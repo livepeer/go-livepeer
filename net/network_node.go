@@ -8,11 +8,10 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	host "github.com/libp2p/go-libp2p-host"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
+	kad "github.com/libp2p/go-libp2p-kad-dht"
 	net "github.com/libp2p/go-libp2p-net"
 	peer "github.com/libp2p/go-libp2p-peer"
 	peerstore "github.com/libp2p/go-libp2p-peerstore"
-	routing "github.com/libp2p/go-libp2p-routing"
 	swarm "github.com/libp2p/go-libp2p-swarm"
 	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
 	rhost "github.com/libp2p/go-libp2p/p2p/host/routed"
@@ -20,10 +19,10 @@ import (
 )
 
 type NetworkNode struct {
-	Identity  peer.ID             // the local node's identity
-	Peerstore peerstore.Peerstore // storage for other Peer instances
-	Routing   routing.IpfsRouting // the routing system. recommend ipfs-dht
-	PeerHost  host.Host           // the network host (server+client)
+	Identity peer.ID // the local node's identity
+	Kad      *kad.IpfsDHT
+	PeerHost host.Host // the network host (server+client)
+	streams  map[peer.ID]net.Stream
 }
 
 //NewNode creates a new Livepeerd node.
@@ -54,28 +53,44 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey) (*NetworkNo
 
 	basicHost := bhost.New(netwrk)
 
-	r, err := constructDHTRouting(context.Background(), basicHost, ds.NewMapDatastore())
-	rHost := rhost.Wrap(basicHost, r)
+	dht, err := constructDHTRouting(context.Background(), basicHost, ds.NewMapDatastore())
+	rHost := rhost.Wrap(basicHost, dht)
 
-	return &NetworkNode{Identity: pid, Peerstore: store, Routing: r, PeerHost: rHost}, nil
+	return &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, streams: make(map[peer.ID]net.Stream)}, nil
 }
 
-func constructDHTRouting(ctx context.Context, host host.Host, dstore ds.Batching) (routing.IpfsRouting, error) {
-	dhtRouting := dht.NewDHT(ctx, host, dstore)
+func constructDHTRouting(ctx context.Context, host host.Host, dstore ds.Batching) (*kad.IpfsDHT, error) {
+	dhtRouting := kad.NewDHT(ctx, host, dstore)
 	return dhtRouting, nil
 }
 
-func (n *NetworkNode) SendMessage(stream net.Stream, pid peer.ID, opCode Opcode, data interface{}) {
+func (n *NetworkNode) GetStream(pid peer.ID) net.Stream {
+	if n.streams[pid] == nil {
+		ns, err := n.PeerHost.NewStream(context.Background(), pid, Protocol)
+		if err != nil {
+			glog.Errorf("Error creating stream: %v", err)
+			return nil
+		}
+		n.streams[pid] = ns
+	}
+	return n.streams[pid]
+}
+
+func (n *NetworkNode) SendMessage(stream net.Stream, pid peer.ID, opCode Opcode, data interface{}) error {
 	wrappedStream := WrapStream(stream)
 	msg := Msg{Op: opCode, Data: data}
 	glog.Infof("Sending: %v", msg)
-	err := wrappedStream.enc.Encode(msg)
+	err := wrappedStream.Enc.Encode(msg)
 	if err != nil {
 		glog.Errorf("send message encode error: %v", err)
+		return err
 	}
 
-	err = wrappedStream.w.Flush()
+	// glog.Infof("wrappedStream.w: %v", wrappedStream.W)
+	err = wrappedStream.W.Flush()
 	if err != nil {
 		glog.Errorf("send message flush error: %v", err)
+		return err
 	}
+	return nil
 }

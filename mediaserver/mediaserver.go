@@ -157,10 +157,13 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 		}
 
 		//Look for media playlist locally.  If not found, ask the network, create a new local buffer.
+		strm := s.LivepeerNode.StreamDB.GetStream(strmID)
+		if strm == nil {
+			sub := s.LivepeerNode.Network.NewSubscriber(strmID.String())
+		}
 
 		//Wait for the local buffer gets populated, get the playlist from the local buffer, and return it.  Also update the hlsSubTimer.
 
-		strm := s.LivepeerNode.StreamDB.GetStream(strmID)
 		pl, _ := strm.ReadHLSPlaylist()
 		return &pl, nil
 	}

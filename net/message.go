@@ -15,6 +15,7 @@ const (
 	FinishStreamID
 	SubReqID
 	CancelSubID
+	SimpleString
 )
 
 type Msg struct {
@@ -28,9 +29,13 @@ type msgAux struct {
 }
 
 type SubReqMsg struct {
-	StrmID      string
-	SubNodeID   string
-	SubNodeAddr string
+	StrmID string
+	// SubNodeID string
+	//TODO: Add Signature
+}
+
+type CancelSubMsg struct {
+	StrmID string
 }
 
 type StreamDataMsg struct {
@@ -55,6 +60,11 @@ func (m Msg) MarshalJSON() ([]byte, error) {
 		err := enc.Encode(m.Data.(StreamDataMsg))
 		if err != nil {
 			return nil, fmt.Errorf("Failed to marshal StreamDataMsg: %v", err)
+		}
+	case string:
+		err := enc.Encode(m.Data)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to marshal string: %v", err)
 		}
 	default:
 		return nil, errors.New("failed to marshal message data")
@@ -90,6 +100,14 @@ func (m *Msg) UnmarshalJSON(b []byte) error {
 			return errors.New("failed to decode StreamDataMsg")
 		}
 		m.Data = sd
+	case SimpleString:
+		var str string
+		err := dec.Decode(&str)
+		if err != nil {
+			return errors.New("Failed to decode string msg")
+		}
+		m.Data = str
+
 	default:
 		return errors.New("failed to decode message data")
 	}
