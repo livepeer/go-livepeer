@@ -3,7 +3,9 @@
 package mediaserver
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"errors"
 	"net/http"
 	"net/url"
@@ -75,11 +77,7 @@ func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
 	http.HandleFunc("/streamerStatus", func(w http.ResponseWriter, r *http.Request) {
 	})
 
-	err := s.LPMS.Start(ctx)
-	if err != nil {
-		glog.Errorf("Cannot start LPMS: %v", err)
-		return err
-	}
+	go s.LPMS.Start(ctx)
 
 	return nil
 }
@@ -112,8 +110,42 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 
 		//Create Segmenter
 		glog.Infof("Segmenting rtmp stream:%v to hls stream:%v", rtmpStrm.GetStreamID(), hlsStrm.GetStreamID())
-		glog.Infof("Mediaserver RTMP addr: %v", &rtmpStrm)
 		go s.LPMS.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions) //TODO: do we need to cancel this thread when the stream finishes?
+
+		//Kick off go routine to broadcast the hls stream.
+		go func() {
+			// b := s.LivepeerNode.VideoNetwork.GetBroadcaster(hlsStrm.GetStreamID())
+			// glog.Infof("Getting broadcaster, got %v", b)
+			// if b == nil {
+			// 	glog.Infof("Creating broadcaster")
+			b := s.LivepeerNode.VideoNetwork.NewBroadcaster(hlsStrm.GetStreamID())
+			// 	glog.Infof("Got: %v", b)
+			// }
+			counter := uint64(0)
+			for {
+				seg, err := hlsStrm.ReadHLSSegment()
+				if err != nil {
+					glog.Errorf("Error reading broadcast HLS Segment: %v", err)
+					time.Sleep(time.Second)
+					continue
+				}
+
+				//Encode segment into []byte, broadcast it
+				var buf bytes.Buffer
+				enc := gob.NewEncoder(&buf)
+				err = enc.Encode(seg)
+				if err != nil {
+					glog.Errorf("Error encoding segment to []byte: %v", err)
+					continue
+				}
+				glog.Infof("Calling broadcast on broadcaster: %v", b)
+				err = b.Broadcast(counter, buf.Bytes())
+				if err != nil {
+					glog.Errorf("Error broadcasting segment to network: %v", err)
+				}
+				counter++
+			}
+		}()
 
 		//Store HLS Stream into StreamDB, remember HLS stream so we can remove later
 		s.LivepeerNode.StreamDB.AddStream(core.StreamID(hlsStrm.GetStreamID()), hlsStrm)
@@ -157,15 +189,57 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 		}
 
 		//Look for media playlist locally.  If not found, ask the network, create a new local buffer.
-		strm := s.LivepeerNode.StreamDB.GetStream(strmID)
-		if strm == nil {
-			sub := s.LivepeerNode.Network.NewSubscriber(strmID.String())
+		// strm := s.LivepeerNode.StreamDB.GetStream(strmID)
+		buf := s.LivepeerNode.StreamDB.GetHLSBuffer(strmID)
+		if buf == nil {
+			glog.Infof("buf is nil, creating subscription, asking the network")
+			sub := s.LivepeerNode.VideoNetwork.GetSubscriber(strmID.String())
+			if sub == nil {
+				sub = s.LivepeerNode.VideoNetwork.NewSubscriber(strmID.String())
+			}
+			sub.Subscribe(context.Background(), func(seqNo uint64, data []byte) {
+				//Decode data into HLSSegment
+				dec := gob.NewDecoder(bytes.NewReader(data))
+				var seg stream.HLSSegment
+				err := dec.Decode(&seg)
+				if err != nil {
+					glog.Errorf("Error decoding byte array into segment: %v", err)
+				}
+
+				//Add segment into a HLS buffer in StreamDB
+				if buf == nil {
+					buf = s.LivepeerNode.StreamDB.AddNewHLSBuffer(strmID)
+					glog.Infof("Creating new buf in StreamDB: %v", s.LivepeerNode.StreamDB)
+				}
+				glog.Infof("Inserting seg %v into buf %v", seg, buf)
+				buf.WriteSegment(seg.SeqNo, seg.Name, seg.Duration, seg.Data)
+			})
 		}
 
-		//Wait for the local buffer gets populated, get the playlist from the local buffer, and return it.  Also update the hlsSubTimer.
+		//Wait for the HLSBuffer gets populated, get the playlist from the buffer, and return it.
+		//Also update the hlsSubTimer.
+		start := time.Now()
+		for time.Since(start) < time.Second*5 {
+			buf = s.LivepeerNode.StreamDB.GetHLSBuffer(strmID)
+			if buf == nil {
+				glog.Infof("Got nothing - sleeping: %v", s.LivepeerNode.StreamDB.GetHLSBuffer(strmID))
+				time.Sleep(100 * time.Millisecond)
+				continue
+			} else {
+				pl, err := buf.LatestPlaylist()
+				if err != nil {
+					glog.Infof("Waiting for playlist... err: %v", err)
+					time.Sleep(100 * time.Millisecond)
+					continue
+				} else {
+					glog.Infof("Found playlist. Returning")
+					s.hlsSubTimer[strmID] = time.Now()
+					return pl, err
+				}
+			}
+		}
 
-		pl, _ := strm.ReadHLSPlaylist()
-		return &pl, nil
+		return nil, ErrNotFound
 	}
 }
 
@@ -175,21 +249,18 @@ func (s *LivepeerMediaServer) makeGetHLSSegmentHandler() func(url *url.URL) ([]b
 		if strmID.IsMasterPlaylistID() {
 			return nil, nil
 		}
-		//Look for stream in StreamDB, if not found return error (should already be here because of the mediaPlaylist request)
-		strm := s.LivepeerNode.StreamDB.GetStream(strmID)
-		if strm == nil {
+		//Look for buffer in StreamDB, if not found return error (should already be here because of the mediaPlaylist request)
+		buf := s.LivepeerNode.StreamDB.GetHLSBuffer(strmID)
+		if buf == nil {
 			return nil, ErrNotFound
 		}
 
-		//Get the buffer from the stream, if buffer not found return error (should already be here because of the mediaPlaylist request)
-		// 		subID := "local"
-		// hlsBuffer := streamer.GetHLSMuxer(strmID, subID)
+		segName := parseSegName(url.Path)
+		if segName == "" {
+			return nil, ErrNotFound
+		}
 
-		//Wait for the segment in the buffer, and return it. Also update the hlsSubTimer.
-
-		seg, _ := strm.ReadHLSSegment()
-		glog.Infof("HLS Seg URL: %v.  Seg Name: %v", url, seg.Name)
-		return seg.Data, nil
+		return buf.WaitAndPopSegment(context.Background(), segName)
 	}
 }
 
@@ -209,9 +280,7 @@ func (s *LivepeerMediaServer) makeGetRTMPStreamHandler() func(ctx context.Contex
 		}
 
 		//Could use a subscriber, but not going to here because the RTMP stream doesn't need to be available for consumption by multiple views.  It's only for the segmenter.
-		strm.ReadRTMPFromStream(ctx, dst)
-
-		return nil
+		return strm.ReadRTMPFromStream(ctx, dst)
 	}
 }
 
@@ -239,4 +308,14 @@ func parseStreamID(reqPath string) core.StreamID {
 		strmID = strings.Replace(match, "/stream/", "", -1)
 	}
 	return core.StreamID(strmID)
+}
+
+func parseSegName(reqPath string) string {
+	var segName string
+	regex, _ := regexp.Compile("\\/stream\\/.*\\.ts")
+	match := regex.FindString(reqPath)
+	if match != "" {
+		segName = strings.Replace(match, "/stream/", "", -1)
+	}
+	return segName
 }

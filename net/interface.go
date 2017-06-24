@@ -4,6 +4,7 @@ import "context"
 
 type VideoNetwork interface {
 	NewBroadcaster(strmID string) Broadcaster
+	GetBroadcaster(strmID string) Broadcaster
 	NewSubscriber(strmID string) Subscriber
 	GetSubscriber(strmID string) Subscriber
 }

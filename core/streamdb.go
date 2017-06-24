@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -13,19 +14,24 @@ var ErrNotFound = errors.New("NotFound")
 const HLSWaitTime = time.Second * 10
 
 type StreamDB struct {
-	streams      map[StreamID]*stream.VideoStream
-	subscribers  map[StreamID]*stream.StreamSubscriber
+	streams map[StreamID]*stream.VideoStream
+	// subscribers  map[StreamID]*stream.StreamSubscriber
+	hlsBuffers   map[StreamID]*stream.HLSBuffer
 	cancellation map[StreamID]context.CancelFunc
+	SelfAddress  string
 }
 
-func NewStreamDB() *StreamDB {
+func NewStreamDB(selfAddr string) *StreamDB {
 	return &StreamDB{
-		streams:      make(map[StreamID]*stream.VideoStream),
-		subscribers:  make(map[StreamID]*stream.StreamSubscriber),
-		cancellation: make(map[StreamID]context.CancelFunc)}
+		streams: make(map[StreamID]*stream.VideoStream),
+		// subscribers:  make(map[StreamID]*stream.StreamSubscriber),
+		hlsBuffers:   make(map[StreamID]*stream.HLSBuffer),
+		cancellation: make(map[StreamID]context.CancelFunc),
+		SelfAddress:  selfAddr}
 }
 
 func (s *StreamDB) GetStream(id StreamID) *stream.VideoStream {
+	// glog.Infof("Getting stream with %v, %v", id, s.streams[id])
 	return s.streams[id]
 }
 
@@ -33,7 +39,7 @@ func (s *StreamDB) AddNewStream(strmID StreamID, format stream.VideoFormat) (str
 	strm = stream.NewVideoStream(strmID.String(), format)
 	s.streams[strmID] = strm
 
-	// glog.V(logger.Info).Infof("Adding new video stream with ID: %v", strmID)
+	glog.Infof("Adding new video stream with ID: %v", strmID)
 	return strm, nil
 }
 
@@ -46,47 +52,57 @@ func (s *StreamDB) DeleteStream(strmID StreamID) {
 	delete(s.streams, strmID)
 }
 
-func (self *StreamDB) SubscribeToHLSStream(strmID string, subID string, mux stream.HLSMuxer) error {
-	strm := self.streams[StreamID(strmID)]
-	if strm == nil {
-		return ErrNotFound
-	}
-
-	sub := self.subscribers[StreamID(strmID)]
-	if sub == nil {
-		sub = stream.NewStreamSubscriber(strm)
-		self.subscribers[StreamID(strmID)] = sub
-		ctx, cancel := context.WithCancel(context.Background())
-		go sub.StartHLSWorker(ctx, HLSWaitTime)
-		self.cancellation[StreamID(strmID)] = cancel
-	}
-
-	return sub.SubscribeHLS(subID, mux)
+func (s *StreamDB) GetHLSBuffer(strmID StreamID) *stream.HLSBuffer {
+	return s.hlsBuffers[strmID]
 }
 
-func (self *StreamDB) UnsubscribeToHLSStream(strmID string, subID string) {
-	sub := self.subscribers[StreamID(strmID)]
-	if sub != nil {
-		sub.UnsubscribeHLS(subID)
-	} else {
-		return
-	}
-
-	if !sub.HasSubscribers() {
-		self.cancellation[StreamID(strmID)]() //Call cancel on hls worker
-		delete(self.subscribers, StreamID(strmID))
-		sid := StreamID(strmID)
-		nid := sid.GetNodeID()
-		if self.SelfAddress != nid { //Only delete the networkStream if you are a relay node
-			delete(self.networkStreams, StreamID(strmID))
-		}
-	}
+func (s *StreamDB) AddNewHLSBuffer(strmID StreamID) *stream.HLSBuffer {
+	buf := stream.NewHLSBuffer(5, 1000) //TODO: Need to fix the static cap
+	s.hlsBuffers[strmID] = buf
+	return buf
 }
 
-func (self *StreamDB) GetHLSMuxer(strmID string, subID string) (mux stream.HLSMuxer) {
-	sub := self.subscribers[StreamID(strmID)]
-	if sub != nil {
-		return sub.GetHLSMuxer(subID)
-	}
-	return nil
-}
+// func (self *StreamDB) SubscribeToHLSStream(strmID string, subID string, mux stream.HLSMuxer) error {
+// 	strm := self.streams[StreamID(strmID)]
+// 	if strm == nil {
+// 		return ErrNotFound
+// 	}
+
+// 	sub := self.subscribers[StreamID(strmID)]
+// 	if sub == nil {
+// 		sub = stream.NewStreamSubscriber(strm)
+// 		self.subscribers[StreamID(strmID)] = sub
+// 		ctx, cancel := context.WithCancel(context.Background())
+// 		go sub.StartHLSWorker(ctx, HLSWaitTime)
+// 		self.cancellation[StreamID(strmID)] = cancel
+// 	}
+
+// 	return sub.SubscribeHLS(subID, mux)
+// }
+
+// func (self *StreamDB) UnsubscribeToHLSStream(strmID string, subID string) {
+// 	sub := self.subscribers[StreamID(strmID)]
+// 	if sub != nil {
+// 		sub.UnsubscribeHLS(subID)
+// 	} else {
+// 		return
+// 	}
+
+// 	if !sub.HasSubscribers() {
+// 		self.cancellation[StreamID(strmID)]() //Call cancel on hls worker
+// 		delete(self.subscribers, StreamID(strmID))
+// 		sid := StreamID(strmID)
+// 		nid := sid.GetNodeID()
+// 		if self.SelfAddress != nid { //Only delete the networkStream if you are a relay node
+// 			delete(self.streams, StreamID(strmID))
+// 		}
+// 	}
+// }
+
+// func (self *StreamDB) GetHLSMuxer(strmID string, subID string) (mux stream.HLSMuxer) {
+// 	sub := self.subscribers[StreamID(strmID)]
+// 	if sub != nil {
+// 		return sub.GetHLSMuxer(subID)
+// 	}
+// 	return nil
+// }

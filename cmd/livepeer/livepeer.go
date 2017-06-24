@@ -2,19 +2,40 @@ package main
 
 import (
 	"context"
+	"flag"
 
+	"github.com/golang/glog"
+	crypto "github.com/libp2p/go-libp2p-crypto"
 	"github.com/livepeer/libp2p-livepeer/core"
 	"github.com/livepeer/libp2p-livepeer/mediaserver"
 )
 
 func main() {
-	s := mediaserver.NewLivepeerMediaServer("1935", "8935", "", core.NewLivepeerNode())
+	port := flag.Int("p", 0, "port")
+	httpPort := flag.String("http", "", "http port")
+	rtmpPort := flag.String("rtmp", "", "rtmp port")
+	flag.Parse()
+
+	if *port == 0 {
+		glog.Fatalf("Please provide port")
+	}
+	if *httpPort == "" {
+		glog.Fatalf("Please provide http port")
+	}
+	if *rtmpPort == "" {
+		glog.Fatalf("Please provide rtmp port")
+	}
+
+	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+
+	n, err := core.NewLivepeerNode(*port, priv, pub)
+	if err != nil {
+		glog.Errorf("Error creating livepeer node: %v", err)
+	}
+	s := mediaserver.NewLivepeerMediaServer(*rtmpPort, *httpPort, "", n)
 	s.StartLPMS(context.Background())
 
 	select {}
-	// if err != nil {
-	// 	glog.Fatalf("Cannot start media server: %v", err)
-	// }
 }
 
 // import (

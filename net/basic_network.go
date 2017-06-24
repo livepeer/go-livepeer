@@ -30,7 +30,7 @@ var ErrUnknownMsg = errors.New("UnknownMsgType")
 var ErrProtocol = errors.New("ProtocolError")
 
 type VideoMuxer interface {
-	WriteSegment(seqNo uint64, data []byte)
+	WriteSegment(seqNo uint64, strmID string, data []byte) error
 }
 
 //BasicVideoNetwork creates a kademlia network using libp2p.  It does push-based video delivery, and handles the protocol in the background.
@@ -67,6 +67,7 @@ type BasicSubscriber struct {
 	// q       *list.List
 	// lock    *sync.Mutex
 	StrmID       string
+	working      bool
 	cancelWorker context.CancelFunc
 
 	// listeners map[string]net.Stream
@@ -89,21 +90,30 @@ func NewBasicNetwork(port int, priv crypto.PrivKey, pub crypto.PubKey) (*BasicVi
 	return nw, nil
 }
 
-func (n *BasicVideoNetwork) NewBroadcaster(strmID string) *BasicBroadcaster {
+func (n *BasicVideoNetwork) NewBroadcaster(strmID string) Broadcaster {
 	// b := &BasicBroadcaster{Network: n, StrmID: strmID, q: list.New(), host: n.NetworkNode.PeerHost, lock: &sync.Mutex{}, listeners: make(map[string]peerstore.PeerInfo)}
 	b := &BasicBroadcaster{Network: n, StrmID: strmID, q: list.New(), lock: &sync.Mutex{}, listeners: make(map[string]VideoMuxer)}
 	n.broadcasters[strmID] = b
 	return b
 }
 
-func (n *BasicVideoNetwork) NewSubscriber(strmID string) *BasicSubscriber {
+func (n *BasicVideoNetwork) GetBroadcaster(strmID string) Broadcaster {
+	return n.broadcasters[strmID]
+}
+
+func (n *BasicVideoNetwork) NewSubscriber(strmID string) Subscriber {
 	s := &BasicSubscriber{Network: n, StrmID: strmID, host: n.NetworkNode.PeerHost, msgChan: make(chan StreamDataMsg)}
 	n.subscribers[strmID] = s
 	return s
 }
 
+func (n *BasicVideoNetwork) GetSubscriber(strmID string) Subscriber {
+	return n.subscribers[strmID]
+}
+
 //Broadcast sends a video chunk to the stream
 func (b *BasicBroadcaster) Broadcast(seqNo uint64, data []byte) error {
+	glog.Infof("Broadcasting data: %v (%v), storing in q: %v", seqNo, len(data), b)
 	b.q.PushBack(&StreamDataMsg{SeqNo: seqNo, Data: data})
 
 	//This should only get invoked once per broadcaster
@@ -147,42 +157,12 @@ func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 				continue
 			}
 
-			glog.Infof("broadcasting msg:%v to network.  listeners: %v", msg, b.listeners)
-			for _, l := range b.listeners {
-				// glog.Infof("Peerstore entry: for %v: %v", p.ID.Pretty(), n.Peerstore.Addrs(p.ID))
-				// if n.PeerHost.Network().Connectedness(p.ID) != net.Connected {
-				// 	// p.ID
-				// 	glog.Infof("%v Creating new connection to :%v", n.PeerHost.ID().Pretty(), p.ID.Pretty())
-				// 	n.Peerstore.AddAddrs(p.ID, p.Addrs, peerstore.PermanentAddrTTL)
-				// 	// err := n.PeerHost.Connect(context.Background(), p)
-				// 	// if err != nil {
-				// 	// 	glog.Errorf("Cannot create connection: %v", err)
-				// 	// }
-				// }
-
-				// s, err := n.PeerHost.NewStream(context.Background(), p.ID, Protocol)
-				// if err != nil {
-				// 	log.Fatal(err)
-				// }
-
-				// n.SendMessage(l, p.ID, StreamDataID, StreamDataMsg{SeqNo: 0, StrmID: b.StrmID, Data: msg.Data})
-				l.WriteSegment(msg.SeqNo, msg.Data)
-
-				//This logic should be moved to WrappedStream.WriteSegment()
-				// nwMsg := Msg{Op: StreamDataID, Data: StreamDataMsg{SeqNo: msg.SeqNo, StrmID: b.StrmID, Data: msg.Data}}
-				// glog.Infof("Sending: %v to %v", nwMsg, l.Stream.Conn().RemotePeer().Pretty())
-
-				// err := l.Enc.Encode(nwMsg)
-				// if err != nil {
-				// 	glog.Errorf("send message encode error: %v", err)
-				// 	delete(b.listeners, id)
-				// }
-
-				// err = l.W.Flush()
-				// if err != nil {
-				// 	glog.Errorf("send message flush error: %v", err)
-				// 	delete(b.listeners, id)
-				// }
+			// glog.Infof("broadcasting msg:%v to network.  listeners: %v", msg, b.listeners)
+			for id, l := range b.listeners {
+				err := l.WriteSegment(msg.SeqNo, b.StrmID, msg.Data)
+				if err != nil {
+					delete(b.listeners, id)
+				}
 			}
 		}
 	}()
@@ -239,25 +219,29 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 				s.Network.NetworkNode.SendMessage(ns, p, SubReqID, SubReqMsg{StrmID: s.StrmID})
 				ctxW, cancel := context.WithCancel(context.Background())
 				s.cancelWorker = cancel
+				s.working = true
 				s.networkStream = ns
 
-				//We expect DataStreamMsg to come back
-				go func() {
-					for {
-						//Get message from the broadcaster
-						//Call gotData(seqNo, data)
-						//Question: What happens if the handler gets stuck?
-						select {
-						case msg := <-s.msgChan:
-							// glog.Infof("Got data from msgChan: %v", msg)
-							gotData(msg.SeqNo, msg.Data)
-						case <-ctxW.Done():
-							glog.Infof("Done with subscription, sending CancelSubMsg")
-							s.Network.NetworkNode.SendMessage(ns, p, CancelSubID, CancelSubMsg{StrmID: s.StrmID})
-							return
-						}
-					}
-				}()
+				s.startWorker(ctxW, p, ns, gotData)
+				// //We expect DataStreamMsg to come back
+				// go func() {
+				// 	for {
+				// 		//Get message from the broadcaster
+				// 		//Call gotData(seqNo, data)
+				// 		//Question: What happens if the handler gets stuck?
+				// 		select {
+				// 		case msg := <-s.msgChan:
+				// 			// glog.Infof("Got data from msgChan: %v", msg)
+				// 			gotData(msg.SeqNo, msg.Data)
+				// 		case <-ctxW.Done():
+				// 			s.networkStream = nil
+				// 			s.working = false
+				// 			glog.Infof("Done with subscription, sending CancelSubMsg")
+				// 			s.Network.NetworkNode.SendMessage(ns, p, CancelSubID, CancelSubMsg{StrmID: s.StrmID})
+				// 			return
+				// 		}
+				// 	}
+				// }()
 
 				return nil
 			}
@@ -269,6 +253,31 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 	return ErrNoClosePeers
 
 	//Call gotData for every new piece of data
+}
+
+func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ns net.Stream, gotData func(seqNo uint64, data []byte)) {
+	//We expect DataStreamMsg to come back
+	go func() {
+		for {
+			//Get message from the broadcaster
+			//Call gotData(seqNo, data)
+			//Question: What happens if the handler gets stuck?
+			select {
+			case msg := <-s.msgChan:
+				// glog.Infof("Got data from msgChan: %v", msg)
+				gotData(msg.SeqNo, msg.Data)
+			case <-ctxW.Done():
+				s.networkStream = nil
+				s.working = false
+				glog.Infof("Done with subscription, sending CancelSubMsg")
+				err := s.Network.NetworkNode.SendMessage(ns, p, CancelSubID, CancelSubMsg{StrmID: s.StrmID})
+				if err != nil {
+					glog.Errorf("Error sending CancelSubMsg during worker cancellation: %v", err)
+				}
+				return
+			}
+		}
+	}()
 }
 
 //Unsubscribe unsubscribes from the broadcast
@@ -305,9 +314,17 @@ func streamHandler(nw *BasicVideoNetwork, stream net.Stream) error {
 		sr, ok := msg.Data.(SubReqMsg)
 		if !ok {
 			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
+			return ErrProtocol
 		}
-		glog.Infof("Got Sub Req: %v", sr)
+		// glog.Infof("Got Sub Req: %v", sr)
 		return nw.handleSubReq(sr, ws)
+	case CancelSubID:
+		cr, ok := msg.Data.(CancelSubMsg)
+		if !ok {
+			glog.Errorf("Cannot convert CancelSubMsg: %v", msg.Data)
+			return ErrProtocol
+		}
+		return nw.handleCancelSubReq(cr, ws.Stream.Conn().RemotePeer())
 	case StreamDataID:
 		// glog.Infof("Got Stream Data: %v", msg.Data)
 		//Enque it into the subscriber
@@ -315,8 +332,13 @@ func streamHandler(nw *BasicVideoNetwork, stream net.Stream) error {
 		if !ok {
 			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
 		}
-
 		return nw.handleStreamData(sd)
+	case FinishStreamID:
+		fs, ok := msg.Data.(FinishStreamMsg)
+		if !ok {
+			glog.Errorf("Cannot convert FinishStreamMsg: %v", msg.Data)
+		}
+		return nw.handleFinishStream(fs)
 	default:
 		glog.Infof("Data: %v", msg)
 		stream.Close()
@@ -341,14 +363,7 @@ func (nw *BasicVideoNetwork) handleSubReq(subReq SubReqMsg, ws *WrappedStream) e
 		//This is when you are a relay node
 		glog.Infof("Cannot find local broadcaster for stream: %v.  Forwarding along to the network", subReq.StrmID)
 
-		//Create a local broadcaster
-		b = nw.NewBroadcaster(subReq.StrmID)
-
-		//Kick off the broadcaster worker
-		ctxB, cancel := context.WithCancel(context.Background())
-		b.cancelWorker = cancel
-		go b.broadcastToListeners(ctxB)
-		b.working = true
+		//Create a relayer, hook up the relaying
 
 		//Subscribe from the network
 	}
@@ -359,19 +374,45 @@ func (nw *BasicVideoNetwork) handleSubReq(subReq SubReqMsg, ws *WrappedStream) e
 	return nil
 }
 
-func (nw *BasicVideoNetwork) handleStreamData(sd StreamDataMsg) error {
-	if b := nw.broadcasters[sd.StrmID]; b != nil {
-		//TODO: This is questionable.  Do we every have this case?
-		glog.Infof("Calling broadcast")
-		b.Broadcast(sd.SeqNo, sd.Data)
+func (nw *BasicVideoNetwork) handleCancelSubReq(cr CancelSubMsg, rpeer peer.ID) error {
+	if b := nw.broadcasters[cr.StrmID]; b != nil {
+		//Remove from listener
+		delete(b.listeners, peer.IDHexEncode(rpeer))
 		return nil
-	} else if s := nw.subscribers[sd.StrmID]; s != nil {
+	} else {
+		//TODO: Add relay case
+		glog.Errorf("Cannot find broadcaster or relayer.  Error!")
+		return ErrProtocol
+	}
+}
+
+func (nw *BasicVideoNetwork) handleStreamData(sd StreamDataMsg) error {
+	// if b := nw.broadcasters[sd.StrmID]; b != nil {
+	// 	//TODO: This is questionable.  Do we every have this case?
+	// 	glog.Infof("Calling broadcast")
+	// 	b.Broadcast(sd.SeqNo, sd.Data)
+	// 	return nil
+	// } else
+	if s := nw.subscribers[sd.StrmID]; s != nil {
 		// glog.Infof("Inserting into subscriber msg queue: %v", sd)
 		s.msgChan <- sd
 		return nil
 	} else {
 		//TODO: Add relay case
 		glog.Errorf("Something is wrong.  Expect broadcaster or subscriber to exist at this point (should have been setup when SubReq came in)")
+		return ErrProtocol
+	}
+}
+
+func (nw *BasicVideoNetwork) handleFinishStream(fs FinishStreamMsg) error {
+	if s := nw.subscribers[fs.StrmID]; s != nil {
+		//Cancel subscriber worker, delete subscriber
+		s.cancelWorker()
+		delete(nw.subscribers, fs.StrmID)
+		return nil
+	} else {
+		//TODO: Add relay case
+		glog.Errorf("Error: cannot find subscriber or relayer")
 		return ErrProtocol
 	}
 }

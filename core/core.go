@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/golang/glog"
+	crypto "github.com/libp2p/go-libp2p-crypto"
+	peer "github.com/libp2p/go-libp2p-peer"
 	"github.com/livepeer/libp2p-livepeer/eth"
 	"github.com/livepeer/libp2p-livepeer/net"
 	"github.com/livepeer/lpms/stream"
@@ -13,15 +15,21 @@ import (
 type NodeID string
 
 type LivepeerNode struct {
-	Identity     NodeID
+	Identity NodeID
+	// VideoNetwork net.VideoNetwork
 	VideoNetwork net.VideoNetwork
 	StreamDB     *StreamDB
 	Eth          eth.Client
 	IsTranscoder bool
 }
 
-func NewLivepeerNode() *LivepeerNode {
-	return &LivepeerNode{StreamDB: NewStreamDB()}
+func NewLivepeerNode(port int, priv crypto.PrivKey, pub crypto.PubKey) (*LivepeerNode, error) {
+	n, err := net.NewBasicNetwork(port, priv, pub)
+	if err != nil {
+		glog.Errorf("Cannot create network node: %v", err)
+		return nil, err
+	}
+	return &LivepeerNode{StreamDB: NewStreamDB(peer.IDHexEncode(n.NetworkNode.Identity)), VideoNetwork: n, Identity: NodeID(peer.IDHexEncode(n.NetworkNode.Identity))}, nil
 }
 
 func (n *LivepeerNode) Start() {
@@ -71,6 +79,7 @@ func (n *LivepeerNode) BroadcastToNetwork(ctx context.Context, strm *stream.Vide
 			}
 
 			//Encode seg into []byte, then send it via b.Broadcast
+			b.Broadcast(seg.SeqNo, seg.Data)
 		}
 	}()
 
