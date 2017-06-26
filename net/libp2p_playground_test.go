@@ -45,7 +45,6 @@ func simpleHandler(ns net.Stream, txt string) {
 		return
 	}
 	glog.Infof("%v Got msg: %v", ws.Stream.Conn().LocalPeer().Pretty(), msg)
-
 	time.Sleep(500 * time.Millisecond)
 
 	str := string(msg.Msg)
@@ -63,7 +62,8 @@ func simpleHandler(ns net.Stream, txt string) {
 	}
 	// }
 }
-func simpleHandlerLoop(ws *WrappedStream, txt string) {
+
+func simpleHandlerLoop(ws *BasicStream, txt string) {
 	for {
 		var msg SimpleMsg
 		err := ws.Dec.Decode(&msg)
@@ -107,7 +107,7 @@ func simpleSend(ns net.Stream, txt string, t *testing.T) {
 func TestBackAndForth(t *testing.T) {
 	glog.Infof("libp2p playground......")
 	n1, n2 := simpleNodes()
-	connect(n1.PeerHost, n2.PeerHost)
+	connectHosts(n1.PeerHost, n2.PeerHost)
 	time.Sleep(time.Second)
 
 	n2.PeerHost.SetStreamHandler("/test/1.0", func(stream net.Stream) {

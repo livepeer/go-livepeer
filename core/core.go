@@ -32,12 +32,24 @@ func NewLivepeerNode(port int, priv crypto.PrivKey, pub crypto.PubKey) (*Livepee
 	return &LivepeerNode{StreamDB: NewStreamDB(peer.IDHexEncode(n.NetworkNode.Identity)), VideoNetwork: n, Identity: NodeID(peer.IDHexEncode(n.NetworkNode.Identity))}, nil
 }
 
-func (n *LivepeerNode) Start() {
-	//Connect to bootstrap node, ask for more peers
+func (n *LivepeerNode) Start(bootID, bootAddr string) error {
+	//Set up protocol (to handle incoming streams)
+	if err := n.VideoNetwork.SetupProtocol(); err != nil {
+		glog.Errorf("Error setting up protocol: %v", err)
+		return err
+	}
 
-	//Connect to peers
+	//Connect to bootstrap node
+	if err := n.VideoNetwork.Connect(bootID, bootAddr); err != nil {
+		glog.Errorf("Cannot connect to node: %v", err)
+		return err
+	}
+
+	//Ask for more peers, connect to peers
 
 	//Kick off process to periodically monitor peer connection by pinging them
+
+	return nil
 }
 
 //CreateTranscodeJob creates the onchain transcode job

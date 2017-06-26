@@ -12,7 +12,7 @@ import (
 
 var ErrStream = errors.New("ErrStream")
 
-type WrappedStream struct {
+type BasicStream struct {
 	Stream net.Stream
 	Enc    multicodec.Encoder
 	Dec    multicodec.Decoder
@@ -20,7 +20,7 @@ type WrappedStream struct {
 	R      *bufio.Reader
 }
 
-func WrapStream(s net.Stream) *WrappedStream {
+func WrapStream(s net.Stream) *BasicStream {
 	reader := bufio.NewReader(s)
 	writer := bufio.NewWriter(s)
 	// This is where we pick our specific multicodec. In order to change the
@@ -28,7 +28,7 @@ func WrapStream(s net.Stream) *WrappedStream {
 	// See https://godoc.org/github.com/multiformats/go-multicodec/json
 	dec := mcjson.Multicodec(false).Decoder(reader)
 	enc := mcjson.Multicodec(false).Encoder(writer)
-	return &WrappedStream{
+	return &BasicStream{
 		Stream: s,
 		R:      reader,
 		W:      writer,
@@ -37,11 +37,11 @@ func WrapStream(s net.Stream) *WrappedStream {
 	}
 }
 
-func (ws *WrappedStream) WriteSegment(seqNo uint64, strmID string, data []byte) error {
-	glog.Infof("Writing Segment in WrappedStream")
+func (ws *BasicStream) WriteSegment(seqNo uint64, strmID string, data []byte) error {
+	glog.Infof("Writing Segment in BasicStream")
 
 	nwMsg := Msg{Op: StreamDataID, Data: StreamDataMsg{SeqNo: seqNo, StrmID: strmID, Data: data}}
-	glog.Infof("Sending: %v to %v", nwMsg, ws.Stream.Conn().RemotePeer().Pretty())
+	glog.Infof("Sending: %v::%v to %v", strmID, seqNo, ws.Stream.Conn().RemotePeer().Pretty())
 
 	err := ws.Enc.Encode(nwMsg)
 	if err != nil {

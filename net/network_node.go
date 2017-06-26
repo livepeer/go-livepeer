@@ -56,6 +56,7 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey) (*NetworkNo
 	dht, err := constructDHTRouting(context.Background(), basicHost, ds.NewMapDatastore())
 	rHost := rhost.Wrap(basicHost, dht)
 
+	glog.Infof("Created node: %v at %v", peer.IDHexEncode(rHost.ID()), rHost.Addrs())
 	return &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, streams: make(map[peer.ID]net.Stream)}, nil
 }
 

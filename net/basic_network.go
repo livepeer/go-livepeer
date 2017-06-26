@@ -6,14 +6,13 @@ import (
 	"errors"
 	"sync"
 
-	"time"
-
 	"github.com/golang/glog"
 	crypto "github.com/libp2p/go-libp2p-crypto"
-	host "github.com/libp2p/go-libp2p-host"
 	net "github.com/libp2p/go-libp2p-net"
 	peer "github.com/libp2p/go-libp2p-peer"
+	peerstore "github.com/libp2p/go-libp2p-peerstore"
 	protocol "github.com/libp2p/go-libp2p-protocol"
+	ma "github.com/multiformats/go-multiaddr"
 )
 
 /**
@@ -21,7 +20,7 @@ The basic network is a push-based streaming protocol.  It works as follow:
 	- When a video is broadcasted, it's stored at a local broadcaster
 	- When a viewer wants to view a video, it sends a subscribe request to the network
 	- The network routes the request towards the broadcast node via kademlia routing
-	-
+
 **/
 
 var Protocol = protocol.ID("/livepeer_video/0.0.1")
@@ -42,35 +41,6 @@ type BasicVideoNetwork struct {
 	// streams           map[string]*stream.VideoStream
 	// streamSubscribers map[string]*stream.StreamSubscriber
 	// cancellation      map[string]context.CancelFunc
-}
-
-//BasicBroadcaster keeps track of a list of listeners and a queue of video chunks.  It doesn't start keeping track of things until there is at least 1 listner.
-type BasicBroadcaster struct {
-	Network *BasicVideoNetwork
-	// host    host.Host
-	q    *list.List
-	lock *sync.Mutex
-
-	// listeners    map[string]*WrappedStream
-	listeners    map[string]VideoMuxer
-	StrmID       string
-	working      bool
-	cancelWorker context.CancelFunc
-}
-
-//BasicSubscriber keeps track of
-type BasicSubscriber struct {
-	Network       *BasicVideoNetwork
-	host          host.Host
-	msgChan       chan StreamDataMsg
-	networkStream net.Stream
-	// q       *list.List
-	// lock    *sync.Mutex
-	StrmID       string
-	working      bool
-	cancelWorker context.CancelFunc
-
-	// listeners map[string]net.Stream
 }
 
 //NewBasicNetwork creates a libp2p node, handle the basic (push-based) video protocol.
@@ -98,7 +68,11 @@ func (n *BasicVideoNetwork) NewBroadcaster(strmID string) Broadcaster {
 }
 
 func (n *BasicVideoNetwork) GetBroadcaster(strmID string) Broadcaster {
-	return n.broadcasters[strmID]
+	b, ok := n.broadcasters[strmID]
+	if !ok {
+		return nil
+	}
+	return b
 }
 
 func (n *BasicVideoNetwork) NewSubscriber(strmID string) Subscriber {
@@ -108,183 +82,40 @@ func (n *BasicVideoNetwork) NewSubscriber(strmID string) Subscriber {
 }
 
 func (n *BasicVideoNetwork) GetSubscriber(strmID string) Subscriber {
-	return n.subscribers[strmID]
-}
-
-//Broadcast sends a video chunk to the stream
-func (b *BasicBroadcaster) Broadcast(seqNo uint64, data []byte) error {
-	glog.Infof("Broadcasting data: %v (%v), storing in q: %v", seqNo, len(data), b)
-	b.q.PushBack(&StreamDataMsg{SeqNo: seqNo, Data: data})
-
-	//This should only get invoked once per broadcaster
-	if b.working == false {
-		ctxB, cancel := context.WithCancel(context.Background())
-		b.cancelWorker = cancel
-		go b.broadcastToListeners(ctxB)
-		b.working = true
-	}
-	return nil
-}
-
-//Finish signals the stream is finished
-func (b *BasicBroadcaster) Finish() error {
-	b.cancelWorker()
-	//TODO: Need to figure out a place to close the stream listners
-	// for _, l := range b.listeners {
-	// 	l.Stream.Close()
-	// }
-	return nil
-}
-
-func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
-	go func() {
-		for {
-			b.lock.Lock()
-			e := b.q.Front()
-			if e != nil {
-				b.q.Remove(e)
-			}
-			b.lock.Unlock()
-
-			if e == nil {
-				time.Sleep(time.Millisecond * 100)
-				continue
-			}
-
-			msg, ok := e.Value.(*StreamDataMsg)
-			if !ok {
-				glog.Errorf("Cannot convert video msg during broadcast: %v", e.Value)
-				continue
-			}
-
-			// glog.Infof("broadcasting msg:%v to network.  listeners: %v", msg, b.listeners)
-			for id, l := range b.listeners {
-				err := l.WriteSegment(msg.SeqNo, b.StrmID, msg.Data)
-				if err != nil {
-					delete(b.listeners, id)
-				}
-			}
-		}
-	}()
-	select {
-	case <-ctx.Done():
-		return
-	}
-}
-
-//Subscribe kicks off a go routine that calls the gotData func for every new video chunk
-func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte)) error {
-	//Do we already have the broadcaster locally?
-	b := s.Network.broadcasters[s.StrmID]
-
-	//If we do, just subscribe to it and listen.
-	if b != nil {
-		glog.Infof("Broadcaster is present - let's just read from that...")
-		//TODO: read from broadcaster
+	s, ok := n.subscribers[strmID]
+	if !ok {
 		return nil
 	}
+	return s
+}
 
-	//If we don't, send subscribe request, listen for response
-	peerc, err := s.Network.NetworkNode.Kad.GetClosestPeers(ctx, s.StrmID)
+func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
+	pid, err := peer.IDHexDecode(nodeID)
 	if err != nil {
-		glog.Errorf("Network Subscribe Error: %v", err)
+		glog.Errorf("Invalid node ID: %v", err)
 		return err
 	}
 
-	//We can range over peerc because we know it'll be closed by libp2p
-	//We'll keep track of all the connections on the
-	peers := make([]peer.ID, 0)
-	for p := range peerc {
-		peers = append(peers, p)
+	var paddr ma.Multiaddr
+	paddr, err = ma.NewMultiaddr(addr)
+	if err != nil {
+		glog.Errorf("Invalid addr: %v", err)
+		return err
 	}
 
-	//Send SubReq to one of the peers
-	if len(peers) > 0 {
-		for _, p := range peers {
-			//Question: Where do we close the stream? If we only close on "Unsubscribe", we may leave some streams open...
-			ns := s.Network.NetworkNode.GetStream(p)
-			if ns != nil {
-				//Set up handler for the stream
-				go func() {
-					for {
-						err := streamHandler(s.Network, ns)
-						if err != nil {
-							glog.Errorf("Got error handling stream: %v", err)
-							return
-						}
-					}
-				}()
+	n.NetworkNode.PeerHost.Peerstore().AddAddr(pid, paddr, peerstore.PermanentAddrTTL)
+	n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid})
 
-				//Send SubReq
-				s.Network.NetworkNode.SendMessage(ns, p, SubReqID, SubReqMsg{StrmID: s.StrmID})
-				ctxW, cancel := context.WithCancel(context.Background())
-				s.cancelWorker = cancel
-				s.working = true
-				s.networkStream = ns
-
-				s.startWorker(ctxW, p, ns, gotData)
-				// //We expect DataStreamMsg to come back
-				// go func() {
-				// 	for {
-				// 		//Get message from the broadcaster
-				// 		//Call gotData(seqNo, data)
-				// 		//Question: What happens if the handler gets stuck?
-				// 		select {
-				// 		case msg := <-s.msgChan:
-				// 			// glog.Infof("Got data from msgChan: %v", msg)
-				// 			gotData(msg.SeqNo, msg.Data)
-				// 		case <-ctxW.Done():
-				// 			s.networkStream = nil
-				// 			s.working = false
-				// 			glog.Infof("Done with subscription, sending CancelSubMsg")
-				// 			s.Network.NetworkNode.SendMessage(ns, p, CancelSubID, CancelSubMsg{StrmID: s.StrmID})
-				// 			return
-				// 		}
-				// 	}
-				// }()
-
-				return nil
-			}
-		}
-		glog.Errorf("Cannot send message to any peer")
-		return ErrNoClosePeers
-	}
-	glog.Errorf("Cannot find any close peers")
-	return ErrNoClosePeers
-
-	//Call gotData for every new piece of data
+	// n.SendJoin(sid)
+	return nil
 }
 
-func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ns net.Stream, gotData func(seqNo uint64, data []byte)) {
-	//We expect DataStreamMsg to come back
-	go func() {
-		for {
-			//Get message from the broadcaster
-			//Call gotData(seqNo, data)
-			//Question: What happens if the handler gets stuck?
-			select {
-			case msg := <-s.msgChan:
-				// glog.Infof("Got data from msgChan: %v", msg)
-				gotData(msg.SeqNo, msg.Data)
-			case <-ctxW.Done():
-				s.networkStream = nil
-				s.working = false
-				glog.Infof("Done with subscription, sending CancelSubMsg")
-				err := s.Network.NetworkNode.SendMessage(ns, p, CancelSubID, CancelSubMsg{StrmID: s.StrmID})
-				if err != nil {
-					glog.Errorf("Error sending CancelSubMsg during worker cancellation: %v", err)
-				}
-				return
-			}
-		}
-	}()
-}
+func (nw *BasicVideoNetwork) SetupProtocol() error {
+	glog.Infof("Setting up protocol: %v", Protocol)
+	nw.NetworkNode.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
+		streamHandler(nw, stream)
+	})
 
-//Unsubscribe unsubscribes from the broadcast
-func (s *BasicSubscriber) Unsubscribe() error {
-	if s.cancelWorker != nil {
-		s.cancelWorker()
-	}
 	return nil
 }
 
@@ -317,7 +148,7 @@ func streamHandler(nw *BasicVideoNetwork, stream net.Stream) error {
 			return ErrProtocol
 		}
 		// glog.Infof("Got Sub Req: %v", sr)
-		return nw.handleSubReq(sr, ws)
+		return handleSubReq(nw, sr, ws)
 	case CancelSubID:
 		cr, ok := msg.Data.(CancelSubMsg)
 		if !ok {
@@ -340,7 +171,7 @@ func streamHandler(nw *BasicVideoNetwork, stream net.Stream) error {
 		}
 		return nw.handleFinishStream(fs)
 	default:
-		glog.Infof("Data: %v", msg)
+		glog.Infof("Unknown Data: %v -- closing stream", msg)
 		stream.Close()
 		return ErrUnknownMsg
 	}
@@ -348,16 +179,7 @@ func streamHandler(nw *BasicVideoNetwork, stream net.Stream) error {
 	return nil
 }
 
-func (nw *BasicVideoNetwork) setupProtocol(node *NetworkNode) error {
-
-	node.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
-		streamHandler(nw, stream)
-	})
-
-	return nil
-}
-
-func (nw *BasicVideoNetwork) handleSubReq(subReq SubReqMsg, ws *WrappedStream) error {
+func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) error {
 	b := nw.broadcasters[subReq.StrmID]
 	if b == nil {
 		//This is when you are a relay node

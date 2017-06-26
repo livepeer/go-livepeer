@@ -14,6 +14,9 @@ func main() {
 	port := flag.Int("p", 0, "port")
 	httpPort := flag.String("http", "", "http port")
 	rtmpPort := flag.String("rtmp", "", "rtmp port")
+	bootID := flag.String("bootID", "", "Bootstrap node ID")
+	bootAddr := flag.String("bootAddr", "", "Bootstrap node addr")
+	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	flag.Parse()
 
 	if *port == 0 {
@@ -31,6 +34,20 @@ func main() {
 	n, err := core.NewLivepeerNode(*port, priv, pub)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
+	}
+
+	if *bootnode {
+		glog.Infof("Setting up boostrap node")
+		//Setup boostrap node
+		if err := n.VideoNetwork.SetupProtocol(); err != nil {
+			glog.Errorf("Cannot set up protocol:%v", err)
+			return
+		}
+	} else {
+		if err := n.Start(*bootID, *bootAddr); err != nil {
+			glog.Errorf("Cannot connect to bootstrap node: %v", err)
+			return
+		}
 	}
 	s := mediaserver.NewLivepeerMediaServer(*rtmpPort, *httpPort, "", n)
 	s.StartLPMS(context.Background())

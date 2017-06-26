@@ -23,14 +23,10 @@ func setupNodes() (*BasicVideoNetwork, *BasicVideoNetwork) {
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	n2, _ := NewBasicNetwork(15001, priv2, pub2)
 
-	// n1.NetworkNode.PeerHost.Peerstore().AddAddrs(n2.NetworkNode.Identity, n2.NetworkNode.PeerHost.Addrs(), peerstore.PermanentAddrTTL)
-	// n2.NetworkNode.PeerHost.Peerstore().AddAddrs(n1.NetworkNode.Identity, n1.NetworkNode.PeerHost.Addrs(), peerstore.PermanentAddrTTL)
-	// n1.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: n2.NetworkNode.Identity})
-	// n2.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: n1.NetworkNode.Identity})
 	return n1, n2
 }
 
-func connect(h1, h2 host.Host) {
+func connectHosts(h1, h2 host.Host) {
 	h1.Peerstore().AddAddrs(h2.ID(), h2.Addrs(), peerstore.PermanentAddrTTL)
 	h2.Peerstore().AddAddrs(h1.ID(), h1.Addrs(), peerstore.PermanentAddrTTL)
 	err := h1.Connect(context.Background(), peerstore.PeerInfo{ID: h2.ID()})
@@ -45,35 +41,12 @@ func connect(h1, h2 host.Host) {
 	// Connection might not be formed right away under high load.  See https://github.com/libp2p/go-libp2p-kad-dht/blob/master/dht_test.go (func connect)
 	time.Sleep(time.Millisecond * 500)
 }
-
-// func TestSettingUpNetwork(t *testing.T) {
-// 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-// 	_, err := NewBasicNetwork(10000, priv, pub)
-// 	if err != nil {
-// 		t.Errorf("Error setting up basic network: %v", err)
-// 	}
-// }
-
-// func TestSendingMessage(t *testing.T) {
-// 	n1, n2 := setupNodes()
-
-// 	ns, err := n1.NetworkNode.PeerHost.NewStream(context.Background(), n2.NetworkNode.Identity, Protocol)
-// 	if err != nil {
-// 		t.Errorf("Error creating stream: %v", err)
-// 	}
-
-// 	glog.Infof("Sending message...")
-// 	n1.NetworkNode.SendMessage(ns, n2.NetworkNode.Identity, SubReqID, SubReqMsg{StrmID: "strm"})
-
-// 	//Should wait/check for state in n2 to make sure it got the message.
-// }
-
 func TestSendBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Broadcast Stream...")
 	n1, _ := setupNodes()
 	//n2 is simple node so we can register our own handler and inspect the incoming messages
 	n2, _ := simpleNodes()
-	connect(n1.NetworkNode.PeerHost, n2.PeerHost)
+	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var strmData StreamDataMsg
 	var finishStrm FinishStreamMsg
@@ -95,7 +68,7 @@ func TestSendBroadcast(t *testing.T) {
 		}
 	})
 
-	b1 := n1.NewBroadcaster("strm")
+	b1, _ := n1.NewBroadcaster("strm").(*BasicBroadcaster)
 	//Create a new stream, this is the communication channel
 	ns1, err := n1.NetworkNode.PeerHost.NewStream(context.Background(), n2.Identity, Protocol)
 	if err != nil {
@@ -147,7 +120,7 @@ func TestHandleBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Broadcast...")
 	n1, _ := setupNodes()
 	n2, _ := simpleNodes()
-	connect(n1.NetworkNode.PeerHost, n2.PeerHost)
+	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var cancelMsg CancelSubMsg
 	//Set up n2 handler so n1 can create a stream to it.
@@ -168,7 +141,7 @@ func TestHandleBroadcast(t *testing.T) {
 	}
 
 	//Set up the subscriber to handle the streamData
-	s1 := n1.NewSubscriber("strmID")
+	s1, _ := n1.NewSubscriber("strmID").(*BasicSubscriber)
 	ctxW, cancel := context.WithCancel(context.Background())
 	s1.cancelWorker = cancel
 	s1.working = true
@@ -229,7 +202,7 @@ func TestSendSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Subscriber...")
 	n1, _ := setupNodes()
 	n2, _ := simpleNodes()
-	connect(n1.NetworkNode.PeerHost, n2.PeerHost)
+	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var subReq SubReqMsg
 	var cancelMsg CancelSubMsg
@@ -270,7 +243,7 @@ func TestSendSubscribe(t *testing.T) {
 		}
 	})
 
-	s1 := n1.NewSubscriber("strmID")
+	s1, _ := n1.NewSubscriber("strmID").(*BasicSubscriber)
 	result := make(map[uint64][]byte)
 	lock := &sync.Mutex{}
 	s1.Subscribe(context.Background(), func(seqNo uint64, data []byte) {
@@ -338,7 +311,7 @@ func TestHandleSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Broadcast...")
 	n1, _ := setupNodes()
 	n2, _ := simpleNodes()
-	connect(n1.NetworkNode.PeerHost, n2.PeerHost)
+	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		ws := WrapStream(s)
@@ -352,13 +325,13 @@ func TestHandleSubscribe(t *testing.T) {
 		// cancelMsg, _ = msg.Data.(CancelSubMsg)
 	})
 
-	b1 := n1.NewBroadcaster("strmID")
+	b1, _ := n1.NewBroadcaster("strmID").(*BasicBroadcaster)
 	n1.broadcasters["strmID"] = b1
 	ws := WrapStream(n1.NetworkNode.GetStream(n2.Identity))
-	n1.handleSubReq(SubReqMsg{StrmID: "strmID"}, ws)
+	handleSubReq(n1, SubReqMsg{StrmID: "strmID"}, ws)
 
 	l := b1.listeners[peer.IDHexEncode(n2.Identity)]
-	if l == nil || reflect.TypeOf(l) != reflect.TypeOf(&WrappedStream{}) {
+	if l == nil || reflect.TypeOf(l) != reflect.TypeOf(&BasicStream{}) {
 		t.Errorf("Expecting l to be assigned a WrapperdStream, but got :%v", reflect.TypeOf(l))
 	}
 }
@@ -366,7 +339,7 @@ func TestHandleSubscribe(t *testing.T) {
 func TestQueue(t *testing.T) {
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	n, _ := NewBasicNetwork(10000, priv, pub)
-	b := n.NewBroadcaster("test")
+	b, _ := n.NewBroadcaster("test").(*BasicBroadcaster)
 	b.q.PushBack(&StreamDataMsg{SeqNo: 5, Data: []byte("hello")})
 
 	e, ok := b.q.Front().Value.(*StreamDataMsg)
@@ -378,4 +351,14 @@ func TestQueue(t *testing.T) {
 		t.Errorf("SeqNo should be 5, but got %v", e.SeqNo)
 	}
 	// fmt.Printf("%v", e)
+}
+
+func TestID(t *testing.T) {
+	n1, _ := simpleNodes()
+	id := n1.Identity
+	sid := peer.IDHexEncode(id)
+	pid, err := peer.IDHexDecode(sid)
+	if err != nil {
+		t.Errorf("Error decoding id %v: %v", pid, err)
+	}
 }

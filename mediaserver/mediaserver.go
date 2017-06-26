@@ -211,7 +211,7 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 					buf = s.LivepeerNode.StreamDB.AddNewHLSBuffer(strmID)
 					glog.Infof("Creating new buf in StreamDB: %v", s.LivepeerNode.StreamDB)
 				}
-				glog.Infof("Inserting seg %v into buf %v", seg, buf)
+				glog.Infof("Inserting seg %v into buf %v", seg.Name, buf)
 				buf.WriteSegment(seg.SeqNo, seg.Name, seg.Duration, seg.Data)
 			})
 		}
