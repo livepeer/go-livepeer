@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/glog"
 	net "github.com/libp2p/go-libp2p-net"
+	peer "github.com/libp2p/go-libp2p-peer"
 	multicodec "github.com/multiformats/go-multicodec"
 	mcjson "github.com/multiformats/go-multicodec/json"
 )
@@ -38,10 +39,8 @@ func WrapStream(s net.Stream) *BasicStream {
 }
 
 func (ws *BasicStream) WriteSegment(seqNo uint64, strmID string, data []byte) error {
-	glog.Infof("Writing Segment in BasicStream")
-
 	nwMsg := Msg{Op: StreamDataID, Data: StreamDataMsg{SeqNo: seqNo, StrmID: strmID, Data: data}}
-	glog.Infof("Sending: %v::%v to %v", strmID, seqNo, ws.Stream.Conn().RemotePeer().Pretty())
+	glog.Infof("Sending: %v::%v to %v", strmID, seqNo, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
 
 	err := ws.Enc.Encode(nwMsg)
 	if err != nil {

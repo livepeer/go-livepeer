@@ -1,7 +1,9 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 
 	"github.com/golang/glog"
 	crypto "github.com/libp2p/go-libp2p-crypto"
@@ -110,9 +112,46 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 	}
 
 	//Create a new video stream
-	strm := stream.NewVideoStream(strmID.String(), stream.HLS)
-	err := s.Subscribe(ctx, func(seqNo uint64, data []byte) {
-		//Check for segNo, decode data into HLSSegment, then write it to the stream.
+	strm := n.StreamDB.GetStream(strmID)
+	var err error
+	if strm != nil {
+		strm, err = n.StreamDB.AddNewStream(strmID, stream.HLS)
+		if err != nil {
+			glog.Errorf("Error creating stream when subscribing: %v", err)
+		}
+	}
+	err = s.Subscribe(ctx, func(seqNo uint64, data []byte, eof bool) {
+		if eof {
+			//TODO: Remove stream, remove subscriber.
+			n.StreamDB.UnsubscribeToHLSStream(strmID.String(), "local")
+			n.StreamDB.DeleteHLSBuffer(strmID)
+			n.StreamDB.DeleteStream(strmID)
+
+			n.VideoNetwork.DeleteSubscriber(strmID.String())
+			return
+		}
+
+		//TOOD: Check for segNo, make sure it's not out of order
+
+		//Decode data into HLSSegment
+		dec := gob.NewDecoder(bytes.NewReader(data))
+		var seg stream.HLSSegment
+		err := dec.Decode(&seg)
+		if err != nil {
+			glog.Errorf("Error decoding byte array into segment: %v", err)
+		}
+
+		//Add segment into stream
+		if err := strm.WriteHLSSegmentToStream(seg); err != nil {
+			glog.Errorf("Error writing HLS Segment: %v", err)
+		}
+
+		// if buf == nil {
+		// 	buf = s.LivepeerNode.StreamDB.AddNewHLSBuffer(strmID)
+		// 	glog.Infof("Creating new buf in StreamDB: %v", s.LivepeerNode.StreamDB)
+		// }
+		// glog.Infof("Inserting seg %v into buf %v", seg.Name, buf)
+		// buf.WriteSegment(seg.SeqNo, seg.Name, seg.Duration, seg.Data)
 		// strm.WriteHLSSegmentToStream()
 	})
 	if err != nil {

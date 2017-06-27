@@ -145,5 +145,5 @@ func TestBackAndForth(t *testing.T) {
 	// 	simpleHandler(stream, "ping")
 	// })
 
-	time.Sleep(time.Second * 5)
+	// time.Sleep(time.Second * 5)
 }

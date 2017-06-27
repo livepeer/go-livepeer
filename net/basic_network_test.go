@@ -41,6 +41,7 @@ func connectHosts(h1, h2 host.Host) {
 	// Connection might not be formed right away under high load.  See https://github.com/libp2p/go-libp2p-kad-dht/blob/master/dht_test.go (func connect)
 	time.Sleep(time.Millisecond * 500)
 }
+
 func TestSendBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Broadcast Stream...")
 	n1, _ := setupNodes()
@@ -135,7 +136,7 @@ func TestHandleBroadcast(t *testing.T) {
 		cancelMsg, _ = msg.Data.(CancelSubMsg)
 	})
 
-	err := n1.handleStreamData(StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
+	err := handleStreamData(n1, StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
 	if err != ErrProtocol {
 		t.Errorf("Expecting error because no subscriber has been assigned")
 	}
@@ -148,12 +149,12 @@ func TestHandleBroadcast(t *testing.T) {
 	s1.networkStream = n1.NetworkNode.GetStream(n2.Identity)
 	var seqNoResult uint64
 	var dataResult []byte
-	s1.startWorker(ctxW, n2.Identity, s1.networkStream, func(seqNo uint64, data []byte) {
+	s1.startWorker(ctxW, n2.Identity, s1.networkStream, func(seqNo uint64, data []byte, eof bool) {
 		seqNoResult = seqNo
 		dataResult = data
 	})
 	n1.subscribers["strmID"] = s1
-	err = n1.handleStreamData(StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
+	err = handleStreamData(n1, StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
 	if err != nil {
 		t.Errorf("handleStreamData error: %v", err)
 	}
@@ -246,7 +247,7 @@ func TestSendSubscribe(t *testing.T) {
 	s1, _ := n1.NewSubscriber("strmID").(*BasicSubscriber)
 	result := make(map[uint64][]byte)
 	lock := &sync.Mutex{}
-	s1.Subscribe(context.Background(), func(seqNo uint64, data []byte) {
+	s1.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 		glog.Infof("Got response: %v, %v", seqNo, data)
 		lock.Lock()
 		result[seqNo] = data
@@ -325,32 +326,144 @@ func TestHandleSubscribe(t *testing.T) {
 		// cancelMsg, _ = msg.Data.(CancelSubMsg)
 	})
 
+	//Test when the broadcaster is local
 	b1, _ := n1.NewBroadcaster("strmID").(*BasicBroadcaster)
 	n1.broadcasters["strmID"] = b1
-	ws := WrapStream(n1.NetworkNode.GetStream(n2.Identity))
+	ws := n1.NetworkNode.GetStream(n2.Identity)
 	handleSubReq(n1, SubReqMsg{StrmID: "strmID"}, ws)
 
 	l := b1.listeners[peer.IDHexEncode(n2.Identity)]
 	if l == nil || reflect.TypeOf(l) != reflect.TypeOf(&BasicStream{}) {
 		t.Errorf("Expecting l to be assigned a WrapperdStream, but got :%v", reflect.TypeOf(l))
 	}
+	delete(n1.broadcasters, "strmID")
+
+	//Test when the broadcaster is remote, and there is already a relayer.
+	r1 := n1.NewRelayer("strmID")
+	if n1.relayers["strmID"] != r1 {
+		t.Errorf("Should have assigned relayer")
+	}
+	handleSubReq(n1, SubReqMsg{StrmID: "strmID"}, ws)
+	pid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
+	if r1.listeners[pid] != ws {
+		t.Errorf("Should have assigned listener to relayer")
+	}
+	delete(n1.relayers, "strmID")
+
+	//Test when the broadcaster is remote, and there isn't a relayer yet.
+	//TODO: This is hard to test because of the dependency to kad.IpfsDht.  We can get around it by creating an interface called "NetworkRouting"
+	// handleSubReq(n1, SubReqMsg{StrmID: "strmID"}, ws)
+
 }
 
-func TestQueue(t *testing.T) {
-	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	n, _ := NewBasicNetwork(10000, priv, pub)
-	b, _ := n.NewBroadcaster("test").(*BasicBroadcaster)
-	b.q.PushBack(&StreamDataMsg{SeqNo: 5, Data: []byte("hello")})
+func simpleRelayHandler(ws *BasicStream, t *testing.T) Msg {
+	var msg Msg
+	err := ws.Dec.Decode(&msg)
+	if err != nil {
+		glog.Errorf("Got error decoding msg: %v", err)
+		return Msg{}
+	}
+	return msg
+}
+func TestRelaying(t *testing.T) {
+	n1, n2 := setupNodes()
+	n3, _ := simpleNodes()
+	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
+	connectHosts(n2.NetworkNode.PeerHost, n3.PeerHost)
 
-	e, ok := b.q.Front().Value.(*StreamDataMsg)
-	if !ok {
-		t.Errorf("Cannot convert")
+	strmID := peer.IDHexEncode(n1.NetworkNode.Identity) + "strmID"
+	b1 := n1.NewBroadcaster(strmID)
+	go n1.SetupProtocol()
+	go n2.SetupProtocol()
+
+	s3 := n3.GetStream(n2.NetworkNode.Identity)
+	n3.SendMessage(s3, n2.NetworkNode.Identity, SubReqID, SubReqMsg{StrmID: strmID})
+
+	var strmDataResult StreamDataMsg
+	var finishResult FinishStreamMsg
+	var ok bool
+	go func() {
+		for {
+			msg := simpleRelayHandler(s3, t)
+
+			glog.Infof("Got msg: %v", msg)
+			switch msg.Data.(type) {
+			case StreamDataMsg:
+				strmDataResult, ok = msg.Data.(StreamDataMsg)
+				if !ok {
+					t.Errorf("Expecting stream data to come back")
+				}
+			case FinishStreamMsg:
+				finishResult, ok = msg.Data.(FinishStreamMsg)
+				if !ok {
+					t.Errorf("Expecting finish stream to come back")
+				}
+			}
+		}
+	}()
+
+	time.Sleep(time.Second * 1)
+	err := b1.Broadcast(100, []byte("test data"))
+	if err != nil {
+		t.Errorf("Error broadcasting: %v", err)
 	}
 
-	if e.SeqNo != 5 {
-		t.Errorf("SeqNo should be 5, but got %v", e.SeqNo)
+	start := time.Now()
+	for time.Since(start) < time.Second*5 {
+		if strmDataResult.SeqNo == 0 {
+			time.Sleep(100 * time.Millisecond)
+		} else {
+			break
+		}
 	}
-	// fmt.Printf("%v", e)
+
+	if string(strmDataResult.Data) != "test data" {
+		t.Errorf("Expecting 'test data', got %v", strmDataResult.Data)
+	}
+
+	if len(n1.broadcasters) != 1 {
+		t.Errorf("Should be 1 broadcaster in n1")
+	}
+
+	if len(n1.broadcasters[strmID].listeners) != 1 {
+		t.Errorf("Should be 1 listener in b1")
+	}
+
+	if len(n2.relayers) != 1 {
+		t.Errorf("Should be 1 relayer in n2")
+	}
+
+	if len(n2.relayers[strmID].listeners) != 1 {
+		t.Errorf("Should be 1 listener in r2")
+	}
+
+	err = b1.Finish()
+	n1.DeleteBroadcaster(strmID)
+	if err != nil {
+		t.Errorf("Error when broadcasting Finish: %v", err)
+	}
+
+	//Wait for finish msg in n3
+	start = time.Now()
+	for time.Since(start) < time.Second*5 {
+		if finishResult.StrmID == "" {
+			time.Sleep(100 * time.Millisecond)
+		} else {
+			break
+		}
+	}
+
+	if finishResult.StrmID != strmID {
+		t.Errorf("Expecting finishResult to have strmID: %v, but got %v", strmID, finishResult)
+	}
+
+	if len(n1.broadcasters) != 0 {
+		t.Errorf("Should have 0 broadcasters in n1")
+	}
+
+	if len(n2.relayers) != 0 {
+		t.Errorf("Should have 0 relayers in n2")
+	}
 }
 
 func TestID(t *testing.T) {

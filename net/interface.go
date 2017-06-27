@@ -5,8 +5,10 @@ import "context"
 type VideoNetwork interface {
 	NewBroadcaster(strmID string) Broadcaster
 	GetBroadcaster(strmID string) Broadcaster
+	DeleteBroadcaster(strmID string)
 	NewSubscriber(strmID string) Subscriber
 	GetSubscriber(strmID string) Subscriber
+	DeleteSubscriber(strmID string)
 	Connect(nodeID, nodeAddr string) error
 	SetupProtocol() error
 }
@@ -39,7 +41,7 @@ type Broadcaster interface {
 //Example 2:
 //	sub.Unsubscribe() //This is the same with calling cancel()
 type Subscriber interface {
-	Subscribe(ctx context.Context, f func(seqNo uint64, data []byte)) error
+	Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error
 	Unsubscribe() error
 }
 

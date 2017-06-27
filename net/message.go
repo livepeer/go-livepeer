@@ -59,17 +59,23 @@ func (m Msg) MarshalJSON() ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Failed to marshal Handshake: %v", err)
 		}
+	case CancelSubMsg:
+		gob.Register(CancelSubMsg{})
+		err := enc.Encode(m.Data.(CancelSubMsg))
+		if err != nil {
+			return nil, fmt.Errorf("Failed to marshal CancelSubMsg: %v", err)
+		}
 	case StreamDataMsg:
 		gob.Register(StreamDataMsg{})
 		err := enc.Encode(m.Data.(StreamDataMsg))
 		if err != nil {
 			return nil, fmt.Errorf("Failed to marshal StreamDataMsg: %v", err)
 		}
-	case CancelSubMsg:
-		gob.Register(CancelSubMsg{})
-		err := enc.Encode(m.Data.(CancelSubMsg))
+	case FinishStreamMsg:
+		gob.Register(FinishStreamMsg{})
+		err := enc.Encode(m.Data.(FinishStreamMsg))
 		if err != nil {
-			return nil, fmt.Errorf("Failed to marshal CancelSubMsg: %v", err)
+			return nil, fmt.Errorf("Failed to marshal FinishStreamMsg: %v", err)
 		}
 	case string:
 		err := enc.Encode(m.Data)
@@ -103,13 +109,6 @@ func (m *Msg) UnmarshalJSON(b []byte) error {
 			return errors.New("failed to decode handshake")
 		}
 		m.Data = sr
-	case StreamDataID:
-		var sd StreamDataMsg
-		err := dec.Decode(&sd)
-		if err != nil {
-			return errors.New("failed to decode StreamDataMsg")
-		}
-		m.Data = sd
 	case CancelSubID:
 		var cs CancelSubMsg
 		err := dec.Decode(&cs)
@@ -117,6 +116,20 @@ func (m *Msg) UnmarshalJSON(b []byte) error {
 			return errors.New("failed to decode CancelSubMsg")
 		}
 		m.Data = cs
+	case StreamDataID:
+		var sd StreamDataMsg
+		err := dec.Decode(&sd)
+		if err != nil {
+			return errors.New("failed to decode StreamDataMsg")
+		}
+		m.Data = sd
+	case FinishStreamID:
+		var fs FinishStreamMsg
+		err := dec.Decode(&fs)
+		if err != nil {
+			return errors.New("failed to decode FinishStreamMsg")
+		}
+		m.Data = fs
 	case SimpleString:
 		var str string
 		err := dec.Decode(&str)

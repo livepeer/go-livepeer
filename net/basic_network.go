@@ -1,10 +1,8 @@
 package net
 
 import (
-	"container/list"
 	"context"
 	"errors"
-	"sync"
 
 	"github.com/golang/glog"
 	crypto "github.com/libp2p/go-libp2p-crypto"
@@ -37,10 +35,7 @@ type BasicVideoNetwork struct {
 	NetworkNode  *NetworkNode
 	broadcasters map[string]*BasicBroadcaster
 	subscribers  map[string]*BasicSubscriber
-
-	// streams           map[string]*stream.VideoStream
-	// streamSubscribers map[string]*stream.StreamSubscriber
-	// cancellation      map[string]context.CancelFunc
+	relayers     map[string]*BasicRelayer
 }
 
 //NewBasicNetwork creates a libp2p node, handle the basic (push-based) video protocol.
@@ -51,18 +46,13 @@ func NewBasicNetwork(port int, priv crypto.PrivKey, pub crypto.PubKey) (*BasicVi
 		return nil, err
 	}
 
-	nw := &BasicVideoNetwork{NetworkNode: n, broadcasters: make(map[string]*BasicBroadcaster), subscribers: make(map[string]*BasicSubscriber)}
-	// if err = nw.setupProtocol(n); err != nil {
-	// 	glog.Errorf("Error setting up video protocol: %v", err)
-	// 	return nil, err
-	// }
+	nw := &BasicVideoNetwork{NetworkNode: n, broadcasters: make(map[string]*BasicBroadcaster), subscribers: make(map[string]*BasicSubscriber), relayers: make(map[string]*BasicRelayer)}
 
 	return nw, nil
 }
 
 func (n *BasicVideoNetwork) NewBroadcaster(strmID string) Broadcaster {
-	// b := &BasicBroadcaster{Network: n, StrmID: strmID, q: list.New(), host: n.NetworkNode.PeerHost, lock: &sync.Mutex{}, listeners: make(map[string]peerstore.PeerInfo)}
-	b := &BasicBroadcaster{Network: n, StrmID: strmID, q: list.New(), lock: &sync.Mutex{}, listeners: make(map[string]VideoMuxer)}
+	b := &BasicBroadcaster{Network: n, StrmID: strmID, q: make(chan *StreamDataMsg), listeners: make(map[string]VideoMuxer)}
 	n.broadcasters[strmID] = b
 	return b
 }
@@ -73,6 +63,10 @@ func (n *BasicVideoNetwork) GetBroadcaster(strmID string) Broadcaster {
 		return nil
 	}
 	return b
+}
+
+func (n *BasicVideoNetwork) DeleteBroadcaster(strmID string) {
+	delete(n.broadcasters, strmID)
 }
 
 func (n *BasicVideoNetwork) NewSubscriber(strmID string) Subscriber {
@@ -87,6 +81,17 @@ func (n *BasicVideoNetwork) GetSubscriber(strmID string) Subscriber {
 		return nil
 	}
 	return s
+}
+
+func (n *BasicVideoNetwork) DeleteSubscriber(strmID string) {
+	delete(n.subscribers, strmID)
+}
+
+func (n *BasicVideoNetwork) NewRelayer(strmID string) *BasicRelayer {
+
+	r := &BasicRelayer{listeners: make(map[string]VideoMuxer)}
+	n.relayers[strmID] = r
+	return r
 }
 
 func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
@@ -113,14 +118,70 @@ func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
 func (nw *BasicVideoNetwork) SetupProtocol() error {
 	glog.Infof("Setting up protocol: %v", Protocol)
 	nw.NetworkNode.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
-		streamHandler(nw, stream)
+		ws := WrapStream(stream)
+		nw.NetworkNode.streams[stream.Conn().RemotePeer()] = ws
+
+		for {
+			if err := streamHandler(nw, ws); err != nil {
+				glog.Errorf("Error handling stream: %v", err)
+				delete(nw.NetworkNode.streams, stream.Conn().RemotePeer())
+				stream.Close()
+				return
+			}
+		}
 	})
 
 	return nil
 }
 
-func streamHandler(nw *BasicVideoNetwork, stream net.Stream) error {
-	glog.Infof("%v Received a stream from %v", stream.Conn().LocalPeer().Pretty(), stream.Conn().RemotePeer().Pretty())
+func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
+	glog.Infof("%v Received a stream from %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
+	var msg Msg
+
+	if err := ws.Dec.Decode(&msg); err != nil {
+		glog.Errorf("Got error decoding msg: %v", err)
+		return err
+	}
+	switch msg.Op {
+	case SubReqID:
+		sr, ok := msg.Data.(SubReqMsg)
+		if !ok {
+			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
+			return ErrProtocol
+		}
+		// glog.Infof("Got Sub Req: %v", sr)
+		return handleSubReq(nw, sr, ws)
+	case CancelSubID:
+		cr, ok := msg.Data.(CancelSubMsg)
+		if !ok {
+			glog.Errorf("Cannot convert CancelSubMsg: %v", msg.Data)
+			return ErrProtocol
+		}
+		return handleCancelSubReq(nw, cr, ws.Stream.Conn().RemotePeer())
+	case StreamDataID:
+		// glog.Infof("Got Stream Data: %v", msg.Data)
+		//Enque it into the subscriber
+		sd, ok := msg.Data.(StreamDataMsg)
+		if !ok {
+			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
+		}
+		return handleStreamData(nw, sd)
+	case FinishStreamID:
+		fs, ok := msg.Data.(FinishStreamMsg)
+		if !ok {
+			glog.Errorf("Cannot convert FinishStreamMsg: %v", msg.Data)
+		}
+		return handleFinishStream(nw, fs)
+	default:
+		glog.Infof("Unknown Data: %v -- closing stream", msg)
+		// stream.Close()
+		return ErrUnknownMsg
+	}
+
+}
+
+func streamHandler_old(nw *BasicVideoNetwork, stream net.Stream) error {
+	glog.Infof("%v Received a stream from %v", peer.IDHexEncode(stream.Conn().LocalPeer()), peer.IDHexEncode(stream.Conn().RemotePeer()))
 	var msg Msg
 
 	ws := WrapStream(stream)
@@ -155,7 +216,7 @@ func streamHandler(nw *BasicVideoNetwork, stream net.Stream) error {
 			glog.Errorf("Cannot convert CancelSubMsg: %v", msg.Data)
 			return ErrProtocol
 		}
-		return nw.handleCancelSubReq(cr, ws.Stream.Conn().RemotePeer())
+		return handleCancelSubReq(nw, cr, ws.Stream.Conn().RemotePeer())
 	case StreamDataID:
 		// glog.Infof("Got Stream Data: %v", msg.Data)
 		//Enque it into the subscriber
@@ -163,13 +224,13 @@ func streamHandler(nw *BasicVideoNetwork, stream net.Stream) error {
 		if !ok {
 			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
 		}
-		return nw.handleStreamData(sd)
+		return handleStreamData(nw, sd)
 	case FinishStreamID:
 		fs, ok := msg.Data.(FinishStreamMsg)
 		if !ok {
 			glog.Errorf("Cannot convert FinishStreamMsg: %v", msg.Data)
 		}
-		return nw.handleFinishStream(fs)
+		return handleFinishStream(nw, fs)
 	default:
 		glog.Infof("Unknown Data: %v -- closing stream", msg)
 		stream.Close()
@@ -180,61 +241,148 @@ func streamHandler(nw *BasicVideoNetwork, stream net.Stream) error {
 }
 
 func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) error {
-	b := nw.broadcasters[subReq.StrmID]
-	if b == nil {
-		//This is when you are a relay node
-		glog.Infof("Cannot find local broadcaster for stream: %v.  Forwarding along to the network", subReq.StrmID)
-
-		//Create a relayer, hook up the relaying
-
-		//Subscribe from the network
-	}
-
-	//TODO: Add verification code for the SubNodeID (Make sure the message is not spoofed)
-	remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
-	b.listeners[remotePid] = ws
-	return nil
-}
-
-func (nw *BasicVideoNetwork) handleCancelSubReq(cr CancelSubMsg, rpeer peer.ID) error {
-	if b := nw.broadcasters[cr.StrmID]; b != nil {
-		//Remove from listener
-		delete(b.listeners, peer.IDHexEncode(rpeer))
+	if b := nw.broadcasters[subReq.StrmID]; b != nil {
+		glog.Infof("Handling subReq, adding listener %v to broadcaster", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
+		//TODO: Add verification code for the SubNodeID (Make sure the message is not spoofed)
+		remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
+		b.listeners[remotePid] = ws
+		return nil
+	} else if r := nw.relayers[subReq.StrmID]; r != nil {
+		//Already a relayer in place.  Subscribe as a listener.
+		remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
+		r.listeners[remotePid] = ws
 		return nil
 	} else {
-		//TODO: Add relay case
+		glog.Infof("Cannot find local broadcaster or relayer for stream: %v.  Creating a local relayer, and forwarding along to the network", subReq.StrmID)
+		peerc, err := nw.NetworkNode.Kad.GetClosestPeers(context.Background(), subReq.StrmID)
+		if err != nil {
+			glog.Errorf("Error finding closer peer: %v", err)
+			return err
+		}
+
+		msgSent := false
+		var upstrmPeer peer.ID
+		//Subscribe from the network
+		//We can range over peerc because we know it'll be closed by libp2p
+		for p := range peerc {
+			//Don't send it back to the requesting peer
+			if p == ws.Stream.Conn().RemotePeer() {
+				continue
+			}
+
+			ns := nw.NetworkNode.GetStream(p)
+			if ns != nil {
+				if err := nw.NetworkNode.SendMessage(ns, p, SubReqID, subReq); err != nil {
+					//Question: Do we want to close the stream here?
+					glog.Errorf("Error relaying subReq to %v: %v", p, err)
+					continue
+				}
+
+				//TODO: Figure out when to return from this routine
+				go func() {
+					for {
+						if err := streamHandler(nw, ns); err != nil {
+							glog.Errorf("Error handing stream:%v", err)
+							return
+						}
+					}
+				}()
+
+				upstrmPeer = p
+				msgSent = true
+				break
+			}
+		}
+		if !msgSent {
+			return ErrNoClosePeers
+		}
+
+		//Create a relayer, register the listener
+		r := nw.NewRelayer(subReq.StrmID)
+		r.UpstreamPeer = upstrmPeer
+		remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
+		r.listeners[remotePid] = ws
+		return nil
+	}
+
+}
+
+func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) error {
+	if b := nw.broadcasters[cr.StrmID]; b != nil {
+		//Remove from broadcast listener
+		delete(b.listeners, peer.IDHexEncode(rpeer))
+		return nil
+	} else if r := nw.relayers[cr.StrmID]; r != nil {
+		//Remove from relayer listener
+		delete(r.listeners, peer.IDHexEncode(rpeer))
+		//Pass on the cancel req and remove relayer if relayer has no more listeners
+		if len(r.listeners) == 0 {
+			ns := nw.NetworkNode.GetStream(r.UpstreamPeer)
+			if ns != nil {
+				if err := nw.NetworkNode.SendMessage(ns, r.UpstreamPeer, CancelSubID, cr); err != nil {
+					glog.Errorf("Error relaying cancel message to %v: %v ", peer.IDHexEncode(r.UpstreamPeer), err)
+				}
+				delete(nw.relayers, cr.StrmID)
+				return nil
+			}
+		}
+		return ErrProtocol
+	} else {
 		glog.Errorf("Cannot find broadcaster or relayer.  Error!")
 		return ErrProtocol
 	}
 }
 
-func (nw *BasicVideoNetwork) handleStreamData(sd StreamDataMsg) error {
-	// if b := nw.broadcasters[sd.StrmID]; b != nil {
-	// 	//TODO: This is questionable.  Do we every have this case?
-	// 	glog.Infof("Calling broadcast")
-	// 	b.Broadcast(sd.SeqNo, sd.Data)
-	// 	return nil
-	// } else
-	if s := nw.subscribers[sd.StrmID]; s != nil {
+func handleStreamData(nw *BasicVideoNetwork, sd StreamDataMsg) error {
+	//A node can have a subscriber AND a relayer for the same stream.
+	s := nw.subscribers[sd.StrmID]
+	if s != nil {
 		// glog.Infof("Inserting into subscriber msg queue: %v", sd)
-		s.msgChan <- sd
-		return nil
-	} else {
-		//TODO: Add relay case
-		glog.Errorf("Something is wrong.  Expect broadcaster or subscriber to exist at this point (should have been setup when SubReq came in)")
+		ctx, _ := context.WithTimeout(context.Background(), SubscriberDataInsertTimeout)
+		go func() {
+			select {
+			case s.msgChan <- sd:
+			case <-ctx.Done():
+				glog.Errorf("Subscriber data insert done: %v", ctx.Err())
+			}
+		}()
+	}
+
+	r := nw.relayers[sd.StrmID]
+	if r != nil {
+		if err := r.RelayStreamData(sd); err != nil {
+			glog.Errorf("Error relaying stream data: %v", err)
+			return err
+		}
+	}
+
+	if s == nil && r == nil {
+		glog.Errorf("Something is wrong.  Expect subscriber or relayer to exist at this point (should have been setup when SubReq came in)")
 		return ErrProtocol
 	}
+	return nil
 }
 
-func (nw *BasicVideoNetwork) handleFinishStream(fs FinishStreamMsg) error {
-	if s := nw.subscribers[fs.StrmID]; s != nil {
+func handleFinishStream(nw *BasicVideoNetwork, fs FinishStreamMsg) error {
+	//A node can have a subscriber AND a relayer for the same stream.
+	s := nw.subscribers[fs.StrmID]
+	if s != nil {
 		//Cancel subscriber worker, delete subscriber
 		s.cancelWorker()
 		delete(nw.subscribers, fs.StrmID)
-		return nil
-	} else {
-		//TODO: Add relay case
+	}
+
+	r := nw.relayers[fs.StrmID]
+	if r != nil {
+		if err := r.RelayFinishStream(nw, fs); err != nil {
+			glog.Errorf("Error relaying finish stream: %v", err)
+		}
+		delete(nw.relayers, fs.StrmID)
+	}
+
+	if s == nil && r == nil {
 		glog.Errorf("Error: cannot find subscriber or relayer")
 		return ErrProtocol
 	}
+	return nil
 }
