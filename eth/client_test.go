@@ -1,111 +1,239 @@
 package eth
 
 import (
+	"bytes"
+	"context"
+	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
+	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/livepeer/libp2p-livepeer/eth/contracts"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 var (
-	key0, _ = crypto.GenerateKey()
-	key1, _ = crypto.GenerateKey()
-	key2, _ = crypto.GenerateKey()
-	key3, _ = crypto.GenerateKey()
-	addr0   = crypto.PubkeyToAddress(key0.PublicKey)
-	addr1   = crypto.PubkeyToAddress(key1.PublicKey)
-	addr2   = crypto.PubkeyToAddress(key2.PublicKey)
-	addr3   = crypto.PubkeyToAddress(key3.PublicKey)
+	keyStore        = keystore.NewKeyStore("/Users/yondonfu/.lpTest/keystore", keystore.StandardScryptN, keystore.StandardScryptP)
+	defaultPassword = ""
+	rpcTimeout      = 10 * time.Second
 )
 
-func newTestBackend() *backends.SimulatedBackend {
-	return backends.NewSimulatedBackend(core.GenesisAlloc{
-		addr0: {Balance: big.NewInt(10000000000)},
-		addr1: {Balance: big.NewInt(10000000000)},
-		addr2: {Balance: big.NewInt(10000000000)},
-		addr3: {Balance: big.NewInt(10000000000)},
-	})
+func NewTransactorForAccount(account accounts.Account) (*bind.TransactOpts, error) {
+	keyjson, err := keyStore.Export(account, defaultPassword, defaultPassword)
+
+	if err != nil {
+		return nil, err
+	}
+
+	transactOpts, err := bind.NewTransactor(bytes.NewReader(keyjson), defaultPassword)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return transactOpts, err
 }
 
-func deployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *backends.SimulatedBackend) (common.Address, error) {
-	nodeAddr, _, _, err := contracts.DeployNode(transactOpts, backend, nil)
+func TestLivepeerClient(t *testing.T) {
+	var (
+		tx  *types.Transaction
+		err error
+		ctx context.Context
+	)
+
+	backend, err := ethclient.Dial("/Users/yondonfu/.lpTest/geth.ipc")
 
 	if err != nil {
-		return common.Address{}, err
+		t.Fatalf("Failed to connect to Ethereum client: %v", err)
 	}
 
-	backend.Commit()
+	accounts := keyStore.Accounts()
+
+	// SETUP ACCOUNTS
+
+	transactOpts0, err := NewTransactorForAccount(accounts[0])
+
+	if err != nil {
+		t.Fatalf("Failed to create transactor 0: %v", err)
+	}
+
+	transactOpts1, err := NewTransactorForAccount(accounts[1])
+
+	if err != nil {
+		t.Fatalf("Failed to create transactor 1: %v", err)
+	}
+
+	transactOpts2, err := NewTransactorForAccount(accounts[2])
+
+	if err != nil {
+		t.Fatalf("Failed to create transactor 2: %v", err)
+	}
+
+	transactOpts3, err := NewTransactorForAccount(accounts[3])
+
+	if err != nil {
+		t.Fatalf("Failed to create transactor 3: %v", err)
+	}
+
+	// DEPLOY NODE
+
+	nodeAddr, tx, err := DeployLibrary(transactOpts0, backend, "Node", nil)
+
+	if err != nil {
+		t.Fatalf("Failed to deploy Node: %v", err)
+	}
+
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
+	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("Failed to wait for mined Node tx: %v", err)
+	}
+
+	fmt.Printf("Node deployed at: %v\n", nodeAddr.Hex())
+
+	// DEPLOY MAXHEAP
 
 	maxHeapLibraries := map[string]common.Address{"Node": nodeAddr}
-	maxHeapAddr, _, _, err := contracts.DeployMaxHeap(transactOpts, backend, maxHeapLibraries)
+	maxHeapAddr, tx, err := DeployLibrary(transactOpts0, backend, "MaxHeap", maxHeapLibraries)
 
 	if err != nil {
-		return common.Address{}, err
+		t.Fatalf("Failed to deploy MaxHeap: %v", err)
 	}
 
-	backend.Commit()
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
+	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("Failed to wait for mined MaxHeap tx: %v", err)
+	}
+
+	fmt.Printf("MaxHeap deployed at: %v\n", maxHeapAddr.Hex())
+
+	// DEPLOY MINHEAP
 
 	minHeapLibraries := map[string]common.Address{"Node": nodeAddr}
-	minHeapAddr, _, _, err := contracts.DeployMinHeap(transactOpts, backend, minHeapLibraries)
+	minHeapAddr, tx, err := DeployLibrary(transactOpts0, backend, "MinHeap", minHeapLibraries)
 
 	if err != nil {
-		return common.Address{}, err
+		t.Fatalf("Failed to deploy MinHeap: %v", err)
 	}
 
-	backend.Commit()
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
+	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("Failed to wait for mined MinHeap tx: %v", err)
+	}
+
+	fmt.Printf("MinHeap deployed at: %v\n", minHeapAddr.Hex())
+
+	// DEPLOY TRANSCODERPOOLS
 
 	transcoderPoolsLibraries := map[string]common.Address{
 		"MinHeap": minHeapAddr,
 		"MaxHeap": maxHeapAddr,
 	}
-	transcoderPoolsAddr, _, _, err := contracts.DeployTranscoderPools(transactOpts, backend, transcoderPoolsLibraries)
+	transcoderPoolsAddr, tx, err := DeployLibrary(transactOpts0, backend, "TranscoderPools", transcoderPoolsLibraries)
 
 	if err != nil {
-		return common.Address{}, err
+		t.Fatalf("Failed to deploy TranscoderPools: %v", err)
 	}
 
-	backend.Commit()
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
 
-	merkleProofAddr, _, _, err := contracts.DeployMerkleProof(transactOpts, backend, nil)
+	_, err = waitForMinedTx(ctx, backend, tx.Hash())
 
 	if err != nil {
-		return common.Address{}, err
+		t.Fatalf("Failed to wait for mined TranscoderPools tx: %v", err)
 	}
 
-	backend.Commit()
+	fmt.Printf("TranscoderPools deployed at: %v\n", transcoderPoolsAddr.Hex())
 
-	ecVerifyAddr, _, _, err := contracts.DeployECVerify(transactOpts, backend, nil)
+	// DEPLOY MERKLEPROOF
+
+	merkleProofAddr, tx, err := DeployLibrary(transactOpts0, backend, "MerkleProof", nil)
 
 	if err != nil {
-		return common.Address{}, err
+		t.Fatalf("Failed to deploy MerkleProof: %v", err)
 	}
 
-	backend.Commit()
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
+	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("Failed to wait for mined MerkleProof tx: %v", err)
+	}
+
+	fmt.Printf("MerkleProof deployed at: %v\n", merkleProofAddr.Hex())
+
+	// DEPLOY ECVERIFY
+
+	ecVerifyAddr, tx, err := DeployLibrary(transactOpts0, backend, "ECVerify", nil)
+
+	if err != nil {
+		t.Fatalf("Failed to deploy ECVerify: %v", err)
+	}
+
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
+	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("Failed to wait for mined ECVerify tx: %v", err)
+	}
+
+	fmt.Printf("ECVerify deployed at: %v\n", ecVerifyAddr.Hex())
+
+	// DEPLOY TRANSCODEJOBS
 
 	transcodeJobsLibraries := map[string]common.Address{
 		"ECVerify":    ecVerifyAddr,
 		"MerkleProof": merkleProofAddr,
 	}
-	transcodeJobsAddr, _, _, err := contracts.DeployTranscodeJobs(transactOpts, backend, transcodeJobsLibraries)
+	transcodeJobsAddr, tx, err := DeployLibrary(transactOpts0, backend, "TranscodeJobs", transcodeJobsLibraries)
 
 	if err != nil {
-		return common.Address{}, err
+		t.Fatalf("Failed to deploy TranscodeJobs: %v", err)
 	}
 
-	backend.Commit()
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
 
-	safeMathAddr, _, _, err := contracts.DeploySafeMath(transactOpts, backend, nil)
+	_, err = waitForMinedTx(ctx, backend, tx.Hash())
 
 	if err != nil {
-		return common.Address{}, err
+		t.Fatalf("Failed to wait for mined TranscodeJobs tx: %v", err)
 	}
 
-	backend.Commit()
+	fmt.Printf("TranscodeJobs deployed at: %v\n", transcodeJobsAddr.Hex())
+
+	// DEPLOY SAFEMATH
+
+	safeMathAddr, tx, err := DeployLibrary(transactOpts0, backend, "SafeMath", nil)
+
+	if err != nil {
+		t.Fatalf("Failed to deploy SafeMath: %v", err)
+	}
+
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
+	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("Failed to wait for mined SafeMath tx: %v", err)
+	}
+
+	fmt.Printf("SafeMath deployed at: %v\n", safeMathAddr.Hex())
+
+	// DEPLOY LIVEPEERPROTOCOL
 
 	protocolLibraries := map[string]common.Address{
 		"Node":            nodeAddr,
@@ -113,164 +241,135 @@ func deployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *backends.S
 		"TranscoderPools": transcoderPoolsAddr,
 		"SafeMath":        safeMathAddr,
 	}
-	protocolAddr, _, _, err := contracts.DeployLivepeerProtocol(transactOpts, backend, protocolLibraries, 1, big.NewInt(1), big.NewInt(1))
+	protocolAddr, tx, err := DeployLivepeerProtocol(transactOpts0, backend, protocolLibraries, 1, big.NewInt(20), big.NewInt(2))
 
 	if err != nil {
-		return common.Address{}, err
+		t.Fatalf("Failed to deploy protocol: %v", err)
 	}
 
-	backend.Commit()
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
 
-	return protocolAddr, nil
-}
-
-func TestLivepeerProtocol(t *testing.T) {
-	// DEPLOY
-
-	backend := newTestBackend()
-
-	transactOpts0 := bind.NewKeyedTransactor(key0)
-	transactOpts1 := bind.NewKeyedTransactor(key1)
-	transactOpts2 := bind.NewKeyedTransactor(key2)
-	transactOpts3 := bind.NewKeyedTransactor(key3)
-
-	protocolAddr, err := deployLivepeerProtocol(transactOpts0, backend)
+	_, err = waitForMinedTx(ctx, backend, tx.Hash())
 
 	if err != nil {
-		t.Fatalf("Failed to deploy LivepeerProtocol contract: %v", err)
+		t.Fatalf("Failed to wait for mined LivepeerProtocol tx: %v", err)
 	}
+
+	fmt.Printf("LivepeerProtocol deployed at: %v\n", protocolAddr.Hex())
 
 	// SETUP CLIENTS
 
-	client0, err := NewClient(transactOpts0, backend, protocolAddr)
-
-	if err != nil {
-		t.Fatalf("Failed to instantiate client 0: %v", err)
-	}
-
-	client1, err := NewClient(transactOpts1, backend, protocolAddr)
-
-	if err != nil {
-		t.Fatalf("Failed to instantiate client 1: %v", err)
-	}
-
-	client2, err := NewClient(transactOpts2, backend, protocolAddr)
-
-	if err != nil {
-		t.Fatalf("Failed to instantiate client 2: %v", err)
-	}
-
-	client3, err := NewClient(transactOpts3, backend, protocolAddr)
-
-	if err != nil {
-		t.Fatalf("Failed to instantiate client 3: %v", err)
-	}
-
-	// DISTRIBUTE TOKEN
-
-	_, err = client0.TransferLPT(addr1, big.NewInt(10000))
-
-	if err != nil {
-		t.Fatalf("Client 0 failed to transfer LPT to address 1")
-	}
-
-	backend.Commit()
-
-	_, err = client0.TransferLPT(addr2, big.NewInt(10000))
-
-	if err != nil {
-		t.Fatalf("Client 0 failed to transfer LPT to address 2")
-	}
-
-	backend.Commit()
-
-	_, err = client0.TransferLPT(addr3, big.NewInt(10000))
-
-	if err != nil {
-		t.Fatalf("Client 0 failed to transfer LPT to address 3")
-	}
-
-	backend.Commit()
+	client0, _ := NewClient(transactOpts0, backend, protocolAddr)
+	client1, _ := NewClient(transactOpts1, backend, protocolAddr)
+	client2, _ := NewClient(transactOpts2, backend, protocolAddr)
+	client3, _ := NewClient(transactOpts3, backend, protocolAddr)
 
 	// TRANSCODER REGISTRATION & BONDING
 
-	_, err = client0.InitializeRound()
-
-	if err != nil {
-		t.Fatalf("Client failed to initialize the round: %v", err)
-	}
-
-	backend.Commit()
-
-	_, err = client0.Transcoder(10, 5, big.NewInt(100))
+	tx, err = client0.Transcoder(10, 5, big.NewInt(100))
 
 	if err != nil {
 		t.Fatalf("Client failed to call transcoder: %v", err)
 	}
 
-	backend.Commit()
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
 
-	_, err = client0.Approve(protocolAddr, big.NewInt(500))
-
-	if err != nil {
-		t.Fatalf("Client 0 failed to approve LPT amount: %v", err)
-	}
-
-	backend.Commit()
-
-	_, err = client0.Bond(addr0, big.NewInt(500))
+	_, err = waitForMinedTx(ctx, backend, tx.Hash())
 
 	if err != nil {
-		t.Fatalf("Client 0 failed to bond LPT to address 0: %v", err)
+		t.Fatalf("%v", err)
 	}
 
-	backend.Commit()
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
 
-	_, err = client1.Approve(protocolAddr, big.NewInt(200))
+	_, err = client0.Bond(ctx, big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
-		t.Fatalf("Client 1 failed to approve LPT amount: %v", err)
+		t.Fatalf("Client 0 failed to bond: %v", err)
 	}
 
-	backend.Commit()
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
 
-	_, err = client1.Bond(addr0, big.NewInt(200))
+	_, err = client1.Bond(ctx, big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
-		t.Fatalf("Client 1 failed to bond LPT to address 0: %v", err)
+		t.Fatalf("Client 1 failed to bond: %v", err)
 	}
 
-	backend.Commit()
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
 
-	_, err = client2.Approve(protocolAddr, big.NewInt(200))
+	_, err = client2.Bond(ctx, big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
-		t.Fatalf("Client 2 failed to approve LPT amount: %v", err)
+		t.Fatalf("Client 2 failed to bond: %v", err)
 	}
 
-	backend.Commit()
+	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
 
-	_, err = client2.Bond(addr0, big.NewInt(200))
+	_, err = client3.Bond(ctx, big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
-		t.Fatalf("Client 2 failed to bond LPT to address 0: %v", err)
+		t.Fatalf("Client 3 failed to bond: %v", err)
 	}
 
-	backend.Commit()
+	// REWARD
 
-	_, err = client3.Approve(protocolAddr, big.NewInt(200))
+	for i := 0; i < 30; i++ {
+		fmt.Printf("Checking...\n")
 
-	if err != nil {
-		t.Fatalf("Client 3 failed to approve LPT amount: %v", err)
+		ok, err := client0.CurrentRoundInitialized()
+
+		if err != nil {
+			t.Fatalf("Client 0 failed CurrentRoundInitialized: %v", err)
+		}
+
+		if ok {
+			tx, err := client0.InitializeRound()
+
+			if err != nil {
+				t.Fatalf("Client 0 failed InitializeRound: %v", err)
+			}
+
+			ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
+			_, err = waitForMinedTx(ctx, backend, tx.Hash())
+
+			fmt.Printf("Initialized round\n")
+		}
+
+		valid, err := client0.ValidRewardTimeWindow()
+
+		if err != nil {
+			t.Fatalf("Client 0 failed ValidRewardTimeWindow: %v", err)
+		}
+
+		if valid {
+			tx, err = client0.Reward()
+
+			if err != nil {
+				t.Fatalf("Client 0 failed Reward: %v", err)
+			}
+
+			ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
+			_, err = waitForMinedTx(ctx, backend, tx.Hash())
+
+			if err != nil {
+				t.Fatalf("%v", err)
+			}
+
+			ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
+			cr, cn, crsb, err := client0.RoundInfo(ctx)
+
+			if err != nil {
+				t.Fatalf("Client 0 failed RoundInfo: %v", err)
+			}
+
+			fmt.Printf("Current Round: %v, Cycle #: %v, Current Round Block: %v\n", cr, cn, crsb)
+			fmt.Printf("Client 0 called reward\n")
+		}
+
+		time.Sleep(2 * time.Second)
 	}
-
-	backend.Commit()
-
-	_, err = client3.Bond(addr0, big.NewInt(200))
-
-	if err != nil {
-		t.Fatalf("Client 3 failed to bond LPT to address 0: %v", err)
-	}
-
-	backend.Commit()
 }

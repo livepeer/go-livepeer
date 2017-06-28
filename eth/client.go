@@ -17,37 +17,50 @@ package eth
 //go:generate abigen --abi protocol/abi/MerkleProof.abi --pkg contracts --type MerkleProof --out contracts/merkleProof.go --bin protocol/bin/MerkleProof.bin
 
 import (
+	"context"
+	"fmt"
 	"math/big"
+	"strings"
+	"time"
 
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/livepeer/libp2p-livepeer/eth/contracts"
+)
+
+const (
+	waitForMinedTxTimeout = 60
+	watchEventTimeout     = 60
 )
 
 type Client struct {
 	protocolSession *contracts.LivepeerProtocolSession
 	tokenSession    *contracts.LivepeerTokenSession
-	backend         bind.ContractBackend
+	backend         *ethclient.Client
 
-	protocolContractAddr common.Address
-	tokenContractAddr    common.Address
+	addr         common.Address
+	protocolAddr common.Address
+	tokenAddr    common.Address
 }
 
-func NewClient(transactOpts *bind.TransactOpts, backend bind.ContractBackend, protocolContractAddr common.Address) (*Client, error) {
-	protocol, err := contracts.NewLivepeerProtocol(protocolContractAddr, backend)
+func NewClient(transactOpts *bind.TransactOpts, backend *ethclient.Client, protocolAddr common.Address) (*Client, error) {
+	protocol, err := contracts.NewLivepeerProtocol(protocolAddr, backend)
 
 	if err != nil {
 		return nil, err
 	}
 
-	tokenContractAddr, err := protocol.Token(nil)
+	tokenAddr, err := protocol.Token(nil)
 
 	if err != nil {
 		return nil, err
 	}
 
-	token, err := contracts.NewLivepeerToken(tokenContractAddr, backend)
+	token, err := contracts.NewLivepeerToken(tokenAddr, backend)
 
 	if err != nil {
 		return nil, err
@@ -63,41 +76,210 @@ func NewClient(transactOpts *bind.TransactOpts, backend bind.ContractBackend, pr
 			TransactOpts: *transactOpts,
 		},
 		backend,
-		protocolContractAddr,
-		tokenContractAddr,
+		transactOpts.From,
+		protocolAddr,
+		tokenAddr,
 	}, nil
 }
 
-func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (*types.Transaction, error) {
-	return c.protocolSession.Transcoder(blockRewardCut, feeShare, pricePerSegment)
+func DeployLibrary(transactOpts *bind.TransactOpts, backend *ethclient.Client, name string, libraries map[string]common.Address) (common.Address, *types.Transaction, error) {
+	var (
+		addr common.Address
+		tx   *types.Transaction
+		err  error
+	)
+
+	switch name {
+	case "Node":
+		addr, tx, _, err = contracts.DeployNode(transactOpts, backend, libraries)
+	case "MaxHeap":
+		addr, tx, _, err = contracts.DeployMaxHeap(transactOpts, backend, libraries)
+	case "MinHeap":
+		addr, tx, _, err = contracts.DeployMinHeap(transactOpts, backend, libraries)
+	case "TranscoderPools":
+		addr, tx, _, err = contracts.DeployTranscoderPools(transactOpts, backend, libraries)
+	case "TranscodeJobs":
+		addr, tx, _, err = contracts.DeployTranscodeJobs(transactOpts, backend, libraries)
+	case "MerkleProof":
+		addr, tx, _, err = contracts.DeployMerkleProof(transactOpts, backend, libraries)
+	case "ECVerify":
+		addr, tx, _, err = contracts.DeployECVerify(transactOpts, backend, libraries)
+	case "SafeMath":
+		addr, tx, _, err = contracts.DeploySafeMath(transactOpts, backend, libraries)
+	default:
+		return common.Address{}, nil, fmt.Errorf("Invalid contract name: %v", name)
+	}
+
+	if err != nil {
+		return common.Address{}, nil, err
+	}
+
+	return addr, tx, nil
 }
 
-func (c *Client) IsActiveTranscoder(addr common.Address) (bool, error) {
-	return c.protocolSession.IsActiveTranscoder(addr)
+func DeployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, n uint64, roundLength *big.Int, cyclesPerRound *big.Int) (common.Address, *types.Transaction, error) {
+	addr, tx, _, err := contracts.DeployLivepeerProtocol(transactOpts, backend, libraries, n, roundLength, cyclesPerRound)
+
+	if err != nil {
+		return common.Address{}, nil, err
+	}
+
+	return addr, tx, nil
 }
 
-func (c *Client) Approve(addr common.Address, amount *big.Int) (*types.Transaction, error) {
-	return c.tokenSession.Approve(c.protocolContractAddr, amount)
+func waitForMinedTx(ctx context.Context, backend *ethclient.Client, txHash common.Hash) (*types.Receipt, error) {
+	var (
+		receipt *types.Receipt
+		err     error
+	)
+
+	for i := 0; i < waitForMinedTxTimeout; i++ {
+		receipt, err = backend.TransactionReceipt(ctx, txHash)
+
+		if err != nil && err != ethereum.NotFound {
+			return nil, err
+		}
+
+		if receipt != nil {
+			break
+		}
+
+		time.Sleep(time.Second)
+	}
+
+	if receipt == nil {
+		return nil, ethereum.NotFound
+	} else {
+		return receipt, nil
+	}
 }
 
-func (c *Client) Bond(toAddr common.Address, amount *big.Int) (*types.Transaction, error) {
-	// _, err := c.tokenSession.Approve(c.protocolContractAddr, amount)
+func (c *Client) subscribeToEvent(ctx context.Context, contractAddr common.Address, eventHash common.Hash) (ethereum.Subscription, <-chan types.Log, error) {
+	var (
+		logsSub ethereum.Subscription
+		logsCh  = make(chan types.Log)
+	)
 
-	// if err != nil {
-	// 	return nil, err
-	// }
+	q := ethereum.FilterQuery{
+		Addresses: []common.Address{contractAddr},
+		Topics:    [][]common.Hash{[]common.Hash{eventHash}},
+	}
 
-	return c.protocolSession.Bond(amount, toAddr)
+	logsSub, err := c.backend.SubscribeFilterLogs(ctx, q, logsCh)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return logsSub, logsCh, nil
+}
+
+func (c *Client) watchEvent(logsCh <-chan types.Log) (types.Log, error) {
+	var (
+		receivedLog *types.Log
+		timeout     = time.NewTimer(watchEventTimeout * time.Second)
+	)
+
+	for {
+		select {
+		case log := <-logsCh:
+			if !log.Removed {
+				receivedLog = &log
+			}
+		case <-timeout.C:
+			return types.Log{}, fmt.Errorf("watchEvent timed out")
+		}
+
+		if receivedLog != nil {
+			break
+		}
+	}
+
+	return *receivedLog, nil
+}
+
+func (c *Client) RoundInfo(ctx context.Context) (*big.Int, *big.Int, *big.Int, error) {
+	cr, err := c.protocolSession.CurrentRound()
+
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	cn, err := c.protocolSession.CycleNum()
+
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	crsb, err := c.protocolSession.CurrentRoundStartBlock()
+
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	block, err := c.backend.BlockByNumber(ctx, nil)
+
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return cr, cn, new(big.Int).Sub(block.Number(), crsb), nil
 }
 
 func (c *Client) InitializeRound() (*types.Transaction, error) {
 	return c.protocolSession.InitializeRound()
 }
 
-func (c *Client) TransferLPT(toAddr common.Address, amount *big.Int) (*types.Transaction, error) {
-	return c.tokenSession.Transfer(toAddr, amount)
+func (c *Client) CurrentRoundInitialized() (bool, error) {
+	lir, err := c.protocolSession.LastInitializedRound()
+
+	if err != nil {
+		return false, err
+	}
+
+	cr, err := c.protocolSession.CurrentRound()
+
+	if err != nil {
+		return false, err
+	}
+
+	if lir.Cmp(cr) == -1 {
+		return true, nil
+	} else {
+		return false, nil
+	}
 }
 
-func (c *Client) BalanceOfLPT(addr common.Address) (*big.Int, error) {
-	return c.tokenSession.BalanceOf(addr)
+func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (*types.Transaction, error) {
+	return c.protocolSession.Transcoder(blockRewardCut, feeShare, pricePerSegment)
+}
+
+func (c *Client) Bond(ctx context.Context, amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
+	tokenJson, _ := abi.JSON(strings.NewReader(contracts.LivepeerTokenABI))
+
+	logsSub, logsCh, err := c.subscribeToEvent(ctx, c.tokenAddr, tokenJson.Events["Approval"].Id())
+
+	defer logsSub.Unsubscribe()
+
+	_, err = c.tokenSession.Approve(c.protocolAddr, amount)
+
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = c.watchEvent(logsCh)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return c.protocolSession.Bond(amount, toAddr)
+}
+
+func (c *Client) ValidRewardTimeWindow() (bool, error) {
+	return c.protocolSession.ValidRewardTimeWindow(c.addr)
+}
+
+func (c *Client) Reward() (*types.Transaction, error) {
+	return c.protocolSession.Reward()
 }
