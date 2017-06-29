@@ -2,7 +2,6 @@ package eth
 
 import (
 	"bytes"
-	"fmt"
 	"math/big"
 	"os/user"
 	"path/filepath"
@@ -18,10 +17,11 @@ import (
 )
 
 var (
-	usr, _          = user.Current()
-	dir             = usr.HomeDir
-	keyStore        = keystore.NewKeyStore(filepath.Join(dir, ".lpTest/keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
-	defaultPassword = ""
+	usr, _           = user.Current()
+	dir              = usr.HomeDir
+	keyStore         = keystore.NewKeyStore(filepath.Join(dir, ".lpTest/keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
+	defaultPassword  = ""
+	testRewardLength = 30
 )
 
 func NewTransactorForAccount(account accounts.Account) (*bind.TransactOpts, error) {
@@ -97,8 +97,6 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Failed to wait for mined Node tx: %v", err)
 	}
 
-	fmt.Printf("Node deployed at: %v\n", nodeAddr.Hex())
-
 	// DEPLOY MAXHEAP
 
 	maxHeapLibraries := map[string]common.Address{"Node": nodeAddr}
@@ -114,8 +112,6 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Failed to wait for mined MaxHeap tx: %v", err)
 	}
 
-	fmt.Printf("MaxHeap deployed at: %v\n", maxHeapAddr.Hex())
-
 	// DEPLOY MINHEAP
 
 	minHeapLibraries := map[string]common.Address{"Node": nodeAddr}
@@ -130,8 +126,6 @@ func TestReward(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to wait for mined MinHeap tx: %v", err)
 	}
-
-	fmt.Printf("MinHeap deployed at: %v\n", minHeapAddr.Hex())
 
 	// DEPLOY TRANSCODERPOOLS
 
@@ -151,8 +145,6 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Failed to wait for mined TranscoderPools tx: %v", err)
 	}
 
-	fmt.Printf("TranscoderPools deployed at: %v\n", transcoderPoolsAddr.Hex())
-
 	// DEPLOY MERKLEPROOF
 
 	merkleProofAddr, tx, err := DeployLibrary(transactOpts0, backend, MerkleProof, nil)
@@ -167,8 +159,6 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Failed to wait for mined MerkleProof tx: %v", err)
 	}
 
-	fmt.Printf("MerkleProof deployed at: %v\n", merkleProofAddr.Hex())
-
 	// DEPLOY ECVERIFY
 
 	ecVerifyAddr, tx, err := DeployLibrary(transactOpts0, backend, ECVerify, nil)
@@ -182,8 +172,6 @@ func TestReward(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to wait for mined ECVerify tx: %v", err)
 	}
-
-	fmt.Printf("ECVerify deployed at: %v\n", ecVerifyAddr.Hex())
 
 	// DEPLOY TRANSCODEJOBS
 
@@ -203,8 +191,6 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Failed to wait for mined TranscodeJobs tx: %v", err)
 	}
 
-	fmt.Printf("TranscodeJobs deployed at: %v\n", transcodeJobsAddr.Hex())
-
 	// DEPLOY SAFEMATH
 
 	safeMathAddr, tx, err := DeployLibrary(transactOpts0, backend, SafeMath, nil)
@@ -218,8 +204,6 @@ func TestReward(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to wait for mined SafeMath tx: %v", err)
 	}
-
-	fmt.Printf("SafeMath deployed at: %v\n", safeMathAddr.Hex())
 
 	// DEPLOY LIVEPEERPROTOCOL
 
@@ -240,8 +224,6 @@ func TestReward(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to wait for mined LivepeerProtocol tx: %v", err)
 	}
-
-	fmt.Printf("LivepeerProtocol deployed at: %v\n", protocolAddr.Hex())
 
 	// SETUP CLIENTS
 
@@ -264,8 +246,6 @@ func TestReward(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 
-	fmt.Printf("%v sent %v LPTU to %v\n", accounts[0].Address.Hex(), big.NewInt(500), accounts[1].Address.Hex())
-
 	tx, err = client0.Transfer(accounts[2].Address, big.NewInt(500))
 
 	if err != nil {
@@ -276,8 +256,6 @@ func TestReward(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-
-	fmt.Printf("%v sent %v LPTU to %v\n", accounts[0].Address.Hex(), big.NewInt(500), accounts[2].Address.Hex())
 
 	tx, err = client0.Transfer(accounts[3].Address, big.NewInt(500))
 
@@ -290,8 +268,6 @@ func TestReward(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-
-	fmt.Printf("%v sent %v LPTU to %v\n", accounts[0].Address.Hex(), big.NewInt(500), accounts[3].Address.Hex())
 
 	// TRANSCODER REGISTRATION & BONDING
 
@@ -333,10 +309,7 @@ func TestReward(t *testing.T) {
 
 	// REWARD
 
-	for i := 0; i < 30; i++ {
-
-		fmt.Printf("Client 0 checking if it should call reward...\n")
-
+	for i := 0; i < testRewardLength; i++ {
 		ok, err := client0.CurrentRoundInitialized()
 
 		if err != nil {
@@ -352,7 +325,9 @@ func TestReward(t *testing.T) {
 
 			_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
-			fmt.Printf("Initialized round\n")
+			if err != nil {
+				t.Fatalf("%v", err)
+			}
 		}
 
 		valid, err := client0.ValidRewardTimeWindow()
@@ -373,15 +348,6 @@ func TestReward(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v", err)
 			}
-
-			cr, cn, crsb, err := client0.RoundInfo()
-
-			if err != nil {
-				t.Fatalf("Client 0 failed RoundInfo: %v", err)
-			}
-
-			fmt.Printf("Current Round: %v Cycle #: %v Current Round Block: %v\n", cr, cn, crsb)
-			fmt.Printf("Client 0 called reward\n")
 		}
 
 		time.Sleep(2 * time.Second)

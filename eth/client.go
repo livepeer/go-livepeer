@@ -75,6 +75,8 @@ func NewClient(transactOpts *bind.TransactOpts, backend *ethclient.Client, proto
 		return nil, err
 	}
 
+	glog.Infof("Creating client for account %v", transactOpts.From.Hex())
+
 	return &Client{
 		&contracts.LivepeerProtocolSession{
 			Contract:     protocol,
@@ -103,20 +105,28 @@ func DeployLibrary(transactOpts *bind.TransactOpts, backend *ethclient.Client, n
 	switch name {
 	case Node:
 		addr, tx, _, err = contracts.DeployNode(transactOpts, backend, libraries)
+		glog.Infof("Deploying Node at %v", addr.Hex())
 	case MaxHeap:
 		addr, tx, _, err = contracts.DeployMaxHeap(transactOpts, backend, libraries)
+		glog.Infof("Deploying MaxHeap at %v", addr.Hex())
 	case MinHeap:
 		addr, tx, _, err = contracts.DeployMinHeap(transactOpts, backend, libraries)
+		glog.Infof("Deploying MinHeap at %v", addr.Hex())
 	case TranscoderPools:
 		addr, tx, _, err = contracts.DeployTranscoderPools(transactOpts, backend, libraries)
+		glog.Infof("Deploying TranscoderPools at %v", addr.Hex())
 	case TranscodeJobs:
 		addr, tx, _, err = contracts.DeployTranscodeJobs(transactOpts, backend, libraries)
+		glog.Infof("Deploying TranscodeJobs at %v", addr.Hex())
 	case MerkleProof:
 		addr, tx, _, err = contracts.DeployMerkleProof(transactOpts, backend, libraries)
+		glog.Infof("Deploying MerkleProof at %v", addr.Hex())
 	case ECVerify:
 		addr, tx, _, err = contracts.DeployECVerify(transactOpts, backend, libraries)
+		glog.Infof("Deploying ECVerify at %v", addr.Hex())
 	case SafeMath:
 		addr, tx, _, err = contracts.DeploySafeMath(transactOpts, backend, libraries)
+		glog.Infof("Deploying SafeMath at %v", addr.Hex())
 	default:
 		err = fmt.Errorf("Invalid library type: %v", name)
 
@@ -134,6 +144,8 @@ func DeployLibrary(transactOpts *bind.TransactOpts, backend *ethclient.Client, n
 
 func DeployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, n uint64, roundLength *big.Int, cyclesPerRound *big.Int) (common.Address, *types.Transaction, error) {
 	addr, tx, _, err := contracts.DeployLivepeerProtocol(transactOpts, backend, libraries, n, roundLength, cyclesPerRound)
+
+	glog.Infof("Deploying LivepeerProtocol at %v", addr.Hex())
 
 	if err != nil {
 		glog.Errorf("Error deploying LivepeerProtocol: %v", err)
@@ -242,7 +254,15 @@ func (c *Client) CurrentRoundInitialized() (bool, error) {
 }
 
 func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (*types.Transaction, error) {
-	return c.protocolSession.Transcoder(blockRewardCut, feeShare, pricePerSegment)
+	tx, err := c.protocolSession.Transcoder(blockRewardCut, feeShare, pricePerSegment)
+
+	if err != nil {
+		glog.Errorf("Error registering as a transcoder: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("Submitted transaction %v. Register as a transcoder", tx.Hash().Hex())
+	return tx, nil
 }
 
 func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
@@ -259,12 +279,14 @@ func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transactio
 	defer logsSub.Unsubscribe()
 	defer close(logsCh)
 
-	_, err = c.tokenSession.Approve(c.protocolAddr, amount)
+	tx, err := c.tokenSession.Approve(c.protocolAddr, amount)
 
 	if err != nil {
 		glog.Errorf("Error approving token transfer: %v", err)
 		return nil, err
 	}
+
+	glog.Infof("Submitted transaction %v. Approve %v LPTU transfer by LivepeerProtocol", tx.Hash().Hex(), amount)
 
 	_, err = c.WatchEvent(logsCh)
 
@@ -273,7 +295,15 @@ func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transactio
 		return nil, err
 	}
 
-	return c.protocolSession.Bond(amount, toAddr)
+	tx, err = c.protocolSession.Bond(amount, toAddr)
+
+	if err != nil {
+		glog.Errorf("Error bonding: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("Submitted transaction %v. Bond %v LPTU to %v", tx.Hash().Hex(), amount, toAddr.Hex())
+	return tx, nil
 }
 
 func (c *Client) ValidRewardTimeWindow() (bool, error) {
@@ -281,9 +311,25 @@ func (c *Client) ValidRewardTimeWindow() (bool, error) {
 }
 
 func (c *Client) Reward() (*types.Transaction, error) {
-	return c.protocolSession.Reward()
+	tx, err := c.protocolSession.Reward()
+
+	if err != nil {
+		glog.Errorf("Error calling reward: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("Submitted transaction %v. Called reward", tx.Hash().Hex())
+	return tx, nil
 }
 
 func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error) {
-	return c.tokenSession.Transfer(toAddr, amount)
+	tx, err := c.tokenSession.Transfer(toAddr, amount)
+
+	if err != nil {
+		glog.Errorf("Error transferring tokens: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("Submitted transaction %v. Transfer %v LPTU to %v", tx.Hash().Hex(), amount, toAddr.Hex())
+	return tx, nil
 }
