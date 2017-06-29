@@ -15,6 +15,22 @@ func TestNewLivepeerNode(t *testing.T) {
 	// }
 }
 
+type Vint interface {
+	Call(nums ...int)
+}
+
+type Vimp struct{}
+
+func (*Vimp) Call(nums ...int) {
+	fmt.Println(nums[0])
+}
+
+func TestInterface(t *testing.T) {
+	var obj Vint
+	obj = &Vimp{}
+	obj.Call(4, 5, 6)
+}
+
 func TestSync(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	// intChan := make(chan int)

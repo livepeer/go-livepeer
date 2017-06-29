@@ -54,6 +54,9 @@ func (b *BasicBroadcaster) Finish() error {
 		}
 	}
 
+	//Delete the broadcaster
+	delete(b.Network.broadcasters, b.StrmID)
+
 	//TODO: Need to figure out a place to close the stream listeners
 	return nil
 }

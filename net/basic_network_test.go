@@ -69,7 +69,8 @@ func TestSendBroadcast(t *testing.T) {
 		}
 	})
 
-	b1, _ := n1.NewBroadcaster("strm").(*BasicBroadcaster)
+	b1tmp, _ := n1.GetBroadcaster("strm")
+	b1, _ := b1tmp.(*BasicBroadcaster)
 	//Create a new stream, this is the communication channel
 	ns1, err := n1.NetworkNode.PeerHost.NewStream(context.Background(), n2.Identity, Protocol)
 	if err != nil {
@@ -141,8 +142,9 @@ func TestHandleBroadcast(t *testing.T) {
 		t.Errorf("Expecting error because no subscriber has been assigned")
 	}
 
+	s1tmp, _ := n1.GetSubscriber("strmID")
+	s1, _ := s1tmp.(*BasicSubscriber)
 	//Set up the subscriber to handle the streamData
-	s1, _ := n1.NewSubscriber("strmID").(*BasicSubscriber)
 	ctxW, cancel := context.WithCancel(context.Background())
 	s1.cancelWorker = cancel
 	s1.working = true
@@ -244,7 +246,8 @@ func TestSendSubscribe(t *testing.T) {
 		}
 	})
 
-	s1, _ := n1.NewSubscriber("strmID").(*BasicSubscriber)
+	s1tmp, _ := n1.GetSubscriber("strmID")
+	s1, _ := s1tmp.(*BasicSubscriber)
 	result := make(map[uint64][]byte)
 	lock := &sync.Mutex{}
 	s1.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
@@ -327,7 +330,8 @@ func TestHandleSubscribe(t *testing.T) {
 	})
 
 	//Test when the broadcaster is local
-	b1, _ := n1.NewBroadcaster("strmID").(*BasicBroadcaster)
+	b1tmp, _ := n1.GetBroadcaster("strmID")
+	b1, _ := b1tmp.(*BasicBroadcaster)
 	n1.broadcasters["strmID"] = b1
 	ws := n1.NetworkNode.GetStream(n2.Identity)
 	handleSubReq(n1, SubReqMsg{StrmID: "strmID"}, ws)
@@ -372,7 +376,7 @@ func TestRelaying(t *testing.T) {
 	connectHosts(n2.NetworkNode.PeerHost, n3.PeerHost)
 
 	strmID := peer.IDHexEncode(n1.NetworkNode.Identity) + "strmID"
-	b1 := n1.NewBroadcaster(strmID)
+	b1, _ := n1.GetBroadcaster(strmID)
 	go n1.SetupProtocol()
 	go n2.SetupProtocol()
 
@@ -438,7 +442,7 @@ func TestRelaying(t *testing.T) {
 	}
 
 	err = b1.Finish()
-	n1.DeleteBroadcaster(strmID)
+	// n1.DeleteBroadcaster(strmID)
 	if err != nil {
 		t.Errorf("Error when broadcasting Finish: %v", err)
 	}

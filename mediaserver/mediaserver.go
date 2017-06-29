@@ -129,12 +129,11 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 		// }
 		//Kick off go routine to broadcast the hls stream.
 		go func() {
-			b = s.LivepeerNode.VideoNetwork.GetBroadcaster(hlsStrm.GetStreamID())
+			b, err = s.LivepeerNode.VideoNetwork.GetBroadcaster(hlsStrm.GetStreamID())
 			// glog.Infof("Getting broadcaster, got %v", b)
-			if b == nil {
-				// 	glog.Infof("Creating broadcaster")
-				b = s.LivepeerNode.VideoNetwork.NewBroadcaster(hlsStrm.GetStreamID())
-				// 	glog.Infof("Got: %v", b)
+			if err != nil {
+				glog.Errorf("Error gettng broadcaster: %v", err)
+				return
 			}
 			counter := uint64(0)
 			for {
@@ -153,7 +152,7 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 					glog.Errorf("Error encoding segment to []byte: %v", err)
 					continue
 				}
-				glog.Infof("Calling broadcast on broadcaster: %v", b)
+
 				err = b.Broadcast(counter, buf.Bytes())
 				if err != nil {
 					glog.Errorf("Error broadcasting segment to network: %v", err)
@@ -217,10 +216,14 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 
 			// s.LivepeerNode.SubscribeFromNetwork(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 			glog.Infof("buf is nil, creating subscription, asking the network")
-			sub := s.LivepeerNode.VideoNetwork.GetSubscriber(strmID.String())
-			if sub == nil {
-				sub = s.LivepeerNode.VideoNetwork.NewSubscriber(strmID.String())
+			sub, err := s.LivepeerNode.VideoNetwork.GetSubscriber(strmID.String())
+			if err != nil {
+				glog.Errorf("Error getting subscriber: %v", err)
+				return nil, err
 			}
+			// if sub == nil {
+			// 	sub = s.LivepeerNode.VideoNetwork.NewSubscriber(strmID.String())
+			// }
 			sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 				if eof {
 					glog.Infof("Got EOF, writing to buf")
@@ -240,7 +243,7 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 					buf = s.LivepeerNode.StreamDB.AddNewHLSBuffer(strmID)
 					glog.Infof("Creating new buf in StreamDB: %v", s.LivepeerNode.StreamDB)
 				}
-				glog.Infof("Inserting seg %v into buf %v", seg.Name, buf)
+				glog.Infof("Inserting seg %v into buf", seg.Name)
 				buf.WriteSegment(seg.SeqNo, seg.Name, seg.Duration, seg.Data)
 			})
 		}
@@ -257,6 +260,10 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 			} else {
 				pl, err := buf.LatestPlaylist()
 				if err != nil {
+					if err == stream.ErrEOF {
+						return nil, err
+					}
+
 					glog.Infof("Waiting for playlist... err: %v", err)
 					time.Sleep(100 * time.Millisecond)
 					continue

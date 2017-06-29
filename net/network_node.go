@@ -62,6 +62,9 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey) (*NetworkNo
 
 func constructDHTRouting(ctx context.Context, host host.Host, dstore ds.Batching) (*kad.IpfsDHT, error) {
 	dhtRouting := kad.NewDHT(ctx, host, dstore)
+	if err := dhtRouting.Bootstrap(context.Background()); err != nil {
+		glog.Errorf("Error bootstraping dht: %v", err)
+	}
 	return dhtRouting, nil
 }
 

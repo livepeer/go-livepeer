@@ -79,7 +79,11 @@ func (n *LivepeerNode) StartTranscodeJob() {
 //BroadcastToNetwork is called when a new broadcast stream is available.  It lets the network decide how
 //to deal with the stream.
 func (n *LivepeerNode) BroadcastToNetwork(ctx context.Context, strm *stream.VideoStream) error {
-	b := n.VideoNetwork.NewBroadcaster(strm.GetStreamID())
+	b, err := n.VideoNetwork.GetBroadcaster(strm.GetStreamID())
+	if err != nil {
+		glog.Errorf("Error getting broadcaster from network: %v", err)
+		return err
+	}
 
 	//Prepare the broadcast.  May have to send the MasterPlaylist as part of the handshake.
 
@@ -106,14 +110,17 @@ func (n *LivepeerNode) BroadcastToNetwork(ctx context.Context, strm *stream.Vide
 
 //SubscribeFromNetwork subscribes to a stream on the network.  Returns the stream as a reference.
 func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID) (*stream.VideoStream, error) {
-	s := n.VideoNetwork.GetSubscriber(strmID.String())
-	if s == nil {
-		s = n.VideoNetwork.NewSubscriber(strmID.String())
+	s, err := n.VideoNetwork.GetSubscriber(strmID.String())
+	if err != nil {
+		glog.Errorf("Error getting subscriber from network: %v", err)
 	}
+	// s := n.VideoNetwork.GetSubscriber(strmID.String())
+	// if s == nil {
+	// 	s = n.VideoNetwork.NewSubscriber(strmID.String())
+	// }
 
 	//Create a new video stream
 	strm := n.StreamDB.GetStream(strmID)
-	var err error
 	if strm != nil {
 		strm, err = n.StreamDB.AddNewStream(strmID, stream.HLS)
 		if err != nil {
@@ -127,7 +134,7 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 			n.StreamDB.DeleteHLSBuffer(strmID)
 			n.StreamDB.DeleteStream(strmID)
 
-			n.VideoNetwork.DeleteSubscriber(strmID.String())
+			// n.VideoNetwork.DeleteSubscriber(strmID.String())
 			return
 		}
 
@@ -163,13 +170,13 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 
 //UnsubscribeFromNetwork unsubscribes to a stream on the network.
 func (n *LivepeerNode) UnsubscribeFromNetwork(strmID StreamID) error {
-	s := n.VideoNetwork.GetSubscriber(strmID.String())
-	if s == nil {
-		glog.Error("Error unsubscribing from network - cannot find subscriber")
+	s, err := n.VideoNetwork.GetSubscriber(strmID.String())
+	if err != nil {
+		glog.Errorf("Error getting subscriber when unsubscribing from network: %v", err)
 		return ErrNotFound
 	}
 
-	err := s.Unsubscribe()
+	err = s.Unsubscribe()
 	if err != nil {
 		glog.Errorf("Error unsubscribing from network: %v", err)
 		return err
