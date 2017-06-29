@@ -42,10 +42,11 @@ func NewTransactorForAccount(account accounts.Account) (*bind.TransactOpts, erro
 
 func TestReward(t *testing.T) {
 	var (
-		tx           *types.Transaction
-		err          error
-		rpcTimeout   = 10 * time.Second
-		eventTimeout = 30 * time.Second
+		tx             *types.Transaction
+		err            error
+		rpcTimeout     = 10 * time.Second
+		eventTimeout   = 30 * time.Second
+		minedTxTimeout = 60
 	)
 
 	backend, err := ethclient.Dial("/Users/yondonfu/.lpTest/geth.ipc")
@@ -84,13 +85,13 @@ func TestReward(t *testing.T) {
 
 	// DEPLOY NODE
 
-	nodeAddr, tx, err := DeployLibrary(transactOpts0, backend, "Node", nil)
+	nodeAddr, tx, err := DeployLibrary(transactOpts0, backend, Node, nil)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy Node: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined Node tx: %v", err)
@@ -101,13 +102,13 @@ func TestReward(t *testing.T) {
 	// DEPLOY MAXHEAP
 
 	maxHeapLibraries := map[string]common.Address{"Node": nodeAddr}
-	maxHeapAddr, tx, err := DeployLibrary(transactOpts0, backend, "MaxHeap", maxHeapLibraries)
+	maxHeapAddr, tx, err := DeployLibrary(transactOpts0, backend, MaxHeap, maxHeapLibraries)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy MaxHeap: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined MaxHeap tx: %v", err)
@@ -118,13 +119,13 @@ func TestReward(t *testing.T) {
 	// DEPLOY MINHEAP
 
 	minHeapLibraries := map[string]common.Address{"Node": nodeAddr}
-	minHeapAddr, tx, err := DeployLibrary(transactOpts0, backend, "MinHeap", minHeapLibraries)
+	minHeapAddr, tx, err := DeployLibrary(transactOpts0, backend, MinHeap, minHeapLibraries)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy MinHeap: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined MinHeap tx: %v", err)
@@ -138,13 +139,13 @@ func TestReward(t *testing.T) {
 		"MinHeap": minHeapAddr,
 		"MaxHeap": maxHeapAddr,
 	}
-	transcoderPoolsAddr, tx, err := DeployLibrary(transactOpts0, backend, "TranscoderPools", transcoderPoolsLibraries)
+	transcoderPoolsAddr, tx, err := DeployLibrary(transactOpts0, backend, TranscoderPools, transcoderPoolsLibraries)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy TranscoderPools: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined TranscoderPools tx: %v", err)
@@ -154,13 +155,13 @@ func TestReward(t *testing.T) {
 
 	// DEPLOY MERKLEPROOF
 
-	merkleProofAddr, tx, err := DeployLibrary(transactOpts0, backend, "MerkleProof", nil)
+	merkleProofAddr, tx, err := DeployLibrary(transactOpts0, backend, MerkleProof, nil)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy MerkleProof: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined MerkleProof tx: %v", err)
@@ -170,13 +171,13 @@ func TestReward(t *testing.T) {
 
 	// DEPLOY ECVERIFY
 
-	ecVerifyAddr, tx, err := DeployLibrary(transactOpts0, backend, "ECVerify", nil)
+	ecVerifyAddr, tx, err := DeployLibrary(transactOpts0, backend, ECVerify, nil)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy ECVerify: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined ECVerify tx: %v", err)
@@ -190,13 +191,13 @@ func TestReward(t *testing.T) {
 		"ECVerify":    ecVerifyAddr,
 		"MerkleProof": merkleProofAddr,
 	}
-	transcodeJobsAddr, tx, err := DeployLibrary(transactOpts0, backend, "TranscodeJobs", transcodeJobsLibraries)
+	transcodeJobsAddr, tx, err := DeployLibrary(transactOpts0, backend, TranscodeJobs, transcodeJobsLibraries)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy TranscodeJobs: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined TranscodeJobs tx: %v", err)
@@ -206,13 +207,13 @@ func TestReward(t *testing.T) {
 
 	// DEPLOY SAFEMATH
 
-	safeMathAddr, tx, err := DeployLibrary(transactOpts0, backend, "SafeMath", nil)
+	safeMathAddr, tx, err := DeployLibrary(transactOpts0, backend, SafeMath, nil)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy SafeMath: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined SafeMath tx: %v", err)
@@ -234,7 +235,7 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Failed to deploy protocol: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined LivepeerProtocol tx: %v", err)
@@ -257,7 +258,7 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Client 0 failed to transfer tokens: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -270,7 +271,7 @@ func TestReward(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Client 0 failed to transfer tokens: %v", err)
 	}
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -284,7 +285,7 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Client 0 failed to transfer tokens: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -300,7 +301,7 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Client 0 failed to call transcoder: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -333,6 +334,7 @@ func TestReward(t *testing.T) {
 	// REWARD
 
 	for i := 0; i < 30; i++ {
+
 		fmt.Printf("Client 0 checking if it should call reward...\n")
 
 		ok, err := client0.CurrentRoundInitialized()
@@ -348,7 +350,7 @@ func TestReward(t *testing.T) {
 				t.Fatalf("Client 0 failed InitializeRound: %v", err)
 			}
 
-			_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+			_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 			fmt.Printf("Initialized round\n")
 		}
@@ -366,7 +368,7 @@ func TestReward(t *testing.T) {
 				t.Fatalf("Client 0 failed Reward: %v", err)
 			}
 
-			_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+			_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 			if err != nil {
 				t.Fatalf("%v", err)
@@ -378,7 +380,7 @@ func TestReward(t *testing.T) {
 				t.Fatalf("Client 0 failed RoundInfo: %v", err)
 			}
 
-			fmt.Printf("Current Round: %v, Cycle #: %v, Current Round Block: %v\n", cr, cn, crsb)
+			fmt.Printf("Current Round: %v Cycle #: %v Current Round Block: %v\n", cr, cn, crsb)
 			fmt.Printf("Client 0 called reward\n")
 		}
 

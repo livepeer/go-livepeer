@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/golang/glog"
 	"github.com/livepeer/libp2p-livepeer/eth/contracts"
 )
 
@@ -39,22 +40,38 @@ type Client struct {
 	eventTimeout time.Duration
 }
 
+type LibraryType uint8
+
+const (
+	Node LibraryType = iota
+	MaxHeap
+	MinHeap
+	TranscoderPools
+	TranscodeJobs
+	MerkleProof
+	ECVerify
+	SafeMath
+)
+
 func NewClient(transactOpts *bind.TransactOpts, backend *ethclient.Client, protocolAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
 	protocol, err := contracts.NewLivepeerProtocol(protocolAddr, backend)
 
 	if err != nil {
+		glog.Error("Error creating LivepeerProtocol: %v", err)
 		return nil, err
 	}
 
 	tokenAddr, err := protocol.Token(nil)
 
 	if err != nil {
+		glog.Errorf("Error retrieving token address: %v", err)
 		return nil, err
 	}
 
 	token, err := contracts.NewLivepeerToken(tokenAddr, backend)
 
 	if err != nil {
+		glog.Errorf("Error creating LivepeerToken: %v", err)
 		return nil, err
 	}
 
@@ -76,7 +93,7 @@ func NewClient(transactOpts *bind.TransactOpts, backend *ethclient.Client, proto
 	}, nil
 }
 
-func DeployLibrary(transactOpts *bind.TransactOpts, backend *ethclient.Client, name string, libraries map[string]common.Address) (common.Address, *types.Transaction, error) {
+func DeployLibrary(transactOpts *bind.TransactOpts, backend *ethclient.Client, name LibraryType, libraries map[string]common.Address) (common.Address, *types.Transaction, error) {
 	var (
 		addr common.Address
 		tx   *types.Transaction
@@ -84,27 +101,31 @@ func DeployLibrary(transactOpts *bind.TransactOpts, backend *ethclient.Client, n
 	)
 
 	switch name {
-	case "Node":
+	case Node:
 		addr, tx, _, err = contracts.DeployNode(transactOpts, backend, libraries)
-	case "MaxHeap":
+	case MaxHeap:
 		addr, tx, _, err = contracts.DeployMaxHeap(transactOpts, backend, libraries)
-	case "MinHeap":
+	case MinHeap:
 		addr, tx, _, err = contracts.DeployMinHeap(transactOpts, backend, libraries)
-	case "TranscoderPools":
+	case TranscoderPools:
 		addr, tx, _, err = contracts.DeployTranscoderPools(transactOpts, backend, libraries)
-	case "TranscodeJobs":
+	case TranscodeJobs:
 		addr, tx, _, err = contracts.DeployTranscodeJobs(transactOpts, backend, libraries)
-	case "MerkleProof":
+	case MerkleProof:
 		addr, tx, _, err = contracts.DeployMerkleProof(transactOpts, backend, libraries)
-	case "ECVerify":
+	case ECVerify:
 		addr, tx, _, err = contracts.DeployECVerify(transactOpts, backend, libraries)
-	case "SafeMath":
+	case SafeMath:
 		addr, tx, _, err = contracts.DeploySafeMath(transactOpts, backend, libraries)
 	default:
-		return common.Address{}, nil, fmt.Errorf("Invalid contract name: %v", name)
+		err = fmt.Errorf("Invalid library type: %v", name)
+
+		glog.Errorf(err.Error())
+		return common.Address{}, nil, err
 	}
 
 	if err != nil {
+		glog.Errorf("Error deploying library: %v", err)
 		return common.Address{}, nil, err
 	}
 
@@ -115,44 +136,14 @@ func DeployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *ethclient.
 	addr, tx, _, err := contracts.DeployLivepeerProtocol(transactOpts, backend, libraries, n, roundLength, cyclesPerRound)
 
 	if err != nil {
+		glog.Errorf("Error deploying LivepeerProtocol: %v", err)
 		return common.Address{}, nil, err
 	}
 
 	return addr, tx, nil
 }
 
-func waitForMinedTx(backend *ethclient.Client, rpcTimeout time.Duration, txHash common.Hash) (*types.Receipt, error) {
-	var (
-		receipt *types.Receipt
-		ctx     context.Context
-		err     error
-	)
-
-	for i := 0; i < 60; i++ {
-		ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-		receipt, err = backend.TransactionReceipt(ctx, txHash)
-
-		if err != nil && err != ethereum.NotFound {
-			return nil, err
-		}
-
-		if receipt != nil {
-			break
-		}
-
-		time.Sleep(1 * time.Second)
-	}
-
-	return receipt, nil
-}
-
-func (c *Client) SubscribeToEvent(contractAddr common.Address, eventHash common.Hash) (ethereum.Subscription, <-chan types.Log, error) {
-	var (
-		logsSub ethereum.Subscription
-		logsCh  = make(chan types.Log)
-	)
-
+func (c *Client) SubscribeToEvent(contractAddr common.Address, eventHash common.Hash, logsCh chan<- types.Log) (ethereum.Subscription, error) {
 	q := ethereum.FilterQuery{
 		Addresses: []common.Address{contractAddr},
 		Topics:    [][]common.Hash{[]common.Hash{eventHash}},
@@ -163,52 +154,52 @@ func (c *Client) SubscribeToEvent(contractAddr common.Address, eventHash common.
 	logsSub, err := c.backend.SubscribeFilterLogs(ctx, q, logsCh)
 
 	if err != nil {
-		return nil, nil, err
+		glog.Errorf("Error subscribing to filter logs: %v", err)
+		return nil, err
 	}
 
-	return logsSub, logsCh, nil
+	return logsSub, nil
 }
 
 func (c *Client) WatchEvent(logsCh <-chan types.Log) (types.Log, error) {
 	var (
-		receivedLog *types.Log
-		timer       = time.NewTimer(c.eventTimeout)
+		timer = time.NewTimer(c.eventTimeout)
 	)
 
 	for {
 		select {
 		case log := <-logsCh:
 			if !log.Removed {
-				receivedLog = &log
+				return log, nil
 			}
 		case <-timer.C:
-			return types.Log{}, fmt.Errorf("watchEvent timed out")
-		}
+			err := fmt.Errorf("watchEvent timed out")
 
-		if receivedLog != nil {
-			break
+			glog.Errorf(err.Error())
+			return types.Log{}, err
 		}
 	}
-
-	return *receivedLog, nil
 }
 
 func (c *Client) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
 	cr, err := c.protocolSession.CurrentRound()
 
 	if err != nil {
+		glog.Errorf("Error getting current round: %v", err)
 		return nil, nil, nil, err
 	}
 
 	cn, err := c.protocolSession.CycleNum()
 
 	if err != nil {
+		glog.Errorf("Error getting current cycle number: %v", err)
 		return nil, nil, nil, err
 	}
 
 	crsb, err := c.protocolSession.CurrentRoundStartBlock()
 
 	if err != nil {
+		glog.Errorf("Error getting current round start block: %v", err)
 		return nil, nil, nil, err
 	}
 
@@ -217,6 +208,7 @@ func (c *Client) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
 	block, err := c.backend.BlockByNumber(ctx, nil)
 
 	if err != nil {
+		glog.Errorf("Error getting latest block number: %v", err)
 		return nil, nil, nil, err
 	}
 
@@ -231,12 +223,14 @@ func (c *Client) CurrentRoundInitialized() (bool, error) {
 	lir, err := c.protocolSession.LastInitializedRound()
 
 	if err != nil {
+		glog.Errorf("Error getting last initialized round: %v", err)
 		return false, err
 	}
 
 	cr, err := c.protocolSession.CurrentRound()
 
 	if err != nil {
+		glog.Errorf("Error getting current round: %v", err)
 		return false, err
 	}
 
@@ -252,21 +246,30 @@ func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegmen
 }
 
 func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
-	tokenJson, _ := abi.JSON(strings.NewReader(contracts.LivepeerTokenABI))
+	tokenJson, err := abi.JSON(strings.NewReader(contracts.LivepeerTokenABI))
 
-	logsSub, logsCh, err := c.SubscribeToEvent(c.tokenAddr, tokenJson.Events["Approval"].Id())
+	if err != nil {
+		glog.Errorf("Error decoding ABI into JSON: %v", err)
+		return nil, err
+	}
+
+	logsCh := make(chan types.Log)
+	logsSub, err := c.SubscribeToEvent(c.tokenAddr, tokenJson.Events["Approval"].Id(), logsCh)
 
 	defer logsSub.Unsubscribe()
+	defer close(logsCh)
 
 	_, err = c.tokenSession.Approve(c.protocolAddr, amount)
 
 	if err != nil {
+		glog.Errorf("Error approving token transfer: %v", err)
 		return nil, err
 	}
 
 	_, err = c.WatchEvent(logsCh)
 
 	if err != nil {
+		glog.Errorf("Error watching event: %v", err)
 		return nil, err
 	}
 
