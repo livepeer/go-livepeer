@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"math/big"
+	"os/user"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,9 +18,10 @@ import (
 )
 
 var (
-	keyStore        = keystore.NewKeyStore("/Users/yondonfu/.lpTest/keystore", keystore.StandardScryptN, keystore.StandardScryptP)
+	usr, _          = user.Current()
+	dir             = usr.HomeDir
+	keyStore        = keystore.NewKeyStore(filepath.Join(dir, ".lpTest/keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 	defaultPassword = ""
-	rpcTimeout      = 10 * time.Second
 )
 
 func NewTransactorForAccount(account accounts.Account) (*bind.TransactOpts, error) {
