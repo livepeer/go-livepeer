@@ -280,3 +280,7 @@ func (c *Client) ValidRewardTimeWindow() (bool, error) {
 func (c *Client) Reward() (*types.Transaction, error) {
 	return c.protocolSession.Reward()
 }
+
+func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error) {
+	return c.tokenSession.Transfer(toAddr, amount)
+}

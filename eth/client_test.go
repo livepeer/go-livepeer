@@ -249,12 +249,55 @@ func TestReward(t *testing.T) {
 	client2, _ := NewClient(transactOpts2, backend, protocolAddr, rpcTimeout, eventTimeout)
 	client3, _ := NewClient(transactOpts3, backend, protocolAddr, rpcTimeout, eventTimeout)
 
+	// DISTRIBUTE LPT
+
+	tx, err = client0.Transfer(accounts[1].Address, big.NewInt(500))
+
+	if err != nil {
+		t.Fatalf("Client 0 failed to transfer tokens: %v", err)
+	}
+
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	fmt.Printf("%v sent %v LPTU to %v\n", accounts[0].Address.Hex(), big.NewInt(500), accounts[1].Address.Hex())
+
+	tx, err = client0.Transfer(accounts[2].Address, big.NewInt(500))
+
+	if err != nil {
+		t.Fatalf("Client 0 failed to transfer tokens: %v", err)
+	}
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	fmt.Printf("%v sent %v LPTU to %v\n", accounts[0].Address.Hex(), big.NewInt(500), accounts[2].Address.Hex())
+
+	tx, err = client0.Transfer(accounts[3].Address, big.NewInt(500))
+
+	if err != nil {
+		t.Fatalf("Client 0 failed to transfer tokens: %v", err)
+	}
+
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	fmt.Printf("%v sent %v LPTU to %v\n", accounts[0].Address.Hex(), big.NewInt(500), accounts[3].Address.Hex())
+
 	// TRANSCODER REGISTRATION & BONDING
 
 	tx, err = client0.Transcoder(10, 5, big.NewInt(100))
 
 	if err != nil {
-		t.Fatalf("Client failed to call transcoder: %v", err)
+		t.Fatalf("Client 0 failed to call transcoder: %v", err)
 	}
 
 	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
