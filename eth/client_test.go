@@ -2,7 +2,6 @@ package eth
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"math/big"
 	"testing"
@@ -38,11 +37,12 @@ func NewTransactorForAccount(account accounts.Account) (*bind.TransactOpts, erro
 	return transactOpts, err
 }
 
-func TestLivepeerClient(t *testing.T) {
+func TestReward(t *testing.T) {
 	var (
-		tx  *types.Transaction
-		err error
-		ctx context.Context
+		tx           *types.Transaction
+		err          error
+		rpcTimeout   = 10 * time.Second
+		eventTimeout = 30 * time.Second
 	)
 
 	backend, err := ethclient.Dial("/Users/yondonfu/.lpTest/geth.ipc")
@@ -87,9 +87,7 @@ func TestLivepeerClient(t *testing.T) {
 		t.Fatalf("Failed to deploy Node: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined Node tx: %v", err)
@@ -106,9 +104,7 @@ func TestLivepeerClient(t *testing.T) {
 		t.Fatalf("Failed to deploy MaxHeap: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined MaxHeap tx: %v", err)
@@ -125,9 +121,7 @@ func TestLivepeerClient(t *testing.T) {
 		t.Fatalf("Failed to deploy MinHeap: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined MinHeap tx: %v", err)
@@ -147,9 +141,7 @@ func TestLivepeerClient(t *testing.T) {
 		t.Fatalf("Failed to deploy TranscoderPools: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined TranscoderPools tx: %v", err)
@@ -165,9 +157,7 @@ func TestLivepeerClient(t *testing.T) {
 		t.Fatalf("Failed to deploy MerkleProof: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined MerkleProof tx: %v", err)
@@ -183,9 +173,7 @@ func TestLivepeerClient(t *testing.T) {
 		t.Fatalf("Failed to deploy ECVerify: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined ECVerify tx: %v", err)
@@ -205,9 +193,7 @@ func TestLivepeerClient(t *testing.T) {
 		t.Fatalf("Failed to deploy TranscodeJobs: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined TranscodeJobs tx: %v", err)
@@ -223,9 +209,7 @@ func TestLivepeerClient(t *testing.T) {
 		t.Fatalf("Failed to deploy SafeMath: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined SafeMath tx: %v", err)
@@ -247,9 +231,7 @@ func TestLivepeerClient(t *testing.T) {
 		t.Fatalf("Failed to deploy protocol: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined LivepeerProtocol tx: %v", err)
@@ -259,10 +241,10 @@ func TestLivepeerClient(t *testing.T) {
 
 	// SETUP CLIENTS
 
-	client0, _ := NewClient(transactOpts0, backend, protocolAddr)
-	client1, _ := NewClient(transactOpts1, backend, protocolAddr)
-	client2, _ := NewClient(transactOpts2, backend, protocolAddr)
-	client3, _ := NewClient(transactOpts3, backend, protocolAddr)
+	client0, _ := NewClient(transactOpts0, backend, protocolAddr, rpcTimeout, eventTimeout)
+	client1, _ := NewClient(transactOpts1, backend, protocolAddr, rpcTimeout, eventTimeout)
+	client2, _ := NewClient(transactOpts2, backend, protocolAddr, rpcTimeout, eventTimeout)
+	client3, _ := NewClient(transactOpts3, backend, protocolAddr, rpcTimeout, eventTimeout)
 
 	// TRANSCODER REGISTRATION & BONDING
 
@@ -272,41 +254,31 @@ func TestLivepeerClient(t *testing.T) {
 		t.Fatalf("Client failed to call transcoder: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = waitForMinedTx(ctx, backend, tx.Hash())
+	_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = client0.Bond(ctx, big.NewInt(100), accounts[0].Address)
+	_, err = client0.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 0 failed to bond: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = client1.Bond(ctx, big.NewInt(100), accounts[0].Address)
+	_, err = client1.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 1 failed to bond: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = client2.Bond(ctx, big.NewInt(100), accounts[0].Address)
+	_, err = client2.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 2 failed to bond: %v", err)
 	}
 
-	ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-	_, err = client3.Bond(ctx, big.NewInt(100), accounts[0].Address)
+	_, err = client3.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 3 failed to bond: %v", err)
@@ -315,7 +287,7 @@ func TestLivepeerClient(t *testing.T) {
 	// REWARD
 
 	for i := 0; i < 30; i++ {
-		fmt.Printf("Checking...\n")
+		fmt.Printf("Client 0 checking if it should call reward...\n")
 
 		ok, err := client0.CurrentRoundInitialized()
 
@@ -323,16 +295,14 @@ func TestLivepeerClient(t *testing.T) {
 			t.Fatalf("Client 0 failed CurrentRoundInitialized: %v", err)
 		}
 
-		if ok {
+		if !ok {
 			tx, err := client0.InitializeRound()
 
 			if err != nil {
 				t.Fatalf("Client 0 failed InitializeRound: %v", err)
 			}
 
-			ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-			_, err = waitForMinedTx(ctx, backend, tx.Hash())
+			_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 			fmt.Printf("Initialized round\n")
 		}
@@ -350,17 +320,13 @@ func TestLivepeerClient(t *testing.T) {
 				t.Fatalf("Client 0 failed Reward: %v", err)
 			}
 
-			ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-			_, err = waitForMinedTx(ctx, backend, tx.Hash())
+			_, err = waitForMinedTx(backend, rpcTimeout, tx.Hash())
 
 			if err != nil {
 				t.Fatalf("%v", err)
 			}
 
-			ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-
-			cr, cn, crsb, err := client0.RoundInfo(ctx)
+			cr, cn, crsb, err := client0.RoundInfo()
 
 			if err != nil {
 				t.Fatalf("Client 0 failed RoundInfo: %v", err)

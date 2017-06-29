@@ -1,10 +1,5 @@
 package eth
 
-// This is meant to be the integration point with the Ethereum smart contract.  It's currently stubbed for now.
-//
-// We can do the implementation following this link:
-// https://github.com/ethereum/go-ethereum/wiki/Native-DApps:-Go-bindings-to-Ethereum-contracts
-
 //go:generate abigen --abi protocol/abi/LivepeerProtocol.abi --pkg contracts --type LivepeerProtocol --out contracts/livepeerProtocol.go --bin protocol/bin/LivepeerProtocol.bin
 //go:generate abigen --abi protocol/abi/LivepeerToken.abi --pkg contracts --type LivepeerToken --out contracts/livepeerToken.go --bin protocol/bin/LivepeerToken.bin
 //go:generate abigen --abi protocol/abi/TranscoderPools.abi --pkg contracts --type TranscoderPools --out contracts/transcoderPools.go --bin protocol/bin/TranscoderPools.bin
@@ -32,11 +27,6 @@ import (
 	"github.com/livepeer/libp2p-livepeer/eth/contracts"
 )
 
-const (
-	waitForMinedTxTimeout = 60
-	watchEventTimeout     = 60
-)
-
 type Client struct {
 	protocolSession *contracts.LivepeerProtocolSession
 	tokenSession    *contracts.LivepeerTokenSession
@@ -45,9 +35,11 @@ type Client struct {
 	addr         common.Address
 	protocolAddr common.Address
 	tokenAddr    common.Address
+	rpcTimeout   time.Duration
+	eventTimeout time.Duration
 }
 
-func NewClient(transactOpts *bind.TransactOpts, backend *ethclient.Client, protocolAddr common.Address) (*Client, error) {
+func NewClient(transactOpts *bind.TransactOpts, backend *ethclient.Client, protocolAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
 	protocol, err := contracts.NewLivepeerProtocol(protocolAddr, backend)
 
 	if err != nil {
@@ -79,6 +71,8 @@ func NewClient(transactOpts *bind.TransactOpts, backend *ethclient.Client, proto
 		transactOpts.From,
 		protocolAddr,
 		tokenAddr,
+		rpcTimeout,
+		eventTimeout,
 	}, nil
 }
 
@@ -127,13 +121,16 @@ func DeployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *ethclient.
 	return addr, tx, nil
 }
 
-func waitForMinedTx(ctx context.Context, backend *ethclient.Client, txHash common.Hash) (*types.Receipt, error) {
+func waitForMinedTx(backend *ethclient.Client, rpcTimeout time.Duration, txHash common.Hash) (*types.Receipt, error) {
 	var (
 		receipt *types.Receipt
+		ctx     context.Context
 		err     error
 	)
 
-	for i := 0; i < waitForMinedTxTimeout; i++ {
+	for i := 0; i < 60; i++ {
+		ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
 		receipt, err = backend.TransactionReceipt(ctx, txHash)
 
 		if err != nil && err != ethereum.NotFound {
@@ -144,17 +141,13 @@ func waitForMinedTx(ctx context.Context, backend *ethclient.Client, txHash commo
 			break
 		}
 
-		time.Sleep(time.Second)
+		time.Sleep(1 * time.Second)
 	}
 
-	if receipt == nil {
-		return nil, ethereum.NotFound
-	} else {
-		return receipt, nil
-	}
+	return receipt, nil
 }
 
-func (c *Client) subscribeToEvent(ctx context.Context, contractAddr common.Address, eventHash common.Hash) (ethereum.Subscription, <-chan types.Log, error) {
+func (c *Client) SubscribeToEvent(contractAddr common.Address, eventHash common.Hash) (ethereum.Subscription, <-chan types.Log, error) {
 	var (
 		logsSub ethereum.Subscription
 		logsCh  = make(chan types.Log)
@@ -165,6 +158,8 @@ func (c *Client) subscribeToEvent(ctx context.Context, contractAddr common.Addre
 		Topics:    [][]common.Hash{[]common.Hash{eventHash}},
 	}
 
+	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
+
 	logsSub, err := c.backend.SubscribeFilterLogs(ctx, q, logsCh)
 
 	if err != nil {
@@ -174,10 +169,10 @@ func (c *Client) subscribeToEvent(ctx context.Context, contractAddr common.Addre
 	return logsSub, logsCh, nil
 }
 
-func (c *Client) watchEvent(logsCh <-chan types.Log) (types.Log, error) {
+func (c *Client) WatchEvent(logsCh <-chan types.Log) (types.Log, error) {
 	var (
 		receivedLog *types.Log
-		timeout     = time.NewTimer(watchEventTimeout * time.Second)
+		timer       = time.NewTimer(c.eventTimeout)
 	)
 
 	for {
@@ -186,7 +181,7 @@ func (c *Client) watchEvent(logsCh <-chan types.Log) (types.Log, error) {
 			if !log.Removed {
 				receivedLog = &log
 			}
-		case <-timeout.C:
+		case <-timer.C:
 			return types.Log{}, fmt.Errorf("watchEvent timed out")
 		}
 
@@ -198,7 +193,7 @@ func (c *Client) watchEvent(logsCh <-chan types.Log) (types.Log, error) {
 	return *receivedLog, nil
 }
 
-func (c *Client) RoundInfo(ctx context.Context) (*big.Int, *big.Int, *big.Int, error) {
+func (c *Client) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
 	cr, err := c.protocolSession.CurrentRound()
 
 	if err != nil {
@@ -216,6 +211,8 @@ func (c *Client) RoundInfo(ctx context.Context) (*big.Int, *big.Int, *big.Int, e
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
+	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
 
 	block, err := c.backend.BlockByNumber(ctx, nil)
 
@@ -244,9 +241,9 @@ func (c *Client) CurrentRoundInitialized() (bool, error) {
 	}
 
 	if lir.Cmp(cr) == -1 {
-		return true, nil
-	} else {
 		return false, nil
+	} else {
+		return true, nil
 	}
 }
 
@@ -254,10 +251,10 @@ func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegmen
 	return c.protocolSession.Transcoder(blockRewardCut, feeShare, pricePerSegment)
 }
 
-func (c *Client) Bond(ctx context.Context, amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
+func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
 	tokenJson, _ := abi.JSON(strings.NewReader(contracts.LivepeerTokenABI))
 
-	logsSub, logsCh, err := c.subscribeToEvent(ctx, c.tokenAddr, tokenJson.Events["Approval"].Id())
+	logsSub, logsCh, err := c.SubscribeToEvent(c.tokenAddr, tokenJson.Events["Approval"].Id())
 
 	defer logsSub.Unsubscribe()
 
@@ -267,7 +264,7 @@ func (c *Client) Bond(ctx context.Context, amount *big.Int, toAddr common.Addres
 		return nil, err
 	}
 
-	_, err = c.watchEvent(logsCh)
+	_, err = c.WatchEvent(logsCh)
 
 	if err != nil {
 		return nil, err
