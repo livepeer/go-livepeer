@@ -21,7 +21,10 @@ var (
 	dir              = usr.HomeDir
 	keyStore         = keystore.NewKeyStore(filepath.Join(dir, ".lpTest/keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 	defaultPassword  = ""
-	testRewardLength = 30
+	rpcTimeout       = 10 * time.Second
+	eventTimeout     = 30 * time.Second
+	minedTxTimeout   = 60
+	testRewardLength = 60
 )
 
 func NewTransactorForAccount(account accounts.Account) (*bind.TransactOpts, error) {
@@ -40,13 +43,32 @@ func NewTransactorForAccount(account accounts.Account) (*bind.TransactOpts, erro
 	return transactOpts, err
 }
 
+func checkRound(t *testing.T, client *Client) {
+	ok, err := client.CurrentRoundInitialized()
+
+	if err != nil {
+		t.Fatalf("Client failed CurrentRoundInitialized: %v", err)
+	}
+
+	if !ok {
+		tx, err := client.InitializeRound()
+
+		if err != nil {
+			t.Fatalf("Client failed InitializeRound: %v", err)
+		}
+
+		_, err = waitForMinedTx(client.backend, rpcTimeout, minedTxTimeout, tx.Hash())
+
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+	}
+}
+
 func TestReward(t *testing.T) {
 	var (
-		tx             *types.Transaction
-		err            error
-		rpcTimeout     = 10 * time.Second
-		eventTimeout   = 30 * time.Second
-		minedTxTimeout = 60
+		tx  *types.Transaction
+		err error
 	)
 
 	backend, err := ethclient.Dial("/Users/yondonfu/.lpTest/geth.ipc")
@@ -213,7 +235,7 @@ func TestReward(t *testing.T) {
 		"TranscoderPools": transcoderPoolsAddr,
 		"SafeMath":        safeMathAddr,
 	}
-	protocolAddr, tx, err := DeployLivepeerProtocol(transactOpts0, backend, protocolLibraries, 1, big.NewInt(20), big.NewInt(2))
+	protocolAddr, tx, err := DeployLivepeerProtocol(transactOpts0, backend, protocolLibraries, 1, big.NewInt(40), big.NewInt(2))
 
 	if err != nil {
 		t.Fatalf("Failed to deploy protocol: %v", err)
@@ -271,6 +293,14 @@ func TestReward(t *testing.T) {
 
 	// TRANSCODER REGISTRATION & BONDING
 
+	// Start at the beginning of a round to avoid timing edge cases in tests
+	err = waitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
+
+	if err != nil {
+		t.Fatalf("Failed to wait until next round: %v", err)
+	}
+
+	checkRound(t, client0)
 	tx, err = client0.Transcoder(10, 5, big.NewInt(100))
 
 	if err != nil {
@@ -283,24 +313,34 @@ func TestReward(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 
-	_, err = client0.Bond(big.NewInt(100), accounts[0].Address)
+	checkRound(t, client0)
+	tx, err = client0.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 0 failed to bond: %v", err)
 	}
 
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	checkRound(t, client1)
 	_, err = client1.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 1 failed to bond: %v", err)
 	}
 
+	checkRound(t, client2)
 	_, err = client2.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 2 failed to bond: %v", err)
 	}
 
+	checkRound(t, client3)
 	_, err = client3.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
@@ -310,25 +350,7 @@ func TestReward(t *testing.T) {
 	// REWARD
 
 	for i := 0; i < testRewardLength; i++ {
-		ok, err := client0.CurrentRoundInitialized()
-
-		if err != nil {
-			t.Fatalf("Client 0 failed CurrentRoundInitialized: %v", err)
-		}
-
-		if !ok {
-			tx, err := client0.InitializeRound()
-
-			if err != nil {
-				t.Fatalf("Client 0 failed InitializeRound: %v", err)
-			}
-
-			_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
-
-			if err != nil {
-				t.Fatalf("%v", err)
-			}
-		}
+		checkRound(t, client0)
 
 		valid, err := client0.ValidRewardTimeWindow()
 

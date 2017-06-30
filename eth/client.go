@@ -193,26 +193,26 @@ func (c *Client) WatchEvent(logsCh <-chan types.Log) (types.Log, error) {
 	}
 }
 
-func (c *Client) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
+func (c *Client) RoundInfo() (*big.Int, *big.Int, *big.Int, *big.Int, error) {
 	cr, err := c.protocolSession.CurrentRound()
 
 	if err != nil {
 		glog.Errorf("Error getting current round: %v", err)
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	cn, err := c.protocolSession.CycleNum()
 
 	if err != nil {
 		glog.Errorf("Error getting current cycle number: %v", err)
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	crsb, err := c.protocolSession.CurrentRoundStartBlock()
 
 	if err != nil {
 		glog.Errorf("Error getting current round start block: %v", err)
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
@@ -221,14 +221,22 @@ func (c *Client) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
 
 	if err != nil {
 		glog.Errorf("Error getting latest block number: %v", err)
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	return cr, cn, new(big.Int).Sub(block.Number(), crsb), nil
+	return cr, cn, crsb, block.Number(), nil
 }
 
 func (c *Client) InitializeRound() (*types.Transaction, error) {
-	return c.protocolSession.InitializeRound()
+	tx, err := c.protocolSession.InitializeRound()
+
+	if err != nil {
+		glog.Errorf("Error initializing round: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("[%v] Submitted transaction %v. Initialize round", c.addr.Hex(), tx.Hash().Hex())
+	return tx, nil
 }
 
 func (c *Client) CurrentRoundInitialized() (bool, error) {
@@ -261,7 +269,7 @@ func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegmen
 		return nil, err
 	}
 
-	glog.Infof("Submitted transaction %v. Register as a transcoder", tx.Hash().Hex())
+	glog.Infof("[%v] Submitted transaction %v. Register as a transcoder", c.addr.Hex(), tx.Hash().Hex())
 	return tx, nil
 }
 
@@ -286,7 +294,7 @@ func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transactio
 		return nil, err
 	}
 
-	glog.Infof("Submitted transaction %v. Approve %v LPTU transfer by LivepeerProtocol", tx.Hash().Hex(), amount)
+	glog.Infof("[%v] Submitted transaction %v. Approve %v LPTU transfer by LivepeerProtocol", c.addr.Hex(), tx.Hash().Hex(), amount)
 
 	_, err = c.WatchEvent(logsCh)
 
@@ -302,7 +310,14 @@ func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transactio
 		return nil, err
 	}
 
-	glog.Infof("Submitted transaction %v. Bond %v LPTU to %v", tx.Hash().Hex(), amount, toAddr.Hex())
+	cr, cn, crsb, cb, err := c.RoundInfo()
+
+	if err != nil {
+		glog.Errorf("Error getting round info: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("[%v] Submitted transaction %v. Bond %v LPTU to %v at CR %v CN %v CRSB %v CB %v", c.addr.Hex(), tx.Hash().Hex(), amount, toAddr.Hex(), cr, cn, crsb, cb)
 	return tx, nil
 }
 
@@ -318,7 +333,14 @@ func (c *Client) Reward() (*types.Transaction, error) {
 		return nil, err
 	}
 
-	glog.Infof("Submitted transaction %v. Called reward", tx.Hash().Hex())
+	cr, cn, crsb, cb, err := c.RoundInfo()
+
+	if err != nil {
+		glog.Errorf("Error getting round info: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("[%v] Submitted transaction %v. Reward at CR %v CN %v CRSB %v CB %v", c.addr.Hex(), tx.Hash().Hex(), cr, cn, crsb, cb)
 	return tx, nil
 }
 
@@ -330,6 +352,6 @@ func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (*types.Transa
 		return nil, err
 	}
 
-	glog.Infof("Submitted transaction %v. Transfer %v LPTU to %v", tx.Hash().Hex(), amount, toAddr.Hex())
+	glog.Infof("[%v] Submitted transaction %v. Transfer %v LPTU to %v", c.addr.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
 	return tx, nil
 }
