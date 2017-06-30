@@ -3,6 +3,7 @@ package net
 import (
 	"bufio"
 	"errors"
+	"sync"
 
 	"github.com/golang/glog"
 	net "github.com/libp2p/go-libp2p-net"
@@ -19,9 +20,10 @@ type BasicStream struct {
 	Dec    multicodec.Decoder
 	W      *bufio.Writer
 	R      *bufio.Reader
+	l      *sync.Mutex
 }
 
-func WrapStream(s net.Stream) *BasicStream {
+func NewBasicStream(s net.Stream) *BasicStream {
 	reader := bufio.NewReader(s)
 	writer := bufio.NewWriter(s)
 	// This is where we pick our specific multicodec. In order to change the
@@ -35,7 +37,14 @@ func WrapStream(s net.Stream) *BasicStream {
 		W:      writer,
 		Enc:    enc,
 		Dec:    dec,
+		l:      &sync.Mutex{},
 	}
+}
+
+func (ws *BasicStream) Decode(n interface{}) error {
+	ws.l.Lock()
+	defer ws.l.Unlock()
+	return ws.Dec.Decode(n)
 }
 
 func (ws *BasicStream) WriteSegment(seqNo uint64, strmID string, data []byte) error {

@@ -120,7 +120,7 @@ func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
 func (nw *BasicVideoNetwork) SetupProtocol() error {
 	glog.Infof("Setting up protocol: %v", Protocol)
 	nw.NetworkNode.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
-		ws := WrapStream(stream)
+		ws := NewBasicStream(stream)
 		nw.NetworkNode.streams[stream.Conn().RemotePeer()] = ws
 
 		for {
@@ -137,13 +137,13 @@ func (nw *BasicVideoNetwork) SetupProtocol() error {
 }
 
 func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
-	glog.Infof("%v Received a stream from %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
 	var msg Msg
 
-	if err := ws.Dec.Decode(&msg); err != nil {
+	if err := ws.Decode(&msg); err != nil {
 		glog.Errorf("Got error decoding msg: %v", err)
 		return err
 	}
+	glog.Infof("%v Received a message %v from %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), msg.Op, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
 	switch msg.Op {
 	case SubReqID:
 		sr, ok := msg.Data.(SubReqMsg)
@@ -180,66 +180,6 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 		return ErrUnknownMsg
 	}
 
-}
-
-func streamHandler_old(nw *BasicVideoNetwork, stream net.Stream) error {
-	glog.Infof("%v Received a stream from %v", peer.IDHexEncode(stream.Conn().LocalPeer()), peer.IDHexEncode(stream.Conn().RemotePeer()))
-	var msg Msg
-
-	ws := WrapStream(stream)
-	err := ws.Dec.Decode(&msg)
-
-	if err != nil {
-		glog.Errorf("Got error decoding msg: %v", err)
-		return err
-	}
-
-	//Video Protocol:
-	//	- StreamData
-	//	- FinishStream
-	//	- SubReq
-	//	- CancelSub
-
-	//Livepeer Protocol:
-	//	- TranscodeInfo
-	//	- TranscodeInfoAck (TranscodeInfo will re-send until getting an Ack)
-	switch msg.Op {
-	case SubReqID:
-		sr, ok := msg.Data.(SubReqMsg)
-		if !ok {
-			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
-			return ErrProtocol
-		}
-		// glog.Infof("Got Sub Req: %v", sr)
-		return handleSubReq(nw, sr, ws)
-	case CancelSubID:
-		cr, ok := msg.Data.(CancelSubMsg)
-		if !ok {
-			glog.Errorf("Cannot convert CancelSubMsg: %v", msg.Data)
-			return ErrProtocol
-		}
-		return handleCancelSubReq(nw, cr, ws.Stream.Conn().RemotePeer())
-	case StreamDataID:
-		// glog.Infof("Got Stream Data: %v", msg.Data)
-		//Enque it into the subscriber
-		sd, ok := msg.Data.(StreamDataMsg)
-		if !ok {
-			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
-		}
-		return handleStreamData(nw, sd)
-	case FinishStreamID:
-		fs, ok := msg.Data.(FinishStreamMsg)
-		if !ok {
-			glog.Errorf("Cannot convert FinishStreamMsg: %v", msg.Data)
-		}
-		return handleFinishStream(nw, fs)
-	default:
-		glog.Infof("Unknown Data: %v -- closing stream", msg)
-		stream.Close()
-		return ErrUnknownMsg
-	}
-
-	return nil
 }
 
 func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) error {

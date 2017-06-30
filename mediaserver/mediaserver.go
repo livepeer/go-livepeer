@@ -63,7 +63,20 @@ func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
 	s.LPMS.HandleRTMPPlay(s.makeGetRTMPStreamHandler())
 
 	http.HandleFunc("/transcode", func(w http.ResponseWriter, r *http.Request) {
-		//Tell the LivepeerNode to create a job
+		//Temporary endpoint just so we can invoke a transcode job.  This should be invoked by transcoders monitoring the smart contract.
+		strmID := r.URL.Query().Get("strmID")
+		if strmID == "" {
+			http.Error(w, "Need to specify strmID", 500)
+		}
+
+		// 2 profiles is too much for my tiny laptop...
+		// ids, err := s.LivepeerNode.Transcode(net.TranscodeConfig{StrmID: strmID, Profiles: []net.VideoProfile{net.P_144P_30FPS_16_9, net.P_240P_30FPS_16_9}})
+		ids, err := s.LivepeerNode.Transcode(net.TranscodeConfig{StrmID: strmID, Profiles: []net.VideoProfile{net.P_240P_30FPS_16_9}})
+		if err != nil {
+			glog.Errorf("Error transcoding: %v", err)
+			http.Error(w, "Error transcoding.", 500)
+		}
+		glog.Infof("New Stream IDs: %v", ids)
 	})
 
 	http.HandleFunc("/createStream", func(w http.ResponseWriter, r *http.Request) {

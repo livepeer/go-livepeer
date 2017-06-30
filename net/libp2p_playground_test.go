@@ -30,7 +30,7 @@ func simpleNodes() (*NetworkNode, *NetworkNode) {
 }
 
 func simpleHandler(ns net.Stream, txt string) {
-	ws := WrapStream(ns)
+	ws := NewBasicStream(ns)
 	// err := ws.Enc.Encode(&SimpleMsg{Msg: txt})
 	// if err != nil {
 	// 	glog.Errorf("Encode error: %v", err)
@@ -93,7 +93,7 @@ func simpleHandlerLoop(ws *BasicStream, txt string) {
 }
 
 func simpleSend(ns net.Stream, txt string, t *testing.T) {
-	ws := WrapStream(ns)
+	ws := NewBasicStream(ns)
 	err := ws.Enc.Encode(&SimpleMsg{Msg: txt})
 	if err != nil {
 		t.Errorf("Encoding error: %v", err)
@@ -111,7 +111,7 @@ func TestBackAndForth(t *testing.T) {
 	time.Sleep(time.Second)
 
 	n2.PeerHost.SetStreamHandler("/test/1.0", func(stream net.Stream) {
-		// ws := WrapStream(stream)
+		// ws := NewBasicStream(stream)
 		// glog.Infof("ws in n2 handler: %p", ws)
 		// defer stream.Close()
 		simpleHandler(stream, "pong")

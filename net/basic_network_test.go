@@ -53,7 +53,7 @@ func TestSendBroadcast(t *testing.T) {
 	var finishStrm FinishStreamMsg
 	//Set up handler
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
-		ws := WrapStream(s)
+		ws := NewBasicStream(s)
 		var msg Msg
 		err := ws.Dec.Decode(&msg)
 		if err != nil {
@@ -78,7 +78,7 @@ func TestSendBroadcast(t *testing.T) {
 	}
 
 	//Add the stream as a listner in the broadcaster so it can be used to send out the message
-	b1.listeners[peer.IDHexEncode(ns1.Conn().RemotePeer())] = WrapStream(ns1)
+	b1.listeners[peer.IDHexEncode(ns1.Conn().RemotePeer())] = NewBasicStream(ns1)
 
 	if b1.working != false {
 		t.Errorf("broadcaster shouldn't be working yet")
@@ -127,7 +127,7 @@ func TestHandleBroadcast(t *testing.T) {
 	var cancelMsg CancelSubMsg
 	//Set up n2 handler so n1 can create a stream to it.
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
-		ws := WrapStream(s)
+		ws := NewBasicStream(s)
 		var msg Msg
 		err := ws.Dec.Decode(&msg)
 		if err != nil {
@@ -211,7 +211,7 @@ func TestSendSubscribe(t *testing.T) {
 	var cancelMsg CancelSubMsg
 	//Set up handler for simple node (get a subReqMsg, write a streamDataMsg back)
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
-		ws := WrapStream(s)
+		ws := NewBasicStream(s)
 		for {
 			var msg Msg
 			err := ws.Dec.Decode(&msg)
@@ -318,7 +318,7 @@ func TestHandleSubscribe(t *testing.T) {
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
-		ws := WrapStream(s)
+		ws := NewBasicStream(s)
 		var msg Msg
 		err := ws.Dec.Decode(&msg)
 		if err != nil {
@@ -338,7 +338,7 @@ func TestHandleSubscribe(t *testing.T) {
 
 	l := b1.listeners[peer.IDHexEncode(n2.Identity)]
 	if l == nil || reflect.TypeOf(l) != reflect.TypeOf(&BasicStream{}) {
-		t.Errorf("Expecting l to be assigned a WrapperdStream, but got :%v", reflect.TypeOf(l))
+		t.Errorf("Expecting l to be assigned a BasicStream, but got :%v", reflect.TypeOf(l))
 	}
 	delete(n1.broadcasters, "strmID")
 
