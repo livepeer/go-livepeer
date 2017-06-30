@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"errors"
+	"fmt"
 
 	"github.com/golang/glog"
 	crypto "github.com/libp2p/go-libp2p-crypto"
@@ -11,7 +13,10 @@ import (
 	"github.com/livepeer/libp2p-livepeer/eth"
 	"github.com/livepeer/libp2p-livepeer/net"
 	"github.com/livepeer/lpms/stream"
+	lptr "github.com/livepeer/lpms/transcoder"
 )
+
+var ErrTranscode = errors.New("ErrTranscode")
 
 //NodeID can be converted from libp2p PeerID.
 type NodeID string
@@ -60,6 +65,74 @@ func (n *LivepeerNode) CreateTranscodeJob( /*stream information + transcode conf
 	//Verify the stream exists(assume it's a local stream)
 
 	//Call eth client to create the job
+}
+
+//Transcode transcodes one stream into multiple stream, and returns a list of StreamIDs, in the order of the video profiles.
+func (n *LivepeerNode) Transcode(config net.TranscodeConfig) ([]StreamID, error) {
+	// strmID := StreamID(config.StrmID)
+	s, err := n.VideoNetwork.GetSubscriber(config.StrmID)
+	if err != nil {
+		glog.Errorf("Error getting subscriber from network: %v", err)
+	}
+
+	transcoders := make(map[string]*lptr.FFMpegSegmentTranscoder)
+	broadcasters := make(map[string]net.Broadcaster)
+	ids := make(map[string]StreamID)
+	results := make([]StreamID, len(config.Profiles), len(config.Profiles))
+
+	for i, p := range config.Profiles {
+		transcoders[p.Name] = lptr.NewFFMpegSegmentTranscoder(p.Bitrate, p.Framerate, p.Resolution, "", "./tmp")
+		strmID := MakeStreamID(n.Identity, RandomVideoID(), p.Name)
+		b, err := n.VideoNetwork.GetBroadcaster(strmID.String())
+		if err != nil {
+			glog.Errorf("Error creating broadcaster: %v", err)
+			return nil, ErrTranscode
+		}
+		broadcasters[p.Name] = b
+		ids[p.Name] = strmID
+		results[i] = strmID
+	}
+
+	s.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
+		if eof {
+			glog.Infof("Stream finished")
+		}
+
+		//Decode the segment
+		dec := gob.NewDecoder(bytes.NewReader(data))
+		var seg stream.HLSSegment
+		err := dec.Decode(&seg)
+		if err != nil {
+			glog.Errorf("Error decoding byte array into segment: %v", err)
+		}
+
+		for _, p := range config.Profiles {
+			t := transcoders[p.Name]
+			td, err := t.Transcode(seg.Data)
+			if err != nil {
+				glog.Errorf("Error transcoding for %v: %v", p.Name, err)
+			} else {
+				//Encode the transcoded segment
+				b := broadcasters[p.Name]
+				newSeg := stream.HLSSegment{SeqNo: seqNo, Name: fmt.Sprintf("%s_%d.ts", ids[p.Name], seqNo), Data: td, Duration: seg.Duration}
+				var buf bytes.Buffer
+				enc := gob.NewEncoder(&buf)
+				err = enc.Encode(newSeg)
+				if err != nil {
+					glog.Errorf("Error encoding segment to []byte: %v", err)
+					continue
+				}
+
+				//Broadcast the transcoded segment
+				err = b.Broadcast(seqNo, buf.Bytes())
+				if err != nil {
+					glog.Errorf("Error broadcasting segment to network: %v", err)
+				}
+			}
+		}
+	})
+
+	return results, nil
 }
 
 //Monitor the smart contract for job creation (as a transcoder)

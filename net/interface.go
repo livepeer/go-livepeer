@@ -53,17 +53,27 @@ type Subscriber interface {
 //480p_30fps: 2000kbps
 //360p_30fps: 1000kbps
 //240p_30fps: 700kbps
-type TranscodeProfile struct {
-	Name      string
-	Bitrate   uint
-	Framerate uint
+//144p_30fps: 400kbps
+type VideoProfile struct {
+	Name        string
+	Bitrate     string
+	Framerate   uint
+	AspectRatio string
+	Resolution  string
 }
 
 type TranscodeConfig struct {
 	StrmID   string
-	Profiles []TranscodeProfile
+	Profiles []VideoProfile
 }
 
 type Transcoder interface {
 	Transcode(strmID string, config TranscodeConfig, gotPlaylist func(masterPlaylist []byte)) error
 }
+
+//Some sample video profiles
+var (
+	P_720P_60FPS_16_9 = VideoProfile{Name: "P_720P_60FPS_16_9", Bitrate: "6000k", Framerate: 60, AspectRatio: "16:9", Resolution: "1280:720"}
+	P_240P_30FPS_16_9 = VideoProfile{Name: "P_240P_30FPS_16_9", Bitrate: "700k", Framerate: 30, AspectRatio: "16:9", Resolution: "426:240"}
+	P_144P_30FPS_16_9 = VideoProfile{Name: "P_144P_30FPS_16_9", Bitrate: "400k", Framerate: 30, AspectRatio: "16:9", Resolution: "256:144"}
+)
