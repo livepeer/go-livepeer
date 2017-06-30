@@ -100,11 +100,11 @@ func TestTranscode(t *testing.T) {
 		t.Errorf("Error transcoding: %v", err)
 	}
 
-	if !strings.HasSuffix(ids[0].String(), "P_144P_30FPS_16_9") {
+	if !strings.HasSuffix(ids[0].String(), "P144P30FPS169") {
 		t.Errorf("Bad id0: %v", ids[0])
 	}
 
-	if !strings.HasSuffix(ids[1].String(), "P_240P_30FPS_16_9") {
+	if !strings.HasSuffix(ids[1].String(), "P240P30FPS169") {
 		t.Errorf("Bad id1: %v", ids[1])
 	}
 
