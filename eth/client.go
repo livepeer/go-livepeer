@@ -95,6 +95,44 @@ func NewClient(transactOpts *bind.TransactOpts, backend *ethclient.Client, proto
 	}, nil
 }
 
+func (c *Client) SubscribeToJobEvent() (ethereum.Subscription, chan types.Log, error) {
+	var (
+		logsCh = make(chan types.Log)
+	)
+
+	protocolJson, err := abi.JSON(strings.NewReader(contracts.LivepeerProtocolABI))
+
+	if err != nil {
+		glog.Errorf("Error decoding ABI into JSON: %v", err)
+		return nil, nil, err
+	}
+
+	q := ethereum.FilterQuery{
+		Addresses: []common.Address{c.protocolAddr},
+		// Topics:    [][]common.Hash{[]common.Hash{protocolJson.Events["Job"].Id()}, {}, []common.Hash{common.BytesToHash(c.addr[:])}},
+		Topics: [][]common.Hash{[]common.Hash{protocolJson.Events["Job"].Id()}},
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
+
+	logsSub, err := c.backend.SubscribeFilterLogs(ctx, q, logsCh)
+
+	go monitorJobEvent(logsCh)
+
+	return logsSub, logsCh, nil
+}
+
+func monitorJobEvent(logsCh chan types.Log) {
+	for {
+		select {
+		case log := <-logsCh:
+			if !log.Removed {
+				glog.Infof("Received a job")
+			}
+		}
+	}
+}
+
 func DeployLibrary(transactOpts *bind.TransactOpts, backend *ethclient.Client, name LibraryType, libraries map[string]common.Address) (common.Address, *types.Transaction, error) {
 	var (
 		addr common.Address
@@ -335,6 +373,21 @@ func (c *Client) Reward() (*types.Transaction, error) {
 	glog.Infof("[%v] Submitted transaction %v. Reward at CR %v CN %v CRSB %v CB %v", c.addr.Hex(), tx.Hash().Hex(), cr, cn, crsb, cb)
 	return tx, nil
 }
+
+// TODO: Change streamId to its proper type - a streamId is of the format NodeID|VideoID|Rendition
+func (c *Client) Job(streamId *big.Int, transcodingOptions [32]byte, maxPricePerSegment *big.Int) (*types.Transaction, error) {
+	tx, err := c.protocolSession.Job(streamId, transcodingOptions, maxPricePerSegment)
+
+	if err != nil {
+		glog.Errorf("Error creating job: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("[%v] Submitted transaction %v. Creating a job for stream id %v", c.addr.Hex(), tx.Hash().Hex(), streamId)
+	return tx, nil
+}
+
+// Token methods
 
 func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error) {
 	tx, err := c.tokenSession.Transfer(toAddr, amount)
