@@ -43,7 +43,7 @@ func NewTransactorForAccount(account accounts.Account) (*bind.TransactOpts, erro
 	return transactOpts, err
 }
 
-func checkRound(t *testing.T, client *Client) {
+func checkRoundAndInit(t *testing.T, client *Client) {
 	ok, err := client.CurrentRoundInitialized()
 
 	if err != nil {
@@ -300,7 +300,7 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Failed to wait until next round: %v", err)
 	}
 
-	checkRound(t, client0)
+	checkRoundAndInit(t, client0)
 	tx, err = client0.Transcoder(10, 5, big.NewInt(100))
 
 	if err != nil {
@@ -313,7 +313,7 @@ func TestReward(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 
-	checkRound(t, client0)
+	checkRoundAndInit(t, client0)
 	tx, err = client0.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
@@ -326,21 +326,21 @@ func TestReward(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 
-	checkRound(t, client1)
+	checkRoundAndInit(t, client1)
 	_, err = client1.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 1 failed to bond: %v", err)
 	}
 
-	checkRound(t, client2)
+	checkRoundAndInit(t, client2)
 	_, err = client2.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 2 failed to bond: %v", err)
 	}
 
-	checkRound(t, client3)
+	checkRoundAndInit(t, client3)
 	_, err = client3.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
@@ -350,7 +350,7 @@ func TestReward(t *testing.T) {
 	// REWARD
 
 	for i := 0; i < testRewardLength; i++ {
-		checkRound(t, client0)
+		checkRoundAndInit(t, client0)
 
 		valid, err := client0.ValidRewardTimeWindow()
 

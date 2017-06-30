@@ -155,24 +155,6 @@ func DeployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *ethclient.
 	return addr, tx, nil
 }
 
-func (c *Client) SubscribeToEvent(contractAddr common.Address, eventHash common.Hash, logsCh chan<- types.Log) (ethereum.Subscription, error) {
-	q := ethereum.FilterQuery{
-		Addresses: []common.Address{contractAddr},
-		Topics:    [][]common.Hash{[]common.Hash{eventHash}},
-	}
-
-	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
-
-	logsSub, err := c.backend.SubscribeFilterLogs(ctx, q, logsCh)
-
-	if err != nil {
-		glog.Errorf("Error subscribing to filter logs: %v", err)
-		return nil, err
-	}
-
-	return logsSub, nil
-}
-
 func (c *Client) WatchEvent(logsCh <-chan types.Log) (types.Log, error) {
 	var (
 		timer = time.NewTimer(c.eventTimeout)
@@ -274,6 +256,10 @@ func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegmen
 }
 
 func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
+	var (
+		logsCh = make(chan types.Log)
+	)
+
 	tokenJson, err := abi.JSON(strings.NewReader(contracts.LivepeerTokenABI))
 
 	if err != nil {
@@ -281,8 +267,14 @@ func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transactio
 		return nil, err
 	}
 
-	logsCh := make(chan types.Log)
-	logsSub, err := c.SubscribeToEvent(c.tokenAddr, tokenJson.Events["Approval"].Id(), logsCh)
+	q := ethereum.FilterQuery{
+		Addresses: []common.Address{c.tokenAddr},
+		Topics:    [][]common.Hash{[]common.Hash{tokenJson.Events["Approval"].Id()}, []common.Hash{common.BytesToHash(c.addr[:])}},
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
+
+	logsSub, err := c.backend.SubscribeFilterLogs(ctx, q, logsCh)
 
 	defer logsSub.Unsubscribe()
 	defer close(logsCh)
