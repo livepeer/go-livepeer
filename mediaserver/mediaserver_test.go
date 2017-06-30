@@ -51,25 +51,28 @@ type StubNetwork struct {
 	S *StubSubscriber
 }
 
-func (n *StubNetwork) NewBroadcaster(strmID string) net.Broadcaster {
+// func (n *StubNetwork) NewBroadcaster(strmID string) net.Broadcaster {
+// 	n.B = &StubBroadcaster{Data: make(map[uint64][]byte)}
+// 	return n.B
+// }
+
+func (n *StubNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error) {
 	n.B = &StubBroadcaster{Data: make(map[uint64][]byte)}
-	return n.B
+	return n.B, nil
 }
 
-func (n *StubNetwork) GetBroadcaster(strmID string) net.Broadcaster {
-	n.B = &StubBroadcaster{Data: make(map[uint64][]byte)}
-	return n.B
-}
+// func (n *StubNetwork) NewSubscriber(strmID string) net.Subscriber {
+// 	n.S = &StubSubscriber{}
+// 	return n.S
+// }
 
-func (n *StubNetwork) NewSubscriber(strmID string) net.Subscriber {
+func (n *StubNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
 	n.S = &StubSubscriber{}
-	return n.S
+	return n.S, nil
 }
 
-func (n *StubNetwork) GetSubscriber(strmID string) net.Subscriber {
-	n.S = &StubSubscriber{}
-	return n.S
-}
+func (n *StubNetwork) Connect(nodeID, nodeAddr string) error { return nil }
+func (n *StubNetwork) SetupProtocol() error                  { return nil }
 
 type StubBroadcaster struct {
 	Data map[uint64][]byte
@@ -83,7 +86,7 @@ func (b *StubBroadcaster) Finish() error { return nil }
 
 type StubSubscriber struct{}
 
-func (s *StubSubscriber) Subscribe(ctx context.Context, f func(seqNo uint64, data []byte)) error {
+func (s *StubSubscriber) Subscribe(ctx context.Context, f func(seqNo uint64, data []byte, eof bool)) error {
 	glog.Infof("Calling StubSubscriber!!!")
 	s1 := stream.HLSSegment{SeqNo: 0, Name: "strmID_01.ts", Data: []byte("test data"), Duration: 8.001}
 	s2 := stream.HLSSegment{SeqNo: 1, Name: "strmID_02.ts", Data: []byte("test data"), Duration: 8.001}
@@ -97,7 +100,7 @@ func (s *StubSubscriber) Subscribe(ctx context.Context, f func(seqNo uint64, dat
 			glog.Errorf("Error encoding segment to []byte: %v", err)
 			continue
 		}
-		f(uint64(i), buf.Bytes())
+		f(uint64(i), buf.Bytes(), false)
 	}
 	return nil
 }

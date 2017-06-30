@@ -3,10 +3,12 @@ package net
 import "context"
 
 type VideoNetwork interface {
-	NewBroadcaster(strmID string) Broadcaster
-	GetBroadcaster(strmID string) Broadcaster
-	NewSubscriber(strmID string) Subscriber
-	GetSubscriber(strmID string) Subscriber
+	// NewBroadcaster(strmID string) Broadcaster
+	GetBroadcaster(strmID string) (Broadcaster, error)
+	// DeleteBroadcaster(strmID string)
+	// NewSubscriber(strmID string) Subscriber
+	GetSubscriber(strmID string) (Subscriber, error)
+	// DeleteSubscriber(strmID string)
 	Connect(nodeID, nodeAddr string) error
 	SetupProtocol() error
 }
@@ -39,7 +41,7 @@ type Broadcaster interface {
 //Example 2:
 //	sub.Unsubscribe() //This is the same with calling cancel()
 type Subscriber interface {
-	Subscribe(ctx context.Context, f func(seqNo uint64, data []byte)) error
+	Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error
 	Unsubscribe() error
 }
 
@@ -51,17 +53,32 @@ type Subscriber interface {
 //480p_30fps: 2000kbps
 //360p_30fps: 1000kbps
 //240p_30fps: 700kbps
-type TranscodeProfile struct {
-	Name      string
-	Bitrate   uint
-	Framerate uint
+//144p_30fps: 400kbps
+type VideoProfile struct {
+	Name        string
+	Bitrate     string
+	Framerate   uint
+	AspectRatio string
+	Resolution  string
 }
 
 type TranscodeConfig struct {
 	StrmID   string
-	Profiles []TranscodeProfile
+	Profiles []VideoProfile
 }
 
 type Transcoder interface {
 	Transcode(strmID string, config TranscodeConfig, gotPlaylist func(masterPlaylist []byte)) error
 }
+
+//Some sample video profiles
+var (
+	P_720P_60FPS_16_9 = VideoProfile{Name: "P720P60FPS169", Bitrate: "6000k", Framerate: 60, AspectRatio: "16:9", Resolution: "1280:720"}
+	P_720P_30FPS_16_9 = VideoProfile{Name: "P720P30FPS169", Bitrate: "4000k", Framerate: 30, AspectRatio: "16:9", Resolution: "1280:720"}
+	P_720P_30FPS_4_3  = VideoProfile{Name: "P720P30FPS43", Bitrate: "4000k", Framerate: 30, AspectRatio: "4:3", Resolution: "960:720"}
+	P_360P_30FPS_16_9 = VideoProfile{Name: "P360P30FPS169", Bitrate: "1000k", Framerate: 30, AspectRatio: "16:9", Resolution: "640:360"}
+	P_360P_30FPS_4_3  = VideoProfile{Name: "P360P30FPS43", Bitrate: "1000k", Framerate: 30, AspectRatio: "4:3", Resolution: "480:360"}
+	P_240P_30FPS_16_9 = VideoProfile{Name: "P240P30FPS169", Bitrate: "700k", Framerate: 30, AspectRatio: "16:9", Resolution: "426:240"}
+	P_240P_30FPS_4_3  = VideoProfile{Name: "P240P30FPS43", Bitrate: "700k", Framerate: 30, AspectRatio: "4:3", Resolution: "320:240"}
+	P_144P_30FPS_16_9 = VideoProfile{Name: "P144P30FPS169", Bitrate: "400k", Framerate: 30, AspectRatio: "16:9", Resolution: "256:144"}
+)

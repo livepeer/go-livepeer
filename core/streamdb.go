@@ -14,8 +14,8 @@ var ErrNotFound = errors.New("NotFound")
 const HLSWaitTime = time.Second * 10
 
 type StreamDB struct {
-	streams map[StreamID]*stream.VideoStream
-	// subscribers  map[StreamID]*stream.StreamSubscriber
+	streams      map[StreamID]*stream.VideoStream
+	subscribers  map[StreamID]*stream.StreamSubscriber
 	hlsBuffers   map[StreamID]*stream.HLSBuffer
 	cancellation map[StreamID]context.CancelFunc
 	SelfAddress  string
@@ -23,8 +23,8 @@ type StreamDB struct {
 
 func NewStreamDB(selfAddr string) *StreamDB {
 	return &StreamDB{
-		streams: make(map[StreamID]*stream.VideoStream),
-		// subscribers:  make(map[StreamID]*stream.StreamSubscriber),
+		streams:      make(map[StreamID]*stream.VideoStream),
+		subscribers:  make(map[StreamID]*stream.StreamSubscriber),
 		hlsBuffers:   make(map[StreamID]*stream.HLSBuffer),
 		cancellation: make(map[StreamID]context.CancelFunc),
 		SelfAddress:  selfAddr}
@@ -32,7 +32,11 @@ func NewStreamDB(selfAddr string) *StreamDB {
 
 func (s *StreamDB) GetStream(id StreamID) *stream.VideoStream {
 	// glog.Infof("Getting stream with %v, %v", id, s.streams[id])
-	return s.streams[id]
+	strm, ok := s.streams[id]
+	if !ok {
+		return nil
+	}
+	return strm
 }
 
 func (s *StreamDB) AddNewStream(strmID StreamID, format stream.VideoFormat) (strm *stream.VideoStream, err error) {
@@ -53,7 +57,11 @@ func (s *StreamDB) DeleteStream(strmID StreamID) {
 }
 
 func (s *StreamDB) GetHLSBuffer(strmID StreamID) *stream.HLSBuffer {
-	return s.hlsBuffers[strmID]
+	buf, ok := s.hlsBuffers[strmID]
+	if !ok {
+		return nil
+	}
+	return buf
 }
 
 func (s *StreamDB) AddNewHLSBuffer(strmID StreamID) *stream.HLSBuffer {
@@ -62,42 +70,46 @@ func (s *StreamDB) AddNewHLSBuffer(strmID StreamID) *stream.HLSBuffer {
 	return buf
 }
 
-// func (self *StreamDB) SubscribeToHLSStream(strmID string, subID string, mux stream.HLSMuxer) error {
-// 	strm := self.streams[StreamID(strmID)]
-// 	if strm == nil {
-// 		return ErrNotFound
-// 	}
+func (s *StreamDB) DeleteHLSBuffer(strmID StreamID) {
+	delete(s.hlsBuffers, strmID)
+}
 
-// 	sub := self.subscribers[StreamID(strmID)]
-// 	if sub == nil {
-// 		sub = stream.NewStreamSubscriber(strm)
-// 		self.subscribers[StreamID(strmID)] = sub
-// 		ctx, cancel := context.WithCancel(context.Background())
-// 		go sub.StartHLSWorker(ctx, HLSWaitTime)
-// 		self.cancellation[StreamID(strmID)] = cancel
-// 	}
+func (self *StreamDB) SubscribeToHLSStream(strmID string, subID string, mux stream.HLSMuxer) error {
+	strm := self.streams[StreamID(strmID)]
+	if strm == nil {
+		return ErrNotFound
+	}
 
-// 	return sub.SubscribeHLS(subID, mux)
-// }
+	sub := self.subscribers[StreamID(strmID)]
+	if sub == nil {
+		sub = stream.NewStreamSubscriber(strm)
+		self.subscribers[StreamID(strmID)] = sub
+		ctx, cancel := context.WithCancel(context.Background())
+		go sub.StartHLSWorker(ctx, HLSWaitTime)
+		self.cancellation[StreamID(strmID)] = cancel
+	}
 
-// func (self *StreamDB) UnsubscribeToHLSStream(strmID string, subID string) {
-// 	sub := self.subscribers[StreamID(strmID)]
-// 	if sub != nil {
-// 		sub.UnsubscribeHLS(subID)
-// 	} else {
-// 		return
-// 	}
+	return sub.SubscribeHLS(subID, mux)
+}
 
-// 	if !sub.HasSubscribers() {
-// 		self.cancellation[StreamID(strmID)]() //Call cancel on hls worker
-// 		delete(self.subscribers, StreamID(strmID))
-// 		sid := StreamID(strmID)
-// 		nid := sid.GetNodeID()
-// 		if self.SelfAddress != nid { //Only delete the networkStream if you are a relay node
-// 			delete(self.streams, StreamID(strmID))
-// 		}
-// 	}
-// }
+func (self *StreamDB) UnsubscribeToHLSStream(strmID string, subID string) {
+	sub := self.subscribers[StreamID(strmID)]
+	if sub != nil {
+		sub.UnsubscribeHLS(subID)
+	} else {
+		return
+	}
+
+	if !sub.HasSubscribers() {
+		self.cancellation[StreamID(strmID)]() //Call cancel on hls worker
+		delete(self.subscribers, StreamID(strmID))
+		sid := StreamID(strmID)
+		nid := sid.GetNodeID()
+		if self.SelfAddress != nid { //Only delete the networkStream if you are a relay node
+			delete(self.streams, StreamID(strmID))
+		}
+	}
+}
 
 // func (self *StreamDB) GetHLSMuxer(strmID string, subID string) (mux stream.HLSMuxer) {
 // 	sub := self.subscribers[StreamID(strmID)]
