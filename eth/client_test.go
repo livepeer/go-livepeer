@@ -71,7 +71,7 @@ func TestReward(t *testing.T) {
 		err error
 	)
 
-	backend, err := ethclient.Dial("/Users/yondonfu/.lpTest/geth.ipc")
+	backend, err := ethclient.Dial("/Users/erictang/.lpTest/geth.ipc")
 
 	if err != nil {
 		t.Fatalf("Failed to connect to Ethereum client: %v", err)

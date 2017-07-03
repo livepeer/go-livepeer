@@ -22,8 +22,7 @@ var ErrTranscode = errors.New("ErrTranscode")
 type NodeID string
 
 type LivepeerNode struct {
-	Identity NodeID
-	// VideoNetwork net.VideoNetwork
+	Identity     NodeID
 	VideoNetwork net.VideoNetwork
 	StreamDB     *StreamDB
 	Eth          eth.Client
