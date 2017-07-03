@@ -13,7 +13,7 @@ import (
 	"io/ioutil"
 
 	crypto "github.com/libp2p/go-libp2p-crypto"
-	"github.com/livepeer/libp2p-livepeer/net"
+	"github.com/livepeer/golp/net"
 	"github.com/livepeer/lpms/stream"
 )
 

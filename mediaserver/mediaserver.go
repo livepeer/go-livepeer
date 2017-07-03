@@ -15,8 +15,8 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
-	"github.com/livepeer/libp2p-livepeer/core"
-	"github.com/livepeer/libp2p-livepeer/net"
+	"github.com/livepeer/golp/core"
+	"github.com/livepeer/golp/net"
 	"github.com/livepeer/lpms"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"

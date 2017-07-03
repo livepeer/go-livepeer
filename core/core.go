@@ -10,8 +10,8 @@ import (
 	"github.com/golang/glog"
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	peer "github.com/libp2p/go-libp2p-peer"
-	"github.com/livepeer/libp2p-livepeer/eth"
-	"github.com/livepeer/libp2p-livepeer/net"
+	"github.com/livepeer/golp/eth"
+	"github.com/livepeer/golp/net"
 	"github.com/livepeer/lpms/stream"
 	lptr "github.com/livepeer/lpms/transcoder"
 )

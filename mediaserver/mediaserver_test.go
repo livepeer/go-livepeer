@@ -14,8 +14,8 @@ import (
 
 	"github.com/golang/glog"
 	crypto "github.com/libp2p/go-libp2p-crypto"
-	"github.com/livepeer/libp2p-livepeer/core"
-	"github.com/livepeer/libp2p-livepeer/net"
+	"github.com/livepeer/golp/core"
+	"github.com/livepeer/golp/net"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av/avutil"
 	"github.com/nareix/joy4/format"

@@ -10,8 +10,8 @@ import (
 
 	"github.com/golang/glog"
 	crypto "github.com/libp2p/go-libp2p-crypto"
-	"github.com/livepeer/libp2p-livepeer/core"
-	"github.com/livepeer/libp2p-livepeer/mediaserver"
+	"github.com/livepeer/golp/core"
+	"github.com/livepeer/golp/mediaserver"
 )
 
 var ErrKeygen = errors.New("ErrKeygen")

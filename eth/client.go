@@ -25,7 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
-	"github.com/livepeer/libp2p-livepeer/eth/contracts"
+	"github.com/livepeer/golp/eth/contracts"
 )
 
 type Client struct {
