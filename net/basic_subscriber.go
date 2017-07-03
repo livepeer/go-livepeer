@@ -2,6 +2,7 @@ package net
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/golang/glog"
@@ -10,6 +11,7 @@ import (
 )
 
 var SubscriberDataInsertTimeout = time.Second * 5
+var ErrBroadcaster = errors.New("ErrBroadcaster")
 
 //BasicSubscriber keeps track of
 type BasicSubscriber struct {
@@ -17,13 +19,9 @@ type BasicSubscriber struct {
 	host          host.Host
 	msgChan       chan StreamDataMsg
 	networkStream *BasicStream
-	// q       *list.List
-	// lock    *sync.Mutex
-	StrmID       string
-	working      bool
-	cancelWorker context.CancelFunc
-
-	// listeners map[string]net.Stream
+	StrmID        string
+	working       bool
+	cancelWorker  context.CancelFunc
 }
 
 //Subscribe kicks off a go routine that calls the gotData func for every new video chunk
@@ -31,14 +29,14 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 	// glog.Infof("s: %v", s)
 	// glog.Infof("s.Network: %v", s.Network)
 	// glog.Infof("s.Network.broadcasters:%v", s.Network.broadcasters)
+
 	//Do we already have the broadcaster locally?
-	b := s.Network.broadcasters[s.StrmID]
 
 	//If we do, just subscribe to it and listen.
-	if b != nil {
-		glog.Infof("Broadcaster is present - let's just read from that...")
+	if b := s.Network.broadcasters[s.StrmID]; b != nil {
+		glog.Infof("Broadcaster is present, let's return an error for now")
 		//TODO: read from broadcaster
-		return nil
+		return ErrBroadcaster
 	}
 
 	//If we don't, send subscribe request, listen for response
@@ -115,5 +113,8 @@ func (s *BasicSubscriber) Unsubscribe() error {
 	if s.cancelWorker != nil {
 		s.cancelWorker()
 	}
+
+	//Remove self from network
+	delete(s.Network.subscribers, s.StrmID)
 	return nil
 }

@@ -211,32 +211,22 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 			return nil, nil
 		}
 
-		// _, err := s.LivepeerNode.SubscribeFromNetwork(context.Background(), strmID)
-		// if err != nil {
-		// 	glog.Errorf("Error subscribing from network: %v", err)
-		// }
-		//Look for media playlist locally.  If not found, ask the network, create a new local buffer.
-		// strm := s.LivepeerNode.StreamDB.GetStream(strmID)
 		buf := s.LivepeerNode.StreamDB.GetHLSBuffer(strmID)
 		if buf == nil {
-			//Create buf, subscribe from stream
-			// buf = s.LivepeerNode.StreamDB.AddNewHLSBuffer(strmID)
-			// s.LivepeerNode.StreamDB.SubscribeToHLSStream(strmID.String(), "local", buf)
-
-			// s.LivepeerNode.SubscribeFromNetwork(context.Background(), func(seqNo uint64, data []byte, eof bool) {
-			glog.Infof("buf is nil, creating subscription, asking the network")
+			//Get subscriber.
 			sub, err := s.LivepeerNode.VideoNetwork.GetSubscriber(strmID.String())
 			if err != nil {
 				glog.Errorf("Error getting subscriber: %v", err)
 				return nil, err
 			}
-			// if sub == nil {
-			// 	sub = s.LivepeerNode.VideoNetwork.NewSubscriber(strmID.String())
-			// }
+
 			sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 				if eof {
 					glog.Infof("Got EOF, writing to buf")
 					buf.WriteEOF()
+					if err := sub.Unsubscribe(); err != nil {
+						glog.Errorf("Unsubscribe error: %v", err)
+					}
 				}
 
 				//Decode data into HLSSegment

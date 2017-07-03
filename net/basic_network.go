@@ -51,12 +51,6 @@ func NewBasicNetwork(port int, priv crypto.PrivKey, pub crypto.PubKey) (*BasicVi
 	return nw, nil
 }
 
-// func (n *BasicVideoNetwork) NewBroadcaster(strmID string) Broadcaster {
-// 	b := &BasicBroadcaster{Network: n, StrmID: strmID, q: make(chan *StreamDataMsg), listeners: make(map[string]VideoMuxer)}
-// 	n.broadcasters[strmID] = b
-// 	return b
-// }
-
 func (n *BasicVideoNetwork) GetBroadcaster(strmID string) (Broadcaster, error) {
 	b, ok := n.broadcasters[strmID]
 	if !ok {
@@ -66,16 +60,6 @@ func (n *BasicVideoNetwork) GetBroadcaster(strmID string) (Broadcaster, error) {
 	return b, nil
 }
 
-// func (n *BasicVideoNetwork) DeleteBroadcaster(strmID string) {
-// 	delete(n.broadcasters, strmID)
-// }
-
-// func (n *BasicVideoNetwork) NewSubscriber(strmID string) Subscriber {
-// 	s := &BasicSubscriber{Network: n, StrmID: strmID, host: n.NetworkNode.PeerHost, msgChan: make(chan StreamDataMsg)}
-// 	n.subscribers[strmID] = s
-// 	return s
-// }
-
 func (n *BasicVideoNetwork) GetSubscriber(strmID string) (Subscriber, error) {
 	s, ok := n.subscribers[strmID]
 	if !ok {
@@ -84,10 +68,6 @@ func (n *BasicVideoNetwork) GetSubscriber(strmID string) (Subscriber, error) {
 	}
 	return s, nil
 }
-
-// func (n *BasicVideoNetwork) DeleteSubscriber(strmID string) {
-// 	delete(n.subscribers, strmID)
-// }
 
 func (n *BasicVideoNetwork) NewRelayer(strmID string) *BasicRelayer {
 

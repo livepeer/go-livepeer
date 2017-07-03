@@ -46,15 +46,13 @@ func (n *LivepeerNode) Start(bootID, bootAddr string) error {
 		return err
 	}
 
-	//Connect to bootstrap node
+	//Connect to bootstrap node.  This currently also kicks off a bootstrap process, which periodically checks for new peers and connect to them.
 	if err := n.VideoNetwork.Connect(bootID, bootAddr); err != nil {
 		glog.Errorf("Cannot connect to node: %v", err)
 		return err
 	}
 
-	//Ask for more peers, connect to peers
-
-	//Kick off process to periodically monitor peer connection by pinging them
+	//TODO:Kick off process to periodically monitor peer connection by pinging them
 
 	return nil
 }
