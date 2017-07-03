@@ -20,7 +20,6 @@ import (
 	"github.com/livepeer/lpms"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
-	"github.com/nareix/joy4/av"
 )
 
 var ErrNotFound = errors.New("NotFound")
@@ -77,9 +76,6 @@ func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
 			http.Error(w, "Error transcoding.", 500)
 		}
 		glog.Infof("New Stream IDs: %v", ids)
-	})
-
-	http.HandleFunc("/createStream", func(w http.ResponseWriter, r *http.Request) {
 	})
 
 	http.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {
@@ -316,20 +312,20 @@ func (s *LivepeerMediaServer) makeGetHLSSegmentHandler() func(url *url.URL) ([]b
 //End HLS Play Handlers
 
 //PLay RTMP Play Handlers
-func (s *LivepeerMediaServer) makeGetRTMPStreamHandler() func(ctx context.Context, reqPath string, dst av.MuxCloser) error {
+func (s *LivepeerMediaServer) makeGetRTMPStreamHandler() func(url *url.URL) (stream.Stream, error) {
 
-	return func(ctx context.Context, reqPath string, dst av.MuxCloser) error {
-		glog.Infof("Got req: ", reqPath)
+	return func(url *url.URL) (stream.Stream, error) {
+		glog.Infof("Got req: ", url.Path)
 		//Look for stream in StreamDB,
-		strmID := parseStreamID(reqPath)
+		strmID := parseStreamID(url.Path)
 		strm := s.LivepeerNode.StreamDB.GetStream(strmID)
 		if strm == nil {
 			glog.Errorf("Cannot find RTMP stream")
-			return ErrNotFound
+			return nil, ErrNotFound
 		}
 
 		//Could use a subscriber, but not going to here because the RTMP stream doesn't need to be available for consumption by multiple views.  It's only for the segmenter.
-		return strm.ReadRTMPFromStream(ctx, dst)
+		return strm, nil
 	}
 }
 
