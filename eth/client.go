@@ -109,8 +109,7 @@ func (c *Client) SubscribeToJobEvent() (ethereum.Subscription, chan types.Log, e
 
 	q := ethereum.FilterQuery{
 		Addresses: []common.Address{c.protocolAddr},
-		// Topics:    [][]common.Hash{[]common.Hash{protocolJson.Events["Job"].Id()}, {}, []common.Hash{common.BytesToHash(c.addr[:])}},
-		Topics: [][]common.Hash{[]common.Hash{protocolJson.Events["Job"].Id()}},
+		Topics:    [][]common.Hash{[]common.Hash{protocolJson.Events["Job"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.addr[:], 32))}},
 	}
 
 	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
@@ -122,12 +121,12 @@ func (c *Client) SubscribeToJobEvent() (ethereum.Subscription, chan types.Log, e
 	return logsSub, logsCh, nil
 }
 
-func monitorJobEvent(logsCh chan types.Log) {
+func monitorJobEvent(logsCh <-chan types.Log) {
 	for {
 		select {
 		case log := <-logsCh:
-			if !log.Removed {
-				glog.Infof("Received a job")
+			if !log.Removed && log.BlockNumber != 0 {
+				glog.Infof("Received a job at block %v with tx %v by address %v", log.BlockNumber, log.TxHash.Hex(), log.Address.Hex())
 			}
 		}
 	}
@@ -374,7 +373,6 @@ func (c *Client) Reward() (*types.Transaction, error) {
 	return tx, nil
 }
 
-// TODO: Change streamId to its proper type - a streamId is of the format NodeID|VideoID|Rendition
 func (c *Client) Job(streamId *big.Int, transcodingOptions [32]byte, maxPricePerSegment *big.Int) (*types.Transaction, error) {
 	tx, err := c.protocolSession.Job(streamId, transcodingOptions, maxPricePerSegment)
 
@@ -384,6 +382,30 @@ func (c *Client) Job(streamId *big.Int, transcodingOptions [32]byte, maxPricePer
 	}
 
 	glog.Infof("[%v] Submitted transaction %v. Creating a job for stream id %v", c.addr.Hex(), tx.Hash().Hex(), streamId)
+	return tx, nil
+}
+
+func (c *Client) ClaimWork(jobId *big.Int, startSegmentSequenceNumber *big.Int, endSegmentSequenceNumber *big.Int, transcodeClaimsRoot [32]byte) (*types.Transaction, error) {
+	tx, err := c.protocolSession.ClaimWork(jobId, startSegmentSequenceNumber, endSegmentSequenceNumber, transcodeClaimsRoot)
+
+	if err != nil {
+		glog.Errorf("Error claiming work: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("[%v] Submitted transaction %v. Claimed work for segments %v - %v", c.addr.Hex(), tx.Hash().Hex(), startSegmentSequenceNumber, endSegmentSequenceNumber)
+	return tx, nil
+}
+
+func (c *Client) Verify(jobId *big.Int, segmentSequenceNumber *big.Int, dataHash [32]byte, transcodedDataHash [32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error) {
+	tx, err := c.protocolSession.Verify(jobId, segmentSequenceNumber, dataHash, transcodedDataHash, broadcasterSig, proof)
+
+	if err != nil {
+		glog.Errorf("Error invoking verify %v", err)
+		return nil, err
+	}
+
+	glog.Infof("[%v] Submitted transaction %v, Invoked verify for segment %v", c.addr.Hex(), tx.Hash().Hex(), segmentSequenceNumber)
 	return tx, nil
 }
 

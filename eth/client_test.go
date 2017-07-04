@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	ethTypes "github.com/livepeer/libp2p-livepeer/eth/types"
 )
 
 var (
@@ -25,6 +26,7 @@ var (
 	eventTimeout     = 30 * time.Second
 	minedTxTimeout   = 60
 	testRewardLength = 60
+	gasLimit         = big.NewInt(4712388)
 )
 
 func NewTransactorForAccount(account accounts.Account) (*bind.TransactOpts, error) {
@@ -496,7 +498,141 @@ func TestJobClaimVerify(t *testing.T) {
 		t.Fatalf("Client 1 failed to create a job: %v", err)
 	}
 
-	time.Sleep(20 * time.Second)
+	time.Sleep(10 * time.Second)
+
+	// CLAIM WORK
+
+	// Stream ID
+	streamID := big.NewInt(1)
+
+	// Segment data hashes
+	d0 := common.BytesToHash(common.FromHex("80084bf2fba02475726feb2cab2d8215eab14bc6bdd8bfb2c8151257032ecd8b"))
+	d1 := common.BytesToHash(common.FromHex("b039179a8a4ce2c252aa6f2f25798251c19b75fc1508d9d511a191e0487d64a7"))
+	d2 := common.BytesToHash(common.FromHex("263ab762270d3b73d3e2cddf9acc893bb6bd41110347e5d5e4bd1d3c128ea90a"))
+	d3 := common.BytesToHash(common.FromHex("4ce8765e720c576f6f5a34ca380b3de5f0912e6e3cc5355542c363891e54594b"))
+
+	// Segment hashes
+	s0 := &ethTypes.Segment{
+		streamID,
+		big.NewInt(0),
+		d0,
+	}
+
+	s1 := &ethTypes.Segment{
+		streamID,
+		big.NewInt(1),
+		d1,
+	}
+
+	s2 := &ethTypes.Segment{
+		streamID,
+		big.NewInt(2),
+		d2,
+	}
+
+	s3 := &ethTypes.Segment{
+		streamID,
+		big.NewInt(3),
+		d3,
+	}
+
+	// Broadcaster signatures
+	if err = keyStore.TimedUnlock(accounts[1], defaultPassword, 10*time.Second); err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	bSig0, err := keyStore.SignHash(accounts[1], s0.Hash().Bytes())
+
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	bSig1, err := keyStore.SignHash(accounts[1], s1.Hash().Bytes())
+
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	bSig2, err := keyStore.SignHash(accounts[1], s2.Hash().Bytes())
+
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	bSig3, err := keyStore.SignHash(accounts[1], s3.Hash().Bytes())
+
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	// Transcoded data hashes
+	tD0 := common.BytesToHash(common.FromHex("42538602949f370aa331d2c07a1ee7ff26caac9cc676288f94b82eb2188b8465"))
+	tD1 := common.BytesToHash(common.FromHex("a0b37b8bfae8e71330bd8e278e4a45ca916d00475dd8b85e9352533454c9fec8"))
+	tD2 := common.BytesToHash(common.FromHex("9f2898da52dedaca29f05bcac0c8e43e4b9f7cb5707c14cc3f35a567232cec7c"))
+	tD3 := common.BytesToHash(common.FromHex("5a082c81a7e4d5833ee20bd67d2f4d736f679da33e4bebd3838217cb27bec1d3"))
+
+	// Transcode claims
+	tClaim0 := &ethTypes.TranscodeClaim{
+		streamID,
+		big.NewInt(0),
+		d0,
+		tD0,
+		bSig0,
+	}
+	tClaim1 := &ethTypes.TranscodeClaim{
+		streamID,
+		big.NewInt(1),
+		d1,
+		tD1,
+		bSig1,
+	}
+	tClaim2 := &ethTypes.TranscodeClaim{
+		streamID,
+		big.NewInt(2),
+		d2,
+		tD2,
+		bSig2,
+	}
+	tClaim3 := &ethTypes.TranscodeClaim{
+		streamID,
+		big.NewInt(3),
+		d3,
+		tD3,
+		bSig3,
+	}
+
+	tcHashes := []common.Hash{tClaim0.Hash(), tClaim1.Hash(), tClaim2.Hash(), tClaim3.Hash()}
+	tcRoot, proofs, err := ethTypes.NewMerkleTree(tcHashes)
+
+	tx, err = client0.ClaimWork(big.NewInt(0), big.NewInt(0), big.NewInt(3), [32]byte(tcRoot.Hash))
+
+	if err != nil {
+		t.Fatalf("Client 0 failed to claim work: %v", err)
+	}
+
+	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	// VERIFY
+
+	tx, err = client0.Verify(big.NewInt(0), big.NewInt(0), [32]byte(d0), [32]byte(tD0), bSig0, proofs[0].Bytes())
+
+	if err != nil {
+		t.Fatalf("Client 0 failed to invoke verify: %v", err)
+	}
+
+	receipt, err := waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+		t.Fatalf("Client 0 failed verification")
+	}
 
 	logsSub.Unsubscribe()
 	close(logsCh)
