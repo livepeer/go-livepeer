@@ -8,7 +8,7 @@ import (
 )
 
 type TranscodeClaim struct {
-	StreamID              *big.Int
+	StreamID              string
 	SegmentSequenceNumber *big.Int
 	DataHash              common.Hash
 	TranscodedDataHash    common.Hash
@@ -16,5 +16,5 @@ type TranscodeClaim struct {
 }
 
 func (tc *TranscodeClaim) Hash() common.Hash {
-	return crypto.Keccak256Hash(common.LeftPadBytes(tc.StreamID.Bytes(), 32), common.LeftPadBytes(tc.SegmentSequenceNumber.Bytes(), 32), tc.DataHash.Bytes(), tc.TranscodedDataHash.Bytes(), tc.BroadcasterSig)
+	return crypto.Keccak256Hash([]byte(tc.StreamID), common.LeftPadBytes(tc.SegmentSequenceNumber.Bytes(), 32), tc.DataHash.Bytes(), tc.TranscodedDataHash.Bytes(), tc.BroadcasterSig)
 }

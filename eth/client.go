@@ -126,7 +126,7 @@ func (c *Client) SubscribeToJobEvent() (ethereum.Subscription, chan types.Log, e
 
 	q := ethereum.FilterQuery{
 		Addresses: []common.Address{c.protocolAddr},
-		Topics:    [][]common.Hash{[]common.Hash{protocolJson.Events["Job"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
+		Topics:    [][]common.Hash{[]common.Hash{protocolJson.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
 	}
 
 	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
@@ -331,7 +331,7 @@ func (c *Client) Reward() (*types.Transaction, error) {
 	return tx, nil
 }
 
-func (c *Client) Job(streamId *big.Int, transcodingOptions [32]byte, maxPricePerSegment *big.Int) (*types.Transaction, error) {
+func (c *Client) Job(streamId string, transcodingOptions [32]byte, maxPricePerSegment *big.Int) (*types.Transaction, error) {
 	tx, err := c.protocolSession.Job(streamId, transcodingOptions, maxPricePerSegment)
 
 	if err != nil {

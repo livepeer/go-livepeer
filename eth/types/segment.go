@@ -8,11 +8,11 @@ import (
 )
 
 type Segment struct {
-	StreamID              *big.Int
+	StreamID              string
 	SegmentSequenceNumber *big.Int
 	DataHash              common.Hash
 }
 
 func (s *Segment) Hash() common.Hash {
-	return crypto.Keccak256Hash(common.LeftPadBytes(s.StreamID.Bytes(), 32), common.LeftPadBytes(s.SegmentSequenceNumber.Bytes(), 32), s.DataHash.Bytes())
+	return crypto.Keccak256Hash([]byte(s.StreamID), common.LeftPadBytes(s.SegmentSequenceNumber.Bytes(), 32), s.DataHash.Bytes())
 }

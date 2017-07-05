@@ -206,7 +206,7 @@ func TestReward(t *testing.T) {
 		err error
 	)
 
-	backend, err := ethclient.Dial(filepath.Join(dir, ".lpTest/geth.ipc"))
+	backend, err := ethclient.Dial(filepath.Join(dir, datadir, "geth.ipc"))
 
 	if err != nil {
 		t.Fatalf("Failed to connect to Ethereum client: %v", err)
@@ -378,7 +378,7 @@ func TestJobClaimVerify(t *testing.T) {
 		err error
 	)
 
-	backend, err := ethclient.Dial(filepath.Join(dir, ".lpTest/geth.ipc"))
+	backend, err := ethclient.Dial(filepath.Join(dir, datadir, "geth.ipc"))
 
 	if err != nil {
 		t.Fatalf("Failed to connect to Ethereum client: %v", err)
@@ -474,7 +474,7 @@ func TestJobClaimVerify(t *testing.T) {
 	checkRoundAndInit(t, client1)
 
 	// Stream ID
-	streamID := big.NewInt(1)
+	streamID := "1"
 
 	dummyTranscodingOptions := common.BytesToHash([]byte{5})
 	_, err = client1.Job(streamID, dummyTranscodingOptions, big.NewInt(150))
