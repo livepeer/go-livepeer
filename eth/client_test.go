@@ -1,49 +1,31 @@
 package eth
 
 import (
-	"bytes"
 	"math/big"
 	"os/user"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	ethTypes "github.com/livepeer/libp2p-livepeer/eth/types"
+	ethTypes "github.com/livepeer/golp/eth/types"
 )
 
 var (
 	usr, _           = user.Current()
 	dir              = usr.HomeDir
-	keyStore         = keystore.NewKeyStore(filepath.Join(dir, ".lpTest/keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
+	datadir          = ".lpTest"
+	keyStore         = keystore.NewKeyStore(filepath.Join(dir, datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 	defaultPassword  = ""
 	rpcTimeout       = 10 * time.Second
 	eventTimeout     = 30 * time.Second
 	minedTxTimeout   = 60
 	testRewardLength = 60
-	gasLimit         = big.NewInt(4712388)
 )
-
-func NewTransactorForAccount(account accounts.Account) (*bind.TransactOpts, error) {
-	keyjson, err := keyStore.Export(account, defaultPassword, defaultPassword)
-
-	if err != nil {
-		return nil, err
-	}
-
-	transactOpts, err := bind.NewTransactor(bytes.NewReader(keyjson), defaultPassword)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return transactOpts, err
-}
 
 func checkRoundAndInit(t *testing.T, client *Client) {
 	ok, err := client.CurrentRoundInitialized()
@@ -75,7 +57,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 
 	// DEPLOY NODE
 
-	nodeAddr, tx, err := DeployLibrary(transactOpts, backend, Node, nil)
+	nodeAddr, tx, err := deployLibrary(transactOpts, backend, Node, nil)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy Node: %v", err)
@@ -90,7 +72,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 	// DEPLOY MAXHEAP
 
 	maxHeapLibraries := map[string]common.Address{"Node": nodeAddr}
-	maxHeapAddr, tx, err := DeployLibrary(transactOpts, backend, MaxHeap, maxHeapLibraries)
+	maxHeapAddr, tx, err := deployLibrary(transactOpts, backend, MaxHeap, maxHeapLibraries)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy MaxHeap: %v", err)
@@ -105,7 +87,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 	// DEPLOY MINHEAP
 
 	minHeapLibraries := map[string]common.Address{"Node": nodeAddr}
-	minHeapAddr, tx, err := DeployLibrary(transactOpts, backend, MinHeap, minHeapLibraries)
+	minHeapAddr, tx, err := deployLibrary(transactOpts, backend, MinHeap, minHeapLibraries)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy MinHeap: %v", err)
@@ -123,7 +105,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		"MinHeap": minHeapAddr,
 		"MaxHeap": maxHeapAddr,
 	}
-	transcoderPoolsAddr, tx, err := DeployLibrary(transactOpts, backend, TranscoderPools, transcoderPoolsLibraries)
+	transcoderPoolsAddr, tx, err := deployLibrary(transactOpts, backend, TranscoderPools, transcoderPoolsLibraries)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy TranscoderPools: %v", err)
@@ -137,7 +119,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 
 	// DEPLOY MERKLEPROOF
 
-	merkleProofAddr, tx, err := DeployLibrary(transactOpts, backend, MerkleProof, nil)
+	merkleProofAddr, tx, err := deployLibrary(transactOpts, backend, MerkleProof, nil)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy MerkleProof: %v", err)
@@ -151,7 +133,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 
 	// DEPLOY ECVERIFY
 
-	ecVerifyAddr, tx, err := DeployLibrary(transactOpts, backend, ECVerify, nil)
+	ecVerifyAddr, tx, err := deployLibrary(transactOpts, backend, ECVerify, nil)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy ECVerify: %v", err)
@@ -169,7 +151,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		"ECVerify":    ecVerifyAddr,
 		"MerkleProof": merkleProofAddr,
 	}
-	transcodeJobsAddr, tx, err := DeployLibrary(transactOpts, backend, TranscodeJobs, transcodeJobsLibraries)
+	transcodeJobsAddr, tx, err := deployLibrary(transactOpts, backend, TranscodeJobs, transcodeJobsLibraries)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy TranscodeJobs: %v", err)
@@ -183,7 +165,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 
 	// DEPLOY SAFEMATH
 
-	safeMathAddr, tx, err := DeployLibrary(transactOpts, backend, SafeMath, nil)
+	safeMathAddr, tx, err := deployLibrary(transactOpts, backend, SafeMath, nil)
 
 	if err != nil {
 		t.Fatalf("Failed to deploy SafeMath: %v", err)
@@ -203,7 +185,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		"TranscoderPools": transcoderPoolsAddr,
 		"SafeMath":        safeMathAddr,
 	}
-	protocolAddr, tx, err := DeployLivepeerProtocol(transactOpts, backend, protocolLibraries, 1, big.NewInt(40), big.NewInt(2))
+	protocolAddr, tx, err := deployLivepeerProtocol(transactOpts, backend, protocolLibraries, 1, big.NewInt(40), big.NewInt(2))
 
 	if err != nil {
 		t.Fatalf("Failed to deploy protocol: %v", err)
@@ -224,7 +206,7 @@ func TestReward(t *testing.T) {
 		err error
 	)
 
-	backend, err := ethclient.Dial("/Users/yondonfu/.lpTest/geth.ipc")
+	backend, err := ethclient.Dial(filepath.Join(dir, ".lpTest/geth.ipc"))
 
 	if err != nil {
 		t.Fatalf("Failed to connect to Ethereum client: %v", err)
@@ -232,42 +214,41 @@ func TestReward(t *testing.T) {
 
 	accounts := keyStore.Accounts()
 
-	// SETUP ACCOUNTS
-
-	transactOpts0, err := NewTransactorForAccount(accounts[0])
+	transactOpts, err := NewTransactOptsForAccount(accounts[0], defaultPassword, keyStore)
 
 	if err != nil {
-		t.Fatalf("Failed to create transactor 0: %v", err)
-	}
-
-	transactOpts1, err := NewTransactorForAccount(accounts[1])
-
-	if err != nil {
-		t.Fatalf("Failed to create transactor 1: %v", err)
-	}
-
-	transactOpts2, err := NewTransactorForAccount(accounts[2])
-
-	if err != nil {
-		t.Fatalf("Failed to create transactor 2: %v", err)
-	}
-
-	transactOpts3, err := NewTransactorForAccount(accounts[3])
-
-	if err != nil {
-		t.Fatalf("Failed to create transactor 3: %v", err)
+		t.Fatalf("Failed to create transact opts: %v", err)
 	}
 
 	// DEPLOY
 
-	protocolAddr := deployContracts(t, transactOpts0, backend)
+	protocolAddr := deployContracts(t, transactOpts, backend)
 
 	// SETUP CLIENTS
 
-	client0, _ := NewClient(transactOpts0, backend, protocolAddr, rpcTimeout, eventTimeout)
-	client1, _ := NewClient(transactOpts1, backend, protocolAddr, rpcTimeout, eventTimeout)
-	client2, _ := NewClient(transactOpts2, backend, protocolAddr, rpcTimeout, eventTimeout)
-	client3, _ := NewClient(transactOpts3, backend, protocolAddr, rpcTimeout, eventTimeout)
+	client0, err := NewClient(accounts[0], defaultPassword, datadir, backend, protocolAddr, rpcTimeout, eventTimeout)
+
+	if err != nil {
+		t.Fatalf("Failed to create client 0: %v", err)
+	}
+
+	client1, err := NewClient(accounts[1], defaultPassword, datadir, backend, protocolAddr, rpcTimeout, eventTimeout)
+
+	if err != nil {
+		t.Fatalf("Failed to create client 1: %v", err)
+	}
+
+	client2, err := NewClient(accounts[2], defaultPassword, datadir, backend, protocolAddr, rpcTimeout, eventTimeout)
+
+	if err != nil {
+		t.Fatalf("Failed to create client 2: %v", err)
+	}
+
+	client3, err := NewClient(accounts[3], defaultPassword, datadir, backend, protocolAddr, rpcTimeout, eventTimeout)
+
+	if err != nil {
+		t.Fatalf("Faild to create client 3: %v", err)
+	}
 
 	// DISTRIBUTE LPT
 
@@ -397,7 +378,7 @@ func TestJobClaimVerify(t *testing.T) {
 		err error
 	)
 
-	backend, err := ethclient.Dial("/Users/yondonfu/.lpTest/geth.ipc")
+	backend, err := ethclient.Dial(filepath.Join(dir, ".lpTest/geth.ipc"))
 
 	if err != nil {
 		t.Fatalf("Failed to connect to Ethereum client: %v", err)
@@ -405,28 +386,29 @@ func TestJobClaimVerify(t *testing.T) {
 
 	accounts := keyStore.Accounts()
 
-	// SETUP ACCOUNTS
-
-	transactOpts0, err := NewTransactorForAccount(accounts[0])
+	transactOpts, err := NewTransactOptsForAccount(accounts[0], defaultPassword, keyStore)
 
 	if err != nil {
-		t.Fatalf("Failed to create transactor 0: %v", err)
-	}
-
-	transactOpts1, err := NewTransactorForAccount(accounts[1])
-
-	if err != nil {
-		t.Fatalf("Failed to create transactor 1: %v", err)
+		t.Fatalf("Failed to create transact opts: %v", err)
 	}
 
 	// DEPLOY
 
-	protocolAddr := deployContracts(t, transactOpts0, backend)
+	protocolAddr := deployContracts(t, transactOpts, backend)
 
 	// SETUP CLIENTS
 
-	client0, _ := NewClient(transactOpts0, backend, protocolAddr, rpcTimeout, eventTimeout)
-	client1, _ := NewClient(transactOpts1, backend, protocolAddr, rpcTimeout, eventTimeout)
+	client0, err := NewClient(accounts[0], defaultPassword, datadir, backend, protocolAddr, rpcTimeout, eventTimeout)
+
+	if err != nil {
+		t.Fatalf("Failed to create client 0: %v", err)
+	}
+
+	client1, _ := NewClient(accounts[1], defaultPassword, datadir, backend, protocolAddr, rpcTimeout, eventTimeout)
+
+	if err != nil {
+		t.Fatalf("Failed to create client 1: %v", err)
+	}
 
 	// DISTRIBUTE LPT
 
@@ -491,8 +473,11 @@ func TestJobClaimVerify(t *testing.T) {
 	err = waitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
 	checkRoundAndInit(t, client1)
 
-	transcodingOptions := common.BytesToHash([]byte{5})
-	_, err = client1.Job(big.NewInt(1), transcodingOptions, big.NewInt(150))
+	// Stream ID
+	streamID := big.NewInt(1)
+
+	dummyTranscodingOptions := common.BytesToHash([]byte{5})
+	_, err = client1.Job(streamID, dummyTranscodingOptions, big.NewInt(150))
 
 	if err != nil {
 		t.Fatalf("Client 1 failed to create a job: %v", err)
@@ -501,9 +486,6 @@ func TestJobClaimVerify(t *testing.T) {
 	time.Sleep(10 * time.Second)
 
 	// CLAIM WORK
-
-	// Stream ID
-	streamID := big.NewInt(1)
 
 	// Segment data hashes
 	d0 := common.BytesToHash(common.FromHex("80084bf2fba02475726feb2cab2d8215eab14bc6bdd8bfb2c8151257032ecd8b"))
@@ -536,33 +518,28 @@ func TestJobClaimVerify(t *testing.T) {
 		d3,
 	}
 
-	// Broadcaster signatures
-	if err = keyStore.TimedUnlock(accounts[1], defaultPassword, 10*time.Second); err != nil {
-		t.Fatalf("%v", err)
-	}
-
-	bSig0, err := keyStore.SignHash(accounts[1], s0.Hash().Bytes())
+	bSig0, err := client1.SignSegmentHash(defaultPassword, s0.Hash().Bytes())
 
 	if err != nil {
-		t.Fatalf("%v", err)
+		t.Fatalf("Client 1 failed to sign segment hash: %v", err)
 	}
 
-	bSig1, err := keyStore.SignHash(accounts[1], s1.Hash().Bytes())
+	bSig1, err := client1.SignSegmentHash(defaultPassword, s1.Hash().Bytes())
 
 	if err != nil {
-		t.Fatalf("%v", err)
+		t.Fatalf("Client 1 failed to sign segment hash: %v", err)
 	}
 
-	bSig2, err := keyStore.SignHash(accounts[1], s2.Hash().Bytes())
+	bSig2, err := client1.SignSegmentHash(defaultPassword, s2.Hash().Bytes())
 
 	if err != nil {
-		t.Fatalf("%v", err)
+		t.Fatalf("Client 1 failed to sign segment hash: %v", err)
 	}
 
-	bSig3, err := keyStore.SignHash(accounts[1], s3.Hash().Bytes())
+	bSig3, err := client1.SignSegmentHash(defaultPassword, s3.Hash().Bytes())
 
 	if err != nil {
-		t.Fatalf("%v", err)
+		t.Fatalf("Client 1 failed to sign segment hash: %v", err)
 	}
 
 	// Transcoded data hashes
