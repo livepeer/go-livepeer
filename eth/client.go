@@ -344,7 +344,7 @@ func (c *Client) Job(streamId string, transcodingOptions [32]byte, maxPricePerSe
 }
 
 func (c *Client) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) {
-	sig, err := keyStore.SignHashWithPassphrase(c.account, passphrase, hash)
+	sig, err := c.keyStore.SignHashWithPassphrase(c.account, passphrase, hash)
 
 	if err != nil {
 		glog.Errorf("Error signing segment: %v", err)
