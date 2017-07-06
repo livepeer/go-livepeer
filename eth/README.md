@@ -12,6 +12,32 @@ go install ./...
 ```
 cd $GOPATH/src/github.com/livepeer/golp/eth
 bash init.sh
-go test -v
+```
+
+In a seperate window
+
+```
+go test -v -args -v 3 -logtostderr true
+```
+
+When tests are complete
+
+```
 bash cleanup.sh
+```
+
+# Generating Go bindings
+
+The `contracts` folder contains generated Go bindings for the Livepeer protocol smart contracts.
+
+If the smart contracts are updated you can generate new Go bindings by doing the following:
+
+```
+cd $GOPATH/src/github.com/livepeer/golp/eth
+git clone https://github.com/livepeer/protocol.git $GOPATH/src/github.com/livepeer/golp/eth/protocol
+cd $GOPATH/src/github.com/livepeer/golp/eth/protocol
+truffle compile --all
+node parseArtifacts.js
+cd $GOPATH/src/github.com/livepeer/golp/eth
+go generate client.go
 ```

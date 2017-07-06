@@ -18,7 +18,7 @@ import (
 const SafeMathABI = "[]"
 
 // SafeMathBin is the compiled bytecode used for deploying new contracts.
-const SafeMathBin = `0x60606040523415600b57fe5b5b60338060196000396000f30060606040525bfe00a165627a7a72305820b790f45b10249de60e6dd5cef101a770b8acd7183fb86de714489d8b8395c7300029`
+const SafeMathBin = `0x60606040523415600b57fe5b5b60338060196000396000f30060606040525bfe00a165627a7a723058200ec6bb626e3dbc95a0612957cc9895f463deea1ccb3914d0af61564ecd886f520029`
 
 // DeploySafeMath deploys a new Ethereum contract, binding an instance of SafeMath to it.
 func DeploySafeMath(auth *bind.TransactOpts, backend bind.ContractBackend, libraries map[string]common.Address) (common.Address, *types.Transaction, *SafeMath, error) {

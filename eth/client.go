@@ -12,15 +12,19 @@ package eth
 //go:generate abigen --abi protocol/abi/MerkleProof.abi --pkg contracts --type MerkleProof --out contracts/merkleProof.go --bin protocol/bin/MerkleProof.bin
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/big"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -29,31 +33,27 @@ import (
 )
 
 type Client struct {
+	account         accounts.Account
+	keyStore        *keystore.KeyStore
+	backend         *ethclient.Client
+	protocolAddr    common.Address
+	tokenAddr       common.Address
 	protocolSession *contracts.LivepeerProtocolSession
 	tokenSession    *contracts.LivepeerTokenSession
-	backend         *ethclient.Client
 
-	addr         common.Address
-	protocolAddr common.Address
-	tokenAddr    common.Address
 	rpcTimeout   time.Duration
 	eventTimeout time.Duration
 }
 
-type LibraryType uint8
+func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, protocolAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
+	keyStore = keystore.NewKeyStore(filepath.Join(dir, datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 
-const (
-	Node LibraryType = iota
-	MaxHeap
-	MinHeap
-	TranscoderPools
-	TranscodeJobs
-	MerkleProof
-	ECVerify
-	SafeMath
-)
+	transactOpts, err := NewTransactOptsForAccount(account, passphrase, keyStore)
 
-func NewClient(transactOpts *bind.TransactOpts, backend *ethclient.Client, protocolAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
+	if err != nil {
+		return nil, err
+	}
+
 	protocol, err := contracts.NewLivepeerProtocol(protocolAddr, backend)
 
 	if err != nil {
@@ -78,81 +78,76 @@ func NewClient(transactOpts *bind.TransactOpts, backend *ethclient.Client, proto
 	glog.Infof("Creating client for account %v", transactOpts.From.Hex())
 
 	return &Client{
-		&contracts.LivepeerProtocolSession{
+		account:      account,
+		keyStore:     keyStore,
+		backend:      backend,
+		protocolAddr: protocolAddr,
+		tokenAddr:    tokenAddr,
+		protocolSession: &contracts.LivepeerProtocolSession{
 			Contract:     protocol,
 			TransactOpts: *transactOpts,
 		},
-		&contracts.LivepeerTokenSession{
+		tokenSession: &contracts.LivepeerTokenSession{
 			Contract:     token,
 			TransactOpts: *transactOpts,
 		},
-		backend,
-		transactOpts.From,
-		protocolAddr,
-		tokenAddr,
-		rpcTimeout,
-		eventTimeout,
+		rpcTimeout:   rpcTimeout,
+		eventTimeout: eventTimeout,
 	}, nil
 }
 
-func DeployLibrary(transactOpts *bind.TransactOpts, backend *ethclient.Client, name LibraryType, libraries map[string]common.Address) (common.Address, *types.Transaction, error) {
-	var (
-		addr common.Address
-		tx   *types.Transaction
-		err  error
-	)
-
-	switch name {
-	case Node:
-		addr, tx, _, err = contracts.DeployNode(transactOpts, backend, libraries)
-		glog.Infof("Deploying Node at %v", addr.Hex())
-	case MaxHeap:
-		addr, tx, _, err = contracts.DeployMaxHeap(transactOpts, backend, libraries)
-		glog.Infof("Deploying MaxHeap at %v", addr.Hex())
-	case MinHeap:
-		addr, tx, _, err = contracts.DeployMinHeap(transactOpts, backend, libraries)
-		glog.Infof("Deploying MinHeap at %v", addr.Hex())
-	case TranscoderPools:
-		addr, tx, _, err = contracts.DeployTranscoderPools(transactOpts, backend, libraries)
-		glog.Infof("Deploying TranscoderPools at %v", addr.Hex())
-	case TranscodeJobs:
-		addr, tx, _, err = contracts.DeployTranscodeJobs(transactOpts, backend, libraries)
-		glog.Infof("Deploying TranscodeJobs at %v", addr.Hex())
-	case MerkleProof:
-		addr, tx, _, err = contracts.DeployMerkleProof(transactOpts, backend, libraries)
-		glog.Infof("Deploying MerkleProof at %v", addr.Hex())
-	case ECVerify:
-		addr, tx, _, err = contracts.DeployECVerify(transactOpts, backend, libraries)
-		glog.Infof("Deploying ECVerify at %v", addr.Hex())
-	case SafeMath:
-		addr, tx, _, err = contracts.DeploySafeMath(transactOpts, backend, libraries)
-		glog.Infof("Deploying SafeMath at %v", addr.Hex())
-	default:
-		err = fmt.Errorf("Invalid library type: %v", name)
-
-		glog.Errorf(err.Error())
-		return common.Address{}, nil, err
-	}
+func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyStore *keystore.KeyStore) (*bind.TransactOpts, error) {
+	keyjson, err := keyStore.Export(account, passphrase, passphrase)
 
 	if err != nil {
-		glog.Errorf("Error deploying library: %v", err)
-		return common.Address{}, nil, err
+		return nil, err
 	}
 
-	return addr, tx, nil
+	transactOpts, err := bind.NewTransactor(bytes.NewReader(keyjson), passphrase)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return transactOpts, err
 }
 
-func DeployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, n uint64, roundLength *big.Int, cyclesPerRound *big.Int) (common.Address, *types.Transaction, error) {
-	addr, tx, _, err := contracts.DeployLivepeerProtocol(transactOpts, backend, libraries, n, roundLength, cyclesPerRound)
+func (c *Client) SubscribeToJobEvent() (ethereum.Subscription, chan types.Log, error) {
+	var (
+		logsCh = make(chan types.Log)
+	)
 
-	glog.Infof("Deploying LivepeerProtocol at %v", addr.Hex())
+	protocolJson, err := abi.JSON(strings.NewReader(contracts.LivepeerProtocolABI))
 
 	if err != nil {
-		glog.Errorf("Error deploying LivepeerProtocol: %v", err)
-		return common.Address{}, nil, err
+		glog.Errorf("Error decoding ABI into JSON: %v", err)
+		return nil, nil, err
 	}
 
-	return addr, tx, nil
+	q := ethereum.FilterQuery{
+		Addresses: []common.Address{c.protocolAddr},
+		Topics:    [][]common.Hash{[]common.Hash{protocolJson.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
+
+	logsSub, err := c.backend.SubscribeFilterLogs(ctx, q, logsCh)
+
+	go monitorJobEvent(logsCh)
+
+	return logsSub, logsCh, nil
+}
+
+func monitorJobEvent(logsCh <-chan types.Log) {
+	for {
+		select {
+		case log := <-logsCh:
+			if !log.Removed && log.BlockNumber != 0 {
+				// TODO: Perform action in response to job event
+				glog.Infof("Received a job at block %v with tx %v by address %v", log.BlockNumber, log.TxHash.Hex(), log.Address.Hex())
+			}
+		}
+	}
 }
 
 func (c *Client) WatchEvent(logsCh <-chan types.Log) (types.Log, error) {
@@ -217,7 +212,7 @@ func (c *Client) InitializeRound() (*types.Transaction, error) {
 		return nil, err
 	}
 
-	glog.Infof("[%v] Submitted transaction %v. Initialize round", c.addr.Hex(), tx.Hash().Hex())
+	glog.Infof("[%v] Submitted transaction %v. Initialize round", c.account.Address.Hex(), tx.Hash().Hex())
 	return tx, nil
 }
 
@@ -251,7 +246,7 @@ func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegmen
 		return nil, err
 	}
 
-	glog.Infof("[%v] Submitted transaction %v. Register as a transcoder", c.addr.Hex(), tx.Hash().Hex())
+	glog.Infof("[%v] Submitted transaction %v. Register as a transcoder", c.account.Address.Hex(), tx.Hash().Hex())
 	return tx, nil
 }
 
@@ -269,7 +264,7 @@ func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transactio
 
 	q := ethereum.FilterQuery{
 		Addresses: []common.Address{c.tokenAddr},
-		Topics:    [][]common.Hash{[]common.Hash{tokenJson.Events["Approval"].Id()}, []common.Hash{common.BytesToHash(c.addr[:])}},
+		Topics:    [][]common.Hash{[]common.Hash{tokenJson.Events["Approval"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
 	}
 
 	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
@@ -286,7 +281,7 @@ func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transactio
 		return nil, err
 	}
 
-	glog.Infof("[%v] Submitted transaction %v. Approve %v LPTU transfer by LivepeerProtocol", c.addr.Hex(), tx.Hash().Hex(), amount)
+	glog.Infof("[%v] Submitted transaction %v. Approve %v LPTU transfer by LivepeerProtocol", c.account.Address.Hex(), tx.Hash().Hex(), amount)
 
 	_, err = c.WatchEvent(logsCh)
 
@@ -309,12 +304,12 @@ func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transactio
 		return nil, err
 	}
 
-	glog.Infof("[%v] Submitted transaction %v. Bond %v LPTU to %v at CR %v CN %v CRSB %v CB %v", c.addr.Hex(), tx.Hash().Hex(), amount, toAddr.Hex(), cr, cn, crsb, cb)
+	glog.Infof("[%v] Submitted transaction %v. Bond %v LPTU to %v at CR %v CN %v CRSB %v CB %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex(), cr, cn, crsb, cb)
 	return tx, nil
 }
 
 func (c *Client) ValidRewardTimeWindow() (bool, error) {
-	return c.protocolSession.ValidRewardTimeWindow(c.addr)
+	return c.protocolSession.ValidRewardTimeWindow(c.account.Address)
 }
 
 func (c *Client) Reward() (*types.Transaction, error) {
@@ -332,9 +327,59 @@ func (c *Client) Reward() (*types.Transaction, error) {
 		return nil, err
 	}
 
-	glog.Infof("[%v] Submitted transaction %v. Reward at CR %v CN %v CRSB %v CB %v", c.addr.Hex(), tx.Hash().Hex(), cr, cn, crsb, cb)
+	glog.Infof("[%v] Submitted transaction %v. Reward at CR %v CN %v CRSB %v CB %v", c.account.Address.Hex(), tx.Hash().Hex(), cr, cn, crsb, cb)
 	return tx, nil
 }
+
+func (c *Client) Job(streamId string, transcodingOptions [32]byte, maxPricePerSegment *big.Int) (*types.Transaction, error) {
+	tx, err := c.protocolSession.Job(streamId, transcodingOptions, maxPricePerSegment)
+
+	if err != nil {
+		glog.Errorf("Error creating job: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("[%v] Submitted transaction %v. Creating a job for stream id %v", c.account.Address.Hex(), tx.Hash().Hex(), streamId)
+	return tx, nil
+}
+
+func (c *Client) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) {
+	sig, err := c.keyStore.SignHashWithPassphrase(c.account, passphrase, hash)
+
+	if err != nil {
+		glog.Errorf("Error signing segment: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("[%v] Created signed segment hash %v", c.account.Address.Hex(), common.ToHex(sig))
+	return sig, nil
+}
+
+func (c *Client) ClaimWork(jobId *big.Int, startSegmentSequenceNumber *big.Int, endSegmentSequenceNumber *big.Int, transcodeClaimsRoot [32]byte) (*types.Transaction, error) {
+	tx, err := c.protocolSession.ClaimWork(jobId, startSegmentSequenceNumber, endSegmentSequenceNumber, transcodeClaimsRoot)
+
+	if err != nil {
+		glog.Errorf("Error claiming work: %v", err)
+		return nil, err
+	}
+
+	glog.Infof("[%v] Submitted transaction %v. Claimed work for segments %v - %v", c.account.Address.Hex(), tx.Hash().Hex(), startSegmentSequenceNumber, endSegmentSequenceNumber)
+	return tx, nil
+}
+
+func (c *Client) Verify(jobId *big.Int, segmentSequenceNumber *big.Int, dataHash [32]byte, transcodedDataHash [32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error) {
+	tx, err := c.protocolSession.Verify(jobId, segmentSequenceNumber, dataHash, transcodedDataHash, broadcasterSig, proof)
+
+	if err != nil {
+		glog.Errorf("Error invoking verify %v", err)
+		return nil, err
+	}
+
+	glog.Infof("[%v] Submitted transaction %v, Invoked verify for segment %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentSequenceNumber)
+	return tx, nil
+}
+
+// Token methods
 
 func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error) {
 	tx, err := c.tokenSession.Transfer(toAddr, amount)
@@ -344,6 +389,6 @@ func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (*types.Transa
 		return nil, err
 	}
 
-	glog.Infof("[%v] Submitted transaction %v. Transfer %v LPTU to %v", c.addr.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
+	glog.Infof("[%v] Submitted transaction %v. Transfer %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
 	return tx, nil
 }
