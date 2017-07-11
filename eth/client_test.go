@@ -1,6 +1,7 @@
 package eth
 
 import (
+	"fmt"
 	"math/big"
 	"os/user"
 	"path/filepath"
@@ -12,42 +13,21 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/golang/glog"
 	ethTypes "github.com/livepeer/golp/eth/types"
 )
 
 var (
 	usr, _           = user.Current()
 	dir              = usr.HomeDir
-	datadir          = ".lpTest"
-	keyStore         = keystore.NewKeyStore(filepath.Join(dir, datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
+	datadir          = filepath.Join(dir, ".lpTest")
+	keyStore         = keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 	defaultPassword  = ""
 	rpcTimeout       = 10 * time.Second
 	eventTimeout     = 30 * time.Second
-	minedTxTimeout   = 60
+	minedTxTimeout   = 60 * time.Second
 	testRewardLength = 60
 )
-
-func checkRoundAndInit(t *testing.T, client *Client) {
-	ok, err := client.CurrentRoundInitialized()
-
-	if err != nil {
-		t.Fatalf("Client failed CurrentRoundInitialized: %v", err)
-	}
-
-	if !ok {
-		tx, err := client.InitializeRound()
-
-		if err != nil {
-			t.Fatalf("Client failed InitializeRound: %v", err)
-		}
-
-		_, err = waitForMinedTx(client.backend, rpcTimeout, minedTxTimeout, tx.Hash())
-
-		if err != nil {
-			t.Fatalf("%v", err)
-		}
-	}
-}
 
 func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *ethclient.Client) common.Address {
 	var (
@@ -63,7 +43,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		t.Fatalf("Failed to deploy Node: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined Node tx: %v", err)
@@ -78,7 +58,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		t.Fatalf("Failed to deploy MaxHeap: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined MaxHeap tx: %v", err)
@@ -93,7 +73,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		t.Fatalf("Failed to deploy MinHeap: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined MinHeap tx: %v", err)
@@ -111,7 +91,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		t.Fatalf("Failed to deploy TranscoderPools: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined TranscoderPools tx: %v", err)
@@ -125,7 +105,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		t.Fatalf("Failed to deploy MerkleProof: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined MerkleProof tx: %v", err)
@@ -139,7 +119,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		t.Fatalf("Failed to deploy ECVerify: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined ECVerify tx: %v", err)
@@ -157,7 +137,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		t.Fatalf("Failed to deploy TranscodeJobs: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined TranscodeJobs tx: %v", err)
@@ -171,7 +151,7 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		t.Fatalf("Failed to deploy SafeMath: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined SafeMath tx: %v", err)
@@ -185,13 +165,14 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		"TranscoderPools": transcoderPoolsAddr,
 		"SafeMath":        safeMathAddr,
 	}
-	protocolAddr, tx, err := deployLivepeerProtocol(transactOpts, backend, protocolLibraries, 1, big.NewInt(40), big.NewInt(2))
+	// protocolAddr, tx, err := deployLivepeerProtocol(transactOpts, backend, protocolLibraries, 1, big.NewInt(40), big.NewInt(2))
+	protocolAddr, tx, err := deployLivepeerProtocol(transactOpts, backend, protocolLibraries, 1, big.NewInt(20), big.NewInt(2))
 
 	if err != nil {
 		t.Fatalf("Failed to deploy protocol: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("Failed to wait for mined LivepeerProtocol tx: %v", err)
@@ -206,7 +187,7 @@ func TestReward(t *testing.T) {
 		err error
 	)
 
-	backend, err := ethclient.Dial(filepath.Join(dir, datadir, "geth.ipc"))
+	backend, err := ethclient.Dial(filepath.Join(datadir, "geth.ipc"))
 
 	if err != nil {
 		t.Fatalf("Failed to connect to Ethereum client: %v", err)
@@ -223,6 +204,7 @@ func TestReward(t *testing.T) {
 	// DEPLOY
 
 	protocolAddr := deployContracts(t, transactOpts, backend)
+	fmt.Printf("Contract addr: %x\n", protocolAddr.String())
 
 	// SETUP CLIENTS
 
@@ -258,7 +240,7 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Client 0 failed to transfer tokens: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -269,7 +251,7 @@ func TestReward(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Client 0 failed to transfer tokens: %v", err)
 	}
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -281,7 +263,7 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Client 0 failed to transfer tokens: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -290,53 +272,63 @@ func TestReward(t *testing.T) {
 	// TRANSCODER REGISTRATION & BONDING
 
 	// Start at the beginning of a round to avoid timing edge cases in tests
-	err = waitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
+	err = WaitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
 
 	if err != nil {
 		t.Fatalf("Failed to wait until next round: %v", err)
 	}
 
-	checkRoundAndInit(t, client0)
+	if err := CheckRoundAndInit(client0, rpcTimeout, minedTxTimeout); err != nil {
+		t.Fatalf("%v", err)
+	}
 	tx, err = client0.Transcoder(10, 5, big.NewInt(100))
 
 	if err != nil {
 		t.Fatalf("Client 0 failed to call transcoder: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 
-	checkRoundAndInit(t, client0)
+	if err := CheckRoundAndInit(client0, rpcTimeout, minedTxTimeout); err != nil {
+		t.Fatalf("%v", err)
+	}
 	tx, err = client0.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 0 failed to bond: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 
-	checkRoundAndInit(t, client1)
+	if err := CheckRoundAndInit(client1, rpcTimeout, minedTxTimeout); err != nil {
+		t.Fatalf("%v", err)
+	}
 	_, err = client1.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 1 failed to bond: %v", err)
 	}
 
-	checkRoundAndInit(t, client2)
+	if err := CheckRoundAndInit(client2, rpcTimeout, minedTxTimeout); err != nil {
+		t.Fatalf("%v", err)
+	}
 	_, err = client2.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 2 failed to bond: %v", err)
 	}
 
-	checkRoundAndInit(t, client3)
+	if err := CheckRoundAndInit(client3, rpcTimeout, minedTxTimeout); err != nil {
+		t.Fatalf("%v", err)
+	}
 	_, err = client3.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
@@ -346,7 +338,9 @@ func TestReward(t *testing.T) {
 	// REWARD
 
 	for i := 0; i < testRewardLength; i++ {
-		checkRoundAndInit(t, client0)
+		if err := CheckRoundAndInit(client0, rpcTimeout, minedTxTimeout); err != nil {
+			t.Fatalf("%v", err)
+		}
 
 		valid, err := client0.ValidRewardTimeWindow()
 
@@ -361,7 +355,7 @@ func TestReward(t *testing.T) {
 				t.Fatalf("Client 0 failed Reward: %v", err)
 			}
 
-			_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+			_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 			if err != nil {
 				t.Fatalf("%v", err)
@@ -378,7 +372,7 @@ func TestJobClaimVerify(t *testing.T) {
 		err error
 	)
 
-	backend, err := ethclient.Dial(filepath.Join(dir, datadir, "geth.ipc"))
+	backend, err := ethclient.Dial(filepath.Join(datadir, "geth.ipc"))
 
 	if err != nil {
 		t.Fatalf("Failed to connect to Ethereum client: %v", err)
@@ -418,7 +412,7 @@ func TestJobClaimVerify(t *testing.T) {
 		t.Fatalf("Client 0 failed to transfer tokens: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -427,33 +421,35 @@ func TestJobClaimVerify(t *testing.T) {
 	// TRANSCODER REGISTRATION & BONDING
 
 	// Start at the beginning of a round to avoid timing edge cases in tests
-	err = waitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
+	err = WaitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
 
 	if err != nil {
 		t.Fatalf("Failed to wait until next round: %v", err)
 	}
-
-	checkRoundAndInit(t, client0)
+	if err := CheckRoundAndInit(client0, rpcTimeout, minedTxTimeout); err != nil {
+		t.Fatalf("%v", err)
+	}
 	tx, err = client0.Transcoder(10, 5, big.NewInt(100))
 
 	if err != nil {
 		t.Fatalf("Client 0 failed to call transcoder: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-
-	checkRoundAndInit(t, client0)
+	if err := CheckRoundAndInit(client0, rpcTimeout, minedTxTimeout); err != nil {
+		t.Fatalf("%v", err)
+	}
 	tx, err = client0.Bond(big.NewInt(100), accounts[0].Address)
 
 	if err != nil {
 		t.Fatalf("Client 0 failed to bond: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -461,7 +457,10 @@ func TestJobClaimVerify(t *testing.T) {
 
 	// SUBSCRIBE TO JOB EVENT
 
-	logsSub, logsCh, err := client0.SubscribeToJobEvent()
+	logsSub, logsCh, err := client0.SubscribeToJobEvent(func(l types.Log) error {
+		glog.Infof("Got log: %v", l)
+		return nil
+	})
 
 	if err != nil {
 		t.Fatalf("Client 0 failed to subscribe to job event: %v", err)
@@ -470,20 +469,30 @@ func TestJobClaimVerify(t *testing.T) {
 	// CREATE JOB
 
 	// Start at the beginning of a round
-	err = waitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
-	checkRoundAndInit(t, client1)
+	err = WaitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
+	if err := CheckRoundAndInit(client1, rpcTimeout, minedTxTimeout); err != nil {
+		t.Fatalf("%v", err)
+	}
 
 	// Stream ID
 	streamID := "1"
 
 	dummyTranscodingOptions := common.BytesToHash([]byte{5})
-	_, err = client1.Job(streamID, dummyTranscodingOptions, big.NewInt(150))
-
+	tx, err = client1.Job(streamID, dummyTranscodingOptions, big.NewInt(150))
 	if err != nil {
 		t.Fatalf("Client 1 failed to create a job: %v", err)
 	}
+	receipt, err := WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	if err != nil {
+		glog.Errorf("%v", err)
+		return
+	}
+	if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+		glog.Errorf("Job Creation Failed")
+		return
+	}
 
-	time.Sleep(10 * time.Second)
+	// time.Sleep(10 * time.Second)
 
 	// CLAIM WORK
 
@@ -587,7 +596,7 @@ func TestJobClaimVerify(t *testing.T) {
 		t.Fatalf("Client 0 failed to claim work: %v", err)
 	}
 
-	_, err = waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -601,7 +610,7 @@ func TestJobClaimVerify(t *testing.T) {
 		t.Fatalf("Client 0 failed to invoke verify: %v", err)
 	}
 
-	receipt, err := waitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	receipt, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -613,4 +622,147 @@ func TestJobClaimVerify(t *testing.T) {
 
 	logsSub.Unsubscribe()
 	close(logsCh)
+}
+
+func TestDeployContract(t *testing.T) {
+	backend, err := ethclient.Dial(filepath.Join(datadir, "geth.ipc"))
+
+	if err != nil {
+		t.Fatalf("Failed to connect to Ethereum client: %v", err)
+	}
+
+	accounts := keyStore.Accounts()
+
+	transactOpts, err := NewTransactOptsForAccount(accounts[0], defaultPassword, keyStore)
+
+	if err != nil {
+		t.Fatalf("Failed to create transact opts: %v", err)
+	}
+
+	// DEPLOY
+
+	protocolAddr := deployContracts(t, transactOpts, backend)
+	fmt.Printf("Contract addr: %x\n", protocolAddr.String())
+
+}
+
+func TestTranscoderLoop(t *testing.T) {
+	backend, err := ethclient.Dial(filepath.Join(datadir, "geth.ipc"))
+
+	if err != nil {
+		t.Fatalf("Failed to connect to Ethereum client: %v", err)
+	}
+
+	accounts := keyStore.Accounts()
+
+	transactOpts, err := NewTransactOptsForAccount(accounts[0], defaultPassword, keyStore)
+
+	if err != nil {
+		t.Fatalf("Failed to create transact opts: %v", err)
+	}
+
+	// DEPLOY
+
+	protocolAddr := deployContracts(t, transactOpts, backend)
+	fmt.Printf("Contract addr: %x\n", protocolAddr.String())
+
+	client0, err := NewClient(accounts[0], defaultPassword, datadir, backend, protocolAddr, rpcTimeout, eventTimeout)
+	if err != nil {
+		t.Fatalf("Failed to create client 0: %v", err)
+	}
+
+	// TRANSCODER REGISTRATION & BONDING
+
+	// Start at the beginning of a round to avoid timing edge cases in tests
+	err = WaitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
+
+	if err != nil {
+		t.Fatalf("Failed to wait until next round: %v", err)
+	}
+	if err := CheckRoundAndInit(client0, rpcTimeout, minedTxTimeout); err != nil {
+		t.Fatalf("%v", err)
+	}
+	tx, err := client0.Transcoder(10, 5, big.NewInt(100))
+
+	if err != nil {
+		t.Fatalf("Client 0 failed to call transcoder: %v", err)
+	}
+
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	if err := CheckRoundAndInit(client0, rpcTimeout, minedTxTimeout); err != nil {
+		t.Fatalf("%v", err)
+	}
+	tx, err = client0.Bond(big.NewInt(100), accounts[0].Address)
+
+	if err != nil {
+		t.Fatalf("Client 0 failed to bond: %v", err)
+	}
+
+	receipt, err := WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+		glog.Errorf("Client 0 failed bonding")
+	}
+
+	active, err := client0.IsActiveTranscoder()
+	if err != nil {
+		glog.Errorf("Error getting transcoder state: %v", err)
+	}
+	// glog.Infof("Transcoder stake: %v", s)
+	if !active {
+		glog.Infof("Transcoder %v is inactive", accounts[0].Address)
+	} else {
+		s, err := client0.TranscoderStake()
+		if err != nil {
+			glog.Errorf("Error getting transcoder stake: %v", err)
+		}
+		glog.Infof("Transcoder stake: %v", s)
+	}
+
+	// SUBSCRIBE TO JOB EVENT
+
+	logsSub, logsCh, err := client0.SubscribeToJobEvent(func(l types.Log) error {
+		glog.Infof("Got log: %v", l)
+		return nil
+	})
+	defer logsSub.Unsubscribe()
+	defer close(logsCh)
+
+	if err != nil {
+		t.Fatalf("Client 0 failed to subscribe to job event: %v", err)
+	}
+
+	// CREATE JOB
+
+	// Start at the beginning of a round
+	err = WaitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
+	if err := CheckRoundAndInit(client0, rpcTimeout, minedTxTimeout); err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	// Stream ID
+	streamID := "1"
+
+	dummyTranscodingOptions := common.BytesToHash([]byte{5})
+	tx, err = client0.Job(streamID, dummyTranscodingOptions, big.NewInt(150))
+	if err != nil {
+		t.Fatalf("Client 1 failed to create a job: %v", err)
+	}
+	receipt, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
+	if err != nil {
+		glog.Errorf("%v", err)
+		return
+	}
+	if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+		glog.Errorf("Job Creation Failed")
+		return
+	}
+
+	time.Sleep(10 * time.Second)
 }

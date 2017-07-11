@@ -10,12 +10,18 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	"math/big"
+
 	"github.com/ericxtang/m3u8"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	"github.com/livepeer/golp/core"
+	"github.com/livepeer/golp/eth"
 	"github.com/livepeer/golp/net"
 	"github.com/livepeer/lpms"
 	"github.com/livepeer/lpms/segmenter"
@@ -25,11 +31,23 @@ import (
 var ErrNotFound = errors.New("NotFound")
 var ErrAlreadyExists = errors.New("StreamAlreadyExists")
 var ErrRTMPPublish = errors.New("ErrRTMPPublish")
+var ErrBroadcast = errors.New("ErrBroadcast")
 var HLSWaitTime = time.Second * 10
 var HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
 var HLSBufferWindow = uint(5)
 var SegOptions = segmenter.SegmenterOptions{SegLength: 8 * time.Second}
 var HLSUnsubWorkerFreq = time.Second * 5
+
+var EthRpcTimeout = 5 * time.Second
+var EthEventTimeout = 5 * time.Second
+var EthMinedTxTimeout = 60 * time.Second
+var EthRoundLength = big.NewInt(20)
+
+var BroadcastPrice = big.NewInt(150)
+var BroadcastJobVideoProfile = net.P_240P_30FPS_4_3
+var TranscoderFeeCut = uint8(10)
+var TranscoderRewardCut = uint8(10)
+var TranscoderSegmentPrice = big.NewInt(150)
 
 type LivepeerMediaServer struct {
 	LPMS         *lpms.LPMS
@@ -50,6 +68,8 @@ func NewLivepeerMediaServer(rtmpPort string, httpPort string, ffmpegPath string,
 
 //StartLPMS starts the LPMS server
 func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
+	glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfile.Name)
+
 	s.hlsSubTimer = make(map[core.StreamID]time.Time)
 	go s.startHlsUnsubscribeWorker(time.Second*10, HLSUnsubWorkerFreq)
 
@@ -78,6 +98,122 @@ func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
 		glog.Infof("New Stream IDs: %v", ids)
 	})
 
+	http.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Query().Get("price")
+		if p != "" {
+			pi, err := strconv.Atoi(p)
+			if err != nil {
+				glog.Errorf("Price conversion failed: %v", err)
+				return
+			}
+			BroadcastPrice = big.NewInt(int64(pi))
+		}
+
+		j := r.URL.Query().Get("job")
+		if j != "" {
+			jp := net.VideoProfileLookup[j]
+			if jp.Name != "" {
+				BroadcastJobVideoProfile = jp
+			}
+		}
+
+		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfile.Name)
+	})
+
+	http.HandleFunc("/activateTranscoder", func(w http.ResponseWriter, r *http.Request) {
+		active, err := s.LivepeerNode.Eth.IsActiveTranscoder()
+		if err != nil {
+			glog.Errorf("Error getting transcoder state: %v", err)
+		}
+		if active {
+			glog.Error("Transcoder is already active")
+			return
+		}
+
+		//Wait until a fresh round, register transcoder
+		err = eth.WaitUntilNextRound(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthRoundLength)
+		if err != nil {
+			glog.Errorf("Failed to wait until next round: %v", err)
+			return
+		}
+		if err := eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout); err != nil {
+			glog.Errorf("%v", err)
+			return
+		}
+
+		tx, err := s.LivepeerNode.Eth.Transcoder(10, 5, big.NewInt(100))
+		if err != nil {
+			glog.Errorf("Error creating transcoder: %v", err)
+			return
+		}
+
+		receipt, err := eth.WaitForMinedTx(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
+		if err != nil {
+			glog.Errorf("%v", err)
+			return
+		}
+		if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+			glog.Errorf("Client 0 failed transcoder registration")
+		}
+
+		//Bond stake to self
+		eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout)
+		tx, err = s.LivepeerNode.Eth.Bond(big.NewInt(100), s.LivepeerNode.Eth.Account().Address)
+		if err != nil {
+			glog.Errorf("Client 0 failed to bond: %v", err)
+			return
+		}
+		receipt, err = eth.WaitForMinedTx(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
+		if err != nil {
+			glog.Errorf("%v", err)
+			return
+		}
+		if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+			glog.Errorf("Client 0 failed bonding")
+		}
+
+		//Print out total stake
+		s, err := s.LivepeerNode.Eth.TranscoderStake()
+		if err != nil {
+			glog.Errorf("Error getting transcoder stake: %v", err)
+		}
+		glog.Infof("Transcoder Active. Total Stake: %v", s)
+	})
+
+	http.HandleFunc("/setTranscoderConfig", func(w http.ResponseWriter, r *http.Request) {
+		fc := r.URL.Query().Get("feecut")
+		if fc != "" {
+			fci, err := strconv.Atoi(fc)
+			if err != nil {
+				glog.Errorf("Fee cut conversion failed: %v", err)
+				return
+			}
+			TranscoderFeeCut = uint8(fci)
+		}
+
+		rc := r.URL.Query().Get("rewardcut")
+		if rc != "" {
+			rci, err := strconv.Atoi(rc)
+			if err != nil {
+				glog.Errorf("Reward cut conversion failed: %v", err)
+				return
+			}
+			TranscoderRewardCut = uint8(rci)
+		}
+
+		p := r.URL.Query().Get("price")
+		if p != "" {
+			pi, err := strconv.Atoi(p)
+			if err != nil {
+				glog.Errorf("Price conversion failed: %v", err)
+				return
+			}
+			TranscoderSegmentPrice = big.NewInt(int64(pi))
+		}
+
+		glog.Infof("Transcoder Fee Cut: %v, Transcoder Reward Cut: %v, Transcoder Segment Price: %v", TranscoderFeeCut, TranscoderRewardCut, TranscoderSegmentPrice)
+	})
+
 	http.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {
 	})
 
@@ -102,11 +238,26 @@ func (s *LivepeerMediaServer) makeCreateRTMPStreamIDHandler() func(url *url.URL)
 
 func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmpStrm *stream.VideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm *stream.VideoStream) (err error) {
+		if s.LivepeerNode.Eth != nil {
+			//Check Token Balance
+			b, err := s.LivepeerNode.Eth.TokenBalance()
+			if err != nil {
+				glog.Errorf("Error getting token balance:%v", err)
+				return ErrBroadcast
+			}
+			glog.Infof("Current token balance for is: %v", b)
+
+			if b.Cmp(BroadcastPrice) < 0 {
+				glog.Errorf("Low balance (%v) - cannot start broadcast session", b)
+				return ErrBroadcast
+			}
+
+		}
+
+		//Check if stream ID already exists
 		if s.LivepeerNode.StreamDB.GetStream(core.StreamID(rtmpStrm.GetStreamID())) != nil {
 			return ErrAlreadyExists
 		}
-
-		var b net.Broadcaster
 
 		//Add stream to StreamDB
 		if err := s.LivepeerNode.StreamDB.AddStream(core.StreamID(rtmpStrm.GetStreamID()), rtmpStrm); err != nil {
@@ -126,54 +277,40 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 			err := s.LPMS.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions) //TODO: do we need to cancel this thread when the stream finishes?
 			if err != nil {
 				glog.Infof("Error in segmenter, broadcasting finish message")
-				err := b.Finish()
+				err := hlsStrm.WriteHLSSegmentToStream(stream.HLSSegment{EOF: true})
 				if err != nil {
 					glog.Errorf("Error broadcasting finish: %v", err)
 				}
 			}
 		}()
 
-		// if err := s.LivepeerNode.BroadcastToNetwork(context.Background(), hlsStrm); err != nil {
-		// 	glog.Errorf("Error broadcasting to network: %v", err)
-		// }
 		//Kick off go routine to broadcast the hls stream.
-		go func() {
-			b, err = s.LivepeerNode.VideoNetwork.GetBroadcaster(hlsStrm.GetStreamID())
-			// glog.Infof("Getting broadcaster, got %v", b)
-			if err != nil {
-				glog.Errorf("Error gettng broadcaster: %v", err)
-				return
-			}
-			counter := uint64(0)
-			for {
-				seg, err := hlsStrm.ReadHLSSegment()
-				if err != nil {
-					// glog.Errorf("Error reading broadcast HLS Segment: %v", err)
-					time.Sleep(time.Second)
-					continue
-				}
-
-				//Encode segment into []byte, broadcast it
-				var buf bytes.Buffer
-				enc := gob.NewEncoder(&buf)
-				err = enc.Encode(seg)
-				if err != nil {
-					glog.Errorf("Error encoding segment to []byte: %v", err)
-					continue
-				}
-
-				err = b.Broadcast(counter, buf.Bytes())
-				if err != nil {
-					glog.Errorf("Error broadcasting segment to network: %v", err)
-				}
-				counter++
-			}
-		}()
+		go s.LivepeerNode.BroadcastToNetwork(hlsStrm)
 
 		//Store HLS Stream into StreamDB, remember HLS stream so we can remove later
 		s.LivepeerNode.StreamDB.AddStream(core.StreamID(hlsStrm.GetStreamID()), hlsStrm)
 		s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()] = hlsStrm.GetStreamID()
 
+		if s.LivepeerNode.Eth != nil {
+			//Create Transcode Job Onchain
+			tx, err := createBroadcastJob(s, hlsStrm)
+			if err != nil {
+				glog.Info("Error creating job.  Waiting for round start and trying again.")
+				err = eth.WaitUntilNextRound(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthRoundLength)
+				if err != nil {
+					glog.Errorf("Error waiting for round start: %v", err)
+					return ErrBroadcast
+				}
+
+				tx, err = createBroadcastJob(s, hlsStrm)
+				if err != nil {
+					glog.Errorf("Error broadcasting: %v", err)
+					return ErrBroadcast
+				}
+			}
+			glog.Infof("Created broadcast job.  Price: %v. Type: %v. tx: %v", BroadcastPrice, BroadcastJobVideoProfile.Name, tx.Hash())
+
+		}
 		return nil
 	}
 }
@@ -213,7 +350,7 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 
 		buf := s.LivepeerNode.StreamDB.GetHLSBuffer(strmID)
 		if buf == nil {
-			//Get subscriber.
+			//Get subscriber and set up callback for when we get segments.
 			sub, err := s.LivepeerNode.VideoNetwork.GetSubscriber(strmID.String())
 			if err != nil {
 				glog.Errorf("Error getting subscriber: %v", err)
@@ -253,8 +390,8 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 		for time.Since(start) < time.Second*10 {
 			buf = s.LivepeerNode.StreamDB.GetHLSBuffer(strmID)
 			if buf == nil {
-				glog.Infof("Got nothing - sleeping: %v", s.LivepeerNode.StreamDB.GetHLSBuffer(strmID))
-				time.Sleep(500 * time.Millisecond)
+				glog.Infof("Waiting for playlist - sleeping: %v", s.LivepeerNode.StreamDB.GetHLSBuffer(strmID))
+				time.Sleep(2 * time.Second)
 				continue
 			} else {
 				pl, err := buf.LatestPlaylist()
@@ -337,6 +474,8 @@ func (s *LivepeerMediaServer) startHlsUnsubscribeWorker(limit time.Duration, fre
 	}
 }
 
+//Helper Methods
+
 func parseStreamID(reqPath string) core.StreamID {
 	var strmID string
 	regex, _ := regexp.Compile("\\/stream\\/([[:alpha:]]|\\d)*")
@@ -355,4 +494,26 @@ func parseSegName(reqPath string) string {
 		segName = strings.Replace(match, "/stream/", "", -1)
 	}
 	return segName
+}
+
+func createBroadcastJob(s *LivepeerMediaServer, hlsStrm *stream.VideoStream) (*types.Transaction, error) {
+	eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout)
+
+	tOps := common.BytesToHash([]byte(BroadcastJobVideoProfile.Name))
+	tx, err := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), tOps, BroadcastPrice)
+
+	if err != nil {
+		glog.Errorf("Error creating test broadcast job: %v", err)
+		return nil, ErrBroadcast
+	}
+	receipt, err := eth.WaitForMinedTx(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
+	if err != nil {
+		glog.Errorf("%v", err)
+		return nil, ErrBroadcast
+	}
+	if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+		glog.Errorf("Job Creation Failed")
+		return nil, ErrBroadcast
+	}
+	return tx, nil
 }

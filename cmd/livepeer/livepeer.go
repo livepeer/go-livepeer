@@ -5,23 +5,35 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"path"
+	"path/filepath"
+	"time"
 
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	"github.com/livepeer/golp/core"
+	"github.com/livepeer/golp/eth"
 	"github.com/livepeer/golp/mediaserver"
 )
 
 var ErrKeygen = errors.New("ErrKeygen")
+var EthRpcTimeout = 10 * time.Second
+var EthEventTimeout = 30 * time.Second
+var EthMinedTxTimeout = 60 * time.Second
 
-type KeyFile struct {
+type LPKeyFile struct {
 	Pub  string
 	Priv string
 }
 
-func getKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
+func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 	gen := false
 	var priv crypto.PrivKey
 	var pub crypto.PubKey
@@ -35,7 +47,7 @@ func getKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 			gen = true
 		}
 
-		var keyf KeyFile
+		var keyf LPKeyFile
 		if gen == false {
 			if err := json.Unmarshal(f, &keyf); err != nil {
 				gen = true
@@ -85,7 +97,7 @@ func getKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 
 		//Write keys to datadir
 		if datadir != "" {
-			kf := KeyFile{Priv: crypto.ConfigEncodeKey(privb), Pub: crypto.ConfigEncodeKey(pubb)}
+			kf := LPKeyFile{Priv: crypto.ConfigEncodeKey(privb), Pub: crypto.ConfigEncodeKey(pubb)}
 			kfb, err := json.Marshal(kf)
 			if err != nil {
 				glog.Errorf("Error writing keyfile to datadir: %v", err)
@@ -102,6 +114,17 @@ func getKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 	return priv, pub, nil
 }
 
+func getEthAccount(datadir string) (accounts.Account, error) {
+	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
+	accounts := keyStore.Accounts()
+	if len(accounts) == 0 {
+		glog.Errorf("Cannot find geth account, creating a new one")
+		return accounts[0], fmt.Errorf("ErrGeth")
+	}
+
+	return accounts[0], nil
+}
+
 func main() {
 	port := flag.Int("p", 0, "port")
 	httpPort := flag.String("http", "", "http port")
@@ -110,6 +133,12 @@ func main() {
 	bootID := flag.String("bootID", "", "Bootstrap node ID")
 	bootAddr := flag.String("bootAddr", "", "Bootstrap node addr")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
+	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
+	newEthAccount := flag.Bool("newEthAccount", false, "Create an eth account")
+	ethPassword := flag.String("ethPassword", "", "New Eth account password")
+	gethipc := flag.String("gethipc", "", "Geth ipc file location")
+	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
+
 	flag.Parse()
 
 	if *port == 0 {
@@ -122,13 +151,13 @@ func main() {
 		glog.Fatalf("Please provide rtmp port")
 	}
 
-	priv, pub, err := getKeys(*datadir)
+	priv, pub, err := getLPKeys(*datadir)
 	if err != nil {
 		glog.Errorf("Error getting keys: %v", err)
 		return
 	}
 
-	n, err := core.NewLivepeerNode(*port, priv, pub)
+	n, err := core.NewLivepeerNode(*port, priv, pub, nil)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
@@ -146,6 +175,72 @@ func main() {
 			return
 		}
 	}
+
+	var acct accounts.Account
+
+	if *newEthAccount {
+		keyStore := keystore.NewKeyStore(filepath.Join(*datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
+		acct, err = keyStore.NewAccount(*ethPassword)
+		if err != nil {
+			glog.Errorf("Error creating new eth account: %v", err)
+			return
+		}
+	} else {
+		acct, err = getEthAccount(*datadir)
+		if err != nil {
+			glog.Errorf("Error getting Eth account: %v", err)
+			return
+		}
+	}
+
+	var backend *ethclient.Client
+	if *gethipc != "" {
+		glog.Infof("Connecting to geth @ %v", *gethipc)
+		backend, err = ethclient.Dial(*gethipc)
+		if err != nil {
+			glog.Errorf("Failed to connect to Ethereum client: %v", err)
+			return
+		}
+
+		client, err := eth.NewClient(acct, *ethPassword, *datadir, backend, common.HexToAddress(*protocolAddr), EthRpcTimeout, EthEventTimeout)
+		if err != nil {
+			glog.Errorf("Error creating Eth client: %v", err)
+			return
+		}
+		n.Eth = client
+
+		if *transcoder {
+			//Check if transcoder is active
+			active, err := n.Eth.IsActiveTranscoder()
+			if err != nil {
+				glog.Errorf("Error getting transcoder state: %v", err)
+			}
+
+			if !active {
+				glog.Infof("Transcoder %v is inactive", acct.Address.Hex())
+			} else {
+				s, err := n.Eth.TranscoderStake()
+				if err != nil {
+					glog.Errorf("Error getting transcoder stake: %v", err)
+				}
+				glog.Infof("Transcoder Active. Total Stake: %v", s)
+			}
+
+			logsSub, logsChan, err := n.Eth.SubscribeToJobEvent(func(l types.Log) error {
+				glog.Infof("Transcoder got job from addr: %v  Job: %v", l.Address, l)
+				return nil
+			})
+
+			if err != nil {
+				glog.Errorf("Error subscribing to job event: %v", err)
+			}
+			defer logsSub.Unsubscribe()
+			defer close(logsChan)
+		}
+	} else {
+		glog.Infof("Not creating Eth client...")
+	}
+
 	s := mediaserver.NewLivepeerMediaServer(*rtmpPort, *httpPort, "", n)
 	s.StartLPMS(context.Background())
 

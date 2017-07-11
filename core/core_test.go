@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
+	"math/big"
 	"testing"
 	"time"
 
@@ -12,6 +13,11 @@ import (
 
 	"io/ioutil"
 
+	ethereum "github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	"github.com/livepeer/golp/net"
 	"github.com/livepeer/lpms/stream"
@@ -90,7 +96,7 @@ func (s *StubSubscriber) Unsubscribe() error { return nil }
 func TestTranscode(t *testing.T) {
 	//Set up the node
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	n, _ := NewLivepeerNode(15000, priv, pub)
+	n, _ := NewLivepeerNode(15000, priv, pub, nil)
 	n.VideoNetwork = &StubVideoNetwork{T: t}
 
 	//Call transcode
@@ -216,4 +222,79 @@ func monitorChan(intChan chan int) {
 			fmt.Printf("i:%v\n", i)
 		}
 	}
+}
+
+type StubEth struct {
+	strmID   string
+	tOpts    [32]byte
+	maxPrice *big.Int
+}
+
+func (e *StubEth) Backend() *ethclient.Client { return nil }
+func (e *StubEth) Account() accounts.Account  { return accounts.Account{} }
+func (e *StubEth) SubscribeToJobEvent(callback func(types.Log) error) (ethereum.Subscription, chan types.Log, error) {
+	return nil, nil, nil
+}
+func (e *StubEth) WatchEvent(logsCh <-chan types.Log) (types.Log, error) { return types.Log{}, nil }
+func (e *StubEth) RoundInfo() (*big.Int, *big.Int, *big.Int, *big.Int, error) {
+	return nil, nil, nil, nil, nil
+}
+func (e *StubEth) InitializeRound() (*types.Transaction, error) { return nil, nil }
+func (e *StubEth) CurrentRoundInitialized() (bool, error)       { return false, nil }
+func (e *StubEth) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubEth) IsActiveTranscoder() (bool, error)  { return false, nil }
+func (e *StubEth) TranscoderStake() (*big.Int, error) { return nil, nil }
+func (e *StubEth) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubEth) ValidRewardTimeWindow() (bool, error) { return false, nil }
+func (e *StubEth) Reward() (*types.Transaction, error)  { return nil, nil }
+func (e *StubEth) Job(streamId string, transcodingOptions [32]byte, maxPricePerSegment *big.Int) (*types.Transaction, error) {
+	e.strmID = streamId
+	e.tOpts = transcodingOptions
+	e.maxPrice = maxPricePerSegment
+	return nil, nil
+}
+func (e *StubEth) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) { return nil, nil }
+func (e *StubEth) ClaimWork(jobId *big.Int, startSegmentSequenceNumber *big.Int, endSegmentSequenceNumber *big.Int, transcodeClaimsRoot [32]byte) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubEth) Verify(jobId *big.Int, segmentSequenceNumber *big.Int, dataHash [32]byte, transcodedDataHash [32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubEth) Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubEth) TokenBalance() (*big.Int, error) { return nil, nil }
+
+func TestCreateTranscodeJob(t *testing.T) {
+	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	seth := &StubEth{}
+	n, _ := NewLivepeerNode(15000, priv, pub, seth)
+	strmID := MakeStreamID(n.Identity, RandomVideoID(), "")
+	err := n.CreateTranscodeJob(strmID, []net.VideoProfile{net.P_720P_60FPS_16_9}, 999999999999)
+	if err == nil {
+		t.Errorf("Expecting error since no broadcast stream in streamDB")
+	}
+
+	n.StreamDB.AddNewHLSBuffer(strmID)
+	err = n.CreateTranscodeJob(strmID, []net.VideoProfile{net.P_720P_60FPS_16_9}, 999999999999)
+	if err != nil {
+		t.Errorf("Error creating transcoding job")
+	}
+
+	if seth.strmID != strmID.String() {
+		t.Errorf("Expecting strmID to be: %v", strmID)
+	}
+
+	if strings.Trim(string(seth.tOpts[:]), "\x00") != net.P_720P_60FPS_16_9.Name {
+		t.Errorf("Expecting transcode options to be %v, but got %v", net.P_720P_60FPS_16_9.Name, string(seth.tOpts[:]))
+	}
+
+	if big.NewInt(999999999999).Cmp(seth.maxPrice) != 0 {
+		t.Errorf("Expecting price to be 999999999999, got but %v", seth.maxPrice)
+	}
+
 }

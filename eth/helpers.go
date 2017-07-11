@@ -88,14 +88,38 @@ func deployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *ethclient.
 	return addr, tx, nil
 }
 
-func waitForMinedTx(backend *ethclient.Client, rpcTimeout time.Duration, minedTxTimeout int, txHash common.Hash) (*types.Receipt, error) {
+func CheckRoundAndInit(client LivepeerEthClient, rpcTimeout time.Duration, minedTxTimeout time.Duration) error {
+	ok, err := client.CurrentRoundInitialized()
+
+	if err != nil {
+		return fmt.Errorf("Client failed CurrentRoundInitialized: %v", err)
+	}
+
+	if !ok {
+		tx, err := client.InitializeRound()
+
+		if err != nil {
+			return fmt.Errorf("Client failed InitializeRound: %v", err)
+		}
+
+		_, err = WaitForMinedTx(client.Backend(), rpcTimeout, minedTxTimeout, tx.Hash())
+
+		if err != nil {
+			return fmt.Errorf("%v", err)
+		}
+	}
+	return nil
+}
+
+func WaitForMinedTx(backend *ethclient.Client, rpcTimeout time.Duration, minedTxTimeout time.Duration, txHash common.Hash) (*types.Receipt, error) {
 	var (
 		receipt *types.Receipt
 		ctx     context.Context
 		err     error
 	)
 
-	for i := 0; i < minedTxTimeout; i++ {
+	start := time.Now()
+	for time.Since(start) < minedTxTimeout {
 		ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
 
 		receipt, err = backend.TransactionReceipt(ctx, txHash)
@@ -114,7 +138,7 @@ func waitForMinedTx(backend *ethclient.Client, rpcTimeout time.Duration, minedTx
 	return receipt, nil
 }
 
-func nextBlockMultiple(blockNum *big.Int, blockMultiple *big.Int) *big.Int {
+func NextBlockMultiple(blockNum *big.Int, blockMultiple *big.Int) *big.Int {
 	if blockMultiple.Cmp(big.NewInt(0)) == 0 {
 		return blockNum
 	}
@@ -128,7 +152,7 @@ func nextBlockMultiple(blockNum *big.Int, blockMultiple *big.Int) *big.Int {
 	return new(big.Int).Sub(blockNum.Add(blockNum, blockMultiple), remainder)
 }
 
-func waitUntilNextRound(backend *ethclient.Client, rpcTimeout time.Duration, roundLength *big.Int) error {
+func WaitUntilNextRound(backend *ethclient.Client, rpcTimeout time.Duration, roundLength *big.Int) error {
 	ctx, _ := context.WithTimeout(context.Background(), rpcTimeout)
 	block, err := backend.BlockByNumber(ctx, nil)
 
@@ -136,7 +160,7 @@ func waitUntilNextRound(backend *ethclient.Client, rpcTimeout time.Duration, rou
 		return err
 	}
 
-	targetBlockNum := nextBlockMultiple(block.Number(), roundLength)
+	targetBlockNum := NextBlockMultiple(block.Number(), roundLength)
 
 	glog.Infof("Waiting until next round at block %v...", targetBlockNum)
 
