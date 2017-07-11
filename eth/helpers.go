@@ -151,27 +151,3 @@ func NextBlockMultiple(blockNum *big.Int, blockMultiple *big.Int) *big.Int {
 
 	return new(big.Int).Sub(blockNum.Add(blockNum, blockMultiple), remainder)
 }
-
-func WaitUntilNextRound(backend *ethclient.Client, rpcTimeout time.Duration, roundLength *big.Int) error {
-	ctx, _ := context.WithTimeout(context.Background(), rpcTimeout)
-	block, err := backend.BlockByNumber(ctx, nil)
-
-	if err != nil {
-		return err
-	}
-
-	targetBlockNum := NextBlockMultiple(block.Number(), roundLength)
-
-	glog.Infof("Waiting until next round at block %v...", targetBlockNum)
-
-	for block.Number().Cmp(targetBlockNum) == -1 {
-		ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
-		block, err = backend.BlockByNumber(ctx, nil)
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}

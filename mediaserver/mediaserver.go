@@ -41,7 +41,6 @@ var HLSUnsubWorkerFreq = time.Second * 5
 var EthRpcTimeout = 5 * time.Second
 var EthEventTimeout = 5 * time.Second
 var EthMinedTxTimeout = 60 * time.Second
-var EthRoundLength = big.NewInt(20)
 
 var BroadcastPrice = big.NewInt(150)
 var BroadcastJobVideoProfile = net.P_240P_30FPS_4_3
@@ -131,7 +130,7 @@ func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
 		}
 
 		//Wait until a fresh round, register transcoder
-		err = eth.WaitUntilNextRound(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthRoundLength)
+		err = s.LivepeerNode.Eth.WaitUntilNextRound(eth.ProtocolBlockPerRound)
 		if err != nil {
 			glog.Errorf("Failed to wait until next round: %v", err)
 			return
@@ -156,28 +155,7 @@ func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
 			glog.Errorf("Client 0 failed transcoder registration")
 		}
 
-		//Bond stake to self
-		eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout)
-		tx, err = s.LivepeerNode.Eth.Bond(big.NewInt(100), s.LivepeerNode.Eth.Account().Address)
-		if err != nil {
-			glog.Errorf("Client 0 failed to bond: %v", err)
-			return
-		}
-		receipt, err = eth.WaitForMinedTx(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
-		if err != nil {
-			glog.Errorf("%v", err)
-			return
-		}
-		if tx.Gas().Cmp(receipt.GasUsed) == 0 {
-			glog.Errorf("Client 0 failed bonding")
-		}
-
-		//Print out total stake
-		s, err := s.LivepeerNode.Eth.TranscoderStake()
-		if err != nil {
-			glog.Errorf("Error getting transcoder stake: %v", err)
-		}
-		glog.Infof("Transcoder Active. Total Stake: %v", s)
+		printStake(s.LivepeerNode.Eth)
 	})
 
 	http.HandleFunc("/setTranscoderConfig", func(w http.ResponseWriter, r *http.Request) {
@@ -212,6 +190,46 @@ func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
 		}
 
 		glog.Infof("Transcoder Fee Cut: %v, Transcoder Reward Cut: %v, Transcoder Segment Price: %v", TranscoderFeeCut, TranscoderRewardCut, TranscoderSegmentPrice)
+	})
+
+	http.HandleFunc("/bond", func(w http.ResponseWriter, r *http.Request) {
+		addrStr := r.URL.Query().Get("addr")
+		if addrStr == "" {
+			glog.Errorf("Need to provide addr")
+			return
+		}
+
+		amountStr := r.URL.Query().Get("amount")
+		if amountStr == "" {
+			glog.Errorf("Need to provide amount")
+			return
+		}
+
+		addr := common.HexToAddress(addrStr)
+		amount, err := strconv.Atoi(amountStr)
+		if err != nil {
+			glog.Errorf("Cannot convert amount: %v", err)
+			return
+		}
+
+		eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout)
+		tx, err := s.LivepeerNode.Eth.Bond(big.NewInt(int64(amount)), addr)
+		if err != nil {
+			glog.Errorf("Failed to bond: %v", err)
+			return
+		}
+		receipt, err := eth.WaitForMinedTx(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
+		if err != nil {
+			glog.Errorf("%v", err)
+			return
+		}
+		if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+			glog.Errorf("Failed bonding: Ethereum Exception")
+		}
+	})
+
+	http.HandleFunc("/printStake", func(w http.ResponseWriter, r *http.Request) {
+		printStake(s.LivepeerNode.Eth)
 	})
 
 	http.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {
@@ -296,7 +314,7 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 			tx, err := createBroadcastJob(s, hlsStrm)
 			if err != nil {
 				glog.Info("Error creating job.  Waiting for round start and trying again.")
-				err = eth.WaitUntilNextRound(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthRoundLength)
+				err = s.LivepeerNode.Eth.WaitUntilNextRound(eth.ProtocolBlockPerRound)
 				if err != nil {
 					glog.Errorf("Error waiting for round start: %v", err)
 					return ErrBroadcast
@@ -516,4 +534,12 @@ func createBroadcastJob(s *LivepeerMediaServer, hlsStrm *stream.VideoStream) (*t
 		return nil, ErrBroadcast
 	}
 	return tx, nil
+}
+
+func printStake(c eth.LivepeerEthClient) {
+	s, err := c.TranscoderStake()
+	if err != nil {
+		glog.Errorf("Error getting transcoder stake: %v", err)
+	}
+	glog.Infof("Transcoder Active. Total Stake: %v", s)
 }

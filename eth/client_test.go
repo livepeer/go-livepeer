@@ -272,7 +272,7 @@ func TestReward(t *testing.T) {
 	// TRANSCODER REGISTRATION & BONDING
 
 	// Start at the beginning of a round to avoid timing edge cases in tests
-	err = WaitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
+	err = client0.WaitUntilNextRound(big.NewInt(40))
 
 	if err != nil {
 		t.Fatalf("Failed to wait until next round: %v", err)
@@ -421,7 +421,7 @@ func TestJobClaimVerify(t *testing.T) {
 	// TRANSCODER REGISTRATION & BONDING
 
 	// Start at the beginning of a round to avoid timing edge cases in tests
-	err = WaitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
+	err = client0.WaitUntilNextRound(big.NewInt(40))
 
 	if err != nil {
 		t.Fatalf("Failed to wait until next round: %v", err)
@@ -469,7 +469,7 @@ func TestJobClaimVerify(t *testing.T) {
 	// CREATE JOB
 
 	// Start at the beginning of a round
-	err = WaitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
+	err = client1.WaitUntilNextRound(big.NewInt(40))
 	if err := CheckRoundAndInit(client1, rpcTimeout, minedTxTimeout); err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -644,6 +644,14 @@ func TestDeployContract(t *testing.T) {
 	protocolAddr := deployContracts(t, transactOpts, backend)
 	fmt.Printf("Contract addr: %x\n", protocolAddr.String())
 
+	client0, err := NewClient(accounts[0], defaultPassword, datadir, backend, protocolAddr, rpcTimeout, eventTimeout)
+	b0, _ := client0.TokenBalance()
+	glog.Infof("Token balance for %v: %v", accounts[0].Address.Hex(), b0)
+
+	client0.Transfer(accounts[1].Address, big.NewInt(1000000000000))
+	client1, err := NewClient(accounts[1], defaultPassword, datadir, backend, protocolAddr, rpcTimeout, eventTimeout)
+	b1, _ := client1.TokenBalance()
+	glog.Infof("Token balance for %v: %v", accounts[1].Address.Hex(), b1)
 }
 
 func TestTranscoderLoop(t *testing.T) {
@@ -674,7 +682,7 @@ func TestTranscoderLoop(t *testing.T) {
 	// TRANSCODER REGISTRATION & BONDING
 
 	// Start at the beginning of a round to avoid timing edge cases in tests
-	err = WaitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
+	err = client0.WaitUntilNextRound(big.NewInt(40))
 
 	if err != nil {
 		t.Fatalf("Failed to wait until next round: %v", err)
@@ -741,7 +749,7 @@ func TestTranscoderLoop(t *testing.T) {
 	// CREATE JOB
 
 	// Start at the beginning of a round
-	err = WaitUntilNextRound(backend, rpcTimeout, big.NewInt(40))
+	err = client0.WaitUntilNextRound(big.NewInt(40))
 	if err := CheckRoundAndInit(client0, rpcTimeout, minedTxTimeout); err != nil {
 		t.Fatalf("%v", err)
 	}

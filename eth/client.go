@@ -32,6 +32,9 @@ import (
 	"github.com/livepeer/golp/eth/contracts"
 )
 
+var ProtocolCyclesPerRound = 2
+var ProtocolBlockPerRound = big.NewInt(20)
+
 type LivepeerEthClient interface {
 	Backend() *ethclient.Client
 	Account() accounts.Account
@@ -52,6 +55,7 @@ type LivepeerEthClient interface {
 	Verify(jobId *big.Int, segmentSequenceNumber *big.Int, dataHash [32]byte, transcodedDataHash [32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error)
 	Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error)
 	TokenBalance() (*big.Int, error)
+	WaitUntilNextRound(roundLength *big.Int) error
 }
 
 type Client struct {
@@ -434,4 +438,28 @@ func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (*types.Transa
 
 func (c *Client) TokenBalance() (*big.Int, error) {
 	return c.tokenSession.BalanceOf(c.account.Address)
+}
+
+func (c *Client) WaitUntilNextRound(roundLength *big.Int) error {
+	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
+	block, err := c.backend.BlockByNumber(ctx, nil)
+
+	if err != nil {
+		return err
+	}
+
+	targetBlockNum := NextBlockMultiple(block.Number(), roundLength)
+
+	glog.Infof("Waiting until next round at block %v...", targetBlockNum)
+
+	for block.Number().Cmp(targetBlockNum) == -1 {
+		ctx, _ = context.WithTimeout(context.Background(), c.rpcTimeout)
+		block, err = c.backend.BlockByNumber(ctx, nil)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
