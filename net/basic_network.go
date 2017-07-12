@@ -25,6 +25,7 @@ var Protocol = protocol.ID("/livepeer_video/0.0.1")
 var ErrNoClosePeers = errors.New("NoClosePeers")
 var ErrUnknownMsg = errors.New("UnknownMsgType")
 var ErrProtocol = errors.New("ProtocolError")
+var ErrTranscodeResult = errors.New("TranscodeResultError")
 
 type VideoMuxer interface {
 	WriteSegment(seqNo uint64, strmID string, data []byte) error
@@ -54,7 +55,7 @@ func NewBasicNetwork(port int, priv crypto.PrivKey, pub crypto.PubKey) (*BasicVi
 func (n *BasicVideoNetwork) GetBroadcaster(strmID string) (Broadcaster, error) {
 	b, ok := n.broadcasters[strmID]
 	if !ok {
-		b = &BasicBroadcaster{Network: n, StrmID: strmID, q: make(chan *StreamDataMsg), listeners: make(map[string]VideoMuxer)}
+		b = &BasicBroadcaster{Network: n, StrmID: strmID, q: make(chan *StreamDataMsg), listeners: make(map[string]VideoMuxer), TranscodedIDs: make(map[string]VideoProfile)}
 		n.broadcasters[strmID] = b
 	}
 	return b, nil
@@ -95,6 +96,24 @@ func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
 
 	// n.SendJoin(sid)
 	return nil
+}
+
+func (n *BasicVideoNetwork) SendTranscodResult(broadcaster string, strmID string, transcodedVideos map[string]string) error {
+	pid, err := peer.IDHexDecode(broadcaster)
+	if err != nil {
+		glog.Errorf("Bad broadcaster id %v - %v", broadcaster, err)
+	}
+	ws := n.NetworkNode.GetStream(pid)
+	if ws != nil {
+		err = n.NetworkNode.SendMessage(ws, pid, TranscodeResultID, TranscodeResultMsg{StrmID: strmID, Result: transcodedVideos})
+		if err != nil {
+			glog.Errorf("Error sending transcode result message: %v", err)
+			return err
+		}
+		return nil
+	}
+
+	return ErrTranscodeResult
 }
 
 func (nw *BasicVideoNetwork) SetupProtocol() error {
@@ -154,6 +173,12 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 			glog.Errorf("Cannot convert FinishStreamMsg: %v", msg.Data)
 		}
 		return handleFinishStream(nw, fs)
+	case TranscodeResultID:
+		tr, ok := msg.Data.(TranscodeResultMsg)
+		if !ok {
+			glog.Errorf("Cannot convert TranscodeResultMsg: %v", msg.Data)
+		}
+		return handleTranscodeResult(nw, tr)
 	default:
 		glog.Infof("Unknown Data: %v -- closing stream", msg)
 		// stream.Close()
@@ -306,5 +331,25 @@ func handleFinishStream(nw *BasicVideoNetwork, fs FinishStreamMsg) error {
 		glog.Errorf("Error: cannot find subscriber or relayer")
 		return ErrProtocol
 	}
+	return nil
+}
+
+func handleTranscodeResult(nw *BasicVideoNetwork, tr TranscodeResultMsg) error {
+	glog.Infof("Transcode Result StreamIDs: %v", tr)
+	b := nw.broadcasters[tr.StrmID]
+
+	if b == nil {
+		glog.Errorf("Error Handling Transcode Result - cannot find broadcaster with streamID: %v", tr.StrmID)
+		return ErrTranscodeResult
+	}
+
+	for s, v := range tr.Result {
+		if VideoProfileLookup[v].Name == "" {
+			glog.Errorf("Error Handling Transcode Result - cannot find video profile: %v", v)
+		} else {
+			b.TranscodedIDs[s] = VideoProfileLookup[v]
+		}
+	}
+
 	return nil
 }

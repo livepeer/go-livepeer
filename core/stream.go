@@ -1,13 +1,18 @@
 package core
 
 import (
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
 )
 
+var ErrStreamID = errors.New("ErrStreamID")
+
 const (
-	HashLength = 32
+	HashLength   = 32
+	NodeIDLength = 68
 )
 
 //StreamID is NodeID|VideoID|Rendition
@@ -22,20 +27,28 @@ func RandomVideoID() []byte {
 	return x
 }
 
-func MakeStreamID(nodeID NodeID, id []byte, rendition string) StreamID {
+func MakeStreamID(nodeID NodeID, id []byte, rendition string) (StreamID, error) {
+	if len(nodeID) != NodeIDLength {
+		return "", ErrStreamID
+	}
+
 	if rendition == "" {
-		return StreamID(fmt.Sprintf("%v%x", nodeID, id))
+		return StreamID(fmt.Sprintf("%v%x", nodeID, id)), nil
 	} else {
-		return StreamID(fmt.Sprintf("%v%x%v", nodeID, id, rendition))
+		return StreamID(fmt.Sprintf("%v%x%v", nodeID, id, rendition)), nil
 	}
 }
 
-func (id *StreamID) GetNodeID() string {
-	return ""
+func (id *StreamID) GetNodeID() NodeID {
+	return NodeID((*id)[:NodeIDLength])
 }
 
-func (id *StreamID) GetVideoID() string {
-	return ""
+func (id *StreamID) GetVideoID() []byte {
+	vid, err := hex.DecodeString(string((*id)[NodeIDLength : NodeIDLength+(2*HashLength)]))
+	if err != nil {
+		return nil
+	}
+	return vid
 }
 
 func (id *StreamID) GetRendition() string {

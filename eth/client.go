@@ -386,6 +386,10 @@ func (c *Client) Job(streamId string, transcodingOptions [32]byte, maxPricePerSe
 	return tx, nil
 }
 
+func (c *Client) JobDetails(id *big.Int) (*big.Int, [32]byte, *big.Int, common.Address, common.Address, *big.Int, error) {
+	return c.protocolSession.GetJob(id)
+}
+
 func (c *Client) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) {
 	sig, err := c.keyStore.SignHashWithPassphrase(c.account, passphrase, hash)
 

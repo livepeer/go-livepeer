@@ -21,6 +21,7 @@ import (
 	"github.com/livepeer/golp/core"
 	"github.com/livepeer/golp/eth"
 	"github.com/livepeer/golp/mediaserver"
+	"github.com/livepeer/golp/net"
 )
 
 var ErrKeygen = errors.New("ErrKeygen")
@@ -227,7 +228,34 @@ func main() {
 			}
 
 			logsSub, logsChan, err := n.Eth.SubscribeToJobEvent(func(l types.Log) error {
-				glog.Infof("Transcoder got job from addr: %v  Job: %v", l.Address, l)
+				tx, _, err := n.Eth.Backend().TransactionByHash(context.Background(), l.TxHash)
+				if err != nil {
+					glog.Errorf("Error getting transaction data: %v", err)
+				}
+				strmId, tData, err := eth.ParseJobTxData(tx.Data())
+
+				//Create Transcode Config, Do
+				profile, ok := net.VideoProfileLookup[tData]
+				if !ok {
+					glog.Errorf("Cannot find video profile for job: %v", tData)
+					return core.ErrTranscode
+				}
+				config := net.TranscodeConfig{StrmID: strmId, Profiles: []net.VideoProfile{profile}}
+				glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", tx.Hash(), strmId, tData, config)
+
+				//Do The Transcoding
+				strmIDs, err := n.Transcode(config)
+				if err != nil {
+					glog.Errorf("Transcode Error: %v", err)
+				}
+
+				//Notify Broadcaster
+				sid := core.StreamID(strmId)
+				err = n.NotifyBroadcaster(sid.GetNodeID(), sid, map[core.StreamID]net.VideoProfile{strmIDs[0]: net.VideoProfileLookup[tData]})
+				if err != nil {
+					glog.Errorf("Notify Broadcaster Error: %v", err)
+				}
+
 				return nil
 			})
 

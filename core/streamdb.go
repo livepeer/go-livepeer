@@ -104,7 +104,7 @@ func (self *StreamDB) UnsubscribeToHLSStream(strmID string, subID string) {
 		self.cancellation[StreamID(strmID)]() //Call cancel on hls worker
 		delete(self.subscribers, StreamID(strmID))
 		sid := StreamID(strmID)
-		nid := sid.GetNodeID()
+		nid := string(sid.GetNodeID())
 		if self.SelfAddress != nid { //Only delete the networkStream if you are a relay node
 			delete(self.streams, StreamID(strmID))
 		}

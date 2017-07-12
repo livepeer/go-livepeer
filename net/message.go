@@ -15,6 +15,7 @@ const (
 	FinishStreamID
 	SubReqID
 	CancelSubID
+	TranscodeResultID
 	SimpleString
 )
 
@@ -48,6 +49,12 @@ type StreamDataMsg struct {
 	Data   []byte
 }
 
+type TranscodeResultMsg struct {
+	//map of streamid -> video description
+	StrmID string
+	Result map[string]string
+}
+
 func (m Msg) MarshalJSON() ([]byte, error) {
 	// Encode m.Data into a gob
 	var b bytes.Buffer
@@ -76,6 +83,12 @@ func (m Msg) MarshalJSON() ([]byte, error) {
 		err := enc.Encode(m.Data.(FinishStreamMsg))
 		if err != nil {
 			return nil, fmt.Errorf("Failed to marshal FinishStreamMsg: %v", err)
+		}
+	case TranscodeResultMsg:
+		gob.Register(TranscodeResultMsg{})
+		err := enc.Encode(m.Data.(TranscodeResultMsg))
+		if err != nil {
+			return nil, fmt.Errorf("Failed to marshal TranscodeResultMsg: %v", err)
 		}
 	case string:
 		err := enc.Encode(m.Data)
@@ -130,6 +143,13 @@ func (m *Msg) UnmarshalJSON(b []byte) error {
 			return errors.New("failed to decode FinishStreamMsg")
 		}
 		m.Data = fs
+	case TranscodeResultID:
+		var tr TranscodeResultMsg
+		err := dec.Decode(&tr)
+		if err != nil {
+			return errors.New("failed to decode TranscodeResultMsg")
+		}
+		m.Data = tr
 	case SimpleString:
 		var str string
 		err := dec.Decode(&str)

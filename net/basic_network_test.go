@@ -470,6 +470,37 @@ func TestRelaying(t *testing.T) {
 	}
 }
 
+func TestSendTranscodeResult(t *testing.T) {
+	glog.Infof("\n\nTesting Handle Transcode Result...")
+	n1, n2 := setupNodes()
+	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
+	go n1.SetupProtocol()
+	go n2.SetupProtocol()
+
+	//Create the broadcaster, to capture the transcode result
+	n2.GetBroadcaster("strmid")
+
+	n1.SendTranscodResult(peer.IDHexEncode(n2.NetworkNode.Identity), "strmid", map[string]string{"strmid1": P_240P_30FPS_4_3.Name, "strmid2": P_360P_30FPS_4_3.Name})
+
+	//Wait until n2 get the result
+	start := time.Now()
+	for time.Since(start) < time.Second*3 {
+		if len(n2.broadcasters["strmid"].TranscodedIDs) == 0 {
+			time.Sleep(time.Second * 1)
+		} else {
+			break
+		}
+	}
+
+	if n2.broadcasters["strmid"].TranscodedIDs["strmid1"] != P_240P_30FPS_4_3 {
+		t.Errorf("Expecting 240P for strmid1, but got %v", n2.broadcasters["strmid"].TranscodedIDs["strmid1"])
+	}
+
+	if n2.broadcasters["strmid"].TranscodedIDs["strmid2"] != P_360P_30FPS_4_3 {
+		t.Errorf("Expecting 360P for strmid2, but got %v", n2.broadcasters["strmid"].TranscodedIDs["strmid2"])
+	}
+}
+
 func TestID(t *testing.T) {
 	n1, _ := simpleNodes()
 	id := n1.Identity

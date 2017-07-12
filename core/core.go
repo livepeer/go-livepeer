@@ -108,11 +108,15 @@ func (n *LivepeerNode) Transcode(config net.TranscodeConfig) ([]StreamID, error)
 	transcoders := make(map[string]*lptr.FFMpegSegmentTranscoder)
 	broadcasters := make(map[string]net.Broadcaster)
 	ids := make(map[string]StreamID)
-	results := make([]StreamID, len(config.Profiles), len(config.Profiles))
+	resultStrmIDs := make([]StreamID, len(config.Profiles), len(config.Profiles))
 
 	for i, p := range config.Profiles {
 		transcoders[p.Name] = lptr.NewFFMpegSegmentTranscoder(p.Bitrate, p.Framerate, p.Resolution, "", "./tmp")
-		strmID := MakeStreamID(n.Identity, RandomVideoID(), p.Name)
+		strmID, err := MakeStreamID(n.Identity, RandomVideoID(), p.Name)
+		if err != nil {
+			glog.Errorf("Error making stream ID")
+			return nil, ErrTranscode
+		}
 		b, err := n.VideoNetwork.GetBroadcaster(strmID.String())
 		if err != nil {
 			glog.Errorf("Error creating broadcaster: %v", err)
@@ -120,7 +124,7 @@ func (n *LivepeerNode) Transcode(config net.TranscodeConfig) ([]StreamID, error)
 		}
 		broadcasters[p.Name] = b
 		ids[p.Name] = strmID
-		results[i] = strmID
+		resultStrmIDs[i] = strmID
 	}
 
 	s.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
@@ -162,7 +166,7 @@ func (n *LivepeerNode) Transcode(config net.TranscodeConfig) ([]StreamID, error)
 		}
 	})
 
-	return results, nil
+	return resultStrmIDs, nil
 }
 
 //Monitor the smart contract for job creation (as a transcoder)
@@ -311,4 +315,12 @@ func (n *LivepeerNode) UnsubscribeFromNetwork(strmID StreamID) error {
 	}
 
 	return nil
+}
+
+func (n *LivepeerNode) NotifyBroadcaster(nid NodeID, strmID StreamID, transcodeStrmIDs map[StreamID]net.VideoProfile) error {
+	ids := make(map[string]string)
+	for sid, p := range transcodeStrmIDs {
+		ids[sid.String()] = p.Name
+	}
+	return n.VideoNetwork.SendTranscodResult(string(nid), strmID.String(), ids)
 }

@@ -249,7 +249,11 @@ func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
 //RTMP Publish Handlers
 func (s *LivepeerMediaServer) makeCreateRTMPStreamIDHandler() func(url *url.URL) (strmID string) {
 	return func(url *url.URL) (strmID string) {
-		id := core.MakeStreamID(s.LivepeerNode.Identity, core.RandomVideoID(), "")
+		id, err := core.MakeStreamID(s.LivepeerNode.Identity, core.RandomVideoID(), "")
+		if err != nil {
+			glog.Errorf("Error making stream ID")
+			return ""
+		}
 		return id.String()
 	}
 }
@@ -269,7 +273,6 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 				glog.Errorf("Low balance (%v) - cannot start broadcast session", b)
 				return ErrBroadcast
 			}
-
 		}
 
 		//Check if stream ID already exists
@@ -284,7 +287,12 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 		}
 
 		//Create a new HLS Stream
-		hlsStrm, err := s.LivepeerNode.StreamDB.AddNewStream(core.MakeStreamID(s.LivepeerNode.Identity, core.RandomVideoID(), ""), stream.HLS)
+		hlsStrmID, err := core.MakeStreamID(s.LivepeerNode.Identity, core.RandomVideoID(), "")
+		if err != nil {
+			glog.Errorf("Error making stream ID")
+			return ErrRTMPPublish
+		}
+		hlsStrm, err := s.LivepeerNode.StreamDB.AddNewStream(hlsStrmID, stream.HLS)
 		if err != nil {
 			glog.Errorf("Error creating HLS stream for segmentation: %v", err)
 		}
@@ -326,7 +334,7 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 					return ErrBroadcast
 				}
 			}
-			glog.Infof("Created broadcast job.  Price: %v. Type: %v. tx: %v", BroadcastPrice, BroadcastJobVideoProfile.Name, tx.Hash())
+			glog.Infof("Created broadcast job.  Price: %v. Type: %v. tx: %v", BroadcastPrice, BroadcastJobVideoProfile.Name, tx.Hash().Hex())
 
 		}
 		return nil

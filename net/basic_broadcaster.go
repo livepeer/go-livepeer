@@ -15,10 +15,11 @@ type BasicBroadcaster struct {
 	// lock *sync.Mutex
 	q chan *StreamDataMsg
 
-	listeners    map[string]VideoMuxer //A VideoMuxer can be a BasicStream
-	StrmID       string
-	working      bool
-	cancelWorker context.CancelFunc
+	listeners     map[string]VideoMuxer //A VideoMuxer can be a BasicStream
+	StrmID        string
+	TranscodedIDs map[string]VideoProfile
+	working       bool
+	cancelWorker  context.CancelFunc
 }
 
 //Broadcast sends a video chunk to the stream
@@ -79,39 +80,5 @@ func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 			return
 		}
 	}
-	// go func() {
-	// 	for {
-	// 		b.lock.Lock()
-	// 		e := b.q.Front()
-	// 		if e != nil {
-	// 			b.q.Remove(e)
-	// 		}
-	// 		b.lock.Unlock()
 
-	// 		if e == nil {
-	// 			time.Sleep(time.Millisecond * 100)
-	// 			continue
-	// 		}
-
-	// 		msg, ok := e.Value.(*StreamDataMsg)
-	// 		if !ok {
-	// 			glog.Errorf("Cannot convert video msg during broadcast: %v", e.Value)
-	// 			continue
-	// 		}
-
-	// 		// glog.Infof("broadcasting msg:%v to network.  listeners: %v", msg, b.listeners)
-	// 		for id, l := range b.listeners {
-	// 			glog.Infof("Broadcasting segment %v to listener %v", msg.SeqNo, id)
-	// 			err := l.WriteSegment(msg.SeqNo, b.StrmID, msg.Data)
-	// 			if err != nil {
-	// 				glog.Errorf("Error broadcasting segment %v to listener %v: %v", msg.SeqNo, id, err)
-	// 				delete(b.listeners, id)
-	// 			}
-	// 		}
-	// 	}
-	// }()
-	// select {
-	// case <-ctx.Done():
-	// 	return
-	// }
 }

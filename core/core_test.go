@@ -34,6 +34,9 @@ func TestNewLivepeerNode(t *testing.T) {
 type StubVideoNetwork struct {
 	T            *testing.T
 	broadcasters map[string]*StubBroadcaster
+	tResult      map[string]string
+	strmID       string
+	nodeID       string
 }
 
 func (n *StubVideoNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error) {
@@ -52,6 +55,12 @@ func (n *StubVideoNetwork) GetSubscriber(strmID string) (net.Subscriber, error) 
 }
 func (n *StubVideoNetwork) Connect(nodeID, nodeAddr string) error { return nil }
 func (n *StubVideoNetwork) SetupProtocol() error                  { return nil }
+func (n *StubVideoNetwork) SendTranscodResult(nid string, sid string, tr map[string]string) error {
+	n.nodeID = nid
+	n.strmID = sid
+	n.tResult = tr
+	return nil
+}
 
 type StubBroadcaster struct {
 	T      *testing.T
@@ -267,13 +276,14 @@ func (e *StubEth) Verify(jobId *big.Int, segmentSequenceNumber *big.Int, dataHas
 func (e *StubEth) Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubEth) TokenBalance() (*big.Int, error) { return nil, nil }
+func (e *StubEth) TokenBalance() (*big.Int, error)   { return nil, nil }
+func (e *StubEth) WaitUntilNextRound(*big.Int) error { return nil }
 
 func TestCreateTranscodeJob(t *testing.T) {
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	seth := &StubEth{}
 	n, _ := NewLivepeerNode(15000, priv, pub, seth)
-	strmID := MakeStreamID(n.Identity, RandomVideoID(), "")
+	strmID, _ := MakeStreamID(n.Identity, RandomVideoID(), "")
 	err := n.CreateTranscodeJob(strmID, []net.VideoProfile{net.P_720P_60FPS_16_9}, 999999999999)
 	if err == nil {
 		t.Errorf("Expecting error since no broadcast stream in streamDB")
@@ -297,4 +307,29 @@ func TestCreateTranscodeJob(t *testing.T) {
 		t.Errorf("Expecting price to be 999999999999, got but %v", seth.maxPrice)
 	}
 
+}
+
+func TestNotifyBroadcaster(t *testing.T) {
+	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	seth := &StubEth{}
+	n, _ := NewLivepeerNode(15000, priv, pub, seth)
+	sn := &StubVideoNetwork{}
+	n.VideoNetwork = sn
+
+	err := n.NotifyBroadcaster(n.Identity, "strmid", map[StreamID]net.VideoProfile{"strmid1": net.P_240P_30FPS_16_9})
+	if err != nil {
+		t.Errorf("Error notifying broadcaster: %v", err)
+	}
+
+	if sn.nodeID != string(n.Identity) {
+		t.Errorf("Expecting %v, got %v", n.Identity, sn.nodeID)
+	}
+
+	if sn.strmID != "strmid" {
+		t.Errorf("Expecting strmid, got %v", sn.strmID)
+	}
+
+	if sn.tResult["strmid1"] != net.P_240P_30FPS_16_9.Name {
+		t.Errorf("Expecting %v, got %v", net.P_240P_30FPS_16_9.Name, sn.tResult["strmid1"])
+	}
 }

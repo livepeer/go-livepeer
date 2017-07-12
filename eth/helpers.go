@@ -2,9 +2,12 @@ package eth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
+
+	"strings"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -14,6 +17,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/golp/eth/contracts"
 )
+
+var ErrParseJobTxData = errors.New("ErrParseJobTxData")
 
 type LibraryType uint8
 
@@ -150,4 +155,13 @@ func NextBlockMultiple(blockNum *big.Int, blockMultiple *big.Int) *big.Int {
 	}
 
 	return new(big.Int).Sub(blockNum.Add(blockNum, blockMultiple), remainder)
+}
+
+func ParseJobTxData(d []byte) (strmID string, data string, err error) {
+	data = strings.Trim(string(d[56:88]), "\x00")
+	strmID = string(d[132:264])
+	if data == "" || strmID == "" {
+		return "", "", ErrParseJobTxData
+	}
+	return strmID, data, nil
 }

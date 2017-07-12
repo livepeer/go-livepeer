@@ -7,6 +7,7 @@ type VideoNetwork interface {
 	GetSubscriber(strmID string) (Subscriber, error)
 	Connect(nodeID, nodeAddr string) error
 	SetupProtocol() error
+	SendTranscodResult(nodeID string, strmID string, transcodeResult map[string]string) error
 }
 
 //Broadcaster takes a streamID and a reader, and broadcasts the data to whatever underlining network.
