@@ -122,6 +122,10 @@ func WaitForMinedTx(backend *ethclient.Client, rpcTimeout time.Duration, minedTx
 		ctx     context.Context
 		err     error
 	)
+	h := common.Hash{}
+	if txHash == h {
+		return nil, nil
+	}
 
 	start := time.Now()
 	for time.Since(start) < minedTxTimeout {
@@ -157,6 +161,18 @@ func NextBlockMultiple(blockNum *big.Int, blockMultiple *big.Int) *big.Int {
 	return new(big.Int).Sub(blockNum.Add(blockNum, blockMultiple), remainder)
 }
 
+func SignSegmentHash(c *Client, passphrase string, hash []byte) ([]byte, error) {
+	sig, err := c.keyStore.SignHashWithPassphrase(c.account, passphrase, hash)
+
+	if err != nil {
+		glog.Errorf("Error signing segment: %v", err)
+		return nil, err
+	}
+
+	// glog.Infof("[%v] Created signed segment hash %v", c.account.Address.Hex(), common.ToHex(sig))
+	return sig, nil
+}
+
 func ParseJobTxData(d []byte) (strmID string, data string, err error) {
 	data = strings.Trim(string(d[56:88]), "\x00")
 	strmID = string(d[132:264])
@@ -164,4 +180,36 @@ func ParseJobTxData(d []byte) (strmID string, data string, err error) {
 		return "", "", ErrParseJobTxData
 	}
 	return strmID, data, nil
+}
+
+//XXX: This is a total hack.  Should be getting the info from the event log.
+func GetInfoFromJobEvent(l types.Log, c LivepeerEthClient) (jobID *big.Int, strmID string, bAddr common.Address, tAddr common.Address, err error) {
+	var jidR *big.Int
+	var tAddrR common.Address
+	var bAddrR common.Address
+	for i := 0; i < 1000; i++ {
+		jid, _, _, bAddr, tAddr, _, err := c.JobDetails(big.NewInt(int64(i)))
+
+		if err != nil {
+			break
+		} else {
+			jidR = jid
+			bAddrR = bAddr
+			tAddrR = tAddr
+		}
+	}
+
+	tx, _, err := c.Backend().TransactionByHash(context.Background(), l.TxHash)
+	if err != nil {
+		glog.Errorf("Error getting transaction data: %v", err)
+		return nil, "", common.Address{}, common.Address{}, fmt.Errorf("JobEventError")
+	}
+
+	strmID, _, err = ParseJobTxData(tx.Data())
+	if err != nil {
+		glog.Errorf("Error parsing transaction data: %v", err)
+		return nil, "", common.Address{}, common.Address{}, fmt.Errorf("JobEventError")
+	}
+
+	return jidR, strmID, bAddrR, tAddrR, nil
 }

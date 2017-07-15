@@ -1,6 +1,9 @@
 package net
 
-import "context"
+import (
+	"context"
+	"math/big"
+)
 
 type VideoNetwork interface {
 	GetBroadcaster(strmID string) (Broadcaster, error)
@@ -60,8 +63,10 @@ type VideoProfile struct {
 }
 
 type TranscodeConfig struct {
-	StrmID   string
-	Profiles []VideoProfile
+	StrmID              string
+	Profiles            []VideoProfile
+	PerformOnchainClaim bool
+	JobID               *big.Int
 }
 
 type Transcoder interface {

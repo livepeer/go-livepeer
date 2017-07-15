@@ -167,7 +167,6 @@ func deployContracts(t *testing.T, transactOpts *bind.TransactOpts, backend *eth
 		"TranscoderPools": transcoderPoolsAddr,
 		"SafeMath":        safeMathAddr,
 	}
-	// protocolAddr, tx, err := deployLivepeerProtocol(transactOpts, backend, protocolLibraries, 1, big.NewInt(40), big.NewInt(2))
 	protocolAddr, tx, err := deployLivepeerProtocol(transactOpts, backend, protocolLibraries, 1, big.NewInt(20), big.NewInt(2))
 
 	if err != nil {
@@ -459,10 +458,10 @@ func TestJobClaimVerify(t *testing.T) {
 
 	// SUBSCRIBE TO JOB EVENT
 
-	logsSub, logsCh, err := client0.SubscribeToJobEvent(func(l types.Log) error {
-		glog.Infof("Got log: %v", l)
-		return nil
-	})
+	logsCh := make(chan types.Log)
+	logsSub, err := client0.SubscribeToJobEvent(context.Background(), logsCh)
+	defer close(logsCh)
+	defer logsSub.Unsubscribe()
 
 	if err != nil {
 		t.Fatalf("Client 0 failed to subscribe to job event: %v", err)
@@ -494,7 +493,7 @@ func TestJobClaimVerify(t *testing.T) {
 		return
 	}
 
-	// time.Sleep(10 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	// CLAIM WORK
 
@@ -529,25 +528,25 @@ func TestJobClaimVerify(t *testing.T) {
 		d3,
 	}
 
-	bSig0, err := client1.SignSegmentHash(defaultPassword, s0.Hash().Bytes())
+	bSig0, err := SignSegmentHash(client1, defaultPassword, s0.Hash().Bytes())
 
 	if err != nil {
 		t.Fatalf("Client 1 failed to sign segment hash: %v", err)
 	}
 
-	bSig1, err := client1.SignSegmentHash(defaultPassword, s1.Hash().Bytes())
+	bSig1, err := SignSegmentHash(client1, defaultPassword, s1.Hash().Bytes())
 
 	if err != nil {
 		t.Fatalf("Client 1 failed to sign segment hash: %v", err)
 	}
 
-	bSig2, err := client1.SignSegmentHash(defaultPassword, s2.Hash().Bytes())
+	bSig2, err := SignSegmentHash(client1, defaultPassword, s2.Hash().Bytes())
 
 	if err != nil {
 		t.Fatalf("Client 1 failed to sign segment hash: %v", err)
 	}
 
-	bSig3, err := client1.SignSegmentHash(defaultPassword, s3.Hash().Bytes())
+	bSig3, err := SignSegmentHash(client1, defaultPassword, s3.Hash().Bytes())
 
 	if err != nil {
 		t.Fatalf("Client 1 failed to sign segment hash: %v", err)
@@ -622,8 +621,8 @@ func TestJobClaimVerify(t *testing.T) {
 		t.Fatalf("Client 0 failed verification")
 	}
 
-	logsSub.Unsubscribe()
-	close(logsCh)
+	// logsSub.Unsubscribe()
+	// close(logsCh)
 }
 
 func TestDeployContract(t *testing.T) {
@@ -650,9 +649,10 @@ func TestDeployContract(t *testing.T) {
 	b0, _ := client0.TokenBalance()
 	glog.Infof("Token balance for %v: %v", accounts[0].Address.Hex(), b0)
 
-	client0.Transfer(accounts[1].Address, big.NewInt(1000000000000))
+	tx, _ := client0.Transfer(accounts[1].Address, big.NewInt(1000000000000))
 	client1, err := NewClient(accounts[1], defaultPassword, datadir, backend, protocolAddr, rpcTimeout, eventTimeout)
 	b1, _ := client1.TokenBalance()
+	WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash())
 	glog.Infof("Token balance for %v: %v", accounts[1].Address.Hex(), b1)
 }
 
@@ -738,25 +738,30 @@ func TestTranscoderLoop(t *testing.T) {
 
 	// SUBSCRIBE TO JOB EVENT
 
-	logsSub, logsCh, err := client0.SubscribeToJobEvent(func(l types.Log) error {
-		glog.Infof("Got log: %v - addr: %v - ", l.Data, l.Address.Hex())
-		// glog.Infof("l: %v", l)
-		tx, _, err := client0.backend.TransactionByHash(context.Background(), l.TxHash)
-		if err != nil {
-			glog.Errorf("Error getting transaction: %v", err)
-		}
-		glog.Infof("transaction data: %v", tx.Data())
-
-		strmId, tData, err := ParseJobTxData(tx.Data())
-		if err != nil {
-			glog.Errorf("Error parsing job tx data: %v", err)
-		}
-		glog.Infof("strmId: %v, tData: %v", strmId, tData)
-
-		return nil
-	})
+	logsCh := make(chan types.Log)
+	logsSub, err := client0.SubscribeToJobEvent(context.Background(), logsCh)
 	defer logsSub.Unsubscribe()
 	defer close(logsCh)
+	go func() {
+		for {
+			select {
+			case l := <-logsCh:
+				glog.Infof("Got log: %v - addr: %v - ", l.Data, l.Address.Hex())
+				// glog.Infof("l: %v", l)
+				tx, _, err := client0.backend.TransactionByHash(context.Background(), l.TxHash)
+				if err != nil {
+					glog.Errorf("Error getting transaction: %v", err)
+				}
+				glog.Infof("transaction data: %v", tx.Data())
+
+				strmId, tData, err := ParseJobTxData(tx.Data())
+				if err != nil {
+					glog.Errorf("Error parsing job tx data: %v", err)
+				}
+				glog.Infof("strmId: %v, tData: %v", strmId, tData)
+			}
+		}
+	}()
 
 	if err != nil {
 		t.Fatalf("Client 0 failed to subscribe to job event: %v", err)

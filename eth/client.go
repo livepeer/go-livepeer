@@ -38,7 +38,7 @@ var ProtocolBlockPerRound = big.NewInt(20)
 type LivepeerEthClient interface {
 	Backend() *ethclient.Client
 	Account() accounts.Account
-	SubscribeToJobEvent(callback func(types.Log) error) (ethereum.Subscription, chan types.Log, error)
+	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error)
 	WatchEvent(logsCh <-chan types.Log) (types.Log, error)
 	RoundInfo() (*big.Int, *big.Int, *big.Int, *big.Int, error)
 	InitializeRound() (*types.Transaction, error)
@@ -50,7 +50,8 @@ type LivepeerEthClient interface {
 	ValidRewardTimeWindow() (bool, error)
 	Reward() (*types.Transaction, error)
 	Job(streamId string, transcodingOptions [32]byte, maxPricePerSegment *big.Int) (*types.Transaction, error)
-	SignSegmentHash(passphrase string, hash []byte) ([]byte, error)
+	JobDetails(id *big.Int) (*big.Int, [32]byte, *big.Int, common.Address, common.Address, *big.Int, error)
+	EndJob(id *big.Int) (*types.Transaction, error)
 	ClaimWork(jobId *big.Int, startSegmentSequenceNumber *big.Int, endSegmentSequenceNumber *big.Int, transcodeClaimsRoot [32]byte) (*types.Transaction, error)
 	Verify(jobId *big.Int, segmentSequenceNumber *big.Int, dataHash [32]byte, transcodedDataHash [32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error)
 	Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error)
@@ -146,16 +147,12 @@ func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyS
 	return transactOpts, err
 }
 
-func (c *Client) SubscribeToJobEvent(callback func(l types.Log) error) (ethereum.Subscription, chan types.Log, error) {
-	var (
-		logsCh = make(chan types.Log)
-	)
-
+func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error) {
 	protocolJson, err := abi.JSON(strings.NewReader(contracts.LivepeerProtocolABI))
 
 	if err != nil {
 		glog.Errorf("Error decoding ABI into JSON: %v", err)
-		return nil, nil, err
+		return nil, err
 	}
 
 	q := ethereum.FilterQuery{
@@ -163,13 +160,7 @@ func (c *Client) SubscribeToJobEvent(callback func(l types.Log) error) (ethereum
 		Topics:    [][]common.Hash{[]common.Hash{protocolJson.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
-
-	logsSub, err := c.backend.SubscribeFilterLogs(ctx, q, logsCh)
-
-	go monitorJobEvent(logsCh, callback)
-
-	return logsSub, logsCh, nil
+	return c.backend.SubscribeFilterLogs(ctx, q, logsCh)
 }
 
 func monitorJobEvent(logsCh <-chan types.Log, callback func(l types.Log) error) {
@@ -390,16 +381,8 @@ func (c *Client) JobDetails(id *big.Int) (*big.Int, [32]byte, *big.Int, common.A
 	return c.protocolSession.GetJob(id)
 }
 
-func (c *Client) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) {
-	sig, err := c.keyStore.SignHashWithPassphrase(c.account, passphrase, hash)
-
-	if err != nil {
-		glog.Errorf("Error signing segment: %v", err)
-		return nil, err
-	}
-
-	glog.Infof("[%v] Created signed segment hash %v", c.account.Address.Hex(), common.ToHex(sig))
-	return sig, nil
+func (c *Client) EndJob(id *big.Int) (*types.Transaction, error) {
+	return c.protocolSession.EndJob(id)
 }
 
 func (c *Client) ClaimWork(jobId *big.Int, startSegmentSequenceNumber *big.Int, endSegmentSequenceNumber *big.Int, transcodeClaimsRoot [32]byte) (*types.Transaction, error) {

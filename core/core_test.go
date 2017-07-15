@@ -1,9 +1,8 @@
 package core
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
+	"encoding/binary"
 	"fmt"
 	"math/big"
 	"testing"
@@ -13,12 +12,13 @@ import (
 
 	"io/ioutil"
 
-	ethereum "github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts"
+	"bytes"
+
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
+	ethCrypto "github.com/ethereum/go-ethereum/crypto"
 	crypto "github.com/libp2p/go-libp2p-crypto"
+	"github.com/livepeer/golp/eth"
+	ethTypes "github.com/livepeer/golp/eth/types"
 	"github.com/livepeer/golp/net"
 	"github.com/livepeer/lpms/stream"
 )
@@ -51,7 +51,7 @@ func (n *StubVideoNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error
 	return b, nil
 }
 func (n *StubVideoNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
-	return &StubSubscriber{}, nil
+	return &StubSubscriber{T: n.T}, nil
 }
 func (n *StubVideoNetwork) Connect(nodeID, nodeAddr string) error { return nil }
 func (n *StubVideoNetwork) SetupProtocol() error                  { return nil }
@@ -70,18 +70,19 @@ type StubBroadcaster struct {
 }
 
 func (n *StubBroadcaster) Broadcast(seqNo uint64, data []byte) error {
-	dec := gob.NewDecoder(bytes.NewReader(data))
-	var seg stream.HLSSegment
-	dec.Decode(&seg)
+	ss, err := BytesToSignedSegment(data)
+	if err != nil {
+		n.T.Errorf("Error Converting bytes to SignedSegment: %v", err)
+	}
 
 	if n.SeqNo == 0 {
-		n.SeqNo = seg.SeqNo
+		n.SeqNo = ss.Seg.SeqNo
 	} else {
 		n.T.Errorf("Already assigned")
 	}
 
 	if n.Data == nil {
-		n.Data = seg.Data
+		n.Data = ss.Seg.Data
 	} else {
 		n.T.Errorf("Already assigned")
 	}
@@ -89,15 +90,19 @@ func (n *StubBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 }
 func (n *StubBroadcaster) Finish() error { return nil }
 
-type StubSubscriber struct{}
+type StubSubscriber struct {
+	T *testing.T
+}
 
 func (s *StubSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error {
 	d, _ := ioutil.ReadFile("./test.ts")
-	newSeg := stream.HLSSegment{SeqNo: 100, Name: "test name", Data: d, Duration: 1}
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	enc.Encode(newSeg)
-	gotData(100, buf.Bytes(), false)
+	newSeg := SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test name", Data: d, Duration: 1}, Sig: []byte("test sig")}
+	b, err := SignedSegmentToBytes(newSeg)
+	if err != nil {
+		s.T.Errorf("Error Converting SignedSegment to Bytes: %v", err)
+	}
+
+	gotData(100, b, false)
 	return nil
 }
 func (s *StubSubscriber) Unsubscribe() error { return nil }
@@ -123,7 +128,6 @@ func TestTranscode(t *testing.T) {
 		t.Errorf("Bad id1: %v", ids[1])
 	}
 
-	// b1ID := strings.Replace(ids[0], "P_144P_30")
 	b1tmp, err := n.VideoNetwork.GetBroadcaster(ids[0].String())
 	if err != nil {
 		t.Errorf("Error getting broadcaster: %v", err)
@@ -232,56 +236,9 @@ func monitorChan(intChan chan int) {
 		}
 	}
 }
-
-type StubEth struct {
-	strmID   string
-	tOpts    [32]byte
-	maxPrice *big.Int
-}
-
-func (e *StubEth) Backend() *ethclient.Client { return nil }
-func (e *StubEth) Account() accounts.Account  { return accounts.Account{} }
-func (e *StubEth) SubscribeToJobEvent(callback func(types.Log) error) (ethereum.Subscription, chan types.Log, error) {
-	return nil, nil, nil
-}
-func (e *StubEth) WatchEvent(logsCh <-chan types.Log) (types.Log, error) { return types.Log{}, nil }
-func (e *StubEth) RoundInfo() (*big.Int, *big.Int, *big.Int, *big.Int, error) {
-	return nil, nil, nil, nil, nil
-}
-func (e *StubEth) InitializeRound() (*types.Transaction, error) { return nil, nil }
-func (e *StubEth) CurrentRoundInitialized() (bool, error)       { return false, nil }
-func (e *StubEth) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (*types.Transaction, error) {
-	return nil, nil
-}
-func (e *StubEth) IsActiveTranscoder() (bool, error)  { return false, nil }
-func (e *StubEth) TranscoderStake() (*big.Int, error) { return nil, nil }
-func (e *StubEth) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
-	return nil, nil
-}
-func (e *StubEth) ValidRewardTimeWindow() (bool, error) { return false, nil }
-func (e *StubEth) Reward() (*types.Transaction, error)  { return nil, nil }
-func (e *StubEth) Job(streamId string, transcodingOptions [32]byte, maxPricePerSegment *big.Int) (*types.Transaction, error) {
-	e.strmID = streamId
-	e.tOpts = transcodingOptions
-	e.maxPrice = maxPricePerSegment
-	return nil, nil
-}
-func (e *StubEth) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) { return nil, nil }
-func (e *StubEth) ClaimWork(jobId *big.Int, startSegmentSequenceNumber *big.Int, endSegmentSequenceNumber *big.Int, transcodeClaimsRoot [32]byte) (*types.Transaction, error) {
-	return nil, nil
-}
-func (e *StubEth) Verify(jobId *big.Int, segmentSequenceNumber *big.Int, dataHash [32]byte, transcodedDataHash [32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error) {
-	return nil, nil
-}
-func (e *StubEth) Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error) {
-	return nil, nil
-}
-func (e *StubEth) TokenBalance() (*big.Int, error)   { return nil, nil }
-func (e *StubEth) WaitUntilNextRound(*big.Int) error { return nil }
-
 func TestCreateTranscodeJob(t *testing.T) {
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	seth := &StubEth{}
+	seth := &eth.StubClient{}
 	n, _ := NewLivepeerNode(15000, priv, pub, seth)
 	strmID, _ := MakeStreamID(n.Identity, RandomVideoID(), "")
 	err := n.CreateTranscodeJob(strmID, []net.VideoProfile{net.P_720P_60FPS_16_9}, 999999999999)
@@ -295,23 +252,22 @@ func TestCreateTranscodeJob(t *testing.T) {
 		t.Errorf("Error creating transcoding job")
 	}
 
-	if seth.strmID != strmID.String() {
+	if seth.StrmID != strmID.String() {
 		t.Errorf("Expecting strmID to be: %v", strmID)
 	}
 
-	if strings.Trim(string(seth.tOpts[:]), "\x00") != net.P_720P_60FPS_16_9.Name {
-		t.Errorf("Expecting transcode options to be %v, but got %v", net.P_720P_60FPS_16_9.Name, string(seth.tOpts[:]))
+	if strings.Trim(string(seth.TOpts[:]), "\x00") != net.P_720P_60FPS_16_9.Name {
+		t.Errorf("Expecting transcode options to be %v, but got %v", net.P_720P_60FPS_16_9.Name, string(seth.TOpts[:]))
 	}
 
-	if big.NewInt(999999999999).Cmp(seth.maxPrice) != 0 {
-		t.Errorf("Expecting price to be 999999999999, got but %v", seth.maxPrice)
+	if big.NewInt(999999999999).Cmp(seth.MaxPrice) != 0 {
+		t.Errorf("Expecting price to be 999999999999, got but %v", seth.MaxPrice)
 	}
-
 }
 
 func TestNotifyBroadcaster(t *testing.T) {
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	seth := &StubEth{}
+	seth := &eth.StubClient{}
 	n, _ := NewLivepeerNode(15000, priv, pub, seth)
 	sn := &StubVideoNetwork{}
 	n.VideoNetwork = sn
@@ -332,4 +288,95 @@ func TestNotifyBroadcaster(t *testing.T) {
 	if sn.tResult["strmid1"] != net.P_240P_30FPS_16_9.Name {
 		t.Errorf("Expecting %v, got %v", net.P_240P_30FPS_16_9.Name, sn.tResult["strmid1"])
 	}
+}
+
+func TestClaimAndVerify(t *testing.T) {
+	//Prep the data
+	vidLen := 10
+	strmID := "strmID"
+	dataHashes := make([]common.Hash, vidLen, vidLen)
+	tcHashes := make([]common.Hash, vidLen, vidLen)
+	tHashes := make([]common.Hash, vidLen, vidLen)
+	sigs := make([][]byte, vidLen, vidLen)
+
+	//Take the first and last element off
+	for i := 1; i < vidLen-1; i++ {
+		dataHashes[i] = common.StringToHash(fmt.Sprintf("dh%v", i))
+		tHashes[i] = common.StringToHash(fmt.Sprintf("th%v", i))
+		sig := &ethTypes.Segment{strmID, big.NewInt(int64(i)), dataHashes[i]}
+		tcHashes[i] = (&ethTypes.TranscodeClaim{strmID, big.NewInt(int64(i)), dataHashes[i], tHashes[i], sig.Hash().Bytes()}).Hash()
+	}
+
+	s1 := &eth.StubClient{}
+	VerifyRate = 10 //Set the verify rate so it gets called once
+	claimAndVerify(big.NewInt(0), dataHashes, tcHashes, tHashes, sigs, 10, 19, s1)
+
+	if s1.ClaimCounter != 1 {
+		t.Errorf("Claim should be called once, but got %v", s1.ClaimCounter)
+	}
+
+	s2 := &eth.StubClient{ClaimEnd: make([]*big.Int, 0, 10), ClaimJid: make([]*big.Int, 0, 10), ClaimRoot: make([][32]byte, 0, 10), ClaimStart: make([]*big.Int, 0, 10)}
+	dataHashes[4] = common.Hash{}
+	tcHashes[4] = common.Hash{}
+	tHashes[4] = common.Hash{}
+	sigs[4] = nil
+	claimAndVerify(big.NewInt(0), dataHashes, tcHashes, tHashes, sigs, 10, 19, s2)
+	if s2.ClaimCounter != 2 {
+		t.Errorf("Claim should be called twice, but got %v", s2.ClaimCounter)
+	}
+
+	if s2.ClaimStart[0].Cmp(big.NewInt(11)) != 0 || s2.ClaimEnd[0].Cmp(big.NewInt(13)) != 0 {
+		t.Errorf("First claim should be from 11 to 13, but got %v to %v", s2.ClaimStart[0], s2.ClaimEnd[0])
+	}
+
+	if s2.ClaimStart[1].Cmp(big.NewInt(16)) != 0 || s2.ClaimEnd[1].Cmp(big.NewInt(18)) != 0 {
+		t.Errorf("First claim should be from 16 to 18, but got %v to %v", s2.ClaimStart[1], s2.ClaimEnd[1])
+	}
+
+	root1, _, _ := ethTypes.NewMerkleTree(tcHashes[1:4])
+	root2, _, _ := ethTypes.NewMerkleTree(tcHashes[6:9])
+	if bytes.Compare(s2.ClaimRoot[0][:], root1.Hash[:]) != 0 {
+		t.Errorf("Expecting claim root %v, got %v", root1.Hash, s2.ClaimRoot[0])
+	}
+	if bytes.Compare(s2.ClaimRoot[1][:], root2.Hash[:]) != 0 {
+		t.Errorf("Expecting claim root %v, got %v", root2.Hash, s2.ClaimRoot[1])
+	}
+}
+
+func TestVerify(t *testing.T) {
+	dataHashes := []common.Hash{common.StringToHash("dh1"), common.StringToHash("dh2"), common.StringToHash("dh3")}
+	tHashes := []common.Hash{common.StringToHash("th1"), common.StringToHash("th2"), common.StringToHash("th3")}
+	sigs := [][]byte{[]byte("sig1"), []byte("sig2"), []byte("sig3")}
+	proofs := []*ethTypes.MerkleProof{&ethTypes.MerkleProof{}, &ethTypes.MerkleProof{}, &ethTypes.MerkleProof{}}
+	s := &eth.StubClient{}
+	verify(big.NewInt(0), dataHashes, tHashes, sigs, proofs, 0, 2, s, common.Hash{})
+
+	if s.Jid.Cmp(big.NewInt(0)) != 0 {
+		t.Errorf("Expecting 0, got %v", s.Jid)
+	}
+	if fmt.Sprintf("%x", s.DHash) != fmt.Sprintf("%x", common.StringToHash("dh3")) {
+		t.Errorf("Expecting %v, got %v", common.StringToHash("dh3"), s.DHash)
+	}
+	if fmt.Sprintf("%x", s.TDHash) != fmt.Sprintf("%x", common.StringToHash("th3")) {
+		t.Errorf("Expecting %v, got %v", common.StringToHash("th3"), s.TDHash)
+	}
+	if s.VerifyCounter != 3 {
+		t.Errorf("Verify should be called 3 times, but got %v", s.VerifyCounter)
+	}
+}
+
+func TestCrypto(t *testing.T) {
+	b := shouldVerifySegment(10, 0, 20, 10, common.BytesToHash(ethCrypto.Keccak256([]byte("abc"))), 1)
+	fmt.Printf("%x\n\n", b)
+
+	blkNumB := make([]byte, 8)
+	binary.BigEndian.PutUint64(blkNumB, uint64(9994353847340985734))
+	fmt.Printf("%x\n\n", blkNumB)
+
+	newb := make([]byte, 32)
+	copy(newb[24:], blkNumB[:])
+	fmt.Printf("%x\n\n", newb)
+
+	i, _ := binary.Uvarint(ethCrypto.Keccak256(newb, ethCrypto.Keccak256([]byte("abc"))))
+	fmt.Printf("%x\n\n", i%1)
 }

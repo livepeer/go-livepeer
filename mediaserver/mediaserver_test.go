@@ -26,7 +26,7 @@ var S *LivepeerMediaServer
 func setupServer() *LivepeerMediaServer {
 	if S == nil {
 		priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-		n, _ := core.NewLivepeerNode(15000, priv1, pub1)
+		n, _ := core.NewLivepeerNode(15000, priv1, pub1, nil)
 		S = NewLivepeerMediaServer("1935", "8080", "", n)
 		S.StartLPMS(context.Background())
 	}
@@ -51,20 +51,10 @@ type StubNetwork struct {
 	S *StubSubscriber
 }
 
-// func (n *StubNetwork) NewBroadcaster(strmID string) net.Broadcaster {
-// 	n.B = &StubBroadcaster{Data: make(map[uint64][]byte)}
-// 	return n.B
-// }
-
 func (n *StubNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error) {
 	n.B = &StubBroadcaster{Data: make(map[uint64][]byte)}
 	return n.B, nil
 }
-
-// func (n *StubNetwork) NewSubscriber(strmID string) net.Subscriber {
-// 	n.S = &StubSubscriber{}
-// 	return n.S
-// }
 
 func (n *StubNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
 	n.S = &StubSubscriber{}
@@ -73,6 +63,9 @@ func (n *StubNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
 
 func (n *StubNetwork) Connect(nodeID, nodeAddr string) error { return nil }
 func (n *StubNetwork) SetupProtocol() error                  { return nil }
+func (b *StubNetwork) SendTranscodResult(nodeID string, strmID string, transcodeResult map[string]string) error {
+	return nil
+}
 
 type StubBroadcaster struct {
 	Data map[uint64][]byte
@@ -88,11 +81,11 @@ type StubSubscriber struct{}
 
 func (s *StubSubscriber) Subscribe(ctx context.Context, f func(seqNo uint64, data []byte, eof bool)) error {
 	glog.Infof("Calling StubSubscriber!!!")
-	s1 := stream.HLSSegment{SeqNo: 0, Name: "strmID_01.ts", Data: []byte("test data"), Duration: 8.001}
-	s2 := stream.HLSSegment{SeqNo: 1, Name: "strmID_02.ts", Data: []byte("test data"), Duration: 8.001}
-	s3 := stream.HLSSegment{SeqNo: 2, Name: "strmID_03.ts", Data: []byte("test data"), Duration: 8.001}
-	s4 := stream.HLSSegment{SeqNo: 3, Name: "strmID_04.ts", Data: []byte("test data"), Duration: 8.001}
-	for i, s := range []stream.HLSSegment{s1, s2, s3, s4} {
+	s1 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 0, Name: "strmID_01.ts", Data: []byte("test data"), Duration: 8.001}}
+	s2 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 1, Name: "strmID_02.ts", Data: []byte("test data"), Duration: 8.001}}
+	s3 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 2, Name: "strmID_03.ts", Data: []byte("test data"), Duration: 8.001}}
+	s4 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 3, Name: "strmID_04.ts", Data: []byte("test data"), Duration: 8.001}}
+	for i, s := range []core.SignedSegment{s1, s2, s3, s4} {
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
 		err := enc.Encode(s)

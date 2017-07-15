@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
@@ -209,61 +210,16 @@ func main() {
 			return
 		}
 		n.Eth = client
+		n.EthPassword = *ethPassword
 
 		if *transcoder {
-			//Check if transcoder is active
-			active, err := n.Eth.IsActiveTranscoder()
-			if err != nil {
-				glog.Errorf("Error getting transcoder state: %v", err)
-			}
-
-			if !active {
-				glog.Infof("Transcoder %v is inactive", acct.Address.Hex())
-			} else {
-				s, err := n.Eth.TranscoderStake()
-				if err != nil {
-					glog.Errorf("Error getting transcoder stake: %v", err)
-				}
-				glog.Infof("Transcoder Active. Total Stake: %v", s)
-			}
-
-			logsSub, logsChan, err := n.Eth.SubscribeToJobEvent(func(l types.Log) error {
-				tx, _, err := n.Eth.Backend().TransactionByHash(context.Background(), l.TxHash)
-				if err != nil {
-					glog.Errorf("Error getting transaction data: %v", err)
-				}
-				strmId, tData, err := eth.ParseJobTxData(tx.Data())
-
-				//Create Transcode Config, Do
-				profile, ok := net.VideoProfileLookup[tData]
-				if !ok {
-					glog.Errorf("Cannot find video profile for job: %v", tData)
-					return core.ErrTranscode
-				}
-				config := net.TranscodeConfig{StrmID: strmId, Profiles: []net.VideoProfile{profile}}
-				glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", tx.Hash(), strmId, tData, config)
-
-				//Do The Transcoding
-				strmIDs, err := n.Transcode(config)
-				if err != nil {
-					glog.Errorf("Transcode Error: %v", err)
-				}
-
-				//Notify Broadcaster
-				sid := core.StreamID(strmId)
-				err = n.NotifyBroadcaster(sid.GetNodeID(), sid, map[core.StreamID]net.VideoProfile{strmIDs[0]: net.VideoProfileLookup[tData]})
-				if err != nil {
-					glog.Errorf("Notify Broadcaster Error: %v", err)
-				}
-
-				return nil
-			})
+			logsSub, err := setupTranscoder(n, acct)
 
 			if err != nil {
 				glog.Errorf("Error subscribing to job event: %v", err)
 			}
 			defer logsSub.Unsubscribe()
-			defer close(logsChan)
+			// defer close(logsChan)
 		}
 	} else {
 		glog.Infof("Not creating Eth client...")
@@ -273,4 +229,84 @@ func main() {
 	s.StartLPMS(context.Background())
 
 	select {}
+}
+
+func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subscription, error) {
+	//Check if transcoder is active
+	active, err := n.Eth.IsActiveTranscoder()
+	if err != nil {
+		glog.Errorf("Error getting transcoder state: %v", err)
+	}
+
+	if !active {
+		glog.Infof("Transcoder %v is inactive", acct.Address.Hex())
+	} else {
+		s, err := n.Eth.TranscoderStake()
+		if err != nil {
+			glog.Errorf("Error getting transcoder stake: %v", err)
+		}
+		glog.Infof("Transcoder Active. Total Stake: %v", s)
+	}
+
+	//Check to call reward periodically
+	go func() {
+		for {
+			time.Sleep(time.Second * 5)
+			n.CallReward()
+		}
+	}()
+
+	//Subscribe to when a job is assigned to us
+	logsCh := make(chan types.Log)
+	sub, err := n.Eth.SubscribeToJobEvent(context.Background(), logsCh)
+	if err != nil {
+		glog.Errorf("Error subscribing to job event: %v", err)
+	}
+	go func() error {
+		select {
+		case l := <-logsCh:
+			tx, _, err := n.Eth.Backend().TransactionByHash(context.Background(), l.TxHash)
+			if err != nil {
+				glog.Errorf("Error getting transaction data: %v", err)
+			}
+			strmId, tData, err := eth.ParseJobTxData(tx.Data())
+			if err != nil {
+				glog.Errorf("Error parsing job tx data: %v", err)
+			}
+
+			jid, _, _, _, err := eth.GetInfoFromJobEvent(l, n.Eth)
+			if err != nil {
+				glog.Errorf("Error getting info from job event: %v", err)
+			}
+
+			//Create Transcode Config
+			//TODO: profile should contain multiple video profiles.  Waiting for a protocol change.
+			profile, ok := net.VideoProfileLookup[tData]
+			if !ok {
+				glog.Errorf("Cannot find video profile for job: %v", tData)
+				return core.ErrTranscode
+			}
+
+			config := net.TranscodeConfig{StrmID: strmId, Profiles: []net.VideoProfile{profile}, JobID: jid, PerformOnchainClaim: true}
+			glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", tx.Hash(), strmId, tData, config)
+
+			//Do The Transcoding
+			strmIDs, err := n.Transcode(config)
+			if err != nil {
+				glog.Errorf("Transcode Error: %v", err)
+			}
+
+			//Notify Broadcaster
+			sid := core.StreamID(strmId)
+			err = n.NotifyBroadcaster(sid.GetNodeID(), sid, map[core.StreamID]net.VideoProfile{strmIDs[0]: net.VideoProfileLookup[tData]})
+			if err != nil {
+				glog.Errorf("Notify Broadcaster Error: %v", err)
+			}
+
+			return nil
+
+		}
+	}()
+
+	return sub, nil
 }

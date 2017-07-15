@@ -42,16 +42,22 @@ func NewBasicStream(s net.Stream) *BasicStream {
 }
 
 func (ws *BasicStream) Decode(n interface{}) error {
+	// ws.l.Lock()
+	// defer ws.l.Unlock()
+	return ws.Dec.Decode(n)
+}
+
+func (ws *BasicStream) Encode(n interface{}) error {
 	ws.l.Lock()
 	defer ws.l.Unlock()
-	return ws.Dec.Decode(n)
+	return ws.Enc.Encode(n)
 }
 
 func (ws *BasicStream) WriteSegment(seqNo uint64, strmID string, data []byte) error {
 	nwMsg := Msg{Op: StreamDataID, Data: StreamDataMsg{SeqNo: seqNo, StrmID: strmID, Data: data}}
 	glog.Infof("Sending: %v::%v to %v", strmID, seqNo, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
 
-	err := ws.Enc.Encode(nwMsg)
+	err := ws.Encode(nwMsg)
 	if err != nil {
 		glog.Errorf("send message encode error: %v", err)
 		return ErrStream

@@ -68,7 +68,7 @@ func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 		case msg := <-b.q:
 			// glog.Infof("broadcasting msg:%v to network.  listeners: %v", msg, b.listeners)
 			for id, l := range b.listeners {
-				glog.Infof("Broadcasting segment %v to listener %v", msg.SeqNo, id)
+				// glog.Infof("Broadcasting segment %v to listener %v", msg.SeqNo, id)
 				err := l.WriteSegment(msg.SeqNo, b.StrmID, msg.Data)
 				if err != nil {
 					glog.Errorf("Error broadcasting segment %v to listener %v: %v", msg.SeqNo, id, err)

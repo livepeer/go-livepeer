@@ -3,9 +3,7 @@
 package mediaserver
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"errors"
 	"net/http"
 	"net/url"
@@ -302,7 +300,7 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 		go func() {
 			err := s.LPMS.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions) //TODO: do we need to cancel this thread when the stream finishes?
 			if err != nil {
-				glog.Infof("Error in segmenter, broadcasting finish message")
+				glog.Infof("Error in segmenter: %v, broadcasting finish message", err)
 				err := hlsStrm.WriteHLSSegmentToStream(stream.HLSSegment{EOF: true})
 				if err != nil {
 					glog.Errorf("Error broadcasting finish: %v", err)
@@ -311,14 +309,21 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 		}()
 
 		//Kick off go routine to broadcast the hls stream.
-		go s.LivepeerNode.BroadcastToNetwork(hlsStrm)
+		go func() {
+			err := s.LivepeerNode.BroadcastToNetwork(hlsStrm)
+			if err == core.ErrEOF {
+				glog.Info("Broadcast Ended. Ending onchain job")
+			} else if err != nil {
+				glog.Errorf("Error broadcasting to network: %v", err)
+			}
+		}()
 
 		//Store HLS Stream into StreamDB, remember HLS stream so we can remove later
 		s.LivepeerNode.StreamDB.AddStream(core.StreamID(hlsStrm.GetStreamID()), hlsStrm)
 		s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()] = hlsStrm.GetStreamID()
 
 		if s.LivepeerNode.Eth != nil {
-			//Create Transcode Job Onchain
+			//Create Transcode Job Onchain, record the jobID
 			tx, err := createBroadcastJob(s, hlsStrm)
 			if err != nil {
 				glog.Info("Error creating job.  Waiting for round start and trying again.")
@@ -393,9 +398,7 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 				}
 
 				//Decode data into HLSSegment
-				dec := gob.NewDecoder(bytes.NewReader(data))
-				var seg stream.HLSSegment
-				err := dec.Decode(&seg)
+				ss, err := core.BytesToSignedSegment(data)
 				if err != nil {
 					glog.Errorf("Error decoding byte array into segment: %v", err)
 				}
@@ -405,8 +408,8 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 					buf = s.LivepeerNode.StreamDB.AddNewHLSBuffer(strmID)
 					glog.Infof("Creating new buf in StreamDB: %v", s.LivepeerNode.StreamDB)
 				}
-				glog.Infof("Inserting seg %v into buf", seg.Name)
-				buf.WriteSegment(seg.SeqNo, seg.Name, seg.Duration, seg.Data)
+				glog.Infof("Inserting seg %v into buf", ss.Seg.Name)
+				buf.WriteSegment(ss.Seg.SeqNo, ss.Seg.Name, ss.Seg.Duration, ss.Seg.Data)
 			})
 		}
 
@@ -523,8 +526,10 @@ func parseSegName(reqPath string) string {
 }
 
 func createBroadcastJob(s *LivepeerMediaServer, hlsStrm *stream.VideoStream) (*types.Transaction, error) {
+	// func createBroadcastJob(s *LivepeerMediaServer, hlsStrm *stream.VideoStream, jobIDchan chan *big.Int) error {
 	eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout)
-
+	// tOps := common.BytesToHash([]byte(BroadcastJobVideoProfile.Name))
+	// err := s.LivepeerNode.CreateTranscodeJob(hlsStrm.GetStreamID(), tOps, BroadcastPrice)
 	tOps := common.BytesToHash([]byte(BroadcastJobVideoProfile.Name))
 	tx, err := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), tOps, BroadcastPrice)
 

@@ -1,11 +1,16 @@
 package core
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/rand"
 	"time"
+
+	"github.com/golang/glog"
+	"github.com/livepeer/lpms/stream"
 )
 
 var ErrStreamID = errors.New("ErrStreamID")
@@ -61,4 +66,31 @@ func (id *StreamID) IsMasterPlaylistID() bool {
 
 func (id *StreamID) String() string {
 	return string(*id)
+}
+
+type SignedSegment struct {
+	Seg stream.HLSSegment
+	Sig []byte
+}
+
+func SignedSegmentToBytes(ss SignedSegment) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(ss)
+	if err != nil {
+		glog.Errorf("Error encoding segment to []byte: %v", err)
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func BytesToSignedSegment(data []byte) (SignedSegment, error) {
+	dec := gob.NewDecoder(bytes.NewReader(data))
+	var ss SignedSegment
+	err := dec.Decode(&ss)
+	if err != nil {
+		glog.Errorf("Error decoding byte array into segment: %v", err)
+		return SignedSegment{}, err
+	}
+	return ss, nil
 }
