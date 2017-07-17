@@ -87,7 +87,7 @@ func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
 
 		// 2 profiles is too much for my tiny laptop...
 		// ids, err := s.LivepeerNode.Transcode(net.TranscodeConfig{StrmID: strmID, Profiles: []net.VideoProfile{net.P_144P_30FPS_16_9, net.P_240P_30FPS_16_9}})
-		ids, err := s.LivepeerNode.Transcode(net.TranscodeConfig{StrmID: strmID, Profiles: []net.VideoProfile{net.P_240P_30FPS_16_9}})
+		ids, err := s.LivepeerNode.Transcode(net.TranscodeConfig{StrmID: strmID, Profiles: []net.VideoProfile{net.P_240P_30FPS_16_9}}, nil)
 		if err != nil {
 			glog.Errorf("Error transcoding: %v", err)
 			http.Error(w, "Error transcoding.", 500)
@@ -312,7 +312,7 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 		go func() {
 			err := s.LivepeerNode.BroadcastToNetwork(hlsStrm)
 			if err == core.ErrEOF {
-				glog.Info("Broadcast Ended. Ending onchain job")
+				glog.Info("Broadcast Ended.")
 			} else if err != nil {
 				glog.Errorf("Error broadcasting to network: %v", err)
 			}

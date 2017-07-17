@@ -12,13 +12,11 @@ import (
 
 	"io/ioutil"
 
-	"bytes"
-
 	"github.com/ethereum/go-ethereum/common"
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	"github.com/livepeer/golp/eth"
-	ethTypes "github.com/livepeer/golp/eth/types"
+
 	"github.com/livepeer/golp/net"
 	"github.com/livepeer/lpms/stream"
 )
@@ -114,7 +112,7 @@ func TestTranscode(t *testing.T) {
 	n.VideoNetwork = &StubVideoNetwork{T: t}
 
 	//Call transcode
-	ids, err := n.Transcode(net.TranscodeConfig{StrmID: "strmID", Profiles: []net.VideoProfile{net.P_144P_30FPS_16_9, net.P_240P_30FPS_16_9}})
+	ids, err := n.Transcode(net.TranscodeConfig{StrmID: "strmID", Profiles: []net.VideoProfile{net.P_144P_30FPS_16_9, net.P_240P_30FPS_16_9}}, nil)
 
 	if err != nil {
 		t.Errorf("Error transcoding: %v", err)
@@ -287,81 +285,6 @@ func TestNotifyBroadcaster(t *testing.T) {
 
 	if sn.tResult["strmid1"] != net.P_240P_30FPS_16_9.Name {
 		t.Errorf("Expecting %v, got %v", net.P_240P_30FPS_16_9.Name, sn.tResult["strmid1"])
-	}
-}
-
-func TestClaimAndVerify(t *testing.T) {
-	//Prep the data
-	vidLen := 10
-	strmID := "strmID"
-	dataHashes := make([]common.Hash, vidLen, vidLen)
-	tcHashes := make([]common.Hash, vidLen, vidLen)
-	tHashes := make([]common.Hash, vidLen, vidLen)
-	sigs := make([][]byte, vidLen, vidLen)
-
-	//Take the first and last element off
-	for i := 1; i < vidLen-1; i++ {
-		dataHashes[i] = common.StringToHash(fmt.Sprintf("dh%v", i))
-		tHashes[i] = common.StringToHash(fmt.Sprintf("th%v", i))
-		sig := &ethTypes.Segment{strmID, big.NewInt(int64(i)), dataHashes[i]}
-		tcHashes[i] = (&ethTypes.TranscodeClaim{strmID, big.NewInt(int64(i)), dataHashes[i], tHashes[i], sig.Hash().Bytes()}).Hash()
-	}
-
-	s1 := &eth.StubClient{}
-	VerifyRate = 10 //Set the verify rate so it gets called once
-	claimAndVerify(big.NewInt(0), dataHashes, tcHashes, tHashes, sigs, 10, 19, s1)
-
-	if s1.ClaimCounter != 1 {
-		t.Errorf("Claim should be called once, but got %v", s1.ClaimCounter)
-	}
-
-	s2 := &eth.StubClient{ClaimEnd: make([]*big.Int, 0, 10), ClaimJid: make([]*big.Int, 0, 10), ClaimRoot: make([][32]byte, 0, 10), ClaimStart: make([]*big.Int, 0, 10)}
-	dataHashes[4] = common.Hash{}
-	tcHashes[4] = common.Hash{}
-	tHashes[4] = common.Hash{}
-	sigs[4] = nil
-	claimAndVerify(big.NewInt(0), dataHashes, tcHashes, tHashes, sigs, 10, 19, s2)
-	if s2.ClaimCounter != 2 {
-		t.Errorf("Claim should be called twice, but got %v", s2.ClaimCounter)
-	}
-
-	if s2.ClaimStart[0].Cmp(big.NewInt(11)) != 0 || s2.ClaimEnd[0].Cmp(big.NewInt(13)) != 0 {
-		t.Errorf("First claim should be from 11 to 13, but got %v to %v", s2.ClaimStart[0], s2.ClaimEnd[0])
-	}
-
-	if s2.ClaimStart[1].Cmp(big.NewInt(16)) != 0 || s2.ClaimEnd[1].Cmp(big.NewInt(18)) != 0 {
-		t.Errorf("First claim should be from 16 to 18, but got %v to %v", s2.ClaimStart[1], s2.ClaimEnd[1])
-	}
-
-	root1, _, _ := ethTypes.NewMerkleTree(tcHashes[1:4])
-	root2, _, _ := ethTypes.NewMerkleTree(tcHashes[6:9])
-	if bytes.Compare(s2.ClaimRoot[0][:], root1.Hash[:]) != 0 {
-		t.Errorf("Expecting claim root %v, got %v", root1.Hash, s2.ClaimRoot[0])
-	}
-	if bytes.Compare(s2.ClaimRoot[1][:], root2.Hash[:]) != 0 {
-		t.Errorf("Expecting claim root %v, got %v", root2.Hash, s2.ClaimRoot[1])
-	}
-}
-
-func TestVerify(t *testing.T) {
-	dataHashes := []common.Hash{common.StringToHash("dh1"), common.StringToHash("dh2"), common.StringToHash("dh3")}
-	tHashes := []common.Hash{common.StringToHash("th1"), common.StringToHash("th2"), common.StringToHash("th3")}
-	sigs := [][]byte{[]byte("sig1"), []byte("sig2"), []byte("sig3")}
-	proofs := []*ethTypes.MerkleProof{&ethTypes.MerkleProof{}, &ethTypes.MerkleProof{}, &ethTypes.MerkleProof{}}
-	s := &eth.StubClient{}
-	verify(big.NewInt(0), dataHashes, tHashes, sigs, proofs, 0, 2, s, common.Hash{})
-
-	if s.Jid.Cmp(big.NewInt(0)) != 0 {
-		t.Errorf("Expecting 0, got %v", s.Jid)
-	}
-	if fmt.Sprintf("%x", s.DHash) != fmt.Sprintf("%x", common.StringToHash("dh3")) {
-		t.Errorf("Expecting %v, got %v", common.StringToHash("dh3"), s.DHash)
-	}
-	if fmt.Sprintf("%x", s.TDHash) != fmt.Sprintf("%x", common.StringToHash("th3")) {
-		t.Errorf("Expecting %v, got %v", common.StringToHash("th3"), s.TDHash)
-	}
-	if s.VerifyCounter != 3 {
-		t.Errorf("Verify should be called 3 times, but got %v", s.VerifyCounter)
 	}
 }
 

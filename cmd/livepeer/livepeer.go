@@ -287,11 +287,13 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 				return core.ErrTranscode
 			}
 
-			config := net.TranscodeConfig{StrmID: strmId, Profiles: []net.VideoProfile{profile}, JobID: jid, PerformOnchainClaim: true}
+			tProfiles := []net.VideoProfile{profile}
+			config := net.TranscodeConfig{StrmID: strmId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
 			glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", tx.Hash(), strmId, tData, config)
 
 			//Do The Transcoding
-			strmIDs, err := n.Transcode(config)
+			cm := core.NewClaimManager(strmId, jid, tProfiles, n.Eth)
+			strmIDs, err := n.Transcode(config, cm)
 			if err != nil {
 				glog.Errorf("Transcode Error: %v", err)
 			}

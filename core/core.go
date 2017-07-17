@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
@@ -10,7 +9,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	ethCrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	peer "github.com/libp2p/go-libp2p-peer"
@@ -30,7 +28,7 @@ var ClaimInterval = int64(5)
 var EthRpcTimeout = 5 * time.Second
 var EthEventTimeout = 5 * time.Second
 var EthMinedTxTimeout = 60 * time.Second
-var VerifyRate = int64(1)
+var VerifyRate = int64(2)
 
 //NodeID can be converted from libp2p PeerID.
 type NodeID string
@@ -139,7 +137,7 @@ func (n *LivepeerNode) CallReward() {
 }
 
 //Transcode transcodes one stream into multiple stream, and returns a list of StreamIDs, in the order of the video profiles.
-func (n *LivepeerNode) Transcode(config net.TranscodeConfig) ([]StreamID, error) {
+func (n *LivepeerNode) Transcode(config net.TranscodeConfig, cm *ClaimManager) ([]StreamID, error) {
 	s, err := n.VideoNetwork.GetSubscriber(config.StrmID)
 	if err != nil {
 		glog.Errorf("Error getting subscriber from network: %v", err)
@@ -168,26 +166,14 @@ func (n *LivepeerNode) Transcode(config net.TranscodeConfig) ([]StreamID, error)
 		resultStrmIDs[i] = strmID
 	}
 
-	tcHashes := make([][]common.Hash, len(config.Profiles), len(config.Profiles))
-	dHashes := make([][]common.Hash, len(config.Profiles), len(config.Profiles))
-	tHashes := make([][]common.Hash, len(config.Profiles), len(config.Profiles))
-	sigs := make([][][]byte, len(config.Profiles), len(config.Profiles))
-	for i := 0; i < len(config.Profiles); i++ {
-		tch := make([]common.Hash, ClaimInterval, ClaimInterval)
-		tcHashes[i] = tch
-		dh := make([]common.Hash, ClaimInterval, ClaimInterval)
-		dHashes[i] = dh
-		th := make([]common.Hash, ClaimInterval, ClaimInterval)
-		tHashes[i] = th
-		s := make([][]byte, ClaimInterval, ClaimInterval)
-		sigs[i] = s
-	}
-
 	//Subscribe to broadcast video, do the transcoding, broadcast the transcoded video, do the on-chain claim / verify
-	var startSeq, endSeq int64
+	// var startSeq, endSeq int64
 	s.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 		if eof {
-			glog.Infof("Stream finished")
+			glog.Infof("Stream finished.  Claiming work.")
+			for _, p := range config.Profiles {
+				cm.Claim(p)
+			}
 		}
 
 		//Decode the segment
@@ -196,8 +182,14 @@ func (n *LivepeerNode) Transcode(config net.TranscodeConfig) ([]StreamID, error)
 			glog.Errorf("Error decoding byte array into segment: %v", err)
 		}
 
-		for pi, p := range config.Profiles {
+		for _, p := range config.Profiles {
 			t := transcoders[p.Name]
+			if ss.Seg.EOF {
+				glog.Infof("Stream finished.  Claiming work.")
+				cm.Claim(p)
+				continue
+			}
+
 			td, err := t.Transcode(ss.Seg.Data)
 			if err != nil {
 				glog.Errorf("Error transcoding for %v: %v", p.Name, err)
@@ -224,161 +216,11 @@ func (n *LivepeerNode) Transcode(config net.TranscodeConfig) ([]StreamID, error)
 				continue
 			}
 
-			//Record the segment hashes, so we can call claim
-			claim := &ethTypes.TranscodeClaim{
-				StreamID:              config.StrmID,
-				SegmentSequenceNumber: big.NewInt(int64(seqNo)),
-				DataHash:              common.BytesToHash(ss.Seg.Data),
-				TranscodedDataHash:    common.BytesToHash(td),
-				BroadcasterSig:        ss.Sig,
-			}
-
-			tcHashes[pi][int64(seqNo)%ClaimInterval] = claim.Hash()
-			dHashes[pi][int64(seqNo)%ClaimInterval] = common.BytesToHash(ss.Seg.Data)
-			tHashes[pi][int64(seqNo)%ClaimInterval] = common.BytesToHash(td)
-			sigs[pi][int64(seqNo)%ClaimInterval] = ss.Sig
-
-			if int64(seqNo)%ClaimInterval == ClaimInterval-1 {
-				endSeq = startSeq + ClaimInterval - 1
-				go claimAndVerify(config.JobID, dHashes[pi], tcHashes[pi], tHashes[pi], sigs[pi], startSeq, endSeq, n.Eth)
-				startSeq = endSeq + 1
-
-				//Claimed that part of the work.  Now refresh all the containers.
-				tcHashes := make([][]common.Hash, len(config.Profiles), len(config.Profiles))
-				dHashes := make([][]common.Hash, len(config.Profiles), len(config.Profiles))
-				tHashes := make([][]common.Hash, len(config.Profiles), len(config.Profiles))
-				sigs := make([][][]byte, len(config.Profiles), len(config.Profiles))
-				for i := 0; i < len(config.Profiles); i++ {
-					tch := make([]common.Hash, ClaimInterval, ClaimInterval)
-					tcHashes[i] = tch
-					dh := make([]common.Hash, ClaimInterval, ClaimInterval)
-					dHashes[i] = dh
-					th := make([]common.Hash, ClaimInterval, ClaimInterval)
-					tHashes[i] = th
-					s := make([][]byte, ClaimInterval, ClaimInterval)
-					sigs[i] = s
-				}
-			}
+			cm.AddClaim(int64(seqNo), common.BytesToHash(ss.Seg.Data), common.BytesToHash(td), ss.Sig, p)
 		}
 	})
 
 	return resultStrmIDs, nil
-}
-
-func claimAndVerify(jid *big.Int, dHashes []common.Hash, tcHashes []common.Hash, thashes []common.Hash, sigs [][]byte, start, end int64, c eth.LivepeerEthClient) {
-	if end-start+1 != int64(len(dHashes)) {
-		glog.Errorf("Start(%v) and End(%v) doesn't match up with hash length: %v", start, end, len(dHashes))
-		return
-	}
-
-	ranges := make([][2]int64, 0)
-	for i := 0; i < len(dHashes); i++ {
-		empty := common.Hash{}
-		if dHashes[i] != empty {
-			st := i
-			for ed := i + 1; ed < len(dHashes); ed++ {
-				if dHashes[ed] == empty {
-					ranges = append(ranges, [2]int64{int64(st), int64(ed - 1)})
-					i = ed + 1
-					break
-				}
-
-				if ed == len(dHashes)-1 {
-					ranges = append(ranges, [2]int64{int64(st), int64(ed)})
-					i = ed
-					break
-				}
-			}
-		}
-	}
-
-	// glog.Infof("ranges: %v", ranges)
-
-	for _, r := range ranges {
-		st := r[0]
-		ed := r[1]
-		root, proofs, err := ethTypes.NewMerkleTree(tcHashes[st : ed+1])
-		if err != nil {
-			glog.Errorf("Error: %v - creating merkle root for: %v", err, tcHashes[st:ed+1])
-			//TODO: If this happens, should we cancel the job?
-		}
-
-		tx, err := c.ClaimWork(jid, big.NewInt(start+st), big.NewInt(start+ed), root.Hash)
-		if err != nil {
-			glog.Errorf("Error claiming work: %v", err)
-		} else {
-			verify(jid, dHashes[st:ed+1], thashes[st:ed+1], sigs[st:ed+1], proofs, start+st, start+ed, c, tx.Hash())
-		}
-	}
-}
-
-func verify(jid *big.Int, dataHashes []common.Hash, tHashes []common.Hash, sigs [][]byte, proofs []*ethTypes.MerkleProof, start, end int64, c eth.LivepeerEthClient, txHash common.Hash) {
-	num := end - start + 1
-	if len(dataHashes) != int(num) || len(tHashes) != int(num) || len(sigs) != int(num) || len(proofs) != int(num) {
-		glog.Errorf("Wrong input data length in verify: dHashes(%v), tHashes(%v), sigs(%v), proofs(%v)", len(dataHashes), len(tHashes), len(sigs), len(proofs))
-	}
-	//Wait until tx is mined
-	_, err := eth.WaitForMinedTx(c.Backend(), EthRpcTimeout, EthMinedTxTimeout, txHash)
-	if err != nil {
-		glog.Errorf("Error waiting for tx mine in verify: %v", err)
-	}
-
-	//Get block info
-	bNum, bHash := getBlockInfo(c)
-
-	for i := 0; i < len(dataHashes); i++ {
-		//Figure out which seg needs to be verified
-		if shouldVerifySegment(start+int64(i), start, end, int64(bNum), bHash, VerifyRate) {
-			//Call verify
-			_, err := c.Verify(jid, big.NewInt(start+int64(i)), dataHashes[i], tHashes[i], sigs[i], proofs[i].Bytes())
-			if err != nil {
-				glog.Errorf("Error submitting verify transaction: %v", err)
-			}
-		}
-	}
-}
-
-func getBlockInfo(c eth.LivepeerEthClient) (uint64, common.Hash) {
-	if c.Backend() == nil {
-		return 0, common.StringToHash("abc")
-	} else {
-		sp, err := c.Backend().SyncProgress(context.Background())
-		if err != nil || sp == nil {
-			glog.Errorf("Error getting block: %v", err)
-			return 0, common.Hash{}
-		}
-		blk, err := c.Backend().BlockByNumber(context.Background(), big.NewInt(int64(sp.CurrentBlock)))
-		if err != nil {
-			glog.Errorf("Error getting block: %v", err)
-		}
-		return blk.NumberU64(), blk.Hash()
-	}
-}
-
-func shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, blkHash common.Hash, verifyRate int64) bool {
-	if seqNum < start || seqNum > end {
-		return false
-	}
-
-	blkNumTmp := make([]byte, 8)
-	binary.PutVarint(blkNumTmp, blkNum)
-	blkNumB := make([]byte, 32)
-	copy(blkNumB[24:], blkNumTmp)
-
-	seqNumTmp := make([]byte, 8)
-	binary.PutVarint(seqNumTmp, seqNum)
-	seqNumB := make([]byte, 32)
-	copy(seqNumB[24:], blkNumTmp)
-
-	num, i := binary.Uvarint(ethCrypto.Keccak256(blkNumB, blkHash.Bytes(), seqNumB))
-	if i != 0 {
-		glog.Errorf("Error converting bytes in shouldVerifySegment.  num: %v, i: %v.  blkNumB:%x, blkHash:%x, seqNumB:%x", num, i, blkNumB, blkHash.Bytes(), seqNumB)
-	}
-	if num%uint64(VerifyRate) == 0 {
-		return true
-	} else {
-		return false
-	}
 }
 
 //BroadcastToNetwork is called when a new broadcast stream is available.  It lets the network decide how
@@ -407,10 +249,6 @@ func (n *LivepeerNode) BroadcastToNetwork(strm *stream.VideoStream) error {
 			time.Sleep(time.Second)
 			continue
 		}
-		if seg.EOF == true {
-			glog.Info("Got EOF for HLS Broadcast, Terminating Broadcast.")
-			return ErrEOF
-		}
 
 		//Get segment signature
 		segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(counter)), DataHash: common.BytesToHash(seg.Data)}).Hash()
@@ -431,6 +269,11 @@ func (n *LivepeerNode) BroadcastToNetwork(strm *stream.VideoStream) error {
 		} else {
 			glog.Errorf("Error encoding segment to []byte: %v", err)
 			continue
+		}
+
+		if seg.EOF == true {
+			glog.Info("Got EOF for HLS Broadcast, Terminating Broadcast.")
+			return ErrEOF
 		}
 
 		lastSuccess = time.Now()
