@@ -248,13 +248,8 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 		glog.Infof("Transcoder Active. Total Stake: %v", s)
 	}
 
-	//Check to call reward periodically
-	go func() {
-		for {
-			time.Sleep(time.Second * 5)
-			n.CallReward()
-		}
-	}()
+	rm := core.NewRewardManager(time.Second*5, n.Eth)
+	go rm.Start()
 
 	//Subscribe to when a job is assigned to us
 	logsCh := make(chan types.Log)

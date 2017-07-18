@@ -104,38 +104,6 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []net.VideoP
 	return nil
 }
 
-func (n *LivepeerNode) CallReward() {
-	if err := eth.CheckRoundAndInit(n.Eth, EthRpcTimeout, EthMinedTxTimeout); err != nil {
-		glog.Errorf("%v", err)
-		return
-	}
-
-	valid, err := n.Eth.ValidRewardTimeWindow()
-	if err != nil {
-		glog.Errorf("Error getting reward time window info: %v", err)
-		return
-	}
-
-	if valid {
-		glog.Infof("It's our window. Calling reward()")
-		tx, err := n.Eth.Reward()
-		if err != nil || tx == nil {
-			glog.Errorf("Error calling reward: %v", err)
-			return
-		}
-		r, err := eth.WaitForMinedTx(n.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
-		if err != nil {
-			glog.Errorf("Error waiting for mined tx: %v", err)
-		}
-		if tx.Gas().Cmp(r.GasUsed) == 0 {
-			glog.Errorf("Call Reward Failed")
-			return
-		}
-	} else {
-		// glog.Infof("Not valid reward time window.")
-	}
-}
-
 //Transcode transcodes one stream into multiple stream, and returns a list of StreamIDs, in the order of the video profiles.
 func (n *LivepeerNode) Transcode(config net.TranscodeConfig, cm *ClaimManager) ([]StreamID, error) {
 	s, err := n.VideoNetwork.GetSubscriber(config.StrmID)
