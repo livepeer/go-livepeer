@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path"
 	"path/filepath"
 	"time"
@@ -29,6 +30,137 @@ var ErrKeygen = errors.New("ErrKeygen")
 var EthRpcTimeout = 10 * time.Second
 var EthEventTimeout = 30 * time.Second
 var EthMinedTxTimeout = 60 * time.Second
+
+func main() {
+	flag.Set("logtostderr", "true")
+
+	port := flag.Int("p", 15000, "port")
+	httpPort := flag.String("http", "8935", "http port")
+	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
+	datadir := flag.String("datadir", "./data", "data directory")
+	bootID := flag.String("bootID", "122074003534f659626514b1ceb29d750a07f595db6619724576088df8380e1b3d8e", "Bootstrap node ID")
+	bootAddr := flag.String("bootAddr", "/ip4/127.0.0.1/tcp/15000", "Bootstrap node addr")
+	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
+	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
+	newEthAccount := flag.Bool("newEthAccount", false, "Create an eth account")
+	ethPassword := flag.String("ethPassword", "", "New Eth account password")
+	gethipc := flag.String("gethipc", "", "Geth ipc file location")
+	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
+
+	flag.Parse()
+
+	if *port == 0 {
+		glog.Fatalf("Please provide port")
+	}
+	if *httpPort == "" {
+		glog.Fatalf("Please provide http port")
+	}
+	if *rtmpPort == "" {
+		glog.Fatalf("Please provide rtmp port")
+	}
+
+	if _, err := os.Stat(*datadir); os.IsNotExist(err) {
+		os.Mkdir(*datadir, 0755)
+	}
+
+	priv, pub, err := getLPKeys(*datadir)
+	if err != nil {
+		glog.Errorf("Error getting keys: %v", err)
+		return
+	}
+
+	n, err := core.NewLivepeerNode(*port, priv, pub, nil)
+	if err != nil {
+		glog.Errorf("Error creating livepeer node: %v", err)
+	}
+
+	if *bootnode {
+		glog.Infof("Setting up bootnode")
+		//Setup boostrap node
+		if err := n.VideoNetwork.SetupProtocol(); err != nil {
+			glog.Errorf("Cannot set up protocol:%v", err)
+			return
+		}
+	} else {
+		if err := n.Start(*bootID, *bootAddr); err != nil {
+			glog.Errorf("Cannot connect to bootstrap node: %v", err)
+			return
+		}
+	}
+
+	//Set up ethereum-related stuff
+	if *gethipc != "" {
+		var backend *ethclient.Client
+		var acct accounts.Account
+
+		if *newEthAccount {
+			keyStore := keystore.NewKeyStore(filepath.Join(*datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
+			acct, err = keyStore.NewAccount(*ethPassword)
+			if err != nil {
+				glog.Errorf("Error creating new eth account: %v", err)
+				return
+			}
+		} else {
+			acct, err = getEthAccount(*datadir)
+			if err != nil {
+				glog.Errorf("Error getting Eth account: %v", err)
+				return
+			}
+		}
+		glog.Infof("Connecting to geth @ %v", *gethipc)
+		backend, err = ethclient.Dial(*gethipc)
+		if err != nil {
+			glog.Errorf("Failed to connect to Ethereum client: %v", err)
+			return
+		}
+
+		client, err := eth.NewClient(acct, *ethPassword, *datadir, backend, common.HexToAddress(*protocolAddr), EthRpcTimeout, EthEventTimeout)
+		if err != nil {
+			glog.Errorf("Error creating Eth client: %v", err)
+			return
+		}
+		n.Eth = client
+		n.EthPassword = *ethPassword
+
+		if *transcoder {
+			logsSub, err := setupTranscoder(n, acct)
+
+			if err != nil {
+				glog.Errorf("Error subscribing to job event: %v", err)
+			}
+			defer logsSub.Unsubscribe()
+			// defer close(logsChan)
+		}
+	} else {
+		glog.Infof("***Livepeer is in off-chain mode***")
+	}
+
+	//Set up the media server
+	glog.Infof("Setting up Media Server")
+	s := mediaserver.NewLivepeerMediaServer(*rtmpPort, *httpPort, "", n)
+	ec := make(chan error)
+	msCtx, cancel := context.WithCancel(context.Background())
+	go func() {
+		ec <- s.StartMediaServer(msCtx)
+	}()
+
+	select {
+	case err := <-ec:
+		glog.Infof("Error from media server: %v", err)
+		cancel()
+		return
+	case <-msCtx.Done():
+		glog.Infof("MediaServer Done()")
+		cancel()
+		return
+	}
+	// if err := s.StartMediaServer(context.Background()); err != nil {
+	// 	glog.Errorf("Failed to start LPMS: %v", err)
+	// 	return
+	// }
+
+	// select {}
+}
 
 type LPKeyFile struct {
 	Pub  string
@@ -125,110 +257,6 @@ func getEthAccount(datadir string) (accounts.Account, error) {
 	}
 
 	return accounts[0], nil
-}
-
-func main() {
-	port := flag.Int("p", 0, "port")
-	httpPort := flag.String("http", "", "http port")
-	rtmpPort := flag.String("rtmp", "", "rtmp port")
-	datadir := flag.String("datadir", "", "data directory")
-	bootID := flag.String("bootID", "", "Bootstrap node ID")
-	bootAddr := flag.String("bootAddr", "", "Bootstrap node addr")
-	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
-	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
-	newEthAccount := flag.Bool("newEthAccount", false, "Create an eth account")
-	ethPassword := flag.String("ethPassword", "", "New Eth account password")
-	gethipc := flag.String("gethipc", "", "Geth ipc file location")
-	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
-
-	flag.Parse()
-
-	if *port == 0 {
-		glog.Fatalf("Please provide port")
-	}
-	if *httpPort == "" {
-		glog.Fatalf("Please provide http port")
-	}
-	if *rtmpPort == "" {
-		glog.Fatalf("Please provide rtmp port")
-	}
-
-	priv, pub, err := getLPKeys(*datadir)
-	if err != nil {
-		glog.Errorf("Error getting keys: %v", err)
-		return
-	}
-
-	n, err := core.NewLivepeerNode(*port, priv, pub, nil)
-	if err != nil {
-		glog.Errorf("Error creating livepeer node: %v", err)
-	}
-
-	if *bootnode {
-		glog.Infof("Setting up boostrap node")
-		//Setup boostrap node
-		if err := n.VideoNetwork.SetupProtocol(); err != nil {
-			glog.Errorf("Cannot set up protocol:%v", err)
-			return
-		}
-	} else {
-		if err := n.Start(*bootID, *bootAddr); err != nil {
-			glog.Errorf("Cannot connect to bootstrap node: %v", err)
-			return
-		}
-	}
-
-	var acct accounts.Account
-
-	if *newEthAccount {
-		keyStore := keystore.NewKeyStore(filepath.Join(*datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
-		acct, err = keyStore.NewAccount(*ethPassword)
-		if err != nil {
-			glog.Errorf("Error creating new eth account: %v", err)
-			return
-		}
-	} else {
-		acct, err = getEthAccount(*datadir)
-		if err != nil {
-			glog.Errorf("Error getting Eth account: %v", err)
-			return
-		}
-	}
-
-	var backend *ethclient.Client
-	if *gethipc != "" {
-		glog.Infof("Connecting to geth @ %v", *gethipc)
-		backend, err = ethclient.Dial(*gethipc)
-		if err != nil {
-			glog.Errorf("Failed to connect to Ethereum client: %v", err)
-			return
-		}
-
-		client, err := eth.NewClient(acct, *ethPassword, *datadir, backend, common.HexToAddress(*protocolAddr), EthRpcTimeout, EthEventTimeout)
-		if err != nil {
-			glog.Errorf("Error creating Eth client: %v", err)
-			return
-		}
-		n.Eth = client
-		n.EthPassword = *ethPassword
-
-		if *transcoder {
-			logsSub, err := setupTranscoder(n, acct)
-
-			if err != nil {
-				glog.Errorf("Error subscribing to job event: %v", err)
-			}
-			defer logsSub.Unsubscribe()
-			// defer close(logsChan)
-		}
-	} else {
-		glog.Infof("Not creating Eth client...")
-	}
-
-	s := mediaserver.NewLivepeerMediaServer(*rtmpPort, *httpPort, "", n)
-	s.StartLPMS(context.Background())
-
-	select {}
 }
 
 func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subscription, error) {

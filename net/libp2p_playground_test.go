@@ -2,12 +2,22 @@ package net
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"testing"
 	"time"
 
 	"github.com/golang/glog"
+	ds "github.com/ipfs/go-datastore"
 	crypto "github.com/libp2p/go-libp2p-crypto"
+	host "github.com/libp2p/go-libp2p-host"
 	net "github.com/libp2p/go-libp2p-net"
+	peer "github.com/libp2p/go-libp2p-peer"
+	ps "github.com/libp2p/go-libp2p-peerstore"
+	swarm "github.com/libp2p/go-libp2p-swarm"
+	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
+	rhost "github.com/libp2p/go-libp2p/p2p/host/routed"
+	ma "github.com/multiformats/go-multiaddr"
 )
 
 type SimpleMsg struct {
@@ -146,4 +156,50 @@ func TestBackAndForth(t *testing.T) {
 	// })
 
 	// time.Sleep(time.Second * 5)
+}
+
+func makeRandomHost(port int) host.Host {
+	// Ignoring most errors for brevity
+	// See echo example for more details and better implementation
+	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	pid, _ := peer.IDFromPublicKey(pub)
+	listen, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", port))
+	ps := ps.NewPeerstore()
+	ps.AddPrivKey(pid, priv)
+	ps.AddPubKey(pid, pub)
+	n, _ := swarm.NewNetwork(context.Background(),
+		[]ma.Multiaddr{listen}, pid, ps, nil)
+	basicHost := bhost.New(n)
+	// return basicHost
+	dht, err := constructDHTRouting(context.Background(), basicHost, ds.NewMapDatastore())
+	if err != nil {
+		glog.Errorf("Error constructing DHTRouting: %v", err)
+	}
+	rHost := rhost.Wrap(basicHost, dht)
+	return rHost
+}
+
+func TestBasic(t *testing.T) {
+	h1 := makeRandomHost(10000)
+	h2 := makeRandomHost(10001)
+	h1.Peerstore().AddAddrs(h2.ID(), h2.Addrs(), ps.PermanentAddrTTL)
+	h2.Peerstore().AddAddrs(h1.ID(), h1.Addrs(), ps.PermanentAddrTTL)
+
+	h2.SetStreamHandler(Protocol, func(stream net.Stream) {
+		glog.Infof("h2 handler...")
+		simpleHandler(stream, "pong")
+	})
+
+	glog.Infof("Before stream")
+	stream, err := h1.NewStream(context.Background(), h2.ID(), Protocol)
+	if err != nil {
+		log.Fatal(err)
+	}
+	glog.Infof("After stream")
+
+	s1 := NewBasicStream(stream)
+	s1.Enc.Encode(SimpleMsg{Msg: "ping!"})
+	s1.W.Flush()
+
+	time.Sleep(time.Second * 2)
 }

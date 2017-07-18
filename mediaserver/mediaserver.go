@@ -65,8 +65,10 @@ func NewLivepeerMediaServer(rtmpPort string, httpPort string, ffmpegPath string,
 }
 
 //StartLPMS starts the LPMS server
-func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
-	glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfile.Name)
+func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
+	if s.LivepeerNode.Eth != nil {
+		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfile.Name)
+	}
 
 	s.hlsSubTimer = make(map[core.StreamID]time.Time)
 	go s.startHlsUnsubscribeWorker(time.Second*10, HLSUnsubWorkerFreq)
@@ -240,9 +242,21 @@ func (s *LivepeerMediaServer) StartLPMS(ctx context.Context) error {
 	http.HandleFunc("/streamerStatus", func(w http.ResponseWriter, r *http.Request) {
 	})
 
-	go s.LPMS.Start(ctx)
+	lpmsCtx, cancel := context.WithCancel(context.Background())
+	ec := make(chan error, 1)
+	go func() {
+		ec <- s.LPMS.Start(lpmsCtx)
+	}()
 
-	return nil
+	select {
+	case err := <-ec:
+		glog.Infof("LPMS Server Error: %v.  Quitting...", err)
+		cancel()
+		return err
+	case <-ctx.Done():
+		cancel()
+		return ctx.Err()
+	}
 }
 
 //RTMP Publish Handlers

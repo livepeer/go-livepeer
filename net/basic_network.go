@@ -80,7 +80,7 @@ func (n *BasicVideoNetwork) NewRelayer(strmID string) *BasicRelayer {
 func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
 	pid, err := peer.IDHexDecode(nodeID)
 	if err != nil {
-		glog.Errorf("Invalid node ID: %v", err)
+		glog.Errorf("Invalid node ID - %v: %v", nodeID, err)
 		return err
 	}
 
@@ -92,10 +92,8 @@ func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
 	}
 
 	n.NetworkNode.PeerHost.Peerstore().AddAddr(pid, paddr, peerstore.PermanentAddrTTL)
-	n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid})
-
-	// n.SendJoin(sid)
-	return nil
+	glog.Infof("Connecting to %v", pid)
+	return n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid})
 }
 
 func (n *BasicVideoNetwork) SendTranscodResult(broadcaster string, strmID string, transcodedVideos map[string]string) error {
@@ -129,6 +127,7 @@ func (nw *BasicVideoNetwork) SetupProtocol() error {
 				stream.Close()
 				return
 			}
+			glog.Infof("Looping in streamHandler")
 		}
 	})
 
