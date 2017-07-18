@@ -5,9 +5,7 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
-	"io"
 	"net/url"
-	"os"
 	"testing"
 
 	"time"
@@ -16,9 +14,8 @@ import (
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	"github.com/livepeer/golp/core"
 	"github.com/livepeer/golp/net"
+	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
-	"github.com/nareix/joy4/av/avutil"
-	"github.com/nareix/joy4/format"
 )
 
 var S *LivepeerMediaServer
@@ -33,18 +30,18 @@ func setupServer() *LivepeerMediaServer {
 	return S
 }
 
-func TestStartMediaServer(t *testing.T) {
-	s := setupServer()
-	time.Sleep(time.Millisecond * 100)
+// func TestStartMediaServer(t *testing.T) {
+// 	s := setupServer()
+// 	time.Sleep(time.Millisecond * 100)
 
-	if s.hlsSubTimer == nil {
-		t.Errorf("hlsSubTimer should be initiated")
-	}
+// 	if s.hlsSubTimer == nil {
+// 		t.Errorf("hlsSubTimer should be initiated")
+// 	}
 
-	if s.hlsWorkerRunning == false {
-		t.Errorf("Should have kicked off hlsUnsubscribeWorker go routine")
-	}
-}
+// 	if s.hlsWorkerRunning == false {
+// 		t.Errorf("Should have kicked off hlsUnsubscribeWorker go routine")
+// 	}
+// }
 
 type StubNetwork struct {
 	B *StubBroadcaster
@@ -99,10 +96,21 @@ func (s *StubSubscriber) Subscribe(ctx context.Context, f func(seqNo uint64, dat
 }
 func (s *StubSubscriber) Unsubscribe() error { return nil }
 
+type StubSegmenter struct{}
+
+func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.Stream, hs stream.Stream, segOptions segmenter.SegmenterOptions) error {
+	glog.Infof("Calling StubSegmenter")
+	hs.WriteHLSSegmentToStream(stream.HLSSegment{SeqNo: 0, Name: "seg0.ts"})
+	hs.WriteHLSSegmentToStream(stream.HLSSegment{SeqNo: 1, Name: "seg1.ts"})
+	hs.WriteHLSSegmentToStream(stream.HLSSegment{SeqNo: 2, Name: "seg2.ts"})
+	return fmt.Errorf("EOF")
+}
+
 // Should publish RTMP stream, turn the RTMP stream into HLS, and broadcast the HLS stream.
 func TestGotRTMPStreamHandler(t *testing.T) {
 	s := setupServer()
 	s.LivepeerNode.VideoNetwork = &StubNetwork{}
+	s.RTMPSegmenter = &StubSegmenter{}
 	handler := s.makeGotRTMPStreamHandler()
 
 	url, _ := url.Parse("http://localhost/stream/test")
@@ -118,27 +126,6 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 
 	//Try to handle test RTMP data
 	handler(url, strm)
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Errorf("Cannot get working dir: %v", err)
-	}
-
-	//Send test video
-	format.RegisterAll()
-	file, err := avutil.Open(wd + "/test.flv")
-	if err != nil {
-		t.Errorf("Error opening file: %v", err)
-	}
-	header, _ := file.Streams()
-	strm.WriteRTMPHeader(header)
-	for {
-		pkt, err := file.ReadPacket()
-		if err == io.EOF {
-			strm.WriteRTMPTrailer()
-			break
-		}
-		strm.WriteRTMPPacket(pkt)
-	}
 
 	hlsStrmID := s.broadcastRtmpToHLSMap["strmID"]
 	if hlsStrmID == "" {
@@ -150,18 +137,29 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	}
 
 	//Wait for the video to be segmented and broadcasted
-	sn, _ := s.LivepeerNode.VideoNetwork.(*StubNetwork)
+	sn, ok := s.LivepeerNode.VideoNetwork.(*StubNetwork)
+	if !ok {
+		t.Errorf("VideoNetwork not assigned correctly.")
+	}
 	start := time.Now()
 	for time.Since(start) < time.Second*5 {
-		if len(sn.B.Data) < 2 {
+		if sn.B == nil || len(sn.B.Data) < 2 {
 			time.Sleep(100 * time.Millisecond)
 		} else {
 			break
 		}
 	}
 
-	if len(sn.B.Data) != 2 {
-		t.Errorf("Should have recieved 2 data chunks, got:%v", len(sn.B.Data))
+	if len(sn.B.Data) != 4 {
+		t.Errorf("Should have recieved 4 data chunks, got:%v", len(sn.B.Data))
+	}
+
+	seg0, _ := core.BytesToSignedSegment(sn.B.Data[0])
+	seg1, _ := core.BytesToSignedSegment(sn.B.Data[1])
+	seg2, _ := core.BytesToSignedSegment(sn.B.Data[2])
+	seg3, _ := core.BytesToSignedSegment(sn.B.Data[3])
+	if seg0.Seg.Name != "seg0.ts" || seg1.Seg.Name != "seg1.ts" || seg2.Seg.Name != "seg2.ts" || seg3.Seg.EOF != true {
+		t.Errorf("Wrong segments: %v, %v, %v, %v", seg0, seg1, seg2, seg3)
 	}
 }
 

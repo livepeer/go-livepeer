@@ -212,11 +212,10 @@ func (n *LivepeerNode) Transcode(config net.TranscodeConfig, cm *ClaimManager) (
 			}
 
 			//Don't do the onchain stuff unless we want to
-			if !config.PerformOnchainClaim {
-				continue
+			if config.PerformOnchainClaim {
+				cm.AddClaim(int64(seqNo), common.BytesToHash(ss.Seg.Data), common.BytesToHash(td), ss.Sig, p)
 			}
 
-			cm.AddClaim(int64(seqNo), common.BytesToHash(ss.Seg.Data), common.BytesToHash(td), ss.Sig, p)
 		}
 	})
 

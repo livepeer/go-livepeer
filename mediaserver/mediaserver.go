@@ -21,7 +21,7 @@ import (
 	"github.com/livepeer/golp/core"
 	"github.com/livepeer/golp/eth"
 	"github.com/livepeer/golp/net"
-	"github.com/livepeer/lpms"
+	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 )
@@ -47,11 +47,12 @@ var TranscoderRewardCut = uint8(10)
 var TranscoderSegmentPrice = big.NewInt(150)
 
 type LivepeerMediaServer struct {
-	LPMS         *lpms.LPMS
-	HttpPort     string
-	RtmpPort     string
-	FfmpegPath   string
-	LivepeerNode *core.LivepeerNode
+	RTMPSegmenter lpmscore.RTMPSegmenter
+	LPMS          *lpmscore.LPMS
+	HttpPort      string
+	RtmpPort      string
+	FfmpegPath    string
+	LivepeerNode  *core.LivepeerNode
 
 	hlsSubTimer           map[core.StreamID]time.Time
 	hlsWorkerRunning      bool
@@ -59,8 +60,8 @@ type LivepeerMediaServer struct {
 }
 
 func NewLivepeerMediaServer(rtmpPort string, httpPort string, ffmpegPath string, lpNode *core.LivepeerNode) *LivepeerMediaServer {
-	server := lpms.New(rtmpPort, httpPort, ffmpegPath, "")
-	return &LivepeerMediaServer{LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, FfmpegPath: ffmpegPath, LivepeerNode: lpNode}
+	server := lpmscore.New(rtmpPort, httpPort, ffmpegPath, "")
+	return &LivepeerMediaServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, FfmpegPath: ffmpegPath, LivepeerNode: lpNode}
 }
 
 //StartLPMS starts the LPMS server
@@ -298,7 +299,7 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 		//Create Segmenter
 		glog.Infof("Segmenting rtmp stream:%v to hls stream:%v", rtmpStrm.GetStreamID(), hlsStrm.GetStreamID())
 		go func() {
-			err := s.LPMS.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions) //TODO: do we need to cancel this thread when the stream finishes?
+			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions) //TODO: do we need to cancel this thread when the stream finishes?
 			if err != nil {
 				glog.Infof("Error in segmenter: %v, broadcasting finish message", err)
 				err := hlsStrm.WriteHLSSegmentToStream(stream.HLSSegment{EOF: true})
@@ -310,6 +311,7 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 
 		//Kick off go routine to broadcast the hls stream.
 		go func() {
+			glog.Infof("Kicking off broadcaster")
 			err := s.LivepeerNode.BroadcastToNetwork(hlsStrm)
 			if err == core.ErrEOF {
 				glog.Info("Broadcast Ended.")
