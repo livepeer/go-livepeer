@@ -47,29 +47,27 @@ func (ws *BasicStream) Decode(n interface{}) error {
 	return ws.Dec.Decode(n)
 }
 
-func (ws *BasicStream) Encode(n interface{}) error {
+func (ws *BasicStream) EncodeAndFlush(n interface{}) error {
 	ws.l.Lock()
 	defer ws.l.Unlock()
-	return ws.Enc.Encode(n)
-}
-
-func (ws *BasicStream) WriteSegment(seqNo uint64, strmID string, data []byte) error {
-	nwMsg := Msg{Op: StreamDataID, Data: StreamDataMsg{SeqNo: seqNo, StrmID: strmID, Data: data}}
-	glog.Infof("Sending: %v::%v to %v", strmID, seqNo, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
-
-	err := ws.Encode(nwMsg)
+	err := ws.Enc.Encode(n)
 	if err != nil {
 		glog.Errorf("send message encode error: %v", err)
 		return ErrStream
-		// delete(b.listeners, id)
 	}
 
 	err = ws.W.Flush()
 	if err != nil {
 		glog.Errorf("send message flush error: %v", err)
 		return ErrStream
-		// delete(b.listeners, id)
 	}
 
 	return nil
+}
+
+func (ws *BasicStream) WriteSegment(seqNo uint64, strmID string, data []byte) error {
+	nwMsg := Msg{Op: StreamDataID, Data: StreamDataMsg{SeqNo: seqNo, StrmID: strmID, Data: data}}
+	glog.Infof("Sending: %v::%v to %v", strmID, seqNo, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
+
+	return ws.EncodeAndFlush(nwMsg)
 }

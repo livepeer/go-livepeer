@@ -84,18 +84,5 @@ func (n *NetworkNode) GetStream(pid peer.ID) *BasicStream {
 func (n *NetworkNode) SendMessage(wrappedStream *BasicStream, pid peer.ID, opCode Opcode, data interface{}) error {
 	msg := Msg{Op: opCode, Data: data}
 	glog.Infof("Sending: %v to %v", msg, peer.IDHexEncode(wrappedStream.Stream.Conn().RemotePeer()))
-	// err := wrappedStream.Enc.Encode(msg)
-	err := wrappedStream.Encode(msg)
-	if err != nil {
-		glog.Errorf("send message encode error: %v", err)
-		return err
-	}
-
-	// glog.Infof("wrappedStream.w: %v", wrappedStream.W)
-	err = wrappedStream.W.Flush()
-	if err != nil {
-		glog.Errorf("send message flush error: %v", err)
-		return err
-	}
-	return nil
+	return wrappedStream.EncodeAndFlush(msg)
 }

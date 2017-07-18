@@ -2,6 +2,7 @@ package net
 
 import (
 	"context"
+	"crypto/rand"
 	"reflect"
 	"sync"
 	"testing"
@@ -40,6 +41,28 @@ func connectHosts(h1, h2 host.Host) {
 
 	// Connection might not be formed right away under high load.  See https://github.com/libp2p/go-libp2p-kad-dht/blob/master/dht_test.go (func connect)
 	time.Sleep(time.Millisecond * 500)
+}
+
+func TestStreams(t *testing.T) {
+	n1, n2 := setupNodes()
+	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
+	n1.SetupProtocol()
+	n2.SetupProtocol()
+	s1 := n1.NetworkNode.GetStream(n2.NetworkNode.Identity)
+	s2 := n2.NetworkNode.GetStream(n1.NetworkNode.Identity)
+	ds := make([][]byte, 5)
+	for i := 0; i < 5; i++ {
+		d := make([]byte, 999999)
+		rand.Read(d)
+		ds[i] = d
+	}
+	for i := 0; i < 5; i++ {
+		go n1.NetworkNode.SendMessage(s1, n2.NetworkNode.Identity, SubReqID, SubReqMsg{StrmID: "strmid"})
+		go n2.NetworkNode.SendMessage(s2, n1.NetworkNode.Identity, SubReqID, SubReqMsg{StrmID: "strmid"})
+		// go n1.NetworkNode.SendMessage(s1, n2.NetworkNode.Identity, StreamDataID, StreamDataMsg{SeqNo: uint64(i), StrmID: "strmid", Data: ds[i]})
+		// go n2.NetworkNode.SendMessage(s2, n1.NetworkNode.Identity, StreamDataID, StreamDataMsg{SeqNo: uint64(i), StrmID: "strmid", Data: ds[i]})
+	}
+	time.Sleep(time.Second * 2)
 }
 
 func TestSendBroadcast(t *testing.T) {
