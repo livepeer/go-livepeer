@@ -2,7 +2,6 @@ package net
 
 import (
 	"context"
-	"crypto/rand"
 	"reflect"
 	"sync"
 	"testing"
@@ -30,41 +29,41 @@ func setupNodes() (*BasicVideoNetwork, *BasicVideoNetwork) {
 func connectHosts(h1, h2 host.Host) {
 	h1.Peerstore().AddAddrs(h2.ID(), h2.Addrs(), peerstore.PermanentAddrTTL)
 	h2.Peerstore().AddAddrs(h1.ID(), h1.Addrs(), peerstore.PermanentAddrTTL)
-	// err := h1.Connect(context.Background(), peerstore.PeerInfo{ID: h2.ID()})
-	// if err != nil {
-	// 	glog.Errorf("Cannot connect h1 with h2: %v", err)
-	// }
-	// err = h2.Connect(context.Background(), peerstore.PeerInfo{ID: h1.ID()})
-	// if err != nil {
-	// 	glog.Errorf("Cannot connect h2 with h1: %v", err)
-	// }
+	err := h1.Connect(context.Background(), peerstore.PeerInfo{ID: h2.ID()})
+	if err != nil {
+		glog.Errorf("Cannot connect h1 with h2: %v", err)
+	}
+	err = h2.Connect(context.Background(), peerstore.PeerInfo{ID: h1.ID()})
+	if err != nil {
+		glog.Errorf("Cannot connect h2 with h1: %v", err)
+	}
 
 	// Connection might not be formed right away under high load.  See https://github.com/libp2p/go-libp2p-kad-dht/blob/master/dht_test.go (func connect)
 	time.Sleep(time.Millisecond * 500)
 }
 
-func TestStreams(t *testing.T) {
-	n1, _ := setupNodes()
-	n2, _ := simpleNodes()
-	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
-	n1.SetupProtocol()
-	// n2.SetupProtocol()
-	s1 := n1.NetworkNode.GetStream(n2.Identity)
-	// s2 := n2.NetworkNode.GetStream(n1.NetworkNode.Identity)
-	ds := make([][]byte, 5)
-	for i := 0; i < 5; i++ {
-		d := make([]byte, 999999)
-		rand.Read(d)
-		ds[i] = d
-	}
-	for i := 0; i < 5; i++ {
-		go n1.NetworkNode.SendMessage(s1, n2.Identity, SubReqID, SubReqMsg{StrmID: "strmid"})
-		// go n2.NetworkNode.SendMessage(s2, n1.NetworkNode.Identity, SubReqID, SubReqMsg{StrmID: "strmid"})
-		// go n1.NetworkNode.SendMessage(s1, n2.NetworkNode.Identity, StreamDataID, StreamDataMsg{SeqNo: uint64(i), StrmID: "strmid", Data: ds[i]})
-		// go n2.NetworkNode.SendMessage(s2, n1.NetworkNode.Identity, StreamDataID, StreamDataMsg{SeqNo: uint64(i), StrmID: "strmid", Data: ds[i]})
-	}
-	time.Sleep(time.Second * 2)
-}
+// func TestStreams(t *testing.T) {
+// 	n1, _ := setupNodes()
+// 	n2, _ := simpleNodes()
+// 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
+// 	n1.SetupProtocol()
+// 	// n2.SetupProtocol()
+// 	s1 := n1.NetworkNode.GetStream(n2.Identity)
+// 	// s2 := n2.NetworkNode.GetStream(n1.NetworkNode.Identity)
+// 	ds := make([][]byte, 5)
+// 	for i := 0; i < 5; i++ {
+// 		d := make([]byte, 999999)
+// 		rand.Read(d)
+// 		ds[i] = d
+// 	}
+// 	for i := 0; i < 5; i++ {
+// 		go n1.NetworkNode.SendMessage(s1, n2.Identity, SubReqID, SubReqMsg{StrmID: "strmid"})
+// 		// go n2.NetworkNode.SendMessage(s2, n1.NetworkNode.Identity, SubReqID, SubReqMsg{StrmID: "strmid"})
+// 		// go n1.NetworkNode.SendMessage(s1, n2.NetworkNode.Identity, StreamDataID, StreamDataMsg{SeqNo: uint64(i), StrmID: "strmid", Data: ds[i]})
+// 		// go n2.NetworkNode.SendMessage(s2, n1.NetworkNode.Identity, StreamDataID, StreamDataMsg{SeqNo: uint64(i), StrmID: "strmid", Data: ds[i]})
+// 	}
+// 	time.Sleep(time.Second * 2)
+// }
 
 func TestSendBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Broadcast Stream...")
