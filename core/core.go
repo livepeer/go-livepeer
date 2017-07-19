@@ -63,6 +63,8 @@ func (n *LivepeerNode) Start(bootID, bootAddr string) error {
 		return err
 	}
 
+	glog.Infof("Done Starting Livepeer Node")
+
 	//TODO:Kick off process to periodically monitor peer connection by pinging them
 
 	return nil

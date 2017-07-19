@@ -3,6 +3,7 @@ package net
 import (
 	"github.com/golang/glog"
 	net "github.com/libp2p/go-libp2p-net"
+	peer "github.com/libp2p/go-libp2p-peer"
 	ma "github.com/multiformats/go-multiaddr"
 )
 
@@ -20,7 +21,7 @@ func (bn *BasicNotifiee) ListenClose(n net.Network, addr ma.Multiaddr) {
 
 // called when a connection opened
 func (bn *BasicNotifiee) Connected(n net.Network, conn net.Conn) {
-	glog.Infof("Notifiee - Connected")
+	glog.Infof("Notifiee - Connected.  Local: %v - Remote: %v", peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
 }
 
 // called when a connection closed
