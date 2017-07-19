@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"time"
@@ -33,6 +34,20 @@ var EthMinedTxTimeout = 60 * time.Second
 
 func main() {
 	flag.Set("logtostderr", "true")
+
+	//Stream Command
+	streamCmd := flag.NewFlagSet("stream", flag.ExitOnError)
+	streamHLS := streamCmd.Bool("hls", false, "Set to true to indicate hls streaming")
+	streamID := streamCmd.String("id", "", "Stream ID")
+	srPort := streamCmd.String("port", "8935", "Port for the video")
+
+	if len(os.Args) > 1 {
+		if os.Args[1] == "stream" {
+			streamCmd.Parse(os.Args[2:])
+			stream(*streamHLS, *srPort, *streamID)
+			return
+		}
+	}
 
 	port := flag.Int("p", 15000, "port")
 	httpPort := flag.String("http", "8935", "http port")
@@ -334,4 +349,26 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 	}()
 
 	return sub, nil
+}
+
+func stream(hlsRequest bool, port string, streamID string) {
+	var url string
+
+	// Determine if you are streaming the HLS or RTMP version. If --hls is passed in, stream HLS
+	if hlsRequest == true {
+		url = fmt.Sprintf("http://localhost:%v/stream/%v.m3u8", port, streamID)
+	} else {
+		url = fmt.Sprintf("rtmp://localhost:%v/stream/%v", port, streamID)
+	}
+
+	cmd := exec.Command("ffplay", url)
+	glog.Infof("url: %v", url)
+	err := cmd.Start()
+	if err != nil {
+		fmt.Println("Couldn't start the stream")
+		os.Exit(1)
+	}
+	fmt.Println("Now streaming")
+	err = cmd.Wait()
+	fmt.Println("Finished the stream")
 }
