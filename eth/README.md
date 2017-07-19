@@ -9,14 +9,17 @@ go install ./...
 
 # Running tests
 
+Start geth
+
 ```
 cd $GOPATH/src/github.com/livepeer/golp/eth
 bash init.sh
 ```
 
-In a seperate window
+In a separate window
 
 ```
+cd $GOPATH/src/github.com/livepeer/golp/eth
 go test -v -args -v 3 -logtostderr true
 ```
 
