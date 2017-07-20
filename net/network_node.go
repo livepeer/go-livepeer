@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/glog"
 	ds "github.com/ipfs/go-datastore"
+	addrutil "github.com/libp2p/go-addr-util"
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	host "github.com/libp2p/go-libp2p-host"
 	kad "github.com/libp2p/go-libp2p-kad-dht"
@@ -31,27 +32,37 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey) (*NetworkNo
 		return nil, err
 	}
 
-	// Create a multiaddress
-	addr, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", listenPort))
-	if err != nil {
-		return nil, err
-	}
-
 	// Create a peerstore
 	store := peerstore.NewPeerstore()
 	store.AddPrivKey(pid, priv)
 	store.AddPubKey(pid, pub)
 
+	// Create multiaddresses.  I'm not sure if this is correct in all cases...
+	uaddrs, err := addrutil.InterfaceAddresses()
+	if err != nil {
+		return nil, err
+	}
+	addrs := make([]ma.Multiaddr, len(uaddrs), len(uaddrs))
+	for i, uaddr := range uaddrs {
+		portAddr, err := ma.NewMultiaddr(fmt.Sprintf("/tcp/%d", listenPort))
+		if err != nil {
+			glog.Errorf("Error creating portAddr: %v %v", uaddr, err)
+			return nil, err
+		}
+		addrs[i] = uaddr.Encapsulate(portAddr)
+	}
+
 	// Create swarm (implements libP2P Network)
 	netwrk, err := swarm.NewNetwork(
 		context.Background(),
-		[]ma.Multiaddr{addr},
+		addrs,
+		// []ma.Multiaddr{addr},
 		pid,
 		store,
 		&BasicReporter{})
 
 	netwrk.Notify(&BasicNotifiee{})
-	basicHost := bhost.New(netwrk)
+	basicHost := bhost.New(netwrk, bhost.NATPortMap)
 
 	dht, err := constructDHTRouting(context.Background(), basicHost, ds.NewMapDatastore())
 	rHost := rhost.Wrap(basicHost, dht)

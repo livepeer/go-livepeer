@@ -576,6 +576,10 @@ func createBroadcastJob(s *LivepeerMediaServer, hlsStrm *stream.VideoStream) (*t
 }
 
 func printStake(c eth.LivepeerEthClient) {
+	if c == nil {
+		glog.Errorf("Eth client is not assigned")
+		return
+	}
 	s, err := c.TranscoderStake()
 	if err != nil {
 		glog.Errorf("Error getting transcoder stake: %v", err)
