@@ -265,13 +265,13 @@ func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 
 func getEthAccount(datadir string) (accounts.Account, error) {
 	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
-	accounts := keyStore.Accounts()
-	if len(accounts) == 0 {
-		glog.Errorf("Cannot find geth account, creating a new one")
-		return accounts[0], fmt.Errorf("ErrGeth")
+	accts := keyStore.Accounts()
+	if len(accts) == 0 {
+		glog.Errorf("Cannot find geth account.  Make sure the data directory contains keys, or use -newEthAccount to create a new account.")
+		return accounts.Account{}, fmt.Errorf("ErrGeth")
 	}
 
-	return accounts[0], nil
+	return accts[0], nil
 }
 
 func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subscription, error) {

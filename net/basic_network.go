@@ -92,7 +92,6 @@ func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
 	}
 
 	n.NetworkNode.PeerHost.Peerstore().AddAddr(pid, paddr, peerstore.PermanentAddrTTL)
-	glog.Infof("Connecting to %v", pid)
 	return n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid})
 }
 
@@ -127,7 +126,6 @@ func (nw *BasicVideoNetwork) SetupProtocol() error {
 				stream.Close()
 				return
 			}
-			glog.Infof("Looping in streamHandler")
 		}
 	})
 
@@ -149,7 +147,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
 			return ErrProtocol
 		}
-		// glog.Infof("Got Sub Req: %v", sr)
+		glog.Infof("Got Sub Req: %v", sr)
 		return handleSubReq(nw, sr, ws)
 	case CancelSubID:
 		cr, ok := msg.Data.(CancelSubMsg)
@@ -183,7 +181,6 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 		// stream.Close()
 		return ErrUnknownMsg
 	}
-
 }
 
 func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) error {

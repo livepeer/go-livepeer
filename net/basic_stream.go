@@ -20,7 +20,8 @@ type BasicStream struct {
 	Dec    multicodec.Decoder
 	W      *bufio.Writer
 	R      *bufio.Reader
-	l      *sync.Mutex
+	el     *sync.Mutex
+	dl     *sync.Mutex
 }
 
 func NewBasicStream(s net.Stream) *BasicStream {
@@ -37,19 +38,21 @@ func NewBasicStream(s net.Stream) *BasicStream {
 		W:      writer,
 		Enc:    enc,
 		Dec:    dec,
-		l:      &sync.Mutex{},
+		el:     &sync.Mutex{},
+		dl:     &sync.Mutex{},
 	}
 }
 
 func (ws *BasicStream) Decode(n interface{}) error {
-	// ws.l.Lock()
-	// defer ws.l.Unlock()
+	ws.dl.Lock()
+	defer ws.dl.Unlock()
 	return ws.Dec.Decode(n)
 }
 
 func (ws *BasicStream) EncodeAndFlush(n interface{}) error {
-	ws.l.Lock()
-	defer ws.l.Unlock()
+	ws.el.Lock()
+	glog.Infof("Locking Encoder")
+	defer ws.el.Unlock()
 	err := ws.Enc.Encode(n)
 	if err != nil {
 		glog.Errorf("send message encode error: %v", err)
