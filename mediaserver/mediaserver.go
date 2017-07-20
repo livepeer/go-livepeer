@@ -299,10 +299,17 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 			return ErrRTMPPublish
 		}
 
-		//Create a new HLS Stream
-		hlsStrmID, err := core.MakeStreamID(s.LivepeerNode.Identity, core.RandomVideoID(), "")
-		if err != nil {
-			glog.Errorf("Error making stream ID")
+		//Create a new HLS Stream.  If streamID is passed in, use that one.  Otherwise, generate a random ID.
+		hlsStrmID := core.StreamID(url.Query().Get("hlsStrmID"))
+		if hlsStrmID == "" {
+			hlsStrmID, err = core.MakeStreamID(s.LivepeerNode.Identity, core.RandomVideoID(), "")
+			if err != nil {
+				glog.Errorf("Error making stream ID")
+				return ErrRTMPPublish
+			}
+		}
+		if hlsStrmID.GetNodeID() != s.LivepeerNode.Identity {
+			glog.Errorf("Cannot create a HLS stream with Node ID: %v", hlsStrmID.GetNodeID())
 			return ErrRTMPPublish
 		}
 		hlsStrm, err := s.LivepeerNode.StreamDB.AddNewStream(hlsStrmID, stream.HLS)
@@ -335,7 +342,9 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 		}()
 
 		//Store HLS Stream into StreamDB, remember HLS stream so we can remove later
-		s.LivepeerNode.StreamDB.AddStream(core.StreamID(hlsStrm.GetStreamID()), hlsStrm)
+		if err = s.LivepeerNode.StreamDB.AddStream(core.StreamID(hlsStrm.GetStreamID()), hlsStrm); err != nil {
+			glog.Errorf("Error adding stream to streamDB: %v", err)
+		}
 		s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()] = hlsStrm.GetStreamID()
 
 		if s.LivepeerNode.Eth != nil {
@@ -512,6 +521,7 @@ func (s *LivepeerMediaServer) startHlsUnsubscribeWorker(limit time.Duration, fre
 			if time.Since(t) > limit {
 				glog.Infof("HLS Stream %v inactive - unsubscribing", sid)
 				// streamDB.GetStream(sid).Unsubscribe()
+				s.LivepeerNode.StreamDB.DeleteHLSBuffer(sid)
 				s.LivepeerNode.UnsubscribeFromNetwork(sid)
 				delete(s.hlsSubTimer, sid)
 			}

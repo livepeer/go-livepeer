@@ -51,7 +51,6 @@ func (ws *BasicStream) Decode(n interface{}) error {
 
 func (ws *BasicStream) EncodeAndFlush(n interface{}) error {
 	ws.el.Lock()
-	glog.Infof("Locking Encoder")
 	defer ws.el.Unlock()
 	err := ws.Enc.Encode(n)
 	if err != nil {
