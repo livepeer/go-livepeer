@@ -30,10 +30,27 @@ On OSX, run
 or on Debian based Linux
 `apt-get install ffmpeg`
 
-
 ## Usage
+The simplest way to start Livepeer is by running `./livepeer`.  This will use the default data directory, default ports, and connect to the default test network boot node.
 
+To see more configuration details, use `./livepeer -h`
+
+### Start Streaming
+Livepeer takes RTMP streams as input. You can use any streaming software to create the RTMP stream. We recommend [OBS](https://obsproject.com/download) or [ffmpeg](https://www.ffmpeg.org/).
+
+By default, the RTMP port is 1935.  For example, if you are using OSX with ffmpeg, run 
+`ffmpeg -f avfoundation -framerate 30 -pixel_format uyvy422 -i "0:0" -vcodec libx264 -tune zerolatency -b 1000k -x264-params keyint=60:min-keyint=60 -acodec aac -ac 1 -b:a 96k -f flv rtmp://localhost:1935/movie`
+
+To get the streamID, you can do `curl http://localhost:8935/streamID`
+
+Now that the stream is available on the network, it's viewable from any node. For example, you can view it by starting a new node and viewing it from there:
+
+`./livepeer -p=15001 -rtmp=1936 -http=8936 -datadir=./data1`
+
+&&
+
+`./livepeer stream -hls=true -port=8936 -id={StreamID}`
 
 ### Transcoding
-
+TODO
 
