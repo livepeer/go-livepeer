@@ -80,16 +80,19 @@ func constructDHTRouting(ctx context.Context, host host.Host, dstore ds.Batching
 }
 
 func (n *NetworkNode) GetStream(pid peer.ID) *BasicStream {
-	if n.streams[pid] == nil {
+	strm, ok := n.streams[pid]
+	if !ok {
 		glog.Infof("Creating stream from %v to %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid))
 		ns, err := n.PeerHost.NewStream(context.Background(), pid, Protocol)
 		if err != nil {
-			glog.Errorf("Error creating stream: %v", err)
+			glog.Errorf("Error creating stream to %v: %v", peer.IDHexEncode(pid), err)
 			return nil
 		}
-		n.streams[pid] = NewBasicStream(ns)
+		strm = NewBasicStream(ns)
+		n.streams[pid] = strm
 	}
-	return n.streams[pid]
+
+	return strm
 }
 
 func (n *NetworkNode) SendMessage(wrappedStream *BasicStream, pid peer.ID, opCode Opcode, data interface{}) error {

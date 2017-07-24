@@ -419,6 +419,7 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 					buf.WriteEOF()
 					if err := sub.Unsubscribe(); err != nil {
 						glog.Errorf("Unsubscribe error: %v", err)
+						return
 					}
 				}
 
@@ -426,6 +427,7 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 				ss, err := core.BytesToSignedSegment(data)
 				if err != nil {
 					glog.Errorf("Error decoding byte array into segment: %v", err)
+					return
 				}
 
 				//Add segment into a HLS buffer in StreamDB
@@ -552,10 +554,7 @@ func parseSegName(reqPath string) string {
 }
 
 func createBroadcastJob(s *LivepeerMediaServer, hlsStrm *stream.VideoStream) (*types.Transaction, error) {
-	// func createBroadcastJob(s *LivepeerMediaServer, hlsStrm *stream.VideoStream, jobIDchan chan *big.Int) error {
 	eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout)
-	// tOps := common.BytesToHash([]byte(BroadcastJobVideoProfile.Name))
-	// err := s.LivepeerNode.CreateTranscodeJob(hlsStrm.GetStreamID(), tOps, BroadcastPrice)
 	tOps := common.BytesToHash([]byte(BroadcastJobVideoProfile.Name))
 	tx, err := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), tOps, BroadcastPrice)
 
