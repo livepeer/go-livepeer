@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -43,7 +42,7 @@ func (s *StreamDB) AddNewStream(strmID StreamID, format stream.VideoFormat) (str
 	strm = stream.NewVideoStream(strmID.String(), format)
 	s.streams[strmID] = strm
 
-	glog.Infof("Adding new video stream with ID: %v", strmID)
+	// glog.Infof("Adding new video stream with ID: %v", strmID)
 	return strm, nil
 }
 

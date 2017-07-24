@@ -46,6 +46,8 @@ var TranscoderFeeCut = uint8(10)
 var TranscoderRewardCut = uint8(10)
 var TranscoderSegmentPrice = big.NewInt(150)
 
+var CurrentHLSStreamID core.StreamID
+
 type LivepeerMediaServer struct {
 	RTMPSegmenter lpmscore.RTMPSegmenter
 	LPMS          *lpmscore.LPMS
@@ -233,7 +235,8 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 		printStake(s.LivepeerNode.Eth)
 	})
 
-	http.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/streamID", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(CurrentHLSStreamID))
 	})
 
 	http.HandleFunc("/peersCount", func(w http.ResponseWriter, r *http.Request) {
@@ -316,9 +319,10 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 		if err != nil {
 			glog.Errorf("Error creating HLS stream for segmentation: %v", err)
 		}
+		CurrentHLSStreamID = hlsStrmID
 
 		//Create Segmenter
-		glog.Infof("Segmenting rtmp stream:%v to hls stream:%v", rtmpStrm.GetStreamID(), hlsStrm.GetStreamID())
+		glog.Infof("\n\nSegmenting rtmp stream:\n%v \nto hls stream:\n%v\n\n", rtmpStrm.GetStreamID(), hlsStrm.GetStreamID())
 		go func() {
 			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions) //TODO: do we need to cancel this thread when the stream finishes?
 			if err != nil {
@@ -332,7 +336,7 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 
 		//Kick off go routine to broadcast the hls stream.
 		go func() {
-			glog.Infof("Kicking off broadcaster")
+			// glog.Infof("Kicking off broadcaster")
 			err := s.LivepeerNode.BroadcastToNetwork(hlsStrm)
 			if err == core.ErrEOF {
 				glog.Info("Broadcast Ended.")
@@ -498,7 +502,7 @@ func (s *LivepeerMediaServer) makeGetHLSSegmentHandler() func(url *url.URL) ([]b
 func (s *LivepeerMediaServer) makeGetRTMPStreamHandler() func(url *url.URL) (stream.Stream, error) {
 
 	return func(url *url.URL) (stream.Stream, error) {
-		glog.Infof("Got req: ", url.Path)
+		// glog.Infof("Got req: ", url.Path)
 		//Look for stream in StreamDB,
 		strmID := parseStreamID(url.Path)
 		strm := s.LivepeerNode.StreamDB.GetStream(strmID)
