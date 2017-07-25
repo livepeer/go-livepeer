@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"sync"
 
+	net "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
+
+	multicodec "gx/ipfs/QmVRuqGJ881CFiNLgwWSfRVjTjqQ6FeCNufkftNC4fpACZ/go-multicodec"
+	mcjson "gx/ipfs/QmVRuqGJ881CFiNLgwWSfRVjTjqQ6FeCNufkftNC4fpACZ/go-multicodec/json"
+
 	"github.com/golang/glog"
-	net "github.com/libp2p/go-libp2p-net"
-	multicodec "github.com/multiformats/go-multicodec"
-	mcjson "github.com/multiformats/go-multicodec/json"
 )
 
 var ErrStream = errors.New("ErrStream")
