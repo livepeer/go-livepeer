@@ -450,7 +450,7 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 		for time.Since(start) < time.Second*10 {
 			buf = s.LivepeerNode.StreamDB.GetHLSBuffer(strmID)
 			if buf == nil {
-				glog.Infof("Waiting for playlist - sleeping: %v", s.LivepeerNode.StreamDB.GetHLSBuffer(strmID))
+				// glog.Infof("Waiting for playlist - sleeping: %v", s.LivepeerNode.StreamDB.GetHLSBuffer(strmID))
 				time.Sleep(2 * time.Second)
 				continue
 			} else {
@@ -460,11 +460,11 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 						return nil, err
 					}
 
-					glog.Infof("Waiting for playlist... err: %v", err)
+					// glog.Infof("Waiting for playlist... err: %v", err)
 					time.Sleep(100 * time.Millisecond)
 					continue
 				} else {
-					glog.Infof("Found playlist. Returning")
+					// glog.Infof("Found playlist. Returning")
 					s.hlsSubTimer[strmID] = time.Now()
 					return pl, err
 				}

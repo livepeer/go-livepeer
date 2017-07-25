@@ -7,25 +7,20 @@ import (
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
-//BasicBroadcaster keeps track of a list of listeners and a queue of video chunks.  It doesn't start keeping track of things until there is at least 1 listner.
+//BasicBroadcaster is unique for a specific video stream. It keeps track of a list of listeners and a queue of video chunks.  It won't start keeping track of things until there is at least 1 listener.
 type BasicBroadcaster struct {
-	Network *BasicVideoNetwork
-	// host    host.Host
-	// q    *list.List
-	// lock *sync.Mutex
-	q chan *StreamDataMsg
-
-	listeners     map[string]VideoMuxer //A VideoMuxer can be a BasicStream
-	StrmID        string
+	Network       *BasicVideoNetwork
 	TranscodedIDs map[string]VideoProfile
+	q             chan *StreamDataMsg
+	listeners     map[string]*BasicStream
+	StrmID        string
 	working       bool
 	cancelWorker  context.CancelFunc
 }
 
-//Broadcast sends a video chunk to the stream
+//Broadcast sends a video chunk to the stream.  The very first call to Broadcast kicks off a worker routine to do the broadcasting.
 func (b *BasicBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 	// glog.Infof("Broadcasting data: %v (%v), storing in q: %v", seqNo, len(data), b)
-	// b.q.PushBack(&StreamDataMsg{SeqNo: seqNo, Data: data})
 
 	//This should only get invoked once per broadcaster
 	if b.working == false {
@@ -39,19 +34,16 @@ func (b *BasicBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 	return nil
 }
 
-//Finish signals the stream is finished
+//Finish signals the stream is finished.  It cancels the broadcasting worker routine and sends the Finish message to all the listeners.
 func (b *BasicBroadcaster) Finish() error {
 	//Cancel worker
 	b.cancelWorker()
 
 	//Send Finish to all the listeners
 	for _, l := range b.listeners {
-		ws, ok := l.(*BasicStream)
-		if ok {
-			glog.Infof("Broadcasting finish to %v", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
-			if err := b.Network.NetworkNode.SendMessage(ws, ws.Stream.Conn().RemotePeer(), FinishStreamID, FinishStreamMsg{StrmID: b.StrmID}); err != nil {
-				glog.Errorf("Error broadcasting finish to listener %v: %v", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()), err)
-			}
+		glog.Infof("Broadcasting finish to %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()))
+		if err := l.SendMessage(FinishStreamID, FinishStreamMsg{StrmID: b.StrmID}); err != nil {
+			glog.Errorf("Error broadcasting finish to listener %v: %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()), err)
 		}
 	}
 
@@ -69,8 +61,7 @@ func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 			// glog.Infof("broadcasting msg:%v to network.  listeners: %v", msg, b.listeners)
 			for id, l := range b.listeners {
 				// glog.Infof("Broadcasting segment %v to listener %v", msg.SeqNo, id)
-				err := l.WriteSegment(msg.SeqNo, b.StrmID, msg.Data)
-				if err != nil {
+				if err := l.SendMessage(StreamDataID, StreamDataMsg{SeqNo: msg.SeqNo, StrmID: b.StrmID, Data: msg.Data}); err != nil {
 					glog.Errorf("Error broadcasting segment %v to listener %v: %v", msg.SeqNo, id, err)
 					delete(b.listeners, id)
 				}

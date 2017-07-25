@@ -1,3 +1,6 @@
+/*
+Core contains the main functionality of the Livepeer node.
+*/
 package core
 
 import (
@@ -10,8 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
-	crypto "github.com/libp2p/go-libp2p-crypto"
-	peer "github.com/libp2p/go-libp2p-peer"
 	"github.com/livepeer/golp/eth"
 	ethTypes "github.com/livepeer/golp/eth/types"
 	"github.com/livepeer/golp/net"
@@ -19,6 +20,7 @@ import (
 	lptr "github.com/livepeer/lpms/transcoder"
 )
 
+var ErrLivepeerNode = errors.New("ErrLivepeerNode")
 var ErrTranscode = errors.New("ErrTranscode")
 var ErrBroadcastTimeout = errors.New("ErrBroadcastTimeout")
 var ErrBroadcastJob = errors.New("ErrBroadcastJob")
@@ -33,6 +35,7 @@ var VerifyRate = int64(2)
 //NodeID can be converted from libp2p PeerID.
 type NodeID string
 
+//LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 	Identity     NodeID
 	VideoNetwork net.VideoNetwork
@@ -41,15 +44,16 @@ type LivepeerNode struct {
 	EthPassword  string
 }
 
-func NewLivepeerNode(port int, priv crypto.PrivKey, pub crypto.PubKey, e eth.LivepeerEthClient) (*LivepeerNode, error) {
-	n, err := net.NewBasicNetwork(port, priv, pub)
-	if err != nil {
-		glog.Errorf("Cannot create network node: %v", err)
-		return nil, err
+//NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
+func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork) (*LivepeerNode, error) {
+	if vn == nil {
+		glog.Errorf("Cannot create a LivepeerNode without a VideoNetwork")
+		return nil, ErrLivepeerNode
 	}
-	return &LivepeerNode{StreamDB: NewStreamDB(peer.IDHexEncode(n.NetworkNode.Identity)), VideoNetwork: n, Identity: NodeID(peer.IDHexEncode(n.NetworkNode.Identity)), Eth: e}, nil
+	return &LivepeerNode{StreamDB: NewStreamDB(vn.GetNodeID()), VideoNetwork: vn, Identity: NodeID(vn.GetNodeID()), Eth: e}, nil
 }
 
+//Start sets up the Livepeer protocol and connects the node to the network
 func (n *LivepeerNode) Start(bootID, bootAddr string) error {
 	//Set up protocol (to handle incoming streams)
 	if err := n.VideoNetwork.SetupProtocol(); err != nil {
@@ -70,9 +74,13 @@ func (n *LivepeerNode) Start(bootID, bootAddr string) error {
 	return nil
 }
 
-//CreateTranscodeJob creates the onchain transcode job
-//This can only be done by a broadcaster
+//CreateTranscodeJob creates the on-chain transcode job.
 func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []net.VideoProfile, price uint64) error {
+	if n.Eth == nil {
+		glog.Errorf("Cannot create transcode job, no eth client found")
+		return ErrNotFound
+	}
+
 	//Verify the stream exists(assume it's a local stream)
 	buf := n.StreamDB.GetHLSBuffer(strmID)
 	if buf == nil {
@@ -81,11 +89,6 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []net.VideoP
 	}
 
 	//Call eth client to create the job
-	if n.Eth == nil {
-		glog.Errorf("Cannot create transcode job, no eth client found")
-		return ErrNotFound
-	}
-
 	tOpt := [32]byte{}
 	p := big.NewInt(int64(price))
 	count := 0
@@ -106,7 +109,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []net.VideoP
 	return nil
 }
 
-//Transcode transcodes one stream into multiple stream, and returns a list of StreamIDs, in the order of the video profiles.
+//Transcode transcodes one stream into multiple stream (specified by TranscodeConfig), and returns a list of StreamIDs, in the order of the video profiles.
 func (n *LivepeerNode) Transcode(config net.TranscodeConfig, cm *ClaimManager) ([]StreamID, error) {
 	s, err := n.VideoNetwork.GetSubscriber(config.StrmID)
 	if err != nil {
@@ -313,10 +316,11 @@ func (n *LivepeerNode) UnsubscribeFromNetwork(strmID StreamID) error {
 	return nil
 }
 
+//NotifyBroadcaster sends a messages to the broadcaster of the video stream, containing the new streamIDs of the transcoded video streams.
 func (n *LivepeerNode) NotifyBroadcaster(nid NodeID, strmID StreamID, transcodeStrmIDs map[StreamID]net.VideoProfile) error {
 	ids := make(map[string]string)
 	for sid, p := range transcodeStrmIDs {
 		ids[sid.String()] = p.Name
 	}
-	return n.VideoNetwork.SendTranscodResult(string(nid), strmID.String(), ids)
+	return n.VideoNetwork.SendTranscodeResult(string(nid), strmID.String(), ids)
 }

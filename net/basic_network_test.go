@@ -18,10 +18,12 @@ import (
 
 func setupNodes() (*BasicVideoNetwork, *BasicVideoNetwork) {
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	n1, _ := NewBasicNetwork(15000, priv1, pub1)
+	no1, _ := NewNode(15000, priv1, pub1)
+	n1, _ := NewBasicVideoNetwork(no1)
 
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	n2, _ := NewBasicNetwork(15001, priv2, pub2)
+	no2, _ := NewNode(15001, priv2, pub2)
+	n2, _ := NewBasicVideoNetwork(no2)
 
 	return n1, n2
 }
@@ -42,29 +44,6 @@ func connectHosts(h1, h2 host.Host) {
 	time.Sleep(time.Millisecond * 500)
 }
 
-// func TestStreams(t *testing.T) {
-// 	n1, _ := setupNodes()
-// 	n2, _ := simpleNodes()
-// 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
-// 	n1.SetupProtocol()
-// 	// n2.SetupProtocol()
-// 	s1 := n1.NetworkNode.GetStream(n2.Identity)
-// 	// s2 := n2.NetworkNode.GetStream(n1.NetworkNode.Identity)
-// 	ds := make([][]byte, 5)
-// 	for i := 0; i < 5; i++ {
-// 		d := make([]byte, 999999)
-// 		rand.Read(d)
-// 		ds[i] = d
-// 	}
-// 	for i := 0; i < 5; i++ {
-// 		go n1.NetworkNode.SendMessage(s1, n2.Identity, SubReqID, SubReqMsg{StrmID: "strmid"})
-// 		// go n2.NetworkNode.SendMessage(s2, n1.NetworkNode.Identity, SubReqID, SubReqMsg{StrmID: "strmid"})
-// 		// go n1.NetworkNode.SendMessage(s1, n2.NetworkNode.Identity, StreamDataID, StreamDataMsg{SeqNo: uint64(i), StrmID: "strmid", Data: ds[i]})
-// 		// go n2.NetworkNode.SendMessage(s2, n1.NetworkNode.Identity, StreamDataID, StreamDataMsg{SeqNo: uint64(i), StrmID: "strmid", Data: ds[i]})
-// 	}
-// 	time.Sleep(time.Second * 2)
-// }
-
 func TestSendBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Broadcast Stream...")
 	n1, _ := setupNodes()
@@ -78,7 +57,7 @@ func TestSendBroadcast(t *testing.T) {
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		ws := NewBasicStream(s)
 		var msg Msg
-		err := ws.Dec.Decode(&msg)
+		err := ws.ReceiveMessage(&msg)
 		if err != nil {
 			glog.Errorf("Got error decoding msg: %v", err)
 			return
@@ -152,7 +131,7 @@ func TestHandleBroadcast(t *testing.T) {
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		ws := NewBasicStream(s)
 		var msg Msg
-		err := ws.Dec.Decode(&msg)
+		err := ws.ReceiveMessage(&msg)
 		if err != nil {
 			glog.Errorf("Got error decoding msg: %v", err)
 			return
@@ -237,7 +216,7 @@ func TestSendSubscribe(t *testing.T) {
 		ws := NewBasicStream(s)
 		for {
 			var msg Msg
-			err := ws.Dec.Decode(&msg)
+			err := ws.ReceiveMessage(&msg)
 			if err != nil {
 				glog.Errorf("Got error decoding msg: %v", err)
 				return
@@ -251,16 +230,7 @@ func TestSendSubscribe(t *testing.T) {
 					//TODO: Sleep here is needed, because we can't handle the messages fast enough.
 					//I think we need to re-organize our code to kick off goroutines / workers instead of handling everything in a for loop.
 					time.Sleep(time.Millisecond * 100)
-					nwMsg := Msg{Op: StreamDataID, Data: StreamDataMsg{SeqNo: uint64(i), StrmID: subReq.StrmID, Data: []byte("test data")}}
-					// glog.Infof("Sending %v", nwMsg)
-					err = ws.Enc.Encode(nwMsg)
-					if err != nil {
-						glog.Errorf("Cannot encode msg: %v", err)
-					}
-					err = ws.W.Flush()
-					if err != nil {
-						glog.Errorf("Cannot flush: %v", err)
-					}
+					err = ws.SendMessage(StreamDataID, StreamDataMsg{SeqNo: uint64(i), StrmID: subReq.StrmID, Data: []byte("test data")})
 				}
 			case CancelSubMsg:
 				cancelMsg, _ = msg.Data.(CancelSubMsg)
@@ -343,13 +313,12 @@ func TestHandleSubscribe(t *testing.T) {
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		ws := NewBasicStream(s)
 		var msg Msg
-		err := ws.Dec.Decode(&msg)
+		err := ws.ReceiveMessage(&msg)
 		if err != nil {
 			glog.Errorf("Got error decoding msg: %v", err)
 			return
 		}
 		glog.Infof("Got msg: %v", msg)
-		// cancelMsg, _ = msg.Data.(CancelSubMsg)
 	})
 
 	//Test when the broadcaster is local
@@ -385,7 +354,7 @@ func TestHandleSubscribe(t *testing.T) {
 
 func simpleRelayHandler(ws *BasicStream, t *testing.T) Msg {
 	var msg Msg
-	err := ws.Dec.Decode(&msg)
+	err := ws.ReceiveMessage(&msg)
 	if err != nil {
 		glog.Errorf("Got error decoding msg: %v", err)
 		return Msg{}
@@ -404,7 +373,7 @@ func TestRelaying(t *testing.T) {
 	go n2.SetupProtocol()
 
 	s3 := n3.GetStream(n2.NetworkNode.Identity)
-	n3.SendMessage(s3, n2.NetworkNode.Identity, SubReqID, SubReqMsg{StrmID: strmID})
+	s3.SendMessage(SubReqID, SubReqMsg{StrmID: strmID})
 
 	var strmDataResult StreamDataMsg
 	var finishResult FinishStreamMsg
@@ -503,7 +472,7 @@ func TestSendTranscodeResult(t *testing.T) {
 	//Create the broadcaster, to capture the transcode result
 	n2.GetBroadcaster("strmid")
 
-	n1.SendTranscodResult(peer.IDHexEncode(n2.NetworkNode.Identity), "strmid", map[string]string{"strmid1": P_240P_30FPS_4_3.Name, "strmid2": P_360P_30FPS_4_3.Name})
+	n1.SendTranscodeResult(peer.IDHexEncode(n2.NetworkNode.Identity), "strmid", map[string]string{"strmid1": P_240P_30FPS_4_3.Name, "strmid2": P_360P_30FPS_4_3.Name})
 
 	//Wait until n2 get the result
 	start := time.Now()

@@ -1,3 +1,6 @@
+/*
+Livepeer is a peer-to-peer global video live streaming network.  The Golp project is a go implementation of the Livepeer protocol.  For more information, visit the project wiki.
+*/
 package main
 
 import (
@@ -84,7 +87,18 @@ func main() {
 		return
 	}
 
-	n, err := core.NewLivepeerNode(*port, priv, pub, nil)
+	node, err := net.NewNode(*port, priv, pub)
+	if err != nil {
+		glog.Errorf("Error creating a new node: %v", err)
+		return
+	}
+	nw, err := net.NewBasicVideoNetwork(node)
+	if err != nil {
+		glog.Errorf("Cannot create network node: %v", err)
+		return
+	}
+
+	n, err := core.NewLivepeerNode(nil, nw)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
@@ -354,21 +368,32 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 func stream(hlsRequest bool, port string, streamID string) {
 	var url string
 
-	// Determine if you are streaming the HLS or RTMP version. If --hls is passed in, stream HLS
-	if hlsRequest == true {
-		url = fmt.Sprintf("http://localhost:%v/stream/%v.m3u8", port, streamID)
-	} else {
-		url = fmt.Sprintf("rtmp://localhost:%v/stream/%v", port, streamID)
-	}
+	start := time.Now()
+	for i := 0; i < 2; i++ {
+		if hlsRequest == true {
+			url = fmt.Sprintf("http://localhost:%v/stream/%v.m3u8", port, streamID)
+		} else {
+			url = fmt.Sprintf("rtmp://localhost:%v/stream/%v", port, streamID)
+		}
 
-	cmd := exec.Command("ffplay", url)
-	glog.Infof("url: %v", url)
-	err := cmd.Start()
-	if err != nil {
-		fmt.Println("Couldn't start the stream")
-		os.Exit(1)
+		cmd := exec.Command("ffplay", url)
+		glog.Infof("url: %v", url)
+		err := cmd.Start()
+		if err != nil {
+			glog.Infof("Couldn't start the stream")
+			os.Exit(1)
+		}
+		glog.Infof("Now streaming")
+		err = cmd.Wait()
+		if time.Since(start) > time.Second*10 { //cmd.Wait() doesn't return an error if ffplay failed.  What we are trying to prevent here is quitting too early from network latency.
+			if i == 0 {
+				glog.Infof("Error streaming video: %v, trying again\n\n", err)
+			} else {
+				glog.Infof("Error streaming video: %v", err)
+			}
+		} else {
+			glog.Infof("Finished the stream")
+			return
+		}
 	}
-	fmt.Println("Now streaming")
-	err = cmd.Wait()
-	fmt.Println("Finished the stream")
 }

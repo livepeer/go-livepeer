@@ -7,6 +7,7 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 )
 
+//BasicNotifiee gets called during important libp2p events
 type BasicNotifiee struct{}
 
 // called when network starts listening on an addr

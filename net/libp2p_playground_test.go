@@ -41,14 +41,9 @@ func simpleNodes() (*NetworkNode, *NetworkNode) {
 
 func simpleHandler(ns net.Stream, txt string) {
 	ws := NewBasicStream(ns)
-	// err := ws.Enc.Encode(&SimpleMsg{Msg: txt})
-	// if err != nil {
-	// 	glog.Errorf("Encode error: %v", err)
-	// 	return
-	// }
-	// for {
+
 	var msg SimpleMsg
-	err := ws.Dec.Decode(&msg)
+	err := ws.ReceiveMessage(&msg)
 
 	if err != nil {
 		glog.Errorf("Got error decoding msg: %v", err)
@@ -61,22 +56,14 @@ func simpleHandler(ns net.Stream, txt string) {
 	newMsg := &SimpleMsg{Msg: str + "|" + txt}
 
 	glog.Infof("Sending %v", newMsg)
-	err = ws.Enc.Encode(newMsg)
-	if err != nil {
-		glog.Errorf("send message encode error: %v", err)
-	}
+	ws.SendMessage(0, SimpleMsg{Msg: str + "|" + txt})
 
-	err = ws.W.Flush()
-	if err != nil {
-		glog.Errorf("send message flush error: %v", err)
-	}
-	// }
 }
 
 func simpleHandlerLoop(ws *BasicStream, txt string) {
 	for {
 		var msg SimpleMsg
-		err := ws.Dec.Decode(&msg)
+		err := ws.ReceiveMessage(&msg)
 
 		if err != nil {
 			glog.Errorf("Got error decoding msg: %v", err)
@@ -90,28 +77,22 @@ func simpleHandlerLoop(ws *BasicStream, txt string) {
 		newMsg := &SimpleMsg{Msg: str + "|" + txt}
 
 		glog.Infof("Sending %v", newMsg)
-		err = ws.Enc.Encode(newMsg)
-		if err != nil {
-			glog.Errorf("send message encode error: %v", err)
-		}
+		ws.SendMessage(0, *newMsg)
+		// err = ws.Enc.Encode(newMsg)
+		// if err != nil {
+		// 	glog.Errorf("send message encode error: %v", err)
+		// }
 
-		err = ws.W.Flush()
-		if err != nil {
-			glog.Errorf("send message flush error: %v", err)
-		}
+		// err = ws.W.Flush()
+		// if err != nil {
+		// 	glog.Errorf("send message flush error: %v", err)
+		// }
 	}
 }
 
 func simpleSend(ns net.Stream, txt string, t *testing.T) {
 	ws := NewBasicStream(ns)
-	err := ws.Enc.Encode(&SimpleMsg{Msg: txt})
-	if err != nil {
-		t.Errorf("Encoding error: %v", err)
-	}
-	err = ws.W.Flush()
-	if err != nil {
-		t.Errorf("Flush error: %v", err)
-	}
+	ws.SendMessage(0, SimpleMsg{Msg: txt})
 }
 
 func TestBackAndForth(t *testing.T) {
@@ -121,9 +102,6 @@ func TestBackAndForth(t *testing.T) {
 	time.Sleep(time.Second)
 
 	n2.PeerHost.SetStreamHandler("/test/1.0", func(stream net.Stream) {
-		// ws := NewBasicStream(stream)
-		// glog.Infof("ws in n2 handler: %p", ws)
-		// defer stream.Close()
 		simpleHandler(stream, "pong")
 	})
 
@@ -131,31 +109,9 @@ func TestBackAndForth(t *testing.T) {
 	if err != nil {
 		t.Errorf("Cannot create stream: %v", err)
 	}
-
-	// n1.PeerHost.SetStreamHandler("/test/1.0", func(stream net.Stream) {
-	// 	// simpleHandler(stream, "ping")
-	// 	simpleHandler(ns1, "ping")
-	// })
-
 	simpleSend(ns1, "ns1", t)
 	simpleHandler(ns1, "ping")
-	// ns1.Close()
 
-	// ns2, err := n1.PeerHost.NewStream(context.Background(), n2.Identity, "/test/1.0")
-	// if err != nil {
-	// 	t.Errorf("Cannot create stream: %v", err)
-	// }
-	// simpleSend(ns2, "ns2", t)
-
-	// simpleHandler(ns1, "hi")
-	// time.Sleep(time.Second)
-	// ns1.Close()
-
-	// n1.PeerHost.SetStreamHandler("/test/1.0", func(stream net.Stream) {
-	// 	simpleHandler(stream, "ping")
-	// })
-
-	// time.Sleep(time.Second * 5)
 }
 
 func makeRandomHost(port int) host.Host {
@@ -198,8 +154,6 @@ func TestBasic(t *testing.T) {
 	glog.Infof("After stream")
 
 	s1 := NewBasicStream(stream)
-	s1.Enc.Encode(SimpleMsg{Msg: "ping!"})
-	s1.W.Flush()
-
+	s1.SendMessage(0, SimpleMsg{Msg: "ping!"})
 	time.Sleep(time.Second * 2)
 }

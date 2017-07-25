@@ -56,7 +56,6 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey) (*NetworkNo
 	netwrk, err := swarm.NewNetwork(
 		context.Background(),
 		addrs,
-		// []ma.Multiaddr{addr},
 		pid,
 		store,
 		&BasicReporter{})
@@ -93,10 +92,4 @@ func (n *NetworkNode) GetStream(pid peer.ID) *BasicStream {
 	}
 
 	return strm
-}
-
-func (n *NetworkNode) SendMessage(wrappedStream *BasicStream, pid peer.ID, opCode Opcode, data interface{}) error {
-	msg := Msg{Op: opCode, Data: data}
-	glog.Infof("Sending: %v to %v", msg, peer.IDHexEncode(wrappedStream.Stream.Conn().RemotePeer()))
-	return wrappedStream.EncodeAndFlush(msg)
 }

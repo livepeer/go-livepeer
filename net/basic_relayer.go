@@ -6,17 +6,17 @@ import (
 )
 
 //BasicRelayer relays video segments to listners.  Unlike BasicBroadcaster, BasicRelayer is
-//synchronous - it sends out the chunks to its listeners as soon as it gets one from the network.
+//does NOT have a worker - it sends out the chunks to its listeners as soon as it gets one from the network.
 type BasicRelayer struct {
 	UpstreamPeer peer.ID
-	listeners    map[string]VideoMuxer
+	listeners    map[string]*BasicStream
 }
 
+//RelayStreamData sends a StreamDataMsg to its listeners
 func (br *BasicRelayer) RelayStreamData(sd StreamDataMsg) error {
 	for _, l := range br.listeners {
-		glog.Infof("Relaying stream data to listener: %v", l)
-		err := l.WriteSegment(sd.SeqNo, sd.StrmID, sd.Data)
-		if err != nil {
+		// glog.Infof("Relaying stream data to listener: %v", l)
+		if err := l.SendMessage(StreamDataID, sd); err != nil {
 			glog.Errorf("Error writing data to relayer listener %v: %v", l, err)
 		}
 	}
@@ -25,12 +25,8 @@ func (br *BasicRelayer) RelayStreamData(sd StreamDataMsg) error {
 
 func (br *BasicRelayer) RelayFinishStream(nw *BasicVideoNetwork, fs FinishStreamMsg) error {
 	for _, l := range br.listeners {
-		bs, ok := l.(*BasicStream)
-		if ok {
-			err := nw.NetworkNode.SendMessage(bs, bs.Stream.Conn().RemotePeer(), FinishStreamID, fs)
-			if err != nil {
-				glog.Errorf("Error relaying finish stream to %v: %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), err)
-			}
+		if err := l.SendMessage(FinishStreamID, fs); err != nil {
+			glog.Errorf("Error relaying finish stream to %v: %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()), err)
 		}
 	}
 	return nil
