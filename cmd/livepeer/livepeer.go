@@ -369,7 +369,7 @@ func stream(hlsRequest bool, port string, streamID string) {
 	var url string
 
 	start := time.Now()
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		if hlsRequest == true {
 			url = fmt.Sprintf("http://localhost:%v/stream/%v.m3u8", port, streamID)
 		} else {
@@ -386,7 +386,7 @@ func stream(hlsRequest bool, port string, streamID string) {
 		glog.Infof("Now streaming")
 		err = cmd.Wait()
 		if time.Since(start) > time.Second*10 { //cmd.Wait() doesn't return an error if ffplay failed.  What we are trying to prevent here is quitting too early from network latency.
-			if i == 0 {
+			if i < 2 {
 				glog.Infof("Error streaming video: %v, trying again\n\n", err)
 			} else {
 				glog.Infof("Error streaming video: %v", err)
