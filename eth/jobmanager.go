@@ -14,8 +14,7 @@ import (
 var ErrJobManager = errors.New("ErrJobManager")
 
 type JobManager struct {
-	c LivepeerEthClient
-	// jobDB              TranscodeJob
+	c                  LivepeerEthClient
 	transcoderAddrSubs map[common.Address]map[chan *big.Int]*JobSubscription //Addresses can have multiple subscriptions
 	strmIDSubs         map[string]map[chan *big.Int]*JobSubscription         //streamIDs can have multiple subscriptions
 }
@@ -28,18 +27,11 @@ func NewJobManager(c LivepeerEthClient) *JobManager {
 	}
 }
 
-// type TranscodeJob struct {
-// 	ID              *big.Int
-// 	StrmID          string
-// 	BroadcasterAddr common.Address
-// }
 func (j *JobManager) Start() error {
 	ctx := context.Background()
 	logsCh := make(chan types.Log)
-	// jidChan := make(chan *big.Int)
 	sub, err := j.c.SubscribeToJobEvent(ctx, logsCh)
 	if err != nil {
-		// cancel()
 		return err
 	}
 
@@ -65,12 +57,9 @@ func (j *JobManager) Start() error {
 				}
 			case err := <-sub.Err():
 				glog.Errorf("Error from job event subscription: %v", err)
-				// cancel()
-				// return err
+
 			case err := <-ctx.Done():
 				glog.Errorf("Subscription to job done: %v", err)
-				// cancel()
-				// return ctx.Err()
 			}
 		}
 	}()

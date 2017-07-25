@@ -73,7 +73,7 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 	}
 
 	s.hlsSubTimer = make(map[core.StreamID]time.Time)
-	go s.startHlsUnsubscribeWorker(time.Second*10, HLSUnsubWorkerFreq)
+	go s.startHlsUnsubscribeWorker(time.Second*30, HLSUnsubWorkerFreq)
 
 	s.broadcastRtmpToHLSMap = make(map[string]string)
 
@@ -410,38 +410,12 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 
 		buf := s.LivepeerNode.StreamDB.GetHLSBuffer(strmID)
 		if buf == nil {
-			//Get subscriber and set up callback for when we get segments.
-			sub, err := s.LivepeerNode.VideoNetwork.GetSubscriber(strmID.String())
-			if err != nil {
-				glog.Errorf("Error getting subscriber: %v", err)
+			glog.Infof("Creating new buf in StreamDB: %v", s.LivepeerNode.StreamDB)
+			buf = s.LivepeerNode.StreamDB.AddNewHLSBuffer(strmID)
+			if err := s.LivepeerNode.SubscribeFromNetwork(context.Background(), strmID, buf); err != nil {
+				glog.Errorf("Error subscribing from network: %v", err)
 				return nil, err
 			}
-
-			sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
-				if eof {
-					glog.Infof("Got EOF, writing to buf")
-					buf.WriteEOF()
-					if err := sub.Unsubscribe(); err != nil {
-						glog.Errorf("Unsubscribe error: %v", err)
-						return
-					}
-				}
-
-				//Decode data into HLSSegment
-				ss, err := core.BytesToSignedSegment(data)
-				if err != nil {
-					glog.Errorf("Error decoding byte array into segment: %v", err)
-					return
-				}
-
-				//Add segment into a HLS buffer in StreamDB
-				if buf == nil {
-					buf = s.LivepeerNode.StreamDB.AddNewHLSBuffer(strmID)
-					glog.Infof("Creating new buf in StreamDB: %v", s.LivepeerNode.StreamDB)
-				}
-				glog.Infof("Inserting seg %v into buf", ss.Seg.Name)
-				buf.WriteSegment(ss.Seg.SeqNo, ss.Seg.Name, ss.Seg.Duration, ss.Seg.Data)
-			})
 		}
 
 		//Wait for the HLSBuffer gets populated, get the playlist from the buffer, and return it.
@@ -455,13 +429,13 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 				continue
 			} else {
 				pl, err := buf.LatestPlaylist()
-				if err != nil {
+				if err != nil || pl.Segments[0] == nil || pl.Segments[0].URI == "" {
 					if err == stream.ErrEOF {
 						return nil, err
 					}
 
 					// glog.Infof("Waiting for playlist... err: %v", err)
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(2 * time.Second)
 					continue
 				} else {
 					// glog.Infof("Found playlist. Returning")

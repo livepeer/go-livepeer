@@ -254,49 +254,36 @@ func (n *LivepeerNode) BroadcastToNetwork(strm *stream.VideoStream) error {
 }
 
 //SubscribeFromNetwork subscribes to a stream on the network.  Returns the stream as a reference.
-func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID) (*stream.VideoStream, error) {
-	s, err := n.VideoNetwork.GetSubscriber(strmID.String())
+func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID, buf *stream.HLSBuffer) error {
+	sub, err := n.VideoNetwork.GetSubscriber(strmID.String())
 	if err != nil {
-		glog.Errorf("Error getting subscriber from network: %v", err)
+		glog.Errorf("Error getting subscriber: %v", err)
+		return err
 	}
 
-	//Create a new video stream
-	strm := n.StreamDB.GetStream(strmID)
-	if strm != nil {
-		strm, err = n.StreamDB.AddNewStream(strmID, stream.HLS)
-		if err != nil {
-			glog.Errorf("Error creating stream when subscribing: %v", err)
-		}
-	}
-	err = s.Subscribe(ctx, func(seqNo uint64, data []byte, eof bool) {
+	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 		if eof {
-			//TODO: Remove stream, remove subscriber.
-			n.StreamDB.UnsubscribeToHLSStream(strmID.String(), "local")
-			n.StreamDB.DeleteHLSBuffer(strmID)
-			n.StreamDB.DeleteStream(strmID)
-
-			// n.VideoNetwork.DeleteSubscriber(strmID.String())
-			return
+			glog.Infof("Got EOF, writing to buf")
+			buf.WriteEOF()
+			if err := sub.Unsubscribe(); err != nil {
+				glog.Errorf("Unsubscribe error: %v", err)
+				return
+			}
 		}
 
-		//TOOD: Check for segNo, make sure it's not out of order
-
-		//Decode data into SignedSegment
+		//Decode data into HLSSegment
 		ss, err := BytesToSignedSegment(data)
 		if err != nil {
 			glog.Errorf("Error decoding byte array into segment: %v", err)
+			return
 		}
 
-		//Add segment into stream
-		if err := strm.WriteHLSSegmentToStream(ss.Seg); err != nil {
-			glog.Errorf("Error writing HLS Segment: %v", err)
-		}
+		//Add segment into a HLS buffer in StreamDB
+		glog.Infof("Inserting seg %v into buf", ss.Seg.Name)
+		buf.WriteSegment(ss.Seg.SeqNo, ss.Seg.Name, ss.Seg.Duration, ss.Seg.Data)
 	})
-	if err != nil {
-		glog.Errorf("Error subscribing from network: %v", err)
-		return nil, err
-	}
-	return strm, nil
+
+	return nil
 }
 
 //UnsubscribeFromNetwork unsubscribes to a stream on the network.
