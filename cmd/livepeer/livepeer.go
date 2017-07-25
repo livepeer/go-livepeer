@@ -306,7 +306,7 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 	}
 
 	rm := core.NewRewardManager(time.Second*5, n.Eth)
-	go rm.Start()
+	go rm.Start(context.Background())
 
 	//Subscribe to when a job is assigned to us
 	logsCh := make(chan types.Log)

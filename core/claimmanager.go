@@ -16,6 +16,7 @@ import (
 
 var ErrClaim = errors.New("ErrClaim")
 
+//ClaimManager manages the claim process for a Livepeer transcoder.  Check the Livepeer protocol for more details.
 type ClaimManager struct {
 	client eth.LivepeerEthClient
 
@@ -31,6 +32,7 @@ type ClaimManager struct {
 	bSigs       [][][]byte
 }
 
+//NewClaimManager creates a new claim manager.
 func NewClaimManager(sid string, jid *big.Int, p []net.VideoProfile, c eth.LivepeerEthClient) *ClaimManager {
 	seqNos := make([][]int64, len(p), len(p))
 	tcHashes := make([][]common.Hash, len(p), len(p))
@@ -56,6 +58,7 @@ func NewClaimManager(sid string, jid *big.Int, p []net.VideoProfile, c eth.Livep
 	return &ClaimManager{client: c, strmID: sid, jobID: jid, seqNos: seqNos, claimHashes: tcHashes, dataHashes: dHashes, tDataHashes: tHashes, bSigs: sigs, profiles: p, pLookup: pLookup}
 }
 
+//AddClaim adds a claim for a given video segment.
 func (c *ClaimManager) AddClaim(seqNo int64, dataHash common.Hash, tDataHash common.Hash, bSig []byte, profile net.VideoProfile) {
 	claim := &ethTypes.TranscodeClaim{
 		StreamID:              c.strmID,
@@ -82,6 +85,7 @@ func (c *ClaimManager) AddClaim(seqNo int64, dataHash common.Hash, tDataHash com
 	c.bSigs[pi] = append(c.bSigs[pi], bSig)
 }
 
+//Claim creates the onchain claim for all the claims added through AddClaim
 func (c *ClaimManager) Claim(p net.VideoProfile) error {
 	pi, ok := c.pLookup[p]
 	if !ok {

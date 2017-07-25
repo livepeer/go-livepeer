@@ -1,3 +1,6 @@
+/*
+Package eth client is the go client for the Livepeer Ethereum smart contract.
+*/
 package eth
 
 //go:generate abigen --abi protocol/abi/LivepeerProtocol.abi --pkg contracts --type LivepeerProtocol --out contracts/livepeerProtocol.go --bin protocol/bin/LivepeerProtocol.bin

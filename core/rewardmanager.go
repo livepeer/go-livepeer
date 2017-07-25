@@ -1,24 +1,34 @@
 package core
 
 import (
+	"context"
 	"time"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/golp/eth"
 )
 
+//RewardManager manages the transcoder's reward-calling cycle.
 type RewardManager struct {
 	checkFreq time.Duration
 	eth       eth.LivepeerEthClient
 }
 
+//NewRewardManager creates a new reward manager with a given checkFrequency.
 func NewRewardManager(checkFreq time.Duration, eth eth.LivepeerEthClient) *RewardManager {
 	return &RewardManager{checkFreq: checkFreq, eth: eth}
 }
 
-func (r *RewardManager) Start() {
-	time.Sleep(r.checkFreq)
-	r.callReward()
+//Start repeatedly calls reward.
+func (r *RewardManager) Start(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(r.checkFreq):
+			r.callReward()
+		}
+	}
 }
 
 func (r *RewardManager) callReward() {

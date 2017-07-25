@@ -1,5 +1,6 @@
-//mediaserver is the place we set up the handlers for network requests.
-
+/*
+Package mediaserver is the place we integrate the Livepeer node with the LPMS media server.
+*/
 package mediaserver
 
 import (
