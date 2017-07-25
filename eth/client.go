@@ -1,5 +1,5 @@
 /*
-Package eth client is the go client for the Livepeer Ethereum smart contract.
+Package eth client is the go client for the Livepeer Ethereum smart contract.  Contracts here are generated.
 */
 package eth
 

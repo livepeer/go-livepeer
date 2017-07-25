@@ -68,11 +68,13 @@ func (id *StreamID) String() string {
 	return string(*id)
 }
 
+//Segment and its signature by the broadcaster
 type SignedSegment struct {
 	Seg stream.HLSSegment
 	Sig []byte
 }
 
+//Convenience function to convert between SignedSegments and byte slices to put on the wire.
 func SignedSegmentToBytes(ss SignedSegment) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
@@ -84,6 +86,7 @@ func SignedSegmentToBytes(ss SignedSegment) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+//Convenience function to convert between SignedSegments and byte slices to put on the wire.
 func BytesToSignedSegment(data []byte) (SignedSegment, error) {
 	dec := gob.NewDecoder(bytes.NewReader(data))
 	var ss SignedSegment

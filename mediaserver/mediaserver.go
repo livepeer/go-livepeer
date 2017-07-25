@@ -73,19 +73,21 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfile.Name)
 	}
 
+	//Start HLS unsubscribe worker
 	s.hlsSubTimer = make(map[core.StreamID]time.Time)
 	go s.startHlsUnsubscribeWorker(time.Second*30, HLSUnsubWorkerFreq)
 
 	s.broadcastRtmpToHLSMap = make(map[string]string)
 
-	s.LPMS.HandleRTMPPublish(s.makeCreateRTMPStreamIDHandler(), s.makeGotRTMPStreamHandler(), s.makeEndRTMPStreamHandler())
+	//LPMS handlers for handling RTMP video
+	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
+	s.LPMS.HandleRTMPPlay(getRTMPStreamHandler(s))
 
-	s.LPMS.HandleHLSPlay(s.makeGetHLSMasterPlaylistHandler(), s.makeGetHLSMediaPlaylistHandler(), s.makeGetHLSSegmentHandler())
+	//LPMS hanlder for handling HLS video play
+	s.LPMS.HandleHLSPlay(getHLSMasterPlaylistHandler(s), getHLSMediaPlaylistHandler(s), getHLSSegmentHandler(s))
 
-	s.LPMS.HandleRTMPPlay(s.makeGetRTMPStreamHandler())
-
+	//Temporary endpoint just so we can invoke a transcode job.  IRL this should be invoked by transcoders monitoring the smart contract.
 	http.HandleFunc("/transcode", func(w http.ResponseWriter, r *http.Request) {
-		//Temporary endpoint just so we can invoke a transcode job.  This should be invoked by transcoders monitoring the smart contract.
 		strmID := r.URL.Query().Get("strmID")
 		if strmID == "" {
 			http.Error(w, "Need to specify strmID", 500)
@@ -101,6 +103,7 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 		glog.Infof("New Stream IDs: %v", ids)
 	})
 
+	//Set the broadcast config for creating onchain jobs.
 	http.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Query().Get("price")
 		if p != "" {
@@ -123,6 +126,7 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfile.Name)
 	})
 
+	//Activate the transcoder on-chain.
 	http.HandleFunc("/activateTranscoder", func(w http.ResponseWriter, r *http.Request) {
 		active, err := s.LivepeerNode.Eth.IsActiveTranscoder()
 		if err != nil {
@@ -162,6 +166,7 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 		printStake(s.LivepeerNode.Eth)
 	})
 
+	//Set transcoder config on-chain.
 	http.HandleFunc("/setTranscoderConfig", func(w http.ResponseWriter, r *http.Request) {
 		fc := r.URL.Query().Get("feecut")
 		if fc != "" {
@@ -196,6 +201,7 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 		glog.Infof("Transcoder Fee Cut: %v, Transcoder Reward Cut: %v, Transcoder Segment Price: %v", TranscoderFeeCut, TranscoderRewardCut, TranscoderSegmentPrice)
 	})
 
+	//Bond some amount of tokens to a transcoder.
 	http.HandleFunc("/bond", func(w http.ResponseWriter, r *http.Request) {
 		addrStr := r.URL.Query().Get("addr")
 		if addrStr == "" {
@@ -232,20 +238,17 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 		}
 	})
 
+	//Print the transcoder's stake
 	http.HandleFunc("/printStake", func(w http.ResponseWriter, r *http.Request) {
 		printStake(s.LivepeerNode.Eth)
 	})
 
+	//Print the current broadcast HLS streamID
 	http.HandleFunc("/streamID", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(CurrentHLSStreamID))
 	})
 
-	http.HandleFunc("/peersCount", func(w http.ResponseWriter, r *http.Request) {
-	})
-
-	http.HandleFunc("/streamerStatus", func(w http.ResponseWriter, r *http.Request) {
-	})
-
+	//Start the LPMS server
 	lpmsCtx, cancel := context.WithCancel(context.Background())
 	ec := make(chan error, 1)
 	go func() {
@@ -264,7 +267,7 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 }
 
 //RTMP Publish Handlers
-func (s *LivepeerMediaServer) makeCreateRTMPStreamIDHandler() func(url *url.URL) (strmID string) {
+func createRTMPStreamIDHandler(s *LivepeerMediaServer) func(url *url.URL) (strmID string) {
 	return func(url *url.URL) (strmID string) {
 		id, err := core.MakeStreamID(s.LivepeerNode.Identity, core.RandomVideoID(), "")
 		if err != nil {
@@ -275,7 +278,7 @@ func (s *LivepeerMediaServer) makeCreateRTMPStreamIDHandler() func(url *url.URL)
 	}
 }
 
-func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmpStrm *stream.VideoStream) (err error) {
+func gotRTMPStreamHandler(s *LivepeerMediaServer) func(url *url.URL, rtmpStrm *stream.VideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm *stream.VideoStream) (err error) {
 		if s.LivepeerNode.Eth != nil {
 			//Check Token Balance
@@ -376,7 +379,7 @@ func (s *LivepeerMediaServer) makeGotRTMPStreamHandler() func(url *url.URL, rtmp
 	}
 }
 
-func (s *LivepeerMediaServer) makeEndRTMPStreamHandler() func(url *url.URL, rtmpStrm *stream.VideoStream) error {
+func endRTMPStreamHandler(s *LivepeerMediaServer) func(url *url.URL, rtmpStrm *stream.VideoStream) error {
 	return func(url *url.URL, rtmpStrm *stream.VideoStream) error {
 		//Remove RTMP stream
 		s.LivepeerNode.StreamDB.DeleteStream(core.StreamID(rtmpStrm.GetStreamID()))
@@ -389,20 +392,20 @@ func (s *LivepeerMediaServer) makeEndRTMPStreamHandler() func(url *url.URL, rtmp
 //End RTMP Publish Handlers
 
 //HLS Play Handlers
-func (s *LivepeerMediaServer) makeGetHLSMasterPlaylistHandler() func(url *url.URL) (*m3u8.MasterPlaylist, error) {
+func getHLSMasterPlaylistHandler(s *LivepeerMediaServer) func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 	return func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 		strmID := parseStreamID(url.Path)
 		if !strmID.IsMasterPlaylistID() {
 			return nil, nil
 		}
 
-		//Look for master playlist locally.  If not found, ask the network.
+		//TODO: Look for master playlist locally.  If not found, ask the network.
 		// strm := s.LivepeerNode.StreamDB.GetStream(strmID)
 		return nil, nil
 	}
 }
 
-func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL) (*m3u8.MediaPlaylist, error) {
+func getHLSMediaPlaylistHandler(s *LivepeerMediaServer) func(url *url.URL) (*m3u8.MediaPlaylist, error) {
 	return func(url *url.URL) (*m3u8.MediaPlaylist, error) {
 		strmID := parseStreamID(url.Path)
 		if strmID.IsMasterPlaylistID() {
@@ -443,7 +446,7 @@ func (s *LivepeerMediaServer) makeGetHLSMediaPlaylistHandler() func(url *url.URL
 	}
 }
 
-func (s *LivepeerMediaServer) makeGetHLSSegmentHandler() func(url *url.URL) ([]byte, error) {
+func getHLSSegmentHandler(s *LivepeerMediaServer) func(url *url.URL) ([]byte, error) {
 	return func(url *url.URL) ([]byte, error) {
 		strmID := parseStreamID(url.Path)
 		if strmID.IsMasterPlaylistID() {
@@ -466,9 +469,8 @@ func (s *LivepeerMediaServer) makeGetHLSSegmentHandler() func(url *url.URL) ([]b
 
 //End HLS Play Handlers
 
-//PLay RTMP Play Handlers
-func (s *LivepeerMediaServer) makeGetRTMPStreamHandler() func(url *url.URL) (stream.Stream, error) {
-
+//Start RTMP Play Handlers
+func getRTMPStreamHandler(s *LivepeerMediaServer) func(url *url.URL) (stream.Stream, error) {
 	return func(url *url.URL) (stream.Stream, error) {
 		// glog.Infof("Got req: ", url.Path)
 		//Look for stream in StreamDB,
@@ -486,6 +488,9 @@ func (s *LivepeerMediaServer) makeGetRTMPStreamHandler() func(url *url.URL) (str
 
 //End RTMP Handlers
 
+//Helper Methods Begin
+
+//HLS video streams need to be timed out.  When the viewer is no longer watching the stream, we send a Unsubscribe message to the network.
 func (s *LivepeerMediaServer) startHlsUnsubscribeWorker(limit time.Duration, freq time.Duration) {
 	s.hlsWorkerRunning = true
 	defer func() { s.hlsWorkerRunning = false }()
@@ -502,8 +507,6 @@ func (s *LivepeerMediaServer) startHlsUnsubscribeWorker(limit time.Duration, fre
 		}
 	}
 }
-
-//Helper Methods
 
 func parseStreamID(reqPath string) core.StreamID {
 	var strmID string
