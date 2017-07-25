@@ -51,6 +51,11 @@ Now that the stream is available on the network, it's viewable from any node. Fo
 
 `./livepeer stream -hls=true -port=8936 -id={StreamID}`
 
+### Ethereum Transactions
+By default, Livepeer nodes run in off-chain mode.  To start Livepeer in on-chain mode, you need to provide connection information to an Ethereum node.
+
+TODO
+
 ### Transcoding
 TODO
 
