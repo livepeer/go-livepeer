@@ -3,8 +3,9 @@ package net
 import (
 	"context"
 
+	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
+
 	"github.com/golang/glog"
-	peer "github.com/libp2p/go-libp2p-peer"
 )
 
 //BasicBroadcaster is unique for a specific video stream. It keeps track of a list of listeners and a queue of video chunks.  It won't start keeping track of things until there is at least 1 listener.

@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"time"
 
+	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
+
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -23,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
-	crypto "github.com/libp2p/go-libp2p-crypto"
 	"github.com/livepeer/golp/core"
 	"github.com/livepeer/golp/eth"
 	"github.com/livepeer/golp/mediaserver"
