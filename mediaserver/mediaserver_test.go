@@ -22,10 +22,20 @@ var S *LivepeerMediaServer
 
 func setupServer() *LivepeerMediaServer {
 	if S == nil {
-		priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-		n, _ := core.NewLivepeerNode(15000, priv1, pub1, nil)
+		priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+		node, err := net.NewNode(15000, priv, pub)
+		if err != nil {
+			glog.Errorf("Error creating a new node: %v", err)
+			return nil
+		}
+		nw, err := net.NewBasicVideoNetwork(node)
+		if err != nil {
+			glog.Errorf("Cannot create network node: %v", err)
+			return nil
+		}
+		n, _ := core.NewLivepeerNode(nil, nw)
 		S = NewLivepeerMediaServer("1935", "8080", "", n)
-		S.StartLPMS(context.Background())
+		go S.StartMediaServer(context.Background())
 	}
 	return S
 }
@@ -48,6 +58,10 @@ type StubNetwork struct {
 	S *StubSubscriber
 }
 
+func (n *StubNetwork) GetNodeID() string {
+	return "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0"
+}
+
 func (n *StubNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error) {
 	n.B = &StubBroadcaster{Data: make(map[uint64][]byte)}
 	return n.B, nil
@@ -60,7 +74,7 @@ func (n *StubNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
 
 func (n *StubNetwork) Connect(nodeID, nodeAddr string) error { return nil }
 func (n *StubNetwork) SetupProtocol() error                  { return nil }
-func (b *StubNetwork) SendTranscodResult(nodeID string, strmID string, transcodeResult map[string]string) error {
+func (b *StubNetwork) SendTranscodeResult(nodeID string, strmID string, transcodeResult map[string]string) error {
 	return nil
 }
 
@@ -111,7 +125,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	s := setupServer()
 	s.LivepeerNode.VideoNetwork = &StubNetwork{}
 	s.RTMPSegmenter = &StubSegmenter{}
-	handler := s.makeGotRTMPStreamHandler()
+	handler := gotRTMPStreamHandler(s)
 
 	url, _ := url.Parse("http://localhost/stream/test")
 	strm := stream.NewVideoStream("strmID", stream.RTMP)
@@ -165,7 +179,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 
 func TestGetHLSPlaylistHandler(t *testing.T) {
 	s := setupServer()
-	handler := s.makeGetHLSMediaPlaylistHandler()
+	handler := getHLSMediaPlaylistHandler(s)
 	url, _ := url.Parse("http://localhost/stream/strmID.m3u8")
 
 	pl, err := handler(url)

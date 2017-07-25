@@ -53,16 +53,15 @@ func simpleHandler(ns net.Stream, txt string) {
 	time.Sleep(500 * time.Millisecond)
 
 	str := string(msg.Msg)
-	newMsg := &SimpleMsg{Msg: str + "|" + txt}
 
+	newMsg := str + "|" + txt
 	glog.Infof("Sending %v", newMsg)
-	ws.SendMessage(0, SimpleMsg{Msg: str + "|" + txt})
-
+	ws.SendMessage(0, newMsg)
 }
 
 func simpleHandlerLoop(ws *BasicStream, txt string) {
 	for {
-		var msg SimpleMsg
+		var msg string
 		err := ws.ReceiveMessage(&msg)
 
 		if err != nil {
@@ -73,11 +72,13 @@ func simpleHandlerLoop(ws *BasicStream, txt string) {
 
 		time.Sleep(500 * time.Millisecond)
 
-		str := string(msg.Msg)
-		newMsg := &SimpleMsg{Msg: str + "|" + txt}
+		newMsg := msg + "|" + txt
 
 		glog.Infof("Sending %v", newMsg)
-		ws.SendMessage(0, *newMsg)
+		err = ws.SendMessage(0, newMsg)
+		if err != nil {
+			glog.Errorf("Failed to send message %v: %v", newMsg, err)
+		}
 		// err = ws.Enc.Encode(newMsg)
 		// if err != nil {
 		// 	glog.Errorf("send message encode error: %v", err)
@@ -92,11 +93,11 @@ func simpleHandlerLoop(ws *BasicStream, txt string) {
 
 func simpleSend(ns net.Stream, txt string, t *testing.T) {
 	ws := NewBasicStream(ns)
-	ws.SendMessage(0, SimpleMsg{Msg: txt})
+	ws.SendMessage(0, txt)
 }
 
 func TestBackAndForth(t *testing.T) {
-	glog.Infof("libp2p playground......")
+	glog.Infof("\n\nTest back and forth...")
 	n1, n2 := simpleNodes()
 	connectHosts(n1.PeerHost, n2.PeerHost)
 	time.Sleep(time.Second)
@@ -111,7 +112,6 @@ func TestBackAndForth(t *testing.T) {
 	}
 	simpleSend(ns1, "ns1", t)
 	simpleHandler(ns1, "ping")
-
 }
 
 func makeRandomHost(port int) host.Host {
@@ -136,6 +136,7 @@ func makeRandomHost(port int) host.Host {
 }
 
 func TestBasic(t *testing.T) {
+	glog.Infof("\n\nTest Basic...")
 	h1 := makeRandomHost(10000)
 	h2 := makeRandomHost(10001)
 	h1.Peerstore().AddAddrs(h2.ID(), h2.Addrs(), ps.PermanentAddrTTL)
