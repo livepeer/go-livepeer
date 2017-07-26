@@ -1,3 +1,6 @@
+/*
+Package eth client is the go client for the Livepeer Ethereum smart contract.  Contracts here are generated.
+*/
 package eth
 
 //go:generate abigen --abi protocol/abi/LivepeerProtocol.abi --pkg contracts --type LivepeerProtocol --out contracts/livepeerProtocol.go --bin protocol/bin/LivepeerProtocol.bin
@@ -32,6 +35,33 @@ import (
 	"github.com/livepeer/golp/eth/contracts"
 )
 
+var ProtocolCyclesPerRound = 2
+var ProtocolBlockPerRound = big.NewInt(20)
+
+type LivepeerEthClient interface {
+	Backend() *ethclient.Client
+	Account() accounts.Account
+	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error)
+	WatchEvent(logsCh <-chan types.Log) (types.Log, error)
+	RoundInfo() (*big.Int, *big.Int, *big.Int, *big.Int, error)
+	InitializeRound() (*types.Transaction, error)
+	CurrentRoundInitialized() (bool, error)
+	Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (*types.Transaction, error)
+	IsActiveTranscoder() (bool, error)
+	TranscoderStake() (*big.Int, error)
+	Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error)
+	ValidRewardTimeWindow() (bool, error)
+	Reward() (*types.Transaction, error)
+	Job(streamId string, transcodingOptions [32]byte, maxPricePerSegment *big.Int) (*types.Transaction, error)
+	JobDetails(id *big.Int) (*big.Int, [32]byte, *big.Int, common.Address, common.Address, *big.Int, error)
+	EndJob(id *big.Int) (*types.Transaction, error)
+	ClaimWork(jobId *big.Int, startSegmentSequenceNumber *big.Int, endSegmentSequenceNumber *big.Int, transcodeClaimsRoot [32]byte) (*types.Transaction, error)
+	Verify(jobId *big.Int, segmentSequenceNumber *big.Int, dataHash [32]byte, transcodedDataHash [32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error)
+	Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error)
+	TokenBalance() (*big.Int, error)
+	WaitUntilNextRound(roundLength *big.Int) error
+}
+
 type Client struct {
 	account         accounts.Account
 	keyStore        *keystore.KeyStore
@@ -46,7 +76,7 @@ type Client struct {
 }
 
 func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, protocolAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
-	keyStore = keystore.NewKeyStore(filepath.Join(dir, datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
+	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 
 	transactOpts, err := NewTransactOptsForAccount(account, passphrase, keyStore)
 
@@ -96,6 +126,14 @@ func NewClient(account accounts.Account, passphrase string, datadir string, back
 	}, nil
 }
 
+func (c *Client) Backend() *ethclient.Client {
+	return c.backend
+}
+
+func (c *Client) Account() accounts.Account {
+	return c.account
+}
+
 func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyStore *keystore.KeyStore) (*bind.TransactOpts, error) {
 	keyjson, err := keyStore.Export(account, passphrase, passphrase)
 
@@ -112,16 +150,12 @@ func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyS
 	return transactOpts, err
 }
 
-func (c *Client) SubscribeToJobEvent() (ethereum.Subscription, chan types.Log, error) {
-	var (
-		logsCh = make(chan types.Log)
-	)
-
+func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error) {
 	protocolJson, err := abi.JSON(strings.NewReader(contracts.LivepeerProtocolABI))
 
 	if err != nil {
 		glog.Errorf("Error decoding ABI into JSON: %v", err)
-		return nil, nil, err
+		return nil, err
 	}
 
 	q := ethereum.FilterQuery{
@@ -129,22 +163,17 @@ func (c *Client) SubscribeToJobEvent() (ethereum.Subscription, chan types.Log, e
 		Topics:    [][]common.Hash{[]common.Hash{protocolJson.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
-
-	logsSub, err := c.backend.SubscribeFilterLogs(ctx, q, logsCh)
-
-	go monitorJobEvent(logsCh)
-
-	return logsSub, logsCh, nil
+	return c.backend.SubscribeFilterLogs(ctx, q, logsCh)
 }
 
-func monitorJobEvent(logsCh <-chan types.Log) {
+func monitorJobEvent(logsCh <-chan types.Log, callback func(l types.Log) error) {
 	for {
 		select {
 		case log := <-logsCh:
 			if !log.Removed && log.BlockNumber != 0 {
 				// TODO: Perform action in response to job event
-				glog.Infof("Received a job at block %v with tx %v by address %v", log.BlockNumber, log.TxHash.Hex(), log.Address.Hex())
+				// glog.Infof("Received a job at block %v with tx %v by address %v", log.BlockNumber, log.TxHash.Hex(), log.Address.Hex())
+				callback(log)
 			}
 		}
 	}
@@ -250,6 +279,14 @@ func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegmen
 	return tx, nil
 }
 
+func (c *Client) IsActiveTranscoder() (bool, error) {
+	return c.protocolSession.IsActiveTranscoder(c.account.Address)
+}
+
+func (c *Client) TranscoderStake() (*big.Int, error) {
+	return c.protocolSession.TranscoderTotalStake(c.account.Address)
+}
+
 func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
 	var (
 		logsCh = make(chan types.Log)
@@ -343,16 +380,12 @@ func (c *Client) Job(streamId string, transcodingOptions [32]byte, maxPricePerSe
 	return tx, nil
 }
 
-func (c *Client) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) {
-	sig, err := c.keyStore.SignHashWithPassphrase(c.account, passphrase, hash)
+func (c *Client) JobDetails(id *big.Int) (*big.Int, [32]byte, *big.Int, common.Address, common.Address, *big.Int, error) {
+	return c.protocolSession.GetJob(id)
+}
 
-	if err != nil {
-		glog.Errorf("Error signing segment: %v", err)
-		return nil, err
-	}
-
-	glog.Infof("[%v] Created signed segment hash %v", c.account.Address.Hex(), common.ToHex(sig))
-	return sig, nil
+func (c *Client) EndJob(id *big.Int) (*types.Transaction, error) {
+	return c.protocolSession.EndJob(id)
 }
 
 func (c *Client) ClaimWork(jobId *big.Int, startSegmentSequenceNumber *big.Int, endSegmentSequenceNumber *big.Int, transcodeClaimsRoot [32]byte) (*types.Transaction, error) {
@@ -391,4 +424,32 @@ func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (*types.Transa
 
 	glog.Infof("[%v] Submitted transaction %v. Transfer %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
 	return tx, nil
+}
+
+func (c *Client) TokenBalance() (*big.Int, error) {
+	return c.tokenSession.BalanceOf(c.account.Address)
+}
+
+func (c *Client) WaitUntilNextRound(roundLength *big.Int) error {
+	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
+	block, err := c.backend.BlockByNumber(ctx, nil)
+
+	if err != nil {
+		return err
+	}
+
+	targetBlockNum := NextBlockMultiple(block.Number(), roundLength)
+
+	glog.Infof("Waiting until next round at block %v...", targetBlockNum)
+
+	for block.Number().Cmp(targetBlockNum) == -1 {
+		ctx, _ = context.WithTimeout(context.Background(), c.rpcTimeout)
+		block, err = c.backend.BlockByNumber(ctx, nil)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

@@ -1,3 +1,9 @@
+/*
+The BasicVideoNetwork is a push-based streaming protocol.  It works as follow:
+	- When a video is broadcasted, it's stored at a local broadcaster
+	- When a viewer wants to view a video, it sends a subscribe request to the network
+	- The network routes the request towards the broadcast node via kademlia routing
+*/
 package net
 
 import (
@@ -5,32 +11,25 @@ import (
 	"errors"
 
 	"github.com/golang/glog"
-	crypto "github.com/libp2p/go-libp2p-crypto"
-	net "github.com/libp2p/go-libp2p-net"
-	peer "github.com/libp2p/go-libp2p-peer"
-	peerstore "github.com/libp2p/go-libp2p-peerstore"
-	protocol "github.com/libp2p/go-libp2p-protocol"
-	ma "github.com/multiformats/go-multiaddr"
+
+	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
+	ma "gx/ipfs/QmXY77cVe7rVRQXZZQRioukUM7aRW3BTcAgJe12MCtb3Ji/go-multiaddr"
+	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
+	protocol "gx/ipfs/QmZNkThpqfVXs9GNbexPrfBbXSLNYeKrE7jwFM2oqHbyqN/go-libp2p-protocol"
+	net "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
 )
-
-/**
-The basic network is a push-based streaming protocol.  It works as follow:
-	- When a video is broadcasted, it's stored at a local broadcaster
-	- When a viewer wants to view a video, it sends a subscribe request to the network
-	- The network routes the request towards the broadcast node via kademlia routing
-
-**/
 
 var Protocol = protocol.ID("/livepeer_video/0.0.1")
 var ErrNoClosePeers = errors.New("NoClosePeers")
 var ErrUnknownMsg = errors.New("UnknownMsgType")
 var ErrProtocol = errors.New("ProtocolError")
+var ErrTranscodeResult = errors.New("TranscodeResultError")
 
 type VideoMuxer interface {
 	WriteSegment(seqNo uint64, strmID string, data []byte) error
 }
 
-//BasicVideoNetwork creates a kademlia network using libp2p.  It does push-based video delivery, and handles the protocol in the background.
+//BasicVideoNetwork implements the VideoNetwork interface.  It creates a kademlia network using libp2p.  It does push-based video delivery, and handles the protocol in the background.
 type BasicVideoNetwork struct {
 	NetworkNode  *NetworkNode
 	broadcasters map[string]*BasicBroadcaster
@@ -38,28 +37,29 @@ type BasicVideoNetwork struct {
 	relayers     map[string]*BasicRelayer
 }
 
-//NewBasicNetwork creates a libp2p node, handle the basic (push-based) video protocol.
-func NewBasicNetwork(port int, priv crypto.PrivKey, pub crypto.PubKey) (*BasicVideoNetwork, error) {
-	n, err := NewNode(port, priv, pub)
-	if err != nil {
-		glog.Errorf("Error creating a new node: %v", err)
-		return nil, err
-	}
-
+//NewBasicVideoNetwork creates a libp2p node, handle the basic (push-based) video protocol.
+func NewBasicVideoNetwork(n *NetworkNode) (*BasicVideoNetwork, error) {
 	nw := &BasicVideoNetwork{NetworkNode: n, broadcasters: make(map[string]*BasicBroadcaster), subscribers: make(map[string]*BasicSubscriber), relayers: make(map[string]*BasicRelayer)}
 
 	return nw, nil
 }
 
+//GetNodeID gets the node id
+func (n *BasicVideoNetwork) GetNodeID() string {
+	return peer.IDHexEncode(n.NetworkNode.Identity)
+}
+
+//GetBroadcaster gets a broadcaster for a streamID.  If it doesn't exist, create a new one.
 func (n *BasicVideoNetwork) GetBroadcaster(strmID string) (Broadcaster, error) {
 	b, ok := n.broadcasters[strmID]
 	if !ok {
-		b = &BasicBroadcaster{Network: n, StrmID: strmID, q: make(chan *StreamDataMsg), listeners: make(map[string]VideoMuxer)}
+		b = &BasicBroadcaster{Network: n, StrmID: strmID, q: make(chan *StreamDataMsg), listeners: make(map[string]*BasicStream), TranscodedIDs: make(map[string]VideoProfile)}
 		n.broadcasters[strmID] = b
 	}
 	return b, nil
 }
 
+//GetSubscriber gets a subscriber for a streamID.  If it doesn't exist, create a new one.
 func (n *BasicVideoNetwork) GetSubscriber(strmID string) (Subscriber, error) {
 	s, ok := n.subscribers[strmID]
 	if !ok {
@@ -69,17 +69,18 @@ func (n *BasicVideoNetwork) GetSubscriber(strmID string) (Subscriber, error) {
 	return s, nil
 }
 
+//NewRelayer creates a new relayer.
 func (n *BasicVideoNetwork) NewRelayer(strmID string) *BasicRelayer {
-
-	r := &BasicRelayer{listeners: make(map[string]VideoMuxer)}
+	r := &BasicRelayer{listeners: make(map[string]*BasicStream)}
 	n.relayers[strmID] = r
 	return r
 }
 
+//Connect connects a node to the Livepeer network.
 func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
 	pid, err := peer.IDHexDecode(nodeID)
 	if err != nil {
-		glog.Errorf("Invalid node ID: %v", err)
+		glog.Errorf("Invalid node ID - %v: %v", nodeID, err)
 		return err
 	}
 
@@ -91,22 +92,38 @@ func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
 	}
 
 	n.NetworkNode.PeerHost.Peerstore().AddAddr(pid, paddr, peerstore.PermanentAddrTTL)
-	n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid})
-
-	// n.SendJoin(sid)
-	return nil
+	return n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid})
 }
 
-func (nw *BasicVideoNetwork) SetupProtocol() error {
+//SendTranscodeResult sends the transcode result to the broadcast node.
+func (n *BasicVideoNetwork) SendTranscodeResult(broadcaster string, strmID string, transcodedVideos map[string]string) error {
+	pid, err := peer.IDHexDecode(broadcaster)
+	if err != nil {
+		glog.Errorf("Bad broadcaster id %v - %v", broadcaster, err)
+	}
+	ws := n.NetworkNode.GetStream(pid)
+	if ws != nil {
+		if err = ws.SendMessage(TranscodeResultID, TranscodeResultMsg{StrmID: strmID, Result: transcodedVideos}); err != nil {
+			glog.Errorf("Error sending transcode result message: %v", err)
+			return err
+		}
+		return nil
+	}
+
+	return ErrTranscodeResult
+}
+
+//SetupProtocol sets up the protocol so we can handle incoming messages
+func (n *BasicVideoNetwork) SetupProtocol() error {
 	glog.Infof("Setting up protocol: %v", Protocol)
-	nw.NetworkNode.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
+	n.NetworkNode.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
 		ws := NewBasicStream(stream)
-		nw.NetworkNode.streams[stream.Conn().RemotePeer()] = ws
+		n.NetworkNode.streams[stream.Conn().RemotePeer()] = ws
 
 		for {
-			if err := streamHandler(nw, ws); err != nil {
+			if err := streamHandler(n, ws); err != nil {
 				glog.Errorf("Error handling stream: %v", err)
-				delete(nw.NetworkNode.streams, stream.Conn().RemotePeer())
+				delete(n.NetworkNode.streams, stream.Conn().RemotePeer())
 				stream.Close()
 				return
 			}
@@ -119,7 +136,7 @@ func (nw *BasicVideoNetwork) SetupProtocol() error {
 func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 	var msg Msg
 
-	if err := ws.Decode(&msg); err != nil {
+	if err := ws.ReceiveMessage(&msg); err != nil {
 		glog.Errorf("Got error decoding msg: %v", err)
 		return err
 	}
@@ -131,7 +148,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
 			return ErrProtocol
 		}
-		// glog.Infof("Got Sub Req: %v", sr)
+		glog.Infof("Got Sub Req: %v", sr)
 		return handleSubReq(nw, sr, ws)
 	case CancelSubID:
 		cr, ok := msg.Data.(CancelSubMsg)
@@ -154,12 +171,17 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 			glog.Errorf("Cannot convert FinishStreamMsg: %v", msg.Data)
 		}
 		return handleFinishStream(nw, fs)
+	case TranscodeResultID:
+		tr, ok := msg.Data.(TranscodeResultMsg)
+		if !ok {
+			glog.Errorf("Cannot convert TranscodeResultMsg: %v", msg.Data)
+		}
+		return handleTranscodeResult(nw, tr)
 	default:
 		glog.Infof("Unknown Data: %v -- closing stream", msg)
 		// stream.Close()
 		return ErrUnknownMsg
 	}
-
 }
 
 func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) error {
@@ -176,55 +198,57 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 		return nil
 	} else {
 		glog.Infof("Cannot find local broadcaster or relayer for stream: %v.  Creating a local relayer, and forwarding along to the network", subReq.StrmID)
-		peerc, err := nw.NetworkNode.Kad.GetClosestPeers(context.Background(), subReq.StrmID)
+		ctx := context.Background()
+		peerc, err := nw.NetworkNode.Kad.GetClosestPeers(ctx, subReq.StrmID)
 		if err != nil {
 			glog.Errorf("Error finding closer peer: %v", err)
 			return err
 		}
 
-		msgSent := false
-		var upstrmPeer peer.ID
+		// var upstrmPeer peer.ID
 		//Subscribe from the network
 		//We can range over peerc because we know it'll be closed by libp2p
-		for p := range peerc {
-			//Don't send it back to the requesting peer
-			if p == ws.Stream.Conn().RemotePeer() {
-				continue
-			}
-
-			ns := nw.NetworkNode.GetStream(p)
-			if ns != nil {
-				if err := nw.NetworkNode.SendMessage(ns, p, SubReqID, subReq); err != nil {
-					//Question: Do we want to close the stream here?
-					glog.Errorf("Error relaying subReq to %v: %v", p, err)
+		for {
+			select {
+			case p := <-peerc:
+				//Don't send it back to the requesting peer
+				if p == ws.Stream.Conn().RemotePeer() {
 					continue
 				}
 
-				//TODO: Figure out when to return from this routine
-				go func() {
-					for {
-						if err := streamHandler(nw, ns); err != nil {
-							glog.Errorf("Error handing stream:%v", err)
-							return
-						}
+				ns := nw.NetworkNode.GetStream(p)
+				if ns != nil {
+					// if err := nw.NetworkNode.SendMessage(ns, p, SubReqID, subReq); err != nil {
+					if err := ns.SendMessage(SubReqID, subReq); err != nil {
+						//Question: Do we want to close the stream here?
+						glog.Errorf("Error relaying subReq to %v: %v", p, err)
+						continue
 					}
-				}()
 
-				upstrmPeer = p
-				msgSent = true
-				break
+					//TODO: Figure out when to return from this routine
+					go func() {
+						for {
+							if err := streamHandler(nw, ns); err != nil {
+								glog.Errorf("Error handing stream:%v", err)
+								return
+							}
+						}
+					}()
+
+					//Create a relayer, register the listener
+					r := nw.NewRelayer(subReq.StrmID)
+					r.UpstreamPeer = p
+					remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
+					r.listeners[remotePid] = ws
+					return nil
+				} else {
+					glog.Errorf("Cannot find stream: %v", peer.IDHexEncode(p))
+				}
+			case <-ctx.Done():
+				glog.Errorf("Didn't find any peer from network")
+				return ErrNoClosePeers
 			}
 		}
-		if !msgSent {
-			return ErrNoClosePeers
-		}
-
-		//Create a relayer, register the listener
-		r := nw.NewRelayer(subReq.StrmID)
-		r.UpstreamPeer = upstrmPeer
-		remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
-		r.listeners[remotePid] = ws
-		return nil
 	}
 
 }
@@ -241,7 +265,7 @@ func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) e
 		if len(r.listeners) == 0 {
 			ns := nw.NetworkNode.GetStream(r.UpstreamPeer)
 			if ns != nil {
-				if err := nw.NetworkNode.SendMessage(ns, r.UpstreamPeer, CancelSubID, cr); err != nil {
+				if err := ns.SendMessage(CancelSubID, cr); err != nil {
 					glog.Errorf("Error relaying cancel message to %v: %v ", peer.IDHexEncode(r.UpstreamPeer), err)
 				}
 				delete(nw.relayers, cr.StrmID)
@@ -306,5 +330,25 @@ func handleFinishStream(nw *BasicVideoNetwork, fs FinishStreamMsg) error {
 		glog.Errorf("Error: cannot find subscriber or relayer")
 		return ErrProtocol
 	}
+	return nil
+}
+
+func handleTranscodeResult(nw *BasicVideoNetwork, tr TranscodeResultMsg) error {
+	glog.Infof("Transcode Result StreamIDs: %v", tr)
+	b := nw.broadcasters[tr.StrmID]
+
+	if b == nil {
+		glog.Errorf("Error Handling Transcode Result - cannot find broadcaster with streamID: %v", tr.StrmID)
+		return ErrTranscodeResult
+	}
+
+	for s, v := range tr.Result {
+		if VideoProfileLookup[v].Name == "" {
+			glog.Errorf("Error Handling Transcode Result - cannot find video profile: %v", v)
+		} else {
+			b.TranscodedIDs[s] = VideoProfileLookup[v]
+		}
+	}
+
 	return nil
 }

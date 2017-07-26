@@ -3,26 +3,31 @@ package net
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"sync"
 
+	net "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
+
+	multicodec "gx/ipfs/QmVRuqGJ881CFiNLgwWSfRVjTjqQ6FeCNufkftNC4fpACZ/go-multicodec"
+	mcjson "gx/ipfs/QmVRuqGJ881CFiNLgwWSfRVjTjqQ6FeCNufkftNC4fpACZ/go-multicodec/json"
+
 	"github.com/golang/glog"
-	net "github.com/libp2p/go-libp2p-net"
-	peer "github.com/libp2p/go-libp2p-peer"
-	multicodec "github.com/multiformats/go-multicodec"
-	mcjson "github.com/multiformats/go-multicodec/json"
 )
 
 var ErrStream = errors.New("ErrStream")
 
+//BasicStream is a libp2p stream wrapped in a reader and a writer.
 type BasicStream struct {
 	Stream net.Stream
-	Enc    multicodec.Encoder
-	Dec    multicodec.Decoder
-	W      *bufio.Writer
-	R      *bufio.Reader
-	l      *sync.Mutex
+	enc    multicodec.Encoder
+	dec    multicodec.Decoder
+	w      *bufio.Writer
+	r      *bufio.Reader
+	el     *sync.Mutex
+	dl     *sync.Mutex
 }
 
+//NewBasicStream creates a stream from a libp2p raw stream.
 func NewBasicStream(s net.Stream) *BasicStream {
 	reader := bufio.NewReader(s)
 	writer := bufio.NewWriter(s)
@@ -33,36 +38,46 @@ func NewBasicStream(s net.Stream) *BasicStream {
 	enc := mcjson.Multicodec(false).Encoder(writer)
 	return &BasicStream{
 		Stream: s,
-		R:      reader,
-		W:      writer,
-		Enc:    enc,
-		Dec:    dec,
-		l:      &sync.Mutex{},
+		r:      reader,
+		w:      writer,
+		enc:    enc,
+		dec:    dec,
+		el:     &sync.Mutex{},
+		dl:     &sync.Mutex{},
 	}
 }
 
-func (ws *BasicStream) Decode(n interface{}) error {
-	ws.l.Lock()
-	defer ws.l.Unlock()
-	return ws.Dec.Decode(n)
+//ReceiveMessage takes a message off the stream.
+func (bs *BasicStream) ReceiveMessage(n interface{}) error {
+	bs.dl.Lock()
+	defer bs.dl.Unlock()
+	return bs.dec.Decode(n)
 }
 
-func (ws *BasicStream) WriteSegment(seqNo uint64, strmID string, data []byte) error {
-	nwMsg := Msg{Op: StreamDataID, Data: StreamDataMsg{SeqNo: seqNo, StrmID: strmID, Data: data}}
-	glog.Infof("Sending: %v::%v to %v", strmID, seqNo, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
+//SendMessage writes a message into the stream.
+func (bs *BasicStream) SendMessage(opCode Opcode, data interface{}) error {
+	msg := Msg{Op: opCode, Data: data}
+	// glog.Infof("Sending: %v to %v", msg, peer.IDHexEncode(bs.Stream.Conn().RemotePeer()))
+	return bs.encodeAndFlush(msg)
+}
 
-	err := ws.Enc.Encode(nwMsg)
+//EncodeAndFlush writes a message into the stream.
+func (bs *BasicStream) encodeAndFlush(n interface{}) error {
+	if bs == nil {
+		fmt.Println("stream is nil")
+	}
+	bs.el.Lock()
+	defer bs.el.Unlock()
+	err := bs.enc.Encode(n)
 	if err != nil {
 		glog.Errorf("send message encode error: %v", err)
 		return ErrStream
-		// delete(b.listeners, id)
 	}
 
-	err = ws.W.Flush()
+	err = bs.w.Flush()
 	if err != nil {
 		glog.Errorf("send message flush error: %v", err)
 		return ErrStream
-		// delete(b.listeners, id)
 	}
 
 	return nil

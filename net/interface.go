@@ -1,12 +1,17 @@
 package net
 
-import "context"
+import (
+	"context"
+	"math/big"
+)
 
 type VideoNetwork interface {
+	GetNodeID() string
 	GetBroadcaster(strmID string) (Broadcaster, error)
 	GetSubscriber(strmID string) (Subscriber, error)
 	Connect(nodeID, nodeAddr string) error
 	SetupProtocol() error
+	SendTranscodeResult(nodeID string, strmID string, transcodeResult map[string]string) error
 }
 
 //Broadcaster takes a streamID and a reader, and broadcasts the data to whatever underlining network.
@@ -59,8 +64,10 @@ type VideoProfile struct {
 }
 
 type TranscodeConfig struct {
-	StrmID   string
-	Profiles []VideoProfile
+	StrmID              string
+	Profiles            []VideoProfile
+	PerformOnchainClaim bool
+	JobID               *big.Int
 }
 
 type Transcoder interface {
@@ -78,3 +85,14 @@ var (
 	P_240P_30FPS_4_3  = VideoProfile{Name: "P240P30FPS43", Bitrate: "700k", Framerate: 30, AspectRatio: "4:3", Resolution: "320:240"}
 	P_144P_30FPS_16_9 = VideoProfile{Name: "P144P30FPS169", Bitrate: "400k", Framerate: 30, AspectRatio: "16:9", Resolution: "256:144"}
 )
+
+var VideoProfileLookup = map[string]VideoProfile{
+	"P720P60FPS169": P_720P_60FPS_16_9,
+	"P720P30FPS169": P_720P_30FPS_16_9,
+	"P720P30FPS43":  P_720P_30FPS_4_3,
+	"P360P30FPS169": P_360P_30FPS_16_9,
+	"P360P30FPS43":  P_360P_30FPS_4_3,
+	"P240P30FPS169": P_240P_30FPS_16_9,
+	"P240P30FPS43":  P_240P_30FPS_4_3,
+	"P144P30FPS169": P_144P_30FPS_16_9,
+}

@@ -1,10 +1,10 @@
 package core
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
+	"encoding/binary"
 	"fmt"
+	"math/big"
 	"testing"
 	"time"
 
@@ -12,7 +12,13 @@ import (
 
 	"io/ioutil"
 
-	crypto "github.com/libp2p/go-libp2p-crypto"
+	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
+
+	"github.com/ethereum/go-ethereum/common"
+	ethCrypto "github.com/ethereum/go-ethereum/crypto"
+	"github.com/golang/glog"
+	"github.com/livepeer/golp/eth"
+
 	"github.com/livepeer/golp/net"
 	"github.com/livepeer/lpms/stream"
 )
@@ -28,6 +34,13 @@ func TestNewLivepeerNode(t *testing.T) {
 type StubVideoNetwork struct {
 	T            *testing.T
 	broadcasters map[string]*StubBroadcaster
+	tResult      map[string]string
+	strmID       string
+	nodeID       string
+}
+
+func (n *StubVideoNetwork) GetNodeID() string {
+	return "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0"
 }
 
 func (n *StubVideoNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error) {
@@ -42,10 +55,16 @@ func (n *StubVideoNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error
 	return b, nil
 }
 func (n *StubVideoNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
-	return &StubSubscriber{}, nil
+	return &StubSubscriber{T: n.T}, nil
 }
 func (n *StubVideoNetwork) Connect(nodeID, nodeAddr string) error { return nil }
 func (n *StubVideoNetwork) SetupProtocol() error                  { return nil }
+func (n *StubVideoNetwork) SendTranscodeResult(nid string, sid string, tr map[string]string) error {
+	n.nodeID = nid
+	n.strmID = sid
+	n.tResult = tr
+	return nil
+}
 
 type StubBroadcaster struct {
 	T      *testing.T
@@ -55,18 +74,19 @@ type StubBroadcaster struct {
 }
 
 func (n *StubBroadcaster) Broadcast(seqNo uint64, data []byte) error {
-	dec := gob.NewDecoder(bytes.NewReader(data))
-	var seg stream.HLSSegment
-	dec.Decode(&seg)
+	ss, err := BytesToSignedSegment(data)
+	if err != nil {
+		n.T.Errorf("Error Converting bytes to SignedSegment: %v", err)
+	}
 
 	if n.SeqNo == 0 {
-		n.SeqNo = seg.SeqNo
+		n.SeqNo = ss.Seg.SeqNo
 	} else {
 		n.T.Errorf("Already assigned")
 	}
 
 	if n.Data == nil {
-		n.Data = seg.Data
+		n.Data = ss.Seg.Data
 	} else {
 		n.T.Errorf("Already assigned")
 	}
@@ -74,27 +94,41 @@ func (n *StubBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 }
 func (n *StubBroadcaster) Finish() error { return nil }
 
-type StubSubscriber struct{}
+type StubSubscriber struct {
+	T *testing.T
+}
 
 func (s *StubSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error {
 	d, _ := ioutil.ReadFile("./test.ts")
-	newSeg := stream.HLSSegment{SeqNo: 100, Name: "test name", Data: d, Duration: 1}
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	enc.Encode(newSeg)
-	gotData(100, buf.Bytes(), false)
+	newSeg := SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test name", Data: d, Duration: 1}, Sig: []byte("test sig")}
+	b, err := SignedSegmentToBytes(newSeg)
+	if err != nil {
+		s.T.Errorf("Error Converting SignedSegment to Bytes: %v", err)
+	}
+
+	gotData(100, b, false)
 	return nil
 }
 func (s *StubSubscriber) Unsubscribe() error { return nil }
 
 func TestTranscode(t *testing.T) {
 	//Set up the node
-	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	n, _ := NewLivepeerNode(15000, priv, pub)
-	n.VideoNetwork = &StubVideoNetwork{T: t}
+	// priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	// node, err := net.NewNode(15000, priv, pub)
+	// if err != nil {
+	// 	glog.Errorf("Error creating a new node: %v", err)
+	// 	return
+	// }
+	// nw, err := net.NewBasicVideoNetwork(node)
+	// if err != nil {
+	// 	glog.Errorf("Cannot create network node: %v", err)
+	// 	return
+	// }
+
+	n, _ := NewLivepeerNode(nil, &StubVideoNetwork{T: t})
 
 	//Call transcode
-	ids, err := n.Transcode(net.TranscodeConfig{StrmID: "strmID", Profiles: []net.VideoProfile{net.P_144P_30FPS_16_9, net.P_240P_30FPS_16_9}})
+	ids, err := n.Transcode(net.TranscodeConfig{StrmID: "strmID", Profiles: []net.VideoProfile{net.P_144P_30FPS_16_9, net.P_240P_30FPS_16_9}}, nil)
 
 	if err != nil {
 		t.Errorf("Error transcoding: %v", err)
@@ -108,7 +142,6 @@ func TestTranscode(t *testing.T) {
 		t.Errorf("Bad id1: %v", ids[1])
 	}
 
-	// b1ID := strings.Replace(ids[0], "P_144P_30")
 	b1tmp, err := n.VideoNetwork.GetBroadcaster(ids[0].String())
 	if err != nil {
 		t.Errorf("Error getting broadcaster: %v", err)
@@ -216,4 +249,94 @@ func monitorChan(intChan chan int) {
 			fmt.Printf("i:%v\n", i)
 		}
 	}
+}
+func TestCreateTranscodeJob(t *testing.T) {
+	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	node, err := net.NewNode(15000, priv, pub)
+	if err != nil {
+		glog.Errorf("Error creating a new node: %v", err)
+		return
+	}
+	nw, err := net.NewBasicVideoNetwork(node)
+	if err != nil {
+		glog.Errorf("Cannot create network node: %v", err)
+		return
+	}
+
+	seth := &eth.StubClient{}
+	n, _ := NewLivepeerNode(seth, nw)
+	strmID, _ := MakeStreamID(n.Identity, RandomVideoID(), "")
+	err = n.CreateTranscodeJob(strmID, []net.VideoProfile{net.P_720P_60FPS_16_9}, 999999999999)
+	if err == nil {
+		t.Errorf("Expecting error since no broadcast stream in streamDB")
+	}
+
+	n.StreamDB.AddNewHLSBuffer(strmID)
+	err = n.CreateTranscodeJob(strmID, []net.VideoProfile{net.P_720P_60FPS_16_9}, 999999999999)
+	if err != nil {
+		t.Errorf("Error creating transcoding job")
+	}
+
+	if seth.StrmID != strmID.String() {
+		t.Errorf("Expecting strmID to be: %v", strmID)
+	}
+
+	if strings.Trim(string(seth.TOpts[:]), "\x00") != net.P_720P_60FPS_16_9.Name {
+		t.Errorf("Expecting transcode options to be %v, but got %v", net.P_720P_60FPS_16_9.Name, string(seth.TOpts[:]))
+	}
+
+	if big.NewInt(999999999999).Cmp(seth.MaxPrice) != 0 {
+		t.Errorf("Expecting price to be 999999999999, got but %v", seth.MaxPrice)
+	}
+}
+
+func TestNotifyBroadcaster(t *testing.T) {
+	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+	node, err := net.NewNode(15000, priv, pub)
+	if err != nil {
+		glog.Errorf("Error creating a new node: %v", err)
+		return
+	}
+	nw, err := net.NewBasicVideoNetwork(node)
+	if err != nil {
+		glog.Errorf("Cannot create network node: %v", err)
+		return
+	}
+	seth := &eth.StubClient{}
+	n, _ := NewLivepeerNode(seth, nw)
+	sn := &StubVideoNetwork{}
+	n.VideoNetwork = sn
+
+	err = n.NotifyBroadcaster(n.Identity, "strmid", map[StreamID]net.VideoProfile{"strmid1": net.P_240P_30FPS_16_9})
+	if err != nil {
+		t.Errorf("Error notifying broadcaster: %v", err)
+	}
+
+	if sn.nodeID != string(n.Identity) {
+		t.Errorf("Expecting %v, got %v", n.Identity, sn.nodeID)
+	}
+
+	if sn.strmID != "strmid" {
+		t.Errorf("Expecting strmid, got %v", sn.strmID)
+	}
+
+	if sn.tResult["strmid1"] != net.P_240P_30FPS_16_9.Name {
+		t.Errorf("Expecting %v, got %v", net.P_240P_30FPS_16_9.Name, sn.tResult["strmid1"])
+	}
+}
+
+func TestCrypto(t *testing.T) {
+	b := shouldVerifySegment(10, 0, 20, 10, common.BytesToHash(ethCrypto.Keccak256([]byte("abc"))), 1)
+	fmt.Printf("%x\n\n", b)
+
+	blkNumB := make([]byte, 8)
+	binary.BigEndian.PutUint64(blkNumB, uint64(9994353847340985734))
+	fmt.Printf("%x\n\n", blkNumB)
+
+	newb := make([]byte, 32)
+	copy(newb[24:], blkNumB[:])
+	fmt.Printf("%x\n\n", newb)
+
+	i, _ := binary.Uvarint(ethCrypto.Keccak256(newb, ethCrypto.Keccak256([]byte("abc"))))
+	fmt.Printf("%x\n\n", i%1)
 }

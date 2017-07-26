@@ -5,9 +5,10 @@ import (
 	"errors"
 	"time"
 
+	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
+	host "gx/ipfs/QmZy7c24mmkEHpNJndwgsEE3wcVxHd8yB969yTnAJFVw7f/go-libp2p-host"
+
 	"github.com/golang/glog"
-	host "github.com/libp2p/go-libp2p-host"
-	peer "github.com/libp2p/go-libp2p-peer"
 )
 
 var SubscriberDataInsertTimeout = time.Second * 5
@@ -64,7 +65,9 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 			}()
 
 			//Send SubReq
-			s.Network.NetworkNode.SendMessage(ns, p, SubReqID, SubReqMsg{StrmID: s.StrmID})
+			if err := ns.SendMessage(SubReqID, SubReqMsg{StrmID: s.StrmID}); err != nil {
+				glog.Errorf("Error sending SubReq to %v: %v", peer.IDHexEncode(p), err)
+			}
 			ctxW, cancel := context.WithCancel(context.Background())
 			s.cancelWorker = cancel
 			s.working = true
@@ -98,8 +101,7 @@ func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *Basic
 				glog.Infof("Done with subscription, sending CancelSubMsg")
 				//Send EOF
 				gotData(0, nil, true)
-				err := s.Network.NetworkNode.SendMessage(ws, p, CancelSubID, CancelSubMsg{StrmID: s.StrmID})
-				if err != nil {
+				if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
 					glog.Errorf("Error sending CancelSubMsg during worker cancellation: %v", err)
 				}
 				return
