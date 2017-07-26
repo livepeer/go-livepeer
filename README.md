@@ -19,7 +19,7 @@ You can build Livepeer from scratch.  Livepeer is built with Go, and the depende
 
 If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
 
-Now fetch and build the `livepeer` node using go - `go get github.com/livepeer/golp/cmd/livepeer`
+Now fetch and build the `livepeer` node using `go get github.com/livepeer/golp/cmd/livepeer`
 
 ## Setup
 The current version of Livepeer requires [ffmpeg](https://www.ffmpeg.org/).
@@ -66,4 +66,9 @@ Sometimes the `./livepeer stream` doesn't work.  You can use tools like `ffplay`
 For example, after you get the streamID, you can view the stream by running: 
 
 `ffplay http://localhost:8935/stream/{streamID}.m3u8`
+
+## Contribution
+Thank you for your interest in contributing to the core software of Livepeer. 
+
+There are many ways to contribute to the Livepeer community. To see the project overview, head to our [Wiki overview page](https://github.com/livepeer/wiki/wiki/Project-Overview). The best way to get started is to reach out to us directly via our [gitter channel](https://gitter.im/livepeer/Lobby).
 
