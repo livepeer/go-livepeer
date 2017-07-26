@@ -115,7 +115,7 @@ func (n *BasicVideoNetwork) SendTranscodeResult(broadcaster string, strmID strin
 
 //SetupProtocol sets up the protocol so we can handle incoming messages
 func (n *BasicVideoNetwork) SetupProtocol() error {
-	glog.Infof("Setting up protocol: %v", Protocol)
+	glog.Infof("\n\nSetting up protocol: %v", Protocol)
 	n.NetworkNode.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
 		ws := NewBasicStream(stream)
 		n.NetworkNode.streams[stream.Conn().RemotePeer()] = ws

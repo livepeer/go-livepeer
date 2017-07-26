@@ -4,6 +4,7 @@ Livepeer is a peer-to-peer global video live streaming network.  The Golp projec
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
@@ -45,10 +47,18 @@ func main() {
 	streamID := streamCmd.String("id", "", "Stream ID")
 	srPort := streamCmd.String("port", "8935", "Port for the video")
 
+	//Broadcast Command
+	broadcastCmd := flag.NewFlagSet("broadcast", flag.ExitOnError)
+	bport := broadcastCmd.Int("port", 1935, "RTMP port for broadcasting.")
+
 	if len(os.Args) > 1 {
 		if os.Args[1] == "stream" {
 			streamCmd.Parse(os.Args[2:])
 			stream(*streamHLS, *srPort, *streamID)
+			return
+		} else if os.Args[1] == "broadcast" {
+			broadcastCmd.Parse(os.Args[2:])
+			broadcast(*bport)
 			return
 		}
 	}
@@ -105,7 +115,7 @@ func main() {
 	}
 
 	if *bootnode {
-		glog.Infof("Setting up bootnode")
+		glog.Infof("\n\nSetting up bootnode")
 		//Setup boostrap node
 		if err := n.VideoNetwork.SetupProtocol(); err != nil {
 			glog.Errorf("Cannot set up protocol:%v", err)
@@ -166,7 +176,7 @@ func main() {
 	}
 
 	//Set up the media server
-	glog.Infof("Setting up Media Server")
+	glog.Infof("\n\nSetting up Media Server")
 	s := mediaserver.NewLivepeerMediaServer(*rtmpPort, *httpPort, "", n)
 	ec := make(chan error)
 	msCtx, cancel := context.WithCancel(context.Background())
@@ -396,5 +406,30 @@ func stream(hlsRequest bool, port string, streamID string) {
 			glog.Infof("Finished the stream")
 			return
 		}
+	}
+}
+
+//Run ffmpeg - only works on OSX
+func broadcast(port int) {
+	if runtime.GOOS == "darwin" {
+		cmd := exec.Command("ffmpeg", "-f", "avfoundation", "-framerate", "30", "-pixel_format", "uyvy422", "-i", "0:0", "-vcodec", "libx264", "-tune", "zerolatency", "-b", "1000k", "-x264-params", "keyint=60:min-keyint=60", "-acodec", "aac", "-ac", "1", "-b:a", "96k", "-f", "flv", fmt.Sprintf("rtmp://localhost:%v/movie", port))
+
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = &stderr
+		err := cmd.Start()
+		if err != nil {
+			glog.Infof("Couldn't broadcast the stream: %v %v", err, stderr.String())
+			os.Exit(1)
+		}
+
+		glog.Infof("Now broadcasting: %v%v", out.String(), stderr.String())
+		if err = cmd.Wait(); err != nil {
+			glog.Errorf("Error running broadcast: %v\n%v", err, stderr.String())
+			return
+		}
+	} else {
+		glog.Errorf("The broadcast command only support darwin for now.  Please download OBS to broadcast.")
 	}
 }
