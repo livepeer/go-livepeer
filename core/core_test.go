@@ -12,10 +12,11 @@ import (
 
 	"io/ioutil"
 
+	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
+
 	"github.com/ethereum/go-ethereum/common"
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
-	crypto "github.com/libp2p/go-libp2p-crypto"
 	"github.com/livepeer/golp/eth"
 
 	"github.com/livepeer/golp/net"

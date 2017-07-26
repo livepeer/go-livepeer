@@ -80,15 +80,6 @@ func simpleHandlerLoop(ws *BasicStream, txt string) {
 		if err != nil {
 			glog.Errorf("Failed to send message %v: %v", newMsg, err)
 		}
-		// err = ws.Enc.Encode(newMsg)
-		// if err != nil {
-		// 	glog.Errorf("send message encode error: %v", err)
-		// }
-
-		// err = ws.W.Flush()
-		// if err != nil {
-		// 	glog.Errorf("send message flush error: %v", err)
-		// }
 	}
 }
 

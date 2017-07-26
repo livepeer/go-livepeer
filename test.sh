@@ -17,9 +17,9 @@ cd ..
 
 if (($t1!=0||$t2!=0||$t3!=0))
 then
-    echo "Tests Failed"
+    printf "\n\nSome Tests Failed\n\n"
     exit -1
 else 
-    echo "Tests Passed"
+    printf "\n\nAll Tests Passed\n\n"
     exit 0
 fi

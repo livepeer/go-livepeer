@@ -10,8 +10,9 @@ import (
 
 	"time"
 
+	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
+
 	"github.com/golang/glog"
-	crypto "github.com/libp2p/go-libp2p-crypto"
 	"github.com/livepeer/golp/core"
 	"github.com/livepeer/golp/net"
 	"github.com/livepeer/lpms/segmenter"
