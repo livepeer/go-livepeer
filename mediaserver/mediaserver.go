@@ -344,6 +344,7 @@ func gotRTMPStreamHandler(s *LivepeerMediaServer) func(url *url.URL, rtmpStrm *s
 			err := s.LivepeerNode.BroadcastToNetwork(hlsStrm)
 			if err == core.ErrEOF {
 				glog.Info("Broadcast Ended.")
+				CurrentHLSStreamID = ""
 			} else if err != nil {
 				glog.Errorf("Error broadcasting to network: %v", err)
 			}

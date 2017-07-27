@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -43,22 +44,22 @@ func main() {
 
 	//Stream Command
 	streamCmd := flag.NewFlagSet("stream", flag.ExitOnError)
-	streamHLS := streamCmd.Bool("hls", false, "Set to true to indicate hls streaming")
 	streamID := streamCmd.String("id", "", "Stream ID")
-	srPort := streamCmd.String("port", "8935", "Port for the video")
+	srPort := streamCmd.String("http", "8935", "http port for the video")
 
 	//Broadcast Command
 	broadcastCmd := flag.NewFlagSet("broadcast", flag.ExitOnError)
-	bport := broadcastCmd.Int("port", 1935, "RTMP port for broadcasting.")
+	brtmp := broadcastCmd.Int("rtmp", 1935, "RTMP port for broadcasting.")
+	bhttp := broadcastCmd.Int("http", 8935, "HTTP port for getting broadcast streamID.")
 
 	if len(os.Args) > 1 {
 		if os.Args[1] == "stream" {
 			streamCmd.Parse(os.Args[2:])
-			stream(*streamHLS, *srPort, *streamID)
+			stream(*srPort, *streamID)
 			return
 		} else if os.Args[1] == "broadcast" {
 			broadcastCmd.Parse(os.Args[2:])
-			broadcast(*bport)
+			broadcast(*brtmp, *bhttp)
 			return
 		}
 	}
@@ -67,7 +68,7 @@ func main() {
 	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", "./data", "data directory")
-	bootID := flag.String("bootID", "122014cdac8f86a181d53ddee85a52505db38476f9778bbe2372efd968bdbf9348f7", "Bootstrap node ID")
+	bootID := flag.String("bootID", "12208a4eb428aa57a74ef0593612adb88077c75c71ad07c3c26e4e7a8d4860083b01", "Bootstrap node ID")
 	bootAddr := flag.String("bootAddr", "/ip4/52.15.174.204/tcp/15000", "Bootstrap node addr")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
@@ -376,16 +377,15 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 	return sub, nil
 }
 
-func stream(hlsRequest bool, port string, streamID string) {
-	var url string
+func stream(port string, streamID string) {
+	if streamID == "" {
+		glog.Errorf("Need to specify streamID via -id")
+		return
+	}
 
 	start := time.Now()
 	for i := 0; i < 3; i++ {
-		if hlsRequest == true {
-			url = fmt.Sprintf("http://localhost:%v/stream/%v.m3u8", port, streamID)
-		} else {
-			url = fmt.Sprintf("rtmp://localhost:%v/stream/%v", port, streamID)
-		}
+		url := fmt.Sprintf("http://localhost:%v/stream/%v.m3u8", port, streamID)
 
 		cmd := exec.Command("ffplay", url)
 		glog.Infof("url: %v", url)
@@ -410,9 +410,9 @@ func stream(hlsRequest bool, port string, streamID string) {
 }
 
 //Run ffmpeg - only works on OSX
-func broadcast(port int) {
+func broadcast(rtmpPort int, httpPort int) {
 	if runtime.GOOS == "darwin" {
-		cmd := exec.Command("ffmpeg", "-f", "avfoundation", "-framerate", "30", "-pixel_format", "uyvy422", "-i", "0:0", "-vcodec", "libx264", "-tune", "zerolatency", "-b", "1000k", "-x264-params", "keyint=60:min-keyint=60", "-acodec", "aac", "-ac", "1", "-b:a", "96k", "-f", "flv", fmt.Sprintf("rtmp://localhost:%v/movie", port))
+		cmd := exec.Command("ffmpeg", "-f", "avfoundation", "-framerate", "30", "-pixel_format", "uyvy422", "-i", "0:0", "-vcodec", "libx264", "-tune", "zerolatency", "-b", "1000k", "-x264-params", "keyint=60:min-keyint=60", "-acodec", "aac", "-ac", "1", "-b:a", "96k", "-f", "flv", fmt.Sprintf("rtmp://localhost:%v/movie", rtmpPort))
 
 		var out bytes.Buffer
 		var stderr bytes.Buffer
@@ -424,7 +424,21 @@ func broadcast(port int) {
 			os.Exit(1)
 		}
 
-		glog.Infof("Now broadcasting: %v%v", out.String(), stderr.String())
+		glog.Infof("Now broadcasting - %v%v", out.String(), stderr.String())
+
+		time.Sleep(3 * time.Second)
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%v/streamID", httpPort))
+		if err != nil {
+			glog.Errorf("Error getting stream ID: %v", err)
+		} else {
+			defer resp.Body.Close()
+			id, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				glog.Errorf("Error reading stream ID: %v", err)
+			}
+			glog.Infof("StreamID: %v", string(id))
+		}
+
 		if err = cmd.Wait(); err != nil {
 			glog.Errorf("Error running broadcast: %v\n%v", err, stderr.String())
 			return
