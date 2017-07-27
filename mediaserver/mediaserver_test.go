@@ -13,8 +13,8 @@ import (
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/golp/core"
-	"github.com/livepeer/golp/net"
+	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 )

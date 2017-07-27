@@ -12,14 +12,14 @@ go install ./...
 Start geth
 
 ```
-cd $GOPATH/src/github.com/livepeer/golp/eth
+cd $GOPATH/src/github.com/livepeer/go-livepeer/eth
 bash init.sh
 ```
 
 In a separate window
 
 ```
-cd $GOPATH/src/github.com/livepeer/golp/eth
+cd $GOPATH/src/github.com/livepeer/go-livepeer/eth
 go test -v -args -v 3 -logtostderr true
 ```
 
@@ -36,11 +36,11 @@ The `contracts` folder contains generated Go bindings for the Livepeer protocol 
 If the smart contracts are updated you can generate new Go bindings by doing the following:
 
 ```
-cd $GOPATH/src/github.com/livepeer/golp/eth
-git clone https://github.com/livepeer/protocol.git $GOPATH/src/github.com/livepeer/golp/eth/protocol
-cd $GOPATH/src/github.com/livepeer/golp/eth/protocol
+cd $GOPATH/src/github.com/livepeer/go-livepeer/eth
+git clone https://github.com/livepeer/protocol.git $GOPATH/src/github.com/livepeer/go-livepeer/eth/protocol
+cd $GOPATH/src/github.com/livepeer/go-livepeer/eth/protocol
 truffle compile --all
 node parseArtifacts.js
-cd $GOPATH/src/github.com/livepeer/golp/eth
+cd $GOPATH/src/github.com/livepeer/go-livepeer/eth
 go generate client.go
 ```

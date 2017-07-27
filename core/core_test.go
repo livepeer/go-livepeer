@@ -17,9 +17,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
-	"github.com/livepeer/golp/eth"
+	"github.com/livepeer/go-livepeer/eth"
 
-	"github.com/livepeer/golp/net"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/stream"
 )
 

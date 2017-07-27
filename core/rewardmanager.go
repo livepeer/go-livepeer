@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/golp/eth"
+	"github.com/livepeer/go-livepeer/eth"
 )
 
 //RewardManager manages the transcoder's reward-calling cycle.

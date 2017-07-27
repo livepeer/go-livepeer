@@ -32,7 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
-	"github.com/livepeer/golp/eth/contracts"
+	"github.com/livepeer/go-livepeer/eth/contracts"
 )
 
 var ProtocolCyclesPerRound = 2

@@ -12,14 +12,14 @@ For full documentation and a project overview, go to
 [Livepeer Documentation](https://github.com/livepeer/wiki/wiki)
 
 ## Installation
-The easiest way to install Livepeer is by downloading it from the [release page on Github](https://github.com/livepeer/golp/releases).  Pick the appropriate platform and the latest version.
+The easiest way to install Livepeer is by downloading it from the [release page on Github](https://github.com/livepeer/go-livepeer/releases).  Pick the appropriate platform and the latest version.
 
 ## Build
 You can build Livepeer from scratch.  Livepeer is built with Go, and the dependencies should all be vendored.  You can simply run `go build ./cmd/livepeer/livepeer.go` from the project root directory.
 
 If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
 
-Now fetch and build the `livepeer` node using `go get github.com/livepeer/golp/cmd/livepeer`
+Now fetch and build the `livepeer` node using `go get github.com/livepeer/go-livepeer/cmd/livepeer`
 
 ## Setup
 The current version of Livepeer requires [ffmpeg](https://www.ffmpeg.org/).
@@ -33,7 +33,7 @@ or on Debian based Linux
 ## Usage
 
 ### Short version
-- Make sure you have the `livepeer` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/golp/releases).
+- Make sure you have the `livepeer` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
 
 - `./livepeer` to start Livepeer.  This will be our broadcasting node.
 

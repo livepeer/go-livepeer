@@ -9,9 +9,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
-	"github.com/livepeer/golp/eth"
-	ethTypes "github.com/livepeer/golp/eth/types"
-	"github.com/livepeer/golp/net"
+	"github.com/livepeer/go-livepeer/eth"
+	ethTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
 )
 
 var ErrClaim = errors.New("ErrClaim")

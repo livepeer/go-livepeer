@@ -28,10 +28,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
-	"github.com/livepeer/golp/core"
-	"github.com/livepeer/golp/eth"
-	"github.com/livepeer/golp/mediaserver"
-	"github.com/livepeer/golp/net"
+	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/mediaserver"
+	"github.com/livepeer/go-livepeer/net"
 )
 
 var ErrKeygen = errors.New("ErrKeygen")
