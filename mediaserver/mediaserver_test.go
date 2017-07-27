@@ -13,6 +13,7 @@ import (
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
 	"github.com/golang/glog"
+	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/segmenter"
@@ -24,12 +25,12 @@ var S *LivepeerMediaServer
 func setupServer() *LivepeerMediaServer {
 	if S == nil {
 		priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-		node, err := net.NewNode(15000, priv, pub)
+		node, err := bnet.NewNode(15000, priv, pub)
 		if err != nil {
 			glog.Errorf("Error creating a new node: %v", err)
 			return nil
 		}
-		nw, err := net.NewBasicVideoNetwork(node)
+		nw, err := bnet.NewBasicVideoNetwork(node)
 		if err != nil {
 			glog.Errorf("Cannot create network node: %v", err)
 			return nil

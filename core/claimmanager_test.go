@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
-	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/types"
 )
 
 func TestClaimAndVerify(t *testing.T) {
@@ -17,7 +17,7 @@ func TestClaimAndVerify(t *testing.T) {
 	jid := big.NewInt(0)
 	vidLen := 10
 	strmID := "strmID"
-	profiles := []net.VideoProfile{net.P_240P_30FPS_16_9}
+	profiles := []types.VideoProfile{types.P_240P_30FPS_16_9}
 	s1 := &eth.StubClient{}
 	cm1 := NewClaimManager(strmID, jid, profiles, s1)
 
@@ -26,11 +26,11 @@ func TestClaimAndVerify(t *testing.T) {
 		dh := common.StringToHash(fmt.Sprintf("dh%v", i))
 		th := common.StringToHash(fmt.Sprintf("th%v", i))
 		sig := (&ethTypes.Segment{strmID, big.NewInt(int64(i)), dh}).Hash().Bytes()
-		cm1.AddClaim(int64(i), dh, th, sig, net.P_240P_30FPS_16_9)
+		cm1.AddClaim(int64(i), dh, th, sig, types.P_240P_30FPS_16_9)
 	}
 
 	VerifyRate = 10 //Set the verify rate so it gets called once
-	cm1.Claim(net.P_240P_30FPS_16_9)
+	cm1.Claim(types.P_240P_30FPS_16_9)
 
 	if s1.ClaimCounter != 1 {
 		t.Errorf("Claim should be called once, but got %v", s1.ClaimCounter)
@@ -58,7 +58,7 @@ func TestClaimAndVerify(t *testing.T) {
 			BroadcasterSig:        sig,
 		}
 		tcHashes = append(tcHashes, claim.Hash())
-		cm2.AddClaim(seqNo, dh, th, sig, net.P_240P_30FPS_16_9)
+		cm2.AddClaim(seqNo, dh, th, sig, types.P_240P_30FPS_16_9)
 	}
 	cm2.Claim(profiles[0])
 	if s2.ClaimCounter != 2 {

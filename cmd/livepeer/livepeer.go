@@ -25,13 +25,15 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
+	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/mediaserver"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/types"
 )
 
 var ErrKeygen = errors.New("ErrKeygen")
@@ -99,12 +101,12 @@ func main() {
 		return
 	}
 
-	node, err := net.NewNode(*port, priv, pub)
+	node, err := bnet.NewNode(*port, priv, pub)
 	if err != nil {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
 	}
-	nw, err := net.NewBasicVideoNetwork(node)
+	nw, err := bnet.NewBasicVideoNetwork(node)
 	if err != nil {
 		glog.Errorf("Cannot create network node: %v", err)
 		return
@@ -321,7 +323,7 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 	go rm.Start(context.Background())
 
 	//Subscribe to when a job is assigned to us
-	logsCh := make(chan types.Log)
+	logsCh := make(chan ethtypes.Log)
 	sub, err := n.Eth.SubscribeToJobEvent(context.Background(), logsCh)
 	if err != nil {
 		glog.Errorf("Error subscribing to job event: %v", err)
@@ -345,13 +347,13 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 
 			//Create Transcode Config
 			//TODO: profile should contain multiple video profiles.  Waiting for a protocol change.
-			profile, ok := net.VideoProfileLookup[tData]
+			profile, ok := types.VideoProfileLookup[tData]
 			if !ok {
 				glog.Errorf("Cannot find video profile for job: %v", tData)
 				return core.ErrTranscode
 			}
 
-			tProfiles := []net.VideoProfile{profile}
+			tProfiles := []types.VideoProfile{profile}
 			config := net.TranscodeConfig{StrmID: strmId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
 			glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", tx.Hash(), strmId, tData, config)
 
@@ -364,7 +366,7 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 
 			//Notify Broadcaster
 			sid := core.StreamID(strmId)
-			err = n.NotifyBroadcaster(sid.GetNodeID(), sid, map[core.StreamID]net.VideoProfile{strmIDs[0]: net.VideoProfileLookup[tData]})
+			err = n.NotifyBroadcaster(sid.GetNodeID(), sid, map[core.StreamID]types.VideoProfile{strmIDs[0]: types.VideoProfileLookup[tData]})
 			if err != nil {
 				glog.Errorf("Notify Broadcaster Error: %v", err)
 			}

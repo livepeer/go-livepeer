@@ -10,12 +10,7 @@ go test -logtostderr=true
 t2=$?
 cd ..
 
-cd net
-go test -logtostderr=true
-t3=$?
-cd ..
-
-if (($t1!=0||$t2!=0||$t3!=0))
+if (($t1!=0||$t2!=0))
 then
     printf "\n\nSome Tests Failed\n\n"
     exit -1

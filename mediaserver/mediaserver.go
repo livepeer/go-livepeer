@@ -17,11 +17,12 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/types"
 	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
@@ -42,7 +43,7 @@ var EthEventTimeout = 5 * time.Second
 var EthMinedTxTimeout = 60 * time.Second
 
 var BroadcastPrice = big.NewInt(150)
-var BroadcastJobVideoProfile = net.P_240P_30FPS_4_3
+var BroadcastJobVideoProfile = types.P_240P_30FPS_4_3
 var TranscoderFeeCut = uint8(10)
 var TranscoderRewardCut = uint8(10)
 var TranscoderSegmentPrice = big.NewInt(150)
@@ -95,7 +96,7 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 
 		// 2 profiles is too much for my tiny laptop...
 		// ids, err := s.LivepeerNode.Transcode(net.TranscodeConfig{StrmID: strmID, Profiles: []net.VideoProfile{net.P_144P_30FPS_16_9, net.P_240P_30FPS_16_9}})
-		ids, err := s.LivepeerNode.Transcode(net.TranscodeConfig{StrmID: strmID, Profiles: []net.VideoProfile{net.P_240P_30FPS_16_9}}, nil)
+		ids, err := s.LivepeerNode.Transcode(net.TranscodeConfig{StrmID: strmID, Profiles: []types.VideoProfile{types.P_240P_30FPS_16_9}}, nil)
 		if err != nil {
 			glog.Errorf("Error transcoding: %v", err)
 			http.Error(w, "Error transcoding.", 500)
@@ -117,7 +118,7 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 
 		j := r.URL.Query().Get("job")
 		if j != "" {
-			jp := net.VideoProfileLookup[j]
+			jp := types.VideoProfileLookup[j]
 			if jp.Name != "" {
 				BroadcastJobVideoProfile = jp
 			}
@@ -529,7 +530,7 @@ func parseSegName(reqPath string) string {
 	return segName
 }
 
-func createBroadcastJob(s *LivepeerMediaServer, hlsStrm *stream.VideoStream) (*types.Transaction, error) {
+func createBroadcastJob(s *LivepeerMediaServer, hlsStrm *stream.VideoStream) (*ethtypes.Transaction, error) {
 	eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout)
 	tOps := common.BytesToHash([]byte(BroadcastJobVideoProfile.Name))
 	tx, err := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), tOps, BroadcastPrice)

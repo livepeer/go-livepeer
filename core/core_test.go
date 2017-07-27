@@ -17,9 +17,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/eth"
-
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/types"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -128,7 +129,7 @@ func TestTranscode(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, &StubVideoNetwork{T: t})
 
 	//Call transcode
-	ids, err := n.Transcode(net.TranscodeConfig{StrmID: "strmID", Profiles: []net.VideoProfile{net.P_144P_30FPS_16_9, net.P_240P_30FPS_16_9}}, nil)
+	ids, err := n.Transcode(net.TranscodeConfig{StrmID: "strmID", Profiles: []types.VideoProfile{types.P_144P_30FPS_16_9, types.P_240P_30FPS_16_9}}, nil)
 
 	if err != nil {
 		t.Errorf("Error transcoding: %v", err)
@@ -252,12 +253,12 @@ func monitorChan(intChan chan int) {
 }
 func TestCreateTranscodeJob(t *testing.T) {
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	node, err := net.NewNode(15000, priv, pub)
+	node, err := bnet.NewNode(15000, priv, pub)
 	if err != nil {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
 	}
-	nw, err := net.NewBasicVideoNetwork(node)
+	nw, err := bnet.NewBasicVideoNetwork(node)
 	if err != nil {
 		glog.Errorf("Cannot create network node: %v", err)
 		return
@@ -266,13 +267,13 @@ func TestCreateTranscodeJob(t *testing.T) {
 	seth := &eth.StubClient{}
 	n, _ := NewLivepeerNode(seth, nw)
 	strmID, _ := MakeStreamID(n.Identity, RandomVideoID(), "")
-	err = n.CreateTranscodeJob(strmID, []net.VideoProfile{net.P_720P_60FPS_16_9}, 999999999999)
+	err = n.CreateTranscodeJob(strmID, []types.VideoProfile{types.P_720P_60FPS_16_9}, 999999999999)
 	if err == nil {
 		t.Errorf("Expecting error since no broadcast stream in streamDB")
 	}
 
 	n.StreamDB.AddNewHLSBuffer(strmID)
-	err = n.CreateTranscodeJob(strmID, []net.VideoProfile{net.P_720P_60FPS_16_9}, 999999999999)
+	err = n.CreateTranscodeJob(strmID, []types.VideoProfile{types.P_720P_60FPS_16_9}, 999999999999)
 	if err != nil {
 		t.Errorf("Error creating transcoding job")
 	}
@@ -281,8 +282,8 @@ func TestCreateTranscodeJob(t *testing.T) {
 		t.Errorf("Expecting strmID to be: %v", strmID)
 	}
 
-	if strings.Trim(string(seth.TOpts[:]), "\x00") != net.P_720P_60FPS_16_9.Name {
-		t.Errorf("Expecting transcode options to be %v, but got %v", net.P_720P_60FPS_16_9.Name, string(seth.TOpts[:]))
+	if strings.Trim(string(seth.TOpts[:]), "\x00") != types.P_720P_60FPS_16_9.Name {
+		t.Errorf("Expecting transcode options to be %v, but got %v", types.P_720P_60FPS_16_9.Name, string(seth.TOpts[:]))
 	}
 
 	if big.NewInt(999999999999).Cmp(seth.MaxPrice) != 0 {
@@ -292,12 +293,12 @@ func TestCreateTranscodeJob(t *testing.T) {
 
 func TestNotifyBroadcaster(t *testing.T) {
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	node, err := net.NewNode(15000, priv, pub)
+	node, err := bnet.NewNode(15000, priv, pub)
 	if err != nil {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
 	}
-	nw, err := net.NewBasicVideoNetwork(node)
+	nw, err := bnet.NewBasicVideoNetwork(node)
 	if err != nil {
 		glog.Errorf("Cannot create network node: %v", err)
 		return
@@ -307,7 +308,7 @@ func TestNotifyBroadcaster(t *testing.T) {
 	sn := &StubVideoNetwork{}
 	n.VideoNetwork = sn
 
-	err = n.NotifyBroadcaster(n.Identity, "strmid", map[StreamID]net.VideoProfile{"strmid1": net.P_240P_30FPS_16_9})
+	err = n.NotifyBroadcaster(n.Identity, "strmid", map[StreamID]types.VideoProfile{"strmid1": types.P_240P_30FPS_16_9})
 	if err != nil {
 		t.Errorf("Error notifying broadcaster: %v", err)
 	}
@@ -320,8 +321,8 @@ func TestNotifyBroadcaster(t *testing.T) {
 		t.Errorf("Expecting strmid, got %v", sn.strmID)
 	}
 
-	if sn.tResult["strmid1"] != net.P_240P_30FPS_16_9.Name {
-		t.Errorf("Expecting %v, got %v", net.P_240P_30FPS_16_9.Name, sn.tResult["strmid1"])
+	if sn.tResult["strmid1"] != types.P_240P_30FPS_16_9.Name {
+		t.Errorf("Expecting %v, got %v", types.P_240P_30FPS_16_9.Name, sn.tResult["strmid1"])
 	}
 }
 

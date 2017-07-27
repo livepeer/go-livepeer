@@ -16,6 +16,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/types"
 	"github.com/livepeer/lpms/stream"
 	lptr "github.com/livepeer/lpms/transcoder"
 )
@@ -73,7 +74,7 @@ func (n *LivepeerNode) Start(bootID, bootAddr string) error {
 }
 
 //CreateTranscodeJob creates the on-chain transcode job.
-func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []net.VideoProfile, price uint64) error {
+func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []types.VideoProfile, price uint64) error {
 	if n.Eth == nil {
 		glog.Errorf("Cannot create transcode job, no eth client found")
 		return ErrNotFound
@@ -302,7 +303,7 @@ func (n *LivepeerNode) UnsubscribeFromNetwork(strmID StreamID) error {
 }
 
 //NotifyBroadcaster sends a messages to the broadcaster of the video stream, containing the new streamIDs of the transcoded video streams.
-func (n *LivepeerNode) NotifyBroadcaster(nid NodeID, strmID StreamID, transcodeStrmIDs map[StreamID]net.VideoProfile) error {
+func (n *LivepeerNode) NotifyBroadcaster(nid NodeID, strmID StreamID, transcodeStrmIDs map[StreamID]types.VideoProfile) error {
 	ids := make(map[string]string)
 	for sid, p := range transcodeStrmIDs {
 		ids[sid.String()] = p.Name

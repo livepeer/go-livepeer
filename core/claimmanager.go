@@ -11,7 +11,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
-	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/types"
 )
 
 var ErrClaim = errors.New("ErrClaim")
@@ -22,8 +22,8 @@ type ClaimManager struct {
 
 	strmID   string
 	jobID    *big.Int
-	profiles []net.VideoProfile
-	pLookup  map[net.VideoProfile]int
+	profiles []types.VideoProfile
+	pLookup  map[types.VideoProfile]int
 
 	seqNos      [][]int64
 	claimHashes [][]common.Hash
@@ -33,13 +33,13 @@ type ClaimManager struct {
 }
 
 //NewClaimManager creates a new claim manager.
-func NewClaimManager(sid string, jid *big.Int, p []net.VideoProfile, c eth.LivepeerEthClient) *ClaimManager {
+func NewClaimManager(sid string, jid *big.Int, p []types.VideoProfile, c eth.LivepeerEthClient) *ClaimManager {
 	seqNos := make([][]int64, len(p), len(p))
 	tcHashes := make([][]common.Hash, len(p), len(p))
 	dHashes := make([][]common.Hash, len(p), len(p))
 	tHashes := make([][]common.Hash, len(p), len(p))
 	sigs := make([][][]byte, len(p), len(p))
-	pLookup := make(map[net.VideoProfile]int)
+	pLookup := make(map[types.VideoProfile]int)
 
 	for i := 0; i < len(p); i++ {
 		sNo := make([]int64, 0)
@@ -59,7 +59,7 @@ func NewClaimManager(sid string, jid *big.Int, p []net.VideoProfile, c eth.Livep
 }
 
 //AddClaim adds a claim for a given video segment.
-func (c *ClaimManager) AddClaim(seqNo int64, dataHash common.Hash, tDataHash common.Hash, bSig []byte, profile net.VideoProfile) {
+func (c *ClaimManager) AddClaim(seqNo int64, dataHash common.Hash, tDataHash common.Hash, bSig []byte, profile types.VideoProfile) {
 	claim := &ethTypes.TranscodeClaim{
 		StreamID:              c.strmID,
 		SegmentSequenceNumber: big.NewInt(seqNo),
@@ -86,7 +86,7 @@ func (c *ClaimManager) AddClaim(seqNo int64, dataHash common.Hash, tDataHash com
 }
 
 //Claim creates the onchain claim for all the claims added through AddClaim
-func (c *ClaimManager) Claim(p net.VideoProfile) error {
+func (c *ClaimManager) Claim(p types.VideoProfile) error {
 	pi, ok := c.pLookup[p]
 	if !ok {
 		glog.Errorf("Cannot find video profile: %v", p)
