@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -66,10 +67,15 @@ func main() {
 		}
 	}
 
+	usr, err := user.Current()
+	if err != nil {
+		glog.Fatalf("Cannot find current user: %v", err)
+	}
+
 	port := flag.Int("p", 15000, "port")
 	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
-	datadir := flag.String("datadir", "./data", "data directory")
+	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpdata", usr.HomeDir), "data directory")
 	bootID := flag.String("bootID", "12208a4eb428aa57a74ef0593612adb88077c75c71ad07c3c26e4e7a8d4860083b01", "Bootstrap node ID")
 	bootAddr := flag.String("bootAddr", "/ip4/52.15.174.204/tcp/15000", "Bootstrap node addr")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
@@ -92,7 +98,10 @@ func main() {
 	}
 
 	if _, err := os.Stat(*datadir); os.IsNotExist(err) {
-		os.Mkdir(*datadir, 0755)
+		glog.Infof("Creating data dir: %v", *datadir)
+		if err = os.Mkdir(*datadir, 0755); err != nil {
+			glog.Errorf("Error creating datadir: %v", err)
+		}
 	}
 
 	priv, pub, err := getLPKeys(*datadir)
