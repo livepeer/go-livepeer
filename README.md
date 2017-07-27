@@ -1,4 +1,4 @@
-# golp
+# go-livepeer
 [Livepeer](https://livepeer.org) is a decentralized live streaming broadcast platform.  On the Livepeer network, video transcoding and delivery happens in a peer-to-peer fashion, and participants who contribute to the network will be compensated via a crypto token called the Livepeer Token.
 
 Building and running this node allows you to:
@@ -19,7 +19,7 @@ You can build Livepeer from scratch.  Livepeer is built with Go, and the depende
 
 If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
 
-Now fetch and build the `livepeer` node using go - `go get github.com/livepeer/golp/cmd/livepeer`
+Now fetch and build the `livepeer` node using `go get github.com/livepeer/golp/cmd/livepeer`
 
 ## Setup
 The current version of Livepeer requires [ffmpeg](https://www.ffmpeg.org/).
@@ -31,31 +31,44 @@ or on Debian based Linux
 `apt-get install ffmpeg`
 
 ## Usage
-The simplest way to start Livepeer is by running `./livepeer`.  This will use the default data directory, default ports, and connect to the default test network boot node.
 
-To see more configuration details, use `./livepeer -h`
+### Short version
+- Make sure you have the `livepeer` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/golp/releases).
 
-### Start Streaming
-Livepeer takes RTMP streams as input. You can use any streaming software to create the RTMP stream. We recommend [OBS](https://obsproject.com/download) or [ffmpeg](https://www.ffmpeg.org/).
+- `./livepeer` to start Livepeer.  This will be our broadcasting node.
+
+- `./livepeer -p=15001 -rtmp=1936 -http=8936 -datadir=./data1` to start another Livepeer node. This will be our subscribing node.
+
+- `./livepeer broadcast` to start broadcasting. You should see a streamID in the log. Copy it.
+
+- `./livepeer stream -http=8936 -id={streamID}`, replacing the {streamID} with the streamID we just got.
+
+You should see a video stream broadcasted from your webcam.  It may feel a little delayed - that's normal. Video live streaming typically has latency from 15 seconds to a few minutes. We are working on solutions to lower this latency, using techniques like WebRTC, peer-to-peer streaming, and crypto-incentives.
+
+### Broadcasting
+
+Sometimes the `./livepeer broadcast` command doesn't work - especially if you are running the software on Windows or Linux. Livepeer can take any RTMP stream as input, so you can use other popular streaming software to create the video stream. e recommend [OBS](https://obsproject.com/download) or [ffmpeg](https://www.ffmpeg.org/).
 
 By default, the RTMP port is 1935.  For example, if you are using OSX with ffmpeg, run 
+
 `ffmpeg -f avfoundation -framerate 30 -pixel_format uyvy422 -i "0:0" -vcodec libx264 -tune zerolatency -b 1000k -x264-params keyint=60:min-keyint=60 -acodec aac -ac 1 -b:a 96k -f flv rtmp://localhost:1935/movie`
 
-To get the streamID, you can do `curl http://localhost:8935/streamID`
+Similarly, you can use OBS, and change the setting->stream->URL to `rtmp://localhost:1935/movie`
 
-Now that the stream is available on the network, it's viewable from any node. For example, you can view it by starting a new node and viewing it from there:
+If the broadcast is successful, you should be able to get a streamID by querying the local node:
 
-`./livepeer -p=15001 -rtmp=1936 -http=8936 -datadir=./data1`
+`curl http://localhost:8935/streamID`
 
-&&
+### Streaming
 
-`./livepeer stream -hls=true -port=8936 -id={StreamID}`
+Sometimes the `./livepeer stream` doesn't work.  You can use tools like `ffplay` to view the stream.
 
-### Ethereum Transactions
-By default, Livepeer nodes run in off-chain mode.  To start Livepeer in on-chain mode, you need to provide connection information to an Ethereum node.
+For example, after you get the streamID, you can view the stream by running: 
 
-TODO
+`ffplay http://localhost:8935/stream/{streamID}.m3u8`
 
-### Transcoding
-TODO
+## Contribution
+Thank you for your interest in contributing to the core software of Livepeer. 
+
+There are many ways to contribute to the Livepeer community. To see the project overview, head to our [Wiki overview page](https://github.com/livepeer/wiki/wiki/Project-Overview). The best way to get started is to reach out to us directly via our [gitter channel](https://gitter.im/livepeer/Lobby).
 
