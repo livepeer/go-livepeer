@@ -1,0 +1,55 @@
+# Per-device labels. Optional
+# Exactly the same set of labels must be specified for each device.
+# If device address is *, the labels apply to all devices not listed explicitly.
+# If any explicit device if listed below, then you need to specify all devices you're subscribed to,
+# or have a wildcard entry. Otherwise, updates from non-listed devices will be ignored.
+deviceLabels:
+        10.1.1.1:
+                lab1: val1
+                lab2: val2
+        '*':
+                lab1: val3
+                lab2: val4
+
+# Subscriptions to OpenConfig paths.
+subscriptions:
+        - /Sysdb/environment/cooling/status
+        - /Sysdb/environment/power/status
+        - /Sysdb/environment/temperature/status
+        - /Sysdb/interface/counter/eth/lag
+        - /Sysdb/interface/counter/eth/slice/phy
+
+# Prometheus metrics configuration.
+# If you use named capture groups in the path, they will be extracted into labels with the same name.
+# All fields are mandatory.
+metrics:
+        - name: intfCounter
+          path: /Sysdb/interface/counter/eth/(?:lag|slice/phy/.+)/intfCounterDir/(?P<intf>.+)/intfCounter/current/statistics/(?P<direction>(?:in|out))(?P<type>(Octets|Errors|Discards))
+          help: Per-Interface Bytes/Errors/Discards Counters
+        - name: intfPktCounter
+          path: /Sysdb/interface/counter/eth/(?:lag|slice/phy/.+)/intfCounterDir/(?P<intf>.+)/intfCounter/current/statistics/(?P<direction>(?:in|out))(?P<type>(?:Ucast|Multicast|Broadcast))Pkt
+          help: Per-Interface Unicast/Multicast/Broadcast Packer Counters
+        - name: intfPfcClassCounter
+          path: /Sysdb/interface/counter/eth/(?:lag|slice/phy/.+)/intfCounterDir/(?P<intf>.+)/intfCounter/current/ethStatistics/(?P<direction>(?:in|out))PfcClassFrames
+          help: Per-Interface Input/Output PFC Frames Counters
+        - name: tempSensor
+          path: /Sysdb/environment/temperature/status/tempSensor/(?P<sensor>.+)/(?P<type>(?:maxT|t)emperature)/value
+          help: Temperature and Maximum Temperature
+        - name: tempSensorAlert
+          path: /Sysdb/environment/temperature/status/tempSensor/(?P<sensor>.+)/alertRaisedCount
+          help: Temperature Alerts Counter
+        - name: currentSensor
+          path: /Sysdb/environment/power/status/currentSensor/(?P<sensor>.+)/current/value
+          help: Current Levels
+        - name: powerSensor
+          path: /Sysdb/environment/power/status/powerSupply/(?P<sensor>.+)/(?P<direction>(input|output))Power/value
+          help: Input/Output Power Levels
+        - name: voltageSensor
+          path: /Sysdb/environment/power/status/voltageSensor/(?P<sensor>.+)/voltage/value
+          help: Voltage Levels
+        - name: railCurrentSensor
+          path: /Sysdb/environment/power/status/voltageSensor/(?P<sensor>.+)/current/value
+          help: Rail Current Levels
+        - name: fanSpeed
+          path: /Sysdb/environment/cooling/status/fan/(?P<fan>.+)/speed/value
+          help: Fan Speed

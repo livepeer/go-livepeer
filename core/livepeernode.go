@@ -13,9 +13,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/golp/eth"
 	"github.com/livepeer/lpms/stream"
 	lptr "github.com/livepeer/lpms/transcoder"
 )
