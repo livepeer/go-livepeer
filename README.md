@@ -32,7 +32,7 @@ or on Debian based Linux
 
 ## Usage
 
-### Short version
+### Quick start
 - Make sure you have the `livepeer` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
 
 - `./livepeer` to start Livepeer.  This will be our broadcasting node.
