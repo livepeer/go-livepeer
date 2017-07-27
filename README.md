@@ -1,9 +1,9 @@
 # go-livepeer
-[Livepeer](https://livepeer.org) is a decentralized live streaming broadcast platform.  On the Livepeer network, video transcoding and delivery happens in a peer-to-peer fashion, and participants who contribute to the network will be compensated via a crypto token called the Livepeer Token.
+[Livepeer](https://livepeer.org) is a live video streaming network protocol that is fully decentralized, highly scalable, crypto token incentivized, and results in a solution which is cheaper to an app developer or broadcaster than using traditional centralized live video solutions.  go-livepeer is a golang implementation of the protocol.
 
 Building and running this node allows you to:
 
-* Create a local Livepeer Network, or join the existing Livepeer POC network.
+* Create a local Livepeer Network, or join the existing Livepeer test network.
 * Broadcast a live stream into the network.
 * Request that your stream be transcoded into multiple formats.
 * Consume a live stream from the network.
@@ -15,11 +15,11 @@ For full documentation and a project overview, go to
 The easiest way to install Livepeer is by downloading it from the [release page on Github](https://github.com/livepeer/go-livepeer/releases).  Pick the appropriate platform and the latest version.
 
 ## Build
-You can build Livepeer from scratch.  Livepeer is built with Go, and the dependencies should all be vendored.  You can simply run `go build ./cmd/livepeer/livepeer.go` from the project root directory.
-
 If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
 
-Now fetch and build the `livepeer` node using `go get github.com/livepeer/go-livepeer/cmd/livepeer`
+You can build Livepeer from scratch.  If you already have the code, you can simply run `go build ./cmd/livepeer/livepeer.go` from the project root directory.
+
+You can also fetch and build the `livepeer` node using `go get github.com/livepeer/go-livepeer/cmd/livepeer`. It should be built and put in your $GOPATH/bin.
 
 ## Setup
 The current version of Livepeer requires [ffmpeg](https://www.ffmpeg.org/).
