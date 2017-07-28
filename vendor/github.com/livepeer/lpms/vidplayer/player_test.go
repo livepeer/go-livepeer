@@ -2,7 +2,6 @@ package vidplayer
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -13,28 +12,37 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/livepeer/lpms/stream"
-	"github.com/nareix/joy4/av"
-	"github.com/nareix/joy4/av/avutil"
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
 
 func TestRTMP(t *testing.T) {
 	server := &joy4rtmp.Server{Addr: ":1936"}
 	player := &VidPlayer{RtmpServer: server}
-	var demuxer av.Demuxer
-	gotUpvid := false
-	gotPlayvid := false
-	player.RtmpServer.HandlePublish = func(conn *joy4rtmp.Conn) {
-		gotUpvid = true
-		demuxer = conn
+
+	//Handler should get called
+	handler1Called := false
+	player.rtmpPlayHandler = func(url *url.URL) (stream.Stream, error) {
+		handler1Called = true
+		return nil, fmt.Errorf("error")
+	}
+	handler := player.rtmpServerHandlePlay()
+	handler(&joy4rtmp.Conn{})
+	if !handler1Called {
+		t.Errorf("Handler not called")
 	}
 
-	player.HandleRTMPPlay(func(ctx context.Context, reqPath string, dst av.MuxCloser) error {
-		gotPlayvid = true
-		fmt.Println(reqPath)
-		avutil.CopyFile(dst, demuxer)
-		return nil
-	})
+	//Re-assign handler, it should still get called
+	handler2Called := false
+	player.rtmpPlayHandler = func(url *url.URL) (stream.Stream, error) {
+		handler2Called = true
+		return nil, fmt.Errorf("error")
+	}
+	handler(&joy4rtmp.Conn{})
+	if !handler1Called {
+		t.Errorf("Handler not called")
+	}
+
+	//TODO: Should add a test for writing to the stream.
 }
 
 func TestHLS(t *testing.T) {
@@ -76,8 +84,8 @@ func (*TestRWriter) WriteHeader(int) {}
 
 func TestHandleHLS(t *testing.T) {
 	testBuf := stream.NewHLSBuffer(10, 100)
-	req := &http.Request{URL: &url.URL{Path: "test.m3u8"}}
-	rw := &TestRWriter{header: make(map[string][]string)}
+	// req := &http.Request{URL: &url.URL{Path: "test.m3u8"}}
+	// rw := &TestRWriter{header: make(map[string][]string)}
 
 	pl, _ := m3u8.NewMediaPlaylist(10, 10)
 	pl.Append("url_1.ts", 2, "")

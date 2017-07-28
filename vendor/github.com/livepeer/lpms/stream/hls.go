@@ -83,8 +83,11 @@ func (b *HLSBuffer) WaitAndGetSegment(ctx context.Context, name string) ([]byte,
 		seg, found := b.sq.Get(name)
 		// glog.Infof("GetSegment: %v, %v", name, found)
 		if found {
-			return seg.(*HLSSegment).Data, nil
-			// return seg.([]byte), nil
+			if seg.(*HLSSegment).EOF {
+				return nil, ErrEOF
+			} else {
+				return seg.(*HLSSegment).Data, nil
+			}
 		}
 
 		time.Sleep(time.Second * 1)

@@ -394,30 +394,19 @@ func stream(port string, streamID string) {
 		return
 	}
 
-	start := time.Now()
-	for i := 0; i < 3; i++ {
-		url := fmt.Sprintf("http://localhost:%v/stream/%v.m3u8", port, streamID)
-
-		cmd := exec.Command("ffplay", url)
-		glog.Infof("url: %v", url)
-		err := cmd.Start()
-		if err != nil {
-			glog.Infof("Couldn't start the stream")
-			os.Exit(1)
-		}
-		glog.Infof("Now streaming")
-		err = cmd.Wait()
-		if time.Since(start) > time.Second*10 { //cmd.Wait() doesn't return an error if ffplay failed.  What we are trying to prevent here is quitting too early from network latency.
-			if i < 2 {
-				glog.Infof("Error streaming video: %v, trying again\n\n", err)
-			} else {
-				glog.Infof("Error streaming video: %v", err)
-			}
-		} else {
-			glog.Infof("Finished the stream")
-			return
-		}
+	url := fmt.Sprintf("http://localhost:%v/stream/%v.m3u8", port, streamID)
+	cmd := exec.Command("ffplay", "-timeout", "180000000", url) //timeout in 3 mins
+	glog.Infof("url: %v", url)
+	err := cmd.Start()
+	if err != nil {
+		glog.Infof("Couldn't start the stream")
+		os.Exit(1)
 	}
+	glog.Infof("Now streaming")
+	err = cmd.Wait()
+
+	glog.Infof("Finished the stream")
+	return
 }
 
 //Run ffmpeg - only works on OSX

@@ -218,6 +218,11 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 					continue
 				}
 
+				if p == "" {
+					glog.Errorf("Got empty peer from libp2p")
+					return
+				}
+
 				ns := nw.NetworkNode.GetStream(p)
 				if ns != nil {
 					// if err := nw.NetworkNode.SendMessage(ns, p, SubReqID, subReq); err != nil {

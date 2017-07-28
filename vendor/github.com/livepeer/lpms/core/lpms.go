@@ -42,7 +42,7 @@ type transcodeReq struct {
 //New creates a new LPMS server object.  It really just brokers everything to the components.
 func New(rtmpPort, httpPort, ffmpegPath, vodPath string) *LPMS {
 	server := &joy4rtmp.Server{Addr: (":" + rtmpPort)}
-	player := &vidplayer.VidPlayer{RtmpServer: server, VodPath: vodPath}
+	player := vidplayer.NewVidPlayer(server, vodPath)
 	listener := &vidlistener.VidListener{RtmpServer: server, FfmpegPath: ffmpegPath}
 	return &LPMS{rtmpServer: server, vidPlayer: player, vidListen: listener, httpPort: httpPort, ffmpegPath: ffmpegPath}
 }

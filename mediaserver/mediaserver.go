@@ -32,7 +32,7 @@ var ErrNotFound = errors.New("NotFound")
 var ErrAlreadyExists = errors.New("StreamAlreadyExists")
 var ErrRTMPPublish = errors.New("ErrRTMPPublish")
 var ErrBroadcast = errors.New("ErrBroadcast")
-var HLSWaitTime = time.Second * 10
+var HLSWaitTime = time.Second * 45
 var HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
 var HLSBufferWindow = uint(5)
 var SegOptions = segmenter.SegmenterOptions{SegLength: 8 * time.Second}
@@ -427,7 +427,7 @@ func getHLSMediaPlaylistHandler(s *LivepeerMediaServer) func(url *url.URL) (*m3u
 		//Wait for the HLSBuffer gets populated, get the playlist from the buffer, and return it.
 		//Also update the hlsSubTimer.
 		start := time.Now()
-		for time.Since(start) < time.Second*10 {
+		for time.Since(start) < HLSWaitTime {
 			pl, err := buf.LatestPlaylist()
 			if err != nil || pl.Segments[0] == nil || pl.Segments[0].URI == "" {
 				if err == stream.ErrEOF {

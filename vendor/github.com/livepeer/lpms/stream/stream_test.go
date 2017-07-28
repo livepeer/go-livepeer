@@ -207,8 +207,8 @@ func TestReadHLSAsync(t *testing.T) {
 		t.Errorf("Should have 9 packets in the buffer, but got: %v", buffer.sq.Count())
 	}
 
-	if buffer.plCache.SeqNo != 10 { //From the first HLSSegment
-		t.Errorf("Should have gotten SeqNo 10, but got %v", buffer.plCache.SeqNo)
+	if buffer.mediaPlCache.SeqNo != 10 { //From the first HLSSegment
+		t.Errorf("Should have gotten SeqNo 10, but got %v", buffer.mediaPlCache.SeqNo)
 	}
 
 	time.Sleep(time.Millisecond * 100)

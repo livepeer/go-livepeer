@@ -261,6 +261,8 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 	}
 
 	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
+		//Two possibilities of ending the stream.
+		//1 - the subscriber quits
 		if eof {
 			glog.Infof("Got EOF, writing to buf")
 			buf.WriteEOF()
@@ -275,6 +277,17 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 		if err != nil {
 			glog.Errorf("Error decoding byte array into segment: %v", err)
 			return
+		}
+
+		//Two possibilities of ending the stream.
+		//2 - receive a EOF segment
+		if ss.Seg.EOF {
+			glog.Infof("Got EOF, writing to buf")
+			buf.WriteEOF()
+			if err := sub.Unsubscribe(); err != nil {
+				glog.Errorf("Unsubscribe error: %v", err)
+				return
+			}
 		}
 
 		//Add segment into a HLS buffer in StreamDB

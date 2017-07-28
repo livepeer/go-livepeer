@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"testing"
 
@@ -51,10 +52,11 @@ func (s *TestStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) e
 		dst.WritePacket(pkt)
 	}
 }
-func (s *TestStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error { return nil }
-func (s *TestStream) WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error            { return nil }
-func (s *TestStream) WriteHLSSegmentToStream(seg stream.HLSSegment) error             { return nil }
-func (s *TestStream) ReadHLSFromStream(buffer stream.HLSMuxer) error                  { return nil }
+func (s *TestStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error     { return nil }
+func (s *TestStream) WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error                { return nil }
+func (s *TestStream) WriteHLSSegmentToStream(seg stream.HLSSegment) error                 { return nil }
+func (s *TestStream) ReadHLSFromStream(ctx context.Context, buffer stream.HLSMuxer) error { return nil }
+func (s *TestStream) ReadHLSSegment() (stream.HLSSegment, error)                          { return stream.HLSSegment{}, nil }
 
 func TestSegmenter(t *testing.T) {
 	wd, _ := os.Getwd()
@@ -63,14 +65,14 @@ func TestSegmenter(t *testing.T) {
 
 	//Create a test stream from stub
 	strm := &TestStream{}
-	url := fmt.Sprintf("rtmp://localhost:%v/stream/%v", "1935", strm.GetStreamID())
-	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), url, time.Millisecond*10, "")
+	strmUrl := fmt.Sprintf("rtmp://localhost:%v/stream/%v", "1935", strm.GetStreamID())
+	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), strmUrl, time.Millisecond*10, "")
 	server := &rtmp.Server{Addr: ":1935"}
-	player := vidplayer.VidPlayer{RtmpServer: server}
+	player := vidplayer.NewVidPlayer(server, "")
 
 	player.HandleRTMPPlay(
-		func(ctx context.Context, reqPath string, dst av.MuxCloser) error {
-			return strm.ReadRTMPFromStream(ctx, dst)
+		func(url *url.URL) (stream.Stream, error) {
+			return strm, nil
 		})
 
 	//Kick off RTMP server
