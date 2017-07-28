@@ -1,2 +1,2 @@
 # go-livepeer-basicnet
-Basic p2p streaming using libp2p
+Implementation of the Livepeer VideoNetwork interface.  Built with libp2p.
