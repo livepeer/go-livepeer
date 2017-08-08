@@ -207,12 +207,6 @@ func main() {
 		cancel()
 		return
 	}
-	// if err := s.StartMediaServer(context.Background()); err != nil {
-	// 	glog.Errorf("Failed to start LPMS: %v", err)
-	// 	return
-	// }
-
-	// select {}
 }
 
 type LPKeyFile struct {
