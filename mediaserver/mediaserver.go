@@ -104,13 +104,13 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 			http.Error(w, "Error transcoding.", 500)
 		}
 
-		sid := core.StreamID(strmID)
-		nid := sid.GetNodeID()
-		result := map[string]string{}
-		for i, id := range ids {
-			result[id.String()] = ps[i].Name
+		vids := make(map[core.StreamID]types.VideoProfile)
+		for i, vp := range ps {
+			vids[ids[i]] = vp
 		}
-		s.LivepeerNode.VideoNetwork.SendTranscodeResponse(string(nid), strmID, result)
+
+		sid := core.StreamID(strmID)
+		s.LivepeerNode.NotifyBroadcaster(sid.GetNodeID(), sid, vids)
 	})
 
 	//Set the broadcast config for creating onchain jobs.

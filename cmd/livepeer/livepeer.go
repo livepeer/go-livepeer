@@ -373,9 +373,7 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 			for i, vp := range tProfiles {
 				vids[strmIDs[i]] = vp
 			}
-			err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids)
-			// err = n.NotifyBroadcaster(sid.GetNodeID(), sid, map[core.StreamID]types.VideoProfile{strmIDs[0]: types.VideoProfileLookup[tData]})
-			if err != nil {
+			if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
 				glog.Errorf("Notify Broadcaster Error: %v", err)
 			}
 
