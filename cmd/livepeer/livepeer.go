@@ -18,6 +18,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
@@ -121,7 +122,7 @@ func main() {
 		return
 	}
 
-	n, err := core.NewLivepeerNode(nil, nw)
+	n, err := core.NewLivepeerNode(nil, nw, fmt.Sprintf("%v/.tmp", *datadir))
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
@@ -355,27 +356,25 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 			}
 
 			//Create Transcode Config
-			//TODO: profile should contain multiple video profiles.  Waiting for a protocol change.
-			profile, ok := types.VideoProfileLookup[tData]
-			if !ok {
-				glog.Errorf("Cannot find video profile for job: %v", tData)
-				return core.ErrTranscode
-			}
-
-			tProfiles := []types.VideoProfile{profile}
+			tProfiles := txDataToVideoProfile(tData)
 			config := net.TranscodeConfig{StrmID: strmId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
 			glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", tx.Hash(), strmId, tData, config)
 
 			//Do The Transcoding
 			cm := core.NewClaimManager(strmId, jid, tProfiles, n.Eth)
-			strmIDs, err := n.Transcode(config, cm)
+			strmIDs, err := n.TranscodeAndBroadcast(config, cm)
 			if err != nil {
 				glog.Errorf("Transcode Error: %v", err)
 			}
 
 			//Notify Broadcaster
 			sid := core.StreamID(strmId)
-			err = n.NotifyBroadcaster(sid.GetNodeID(), sid, map[core.StreamID]types.VideoProfile{strmIDs[0]: types.VideoProfileLookup[tData]})
+			vids := make(map[core.StreamID]types.VideoProfile)
+			for i, vp := range tProfiles {
+				vids[strmIDs[i]] = vp
+			}
+			err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids)
+			// err = n.NotifyBroadcaster(sid.GetNodeID(), sid, map[core.StreamID]types.VideoProfile{strmIDs[0]: types.VideoProfileLookup[tData]})
 			if err != nil {
 				glog.Errorf("Notify Broadcaster Error: %v", err)
 			}
@@ -386,6 +385,19 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 	}()
 
 	return sub, nil
+}
+
+func txDataToVideoProfile(txData string) []types.VideoProfile {
+	profiles := make([]types.VideoProfile, 0)
+	for _, txp := range strings.Split(txData, "|") {
+		p, ok := types.VideoProfileLookup[txp]
+		if !ok {
+			glog.Errorf("Cannot find video profile for job: %v", txp)
+			// return core.ErrTranscode
+		}
+		profiles = append(profiles, p)
+	}
+	return profiles
 }
 
 func stream(port string, streamID string) {

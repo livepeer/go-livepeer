@@ -4,16 +4,21 @@ import (
 	"context"
 	"math/big"
 
+	"github.com/ericxtang/m3u8"
 	"github.com/livepeer/go-livepeer/types"
 )
 
+//VideoNetwork describes the interface for a Livepeer node network-layer library.
 type VideoNetwork interface {
 	GetNodeID() string
+	GetMasterPlaylist(nodeID string, strmID string) (chan *m3u8.MasterPlaylist, error)
+	UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterPlaylist) error
 	GetBroadcaster(strmID string) (Broadcaster, error)
 	GetSubscriber(strmID string) (Subscriber, error)
 	Connect(nodeID, nodeAddr string) error
 	SetupProtocol() error
 	SendTranscodeResult(nodeID string, strmID string, transcodeResult map[string]string) error
+	ReceivedTranscodeResult(strmID string, gotResult func(transcodeResult map[string]string))
 }
 
 //Broadcaster takes a streamID and a reader, and broadcasts the data to whatever underlining network.

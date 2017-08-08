@@ -6,18 +6,16 @@ import (
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/types"
 )
 
 //BasicBroadcaster is unique for a specific video stream. It keeps track of a list of listeners and a queue of video chunks.  It won't start keeping track of things until there is at least 1 listener.
 type BasicBroadcaster struct {
-	Network       *BasicVideoNetwork
-	TranscodedIDs map[string]types.VideoProfile
-	q             chan *StreamDataMsg
-	listeners     map[string]*BasicStream
-	StrmID        string
-	working       bool
-	cancelWorker  context.CancelFunc
+	Network      *BasicVideoNetwork
+	q            chan *StreamDataMsg
+	listeners    map[string]*BasicStream
+	StrmID       string
+	working      bool
+	cancelWorker context.CancelFunc
 }
 
 //Broadcast sends a video chunk to the stream.  The very first call to Broadcast kicks off a worker routine to do the broadcasting.

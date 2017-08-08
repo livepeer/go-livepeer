@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ericxtang/m3u8"
+	"github.com/golang/glog"
 )
 
 var ErrNotFound = errors.New("Not Found")
@@ -45,6 +46,7 @@ func (b *HLSBuffer) WriteSegment(seqNo uint64, name string, duration float64, s 
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
+	glog.Infof("Writing seqNo:%v Name:%v Data:%v", seqNo, name, len(s))
 	b.sq.Set(name, &HLSSegment{SeqNo: seqNo, Name: name, Duration: duration, Data: s})
 	err := b.mediaPlCache.InsertSegment(seqNo, &m3u8.MediaSegment{SeqId: seqNo, Duration: duration, URI: name})
 	if err != nil {

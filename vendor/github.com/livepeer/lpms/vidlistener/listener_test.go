@@ -24,13 +24,13 @@ func TestListener(t *testing.T) {
 			return "testID"
 		},
 		//gotStream
-		func(url *url.URL, rtmpStrm *stream.VideoStream) (err error) {
+		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 			//Read the stream into q
 			go rtmpStrm.ReadRTMPFromStream(context.Background(), q)
 			return nil
 		},
 		//endStream
-		func(url *url.URL, rtmpStrm *stream.VideoStream) error {
+		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 			if rtmpStrm.GetStreamID() != "testID" {
 				t.Errorf("Expecting 'testID', found %v", rtmpStrm.GetStreamID())
 			}
@@ -39,7 +39,7 @@ func TestListener(t *testing.T) {
 
 	//Stream test stream into the rtmp server
 	ffmpegCmd := "ffmpeg"
-	ffmpegArgs := []string{"-re", "-i", "../data/bunny2.mp4", "-c", "copy", "-f", "flv", "rtmp://localhost:1937/movie/stream"}
+	ffmpegArgs := []string{"-re", "-i", "../data/bunny2.mp4", "-c", "copy", "-f", "flv", "rtmp://localhost:1937/movie"}
 	cmd := exec.Command(ffmpegCmd, ffmpegArgs...)
 	go cmd.Run()
 

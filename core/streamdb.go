@@ -1,122 +1,151 @@
 package core
 
 import (
-	"context"
 	"errors"
+	"strings"
 	"time"
 
+	"github.com/ericxtang/m3u8"
+	"github.com/golang/glog"
+
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/stream"
 )
 
 var ErrNotFound = errors.New("NotFound")
+var ErrAddSubscriber = errors.New("ErrAddSubscriber")
 
 const HLSWaitTime = time.Second * 10
 
-//StreamDB stores the video streams, the video buffers, and related information in memory.
+//StreamDB stores the video streams, the video buffers, and related information in memory. Note that HLS streams may have many streamIDs, each representing a
+//ABS rendition, so there may be multiple streamIDs that map to the same HLS stream in the streams map.
 type StreamDB struct {
-	streams      map[StreamID]*stream.VideoStream
-	subscribers  map[StreamID]*stream.StreamSubscriber
-	hlsBuffers   map[StreamID]*stream.HLSBuffer
-	cancellation map[StreamID]context.CancelFunc
-	SelfNodeID   string
+	streams     map[StreamID]stream.VideoStream_
+	subscribers map[StreamID]net.Subscriber
+	SelfNodeID  string
 }
 
-//Create a new StreamDB with the node's network address
+//NewStreamDB Create a new StreamDB with the node's network address
 func NewStreamDB(selfNodeID string) *StreamDB {
 	return &StreamDB{
-		streams:      make(map[StreamID]*stream.VideoStream),
-		subscribers:  make(map[StreamID]*stream.StreamSubscriber),
-		hlsBuffers:   make(map[StreamID]*stream.HLSBuffer),
-		cancellation: make(map[StreamID]context.CancelFunc),
-		SelfNodeID:   selfNodeID}
+		streams:     make(map[StreamID]stream.VideoStream_),
+		subscribers: make(map[StreamID]net.Subscriber),
+		SelfNodeID:  selfNodeID}
 }
 
-//GetStream gets a video stream stored in the StreamDB
-func (s *StreamDB) GetStream(id StreamID) *stream.VideoStream {
+//GetHLSStream gets a HLS video stream stored in the StreamDB
+func (s *StreamDB) GetHLSStream(id StreamID) stream.HLSVideoStream {
 	// glog.Infof("Getting stream with %v, %v", id, s.streams[id])
 	strm, ok := s.streams[id]
 	if !ok {
 		return nil
 	}
-	return strm
+	if strm.GetStreamFormat() != stream.HLS {
+		return nil
+	}
+	return strm.(stream.HLSVideoStream)
 }
 
-//AddNewStream creates a new video stream in the StreamDB
-func (s *StreamDB) AddNewStream(strmID StreamID, format stream.VideoFormat) (strm *stream.VideoStream, err error) {
-	strm = stream.NewVideoStream(strmID.String(), format)
+//GetRTMPStream gets a RTMP video stream stored in the StreamDB
+func (s *StreamDB) GetRTMPStream(id StreamID) stream.RTMPVideoStream {
+	// glog.Infof("Getting stream with %v, %v", id, s.streams[id])
+	strm, ok := s.streams[id]
+	if !ok {
+		return nil
+	}
+	if strm.GetStreamFormat() != stream.RTMP {
+		return nil
+	}
+	return strm.(stream.RTMPVideoStream)
+}
+
+//AddNewHLSStream creates a new HLS video stream in the StreamDB
+func (s *StreamDB) AddNewHLSStream(strmID StreamID) (strm stream.HLSVideoStream, err error) {
+	strm = stream.NewBasicHLSVideoStream(strmID.String(), stream.DefaultSegWaitTime)
 	s.streams[strmID] = strm
 
 	// glog.Infof("Adding new video stream with ID: %v", strmID)
 	return strm, nil
 }
 
+//AddNewRTMPStream creates a new RTMP video stream in the StreamDB
+func (s *StreamDB) AddNewRTMPStream(strmID StreamID) (strm stream.RTMPVideoStream, err error) {
+	strm = stream.NewBasicRTMPVideoStream(strmID.String())
+	s.streams[strmID] = strm
+
+	// glog.Infof("Adding new video stream with ID: %v", strmID)
+	return strm, nil
+}
+
+//AddHLSVariant adds a new variant for the HLS video stream
+func (s *StreamDB) AddHLSVariant(hlsStrmID StreamID, varStrmID StreamID, variant *m3u8.Variant) error {
+	strm, ok := s.streams[hlsStrmID]
+	if !ok {
+		return ErrNotFound
+	}
+
+	hlsStrm, ok := strm.(stream.HLSVideoStream)
+	if !ok {
+		return ErrNotFound
+	}
+
+	if err := hlsStrm.AddVariant(varStrmID.String(), variant); err != nil {
+		return ErrNotFound
+	}
+
+	//Add variant streamID to streams map so we can keep track
+	s.streams[varStrmID] = strm
+	return nil
+}
+
 //AddStream adds an existing video stream.
-func (s *StreamDB) AddStream(strmID StreamID, strm *stream.VideoStream) (err error) {
+func (s *StreamDB) AddStream(strmID StreamID, strm stream.VideoStream_) (err error) {
 	s.streams[strmID] = strm
 	return nil
 }
 
 //DeleteStream removes a video stream from the StreamDB
 func (s *StreamDB) DeleteStream(strmID StreamID) {
-	delete(s.streams, strmID)
-}
-
-//GetHLSBuffer gets a HLS video buffer from the StreamDB
-func (s *StreamDB) GetHLSBuffer(strmID StreamID) *stream.HLSBuffer {
-	buf, ok := s.hlsBuffers[strmID]
+	strm, ok := s.streams[strmID]
 	if !ok {
-		return nil
-	}
-	return buf
-}
-
-//AddNewHLSBuffer creates a new HLS video buffer and adds it to the StreamDB
-func (s *StreamDB) AddNewHLSBuffer(strmID StreamID) *stream.HLSBuffer {
-	buf := stream.NewHLSBuffer(5, 1000) //TODO: Need to fix the static cap
-	s.hlsBuffers[strmID] = buf
-	return buf
-}
-
-//DeleteHLSBuffer removes the HLS video buffer from the StreamDB
-func (s *StreamDB) DeleteHLSBuffer(strmID StreamID) {
-	delete(s.hlsBuffers, strmID)
-}
-
-//SubscribeToHLSStream takes a HLSMuxer and puts any new HLS segment from the stream into the muxer.
-func (s *StreamDB) SubscribeToHLSStream(strmID string, subID string, mux stream.HLSMuxer) error {
-	strm := s.streams[StreamID(strmID)]
-	if strm == nil {
-		return ErrNotFound
-	}
-
-	sub := s.subscribers[StreamID(strmID)]
-	if sub == nil {
-		sub = stream.NewStreamSubscriber(strm)
-		s.subscribers[StreamID(strmID)] = sub
-		ctx, cancel := context.WithCancel(context.Background())
-		go sub.StartHLSWorker(ctx, HLSWaitTime)
-		s.cancellation[StreamID(strmID)] = cancel
-	}
-
-	return sub.SubscribeHLS(subID, mux)
-}
-
-//UnsubscribeToHLSStream unsubscribes a HLSMuxer from a stream
-func (s *StreamDB) UnsubscribeToHLSStream(strmID string, subID string) {
-	sub := s.subscribers[StreamID(strmID)]
-	if sub != nil {
-		sub.UnsubscribeHLS(subID)
-	} else {
 		return
 	}
 
-	if !sub.HasSubscribers() {
-		s.cancellation[StreamID(strmID)]() //Call cancel on hls worker
-		delete(s.subscribers, StreamID(strmID))
-		sid := StreamID(strmID)
-		nid := string(sid.GetNodeID())
-		if s.SelfNodeID != nid { //Only delete the networkStream if you are a relay node
-			delete(s.streams, StreamID(strmID))
+	if strm.GetStreamFormat() == stream.HLS {
+		//Remove all the variant lookups too
+		hlsStrm := strm.(stream.HLSVideoStream)
+		mpl, err := hlsStrm.GetMasterPlaylist()
+		if err != nil {
+			glog.Errorf("Error getting master playlist: %v", err)
+		}
+		for _, v := range mpl.Variants {
+			vName := strings.Split(v.URI, ".")[0]
+			delete(s.streams, StreamID(vName))
 		}
 	}
+	delete(s.streams, strmID)
+	// glog.Infof("streams len after delete: %v", len(s.streams))
+}
+
+//AddSubscriber adds a VideoNetwork subscriber to StreamDB
+func (s *StreamDB) AddSubscriber(strmID StreamID, sub net.Subscriber) error {
+	if _, ok := s.subscribers[strmID]; ok {
+		return ErrAddSubscriber
+	}
+	s.subscribers[strmID] = sub
+	return nil
+}
+
+//GetSubscriber gets a VideoNetwork subscriber to StreamDB
+func (s *StreamDB) GetSubscriber(strmID StreamID) net.Subscriber {
+	sub, ok := s.subscribers[strmID]
+	if !ok {
+		return nil
+	}
+	return sub
+}
+
+//DeleteSubscriber deletes a VideoNetwork subscriber from StreamDB
+func (s *StreamDB) DeleteSubscriber(strmID StreamID) {
+	delete(s.subscribers, strmID)
 }

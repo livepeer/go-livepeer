@@ -61,7 +61,7 @@ func (id *StreamID) GetRendition() string {
 }
 
 func (id *StreamID) IsMasterPlaylistID() bool {
-	return false
+	return id.GetRendition() == ""
 }
 
 func (id *StreamID) String() string {

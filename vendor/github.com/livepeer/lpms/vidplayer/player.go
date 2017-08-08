@@ -27,11 +27,11 @@ var PlaylistWaittime = 6 * time.Second
 //VidPlayer is the module that handles playing video. For now we only support RTMP and HLS play.
 type VidPlayer struct {
 	RtmpServer      *joy4rtmp.Server
-	rtmpPlayHandler func(url *url.URL) (stream.Stream, error)
+	rtmpPlayHandler func(url *url.URL) (stream.RTMPVideoStream, error)
 	VodPath         string
 }
 
-func defaultRtmpPlayHandler(url *url.URL) (stream.Stream, error) { return nil, ErrNotFound }
+func defaultRtmpPlayHandler(url *url.URL) (stream.RTMPVideoStream, error) { return nil, ErrNotFound }
 
 //NewVidPlayer creates a new video player
 func NewVidPlayer(rtmpS *joy4rtmp.Server, vodPath string) *VidPlayer {
@@ -42,7 +42,7 @@ func NewVidPlayer(rtmpS *joy4rtmp.Server, vodPath string) *VidPlayer {
 
 //HandleRTMPPlay is the handler when there is a RTMP request for a video. The source should write
 //into the MuxCloser. The easiest way is through avutil.Copy.
-func (s *VidPlayer) HandleRTMPPlay(getStream func(url *url.URL) (stream.Stream, error)) error {
+func (s *VidPlayer) HandleRTMPPlay(getStream func(url *url.URL) (stream.RTMPVideoStream, error)) error {
 	s.rtmpPlayHandler = getStream
 	return nil
 }
@@ -95,33 +95,31 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
 		w.Header().Set("Content-Type", "application/x-mpegURL")
-		//First, assume it's the master playlist
+
+		//Could be a master playlist, or a media playlist
 		var masterPl *m3u8.MasterPlaylist
 		var mediaPl *m3u8.MediaPlaylist
 		masterPl, err := getMasterPlaylist(r.URL)
-		if masterPl == nil || err != nil {
-			//Now try the media playlist
-			mediaPl, err = getMediaPlaylist(r.URL)
-			if err != nil {
-				http.Error(w, "Error getting HLS playlist", 500)
-				return
-			}
+		if err != nil {
+			glog.Errorf("Error getting HLS master playlist: %v", err)
+			http.Error(w, "Error getting HLS master playlist", 500)
+			return
 		}
-
-		if masterPl != nil {
+		if masterPl != nil && len(masterPl.Variants) > 0 {
 			w.Header().Set("Connection", "keep-alive")
 			_, err = w.Write(masterPl.Encode().Bytes())
-			return
-		} else if mediaPl != nil {
-			w.Header().Set("Connection", "keep-alive")
-			_, err = w.Write(mediaPl.Encode().Bytes())
-			return
-		}
-		if err != nil {
-			glog.Errorf("Error writing playlist to ResponseWriter: %v", err)
+			// glog.Infof("%v", string(masterPl.Encode().Bytes()))
 			return
 		}
 
+		mediaPl, err = getMediaPlaylist(r.URL)
+		if err != nil {
+			http.Error(w, "Error getting HLS media playlist", 500)
+			return
+		}
+
+		w.Header().Set("Connection", "keep-alive")
+		_, err = w.Write(mediaPl.Encode().Bytes())
 		return
 	}
 
@@ -129,6 +127,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		seg, err := getSegment(r.URL)
 		if err != nil {
 			glog.Errorf("Error getting segment %v: %v", r.URL, err)
+			http.Error(w, "Error getting segment", 500)
 			return
 		}
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
@@ -137,6 +136,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		_, err = w.Write(seg)
 		if err != nil {
 			glog.Errorf("Error writting HLS segment %v: %v", r.URL, err)
+			http.Error(w, "Error writting segment", 500)
 			return
 		}
 		return

@@ -71,14 +71,14 @@ func (l *LPMS) Start(ctx context.Context) error {
 //HandleRTMPPublish offload to the video listener
 func (l *LPMS) HandleRTMPPublish(
 	makeStreamID func(url *url.URL) (strmID string),
-	gotStream func(url *url.URL, rtmpStrm *stream.VideoStream) (err error),
-	endStream func(url *url.URL, rtmpStrm *stream.VideoStream) error) {
+	gotStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error),
+	endStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error) {
 
 	l.vidListen.HandleRTMPPublish(makeStreamID, gotStream, endStream)
 }
 
 //HandleRTMPPlay offload to the video player
-func (l *LPMS) HandleRTMPPlay(getStream func(url *url.URL) (stream.Stream, error)) error {
+func (l *LPMS) HandleRTMPPlay(getStream func(url *url.URL) (stream.RTMPVideoStream, error)) error {
 	return l.vidPlayer.HandleRTMPPlay(getStream)
 }
 
@@ -92,7 +92,7 @@ func (l *LPMS) HandleHLSPlay(
 }
 
 //SegmentRTMPToHLS takes a rtmp stream and re-packages it into a HLS stream with the specified segmenter options
-func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.Stream, hs stream.Stream, segOptions segmenter.SegmenterOptions) error {
+func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error {
 	//Invoke Segmenter
 	workDir, _ := os.Getwd()
 	workDir = workDir + "/tmp"
@@ -103,27 +103,6 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.Stream, hs stream
 	c := make(chan error, 1)
 	ffmpegCtx, ffmpegCancel := context.WithCancel(context.Background())
 	go func() { c <- s.RTMPToHLS(ffmpegCtx, segOptions, true) }()
-
-	//Kick off go routine to write HLS playlist
-	plCtx, plCancel := context.WithCancel(context.Background())
-	go func() {
-		c <- func() error {
-			for {
-				pl, err := s.PollPlaylist(plCtx)
-				if err != nil {
-					glog.Errorf("Got error polling playlist: %v", err)
-					return err
-				}
-				// glog.Infof("Writing pl: %v", pl)
-				hs.WriteHLSPlaylistToStream(*pl.Data)
-				select {
-				case <-plCtx.Done():
-					return plCtx.Err()
-				default:
-				}
-			}
-		}()
-	}()
 
 	//Kick off go routine to write HLS segments
 	segCtx, segCancel := context.WithCancel(context.Background())
@@ -136,7 +115,9 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.Stream, hs stream
 				}
 				ss := stream.HLSSegment{SeqNo: seg.SeqNo, Data: seg.Data, Name: seg.Name, Duration: seg.Length.Seconds()}
 				// glog.Infof("Writing stream: %v, duration:%v, len:%v", ss.Name, ss.Duration, len(seg.Data))
-				hs.WriteHLSSegmentToStream(ss)
+				if err = hs.AddHLSSegment(hs.GetStreamID(), &ss); err != nil {
+					glog.Errorf("Error adding segment: %v", err)
+				}
 				select {
 				case <-segCtx.Done():
 					return segCtx.Err()
@@ -150,12 +131,10 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.Stream, hs stream
 	case err := <-c:
 		glog.Errorf("Error segmenting stream: %v", err)
 		ffmpegCancel()
-		plCancel()
 		segCancel()
 		return err
 	case <-ctx.Done():
 		ffmpegCancel()
-		plCancel()
 		segCancel()
 		return ctx.Err()
 	}
@@ -166,7 +145,6 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.Stream, hs stream
 func (l *LPMS) HandleTranscode(getInStream func(ctx context.Context, streamID string) (stream.Stream, error), getOutStream func(ctx context.Context, streamID string) (stream.Stream, error)) {
 	http.HandleFunc("/transcode", func(w http.ResponseWriter, r *http.Request) {
 		ctx, _ := context.WithCancel(context.Background())
-		// defer cancel()
 
 		//parse transcode request
 		decoder := json.NewDecoder(r.Body)
