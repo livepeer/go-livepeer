@@ -35,25 +35,25 @@ type VideoMuxer interface {
 
 //BasicVideoNetwork implements the VideoNetwork interface.  It creates a kademlia network using libp2p.  It does push-based video delivery, and handles the protocol in the background.
 type BasicVideoNetwork struct {
-	NetworkNode          *NetworkNode
-	broadcasters         map[string]*BasicBroadcaster
-	subscribers          map[string]*BasicSubscriber
-	relayers             map[string]*BasicRelayer
-	mplMap               map[string]*m3u8.MasterPlaylist
-	mplChans             map[string]chan *m3u8.MasterPlaylist
-	transResultCallbacks map[string]func(transcodeResult map[string]string)
+	NetworkNode            *NetworkNode
+	broadcasters           map[string]*BasicBroadcaster
+	subscribers            map[string]*BasicSubscriber
+	relayers               map[string]*BasicRelayer
+	mplMap                 map[string]*m3u8.MasterPlaylist
+	mplChans               map[string]chan *m3u8.MasterPlaylist
+	transResponseCallbacks map[string]func(transcodeResult map[string]string)
 }
 
 //NewBasicVideoNetwork creates a libp2p node, handle the basic (push-based) video protocol.
 func NewBasicVideoNetwork(n *NetworkNode) (*BasicVideoNetwork, error) {
 	nw := &BasicVideoNetwork{
-		NetworkNode:          n,
-		broadcasters:         make(map[string]*BasicBroadcaster),
-		subscribers:          make(map[string]*BasicSubscriber),
-		relayers:             make(map[string]*BasicRelayer),
-		mplMap:               make(map[string]*m3u8.MasterPlaylist),
-		mplChans:             make(map[string]chan *m3u8.MasterPlaylist),
-		transResultCallbacks: make(map[string]func(transcodeResult map[string]string))}
+		NetworkNode:            n,
+		broadcasters:           make(map[string]*BasicBroadcaster),
+		subscribers:            make(map[string]*BasicSubscriber),
+		relayers:               make(map[string]*BasicRelayer),
+		mplMap:                 make(map[string]*m3u8.MasterPlaylist),
+		mplChans:               make(map[string]chan *m3u8.MasterPlaylist),
+		transResponseCallbacks: make(map[string]func(transcodeResult map[string]string))}
 	return nw, nil
 }
 
@@ -129,7 +129,7 @@ func (n *BasicVideoNetwork) SendTranscodeResponse(broadcaster string, strmID str
 
 //ReceivedTranscodeResponse registers the callback for when the broadcaster receives transcode results.
 func (n *BasicVideoNetwork) ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string)) {
-	n.transResultCallbacks[strmID] = gotResult
+	n.transResponseCallbacks[strmID] = gotResult
 }
 
 //GetMasterPlaylist issues a request to the broadcaster for the MasterPlaylist and returns the channel to the playlist. The broadcaster should send the response back as soon as it gets the request.
@@ -418,7 +418,7 @@ func handleFinishStream(nw *BasicVideoNetwork, fs FinishStreamMsg) error {
 
 func handleTranscodeResponse(nw *BasicVideoNetwork, tr TranscodeResponseMsg) error {
 	glog.Infof("Transcode Result StreamIDs: %v", tr)
-	callback, ok := nw.transResultCallbacks[tr.StrmID]
+	callback, ok := nw.transResponseCallbacks[tr.StrmID]
 	if !ok {
 		glog.Errorf("Error handling transcode result - cannot find callback for stream: %v", tr.StrmID)
 		return ErrTranscodeResponse
