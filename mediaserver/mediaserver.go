@@ -110,7 +110,7 @@ func (s *LivepeerMediaServer) StartMediaServer(ctx context.Context) error {
 		for i, id := range ids {
 			result[id.String()] = ps[i].Name
 		}
-		s.LivepeerNode.VideoNetwork.SendTranscodeResult(string(nid), strmID, result)
+		s.LivepeerNode.VideoNetwork.SendTranscodeResponse(string(nid), strmID, result)
 	})
 
 	//Set the broadcast config for creating onchain jobs.

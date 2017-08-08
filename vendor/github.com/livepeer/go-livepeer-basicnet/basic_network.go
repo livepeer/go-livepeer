@@ -26,7 +26,7 @@ var Protocol = protocol.ID("/livepeer_video/0.0.1")
 var ErrNoClosePeers = errors.New("NoClosePeers")
 var ErrUnknownMsg = errors.New("UnknownMsgType")
 var ErrProtocol = errors.New("ProtocolError")
-var ErrTranscodeResult = errors.New("TranscodeResultError")
+var ErrTranscodeResponse = errors.New("TranscodeResponseError")
 var ErrGetMasterPlaylist = errors.New("ErrGetMasterPlaylist")
 
 type VideoMuxer interface {
@@ -108,8 +108,8 @@ func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
 	return n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid})
 }
 
-//SendTranscodeResult sends the transcode result to the broadcast node.
-func (n *BasicVideoNetwork) SendTranscodeResult(broadcaster string, strmID string, transcodedVideos map[string]string) error {
+//SendTranscodeResponse tsends the transcode result to the broadcast node.
+func (n *BasicVideoNetwork) SendTranscodeResponse(broadcaster string, strmID string, transcodedVideos map[string]string) error {
 	pid, err := peer.IDHexDecode(broadcaster)
 	if err != nil {
 		glog.Errorf("Bad broadcaster id %v - %v", broadcaster, err)
@@ -117,18 +117,18 @@ func (n *BasicVideoNetwork) SendTranscodeResult(broadcaster string, strmID strin
 	}
 	ws := n.NetworkNode.GetStream(pid)
 	if ws != nil {
-		if err = ws.SendMessage(TranscodeResultID, TranscodeResultMsg{StrmID: strmID, Result: transcodedVideos}); err != nil {
+		if err = ws.SendMessage(TranscodeResponseID, TranscodeResponseMsg{StrmID: strmID, Result: transcodedVideos}); err != nil {
 			glog.Errorf("Error sending transcode result message: %v", err)
 			return err
 		}
 		return nil
 	}
 
-	return ErrTranscodeResult
+	return ErrTranscodeResponse
 }
 
-//ReceivedTranscodeResult registers the callback for when the broadcaster receives transcode results.
-func (n *BasicVideoNetwork) ReceivedTranscodeResult(strmID string, gotResult func(transcodeResult map[string]string)) {
+//ReceivedTranscodeResponse registers the callback for when the broadcaster receives transcode results.
+func (n *BasicVideoNetwork) ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string)) {
 	n.transResultCallbacks[strmID] = gotResult
 }
 
@@ -237,12 +237,12 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 			glog.Errorf("Cannot convert FinishStreamMsg: %v", msg.Data)
 		}
 		return handleFinishStream(nw, fs)
-	case TranscodeResultID:
-		tr, ok := msg.Data.(TranscodeResultMsg)
+	case TranscodeResponseID:
+		tr, ok := msg.Data.(TranscodeResponseMsg)
 		if !ok {
-			glog.Errorf("Cannot convert TranscodeResultMsg: %v", msg.Data)
+			glog.Errorf("Cannot convert TranscodeResponseMsg: %v", msg.Data)
 		}
-		return handleTranscodeResult(nw, tr)
+		return handleTranscodeResponse(nw, tr)
 	case GetMasterPlaylistReqID:
 		//Get the local master playlist from a broadcaster and send it back
 		mplr, ok := msg.Data.(GetMasterPlaylistReqMsg)
@@ -416,12 +416,12 @@ func handleFinishStream(nw *BasicVideoNetwork, fs FinishStreamMsg) error {
 	return nil
 }
 
-func handleTranscodeResult(nw *BasicVideoNetwork, tr TranscodeResultMsg) error {
+func handleTranscodeResponse(nw *BasicVideoNetwork, tr TranscodeResponseMsg) error {
 	glog.Infof("Transcode Result StreamIDs: %v", tr)
 	callback, ok := nw.transResultCallbacks[tr.StrmID]
 	if !ok {
 		glog.Errorf("Error handling transcode result - cannot find callback for stream: %v", tr.StrmID)
-		return ErrTranscodeResult
+		return ErrTranscodeResponse
 	}
 
 	callback(tr.Result)

@@ -64,10 +64,10 @@ func (n *StubNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
 
 func (n *StubNetwork) Connect(nodeID, nodeAddr string) error { return nil }
 func (n *StubNetwork) SetupProtocol() error                  { return nil }
-func (b *StubNetwork) SendTranscodeResult(nodeID string, strmID string, transcodeResult map[string]string) error {
+func (b *StubNetwork) SendTranscodeResponse(nodeID string, strmID string, transcodeResult map[string]string) error {
 	return nil
 }
-func (b *StubNetwork) ReceivedTranscodeResult(strmID string, gotResult func(transcodeResult map[string]string)) {
+func (b *StubNetwork) ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string)) {
 }
 func (b *StubNetwork) GetMasterPlaylist(nodeID string, strmID string) (chan *m3u8.MasterPlaylist, error) {
 	mplc := make(chan *m3u8.MasterPlaylist)

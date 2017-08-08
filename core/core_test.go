@@ -53,13 +53,13 @@ func (n *StubVideoNetwork) GetSubscriber(strmID string) (net.Subscriber, error) 
 }
 func (n *StubVideoNetwork) Connect(nodeID, nodeAddr string) error { return nil }
 func (n *StubVideoNetwork) SetupProtocol() error                  { return nil }
-func (n *StubVideoNetwork) SendTranscodeResult(nid string, sid string, tr map[string]string) error {
+func (n *StubVideoNetwork) SendTranscodeResponse(nid string, sid string, tr map[string]string) error {
 	n.nodeID = nid
 	n.strmID = sid
 	n.tResult = tr
 	return nil
 }
-func (n *StubVideoNetwork) ReceivedTranscodeResult(strmID string, gotResult func(transcodeResult map[string]string)) {
+func (n *StubVideoNetwork) ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string)) {
 }
 func (n *StubVideoNetwork) GetMasterPlaylist(nodeID string, strmID string) (chan *m3u8.MasterPlaylist, error) {
 	mplc := make(chan *m3u8.MasterPlaylist)

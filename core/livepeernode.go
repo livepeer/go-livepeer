@@ -201,7 +201,7 @@ func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
 	}
 
 	//Set up the callback for when we get transcode results back
-	n.VideoNetwork.ReceivedTranscodeResult(strm.GetStreamID(), func(result map[string]string) {
+	n.VideoNetwork.ReceivedTranscodeResponse(strm.GetStreamID(), func(result map[string]string) {
 		//Parse through the results
 		for strmID, tProfile := range result {
 			vParams := transcoder.TranscodeProfileToVariantParams(transcoder.TranscodeProfileLookup[tProfile])
@@ -347,5 +347,5 @@ func (n *LivepeerNode) NotifyBroadcaster(nid NodeID, strmID StreamID, transcodeS
 	for sid, p := range transcodeStrmIDs {
 		ids[sid.String()] = p.Name
 	}
-	return n.VideoNetwork.SendTranscodeResult(string(nid), strmID.String(), ids)
+	return n.VideoNetwork.SendTranscodeResponse(string(nid), strmID.String(), ids)
 }

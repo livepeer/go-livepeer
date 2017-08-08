@@ -51,7 +51,7 @@ func TestSendBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Broadcast Stream...")
 	n1, _ := setupNodes()
 	//n2 is simple node so we can register our own handler and inspect the incoming messages
-	n2, _ := simpleNodes()
+	n2, _ := simpleNodes(15002, 15003)
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var strmData StreamDataMsg
@@ -126,7 +126,7 @@ func TestSendBroadcast(t *testing.T) {
 func TestHandleBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Broadcast...")
 	n1, _ := setupNodes()
-	n2, _ := simpleNodes()
+	n2, _ := simpleNodes(15002, 15003)
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var cancelMsg CancelSubMsg
@@ -209,7 +209,7 @@ func TestHandleBroadcast(t *testing.T) {
 func TestSendSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Subscriber...")
 	n1, _ := setupNodes()
-	n2, _ := simpleNodes()
+	n2, _ := simpleNodes(15002, 15003)
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var subReq SubReqMsg
@@ -310,7 +310,7 @@ func TestSendSubscribe(t *testing.T) {
 func TestHandleSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Broadcast...")
 	n1, _ := setupNodes()
-	n2, _ := simpleNodes()
+	n2, _ := simpleNodes(15002, 15003)
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
@@ -366,7 +366,7 @@ func simpleRelayHandler(ws *BasicStream, t *testing.T) Msg {
 }
 func TestRelaying(t *testing.T) {
 	n1, n2 := setupNodes()
-	n3, _ := simpleNodes()
+	n3, _ := simpleNodes(15002, 15003)
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
 	connectHosts(n2.NetworkNode.PeerHost, n3.PeerHost)
 
@@ -465,7 +465,7 @@ func TestRelaying(t *testing.T) {
 	}
 }
 
-func TestSendTranscodeResult(t *testing.T) {
+func TestSendTranscodeResponse(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Transcode Result...")
 	n1, n2 := setupNodes()
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
@@ -475,10 +475,10 @@ func TestSendTranscodeResult(t *testing.T) {
 	//Create the broadcaster, to capture the transcode result
 	n2.GetBroadcaster("strmid")
 	rc := make(chan map[string]string)
-	n2.ReceivedTranscodeResult("strmid", func(result map[string]string) {
+	n2.ReceivedTranscodeResponse("strmid", func(result map[string]string) {
 		rc <- result
 	})
-	err := n1.SendTranscodeResult(peer.IDHexEncode(n2.NetworkNode.Identity), "strmid", map[string]string{"strmid1": types.P240p30fps4x3.Name, "strmid2": types.P360p30fps4x3.Name})
+	err := n1.SendTranscodeResponse(peer.IDHexEncode(n2.NetworkNode.Identity), "strmid", map[string]string{"strmid1": types.P240p30fps4x3.Name, "strmid2": types.P360p30fps4x3.Name})
 	if err != nil {
 		t.Errorf("Error sending transcode result: %v", err)
 	}
@@ -528,7 +528,7 @@ func TestMasterPlaylist(t *testing.T) {
 }
 
 func TestID(t *testing.T) {
-	n1, _ := simpleNodes()
+	n1, _ := simpleNodes(15002, 15003)
 	id := n1.Identity
 	sid := peer.IDHexEncode(id)
 	pid, err := peer.IDHexDecode(sid)
