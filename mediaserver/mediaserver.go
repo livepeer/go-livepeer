@@ -6,6 +6,7 @@ package mediaserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -342,7 +343,7 @@ func gotRTMPStreamHandler(s *LivepeerMediaServer) func(url *url.URL, rtmpStrm st
 			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions) //TODO: do we need to cancel this thread when the stream finishes?
 			if err != nil {
 				glog.Infof("Error in segmenter: %v, broadcasting finish message", err)
-				err = hlsStrm.AddHLSSegment(hlsStrmID.String(), &stream.HLSSegment{EOF: true})
+				err = hlsStrm.AddHLSSegment(hlsStrmID.String(), &stream.HLSSegment{Name: fmt.Sprintf("%v_eof", hlsStrmID), EOF: true})
 				if err != nil {
 					glog.Errorf("Error adding segmenter finish: %v", err)
 				}
