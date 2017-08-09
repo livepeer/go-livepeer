@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericxtang/m3u8"
+
 	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 	host "gx/ipfs/QmZy7c24mmkEHpNJndwgsEE3wcVxHd8yB969yTnAJFVw7f/go-libp2p-host"
@@ -49,7 +51,7 @@ func TestSendBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Broadcast Stream...")
 	n1, _ := setupNodes()
 	//n2 is simple node so we can register our own handler and inspect the incoming messages
-	n2, _ := simpleNodes()
+	n2, _ := simpleNodes(15002, 15003)
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var strmData StreamDataMsg
@@ -124,7 +126,7 @@ func TestSendBroadcast(t *testing.T) {
 func TestHandleBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Broadcast...")
 	n1, _ := setupNodes()
-	n2, _ := simpleNodes()
+	n2, _ := simpleNodes(15002, 15003)
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var cancelMsg CancelSubMsg
@@ -207,7 +209,7 @@ func TestHandleBroadcast(t *testing.T) {
 func TestSendSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Subscriber...")
 	n1, _ := setupNodes()
-	n2, _ := simpleNodes()
+	n2, _ := simpleNodes(15002, 15003)
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var subReq SubReqMsg
@@ -308,7 +310,7 @@ func TestSendSubscribe(t *testing.T) {
 func TestHandleSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Broadcast...")
 	n1, _ := setupNodes()
-	n2, _ := simpleNodes()
+	n2, _ := simpleNodes(15002, 15003)
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
@@ -364,7 +366,7 @@ func simpleRelayHandler(ws *BasicStream, t *testing.T) Msg {
 }
 func TestRelaying(t *testing.T) {
 	n1, n2 := setupNodes()
-	n3, _ := simpleNodes()
+	n3, _ := simpleNodes(15002, 15003)
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
 	connectHosts(n2.NetworkNode.PeerHost, n3.PeerHost)
 
@@ -463,7 +465,7 @@ func TestRelaying(t *testing.T) {
 	}
 }
 
-func TestSendTranscodeResult(t *testing.T) {
+func TestSendTranscodeResponse(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Transcode Result...")
 	n1, n2 := setupNodes()
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
@@ -472,30 +474,63 @@ func TestSendTranscodeResult(t *testing.T) {
 
 	//Create the broadcaster, to capture the transcode result
 	n2.GetBroadcaster("strmid")
-
-	n1.SendTranscodeResult(peer.IDHexEncode(n2.NetworkNode.Identity), "strmid", map[string]string{"strmid1": types.P_240P_30FPS_4_3.Name, "strmid2": types.P_360P_30FPS_4_3.Name})
-
-	//Wait until n2 get the result
-	start := time.Now()
-	for time.Since(start) < time.Second*3 {
-		if len(n2.broadcasters["strmid"].TranscodedIDs) == 0 {
-			time.Sleep(time.Second * 1)
-		} else {
-			break
+	rc := make(chan map[string]string)
+	n2.ReceivedTranscodeResponse("strmid", func(result map[string]string) {
+		rc <- result
+	})
+	err := n1.SendTranscodeResponse(peer.IDHexEncode(n2.NetworkNode.Identity), "strmid", map[string]string{"strmid1": types.P240p30fps4x3.Name, "strmid2": types.P360p30fps4x3.Name})
+	if err != nil {
+		t.Errorf("Error sending transcode result: %v", err)
+	}
+	timer := time.NewTimer(time.Second * 3)
+	select {
+	case r := <-rc:
+		if r["strmid1"] != types.P240p30fps4x3.Name {
+			t.Errorf("Expecting %v, got %v", types.P240p30fps4x3.Name, r["strmid1"])
 		}
+		if r["strmid2"] != types.P360p30fps4x3.Name {
+			t.Errorf("Expecting %v, got %v", types.P360p30fps4x3.Name, r["strmid2"])
+		}
+	case <-timer.C:
+		t.Errorf("Timed out")
 	}
 
-	if n2.broadcasters["strmid"].TranscodedIDs["strmid1"] != types.P_240P_30FPS_4_3 {
-		t.Errorf("Expecting 240P for strmid1, but got %v", n2.broadcasters["strmid"].TranscodedIDs["strmid1"])
+	glog.Infof("%v", n2)
+}
+
+func TestMasterPlaylist(t *testing.T) {
+	glog.Infof("\n\nTesting handle master playlist")
+	n1, n2 := setupNodes()
+	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
+	go n1.SetupProtocol()
+
+	mpl := m3u8.NewMasterPlaylist()
+	pl, _ := m3u8.NewMediaPlaylist(10, 10)
+	mpl.Append("test.m3u8", pl, m3u8.VariantParams{Bandwidth: 100000})
+
+	err := n1.UpdateMasterPlaylist("test", mpl)
+	if err != nil {
+		t.Errorf("Error updating master playlist")
 	}
 
-	if n2.broadcasters["strmid"].TranscodedIDs["strmid2"] != types.P_360P_30FPS_4_3 {
-		t.Errorf("Expecting 360P for strmid2, but got %v", n2.broadcasters["strmid"].TranscodedIDs["strmid2"])
+	mplc, err := n2.GetMasterPlaylist(n1.GetNodeID(), "test")
+	if err != nil {
+		t.Errorf("Error getting master playlist: %v", err)
+	}
+	timer := time.NewTimer(time.Second * 3)
+	select {
+	case r := <-mplc:
+		vars := r.Variants
+		if len(vars) != 1 {
+			t.Errorf("Expecting 1 variants, but got: %v - %v", len(vars), r)
+		}
+	case <-timer.C:
+		t.Errorf("Timed out")
 	}
 }
 
 func TestID(t *testing.T) {
-	n1, _ := simpleNodes()
+	n1, _ := simpleNodes(15002, 15003)
 	id := n1.Identity
 	sid := peer.IDHexEncode(id)
 	pid, err := peer.IDHexDecode(sid)

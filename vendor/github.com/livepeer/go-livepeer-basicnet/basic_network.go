@@ -9,6 +9,8 @@ package basicnet
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
 	ma "gx/ipfs/QmXY77cVe7rVRQXZZQRioukUM7aRW3BTcAgJe12MCtb3Ji/go-multiaddr"
@@ -16,16 +18,17 @@ import (
 	protocol "gx/ipfs/QmZNkThpqfVXs9GNbexPrfBbXSLNYeKrE7jwFM2oqHbyqN/go-libp2p-protocol"
 	net "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
 
+	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	lpnet "github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/types"
 )
 
 var Protocol = protocol.ID("/livepeer_video/0.0.1")
 var ErrNoClosePeers = errors.New("NoClosePeers")
 var ErrUnknownMsg = errors.New("UnknownMsgType")
 var ErrProtocol = errors.New("ProtocolError")
-var ErrTranscodeResult = errors.New("TranscodeResultError")
+var ErrTranscodeResponse = errors.New("TranscodeResponseError")
+var ErrGetMasterPlaylist = errors.New("ErrGetMasterPlaylist")
 
 type VideoMuxer interface {
 	WriteSegment(seqNo uint64, strmID string, data []byte) error
@@ -33,16 +36,29 @@ type VideoMuxer interface {
 
 //BasicVideoNetwork implements the VideoNetwork interface.  It creates a kademlia network using libp2p.  It does push-based video delivery, and handles the protocol in the background.
 type BasicVideoNetwork struct {
-	NetworkNode  *NetworkNode
-	broadcasters map[string]*BasicBroadcaster
-	subscribers  map[string]*BasicSubscriber
-	relayers     map[string]*BasicRelayer
+	NetworkNode            *NetworkNode
+	broadcasters           map[string]*BasicBroadcaster
+	subscribers            map[string]*BasicSubscriber
+	relayers               map[string]*BasicRelayer
+	mplMap                 map[string]*m3u8.MasterPlaylist
+	mplChans               map[string]chan *m3u8.MasterPlaylist
+	transResponseCallbacks map[string]func(transcodeResult map[string]string)
+}
+
+func (n *BasicVideoNetwork) String() string {
+	return fmt.Sprintf("\n\nbroadcasters:%v\n\nsubscribers:%v\n\nrelayers:%v\n\n", n.broadcasters, n.subscribers, n.relayers)
 }
 
 //NewBasicVideoNetwork creates a libp2p node, handle the basic (push-based) video protocol.
 func NewBasicVideoNetwork(n *NetworkNode) (*BasicVideoNetwork, error) {
-	nw := &BasicVideoNetwork{NetworkNode: n, broadcasters: make(map[string]*BasicBroadcaster), subscribers: make(map[string]*BasicSubscriber), relayers: make(map[string]*BasicRelayer)}
-
+	nw := &BasicVideoNetwork{
+		NetworkNode:            n,
+		broadcasters:           make(map[string]*BasicBroadcaster),
+		subscribers:            make(map[string]*BasicSubscriber),
+		relayers:               make(map[string]*BasicRelayer),
+		mplMap:                 make(map[string]*m3u8.MasterPlaylist),
+		mplChans:               make(map[string]chan *m3u8.MasterPlaylist),
+		transResponseCallbacks: make(map[string]func(transcodeResult map[string]string))}
 	return nw, nil
 }
 
@@ -55,7 +71,7 @@ func (n *BasicVideoNetwork) GetNodeID() string {
 func (n *BasicVideoNetwork) GetBroadcaster(strmID string) (lpnet.Broadcaster, error) {
 	b, ok := n.broadcasters[strmID]
 	if !ok {
-		b = &BasicBroadcaster{Network: n, StrmID: strmID, q: make(chan *StreamDataMsg), listeners: make(map[string]*BasicStream), TranscodedIDs: make(map[string]types.VideoProfile)}
+		b = &BasicBroadcaster{Network: n, StrmID: strmID, q: make(chan *StreamDataMsg), listeners: make(map[string]*BasicStream)}
 		n.broadcasters[strmID] = b
 	}
 	return b, nil
@@ -97,22 +113,75 @@ func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
 	return n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid})
 }
 
-//SendTranscodeResult sends the transcode result to the broadcast node.
-func (n *BasicVideoNetwork) SendTranscodeResult(broadcaster string, strmID string, transcodedVideos map[string]string) error {
+//SendTranscodeResponse tsends the transcode result to the broadcast node.
+func (n *BasicVideoNetwork) SendTranscodeResponse(broadcaster string, strmID string, transcodedVideos map[string]string) error {
 	pid, err := peer.IDHexDecode(broadcaster)
 	if err != nil {
 		glog.Errorf("Bad broadcaster id %v - %v", broadcaster, err)
+		return err
 	}
 	ws := n.NetworkNode.GetStream(pid)
 	if ws != nil {
-		if err = ws.SendMessage(TranscodeResultID, TranscodeResultMsg{StrmID: strmID, Result: transcodedVideos}); err != nil {
+		if err = ws.SendMessage(TranscodeResponseID, TranscodeResponseMsg{StrmID: strmID, Result: transcodedVideos}); err != nil {
 			glog.Errorf("Error sending transcode result message: %v", err)
 			return err
 		}
 		return nil
 	}
 
-	return ErrTranscodeResult
+	return ErrTranscodeResponse
+}
+
+//ReceivedTranscodeResponse registers the callback for when the broadcaster receives transcode results.
+func (n *BasicVideoNetwork) ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string)) {
+	n.transResponseCallbacks[strmID] = gotResult
+}
+
+//GetMasterPlaylist issues a request to the broadcaster for the MasterPlaylist and returns the channel to the playlist. The broadcaster should send the response back as soon as it gets the request.
+func (n *BasicVideoNetwork) GetMasterPlaylist(p string, strmID string) (chan *m3u8.MasterPlaylist, error) {
+	pid, err := peer.IDHexDecode(p)
+	if err != nil {
+		glog.Errorf("Bad peer id: %v - %v", p, err)
+		return nil, err
+	}
+
+	if len(n.NetworkNode.PeerHost.Peerstore().Addrs(pid)) == 0 {
+		pinfo, err := n.NetworkNode.Kad.FindPeer(context.Background(), pid)
+		if err != nil {
+			glog.Errorf("Error geting peer info for %v: %v", peer.IDHexEncode(pid), err)
+			return nil, err
+		}
+		n.NetworkNode.PeerHost.Peerstore().AddAddrs(pinfo.ID, pinfo.Addrs, peerstore.PermanentAddrTTL)
+	}
+
+	ws := n.NetworkNode.GetStream(pid)
+	if ws != nil {
+		if err = ws.SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
+			glog.Errorf("Error sending get master playlist message: %v", err)
+			return nil, err
+		}
+		c := make(chan *m3u8.MasterPlaylist)
+		n.mplChans[strmID] = c
+
+		go func() {
+			for {
+				if err := streamHandler(n, ws); err != nil {
+					glog.Errorf("Error handling stream: %v", err)
+					return
+				}
+			}
+
+		}()
+		return c, nil
+	}
+
+	return nil, ErrGetMasterPlaylist
+}
+
+//UpdateMasterPlaylist updates the copy of the master playlist so any node can request it.
+func (n *BasicVideoNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterPlaylist) error {
+	n.mplMap[strmID] = mpl
+	return nil
 }
 
 //SetupProtocol sets up the protocol so we can handle incoming messages
@@ -173,12 +242,25 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 			glog.Errorf("Cannot convert FinishStreamMsg: %v", msg.Data)
 		}
 		return handleFinishStream(nw, fs)
-	case TranscodeResultID:
-		tr, ok := msg.Data.(TranscodeResultMsg)
+	case TranscodeResponseID:
+		tr, ok := msg.Data.(TranscodeResponseMsg)
 		if !ok {
-			glog.Errorf("Cannot convert TranscodeResultMsg: %v", msg.Data)
+			glog.Errorf("Cannot convert TranscodeResponseMsg: %v", msg.Data)
 		}
-		return handleTranscodeResult(nw, tr)
+		return handleTranscodeResponse(nw, tr)
+	case GetMasterPlaylistReqID:
+		//Get the local master playlist from a broadcaster and send it back
+		mplr, ok := msg.Data.(GetMasterPlaylistReqMsg)
+		if !ok {
+			glog.Errorf("Cannot convert GetMasterPlaylistReqMsg: %v", msg.Data)
+		}
+		return handleGetMasterPlaylistReq(nw, ws, mplr)
+	case MasterPlaylistDataID:
+		mpld, ok := msg.Data.(MasterPlaylistDataMsg)
+		if !ok {
+			glog.Errorf("Cannot convert MasterPlaylistDataMsg: %v", msg.Data)
+		}
+		return handleMasterPlaylistDataMsg(nw, mpld)
 	default:
 		glog.Infof("Unknown Data: %v -- closing stream", msg)
 		// stream.Close()
@@ -225,7 +307,6 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 
 				ns := nw.NetworkNode.GetStream(p)
 				if ns != nil {
-					// if err := nw.NetworkNode.SendMessage(ns, p, SubReqID, subReq); err != nil {
 					if err := ns.SendMessage(SubReqID, subReq); err != nil {
 						//Question: Do we want to close the stream here?
 						glog.Errorf("Error relaying subReq to %v: %v", p, err)
@@ -340,22 +421,46 @@ func handleFinishStream(nw *BasicVideoNetwork, fs FinishStreamMsg) error {
 	return nil
 }
 
-func handleTranscodeResult(nw *BasicVideoNetwork, tr TranscodeResultMsg) error {
+func handleTranscodeResponse(nw *BasicVideoNetwork, tr TranscodeResponseMsg) error {
 	glog.Infof("Transcode Result StreamIDs: %v", tr)
-	b := nw.broadcasters[tr.StrmID]
-
-	if b == nil {
-		glog.Errorf("Error Handling Transcode Result - cannot find broadcaster with streamID: %v", tr.StrmID)
-		return ErrTranscodeResult
+	callback, ok := nw.transResponseCallbacks[tr.StrmID]
+	if !ok {
+		glog.Errorf("Error handling transcode result - cannot find callback for stream: %v", tr.StrmID)
+		return ErrTranscodeResponse
 	}
 
-	for s, v := range tr.Result {
-		if types.VideoProfileLookup[v].Name == "" {
-			glog.Errorf("Error Handling Transcode Result - cannot find video profile: %v", v)
-		} else {
-			b.TranscodedIDs[s] = types.VideoProfileLookup[v]
-		}
+	callback(tr.Result)
+	return nil
+}
+
+func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, ws *BasicStream, mplr GetMasterPlaylistReqMsg) error {
+	mpl, ok := nw.mplMap[mplr.StrmID]
+	if !ok {
+		glog.Errorf("Got master playlist request, but can't find the playlist")
+		return ws.SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{StrmID: mplr.StrmID, NotFound: true})
 	}
 
+	return ws.SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{StrmID: mplr.StrmID, MPL: mpl.String()})
+}
+
+func handleMasterPlaylistDataMsg(nw *BasicVideoNetwork, mpld MasterPlaylistDataMsg) error {
+	ch, ok := nw.mplChans[mpld.StrmID]
+	if !ok {
+		glog.Errorf("Got master playlist data, but don't have a channel")
+		return ErrGetMasterPlaylist
+	}
+
+	//Decode the playlist from a string
+	mpl := m3u8.NewMasterPlaylist()
+	if err := mpl.DecodeFrom(strings.NewReader(mpld.MPL), true); err != nil {
+		glog.Errorf("Error decoding playlist: %v", err)
+		return ErrGetMasterPlaylist
+	}
+
+	//insert into channel
+	ch <- mpl
+	//close channel, delete it
+	close(ch)
+	delete(nw.mplChans, mpld.StrmID)
 	return nil
 }

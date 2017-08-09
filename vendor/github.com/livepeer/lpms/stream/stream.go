@@ -222,6 +222,7 @@ func (s *VideoStream) WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error {
 }
 
 func (s *VideoStream) WriteHLSSegmentToStream(seg HLSSegment) error {
+	glog.Infof("Writing seg to stream: %v", seg.Name)
 	return s.buffer.push(seg)
 }
 

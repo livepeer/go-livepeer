@@ -4,16 +4,22 @@ import (
 	"context"
 	"math/big"
 
+	"github.com/ericxtang/m3u8"
 	"github.com/livepeer/go-livepeer/types"
 )
 
+//VideoNetwork describes the interface for a Livepeer node network-layer library.
 type VideoNetwork interface {
 	GetNodeID() string
+	GetMasterPlaylist(nodeID string, strmID string) (chan *m3u8.MasterPlaylist, error)
+	UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterPlaylist) error
 	GetBroadcaster(strmID string) (Broadcaster, error)
 	GetSubscriber(strmID string) (Subscriber, error)
 	Connect(nodeID, nodeAddr string) error
 	SetupProtocol() error
-	SendTranscodeResult(nodeID string, strmID string, transcodeResult map[string]string) error
+	SendTranscodeResponse(nodeID string, strmID string, transcodeResult map[string]string) error
+	ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string))
+	String() string
 }
 
 //Broadcaster takes a streamID and a reader, and broadcasts the data to whatever underlining network.
@@ -27,7 +33,9 @@ type VideoNetwork interface {
 //	b.Finish()
 type Broadcaster interface {
 	Broadcast(seqNo uint64, data []byte) error
+	IsWorking() bool
 	Finish() error
+	String() string
 }
 
 //Subscriber subscribes to a stream defined by strmID.  It returns a reader that contains the stream.
@@ -45,7 +53,9 @@ type Broadcaster interface {
 //	sub.Unsubscribe() //This is the same with calling cancel()
 type Subscriber interface {
 	Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error
+	IsWorking() bool
 	Unsubscribe() error
+	String() string
 }
 
 type TranscodeConfig struct {

@@ -1,6 +1,7 @@
 package basicnet
 
 import (
+	"fmt"
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 
 	"github.com/golang/glog"
@@ -31,4 +32,8 @@ func (br *BasicRelayer) RelayFinishStream(nw *BasicVideoNetwork, fs FinishStream
 		}
 	}
 	return nil
+}
+
+func (br BasicRelayer) String() string {
+	return fmt.Sprintf("UpstreamPeer: %v", peer.IDHexEncode(br.UpstreamPeer))
 }

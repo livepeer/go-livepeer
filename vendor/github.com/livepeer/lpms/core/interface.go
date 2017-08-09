@@ -7,6 +7,7 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
+//RTMPSegmenter describes an interface for a segmenter
 type RTMPSegmenter interface {
-	SegmentRTMPToHLS(ctx context.Context, rs stream.Stream, hs stream.Stream, segOptions segmenter.SegmenterOptions) error
+	SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error
 }

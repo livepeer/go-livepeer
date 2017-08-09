@@ -15,7 +15,9 @@ const (
 	FinishStreamID
 	SubReqID
 	CancelSubID
-	TranscodeResultID
+	TranscodeResponseID
+	GetMasterPlaylistReqID
+	MasterPlaylistDataID
 	SimpleString
 )
 
@@ -49,10 +51,20 @@ type StreamDataMsg struct {
 	Data   []byte
 }
 
-type TranscodeResultMsg struct {
+type TranscodeResponseMsg struct {
 	//map of streamid -> video description
 	StrmID string
 	Result map[string]string
+}
+
+type GetMasterPlaylistReqMsg struct {
+	StrmID string
+}
+
+type MasterPlaylistDataMsg struct {
+	StrmID   string
+	MPL      string
+	NotFound bool
 }
 
 func (m Msg) MarshalJSON() ([]byte, error) {
@@ -84,11 +96,23 @@ func (m Msg) MarshalJSON() ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Failed to marshal FinishStreamMsg: %v", err)
 		}
-	case TranscodeResultMsg:
-		gob.Register(TranscodeResultMsg{})
-		err := enc.Encode(m.Data.(TranscodeResultMsg))
+	case TranscodeResponseMsg:
+		gob.Register(TranscodeResponseMsg{})
+		err := enc.Encode(m.Data.(TranscodeResponseMsg))
 		if err != nil {
-			return nil, fmt.Errorf("Failed to marshal TranscodeResultMsg: %v", err)
+			return nil, fmt.Errorf("Failed to marshal TranscodeResponseMsg: %v", err)
+		}
+	case MasterPlaylistDataMsg:
+		gob.Register(MasterPlaylistDataMsg{})
+		err := enc.Encode(m.Data.(MasterPlaylistDataMsg))
+		if err != nil {
+			return nil, fmt.Errorf("Failed to marshal MasterPlaylistDataMsg: %v", err)
+		}
+	case GetMasterPlaylistReqMsg:
+		gob.Register(GetMasterPlaylistReqMsg{})
+		err := enc.Encode(m.Data.(GetMasterPlaylistReqMsg))
+		if err != nil {
+			return nil, fmt.Errorf("Failed to marshal GetMasterPlaylistReqMsg: %v", err)
 		}
 	case string:
 		err := enc.Encode(m.Data)
@@ -143,13 +167,27 @@ func (m *Msg) UnmarshalJSON(b []byte) error {
 			return errors.New("failed to decode FinishStreamMsg")
 		}
 		m.Data = fs
-	case TranscodeResultID:
-		var tr TranscodeResultMsg
+	case TranscodeResponseID:
+		var tr TranscodeResponseMsg
 		err := dec.Decode(&tr)
 		if err != nil {
-			return errors.New("failed to decode TranscodeResultMsg")
+			return errors.New("failed to decode TranscodeResponseMsg")
 		}
 		m.Data = tr
+	case MasterPlaylistDataID:
+		var mpld MasterPlaylistDataMsg
+		err := dec.Decode(&mpld)
+		if err != nil {
+			return errors.New("failed to decode MasterPlaylistDataMsg")
+		}
+		m.Data = mpld
+	case GetMasterPlaylistReqID:
+		var mplr GetMasterPlaylistReqMsg
+		err := dec.Decode(&mplr)
+		if err != nil {
+			return errors.New("failed to decode GetMasterPlaylistReqMsg")
+		}
+		m.Data = mplr
 	case SimpleString:
 		var str string
 		err := dec.Decode(&str)

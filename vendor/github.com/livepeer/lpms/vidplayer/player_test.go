@@ -3,10 +3,11 @@ package vidplayer
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
-
-	"time"
 
 	"net/url"
 
@@ -21,7 +22,7 @@ func TestRTMP(t *testing.T) {
 
 	//Handler should get called
 	handler1Called := false
-	player.rtmpPlayHandler = func(url *url.URL) (stream.Stream, error) {
+	player.rtmpPlayHandler = func(url *url.URL) (stream.RTMPVideoStream, error) {
 		handler1Called = true
 		return nil, fmt.Errorf("error")
 	}
@@ -33,7 +34,7 @@ func TestRTMP(t *testing.T) {
 
 	//Re-assign handler, it should still get called
 	handler2Called := false
-	player.rtmpPlayHandler = func(url *url.URL) (stream.Stream, error) {
+	player.rtmpPlayHandler = func(url *url.URL) (stream.RTMPVideoStream, error) {
 		handler2Called = true
 		return nil, fmt.Errorf("error")
 	}
@@ -45,29 +46,79 @@ func TestRTMP(t *testing.T) {
 	//TODO: Should add a test for writing to the stream.
 }
 
-func TestHLS(t *testing.T) {
-	player := &VidPlayer{}
-	s := stream.NewVideoStream("test", stream.HLS)
-	s.HLSTimeout = time.Second * 5
-	//Write some packets into the stream
-	s.WriteHLSPlaylistToStream(m3u8.MediaPlaylist{})
-	s.WriteHLSSegmentToStream(stream.HLSSegment{})
-	var buffer *stream.HLSBuffer
-	player.HandleHLSPlay(
-		//getMasterPlaylist
-		func(url *url.URL) (*m3u8.MasterPlaylist, error) {
-			return nil, nil
-		},
-		//getMediaPlaylist
-		func(url *url.URL) (*m3u8.MediaPlaylist, error) {
-			return buffer.LatestPlaylist()
-		},
-		//getSegment
-		func(url *url.URL) ([]byte, error) {
-			return nil, nil
-		})
+func stubGetMasterPL(url *url.URL) (*m3u8.MasterPlaylist, error) {
+	// glog.Infof("%v", url.Path)
+	if url.Path == "/master.m3u8" {
+		mpl := m3u8.NewMasterPlaylist()
+		mpl.Append("test.m3u8", nil, m3u8.VariantParams{Bandwidth: 10})
+		return mpl, nil
+	}
+	return nil, nil
+}
 
-	//TODO: Add tests for checking if packets were written, etc.
+func stubGetMediaPL(url *url.URL) (*m3u8.MediaPlaylist, error) {
+	if url.Path == "/media.m3u8" {
+		pl, _ := m3u8.NewMediaPlaylist(10, 10)
+		pl.Append("seg1.ts", 10, "seg1.ts")
+		return pl, nil
+	}
+	return nil, nil
+}
+
+func stubGetSeg(url *url.URL) ([]byte, error) {
+	return []byte("testseg"), nil
+}
+
+func TestHLS(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handleLive(rec, httptest.NewRequest("GET", "/badpath", strings.NewReader("")), stubGetMasterPL, stubGetMediaPL, stubGetSeg)
+	if rec.Result().StatusCode != 500 {
+		t.Errorf("Expecting 500 because of bad path, but got: %v", rec.Result().StatusCode)
+	}
+
+	//Test getting master playlist
+	rec = httptest.NewRecorder()
+	handleLive(rec, httptest.NewRequest("GET", "/master.m3u8", strings.NewReader("")), stubGetMasterPL, stubGetMediaPL, stubGetSeg)
+	if rec.Result().StatusCode != 200 {
+		t.Errorf("Expecting 200, but got %v", rec.Result().StatusCode)
+	}
+	mpl := m3u8.NewMasterPlaylist()
+	mpl.DecodeFrom(rec.Result().Body, true)
+	if mpl.Variants[0].URI != "test.m3u8" {
+		t.Errorf("Expecting test.m3u8, got %v", mpl.Variants[0].URI)
+	}
+
+	//Test getting media playlist
+	rec = httptest.NewRecorder()
+	handleLive(rec, httptest.NewRequest("GET", "/media.m3u8", strings.NewReader("")), stubGetMasterPL, stubGetMediaPL, stubGetSeg)
+	if rec.Result().StatusCode != 200 {
+		t.Errorf("Expecting 200, but got %v", rec.Result().StatusCode)
+	}
+	pl, _, err := m3u8.DecodeFrom(rec.Result().Body, true)
+	if err != nil {
+		t.Errorf("Error decoding from result: %v", err)
+	}
+	me, ok := pl.(*m3u8.MediaPlaylist)
+	if !ok {
+		t.Errorf("Expecting a media playlist, got %v", me)
+	}
+	if me.Segments[0].URI != "seg1.ts" || me.Segments[0].Duration != 10 {
+		t.Errorf("Expecting seg1.ts with duration 10, got: %v", me.Segments[0])
+	}
+
+	//Test getting segment
+	rec = httptest.NewRecorder()
+	handleLive(rec, httptest.NewRequest("GET", "/seg.ts", strings.NewReader("")), stubGetMasterPL, stubGetMediaPL, stubGetSeg)
+	if rec.Result().StatusCode != 200 {
+		t.Errorf("Expecting 200, but got %v", rec.Result().StatusCode)
+	}
+	res, err := ioutil.ReadAll(rec.Result().Body)
+	if err != nil {
+		t.Errorf("Error reading result: %v", err)
+	}
+	if string(res) != "testseg" {
+		t.Errorf("Expecting testseg, got %v", string(res))
+	}
 }
 
 type TestRWriter struct {
@@ -84,9 +135,6 @@ func (*TestRWriter) WriteHeader(int) {}
 
 func TestHandleHLS(t *testing.T) {
 	testBuf := stream.NewHLSBuffer(10, 100)
-	// req := &http.Request{URL: &url.URL{Path: "test.m3u8"}}
-	// rw := &TestRWriter{header: make(map[string][]string)}
-
 	pl, _ := m3u8.NewMediaPlaylist(10, 10)
 	pl.Append("url_1.ts", 2, "")
 	pl.Append("url_2.ts", 2, "")

@@ -26,8 +26,10 @@ import (
 
 type TestStream struct{}
 
-func (s *TestStream) GetStreamID() string { return "test" }
-func (s *TestStream) Len() int64          { return 0 }
+func (s TestStream) String() string                       { return "" }
+func (s *TestStream) GetStreamFormat() stream.VideoFormat { return stream.RTMP }
+func (s *TestStream) GetStreamID() string                 { return "test" }
+func (s *TestStream) Len() int64                          { return 0 }
 func (s *TestStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) error {
 	format.RegisterAll()
 	wd, _ := os.Getwd()
@@ -71,7 +73,7 @@ func TestSegmenter(t *testing.T) {
 	player := vidplayer.NewVidPlayer(server, "")
 
 	player.HandleRTMPPlay(
-		func(url *url.URL) (stream.Stream, error) {
+		func(url *url.URL) (stream.RTMPVideoStream, error) {
 			return strm, nil
 		})
 

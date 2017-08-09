@@ -2,11 +2,14 @@ package basicnet
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
+	"gx/ipfs/QmU9a9NV9RdPNwZQDYd5uKsm6N6LJLSvLbywDDYFbaaC6P/go-multihash"
 	"testing"
 	"time"
 
 	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
+	cid "gx/ipfs/QmTprEaAA2A9bst5XH7exuyi5KzNMK3SEDNN8rBDnKWcUS/go-cid"
 	ds "gx/ipfs/QmVSase1JP7cq9QkPT46oNwdp9pT6kBkG3oqS14y3QcZjG/go-datastore"
 	ma "gx/ipfs/QmXY77cVe7rVRQXZZQRioukUM7aRW3BTcAgJe12MCtb3Ji/go-multiaddr"
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
@@ -24,12 +27,12 @@ type SimpleMsg struct {
 	Msg string
 }
 
-func simpleNodes() (*NetworkNode, *NetworkNode) {
+func simpleNodes(p1, p2 int) (*NetworkNode, *NetworkNode) {
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 
-	n1, _ := NewNode(15003, priv1, pub1)
-	n2, _ := NewNode(15004, priv2, pub2)
+	n1, _ := NewNode(p1, priv1, pub1)
+	n2, _ := NewNode(p2, priv2, pub2)
 
 	// n1.PeerHost.Peerstore().AddAddrs(n2.Identity, n2.PeerHost.Addrs(), peerstore.PermanentAddrTTL)
 	// n2.PeerHost.Peerstore().AddAddrs(n1.Identity, n1.PeerHost.Addrs(), peerstore.PermanentAddrTTL)
@@ -89,7 +92,7 @@ func simpleSend(ns net.Stream, txt string, t *testing.T) {
 
 func TestBackAndForth(t *testing.T) {
 	glog.Infof("\n\nTest back and forth...")
-	n1, n2 := simpleNodes()
+	n1, n2 := simpleNodes(15003, 15004)
 	connectHosts(n1.PeerHost, n2.PeerHost)
 	time.Sleep(time.Second)
 
@@ -148,4 +151,32 @@ func TestBasic(t *testing.T) {
 	s1 := NewBasicStream(stream)
 	s1.SendMessage(0, SimpleMsg{Msg: "ping!"})
 	time.Sleep(time.Second * 2)
+}
+
+func TestProvider(t *testing.T) {
+	n1, n2 := simpleNodes(15010, 15011)
+	n3, n4 := simpleNodes(15012, 15013)
+	connectHosts(n1.PeerHost, n2.PeerHost)
+	connectHosts(n2.PeerHost, n3.PeerHost)
+	connectHosts(n3.PeerHost, n4.PeerHost)
+
+	time.Sleep(time.Second)
+	buf, _ := hex.DecodeString("hello")
+	mhashBuf, _ := multihash.EncodeName(buf, "sha1")
+	glog.Infof("Declaring provider: %v", peer.IDHexEncode(n1.Identity))
+	// if err := n1.Kad.Provide(context.Background(), cid.NewCidV1(cid.Raw, []byte("hello")), true); err != nil {
+	if err := n1.Kad.Provide(context.Background(), cid.NewCidV1(cid.Raw, mhashBuf), true); err != nil {
+		glog.Errorf("Error declaring provide: %v", err)
+	}
+
+	time.Sleep(time.Second)
+	// pidc := n4.Kad.FindProvidersAsync(context.Background(), cid.NewCidV1(cid.Raw, []byte("hello")), 10)
+	pidc := n4.Kad.FindProvidersAsync(context.Background(), cid.NewCidV1(cid.Raw, mhashBuf), 1)
+	// if err != nil {
+	// 	glog.Errorf("Error finding providers: %v", err)
+	// }
+	select {
+	case pid := <-pidc:
+		glog.Infof("Provider for hello: %v", peer.IDHexEncode(pid.ID))
+	}
 }
