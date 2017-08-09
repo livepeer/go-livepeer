@@ -33,8 +33,8 @@ import (
 	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/mediaserver"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/server"
 	"github.com/livepeer/go-livepeer/types"
 )
 
@@ -190,10 +190,11 @@ func main() {
 
 	//Set up the media server
 	glog.Infof("\n\nSetting up Media Server")
-	s := mediaserver.NewLivepeerMediaServer(*rtmpPort, *httpPort, "", n)
+	s := server.NewLivepeerServer(*rtmpPort, *httpPort, "", n)
 	ec := make(chan error)
 	msCtx, cancel := context.WithCancel(context.Background())
 	go func() {
+		s.StartWebserver()
 		ec <- s.StartMediaServer(msCtx)
 	}()
 

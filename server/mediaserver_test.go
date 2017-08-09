@@ -1,4 +1,4 @@
-package mediaserver
+package server
 
 import (
 	"bytes"
@@ -21,9 +21,9 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-var S *LivepeerMediaServer
+var S *LivepeerServer
 
-func setupServer() *LivepeerMediaServer {
+func setupServer() *LivepeerServer {
 	if S == nil {
 		priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 		node, err := bnet.NewNode(15000, priv, pub)
@@ -37,8 +37,9 @@ func setupServer() *LivepeerMediaServer {
 			return nil
 		}
 		n, _ := core.NewLivepeerNode(nil, nw, "./tmp")
-		S = NewLivepeerMediaServer("1935", "8080", "", n)
+		S = NewLivepeerServer("1935", "8080", "", n)
 		go S.StartMediaServer(context.Background())
+		go S.StartWebserver()
 	}
 	return S
 }
@@ -48,6 +49,7 @@ type StubNetwork struct {
 	S *StubSubscriber
 }
 
+func (n *StubNetwork) String() string { return "" }
 func (n *StubNetwork) GetNodeID() string {
 	return "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0"
 }
@@ -92,14 +94,20 @@ type StubBroadcaster struct {
 	Data map[uint64][]byte
 }
 
+func (b *StubBroadcaster) IsWorking() bool { return false }
+func (b *StubBroadcaster) String() string  { return "" }
 func (b *StubBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 	b.Data[seqNo] = data
 	return nil
 }
 func (b *StubBroadcaster) Finish() error { return nil }
 
-type StubSubscriber struct{}
+type StubSubscriber struct {
+	working bool
+}
 
+func (s *StubSubscriber) IsWorking() bool { return s.working }
+func (s *StubSubscriber) String() string  { return "" }
 func (s *StubSubscriber) Subscribe(ctx context.Context, f func(seqNo uint64, data []byte, eof bool)) error {
 	glog.Infof("Calling StubSubscriber!!!")
 	s1 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 0, Name: "strmID_01.ts", Data: []byte("test data"), Duration: 8.001}}
@@ -116,6 +124,7 @@ func (s *StubSubscriber) Subscribe(ctx context.Context, f func(seqNo uint64, dat
 		}
 		f(uint64(i), buf.Bytes(), false)
 	}
+	s.working = true
 	return nil
 }
 func (s *StubSubscriber) Unsubscribe() error { return nil }
@@ -272,7 +281,7 @@ func TestGetHLSMediaPlaylistHandler(t *testing.T) {
 
 	//Set up a local stream and a local subscriber.
 	hlsStrm, _ := s.LivepeerNode.StreamDB.AddNewHLSStream("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")
-	s.LivepeerNode.StreamDB.AddSubscriber("strm", &StubSubscriber{})
+	// s.LivepeerNode.StreamDB.AddSubscriber("strm", &StubSubscriber{})
 	tmpPl, _ := m3u8.NewMediaPlaylist(100, 100)
 	tmpPl.Append("seg1.ts", 8, "")
 	hlsStrm.AddVariant("strm", &m3u8.Variant{URI: "strm.m3u8", Chunklist: tmpPl, VariantParams: m3u8.VariantParams{Bandwidth: 100}})

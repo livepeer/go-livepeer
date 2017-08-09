@@ -9,6 +9,7 @@ package basicnet
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
@@ -42,6 +43,10 @@ type BasicVideoNetwork struct {
 	mplMap                 map[string]*m3u8.MasterPlaylist
 	mplChans               map[string]chan *m3u8.MasterPlaylist
 	transResponseCallbacks map[string]func(transcodeResult map[string]string)
+}
+
+func (n *BasicVideoNetwork) String() string {
+	return fmt.Sprintf("\n\nbroadcasters:%v\n\nsubscribers:%v\n\nrelayers:%v\n\n", n.broadcasters, n.subscribers, n.relayers)
 }
 
 //NewBasicVideoNetwork creates a libp2p node, handle the basic (push-based) video protocol.

@@ -33,6 +33,7 @@ type StubVideoNetwork struct {
 	nodeID       string
 }
 
+func (n *StubVideoNetwork) String() string { return "" }
 func (n *StubVideoNetwork) GetNodeID() string {
 	return "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0"
 }
@@ -86,6 +87,8 @@ type StubBroadcaster struct {
 	Data   []byte
 }
 
+func (n *StubBroadcaster) IsWorking() bool { return true }
+func (n *StubBroadcaster) String() string  { return "" }
 func (n *StubBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 	ss, err := BytesToSignedSegment(data)
 	if err != nil {
@@ -111,6 +114,8 @@ type StubSubscriber struct {
 	T *testing.T
 }
 
+func (s *StubSubscriber) IsWorking() bool { return true }
+func (s *StubSubscriber) String() string  { return "" }
 func (s *StubSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error {
 	d, _ := ioutil.ReadFile("./test.ts")
 	newSeg := SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test name", Data: d, Duration: 1}, Sig: []byte("test sig")}

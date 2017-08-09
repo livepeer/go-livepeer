@@ -2,35 +2,32 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 
-	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/stream"
 )
 
 var ErrNotFound = errors.New("NotFound")
-var ErrAddSubscriber = errors.New("ErrAddSubscriber")
 
 const HLSWaitTime = time.Second * 10
 
 //StreamDB stores the video streams, the video buffers, and related information in memory. Note that HLS streams may have many streamIDs, each representing a
 //ABS rendition, so there may be multiple streamIDs that map to the same HLS stream in the streams map.
 type StreamDB struct {
-	streams     map[StreamID]stream.VideoStream_
-	subscribers map[StreamID]net.Subscriber
-	SelfNodeID  string
+	streams    map[StreamID]stream.VideoStream_
+	SelfNodeID string
 }
 
 //NewStreamDB Create a new StreamDB with the node's network address
 func NewStreamDB(selfNodeID string) *StreamDB {
 	return &StreamDB{
-		streams:     make(map[StreamID]stream.VideoStream_),
-		subscribers: make(map[StreamID]net.Subscriber),
-		SelfNodeID:  selfNodeID}
+		streams:    make(map[StreamID]stream.VideoStream_),
+		SelfNodeID: selfNodeID}
 }
 
 //GetHLSStream gets a HLS video stream stored in the StreamDB
@@ -127,25 +124,11 @@ func (s *StreamDB) DeleteStream(strmID StreamID) {
 	// glog.Infof("streams len after delete: %v", len(s.streams))
 }
 
-//AddSubscriber adds a VideoNetwork subscriber to StreamDB
-func (s *StreamDB) AddSubscriber(strmID StreamID, sub net.Subscriber) error {
-	if _, ok := s.subscribers[strmID]; ok {
-		return ErrAddSubscriber
+func (s StreamDB) String() string {
+	streams := ""
+	for vid, s := range s.streams {
+		streams = streams + fmt.Sprintf("\nVariantID:%v, %v", vid, s)
 	}
-	s.subscribers[strmID] = sub
-	return nil
-}
 
-//GetSubscriber gets a VideoNetwork subscriber to StreamDB
-func (s *StreamDB) GetSubscriber(strmID StreamID) net.Subscriber {
-	sub, ok := s.subscribers[strmID]
-	if !ok {
-		return nil
-	}
-	return sub
-}
-
-//DeleteSubscriber deletes a VideoNetwork subscriber from StreamDB
-func (s *StreamDB) DeleteSubscriber(strmID StreamID) {
-	delete(s.subscribers, strmID)
+	return fmt.Sprintf("\nStreams:%v\n\n", streams)
 }

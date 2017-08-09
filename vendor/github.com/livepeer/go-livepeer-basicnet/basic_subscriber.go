@@ -3,6 +3,7 @@ package basicnet
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
@@ -119,4 +120,12 @@ func (s *BasicSubscriber) Unsubscribe() error {
 	//Remove self from network
 	delete(s.Network.subscribers, s.StrmID)
 	return nil
+}
+
+func (s BasicSubscriber) String() string {
+	return fmt.Sprintf("StreamID: %v, working: %v", s.StrmID, s.working)
+}
+
+func (s *BasicSubscriber) IsWorking() bool {
+	return s.working
 }

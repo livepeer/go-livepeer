@@ -5,7 +5,7 @@ go test -logtostderr=true
 t1=$?
 cd ..
 
-cd mediaserver
+cd server
 go test -logtostderr=true
 t2=$?
 cd ..

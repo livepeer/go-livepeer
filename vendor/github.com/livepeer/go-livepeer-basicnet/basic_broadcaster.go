@@ -2,6 +2,7 @@ package basicnet
 
 import (
 	"context"
+	"fmt"
 
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 
@@ -72,4 +73,12 @@ func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 		}
 	}
 
+}
+
+func (b BasicBroadcaster) String() string {
+	return fmt.Sprintf("StreamID: %v, working: %v, q: %v, listeners: %v", b.StrmID, b.working, len(b.q), len(b.listeners))
+}
+
+func (b *BasicBroadcaster) IsWorking() bool {
+	return b.working
 }

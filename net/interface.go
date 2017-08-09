@@ -19,6 +19,7 @@ type VideoNetwork interface {
 	SetupProtocol() error
 	SendTranscodeResponse(nodeID string, strmID string, transcodeResult map[string]string) error
 	ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string))
+	String() string
 }
 
 //Broadcaster takes a streamID and a reader, and broadcasts the data to whatever underlining network.
@@ -32,7 +33,9 @@ type VideoNetwork interface {
 //	b.Finish()
 type Broadcaster interface {
 	Broadcast(seqNo uint64, data []byte) error
+	IsWorking() bool
 	Finish() error
+	String() string
 }
 
 //Subscriber subscribes to a stream defined by strmID.  It returns a reader that contains the stream.
@@ -50,7 +53,9 @@ type Broadcaster interface {
 //	sub.Unsubscribe() //This is the same with calling cancel()
 type Subscriber interface {
 	Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error
+	IsWorking() bool
 	Unsubscribe() error
+	String() string
 }
 
 type TranscodeConfig struct {

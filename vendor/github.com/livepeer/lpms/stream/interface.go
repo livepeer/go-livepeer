@@ -10,6 +10,7 @@ import (
 type VideoStream_ interface {
 	GetStreamID() string
 	GetStreamFormat() VideoFormat
+	String() string
 }
 
 //HLSVideoStream contains the master playlist, media playlists in it, and the segments in them.  Each media playlist also has a streamID.

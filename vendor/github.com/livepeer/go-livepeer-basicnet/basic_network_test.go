@@ -494,6 +494,8 @@ func TestSendTranscodeResponse(t *testing.T) {
 	case <-timer.C:
 		t.Errorf("Timed out")
 	}
+
+	glog.Infof("%v", n2)
 }
 
 func TestMasterPlaylist(t *testing.T) {

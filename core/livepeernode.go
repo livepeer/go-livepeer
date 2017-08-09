@@ -269,7 +269,7 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 		//1 - the subscriber quits
 		if eof {
 			glog.Infof("Got EOF, writing to buf")
-			strm.AddHLSSegment(strmID.String(), &stream.HLSSegment{EOF: true})
+			strm.AddHLSSegment(strmID.String(), &stream.HLSSegment{Name: fmt.Sprintf("%v_eof", strmID), EOF: true})
 			if err := sub.Unsubscribe(); err != nil {
 				glog.Errorf("Unsubscribe error: %v", err)
 				return

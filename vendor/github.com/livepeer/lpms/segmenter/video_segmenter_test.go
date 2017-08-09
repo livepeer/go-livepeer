@@ -26,6 +26,7 @@ import (
 
 type TestStream struct{}
 
+func (s TestStream) String() string                       { return "" }
 func (s *TestStream) GetStreamFormat() stream.VideoFormat { return stream.RTMP }
 func (s *TestStream) GetStreamID() string                 { return "test" }
 func (s *TestStream) Len() int64                          { return 0 }

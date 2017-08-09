@@ -2,6 +2,7 @@ package stream
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"reflect"
 	"runtime/debug"
@@ -119,4 +120,8 @@ func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.Dem
 	case err := <-c:
 		return err
 	}
+}
+
+func (s BasicRTMPVideoStream) String() string {
+	return fmt.Sprintf("StreamID: %v, Type: %v", s.GetStreamID(), s.GetStreamFormat())
 }
