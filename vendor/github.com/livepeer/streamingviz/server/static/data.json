@@ -1,0 +1,32 @@
+{
+  "nodes": [
+    {"id": "A"},
+    {"id": "B"},
+    {"id": "C"},
+    {"id": "D"},
+    {"id": "E"},
+    {"id": "F"},
+    {"id": "G"},
+    {"id": "H"},
+    {"id": "I"}
+  ],
+  "links": [
+    {"source": "A", "target": "B", "value": 1},
+    {"source": "A", "target": "D", "value": 1},
+    {"source": "A", "target": "F", "value": 1},
+    {"source": "B", "target": "D", "value": 1},
+    {"source": "B", "target": "E", "value": 1},
+    {"source": "C", "target": "I", "value": 1},
+    {"source": "C", "target": "F", "value": 1},
+    {"source": "C", "target": "G", "value": 1},
+    {"source": "E", "target": "I", "value": 1},
+    {"source": "E", "target": "H", "value": 1},
+    {"source": "F", "target": "G", "value": 1},
+    {"source": "G", "target": "H", "value": 1},
+    {"source": "H", "target": "I", "value": 1}
+  ],
+  "streams": {
+    "id1": {"broadcaster": "A", "relayers": ["B", "C", "D"], "subscribers": ["C", "E"]},
+    "id2": {"broadcaster": "B", "relayers": ["C", "F"], "subscribers": ["E", "H"]}
+  }
+}

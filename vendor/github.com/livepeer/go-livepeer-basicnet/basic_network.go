@@ -20,6 +20,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 	lpnet "github.com/livepeer/go-livepeer/net"
 )
 
@@ -73,6 +74,7 @@ func (n *BasicVideoNetwork) GetBroadcaster(strmID string) (lpnet.Broadcaster, er
 	if !ok {
 		b = &BasicBroadcaster{Network: n, StrmID: strmID, q: make(chan *StreamDataMsg), listeners: make(map[string]*BasicStream)}
 		n.broadcasters[strmID] = b
+		lpmon.Instance().LogBroadcaster(strmID)
 	}
 	return b, nil
 }
@@ -83,6 +85,7 @@ func (n *BasicVideoNetwork) GetSubscriber(strmID string) (lpnet.Subscriber, erro
 	if !ok {
 		s = &BasicSubscriber{Network: n, StrmID: strmID, host: n.NetworkNode.PeerHost, msgChan: make(chan StreamDataMsg)}
 		n.subscribers[strmID] = s
+		lpmon.Instance().LogSub(strmID)
 	}
 	return s, nil
 }
@@ -274,6 +277,7 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 		//TODO: Add verification code for the SubNodeID (Make sure the message is not spoofed)
 		remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
 		b.listeners[remotePid] = ws
+		b.sendDataMsg(remotePid, ws, b.lastMsg)
 		return nil
 	} else if r := nw.relayers[subReq.StrmID]; r != nil {
 		//Already a relayer in place.  Subscribe as a listener.
@@ -326,6 +330,7 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 					//Create a relayer, register the listener
 					r := nw.NewRelayer(subReq.StrmID)
 					r.UpstreamPeer = p
+					lpmon.Instance().LogRelay(subReq.StrmID, peer.IDHexEncode(p))
 					remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
 					r.listeners[remotePid] = ws
 					return nil
@@ -349,6 +354,7 @@ func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) e
 	} else if r := nw.relayers[cr.StrmID]; r != nil {
 		//Remove from relayer listener
 		delete(r.listeners, peer.IDHexEncode(rpeer))
+		lpmon.Instance().RemoveRelay(cr.StrmID)
 		//Pass on the cancel req and remove relayer if relayer has no more listeners
 		if len(r.listeners) == 0 {
 			ns := nw.NetworkNode.GetStream(r.UpstreamPeer)
@@ -412,6 +418,7 @@ func handleFinishStream(nw *BasicVideoNetwork, fs FinishStreamMsg) error {
 			glog.Errorf("Error relaying finish stream: %v", err)
 		}
 		delete(nw.relayers, fs.StrmID)
+		lpmon.Instance().RemoveRelay(fs.StrmID)
 	}
 
 	if s == nil && r == nil {

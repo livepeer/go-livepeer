@@ -8,6 +8,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 )
 
 const DefaultMediaPlLen = uint(500)
@@ -88,6 +89,7 @@ func (s *BasicHLSVideoStream) GetHLSSegment(strmID string, segName string) (*HLS
 
 		seg, ok := s.sqMap[sqMapKey(strmID, segName)]
 		if !ok {
+			lpmon.Instance().LogBuffer(strmID)
 			time.Sleep(SegWaitInterval)
 			continue
 		}

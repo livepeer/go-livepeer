@@ -14,6 +14,7 @@ import (
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 	host "gx/ipfs/QmZy7c24mmkEHpNJndwgsEE3wcVxHd8yB969yTnAJFVw7f/go-libp2p-host"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
+	inet "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
 	swarm "gx/ipfs/QmaijwHnbD4SabGA8C2fN9gchptLvRe2RxqTU5XkjAGBw5/go-libp2p-swarm"
 	bhost "gx/ipfs/QmapADMpK4e5kFGBxC2aHreaDqKP9vmMng5f91MA14Ces9/go-libp2p/p2p/host/basic"
 	rhost "gx/ipfs/QmapADMpK4e5kFGBxC2aHreaDqKP9vmMng5f91MA14Ces9/go-libp2p/p2p/host/routed"
@@ -27,7 +28,7 @@ type NetworkNode struct {
 }
 
 //NewNode creates a new Livepeerd node.
-func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey) (*NetworkNode, error) {
+func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey, f inet.Notifiee) (*NetworkNode, error) {
 	pid, err := peer.IDFromPublicKey(pub)
 	if err != nil {
 		return nil, err
@@ -61,7 +62,7 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey) (*NetworkNo
 		store,
 		&BasicReporter{})
 
-	netwrk.Notify(&BasicNotifiee{})
+	netwrk.Notify(f)
 	basicHost := bhost.New(netwrk, bhost.NATPortMap)
 
 	dht, err := constructDHTRouting(context.Background(), basicHost, ds.NewMapDatastore())

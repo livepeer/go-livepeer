@@ -256,7 +256,7 @@ func monitorChan(intChan chan int) {
 }
 func TestCreateTranscodeJob(t *testing.T) {
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	node, err := bnet.NewNode(15000, priv, pub)
+	node, err := bnet.NewNode(15000, priv, pub, nil)
 	if err != nil {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
@@ -296,7 +296,7 @@ func TestCreateTranscodeJob(t *testing.T) {
 
 func TestNotifyBroadcaster(t *testing.T) {
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	node, err := bnet.NewNode(15000, priv, pub)
+	node, err := bnet.NewNode(15000, priv, pub, nil)
 	if err != nil {
 		glog.Errorf("Error creating a new node: %v", err)
 		return

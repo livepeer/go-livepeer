@@ -6,10 +6,17 @@ import (
 	net "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
 
 	"github.com/golang/glog"
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 )
 
 //BasicNotifiee gets called during important libp2p events
-type BasicNotifiee struct{}
+type BasicNotifiee struct {
+	monitor *lpmon.Monitor
+}
+
+func NewBasicNotifiee(mon *lpmon.Monitor) *BasicNotifiee {
+	return &BasicNotifiee{monitor: mon}
+}
 
 // called when network starts listening on an addr
 func (bn *BasicNotifiee) Listen(n net.Network, addr ma.Multiaddr) {
@@ -24,11 +31,13 @@ func (bn *BasicNotifiee) ListenClose(n net.Network, addr ma.Multiaddr) {
 // called when a connection opened
 func (bn *BasicNotifiee) Connected(n net.Network, conn net.Conn) {
 	glog.Infof("Notifiee - Connected.  Local: %v - Remote: %v", peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
+	bn.monitor.LogNewConn(peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
 }
 
 // called when a connection closed
 func (bn *BasicNotifiee) Disconnected(n net.Network, conn net.Conn) {
-	glog.Infof("Notifiee - Disconnected")
+	glog.Infof("Notifiee - Disconnected. Local: %v - Remote: %v", peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
+	bn.monitor.RemoveConn(peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
 }
 
 // called when a stream opened

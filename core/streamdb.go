@@ -9,6 +9,7 @@ import (
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -60,6 +61,7 @@ func (s *StreamDB) GetRTMPStream(id StreamID) stream.RTMPVideoStream {
 func (s *StreamDB) AddNewHLSStream(strmID StreamID) (strm stream.HLSVideoStream, err error) {
 	strm = stream.NewBasicHLSVideoStream(strmID.String(), stream.DefaultSegWaitTime)
 	s.streams[strmID] = strm
+	lpmon.Instance().LogStream(strmID.String(), 0, 0)
 
 	// glog.Infof("Adding new video stream with ID: %v", strmID)
 	return strm, nil
@@ -69,6 +71,7 @@ func (s *StreamDB) AddNewHLSStream(strmID StreamID) (strm stream.HLSVideoStream,
 func (s *StreamDB) AddNewRTMPStream(strmID StreamID) (strm stream.RTMPVideoStream, err error) {
 	strm = stream.NewBasicRTMPVideoStream(strmID.String())
 	s.streams[strmID] = strm
+	lpmon.Instance().LogStream(strmID.String(), 0, 0)
 
 	// glog.Infof("Adding new video stream with ID: %v", strmID)
 	return strm, nil
@@ -92,12 +95,14 @@ func (s *StreamDB) AddHLSVariant(hlsStrmID StreamID, varStrmID StreamID, variant
 
 	//Add variant streamID to streams map so we can keep track
 	s.streams[varStrmID] = strm
+	lpmon.Instance().LogStream(varStrmID.String(), 0, 0)
 	return nil
 }
 
 //AddStream adds an existing video stream.
 func (s *StreamDB) AddStream(strmID StreamID, strm stream.VideoStream_) (err error) {
 	s.streams[strmID] = strm
+	lpmon.Instance().LogStream(strmID.String(), 0, 0)
 	return nil
 }
 
