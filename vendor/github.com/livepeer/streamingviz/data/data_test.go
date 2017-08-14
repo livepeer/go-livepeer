@@ -7,17 +7,17 @@ import (
 func TestToD3Json(t *testing.T) {
 	n1 := NewNode("A")
 	n1.AddConn("A", "B")
-	n1.AddBroadcast("strm1")
+	n1.SetBroadcast("strm1")
 	n1.SetStream("strm1", 15, 100)
 
 	n2 := NewNode("B")
 	n2.AddConn("B", "A")
 	n2.AddConn("B", "C")
-	n2.AddRelay("strm1", "A")
+	n2.SetRelay("strm1", "A")
 
 	n3 := NewNode("C")
 	n3.AddConn("C", "B")
-	n3.AddSub("strm1")
+	n3.SetSub("strm1")
 	n3.SetStream("strm1", 10, 100)
 
 	n := NewNetwork()

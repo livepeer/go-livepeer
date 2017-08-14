@@ -41,12 +41,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// func handleJson(w http.ResponseWriter, r *http.Request) {
-// 	abs, _ := filepath.Abs("./server/static/data.json")
-// 	view, _ := ioutil.ReadFile(abs)
-// 	fmt.Fprintf(w, "%s", view)
-// }
-
 func handleEvent(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		fmt.Fprintf(w, "Error. You must POST events")
@@ -104,6 +98,7 @@ func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		glog.Errorf("Error unmarshaling: %v", err)
 	}
+	glog.Infof("Got Node: %v", string(rBody))
 
 	network.SetNode(node)
 }
@@ -113,8 +108,8 @@ func main() {
 	http.HandleFunc("/event", handleEvent)
 	http.HandleFunc("/metrics", handleMetrics)
 	http.HandleFunc("/", handler)
-	glog.Infof("Listening on 8080")
-	http.ListenAndServe(":8080", nil)
+	glog.Infof("Listening on 8081")
+	http.ListenAndServe(":8081", nil)
 }
 
 func getNetwork() *streamingviz.Network {
