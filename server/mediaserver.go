@@ -20,6 +20,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/types"
 	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/segmenter"
@@ -320,8 +321,10 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 					return nil, err
 				}
 
+				lpmon.Instance().LogBuffer(strmID.String())
 				// glog.Infof("Waiting for playlist... err: %v", err)
 				time.Sleep(2 * time.Second)
+
 				continue
 			} else {
 				// glog.Infof("Found playlist. Returning")

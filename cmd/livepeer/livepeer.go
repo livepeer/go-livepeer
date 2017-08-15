@@ -33,6 +33,7 @@ import (
 	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
 	"github.com/livepeer/go-livepeer/types"
@@ -85,6 +86,8 @@ func main() {
 	ethPassword := flag.String("ethPassword", "", "New Eth account password")
 	gethipc := flag.String("gethipc", "", "Geth ipc file location")
 	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
+	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
+	monhost := flag.String("monitorhost", "metrics.livepeer.org", "host name for the metrics data collector")
 
 	flag.Parse()
 
@@ -111,7 +114,11 @@ func main() {
 		return
 	}
 
-	node, err := bnet.NewNode(*port, priv, pub)
+	if *monitor {
+		lpmon.Endpoint = *monhost
+	}
+	notifiee := bnet.NewBasicNotifiee(lpmon.Instance())
+	node, err := bnet.NewNode(*port, priv, pub, notifiee)
 	if err != nil {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
@@ -134,6 +141,7 @@ func main() {
 			glog.Errorf("Cannot set up protocol:%v", err)
 			return
 		}
+		lpmon.Instance().SetBootNode()
 	} else {
 		if err := n.Start(*bootID, *bootAddr); err != nil {
 			glog.Errorf("Cannot connect to bootstrap node: %v", err)
@@ -394,6 +402,7 @@ func txDataToVideoProfile(txData string) []types.VideoProfile {
 }
 
 func stream(port string, streamID string) {
+	start := time.Now()
 	if streamID == "" {
 		glog.Errorf("Need to specify streamID via -id")
 		return
@@ -404,13 +413,21 @@ func stream(port string, streamID string) {
 	glog.Infof("url: %v", url)
 	err := cmd.Start()
 	if err != nil {
-		glog.Infof("Couldn't start the stream")
+		glog.Infof("Couldn't start the stream.  Make sure a local Livepeer node is running on port %v", port)
 		os.Exit(1)
 	}
 	glog.Infof("Now streaming")
 	err = cmd.Wait()
+	if err != nil {
+		glog.Infof("Couldn't start the stream.  Make sure a local Livepeer node is running on port %v", port)
+		os.Exit(1)
+	}
 
-	glog.Infof("Finished the stream")
+	if time.Since(start) < time.Second {
+		glog.Infof("Error: Make sure local Livepeer node is running on port %v", port)
+	} else {
+		glog.Infof("Finished the stream")
+	}
 	return
 }
 

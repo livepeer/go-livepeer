@@ -12,6 +12,7 @@ import (
 //BasicBroadcaster is unique for a specific video stream. It keeps track of a list of listeners and a queue of video chunks.  It won't start keeping track of things until there is at least 1 listener.
 type BasicBroadcaster struct {
 	Network      *BasicVideoNetwork
+	lastMsg      *StreamDataMsg
 	q            chan *StreamDataMsg
 	listeners    map[string]*BasicStream
 	StrmID       string
@@ -31,7 +32,8 @@ func (b *BasicBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 		b.working = true
 	}
 
-	b.q <- &StreamDataMsg{SeqNo: seqNo, Data: data}
+	b.lastMsg = &StreamDataMsg{SeqNo: seqNo, Data: data}
+	b.q <- b.lastMsg
 	return nil
 }
 
@@ -62,17 +64,20 @@ func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 			// glog.Infof("broadcasting msg:%v to network.  listeners: %v", msg, b.listeners)
 			for id, l := range b.listeners {
 				// glog.Infof("Broadcasting segment %v to listener %v", msg.SeqNo, id)
-				if err := l.SendMessage(StreamDataID, StreamDataMsg{SeqNo: msg.SeqNo, StrmID: b.StrmID, Data: msg.Data}); err != nil {
-					glog.Errorf("Error broadcasting segment %v to listener %v: %v", msg.SeqNo, id, err)
-					delete(b.listeners, id)
-				}
+				b.sendDataMsg(id, l, msg)
 			}
 		case <-ctx.Done():
 			glog.Infof("broadcast worker done")
 			return
 		}
 	}
+}
 
+func (b *BasicBroadcaster) sendDataMsg(lid string, l *BasicStream, msg *StreamDataMsg) {
+	if err := l.SendMessage(StreamDataID, StreamDataMsg{SeqNo: msg.SeqNo, StrmID: b.StrmID, Data: msg.Data}); err != nil {
+		glog.Errorf("Error broadcasting segment %v to listener %v: %v", msg.SeqNo, lid, err)
+		delete(b.listeners, lid)
+	}
 }
 
 func (b BasicBroadcaster) String() string {
