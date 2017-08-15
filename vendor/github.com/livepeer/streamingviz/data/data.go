@@ -121,8 +121,8 @@ type Node struct {
 	Subs                map[string]*Subscription `json:"subs"`
 	ConnsInLastHr       uint                     `json:"connsInLastHr"`
 	StrmsInLastHr       uint                     `json:"strmsInLastHr"`
-	TotalVidLenInLastHr uint                     `json:"TotalVidLenInLastHr"`
-	TotalRelayInLastHr  uint                     `json:"TotalRelayInLastHr"`
+	TotalVidLenInLastHr uint                     `json:"totalVidLenInLastHr"`
+	TotalRelayInLastHr  uint                     `json:"totalRelayInLastHr"`
 	AvgCPU              float32                  `json:"avgCPU"`
 	AvgMem              uint32                   `json:"avgMem"`
 	AvgBandwidth        uint32                   `json:"avgBandwidth"`
