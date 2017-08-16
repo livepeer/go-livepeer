@@ -408,10 +408,21 @@ func stream(port string, streamID string) {
 		return
 	}
 
+	//Fetch local stream playlist - this will request from the network so we know the stream is here
 	url := fmt.Sprintf("http://localhost:%v/stream/%v.m3u8", port, streamID)
+	res, err := http.Get(url)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	_, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		glog.Fatal(err)
+	}
+
 	cmd := exec.Command("ffplay", "-timeout", "180000000", url) //timeout in 3 mins
 	glog.Infof("url: %v", url)
-	err := cmd.Start()
+	err = cmd.Start()
 	if err != nil {
 		glog.Infof("Couldn't start the stream.  Make sure a local Livepeer node is running on port %v", port)
 		os.Exit(1)
