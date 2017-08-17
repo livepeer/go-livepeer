@@ -111,12 +111,18 @@ func main() {
 		}
 	}
 
+	//Set pidfile
+	if _, err = os.Stat(fmt.Sprintf("%v/livepeer.pid", *datadir)); !os.IsNotExist(err) {
+		glog.Errorf("Node already running with datadir: %v", *datadir)
+		return
+	}
 	pidfile.SetPidfilePath(fmt.Sprintf("%v/livepeer.pid", *datadir))
 	if err = pidfile.Write(); err != nil {
 		glog.Errorf("Error writing pidfile: %v", err)
 		return
 	}
 	defer os.Remove(fmt.Sprintf("%v/livepeer.pid", *datadir))
+
 	//Take care of priv/pub keypair
 	priv, pub, err := getLPKeys(*datadir)
 	if err != nil {
