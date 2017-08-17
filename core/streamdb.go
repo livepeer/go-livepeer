@@ -129,6 +129,16 @@ func (s *StreamDB) DeleteStream(strmID StreamID) {
 	// glog.Infof("streams len after delete: %v", len(s.streams))
 }
 
+func (s *StreamDB) GetStreamIDs(format stream.VideoFormat) []StreamID {
+	result := make([]StreamID, 0)
+	for id, strm := range s.streams {
+		if strm.GetStreamFormat() == format {
+			result = append(result, id)
+		}
+	}
+	return result
+}
+
 func (s StreamDB) String() string {
 	streams := ""
 	for vid, s := range s.streams {

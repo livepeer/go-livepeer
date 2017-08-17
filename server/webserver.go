@@ -1,15 +1,19 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/http"
 	"strconv"
 
+	"github.com/livepeer/lpms/stream"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/types"
 )
@@ -182,6 +186,36 @@ func (s *LivepeerServer) StartWebserver() {
 	//Print the current broadcast HLS streamID
 	http.HandleFunc("/streamID", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(LastHLSStreamID))
+	})
+
+	http.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {
+		strmIDs := s.LivepeerNode.StreamDB.GetStreamIDs(stream.HLS)
+		ret := make([]map[string]string, 0)
+		for _, strmID := range strmIDs {
+			ret = append(ret, map[string]string{"format": "hls", "streamID": strmID.String()})
+		}
+		js, err := json.Marshal(ret)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(js)
+	})
+
+	http.HandleFunc("/peersCount", func(w http.ResponseWriter, r *http.Request) {
+		ret := make(map[string]int)
+		ret["count"] = lpmon.Instance().GetPeerCount()
+
+		js, err := json.Marshal(ret)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(js)
 	})
 
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {

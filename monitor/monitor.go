@@ -82,6 +82,10 @@ func (m *Monitor) LogBuffer(strmID string) {
 	m.Node.AddBufferEvent(strmID)
 }
 
+func (m *Monitor) GetPeerCount() int {
+	return len(m.Node.Conns)
+}
+
 func (m *Monitor) StartWorker(ctx context.Context) {
 	ticker := time.NewTicker(PostFreq)
 	go func() {
