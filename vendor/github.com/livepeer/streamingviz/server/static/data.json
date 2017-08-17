@@ -26,7 +26,7 @@
     {"source": "H", "target": "I", "value": 1}
   ],
   "streams": {
-    "id1": {"broadcaster": "A", "relayers": ["B", "C", "D"], "subscribers": ["C", "E"]},
+    "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2c3e5193fc21a4165ff3c8b1c40d91c46944bc96b3bf9e37697f0566fee618b2a": {"broadcaster": "A", "relayers": ["B", "C", "D"], "subscribers": ["C", "E"]},
     "id2": {"broadcaster": "B", "relayers": ["C", "F"], "subscribers": ["E", "H"]}
   }
 }

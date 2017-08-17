@@ -57,15 +57,19 @@ func (n *Network) ToD3Json() interface{} {
 	links := make([]map[string]string, 0)
 	streams := make(map[string]map[string]interface{})
 
-	for _, n := range n.Nodes {
+	for _, node := range n.Nodes {
 		// glog.Infof("Node: %v", n.ID)
 		//Add nodes
-		nmap := map[string]interface{}{"id": n.ID, "bootnode": n.IsBootNode}
+		nmap := map[string]interface{}{"id": node.ID, "bootnode": node.IsBootNode}
 		nodes = append(nodes, nmap)
 
 		//Add links
-		for _, conn := range n.Conns {
-			links = append(links, map[string]string{"source": conn.N1, "target": conn.N2})
+		for _, conn := range node.Conns {
+			_, ok1 := n.Nodes[conn.N1]
+			_, ok2 := n.Nodes[conn.N2]
+			if ok1 && ok2 {
+				links = append(links, map[string]string{"source": conn.N1, "target": conn.N2})
+			}
 		}
 
 		//Add streams, broadcasters, relayers and subscribers
@@ -78,19 +82,19 @@ func (n *Network) ToD3Json() interface{} {
 			}
 		}
 
-		for _, b := range n.Broadcasts {
+		for _, b := range node.Broadcasts {
 			checkStrm(b.StrmID, streams)
-			streams[b.StrmID]["broadcaster"] = n.ID
+			streams[b.StrmID]["broadcaster"] = node.ID
 		}
-		for _, sub := range n.Subs {
+		for _, sub := range node.Subs {
 			// glog.Infof("n: %v, strmID: %v", n.ID, sub.StrmID)
 			checkStrm(sub.StrmID, streams)
-			streams[sub.StrmID]["subscribers"] = append(streams[sub.StrmID]["subscribers"].([]map[string]string), map[string]string{"id": n.ID, "buffer": string(sub.BufferCount)})
+			streams[sub.StrmID]["subscribers"] = append(streams[sub.StrmID]["subscribers"].([]map[string]string), map[string]string{"id": node.ID, "buffer": string(sub.BufferCount)})
 		}
-		for _, r := range n.Relays {
+		for _, r := range node.Relays {
 			// glog.Infof("n: %v, strmID: %v", n.ID, r.StrmID)
 			checkStrm(r.StrmID, streams)
-			streams[r.StrmID]["relayers"] = append(streams[r.StrmID]["relayers"].([]string), n.ID)
+			streams[r.StrmID]["relayers"] = append(streams[r.StrmID]["relayers"].([]string), node.ID)
 		}
 
 	}
@@ -155,6 +159,7 @@ func (n *Node) RemoveConn(local, remote string) {
 	for i, c := range n.Conns {
 		if c == rmc {
 			n.Conns = append(n.Conns[:i], n.Conns[i+1:]...)
+			return
 		}
 	}
 }

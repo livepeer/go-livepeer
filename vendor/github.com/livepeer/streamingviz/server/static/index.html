@@ -7,6 +7,20 @@
         <link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
 <style>
 
+div #ids-container {
+    width:200px;
+    float:left;
+}
+
+div #svg-container {
+    float:left;
+}
+
+.strmID {
+    cursor: pointer;
+    color:blue;
+}
+
 .links line {
   stroke: #999;
   stroke-opacity: 0.6;
@@ -40,13 +54,14 @@ table {
 </p>
 
 <div class="ui-widget">
-    <label>StreamID </label>
-  <input id="streamID"></input>
+    <label>StreamIDs </label>
+    <input id="streamID" style="display:none"></input>
 </div>
 
-<button id="button">button</button>
-    
-<svg width="960" height="600"></svg>
+<div>
+    <div id="ids-container"></div>
+    <div id="svg-container"><svg width="960" height="600"></svg></div>
+</div>
 <script src="https://d3js.org/d3.v4.min.js"></script>
 <script
   src="https://code.jquery.com/jquery-3.2.1.min.js"
@@ -188,7 +203,8 @@ function updateNodes() {
         .duration(750)
         .ease(d3.easeLinear);
 
-    var strmID = $("#streamID").val();
+    var urlParams = new URLSearchParams(window.location.search);
+    var strmID = urlParams.get("streamID");
 
     d3.selectAll("circle").transition(t)
         .style("fill", function(d) { return color(d.id, strmID); })
@@ -199,16 +215,29 @@ function updateNodes() {
 }
 
 $( document ).ready(function() {
-    var urlParams = new URLSearchParams(window.location.search);
-    $("#streamID").val(urlParams.get("streamID"));
+    // var urlParams = new URLSearchParams(window.location.search);
 
-    $("#streamID").change(function() {
-        updateNodes();
-        var myURL = document.location;
-        location.search = "streamID=" + $("#streamID").val();
+    //Create stream IDs
+    Object.keys(graph.streams).forEach(function(id) {
+        var lengthText = 20;
+        var shortText = $.trim(id).substring(0, lengthText) + "...";
+        console.log(shortText);
+        $("#ids-container").append("<p class='strmID' strmid='" + id + "' shortstrmid='" + shortText + "'>" + shortText + "</p>")
     });
 
+    $(".strmID").hover(function() {
+        $(this).text($(this).attr("strmid"));
+    }, function() {
+        $(this).text($(this).attr("shortstrmid"));
+    });
+
+    $(".strmID").click(function(strmID) {
+        var myURL = document.location;
+        location.search = "streamID=" + $(this).html();
+        updateNodes();
+    });
     updateNodes();
+    
 });
 
 </script>
