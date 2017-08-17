@@ -169,8 +169,6 @@ func (n *Node) SetBootNode() {
 }
 
 func (n *Node) SetStream(id string, size, avgChunkSize uint) {
-
-	// n.Strms = append(n.Strms, Stream{ID: id, Chunks: size, AvgChunkSize: avgChunkSize})
 	n.Strms[id] = Stream{ID: id, Chunks: size, AvgChunkSize: avgChunkSize}
 }
 
@@ -179,7 +177,6 @@ func (n *Node) RemoveStream(id string) {
 }
 
 func (n *Node) SetBroadcast(strmID string) {
-	// n.Broadcasts = append(n.Broadcasts, Broadcast{StrmID: id})
 	n.Broadcasts[strmID] = Broadcast{StrmID: strmID}
 }
 
@@ -188,7 +185,6 @@ func (n *Node) RemoveBroadcast(strmID string) {
 }
 
 func (n *Node) SetSub(strmID string) {
-	// n.Subs = append(n.Subs, Subscription{StrmID: strmID})
 	n.Subs[strmID] = &Subscription{StrmID: strmID}
 }
 
@@ -197,18 +193,16 @@ func (n *Node) RemoveSub(strmID string) {
 }
 
 func (n *Node) AddBufferEvent(strmID string) {
-	// for i, sub := range n.Subs {
-	// 	if sub.StrmID == strmID {
-	// 		n.Subs[i].BufferCount++
-	// 	}
-	// }
-
 	glog.Info("Logging buffer event")
+	_, ok := n.Subs[strmID]
+	if !ok {
+		glog.Errorf("Cannot find subscription with streamID: %v", strmID)
+		return
+	}
 	n.Subs[strmID].BufferCount = n.Subs[strmID].BufferCount + 1
 }
 
 func (n *Node) SetRelay(strmID string, remote string) {
-	// n.Relays = append(n.Relays, Relay{StrmID: strmID, RemoteN: remote})
 	n.Relays[strmID] = Relay{StrmID: strmID, RemoteN: remote}
 }
 
