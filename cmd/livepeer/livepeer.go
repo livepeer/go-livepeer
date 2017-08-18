@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"os/user"
 	"path"
 	"path/filepath"
@@ -29,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/facebookgo/pidfile"
 	"github.com/golang/glog"
 	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/core"
@@ -101,6 +103,7 @@ func main() {
 		glog.Fatalf("Please provide rtmp port")
 	}
 
+	//Make sure datadir is present
 	if _, err := os.Stat(*datadir); os.IsNotExist(err) {
 		glog.Infof("Creating data dir: %v", *datadir)
 		if err = os.Mkdir(*datadir, 0755); err != nil {
@@ -108,12 +111,26 @@ func main() {
 		}
 	}
 
+	//Set pidfile
+	if _, err = os.Stat(fmt.Sprintf("%v/livepeer.pid", *datadir)); !os.IsNotExist(err) {
+		glog.Errorf("Node already running with datadir: %v", *datadir)
+		return
+	}
+	pidfile.SetPidfilePath(fmt.Sprintf("%v/livepeer.pid", *datadir))
+	if err = pidfile.Write(); err != nil {
+		glog.Errorf("Error writing pidfile: %v", err)
+		return
+	}
+	defer os.Remove(fmt.Sprintf("%v/livepeer.pid", *datadir))
+
+	//Take care of priv/pub keypair
 	priv, pub, err := getLPKeys(*datadir)
 	if err != nil {
 		glog.Errorf("Error getting keys: %v", err)
 		return
 	}
 
+	//Create Livepeer Node
 	if *monitor {
 		lpmon.Endpoint = *monhost
 	}
@@ -206,6 +223,8 @@ func main() {
 		ec <- s.StartMediaServer(msCtx)
 	}()
 
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt)
 	select {
 	case err := <-ec:
 		glog.Infof("Error from media server: %v", err)
@@ -215,6 +234,8 @@ func main() {
 		glog.Infof("MediaServer Done()")
 		cancel()
 		return
+	case sig := <-c:
+		glog.Infof("Exiting Livepeer: %v", sig)
 	}
 }
 
