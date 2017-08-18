@@ -52,8 +52,8 @@ var tmplSource = map[Lang]string{
 // tmplSourceGo is the Go source template use to generate the contract binding
 // based on.
 const tmplSourceGo = `
-// Code generated - DO NOT EDIT.
-// This file is a generated binding and any manual changes will be lost.
+// This file is an automatically generated Go binding. Do not modify as any
+// change will likely be lost upon the next re-generation!
 
 package {{.Package}}
 
@@ -66,12 +66,23 @@ package {{.Package}}
 		const {{.Type}}Bin = ` + "`" + `{{.InputBin}}` + "`" + `
 
 		// Deploy{{.Type}} deploys a new Ethereum contract, binding an instance of {{.Type}} to it.
-		func Deploy{{.Type}}(auth *bind.TransactOpts, backend bind.ContractBackend {{range .Constructor.Inputs}}, {{.Name}} {{bindtype .Type}}{{end}}) (common.Address, *types.Transaction, *{{.Type}}, error) {
+		func Deploy{{.Type}}(auth *bind.TransactOpts, backend bind.ContractBackend, libraries map[string]common.Address {{range .Constructor.Inputs}}, {{.Name}} {{bindtype .Type}}{{end}}) (common.Address, *types.Transaction, *{{.Type}}, error) {
 		  parsed, err := abi.JSON(strings.NewReader({{.Type}}ABI))
 		  if err != nil {
 		    return common.Address{}, nil, nil, err
 		  }
-		  address, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex({{.Type}}Bin), backend {{range .Constructor.Inputs}}, {{.Name}}{{end}})
+
+                  linkedBin := {{.Type}}Bin
+                  for lib, addr := range libraries {
+                    reg, err := regexp.Compile(fmt.Sprintf("_+%s_+", lib))
+                    if err != nil {
+                      return common.Address{}, nil, nil, err
+                    }
+
+                    linkedBin = reg.ReplaceAllString(linkedBin, addr.Hex()[2:])
+                  }
+
+		  address, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex(linkedBin), backend {{range .Constructor.Inputs}}, {{.Name}}{{end}})
 		  if err != nil {
 		    return common.Address{}, nil, nil, err
 		  }

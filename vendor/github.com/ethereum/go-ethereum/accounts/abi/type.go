@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -33,7 +34,7 @@ const (
 	FixedBytesTy
 	BytesTy
 	HashTy
-	FixedPointTy
+	FixedpointTy
 	FunctionTy
 )
 
@@ -124,13 +125,21 @@ func NewType(t string) (typ Type, err error) {
 		typ.stringKind = t
 	}
 
+	words := strings.Split(t, ".")
+
+	if len(words) > 1 {
+		typ.stringKind = words[0]
+	}
+
 	switch varType {
 	case "int":
-		typ.Kind, typ.Type = reflectIntKindAndType(false, varSize)
+		typ.Kind = reflectIntKind(false, varSize)
+		typ.Type = big_t
 		typ.Size = varSize
 		typ.T = IntTy
 	case "uint":
-		typ.Kind, typ.Type = reflectIntKindAndType(true, varSize)
+		typ.Kind = reflectIntKind(true, varSize)
+		typ.Type = ubig_t
 		typ.Size = varSize
 		typ.T = UintTy
 	case "bool":
@@ -164,7 +173,18 @@ func NewType(t string) (typ Type, err error) {
 		typ.T = FunctionTy
 		typ.SliceSize = 24
 	default:
-		return Type{}, fmt.Errorf("unsupported arg type: %s", t)
+		sliceType, _ := NewType("uint8")
+		typ.Elem = &sliceType
+		if varSize == 0 {
+			typ.IsSlice = true
+			typ.T = BytesTy
+			typ.SliceSize = -1
+		} else {
+			typ.IsArray = true
+			typ.T = FixedBytesTy
+			typ.SliceSize = varSize
+		}
+		// return Type{}, fmt.Errorf("unsupported arg type: %s", t)
 	}
 
 	return
