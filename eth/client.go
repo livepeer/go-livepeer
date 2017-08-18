@@ -47,7 +47,6 @@ type LivepeerEthClient interface {
 	Backend() *ethclient.Client
 	Account() accounts.Account
 	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error)
-	WatchEvent(logsCh <-chan types.Log) (types.Log, error)
 	RoundInfo() (*big.Int, *big.Int, *big.Int, error)
 	InitializeRound() (<-chan types.Receipt, <-chan error)
 	Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
@@ -214,79 +213,6 @@ func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyS
 	}
 
 	return transactOpts, err
-}
-
-func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error) {
-	abiJSON, err := abi.JSON(strings.NewReader(contracts.JobsManagerABI))
-	if err != nil {
-		glog.Errorf("Error decoding ABI into JSON: %v", err)
-		return nil, err
-	}
-
-	q := ethereum.FilterQuery{
-		Addresses: []common.Address{c.jobsManagerAddr},
-		Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
-	}
-
-	return c.backend.SubscribeFilterLogs(ctx, q, logsCh)
-}
-
-func (c *Client) WatchEvent(logsCh <-chan types.Log) (types.Log, error) {
-	var (
-		timer = time.NewTimer(c.eventTimeout)
-	)
-
-	for {
-		select {
-		case log := <-logsCh:
-			if !log.Removed {
-				return log, nil
-			}
-		case <-timer.C:
-			err := fmt.Errorf("watchEvent timed out")
-
-			glog.Errorf(err.Error())
-			return types.Log{}, err
-		}
-	}
-}
-
-func (c *Client) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
-	cr, err := c.roundsManagerSession.CurrentRound()
-
-	if err != nil {
-		glog.Errorf("Error getting current round: %v", err)
-		return nil, nil, nil, err
-	}
-
-	crsb, err := c.roundsManagerSession.CurrentRoundStartBlock()
-
-	if err != nil {
-		glog.Errorf("Error getting current round start block: %v", err)
-		return nil, nil, nil, err
-	}
-
-	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
-
-	block, err := c.backend.BlockByNumber(ctx, nil)
-
-	if err != nil {
-		glog.Errorf("Error getting latest block number: %v", err)
-		return nil, nil, nil, err
-	}
-
-	return cr, crsb, block.Number(), nil
-}
-
-func (c *Client) CurrentRoundInitialized() (bool, error) {
-	initialized, err := c.roundsManagerSession.CurrentRoundInitialized()
-
-	if err != nil {
-		glog.Errorf("Error checking if current round initialized: %v", err)
-		return false, err
-	}
-
-	return initialized, nil
 }
 
 // TRANSACTIONS
@@ -581,6 +507,35 @@ func (c *Client) DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.
 	return outRes, outErr
 }
 
+func (c *Client) BatchDistributeFees(jobId *big.Int, claimIds []*big.Int) (<-chan types.Receipt, <-chan error) {
+	outRes := make(chan types.Receipt)
+	outErr := make(chan error)
+
+	go func() {
+		defer close(outRes)
+		defer close(outErr)
+
+		tx, err := c.jobsManagerSession.BatchDistributeFees(jobId, claimIds)
+		if err != nil {
+			outErr <- err
+			return
+		}
+
+		glog.Infof("[%v] Submitted tx %v. Distributed fee fors job %v claims %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId, claimIds)
+
+		receipt, err := c.WaitForReceipt(tx)
+		if err != nil {
+			outErr <- err
+		} else {
+			outRes <- *receipt
+		}
+
+		return
+	}()
+
+	return outRes, outErr
+}
+
 func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error) {
 	outRes := make(chan types.Receipt)
 	outErr := make(chan error)
@@ -614,32 +569,31 @@ func (c *Client) Approve(toAddr common.Address, amount *big.Int) (chan types.Log
 	outRes := make(chan types.Log)
 	outErr := make(chan error)
 
-	logsCh, sub, err := c.SubscribeToApproval()
-	if err != nil {
-		outErr <- err
-
-		close(outRes)
-		close(outErr)
-	}
-
-	_, err = c.tokenSession.Approve(toAddr, amount)
-	if err != nil {
-		outErr <- err
-
-		close(outRes)
-		close(outErr)
-	}
-
 	go func() {
-		log := <-logsCh
+		defer close(outRes)
+		defer close(outErr)
 
-		close(logsCh)
-		sub.Unsubscribe()
+		logsCh, sub, err := c.SubscribeToApproval()
+
+		defer close(logsCh)
+		defer sub.Unsubscribe()
+
+		if err != nil {
+			outErr <- err
+			return
+		}
+
+		_, err = c.tokenSession.Approve(toAddr, amount)
+		if err != nil {
+			outErr <- err
+			return
+		}
+
+		log := <-logsCh
 
 		outRes <- log
 
-		close(outRes)
-		close(outErr)
+		return
 	}()
 
 	return outRes, outErr
@@ -666,6 +620,42 @@ func (c *Client) SubscribeToApproval() (chan types.Log, ethereum.Subscription, e
 	}
 
 	return logsCh, sub, nil
+}
+
+// CONSTANT FUNCTIONS
+
+func (c *Client) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
+	cr, err := c.roundsManagerSession.CurrentRound()
+	if err != nil {
+		glog.Errorf("Error getting current round: %v", err)
+		return nil, nil, nil, err
+	}
+
+	crsb, err := c.roundsManagerSession.CurrentRoundStartBlock()
+	if err != nil {
+		glog.Errorf("Error getting current round start block: %v", err)
+		return nil, nil, nil, err
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
+
+	block, err := c.backend.BlockByNumber(ctx, nil)
+	if err != nil {
+		glog.Errorf("Error getting latest block number: %v", err)
+		return nil, nil, nil, err
+	}
+
+	return cr, crsb, block.Number(), nil
+}
+
+func (c *Client) CurrentRoundInitialized() (bool, error) {
+	initialized, err := c.roundsManagerSession.CurrentRoundInitialized()
+	if err != nil {
+		glog.Errorf("Error checking if current round initialized: %v", err)
+		return false, err
+	}
+
+	return initialized, nil
 }
 
 func (c *Client) IsActiveTranscoder() (bool, error) {
@@ -767,11 +757,26 @@ func (c *Client) GetJob(jobID *big.Int) (struct {
 	return c.jobsManagerSession.Jobs(jobID)
 }
 
-// Token methods
-
 func (c *Client) TokenBalance() (*big.Int, error) {
 	return c.tokenSession.BalanceOf(c.account.Address)
 }
+
+func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error) {
+	abiJSON, err := abi.JSON(strings.NewReader(contracts.JobsManagerABI))
+	if err != nil {
+		glog.Errorf("Error decoding ABI into JSON: %v", err)
+		return nil, err
+	}
+
+	q := ethereum.FilterQuery{
+		Addresses: []common.Address{c.jobsManagerAddr},
+		Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
+	}
+
+	return c.backend.SubscribeFilterLogs(ctx, q, logsCh)
+}
+
+// HELPERS
 
 func (c *Client) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) {
 	msg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, hash)
