@@ -12,9 +12,9 @@ func TestSubscribeStrmID(t *testing.T) {
 	defer close(jidChan)
 	stub := &StubClient{}
 	j1 := NewJobManager(stub)
-	// if err := j1.Start(); err != nil {
-	// 	t.Errorf("Error starting job manager: %v", err)
-	// }
+	if err := j1.Start(); err != nil {
+		t.Errorf("Error starting job manager: %v", err)
+	}
 
 	//Subscribe by streamID
 	sub, err := j1.SubscribeJobIDByStrmID("strmID", jidChan)

@@ -96,3 +96,26 @@ func (e *StubClient) Transfer(toAddr common.Address, amount *big.Int) (<-chan ty
 }
 func (e *StubClient) TokenBalance() (*big.Int, error) { return big.NewInt(100000), nil }
 func (e *StubClient) WaitUntilNextRound() error       { return nil }
+func (e *StubClient) GetJob(jobID *big.Int) (struct {
+	JobId              *big.Int
+	StreamId           string
+	TranscodingOptions string
+	MaxPricePerSegment *big.Int
+	PricePerSegment    *big.Int
+	BroadcasterAddress common.Address
+	TranscoderAddress  common.Address
+	EndBlock           *big.Int
+	Escrow             *big.Int
+}, error) {
+	return struct {
+		JobId              *big.Int
+		StreamId           string
+		TranscodingOptions string
+		MaxPricePerSegment *big.Int
+		PricePerSegment    *big.Int
+		BroadcasterAddress common.Address
+		TranscoderAddress  common.Address
+		EndBlock           *big.Int
+		Escrow             *big.Int
+	}{}, nil
+}

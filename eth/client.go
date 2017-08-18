@@ -60,6 +60,17 @@ type LivepeerEthClient interface {
 	IsActiveTranscoder() (bool, error)
 	TranscoderStake() (*big.Int, error)
 	TokenBalance() (*big.Int, error)
+	GetJob(jobID *big.Int) (struct {
+		JobId              *big.Int
+		StreamId           string
+		TranscodingOptions string
+		MaxPricePerSegment *big.Int
+		PricePerSegment    *big.Int
+		BroadcasterAddress common.Address
+		TranscoderAddress  common.Address
+		EndBlock           *big.Int
+		Escrow             *big.Int
+	}, error)
 }
 
 type Client struct {
