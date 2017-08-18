@@ -7,18 +7,16 @@ import (
 	"math/big"
 	"time"
 
-	"strings"
-
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 )
-
-var ErrParseJobTxData = errors.New("ErrParseJobTxData")
 
 type LibraryType uint8
 
@@ -27,9 +25,9 @@ const (
 	MaxHeap
 	MinHeap
 	TranscoderPools
-	TranscodeJobs
+	JobLib
 	MerkleProof
-	ECVerify
+	ECRecovery
 	SafeMath
 )
 
@@ -53,15 +51,15 @@ func deployLibrary(transactOpts *bind.TransactOpts, backend *ethclient.Client, n
 	case TranscoderPools:
 		addr, tx, _, err = contracts.DeployTranscoderPools(transactOpts, backend, libraries)
 		glog.Infof("Deploying TranscoderPools at %v", addr.Hex())
-	case TranscodeJobs:
-		addr, tx, _, err = contracts.DeployTranscodeJobs(transactOpts, backend, libraries)
-		glog.Infof("Deploying TranscodeJobs at %v", addr.Hex())
+	case JobLib:
+		addr, tx, _, err = contracts.DeployJobLib(transactOpts, backend, libraries)
+		glog.Infof("Deploying JobLib at %v", addr.Hex())
 	case MerkleProof:
 		addr, tx, _, err = contracts.DeployMerkleProof(transactOpts, backend, libraries)
 		glog.Infof("Deploying MerkleProof at %v", addr.Hex())
-	case ECVerify:
-		addr, tx, _, err = contracts.DeployECVerify(transactOpts, backend, libraries)
-		glog.Infof("Deploying ECVerify at %v", addr.Hex())
+	case ECRecovery:
+		addr, tx, _, err = contracts.DeployECRecovery(transactOpts, backend, libraries)
+		glog.Infof("Deploying ECRecovery at %v", addr.Hex())
 	case SafeMath:
 		addr, tx, _, err = contracts.DeploySafeMath(transactOpts, backend, libraries)
 		glog.Infof("Deploying SafeMath at %v", addr.Hex())
@@ -80,8 +78,34 @@ func deployLibrary(transactOpts *bind.TransactOpts, backend *ethclient.Client, n
 	return addr, tx, nil
 }
 
-func deployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, n uint64, roundLength *big.Int, cyclesPerRound *big.Int) (common.Address, *types.Transaction, error) {
-	addr, tx, _, err := contracts.DeployLivepeerProtocol(transactOpts, backend, libraries, n, roundLength, cyclesPerRound)
+func deployIdentityVerifier(transactOpts *bind.TransactOpts, backend *ethclient.Client) (common.Address, *types.Transaction, error) {
+	addr, tx, _, err := contracts.DeployIdentityVerifier(transactOpts, backend, nil)
+
+	glog.Infof("Deploying IdentityVerifier at %v", addr.Hex())
+
+	if err != nil {
+		glog.Errorf("Error deploying IdentityVerifier: %v", err)
+		return common.Address{}, nil, err
+	}
+
+	return addr, tx, nil
+}
+
+func deployLivepeerToken(transactOpts *bind.TransactOpts, backend *ethclient.Client) (common.Address, *types.Transaction, error) {
+	addr, tx, _, err := contracts.DeployLivepeerToken(transactOpts, backend, nil)
+
+	glog.Infof("Deploying LivepeerToken at %v", addr.Hex())
+
+	if err != nil {
+		glog.Errorf("Error deploying LivepeerToken: %v", err)
+		return common.Address{}, nil, err
+	}
+
+	return addr, tx, nil
+}
+
+func deployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *ethclient.Client) (common.Address, *types.Transaction, error) {
+	addr, tx, _, err := contracts.DeployLivepeerProtocol(transactOpts, backend, nil)
 
 	glog.Infof("Deploying LivepeerProtocol at %v", addr.Hex())
 
@@ -93,30 +117,228 @@ func deployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *ethclient.
 	return addr, tx, nil
 }
 
-func CheckRoundAndInit(client LivepeerEthClient, rpcTimeout time.Duration, minedTxTimeout time.Duration) error {
-	ok, err := client.CurrentRoundInitialized()
+func deployBondingManager(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, registry common.Address, token common.Address, numActiveTranscoders *big.Int) (common.Address, *types.Transaction, error) {
+	addr, tx, _, err := contracts.DeployBondingManager(transactOpts, backend, libraries, registry, token, numActiveTranscoders)
 
+	glog.Infof("Deploying BondingManager at %v", addr.Hex())
+
+	if err != nil {
+		glog.Errorf("Error deploying BondingManager: %v", err)
+		return common.Address{}, nil, err
+	}
+
+	return addr, tx, nil
+}
+
+func deployJobsManager(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, registry common.Address, token common.Address, verifier common.Address) (common.Address, *types.Transaction, error) {
+	addr, tx, _, err := contracts.DeployJobsManager(transactOpts, backend, libraries, registry, token, verifier)
+
+	glog.Infof("Deploying JobsManager at %v", addr.Hex())
+
+	if err != nil {
+		glog.Infof("Error deploying JobsManager: %v", err)
+		return common.Address{}, nil, err
+	}
+
+	return addr, tx, nil
+}
+
+func deployRoundsManager(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, registry common.Address) (common.Address, *types.Transaction, error) {
+	addr, tx, _, err := contracts.DeployRoundsManager(transactOpts, backend, libraries, registry)
+
+	glog.Infof("Deploying RoundsManager at %v", addr.Hex())
+
+	if err != nil {
+		glog.Errorf("Error deploying RoundsManager: %v", err)
+		return common.Address{}, nil, err
+	}
+
+	return addr, tx, nil
+}
+
+func initProtocol(transactOpts *bind.TransactOpts, backend *ethclient.Client, rpcTimeout time.Duration, minedTxTimeout time.Duration, protocolAddr common.Address, tokenAddr common.Address, bondingManagerAddr common.Address, jobsManagerAddr common.Address, roundsManagerAddr common.Address) error {
+	protocol, err := contracts.NewLivepeerProtocol(protocolAddr, backend)
+
+	if err != nil {
+		glog.Errorf("Error creating LivepeerProtocol: %v", err)
+		return err
+	}
+
+	tx, err := protocol.SetContract(transactOpts, crypto.Keccak256Hash([]byte("BondingManager")), bondingManagerAddr)
+
+	if err != nil {
+		glog.Errorf("Error adding BondingManager to registry: %v", err)
+		return err
+	}
+
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash(), tx.Gas())
+
+	if err != nil {
+		glog.Errorf("Error waiting for mined SetContract tx: %v", err)
+		return err
+	}
+
+	tx, err = protocol.SetContract(transactOpts, crypto.Keccak256Hash([]byte("JobsManager")), jobsManagerAddr)
+
+	if err != nil {
+		glog.Errorf("Error adding JobsManager to registry: %v", err)
+		return err
+	}
+
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash(), tx.Gas())
+
+	if err != nil {
+		glog.Errorf("Error waiting for mined SetContract tx: %v", err)
+		return err
+	}
+
+	tx, err = protocol.SetContract(transactOpts, crypto.Keccak256Hash([]byte("RoundsManager")), roundsManagerAddr)
+
+	if err != nil {
+		glog.Errorf("Error adding RoundsManager to registry: %v", err)
+		return err
+	}
+
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash(), tx.Gas())
+
+	if err != nil {
+		glog.Errorf("Error waiting for mined SetContract tx: %v", err)
+		return err
+	}
+
+	token, err := contracts.NewLivepeerToken(tokenAddr, backend)
+
+	if err != nil {
+		glog.Errorf("Error creating LivepeerToken: %v", err)
+		return err
+	}
+
+	tx, err = token.TransferOwnership(transactOpts, bondingManagerAddr)
+
+	if err != nil {
+		glog.Errorf("Error transfering ownership of LivepeerToken: %v", err)
+		return err
+	}
+
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash(), tx.Gas())
+
+	if err != nil {
+		glog.Errorf("Error waiting for TransferOwnership tx: %v", err)
+		return err
+	}
+
+	tx, err = protocol.Unpause(transactOpts)
+
+	if err != nil {
+		glog.Errorf("Error unpausing LivepeerProtocol: %v", err)
+		return err
+	}
+
+	_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash(), tx.Gas())
+
+	if err != nil {
+		glog.Errorf("Error waiting for Unapuse tx: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+// To be called by account that deploys LivepeerToken
+func distributeTokens(transactOpts *bind.TransactOpts, backend *ethclient.Client, rpcTimeout time.Duration, minedTxTimeout time.Duration, tokenAddr common.Address, mintAmount *big.Int, accounts []accounts.Account) error {
+	token, err := contracts.NewLivepeerToken(tokenAddr, backend)
+
+	if err != nil {
+		glog.Errorf("Error creating LivepeerToken: %v", err)
+	}
+
+	var tx *types.Transaction
+
+	for _, account := range accounts {
+		tx, err = token.Mint(transactOpts, account.Address, mintAmount)
+		if err != nil {
+			glog.Errorf("Error minting tokens: %v", err)
+			return err
+		}
+
+		_, err = WaitForMinedTx(backend, rpcTimeout, minedTxTimeout, tx.Hash(), tx.Gas())
+		if err != nil {
+			glog.Errorf("Error waiting for mined mint tx: %v", err)
+			return err
+		}
+	}
+
+	return nil
+}
+
+func WaitUntilBlockMultiple(backend *ethclient.Client, rpcTimeout time.Duration, blockMultiple *big.Int) error {
+	ctx, _ := context.WithTimeout(context.Background(), rpcTimeout)
+
+	block, err := backend.BlockByNumber(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	targetBlockNum := NextBlockMultiple(block.Number(), blockMultiple)
+
+	glog.Infof("Waiting until next round at block %v...", targetBlockNum)
+
+	for block.Number().Cmp(targetBlockNum) == -1 {
+		ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
+		block, err = backend.BlockByNumber(ctx, nil)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func Wait(backend *ethclient.Client, rpcTimeout time.Duration, blocks *big.Int) error {
+	ctx, _ := context.WithTimeout(context.Background(), rpcTimeout)
+
+	block, err := backend.BlockByNumber(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	targetBlockNum := new(big.Int).Add(block.Number(), blocks)
+
+	glog.Infof("Waiting %v blocks...", blocks)
+
+	for block.Number().Cmp(targetBlockNum) == -1 {
+		ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+
+		block, err = backend.BlockByNumber(ctx, nil)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func CheckRoundAndInit(client LivepeerEthClient) error {
+	ok, err := client.CurrentRoundInitialized()
 	if err != nil {
 		return fmt.Errorf("Client failed CurrentRoundInitialized: %v", err)
 	}
 
 	if !ok {
-		tx, err := client.InitializeRound()
-
-		if err != nil {
-			return fmt.Errorf("Client failed InitializeRound: %v", err)
-		}
-
-		_, err = WaitForMinedTx(client.Backend(), rpcTimeout, minedTxTimeout, tx.Hash())
-
-		if err != nil {
-			return fmt.Errorf("%v", err)
+		receiptCh, errCh := client.InitializeRound()
+		select {
+		case <-receiptCh:
+			return nil
+		case err := <-errCh:
+			return err
 		}
 	}
+
 	return nil
 }
 
-func WaitForMinedTx(backend *ethclient.Client, rpcTimeout time.Duration, minedTxTimeout time.Duration, txHash common.Hash) (*types.Receipt, error) {
+func WaitForMinedTx(backend *ethclient.Client, rpcTimeout time.Duration, minedTxTimeout time.Duration, txHash common.Hash, gas *big.Int) (*types.Receipt, error) {
 	var (
 		receipt *types.Receipt
 		ctx     context.Context
@@ -144,7 +366,11 @@ func WaitForMinedTx(backend *ethclient.Client, rpcTimeout time.Duration, minedTx
 		time.Sleep(time.Second)
 	}
 
-	return receipt, nil
+	if gas.Cmp(receipt.GasUsed) == 0 {
+		return receipt, fmt.Errorf("Transaction %v threw", txHash.Hex())
+	} else {
+		return receipt, nil
+	}
 }
 
 func NextBlockMultiple(blockNum *big.Int, blockMultiple *big.Int) *big.Int {
@@ -159,57 +385,4 @@ func NextBlockMultiple(blockNum *big.Int, blockMultiple *big.Int) *big.Int {
 	}
 
 	return new(big.Int).Sub(blockNum.Add(blockNum, blockMultiple), remainder)
-}
-
-func SignSegmentHash(c *Client, passphrase string, hash []byte) ([]byte, error) {
-	sig, err := c.keyStore.SignHashWithPassphrase(c.account, passphrase, hash)
-
-	if err != nil {
-		glog.Errorf("Error signing segment: %v", err)
-		return nil, err
-	}
-
-	// glog.Infof("[%v] Created signed segment hash %v", c.account.Address.Hex(), common.ToHex(sig))
-	return sig, nil
-}
-
-func ParseJobTxData(d []byte) (strmID string, data string, err error) {
-	data = strings.Trim(string(d[56:88]), "\x00")
-	strmID = string(d[132:264])
-	if data == "" || strmID == "" {
-		return "", "", ErrParseJobTxData
-	}
-	return strmID, data, nil
-}
-
-//XXX: This is a total hack.  Should be getting the info from the event log.
-func GetInfoFromJobEvent(l types.Log, c LivepeerEthClient) (jobID *big.Int, strmID string, bAddr common.Address, tAddr common.Address, err error) {
-	var jidR *big.Int
-	var tAddrR common.Address
-	var bAddrR common.Address
-	for i := 0; i < 1000; i++ {
-		jid, _, _, bAddr, tAddr, _, err := c.JobDetails(big.NewInt(int64(i)))
-
-		if err != nil {
-			break
-		} else {
-			jidR = jid
-			bAddrR = bAddr
-			tAddrR = tAddr
-		}
-	}
-
-	tx, _, err := c.Backend().TransactionByHash(context.Background(), l.TxHash)
-	if err != nil {
-		glog.Errorf("Error getting transaction data: %v", err)
-		return nil, "", common.Address{}, common.Address{}, fmt.Errorf("JobEventError")
-	}
-
-	strmID, _, err = ParseJobTxData(tx.Data())
-	if err != nil {
-		glog.Errorf("Error parsing transaction data: %v", err)
-		return nil, "", common.Address{}, common.Address{}, fmt.Errorf("JobEventError")
-	}
-
-	return jidR, strmID, bAddrR, tAddrR, nil
 }

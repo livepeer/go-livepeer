@@ -7,7 +7,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
+	// "github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 )
 
@@ -28,41 +28,41 @@ func NewJobManager(c LivepeerEthClient) *JobManager {
 }
 
 func (j *JobManager) Start() error {
-	ctx := context.Background()
-	logsCh := make(chan types.Log)
-	sub, err := j.c.SubscribeToJobEvent(ctx, logsCh)
-	if err != nil {
-		return err
-	}
+	// ctx := context.Background()
+	// logsCh := make(chan types.Log)
+	// sub, err := j.c.SubscribeToJobEvent(ctx, logsCh)
+	// if err != nil {
+	// 	return err
+	// }
 
-	//Monitor every job event
-	go func() {
-		for {
-			select {
-			case l := <-logsCh:
-				jid, strmID, _, tAddr, err := GetInfoFromJobEvent(l, j.c)
-				if err != nil {
-					glog.Errorf("Error getting info from job event: %v", err)
-				}
+	// //Monitor every job event
+	// go func() {
+	// 	for {
+	// 		select {
+	// 		case l := <-logsCh:
+	// 			jid, strmID, _, tAddr, err := GetInfoFromJobEvent(l, j.c)
+	// 			if err != nil {
+	// 				glog.Errorf("Error getting info from job event: %v", err)
+	// 			}
 
-				if subs, ok := j.transcoderAddrSubs[tAddr]; ok {
-					for sub := range subs {
-						sub <- jid
-					}
-				}
-				if subs, ok := j.strmIDSubs[strmID]; ok {
-					for sub := range subs {
-						sub <- jid
-					}
-				}
-			case err := <-sub.Err():
-				glog.Errorf("Error from job event subscription: %v", err)
+	// 			if subs, ok := j.transcoderAddrSubs[tAddr]; ok {
+	// 				for sub := range subs {
+	// 					sub <- jid
+	// 				}
+	// 			}
+	// 			if subs, ok := j.strmIDSubs[strmID]; ok {
+	// 				for sub := range subs {
+	// 					sub <- jid
+	// 				}
+	// 			}
+	// 		case err := <-sub.Err():
+	// 			glog.Errorf("Error from job event subscription: %v", err)
 
-			case err := <-ctx.Done():
-				glog.Errorf("Subscription to job done: %v", err)
-			}
-		}
-	}()
+	// 		case err := <-ctx.Done():
+	// 			glog.Errorf("Subscription to job done: %v", err)
+	// 		}
+	// 	}
+	// }()
 
 	return nil
 }
