@@ -321,13 +321,13 @@ func TestReward(t *testing.T) {
 	}
 
 	// TRANSCODER REGISTRATION & BONDING
-	timeParams, err := transcoderClient.ProtocolTimeParams()
+	roundLength, err := transcoderClient.RoundLength()
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 
 	// Start at the beginning of a round to avoid timing edge cases in tests
-	if err := WaitUntilBlockMultiple(backend, rpcTimeout, timeParams.RoundLength); err != nil {
+	if err := WaitUntilBlockMultiple(backend, rpcTimeout, roundLength); err != nil {
 		t.Fatalf("%v", err)
 	}
 
@@ -353,7 +353,7 @@ func TestReward(t *testing.T) {
 	// REWARD
 
 	// Wait until new round
-	if err := WaitUntilBlockMultiple(backend, rpcTimeout, timeParams.RoundLength); err != nil {
+	if err := WaitUntilBlockMultiple(backend, rpcTimeout, roundLength); err != nil {
 		t.Fatalf("%v", err)
 	}
 
@@ -442,12 +442,22 @@ func TestJobClaimVerify(t *testing.T) {
 	}
 
 	// TRANSCODER REGISTRATION & BONDING
-	timeParams, err := transcoderClient.ProtocolTimeParams()
+	roundLength, err := transcoderClient.RoundLength()
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 
-	if err := WaitUntilBlockMultiple(backend, rpcTimeout, timeParams.RoundLength); err != nil {
+	verificationPeriod, err := transcoderClient.VerificationPeriod()
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	slashingPeriod, err := transcoderClient.SlashingPeriod()
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	if err := WaitUntilBlockMultiple(backend, rpcTimeout, roundLength); err != nil {
 		t.Fatalf("Failed to wait until next round: %v", err)
 	}
 
@@ -478,7 +488,7 @@ func TestJobClaimVerify(t *testing.T) {
 	// CREATE JOB
 
 	// Start at the beginning of a round
-	if err := WaitUntilBlockMultiple(backend, rpcTimeout, timeParams.RoundLength); err != nil {
+	if err := WaitUntilBlockMultiple(backend, rpcTimeout, roundLength); err != nil {
 		t.Fatalf("%v", err)
 	}
 
@@ -596,7 +606,7 @@ func TestJobClaimVerify(t *testing.T) {
 
 	// DISTRIBUTE FEES
 
-	if err := Wait(backend, rpcTimeout, new(big.Int).Add(timeParams.VerificationPeriod, timeParams.SlashingPeriod)); err != nil {
+	if err := Wait(backend, rpcTimeout, new(big.Int).Add(verificationPeriod, slashingPeriod)); err != nil {
 		t.Fatalf("%v", err)
 	}
 
@@ -698,13 +708,13 @@ func TestTranscoderLoop(t *testing.T) {
 	}
 
 	// TRANSCODER REGISTRATION & BONDING
-	timeParams, err := transcoderClient.ProtocolTimeParams()
+	roundLength, err := transcoderClient.RoundLength()
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 
 	// Start at the beginning of a round to avoid timing edge cases in tests
-	if err := WaitUntilBlockMultiple(backend, rpcTimeout, timeParams.RoundLength); err != nil {
+	if err := WaitUntilBlockMultiple(backend, rpcTimeout, roundLength); err != nil {
 		t.Fatalf("%v", err)
 	}
 
@@ -755,7 +765,7 @@ func TestTranscoderLoop(t *testing.T) {
 	// CREATE JOB
 
 	// Start at the beginning of a round
-	if err := WaitUntilBlockMultiple(backend, rpcTimeout, timeParams.RoundLength); err != nil {
+	if err := WaitUntilBlockMultiple(backend, rpcTimeout, roundLength); err != nil {
 		t.Fatalf("%v", err)
 	}
 

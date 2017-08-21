@@ -60,17 +60,7 @@ type LivepeerEthClient interface {
 	IsActiveTranscoder() (bool, error)
 	TranscoderStake() (*big.Int, error)
 	TokenBalance() (*big.Int, error)
-	GetJob(jobID *big.Int) (struct {
-		JobId              *big.Int
-		StreamId           string
-		TranscodingOptions string
-		MaxPricePerSegment *big.Int
-		PricePerSegment    *big.Int
-		BroadcasterAddress common.Address
-		TranscoderAddress  common.Address
-		EndBlock           *big.Int
-		Escrow             *big.Int
-	}, error)
+	GetJob(jobID *big.Int) (*Job, error)
 }
 
 type Client struct {
@@ -91,6 +81,28 @@ type Client struct {
 
 	rpcTimeout   time.Duration
 	eventTimeout time.Duration
+}
+
+type Job struct {
+	JobId              *big.Int
+	StreamId           string
+	TranscodingOptions string
+	MaxPricePerSegment *big.Int
+	PricePerSegment    *big.Int
+	BroadcasterAddress common.Address
+	TranscoderAddress  common.Address
+	EndBlock           *big.Int
+	Escrow             *big.Int
+}
+
+type Claim struct {
+	SegmentRange         [2]*big.Int
+	ClaimRoot            [32]byte
+	ClaimBlock           *big.Int
+	EndVerificationBlock *big.Int
+	EndSlashingBlock     *big.Int
+	TranscoderTotalStake *big.Int
+	Status               uint8
 }
 
 func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, protocolAddr common.Address, tokenAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
@@ -635,6 +647,7 @@ func (c *Client) SubscribeToApproval() (chan types.Log, ethereum.Subscription, e
 
 // CONSTANT FUNCTIONS
 
+//RoundInfo returns the current round, start block of current round and current block of the protocol
 func (c *Client) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
 	cr, err := c.roundsManagerSession.CurrentRound()
 	if err != nil {
@@ -705,67 +718,52 @@ func (c *Client) LastRewardRound() (*big.Int, error) {
 	return transcoderDetails.LastRewardRound, nil
 }
 
-func (c *Client) ProtocolTimeParams() (*struct {
-	RoundLength        *big.Int
-	JobEndingPeriod    *big.Int
-	VerificationPeriod *big.Int
-	SlashingPeriod     *big.Int
-	UnbondingPeriod    uint64
-}, error) {
-	roundLength, err := c.roundsManagerSession.RoundLength()
-	if err != nil {
-		return nil, err
-	}
-
-	jobEndingPeriod, err := c.jobsManagerSession.JobEndingPeriod()
-	if err != nil {
-		return nil, err
-	}
-
-	verificationPeriod, err := c.jobsManagerSession.VerificationPeriod()
-	if err != nil {
-		return nil, err
-	}
-
-	slashingPeriod, err := c.jobsManagerSession.SlashingPeriod()
-	if err != nil {
-		return nil, err
-	}
-
-	unbondingPeriod, err := c.bondingManagerSession.UnbondingPeriod()
-	if err != nil {
-		return nil, err
-	}
-
-	timingParams := &struct {
-		RoundLength        *big.Int
-		JobEndingPeriod    *big.Int
-		VerificationPeriod *big.Int
-		SlashingPeriod     *big.Int
-		UnbondingPeriod    uint64
-	}{
-		roundLength,
-		jobEndingPeriod,
-		verificationPeriod,
-		slashingPeriod,
-		unbondingPeriod,
-	}
-
-	return timingParams, nil
+func (c *Client) RoundLength() (*big.Int, error) {
+	return c.roundsManagerSession.RoundLength()
 }
 
-func (c *Client) GetJob(jobID *big.Int) (struct {
-	JobId              *big.Int
-	StreamId           string
-	TranscodingOptions string
-	MaxPricePerSegment *big.Int
-	PricePerSegment    *big.Int
-	BroadcasterAddress common.Address
-	TranscoderAddress  common.Address
-	EndBlock           *big.Int
-	Escrow             *big.Int
-}, error) {
-	return c.jobsManagerSession.Jobs(jobID)
+func (c *Client) VerificationPeriod() (*big.Int, error) {
+	return c.jobsManagerSession.VerificationPeriod()
+}
+
+func (c *Client) SlashingPeriod() (*big.Int, error) {
+	return c.jobsManagerSession.SlashingPeriod()
+}
+
+func (c *Client) GetJob(jobID *big.Int) (*Job, error) {
+	ret, err := c.jobsManagerSession.Jobs(jobID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Job{
+		JobId:              ret.JobId,
+		StreamId:           ret.StreamId,
+		TranscodingOptions: ret.TranscodingOptions,
+		MaxPricePerSegment: ret.MaxPricePerSegment,
+		PricePerSegment:    ret.PricePerSegment,
+		BroadcasterAddress: ret.BroadcasterAddress,
+		TranscoderAddress:  ret.TranscoderAddress,
+		EndBlock:           ret.EndBlock,
+		Escrow:             ret.Escrow,
+	}, nil
+}
+
+func (c *Client) GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error) {
+	segmentRange, claimRoot, claimBlock, endVerificationBlock, endSlashingBlock, transcoderTotalStake, status, err := c.jobsManagerSession.GetClaimDetails(jobID, claimID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Claim{
+		SegmentRange:         segmentRange,
+		ClaimRoot:            claimRoot,
+		ClaimBlock:           claimBlock,
+		EndVerificationBlock: endVerificationBlock,
+		EndSlashingBlock:     endSlashingBlock,
+		TranscoderTotalStake: transcoderTotalStake,
+		Status:               status,
+	}, err
 }
 
 func (c *Client) TokenBalance() (*big.Int, error) {
