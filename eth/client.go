@@ -267,18 +267,7 @@ func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegmen
 }
 
 func (c *Client) Bond(amount *big.Int, toAddr common.Address) (<-chan types.Receipt, <-chan error) {
-	return c.WaitForEventAndTransact(func() (chan types.Log, ethereum.Subscription, error) {
-		return c.SubscribeToApproval()
-	}, func() (*types.Transaction, error) {
-		tx, err := c.tokenSession.Approve(c.bondingManagerAddr, amount)
-		if err != nil {
-			return nil, err
-		}
-
-		glog.Infof("[%v]. Submitted tx %v. Approve %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
-
-		return tx, nil
-	}, func() (*types.Transaction, error) {
+	return c.ApproveAndTransact(c.bondingManagerAddr, amount, func() (*types.Transaction, error) {
 		tx, err := c.bondingManagerSession.Bond(amount, toAddr)
 		if err != nil {
 			return nil, err
@@ -304,18 +293,7 @@ func (c *Client) Reward() (<-chan types.Receipt, <-chan error) {
 }
 
 func (c *Client) Deposit(amount *big.Int) (<-chan types.Receipt, <-chan error) {
-	return c.WaitForEventAndTransact(func() (chan types.Log, ethereum.Subscription, error) {
-		return c.SubscribeToApproval()
-	}, func() (*types.Transaction, error) {
-		tx, err := c.tokenSession.Approve(c.jobsManagerAddr, amount)
-		if err != nil {
-			return nil, err
-		}
-
-		glog.Infof("[%v] Submitted tx %v. Approve %v LPTU for %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, c.bondingManagerAddr)
-
-		return tx, nil
-	}, func() (*types.Transaction, error) {
+	return c.ApproveAndTransact(c.jobsManagerAddr, amount, func() (*types.Transaction, error) {
 		tx, err := c.jobsManagerSession.Deposit(amount)
 		if err != nil {
 			return nil, err
@@ -646,7 +624,7 @@ func (c *Client) WaitForReceipt(txFunc func() (*types.Transaction, error)) (<-ch
 	return outRes, outErr
 }
 
-func (c *Client) WaitForEventAndTransact(subEventFunc func() (chan types.Log, ethereum.Subscription, error), txFunc1 func() (*types.Transaction, error), txFunc2 func() (*types.Transaction, error)) (<-chan types.Receipt, <-chan error) {
+func (c *Client) ApproveAndTransact(toAddr common.Address, amount *big.Int, txFunc func() (*types.Transaction, error)) (<-chan types.Receipt, <-chan error) {
 	timer := time.NewTimer(c.eventTimeout)
 	outRes := make(chan types.Receipt)
 	outErr := make(chan error)
@@ -655,7 +633,7 @@ func (c *Client) WaitForEventAndTransact(subEventFunc func() (chan types.Log, et
 		defer close(outRes)
 		defer close(outErr)
 
-		logCh, sub, err := subEventFunc()
+		logCh, sub, err := c.SubscribeToApproval()
 		if err != nil {
 			outErr <- err
 			return
@@ -664,7 +642,7 @@ func (c *Client) WaitForEventAndTransact(subEventFunc func() (chan types.Log, et
 		defer close(logCh)
 		defer sub.Unsubscribe()
 
-		_, err = txFunc1()
+		_, err = c.tokenSession.Approve(toAddr, amount)
 		if err != nil {
 			outErr <- err
 			return
@@ -673,9 +651,16 @@ func (c *Client) WaitForEventAndTransact(subEventFunc func() (chan types.Log, et
 		select {
 		case log := <-logCh:
 			if !log.Removed {
-				tx, err := txFunc2()
+				tx, err := txFunc()
 				if err != nil {
-					outErr <- err
+					// Set approval amount to 0
+					_, approveErr := c.tokenSession.Approve(toAddr, big.NewInt(0))
+					if approveErr != nil {
+						outErr <- approveErr
+					} else {
+						outErr <- err
+					}
+
 					return
 				}
 
