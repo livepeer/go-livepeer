@@ -241,389 +241,185 @@ func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyS
 // TRANSACTIONS
 
 func (c *Client) InitializeRound() (<-chan types.Receipt, <-chan error) {
-	outRes := make(chan types.Receipt)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
 		tx, err := c.roundsManagerSession.InitializeRound()
 		if err != nil {
-			outErr <- err
-			return
+			return nil, err
 		}
 
 		glog.Infof("[%v] Submitted tx %v. Initialize round", c.account.Address.Hex(), tx.Hash().Hex())
 
-		receipt, err := c.WaitForReceipt(tx)
-		if err != nil {
-			outErr <- err
-		} else {
-			outRes <- *receipt
-		}
-
-		return
-	}()
-
-	return outRes, outErr
+		return tx, nil
+	})
 }
 
 func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
-	outRes := make(chan types.Receipt)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
 		tx, err := c.bondingManagerSession.Transcoder(blockRewardCut, feeShare, pricePerSegment)
 		if err != nil {
-			outErr <- err
-			return
+			return nil, err
 		}
 
 		glog.Infof("[%v] Submitted tx %v. Register as transcoder", c.account.Address.Hex(), tx.Hash().Hex())
 
-		receipt, err := c.WaitForReceipt(tx)
-		if err != nil {
-			outErr <- err
-			return
-		}
-
-		outRes <- *receipt
-
-		return
-	}()
-
-	return outRes, outErr
+		return tx, nil
+	})
 }
 
 func (c *Client) Bond(amount *big.Int, toAddr common.Address) (<-chan types.Receipt, <-chan error) {
-	inRes, inErr := c.Approve(c.bondingManagerAddr, amount)
-
-	timer := time.NewTimer(c.eventTimeout)
-	outRes := make(chan types.Receipt)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
-		select {
-		case log := <-inRes:
-			if !log.Removed {
-				tx, err := c.bondingManagerSession.Bond(amount, toAddr)
-				if err != nil {
-					outErr <- err
-					return
-				}
-
-				glog.Infof("[%v] Submitted tx %v. Bond %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
-
-				receipt, err := c.WaitForReceipt(tx)
-				if err != nil {
-					outErr <- err
-				} else {
-					outRes <- *receipt
-				}
-
-				return
-			}
-		case err := <-inErr:
-			outErr <- err
-			return
-		case <-timer.C:
-			outErr <- fmt.Errorf("Event subscription timed out")
-			return
+	return c.WaitForEventAndTransact(func() (chan types.Log, ethereum.Subscription, error) {
+		return c.SubscribeToApproval()
+	}, func() (*types.Transaction, error) {
+		tx, err := c.tokenSession.Approve(c.bondingManagerAddr, amount)
+		if err != nil {
+			return nil, err
 		}
-	}()
 
-	return outRes, outErr
+		glog.Infof("[%v]. Submitted tx %v. Approve %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
+
+		return tx, nil
+	}, func() (*types.Transaction, error) {
+		tx, err := c.bondingManagerSession.Bond(amount, toAddr)
+		if err != nil {
+			return nil, err
+		}
+
+		glog.Infof("[%v] Submitted tx %v. Bond %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
+
+		return tx, nil
+	})
 }
 
 func (c *Client) Reward() (<-chan types.Receipt, <-chan error) {
-	outRes := make(chan types.Receipt)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
 		tx, err := c.bondingManagerSession.Reward()
 		if err != nil {
-			outErr <- err
-			return
+			return nil, err
 		}
 
 		glog.Infof("[%v] Submitted tx %v. Called reward", c.account.Address.Hex(), tx.Hash().Hex())
 
-		receipt, err := c.WaitForReceipt(tx)
-		if err != nil {
-			outErr <- err
-		} else {
-			outRes <- *receipt
-		}
-
-		return
-	}()
-
-	return outRes, outErr
+		return tx, nil
+	})
 }
 
 func (c *Client) Deposit(amount *big.Int) (<-chan types.Receipt, <-chan error) {
-	inRes, inErr := c.Approve(c.jobsManagerAddr, amount)
-
-	timer := time.NewTimer(c.eventTimeout)
-	outRes := make(chan types.Receipt)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
-		select {
-		case log := <-inRes:
-			if !log.Removed {
-				tx, err := c.jobsManagerSession.Deposit(amount)
-				if err != nil {
-					outErr <- err
-					return
-				}
-
-				glog.Infof("[%v] Submitted tx %v. Deposited %v LPTU", c.account.Address.Hex(), tx.Hash().Hex(), amount)
-
-				receipt, err := c.WaitForReceipt(tx)
-				if err != nil {
-					outErr <- err
-				} else {
-					outRes <- *receipt
-				}
-
-				return
-			}
-		case err := <-inErr:
-			outErr <- err
-			return
-		case <-timer.C:
-			outErr <- fmt.Errorf("Event subscription timed out")
-			return
+	return c.WaitForEventAndTransact(func() (chan types.Log, ethereum.Subscription, error) {
+		return c.SubscribeToApproval()
+	}, func() (*types.Transaction, error) {
+		tx, err := c.tokenSession.Approve(c.jobsManagerAddr, amount)
+		if err != nil {
+			return nil, err
 		}
-	}()
 
-	return outRes, outErr
+		glog.Infof("[%v] Submitted tx %v. Approve %v LPTU for %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, c.bondingManagerAddr)
+
+		return tx, nil
+	}, func() (*types.Transaction, error) {
+		tx, err := c.jobsManagerSession.Deposit(amount)
+		if err != nil {
+			return nil, err
+		}
+
+		glog.Infof("[%v] Submitted tx %v. Deposit %v LPTU", c.account.Address.Hex(), tx.Hash().Hex(), amount)
+
+		return tx, nil
+	})
 }
 
 func (c *Client) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
-	outRes := make(chan types.Receipt)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
 		tx, err := c.jobsManagerSession.Job(streamId, transcodingOptions, maxPricePerSegment)
 		if err != nil {
-			outErr <- err
-			return
+			return nil, err
 		}
 
 		glog.Infof("[%v] Submitted tx %v. Creating job for stream id %v", c.account.Address.Hex(), tx.Hash().Hex(), streamId)
 
-		receipt, err := c.WaitForReceipt(tx)
-		if err != nil {
-			outErr <- err
-		} else {
-			outRes <- *receipt
-		}
-
-		return
-	}()
-
-	return outRes, outErr
+		return tx, nil
+	})
 }
 
 func (c *Client) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error) {
-	outRes := make(chan types.Receipt)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
 		tx, err := c.jobsManagerSession.ClaimWork(jobId, segmentRange, claimRoot)
 		if err != nil {
-			outErr <- err
-			return
+			return nil, err
 		}
 
-		glog.Infof("[%v] Submitted transaction %v. Claimed work for segments %v - %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentRange[0], segmentRange[1])
+		glog.Infof("[%v] Submitted tx %v. Claimed work for segments %v - %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentRange[0], segmentRange[1])
 
-		receipt, err := c.WaitForReceipt(tx)
-		if err != nil {
-			outErr <- err
-		} else {
-			outRes <- *receipt
-		}
-
-		return
-	}()
-
-	return outRes, outErr
+		return tx, nil
+	})
 }
 
 func (c *Client) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error) {
-	outRes := make(chan types.Receipt)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
 		tx, err := c.jobsManagerSession.Verify(jobId, claimId, segmentNumber, dataHash, transcodedDataHash, broadcasterSig, proof)
 		if err != nil {
-			outErr <- err
-			return
+			return nil, err
 		}
 
 		glog.Infof("[%v] Submitted tx %v. Verify segment %v in claim %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentNumber, claimId)
 
-		receipt, err := c.WaitForReceipt(tx)
-		if err != nil {
-			outErr <- err
-		} else {
-			outRes <- *receipt
-		}
-
-		return
-	}()
-
-	return outRes, outErr
+		return tx, nil
+	})
 }
 
 func (c *Client) DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error) {
-	outRes := make(chan types.Receipt)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
 		tx, err := c.jobsManagerSession.DistributeFees(jobId, claimId)
 		if err != nil {
-			outErr <- err
-			return
+			return nil, err
 		}
 
-		glog.Infof("[%v] Submitted transaction %v. Distributed fees for job %v claim %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId, claimId)
+		glog.Infof("[%v] Submitted tx %v. Distributed fees for job %v claim %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId, claimId)
 
-		receipt, err := c.WaitForReceipt(tx)
-		if err != nil {
-			outErr <- err
-		} else {
-			outRes <- *receipt
-		}
-
-		return
-	}()
-
-	return outRes, outErr
+		return tx, nil
+	})
 }
 
 func (c *Client) BatchDistributeFees(jobId *big.Int, claimIds []*big.Int) (<-chan types.Receipt, <-chan error) {
-	outRes := make(chan types.Receipt)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
 		tx, err := c.jobsManagerSession.BatchDistributeFees(jobId, claimIds)
 		if err != nil {
-			outErr <- err
-			return
+			return nil, err
 		}
 
-		glog.Infof("[%v] Submitted tx %v. Distributed fee fors job %v claims %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId, claimIds)
+		glog.Infof("[%v] Submitted tx %v. Distributed fee for job %v claims %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId, claimIds)
 
-		receipt, err := c.WaitForReceipt(tx)
-		if err != nil {
-			outErr <- err
-		} else {
-			outRes <- *receipt
-		}
-
-		return
-	}()
-
-	return outRes, outErr
+		return tx, nil
+	})
 }
 
 func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error) {
-	outRes := make(chan types.Receipt)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
 		tx, err := c.tokenSession.Transfer(toAddr, amount)
 		if err != nil {
-			outErr <- err
-			return
+			return nil, err
 		}
 
-		glog.Infof("[%v] Submitted transaction %v. Transfer %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
+		glog.Infof("[%v] Submitted tx %v. Transfer %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
 
-		receipt, err := c.WaitForReceipt(tx)
-		if err != nil {
-			outErr <- err
-		} else {
-			outRes <- *receipt
-		}
-
-		return
-	}()
-
-	return outRes, outErr
+		return tx, nil
+	})
 }
 
-func (c *Client) Approve(toAddr common.Address, amount *big.Int) (chan types.Log, chan error) {
-	outRes := make(chan types.Log)
-	outErr := make(chan error)
-
-	go func() {
-		defer close(outRes)
-		defer close(outErr)
-
-		logsCh, sub, err := c.SubscribeToApproval()
-
-		defer close(logsCh)
-		defer sub.Unsubscribe()
-
+func (c *Client) Approve(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		tx, err := c.tokenSession.Approve(toAddr, amount)
 		if err != nil {
-			outErr <- err
-			return
+			return nil, err
 		}
 
-		_, err = c.tokenSession.Approve(toAddr, amount)
-		if err != nil {
-			outErr <- err
-			return
-		}
+		glog.Infof("[%v], Submitted tx %v. Approve %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
 
-		log := <-logsCh
-
-		outRes <- log
-
-		return
-	}()
-
-	return outRes, outErr
+		return tx, nil
+	})
 }
 
 func (c *Client) SubscribeToApproval() (chan types.Log, ethereum.Subscription, error) {
-	logsCh := make(chan types.Log)
+	logCh := make(chan types.Log)
 
 	abiJSON, err := abi.JSON(strings.NewReader(contracts.LivepeerTokenABI))
 	if err != nil {
@@ -637,12 +433,27 @@ func (c *Client) SubscribeToApproval() (chan types.Log, ethereum.Subscription, e
 
 	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
 
-	sub, err := c.backend.SubscribeFilterLogs(ctx, q, logsCh)
+	sub, err := c.backend.SubscribeFilterLogs(ctx, q, logCh)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return logsCh, sub, nil
+	return logCh, sub, nil
+}
+
+func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error) {
+	abiJSON, err := abi.JSON(strings.NewReader(contracts.JobsManagerABI))
+	if err != nil {
+		glog.Errorf("Error decoding ABI into JSON: %v", err)
+		return nil, err
+	}
+
+	q := ethereum.FilterQuery{
+		Addresses: []common.Address{c.jobsManagerAddr},
+		Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
+	}
+
+	return c.backend.SubscribeFilterLogs(ctx, q, logsCh)
 }
 
 // CONSTANT FUNCTIONS
@@ -770,21 +581,6 @@ func (c *Client) TokenBalance() (*big.Int, error) {
 	return c.tokenSession.BalanceOf(c.account.Address)
 }
 
-func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error) {
-	abiJSON, err := abi.JSON(strings.NewReader(contracts.JobsManagerABI))
-	if err != nil {
-		glog.Errorf("Error decoding ABI into JSON: %v", err)
-		return nil, err
-	}
-
-	q := ethereum.FilterQuery{
-		Addresses: []common.Address{c.jobsManagerAddr},
-		Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
-	}
-
-	return c.backend.SubscribeFilterLogs(ctx, q, logsCh)
-}
-
 // HELPERS
 
 func (c *Client) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) {
@@ -800,7 +596,7 @@ func (c *Client) SignSegmentHash(passphrase string, hash []byte) ([]byte, error)
 	return sig, nil
 }
 
-func (c *Client) WaitForReceipt(tx *types.Transaction) (*types.Receipt, error) {
+func (c *Client) GetReceipt(tx *types.Transaction) (*types.Receipt, error) {
 	for time.Since(time.Now()) < c.eventTimeout {
 		ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
 
@@ -821,4 +617,82 @@ func (c *Client) WaitForReceipt(tx *types.Transaction) (*types.Receipt, error) {
 	}
 
 	return nil, fmt.Errorf("Tx %v timed out", tx.Hash().Hex())
+}
+
+func (c *Client) WaitForReceipt(txFunc func() (*types.Transaction, error)) (<-chan types.Receipt, <-chan error) {
+	outRes := make(chan types.Receipt)
+	outErr := make(chan error)
+
+	go func() {
+		defer close(outRes)
+		defer close(outErr)
+
+		tx, err := txFunc()
+		if err != nil {
+			outErr <- err
+			return
+		}
+
+		receipt, err := c.GetReceipt(tx)
+		if err != nil {
+			outErr <- err
+		} else {
+			outRes <- *receipt
+		}
+
+		return
+	}()
+
+	return outRes, outErr
+}
+
+func (c *Client) WaitForEventAndTransact(subEventFunc func() (chan types.Log, ethereum.Subscription, error), txFunc1 func() (*types.Transaction, error), txFunc2 func() (*types.Transaction, error)) (<-chan types.Receipt, <-chan error) {
+	timer := time.NewTimer(c.eventTimeout)
+	outRes := make(chan types.Receipt)
+	outErr := make(chan error)
+
+	go func() {
+		defer close(outRes)
+		defer close(outErr)
+
+		logCh, sub, err := subEventFunc()
+		if err != nil {
+			outErr <- err
+			return
+		}
+
+		defer close(logCh)
+		defer sub.Unsubscribe()
+
+		_, err = txFunc1()
+		if err != nil {
+			outErr <- err
+			return
+		}
+
+		select {
+		case log := <-logCh:
+			if !log.Removed {
+				tx, err := txFunc2()
+				if err != nil {
+					outErr <- err
+					return
+				}
+
+				receipt, err := c.GetReceipt(tx)
+				if err != nil {
+					outErr <- err
+				} else {
+					outRes <- *receipt
+				}
+
+				return
+			}
+		case <-timer.C:
+			outErr <- fmt.Errorf("Event subscription timed out")
+			return
+		}
+	}()
+
+	return outRes, outErr
 }
