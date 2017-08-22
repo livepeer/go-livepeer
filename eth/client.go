@@ -5,13 +5,17 @@ package eth
 
 //go:generate abigen --abi protocol/abi/LivepeerProtocol.abi --pkg contracts --type LivepeerProtocol --out contracts/livepeerProtocol.go --bin protocol/bin/LivepeerProtocol.bin
 //go:generate abigen --abi protocol/abi/LivepeerToken.abi --pkg contracts --type LivepeerToken --out contracts/livepeerToken.go --bin protocol/bin/LivepeerToken.bin
+//go:generate abigen --abi protocol/abi/BondingManager.abi --pkg contracts --type BondingManager --out contracts/bondingManager.go --bin protocol/bin/BondingManager.bin
+//go:generate abigen --abi protocol/abi/JobsManager.abi --pkg contracts --type JobsManager --out contracts/jobsManager.go --bin protocol/bin/JobsManager.bin
+//go:generate abigen --abi protocol/abi/RoundsManager.abi --pkg contracts --type RoundsManager --out contracts/roundsManager.go --bin protocol/bin/RoundsManager.bin
+//go:generate abigen --abi protocol/abi/IdentityVerifier.abi --pkg contracts --type IdentityVerifier --out contracts/identityVerifier.go --bin protocol/bin/IdentityVerifier.bin
 //go:generate abigen --abi protocol/abi/TranscoderPools.abi --pkg contracts --type TranscoderPools --out contracts/transcoderPools.go --bin protocol/bin/TranscoderPools.bin
-//go:generate abigen --abi protocol/abi/TranscodeJobs.abi --pkg contracts --type TranscodeJobs --out contracts/transcodeJobs.go --bin protocol/bin/TranscodeJobs.bin
+//go:generate abigen --abi protocol/abi/JobLib.abi --pkg contracts --type JobLib --out contracts/jobLib.go --bin protocol/bin/JobLib.bin
 //go:generate abigen --abi protocol/abi/MaxHeap.abi --pkg contracts --type MaxHeap --out contracts/maxHeap.go --bin protocol/bin/MaxHeap.bin
 //go:generate abigen --abi protocol/abi/MinHeap.abi --pkg contracts --type MinHeap --out contracts/minHeap.go --bin protocol/bin/MinHeap.bin
 //go:generate abigen --abi protocol/abi/Node.abi --pkg contracts --type Node --out contracts/node.go --bin protocol/bin/Node.bin
 //go:generate abigen --abi protocol/abi/SafeMath.abi --pkg contracts --type SafeMath --out contracts/safeMath.go --bin protocol/bin/SafeMath.bin
-//go:generate abigen --abi protocol/abi/ECVerify.abi --pkg contracts --type ECVerify --out contracts/ecVerify.go --bin protocol/bin/ECVerify.bin
+//go:generate abigen --abi protocol/abi/ECRecovery.abi --pkg contracts --type ECRecovery --out contracts/ecRecovery.go --bin protocol/bin/ECRecovery.bin
 //go:generate abigen --abi protocol/abi/MerkleProof.abi --pkg contracts --type MerkleProof --out contracts/merkleProof.go --bin protocol/bin/MerkleProof.bin
 
 import (
@@ -30,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth/contracts"
@@ -42,74 +47,88 @@ type LivepeerEthClient interface {
 	Backend() *ethclient.Client
 	Account() accounts.Account
 	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error)
-	WatchEvent(logsCh <-chan types.Log) (types.Log, error)
-	RoundInfo() (*big.Int, *big.Int, *big.Int, *big.Int, error)
-	InitializeRound() (*types.Transaction, error)
+	RoundInfo() (*big.Int, *big.Int, *big.Int, error)
+	InitializeRound() (<-chan types.Receipt, <-chan error)
+	Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
+	Bond(amount *big.Int, toAddr common.Address) (<-chan types.Receipt, <-chan error)
+	Reward() (<-chan types.Receipt, <-chan error)
+	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
+	ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error)
+	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
+	Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error)
 	CurrentRoundInitialized() (bool, error)
-	Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (*types.Transaction, error)
 	IsActiveTranscoder() (bool, error)
 	TranscoderStake() (*big.Int, error)
-	Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error)
-	ValidRewardTimeWindow() (bool, error)
-	Reward() (*types.Transaction, error)
-	Job(streamId string, transcodingOptions [32]byte, maxPricePerSegment *big.Int) (*types.Transaction, error)
-	JobDetails(id *big.Int) (*big.Int, [32]byte, *big.Int, common.Address, common.Address, *big.Int, error)
-	EndJob(id *big.Int) (*types.Transaction, error)
-	ClaimWork(jobId *big.Int, startSegmentSequenceNumber *big.Int, endSegmentSequenceNumber *big.Int, transcodeClaimsRoot [32]byte) (*types.Transaction, error)
-	Verify(jobId *big.Int, segmentSequenceNumber *big.Int, dataHash [32]byte, transcodedDataHash [32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error)
-	Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error)
 	TokenBalance() (*big.Int, error)
-	WaitUntilNextRound(roundLength *big.Int) error
+	GetJob(jobID *big.Int) (*Job, error)
 }
 
 type Client struct {
-	account         accounts.Account
-	keyStore        *keystore.KeyStore
-	backend         *ethclient.Client
-	protocolAddr    common.Address
-	tokenAddr       common.Address
-	protocolSession *contracts.LivepeerProtocolSession
-	tokenSession    *contracts.LivepeerTokenSession
+	account               accounts.Account
+	keyStore              *keystore.KeyStore
+	transactOpts          bind.TransactOpts
+	backend               *ethclient.Client
+	protocolAddr          common.Address
+	tokenAddr             common.Address
+	bondingManagerAddr    common.Address
+	jobsManagerAddr       common.Address
+	roundsManagerAddr     common.Address
+	protocolSession       *contracts.LivepeerProtocolSession
+	tokenSession          *contracts.LivepeerTokenSession
+	bondingManagerSession *contracts.BondingManagerSession
+	jobsManagerSession    *contracts.JobsManagerSession
+	roundsManagerSession  *contracts.RoundsManagerSession
 
 	rpcTimeout   time.Duration
 	eventTimeout time.Duration
 }
 
-func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, protocolAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
+type Job struct {
+	JobId              *big.Int
+	StreamId           string
+	TranscodingOptions string
+	MaxPricePerSegment *big.Int
+	PricePerSegment    *big.Int
+	BroadcasterAddress common.Address
+	TranscoderAddress  common.Address
+	EndBlock           *big.Int
+	Escrow             *big.Int
+}
+
+type Claim struct {
+	SegmentRange         [2]*big.Int
+	ClaimRoot            [32]byte
+	ClaimBlock           *big.Int
+	EndVerificationBlock *big.Int
+	EndSlashingBlock     *big.Int
+	TranscoderTotalStake *big.Int
+	Status               uint8
+}
+
+func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, protocolAddr common.Address, tokenAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
 	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 
 	transactOpts, err := NewTransactOptsForAccount(account, passphrase, keyStore)
-
 	if err != nil {
-		return nil, err
-	}
-
-	protocol, err := contracts.NewLivepeerProtocol(protocolAddr, backend)
-
-	if err != nil {
-		glog.Error("Error creating LivepeerProtocol: %v", err)
-		return nil, err
-	}
-
-	tokenAddr, err := protocol.Token(nil)
-
-	if err != nil {
-		glog.Errorf("Error retrieving token address: %v", err)
 		return nil, err
 	}
 
 	token, err := contracts.NewLivepeerToken(tokenAddr, backend)
-
 	if err != nil {
 		glog.Errorf("Error creating LivepeerToken: %v", err)
 		return nil, err
 	}
 
-	glog.Infof("Creating client for account %v", transactOpts.From.Hex())
+	protocol, err := contracts.NewLivepeerProtocol(protocolAddr, backend)
+	if err != nil {
+		glog.Errorf("Error creating LivepeerProtocol: %v", err)
+		return nil, err
+	}
 
-	return &Client{
+	client := &Client{
 		account:      account,
 		keyStore:     keyStore,
+		transactOpts: *transactOpts,
 		backend:      backend,
 		protocolAddr: protocolAddr,
 		tokenAddr:    tokenAddr,
@@ -123,7 +142,76 @@ func NewClient(account accounts.Account, passphrase string, datadir string, back
 		},
 		rpcTimeout:   rpcTimeout,
 		eventTimeout: eventTimeout,
-	}, nil
+	}
+
+	glog.Infof("Creating client for account %v", transactOpts.From.Hex())
+
+	client.SetManagers()
+
+	return client, nil
+}
+
+func (c *Client) SetManagers() error {
+	bondingManagerAddr, err := c.protocolSession.Registry(crypto.Keccak256Hash([]byte("BondingManager")))
+	if err != nil {
+		glog.Errorf("Error getting BondingManager address: %v", err)
+		return err
+	}
+
+	c.bondingManagerAddr = bondingManagerAddr
+
+	bondingManager, err := contracts.NewBondingManager(bondingManagerAddr, c.backend)
+	if err != nil {
+		glog.Errorf("Error creating BondingManager: %v", err)
+		return err
+	}
+
+	c.bondingManagerSession = &contracts.BondingManagerSession{
+		Contract:     bondingManager,
+		TransactOpts: c.transactOpts,
+	}
+
+	jobsManagerAddr, err := c.protocolSession.Registry(crypto.Keccak256Hash([]byte("JobsManager")))
+	if err != nil {
+		glog.Errorf("Error getting JobsManager address: %v", err)
+		return err
+	}
+
+	c.jobsManagerAddr = jobsManagerAddr
+
+	jobsManager, err := contracts.NewJobsManager(jobsManagerAddr, c.backend)
+	if err != nil {
+		glog.Errorf("Error creating JobsManager: %v", err)
+		return err
+	}
+
+	c.jobsManagerSession = &contracts.JobsManagerSession{
+		Contract:     jobsManager,
+		TransactOpts: c.transactOpts,
+	}
+
+	roundsManagerAddr, err := c.protocolSession.Registry(crypto.Keccak256Hash([]byte("RoundsManager")))
+	if err != nil {
+		glog.Errorf("Error getting RoundsManager address: %v", err)
+		return err
+	}
+
+	c.roundsManagerAddr = roundsManagerAddr
+
+	roundsManager, err := contracts.NewRoundsManager(roundsManagerAddr, c.backend)
+	if err != nil {
+		glog.Errorf("Error creating RoundsManager: %v", err)
+		return err
+	}
+
+	c.roundsManagerSession = &contracts.RoundsManagerSession{
+		Contract:     roundsManager,
+		TransactOpts: c.transactOpts,
+	}
+
+	glog.Infof("Client: [LivepeerProtocol: %v LivepeerToken: %v BondingManager: %v JobsManager: %v RoundsManager: %v]", c.protocolAddr.Hex(), c.tokenAddr.Hex(), bondingManagerAddr.Hex(), jobsManagerAddr.Hex(), roundsManagerAddr.Hex())
+
+	return nil
 }
 
 func (c *Client) Backend() *ethclient.Client {
@@ -150,306 +238,423 @@ func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyS
 	return transactOpts, err
 }
 
-func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error) {
-	protocolJson, err := abi.JSON(strings.NewReader(contracts.LivepeerProtocolABI))
+// TRANSACTIONS
 
+func (c *Client) InitializeRound() (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.roundsManagerSession.InitializeRound(); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Initialize round", c.account.Address.Hex(), tx.Hash().Hex())
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.bondingManagerSession.Transcoder(blockRewardCut, feeShare, pricePerSegment); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Register as transcoder", c.account.Address.Hex(), tx.Hash().Hex())
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) Bond(amount *big.Int, toAddr common.Address) (<-chan types.Receipt, <-chan error) {
+	return c.ApproveAndTransact(c.bondingManagerAddr, amount, func() (*types.Transaction, error) {
+		if tx, err := c.bondingManagerSession.Bond(amount, toAddr); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Bond %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) Reward() (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.bondingManagerSession.Reward(); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Called reward", c.account.Address.Hex(), tx.Hash().Hex())
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) Deposit(amount *big.Int) (<-chan types.Receipt, <-chan error) {
+	return c.ApproveAndTransact(c.jobsManagerAddr, amount, func() (*types.Transaction, error) {
+		if tx, err := c.jobsManagerSession.Deposit(amount); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Deposit %v LPTU", c.account.Address.Hex(), tx.Hash().Hex(), amount)
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.jobsManagerSession.Job(streamId, transcodingOptions, maxPricePerSegment); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Creating job for stream id %v", c.account.Address.Hex(), tx.Hash().Hex(), streamId)
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.jobsManagerSession.ClaimWork(jobId, segmentRange, claimRoot); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Claimed work for segments %v - %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentRange[0], segmentRange[1])
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.jobsManagerSession.Verify(jobId, claimId, segmentNumber, dataHash, transcodedDataHash, broadcasterSig, proof); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Verify segment %v in claim %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentNumber, claimId)
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.jobsManagerSession.DistributeFees(jobId, claimId); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Distributed fees for job %v claim %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId, claimId)
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) BatchDistributeFees(jobId *big.Int, claimIds []*big.Int) (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.jobsManagerSession.BatchDistributeFees(jobId, claimIds); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Distributed fee for job %v claims %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId, claimIds)
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.tokenSession.Transfer(toAddr, amount); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Transfer %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) Approve(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.tokenSession.Approve(toAddr, amount); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v], Submitted tx %v. Approve %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) SubscribeToApproval() (chan types.Log, ethereum.Subscription, error) {
+	logCh := make(chan types.Log)
+
+	abiJSON, err := abi.JSON(strings.NewReader(contracts.LivepeerTokenABI))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	q := ethereum.FilterQuery{
+		Addresses: []common.Address{c.tokenAddr},
+		Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["Approval"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
+	}
+
+	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
+
+	sub, err := c.backend.SubscribeFilterLogs(ctx, q, logCh)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return logCh, sub, nil
+}
+
+func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error) {
+	abiJSON, err := abi.JSON(strings.NewReader(contracts.JobsManagerABI))
 	if err != nil {
 		glog.Errorf("Error decoding ABI into JSON: %v", err)
 		return nil, err
 	}
 
 	q := ethereum.FilterQuery{
-		Addresses: []common.Address{c.protocolAddr},
-		Topics:    [][]common.Hash{[]common.Hash{protocolJson.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
+		Addresses: []common.Address{c.jobsManagerAddr},
+		Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
 	}
 
 	return c.backend.SubscribeFilterLogs(ctx, q, logsCh)
 }
 
-func monitorJobEvent(logsCh <-chan types.Log, callback func(l types.Log) error) {
-	for {
-		select {
-		case log := <-logsCh:
-			if !log.Removed && log.BlockNumber != 0 {
-				// TODO: Perform action in response to job event
-				// glog.Infof("Received a job at block %v with tx %v by address %v", log.BlockNumber, log.TxHash.Hex(), log.Address.Hex())
-				callback(log)
-			}
-		}
-	}
-}
+// CONSTANT FUNCTIONS
 
-func (c *Client) WatchEvent(logsCh <-chan types.Log) (types.Log, error) {
-	var (
-		timer = time.NewTimer(c.eventTimeout)
-	)
-
-	for {
-		select {
-		case log := <-logsCh:
-			if !log.Removed {
-				return log, nil
-			}
-		case <-timer.C:
-			err := fmt.Errorf("watchEvent timed out")
-
-			glog.Errorf(err.Error())
-			return types.Log{}, err
-		}
-	}
-}
-
-func (c *Client) RoundInfo() (*big.Int, *big.Int, *big.Int, *big.Int, error) {
-	cr, err := c.protocolSession.CurrentRound()
-
+//RoundInfo returns the current round, start block of current round and current block of the protocol
+func (c *Client) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
+	cr, err := c.roundsManagerSession.CurrentRound()
 	if err != nil {
 		glog.Errorf("Error getting current round: %v", err)
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	cn, err := c.protocolSession.CycleNum()
-
-	if err != nil {
-		glog.Errorf("Error getting current cycle number: %v", err)
-		return nil, nil, nil, nil, err
-	}
-
-	crsb, err := c.protocolSession.CurrentRoundStartBlock()
-
+	crsb, err := c.roundsManagerSession.CurrentRoundStartBlock()
 	if err != nil {
 		glog.Errorf("Error getting current round start block: %v", err)
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
 
 	block, err := c.backend.BlockByNumber(ctx, nil)
-
 	if err != nil {
 		glog.Errorf("Error getting latest block number: %v", err)
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return cr, cn, crsb, block.Number(), nil
-}
-
-func (c *Client) InitializeRound() (*types.Transaction, error) {
-	tx, err := c.protocolSession.InitializeRound()
-
-	if err != nil {
-		glog.Errorf("Error initializing round: %v", err)
-		return nil, err
-	}
-
-	glog.Infof("[%v] Submitted transaction %v. Initialize round", c.account.Address.Hex(), tx.Hash().Hex())
-	return tx, nil
+	return cr, crsb, block.Number(), nil
 }
 
 func (c *Client) CurrentRoundInitialized() (bool, error) {
-	lir, err := c.protocolSession.LastInitializedRound()
-
+	initialized, err := c.roundsManagerSession.CurrentRoundInitialized()
 	if err != nil {
-		glog.Errorf("Error getting last initialized round: %v", err)
+		glog.Errorf("Error checking if current round initialized: %v", err)
 		return false, err
 	}
 
-	cr, err := c.protocolSession.CurrentRound()
-
-	if err != nil {
-		glog.Errorf("Error getting current round: %v", err)
-		return false, err
-	}
-
-	if lir.Cmp(cr) == -1 {
-		return false, nil
-	} else {
-		return true, nil
-	}
-}
-
-func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (*types.Transaction, error) {
-	tx, err := c.protocolSession.Transcoder(blockRewardCut, feeShare, pricePerSegment)
-
-	if err != nil {
-		glog.Errorf("Error registering as a transcoder: %v", err)
-		return nil, err
-	}
-
-	glog.Infof("[%v] Submitted transaction %v. Register as a transcoder", c.account.Address.Hex(), tx.Hash().Hex())
-	return tx, nil
+	return initialized, nil
 }
 
 func (c *Client) IsActiveTranscoder() (bool, error) {
-	return c.protocolSession.IsActiveTranscoder(c.account.Address)
+	return c.bondingManagerSession.IsActiveTranscoder(c.account.Address)
+}
+
+func (c *Client) TranscoderBond() (*big.Int, error) {
+	transcoder, err := c.bondingManagerSession.Transcoders(c.account.Address)
+	if err != nil {
+		return nil, err
+	}
+
+	return transcoder.BondedAmount, nil
 }
 
 func (c *Client) TranscoderStake() (*big.Int, error) {
-	return c.protocolSession.TranscoderTotalStake(c.account.Address)
+	return c.bondingManagerSession.TranscoderTotalStake(c.account.Address)
 }
 
-func (c *Client) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
-	var (
-		logsCh = make(chan types.Log)
-	)
-
-	tokenJson, err := abi.JSON(strings.NewReader(contracts.LivepeerTokenABI))
-
-	if err != nil {
-		glog.Errorf("Error decoding ABI into JSON: %v", err)
-		return nil, err
-	}
-
-	q := ethereum.FilterQuery{
-		Addresses: []common.Address{c.tokenAddr},
-		Topics:    [][]common.Hash{[]common.Hash{tokenJson.Events["Approval"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
-	}
-
-	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
-
-	logsSub, err := c.backend.SubscribeFilterLogs(ctx, q, logsCh)
-
-	defer logsSub.Unsubscribe()
-	defer close(logsCh)
-
-	tx, err := c.tokenSession.Approve(c.protocolAddr, amount)
-
-	if err != nil {
-		glog.Errorf("Error approving token transfer: %v", err)
-		return nil, err
-	}
-
-	glog.Infof("[%v] Submitted transaction %v. Approve %v LPTU transfer by LivepeerProtocol", c.account.Address.Hex(), tx.Hash().Hex(), amount)
-
-	_, err = c.WatchEvent(logsCh)
-
-	if err != nil {
-		glog.Errorf("Error watching event: %v", err)
-		return nil, err
-	}
-
-	tx, err = c.protocolSession.Bond(amount, toAddr)
-
-	if err != nil {
-		glog.Errorf("Error bonding: %v", err)
-		return nil, err
-	}
-
-	cr, cn, crsb, cb, err := c.RoundInfo()
-
-	if err != nil {
-		glog.Errorf("Error getting round info: %v", err)
-		return nil, err
-	}
-
-	glog.Infof("[%v] Submitted transaction %v. Bond %v LPTU to %v at CR %v CN %v CRSB %v CB %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex(), cr, cn, crsb, cb)
-	return tx, nil
+func (c *Client) TranscoderStatus() (uint8, error) {
+	return c.bondingManagerSession.TranscoderStatus(c.account.Address)
 }
 
-func (c *Client) ValidRewardTimeWindow() (bool, error) {
-	return c.protocolSession.ValidRewardTimeWindow(c.account.Address)
+func (c *Client) DelegatorStake() (*big.Int, error) {
+	return c.bondingManagerSession.DelegatorStake(c.account.Address)
 }
 
-func (c *Client) Reward() (*types.Transaction, error) {
-	tx, err := c.protocolSession.Reward()
+func (c *Client) LastRewardRound() (*big.Int, error) {
+	transcoderDetails, err := c.bondingManagerSession.Transcoders(c.account.Address)
 
 	if err != nil {
-		glog.Errorf("Error calling reward: %v", err)
+		glog.Errorf("Error getting transcoder details: %v", err)
 		return nil, err
 	}
 
-	cr, cn, crsb, cb, err := c.RoundInfo()
+	return transcoderDetails.LastRewardRound, nil
+}
 
+func (c *Client) RoundLength() (*big.Int, error) {
+	return c.roundsManagerSession.RoundLength()
+}
+
+func (c *Client) VerificationPeriod() (*big.Int, error) {
+	return c.jobsManagerSession.VerificationPeriod()
+}
+
+func (c *Client) SlashingPeriod() (*big.Int, error) {
+	return c.jobsManagerSession.SlashingPeriod()
+}
+
+func (c *Client) GetJob(jobID *big.Int) (*Job, error) {
+	ret, err := c.jobsManagerSession.Jobs(jobID)
 	if err != nil {
-		glog.Errorf("Error getting round info: %v", err)
 		return nil, err
 	}
 
-	glog.Infof("[%v] Submitted transaction %v. Reward at CR %v CN %v CRSB %v CB %v", c.account.Address.Hex(), tx.Hash().Hex(), cr, cn, crsb, cb)
-	return tx, nil
+	return &Job{
+		JobId:              ret.JobId,
+		StreamId:           ret.StreamId,
+		TranscodingOptions: ret.TranscodingOptions,
+		MaxPricePerSegment: ret.MaxPricePerSegment,
+		PricePerSegment:    ret.PricePerSegment,
+		BroadcasterAddress: ret.BroadcasterAddress,
+		TranscoderAddress:  ret.TranscoderAddress,
+		EndBlock:           ret.EndBlock,
+		Escrow:             ret.Escrow,
+	}, nil
 }
 
-func (c *Client) Job(streamId string, transcodingOptions [32]byte, maxPricePerSegment *big.Int) (*types.Transaction, error) {
-	tx, err := c.protocolSession.Job(streamId, transcodingOptions, maxPricePerSegment)
-
+func (c *Client) GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error) {
+	segmentRange, claimRoot, claimBlock, endVerificationBlock, endSlashingBlock, transcoderTotalStake, status, err := c.jobsManagerSession.GetClaimDetails(jobID, claimID)
 	if err != nil {
-		glog.Errorf("Error creating job: %v", err)
 		return nil, err
 	}
 
-	glog.Infof("[%v] Submitted transaction %v. Creating a job for stream id %v", c.account.Address.Hex(), tx.Hash().Hex(), streamId)
-	return tx, nil
-}
-
-func (c *Client) JobDetails(id *big.Int) (*big.Int, [32]byte, *big.Int, common.Address, common.Address, *big.Int, error) {
-	return c.protocolSession.GetJob(id)
-}
-
-func (c *Client) EndJob(id *big.Int) (*types.Transaction, error) {
-	return c.protocolSession.EndJob(id)
-}
-
-func (c *Client) ClaimWork(jobId *big.Int, startSegmentSequenceNumber *big.Int, endSegmentSequenceNumber *big.Int, transcodeClaimsRoot [32]byte) (*types.Transaction, error) {
-	tx, err := c.protocolSession.ClaimWork(jobId, startSegmentSequenceNumber, endSegmentSequenceNumber, transcodeClaimsRoot)
-
-	if err != nil {
-		glog.Errorf("Error claiming work: %v", err)
-		return nil, err
-	}
-
-	glog.Infof("[%v] Submitted transaction %v. Claimed work for segments %v - %v", c.account.Address.Hex(), tx.Hash().Hex(), startSegmentSequenceNumber, endSegmentSequenceNumber)
-	return tx, nil
-}
-
-func (c *Client) Verify(jobId *big.Int, segmentSequenceNumber *big.Int, dataHash [32]byte, transcodedDataHash [32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error) {
-	tx, err := c.protocolSession.Verify(jobId, segmentSequenceNumber, dataHash, transcodedDataHash, broadcasterSig, proof)
-
-	if err != nil {
-		glog.Errorf("Error invoking verify %v", err)
-		return nil, err
-	}
-
-	glog.Infof("[%v] Submitted transaction %v, Invoked verify for segment %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentSequenceNumber)
-	return tx, nil
-}
-
-// Token methods
-
-func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error) {
-	tx, err := c.tokenSession.Transfer(toAddr, amount)
-
-	if err != nil {
-		glog.Errorf("Error transferring tokens: %v", err)
-		return nil, err
-	}
-
-	glog.Infof("[%v] Submitted transaction %v. Transfer %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
-	return tx, nil
+	return &Claim{
+		SegmentRange:         segmentRange,
+		ClaimRoot:            claimRoot,
+		ClaimBlock:           claimBlock,
+		EndVerificationBlock: endVerificationBlock,
+		EndSlashingBlock:     endSlashingBlock,
+		TranscoderTotalStake: transcoderTotalStake,
+		Status:               status,
+	}, err
 }
 
 func (c *Client) TokenBalance() (*big.Int, error) {
 	return c.tokenSession.BalanceOf(c.account.Address)
 }
 
-func (c *Client) WaitUntilNextRound(roundLength *big.Int) error {
-	ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
-	block, err := c.backend.BlockByNumber(ctx, nil)
+// HELPERS
 
+func (c *Client) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) {
+	msg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, hash)
+	signHash := crypto.Keccak256([]byte(msg))
+
+	sig, err := c.keyStore.SignHashWithPassphrase(c.account, passphrase, signHash)
 	if err != nil {
-		return err
+		glog.Errorf("Error signing segment hash: %v", err)
+		return nil, err
 	}
 
-	targetBlockNum := NextBlockMultiple(block.Number(), roundLength)
+	return sig, nil
+}
 
-	glog.Infof("Waiting until next round at block %v...", targetBlockNum)
+func (c *Client) GetReceipt(tx *types.Transaction) (*types.Receipt, error) {
+	start := time.Now()
+	for time.Since(start) < c.eventTimeout {
+		ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
 
-	for block.Number().Cmp(targetBlockNum) == -1 {
-		ctx, _ = context.WithTimeout(context.Background(), c.rpcTimeout)
-		block, err = c.backend.BlockByNumber(ctx, nil)
-
-		if err != nil {
-			return err
+		receipt, err := c.backend.TransactionReceipt(ctx, tx.Hash())
+		if err != nil && err != ethereum.NotFound {
+			return nil, err
 		}
+
+		if receipt != nil {
+			if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+				return nil, fmt.Errorf("Tx %v threw", tx.Hash().Hex())
+			} else {
+				return receipt, nil
+			}
+		}
+
+		time.Sleep(time.Second)
 	}
 
-	return nil
+	return nil, fmt.Errorf("Tx %v timed out", tx.Hash().Hex())
+}
+
+func (c *Client) WaitForReceipt(txFunc func() (*types.Transaction, error)) (<-chan types.Receipt, <-chan error) {
+	outRes := make(chan types.Receipt)
+	outErr := make(chan error)
+
+	go func() {
+		defer close(outRes)
+		defer close(outErr)
+
+		tx, err := txFunc()
+		if err != nil {
+			outErr <- err
+			return
+		}
+
+		receipt, err := c.GetReceipt(tx)
+		if err != nil {
+			outErr <- err
+		} else {
+			outRes <- *receipt
+		}
+
+		return
+	}()
+
+	return outRes, outErr
+}
+
+func (c *Client) ApproveAndTransact(toAddr common.Address, amount *big.Int, txFunc func() (*types.Transaction, error)) (<-chan types.Receipt, <-chan error) {
+	timer := time.NewTimer(c.eventTimeout)
+	outRes := make(chan types.Receipt)
+	outErr := make(chan error)
+
+	go func() {
+		defer close(outRes)
+		defer close(outErr)
+
+		logCh, sub, err := c.SubscribeToApproval()
+		if err != nil {
+			outErr <- err
+			return
+		}
+
+		defer close(logCh)
+		defer sub.Unsubscribe()
+
+		_, err = c.tokenSession.Approve(toAddr, amount)
+		if err != nil {
+			outErr <- err
+			return
+		}
+
+		select {
+		case log := <-logCh:
+			if !log.Removed {
+				tx, err := txFunc()
+				if err != nil {
+					// Set approval amount to 0
+					_, approveErr := c.tokenSession.Approve(toAddr, big.NewInt(0))
+					if approveErr != nil {
+						outErr <- approveErr
+					} else {
+						outErr <- err
+					}
+
+					return
+				}
+
+				receipt, err := c.GetReceipt(tx)
+				if err != nil {
+					outErr <- err
+				} else {
+					outRes <- *receipt
+				}
+
+				return
+			}
+		case <-timer.C:
+			outErr <- fmt.Errorf("Event subscription timed out")
+			return
+		}
+	}()
+
+	return outRes, outErr
 }

@@ -40,10 +40,14 @@ func (j *JobManager) Start() error {
 		for {
 			select {
 			case l := <-logsCh:
-				jid, strmID, _, tAddr, err := GetInfoFromJobEvent(l, j.c)
+				tAddr, _, jid := ParseNewJobLog(l)
+
+				job, err := j.c.GetJob(jid)
 				if err != nil {
-					glog.Errorf("Error getting info from job event: %v", err)
+					glog.Errorf("Error getting job info: %v", err)
 				}
+
+				strmID := job.StreamId
 
 				if subs, ok := j.transcoderAddrSubs[tAddr]; ok {
 					for sub := range subs {
@@ -84,6 +88,10 @@ func (j *JobManager) SubscribeJobIDByStrmID(strmID string, jidChan chan *big.Int
 
 func (j *JobManager) SubscribeJobIDByTranscoderAddr(ctx context.Context, addr common.Address, callback func(jobID *big.Int)) (*JobSubscription, error) {
 	return nil, nil
+}
+
+func ParseNewJobLog(log types.Log) (transcoderAddr common.Address, broadcasterAddr common.Address, jid *big.Int) {
+	return common.BytesToAddress(log.Topics[0].Bytes()), common.BytesToAddress(log.Topics[1].Bytes()), new(big.Int).SetBytes(log.Data[0:32])
 }
 
 type JobSubscription struct {

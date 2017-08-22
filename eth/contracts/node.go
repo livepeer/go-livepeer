@@ -18,7 +18,7 @@ import (
 const NodeABI = "[]"
 
 // NodeBin is the compiled bytecode used for deploying new contracts.
-const NodeBin = `0x60606040523415600b57fe5b5b60338060196000396000f30060606040525bfe00a165627a7a72305820312ae0557eee63284ce6a5c88b87a2cb435aca9dc0a6ccb18de27d29ec530eb80029`
+const NodeBin = `0x60606040523415600e57600080fd5b5b603680601c6000396000f30060606040525b600080fd00a165627a7a7230582046ada4797ac6da028cc21820767eccc113ab50ee83168d7d240205389c13e5230029`
 
 // DeployNode deploys a new Ethereum contract, binding an instance of Node to it.
 func DeployNode(auth *bind.TransactOpts, backend bind.ContractBackend, libraries map[string]common.Address) (common.Address, *types.Transaction, *Node, error) {
