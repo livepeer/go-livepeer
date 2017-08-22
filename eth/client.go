@@ -67,6 +67,7 @@ type LivepeerEthClient interface {
 	VerificationRate() (uint64, error)
 	VerificationPeriod() (*big.Int, error)
 	SlashingPeriod() (*big.Int, error)
+	LastRewardRound() (*big.Int, error)
 }
 
 type Client struct {

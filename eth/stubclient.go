@@ -114,3 +114,6 @@ func (e *StubClient) VerificationPeriod() (*big.Int, error) {
 func (e *StubClient) SlashingPeriod() (*big.Int, error) {
 	return nil, nil
 }
+func (e *StubClient) LastRewardRound() (*big.Int, error) {
+	return nil, nil
+}
