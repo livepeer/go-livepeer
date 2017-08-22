@@ -36,6 +36,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
 	"github.com/livepeer/go-livepeer/types"
 )
@@ -87,6 +88,7 @@ func main() {
 	ethPassword := flag.String("ethPassword", "", "New Eth account password")
 	gethipc := flag.String("gethipc", "", "Geth ipc file location")
 	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
+	tokenAddr := flag.String("tokenAddr", "", "Token smart contract address")
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "metrics.livepeer.org", "host name for the metrics data collector")
 
@@ -191,7 +193,7 @@ func main() {
 			return
 		}
 
-		client, err := eth.NewClient(acct, *ethPassword, *datadir, backend, common.HexToAddress(*protocolAddr), common.HexToAddress(""), EthRpcTimeout, EthEventTimeout)
+		client, err := eth.NewClient(acct, *ethPassword, *datadir, backend, common.HexToAddress(*protocolAddr), common.HexToAddress(*tokenAddr), EthRpcTimeout, EthEventTimeout)
 		if err != nil {
 			glog.Errorf("Error creating Eth client: %v", err)
 			return
@@ -361,49 +363,42 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 	if err != nil {
 		glog.Errorf("Error subscribing to job event: %v", err)
 	}
-	// go func() error {
-	// select {
-	// case l := <-logsCh:
-	// tx, _, err := n.Eth.Backend().TransactionByHash(context.Background(), l.TxHash)
-	// if err != nil {
-	// 	glog.Errorf("Error getting transaction data: %v", err)
-	// }
-	// strmId, tData, err := eth.ParseJobTxData(tx.Data())
-	// if err != nil {
-	// 	glog.Errorf("Error parsing job tx data: %v", err)
-	// }
+	go func() error {
+		select {
+		case l := <-logsCh:
+			_, _, jid := eth.ParseNewJobLog(l)
 
-	// jid, _, _, _, err := eth.GetInfoFromJobEvent(l, n.Eth)
-	// if err != nil {
-	// 	glog.Errorf("Error getting info from job event: %v", err)
-	// }
+			job, err := n.Eth.GetJob(jid)
+			if err != nil {
+				glog.Errorf("Error getting job info: %v", err)
+			}
 
-	// //Create Transcode Config
-	// tProfiles := txDataToVideoProfile(tData)
-	// config := net.TranscodeConfig{StrmID: strmId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
-	// glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", tx.Hash(), strmId, tData, config)
+			//Create Transcode Config
+			tProfiles := txDataToVideoProfile(job.TranscodingOptions)
+			config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
+			glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", jid, job.StreamId, job.TranscodingOptions, config)
 
-	// //Do The Transcoding
-	// cm := core.NewClaimManager(strmId, jid, tProfiles, n.Eth)
-	// strmIDs, err := n.TranscodeAndBroadcast(config, cm)
-	// if err != nil {
-	// 	glog.Errorf("Transcode Error: %v", err)
-	// }
+			//Do The Transcoding
+			cm := core.NewClaimManager(job.StreamId, jid, tProfiles, n.Eth)
+			strmIDs, err := n.TranscodeAndBroadcast(config, cm)
+			if err != nil {
+				glog.Errorf("Transcode Error: %v", err)
+			}
 
-	// //Notify Broadcaster
-	// sid := core.StreamID(strmId)
-	// vids := make(map[core.StreamID]types.VideoProfile)
-	// for i, vp := range tProfiles {
-	// 	vids[strmIDs[i]] = vp
-	// }
-	// if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
-	// 	glog.Errorf("Notify Broadcaster Error: %v", err)
-	// }
+			//Notify Broadcaster
+			sid := core.StreamID(job.StreamId)
+			vids := make(map[core.StreamID]types.VideoProfile)
+			for i, vp := range tProfiles {
+				vids[strmIDs[i]] = vp
+			}
+			if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
+				glog.Errorf("Notify Broadcaster Error: %v", err)
+			}
 
-	// 	return nil
+			return nil
 
-	// }
-	// }()
+		}
+	}()
 
 	return sub, nil
 }
