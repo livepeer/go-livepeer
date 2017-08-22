@@ -74,6 +74,10 @@ func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 }
 
 func (b *BasicBroadcaster) sendDataMsg(lid string, l *BasicStream, msg *StreamDataMsg) {
+	if msg == nil {
+		return
+	}
+
 	if err := l.SendMessage(StreamDataID, StreamDataMsg{SeqNo: msg.SeqNo, StrmID: b.StrmID, Data: msg.Data}); err != nil {
 		glog.Errorf("Error broadcasting segment %v to listener %v: %v", msg.SeqNo, lid, err)
 		delete(b.listeners, lid)
