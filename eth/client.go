@@ -242,157 +242,133 @@ func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyS
 
 func (c *Client) InitializeRound() (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		tx, err := c.roundsManagerSession.InitializeRound()
-		if err != nil {
+		if tx, err := c.roundsManagerSession.InitializeRound(); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Initialize round", c.account.Address.Hex(), tx.Hash().Hex())
+			return tx, nil
 		}
-
-		glog.Infof("[%v] Submitted tx %v. Initialize round", c.account.Address.Hex(), tx.Hash().Hex())
-
-		return tx, nil
 	})
 }
 
 func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		tx, err := c.bondingManagerSession.Transcoder(blockRewardCut, feeShare, pricePerSegment)
-		if err != nil {
+		if tx, err := c.bondingManagerSession.Transcoder(blockRewardCut, feeShare, pricePerSegment); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Register as transcoder", c.account.Address.Hex(), tx.Hash().Hex())
+			return tx, nil
 		}
-
-		glog.Infof("[%v] Submitted tx %v. Register as transcoder", c.account.Address.Hex(), tx.Hash().Hex())
-
-		return tx, nil
 	})
 }
 
 func (c *Client) Bond(amount *big.Int, toAddr common.Address) (<-chan types.Receipt, <-chan error) {
 	return c.ApproveAndTransact(c.bondingManagerAddr, amount, func() (*types.Transaction, error) {
-		tx, err := c.bondingManagerSession.Bond(amount, toAddr)
-		if err != nil {
+		if tx, err := c.bondingManagerSession.Bond(amount, toAddr); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Bond %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
+			return tx, nil
 		}
-
-		glog.Infof("[%v] Submitted tx %v. Bond %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
-
-		return tx, nil
 	})
 }
 
 func (c *Client) Reward() (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		tx, err := c.bondingManagerSession.Reward()
-		if err != nil {
+		if tx, err := c.bondingManagerSession.Reward(); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Called reward", c.account.Address.Hex(), tx.Hash().Hex())
+			return tx, nil
 		}
-
-		glog.Infof("[%v] Submitted tx %v. Called reward", c.account.Address.Hex(), tx.Hash().Hex())
-
-		return tx, nil
 	})
 }
 
 func (c *Client) Deposit(amount *big.Int) (<-chan types.Receipt, <-chan error) {
 	return c.ApproveAndTransact(c.jobsManagerAddr, amount, func() (*types.Transaction, error) {
-		tx, err := c.jobsManagerSession.Deposit(amount)
-		if err != nil {
+		if tx, err := c.jobsManagerSession.Deposit(amount); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Deposit %v LPTU", c.account.Address.Hex(), tx.Hash().Hex(), amount)
+			return tx, nil
 		}
-
-		glog.Infof("[%v] Submitted tx %v. Deposit %v LPTU", c.account.Address.Hex(), tx.Hash().Hex(), amount)
-
-		return tx, nil
 	})
 }
 
 func (c *Client) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		tx, err := c.jobsManagerSession.Job(streamId, transcodingOptions, maxPricePerSegment)
-		if err != nil {
+		if tx, err := c.jobsManagerSession.Job(streamId, transcodingOptions, maxPricePerSegment); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Creating job for stream id %v", c.account.Address.Hex(), tx.Hash().Hex(), streamId)
+			return tx, nil
 		}
-
-		glog.Infof("[%v] Submitted tx %v. Creating job for stream id %v", c.account.Address.Hex(), tx.Hash().Hex(), streamId)
-
-		return tx, nil
 	})
 }
 
 func (c *Client) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		tx, err := c.jobsManagerSession.ClaimWork(jobId, segmentRange, claimRoot)
-		if err != nil {
+		if tx, err := c.jobsManagerSession.ClaimWork(jobId, segmentRange, claimRoot); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Claimed work for segments %v - %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentRange[0], segmentRange[1])
+			return tx, nil
 		}
-
-		glog.Infof("[%v] Submitted tx %v. Claimed work for segments %v - %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentRange[0], segmentRange[1])
-
-		return tx, nil
 	})
 }
 
 func (c *Client) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		tx, err := c.jobsManagerSession.Verify(jobId, claimId, segmentNumber, dataHash, transcodedDataHash, broadcasterSig, proof)
-		if err != nil {
+		if tx, err := c.jobsManagerSession.Verify(jobId, claimId, segmentNumber, dataHash, transcodedDataHash, broadcasterSig, proof); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Verify segment %v in claim %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentNumber, claimId)
+			return tx, nil
 		}
-
-		glog.Infof("[%v] Submitted tx %v. Verify segment %v in claim %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentNumber, claimId)
-
-		return tx, nil
 	})
 }
 
 func (c *Client) DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		tx, err := c.jobsManagerSession.DistributeFees(jobId, claimId)
-		if err != nil {
+		if tx, err := c.jobsManagerSession.DistributeFees(jobId, claimId); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Distributed fees for job %v claim %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId, claimId)
+			return tx, nil
 		}
-
-		glog.Infof("[%v] Submitted tx %v. Distributed fees for job %v claim %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId, claimId)
-
-		return tx, nil
 	})
 }
 
 func (c *Client) BatchDistributeFees(jobId *big.Int, claimIds []*big.Int) (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		tx, err := c.jobsManagerSession.BatchDistributeFees(jobId, claimIds)
-		if err != nil {
+		if tx, err := c.jobsManagerSession.BatchDistributeFees(jobId, claimIds); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Distributed fee for job %v claims %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId, claimIds)
+			return tx, nil
 		}
-
-		glog.Infof("[%v] Submitted tx %v. Distributed fee for job %v claims %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId, claimIds)
-
-		return tx, nil
 	})
 }
 
 func (c *Client) Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		tx, err := c.tokenSession.Transfer(toAddr, amount)
-		if err != nil {
+		if tx, err := c.tokenSession.Transfer(toAddr, amount); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Transfer %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
+			return tx, nil
 		}
-
-		glog.Infof("[%v] Submitted tx %v. Transfer %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
-
-		return tx, nil
 	})
 }
 
 func (c *Client) Approve(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		tx, err := c.tokenSession.Approve(toAddr, amount)
-		if err != nil {
+		if tx, err := c.tokenSession.Approve(toAddr, amount); err != nil {
 			return nil, err
+		} else {
+			glog.Infof("[%v], Submitted tx %v. Approve %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
+			return tx, nil
 		}
-
-		glog.Infof("[%v], Submitted tx %v. Approve %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
-
-		return tx, nil
 	})
 }
 
@@ -575,7 +551,8 @@ func (c *Client) SignSegmentHash(passphrase string, hash []byte) ([]byte, error)
 }
 
 func (c *Client) GetReceipt(tx *types.Transaction) (*types.Receipt, error) {
-	for time.Since(time.Now()) < c.eventTimeout {
+	start := time.Now()
+	for time.Since(start) < c.eventTimeout {
 		ctx, _ := context.WithTimeout(context.Background(), c.rpcTimeout)
 
 		receipt, err := c.backend.TransactionReceipt(ctx, tx.Hash())

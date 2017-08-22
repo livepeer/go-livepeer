@@ -1,7 +1,6 @@
 package eth
 
 import (
-	// "fmt"
 	"context"
 	"math/big"
 	"os/user"
@@ -746,14 +745,13 @@ func TestTranscoderLoop(t *testing.T) {
 			if !ok {
 				return
 			} else {
-				glog.Infof("Got log from %v. Topics: %v Data: %v", l.Address.Hex(), l.Topics, l.Data)
-				glog.Infof("Transcoder address: %v", common.BytesToAddress(l.Topics[1].Bytes()).Hex())
-				glog.Infof("Broadcaster address: %v", common.BytesToAddress(l.Topics[2].Bytes()).Hex())
+				tAddr, bAddr, jid := ParseNewJobLog(l)
+				glog.Infof("Transcoder address: %v", tAddr.Hex())
+				glog.Infof("Broadcaster address: %v", bAddr.Hex())
 
-				newJobID := new(big.Int).SetBytes(l.Data[0:32])
-				glog.Infof("Job id: %v", newJobID)
+				glog.Infof("Job id: %v", jid)
 
-				job, _ := transcoderClient.GetJob(newJobID)
+				job, _ := transcoderClient.GetJob(jid)
 				glog.Infof("Stream id: %v", job.StreamId)
 				glog.Infof("Transcoding options: %v", job.TranscodingOptions)
 				glog.Infof("Max price per segment: %v", job.MaxPricePerSegment)
