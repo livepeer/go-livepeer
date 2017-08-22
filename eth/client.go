@@ -46,6 +46,7 @@ var ProtocolBlockPerRound = big.NewInt(20)
 type LivepeerEthClient interface {
 	Backend() *ethclient.Client
 	Account() accounts.Account
+	RpcTimeout() time.Duration
 	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error)
 	RoundInfo() (*big.Int, *big.Int, *big.Int, error)
 	InitializeRound() (<-chan types.Receipt, <-chan error)
@@ -55,12 +56,17 @@ type LivepeerEthClient interface {
 	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
 	ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error)
 	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
+	DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error)
 	Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error)
 	CurrentRoundInitialized() (bool, error)
 	IsActiveTranscoder() (bool, error)
 	TranscoderStake() (*big.Int, error)
 	TokenBalance() (*big.Int, error)
 	GetJob(jobID *big.Int) (*Job, error)
+	GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error)
+	VerificationRate() (uint64, error)
+	VerificationPeriod() (*big.Int, error)
+	SlashingPeriod() (*big.Int, error)
 }
 
 type Client struct {
@@ -220,6 +226,10 @@ func (c *Client) Backend() *ethclient.Client {
 
 func (c *Client) Account() accounts.Account {
 	return c.account
+}
+
+func (c *Client) RpcTimeout() time.Duration {
+	return c.rpcTimeout
 }
 
 func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyStore *keystore.KeyStore) (*bind.TransactOpts, error) {
@@ -485,6 +495,10 @@ func (c *Client) LastRewardRound() (*big.Int, error) {
 
 func (c *Client) RoundLength() (*big.Int, error) {
 	return c.roundsManagerSession.RoundLength()
+}
+
+func (c *Client) VerificationRate() (uint64, error) {
+	return c.jobsManagerSession.VerificationRate()
 }
 
 func (c *Client) VerificationPeriod() (*big.Int, error) {

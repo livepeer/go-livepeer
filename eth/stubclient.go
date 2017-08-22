@@ -91,11 +91,26 @@ func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big
 	e.VerifyCounter++
 	return nil, nil
 }
+func (e *StubClient) DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error) {
+	return nil, nil
+}
 func (e *StubClient) Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error) {
 	return nil, nil
 }
 func (e *StubClient) TokenBalance() (*big.Int, error) { return big.NewInt(100000), nil }
 func (e *StubClient) WaitUntilNextRound() error       { return nil }
 func (e *StubClient) GetJob(jobID *big.Int) (*Job, error) {
+	return nil, nil
+}
+func (e *StubClient) GetClaim(jobID *big.Int) (*Claim, error) {
+	return nil, nil
+}
+func (e *StubClient) VerificationRate() (uint64, error) {
+	return 0, nil
+}
+func (e *StubClient) VerificationPeriod() (*big.Int, error) {
+	return nil, nil
+}
+func (e *StubClient) SlashingPeriod() (*big.Int, error) {
 	return nil, nil
 }
