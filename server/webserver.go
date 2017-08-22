@@ -9,10 +9,8 @@ import (
 
 	"github.com/livepeer/lpms/stream"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/types"
@@ -68,42 +66,42 @@ func (s *LivepeerServer) StartWebserver() {
 
 	//Activate the transcoder on-chain.
 	http.HandleFunc("/activateTranscoder", func(w http.ResponseWriter, r *http.Request) {
-		active, err := s.LivepeerNode.Eth.IsActiveTranscoder()
-		if err != nil {
-			glog.Errorf("Error getting transcoder state: %v", err)
-		}
-		if active {
-			glog.Error("Transcoder is already active")
-			return
-		}
+		// active, err := s.LivepeerNode.Eth.IsActiveTranscoder()
+		// if err != nil {
+		// 	glog.Errorf("Error getting transcoder state: %v", err)
+		// }
+		// if active {
+		// 	glog.Error("Transcoder is already active")
+		// 	return
+		// }
 
-		//Wait until a fresh round, register transcoder
-		err = s.LivepeerNode.Eth.WaitUntilNextRound(eth.ProtocolBlockPerRound)
-		if err != nil {
-			glog.Errorf("Failed to wait until next round: %v", err)
-			return
-		}
-		if err := eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout); err != nil {
-			glog.Errorf("%v", err)
-			return
-		}
+		// //Wait until a fresh round, register transcoder
+		// err = s.LivepeerNode.Eth.WaitUntilNextRound(eth.ProtocolBlockPerRound)
+		// if err != nil {
+		// 	glog.Errorf("Failed to wait until next round: %v", err)
+		// 	return
+		// }
+		// if err := eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout); err != nil {
+		// 	glog.Errorf("%v", err)
+		// 	return
+		// }
 
-		tx, err := s.LivepeerNode.Eth.Transcoder(10, 5, big.NewInt(100))
-		if err != nil {
-			glog.Errorf("Error creating transcoder: %v", err)
-			return
-		}
+		// tx, err := s.LivepeerNode.Eth.Transcoder(10, 5, big.NewInt(100))
+		// if err != nil {
+		// 	glog.Errorf("Error creating transcoder: %v", err)
+		// 	return
+		// }
 
-		receipt, err := eth.WaitForMinedTx(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
-		if err != nil {
-			glog.Errorf("%v", err)
-			return
-		}
-		if tx.Gas().Cmp(receipt.GasUsed) == 0 {
-			glog.Errorf("Client 0 failed transcoder registration")
-		}
+		// receipt, err := eth.WaitForMinedTx(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
+		// if err != nil {
+		// 	glog.Errorf("%v", err)
+		// 	return
+		// }
+		// if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+		// 	glog.Errorf("Client 0 failed transcoder registration")
+		// }
 
-		printStake(s.LivepeerNode.Eth)
+		// printStake(s.LivepeerNode.Eth)
 	})
 
 	//Set transcoder config on-chain.
@@ -143,39 +141,39 @@ func (s *LivepeerServer) StartWebserver() {
 
 	//Bond some amount of tokens to a transcoder.
 	http.HandleFunc("/bond", func(w http.ResponseWriter, r *http.Request) {
-		addrStr := r.URL.Query().Get("addr")
-		if addrStr == "" {
-			glog.Errorf("Need to provide addr")
-			return
-		}
+		// addrStr := r.URL.Query().Get("addr")
+		// if addrStr == "" {
+		// 	glog.Errorf("Need to provide addr")
+		// 	return
+		// }
 
-		amountStr := r.URL.Query().Get("amount")
-		if amountStr == "" {
-			glog.Errorf("Need to provide amount")
-			return
-		}
+		// amountStr := r.URL.Query().Get("amount")
+		// if amountStr == "" {
+		// 	glog.Errorf("Need to provide amount")
+		// 	return
+		// }
 
-		addr := common.HexToAddress(addrStr)
-		amount, err := strconv.Atoi(amountStr)
-		if err != nil {
-			glog.Errorf("Cannot convert amount: %v", err)
-			return
-		}
+		// addr := common.HexToAddress(addrStr)
+		// amount, err := strconv.Atoi(amountStr)
+		// if err != nil {
+		// 	glog.Errorf("Cannot convert amount: %v", err)
+		// 	return
+		// }
 
-		eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout)
-		tx, err := s.LivepeerNode.Eth.Bond(big.NewInt(int64(amount)), addr)
-		if err != nil {
-			glog.Errorf("Failed to bond: %v", err)
-			return
-		}
-		receipt, err := eth.WaitForMinedTx(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
-		if err != nil {
-			glog.Errorf("%v", err)
-			return
-		}
-		if tx.Gas().Cmp(receipt.GasUsed) == 0 {
-			glog.Errorf("Failed bonding: Ethereum Exception")
-		}
+		// eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout)
+		// tx, err := s.LivepeerNode.Eth.Bond(big.NewInt(int64(amount)), addr)
+		// if err != nil {
+		// 	glog.Errorf("Failed to bond: %v", err)
+		// 	return
+		// }
+		// receipt, err := eth.WaitForMinedTx(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
+		// if err != nil {
+		// 	glog.Errorf("%v", err)
+		// 	return
+		// }
+		// if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+		// 	glog.Errorf("Failed bonding: Ethereum Exception")
+		// }
 	})
 
 	//Print the transcoder's stake

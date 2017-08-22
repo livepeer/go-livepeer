@@ -15,8 +15,6 @@ import (
 	"math/big"
 
 	"github.com/ericxtang/m3u8"
-	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -207,22 +205,22 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		if s.LivepeerNode.Eth != nil {
 			//Create Transcode Job Onchain, record the jobID
-			tx, err := createBroadcastJob(s, hlsStrm)
-			if err != nil {
-				glog.Info("Error creating job.  Waiting for round start and trying again.")
-				err = s.LivepeerNode.Eth.WaitUntilNextRound(eth.ProtocolBlockPerRound)
-				if err != nil {
-					glog.Errorf("Error waiting for round start: %v", err)
-					return ErrBroadcast
-				}
+			// tx, err := createBroadcastJob(s, hlsStrm)
+			// if err != nil {
+			// 	glog.Info("Error creating job.  Waiting for round start and trying again.")
+			// 	err = s.LivepeerNode.Eth.WaitUntilNextRound(eth.ProtocolBlockPerRound)
+			// 	if err != nil {
+			// 		glog.Errorf("Error waiting for round start: %v", err)
+			// 		return ErrBroadcast
+			// 	}
 
-				tx, err = createBroadcastJob(s, hlsStrm)
-				if err != nil {
-					glog.Errorf("Error broadcasting: %v", err)
-					return ErrBroadcast
-				}
-			}
-			glog.Infof("Created broadcast job.  Price: %v. Type: %v. tx: %v", BroadcastPrice, BroadcastJobVideoProfile.Name, tx.Hash().Hex())
+			// 	tx, err = createBroadcastJob(s, hlsStrm)
+			// 	if err != nil {
+			// 		glog.Errorf("Error broadcasting: %v", err)
+			// 		return ErrBroadcast
+			// 	}
+			// }
+			// glog.Infof("Created broadcast job.  Price: %v. Type: %v. tx: %v", BroadcastPrice, BroadcastJobVideoProfile.Name, tx.Hash().Hex())
 
 		}
 		return nil
@@ -424,26 +422,26 @@ func parseSegName(reqPath string) string {
 	return segName
 }
 
-func createBroadcastJob(s *LivepeerServer, hlsStrm stream.HLSVideoStream) (*ethtypes.Transaction, error) {
-	eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout)
-	tOps := common.BytesToHash([]byte(BroadcastJobVideoProfile.Name))
-	tx, err := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), tOps, BroadcastPrice)
+// func createBroadcastJob(s *LivepeerServer, hlsStrm stream.HLSVideoStream) (*ethtypes.Transaction, error) {
+// 	eth.CheckRoundAndInit(s.LivepeerNode.Eth, EthRpcTimeout, EthMinedTxTimeout)
+// 	tOps := common.BytesToHash([]byte(BroadcastJobVideoProfile.Name))
+// 	tx, err := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), tOps, BroadcastPrice)
 
-	if err != nil {
-		glog.Errorf("Error creating test broadcast job: %v", err)
-		return nil, ErrBroadcast
-	}
-	receipt, err := eth.WaitForMinedTx(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
-	if err != nil {
-		glog.Errorf("%v", err)
-		return nil, ErrBroadcast
-	}
-	if tx.Gas().Cmp(receipt.GasUsed) == 0 {
-		glog.Errorf("Job Creation Failed")
-		return nil, ErrBroadcast
-	}
-	return tx, nil
-}
+// 	if err != nil {
+// 		glog.Errorf("Error creating test broadcast job: %v", err)
+// 		return nil, ErrBroadcast
+// 	}
+// 	receipt, err := eth.WaitForMinedTx(s.LivepeerNode.Eth.Backend(), EthRpcTimeout, EthMinedTxTimeout, tx.Hash())
+// 	if err != nil {
+// 		glog.Errorf("%v", err)
+// 		return nil, ErrBroadcast
+// 	}
+// 	if tx.Gas().Cmp(receipt.GasUsed) == 0 {
+// 		glog.Errorf("Job Creation Failed")
+// 		return nil, ErrBroadcast
+// 	}
+// 	return tx, nil
+// }
 
 func printStake(c eth.LivepeerEthClient) {
 	if c == nil {

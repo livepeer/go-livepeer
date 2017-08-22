@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
-	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/types"
 )
 
@@ -59,111 +58,111 @@ func NewClaimManager(sid string, jid *big.Int, p []types.VideoProfile, c eth.Liv
 }
 
 //AddClaim adds a claim for a given video segment.
-func (c *ClaimManager) AddClaim(seqNo int64, dataHash common.Hash, tDataHash common.Hash, bSig []byte, profile types.VideoProfile) {
-	claim := &ethTypes.TranscodeClaim{
-		StreamID:              c.strmID,
-		SegmentSequenceNumber: big.NewInt(seqNo),
-		DataHash:              dataHash,
-		TranscodedDataHash:    tDataHash,
-		BroadcasterSig:        bSig,
-	}
+// func (c *ClaimManager) AddClaim(seqNo int64, dataHash common.Hash, tDataHash common.Hash, bSig []byte, profile types.VideoProfile) {
+// 	claim := &ethTypes.TranscodeClaim{
+// 		StreamID:              c.strmID,
+// 		SegmentSequenceNumber: big.NewInt(seqNo),
+// 		DataHash:              dataHash,
+// 		TranscodedDataHash:    tDataHash,
+// 		BroadcasterSig:        bSig,
+// 	}
 
-	pi, ok := c.pLookup[profile]
-	if !ok {
-		glog.Errorf("Cannot find profile: %v", profile)
-		return
-	}
+// 	pi, ok := c.pLookup[profile]
+// 	if !ok {
+// 		glog.Errorf("Cannot find profile: %v", profile)
+// 		return
+// 	}
 
-	if len(c.seqNos[pi]) != 0 && c.seqNos[pi][len(c.seqNos[pi])-1] >= seqNo {
-		glog.Errorf("Cannot insert out of order.  Trying to insert %v into %v", c.seqNos[pi], seqNo)
-	}
+// 	if len(c.seqNos[pi]) != 0 && c.seqNos[pi][len(c.seqNos[pi])-1] >= seqNo {
+// 		glog.Errorf("Cannot insert out of order.  Trying to insert %v into %v", c.seqNos[pi], seqNo)
+// 	}
 
-	c.seqNos[pi] = append(c.seqNos[pi], seqNo)
-	c.claimHashes[pi] = append(c.claimHashes[pi], claim.Hash())
-	c.dataHashes[pi] = append(c.dataHashes[pi], dataHash)
-	c.tDataHashes[pi] = append(c.tDataHashes[pi], tDataHash)
-	c.bSigs[pi] = append(c.bSigs[pi], bSig)
-}
+// 	c.seqNos[pi] = append(c.seqNos[pi], seqNo)
+// 	c.claimHashes[pi] = append(c.claimHashes[pi], claim.Hash())
+// 	c.dataHashes[pi] = append(c.dataHashes[pi], dataHash)
+// 	c.tDataHashes[pi] = append(c.tDataHashes[pi], tDataHash)
+// 	c.bSigs[pi] = append(c.bSigs[pi], bSig)
+// }
 
 //Claim creates the onchain claim for all the claims added through AddClaim
 func (c *ClaimManager) Claim(p types.VideoProfile) error {
-	pi, ok := c.pLookup[p]
-	if !ok {
-		glog.Errorf("Cannot find video profile: %v", p)
-		return ErrClaim
-	}
+	// pi, ok := c.pLookup[p]
+	// if !ok {
+	// 	glog.Errorf("Cannot find video profile: %v", p)
+	// 	return ErrClaim
+	// }
 
-	c.claimAndVerify(c.jobID, c.seqNos[pi], c.dataHashes[pi], c.claimHashes[pi], c.tDataHashes[pi], c.bSigs[pi])
+	// c.claimAndVerify(c.jobID, c.seqNos[pi], c.dataHashes[pi], c.claimHashes[pi], c.tDataHashes[pi], c.bSigs[pi])
 	return nil
 }
 
 //TODO: Can't just check for empty - need to check for seq No...
-func (c *ClaimManager) claimAndVerify(jid *big.Int, seqNos []int64, dHashes []common.Hash, tcHashes []common.Hash, thashes []common.Hash, sigs [][]byte) {
-	claimLen := len(seqNos)
-	if len(dHashes) != claimLen || len(tcHashes) != claimLen || len(thashes) != claimLen || len(sigs) != claimLen {
-		glog.Errorf("Claim data length doesn't match")
-		return
-	}
+// func (c *ClaimManager) claimAndVerify(jid *big.Int, seqNos []int64, dHashes []common.Hash, tcHashes []common.Hash, thashes []common.Hash, sigs [][]byte) {
+// 	claimLen := len(seqNos)
+// 	if len(dHashes) != claimLen || len(tcHashes) != claimLen || len(thashes) != claimLen || len(sigs) != claimLen {
+// 		glog.Errorf("Claim data length doesn't match")
+// 		return
+// 	}
 
-	ranges := make([][2]int64, 0)
-	start := seqNos[0]
-	for i := int64(0); i < int64(len(seqNos)); i++ {
-		if i+1 == int64(len(seqNos)) || seqNos[i+1] != seqNos[i]+1 {
-			ranges = append(ranges, [2]int64{start, seqNos[i]})
-			if i+1 != int64(len(seqNos)) {
-				start = seqNos[i+1]
-			}
-			continue
-		}
-	}
+// 	ranges := make([][2]int64, 0)
+// 	start := seqNos[0]
+// 	for i := int64(0); i < int64(len(seqNos)); i++ {
+// 		if i+1 == int64(len(seqNos)) || seqNos[i+1] != seqNos[i]+1 {
+// 			ranges = append(ranges, [2]int64{start, seqNos[i]})
+// 			if i+1 != int64(len(seqNos)) {
+// 				start = seqNos[i+1]
+// 			}
+// 			continue
+// 		}
+// 	}
 
-	// glog.Infof("seq: %v, ranges: %v", seqNos, ranges)
+// 	// glog.Infof("seq: %v, ranges: %v", seqNos, ranges)
 
-	startIdx := int64(0)
-	for _, r := range ranges {
-		endIdx := startIdx + r[1] - r[0]
-		root, proofs, err := ethTypes.NewMerkleTree(tcHashes[startIdx : endIdx+1])
-		if err != nil {
-			glog.Errorf("Error: %v - creating merkle root for: %v", err, tcHashes[startIdx:endIdx+1])
-			//TODO: If this happens, should we cancel the job?
-		}
+// 	startIdx := int64(0)
+// 	for _, r := range ranges {
+// 		endIdx := startIdx + r[1] - r[0]
+// 		root, proofs, err := ethTypes.NewMerkleTree(tcHashes[startIdx : endIdx+1])
+// 		if err != nil {
+// 			glog.Errorf("Error: %v - creating merkle root for: %v", err, tcHashes[startIdx:endIdx+1])
+// 			//TODO: If this happens, should we cancel the job?
+// 		}
 
-		tx, err := c.client.ClaimWork(jid, big.NewInt(r[0]), big.NewInt(r[1]), root.Hash)
-		if err != nil {
-			glog.Errorf("Error claiming work: %v", err)
-		} else {
-			verify(jid, dHashes[startIdx:endIdx+1], thashes[startIdx:endIdx+1], sigs[startIdx:endIdx+1], proofs, r[0], r[1], c.client, tx.Hash())
-		}
+// 		tx, err := c.client.ClaimWork(jid, big.NewInt(r[0]), big.NewInt(r[1]), root.Hash)
+// 		if err != nil {
+// 			glog.Errorf("Error claiming work: %v", err)
+// 		} else {
+// 			verify(jid, dHashes[startIdx:endIdx+1], thashes[startIdx:endIdx+1], sigs[startIdx:endIdx+1], proofs, r[0], r[1], c.client, tx.Hash())
+// 		}
 
-		startIdx = endIdx + 1
-	}
-}
+// 		startIdx = endIdx + 1
+// 	}
+// }
 
-func verify(jid *big.Int, dataHashes []common.Hash, tHashes []common.Hash, sigs [][]byte, proofs []*ethTypes.MerkleProof, start, end int64, c eth.LivepeerEthClient, txHash common.Hash) {
-	num := end - start + 1
-	if len(dataHashes) != int(num) || len(tHashes) != int(num) || len(sigs) != int(num) || len(proofs) != int(num) {
-		glog.Errorf("Wrong input data length in verify: dHashes(%v), tHashes(%v), sigs(%v), proofs(%v)", len(dataHashes), len(tHashes), len(sigs), len(proofs))
-	}
-	//Wait until tx is mined
-	_, err := eth.WaitForMinedTx(c.Backend(), EthRpcTimeout, EthMinedTxTimeout, txHash)
-	if err != nil {
-		glog.Errorf("Error waiting for tx mine in verify: %v", err)
-	}
+// func verify(jid *big.Int, dataHashes []common.Hash, tHashes []common.Hash, sigs [][]byte, proofs []*ethTypes.MerkleProof, start, end int64, c eth.LivepeerEthClient, txHash common.Hash) {
+// 	num := end - start + 1
+// 	if len(dataHashes) != int(num) || len(tHashes) != int(num) || len(sigs) != int(num) || len(proofs) != int(num) {
+// 		glog.Errorf("Wrong input data length in verify: dHashes(%v), tHashes(%v), sigs(%v), proofs(%v)", len(dataHashes), len(tHashes), len(sigs), len(proofs))
+// 	}
+// 	//Wait until tx is mined
+// 	_, err := eth.WaitForMinedTx(c.Backend(), EthRpcTimeout, EthMinedTxTimeout, txHash)
+// 	if err != nil {
+// 		glog.Errorf("Error waiting for tx mine in verify: %v", err)
+// 	}
 
-	//Get block info
-	bNum, bHash := getBlockInfo(c)
+// 	//Get block info
+// 	bNum, bHash := getBlockInfo(c)
 
-	for i := 0; i < len(dataHashes); i++ {
-		//Figure out which seg needs to be verified
-		if shouldVerifySegment(start+int64(i), start, end, int64(bNum), bHash, VerifyRate) {
-			//Call verify
-			_, err := c.Verify(jid, big.NewInt(start+int64(i)), dataHashes[i], tHashes[i], sigs[i], proofs[i].Bytes())
-			if err != nil {
-				glog.Errorf("Error submitting verify transaction: %v", err)
-			}
-		}
-	}
-}
+// 	for i := 0; i < len(dataHashes); i++ {
+// 		//Figure out which seg needs to be verified
+// 		if shouldVerifySegment(start+int64(i), start, end, int64(bNum), bHash, VerifyRate) {
+// 			//Call verify
+// 			_, err := c.Verify(jid, big.NewInt(start+int64(i)), dataHashes[i], tHashes[i], sigs[i], proofs[i].Bytes())
+// 			if err != nil {
+// 				glog.Errorf("Error submitting verify transaction: %v", err)
+// 			}
+// 		}
+// 	}
+// }
 
 func getBlockInfo(c eth.LivepeerEthClient) (uint64, common.Hash) {
 	if c.Backend() == nil {
