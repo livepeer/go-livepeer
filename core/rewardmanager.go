@@ -41,22 +41,35 @@ func (r *RewardManager) Start(ctx context.Context) {
 }
 
 func (r *RewardManager) callReward() {
+	if err := eth.CheckRoundAndInit(r.client); err != nil {
+		glog.Errorf("%v", err)
+		return
+	}
+
 	currentRound, _, _, err := r.client.RoundInfo()
 	if err != nil {
 		glog.Errorf("Error getting round info: %v", err)
 		return
 	}
 
-	if r.lastRewardRound.Cmp(currentRound) == -1 {
-		if err := eth.CheckRoundAndInit(r.client); err != nil {
-			glog.Errorf("%v", err)
-			return
-		}
+	active, err := r.client.IsActiveTranscoder()
+	if err != nil {
+		glog.Errorf("Error checking for active transcoder: %v", err)
+		return
+	}
 
+	if r.lastRewardRound.Cmp(currentRound) == -1 && active {
 		resCh, errCh := r.client.Reward()
 		select {
 		case <-resCh:
 			r.lastRewardRound = currentRound
+
+			bond, err := r.client.TranscoderBond()
+			if err != nil {
+				glog.Errorf("Error getting transcoder bond: %v", err)
+			} else {
+				glog.Infof("Transcoder bond: %v", bond)
+			}
 		case err := <-errCh:
 			glog.Errorf("Error calling reward: %v", err)
 		}

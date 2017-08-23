@@ -68,6 +68,8 @@ type LivepeerEthClient interface {
 	VerificationPeriod() (*big.Int, error)
 	SlashingPeriod() (*big.Int, error)
 	LastRewardRound() (*big.Int, error)
+	IsRegisteredTranscoder() (bool, error)
+	TranscoderBond() (*big.Int, error)
 }
 
 type Client struct {
@@ -456,6 +458,16 @@ func (c *Client) CurrentRoundInitialized() (bool, error) {
 	}
 
 	return initialized, nil
+}
+
+func (c *Client) IsRegisteredTranscoder() (bool, error) {
+	status, err := c.bondingManagerSession.TranscoderStatus(c.account.Address)
+	if err != nil {
+		return false, err
+	}
+
+	// TODO: Use enum here for transcoder status?
+	return status == 1, nil
 }
 
 func (c *Client) IsActiveTranscoder() (bool, error) {
