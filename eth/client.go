@@ -53,6 +53,7 @@ type LivepeerEthClient interface {
 	Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
 	Bond(amount *big.Int, toAddr common.Address) (<-chan types.Receipt, <-chan error)
 	Reward() (<-chan types.Receipt, <-chan error)
+	Deposit(amount *big.Int) (<-chan types.Receipt, <-chan error)
 	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
 	ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error)
 	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
@@ -543,6 +544,13 @@ func (c *Client) GetJob(jobID *big.Int) (*Job, error) {
 
 func (c *Client) GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error) {
 	segmentRange, claimRoot, claimBlock, endVerificationBlock, endSlashingBlock, transcoderTotalStake, status, err := c.jobsManagerSession.GetClaimDetails(jobID, claimID)
+	glog.Infof("Segment range: %v", segmentRange)
+	glog.Infof("Claim root: %v", claimRoot)
+	glog.Infof("Claim block: %v", claimBlock)
+	glog.Infof("EV block: %v", endVerificationBlock)
+	glog.Infof("ES block: %v", endSlashingBlock)
+	glog.Infof("Ttotalstake: %v", transcoderTotalStake)
+	glog.Infof("Status: %v", status)
 	if err != nil {
 		return nil, err
 	}

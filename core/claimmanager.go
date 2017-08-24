@@ -78,6 +78,8 @@ func (c *ClaimManager) AddReceipt(seqNo int64, dataHash string, tDataHash string
 		glog.Errorf("Cannot insert out of order.  Trying to insert %v into %v", c.seqNos[pi], seqNo)
 	}
 
+	glog.Infof("Add receipt. Seq no %v Receipt hash %v Data hash %v Tdata hash %v BSig %v", seqNo, receipt.Hash(), dataHash, tDataHash, bSig)
+
 	c.seqNos[pi] = append(c.seqNos[pi], seqNo)
 	c.receiptHashes[pi] = append(c.receiptHashes[pi], receipt.Hash())
 	c.dataHashes[pi] = append(c.dataHashes[pi], dataHash)
@@ -93,7 +95,7 @@ func (c *ClaimManager) Claim(p types.VideoProfile) error {
 		return ErrClaim
 	}
 
-	claimVerifyDistribute(c.client, c.jobID, c.seqNos[pi], c.dataHashes[pi], c.receiptHashes[pi], c.tDataHashes[pi], c.bSigs[pi])
+	go claimVerifyDistribute(c.client, c.jobID, c.seqNos[pi], c.dataHashes[pi], c.receiptHashes[pi], c.tDataHashes[pi], c.bSigs[pi])
 	return nil
 }
 
@@ -116,31 +118,38 @@ func claimVerifyDistribute(client eth.LivepeerEthClient, jid *big.Int, seqNos []
 		}
 	}
 
+	glog.Infof("Segment ranges: %v", ranges)
+
 	startIdx := int64(0)
 	for idx, r := range ranges {
 		endIdx := startIdx + r[1] - r[0]
 
-		go func() {
-			root, proofs, err := ethTypes.NewMerkleTree(rHashes[startIdx : endIdx+1])
+		root, proofs, err := ethTypes.NewMerkleTree(rHashes[startIdx : endIdx+1])
+		if err != nil {
+			glog.Errorf("Error: %v - creating merkle root for: %v", err, rHashes[startIdx:endIdx+1])
+			//TODO: If this happens, should we cancel the job?
+		}
+
+		glog.Infof("Submitting claim root: %v", root.Hash.Hex())
+		resCh, errCh := client.ClaimWork(jid, [2]*big.Int{big.NewInt(r[0]), big.NewInt(r[1])}, [32]byte(root.Hash))
+		select {
+		case <-resCh:
+			bNum, bHash, err := getBlockInfo(client)
 			if err != nil {
-				glog.Errorf("Error: %v - creating merkle root for: %v", err, rHashes[startIdx:endIdx+1])
-				//TODO: If this happens, should we cancel the job?
+				glog.Errorf("Error getting block info: %v", err)
+				return
 			}
 
-			resCh, errCh := client.ClaimWork(jid, [2]*big.Int{big.NewInt(r[0]), big.NewInt(r[1])}, root.Hash)
-			select {
-			case <-resCh:
-				verify(client, jid, big.NewInt(int64(idx)), dHashes[startIdx:endIdx+1], tHashes[startIdx:endIdx+1], sigs[startIdx:endIdx+1], proofs, r[0], r[1])
-			case err := <-errCh:
-				glog.Errorf("Error claiming work: %v", err)
-			}
-		}()
+			verify(client, jid, big.NewInt(int64(idx)), dHashes[startIdx:endIdx+1], tHashes[startIdx:endIdx+1], sigs[startIdx:endIdx+1], proofs, r[0], r[1], int64(bNum), bHash)
+		case err := <-errCh:
+			glog.Errorf("Error claiming work: %v", err)
+		}
 
 		startIdx = endIdx + 1
 	}
 }
 
-func verify(client eth.LivepeerEthClient, jid *big.Int, cid *big.Int, dataHashes []string, tHashes []string, sigs [][]byte, proofs []*ethTypes.MerkleProof, start, end int64) {
+func verify(client eth.LivepeerEthClient, jid *big.Int, cid *big.Int, dataHashes []string, tHashes []string, sigs [][]byte, proofs []*ethTypes.MerkleProof, start, end int64, bNum int64, bHash common.Hash) {
 	num := end - start + 1
 	if len(dataHashes) != int(num) || len(tHashes) != int(num) || len(sigs) != int(num) || len(proofs) != int(num) {
 		glog.Errorf("Wrong input data length in verify: dHashes(%v), tHashes(%v), sigs(%v), proofs(%v)", len(dataHashes), len(tHashes), len(sigs), len(proofs))
@@ -148,34 +157,28 @@ func verify(client eth.LivepeerEthClient, jid *big.Int, cid *big.Int, dataHashes
 
 	verifyRate, err := client.VerificationRate()
 	if err != nil {
+		glog.Errorf("Error getting verification rate: %v", err)
 		return
 	}
 
-	claim, err := client.GetClaim(jid, cid)
-	if err != nil {
-		return
-	}
-
-	bNum, bHash, err := getBlockInfo(client, claim.ClaimBlock)
-	if err != nil {
-		return
-	}
-
+	glog.Infof("Checking which segments need to be verified...")
 	for i := 0; i < len(dataHashes); i++ {
-		go func() {
-			//Figure out which seg needs to be verified
-			if shouldVerifySegment(start+int64(i), start, end, int64(bNum), bHash, int64(verifyRate)) {
-				//Call verify
-				resCh, errCh := client.Verify(jid, cid, big.NewInt(start+int64(i)), dataHashes[i], tHashes[i], sigs[i], proofs[i].Bytes())
-				select {
-				case <-resCh:
-					distributeFees(client, jid, cid)
-				case err := <-errCh:
-					glog.Errorf("Error submitting verify transaction: %v", err)
-				}
+		if shouldVerifySegment(start+int64(i), start, end, int64(bNum), bHash, int64(verifyRate)) {
+			glog.Infof("Should verify seg no %v", start+int64(i))
+			//Call verify
+			resCh, errCh := client.Verify(jid, cid, big.NewInt(start+int64(i)), dataHashes[i], tHashes[i], sigs[i], proofs[i].Bytes())
+			select {
+			case <-resCh:
+				glog.Infof("Invoked verification for seg no %v", start+int64(i))
+			case err := <-errCh:
+				glog.Errorf("Error submitting verify transaction: %v", err)
 			}
-		}()
+		} else {
+			glog.Infof("Don't need to verify seg no %v", start+int64(i))
+		}
 	}
+
+	distributeFees(client, jid, cid)
 }
 
 func distributeFees(client eth.LivepeerEthClient, jid *big.Int, cid *big.Int) {
@@ -194,16 +197,23 @@ func distributeFees(client eth.LivepeerEthClient, jid *big.Int, cid *big.Int) {
 	resCh, errCh := client.DistributeFees(jid, cid)
 	select {
 	case <-resCh:
-		glog.Infof("Distributed fess")
+		glog.Infof("Distributed fees")
+
+		bond, err := client.TranscoderBond()
+		if err != nil {
+			glog.Errorf("Error getting token balance: %v", err)
+		}
+
+		glog.Infof("Transcoder bond after fees: %v", bond)
 	case err := <-errCh:
 		glog.Infof("Error distributing fees: %v", err)
 	}
 }
 
-func getBlockInfo(client eth.LivepeerEthClient, blockNum *big.Int) (uint64, common.Hash, error) {
+func getBlockInfo(client eth.LivepeerEthClient) (uint64, common.Hash, error) {
 	ctx, _ := context.WithTimeout(context.Background(), client.RpcTimeout())
 
-	block, err := client.Backend().BlockByNumber(ctx, blockNum)
+	block, err := client.Backend().BlockByNumber(ctx, nil)
 	if err != nil {
 		return 0, common.Hash{}, err
 	}
@@ -227,7 +237,7 @@ func shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, blk
 	copy(seqNumB[24:], blkNumTmp)
 
 	num, i := binary.Uvarint(crypto.Keccak256(blkNumB, blkHash.Bytes(), seqNumB))
-	if i != 0 {
+	if i == 0 {
 		glog.Errorf("Error converting bytes in shouldVerifySegment.  num: %v, i: %v.  blkNumB:%x, blkHash:%x, seqNumB:%x", num, i, blkNumB, blkHash.Bytes(), seqNumB)
 	}
 	if num%uint64(verifyRate) == 0 {

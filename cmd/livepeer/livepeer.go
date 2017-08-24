@@ -80,15 +80,20 @@ func main() {
 	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpdata", usr.HomeDir), "data directory")
+	ethDatadir := flag.String("ethDatadir", fmt.Sprintf("%v/.lpTest", usr.HomeDir), "geth data directory")
 	bootID := flag.String("bootID", "12208a4eb428aa57a74ef0593612adb88077c75c71ad07c3c26e4e7a8d4860083b01", "Bootstrap node ID")
 	bootAddr := flag.String("bootAddr", "/ip4/52.15.174.204/tcp/15000", "Bootstrap node addr")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	blockRewardCut := flag.Int("blockRewardCut", 10, "Block reward cut value for a transcoder")
 	feeShare := flag.Int("feeShare", 5, "Fee share value for a transcoder")
-	pricePerSegment := flag.Int("pricePerSegment", 1000, "Price per segment (LPT) for a transcoder")
+	pricePerSegment := flag.Int("pricePerSegment", 1, "Price per segment (LPT) for a transcoder")
+	deposit := flag.Int("deposit", 100000, "Deposit (LPT) for broadcast job")
+	maxPricePerSegment := flag.Int("maxPricePerSegment", 1, "Max price per segment for a broadcast job")
+	transcodingOptions := flag.String("transcodingOptions", "P240p30fps4x3", "Transcoding options for broadcast job")
 	newEthAccount := flag.Bool("newEthAccount", false, "Create an eth account")
 	ethPassword := flag.String("ethPassword", "", "New Eth account password")
+	ethAccountAddr := flag.String("ethAccountAddr", "", "Existing Eth account address")
 	gethipc := flag.String("gethipc", "", "Geth ipc file location")
 	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
 	tokenAddr := flag.String("tokenAddr", "", "Token smart contract address")
@@ -106,6 +111,8 @@ func main() {
 	if *rtmpPort == "" {
 		glog.Fatalf("Please provide rtmp port")
 	}
+
+	glog.Infof("Bootnode? %v", *bootnode)
 
 	//Make sure datadir is present
 	if _, err := os.Stat(*datadir); os.IsNotExist(err) {
@@ -176,18 +183,20 @@ func main() {
 		var acct accounts.Account
 
 		if *newEthAccount {
-			keyStore := keystore.NewKeyStore(filepath.Join(*datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
+			keyStore := keystore.NewKeyStore(filepath.Join(*ethDatadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 			acct, err = keyStore.NewAccount(*ethPassword)
 			if err != nil {
 				glog.Errorf("Error creating new eth account: %v", err)
 				return
 			}
 		} else {
-			acct, err = getEthAccount(*datadir)
+			acct, err = getEthAccount(*ethDatadir, *ethAccountAddr)
 			if err != nil {
 				glog.Errorf("Error getting Eth account: %v", err)
 				return
 			}
+
+			glog.Infof("Found Eth account: %v", acct.Address.Hex())
 		}
 		glog.Infof("Connecting to geth @ %v", *gethipc)
 		backend, err = ethclient.Dial(*gethipc)
@@ -196,7 +205,7 @@ func main() {
 			return
 		}
 
-		client, err := eth.NewClient(acct, *ethPassword, *datadir, backend, common.HexToAddress(*protocolAddr), common.HexToAddress(*tokenAddr), EthRpcTimeout, EthEventTimeout)
+		client, err := eth.NewClient(acct, *ethPassword, *ethDatadir, backend, common.HexToAddress(*protocolAddr), common.HexToAddress(*tokenAddr), EthRpcTimeout, EthEventTimeout)
 		if err != nil {
 			glog.Errorf("Error creating Eth client: %v", err)
 			return
@@ -244,7 +253,7 @@ func main() {
 	msCtx, cancel := context.WithCancel(context.Background())
 	go func() {
 		s.StartWebserver()
-		ec <- s.StartMediaServer(msCtx)
+		ec <- s.StartMediaServer(msCtx, *deposit, *maxPricePerSegment, *transcodingOptions)
 	}()
 
 	c := make(chan os.Signal)
@@ -349,11 +358,22 @@ func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 	return priv, pub, nil
 }
 
-func getEthAccount(datadir string) (accounts.Account, error) {
+func getEthAccount(datadir string, addr string) (accounts.Account, error) {
 	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 	accts := keyStore.Accounts()
 	if len(accts) == 0 {
 		glog.Errorf("Cannot find geth account.  Make sure the data directory contains keys, or use -newEthAccount to create a new account.")
+		return accounts.Account{}, fmt.Errorf("ErrGeth")
+	}
+
+	if addr != "" {
+		for _, acct := range accts {
+			if acct.Address == common.HexToAddress(addr) {
+				return acct, nil
+			}
+		}
+
+		glog.Errorf("Cannot find geth account")
 		return accounts.Account{}, fmt.Errorf("ErrGeth")
 	}
 

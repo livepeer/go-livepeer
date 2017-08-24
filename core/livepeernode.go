@@ -135,12 +135,16 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm *Cla
 	if err != nil {
 		glog.Errorf("Error getting subscriber for stream %v from network: %v", config.StrmID, err)
 	}
+	glog.Infof("Config strm ID: %v", config.StrmID)
+	glog.Infof("Subscriber: %v", sub)
 	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 		if eof {
 			glog.Infof("Stream finished.  Claiming work.")
 			for _, p := range config.Profiles {
 				cm.Claim(p)
 			}
+
+			return
 		}
 
 		//Decode the segment
@@ -182,6 +186,16 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm *Cla
 	})
 
 	return resultStrmIDs, nil
+}
+
+func (n *LivepeerNode) BroadcastFinishMsg(strmID string) error {
+	b, err := n.VideoNetwork.GetBroadcaster(strmID)
+	if err != nil {
+		glog.Errorf("Error getting broadcaster from network: %v", err)
+		return err
+	}
+
+	return b.Finish()
 }
 
 //BroadcastToNetwork is called when a new broadcast stream is available.  It lets the network decide how
