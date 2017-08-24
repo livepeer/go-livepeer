@@ -31,8 +31,8 @@ func simpleNodes(p1, p2 int) (*NetworkNode, *NetworkNode) {
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 
-	n1, _ := NewNode(p1, priv1, pub1)
-	n2, _ := NewNode(p2, priv2, pub2)
+	n1, _ := NewNode(p1, priv1, pub1, &BasicNotifiee{})
+	n2, _ := NewNode(p2, priv2, pub2, &BasicNotifiee{})
 
 	// n1.PeerHost.Peerstore().AddAddrs(n2.Identity, n2.PeerHost.Addrs(), peerstore.PermanentAddrTTL)
 	// n2.PeerHost.Peerstore().AddAddrs(n1.Identity, n1.PeerHost.Addrs(), peerstore.PermanentAddrTTL)

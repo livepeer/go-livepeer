@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 	net "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
 
 	multicodec "gx/ipfs/QmVRuqGJ881CFiNLgwWSfRVjTjqQ6FeCNufkftNC4fpACZ/go-multicodec"
@@ -70,13 +71,13 @@ func (bs *BasicStream) encodeAndFlush(n interface{}) error {
 	defer bs.el.Unlock()
 	err := bs.enc.Encode(n)
 	if err != nil {
-		glog.Errorf("send message encode error: %v", err)
+		glog.Errorf("send message encode error for peer %v: %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), err)
 		return ErrStream
 	}
 
 	err = bs.w.Flush()
 	if err != nil {
-		glog.Errorf("send message flush error: %v", err)
+		glog.Errorf("send message flush error for peer %v: %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), err)
 		return ErrStream
 	}
 
