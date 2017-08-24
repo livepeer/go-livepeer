@@ -381,29 +381,27 @@ func getEthAccount(datadir string, addr string) (accounts.Account, error) {
 }
 
 func registerAndSetupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log, bondAmount *big.Int, blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) {
-	go func() {
-		if err := eth.CheckRoundAndInit(n.Eth); err != nil {
-			glog.Errorf("Error checking and initializing round: %v", err)
-		}
+	if err := eth.CheckRoundAndInit(n.Eth); err != nil {
+		glog.Errorf("Error checking and initializing round: %v", err)
+	}
 
-		resCh, errCh := n.Eth.Transcoder(blockRewardCut, feeShare, pricePerSegment)
+	resCh, errCh := n.Eth.Transcoder(blockRewardCut, feeShare, pricePerSegment)
+	select {
+	case <-resCh:
+		glog.Infof("Registered transcoder")
+
+		bResCh, bErrCh := n.Eth.Bond(bondAmount, n.Eth.Account().Address)
 		select {
-		case <-resCh:
-			glog.Infof("Registered transcoder")
+		case <-bResCh:
+			glog.Infof("Bonded transcoder")
 
-			bResCh, bErrCh := n.Eth.Bond(bondAmount, n.Eth.Account().Address)
-			select {
-			case <-bResCh:
-				glog.Infof("Bonded transcoder")
-
-				setupTranscoder(n, logsCh)
-			case err := <-bErrCh:
-				glog.Infof("Error bonding transcoder: %v", err)
-			}
-		case err := <-errCh:
-			glog.Errorf("Error registering transcoder: %v", err)
+			setupTranscoder(n, logsCh)
+		case err := <-bErrCh:
+			glog.Infof("Error bonding transcoder: %v", err)
 		}
-	}()
+	case err := <-errCh:
+		glog.Errorf("Error registering transcoder: %v", err)
+	}
 }
 
 func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) {

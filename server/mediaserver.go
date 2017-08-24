@@ -207,23 +207,8 @@ func gotRTMPStreamHandler(s *LivepeerServer, deposit int, maxPricePerSegment int
 		s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()] = hlsStrm.GetStreamID()
 
 		if s.LivepeerNode.Eth != nil {
-			//Create Transcode Job Onchain, record the jobID
-			createBroadcastJob(s, hlsStrm, deposit, maxPricePerSegment, transcodingOptions)
-			// tx, err := createBroadcastJob(s, hlsStrm)
-			// if err != nil {
-			// 	glog.Info("Error creating job.  Waiting for round start and trying again.")
-			// 	err = s.LivepeerNode.Eth.WaitUntilNextRound(eth.ProtocolBlockPerRound)
-			// 	if err != nil {
-			// 		glog.Errorf("Error waiting for round start: %v", err)
-			// 		return ErrBroadcast
-			// 	}
-
-			// 	tx, err = createBroadcastJob(s, hlsStrm)
-			// 	if err != nil {
-			// 		glog.Errorf("Error broadcasting: %v", err)
-			// 		return ErrBroadcast
-			// 	}
-			// }
+			//Create Transcode Job Onchain
+			go createBroadcastJob(s, hlsStrm, deposit, maxPricePerSegment, transcodingOptions)
 		}
 		return nil
 	}
@@ -428,25 +413,23 @@ func parseSegName(reqPath string) string {
 }
 
 func createBroadcastJob(s *LivepeerServer, hlsStrm stream.HLSVideoStream, deposit int, maxPricePerSegment int, transcodingOptions string) {
-	go func() {
-		eth.CheckRoundAndInit(s.LivepeerNode.Eth)
+	eth.CheckRoundAndInit(s.LivepeerNode.Eth)
 
-		resCh, errCh := s.LivepeerNode.Eth.Deposit(big.NewInt(int64(deposit)))
+	resCh, errCh := s.LivepeerNode.Eth.Deposit(big.NewInt(int64(deposit)))
+	select {
+	case <-resCh:
+		glog.Infof("Deposited tokens for broadcast job")
+
+		jResCh, jErrCh := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), transcodingOptions, big.NewInt(int64(maxPricePerSegment)))
 		select {
-		case <-resCh:
-			glog.Infof("Deposited tokens for broadcast job")
-
-			jResCh, jErrCh := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), transcodingOptions, big.NewInt(int64(maxPricePerSegment)))
-			select {
-			case <-jResCh:
-				glog.Infof("Created broadcast job.  Price: %v. Type: %v", maxPricePerSegment, transcodingOptions)
-			case err := <-jErrCh:
-				glog.Errorf("Error creating broadcast job: %v", err)
-			}
-		case err := <-errCh:
-			glog.Errorf("Error depositing tokens for broadcast job: %v", err)
+		case <-jResCh:
+			glog.Infof("Created broadcast job.  Price: %v. Type: %v", maxPricePerSegment, transcodingOptions)
+		case err := <-jErrCh:
+			glog.Errorf("Error creating broadcast job: %v", err)
 		}
-	}()
+	case err := <-errCh:
+		glog.Errorf("Error depositing tokens for broadcast job: %v", err)
+	}
 }
 
 func printStake(c eth.LivepeerEthClient) {
