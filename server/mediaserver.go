@@ -170,13 +170,9 @@ func gotRTMPStreamHandler(s *LivepeerServer, deposit int, maxPricePerSegment int
 			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions) //TODO: do we need to cancel this thread when the stream finishes?
 			if err != nil {
 				glog.Infof("Error in segmenter: %v, broadcasting finish message", err)
-				// err = hlsStrm.AddHLSSegment(hlsStrmID.String(), &stream.HLSSegment{Name: fmt.Sprintf("%v_eof", hlsStrmID), EOF: true})
 				if err := s.LivepeerNode.BroadcastFinishMsg(hlsStrmID.String()); err != nil {
 					glog.Errorf("Error broadcaseting finish message: %v", err)
 				}
-				// if err != nil {
-				// 	glog.Errorf("Error adding segmenter finish: %v", err)
-				// }
 			}
 		}()
 

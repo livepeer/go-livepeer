@@ -112,8 +112,6 @@ func main() {
 		glog.Fatalf("Please provide rtmp port")
 	}
 
-	glog.Infof("Bootnode? %v", *bootnode)
-
 	//Make sure datadir is present
 	if _, err := os.Stat(*datadir); os.IsNotExist(err) {
 		glog.Infof("Creating data dir: %v", *datadir)
@@ -229,17 +227,23 @@ func main() {
 			defer logsSub.Unsubscribe()
 
 			if !registered {
-				fmt.Println("You are not registered as a transcoder. To register and become a candidate transcoder please bond some tokens: ")
+				glog.Infof("You are not registered as a transcoder. To register and become a candidate transcoder please bond some tokens: ")
 
-				var bondAmount int
+				var bondAmount uint
 				_, err := fmt.Scanf("%d", &bondAmount)
 				if err != nil {
 					glog.Errorf("Error reading bond amount from input: %v", err)
 				}
 
-				registerAndSetupTranscoder(n, logsCh, big.NewInt(int64(bondAmount)), uint8(*blockRewardCut), uint8(*feeShare), big.NewInt(int64(*pricePerSegment)))
+				if err := registerAndSetupTranscoder(n, logsCh, big.NewInt(int64(bondAmount)), uint8(*blockRewardCut), uint8(*feeShare), big.NewInt(int64(*pricePerSegment))); err != nil {
+					glog.Errorf("Error registering and setting up transcoder: %v", err)
+					return
+				}
 			} else {
-				setupTranscoder(n, logsCh)
+				if err := setupTranscoder(n, logsCh); err != nil {
+					glog.Errorf("Error setting up transcoder: %v", err)
+					return
+				}
 			}
 		}
 	} else {
@@ -380,9 +384,10 @@ func getEthAccount(datadir string, addr string) (accounts.Account, error) {
 	return accts[0], nil
 }
 
-func registerAndSetupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log, bondAmount *big.Int, blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) {
+func registerAndSetupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log, bondAmount *big.Int, blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) error {
 	if err := eth.CheckRoundAndInit(n.Eth); err != nil {
 		glog.Errorf("Error checking and initializing round: %v", err)
+		return err
 	}
 
 	resCh, errCh := n.Eth.Transcoder(blockRewardCut, feeShare, pricePerSegment)
@@ -395,20 +400,24 @@ func registerAndSetupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log, 
 		case <-bResCh:
 			glog.Infof("Bonded transcoder")
 
-			setupTranscoder(n, logsCh)
+			return setupTranscoder(n, logsCh)
 		case err := <-bErrCh:
 			glog.Infof("Error bonding transcoder: %v", err)
 		}
 	case err := <-errCh:
 		glog.Errorf("Error registering transcoder: %v", err)
+		return err
 	}
+
+	return nil
 }
 
-func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) {
+func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) error {
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
 		glog.Errorf("Error getting transcoder state: %v", err)
+		return err
 	}
 
 	if !active {
@@ -424,54 +433,65 @@ func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) {
 	rm := core.NewRewardManager(time.Second*5, n.Eth)
 	go rm.Start(context.Background())
 
-	go func() error {
-		select {
-		case l := <-logsCh:
-			_, _, jid := eth.ParseNewJobLog(l)
+	go func() {
+		for {
+			select {
+			case l, ok := <-logsCh:
+				if !ok {
+					// Logs channel closed, exit loop
+					return
+				}
 
-			job, err := n.Eth.GetJob(jid)
-			if err != nil {
-				glog.Errorf("Error getting job info: %v", err)
+				_, _, jid := eth.ParseNewJobLog(l)
+
+				job, err := n.Eth.GetJob(jid)
+				if err != nil {
+					glog.Errorf("Error getting job info: %v", err)
+				}
+
+				//Create Transcode Config
+				tProfiles, err := txDataToVideoProfile(job.TranscodingOptions)
+				if err != nil {
+					glog.Errorf("Error processing job transcoding options: %v", err)
+				} else {
+					config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
+					glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", jid, job.StreamId, job.TranscodingOptions, config)
+
+					//Do The Transcoding
+					cm := core.NewClaimManager(job.StreamId, jid, tProfiles, n.Eth)
+					strmIDs, err := n.TranscodeAndBroadcast(config, cm)
+					if err != nil {
+						glog.Errorf("Transcode Error: %v", err)
+					} else {
+						//Notify Broadcaster
+						sid := core.StreamID(job.StreamId)
+						vids := make(map[core.StreamID]types.VideoProfile)
+						for i, vp := range tProfiles {
+							vids[strmIDs[i]] = vp
+						}
+						if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
+							glog.Errorf("Notify Broadcaster Error: %v", err)
+						}
+					}
+				}
 			}
-
-			//Create Transcode Config
-			tProfiles := txDataToVideoProfile(job.TranscodingOptions)
-			config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
-			glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", jid, job.StreamId, job.TranscodingOptions, config)
-
-			//Do The Transcoding
-			cm := core.NewClaimManager(job.StreamId, jid, tProfiles, n.Eth)
-			strmIDs, err := n.TranscodeAndBroadcast(config, cm)
-			if err != nil {
-				glog.Errorf("Transcode Error: %v", err)
-			}
-
-			//Notify Broadcaster
-			sid := core.StreamID(job.StreamId)
-			vids := make(map[core.StreamID]types.VideoProfile)
-			for i, vp := range tProfiles {
-				vids[strmIDs[i]] = vp
-			}
-			if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
-				glog.Errorf("Notify Broadcaster Error: %v", err)
-			}
-
-			return nil
 		}
 	}()
+
+	return nil
 }
 
-func txDataToVideoProfile(txData string) []types.VideoProfile {
+func txDataToVideoProfile(txData string) ([]types.VideoProfile, error) {
 	profiles := make([]types.VideoProfile, 0)
 	for _, txp := range strings.Split(txData, "|") {
 		p, ok := types.VideoProfileLookup[txp]
 		if !ok {
 			glog.Errorf("Cannot find video profile for job: %v", txp)
-			// return core.ErrTranscode
+			return nil, core.ErrTranscode
 		}
 		profiles = append(profiles, p)
 	}
-	return profiles
+	return profiles, nil
 }
 
 func stream(port string, streamID string) {

@@ -248,7 +248,6 @@ func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
 
 		//Encode segment into []byte, broadcast it
 		if ssb, err := SignedSegmentToBytes(SignedSegment{Seg: *seg, Sig: sig}); err == nil {
-			// if ssb, err := SignedSegmentToBytes(SignedSegment{Seg: *seg, Sig: nil}); err == nil {
 			if err = b.Broadcast(counter, ssb); err != nil {
 				glog.Errorf("Error broadcasting segment to network: %v", err)
 			}
