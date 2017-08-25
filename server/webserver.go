@@ -212,6 +212,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(js)
 	})

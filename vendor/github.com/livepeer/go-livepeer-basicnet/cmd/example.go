@@ -28,7 +28,7 @@ func main() {
 	flag.Lookup("logtostderr").Value.Set("true")
 
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	node, _ := basicnet.NewNode(*p, priv, pub)
+	node, _ := basicnet.NewNode(*p, priv, pub, &inet.BasicNotifiee{})
 
 	pid, _ := peer.IDHexDecode(*id)
 	if *id != "" {

@@ -52,6 +52,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 	//We'll keep track of all the connections on the
 	for p := range peerc {
 		//Question: Where do we close the stream? If we only close on "Unsubscribe", we may leave some streams open...
+		// glog.Infof("New peer from kademlia: %v", peer.IDHexEncode(p))
 		ns := s.Network.NetworkNode.GetStream(p)
 		if ns != nil {
 			//Set up handler for the stream
