@@ -30,7 +30,7 @@ var ClaimInterval = int64(5)
 var EthRpcTimeout = 5 * time.Second
 var EthEventTimeout = 5 * time.Second
 var EthMinedTxTimeout = 60 * time.Second
-var DefaultMasterPlaylistWaitTime = 10 * time.Second
+var DefaultMasterPlaylistWaitTime = 60 * time.Second
 var VerifyRate = int64(2)
 
 //NodeID can be converted from libp2p PeerID.

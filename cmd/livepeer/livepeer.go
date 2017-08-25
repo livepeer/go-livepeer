@@ -87,8 +87,8 @@ func main() {
 	ethPassword := flag.String("ethPassword", "", "New Eth account password")
 	gethipc := flag.String("gethipc", "", "Geth ipc file location")
 	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
-	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
-	monhost := flag.String("monitorhost", "metrics.livepeer.org", "host name for the metrics data collector")
+	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
+	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
 
 	flag.Parse()
 
@@ -131,6 +131,7 @@ func main() {
 
 	//Create Livepeer Node
 	if *monitor {
+		glog.Info("Monitor is set to 'true' by default.  If you want to disable it, use -monitor=false when starting Livepeer.")
 		lpmon.Endpoint = *monhost
 	}
 	notifiee := bnet.NewBasicNotifiee(lpmon.Instance())
