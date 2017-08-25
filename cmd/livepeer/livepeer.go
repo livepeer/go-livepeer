@@ -88,7 +88,7 @@ func main() {
 	blockRewardCut := flag.Int("blockRewardCut", 10, "Block reward cut value for a transcoder")
 	feeShare := flag.Int("feeShare", 5, "Fee share value for a transcoder")
 	pricePerSegment := flag.Int("pricePerSegment", 1, "Price per segment (LPT) for a transcoder")
-	deposit := flag.Int("deposit", 100000, "Deposit (LPT) for broadcast job")
+	deposit := flag.Int("deposit", 0, "Deposit (LPT) for broadcast job")
 	maxPricePerSegment := flag.Int("maxPricePerSegment", 1, "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps4x3", "Transcoding options for broadcast job")
 	newEthAccount := flag.Bool("newEthAccount", false, "Create an eth account")
@@ -212,6 +212,30 @@ func main() {
 		n.Eth = client
 		n.EthPassword = *ethPassword
 
+		if *deposit > 0 {
+			glog.Infof("You started your node with the deposit amount set to %v tokens. Would you like to deposit this amount? (y/n)", *deposit)
+
+			var resp string
+			_, err := fmt.Scanf("%s", &resp)
+			if err != nil {
+				glog.Errorf("Error reading deposit confirmation response from input: %v", err)
+				return
+			}
+
+			if strings.Compare(strings.ToLower(resp), "y") == 0 {
+				resCh, errCh := n.Eth.Deposit(big.NewInt(int64(*deposit)))
+				select {
+				case <-resCh:
+					glog.Infof("Deposited %v tokens", *deposit)
+				case err := <-errCh:
+					glog.Errorf("Error depositing tokens: %v", err)
+					return
+				}
+			} else {
+				glog.Infof("Not depositing")
+			}
+		}
+
 		if *transcoder {
 			registered, err := n.Eth.IsRegisteredTranscoder()
 			if err != nil {
@@ -258,7 +282,7 @@ func main() {
 	msCtx, cancel := context.WithCancel(context.Background())
 	go func() {
 		s.StartWebserver()
-		ec <- s.StartMediaServer(msCtx, *deposit, *maxPricePerSegment, *transcodingOptions)
+		ec <- s.StartMediaServer(msCtx, *maxPricePerSegment, *transcodingOptions)
 	}()
 
 	c := make(chan os.Signal)
