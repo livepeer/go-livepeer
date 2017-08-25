@@ -97,6 +97,7 @@ func main() {
 	gethipc := flag.String("gethipc", "", "Geth ipc file location")
 	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
 	tokenAddr := flag.String("tokenAddr", "", "Token smart contract address")
+	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "metrics.livepeer.org", "host name for the metrics data collector")
 
@@ -203,7 +204,7 @@ func main() {
 			return
 		}
 
-		client, err := eth.NewClient(acct, *ethPassword, *ethDatadir, backend, common.HexToAddress(*protocolAddr), common.HexToAddress(*tokenAddr), EthRpcTimeout, EthEventTimeout)
+		client, err := eth.NewClient(acct, *ethPassword, *ethDatadir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*protocolAddr), common.HexToAddress(*tokenAddr), EthRpcTimeout, EthEventTimeout)
 		if err != nil {
 			glog.Errorf("Error creating Eth client: %v", err)
 			return
@@ -447,32 +448,46 @@ func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) error {
 				job, err := n.Eth.GetJob(jid)
 				if err != nil {
 					glog.Errorf("Error getting job info: %v", err)
+					continue
+				}
+
+				//Check if broadcaster has enough funds
+				bDeposit, err := n.Eth.GetBroadcasterDeposit(job.BroadcasterAddress)
+				if err != nil {
+					glog.Errorf("Error getting broadcaster deposit: %v", err)
+					continue
+				}
+				if bDeposit.Cmp(big.NewInt(0)) == 0 {
+					glog.Errorf("Broadcaster does not have enough funds. Skipping job")
+					continue
 				}
 
 				//Create Transcode Config
 				tProfiles, err := txDataToVideoProfile(job.TranscodingOptions)
 				if err != nil {
 					glog.Errorf("Error processing job transcoding options: %v", err)
-				} else {
-					config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
-					glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", jid, job.StreamId, job.TranscodingOptions, config)
+					continue
+				}
 
-					//Do The Transcoding
-					cm := core.NewClaimManager(job.StreamId, jid, tProfiles, n.Eth)
-					strmIDs, err := n.TranscodeAndBroadcast(config, cm)
-					if err != nil {
-						glog.Errorf("Transcode Error: %v", err)
-					} else {
-						//Notify Broadcaster
-						sid := core.StreamID(job.StreamId)
-						vids := make(map[core.StreamID]types.VideoProfile)
-						for i, vp := range tProfiles {
-							vids[strmIDs[i]] = vp
-						}
-						if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
-							glog.Errorf("Notify Broadcaster Error: %v", err)
-						}
-					}
+				config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
+				glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", jid, job.StreamId, job.TranscodingOptions, config)
+
+				//Do The Transcoding
+				cm := core.NewClaimManager(job.StreamId, jid, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth)
+				strmIDs, err := n.TranscodeAndBroadcast(config, cm)
+				if err != nil {
+					glog.Errorf("Transcode Error: %v", err)
+					continue
+				}
+
+				//Notify Broadcaster
+				sid := core.StreamID(job.StreamId)
+				vids := make(map[core.StreamID]types.VideoProfile)
+				for i, vp := range tProfiles {
+					vids[strmIDs[i]] = vp
+				}
+				if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
+					glog.Errorf("Notify Broadcaster Error: %v", err)
 				}
 			}
 		}

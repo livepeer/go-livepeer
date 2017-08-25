@@ -139,7 +139,23 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm *Cla
 	glog.Infof("Subscriber: %v", sub)
 	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 		if eof {
-			glog.Infof("Stream finished.  Claiming work.")
+			glog.Infof("Stream finished. Claiming work.")
+
+			for _, p := range config.Profiles {
+				cm.Claim(p)
+			}
+
+			return
+		}
+
+		sufficient, err := cm.SufficientBroadcasterDeposit()
+		if err != nil {
+			glog.Errorf("Error checking broadcaster funds: %v", err)
+		}
+
+		if !sufficient {
+			glog.Infof("Broadcaster does not have enough funds. Claiming work.")
+
 			for _, p := range config.Profiles {
 				cm.Claim(p)
 			}

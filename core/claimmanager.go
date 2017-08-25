@@ -30,10 +30,15 @@ type ClaimManager struct {
 	dataHashes    [][]string
 	tDataHashes   [][]string
 	bSigs         [][][]byte
+
+	cost *big.Int
+
+	broadcasterAddr common.Address
+	pricePerSegment *big.Int
 }
 
 //NewClaimManager creates a new claim manager.
-func NewClaimManager(sid string, jid *big.Int, p []types.VideoProfile, c eth.LivepeerEthClient) *ClaimManager {
+func NewClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []types.VideoProfile, c eth.LivepeerEthClient) *ClaimManager {
 	seqNos := make([][]int64, len(p), len(p))
 	rHashes := make([][]common.Hash, len(p), len(p))
 	dHashes := make([][]string, len(p), len(p))
@@ -55,7 +60,7 @@ func NewClaimManager(sid string, jid *big.Int, p []types.VideoProfile, c eth.Liv
 		pLookup[p[i]] = i
 	}
 
-	return &ClaimManager{client: c, strmID: sid, jobID: jid, seqNos: seqNos, receiptHashes: rHashes, dataHashes: dHashes, tDataHashes: tHashes, bSigs: sigs, profiles: p, pLookup: pLookup}
+	return &ClaimManager{client: c, strmID: sid, jobID: jid, cost: big.NewInt(0), broadcasterAddr: broadcaster, pricePerSegment: pricePerSegment, seqNos: seqNos, receiptHashes: rHashes, dataHashes: dHashes, tDataHashes: tHashes, bSigs: sigs, profiles: p, pLookup: pLookup}
 }
 
 //AddClaim adds a claim for a given video segment.
@@ -85,6 +90,24 @@ func (c *ClaimManager) AddReceipt(seqNo int64, dataHash string, tDataHash string
 	c.dataHashes[pi] = append(c.dataHashes[pi], dataHash)
 	c.tDataHashes[pi] = append(c.tDataHashes[pi], tDataHash)
 	c.bSigs[pi] = append(c.bSigs[pi], bSig)
+	c.cost = new(big.Int).Add(c.cost, c.pricePerSegment)
+}
+
+func (c *ClaimManager) SufficientBroadcasterDeposit() (bool, error) {
+	bDeposit, err := c.client.GetBroadcasterDeposit(c.broadcasterAddr)
+	if err != nil {
+		glog.Errorf("Error getting broadcaster deposit: %v", err)
+		return false, err
+	}
+
+	//If broadcaster does not have enough for a segment, return false
+	//If broadcaster has enough for at least one transcoded segment, return true
+	currDeposit := new(big.Int).Sub(bDeposit, c.cost)
+	if new(big.Int).Sub(currDeposit, new(big.Int).Mul(big.NewInt(int64(len(c.profiles))), c.pricePerSegment)).Cmp(big.NewInt(0)) == -1 {
+		return false, nil
+	} else {
+		return true, nil
+	}
 }
 
 //Claim creates the onchain claim for all the claims added through AddClaim
@@ -95,7 +118,12 @@ func (c *ClaimManager) Claim(p types.VideoProfile) error {
 		return ErrClaim
 	}
 
-	go claimVerifyDistribute(c.client, c.jobID, c.seqNos[pi], c.dataHashes[pi], c.receiptHashes[pi], c.tDataHashes[pi], c.bSigs[pi])
+	if len(c.seqNos[pi]) == 0 {
+		glog.Infof("No segments to claim for %v", pi)
+	} else {
+		go claimVerifyDistribute(c.client, c.jobID, c.seqNos[pi], c.dataHashes[pi], c.receiptHashes[pi], c.tDataHashes[pi], c.bSigs[pi])
+	}
+
 	return nil
 }
 
@@ -131,6 +159,7 @@ func claimVerifyDistribute(client eth.LivepeerEthClient, jid *big.Int, seqNos []
 		}
 
 		glog.Infof("Submitting claim root: %v", root.Hash.Hex())
+
 		resCh, errCh := client.ClaimWork(jid, [2]*big.Int{big.NewInt(r[0]), big.NewInt(r[1])}, [32]byte(root.Hash))
 		select {
 		case <-resCh:

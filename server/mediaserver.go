@@ -216,8 +216,6 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		s.LivepeerNode.StreamDB.DeleteStream(core.StreamID(rtmpStrm.GetStreamID()))
 		//Remove HLS stream associated with the RTMP stream
 		s.LivepeerNode.StreamDB.DeleteStream(core.StreamID(s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()]))
-		// Withdraw deposit if there is anything left
-		s.LivepeerNode.Eth.WithdrawDeposit()
 
 		return nil
 	}

@@ -54,6 +54,7 @@ type LivepeerEthClient interface {
 	Bond(amount *big.Int, toAddr common.Address) (<-chan types.Receipt, <-chan error)
 	Reward() (<-chan types.Receipt, <-chan error)
 	Deposit(amount *big.Int) (<-chan types.Receipt, <-chan error)
+	GetBroadcasterDeposit(broadcaster common.Address) (*big.Int, error)
 	WithdrawDeposit() (<-chan types.Receipt, <-chan error)
 	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
 	ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error)
@@ -116,13 +117,15 @@ type Claim struct {
 	Status               uint8
 }
 
-func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, protocolAddr common.Address, tokenAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
+func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, gasPrice *big.Int, protocolAddr common.Address, tokenAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
 	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 
 	transactOpts, err := NewTransactOptsForAccount(account, passphrase, keyStore)
 	if err != nil {
 		return nil, err
 	}
+
+	transactOpts.GasPrice = gasPrice
 
 	token, err := contracts.NewLivepeerToken(tokenAddr, backend)
 	if err != nil {
@@ -250,9 +253,6 @@ func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyS
 		return nil, err
 	}
 
-	// Set to 4 GWei
-	// transactOpts.GasPrice = big.NewInt(4000000000)
-
 	return transactOpts, err
 }
 
@@ -311,6 +311,10 @@ func (c *Client) Deposit(amount *big.Int) (<-chan types.Receipt, <-chan error) {
 			return tx, nil
 		}
 	})
+}
+
+func (c *Client) GetBroadcasterDeposit(broadcaster common.Address) (*big.Int, error) {
+	return c.jobsManagerSession.BroadcasterDeposits(broadcaster)
 }
 
 func (c *Client) WithdrawDeposit() (<-chan types.Receipt, <-chan error) {
@@ -626,13 +630,6 @@ func (c *Client) WaitForReceipt(txFunc func() (*types.Transaction, error)) (<-ch
 		defer close(outRes)
 		defer close(outErr)
 
-		// startBalance, err := c.backend.BalanceAt(context.Background(), c.account.Address, nil)
-		// if err != nil {
-		// 	glog.Errorf("Error getting balance: %v", err)
-		// }
-
-		// startBalanceETH := new(big.Float).Quo(new(big.Float).SetInt(startBalance), big.NewFloat(1000000000000000000))
-
 		tx, err := txFunc()
 		if err != nil {
 			outErr <- err
@@ -645,22 +642,6 @@ func (c *Client) WaitForReceipt(txFunc func() (*types.Transaction, error)) (<-ch
 		} else {
 			outRes <- *receipt
 		}
-
-		// glog.Infof("Gas used for tx %v: %v", receipt.TxHash.Hex(), receipt.GasUsed)
-		// gasCost := new(big.Int).Mul(receipt.GasUsed, big.NewInt(4000000000))
-		// glog.Infof("Gas cost (4 GWei gas price) for tx %v: %v", receipt.TxHash.Hex(), gasCost)
-		// glog.Infof("Gas cost ETH for tx %v: %v", receipt.TxHash.Hex(), new(big.Float).Quo(new(big.Float).SetInt(gasCost), big.NewFloat(1000000000000000000)))
-		// glog.Infof("ETH balance before tx %v: %v", receipt.TxHash.Hex(), startBalanceETH)
-
-		// endBalance, err := c.backend.BalanceAt(context.Background(), c.account.Address, nil)
-		// if err != nil {
-		// 	glog.Errorf("Error getting balance: %v", err)
-		// }
-
-		// endBalanceETH := new(big.Float).Quo(new(big.Float).SetInt(endBalance), big.NewFloat(1000000000000000000))
-
-		// glog.Infof("ETH balance after tx %v: %v", receipt.TxHash.Hex(), endBalanceETH)
-		// glog.Infof("Balance diff (ETH) after tx %v: %v", receipt.TxHash.Hex(), new(big.Float).Sub(startBalanceETH, endBalanceETH))
 
 		return
 	}()
