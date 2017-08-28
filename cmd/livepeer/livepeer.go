@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,7 +25,6 @@ import (
 
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
-	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
@@ -36,6 +36,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
 	"github.com/livepeer/go-livepeer/types"
 )
@@ -79,14 +80,24 @@ func main() {
 	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpdata", usr.HomeDir), "data directory")
+	ethDatadir := flag.String("ethDatadir", fmt.Sprintf("%v/.lpTest", usr.HomeDir), "geth data directory")
 	bootID := flag.String("bootID", "12208a4eb428aa57a74ef0593612adb88077c75c71ad07c3c26e4e7a8d4860083b01", "Bootstrap node ID")
 	bootAddr := flag.String("bootAddr", "/ip4/52.15.174.204/tcp/15000", "Bootstrap node addr")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
+	blockRewardCut := flag.Int("blockRewardCut", 10, "Block reward cut value for a transcoder")
+	feeShare := flag.Int("feeShare", 5, "Fee share value for a transcoder")
+	pricePerSegment := flag.Int("pricePerSegment", 1, "Price per segment (LPT) for a transcoder")
+	deposit := flag.Int("deposit", 0, "Deposit (LPT) for broadcast job")
+	maxPricePerSegment := flag.Int("maxPricePerSegment", 1, "Max price per segment for a broadcast job")
+	transcodingOptions := flag.String("transcodingOptions", "P240p30fps4x3", "Transcoding options for broadcast job")
 	newEthAccount := flag.Bool("newEthAccount", false, "Create an eth account")
 	ethPassword := flag.String("ethPassword", "", "New Eth account password")
+	ethAccountAddr := flag.String("ethAccountAddr", "", "Existing Eth account address")
 	gethipc := flag.String("gethipc", "", "Geth ipc file location")
 	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
+	tokenAddr := flag.String("tokenAddr", "", "Token smart contract address")
+	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
 
@@ -172,18 +183,20 @@ func main() {
 		var acct accounts.Account
 
 		if *newEthAccount {
-			keyStore := keystore.NewKeyStore(filepath.Join(*datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
+			keyStore := keystore.NewKeyStore(filepath.Join(*ethDatadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 			acct, err = keyStore.NewAccount(*ethPassword)
 			if err != nil {
 				glog.Errorf("Error creating new eth account: %v", err)
 				return
 			}
 		} else {
-			acct, err = getEthAccount(*datadir)
+			acct, err = getEthAccount(*ethDatadir, *ethAccountAddr)
 			if err != nil {
 				glog.Errorf("Error getting Eth account: %v", err)
 				return
 			}
+
+			glog.Infof("Found Eth account: %v", acct.Address.Hex())
 		}
 		glog.Infof("Connecting to geth @ %v", *gethipc)
 		backend, err = ethclient.Dial(*gethipc)
@@ -192,7 +205,7 @@ func main() {
 			return
 		}
 
-		client, err := eth.NewClient(acct, *ethPassword, *datadir, backend, common.HexToAddress(*protocolAddr), common.HexToAddress(""), EthRpcTimeout, EthEventTimeout)
+		client, err := eth.NewClient(acct, *ethPassword, *ethDatadir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*protocolAddr), common.HexToAddress(*tokenAddr), EthRpcTimeout, EthEventTimeout)
 		if err != nil {
 			glog.Errorf("Error creating Eth client: %v", err)
 			return
@@ -200,14 +213,64 @@ func main() {
 		n.Eth = client
 		n.EthPassword = *ethPassword
 
-		if *transcoder {
-			logsSub, err := setupTranscoder(n, acct)
+		if *deposit > 0 {
+			glog.Infof("You started your node with the deposit amount set to %v tokens. Would you like to deposit this amount? (y/n)", *deposit)
 
+			var resp string
+			_, err := fmt.Scanf("%s", &resp)
+			if err != nil {
+				glog.Errorf("Error reading deposit confirmation response from input: %v", err)
+				return
+			}
+
+			if strings.Compare(strings.ToLower(resp), "y") == 0 {
+				resCh, errCh := n.Eth.Deposit(big.NewInt(int64(*deposit)))
+				select {
+				case <-resCh:
+					glog.Infof("Deposited %v tokens", *deposit)
+				case err := <-errCh:
+					glog.Errorf("Error depositing tokens: %v", err)
+					return
+				}
+			} else {
+				glog.Infof("Not depositing")
+			}
+		}
+
+		if *transcoder {
+			registered, err := n.Eth.IsRegisteredTranscoder()
+			if err != nil {
+				glog.Errorf("Error checking for registered transcoder: %v", err)
+			}
+
+			logsCh := make(chan ethtypes.Log)
+			logsSub, err := n.Eth.SubscribeToJobEvent(context.Background(), logsCh)
 			if err != nil {
 				glog.Errorf("Error subscribing to job event: %v", err)
 			}
+
+			defer close(logsCh)
 			defer logsSub.Unsubscribe()
-			// defer close(logsChan)
+
+			if !registered {
+				glog.Infof("You are not registered as a transcoder. To register and become a candidate transcoder please bond some tokens: ")
+
+				var bondAmount uint
+				_, err := fmt.Scanf("%d", &bondAmount)
+				if err != nil {
+					glog.Errorf("Error reading bond amount from input: %v", err)
+				}
+
+				if err := registerAndSetupTranscoder(n, logsCh, big.NewInt(int64(bondAmount)), uint8(*blockRewardCut), uint8(*feeShare), big.NewInt(int64(*pricePerSegment))); err != nil {
+					glog.Errorf("Error registering and setting up transcoder: %v", err)
+					return
+				}
+			} else {
+				if err := setupTranscoder(n, logsCh); err != nil {
+					glog.Errorf("Error setting up transcoder: %v", err)
+					return
+				}
+			}
 		}
 	} else {
 		glog.Infof("***Livepeer is in off-chain mode***")
@@ -220,7 +283,7 @@ func main() {
 	msCtx, cancel := context.WithCancel(context.Background())
 	go func() {
 		s.StartWebserver()
-		ec <- s.StartMediaServer(msCtx)
+		ec <- s.StartMediaServer(msCtx, *maxPricePerSegment, *transcodingOptions)
 	}()
 
 	c := make(chan os.Signal)
@@ -325,7 +388,7 @@ func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 	return priv, pub, nil
 }
 
-func getEthAccount(datadir string) (accounts.Account, error) {
+func getEthAccount(datadir string, addr string) (accounts.Account, error) {
 	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 	accts := keyStore.Accounts()
 	if len(accts) == 0 {
@@ -333,18 +396,58 @@ func getEthAccount(datadir string) (accounts.Account, error) {
 		return accounts.Account{}, fmt.Errorf("ErrGeth")
 	}
 
+	if addr != "" {
+		for _, acct := range accts {
+			if acct.Address == common.HexToAddress(addr) {
+				return acct, nil
+			}
+		}
+
+		glog.Errorf("Cannot find geth account")
+		return accounts.Account{}, fmt.Errorf("ErrGeth")
+	}
+
 	return accts[0], nil
 }
 
-func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subscription, error) {
+func registerAndSetupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log, bondAmount *big.Int, blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) error {
+	if err := eth.CheckRoundAndInit(n.Eth); err != nil {
+		glog.Errorf("Error checking and initializing round: %v", err)
+		return err
+	}
+
+	resCh, errCh := n.Eth.Transcoder(blockRewardCut, feeShare, pricePerSegment)
+	select {
+	case <-resCh:
+		glog.Infof("Registered transcoder")
+
+		bResCh, bErrCh := n.Eth.Bond(bondAmount, n.Eth.Account().Address)
+		select {
+		case <-bResCh:
+			glog.Infof("Bonded transcoder")
+
+			return setupTranscoder(n, logsCh)
+		case err := <-bErrCh:
+			glog.Infof("Error bonding transcoder: %v", err)
+		}
+	case err := <-errCh:
+		glog.Errorf("Error registering transcoder: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) error {
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
 		glog.Errorf("Error getting transcoder state: %v", err)
+		return err
 	}
 
 	if !active {
-		glog.Infof("Transcoder %v is inactive", acct.Address.Hex())
+		glog.Infof("Transcoder %v is inactive", n.Eth.Account().Address.Hex())
 	} else {
 		s, err := n.Eth.TranscoderStake()
 		if err != nil {
@@ -356,70 +459,79 @@ func setupTranscoder(n *core.LivepeerNode, acct accounts.Account) (ethereum.Subs
 	rm := core.NewRewardManager(time.Second*5, n.Eth)
 	go rm.Start(context.Background())
 
-	//Subscribe to when a job is assigned to us
-	logsCh := make(chan ethtypes.Log)
-	sub, err := n.Eth.SubscribeToJobEvent(context.Background(), logsCh)
-	if err != nil {
-		glog.Errorf("Error subscribing to job event: %v", err)
-	}
-	// go func() error {
-	// select {
-	// case l := <-logsCh:
-	// tx, _, err := n.Eth.Backend().TransactionByHash(context.Background(), l.TxHash)
-	// if err != nil {
-	// 	glog.Errorf("Error getting transaction data: %v", err)
-	// }
-	// strmId, tData, err := eth.ParseJobTxData(tx.Data())
-	// if err != nil {
-	// 	glog.Errorf("Error parsing job tx data: %v", err)
-	// }
+	go func() {
+		for {
+			select {
+			case l, ok := <-logsCh:
+				if !ok {
+					// Logs channel closed, exit loop
+					return
+				}
 
-	// jid, _, _, _, err := eth.GetInfoFromJobEvent(l, n.Eth)
-	// if err != nil {
-	// 	glog.Errorf("Error getting info from job event: %v", err)
-	// }
+				_, _, jid := eth.ParseNewJobLog(l)
 
-	// //Create Transcode Config
-	// tProfiles := txDataToVideoProfile(tData)
-	// config := net.TranscodeConfig{StrmID: strmId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
-	// glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", tx.Hash(), strmId, tData, config)
+				job, err := n.Eth.GetJob(jid)
+				if err != nil {
+					glog.Errorf("Error getting job info: %v", err)
+					continue
+				}
 
-	// //Do The Transcoding
-	// cm := core.NewClaimManager(strmId, jid, tProfiles, n.Eth)
-	// strmIDs, err := n.TranscodeAndBroadcast(config, cm)
-	// if err != nil {
-	// 	glog.Errorf("Transcode Error: %v", err)
-	// }
+				//Check if broadcaster has enough funds
+				bDeposit, err := n.Eth.GetBroadcasterDeposit(job.BroadcasterAddress)
+				if err != nil {
+					glog.Errorf("Error getting broadcaster deposit: %v", err)
+					continue
+				}
+				if bDeposit.Cmp(big.NewInt(0)) == 0 {
+					glog.Errorf("Broadcaster does not have enough funds. Skipping job")
+					continue
+				}
 
-	// //Notify Broadcaster
-	// sid := core.StreamID(strmId)
-	// vids := make(map[core.StreamID]types.VideoProfile)
-	// for i, vp := range tProfiles {
-	// 	vids[strmIDs[i]] = vp
-	// }
-	// if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
-	// 	glog.Errorf("Notify Broadcaster Error: %v", err)
-	// }
+				//Create Transcode Config
+				tProfiles, err := txDataToVideoProfile(job.TranscodingOptions)
+				if err != nil {
+					glog.Errorf("Error processing job transcoding options: %v", err)
+					continue
+				}
 
-	// 	return nil
+				config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
+				glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", jid, job.StreamId, job.TranscodingOptions, config)
 
-	// }
-	// }()
+				//Do The Transcoding
+				cm := core.NewClaimManager(job.StreamId, jid, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth)
+				strmIDs, err := n.TranscodeAndBroadcast(config, cm)
+				if err != nil {
+					glog.Errorf("Transcode Error: %v", err)
+					continue
+				}
 
-	return sub, nil
+				//Notify Broadcaster
+				sid := core.StreamID(job.StreamId)
+				vids := make(map[core.StreamID]types.VideoProfile)
+				for i, vp := range tProfiles {
+					vids[strmIDs[i]] = vp
+				}
+				if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
+					glog.Errorf("Notify Broadcaster Error: %v", err)
+				}
+			}
+		}
+	}()
+
+	return nil
 }
 
-func txDataToVideoProfile(txData string) []types.VideoProfile {
+func txDataToVideoProfile(txData string) ([]types.VideoProfile, error) {
 	profiles := make([]types.VideoProfile, 0)
 	for _, txp := range strings.Split(txData, "|") {
 		p, ok := types.VideoProfileLookup[txp]
 		if !ok {
 			glog.Errorf("Cannot find video profile for job: %v", txp)
-			// return core.ErrTranscode
+			return nil, core.ErrTranscode
 		}
 		profiles = append(profiles, p)
 	}
-	return profiles
+	return profiles, nil
 }
 
 func stream(port string, streamID string) {

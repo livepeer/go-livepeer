@@ -46,21 +46,33 @@ var ProtocolBlockPerRound = big.NewInt(20)
 type LivepeerEthClient interface {
 	Backend() *ethclient.Client
 	Account() accounts.Account
+	RpcTimeout() time.Duration
 	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error)
 	RoundInfo() (*big.Int, *big.Int, *big.Int, error)
 	InitializeRound() (<-chan types.Receipt, <-chan error)
 	Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
 	Bond(amount *big.Int, toAddr common.Address) (<-chan types.Receipt, <-chan error)
 	Reward() (<-chan types.Receipt, <-chan error)
+	Deposit(amount *big.Int) (<-chan types.Receipt, <-chan error)
+	GetBroadcasterDeposit(broadcaster common.Address) (*big.Int, error)
+	WithdrawDeposit() (<-chan types.Receipt, <-chan error)
 	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
 	ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error)
 	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
+	DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error)
 	Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error)
 	CurrentRoundInitialized() (bool, error)
 	IsActiveTranscoder() (bool, error)
 	TranscoderStake() (*big.Int, error)
 	TokenBalance() (*big.Int, error)
 	GetJob(jobID *big.Int) (*Job, error)
+	GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error)
+	VerificationRate() (uint64, error)
+	VerificationPeriod() (*big.Int, error)
+	SlashingPeriod() (*big.Int, error)
+	LastRewardRound() (*big.Int, error)
+	IsRegisteredTranscoder() (bool, error)
+	TranscoderBond() (*big.Int, error)
 }
 
 type Client struct {
@@ -105,13 +117,15 @@ type Claim struct {
 	Status               uint8
 }
 
-func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, protocolAddr common.Address, tokenAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
+func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, gasPrice *big.Int, protocolAddr common.Address, tokenAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
 	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 
 	transactOpts, err := NewTransactOptsForAccount(account, passphrase, keyStore)
 	if err != nil {
 		return nil, err
 	}
+
+	transactOpts.GasPrice = gasPrice
 
 	token, err := contracts.NewLivepeerToken(tokenAddr, backend)
 	if err != nil {
@@ -222,6 +236,10 @@ func (c *Client) Account() accounts.Account {
 	return c.account
 }
 
+func (c *Client) RpcTimeout() time.Duration {
+	return c.rpcTimeout
+}
+
 func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyStore *keystore.KeyStore) (*bind.TransactOpts, error) {
 	keyjson, err := keyStore.Export(account, passphrase, passphrase)
 
@@ -290,6 +308,21 @@ func (c *Client) Deposit(amount *big.Int) (<-chan types.Receipt, <-chan error) {
 			return nil, err
 		} else {
 			glog.Infof("[%v] Submitted tx %v. Deposit %v LPTU", c.account.Address.Hex(), tx.Hash().Hex(), amount)
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) GetBroadcasterDeposit(broadcaster common.Address) (*big.Int, error) {
+	return c.jobsManagerSession.BroadcasterDeposits(broadcaster)
+}
+
+func (c *Client) WithdrawDeposit() (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.jobsManagerSession.Withdraw(); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Withdraw deposit", c.account.Address.Hex(), tx.Hash().Hex())
 			return tx, nil
 		}
 	})
@@ -447,6 +480,16 @@ func (c *Client) CurrentRoundInitialized() (bool, error) {
 	return initialized, nil
 }
 
+func (c *Client) IsRegisteredTranscoder() (bool, error) {
+	status, err := c.bondingManagerSession.TranscoderStatus(c.account.Address)
+	if err != nil {
+		return false, err
+	}
+
+	// TODO: Use enum here for transcoder status?
+	return status == 1, nil
+}
+
 func (c *Client) IsActiveTranscoder() (bool, error) {
 	return c.bondingManagerSession.IsActiveTranscoder(c.account.Address)
 }
@@ -487,6 +530,10 @@ func (c *Client) RoundLength() (*big.Int, error) {
 	return c.roundsManagerSession.RoundLength()
 }
 
+func (c *Client) VerificationRate() (uint64, error) {
+	return c.jobsManagerSession.VerificationRate()
+}
+
 func (c *Client) VerificationPeriod() (*big.Int, error) {
 	return c.jobsManagerSession.VerificationPeriod()
 }
@@ -514,6 +561,7 @@ func (c *Client) GetJob(jobID *big.Int) (*Job, error) {
 	}, nil
 }
 
+//TODO: Go binding has an issue returning [32]byte...
 func (c *Client) GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error) {
 	segmentRange, claimRoot, claimBlock, endVerificationBlock, endSlashingBlock, transcoderTotalStake, status, err := c.jobsManagerSession.GetClaimDetails(jobID, claimID)
 	if err != nil {

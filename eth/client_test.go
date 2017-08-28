@@ -266,6 +266,8 @@ func TestReward(t *testing.T) {
 	var (
 		err error
 
+		gasPrice = big.NewInt(4000000000)
+
 		blockRewardCut  uint8 = 10
 		feeShare        uint8 = 5
 		pricePerSegment       = big.NewInt(10)
@@ -299,22 +301,22 @@ func TestReward(t *testing.T) {
 
 	// SETUP CLIENTS
 
-	transcoderClient, err := NewClient(accounts[0], defaultPassword, datadir, backend, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	transcoderClient, err := NewClient(accounts[0], defaultPassword, datadir, backend, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 
-	delegatorClient0, err := NewClient(accounts[1], defaultPassword, datadir, backend, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	delegatorClient0, err := NewClient(accounts[1], defaultPassword, datadir, backend, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 
-	delegatorClient1, err := NewClient(accounts[2], defaultPassword, datadir, backend, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	delegatorClient1, err := NewClient(accounts[2], defaultPassword, datadir, backend, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 
-	delegatorClient2, err := NewClient(accounts[3], defaultPassword, datadir, backend, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	delegatorClient2, err := NewClient(accounts[3], defaultPassword, datadir, backend, gasPrice, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 	if err != nil {
 		t.Fatalf("Failedd to create client: %v", err)
 	}
@@ -388,6 +390,8 @@ func TestJobClaimVerify(t *testing.T) {
 	var (
 		err error
 
+		gasPrice = big.NewInt(4000000000)
+
 		receiptCh <-chan types.Receipt
 		errCh     <-chan error
 
@@ -425,17 +429,17 @@ func TestJobClaimVerify(t *testing.T) {
 
 	// SETUP CLIENTS
 
-	transcoderClient, err := NewClient(accounts[0], defaultPassword, datadir, backend, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	transcoderClient, err := NewClient(accounts[0], defaultPassword, datadir, backend, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 	if err != nil {
 		t.Fatalf("Failed to create transcoder client: %v", err)
 	}
 
-	delegatorClient, _ := NewClient(accounts[1], defaultPassword, datadir, backend, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	delegatorClient, _ := NewClient(accounts[1], defaultPassword, datadir, backend, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 	if err != nil {
 		t.Fatalf("Failed to create delegator client: %v", err)
 	}
 
-	broadcasterClient, _ := NewClient(accounts[2], defaultPassword, datadir, backend, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	broadcasterClient, _ := NewClient(accounts[2], defaultPassword, datadir, backend, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 	if err != nil {
 		t.Fatalf("Failed to create broadcaster client: %v", err)
 	}
@@ -621,6 +625,8 @@ func TestJobClaimVerify(t *testing.T) {
 
 func TestDeployContract(t *testing.T) {
 	var (
+		gasPrice = big.NewInt(4000000000)
+
 		receiptCh <-chan types.Receipt
 		errCh     <-chan error
 	)
@@ -645,7 +651,7 @@ func TestDeployContract(t *testing.T) {
 	distributeTokens(transactOpts, backend, rpcTimeout, minedTxTimeout, tokenAddr, big.NewInt(1000000), accounts)
 	initProtocol(transactOpts, backend, rpcTimeout, minedTxTimeout, protocolAddr, tokenAddr, bondingManagerAddr, jobsManagerAddr, roundsManagerAddr)
 
-	client0, err := NewClient(accounts[0], defaultPassword, datadir, backend, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	client0, err := NewClient(accounts[0], defaultPassword, datadir, backend, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 
 	b0, _ := client0.TokenBalance()
 	glog.Infof("Token balance for %v: %v", accounts[0].Address.Hex(), b0)
@@ -653,7 +659,7 @@ func TestDeployContract(t *testing.T) {
 	receiptCh, errCh = client0.Transfer(accounts[1].Address, big.NewInt(1000))
 	checkTxReceipt(t, receiptCh, errCh)
 
-	client1, err := NewClient(accounts[1], defaultPassword, datadir, backend, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	client1, err := NewClient(accounts[1], defaultPassword, datadir, backend, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 	b1, _ := client1.TokenBalance()
 	glog.Infof("Token balance for %v: %v", accounts[1].Address.Hex(), b1)
 	b0, _ = client0.TokenBalance()
@@ -664,6 +670,7 @@ func TestTranscoderLoop(t *testing.T) {
 	var (
 		err error
 
+		gasPrice  = big.NewInt(4000000000)
 		receiptCh <-chan types.Receipt
 		errCh     <-chan error
 
@@ -696,12 +703,12 @@ func TestTranscoderLoop(t *testing.T) {
 	distributeTokens(transactOpts, backend, rpcTimeout, minedTxTimeout, tokenAddr, big.NewInt(1000000), accounts)
 	initProtocol(transactOpts, backend, rpcTimeout, minedTxTimeout, protocolAddr, tokenAddr, bondingManagerAddr, jobsManagerAddr, roundsManagerAddr)
 
-	transcoderClient, err := NewClient(accounts[0], defaultPassword, datadir, backend, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	transcoderClient, err := NewClient(accounts[0], defaultPassword, datadir, backend, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 
-	broadcasterClient, err := NewClient(accounts[1], defaultPassword, datadir, backend, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	broadcasterClient, err := NewClient(accounts[1], defaultPassword, datadir, backend, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}

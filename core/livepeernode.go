@@ -4,15 +4,20 @@ Core contains the main functionality of the Livepeer node.
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/ericxtang/m3u8"
 
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
+	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/types"
 	"github.com/livepeer/lpms/stream"
@@ -74,38 +79,30 @@ func (n *LivepeerNode) Start(bootID, bootAddr string) error {
 }
 
 //CreateTranscodeJob creates the on-chain transcode job.
-// func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []types.VideoProfile, price uint64) error {
-// 	if n.Eth == nil {
-// 		glog.Errorf("Cannot create transcode job, no eth client found")
-// 		return ErrNotFound
-// 	}
+func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []types.VideoProfile, price uint64) error {
+	if n.Eth == nil {
+		glog.Errorf("Cannot create transcode job, no eth client found")
+		return ErrNotFound
+	}
 
-// 	//Verify the stream exists(assume it's a local stream)
-// 	if hlsStream := n.StreamDB.GetHLSStream(strmID); hlsStream == nil {
-// 		glog.Errorf("Cannot find stream %v for creating transcode job", strmID)
-// 		return ErrNotFound
-// 	}
+	//Verify the stream exists(assume it's a local stream)
+	if hlsStream := n.StreamDB.GetHLSStream(strmID); hlsStream == nil {
+		glog.Errorf("Cannot find stream %v for creating transcode job", strmID)
+		return ErrNotFound
+	}
 
-// 	//Call eth client to create the job
-// 	tOpt := [32]byte{}
-// 	p := big.NewInt(int64(price))
-// 	count := 0
-// 	for _, p := range profiles {
-// 		count += copy(tOpt[count:], p.Name)
-// 		if count > 32 {
-// 			glog.Errorf("Too many profiles.  Names can best at most 32 bytes")
-// 			return fmt.Errorf("Transcode Job Error")
-// 		}
-// 	}
-// 	tx, err := n.Eth.Job(strmID.String(), tOpt, p)
-// 	if err != nil || tx == nil {
-// 		glog.Errorf("Error creating transcode job: %v", err)
-// 		return err
-// 	}
+	//Call eth client to create the job
+	p := big.NewInt(int64(price))
 
-// 	glog.Infof("Created transcode job: %v", tx)
-// 	return nil
-// }
+	var tOpt bytes.Buffer
+	for _, p := range profiles {
+		tOpt.WriteString(p.Name)
+	}
+
+	n.Eth.Job(strmID.String(), tOpt.String(), p)
+
+	return nil
+}
 
 //TranscodeAndBroadcast transcodes one stream into multiple streams (specified by TranscodeConfig), broadcasts the streams, and returns a list of streamIDs.
 func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm *ClaimManager) ([]StreamID, error) {
@@ -138,12 +135,32 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm *Cla
 	if err != nil {
 		glog.Errorf("Error getting subscriber for stream %v from network: %v", config.StrmID, err)
 	}
+	glog.Infof("Config strm ID: %v", config.StrmID)
+	glog.Infof("Subscriber: %v", sub)
 	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 		if eof {
-			glog.Infof("Stream finished.  Claiming work.")
+			glog.Infof("Stream finished. Claiming work.")
+
 			for _, p := range config.Profiles {
 				cm.Claim(p)
 			}
+
+			return
+		}
+
+		sufficient, err := cm.SufficientBroadcasterDeposit()
+		if err != nil {
+			glog.Errorf("Error checking broadcaster funds: %v", err)
+		}
+
+		if !sufficient {
+			glog.Infof("Broadcaster does not have enough funds. Claiming work.")
+
+			for _, p := range config.Profiles {
+				cm.Claim(p)
+			}
+
+			return
 		}
 
 		//Decode the segment
@@ -178,13 +195,23 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm *Cla
 
 			//Don't do the onchain stuff unless specified
 			if config.PerformOnchainClaim {
-				// cm.AddClaim(int64(seqNo), common.BytesToHash(ss.Seg.Data), common.BytesToHash(tData[i]), ss.Sig, config.Profiles[i])
+				cm.AddReceipt(int64(seqNo), common.BytesToHash(ss.Seg.Data).Hex(), common.BytesToHash(tData[i]).Hex(), ss.Sig, config.Profiles[i])
 			}
 
 		}
 	})
 
 	return resultStrmIDs, nil
+}
+
+func (n *LivepeerNode) BroadcastFinishMsg(strmID string) error {
+	b, err := n.VideoNetwork.GetBroadcaster(strmID)
+	if err != nil {
+		glog.Errorf("Error getting broadcaster from network: %v", err)
+		return err
+	}
+
+	return b.Finish()
 }
 
 //BroadcastToNetwork is called when a new broadcast stream is available.  It lets the network decide how
@@ -225,19 +252,18 @@ func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
 	counter := uint64(0)
 	strm.SetSubscriber(func(strm stream.HLSVideoStream, strmID string, seg *stream.HLSSegment) {
 		//Get segment signature
-		// segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(counter)), DataHash: common.BytesToHash(seg.Data)}).Hash()
-		// var sig []byte
-		// if c, ok := n.Eth.(*eth.Client); ok {
-		// 	sig, err = eth.SignSegmentHash(c, n.EthPassword, segHash.Bytes())
-		// 	if err != nil {
-		// 		glog.Errorf("Error signing segment %v-%v: %v", strm.GetStreamID(), counter, err)
-		// 		return
-		// 	}
-		// }
+		segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(counter)), DataHash: common.BytesToHash(seg.Data).Hex()}).Hash()
+		var sig []byte
+		if c, ok := n.Eth.(*eth.Client); ok {
+			sig, err = c.SignSegmentHash(n.EthPassword, segHash.Bytes())
+			if err != nil {
+				glog.Errorf("Error signing segment %v-%v: %v", strm.GetStreamID(), counter, err)
+				return
+			}
+		}
 
 		//Encode segment into []byte, broadcast it
-		// if ssb, err := SignedSegmentToBytes(SignedSegment{Seg: *seg, Sig: sig}); err == nil {
-		if ssb, err := SignedSegmentToBytes(SignedSegment{Seg: *seg, Sig: nil}); err == nil {
+		if ssb, err := SignedSegmentToBytes(SignedSegment{Seg: *seg, Sig: sig}); err == nil {
 			if err = b.Broadcast(counter, ssb); err != nil {
 				glog.Errorf("Error broadcasting segment to network: %v", err)
 			}
