@@ -11,7 +11,8 @@ import (
 
 //BasicNotifiee gets called during important libp2p events
 type BasicNotifiee struct {
-	monitor *lpmon.Monitor
+	monitor           *lpmon.Monitor
+	disconnectHandler func(pid peer.ID)
 }
 
 func NewBasicNotifiee(mon *lpmon.Monitor) *BasicNotifiee {
@@ -31,13 +32,24 @@ func (bn *BasicNotifiee) ListenClose(n net.Network, addr ma.Multiaddr) {
 // called when a connection opened
 func (bn *BasicNotifiee) Connected(n net.Network, conn net.Conn) {
 	glog.Infof("Notifiee - Connected.  Local: %v - Remote: %v", peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
-	bn.monitor.LogNewConn(peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
+	if bn.monitor != nil {
+		bn.monitor.LogNewConn(peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
+	}
 }
 
 // called when a connection closed
 func (bn *BasicNotifiee) Disconnected(n net.Network, conn net.Conn) {
 	glog.Infof("Notifiee - Disconnected. Local: %v - Remote: %v", peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
-	bn.monitor.RemoveConn(peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
+	if bn.monitor != nil {
+		bn.monitor.RemoveConn(peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
+	}
+	if bn.disconnectHandler != nil {
+		bn.disconnectHandler(conn.RemotePeer())
+	}
+}
+
+func (bn *BasicNotifiee) HandleDisconnect(h func(pid peer.ID)) {
+	bn.disconnectHandler = h
 }
 
 // called when a stream opened

@@ -14,10 +14,10 @@ import (
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 	host "gx/ipfs/QmZy7c24mmkEHpNJndwgsEE3wcVxHd8yB969yTnAJFVw7f/go-libp2p-host"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
-	inet "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
 	swarm "gx/ipfs/QmaijwHnbD4SabGA8C2fN9gchptLvRe2RxqTU5XkjAGBw5/go-libp2p-swarm"
 	bhost "gx/ipfs/QmapADMpK4e5kFGBxC2aHreaDqKP9vmMng5f91MA14Ces9/go-libp2p/p2p/host/basic"
 	rhost "gx/ipfs/QmapADMpK4e5kFGBxC2aHreaDqKP9vmMng5f91MA14Ces9/go-libp2p/p2p/host/routed"
+	record "gx/ipfs/QmbxkgUceEcuSZ4ZdBA3x74VUDSSYjHYmmeEqkjxbtZ6Jg/go-libp2p-record"
 )
 
 type NetworkNode struct {
@@ -28,11 +28,13 @@ type NetworkNode struct {
 }
 
 //NewNode creates a new Livepeerd node.
-func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey, f inet.Notifiee) (*NetworkNode, error) {
+func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey, f *BasicNotifiee) (*NetworkNode, error) {
 	pid, err := peer.IDFromPublicKey(pub)
 	if err != nil {
 		return nil, err
 	}
+
+	streams := make(map[peer.ID]*BasicStream)
 
 	// Create a peerstore
 	store := peerstore.NewPeerstore()
@@ -66,16 +68,35 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey, f inet.Noti
 	basicHost := bhost.New(netwrk, bhost.NATPortMap)
 
 	dht, err := constructDHTRouting(context.Background(), basicHost, ds.NewMapDatastore())
+	if err != nil {
+		glog.Errorf("Error constructing DHT: %v", err)
+		return nil, err
+	}
 	rHost := rhost.Wrap(basicHost, dht)
 
 	glog.Infof("Created node: %v at %v", peer.IDHexEncode(rHost.ID()), rHost.Addrs())
-	return &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, streams: make(map[peer.ID]*BasicStream)}, nil
+	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, streams: streams}
+	f.HandleDisconnect(func(pid peer.ID) {
+		nn.RemoveStream(pid)
+	})
+
+	return nn, nil
 }
 
 func constructDHTRouting(ctx context.Context, host host.Host, dstore ds.Batching) (*kad.IpfsDHT, error) {
 	dhtRouting := kad.NewDHT(ctx, host, dstore)
+
+	dhtRouting.Validator["v"] = &record.ValidChecker{
+		Func: func(string, []byte) error {
+			return nil
+		},
+		Sign: false,
+	}
+	dhtRouting.Selector["v"] = func(_ string, bs [][]byte) (int, error) { return 0, nil }
+
 	if err := dhtRouting.Bootstrap(context.Background()); err != nil {
 		glog.Errorf("Error bootstraping dht: %v", err)
+		return nil, err
 	}
 	return dhtRouting, nil
 }
@@ -83,15 +104,24 @@ func constructDHTRouting(ctx context.Context, host host.Host, dstore ds.Batching
 func (n *NetworkNode) GetStream(pid peer.ID) *BasicStream {
 	strm, ok := n.streams[pid]
 	if !ok {
-		glog.Infof("Creating stream from %v to %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid))
-		ns, err := n.PeerHost.NewStream(context.Background(), pid, Protocol)
-		if err != nil {
-			glog.Errorf("Error creating stream to %v: %v", peer.IDHexEncode(pid), err)
-			return nil
-		}
-		strm = NewBasicStream(ns)
-		n.streams[pid] = strm
+		strm = n.RefreshStream(pid)
 	}
-
 	return strm
+}
+
+func (n *NetworkNode) RefreshStream(pid peer.ID) *BasicStream {
+	// glog.Infof("Creating stream from %v to %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid))
+	ns, err := n.PeerHost.NewStream(context.Background(), pid, Protocol)
+	if err != nil {
+		glog.Errorf("Error creating stream to %v: %v", peer.IDHexEncode(pid), err)
+		return nil
+	}
+	strm := NewBasicStream(ns)
+	n.streams[pid] = strm
+	return strm
+}
+
+func (n *NetworkNode) RemoveStream(pid peer.ID) {
+	// glog.Infof("Removing stream for %v", peer.IDHexEncode(pid))
+	delete(n.streams, pid)
 }
