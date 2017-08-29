@@ -64,13 +64,15 @@ func (w *wizard) broadcast() {
 		}
 		fmt.Printf("StreamID: %v\n", string(id))
 
-		fmt.Printf("Type `q` to stop broadcasting\n")
-		end := w.read()
-		if end == "q" {
-			fmt.Println("Quitting broadcast...")
-			cmd.Process.Kill()
-			time.Sleep(time.Second)
-			return
+		for {
+			fmt.Printf("Type `q` to stop broadcasting\n")
+			end := w.read()
+			if end == "q" {
+				fmt.Println("Quitting broadcast...")
+				cmd.Process.Kill()
+				time.Sleep(time.Second)
+				return
+			}
 		}
 
 	} else {

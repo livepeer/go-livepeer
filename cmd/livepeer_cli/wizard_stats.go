@@ -49,15 +49,15 @@ func httpGet(url string) string {
 }
 
 func (w *wizard) getNodeID() string {
-	return httpGet(fmt.Sprintf("http://localhost:%v/nodeID", w.httpPort))
+	return httpGet(fmt.Sprintf("http://%v:%v/nodeID", w.host, w.httpPort))
 }
 
 func (w *wizard) getNodeAddr() string {
-	return httpGet(fmt.Sprintf("http://localhost:%v/nodeAddrs", w.httpPort))
+	return httpGet(fmt.Sprintf("http://%v:%v/nodeAddrs", w.host, w.httpPort))
 }
 
 func (w *wizard) getProtAddr() string {
-	addr := httpGet(fmt.Sprintf("http://localhost:%v/protocolContractAddr", w.httpPort))
+	addr := httpGet(fmt.Sprintf("http://%v:%v/protocolContractAddr", w.host, w.httpPort))
 	if addr == "" {
 		addr = "Unknown"
 	}
@@ -65,7 +65,7 @@ func (w *wizard) getProtAddr() string {
 }
 
 func (w *wizard) getTokenAddr() string {
-	addr := httpGet(fmt.Sprintf("http://localhost:%v/tokenContractAddr", w.httpPort))
+	addr := httpGet(fmt.Sprintf("http://%v:%v/tokenContractAddr", w.host, w.httpPort))
 	if addr == "" {
 		addr = "Unknown"
 	}
@@ -77,7 +77,7 @@ func (w *wizard) getFaucetAddr() string {
 }
 
 func (w *wizard) getEthAddr() string {
-	addr := httpGet(fmt.Sprintf("http://localhost:%v/ethAddr", w.httpPort))
+	addr := httpGet(fmt.Sprintf("http://%v:%v/ethAddr", w.host, w.httpPort))
 	if addr == "" {
 		addr = "Unknown"
 	}
@@ -97,7 +97,7 @@ func (w *wizard) getJobPrice() string {
 }
 
 func (w *wizard) getIsActiveTranscoder() string {
-	return httpGet(fmt.Sprintf("http://localhost:%v/isActiveTranscoder", w.httpPort))
+	return httpGet(fmt.Sprintf("http://%v:%v/isActiveTranscoder", w.host, w.httpPort))
 }
 
 func (w *wizard) getTranscoderPrice() string {

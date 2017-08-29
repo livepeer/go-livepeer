@@ -27,6 +27,11 @@ func main() {
 			Usage: "local rtmp port",
 			Value: "1935",
 		},
+		cli.StringFlag{
+			Name:  "host",
+			Usage: "host for the Livepeer node",
+			Value: "localhost",
+		},
 		cli.IntFlag{
 			Name:  "loglevel",
 			Value: 4,
@@ -40,9 +45,10 @@ func main() {
 
 		// Start the wizard and relinquish control
 		w := &wizard{
-			endpoint: fmt.Sprintf("http://localhost:%v/status", c.String("http")),
+			endpoint: fmt.Sprintf("http://%v:%v/status", c.String("host"), c.String("http")),
 			rtmpPort: c.String("rtmp"),
 			httpPort: c.String("http"),
+			host:     c.String("host"),
 			in:       bufio.NewReader(os.Stdin),
 		}
 		w.run()
@@ -53,10 +59,10 @@ func main() {
 }
 
 type wizard struct {
-	// conf     config        // Configurations from previous runs
 	endpoint string // Local livepeer node
 	rtmpPort string
 	httpPort string
+	host     string
 	in       *bufio.Reader // Wrapper around stdin to allow reading user input
 }
 
