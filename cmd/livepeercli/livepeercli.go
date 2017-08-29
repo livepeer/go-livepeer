@@ -20,10 +20,12 @@ func main() {
 		cli.StringFlag{
 			Name:  "http",
 			Usage: "local http port",
+			Value: "8935",
 		},
 		cli.StringFlag{
 			Name:  "rtmp",
 			Usage: "local rtmp port",
+			Value: "1935",
 		},
 		cli.IntFlag{
 			Name:  "loglevel",

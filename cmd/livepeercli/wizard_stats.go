@@ -13,9 +13,12 @@ import (
 func (w *wizard) stats(tips bool) {
 	// Observe how the b's and the d's, despite appearing in the
 	// second cell of each line, belong to different columns.
-	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight|tabwriter.Debug)
+	// wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight|tabwriter.Debug)
+	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
 	fmt.Fprintf(wtr, "Node ID: \t%s\n", w.getNodeID())
 	fmt.Fprintf(wtr, "Node Addr: \t%s\n", w.getNodeAddr())
+	fmt.Fprintf(wtr, "RTMP Port: \t%s\n", w.rtmpPort)
+	fmt.Fprintf(wtr, "HTTP Port: \t%s\n", w.httpPort)
 	fmt.Fprintf(wtr, "Protocol Contract Addr: \t%s\n", w.getProtAddr())
 	fmt.Fprintf(wtr, "Token Contract Addr: \t%s\n", w.getTokenAddr())
 	fmt.Fprintf(wtr, "Faucet Contract Addr: \t%s\n", w.getFaucetAddr())
