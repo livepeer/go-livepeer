@@ -61,6 +61,13 @@ type wizard struct {
 }
 
 func (w *wizard) run() {
+	// Make sure there is a local node running
+	_, err := http.Get(w.endpoint)
+	if err != nil {
+		log.Error(fmt.Sprintf("Cannot find local node. Is your node running on http:%v and rtmp:%v?", w.httpPort, w.rtmpPort))
+		return
+	}
+
 	fmt.Println("+-----------------------------------------------------------+")
 	fmt.Println("| Welcome to livepeer-cli, your Livepeer command line tool  |")
 	fmt.Println("|                                                           |")
@@ -70,13 +77,6 @@ func (w *wizard) run() {
 	fmt.Println("|                                                           |")
 	fmt.Println("+-----------------------------------------------------------+")
 	fmt.Println()
-
-	// Make sure there is a local node running
-	_, err := http.Get(w.endpoint)
-	if err != nil {
-		log.Error("Cannot find local node")
-		return
-	}
 
 	w.stats(false)
 	// Basics done, loop ad infinitum about what to do
