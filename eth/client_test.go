@@ -316,7 +316,7 @@ func TestReward(t *testing.T) {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 
-	delegatorClient2, err := NewClient(accounts[3], defaultPassword, datadir, backend, gasPrice, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
+	delegatorClient2, err := NewClient(accounts[3], defaultPassword, datadir, backend, gasPrice, protocolAddr, tokenAddr, rpcTimeout, eventTimeout)
 	if err != nil {
 		t.Fatalf("Failedd to create client: %v", err)
 	}

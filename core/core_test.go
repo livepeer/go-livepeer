@@ -131,7 +131,7 @@ func (s *StubSubscriber) Unsubscribe() error { return nil }
 
 func TestTranscode(t *testing.T) {
 	//Set up the node
-	n, _ := NewLivepeerNode(nil, &StubVideoNetwork{T: t}, ".tmp")
+	n, _ := NewLivepeerNode(nil, &StubVideoNetwork{T: t}, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, ".tmp")
 
 	//Call transcode
 	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: "strmID", Profiles: []types.VideoProfile{types.P144p30fps16x9, types.P240p30fps16x9}}, nil)
@@ -306,7 +306,7 @@ func TestNotifyBroadcaster(t *testing.T) {
 		return
 	}
 	seth := &eth.StubClient{}
-	n, _ := NewLivepeerNode(seth, nw, "./tmp")
+	n, _ := NewLivepeerNode(seth, nw, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{}, "./tmp")
 	sn := &StubVideoNetwork{}
 	n.VideoNetwork = sn
 

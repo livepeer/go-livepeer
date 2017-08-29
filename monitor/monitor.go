@@ -15,7 +15,7 @@ type Monitor struct {
 var monitor *Monitor
 var Endpoint string
 
-const PostFreq = time.Second * 30
+const PostFreq = time.Second * 10
 
 func Instance() *Monitor {
 	if monitor == nil {
