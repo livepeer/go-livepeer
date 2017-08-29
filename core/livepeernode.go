@@ -44,20 +44,23 @@ type NodeID string
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 	Identity     NodeID
+	Addrs        []string
 	VideoNetwork net.VideoNetwork
 	StreamDB     *StreamDB
 	Eth          eth.LivepeerEthClient
+	EthAccount   string
 	EthPassword  string
 	workDir      string
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
-func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, wd string) (*LivepeerNode, error) {
+func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID, addrs []string, wd string) (*LivepeerNode, error) {
 	if vn == nil {
 		glog.Errorf("Cannot create a LivepeerNode without a VideoNetwork")
 		return nil, ErrLivepeerNode
 	}
-	return &LivepeerNode{StreamDB: NewStreamDB(vn.GetNodeID()), VideoNetwork: vn, Identity: NodeID(vn.GetNodeID()), Eth: e, workDir: wd}, nil
+
+	return &LivepeerNode{StreamDB: NewStreamDB(vn.GetNodeID()), VideoNetwork: vn, Identity: nodeId, Addrs: addrs, Eth: e, workDir: wd}, nil
 }
 
 //Start sets up the Livepeer protocol and connects the node to the network
@@ -139,28 +142,32 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm *Cla
 	glog.Infof("Subscriber: %v", sub)
 	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 		if eof {
-			glog.Infof("Stream finished. Claiming work.")
+			if cm != nil {
+				glog.Infof("Stream finished. Claiming work.")
 
-			for _, p := range config.Profiles {
-				cm.Claim(p)
+				for _, p := range config.Profiles {
+					cm.Claim(p)
+				}
 			}
 
 			return
 		}
 
-		sufficient, err := cm.SufficientBroadcasterDeposit()
-		if err != nil {
-			glog.Errorf("Error checking broadcaster funds: %v", err)
-		}
-
-		if !sufficient {
-			glog.Infof("Broadcaster does not have enough funds. Claiming work.")
-
-			for _, p := range config.Profiles {
-				cm.Claim(p)
+		if cm != nil {
+			sufficient, err := cm.SufficientBroadcasterDeposit()
+			if err != nil {
+				glog.Errorf("Error checking broadcaster funds: %v", err)
 			}
 
-			return
+			if !sufficient {
+				glog.Infof("Broadcaster does not have enough funds. Claiming work.")
+
+				for _, p := range config.Profiles {
+					cm.Claim(p)
+				}
+
+				return
+			}
 		}
 
 		//Decode the segment
@@ -194,7 +201,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm *Cla
 			}
 
 			//Don't do the onchain stuff unless specified
-			if config.PerformOnchainClaim {
+			if cm != nil && config.PerformOnchainClaim {
 				cm.AddReceipt(int64(seqNo), common.BytesToHash(ss.Seg.Data).Hex(), common.BytesToHash(tData[i]).Hex(), ss.Sig, config.Profiles[i])
 			}
 

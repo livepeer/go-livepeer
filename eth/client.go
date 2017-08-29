@@ -73,6 +73,11 @@ type LivepeerEthClient interface {
 	LastRewardRound() (*big.Int, error)
 	IsRegisteredTranscoder() (bool, error)
 	TranscoderBond() (*big.Int, error)
+	GetProtocolAddr() string
+	GetTokenAddr() string
+	GetBondingManagerAddr() string
+	GetJobsManagerAddr() string
+	GetRoundsManagerAddr() string
 }
 
 type Client struct {
@@ -705,4 +710,24 @@ func (c *Client) ApproveAndTransact(toAddr common.Address, amount *big.Int, txFu
 	}()
 
 	return outRes, outErr
+}
+
+func (c *Client) GetProtocolAddr() string {
+	return c.protocolAddr.Hex()
+}
+
+func (c *Client) GetTokenAddr() string {
+	return c.tokenAddr.Hex()
+}
+
+func (c *Client) GetJobsManagerAddr() string {
+	return c.jobsManagerAddr.Hex()
+}
+
+func (c *Client) GetRoundsManagerAddr() string {
+	return c.roundsManagerAddr.Hex()
+}
+
+func (c *Client) GetBondingManagerAddr() string {
+	return c.bondingManagerAddr.Hex()
 }

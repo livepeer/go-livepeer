@@ -151,13 +151,17 @@ func main() {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
 	}
+	addrs := make([]string, 0)
+	for _, addr := range node.PeerHost.Addrs() {
+		addrs = append(addrs, addr.String())
+	}
 	nw, err := bnet.NewBasicVideoNetwork(node)
 	if err != nil {
 		glog.Errorf("Cannot create network node: %v", err)
 		return
 	}
 
-	n, err := core.NewLivepeerNode(nil, nw, fmt.Sprintf("%v/.tmp", *datadir))
+	n, err := core.NewLivepeerNode(nil, nw, core.NodeID(nw.GetNodeID()), addrs, fmt.Sprintf("%v/.tmp", *datadir))
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
@@ -211,6 +215,7 @@ func main() {
 			return
 		}
 		n.Eth = client
+		n.EthAccount = *ethAccountAddr
 		n.EthPassword = *ethPassword
 
 		if *deposit > 0 {

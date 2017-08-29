@@ -15,6 +15,20 @@ import (
 
 func (w *wizard) broadcast() {
 	if runtime.GOOS == "darwin" {
+		fmt.Println()
+		if w.rtmpPort != "" && w.httpPort != "" {
+			fmt.Printf("Current RTMP setting: http://localhost:%v/streams\n", w.rtmpPort)
+			fmt.Printf("Current HTTP setting: http://localhost:%v/streams\n", w.httpPort)
+			fmt.Println("Keep it? (y/n)")
+			if w.readDefaultString("y") != "y" {
+				fmt.Printf("New rtmp port? (default 1935)")
+				w.rtmpPort = w.readDefaultString("1935")
+				fmt.Printf("New http port? (default 8935)")
+				w.httpPort = w.readDefaultString("8935")
+				fmt.Printf("New RTMP setting: http://localhost:%v/streams\n", w.rtmpPort)
+				fmt.Printf("New HTTP setting: http://localhost:%v/streams\n", w.httpPort)
+			}
+		}
 		cmd := exec.Command("ffmpeg", "-f", "avfoundation", "-framerate", "30", "-pixel_format", "uyvy422", "-i", "0:0", "-vcodec", "libx264", "-tune", "zerolatency", "-b", "1000k", "-x264-params", "keyint=60:min-keyint=60", "-acodec", "aac", "-ac", "1", "-b:a", "96k", "-f", "flv", fmt.Sprintf("rtmp://localhost:%v/movie", w.rtmpPort))
 
 		var out bytes.Buffer
@@ -28,34 +42,35 @@ func (w *wizard) broadcast() {
 		}
 
 		fmt.Printf("Now broadcasting - %v%v\n", out.String(), stderr.String())
+		go func() {
+			if err = cmd.Wait(); err != nil {
+				// glog.Errorf("Error running broadcast: %v\n%v", err, stderr.String())
+				return
+			}
+		}()
 
 		time.Sleep(3 * time.Second)
 		resp, err := http.Get(fmt.Sprintf("http://localhost:%v/streamID", w.httpPort))
 		if err != nil {
 			glog.Errorf("Error getting stream ID: %v", err)
-		} else {
-			defer resp.Body.Close()
-			id, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				glog.Errorf("Error reading stream ID: %v", err)
-			}
-			fmt.Printf("StreamID: %v\n", string(id))
+			return
 		}
 
-		fmt.Printf("Type `q` to stop broadcasting\n")
-		go cmd.Wait()
-		// if err = cmd.Start(); err != nil {
-		// 	glog.Errorf("Error running broadcast: %v\n%v", err, stderr.String())
-		// 	return
-		// }
+		defer resp.Body.Close()
+		id, err := ioutil.ReadAll(resp.Body)
+		if err != nil || string(id) == "" {
+			glog.Errorf("Error reading stream ID: %v", err)
+			return
+		}
+		fmt.Printf("StreamID: %v\n", string(id))
 
-		for {
-			end := w.read()
-			if end == "q" {
-				fmt.Println("Quitting broadcast...")
-				cmd.Process.Kill()
-				return
-			}
+		fmt.Printf("Type `q` to stop broadcasting\n")
+		end := w.read()
+		if end == "q" {
+			fmt.Println("Quitting broadcast...")
+			cmd.Process.Kill()
+			time.Sleep(time.Second)
+			return
 		}
 
 	} else {

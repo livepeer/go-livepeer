@@ -36,9 +36,9 @@ func setupServer() *LivepeerServer {
 			glog.Errorf("Cannot create network node: %v", err)
 			return nil
 		}
-		n, _ := core.NewLivepeerNode(nil, nw, "./tmp")
+		n, _ := core.NewLivepeerNode(nil, nw, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, "./tmp")
 		S = NewLivepeerServer("1935", "8080", "", n)
-		go S.StartMediaServer(context.Background())
+		go S.StartMediaServer(context.Background(), 0, "")
 		go S.StartWebserver()
 	}
 	return S
@@ -153,7 +153,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	s := setupServer()
 	s.LivepeerNode.VideoNetwork = &StubNetwork{}
 	s.RTMPSegmenter = &StubSegmenter{}
-	handler := gotRTMPStreamHandler(s)
+	handler := gotRTMPStreamHandler(s, 0, "")
 
 	url, _ := url.Parse("http://localhost/stream/test")
 	strm := stream.NewBasicRTMPVideoStream("strmID")

@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/livepeer/lpms/stream"
 
@@ -222,4 +223,53 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write([]byte(fmt.Sprintf("\n\nVideoNetwork: %v", s.LivepeerNode.VideoNetwork)))
 	})
 
+	http.HandleFunc("/nodeID", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(s.LivepeerNode.VideoNetwork.GetNodeID()))
+	})
+
+	http.HandleFunc("/nodeAddrs", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(strings.Join(s.LivepeerNode.Addrs, ", ")))
+	})
+
+	http.HandleFunc("/protocolContractAddr", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			w.Write([]byte(s.LivepeerNode.Eth.GetProtocolAddr()))
+		}
+	})
+
+	http.HandleFunc("/tokenContractAddr", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			w.Write([]byte(s.LivepeerNode.Eth.GetTokenAddr()))
+		}
+	})
+
+	http.HandleFunc("/ethAddr", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			w.Write([]byte(s.LivepeerNode.EthAccount))
+		}
+	})
+
+	http.HandleFunc("/isActiveTranscoder", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			reg, err := s.LivepeerNode.Eth.IsRegisteredTranscoder()
+			if err != nil {
+				w.Write([]byte("False"))
+				return
+			}
+			active, err := s.LivepeerNode.Eth.IsActiveTranscoder()
+			if err != nil {
+				w.Write([]byte("False"))
+				return
+			}
+
+			if reg && active {
+				w.Write([]byte("True"))
+			} else {
+				w.Write([]byte("False"))
+			}
+			return
+		}
+
+		w.Write([]byte("False"))
+	})
 }
