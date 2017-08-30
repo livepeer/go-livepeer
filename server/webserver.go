@@ -191,8 +191,12 @@ func (s *LivepeerServer) StartWebserver() {
 
 	http.HandleFunc("/deposit", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
+			}
 			//Parse amount
-			amountStr := r.URL.Query().Get("amount")
+			amountStr := r.FormValue("amount")
 			if amountStr == "" {
 				glog.Errorf("Need to provide amount")
 				return
