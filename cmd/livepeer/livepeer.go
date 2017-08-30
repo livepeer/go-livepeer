@@ -43,8 +43,7 @@ import (
 
 var ErrKeygen = errors.New("ErrKeygen")
 var EthRpcTimeout = 10 * time.Second
-var EthEventTimeout = 30 * time.Second
-var EthMinedTxTimeout = 60 * time.Second
+var EthEventTimeout = 120 * time.Second
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -80,9 +79,8 @@ func main() {
 	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpdata", usr.HomeDir), "data directory")
-	ethDatadir := flag.String("ethDatadir", fmt.Sprintf("%v/.lpTest", usr.HomeDir), "geth data directory")
-	bootID := flag.String("bootID", "12208a4eb428aa57a74ef0593612adb88077c75c71ad07c3c26e4e7a8d4860083b01", "Bootstrap node ID")
-	bootAddr := flag.String("bootAddr", "/ip4/52.15.174.204/tcp/15000", "Bootstrap node addr")
+	bootID := flag.String("bootID", "", "Bootstrap node ID")
+	bootAddr := flag.String("bootAddr", "", "Bootstrap node addr")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	blockRewardCut := flag.Int("blockRewardCut", 10, "Block reward cut value for a transcoder")
@@ -94,7 +92,8 @@ func main() {
 	newEthAccount := flag.Bool("newEthAccount", false, "Create an eth account")
 	ethPassword := flag.String("ethPassword", "", "New Eth account password")
 	ethAccountAddr := flag.String("ethAccountAddr", "", "Existing Eth account address")
-	gethipc := flag.String("gethipc", "", "Geth ipc file location")
+	ethDatadir := flag.String("ethDatadir", fmt.Sprintf("%v/.lpTest", usr.HomeDir), "geth data directory")
+	testnet := flag.Bool("testnet", false, "Set to true to connect to testnet")
 	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
 	tokenAddr := flag.String("tokenAddr", "", "Token smart contract address")
 	faucetAddr := flag.String("faucetAddr", "", "Token faucet smart contract address")
@@ -104,14 +103,9 @@ func main() {
 
 	flag.Parse()
 
-	if *port == 0 {
-		glog.Fatalf("Please provide port")
-	}
-	if *httpPort == "" {
-		glog.Fatalf("Please provide http port")
-	}
-	if *rtmpPort == "" {
-		glog.Fatalf("Please provide rtmp port")
+	if *testnet {
+		*bootID = "12208a4eb428aa57a74ef0593612adb88077c75c71ad07c3c26e4e7a8d4860083b01"
+		*bootAddr = "/ip4/52.15.174.204/tcp/15000"
 	}
 
 	//Make sure datadir is present
@@ -182,8 +176,34 @@ func main() {
 		}
 	}
 
+	var gethCmd *exec.Cmd
 	//Set up ethereum-related stuff
-	if *gethipc != "" {
+	if *ethDatadir != "" {
+		gethipc := filepath.Join(filepath.Join(*ethDatadir, "geth.ipc"))
+		//If getipc file is not there, start the geth node
+		if _, err := os.Stat(gethipc); os.IsNotExist(err) {
+			//Set up geth params depending on network, invoke geth
+			if *testnet {
+				gethCmd = exec.Command("geth", "--rpc", "--datadir", *ethDatadir, "--bootnodes=enode://a1bd18a737acef008f94857654cfb2470124d1dc826b6248cea0331a7ca82b36d2389566e3aa0a1bc9a5c3c34a61f47601a6cff5279d829fcc60cb632ee88bad@13.58.149.151:30303") //timeout in 3 mins
+				err = gethCmd.Start()
+				if err != nil {
+					glog.Infof("Couldn't start geth: %v", err)
+					return
+				}
+				defer gethCmd.Process.Kill()
+				go func() {
+					err = gethCmd.Wait()
+					if err != nil {
+						glog.Infof("Couldn't start geth: %v", err)
+						os.Exit(1)
+					}
+				}()
+			} else {
+				glog.Errorf("Cannot connect to product network yet.")
+				return
+			}
+		}
+
 		var backend *ethclient.Client
 		var acct accounts.Account
 
@@ -201,10 +221,23 @@ func main() {
 				return
 			}
 
-			glog.Infof("Found Eth account: %v", acct.Address.Hex())
+			glog.V(4).Infof("Found Eth account: %v", acct.Address.Hex())
 		}
-		glog.Infof("Connecting to geth @ %v", *gethipc)
-		backend, err = ethclient.Dial(*gethipc)
+
+		//Wait for gethipc
+		if _, err := os.Stat(gethipc); os.IsNotExist(err) {
+			start := time.Now()
+			glog.V(0).Infof("Waiting to start go-ethereum")
+			for time.Since(start) < time.Second*5 {
+				if _, err := os.Stat(gethipc); os.IsNotExist(err) {
+					time.Sleep(time.Millisecond * 500)
+				} else {
+					continue
+				}
+			}
+		}
+
+		backend, err = ethclient.Dial(gethipc)
 		if err != nil {
 			glog.Errorf("Failed to connect to Ethereum client: %v", err)
 			return
@@ -220,7 +253,7 @@ func main() {
 		n.EthPassword = *ethPassword
 
 		if *deposit > 0 {
-			glog.Infof("You started your node with the deposit amount set to %v tokens. Would you like to deposit this amount? (y/n)", *deposit)
+			glog.V(0).Infof("You started your node with the deposit amount set to %v tokens. Would you like to deposit this amount? (y/n)", *deposit)
 
 			var resp string
 			_, err := fmt.Scanf("%s", &resp)
@@ -305,6 +338,7 @@ func main() {
 		return
 	case sig := <-c:
 		glog.Infof("Exiting Livepeer: %v", sig)
+		time.Sleep(time.Millisecond * 500) //Give time for other processes to shut down completely
 	}
 }
 
