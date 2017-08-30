@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/golang/glog"
+	ipfsApi "github.com/ipfs/go-ipfs-api"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
@@ -49,6 +50,7 @@ type LivepeerNode struct {
 	Eth          eth.LivepeerEthClient
 	EthPassword  string
 	workDir      string
+	Ipfs         *ipfsApi.Shell
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
@@ -195,7 +197,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm *Cla
 
 			//Don't do the onchain stuff unless specified
 			if config.PerformOnchainClaim {
-				cm.AddReceipt(int64(seqNo), common.BytesToHash(ss.Seg.Data).Hex(), common.BytesToHash(tData[i]).Hex(), ss.Sig, config.Profiles[i])
+				cm.AddReceipt(int64(seqNo), ss.Seg.Data, common.BytesToHash(tData[i]).Hex(), ss.Sig, config.Profiles[i])
 			}
 
 		}
@@ -252,7 +254,13 @@ func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
 	counter := uint64(0)
 	strm.SetSubscriber(func(strm stream.HLSVideoStream, strmID string, seg *stream.HLSSegment) {
 		//Get segment signature
-		segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(counter)), DataHash: common.BytesToHash(seg.Data).Hex()}).Hash()
+		dataHash, err := n.Ipfs.AddOnlyHash(bytes.NewReader(seg.Data))
+		if err != nil {
+			glog.Errorf("Error getting IPFS hash of segment data: %v", err)
+			return
+		}
+
+		segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(counter)), DataHash: dataHash}).Hash()
 		var sig []byte
 		if c, ok := n.Eth.(*eth.Client); ok {
 			sig, err = c.SignSegmentHash(n.EthPassword, segHash.Bytes())

@@ -1,14 +1,17 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	ipfsApi "github.com/ipfs/go-ipfs-api"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/types"
@@ -19,6 +22,7 @@ var ErrClaim = errors.New("ErrClaim")
 //ClaimManager manages the claim process for a Livepeer transcoder.  Check the Livepeer protocol for more details.
 type ClaimManager struct {
 	client eth.LivepeerEthClient
+	ipfs   *ipfsApi.Shell
 
 	strmID   string
 	jobID    *big.Int
@@ -27,6 +31,7 @@ type ClaimManager struct {
 
 	seqNos        [][]int64
 	receiptHashes [][]common.Hash
+	segData       [][][]byte
 	dataHashes    [][]string
 	tDataHashes   [][]string
 	bSigs         [][][]byte
@@ -38,9 +43,10 @@ type ClaimManager struct {
 }
 
 //NewClaimManager creates a new claim manager.
-func NewClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []types.VideoProfile, c eth.LivepeerEthClient) *ClaimManager {
+func NewClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []types.VideoProfile, c eth.LivepeerEthClient, ipfs *ipfsApi.Shell) *ClaimManager {
 	seqNos := make([][]int64, len(p), len(p))
 	rHashes := make([][]common.Hash, len(p), len(p))
+	sd := make([][][]byte, len(p), len(p))
 	dHashes := make([][]string, len(p), len(p))
 	tHashes := make([][]string, len(p), len(p))
 	sigs := make([][][]byte, len(p), len(p))
@@ -51,6 +57,8 @@ func NewClaimManager(sid string, jid *big.Int, broadcaster common.Address, price
 		seqNos[i] = sNo
 		rh := make([]common.Hash, 0)
 		rHashes[i] = rh
+		d := make([][]byte, 0)
+		sd[i] = d
 		dh := make([]string, 0)
 		dHashes[i] = dh
 		th := make([]string, 0)
@@ -60,11 +68,17 @@ func NewClaimManager(sid string, jid *big.Int, broadcaster common.Address, price
 		pLookup[p[i]] = i
 	}
 
-	return &ClaimManager{client: c, strmID: sid, jobID: jid, cost: big.NewInt(0), broadcasterAddr: broadcaster, pricePerSegment: pricePerSegment, seqNos: seqNos, receiptHashes: rHashes, dataHashes: dHashes, tDataHashes: tHashes, bSigs: sigs, profiles: p, pLookup: pLookup}
+	return &ClaimManager{client: c, ipfs: ipfs, strmID: sid, jobID: jid, cost: big.NewInt(0), broadcasterAddr: broadcaster, pricePerSegment: pricePerSegment, seqNos: seqNos, receiptHashes: rHashes, segData: sd, dataHashes: dHashes, tDataHashes: tHashes, bSigs: sigs, profiles: p, pLookup: pLookup}
 }
 
 //AddClaim adds a claim for a given video segment.
-func (c *ClaimManager) AddReceipt(seqNo int64, dataHash string, tDataHash string, bSig []byte, profile types.VideoProfile) {
+func (c *ClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash string, bSig []byte, profile types.VideoProfile) {
+	dataHash, err := c.ipfs.AddOnlyHash(bytes.NewReader(data))
+	if err != nil {
+		glog.Errorf("Error getting IPFS hash for segment data: %v", err)
+		return
+	}
+
 	receipt := &ethTypes.TranscodeReceipt{
 		StreamID:              c.strmID,
 		SegmentSequenceNumber: big.NewInt(seqNo),
@@ -87,6 +101,7 @@ func (c *ClaimManager) AddReceipt(seqNo int64, dataHash string, tDataHash string
 
 	c.seqNos[pi] = append(c.seqNos[pi], seqNo)
 	c.receiptHashes[pi] = append(c.receiptHashes[pi], receipt.Hash())
+	c.segData[pi] = append(c.segData[pi], data)
 	c.dataHashes[pi] = append(c.dataHashes[pi], dataHash)
 	c.tDataHashes[pi] = append(c.tDataHashes[pi], tDataHash)
 	c.bSigs[pi] = append(c.bSigs[pi], bSig)
@@ -121,16 +136,16 @@ func (c *ClaimManager) Claim(p types.VideoProfile) error {
 	if len(c.seqNos[pi]) == 0 {
 		glog.Infof("No segments to claim for %v", pi)
 	} else {
-		go claimVerifyDistribute(c.client, c.jobID, c.seqNos[pi], c.dataHashes[pi], c.receiptHashes[pi], c.tDataHashes[pi], c.bSigs[pi])
+		go claimVerifyDistribute(c.client, c.ipfs, c.jobID, c.seqNos[pi], c.segData[pi], c.dataHashes[pi], c.receiptHashes[pi], c.tDataHashes[pi], c.bSigs[pi])
 	}
 
 	return nil
 }
 
 //TODO: Can't just check for empty - need to check for seq No...
-func claimVerifyDistribute(client eth.LivepeerEthClient, jid *big.Int, seqNos []int64, dHashes []string, rHashes []common.Hash, tHashes []string, sigs [][]byte) {
+func claimVerifyDistribute(client eth.LivepeerEthClient, ipfs *ipfsApi.Shell, jid *big.Int, seqNos []int64, segData [][]byte, dHashes []string, rHashes []common.Hash, tHashes []string, sigs [][]byte) {
 	claimLen := len(seqNos)
-	if len(dHashes) != claimLen || len(rHashes) != claimLen || len(tHashes) != claimLen || len(sigs) != claimLen {
+	if len(segData) != claimLen || len(dHashes) != claimLen || len(rHashes) != claimLen || len(tHashes) != claimLen || len(sigs) != claimLen {
 		glog.Errorf("Claim data length doesn't match")
 		return
 	}
@@ -169,7 +184,7 @@ func claimVerifyDistribute(client eth.LivepeerEthClient, jid *big.Int, seqNos []
 				return
 			}
 
-			verify(client, jid, big.NewInt(int64(idx)), dHashes[startIdx:endIdx+1], tHashes[startIdx:endIdx+1], sigs[startIdx:endIdx+1], proofs, r[0], r[1], int64(bNum), bHash)
+			verify(client, ipfs, jid, big.NewInt(int64(idx)), segData[startIdx:endIdx+1], dHashes[startIdx:endIdx+1], tHashes[startIdx:endIdx+1], sigs[startIdx:endIdx+1], proofs, r[0], r[1], int64(bNum), bHash)
 		case err := <-errCh:
 			glog.Errorf("Error claiming work: %v", err)
 		}
@@ -178,9 +193,9 @@ func claimVerifyDistribute(client eth.LivepeerEthClient, jid *big.Int, seqNos []
 	}
 }
 
-func verify(client eth.LivepeerEthClient, jid *big.Int, cid *big.Int, dataHashes []string, tHashes []string, sigs [][]byte, proofs []*ethTypes.MerkleProof, start, end int64, bNum int64, bHash common.Hash) {
+func verify(client eth.LivepeerEthClient, ipfs *ipfsApi.Shell, jid *big.Int, cid *big.Int, segData [][]byte, dataHashes []string, tHashes []string, sigs [][]byte, proofs []*ethTypes.MerkleProof, start, end int64, bNum int64, bHash common.Hash) {
 	num := end - start + 1
-	if len(dataHashes) != int(num) || len(tHashes) != int(num) || len(sigs) != int(num) || len(proofs) != int(num) {
+	if len(segData) != int(num) || len(dataHashes) != int(num) || len(tHashes) != int(num) || len(sigs) != int(num) || len(proofs) != int(num) {
 		glog.Errorf("Wrong input data length in verify: dHashes(%v), tHashes(%v), sigs(%v), proofs(%v)", len(dataHashes), len(tHashes), len(sigs), len(proofs))
 	}
 
@@ -194,6 +209,20 @@ func verify(client eth.LivepeerEthClient, jid *big.Int, cid *big.Int, dataHashes
 	for i := 0; i < len(dataHashes); i++ {
 		if shouldVerifySegment(start+int64(i), start, end, int64(bNum), bHash, int64(verifyRate)) {
 			glog.Infof("Should verify seg no %v", start+int64(i))
+
+			//Upload segment data to ipfs
+			ipfsHash, err := ipfs.Add(bytes.NewReader(segData[i]))
+			if err != nil {
+				glog.Errorf("Error uploading segment data to IPFS: %v", err)
+				continue
+			}
+			if strings.Compare(ipfsHash, dataHashes[i]) != 0 {
+				glog.Errorf("IPFS hash of uploaded segment data does not match previous hash")
+				continue
+			}
+
+			glog.Infof("Uploaded seg no %v to IPFS with hash %v", start+int64(i), ipfsHash)
+
 			//Call verify
 			resCh, errCh := client.Verify(jid, cid, big.NewInt(start+int64(i)), dataHashes[i], tHashes[i], sigs[i], proofs[i].Bytes())
 			select {

@@ -32,9 +32,11 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/facebookgo/pidfile"
 	"github.com/golang/glog"
+	ipfsApi "github.com/ipfs/go-ipfs-api"
 	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	ipfsd "github.com/livepeer/go-livepeer/ipfs"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
@@ -100,6 +102,9 @@ func main() {
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
+	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
+	ipfsGatewayPort := flag.Int("ipfsGatewayPort", 8080, "IPFS gateway port")
+	ipfsApiPort := flag.Int("ipfsApiPort", 5001, "IPFS api port")
 
 	flag.Parse()
 
@@ -176,6 +181,24 @@ func main() {
 			return
 		}
 	}
+
+	ipfsEc := make(chan error)
+	ipfsCtx, ipfsCancel := context.WithCancel(context.Background())
+	defer ipfsCancel()
+
+	go func() {
+		ipfsEc <- startIpfs(ipfsCtx, *ipfsPath, *ipfsGatewayPort, *ipfsApiPort)
+	}()
+
+	time.Sleep(3 * time.Second)
+
+	ipfs := ipfsApi.NewShell(fmt.Sprintf("localhost:%v", *ipfsApiPort))
+	if ipfs == nil {
+		glog.Errorf("Error connecting to IPFS")
+		return
+	}
+
+	n.Ipfs = ipfs
 
 	//Set up ethereum-related stuff
 	if *gethipc != "" {
@@ -281,6 +304,8 @@ func main() {
 	s := server.NewLivepeerServer(*rtmpPort, *httpPort, "", n)
 	ec := make(chan error)
 	msCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	go func() {
 		s.StartWebserver()
 		ec <- s.StartMediaServer(msCtx, *maxPricePerSegment, *transcodingOptions)
@@ -291,14 +316,16 @@ func main() {
 	select {
 	case err := <-ec:
 		glog.Infof("Error from media server: %v", err)
-		cancel()
+		return
+	case err := <-ipfsEc:
+		glog.Infof("Error from IPFS: %v", err)
 		return
 	case <-msCtx.Done():
 		glog.Infof("MediaServer Done()")
-		cancel()
 		return
 	case sig := <-c:
 		glog.Infof("Exiting Livepeer: %v", sig)
+		return
 	}
 }
 
@@ -410,6 +437,30 @@ func getEthAccount(datadir string, addr string) (accounts.Account, error) {
 	return accts[0], nil
 }
 
+func startIpfs(ctx context.Context, ipfsPath string, gatewayPort int, apiPort int) error {
+	// Set IPFS config path
+	if err := ipfsd.ConfigIpfsPath(ipfsPath); err != nil {
+		return err
+	}
+
+	// Configure gateway
+	if err := ipfsd.ConfigIpfsGateway(ipfsPath, gatewayPort); err != nil {
+		return err
+	}
+
+	// Configure api
+	if err := ipfsd.ConfigIpfsApi(ipfsPath, apiPort); err != nil {
+		return err
+	}
+
+	// Start daemon
+	if err := ipfsd.StartIpfsDaemon(ctx, ipfsPath); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func registerAndSetupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log, bondAmount *big.Int, blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) error {
 	if err := eth.CheckRoundAndInit(n.Eth); err != nil {
 		glog.Errorf("Error checking and initializing round: %v", err)
@@ -498,7 +549,7 @@ func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) error {
 				glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", jid, job.StreamId, job.TranscodingOptions, config)
 
 				//Do The Transcoding
-				cm := core.NewClaimManager(job.StreamId, jid, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth)
+				cm := core.NewClaimManager(job.StreamId, jid, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth, n.Ipfs)
 				strmIDs, err := n.TranscodeAndBroadcast(config, cm)
 				if err != nil {
 					glog.Errorf("Transcode Error: %v", err)
