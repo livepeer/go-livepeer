@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -44,4 +45,25 @@ func (w *wizard) readDefaultString(def string) string {
 		return text
 	}
 	return def
+}
+
+// readInt reads a single line from stdin, trimming if from spaces, enforcing it
+// to parse into an integer.
+func (w *wizard) readInt() int {
+	for {
+		fmt.Printf("> ")
+		text, err := w.in.ReadString('\n')
+		if err != nil {
+			log.Crit("Failed to read user input", "err", err)
+		}
+		if text = strings.TrimSpace(text); text == "" {
+			continue
+		}
+		val, err := strconv.Atoi(strings.TrimSpace(text))
+		if err != nil {
+			log.Error("Invalid input, expected integer", "err", err)
+			continue
+		}
+		return val
+	}
 }
