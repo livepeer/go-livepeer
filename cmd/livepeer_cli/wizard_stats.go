@@ -34,7 +34,9 @@ func (w *wizard) stats(tips bool) {
 	fmt.Fprintf(wtr, "Transcoder Block Reward Cut: \t%s\n", w.getTranscoderBlockRewardCut())
 	fmt.Fprintf(wtr, "Transcoder Fee Share: \t%s\n", w.getTranscoderFeeShare())
 	fmt.Fprintf(wtr, "Transcoder Price: \t%s\n", w.getTranscoderPrice())
+	fmt.Fprintf(wtr, "Transcoder Bond: \t%s\n", w.getTranscoderBond())
 	fmt.Fprintf(wtr, "Transcoder Stake: \t%s\n", w.getTranscoderStake())
+	fmt.Fprintf(wtr, "Delegator Stake: \t%s\n", w.getDelegatorStake())
 	wtr.Flush()
 }
 
@@ -119,8 +121,24 @@ func (w *wizard) getDeposit() string {
 	return e
 }
 
+func (w *wizard) getTranscoderBond() string {
+	e := httpGet(fmt.Sprintf("http://%v:%v/transcoderBond", w.host, w.httpPort))
+	if e == "" {
+		e = "Unknown"
+	}
+	return e
+}
+
 func (w *wizard) getTranscoderStake() string {
 	e := httpGet(fmt.Sprintf("http://%v:%v/transcoderStake", w.host, w.httpPort))
+	if e == "" {
+		e = "Unknown"
+	}
+	return e
+}
+
+func (w *wizard) getDelegatorStake() string {
+	e := httpGet(fmt.Sprintf("http://%v:%v/delegatorStake", w.host, w.httpPort))
 	if e == "" {
 		e = "Unknown"
 	}

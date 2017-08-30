@@ -68,6 +68,7 @@ type LivepeerEthClient interface {
 	TranscoderStake() (*big.Int, error)
 	TranscoderPendingPricingInfo() (uint8, uint8, *big.Int, error)
 	TranscoderPricingInfo() (uint8, uint8, *big.Int, error)
+	DelegatorStake() (*big.Int, error)
 	TokenBalance() (*big.Int, error)
 	GetJob(jobID *big.Int) (*Job, error)
 	GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error)

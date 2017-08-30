@@ -230,6 +230,16 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
+	http.HandleFunc("/delegatorStake", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			s, err := s.LivepeerNode.Eth.DelegatorStake()
+			if err != nil {
+				w.Write([]byte(""))
+			}
+			w.Write([]byte(s.String()))
+		}
+	})
+
 	http.HandleFunc("/deposit", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			//Parse amount
