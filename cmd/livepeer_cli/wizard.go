@@ -67,3 +67,16 @@ func (w *wizard) readInt() int {
 		return val
 	}
 }
+
+func (w *wizard) readDefaultInt(def int) int {
+	fmt.Printf("> ")
+	text, err := w.in.ReadString('\n')
+	if err != nil {
+		log.Crit("Failed to read user input", "err", err)
+	}
+	val, err := strconv.Atoi(strings.TrimSpace(text))
+	if err == nil {
+		return val
+	}
+	return def
+}

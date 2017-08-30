@@ -97,6 +97,7 @@ func main() {
 	gethipc := flag.String("gethipc", "", "Geth ipc file location")
 	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
 	tokenAddr := flag.String("tokenAddr", "", "Token smart contract address")
+	faucetAddr := flag.String("faucetAddr", "", "Token faucet smart contract address")
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
@@ -209,7 +210,7 @@ func main() {
 			return
 		}
 
-		client, err := eth.NewClient(acct, *ethPassword, *ethDatadir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*protocolAddr), common.HexToAddress(*tokenAddr), EthRpcTimeout, EthEventTimeout)
+		client, err := eth.NewClient(acct, *ethPassword, *ethDatadir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*protocolAddr), common.HexToAddress(*tokenAddr), common.HexToAddress(*faucetAddr), EthRpcTimeout, EthEventTimeout)
 		if err != nil {
 			glog.Errorf("Error creating Eth client: %v", err)
 			return

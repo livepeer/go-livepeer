@@ -17,6 +17,7 @@ package eth
 //go:generate abigen --abi protocol/abi/SafeMath.abi --pkg contracts --type SafeMath --out contracts/safeMath.go --bin protocol/bin/SafeMath.bin
 //go:generate abigen --abi protocol/abi/ECRecovery.abi --pkg contracts --type ECRecovery --out contracts/ecRecovery.go --bin protocol/bin/ECRecovery.bin
 //go:generate abigen --abi protocol/abi/MerkleProof.abi --pkg contracts --type MerkleProof --out contracts/merkleProof.go --bin protocol/bin/MerkleProof.bin
+//go:generate abigen --abi protocol/abi/LivepeerTokenFaucet.abi --pkg contracts --type LivepeerTokenFaucet --out contracts/livepeerTokenFaucet.go --bin protocol/bin/LivepeerTokenFaucet.bin
 
 import (
 	"bytes"
@@ -61,9 +62,13 @@ type LivepeerEthClient interface {
 	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
 	DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error)
 	Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error)
+	RequestTokens() (<-chan types.Receipt, <-chan error)
 	CurrentRoundInitialized() (bool, error)
 	IsActiveTranscoder() (bool, error)
 	TranscoderStake() (*big.Int, error)
+	TranscoderPendingPricingInfo() (uint8, uint8, *big.Int, error)
+	TranscoderPricingInfo() (uint8, uint8, *big.Int, error)
+	DelegatorStake() (*big.Int, error)
 	TokenBalance() (*big.Int, error)
 	GetJob(jobID *big.Int) (*Job, error)
 	GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error)
@@ -73,8 +78,10 @@ type LivepeerEthClient interface {
 	LastRewardRound() (*big.Int, error)
 	IsRegisteredTranscoder() (bool, error)
 	TranscoderBond() (*big.Int, error)
+	GetAllTranscoderStats() ([]TranscoderStats, error)
 	GetProtocolAddr() string
 	GetTokenAddr() string
+	GetFaucetAddr() string
 	GetBondingManagerAddr() string
 	GetJobsManagerAddr() string
 	GetRoundsManagerAddr() string
@@ -90,14 +97,27 @@ type Client struct {
 	bondingManagerAddr    common.Address
 	jobsManagerAddr       common.Address
 	roundsManagerAddr     common.Address
+	faucetAddr            common.Address
 	protocolSession       *contracts.LivepeerProtocolSession
 	tokenSession          *contracts.LivepeerTokenSession
 	bondingManagerSession *contracts.BondingManagerSession
 	jobsManagerSession    *contracts.JobsManagerSession
 	roundsManagerSession  *contracts.RoundsManagerSession
+	faucetSession         *contracts.LivepeerTokenFaucetSession
 
 	rpcTimeout   time.Duration
 	eventTimeout time.Duration
+}
+
+type TranscoderStats struct {
+	Address                common.Address
+	TotalStake             *big.Int
+	PendingBlockRewardCut  uint8
+	PendingFeeShare        uint8
+	PendingPricePerSegment *big.Int
+	BlockRewardCut         uint8
+	FeeShare               uint8
+	PricePerSegment        *big.Int
 }
 
 type Job struct {
@@ -122,7 +142,7 @@ type Claim struct {
 	Status               uint8
 }
 
-func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, gasPrice *big.Int, protocolAddr common.Address, tokenAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
+func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, gasPrice *big.Int, protocolAddr common.Address, tokenAddr common.Address, faucetAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
 	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 
 	transactOpts, err := NewTransactOptsForAccount(account, passphrase, keyStore)
@@ -144,6 +164,12 @@ func NewClient(account accounts.Account, passphrase string, datadir string, back
 		return nil, err
 	}
 
+	faucet, err := contracts.NewLivepeerTokenFaucet(faucetAddr, backend)
+	if err != nil {
+		glog.Errorf("Error creating LivepeerTokenFaucet: %v", err)
+		return nil, err
+	}
+
 	client := &Client{
 		account:      account,
 		keyStore:     keyStore,
@@ -151,12 +177,17 @@ func NewClient(account accounts.Account, passphrase string, datadir string, back
 		backend:      backend,
 		protocolAddr: protocolAddr,
 		tokenAddr:    tokenAddr,
+		faucetAddr:   faucetAddr,
 		protocolSession: &contracts.LivepeerProtocolSession{
 			Contract:     protocol,
 			TransactOpts: *transactOpts,
 		},
 		tokenSession: &contracts.LivepeerTokenSession{
 			Contract:     token,
+			TransactOpts: *transactOpts,
+		},
+		faucetSession: &contracts.LivepeerTokenFaucetSession{
+			Contract:     faucet,
 			TransactOpts: *transactOpts,
 		},
 		rpcTimeout:   rpcTimeout,
@@ -411,6 +442,17 @@ func (c *Client) Approve(toAddr common.Address, amount *big.Int) (<-chan types.R
 	})
 }
 
+func (c *Client) RequestTokens() (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.faucetSession.Request(); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v], Submitted tx %v. Requested tokens from faucet", c.account.Address.Hex(), tx.Hash().Hex())
+			return tx, nil
+		}
+	})
+}
+
 func (c *Client) SubscribeToApproval() (chan types.Log, ethereum.Subscription, error) {
 	logCh := make(chan types.Log)
 
@@ -517,6 +559,28 @@ func (c *Client) TranscoderStatus() (uint8, error) {
 	return c.bondingManagerSession.TranscoderStatus(c.account.Address)
 }
 
+func (c *Client) TranscoderPendingPricingInfo() (uint8, uint8, *big.Int, error) {
+	transcoderDetails, err := c.bondingManagerSession.Transcoders(c.account.Address)
+
+	if err != nil {
+		glog.Errorf("Error getting transcoder details: %v", err)
+		return 0, 0, nil, err
+	}
+
+	return transcoderDetails.PendingBlockRewardCut, transcoderDetails.PendingFeeShare, transcoderDetails.PendingPricePerSegment, nil
+}
+
+func (c *Client) TranscoderPricingInfo() (uint8, uint8, *big.Int, error) {
+	transcoderDetails, err := c.bondingManagerSession.Transcoders(c.account.Address)
+
+	if err != nil {
+		glog.Errorf("Error getting transcoder details: %v", err)
+		return 0, 0, nil, err
+	}
+
+	return transcoderDetails.BlockRewardCut, transcoderDetails.FeeShare, transcoderDetails.PricePerSegment, nil
+}
+
 func (c *Client) DelegatorStake() (*big.Int, error) {
 	return c.bondingManagerSession.DelegatorStake(c.account.Address)
 }
@@ -583,6 +647,46 @@ func (c *Client) GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error) {
 		TranscoderTotalStake: transcoderTotalStake,
 		Status:               status,
 	}, err
+}
+
+func (c *Client) GetAllTranscoderStats() ([]TranscoderStats, error) {
+	total, err := c.bondingManagerSession.GetTotalRegisteredTranscoders()
+	if err != nil {
+		return nil, err
+	}
+
+	var allTranscoderStats []TranscoderStats
+	for i := 0; i < int(total.Int64()); i++ {
+		transcoder, err := c.bondingManagerSession.RegisteredTranscoders(big.NewInt(int64(i)))
+		if err != nil {
+			return nil, err
+		}
+
+		transcoderDetails, err := c.bondingManagerSession.Transcoders(transcoder)
+		if err != nil {
+			return nil, err
+		}
+
+		transcoderTotalStake, err := c.bondingManagerSession.TranscoderTotalStake(transcoder)
+		if err != nil {
+			return nil, err
+		}
+
+		stats := TranscoderStats{
+			Address:                transcoderDetails.TranscoderAddress,
+			TotalStake:             transcoderTotalStake,
+			PendingBlockRewardCut:  transcoderDetails.PendingBlockRewardCut,
+			PendingFeeShare:        transcoderDetails.PendingFeeShare,
+			PendingPricePerSegment: transcoderDetails.PendingPricePerSegment,
+			BlockRewardCut:         transcoderDetails.BlockRewardCut,
+			FeeShare:               transcoderDetails.FeeShare,
+			PricePerSegment:        transcoderDetails.PricePerSegment,
+		}
+
+		allTranscoderStats = append(allTranscoderStats, stats)
+	}
+
+	return allTranscoderStats, nil
 }
 
 func (c *Client) TokenBalance() (*big.Int, error) {
@@ -719,6 +823,10 @@ func (c *Client) GetProtocolAddr() string {
 
 func (c *Client) GetTokenAddr() string {
 	return c.tokenAddr.Hex()
+}
+
+func (c *Client) GetFaucetAddr() string {
+	return c.faucetAddr.Hex()
 }
 
 func (c *Client) GetJobsManagerAddr() string {

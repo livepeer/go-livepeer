@@ -116,8 +116,8 @@ func deployLivepeerProtocol(transactOpts *bind.TransactOpts, backend *ethclient.
 	return addr, tx, nil
 }
 
-func deployBondingManager(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, registry common.Address, token common.Address, numActiveTranscoders *big.Int) (common.Address, *types.Transaction, error) {
-	addr, tx, _, err := contracts.DeployBondingManager(transactOpts, backend, libraries, registry, token, numActiveTranscoders)
+func deployBondingManager(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, registry common.Address, token common.Address, numActiveTranscoders *big.Int, unbondingPeriod uint64) (common.Address, *types.Transaction, error) {
+	addr, tx, _, err := contracts.DeployBondingManager(transactOpts, backend, libraries, registry, token, numActiveTranscoders, unbondingPeriod)
 
 	glog.Infof("Deploying BondingManager at %v", addr.Hex())
 
@@ -129,8 +129,8 @@ func deployBondingManager(transactOpts *bind.TransactOpts, backend *ethclient.Cl
 	return addr, tx, nil
 }
 
-func deployJobsManager(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, registry common.Address, token common.Address, verifier common.Address) (common.Address, *types.Transaction, error) {
-	addr, tx, _, err := contracts.DeployJobsManager(transactOpts, backend, libraries, registry, token, verifier)
+func deployJobsManager(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, registry common.Address, token common.Address, verifier common.Address, verificationRate uint64, jobEndingPeriod *big.Int, verificationPeriod *big.Int, slashingPeriod *big.Int, failedVerificationSlashAmount uint64, missedVerificationSlashAmount uint64, finderFee uint64) (common.Address, *types.Transaction, error) {
+	addr, tx, _, err := contracts.DeployJobsManager(transactOpts, backend, libraries, registry, token, verifier, verificationRate, jobEndingPeriod, verificationPeriod, slashingPeriod, failedVerificationSlashAmount, missedVerificationSlashAmount, finderFee)
 
 	glog.Infof("Deploying JobsManager at %v", addr.Hex())
 
@@ -142,8 +142,8 @@ func deployJobsManager(transactOpts *bind.TransactOpts, backend *ethclient.Clien
 	return addr, tx, nil
 }
 
-func deployRoundsManager(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, registry common.Address) (common.Address, *types.Transaction, error) {
-	addr, tx, _, err := contracts.DeployRoundsManager(transactOpts, backend, libraries, registry)
+func deployRoundsManager(transactOpts *bind.TransactOpts, backend *ethclient.Client, libraries map[string]common.Address, registry common.Address, blockTime *big.Int, roundLength *big.Int) (common.Address, *types.Transaction, error) {
+	addr, tx, _, err := contracts.DeployRoundsManager(transactOpts, backend, libraries, registry, blockTime, roundLength)
 
 	glog.Infof("Deploying RoundsManager at %v", addr.Hex())
 
