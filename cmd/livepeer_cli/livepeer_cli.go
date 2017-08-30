@@ -121,6 +121,7 @@ func (w *wizard) run() {
 			//Unbond
 		case choice == "8":
 			//Activate Transcoder
+			w.activateTranscoder()
 		case choice == "9":
 			//Get test Livepeer Token
 			w.requestTokens()

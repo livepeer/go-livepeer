@@ -66,6 +66,8 @@ type LivepeerEthClient interface {
 	CurrentRoundInitialized() (bool, error)
 	IsActiveTranscoder() (bool, error)
 	TranscoderStake() (*big.Int, error)
+	TranscoderPendingPricingInfo() (uint8, uint8, *big.Int, error)
+	TranscoderPricingInfo() (uint8, uint8, *big.Int, error)
 	TokenBalance() (*big.Int, error)
 	GetJob(jobID *big.Int) (*Job, error)
 	GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error)
@@ -542,6 +544,28 @@ func (c *Client) TranscoderStake() (*big.Int, error) {
 
 func (c *Client) TranscoderStatus() (uint8, error) {
 	return c.bondingManagerSession.TranscoderStatus(c.account.Address)
+}
+
+func (c *Client) TranscoderPendingPricingInfo() (uint8, uint8, *big.Int, error) {
+	transcoderDetails, err := c.bondingManagerSession.Transcoders(c.account.Address)
+
+	if err != nil {
+		glog.Errorf("Error getting transcoder details: %v", err)
+		return 0, 0, nil, err
+	}
+
+	return transcoderDetails.PendingBlockRewardCut, transcoderDetails.PendingFeeShare, transcoderDetails.PendingPricePerSegment, nil
+}
+
+func (c *Client) TranscoderPricingInfo() (uint8, uint8, *big.Int, error) {
+	transcoderDetails, err := c.bondingManagerSession.Transcoders(c.account.Address)
+
+	if err != nil {
+		glog.Errorf("Error getting transcoder details: %v", err)
+		return 0, 0, nil, err
+	}
+
+	return transcoderDetails.BlockRewardCut, transcoderDetails.FeeShare, transcoderDetails.PricePerSegment, nil
 }
 
 func (c *Client) DelegatorStake() (*big.Int, error) {

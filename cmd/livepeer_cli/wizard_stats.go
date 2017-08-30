@@ -28,6 +28,11 @@ func (w *wizard) stats(tips bool) {
 	fmt.Fprintf(wtr, "Deposit Amount: \t%s\n", w.getDeposit())
 	fmt.Fprintf(wtr, "Broadcast Job Segment Price: \t%s\n", w.getJobPrice())
 	fmt.Fprintf(wtr, "Is Active Transcoder: \t%s\n", w.getIsActiveTranscoder())
+	fmt.Fprintf(wtr, "Transcoder Pending Block Reward Cut: \t%s\n", w.getPendingTranscoderBlockRewardCut())
+	fmt.Fprintf(wtr, "Transcoder Pending Fee Share: \t%s\n", w.getPendingTranscoderFeeShare())
+	fmt.Fprintf(wtr, "Transcoder Pending Price: \t%s\n", w.getPendingTranscoderPrice())
+	fmt.Fprintf(wtr, "Transcoder Block Reward Cut: \t%s\n", w.getTranscoderBlockRewardCut())
+	fmt.Fprintf(wtr, "Transcoder Fee Share: \t%s\n", w.getTranscoderFeeShare())
 	fmt.Fprintf(wtr, "Transcoder Price: \t%s\n", w.getTranscoderPrice())
 	fmt.Fprintf(wtr, "Transcoder Stake: \t%s\n", w.getTranscoderStake())
 	wtr.Flush()
@@ -130,6 +135,26 @@ func (w *wizard) getIsActiveTranscoder() string {
 	return httpGet(fmt.Sprintf("http://%v:%v/isActiveTranscoder", w.host, w.httpPort))
 }
 
+func (w *wizard) getTranscoderBlockRewardCut() string {
+	return httpGet(fmt.Sprintf("http://%v:%v/transcoderBlockRewardCut", w.host, w.httpPort))
+}
+
+func (w *wizard) getTranscoderFeeShare() string {
+	return httpGet(fmt.Sprintf("http://%v:%v/transcoderFeeShare", w.host, w.httpPort))
+}
+
 func (w *wizard) getTranscoderPrice() string {
-	return "TODO"
+	return httpGet(fmt.Sprintf("http://%v:%v/transcoderPrice", w.host, w.httpPort))
+}
+
+func (w *wizard) getPendingTranscoderBlockRewardCut() string {
+	return httpGet(fmt.Sprintf("http://%v:%v/transcoderPendingBlockRewardCut", w.host, w.httpPort))
+}
+
+func (w *wizard) getPendingTranscoderFeeShare() string {
+	return httpGet(fmt.Sprintf("http://%v:%v/transcoderPendingFeeShare", w.host, w.httpPort))
+}
+
+func (w *wizard) getPendingTranscoderPrice() string {
+	return httpGet(fmt.Sprintf("http://%v:%v/transcoderPendingPrice", w.host, w.httpPort))
 }
