@@ -178,20 +178,22 @@ func main() {
 	var gethCmd *exec.Cmd
 	//Set up ethereum-related stuff
 	if *ethDatadir != "" {
+		gethipc := filepath.Join(filepath.Join(*ethDatadir, "geth.ipc"))
 		//If getipc file is not there, start the geth node
-		if _, err := os.Stat(filepath.Join(*ethDatadir, "geth.ipc")); os.IsNotExist(err) {
+		if _, err := os.Stat(gethipc); os.IsNotExist(err) {
 			//Set up geth params depending on network, invoke geth
 			if *testnet {
 				gethCmd = exec.Command("geth", "--rpc", "--datadir", *ethDatadir, "--bootnodes=enode://a1bd18a737acef008f94857654cfb2470124d1dc826b6248cea0331a7ca82b36d2389566e3aa0a1bc9a5c3c34a61f47601a6cff5279d829fcc60cb632ee88bad@13.58.149.151:30303") //timeout in 3 mins
 				err = gethCmd.Start()
 				if err != nil {
-					glog.Infof("Couldn't start geth.")
+					glog.Infof("Couldn't start geth: %v", err)
 					return
 				}
+				defer gethCmd.Process.Kill()
 				go func() {
 					err = gethCmd.Wait()
 					if err != nil {
-						glog.Infof("Couldn't start geth")
+						glog.Infof("Couldn't start geth: %v", err)
 						os.Exit(1)
 					}
 				}()
@@ -201,7 +203,6 @@ func main() {
 			}
 		}
 
-		// if *gethipc != "" {
 		var backend *ethclient.Client
 		var acct accounts.Account
 
@@ -219,10 +220,22 @@ func main() {
 				return
 			}
 
-			glog.Infof("Found Eth account: %v", acct.Address.Hex())
+			glog.V(4).Infof("Found Eth account: %v", acct.Address.Hex())
 		}
 
-		gethipc := filepath.Join(filepath.Join(*ethDatadir, "geth.ipc"))
+		//Wait for gethipc
+		if _, err := os.Stat(gethipc); os.IsNotExist(err) {
+			start := time.Now()
+			glog.V(0).Infof("Waiting to start go-ethereum")
+			for time.Since(start) < time.Second*5 {
+				if _, err := os.Stat(gethipc); os.IsNotExist(err) {
+					time.Sleep(time.Millisecond * 500)
+				} else {
+					continue
+				}
+			}
+		}
+
 		backend, err = ethclient.Dial(gethipc)
 		if err != nil {
 			glog.Errorf("Failed to connect to Ethereum client: %v", err)
@@ -239,7 +252,7 @@ func main() {
 		n.EthPassword = *ethPassword
 
 		if *deposit > 0 {
-			glog.Infof("You started your node with the deposit amount set to %v tokens. Would you like to deposit this amount? (y/n)", *deposit)
+			glog.V(0).Infof("You started your node with the deposit amount set to %v tokens. Would you like to deposit this amount? (y/n)", *deposit)
 
 			var resp string
 			_, err := fmt.Scanf("%s", &resp)
@@ -324,6 +337,7 @@ func main() {
 		return
 	case sig := <-c:
 		glog.Infof("Exiting Livepeer: %v", sig)
+		time.Sleep(time.Millisecond * 500) //Give time for other processes to shut down completely
 	}
 }
 
