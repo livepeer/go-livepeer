@@ -243,6 +243,12 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
+	http.HandleFunc("/faucetContractAddr", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			w.Write([]byte(s.LivepeerNode.Eth.GetFaucetAddr()))
+		}
+	})
+
 	http.HandleFunc("/ethAddr", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			w.Write([]byte(s.LivepeerNode.EthAccount))
@@ -271,5 +277,19 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 
 		w.Write([]byte("False"))
+	})
+
+	http.HandleFunc("/requestTokens", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			glog.Infof("Requesting tokens from faucet")
+
+			rc, ec := s.LivepeerNode.Eth.RequestTokens()
+			select {
+			case rec := <-rc:
+				glog.Infof("%v", rec)
+			case err := <-ec:
+				glog.Errorf("Error request tokens from faucet: %v", err)
+			}
+		}
 	})
 }

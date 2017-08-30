@@ -1,5 +1,5 @@
-// This file is an automatically generated Go binding. Do not modify as any
-// change will likely be lost upon the next re-generation!
+// Code generated - DO NOT EDIT.
+// This file is a generated binding and any manual changes will be lost.
 
 package contracts
 
@@ -18,7 +18,7 @@ import (
 const SafeMathABI = "[]"
 
 // SafeMathBin is the compiled bytecode used for deploying new contracts.
-const SafeMathBin = `0x60606040523415600e57600080fd5b5b603680601c6000396000f30060606040525b600080fd00a165627a7a72305820322b330e8563d91dbb12b2ec97507b4f851ee17a643fe9758fa11e10412e2b2d0029`
+const SafeMathBin = `0x60606040523415600e57600080fd5b5b603680601c6000396000f30060606040525b600080fd00a165627a7a72305820c8eb8653997699610483edbb1057941916e20c06a92d613cb5122a327a4bdbb00029`
 
 // DeploySafeMath deploys a new Ethereum contract, binding an instance of SafeMath to it.
 func DeploySafeMath(auth *bind.TransactOpts, backend bind.ContractBackend, libraries map[string]common.Address) (common.Address, *types.Transaction, *SafeMath, error) {
@@ -34,7 +34,7 @@ func DeploySafeMath(auth *bind.TransactOpts, backend bind.ContractBackend, libra
 			return common.Address{}, nil, nil, err
 		}
 
-		linkedBin = reg.ReplaceAllString(linkedBin, addr.Hex()[2:])
+		linkedBin = reg.ReplaceAllString(linkedBin, addr.Hex())
 	}
 
 	address, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex(linkedBin), backend)

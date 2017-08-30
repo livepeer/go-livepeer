@@ -17,6 +17,7 @@ package eth
 //go:generate abigen --abi protocol/abi/SafeMath.abi --pkg contracts --type SafeMath --out contracts/safeMath.go --bin protocol/bin/SafeMath.bin
 //go:generate abigen --abi protocol/abi/ECRecovery.abi --pkg contracts --type ECRecovery --out contracts/ecRecovery.go --bin protocol/bin/ECRecovery.bin
 //go:generate abigen --abi protocol/abi/MerkleProof.abi --pkg contracts --type MerkleProof --out contracts/merkleProof.go --bin protocol/bin/MerkleProof.bin
+//go:generate abigen --abi protocol/abi/LivepeerTokenFaucet.abi --pkg contracts --type LivepeerTokenFaucet --out contracts/livepeerTokenFaucet.go --bin protocol/bin/LivepeerTokenFaucet.bin
 
 import (
 	"bytes"
@@ -61,6 +62,7 @@ type LivepeerEthClient interface {
 	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
 	DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error)
 	Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error)
+	RequestTokens() (<-chan types.Receipt, <-chan error)
 	CurrentRoundInitialized() (bool, error)
 	IsActiveTranscoder() (bool, error)
 	TranscoderStake() (*big.Int, error)
@@ -75,6 +77,7 @@ type LivepeerEthClient interface {
 	TranscoderBond() (*big.Int, error)
 	GetProtocolAddr() string
 	GetTokenAddr() string
+	GetFaucetAddr() string
 	GetBondingManagerAddr() string
 	GetJobsManagerAddr() string
 	GetRoundsManagerAddr() string
@@ -90,11 +93,13 @@ type Client struct {
 	bondingManagerAddr    common.Address
 	jobsManagerAddr       common.Address
 	roundsManagerAddr     common.Address
+	faucetAddr            common.Address
 	protocolSession       *contracts.LivepeerProtocolSession
 	tokenSession          *contracts.LivepeerTokenSession
 	bondingManagerSession *contracts.BondingManagerSession
 	jobsManagerSession    *contracts.JobsManagerSession
 	roundsManagerSession  *contracts.RoundsManagerSession
+	faucetSession         *contracts.LivepeerTokenFaucetSession
 
 	rpcTimeout   time.Duration
 	eventTimeout time.Duration
@@ -122,7 +127,7 @@ type Claim struct {
 	Status               uint8
 }
 
-func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, gasPrice *big.Int, protocolAddr common.Address, tokenAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
+func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, gasPrice *big.Int, protocolAddr common.Address, tokenAddr common.Address, faucetAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
 	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 
 	transactOpts, err := NewTransactOptsForAccount(account, passphrase, keyStore)
@@ -144,6 +149,12 @@ func NewClient(account accounts.Account, passphrase string, datadir string, back
 		return nil, err
 	}
 
+	faucet, err := contracts.NewLivepeerTokenFaucet(faucetAddr, backend)
+	if err != nil {
+		glog.Errorf("Error creating LivepeerTokenFaucet: %v", err)
+		return nil, err
+	}
+
 	client := &Client{
 		account:      account,
 		keyStore:     keyStore,
@@ -151,12 +162,17 @@ func NewClient(account accounts.Account, passphrase string, datadir string, back
 		backend:      backend,
 		protocolAddr: protocolAddr,
 		tokenAddr:    tokenAddr,
+		faucetAddr:   faucetAddr,
 		protocolSession: &contracts.LivepeerProtocolSession{
 			Contract:     protocol,
 			TransactOpts: *transactOpts,
 		},
 		tokenSession: &contracts.LivepeerTokenSession{
 			Contract:     token,
+			TransactOpts: *transactOpts,
+		},
+		faucetSession: &contracts.LivepeerTokenFaucetSession{
+			Contract:     faucet,
 			TransactOpts: *transactOpts,
 		},
 		rpcTimeout:   rpcTimeout,
@@ -405,6 +421,17 @@ func (c *Client) Approve(toAddr common.Address, amount *big.Int) (<-chan types.R
 			return nil, err
 		} else {
 			glog.Infof("[%v], Submitted tx %v. Approve %v LPTU to %v", c.account.Address.Hex(), tx.Hash().Hex(), amount, toAddr.Hex())
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) RequestTokens() (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.faucetSession.Request(); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v], Submitted tx %v. Requested tokens from faucet", c.account.Address.Hex(), tx.Hash().Hex())
 			return tx, nil
 		}
 	})
@@ -718,6 +745,10 @@ func (c *Client) GetProtocolAddr() string {
 
 func (c *Client) GetTokenAddr() string {
 	return c.tokenAddr.Hex()
+}
+
+func (c *Client) GetFaucetAddr() string {
+	return c.faucetAddr.Hex()
 }
 
 func (c *Client) GetJobsManagerAddr() string {

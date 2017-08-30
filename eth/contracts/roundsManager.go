@@ -1,5 +1,5 @@
-// This file is an automatically generated Go binding. Do not modify as any
-// change will likely be lost upon the next re-generation!
+// Code generated - DO NOT EDIT.
+// This file is a generated binding and any manual changes will be lost.
 
 package contracts
 
@@ -16,13 +16,13 @@ import (
 )
 
 // RoundsManagerABI is the input ABI used to generate the binding from.
-const RoundsManagerABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"rewardCallsPerYear\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundInitialized\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"blockTime\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"numActiveTranscoders\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"registry\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"lastInitializedRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"roundLength\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundStartBlock\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_registry\",\"type\":\"address\"}],\"name\":\"setRegistry\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"initializeRound\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"inputs\":[{\"name\":\"_registry\",\"type\":\"address\"}],\"payable\":false,\"type\":\"constructor\"}]"
+const RoundsManagerABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"roundsPerYear\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundInitialized\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"blockTime\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"registry\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"lastInitializedRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"roundLength\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundStartBlock\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_registry\",\"type\":\"address\"}],\"name\":\"setRegistry\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"initializeRound\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"inputs\":[{\"name\":\"_registry\",\"type\":\"address\"},{\"name\":\"_blockTime\",\"type\":\"uint256\"},{\"name\":\"_roundLength\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"constructor\"}]"
 
 // RoundsManagerBin is the compiled bytecode used for deploying new contracts.
-const RoundsManagerBin = `0x6060604052341561000f57600080fd5b6040516020806106a8833981016040528080519150505b805b60008054600160a060020a031916600160a060020a0383161790555b50600180805560326002556004556100676401000000006102ca61007182021704565b6003555b506100b1565b60025460009061008f9043906401000000006104cf61009582021704565b90505b90565b60008082848115156100a357fe5b0490508091505b5092915050565b6105e8806100c06000396000f300606060405236156100935763ffffffff60e060020a6000350416630a71fde48114610098578063219bc76c146100bd57806348b15166146100e457806361e25d23146101095780637b1039991461012e5780638807f36e1461015d5780638a19c8bc146101825780638b649b94146101a75780638fa148f2146101cc578063a91ee0dc146101f1578063d4807fb214610224575b600080fd5b34156100a357600080fd5b6100ab61024b565b60405190815260200160405180910390f35b34156100c857600080fd5b6100d0610295565b604051901515815260200160405180910390f35b34156100ef57600080fd5b6100ab6102a9565b60405190815260200160405180910390f35b341561011457600080fd5b6100ab6102af565b60405190815260200160405180910390f35b341561013957600080fd5b6101416102b5565b604051600160a060020a03909116815260200160405180910390f35b341561016857600080fd5b6100ab6102c4565b60405190815260200160405180910390f35b341561018d57600080fd5b6100ab6102ca565b60405190815260200160405180910390f35b34156101b257600080fd5b6100ab6102e7565b60405190815260200160405180910390f35b34156101d757600080fd5b6100ab6102ed565b60405190815260200160405180910390f35b34156101fc57600080fd5b6100d0600160a060020a036004351661030f565b604051901515815260200160405180910390f35b341561022f57600080fd5b6100d06103cd565b604051901515815260200160405180910390f35b6000806301e13380905061028e600454610282600254610276600154866104cf90919063ffffffff16565b9063ffffffff6104cf16565b9063ffffffff6104eb16565b91505b5090565b600061029f6102ca565b6003541490505b90565b60015481565b60045481565b600054600160a060020a031681565b60035481565b60006102e1600254436104cf90919063ffffffff16565b90505b90565b60025481565b60006102e16002546102826102ca565b9063ffffffff6104eb16565b90505b90565b6000805433600160a060020a0390811691161461032b57600080fd5b60008054600160a060020a031690635c975abb90604051602001526040518163ffffffff1660e060020a028152600401602060405180830381600087803b151561037457600080fd5b6102c65a03f1151561038557600080fd5b50505060405180519050151561039a57600080fd5b506000805473ffffffffffffffffffffffffffffffffffffffff1916600160a060020a03831617905560015b5b5b919050565b60008054600160a060020a0316635c975abb82604051602001526040518163ffffffff1660e060020a028152600401602060405180830381600087803b151561041557600080fd5b6102c65a03f1151561042657600080fd5b505050604051805115905061043a57600080fd5b6104426102ca565b6003541415610453575060006102a6565b61045b6102ca565b60035561046661051a565b600160a060020a031663242ed69f6000604051602001526040518163ffffffff1660e060020a028152600401602060405180830381600087803b15156104ab57600080fd5b6102c65a03f115156104bc57600080fd5b50505060405180515060019150505b5b90565b60008082848115156104dd57fe5b0490508091505b5092915050565b6000828202831580610507575082848281151561050457fe5b04145b151561050f57fe5b8091505b5092915050565b60008054600160a060020a0316637ef502986040517f426f6e64696e674d616e616765720000000000000000000000000000000000008152600e01604051809103902060006040516020015260405160e060020a63ffffffff84160281526004810191909152602401602060405180830381600087803b151561059c57600080fd5b6102c65a03f115156105ad57600080fd5b50505060405180519150505b905600a165627a7a72305820e447f58ac91b03c899cdec9ff7a1404c647294084f9c2b63fab09e9a953a81920029`
+const RoundsManagerBin = `0x6060604052341561000f57600080fd5b60405160608061066d8339810160405280805191906020018051919060200180519150505b825b60008054600160a060020a031916600160a060020a0383161790555b506001829055600281905561007264010000000061028261007e82021704565b6003555b5050506100be565b60025460009061009c9043906401000000006104876100a282021704565b90505b90565b60008082848115156100b057fe5b0490508091505b5092915050565b6105a0806100cd6000396000f300606060405236156100885763ffffffff60e060020a60003504166317f60ec7811461008d578063219bc76c146100b257806348b15166146100d95780637b103999146100fe5780638807f36e1461012d5780638a19c8bc146101525780638b649b94146101775780638fa148f21461019c578063a91ee0dc146101c1578063d4807fb2146101f4575b600080fd5b341561009857600080fd5b6100a061021b565b60405190815260200160405180910390f35b34156100bd57600080fd5b6100c5610253565b604051901515815260200160405180910390f35b34156100e457600080fd5b6100a0610267565b60405190815260200160405180910390f35b341561010957600080fd5b61011161026d565b604051600160a060020a03909116815260200160405180910390f35b341561013857600080fd5b6100a061027c565b60405190815260200160405180910390f35b341561015d57600080fd5b6100a0610282565b60405190815260200160405180910390f35b341561018257600080fd5b6100a061029f565b60405190815260200160405180910390f35b34156101a757600080fd5b6100a06102a5565b60405190815260200160405180910390f35b34156101cc57600080fd5b6100c5600160a060020a03600435166102c7565b604051901515815260200160405180910390f35b34156101ff57600080fd5b6100c5610385565b604051901515815260200160405180910390f35b6000806301e13380905061024c6002546102406001548461048790919063ffffffff16565b9063ffffffff61048716565b91505b5090565b600061025d610282565b6003541490505b90565b60015481565b600054600160a060020a031681565b60035481565b60006102996002544361048790919063ffffffff16565b90505b90565b60025481565b60006102996002546102b5610282565b9063ffffffff6104a316565b90505b90565b6000805433600160a060020a039081169116146102e357600080fd5b60008054600160a060020a031690635c975abb90604051602001526040518163ffffffff1660e060020a028152600401602060405180830381600087803b151561032c57600080fd5b6102c65a03f1151561033d57600080fd5b50505060405180519050151561035257600080fd5b506000805473ffffffffffffffffffffffffffffffffffffffff1916600160a060020a03831617905560015b5b5b919050565b60008054600160a060020a0316635c975abb82604051602001526040518163ffffffff1660e060020a028152600401602060405180830381600087803b15156103cd57600080fd5b6102c65a03f115156103de57600080fd5b50505060405180511590506103f257600080fd5b6103fa610282565b600354141561040b57506000610264565b610413610282565b60035561041e6104d2565b600160a060020a031663242ed69f6000604051602001526040518163ffffffff1660e060020a028152600401602060405180830381600087803b151561046357600080fd5b6102c65a03f1151561047457600080fd5b50505060405180515060019150505b5b90565b600080828481151561049557fe5b0490508091505b5092915050565b60008282028315806104bf57508284828115156104bc57fe5b04145b15156104c757fe5b8091505b5092915050565b60008054600160a060020a0316637ef502986040517f426f6e64696e674d616e616765720000000000000000000000000000000000008152600e01604051809103902060006040516020015260405160e060020a63ffffffff84160281526004810191909152602401602060405180830381600087803b151561055457600080fd5b6102c65a03f1151561056557600080fd5b50505060405180519150505b905600a165627a7a72305820779a4ea678063515150284ae284c03bf4d15c2099eedf72b7738b6de1c665aff0029`
 
 // DeployRoundsManager deploys a new Ethereum contract, binding an instance of RoundsManager to it.
-func DeployRoundsManager(auth *bind.TransactOpts, backend bind.ContractBackend, libraries map[string]common.Address, _registry common.Address) (common.Address, *types.Transaction, *RoundsManager, error) {
+func DeployRoundsManager(auth *bind.TransactOpts, backend bind.ContractBackend, libraries map[string]common.Address, _registry common.Address, _blockTime *big.Int, _roundLength *big.Int) (common.Address, *types.Transaction, *RoundsManager, error) {
 	parsed, err := abi.JSON(strings.NewReader(RoundsManagerABI))
 	if err != nil {
 		return common.Address{}, nil, nil, err
@@ -35,10 +35,10 @@ func DeployRoundsManager(auth *bind.TransactOpts, backend bind.ContractBackend, 
 			return common.Address{}, nil, nil, err
 		}
 
-		linkedBin = reg.ReplaceAllString(linkedBin, addr.Hex()[2:])
+		linkedBin = reg.ReplaceAllString(linkedBin, addr.Hex())
 	}
 
-	address, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex(linkedBin), backend, _registry)
+	address, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex(linkedBin), backend, _registry, _blockTime, _roundLength)
 	if err != nil {
 		return common.Address{}, nil, nil, err
 	}
@@ -302,32 +302,6 @@ func (_RoundsManager *RoundsManagerCallerSession) LastInitializedRound() (*big.I
 	return _RoundsManager.Contract.LastInitializedRound(&_RoundsManager.CallOpts)
 }
 
-// NumActiveTranscoders is a free data retrieval call binding the contract method 0x61e25d23.
-//
-// Solidity: function numActiveTranscoders() constant returns(uint256)
-func (_RoundsManager *RoundsManagerCaller) NumActiveTranscoders(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "numActiveTranscoders")
-	return *ret0, err
-}
-
-// NumActiveTranscoders is a free data retrieval call binding the contract method 0x61e25d23.
-//
-// Solidity: function numActiveTranscoders() constant returns(uint256)
-func (_RoundsManager *RoundsManagerSession) NumActiveTranscoders() (*big.Int, error) {
-	return _RoundsManager.Contract.NumActiveTranscoders(&_RoundsManager.CallOpts)
-}
-
-// NumActiveTranscoders is a free data retrieval call binding the contract method 0x61e25d23.
-//
-// Solidity: function numActiveTranscoders() constant returns(uint256)
-func (_RoundsManager *RoundsManagerCallerSession) NumActiveTranscoders() (*big.Int, error) {
-	return _RoundsManager.Contract.NumActiveTranscoders(&_RoundsManager.CallOpts)
-}
-
 // Registry is a free data retrieval call binding the contract method 0x7b103999.
 //
 // Solidity: function registry() constant returns(address)
@@ -354,32 +328,6 @@ func (_RoundsManager *RoundsManagerCallerSession) Registry() (common.Address, er
 	return _RoundsManager.Contract.Registry(&_RoundsManager.CallOpts)
 }
 
-// RewardCallsPerYear is a free data retrieval call binding the contract method 0x0a71fde4.
-//
-// Solidity: function rewardCallsPerYear() constant returns(uint256)
-func (_RoundsManager *RoundsManagerCaller) RewardCallsPerYear(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "rewardCallsPerYear")
-	return *ret0, err
-}
-
-// RewardCallsPerYear is a free data retrieval call binding the contract method 0x0a71fde4.
-//
-// Solidity: function rewardCallsPerYear() constant returns(uint256)
-func (_RoundsManager *RoundsManagerSession) RewardCallsPerYear() (*big.Int, error) {
-	return _RoundsManager.Contract.RewardCallsPerYear(&_RoundsManager.CallOpts)
-}
-
-// RewardCallsPerYear is a free data retrieval call binding the contract method 0x0a71fde4.
-//
-// Solidity: function rewardCallsPerYear() constant returns(uint256)
-func (_RoundsManager *RoundsManagerCallerSession) RewardCallsPerYear() (*big.Int, error) {
-	return _RoundsManager.Contract.RewardCallsPerYear(&_RoundsManager.CallOpts)
-}
-
 // RoundLength is a free data retrieval call binding the contract method 0x8b649b94.
 //
 // Solidity: function roundLength() constant returns(uint256)
@@ -404,6 +352,32 @@ func (_RoundsManager *RoundsManagerSession) RoundLength() (*big.Int, error) {
 // Solidity: function roundLength() constant returns(uint256)
 func (_RoundsManager *RoundsManagerCallerSession) RoundLength() (*big.Int, error) {
 	return _RoundsManager.Contract.RoundLength(&_RoundsManager.CallOpts)
+}
+
+// RoundsPerYear is a free data retrieval call binding the contract method 0x17f60ec7.
+//
+// Solidity: function roundsPerYear() constant returns(uint256)
+func (_RoundsManager *RoundsManagerCaller) RoundsPerYear(opts *bind.CallOpts) (*big.Int, error) {
+	var (
+		ret0 = new(*big.Int)
+	)
+	out := ret0
+	err := _RoundsManager.contract.Call(opts, out, "roundsPerYear")
+	return *ret0, err
+}
+
+// RoundsPerYear is a free data retrieval call binding the contract method 0x17f60ec7.
+//
+// Solidity: function roundsPerYear() constant returns(uint256)
+func (_RoundsManager *RoundsManagerSession) RoundsPerYear() (*big.Int, error) {
+	return _RoundsManager.Contract.RoundsPerYear(&_RoundsManager.CallOpts)
+}
+
+// RoundsPerYear is a free data retrieval call binding the contract method 0x17f60ec7.
+//
+// Solidity: function roundsPerYear() constant returns(uint256)
+func (_RoundsManager *RoundsManagerCallerSession) RoundsPerYear() (*big.Int, error) {
+	return _RoundsManager.Contract.RoundsPerYear(&_RoundsManager.CallOpts)
 }
 
 // InitializeRound is a paid mutator transaction binding the contract method 0xd4807fb2.

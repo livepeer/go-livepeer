@@ -73,7 +73,11 @@ func (w *wizard) getTokenAddr() string {
 }
 
 func (w *wizard) getFaucetAddr() string {
-	return "TODO"
+	addr := httpGet(fmt.Sprintf("http://%v:%v/faucetContractAddr", w.host, w.httpPort))
+	if addr == "" {
+		addr = "Unknown"
+	}
+	return addr
 }
 
 func (w *wizard) getEthAddr() string {

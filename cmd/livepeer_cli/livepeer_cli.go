@@ -122,6 +122,7 @@ func (w *wizard) run() {
 			//Activate Transcoder
 		case choice == "9":
 			//Get test Livepeer Token
+			w.requestTokens()
 
 		default:
 			log.Error("That's not something I can do")
