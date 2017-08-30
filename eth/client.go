@@ -253,6 +253,7 @@ func NewTransactOptsForAccount(account accounts.Account, passphrase string, keyS
 	}
 
 	transactOpts, err := bind.NewTransactor(bytes.NewReader(keyjson), passphrase)
+	transactOpts.GasLimit = big.NewInt(4000000)
 
 	if err != nil {
 		return nil, err
