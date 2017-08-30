@@ -77,6 +77,7 @@ type LivepeerEthClient interface {
 	LastRewardRound() (*big.Int, error)
 	IsRegisteredTranscoder() (bool, error)
 	TranscoderBond() (*big.Int, error)
+	GetAllTranscoderStats() ([]TranscoderStats, error)
 	GetProtocolAddr() string
 	GetTokenAddr() string
 	GetFaucetAddr() string
@@ -105,6 +106,17 @@ type Client struct {
 
 	rpcTimeout   time.Duration
 	eventTimeout time.Duration
+}
+
+type TranscoderStats struct {
+	Address                common.Address
+	TotalStake             *big.Int
+	PendingBlockRewardCut  uint8
+	PendingFeeShare        uint8
+	PendingPricePerSegment *big.Int
+	BlockRewardCut         uint8
+	FeeShare               uint8
+	PricePerSegment        *big.Int
 }
 
 type Job struct {
@@ -634,6 +646,46 @@ func (c *Client) GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error) {
 		TranscoderTotalStake: transcoderTotalStake,
 		Status:               status,
 	}, err
+}
+
+func (c *Client) GetAllTranscoderStats() ([]TranscoderStats, error) {
+	total, err := c.bondingManagerSession.GetTotalRegisteredTranscoders()
+	if err != nil {
+		return nil, err
+	}
+
+	var allTranscoderStats []TranscoderStats
+	for i := 0; i < int(total.Int64()); i++ {
+		transcoder, err := c.bondingManagerSession.RegisteredTranscoders(big.NewInt(int64(i)))
+		if err != nil {
+			return nil, err
+		}
+
+		transcoderDetails, err := c.bondingManagerSession.Transcoders(transcoder)
+		if err != nil {
+			return nil, err
+		}
+
+		transcoderTotalStake, err := c.bondingManagerSession.TranscoderTotalStake(transcoder)
+		if err != nil {
+			return nil, err
+		}
+
+		stats := TranscoderStats{
+			Address:                transcoderDetails.TranscoderAddress,
+			TotalStake:             transcoderTotalStake,
+			PendingBlockRewardCut:  transcoderDetails.PendingBlockRewardCut,
+			PendingFeeShare:        transcoderDetails.PendingFeeShare,
+			PendingPricePerSegment: transcoderDetails.PendingPricePerSegment,
+			BlockRewardCut:         transcoderDetails.BlockRewardCut,
+			FeeShare:               transcoderDetails.FeeShare,
+			PricePerSegment:        transcoderDetails.PricePerSegment,
+		}
+
+		allTranscoderStats = append(allTranscoderStats, stats)
+	}
+
+	return allTranscoderStats, nil
 }
 
 func (c *Client) TokenBalance() (*big.Int, error) {

@@ -15,13 +15,13 @@ func (w *wizard) activateTranscoder() {
 
 	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
 	fmt.Printf("Enter block reward cut percentage (default: 10) - ")
-	blockRewardCut = w.readInt()
+	blockRewardCut = w.readDefaultInt(10)
 
 	fmt.Printf("Enter fee share percentage (default: 5) - ")
-	feeShare = w.readInt()
+	feeShare = w.readDefaultInt(5)
 
 	fmt.Printf("Enter price per segment (default: 1) - ")
-	pricePerSegment = w.readInt()
+	pricePerSegment = w.readDefaultInt(1)
 
 	fmt.Printf("Would you like to bond to yourself (you will not be active until someone bonds to you)? (y/n)")
 	resp := w.read()

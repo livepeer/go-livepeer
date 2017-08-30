@@ -392,6 +392,24 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write([]byte("False"))
 	})
 
+	http.HandleFunc("/allTranscoderStats", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			allTranscoderStats, err := s.LivepeerNode.Eth.GetAllTranscoderStats()
+			if err != nil {
+				w.Write([]byte(""))
+			}
+
+			data, err := json.Marshal(allTranscoderStats)
+			if err != nil {
+				glog.Errorf("Error marshalling all transcoder stats: %v", err)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+		}
+	})
+
 	http.HandleFunc("/transcoderPendingBlockRewardCut", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			blockRewardCut, _, _, err := s.LivepeerNode.Eth.TranscoderPendingPricingInfo()
