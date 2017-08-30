@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -178,8 +179,45 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	//Print the transcoder's stake
-	http.HandleFunc("/printStake", func(w http.ResponseWriter, r *http.Request) {
-		printStake(s.LivepeerNode.Eth)
+	http.HandleFunc("/transcoderStake", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			b, err := s.LivepeerNode.Eth.TranscoderStake()
+			if err != nil {
+				w.Write([]byte(""))
+			}
+			w.Write([]byte(b.String()))
+		}
+	})
+
+	http.HandleFunc("/deposit", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			//Parse amount
+			amountStr := r.URL.Query().Get("amount")
+			if amountStr == "" {
+				glog.Errorf("Need to provide amount")
+				return
+			}
+			amount, err := strconv.Atoi(amountStr)
+			if err != nil {
+				glog.Errorf("Cannot convert amount: %v", err)
+				return
+			}
+			glog.Infof("Depositing: %v", amount)
+
+			rc, ec := s.LivepeerNode.Eth.Deposit(big.NewInt(int64(amount)))
+			select {
+			case rec := <-rc:
+				glog.Infof("%v", rec)
+			case err := <-ec:
+				glog.Errorf("Error depositing: %v", err)
+			}
+		}
+	})
+
+	http.HandleFunc("/faucet", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			// s.LivepeerNode.Eth.Fa
+		}
 	})
 
 	//Print the current broadcast HLS streamID
@@ -252,6 +290,46 @@ func (s *LivepeerServer) StartWebserver() {
 	http.HandleFunc("/ethAddr", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			w.Write([]byte(s.LivepeerNode.EthAccount))
+		}
+	})
+
+	http.HandleFunc("/tokenBalance", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			b, err := s.LivepeerNode.Eth.TokenBalance()
+			if err != nil {
+				w.Write([]byte(""))
+			}
+			w.Write([]byte(b.String()))
+		}
+	})
+
+	http.HandleFunc("/ethBalance", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			b, err := s.LivepeerNode.Eth.Backend().BalanceAt(context.Background(), s.LivepeerNode.Eth.Account().Address, nil)
+			if err != nil {
+				w.Write([]byte(""))
+			}
+			w.Write([]byte(b.String()))
+		}
+	})
+
+	http.HandleFunc("/broadcasterDeposit", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			b, err := s.LivepeerNode.Eth.GetBroadcasterDeposit(s.LivepeerNode.Eth.Account().Address)
+			if err != nil {
+				w.Write([]byte(""))
+			}
+			w.Write([]byte(b.String()))
+		}
+	})
+
+	http.HandleFunc("/transcoderBond", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			b, err := s.LivepeerNode.Eth.TranscoderBond()
+			if err != nil {
+				w.Write([]byte(""))
+			}
+			w.Write([]byte(b.String()))
 		}
 	})
 

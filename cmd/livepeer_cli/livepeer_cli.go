@@ -98,13 +98,14 @@ func (w *wizard) run() {
 		fmt.Println(" 7. Unbond (TODO)")
 		fmt.Println(" 8. Become a transcoder (TODO)")
 		fmt.Println(" 9. Get test Livepeer Token (TODO)")
+		fmt.Println(" 10. Get test Ether")
 
 		choice := w.read()
 		switch {
 		case choice == "" || choice == "1":
 			w.stats(false)
 		case choice == "2":
-			//Deposit token
+			w.deposit()
 		case choice == "3":
 			w.broadcast()
 		case choice == "4":
@@ -123,7 +124,9 @@ func (w *wizard) run() {
 		case choice == "9":
 			//Get test Livepeer Token
 			w.requestTokens()
-
+		case choice == "10":
+			fmt.Print("Go to eth-testnet.livepeer.org and use the faucet. (enter to continue)")
+			w.read()
 		default:
 			log.Error("That's not something I can do")
 		}

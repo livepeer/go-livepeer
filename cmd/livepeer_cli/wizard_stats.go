@@ -24,10 +24,12 @@ func (w *wizard) stats(tips bool) {
 	fmt.Fprintf(wtr, "Faucet Contract Addr: \t%s\n", w.getFaucetAddr())
 	fmt.Fprintf(wtr, "Account Eth Addr: \t%s\n", w.getEthAddr())
 	fmt.Fprintf(wtr, "Token balance: \t%s\n", w.getTokenBalance())
+	fmt.Fprintf(wtr, "Eth balance: \t%s\n", w.getEthBalance())
 	fmt.Fprintf(wtr, "Deposit Amount: \t%s\n", w.getDeposit())
 	fmt.Fprintf(wtr, "Broadcast Job Segment Price: \t%s\n", w.getJobPrice())
 	fmt.Fprintf(wtr, "Is Active Transcoder: \t%s\n", w.getIsActiveTranscoder())
 	fmt.Fprintf(wtr, "Transcoder Price: \t%s\n", w.getTranscoderPrice())
+	fmt.Fprintf(wtr, "Transcoder Stake: \t%s\n", w.getTranscoderStake())
 	wtr.Flush()
 }
 
@@ -89,11 +91,35 @@ func (w *wizard) getEthAddr() string {
 }
 
 func (w *wizard) getTokenBalance() string {
-	return "TODO"
+	b := httpGet(fmt.Sprintf("http://%v:%v/tokenBalance", w.host, w.httpPort))
+	if b == "" {
+		b = "Unknown"
+	}
+	return b
+}
+
+func (w *wizard) getEthBalance() string {
+	e := httpGet(fmt.Sprintf("http://%v:%v/ethBalance", w.host, w.httpPort))
+	if e == "" {
+		e = "Unknown"
+	}
+	return e
 }
 
 func (w *wizard) getDeposit() string {
-	return "TODO"
+	e := httpGet(fmt.Sprintf("http://%v:%v/broadcasterDeposit", w.host, w.httpPort))
+	if e == "" {
+		e = "Unknown"
+	}
+	return e
+}
+
+func (w *wizard) getTranscoderStake() string {
+	e := httpGet(fmt.Sprintf("http://%v:%v/transcoderStake", w.host, w.httpPort))
+	if e == "" {
+		e = "Unknown"
+	}
+	return e
 }
 
 func (w *wizard) getJobPrice() string {
