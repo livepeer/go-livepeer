@@ -232,32 +232,44 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 
 		//Get master playlist from broadcaster
 		hlsStrm := s.LivepeerNode.StreamDB.GetHLSStream(strmID)
+		var mpl *m3u8.MasterPlaylist
+		var err error
 		if hlsStrm == nil {
 			//Get master playlist from the network
-			mpl := s.LivepeerNode.GetMasterPlaylistFromNetwork(strmID)
+			mpl = s.LivepeerNode.GetMasterPlaylistFromNetwork(strmID)
 			if mpl == nil {
 				glog.Errorf("Cannot find master playlist")
 				return nil, nil //not returning an error here because it could be a media playlist request
 			}
 
 			//Create local stream and all of its variants
-			var err error
 			hlsStrm, err = s.LivepeerNode.StreamDB.AddNewHLSStream(strmID)
 			if err != nil {
 				glog.Errorf("Cannot create local stream: %v", err)
 				return nil, ErrNotFound
 			}
+		} else {
+			mpl, err = hlsStrm.GetMasterPlaylist()
+			if err != nil {
+				glog.Errorf("Error getting master playlist from hlsStream: %v", err)
+				return nil, ErrNotFound
+			}
+		}
 
-			for _, v := range mpl.Variants {
-				vName := strings.Split(v.URI, ".")[0]
-				//Need to create local media playlist because it has local state.
-				pl, _ := m3u8.NewMediaPlaylist(stream.DefaultMediaPlLen, stream.DefaultMediaPlLen)
-				v.Chunklist = pl
-				// glog.Infof("Adding variant %v to %v", v, hlsStrm.GetStreamID())
+		//Make sure the variants are in the streamDB
+		for _, v := range mpl.Variants {
+			vName := strings.Split(v.URI, ".")[0]
+			//Need to create local media playlist because it has local state.
+			pl, _ := m3u8.NewMediaPlaylist(stream.DefaultMediaPlLen, stream.DefaultMediaPlLen)
+			v.Chunklist = pl
+			// glog.Infof("Adding variant %v to %v", v, hlsStrm.GetStreamID())
+			if s.LivepeerNode.StreamDB.GetHLSStream(core.StreamID(vName)) == nil {
 				if err = hlsStrm.AddVariant(strings.Split(v.URI, ".")[0], v); err != nil {
 					glog.Errorf("Error adding variant: %v", err)
 				}
-				s.LivepeerNode.StreamDB.AddStream(core.StreamID(vName), hlsStrm)
+				if err = s.LivepeerNode.StreamDB.AddStream(core.StreamID(vName), hlsStrm); err != nil {
+					glog.Errorf("Error adding variant stream to StreamDB: %v", vName)
+				}
 			}
 		}
 		// glog.Infof("hlsStrm: %v", hlsStrm)
