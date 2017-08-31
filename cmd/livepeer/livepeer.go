@@ -78,7 +78,7 @@ func main() {
 	port := flag.Int("p", 15000, "port")
 	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
-	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpdata", usr.HomeDir), "data directory")
+	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
 	bootID := flag.String("bootID", "", "Bootstrap node ID")
 	bootAddr := flag.String("bootAddr", "", "Bootstrap node addr")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
@@ -92,7 +92,7 @@ func main() {
 	newEthAccount := flag.Bool("newEthAccount", false, "Create an eth account")
 	ethPassword := flag.String("ethPassword", "", "New Eth account password")
 	ethAccountAddr := flag.String("ethAccountAddr", "", "Existing Eth account address")
-	ethDatadir := flag.String("ethDatadir", fmt.Sprintf("%v/.lpTest", usr.HomeDir), "geth data directory")
+	ethDatadir := flag.String("ethDatadir", "", "geth data directory")
 	testnet := flag.Bool("testnet", false, "Set to true to connect to testnet")
 	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
 	tokenAddr := flag.String("tokenAddr", "", "Token smart contract address")
@@ -100,12 +100,16 @@ func main() {
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
+	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
 
 	flag.Parse()
 
 	if *testnet {
 		*bootID = "12208a4eb428aa57a74ef0593612adb88077c75c71ad07c3c26e4e7a8d4860083b01"
 		*bootAddr = "/ip4/52.15.174.204/tcp/15000"
+		if *ethDatadir == "" && !*offchain {
+			*ethDatadir = fmt.Sprintf("%v/.lpGeth", usr.HomeDir)
+		}
 	}
 
 	//Make sure datadir is present
@@ -178,7 +182,7 @@ func main() {
 
 	var gethCmd *exec.Cmd
 	//Set up ethereum-related stuff
-	if *ethDatadir != "" {
+	if *ethDatadir != "" && !*offchain {
 		gethipc := filepath.Join(filepath.Join(*ethDatadir, "geth.ipc"))
 		//If getipc file is not there, start the geth node
 		if _, err := os.Stat(gethipc); os.IsNotExist(err) {
