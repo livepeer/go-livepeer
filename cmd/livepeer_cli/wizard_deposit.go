@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"net/http"
 	"net/url"
 )
 
@@ -17,10 +15,5 @@ func (w *wizard) deposit() {
 		"amount": {fmt.Sprintf("%v", amount)},
 	}
 
-	body := bytes.NewBufferString(val.Encode())
-	rsp, err := http.Post(fmt.Sprintf("http://%v:%v/deposit", w.host, w.httpPort), "application/x-www-form-urlencoded", body)
-	if err != nil {
-		panic(err)
-	}
-	defer rsp.Body.Close()
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/deposit", w.host, w.httpPort), val)
 }

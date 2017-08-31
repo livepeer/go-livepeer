@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -79,4 +83,55 @@ func (w *wizard) readDefaultInt(def int) int {
 		return val
 	}
 	return def
+}
+
+func httpGet(url string) string {
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Error("Error getting node ID: %v")
+		return ""
+	}
+
+	defer resp.Body.Close()
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil || string(result) == "" {
+		// log.Error(fmt.Sprintf("Error reading from: %v - %v", url, err))
+		return ""
+	}
+	return string(result)
+
+}
+
+func httpPostWithParams(url string, val url.Values) string {
+	body := bytes.NewBufferString(val.Encode())
+
+	resp, err := http.Post(url, "application/x-www-form-urlencoded", body)
+	if err != nil {
+		log.Error("Error sending HTTP POST: %v", err)
+		return ""
+	}
+
+	defer resp.Body.Close()
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil || string(result) == "" {
+		return ""
+	}
+
+	return string(result)
+}
+
+func httpPost(url string) string {
+	resp, err := http.Post(url, "application/x-www-form-urlencoded", nil)
+	if err != nil {
+		log.Error("Error sending HTTP POST: %v", err)
+		return ""
+	}
+
+	defer resp.Body.Close()
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil || string(result) == "" {
+		return ""
+	}
+
+	return string(result)
 }

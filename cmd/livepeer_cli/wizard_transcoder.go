@@ -2,18 +2,17 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 )
 
-func (w *wizard) activateTranscoder() {
+func (w *wizard) promptTranscoderConfig() (int, int, int) {
 	var (
 		blockRewardCut  int
 		feeShare        int
 		pricePerSegment int
-		amount          int
 	)
 
-	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
 	fmt.Printf("Enter block reward cut percentage (default: 10) - ")
 	blockRewardCut = w.readDefaultInt(10)
 
@@ -23,12 +22,43 @@ func (w *wizard) activateTranscoder() {
 	fmt.Printf("Enter price per segment (default: 1) - ")
 	pricePerSegment = w.readDefaultInt(1)
 
+	return blockRewardCut, feeShare, pricePerSegment
+}
+
+func (w *wizard) activateTranscoder() {
+	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
+
+	blockRewardCut, feeShare, pricePerSegment := w.promptTranscoderConfig()
+
 	fmt.Printf("Would you like to bond to yourself (you will not be active until someone bonds to you)? (y/n)")
 	resp := w.read()
+
+	var amount int
 	if strings.Compare(strings.ToLower(resp), "y") == 0 {
 		fmt.Printf("Enter bond amount - ")
 		amount = w.readInt()
 	}
 
-	httpGet(fmt.Sprintf("http://%v:%v/activateTranscoder?blockRewardCut=%v&feeShare=%v&pricePerSegment=%v&amount=%v", w.host, w.httpPort, blockRewardCut, feeShare, pricePerSegment, amount))
+	val := url.Values{
+		"blockRewardCut":  {fmt.Sprintf("%v", blockRewardCut)},
+		"feeShare":        {fmt.Sprintf("%v", feeShare)},
+		"pricePerSegment": {fmt.Sprintf("%v", pricePerSegment)},
+		"amount":          {fmt.Sprintf("%v", amount)},
+	}
+
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/activateTranscoder", w.host, w.httpPort), val)
+}
+
+func (w *wizard) setTranscoderConfig() {
+	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
+
+	blockRewardCut, feeShare, pricePerSegment := w.promptTranscoderConfig()
+
+	val := url.Values{
+		"blockRewardCut":  {fmt.Sprintf("%v", blockRewardCut)},
+		"feeShare":        {fmt.Sprintf("%v", feeShare)},
+		"pricePerSegment": {fmt.Sprintf("%v", pricePerSegment)},
+	}
+
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/setTranscoderConfig", w.host, w.httpPort), val)
 }

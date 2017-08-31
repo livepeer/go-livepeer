@@ -81,7 +81,12 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		blockRewardCutStr := r.URL.Query().Get("blockRewardCut")
+		if err := r.ParseForm(); err != nil {
+			glog.Errorf("Parse Form Error: %v", err)
+			return
+		}
+
+		blockRewardCutStr := r.FormValue("blockRewardCut")
 		if blockRewardCutStr == "" {
 			glog.Errorf("Need to provide block reward cut")
 			return
@@ -92,7 +97,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		feeShareStr := r.URL.Query().Get("feeShare")
+		feeShareStr := r.FormValue("feeShare")
 		if feeShareStr == "" {
 			glog.Errorf("Need to provide fee share")
 			return
@@ -103,18 +108,18 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		pricePerSegmentStr := r.URL.Query().Get("pricePerSegment")
-		if pricePerSegmentStr == "" {
+		priceStr := r.FormValue("pricePerSegment")
+		if priceStr == "" {
 			glog.Errorf("Need to provide price per segment")
 			return
 		}
-		pricePerSegment, err := strconv.Atoi(pricePerSegmentStr)
+		price, err := strconv.Atoi(priceStr)
 		if err != nil {
 			glog.Errorf("Cannot convert price per segment: %v", err)
 			return
 		}
 
-		amountStr := r.URL.Query().Get("amount")
+		amountStr := r.FormValue("amount")
 		if amountStr == "" {
 			glog.Errorf("Need to provide amount")
 			return
@@ -130,7 +135,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		rc, ec := s.LivepeerNode.Eth.Transcoder(uint8(blockRewardCut), uint8(feeShare), big.NewInt(int64(pricePerSegment)))
+		rc, ec := s.LivepeerNode.Eth.Transcoder(uint8(blockRewardCut), uint8(feeShare), big.NewInt(int64(price)))
 		select {
 		case <-rc:
 			if amount > 0 {
@@ -149,44 +154,67 @@ func (s *LivepeerServer) StartWebserver() {
 
 	//Set transcoder config on-chain.
 	http.HandleFunc("/setTranscoderConfig", func(w http.ResponseWriter, r *http.Request) {
-		fc := r.URL.Query().Get("feecut")
-		if fc != "" {
-			fci, err := strconv.Atoi(fc)
-			if err != nil {
-				glog.Errorf("Fee cut conversion failed: %v", err)
-				return
-			}
-			TranscoderFeeCut = uint8(fci)
+		if err := r.ParseForm(); err != nil {
+			glog.Errorf("Parse Form Error: %v", err)
+			return
 		}
 
-		rc := r.URL.Query().Get("rewardcut")
-		if rc != "" {
-			rci, err := strconv.Atoi(rc)
-			if err != nil {
-				glog.Errorf("Reward cut conversion failed: %v", err)
-				return
-			}
-			TranscoderRewardCut = uint8(rci)
+		blockRewardCutStr := r.FormValue("blockRewardCut")
+		if blockRewardCutStr == "" {
+			glog.Errorf("Need to provide block reward cut")
+			return
+		}
+		blockRewardCut, err := strconv.Atoi(blockRewardCutStr)
+		if err != nil {
+			glog.Errorf("Cannot convert block reward cut: %v", err)
+			return
 		}
 
-		p := r.URL.Query().Get("price")
-		if p != "" {
-			pi, err := strconv.Atoi(p)
-			if err != nil {
-				glog.Errorf("Price conversion failed: %v", err)
-				return
-			}
-			TranscoderSegmentPrice = big.NewInt(int64(pi))
+		feeShareStr := r.FormValue("feeShare")
+		if feeShareStr == "" {
+			glog.Errorf("Need to provide fee share")
+			return
+		}
+		feeShare, err := strconv.Atoi(feeShareStr)
+		if err != nil {
+			glog.Errorf("Cannot convert fee share: %v", err)
+			return
 		}
 
-		glog.Infof("Transcoder Fee Cut: %v, Transcoder Reward Cut: %v, Transcoder Segment Price: %v", TranscoderFeeCut, TranscoderRewardCut, TranscoderSegmentPrice)
+		priceStr := r.FormValue("pricePerSegment")
+		if priceStr == "" {
+			glog.Errorf("Need to provide price per segment")
+			return
+		}
+		price, err := strconv.Atoi(priceStr)
+		if err != nil {
+			glog.Errorf("Cannot convert price per segment: %v", err)
+			return
+		}
+
+		if err := eth.CheckRoundAndInit(s.LivepeerNode.Eth); err != nil {
+			glog.Errorf("Error checking and initializing round: %v", err)
+			return
+		}
+
+		rc, ec := s.LivepeerNode.Eth.Transcoder(uint8(blockRewardCut), uint8(feeShare), big.NewInt(int64(price)))
+		select {
+		case rec := <-rc:
+			glog.Infof("%v", rec)
+		case err := <-ec:
+			glog.Errorf("Error setting transcoder config: %v", err)
+		}
 	})
 
 	//Bond some amount of tokens to a transcoder.
 	http.HandleFunc("/bond", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			//Parse amount
-			amountStr := r.URL.Query().Get("amount")
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
+			}
+
+			amountStr := r.FormValue("amount")
 			if amountStr == "" {
 				glog.Errorf("Need to provide amount")
 				return
@@ -197,10 +225,9 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
-			//Parse transcoder address
-			toAddr := r.URL.Query().Get("toAddr")
+			toAddr := r.FormValue("toAddr")
 			if toAddr == "" {
-				glog.Errorf("Need to provide transcoder address")
+				glog.Errorf("Need to provide to addr")
 				return
 			}
 
@@ -219,6 +246,50 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
+	http.HandleFunc("/unbond", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			if err := eth.CheckRoundAndInit(s.LivepeerNode.Eth); err != nil {
+				glog.Errorf("Error checking and initializing round: %v", err)
+				return
+			}
+
+			rc, ec := s.LivepeerNode.Eth.Unbond()
+			select {
+			case rec := <-rc:
+				glog.Infof("%v", rec)
+			case err := <-ec:
+				glog.Errorf("Error unbonding: %v", err)
+			}
+		}
+	})
+
+	http.HandleFunc("/withdrawBond", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			if err := eth.CheckRoundAndInit(s.LivepeerNode.Eth); err != nil {
+				glog.Errorf("Error checking and initializing round: %v", err)
+				return
+			}
+
+			rc, ec := s.LivepeerNode.Eth.WithdrawBond()
+			select {
+			case rec := <-rc:
+				glog.Infof("%v", rec)
+			case err := <-ec:
+				glog.Errorf("Error withdrawing bond: %v", err)
+			}
+		}
+	})
+
+	http.HandleFunc("/transcoderStatus", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			status, err := s.LivepeerNode.Eth.TranscoderStatus()
+			if err != nil {
+				w.Write([]byte(""))
+			}
+			w.Write([]byte(status))
+		}
+	})
+
 	//Print the transcoder's stake
 	http.HandleFunc("/transcoderStake", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
@@ -227,6 +298,16 @@ func (s *LivepeerServer) StartWebserver() {
 				w.Write([]byte(""))
 			}
 			w.Write([]byte(b.String()))
+		}
+	})
+
+	http.HandleFunc("/delegatorStatus", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			status, err := s.LivepeerNode.Eth.DelegatorStatus()
+			if err != nil {
+				w.Write([]byte(""))
+			}
+			w.Write([]byte(status))
 		}
 	})
 
@@ -406,22 +487,36 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write([]byte("False"))
 	})
 
-	http.HandleFunc("/allTranscoderStats", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			allTranscoderStats, err := s.LivepeerNode.Eth.GetAllTranscoderStats()
-			if err != nil {
-				w.Write([]byte(""))
-			}
-
-			data, err := json.Marshal(allTranscoderStats)
-			if err != nil {
-				glog.Errorf("Error marshalling all transcoder stats: %v", err)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
+	http.HandleFunc("/candidateTranscodersStats", func(w http.ResponseWriter, r *http.Request) {
+		candidateTranscodersStats, err := s.LivepeerNode.Eth.GetCandidateTranscodersStats()
+		if err != nil {
+			w.Write([]byte(""))
 		}
+
+		data, err := json.Marshal(candidateTranscodersStats)
+		if err != nil {
+			glog.Errorf("Error marshalling all transcoder stats: %v", err)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
+	})
+
+	http.HandleFunc("/reserveTranscodersStats", func(w http.ResponseWriter, r *http.Request) {
+		reserveTranscodersStats, err := s.LivepeerNode.Eth.GetReserveTranscodersStats()
+		if err != nil {
+			w.Write([]byte(""))
+		}
+
+		data, err := json.Marshal(reserveTranscodersStats)
+		if err != nil {
+			glog.Errorf("Error marshalling reserve transcoders stats: %v", err)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
 	})
 
 	http.HandleFunc("/transcoderPendingBlockRewardCut", func(w http.ResponseWriter, r *http.Request) {
