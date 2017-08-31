@@ -290,6 +290,15 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 			return nil, ErrNotFound
 		}
 
+		//If the hls stream is not empty, we don't need to request from the network anymore.  This could happen if there is a local broadcaster.
+		pl, err := hlsStrm.GetVariantPlaylist(strmID.String())
+		if err != nil {
+			glog.Errorf("Error getting pl")
+		}
+		if pl.Segments[0].URI != "" {
+			return pl, nil
+		}
+
 		//Subscribe from the network if we can't find a subscriber
 		sub, err := s.LivepeerNode.VideoNetwork.GetSubscriber(strmID.String())
 		if err != nil {
@@ -297,7 +306,7 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 			return nil, err
 		}
 		if !sub.IsWorking() {
-			glog.Infof("Making new subscriber for %v", strmID)
+			glog.V(4).Infof("Making new subscriber for %v", strmID)
 			if _, err := s.LivepeerNode.SubscribeFromNetwork(context.Background(), strmID, hlsStrm); err != nil {
 				glog.Errorf("Error subscribing from network: %v", err)
 				return nil, err
