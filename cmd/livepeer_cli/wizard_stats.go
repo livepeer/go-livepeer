@@ -27,16 +27,37 @@ func (w *wizard) stats(tips bool) {
 	fmt.Fprintf(wtr, "Eth balance: \t%s\n", w.getEthBalance())
 	fmt.Fprintf(wtr, "Deposit Amount: \t%s\n", w.getDeposit())
 	fmt.Fprintf(wtr, "Broadcast Job Segment Price: \t%s\n", w.getJobPrice())
+	wtr.Flush()
+
+	w.transcoderStats()
+	w.delegatorStats()
+}
+
+func (w *wizard) transcoderStats() {
+	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
+	fmt.Fprintln(wtr, "+----------------+")
+	fmt.Fprintln(wtr, "|TRANSCODER STATS|")
+	fmt.Fprintln(wtr, "+----------------+")
+	fmt.Fprintf(wtr, "Transcoder Status: \t%s\n", w.getTranscoderStatus())
 	fmt.Fprintf(wtr, "Is Active Transcoder: \t%s\n", w.getIsActiveTranscoder())
-	fmt.Fprintf(wtr, "Transcoder Pending Block Reward Cut: \t%s\n", w.getPendingTranscoderBlockRewardCut())
-	fmt.Fprintf(wtr, "Transcoder Pending Fee Share: \t%s\n", w.getPendingTranscoderFeeShare())
-	fmt.Fprintf(wtr, "Transcoder Pending Price: \t%s\n", w.getPendingTranscoderPrice())
-	fmt.Fprintf(wtr, "Transcoder Block Reward Cut: \t%s\n", w.getTranscoderBlockRewardCut())
-	fmt.Fprintf(wtr, "Transcoder Fee Share: \t%s\n", w.getTranscoderFeeShare())
-	fmt.Fprintf(wtr, "Transcoder Price: \t%s\n", w.getTranscoderPrice())
-	fmt.Fprintf(wtr, "Transcoder Bond: \t%s\n", w.getTranscoderBond())
-	fmt.Fprintf(wtr, "Transcoder Stake: \t%s\n", w.getTranscoderStake())
-	fmt.Fprintf(wtr, "Delegator Stake: \t%s\n", w.getDelegatorStake())
+	fmt.Fprintf(wtr, "Pending Block Reward Cut: \t%s\n", w.getPendingTranscoderBlockRewardCut())
+	fmt.Fprintf(wtr, "Pending Fee Share: \t%s\n", w.getPendingTranscoderFeeShare())
+	fmt.Fprintf(wtr, "Pending Price: \t%s\n", w.getPendingTranscoderPrice())
+	fmt.Fprintf(wtr, "Block Reward Cut: \t%s\n", w.getTranscoderBlockRewardCut())
+	fmt.Fprintf(wtr, "Fee Share: \t%s\n", w.getTranscoderFeeShare())
+	fmt.Fprintf(wtr, "Price: \t%s\n", w.getTranscoderPrice())
+	fmt.Fprintf(wtr, "Bond: \t%s\n", w.getTranscoderBond())
+	fmt.Fprintf(wtr, "Total Stake: \t%s\n", w.getTranscoderStake())
+	wtr.Flush()
+}
+
+func (w *wizard) delegatorStats() {
+	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
+	fmt.Fprintln(wtr, "+---------------+")
+	fmt.Fprintln(wtr, "|DELEGATOR STATS|")
+	fmt.Fprintln(wtr, "+---------------+")
+	fmt.Fprintf(wtr, "Delegator Status: \t%s\n", w.getDelegatorStatus())
+	fmt.Fprintf(wtr, "Total Stake: \t%s\n", w.getDelegatorStake())
 	wtr.Flush()
 }
 
@@ -121,6 +142,10 @@ func (w *wizard) getDeposit() string {
 	return e
 }
 
+func (w *wizard) getTranscoderStatus() string {
+	return httpGet(fmt.Sprintf("http://%v:%v/transcoderStatus", w.host, w.httpPort))
+}
+
 func (w *wizard) getTranscoderBond() string {
 	e := httpGet(fmt.Sprintf("http://%v:%v/transcoderBond", w.host, w.httpPort))
 	if e == "" {
@@ -135,6 +160,10 @@ func (w *wizard) getTranscoderStake() string {
 		e = "Unknown"
 	}
 	return e
+}
+
+func (w *wizard) getDelegatorStatus() string {
+	return httpGet(fmt.Sprintf("http://%v:%v/delegatorStatus", w.host, w.httpPort))
 }
 
 func (w *wizard) getDelegatorStake() string {
