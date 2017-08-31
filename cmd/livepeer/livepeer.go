@@ -30,7 +30,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/facebookgo/pidfile"
 	"github.com/golang/glog"
 	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/core"
@@ -120,17 +119,17 @@ func main() {
 		}
 	}
 
-	//Set pidfile
-	if _, err = os.Stat(fmt.Sprintf("%v/livepeer.pid", *datadir)); !os.IsNotExist(err) {
-		glog.Errorf("Node already running with datadir: %v", *datadir)
-		return
-	}
-	pidfile.SetPidfilePath(fmt.Sprintf("%v/livepeer.pid", *datadir))
-	if err = pidfile.Write(); err != nil {
-		glog.Errorf("Error writing pidfile: %v", err)
-		return
-	}
-	defer os.Remove(fmt.Sprintf("%v/livepeer.pid", *datadir))
+	// //Set pidfile
+	// if _, err = os.Stat(fmt.Sprintf("%v/livepeer.pid", *datadir)); !os.IsNotExist(err) {
+	// 	glog.Errorf("Node already running with datadir: %v", *datadir)
+	// 	return
+	// }
+	// pidfile.SetPidfilePath(fmt.Sprintf("%v/livepeer.pid", *datadir))
+	// if err = pidfile.Write(); err != nil {
+	// 	glog.Errorf("Error writing pidfile: %v", err)
+	// 	return
+	// }
+	// defer os.Remove(fmt.Sprintf("%v/livepeer.pid", *datadir))
 
 	//Take care of priv/pub keypair
 	priv, pub, err := getLPKeys(*datadir)
