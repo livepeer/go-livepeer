@@ -47,25 +47,71 @@ func (s *LivepeerServer) StartWebserver() {
 
 	//Set the broadcast config for creating onchain jobs.
 	http.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
-		p := r.URL.Query().Get("price")
-		if p != "" {
-			pi, err := strconv.Atoi(p)
-			if err != nil {
-				glog.Errorf("Price conversion failed: %v", err)
-				return
-			}
-			BroadcastPrice = big.NewInt(int64(pi))
+		if err := r.ParseForm(); err != nil {
+			glog.Errorf("Parse Form Error: %v", err)
+			return
 		}
 
-		j := r.URL.Query().Get("job")
-		if j != "" {
-			jp := types.VideoProfileLookup[j]
-			if jp.Name != "" {
-				BroadcastJobVideoProfile = jp
-			}
+		priceStr := r.FormValue("maxPricePerSegment")
+		if priceStr == "" {
+			glog.Errorf("Need to provide max price per segment")
+			return
 		}
+		price, err := strconv.Atoi(priceStr)
+		if err != nil {
+			glog.Errorf("Cannot convert max price per segment: %v", err)
+			return
+		}
+
+		transcodingOptions := r.FormValue("transcodingOptions")
+		if transcodingOptions == "" {
+			glog.Errorf("Need to provide transcoding options")
+			return
+		}
+
+		profile := types.VideoProfileLookup[transcodingOptions]
+		if profile.Name == "" {
+			glog.Errorf("Invalid transcoding options")
+			return
+		}
+
+		BroadcastPrice = big.NewInt(int64(price))
+		BroadcastJobVideoProfile = profile
 
 		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfile.Name)
+	})
+
+	http.HandleFunc("/getBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
+		config := struct {
+			MaxPricePerSegment *big.Int
+			TranscodingOptions string
+		}{
+			BroadcastPrice,
+			BroadcastJobVideoProfile.Name,
+		}
+
+		data, err := json.Marshal(config)
+		if err != nil {
+			glog.Errorf("Error marshalling broadcaster config: %v", err)
+			return
+		}
+
+		w.Write(data)
+	})
+
+	http.HandleFunc("/getAvailableTranscodingOptions", func(w http.ResponseWriter, r *http.Request) {
+		transcodingOptions := make([]string, 0, len(types.VideoProfileLookup))
+		for opt := range types.VideoProfileLookup {
+			transcodingOptions = append(transcodingOptions, opt)
+		}
+
+		data, err := json.Marshal(transcodingOptions)
+		if err != nil {
+			glog.Errorf("Error marshalling all transcoding options: %v", err)
+			return
+		}
+
+		w.Write(data)
 	})
 
 	//Activate the transcoder on-chain.

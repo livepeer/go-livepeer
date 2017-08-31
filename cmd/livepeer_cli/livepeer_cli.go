@@ -94,13 +94,14 @@ func (w *wizard) run() {
 		fmt.Println(" 3. Broadcast video")
 		fmt.Println(" 4. Stream video")
 		fmt.Println(" 5. Set transcoder config")
-		fmt.Println(" 6. Bond")
-		fmt.Println(" 7. Unbond")
-		fmt.Println(" 8. Withdraw bond")
-		fmt.Println(" 9. Become a transcoder")
-		fmt.Println(" 10. Get test Livepeer Token")
-		fmt.Println(" 11. Get test Ether")
-		fmt.Println(" 12. List registered transcoders")
+		fmt.Println(" 6. Set broadcast config")
+		fmt.Println(" 7. Bond")
+		fmt.Println(" 8. Unbond")
+		fmt.Println(" 9. Withdraw bond")
+		fmt.Println(" 10. Become a transcoder")
+		fmt.Println(" 11. Get test Livepeer Token")
+		fmt.Println(" 12. Get test Ether")
+		fmt.Println(" 13. List registered transcoders")
 
 		choice := w.read()
 		switch {
@@ -115,19 +116,21 @@ func (w *wizard) run() {
 		case choice == "5":
 			w.setTranscoderConfig()
 		case choice == "6":
-			w.bond()
+			w.setBroadcastConfig()
 		case choice == "7":
-			w.unbond()
+			w.bond()
 		case choice == "8":
-			w.withdrawBond()
+			w.unbond()
 		case choice == "9":
-			w.activateTranscoder()
+			w.withdrawBond()
 		case choice == "10":
-			w.requestTokens()
+			w.activateTranscoder()
 		case choice == "11":
+			w.requestTokens()
+		case choice == "12":
 			fmt.Print("Go to eth-testnet.livepeer.org and use the faucet. (enter to continue)")
 			w.read()
-		case choice == "12":
+		case choice == "13":
 			w.allTranscoderStats()
 		default:
 			log.Error("That's not something I can do")

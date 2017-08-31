@@ -70,7 +70,9 @@ func NewLivepeerServer(rtmpPort string, httpPort string, ffmpegPath string, lpNo
 //StartServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegment int, transcodingOptions string) error {
 	if s.LivepeerNode.Eth != nil {
-		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", maxPricePerSegment, transcodingOptions)
+		BroadcastPrice = big.NewInt(int64(maxPricePerSegment))
+		BroadcastJobVideoProfile = types.VideoProfileLookup[transcodingOptions]
+		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfile)
 	}
 
 	//Start HLS unsubscribe worker
@@ -80,7 +82,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 	s.broadcastRtmpToHLSMap = make(map[string]string)
 
 	//LPMS handlers for handling RTMP video
-	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(s), gotRTMPStreamHandler(s, maxPricePerSegment, transcodingOptions), endRTMPStreamHandler(s))
+	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
 	s.LPMS.HandleRTMPPlay(getRTMPStreamHandler(s))
 
 	//LPMS hanlder for handling HLS video play
@@ -116,7 +118,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 	}
 }
 
-func gotRTMPStreamHandler(s *LivepeerServer, maxPricePerSegment int, transcodingOptions string) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
+func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 		if s.LivepeerNode.Eth != nil {
 			//Check Token Balance
@@ -204,7 +206,7 @@ func gotRTMPStreamHandler(s *LivepeerServer, maxPricePerSegment int, transcoding
 
 		if s.LivepeerNode.Eth != nil {
 			//Create Transcode Job Onchain
-			go createBroadcastJob(s, hlsStrm, maxPricePerSegment, transcodingOptions)
+			go createBroadcastJob(s, hlsStrm)
 		}
 		return nil
 	}
@@ -427,13 +429,13 @@ func parseSegName(reqPath string) string {
 	return segName
 }
 
-func createBroadcastJob(s *LivepeerServer, hlsStrm stream.HLSVideoStream, maxPricePerSegment int, transcodingOptions string) {
+func createBroadcastJob(s *LivepeerServer, hlsStrm stream.HLSVideoStream) {
 	eth.CheckRoundAndInit(s.LivepeerNode.Eth)
 
-	resCh, errCh := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), transcodingOptions, big.NewInt(int64(maxPricePerSegment)))
+	resCh, errCh := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), BroadcastJobVideoProfile.Name, BroadcastPrice)
 	select {
 	case <-resCh:
-		glog.Infof("Created broadcast job. Price: %v. Type: %v", maxPricePerSegment, transcodingOptions)
+		glog.Infof("Created broadcast job. Price: %v. Type: %v", BroadcastJobVideoProfile.Name, BroadcastPrice)
 	case err := <-errCh:
 		glog.Errorf("Error creating broadcast job: %v", err)
 	}
