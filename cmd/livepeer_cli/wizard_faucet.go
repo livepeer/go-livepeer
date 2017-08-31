@@ -5,5 +5,5 @@ import (
 )
 
 func (w *wizard) requestTokens() {
-	httpGet(fmt.Sprintf("http://%v:%v/requestTokens", w.host, w.httpPort))
+	httpPost(fmt.Sprintf("http://%v:%v/requestTokens", w.host, w.httpPort))
 }

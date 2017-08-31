@@ -81,7 +81,12 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		blockRewardCutStr := r.URL.Query().Get("blockRewardCut")
+		if err := r.ParseForm(); err != nil {
+			glog.Errorf("Parse Form Error: %v", err)
+			return
+		}
+
+		blockRewardCutStr := r.FormValue("blockRewardCut")
 		if blockRewardCutStr == "" {
 			glog.Errorf("Need to provide block reward cut")
 			return
@@ -92,7 +97,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		feeShareStr := r.URL.Query().Get("feeShare")
+		feeShareStr := r.FormValue("feeShare")
 		if feeShareStr == "" {
 			glog.Errorf("Need to provide fee share")
 			return
@@ -103,18 +108,18 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		pricePerSegmentStr := r.URL.Query().Get("pricePerSegment")
-		if pricePerSegmentStr == "" {
+		priceStr := r.FormValue("pricePerSegment")
+		if priceStr == "" {
 			glog.Errorf("Need to provide price per segment")
 			return
 		}
-		pricePerSegment, err := strconv.Atoi(pricePerSegmentStr)
+		price, err := strconv.Atoi(priceStr)
 		if err != nil {
 			glog.Errorf("Cannot convert price per segment: %v", err)
 			return
 		}
 
-		amountStr := r.URL.Query().Get("amount")
+		amountStr := r.FormValue("amount")
 		if amountStr == "" {
 			glog.Errorf("Need to provide amount")
 			return
@@ -130,7 +135,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		rc, ec := s.LivepeerNode.Eth.Transcoder(uint8(blockRewardCut), uint8(feeShare), big.NewInt(int64(pricePerSegment)))
+		rc, ec := s.LivepeerNode.Eth.Transcoder(uint8(blockRewardCut), uint8(feeShare), big.NewInt(int64(price)))
 		select {
 		case <-rc:
 			if amount > 0 {
@@ -204,19 +209,25 @@ func (s *LivepeerServer) StartWebserver() {
 	//Bond some amount of tokens to a transcoder.
 	http.HandleFunc("/bond", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			var params struct {
-				Amount int
-				ToAddr string
-			}
-
-			if r.Body == nil {
-				http.Error(w, "Missing request body", 400)
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
 				return
 			}
 
-			err := json.NewDecoder(r.Body).Decode(&params)
+			amountStr := r.FormValue("amount")
+			if amountStr == "" {
+				glog.Errorf("Need to provide amount")
+				return
+			}
+			amount, err := strconv.Atoi(amountStr)
 			if err != nil {
-				http.Error(w, err.Error(), 400)
+				glog.Errorf("Cannot convert amount: %v", err)
+				return
+			}
+
+			toAddr := r.FormValue("toAddr")
+			if toAddr == "" {
+				glog.Errorf("Need to provide to addr")
 				return
 			}
 
@@ -225,7 +236,7 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
-			rc, ec := s.LivepeerNode.Eth.Bond(big.NewInt(int64(params.Amount)), common.HexToAddress(params.ToAddr))
+			rc, ec := s.LivepeerNode.Eth.Bond(big.NewInt(int64(amount)), common.HexToAddress(toAddr))
 			select {
 			case rec := <-rc:
 				glog.Infof("%v", rec)

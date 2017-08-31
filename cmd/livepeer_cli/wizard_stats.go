@@ -2,12 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"os"
 	"text/tabwriter"
-
-	"github.com/ethereum/go-ethereum/log"
 )
 
 func (w *wizard) stats(tips bool) {
@@ -59,23 +55,6 @@ func (w *wizard) delegatorStats() {
 	fmt.Fprintf(wtr, "Delegator Status: \t%s\n", w.getDelegatorStatus())
 	fmt.Fprintf(wtr, "Total Stake: \t%s\n", w.getDelegatorStake())
 	wtr.Flush()
-}
-
-func httpGet(url string) string {
-	resp, err := http.Get(url)
-	if err != nil {
-		log.Error("Error getting node ID: %v")
-		return ""
-	}
-
-	defer resp.Body.Close()
-	result, err := ioutil.ReadAll(resp.Body)
-	if err != nil || string(result) == "" {
-		// log.Error(fmt.Sprintf("Error reading from: %v - %v", url, err))
-		return ""
-	}
-	return string(result)
-
 }
 
 func (w *wizard) getNodeID() string {

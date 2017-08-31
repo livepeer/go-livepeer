@@ -1,12 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/golang/glog"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"text/tabwriter"
 
@@ -98,27 +98,18 @@ func (w *wizard) bond() {
 	fmt.Printf("Enter bond amount - ")
 	amount := w.readInt()
 
-	params := struct {
-		Amount int
-		ToAddr string
-	}{
-		amount,
-		transcoderIds[id].Hex(),
+	val := url.Values{
+		"amount": {fmt.Sprintf("%v", amount)},
+		"toAddr": {fmt.Sprintf("%v", transcoderIds[id].Hex())},
 	}
 
-	b := new(bytes.Buffer)
-	err := json.NewEncoder(b).Encode(params)
-	if err != nil {
-		return
-	}
-
-	http.Post(fmt.Sprintf("http://%v:%v/bond", w.host, w.httpPort), "application/json", b)
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/bond", w.host, w.httpPort), val)
 }
 
 func (w *wizard) unbond() {
-	http.Post(fmt.Sprintf("http://%v:%v/unbond", w.host, w.httpPort), "application/x-www-form-urlencoded", nil)
+	httpPost(fmt.Sprintf("http://%v:%v/unbond", w.host, w.httpPort))
 }
 
 func (w *wizard) withdrawBond() {
-	http.Post(fmt.Sprintf("http://%v:%v/withdrawBond", w.host, w.httpPort), "application/x-www-form-urlencoded", nil)
+	httpPost(fmt.Sprintf("http://%v:%v/withdrawBond", w.host, w.httpPort))
 }
