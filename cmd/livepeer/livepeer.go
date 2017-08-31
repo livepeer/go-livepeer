@@ -85,10 +85,6 @@ func main() {
 	bootAddr := flag.String("bootAddr", "/ip4/52.15.174.204/tcp/15000", "Bootstrap node addr")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
-	blockRewardCut := flag.Int("blockRewardCut", 10, "Block reward cut value for a transcoder")
-	feeShare := flag.Int("feeShare", 5, "Fee share value for a transcoder")
-	pricePerSegment := flag.Int("pricePerSegment", 1, "Price per segment (LPT) for a transcoder")
-	deposit := flag.Int("deposit", 0, "Deposit (LPT) for broadcast job")
 	maxPricePerSegment := flag.Int("maxPricePerSegment", 1, "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps4x3", "Transcoding options for broadcast job")
 	newEthAccount := flag.Bool("newEthAccount", false, "Create an eth account")
@@ -219,36 +215,7 @@ func main() {
 		n.EthAccount = *ethAccountAddr
 		n.EthPassword = *ethPassword
 
-		if *deposit > 0 {
-			glog.Infof("You started your node with the deposit amount set to %v tokens. Would you like to deposit this amount? (y/n)", *deposit)
-
-			var resp string
-			_, err := fmt.Scanf("%s", &resp)
-			if err != nil {
-				glog.Errorf("Error reading deposit confirmation response from input: %v", err)
-				return
-			}
-
-			if strings.Compare(strings.ToLower(resp), "y") == 0 {
-				resCh, errCh := n.Eth.Deposit(big.NewInt(int64(*deposit)))
-				select {
-				case <-resCh:
-					glog.Infof("Deposited %v tokens", *deposit)
-				case err := <-errCh:
-					glog.Errorf("Error depositing tokens: %v", err)
-					return
-				}
-			} else {
-				glog.Infof("Not depositing")
-			}
-		}
-
 		if *transcoder {
-			registered, err := n.Eth.IsRegisteredTranscoder()
-			if err != nil {
-				glog.Errorf("Error checking for registered transcoder: %v", err)
-			}
-
 			logsCh := make(chan ethtypes.Log)
 			logsSub, err := n.Eth.SubscribeToJobEvent(context.Background(), logsCh)
 			if err != nil {
@@ -258,24 +225,9 @@ func main() {
 			defer close(logsCh)
 			defer logsSub.Unsubscribe()
 
-			if !registered {
-				glog.Infof("You are not registered as a transcoder. To register and become a candidate transcoder please bond some tokens: ")
-
-				var bondAmount uint
-				_, err := fmt.Scanf("%d", &bondAmount)
-				if err != nil {
-					glog.Errorf("Error reading bond amount from input: %v", err)
-				}
-
-				if err := registerAndSetupTranscoder(n, logsCh, big.NewInt(int64(bondAmount)), uint8(*blockRewardCut), uint8(*feeShare), big.NewInt(int64(*pricePerSegment))); err != nil {
-					glog.Errorf("Error registering and setting up transcoder: %v", err)
-					return
-				}
-			} else {
-				if err := setupTranscoder(n, logsCh); err != nil {
-					glog.Errorf("Error setting up transcoder: %v", err)
-					return
-				}
+			if err := setupTranscoder(n, logsCh); err != nil {
+				glog.Errorf("Error setting up transcoder: %v", err)
+				return
 			}
 		}
 	} else {
@@ -414,34 +366,6 @@ func getEthAccount(datadir string, addr string) (accounts.Account, error) {
 	}
 
 	return accts[0], nil
-}
-
-func registerAndSetupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log, bondAmount *big.Int, blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) error {
-	if err := eth.CheckRoundAndInit(n.Eth); err != nil {
-		glog.Errorf("Error checking and initializing round: %v", err)
-		return err
-	}
-
-	resCh, errCh := n.Eth.Transcoder(blockRewardCut, feeShare, pricePerSegment)
-	select {
-	case <-resCh:
-		glog.Infof("Registered transcoder")
-
-		bResCh, bErrCh := n.Eth.Bond(bondAmount, n.Eth.Account().Address)
-		select {
-		case <-bResCh:
-			glog.Infof("Bonded transcoder")
-
-			return setupTranscoder(n, logsCh)
-		case err := <-bErrCh:
-			glog.Infof("Error bonding transcoder: %v", err)
-		}
-	case err := <-errCh:
-		glog.Errorf("Error registering transcoder: %v", err)
-		return err
-	}
-
-	return nil
 }
 
 func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) error {
