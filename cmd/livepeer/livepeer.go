@@ -88,7 +88,7 @@ func main() {
 	pricePerSegment := flag.Int("pricePerSegment", 1, "Price per segment (LPT) for a transcoder")
 	deposit := flag.Int("deposit", 0, "Deposit (LPT) for broadcast job")
 	maxPricePerSegment := flag.Int("maxPricePerSegment", 1, "Max price per segment for a broadcast job")
-	transcodingOptions := flag.String("transcodingOptions", "P240p30fps4x3", "Transcoding options for broadcast job")
+	transcodingOptions := flag.String("transcodingOptions", "P360p30fps16x9", "Transcoding options for broadcast job")
 	newEthAccount := flag.Bool("newEthAccount", false, "Create an eth account")
 	ethPassword := flag.String("ethPassword", "", "New Eth account password")
 	ethAccountAddr := flag.String("ethAccountAddr", "", "Existing Eth account address")
