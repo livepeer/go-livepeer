@@ -1,9 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"math/big"
+	"net/http"
 	"os"
 	"text/tabwriter"
+
+	"github.com/golang/glog"
 )
 
 func (w *wizard) stats(tips bool) {
@@ -21,12 +27,24 @@ func (w *wizard) stats(tips bool) {
 	fmt.Fprintf(wtr, "Account Eth Addr: \t%s\n", w.getEthAddr())
 	fmt.Fprintf(wtr, "Token balance: \t%s\n", w.getTokenBalance())
 	fmt.Fprintf(wtr, "Eth balance: \t%s\n", w.getEthBalance())
-	fmt.Fprintf(wtr, "Deposit Amount: \t%s\n", w.getDeposit())
-	fmt.Fprintf(wtr, "Broadcast Job Segment Price: \t%s\n", w.getJobPrice())
 	wtr.Flush()
 
+	w.broadcastStats()
 	w.transcoderStats()
 	w.delegatorStats()
+}
+
+func (w *wizard) broadcastStats() {
+	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
+	fmt.Fprintln(wtr, "+---------------+")
+	fmt.Fprintln(wtr, "|BROADCAST STATS|")
+	fmt.Fprintln(wtr, "+---------------+")
+	fmt.Fprintf(wtr, "Deposit Amount: \t%s\n", w.getDeposit())
+
+	price, transcodingOptions := w.getBroadcastConfig()
+	fmt.Fprintf(wtr, "Broadcast Job Segment Price: \t%s\n", price)
+	fmt.Fprintf(wtr, "Broadcast Transcoding Options: \t%s\n", transcodingOptions)
+	wtr.Flush()
 }
 
 func (w *wizard) transcoderStats() {
@@ -153,8 +171,31 @@ func (w *wizard) getDelegatorStake() string {
 	return e
 }
 
-func (w *wizard) getJobPrice() string {
-	return "TODO"
+func (w *wizard) getBroadcastConfig() (*big.Int, string) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/getBroadcastConfig", w.host, w.httpPort))
+	if err != nil {
+		glog.Errorf("Error getting broadcast config: %v", err)
+		return nil, ""
+	}
+
+	defer resp.Body.Close()
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		glog.Errorf("Error reading response: %v", err)
+		return nil, ""
+	}
+
+	var config struct {
+		MaxPricePerSegment *big.Int
+		TranscodingOptions string
+	}
+	err = json.Unmarshal(result, &config)
+	if err != nil {
+		glog.Errorf("Error unmarshalling broadcast config: %v", err)
+		return nil, ""
+	}
+
+	return config.MaxPricePerSegment, config.TranscodingOptions
 }
 
 func (w *wizard) getIsActiveTranscoder() string {

@@ -2,16 +2,74 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
+	"text/tabwriter"
 	"time"
 
 	"github.com/golang/glog"
 )
+
+func (w *wizard) allTranscodingOptions() map[int]string {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/getAvailableTranscodingOptions", w.host, w.httpPort))
+	if err != nil {
+		glog.Errorf("Error getting all transcoding options: %v", err)
+		return nil
+	}
+
+	defer resp.Body.Close()
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		glog.Errorf("Error reading response: %v", err)
+		return nil
+	}
+
+	var opts []string
+	err = json.Unmarshal(result, &opts)
+	if err != nil {
+		glog.Errorf("Error unmarshalling all transcoding options: %v", err)
+		return nil
+	}
+
+	optIds := make(map[int]string)
+
+	wtr := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', 0)
+	fmt.Fprintln(wtr, "Identifier\tTranscoding Options")
+	for idx, opt := range opts {
+		fmt.Fprintf(wtr, "%v\t%v\n", idx, opt)
+		optIds[idx] = opt
+	}
+
+	wtr.Flush()
+
+	return optIds
+}
+
+func (w *wizard) setBroadcastConfig() {
+	fmt.Printf("Enter broadcast max price per segment - ")
+	maxPricePerSegment := w.readInt()
+
+	opts := w.allTranscodingOptions()
+	if opts == nil {
+		return
+	}
+
+	fmt.Printf("Enter the identifier of the transcoding options you would like to use - ")
+	id := w.readInt()
+
+	val := url.Values{
+		"maxPricePerSegment": {fmt.Sprintf("%v", maxPricePerSegment)},
+		"transcodingOptions": {fmt.Sprintf("%v", opts[id])},
+	}
+
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/setBroadcastConfig", w.host, w.httpPort), val)
+}
 
 func (w *wizard) broadcast() {
 	if runtime.GOOS == "darwin" {
