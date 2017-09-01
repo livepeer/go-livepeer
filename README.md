@@ -8,7 +8,7 @@ Building and running this node allows you to:
 * Request that your stream be transcoded into multiple formats.
 * Consume a live stream from the network.
 
-For full documentation and a project overview, go to 
+For full documentation and a project overview, go to
 [Livepeer Documentation](https://github.com/livepeer/wiki/wiki)
 
 ## Installation
@@ -39,7 +39,7 @@ Livepeer requires a local Ethereum node. To set it up, follow the [Ethereum Inst
 Livepeer is currently only running on a private Ethereum testnet.
 1. Create a geth data directory. For example, `mkdir ~/.lpGeth`. We recommend creating a new directory even if you already have one, so the Livepeer testing data will be stored separately.
 2. Download the genesis json [lptestnet.json](http://eth-testnet.livepeer.org/lptestnet.json) (depending on your geth version, it may complain about 'genesis.number'. If encountered, delete the "number" field in the json.)
-3. Run `geth init` to initialize your local geth node with testnet genesis block.  For example: `geth --datadir ~/.lpGeth lptestnet.json`
+3. Run `geth init` to initialize your local geth node with testnet genesis block.  For example: `geth --datadir ~/.lpGeth init lptestnet.json`
 4. Start `geth` with the network id `858585` and the Livepeer testnet bootnode. For example: `geth --datadir ~/.lpGeth --networkid 858585 --bootnodes "enode://a1bd18a737acef008f94857654cfb2470124d1dc826b6248cea0331a7ca82b36d2389566e3aa0a1bc9a5c3c34a61f47601a6cff5279d829fcc60cb632ee88bad@13.58.149.151:30303"`
 
 Now the geth node should be running, and it should soon start downloading blocks.
@@ -67,7 +67,7 @@ You should see a video stream broadcasted from your webcam.  It may feel a littl
 
 Sometimes you want to use third-party broadcasting software, especially if you are running the software on Windows or Linux. Livepeer can take any RTMP stream as input, so you can use other popular streaming software to create the video stream. We recommend [OBS](https://obsproject.com/download) or [ffmpeg](https://www.ffmpeg.org/).
 
-By default, the RTMP port is 1935.  For example, if you are using OSX with ffmpeg, run 
+By default, the RTMP port is 1935.  For example, if you are using OSX with ffmpeg, run
 
 `ffmpeg -f avfoundation -framerate 30 -pixel_format uyvy422 -i "0:0" -vcodec libx264 -tune zerolatency -b 1000k -x264-params keyint=60:min-keyint=60 -acodec aac -ac 1 -b:a 96k -f flv rtmp://localhost:1935/movie`
 
@@ -81,7 +81,7 @@ If the broadcast is successful, you should be able to get a streamID by querying
 
 Sometimes the stream tool doesn't work.  You can use tools like `ffplay` to view the stream.
 
-For example, after you get the streamID, you can view the stream by running: 
+For example, after you get the streamID, you can view the stream by running:
 
 `ffplay http://localhost:8935/stream/{streamID}.m3u8`
 
@@ -101,7 +101,6 @@ We'll walk through the steps of becoming a transcoder on the test network.  To l
 
 
 ## Contribution
-Thank you for your interest in contributing to the core software of Livepeer. 
+Thank you for your interest in contributing to the core software of Livepeer.
 
 There are many ways to contribute to the Livepeer community. To see the project overview, head to our [Wiki overview page](https://github.com/livepeer/wiki/wiki/Project-Overview). The best way to get started is to reach out to us directly via our [gitter channel](https://gitter.im/livepeer/Lobby).
-

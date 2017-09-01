@@ -188,7 +188,7 @@ func main() {
 		if _, err := os.Stat(gethipc); os.IsNotExist(err) {
 			//Set up geth params depending on network, invoke geth
 			if *testnet {
-				gethCmd = exec.Command("geth", "--rpc", "--datadir", *ethDatadir, "--bootnodes=enode://a1bd18a737acef008f94857654cfb2470124d1dc826b6248cea0331a7ca82b36d2389566e3aa0a1bc9a5c3c34a61f47601a6cff5279d829fcc60cb632ee88bad@13.58.149.151:30303") //timeout in 3 mins
+				gethCmd = exec.Command("geth", "--rpc", "--datadir", *ethDatadir, "--networkid=858585", "--bootnodes=enode://a1bd18a737acef008f94857654cfb2470124d1dc826b6248cea0331a7ca82b36d2389566e3aa0a1bc9a5c3c34a61f47601a6cff5279d829fcc60cb632ee88bad@13.58.149.151:30303") //timeout in 3 mins
 				err = gethCmd.Start()
 				if err != nil {
 					glog.Infof("Couldn't start geth: %v", err)
