@@ -95,7 +95,7 @@ We'll walk through the steps of becoming a transcoder on the test network.  To l
 
 - You should see the Transcoder Status as "Not Registered".
 
-- Pick "Become a transcoder" in the wizard.  Make sure to choose "bond to yourself".
+- Pick "Become a transcoder" in the wizard.  Make sure to choose "bond to yourself".  If Successful, you should see the Transcoder Status change to "Registered"
 
 [TODO: become an active transcoder]
 
