@@ -51,7 +51,7 @@ Now the geth node should be running, and it should soon start downloading blocks
 
 - Make sure you have the `livepeer` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
 
-- Run `./livepeer -testnet --protocolAddr 0x5276beb2075da92075c332ab5f24d10f218d0936 --tokenAddr 0xbc5352a099206dc4e4a8defb6ab45d4bf757eecb --faucetAddr 0x3243e201a41ca2cc8a959ec37306026bdf9d1d30` to start Livepeer.
+- Run `./livepeer -testnet` to start Livepeer.
 
 - Make sure you have the `livepeer_cli` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
 
