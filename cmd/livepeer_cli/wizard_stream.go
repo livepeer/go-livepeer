@@ -46,12 +46,12 @@ func (w *wizard) stream() {
 		err = cmd.Wait()
 		if err != nil {
 			glog.Infof("Couldn't start the stream.  Make sure a local Livepeer node is running on port %v", w.httpPort)
-			fmt.Printf("Type `q` to stop broadcasting\n")
+			fmt.Printf("Type `q` to stop streaming\n")
 			return
 		}
 	}()
 
-	fmt.Printf("Type `q` to stop broadcasting\n")
+	fmt.Printf("Type `q` to stop streaming\n")
 	end := w.read()
 	if end == "q" {
 		fmt.Println("Quitting broadcast...")

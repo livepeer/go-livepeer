@@ -84,20 +84,25 @@ func main() {
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	maxPricePerSegment := flag.Int("maxPricePerSegment", 1, "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P360p30fps16x9", "Transcoding options for broadcast job")
-	newEthAccount := flag.Bool("newEthAccount", false, "Create an eth account")
 	ethPassword := flag.String("ethPassword", "", "New Eth account password")
 	ethAccountAddr := flag.String("ethAccountAddr", "", "Existing Eth account address")
 	ethDatadir := flag.String("ethDatadir", "", "geth data directory")
 	testnet := flag.Bool("testnet", false, "Set to true to connect to testnet")
-	protocolAddr := flag.String("protocolAddr", "", "Protocol smart contract address")
-	tokenAddr := flag.String("tokenAddr", "", "Token smart contract address")
-	faucetAddr := flag.String("faucetAddr", "", "Token faucet smart contract address")
+	protocolAddr := flag.String("protocolAddr", "0xc7ff57decee68ab792a31eb99af132fa2e6889b0", "Protocol smart contract address")
+	tokenAddr := flag.String("tokenAddr", "0x2c7d6359ad65c6ba619d0297974c4763991f2eec", "Token smart contract address")
+	faucetAddr := flag.String("faucetAddr", "0x6ae1af1d97625c5d443da7c243d196c30d26354a", "Token faucet smart contract address")
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
+	version := flag.Bool("version", false, "Print out the version")
 
 	flag.Parse()
+
+	if *version {
+		fmt.Println("Livepeer Node Version: 0.1.0")
+		return
+	}
 
 	if *testnet {
 		*bootID = "12208a4eb428aa57a74ef0593612adb88077c75c71ad07c3c26e4e7a8d4860083b01"
@@ -206,22 +211,17 @@ func main() {
 		var backend *ethclient.Client
 		var acct accounts.Account
 
-		if *newEthAccount {
+		acct, err = getEthAccount(*ethDatadir, *ethAccountAddr)
+		if err != nil {
+			glog.Infof("Cannot find eth account - creating new account")
 			keyStore := keystore.NewKeyStore(filepath.Join(*ethDatadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 			acct, err = keyStore.NewAccount(*ethPassword)
 			if err != nil {
 				glog.Errorf("Error creating new eth account: %v", err)
 				return
 			}
-		} else {
-			acct, err = getEthAccount(*ethDatadir, *ethAccountAddr)
-			if err != nil {
-				glog.Errorf("Error getting Eth account: %v", err)
-				return
-			}
-
-			glog.V(4).Infof("Found Eth account: %v", acct.Address.Hex())
 		}
+		glog.Infof("Using Eth account: %v", acct.Address.Hex())
 
 		//Wait for gethipc
 		if _, err := os.Stat(gethipc); os.IsNotExist(err) {
@@ -248,7 +248,7 @@ func main() {
 			return
 		}
 		n.Eth = client
-		n.EthAccount = *ethAccountAddr
+		n.EthAccount = acct.Address.String()
 		n.EthPassword = *ethPassword
 
 		if *transcoder {
@@ -387,7 +387,7 @@ func getEthAccount(datadir string, addr string) (accounts.Account, error) {
 	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
 	accts := keyStore.Accounts()
 	if len(accts) == 0 {
-		glog.Errorf("Cannot find geth account.  Make sure the data directory contains keys, or use -newEthAccount to create a new account.")
+		// glog.Errorf("Cannot find geth account.  Make sure the data directory contains keys, or use -newEthAccount to create a new account.")
 		return accounts.Account{}, fmt.Errorf("ErrGeth")
 	}
 
