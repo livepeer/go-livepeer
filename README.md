@@ -49,15 +49,15 @@ Now the geth node should be running, and it should soon start downloading blocks
 ### Quick start
 - Make sure you have done all the setup steps. (Have `ffmpeg` installed, have `geth` running on the Livepeer private testnet)
 
-- Make sure you have the `livepeer` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
+- Run `livepeer -testnet` to start Livepeer. Make sure you have the `livepeer` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
 
-- Run `./livepeer -testnet` to start Livepeer.
+- Run `livepeer_cli`. You should see a wizard launch in the command line. Make sure you installed the `livepeer_cli` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
 
-- Make sure you have the `livepeer_cli` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
+- Get some test eth from the eth faucet from [http://eth-testnet.livepeer.org/](http://eth-testnet.livepeer.org/). Make sure to use the "Account Eth Addr".  You should see your Eth balance go up.
 
-- We need some test tokens to broadcast video into the network.  You can run `./livepeer_cli` and pick 'Get test Livepeer Token'.  If the request is successful, you should see your `Token balance` go up.
+- Now get some test Livepeer tokens. Pick 'Get test Livepeer Token'. If the request is successful, you should see your `Token balance` go up.
 
-- To broadcast, run `./livepeer_cli` and pick 'Broadcast Video'.  You should see your webcam becoming active and a streamID printed on the screen.
+- To broadcast, run `livepeer_cli` and pick 'Broadcast Video'.  You should see your webcam becoming active and a streamID printed on the screen.
 
 - To see the video, run `./livepeer_cli` again, this time pick 'Stream Video'.
 
@@ -86,7 +86,18 @@ For example, after you get the streamID, you can view the stream by running:
 `ffplay http://localhost:8935/stream/{streamID}.m3u8`
 
 ### Becoming a Transcoder
-[TODO]
+
+We'll walk through the steps of becoming a transcoder on the test network.  To learn more about the transcoder, refer to the [Livepeer whitepaper](https://github.com/livepeer/wiki/blob/master/WHITEPAPER.md)
+
+- `livepeer --testnet --transcoder` to start the node as a transcoder.
+
+- `livepeer_cli` - make sure you have test ether and test Livepeer token.  Refer to the Quick Start section for getting test ether and test tokens.
+
+- You should see the Transcoder Status as "Not Registered".
+
+- Pick "Become a transcoder" in the wizard.  Make sure to choose "bond to yourself".
+
+[TODO: become an active transcoder]
 
 
 ## Contribution
