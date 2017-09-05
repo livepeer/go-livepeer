@@ -36,7 +36,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 
 	//If we do, just subscribe to it and listen.
 	if b := s.Network.broadcasters[s.StrmID]; b != nil {
-		glog.Infof("Broadcaster is present, let's return an error for now")
+		glog.V(4).Infof("Broadcaster is present, let's return an error for now")
 		//TODO: read from broadcaster
 		return ErrBroadcaster
 	}
@@ -52,7 +52,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 	//We'll keep track of all the connections on the
 	for p := range peerc {
 		//Question: Where do we close the stream? If we only close on "Unsubscribe", we may leave some streams open...
-		// glog.Infof("New peer from kademlia: %v", peer.IDHexEncode(p))
+		glog.V(5).Infof("New peer from kademlia: %v", peer.IDHexEncode(p))
 		ns := s.Network.NetworkNode.GetStream(p)
 		if ns != nil {
 			//Set up handler for the stream
@@ -95,12 +95,12 @@ func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *Basic
 			//Question: What happens if the handler gets stuck?
 			select {
 			case msg := <-s.msgChan:
-				// glog.Infof("Got data from msgChan: %v", msg)
+				glog.V(5).Infof("Got data from msgChan: %v", msg)
 				gotData(msg.SeqNo, msg.Data, false)
 			case <-ctxW.Done():
 				s.networkStream = nil
 				s.working = false
-				glog.Infof("Done with subscription, sending CancelSubMsg")
+				glog.V(4).Infof("Done with subscription, sending CancelSubMsg")
 				//Send EOF
 				gotData(0, nil, true)
 				if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {

@@ -17,7 +17,7 @@ type BasicRelayer struct {
 //RelayStreamData sends a StreamDataMsg to its listeners
 func (br *BasicRelayer) RelayStreamData(sd StreamDataMsg) error {
 	for _, l := range br.listeners {
-		// glog.Infof("Relaying stream data to listener: %v", l)
+		glog.V(5).Infof("Relaying stream data to listener: %v", l)
 		if err := l.SendMessage(StreamDataID, sd); err != nil {
 			glog.Errorf("Error writing data to relayer listener %v: %v", l, err)
 		}

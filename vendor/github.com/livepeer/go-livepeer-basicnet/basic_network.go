@@ -174,7 +174,7 @@ func (n *BasicVideoNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.Master
 
 //SetupProtocol sets up the protocol so we can handle incoming messages
 func (n *BasicVideoNetwork) SetupProtocol() error {
-	glog.Infof("\n\nSetting up protocol: %v", Protocol)
+	glog.V(4).Infof("\n\nSetting up protocol: %v", Protocol)
 	n.NetworkNode.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
 		ws := NewBasicStream(stream)
 		n.NetworkNode.streams[stream.Conn().RemotePeer()] = ws
@@ -199,7 +199,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 		glog.Errorf("%v Got error decoding msg: %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), err)
 		return err
 	}
-	glog.Infof("%v Received a message %v from %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), msg.Op, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
+	glog.V(4).Infof("%v Received a message %v from %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), msg.Op, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
 	switch msg.Op {
 	case SubReqID:
 		sr, ok := msg.Data.(SubReqMsg)
@@ -207,7 +207,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
 			return ErrProtocol
 		}
-		glog.Infof("Got Sub Req: %v", sr)
+		glog.V(5).Infof("Got Sub Req: %v", sr)
 		return handleSubReq(nw, sr, ws)
 	case CancelSubID:
 		cr, ok := msg.Data.(CancelSubMsg)
@@ -217,7 +217,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 		}
 		return handleCancelSubReq(nw, cr, ws.Stream.Conn().RemotePeer())
 	case StreamDataID:
-		// glog.Infof("Got Stream Data: %v", msg.Data)
+		glog.V(5).Infof("Got Stream Data: %v", msg.Data)
 		//Enque it into the subscriber
 		sd, ok := msg.Data.(StreamDataMsg)
 		if !ok {
@@ -250,7 +250,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 		}
 		return handleMasterPlaylistDataMsg(nw, mpld)
 	default:
-		glog.Infof("Unknown Data: %v -- closing stream", msg)
+		glog.V(2).Infof("Unknown Data: %v -- closing stream", msg)
 		// stream.Close()
 		return ErrUnknownMsg
 	}
@@ -258,7 +258,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 
 func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) error {
 	if b := nw.broadcasters[subReq.StrmID]; b != nil {
-		glog.Infof("Handling subReq, adding listener %v to broadcaster", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
+		glog.V(5).Infof("Handling subReq, adding listener %v to broadcaster", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
 		//TODO: Add verification code for the SubNodeID (Make sure the message is not spoofed)
 		remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
 		b.listeners[remotePid] = ws
@@ -270,7 +270,7 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 		r.listeners[remotePid] = ws
 		return nil
 	} else {
-		glog.Infof("Cannot find local broadcaster or relayer for stream: %v.  Creating a local relayer, and forwarding along to the network", subReq.StrmID)
+		glog.V(5).Infof("Cannot find local broadcaster or relayer for stream: %v.  Creating a local relayer, and forwarding along to the network", subReq.StrmID)
 		ctx := context.Background()
 		peerc, err := nw.NetworkNode.Kad.GetClosestPeers(ctx, subReq.StrmID)
 		if err != nil {
@@ -362,7 +362,7 @@ func handleStreamData(nw *BasicVideoNetwork, sd StreamDataMsg) error {
 	//A node can have a subscriber AND a relayer for the same stream.
 	s := nw.subscribers[sd.StrmID]
 	if s != nil {
-		// glog.Infof("Inserting into subscriber msg queue: %v", sd)
+		glog.V(5).Infof("Inserting into subscriber msg queue: %v", sd)
 		ctx, _ := context.WithTimeout(context.Background(), SubscriberDataInsertTimeout)
 		go func() {
 			select {
@@ -414,7 +414,7 @@ func handleFinishStream(nw *BasicVideoNetwork, fs FinishStreamMsg) error {
 }
 
 func handleTranscodeResponse(nw *BasicVideoNetwork, tr TranscodeResponseMsg) error {
-	glog.Infof("Transcode Result StreamIDs: %v", tr)
+	glog.V(5).Infof("Transcode Result StreamIDs: %v", tr)
 	callback, ok := nw.transResponseCallbacks[tr.StrmID]
 	if !ok {
 		glog.Errorf("Error handling transcode result - cannot find callback for stream: %v", tr.StrmID)

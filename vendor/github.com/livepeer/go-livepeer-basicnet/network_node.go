@@ -74,7 +74,7 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey, f *BasicNot
 	}
 	rHost := rhost.Wrap(basicHost, dht)
 
-	glog.Infof("Created node: %v at %v", peer.IDHexEncode(rHost.ID()), rHost.Addrs())
+	glog.V(2).Infof("Created node: %v at %v", peer.IDHexEncode(rHost.ID()), rHost.Addrs())
 	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, streams: streams}
 	f.HandleDisconnect(func(pid peer.ID) {
 		nn.RemoveStream(pid)
