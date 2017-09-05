@@ -12,7 +12,7 @@ For full documentation and a project overview, go to
 [Livepeer Documentation](https://github.com/livepeer/wiki/wiki)
 
 ## Installation
-The easiest way to install Livepeer is by downloading it from the [release page on Github](https://github.com/livepeer/go-livepeer/releases).  Pick the appropriate platform and the latest version. (We have tested with 1.6.7)
+The easiest way to install Livepeer is by downloading it from the [release page on Github](https://github.com/livepeer/go-livepeer/releases).  Pick the appropriate platform and the latest version.
 
 ## Build
 If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
@@ -33,7 +33,7 @@ or on Debian based Linux
 `apt-get install ffmpeg`
 
 ### geth
-Livepeer requires a local Ethereum node. To set it up, follow the [Ethereum Installation Guide](https://github.com/ethereum/go-ethereum/wiki/Building-Ethereum)
+Livepeer requires a local Ethereum node. To set it up, follow the [Ethereum Installation Guide](https://github.com/ethereum/go-ethereum/wiki/Building-Ethereum)  (We have tested with 1.6.7)
 
 ### Livepeer private Ethereum testnet
 Livepeer is currently only running on a private Ethereum testnet.
