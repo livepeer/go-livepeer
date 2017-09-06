@@ -298,7 +298,7 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 			glog.Errorf("Error getting pl")
 			return nil, err
 		}
-		if pl.Segments[0].URI != "" {
+		if pl != nil && pl.Segments[0] != nil {
 			return pl, nil
 		}
 
