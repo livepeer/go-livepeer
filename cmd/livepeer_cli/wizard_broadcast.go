@@ -77,7 +77,7 @@ func (w *wizard) broadcast() {
 		if w.rtmpPort != "" && w.httpPort != "" {
 			fmt.Printf("Current RTMP setting: http://localhost:%v/streams\n", w.rtmpPort)
 			fmt.Printf("Current HTTP setting: http://localhost:%v/streams\n", w.httpPort)
-			fmt.Println("Keep it? (y/n)")
+			fmt.Printf("Keep it? (Y/n) ")
 			if w.readDefaultString("y") != "y" {
 				fmt.Printf("New rtmp port? (default 1935)")
 				w.rtmpPort = w.readDefaultString("1935")
