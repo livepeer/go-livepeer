@@ -334,7 +334,6 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 				continue
 			} else {
 				// glog.Infof("Found playlist. Returning")
-				s.hlsSubTimer[strmID] = time.Now()
 				return pl, err
 			}
 		}
@@ -364,6 +363,8 @@ func getHLSSegmentHandler(s *LivepeerServer) func(url *url.URL) ([]byte, error) 
 			glog.Errorf("Error getting segment from stream: %v", err)
 			return nil, err
 		}
+
+		s.hlsSubTimer[strmID] = time.Now()
 		return seg.Data, nil
 	}
 }
