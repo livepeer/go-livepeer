@@ -1,0 +1,35 @@
+package: github.com/livepeer/go-livepeer-basicnet
+import:
+- package: github.com/ericxtang/m3u8
+  version: ^0.10.0
+- package: github.com/golang/glog
+- package: github.com/ipfs/go-datastore
+- package: github.com/libp2p/go-addr-util
+- package: github.com/libp2p/go-libp2p-crypto
+- package: github.com/libp2p/go-libp2p-host
+- package: github.com/libp2p/go-libp2p-kad-dht
+- package: github.com/libp2p/go-libp2p-metrics
+- package: github.com/libp2p/go-libp2p-net
+- package: github.com/libp2p/go-libp2p-peer
+- package: github.com/libp2p/go-libp2p-peerstore
+- package: github.com/libp2p/go-libp2p-protocol
+- package: github.com/libp2p/go-libp2p-record
+- package: github.com/libp2p/go-libp2p-swarm
+- package: github.com/libp2p/go-libp2p
+  subpackages:
+  - p2p/host/basic
+  - p2p/host/routed
+- package: github.com/livepeer/go-livepeer
+  version: ^0.1.1
+  subpackages:
+  - monitor
+  - net
+- package: github.com/multiformats/go-multiaddr
+  version: ^0.1.2
+- package: github.com/multiformats/go-multicodec
+  subpackages:
+  - json
+testImport:
+- package: github.com/ipfs/go-cid
+- package: github.com/multiformats/go-multihash
+  version: ^0.1.0

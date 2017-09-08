@@ -1,0 +1,85 @@
+{
+  "author": "ericxtang",
+  "bugs": {},
+  "gx": {
+    "dvcsimport": "github.com/livepeer/go-livepeer-basicnet"
+  },
+  "gxDependencies": [
+    {
+      "author": "multiformats",
+      "hash": "QmXY77cVe7rVRQXZZQRioukUM7aRW3BTcAgJe12MCtb3Ji",
+      "name": "go-multiaddr",
+      "version": "1.2.4"
+    },
+    {
+      "author": "whyrusleeping",
+      "hash": "QmVjRAPfRtResCMCE4eBqr4Beoa6A89P1YweG9wUS6RqUL",
+      "name": "go-libp2p-metrics",
+      "version": "1.6.10"
+    },
+    {
+      "author": "whyrusleeping",
+      "hash": "QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF",
+      "name": "go-libp2p-net",
+      "version": "1.6.12"
+    },
+    {
+      "hash": "QmeQMs9pr9Goci9xJ1Wo5ZQrknzBZwnmHYWJXA8stQDFMx",
+      "name": "go-libp2p-kad-dht",
+      "version": "2.5.16"
+    },
+    {
+      "author": "whyrusleeping",
+      "hash": "QmXZyBQMkqSYigxhJResC6fLWDGFhbphK67eZoqMDUvBmK",
+      "name": "go-libp2p",
+      "version": "4.5.5"
+    },
+    {
+      "author": "jbenet",
+      "hash": "QmVSase1JP7cq9QkPT46oNwdp9pT6kBkG3oqS14y3QcZjG",
+      "name": "go-datastore",
+      "version": "1.2.2"
+    },
+    {
+      "author": "whyrusleeping",
+      "hash": "QmVJGsPeK3vwtEyyTxpCs47yjBYMmYsAhEouPDF3Gb2eK3",
+      "name": "go-addr-util",
+      "version": "1.2.2"
+    },
+    {
+      "author": "whyrusleeping",
+      "hash": "QmQUmDr1DMDDy6KMSsJuyV9nVD7dJZ9iWxXESQWPvte2NP",
+      "name": "go-libp2p-swarm",
+      "version": "1.7.7"
+    },
+    {
+      "hash": "QmbxkgUceEcuSZ4ZdBA3x74VUDSSYjHYmmeEqkjxbtZ6Jg",
+      "name": "go-libp2p-record",
+      "version": "2.1.5"
+    },
+    {
+      "author": "whyrusleeping",
+      "hash": "QmUwW8jMQDxXhLD2j4EfWqLEMX3MsvyWcWGvJPVDh1aTmu",
+      "name": "go-libp2p-host",
+      "version": "1.3.19"
+    },
+    {
+      "author": "whyrusleeping",
+      "hash": "QmNp85zy9RLrQ5oQD4hPyS39ezrrXpcaa7R4Y9kxdWQLLQ",
+      "name": "go-cid",
+      "version": "0.7.18"
+    },
+    {
+      "hash": "QmSAFA8v42u4gpJNy1tb7vW3JiiXiaYDC2b845c2RnNSJL",
+      "name": "go-libp2p-kbucket",
+      "version": "2.1.13"
+    }
+  ],
+  "gxVersion": "0.11.0",
+  "language": "go",
+  "license": "",
+  "name": "go-livepeer-basicnet",
+  "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
+  "version": "0.0.0"
+}
+

@@ -1,0 +1,19 @@
+environment:
+
+
+dependencies:
+  cache_directories:
+    - "$HOME/.go_workspace/"
+  override:
+    - go get -u github.com/whyrusleeping/gx
+    - go get github.com/go-livepeer-basicnet
+    - go get github.com/multiformats/go-multicodec
+    - go get github.com/jbenet/go-msgio
+    - cd "$HOME/.go_workplace/src/github.com/go-livepeer-basicnet"
+    - gx install
+    - mv ../go-livepeer/vendor/github.com/golang/glog ../go-livepeer/vendor/github.com/golang/glog_backup
+
+test:
+  override:
+    - cd "$HOME/.go_workplace/src/github.com/go-livepeer-basicnet"
+    - go test
