@@ -7,7 +7,7 @@ dependencies:
   cache_directories:
     - "$HOME/.go_workspace/"
   override:
-    - go get github.com/livepeer/go-livepeer
+    - go get github.com/livepeer/go-livepeer/cmd/livepeer
     - go get github.com/golang/glog
     - npm install -g ffmpeg-static
 
