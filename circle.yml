@@ -13,5 +13,4 @@ dependencies:
 
 test:
   override:
-    - cd "$HOME/.go_workspace/src/github.com/livepeer/go-livepeer"
-    - bash test.sh
+    - cd "$HOME/.go_workspace/src/github.com/livepeer/go-livepeer" && bash test.sh
