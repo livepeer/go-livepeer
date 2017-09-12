@@ -60,7 +60,9 @@ func (n *StubNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error) {
 }
 
 func (n *StubNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
-	n.S = &StubSubscriber{}
+	if n.S == nil {
+		n.S = &StubSubscriber{}
+	}
 	return n.S, nil
 }
 
@@ -103,13 +105,15 @@ func (b *StubBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 func (b *StubBroadcaster) Finish() error { return nil }
 
 type StubSubscriber struct {
-	working bool
+	working         bool
+	subscribeCalled bool
 }
 
 func (s *StubSubscriber) IsWorking() bool { return s.working }
 func (s *StubSubscriber) String() string  { return "" }
 func (s *StubSubscriber) Subscribe(ctx context.Context, f func(seqNo uint64, data []byte, eof bool)) error {
-	glog.Infof("Calling StubSubscriber!!!")
+	// glog.Infof("Calling StubSubscriber!!!")
+	s.subscribeCalled = true
 	s1 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 0, Name: "strmID_01.ts", Data: []byte("test data"), Duration: 8.001}}
 	s2 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 1, Name: "strmID_02.ts", Data: []byte("test data"), Duration: 8.001}}
 	s3 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 2, Name: "strmID_03.ts", Data: []byte("test data"), Duration: 8.001}}
@@ -153,7 +157,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	s := setupServer()
 	s.LivepeerNode.VideoNetwork = &StubNetwork{}
 	s.RTMPSegmenter = &StubSegmenter{}
-	handler := gotRTMPStreamHandler(s, 0, "")
+	handler := gotRTMPStreamHandler(s)
 
 	url, _ := url.Parse("http://localhost/stream/test")
 	strm := stream.NewBasicRTMPVideoStream("strmID")
@@ -279,12 +283,13 @@ func TestGetHLSMediaPlaylistHandler(t *testing.T) {
 		t.Errorf("Expecting ErrNotFound, but got: %v", err)
 	}
 
-	//Set up a local stream and a local subscriber.
+	//Set up a local stream and a working local subscriber.
 	hlsStrm, _ := s.LivepeerNode.StreamDB.AddNewHLSStream("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")
-	// s.LivepeerNode.StreamDB.AddSubscriber("strm", &StubSubscriber{})
 	tmpPl, _ := m3u8.NewMediaPlaylist(100, 100)
 	tmpPl.Append("seg1.ts", 8, "")
 	hlsStrm.AddVariant("strm", &m3u8.Variant{URI: "strm.m3u8", Chunklist: tmpPl, VariantParams: m3u8.VariantParams{Bandwidth: 100}})
+	sub, _ := s.LivepeerNode.VideoNetwork.GetSubscriber("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")
+	sub.(*StubSubscriber).working = true
 	s.LivepeerNode.StreamDB.AddStream("strm", hlsStrm)
 
 	pl, err := handler(url)
@@ -294,18 +299,23 @@ func TestGetHLSMediaPlaylistHandler(t *testing.T) {
 	if pl.Segments[0] == nil {
 		t.Errorf("Expecting segment, but got %v", pl.Segments[0])
 	}
-
 	if pl.Segments[0].URI != "seg1.ts" || pl.Segments[0].Duration != 8 {
 		t.Errorf("Wrong segment info: %v", pl.Segments[0])
 	}
+	if sub.(*StubSubscriber).subscribeCalled == true {
+		t.Errorf("Should not call subscribe because subscriber is 'already working'")
+	}
 
-	//Set up local stream and no local subscriber (test calling subscribe to network)
+	//Set up local stream and non-working local subscriber (test should call subscribe to network)
 	s.LivepeerNode.StreamDB = core.NewStreamDB(string(s.LivepeerNode.Identity))
 	hlsStrm, _ = s.LivepeerNode.StreamDB.AddNewHLSStream("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")
+	variantStrm, _ := s.LivepeerNode.StreamDB.AddNewHLSStream("strm")
 	tmpPl, _ = m3u8.NewMediaPlaylist(100, 100)
 	tmpPl.Append("seg1.ts", 8, "")
 	hlsStrm.AddVariant("strm", &m3u8.Variant{URI: "strm.m3u8", Chunklist: tmpPl, VariantParams: m3u8.VariantParams{Bandwidth: 100}})
-	s.LivepeerNode.StreamDB.AddStream("strm", hlsStrm)
+
+	sub, _ = s.LivepeerNode.VideoNetwork.GetSubscriber("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")
+	sub.(*StubSubscriber).working = false
 
 	_, err = handler(url)
 	if err != nil {
@@ -314,9 +324,9 @@ func TestGetHLSMediaPlaylistHandler(t *testing.T) {
 
 	//Test the data from stub subscriber
 	for _, i := range []int{1, 2, 3, 4} {
-		s, err := hlsStrm.GetHLSSegment("strm", fmt.Sprintf("strmID_0%v.ts", i))
+		s, err := variantStrm.GetHLSSegment("strm", fmt.Sprintf("strmID_0%v.ts", i))
 		if err != nil || s == nil {
-			t.Errorf("Error getting hlsSegment: %v", err)
+			t.Errorf("Error getting hlsSegment%v: %v", i, err)
 		}
 		if string(s.Data) != "test data" {
 			t.Errorf("Expecting 'test data', but got %v", s.Data)

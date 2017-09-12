@@ -136,8 +136,29 @@ func (e *StubClient) SlashingPeriod() (*big.Int, error) {
 func (e *StubClient) LastRewardRound() (*big.Int, error) {
 	return nil, nil
 }
-func (e *StubClient) GetProtocolAddr() string       { return "" }
-func (e *StubClient) GetTokenAddr() string          { return "" }
-func (e *StubClient) GetBondingManagerAddr() string { return "" }
-func (e *StubClient) GetJobsManagerAddr() string    { return "" }
-func (e *StubClient) GetRoundsManagerAddr() string  { return "" }
+func (e *StubClient) GetProtocolAddr() string           { return "" }
+func (e *StubClient) GetTokenAddr() string              { return "" }
+func (e *StubClient) GetBondingManagerAddr() string     { return "" }
+func (e *StubClient) GetJobsManagerAddr() string        { return "" }
+func (e *StubClient) GetRoundsManagerAddr() string      { return "" }
+func (e *StubClient) DelegatorStake() (*big.Int, error) { return nil, nil }
+func (e *StubClient) DelegatorStatus() (string, error)  { return "", nil }
+func (e *StubClient) GetCandidateTranscodersStats() ([]TranscoderStats, error) {
+	return []TranscoderStats{}, nil
+}
+func (e *StubClient) GetReserveTranscodersStats() ([]TranscoderStats, error) {
+	return []TranscoderStats{}, nil
+}
+func (e *StubClient) GetFaucetAddr() string { return "" }
+func (e *StubClient) RequestTokens() (<-chan types.Receipt, <-chan error) {
+	return nil, nil
+}
+func (e *StubClient) TranscoderPendingPricingInfo() (uint8, uint8, *big.Int, error) {
+	return 0, 0, nil, nil
+}
+func (e *StubClient) TranscoderPricingInfo() (uint8, uint8, *big.Int, error) {
+	return 0, 0, nil, nil
+}
+func (e *StubClient) TranscoderStatus() (string, error)                  { return "", nil }
+func (e *StubClient) Unbond() (<-chan types.Receipt, <-chan error)       { return nil, nil }
+func (e *StubClient) WithdrawBond() (<-chan types.Receipt, <-chan error) { return nil, nil }
