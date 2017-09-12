@@ -235,7 +235,9 @@ func (n *BasicVideoNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.Master
 }
 
 func (n *BasicVideoNetwork) updateMasterPlaylistWithRelay(strmID string, mpl *m3u8.MasterPlaylist) error {
-	n.mplMap[strmID] = mpl
+	if mpl != nil {
+		n.mplMap[strmID] = mpl
+	}
 	return nil
 }
 
