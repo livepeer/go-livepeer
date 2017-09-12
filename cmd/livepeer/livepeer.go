@@ -100,7 +100,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("Livepeer Node Version: 0.1.1")
+		fmt.Println("Livepeer Node Version: 0.1.2")
 		return
 	}
 
