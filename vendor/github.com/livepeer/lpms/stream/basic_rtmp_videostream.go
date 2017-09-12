@@ -48,25 +48,25 @@ func (s *BasicRTMPVideoStream) ReadRTMPFromStream(ctx context.Context, dst av.Mu
 			headers := item.([]av.CodecData)
 			err = dst.WriteHeader(headers)
 			if err != nil {
-				glog.Infof("Error writing RTMP header from Stream %v to mux", s.streamID)
+				glog.Errorf("Error writing RTMP header from Stream %v to mux", s.streamID)
 				return err
 			}
 		case av.Packet:
 			packet := item.(av.Packet)
 			err = dst.WritePacket(packet)
 			if err != nil {
-				glog.Infof("Error writing RTMP packet from Stream %v to mux: %v", s.streamID, err)
+				glog.Errorf("Error writing RTMP packet from Stream %v to mux: %v", s.streamID, err)
 				return err
 			}
 		case RTMPEOF:
 			err := dst.WriteTrailer()
 			if err != nil {
-				glog.Infof("Error writing RTMP trailer from Stream %v", s.streamID)
+				glog.Errorf("Error writing RTMP trailer from Stream %v", s.streamID)
 				return err
 			}
 			return io.EOF
 		default:
-			glog.Infof("Cannot recognize buffer iteam type: ", reflect.TypeOf(item))
+			glog.Errorf("Cannot recognize buffer iteam type: ", reflect.TypeOf(item))
 			debug.PrintStack()
 			return ErrBufferItemType
 		}
@@ -115,7 +115,7 @@ func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.Dem
 
 	select {
 	case <-ctx.Done():
-		glog.Infof("Finished writing RTMP to Stream %v", s.streamID)
+		glog.V(2).Infof("Finished writing RTMP to Stream %v", s.streamID)
 		return ctx.Err()
 	case err := <-c:
 		return err

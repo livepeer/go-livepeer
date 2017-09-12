@@ -60,7 +60,7 @@ func main() {
 	lpms := core.New("1935", "8000", "", "")
 
 	//Streams needed for transcoding:
-	var rtmpStrm stream.Stream
+	var rtmpStrm stream.RTMPVideoStream
 	var hlsStrm stream.HLSVideoStream
 	var cancelSeg context.CancelFunc
 
@@ -71,7 +71,7 @@ func main() {
 		},
 
 		//gotStream
-		func(url *url.URL, rs *stream.VideoStream) (err error) {
+		func(url *url.URL, rs stream.RTMPVideoStream) (err error) {
 			//Store the stream
 			glog.Infof("Got RTMP stream: %v", rs.GetStreamID())
 			rtmpStrm = rs
@@ -100,7 +100,7 @@ func main() {
 			return nil
 		},
 		//endStream
-		func(url *url.URL, rtmpStrm *stream.VideoStream) error {
+		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 			//Remove the stream
 			cancelSeg()
 			rtmpStrm = nil
@@ -153,7 +153,7 @@ func main() {
 
 	lpms.HandleRTMPPlay(
 		//getStream
-		func(url *url.URL) (stream.Stream, error) {
+		func(url *url.URL) (stream.RTMPVideoStream, error) {
 			glog.Infof("Got req: ", url.Path)
 			strmID := parseStreamID(url.Path)
 			if strmID == rtmpStrm.GetStreamID() {
