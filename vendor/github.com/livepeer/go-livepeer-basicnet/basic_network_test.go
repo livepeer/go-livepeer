@@ -542,42 +542,95 @@ func TestHandleSubscribe(t *testing.T) {
 	defer n2.PeerHost.Close()
 	defer n4.PeerHost.Close()
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
+	connectHosts(n1.NetworkNode.PeerHost, n4.PeerHost)
+	go n1.SetupProtocol()
 
+	n2chan := make(chan string)
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
+		defer s.Close()
 		ws := NewBasicStream(s)
-		var msg Msg
-		err := ws.ReceiveMessage(&msg)
-		if err != nil {
-			glog.Errorf("Got error decoding msg: %v", err)
-			return
+		for {
+			var msg Msg
+			err := ws.ReceiveMessage(&msg)
+			if err != nil {
+				glog.Errorf("N2 Got error decoding msg: %v", err)
+				return
+			}
+			// glog.Infof("Got msg: %v", msg)
+			n2chan <- msg.Data.(StreamDataMsg).StrmID
 		}
-		glog.Infof("Got msg: %v", msg)
 	})
 
-	//Test when the broadcaster is local
-	b1tmp, _ := n1.GetBroadcaster("strmID")
+	n4chan := make(chan string)
+	n4.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
+		defer s.Close()
+		ws := NewBasicStream(s)
+		for {
+			var msg Msg
+			err := ws.ReceiveMessage(&msg)
+			if err != nil {
+				glog.Errorf("N4 Got error decoding msg: %v", err)
+				return
+			}
+			// glog.Infof("Got msg: %v", msg)
+			// t.Errorf("Shouldn't be here...")
+			n4chan <- msg.Data.(SubReqMsg).StrmID
+		}
+	})
+
+	//Test when the broadcaster is local (n2 should get a stream data back because n1 sends the last msg immediately)
+	strmID := fmt.Sprintf("%vStrmID", n1.GetNodeID())
+	b1tmp, _ := n1.GetBroadcaster(strmID)
 	b1, _ := b1tmp.(*BasicBroadcaster)
-	n1.broadcasters["strmID"] = b1
+	b1.lastMsg = &StreamDataMsg{SeqNo: 0, StrmID: strmID, Data: []byte("hello")}
+	n1.broadcasters[strmID] = b1
 	ws := n1.NetworkNode.GetStream(n2.Identity)
-	handleSubReq(n1, SubReqMsg{StrmID: "strmID"}, ws)
+	if err := handleSubReq(n1, SubReqMsg{StrmID: strmID}, ws); err != nil {
+		t.Errorf("Error handling sub req: %v", err)
+	}
 
 	l := b1.listeners[peer.IDHexEncode(n2.Identity)]
 	if l == nil || reflect.TypeOf(l) != reflect.TypeOf(&BasicStream{}) {
 		t.Errorf("Expecting l to be assigned a BasicStream, but got :%v", reflect.TypeOf(l))
 	}
-	delete(n1.broadcasters, "strmID")
 
-	//Test when the broadcaster is remote, and there is already a relayer.
-	r1 := n1.NewRelayer("strmID")
-	if n1.relayers["strmID"] != r1 {
+	timer := time.NewTimer(time.Second)
+	select {
+	case n2ID := <-n2chan:
+		if n2ID != strmID {
+			t.Errorf("Expecting %v, got %v", strmID, n2ID)
+		}
+	case <-timer.C:
+		t.Errorf("Timed out")
+	}
+	delete(n1.broadcasters, strmID)
+
+	//Test relaying
+	strmID2 := fmt.Sprintf("%vStrmID2", peer.IDHexEncode(n4.Identity))
+	r1 := n1.NewRelayer(strmID2)
+	if n1.relayers[strmID2] != r1 {
 		t.Errorf("Should have assigned relayer")
 	}
-	handleSubReq(n1, SubReqMsg{StrmID: "strmID"}, ws)
+	ws = n1.NetworkNode.GetStream(n2.Identity)
+	if err := handleSubReq(n1, SubReqMsg{StrmID: strmID2}, ws); err != nil {
+		t.Errorf("Error handling sub req: %v", err)
+	}
 	pid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
 	if r1.listeners[pid] != ws {
 		t.Errorf("Should have assigned listener to relayer")
 	}
-	delete(n1.relayers, "strmID")
+	timer = time.NewTimer(time.Second)
+	select {
+	case strm := <-n4chan:
+		if strm != strmID2 {
+			t.Errorf("n2 should have gotten %v, but it got %v", strmID2, strm)
+		}
+	case <-timer.C:
+		{
+			t.Errorf("Timed out")
+		}
+	}
+	delete(n1.relayers, strmID2)
 
 	//Test when the broadcaster is remote, and there isn't a relayer yet.
 	//TODO: This is hard to test because of the dependency to kad.IpfsDht.  We can get around it by creating an interface called "NetworkRouting"

@@ -349,9 +349,6 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 		return nil
 	}
 
-	// } else {
-	// glog.V(5).Infof("Cannot find local broadcaster or relayer for stream: %v.  Creating a local relayer, and forwarding along to the network", subReq.StrmID)
-
 	//If we don't have local broadcaster, forward the sub request to the closest peer
 	peers, err := closestLocalPeers(nw.NetworkNode.PeerHost.Peerstore(), subReq.StrmID)
 	if err != nil {
@@ -359,7 +356,7 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 		return err
 	}
 
-	//Subscribe from the network
+	//Send Sub Req to the network
 	for _, p := range peers {
 		//Don't send it back to the requesting peer
 		if p == ws.Stream.Conn().RemotePeer() || p == nw.NetworkNode.Identity {
@@ -397,8 +394,6 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 
 	glog.Errorf("%v Cannot forward Sub req to any of the peers: %v", nw.GetNodeID(), peers)
 	return ErrProtocol
-	// }
-
 }
 
 func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) error {
@@ -452,7 +447,7 @@ func handleStreamData(nw *BasicVideoNetwork, sd StreamDataMsg) error {
 	}
 
 	if s == nil && r == nil {
-		glog.Errorf("Something is wrong.  Expect subscriber or relayer to exist at this point (should have been setup when SubReq came in)")
+		glog.Errorf("%v, Something is wrong.  Expect subscriber or relayer to exist at this point (should have been setup when SubReq came in)", peer.IDHexEncode(nw.NetworkNode.Identity))
 		return ErrProtocol
 	}
 	return nil

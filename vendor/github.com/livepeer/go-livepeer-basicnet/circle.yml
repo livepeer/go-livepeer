@@ -17,5 +17,4 @@ dependencies:
 
 test:
   override:
-    - cd "$HOME/go-livepeer-basicnet"
-    - go test
+    - cd "$HOME/go-livepeer-basicnet" && go test
