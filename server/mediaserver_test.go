@@ -322,6 +322,15 @@ func TestGetHLSMediaPlaylistHandler(t *testing.T) {
 		t.Errorf("Error in handler: %v", err)
 	}
 
+	//TODO: Wait a few seconds to make sure segments are populated.
+	start := time.Now()
+	for time.Since(start) < time.Second*2 {
+		s, err := variantStrm.GetHLSSegment("strm", "strmID_01.ts")
+		if err != nil || s == nil {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+
 	//Test the data from stub subscriber
 	for _, i := range []int{1, 2, 3, 4} {
 		s, err := variantStrm.GetHLSSegment("strm", fmt.Sprintf("strmID_0%v.ts", i))

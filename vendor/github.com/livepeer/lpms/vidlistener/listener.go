@@ -2,6 +2,7 @@ package vidlistener
 
 import (
 	"context"
+	"io"
 	"net/url"
 	"time"
 
@@ -29,7 +30,7 @@ func (self *VidListener) HandleRTMPPublish(
 	endStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error) {
 
 	self.RtmpServer.HandlePublish = func(conn *joy4rtmp.Conn) {
-		glog.Infof("RTMP server got upstream: %v", conn.URL)
+		glog.V(2).Infof("RTMP server got upstream: %v", conn.URL)
 
 		s := stream.NewBasicRTMPVideoStream(makeStreamID(conn.URL))
 		ctx, cancel := context.WithCancel(context.Background())
@@ -46,7 +47,9 @@ func (self *VidListener) HandleRTMPPublish(
 		select {
 		case err := <-ec:
 			endStream(conn.URL, s)
-			glog.Errorf("Got error writing RTMP: %v", err)
+			if err != io.EOF {
+				glog.Errorf("Got error writing RTMP: %v", err)
+			}
 			cancel()
 		}
 	}

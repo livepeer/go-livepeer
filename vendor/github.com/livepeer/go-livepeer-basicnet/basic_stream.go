@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"sync"
 
+	multicodec "github.com/multiformats/go-multicodec"
+	mcjson "github.com/multiformats/go-multicodec/json"
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 	net "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
-
-	multicodec "gx/ipfs/QmVRuqGJ881CFiNLgwWSfRVjTjqQ6FeCNufkftNC4fpACZ/go-multicodec"
-	mcjson "gx/ipfs/QmVRuqGJ881CFiNLgwWSfRVjTjqQ6FeCNufkftNC4fpACZ/go-multicodec/json"
 
 	"github.com/golang/glog"
 )
@@ -58,7 +57,7 @@ func (bs *BasicStream) ReceiveMessage(n interface{}) error {
 //SendMessage writes a message into the stream.
 func (bs *BasicStream) SendMessage(opCode Opcode, data interface{}) error {
 	msg := Msg{Op: opCode, Data: data}
-	// glog.Infof("Sending: %v to %v", msg, peer.IDHexEncode(bs.Stream.Conn().RemotePeer()))
+	glog.V(5).Infof("Sending: %v to %v", msg, peer.IDHexEncode(bs.Stream.Conn().RemotePeer()))
 	return bs.encodeAndFlush(msg)
 }
 

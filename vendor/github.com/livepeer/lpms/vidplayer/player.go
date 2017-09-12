@@ -3,6 +3,7 @@ package vidplayer
 import (
 	"context"
 	"errors"
+	"io"
 	"io/ioutil"
 	"mime"
 	"net/http"
@@ -49,7 +50,7 @@ func (s *VidPlayer) HandleRTMPPlay(getStream func(url *url.URL) (stream.RTMPVide
 
 func (s *VidPlayer) rtmpServerHandlePlay() func(conn *joy4rtmp.Conn) {
 	return func(conn *joy4rtmp.Conn) {
-		glog.Infof("LPMS got RTMP request @ %v", conn.URL)
+		glog.V(2).Infof("LPMS got RTMP request @ %v", conn.URL)
 
 		src, err := s.rtmpPlayHandler(conn.URL)
 		if err != nil {
@@ -57,9 +58,10 @@ func (s *VidPlayer) rtmpServerHandlePlay() func(conn *joy4rtmp.Conn) {
 			return
 		}
 
-		err = src.ReadRTMPFromStream(context.Background(), conn)
-		if err != nil {
-			glog.Errorf("Error copying RTMP stream: %v", err)
+		if err = src.ReadRTMPFromStream(context.Background(), conn); err != nil {
+			if err != io.EOF {
+				glog.Errorf("Error copying RTMP stream: %v", err)
+			}
 			return
 		}
 	}
@@ -85,7 +87,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 	getMediaPlaylist func(url *url.URL) (*m3u8.MediaPlaylist, error),
 	getSegment func(url *url.URL) ([]byte, error)) {
 
-	glog.Infof("LPMS got HTTP request @ %v", r.URL.Path)
+	glog.V(2).Infof("LPMS got HTTP request @ %v", r.URL.Path)
 
 	if !strings.HasSuffix(r.URL.Path, ".m3u8") && !strings.HasSuffix(r.URL.Path, ".ts") {
 		http.Error(w, "LPMS only accepts HLS requests over HTTP (m3u8, ts).", 500)

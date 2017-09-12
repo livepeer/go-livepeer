@@ -13,10 +13,12 @@ import (
 	"github.com/ericxtang/m3u8"
 
 	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
+	kb "gx/ipfs/QmSAFA8v42u4gpJNy1tb7vW3JiiXiaYDC2b845c2RnNSJL/go-libp2p-kbucket"
+	host "gx/ipfs/QmUwW8jMQDxXhLD2j4EfWqLEMX3MsvyWcWGvJPVDh1aTmu/go-libp2p-host"
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
-	host "gx/ipfs/QmZy7c24mmkEHpNJndwgsEE3wcVxHd8yB969yTnAJFVw7f/go-libp2p-host"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 	net "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
+	kad "gx/ipfs/QmeQMs9pr9Goci9xJ1Wo5ZQrknzBZwnmHYWJXA8stQDFMx/go-libp2p-kad-dht"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/types"
@@ -66,6 +68,8 @@ func TestReconnect(t *testing.T) {
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
 	go n1.SetupProtocol()
 	go n2.SetupProtocol()
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n2.NetworkNode.PeerHost.Close()
 
 	//Send a message, it should work
 	s := n2.NetworkNode.GetStream(n1.NetworkNode.Identity)
@@ -90,7 +94,101 @@ func TestReconnect(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 }
 
+func TestSubPath(t *testing.T) {
+	ctx := context.Background()
+	nDHTs := 10
+	dhts, hosts := setupDHTS(ctx, nDHTs, t)
+	defer func() {
+		for i := 0; i < nDHTs; i++ {
+			dhts[i].Close()
+			defer hosts[i].Close()
+		}
+	}()
+
+	ids := make([]peer.ID, 10)
+	dhtLookup := make(map[peer.ID]*kad.IpfsDHT)
+	hostsLookup := make(map[peer.ID]host.Host)
+	for i, dht := range dhts {
+		id := hosts[i].ID()
+		ids[i] = id
+		dhtLookup[id] = dht
+		hostsLookup[id] = hosts[i]
+	}
+
+	glog.Infof("id0: %v", peer.IDHexEncode(ids[0]))
+	ids = kb.SortClosestPeers(ids, kb.ConvertPeerID(ids[0]))
+	//Connect 9 with 6-8
+	for i := 6; i < 9; i++ {
+		connect(t, ctx, dhtLookup[ids[9]], dhtLookup[ids[i]], hostsLookup[ids[9]], hostsLookup[ids[i]])
+	}
+	//Connect 6 with 3-5
+	for i := 3; i < 6; i++ {
+		connect(t, ctx, dhtLookup[ids[6]], dhtLookup[ids[i]], hostsLookup[ids[6]], hostsLookup[ids[i]])
+	}
+	//Connect 3 with 0-2
+	for i := 0; i < 3; i++ {
+		connect(t, ctx, dhtLookup[ids[3]], dhtLookup[ids[i]], hostsLookup[ids[3]], hostsLookup[ids[i]])
+	}
+
+	for _, id := range ids {
+		ps := hostsLookup[id].Peerstore().Peers()
+		pstr := ""
+		for _, p := range ps {
+			pstr = fmt.Sprintf("%v, %v", pstr, peer.IDHexEncode(p))
+		}
+		// glog.Infof("ID: %v, Addrs: %v, Peers: %v", peer.IDHexEncode(id), hostsLookup[id].Addrs(), pstr)
+		glog.Infof("ID: %v, Peers: %v", peer.IDHexEncode(id), pstr)
+	}
+	nodes := make([]*BasicVideoNetwork, 10, 10)
+	for i, id := range ids {
+		n_tmp := newNode(id, dhtLookup[id], hostsLookup[id])
+		n, _ := NewBasicVideoNetwork(n_tmp)
+		nodes[i] = n
+		if i != 0 {
+			go n.SetupProtocol()
+		}
+	}
+
+	strmID := fmt.Sprintf("%v%v", nodes[0].GetNodeID(), "strmID")
+	hostsLookup[ids[0]].SetStreamHandler(Protocol, func(s net.Stream) {
+		ws := NewBasicStream(s)
+		var msg Msg
+		err := ws.ReceiveMessage(&msg)
+		if err != nil {
+			t.Errorf("Error receiving msg: %v", err)
+		}
+		glog.Infof("n0 got msg: %v", msg)
+		if msg.Op != SubReqID {
+			t.Errorf("Expecting Sub")
+		}
+		ws.SendMessage(StreamDataID, StreamDataMsg{StrmID: strmID, Data: []byte("Hello from n0")})
+	})
+
+	glog.Infof("Sending Sub from %v, StrmID: %v", peer.IDHexEncode(nodes[0].NetworkNode.Identity), strmID)
+	sub, err := nodes[9].GetSubscriber(strmID)
+	if err != nil {
+		t.Errorf("error: %v", err)
+	}
+	bc := make(chan bool)
+	sub.Subscribe(ctx, func(segNo uint64, data []byte, eof bool) {
+		glog.Infof("n9 got msg: %v", string(data))
+		bc <- true
+	})
+
+	select {
+	case <-bc:
+		//pass
+	}
+}
+
+func newNode(pid peer.ID, dht *kad.IpfsDHT, rHost host.Host) *NetworkNode {
+	streams := make(map[peer.ID]*BasicStream)
+	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, streams: streams}
+	return nn
+}
+
 func TestSubPeerForwardPath(t *testing.T) {
+	// connect(t, ctx, )
 	keys := make([]keyPair, 3)
 	for i := 0; i < 3; i++ {
 		priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
@@ -109,6 +207,10 @@ func TestSubPeerForwardPath(t *testing.T) {
 	n1, _ := NewBasicVideoNetwork(no1)
 	no2, _ := NewNode(15001, keys[1].Priv, keys[1].Pub, &BasicNotifiee{})
 	no3, _ := NewNode(15000, keys[2].Priv, keys[2].Pub, &BasicNotifiee{}) //Make this node unreachable from n1 because it's using the same port
+	defer no1.PeerHost.Close()
+	defer n1.NetworkNode.PeerHost.Close()
+	defer no2.PeerHost.Close()
+	defer no3.PeerHost.Close()
 
 	connectHosts(n1.NetworkNode.PeerHost, no2.PeerHost)
 	connectHosts(no2.PeerHost, no3.PeerHost)
@@ -138,7 +240,8 @@ func TestSubPeerForwardPath(t *testing.T) {
 	})
 
 	//n1 subscribe from n3 - should go through n2 because n3 is not directly reachable from n1
-	s1tmp, _ := n1.GetSubscriber(fmt.Sprintf("%v%v", peer.IDHexEncode(no3.Identity), "strmID"))
+	strmID := fmt.Sprintf("%v%v", peer.IDHexEncode(no3.Identity), "strmID")
+	s1tmp, _ := n1.GetSubscriber(strmID)
 	s1, _ := s1tmp.(*BasicSubscriber)
 	s1.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 		glog.Infof("Got response: %v, %v", seqNo, data)
@@ -159,9 +262,13 @@ func TestSubPeerForwardPath(t *testing.T) {
 
 func TestSendBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Broadcast Stream...")
-	n1, _ := setupNodes()
+	n1, n3 := setupNodes()
 	//n2 is simple node so we can register our own handler and inspect the incoming messages
-	n2, _ := simpleNodes(15002, 15003)
+	n2, n4 := simpleNodes(15002, 15003)
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n3.NetworkNode.PeerHost.Close()
+	defer n2.PeerHost.Close()
+	defer n4.PeerHost.Close()
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var strmData StreamDataMsg
@@ -235,8 +342,12 @@ func TestSendBroadcast(t *testing.T) {
 
 func TestHandleBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Broadcast...")
-	n1, _ := setupNodes()
-	n2, _ := simpleNodes(15002, 15003)
+	n1, n3 := setupNodes()
+	n2, n4 := simpleNodes(15002, 15003)
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n3.NetworkNode.PeerHost.Close()
+	defer n2.PeerHost.Close()
+	defer n4.PeerHost.Close()
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var cancelMsg CancelSubMsg
@@ -318,8 +429,12 @@ func TestHandleBroadcast(t *testing.T) {
 
 func TestSendSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Subscriber...")
-	n1, _ := setupNodes()
-	n2, _ := simpleNodes(15002, 15003)
+	n1, n3 := setupNodes()
+	n2, n4 := simpleNodes(15002, 15003)
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n3.NetworkNode.PeerHost.Close()
+	defer n2.PeerHost.Close()
+	defer n4.PeerHost.Close()
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var subReq SubReqMsg
@@ -352,7 +467,8 @@ func TestSendSubscribe(t *testing.T) {
 		}
 	})
 
-	s1tmp, _ := n1.GetSubscriber("strmID")
+	strmID := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n2.Identity))
+	s1tmp, _ := n1.GetSubscriber(strmID)
 	s1, _ := s1tmp.(*BasicSubscriber)
 	result := make(map[uint64][]byte)
 	lock := &sync.Mutex{}
@@ -377,7 +493,7 @@ func TestSendSubscribe(t *testing.T) {
 		}
 	}
 
-	if subReq.StrmID != "strmID" {
+	if subReq.StrmID != strmID {
 		t.Errorf("Expecting subReq.StrmID to be 'strmID', but got %v", subReq.StrmID)
 	}
 
@@ -408,7 +524,7 @@ func TestSendSubscribe(t *testing.T) {
 		}
 	}
 
-	if cancelMsg.StrmID != "strmID" {
+	if cancelMsg.StrmID != strmID {
 		t.Errorf("Expecting to get cancelMsg with StrmID: 'strmID', but got %v", cancelMsg.StrmID)
 	}
 	if s1.working {
@@ -419,45 +535,102 @@ func TestSendSubscribe(t *testing.T) {
 
 func TestHandleSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Broadcast...")
-	n1, _ := setupNodes()
-	n2, _ := simpleNodes(15002, 15003)
+	n1, n3 := setupNodes()
+	n2, n4 := simpleNodes(15002, 15003)
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n3.NetworkNode.PeerHost.Close()
+	defer n2.PeerHost.Close()
+	defer n4.PeerHost.Close()
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
+	connectHosts(n1.NetworkNode.PeerHost, n4.PeerHost)
+	go n1.SetupProtocol()
 
+	n2chan := make(chan string)
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
+		defer s.Close()
 		ws := NewBasicStream(s)
-		var msg Msg
-		err := ws.ReceiveMessage(&msg)
-		if err != nil {
-			glog.Errorf("Got error decoding msg: %v", err)
-			return
+		for {
+			var msg Msg
+			err := ws.ReceiveMessage(&msg)
+			if err != nil {
+				glog.Errorf("N2 Got error decoding msg: %v", err)
+				return
+			}
+			// glog.Infof("Got msg: %v", msg)
+			n2chan <- msg.Data.(StreamDataMsg).StrmID
 		}
-		glog.Infof("Got msg: %v", msg)
 	})
 
-	//Test when the broadcaster is local
-	b1tmp, _ := n1.GetBroadcaster("strmID")
+	n4chan := make(chan string)
+	n4.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
+		defer s.Close()
+		ws := NewBasicStream(s)
+		for {
+			var msg Msg
+			err := ws.ReceiveMessage(&msg)
+			if err != nil {
+				glog.Errorf("N4 Got error decoding msg: %v", err)
+				return
+			}
+			// glog.Infof("Got msg: %v", msg)
+			// t.Errorf("Shouldn't be here...")
+			n4chan <- msg.Data.(SubReqMsg).StrmID
+		}
+	})
+
+	//Test when the broadcaster is local (n2 should get a stream data back because n1 sends the last msg immediately)
+	strmID := fmt.Sprintf("%vStrmID", n1.GetNodeID())
+	b1tmp, _ := n1.GetBroadcaster(strmID)
 	b1, _ := b1tmp.(*BasicBroadcaster)
-	n1.broadcasters["strmID"] = b1
+	b1.lastMsg = &StreamDataMsg{SeqNo: 0, StrmID: strmID, Data: []byte("hello")}
+	n1.broadcasters[strmID] = b1
 	ws := n1.NetworkNode.GetStream(n2.Identity)
-	handleSubReq(n1, SubReqMsg{StrmID: "strmID"}, ws)
+	if err := handleSubReq(n1, SubReqMsg{StrmID: strmID}, ws); err != nil {
+		t.Errorf("Error handling sub req: %v", err)
+	}
 
 	l := b1.listeners[peer.IDHexEncode(n2.Identity)]
 	if l == nil || reflect.TypeOf(l) != reflect.TypeOf(&BasicStream{}) {
 		t.Errorf("Expecting l to be assigned a BasicStream, but got :%v", reflect.TypeOf(l))
 	}
-	delete(n1.broadcasters, "strmID")
 
-	//Test when the broadcaster is remote, and there is already a relayer.
-	r1 := n1.NewRelayer("strmID")
-	if n1.relayers["strmID"] != r1 {
+	timer := time.NewTimer(time.Second)
+	select {
+	case n2ID := <-n2chan:
+		if n2ID != strmID {
+			t.Errorf("Expecting %v, got %v", strmID, n2ID)
+		}
+	case <-timer.C:
+		t.Errorf("Timed out")
+	}
+	delete(n1.broadcasters, strmID)
+
+	//Test relaying
+	strmID2 := fmt.Sprintf("%vStrmID2", peer.IDHexEncode(n4.Identity))
+	r1 := n1.NewRelayer(strmID2)
+	if n1.relayers[strmID2] != r1 {
 		t.Errorf("Should have assigned relayer")
 	}
-	handleSubReq(n1, SubReqMsg{StrmID: "strmID"}, ws)
+	ws = n1.NetworkNode.GetStream(n2.Identity)
+	if err := handleSubReq(n1, SubReqMsg{StrmID: strmID2}, ws); err != nil {
+		t.Errorf("Error handling sub req: %v", err)
+	}
 	pid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
 	if r1.listeners[pid] != ws {
 		t.Errorf("Should have assigned listener to relayer")
 	}
-	delete(n1.relayers, "strmID")
+	timer = time.NewTimer(time.Second)
+	select {
+	case strm := <-n4chan:
+		if strm != strmID2 {
+			t.Errorf("n2 should have gotten %v, but it got %v", strmID2, strm)
+		}
+	case <-timer.C:
+		{
+			t.Errorf("Timed out")
+		}
+	}
+	delete(n1.relayers, strmID2)
 
 	//Test when the broadcaster is remote, and there isn't a relayer yet.
 	//TODO: This is hard to test because of the dependency to kad.IpfsDht.  We can get around it by creating an interface called "NetworkRouting"
@@ -469,14 +642,19 @@ func simpleRelayHandler(ws *BasicStream, t *testing.T) Msg {
 	var msg Msg
 	err := ws.ReceiveMessage(&msg)
 	if err != nil {
-		glog.Errorf("Got error decoding msg: %v", err)
+		// glog.Errorf("Got error decoding msg: %v", err)
 		return Msg{}
 	}
 	return msg
 }
 func TestRelaying(t *testing.T) {
 	n1, n2 := setupNodes()
-	n3, _ := simpleNodes(15002, 15003)
+	n3, n4 := simpleNodes(15002, 15003)
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n2.NetworkNode.PeerHost.Close()
+	defer n3.PeerHost.Close()
+	defer n4.PeerHost.Close()
+
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
 	connectHosts(n2.NetworkNode.PeerHost, n3.PeerHost)
 
@@ -495,7 +673,7 @@ func TestRelaying(t *testing.T) {
 		for {
 			msg := simpleRelayHandler(s3, t)
 
-			glog.Infof("Got msg: %v", msg)
+			// glog.Infof("Got msg: %v", msg)
 			switch msg.Data.(type) {
 			case StreamDataMsg:
 				strmDataResult, ok = msg.Data.(StreamDataMsg)
@@ -578,6 +756,8 @@ func TestRelaying(t *testing.T) {
 func TestSendTranscodeResponse(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Transcode Result...")
 	n1, n2 := setupNodes()
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n2.NetworkNode.PeerHost.Close()
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
 	go n1.SetupProtocol()
 	go n2.SetupProtocol()
@@ -610,11 +790,14 @@ func TestSendTranscodeResponse(t *testing.T) {
 
 func TestMasterPlaylist(t *testing.T) {
 	glog.Infof("\n\nTesting handle master playlist")
-	n1, _ := setupNodes()
+	n1, n3 := setupNodes()
 
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	no2, _ := NewNode(15003, priv, pub, &BasicNotifiee{})
 	n2, _ := NewBasicVideoNetwork(no2)
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n2.NetworkNode.PeerHost.Close()
+	defer n3.NetworkNode.PeerHost.Close()
 
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
 	go n1.SetupProtocol()
@@ -644,6 +827,7 @@ func TestMasterPlaylist(t *testing.T) {
 			t.Errorf("Expecting 1 variants, but got: %v - %v", len(vars), r)
 		}
 	case <-timer.C:
+		glog.Infof("n2 mplMap: %v", n2.mplMap)
 		t.Errorf("Timed out")
 	}
 
@@ -651,6 +835,7 @@ func TestMasterPlaylist(t *testing.T) {
 	n2.NetworkNode.PeerHost.Close()
 	no2, _ = NewNode(15003, priv, pub, &BasicNotifiee{})
 	n2, _ = NewBasicVideoNetwork(no2)
+	go n2.SetupProtocol()
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
 
 	//Create Playlist should still work
@@ -676,6 +861,41 @@ func TestMasterPlaylist(t *testing.T) {
 		}
 		if r.Variants[0].URI != "test2.m3u8" {
 			t.Errorf("Expecting test2.m3u8, got %v", r.Variants[0].URI)
+		}
+	case <-timer.C:
+		t.Errorf("Timed out")
+	}
+
+	//Add a new node in the network
+	connectHosts(n2.NetworkNode.PeerHost, n3.NetworkNode.PeerHost)
+	go n3.SetupProtocol()
+
+	//Create a playlist on n3, make sure n2 is relaying and n1 can still get the playlist
+	mpl = m3u8.NewMasterPlaylist()
+	pl, _ = m3u8.NewMediaPlaylist(10, 10)
+	mpl.Append("test3.m3u8", pl, m3u8.VariantParams{Bandwidth: 100000})
+	strmID = fmt.Sprintf("%vba1637fd2531f50f9e8f99a37b48d7cfe12fa498ff6da8d6b63279b4632101d5e8b1c872f", peer.IDHexEncode(n1.NetworkNode.Identity))
+	if err := n3.UpdateMasterPlaylist(strmID, mpl); err != nil {
+		t.Errorf("Error updating master playlist: %v", err)
+	}
+
+	//Get Playlist should still work
+	mplc, err = n1.GetMasterPlaylist("", strmID)
+	if err != nil {
+		t.Errorf("Error getting master playlist: %v", err)
+	}
+	timer = time.NewTimer(time.Second * 3)
+	select {
+	case r := <-mplc:
+		vars := r.Variants
+		if len(vars) != 1 {
+			t.Errorf("Expecting 1 variants, but got: %v - %v", len(vars), r)
+		}
+		if r.Variants[0].URI != "test3.m3u8" {
+			t.Errorf("Expecting test3.m3u8, got %v", r.Variants[0].URI)
+		}
+		if len(n2.relayers) != 1 {
+			t.Errorf("Expecting 1 relayer in n2")
 		}
 	case <-timer.C:
 		t.Errorf("Timed out")

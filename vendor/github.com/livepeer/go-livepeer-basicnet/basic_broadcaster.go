@@ -22,7 +22,7 @@ type BasicBroadcaster struct {
 
 //Broadcast sends a video chunk to the stream.  The very first call to Broadcast kicks off a worker routine to do the broadcasting.
 func (b *BasicBroadcaster) Broadcast(seqNo uint64, data []byte) error {
-	// glog.Infof("Broadcasting data: %v (%v), storing in q: %v", seqNo, len(data), b)
+	glog.V(5).Infof("Broadcasting data: %v (%v), storing in q: %v", seqNo, len(data), b)
 
 	//This should only get invoked once per broadcaster
 	if b.working == false {
@@ -40,11 +40,13 @@ func (b *BasicBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 //Finish signals the stream is finished.  It cancels the broadcasting worker routine and sends the Finish message to all the listeners.
 func (b *BasicBroadcaster) Finish() error {
 	//Cancel worker
-	b.cancelWorker()
+	if b.cancelWorker != nil {
+		b.cancelWorker()
+	}
 
 	//Send Finish to all the listeners
 	for _, l := range b.listeners {
-		glog.Infof("Broadcasting finish to %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()))
+		glog.V(5).Infof("Broadcasting finish to %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()))
 		if err := l.SendMessage(FinishStreamID, FinishStreamMsg{StrmID: b.StrmID}); err != nil {
 			glog.Errorf("Error broadcasting finish to listener %v: %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()), err)
 		}
@@ -61,13 +63,13 @@ func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 	for {
 		select {
 		case msg := <-b.q:
-			// glog.Infof("broadcasting msg:%v to network.  listeners: %v", msg, b.listeners)
+			glog.V(6).Infof("broadcasting msg:%v to network.  listeners: %v", msg, b.listeners)
 			for id, l := range b.listeners {
 				// glog.Infof("Broadcasting segment %v to listener %v", msg.SeqNo, id)
 				b.sendDataMsg(id, l, msg)
 			}
 		case <-ctx.Done():
-			glog.Infof("broadcast worker done")
+			glog.V(5).Infof("broadcast worker done")
 			return
 		}
 	}
