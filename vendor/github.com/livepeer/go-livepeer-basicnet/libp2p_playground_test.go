@@ -185,6 +185,10 @@ func TestBackAndForth(t *testing.T) {
 		simpleHandler(stream, "pong")
 	})
 
+	n1.PeerHost.SetStreamHandler("/test/1.0", func(stream net.Stream) {
+		simpleHandler(stream, "ping")
+	})
+
 	ns1, err := n1.PeerHost.NewStream(context.Background(), n2.Identity, "/test/1.0")
 	if err != nil {
 		t.Errorf("Cannot create stream: %v", err)

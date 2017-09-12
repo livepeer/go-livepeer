@@ -55,8 +55,6 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 	}
 	peers := kb.SortClosestPeers(localPeers, kb.ConvertPeerID(targetPid))
 
-	//We can range over peerc because we know it'll be closed by libp2p
-	//We'll keep track of all the connections on the
 	for _, p := range peers {
 		if p == s.Network.NetworkNode.Identity {
 			continue
@@ -65,17 +63,6 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 		glog.V(5).Infof("New peer from kademlia: %v", peer.IDHexEncode(p))
 		ns := s.Network.NetworkNode.GetStream(p)
 		if ns != nil {
-			//Set up handler for the stream
-			go func() {
-				for {
-					err := streamHandler(s.Network, ns)
-					if err != nil {
-						glog.Errorf("Got error handling stream: %v", err)
-						return
-					}
-				}
-			}()
-
 			//Send SubReq
 			if err := ns.SendMessage(SubReqID, SubReqMsg{StrmID: s.StrmID}); err != nil {
 				glog.Errorf("Error sending SubReq to %v: %v", peer.IDHexEncode(p), err)

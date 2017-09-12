@@ -24,6 +24,7 @@ type NetworkNode struct {
 	Identity peer.ID // the local node's identity
 	Kad      *kad.IpfsDHT
 	PeerHost host.Host // the network host (server+client)
+	Network  *BasicVideoNetwork
 	streams  map[peer.ID]*BasicStream
 }
 
@@ -111,6 +112,10 @@ func (n *NetworkNode) GetStream(pid peer.ID) *BasicStream {
 
 func (n *NetworkNode) RefreshStream(pid peer.ID) *BasicStream {
 	// glog.Infof("Creating stream from %v to %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid))
+	if s, ok := n.streams[pid]; ok {
+		s.Stream.Close()
+	}
+
 	ns, err := n.PeerHost.NewStream(context.Background(), pid, Protocol)
 	if err != nil {
 		glog.Errorf("%v Error creating stream to %v: %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid), err)
@@ -118,6 +123,20 @@ func (n *NetworkNode) RefreshStream(pid peer.ID) *BasicStream {
 	}
 	strm := NewBasicStream(ns)
 	n.streams[pid] = strm
+
+	//Handle messages that come back from the stream.  Only do this if we are setting up the Livepeer network protocol.
+	if n.Network != nil {
+		go func() {
+			for {
+				err := streamHandler(n.Network, strm)
+				if err != nil {
+					glog.Errorf("Got error handling stream: %v", err)
+					return
+				}
+			}
+		}()
+	}
+
 	return strm
 }
 

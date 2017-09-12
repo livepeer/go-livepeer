@@ -2,6 +2,7 @@ package basicnet
 
 import (
 	"fmt"
+	"time"
 
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 
@@ -13,6 +14,7 @@ import (
 type BasicRelayer struct {
 	UpstreamPeer peer.ID
 	listeners    map[string]*BasicStream
+	LastRelay    time.Time
 }
 
 //RelayStreamData sends a StreamDataMsg to its listeners
@@ -22,6 +24,7 @@ func (br *BasicRelayer) RelayStreamData(sd StreamDataMsg) error {
 		if err := l.SendMessage(StreamDataID, sd); err != nil {
 			glog.Errorf("Error writing data to relayer listener %v: %v", l, err)
 		}
+		br.LastRelay = time.Now()
 	}
 	return nil
 }
@@ -31,6 +34,17 @@ func (br *BasicRelayer) RelayFinishStream(nw *BasicVideoNetwork, fs FinishStream
 		if err := l.SendMessage(FinishStreamID, fs); err != nil {
 			glog.Errorf("Error relaying finish stream to %v: %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()), err)
 		}
+		br.LastRelay = time.Now()
+	}
+	return nil
+}
+
+func (br *BasicRelayer) RelayMasterPlaylistData(nw *BasicVideoNetwork, mpld MasterPlaylistDataMsg) error {
+	for _, l := range br.listeners {
+		if err := l.SendMessage(MasterPlaylistDataID, mpld); err != nil {
+			glog.Errorf("Error relaying master playlist data to %v: %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()), err)
+		}
+		br.LastRelay = time.Now()
 	}
 	return nil
 }
