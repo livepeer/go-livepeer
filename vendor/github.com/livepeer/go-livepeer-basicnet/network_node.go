@@ -95,10 +95,10 @@ func constructDHTRouting(ctx context.Context, host host.Host, dstore ds.Batching
 	}
 	dhtRouting.Selector["v"] = func(_ string, bs [][]byte) (int, error) { return 0, nil }
 
-	if err := dhtRouting.Bootstrap(context.Background()); err != nil {
-		glog.Errorf("Error bootstraping dht: %v", err)
-		return nil, err
-	}
+	// if err := dhtRouting.Bootstrap(context.Background()); err != nil {
+	// 	glog.Errorf("Error bootstraping dht: %v", err)
+	// 	return nil, err
+	// }
 	return dhtRouting, nil
 }
 
