@@ -9,6 +9,8 @@ dependencies:
   override:
     - go get github.com/livepeer/go-livepeer/cmd/livepeer
     - go get github.com/golang/glog
+    - go get github.com/multiformats/go-multicodec
+    - go get github.com/jbenet/go-msgio
     - npm install -g ffmpeg-static
 
 test:
