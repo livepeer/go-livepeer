@@ -337,63 +337,67 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 }
 
 func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) error {
+	//If we have local broadcaster, just listen.
 	if b := nw.broadcasters[subReq.StrmID]; b != nil {
 		glog.V(5).Infof("Handling subReq, adding listener %v to broadcaster", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
 		//TODO: Add verification code for the SubNodeID (Make sure the message is not spoofed)
 		remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
 		b.listeners[remotePid] = ws
+
+		//Send the last video chunk so we don't have to wait for the next one.
 		b.sendDataMsg(remotePid, ws, b.lastMsg)
 		return nil
-	} else if r := nw.relayers[subReq.StrmID]; r != nil {
-		//Already a relayer in place.  Subscribe as a listener.
-		remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
-		r.listeners[remotePid] = ws
-		return nil
-	} else {
-		glog.V(5).Infof("Cannot find local broadcaster or relayer for stream: %v.  Creating a local relayer, and forwarding along to the network", subReq.StrmID)
+	}
 
-		peers, err := closestLocalPeers(nw.NetworkNode.PeerHost.Peerstore(), subReq.StrmID)
-		if err != nil {
-			glog.Errorf("Error getting closest local node: %v", err)
-			return err
+	// } else {
+	// glog.V(5).Infof("Cannot find local broadcaster or relayer for stream: %v.  Creating a local relayer, and forwarding along to the network", subReq.StrmID)
+
+	//If we don't have local broadcaster, forward the sub request to the closest peer
+	peers, err := closestLocalPeers(nw.NetworkNode.PeerHost.Peerstore(), subReq.StrmID)
+	if err != nil {
+		glog.Errorf("Error getting closest local node: %v", err)
+		return err
+	}
+
+	//Subscribe from the network
+	for _, p := range peers {
+		//Don't send it back to the requesting peer
+		if p == ws.Stream.Conn().RemotePeer() || p == nw.NetworkNode.Identity {
+			continue
 		}
 
-		//Subscribe from the network
-		for _, p := range peers {
-			//Don't send it back to the requesting peer
-			if p == ws.Stream.Conn().RemotePeer() || p == nw.NetworkNode.Identity {
+		if p == "" {
+			glog.Errorf("Got empty peer from libp2p")
+			return nil
+		}
+
+		ns := nw.NetworkNode.GetStream(p)
+		if ns != nil {
+			if err := ns.SendMessage(SubReqID, subReq); err != nil {
+				//Question: Do we want to close the stream here?
+				glog.Errorf("Error relaying subReq to %v: %v.", p, err)
 				continue
 			}
 
-			if p == "" {
-				glog.Errorf("Got empty peer from libp2p")
-				return nil
-			}
-
-			ns := nw.NetworkNode.GetStream(p)
-			if ns != nil {
-				if err := ns.SendMessage(SubReqID, subReq); err != nil {
-					//Question: Do we want to close the stream here?
-					glog.Errorf("Error relaying subReq to %v: %v.", p, err)
-					continue
-				}
-				glog.Infof("Send Sub to %v", peer.IDHexEncode(p))
-
-				//Create a relayer, register the listener
+			if r := nw.relayers[subReq.StrmID]; r != nil {
+				remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
+				r.listeners[remotePid] = ws
+			} else {
 				r := nw.NewRelayer(subReq.StrmID)
 				r.UpstreamPeer = p
 				lpmon.Instance().LogRelay(subReq.StrmID, peer.IDHexEncode(p))
 				remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
 				r.listeners[remotePid] = ws
-				return nil
-			} else {
-				glog.Errorf("Cannot get stream for peer: %v", peer.IDHexEncode(p))
 			}
+			return nil
+		} else {
+			glog.Errorf("Cannot get stream for peer: %v", peer.IDHexEncode(p))
 		}
-
-		glog.Errorf("%v Cannot forward Sub req to any of the peers: %v", nw.GetNodeID(), peers)
-		return ErrProtocol
 	}
+
+	glog.Errorf("%v Cannot forward Sub req to any of the peers: %v", nw.GetNodeID(), peers)
+	return ErrProtocol
+	// }
 
 }
 
