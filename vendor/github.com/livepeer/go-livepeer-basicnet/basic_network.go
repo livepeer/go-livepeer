@@ -33,6 +33,8 @@ var ErrUnknownMsg = errors.New("UnknownMsgType")
 var ErrProtocol = errors.New("ProtocolError")
 var ErrTranscodeResponse = errors.New("TranscodeResponseError")
 var ErrGetMasterPlaylist = errors.New("ErrGetMasterPlaylist")
+var ErrHandleMasterPlaylist = errors.New("ErrHandleMaterPlaylist")
+var GetMasterPlaylistRelayWait = 10 * time.Second
 
 const RelayGCTime = 60 * time.Second
 const RelayTicker = 10 * time.Second
@@ -171,14 +173,17 @@ func (n *BasicVideoNetwork) GetMasterPlaylist(p string, strmID string) (chan *m3
 }
 
 func (n *BasicVideoNetwork) getMasterPlaylistWithRelay(strmID string) (chan *m3u8.MasterPlaylist, error) {
+	returnC := make(chan *m3u8.MasterPlaylist)
 	c := make(chan *m3u8.MasterPlaylist)
 	n.mplChans[strmID] = c
 
 	go func() {
+		defer close(c)
+		defer delete(n.mplChans, strmID)
 		//Check to see if we have the playlist locally
 		mpl := n.mplMap[strmID]
 		if mpl != nil {
-			c <- mpl
+			returnC <- mpl
 			return
 		}
 
@@ -199,11 +204,23 @@ func (n *BasicVideoNetwork) getMasterPlaylistWithRelay(strmID string) (chan *m3u
 					continue
 				}
 			}
-			return
+
+			timer := time.NewTimer(GetMasterPlaylistRelayWait)
+			select {
+			case mpl := <-c:
+				if mpl != nil {
+					returnC <- mpl
+					return
+				}
+			case <-timer.C:
+				continue
+			}
 		}
+
+		glog.Errorf("Cannot find Master playlist from network")
 	}()
 
-	return c, nil
+	return returnC, nil
 }
 
 func (n *BasicVideoNetwork) getMasterPlaylistWithDHT(p string, strmID string) (chan *m3u8.MasterPlaylist, error) {
@@ -527,6 +544,8 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, ws *BasicStream, mplr Get
 				return nil
 			}
 		}
+		glog.Info("Cannot relay GetMasterPlaylist req to peers")
+		return ws.SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{StrmID: mplr.StrmID, NotFound: true})
 	}
 
 	return ws.SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{StrmID: mplr.StrmID, MPL: mpl.String()})
@@ -541,8 +560,13 @@ func handleMasterPlaylistDataMsg(nw *BasicVideoNetwork, mpld MasterPlaylistDataM
 			return r.RelayMasterPlaylistData(nw, mpld)
 		} else {
 			glog.Errorf("Got master playlist data, but don't have a channel")
-			return ErrGetMasterPlaylist
+			return ErrHandleMasterPlaylist
 		}
+	}
+
+	if mpld.NotFound {
+		ch <- nil
+		return nil
 	}
 
 	//Decode the playlist from a string
@@ -554,9 +578,6 @@ func handleMasterPlaylistDataMsg(nw *BasicVideoNetwork, mpld MasterPlaylistDataM
 
 	//insert into channel
 	ch <- mpl
-	//close channel, delete it
-	close(ch)
-	delete(nw.mplChans, mpld.StrmID)
 	return nil
 }
 

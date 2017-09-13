@@ -886,7 +886,134 @@ func TestSendTranscodeResponse(t *testing.T) {
 	glog.Infof("%v", n2)
 }
 
-func TestMasterPlaylist(t *testing.T) {
+func TestHandleGetMasterPlaylist(t *testing.T) {
+	n1, n2 := setupNodes()
+	n3, n4 := simpleNodes(15003, 15004)
+	connectHosts(n1.NetworkNode.PeerHost, n3.PeerHost)
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n2.NetworkNode.PeerHost.Close()
+	defer n3.PeerHost.Close()
+	defer n4.PeerHost.Close()
+	go n1.SetupProtocol()
+	n3Chan := make(chan MasterPlaylistDataMsg)
+	n3.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
+		strm := NewBasicStream(s)
+		var msg Msg
+		strm.ReceiveMessage(&msg)
+		n3Chan <- msg.Data.(MasterPlaylistDataMsg)
+	})
+	// go n2.SetupProtocol()
+
+	//Set up a node without the playlist.  Should send a NotFound
+	strmID := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n1.NetworkNode.Identity))
+	_, ok := n1.mplMap[strmID]
+	if ok {
+		t.Errorf("Expecting to not have the playlist")
+	}
+	strm := n1.NetworkNode.GetStream(n3.Identity)
+	if err := handleGetMasterPlaylistReq(n1, strm, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	timer := time.NewTimer(time.Second)
+	select {
+	case n3data := <-n3Chan:
+		if n3data.NotFound == false {
+			t.Errorf("Expecting NotFound, but got: %v", n3data)
+		}
+	case <-timer.C:
+		t.Errorf("timed out")
+	}
+}
+
+func TestHandleMasterPlaylistData(t *testing.T) {
+	n1, n2 := setupNodes()
+	n3, n4 := simpleNodes(15003, 15004)
+	connectHosts(n1.NetworkNode.PeerHost, n3.PeerHost)
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n2.NetworkNode.PeerHost.Close()
+	defer n3.PeerHost.Close()
+	defer n4.PeerHost.Close()
+	go n1.SetupProtocol()
+	go n2.SetupProtocol()
+
+	//Set up no relayer and no receiving playlist channel. Should get error
+	strmID := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n1.NetworkNode.Identity))
+	_, ok := n1.mplMap[strmID]
+	if ok {
+		t.Errorf("Expecting to not have the playlist")
+	}
+	err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{StrmID: strmID, NotFound: true})
+	if err != ErrHandleMasterPlaylist {
+		t.Errorf("Expecting ErrHandleMasterPlaylist, got: %v", err)
+	}
+
+	//Set up a relayer, make sure it's relaying to the right destination
+	n3Chan := make(chan MasterPlaylistDataMsg)
+	n3.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
+		strm := NewBasicStream(s)
+		var msg Msg
+		strm.ReceiveMessage(&msg)
+		n3Chan <- msg.Data.(MasterPlaylistDataMsg)
+	})
+	strm := n1.NetworkNode.GetStream(n3.Identity)
+	r := &BasicRelayer{listeners: map[string]*BasicStream{peer.IDHexEncode(n3.Identity): strm}}
+	n1.relayers[strmID] = r
+	if err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{StrmID: strmID, NotFound: true}); err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	timer := time.NewTimer(time.Second)
+	select {
+	case n3data := <-n3Chan:
+		if n3data.StrmID != strmID {
+			t.Errorf("Expecting %v, got %v", strmID, n3data.StrmID)
+		}
+	case <-timer.C:
+		t.Errorf("Timed out")
+	}
+	delete(n1.relayers, strmID)
+
+	//No relayer and NotFound.  Should insert 'nil' into the channel.
+	mplc := make(chan *m3u8.MasterPlaylist)
+	n1.mplChans[strmID] = mplc
+	//handle in a go routine because we expect something on the channel
+	go func() {
+		if err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{StrmID: strmID, NotFound: true}); err != nil {
+			t.Errorf("Error: %v", err)
+		}
+	}()
+	timer = time.NewTimer(time.Second)
+	select {
+	case mpl := <-mplc:
+		if mpl != nil {
+			t.Errorf("Expecting nil for mpl")
+		}
+	case <-timer.C:
+		t.Errorf("Timed out")
+	}
+
+	//No relayer and have an actual playlist.  Should get the playlist.
+	mplc = make(chan *m3u8.MasterPlaylist)
+	n1.mplChans[strmID] = mplc
+	pl := m3u8.NewMasterPlaylist()
+	pl.Append("someurl", nil, m3u8.VariantParams{Bandwidth: 100})
+	//handle in a go routine because we expect something on the channel
+	go func() {
+		if err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{StrmID: strmID, MPL: pl.String()}); err != nil {
+			t.Errorf("Error: %v", err)
+		}
+	}()
+	timer = time.NewTimer(time.Second)
+	select {
+	case mpl := <-mplc:
+		if mpl.String() != pl.String() {
+			t.Errorf("Expecting %v, got %v", pl, mpl)
+		}
+	case <-timer.C:
+		t.Errorf("Timed out")
+	}
+}
+
+func TestMasterPlaylistIntegration(t *testing.T) {
 	glog.Infof("\n\nTesting handle master playlist")
 	n1, n3 := setupNodes()
 
@@ -998,7 +1125,6 @@ func TestMasterPlaylist(t *testing.T) {
 	case <-timer.C:
 		t.Errorf("Timed out")
 	}
-
 }
 
 func TestID(t *testing.T) {
