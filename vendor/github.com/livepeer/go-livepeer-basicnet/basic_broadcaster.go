@@ -22,8 +22,6 @@ type BasicBroadcaster struct {
 
 //Broadcast sends a video chunk to the stream.  The very first call to Broadcast kicks off a worker routine to do the broadcasting.
 func (b *BasicBroadcaster) Broadcast(seqNo uint64, data []byte) error {
-	glog.V(5).Infof("Broadcasting data: %v (%v), storing in q: %v", seqNo, len(data), b)
-
 	//This should only get invoked once per broadcaster
 	if b.working == false {
 		ctxB, cancel := context.WithCancel(context.Background())
@@ -63,7 +61,6 @@ func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 	for {
 		select {
 		case msg := <-b.q:
-			glog.V(6).Infof("broadcasting msg:%v to network.  listeners: %v", msg, b.listeners)
 			for id, l := range b.listeners {
 				// glog.Infof("Broadcasting segment %v to listener %v", msg.SeqNo, id)
 				b.sendDataMsg(id, l, msg)

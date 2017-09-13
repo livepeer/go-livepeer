@@ -94,6 +94,60 @@ func TestReconnect(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 }
 
+func TestStream(t *testing.T) {
+	n1, n2 := setupNodes()
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n2.NetworkNode.PeerHost.Close()
+	go n1.SetupProtocol()
+	go n2.SetupProtocol()
+	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
+
+	strmID1 := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n1.NetworkNode.Identity))
+	strmID2 := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n2.NetworkNode.Identity))
+	//Should be able to send messages back and forth
+	s12 := n1.NetworkNode.GetStream(n2.NetworkNode.Identity)
+	if err := s12.SendMessage(SubReqID, SubReqMsg{StrmID: strmID2}); err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	if _, ok := n1.NetworkNode.streams[n2.NetworkNode.Identity]; !ok {
+		t.Errorf("Expecting stream to be there")
+	}
+	s21 := n2.NetworkNode.GetStream(n1.NetworkNode.Identity)
+	if err := s21.SendMessage(SubReqID, SubReqMsg{StrmID: strmID1}); err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	if _, ok := n2.NetworkNode.streams[n1.NetworkNode.Identity]; !ok {
+		t.Errorf("Expecting stream to be there")
+	}
+
+	//Now cause a problem - say use a bad ID
+	if err := s12.SendMessage(CancelSubID, SubReqMsg{StrmID: strmID2}); err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	start := time.Now()
+	for time.Since(start) < time.Second {
+		if len(n2.NetworkNode.streams) > 0 {
+			time.Sleep(time.Millisecond * 100)
+		}
+	}
+	if _, ok := n2.NetworkNode.streams[n1.NetworkNode.Identity]; ok {
+		t.Errorf("Expecting stream to not be there")
+	}
+	if _, ok := n1.NetworkNode.streams[n2.NetworkNode.Identity]; ok {
+		t.Errorf("Expecting stream to not be there")
+	}
+
+	//Shouldn't be able to use the old stream anymore
+	if err := s21.SendMessage(SubReqID, SubReqMsg{StrmID: strmID1}); err == nil {
+		t.Errorf("Expecting error, but got none")
+	}
+	//Should still be able to send stream if we recreate the stream
+	s21 = n2.NetworkNode.GetStream(n1.NetworkNode.Identity)
+	if err := s21.SendMessage(SubReqID, SubReqMsg{StrmID: strmID1}); err != nil {
+		t.Errorf("Error: %v", err)
+	}
+}
+
 func TestSubPath(t *testing.T) {
 	ctx := context.Background()
 	nDHTs := 10
@@ -531,6 +585,50 @@ func TestSendSubscribe(t *testing.T) {
 		t.Errorf("subscriber shouldn't be working after 'cancel' is called")
 	}
 
+}
+
+func TestHandleCancel(t *testing.T) {
+	n1, n2 := setupNodes()
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n2.NetworkNode.PeerHost.Close()
+
+	nid1, _ := peer.IDHexDecode("122024506e16a51b9853ae5a019d7d99549414e7c053116f6de533cac987ace38420")
+	nid2, _ := peer.IDHexDecode("1220fd6156923c7138dc1b4388ab59a3eb0631c4e673499d35d47f1af32f2c92de66")
+	//Put a broadcaster with a single listener in the node, make sure cancel removes the listener
+	strmID1 := "strmID1"
+	b := &BasicBroadcaster{listeners: map[string]*BasicStream{peer.IDHexEncode(nid1): nil}}
+	n1.broadcasters[strmID1] = b
+	if err := handleCancelSubReq(n1, CancelSubMsg{StrmID: strmID1}, nid1); err != nil {
+		t.Errorf("Error handling req: %v", err)
+	}
+	if len(b.listeners) != 0 {
+		t.Errorf("Expecting 0 listerns, but go %v", len(b.listeners))
+	}
+	delete(n1.broadcasters, strmID1)
+
+	//Put a relayer with 2 listeners in the node, make sure cancel removes the listener, then the relayer
+	r := &BasicRelayer{listeners: map[string]*BasicStream{peer.IDHexEncode(nid1): nil, peer.IDHexEncode(nid2): nil}}
+	n1.relayers[strmID1] = r
+	if err := handleCancelSubReq(n1, CancelSubMsg{StrmID: strmID1}, nid1); err != nil {
+		t.Errorf("Error handling req: %v", err)
+	}
+	if len(r.listeners) != 1 {
+		t.Errorf("Expecting 1 listener, but got %v", len(r.listeners))
+	}
+	//Remove the same nid again, it shouldn't change anything
+	if err := handleCancelSubReq(n1, CancelSubMsg{StrmID: strmID1}, nid1); err != nil {
+		t.Errorf("Error handling req: %v", err)
+	}
+	if len(r.listeners) != 1 {
+		t.Errorf("Expecting 1 listener, but got %v", len(r.listeners))
+	}
+	//Should have no listeners left
+	if err := handleCancelSubReq(n1, CancelSubMsg{StrmID: strmID1}, nid2); err != nil {
+		t.Errorf("Error handling req: %v", err)
+	}
+	if len(r.listeners) != 0 {
+		t.Errorf("Expecting 0 listener, but got %v", len(r.listeners))
+	}
 }
 
 func TestHandleSubscribe(t *testing.T) {

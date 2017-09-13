@@ -92,7 +92,6 @@ func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *Basic
 			//Question: What happens if the handler gets stuck?
 			select {
 			case msg := <-s.msgChan:
-				glog.V(5).Infof("Got data from msgChan: %v", msg)
 				gotData(msg.SeqNo, msg.Data, false)
 			case <-ctxW.Done():
 				s.networkStream = nil

@@ -131,6 +131,8 @@ func (n *NetworkNode) RefreshStream(pid peer.ID) *BasicStream {
 				err := streamHandler(n.Network, strm)
 				if err != nil {
 					glog.Errorf("Got error handling stream: %v", err)
+					n.Network.NetworkNode.RemoveStream(strm.Stream.Conn().RemotePeer())
+					strm.Stream.Close()
 					return
 				}
 			}

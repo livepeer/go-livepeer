@@ -53,7 +53,11 @@ type BasicVideoNetwork struct {
 }
 
 func (n *BasicVideoNetwork) String() string {
-	return fmt.Sprintf("\n\nbroadcasters:%v\n\nsubscribers:%v\n\nrelayers:%v\n\n", n.broadcasters, n.subscribers, n.relayers)
+	peers := make([]string, 0)
+	for _, p := range n.NetworkNode.PeerHost.Peerstore().Peers() {
+		peers = append(peers, peer.IDHexEncode(p))
+	}
+	return fmt.Sprintf("\n\nbroadcasters:%v\n\nsubscribers:%v\n\nrelayers:%v\n\npeers:%v\n\n", n.broadcasters, n.subscribers, n.relayers, peers)
 }
 
 //NewBasicVideoNetwork creates a libp2p node, handle the basic (push-based) video protocol.
@@ -299,7 +303,6 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 		}
 		return handleCancelSubReq(nw, cr, ws.Stream.Conn().RemotePeer())
 	case StreamDataID:
-		glog.V(5).Infof("Got Stream Data: %v", msg.Data)
 		//Enque it into the subscriber
 		sd, ok := msg.Data.(StreamDataMsg)
 		if !ok {
@@ -418,7 +421,7 @@ func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) e
 				return nil
 			}
 		}
-		return ErrProtocol
+		return nil
 	} else {
 		glog.Errorf("Cannot find broadcaster or relayer.  Error!")
 		return ErrProtocol
@@ -429,7 +432,6 @@ func handleStreamData(nw *BasicVideoNetwork, sd StreamDataMsg) error {
 	//A node can have a subscriber AND a relayer for the same stream.
 	s := nw.subscribers[sd.StrmID]
 	if s != nil {
-		glog.V(5).Infof("Inserting into subscriber msg queue: %v", sd)
 		ctx, _ := context.WithTimeout(context.Background(), SubscriberDataInsertTimeout)
 		go func() {
 			select {
