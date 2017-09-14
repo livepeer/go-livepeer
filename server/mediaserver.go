@@ -181,14 +181,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		//Kick off go routine to broadcast the hls stream.
 		go func() {
 			// glog.Infof("Kicking off broadcaster")
-			mpl, err := hlsStrm.GetMasterPlaylist()
-			if err != nil {
-				glog.Errorf("Error getting master playlist: %v", err)
-			}
-			if err = s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(hlsStrm.GetStreamID(), mpl); err != nil {
-				glog.Errorf("Error updating master playlist: %v", err)
-			}
-
 			err = s.LivepeerNode.BroadcastToNetwork(hlsStrm)
 			if err == core.ErrEOF {
 				glog.Info("Broadcast Ended.")

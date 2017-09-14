@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/livepeer/lpms/transcoder"
+
 	"github.com/livepeer/lpms/stream"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -30,7 +32,9 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 
 		ps := []types.VideoProfile{types.P240p30fps16x9, types.P360p30fps16x9}
-		ids, err := s.LivepeerNode.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: strmID, Profiles: ps}, nil)
+		tps := []transcoder.TranscodeProfile{transcoder.P240p30fps16x9, transcoder.P360p30fps16x9}
+		tr := transcoder.NewFFMpegSegmentTranscoder(tps, "", s.LivepeerNode.WorkDir)
+		ids, err := s.LivepeerNode.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: strmID, Profiles: ps}, nil, tr)
 		if err != nil {
 			glog.Errorf("Error transcoding: %v", err)
 			http.Error(w, "Error transcoding.", 500)

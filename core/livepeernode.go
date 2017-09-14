@@ -50,7 +50,7 @@ type LivepeerNode struct {
 	Eth          eth.LivepeerEthClient
 	EthAccount   string
 	EthPassword  string
-	workDir      string
+	WorkDir      string
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
@@ -60,7 +60,7 @@ func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID
 		return nil, ErrLivepeerNode
 	}
 
-	return &LivepeerNode{StreamDB: NewStreamDB(vn.GetNodeID()), VideoNetwork: vn, Identity: nodeId, Addrs: addrs, Eth: e, workDir: wd}, nil
+	return &LivepeerNode{StreamDB: NewStreamDB(vn.GetNodeID()), VideoNetwork: vn, Identity: nodeId, Addrs: addrs, Eth: e, WorkDir: wd}, nil
 }
 
 //Start sets up the Livepeer protocol and connects the node to the network
@@ -108,7 +108,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []types.Vide
 }
 
 //TranscodeAndBroadcast transcodes one stream into multiple streams (specified by TranscodeConfig), broadcasts the streams, and returns a list of streamIDs.
-func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm *ClaimManager) ([]StreamID, error) {
+func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm ClaimManager, t transcoder.Transcoder) ([]StreamID, error) {
 	//Get TranscodeProfiles from VideoProfiles, create the broadcasters
 	tProfiles := make([]lptr.TranscodeProfile, len(config.Profiles), len(config.Profiles))
 	broadcasters := make(map[StreamID]net.Broadcaster)
@@ -129,9 +129,6 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm *Cla
 		}
 		broadcasters[strmID] = b
 	}
-
-	//Create the transcoder
-	t := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.workDir)
 
 	//Subscribe to broadcast video, do the transcoding, broadcast the transcoded video, do the on-chain claim / verify
 	sub, err := n.VideoNetwork.GetSubscriber(config.StrmID)
@@ -224,6 +221,16 @@ func (n *LivepeerNode) BroadcastFinishMsg(strmID string) error {
 //BroadcastToNetwork is called when a new broadcast stream is available.  It lets the network decide how
 //to deal with the stream.
 func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
+	//Update the playlist to the network
+	mpl, err := strm.GetMasterPlaylist()
+	if err != nil {
+		glog.Errorf("Error getting master playlist: %v", err)
+	}
+	if err = n.VideoNetwork.UpdateMasterPlaylist(strm.GetStreamID(), mpl); err != nil {
+		glog.Errorf("Error updating master playlist: %v", err)
+	}
+
+	//Get the broadcaster from the network
 	b, err := n.VideoNetwork.GetBroadcaster(strm.GetStreamID())
 	if err != nil {
 		glog.Errorf("Error getting broadcaster from network: %v", err)

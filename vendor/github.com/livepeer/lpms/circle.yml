@@ -9,6 +9,7 @@ dependencies:
     # - "$HOME/ffmpeg-static"
   override:
     - go get github.com/livepeer/lpms/cmd/example
+    - cd $HOME/.go_workspace/src/github.com/livepeer/lpms/ && git pull
     - npm install -g ffmpeg-static
 
 test:
