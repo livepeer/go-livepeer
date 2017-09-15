@@ -22,6 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/types"
 	"github.com/livepeer/lpms/stream"
+	"github.com/livepeer/lpms/transcoder"
 )
 
 type StubVideoNetwork struct {
@@ -30,6 +31,7 @@ type StubVideoNetwork struct {
 	tResult      map[string]string
 	strmID       string
 	nodeID       string
+	mplMap       map[string]*m3u8.MasterPlaylist
 }
 
 func (n *StubVideoNetwork) String() string { return "" }
@@ -76,6 +78,10 @@ func (n *StubVideoNetwork) GetMasterPlaylist(nodeID string, strmID string) (chan
 	return mplc, nil
 }
 func (n *StubVideoNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterPlaylist) error {
+	if n.mplMap == nil {
+		n.mplMap = make(map[string]*m3u8.MasterPlaylist)
+	}
+	n.mplMap[strmID] = mpl
 	return nil
 }
 
@@ -134,7 +140,14 @@ func TestTranscode(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, &StubVideoNetwork{T: t}, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, ".tmp")
 
 	//Call transcode
-	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: "strmID", Profiles: []types.VideoProfile{types.P144p30fps16x9, types.P240p30fps16x9}}, nil)
+	p := []types.VideoProfile{types.P144p30fps16x9, types.P240p30fps16x9}
+
+	tProfiles := make([]transcoder.TranscodeProfile, len(p), len(p))
+	for i, vp := range p {
+		tProfiles[i] = transcoder.TranscodeProfileLookup[vp.Name]
+	}
+	tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.WorkDir)
+	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: "strmID", Profiles: p}, nil, tr)
 	if err != nil {
 		t.Errorf("Error transcoding: %v", err)
 	}
