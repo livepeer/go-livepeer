@@ -16,8 +16,14 @@ import (
 
 var ErrClaim = errors.New("ErrClaim")
 
+type ClaimManager interface {
+	AddReceipt(seqNo int64, dataHash string, tDataHash string, bSig []byte, profile types.VideoProfile)
+	SufficientBroadcasterDeposit() (bool, error)
+	Claim(p types.VideoProfile) error
+}
+
 //ClaimManager manages the claim process for a Livepeer transcoder.  Check the Livepeer protocol for more details.
-type ClaimManager struct {
+type BasicClaimManager struct {
 	client eth.LivepeerEthClient
 
 	strmID   string
@@ -38,7 +44,7 @@ type ClaimManager struct {
 }
 
 //NewClaimManager creates a new claim manager.
-func NewClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []types.VideoProfile, c eth.LivepeerEthClient) *ClaimManager {
+func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []types.VideoProfile, c eth.LivepeerEthClient) *BasicClaimManager {
 	seqNos := make([][]int64, len(p), len(p))
 	rHashes := make([][]common.Hash, len(p), len(p))
 	dHashes := make([][]string, len(p), len(p))
@@ -60,11 +66,11 @@ func NewClaimManager(sid string, jid *big.Int, broadcaster common.Address, price
 		pLookup[p[i]] = i
 	}
 
-	return &ClaimManager{client: c, strmID: sid, jobID: jid, cost: big.NewInt(0), broadcasterAddr: broadcaster, pricePerSegment: pricePerSegment, seqNos: seqNos, receiptHashes: rHashes, dataHashes: dHashes, tDataHashes: tHashes, bSigs: sigs, profiles: p, pLookup: pLookup}
+	return &BasicClaimManager{client: c, strmID: sid, jobID: jid, cost: big.NewInt(0), broadcasterAddr: broadcaster, pricePerSegment: pricePerSegment, seqNos: seqNos, receiptHashes: rHashes, dataHashes: dHashes, tDataHashes: tHashes, bSigs: sigs, profiles: p, pLookup: pLookup}
 }
 
 //AddClaim adds a claim for a given video segment.
-func (c *ClaimManager) AddReceipt(seqNo int64, dataHash string, tDataHash string, bSig []byte, profile types.VideoProfile) {
+func (c *BasicClaimManager) AddReceipt(seqNo int64, dataHash string, tDataHash string, bSig []byte, profile types.VideoProfile) {
 	receipt := &ethTypes.TranscodeReceipt{
 		StreamID:              c.strmID,
 		SegmentSequenceNumber: big.NewInt(seqNo),
@@ -93,7 +99,7 @@ func (c *ClaimManager) AddReceipt(seqNo int64, dataHash string, tDataHash string
 	c.cost = new(big.Int).Add(c.cost, c.pricePerSegment)
 }
 
-func (c *ClaimManager) SufficientBroadcasterDeposit() (bool, error) {
+func (c *BasicClaimManager) SufficientBroadcasterDeposit() (bool, error) {
 	bDeposit, err := c.client.GetBroadcasterDeposit(c.broadcasterAddr)
 	if err != nil {
 		glog.Errorf("Error getting broadcaster deposit: %v", err)
@@ -111,7 +117,7 @@ func (c *ClaimManager) SufficientBroadcasterDeposit() (bool, error) {
 }
 
 //Claim creates the onchain claim for all the claims added through AddClaim
-func (c *ClaimManager) Claim(p types.VideoProfile) error {
+func (c *BasicClaimManager) Claim(p types.VideoProfile) error {
 	pi, ok := c.pLookup[p]
 	if !ok {
 		glog.Errorf("Cannot find video profile: %v", p)
