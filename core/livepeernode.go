@@ -22,7 +22,6 @@ import (
 	"github.com/livepeer/go-livepeer/types"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/transcoder"
-	lptr "github.com/livepeer/lpms/transcoder"
 )
 
 var ErrLivepeerNode = errors.New("ErrLivepeerNode")
@@ -110,9 +109,9 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []types.Vide
 //TranscodeAndBroadcast transcodes one stream into multiple streams (specified by TranscodeConfig), broadcasts the streams, and returns a list of streamIDs.
 func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm ClaimManager, t transcoder.Transcoder) ([]StreamID, error) {
 	//Get TranscodeProfiles from VideoProfiles, create the broadcasters
-	tProfiles := make([]lptr.TranscodeProfile, len(config.Profiles), len(config.Profiles))
-	broadcasters := make(map[StreamID]net.Broadcaster)
+	tProfiles := make([]transcoder.TranscodeProfile, len(config.Profiles), len(config.Profiles))
 	resultStrmIDs := make([]StreamID, len(config.Profiles), len(config.Profiles))
+	tranStrms := make(map[StreamID]stream.HLSVideoStream)
 	for i, vp := range config.Profiles {
 		strmID, err := MakeStreamID(n.Identity, RandomVideoID(), vp.Name)
 		if err != nil {
@@ -120,14 +119,17 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 			return nil, ErrTranscode
 		}
 		resultStrmIDs[i] = strmID
-		tProfiles[i] = lptr.TranscodeProfileLookup[vp.Name]
-
-		b, err := n.VideoNetwork.GetBroadcaster(strmID.String())
+		tProfiles[i] = transcoder.TranscodeProfileLookup[vp.Name]
+		newStrm, err := n.StreamDB.AddNewHLSStream(strmID)
 		if err != nil {
-			glog.Errorf("Error creating broadcaster: %v", err)
+			glog.Errorf("Error making new stream: %v", err)
 			return nil, ErrTranscode
 		}
-		broadcasters[strmID] = b
+		tranStrms[strmID] = newStrm
+		if err := n.BroadcastToNetwork(newStrm); err != nil {
+			glog.Errorf("Error broadcasting transcoded stream: %v", err)
+			return nil, ErrTranscode
+		}
 	}
 
 	//Subscribe to broadcast video, do the transcoding, broadcast the transcoded video, do the on-chain claim / verify
@@ -181,20 +183,10 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 
 		//Encode and broadcast the segment
 		for i, strmID := range resultStrmIDs {
-
-			//Encode the transcoded segment into bytes
-			b := broadcasters[strmID]
+			//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
 			newSeg := stream.HLSSegment{SeqNo: seqNo, Name: fmt.Sprintf("%v_%d.ts", strmID, seqNo), Data: tData[i], Duration: ss.Seg.Duration}
-			newSegb, err := SignedSegmentToBytes(SignedSegment{Seg: newSeg, Sig: nil}) //We don't need to sign the transcoded streams now
-			if err != nil {
-				glog.Errorf("Error encoding segment to []byte: %v", err)
-				continue
-			}
-
-			//Broadcast the transcoded segment
-			err = b.Broadcast(seqNo, newSegb)
-			if err != nil {
-				glog.Errorf("Error broadcasting segment to network: %v", err)
+			if err := tranStrms[strmID].AddHLSSegment(strmID.String(), &newSeg); err != nil {
+				glog.Errorf("Error insert transcoded segment into video stream: %v", err)
 			}
 
 			//Don't do the onchain stuff unless specified
