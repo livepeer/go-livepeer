@@ -373,7 +373,9 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 		b.listeners[remotePid] = ws
 
 		//Send the last video chunk so we don't have to wait for the next one.
-		b.sendDataMsg(remotePid, ws, b.lastMsg)
+		if b.lastMsg != nil {
+			b.sendDataMsg(remotePid, ws, b.lastMsg)
+		}
 		return nil
 	}
 
@@ -456,11 +458,13 @@ func handleStreamData(nw *BasicVideoNetwork, sd StreamDataMsg) error {
 	s := nw.subscribers[sd.StrmID]
 	if s != nil {
 		ctx, _ := context.WithTimeout(context.Background(), SubscriberDataInsertTimeout)
+		start := time.Now()
 		go func() {
 			select {
 			case s.msgChan <- sd:
+				glog.V(4).Infof("Data segment %v for %v inserted. (%v)", sd.SeqNo, sd.StrmID, time.Since(start))
 			case <-ctx.Done():
-				glog.Errorf("Subscriber data insert done: %v", ctx.Err())
+				glog.Errorf("Subscriber data insert done for stream: %v - %v", sd.StrmID, ctx.Err())
 			}
 		}()
 	}

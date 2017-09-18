@@ -13,7 +13,7 @@ import (
 	"github.com/golang/glog"
 )
 
-var SubscriberDataInsertTimeout = time.Second * 5
+var SubscriberDataInsertTimeout = time.Second * 300
 var ErrSubscriber = errors.New("ErrSubscriber")
 
 //BasicSubscriber keeps track of
@@ -87,12 +87,14 @@ func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *Basic
 	//We expect DataStreamMsg to come back
 	go func() {
 		for {
-			//Get message from the broadcaster
+			//Get message from the msgChan (inserted from the network by StreamDataMsg)
 			//Call gotData(seqNo, data)
 			//Question: What happens if the handler gets stuck?
+			start := time.Now()
 			select {
 			case msg := <-s.msgChan:
 				gotData(msg.SeqNo, msg.Data, false)
+				glog.Infof("Subscriber worker inserted segment: %v - took %v", msg.SeqNo, time.Since(start))
 			case <-ctxW.Done():
 				s.networkStream = nil
 				s.working = false

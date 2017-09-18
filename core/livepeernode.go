@@ -140,6 +140,8 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 	glog.Infof("Config strm ID: %v", config.StrmID)
 	glog.Infof("Subscriber: %v", sub)
 	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
+		glog.Infof("Starting to transcode segment %v", seqNo)
+		totalStart := time.Now()
 		if eof {
 			if cm != nil {
 				glog.Infof("Stream finished. Claiming work.")
@@ -170,22 +172,32 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 		}
 
 		//Decode the segment
+		start := time.Now()
 		ss, err := BytesToSignedSegment(data)
 		if err != nil {
 			glog.Errorf("Error decoding byte array into segment: %v", err)
 		}
+		glog.Infof("Decoding of segment took %v", time.Since(start))
 
 		//Do the transcoding
+		start = time.Now()
 		tData, err := t.Transcode(ss.Seg.Data)
 		if err != nil {
 			glog.Errorf("Error transcoding seg: %v - %v", ss.Seg.Name, err)
 		}
+		glog.Infof("Transcoding of segment %v took %v", ss.Seg.SeqNo, time.Since(start))
 
 		//Encode and broadcast the segment
+		start = time.Now()
 		for i, strmID := range resultStrmIDs {
 			//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
 			newSeg := stream.HLSSegment{SeqNo: seqNo, Name: fmt.Sprintf("%v_%d.ts", strmID, seqNo), Data: tData[i], Duration: ss.Seg.Duration}
-			if err := tranStrms[strmID].AddHLSSegment(strmID.String(), &newSeg); err != nil {
+			strm, ok := tranStrms[strmID]
+			if !ok {
+				glog.Errorf("Cannot find stream for %v", strmID)
+				continue
+			}
+			if err := strm.AddHLSSegment(strmID.String(), &newSeg); err != nil {
 				glog.Errorf("Error insert transcoded segment into video stream: %v", err)
 			}
 
@@ -193,10 +205,10 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 			if cm != nil && config.PerformOnchainClaim {
 				cm.AddReceipt(int64(seqNo), common.BytesToHash(ss.Seg.Data).Hex(), common.BytesToHash(tData[i]).Hex(), ss.Sig, config.Profiles[i])
 			}
-
 		}
+		glog.Infof("Encoding and broadcasting of segment %v took %v", ss.Seg.SeqNo, time.Since(start))
+		glog.Infof("Finished transcoding segment %v, overall took %v\n\n\n", seqNo, time.Since(totalStart))
 	})
-
 	return resultStrmIDs, nil
 }
 

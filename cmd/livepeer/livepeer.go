@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livepeer/lpms/transcoder"
+
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -465,8 +467,9 @@ func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) error {
 				glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", jid, job.StreamId, job.TranscodingOptions, config)
 
 				//Do The Transcoding
-				cm := core.NewClaimManager(job.StreamId, jid, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth)
-				strmIDs, err := n.TranscodeAndBroadcast(config, cm)
+				cm := core.NewBasicClaimManager(job.StreamId, jid, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth)
+				tr := transcoder.NewFFMpegSegmentTranscoder([]transcoder.TranscodeProfile{transcoder.P360p30fps16x9, transcoder.P240p30fps16x9}, "", n.WorkDir)
+				strmIDs, err := n.TranscodeAndBroadcast(config, cm, tr)
 				if err != nil {
 					glog.Errorf("Transcode Error: %v", err)
 					continue
