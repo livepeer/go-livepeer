@@ -136,7 +136,7 @@ func (s *BasicHLSVideoStream) AddHLSSegment(strmID string, seg *HLSSegment) erro
 	if strmID == s.GetStreamID() {
 		s.strmLock.Lock()
 		defer s.strmLock.Unlock()
-		glog.Infof("Adding segment %v to stream: %v.  pl len: %v", seg.SeqNo, strmID, len(s.strmMediaPlCache.Segments))
+		// glog.Infof("Adding segment %v to stream: %v.  pl len: %v", seg.SeqNo, strmID, len(s.strmMediaPlCache.Segments))
 		if err := s.strmMediaPlCache.InsertSegment(seg.SeqNo, &m3u8.MediaSegment{SeqId: seg.SeqNo, Duration: seg.Duration, URI: seg.Name}); err != nil {
 			glog.Errorf("Error inserting segment %v: %v", seg.Name, err)
 			return ErrAddHLSSegment
