@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/ericxtang/m3u8"
-
-	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
@@ -132,17 +132,37 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 		}
 	}
 
+	//If we found a local stream, transcode and broadcast local stream.  This is for testing only, so we'll always set cm to nil.
+	localStrm := n.StreamDB.GetHLSStream(StreamID(config.StrmID))
+	if localStrm != nil {
+		glog.V(common.SHORT).Infof("Transcoding local stream: %v", config.StrmID)
+		localStrm.SetSubscriber(func(origStrm stream.HLSVideoStream, strmID string, seg *stream.HLSSegment) {
+			n.transcodeAndBroadcastSeg(seg, nil, nil, t, resultStrmIDs, tranStrms, config)
+		})
+		for i, tStrmID := range resultStrmIDs {
+			vParams := transcoder.TranscodeProfileToVariantParams(tProfiles[i])
+			pl, _ := m3u8.NewMediaPlaylist(HLSStreamWinSize, stream.DefaultMediaPlLen)
+			if err := localStrm.AddVariant(tStrmID.String(), &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", tStrmID), Chunklist: pl, VariantParams: vParams}); err != nil {
+				glog.Errorf("Error adding variant: %v", err)
+			}
+			tranStrms[tStrmID].SetSubscriber(func(strm stream.HLSVideoStream, strmID string, seg *stream.HLSSegment) {
+				localStrm.AddHLSSegment(strmID, seg)
+			})
+		}
+		return resultStrmIDs, nil
+	}
+
 	//Subscribe to broadcast video, do the transcoding, broadcast the transcoded video, do the on-chain claim / verify
 	sub, err := n.VideoNetwork.GetSubscriber(config.StrmID)
 	if err != nil {
 		glog.Errorf("Error getting subscriber for stream %v from network: %v", config.StrmID, err)
 	}
-	glog.Infof("Config strm ID: %v", config.StrmID)
-	glog.Infof("Subscriber: %v", sub)
 	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
+		glog.V(common.DEBUG).Infof("Starting to transcode segment %v", seqNo)
+		totalStart := time.Now()
 		if eof {
 			if cm != nil {
-				glog.Infof("Stream finished. Claiming work.")
+				glog.V(common.SHORT).Infof("Stream finished. Claiming work.")
 
 				for _, p := range config.Profiles {
 					cm.Claim(p)
@@ -159,7 +179,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 			}
 
 			if !sufficient {
-				glog.Infof("Broadcaster does not have enough funds. Claiming work.")
+				glog.V(common.SHORT).Infof("Broadcaster does not have enough funds. Claiming work.")
 
 				for _, p := range config.Profiles {
 					cm.Claim(p)
@@ -170,34 +190,55 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 		}
 
 		//Decode the segment
+		start := time.Now()
 		ss, err := BytesToSignedSegment(data)
 		if err != nil {
 			glog.Errorf("Error decoding byte array into segment: %v", err)
 		}
-
-		//Do the transcoding
-		tData, err := t.Transcode(ss.Seg.Data)
-		if err != nil {
-			glog.Errorf("Error transcoding seg: %v - %v", ss.Seg.Name, err)
-		}
-
-		//Encode and broadcast the segment
-		for i, strmID := range resultStrmIDs {
-			//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
-			newSeg := stream.HLSSegment{SeqNo: seqNo, Name: fmt.Sprintf("%v_%d.ts", strmID, seqNo), Data: tData[i], Duration: ss.Seg.Duration}
-			if err := tranStrms[strmID].AddHLSSegment(strmID.String(), &newSeg); err != nil {
-				glog.Errorf("Error insert transcoded segment into video stream: %v", err)
-			}
-
-			//Don't do the onchain stuff unless specified
-			if cm != nil && config.PerformOnchainClaim {
-				cm.AddReceipt(int64(seqNo), common.BytesToHash(ss.Seg.Data).Hex(), common.BytesToHash(tData[i]).Hex(), ss.Sig, config.Profiles[i])
-			}
-
-		}
+		glog.V(common.DEBUG).Infof("Decoding of segment took %v", time.Since(start))
+		n.transcodeAndBroadcastSeg(&ss.Seg, ss.Sig, cm, t, resultStrmIDs, tranStrms, config)
+		glog.V(common.DEBUG).Infof("Encoding and broadcasting of segment %v took %v", ss.Seg.SeqNo, time.Since(start))
+		glog.V(common.SHORT).Infof("Finished transcoding segment %v, overall took %v\n\n\n", seqNo, time.Since(totalStart))
 	})
-
 	return resultStrmIDs, nil
+}
+
+func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []byte, cm ClaimManager, t transcoder.Transcoder, resultStrmIDs []StreamID, tranStrms map[StreamID]stream.HLSVideoStream, config net.TranscodeConfig) {
+	//Do the transcoding
+	start := time.Now()
+	tData, err := t.Transcode(seg.Data)
+	if err != nil {
+		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
+	}
+	glog.V(common.DEBUG).Infof("Transcoding of segment %v took %v", seg.SeqNo, time.Since(start))
+
+	//Encode and broadcast the segment
+	start = time.Now()
+	for i, resultStrmID := range resultStrmIDs {
+		// if err := ioutil.WriteFile(filepath.Join(n.WorkDir, "transegs", fmt.Sprintf("%v_%d.ts", resultStrmID, seg.SeqNo)), tData[i], 0600); err != nil {
+		// 	glog.Errorf("Error writing transcoded seg: %v", err)
+		// }
+
+		//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
+		if tData[i] == nil {
+			glog.Errorf("Cannot find transcoded segment for %v", seg.SeqNo)
+			continue
+		}
+		newSeg := stream.HLSSegment{SeqNo: seg.SeqNo, Name: fmt.Sprintf("%v_%d.ts", resultStrmID, seg.SeqNo), Data: tData[i], Duration: seg.Duration}
+		transStrm, ok := tranStrms[resultStrmID]
+		if !ok {
+			glog.Errorf("Cannot find stream for %v", tranStrms)
+			continue
+		}
+		if err := transStrm.AddHLSSegment(resultStrmID.String(), &newSeg); err != nil {
+			glog.Errorf("Error insert transcoded segment into video stream: %v", err)
+		}
+
+		//Don't do the onchain stuff unless specified
+		if cm != nil && config.PerformOnchainClaim {
+			cm.AddReceipt(int64(seg.SeqNo), ethcommon.BytesToHash(seg.Data).Hex(), ethcommon.BytesToHash(tData[i]).Hex(), sig, config.Profiles[i])
+		}
+	}
 }
 
 func (n *LivepeerNode) BroadcastFinishMsg(strmID string) error {
@@ -234,7 +275,7 @@ func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
 		//Parse through the results
 		for strmID, tProfile := range result {
 			vParams := transcoder.TranscodeProfileToVariantParams(transcoder.TranscodeProfileLookup[tProfile])
-			pl, _ := m3u8.NewMediaPlaylist(stream.DefaultMediaPlLen, stream.DefaultMediaPlLen)
+			pl, _ := m3u8.NewMediaPlaylist(HLSStreamWinSize, stream.DefaultMediaPlLen)
 			if err := strm.AddVariant(strmID, &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}); err != nil {
 				glog.Errorf("Error adding variant: %v", err)
 			}
@@ -251,14 +292,14 @@ func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
 			return
 		}
 
-		glog.Infof("Updated master playlist for %v", strm.GetStreamID())
+		glog.V(common.SHORT).Infof("Updated master playlist for %v", strm.GetStreamID())
 	})
 
 	//Broadcast stream to network
 	counter := uint64(0)
 	strm.SetSubscriber(func(strm stream.HLSVideoStream, strmID string, seg *stream.HLSSegment) {
 		//Get segment signature
-		segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(counter)), DataHash: common.BytesToHash(seg.Data).Hex()}).Hash()
+		segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(counter)), DataHash: ethcommon.BytesToHash(seg.Data).Hex()}).Hash()
 		var sig []byte
 		if c, ok := n.Eth.(*eth.Client); ok {
 			sig, err = c.SignSegmentHash(n.EthPassword, segHash.Bytes())
@@ -286,7 +327,7 @@ func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
 
 //SubscribeFromNetwork subscribes to a stream on the network.  Returns the stream as a reference.
 func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID, strm stream.HLSVideoStream) (net.Subscriber, error) {
-	glog.Infof("Subscriber from network...")
+	glog.V(common.DEBUG).Infof("Subscribe from network: %v", strmID)
 	sub, err := n.VideoNetwork.GetSubscriber(strmID.String())
 	if err != nil {
 		glog.Errorf("Error getting subscriber: %v", err)
@@ -297,8 +338,8 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 		//Two possibilities of ending the stream.
 		//1 - the subscriber quits
 		if eof {
-			glog.Infof("Got EOF, writing to buf")
-			strm.AddHLSSegment(strmID.String(), &stream.HLSSegment{Name: fmt.Sprintf("%v_eof", strmID), EOF: true})
+			glog.V(common.SHORT).Infof("Got EOF, writing to buf")
+			strm.AddHLSSegment(strmID.String(), &stream.HLSSegment{Name: fmt.Sprintf("%v_eof", strmID), EOF: true, SeqNo: seqNo})
 			if err := sub.Unsubscribe(); err != nil {
 				glog.Errorf("Unsubscribe error: %v", err)
 				return
@@ -315,7 +356,7 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 		//Two possibilities of ending the stream.
 		//2 - receive a EOF segment
 		if ss.Seg.EOF {
-			glog.Infof("Got EOF, writing to buf")
+			glog.V(common.SHORT).Infof("Got EOF, writing to buf")
 			// strm.AddHLSSegment(strmID.String(), &stream.HLSSegment{EOF: true})
 			strm.AddHLSSegment(strmID.String(), &ss.Seg)
 			if err := sub.Unsubscribe(); err != nil {

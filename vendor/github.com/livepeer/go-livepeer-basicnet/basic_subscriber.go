@@ -11,9 +11,10 @@ import (
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 )
 
-var SubscriberDataInsertTimeout = time.Second * 5
+var SubscriberDataInsertTimeout = time.Second * 300
 var ErrSubscriber = errors.New("ErrSubscriber")
 
 //BasicSubscriber keeps track of
@@ -87,12 +88,15 @@ func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *Basic
 	//We expect DataStreamMsg to come back
 	go func() {
 		for {
-			//Get message from the broadcaster
+			//Get message from the msgChan (inserted from the network by StreamDataMsg)
 			//Call gotData(seqNo, data)
 			//Question: What happens if the handler gets stuck?
+			start := time.Now()
 			select {
 			case msg := <-s.msgChan:
+				networkWaitTime := time.Since(start)
 				gotData(msg.SeqNo, msg.Data, false)
+				glog.V(common.DEBUG).Infof("Subscriber worker inserted segment: %v - took %v in total, %v waiting for data", msg.SeqNo, time.Since(start), networkWaitTime)
 			case <-ctxW.Done():
 				s.networkStream = nil
 				s.working = false

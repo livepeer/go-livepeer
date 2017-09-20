@@ -5,10 +5,11 @@ import (
 	"time"
 
 	"github.com/ericxtang/m3u8"
+	"github.com/golang/glog"
 )
 
 func TestAddAndRemove(t *testing.T) {
-	stream := NewBasicHLSVideoStream("test", time.Second)
+	stream := NewBasicHLSVideoStream("test", time.Second, 3)
 	ml, err := stream.GetMasterPlaylist()
 	if len(ml.Variants) != 0 {
 		t.Errorf("Expecting 0 variant, but got: %v", ml.Variants)
@@ -19,8 +20,13 @@ func TestAddAndRemove(t *testing.T) {
 	})
 
 	//Add to the original stream
-	err = stream.AddHLSSegment("test", &HLSSegment{Name: "test01.ts"})
-	if err != nil {
+	if err = stream.AddHLSSegment("test", &HLSSegment{Name: "test01.ts"}); err != nil {
+		t.Errorf("Error adding segment: %v", err)
+	}
+	if err = stream.AddHLSSegment("test", &HLSSegment{Name: "test02.ts"}); err != nil {
+		t.Errorf("Error adding segment: %v", err)
+	}
+	if err = stream.AddHLSSegment("test", &HLSSegment{Name: "test03.ts"}); err != nil {
 		t.Errorf("Error adding segment: %v", err)
 	}
 	seg, err := stream.GetHLSSegment("test", "test01.ts")
@@ -32,7 +38,7 @@ func TestAddAndRemove(t *testing.T) {
 	}
 
 	//Make sure the subscriber function is called
-	if len(segs) != 1 {
+	if len(segs) != 3 {
 		t.Errorf("Subscriber never called")
 	}
 
@@ -50,7 +56,7 @@ func TestAddAndRemove(t *testing.T) {
 	}
 
 	//Add a variant
-	pl, _ = m3u8.NewMediaPlaylist(10, 10)
+	pl, _ = m3u8.NewMediaPlaylist(3, 10)
 	err = stream.AddVariant("test1", &m3u8.Variant{URI: "test1.m3u8", Chunklist: pl, VariantParams: m3u8.VariantParams{Bandwidth: 10, Resolution: "10x10"}})
 	if err != nil {
 		t.Errorf("Error adding media playlist: %v", err)
@@ -75,29 +81,45 @@ func TestAddAndRemove(t *testing.T) {
 	}
 
 	//Add segment to the new variant
-	err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 1, Name: "seg1.ts", Data: []byte("hello"), Duration: 8, EOF: false})
-	if err != nil {
+	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 1, Name: "seg1.ts", Data: []byte("hello"), Duration: 8, EOF: false}); err != nil {
+		t.Errorf("Error adding HLS Segment: %v", err)
+	}
+	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 2, Name: "seg2.ts", Data: []byte("hello"), Duration: 8, EOF: false}); err != nil {
+		t.Errorf("Error adding HLS Segment: %v", err)
+	}
+	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 3, Name: "seg3.ts", Data: []byte("hello"), Duration: 8, EOF: false}); err != nil {
+		t.Errorf("Error adding HLS Segment: %v", err)
+	}
+	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 4, Name: "seg4.ts", Data: []byte("hello"), Duration: 8, EOF: false}); err != nil {
 		t.Errorf("Error adding HLS Segment: %v", err)
 	}
 	pltmp, err = stream.GetVariantPlaylist("test1")
 	if err != nil {
 		t.Errorf("Error getting variant playlist: %v", err)
 	}
-	if pltmp.Segments[0].URI != "seg1.ts" {
-		t.Errorf("Expecting segment URI to be seg1.ts, but got %v", pltmp.Segments[0].URI)
+	if pltmp.Segments[pltmp.SeqNo].URI != "seg2.ts" {
+		t.Errorf("Expecting segment URI to be seg2.ts, but got %v", pltmp.Segments[pltmp.SeqNo].URI)
 	}
-	if pltmp.Segments[0].Duration != 8 {
-		t.Errorf("Expecting duration to be 8, but got %v", pltmp.Segments[0].Duration)
+	if pltmp.Segments[pltmp.SeqNo].Duration != 8 {
+		t.Errorf("Expecting duration to be 8, but got %v", pltmp.Segments[pltmp.SeqNo].Duration)
 	}
-	if pltmp.Segments[0].SeqId != 1 {
-		t.Errorf("Expecting seqNo to be 1, but got %v", pltmp.Segments[0].SeqId)
+	if pltmp.Segments[pltmp.SeqNo].SeqId != 2 {
+		t.Errorf("Expecting seqNo to be 1, but got %v", pltmp.Segments[pltmp.SeqNo].SeqId)
 	}
-	if pltmp.Segments[1] != nil {
-		t.Errorf("Expecting to only have one segment, but the second segment is %v", pltmp.Segments[1])
+	if pltmp.Segments[pltmp.SeqNo+1].URI != "seg3.ts" {
+		t.Errorf("Expecting segment URI to be seg3.ts, but got %v", pltmp.Segments[1].URI)
 	}
-	if len(segs) != 1 {
+	if pltmp.Segments[pltmp.SeqNo+2].URI != "seg4.ts" {
+		t.Errorf("Expecting segment URI to be seg4.ts, but got %v", pltmp.Segments[2].URI)
+	}
+	if pltmp.Count() != 3 {
+		t.Errorf("Expecting to only have 3 segments, but got %v", pltmp.Count())
+	}
+	if len(segs) != 4 {
 		t.Errorf("Callback not invoked")
 	}
+	glog.Infof("%v", pltmp)
+	glog.Infof("%v", pltmp.SeqNo)
 
 	//Now master playlist should have 1 variant
 	ml, err = stream.GetMasterPlaylist()
@@ -114,7 +136,7 @@ func TestAddAndRemove(t *testing.T) {
 }
 
 func TestTimeout(t *testing.T) {
-	stream := NewBasicHLSVideoStream("test", time.Second)
+	stream := NewBasicHLSVideoStream("test", time.Second, 5)
 	sc := make(chan *HLSSegment)
 	ec := make(chan error)
 	go func() {

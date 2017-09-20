@@ -24,13 +24,13 @@ import (
 	"github.com/livepeer/go-livepeer/types"
 )
 
-func setupNodes() (*BasicVideoNetwork, *BasicVideoNetwork) {
+func setupNodes(p1, p2 int) (*BasicVideoNetwork, *BasicVideoNetwork) {
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	no1, _ := NewNode(15000, priv1, pub1, &BasicNotifiee{})
+	no1, _ := NewNode(p1, priv1, pub1, &BasicNotifiee{})
 	n1, _ := NewBasicVideoNetwork(no1)
 
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	no2, _ := NewNode(15001, priv2, pub2, &BasicNotifiee{})
+	no2, _ := NewNode(p2, priv2, pub2, &BasicNotifiee{})
 	n2, _ := NewBasicVideoNetwork(no2)
 
 	return n1, n2
@@ -95,7 +95,7 @@ func TestReconnect(t *testing.T) {
 }
 
 func TestStream(t *testing.T) {
-	n1, n2 := setupNodes()
+	n1, n2 := setupNodes(15000, 15001)
 	defer n1.NetworkNode.PeerHost.Close()
 	defer n2.NetworkNode.PeerHost.Close()
 	go n1.SetupProtocol()
@@ -316,7 +316,7 @@ func TestSubPeerForwardPath(t *testing.T) {
 
 func TestSendBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Broadcast Stream...")
-	n1, n3 := setupNodes()
+	n1, n3 := setupNodes(15000, 15001)
 	//n2 is simple node so we can register our own handler and inspect the incoming messages
 	n2, n4 := simpleNodes(15002, 15003)
 	defer n1.NetworkNode.PeerHost.Close()
@@ -396,7 +396,7 @@ func TestSendBroadcast(t *testing.T) {
 
 func TestHandleBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Broadcast...")
-	n1, n3 := setupNodes()
+	n1, n3 := setupNodes(15000, 15001)
 	n2, n4 := simpleNodes(15002, 15003)
 	defer n1.NetworkNode.PeerHost.Close()
 	defer n3.NetworkNode.PeerHost.Close()
@@ -483,7 +483,7 @@ func TestHandleBroadcast(t *testing.T) {
 
 func TestSendSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Subscriber...")
-	n1, n3 := setupNodes()
+	n1, n3 := setupNodes(15000, 15001)
 	n2, n4 := simpleNodes(15002, 15003)
 	defer n1.NetworkNode.PeerHost.Close()
 	defer n3.NetworkNode.PeerHost.Close()
@@ -588,7 +588,7 @@ func TestSendSubscribe(t *testing.T) {
 }
 
 func TestHandleCancel(t *testing.T) {
-	n1, n2 := setupNodes()
+	n1, n2 := setupNodes(15000, 15001)
 	defer n1.NetworkNode.PeerHost.Close()
 	defer n2.NetworkNode.PeerHost.Close()
 
@@ -633,7 +633,7 @@ func TestHandleCancel(t *testing.T) {
 
 func TestHandleSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Broadcast...")
-	n1, n3 := setupNodes()
+	n1, n3 := setupNodes(15000, 15001)
 	n2, n4 := simpleNodes(15002, 15003)
 	defer n1.NetworkNode.PeerHost.Close()
 	defer n3.NetworkNode.PeerHost.Close()
@@ -746,7 +746,7 @@ func simpleRelayHandler(ws *BasicStream, t *testing.T) Msg {
 	return msg
 }
 func TestRelaying(t *testing.T) {
-	n1, n2 := setupNodes()
+	n1, n2 := setupNodes(15000, 15001)
 	n3, n4 := simpleNodes(15002, 15003)
 	defer n1.NetworkNode.PeerHost.Close()
 	defer n2.NetworkNode.PeerHost.Close()
@@ -853,20 +853,34 @@ func TestRelaying(t *testing.T) {
 
 func TestSendTranscodeResponse(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Transcode Result...")
-	n1, n2 := setupNodes()
+	//n1 -> n2 -> n3, n3 should get the result, n2 should relay it, n1 should send it.
+	n1, n2 := setupNodes(15000, 15001)
+	n3, n4 := simpleNodes(15003, 15004)
 	defer n1.NetworkNode.PeerHost.Close()
 	defer n2.NetworkNode.PeerHost.Close()
+	defer n3.PeerHost.Close()
+	defer n4.PeerHost.Close()
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
+	connectHosts(n2.NetworkNode.PeerHost, n3.PeerHost)
 	go n1.SetupProtocol()
 	go n2.SetupProtocol()
 
-	//Create the broadcaster, to capture the transcode result
-	n2.GetBroadcaster("strmid")
+	//Set up n3 to capture the message
 	rc := make(chan map[string]string)
-	n2.ReceivedTranscodeResponse("strmid", func(result map[string]string) {
-		rc <- result
+	n3.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
+		defer s.Close()
+		ws := NewBasicStream(s)
+		var msg Msg
+		if err := ws.ReceiveMessage(&msg); err != nil {
+			t.Errorf("Error: %v", err)
+		}
+		glog.Infof("n3 got Msg: %v", msg)
+		rc <- msg.Data.(TranscodeResponseMsg).Result
 	})
-	err := n1.SendTranscodeResponse(peer.IDHexEncode(n2.NetworkNode.Identity), "strmid", map[string]string{"strmid1": types.P240p30fps4x3.Name, "strmid2": types.P360p30fps4x3.Name})
+
+	strmID := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n3.Identity))
+	//Send the message
+	err := n1.SendTranscodeResponse(peer.IDHexEncode(n3.Identity), strmID, map[string]string{"strmid1": types.P240p30fps4x3.Name, "strmid2": types.P360p30fps4x3.Name})
 	if err != nil {
 		t.Errorf("Error sending transcode result: %v", err)
 	}
@@ -883,11 +897,17 @@ func TestSendTranscodeResponse(t *testing.T) {
 		t.Errorf("Timed out")
 	}
 
-	glog.Infof("%v", n2)
+	r, ok := n2.relayers[strmID]
+	if !ok {
+		glog.Infof("n2 should have created a relayer")
+	}
+	if _, ok := r.listeners[peer.IDHexEncode(n3.Identity)]; !ok {
+		glog.Infof("relayer should have 1 listener, but got: %v", r.listeners[peer.IDHexEncode(n3.Identity)])
+	}
 }
 
 func TestHandleGetMasterPlaylist(t *testing.T) {
-	n1, n2 := setupNodes()
+	n1, n2 := setupNodes(15000, 15001)
 	n3, n4 := simpleNodes(15003, 15004)
 	connectHosts(n1.NetworkNode.PeerHost, n3.PeerHost)
 	defer n1.NetworkNode.PeerHost.Close()
@@ -895,6 +915,7 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 	defer n3.PeerHost.Close()
 	defer n4.PeerHost.Close()
 	go n1.SetupProtocol()
+	go n2.SetupProtocol()
 	n3Chan := make(chan MasterPlaylistDataMsg)
 	n3.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		strm := NewBasicStream(s)
@@ -902,9 +923,8 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 		strm.ReceiveMessage(&msg)
 		n3Chan <- msg.Data.(MasterPlaylistDataMsg)
 	})
-	// go n2.SetupProtocol()
 
-	//Set up a node without the playlist.  Should send a NotFound
+	//Set up n1 without the playlist and with no other peer.  Should send a NotFound.
 	strmID := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n1.NetworkNode.Identity))
 	_, ok := n1.mplMap[strmID]
 	if ok {
@@ -923,10 +943,65 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 	case <-timer.C:
 		t.Errorf("timed out")
 	}
+	strm.Stream.Close()
+
+	glog.Infof("Case 2...")
+	//Relay req from n3 to n2 (through n1).  Set up n2 to have a playlist.  n3 should recieve the playlist.
+	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
+	strmID = fmt.Sprintf("%vstrmID", peer.IDHexEncode(n2.NetworkNode.Identity))
+	pl := m3u8.NewMasterPlaylist()
+	pl.Append("testurl", nil, m3u8.VariantParams{Bandwidth: 100})
+	n2.mplMap[strmID] = pl
+	strm = n1.NetworkNode.GetStream(n3.Identity)
+	if err := handleGetMasterPlaylistReq(n1, strm, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
+		t.Errorf("Error: %v", err)
+	}
+
+	timer = time.NewTimer(time.Second)
+	select {
+	case n3data := <-n3Chan:
+		if n3data.MPL == "" {
+			t.Errorf("Expecting n3 to receive playlist, but got %v", n3data)
+		}
+	case <-timer.C:
+		t.Errorf("timed out")
+	}
+	if len(n1.relayers) != 1 {
+		t.Errorf("Expecting 1 relayer, got %v", n2.relayers)
+	}
+	if len(n1.relayers[strmID].listeners) != 1 {
+		t.Errorf("Expecting 1 listener, got %v", n1.relayers[strmID].listeners)
+	}
+	strm.Stream.Close()
+
+	//Send another req for the same stream, make sure the relayer listener increased
+	glog.Infof("Case 3...")
+	n4Chan := make(chan struct{})
+	n4.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
+		n4Chan <- struct{}{}
+	})
+	connectHosts(n1.NetworkNode.PeerHost, n4.PeerHost)
+	strm = n1.NetworkNode.GetStream(n4.Identity)
+	if err := handleGetMasterPlaylistReq(n1, strm, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	timer = time.NewTimer(time.Second)
+	select {
+	case <-n4Chan:
+	case <-timer.C:
+		t.Errorf("timed out")
+	}
+	if len(n1.relayers) != 1 {
+		t.Errorf("Expecting 1 relayer, got %v", n2.relayers)
+	}
+	if len(n1.relayers[strmID].listeners) != 2 {
+		t.Errorf("Expecting 2 listeners, got %v", n1.relayers[strmID].listeners)
+	}
+	strm.Stream.Close()
 }
 
 func TestHandleMasterPlaylistData(t *testing.T) {
-	n1, n2 := setupNodes()
+	n1, n2 := setupNodes(15000, 15001)
 	n3, n4 := simpleNodes(15003, 15004)
 	connectHosts(n1.NetworkNode.PeerHost, n3.PeerHost)
 	defer n1.NetworkNode.PeerHost.Close()
@@ -1015,7 +1090,7 @@ func TestHandleMasterPlaylistData(t *testing.T) {
 
 func TestMasterPlaylistIntegration(t *testing.T) {
 	glog.Infof("\n\nTesting handle master playlist")
-	n1, n3 := setupNodes()
+	n1, n3 := setupNodes(15000, 15001)
 
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	no2, _ := NewNode(15003, priv, pub, &BasicNotifiee{})

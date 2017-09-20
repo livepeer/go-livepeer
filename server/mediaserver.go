@@ -30,7 +30,7 @@ var ErrAlreadyExists = errors.New("StreamAlreadyExists")
 var ErrRTMPPublish = errors.New("ErrRTMPPublish")
 var ErrBroadcast = errors.New("ErrBroadcast")
 
-const HLSWaitTime = time.Second * 45
+const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
 const HLSBufferWindow = uint(5)
 
@@ -42,6 +42,7 @@ const EthRpcTimeout = 5 * time.Second
 const EthEventTimeout = 5 * time.Second
 const EthMinedTxTimeout = 60 * time.Second
 
+var HLSWaitTime = time.Second * 45
 var BroadcastPrice = big.NewInt(150)
 var BroadcastJobVideoProfile = types.P240p30fps4x3
 var TranscoderFeeCut = uint8(10)
@@ -252,7 +253,7 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 		for _, v := range mpl.Variants {
 			vName := strings.Split(v.URI, ".")[0]
 			//Need to create local media playlist because it has local state.
-			pl, _ := m3u8.NewMediaPlaylist(stream.DefaultMediaPlLen, stream.DefaultMediaPlLen)
+			pl, _ := m3u8.NewMediaPlaylist(core.HLSStreamWinSize, stream.DefaultMediaPlLen)
 			v.Chunklist = pl
 			// glog.Infof("Adding variant %v to %v", v, hlsStrm.GetStreamID())
 			if s.LivepeerNode.StreamDB.GetHLSStream(core.StreamID(vName)) == nil {
@@ -287,7 +288,7 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 		//If the hls stream is not empty, we don't need to request from the network anymore.  This could happen if there is a local broadcaster.
 		pl, err := hlsStrm.GetVariantPlaylist(strmID.String())
 		if err != nil {
-			glog.Errorf("Error getting pl")
+			glog.Errorf("Error getting pl: %v", err)
 			return nil, err
 		}
 		if pl != nil && pl.Segments[0] != nil {
@@ -313,7 +314,6 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 		start := time.Now()
 		for time.Since(start) < HLSWaitTime {
 			pl, err := hlsStrm.GetVariantPlaylist(strmID.String())
-			// glog.Infof("pl: %v", pl)
 			if err != nil || pl == nil || pl.Segments[0] == nil || pl.Segments[0].URI == "" {
 				if err == stream.ErrEOF {
 					return nil, err
@@ -321,7 +321,7 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 
 				lpmon.Instance().LogBuffer(strmID.String())
 				// glog.Infof("Waiting for playlist... err: %v", err)
-				time.Sleep(2 * time.Second)
+				time.Sleep(HLSWaitInterval)
 
 				continue
 			} else {
@@ -349,15 +349,23 @@ func getHLSSegmentHandler(s *LivepeerServer) func(url *url.URL) ([]byte, error) 
 			return nil, ErrNotFound
 		}
 
-		seg, err := hlsStrm.GetHLSSegment(strmID.String(), segName)
-		// glog.Infof("Return data for %v: %v", segName, len(seg.Data))
-		if err != nil {
-			glog.Errorf("Error getting segment from stream: %v", err)
-			return nil, err
+		start := time.Now()
+		for time.Since(start) < HLSWaitTime {
+			seg, err := hlsStrm.GetHLSSegment(strmID.String(), segName)
+			if err != nil {
+				if err == stream.ErrNotFound {
+					time.Sleep(HLSWaitInterval)
+					continue
+				} else {
+					glog.Errorf("Error getting segment from stream: %v", err)
+					return nil, err
+				}
+			}
+			s.hlsSubTimer[strmID] = time.Now()
+			return seg.Data, nil
 		}
-
-		s.hlsSubTimer[strmID] = time.Now()
-		return seg.Data, nil
+		// glog.Infof("Return data for %v: %v", segName, len(seg.Data))
+		return nil, ErrNotFound
 	}
 }
 
