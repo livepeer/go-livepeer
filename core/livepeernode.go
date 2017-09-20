@@ -8,9 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/big"
-	"path/filepath"
 	"time"
 
 	"github.com/ericxtang/m3u8"
@@ -137,9 +135,20 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 	//If we found a local stream, transcode and broadcast local stream.  This is for testing only, so we'll always set cm to nil.
 	localStrm := n.StreamDB.GetHLSStream(StreamID(config.StrmID))
 	if localStrm != nil {
+		glog.V(common.SHORT).Infof("Transcoding local stream: %v", config.StrmID)
 		localStrm.SetSubscriber(func(origStrm stream.HLSVideoStream, strmID string, seg *stream.HLSSegment) {
 			n.transcodeAndBroadcastSeg(seg, nil, nil, t, resultStrmIDs, tranStrms, config)
 		})
+		for i, tStrmID := range resultStrmIDs {
+			vParams := transcoder.TranscodeProfileToVariantParams(tProfiles[i])
+			pl, _ := m3u8.NewMediaPlaylist(HLSStreamWinSize, stream.DefaultMediaPlLen)
+			if err := localStrm.AddVariant(tStrmID.String(), &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", tStrmID), Chunklist: pl, VariantParams: vParams}); err != nil {
+				glog.Errorf("Error adding variant: %v", err)
+			}
+			tranStrms[tStrmID].SetSubscriber(func(strm stream.HLSVideoStream, strmID string, seg *stream.HLSSegment) {
+				localStrm.AddHLSSegment(strmID, seg)
+			})
+		}
 		return resultStrmIDs, nil
 	}
 
@@ -206,10 +215,9 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	//Encode and broadcast the segment
 	start = time.Now()
 	for i, resultStrmID := range resultStrmIDs {
-		// glog.Infof("Writing to %v", filepath.Join(n.WorkDir, "transegs", fmt.Sprintf("%v_%d.ts", strmID, seqNo)))
-		if err := ioutil.WriteFile(filepath.Join(n.WorkDir, "transegs", fmt.Sprintf("%v_%d.ts", resultStrmID, seg.SeqNo)), tData[i], 0600); err != nil {
-			glog.Errorf("Error writing transcoded seg: %v", err)
-		}
+		// if err := ioutil.WriteFile(filepath.Join(n.WorkDir, "transegs", fmt.Sprintf("%v_%d.ts", resultStrmID, seg.SeqNo)), tData[i], 0600); err != nil {
+		// 	glog.Errorf("Error writing transcoded seg: %v", err)
+		// }
 
 		//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
 		if tData[i] == nil {
@@ -284,7 +292,7 @@ func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
 			return
 		}
 
-		glog.V(common.INFO).Infof("Updated master playlist for %v", strm.GetStreamID())
+		glog.V(common.SHORT).Infof("Updated master playlist for %v", strm.GetStreamID())
 	})
 
 	//Broadcast stream to network
@@ -330,7 +338,7 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 		//Two possibilities of ending the stream.
 		//1 - the subscriber quits
 		if eof {
-			glog.V(common.INFO).Infof("Got EOF, writing to buf")
+			glog.V(common.SHORT).Infof("Got EOF, writing to buf")
 			strm.AddHLSSegment(strmID.String(), &stream.HLSSegment{Name: fmt.Sprintf("%v_eof", strmID), EOF: true, SeqNo: seqNo})
 			if err := sub.Unsubscribe(); err != nil {
 				glog.Errorf("Unsubscribe error: %v", err)
@@ -348,7 +356,7 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 		//Two possibilities of ending the stream.
 		//2 - receive a EOF segment
 		if ss.Seg.EOF {
-			glog.V(common.INFO).Infof("Got EOF, writing to buf")
+			glog.V(common.SHORT).Infof("Got EOF, writing to buf")
 			// strm.AddHLSSegment(strmID.String(), &stream.HLSSegment{EOF: true})
 			strm.AddHLSSegment(strmID.String(), &ss.Seg)
 			if err := sub.Unsubscribe(); err != nil {
