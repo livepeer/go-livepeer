@@ -12,7 +12,7 @@ import (
 //BasicBroadcaster is unique for a specific video stream. It keeps track of a list of listeners and a queue of video chunks.  It won't start keeping track of things until there is at least 1 listener.
 type BasicBroadcaster struct {
 	Network      *BasicVideoNetwork
-	lastMsg      *StreamDataMsg
+	lastMsgs     []*StreamDataMsg
 	q            chan *StreamDataMsg
 	listeners    map[string]*BasicStream
 	StrmID       string
@@ -30,8 +30,10 @@ func (b *BasicBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 		b.working = true
 	}
 
-	b.lastMsg = &StreamDataMsg{SeqNo: seqNo, Data: data}
-	b.q <- b.lastMsg
+	latest := &StreamDataMsg{SeqNo: seqNo, Data: data}
+	b.lastMsgs = append(b.lastMsgs, latest)
+	b.lastMsgs = b.lastMsgs[1:]
+	b.q <- latest
 	return nil
 }
 

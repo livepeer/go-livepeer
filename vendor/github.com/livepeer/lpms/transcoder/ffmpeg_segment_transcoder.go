@@ -45,7 +45,7 @@ func (t *FFMpegSegmentTranscoder) Transcode(d []byte) ([][]byte, error) {
 	//ffmpeg -i seg.ts -c:v libx264 -s 426:240 -r 30 -mpegts_copyts 1 -minrate 700k -maxrate 700k -bufsize 700k -threads 1 out3.ts
 	args := make([]string, 0, 0)
 	for i, p := range t.tProfiles {
-		args = append(args, []string{"-c:v", "libx264", "-s", p.Resolution, "-mpegts_copyts", "1", "-minrate", p.Bitrate, "-maxrate", p.Bitrate, "-bufsize", p.Bitrate, "-r", fmt.Sprintf("%d", p.Framerate), "-threads", "1", path.Join(t.workDir, fmt.Sprintf("out%v%v", i, inName))}...)
+		args = append(args, []string{"-c:v", "libx264", "-s", p.Resolution, "-minrate", p.Bitrate, "-maxrate", p.Bitrate, "-bufsize", p.Bitrate, "-r", fmt.Sprintf("%d", p.Framerate), "-threads", "1", "-copyts", path.Join(t.workDir, fmt.Sprintf("out%v%v", i, inName))}...)
 	}
 	cmd = exec.Command(path.Join(t.ffmpegPath, "ffmpeg"), append([]string{"-i", path.Join(t.workDir, inName)}, args...)...)
 	if err := cmd.Run(); err != nil {

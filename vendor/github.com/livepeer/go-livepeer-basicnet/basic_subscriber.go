@@ -11,6 +11,7 @@ import (
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 )
 
 var SubscriberDataInsertTimeout = time.Second * 300
@@ -93,8 +94,9 @@ func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *Basic
 			start := time.Now()
 			select {
 			case msg := <-s.msgChan:
+				networkWaitTime := time.Since(start)
 				gotData(msg.SeqNo, msg.Data, false)
-				glog.Infof("Subscriber worker inserted segment: %v - took %v", msg.SeqNo, time.Since(start))
+				glog.V(common.DEBUG).Infof("Subscriber worker inserted segment: %v - took %v in total, %v waiting for data", msg.SeqNo, time.Since(start), networkWaitTime)
 			case <-ctxW.Done():
 				s.networkStream = nil
 				s.working = false

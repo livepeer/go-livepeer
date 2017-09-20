@@ -38,6 +38,8 @@ var GetMasterPlaylistRelayWait = 10 * time.Second
 
 const RelayGCTime = 60 * time.Second
 const RelayTicker = 10 * time.Second
+const DefaultBroadcasterBufferSize = 3
+const DefaultBroadcasterBufferSegSendInterval = time.Second
 
 type VideoMuxer interface {
 	WriteSegment(seqNo uint64, strmID string, data []byte) error
@@ -85,7 +87,13 @@ func (n *BasicVideoNetwork) GetNodeID() string {
 func (n *BasicVideoNetwork) GetBroadcaster(strmID string) (lpnet.Broadcaster, error) {
 	b, ok := n.broadcasters[strmID]
 	if !ok {
-		b = &BasicBroadcaster{Network: n, StrmID: strmID, q: make(chan *StreamDataMsg), listeners: make(map[string]*BasicStream)}
+		b = &BasicBroadcaster{
+			Network:   n,
+			StrmID:    strmID,
+			q:         make(chan *StreamDataMsg),
+			listeners: make(map[string]*BasicStream),
+			lastMsgs:  make([]*StreamDataMsg, DefaultBroadcasterBufferSize, DefaultBroadcasterBufferSize)}
+
 		n.broadcasters[strmID] = b
 		lpmon.Instance().LogBroadcaster(strmID)
 	}
@@ -373,8 +381,11 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 		b.listeners[remotePid] = ws
 
 		//Send the last video chunk so we don't have to wait for the next one.
-		if b.lastMsg != nil {
-			b.sendDataMsg(remotePid, ws, b.lastMsg)
+		for _, msg := range b.lastMsgs {
+			if msg != nil {
+				b.sendDataMsg(remotePid, ws, msg)
+				time.Sleep(DefaultBroadcasterBufferSegSendInterval)
+			}
 		}
 		return nil
 	}

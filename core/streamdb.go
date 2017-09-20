@@ -16,6 +16,7 @@ import (
 var ErrNotFound = errors.New("NotFound")
 
 const HLSWaitTime = time.Second * 10
+const HLSStreamWinSize = uint(3)
 
 //StreamDB stores the video streams, the video buffers, and related information in memory. Note that HLS streams may have many streamIDs, each representing a
 //ABS rendition, so there may be multiple streamIDs that map to the same HLS stream in the streams map.
@@ -59,7 +60,7 @@ func (s *StreamDB) GetRTMPStream(id StreamID) stream.RTMPVideoStream {
 
 //AddNewHLSStream creates a new HLS video stream in the StreamDB
 func (s *StreamDB) AddNewHLSStream(strmID StreamID) (strm stream.HLSVideoStream, err error) {
-	strm = stream.NewBasicHLSVideoStream(strmID.String(), stream.DefaultSegWaitTime)
+	strm = stream.NewBasicHLSVideoStream(strmID.String(), stream.DefaultSegWaitTime, HLSStreamWinSize)
 	s.streams[strmID] = strm
 	lpmon.Instance().LogStream(strmID.String(), 0, 0)
 
