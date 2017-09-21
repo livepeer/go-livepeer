@@ -23,6 +23,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	lpnet "github.com/livepeer/go-livepeer/net"
 )
@@ -272,6 +273,8 @@ func (n *BasicVideoNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.Master
 func (n *BasicVideoNetwork) updateMasterPlaylistWithRelay(strmID string, mpl *m3u8.MasterPlaylist) error {
 	if mpl != nil {
 		n.mplMap[strmID] = mpl
+	} else {
+		delete(n.mplMap, strmID)
 	}
 	return nil
 }
@@ -313,7 +316,11 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 	var msg Msg
 
 	if err := ws.ReceiveMessage(&msg); err != nil {
-		glog.Errorf("%v Got error decoding msg: %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), err)
+		glog.Errorf("Got error decoding msg from %v: %v.", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()), err)
+		// if err == multicodec.ErrMismatch {
+		// 	glog.Infof("Got multicoded error.  msg: %v", msg)
+		// 	return nil
+		// }
 		return err
 	}
 	glog.V(4).Infof("%v Received a message %v from %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), msg.Op, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
@@ -339,7 +346,16 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 		if !ok {
 			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
 		}
-		return handleStreamData(nw, sd)
+		err := handleStreamData(nw, sd)
+		if err == ErrProtocol {
+			// if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: sd.StrmID}); err != nil {
+			// 	glog.Errorf("Error sending cancel msg")
+			// }
+			glog.Errorf("Got protocol error, but ignoring it for now")
+			return nil
+		} else {
+			return err
+		}
 	case FinishStreamID:
 		fs, ok := msg.Data.(FinishStreamMsg)
 		if !ok {
@@ -421,6 +437,7 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 				remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
 				r.listeners[remotePid] = ws
 			} else {
+				glog.V(common.VERBOSE).Infof("Creating relayer for sub req")
 				r := nw.NewRelayer(subReq.StrmID)
 				r.UpstreamPeer = p
 				lpmon.Instance().LogRelay(subReq.StrmID, peer.IDHexEncode(p))
@@ -440,10 +457,12 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) error {
 	if b := nw.broadcasters[cr.StrmID]; b != nil {
 		//Remove from broadcast listener
+		glog.V(common.DEBUG).Infof("Removing listener from broadcaster for stream: %v", cr.StrmID)
 		delete(b.listeners, peer.IDHexEncode(rpeer))
 		return nil
 	} else if r := nw.relayers[cr.StrmID]; r != nil {
 		//Remove from relayer listener
+		glog.V(common.DEBUG).Infof("Removing listener from relayer for stream: %v", cr.StrmID)
 		delete(r.listeners, peer.IDHexEncode(rpeer))
 		lpmon.Instance().RemoveRelay(cr.StrmID)
 		//Pass on the cancel req and remove relayer if relayer has no more listeners
@@ -489,7 +508,7 @@ func handleStreamData(nw *BasicVideoNetwork, sd StreamDataMsg) error {
 	}
 
 	if s == nil && r == nil {
-		glog.Errorf("%v, Something is wrong.  Expect subscriber or relayer to exist at this point (should have been setup when SubReq came in)", peer.IDHexEncode(nw.NetworkNode.Identity))
+		glog.Errorf("Something is wrong.  Expect subscriber or relayer for seg:%v strm:%v to exist at this point (should have been setup when SubReq came in)", sd.SeqNo, sd.StrmID)
 		return ErrProtocol
 	}
 	return nil
@@ -548,6 +567,7 @@ func handleTranscodeResponse(nw *BasicVideoNetwork, ws *BasicStream, tr Transcod
 
 				r, ok := nw.relayers[tr.StrmID]
 				if !ok {
+					glog.V(common.VERBOSE).Infof("Creating relayer for transcode response")
 					r = nw.NewRelayer(tr.StrmID)
 					r.UpstreamPeer = p
 					lpmon.Instance().LogRelay(tr.StrmID, peer.IDHexEncode(p))
@@ -593,6 +613,7 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, ws *BasicStream, mplr Get
 
 				r, ok := nw.relayers[mplr.StrmID]
 				if !ok {
+					glog.V(common.VERBOSE).Infof("Creating relayer for get master playlist req")
 					r = nw.NewRelayer(mplr.StrmID)
 					r.UpstreamPeer = p
 					lpmon.Instance().LogRelay(mplr.StrmID, peer.IDHexEncode(p))

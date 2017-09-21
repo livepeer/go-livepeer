@@ -85,7 +85,7 @@ func main() {
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	maxPricePerSegment := flag.Int("maxPricePerSegment", 1, "Max price per segment for a broadcast job")
-	transcodingOptions := flag.String("transcodingOptions", "P360p30fps16x9", "Transcoding options for broadcast job")
+	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
 	ethPassword := flag.String("ethPassword", "", "New Eth account password")
 	ethAccountAddr := flag.String("ethAccountAddr", "", "Existing Eth account address")
 	ethDatadir := flag.String("ethDatadir", "", "geth data directory")
@@ -493,7 +493,7 @@ func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) error {
 
 func txDataToVideoProfile(txData string) ([]types.VideoProfile, error) {
 	profiles := make([]types.VideoProfile, 0)
-	for _, txp := range strings.Split(txData, "|") {
+	for _, txp := range strings.Split(txData, ",") {
 		p, ok := types.VideoProfileLookup[txp]
 		if !ok {
 			glog.Errorf("Cannot find video profile for job: %v", txp)

@@ -7,7 +7,7 @@ import (
 	"github.com/nareix/joy4/av"
 )
 
-type VideoStream_ interface {
+type VideoStream interface {
 	GetStreamID() string
 	GetStreamFormat() VideoFormat
 	String() string
@@ -16,7 +16,7 @@ type VideoStream_ interface {
 //HLSVideoStream contains the master playlist, media playlists in it, and the segments in them.  Each media playlist also has a streamID.
 //You can only add media playlists to the stream.
 type HLSVideoStream interface {
-	VideoStream_
+	VideoStream
 	GetMasterPlaylist() (*m3u8.MasterPlaylist, error)
 	GetVariantPlaylist(strmID string) (*m3u8.MediaPlaylist, error)
 	GetHLSSegment(strmID string, segName string) (*HLSSegment, error)
@@ -26,7 +26,7 @@ type HLSVideoStream interface {
 }
 
 type RTMPVideoStream interface {
-	VideoStream_
+	VideoStream
 	ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) error
 	WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error
 }

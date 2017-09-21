@@ -17,6 +17,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/stream"
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
@@ -87,7 +88,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 	getMediaPlaylist func(url *url.URL) (*m3u8.MediaPlaylist, error),
 	getSegment func(url *url.URL) ([]byte, error)) {
 
-	glog.V(2).Infof("LPMS got HTTP request @ %v", r.URL.Path)
+	glog.V(common.SHORT).Infof("LPMS got HTTP request @ %v", r.URL.Path)
 
 	if !strings.HasSuffix(r.URL.Path, ".m3u8") && !strings.HasSuffix(r.URL.Path, ".ts") {
 		http.Error(w, "LPMS only accepts HLS requests over HTTP (m3u8, ts).", 500)

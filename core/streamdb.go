@@ -9,11 +9,13 @@ import (
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 
+	"github.com/livepeer/go-livepeer/common"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/lpms/stream"
 )
 
 var ErrNotFound = errors.New("NotFound")
+var ErrStreamDB = errors.New("ErrStreamDB")
 
 const HLSWaitTime = time.Second * 10
 const HLSStreamWinSize = uint(3)
@@ -21,14 +23,14 @@ const HLSStreamWinSize = uint(3)
 //StreamDB stores the video streams, the video buffers, and related information in memory. Note that HLS streams may have many streamIDs, each representing a
 //ABS rendition, so there may be multiple streamIDs that map to the same HLS stream in the streams map.
 type StreamDB struct {
-	streams    map[StreamID]stream.VideoStream_
+	streams    map[StreamID]stream.VideoStream
 	SelfNodeID string
 }
 
 //NewStreamDB Create a new StreamDB with the node's network address
 func NewStreamDB(selfNodeID string) *StreamDB {
 	return &StreamDB{
-		streams:    make(map[StreamID]stream.VideoStream_),
+		streams:    make(map[StreamID]stream.VideoStream),
 		SelfNodeID: selfNodeID}
 }
 
@@ -101,10 +103,23 @@ func (s *StreamDB) AddHLSVariant(hlsStrmID StreamID, varStrmID StreamID, variant
 }
 
 //AddStream adds an existing video stream.
-func (s *StreamDB) AddStream(strmID StreamID, strm stream.VideoStream_) (err error) {
+func (s *StreamDB) AddStream(strmID StreamID, strm stream.VideoStream) (err error) {
+	if _, ok := s.streams[strmID]; ok {
+		return ErrStreamDB
+	}
+
+	glog.V(common.VERBOSE).Infof("Adding stream: %v", strmID)
 	s.streams[strmID] = strm
 	lpmon.Instance().LogStream(strmID.String(), 0, 0)
 	return nil
+}
+
+func (s *StreamDB) DeleteVariant(strmID StreamID) {
+	if _, ok := s.streams[strmID]; !ok {
+		return
+	}
+
+	delete(s.streams, strmID)
 }
 
 //DeleteStream removes a video stream from the StreamDB
@@ -143,7 +158,7 @@ func (s *StreamDB) GetStreamIDs(format stream.VideoFormat) []StreamID {
 func (s StreamDB) String() string {
 	streams := ""
 	for vid, s := range s.streams {
-		streams = streams + fmt.Sprintf("\nVariantID:%v, %v", vid, s)
+		streams = streams + fmt.Sprintf("\nAddr:%p, VariantID:%v, %v", s, vid, s)
 	}
 
 	return fmt.Sprintf("\nStreams:%v\n\n", streams)

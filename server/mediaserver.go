@@ -44,7 +44,7 @@ const EthMinedTxTimeout = 60 * time.Second
 
 var HLSWaitTime = time.Second * 45
 var BroadcastPrice = big.NewInt(150)
-var BroadcastJobVideoProfile = types.P240p30fps4x3
+var BroadcastJobVideoProfiles = []types.VideoProfile{types.P240p30fps4x3, types.P360p30fps16x9}
 var TranscoderFeeCut = uint8(10)
 var TranscoderRewardCut = uint8(10)
 var TranscoderSegmentPrice = big.NewInt(150)
@@ -72,8 +72,15 @@ func NewLivepeerServer(rtmpPort string, httpPort string, ffmpegPath string, lpNo
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegment int, transcodingOptions string) error {
 	if s.LivepeerNode.Eth != nil {
 		BroadcastPrice = big.NewInt(int64(maxPricePerSegment))
-		BroadcastJobVideoProfile = types.VideoProfileLookup[transcodingOptions]
-		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfile)
+		bProfiles := make([]types.VideoProfile, 0)
+		for _, opt := range strings.Split(transcodingOptions, ",") {
+			p, ok := types.VideoProfileLookup[opt]
+			if ok {
+				bProfiles = append(bProfiles, p)
+			}
+		}
+		BroadcastJobVideoProfiles = bProfiles
+		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
 	}
 
 	//Start HLS unsubscribe worker
@@ -191,10 +198,10 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			}
 		}()
 
-		//Store HLS Stream into StreamDB, remember HLS stream so we can remove later
-		if err = s.LivepeerNode.StreamDB.AddStream(core.StreamID(hlsStrm.GetStreamID()), hlsStrm); err != nil {
-			glog.Errorf("Error adding stream to streamDB: %v", err)
-		}
+		//Remember HLS stream so we can remove later
+		// if err = s.LivepeerNode.StreamDB.AddStream(core.StreamID(hlsStrm.GetStreamID()), hlsStrm); err != nil {
+		// 	glog.Errorf("Error adding stream to streamDB: %v", err)
+		// }
 		s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()] = hlsStrm.GetStreamID()
 
 		if s.LivepeerNode.Eth != nil {
@@ -211,7 +218,8 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		s.LivepeerNode.StreamDB.DeleteStream(core.StreamID(rtmpStrm.GetStreamID()))
 		//Remove HLS stream associated with the RTMP stream
 		s.LivepeerNode.StreamDB.DeleteStream(core.StreamID(s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()]))
-
+		//Remove the master playlist
+		s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()], nil)
 		return nil
 	}
 }
@@ -238,7 +246,7 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 			//Create local stream and all of its variants
 			hlsStrm, err = s.LivepeerNode.StreamDB.AddNewHLSStream(strmID)
 			if err != nil {
-				glog.Errorf("Cannot create local stream: %v", err)
+				glog.Errorf("Cannot create local stream for variant: %v", err)
 				return nil, ErrNotFound
 			}
 		} else {
@@ -310,7 +318,6 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 		}
 
 		//Wait for the stream to get populated, get the playlist from the stream, and return it.
-		//Also update the hlsSubTimer.
 		start := time.Now()
 		for time.Since(start) < HLSWaitTime {
 			pl, err := hlsStrm.GetVariantPlaylist(strmID.String())
@@ -401,11 +408,11 @@ func (s *LivepeerServer) startHlsUnsubscribeWorker(limit time.Duration, freq tim
 		for sid, t := range s.hlsSubTimer {
 			if time.Since(t) > limit {
 				glog.Infof("HLS Stream %v inactive - unsubscribing", sid)
+				glog.Infof("\n\nStreamDB before delete: %v", s.LivepeerNode.StreamDB)
 				s.LivepeerNode.UnsubscribeFromNetwork(sid)
-
-				// s.LivepeerNode.StreamDB.DeleteSubscriber(sid)
-				// s.LivepeerNode.StreamDB.DeleteStream(sid) - don't delete stream because we still need it in case other renditions are being used.
+				s.LivepeerNode.StreamDB.DeleteVariant(sid)
 				delete(s.hlsSubTimer, sid)
+				glog.Infof("\n\nStreamDB after delete: %v", s.LivepeerNode.StreamDB)
 			}
 		}
 	}
@@ -434,10 +441,14 @@ func parseSegName(reqPath string) string {
 func createBroadcastJob(s *LivepeerServer, hlsStrm stream.HLSVideoStream) {
 	eth.CheckRoundAndInit(s.LivepeerNode.Eth)
 
-	resCh, errCh := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), BroadcastJobVideoProfile.Name, BroadcastPrice)
+	pNames := []string{}
+	for _, prof := range BroadcastJobVideoProfiles {
+		pNames = append(pNames, prof.Name)
+	}
+	resCh, errCh := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), strings.Join(pNames, ","), BroadcastPrice)
 	select {
 	case <-resCh:
-		glog.Infof("Created broadcast job. Price: %v. Type: %v", BroadcastJobVideoProfile.Name, BroadcastPrice)
+		glog.Infof("Created broadcast job. Price: %v. Type: %v", BroadcastPrice, pNames)
 	case err := <-errCh:
 		glog.Errorf("Error creating broadcast job: %v", err)
 	}

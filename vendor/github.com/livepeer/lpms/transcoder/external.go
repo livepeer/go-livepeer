@@ -54,7 +54,7 @@ func (et *ExternalTranscoder) LocalSRSUploadMux() (av.MuxCloser, error) {
 
 //StartUpload takes a io.Stream of RTMP stream, and loads it into a local RTMP endpoint.  The streamID will be used as the streaming endpoint.
 //So if you want to create a new stream, make sure to do that before passing in the stream.
-func (et *ExternalTranscoder) StartUpload(ctx context.Context, rtmpMux av.MuxCloser, src stream.Stream) error {
+func (et *ExternalTranscoder) StartUpload(ctx context.Context, rtmpMux av.MuxCloser, src stream.RTMPVideoStream) error {
 	upErrC := make(chan error, 1)
 
 	go func() { upErrC <- src.ReadRTMPFromStream(ctx, rtmpMux) }()
@@ -68,21 +68,15 @@ func (et *ExternalTranscoder) StartUpload(ctx context.Context, rtmpMux av.MuxClo
 }
 
 //StartDownload pushes hls playlists and segments into the stream as they become available from the transcoder.
-func (et *ExternalTranscoder) StartDownload(ctx context.Context, hlsMux stream.Stream) error {
+func (et *ExternalTranscoder) StartDownload(ctx context.Context, hlsMux stream.HLSVideoStream) error {
 	pc := make(chan *m3u8.MediaPlaylist)
 	sc := make(chan *stream.HLSSegment)
 	ec := make(chan error)
 	go func() { ec <- et.downloader.Download(pc, sc) }()
 	for {
 		select {
-		case pl := <-pc:
-			err := hlsMux.WriteHLSPlaylistToStream(*pl)
-			if err != nil {
-				return err
-			}
 		case seg := <-sc:
-			err := hlsMux.WriteHLSSegmentToStream(*seg)
-			if err != nil {
+			if err := hlsMux.AddHLSSegment(hlsMux.GetStreamID(), seg); err != nil {
 				return err
 			}
 		case err := <-ec:

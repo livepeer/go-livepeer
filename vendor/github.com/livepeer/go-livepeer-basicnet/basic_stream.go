@@ -9,6 +9,7 @@ import (
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 	net "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
 
+	"github.com/livepeer/go-livepeer/common"
 	multicodec "github.com/multiformats/go-multicodec"
 	mcjson "github.com/multiformats/go-multicodec/json"
 
@@ -37,6 +38,7 @@ func NewBasicStream(s net.Stream) *BasicStream {
 	// See https://godoc.org/github.com/multiformats/go-multicodec/json
 	dec := mcjson.Multicodec(false).Decoder(reader)
 	enc := mcjson.Multicodec(false).Encoder(writer)
+
 	return &BasicStream{
 		Stream: s,
 		r:      reader,
@@ -57,6 +59,7 @@ func (bs *BasicStream) ReceiveMessage(n interface{}) error {
 
 //SendMessage writes a message into the stream.
 func (bs *BasicStream) SendMessage(opCode Opcode, data interface{}) error {
+	glog.V(common.DEBUG).Infof("Sending msg %v to %v", opCode, peer.IDHexEncode(bs.Stream.Conn().RemotePeer()))
 	msg := Msg{Op: opCode, Data: data}
 	return bs.encodeAndFlush(msg)
 }

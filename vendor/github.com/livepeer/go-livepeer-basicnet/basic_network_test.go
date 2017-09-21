@@ -680,7 +680,7 @@ func TestHandleSubscribe(t *testing.T) {
 	strmID := fmt.Sprintf("%vStrmID", n1.GetNodeID())
 	b1tmp, _ := n1.GetBroadcaster(strmID)
 	b1, _ := b1tmp.(*BasicBroadcaster)
-	b1.lastMsg = &StreamDataMsg{SeqNo: 0, StrmID: strmID, Data: []byte("hello")}
+	b1.lastMsgs = []*StreamDataMsg{&StreamDataMsg{SeqNo: 0, StrmID: strmID, Data: []byte("hello")}}
 	n1.broadcasters[strmID] = b1
 	ws := n1.NetworkNode.GetStream(n2.Identity)
 	if err := handleSubReq(n1, SubReqMsg{StrmID: strmID}, ws); err != nil {

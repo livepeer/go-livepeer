@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/ericxtang/m3u8"
-	"github.com/golang/glog"
 )
 
 func TestAddAndRemove(t *testing.T) {
@@ -81,16 +80,16 @@ func TestAddAndRemove(t *testing.T) {
 	}
 
 	//Add segment to the new variant
-	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 1, Name: "seg1.ts", Data: []byte("hello"), Duration: 8, EOF: false}); err != nil {
+	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 1, Name: "seg1.ts", Data: []byte("hello"), Duration: 8}); err != nil {
 		t.Errorf("Error adding HLS Segment: %v", err)
 	}
-	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 2, Name: "seg2.ts", Data: []byte("hello"), Duration: 8, EOF: false}); err != nil {
+	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 2, Name: "seg2.ts", Data: []byte("hello"), Duration: 8}); err != nil {
 		t.Errorf("Error adding HLS Segment: %v", err)
 	}
-	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 3, Name: "seg3.ts", Data: []byte("hello"), Duration: 8, EOF: false}); err != nil {
+	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 3, Name: "seg3.ts", Data: []byte("hello"), Duration: 8}); err != nil {
 		t.Errorf("Error adding HLS Segment: %v", err)
 	}
-	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 4, Name: "seg4.ts", Data: []byte("hello"), Duration: 8, EOF: false}); err != nil {
+	if err = stream.AddHLSSegment("test1", &HLSSegment{SeqNo: 4, Name: "seg4.ts", Data: []byte("hello"), Duration: 8}); err != nil {
 		t.Errorf("Error adding HLS Segment: %v", err)
 	}
 	pltmp, err = stream.GetVariantPlaylist("test1")
@@ -118,8 +117,6 @@ func TestAddAndRemove(t *testing.T) {
 	if len(segs) != 4 {
 		t.Errorf("Callback not invoked")
 	}
-	glog.Infof("%v", pltmp)
-	glog.Infof("%v", pltmp.SeqNo)
 
 	//Now master playlist should have 1 variant
 	ml, err = stream.GetMasterPlaylist()

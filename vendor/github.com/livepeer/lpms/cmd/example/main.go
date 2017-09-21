@@ -77,7 +77,7 @@ func main() {
 			rtmpStrm = rs
 
 			//Segment the video into HLS (If we need multiple outlets for the HLS stream, we'd need to create a buffer.  But here we only have one outlet for the transcoder)
-			hlsStrm = stream.NewBasicHLSVideoStream(randString(10), time.Second*10)
+			hlsStrm = stream.NewBasicHLSVideoStream(randString(10), time.Second*10, 3)
 			var subscriber func(stream.HLSVideoStream, string, *stream.HLSSegment)
 			subscriber, err = transcode(hlsStrm)
 			if err != nil {
