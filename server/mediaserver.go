@@ -74,7 +74,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 		BroadcastPrice = big.NewInt(int64(maxPricePerSegment))
 		bProfiles := make([]types.VideoProfile, 0)
 		for _, opt := range strings.Split(transcodingOptions, ",") {
-			p, ok := types.VideoProfileLookup[opt]
+			p, ok := types.VideoProfileLookup[strings.TrimSpace(opt)]
 			if ok {
 				bProfiles = append(bProfiles, p)
 			}
