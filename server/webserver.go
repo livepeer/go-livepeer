@@ -73,25 +73,35 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		profile := types.VideoProfileLookup[transcodingOptions]
-		if profile.Name == "" {
-			glog.Errorf("Invalid transcoding options")
+		profiles := []types.VideoProfile{}
+		for _, pName := range strings.Split(transcodingOptions, ",") {
+			p, ok := types.VideoProfileLookup[pName]
+			if ok {
+				profiles = append(profiles, p)
+			}
+		}
+		if len(profiles) == 0 {
+			glog.Errorf("Invalid transcoding options: %v", transcodingOptions)
 			return
 		}
 
 		BroadcastPrice = big.NewInt(int64(price))
-		BroadcastJobVideoProfile = profile
+		BroadcastJobVideoProfiles = profiles
 
-		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfile.Name)
+		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
 	})
 
 	http.HandleFunc("/getBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
+		pNames := []string{}
+		for _, p := range BroadcastJobVideoProfiles {
+			pNames = append(pNames, p.Name)
+		}
 		config := struct {
 			MaxPricePerSegment *big.Int
 			TranscodingOptions string
 		}{
 			BroadcastPrice,
-			BroadcastJobVideoProfile.Name,
+			strings.Join(pNames, ","),
 		}
 
 		data, err := json.Marshal(config)
@@ -439,6 +449,7 @@ func (s *LivepeerServer) StartWebserver() {
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(fmt.Sprintf("StreamDB: %v", s.LivepeerNode.StreamDB)))
 		w.Write([]byte(fmt.Sprintf("\n\nVideoNetwork: %v", s.LivepeerNode.VideoNetwork)))
+		w.Write([]byte(fmt.Sprintf("\n\nmediaserver sub timer: %v", s.hlsSubTimer)))
 	})
 
 	http.HandleFunc("/nodeID", func(w http.ResponseWriter, r *http.Request) {

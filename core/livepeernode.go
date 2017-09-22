@@ -270,7 +270,7 @@ func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
 		return err
 	}
 
-	//Set up the callback for when we get transcode results back
+	//Set up the callback for when we get transcode results back.  It's here because any stream can be transcoded.
 	n.VideoNetwork.ReceivedTranscodeResponse(strm.GetStreamID(), func(result map[string]string) {
 		//Parse through the results
 		for strmID, tProfile := range result {
@@ -335,11 +335,9 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 	}
 
 	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
-		//Two possibilities of ending the stream.
 		//1 - the subscriber quits
 		if eof {
-			glog.V(common.SHORT).Infof("Got EOF, writing to buf")
-			strm.AddHLSSegment(strmID.String(), &stream.HLSSegment{Name: fmt.Sprintf("%v_eof", strmID), EOF: true, SeqNo: seqNo})
+			glog.V(common.SHORT).Infof("Got EOF, unsubscribing")
 			if err := sub.Unsubscribe(); err != nil {
 				glog.Errorf("Unsubscribe error: %v", err)
 				return
@@ -351,18 +349,6 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 		if err != nil {
 			glog.Errorf("Error decoding byte array into segment: %v", err)
 			return
-		}
-
-		//Two possibilities of ending the stream.
-		//2 - receive a EOF segment
-		if ss.Seg.EOF {
-			glog.V(common.SHORT).Infof("Got EOF, writing to buf")
-			// strm.AddHLSSegment(strmID.String(), &stream.HLSSegment{EOF: true})
-			strm.AddHLSSegment(strmID.String(), &ss.Seg)
-			if err := sub.Unsubscribe(); err != nil {
-				glog.Errorf("Unsubscribe error: %v", err)
-				return
-			}
 		}
 
 		//Add segment into a HLS buffer in StreamDB

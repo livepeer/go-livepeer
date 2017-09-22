@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"testing"
-	"time"
 
 	"github.com/nareix/joy4/av"
 )
@@ -48,7 +47,6 @@ func (d NoEOFDemuxer) ReadPacket() (av.Packet, error) {
 }
 
 func TestWriteBasicRTMPErrors(t *testing.T) {
-	// stream := Stream{Buffer: &StreamBuffer{}, StreamID: "test"}
 	stream := NewBasicRTMPVideoStream("test")
 	err := stream.WriteRTMPToStream(context.Background(), BadStreamsDemuxer{})
 	if err != ErrStreams {
@@ -159,14 +157,4 @@ func TestReadBasicRTMP(t *testing.T) {
 		t.Error("Expecting buffer length to be 0, but got ", stream.buffer.len())
 	}
 
-	stream2 := NewVideoStream("test2", RTMP)
-	stream2.RTMPTimeout = time.Millisecond * 50
-	err2 := stream.WriteRTMPToStream(context.Background(), NoEOFDemuxer{c: &Counter{Count: 0}})
-	if err2 != ErrDroppedRTMPStream {
-		t.Error("Error setting up the test - while inserting packet.")
-	}
-	err2 = stream2.ReadRTMPFromStream(context.Background(), PacketsMuxer{})
-	if err2 != ErrTimeout {
-		t.Error("Expecting timeout, but got", err2)
-	}
 }
