@@ -65,7 +65,7 @@ type LivepeerServer struct {
 
 func NewLivepeerServer(rtmpPort string, httpPort string, ffmpegPath string, lpNode *core.LivepeerNode) *LivepeerServer {
 	server := lpmscore.New(rtmpPort, httpPort, ffmpegPath, "")
-	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, FfmpegPath: ffmpegPath, LivepeerNode: lpNode}
+	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, FfmpegPath: ffmpegPath, LivepeerNode: lpNode, broadcastRtmpToHLSMap: make(map[string]string)}
 }
 
 //StartServer starts the LPMS server
@@ -86,8 +86,6 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 	//Start HLS unsubscribe worker
 	s.hlsSubTimer = make(map[core.StreamID]time.Time)
 	go s.startHlsUnsubscribeWorker(time.Second*30, HLSUnsubWorkerFreq)
-
-	s.broadcastRtmpToHLSMap = make(map[string]string)
 
 	//LPMS handlers for handling RTMP video
 	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
@@ -168,9 +166,9 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			return ErrRTMPPublish
 		}
 		hlsStrm, err := s.LivepeerNode.StreamDB.AddNewHLSStream(hlsStrmID)
-
 		if err != nil {
 			glog.Errorf("Error creating HLS stream for segmentation: %v", err)
+			return ErrRTMPPublish
 		}
 		LastHLSStreamID = hlsStrmID
 
