@@ -13,7 +13,7 @@ dependencies:
     - cd $HOME/go-livepeer-basicnet
     - gx install
     - go get github.com/livepeer/go-livepeer-basicnet
-    # - mv $HOME/.go_workspace/src/github.com/livepeer/go-livepeer/vendor/github.com/golang/glog $HOME/.go_workspace/src/github.com/livepeer/go-livepeer/vendor/github.com/golang/glog_backup
+    - cd $HOME/.go_workspace/src/github.com/livepeer/go-livepeer/ && git pull
 
 test:
   override:

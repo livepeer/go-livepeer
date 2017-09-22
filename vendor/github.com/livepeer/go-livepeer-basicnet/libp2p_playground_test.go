@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -270,46 +269,46 @@ func TestProvider(t *testing.T) {
 	}
 }
 
-func TestCid(t *testing.T) {
-	ctx := context.Background()
-	nDHTs := 101
-	dhts, hosts := setupDHTS(ctx, nDHTs, t)
-	defer func() {
-		for i := 0; i < nDHTs; i++ {
-			dhts[i].Close()
-			defer hosts[i].Close()
-		}
-	}()
+// func TestCid(t *testing.T) {
+// 	ctx := context.Background()
+// 	nDHTs := 101
+// 	dhts, hosts := setupDHTS(ctx, nDHTs, t)
+// 	defer func() {
+// 		for i := 0; i < nDHTs; i++ {
+// 			dhts[i].Close()
+// 			defer hosts[i].Close()
+// 		}
+// 	}()
 
-	mrand := rand.New(rand.NewSource(42))
-	guy := dhts[0]
-	guyh := hosts[0]
-	others := dhts[1:]
-	othersh := hosts[1:]
-	for i := 0; i < 20; i++ {
-		for j := 0; j < 16; j++ { // 16, high enough to probably not have any partitions
-			v := mrand.Intn(80)
-			connect(t, ctx, others[i], others[20+v], othersh[i], othersh[20+v])
-		}
-	}
+// 	mrand := rand.New(rand.NewSource(42))
+// 	guy := dhts[0]
+// 	guyh := hosts[0]
+// 	others := dhts[1:]
+// 	othersh := hosts[1:]
+// 	for i := 0; i < 20; i++ {
+// 		for j := 0; j < 16; j++ { // 16, high enough to probably not have any partitions
+// 			v := mrand.Intn(80)
+// 			connect(t, ctx, others[i], others[20+v], othersh[i], othersh[20+v])
+// 		}
+// 	}
 
-	for i := 0; i < 20; i++ {
-		connect(t, ctx, guy, others[i], guyh, othersh[i])
-	}
+// 	for i := 0; i < 20; i++ {
+// 		connect(t, ctx, guy, others[i], guyh, othersh[i])
+// 	}
 
-	pc, err := dhts[0].GetClosestPeers(context.Background(), peer.IDB58Encode(hosts[60].ID()))
-	if err != nil {
-		t.Errorf("Error: %v", err)
-	}
+// 	pc, err := dhts[0].GetClosestPeers(context.Background(), peer.IDB58Encode(hosts[60].ID()))
+// 	if err != nil {
+// 		t.Errorf("Error: %v", err)
+// 	}
 
-	timer := time.NewTimer(time.Second * 2)
-	select {
-	case pid := <-pc:
-		if pid == hosts[3].ID() {
-			return
-			// t.Errorf("Expecting %v, got %v", peer.IDHexEncode(hosts[3].ID()), peer.IDHexEncode(pid))
-		}
-	case <-timer.C:
-		t.Errorf("Timed out, didn't find: %v", peer.IDHexEncode(hosts[3].ID()))
-	}
-}
+// 	timer := time.NewTimer(time.Second * 2)
+// 	select {
+// 	case pid := <-pc:
+// 		if pid == hosts[3].ID() {
+// 			return
+// 			// t.Errorf("Expecting %v, got %v", peer.IDHexEncode(hosts[3].ID()), peer.IDHexEncode(pid))
+// 		}
+// 	case <-timer.C:
+// 		t.Errorf("Timed out, didn't find: %v", peer.IDHexEncode(hosts[3].ID()))
+// 	}
+// }
