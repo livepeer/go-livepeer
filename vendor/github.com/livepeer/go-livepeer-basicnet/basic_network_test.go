@@ -3,6 +3,7 @@ package basicnet
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"reflect"
 	"sort"
@@ -23,6 +24,13 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/types"
 )
+
+func init() {
+	flag.Set("alsologtostderr", fmt.Sprintf("%t", true))
+	var logLevel string
+	flag.StringVar(&logLevel, "logLevel", "6", "test")
+	flag.Lookup("v").Value.Set(logLevel)
+}
 
 func setupNodes(p1, p2 int) (*BasicVideoNetwork, *BasicVideoNetwork) {
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
@@ -229,9 +237,17 @@ func TestSubPath(t *testing.T) {
 		bc <- true
 	})
 
+	timer := time.NewTimer(time.Second * 2)
 	select {
 	case <-bc:
 		//pass
+	case <-timer.C:
+
+		glog.Infof("n0: %v", nodes[0].relayers)
+		glog.Infof("n3: %v", nodes[3].relayers)
+		glog.Infof("n6: %v", nodes[6].relayers)
+		glog.Infof("n9: %v", nodes[9].relayers)
+		t.Errorf("Timed out")
 	}
 }
 
@@ -608,7 +624,7 @@ func TestHandleCancel(t *testing.T) {
 
 	//Put a relayer with 2 listeners in the node, make sure cancel removes the listener, then the relayer
 	r := &BasicRelayer{listeners: map[string]*BasicStream{peer.IDHexEncode(nid1): nil, peer.IDHexEncode(nid2): nil}}
-	n1.relayers[strmID1] = r
+	n1.relayers[relayerMapKey(strmID1, SubReqID)] = r
 	if err := handleCancelSubReq(n1, CancelSubMsg{StrmID: strmID1}, nid1); err != nil {
 		t.Errorf("Error handling req: %v", err)
 	}
@@ -705,8 +721,8 @@ func TestHandleSubscribe(t *testing.T) {
 
 	//Test relaying
 	strmID2 := fmt.Sprintf("%vStrmID2", peer.IDHexEncode(n4.Identity))
-	r1 := n1.NewRelayer(strmID2)
-	if n1.relayers[strmID2] != r1 {
+	r1 := n1.NewRelayer(strmID2, SubReqID)
+	if n1.relayers[relayerMapKey(strmID2, SubReqID)] != r1 {
 		t.Errorf("Should have assigned relayer")
 	}
 	ws = n1.NetworkNode.GetStream(n2.Identity)
@@ -728,7 +744,7 @@ func TestHandleSubscribe(t *testing.T) {
 			t.Errorf("Timed out")
 		}
 	}
-	delete(n1.relayers, strmID2)
+	delete(n1.relayers, relayerMapKey(strmID2, SubReqID))
 
 	//Test when the broadcaster is remote, and there isn't a relayer yet.
 	//TODO: This is hard to test because of the dependency to kad.IpfsDht.  We can get around it by creating an interface called "NetworkRouting"
@@ -818,7 +834,7 @@ func TestRelaying(t *testing.T) {
 		t.Errorf("Should be 1 relayer in n2")
 	}
 
-	if len(n2.relayers[strmID].listeners) != 1 {
+	if len(n2.relayers[relayerMapKey(strmID, SubReqID)].listeners) != 1 {
 		t.Errorf("Should be 1 listener in r2")
 	}
 
@@ -847,7 +863,7 @@ func TestRelaying(t *testing.T) {
 	}
 
 	if len(n2.relayers) != 0 {
-		t.Errorf("Should have 0 relayers in n2")
+		t.Errorf("Should have 0 relayers in n2, but got %v", n2.relayers)
 	}
 }
 
@@ -897,13 +913,13 @@ func TestSendTranscodeResponse(t *testing.T) {
 		t.Errorf("Timed out")
 	}
 
-	r, ok := n2.relayers[strmID]
-	if !ok {
-		glog.Infof("n2 should have created a relayer")
-	}
-	if _, ok := r.listeners[peer.IDHexEncode(n3.Identity)]; !ok {
-		glog.Infof("relayer should have 1 listener, but got: %v", r.listeners[peer.IDHexEncode(n3.Identity)])
-	}
+	// r, ok := n2.relayers[relayerMapKey(strmID, TranscodeResponseID)]
+	// if !ok {
+	// 	glog.Infof("n2 should have created a relayer")
+	// }
+	// if _, ok := r.listeners[peer.IDHexEncode(n3.Identity)]; !ok {
+	// 	glog.Infof("relayer should have 1 listener, but got: %v", r.listeners[peer.IDHexEncode(n3.Identity)])
+	// }
 }
 
 func TestHandleGetMasterPlaylist(t *testing.T) {
@@ -969,8 +985,8 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 	if len(n1.relayers) != 1 {
 		t.Errorf("Expecting 1 relayer, got %v", n2.relayers)
 	}
-	if len(n1.relayers[strmID].listeners) != 1 {
-		t.Errorf("Expecting 1 listener, got %v", n1.relayers[strmID].listeners)
+	if len(n1.relayers[relayerMapKey(strmID, GetMasterPlaylistReqID)].listeners) != 1 {
+		t.Errorf("Expecting 1 listener, got %v", n1.relayers[relayerMapKey(strmID, GetMasterPlaylistReqID)].listeners)
 	}
 	strm.Stream.Close()
 
@@ -994,8 +1010,8 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 	if len(n1.relayers) != 1 {
 		t.Errorf("Expecting 1 relayer, got %v", n2.relayers)
 	}
-	if len(n1.relayers[strmID].listeners) != 2 {
-		t.Errorf("Expecting 2 listeners, got %v", n1.relayers[strmID].listeners)
+	if len(n1.relayers[relayerMapKey(strmID, GetMasterPlaylistReqID)].listeners) != 2 {
+		t.Errorf("Expecting 2 listeners, got %v", n1.relayers[relayerMapKey(strmID, GetMasterPlaylistReqID)].listeners)
 	}
 	strm.Stream.Close()
 }
@@ -1032,7 +1048,7 @@ func TestHandleMasterPlaylistData(t *testing.T) {
 	})
 	strm := n1.NetworkNode.GetStream(n3.Identity)
 	r := &BasicRelayer{listeners: map[string]*BasicStream{peer.IDHexEncode(n3.Identity): strm}}
-	n1.relayers[strmID] = r
+	n1.relayers[relayerMapKey(strmID, GetMasterPlaylistReqID)] = r
 	if err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{StrmID: strmID, NotFound: true}); err != nil {
 		t.Errorf("Error: %v", err)
 	}
@@ -1045,7 +1061,7 @@ func TestHandleMasterPlaylistData(t *testing.T) {
 	case <-timer.C:
 		t.Errorf("Timed out")
 	}
-	delete(n1.relayers, strmID)
+	delete(n1.relayers, relayerMapKey(strmID, GetMasterPlaylistReqID))
 
 	//No relayer and NotFound.  Should insert 'nil' into the channel.
 	mplc := make(chan *m3u8.MasterPlaylist)

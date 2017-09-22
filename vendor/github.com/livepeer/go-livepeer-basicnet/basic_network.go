@@ -41,6 +41,7 @@ const RelayGCTime = 60 * time.Second
 const RelayTicker = 10 * time.Second
 const DefaultBroadcasterBufferSize = 3
 const DefaultBroadcasterBufferSegSendInterval = time.Second
+const DefaultTranscodeResponseRelayDuplication = 2
 
 type VideoMuxer interface {
 	WriteSegment(seqNo uint64, strmID string, data []byte) error
@@ -51,7 +52,7 @@ type BasicVideoNetwork struct {
 	NetworkNode            *NetworkNode
 	broadcasters           map[string]*BasicBroadcaster
 	subscribers            map[string]*BasicSubscriber
-	relayers               map[string]*BasicRelayer
+	relayers               map[relayerID]*BasicRelayer
 	mplMap                 map[string]*m3u8.MasterPlaylist
 	mplChans               map[string]chan *m3u8.MasterPlaylist
 	transResponseCallbacks map[string]func(transcodeResult map[string]string)
@@ -71,7 +72,7 @@ func NewBasicVideoNetwork(n *NetworkNode) (*BasicVideoNetwork, error) {
 		NetworkNode:            n,
 		broadcasters:           make(map[string]*BasicBroadcaster),
 		subscribers:            make(map[string]*BasicSubscriber),
-		relayers:               make(map[string]*BasicRelayer),
+		relayers:               make(map[relayerID]*BasicRelayer),
 		mplMap:                 make(map[string]*m3u8.MasterPlaylist),
 		mplChans:               make(map[string]chan *m3u8.MasterPlaylist),
 		transResponseCallbacks: make(map[string]func(transcodeResult map[string]string))}
@@ -113,16 +114,16 @@ func (n *BasicVideoNetwork) GetSubscriber(strmID string) (lpnet.Subscriber, erro
 }
 
 //NewRelayer creates a new relayer.
-func (n *BasicVideoNetwork) NewRelayer(strmID string) *BasicRelayer {
+func (n *BasicVideoNetwork) NewRelayer(strmID string, opcode Opcode) *BasicRelayer {
 	r := &BasicRelayer{listeners: make(map[string]*BasicStream)}
-	n.relayers[strmID] = r
+	n.relayers[relayerMapKey(strmID, opcode)] = r
 	go func() {
 		timer := time.NewTicker(RelayTicker)
 		for {
 			select {
 			case <-timer.C:
 				if time.Since(r.LastRelay) > RelayGCTime {
-					delete(n.relayers, strmID)
+					delete(n.relayers, relayerMapKey(strmID, opcode))
 					return
 				}
 			}
@@ -433,12 +434,12 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 				continue
 			}
 
-			if r := nw.relayers[subReq.StrmID]; r != nil {
+			if r := nw.relayers[relayerMapKey(subReq.StrmID, SubReqID)]; r != nil {
 				remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
 				r.listeners[remotePid] = ws
 			} else {
 				glog.V(common.VERBOSE).Infof("Creating relayer for sub req")
-				r := nw.NewRelayer(subReq.StrmID)
+				r := nw.NewRelayer(subReq.StrmID, SubReqID)
 				r.UpstreamPeer = p
 				lpmon.Instance().LogRelay(subReq.StrmID, peer.IDHexEncode(p))
 				remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
@@ -460,7 +461,7 @@ func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) e
 		glog.V(common.DEBUG).Infof("Removing listener from broadcaster for stream: %v", cr.StrmID)
 		delete(b.listeners, peer.IDHexEncode(rpeer))
 		return nil
-	} else if r := nw.relayers[cr.StrmID]; r != nil {
+	} else if r := nw.relayers[relayerMapKey(cr.StrmID, SubReqID)]; r != nil {
 		//Remove from relayer listener
 		glog.V(common.DEBUG).Infof("Removing listener from relayer for stream: %v", cr.StrmID)
 		delete(r.listeners, peer.IDHexEncode(rpeer))
@@ -472,7 +473,7 @@ func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) e
 				if err := ns.SendMessage(CancelSubID, cr); err != nil {
 					glog.Errorf("Error relaying cancel message to %v: %v ", peer.IDHexEncode(r.UpstreamPeer), err)
 				}
-				delete(nw.relayers, cr.StrmID)
+				delete(nw.relayers, relayerMapKey(cr.StrmID, CancelSubID))
 				return nil
 			}
 		}
@@ -499,7 +500,7 @@ func handleStreamData(nw *BasicVideoNetwork, sd StreamDataMsg) error {
 		}()
 	}
 
-	r := nw.relayers[sd.StrmID]
+	r := nw.relayers[relayerMapKey(sd.StrmID, SubReqID)]
 	if r != nil {
 		if err := r.RelayStreamData(sd); err != nil {
 			glog.Errorf("Error relaying stream data: %v", err)
@@ -523,12 +524,12 @@ func handleFinishStream(nw *BasicVideoNetwork, fs FinishStreamMsg) error {
 		delete(nw.subscribers, fs.StrmID)
 	}
 
-	r := nw.relayers[fs.StrmID]
+	r := nw.relayers[relayerMapKey(fs.StrmID, SubReqID)]
 	if r != nil {
 		if err := r.RelayFinishStream(nw, fs); err != nil {
 			glog.Errorf("Error relaying finish stream: %v", err)
 		}
-		delete(nw.relayers, fs.StrmID)
+		delete(nw.relayers, relayerMapKey(fs.StrmID, SubReqID))
 		lpmon.Instance().RemoveRelay(fs.StrmID)
 	}
 
@@ -548,6 +549,8 @@ func handleTranscodeResponse(nw *BasicVideoNetwork, ws *BasicStream, tr Transcod
 		if err != nil {
 			return ErrTranscodeResponse
 		}
+
+		dupCount := DefaultTranscodeResponseRelayDuplication
 		for _, p := range peers {
 			//Don't send it back to the requesting peer
 			if p == ws.Stream.Conn().RemotePeer() || p == nw.NetworkNode.Identity {
@@ -565,20 +568,15 @@ func handleTranscodeResponse(nw *BasicVideoNetwork, ws *BasicStream, tr Transcod
 					continue
 				}
 
-				r, ok := nw.relayers[tr.StrmID]
-				if !ok {
-					glog.V(common.VERBOSE).Infof("Creating relayer for transcode response")
-					r = nw.NewRelayer(tr.StrmID)
-					r.UpstreamPeer = p
-					lpmon.Instance().LogRelay(tr.StrmID, peer.IDHexEncode(p))
+				//Don't need to set up a relayer here because we don't expect any response.
+				if dupCount == 0 {
+					return nil
 				}
-				remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
-				r.listeners[remotePid] = ws
-				return nil
 			}
+			dupCount--
 		}
-		glog.Info("Cannot relay TranscodeResponse to peers")
-
+		glog.Info("Only sent to %v peers", DefaultTranscodeResponseRelayDuplication-dupCount)
+		return nil
 	}
 
 	callback(tr.Result)
@@ -611,10 +609,10 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, ws *BasicStream, mplr Get
 					continue
 				}
 
-				r, ok := nw.relayers[mplr.StrmID]
+				r, ok := nw.relayers[relayerMapKey(mplr.StrmID, GetMasterPlaylistReqID)]
 				if !ok {
 					glog.V(common.VERBOSE).Infof("Creating relayer for get master playlist req")
-					r = nw.NewRelayer(mplr.StrmID)
+					r = nw.NewRelayer(mplr.StrmID, GetMasterPlaylistReqID)
 					r.UpstreamPeer = p
 					lpmon.Instance().LogRelay(mplr.StrmID, peer.IDHexEncode(p))
 				}
@@ -633,7 +631,7 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, ws *BasicStream, mplr Get
 func handleMasterPlaylistDataMsg(nw *BasicVideoNetwork, mpld MasterPlaylistDataMsg) error {
 	ch, ok := nw.mplChans[mpld.StrmID]
 	if !ok {
-		r := nw.relayers[mpld.StrmID]
+		r := nw.relayers[relayerMapKey(mpld.StrmID, GetMasterPlaylistReqID)]
 		if r != nil {
 			//Relay the data
 			return r.RelayMasterPlaylistData(nw, mpld)
@@ -682,4 +680,10 @@ func closestLocalPeers(ps peerstore.Peerstore, strmID string) ([]peer.ID, error)
 	}
 
 	return kb.SortClosestPeers(localPeers, kb.ConvertPeerID(targetPid)), nil
+}
+
+type relayerID string
+
+func relayerMapKey(strmID string, opcode Opcode) relayerID {
+	return relayerID(fmt.Sprintf("%v-%v", opcode, strmID))
 }
