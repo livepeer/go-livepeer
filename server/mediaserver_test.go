@@ -147,7 +147,7 @@ func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVide
 	if err := hs.AddHLSSegment(hs.GetStreamID(), &stream.HLSSegment{SeqNo: 2, Name: "seg2.ts"}); err != nil {
 		glog.Errorf("Error adding hls seg2")
 	}
-	if err := hs.AddHLSSegment(hs.GetStreamID(), &stream.HLSSegment{SeqNo: 3, EOF: true, Name: "seg3.ts"}); err != nil {
+	if err := hs.AddHLSSegment(hs.GetStreamID(), &stream.HLSSegment{SeqNo: 3, Name: "seg3.ts"}); err != nil {
 		glog.Errorf("Error adding hls seg3")
 	}
 	return nil
@@ -226,7 +226,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	seg1, _ := core.BytesToSignedSegment(sn.B.Data[1])
 	seg2, _ := core.BytesToSignedSegment(sn.B.Data[2])
 	seg3, _ := core.BytesToSignedSegment(sn.B.Data[3])
-	if seg0.Seg.Name != "seg0.ts" || seg1.Seg.Name != "seg1.ts" || seg2.Seg.Name != "seg2.ts" || seg3.Seg.EOF != true {
+	if seg0.Seg.Name != "seg0.ts" || seg1.Seg.Name != "seg1.ts" || seg2.Seg.Name != "seg2.ts" {
 		t.Errorf("Wrong segments: %v, %v, %v, %v", seg0, seg1, seg2, seg3)
 	}
 }
