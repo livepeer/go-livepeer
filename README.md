@@ -52,7 +52,7 @@ Now the geth node should be running, and it should soon start downloading blocks
 ### Quick start
 - Make sure you have done all the setup steps. (Have `ffmpeg` installed, have `geth` running on the Livepeer private testnet)
 
-- Run `livepeer -testnet` to start Livepeer. Make sure you have the `livepeer` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
+- Run `livepeer -testnet` to start Livepeer. Make sure you have the `livepeer` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases) (you should download the packages for your OS - darwin for Macs and linux for linux.  You should also rename them to `livepeer` and `livepeer_cli`, and make sure they have executable permissions).
 
 - Run `livepeer_cli`. You should see a wizard launch in the command line. Make sure you installed the `livepeer_cli` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
 
