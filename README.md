@@ -14,17 +14,18 @@ Building and running this node allows you to:
 For full documentation and a project overview, go to
 [Livepeer Documentation](https://github.com/livepeer/wiki/wiki)
 
-## Installation
+## Installing Livepeer
+### Option 1: Download executables
 The easiest way to install Livepeer is by downloading it from the [release page on Github](https://github.com/livepeer/go-livepeer/releases).  Pick the appropriate platform and the latest version.
 
-## Build
+### Option 2: Build from source
 If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
 
 You can build Livepeer from scratch.  If you already have the code, you can simply run `go build ./cmd/livepeer/livepeer.go` from the project root directory.
 
 You can also fetch and build the `livepeer` node using `go get github.com/livepeer/go-livepeer/cmd/livepeer`. It should be built and put in your $GOPATH/bin.
 
-## Setup
+## Additional Dependencies and Setup
 
 ### ffmpeg
 The current version of Livepeer requires [ffmpeg](https://www.ffmpeg.org/).
@@ -47,7 +48,7 @@ Livepeer is currently only running on a private Ethereum testnet.
 
 Now the geth node should be running, and it should soon start downloading blocks.
 
-## Usage
+## Running Livepeer
 
 ### Quick start
 - Make sure you have done all the setup steps. (Have `ffmpeg` installed, have `geth` running on the Livepeer private testnet)
