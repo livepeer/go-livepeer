@@ -86,10 +86,11 @@ func (n *StubVideoNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterP
 }
 
 type StubBroadcaster struct {
-	T      *testing.T
-	StrmID string
-	SeqNo  uint64
-	Data   []byte
+	T         *testing.T
+	StrmID    string
+	SeqNo     uint64
+	Data      []byte
+	FinishMsg bool
 }
 
 func (n *StubBroadcaster) IsWorking() bool { return true }
@@ -113,7 +114,10 @@ func (n *StubBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 	}
 	return nil
 }
-func (n *StubBroadcaster) Finish() error { return nil }
+func (n *StubBroadcaster) Finish() error {
+	n.FinishMsg = true
+	return nil
+}
 
 type StubSubscriber struct {
 	T *testing.T

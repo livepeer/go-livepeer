@@ -24,6 +24,7 @@ type BasicSubscriber struct {
 	msgChan       chan StreamDataMsg
 	networkStream *BasicStream
 	StrmID        string
+	UpstreamPeer  peer.ID
 	working       bool
 	cancelWorker  context.CancelFunc
 }
@@ -65,6 +66,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 		ns := s.Network.NetworkNode.GetStream(p)
 		if ns != nil {
 			//Send SubReq
+			glog.Infof("Sending Req %v", s.StrmID)
 			if err := ns.SendMessage(SubReqID, SubReqMsg{StrmID: s.StrmID}); err != nil {
 				glog.Errorf("Error sending SubReq to %v: %v", peer.IDHexEncode(p), err)
 			}
@@ -72,7 +74,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 			s.cancelWorker = cancel
 			s.working = true
 			s.networkStream = ns
-
+			s.UpstreamPeer = p
 			s.startWorker(ctxW, p, ns, gotData)
 			return nil
 		}

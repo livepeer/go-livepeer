@@ -28,6 +28,7 @@ var ErrLivepeerNode = errors.New("ErrLivepeerNode")
 var ErrTranscode = errors.New("ErrTranscode")
 var ErrBroadcastTimeout = errors.New("ErrBroadcastTimeout")
 var ErrBroadcastJob = errors.New("ErrBroadcastJob")
+var ErrBroadcast = errors.New("ErrBroadcast")
 var ErrEOF = errors.New("ErrEOF")
 var BroadcastTimeout = time.Second * 30
 var ClaimInterval = int64(5)
@@ -45,7 +46,7 @@ type LivepeerNode struct {
 	Identity     NodeID
 	Addrs        []string
 	VideoNetwork net.VideoNetwork
-	StreamDB     *StreamDB
+	VideoDB      *VideoDB
 	Eth          eth.LivepeerEthClient
 	EthAccount   string
 	EthPassword  string
@@ -59,7 +60,7 @@ func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID
 		return nil, ErrLivepeerNode
 	}
 
-	return &LivepeerNode{StreamDB: NewStreamDB(vn.GetNodeID()), VideoNetwork: vn, Identity: nodeId, Addrs: addrs, Eth: e, WorkDir: wd}, nil
+	return &LivepeerNode{VideoDB: NewVideoDB(vn.GetNodeID()), VideoNetwork: vn, Identity: nodeId, Addrs: addrs, Eth: e, WorkDir: wd}, nil
 }
 
 //Start sets up the Livepeer protocol and connects the node to the network
@@ -88,7 +89,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []types.Vide
 	}
 
 	//Verify the stream exists(assume it's a local stream)
-	if hlsStream := n.StreamDB.GetHLSStream(strmID); hlsStream == nil {
+	if hlsStream := n.VideoDB.GetHLSStream(strmID); hlsStream == nil {
 		glog.Errorf("Cannot find stream %v for creating transcode job", strmID)
 		return ErrNotFound
 	}
@@ -112,6 +113,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 	tProfiles := make([]transcoder.TranscodeProfile, len(config.Profiles), len(config.Profiles))
 	resultStrmIDs := make([]StreamID, len(config.Profiles), len(config.Profiles))
 	tranStrms := make(map[StreamID]stream.HLSVideoStream)
+	variants := make(map[StreamID]*m3u8.Variant)
 	for i, vp := range config.Profiles {
 		strmID, err := MakeStreamID(n.Identity, RandomVideoID(), vp.Name)
 		if err != nil {
@@ -120,34 +122,39 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 		}
 		resultStrmIDs[i] = strmID
 		tProfiles[i] = transcoder.TranscodeProfileLookup[vp.Name]
-		newStrm, err := n.StreamDB.AddNewHLSStream(strmID)
+
+		pl, err := m3u8.NewMediaPlaylist(HLSStreamWinSize, stream.DefaultHLSStreamCap)
+		if err != nil {
+			glog.Errorf("Error making playlist: %v", err)
+			return nil, ErrTranscode
+		}
+		variants[strmID] = &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: transcoder.TranscodeProfileToVariantParams(tProfiles[i])}
+
+		newStrm, err := n.VideoDB.AddNewHLSStream(strmID)
 		if err != nil {
 			glog.Errorf("Error making new stream: %v", err)
 			return nil, ErrTranscode
 		}
 		tranStrms[strmID] = newStrm
-		if err := n.BroadcastToNetwork(newStrm); err != nil {
+		if err := n.BroadcastStreamToNetwork(newStrm); err != nil {
 			glog.Errorf("Error broadcasting transcoded stream: %v", err)
 			return nil, ErrTranscode
 		}
 	}
 
 	//If we found a local stream, transcode and broadcast local stream.  This is for testing only, so we'll always set cm to nil.
-	localStrm := n.StreamDB.GetHLSStream(StreamID(config.StrmID))
-	if localStrm != nil {
-		glog.V(common.SHORT).Infof("Transcoding local stream: %v", config.StrmID)
-		localStrm.SetSubscriber(func(origStrm stream.HLSVideoStream, strmID string, seg *stream.HLSSegment) {
+	localMfst := n.VideoDB.GetHLSManifest(ManifestID(config.ManifestID))
+	if localMfst != nil && len(localMfst.GetVideoStreams()) == 1 {
+		glog.V(common.SHORT).Infof("Transcoding local manifest: %v", config.ManifestID)
+		localMfst.GetVideoStreams()[0].SetSubscriber(func(seg *stream.HLSSegment, eof bool) {
+			if eof {
+				return
+			}
 			n.transcodeAndBroadcastSeg(seg, nil, nil, t, resultStrmIDs, tranStrms, config)
 		})
-		for i, tStrmID := range resultStrmIDs {
-			vParams := transcoder.TranscodeProfileToVariantParams(tProfiles[i])
-			pl, _ := m3u8.NewMediaPlaylist(HLSStreamWinSize, stream.DefaultMediaPlLen)
-			if err := localStrm.AddVariant(tStrmID.String(), &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", tStrmID), Chunklist: pl, VariantParams: vParams}); err != nil {
-				glog.Errorf("Error adding variant: %v", err)
-			}
-			tranStrms[tStrmID].SetSubscriber(func(strm stream.HLSVideoStream, strmID string, seg *stream.HLSSegment) {
-				localStrm.AddHLSSegment(strmID, seg)
-			})
+
+		for _, tStrmID := range resultStrmIDs {
+			localMfst.AddVideoStream(tranStrms[tStrmID], variants[tStrmID])
 		}
 		return resultStrmIDs, nil
 	}
@@ -230,7 +237,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 			glog.Errorf("Cannot find stream for %v", tranStrms)
 			continue
 		}
-		if err := transStrm.AddHLSSegment(resultStrmID.String(), &newSeg); err != nil {
+		if err := transStrm.AddHLSSegment(&newSeg); err != nil {
 			glog.Errorf("Error insert transcoded segment into video stream: %v", err)
 		}
 
@@ -251,18 +258,56 @@ func (n *LivepeerNode) BroadcastFinishMsg(strmID string) error {
 	return b.Finish()
 }
 
-//BroadcastToNetwork is called when a new broadcast stream is available.  It lets the network decide how
-//to deal with the stream.
-func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
-	//Update the playlist to the network
-	mpl, err := strm.GetMasterPlaylist()
+func (n *LivepeerNode) BroadcastManifestToNetwork(manifest stream.HLSVideoManifest) error {
+	//Update the playlist
+	mpl, err := manifest.GetManifest()
 	if err != nil {
 		glog.Errorf("Error getting master playlist: %v", err)
+		return ErrBroadcast
 	}
-	if err = n.VideoNetwork.UpdateMasterPlaylist(strm.GetStreamID(), mpl); err != nil {
+	if err = n.VideoNetwork.UpdateMasterPlaylist(manifest.GetManifestID(), mpl); err != nil {
 		glog.Errorf("Error updating master playlist: %v", err)
+		return ErrBroadcast
 	}
 
+	//Set up the callback for TranscodeResponse.  We are assuming there is only 1 stream.
+	if len(manifest.GetVideoStreams()) > 1 {
+		glog.Errorf("Currently only support single-stream manifest")
+		return ErrBroadcast
+	}
+	n.VideoNetwork.ReceivedTranscodeResponse(manifest.GetVideoStreams()[0].GetStreamID(), func(result map[string]string) {
+		//Parse through the results
+		for strmID, tProfile := range result {
+			vParams := transcoder.TranscodeProfileToVariantParams(transcoder.TranscodeProfileLookup[tProfile])
+			pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
+			variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}
+			strm := stream.NewBasicHLSVideoStream(strmID, HLSStreamWinSize)
+			if err := manifest.AddVideoStream(strm, variant); err != nil {
+				glog.Errorf("Error adding video stream: %v", err)
+			}
+
+		}
+
+		//Update the master playlist on the network
+		mpl, err := manifest.GetManifest()
+		if err != nil {
+			glog.Errorf("Error getting master playlist: %v", err)
+			return
+		}
+		if err = n.VideoNetwork.UpdateMasterPlaylist(manifest.GetManifestID(), mpl); err != nil {
+			glog.Errorf("Error updating master playlist on network: %v", err)
+			return
+		}
+
+		glog.V(common.SHORT).Infof("Updated master playlist for %v", manifest.GetManifestID())
+	})
+
+	return nil
+}
+
+//BroadcastToNetwork is called when a new broadcast stream is available.  It lets the network decide how
+//to deal with the stream.
+func (n *LivepeerNode) BroadcastStreamToNetwork(strm stream.HLSVideoStream) error {
 	//Get the broadcaster from the network
 	b, err := n.VideoNetwork.GetBroadcaster(strm.GetStreamID())
 	if err != nil {
@@ -270,34 +315,9 @@ func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
 		return err
 	}
 
-	//Set up the callback for when we get transcode results back.  It's here because any stream can be transcoded.
-	n.VideoNetwork.ReceivedTranscodeResponse(strm.GetStreamID(), func(result map[string]string) {
-		//Parse through the results
-		for strmID, tProfile := range result {
-			vParams := transcoder.TranscodeProfileToVariantParams(transcoder.TranscodeProfileLookup[tProfile])
-			pl, _ := m3u8.NewMediaPlaylist(HLSStreamWinSize, stream.DefaultMediaPlLen)
-			if err := strm.AddVariant(strmID, &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}); err != nil {
-				glog.Errorf("Error adding variant: %v", err)
-			}
-		}
-
-		//Update the master playlist on the network
-		mpl, err := strm.GetMasterPlaylist()
-		if err != nil {
-			glog.Errorf("Error getting master playlist: %v", err)
-			return
-		}
-		if err = n.VideoNetwork.UpdateMasterPlaylist(strm.GetStreamID(), mpl); err != nil {
-			glog.Errorf("Error updating master playlist on network: %v", err)
-			return
-		}
-
-		glog.V(common.SHORT).Infof("Updated master playlist for %v", strm.GetStreamID())
-	})
-
 	//Broadcast stream to network
 	counter := uint64(0)
-	strm.SetSubscriber(func(strm stream.HLSVideoStream, strmID string, seg *stream.HLSSegment) {
+	strm.SetSubscriber(func(seg *stream.HLSSegment, eof bool) {
 		//Get segment signature
 		segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(counter)), DataHash: ethcommon.BytesToHash(seg.Data).Hex()}).Hash()
 		var sig []byte
@@ -326,18 +346,18 @@ func (n *LivepeerNode) BroadcastToNetwork(strm stream.HLSVideoStream) error {
 }
 
 //SubscribeFromNetwork subscribes to a stream on the network.  Returns the stream as a reference.
-func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID, strm stream.HLSVideoStream) (net.Subscriber, error) {
+func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID, strm stream.HLSVideoStream) error {
 	glog.V(common.DEBUG).Infof("Subscribe from network: %v", strmID)
 	sub, err := n.VideoNetwork.GetSubscriber(strmID.String())
 	if err != nil {
 		glog.Errorf("Error getting subscriber: %v", err)
-		return nil, err
+		return err
 	}
 
-	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
+	return sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
 		//1 - the subscriber quits
 		if eof {
-			glog.V(common.SHORT).Infof("Got EOF, unsubscribing")
+			glog.V(common.SHORT).Infof("Got EOF, unsubscribing to %v", strmID)
 			if err := sub.Unsubscribe(); err != nil {
 				glog.Errorf("Unsubscribe error: %v", err)
 				return
@@ -351,14 +371,12 @@ func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID
 			return
 		}
 
-		//Add segment into a HLS buffer in StreamDB
+		//Add segment into a HLS buffer in VideoDB
 		// glog.Infof("Inserting seg %v into stream %v", ss.Seg.Name, strmID)
-		if err = strm.AddHLSSegment(strmID.String(), &ss.Seg); err != nil {
+		if err = strm.AddHLSSegment(&ss.Seg); err != nil {
 			glog.Errorf("Error adding segment: %v", err)
 		}
 	})
-
-	return sub, nil
 }
 
 //UnsubscribeFromNetwork unsubscribes to a stream on the network.
@@ -379,9 +397,9 @@ func (n *LivepeerNode) UnsubscribeFromNetwork(strmID StreamID) error {
 }
 
 //GetMasterPlaylistFromNetwork blocks until it gets the playlist, or it times out.
-func (n *LivepeerNode) GetMasterPlaylistFromNetwork(strmID StreamID) *m3u8.MasterPlaylist {
+func (n *LivepeerNode) GetMasterPlaylistFromNetwork(mid ManifestID) *m3u8.MasterPlaylist {
 	timer := time.NewTimer(DefaultMasterPlaylistWaitTime)
-	plChan, err := n.VideoNetwork.GetMasterPlaylist(string(strmID.GetNodeID()), strmID.String())
+	plChan, err := n.VideoNetwork.GetMasterPlaylist(string(mid.GetNodeID()), mid.String())
 	if err != nil {
 		glog.Errorf("Error getting master playlist: %v", err)
 		return nil

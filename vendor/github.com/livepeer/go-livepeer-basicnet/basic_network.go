@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -52,10 +53,10 @@ type BasicVideoNetwork struct {
 	NetworkNode            *NetworkNode
 	broadcasters           map[string]*BasicBroadcaster
 	subscribers            map[string]*BasicSubscriber
-	relayers               map[relayerID]*BasicRelayer
 	mplMap                 map[string]*m3u8.MasterPlaylist
 	mplChans               map[string]chan *m3u8.MasterPlaylist
 	transResponseCallbacks map[string]func(transcodeResult map[string]string)
+	relayers               map[relayerID]*BasicRelayer
 }
 
 func (n *BasicVideoNetwork) String() string {
@@ -232,8 +233,6 @@ func (n *BasicVideoNetwork) getMasterPlaylistWithRelay(strmID string) (chan *m3u
 				continue
 			}
 		}
-
-		glog.Errorf("Cannot find Master playlist from network")
 	}()
 
 	return returnC, nil
@@ -298,7 +297,13 @@ func (n *BasicVideoNetwork) SetupProtocol() error {
 	glog.V(4).Infof("\n\nSetting up protocol: %v", Protocol)
 	n.NetworkNode.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
 		ws := NewBasicStream(stream)
-		n.NetworkNode.streams[stream.Conn().RemotePeer()] = ws
+		if _, ok := n.NetworkNode.streams[stream.Conn().RemotePeer()]; !ok {
+			n.NetworkNode.streams[stream.Conn().RemotePeer()] = ws
+		} else {
+			glog.Errorf("Protocol Error: already have the stream...")
+			stream.Close()
+			return
+		}
 
 		for {
 			if err := streamHandler(n, ws); err != nil {
@@ -314,17 +319,17 @@ func (n *BasicVideoNetwork) SetupProtocol() error {
 }
 
 func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
-	var msg Msg
-
-	if err := ws.ReceiveMessage(&msg); err != nil {
-		glog.Errorf("Got error decoding msg from %v: %v.", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()), err)
+	msg, err := ws.ReceiveMessage()
+	if err != nil {
+		glog.Errorf("Got error decoding msg from %v: %v (%v).", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()), err, reflect.TypeOf(err))
 		// if err == multicodec.ErrMismatch {
 		// 	glog.Infof("Got multicoded error.  msg: %v", msg)
 		// 	return nil
 		// }
 		return err
 	}
-	glog.V(4).Infof("%v Received a message %v from %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), msg.Op, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
+	// glog.V(4).Infof("%v Received a message %v from %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), msg.Op, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
+	glog.V(4).Infof("Received a message %v from %v", msg.Op, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
 	switch msg.Op {
 	case SubReqID:
 		sr, ok := msg.Data.(SubReqMsg)
@@ -390,6 +395,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 }
 
 func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) error {
+	glog.Infof("Handling sub req for %v", subReq.StrmID)
 	//If we have local broadcaster, just listen.
 	if b := nw.broadcasters[subReq.StrmID]; b != nil {
 		glog.V(5).Infof("Handling subReq, adding listener %v to broadcaster", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
@@ -407,7 +413,23 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 		return nil
 	}
 
-	//If we don't have local broadcaster, forward the sub request to the closest peer
+	//If we have a local relayer, add to the listener
+	if r := nw.relayers[relayerMapKey(subReq.StrmID, SubReqID)]; r != nil {
+		remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
+		r.listeners[remotePid] = ws
+		return nil
+	}
+
+	//If we have a local subscriber (and not a relayer), create a relayer
+	if s := nw.subscribers[subReq.StrmID]; s != nil {
+		remotePeer := ws.Stream.Conn().RemotePeer()
+		r := nw.NewRelayer(subReq.StrmID, SubReqID)
+		r.UpstreamPeer = s.UpstreamPeer
+		lpmon.Instance().LogRelay(subReq.StrmID, peer.IDHexEncode(remotePeer))
+		r.listeners[peer.IDHexEncode(remotePeer)] = ws
+	}
+
+	//If we don't have local broadcaster, relayer, or a subscriber, forward the sub request to the closest peer
 	peers, err := closestLocalPeers(nw.NetworkNode.PeerHost.Peerstore(), subReq.StrmID)
 	if err != nil {
 		glog.Errorf("Error getting closest local node: %v", err)
@@ -456,25 +478,27 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, ws *BasicStream) erro
 }
 
 func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) error {
-	if b := nw.broadcasters[cr.StrmID]; b != nil {
+	if b, ok := nw.broadcasters[cr.StrmID]; ok {
 		//Remove from broadcast listener
 		glog.V(common.DEBUG).Infof("Removing listener from broadcaster for stream: %v", cr.StrmID)
 		delete(b.listeners, peer.IDHexEncode(rpeer))
 		return nil
-	} else if r := nw.relayers[relayerMapKey(cr.StrmID, SubReqID)]; r != nil {
+	} else if r, ok := nw.relayers[relayerMapKey(cr.StrmID, SubReqID)]; ok {
 		//Remove from relayer listener
 		glog.V(common.DEBUG).Infof("Removing listener from relayer for stream: %v", cr.StrmID)
 		delete(r.listeners, peer.IDHexEncode(rpeer))
 		lpmon.Instance().RemoveRelay(cr.StrmID)
-		//Pass on the cancel req and remove relayer if relayer has no more listeners
+		//Pass on the cancel req and remove relayer if relayer has no more listeners, unless we still have a subscriber - in which case, just remove the relayer.
 		if len(r.listeners) == 0 {
 			ns := nw.NetworkNode.GetStream(r.UpstreamPeer)
 			if ns != nil {
 				if err := ns.SendMessage(CancelSubID, cr); err != nil {
 					glog.Errorf("Error relaying cancel message to %v: %v ", peer.IDHexEncode(r.UpstreamPeer), err)
 				}
-				delete(nw.relayers, relayerMapKey(cr.StrmID, CancelSubID))
 				return nil
+			}
+			if _, ok := nw.subscribers[cr.StrmID]; !ok {
+				delete(nw.relayers, relayerMapKey(cr.StrmID, CancelSubID))
 			}
 		}
 		return nil
@@ -543,43 +567,42 @@ func handleFinishStream(nw *BasicVideoNetwork, fs FinishStreamMsg) error {
 func handleTranscodeResponse(nw *BasicVideoNetwork, ws *BasicStream, tr TranscodeResponseMsg) error {
 	glog.V(5).Infof("Transcode Result StreamIDs: %v", tr)
 	callback, ok := nw.transResponseCallbacks[tr.StrmID]
-	if !ok {
-		//Don't have a local callback.  Forward to a peer
-		peers, err := closestLocalPeers(nw.NetworkNode.PeerHost.Peerstore(), tr.StrmID)
-		if err != nil {
-			return ErrTranscodeResponse
-		}
-
-		dupCount := DefaultTranscodeResponseRelayDuplication
-		for _, p := range peers {
-			//Don't send it back to the requesting peer
-			if p == ws.Stream.Conn().RemotePeer() || p == nw.NetworkNode.Identity {
-				continue
-			}
-
-			if p == "" {
-				glog.Errorf("Got empty peer from libp2p")
-				return nil
-			}
-
-			s := nw.NetworkNode.GetStream(p)
-			if s != nil {
-				if err := s.SendMessage(TranscodeResponseID, tr); err != nil {
-					continue
-				}
-
-				//Don't need to set up a relayer here because we don't expect any response.
-				if dupCount == 0 {
-					return nil
-				}
-			}
-			dupCount--
-		}
-		glog.Info("Only sent to %v peers", DefaultTranscodeResponseRelayDuplication-dupCount)
+	if ok {
+		callback(tr.Result)
 		return nil
 	}
 
-	callback(tr.Result)
+	//Don't have a local callback.  Forward to a peer
+	peers, err := closestLocalPeers(nw.NetworkNode.PeerHost.Peerstore(), tr.StrmID)
+	if err != nil {
+		return ErrTranscodeResponse
+	}
+	dupCount := DefaultTranscodeResponseRelayDuplication
+	for _, p := range peers {
+		//Don't send it back to the requesting peer
+		if p == ws.Stream.Conn().RemotePeer() || p == nw.NetworkNode.Identity {
+			continue
+		}
+
+		if p == "" {
+			glog.Errorf("Got empty peer from libp2p")
+			return nil
+		}
+
+		s := nw.NetworkNode.GetStream(p)
+		if s != nil {
+			if err := s.SendMessage(TranscodeResponseID, tr); err != nil {
+				continue
+			}
+
+			//Don't need to set up a relayer here because we don't expect any response.
+			if dupCount == 0 {
+				return nil
+			}
+		}
+		dupCount--
+	}
+	glog.Info("Cannot relay TranscodeResponse to peers")
 	return nil
 }
 

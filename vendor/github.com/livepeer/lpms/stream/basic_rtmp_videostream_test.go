@@ -5,8 +5,10 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/nareix/joy4/av"
+	"github.com/nareix/joy4/codec/h264parser"
 )
 
 //Testing WriteRTMP errors
@@ -69,8 +71,10 @@ type PacketsDemuxer struct {
 	c *Counter
 }
 
-func (d PacketsDemuxer) Close() error                     { return nil }
-func (d PacketsDemuxer) Streams() ([]av.CodecData, error) { return nil, nil }
+func (d PacketsDemuxer) Close() error { return nil }
+func (d PacketsDemuxer) Streams() ([]av.CodecData, error) {
+	return []av.CodecData{h264parser.CodecData{}}, nil
+}
 func (d PacketsDemuxer) ReadPacket() (av.Packet, error) {
 	if d.c.Count == 10 {
 		return av.Packet{Data: []byte{0, 0}}, io.EOF
@@ -91,6 +95,18 @@ func TestWriteBasicRTMP(t *testing.T) {
 
 	if stream.buffer.len() != 12 { //10 packets, 1 header, 1 trailer
 		t.Error("Expecting buffer length to be 12, but got: ", stream.buffer.len())
+	}
+
+	start := time.Now()
+	for time.Since(start) < time.Second {
+		if len(stream.header) == 0 {
+			time.Sleep(time.Millisecond * 100)
+			continue
+		}
+		break
+	}
+	if len(stream.header) == 0 {
+		t.Errorf("Expecting header to be set")
 	}
 
 	// fmt.Println(stream.buffer.q.Get(12))

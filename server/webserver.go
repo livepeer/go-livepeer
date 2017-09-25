@@ -416,7 +416,7 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {
-		strmIDs := s.LivepeerNode.StreamDB.GetStreamIDs(stream.HLS)
+		strmIDs := s.LivepeerNode.VideoDB.GetStreamIDs(stream.HLS)
 		ret := make([]map[string]string, 0)
 		for _, strmID := range strmIDs {
 			ret = append(ret, map[string]string{"format": "hls", "streamID": strmID.String()})
@@ -447,7 +447,7 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf("StreamDB: %v", s.LivepeerNode.StreamDB)))
+		w.Write([]byte(fmt.Sprintf("VideoDB: %v", s.LivepeerNode.VideoDB)))
 		w.Write([]byte(fmt.Sprintf("\n\nVideoNetwork: %v", s.LivepeerNode.VideoNetwork)))
 		w.Write([]byte(fmt.Sprintf("\n\nmediaserver sub timer: %v", s.hlsSubTimer)))
 	})

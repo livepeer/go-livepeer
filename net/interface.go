@@ -11,14 +11,14 @@ import (
 //VideoNetwork describes the interface for a Livepeer node network-layer library.
 type VideoNetwork interface {
 	GetNodeID() string
-	GetMasterPlaylist(nodeID string, strmID string) (chan *m3u8.MasterPlaylist, error)
-	UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterPlaylist) error
+	GetMasterPlaylist(nodeID string, manifestID string) (chan *m3u8.MasterPlaylist, error)
+	UpdateMasterPlaylist(manifestID string, mpl *m3u8.MasterPlaylist) error
 	GetBroadcaster(strmID string) (Broadcaster, error)
 	GetSubscriber(strmID string) (Subscriber, error)
 	Connect(nodeID, nodeAddr string) error
 	SetupProtocol() error
-	SendTranscodeResponse(nodeID string, strmID string, transcodeResult map[string]string) error
-	ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string))
+	SendTranscodeResponse(nodeID string, manifestID string, transcodeResult map[string]string) error
+	ReceivedTranscodeResponse(manifestID string, gotResult func(transcodeResult map[string]string))
 	String() string
 }
 
@@ -59,6 +59,7 @@ type Subscriber interface {
 }
 
 type TranscodeConfig struct {
+	ManifestID          string
 	StrmID              string
 	Profiles            []types.VideoProfile
 	PerformOnchainClaim bool

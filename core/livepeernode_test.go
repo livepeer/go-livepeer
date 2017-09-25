@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericxtang/m3u8"
+
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/types"
@@ -71,9 +73,9 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 		t.Errorf("Expecting 1 segment to be transcoded, got %v", tr.InputData)
 	}
 
-	//Should have broadcasted the transcoded segments into new streams
-	if len(n.VideoNetwork.(*StubVideoNetwork).mplMap) != 2 {
-		t.Errorf("Expecting 2 playlists to be created, but got %v", n.VideoNetwork.(*StubVideoNetwork).mplMap)
+	// Should have broadcasted the transcoded segments into new streams
+	if len(n.VideoDB.streams) != 2 {
+		t.Errorf("Expecting 2 streams to be created, but got %v", n.VideoDB.streams)
 	}
 	if len(n.VideoNetwork.(*StubVideoNetwork).broadcasters) != 2 {
 		t.Errorf("Expecting 2 broadcasters to be created, but got %v", n.VideoNetwork.(*StubVideoNetwork).broadcasters)
@@ -88,30 +90,25 @@ func TestBroadcastToNetwork(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
-	strmID, err := MakeStreamID(nid, RandomVideoID(), "")
+	strmID, err := MakeStreamID(nid, RandomVideoID(), types.P144p30fps16x9.Name)
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
-	testStrm, err := n.StreamDB.AddNewHLSStream(strmID)
+	pl, _ := m3u8.NewMediaPlaylist(3, 10)
+	testStrm, err := n.VideoDB.AddNewHLSStream(strmID)
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
 
-	//Set up the broadcasting
-	if err := n.BroadcastToNetwork(testStrm); err != nil {
+	//Broadcast the stream
+	if err := n.BroadcastStreamToNetwork(testStrm); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 
 	//Insert a segment into the stream
 	seg := &stream.HLSSegment{SeqNo: 0, Name: fmt.Sprintf("%v_00.ts", strmID), Data: []byte("hello"), Duration: 1}
-	if err := testStrm.AddHLSSegment(strmID.String(), seg); err != nil {
+	if err := testStrm.AddHLSSegment(seg); err != nil {
 		t.Errorf("Error: %v", err)
-	}
-
-	//We should have created a playlist and inserted into the network broadcaster
-	_, ok := n.VideoNetwork.(*StubVideoNetwork).mplMap[strmID.String()]
-	if !ok {
-		t.Errorf("Should have created a playlist")
 	}
 
 	b, ok := n.VideoNetwork.(*StubVideoNetwork).broadcasters[strmID.String()]
@@ -121,5 +118,38 @@ func TestBroadcastToNetwork(t *testing.T) {
 
 	if string(b.Data) != string(seg.Data) {
 		t.Errorf("Expecting %v, got %v", seg.Data, b.Data)
+	}
+
+	//Broadcast the manifest
+	mid, err := MakeManifestID(nid, RandomVideoID())
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	manifest, err := n.VideoDB.AddNewHLSManifest(mid)
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	variant := &m3u8.Variant{URI: "test.m3u8", Chunklist: pl, VariantParams: m3u8.VariantParams{Bandwidth: 100}}
+	if err := manifest.AddVideoStream(testStrm, variant); err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	if err := n.BroadcastManifestToNetwork(manifest); err != nil {
+		t.Errorf("Error :%v", err)
+	}
+	//We should have created a playlist and inserted into the network broadcaster
+	_, ok = n.VideoNetwork.(*StubVideoNetwork).mplMap[mid.String()]
+	if !ok {
+		t.Errorf("Should have created a playlist")
+	}
+
+	//Broadcast Finish
+	if n.VideoNetwork.(*StubVideoNetwork).broadcasters[strmID.String()].FinishMsg != false {
+		t.Errorf("Expecting finish to have not been called yet")
+	}
+	if err := n.BroadcastFinishMsg(strmID.String()); err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	if n.VideoNetwork.(*StubVideoNetwork).broadcasters[strmID.String()].FinishMsg != true {
+		t.Errorf("Expecting finish to have been called")
 	}
 }

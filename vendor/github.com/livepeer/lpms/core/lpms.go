@@ -117,7 +117,7 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 				}
 				ss := stream.HLSSegment{SeqNo: seg.SeqNo, Data: seg.Data, Name: seg.Name, Duration: seg.Length.Seconds()}
 				// glog.Infof("Writing stream: %v, duration:%v, len:%v", ss.Name, ss.Duration, len(seg.Data))
-				if err = hs.AddHLSSegment(hs.GetStreamID(), &ss); err != nil {
+				if err = hs.AddHLSSegment(&ss); err != nil {
 					glog.Errorf("Error adding segment: %v", err)
 				}
 				select {

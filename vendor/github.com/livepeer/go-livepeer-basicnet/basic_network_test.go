@@ -3,7 +3,6 @@ package basicnet
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"reflect"
 	"sort"
@@ -26,10 +25,10 @@ import (
 )
 
 func init() {
-	flag.Set("alsologtostderr", fmt.Sprintf("%t", true))
-	var logLevel string
-	flag.StringVar(&logLevel, "logLevel", "6", "test")
-	flag.Lookup("v").Value.Set(logLevel)
+	// flag.Set("alsologtostderr", fmt.Sprintf("%t", true))
+	// var logLevel string
+	// flag.StringVar(&logLevel, "logLevel", "6", "test")
+	// flag.Lookup("v").Value.Set(logLevel)
 }
 
 func setupNodes(p1, p2 int) (*BasicVideoNetwork, *BasicVideoNetwork) {
@@ -214,8 +213,7 @@ func TestSubPath(t *testing.T) {
 	strmID := fmt.Sprintf("%v%v", nodes[0].GetNodeID(), "strmID")
 	hostsLookup[ids[0]].SetStreamHandler(Protocol, func(s net.Stream) {
 		ws := NewBasicStream(s)
-		var msg Msg
-		err := ws.ReceiveMessage(&msg)
+		msg, err := ws.ReceiveMessage()
 		if err != nil {
 			t.Errorf("Error receiving msg: %v", err)
 		}
@@ -288,8 +286,7 @@ func TestSubPeerForwardPath(t *testing.T) {
 	n3chan := make(chan bool)
 	no3.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		ws := NewBasicStream(s)
-		var msg Msg
-		err := ws.ReceiveMessage(&msg)
+		_, err := ws.ReceiveMessage()
 		if err != nil {
 			t.Errorf("Error receiving msg: %v", err)
 		}
@@ -300,8 +297,7 @@ func TestSubPeerForwardPath(t *testing.T) {
 	n2chan := make(chan bool)
 	no2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		ws := NewBasicStream(s)
-		var msg Msg
-		err := ws.ReceiveMessage(&msg)
+		_, err := ws.ReceiveMessage()
 		if err != nil {
 			t.Errorf("Error receiving msg: %v", err)
 		}
@@ -346,8 +342,7 @@ func TestSendBroadcast(t *testing.T) {
 	//Set up handler
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		ws := NewBasicStream(s)
-		var msg Msg
-		err := ws.ReceiveMessage(&msg)
+		msg, err := ws.ReceiveMessage()
 		if err != nil {
 			glog.Errorf("Got error decoding msg: %v", err)
 			return
@@ -424,8 +419,7 @@ func TestHandleBroadcast(t *testing.T) {
 	//Set up n2 handler so n1 can create a stream to it.
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		ws := NewBasicStream(s)
-		var msg Msg
-		err := ws.ReceiveMessage(&msg)
+		msg, err := ws.ReceiveMessage()
 		if err != nil {
 			glog.Errorf("Got error decoding msg: %v", err)
 			return
@@ -513,8 +507,7 @@ func TestSendSubscribe(t *testing.T) {
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		ws := NewBasicStream(s)
 		for {
-			var msg Msg
-			err := ws.ReceiveMessage(&msg)
+			msg, err := ws.ReceiveMessage()
 			if err != nil {
 				glog.Errorf("Got error decoding msg: %v", err)
 				return
@@ -648,7 +641,7 @@ func TestHandleCancel(t *testing.T) {
 }
 
 func TestHandleSubscribe(t *testing.T) {
-	glog.Infof("\n\nTesting Handle Broadcast...")
+	glog.Infof("\n\nTesting Handle Subscribe...")
 	n1, n3 := setupNodes(15000, 15001)
 	n2, n4 := simpleNodes(15002, 15003)
 	defer n1.NetworkNode.PeerHost.Close()
@@ -664,8 +657,7 @@ func TestHandleSubscribe(t *testing.T) {
 		defer s.Close()
 		ws := NewBasicStream(s)
 		for {
-			var msg Msg
-			err := ws.ReceiveMessage(&msg)
+			msg, err := ws.ReceiveMessage()
 			if err != nil {
 				glog.Errorf("N2 Got error decoding msg: %v", err)
 				return
@@ -680,13 +672,12 @@ func TestHandleSubscribe(t *testing.T) {
 		defer s.Close()
 		ws := NewBasicStream(s)
 		for {
-			var msg Msg
-			err := ws.ReceiveMessage(&msg)
+			msg, err := ws.ReceiveMessage()
 			if err != nil {
 				glog.Errorf("N4 Got error decoding msg: %v", err)
 				return
 			}
-			// glog.Infof("Got msg: %v", msg)
+			glog.Infof("Got msg: %v", msg)
 			// t.Errorf("Shouldn't be here...")
 			n4chan <- msg.Data.(SubReqMsg).StrmID
 		}
@@ -721,6 +712,9 @@ func TestHandleSubscribe(t *testing.T) {
 
 	//Test relaying
 	strmID2 := fmt.Sprintf("%vStrmID2", peer.IDHexEncode(n4.Identity))
+	if len(n1.relayers) != 0 {
+		t.Errorf("Should have 0 relayer")
+	}
 	r1 := n1.NewRelayer(strmID2, SubReqID)
 	if n1.relayers[relayerMapKey(strmID2, SubReqID)] != r1 {
 		t.Errorf("Should have assigned relayer")
@@ -733,16 +727,12 @@ func TestHandleSubscribe(t *testing.T) {
 	if r1.listeners[pid] != ws {
 		t.Errorf("Should have assigned listener to relayer")
 	}
-	timer = time.NewTimer(time.Second)
+	timer = time.NewTimer(time.Millisecond * 100)
 	select {
-	case strm := <-n4chan:
-		if strm != strmID2 {
-			t.Errorf("n2 should have gotten %v, but it got %v", strmID2, strm)
-		}
+	case <-n4chan:
+		t.Errorf("Should not recieve a message on n4chan - there is already a relayer, we just add as a listener")
 	case <-timer.C:
-		{
-			t.Errorf("Timed out")
-		}
+		//This is good
 	}
 	delete(n1.relayers, relayerMapKey(strmID2, SubReqID))
 
@@ -753,8 +743,7 @@ func TestHandleSubscribe(t *testing.T) {
 }
 
 func simpleRelayHandler(ws *BasicStream, t *testing.T) Msg {
-	var msg Msg
-	err := ws.ReceiveMessage(&msg)
+	msg, err := ws.ReceiveMessage()
 	if err != nil {
 		// glog.Errorf("Got error decoding msg: %v", err)
 		return Msg{}
@@ -886,8 +875,8 @@ func TestSendTranscodeResponse(t *testing.T) {
 	n3.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		defer s.Close()
 		ws := NewBasicStream(s)
-		var msg Msg
-		if err := ws.ReceiveMessage(&msg); err != nil {
+		msg, err := ws.ReceiveMessage()
+		if err != nil {
 			t.Errorf("Error: %v", err)
 		}
 		glog.Infof("n3 got Msg: %v", msg)
@@ -935,8 +924,7 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 	n3Chan := make(chan MasterPlaylistDataMsg)
 	n3.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		strm := NewBasicStream(s)
-		var msg Msg
-		strm.ReceiveMessage(&msg)
+		msg, _ := strm.ReceiveMessage()
 		n3Chan <- msg.Data.(MasterPlaylistDataMsg)
 	})
 
@@ -1042,8 +1030,7 @@ func TestHandleMasterPlaylistData(t *testing.T) {
 	n3Chan := make(chan MasterPlaylistDataMsg)
 	n3.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		strm := NewBasicStream(s)
-		var msg Msg
-		strm.ReceiveMessage(&msg)
+		msg, _ := strm.ReceiveMessage()
 		n3Chan <- msg.Data.(MasterPlaylistDataMsg)
 	})
 	strm := n1.NetworkNode.GetStream(n3.Identity)

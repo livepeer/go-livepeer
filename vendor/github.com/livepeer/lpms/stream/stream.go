@@ -21,6 +21,7 @@ type VideoFormat uint32
 var (
 	HLS  = MakeVideoFormatType(avFormatTypeMagic + 1)
 	RTMP = MakeVideoFormatType(avFormatTypeMagic + 2)
+	DASH = MakeVideoFormatType(avFormatTypeMagic + 3)
 )
 
 func MakeVideoFormatType(base uint32) (c VideoFormat) {

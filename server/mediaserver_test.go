@@ -44,6 +44,8 @@ func setupServer() *LivepeerServer {
 	return S
 }
 
+var StubMasterPLStreamID = "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2122f1cb223775a93e8b3102942f54aa2561e3931cc5ac0d57a39e0c064b243efPvideotest"
+
 type StubNetwork struct {
 	B *StubBroadcaster
 	S *StubSubscriber
@@ -77,7 +79,7 @@ func (b *StubNetwork) GetMasterPlaylist(nodeID string, strmID string) (chan *m3u
 	mplc := make(chan *m3u8.MasterPlaylist)
 	mpl := m3u8.NewMasterPlaylist()
 	pl, _ := m3u8.NewMediaPlaylist(100, 100)
-	mpl.Append("stub.m3u8", pl, m3u8.VariantParams{Bandwidth: 100})
+	mpl.Append(fmt.Sprintf("%v.m3u8", StubMasterPLStreamID), pl, m3u8.VariantParams{Bandwidth: 100})
 	// glog.Infof("StubNetwork GetMasterPlaylist. mpl: %v", mpl)
 
 	go func() {
@@ -117,9 +119,7 @@ func (s *StubSubscriber) Subscribe(ctx context.Context, f func(seqNo uint64, dat
 	s1 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 0, Name: "strmID_01.ts", Data: []byte("test data"), Duration: 8.001}}
 	s2 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 1, Name: "strmID_02.ts", Data: []byte("test data"), Duration: 8.001}}
 	s3 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 2, Name: "strmID_03.ts", Data: []byte("test data"), Duration: 8.001}}
-	s4 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 3, Name: "strmID_04.ts", Data: []byte("test data"), Duration: 8.001}}
-	s5 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 4, Name: "strmID_05.ts", Data: []byte("test data"), Duration: 8.001}}
-	for i, s := range []core.SignedSegment{s1, s2, s3, s4, s5} {
+	for i, s := range []core.SignedSegment{s1, s2, s3} {
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
 		err := enc.Encode(s)
@@ -138,16 +138,16 @@ type StubSegmenter struct{}
 
 func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error {
 	glog.Infof("Calling StubSegmenter")
-	if err := hs.AddHLSSegment(hs.GetStreamID(), &stream.HLSSegment{SeqNo: 0, Name: "seg0.ts"}); err != nil {
+	if err := hs.AddHLSSegment(&stream.HLSSegment{SeqNo: 0, Name: "seg0.ts"}); err != nil {
 		glog.Errorf("Error adding hls seg0")
 	}
-	if err := hs.AddHLSSegment(hs.GetStreamID(), &stream.HLSSegment{SeqNo: 1, Name: "seg1.ts"}); err != nil {
+	if err := hs.AddHLSSegment(&stream.HLSSegment{SeqNo: 1, Name: "seg1.ts"}); err != nil {
 		glog.Errorf("Error adding hls seg1")
 	}
-	if err := hs.AddHLSSegment(hs.GetStreamID(), &stream.HLSSegment{SeqNo: 2, Name: "seg2.ts"}); err != nil {
+	if err := hs.AddHLSSegment(&stream.HLSSegment{SeqNo: 2, Name: "seg2.ts"}); err != nil {
 		glog.Errorf("Error adding hls seg2")
 	}
-	if err := hs.AddHLSSegment(hs.GetStreamID(), &stream.HLSSegment{SeqNo: 3, Name: "seg3.ts"}); err != nil {
+	if err := hs.AddHLSSegment(&stream.HLSSegment{SeqNo: 3, Name: "seg3.ts"}); err != nil {
 		glog.Errorf("Error adding hls seg3")
 	}
 	return nil
@@ -164,12 +164,12 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	strm := stream.NewBasicRTMPVideoStream("strmID")
 
 	//Stream already exists
-	s.LivepeerNode.StreamDB.AddNewRTMPStream("strmID")
+	s.LivepeerNode.VideoDB.AddNewRTMPStream("strmID")
 	err := handler(url, strm)
 	if err != ErrAlreadyExists {
 		t.Errorf("Expecting publish error because stream already exists, but got: %v", err)
 	}
-	s.LivepeerNode.StreamDB.DeleteStream(core.StreamID("strmID"))
+	s.LivepeerNode.VideoDB.DeleteStream(core.StreamID("strmID"))
 
 	//Try to handle test RTMP data.  There is a race condition somewhere, sleeping seems to make it go away...
 	// time.Sleep(time.Millisecond * 500)
@@ -181,16 +181,16 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	if hlsStrmID == "" {
 		t.Errorf("HLS stream ID should exist")
 	}
-	hlsStrm := s.LivepeerNode.StreamDB.GetHLSStream(core.StreamID(hlsStrmID))
+	hlsStrm := s.LivepeerNode.VideoDB.GetHLSStream(core.StreamID(hlsStrmID))
 	if hlsStrm == nil {
 		t.Errorf("HLS stream should exist")
 	}
 	start := time.Now()
-	s1, err := hlsStrm.GetHLSSegment(hlsStrm.GetStreamID(), "seg1.ts")
+	s1, err := hlsStrm.GetHLSSegment("seg1.ts")
 	for time.Since(start) < time.Second*2 {
 		if err == stream.ErrNotFound {
 			time.Sleep(100 * time.Millisecond)
-			s1, err = hlsStrm.GetHLSSegment(hlsStrm.GetStreamID(), "seg1.ts")
+			s1, err = hlsStrm.GetHLSSegment("seg1.ts")
 			continue
 		} else {
 			break
@@ -234,18 +234,21 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	s := setupServer()
 	s.LivepeerNode.VideoNetwork = &StubNetwork{}
-	url, _ := url.Parse("http://localhost/stream/1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID.m3u8")
+	url, _ := url.Parse("http://localhost/stream/12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2122f1cb223775a93e8b3102942f54aa2561e3931cc5ac0d57a39e0c064b243ee.m3u8")
 
-	//Set up the StreamDB so it already has a local stream
-	hlsStrm, err := s.LivepeerNode.StreamDB.AddNewHLSStream("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")
+	//Set up the VideoDB so it already has a manifest with a local stream
+	manifest, err := s.LivepeerNode.VideoDB.AddNewHLSManifest("12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2122f1cb223775a93e8b3102942f54aa2561e3931cc5ac0d57a39e0c064b243ee")
 	if err != nil {
 		t.Errorf("Error creating hls stream: %v", err)
 	}
-	if err = s.LivepeerNode.StreamDB.AddHLSVariant("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID", "strm", &m3u8.Variant{URI: "strm.m3u8", VariantParams: m3u8.VariantParams{Bandwidth: 100}}); err != nil {
-		t.Errorf("Error adding variant: %v", err)
-	}
 
-	mpl, _ := hlsStrm.GetMasterPlaylist()
+	strm := stream.NewBasicHLSVideoStream("strm", 3)
+	manifest.AddVideoStream(strm, &m3u8.Variant{URI: "strm.m3u8", VariantParams: m3u8.VariantParams{Bandwidth: 100}})
+	// if err = s.LivepeerNode.VideoDB.AddHLSVariant("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID", "strm", &m3u8.Variant{URI: "strm.m3u8", VariantParams: m3u8.VariantParams{Bandwidth: 100}}); err != nil {
+	// 	t.Errorf("Error adding variant: %v", err)
+	// }
+
+	mpl, _ := manifest.GetManifest()
 	if len(mpl.Variants) != 1 {
 		t.Errorf("Expecting 1 variant, but got %v", mpl)
 	}
@@ -265,7 +268,7 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	}
 
 	//Remove the local stream to test getting stream from the network
-	s.LivepeerNode.StreamDB.DeleteStream("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")
+	s.LivepeerNode.VideoDB.DeleteHLSManifest("12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2122f1cb223775a93e8b3102942f54aa2561e3931cc5ac0d57a39e0c064b243ee")
 	pl, err = handler(url)
 	if err != nil {
 		t.Errorf("Error handling getHLSMasterPlaylist", err)
@@ -274,105 +277,85 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	if len(pl.Variants) != 1 {
 		t.Errorf("Expecting 1 variant, but got %v", pl)
 	}
-	if pl.Variants[0].URI != "stub.m3u8" {
-		t.Errorf("Expecting stub.m3u8, but got: %v", pl.Variants[0].URI)
+	if pl.Variants[0].URI != fmt.Sprintf("%v.m3u8", StubMasterPLStreamID) {
+		t.Errorf("Expecting %v.m3u8, but got: %v", StubMasterPLStreamID, pl.Variants[0].URI)
 	}
 
-	varStrm := s.LivepeerNode.StreamDB.GetHLSStream("stub")
-	if varStrm == nil {
-		t.Errorf("Expecting to be able to look up via variant names, but got nil")
+	mfst := s.LivepeerNode.VideoDB.GetHLSManifest("12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2122f1cb223775a93e8b3102942f54aa2561e3931cc5ac0d57a39e0c064b243ee")
+	if mfst == nil {
+		t.Errorf("Expecting to be able to look up via manifest names, but got nil")
 	}
 }
 
 func TestGetHLSMediaPlaylistHandler(t *testing.T) {
 	HLSWaitTime = time.Second * 3 //Make the waittime shorter to speed up the test suite
+	strmID := "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2122f1cb223775a93e8b3102942f54aa2561e3931cc5ac0d57a39e0c064b243eePTestVideo"
 	s := setupServer()
 	s.LivepeerNode.VideoNetwork = &StubNetwork{}
-	url, _ := url.Parse("http://localhost/stream/strm.m3u8")
+	url, _ := url.Parse(fmt.Sprintf("http://localhost/stream/%v.m3u8", strmID))
 
 	handler := getHLSMediaPlaylistHandler(s)
 
-	//Should get error because no local stream
-	_, err := handler(url)
-	if err != ErrNotFound {
-		t.Errorf("Expecting ErrNotFound, but got: %v", err)
+	//Set up a local stream, should return that.
+	glog.Infof("VideoDB: %v", s.LivepeerNode.VideoDB)
+	hlsStrm, err := s.LivepeerNode.VideoDB.AddNewHLSStream(core.StreamID(strmID))
+	if err != nil {
+		t.Errorf("Error: %v", err)
 	}
-
-	//Set up a local stream and a working local subscriber.
-	hlsStrm, _ := s.LivepeerNode.StreamDB.AddNewHLSStream("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")
-	tmpPl, _ := m3u8.NewMediaPlaylist(100, 100)
-	tmpPl.Append("seg0.ts", 8, "")
-	tmpPl.Append("seg1.ts", 8, "")
-	tmpPl.Append("seg2.ts", 8, "")
-	tmpPl.Append("seg3.ts", 8, "")
-	tmpPl.Append("seg4.ts", 8, "")
-	hlsStrm.AddVariant("strm", &m3u8.Variant{URI: "strm.m3u8", Chunklist: tmpPl, VariantParams: m3u8.VariantParams{Bandwidth: 100}})
-	sub, _ := s.LivepeerNode.VideoNetwork.GetSubscriber("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")
-	sub.(*StubSubscriber).working = true
-	s.LivepeerNode.StreamDB.AddStream("strm", hlsStrm)
-
-	tmpPl1, _ := s.LivepeerNode.StreamDB.GetHLSStream(core.StreamID("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")).GetVariantPlaylist("strm")
-	// tmpPl1, _ := hlsStrm.GetVariantPlaylist("strm")
-	if tmpPl1 != tmpPl {
-		t.Errorf("Should get %v, but got %v", tmpPl, tmpPl1)
-	}
+	hlsStrm.AddHLSSegment(&stream.HLSSegment{SeqNo: 0, Name: "seg0.ts", Data: []byte("hello"), Duration: 8})
+	hlsStrm.AddHLSSegment(&stream.HLSSegment{SeqNo: 1, Name: "seg1.ts", Data: []byte("hello"), Duration: 8})
+	hlsStrm.AddHLSSegment(&stream.HLSSegment{SeqNo: 2, Name: "seg2.ts", Data: []byte("hello"), Duration: 8})
 	handler = getHLSMediaPlaylistHandler(s)
-	glog.Infof("%v", s.LivepeerNode.StreamDB)
 	pl, err := handler(url)
 	if err != nil {
 		t.Errorf("Error in handler: %v", err)
 	}
-	if pl.Segments[0] == nil {
-		t.Errorf("Expecting segment, but got %v", pl.Segments[0])
+	if pl.Count() == 0 {
+		t.Errorf("Expecting segments, but got %v", pl)
 	}
 	if pl.Segments[0].URI != "seg0.ts" || pl.Segments[0].Duration != 8 {
 		t.Errorf("Wrong segment info: %v", pl.Segments[0])
 	}
-	if sub.(*StubSubscriber).subscribeCalled == true {
-		t.Errorf("Should not call subscribe because subscriber is 'already working'")
-	}
 
-	//Set up local stream and non-working local subscriber (test should call subscribe to network)
-	s.LivepeerNode.StreamDB = core.NewStreamDB(string(s.LivepeerNode.Identity))
-	hlsStrm, _ = s.LivepeerNode.StreamDB.AddNewHLSStream("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")
-	variantStrm, _ := s.LivepeerNode.StreamDB.AddNewHLSStream("strm")
-	tmpPl, _ = m3u8.NewMediaPlaylist(100, 100)
-	tmpPl.Append("seg0.ts", 8, "")
-	tmpPl.Append("seg1.ts", 8, "")
-	tmpPl.Append("seg2.ts", 8, "")
-	tmpPl.Append("seg3.ts", 8, "")
-	tmpPl.Append("seg4.ts", 8, "")
-	hlsStrm.AddVariant("strm", &m3u8.Variant{URI: "strm.m3u8", Chunklist: tmpPl, VariantParams: m3u8.VariantParams{Bandwidth: 100}})
-
-	sub, _ = s.LivepeerNode.VideoNetwork.GetSubscriber("1220e3fd52491fc1691d6a5b45b7f21244640bd3b5cfbe2a59b3f5a8f6f1eb9e39a8strmID")
-	sub.(*StubSubscriber).working = false
-	tmpPl1, _ = hlsStrm.GetVariantPlaylist("strm")
-	if tmpPl1 != tmpPl {
-		t.Errorf("Should get %v, but got %v", tmpPl, tmpPl1)
+	//Don't set up local stream (test should call subscribe to network)
+	s.LivepeerNode.VideoDB = core.NewVideoDB(string(s.LivepeerNode.Identity))
+	m, err := s.LivepeerNode.VideoDB.AddNewHLSManifest(core.ManifestID("12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2122f1cb223775a93e8b3102942f54aa2561e3931cc5ac0d57a39e0c064b243ee"))
+	if err != nil {
+		t.Errorf("Error: %v", err)
 	}
-	_, err = handler(url)
+	tmpStrm := stream.NewBasicHLSVideoStream(strmID, 3)
+	m.AddVideoStream(tmpStrm, &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), VariantParams: m3u8.VariantParams{Bandwidth: 100}})
+	pl, err = handler(url)
 	if err != nil {
 		t.Errorf("Error in handler: %v", err)
+	}
+	hlsStrm = s.LivepeerNode.VideoDB.GetHLSStream(core.StreamID(strmID))
+	if hlsStrm == nil {
+		t.Errorf("Expecting there to be a stream")
 	}
 
 	//Wait a few seconds to make sure segments are populated.
 	start := time.Now()
 	for time.Since(start) < time.Second*2 {
-		s, err := variantStrm.GetHLSSegment("strm", "strmID_01.ts")
+		s, err := hlsStrm.GetHLSSegment("strmID_01.ts")
 		if err != nil || s == nil {
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
 
+	glog.Infof("strm: %v", hlsStrm)
 	//Test the data from stub subscriber
-	for _, i := range []int{1, 2, 3, 4} {
-		s, err := variantStrm.GetHLSSegment("strm", fmt.Sprintf("strmID_0%v.ts", i))
+	for _, i := range []int{1, 2, 3} {
+		s, err := hlsStrm.GetHLSSegment(fmt.Sprintf("strmID_0%v.ts", i))
 		if err != nil || s == nil {
 			t.Errorf("Error getting hlsSegment%v: %v", i, err)
 		}
 		if string(s.Data) != "test data" {
 			t.Errorf("Expecting 'test data', but got %v", s.Data)
 		}
+	}
+	if pl.Count() != 3 {
+		t.Errorf("Expecting count to be 3, got %v", pl.Count())
 	}
 }
 

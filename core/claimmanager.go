@@ -89,7 +89,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64, dataHash string, tDataHash s
 		glog.Errorf("Cannot insert out of order.  Trying to insert %v into %v", c.seqNos[pi], seqNo)
 	}
 
-	glog.Infof("Add receipt. Seq no %v Receipt hash %v Data hash %v Tdata hash %v BSig %v", seqNo, receipt.Hash(), dataHash, tDataHash, bSig)
+	// glog.Infof("Add receipt. Seq no %v Receipt hash %v Data hash %v Tdata hash %v BSig %v", seqNo, receipt.Hash(), dataHash, tDataHash, bSig)
 
 	c.seqNos[pi] = append(c.seqNos[pi], seqNo)
 	c.receiptHashes[pi] = append(c.receiptHashes[pi], receipt.Hash())
