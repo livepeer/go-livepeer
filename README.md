@@ -36,10 +36,10 @@ You can also build the executables from scratch.
 ### ffmpeg
 The current version of Livepeer requires [ffmpeg](https://www.ffmpeg.org/).
 
-On OSX, run
+* On OSX, run
 `brew install ffmpeg --with-ffplay`
 
-or on Debian based Linux
+* or on Debian based Linux
 `apt-get install ffmpeg`
 
 ### geth
@@ -47,12 +47,15 @@ Livepeer requires a local Ethereum node. To set it up, follow the [Ethereum Inst
 
 ### Livepeer private Ethereum testnet
 Livepeer is currently only running on a private Ethereum testnet.
-1. Create a geth data directory. For example, `mkdir ~/.lpGeth`. We recommend creating a new directory even if you already have one, so the Livepeer testing data will be stored separately.
-2. Download the genesis json [lptestnet.json](http://eth-testnet.livepeer.org/lptestnet.json) (depending on your geth version, it may complain about 'genesis.number'. If encountered, delete the "number" field in the json.)
-3. Run `geth init` to initialize your local geth node with testnet genesis block.  For example: `geth --datadir ~/.lpGeth init lptestnet.json`
-4. Start `geth` with the network id `858585` and the Livepeer testnet bootnode. For example: `geth --datadir ~/.lpGeth --networkid 858585 --bootnodes "enode://080ebca2373d15762c29ca8d85ddc848f10a7ffc745f7110cacba4694728325d645292cb512d7168323bd0af1650fca825ff54c8dba20aec8878498fae3ff3c6@18.221.67.74:30303"`
 
-Now the geth node should be running, and it should soon start downloading blocks.
+1. Create a geth data directory. For example: `mkdir ~/.lpGeth`. 
+  * We recommend creating a new directory even if you already have one, so the Livepeer testing data will be stored separately.
+2. Download the genesis json [lptestnet.json](http://eth-testnet.livepeer.org/lptestnet.json)
+  * It can be saved anywhere. It'll just be used once for the next step
+3. Initialize your local geth node with testnet genesis block.  For example: `geth --datadir ~/.lpGeth init lptestnet.json`
+  * Depending on your geth version, you may see a complaint about 'genesis.number' related to your .json file. To fix the issue, delete the "number" field in the json.
+4. Start `geth` with the network id `858585` and the Livepeer testnet bootnode. For example: `geth --datadir ~/.lpGeth --networkid 858585 --bootnodes "enode://080ebca2373d15762c29ca8d85ddc848f10a7ffc745f7110cacba4694728325d645292cb512d7168323bd0af1650fca825ff54c8dba20aec8878498fae3ff3c6@18.221.67.74:30303"`
+  * Now the geth node should be running, and it should soon start downloading blocks.
 
 ## Running Livepeer
 
