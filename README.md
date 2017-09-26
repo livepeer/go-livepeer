@@ -60,21 +60,27 @@ Livepeer is currently only running on a private Ethereum testnet.
 ## Running Livepeer
 
 ### Quick start
-- Make sure you have done all the setup steps. (Have `ffmpeg` installed, have `geth` running on the Livepeer private testnet)
+- Make sure you have successfully gone through the steps in 'Installing Livepeer' and 'Additional Dependencies'.
 
-- Run `livepeer -testnet` to start Livepeer. Make sure you have the `livepeer` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases) (you should download the packages for your OS - darwin for Macs and linux for linux.  You should also rename them to `livepeer` and `livepeer_cli`, and make sure they have executable permissions).
+- Start `geth ` (see step 4 of 'Livepeer private Ethereum testnet').
 
-- Run `livepeer_cli`. You should see a wizard launch in the command line. Make sure you installed the `livepeer_cli` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
+- Run `./livepeer -testnet`.
+  * Take note of the log output for your Eth address.  You should see a line: `'Using Eth account: ...'`
 
-- Get some test eth from the eth faucet from [http://eth-testnet.livepeer.org/](http://eth-testnet.livepeer.org/). Make sure to use the "Account Eth Addr".  You should see your Eth balance go up.
+- Run `./livepeer_cli`.
+  * You should see a wizard launch in the command line. 
 
-- Now get some test Livepeer tokens. Pick 'Get test Livepeer Token'. If the request is successful, you should see your `Token balance` go up.
+- Get some test eth from the eth faucet from [http://eth-testnet.livepeer.org/](http://eth-testnet.livepeer.org/). Make sure to use the Eth account address from above. 
+  * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see a positive Eth balance.
 
-- To broadcast, run `livepeer_cli` and pick 'Broadcast Video'.  You should see your webcam becoming active and a streamID printed on the screen.
+- Now get some test Livepeer tokens. Pick `Get test Livepeer Token`.  
+  * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see your `Token balance` go up.
 
-- To see the video, run `./livepeer_cli` again, this time pick 'Stream Video'.
+- To broadcast, run `./livepeer_cli` and pick 'Broadcast Video'.  
+  * You should see your webcam becoming active and a streamID printed on the screen.
 
-You should see a video stream broadcasted from your webcam.  It may feel a little delayed - that's normal. Video live streaming typically has latency from 15 seconds to a few minutes. We are working on solutions to lower this latency, using techniques like WebRTC, peer-to-peer streaming, and crypto-incentives.
+- To see the video, run `./livepeer_cli` and pick 'Stream Video'.
+  * You should see a video stream broadcasted from your webcam.  It may feel a little delayed - that's normal. Video live streaming typically has latency from 15 seconds to a few minutes. We are working on solutions to lower this latency, using techniques like WebRTC, peer-to-peer streaming, and crypto-incentives.
 
 ### Broadcasting
 
