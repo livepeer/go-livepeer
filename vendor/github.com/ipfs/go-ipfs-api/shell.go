@@ -15,13 +15,11 @@ import (
 	"strings"
 	"time"
 
-	ma "gx/ipfs/QmXY77cVe7rVRQXZZQRioukUM7aRW3BTcAgJe12MCtb3Ji/go-multiaddr"
-
-	manet "gx/ipfs/QmX3U3YXCQ6UYBxq2LVWF8dARS1hPUTEYLrSx654Qyxyw6/go-multiaddr-net"
-
 	homedir "github.com/mitchellh/go-homedir"
 	files "github.com/whyrusleeping/go-multipart-files"
 	tar "github.com/whyrusleeping/tar-utils"
+	manet "gx/ipfs/QmX3U3YXCQ6UYBxq2LVWF8dARS1hPUTEYLrSx654Qyxyw6/go-multiaddr-net"
+	ma "gx/ipfs/QmXY77cVe7rVRQXZZQRioukUM7aRW3BTcAgJe12MCtb3Ji/go-multiaddr"
 )
 
 const (
@@ -149,15 +147,20 @@ type object struct {
 
 // Add a file to ipfs from the given reader, returns the hash of the added file
 func (s *Shell) Add(r io.Reader) (string, error) {
-	return s.addWithOpts(r, true)
+	return s.addWithOpts(r, true, false)
 }
 
 // AddNoPin a file to ipfs from the given reader, returns the hash of the added file without pinning the file
 func (s *Shell) AddNoPin(r io.Reader) (string, error) {
-	return s.addWithOpts(r, false)
+	return s.addWithOpts(r, false, false)
 }
 
-func (s *Shell) addWithOpts(r io.Reader, pin bool) (string, error) {
+// Only chunk and hash a file. Do not write data to disk
+func (s *Shell) AddOnlyHash(r io.Reader) (string, error) {
+	return s.addWithOpts(r, false, true)
+}
+
+func (s *Shell) addWithOpts(r io.Reader, pin bool, onlyHash bool) (string, error) {
 	var rc io.ReadCloser
 	if rclose, ok := r.(io.ReadCloser); ok {
 		rc = rclose
@@ -175,6 +178,9 @@ func (s *Shell) addWithOpts(r io.Reader, pin bool) (string, error) {
 	req.Opts["progress"] = "false"
 	if !pin {
 		req.Opts["pin"] = "false"
+	}
+	if onlyHash {
+		req.Opts["only-hash"] = "true"
 	}
 
 	resp, err := req.Send(s.httpcli)
