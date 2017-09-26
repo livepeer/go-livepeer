@@ -22,9 +22,9 @@ import (
 var StagedStream SegmentStream
 var transcodeCount int
 
-type StreamDB struct {
-	db map[string]stream.Stream
-}
+// type StreamDB struct {
+// 	db map[string]stream.Stream
+// }
 
 type Segment struct {
 	availSpace time.Duration
@@ -251,7 +251,6 @@ func main() {
 	flag.Parse()
 
 	lpms := core.New("1935", "8000", "", "")
-	streamDB := &StreamDB{db: make(map[string]stream.Stream)}
 
 	lpms.HandleRTMPPublish(
 		//makeStreamID
@@ -259,43 +258,42 @@ func main() {
 			return getStreamIDFromPath(url.Path)
 		},
 		//gotStream
-		func(url *url.URL, rtmpStrm *stream.VideoStream) error {
-			streamID := getStreamIDFromPath(url.Path)
-			stream1 := NewSegmentStream(streamID)
+		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
+			// streamID := getStreamIDFromPath(url.Path)
+			// stream1 := NewSegmentStream(streamID)
 			// stream2 := NewSegmentStream(streamID)
-			streamDB.db[streamID] = stream1
 			return nil
 		},
 		//endStream
-		func(url *url.URL, rtmpStrm *stream.VideoStream) error {
-			delete(streamDB.db, rtmpStrm.GetStreamID())
+		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 			return nil
 		})
 
 	lpms.HandleRTMPPlay(
 		//getStream
-		func(url *url.URL) (stream.Stream, error) {
-			src := copyStream(&StagedStream)
-			return src, nil
+		func(url *url.URL) (stream.RTMPVideoStream, error) {
+			// src := copyStream(&StagedStream)
+			return nil, nil
+			// return src, nil
 		})
 
-	lpms.HandleTranscode(
-		//getInStream
-		func(ctx context.Context, streamID string) (stream.Stream, error) {
-			s := copyStream(&StagedStream)
-			return s, nil
-		},
-		//getOutStream
-		func(ctx context.Context, streamID string) (stream.Stream, error) {
-			//For this example, we'll name the transcoded stream "{streamID}_tran"
-			// newStream := stream.NewVideoStream(streamID + "_tran")
-			// streamDB.db[newStream.GetStreamID()] = newStream
-			// return newStream, nil
+	// lpms.HandleTranscode(
+	// 	//getInStream
+	// 	func(ctx context.Context, streamID string) (stream.Stream, error) {
+	// 		s := copyStream(&StagedStream)
+	// 		return s, nil
+	// 	},
+	// 	//getOutStream
+	// 	func(ctx context.Context, streamID string) (stream.Stream, error) {
+	// 		//For this example, we'll name the transcoded stream "{streamID}_tran"
+	// 		// newStream := stream.NewVideoStream(streamID + "_tran")
+	// 		// streamDB.db[newStream.GetStreamID()] = newStream
+	// 		// return newStream, nil
 
-			glog.Infof("Making File Stream")
-			fileStream := stream.NewFileStream(streamID + "_file")
-			return fileStream, nil
-		})
+	// 		glog.Infof("Making File Stream")
+	// 		fileStream := stream.NewFileStream(streamID + "_file")
+	// 		return fileStream, nil
+	// 	})
 	lpms.Start(context.Background())
 }
 

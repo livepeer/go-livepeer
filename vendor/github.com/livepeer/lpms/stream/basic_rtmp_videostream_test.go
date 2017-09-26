@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nareix/joy4/av"
+	"github.com/nareix/joy4/codec/h264parser"
 )
 
 //Testing WriteRTMP errors
@@ -48,7 +49,6 @@ func (d NoEOFDemuxer) ReadPacket() (av.Packet, error) {
 }
 
 func TestWriteBasicRTMPErrors(t *testing.T) {
-	// stream := Stream{Buffer: &StreamBuffer{}, StreamID: "test"}
 	stream := NewBasicRTMPVideoStream("test")
 	err := stream.WriteRTMPToStream(context.Background(), BadStreamsDemuxer{})
 	if err != ErrStreams {
@@ -71,8 +71,10 @@ type PacketsDemuxer struct {
 	c *Counter
 }
 
-func (d PacketsDemuxer) Close() error                     { return nil }
-func (d PacketsDemuxer) Streams() ([]av.CodecData, error) { return nil, nil }
+func (d PacketsDemuxer) Close() error { return nil }
+func (d PacketsDemuxer) Streams() ([]av.CodecData, error) {
+	return []av.CodecData{h264parser.CodecData{}}, nil
+}
 func (d PacketsDemuxer) ReadPacket() (av.Packet, error) {
 	if d.c.Count == 10 {
 		return av.Packet{Data: []byte{0, 0}}, io.EOF
@@ -93,6 +95,18 @@ func TestWriteBasicRTMP(t *testing.T) {
 
 	if stream.buffer.len() != 12 { //10 packets, 1 header, 1 trailer
 		t.Error("Expecting buffer length to be 12, but got: ", stream.buffer.len())
+	}
+
+	start := time.Now()
+	for time.Since(start) < time.Second {
+		if len(stream.header) == 0 {
+			time.Sleep(time.Millisecond * 100)
+			continue
+		}
+		break
+	}
+	if len(stream.header) == 0 {
+		t.Errorf("Expecting header to be set")
 	}
 
 	// fmt.Println(stream.buffer.q.Get(12))
@@ -159,14 +173,4 @@ func TestReadBasicRTMP(t *testing.T) {
 		t.Error("Expecting buffer length to be 0, but got ", stream.buffer.len())
 	}
 
-	stream2 := NewVideoStream("test2", RTMP)
-	stream2.RTMPTimeout = time.Millisecond * 50
-	err2 := stream.WriteRTMPToStream(context.Background(), NoEOFDemuxer{c: &Counter{Count: 0}})
-	if err2 != ErrDroppedRTMPStream {
-		t.Error("Error setting up the test - while inserting packet.")
-	}
-	err2 = stream2.ReadRTMPFromStream(context.Background(), PacketsMuxer{})
-	if err2 != ErrTimeout {
-		t.Error("Expecting timeout, but got", err2)
-	}
 }

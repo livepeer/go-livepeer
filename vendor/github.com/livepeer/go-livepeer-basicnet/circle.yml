@@ -1,0 +1,20 @@
+machine:
+  environment:
+    GOROOT: /usr/local/go
+
+dependencies:
+  cache_directories:
+    - "$HOME/.go_workspace/"
+  override:
+    - go get -u github.com/whyrusleeping/gx
+    - go get -u github.com/whyrusleeping/gx-go
+    - go get github.com/multiformats/go-multicodec
+    - go get github.com/jbenet/go-msgio
+    - cd $HOME/go-livepeer-basicnet
+    - gx install
+    - go get github.com/livepeer/go-livepeer-basicnet
+    - cd $HOME/.go_workspace/src/github.com/livepeer/go-livepeer/ && git pull
+
+test:
+  override:
+    - cd "$HOME/go-livepeer-basicnet" && go test

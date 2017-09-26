@@ -21,17 +21,17 @@ func NewBasicNotifiee(mon *lpmon.Monitor) *BasicNotifiee {
 
 // called when network starts listening on an addr
 func (bn *BasicNotifiee) Listen(n net.Network, addr ma.Multiaddr) {
-	glog.Infof("Notifiee - Listen: %v", addr)
+	glog.V(4).Infof("Notifiee - Listen: %v", addr)
 }
 
 // called when network starts listening on an addr
 func (bn *BasicNotifiee) ListenClose(n net.Network, addr ma.Multiaddr) {
-	glog.Infof("Notifiee - Close: %v", addr)
+	glog.V(4).Infof("Notifiee - Close: %v", addr)
 }
 
 // called when a connection opened
 func (bn *BasicNotifiee) Connected(n net.Network, conn net.Conn) {
-	glog.Infof("Notifiee - Connected.  Local: %v - Remote: %v", peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
+	glog.V(4).Infof("Notifiee - Connected.  Local: %v - Remote: %v", peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
 	if bn.monitor != nil {
 		bn.monitor.LogNewConn(peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
 	}
@@ -39,7 +39,7 @@ func (bn *BasicNotifiee) Connected(n net.Network, conn net.Conn) {
 
 // called when a connection closed
 func (bn *BasicNotifiee) Disconnected(n net.Network, conn net.Conn) {
-	glog.Infof("Notifiee - Disconnected. Local: %v - Remote: %v", peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
+	glog.V(4).Infof("Notifiee - Disconnected. Local: %v - Remote: %v", peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
 	if bn.monitor != nil {
 		bn.monitor.RemoveConn(peer.IDHexEncode(conn.LocalPeer()), peer.IDHexEncode(conn.RemotePeer()))
 	}
@@ -54,10 +54,10 @@ func (bn *BasicNotifiee) HandleDisconnect(h func(pid peer.ID)) {
 
 // called when a stream opened
 func (bn *BasicNotifiee) OpenedStream(n net.Network, s net.Stream) {
-	// glog.Infof("Notifiee - OpenedStream: %v - %v", peer.IDHexEncode(s.Conn().LocalPeer()), peer.IDHexEncode(s.Conn().RemotePeer()))
+	glog.V(4).Infof("Notifiee - OpenedStream: %v - %v", peer.IDHexEncode(s.Conn().LocalPeer()), peer.IDHexEncode(s.Conn().RemotePeer()))
 }
 
 // called when a stream closed
 func (bn *BasicNotifiee) ClosedStream(n net.Network, s net.Stream) {
-	// glog.Infof("Notifiee - ClosedStream: %v - %v", peer.IDHexEncode(s.Conn().LocalPeer()), peer.IDHexEncode(s.Conn().RemotePeer()))
+	glog.V(4).Infof("Notifiee - ClosedStream: %v - %v", peer.IDHexEncode(s.Conn().LocalPeer()), peer.IDHexEncode(s.Conn().RemotePeer()))
 }

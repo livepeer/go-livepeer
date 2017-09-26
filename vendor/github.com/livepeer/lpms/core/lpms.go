@@ -5,7 +5,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,7 +13,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
-	"github.com/livepeer/lpms/transcoder"
 	"github.com/livepeer/lpms/vidlistener"
 	"github.com/livepeer/lpms/vidplayer"
 
@@ -51,17 +49,17 @@ func New(rtmpPort, httpPort, ffmpegPath, vodPath string) *LPMS {
 func (l *LPMS) Start(ctx context.Context) error {
 	ec := make(chan error, 1)
 	go func() {
-		glog.Infof("Starting LPMS Server at :%v", l.rtmpServer.Addr)
+		glog.V(2).Infof("Starting LPMS Server at :%v", l.rtmpServer.Addr)
 		ec <- l.rtmpServer.ListenAndServe()
 	}()
 	go func() {
-		glog.Infof("Starting HTTP Server at :%v", l.httpPort)
+		glog.V(2).Infof("Starting HTTP Server at :%v", l.httpPort)
 		ec <- http.ListenAndServe(":"+l.httpPort, nil)
 	}()
 
 	select {
 	case err := <-ec:
-		glog.Infof("LPMS Server Error: %v.  Quitting...", err)
+		glog.Errorf("LPMS Server Error: %v.  Quitting...", err)
 		return err
 	case <-ctx.Done():
 		return ctx.Err()
@@ -97,7 +95,7 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 	workDir, _ := os.Getwd()
 	workDir = workDir + "/tmp"
 	localRtmpUrl := "rtmp://localhost" + l.rtmpServer.Addr + "/stream/" + rs.GetStreamID()
-	glog.Infof("Segment RTMP Req: %v", localRtmpUrl)
+	glog.V(4).Infof("Segment RTMP Req: %v", localRtmpUrl)
 
 	s := segmenter.NewFFMpegVideoSegmenter(workDir, hs.GetStreamID(), localRtmpUrl, segOptions.SegLength, l.ffmpegPath)
 	c := make(chan error, 1)
@@ -109,13 +107,17 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 	go func() {
 		c <- func() error {
 			for {
+				if hs == nil {
+					glog.Errorf("HLS Stream is nil")
+					return segmenter.ErrSegmenter
+				}
 				seg, err := s.PollSegment(segCtx)
 				if err != nil {
 					return err
 				}
 				ss := stream.HLSSegment{SeqNo: seg.SeqNo, Data: seg.Data, Name: seg.Name, Duration: seg.Length.Seconds()}
 				// glog.Infof("Writing stream: %v, duration:%v, len:%v", ss.Name, ss.Duration, len(seg.Data))
-				if err = hs.AddHLSSegment(hs.GetStreamID(), &ss); err != nil {
+				if err = hs.AddHLSSegment(&ss); err != nil {
 					glog.Errorf("Error adding segment: %v", err)
 				}
 				select {
@@ -129,7 +131,9 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 
 	select {
 	case err := <-c:
-		glog.Errorf("Error segmenting stream: %v", err)
+		if err != segmenter.ErrFFMpegSegmenter {
+			glog.Errorf("Error segmenting stream: %v", err)
+		}
 		ffmpegCancel()
 		segCancel()
 		return err
@@ -140,67 +144,67 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 	}
 }
 
-//HandleTranscode kicks off a transcoding process, keeps a local HLS buffer, and returns the new stream ID.
-//stream is the video stream you want to be transcoded.  getNewStreamID gives you a way to name the transcoded stream.
-func (l *LPMS) HandleTranscode(getInStream func(ctx context.Context, streamID string) (stream.Stream, error), getOutStream func(ctx context.Context, streamID string) (stream.Stream, error)) {
-	http.HandleFunc("/transcode", func(w http.ResponseWriter, r *http.Request) {
-		ctx, _ := context.WithCancel(context.Background())
+// //HandleTranscode kicks off a transcoding process, keeps a local HLS buffer, and returns the new stream ID.
+// //stream is the video stream you want to be transcoded.  getNewStreamID gives you a way to name the transcoded stream.
+// func (l *LPMS) HandleTranscode(getInStream func(ctx context.Context, streamID string) (stream.Stream, error), getOutStream func(ctx context.Context, streamID string) (stream.Stream, error)) {
+// 	http.HandleFunc("/transcode", func(w http.ResponseWriter, r *http.Request) {
+// 		ctx, _ := context.WithCancel(context.Background())
 
-		//parse transcode request
-		decoder := json.NewDecoder(r.Body)
-		var tReq transcodeReq
-		if r.Body == nil {
-			http.Error(w, "Please send a request body", 400)
-			return
-		}
-		err := decoder.Decode(&tReq)
-		if err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
+// 		//parse transcode request
+// 		decoder := json.NewDecoder(r.Body)
+// 		var tReq transcodeReq
+// 		if r.Body == nil {
+// 			http.Error(w, "Please send a request body", 400)
+// 			return
+// 		}
+// 		err := decoder.Decode(&tReq)
+// 		if err != nil {
+// 			http.Error(w, err.Error(), 400)
+// 			return
+// 		}
 
-		//Get the RTMP Stream
-		inStream, err := getInStream(ctx, tReq.StreamID)
-		if err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
+// 		//Get the RTMP Stream
+// 		inStream, err := getInStream(ctx, tReq.StreamID)
+// 		if err != nil {
+// 			http.Error(w, err.Error(), 400)
+// 			return
+// 		}
 
-		//Get the HLS Stream
-		newStream, err := getOutStream(ctx, tReq.StreamID)
-		if err != nil {
-			http.Error(w, err.Error(), 400)
-		}
+// 		//Get the HLS Stream
+// 		newStream, err := getOutStream(ctx, tReq.StreamID)
+// 		if err != nil {
+// 			http.Error(w, err.Error(), 400)
+// 		}
 
-		ec := make(chan error, 1)
-		go func() { ec <- l.doTranscoding(ctx, inStream, newStream) }()
+// 		ec := make(chan error, 1)
+// 		go func() { ec <- l.doTranscoding(ctx, inStream, newStream) }()
 
-		w.Write([]byte("New Stream: " + newStream.GetStreamID()))
-	})
-}
+// 		w.Write([]byte("New Stream: " + newStream.GetStreamID()))
+// 	})
+// }
 
-func (l *LPMS) doTranscoding(ctx context.Context, inStream stream.Stream, newStream stream.Stream) error {
-	t := transcoder.New(l.srsRTMPPort, l.srsHTTPPort, newStream.GetStreamID())
-	//Should kick off a goroutine for this, so we can return the new streamID rightaway.
+// func (l *LPMS) doTranscoding(ctx context.Context, inStream stream.Stream, newStream stream.Stream) error {
+// 	t := transcoder.New(l.srsRTMPPort, l.srsHTTPPort, newStream.GetStreamID())
+// 	//Should kick off a goroutine for this, so we can return the new streamID rightaway.
 
-	tranMux, err := t.LocalSRSUploadMux()
-	if err != nil {
-		return err
-		// http.Error(w, "Cannot create a connection with local transcoder", 400)
-	}
+// 	tranMux, err := t.LocalSRSUploadMux()
+// 	if err != nil {
+// 		return err
+// 		// http.Error(w, "Cannot create a connection with local transcoder", 400)
+// 	}
 
-	uec := make(chan error, 1)
-	go func() { uec <- t.StartUpload(ctx, tranMux, inStream) }()
-	dec := make(chan error, 1)
-	go func() { dec <- t.StartDownload(ctx, newStream) }()
+// 	uec := make(chan error, 1)
+// 	go func() { uec <- t.StartUpload(ctx, tranMux, inStream) }()
+// 	dec := make(chan error, 1)
+// 	go func() { dec <- t.StartDownload(ctx, newStream) }()
 
-	select {
-	case err := <-uec:
-		return err
-		// http.Error(w, "Cannot upload stream to transcoder: "+err.Error(), 400)
-	case err := <-dec:
-		return err
-		// http.Error(w, "Cannot download stream from transcoder: "+err.Error(), 400)
-	}
+// 	select {
+// 	case err := <-uec:
+// 		return err
+// 		// http.Error(w, "Cannot upload stream to transcoder: "+err.Error(), 400)
+// 	case err := <-dec:
+// 		return err
+// 		// http.Error(w, "Cannot download stream from transcoder: "+err.Error(), 400)
+// 	}
 
-}
+// }

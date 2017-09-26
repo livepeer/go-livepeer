@@ -16,6 +16,7 @@ type BasicRTMPVideoStream struct {
 	streamID    string
 	buffer      *streamBuffer
 	RTMPTimeout time.Duration
+	header      []av.CodecData
 }
 
 //NewBasicRTMPVideoStream creates a new BasicRTMPVideoStream.  The default RTMPTimeout is set to 10 milliseconds because we assume all RTMP streams are local.
@@ -48,25 +49,25 @@ func (s *BasicRTMPVideoStream) ReadRTMPFromStream(ctx context.Context, dst av.Mu
 			headers := item.([]av.CodecData)
 			err = dst.WriteHeader(headers)
 			if err != nil {
-				glog.Infof("Error writing RTMP header from Stream %v to mux", s.streamID)
+				glog.Errorf("Error writing RTMP header from Stream %v to mux", s.streamID)
 				return err
 			}
 		case av.Packet:
 			packet := item.(av.Packet)
 			err = dst.WritePacket(packet)
 			if err != nil {
-				glog.Infof("Error writing RTMP packet from Stream %v to mux: %v", s.streamID, err)
+				glog.Errorf("Error writing RTMP packet from Stream %v to mux: %v", s.streamID, err)
 				return err
 			}
 		case RTMPEOF:
 			err := dst.WriteTrailer()
 			if err != nil {
-				glog.Infof("Error writing RTMP trailer from Stream %v", s.streamID)
+				glog.Errorf("Error writing RTMP trailer from Stream %v", s.streamID)
 				return err
 			}
 			return io.EOF
 		default:
-			glog.Infof("Cannot recognize buffer iteam type: ", reflect.TypeOf(item))
+			glog.Errorf("Cannot recognize buffer iteam type: ", reflect.TypeOf(item))
 			debug.PrintStack()
 			return ErrBufferItemType
 		}
@@ -76,6 +77,13 @@ func (s *BasicRTMPVideoStream) ReadRTMPFromStream(ctx context.Context, dst av.Mu
 //WriteRTMPToStream writes a video stream from src into the stream.
 func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error {
 	defer src.Close()
+
+	//Set header in case we want to use it.
+	h, err := src.Streams()
+	if err != nil {
+		return err
+	}
+	s.header = h
 
 	c := make(chan error, 1)
 	go func() {
@@ -115,7 +123,7 @@ func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.Dem
 
 	select {
 	case <-ctx.Done():
-		glog.Infof("Finished writing RTMP to Stream %v", s.streamID)
+		glog.V(2).Infof("Finished writing RTMP to Stream %v", s.streamID)
 		return ctx.Err()
 	case err := <-c:
 		return err
@@ -124,4 +132,24 @@ func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.Dem
 
 func (s BasicRTMPVideoStream) String() string {
 	return fmt.Sprintf("StreamID: %v, Type: %v", s.GetStreamID(), s.GetStreamFormat())
+}
+
+func (s BasicRTMPVideoStream) Height() int {
+	for _, cd := range s.header {
+		if cd.Type().IsVideo() {
+			return cd.(av.VideoCodecData).Height()
+		}
+	}
+
+	return 0
+}
+
+func (s BasicRTMPVideoStream) Width() int {
+	for _, cd := range s.header {
+		if cd.Type().IsVideo() {
+			return cd.(av.VideoCodecData).Width()
+		}
+	}
+
+	return 0
 }

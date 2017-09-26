@@ -2,13 +2,14 @@ package main
 
 import (
 	"flag"
+	"io/ioutil"
+	"time"
+
 	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
 	ma "gx/ipfs/QmXY77cVe7rVRQXZZQRioukUM7aRW3BTcAgJe12MCtb3Ji/go-multiaddr"
 	"gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 	net "gx/ipfs/QmahYsGWry85Y7WUe2SX5G4JkH2zifEQAUtJVLZ24aC9DF/go-libp2p-net"
-	"io/ioutil"
-	"time"
 
 	"github.com/golang/glog"
 	basicnet "github.com/livepeer/go-livepeer-basicnet"
@@ -17,7 +18,6 @@ import (
 var timer time.Time
 
 func main() {
-
 	p := flag.Int("p", 15000, "port")
 	id := flag.String("id", "", "id")
 	addr := flag.String("addr", "", "addr")
@@ -28,7 +28,7 @@ func main() {
 	flag.Lookup("logtostderr").Value.Set("true")
 
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	node, _ := basicnet.NewNode(*p, priv, pub, &inet.BasicNotifiee{})
+	node, _ := basicnet.NewNode(*p, priv, pub, &basicnet.BasicNotifiee{})
 
 	pid, _ := peer.IDHexDecode(*id)
 	if *id != "" {
@@ -75,8 +75,8 @@ func setHandler(n *basicnet.NetworkNode) {
 }
 
 func streamHandler(ws *basicnet.BasicStream) error {
-	var msg basicnet.Msg
-	if err := ws.ReceiveMessage(&msg); err != nil {
+	msg, err := ws.ReceiveMessage()
+	if err != nil {
 		glog.Errorf("Got error decoding msg: %v", err)
 		return err
 	}

@@ -3,6 +3,7 @@ package vidplayer
 import (
 	"context"
 	"errors"
+	"io"
 	"io/ioutil"
 	"mime"
 	"net/http"
@@ -16,12 +17,15 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/stream"
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
 
-var ErrNotFound = errors.New("NotFound")
-var ErrRTMP = errors.New("RTMP Error")
+var ErrMasterPlaylistNotFound = errors.New("ErrMasterPlaylistNotFound")
+var ErrNotMasterPlaylistID = errors.New("ErrNotMasterPlaylistID")
+var ErrRTMP = errors.New("ErrRTMP")
+var ErrHLS = errors.New("ErrHLS")
 var PlaylistWaittime = 6 * time.Second
 
 //VidPlayer is the module that handles playing video. For now we only support RTMP and HLS play.
@@ -31,7 +35,7 @@ type VidPlayer struct {
 	VodPath         string
 }
 
-func defaultRtmpPlayHandler(url *url.URL) (stream.RTMPVideoStream, error) { return nil, ErrNotFound }
+func defaultRtmpPlayHandler(url *url.URL) (stream.RTMPVideoStream, error) { return nil, ErrRTMP }
 
 //NewVidPlayer creates a new video player
 func NewVidPlayer(rtmpS *joy4rtmp.Server, vodPath string) *VidPlayer {
@@ -49,7 +53,7 @@ func (s *VidPlayer) HandleRTMPPlay(getStream func(url *url.URL) (stream.RTMPVide
 
 func (s *VidPlayer) rtmpServerHandlePlay() func(conn *joy4rtmp.Conn) {
 	return func(conn *joy4rtmp.Conn) {
-		glog.Infof("LPMS got RTMP request @ %v", conn.URL)
+		glog.V(2).Infof("LPMS got RTMP request @ %v", conn.URL)
 
 		src, err := s.rtmpPlayHandler(conn.URL)
 		if err != nil {
@@ -57,9 +61,10 @@ func (s *VidPlayer) rtmpServerHandlePlay() func(conn *joy4rtmp.Conn) {
 			return
 		}
 
-		err = src.ReadRTMPFromStream(context.Background(), conn)
-		if err != nil {
-			glog.Errorf("Error copying RTMP stream: %v", err)
+		if err = src.ReadRTMPFromStream(context.Background(), conn); err != nil {
+			if err != io.EOF {
+				glog.Errorf("Error copying RTMP stream: %v", err)
+			}
 			return
 		}
 	}
@@ -85,7 +90,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 	getMediaPlaylist func(url *url.URL) (*m3u8.MediaPlaylist, error),
 	getSegment func(url *url.URL) ([]byte, error)) {
 
-	glog.Infof("LPMS got HTTP request @ %v", r.URL.Path)
+	glog.V(common.SHORT).Infof("LPMS got HTTP request @ %v", r.URL.Path)
 
 	if !strings.HasSuffix(r.URL.Path, ".m3u8") && !strings.HasSuffix(r.URL.Path, ".ts") {
 		http.Error(w, "LPMS only accepts HLS requests over HTTP (m3u8, ts).", 500)
@@ -99,11 +104,13 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		//Could be a master playlist, or a media playlist
 		var masterPl *m3u8.MasterPlaylist
 		var mediaPl *m3u8.MediaPlaylist
-		masterPl, err := getMasterPlaylist(r.URL)
+		masterPl, err := getMasterPlaylist(r.URL) //Return ErrNotMasterPlaylistID to by past the error case
 		if err != nil {
-			glog.Errorf("Error getting HLS master playlist: %v", err)
-			http.Error(w, "Error getting HLS master playlist", 500)
-			return
+			if err != ErrNotMasterPlaylistID {
+				glog.Errorf("Error getting HLS master playlist: %v", err)
+				http.Error(w, "Error getting HLS master playlist", 500)
+				return
+			}
 		}
 		if masterPl != nil && len(masterPl.Variants) > 0 {
 			w.Header().Set("Connection", "keep-alive")
@@ -151,7 +158,7 @@ func handleVOD(url *url.URL, vodPath string, w http.ResponseWriter) error {
 		dat, err := ioutil.ReadFile(plName)
 		if err != nil {
 			glog.Errorf("Cannot find file: %v", plName)
-			return ErrNotFound
+			return ErrHLS
 		}
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(url.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -164,7 +171,7 @@ func handleVOD(url *url.URL, vodPath string, w http.ResponseWriter) error {
 		dat, err := ioutil.ReadFile(segName)
 		if err != nil {
 			glog.Errorf("Cannot find file: %v", segName)
-			return ErrNotFound
+			return ErrHLS
 		}
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(url.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")

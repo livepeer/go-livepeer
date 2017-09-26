@@ -14,14 +14,12 @@ import (
 )
 
 var ErrStreamID = errors.New("ErrStreamID")
+var ErrManifestID = errors.New("ErrManifestID")
 
 const (
 	HashLength   = 32
 	NodeIDLength = 68
 )
-
-//StreamID is NodeID|VideoID|Rendition
-type StreamID string
 
 func RandomVideoID() []byte {
 	rand.Seed(time.Now().UnixNano())
@@ -32,16 +30,14 @@ func RandomVideoID() []byte {
 	return x
 }
 
-func MakeStreamID(nodeID NodeID, id []byte, rendition string) (StreamID, error) {
-	if len(nodeID) != NodeIDLength {
-		return "", ErrStreamID
-	}
+//StreamID is NodeID|VideoID|Rendition
+type StreamID string
 
-	if rendition == "" {
-		return StreamID(fmt.Sprintf("%v%x", nodeID, id)), nil
-	} else {
-		return StreamID(fmt.Sprintf("%v%x%v", nodeID, id, rendition)), nil
+func MakeStreamID(nodeID NodeID, id []byte, rendition string) (StreamID, error) {
+	if len(nodeID) != NodeIDLength || len(id) == 0 || rendition == "" {
+		return "", ErrManifestID
 	}
+	return StreamID(fmt.Sprintf("%v%x%v", nodeID, id, rendition)), nil
 }
 
 func (id *StreamID) GetNodeID() NodeID {
@@ -57,15 +53,45 @@ func (id *StreamID) GetVideoID() []byte {
 }
 
 func (id *StreamID) GetRendition() string {
-	return ""
+	return string((*id)[NodeIDLength+2*HashLength:])
 }
 
-func (id *StreamID) IsMasterPlaylistID() bool {
-	return id.GetRendition() == ""
+func (id *StreamID) IsValid() bool {
+	return len(*id) > (NodeIDLength + 2*HashLength)
 }
 
-func (id *StreamID) String() string {
-	return string(*id)
+func (id StreamID) String() string {
+	return string(id)
+}
+
+//ManifestID is NodeID|VideoID
+type ManifestID string
+
+func MakeManifestID(nodeID NodeID, id []byte) (ManifestID, error) {
+	if nodeID == "" || len(nodeID) != NodeIDLength {
+		return "", ErrStreamID
+	}
+	return ManifestID(fmt.Sprintf("%v%x", nodeID, id)), nil
+}
+
+func (id *ManifestID) GetNodeID() NodeID {
+	return NodeID((*id)[:NodeIDLength])
+}
+
+func (id *ManifestID) GetVideoID() []byte {
+	vid, err := hex.DecodeString(string((*id)[NodeIDLength : NodeIDLength+(2*HashLength)]))
+	if err != nil {
+		return nil
+	}
+	return vid
+}
+
+func (id *ManifestID) IsValid() bool {
+	return len(*id) == (NodeIDLength + 2*HashLength)
+}
+
+func (id ManifestID) String() string {
+	return string(id)
 }
 
 //Segment and its signature by the broadcaster

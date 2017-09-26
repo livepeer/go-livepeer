@@ -59,6 +59,8 @@ func (s *TestStream) WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error      
 func (s *TestStream) WriteHLSSegmentToStream(seg stream.HLSSegment) error                 { return nil }
 func (s *TestStream) ReadHLSFromStream(ctx context.Context, buffer stream.HLSMuxer) error { return nil }
 func (s *TestStream) ReadHLSSegment() (stream.HLSSegment, error)                          { return stream.HLSSegment{}, nil }
+func (s *TestStream) Width() int                                                          { return 0 }
+func (s *TestStream) Height() int                                                         { return 0 }
 
 func TestSegmenter(t *testing.T) {
 	wd, _ := os.Getwd()

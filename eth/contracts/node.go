@@ -1,5 +1,5 @@
-// This file is an automatically generated Go binding. Do not modify as any
-// change will likely be lost upon the next re-generation!
+// Code generated - DO NOT EDIT.
+// This file is a generated binding and any manual changes will be lost.
 
 package contracts
 
@@ -18,7 +18,7 @@ import (
 const NodeABI = "[]"
 
 // NodeBin is the compiled bytecode used for deploying new contracts.
-const NodeBin = `0x60606040523415600e57600080fd5b5b603680601c6000396000f30060606040525b600080fd00a165627a7a7230582046ada4797ac6da028cc21820767eccc113ab50ee83168d7d240205389c13e5230029`
+const NodeBin = `0x60606040523415600e57600080fd5b5b603680601c6000396000f30060606040525b600080fd00a165627a7a72305820e38bdf92539f7c2baa4a1c48bd2fef39cbbdf22b2b201daf2d565343ff45d7c60029`
 
 // DeployNode deploys a new Ethereum contract, binding an instance of Node to it.
 func DeployNode(auth *bind.TransactOpts, backend bind.ContractBackend, libraries map[string]common.Address) (common.Address, *types.Transaction, *Node, error) {
@@ -34,7 +34,7 @@ func DeployNode(auth *bind.TransactOpts, backend bind.ContractBackend, libraries
 			return common.Address{}, nil, nil, err
 		}
 
-		linkedBin = reg.ReplaceAllString(linkedBin, addr.Hex()[2:])
+		linkedBin = reg.ReplaceAllString(linkedBin, addr.Hex())
 	}
 
 	address, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex(linkedBin), backend)

@@ -1,5 +1,5 @@
-// This file is an automatically generated Go binding. Do not modify as any
-// change will likely be lost upon the next re-generation!
+// Code generated - DO NOT EDIT.
+// This file is a generated binding and any manual changes will be lost.
 
 package contracts
 
@@ -19,7 +19,7 @@ import (
 const IdentityVerifierABI = "[{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"},{\"name\":\"_dataHash\",\"type\":\"string\"},{\"name\":\"_transcodedDataHash\",\"type\":\"string\"},{\"name\":\"_callbackContract\",\"type\":\"address\"}],\"name\":\"verify\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":true,\"type\":\"function\"}]"
 
 // IdentityVerifierBin is the compiled bytecode used for deploying new contracts.
-const IdentityVerifierBin = `0x6060604052341561000f57600080fd5b5b61017c8061001f6000396000f300606060405263ffffffff7c0100000000000000000000000000000000000000000000000000000000600035041663d3251d63811461003d575b600080fd5b610081600480359060248035916044359160643580820192908101359160843590810191013573ffffffffffffffffffffffffffffffffffffffff60a43516610095565b604051901515815260200160405180910390f35b60008173ffffffffffffffffffffffffffffffffffffffff16631e0976f38a8a8a60016000604051602001526040517c010000000000000000000000000000000000000000000000000000000063ffffffff871602815260048101949094526024840192909252604483015215156064820152608401602060405180830381600087803b151561012457600080fd5b6102c65a03f1151561013557600080fd5b50505060405180515060019150505b989750505050505050505600a165627a7a723058200c479f1e819afe3ee167b33f1a9b15fc314da1c696d7eb308e94d49473fc74550029`
+const IdentityVerifierBin = `0x6060604052341561000f57600080fd5b5b61017c8061001f6000396000f300606060405263ffffffff7c0100000000000000000000000000000000000000000000000000000000600035041663d3251d63811461003d575b600080fd5b610081600480359060248035916044359160643580820192908101359160843590810191013573ffffffffffffffffffffffffffffffffffffffff60a43516610095565b604051901515815260200160405180910390f35b60008173ffffffffffffffffffffffffffffffffffffffff16631e0976f38a8a8a60016000604051602001526040517c010000000000000000000000000000000000000000000000000000000063ffffffff871602815260048101949094526024840192909252604483015215156064820152608401602060405180830381600087803b151561012457600080fd5b6102c65a03f1151561013557600080fd5b50505060405180515060019150505b989750505050505050505600a165627a7a723058208c5beb5680f114617637a53e40c1c38837dd29ace9b47738ca814e958b50b1100029`
 
 // DeployIdentityVerifier deploys a new Ethereum contract, binding an instance of IdentityVerifier to it.
 func DeployIdentityVerifier(auth *bind.TransactOpts, backend bind.ContractBackend, libraries map[string]common.Address) (common.Address, *types.Transaction, *IdentityVerifier, error) {
@@ -35,7 +35,7 @@ func DeployIdentityVerifier(auth *bind.TransactOpts, backend bind.ContractBacken
 			return common.Address{}, nil, nil, err
 		}
 
-		linkedBin = reg.ReplaceAllString(linkedBin, addr.Hex()[2:])
+		linkedBin = reg.ReplaceAllString(linkedBin, addr.Hex())
 	}
 
 	address, tx, contract, err := bind.DeployContract(auth, parsed, common.FromHex(linkedBin), backend)

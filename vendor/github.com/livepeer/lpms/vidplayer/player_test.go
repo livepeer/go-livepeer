@@ -1,7 +1,6 @@
 package vidplayer
 
 import (
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -132,36 +131,3 @@ func (t *TestRWriter) Write(b []byte) (int, error) {
 	return 0, nil
 }
 func (*TestRWriter) WriteHeader(int) {}
-
-func TestHandleHLS(t *testing.T) {
-	testBuf := stream.NewHLSBuffer(10, 100)
-	pl, _ := m3u8.NewMediaPlaylist(10, 10)
-	pl.Append("url_1.ts", 2, "")
-	pl.Append("url_2.ts", 2, "")
-	pl.Append("url_3.ts", 2, "")
-	pl.Append("url_4.ts", 2, "")
-	pl.SeqNo = 1
-
-	testBuf.WriteSegment(1, "url_1.ts", 2, []byte{0, 0})
-	testBuf.WriteSegment(2, "url_2.ts", 2, []byte{0, 0})
-	testBuf.WriteSegment(3, "url_3.ts", 2, []byte{0, 0})
-	testBuf.WriteSegment(4, "url_4.ts", 2, []byte{0, 0})
-
-	p1, _ := m3u8.NewMediaPlaylist(10, 10)
-	err := p1.DecodeFrom(bytes.NewReader(pl.Encode().Bytes()), true)
-	if err != nil {
-		t.Errorf("Error decoding pl :%v", err)
-	}
-
-	segLen := 0
-	for _, s := range p1.Segments {
-		if s != nil {
-			segLen = segLen + 1
-		}
-	}
-
-	if segLen != 4 {
-		t.Errorf("Expecting 4 segments, got %v", segLen)
-	}
-
-}
