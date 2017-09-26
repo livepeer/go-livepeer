@@ -34,6 +34,7 @@ type StubClient struct {
 	ClaimRoot     [][32]byte
 	ClaimCounter  int
 	SubLogsCh     chan types.Log
+	JobsMap       map[string]*Job
 }
 
 func (e *StubClient) Backend() *ethclient.Client { return nil }
@@ -107,7 +108,7 @@ func (c *StubClient) GetBroadcasterDeposit(broadcaster common.Address) (*big.Int
 func (e *StubClient) TokenBalance() (*big.Int, error) { return big.NewInt(100000), nil }
 func (e *StubClient) WaitUntilNextRound() error       { return nil }
 func (e *StubClient) GetJob(jobID *big.Int) (*Job, error) {
-	return nil, nil
+	return e.JobsMap[jobID.String()], nil
 }
 func (c *StubClient) GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error) {
 	return nil, nil
