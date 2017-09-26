@@ -16,14 +16,20 @@ For full documentation and a project overview, go to
 
 ## Installing Livepeer
 ### Option 1: Download executables
-The easiest way to install Livepeer is by downloading it from the [release page on Github](https://github.com/livepeer/go-livepeer/releases).  Pick the appropriate platform and the latest version.
+The easiest way to install Livepeer is by downloading the `livepeer` and `livepeer_cli` executables from the [release page on Github](https://github.com/livepeer/go-livepeer/releases). 
+
+1. Download the packages for your OS - darwin for Macs and linux for linux. 
+2. Rename them to `livepeer` and `livepeer_cli`
+3. Make sure they have executable permissions by running `chmod +x livepeer` and `chmod +x livepeer_cli`
 
 ### Option 2: Build from source
-If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
+You can also build the executables from scratch.  
 
-You can build Livepeer from scratch.  If you already have the code, you can simply run `go build ./cmd/livepeer/livepeer.go` from the project root directory.
+1. If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
 
-You can also fetch and build the `livepeer` node using `go get github.com/livepeer/go-livepeer/cmd/livepeer`. It should be built and put in your $GOPATH/bin.
+2. You can fetch and build the `livepeer` binaries in one step by running `go get github.com/livepeer/go-livepeer/cmd/livepeer` in terminal. The binaries should be built and put in $GOPATH/bin.
+
+3. If you already have the code, you can simply run `go build ./cmd/livepeer/livepeer.go` from the project root directory. To get latest version, `git pull` from the project root directory.
 
 ## Additional Dependencies and Setup
 
