@@ -65,13 +65,13 @@ Livepeer is currently only running on a private Ethereum testnet.
 - Start `geth ` (see step 4 of 'Livepeer private Ethereum testnet').
 
 - Run `./livepeer -testnet`.
-  * Take note of the log output for your Eth address.  You should see a line: `'Using Eth account: ...'`
 
 - Run `./livepeer_cli`.
   * You should see a wizard launch in the command line. 
+  * The wizard should print out `Account Eth Addr`, `Token balance`, and `Eth balance`
 
 - Get some test eth from the eth faucet from [http://eth-testnet.livepeer.org/](http://eth-testnet.livepeer.org/). Make sure to use the Eth account address from above. 
-  * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see a positive Eth balance.
+  * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see a positive `Eth balance`.
 
 - Now get some test Livepeer tokens. Pick `Get test Livepeer Token`.  
   * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see your `Token balance` go up.
