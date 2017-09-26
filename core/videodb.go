@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
@@ -22,9 +23,10 @@ const HLSStreamWinSize = uint(3)
 //VideoDB stores the video streams, the video buffers, and related information in memory. Note that HLS streams may have many streamIDs, each representing a
 //ABS rendition, so there may be multiple streamIDs that map to the same HLS stream in the streams map.
 type VideoDB struct {
-	streams    map[StreamID]stream.VideoStream
-	manifests  map[ManifestID]stream.HLSVideoManifest
-	SelfNodeID string
+	streams      map[StreamID]stream.VideoStream
+	manifests    map[ManifestID]stream.HLSVideoManifest
+	streamJobMap map[StreamID]*big.Int
+	SelfNodeID   string
 }
 
 //NewVideo Create a new VideoDB with the node's network address
@@ -165,6 +167,18 @@ func (s *VideoDB) GetHLSManifestFromStreamID(strmID StreamID) (stream.HLSVideoMa
 
 func (s *VideoDB) DeleteHLSManifest(mid ManifestID) {
 	delete(s.manifests, mid)
+}
+
+func (s *VideoDB) GetJidByStreamID(strmID StreamID) *big.Int {
+	jid, ok := s.streamJobMap[strmID]
+	if ok {
+		return jid
+	}
+	return nil
+}
+
+func (s *VideoDB) AddJid(strmID StreamID, jid *big.Int) {
+	s.streamJobMap[strmID] = jid
 }
 
 func (s VideoDB) String() string {

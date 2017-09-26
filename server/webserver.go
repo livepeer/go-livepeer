@@ -85,7 +85,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		BroadcastPrice = big.NewInt(int64(price))
+		BroadcastPrice = uint64(price)
 		BroadcastJobVideoProfiles = profiles
 
 		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
@@ -97,7 +97,7 @@ func (s *LivepeerServer) StartWebserver() {
 			pNames = append(pNames, p.Name)
 		}
 		config := struct {
-			MaxPricePerSegment *big.Int
+			MaxPricePerSegment uint64
 			TranscodingOptions string
 		}{
 			BroadcastPrice,

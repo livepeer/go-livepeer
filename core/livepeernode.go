@@ -4,11 +4,11 @@ Core contains the main functionality of the Livepeer node.
 package core
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/ericxtang/m3u8"
@@ -99,13 +99,42 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []types.Vide
 	//Call eth client to create the job
 	p := big.NewInt(int64(price))
 
-	var tOpt bytes.Buffer
-	for _, p := range profiles {
-		tOpt.WriteString(p.Name)
+	pNames := []string{}
+	for _, prof := range profiles {
+		pNames = append(pNames, prof.Name)
 	}
 
-	n.Eth.Job(strmID.String(), tOpt.String(), p)
+	resCh, errCh := n.Eth.Job(strmID.String(), strings.Join(pNames, ","), p)
+	select {
+	case <-resCh:
+		glog.Infof("Created broadcast job. Price: %v. Type: %v", p, pNames)
+	case err := <-errCh:
+		glog.Errorf("Error creating broadcast job: %v", err)
+	}
+	return nil
+}
 
+func (n *LivepeerNode) EndTranscodeJob(jid *big.Int) error {
+	if jid == nil {
+		glog.Errorf("Cannot end job with nil jid")
+		return ErrNotFound
+	}
+
+	job, err := n.Eth.GetJob(jid)
+	if err != nil {
+		glog.Errorf("Cannot get job %v - %v", jid, err)
+		return ErrNotFound
+	}
+	if job.EndBlock.Cmp(big.NewInt(0)) == 0 {
+		//End the job
+		resCh, errCh := n.Eth.EndJob(jid)
+		select {
+		case <-resCh:
+			glog.Infof("Ended job %v. ", jid)
+		case err := <-errCh:
+			glog.Errorf("Error ending job: %v", err)
+		}
+	}
 	return nil
 }
 

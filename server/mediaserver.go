@@ -17,7 +17,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/types"
 	lpmscore "github.com/livepeer/lpms/core"
@@ -47,7 +46,7 @@ const EthEventTimeout = 5 * time.Second
 const EthMinedTxTimeout = 60 * time.Second
 
 var HLSWaitTime = time.Second * 45
-var BroadcastPrice = big.NewInt(150)
+var BroadcastPrice = uint64(1)
 var BroadcastJobVideoProfiles = []types.VideoProfile{types.P240p30fps4x3, types.P360p30fps16x9}
 var TranscoderFeeCut = uint8(10)
 var TranscoderRewardCut = uint8(10)
@@ -75,7 +74,7 @@ func NewLivepeerServer(rtmpPort string, httpPort string, ffmpegPath string, lpNo
 //StartServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegment int, transcodingOptions string) error {
 	if s.LivepeerNode.Eth != nil {
-		BroadcastPrice = big.NewInt(int64(maxPricePerSegment))
+		BroadcastPrice = uint64(maxPricePerSegment)
 		bProfiles := make([]types.VideoProfile, 0)
 		for _, opt := range strings.Split(transcodingOptions, ",") {
 			p, ok := types.VideoProfileLookup[strings.TrimSpace(opt)]
@@ -139,7 +138,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			}
 			glog.Infof("Current token balance for is: %v", b)
 
-			if b.Cmp(BroadcastPrice) < 0 {
+			if b.Cmp(big.NewInt(int64(BroadcastPrice))) < 0 {
 				glog.Errorf("Low balance (%v) - cannot start broadcast session", b)
 				return ErrBroadcast
 			}
@@ -197,7 +196,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		LastHLSStreamID = hlsStrmID
 
 		//Segment the stream (this populates the hls stream)
-		// glog.Infof("\n\nSegmenting rtmp stream:\n%v \nto hls stream:\n%v\n\n", rtmpStrm.GetStreamID(), hlsStrm.GetStreamID())
 		go func() {
 			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions) //TODO: do we need to cancel this thread when the stream finishes?
 			if err != nil {
@@ -205,6 +203,9 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				if err := s.LivepeerNode.BroadcastFinishMsg(hlsStrmID.String()); err != nil {
 					glog.Errorf("Error broadcaseting finish message: %v", err)
 				}
+
+				//End job
+				s.LivepeerNode.EndTranscodeJob(s.LivepeerNode.VideoDB.GetJidByStreamID(hlsStrmID))
 			}
 		}()
 
@@ -244,7 +245,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		if s.LivepeerNode.Eth != nil {
 			//Create Transcode Job Onchain
-			go createBroadcastJob(s, hlsStrm)
+			go s.LivepeerNode.CreateTranscodeJob(hlsStrmID, BroadcastJobVideoProfiles, BroadcastPrice)
 		}
 		return nil
 	}
@@ -507,18 +508,18 @@ func parseSegName(reqPath string) string {
 	return segName
 }
 
-func createBroadcastJob(s *LivepeerServer, hlsStrm stream.HLSVideoStream) {
-	eth.CheckRoundAndInit(s.LivepeerNode.Eth)
+// func createBroadcastJob(s *LivepeerServer, hlsStrm stream.HLSVideoStream) {
+// 	eth.CheckRoundAndInit(s.LivepeerNode.Eth)
 
-	pNames := []string{}
-	for _, prof := range BroadcastJobVideoProfiles {
-		pNames = append(pNames, prof.Name)
-	}
-	resCh, errCh := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), strings.Join(pNames, ","), BroadcastPrice)
-	select {
-	case <-resCh:
-		glog.Infof("Created broadcast job. Price: %v. Type: %v", BroadcastPrice, pNames)
-	case err := <-errCh:
-		glog.Errorf("Error creating broadcast job: %v", err)
-	}
-}
+// 	pNames := []string{}
+// 	for _, prof := range BroadcastJobVideoProfiles {
+// 		pNames = append(pNames, prof.Name)
+// 	}
+// 	resCh, errCh := s.LivepeerNode.Eth.Job(hlsStrm.GetStreamID(), strings.Join(pNames, ","), BroadcastPrice)
+// 	select {
+// 	case <-resCh:
+// 		glog.Infof("Created broadcast job. Price: %v. Type: %v", BroadcastPrice, pNames)
+// 	case err := <-errCh:
+// 		glog.Errorf("Error creating broadcast job: %v", err)
+// 	}
+// }

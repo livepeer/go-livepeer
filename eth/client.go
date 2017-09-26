@@ -60,6 +60,7 @@ type LivepeerEthClient interface {
 	GetBroadcasterDeposit(broadcaster common.Address) (*big.Int, error)
 	WithdrawDeposit() (<-chan types.Receipt, <-chan error)
 	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
+	EndJob(jobID *big.Int) (<-chan types.Receipt, <-chan error)
 	ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error)
 	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
 	DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error)
@@ -398,6 +399,17 @@ func (c *Client) Job(streamId string, transcodingOptions string, maxPricePerSegm
 			return nil, err
 		} else {
 			glog.Infof("[%v] Submitted tx %v. Creating job for stream id %v", c.account.Address.Hex(), tx.Hash().Hex(), streamId)
+			return tx, nil
+		}
+	})
+}
+
+func (c *Client) EndJob(jobId *big.Int) (<-chan types.Receipt, <-chan error) {
+	return c.WaitForReceipt(func() (*types.Transaction, error) {
+		if tx, err := c.jobsManagerSession.EndJob(jobId); err != nil {
+			return nil, err
+		} else {
+			glog.Infof("[%v] Submitted tx %v. Ending job %v", c.account.Address.Hex(), tx.Hash().Hex(), jobId)
 			return tx, nil
 		}
 	})

@@ -30,7 +30,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
 	ipfsApi "github.com/ipfs/go-ipfs-api"
@@ -275,18 +274,14 @@ func main() {
 		n.Eth = client
 		n.EthAccount = acct.Address.String()
 		n.EthPassword = *ethPassword
+		logMonitor := eth.NewLogMonitor(client)
+		logMonitor.SubscribeToJobEvents(func(j *eth.Job) {
+			glog.Infof("Adding jid %v for strmID: %v", j.JobId, j.StreamId)
+			n.VideoDB.AddJid(core.StreamID(j.StreamId), j.JobId)
+		})
 
 		if *transcoder {
-			logsCh := make(chan ethtypes.Log)
-			logsSub, err := n.Eth.SubscribeToJobEvent(context.Background(), logsCh)
-			if err != nil {
-				glog.Errorf("Error subscribing to job event: %v", err)
-			}
-
-			defer close(logsCh)
-			defer logsSub.Unsubscribe()
-
-			if err := setupTranscoder(n, logsCh); err != nil {
+			if err := setupTranscoder(n, logMonitor); err != nil {
 				glog.Errorf("Error setting up transcoder: %v", err)
 				return
 			}
@@ -457,7 +452,7 @@ func startIpfs(ctx context.Context, ipfsPath string, gatewayPort int, apiPort in
 	return nil
 }
 
-func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) error {
+func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
@@ -478,65 +473,47 @@ func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) error {
 	rm := core.NewRewardManager(time.Second*5, n.Eth)
 	go rm.Start(context.Background())
 
-	go func() {
-		for {
-			select {
-			case l, ok := <-logsCh:
-				if !ok {
-					// Logs channel closed, exit loop
-					return
-				}
-
-				_, _, jid := eth.ParseNewJobLog(l)
-
-				job, err := n.Eth.GetJob(jid)
-				if err != nil {
-					glog.Errorf("Error getting job info: %v", err)
-					continue
-				}
-
-				//Check if broadcaster has enough funds
-				bDeposit, err := n.Eth.GetBroadcasterDeposit(job.BroadcasterAddress)
-				if err != nil {
-					glog.Errorf("Error getting broadcaster deposit: %v", err)
-					continue
-				}
-				if bDeposit.Cmp(big.NewInt(0)) == 0 {
-					glog.Errorf("Broadcaster does not have enough funds. Skipping job")
-					continue
-				}
-
-				//Create Transcode Config
-				tProfiles, err := txDataToVideoProfile(job.TranscodingOptions)
-				if err != nil {
-					glog.Errorf("Error processing job transcoding options: %v", err)
-					continue
-				}
-
-				config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
-				glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", jid, job.StreamId, job.TranscodingOptions, config)
-
-				//Do The Transcoding
-				cm := core.NewBasicClaimManager(job.StreamId, jid, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth, n.Ipfs)
-				tr := transcoder.NewFFMpegSegmentTranscoder([]transcoder.TranscodeProfile{transcoder.P360p30fps16x9, transcoder.P240p30fps16x9}, "", n.WorkDir)
-				strmIDs, err := n.TranscodeAndBroadcast(config, cm, tr)
-				if err != nil {
-					glog.Errorf("Transcode Error: %v", err)
-					continue
-				}
-
-				//Notify Broadcaster
-				sid := core.StreamID(job.StreamId)
-				vids := make(map[core.StreamID]types.VideoProfile)
-				for i, vp := range tProfiles {
-					vids[strmIDs[i]] = vp
-				}
-				if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
-					glog.Errorf("Notify Broadcaster Error: %v", err)
-				}
-			}
+	lm.SubscribeToJobEvents(func(job *eth.Job) {
+		//Check if broadcaster has enough funds
+		bDeposit, err := n.Eth.GetBroadcasterDeposit(job.BroadcasterAddress)
+		if err != nil {
+			glog.Errorf("Error getting broadcaster deposit: %v", err)
+			return
 		}
-	}()
+		if bDeposit.Cmp(big.NewInt(0)) == 0 {
+			glog.Errorf("Broadcaster does not have enough funds. Skipping job")
+			return
+		}
+
+		//Create Transcode Config
+		tProfiles, err := txDataToVideoProfile(job.TranscodingOptions)
+		if err != nil {
+			glog.Errorf("Error processing job transcoding options: %v", err)
+			return
+		}
+
+		config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: job.JobId, PerformOnchainClaim: true}
+		glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.TranscodingOptions, config)
+
+		//Do The Transcoding
+		cm := core.NewBasicClaimManager(job.StreamId, jid, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth, n.Ipfs)
+		tr := transcoder.NewFFMpegSegmentTranscoder([]transcoder.TranscodeProfile{transcoder.P360p30fps16x9, transcoder.P240p30fps16x9}, "", n.WorkDir)
+		strmIDs, err := n.TranscodeAndBroadcast(config, cm, tr)
+		if err != nil {
+			glog.Errorf("Transcode Error: %v", err)
+			continue
+		}
+
+		//Notify Broadcaster
+		sid := core.StreamID(job.StreamId)
+		vids := make(map[core.StreamID]types.VideoProfile)
+		for i, vp := range tProfiles {
+			vids[strmIDs[i]] = vp
+		}
+		if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
+			glog.Errorf("Notify Broadcaster Error: %v", err)
+		}
+	})
 
 	return nil
 }
