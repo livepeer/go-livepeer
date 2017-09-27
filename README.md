@@ -14,25 +14,32 @@ Building and running this node allows you to:
 For full documentation and a project overview, go to
 [Livepeer Documentation](https://github.com/livepeer/wiki/wiki)
 
-## Installation
-The easiest way to install Livepeer is by downloading it from the [release page on Github](https://github.com/livepeer/go-livepeer/releases).  Pick the appropriate platform and the latest version.
+## Installing Livepeer
+### Option 1: Download executables
+The easiest way to install Livepeer is by downloading the `livepeer` and `livepeer_cli` executables from the [release page on Github](https://github.com/livepeer/go-livepeer/releases). 
 
-## Build
-If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
+1. Download the packages for your OS - darwin for Macs and linux for linux. 
+2. Rename them to `livepeer` and `livepeer_cli`
+3. Make sure they have executable permissions by running `chmod +x livepeer` and `chmod +x livepeer_cli`
 
-You can build Livepeer from scratch.  If you already have the code, you can simply run `go build ./cmd/livepeer/livepeer.go` from the project root directory.
+### Option 2: Build from source
+You can also build the executables from scratch.  
 
-You can also fetch and build the `livepeer` node using `go get github.com/livepeer/go-livepeer/cmd/livepeer`. It should be built and put in your $GOPATH/bin.
+1. If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
 
-## Setup
+2. You can fetch and build the `livepeer` binaries in one step by running `go get github.com/livepeer/go-livepeer/cmd/livepeer` in terminal. The binaries should be built and put in $GOPATH/bin.
+
+3. If you already have the code, you can simply run `go build ./cmd/livepeer/livepeer.go` from the project root directory. To get latest version, `git pull` from the project root directory.
+
+## Additional Dependencies and Setup
 
 ### ffmpeg
 The current version of Livepeer requires [ffmpeg](https://www.ffmpeg.org/).
 
-On OSX, run
+* On OSX, run
 `brew install ffmpeg --with-ffplay`
 
-or on Debian based Linux
+* or on Debian based Linux
 `apt-get install ffmpeg`
 
 ### geth
@@ -40,31 +47,40 @@ Livepeer requires a local Ethereum node. To set it up, follow the [Ethereum Inst
 
 ### Livepeer private Ethereum testnet
 Livepeer is currently only running on a private Ethereum testnet.
-1. Create a geth data directory. For example, `mkdir ~/.lpGeth`. We recommend creating a new directory even if you already have one, so the Livepeer testing data will be stored separately.
-2. Download the genesis json [lptestnet.json](http://eth-testnet.livepeer.org/lptestnet.json) (depending on your geth version, it may complain about 'genesis.number'. If encountered, delete the "number" field in the json.)
-3. Run `geth init` to initialize your local geth node with testnet genesis block.  For example: `geth --datadir ~/.lpGeth init lptestnet.json`
+
+1. Create a geth data directory. For example: `mkdir ~/.lpGeth`. 
+  * We recommend creating a new directory even if you already have one, so the Livepeer testing data will be stored separately.
+2. Download the genesis json [lptestnet.json](http://eth-testnet.livepeer.org/lptestnet.json)
+  * It can be saved anywhere. It'll just be used once for the next step
+3. Initialize your local geth node with testnet genesis block.  For example: `geth --datadir ~/.lpGeth init lptestnet.json`
+  * Depending on your geth version, you may see a complaint about 'genesis.number' related to your .json file. To fix the issue, delete the "number" field in the json.
 4. Start `geth` with the network id `858585` and the Livepeer testnet bootnode. For example: `geth --datadir ~/.lpGeth --networkid 858585 --bootnodes "enode://080ebca2373d15762c29ca8d85ddc848f10a7ffc745f7110cacba4694728325d645292cb512d7168323bd0af1650fca825ff54c8dba20aec8878498fae3ff3c6@18.221.67.74:30303"`
+  * Now the geth node should be running, and it should soon start downloading blocks.
 
-Now the geth node should be running, and it should soon start downloading blocks.
-
-## Usage
+## Running Livepeer
 
 ### Quick start
-- Make sure you have done all the setup steps. (Have `ffmpeg` installed, have `geth` running on the Livepeer private testnet)
+- Make sure you have successfully gone through the steps in 'Installing Livepeer' and 'Additional Dependencies'.
 
-- Run `livepeer -testnet` to start Livepeer. Make sure you have the `livepeer` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases) (you should download the packages for your OS - darwin for Macs and linux for linux.  You should also rename them to `livepeer` and `livepeer_cli`, and make sure they have executable permissions).
+- Start `geth ` (see step 4 of 'Livepeer private Ethereum testnet').
 
-- Run `livepeer_cli`. You should see a wizard launch in the command line. Make sure you installed the `livepeer_cli` executable.  It can be downloaded from the [releases page](https://github.com/livepeer/go-livepeer/releases).
+- Run `./livepeer -testnet`.
 
-- Get some test eth from the eth faucet from [http://eth-testnet.livepeer.org/](http://eth-testnet.livepeer.org/). Make sure to use the "Account Eth Addr".  You should see your Eth balance go up.
+- Run `./livepeer_cli`.
+  * You should see a wizard launch in the command line. 
+  * The wizard should print out `Account Eth Addr`, `Token balance`, and `Eth balance`
 
-- Now get some test Livepeer tokens. Pick 'Get test Livepeer Token'. If the request is successful, you should see your `Token balance` go up.
+- Get some test eth from the eth faucet from [http://eth-testnet.livepeer.org/](http://eth-testnet.livepeer.org/). Make sure to use the Eth account address from above. 
+  * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see a positive `Eth balance`.
 
-- To broadcast, run `livepeer_cli` and pick 'Broadcast Video'.  You should see your webcam becoming active and a streamID printed on the screen.
+- Now get some test Livepeer tokens. Pick `Get test Livepeer Token`.  
+  * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see your `Token balance` go up.
 
-- To see the video, run `./livepeer_cli` again, this time pick 'Stream Video'.
+- To broadcast, run `./livepeer_cli` and pick 'Broadcast Video'.  
+  * You should see your webcam becoming active and a streamID printed on the screen.
 
-You should see a video stream broadcasted from your webcam.  It may feel a little delayed - that's normal. Video live streaming typically has latency from 15 seconds to a few minutes. We are working on solutions to lower this latency, using techniques like WebRTC, peer-to-peer streaming, and crypto-incentives.
+- To see the video, run `./livepeer_cli` and pick 'Stream Video'.
+  * You should see a video stream broadcasted from your webcam.  It may feel a little delayed - that's normal. Video live streaming typically has latency from 15 seconds to a few minutes. We are working on solutions to lower this latency, using techniques like WebRTC, peer-to-peer streaming, and crypto-incentives.
 
 ### Broadcasting
 
