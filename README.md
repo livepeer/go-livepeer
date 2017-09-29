@@ -45,6 +45,13 @@ The current version of Livepeer requires [ffmpeg](https://www.ffmpeg.org/).
 ### geth
 Livepeer requires a local Ethereum node. To set it up, follow the [Ethereum Installation Guide](https://github.com/ethereum/go-ethereum/wiki/Building-Ethereum)  (We have tested with 1.6.7)
 
+### Creating Etherium Account
+Once the geth installation is complete, create an Etherium account, that will be used by livepeer.
+
+1. Run the command `geth account new`, it will ask for the password, give a password and remember it for future use.
+2. The completion of command will give you an Account address something like `Address: {3116bca27962d524e3cb7c9b8fbe6bd35ccfabda}`, note the address for future use.
+3. You can check the newly created account using the command `geth account list`.
+
 ### Livepeer private Ethereum testnet
 Livepeer is currently only running on a private Ethereum testnet.
 
@@ -64,13 +71,13 @@ Livepeer is currently only running on a private Ethereum testnet.
 
 - Start `geth ` (see step 4 of 'Livepeer private Ethereum testnet').
 
-- Run `./livepeer -testnet`.
+- Run `./livepeer -testnet -ethAccountAddr above_generated_address -ethPassword above_type_password` . 
 
 - Run `./livepeer_cli`.
   * You should see a wizard launch in the command line. 
   * The wizard should print out `Account Eth Addr`, `Token balance`, and `Eth balance`
 
-- Get some test eth from the eth faucet from [http://eth-testnet.livepeer.org/](http://eth-testnet.livepeer.org/). Make sure to use the Eth account address from above. 
+- Get some test eth from the eth faucet from [http://eth-testnet.livepeer.org/](http://eth-testnet.livepeer.org/). Make sure to use the Eth account address from above. Remember to add 0x as a prefix to address, if not present.
   * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see a positive `Eth balance`.
 
 - Now get some test Livepeer tokens. Pick `Get test Livepeer Token`.  
