@@ -37,6 +37,11 @@ func main() {
 			Value: 4,
 			Usage: "log level to emit to the screen",
 		},
+		cli.BoolFlag{
+			Name :"transcoder",
+			Usage:"transcoder on off flag",
+			Hidden:false,
+		},
 	}
 	app.Action = func(c *cli.Context) error {
 		// Set up the logger to print everything and the random generator
@@ -49,6 +54,7 @@ func main() {
 			rtmpPort: c.String("rtmp"),
 			httpPort: c.String("http"),
 			host:     c.String("host"),
+			transcoder:c.Bool("transcoder"),
 			in:       bufio.NewReader(os.Stdin),
 		}
 		w.run()
@@ -63,6 +69,7 @@ type wizard struct {
 	rtmpPort string
 	httpPort string
 	host     string
+	transcoder bool
 	in       *bufio.Reader // Wrapper around stdin to allow reading user input
 }
 
@@ -87,23 +94,76 @@ func (w *wizard) run() {
 	w.stats(false)
 	// Basics done, loop ad infinitum about what to do
 	for {
+
 		fmt.Println()
 		fmt.Println("What would you like to do? (default = stats)")
 		fmt.Println(" 1. Get node status")
-		fmt.Println(" 2. Deposit token")
-		fmt.Println(" 3. Broadcast video")
-		fmt.Println(" 4. Stream video")
-		fmt.Println(" 5. Set transcoder config")
-		fmt.Println(" 6. Set broadcast config")
-		fmt.Println(" 7. Bond")
-		fmt.Println(" 8. Unbond")
-		fmt.Println(" 9. Withdraw bond")
-		fmt.Println(" 10. Become a transcoder")
-		fmt.Println(" 11. Get test Livepeer Token")
-		fmt.Println(" 12. Get test Ether")
-		fmt.Println(" 13. List registered transcoders")
+		var choice string
 
-		choice := w.read()
+		if ( w.transcoder ) {
+			fmt.Println(" 2. Set transcoder config")
+			fmt.Println(" 3. Become a transcoder")
+			fmt.Println(" 4. Get test Livepeer Token")
+			fmt.Println(" 5. Get test Ether")
+			fmt.Println(" 6. List registered transcoders")
+			choice = w.read()
+			switch {
+				case choice == "2":
+					choice = "5"
+					break
+				case choice == "3":
+					choice = "10"
+					break
+				case choice == "4":
+					choice = "11"
+					break
+				case choice == "5":
+					choice = "12"
+					break
+				case choice == "6":
+					choice = "13"
+					break
+			}
+
+		} else {
+
+			fmt.Println(" 2. Deposit token")
+			fmt.Println(" 3. Broadcast video")
+			fmt.Println(" 4. Stream video")
+			fmt.Println(" 5. Set broadcast config")
+			fmt.Println(" 6. Bond")
+			fmt.Println(" 7. Unbond")
+			fmt.Println(" 8. Withdraw bond")
+			fmt.Println(" 9. Get test Livepeer Token")
+			fmt.Println(" 10. Get test Ether")
+			fmt.Println(" 11. List registered transcoders")
+
+			switch {
+			case choice == "5":
+				choice = "6"
+				break
+			case choice == "6":
+				choice = "7"
+				break
+			case choice == "7":
+				choice = "8"
+				break
+			case choice == "8":
+				choice = "9"
+				break
+			case choice == "9":
+				choice = "11"
+				break
+			case choice == "10":
+				choice = "12"
+				break
+			case choice == "11":
+				choice = "13"
+			break
+			}
+
+		}
+		//choice := w.read()
 		switch {
 		case choice == "" || choice == "1":
 			w.stats(false)

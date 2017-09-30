@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/golang/glog"
+	"strings"
 )
 
 func (w *wizard) stats(tips bool) {
@@ -29,9 +30,15 @@ func (w *wizard) stats(tips bool) {
 	fmt.Fprintf(wtr, "Eth balance: \t%s\n", w.getEthBalance())
 	wtr.Flush()
 
-	w.broadcastStats()
-	w.transcoderStats()
-	w.delegatorStats()
+	if ( strings.Compare(w.getTranscoderStatus(),"False" )  == 0){
+		w.delegatorStats()
+		w.broadcastStats()
+	}else {
+		w.transcoderStats()
+	}
+
+
+
 }
 
 func (w *wizard) broadcastStats() {
