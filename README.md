@@ -45,8 +45,8 @@ The current version of Livepeer requires [ffmpeg](https://www.ffmpeg.org/).
 ### geth
 Livepeer requires a local Ethereum node. To set it up, follow the [Ethereum Installation Guide](https://github.com/ethereum/go-ethereum/wiki/Building-Ethereum)  (We have tested with 1.6.7)
 
-### Creating Etherium Account
-Once the geth installation is complete, create an Etherium account, that will be used by livepeer.
+### Creating Ethereum Account
+Once the geth installation is complete, create an Ethereum account, that will be used by livepeer.
 
 1. Run the command `geth account new`, it will ask for the password, give a password and remember it for future use.
 2. The completion of command will give you an Account address something like `Address: {3116bca27962d524e3cb7c9b8fbe6bd35ccfabda}`, note the address for future use.
