@@ -40,7 +40,6 @@ func main() {
 		cli.BoolFlag{
 			Name :"transcoder",
 			Usage:"transcoder on off flag",
-			Hidden:false,
 		},
 	}
 	app.Action = func(c *cli.Context) error {
