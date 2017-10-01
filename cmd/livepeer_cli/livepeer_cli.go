@@ -138,6 +138,7 @@ func (w *wizard) run() {
 			fmt.Println(" 10. Get test Ether")
 			fmt.Println(" 11. List registered transcoders")
 
+			choice = w.read()
 			switch {
 			case choice == "5":
 				choice = "6"
@@ -163,7 +164,6 @@ func (w *wizard) run() {
 			}
 
 		}
-		//choice := w.read()
 		switch {
 		case choice == "" || choice == "1":
 			w.stats(false)
