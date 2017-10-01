@@ -3,7 +3,7 @@ package core
 import (
 	"testing"
 
-	"github.com/livepeer/go-livepeer/types"
+	lpmscore "github.com/livepeer/lpms/core"
 
 	"bytes"
 
@@ -13,14 +13,14 @@ import (
 
 func TestStreamID(t *testing.T) {
 	vid := RandomVideoID()
-	_, err := MakeStreamID(NodeID("nid"), vid, types.P144p30fps16x9.Name)
+	_, err := MakeStreamID(NodeID("nid"), vid, lpmscore.P144p30fps16x9.Name)
 	if err == nil {
 		t.Errorf("Expecting error because NodeID is too short")
 	}
 
 	_, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	pid, err := peer.IDFromPublicKey(pub)
-	id, err := MakeStreamID(NodeID(peer.IDHexEncode(pid)), vid, types.P144p30fps16x9.Name)
+	id, err := MakeStreamID(NodeID(peer.IDHexEncode(pid)), vid, lpmscore.P144p30fps16x9.Name)
 	if err != nil {
 		t.Errorf("Error creating Node ID: %v", err)
 	}

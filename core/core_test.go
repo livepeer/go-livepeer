@@ -20,7 +20,7 @@ import (
 	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/types"
+	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/transcoder"
 )
@@ -144,11 +144,11 @@ func TestTranscode(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, &StubVideoNetwork{T: t}, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, ".tmp")
 
 	//Call transcode
-	p := []types.VideoProfile{types.P144p30fps16x9, types.P240p30fps16x9}
+	p := []lpmscore.VideoProfile{lpmscore.P144p30fps16x9, lpmscore.P240p30fps16x9}
 
-	tProfiles := make([]transcoder.TranscodeProfile, len(p), len(p))
+	tProfiles := make([]lpmscore.VideoProfile, len(p), len(p))
 	for i, vp := range p {
-		tProfiles[i] = transcoder.TranscodeProfileLookup[vp.Name]
+		tProfiles[i] = lpmscore.VideoProfileLookup[vp.Name]
 	}
 	tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.WorkDir)
 	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: "strmID", Profiles: p}, nil, tr)
@@ -328,7 +328,7 @@ func TestNotifyBroadcaster(t *testing.T) {
 	sn := &StubVideoNetwork{}
 	n.VideoNetwork = sn
 
-	err = n.NotifyBroadcaster(n.Identity, "strmid", map[StreamID]types.VideoProfile{"strmid1": types.P240p30fps16x9})
+	err = n.NotifyBroadcaster(n.Identity, "strmid", map[StreamID]lpmscore.VideoProfile{"strmid1": lpmscore.P240p30fps16x9})
 	if err != nil {
 		t.Errorf("Error notifying broadcaster: %v", err)
 	}
@@ -341,8 +341,8 @@ func TestNotifyBroadcaster(t *testing.T) {
 		t.Errorf("Expecting strmid, got %v", sn.strmID)
 	}
 
-	if sn.tResult["strmid1"] != types.P240p30fps16x9.Name {
-		t.Errorf("Expecting %v, got %v", types.P240p30fps16x9.Name, sn.tResult["strmid1"])
+	if sn.tResult["strmid1"] != lpmscore.P240p30fps16x9.Name {
+		t.Errorf("Expecting %v, got %v", lpmscore.P240p30fps16x9.Name, sn.tResult["strmid1"])
 	}
 }
 

@@ -32,9 +32,10 @@ type VideoDB struct {
 //NewVideo Create a new VideoDB with the node's network address
 func NewVideoDB(selfNodeID string) *VideoDB {
 	return &VideoDB{
-		streams:    make(map[StreamID]stream.VideoStream),
-		manifests:  make(map[ManifestID]stream.HLSVideoManifest),
-		SelfNodeID: selfNodeID}
+		streams:      make(map[StreamID]stream.VideoStream),
+		manifests:    make(map[ManifestID]stream.HLSVideoManifest),
+		streamJobMap: make(map[StreamID]*big.Int),
+		SelfNodeID:   selfNodeID}
 }
 
 //GetHLSStream gets a HLS video stream stored in the VideoDB

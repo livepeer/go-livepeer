@@ -23,15 +23,16 @@ type StubClient struct {
 	MaxPrice      *big.Int
 	Jid           *big.Int
 	SegSeqNum     *big.Int
-	DHash         string
-	TDHash        string
+	VeriRate      uint64
+	DHash         []byte
+	TDHash        []byte
 	BSig          []byte
 	Proof         []byte
 	VerifyCounter int
 	ClaimJid      []*big.Int
 	ClaimStart    []*big.Int
 	ClaimEnd      []*big.Int
-	ClaimRoot     [][32]byte
+	ClaimRoot     map[[32]byte]bool
 	ClaimCounter  int
 	SubLogsCh     chan types.Log
 	JobsMap       map[string]*Job
@@ -39,15 +40,10 @@ type StubClient struct {
 
 func (e *StubClient) Backend() *ethclient.Client { return nil }
 func (e *StubClient) Account() accounts.Account  { return accounts.Account{} }
-func (e *StubClient) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error) {
+func (e *StubClient) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr, transcoderAddr common.Address) (ethereum.Subscription, error) {
 	e.SubLogsCh = logsCh
-
 	return &StubSubscription{}, nil
 }
-
-// func (e *StubClient) SubscribeToJobEvent(callback func(types.Log) error) (ethereum.Subscription, chan types.Log, error) {
-// 	return nil, nil, nil
-// }
 func (e *StubClient) WatchEvent(logsCh <-chan types.Log) (types.Log, error) { return types.Log{}, nil }
 func (e *StubClient) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
 	return nil, nil, nil, nil
@@ -80,10 +76,15 @@ func (e *StubClient) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, transco
 	e.ClaimJid = append(e.ClaimJid, jobId)
 	e.ClaimStart = append(e.ClaimStart, segmentRange[0])
 	e.ClaimEnd = append(e.ClaimEnd, segmentRange[1])
-	e.ClaimRoot = append(e.ClaimRoot, transcodeClaimsRoot)
-	return nil, nil
+	e.ClaimRoot[transcodeClaimsRoot] = true
+	rc := make(chan types.Receipt)
+	ec := make(chan error)
+	go func() {
+		rc <- types.Receipt{TxHash: common.StringToHash("ClaimWork")}
+	}()
+	return rc, ec
 }
-func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error) {
+func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash []byte, transcodedDataHash []byte, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error) {
 	e.Jid = jobId
 	e.SegSeqNum = segmentNumber
 	e.DHash = dataHash
@@ -126,7 +127,7 @@ func (c *StubClient) WithdrawDeposit() (<-chan types.Receipt, <-chan error) {
 	return nil, nil
 }
 func (e *StubClient) VerificationRate() (uint64, error) {
-	return 0, nil
+	return e.VeriRate, nil
 }
 func (e *StubClient) VerificationPeriod() (*big.Int, error) {
 	return nil, nil
@@ -163,3 +164,6 @@ func (e *StubClient) TranscoderPricingInfo() (uint8, uint8, *big.Int, error) {
 func (e *StubClient) TranscoderStatus() (string, error)                  { return "", nil }
 func (e *StubClient) Unbond() (<-chan types.Receipt, <-chan error)       { return nil, nil }
 func (e *StubClient) WithdrawBond() (<-chan types.Receipt, <-chan error) { return nil, nil }
+func (e *StubClient) GetBlockInfoByTxHash(ctx context.Context, hash common.Hash) (blkNum *big.Int, blkHash common.Hash, err error) {
+	return big.NewInt(0), hash, nil
+}

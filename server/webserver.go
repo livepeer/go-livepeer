@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/transcoder"
 
 	"github.com/livepeer/lpms/stream"
@@ -19,7 +20,6 @@ import (
 	eth "github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/types"
 )
 
 func (s *LivepeerServer) StartWebserver() {
@@ -31,16 +31,16 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		ps := []types.VideoProfile{types.P240p30fps16x9, types.P360p30fps16x9}
-		tps := []transcoder.TranscodeProfile{transcoder.P240p30fps16x9, transcoder.P360p30fps16x9}
-		tr := transcoder.NewFFMpegSegmentTranscoder(tps, "", s.LivepeerNode.WorkDir)
+		ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps16x9}
+		// tps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps16x9}
+		tr := transcoder.NewFFMpegSegmentTranscoder(ps, "", s.LivepeerNode.WorkDir)
 		ids, err := s.LivepeerNode.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: strmID, Profiles: ps}, nil, tr)
 		if err != nil {
 			glog.Errorf("Error transcoding: %v", err)
 			http.Error(w, "Error transcoding.", 500)
 		}
 
-		vids := make(map[core.StreamID]types.VideoProfile)
+		vids := make(map[core.StreamID]lpmscore.VideoProfile)
 		for i, vp := range ps {
 			vids[ids[i]] = vp
 		}
@@ -73,9 +73,9 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		profiles := []types.VideoProfile{}
+		profiles := []lpmscore.VideoProfile{}
 		for _, pName := range strings.Split(transcodingOptions, ",") {
-			p, ok := types.VideoProfileLookup[pName]
+			p, ok := lpmscore.VideoProfileLookup[pName]
 			if ok {
 				profiles = append(profiles, p)
 			}
@@ -114,8 +114,8 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/getAvailableTranscodingOptions", func(w http.ResponseWriter, r *http.Request) {
-		transcodingOptions := make([]string, 0, len(types.VideoProfileLookup))
-		for opt := range types.VideoProfileLookup {
+		transcodingOptions := make([]string, 0, len(lpmscore.VideoProfileLookup))
+		for opt := range lpmscore.VideoProfileLookup {
 			transcodingOptions = append(transcodingOptions, opt)
 		}
 

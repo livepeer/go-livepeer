@@ -66,10 +66,6 @@ func (s *BasicHLSVideoStream) GetStreamPlaylist() (*m3u8.MediaPlaylist, error) {
 	return s.plCache, nil
 }
 
-// func (s *BasicHLSVideoStream) GetStreamVariant() *m3u8.Variant {
-// 	return s.variant
-// }
-
 //GetHLSSegment gets the HLS segment.  It blocks until something is found, or timeout happens.
 func (s *BasicHLSVideoStream) GetHLSSegment(segName string) (*HLSSegment, error) {
 	seg, ok := s.sqMap[segName]
@@ -115,35 +111,3 @@ func (s *BasicHLSVideoStream) End() {
 func (s BasicHLSVideoStream) String() string {
 	return fmt.Sprintf("StreamID: %v, Type: %v, len: %v", s.GetStreamID(), s.GetStreamFormat(), len(s.sqMap))
 }
-
-// //AddVariant adds a new variant playlist (and therefore, a new HLS video stream) to the master playlist.
-// func (s *BasicHLSVideoStream) AddVariant(strmID string, variant *m3u8.Variant) error {
-// 	if variant == nil {
-// 		glog.Errorf("Cannot add nil variant")
-// 		return ErrAddVariant
-// 	}
-
-// 	_, ok := s.variantMediaPlCache[strmID]
-// 	if ok {
-// 		glog.Errorf("Variant %v already exists", strmID)
-// 		return ErrAddVariant
-// 	}
-
-// 	for _, v := range s.masterPlCache.Variants {
-// 		if v.Bandwidth == variant.Bandwidth && v.Resolution == variant.Resolution {
-// 			glog.Errorf("Variant with Bandwidth %v and Resolution %v already exists", v.Bandwidth, v.Resolution)
-// 			return ErrAddVariant
-// 		}
-// 	}
-
-// 	//Append to master playlist
-// 	s.masterPlCache.Append(variant.URI, variant.Chunklist, variant.VariantParams)
-
-// 	//Add to mediaPLCache
-// 	s.variantMediaPlCache[strmID] = variant.Chunklist
-
-// 	//Create the "media playlist specific" lock
-// 	s.lockMap[strmID] = &sync.Mutex{}
-
-// 	return nil
-// }

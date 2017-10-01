@@ -1,63 +1,79 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"math/big"
-	"strings"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
-	ipfsApi "github.com/ipfs/go-ipfs-api"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
-	"github.com/livepeer/go-livepeer/types"
+	"github.com/livepeer/go-livepeer/ipfs"
+	lpmscore "github.com/livepeer/lpms/core"
 )
 
 var ErrClaim = errors.New("ErrClaim")
+var ErrClaimManager = errors.New("ErrClaimManager")
 
 type ClaimManager interface {
-	AddReceipt(seqNo int64, data []byte, tDataHash string, bSig []byte, profile types.VideoProfile)
+	AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error
 	SufficientBroadcasterDeposit() (bool, error)
-	Claim(p types.VideoProfile) error
+	Claim() (claimCount int, rc chan types.Receipt, ec chan error)
+	Verify() error
+	DistributeFees() error
 }
 
-//ClaimManager manages the claim process for a Livepeer transcoder.  Check the Livepeer protocol for more details.
+type claimData struct {
+	seqNo                int64
+	segData              []byte
+	dataHash             []byte
+	tDataHashes          map[lpmscore.VideoProfile][]byte
+	bSig                 []byte
+	receiptHashes        map[lpmscore.VideoProfile]common.Hash
+	claimStart           int64
+	claimEnd             int64
+	claimBlkNum          *big.Int
+	claimBlkHash         common.Hash
+	claimProof           []byte
+	claimId              *big.Int
+	claimConcatTDatahash []byte
+}
+
+//BasicClaimManager manages the claim process for a Livepeer transcoder.  Check the Livepeer protocol for more details.
 type BasicClaimManager struct {
 	client eth.LivepeerEthClient
-	ipfs   *ipfsApi.Shell
+	ipfs   ipfs.IPFSShell
 
 	strmID   string
 	jobID    *big.Int
-	profiles []types.VideoProfile
-	pLookup  map[types.VideoProfile]int
+	profiles []lpmscore.VideoProfile
+	pLookup  map[lpmscore.VideoProfile]int
 
-	seqNos        [][]int64
-	receiptHashes [][]common.Hash
-	segData       [][][]byte
-	dataHashes    [][]string
-	tDataHashes   [][]string
-	bSigs         [][][]byte
-
-	cost *big.Int
+	segClaimMap map[int64]*claimData
+	cost        *big.Int
 
 	broadcasterAddr common.Address
 	pricePerSegment *big.Int
+
+	r *ethTypes.TranscodeReceipt
 }
 
-//NewClaimManager creates a new claim manager.
-func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []types.VideoProfile, c eth.LivepeerEthClient, ipfs *ipfsApi.Shell) *BasicClaimManager {
+//NewBasicClaimManager creates a new claim manager.
+func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []lpmscore.VideoProfile, c eth.LivepeerEthClient, ipfs ipfs.IPFSShell) *BasicClaimManager {
 	seqNos := make([][]int64, len(p), len(p))
 	rHashes := make([][]common.Hash, len(p), len(p))
 	sd := make([][][]byte, len(p), len(p))
 	dHashes := make([][]string, len(p), len(p))
 	tHashes := make([][]string, len(p), len(p))
 	sigs := make([][][]byte, len(p), len(p))
-	pLookup := make(map[types.VideoProfile]int)
+	pLookup := make(map[lpmscore.VideoProfile]int)
 
+	sort.Sort(lpmscore.ByName(p))
 	for i := 0; i < len(p); i++ {
 		sNo := make([]int64, 0)
 		seqNos[i] = sNo
@@ -73,17 +89,13 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, 
 		sigs[i] = s
 		pLookup[p[i]] = i
 	}
-
-	return &BasicClaimManager{client: c, ipfs: ipfs, strmID: sid, jobID: jid, cost: big.NewInt(0), broadcasterAddr: broadcaster, pricePerSegment: pricePerSegment, seqNos: seqNos, receiptHashes: rHashes, dataHashes: dHashes, tDataHashes: tHashes, bSigs: sigs, profiles: p, pLookup: pLookup}
+	// return &BasicClaimManager{client: c, ipfs: ipfs, strmID: sid, jobID: jid, cost: big.NewInt(0), broadcasterAddr: broadcaster, pricePerSegment: pricePerSegment, seqNos: seqNos, receiptHashes: rHashes, segData: sd, dataHashes: dHashes, tDataHashes: tHashes, bSigs: sigs, profiles: p, pLookup: pLookup}
+	return &BasicClaimManager{client: c, ipfs: ipfs, strmID: sid, jobID: jid, cost: big.NewInt(0), broadcasterAddr: broadcaster, pricePerSegment: pricePerSegment, profiles: p, pLookup: pLookup, segClaimMap: make(map[int64]*claimData)}
 }
 
-//AddClaim adds a claim for a given video segment.
-func (c *BasicClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash string, bSig []byte, profile types.VideoProfile) {
-	dataHash, err := c.ipfs.AddOnlyHash(bytes.NewReader(data))
-	if err != nil {
-		glog.Errorf("Error getting IPFS hash for segment data: %v", err)
-		return
-	}
+//AddReceipt adds a claim for a given video segment.
+func (c *BasicClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error {
+	dataHash := crypto.Keccak256(data)
 
 	receipt := &ethTypes.TranscodeReceipt{
 		StreamID:              c.strmID,
@@ -93,25 +105,37 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash strin
 		BroadcasterSig:        bSig,
 	}
 
-	pi, ok := c.pLookup[profile]
+	_, ok := c.pLookup[profile]
 	if !ok {
 		glog.Errorf("Cannot find profile: %v", profile)
-		return
+		return ErrClaimManager
 	}
 
-	if len(c.seqNos[pi]) != 0 && c.seqNos[pi][len(c.seqNos[pi])-1] >= seqNo {
-		glog.Errorf("Cannot insert out of order.  Trying to insert %v into %v", c.seqNos[pi], seqNo)
+	cd, ok := c.segClaimMap[seqNo]
+	if !ok {
+		cd = &claimData{
+			seqNo:         seqNo,
+			segData:       data,
+			dataHash:      dataHash,
+			tDataHashes:   make(map[lpmscore.VideoProfile][]byte),
+			bSig:          bSig,
+			receiptHashes: make(map[lpmscore.VideoProfile]common.Hash),
+		}
+		c.segClaimMap[seqNo] = cd
 	}
+	if _, ok := cd.tDataHashes[profile]; ok {
+		return ErrClaimManager
+	}
+	cd.tDataHashes[profile] = tDataHash
 
-	// glog.Infof("Add receipt. Seq no %v Receipt hash %v Data hash %v Tdata hash %v BSig %v", seqNo, receipt.Hash(), dataHash, tDataHash, bSig)
+	if _, ok := cd.receiptHashes[profile]; ok {
+		return ErrClaimManager
+	}
+	cd.receiptHashes[profile] = receipt.Hash()
 
-	c.seqNos[pi] = append(c.seqNos[pi], seqNo)
-	c.receiptHashes[pi] = append(c.receiptHashes[pi], receipt.Hash())
-	c.segData[pi] = append(c.segData[pi], data)
-	c.dataHashes[pi] = append(c.dataHashes[pi], dataHash)
-	c.tDataHashes[pi] = append(c.tDataHashes[pi], tDataHash)
-	c.bSigs[pi] = append(c.bSigs[pi], bSig)
 	c.cost = new(big.Int).Add(c.cost, c.pricePerSegment)
+
+	return nil
 }
 
 func (c *BasicClaimManager) SufficientBroadcasterDeposit() (bool, error) {
@@ -131,161 +155,185 @@ func (c *BasicClaimManager) SufficientBroadcasterDeposit() (bool, error) {
 	}
 }
 
-//Claim creates the onchain claim for all the claims added through AddClaim
-func (c *BasicClaimManager) Claim(p types.VideoProfile) error {
-	pi, ok := c.pLookup[p]
-	if !ok {
-		glog.Errorf("Cannot find video profile: %v", p)
-		return ErrClaim
+type SortUint64 []int64
+
+func (a SortUint64) Len() int           { return len(a) }
+func (a SortUint64) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a SortUint64) Less(i, j int) bool { return a[i] < a[j] }
+
+func (c *BasicClaimManager) makeRanges() [][2]int64 {
+	//Get seqNos, sort them
+	keys := []int64{}
+	for key := range c.segClaimMap {
+		keys = append(keys, key)
+	}
+	sort.Sort(SortUint64(keys))
+
+	//Iterate through, check to make sure all tHashes are present (otherwise break and start new range),
+	start := keys[0]
+	ranges := make([][2]int64, 0)
+	for i, key := range keys {
+		startNewRange := false
+		scm := c.segClaimMap[key]
+
+		//If not all profiles exist in transcoded hashes, remove current key and start new range (don't claim for current segment)
+		for _, p := range c.profiles {
+			if _, ok := scm.tDataHashes[p]; !ok {
+				ranges = append(ranges, [2]int64{start, keys[i-1]})
+				startNewRange = true
+				break
+			}
+		}
+
+		//If the next key is not 1 more than the current key, it's not contiguous - start a new range
+		if startNewRange == false && (i+1 == len(keys) || keys[i+1] != keys[i]+1) {
+			ranges = append(ranges, [2]int64{start, keys[i]})
+			startNewRange = true
+		}
+
+		if startNewRange {
+			if i+1 != len(keys) {
+				start = keys[i+1]
+			}
+		}
+	}
+	return ranges
+}
+
+//Claim creates the onchain claim for all the claims added through AddReceipt
+func (c *BasicClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec chan error) {
+	ranges := c.makeRanges()
+	ec = make(chan error)
+	rc = make(chan types.Receipt)
+
+	for rangeIdx, segRange := range ranges {
+		//create concat hashes for each seg
+		concatHashes := make([]common.Hash, segRange[1]-segRange[0]+1)
+		for i := segRange[0]; i <= segRange[1]; i++ {
+			segReceiptHashes := make([][]byte, len(c.profiles))
+			segTDataHashes := make([][]byte, len(c.profiles))
+			for pi, p := range c.profiles {
+				segReceiptHashes[pi] = c.segClaimMap[i].receiptHashes[p].Bytes()
+				segTDataHashes[pi] = []byte(c.segClaimMap[i].tDataHashes[p])
+			}
+			seg, _ := c.segClaimMap[i]
+			seg.claimConcatTDatahash = crypto.Keccak256(segTDataHashes...)
+			concatHashes[i-segRange[0]] = crypto.Keccak256Hash(segReceiptHashes...)
+		}
+
+		//create merkle root for concat hashes
+		root, proofs, err := ethTypes.NewMerkleTree(concatHashes)
+		if err != nil {
+			glog.Errorf("Error: %v - creating merkle root for %v", err, concatHashes)
+		}
+
+		//Do the claim
+		biRange := [2]*big.Int{big.NewInt(segRange[0]), big.NewInt(segRange[1])}
+		go func() {
+			resCh, errCh := c.client.ClaimWork(c.jobID, biRange, root.Hash)
+			select {
+			case res := <-resCh:
+				blkNum, blkHash, err := c.client.GetBlockInfoByTxHash(context.Background(), res.TxHash)
+				if err != nil {
+					glog.Infof("Error getting block number / hash: %v", err)
+					ec <- err
+					return
+				}
+				glog.Infof("Got block hash: %x, block number: %v", blkHash, blkNum)
+				//Record claim information for verification later
+				for i := segRange[0]; i <= segRange[1]; i++ {
+					seg, _ := c.segClaimMap[i]
+					seg.claimStart = segRange[0]
+					seg.claimEnd = segRange[1]
+					seg.claimBlkNum = blkNum
+					seg.claimBlkHash = blkHash
+					seg.claimProof = proofs[i-segRange[0]].Bytes()
+					seg.claimId = big.NewInt(int64(rangeIdx))
+				}
+
+				rc <- res
+			case err := <-errCh:
+				glog.Errorf("Error claiming work: %v", err)
+				ec <- err
+			}
+		}()
 	}
 
-	if len(c.seqNos[pi]) == 0 {
-		glog.Infof("No segments to claim for %v", pi)
-	} else {
-		go claimVerifyDistribute(c.client, c.ipfs, c.jobID, c.seqNos[pi], c.segData[pi], c.dataHashes[pi], c.receiptHashes[pi], c.tDataHashes[pi], c.bSigs[pi])
+	return len(ranges), rc, ec
+}
+
+func (c *BasicClaimManager) Verify() error {
+	//Get verification rate
+	verifyRate, err := c.client.VerificationRate()
+	if err != nil {
+		glog.Errorf("Error getting verification rate: %v", err)
+		return err
+	}
+
+	//Iterate through segments, determine which one needs to be verified.
+	for segNo, scm := range c.segClaimMap {
+		glog.Infof("blkHash: %x", scm.claimBlkHash)
+		glog.Infof("segNo: %v", segNo)
+		glog.Infof("blkNum: %v", scm.claimBlkNum.Int64())
+		if shouldVerifySegment(segNo, scm.claimStart, scm.claimEnd, scm.claimBlkNum.Int64(), scm.claimBlkHash, verifyRate) {
+			glog.Infof("Calling verify")
+			//TODO: Add data to IPFS
+			// ipfsHash, err := c.ipfs.Add(bytes.NewReader(c.segClaimMap[segNo].segData))
+			// if err != nil {
+			// 	glog.Errorf("Error uploading segment data to IPFS: %v", err)
+			// 	continue
+			// }
+
+			//Call Verify
+			go func() {
+				resCh, errCh := c.client.Verify(c.jobID, scm.claimId, big.NewInt(segNo), scm.dataHash, scm.claimConcatTDatahash, scm.bSig, scm.claimProof)
+				select {
+				case <-resCh:
+					glog.Infof("Invoked verification for seg no %v", segNo)
+				case err := <-errCh:
+					glog.Errorf("Error submitting verify transaction: %v", err)
+				}
+			}()
+		}
 	}
 
 	return nil
 }
 
-//TODO: Can't just check for empty - need to check for seq No...
-func claimVerifyDistribute(client eth.LivepeerEthClient, ipfs *ipfsApi.Shell, jid *big.Int, seqNos []int64, segData [][]byte, dHashes []string, rHashes []common.Hash, tHashes []string, sigs [][]byte) {
-	claimLen := len(seqNos)
-	if len(segData) != claimLen || len(dHashes) != claimLen || len(rHashes) != claimLen || len(tHashes) != claimLen || len(sigs) != claimLen {
-		glog.Errorf("Claim data length doesn't match")
-		return
+func (c *BasicClaimManager) DistributeFees() error {
+	verificationPeriod, err := c.client.VerificationPeriod()
+	if err != nil {
+		return err
 	}
 
-	ranges := make([][2]int64, 0)
-	start := seqNos[0]
-	for i := int64(0); i < int64(len(seqNos)); i++ {
-		if i+1 == int64(len(seqNos)) || seqNos[i+1] != seqNos[i]+1 {
-			ranges = append(ranges, [2]int64{start, seqNos[i]})
-			if i+1 != int64(len(seqNos)) {
-				start = seqNos[i+1]
-			}
-		}
+	slashingPeriod, err := c.client.SlashingPeriod()
+	if err != nil {
+		return err
 	}
 
-	glog.Infof("Segment ranges: %v", ranges)
+	eth.Wait(c.client.Backend(), c.client.RpcTimeout(), new(big.Int).Add(verificationPeriod, slashingPeriod))
 
-	startIdx := int64(0)
-	for idx, r := range ranges {
-		endIdx := startIdx + r[1] - r[0]
-
-		root, proofs, err := ethTypes.NewMerkleTree(rHashes[startIdx : endIdx+1])
-		if err != nil {
-			glog.Errorf("Error: %v - creating merkle root for: %v", err, rHashes[startIdx:endIdx+1])
-			//TODO: If this happens, should we cancel the job?
-		}
-
-		glog.Infof("Submitting claim root: %v", root.Hash.Hex())
-
-		resCh, errCh := client.ClaimWork(jid, [2]*big.Int{big.NewInt(r[0]), big.NewInt(r[1])}, [32]byte(root.Hash))
+	for cid := range c.makeRanges() {
+		resCh, errCh := c.client.DistributeFees(c.jobID, big.NewInt(int64(cid)))
 		select {
 		case <-resCh:
-			bNum, bHash, err := getBlockInfo(client)
+			glog.Infof("Distributed fees")
+
+			bond, err := c.client.TranscoderBond()
 			if err != nil {
-				glog.Errorf("Error getting block info: %v", err)
-				return
+				glog.Errorf("Error getting token balance: %v", err)
 			}
 
-			verify(client, ipfs, jid, big.NewInt(int64(idx)), segData[startIdx:endIdx+1], dHashes[startIdx:endIdx+1], tHashes[startIdx:endIdx+1], sigs[startIdx:endIdx+1], proofs, r[0], r[1], int64(bNum), bHash)
+			glog.Infof("Transcoder bond after fees: %v", bond)
 		case err := <-errCh:
-			glog.Errorf("Error claiming work: %v", err)
+			glog.Infof("Error distributing fees: %v", err)
 		}
 
-		startIdx = endIdx + 1
 	}
+	return nil
 }
 
-func verify(client eth.LivepeerEthClient, ipfs *ipfsApi.Shell, jid *big.Int, cid *big.Int, segData [][]byte, dataHashes []string, tHashes []string, sigs [][]byte, proofs []*ethTypes.MerkleProof, start, end int64, bNum int64, bHash common.Hash) {
-	num := end - start + 1
-	if len(segData) != int(num) || len(dataHashes) != int(num) || len(tHashes) != int(num) || len(sigs) != int(num) || len(proofs) != int(num) {
-		glog.Errorf("Wrong input data length in verify: dHashes(%v), tHashes(%v), sigs(%v), proofs(%v)", len(dataHashes), len(tHashes), len(sigs), len(proofs))
-	}
-
-	verifyRate, err := client.VerificationRate()
-	if err != nil {
-		glog.Errorf("Error getting verification rate: %v", err)
-		return
-	}
-
-	glog.Infof("Checking which segments need to be verified...")
-	for i := 0; i < len(dataHashes); i++ {
-		if shouldVerifySegment(start+int64(i), start, end, int64(bNum), bHash, int64(verifyRate)) {
-			glog.Infof("Should verify seg no %v", start+int64(i))
-
-			//Upload segment data to ipfs
-			ipfsHash, err := ipfs.Add(bytes.NewReader(segData[i]))
-			if err != nil {
-				glog.Errorf("Error uploading segment data to IPFS: %v", err)
-				continue
-			}
-			if strings.Compare(ipfsHash, dataHashes[i]) != 0 {
-				glog.Errorf("IPFS hash of uploaded segment data does not match previous hash")
-				continue
-			}
-
-			glog.Infof("Uploaded seg no %v to IPFS with hash %v", start+int64(i), ipfsHash)
-
-			//Call verify
-			resCh, errCh := client.Verify(jid, cid, big.NewInt(start+int64(i)), dataHashes[i], tHashes[i], sigs[i], proofs[i].Bytes())
-			select {
-			case <-resCh:
-				glog.Infof("Invoked verification for seg no %v", start+int64(i))
-			case err := <-errCh:
-				glog.Errorf("Error submitting verify transaction: %v", err)
-			}
-		} else {
-			glog.Infof("Don't need to verify seg no %v", start+int64(i))
-		}
-	}
-
-	distributeFees(client, jid, cid)
-}
-
-func distributeFees(client eth.LivepeerEthClient, jid *big.Int, cid *big.Int) {
-	verificationPeriod, err := client.VerificationPeriod()
-	if err != nil {
-		return
-	}
-
-	slashingPeriod, err := client.SlashingPeriod()
-	if err != nil {
-		return
-	}
-
-	eth.Wait(client.Backend(), client.RpcTimeout(), new(big.Int).Add(verificationPeriod, slashingPeriod))
-
-	resCh, errCh := client.DistributeFees(jid, cid)
-	select {
-	case <-resCh:
-		glog.Infof("Distributed fees")
-
-		bond, err := client.TranscoderBond()
-		if err != nil {
-			glog.Errorf("Error getting token balance: %v", err)
-		}
-
-		glog.Infof("Transcoder bond after fees: %v", bond)
-	case err := <-errCh:
-		glog.Infof("Error distributing fees: %v", err)
-	}
-}
-
-func getBlockInfo(client eth.LivepeerEthClient) (uint64, common.Hash, error) {
-	ctx, _ := context.WithTimeout(context.Background(), client.RpcTimeout())
-
-	block, err := client.Backend().BlockByNumber(ctx, nil)
-	if err != nil {
-		return 0, common.Hash{}, err
-	}
-
-	return block.NumberU64(), block.Hash(), nil
-}
-
-func shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, blkHash common.Hash, verifyRate int64) bool {
+func shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, blkHash common.Hash, verifyRate uint64) bool {
 	if seqNum < start || seqNum > end {
 		return false
 	}

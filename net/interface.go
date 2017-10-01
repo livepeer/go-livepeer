@@ -5,7 +5,7 @@ import (
 	"math/big"
 
 	"github.com/ericxtang/m3u8"
-	"github.com/livepeer/go-livepeer/types"
+	lpmscore "github.com/livepeer/lpms/core"
 )
 
 //VideoNetwork describes the interface for a Livepeer node network-layer library.
@@ -61,7 +61,7 @@ type Subscriber interface {
 type TranscodeConfig struct {
 	ManifestID          string
 	StrmID              string
-	Profiles            []types.VideoProfile
+	Profiles            []lpmscore.VideoProfile
 	PerformOnchainClaim bool
 	JobID               *big.Int
 }

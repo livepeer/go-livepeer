@@ -7,22 +7,28 @@ import (
 	"time"
 
 	"github.com/ericxtang/m3u8"
+	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/types"
+	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/stream"
 )
 
 type StubClaimManager struct{}
 
-func (cm *StubClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash string, bSig []byte, profile types.VideoProfile) {
+func (cm *StubClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error {
+	return nil
 }
 func (cm *StubClaimManager) SufficientBroadcasterDeposit() (bool, error) { return true, nil }
-func (cm *StubClaimManager) Claim(p types.VideoProfile) error            { return nil }
+func (cm *StubClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec chan error) {
+	return 0, nil, nil
+}
+func (cm *StubClaimManager) Verify() error         { return nil }
+func (cm *StubClaimManager) DistributeFees() error { return nil }
 
 type StubTranscoder struct {
-	Profiles  []types.VideoProfile
+	Profiles  []lpmscore.VideoProfile
 	InputData [][]byte
 }
 
@@ -44,7 +50,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	nid := NodeID("12201c23641663bf06187a8c154a6c97266d138cb8379c1bc0828122dcc51c83698d")
 	strmID := "strmID"
 	jid := big.NewInt(0)
-	p := []types.VideoProfile{types.P720p60fps16x9, types.P144p30fps16x9}
+	p := []lpmscore.VideoProfile{lpmscore.P720p60fps16x9, lpmscore.P144p30fps16x9}
 	config := net.TranscodeConfig{StrmID: strmID, Profiles: p, PerformOnchainClaim: false, JobID: jid}
 
 	n, err := NewLivepeerNode(&eth.StubClient{}, &StubVideoNetwork{}, nid, []string{""}, "")
@@ -90,7 +96,7 @@ func TestBroadcastToNetwork(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
-	strmID, err := MakeStreamID(nid, RandomVideoID(), types.P144p30fps16x9.Name)
+	strmID, err := MakeStreamID(nid, RandomVideoID(), lpmscore.P144p30fps16x9.Name)
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}

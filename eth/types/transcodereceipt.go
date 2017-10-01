@@ -10,8 +10,8 @@ import (
 type TranscodeReceipt struct {
 	StreamID              string
 	SegmentSequenceNumber *big.Int
-	DataHash              string
-	TranscodedDataHash    string
+	DataHash              []byte
+	TranscodedDataHash    []byte
 	BroadcasterSig        []byte
 }
 

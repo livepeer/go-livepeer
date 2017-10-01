@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strconv"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -130,6 +131,36 @@ func (ec *Client) getBlock(ctx context.Context, method string, args ...interface
 		}
 	}
 	return types.NewBlockWithHeader(head).WithBody(body.Transactions, uncles), nil
+}
+
+func (ec *Client) BlockByTxHash(ctx context.Context, hash common.Hash) (block *types.Block, tx *types.Transaction, err error) {
+	_, _, err = ec.TransactionByHash(ctx, hash)
+	var raw json.RawMessage
+	err = ec.c.CallContext(ctx, &raw, "eth_getTransactionByHash", hash)
+	if err != nil {
+		return nil, nil, err
+	} else if len(raw) == 0 {
+		return nil, nil, ethereum.NotFound
+	}
+	if err := json.Unmarshal(raw, &tx); err != nil {
+		return nil, nil, err
+	} else if _, r, _ := tx.RawSignatureValues(); r == nil {
+		return nil, nil, fmt.Errorf("server returned transaction without signature")
+	}
+	var blockNum struct{ BlockNumber *string }
+	if err := json.Unmarshal(raw, &blockNum); err != nil {
+		return nil, nil, err
+	}
+
+	n, err := strconv.ParseInt(*blockNum.BlockNumber, 0, 64)
+	if err != nil {
+		return nil, nil, err
+	}
+	block, err = ec.BlockByNumber(ctx, big.NewInt(n))
+	if err != nil {
+		return nil, nil, err
+	}
+	return block, tx, nil
 }
 
 // HeaderByHash returns the block header with the given hash.

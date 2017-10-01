@@ -13,6 +13,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/golang/glog"
 	ipfsApi "github.com/ipfs/go-ipfs-api"
@@ -20,7 +21,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/types"
+	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/transcoder"
 )
@@ -84,7 +85,7 @@ func (n *LivepeerNode) Start(bootID, bootAddr string) error {
 }
 
 //CreateTranscodeJob creates the on-chain transcode job.
-func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []types.VideoProfile, price uint64) error {
+func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.VideoProfile, price uint64) error {
 	if n.Eth == nil {
 		glog.Errorf("Cannot create transcode job, no eth client found")
 		return ErrNotFound
@@ -138,10 +139,39 @@ func (n *LivepeerNode) EndTranscodeJob(jid *big.Int) error {
 	return nil
 }
 
+func (n *LivepeerNode) ClaimVerifyAndDistributeFees(cm ClaimManager) error {
+	//Do the claim, wait until it's finished
+	count, rc, ec := cm.Claim()
+	select {
+	case res := <-rc:
+		glog.V(common.SHORT).Infof("Claimed work with transaction: %v", res.TxHash)
+		count--
+		if count == 0 {
+			break
+		}
+	case err := <-ec:
+		glog.Errorf("Error claim work: %v", err)
+		count--
+		if count == 0 {
+			break
+		}
+	}
+
+	if err := cm.Verify(); err != nil {
+		glog.Errorf("Verification error: %v", err)
+	}
+
+	if err := cm.DistributeFees(); err != nil {
+		glog.Errorf("Error distributing fees: %v", err)
+	}
+
+	return nil
+}
+
 //TranscodeAndBroadcast transcodes one stream into multiple streams (specified by TranscodeConfig), broadcasts the streams, and returns a list of streamIDs.
 func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm ClaimManager, t transcoder.Transcoder) ([]StreamID, error) {
-	//Get TranscodeProfiles from VideoProfiles, create the broadcasters
-	tProfiles := make([]transcoder.TranscodeProfile, len(config.Profiles), len(config.Profiles))
+	//Create the broadcasters
+	tProfiles := make([]lpmscore.VideoProfile, len(config.Profiles), len(config.Profiles))
 	resultStrmIDs := make([]StreamID, len(config.Profiles), len(config.Profiles))
 	tranStrms := make(map[StreamID]stream.HLSVideoStream)
 	variants := make(map[StreamID]*m3u8.Variant)
@@ -152,14 +182,14 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 			return nil, ErrTranscode
 		}
 		resultStrmIDs[i] = strmID
-		tProfiles[i] = transcoder.TranscodeProfileLookup[vp.Name]
+		tProfiles[i] = lpmscore.VideoProfileLookup[vp.Name]
 
 		pl, err := m3u8.NewMediaPlaylist(HLSStreamWinSize, stream.DefaultHLSStreamCap)
 		if err != nil {
 			glog.Errorf("Error making playlist: %v", err)
 			return nil, ErrTranscode
 		}
-		variants[strmID] = &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: transcoder.TranscodeProfileToVariantParams(tProfiles[i])}
+		variants[strmID] = &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: lpmscore.VideoProfileToVariantParams(tProfiles[i])}
 
 		newStrm, err := n.VideoDB.AddNewHLSStream(strmID)
 		if err != nil {
@@ -202,11 +232,17 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 			if cm != nil {
 				glog.V(common.SHORT).Infof("Stream finished. Claiming work.")
 
-				for _, p := range config.Profiles {
-					cm.Claim(p)
+				if err := n.ClaimVerifyAndDistributeFees(cm); err != nil {
+					glog.Errorf("Error claiming work: %v", err)
 				}
 			}
 
+			if n.Eth != nil {
+				if jid := n.VideoDB.GetJidByStreamID(StreamID(config.StrmID)); jid != nil {
+					glog.V(common.SHORT).Infof("Calling Endjob for job: %v.", jid)
+					n.Eth.EndJob(jid)
+				}
+			}
 			return
 		}
 
@@ -218,11 +254,9 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 
 			if !sufficient {
 				glog.V(common.SHORT).Infof("Broadcaster does not have enough funds. Claiming work.")
-
-				for _, p := range config.Profiles {
-					cm.Claim(p)
+				if err := n.ClaimVerifyAndDistributeFees(cm); err != nil {
+					glog.Errorf("Error claiming work: %v", err)
 				}
-
 				return
 			}
 		}
@@ -275,7 +309,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 
 		//Don't do the onchain stuff unless specified
 		if cm != nil && config.PerformOnchainClaim {
-			cm.AddReceipt(int64(seg.SeqNo), seg.Data, ethcommon.BytesToHash(tData[i]).Hex(), sig, config.Profiles[i])
+			cm.AddReceipt(int64(seg.SeqNo), seg.Data, crypto.Keccak256(tData[i]), sig, config.Profiles[i])
 		}
 	}
 }
@@ -310,7 +344,7 @@ func (n *LivepeerNode) BroadcastManifestToNetwork(manifest stream.HLSVideoManife
 	n.VideoNetwork.ReceivedTranscodeResponse(manifest.GetVideoStreams()[0].GetStreamID(), func(result map[string]string) {
 		//Parse through the results
 		for strmID, tProfile := range result {
-			vParams := transcoder.TranscodeProfileToVariantParams(transcoder.TranscodeProfileLookup[tProfile])
+			vParams := lpmscore.VideoProfileToVariantParams(lpmscore.VideoProfileLookup[tProfile])
 			pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
 			variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}
 			strm := stream.NewBasicHLSVideoStream(strmID, HLSStreamWinSize)
@@ -449,7 +483,7 @@ func (n *LivepeerNode) GetMasterPlaylistFromNetwork(mid ManifestID) *m3u8.Master
 }
 
 //NotifyBroadcaster sends a messages to the broadcaster of the video stream, containing the new streamIDs of the transcoded video streams.
-func (n *LivepeerNode) NotifyBroadcaster(nid NodeID, strmID StreamID, transcodeStrmIDs map[StreamID]types.VideoProfile) error {
+func (n *LivepeerNode) NotifyBroadcaster(nid NodeID, strmID StreamID, transcodeStrmIDs map[StreamID]lpmscore.VideoProfile) error {
 	ids := make(map[string]string)
 	for sid, p := range transcodeStrmIDs {
 		ids[sid.String()] = p.Name

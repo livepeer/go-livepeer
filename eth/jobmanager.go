@@ -30,7 +30,7 @@ func NewJobManager(c LivepeerEthClient) *JobManager {
 func (j *JobManager) Start() error {
 	ctx := context.Background()
 	logsCh := make(chan types.Log)
-	sub, err := j.c.SubscribeToJobEvent(ctx, logsCh)
+	sub, err := j.c.SubscribeToJobEvent(ctx, logsCh, common.Address{}, j.c.Account().Address)
 	if err != nil {
 		return err
 	}

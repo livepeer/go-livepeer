@@ -3,7 +3,6 @@ Package eth client is the go client for the Livepeer Ethereum smart contract.  C
 */
 package eth
 
-//go:generate abigen --abi protocol/abi/LivepeerProtocol.abi --pkg contracts --type LivepeerProtocol --out contracts/livepeerProtocol.go --bin protocol/bin/LivepeerProtocol.bin
 //go:generate abigen --abi protocol/abi/LivepeerToken.abi --pkg contracts --type LivepeerToken --out contracts/livepeerToken.go --bin protocol/bin/LivepeerToken.bin
 //go:generate abigen --abi protocol/abi/BondingManager.abi --pkg contracts --type BondingManager --out contracts/bondingManager.go --bin protocol/bin/BondingManager.bin
 //go:generate abigen --abi protocol/abi/JobsManager.abi --pkg contracts --type JobsManager --out contracts/jobsManager.go --bin protocol/bin/JobsManager.bin
@@ -48,7 +47,7 @@ type LivepeerEthClient interface {
 	Backend() *ethclient.Client
 	Account() accounts.Account
 	RpcTimeout() time.Duration
-	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error)
+	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr, transcoderAddr common.Address) (ethereum.Subscription, error)
 	RoundInfo() (*big.Int, *big.Int, *big.Int, error)
 	InitializeRound() (<-chan types.Receipt, <-chan error)
 	Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
@@ -62,7 +61,7 @@ type LivepeerEthClient interface {
 	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
 	EndJob(jobID *big.Int) (<-chan types.Receipt, <-chan error)
 	ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error)
-	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
+	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash []byte, transcodedDataHash []byte, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
 	DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error)
 	Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error)
 	RequestTokens() (<-chan types.Receipt, <-chan error)
@@ -91,6 +90,7 @@ type LivepeerEthClient interface {
 	GetBondingManagerAddr() string
 	GetJobsManagerAddr() string
 	GetRoundsManagerAddr() string
+	GetBlockInfoByTxHash(ctx context.Context, hash common.Hash) (blkNum *big.Int, blkHash common.Hash, err error)
 }
 
 type Client struct {
@@ -426,9 +426,9 @@ func (c *Client) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [
 	})
 }
 
-func (c *Client) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash string, transcodedDataHash string, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error) {
+func (c *Client) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash []byte, transcodedDataHash []byte, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		if tx, err := c.jobsManagerSession.Verify(jobId, claimId, segmentNumber, dataHash, transcodedDataHash, broadcasterSig, proof); err != nil {
+		if tx, err := c.jobsManagerSession.Verify(jobId, claimId, segmentNumber, string(dataHash), string(transcodedDataHash), broadcasterSig, proof); err != nil {
 			return nil, err
 		} else {
 			glog.Infof("[%v] Submitted tx %v. Verify segment %v in claim %v", c.account.Address.Hex(), tx.Hash().Hex(), segmentNumber, claimId)
@@ -515,7 +515,7 @@ func (c *Client) SubscribeToApproval() (chan types.Log, ethereum.Subscription, e
 	return logCh, sub, nil
 }
 
-func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log) (ethereum.Subscription, error) {
+func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr, transcoderAddr common.Address) (ethereum.Subscription, error) {
 	abiJSON, err := abi.JSON(strings.NewReader(contracts.JobsManagerABI))
 	if err != nil {
 		glog.Errorf("Error decoding ABI into JSON: %v", err)
@@ -524,7 +524,7 @@ func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log)
 
 	q := ethereum.FilterQuery{
 		Addresses: []common.Address{c.jobsManagerAddr},
-		Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(c.account.Address[:], 32))}},
+		Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(transcoderAddr[:], 32))}, []common.Hash{common.BytesToHash(common.LeftPadBytes(broadcasterAddr[:], 32))}},
 	}
 
 	return c.backend.SubscribeFilterLogs(ctx, q, logsCh)
@@ -968,4 +968,12 @@ func (c *Client) GetRoundsManagerAddr() string {
 
 func (c *Client) GetBondingManagerAddr() string {
 	return c.bondingManagerAddr.Hex()
+}
+
+func (c *Client) GetBlockInfoByTxHash(ctx context.Context, hash common.Hash) (blkNum *big.Int, blkHash common.Hash, err error) {
+	blk, _, err := c.Backend().BlockByTxHash(ctx, hash)
+	if err != nil {
+		return nil, common.Hash{}, err
+	}
+	return blk.Number(), blk.Hash(), nil
 }
