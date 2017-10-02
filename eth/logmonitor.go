@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -30,7 +31,7 @@ func NewLogMonitor(eth LivepeerEthClient, broadcasterAddr, transcoderAddr common
 			case l, ok := <-logsCh:
 				if !ok {
 					glog.Infof("logsCh coming back with !ok, quitting...")
-					return
+					continue
 				}
 				_, _, jid := ParseNewJobLog(l)
 
@@ -53,4 +54,8 @@ func NewLogMonitor(eth LivepeerEthClient, broadcasterAddr, transcoderAddr common
 func (m *LogMonitor) SubscribeToJobEvents(callback func(j *Job)) {
 	glog.Infof("LogMonitor adding callback: %v", callback)
 	m.callbacks = append(m.callbacks, callback)
+}
+
+func ParseNewJobLog(log types.Log) (transcoderAddr common.Address, broadcasterAddr common.Address, jid *big.Int) {
+	return common.BytesToAddress(log.Topics[0].Bytes()), common.BytesToAddress(log.Topics[1].Bytes()), new(big.Int).SetBytes(log.Data[0:32])
 }
