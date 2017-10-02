@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"gopkg.in/urfave/cli.v1"
+	"github.com/ethereum/go-ethereum/swarm/network"
 )
 
 const (
@@ -159,6 +160,15 @@ func (w *wizard) run() {
 
 			choice = w.read()
 			switch {
+			case choice == "2":
+				choice = DepositToken
+				break
+			case choice == "3":
+				choice = BroadcastVideo
+				break
+			case choice == "4":
+				choice = StreamVideo
+				break
 			case choice == "5":
 				choice = SetBroadcastConfig
 				break
@@ -180,6 +190,8 @@ func (w *wizard) run() {
 			case choice == "11":
 				choice = ListRegisteredTranscoders
 			break
+			default:
+				choice = InvalidOption
 			}
 
 		}
