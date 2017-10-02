@@ -170,6 +170,7 @@ func TestClaim(t *testing.T) {
 
 	//call Claim
 	count, rc, ec := cm.Claim()
+	timer := time.NewTimer(500 * time.Millisecond)
 	select {
 	case <-rc:
 		count = count - 1
@@ -178,6 +179,8 @@ func TestClaim(t *testing.T) {
 		}
 	case err := <-ec:
 		t.Errorf("Error: %v", err)
+	case <-timer.C:
+		t.Errorf("Timed out")
 	}
 
 	//Make sure the roots are used for calling Claim

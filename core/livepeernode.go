@@ -33,12 +33,10 @@ var ErrBroadcastJob = errors.New("ErrBroadcastJob")
 var ErrBroadcast = errors.New("ErrBroadcast")
 var ErrEOF = errors.New("ErrEOF")
 var BroadcastTimeout = time.Second * 30
-var ClaimInterval = int64(5)
 var EthRpcTimeout = 5 * time.Second
 var EthEventTimeout = 5 * time.Second
 var EthMinedTxTimeout = 60 * time.Second
 var DefaultMasterPlaylistWaitTime = 60 * time.Second
-var VerifyRate = int64(2)
 
 //NodeID can be converted from libp2p PeerID.
 type NodeID string
@@ -142,18 +140,14 @@ func (n *LivepeerNode) EndTranscodeJob(jid *big.Int) error {
 func (n *LivepeerNode) ClaimVerifyAndDistributeFees(cm ClaimManager) error {
 	//Do the claim, wait until it's finished
 	count, rc, ec := cm.Claim()
-	select {
-	case res := <-rc:
-		glog.V(common.SHORT).Infof("Claimed work with transaction: %v", res.TxHash)
-		count--
-		if count == 0 {
-			break
-		}
-	case err := <-ec:
-		glog.Errorf("Error claim work: %v", err)
-		count--
-		if count == 0 {
-			break
+	for count > 0 {
+		select {
+		case res := <-rc:
+			glog.V(common.SHORT).Infof("Claimed work with transaction: %v", res.TxHash)
+			count--
+		case err := <-ec:
+			glog.Errorf("Error claim work: %v", err)
+			count--
 		}
 	}
 
@@ -239,8 +233,14 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 
 			if n.Eth != nil {
 				if jid := n.VideoDB.GetJidByStreamID(StreamID(config.StrmID)); jid != nil {
-					glog.V(common.SHORT).Infof("Calling Endjob for job: %v.", jid)
-					n.Eth.EndJob(jid)
+					job, err := n.Eth.GetJob(jid)
+					if err != nil {
+						return
+					}
+					if job.EndBlock == nil || job.EndBlock.Cmp(big.NewInt(0)) == 0 {
+						glog.V(common.SHORT).Infof("Calling Endjob for job: %v.", jid)
+						n.Eth.EndJob(jid)
+					}
 				}
 			}
 			return
