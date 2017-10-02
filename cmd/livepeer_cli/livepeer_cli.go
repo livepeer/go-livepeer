@@ -12,6 +12,23 @@ import (
 	"gopkg.in/urfave/cli.v1"
 )
 
+const (
+	 NodeStatus = "1"
+	 DepositToken = "2"
+	 BroadcastVideo = "3"
+	 StreamVideo = "4"
+	 SetTranscoderConfig = "5"
+	 SetBroadcastConfig = "6"
+	 Bond = "7"
+	 UnBond = "8"
+	 WithdrawBond = "9"
+	 BecomeTranscoder = "10"
+	 GetTestToken = "11"
+	 GetTestEther = "12"
+	 ListRegisteredTranscoders = "13"
+	 InvalidOption = "20"
+)
+
 func main() {
 	app := cli.NewApp()
 	app.Name = "livepeer-cli"
@@ -108,20 +125,23 @@ func (w *wizard) run() {
 			choice = w.read()
 			switch {
 				case choice == "2":
-					choice = "5"
+					choice = SetTranscoderConfig
 					break
 				case choice == "3":
-					choice = "10"
+					choice = BecomeTranscoder
 					break
 				case choice == "4":
-					choice = "11"
+					choice = GetTestToken
 					break
 				case choice == "5":
-					choice = "12"
+					choice = GetTestEther
 					break
 				case choice == "6":
-					choice = "13"
+					choice = ListRegisteredTranscoders
 					break
+				default:
+					choice = InvalidOption
+
 			}
 
 		} else {
@@ -140,56 +160,56 @@ func (w *wizard) run() {
 			choice = w.read()
 			switch {
 			case choice == "5":
-				choice = "6"
+				choice = SetBroadcastConfig
 				break
 			case choice == "6":
-				choice = "7"
+				choice = Bond
 				break
 			case choice == "7":
-				choice = "8"
+				choice = UnBond
 				break
 			case choice == "8":
-				choice = "9"
+				choice = WithdrawBond
 				break
 			case choice == "9":
-				choice = "11"
+				choice = GetTestToken
 				break
 			case choice == "10":
-				choice = "12"
+				choice = GetTestEther
 				break
 			case choice == "11":
-				choice = "13"
+				choice = ListRegisteredTranscoders
 			break
 			}
 
 		}
 		switch {
-		case choice == "" || choice == "1":
+		case choice == "" || choice == NodeStatus:
 			w.stats(false)
-		case choice == "2":
+		case choice == DepositToken:
 			w.deposit()
-		case choice == "3":
+		case choice == BroadcastVideo:
 			w.broadcast()
-		case choice == "4":
+		case choice == StreamVideo:
 			w.stream()
-		case choice == "5":
+		case choice == SetTranscoderConfig:
 			w.setTranscoderConfig()
-		case choice == "6":
+		case choice == SetBroadcastConfig:
 			w.setBroadcastConfig()
-		case choice == "7":
+		case choice == Bond:
 			w.bond()
-		case choice == "8":
+		case choice == UnBond:
 			w.unbond()
-		case choice == "9":
+		case choice ==  WithdrawBond:
 			w.withdrawBond()
-		case choice == "10":
+		case choice == BecomeTranscoder:
 			w.activateTranscoder()
-		case choice == "11":
+		case choice == GetTestToken:
 			w.requestTokens()
-		case choice == "12":
+		case choice == GetTestEther:
 			fmt.Print("Go to eth-testnet.livepeer.org and use the faucet. (enter to continue)")
 			w.read()
-		case choice == "13":
+		case choice == ListRegisteredTranscoders:
 			w.allTranscoderStats()
 		default:
 			log.Error("That's not something I can do")
