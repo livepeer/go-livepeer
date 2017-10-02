@@ -20,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,21 +31,23 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
+	ipfsApi "github.com/ipfs/go-ipfs-api"
 	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	ipfsd "github.com/livepeer/go-livepeer/ipfs"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
-	"github.com/livepeer/go-livepeer/types"
+	lpmscore "github.com/livepeer/lpms/core"
 )
 
 var ErrKeygen = errors.New("ErrKeygen")
 var EthRpcTimeout = 10 * time.Second
 var EthEventTimeout = 120 * time.Second
+var ErrIpfs = errors.New("ErrIpfs")
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -96,6 +99,9 @@ func main() {
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
+	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
+	ipfsGatewayPort := flag.Int("ipfsGatewayPort", 8080, "IPFS gateway port")
+	ipfsApiPort := flag.Int("ipfsApiPort", 5001, "IPFS api port")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
 	version := flag.Bool("version", false, "Print out the version")
 
@@ -253,17 +259,19 @@ func main() {
 		n.EthAccount = acct.Address.String()
 		n.EthPassword = *ethPassword
 
+		//Create LogMonitor, the addresses act as filters.
+		var logMonitor *eth.LogMonitor
 		if *transcoder {
-			logsCh := make(chan ethtypes.Log)
-			logsSub, err := n.Eth.SubscribeToJobEvent(context.Background(), logsCh)
-			if err != nil {
-				glog.Errorf("Error subscribing to job event: %v", err)
-			}
+			logMonitor = eth.NewLogMonitor(client, common.Address{}, client.Account().Address)
+		} else {
+			logMonitor = eth.NewLogMonitor(client, client.Account().Address, common.Address{})
+		}
+		logMonitor.SubscribeToJobEvents(func(j *eth.Job) {
+			n.VideoDB.AddJid(core.StreamID(j.StreamId), j.JobId)
+		})
 
-			defer close(logsCh)
-			defer logsSub.Unsubscribe()
-
-			if err := setupTranscoder(n, logsCh); err != nil {
+		if *transcoder {
+			if err := setupTranscoder(n, logMonitor); err != nil {
 				glog.Errorf("Error setting up transcoder: %v", err)
 				return
 			}
@@ -272,11 +280,20 @@ func main() {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	}
 
+	var ipfsEc chan error
+	if *transcoder {
+		if ipfsEc, err = setupIpfs(n, *ipfsPath, *ipfsApiPort, *ipfsGatewayPort); err != nil {
+			glog.Errorf("Error setting up ipfs: %v", err)
+		}
+	}
+
 	//Set up the media server
 	glog.Infof("\n\nSetting up Media Server")
 	s := server.NewLivepeerServer(*rtmpPort, *httpPort, "", n)
 	ec := make(chan error)
 	msCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	go func() {
 		s.StartWebserver()
 		ec <- s.StartMediaServer(msCtx, *maxPricePerSegment, *transcodingOptions)
@@ -287,11 +304,12 @@ func main() {
 	select {
 	case err := <-ec:
 		glog.Infof("Error from media server: %v", err)
-		cancel()
+		return
+	case err := <-ipfsEc:
+		glog.Infof("Error from IPFS: %v", err)
 		return
 	case <-msCtx.Done():
 		glog.Infof("MediaServer Done()")
-		cancel()
 		return
 	case sig := <-c:
 		glog.Infof("Exiting Livepeer: %v", sig)
@@ -407,7 +425,31 @@ func getEthAccount(datadir string, addr string) (accounts.Account, error) {
 	return accts[0], nil
 }
 
-func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) error {
+func startIpfs(ctx context.Context, ipfsPath string, gatewayPort int, apiPort int) error {
+	// Set IPFS config path
+	if err := ipfsd.ConfigIpfsPath(ipfsPath); err != nil {
+		return err
+	}
+
+	// Configure gateway
+	if err := ipfsd.ConfigIpfsGateway(ipfsPath, gatewayPort); err != nil {
+		return err
+	}
+
+	// Configure api
+	if err := ipfsd.ConfigIpfsApi(ipfsPath, apiPort); err != nil {
+		return err
+	}
+
+	// Start daemon
+	if err := ipfsd.StartIpfsDaemon(ctx, ipfsPath); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
@@ -428,73 +470,79 @@ func setupTranscoder(n *core.LivepeerNode, logsCh chan ethtypes.Log) error {
 	rm := core.NewRewardManager(time.Second*5, n.Eth)
 	go rm.Start(context.Background())
 
-	go func() {
-		for {
-			select {
-			case l, ok := <-logsCh:
-				if !ok {
-					// Logs channel closed, exit loop
-					return
-				}
-
-				_, _, jid := eth.ParseNewJobLog(l)
-
-				job, err := n.Eth.GetJob(jid)
-				if err != nil {
-					glog.Errorf("Error getting job info: %v", err)
-					continue
-				}
-
-				//Check if broadcaster has enough funds
-				bDeposit, err := n.Eth.GetBroadcasterDeposit(job.BroadcasterAddress)
-				if err != nil {
-					glog.Errorf("Error getting broadcaster deposit: %v", err)
-					continue
-				}
-				if bDeposit.Cmp(big.NewInt(0)) == 0 {
-					glog.Errorf("Broadcaster does not have enough funds. Skipping job")
-					continue
-				}
-
-				//Create Transcode Config
-				tProfiles, err := txDataToVideoProfile(job.TranscodingOptions)
-				if err != nil {
-					glog.Errorf("Error processing job transcoding options: %v", err)
-					continue
-				}
-
-				config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: jid, PerformOnchainClaim: true}
-				glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", jid, job.StreamId, job.TranscodingOptions, config)
-
-				//Do The Transcoding
-				cm := core.NewBasicClaimManager(job.StreamId, jid, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth)
-				tr := transcoder.NewFFMpegSegmentTranscoder([]transcoder.TranscodeProfile{transcoder.P360p30fps16x9, transcoder.P240p30fps16x9}, "", n.WorkDir)
-				strmIDs, err := n.TranscodeAndBroadcast(config, cm, tr)
-				if err != nil {
-					glog.Errorf("Transcode Error: %v", err)
-					continue
-				}
-
-				//Notify Broadcaster
-				sid := core.StreamID(job.StreamId)
-				vids := make(map[core.StreamID]types.VideoProfile)
-				for i, vp := range tProfiles {
-					vids[strmIDs[i]] = vp
-				}
-				if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
-					glog.Errorf("Notify Broadcaster Error: %v", err)
-				}
-			}
+	//Set up callback for when a job is assigned to us (via monitoring the eth log)
+	lm.SubscribeToJobEvents(func(job *eth.Job) {
+		//Check if broadcaster has enough funds
+		bDeposit, err := n.Eth.GetBroadcasterDeposit(job.BroadcasterAddress)
+		if err != nil {
+			glog.Errorf("Error getting broadcaster deposit: %v", err)
+			return
 		}
-	}()
+		if bDeposit.Cmp(big.NewInt(0)) == 0 {
+			glog.Errorf("Broadcaster does not have enough funds. Skipping job")
+			return
+		}
+
+		//Create transcode config, make sure the profiles are sorted
+		tProfiles, err := txDataToVideoProfile(job.TranscodingOptions)
+		if err != nil {
+			glog.Errorf("Error processing job transcoding options: %v", err)
+			return
+		}
+		sort.Sort(lpmscore.ByName(tProfiles))
+
+		config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: job.JobId, PerformOnchainClaim: true}
+		glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.TranscodingOptions, config)
+
+		//Do The Transcoding
+		cm := core.NewBasicClaimManager(job.StreamId, job.JobId, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth, n.Ipfs)
+		tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.WorkDir)
+		strmIDs, err := n.TranscodeAndBroadcast(config, cm, tr)
+		if err != nil {
+			glog.Errorf("Transcode Error: %v", err)
+			return
+		}
+
+		//Notify Broadcaster
+		sid := core.StreamID(job.StreamId)
+		vids := make(map[core.StreamID]lpmscore.VideoProfile)
+		for i, vp := range tProfiles {
+			vids[strmIDs[i]] = vp
+		}
+		if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
+			glog.Errorf("Notify Broadcaster Error: %v", err)
+		}
+	})
 
 	return nil
 }
 
-func txDataToVideoProfile(txData string) ([]types.VideoProfile, error) {
-	profiles := make([]types.VideoProfile, 0)
+func setupIpfs(n *core.LivepeerNode, ipfsPath string, ipfsApiPort, ipfsGatewayPort int) (chan error, error) {
+	ipfsEc := make(chan error)
+	ipfsCtx, ipfsCancel := context.WithCancel(context.Background())
+	defer ipfsCancel()
+
+	go func() {
+		ipfsEc <- startIpfs(ipfsCtx, ipfsPath, ipfsGatewayPort, ipfsApiPort)
+	}()
+
+	time.Sleep(3 * time.Second)
+
+	ipfs := ipfsApi.NewShell(fmt.Sprintf("localhost:%v", ipfsApiPort))
+	if ipfs == nil {
+		glog.Errorf("Error connecting to IPFS")
+		return nil, ErrIpfs
+	}
+
+	n.Ipfs = ipfs
+
+	return ipfsEc, nil
+}
+
+func txDataToVideoProfile(txData string) ([]lpmscore.VideoProfile, error) {
+	profiles := make([]lpmscore.VideoProfile, 0)
 	for _, txp := range strings.Split(txData, ",") {
-		p, ok := types.VideoProfileLookup[txp]
+		p, ok := lpmscore.VideoProfileLookup[txp]
 		if !ok {
 			glog.Errorf("Cannot find video profile for job: %v", txp)
 			return nil, core.ErrTranscode

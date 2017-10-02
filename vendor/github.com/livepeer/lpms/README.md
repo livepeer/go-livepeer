@@ -1,3 +1,5 @@
+[![Build Status](https://circleci.com/gh/livepeer/lpms.svg?style=shield&circle-token=e33534f6f4e2a6af19bb1596d7b72767a246cbab)](https://circleci.com/gh/livepeer/lpms/tree/master)
+
 # LPMS - Livepeer media server
 
 LPMS is a media server that can run independently, or on top of the [Livepeer](https://livepeer.org) 

@@ -22,8 +22,10 @@ import (
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
 
-var ErrNotFound = errors.New("NotFound")
-var ErrRTMP = errors.New("RTMP Error")
+var ErrMasterPlaylistNotFound = errors.New("ErrMasterPlaylistNotFound")
+var ErrNotMasterPlaylistID = errors.New("ErrNotMasterPlaylistID")
+var ErrRTMP = errors.New("ErrRTMP")
+var ErrHLS = errors.New("ErrHLS")
 var PlaylistWaittime = 6 * time.Second
 
 //VidPlayer is the module that handles playing video. For now we only support RTMP and HLS play.
@@ -33,7 +35,7 @@ type VidPlayer struct {
 	VodPath         string
 }
 
-func defaultRtmpPlayHandler(url *url.URL) (stream.RTMPVideoStream, error) { return nil, ErrNotFound }
+func defaultRtmpPlayHandler(url *url.URL) (stream.RTMPVideoStream, error) { return nil, ErrRTMP }
 
 //NewVidPlayer creates a new video player
 func NewVidPlayer(rtmpS *joy4rtmp.Server, vodPath string) *VidPlayer {
@@ -102,11 +104,13 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		//Could be a master playlist, or a media playlist
 		var masterPl *m3u8.MasterPlaylist
 		var mediaPl *m3u8.MediaPlaylist
-		masterPl, err := getMasterPlaylist(r.URL)
+		masterPl, err := getMasterPlaylist(r.URL) //Return ErrNotMasterPlaylistID to by past the error case
 		if err != nil {
-			glog.Errorf("Error getting HLS master playlist: %v", err)
-			http.Error(w, "Error getting HLS master playlist", 500)
-			return
+			if err != ErrNotMasterPlaylistID {
+				glog.Errorf("Error getting HLS master playlist: %v", err)
+				http.Error(w, "Error getting HLS master playlist", 500)
+				return
+			}
 		}
 		if masterPl != nil && len(masterPl.Variants) > 0 {
 			w.Header().Set("Connection", "keep-alive")
@@ -154,7 +158,7 @@ func handleVOD(url *url.URL, vodPath string, w http.ResponseWriter) error {
 		dat, err := ioutil.ReadFile(plName)
 		if err != nil {
 			glog.Errorf("Cannot find file: %v", plName)
-			return ErrNotFound
+			return ErrHLS
 		}
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(url.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -167,7 +171,7 @@ func handleVOD(url *url.URL, vodPath string, w http.ResponseWriter) error {
 		dat, err := ioutil.ReadFile(segName)
 		if err != nil {
 			glog.Errorf("Cannot find file: %v", segName)
-			return ErrNotFound
+			return ErrHLS
 		}
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(url.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")

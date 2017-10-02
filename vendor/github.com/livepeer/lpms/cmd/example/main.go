@@ -62,6 +62,7 @@ func main() {
 	//Streams needed for transcoding:
 	var rtmpStrm stream.RTMPVideoStream
 	var hlsStrm stream.HLSVideoStream
+	var manifest stream.HLSVideoManifest
 	var cancelSeg context.CancelFunc
 
 	lpms.HandleRTMPPublish(
@@ -77,8 +78,8 @@ func main() {
 			rtmpStrm = rs
 
 			//Segment the video into HLS (If we need multiple outlets for the HLS stream, we'd need to create a buffer.  But here we only have one outlet for the transcoder)
-			hlsStrm = stream.NewBasicHLSVideoStream(randString(10), time.Second*10, 3)
-			var subscriber func(stream.HLSVideoStream, string, *stream.HLSSegment)
+			hlsStrm = stream.NewBasicHLSVideoStream(randString(10), 3)
+			var subscriber func(*stream.HLSSegment, bool)
 			subscriber, err = transcode(hlsStrm)
 			if err != nil {
 				glog.Errorf("Error transcoding: %v", err)
@@ -97,6 +98,11 @@ func main() {
 			}()
 			glog.Infof("HLS StreamID: %v", hlsStrm.GetStreamID())
 
+			mid := randString(10)
+			manifest = stream.NewBasicHLSVideoManifest(mid)
+			pl, _ := hlsStrm.GetStreamPlaylist()
+			variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", mid), Chunklist: pl, VariantParams: m3u8.VariantParams{}}
+			manifest.AddVideoStream(hlsStrm, variant)
 			return nil
 		},
 		//endStream
@@ -112,7 +118,7 @@ func main() {
 		//getMasterPlaylist
 		func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 			if parseStreamID(url.Path) == "transcoded" && hlsStrm != nil {
-				mpl, err := hlsStrm.GetMasterPlaylist()
+				mpl, err := manifest.GetManifest()
 				if err != nil {
 					glog.Errorf("Error getting master playlist: %v", err)
 					return nil, err
@@ -127,7 +133,7 @@ func main() {
 			//Wait for the HLSBuffer gets populated, get the playlist from the buffer, and return it.
 			start := time.Now()
 			for time.Since(start) < HLSWaitTime {
-				pl, err := hlsStrm.GetVariantPlaylist(parseStreamID(url.Path))
+				pl, err := hlsStrm.GetStreamPlaylist()
 				if err != nil || pl.Segments[0] == nil || pl.Segments[0].URI == "" {
 					if err == stream.ErrEOF {
 						return nil, err
@@ -143,7 +149,7 @@ func main() {
 		},
 		//getSegment
 		func(url *url.URL) ([]byte, error) {
-			seg, err := hlsStrm.GetHLSSegment(parseStreamID(url.Path), getHLSSegmentName(url))
+			seg, err := hlsStrm.GetHLSSegment(getHLSSegmentName(url))
 			if err != nil {
 				glog.Errorf("Error getting segment: %v", err)
 				return nil, err
@@ -165,7 +171,7 @@ func main() {
 	lpms.Start(context.Background())
 }
 
-func transcode(hlsStream stream.HLSVideoStream) (func(stream.HLSVideoStream, string, *stream.HLSSegment), error) {
+func transcode(hlsStream stream.HLSVideoStream) (func(*stream.HLSSegment, bool), error) {
 	//Create Transcoder
 	profiles := []transcoder.TranscodeProfile{
 		transcoder.P144p30fps16x9,
@@ -176,31 +182,31 @@ func transcode(hlsStream stream.HLSVideoStream) (func(stream.HLSVideoStream, str
 
 	//Create variants in the stream
 	strmIDs := make([]string, len(profiles), len(profiles))
-	for i, p := range profiles {
-		strmID := randString(10)
-		strmIDs[i] = strmID
-		pl, _ := m3u8.NewMediaPlaylist(100, 100)
-		hlsStream.AddVariant(strmID, &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: transcoder.TranscodeProfileToVariantParams(p)})
-	}
+	// for i, p := range profiles {
+	// 	strmID := randString(10)
+	// 	strmIDs[i] = strmID
+	// 	pl, _ := m3u8.NewMediaPlaylist(100, 100)
+	// 	// hlsStream.AddVariant(strmID, &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: transcoder.TranscodeProfileToVariantParams(p)})
+	// }
 
-	subscriber := func(strm stream.HLSVideoStream, strmID string, seg *stream.HLSSegment) {
+	subscriber := func(seg *stream.HLSSegment, eof bool) {
 		//If we get a new video segment for the original HLS stream, do the transcoding.
 		// glog.Infof("Got seg: %v", seg.Name)
-		if strmID == hlsStream.GetStreamID() {
-			//Transcode stream
-			tData, err := t.Transcode(seg.Data)
-			if err != nil {
-				glog.Errorf("Error transcoding: %v", err)
-			}
+		// if strmID == hlsStream.GetStreamID() {
+		//Transcode stream
+		tData, err := t.Transcode(seg.Data)
+		if err != nil {
+			glog.Errorf("Error transcoding: %v", err)
+		}
 
-			//Insert into HLS stream
-			for i, strmID := range strmIDs {
-				glog.Infof("Inserting transcoded seg %v into strm: %v", len(tData[i]), strmID)
-				if err := hlsStream.AddHLSSegment(strmID, &stream.HLSSegment{SeqNo: seg.SeqNo, Name: fmt.Sprintf("%v_%v.ts", strmID, seg.SeqNo), Data: tData[i], Duration: 8}); err != nil {
-					glog.Errorf("Error writing transcoded seg: %v", err)
-				}
+		//Insert into HLS stream
+		for i, strmID := range strmIDs {
+			glog.Infof("Inserting transcoded seg %v into strm: %v", len(tData[i]), strmID)
+			if err := hlsStream.AddHLSSegment(&stream.HLSSegment{SeqNo: seg.SeqNo, Name: fmt.Sprintf("%v_%v.ts", strmID, seg.SeqNo), Data: tData[i], Duration: 8}); err != nil {
+				glog.Errorf("Error writing transcoded seg: %v", err)
 			}
 		}
+		// }
 	}
 
 	return subscriber, nil

@@ -20,7 +20,7 @@ import (
 	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/types"
+	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/transcoder"
 )
@@ -86,10 +86,11 @@ func (n *StubVideoNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterP
 }
 
 type StubBroadcaster struct {
-	T      *testing.T
-	StrmID string
-	SeqNo  uint64
-	Data   []byte
+	T         *testing.T
+	StrmID    string
+	SeqNo     uint64
+	Data      []byte
+	FinishMsg bool
 }
 
 func (n *StubBroadcaster) IsWorking() bool { return true }
@@ -113,7 +114,10 @@ func (n *StubBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 	}
 	return nil
 }
-func (n *StubBroadcaster) Finish() error { return nil }
+func (n *StubBroadcaster) Finish() error {
+	n.FinishMsg = true
+	return nil
+}
 
 type StubSubscriber struct {
 	T *testing.T
@@ -140,11 +144,11 @@ func TestTranscode(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, &StubVideoNetwork{T: t}, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, ".tmp")
 
 	//Call transcode
-	p := []types.VideoProfile{types.P144p30fps16x9, types.P240p30fps16x9}
+	p := []lpmscore.VideoProfile{lpmscore.P144p30fps16x9, lpmscore.P240p30fps16x9}
 
-	tProfiles := make([]transcoder.TranscodeProfile, len(p), len(p))
+	tProfiles := make([]lpmscore.VideoProfile, len(p), len(p))
 	for i, vp := range p {
-		tProfiles[i] = transcoder.TranscodeProfileLookup[vp.Name]
+		tProfiles[i] = lpmscore.VideoProfileLookup[vp.Name]
 	}
 	tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.WorkDir)
 	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: "strmID", Profiles: p}, nil, tr)
@@ -266,45 +270,46 @@ func monitorChan(intChan chan int) {
 		}
 	}
 }
-func TestCreateTranscodeJob(t *testing.T) {
-	// priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	// node, err := bnet.NewNode(15000, priv, pub, nil)
-	// if err != nil {
-	// 	glog.Errorf("Error creating a new node: %v", err)
-	// 	return
-	// }
-	// nw, err := bnet.NewBasicVideoNetwork(node)
-	// if err != nil {
-	// 	glog.Errorf("Cannot create network node: %v", err)
-	// 	return
-	// }
 
-	// seth := &eth.StubClient{}
-	// n, _ := NewLivepeerNode(seth, nw, "./tmp")
-	// strmID, _ := MakeStreamID(n.Identity, RandomVideoID(), "")
-	// err = n.CreateTranscodeJob(strmID, []types.VideoProfile{types.P720p60fps16x9}, 999999999999)
-	// if err == nil {
-	// 	t.Errorf("Expecting error since no broadcast stream in streamDB")
-	// }
+// func TestCreateTranscodeJob(t *testing.T) {
+// priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
+// node, err := bnet.NewNode(15000, priv, pub, nil)
+// if err != nil {
+// 	glog.Errorf("Error creating a new node: %v", err)
+// 	return
+// }
+// nw, err := bnet.NewBasicVideoNetwork(node)
+// if err != nil {
+// 	glog.Errorf("Cannot create network node: %v", err)
+// 	return
+// }
 
-	// n.StreamDB.AddNewHLSStream(strmID)
-	// err = n.CreateTranscodeJob(strmID, []types.VideoProfile{types.P720p60fps16x9}, 999999999999)
-	// if err != nil {
-	// 	t.Errorf("Error creating transcoding job")
-	// }
+// seth := &eth.StubClient{}
+// n, _ := NewLivepeerNode(seth, nw, "./tmp")
+// strmID, _ := MakeStreamID(n.Identity, RandomVideoID(), "")
+// err = n.CreateTranscodeJob(strmID, []types.VideoProfile{types.P720p60fps16x9}, 999999999999)
+// if err == nil {
+// 	t.Errorf("Expecting error since no broadcast stream in streamDB")
+// }
 
-	// if seth.StrmID != strmID.String() {
-	// 	t.Errorf("Expecting strmID to be: %v", strmID)
-	// }
+// n.StreamDB.AddNewHLSStream(strmID)
+// err = n.CreateTranscodeJob(strmID, []types.VideoProfile{types.P720p60fps16x9}, 999999999999)
+// if err != nil {
+// 	t.Errorf("Error creating transcoding job")
+// }
 
-	// if strings.Trim(string(seth.TOpts[:]), "\x00") != types.P720p60fps16x9.Name {
-	// 	t.Errorf("Expecting transcode options to be %v, but got %v", types.P720p60fps16x9.Name, string(seth.TOpts[:]))
-	// }
+// if seth.StrmID != strmID.String() {
+// 	t.Errorf("Expecting strmID to be: %v", strmID)
+// }
 
-	// if big.NewInt(999999999999).Cmp(seth.MaxPrice) != 0 {
-	// 	t.Errorf("Expecting price to be 999999999999, got but %v", seth.MaxPrice)
-	// }
-}
+// if strings.Trim(string(seth.TOpts[:]), "\x00") != types.P720p60fps16x9.Name {
+// 	t.Errorf("Expecting transcode options to be %v, but got %v", types.P720p60fps16x9.Name, string(seth.TOpts[:]))
+// }
+
+// if big.NewInt(999999999999).Cmp(seth.MaxPrice) != 0 {
+// 	t.Errorf("Expecting price to be 999999999999, got but %v", seth.MaxPrice)
+// }
+// }
 
 func TestNotifyBroadcaster(t *testing.T) {
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
@@ -323,7 +328,7 @@ func TestNotifyBroadcaster(t *testing.T) {
 	sn := &StubVideoNetwork{}
 	n.VideoNetwork = sn
 
-	err = n.NotifyBroadcaster(n.Identity, "strmid", map[StreamID]types.VideoProfile{"strmid1": types.P240p30fps16x9})
+	err = n.NotifyBroadcaster(n.Identity, "strmid", map[StreamID]lpmscore.VideoProfile{"strmid1": lpmscore.P240p30fps16x9})
 	if err != nil {
 		t.Errorf("Error notifying broadcaster: %v", err)
 	}
@@ -336,8 +341,8 @@ func TestNotifyBroadcaster(t *testing.T) {
 		t.Errorf("Expecting strmid, got %v", sn.strmID)
 	}
 
-	if sn.tResult["strmid1"] != types.P240p30fps16x9.Name {
-		t.Errorf("Expecting %v, got %v", types.P240p30fps16x9.Name, sn.tResult["strmid1"])
+	if sn.tResult["strmid1"] != lpmscore.P240p30fps16x9.Name {
+		t.Errorf("Expecting %v, got %v", lpmscore.P240p30fps16x9.Name, sn.tResult["strmid1"])
 	}
 }
 

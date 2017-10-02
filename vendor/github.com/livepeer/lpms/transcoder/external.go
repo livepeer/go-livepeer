@@ -76,7 +76,7 @@ func (et *ExternalTranscoder) StartDownload(ctx context.Context, hlsMux stream.H
 	for {
 		select {
 		case seg := <-sc:
-			if err := hlsMux.AddHLSSegment(hlsMux.GetStreamID(), seg); err != nil {
+			if err := hlsMux.AddHLSSegment(seg); err != nil {
 				return err
 			}
 		case err := <-ec:

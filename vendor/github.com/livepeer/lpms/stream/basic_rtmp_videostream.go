@@ -16,6 +16,7 @@ type BasicRTMPVideoStream struct {
 	streamID    string
 	buffer      *streamBuffer
 	RTMPTimeout time.Duration
+	header      []av.CodecData
 }
 
 //NewBasicRTMPVideoStream creates a new BasicRTMPVideoStream.  The default RTMPTimeout is set to 10 milliseconds because we assume all RTMP streams are local.
@@ -77,6 +78,13 @@ func (s *BasicRTMPVideoStream) ReadRTMPFromStream(ctx context.Context, dst av.Mu
 func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error {
 	defer src.Close()
 
+	//Set header in case we want to use it.
+	h, err := src.Streams()
+	if err != nil {
+		return err
+	}
+	s.header = h
+
 	c := make(chan error, 1)
 	go func() {
 		c <- func() error {
@@ -124,4 +132,24 @@ func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.Dem
 
 func (s BasicRTMPVideoStream) String() string {
 	return fmt.Sprintf("StreamID: %v, Type: %v", s.GetStreamID(), s.GetStreamFormat())
+}
+
+func (s BasicRTMPVideoStream) Height() int {
+	for _, cd := range s.header {
+		if cd.Type().IsVideo() {
+			return cd.(av.VideoCodecData).Height()
+		}
+	}
+
+	return 0
+}
+
+func (s BasicRTMPVideoStream) Width() int {
+	for _, cd := range s.header {
+		if cd.Type().IsVideo() {
+			return cd.(av.VideoCodecData).Width()
+		}
+	}
+
+	return 0
 }

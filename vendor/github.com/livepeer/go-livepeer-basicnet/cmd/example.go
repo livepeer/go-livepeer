@@ -18,7 +18,6 @@ import (
 var timer time.Time
 
 func main() {
-
 	p := flag.Int("p", 15000, "port")
 	id := flag.String("id", "", "id")
 	addr := flag.String("addr", "", "addr")
@@ -76,8 +75,8 @@ func setHandler(n *basicnet.NetworkNode) {
 }
 
 func streamHandler(ws *basicnet.BasicStream) error {
-	var msg basicnet.Msg
-	if err := ws.ReceiveMessage(&msg); err != nil {
+	msg, err := ws.ReceiveMessage()
+	if err != nil {
 		glog.Errorf("Got error decoding msg: %v", err)
 		return err
 	}

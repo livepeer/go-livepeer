@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/transcoder"
 
 	"github.com/livepeer/lpms/stream"
@@ -19,7 +20,6 @@ import (
 	eth "github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/types"
 )
 
 func (s *LivepeerServer) StartWebserver() {
@@ -31,16 +31,16 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		ps := []types.VideoProfile{types.P240p30fps16x9, types.P360p30fps16x9}
-		tps := []transcoder.TranscodeProfile{transcoder.P240p30fps16x9, transcoder.P360p30fps16x9}
-		tr := transcoder.NewFFMpegSegmentTranscoder(tps, "", s.LivepeerNode.WorkDir)
+		ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps16x9}
+		// tps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps16x9}
+		tr := transcoder.NewFFMpegSegmentTranscoder(ps, "", s.LivepeerNode.WorkDir)
 		ids, err := s.LivepeerNode.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: strmID, Profiles: ps}, nil, tr)
 		if err != nil {
 			glog.Errorf("Error transcoding: %v", err)
 			http.Error(w, "Error transcoding.", 500)
 		}
 
-		vids := make(map[core.StreamID]types.VideoProfile)
+		vids := make(map[core.StreamID]lpmscore.VideoProfile)
 		for i, vp := range ps {
 			vids[ids[i]] = vp
 		}
@@ -73,9 +73,9 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		profiles := []types.VideoProfile{}
+		profiles := []lpmscore.VideoProfile{}
 		for _, pName := range strings.Split(transcodingOptions, ",") {
-			p, ok := types.VideoProfileLookup[pName]
+			p, ok := lpmscore.VideoProfileLookup[pName]
 			if ok {
 				profiles = append(profiles, p)
 			}
@@ -85,7 +85,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		BroadcastPrice = big.NewInt(int64(price))
+		BroadcastPrice = uint64(price)
 		BroadcastJobVideoProfiles = profiles
 
 		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
@@ -97,7 +97,7 @@ func (s *LivepeerServer) StartWebserver() {
 			pNames = append(pNames, p.Name)
 		}
 		config := struct {
-			MaxPricePerSegment *big.Int
+			MaxPricePerSegment uint64
 			TranscodingOptions string
 		}{
 			BroadcastPrice,
@@ -114,8 +114,8 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/getAvailableTranscodingOptions", func(w http.ResponseWriter, r *http.Request) {
-		transcodingOptions := make([]string, 0, len(types.VideoProfileLookup))
-		for opt := range types.VideoProfileLookup {
+		transcodingOptions := make([]string, 0, len(lpmscore.VideoProfileLookup))
+		for opt := range lpmscore.VideoProfileLookup {
 			transcodingOptions = append(transcodingOptions, opt)
 		}
 
@@ -416,7 +416,7 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {
-		strmIDs := s.LivepeerNode.StreamDB.GetStreamIDs(stream.HLS)
+		strmIDs := s.LivepeerNode.VideoDB.GetStreamIDs(stream.HLS)
 		ret := make([]map[string]string, 0)
 		for _, strmID := range strmIDs {
 			ret = append(ret, map[string]string{"format": "hls", "streamID": strmID.String()})
@@ -447,7 +447,7 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf("StreamDB: %v", s.LivepeerNode.StreamDB)))
+		w.Write([]byte(fmt.Sprintf("VideoDB: %v", s.LivepeerNode.VideoDB)))
 		w.Write([]byte(fmt.Sprintf("\n\nVideoNetwork: %v", s.LivepeerNode.VideoNetwork)))
 		w.Write([]byte(fmt.Sprintf("\n\nmediaserver sub timer: %v", s.hlsSubTimer)))
 	})

@@ -32,7 +32,11 @@ func (self *VidListener) HandleRTMPPublish(
 	self.RtmpServer.HandlePublish = func(conn *joy4rtmp.Conn) {
 		glog.V(2).Infof("RTMP server got upstream: %v", conn.URL)
 
-		s := stream.NewBasicRTMPVideoStream(makeStreamID(conn.URL))
+		strmID := makeStreamID(conn.URL)
+		if strmID == "" {
+			return
+		}
+		s := stream.NewBasicRTMPVideoStream(strmID)
 		ctx, cancel := context.WithCancel(context.Background())
 		ec := make(chan error)
 		go func() { ec <- s.WriteRTMPToStream(ctx, conn) }()
