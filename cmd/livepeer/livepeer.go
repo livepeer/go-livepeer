@@ -20,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,12 +41,13 @@ import (
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
-	"github.com/livepeer/go-livepeer/types"
+	lpmscore "github.com/livepeer/lpms/core"
 )
 
 var ErrKeygen = errors.New("ErrKeygen")
 var EthRpcTimeout = 10 * time.Second
 var EthEventTimeout = 120 * time.Second
+var ErrIpfs = errors.New("ErrIpfs")
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -186,24 +188,6 @@ func main() {
 		}
 	}
 
-	ipfsEc := make(chan error)
-	ipfsCtx, ipfsCancel := context.WithCancel(context.Background())
-	defer ipfsCancel()
-
-	go func() {
-		ipfsEc <- startIpfs(ipfsCtx, *ipfsPath, *ipfsGatewayPort, *ipfsApiPort)
-	}()
-
-	time.Sleep(3 * time.Second)
-
-	ipfs := ipfsApi.NewShell(fmt.Sprintf("localhost:%v", *ipfsApiPort))
-	if ipfs == nil {
-		glog.Errorf("Error connecting to IPFS")
-		return
-	}
-
-	n.Ipfs = ipfs
-
 	var gethCmd *exec.Cmd
 	//Set up ethereum-related stuff
 	if *ethDatadir != "" && !*offchain {
@@ -274,9 +258,15 @@ func main() {
 		n.Eth = client
 		n.EthAccount = acct.Address.String()
 		n.EthPassword = *ethPassword
-		logMonitor := eth.NewLogMonitor(client)
+
+		//Create LogMonitor, the addresses act as filters.
+		var logMonitor *eth.LogMonitor
+		if *transcoder {
+			logMonitor = eth.NewLogMonitor(client, common.Address{}, client.Account().Address)
+		} else {
+			logMonitor = eth.NewLogMonitor(client, client.Account().Address, common.Address{})
+		}
 		logMonitor.SubscribeToJobEvents(func(j *eth.Job) {
-			glog.Infof("Adding jid %v for strmID: %v", j.JobId, j.StreamId)
 			n.VideoDB.AddJid(core.StreamID(j.StreamId), j.JobId)
 		})
 
@@ -288,6 +278,13 @@ func main() {
 		}
 	} else {
 		glog.Infof("***Livepeer is in off-chain mode***")
+	}
+
+	var ipfsEc chan error
+	if *transcoder {
+		if ipfsEc, err = setupIpfs(n, *ipfsPath, *ipfsApiPort, *ipfsGatewayPort); err != nil {
+			glog.Errorf("Error setting up ipfs: %v", err)
+		}
 	}
 
 	//Set up the media server
@@ -473,6 +470,7 @@ func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 	rm := core.NewRewardManager(time.Second*5, n.Eth)
 	go rm.Start(context.Background())
 
+	//Set up callback for when a job is assigned to us (via monitoring the eth log)
 	lm.SubscribeToJobEvents(func(job *eth.Job) {
 		//Check if broadcaster has enough funds
 		bDeposit, err := n.Eth.GetBroadcasterDeposit(job.BroadcasterAddress)
@@ -485,28 +483,29 @@ func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 			return
 		}
 
-		//Create Transcode Config
+		//Create transcode config, make sure the profiles are sorted
 		tProfiles, err := txDataToVideoProfile(job.TranscodingOptions)
 		if err != nil {
 			glog.Errorf("Error processing job transcoding options: %v", err)
 			return
 		}
+		sort.Sort(lpmscore.ByName(tProfiles))
 
 		config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: job.JobId, PerformOnchainClaim: true}
 		glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.TranscodingOptions, config)
 
 		//Do The Transcoding
-		cm := core.NewBasicClaimManager(job.StreamId, jid, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth, n.Ipfs)
-		tr := transcoder.NewFFMpegSegmentTranscoder([]transcoder.TranscodeProfile{transcoder.P360p30fps16x9, transcoder.P240p30fps16x9}, "", n.WorkDir)
+		cm := core.NewBasicClaimManager(job.StreamId, job.JobId, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth, n.Ipfs)
+		tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.WorkDir)
 		strmIDs, err := n.TranscodeAndBroadcast(config, cm, tr)
 		if err != nil {
 			glog.Errorf("Transcode Error: %v", err)
-			continue
+			return
 		}
 
 		//Notify Broadcaster
 		sid := core.StreamID(job.StreamId)
-		vids := make(map[core.StreamID]types.VideoProfile)
+		vids := make(map[core.StreamID]lpmscore.VideoProfile)
 		for i, vp := range tProfiles {
 			vids[strmIDs[i]] = vp
 		}
@@ -518,10 +517,32 @@ func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 	return nil
 }
 
-func txDataToVideoProfile(txData string) ([]types.VideoProfile, error) {
-	profiles := make([]types.VideoProfile, 0)
+func setupIpfs(n *core.LivepeerNode, ipfsPath string, ipfsApiPort, ipfsGatewayPort int) (chan error, error) {
+	ipfsEc := make(chan error)
+	ipfsCtx, ipfsCancel := context.WithCancel(context.Background())
+	defer ipfsCancel()
+
+	go func() {
+		ipfsEc <- startIpfs(ipfsCtx, ipfsPath, ipfsGatewayPort, ipfsApiPort)
+	}()
+
+	time.Sleep(3 * time.Second)
+
+	ipfs := ipfsApi.NewShell(fmt.Sprintf("localhost:%v", ipfsApiPort))
+	if ipfs == nil {
+		glog.Errorf("Error connecting to IPFS")
+		return nil, ErrIpfs
+	}
+
+	n.Ipfs = ipfs
+
+	return ipfsEc, nil
+}
+
+func txDataToVideoProfile(txData string) ([]lpmscore.VideoProfile, error) {
+	profiles := make([]lpmscore.VideoProfile, 0)
 	for _, txp := range strings.Split(txData, ",") {
-		p, ok := types.VideoProfileLookup[txp]
+		p, ok := lpmscore.VideoProfileLookup[txp]
 		if !ok {
 			glog.Errorf("Cannot find video profile for job: %v", txp)
 			return nil, core.ErrTranscode

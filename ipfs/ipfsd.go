@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/golang/glog"
 	"os"
 	"os/exec"
+
+	"github.com/golang/glog"
 )
 
 func ConfigIpfsPath(ipfsPath string) error {
@@ -78,7 +79,7 @@ func StartIpfsDaemon(ctx context.Context, ipfsPath string) error {
 
 	if err := cmd.Wait(); err != nil {
 		// glog.Infof("%v", stderr)
-		glog.Infof("%v", out)
+		glog.Errorf("Error: %v - %v", err, out)
 		return err
 	}
 
