@@ -29,12 +29,12 @@ type ClaimManager interface {
 }
 
 type claimData struct {
-	seqNo                int64
-	segData              []byte
-	dataHash             []byte
-	tDataHashes          map[lpmscore.VideoProfile][]byte
-	bSig                 []byte
-	receiptHashes        map[lpmscore.VideoProfile]common.Hash
+	seqNo       int64
+	segData     []byte
+	dataHash    []byte
+	tDataHashes map[lpmscore.VideoProfile][]byte
+	bSig        []byte
+	// receiptHashes        map[lpmscore.VideoProfile]common.Hash
 	claimStart           int64
 	claimEnd             int64
 	claimBlkNum          *big.Int
@@ -97,14 +97,6 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, 
 func (c *BasicClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error {
 	dataHash := crypto.Keccak256(data)
 
-	receipt := &ethTypes.TranscodeReceipt{
-		StreamID:              c.strmID,
-		SegmentSequenceNumber: big.NewInt(seqNo),
-		DataHash:              dataHash,
-		TranscodedDataHash:    tDataHash,
-		BroadcasterSig:        bSig,
-	}
-
 	_, ok := c.pLookup[profile]
 	if !ok {
 		glog.Errorf("Cannot find profile: %v", profile)
@@ -114,12 +106,11 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byt
 	cd, ok := c.segClaimMap[seqNo]
 	if !ok {
 		cd = &claimData{
-			seqNo:         seqNo,
-			segData:       data,
-			dataHash:      dataHash,
-			tDataHashes:   make(map[lpmscore.VideoProfile][]byte),
-			bSig:          bSig,
-			receiptHashes: make(map[lpmscore.VideoProfile]common.Hash),
+			seqNo:       seqNo,
+			segData:     data,
+			dataHash:    dataHash,
+			tDataHashes: make(map[lpmscore.VideoProfile][]byte),
+			bSig:        bSig,
 		}
 		c.segClaimMap[seqNo] = cd
 	}
@@ -128,13 +119,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byt
 	}
 	cd.tDataHashes[profile] = tDataHash
 
-	if _, ok := cd.receiptHashes[profile]; ok {
-		return ErrClaimManager
-	}
-	cd.receiptHashes[profile] = receipt.Hash()
-
 	c.cost = new(big.Int).Add(c.cost, c.pricePerSegment)
-
 	return nil
 }
 
@@ -208,28 +193,35 @@ func (c *BasicClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec c
 
 	for rangeIdx, segRange := range ranges {
 		//create concat hashes for each seg
-		concatHashes := make([]common.Hash, segRange[1]-segRange[0]+1)
+		receiptHashes := make([]common.Hash, segRange[1]-segRange[0]+1)
 		for i := segRange[0]; i <= segRange[1]; i++ {
-			segReceiptHashes := make([][]byte, len(c.profiles))
 			segTDataHashes := make([][]byte, len(c.profiles))
 			for pi, p := range c.profiles {
-				segReceiptHashes[pi] = c.segClaimMap[i].receiptHashes[p].Bytes()
 				segTDataHashes[pi] = []byte(c.segClaimMap[i].tDataHashes[p])
 			}
 			seg, _ := c.segClaimMap[i]
 			seg.claimConcatTDatahash = crypto.Keccak256(segTDataHashes...)
-			concatHashes[i-segRange[0]] = crypto.Keccak256Hash(segReceiptHashes...)
+
+			receipt := &ethTypes.TranscodeReceipt{
+				StreamID:                 c.strmID,
+				SegmentSequenceNumber:    big.NewInt(seg.seqNo),
+				DataHash:                 seg.dataHash,
+				ConcatTranscodedDataHash: seg.claimConcatTDatahash,
+				BroadcasterSig:           seg.bSig,
+			}
+
+			receiptHashes[i-segRange[0]] = receipt.Hash()
 		}
 
 		//create merkle root for concat hashes
-		root, proofs, err := ethTypes.NewMerkleTree(concatHashes)
+		root, proofs, err := ethTypes.NewMerkleTree(receiptHashes)
 		if err != nil {
-			glog.Errorf("Error: %v - creating merkle root for %v", err, concatHashes)
+			glog.Errorf("Error: %v - creating merkle root for %v", err, receiptHashes)
 		}
 
 		//Do the claim
-		bigRange := [2]*big.Int{big.NewInt(segRange[0]), big.NewInt(segRange[1])}
-		go func(bigRange [2]*big.Int, rc chan types.Receipt, ec chan error) {
+		go func(segRange [2]int64, rc chan types.Receipt, ec chan error) {
+			bigRange := [2]*big.Int{big.NewInt(segRange[0]), big.NewInt(segRange[1])}
 			resCh, errCh := c.client.ClaimWork(c.jobID, bigRange, root.Hash)
 			select {
 			case res := <-resCh:
@@ -256,7 +248,7 @@ func (c *BasicClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec c
 				glog.Errorf("Error claiming work: %v", err)
 				ec <- err
 			}
-		}(bigRange, rc, ec)
+		}(segRange, rc, ec)
 	}
 
 	return len(ranges), rc, ec

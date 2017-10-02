@@ -230,19 +230,6 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 					glog.Errorf("Error claiming work: %v", err)
 				}
 			}
-
-			if n.Eth != nil {
-				if jid := n.VideoDB.GetJidByStreamID(StreamID(config.StrmID)); jid != nil {
-					job, err := n.Eth.GetJob(jid)
-					if err != nil {
-						return
-					}
-					if job.EndBlock == nil || job.EndBlock.Cmp(big.NewInt(0)) == 0 {
-						glog.V(common.SHORT).Infof("Calling Endjob for job: %v.", jid)
-						n.Eth.EndJob(jid)
-					}
-				}
-			}
 			return
 		}
 

@@ -53,19 +53,6 @@ func TestAddReceipt(t *testing.T) {
 	if string(cm.segClaimMap[0].bSig) != "sig" {
 		t.Errorf("Expecting %v, got %v", "sig", string(cm.segClaimMap[0].bSig))
 	}
-
-	receipt := &ethTypes.TranscodeReceipt{
-		StreamID:              "strmID",
-		SegmentSequenceNumber: big.NewInt(0),
-		DataHash:              crypto.Keccak256([]byte("data")),
-		TranscodedDataHash:    []byte("tdatahash"),
-		BroadcasterSig:        []byte("sig"),
-	}
-
-	if cm.segClaimMap[0].receiptHashes[lpmscore.P240p30fps16x9].String() != receipt.Hash().String() {
-		t.Errorf("Expecting %v, got %v", receipt.Hash(), cm.segClaimMap[0].receiptHashes[lpmscore.P240p30fps16x9])
-	}
-
 }
 
 //We add 6 ranges (0, 3-13, 15-18, 20-25, 27, 29)
@@ -119,53 +106,50 @@ func TestClaim(t *testing.T) {
 	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &StubShell{})
 
 	//Add some receipts(0-9)
-	concatHashes1 := make([]common.Hash, 10)
+	receiptHashes1 := make([]common.Hash, 10)
 	for i := 0; i < 10; i++ {
-		rhashes := make([][]byte, len(ps))
+		segTDataHashes := make([][]byte, len(ps))
+		data := []byte(fmt.Sprintf("data%v", i))
+		sig := []byte(fmt.Sprintf("sig%v", i))
 		for pi, p := range ps {
-			data := []byte(fmt.Sprintf("data%v%v", lpmscore.P240p30fps16x9.Name, i))
-			hash := []byte(fmt.Sprintf("hash%v%v", lpmscore.P240p30fps16x9.Name, i))
-			sig := []byte(fmt.Sprintf("sig%v%v", lpmscore.P240p30fps16x9.Name, i))
-			if err := cm.AddReceipt(int64(i), data, hash, []byte(sig), p); err != nil {
+			tHash := []byte(fmt.Sprintf("tHash%v%v", lpmscore.P240p30fps16x9.Name, i))
+			if err := cm.AddReceipt(int64(i), data, tHash, []byte(sig), p); err != nil {
 				t.Errorf("Error: %v", err)
 			}
-
-			// ipfsHash := fmt.Sprintf("%vHash", data)
-			receipt := &ethTypes.TranscodeReceipt{
-				StreamID:              "strmID",
-				SegmentSequenceNumber: big.NewInt(int64(i)),
-				DataHash:              crypto.Keccak256(data),
-				TranscodedDataHash:    hash,
-				BroadcasterSig:        []byte(sig),
-			}
-			rhashes[pi] = receipt.Hash().Bytes()
+			segTDataHashes[pi] = tHash
 		}
-		concatHashes1[i] = crypto.Keccak256Hash(rhashes...)
+		receipt := &ethTypes.TranscodeReceipt{
+			StreamID:                 "strmID",
+			SegmentSequenceNumber:    big.NewInt(int64(i)),
+			DataHash:                 crypto.Keccak256(data),
+			ConcatTranscodedDataHash: crypto.Keccak256(segTDataHashes...),
+			BroadcasterSig:           []byte(sig),
+		}
+		receiptHashes1[i] = receipt.Hash()
 	}
 
 	//Add some receipts(15-24)
-	concatHashes2 := make([]common.Hash, 10)
+	receiptHashes2 := make([]common.Hash, 10)
 	for i := 15; i < 25; i++ {
-		rhashes := make([][]byte, len(ps))
+		segTDataHashes := make([][]byte, len(ps))
+		data := []byte(fmt.Sprintf("data%v", i))
+		sig := []byte(fmt.Sprintf("sig%v", i))
 		for pi, p := range ps {
-			data := []byte(fmt.Sprintf("data%v%v", lpmscore.P240p30fps16x9.Name, i))
-			hash := []byte(fmt.Sprintf("hash%v%v", lpmscore.P240p30fps16x9.Name, i))
-			sig := []byte(fmt.Sprintf("sig%v%v", lpmscore.P240p30fps16x9.Name, i))
-			if err := cm.AddReceipt(int64(i), []byte(data), hash, []byte(sig), p); err != nil {
+			tHash := []byte(fmt.Sprintf("tHash%v%v", lpmscore.P240p30fps16x9.Name, i))
+			if err := cm.AddReceipt(int64(i), []byte(data), tHash, []byte(sig), p); err != nil {
 				t.Errorf("Error: %v", err)
 			}
 
-			// ipfsHash := fmt.Sprintf("%vHash", data)
-			receipt := &ethTypes.TranscodeReceipt{
-				StreamID:              "strmID",
-				SegmentSequenceNumber: big.NewInt(int64(i)),
-				DataHash:              crypto.Keccak256(data),
-				TranscodedDataHash:    hash,
-				BroadcasterSig:        []byte(sig),
-			}
-			rhashes[pi] = receipt.Hash().Bytes()
+			segTDataHashes[pi] = tHash
 		}
-		concatHashes2[i-15] = crypto.Keccak256Hash(rhashes...)
+		receipt := &ethTypes.TranscodeReceipt{
+			StreamID:                 "strmID",
+			SegmentSequenceNumber:    big.NewInt(int64(i)),
+			DataHash:                 crypto.Keccak256(data),
+			ConcatTranscodedDataHash: crypto.Keccak256(segTDataHashes...),
+			BroadcasterSig:           []byte(sig),
+		}
+		receiptHashes2[i-15] = receipt.Hash()
 	}
 
 	//call Claim
@@ -184,7 +168,7 @@ func TestClaim(t *testing.T) {
 	}
 
 	//Make sure the roots are used for calling Claim
-	root1, _, err := ethTypes.NewMerkleTree(concatHashes1)
+	root1, _, err := ethTypes.NewMerkleTree(receiptHashes1)
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
@@ -192,7 +176,7 @@ func TestClaim(t *testing.T) {
 		t.Errorf("Expecting claim to have root %v, but got %v", [32]byte(root1.Hash), ethClient.ClaimRoot)
 	}
 
-	root2, _, err := ethTypes.NewMerkleTree(concatHashes2)
+	root2, _, err := ethTypes.NewMerkleTree(receiptHashes2)
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
