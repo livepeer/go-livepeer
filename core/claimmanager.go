@@ -270,7 +270,7 @@ func (c *BasicClaimManager) Verify() error {
 		glog.Infof("blkNum: %v", scm.claimBlkNum.Int64())
 		if shouldVerifySegment(segNo, scm.claimStart, scm.claimEnd, scm.claimBlkNum.Int64(), scm.claimBlkHash, verifyRate) {
 			glog.Infof("Calling verify")
-			//TODO: Add data to IPFS
+
 			dataStorageHash, err := c.ipfs.Add(bytes.NewReader(c.segClaimMap[segNo].segData))
 			if err != nil {
 				glog.Errorf("Error uploading segment data to IPFS: %v", err)
