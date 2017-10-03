@@ -159,6 +159,9 @@ func (w *wizard) run() {
 
 			choice = w.read()
 			switch {
+			case choice == "1":
+				choice = NodeStatus
+				break
 			case choice == "2":
 				choice = DepositToken
 				break
@@ -195,7 +198,7 @@ func (w *wizard) run() {
 
 		}
 		switch {
-		case choice == "" || choice == NodeStatus:
+		case choice == NodeStatus:
 			w.stats(false)
 		case choice == DepositToken:
 			w.deposit()

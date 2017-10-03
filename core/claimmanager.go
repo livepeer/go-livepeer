@@ -221,7 +221,7 @@ func (c *BasicClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec c
 		}
 
 		//Do the claim
-		go func(segRange [2]int64, rc chan types.Receipt, ec chan error) {
+		go func(rangeIdx int, segRange [2]int64, rc chan types.Receipt, ec chan error) {
 			bigRange := [2]*big.Int{big.NewInt(segRange[0]), big.NewInt(segRange[1])}
 			resCh, errCh := c.client.ClaimWork(c.jobID, bigRange, root.Hash)
 			select {
@@ -249,7 +249,7 @@ func (c *BasicClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec c
 				glog.Errorf("Error claiming work: %v", err)
 				ec <- err
 			}
-		}(segRange, rc, ec)
+		}(rangeIdx, segRange, rc, ec)
 	}
 
 	return len(ranges), rc, ec

@@ -262,7 +262,7 @@ func (c *Client) SetManagers() error {
 
 	glog.Infof("RoundsManager: %v", c.roundsManagerAddr.Hex())
 
-	faucetAddr, err := c.controllerSession.GetContract(crypto.Keccak256Hash([]byte("LivepeerTokenFacuet")))
+	faucetAddr, err := c.controllerSession.GetContract(crypto.Keccak256Hash([]byte("LivepeerTokenFaucet")))
 	if err != nil {
 		glog.Errorf("Error getting LivepeerTokenFacuet address: %v", err)
 		return err
