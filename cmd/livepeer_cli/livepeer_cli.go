@@ -10,24 +10,23 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"gopkg.in/urfave/cli.v1"
-	"github.com/ethereum/go-ethereum/swarm/network"
 )
 
 const (
-	 NodeStatus = "1"
-	 DepositToken = "2"
-	 BroadcastVideo = "3"
-	 StreamVideo = "4"
-	 SetTranscoderConfig = "5"
-	 SetBroadcastConfig = "6"
-	 Bond = "7"
-	 UnBond = "8"
-	 WithdrawBond = "9"
-	 BecomeTranscoder = "10"
-	 GetTestToken = "11"
-	 GetTestEther = "12"
-	 ListRegisteredTranscoders = "13"
-	 InvalidOption = "20"
+	NodeStatus                = "1"
+	DepositToken              = "2"
+	BroadcastVideo            = "3"
+	StreamVideo               = "4"
+	SetTranscoderConfig       = "5"
+	SetBroadcastConfig        = "6"
+	Bond                      = "7"
+	UnBond                    = "8"
+	WithdrawBond              = "9"
+	BecomeTranscoder          = "10"
+	GetTestToken              = "11"
+	GetTestEther              = "12"
+	ListRegisteredTranscoders = "13"
+	InvalidOption             = "20"
 )
 
 func main() {
@@ -56,8 +55,8 @@ func main() {
 			Usage: "log level to emit to the screen",
 		},
 		cli.BoolFlag{
-			Name :"transcoder",
-			Usage:"transcoder on off flag",
+			Name:  "transcoder",
+			Usage: "transcoder on off flag",
 		},
 	}
 	app.Action = func(c *cli.Context) error {
@@ -67,12 +66,12 @@ func main() {
 
 		// Start the wizard and relinquish control
 		w := &wizard{
-			endpoint: fmt.Sprintf("http://%v:%v/status", c.String("host"), c.String("http")),
-			rtmpPort: c.String("rtmp"),
-			httpPort: c.String("http"),
-			host:     c.String("host"),
-			transcoder:c.Bool("transcoder"),
-			in:       bufio.NewReader(os.Stdin),
+			endpoint:   fmt.Sprintf("http://%v:%v/status", c.String("host"), c.String("http")),
+			rtmpPort:   c.String("rtmp"),
+			httpPort:   c.String("http"),
+			host:       c.String("host"),
+			transcoder: c.Bool("transcoder"),
+			in:         bufio.NewReader(os.Stdin),
 		}
 		w.run()
 
@@ -82,12 +81,12 @@ func main() {
 }
 
 type wizard struct {
-	endpoint string // Local livepeer node
-	rtmpPort string
-	httpPort string
-	host     string
+	endpoint   string // Local livepeer node
+	rtmpPort   string
+	httpPort   string
+	host       string
 	transcoder bool
-	in       *bufio.Reader // Wrapper around stdin to allow reading user input
+	in         *bufio.Reader // Wrapper around stdin to allow reading user input
 }
 
 func (w *wizard) run() {
@@ -117,7 +116,7 @@ func (w *wizard) run() {
 		fmt.Println(" 1. Get node status")
 		var choice string
 
-		if ( w.transcoder ) {
+		if w.transcoder {
 			fmt.Println(" 2. Set transcoder config")
 			fmt.Println(" 3. Become a transcoder")
 			fmt.Println(" 4. Get test Livepeer Token")
@@ -125,23 +124,23 @@ func (w *wizard) run() {
 			fmt.Println(" 6. List registered transcoders")
 			choice = w.read()
 			switch {
-				case choice == "2":
-					choice = SetTranscoderConfig
-					break
-				case choice == "3":
-					choice = BecomeTranscoder
-					break
-				case choice == "4":
-					choice = GetTestToken
-					break
-				case choice == "5":
-					choice = GetTestEther
-					break
-				case choice == "6":
-					choice = ListRegisteredTranscoders
-					break
-				default:
-					choice = InvalidOption
+			case choice == "2":
+				choice = SetTranscoderConfig
+				break
+			case choice == "3":
+				choice = BecomeTranscoder
+				break
+			case choice == "4":
+				choice = GetTestToken
+				break
+			case choice == "5":
+				choice = GetTestEther
+				break
+			case choice == "6":
+				choice = ListRegisteredTranscoders
+				break
+			default:
+				choice = InvalidOption
 
 			}
 
@@ -189,7 +188,7 @@ func (w *wizard) run() {
 				break
 			case choice == "11":
 				choice = ListRegisteredTranscoders
-			break
+				break
 			default:
 				choice = InvalidOption
 			}
@@ -212,7 +211,7 @@ func (w *wizard) run() {
 			w.bond()
 		case choice == UnBond:
 			w.unbond()
-		case choice ==  WithdrawBond:
+		case choice == WithdrawBond:
 			w.withdrawBond()
 		case choice == BecomeTranscoder:
 			w.activateTranscoder()

@@ -53,7 +53,7 @@ type LivepeerEthClient interface {
 	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
 	EndJob(jobID *big.Int) (<-chan types.Receipt, <-chan error)
 	ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error)
-	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash []byte, transcodedDataHash []byte, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
+	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
 	DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error)
 	Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error)
 	RequestTokens() (<-chan types.Receipt, <-chan error)
@@ -598,7 +598,7 @@ func (c *Client) IsActiveTranscoder() (bool, error) {
 }
 
 func (c *Client) TranscoderBond() (*big.Int, error) {
-	return c.bondingManagerSession.GetDelegatorBondedAmount(c.accountAddress)
+	return c.bondingManagerSession.GetDelegatorBondedAmount(c.account.Address)
 }
 
 func (c *Client) TranscoderStake() (*big.Int, error) {

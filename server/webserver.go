@@ -460,9 +460,9 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write([]byte(strings.Join(s.LivepeerNode.Addrs, ", ")))
 	})
 
-	http.HandleFunc("/protocolContractAddr", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/controllerContractAddr", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			w.Write([]byte(s.LivepeerNode.Eth.GetProtocolAddr()))
+			w.Write([]byte(s.LivepeerNode.Eth.GetControllerAddr()))
 		}
 	})
 

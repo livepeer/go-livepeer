@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -270,15 +271,16 @@ func (c *BasicClaimManager) Verify() error {
 		if shouldVerifySegment(segNo, scm.claimStart, scm.claimEnd, scm.claimBlkNum.Int64(), scm.claimBlkHash, verifyRate) {
 			glog.Infof("Calling verify")
 			//TODO: Add data to IPFS
-			// ipfsHash, err := c.ipfs.Add(bytes.NewReader(c.segClaimMap[segNo].segData))
-			// if err != nil {
-			// 	glog.Errorf("Error uploading segment data to IPFS: %v", err)
-			// 	continue
-			// }
+			dataStorageHash, err := c.ipfs.Add(bytes.NewReader(c.segClaimMap[segNo].segData))
+			if err != nil {
+				glog.Errorf("Error uploading segment data to IPFS: %v", err)
+				continue
+			}
 
 			//Call Verify
 			go func() {
-				resCh, errCh := c.client.Verify(c.jobID, scm.claimId, big.NewInt(segNo), scm.dataHash, scm.claimConcatTDatahash, scm.bSig, scm.claimProof)
+				dataHashes := [2][32]byte{common.BytesToHash(scm.dataHash), common.BytesToHash(scm.claimConcatTDatahash)}
+				resCh, errCh := c.client.Verify(c.jobID, scm.claimId, big.NewInt(segNo), dataStorageHash, dataHashes, scm.bSig, scm.claimProof)
 				select {
 				case <-resCh:
 					glog.Infof("Invoked verification for seg no %v", segNo)
