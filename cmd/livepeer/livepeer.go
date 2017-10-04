@@ -93,9 +93,7 @@ func main() {
 	ethAccountAddr := flag.String("ethAccountAddr", "", "Existing Eth account address")
 	ethDatadir := flag.String("ethDatadir", "", "geth data directory")
 	testnet := flag.Bool("testnet", false, "Set to true to connect to testnet")
-	protocolAddr := flag.String("protocolAddr", "0xc7ff57decee68ab792a31eb99af132fa2e6889b0", "Protocol smart contract address")
-	tokenAddr := flag.String("tokenAddr", "0x2c7d6359ad65c6ba619d0297974c4763991f2eec", "Token smart contract address")
-	faucetAddr := flag.String("faucetAddr", "0x6ae1af1d97625c5d443da7c243d196c30d26354a", "Token faucet smart contract address")
+	controllerAddr := flag.String("controllerAddr", "0xc7ff57decee68ab792a31eb99af132fa2e6889b0", "Protocol smart contract address")
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
@@ -250,7 +248,7 @@ func main() {
 			return
 		}
 
-		client, err := eth.NewClient(acct, *ethPassword, *ethDatadir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*protocolAddr), common.HexToAddress(*tokenAddr), common.HexToAddress(*faucetAddr), EthRpcTimeout, EthEventTimeout)
+		client, err := eth.NewClient(acct, *ethPassword, *ethDatadir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*controllerAddr), EthRpcTimeout, EthEventTimeout)
 		if err != nil {
 			glog.Errorf("Error creating Eth client: %v", err)
 			return

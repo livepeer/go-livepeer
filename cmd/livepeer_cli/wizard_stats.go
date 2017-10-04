@@ -22,7 +22,7 @@ func (w *wizard) stats(tips bool) {
 	fmt.Fprintf(wtr, "Node Addr: \t%s\n", w.getNodeAddr())
 	fmt.Fprintf(wtr, "RTMP Port: \t%s\n", w.rtmpPort)
 	fmt.Fprintf(wtr, "HTTP Port: \t%s\n", w.httpPort)
-	fmt.Fprintf(wtr, "Protocol Contract Addr: \t%s\n", w.getProtAddr())
+	fmt.Fprintf(wtr, "Protocol Contract Addr: \t%s\n", w.getControllerAddr())
 	fmt.Fprintf(wtr, "Token Contract Addr: \t%s\n", w.getTokenAddr())
 	fmt.Fprintf(wtr, "Faucet Contract Addr: \t%s\n", w.getFaucetAddr())
 	fmt.Fprintf(wtr, "Account Eth Addr: \t%s\n", w.getEthAddr())
@@ -30,14 +30,12 @@ func (w *wizard) stats(tips bool) {
 	fmt.Fprintf(wtr, "Eth balance: \t%s\n", w.getEthBalance())
 	wtr.Flush()
 
-	if ( strings.Compare(w.getTranscoderStatus(),"False" )  == 0){
+	if strings.Compare(w.getTranscoderStatus(), "False") == 0 {
 		w.delegatorStats()
 		w.broadcastStats()
-	}else {
+	} else {
 		w.transcoderStats()
 	}
-
-
 
 }
 
@@ -90,8 +88,8 @@ func (w *wizard) getNodeAddr() string {
 	return httpGet(fmt.Sprintf("http://%v:%v/nodeAddrs", w.host, w.httpPort))
 }
 
-func (w *wizard) getProtAddr() string {
-	addr := httpGet(fmt.Sprintf("http://%v:%v/protocolContractAddr", w.host, w.httpPort))
+func (w *wizard) getControllerAddr() string {
+	addr := httpGet(fmt.Sprintf("http://%v:%v/controllerContractAddr", w.host, w.httpPort))
 	if addr == "" {
 		addr = "Unknown"
 	}

@@ -24,8 +24,9 @@ type StubClient struct {
 	Jid           *big.Int
 	SegSeqNum     *big.Int
 	VeriRate      uint64
-	DHash         []byte
-	TDHash        []byte
+	DStorageHash  string
+	DHash         [32]byte
+	TDHash        [32]byte
 	BSig          []byte
 	Proof         []byte
 	VerifyCounter int
@@ -84,11 +85,12 @@ func (e *StubClient) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, transco
 	}()
 	return rc, ec
 }
-func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataHash []byte, transcodedDataHash []byte, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error) {
+func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error) {
 	e.Jid = jobId
 	e.SegSeqNum = segmentNumber
-	e.DHash = dataHash
-	e.TDHash = transcodedDataHash
+	e.DStorageHash = dataStorageHash
+	e.DHash = dataHashes[0]
+	e.TDHash = dataHashes[1]
 	e.BSig = broadcasterSig
 	e.Proof = proof
 	e.VerifyCounter++
@@ -138,7 +140,7 @@ func (e *StubClient) SlashingPeriod() (*big.Int, error) {
 func (e *StubClient) LastRewardRound() (*big.Int, error) {
 	return nil, nil
 }
-func (e *StubClient) GetProtocolAddr() string           { return "" }
+func (e *StubClient) GetControllerAddr() string         { return "" }
 func (e *StubClient) GetTokenAddr() string              { return "" }
 func (e *StubClient) GetBondingManagerAddr() string     { return "" }
 func (e *StubClient) GetJobsManagerAddr() string        { return "" }
