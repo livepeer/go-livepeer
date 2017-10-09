@@ -123,7 +123,6 @@ type Job struct {
 	StreamId           string
 	TranscodingOptions string
 	MaxPricePerSegment *big.Int
-	PricePerSegment    *big.Int
 	BroadcasterAddress common.Address
 	TranscoderAddress  common.Address
 	EndBlock           *big.Int
@@ -746,7 +745,6 @@ func (c *Client) GetJob(jobID *big.Int) (*Job, error) {
 	// If we are using the ManagerProxy contract address
 	// we cannot directly retrieve dynamic length data at the moment
 	// We have to retrieve streamId and transcodingOptions via logs
-
 	return &Job{
 		JobId:              jobID,
 		MaxPricePerSegment: maxPricePerSegment,

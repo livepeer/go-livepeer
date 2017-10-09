@@ -493,7 +493,7 @@ func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 		glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.TranscodingOptions, config)
 
 		//Do The Transcoding
-		cm := core.NewBasicClaimManager(job.StreamId, job.JobId, job.BroadcasterAddress, job.PricePerSegment, tProfiles, n.Eth, n.Ipfs)
+		cm := core.NewBasicClaimManager(job.StreamId, job.JobId, job.BroadcasterAddress, job.MaxPricePerSegment, tProfiles, n.Eth, n.Ipfs)
 		tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.WorkDir)
 		strmIDs, err := n.TranscodeAndBroadcast(config, cm, tr)
 		if err != nil {
