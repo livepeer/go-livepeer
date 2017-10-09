@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/ericxtang/m3u8"
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/golang/glog"
@@ -372,7 +371,7 @@ func (n *LivepeerNode) BroadcastStreamToNetwork(strm stream.HLSVideoStream) erro
 	counter := uint64(0)
 	strm.SetSubscriber(func(seg *stream.HLSSegment, eof bool) {
 		//Get segment signature
-		segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(counter)), DataHash: ethcommon.BytesToHash(seg.Data).Hex()}).Hash()
+		segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(counter)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
 
 		var sig []byte
 		if c, ok := n.Eth.(*eth.Client); ok {

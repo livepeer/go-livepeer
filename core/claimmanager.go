@@ -265,9 +265,6 @@ func (c *BasicClaimManager) Verify() error {
 
 	//Iterate through segments, determine which one needs to be verified.
 	for segNo, scm := range c.segClaimMap {
-		glog.Infof("blkHash: %x", scm.claimBlkHash)
-		glog.Infof("segNo: %v", segNo)
-		glog.Infof("blkNum: %v", scm.claimBlkNum.Int64())
 		if shouldVerifySegment(segNo, scm.claimStart, scm.claimEnd, scm.claimBlkNum.Int64(), scm.claimBlkHash, verifyRate) {
 			glog.Infof("Calling verify")
 
@@ -340,7 +337,7 @@ func shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, blk
 	seqNumTmp := make([]byte, 8)
 	binary.PutVarint(seqNumTmp, seqNum)
 	seqNumB := make([]byte, 32)
-	copy(seqNumB[24:], blkNumTmp)
+	copy(seqNumB[24:], seqNumTmp)
 
 	num, i := binary.Uvarint(crypto.Keccak256(blkNumB, blkHash.Bytes(), seqNumB))
 	if i == 0 {
