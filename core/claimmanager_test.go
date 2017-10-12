@@ -200,6 +200,8 @@ func TestClaim(t *testing.T) {
 	if _, ok := ethClient.ClaimRoot[[32]byte(root2.Hash)]; !ok {
 		t.Errorf("Expecting claim to have root %v, but got %v", [32]byte(root2.Hash), ethClient.ClaimRoot)
 	}
+
+	glog.Infof("%v", ethClient.ClaimRoot)
 }
 
 func TestVerify(t *testing.T) {
