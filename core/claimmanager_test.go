@@ -186,6 +186,10 @@ func TestClaim(t *testing.T) {
 
 	//Make sure the roots are used for calling Claim
 	root1, _, err := ethTypes.NewMerkleTree(receiptHashes1)
+	lpCommon.WaitUntil(time.Second, func() bool {
+		_, ok := ethClient.ClaimRoot[[32]byte(root1.Hash)]
+		return ok
+	})
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
@@ -200,8 +204,6 @@ func TestClaim(t *testing.T) {
 	if _, ok := ethClient.ClaimRoot[[32]byte(root2.Hash)]; !ok {
 		t.Errorf("Expecting claim to have root %v, but got %v", [32]byte(root2.Hash), ethClient.ClaimRoot)
 	}
-
-	glog.Infof("%v", ethClient.ClaimRoot)
 }
 
 func TestVerify(t *testing.T) {
