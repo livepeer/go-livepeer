@@ -21,7 +21,7 @@ func TestShouldVerify(t *testing.T) {
 	same := true
 	var result bool
 	for i := int64(0); i < 10; i++ {
-		if tResult := shouldVerifySegment(i, 0, 10, 100, common.Hash([32]byte{0, 2, 4, 42, 2, 3, 4, 4, 4, 2, 21, 1, 1, 24}), 5); result != tResult {
+		if tResult := shouldVerifySegment(i, 0, 10, 100, common.Hash([32]byte{0, 2, 4, 42, 2, 3, 4, 4, 4, 2, 21, 1, 1, 24, 134, 0, 02, 43}), 5); result != tResult {
 			same = false
 			break
 		} else {

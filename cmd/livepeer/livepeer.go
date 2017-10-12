@@ -516,24 +516,24 @@ func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 }
 
 func setupIpfs(n *core.LivepeerNode, ipfsPath string, ipfsApiPort, ipfsGatewayPort int) (chan error, error) {
-	ipfsEc := make(chan error)
-	ipfsCtx, ipfsCancel := context.WithCancel(context.Background())
-	defer ipfsCancel()
-
-	go func() {
-		ipfsEc <- startIpfs(ipfsCtx, ipfsPath, ipfsGatewayPort, ipfsApiPort)
-	}()
-
-	time.Sleep(3 * time.Second)
-
 	ipfs := ipfsApi.NewShell(fmt.Sprintf("localhost:%v", ipfsApiPort))
-	if ipfs == nil {
-		glog.Errorf("Error connecting to IPFS")
-		return nil, ErrIpfs
+	ipfsEc := make(chan error)
+	if _, _, err := ipfs.Version(); err != nil {
+		glog.Errorf("Error connecting to existing IPFS - starting IPFS daemon")
+
+		ipfsCtx, ipfsCancel := context.WithCancel(context.Background())
+		defer ipfsCancel()
+
+		go func() {
+			ipfsEc <- startIpfs(ipfsCtx, ipfsPath, ipfsGatewayPort, ipfsApiPort)
+		}()
+
+		time.Sleep(3 * time.Second)
+		ipfs := ipfsApi.NewShell(fmt.Sprintf("localhost:%v", ipfsApiPort))
+		n.Ipfs = ipfs
+	} else {
+		n.Ipfs = ipfs
 	}
-
-	n.Ipfs = ipfs
-
 	return ipfsEc, nil
 }
 

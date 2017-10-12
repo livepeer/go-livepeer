@@ -79,7 +79,11 @@ func StartIpfsDaemon(ctx context.Context, ipfsPath string) error {
 
 	if err := cmd.Wait(); err != nil {
 		// glog.Infof("%v", stderr)
-		glog.Errorf("Error: %v - %v", err, out)
+		if out.Len() < 500 {
+			glog.Errorf("Error: %v - %v", err, out)
+		} else {
+			glog.Errorf("Error: %v - video(len - %v)", err, out.Len())
+		}
 		return err
 	}
 

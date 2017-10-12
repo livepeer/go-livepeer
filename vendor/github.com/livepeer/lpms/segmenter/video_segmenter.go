@@ -94,7 +94,7 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 
 	var cmd *exec.Cmd
 
-	cmd = exec.Command(path.Join(s.ffmpegPath, "ffmpeg"), "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-segment_time", "8", "-muxdelay", "0", "-segment_list", plfn, tsfn)
+	cmd = exec.Command(path.Join(s.ffmpegPath, "ffmpeg"), "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-segment_time", "4", "-muxdelay", "0", "-segment_list", plfn, tsfn)
 
 	err = cmd.Start()
 	if err != nil {
