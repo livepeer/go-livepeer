@@ -94,7 +94,13 @@ func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big
 	e.BSig = broadcasterSig
 	e.Proof = proof
 	e.VerifyCounter++
-	return nil, nil
+
+	rc := make(chan types.Receipt)
+	go func(rc chan types.Receipt) {
+		time.Sleep(time.Millisecond * 50)
+		rc <- types.Receipt{}
+	}(rc)
+	return rc, nil
 }
 func (e *StubClient) DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error) {
 	return nil, nil

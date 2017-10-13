@@ -16,6 +16,23 @@ import (
 	lpmscore "github.com/livepeer/lpms/core"
 )
 
+func TestShouldVerify(t *testing.T) {
+	//Just make sure the results are different
+	same := true
+	var result bool
+	for i := int64(0); i < 10; i++ {
+		if tResult := shouldVerifySegment(i, 0, 10, 100, common.Hash([32]byte{0, 2, 4, 42, 2, 3, 4, 4, 4, 2, 21, 1, 1, 24, 134, 0, 02, 43}), 5); result != tResult {
+			same = false
+			break
+		} else {
+			result = tResult
+		}
+	}
+	if same {
+		t.Errorf("Should give different results")
+	}
+}
+
 func TestProfileOrder(t *testing.T) {
 	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
 	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, &eth.StubClient{}, &StubShell{})
@@ -169,6 +186,10 @@ func TestClaim(t *testing.T) {
 
 	//Make sure the roots are used for calling Claim
 	root1, _, err := ethTypes.NewMerkleTree(receiptHashes1)
+	lpCommon.WaitUntil(time.Second, func() bool {
+		_, ok := ethClient.ClaimRoot[[32]byte(root1.Hash)]
+		return ok
+	})
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}

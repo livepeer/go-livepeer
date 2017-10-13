@@ -3,7 +3,6 @@ package core
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"math/big"
 	"sort"
@@ -232,7 +231,7 @@ func (c *BasicClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec c
 					ec <- err
 					return
 				}
-				glog.Infof("Got block hash: %x, block number: %v", blkHash, blkNum)
+				// glog.Infof("Got block hash: %x, block number: %v", blkHash, blkNum)
 				//Record claim information for verification later
 				for i := segRange[0]; i <= segRange[1]; i++ {
 					seg, _ := c.segClaimMap[i]
@@ -265,9 +264,10 @@ func (c *BasicClaimManager) Verify() error {
 
 	//Iterate through segments, determine which one needs to be verified.
 	for segNo, scm := range c.segClaimMap {
-		glog.Infof("blkHash: %x", scm.claimBlkHash)
-		glog.Infof("segNo: %v", segNo)
-		glog.Infof("blkNum: %v", scm.claimBlkNum.Int64())
+		if scm.claimBlkNum == nil {
+			glog.Errorf("Claim failed.  Skipping verification for %v.", segNo)
+			continue
+		}
 		if shouldVerifySegment(segNo, scm.claimStart, scm.claimEnd, scm.claimBlkNum.Int64(), scm.claimBlkHash, verifyRate) {
 			glog.Infof("Calling verify")
 
@@ -278,16 +278,15 @@ func (c *BasicClaimManager) Verify() error {
 			}
 
 			//Call Verify
-			go func() {
-				dataHashes := [2][32]byte{common.BytesToHash(scm.dataHash), common.BytesToHash(scm.claimConcatTDatahash)}
-				resCh, errCh := c.client.Verify(c.jobID, scm.claimId, big.NewInt(segNo), dataStorageHash, dataHashes, scm.bSig, scm.claimProof)
-				select {
-				case <-resCh:
-					glog.Infof("Invoked verification for seg no %v", segNo)
-				case err := <-errCh:
-					glog.Errorf("Error submitting verify transaction: %v", err)
-				}
-			}()
+			dataHashes := [2][32]byte{common.BytesToHash(scm.dataHash), common.BytesToHash(scm.claimConcatTDatahash)}
+			glog.Infof("Calling Verfy with: strmID:%v, segNum:%v, dataHashes[0]:%v, dataHashes[1]:%v, dataStorageHash: %v, broadcasterSig:%v, broadcasterAddr:%v, proof:%v", c.strmID, segNo, common.ToHex(dataHashes[0][:]), common.ToHex(dataHashes[1][:]), dataStorageHash, common.ToHex(scm.bSig), common.ToHex(c.broadcasterAddr.Bytes()), scm.claimProof)
+			resCh, errCh := c.client.Verify(c.jobID, scm.claimId, big.NewInt(segNo), dataStorageHash, dataHashes, scm.bSig, scm.claimProof)
+			select {
+			case <-resCh:
+				glog.Infof("Invoked verification for seg no %v", segNo)
+			case err := <-errCh:
+				glog.Errorf("Error submitting verify transaction: %v", err)
+			}
 		}
 	}
 
@@ -332,21 +331,15 @@ func shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, blk
 		return false
 	}
 
-	blkNumTmp := make([]byte, 8)
-	binary.PutVarint(blkNumTmp, blkNum)
-	blkNumB := make([]byte, 32)
-	copy(blkNumB[24:], blkNumTmp)
+	bigSeqNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(seqNum).Bytes(), 32)
+	bigBlkNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(blkNum).Bytes(), 32)
 
-	seqNumTmp := make([]byte, 8)
-	binary.PutVarint(seqNumTmp, seqNum)
-	seqNumB := make([]byte, 32)
-	copy(seqNumB[24:], blkNumTmp)
+	combH := crypto.Keccak256(bigBlkNumBytes, blkHash.Bytes(), bigSeqNumBytes)
+	hashNum := new(big.Int).SetBytes(combH)
+	result := new(big.Int).Mod(hashNum, new(big.Int).SetInt64(int64(verifyRate)))
 
-	num, i := binary.Uvarint(crypto.Keccak256(blkNumB, blkHash.Bytes(), seqNumB))
-	if i == 0 {
-		glog.Errorf("Error converting bytes in shouldVerifySegment.  num: %v, i: %v.  blkNumB:%x, blkHash:%x, seqNumB:%x", num, i, blkNumB, blkHash.Bytes(), seqNumB)
-	}
-	if num%uint64(verifyRate) == 0 {
+	glog.Infof("shouldVerifySegment rate: %v, hashNum:%v, result: %v", verifyRate, hashNum, result)
+	if result.Cmp(new(big.Int).SetInt64(int64(0))) == 0 {
 		return true
 	} else {
 		return false

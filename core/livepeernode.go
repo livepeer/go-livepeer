@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/ericxtang/m3u8"
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/golang/glog"
@@ -369,32 +368,31 @@ func (n *LivepeerNode) BroadcastStreamToNetwork(strm stream.HLSVideoStream) erro
 	}
 
 	//Broadcast stream to network
-	counter := uint64(0)
 	strm.SetSubscriber(func(seg *stream.HLSSegment, eof bool) {
 		//Get segment signature
-		segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(counter)), DataHash: ethcommon.BytesToHash(seg.Data).Hex()}).Hash()
+		segHash := (&ethTypes.Segment{StreamID: strm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
+		// glog.Infof("streamID: %v", strm.GetStreamID())
+		// glog.Infof("seqNum: %v", seg.SeqNo)
+		// glog.Infof("dataHash: %v", ethcommon.Bytes2Hex(crypto.Keccak256(seg.Data)))
 
 		var sig []byte
 		if c, ok := n.Eth.(*eth.Client); ok {
 			sig, err = c.SignSegmentHash(n.EthPassword, segHash.Bytes())
 			if err != nil {
-				glog.Errorf("Error signing segment %v-%v: %v", strm.GetStreamID(), counter, err)
+				glog.Errorf("Error signing segment %v-%v: %v", strm.GetStreamID(), seg.SeqNo, err)
 				return
 			}
 		}
 
 		//Encode segment into []byte, broadcast it
 		if ssb, err := SignedSegmentToBytes(SignedSegment{Seg: *seg, Sig: sig}); err == nil {
-			if err = b.Broadcast(counter, ssb); err != nil {
+			if err = b.Broadcast(seg.SeqNo, ssb); err != nil {
 				glog.Errorf("Error broadcasting segment to network: %v", err)
 			}
 		} else {
 			glog.Errorf("Error encoding segment to []byte: %v", err)
 			return
 		}
-
-		counter++
-
 	})
 	return nil
 }
