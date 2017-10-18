@@ -15,10 +15,10 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/golang/glog"
-	ipfsApi "github.com/ipfs/go-ipfs-api"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/ipfs"
 	"github.com/livepeer/go-livepeer/net"
 	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/stream"
@@ -49,7 +49,7 @@ type LivepeerNode struct {
 	Eth          eth.LivepeerEthClient
 	EthAccount   string
 	EthPassword  string
-	Ipfs         *ipfsApi.Shell
+	Ipfs         ipfs.IpfsApi
 	WorkDir      string
 }
 

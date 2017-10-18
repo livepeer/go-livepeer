@@ -13,6 +13,7 @@ import (
 	lpCommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/ipfs"
 	lpmscore "github.com/livepeer/lpms/core"
 )
 
@@ -35,7 +36,7 @@ func TestShouldVerify(t *testing.T) {
 
 func TestProfileOrder(t *testing.T) {
 	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
-	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, &eth.StubClient{}, &StubShell{})
+	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, &eth.StubClient{}, &ipfs.StubIpfsApi{})
 
 	if cm.profiles[0] != lpmscore.P720p30fps4x3 || cm.profiles[1] != lpmscore.P360p30fps4x3 || cm.profiles[2] != lpmscore.P240p30fps16x9 {
 		t.Errorf("wrong ordering: %v", cm.profiles)
@@ -44,7 +45,7 @@ func TestProfileOrder(t *testing.T) {
 
 func TestAddReceipt(t *testing.T) {
 	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
-	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, &eth.StubClient{}, &StubShell{})
+	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, &eth.StubClient{}, &ipfs.StubIpfsApi{})
 
 	//Should get error for adding to a non-existing profile
 	if err := cm.AddReceipt(0, []byte("data"), []byte("tdatahash"), []byte("sig"), lpmscore.P144p30fps16x9); err == nil {
@@ -59,7 +60,7 @@ func TestAddReceipt(t *testing.T) {
 		t.Errorf("Expecting %v, got %v", "data", string(cm.segClaimMap[0].segData))
 	}
 
-	if string(cm.segClaimMap[0].dataHash) != string(crypto.Keccak256([]byte("data"))) { //appended by StubShell
+	if string(cm.segClaimMap[0].dataHash) != string(crypto.Keccak256([]byte("data"))) { //appended by ipfs.StubIpfsApi
 		t.Errorf("Expecting %v, got %v", string(crypto.Keccak256([]byte("data"))), string(cm.segClaimMap[0].dataHash))
 	}
 
@@ -76,7 +77,7 @@ func TestAddReceipt(t *testing.T) {
 func setupRanges(t *testing.T) *BasicClaimManager {
 	ethClient := &eth.StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
 	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
-	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &StubShell{})
+	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{})
 
 	for _, segRange := range [][2]int64{[2]int64{0, 0}, [2]int64{3, 13}, [2]int64{15, 18}, [2]int64{21, 25}, [2]int64{27, 27}, [2]int64{29, 29}} {
 		for i := segRange[0]; i <= segRange[1]; i++ {
@@ -120,7 +121,7 @@ func TestRanges(t *testing.T) {
 func TestClaim(t *testing.T) {
 	ethClient := &eth.StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
 	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
-	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &StubShell{})
+	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{})
 
 	//Add some receipts(0-9)
 	receiptHashes1 := make([]common.Hash, 10)
@@ -210,7 +211,7 @@ func TestVerify(t *testing.T) {
 	// ethClient := &eth.StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
 	ethClient := &eth.StubClient{VeriRate: 10}
 	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
-	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &StubShell{})
+	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{})
 	start := int64(0)
 	end := int64(100)
 	blkNum := int64(100)

@@ -47,7 +47,7 @@ type claimData struct {
 //BasicClaimManager manages the claim process for a Livepeer transcoder.  Check the Livepeer protocol for more details.
 type BasicClaimManager struct {
 	client eth.LivepeerEthClient
-	ipfs   ipfs.IPFSShell
+	ipfs   ipfs.IpfsApi
 
 	strmID   string
 	jobID    *big.Int
@@ -64,7 +64,7 @@ type BasicClaimManager struct {
 }
 
 //NewBasicClaimManager creates a new claim manager.
-func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []lpmscore.VideoProfile, c eth.LivepeerEthClient, ipfs ipfs.IPFSShell) *BasicClaimManager {
+func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []lpmscore.VideoProfile, c eth.LivepeerEthClient, ipfs ipfs.IpfsApi) *BasicClaimManager {
 	seqNos := make([][]int64, len(p), len(p))
 	rHashes := make([][]common.Hash, len(p), len(p))
 	sd := make([][][]byte, len(p), len(p))
