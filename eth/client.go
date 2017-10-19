@@ -951,8 +951,8 @@ func (c *Client) GetReceipt(tx *types.Transaction) (*types.Receipt, error) {
 		}
 
 		if receipt != nil {
-			if tx.Gas().Cmp(receipt.GasUsed) == 0 {
-				return nil, fmt.Errorf("Tx %v threw", tx.Hash().Hex())
+			if receipt.Status == uint(0) {
+				return nil, fmt.Errorf("Tx %v failed", tx.Hash().Hex())
 			} else {
 				return receipt, nil
 			}
