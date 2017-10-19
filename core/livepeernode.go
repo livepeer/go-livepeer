@@ -8,12 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/ericxtang/m3u8"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
@@ -97,15 +97,15 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.V
 	//Call eth client to create the job
 	p := big.NewInt(int64(price))
 
-	pNames := []string{}
+	transOpts := []byte{}
 	for _, prof := range profiles {
-		pNames = append(pNames, prof.Name)
+		transOpts = append(transOpts, crypto.Keccak256([]byte(prof.Name))[0:4]...)
 	}
 
-	resCh, errCh := n.Eth.Job(strmID.String(), strings.Join(pNames, ","), p)
+	resCh, errCh := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], p)
 	select {
 	case <-resCh:
-		glog.Infof("Created broadcast job. Price: %v. Type: %v", p, pNames)
+		glog.Infof("Created broadcast job. Price: %v. Type: %v", p, transOpts)
 	case err := <-errCh:
 		glog.Errorf("Error creating broadcast job: %v", err)
 	}

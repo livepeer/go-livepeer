@@ -46,8 +46,10 @@ func StartIpfs(ctx context.Context, repoPath string) (*IpfsCoreApi, error) {
 	}
 
 	ncfg := &core.BuildCfg{
-		Repo:   repo,
-		Online: true,
+		Repo:      repo,
+		Online:    true,
+		Permament: true,
+		Routing:   core.DHTOption,
 	}
 
 	node, err := core.NewNode(ctx, ncfg)

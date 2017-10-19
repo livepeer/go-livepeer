@@ -42,6 +42,7 @@ var VideoProfileLookup = map[string]VideoProfile{
 	"P720p60fps16x9": P720p60fps16x9,
 	"P720p30fps16x9": P720p30fps16x9,
 	"P720p30fps4x3":  P720p30fps4x3,
+	"P576p30fps16x9": P576p30fps16x9,
 	"P360p30fps16x9": P360p30fps16x9,
 	"P360p30fps4x3":  P360p30fps4x3,
 	"P240p30fps16x9": P240p30fps16x9,
