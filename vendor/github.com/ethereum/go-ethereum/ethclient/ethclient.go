@@ -20,6 +20,7 @@ package ethclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -71,9 +72,9 @@ func (ec *Client) BlockByNumber(ctx context.Context, number *big.Int) (*types.Bl
 }
 
 type rpcBlock struct {
-	Hash         common.Hash          `json:"hash"`
-	Transactions []*types.Transaction `json:"transactions"`
-	UncleHashes  []common.Hash        `json:"uncles"`
+	Hash         common.Hash      `json:"hash"`
+	Transactions []rpcTransaction `json:"transactions"`
+	UncleHashes  []common.Hash    `json:"uncles"`
 }
 
 func (ec *Client) getBlock(ctx context.Context, method string, args ...interface{}) (*types.Block, error) {
@@ -130,7 +131,13 @@ func (ec *Client) getBlock(ctx context.Context, method string, args ...interface
 			}
 		}
 	}
-	return types.NewBlockWithHeader(head).WithBody(body.Transactions, uncles), nil
+	// Fill the sender cache of transactions in the block.
+	txs := make([]*types.Transaction, len(body.Transactions))
+	for i, tx := range body.Transactions {
+		setSenderFromServer(tx.tx, tx.From, body.Hash)
+		txs[i] = tx.tx
+	}
+	return types.NewBlockWithHeader(head).WithBody(txs, uncles), nil
 }
 
 func (ec *Client) BlockByTxHash(ctx context.Context, hash common.Hash) (block *types.Block, tx *types.Transaction, err error) {
@@ -184,25 +191,62 @@ func (ec *Client) HeaderByNumber(ctx context.Context, number *big.Int) (*types.H
 	return head, err
 }
 
+type rpcTransaction struct {
+	tx *types.Transaction
+	txExtraInfo
+}
+
+type txExtraInfo struct {
+	BlockNumber *string
+	BlockHash   common.Hash
+	From        common.Address
+}
+
+func (tx *rpcTransaction) UnmarshalJSON(msg []byte) error {
+	if err := json.Unmarshal(msg, &tx.tx); err != nil {
+		return err
+	}
+	return json.Unmarshal(msg, &tx.txExtraInfo)
+}
+
 // TransactionByHash returns the transaction with the given hash.
 func (ec *Client) TransactionByHash(ctx context.Context, hash common.Hash) (tx *types.Transaction, isPending bool, err error) {
-	var raw json.RawMessage
-	err = ec.c.CallContext(ctx, &raw, "eth_getTransactionByHash", hash)
+	var json *rpcTransaction
+	err = ec.c.CallContext(ctx, &json, "eth_getTransactionByHash", hash)
 	if err != nil {
 		return nil, false, err
-	} else if len(raw) == 0 {
+	} else if json == nil {
 		return nil, false, ethereum.NotFound
-	}
-	if err := json.Unmarshal(raw, &tx); err != nil {
-		return nil, false, err
-	} else if _, r, _ := tx.RawSignatureValues(); r == nil {
+	} else if _, r, _ := json.tx.RawSignatureValues(); r == nil {
 		return nil, false, fmt.Errorf("server returned transaction without signature")
 	}
-	var block struct{ BlockNumber *string }
-	if err := json.Unmarshal(raw, &block); err != nil {
-		return nil, false, err
+	setSenderFromServer(json.tx, json.From, json.BlockHash)
+	return json.tx, json.BlockNumber == nil, nil
+}
+
+// TransactionSender returns the sender address of the given transaction. The transaction
+// must be known to the remote node and included in the blockchain at the given block and
+// index. The sender is the one derived by the protocol at the time of inclusion.
+//
+// There is a fast-path for transactions retrieved by TransactionByHash and
+// TransactionInBlock. Getting their sender address can be done without an RPC interaction.
+func (ec *Client) TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error) {
+	// Try to load the address from the cache.
+	sender, err := types.Sender(&senderFromServer{blockhash: block}, tx)
+	if err == nil {
+		return sender, nil
 	}
-	return tx, block.BlockNumber == nil, nil
+	var meta struct {
+		Hash common.Hash
+		From common.Address
+	}
+	if err = ec.c.CallContext(ctx, &meta, "eth_getTransactionByBlockHashAndIndex", block, hexutil.Uint64(index)); err != nil {
+		return common.Address{}, err
+	}
+	if meta.Hash == (common.Hash{}) || meta.Hash != tx.Hash() {
+		return common.Address{}, errors.New("wrong inclusion block/index")
+	}
+	return meta.From, nil
 }
 
 // TransactionCount returns the total number of transactions in the given block.
@@ -214,16 +258,17 @@ func (ec *Client) TransactionCount(ctx context.Context, blockHash common.Hash) (
 
 // TransactionInBlock returns a single transaction at index in the given block.
 func (ec *Client) TransactionInBlock(ctx context.Context, blockHash common.Hash, index uint) (*types.Transaction, error) {
-	var tx *types.Transaction
-	err := ec.c.CallContext(ctx, &tx, "eth_getTransactionByBlockHashAndIndex", blockHash, hexutil.Uint64(index))
+	var json *rpcTransaction
+	err := ec.c.CallContext(ctx, &json, "eth_getTransactionByBlockHashAndIndex", blockHash, hexutil.Uint64(index))
 	if err == nil {
-		if tx == nil {
+		if json == nil {
 			return nil, ethereum.NotFound
-		} else if _, r, _ := tx.RawSignatureValues(); r == nil {
+		} else if _, r, _ := json.tx.RawSignatureValues(); r == nil {
 			return nil, fmt.Errorf("server returned transaction without signature")
 		}
 	}
-	return tx, err
+	setSenderFromServer(json.tx, json.From, json.BlockHash)
+	return json.tx, err
 }
 
 // TransactionReceipt returns the receipt of a transaction by transaction hash.
@@ -286,6 +331,19 @@ func (ec *Client) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header)
 }
 
 // State Access
+
+// NetworkID returns the network ID (also known as the chain ID) for this chain.
+func (ec *Client) NetworkID(ctx context.Context) (*big.Int, error) {
+	version := new(big.Int)
+	var ver string
+	if err := ec.c.CallContext(ctx, &ver, "net_version"); err != nil {
+		return nil, err
+	}
+	if _, ok := version.SetString(ver, 10); !ok {
+		return nil, fmt.Errorf("invalid net_version result %q", ver)
+	}
+	return version, nil
+}
 
 // BalanceAt returns the wei balance of the given account.
 // The block number can be nil, in which case the balance is taken from the latest known block.

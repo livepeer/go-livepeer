@@ -537,9 +537,26 @@ func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log,
 		return nil, err
 	}
 
-	q := ethereum.FilterQuery{
-		Addresses: []common.Address{c.jobsManagerAddr},
-		Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(transcoderAddr[:], 32))}, []common.Hash{common.BytesToHash(common.LeftPadBytes(broadcasterAddr[:], 32))}},
+	var q ethereum.FilterQuery
+	if !IsNullAddress(broadcasterAddr) {
+		q = ethereum.FilterQuery{
+			Addresses: []common.Address{c.jobsManagerAddr},
+			Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{}, []common.Hash{common.BytesToHash(common.LeftPadBytes(broadcasterAddr[:], 32))}},
+		}
+	} else if !IsNullAddress(transcoderAddr) {
+		q = ethereum.FilterQuery{
+			Addresses: []common.Address{c.jobsManagerAddr},
+			Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(transcoderAddr[:], 32))}},
+		}
+	} else {
+		q = ethereum.FilterQuery{
+			Addresses: []common.Address{c.jobsManagerAddr},
+			Topics: [][]common.Hash{
+				[]common.Hash{abiJSON.Events["NewJob"].Id()},
+				[]common.Hash{common.BytesToHash(common.LeftPadBytes(transcoderAddr[:], 32))},
+				[]common.Hash{common.BytesToHash(common.LeftPadBytes(broadcasterAddr[:], 32))},
+			},
+		}
 	}
 
 	return c.backend.SubscribeFilterLogs(ctx, q, logsCh)
