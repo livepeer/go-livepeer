@@ -33,11 +33,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
-	ipfsApi "github.com/ipfs/go-ipfs-api"
 	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
-	ipfsd "github.com/livepeer/go-livepeer/ipfs"
+	"github.com/livepeer/go-livepeer/ipfs"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
@@ -98,8 +97,6 @@ func main() {
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
-	ipfsGatewayPort := flag.Int("ipfsGatewayPort", 8080, "IPFS gateway port")
-	ipfsApiPort := flag.Int("ipfsApiPort", 5001, "IPFS api port")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
 	version := flag.Bool("version", false, "Print out the version")
 
@@ -278,11 +275,17 @@ func main() {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	}
 
-	var ipfsEc chan error
 	if *transcoder {
-		if ipfsEc, err = setupIpfs(n, *ipfsPath, *ipfsApiPort, *ipfsGatewayPort); err != nil {
-			glog.Errorf("Error setting up ipfs: %v", err)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		ipfsApi, err := ipfs.StartIpfs(ctx, *ipfsPath)
+		if err != nil {
+			glog.Errorf("Error starting ipfs: %v", err)
+			return
 		}
+
+		n.Ipfs = ipfsApi
 	}
 
 	//Set up the media server
@@ -303,15 +306,13 @@ func main() {
 	case err := <-ec:
 		glog.Infof("Error from media server: %v", err)
 		return
-	case err := <-ipfsEc:
-		glog.Infof("Error from IPFS: %v", err)
-		return
 	case <-msCtx.Done():
 		glog.Infof("MediaServer Done()")
 		return
 	case sig := <-c:
 		glog.Infof("Exiting Livepeer: %v", sig)
 		time.Sleep(time.Millisecond * 500) //Give time for other processes to shut down completely
+		return
 	}
 }
 
@@ -423,30 +424,6 @@ func getEthAccount(datadir string, addr string) (accounts.Account, error) {
 	return accts[0], nil
 }
 
-func startIpfs(ctx context.Context, ipfsPath string, gatewayPort int, apiPort int) error {
-	// Set IPFS config path
-	if err := ipfsd.ConfigIpfsPath(ipfsPath); err != nil {
-		return err
-	}
-
-	// Configure gateway
-	if err := ipfsd.ConfigIpfsGateway(ipfsPath, gatewayPort); err != nil {
-		return err
-	}
-
-	// Configure api
-	if err := ipfsd.ConfigIpfsApi(ipfsPath, apiPort); err != nil {
-		return err
-	}
-
-	// Start daemon
-	if err := ipfsd.StartIpfsDaemon(ctx, ipfsPath); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
@@ -513,28 +490,6 @@ func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 	})
 
 	return nil
-}
-
-func setupIpfs(n *core.LivepeerNode, ipfsPath string, ipfsApiPort, ipfsGatewayPort int) (chan error, error) {
-	ipfs := ipfsApi.NewShell(fmt.Sprintf("localhost:%v", ipfsApiPort))
-	ipfsEc := make(chan error)
-	if _, _, err := ipfs.Version(); err != nil {
-		glog.Errorf("Error connecting to existing IPFS - starting IPFS daemon")
-
-		ipfsCtx, ipfsCancel := context.WithCancel(context.Background())
-		defer ipfsCancel()
-
-		go func() {
-			ipfsEc <- startIpfs(ipfsCtx, ipfsPath, ipfsGatewayPort, ipfsApiPort)
-		}()
-
-		time.Sleep(3 * time.Second)
-		ipfs := ipfsApi.NewShell(fmt.Sprintf("localhost:%v", ipfsApiPort))
-		n.Ipfs = ipfs
-	} else {
-		n.Ipfs = ipfs
-	}
-	return ipfsEc, nil
 }
 
 func txDataToVideoProfile(txData string) ([]lpmscore.VideoProfile, error) {
