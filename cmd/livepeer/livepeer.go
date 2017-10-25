@@ -20,7 +20,6 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"time"
 
 	"github.com/livepeer/lpms/transcoder"
@@ -464,7 +463,6 @@ func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 			glog.Errorf("Error processing job transcoding options: %v", err)
 			return
 		}
-		sort.Sort(lpmscore.ByName(tProfiles))
 
 		config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: job.JobId, PerformOnchainClaim: true}
 		glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.TranscodingOptions, config)

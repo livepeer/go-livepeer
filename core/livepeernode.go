@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"time"
 
 	"github.com/ericxtang/m3u8"
@@ -97,6 +98,9 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.V
 	//Call eth client to create the job
 	p := big.NewInt(int64(price))
 
+	//Sort profiles first
+	sort.Sort(lpmscore.ByName(profiles))
+
 	transOpts := []byte{}
 	for _, prof := range profiles {
 		transOpts = append(transOpts, crypto.Keccak256([]byte(prof.Name))[0:4]...)
@@ -105,7 +109,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.V
 	resCh, errCh := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], p)
 	select {
 	case <-resCh:
-		glog.Infof("Created broadcast job. Price: %v. Type: %v", p, transOpts)
+		glog.Infof("Created broadcast job. Price: %v. Type: %v", p, ethcommon.ToHex(transOpts)[2:])
 	case err := <-errCh:
 		glog.Errorf("Error creating broadcast job: %v", err)
 	}
