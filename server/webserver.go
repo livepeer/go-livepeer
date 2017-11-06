@@ -34,7 +34,7 @@ func (s *LivepeerServer) StartWebserver() {
 		ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps16x9}
 		// tps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps16x9}
 		tr := transcoder.NewFFMpegSegmentTranscoder(ps, "", s.LivepeerNode.WorkDir)
-		ids, err := s.LivepeerNode.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: strmID, Profiles: ps}, nil, tr)
+		ids, err := s.LivepeerNode.TranscodeAndBroadcast(net.TranscodeConfig{ManifestID: strmID, Profiles: ps}, nil, tr)
 		if err != nil {
 			glog.Errorf("Error transcoding: %v", err)
 			http.Error(w, "Error transcoding.", 500)
@@ -413,6 +413,10 @@ func (s *LivepeerServer) StartWebserver() {
 	//Print the current broadcast HLS streamID
 	http.HandleFunc("/streamID", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(LastHLSStreamID))
+	})
+
+	http.HandleFunc("/manifestID", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(LastManifestID))
 	})
 
 	http.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {

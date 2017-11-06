@@ -50,6 +50,7 @@ var TranscoderFeeCut = uint8(10)
 var TranscoderRewardCut = uint8(10)
 var TranscoderSegmentPrice = big.NewInt(150)
 var LastHLSStreamID core.StreamID
+var LastManifestID core.ManifestID
 
 type LivepeerServer struct {
 	RTMPSegmenter lpmscore.RTMPSegmenter
@@ -225,6 +226,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			glog.Errorf("Error creating manifest id: %v", err)
 			return ErrRTMPPublish
 		}
+		LastManifestID = mid
 		manifest, err := s.LivepeerNode.VideoDB.AddNewHLSManifest(mid)
 		if err != nil {
 			glog.Errorf("Error adding manifest %v - %v", mid, err)
