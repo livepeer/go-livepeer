@@ -20,8 +20,6 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/livepeer/lpms/transcoder"
@@ -34,6 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
 	bnet "github.com/livepeer/go-livepeer-basicnet"
+	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/ipfs"
@@ -464,7 +463,6 @@ func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 			glog.Errorf("Error processing job transcoding options: %v", err)
 			return
 		}
-		sort.Sort(lpmscore.ByName(tProfiles))
 
 		config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: job.JobId, PerformOnchainClaim: true}
 		glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.TranscodingOptions, config)
@@ -494,14 +492,18 @@ func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 
 func txDataToVideoProfile(txData string) ([]lpmscore.VideoProfile, error) {
 	profiles := make([]lpmscore.VideoProfile, 0)
-	for _, txp := range strings.Split(txData, ",") {
-		p, ok := lpmscore.VideoProfileLookup[txp]
+
+	for i := 0; i < len(txData); i += lpcommon.VideoProfileIDSize {
+		txp := txData[i : i+lpcommon.VideoProfileIDSize]
+
+		p, ok := lpmscore.VideoProfileLookup[lpcommon.VideoProfileNameLookup[txp]]
 		if !ok {
 			glog.Errorf("Cannot find video profile for job: %v", txp)
 			return nil, core.ErrTranscode
 		}
 		profiles = append(profiles, p)
 	}
+
 	return profiles, nil
 }
 

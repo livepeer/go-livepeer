@@ -380,3 +380,7 @@ func NextBlockMultiple(blockNum *big.Int, blockMultiple *big.Int) *big.Int {
 
 	return new(big.Int).Sub(blockNum.Add(blockNum, blockMultiple), remainder)
 }
+
+func IsNullAddress(addr common.Address) bool {
+	return addr == common.Address{}
+}

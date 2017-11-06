@@ -44,7 +44,7 @@ type Config struct {
 	// Enable recording of SHA3/keccak preimages
 	EnablePreimageRecording bool
 	// JumpTable contains the EVM instruction table. This
-	// may me left uninitialised and will be set the default
+	// may be left uninitialised and will be set to the default
 	// table.
 	JumpTable [256]operation
 }
@@ -59,7 +59,8 @@ type Interpreter struct {
 	gasTable params.GasTable
 	intPool  *intPool
 
-	readonly bool
+	readOnly   bool   // Whether to throw on stateful modifications
+	returnData []byte // Last CALL's return data for subsequent reuse
 }
 
 // NewInterpreter returns a new instance of the Interpreter.
@@ -69,6 +70,8 @@ func NewInterpreter(evm *EVM, cfg Config) *Interpreter {
 	// we'll set the default jump table.
 	if !cfg.JumpTable[STOP].valid {
 		switch {
+		case evm.ChainConfig().IsByzantium(evm.BlockNumber):
+			cfg.JumpTable = byzantiumInstructionSet
 		case evm.ChainConfig().IsHomestead(evm.BlockNumber):
 			cfg.JumpTable = homesteadInstructionSet
 		default:
@@ -85,6 +88,18 @@ func NewInterpreter(evm *EVM, cfg Config) *Interpreter {
 }
 
 func (in *Interpreter) enforceRestrictions(op OpCode, operation operation, stack *Stack) error {
+	if in.evm.chainRules.IsByzantium {
+		if in.readOnly {
+			// If the interpreter is operating in readonly mode, make sure no
+			// state-modifying operation is performed. The 3rd stack item
+			// for a call operation is the value. Transferring value from one
+			// account to the others means the state is modified and should also
+			// return with an error.
+			if operation.writes || (op == CALL && stack.Back(2).BitLen() > 0) {
+				return errWriteProtection
+			}
+		}
+	}
 	return nil
 }
 
@@ -95,8 +110,13 @@ func (in *Interpreter) enforceRestrictions(op OpCode, operation operation, stack
 // considered a revert-and-consume-all-gas operation. No error specific checks
 // should be handled to reduce complexity and errors further down the in.
 func (in *Interpreter) Run(snapshot int, contract *Contract, input []byte) (ret []byte, err error) {
+	// Increment the call depth which is restricted to 1024
 	in.evm.depth++
 	defer func() { in.evm.depth-- }()
+
+	// Reset the previous call's return data. It's unimportant to preserve the old buffer
+	// as every returning call will return new data anyway.
+	in.returnData = nil
 
 	// Don't bother with the execution if there's no code.
 	if len(contract.Code) == 0 {
@@ -117,12 +137,17 @@ func (in *Interpreter) Run(snapshot int, contract *Contract, input []byte) (ret 
 		// to be uint256. Practically much less so feasible.
 		pc   = uint64(0) // program counter
 		cost uint64
+		// copies used by tracer
+		stackCopy = newstack() // stackCopy needed for Tracer since stack is mutated by 63/64 gas rule
+		pcCopy    uint64       // needed for the deferred Tracer
+		gasCopy   uint64       // for Tracer to log gas remaining before execution
+		logged    bool         // deferred Tracer should ignore already logged steps
 	)
 	contract.Input = input
 
 	defer func() {
-		if err != nil && in.cfg.Debug {
-			in.cfg.Tracer.CaptureState(in.evm, pc, op, contract.Gas, cost, mem, stack, contract, in.evm.depth, err)
+		if err != nil && !logged && in.cfg.Debug {
+			in.cfg.Tracer.CaptureState(in.evm, pcCopy, op, gasCopy, cost, mem, stackCopy, contract, in.evm.depth, err)
 		}
 	}()
 
@@ -134,20 +159,27 @@ func (in *Interpreter) Run(snapshot int, contract *Contract, input []byte) (ret 
 		// Get the memory location of pc
 		op = contract.GetOp(pc)
 
-		// get the operation from the jump table matching the opcode
-		operation := in.cfg.JumpTable[op]
-		if err := in.enforceRestrictions(op, operation, stack); err != nil {
-			return nil, err
+		if in.cfg.Debug {
+			logged = false
+			pcCopy = uint64(pc)
+			gasCopy = uint64(contract.Gas)
+			stackCopy = newstack()
+			for _, val := range stack.data {
+				stackCopy.push(val)
+			}
 		}
 
-		// if the op is invalid abort the process and return an error
+		// Get the operation from the jump table matching the opcode and validate the
+		// stack and make sure there enough stack items available to perform the operation
+		operation := in.cfg.JumpTable[op]
 		if !operation.valid {
 			return nil, fmt.Errorf("invalid opcode 0x%x", int(op))
 		}
-
-		// validate the stack and make sure there enough stack items available
-		// to perform the operation
 		if err := operation.validateStack(stack); err != nil {
+			return nil, err
+		}
+		// If the operation is valid, enforce and write restrictions
+		if err := in.enforceRestrictions(op, operation, stack); err != nil {
 			return nil, err
 		}
 
@@ -179,7 +211,8 @@ func (in *Interpreter) Run(snapshot int, contract *Contract, input []byte) (ret 
 		}
 
 		if in.cfg.Debug {
-			in.cfg.Tracer.CaptureState(in.evm, pc, op, contract.Gas, cost, mem, stack, contract, in.evm.depth, err)
+			in.cfg.Tracer.CaptureState(in.evm, pc, op, gasCopy, cost, mem, stackCopy, contract, in.evm.depth, err)
+			logged = true
 		}
 
 		// execute the operation
@@ -189,19 +222,21 @@ func (in *Interpreter) Run(snapshot int, contract *Contract, input []byte) (ret 
 		if verifyPool {
 			verifyIntegerPool(in.intPool)
 		}
+		// if the operation clears the return data (e.g. it has returning data)
+		// set the last return to the result of the operation.
+		if operation.returns {
+			in.returnData = res
+		}
 
 		switch {
 		case err != nil:
 			return nil, err
+		case operation.reverts:
+			return res, errExecutionReverted
 		case operation.halts:
 			return res, nil
 		case !operation.jumps:
 			pc++
-		}
-		// if the operation returned a value make sure that is also set
-		// the last return data.
-		if res != nil {
-			mem.lastReturn = ret
 		}
 	}
 	return nil, nil

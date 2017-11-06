@@ -1,4 +1,4 @@
-// Copyright 2014 The go-ethereum Authors
+// Copyright 2017 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,4 +14,27 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package core
+package storage
+
+import (
+	"hash"
+)
+
+const (
+	BMTHash  = "BMT"
+	SHA3Hash = "SHA3" // http://golang.org/pkg/hash/#Hash
+)
+
+type SwarmHash interface {
+	hash.Hash
+	ResetWithLength([]byte)
+}
+
+type HashWithLength struct {
+	hash.Hash
+}
+
+func (self *HashWithLength) ResetWithLength(length []byte) {
+	self.Reset()
+	self.Write(length)
+}
