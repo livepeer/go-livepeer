@@ -37,6 +37,14 @@ type StubClient struct {
 	ClaimCounter  int
 	SubLogsCh     chan types.Log
 	JobsMap       map[string]*Job
+
+	ClaimWorkFunc func(e *StubClient, jobId *big.Int, segmentRange [2]*big.Int, transcodeClaimsRoot [32]byte) (<-chan types.Receipt, <-chan error)
+}
+
+func NewStubClient() *StubClient {
+	e := &StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
+	e.initClaimWork()
+	return e
 }
 
 func (e *StubClient) Backend() *ethclient.Client { return nil }
@@ -73,18 +81,24 @@ func (e *StubClient) JobDetails(id *big.Int) (*big.Int, [32]byte, *big.Int, comm
 }
 func (e *StubClient) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) { return nil, nil }
 func (e *StubClient) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, transcodeClaimsRoot [32]byte) (<-chan types.Receipt, <-chan error) {
-	e.ClaimCounter++
-	e.ClaimJid = append(e.ClaimJid, jobId)
-	e.ClaimStart = append(e.ClaimStart, segmentRange[0])
-	e.ClaimEnd = append(e.ClaimEnd, segmentRange[1])
-	e.ClaimRoot[transcodeClaimsRoot] = true
-	rc := make(chan types.Receipt)
-	ec := make(chan error)
-	go func() {
-		rc <- types.Receipt{TxHash: common.StringToHash("ClaimWork")}
-	}()
-	return rc, ec
+	return e.ClaimWorkFunc(e, jobId, segmentRange, transcodeClaimsRoot)
 }
+func (e *StubClient) initClaimWork() {
+	e.ClaimWorkFunc = func(e *StubClient, jobId *big.Int, segmentRange [2]*big.Int, transcodeClaimsRoot [32]byte) (<-chan types.Receipt, <-chan error) {
+		e.ClaimCounter++
+		e.ClaimJid = append(e.ClaimJid, jobId)
+		e.ClaimStart = append(e.ClaimStart, segmentRange[0])
+		e.ClaimEnd = append(e.ClaimEnd, segmentRange[1])
+		e.ClaimRoot[transcodeClaimsRoot] = true
+		rc := make(chan types.Receipt)
+		ec := make(chan error)
+		go func() {
+			rc <- types.Receipt{TxHash: common.StringToHash("ClaimWork")}
+		}()
+		return rc, ec
+	}
+}
+
 func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error) {
 	e.Jid = jobId
 	e.SegSeqNum = segmentNumber

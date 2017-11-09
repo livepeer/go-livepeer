@@ -1,11 +1,13 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -118,8 +120,7 @@ func TestRanges(t *testing.T) {
 	}
 }
 
-func TestClaim(t *testing.T) {
-	ethClient := &eth.StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
+func prepClaim(ethClient *eth.StubClient, t *testing.T) (*BasicClaimManager, []common.Hash, []common.Hash) {
 	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
 	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{})
 
@@ -170,6 +171,27 @@ func TestClaim(t *testing.T) {
 		receiptHashes2[i-15] = receipt.Hash()
 	}
 
+	return cm, receiptHashes1, receiptHashes2
+}
+func TestClaim(t *testing.T) {
+	ethClient := eth.NewStubClient()
+	//Make the first Claim call fail. The manager should retry.
+	// ethClient := eth.NewStubClient()
+	// workingFunc := ethClient.ClaimWorkFunc
+	// ethClient.ClaimWorkFunc = func(e *eth.StubClient, jobId *big.Int, segmentRange [2]*big.Int, transcodeClaimsRoot [32]byte) (<-chan types.Receipt, <-chan error) {
+	// 	if ethClient.ClaimCounter == 0 {
+	// 		rc := make(chan types.Receipt)
+	// 		ec := make(chan error)
+	// 		go func() {
+	// 			ec <- errors.New("Test Claim Error")
+	// 		}()
+	// 		return rc, ec
+	// 	}
+	// 	return workingFunc(ethClient, jobId, segmentRange, transcodeClaimsRoot)
+	// }
+
+	cm, receiptHashes1, receiptHashes2 := prepClaim(ethClient, t)
+
 	//call Claim
 	count, rc, ec := cm.Claim()
 	timer := time.NewTimer(500 * time.Millisecond)
@@ -207,6 +229,61 @@ func TestClaim(t *testing.T) {
 	}
 }
 
+func TestClaimRetry(t *testing.T) {
+	//Make the first Claim call fail. The manager should retry.
+	ethClient := eth.NewStubClient()
+	workingFunc := ethClient.ClaimWorkFunc
+	ethClient.ClaimWorkFunc = func(e *eth.StubClient, jobId *big.Int, segmentRange [2]*big.Int, transcodeClaimsRoot [32]byte) (<-chan types.Receipt, <-chan error) {
+		if ethClient.ClaimCounter == 0 {
+			rc := make(chan types.Receipt)
+			ec := make(chan error)
+			go func() {
+				ec <- errors.New("Test Claim Error")
+			}()
+			return rc, ec
+		}
+		return workingFunc(ethClient, jobId, segmentRange, transcodeClaimsRoot)
+	}
+
+	cm, receiptHashes1, receiptHashes2 := prepClaim(ethClient, t)
+	cm.claimRetryInterval = time.Millisecond * 100
+
+	//call Claim
+	count, rc, ec := cm.Claim()
+	timer := time.NewTimer(500 * time.Millisecond)
+	select {
+	case <-rc:
+		count = count - 1
+		if count == 0 {
+			break
+		}
+	case err := <-ec:
+		t.Errorf("Error: %v", err)
+	case <-timer.C:
+		t.Errorf("Timed out")
+	}
+
+	//Make sure the roots are used for calling Claim
+	root1, _, err := ethTypes.NewMerkleTree(receiptHashes1)
+	lpCommon.WaitUntil(time.Second, func() bool {
+		_, ok := ethClient.ClaimRoot[[32]byte(root1.Hash)]
+		return ok
+	})
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	if _, ok := ethClient.ClaimRoot[[32]byte(root1.Hash)]; !ok {
+		t.Errorf("Expecting claim to have root %v, but got %v", [32]byte(root1.Hash), ethClient.ClaimRoot)
+	}
+
+	root2, _, err := ethTypes.NewMerkleTree(receiptHashes2)
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	if _, ok := ethClient.ClaimRoot[[32]byte(root2.Hash)]; !ok {
+		t.Errorf("Expecting claim to have root %v, but got %v", [32]byte(root2.Hash), ethClient.ClaimRoot)
+	}
+}
 func TestVerify(t *testing.T) {
 	// ethClient := &eth.StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
 	ethClient := &eth.StubClient{VeriRate: 10}

@@ -6,11 +6,13 @@ import (
 	"errors"
 	"math/big"
 	"sort"
+	"time"
 
-	"github.com/ethereum/go-ethereum/common"
+	ethCommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/ipfs"
@@ -19,6 +21,8 @@ import (
 
 var ErrClaim = errors.New("ErrClaim")
 var ErrClaimManager = errors.New("ErrClaimManager")
+
+const DefaultClaimRetryInterval = time.Second * 5
 
 type ClaimManager interface {
 	AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error
@@ -38,7 +42,7 @@ type claimData struct {
 	claimStart           int64
 	claimEnd             int64
 	claimBlkNum          *big.Int
-	claimBlkHash         common.Hash
+	claimBlkHash         ethCommon.Hash
 	claimProof           []byte
 	claimId              *big.Int
 	claimConcatTDatahash []byte
@@ -57,16 +61,17 @@ type BasicClaimManager struct {
 	segClaimMap map[int64]*claimData
 	cost        *big.Int
 
-	broadcasterAddr common.Address
+	broadcasterAddr ethCommon.Address
 	pricePerSegment *big.Int
 
-	r *ethTypes.TranscodeReceipt
+	r                  *ethTypes.TranscodeReceipt
+	claimRetryInterval time.Duration
 }
 
 //NewBasicClaimManager creates a new claim manager.
-func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []lpmscore.VideoProfile, c eth.LivepeerEthClient, ipfs ipfs.IpfsApi) *BasicClaimManager {
+func NewBasicClaimManager(sid string, jid *big.Int, broadcaster ethCommon.Address, pricePerSegment *big.Int, p []lpmscore.VideoProfile, c eth.LivepeerEthClient, ipfs ipfs.IpfsApi) *BasicClaimManager {
 	seqNos := make([][]int64, len(p), len(p))
-	rHashes := make([][]common.Hash, len(p), len(p))
+	rHashes := make([][]ethCommon.Hash, len(p), len(p))
 	sd := make([][][]byte, len(p), len(p))
 	dHashes := make([][]string, len(p), len(p))
 	tHashes := make([][]string, len(p), len(p))
@@ -77,7 +82,7 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, 
 	for i := 0; i < len(p); i++ {
 		sNo := make([]int64, 0)
 		seqNos[i] = sNo
-		rh := make([]common.Hash, 0)
+		rh := make([]ethCommon.Hash, 0)
 		rHashes[i] = rh
 		d := make([][]byte, 0)
 		sd[i] = d
@@ -90,7 +95,7 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, 
 		pLookup[p[i]] = i
 	}
 	// return &BasicClaimManager{client: c, ipfs: ipfs, strmID: sid, jobID: jid, cost: big.NewInt(0), broadcasterAddr: broadcaster, pricePerSegment: pricePerSegment, seqNos: seqNos, receiptHashes: rHashes, segData: sd, dataHashes: dHashes, tDataHashes: tHashes, bSigs: sigs, profiles: p, pLookup: pLookup}
-	return &BasicClaimManager{client: c, ipfs: ipfs, strmID: sid, jobID: jid, cost: big.NewInt(0), broadcasterAddr: broadcaster, pricePerSegment: pricePerSegment, profiles: p, pLookup: pLookup, segClaimMap: make(map[int64]*claimData)}
+	return &BasicClaimManager{client: c, ipfs: ipfs, strmID: sid, jobID: jid, cost: big.NewInt(0), broadcasterAddr: broadcaster, pricePerSegment: pricePerSegment, profiles: p, pLookup: pLookup, segClaimMap: make(map[int64]*claimData), claimRetryInterval: DefaultClaimRetryInterval}
 }
 
 //AddReceipt adds a claim for a given video segment.
@@ -193,7 +198,7 @@ func (c *BasicClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec c
 
 	for rangeIdx, segRange := range ranges {
 		//create concat hashes for each seg
-		receiptHashes := make([]common.Hash, segRange[1]-segRange[0]+1)
+		receiptHashes := make([]ethCommon.Hash, segRange[1]-segRange[0]+1)
 		for i := segRange[0]; i <= segRange[1]; i++ {
 			segTDataHashes := make([][]byte, len(c.profiles))
 			for pi, p := range c.profiles {
@@ -222,32 +227,39 @@ func (c *BasicClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec c
 		//Do the claim
 		go func(rangeIdx int, segRange [2]int64, rc chan types.Receipt, ec chan error) {
 			bigRange := [2]*big.Int{big.NewInt(segRange[0]), big.NewInt(segRange[1])}
-			resCh, errCh := c.client.ClaimWork(c.jobID, bigRange, root.Hash)
-			select {
-			case res := <-resCh:
-				blkNum, blkHash, err := c.client.GetBlockInfoByTxHash(context.Background(), res.TxHash)
-				if err != nil {
-					glog.Infof("Error getting block number / hash: %v", err)
-					ec <- err
-					return
-				}
-				// glog.Infof("Got block hash: %x, block number: %v", blkHash, blkNum)
-				//Record claim information for verification later
-				for i := segRange[0]; i <= segRange[1]; i++ {
-					seg, _ := c.segClaimMap[i]
-					seg.claimStart = segRange[0]
-					seg.claimEnd = segRange[1]
-					seg.claimBlkNum = blkNum
-					seg.claimBlkHash = blkHash
-					seg.claimProof = proofs[i-segRange[0]].Bytes()
-					seg.claimId = big.NewInt(int64(rangeIdx))
+
+			common.Retry(3, c.claimRetryInterval, func() error {
+				resCh, errCh := c.client.ClaimWork(c.jobID, bigRange, root.Hash)
+				select {
+				case res := <-resCh:
+					blkNum, blkHash, err := c.client.GetBlockInfoByTxHash(context.Background(), res.TxHash)
+					if err != nil {
+						glog.Infof("Error getting block number / hash: %v", err)
+						ec <- err
+						return nil
+					}
+					// glog.Infof("Got block hash: %x, block number: %v", blkHash, blkNum)
+					//Record claim information for verification later
+					for i := segRange[0]; i <= segRange[1]; i++ {
+						seg, _ := c.segClaimMap[i]
+						seg.claimStart = segRange[0]
+						seg.claimEnd = segRange[1]
+						seg.claimBlkNum = blkNum
+						seg.claimBlkHash = blkHash
+						seg.claimProof = proofs[i-segRange[0]].Bytes()
+						seg.claimId = big.NewInt(int64(rangeIdx))
+					}
+
+					rc <- res
+					return nil
+				case err := <-errCh:
+					glog.Errorf("Error claiming work: %v", err)
+					return err
 				}
 
-				rc <- res
-			case err := <-errCh:
-				glog.Errorf("Error claiming work: %v", err)
 				ec <- err
-			}
+				return nil
+			})
 		}(rangeIdx, segRange, rc, ec)
 	}
 
@@ -278,8 +290,8 @@ func (c *BasicClaimManager) Verify() error {
 			}
 
 			//Call Verify
-			dataHashes := [2][32]byte{common.BytesToHash(scm.dataHash), common.BytesToHash(scm.claimConcatTDatahash)}
-			glog.Infof("Calling Verfy with: strmID:%v, segNum:%v, dataHashes[0]:%v, dataHashes[1]:%v, dataStorageHash: %v, broadcasterSig:%v, broadcasterAddr:%v, proof:%v", c.strmID, segNo, common.ToHex(dataHashes[0][:]), common.ToHex(dataHashes[1][:]), dataStorageHash, common.ToHex(scm.bSig), common.ToHex(c.broadcasterAddr.Bytes()), scm.claimProof)
+			dataHashes := [2][32]byte{ethCommon.BytesToHash(scm.dataHash), ethCommon.BytesToHash(scm.claimConcatTDatahash)}
+			glog.Infof("Calling Verfy with: strmID:%v, segNum:%v, dataHashes[0]:%v, dataHashes[1]:%v, dataStorageHash: %v, broadcasterSig:%v, broadcasterAddr:%v, proof:%v", c.strmID, segNo, ethCommon.ToHex(dataHashes[0][:]), ethCommon.ToHex(dataHashes[1][:]), dataStorageHash, ethCommon.ToHex(scm.bSig), ethCommon.ToHex(c.broadcasterAddr.Bytes()), scm.claimProof)
 			resCh, errCh := c.client.Verify(c.jobID, scm.claimId, big.NewInt(segNo), dataStorageHash, dataHashes, scm.bSig, scm.claimProof)
 			select {
 			case <-resCh:
@@ -326,13 +338,13 @@ func (c *BasicClaimManager) DistributeFees() error {
 	return nil
 }
 
-func shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, blkHash common.Hash, verifyRate uint64) bool {
+func shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, blkHash ethCommon.Hash, verifyRate uint64) bool {
 	if seqNum < start || seqNum > end {
 		return false
 	}
 
-	bigSeqNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(seqNum).Bytes(), 32)
-	bigBlkNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(blkNum).Bytes(), 32)
+	bigSeqNumBytes := ethCommon.LeftPadBytes(new(big.Int).SetInt64(seqNum).Bytes(), 32)
+	bigBlkNumBytes := ethCommon.LeftPadBytes(new(big.Int).SetInt64(blkNum).Bytes(), 32)
 
 	combH := crypto.Keccak256(bigBlkNumBytes, blkHash.Bytes(), bigSeqNumBytes)
 	hashNum := new(big.Int).SetBytes(combH)
