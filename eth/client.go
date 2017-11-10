@@ -135,7 +135,6 @@ type Claim struct {
 	ClaimBlock           *big.Int
 	EndVerificationBlock *big.Int
 	EndSlashingBlock     *big.Int
-	TranscoderTotalStake *big.Int
 	Status               uint8
 }
 
@@ -614,7 +613,11 @@ func (c *Client) IsActiveTranscoder() (bool, error) {
 }
 
 func (c *Client) TranscoderBond() (*big.Int, error) {
-	return c.bondingManagerSession.GetDelegatorBondedAmount(c.account.Address)
+	d, err := c.bondingManagerSession.GetDelegator(c.account.Address)
+	if err != nil {
+		return nil, err
+	}
+	return d.BondedAmount, nil
 }
 
 func (c *Client) TranscoderStake() (*big.Int, error) {
@@ -646,22 +649,11 @@ func (c *Client) TranscoderPendingPricingInfo() (uint8, uint8, *big.Int, error) 
 }
 
 func (c *Client) GetTranscoderPendingPricingInfo(addr common.Address) (uint8, uint8, *big.Int, error) {
-	pBlockRewardCut, err := c.bondingManagerSession.GetTranscoderPendingBlockRewardCut(addr)
+	t, err := c.bondingManagerSession.GetTranscoder(addr)
 	if err != nil {
 		return 0, 0, nil, err
 	}
-
-	pFeeShare, err := c.bondingManagerSession.GetTranscoderPendingFeeShare(addr)
-	if err != nil {
-		return 0, 0, nil, err
-	}
-
-	pPricePerSegment, err := c.bondingManagerSession.GetTranscoderPendingPricePerSegment(addr)
-	if err != nil {
-		return 0, 0, nil, err
-	}
-
-	return pBlockRewardCut, pFeeShare, pPricePerSegment, nil
+	return t.PendingBlockRewardCut, t.PendingFeeShare, t.PendingPricePerSegment, nil
 }
 
 func (c *Client) TranscoderPricingInfo() (uint8, uint8, *big.Int, error) {
@@ -669,22 +661,11 @@ func (c *Client) TranscoderPricingInfo() (uint8, uint8, *big.Int, error) {
 }
 
 func (c *Client) GetTranscoderPricingInfo(addr common.Address) (uint8, uint8, *big.Int, error) {
-	blockRewardCut, err := c.bondingManagerSession.GetTranscoderBlockRewardCut(addr)
+	t, err := c.bondingManagerSession.GetTranscoder(addr)
 	if err != nil {
 		return 0, 0, nil, err
 	}
-
-	feeShare, err := c.bondingManagerSession.GetTranscoderFeeShare(addr)
-	if err != nil {
-		return 0, 0, nil, err
-	}
-
-	pricePerSegment, err := c.bondingManagerSession.GetTranscoderPricePerSegment(addr)
-	if err != nil {
-		return 0, 0, nil, err
-	}
-
-	return blockRewardCut, feeShare, pricePerSegment, nil
+	return t.BlockRewardCut, t.FeeShare, t.PricePerSegment, nil
 }
 
 func (c *Client) DelegatorStatus() (string, error) {
@@ -714,7 +695,11 @@ func (c *Client) DelegatorStake() (*big.Int, error) {
 }
 
 func (c *Client) LastRewardRound() (*big.Int, error) {
-	return c.bondingManagerSession.GetTranscoderLastRewardRound(c.account.Address)
+	t, err := c.bondingManagerSession.GetTranscoder(c.account.Address)
+	if err != nil {
+		return nil, err
+	}
+	return t.LastRewardRound, nil
 }
 
 func (c *Client) RoundLength() (*big.Int, error) {
@@ -734,95 +719,38 @@ func (c *Client) SlashingPeriod() (*big.Int, error) {
 }
 
 func (c *Client) GetJob(jobID *big.Int) (*Job, error) {
-	maxPricePerSegment, err := c.jobsManagerSession.GetJobMaxPricePerSegment(jobID)
+	j, err := c.jobsManagerSession.GetJob(jobID)
 	if err != nil {
 		return nil, err
 	}
-
-	broadcaster, err := c.jobsManagerSession.GetJobBroadcasterAddress(jobID)
-	if err != nil {
-		return nil, err
-	}
-
-	transcoder, err := c.jobsManagerSession.GetJobTranscoderAddress(jobID)
-	if err != nil {
-		return nil, err
-	}
-
-	endBlock, err := c.jobsManagerSession.GetJobEndBlock(jobID)
-	if err != nil {
-		return nil, err
-	}
-
-	escrow, err := c.jobsManagerSession.GetJobEscrow(jobID)
-	if err != nil {
-		return nil, err
-	}
-
-	// If we are using the ManagerProxy contract address
-	// we cannot directly retrieve dynamic length data at the moment
-	// We have to retrieve streamId and transcodingOptions via logs
 	return &Job{
 		JobId:              jobID,
-		MaxPricePerSegment: maxPricePerSegment,
-		BroadcasterAddress: broadcaster,
-		TranscoderAddress:  transcoder,
-		EndBlock:           endBlock,
-		Escrow:             escrow,
+		StreamId:           j.StreamId,
+		MaxPricePerSegment: j.MaxPricePerSegment,
+		BroadcasterAddress: j.BroadcasterAddress,
+		TranscodingOptions: j.TranscodingOptions,
+		TranscoderAddress:  j.TranscoderAddress,
+		EndBlock:           j.EndBlock,
+		Escrow:             j.Escrow,
 	}, nil
 }
 
 //TODO: Go binding has an issue returning [32]byte...
 func (c *Client) GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error) {
-	startSegment, err := c.jobsManagerSession.GetClaimStartSegment(jobID, claimID)
-	if err != nil {
-		return nil, err
-	}
-
-	endSegment, err := c.jobsManagerSession.GetClaimEndSegment(jobID, claimID)
-	if err != nil {
-		return nil, err
-	}
-
-	claimRoot, err := c.jobsManagerSession.GetClaimRoot(jobID, claimID)
-	if err != nil {
-		return nil, err
-	}
-
-	claimBlock, err := c.jobsManagerSession.GetClaimBlock(jobID, claimID)
-	if err != nil {
-		return nil, err
-	}
-
-	endVerificationBlock, err := c.jobsManagerSession.GetClaimEndVerificationBlock(jobID, claimID)
-	if err != nil {
-		return nil, err
-	}
-
-	endSlashingBlock, err := c.jobsManagerSession.GetClaimEndSlashingBlock(jobID, claimID)
-	if err != nil {
-		return nil, err
-	}
-
-	transcoderTotalStake, err := c.jobsManagerSession.GetClaimTranscoderTotalStake(jobID, claimID)
-	if err != nil {
-		return nil, err
-	}
-
-	status, err := c.jobsManagerSession.GetClaimStatus(jobID, claimID)
+	claim, err := c.jobsManagerSession.GetClaim(jobID, claimID)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Claim{
-		SegmentRange:         [2]*big.Int{startSegment, endSegment},
-		ClaimRoot:            claimRoot,
-		ClaimBlock:           claimBlock,
-		EndVerificationBlock: endVerificationBlock,
-		EndSlashingBlock:     endSlashingBlock,
-		TranscoderTotalStake: transcoderTotalStake,
-		Status:               status,
-	}, err
+		SegmentRange:         claim.SegmentRange,
+		ClaimRoot:            claim.ClaimRoot,
+		ClaimBlock:           claim.ClaimBlock,
+		EndVerificationBlock: claim.EndVerificationBlock,
+		EndSlashingBlock:     claim.EndSlashingBlock,
+		Status:               claim.Status,
+	}, nil
+
 }
 
 func (c *Client) GetCandidateTranscodersStats() ([]TranscoderStats, error) {

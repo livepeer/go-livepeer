@@ -14,7 +14,7 @@ import (
 )
 
 // JobsManagerABI is the input ABI used to generate the binding from.
-const JobsManagerABI = "[{\"constant\":false,\"inputs\":[{\"name\":\"_streamId\",\"type\":\"string\"},{\"name\":\"_transcodingOptions\",\"type\":\"string\"},{\"name\":\"_maxPricePerSegment\",\"type\":\"uint256\"}],\"name\":\"job\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"jobs\",\"outputs\":[{\"name\":\"jobId\",\"type\":\"uint256\"},{\"name\":\"streamId\",\"type\":\"string\"},{\"name\":\"transcodingOptions\",\"type\":\"string\"},{\"name\":\"maxPricePerSegment\",\"type\":\"uint256\"},{\"name\":\"broadcasterAddress\",\"type\":\"address\"},{\"name\":\"transcoderAddress\",\"type\":\"address\"},{\"name\":\"endBlock\",\"type\":\"uint256\"},{\"name\":\"escrow\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"},{\"name\":\"_result\",\"type\":\"bool\"}],\"name\":\"receiveVerification\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"finderFee\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"getJobStreamId\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"missedVerificationSlashAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"getJobEscrow\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"isInitialized\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"withdraw\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_segmentRange\",\"type\":\"uint256[2]\"},{\"name\":\"_claimRoot\",\"type\":\"bytes32\"}],\"name\":\"claimWork\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"getClaimEndSegment\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"getClaimBlock\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"},{\"name\":\"_dataStorageHash\",\"type\":\"string\"},{\"name\":\"_dataHashes\",\"type\":\"bytes32[2]\"},{\"name\":\"_broadcasterSig\",\"type\":\"bytes\"},{\"name\":\"_proof\",\"type\":\"bytes\"}],\"name\":\"verify\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":true,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"getJobTranscodingOptions\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"getClaimTranscoderTotalStake\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"getClaimStatus\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationRate\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"distributeFees\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimIds\",\"type\":\"uint256[]\"}],\"name\":\"batchDistributeFees\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"getClaimEndSlashingBlock\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"getJobTranscoderAddress\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"getJobTotalClaims\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"numJobs\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"getClaimRoot\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"getJobMaxPricePerSegment\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"getClaimEndVerificationBlock\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"jobStatus\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"deposit\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"failedVerificationSlashAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"getJobEndBlock\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationFailureThreshold\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"}],\"name\":\"missedVerificationSlash\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"getJobBroadcasterAddress\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"getClaimStartSegment\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"slashingPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"broadcasterDeposits\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"jobEndingPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"endJob\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_verificationRate\",\"type\":\"uint64\"},{\"name\":\"_jobEndingPeriod\",\"type\":\"uint256\"},{\"name\":\"_verificationPeriod\",\"type\":\"uint256\"},{\"name\":\"_slashingPeriod\",\"type\":\"uint256\"},{\"name\":\"_failedVerificationSlashAmount\",\"type\":\"uint64\"},{\"name\":\"_missedVerificationSlashAmount\",\"type\":\"uint64\"},{\"name\":\"_finderFee\",\"type\":\"uint64\"}],\"name\":\"initialize\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"broadcaster\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"streamId\",\"type\":\"string\"},{\"indexed\":false,\"name\":\"transcodingOptions\",\"type\":\"string\"}],\"name\":\"NewJob\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"claimId\",\"type\":\"uint256\"}],\"name\":\"NewClaim\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"claimId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"segmentNumber\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"result\",\"type\":\"bool\"}],\"name\":\"ReceivedVerification\",\"type\":\"event\"}]"
+const JobsManagerABI = "[{\"constant\":false,\"inputs\":[{\"name\":\"_streamId\",\"type\":\"string\"},{\"name\":\"_transcodingOptions\",\"type\":\"string\"},{\"name\":\"_maxPricePerSegment\",\"type\":\"uint256\"}],\"name\":\"job\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"jobs\",\"outputs\":[{\"name\":\"jobId\",\"type\":\"uint256\"},{\"name\":\"streamId\",\"type\":\"string\"},{\"name\":\"transcodingOptions\",\"type\":\"string\"},{\"name\":\"maxPricePerSegment\",\"type\":\"uint256\"},{\"name\":\"broadcasterAddress\",\"type\":\"address\"},{\"name\":\"transcoderAddress\",\"type\":\"address\"},{\"name\":\"creationRound\",\"type\":\"uint256\"},{\"name\":\"endBlock\",\"type\":\"uint256\"},{\"name\":\"escrow\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"},{\"name\":\"_result\",\"type\":\"bool\"}],\"name\":\"receiveVerification\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"finderFee\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"missedVerificationSlashAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"isInitialized\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"withdraw\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_segmentRange\",\"type\":\"uint256[2]\"},{\"name\":\"_claimRoot\",\"type\":\"bytes32\"}],\"name\":\"claimWork\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"getClaim\",\"outputs\":[{\"name\":\"segmentRange\",\"type\":\"uint256[2]\"},{\"name\":\"claimRoot\",\"type\":\"bytes32\"},{\"name\":\"claimBlock\",\"type\":\"uint256\"},{\"name\":\"endVerificationBlock\",\"type\":\"uint256\"},{\"name\":\"endSlashingBlock\",\"type\":\"uint256\"},{\"name\":\"status\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"},{\"name\":\"_dataStorageHash\",\"type\":\"string\"},{\"name\":\"_dataHashes\",\"type\":\"bytes32[2]\"},{\"name\":\"_broadcasterSig\",\"type\":\"bytes\"},{\"name\":\"_proof\",\"type\":\"bytes\"}],\"name\":\"verify\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"}],\"name\":\"isClaimSegmentVerified\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationRate\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"distributeFees\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimIds\",\"type\":\"uint256[]\"}],\"name\":\"batchDistributeFees\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"numJobs\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"jobStatus\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"deposit\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"failedVerificationSlashAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"getJob\",\"outputs\":[{\"name\":\"streamId\",\"type\":\"string\"},{\"name\":\"transcodingOptions\",\"type\":\"string\"},{\"name\":\"maxPricePerSegment\",\"type\":\"uint256\"},{\"name\":\"broadcasterAddress\",\"type\":\"address\"},{\"name\":\"transcoderAddress\",\"type\":\"address\"},{\"name\":\"creationRound\",\"type\":\"uint256\"},{\"name\":\"endBlock\",\"type\":\"uint256\"},{\"name\":\"escrow\",\"type\":\"uint256\"},{\"name\":\"totalClaims\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationFailureThreshold\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"}],\"name\":\"missedVerificationSlash\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"slashingPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"broadcasterDeposits\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"jobEndingPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"endJob\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_verificationRate\",\"type\":\"uint64\"},{\"name\":\"_jobEndingPeriod\",\"type\":\"uint256\"},{\"name\":\"_verificationPeriod\",\"type\":\"uint256\"},{\"name\":\"_slashingPeriod\",\"type\":\"uint256\"},{\"name\":\"_failedVerificationSlashAmount\",\"type\":\"uint64\"},{\"name\":\"_missedVerificationSlashAmount\",\"type\":\"uint64\"},{\"name\":\"_finderFee\",\"type\":\"uint64\"}],\"name\":\"initialize\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"broadcaster\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"streamId\",\"type\":\"string\"},{\"indexed\":false,\"name\":\"transcodingOptions\",\"type\":\"string\"}],\"name\":\"NewJob\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"claimId\",\"type\":\"uint256\"}],\"name\":\"NewClaim\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"claimId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"segmentNumber\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"result\",\"type\":\"bool\"}],\"name\":\"ReceivedVerification\",\"type\":\"event\"}]"
 
 // JobsManager is an auto generated Go binding around an Ethereum contract.
 type JobsManager struct {
@@ -247,420 +247,146 @@ func (_JobsManager *JobsManagerCallerSession) FinderFee() (uint64, error) {
 	return _JobsManager.Contract.FinderFee(&_JobsManager.CallOpts)
 }
 
-// GetClaimBlock is a free data retrieval call binding the contract method 0x5831fd65.
+// GetClaim is a free data retrieval call binding the contract method 0x427a2fc2.
 //
-// Solidity: function getClaimBlock(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) GetClaimBlock(opts *bind.CallOpts, _jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
+// Solidity: function getClaim(_jobId uint256, _claimId uint256) constant returns(segmentRange uint256[2], claimRoot bytes32, claimBlock uint256, endVerificationBlock uint256, endSlashingBlock uint256, status uint8)
+func (_JobsManager *JobsManagerCaller) GetClaim(opts *bind.CallOpts, _jobId *big.Int, _claimId *big.Int) (struct {
+	SegmentRange         [2]*big.Int
+	ClaimRoot            [32]byte
+	ClaimBlock           *big.Int
+	EndVerificationBlock *big.Int
+	EndSlashingBlock     *big.Int
+	Status               uint8
+}, error) {
+	ret := new(struct {
+		SegmentRange         [2]*big.Int
+		ClaimRoot            [32]byte
+		ClaimBlock           *big.Int
+		EndVerificationBlock *big.Int
+		EndSlashingBlock     *big.Int
+		Status               uint8
+	})
+	out := ret
+	err := _JobsManager.contract.Call(opts, out, "getClaim", _jobId, _claimId)
+	return *ret, err
+}
+
+// GetClaim is a free data retrieval call binding the contract method 0x427a2fc2.
+//
+// Solidity: function getClaim(_jobId uint256, _claimId uint256) constant returns(segmentRange uint256[2], claimRoot bytes32, claimBlock uint256, endVerificationBlock uint256, endSlashingBlock uint256, status uint8)
+func (_JobsManager *JobsManagerSession) GetClaim(_jobId *big.Int, _claimId *big.Int) (struct {
+	SegmentRange         [2]*big.Int
+	ClaimRoot            [32]byte
+	ClaimBlock           *big.Int
+	EndVerificationBlock *big.Int
+	EndSlashingBlock     *big.Int
+	Status               uint8
+}, error) {
+	return _JobsManager.Contract.GetClaim(&_JobsManager.CallOpts, _jobId, _claimId)
+}
+
+// GetClaim is a free data retrieval call binding the contract method 0x427a2fc2.
+//
+// Solidity: function getClaim(_jobId uint256, _claimId uint256) constant returns(segmentRange uint256[2], claimRoot bytes32, claimBlock uint256, endVerificationBlock uint256, endSlashingBlock uint256, status uint8)
+func (_JobsManager *JobsManagerCallerSession) GetClaim(_jobId *big.Int, _claimId *big.Int) (struct {
+	SegmentRange         [2]*big.Int
+	ClaimRoot            [32]byte
+	ClaimBlock           *big.Int
+	EndVerificationBlock *big.Int
+	EndSlashingBlock     *big.Int
+	Status               uint8
+}, error) {
+	return _JobsManager.Contract.GetClaim(&_JobsManager.CallOpts, _jobId, _claimId)
+}
+
+// GetJob is a free data retrieval call binding the contract method 0xbf22c457.
+//
+// Solidity: function getJob(_jobId uint256) constant returns(streamId string, transcodingOptions string, maxPricePerSegment uint256, broadcasterAddress address, transcoderAddress address, creationRound uint256, endBlock uint256, escrow uint256, totalClaims uint256)
+func (_JobsManager *JobsManagerCaller) GetJob(opts *bind.CallOpts, _jobId *big.Int) (struct {
+	StreamId           string
+	TranscodingOptions string
+	MaxPricePerSegment *big.Int
+	BroadcasterAddress common.Address
+	TranscoderAddress  common.Address
+	CreationRound      *big.Int
+	EndBlock           *big.Int
+	Escrow             *big.Int
+	TotalClaims        *big.Int
+}, error) {
+	ret := new(struct {
+		StreamId           string
+		TranscodingOptions string
+		MaxPricePerSegment *big.Int
+		BroadcasterAddress common.Address
+		TranscoderAddress  common.Address
+		CreationRound      *big.Int
+		EndBlock           *big.Int
+		Escrow             *big.Int
+		TotalClaims        *big.Int
+	})
+	out := ret
+	err := _JobsManager.contract.Call(opts, out, "getJob", _jobId)
+	return *ret, err
+}
+
+// GetJob is a free data retrieval call binding the contract method 0xbf22c457.
+//
+// Solidity: function getJob(_jobId uint256) constant returns(streamId string, transcodingOptions string, maxPricePerSegment uint256, broadcasterAddress address, transcoderAddress address, creationRound uint256, endBlock uint256, escrow uint256, totalClaims uint256)
+func (_JobsManager *JobsManagerSession) GetJob(_jobId *big.Int) (struct {
+	StreamId           string
+	TranscodingOptions string
+	MaxPricePerSegment *big.Int
+	BroadcasterAddress common.Address
+	TranscoderAddress  common.Address
+	CreationRound      *big.Int
+	EndBlock           *big.Int
+	Escrow             *big.Int
+	TotalClaims        *big.Int
+}, error) {
+	return _JobsManager.Contract.GetJob(&_JobsManager.CallOpts, _jobId)
+}
+
+// GetJob is a free data retrieval call binding the contract method 0xbf22c457.
+//
+// Solidity: function getJob(_jobId uint256) constant returns(streamId string, transcodingOptions string, maxPricePerSegment uint256, broadcasterAddress address, transcoderAddress address, creationRound uint256, endBlock uint256, escrow uint256, totalClaims uint256)
+func (_JobsManager *JobsManagerCallerSession) GetJob(_jobId *big.Int) (struct {
+	StreamId           string
+	TranscodingOptions string
+	MaxPricePerSegment *big.Int
+	BroadcasterAddress common.Address
+	TranscoderAddress  common.Address
+	CreationRound      *big.Int
+	EndBlock           *big.Int
+	Escrow             *big.Int
+	TotalClaims        *big.Int
+}, error) {
+	return _JobsManager.Contract.GetJob(&_JobsManager.CallOpts, _jobId)
+}
+
+// IsClaimSegmentVerified is a free data retrieval call binding the contract method 0x71d6dbe1.
+//
+// Solidity: function isClaimSegmentVerified(_jobId uint256, _claimId uint256, _segmentNumber uint256) constant returns(bool)
+func (_JobsManager *JobsManagerCaller) IsClaimSegmentVerified(opts *bind.CallOpts, _jobId *big.Int, _claimId *big.Int, _segmentNumber *big.Int) (bool, error) {
 	var (
-		ret0 = new(*big.Int)
+		ret0 = new(bool)
 	)
 	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getClaimBlock", _jobId, _claimId)
+	err := _JobsManager.contract.Call(opts, out, "isClaimSegmentVerified", _jobId, _claimId, _segmentNumber)
 	return *ret0, err
 }
 
-// GetClaimBlock is a free data retrieval call binding the contract method 0x5831fd65.
+// IsClaimSegmentVerified is a free data retrieval call binding the contract method 0x71d6dbe1.
 //
-// Solidity: function getClaimBlock(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerSession) GetClaimBlock(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimBlock(&_JobsManager.CallOpts, _jobId, _claimId)
+// Solidity: function isClaimSegmentVerified(_jobId uint256, _claimId uint256, _segmentNumber uint256) constant returns(bool)
+func (_JobsManager *JobsManagerSession) IsClaimSegmentVerified(_jobId *big.Int, _claimId *big.Int, _segmentNumber *big.Int) (bool, error) {
+	return _JobsManager.Contract.IsClaimSegmentVerified(&_JobsManager.CallOpts, _jobId, _claimId, _segmentNumber)
 }
 
-// GetClaimBlock is a free data retrieval call binding the contract method 0x5831fd65.
+// IsClaimSegmentVerified is a free data retrieval call binding the contract method 0x71d6dbe1.
 //
-// Solidity: function getClaimBlock(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) GetClaimBlock(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimBlock(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimEndSegment is a free data retrieval call binding the contract method 0x52bde16c.
-//
-// Solidity: function getClaimEndSegment(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) GetClaimEndSegment(opts *bind.CallOpts, _jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getClaimEndSegment", _jobId, _claimId)
-	return *ret0, err
-}
-
-// GetClaimEndSegment is a free data retrieval call binding the contract method 0x52bde16c.
-//
-// Solidity: function getClaimEndSegment(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerSession) GetClaimEndSegment(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimEndSegment(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimEndSegment is a free data retrieval call binding the contract method 0x52bde16c.
-//
-// Solidity: function getClaimEndSegment(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) GetClaimEndSegment(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimEndSegment(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimEndSlashingBlock is a free data retrieval call binding the contract method 0x8d9805b7.
-//
-// Solidity: function getClaimEndSlashingBlock(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) GetClaimEndSlashingBlock(opts *bind.CallOpts, _jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getClaimEndSlashingBlock", _jobId, _claimId)
-	return *ret0, err
-}
-
-// GetClaimEndSlashingBlock is a free data retrieval call binding the contract method 0x8d9805b7.
-//
-// Solidity: function getClaimEndSlashingBlock(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerSession) GetClaimEndSlashingBlock(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimEndSlashingBlock(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimEndSlashingBlock is a free data retrieval call binding the contract method 0x8d9805b7.
-//
-// Solidity: function getClaimEndSlashingBlock(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) GetClaimEndSlashingBlock(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimEndSlashingBlock(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimEndVerificationBlock is a free data retrieval call binding the contract method 0xa74e1b17.
-//
-// Solidity: function getClaimEndVerificationBlock(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) GetClaimEndVerificationBlock(opts *bind.CallOpts, _jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getClaimEndVerificationBlock", _jobId, _claimId)
-	return *ret0, err
-}
-
-// GetClaimEndVerificationBlock is a free data retrieval call binding the contract method 0xa74e1b17.
-//
-// Solidity: function getClaimEndVerificationBlock(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerSession) GetClaimEndVerificationBlock(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimEndVerificationBlock(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimEndVerificationBlock is a free data retrieval call binding the contract method 0xa74e1b17.
-//
-// Solidity: function getClaimEndVerificationBlock(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) GetClaimEndVerificationBlock(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimEndVerificationBlock(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimRoot is a free data retrieval call binding the contract method 0x94fd2229.
-//
-// Solidity: function getClaimRoot(_jobId uint256, _claimId uint256) constant returns(bytes32)
-func (_JobsManager *JobsManagerCaller) GetClaimRoot(opts *bind.CallOpts, _jobId *big.Int, _claimId *big.Int) ([32]byte, error) {
-	var (
-		ret0 = new([32]byte)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getClaimRoot", _jobId, _claimId)
-	return *ret0, err
-}
-
-// GetClaimRoot is a free data retrieval call binding the contract method 0x94fd2229.
-//
-// Solidity: function getClaimRoot(_jobId uint256, _claimId uint256) constant returns(bytes32)
-func (_JobsManager *JobsManagerSession) GetClaimRoot(_jobId *big.Int, _claimId *big.Int) ([32]byte, error) {
-	return _JobsManager.Contract.GetClaimRoot(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimRoot is a free data retrieval call binding the contract method 0x94fd2229.
-//
-// Solidity: function getClaimRoot(_jobId uint256, _claimId uint256) constant returns(bytes32)
-func (_JobsManager *JobsManagerCallerSession) GetClaimRoot(_jobId *big.Int, _claimId *big.Int) ([32]byte, error) {
-	return _JobsManager.Contract.GetClaimRoot(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimStartSegment is a free data retrieval call binding the contract method 0xe6d24add.
-//
-// Solidity: function getClaimStartSegment(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) GetClaimStartSegment(opts *bind.CallOpts, _jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getClaimStartSegment", _jobId, _claimId)
-	return *ret0, err
-}
-
-// GetClaimStartSegment is a free data retrieval call binding the contract method 0xe6d24add.
-//
-// Solidity: function getClaimStartSegment(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerSession) GetClaimStartSegment(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimStartSegment(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimStartSegment is a free data retrieval call binding the contract method 0xe6d24add.
-//
-// Solidity: function getClaimStartSegment(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) GetClaimStartSegment(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimStartSegment(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimStatus is a free data retrieval call binding the contract method 0x72d9b690.
-//
-// Solidity: function getClaimStatus(_jobId uint256, _claimId uint256) constant returns(uint8)
-func (_JobsManager *JobsManagerCaller) GetClaimStatus(opts *bind.CallOpts, _jobId *big.Int, _claimId *big.Int) (uint8, error) {
-	var (
-		ret0 = new(uint8)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getClaimStatus", _jobId, _claimId)
-	return *ret0, err
-}
-
-// GetClaimStatus is a free data retrieval call binding the contract method 0x72d9b690.
-//
-// Solidity: function getClaimStatus(_jobId uint256, _claimId uint256) constant returns(uint8)
-func (_JobsManager *JobsManagerSession) GetClaimStatus(_jobId *big.Int, _claimId *big.Int) (uint8, error) {
-	return _JobsManager.Contract.GetClaimStatus(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimStatus is a free data retrieval call binding the contract method 0x72d9b690.
-//
-// Solidity: function getClaimStatus(_jobId uint256, _claimId uint256) constant returns(uint8)
-func (_JobsManager *JobsManagerCallerSession) GetClaimStatus(_jobId *big.Int, _claimId *big.Int) (uint8, error) {
-	return _JobsManager.Contract.GetClaimStatus(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimTranscoderTotalStake is a free data retrieval call binding the contract method 0x709cd50c.
-//
-// Solidity: function getClaimTranscoderTotalStake(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) GetClaimTranscoderTotalStake(opts *bind.CallOpts, _jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getClaimTranscoderTotalStake", _jobId, _claimId)
-	return *ret0, err
-}
-
-// GetClaimTranscoderTotalStake is a free data retrieval call binding the contract method 0x709cd50c.
-//
-// Solidity: function getClaimTranscoderTotalStake(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerSession) GetClaimTranscoderTotalStake(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimTranscoderTotalStake(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetClaimTranscoderTotalStake is a free data retrieval call binding the contract method 0x709cd50c.
-//
-// Solidity: function getClaimTranscoderTotalStake(_jobId uint256, _claimId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) GetClaimTranscoderTotalStake(_jobId *big.Int, _claimId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetClaimTranscoderTotalStake(&_JobsManager.CallOpts, _jobId, _claimId)
-}
-
-// GetJobBroadcasterAddress is a free data retrieval call binding the contract method 0xd41637be.
-//
-// Solidity: function getJobBroadcasterAddress(_jobId uint256) constant returns(address)
-func (_JobsManager *JobsManagerCaller) GetJobBroadcasterAddress(opts *bind.CallOpts, _jobId *big.Int) (common.Address, error) {
-	var (
-		ret0 = new(common.Address)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getJobBroadcasterAddress", _jobId)
-	return *ret0, err
-}
-
-// GetJobBroadcasterAddress is a free data retrieval call binding the contract method 0xd41637be.
-//
-// Solidity: function getJobBroadcasterAddress(_jobId uint256) constant returns(address)
-func (_JobsManager *JobsManagerSession) GetJobBroadcasterAddress(_jobId *big.Int) (common.Address, error) {
-	return _JobsManager.Contract.GetJobBroadcasterAddress(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobBroadcasterAddress is a free data retrieval call binding the contract method 0xd41637be.
-//
-// Solidity: function getJobBroadcasterAddress(_jobId uint256) constant returns(address)
-func (_JobsManager *JobsManagerCallerSession) GetJobBroadcasterAddress(_jobId *big.Int) (common.Address, error) {
-	return _JobsManager.Contract.GetJobBroadcasterAddress(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobEndBlock is a free data retrieval call binding the contract method 0xbf5d2ccb.
-//
-// Solidity: function getJobEndBlock(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) GetJobEndBlock(opts *bind.CallOpts, _jobId *big.Int) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getJobEndBlock", _jobId)
-	return *ret0, err
-}
-
-// GetJobEndBlock is a free data retrieval call binding the contract method 0xbf5d2ccb.
-//
-// Solidity: function getJobEndBlock(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerSession) GetJobEndBlock(_jobId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetJobEndBlock(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobEndBlock is a free data retrieval call binding the contract method 0xbf5d2ccb.
-//
-// Solidity: function getJobEndBlock(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) GetJobEndBlock(_jobId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetJobEndBlock(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobEscrow is a free data retrieval call binding the contract method 0x3561c340.
-//
-// Solidity: function getJobEscrow(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) GetJobEscrow(opts *bind.CallOpts, _jobId *big.Int) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getJobEscrow", _jobId)
-	return *ret0, err
-}
-
-// GetJobEscrow is a free data retrieval call binding the contract method 0x3561c340.
-//
-// Solidity: function getJobEscrow(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerSession) GetJobEscrow(_jobId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetJobEscrow(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobEscrow is a free data retrieval call binding the contract method 0x3561c340.
-//
-// Solidity: function getJobEscrow(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) GetJobEscrow(_jobId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetJobEscrow(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobMaxPricePerSegment is a free data retrieval call binding the contract method 0x9eba91d5.
-//
-// Solidity: function getJobMaxPricePerSegment(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) GetJobMaxPricePerSegment(opts *bind.CallOpts, _jobId *big.Int) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getJobMaxPricePerSegment", _jobId)
-	return *ret0, err
-}
-
-// GetJobMaxPricePerSegment is a free data retrieval call binding the contract method 0x9eba91d5.
-//
-// Solidity: function getJobMaxPricePerSegment(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerSession) GetJobMaxPricePerSegment(_jobId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetJobMaxPricePerSegment(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobMaxPricePerSegment is a free data retrieval call binding the contract method 0x9eba91d5.
-//
-// Solidity: function getJobMaxPricePerSegment(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) GetJobMaxPricePerSegment(_jobId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetJobMaxPricePerSegment(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobStreamId is a free data retrieval call binding the contract method 0x2929140a.
-//
-// Solidity: function getJobStreamId(_jobId uint256) constant returns(string)
-func (_JobsManager *JobsManagerCaller) GetJobStreamId(opts *bind.CallOpts, _jobId *big.Int) (string, error) {
-	var (
-		ret0 = new(string)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getJobStreamId", _jobId)
-	return *ret0, err
-}
-
-// GetJobStreamId is a free data retrieval call binding the contract method 0x2929140a.
-//
-// Solidity: function getJobStreamId(_jobId uint256) constant returns(string)
-func (_JobsManager *JobsManagerSession) GetJobStreamId(_jobId *big.Int) (string, error) {
-	return _JobsManager.Contract.GetJobStreamId(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobStreamId is a free data retrieval call binding the contract method 0x2929140a.
-//
-// Solidity: function getJobStreamId(_jobId uint256) constant returns(string)
-func (_JobsManager *JobsManagerCallerSession) GetJobStreamId(_jobId *big.Int) (string, error) {
-	return _JobsManager.Contract.GetJobStreamId(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobTotalClaims is a free data retrieval call binding the contract method 0x8fafceac.
-//
-// Solidity: function getJobTotalClaims(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) GetJobTotalClaims(opts *bind.CallOpts, _jobId *big.Int) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getJobTotalClaims", _jobId)
-	return *ret0, err
-}
-
-// GetJobTotalClaims is a free data retrieval call binding the contract method 0x8fafceac.
-//
-// Solidity: function getJobTotalClaims(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerSession) GetJobTotalClaims(_jobId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetJobTotalClaims(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobTotalClaims is a free data retrieval call binding the contract method 0x8fafceac.
-//
-// Solidity: function getJobTotalClaims(_jobId uint256) constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) GetJobTotalClaims(_jobId *big.Int) (*big.Int, error) {
-	return _JobsManager.Contract.GetJobTotalClaims(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobTranscoderAddress is a free data retrieval call binding the contract method 0x8d980fe4.
-//
-// Solidity: function getJobTranscoderAddress(_jobId uint256) constant returns(address)
-func (_JobsManager *JobsManagerCaller) GetJobTranscoderAddress(opts *bind.CallOpts, _jobId *big.Int) (common.Address, error) {
-	var (
-		ret0 = new(common.Address)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getJobTranscoderAddress", _jobId)
-	return *ret0, err
-}
-
-// GetJobTranscoderAddress is a free data retrieval call binding the contract method 0x8d980fe4.
-//
-// Solidity: function getJobTranscoderAddress(_jobId uint256) constant returns(address)
-func (_JobsManager *JobsManagerSession) GetJobTranscoderAddress(_jobId *big.Int) (common.Address, error) {
-	return _JobsManager.Contract.GetJobTranscoderAddress(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobTranscoderAddress is a free data retrieval call binding the contract method 0x8d980fe4.
-//
-// Solidity: function getJobTranscoderAddress(_jobId uint256) constant returns(address)
-func (_JobsManager *JobsManagerCallerSession) GetJobTranscoderAddress(_jobId *big.Int) (common.Address, error) {
-	return _JobsManager.Contract.GetJobTranscoderAddress(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobTranscodingOptions is a free data retrieval call binding the contract method 0x668dfce7.
-//
-// Solidity: function getJobTranscodingOptions(_jobId uint256) constant returns(string)
-func (_JobsManager *JobsManagerCaller) GetJobTranscodingOptions(opts *bind.CallOpts, _jobId *big.Int) (string, error) {
-	var (
-		ret0 = new(string)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "getJobTranscodingOptions", _jobId)
-	return *ret0, err
-}
-
-// GetJobTranscodingOptions is a free data retrieval call binding the contract method 0x668dfce7.
-//
-// Solidity: function getJobTranscodingOptions(_jobId uint256) constant returns(string)
-func (_JobsManager *JobsManagerSession) GetJobTranscodingOptions(_jobId *big.Int) (string, error) {
-	return _JobsManager.Contract.GetJobTranscodingOptions(&_JobsManager.CallOpts, _jobId)
-}
-
-// GetJobTranscodingOptions is a free data retrieval call binding the contract method 0x668dfce7.
-//
-// Solidity: function getJobTranscodingOptions(_jobId uint256) constant returns(string)
-func (_JobsManager *JobsManagerCallerSession) GetJobTranscodingOptions(_jobId *big.Int) (string, error) {
-	return _JobsManager.Contract.GetJobTranscodingOptions(&_JobsManager.CallOpts, _jobId)
+// Solidity: function isClaimSegmentVerified(_jobId uint256, _claimId uint256, _segmentNumber uint256) constant returns(bool)
+func (_JobsManager *JobsManagerCallerSession) IsClaimSegmentVerified(_jobId *big.Int, _claimId *big.Int, _segmentNumber *big.Int) (bool, error) {
+	return _JobsManager.Contract.IsClaimSegmentVerified(&_JobsManager.CallOpts, _jobId, _claimId, _segmentNumber)
 }
 
 // IsInitialized is a free data retrieval call binding the contract method 0x392e53cd.
@@ -743,7 +469,7 @@ func (_JobsManager *JobsManagerCallerSession) JobStatus(_jobId *big.Int) (uint8,
 
 // Jobs is a free data retrieval call binding the contract method 0x180aedf3.
 //
-// Solidity: function jobs( uint256) constant returns(jobId uint256, streamId string, transcodingOptions string, maxPricePerSegment uint256, broadcasterAddress address, transcoderAddress address, endBlock uint256, escrow uint256)
+// Solidity: function jobs( uint256) constant returns(jobId uint256, streamId string, transcodingOptions string, maxPricePerSegment uint256, broadcasterAddress address, transcoderAddress address, creationRound uint256, endBlock uint256, escrow uint256)
 func (_JobsManager *JobsManagerCaller) Jobs(opts *bind.CallOpts, arg0 *big.Int) (struct {
 	JobId              *big.Int
 	StreamId           string
@@ -751,6 +477,7 @@ func (_JobsManager *JobsManagerCaller) Jobs(opts *bind.CallOpts, arg0 *big.Int) 
 	MaxPricePerSegment *big.Int
 	BroadcasterAddress common.Address
 	TranscoderAddress  common.Address
+	CreationRound      *big.Int
 	EndBlock           *big.Int
 	Escrow             *big.Int
 }, error) {
@@ -761,6 +488,7 @@ func (_JobsManager *JobsManagerCaller) Jobs(opts *bind.CallOpts, arg0 *big.Int) 
 		MaxPricePerSegment *big.Int
 		BroadcasterAddress common.Address
 		TranscoderAddress  common.Address
+		CreationRound      *big.Int
 		EndBlock           *big.Int
 		Escrow             *big.Int
 	})
@@ -771,7 +499,7 @@ func (_JobsManager *JobsManagerCaller) Jobs(opts *bind.CallOpts, arg0 *big.Int) 
 
 // Jobs is a free data retrieval call binding the contract method 0x180aedf3.
 //
-// Solidity: function jobs( uint256) constant returns(jobId uint256, streamId string, transcodingOptions string, maxPricePerSegment uint256, broadcasterAddress address, transcoderAddress address, endBlock uint256, escrow uint256)
+// Solidity: function jobs( uint256) constant returns(jobId uint256, streamId string, transcodingOptions string, maxPricePerSegment uint256, broadcasterAddress address, transcoderAddress address, creationRound uint256, endBlock uint256, escrow uint256)
 func (_JobsManager *JobsManagerSession) Jobs(arg0 *big.Int) (struct {
 	JobId              *big.Int
 	StreamId           string
@@ -779,6 +507,7 @@ func (_JobsManager *JobsManagerSession) Jobs(arg0 *big.Int) (struct {
 	MaxPricePerSegment *big.Int
 	BroadcasterAddress common.Address
 	TranscoderAddress  common.Address
+	CreationRound      *big.Int
 	EndBlock           *big.Int
 	Escrow             *big.Int
 }, error) {
@@ -787,7 +516,7 @@ func (_JobsManager *JobsManagerSession) Jobs(arg0 *big.Int) (struct {
 
 // Jobs is a free data retrieval call binding the contract method 0x180aedf3.
 //
-// Solidity: function jobs( uint256) constant returns(jobId uint256, streamId string, transcodingOptions string, maxPricePerSegment uint256, broadcasterAddress address, transcoderAddress address, endBlock uint256, escrow uint256)
+// Solidity: function jobs( uint256) constant returns(jobId uint256, streamId string, transcodingOptions string, maxPricePerSegment uint256, broadcasterAddress address, transcoderAddress address, creationRound uint256, endBlock uint256, escrow uint256)
 func (_JobsManager *JobsManagerCallerSession) Jobs(arg0 *big.Int) (struct {
 	JobId              *big.Int
 	StreamId           string
@@ -795,6 +524,7 @@ func (_JobsManager *JobsManagerCallerSession) Jobs(arg0 *big.Int) (struct {
 	MaxPricePerSegment *big.Int
 	BroadcasterAddress common.Address
 	TranscoderAddress  common.Address
+	CreationRound      *big.Int
 	EndBlock           *big.Int
 	Escrow             *big.Int
 }, error) {
