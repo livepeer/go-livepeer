@@ -39,8 +39,9 @@ If the smart contracts are updated you can generate new Go bindings by doing the
 cd $GOPATH/src/github.com/livepeer/go-livepeer/eth
 git clone https://github.com/livepeer/protocol.git $GOPATH/src/github.com/livepeer/go-livepeer/eth/protocol
 cd $GOPATH/src/github.com/livepeer/go-livepeer/eth/protocol
+npm install
 truffle compile --all
-node parseArtifacts.js
+node scripts/parseArtifacts.js
 cd $GOPATH/src/github.com/livepeer/go-livepeer/eth
 go generate client.go
 ```
