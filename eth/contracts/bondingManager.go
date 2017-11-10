@@ -14,7 +14,7 @@ import (
 )
 
 // BondingManagerABI is the input ABI used to generate the binding from.
-const BondingManagerABI = "[{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"activeTranscoderTotalStake\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"isActiveTranscoder\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"delegatorStake\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getTranscoderDelegatorWithdrawRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_position\",\"type\":\"uint256\"}],\"name\":\"getCandidateTranscoderAtPosition\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_maxPricePerSegment\",\"type\":\"uint256\"}],\"name\":\"electActiveTranscoder\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"delegatorStatus\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"reward\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"setActiveTranscoders\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_unbondingPeriod\",\"type\":\"uint64\"},{\"name\":\"_numActiveTranscoders\",\"type\":\"uint256\"}],\"name\":\"initialize\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getCandidatePoolSize\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"resignAsTranscoder\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getTranscoderFeeShare\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"getDelegatorStartRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getTranscoderBlockRewardCut\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"isInitialized\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_position\",\"type\":\"uint256\"}],\"name\":\"getReserveTranscoderAtPosition\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"withdraw\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getTranscoderLastRewardRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"getDelegatorDelegateBlock\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"unbond\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"unbondingPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"getDelegatorLastStakeUpdateRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getReservePoolSize\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"getDelegatorDelegatedAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"transcoderStatus\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"getDelegatorWithdrawRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"totalActiveTranscoderStake\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"getDelegatorDelegateAddress\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getTranscoderPendingFeeShare\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"transcoderTotalStake\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_amount\",\"type\":\"uint256\"},{\"name\":\"_to\",\"type\":\"address\"}],\"name\":\"bond\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"getDelegatorBondedAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getTranscoderPendingBlockRewardCut\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"},{\"name\":\"_fees\",\"type\":\"uint256\"},{\"name\":\"_claimBlock\",\"type\":\"uint256\"},{\"name\":\"_transcoderTotalStake\",\"type\":\"uint256\"}],\"name\":\"updateTranscoderFeePool\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_blockRewardCut\",\"type\":\"uint8\"},{\"name\":\"_feeShare\",\"type\":\"uint8\"},{\"name\":\"_pricePerSegment\",\"type\":\"uint256\"}],\"name\":\"transcoder\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getTranscoderPricePerSegment\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getTranscoderPendingPricePerSegment\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"activeTranscoderPositions\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"},{\"name\":\"_finder\",\"type\":\"address\"},{\"name\":\"_slashAmount\",\"type\":\"uint64\"},{\"name\":\"_finderFee\",\"type\":\"uint64\"}],\"name\":\"slashTranscoder\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"type\":\"constructor\"}]"
+const BondingManagerABI = "[{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"activeTranscoderTotalStake\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"isActiveTranscoder\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"delegatorStake\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_position\",\"type\":\"uint256\"}],\"name\":\"getCandidateTranscoderAtPosition\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_maxPricePerSegment\",\"type\":\"uint256\"}],\"name\":\"electActiveTranscoder\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"delegatorStatus\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"reward\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"setActiveTranscoders\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_unbondingPeriod\",\"type\":\"uint64\"},{\"name\":\"_numActiveTranscoders\",\"type\":\"uint256\"}],\"name\":\"initialize\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getCandidatePoolSize\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_endRound\",\"type\":\"uint256\"}],\"name\":\"claimTokenPoolsShares\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"resignAsTranscoder\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"isInitialized\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_position\",\"type\":\"uint256\"}],\"name\":\"getReserveTranscoderAtPosition\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"},{\"name\":\"_fees\",\"type\":\"uint256\"},{\"name\":\"_round\",\"type\":\"uint256\"}],\"name\":\"updateTranscoderWithFees\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"withdraw\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getTranscoder\",\"outputs\":[{\"name\":\"delegatorWithdrawRound\",\"type\":\"uint256\"},{\"name\":\"lastRewardRound\",\"type\":\"uint256\"},{\"name\":\"blockRewardCut\",\"type\":\"uint8\"},{\"name\":\"feeShare\",\"type\":\"uint8\"},{\"name\":\"pricePerSegment\",\"type\":\"uint256\"},{\"name\":\"pendingBlockRewardCut\",\"type\":\"uint8\"},{\"name\":\"pendingFeeShare\",\"type\":\"uint8\"},{\"name\":\"pendingPricePerSegment\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"unbond\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"unbondingPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getReservePoolSize\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"transcoderStatus\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"totalActiveTranscoderStake\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"transcoderTotalStake\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"getDelegator\",\"outputs\":[{\"name\":\"bondedAmount\",\"type\":\"uint256\"},{\"name\":\"unbondedAmount\",\"type\":\"uint256\"},{\"name\":\"delegateAddress\",\"type\":\"address\"},{\"name\":\"delegatedAmount\",\"type\":\"uint256\"},{\"name\":\"startRound\",\"type\":\"uint256\"},{\"name\":\"withdrawRound\",\"type\":\"uint256\"},{\"name\":\"lastClaimTokenPoolsSharesRound\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_amount\",\"type\":\"uint256\"},{\"name\":\"_to\",\"type\":\"address\"}],\"name\":\"bond\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"},{\"name\":\"_round\",\"type\":\"uint256\"}],\"name\":\"getTranscoderTokenPoolsForRound\",\"outputs\":[{\"name\":\"rewardPool\",\"type\":\"uint256\"},{\"name\":\"feePool\",\"type\":\"uint256\"},{\"name\":\"totalStake\",\"type\":\"uint256\"},{\"name\":\"usedStake\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"delegatorUnbondedAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_blockRewardCut\",\"type\":\"uint8\"},{\"name\":\"_feeShare\",\"type\":\"uint8\"},{\"name\":\"_pricePerSegment\",\"type\":\"uint256\"}],\"name\":\"transcoder\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"activeTranscoderPositions\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_transcoder\",\"type\":\"address\"},{\"name\":\"_finder\",\"type\":\"address\"},{\"name\":\"_slashAmount\",\"type\":\"uint64\"},{\"name\":\"_finderFee\",\"type\":\"uint64\"}],\"name\":\"slashTranscoder\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"}]"
 
 // BondingManager is an auto generated Go binding around an Ethereum contract.
 type BondingManager struct {
@@ -273,30 +273,30 @@ func (_BondingManager *BondingManagerCallerSession) DelegatorStatus(_delegator c
 	return _BondingManager.Contract.DelegatorStatus(&_BondingManager.CallOpts, _delegator)
 }
 
-// ElectActiveTranscoder is a free data retrieval call binding the contract method 0x105d772f.
+// DelegatorUnbondedAmount is a free data retrieval call binding the contract method 0xc6f92022.
 //
-// Solidity: function electActiveTranscoder(_maxPricePerSegment uint256) constant returns(address)
-func (_BondingManager *BondingManagerCaller) ElectActiveTranscoder(opts *bind.CallOpts, _maxPricePerSegment *big.Int) (common.Address, error) {
+// Solidity: function delegatorUnbondedAmount(_delegator address) constant returns(uint256)
+func (_BondingManager *BondingManagerCaller) DelegatorUnbondedAmount(opts *bind.CallOpts, _delegator common.Address) (*big.Int, error) {
 	var (
-		ret0 = new(common.Address)
+		ret0 = new(*big.Int)
 	)
 	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "electActiveTranscoder", _maxPricePerSegment)
+	err := _BondingManager.contract.Call(opts, out, "delegatorUnbondedAmount", _delegator)
 	return *ret0, err
 }
 
-// ElectActiveTranscoder is a free data retrieval call binding the contract method 0x105d772f.
+// DelegatorUnbondedAmount is a free data retrieval call binding the contract method 0xc6f92022.
 //
-// Solidity: function electActiveTranscoder(_maxPricePerSegment uint256) constant returns(address)
-func (_BondingManager *BondingManagerSession) ElectActiveTranscoder(_maxPricePerSegment *big.Int) (common.Address, error) {
-	return _BondingManager.Contract.ElectActiveTranscoder(&_BondingManager.CallOpts, _maxPricePerSegment)
+// Solidity: function delegatorUnbondedAmount(_delegator address) constant returns(uint256)
+func (_BondingManager *BondingManagerSession) DelegatorUnbondedAmount(_delegator common.Address) (*big.Int, error) {
+	return _BondingManager.Contract.DelegatorUnbondedAmount(&_BondingManager.CallOpts, _delegator)
 }
 
-// ElectActiveTranscoder is a free data retrieval call binding the contract method 0x105d772f.
+// DelegatorUnbondedAmount is a free data retrieval call binding the contract method 0xc6f92022.
 //
-// Solidity: function electActiveTranscoder(_maxPricePerSegment uint256) constant returns(address)
-func (_BondingManager *BondingManagerCallerSession) ElectActiveTranscoder(_maxPricePerSegment *big.Int) (common.Address, error) {
-	return _BondingManager.Contract.ElectActiveTranscoder(&_BondingManager.CallOpts, _maxPricePerSegment)
+// Solidity: function delegatorUnbondedAmount(_delegator address) constant returns(uint256)
+func (_BondingManager *BondingManagerCallerSession) DelegatorUnbondedAmount(_delegator common.Address) (*big.Int, error) {
+	return _BondingManager.Contract.DelegatorUnbondedAmount(&_BondingManager.CallOpts, _delegator)
 }
 
 // GetCandidatePoolSize is a free data retrieval call binding the contract method 0x2a64a8fc.
@@ -351,186 +351,60 @@ func (_BondingManager *BondingManagerCallerSession) GetCandidateTranscoderAtPosi
 	return _BondingManager.Contract.GetCandidateTranscoderAtPosition(&_BondingManager.CallOpts, _position)
 }
 
-// GetDelegatorBondedAmount is a free data retrieval call binding the contract method 0xb8cb529d.
+// GetDelegator is a free data retrieval call binding the contract method 0xa64ad595.
 //
-// Solidity: function getDelegatorBondedAmount(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCaller) GetDelegatorBondedAmount(opts *bind.CallOpts, _delegator common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getDelegatorBondedAmount", _delegator)
-	return *ret0, err
+// Solidity: function getDelegator(_delegator address) constant returns(bondedAmount uint256, unbondedAmount uint256, delegateAddress address, delegatedAmount uint256, startRound uint256, withdrawRound uint256, lastClaimTokenPoolsSharesRound uint256)
+func (_BondingManager *BondingManagerCaller) GetDelegator(opts *bind.CallOpts, _delegator common.Address) (struct {
+	BondedAmount                   *big.Int
+	UnbondedAmount                 *big.Int
+	DelegateAddress                common.Address
+	DelegatedAmount                *big.Int
+	StartRound                     *big.Int
+	WithdrawRound                  *big.Int
+	LastClaimTokenPoolsSharesRound *big.Int
+}, error) {
+	ret := new(struct {
+		BondedAmount                   *big.Int
+		UnbondedAmount                 *big.Int
+		DelegateAddress                common.Address
+		DelegatedAmount                *big.Int
+		StartRound                     *big.Int
+		WithdrawRound                  *big.Int
+		LastClaimTokenPoolsSharesRound *big.Int
+	})
+	out := ret
+	err := _BondingManager.contract.Call(opts, out, "getDelegator", _delegator)
+	return *ret, err
 }
 
-// GetDelegatorBondedAmount is a free data retrieval call binding the contract method 0xb8cb529d.
+// GetDelegator is a free data retrieval call binding the contract method 0xa64ad595.
 //
-// Solidity: function getDelegatorBondedAmount(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerSession) GetDelegatorBondedAmount(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorBondedAmount(&_BondingManager.CallOpts, _delegator)
+// Solidity: function getDelegator(_delegator address) constant returns(bondedAmount uint256, unbondedAmount uint256, delegateAddress address, delegatedAmount uint256, startRound uint256, withdrawRound uint256, lastClaimTokenPoolsSharesRound uint256)
+func (_BondingManager *BondingManagerSession) GetDelegator(_delegator common.Address) (struct {
+	BondedAmount                   *big.Int
+	UnbondedAmount                 *big.Int
+	DelegateAddress                common.Address
+	DelegatedAmount                *big.Int
+	StartRound                     *big.Int
+	WithdrawRound                  *big.Int
+	LastClaimTokenPoolsSharesRound *big.Int
+}, error) {
+	return _BondingManager.Contract.GetDelegator(&_BondingManager.CallOpts, _delegator)
 }
 
-// GetDelegatorBondedAmount is a free data retrieval call binding the contract method 0xb8cb529d.
+// GetDelegator is a free data retrieval call binding the contract method 0xa64ad595.
 //
-// Solidity: function getDelegatorBondedAmount(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) GetDelegatorBondedAmount(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorBondedAmount(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorDelegateAddress is a free data retrieval call binding the contract method 0x982e4b05.
-//
-// Solidity: function getDelegatorDelegateAddress(_delegator address) constant returns(address)
-func (_BondingManager *BondingManagerCaller) GetDelegatorDelegateAddress(opts *bind.CallOpts, _delegator common.Address) (common.Address, error) {
-	var (
-		ret0 = new(common.Address)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getDelegatorDelegateAddress", _delegator)
-	return *ret0, err
-}
-
-// GetDelegatorDelegateAddress is a free data retrieval call binding the contract method 0x982e4b05.
-//
-// Solidity: function getDelegatorDelegateAddress(_delegator address) constant returns(address)
-func (_BondingManager *BondingManagerSession) GetDelegatorDelegateAddress(_delegator common.Address) (common.Address, error) {
-	return _BondingManager.Contract.GetDelegatorDelegateAddress(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorDelegateAddress is a free data retrieval call binding the contract method 0x982e4b05.
-//
-// Solidity: function getDelegatorDelegateAddress(_delegator address) constant returns(address)
-func (_BondingManager *BondingManagerCallerSession) GetDelegatorDelegateAddress(_delegator common.Address) (common.Address, error) {
-	return _BondingManager.Contract.GetDelegatorDelegateAddress(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorDelegateBlock is a free data retrieval call binding the contract method 0x5bcbb7a8.
-//
-// Solidity: function getDelegatorDelegateBlock(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCaller) GetDelegatorDelegateBlock(opts *bind.CallOpts, _delegator common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getDelegatorDelegateBlock", _delegator)
-	return *ret0, err
-}
-
-// GetDelegatorDelegateBlock is a free data retrieval call binding the contract method 0x5bcbb7a8.
-//
-// Solidity: function getDelegatorDelegateBlock(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerSession) GetDelegatorDelegateBlock(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorDelegateBlock(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorDelegateBlock is a free data retrieval call binding the contract method 0x5bcbb7a8.
-//
-// Solidity: function getDelegatorDelegateBlock(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) GetDelegatorDelegateBlock(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorDelegateBlock(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorDelegatedAmount is a free data retrieval call binding the contract method 0x8679342d.
-//
-// Solidity: function getDelegatorDelegatedAmount(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCaller) GetDelegatorDelegatedAmount(opts *bind.CallOpts, _delegator common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getDelegatorDelegatedAmount", _delegator)
-	return *ret0, err
-}
-
-// GetDelegatorDelegatedAmount is a free data retrieval call binding the contract method 0x8679342d.
-//
-// Solidity: function getDelegatorDelegatedAmount(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerSession) GetDelegatorDelegatedAmount(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorDelegatedAmount(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorDelegatedAmount is a free data retrieval call binding the contract method 0x8679342d.
-//
-// Solidity: function getDelegatorDelegatedAmount(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) GetDelegatorDelegatedAmount(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorDelegatedAmount(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorLastStakeUpdateRound is a free data retrieval call binding the contract method 0x7350cb32.
-//
-// Solidity: function getDelegatorLastStakeUpdateRound(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCaller) GetDelegatorLastStakeUpdateRound(opts *bind.CallOpts, _delegator common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getDelegatorLastStakeUpdateRound", _delegator)
-	return *ret0, err
-}
-
-// GetDelegatorLastStakeUpdateRound is a free data retrieval call binding the contract method 0x7350cb32.
-//
-// Solidity: function getDelegatorLastStakeUpdateRound(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerSession) GetDelegatorLastStakeUpdateRound(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorLastStakeUpdateRound(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorLastStakeUpdateRound is a free data retrieval call binding the contract method 0x7350cb32.
-//
-// Solidity: function getDelegatorLastStakeUpdateRound(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) GetDelegatorLastStakeUpdateRound(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorLastStakeUpdateRound(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorStartRound is a free data retrieval call binding the contract method 0x358fbaed.
-//
-// Solidity: function getDelegatorStartRound(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCaller) GetDelegatorStartRound(opts *bind.CallOpts, _delegator common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getDelegatorStartRound", _delegator)
-	return *ret0, err
-}
-
-// GetDelegatorStartRound is a free data retrieval call binding the contract method 0x358fbaed.
-//
-// Solidity: function getDelegatorStartRound(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerSession) GetDelegatorStartRound(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorStartRound(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorStartRound is a free data retrieval call binding the contract method 0x358fbaed.
-//
-// Solidity: function getDelegatorStartRound(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) GetDelegatorStartRound(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorStartRound(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorWithdrawRound is a free data retrieval call binding the contract method 0x8d507b38.
-//
-// Solidity: function getDelegatorWithdrawRound(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCaller) GetDelegatorWithdrawRound(opts *bind.CallOpts, _delegator common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getDelegatorWithdrawRound", _delegator)
-	return *ret0, err
-}
-
-// GetDelegatorWithdrawRound is a free data retrieval call binding the contract method 0x8d507b38.
-//
-// Solidity: function getDelegatorWithdrawRound(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerSession) GetDelegatorWithdrawRound(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorWithdrawRound(&_BondingManager.CallOpts, _delegator)
-}
-
-// GetDelegatorWithdrawRound is a free data retrieval call binding the contract method 0x8d507b38.
-//
-// Solidity: function getDelegatorWithdrawRound(_delegator address) constant returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) GetDelegatorWithdrawRound(_delegator common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetDelegatorWithdrawRound(&_BondingManager.CallOpts, _delegator)
+// Solidity: function getDelegator(_delegator address) constant returns(bondedAmount uint256, unbondedAmount uint256, delegateAddress address, delegatedAmount uint256, startRound uint256, withdrawRound uint256, lastClaimTokenPoolsSharesRound uint256)
+func (_BondingManager *BondingManagerCallerSession) GetDelegator(_delegator common.Address) (struct {
+	BondedAmount                   *big.Int
+	UnbondedAmount                 *big.Int
+	DelegateAddress                common.Address
+	DelegatedAmount                *big.Int
+	StartRound                     *big.Int
+	WithdrawRound                  *big.Int
+	LastClaimTokenPoolsSharesRound *big.Int
+}, error) {
+	return _BondingManager.Contract.GetDelegator(&_BondingManager.CallOpts, _delegator)
 }
 
 // GetReservePoolSize is a free data retrieval call binding the contract method 0x77446bde.
@@ -585,212 +459,108 @@ func (_BondingManager *BondingManagerCallerSession) GetReserveTranscoderAtPositi
 	return _BondingManager.Contract.GetReserveTranscoderAtPosition(&_BondingManager.CallOpts, _position)
 }
 
-// GetTranscoderBlockRewardCut is a free data retrieval call binding the contract method 0x35f4d5b3.
+// GetTranscoder is a free data retrieval call binding the contract method 0x5dce9948.
 //
-// Solidity: function getTranscoderBlockRewardCut(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerCaller) GetTranscoderBlockRewardCut(opts *bind.CallOpts, _transcoder common.Address) (uint8, error) {
-	var (
-		ret0 = new(uint8)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getTranscoderBlockRewardCut", _transcoder)
-	return *ret0, err
+// Solidity: function getTranscoder(_transcoder address) constant returns(delegatorWithdrawRound uint256, lastRewardRound uint256, blockRewardCut uint8, feeShare uint8, pricePerSegment uint256, pendingBlockRewardCut uint8, pendingFeeShare uint8, pendingPricePerSegment uint256)
+func (_BondingManager *BondingManagerCaller) GetTranscoder(opts *bind.CallOpts, _transcoder common.Address) (struct {
+	DelegatorWithdrawRound *big.Int
+	LastRewardRound        *big.Int
+	BlockRewardCut         uint8
+	FeeShare               uint8
+	PricePerSegment        *big.Int
+	PendingBlockRewardCut  uint8
+	PendingFeeShare        uint8
+	PendingPricePerSegment *big.Int
+}, error) {
+	ret := new(struct {
+		DelegatorWithdrawRound *big.Int
+		LastRewardRound        *big.Int
+		BlockRewardCut         uint8
+		FeeShare               uint8
+		PricePerSegment        *big.Int
+		PendingBlockRewardCut  uint8
+		PendingFeeShare        uint8
+		PendingPricePerSegment *big.Int
+	})
+	out := ret
+	err := _BondingManager.contract.Call(opts, out, "getTranscoder", _transcoder)
+	return *ret, err
 }
 
-// GetTranscoderBlockRewardCut is a free data retrieval call binding the contract method 0x35f4d5b3.
+// GetTranscoder is a free data retrieval call binding the contract method 0x5dce9948.
 //
-// Solidity: function getTranscoderBlockRewardCut(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerSession) GetTranscoderBlockRewardCut(_transcoder common.Address) (uint8, error) {
-	return _BondingManager.Contract.GetTranscoderBlockRewardCut(&_BondingManager.CallOpts, _transcoder)
+// Solidity: function getTranscoder(_transcoder address) constant returns(delegatorWithdrawRound uint256, lastRewardRound uint256, blockRewardCut uint8, feeShare uint8, pricePerSegment uint256, pendingBlockRewardCut uint8, pendingFeeShare uint8, pendingPricePerSegment uint256)
+func (_BondingManager *BondingManagerSession) GetTranscoder(_transcoder common.Address) (struct {
+	DelegatorWithdrawRound *big.Int
+	LastRewardRound        *big.Int
+	BlockRewardCut         uint8
+	FeeShare               uint8
+	PricePerSegment        *big.Int
+	PendingBlockRewardCut  uint8
+	PendingFeeShare        uint8
+	PendingPricePerSegment *big.Int
+}, error) {
+	return _BondingManager.Contract.GetTranscoder(&_BondingManager.CallOpts, _transcoder)
 }
 
-// GetTranscoderBlockRewardCut is a free data retrieval call binding the contract method 0x35f4d5b3.
+// GetTranscoder is a free data retrieval call binding the contract method 0x5dce9948.
 //
-// Solidity: function getTranscoderBlockRewardCut(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerCallerSession) GetTranscoderBlockRewardCut(_transcoder common.Address) (uint8, error) {
-	return _BondingManager.Contract.GetTranscoderBlockRewardCut(&_BondingManager.CallOpts, _transcoder)
+// Solidity: function getTranscoder(_transcoder address) constant returns(delegatorWithdrawRound uint256, lastRewardRound uint256, blockRewardCut uint8, feeShare uint8, pricePerSegment uint256, pendingBlockRewardCut uint8, pendingFeeShare uint8, pendingPricePerSegment uint256)
+func (_BondingManager *BondingManagerCallerSession) GetTranscoder(_transcoder common.Address) (struct {
+	DelegatorWithdrawRound *big.Int
+	LastRewardRound        *big.Int
+	BlockRewardCut         uint8
+	FeeShare               uint8
+	PricePerSegment        *big.Int
+	PendingBlockRewardCut  uint8
+	PendingFeeShare        uint8
+	PendingPricePerSegment *big.Int
+}, error) {
+	return _BondingManager.Contract.GetTranscoder(&_BondingManager.CallOpts, _transcoder)
 }
 
-// GetTranscoderDelegatorWithdrawRound is a free data retrieval call binding the contract method 0x0b8d4b8e.
+// GetTranscoderTokenPoolsForRound is a free data retrieval call binding the contract method 0xb8b2fdfb.
 //
-// Solidity: function getTranscoderDelegatorWithdrawRound(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerCaller) GetTranscoderDelegatorWithdrawRound(opts *bind.CallOpts, _transcoder common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getTranscoderDelegatorWithdrawRound", _transcoder)
-	return *ret0, err
+// Solidity: function getTranscoderTokenPoolsForRound(_transcoder address, _round uint256) constant returns(rewardPool uint256, feePool uint256, totalStake uint256, usedStake uint256)
+func (_BondingManager *BondingManagerCaller) GetTranscoderTokenPoolsForRound(opts *bind.CallOpts, _transcoder common.Address, _round *big.Int) (struct {
+	RewardPool *big.Int
+	FeePool    *big.Int
+	TotalStake *big.Int
+	UsedStake  *big.Int
+}, error) {
+	ret := new(struct {
+		RewardPool *big.Int
+		FeePool    *big.Int
+		TotalStake *big.Int
+		UsedStake  *big.Int
+	})
+	out := ret
+	err := _BondingManager.contract.Call(opts, out, "getTranscoderTokenPoolsForRound", _transcoder, _round)
+	return *ret, err
 }
 
-// GetTranscoderDelegatorWithdrawRound is a free data retrieval call binding the contract method 0x0b8d4b8e.
+// GetTranscoderTokenPoolsForRound is a free data retrieval call binding the contract method 0xb8b2fdfb.
 //
-// Solidity: function getTranscoderDelegatorWithdrawRound(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerSession) GetTranscoderDelegatorWithdrawRound(_transcoder common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetTranscoderDelegatorWithdrawRound(&_BondingManager.CallOpts, _transcoder)
+// Solidity: function getTranscoderTokenPoolsForRound(_transcoder address, _round uint256) constant returns(rewardPool uint256, feePool uint256, totalStake uint256, usedStake uint256)
+func (_BondingManager *BondingManagerSession) GetTranscoderTokenPoolsForRound(_transcoder common.Address, _round *big.Int) (struct {
+	RewardPool *big.Int
+	FeePool    *big.Int
+	TotalStake *big.Int
+	UsedStake  *big.Int
+}, error) {
+	return _BondingManager.Contract.GetTranscoderTokenPoolsForRound(&_BondingManager.CallOpts, _transcoder, _round)
 }
 
-// GetTranscoderDelegatorWithdrawRound is a free data retrieval call binding the contract method 0x0b8d4b8e.
+// GetTranscoderTokenPoolsForRound is a free data retrieval call binding the contract method 0xb8b2fdfb.
 //
-// Solidity: function getTranscoderDelegatorWithdrawRound(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) GetTranscoderDelegatorWithdrawRound(_transcoder common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetTranscoderDelegatorWithdrawRound(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderFeeShare is a free data retrieval call binding the contract method 0x32b55608.
-//
-// Solidity: function getTranscoderFeeShare(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerCaller) GetTranscoderFeeShare(opts *bind.CallOpts, _transcoder common.Address) (uint8, error) {
-	var (
-		ret0 = new(uint8)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getTranscoderFeeShare", _transcoder)
-	return *ret0, err
-}
-
-// GetTranscoderFeeShare is a free data retrieval call binding the contract method 0x32b55608.
-//
-// Solidity: function getTranscoderFeeShare(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerSession) GetTranscoderFeeShare(_transcoder common.Address) (uint8, error) {
-	return _BondingManager.Contract.GetTranscoderFeeShare(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderFeeShare is a free data retrieval call binding the contract method 0x32b55608.
-//
-// Solidity: function getTranscoderFeeShare(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerCallerSession) GetTranscoderFeeShare(_transcoder common.Address) (uint8, error) {
-	return _BondingManager.Contract.GetTranscoderFeeShare(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderLastRewardRound is a free data retrieval call binding the contract method 0x3f8a1f87.
-//
-// Solidity: function getTranscoderLastRewardRound(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerCaller) GetTranscoderLastRewardRound(opts *bind.CallOpts, _transcoder common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getTranscoderLastRewardRound", _transcoder)
-	return *ret0, err
-}
-
-// GetTranscoderLastRewardRound is a free data retrieval call binding the contract method 0x3f8a1f87.
-//
-// Solidity: function getTranscoderLastRewardRound(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerSession) GetTranscoderLastRewardRound(_transcoder common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetTranscoderLastRewardRound(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderLastRewardRound is a free data retrieval call binding the contract method 0x3f8a1f87.
-//
-// Solidity: function getTranscoderLastRewardRound(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) GetTranscoderLastRewardRound(_transcoder common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetTranscoderLastRewardRound(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderPendingBlockRewardCut is a free data retrieval call binding the contract method 0xbb2770ed.
-//
-// Solidity: function getTranscoderPendingBlockRewardCut(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerCaller) GetTranscoderPendingBlockRewardCut(opts *bind.CallOpts, _transcoder common.Address) (uint8, error) {
-	var (
-		ret0 = new(uint8)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getTranscoderPendingBlockRewardCut", _transcoder)
-	return *ret0, err
-}
-
-// GetTranscoderPendingBlockRewardCut is a free data retrieval call binding the contract method 0xbb2770ed.
-//
-// Solidity: function getTranscoderPendingBlockRewardCut(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerSession) GetTranscoderPendingBlockRewardCut(_transcoder common.Address) (uint8, error) {
-	return _BondingManager.Contract.GetTranscoderPendingBlockRewardCut(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderPendingBlockRewardCut is a free data retrieval call binding the contract method 0xbb2770ed.
-//
-// Solidity: function getTranscoderPendingBlockRewardCut(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerCallerSession) GetTranscoderPendingBlockRewardCut(_transcoder common.Address) (uint8, error) {
-	return _BondingManager.Contract.GetTranscoderPendingBlockRewardCut(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderPendingFeeShare is a free data retrieval call binding the contract method 0x9d95d25b.
-//
-// Solidity: function getTranscoderPendingFeeShare(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerCaller) GetTranscoderPendingFeeShare(opts *bind.CallOpts, _transcoder common.Address) (uint8, error) {
-	var (
-		ret0 = new(uint8)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getTranscoderPendingFeeShare", _transcoder)
-	return *ret0, err
-}
-
-// GetTranscoderPendingFeeShare is a free data retrieval call binding the contract method 0x9d95d25b.
-//
-// Solidity: function getTranscoderPendingFeeShare(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerSession) GetTranscoderPendingFeeShare(_transcoder common.Address) (uint8, error) {
-	return _BondingManager.Contract.GetTranscoderPendingFeeShare(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderPendingFeeShare is a free data retrieval call binding the contract method 0x9d95d25b.
-//
-// Solidity: function getTranscoderPendingFeeShare(_transcoder address) constant returns(uint8)
-func (_BondingManager *BondingManagerCallerSession) GetTranscoderPendingFeeShare(_transcoder common.Address) (uint8, error) {
-	return _BondingManager.Contract.GetTranscoderPendingFeeShare(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderPendingPricePerSegment is a free data retrieval call binding the contract method 0xd6cc0798.
-//
-// Solidity: function getTranscoderPendingPricePerSegment(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerCaller) GetTranscoderPendingPricePerSegment(opts *bind.CallOpts, _transcoder common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getTranscoderPendingPricePerSegment", _transcoder)
-	return *ret0, err
-}
-
-// GetTranscoderPendingPricePerSegment is a free data retrieval call binding the contract method 0xd6cc0798.
-//
-// Solidity: function getTranscoderPendingPricePerSegment(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerSession) GetTranscoderPendingPricePerSegment(_transcoder common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetTranscoderPendingPricePerSegment(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderPendingPricePerSegment is a free data retrieval call binding the contract method 0xd6cc0798.
-//
-// Solidity: function getTranscoderPendingPricePerSegment(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) GetTranscoderPendingPricePerSegment(_transcoder common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetTranscoderPendingPricePerSegment(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderPricePerSegment is a free data retrieval call binding the contract method 0xd2ecc477.
-//
-// Solidity: function getTranscoderPricePerSegment(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerCaller) GetTranscoderPricePerSegment(opts *bind.CallOpts, _transcoder common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _BondingManager.contract.Call(opts, out, "getTranscoderPricePerSegment", _transcoder)
-	return *ret0, err
-}
-
-// GetTranscoderPricePerSegment is a free data retrieval call binding the contract method 0xd2ecc477.
-//
-// Solidity: function getTranscoderPricePerSegment(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerSession) GetTranscoderPricePerSegment(_transcoder common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetTranscoderPricePerSegment(&_BondingManager.CallOpts, _transcoder)
-}
-
-// GetTranscoderPricePerSegment is a free data retrieval call binding the contract method 0xd2ecc477.
-//
-// Solidity: function getTranscoderPricePerSegment(_transcoder address) constant returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) GetTranscoderPricePerSegment(_transcoder common.Address) (*big.Int, error) {
-	return _BondingManager.Contract.GetTranscoderPricePerSegment(&_BondingManager.CallOpts, _transcoder)
+// Solidity: function getTranscoderTokenPoolsForRound(_transcoder address, _round uint256) constant returns(rewardPool uint256, feePool uint256, totalStake uint256, usedStake uint256)
+func (_BondingManager *BondingManagerCallerSession) GetTranscoderTokenPoolsForRound(_transcoder common.Address, _round *big.Int) (struct {
+	RewardPool *big.Int
+	FeePool    *big.Int
+	TotalStake *big.Int
+	UsedStake  *big.Int
+}, error) {
+	return _BondingManager.Contract.GetTranscoderTokenPoolsForRound(&_BondingManager.CallOpts, _transcoder, _round)
 }
 
 // IsActiveTranscoder is a free data retrieval call binding the contract method 0x08802374.
@@ -996,6 +766,48 @@ func (_BondingManager *BondingManagerTransactorSession) Bond(_amount *big.Int, _
 	return _BondingManager.Contract.Bond(&_BondingManager.TransactOpts, _amount, _to)
 }
 
+// ClaimTokenPoolsShares is a paid mutator transaction binding the contract method 0x2c9509f5.
+//
+// Solidity: function claimTokenPoolsShares(_endRound uint256) returns(bool)
+func (_BondingManager *BondingManagerTransactor) ClaimTokenPoolsShares(opts *bind.TransactOpts, _endRound *big.Int) (*types.Transaction, error) {
+	return _BondingManager.contract.Transact(opts, "claimTokenPoolsShares", _endRound)
+}
+
+// ClaimTokenPoolsShares is a paid mutator transaction binding the contract method 0x2c9509f5.
+//
+// Solidity: function claimTokenPoolsShares(_endRound uint256) returns(bool)
+func (_BondingManager *BondingManagerSession) ClaimTokenPoolsShares(_endRound *big.Int) (*types.Transaction, error) {
+	return _BondingManager.Contract.ClaimTokenPoolsShares(&_BondingManager.TransactOpts, _endRound)
+}
+
+// ClaimTokenPoolsShares is a paid mutator transaction binding the contract method 0x2c9509f5.
+//
+// Solidity: function claimTokenPoolsShares(_endRound uint256) returns(bool)
+func (_BondingManager *BondingManagerTransactorSession) ClaimTokenPoolsShares(_endRound *big.Int) (*types.Transaction, error) {
+	return _BondingManager.Contract.ClaimTokenPoolsShares(&_BondingManager.TransactOpts, _endRound)
+}
+
+// ElectActiveTranscoder is a paid mutator transaction binding the contract method 0x105d772f.
+//
+// Solidity: function electActiveTranscoder(_maxPricePerSegment uint256) returns(address)
+func (_BondingManager *BondingManagerTransactor) ElectActiveTranscoder(opts *bind.TransactOpts, _maxPricePerSegment *big.Int) (*types.Transaction, error) {
+	return _BondingManager.contract.Transact(opts, "electActiveTranscoder", _maxPricePerSegment)
+}
+
+// ElectActiveTranscoder is a paid mutator transaction binding the contract method 0x105d772f.
+//
+// Solidity: function electActiveTranscoder(_maxPricePerSegment uint256) returns(address)
+func (_BondingManager *BondingManagerSession) ElectActiveTranscoder(_maxPricePerSegment *big.Int) (*types.Transaction, error) {
+	return _BondingManager.Contract.ElectActiveTranscoder(&_BondingManager.TransactOpts, _maxPricePerSegment)
+}
+
+// ElectActiveTranscoder is a paid mutator transaction binding the contract method 0x105d772f.
+//
+// Solidity: function electActiveTranscoder(_maxPricePerSegment uint256) returns(address)
+func (_BondingManager *BondingManagerTransactorSession) ElectActiveTranscoder(_maxPricePerSegment *big.Int) (*types.Transaction, error) {
+	return _BondingManager.Contract.ElectActiveTranscoder(&_BondingManager.TransactOpts, _maxPricePerSegment)
+}
+
 // Initialize is a paid mutator transaction binding the contract method 0x294c865a.
 //
 // Solidity: function initialize(_unbondingPeriod uint64, _numActiveTranscoders uint256) returns(bool)
@@ -1164,25 +976,25 @@ func (_BondingManager *BondingManagerTransactorSession) Unbond() (*types.Transac
 	return _BondingManager.Contract.Unbond(&_BondingManager.TransactOpts)
 }
 
-// UpdateTranscoderFeePool is a paid mutator transaction binding the contract method 0xc3d20295.
+// UpdateTranscoderWithFees is a paid mutator transaction binding the contract method 0x3aeb512c.
 //
-// Solidity: function updateTranscoderFeePool(_transcoder address, _fees uint256, _claimBlock uint256, _transcoderTotalStake uint256) returns(bool)
-func (_BondingManager *BondingManagerTransactor) UpdateTranscoderFeePool(opts *bind.TransactOpts, _transcoder common.Address, _fees *big.Int, _claimBlock *big.Int, _transcoderTotalStake *big.Int) (*types.Transaction, error) {
-	return _BondingManager.contract.Transact(opts, "updateTranscoderFeePool", _transcoder, _fees, _claimBlock, _transcoderTotalStake)
+// Solidity: function updateTranscoderWithFees(_transcoder address, _fees uint256, _round uint256) returns(bool)
+func (_BondingManager *BondingManagerTransactor) UpdateTranscoderWithFees(opts *bind.TransactOpts, _transcoder common.Address, _fees *big.Int, _round *big.Int) (*types.Transaction, error) {
+	return _BondingManager.contract.Transact(opts, "updateTranscoderWithFees", _transcoder, _fees, _round)
 }
 
-// UpdateTranscoderFeePool is a paid mutator transaction binding the contract method 0xc3d20295.
+// UpdateTranscoderWithFees is a paid mutator transaction binding the contract method 0x3aeb512c.
 //
-// Solidity: function updateTranscoderFeePool(_transcoder address, _fees uint256, _claimBlock uint256, _transcoderTotalStake uint256) returns(bool)
-func (_BondingManager *BondingManagerSession) UpdateTranscoderFeePool(_transcoder common.Address, _fees *big.Int, _claimBlock *big.Int, _transcoderTotalStake *big.Int) (*types.Transaction, error) {
-	return _BondingManager.Contract.UpdateTranscoderFeePool(&_BondingManager.TransactOpts, _transcoder, _fees, _claimBlock, _transcoderTotalStake)
+// Solidity: function updateTranscoderWithFees(_transcoder address, _fees uint256, _round uint256) returns(bool)
+func (_BondingManager *BondingManagerSession) UpdateTranscoderWithFees(_transcoder common.Address, _fees *big.Int, _round *big.Int) (*types.Transaction, error) {
+	return _BondingManager.Contract.UpdateTranscoderWithFees(&_BondingManager.TransactOpts, _transcoder, _fees, _round)
 }
 
-// UpdateTranscoderFeePool is a paid mutator transaction binding the contract method 0xc3d20295.
+// UpdateTranscoderWithFees is a paid mutator transaction binding the contract method 0x3aeb512c.
 //
-// Solidity: function updateTranscoderFeePool(_transcoder address, _fees uint256, _claimBlock uint256, _transcoderTotalStake uint256) returns(bool)
-func (_BondingManager *BondingManagerTransactorSession) UpdateTranscoderFeePool(_transcoder common.Address, _fees *big.Int, _claimBlock *big.Int, _transcoderTotalStake *big.Int) (*types.Transaction, error) {
-	return _BondingManager.Contract.UpdateTranscoderFeePool(&_BondingManager.TransactOpts, _transcoder, _fees, _claimBlock, _transcoderTotalStake)
+// Solidity: function updateTranscoderWithFees(_transcoder address, _fees uint256, _round uint256) returns(bool)
+func (_BondingManager *BondingManagerTransactorSession) UpdateTranscoderWithFees(_transcoder common.Address, _fees *big.Int, _round *big.Int) (*types.Transaction, error) {
+	return _BondingManager.Contract.UpdateTranscoderWithFees(&_BondingManager.TransactOpts, _transcoder, _fees, _round)
 }
 
 // Withdraw is a paid mutator transaction binding the contract method 0x3ccfd60b.
