@@ -116,30 +116,6 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.V
 	return nil
 }
 
-func (n *LivepeerNode) EndTranscodeJob(jid *big.Int) error {
-	if jid == nil {
-		glog.Errorf("Cannot end job with nil jid")
-		return ErrNotFound
-	}
-
-	job, err := n.Eth.GetJob(jid)
-	if err != nil {
-		glog.Errorf("Cannot get job %v - %v", jid, err)
-		return ErrNotFound
-	}
-	if job.EndBlock.Cmp(big.NewInt(0)) == 0 {
-		//End the job
-		resCh, errCh := n.Eth.EndJob(jid)
-		select {
-		case <-resCh:
-			glog.Infof("Ended job %v. ", jid)
-		case err := <-errCh:
-			glog.Errorf("Error ending job: %v", err)
-		}
-	}
-	return nil
-}
-
 func (n *LivepeerNode) ClaimVerifyAndDistributeFees(cm ClaimManager) error {
 	//Do the claim, wait until it's finished
 	count, rc, ec := cm.Claim()

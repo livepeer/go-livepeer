@@ -14,7 +14,7 @@ import (
 )
 
 // JobsManagerABI is the input ABI used to generate the binding from.
-const JobsManagerABI = "[{\"constant\":false,\"inputs\":[{\"name\":\"_streamId\",\"type\":\"string\"},{\"name\":\"_transcodingOptions\",\"type\":\"string\"},{\"name\":\"_maxPricePerSegment\",\"type\":\"uint256\"}],\"name\":\"job\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"jobs\",\"outputs\":[{\"name\":\"jobId\",\"type\":\"uint256\"},{\"name\":\"streamId\",\"type\":\"string\"},{\"name\":\"transcodingOptions\",\"type\":\"string\"},{\"name\":\"maxPricePerSegment\",\"type\":\"uint256\"},{\"name\":\"broadcasterAddress\",\"type\":\"address\"},{\"name\":\"transcoderAddress\",\"type\":\"address\"},{\"name\":\"creationRound\",\"type\":\"uint256\"},{\"name\":\"endBlock\",\"type\":\"uint256\"},{\"name\":\"escrow\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"},{\"name\":\"_result\",\"type\":\"bool\"}],\"name\":\"receiveVerification\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"finderFee\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"missedVerificationSlashAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"isInitialized\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"withdraw\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_segmentRange\",\"type\":\"uint256[2]\"},{\"name\":\"_claimRoot\",\"type\":\"bytes32\"}],\"name\":\"claimWork\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"getClaim\",\"outputs\":[{\"name\":\"segmentRange\",\"type\":\"uint256[2]\"},{\"name\":\"claimRoot\",\"type\":\"bytes32\"},{\"name\":\"claimBlock\",\"type\":\"uint256\"},{\"name\":\"endVerificationBlock\",\"type\":\"uint256\"},{\"name\":\"endSlashingBlock\",\"type\":\"uint256\"},{\"name\":\"status\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"},{\"name\":\"_dataStorageHash\",\"type\":\"string\"},{\"name\":\"_dataHashes\",\"type\":\"bytes32[2]\"},{\"name\":\"_broadcasterSig\",\"type\":\"bytes\"},{\"name\":\"_proof\",\"type\":\"bytes\"}],\"name\":\"verify\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"}],\"name\":\"isClaimSegmentVerified\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationRate\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"distributeFees\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimIds\",\"type\":\"uint256[]\"}],\"name\":\"batchDistributeFees\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"numJobs\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"jobStatus\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"deposit\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"failedVerificationSlashAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"getJob\",\"outputs\":[{\"name\":\"streamId\",\"type\":\"string\"},{\"name\":\"transcodingOptions\",\"type\":\"string\"},{\"name\":\"maxPricePerSegment\",\"type\":\"uint256\"},{\"name\":\"broadcasterAddress\",\"type\":\"address\"},{\"name\":\"transcoderAddress\",\"type\":\"address\"},{\"name\":\"creationRound\",\"type\":\"uint256\"},{\"name\":\"endBlock\",\"type\":\"uint256\"},{\"name\":\"escrow\",\"type\":\"uint256\"},{\"name\":\"totalClaims\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationFailureThreshold\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"}],\"name\":\"missedVerificationSlash\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"slashingPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"broadcasterDeposits\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"jobEndingPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"endJob\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_verificationRate\",\"type\":\"uint64\"},{\"name\":\"_jobEndingPeriod\",\"type\":\"uint256\"},{\"name\":\"_verificationPeriod\",\"type\":\"uint256\"},{\"name\":\"_slashingPeriod\",\"type\":\"uint256\"},{\"name\":\"_failedVerificationSlashAmount\",\"type\":\"uint64\"},{\"name\":\"_missedVerificationSlashAmount\",\"type\":\"uint64\"},{\"name\":\"_finderFee\",\"type\":\"uint64\"}],\"name\":\"initialize\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"broadcaster\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"streamId\",\"type\":\"string\"},{\"indexed\":false,\"name\":\"transcodingOptions\",\"type\":\"string\"}],\"name\":\"NewJob\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"claimId\",\"type\":\"uint256\"}],\"name\":\"NewClaim\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"claimId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"segmentNumber\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"result\",\"type\":\"bool\"}],\"name\":\"ReceivedVerification\",\"type\":\"event\"}]"
+const JobsManagerABI = "[{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"jobs\",\"outputs\":[{\"name\":\"jobId\",\"type\":\"uint256\"},{\"name\":\"streamId\",\"type\":\"string\"},{\"name\":\"transcodingOptions\",\"type\":\"string\"},{\"name\":\"maxPricePerSegment\",\"type\":\"uint256\"},{\"name\":\"broadcasterAddress\",\"type\":\"address\"},{\"name\":\"transcoderAddress\",\"type\":\"address\"},{\"name\":\"creationRound\",\"type\":\"uint256\"},{\"name\":\"endBlock\",\"type\":\"uint256\"},{\"name\":\"escrow\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"},{\"name\":\"_result\",\"type\":\"bool\"}],\"name\":\"receiveVerification\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"finderFee\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_streamId\",\"type\":\"string\"},{\"name\":\"_transcodingOptions\",\"type\":\"string\"},{\"name\":\"_maxPricePerSegment\",\"type\":\"uint256\"},{\"name\":\"_endBlock\",\"type\":\"uint256\"}],\"name\":\"job\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"missedVerificationSlashAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"isInitialized\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"withdraw\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_segmentRange\",\"type\":\"uint256[2]\"},{\"name\":\"_claimRoot\",\"type\":\"bytes32\"}],\"name\":\"claimWork\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"getClaim\",\"outputs\":[{\"name\":\"segmentRange\",\"type\":\"uint256[2]\"},{\"name\":\"claimRoot\",\"type\":\"bytes32\"},{\"name\":\"claimBlock\",\"type\":\"uint256\"},{\"name\":\"blockHash\",\"type\":\"bytes32\"},{\"name\":\"endVerificationBlock\",\"type\":\"uint256\"},{\"name\":\"endSlashingBlock\",\"type\":\"uint256\"},{\"name\":\"status\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"},{\"name\":\"_dataStorageHash\",\"type\":\"string\"},{\"name\":\"_dataHashes\",\"type\":\"bytes32[2]\"},{\"name\":\"_broadcasterSig\",\"type\":\"bytes\"},{\"name\":\"_proof\",\"type\":\"bytes\"}],\"name\":\"verify\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"}],\"name\":\"isClaimSegmentVerified\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationRate\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"}],\"name\":\"distributeFees\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"broadcasters\",\"outputs\":[{\"name\":\"deposit\",\"type\":\"uint256\"},{\"name\":\"withdrawBlock\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimIds\",\"type\":\"uint256[]\"}],\"name\":\"batchDistributeFees\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"numJobs\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_verificationRate\",\"type\":\"uint64\"},{\"name\":\"_verificationPeriod\",\"type\":\"uint256\"},{\"name\":\"_slashingPeriod\",\"type\":\"uint256\"},{\"name\":\"_failedVerificationSlashAmount\",\"type\":\"uint64\"},{\"name\":\"_missedVerificationSlashAmount\",\"type\":\"uint64\"},{\"name\":\"_finderFee\",\"type\":\"uint64\"}],\"name\":\"initialize\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"jobStatus\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"deposit\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"failedVerificationSlashAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"}],\"name\":\"getJob\",\"outputs\":[{\"name\":\"streamId\",\"type\":\"string\"},{\"name\":\"transcodingOptions\",\"type\":\"string\"},{\"name\":\"maxPricePerSegment\",\"type\":\"uint256\"},{\"name\":\"broadcasterAddress\",\"type\":\"address\"},{\"name\":\"transcoderAddress\",\"type\":\"address\"},{\"name\":\"creationRound\",\"type\":\"uint256\"},{\"name\":\"endBlock\",\"type\":\"uint256\"},{\"name\":\"escrow\",\"type\":\"uint256\"},{\"name\":\"totalClaims\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationFailureThreshold\",\"outputs\":[{\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"}],\"name\":\"missedVerificationSlash\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"slashingPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"broadcaster\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"streamId\",\"type\":\"string\"},{\"indexed\":false,\"name\":\"transcodingOptions\",\"type\":\"string\"}],\"name\":\"NewJob\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"claimId\",\"type\":\"uint256\"}],\"name\":\"NewClaim\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"claimId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"segmentNumber\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"result\",\"type\":\"bool\"}],\"name\":\"ReceivedVerification\",\"type\":\"event\"}]"
 
 // JobsManager is an auto generated Go binding around an Ethereum contract.
 type JobsManager struct {
@@ -143,30 +143,40 @@ func (_JobsManager *JobsManagerTransactorRaw) Transact(opts *bind.TransactOpts, 
 	return _JobsManager.Contract.contract.Transact(opts, method, params...)
 }
 
-// BroadcasterDeposits is a free data retrieval call binding the contract method 0xf0b8720c.
+// Broadcasters is a free data retrieval call binding the contract method 0x88cc1093.
 //
-// Solidity: function broadcasterDeposits( address) constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) BroadcasterDeposits(opts *bind.CallOpts, arg0 common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "broadcasterDeposits", arg0)
-	return *ret0, err
+// Solidity: function broadcasters( address) constant returns(deposit uint256, withdrawBlock uint256)
+func (_JobsManager *JobsManagerCaller) Broadcasters(opts *bind.CallOpts, arg0 common.Address) (struct {
+	Deposit       *big.Int
+	WithdrawBlock *big.Int
+}, error) {
+	ret := new(struct {
+		Deposit       *big.Int
+		WithdrawBlock *big.Int
+	})
+	out := ret
+	err := _JobsManager.contract.Call(opts, out, "broadcasters", arg0)
+	return *ret, err
 }
 
-// BroadcasterDeposits is a free data retrieval call binding the contract method 0xf0b8720c.
+// Broadcasters is a free data retrieval call binding the contract method 0x88cc1093.
 //
-// Solidity: function broadcasterDeposits( address) constant returns(uint256)
-func (_JobsManager *JobsManagerSession) BroadcasterDeposits(arg0 common.Address) (*big.Int, error) {
-	return _JobsManager.Contract.BroadcasterDeposits(&_JobsManager.CallOpts, arg0)
+// Solidity: function broadcasters( address) constant returns(deposit uint256, withdrawBlock uint256)
+func (_JobsManager *JobsManagerSession) Broadcasters(arg0 common.Address) (struct {
+	Deposit       *big.Int
+	WithdrawBlock *big.Int
+}, error) {
+	return _JobsManager.Contract.Broadcasters(&_JobsManager.CallOpts, arg0)
 }
 
-// BroadcasterDeposits is a free data retrieval call binding the contract method 0xf0b8720c.
+// Broadcasters is a free data retrieval call binding the contract method 0x88cc1093.
 //
-// Solidity: function broadcasterDeposits( address) constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) BroadcasterDeposits(arg0 common.Address) (*big.Int, error) {
-	return _JobsManager.Contract.BroadcasterDeposits(&_JobsManager.CallOpts, arg0)
+// Solidity: function broadcasters( address) constant returns(deposit uint256, withdrawBlock uint256)
+func (_JobsManager *JobsManagerCallerSession) Broadcasters(arg0 common.Address) (struct {
+	Deposit       *big.Int
+	WithdrawBlock *big.Int
+}, error) {
+	return _JobsManager.Contract.Broadcasters(&_JobsManager.CallOpts, arg0)
 }
 
 // Controller is a free data retrieval call binding the contract method 0xf77c4791.
@@ -249,11 +259,12 @@ func (_JobsManager *JobsManagerCallerSession) FinderFee() (uint64, error) {
 
 // GetClaim is a free data retrieval call binding the contract method 0x427a2fc2.
 //
-// Solidity: function getClaim(_jobId uint256, _claimId uint256) constant returns(segmentRange uint256[2], claimRoot bytes32, claimBlock uint256, endVerificationBlock uint256, endSlashingBlock uint256, status uint8)
+// Solidity: function getClaim(_jobId uint256, _claimId uint256) constant returns(segmentRange uint256[2], claimRoot bytes32, claimBlock uint256, blockHash bytes32, endVerificationBlock uint256, endSlashingBlock uint256, status uint8)
 func (_JobsManager *JobsManagerCaller) GetClaim(opts *bind.CallOpts, _jobId *big.Int, _claimId *big.Int) (struct {
 	SegmentRange         [2]*big.Int
 	ClaimRoot            [32]byte
 	ClaimBlock           *big.Int
+	BlockHash            [32]byte
 	EndVerificationBlock *big.Int
 	EndSlashingBlock     *big.Int
 	Status               uint8
@@ -262,6 +273,7 @@ func (_JobsManager *JobsManagerCaller) GetClaim(opts *bind.CallOpts, _jobId *big
 		SegmentRange         [2]*big.Int
 		ClaimRoot            [32]byte
 		ClaimBlock           *big.Int
+		BlockHash            [32]byte
 		EndVerificationBlock *big.Int
 		EndSlashingBlock     *big.Int
 		Status               uint8
@@ -273,11 +285,12 @@ func (_JobsManager *JobsManagerCaller) GetClaim(opts *bind.CallOpts, _jobId *big
 
 // GetClaim is a free data retrieval call binding the contract method 0x427a2fc2.
 //
-// Solidity: function getClaim(_jobId uint256, _claimId uint256) constant returns(segmentRange uint256[2], claimRoot bytes32, claimBlock uint256, endVerificationBlock uint256, endSlashingBlock uint256, status uint8)
+// Solidity: function getClaim(_jobId uint256, _claimId uint256) constant returns(segmentRange uint256[2], claimRoot bytes32, claimBlock uint256, blockHash bytes32, endVerificationBlock uint256, endSlashingBlock uint256, status uint8)
 func (_JobsManager *JobsManagerSession) GetClaim(_jobId *big.Int, _claimId *big.Int) (struct {
 	SegmentRange         [2]*big.Int
 	ClaimRoot            [32]byte
 	ClaimBlock           *big.Int
+	BlockHash            [32]byte
 	EndVerificationBlock *big.Int
 	EndSlashingBlock     *big.Int
 	Status               uint8
@@ -287,11 +300,12 @@ func (_JobsManager *JobsManagerSession) GetClaim(_jobId *big.Int, _claimId *big.
 
 // GetClaim is a free data retrieval call binding the contract method 0x427a2fc2.
 //
-// Solidity: function getClaim(_jobId uint256, _claimId uint256) constant returns(segmentRange uint256[2], claimRoot bytes32, claimBlock uint256, endVerificationBlock uint256, endSlashingBlock uint256, status uint8)
+// Solidity: function getClaim(_jobId uint256, _claimId uint256) constant returns(segmentRange uint256[2], claimRoot bytes32, claimBlock uint256, blockHash bytes32, endVerificationBlock uint256, endSlashingBlock uint256, status uint8)
 func (_JobsManager *JobsManagerCallerSession) GetClaim(_jobId *big.Int, _claimId *big.Int) (struct {
 	SegmentRange         [2]*big.Int
 	ClaimRoot            [32]byte
 	ClaimBlock           *big.Int
+	BlockHash            [32]byte
 	EndVerificationBlock *big.Int
 	EndSlashingBlock     *big.Int
 	Status               uint8
@@ -413,32 +427,6 @@ func (_JobsManager *JobsManagerSession) IsInitialized() (bool, error) {
 // Solidity: function isInitialized() constant returns(bool)
 func (_JobsManager *JobsManagerCallerSession) IsInitialized() (bool, error) {
 	return _JobsManager.Contract.IsInitialized(&_JobsManager.CallOpts)
-}
-
-// JobEndingPeriod is a free data retrieval call binding the contract method 0xf1e126e6.
-//
-// Solidity: function jobEndingPeriod() constant returns(uint256)
-func (_JobsManager *JobsManagerCaller) JobEndingPeriod(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _JobsManager.contract.Call(opts, out, "jobEndingPeriod")
-	return *ret0, err
-}
-
-// JobEndingPeriod is a free data retrieval call binding the contract method 0xf1e126e6.
-//
-// Solidity: function jobEndingPeriod() constant returns(uint256)
-func (_JobsManager *JobsManagerSession) JobEndingPeriod() (*big.Int, error) {
-	return _JobsManager.Contract.JobEndingPeriod(&_JobsManager.CallOpts)
-}
-
-// JobEndingPeriod is a free data retrieval call binding the contract method 0xf1e126e6.
-//
-// Solidity: function jobEndingPeriod() constant returns(uint256)
-func (_JobsManager *JobsManagerCallerSession) JobEndingPeriod() (*big.Int, error) {
-	return _JobsManager.Contract.JobEndingPeriod(&_JobsManager.CallOpts)
 }
 
 // JobStatus is a free data retrieval call binding the contract method 0xa8e5e219.
@@ -797,67 +785,46 @@ func (_JobsManager *JobsManagerTransactorSession) DistributeFees(_jobId *big.Int
 	return _JobsManager.Contract.DistributeFees(&_JobsManager.TransactOpts, _jobId, _claimId)
 }
 
-// EndJob is a paid mutator transaction binding the contract method 0xf8e888b4.
+// Initialize is a paid mutator transaction binding the contract method 0x95e7e7ad.
 //
-// Solidity: function endJob(_jobId uint256) returns(bool)
-func (_JobsManager *JobsManagerTransactor) EndJob(opts *bind.TransactOpts, _jobId *big.Int) (*types.Transaction, error) {
-	return _JobsManager.contract.Transact(opts, "endJob", _jobId)
+// Solidity: function initialize(_verificationRate uint64, _verificationPeriod uint256, _slashingPeriod uint256, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) returns(bool)
+func (_JobsManager *JobsManagerTransactor) Initialize(opts *bind.TransactOpts, _verificationRate uint64, _verificationPeriod *big.Int, _slashingPeriod *big.Int, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) (*types.Transaction, error) {
+	return _JobsManager.contract.Transact(opts, "initialize", _verificationRate, _verificationPeriod, _slashingPeriod, _failedVerificationSlashAmount, _missedVerificationSlashAmount, _finderFee)
 }
 
-// EndJob is a paid mutator transaction binding the contract method 0xf8e888b4.
+// Initialize is a paid mutator transaction binding the contract method 0x95e7e7ad.
 //
-// Solidity: function endJob(_jobId uint256) returns(bool)
-func (_JobsManager *JobsManagerSession) EndJob(_jobId *big.Int) (*types.Transaction, error) {
-	return _JobsManager.Contract.EndJob(&_JobsManager.TransactOpts, _jobId)
+// Solidity: function initialize(_verificationRate uint64, _verificationPeriod uint256, _slashingPeriod uint256, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) returns(bool)
+func (_JobsManager *JobsManagerSession) Initialize(_verificationRate uint64, _verificationPeriod *big.Int, _slashingPeriod *big.Int, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) (*types.Transaction, error) {
+	return _JobsManager.Contract.Initialize(&_JobsManager.TransactOpts, _verificationRate, _verificationPeriod, _slashingPeriod, _failedVerificationSlashAmount, _missedVerificationSlashAmount, _finderFee)
 }
 
-// EndJob is a paid mutator transaction binding the contract method 0xf8e888b4.
+// Initialize is a paid mutator transaction binding the contract method 0x95e7e7ad.
 //
-// Solidity: function endJob(_jobId uint256) returns(bool)
-func (_JobsManager *JobsManagerTransactorSession) EndJob(_jobId *big.Int) (*types.Transaction, error) {
-	return _JobsManager.Contract.EndJob(&_JobsManager.TransactOpts, _jobId)
+// Solidity: function initialize(_verificationRate uint64, _verificationPeriod uint256, _slashingPeriod uint256, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) returns(bool)
+func (_JobsManager *JobsManagerTransactorSession) Initialize(_verificationRate uint64, _verificationPeriod *big.Int, _slashingPeriod *big.Int, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) (*types.Transaction, error) {
+	return _JobsManager.Contract.Initialize(&_JobsManager.TransactOpts, _verificationRate, _verificationPeriod, _slashingPeriod, _failedVerificationSlashAmount, _missedVerificationSlashAmount, _finderFee)
 }
 
-// Initialize is a paid mutator transaction binding the contract method 0xfe1f9154.
+// Job is a paid mutator transaction binding the contract method 0x307c6f8e.
 //
-// Solidity: function initialize(_verificationRate uint64, _jobEndingPeriod uint256, _verificationPeriod uint256, _slashingPeriod uint256, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) returns(bool)
-func (_JobsManager *JobsManagerTransactor) Initialize(opts *bind.TransactOpts, _verificationRate uint64, _jobEndingPeriod *big.Int, _verificationPeriod *big.Int, _slashingPeriod *big.Int, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) (*types.Transaction, error) {
-	return _JobsManager.contract.Transact(opts, "initialize", _verificationRate, _jobEndingPeriod, _verificationPeriod, _slashingPeriod, _failedVerificationSlashAmount, _missedVerificationSlashAmount, _finderFee)
+// Solidity: function job(_streamId string, _transcodingOptions string, _maxPricePerSegment uint256, _endBlock uint256) returns(bool)
+func (_JobsManager *JobsManagerTransactor) Job(opts *bind.TransactOpts, _streamId string, _transcodingOptions string, _maxPricePerSegment *big.Int, _endBlock *big.Int) (*types.Transaction, error) {
+	return _JobsManager.contract.Transact(opts, "job", _streamId, _transcodingOptions, _maxPricePerSegment, _endBlock)
 }
 
-// Initialize is a paid mutator transaction binding the contract method 0xfe1f9154.
+// Job is a paid mutator transaction binding the contract method 0x307c6f8e.
 //
-// Solidity: function initialize(_verificationRate uint64, _jobEndingPeriod uint256, _verificationPeriod uint256, _slashingPeriod uint256, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) returns(bool)
-func (_JobsManager *JobsManagerSession) Initialize(_verificationRate uint64, _jobEndingPeriod *big.Int, _verificationPeriod *big.Int, _slashingPeriod *big.Int, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) (*types.Transaction, error) {
-	return _JobsManager.Contract.Initialize(&_JobsManager.TransactOpts, _verificationRate, _jobEndingPeriod, _verificationPeriod, _slashingPeriod, _failedVerificationSlashAmount, _missedVerificationSlashAmount, _finderFee)
+// Solidity: function job(_streamId string, _transcodingOptions string, _maxPricePerSegment uint256, _endBlock uint256) returns(bool)
+func (_JobsManager *JobsManagerSession) Job(_streamId string, _transcodingOptions string, _maxPricePerSegment *big.Int, _endBlock *big.Int) (*types.Transaction, error) {
+	return _JobsManager.Contract.Job(&_JobsManager.TransactOpts, _streamId, _transcodingOptions, _maxPricePerSegment, _endBlock)
 }
 
-// Initialize is a paid mutator transaction binding the contract method 0xfe1f9154.
+// Job is a paid mutator transaction binding the contract method 0x307c6f8e.
 //
-// Solidity: function initialize(_verificationRate uint64, _jobEndingPeriod uint256, _verificationPeriod uint256, _slashingPeriod uint256, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) returns(bool)
-func (_JobsManager *JobsManagerTransactorSession) Initialize(_verificationRate uint64, _jobEndingPeriod *big.Int, _verificationPeriod *big.Int, _slashingPeriod *big.Int, _failedVerificationSlashAmount uint64, _missedVerificationSlashAmount uint64, _finderFee uint64) (*types.Transaction, error) {
-	return _JobsManager.Contract.Initialize(&_JobsManager.TransactOpts, _verificationRate, _jobEndingPeriod, _verificationPeriod, _slashingPeriod, _failedVerificationSlashAmount, _missedVerificationSlashAmount, _finderFee)
-}
-
-// Job is a paid mutator transaction binding the contract method 0x009fe64b.
-//
-// Solidity: function job(_streamId string, _transcodingOptions string, _maxPricePerSegment uint256) returns(bool)
-func (_JobsManager *JobsManagerTransactor) Job(opts *bind.TransactOpts, _streamId string, _transcodingOptions string, _maxPricePerSegment *big.Int) (*types.Transaction, error) {
-	return _JobsManager.contract.Transact(opts, "job", _streamId, _transcodingOptions, _maxPricePerSegment)
-}
-
-// Job is a paid mutator transaction binding the contract method 0x009fe64b.
-//
-// Solidity: function job(_streamId string, _transcodingOptions string, _maxPricePerSegment uint256) returns(bool)
-func (_JobsManager *JobsManagerSession) Job(_streamId string, _transcodingOptions string, _maxPricePerSegment *big.Int) (*types.Transaction, error) {
-	return _JobsManager.Contract.Job(&_JobsManager.TransactOpts, _streamId, _transcodingOptions, _maxPricePerSegment)
-}
-
-// Job is a paid mutator transaction binding the contract method 0x009fe64b.
-//
-// Solidity: function job(_streamId string, _transcodingOptions string, _maxPricePerSegment uint256) returns(bool)
-func (_JobsManager *JobsManagerTransactorSession) Job(_streamId string, _transcodingOptions string, _maxPricePerSegment *big.Int) (*types.Transaction, error) {
-	return _JobsManager.Contract.Job(&_JobsManager.TransactOpts, _streamId, _transcodingOptions, _maxPricePerSegment)
+// Solidity: function job(_streamId string, _transcodingOptions string, _maxPricePerSegment uint256, _endBlock uint256) returns(bool)
+func (_JobsManager *JobsManagerTransactorSession) Job(_streamId string, _transcodingOptions string, _maxPricePerSegment *big.Int, _endBlock *big.Int) (*types.Transaction, error) {
+	return _JobsManager.Contract.Job(&_JobsManager.TransactOpts, _streamId, _transcodingOptions, _maxPricePerSegment, _endBlock)
 }
 
 // MissedVerificationSlash is a paid mutator transaction binding the contract method 0xc8e8f487.

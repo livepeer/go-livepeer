@@ -67,7 +67,6 @@ func (e *StubClient) Job(streamId string, transcodingOptions string, maxPricePer
 	e.MaxPrice = maxPricePerSegment
 	return nil, nil
 }
-func (e *StubClient) EndJob(jobID *big.Int) (<-chan types.Receipt, <-chan error) { return nil, nil }
 func (e *StubClient) JobDetails(id *big.Int) (*big.Int, [32]byte, *big.Int, common.Address, common.Address, *big.Int, error) {
 	return nil, [32]byte{}, nil, common.Address{}, common.Address{}, nil, nil
 }
