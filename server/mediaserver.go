@@ -202,9 +202,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				if err := s.LivepeerNode.BroadcastFinishMsg(hlsStrmID.String()); err != nil {
 					glog.Errorf("Error broadcaseting finish message: %v", err)
 				}
-
-				//End job
-				s.LivepeerNode.EndTranscodeJob(s.LivepeerNode.VideoDB.GetJidByStreamID(hlsStrmID))
 			}
 		}()
 
