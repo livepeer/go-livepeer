@@ -37,6 +37,7 @@ var EthRpcTimeout = 5 * time.Second
 var EthEventTimeout = 5 * time.Second
 var EthMinedTxTimeout = 60 * time.Second
 var DefaultMasterPlaylistWaitTime = 60 * time.Second
+var DefaultJobLength = int64(96)
 
 //NodeID can be converted from libp2p PeerID.
 type NodeID string
@@ -106,7 +107,12 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.V
 		transOpts = append(transOpts, crypto.Keccak256([]byte(prof.Name))[0:4]...)
 	}
 
-	resCh, errCh := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], p)
+	blk, err := n.Eth.Backend().BlockByNumber(context.Background(), nil)
+	if err != nil {
+		glog.Errorf("Cannot get current block number: %v", err)
+		return ErrNotFound
+	}
+	resCh, errCh := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], p, big.NewInt(0).Add(blk.Number(), big.NewInt(DefaultJobLength)))
 	select {
 	case <-resCh:
 		glog.Infof("Created broadcast job. Price: %v. Type: %v", p, ethcommon.ToHex(transOpts)[2:])

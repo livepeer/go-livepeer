@@ -50,7 +50,7 @@ type LivepeerEthClient interface {
 	Deposit(amount *big.Int) (<-chan types.Receipt, <-chan error)
 	GetBroadcasterDeposit(broadcaster common.Address) (*big.Int, error)
 	WithdrawDeposit() (<-chan types.Receipt, <-chan error)
-	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
+	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int, endBlock *big.Int) (<-chan types.Receipt, <-chan error)
 	ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (<-chan types.Receipt, <-chan error)
 	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error)
 	DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error)
@@ -410,9 +410,9 @@ func (c *Client) WithdrawDeposit() (<-chan types.Receipt, <-chan error) {
 	})
 }
 
-func (c *Client) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
+func (c *Client) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int, endBlock *big.Int) (<-chan types.Receipt, <-chan error) {
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
-		if tx, err := c.jobsManagerSession.Job(streamId, transcodingOptions, maxPricePerSegment, big.NewInt(0)); err != nil {
+		if tx, err := c.jobsManagerSession.Job(streamId, transcodingOptions, maxPricePerSegment, endBlock); err != nil {
 			return nil, err
 		} else {
 			glog.Infof("[%v] Submitted tx %v. Creating job for stream id %v", c.account.Address.Hex(), tx.Hash().Hex(), streamId)

@@ -61,7 +61,7 @@ func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (<-chan types.
 }
 func (e *StubClient) ValidRewardTimeWindow() (bool, error)         { return false, nil }
 func (e *StubClient) Reward() (<-chan types.Receipt, <-chan error) { return nil, nil }
-func (e *StubClient) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
+func (e *StubClient) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int, endBlock *big.Int) (<-chan types.Receipt, <-chan error) {
 	e.StrmID = streamId
 	e.TOpts = transcodingOptions
 	e.MaxPrice = maxPricePerSegment
