@@ -37,7 +37,7 @@ var EthRpcTimeout = 5 * time.Second
 var EthEventTimeout = 5 * time.Second
 var EthMinedTxTimeout = 60 * time.Second
 var DefaultMasterPlaylistWaitTime = 60 * time.Second
-var DefaultJobLength = int64(96)
+var DefaultJobLength = int64(5760) //Avg 1 day in 15 sec blocks
 
 //NodeID can be converted from libp2p PeerID.
 type NodeID string
