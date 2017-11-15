@@ -18,25 +18,27 @@ func (s *StubSubscription) Unsubscribe()      {}
 func (s *StubSubscription) Err() <-chan error { return make(chan error) }
 
 type StubClient struct {
-	StrmID        string
-	TOpts         string
-	MaxPrice      *big.Int
-	Jid           *big.Int
-	SegSeqNum     *big.Int
-	VeriRate      uint64
-	DStorageHash  string
-	DHash         [32]byte
-	TDHash        [32]byte
-	BSig          []byte
-	Proof         []byte
-	VerifyCounter int
-	ClaimJid      []*big.Int
-	ClaimStart    []*big.Int
-	ClaimEnd      []*big.Int
-	ClaimRoot     map[[32]byte]bool
-	ClaimCounter  int
-	SubLogsCh     chan types.Log
-	JobsMap       map[string]*Job
+	StrmID            string
+	TOpts             string
+	MaxPrice          *big.Int
+	Jid               *big.Int
+	SegSeqNum         *big.Int
+	VeriRate          uint64
+	DStorageHash      string
+	DHash             [32]byte
+	TDHash            [32]byte
+	BSig              []byte
+	Proof             []byte
+	VerifyCounter     int
+	ClaimJid          []*big.Int
+	ClaimStart        []*big.Int
+	ClaimEnd          []*big.Int
+	ClaimRoot         map[[32]byte]bool
+	ClaimCounter      int
+	SubLogsCh         chan types.Log
+	JobsMap           map[string]*Job
+	BlockNum          *big.Int
+	BlockHashToReturn common.Hash
 }
 
 func (e *StubClient) Backend() *ethclient.Client { return nil }
@@ -173,4 +175,8 @@ func (e *StubClient) Unbond() (<-chan types.Receipt, <-chan error)       { retur
 func (e *StubClient) WithdrawBond() (<-chan types.Receipt, <-chan error) { return nil, nil }
 func (e *StubClient) GetBlockInfoByTxHash(ctx context.Context, hash common.Hash) (blkNum *big.Int, blkHash common.Hash, err error) {
 	return big.NewInt(0), hash, nil
+}
+func (c *StubClient) GetBlockHashByNumber(ctx context.Context, num *big.Int) (common.Hash, error) {
+	c.BlockNum = num
+	return c.BlockHashToReturn, nil
 }

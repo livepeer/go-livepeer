@@ -82,6 +82,7 @@ type LivepeerEthClient interface {
 	GetJobsManagerAddr() string
 	GetRoundsManagerAddr() string
 	GetBlockInfoByTxHash(ctx context.Context, hash common.Hash) (blkNum *big.Int, blkHash common.Hash, err error)
+	GetBlockHashByNumber(ctx context.Context, num *big.Int) (common.Hash, error)
 }
 
 type Client struct {
@@ -1007,4 +1008,12 @@ func (c *Client) GetBlockInfoByTxHash(ctx context.Context, hash common.Hash) (bl
 		return nil, common.Hash{}, err
 	}
 	return blk.Number(), blk.Hash(), nil
+}
+
+func (c *Client) GetBlockHashByNumber(ctx context.Context, num *big.Int) (common.Hash, error) {
+	blk, err := c.Backend().BlockByNumber(ctx, num)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return blk.Hash(), nil
 }
