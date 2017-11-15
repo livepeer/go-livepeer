@@ -18,11 +18,16 @@ import (
 )
 
 func TestShouldVerify(t *testing.T) {
+	client := &eth.StubClient{}
+	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
+	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, client, &ipfs.StubIpfsApi{})
+
+	client.BlockHashToReturn = common.Hash([32]byte{0, 2, 4, 42, 2, 3, 4, 4, 4, 2, 21, 1, 1, 24, 134, 0, 02, 43})
 	//Just make sure the results are different
 	same := true
 	var result bool
 	for i := int64(0); i < 10; i++ {
-		if tResult := shouldVerifySegment(i, 0, 10, 100, common.Hash([32]byte{0, 2, 4, 42, 2, 3, 4, 4, 4, 2, 21, 1, 1, 24, 134, 0, 02, 43}), 5); result != tResult {
+		if tResult := cm.shouldVerifySegment(i, 0, 10, 100, 5); result != tResult {
 			same = false
 			break
 		} else {
@@ -31,6 +36,9 @@ func TestShouldVerify(t *testing.T) {
 	}
 	if same {
 		t.Errorf("Should give different results")
+	}
+	if client.BlockNum.Cmp(new(big.Int).SetInt64(101)) != 0 {
+		t.Errorf("Should have called with blockNumber 101")
 	}
 }
 
@@ -208,7 +216,6 @@ func TestClaim(t *testing.T) {
 }
 
 func TestVerify(t *testing.T) {
-	// ethClient := &eth.StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
 	ethClient := &eth.StubClient{VeriRate: 10}
 	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
 	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{})
@@ -217,10 +224,11 @@ func TestVerify(t *testing.T) {
 	blkNum := int64(100)
 	blkHash := common.HexToHash("0xDEADBEEF")
 	seqNum := int64(10)
-	//Find a seqNum that will trigger verification
+	//Find a blkHash that will trigger verification
 	for i := 0; i < 100; i++ {
 		blkHash = common.HexToHash(fmt.Sprintf("0xDEADBEEF%v", i))
-		if shouldVerifySegment(seqNum, start, end, blkNum, blkHash, 10) {
+		ethClient.BlockHashToReturn = blkHash
+		if cm.shouldVerifySegment(seqNum, start, end, blkNum, 10) {
 			break
 		}
 	}
@@ -233,7 +241,7 @@ func TestVerify(t *testing.T) {
 	seg.claimStart = start
 	seg.claimEnd = end
 	seg.claimBlkNum = big.NewInt(blkNum)
-	seg.claimBlkHash = common.HexToHash("0xDEADBEEF")
+	ethClient.BlockHashToReturn = common.Hash{}
 
 	if err := cm.Verify(); err != nil {
 		t.Errorf("Error: %v", err)
@@ -250,8 +258,8 @@ func TestVerify(t *testing.T) {
 	seg.claimStart = start
 	seg.claimEnd = end
 	seg.claimBlkNum = big.NewInt(blkNum)
-	seg.claimBlkHash = blkHash
 	seg.claimProof = []byte("proof")
+	ethClient.BlockHashToReturn = blkHash
 
 	if err := cm.Verify(); err != nil {
 		t.Errorf("Error: %v", err)

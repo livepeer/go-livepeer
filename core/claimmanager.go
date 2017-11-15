@@ -6,11 +6,13 @@ import (
 	"errors"
 	"math/big"
 	"sort"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	lpCommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/ipfs"
@@ -19,6 +21,8 @@ import (
 
 var ErrClaim = errors.New("ErrClaim")
 var ErrClaimManager = errors.New("ErrClaimManager")
+var PlusOneBlockRetry = 5
+var PlusOneBlockSleepInterval = time.Second * 3 //Max of 96 sec wait time
 
 type ClaimManager interface {
 	AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error
@@ -29,16 +33,14 @@ type ClaimManager interface {
 }
 
 type claimData struct {
-	seqNo       int64
-	segData     []byte
-	dataHash    []byte
-	tDataHashes map[lpmscore.VideoProfile][]byte
-	bSig        []byte
-	// receiptHashes        map[lpmscore.VideoProfile]common.Hash
+	seqNo                int64
+	segData              []byte
+	dataHash             []byte
+	tDataHashes          map[lpmscore.VideoProfile][]byte
+	bSig                 []byte
 	claimStart           int64
 	claimEnd             int64
 	claimBlkNum          *big.Int
-	claimBlkHash         common.Hash
 	claimProof           []byte
 	claimId              *big.Int
 	claimConcatTDatahash []byte
@@ -225,11 +227,10 @@ func (c *BasicClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec c
 			resCh, errCh := c.client.ClaimWork(c.jobID, bigRange, root.Hash)
 			select {
 			case res := <-resCh:
-				blkNum, blkHash, err := c.client.GetBlockInfoByTxHash(context.Background(), res.TxHash)
+				blkNum, _, err := c.client.GetBlockInfoByTxHash(context.Background(), res.TxHash)
 				if err != nil {
 					glog.Infof("Error getting block number / hash: %v", err)
 					ec <- err
-					return
 				}
 				// glog.Infof("Got block hash: %x, block number: %v", blkHash, blkNum)
 				//Record claim information for verification later
@@ -238,7 +239,6 @@ func (c *BasicClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec c
 					seg.claimStart = segRange[0]
 					seg.claimEnd = segRange[1]
 					seg.claimBlkNum = blkNum
-					seg.claimBlkHash = blkHash
 					seg.claimProof = proofs[i-segRange[0]].Bytes()
 					seg.claimId = big.NewInt(int64(rangeIdx))
 				}
@@ -268,7 +268,7 @@ func (c *BasicClaimManager) Verify() error {
 			glog.Errorf("Claim failed.  Skipping verification for %v.", segNo)
 			continue
 		}
-		if shouldVerifySegment(segNo, scm.claimStart, scm.claimEnd, scm.claimBlkNum.Int64(), scm.claimBlkHash, verifyRate) {
+		if c.shouldVerifySegment(segNo, scm.claimStart, scm.claimEnd, scm.claimBlkNum.Int64(), verifyRate) {
 			glog.Infof("Calling verify")
 
 			dataStorageHash, err := c.ipfs.Add(bytes.NewReader(c.segClaimMap[segNo].segData))
@@ -326,19 +326,30 @@ func (c *BasicClaimManager) DistributeFees() error {
 	return nil
 }
 
-func shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, blkHash common.Hash, verifyRate uint64) bool {
+func (c *BasicClaimManager) shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, verifyRate uint64) bool {
 	if seqNum < start || seqNum > end {
 		return false
 	}
 
-	bigSeqNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(seqNum).Bytes(), 32)
-	bigBlkNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(blkNum).Bytes(), 32)
+	var plusOneHash common.Hash
+	var err error
+	err = lpCommon.Retry(PlusOneBlockRetry, PlusOneBlockSleepInterval, func() error {
+		plusOneHash, err = c.client.GetBlockHashByNumber(context.Background(), big.NewInt(blkNum+1))
+		if err != nil {
+			glog.Infof("Failed to fetch blockHash - retry in a bit.")
+			return err
+		}
+		return nil
+	})
 
-	combH := crypto.Keccak256(bigBlkNumBytes, blkHash.Bytes(), bigSeqNumBytes)
+	bigSeqNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(seqNum).Bytes(), 32)
+	bigBlkNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(blkNum+1).Bytes(), 32)
+
+	combH := crypto.Keccak256(bigBlkNumBytes, plusOneHash.Bytes(), bigSeqNumBytes)
 	hashNum := new(big.Int).SetBytes(combH)
 	result := new(big.Int).Mod(hashNum, new(big.Int).SetInt64(int64(verifyRate)))
 
-	glog.Infof("shouldVerifySegment rate: %v, hashNum:%v, result: %v", verifyRate, hashNum, result)
+	// glog.Infof("shouldVerifySegment rate: %v, hashNum:%v, result: %v", verifyRate, hashNum, result)
 	if result.Cmp(new(big.Int).SetInt64(int64(0))) == 0 {
 		return true
 	} else {

@@ -14,7 +14,6 @@ import (
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
 	"github.com/ericxtang/m3u8"
-	"github.com/ethereum/go-ethereum/common"
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	bnet "github.com/livepeer/go-livepeer-basicnet"
@@ -347,9 +346,6 @@ func TestNotifyBroadcaster(t *testing.T) {
 }
 
 func TestCrypto(t *testing.T) {
-	b := shouldVerifySegment(10, 0, 20, 10, common.BytesToHash(ethCrypto.Keccak256([]byte("abc"))), 1)
-	fmt.Printf("%v\n\n", b)
-
 	blkNumB := make([]byte, 8)
 	binary.BigEndian.PutUint64(blkNumB, uint64(9994353847340985734))
 	fmt.Printf("%x\n\n", blkNumB)
