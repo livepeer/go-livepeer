@@ -124,6 +124,9 @@ func (w *wizard) run() {
 			fmt.Println(" 6. List registered transcoders")
 			choice = w.read()
 			switch {
+			case choice == "1":
+				choice = NodeStatus
+				break
 			case choice == "2":
 				choice = SetTranscoderConfig
 				break
