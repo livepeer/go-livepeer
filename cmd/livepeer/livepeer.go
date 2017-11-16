@@ -254,8 +254,9 @@ func main() {
 					for time.Since(start) < time.Second*5 {
 						if _, err := os.Stat(gethipc); os.IsNotExist(err) {
 							time.Sleep(time.Millisecond * 500)
-						} else {
 							continue
+						} else {
+							break
 						}
 					}
 				}
