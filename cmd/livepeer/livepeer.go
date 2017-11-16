@@ -105,7 +105,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("Livepeer Node Version: 0.1.2-unstable")
+		fmt.Println("Livepeer Node Version: 0.1.3-unstable")
 		return
 	}
 
