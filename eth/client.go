@@ -15,7 +15,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -138,8 +137,8 @@ type Claim struct {
 	Status               uint8
 }
 
-func NewClient(account accounts.Account, passphrase string, datadir string, backend *ethclient.Client, gasPrice *big.Int, controllerAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
-	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
+func NewClient(account accounts.Account, passphrase string, keystoreDir string, backend *ethclient.Client, gasPrice *big.Int, controllerAddr common.Address, rpcTimeout time.Duration, eventTimeout time.Duration) (*Client, error) {
+	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
 
 	transactOpts, err := NewTransactOptsForAccount(account, passphrase, keyStore)
 	if err != nil {
@@ -167,8 +166,6 @@ func NewClient(account accounts.Account, passphrase string, datadir string, back
 		rpcTimeout:   rpcTimeout,
 		eventTimeout: eventTimeout,
 	}
-
-	glog.Infof("Creating client for account %v", transactOpts.From.Hex())
 
 	client.SetManagers()
 

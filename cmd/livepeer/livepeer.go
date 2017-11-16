@@ -76,6 +76,7 @@ func main() {
 	if err != nil {
 		glog.Fatalf("Cannot find current user: %v", err)
 	}
+	defaultEthDatadir := fmt.Sprintf("%v/.lpGeth", usr.HomeDir)
 
 	port := flag.Int("p", 15000, "port")
 	httpPort := flag.String("http", "8935", "http port")
@@ -87,9 +88,11 @@ func main() {
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	maxPricePerSegment := flag.Int("maxPricePerSegment", 1, "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
-	ethPassword := flag.String("ethPassword", "", "New Eth account password")
-	ethAccountAddr := flag.String("ethAccountAddr", "", "Existing Eth account address")
-	ethDatadir := flag.String("ethDatadir", "", "geth data directory")
+	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
+	ethKeyPath := flag.String("ethKeyPath", "", "Path for the Eth Key")
+	ethPassword := flag.String("ethPassword", "", "Eth account password")
+	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
+	ethWsUrl := flag.String("ethWsUrl", "", "geth websocket url")
 	testnet := flag.Bool("testnet", false, "Set to true to connect to testnet")
 	controllerAddr := flag.String("controllerAddr", "0xc7ff57decee68ab792a31eb99af132fa2e6889b0", "Protocol smart contract address")
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
@@ -102,16 +105,13 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("Livepeer Node Version: 0.1.2")
+		fmt.Println("Livepeer Node Version: 0.1.3-unstable")
 		return
 	}
 
 	if *testnet {
 		*bootID = "12208a4eb428aa57a74ef0593612adb88077c75c71ad07c3c26e4e7a8d4860083b01"
 		*bootAddr = "/ip4/52.15.174.204/tcp/15000"
-		if *ethDatadir == "" && !*offchain {
-			*ethDatadir = fmt.Sprintf("%v/.lpGeth", usr.HomeDir)
-		}
 	}
 
 	//Make sure datadir is present
@@ -121,18 +121,6 @@ func main() {
 			glog.Errorf("Error creating datadir: %v", err)
 		}
 	}
-
-	// //Set pidfile
-	// if _, err = os.Stat(fmt.Sprintf("%v/livepeer.pid", *datadir)); !os.IsNotExist(err) {
-	// 	glog.Errorf("Node already running with datadir: %v", *datadir)
-	// 	return
-	// }
-	// pidfile.SetPidfilePath(fmt.Sprintf("%v/livepeer.pid", *datadir))
-	// if err = pidfile.Write(); err != nil {
-	// 	glog.Errorf("Error writing pidfile: %v", err)
-	// 	return
-	// }
-	// defer os.Remove(fmt.Sprintf("%v/livepeer.pid", *datadir))
 
 	//Take care of priv/pub keypair
 	priv, pub, err := getLPKeys(*datadir)
@@ -183,14 +171,68 @@ func main() {
 	}
 
 	var gethCmd *exec.Cmd
-	//Set up ethereum-related stuff
-	if *ethDatadir != "" && !*offchain {
-		gethipc := filepath.Join(filepath.Join(*ethDatadir, "geth.ipc"))
-		//If getipc file is not there, start the geth node
-		if _, err := os.Stat(gethipc); os.IsNotExist(err) {
-			//Set up geth params depending on network, invoke geth
+	if *offchain {
+		glog.Infof("***Livepeer is in off-chain mode***")
+	} else {
+		var acct accounts.Account
+		var keystoreDir string
+		if _, err := os.Stat(*ethKeyPath); !os.IsNotExist(err) {
+			//Try loading eth key from ethKeyPath
+			data, err := ioutil.ReadFile(*ethKeyPath)
+			if err != nil {
+				glog.Errorf("Cannot read key from %v", *ethKeyPath)
+				return
+			}
+
+			var objmap map[string]*json.RawMessage
+			if err := json.Unmarshal(data, &objmap); err != nil {
+				glog.Errorf("Cannot parse key from %v", *ethKeyPath)
+				return
+			}
+			var addr string
+			if err := json.Unmarshal(*objmap["address"], &addr); err != nil {
+				glog.Errorf("Cannot find address in %v", *ethKeyPath)
+				return
+			}
+			keystoreDir, _ = filepath.Split(*ethKeyPath)
+			acct, err = getEthAccount(keystoreDir, addr)
+			if err != nil {
+				glog.Errorf("Cannot get account %v in %v", addr, keystoreDir)
+				return
+			}
+		} else {
+			//Try loading eth key from datadir
+			keystoreDir = filepath.Join(*datadir, "keystore")
+			if _, err := os.Stat(keystoreDir); !os.IsNotExist(err) {
+				acct, err = getEthAccount(keystoreDir, *ethAcctAddr)
+				if err != nil {
+					glog.Errorf("Cannot get account %v from %v", *ethAcctAddr, *datadir)
+					return
+				}
+			}
+		}
+
+		if acct.Address.Hex() == "" {
+			glog.Errorf("Cannot find eth account")
+			return
+		}
+		if keystoreDir == "" {
+			glog.Errorf("Cannot find keystore directory")
+			return
+		}
+
+		//Get the Eth client connection information
+		gethUrl := ""
+		if *ethIpcPath != "" {
+			//Connect to specified IPC file
+			gethUrl = *ethIpcPath
+		} else if *ethWsUrl != "" {
+			//Connect to specified websocket
+			gethUrl = *ethWsUrl
+		} else {
+			//Default behavior - start a Geth node and connect to its IPC
 			if *testnet {
-				gethCmd = exec.Command("geth", "--rpc", "--datadir", *ethDatadir, "--networkid=858585", "--bootnodes=enode://a1bd18a737acef008f94857654cfb2470124d1dc826b6248cea0331a7ca82b36d2389566e3aa0a1bc9a5c3c34a61f47601a6cff5279d829fcc60cb632ee88bad@13.58.149.151:30303") //timeout in 3 mins
+				gethCmd = exec.Command("geth", "--rpc", "--datadir", defaultEthDatadir, "--networkid=858585", "--bootnodes=enode://a1bd18a737acef008f94857654cfb2470124d1dc826b6248cea0331a7ca82b36d2389566e3aa0a1bc9a5c3c34a61f47601a6cff5279d829fcc60cb632ee88bad@13.58.149.151:30303") //timeout in 3 mins
 				err = gethCmd.Start()
 				if err != nil {
 					glog.Infof("Couldn't start geth: %v", err)
@@ -204,47 +246,37 @@ func main() {
 						os.Exit(1)
 					}
 				}()
+				gethipc := fmt.Sprintf("%v/geth.ipc", defaultEthDatadir)
+				//Wait for gethipc
+				if _, err := os.Stat(gethipc); os.IsNotExist(err) {
+					start := time.Now()
+					glog.V(0).Infof("Waiting to start go-ethereum")
+					for time.Since(start) < time.Second*5 {
+						if _, err := os.Stat(gethipc); os.IsNotExist(err) {
+							time.Sleep(time.Millisecond * 500)
+							continue
+						} else {
+							break
+						}
+					}
+				}
+				gethUrl = gethipc
+
 			} else {
 				glog.Errorf("Cannot connect to product network yet.")
 				return
 			}
 		}
-
-		var backend *ethclient.Client
-		var acct accounts.Account
-
-		acct, err = getEthAccount(*ethDatadir, *ethAccountAddr)
-		if err != nil {
-			glog.Infof("Cannot find eth account - creating new account")
-			keyStore := keystore.NewKeyStore(filepath.Join(*ethDatadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
-			acct, err = keyStore.NewAccount(*ethPassword)
-			if err != nil {
-				glog.Errorf("Error creating new eth account: %v", err)
-				return
-			}
-		}
 		glog.Infof("Using Eth account: %v", acct.Address.Hex())
 
-		//Wait for gethipc
-		if _, err := os.Stat(gethipc); os.IsNotExist(err) {
-			start := time.Now()
-			glog.V(0).Infof("Waiting to start go-ethereum")
-			for time.Since(start) < time.Second*5 {
-				if _, err := os.Stat(gethipc); os.IsNotExist(err) {
-					time.Sleep(time.Millisecond * 500)
-				} else {
-					continue
-				}
-			}
-		}
-
-		backend, err = ethclient.Dial(gethipc)
+		//Set up eth client
+		backend, err := ethclient.Dial(gethUrl)
 		if err != nil {
 			glog.Errorf("Failed to connect to Ethereum client: %v", err)
 			return
 		}
 
-		client, err := eth.NewClient(acct, *ethPassword, *ethDatadir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*controllerAddr), EthRpcTimeout, EthEventTimeout)
+		client, err := eth.NewClient(acct, *ethPassword, keystoreDir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*controllerAddr), EthRpcTimeout, EthEventTimeout)
 		if err != nil {
 			glog.Errorf("Error creating Eth client: %v", err)
 			return
@@ -270,8 +302,6 @@ func main() {
 				return
 			}
 		}
-	} else {
-		glog.Infof("***Livepeer is in off-chain mode***")
 	}
 
 	if *transcoder {
@@ -288,7 +318,6 @@ func main() {
 	}
 
 	//Set up the media server
-	glog.Infof("\n\nSetting up Media Server")
 	s := server.NewLivepeerServer(*rtmpPort, *httpPort, "", n)
 	ec := make(chan error)
 	msCtx, cancel := context.WithCancel(context.Background())
@@ -401,11 +430,10 @@ func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 	return priv, pub, nil
 }
 
-func getEthAccount(datadir string, addr string) (accounts.Account, error) {
-	keyStore := keystore.NewKeyStore(filepath.Join(datadir, "keystore"), keystore.StandardScryptN, keystore.StandardScryptP)
+func getEthAccount(keystoreDir string, addr string) (accounts.Account, error) {
+	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
 	accts := keyStore.Accounts()
 	if len(accts) == 0 {
-		// glog.Errorf("Cannot find geth account.  Make sure the data directory contains keys, or use -newEthAccount to create a new account.")
 		return accounts.Account{}, fmt.Errorf("ErrGeth")
 	}
 

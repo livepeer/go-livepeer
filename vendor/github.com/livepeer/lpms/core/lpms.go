@@ -49,11 +49,11 @@ func New(rtmpPort, httpPort, ffmpegPath, vodPath string) *LPMS {
 func (l *LPMS) Start(ctx context.Context) error {
 	ec := make(chan error, 1)
 	go func() {
-		glog.V(2).Infof("Starting LPMS Server at :%v", l.rtmpServer.Addr)
+		glog.Infof("LPMS Server listening on %v", l.rtmpServer.Addr)
 		ec <- l.rtmpServer.ListenAndServe()
 	}()
 	go func() {
-		glog.V(2).Infof("Starting HTTP Server at :%v", l.httpPort)
+		glog.Infof("HTTP Server listening on :%v", l.httpPort)
 		ec <- http.ListenAndServe(":"+l.httpPort, nil)
 	}()
 
