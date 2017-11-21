@@ -183,19 +183,16 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 	}
 
 	//If we found a local stream, transcode and broadcast local stream.  This is for testing only, so we'll always set cm to nil.
-	localMfst := n.VideoDB.GetHLSManifest(ManifestID(config.ManifestID))
-	if localMfst != nil && len(localMfst.GetVideoStreams()) == 1 {
-		glog.V(common.SHORT).Infof("Transcoding local manifest: %v", config.ManifestID)
-		localMfst.GetVideoStreams()[0].SetSubscriber(func(seg *stream.HLSSegment, eof bool) {
+	localStrm := n.VideoDB.GetHLSStream(StreamID(config.StrmID))
+	if localStrm != nil {
+		localStrm.SetSubscriber(func(seg *stream.HLSSegment, eof bool) {
 			if eof {
 				return
 			}
+			glog.Infof("Transcoding seg: %v", seg.SeqNo)
 			n.transcodeAndBroadcastSeg(seg, nil, nil, t, resultStrmIDs, tranStrms, config)
 		})
 
-		for _, tStrmID := range resultStrmIDs {
-			localMfst.AddVideoStream(tranStrms[tStrmID], variants[tStrmID])
-		}
 		return resultStrmIDs, nil
 	}
 

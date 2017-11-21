@@ -59,7 +59,6 @@ type Subscriber interface {
 }
 
 type TranscodeConfig struct {
-	ManifestID          string
 	StrmID              string
 	Profiles            []lpmscore.VideoProfile
 	PerformOnchainClaim bool
