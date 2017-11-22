@@ -335,7 +335,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
 		if !ok {
 			glog.Errorf("Cannot convert SubReqMsg: %v", msg.Data)
 		}
-		err := handleStreamData(nw, sd)
+		err := handleStreamData(nw, ws.Stream.Conn().RemotePeer(), sd)
 		if err == ErrProtocol {
 			glog.Errorf("Got protocol error, but ignoring it for now")
 			return nil
@@ -485,7 +485,7 @@ func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) e
 	}
 }
 
-func handleStreamData(nw *BasicVideoNetwork, sd StreamDataMsg) error {
+func handleStreamData(nw *BasicVideoNetwork, remotePID peer.ID, sd StreamDataMsg) error {
 	//A node can have a subscriber AND a relayer for the same stream.
 	s := nw.subscribers[sd.StrmID]
 	if s != nil {
@@ -495,6 +495,9 @@ func handleStreamData(nw *BasicVideoNetwork, sd StreamDataMsg) error {
 			select {
 			case s.msgChan <- sd:
 				glog.V(4).Infof("Data segment %v for %v inserted. (%v)", sd.SeqNo, sd.StrmID, time.Since(start))
+				if err := nw.NetworkNode.GetStream(remotePID).SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{StrmID: sd.StrmID}); err != nil {
+					glog.Errorf("Error sending test GetMasterPlaylistReq: %v", err)
+				}
 			case <-ctx.Done():
 				glog.Errorf("Subscriber data insert done for stream: %v - %v", sd.StrmID, ctx.Err())
 			}
