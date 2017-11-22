@@ -75,7 +75,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 			s.working = true
 			s.networkStream = ns
 			s.UpstreamPeer = p
-			s.startWorker(ctxW, p, ns, gotData)
+			s.startWorker(ctxW, p, gotData)
 			return nil
 		}
 	}
@@ -86,7 +86,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 	//Call gotData for every new piece of data
 }
 
-func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *BasicStream, gotData func(seqNo uint64, data []byte, eof bool)) {
+func (s *BasicSubscriber) startWorker(ctxW context.Context, remotePID peer.ID, gotData func(seqNo uint64, data []byte, eof bool)) {
 	//We expect DataStreamMsg to come back
 	go func() {
 		for {
@@ -105,9 +105,12 @@ func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *Basic
 				glog.V(4).Infof("Done with subscription, sending CancelSubMsg")
 				//Send EOF
 				gotData(0, nil, true)
-				if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
+				if err := s.Network.NetworkNode.GetStream(remotePID).SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
 					glog.Errorf("Error sending CancelSubMsg during worker cancellation: %v", err)
 				}
+				// if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
+				// 	glog.Errorf("Error sending CancelSubMsg during worker cancellation: %v", err)
+				// }
 				return
 			}
 		}
