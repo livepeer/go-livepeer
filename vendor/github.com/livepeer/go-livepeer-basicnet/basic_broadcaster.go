@@ -59,6 +59,13 @@ func (b *BasicBroadcaster) Finish() error {
 	return nil
 }
 
+func (br *BasicBroadcaster) AddListener(nw *BasicVideoNetwork, pid peer.ID) {
+	key := peer.IDHexEncode(pid)
+	if _, ok := br.listeners[key]; !ok {
+		br.listeners[key] = nw.NetworkNode.GetStream(pid)
+	}
+}
+
 func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 	for {
 		select {

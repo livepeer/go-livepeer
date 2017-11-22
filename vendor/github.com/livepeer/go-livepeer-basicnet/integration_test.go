@@ -1,8 +1,84 @@
 package basicnet
 
 import (
+	"context"
+	"fmt"
 	"testing"
+	"time"
+
+	"github.com/golang/glog"
 )
+
+func TestRestream(t *testing.T) {
+	n1, n2 := setupNodes(15000, 15001)
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n2.NetworkNode.PeerHost.Close()
+
+	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
+	go n1.SetupProtocol()
+	go n2.SetupProtocol()
+
+	time.Sleep(200 * time.Millisecond)
+	//Broadcast 1 stream to n1
+	strmID1 := fmt.Sprintf("%vOriginalStrm", n1.GetNodeID())
+	n1b1, err := n1.GetBroadcaster(strmID1)
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+
+	//Set up n2
+	sub, err := n2.GetSubscriber(strmID1)
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
+		if !eof {
+			glog.Infof("n2 got data: %v", data)
+		} else {
+			glog.Infof("n2 go eof")
+		}
+	})
+
+	//Broadcast stream
+	if err := n1b1.Broadcast(0, []byte("hello")); err != nil {
+		t.Errorf("Error broadcasting: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	//Finish
+	if err := n1b1.Finish(); err != nil {
+		t.Errorf("Error finishing stream: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	strmID2 := fmt.Sprintf("%vOriginalStrm2", n1.GetNodeID())
+	n1b2, err := n1.GetBroadcaster(strmID2)
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+
+	sub2, err := n2.GetSubscriber(strmID2)
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	sub2.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
+		if !eof {
+			glog.Infof("n2 got data: %v", data)
+		} else {
+			glog.Infof("n2 go eof")
+		}
+	})
+
+	n1b2.Broadcast(0, []byte("hola"))
+
+	time.Sleep(500 * time.Millisecond)
+
+	n1b2.Finish()
+
+	time.Sleep(3 * time.Second)
+}
 
 func TestABS(t *testing.T) {
 	// //Set up 3 nodes.  n1=broadcaster, n2=transcoder, n3=subscriber

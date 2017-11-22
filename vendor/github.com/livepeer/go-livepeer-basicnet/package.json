@@ -73,6 +73,11 @@
       "hash": "QmSAFA8v42u4gpJNy1tb7vW3JiiXiaYDC2b845c2RnNSJL",
       "name": "go-libp2p-kbucket",
       "version": "2.1.13"
+    },
+    {
+      "hash": "QmQGX417WoxKxDJeHqouMEmmH4G1RCENNSzkZYHrXy3Xb3",
+      "name": "go-libp2p-netutil",
+      "version": "0.3.4"
     }
   ],
   "gxVersion": "0.11.0",

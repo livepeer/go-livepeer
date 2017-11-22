@@ -20,7 +20,8 @@ type BasicRelayer struct {
 //RelayStreamData sends a StreamDataMsg to its listeners
 func (br *BasicRelayer) RelayStreamData(sd StreamDataMsg) error {
 	for strmID, l := range br.listeners {
-		glog.V(5).Infof("Relaying stream data to listener: %v", l)
+		// glog.V(5).Infof("Relaying stream data to listener: %v", l)
+		glog.Infof("Relaying stream data to listener: %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()))
 		if err := l.SendMessage(StreamDataID, sd); err != nil {
 			glog.Errorf("Error writing data to relayer listener %v: %v", l, err)
 			delete(br.listeners, strmID)
@@ -50,6 +51,13 @@ func (br *BasicRelayer) RelayMasterPlaylistData(nw *BasicVideoNetwork, mpld Mast
 		br.LastRelay = time.Now()
 	}
 	return nil
+}
+
+func (br *BasicRelayer) AddListener(nw *BasicVideoNetwork, pid peer.ID) {
+	key := peer.IDHexEncode(pid)
+	if _, ok := br.listeners[key]; !ok {
+		br.listeners[key] = nw.NetworkNode.GetStream(pid)
+	}
 }
 
 func (br BasicRelayer) String() string {

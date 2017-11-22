@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericxtang/m3u8"
-
 	net "gx/ipfs/QmNa31VPzC561NWwRsJLE7nGYZYuuD2QfpK2b1q9BK54J1/go-libp2p-net"
 	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
 	kb "gx/ipfs/QmSAFA8v42u4gpJNy1tb7vW3JiiXiaYDC2b845c2RnNSJL/go-libp2p-kbucket"
@@ -20,8 +18,11 @@ import (
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 	host "gx/ipfs/Qmc1XhrFEiSeBNn3mpfg6gEuYCt5im2gYmNVmncsvmpeAk/go-libp2p-host"
 
+	"github.com/ericxtang/m3u8"
+	common "github.com/livepeer/go-livepeer/common"
+	lpms "github.com/livepeer/lpms/core"
+
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/types"
 )
 
 func init() {
@@ -65,6 +66,7 @@ type keyPair struct {
 }
 
 func TestReconnect(t *testing.T) {
+	glog.Infof("\n\nTesting Reconnect...")
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	no1, _ := NewNode(15000, priv1, pub1, NewBasicNotifiee(nil))
 	n1, _ := NewBasicVideoNetwork(no1)
@@ -87,14 +89,20 @@ func TestReconnect(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	//Kill n2, create a new n2
-	n2.NetworkNode.PeerHost.Close()
+	if err := n2.NetworkNode.PeerHost.Close(); err != nil {
+		t.Errorf("Error closing host: %v", err)
+	}
 	no2, _ = NewNode(15001, priv2, pub2, &BasicNotifiee{})
 	n2, _ = NewBasicVideoNetwork(no2)
+	go n2.SetupProtocol()
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
 	s = n2.NetworkNode.GetStream(n1.NetworkNode.Identity)
+	if s == nil || s.Stream == nil {
+		t.Errorf("Got nil for stream to: %v", n1.NetworkNode.Identity)
+	}
 
 	//Send should still work
-	if err := s.SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{StrmID: "strmID3"}); err != nil {
+	if err := s.SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{StrmID: "strmID2"}); err != nil {
 		t.Errorf("Error sending message: %v", err)
 	}
 
@@ -102,6 +110,7 @@ func TestReconnect(t *testing.T) {
 }
 
 func TestStream(t *testing.T) {
+	glog.Infof("\n\nTesting Stream...")
 	n1, n2 := setupNodes(15000, 15001)
 	defer n1.NetworkNode.PeerHost.Close()
 	defer n2.NetworkNode.PeerHost.Close()
@@ -116,14 +125,14 @@ func TestStream(t *testing.T) {
 	if err := s12.SendMessage(SubReqID, SubReqMsg{StrmID: strmID2}); err != nil {
 		t.Errorf("Error: %v", err)
 	}
-	if _, ok := n1.NetworkNode.streams[n2.NetworkNode.Identity]; !ok {
+	if _, ok := n1.NetworkNode.outStreams[n2.NetworkNode.Identity]; !ok {
 		t.Errorf("Expecting stream to be there")
 	}
 	s21 := n2.NetworkNode.GetStream(n1.NetworkNode.Identity)
 	if err := s21.SendMessage(SubReqID, SubReqMsg{StrmID: strmID1}); err != nil {
 		t.Errorf("Error: %v", err)
 	}
-	if _, ok := n2.NetworkNode.streams[n1.NetworkNode.Identity]; !ok {
+	if _, ok := n2.NetworkNode.outStreams[n1.NetworkNode.Identity]; !ok {
 		t.Errorf("Expecting stream to be there")
 	}
 
@@ -133,14 +142,14 @@ func TestStream(t *testing.T) {
 	}
 	start := time.Now()
 	for time.Since(start) < time.Second {
-		if len(n2.NetworkNode.streams) > 0 {
+		if len(n2.NetworkNode.outStreams) > 0 {
 			time.Sleep(time.Millisecond * 100)
 		}
 	}
-	if _, ok := n2.NetworkNode.streams[n1.NetworkNode.Identity]; ok {
+	if _, ok := n2.NetworkNode.outStreams[n1.NetworkNode.Identity]; ok {
 		t.Errorf("Expecting stream to not be there")
 	}
-	if _, ok := n1.NetworkNode.streams[n2.NetworkNode.Identity]; ok {
+	if _, ok := n1.NetworkNode.outStreams[n2.NetworkNode.Identity]; ok {
 		t.Errorf("Expecting stream to not be there")
 	}
 
@@ -156,6 +165,7 @@ func TestStream(t *testing.T) {
 }
 
 func TestSubPath(t *testing.T) {
+	glog.Infof("\n\nTesting SubPath...")
 	ctx := context.Background()
 	nDHTs := 10
 	dhts, hosts := setupDHTS(ctx, nDHTs, t)
@@ -221,7 +231,10 @@ func TestSubPath(t *testing.T) {
 		if msg.Op != SubReqID {
 			t.Errorf("Expecting Sub")
 		}
-		ws.SendMessage(StreamDataID, StreamDataMsg{StrmID: strmID, Data: []byte("Hello from n0")})
+		time.Sleep(100 * time.Millisecond)
+		if err := nodes[0].NetworkNode.GetStream(s.Conn().RemotePeer()).SendMessage(StreamDataID, StreamDataMsg{StrmID: strmID, Data: []byte("Hello from n0")}); err != nil {
+			t.Errorf("Error sending message from n0: %v", err)
+		}
 	})
 
 	glog.Infof("Sending Sub from %v, StrmID: %v", peer.IDHexEncode(nodes[0].NetworkNode.Identity), strmID)
@@ -251,7 +264,7 @@ func TestSubPath(t *testing.T) {
 
 func newNode(pid peer.ID, dht *kad.IpfsDHT, rHost host.Host) *NetworkNode {
 	streams := make(map[peer.ID]*BasicStream)
-	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, streams: streams}
+	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, outStreams: streams}
 	return nn
 }
 
@@ -495,6 +508,7 @@ func TestSendSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Subscriber...")
 	n1, n3 := setupNodes(15000, 15001)
 	n2, n4 := simpleNodes(15002, 15003)
+	go n1.SetupProtocol()
 	defer n1.NetworkNode.PeerHost.Close()
 	defer n3.NetworkNode.PeerHost.Close()
 	defer n2.PeerHost.Close()
@@ -521,7 +535,9 @@ func TestSendSubscribe(t *testing.T) {
 					//TODO: Sleep here is needed, because we can't handle the messages fast enough.
 					//I think we need to re-organize our code to kick off goroutines / workers instead of handling everything in a for loop.
 					time.Sleep(time.Millisecond * 100)
-					err = ws.SendMessage(StreamDataID, StreamDataMsg{SeqNo: uint64(i), StrmID: subReq.StrmID, Data: []byte("test data")})
+					if err := n2.GetStream(ws.Stream.Conn().RemotePeer()).SendMessage(StreamDataID, StreamDataMsg{SeqNo: uint64(i), StrmID: subReq.StrmID, Data: []byte("test data")}); err != nil {
+						t.Errorf("Error sending data back to n1: %v", err)
+					}
 				}
 			case CancelSubMsg:
 				cancelMsg, _ = msg.Data.(CancelSubMsg)
@@ -536,7 +552,7 @@ func TestSendSubscribe(t *testing.T) {
 	result := make(map[uint64][]byte)
 	lock := &sync.Mutex{}
 	s1.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
-		glog.Infof("Got response: %v, %v", seqNo, data)
+		// glog.Infof("Got response: %v, %v", seqNo, data)
 		lock.Lock()
 		result[seqNo] = data
 		lock.Unlock()
@@ -564,11 +580,9 @@ func TestSendSubscribe(t *testing.T) {
 		t.Errorf("Subscriber should be working")
 	}
 
-	time.Sleep(time.Millisecond * 1500)
-
-	if len(result) != 10 {
-		t.Errorf("Expecting length of result to be 10, but got %v: %v", len(result), result)
-	}
+	common.WaitAssert(t, time.Second*1, func() bool {
+		return len(result) == 10
+	}, fmt.Sprintf("Expecting length of result to be 10, but got %v: %v", len(result), result))
 
 	for _, d := range result {
 		if string(d) != "test data" {
@@ -766,17 +780,18 @@ func TestRelaying(t *testing.T) {
 	go n1.SetupProtocol()
 	go n2.SetupProtocol()
 
+	//Send Sub message from n3 to n1 (should relay through n2)
 	s3 := n3.GetStream(n2.NetworkNode.Identity)
 	s3.SendMessage(SubReqID, SubReqMsg{StrmID: strmID})
 
 	var strmDataResult StreamDataMsg
 	var finishResult FinishStreamMsg
 	var ok bool
-	go func() {
+	n3.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
+		strm := NewBasicStream(s)
 		for {
-			msg := simpleRelayHandler(s3, t)
-
 			// glog.Infof("Got msg: %v", msg)
+			msg := simpleRelayHandler(strm, t)
 			switch msg.Data.(type) {
 			case StreamDataMsg:
 				strmDataResult, ok = msg.Data.(StreamDataMsg)
@@ -790,7 +805,7 @@ func TestRelaying(t *testing.T) {
 				}
 			}
 		}
-	}()
+	})
 
 	time.Sleep(time.Second * 1)
 	err := b1.Broadcast(100, []byte("test data"))
@@ -885,18 +900,18 @@ func TestSendTranscodeResponse(t *testing.T) {
 
 	strmID := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n3.Identity))
 	//Send the message
-	err := n1.SendTranscodeResponse(peer.IDHexEncode(n3.Identity), strmID, map[string]string{"strmid1": types.P240p30fps4x3.Name, "strmid2": types.P360p30fps4x3.Name})
+	err := n1.SendTranscodeResponse(peer.IDHexEncode(n3.Identity), strmID, map[string]string{"strmid1": lpms.P240p30fps4x3.Name, "strmid2": lpms.P360p30fps4x3.Name})
 	if err != nil {
 		t.Errorf("Error sending transcode result: %v", err)
 	}
 	timer := time.NewTimer(time.Second * 3)
 	select {
 	case r := <-rc:
-		if r["strmid1"] != types.P240p30fps4x3.Name {
-			t.Errorf("Expecting %v, got %v", types.P240p30fps4x3.Name, r["strmid1"])
+		if r["strmid1"] != lpms.P240p30fps4x3.Name {
+			t.Errorf("Expecting %v, got %v", lpms.P240p30fps4x3.Name, r["strmid1"])
 		}
-		if r["strmid2"] != types.P360p30fps4x3.Name {
-			t.Errorf("Expecting %v, got %v", types.P360p30fps4x3.Name, r["strmid2"])
+		if r["strmid2"] != lpms.P360p30fps4x3.Name {
+			t.Errorf("Expecting %v, got %v", lpms.P360p30fps4x3.Name, r["strmid2"])
 		}
 	case <-timer.C:
 		t.Errorf("Timed out")
@@ -923,19 +938,26 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 	go n2.SetupProtocol()
 	n3Chan := make(chan MasterPlaylistDataMsg)
 	n3.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
+		defer s.Reset()
 		strm := NewBasicStream(s)
-		msg, _ := strm.ReceiveMessage()
-		n3Chan <- msg.Data.(MasterPlaylistDataMsg)
+		for {
+			msg, err := strm.ReceiveMessage()
+			if err != nil {
+				break
+			}
+			n3Chan <- msg.Data.(MasterPlaylistDataMsg)
+		}
 	})
 
+	glog.Infof("Case 1...")
 	//Set up n1 without the playlist and with no other peer.  Should send a NotFound.
 	strmID := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n1.NetworkNode.Identity))
 	_, ok := n1.mplMap[strmID]
 	if ok {
 		t.Errorf("Expecting to not have the playlist")
 	}
-	strm := n1.NetworkNode.GetStream(n3.Identity)
-	if err := handleGetMasterPlaylistReq(n1, strm, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
+	// strm := n1.NetworkNode.GetStream(n3.Identity)
+	if err := handleGetMasterPlaylistReq(n1, n3.Identity, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 	timer := time.NewTimer(time.Second)
@@ -947,7 +969,8 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 	case <-timer.C:
 		t.Errorf("timed out")
 	}
-	strm.Stream.Close()
+	n1.NetworkNode.outStreams[n3.Identity].Stream.Reset()
+	delete(n1.NetworkNode.outStreams, n3.Identity)
 
 	glog.Infof("Case 2...")
 	//Relay req from n3 to n2 (through n1).  Set up n2 to have a playlist.  n3 should recieve the playlist.
@@ -956,8 +979,7 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 	pl := m3u8.NewMasterPlaylist()
 	pl.Append("testurl", nil, m3u8.VariantParams{Bandwidth: 100})
 	n2.mplMap[strmID] = pl
-	strm = n1.NetworkNode.GetStream(n3.Identity)
-	if err := handleGetMasterPlaylistReq(n1, strm, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
+	if err := handleGetMasterPlaylistReq(n1, n3.Identity, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 
@@ -976,7 +998,6 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 	if len(n1.relayers[relayerMapKey(strmID, GetMasterPlaylistReqID)].listeners) != 1 {
 		t.Errorf("Expecting 1 listener, got %v", n1.relayers[relayerMapKey(strmID, GetMasterPlaylistReqID)].listeners)
 	}
-	strm.Stream.Close()
 
 	//Send another req for the same stream, make sure the relayer listener increased
 	glog.Infof("Case 3...")
@@ -985,8 +1006,7 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 		n4Chan <- struct{}{}
 	})
 	connectHosts(n1.NetworkNode.PeerHost, n4.PeerHost)
-	strm = n1.NetworkNode.GetStream(n4.Identity)
-	if err := handleGetMasterPlaylistReq(n1, strm, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
+	if err := handleGetMasterPlaylistReq(n1, n4.Identity, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 	timer = time.NewTimer(time.Second)
@@ -1001,7 +1021,6 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 	if len(n1.relayers[relayerMapKey(strmID, GetMasterPlaylistReqID)].listeners) != 2 {
 		t.Errorf("Expecting 2 listeners, got %v", n1.relayers[relayerMapKey(strmID, GetMasterPlaylistReqID)].listeners)
 	}
-	strm.Stream.Close()
 }
 
 func TestHandleMasterPlaylistData(t *testing.T) {
