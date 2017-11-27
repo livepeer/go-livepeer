@@ -314,7 +314,6 @@ func (n *BasicVideoNetwork) SetupProtocol() error {
 				stream.Reset()
 				return
 			}
-			glog.Infof("SetupProtocol: Done reading message...")
 		}
 	})
 
@@ -396,7 +395,6 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, remotePID peer.ID) er
 	if b := nw.broadcasters[subReq.StrmID]; b != nil {
 		glog.V(5).Infof("Handling subReq, adding listener %v to broadcaster", peer.IDHexEncode(remotePID))
 		//TODO: Add verification code for the SubNodeID (Make sure the message is not spoofed)
-		// remotePid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
 		b.AddListener(nw, remotePID)
 
 		//Send the last video chunk so we don't have to wait for the next one.
@@ -418,7 +416,6 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, remotePID peer.ID) er
 
 	//If we have a local subscriber (and not a relayer), create a relayer
 	if s := nw.subscribers[subReq.StrmID]; s != nil {
-		// remotePeer := ws.Stream.Conn().RemotePeer()
 		r := nw.NewRelayer(subReq.StrmID, SubReqID)
 		r.UpstreamPeer = s.UpstreamPeer
 		lpmon.Instance().LogRelay(subReq.StrmID, peer.IDHexEncode(remotePID))
@@ -512,10 +509,6 @@ func handleStreamData(nw *BasicVideoNetwork, remotePID peer.ID, sd StreamDataMsg
 			select {
 			case s.msgChan <- sd:
 				glog.V(4).Infof("Data segment %v for %v inserted. (%v)", sd.SeqNo, sd.StrmID, time.Since(start))
-				// if err := nw.NetworkNode.GetStream(remotePID).SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{StrmID: sd.StrmID}); err != nil {
-				// 	glog.Errorf("Error sending test GetMasterPlaylistReq: %v", err)
-				// }
-				// glog.Infof("Done sending test GetMasterPlaylist Req")
 			case <-ctx.Done():
 				glog.Errorf("Subscriber data insert done for stream: %v - %v", sd.StrmID, ctx.Err())
 			}
@@ -524,7 +517,6 @@ func handleStreamData(nw *BasicVideoNetwork, remotePID peer.ID, sd StreamDataMsg
 
 	r := nw.relayers[relayerMapKey(sd.StrmID, SubReqID)]
 	if r != nil {
-		glog.Infof("relaying stream data: %v:%v", sd.StrmID, sd.SeqNo)
 		if err := r.RelayStreamData(sd); err != nil {
 			glog.Errorf("Error relaying stream data: %v", err)
 			return err

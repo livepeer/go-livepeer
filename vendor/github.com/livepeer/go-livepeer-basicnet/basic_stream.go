@@ -66,9 +66,7 @@ func (bs *BasicStream) ReceiveMessage() (Msg, error) {
 //SendMessage writes a message into the stream.
 func (bs *BasicStream) SendMessage(opCode Opcode, data interface{}) error {
 	// glog.V(common.DEBUG).Infof("Sending msg %v to %v", opCode, peer.IDHexEncode(bs.Stream.Conn().RemotePeer()))
-	glog.Infof("Locking stream to %v for send %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), opCode)
 	msg := Msg{Op: opCode, Data: data}
-	glog.Infof("Sending msg %v to %v", opCode, peer.IDHexEncode(bs.Stream.Conn().RemotePeer()))
 	return bs.encodeAndFlush(msg)
 }
 

@@ -19,7 +19,6 @@ import (
 	host "gx/ipfs/Qmc1XhrFEiSeBNn3mpfg6gEuYCt5im2gYmNVmncsvmpeAk/go-libp2p-host"
 
 	"github.com/ericxtang/m3u8"
-	common "github.com/livepeer/go-livepeer/common"
 	lpms "github.com/livepeer/lpms/core"
 
 	"github.com/golang/glog"
@@ -597,9 +596,16 @@ func TestSendSubscribe(t *testing.T) {
 		t.Errorf("Subscriber should be working")
 	}
 
-	common.WaitAssert(t, time.Second*1, func() bool {
-		return len(result) == 10
-	}, fmt.Sprintf("Expecting length of result to be 10, but got %v: %v", len(result), result))
+	for start := time.Now(); time.Since(start) < 1*time.Second; {
+		if len(result) == 10 {
+			break
+		} else {
+			time.Sleep(time.Millisecond * 50)
+		}
+	}
+	if len(result) != 10 {
+		t.Errorf("Expecting length of result to be 10, but got %v: %v", len(result), result)
+	}
 
 	for _, d := range result {
 		if string(d) != "test data" {
@@ -610,9 +616,16 @@ func TestSendSubscribe(t *testing.T) {
 	//Call cancel
 	s1.cancelWorker()
 
-	common.WaitAssert(t, time.Second*1, func() bool {
-		return cancelMsg.StrmID != ""
-	}, fmt.Sprintf("Expecting to get cancelMsg with StrmID: 'strmID', but got %v", cancelMsg.StrmID))
+	for start := time.Now(); time.Since(start) < 1*time.Second; {
+		if cancelMsg.StrmID != "" {
+			break
+		} else {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	if cancelMsg.StrmID != strmID {
+		t.Errorf("Expecting to get cancelMsg with StrmID: %v, but got %v", strmID, cancelMsg.StrmID)
+	}
 
 	if s1.working {
 		t.Errorf("subscriber shouldn't be working after 'cancel' is called")
@@ -913,7 +926,6 @@ func TestSendTranscodeResponse(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error sending transcode result: %v", err)
 	}
-	timer := time.NewTimer(time.Second * 3)
 	select {
 	case r := <-rc:
 		if r["strmid1"] != lpms.P240p30fps4x3.Name {
@@ -922,7 +934,7 @@ func TestSendTranscodeResponse(t *testing.T) {
 		if r["strmid2"] != lpms.P360p30fps4x3.Name {
 			t.Errorf("Expecting %v, got %v", lpms.P360p30fps4x3.Name, r["strmid2"])
 		}
-	case <-timer.C:
+	case <-time.After(time.Second * 5):
 		t.Errorf("Timed out")
 	}
 
@@ -1215,7 +1227,6 @@ func TestMasterPlaylistIntegration(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error getting master playlist: %v", err)
 	}
-	timer = time.NewTimer(time.Second * 3)
 	select {
 	case r := <-mplc:
 		vars := r.Variants
@@ -1228,7 +1239,7 @@ func TestMasterPlaylistIntegration(t *testing.T) {
 		if len(n2.relayers) != 1 {
 			t.Errorf("Expecting 1 relayer in n2")
 		}
-	case <-timer.C:
+	case <-time.After(time.Second * 5):
 		t.Errorf("Timed out")
 	}
 }
