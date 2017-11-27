@@ -119,7 +119,7 @@ func (n *NetworkNode) RefreshStream(pid peer.ID) *BasicStream {
 	}
 
 	ns, err := n.PeerHost.NewStream(context.Background(), pid, Protocol)
-	glog.Infof("Making new stream to: %v", peer.IDHexEncode(pid))
+	// glog.Infof("Making new stream to: %v", peer.IDHexEncode(pid))
 	if err != nil {
 		glog.Errorf("%v Error creating stream to %v: %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid), err)
 		return nil

@@ -400,7 +400,7 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, remotePID peer.ID) er
 		//Send the last video chunk so we don't have to wait for the next one.
 		for _, msg := range b.lastMsgs {
 			if msg != nil {
-				glog.Infof("Sending last msg: %v", msg.SeqNo)
+				// glog.Infof("Sending last msg: %v", msg.SeqNo)
 				b.sendDataMsg(peer.IDHexEncode(remotePID), nw.NetworkNode.GetStream(remotePID), msg)
 				time.Sleep(DefaultBroadcasterBufferSegSendInterval)
 			}
