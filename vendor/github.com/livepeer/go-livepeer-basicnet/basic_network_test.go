@@ -146,12 +146,17 @@ func TestStream(t *testing.T) {
 			time.Sleep(time.Millisecond * 100)
 		}
 	}
+	n1.NetworkNode.outStreamsLock.RLock()
 	if _, ok := n2.NetworkNode.outStreams[n1.NetworkNode.Identity]; ok {
 		t.Errorf("Expecting stream to not be there")
 	}
+	n1.NetworkNode.outStreamsLock.RUnlock()
+
+	n1.NetworkNode.outStreamsLock.RLock()
 	if _, ok := n1.NetworkNode.outStreams[n2.NetworkNode.Identity]; ok {
 		t.Errorf("Expecting stream to not be there")
 	}
+	n1.NetworkNode.outStreamsLock.RUnlock()
 
 	//Shouldn't be able to use the old stream anymore
 	if err := s21.SendMessage(SubReqID, SubReqMsg{StrmID: strmID1}); err == nil {
@@ -264,7 +269,7 @@ func TestSubPath(t *testing.T) {
 
 func newNode(pid peer.ID, dht *kad.IpfsDHT, rHost host.Host) *NetworkNode {
 	streams := make(map[peer.ID]*BasicStream)
-	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, outStreams: streams}
+	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, outStreams: streams, outStreamsLock: &sync.RWMutex{}}
 	return nn
 }
 
@@ -395,7 +400,7 @@ func TestSendBroadcast(t *testing.T) {
 	start := time.Now()
 	for time.Since(start) < 1*time.Second {
 		if strmData.StrmID == "" {
-			time.Sleep(time.Millisecond * 500)
+			time.Sleep(time.Millisecond * 100)
 		} else {
 			break
 		}
@@ -420,15 +425,13 @@ func TestSendBroadcast(t *testing.T) {
 
 func TestHandleBroadcast(t *testing.T) {
 	glog.Infof("\n\nTesting Handle Broadcast...")
-	n1, n3 := setupNodes(15000, 15001)
-	n2, n4 := simpleNodes(15002, 15003)
+	n1, _ := setupNodes(15000, 15001)
+	n2, _ := simpleNodes(15002, 15003)
 	defer n1.NetworkNode.PeerHost.Close()
-	defer n3.NetworkNode.PeerHost.Close()
 	defer n2.PeerHost.Close()
-	defer n4.PeerHost.Close()
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
-	var cancelMsg CancelSubMsg
+	cancelChan := make(chan CancelSubMsg)
 	//Set up n2 handler so n1 can create a stream to it.
 	n2.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 		ws := NewBasicStream(s)
@@ -437,10 +440,15 @@ func TestHandleBroadcast(t *testing.T) {
 			glog.Errorf("Got error decoding msg: %v", err)
 			return
 		}
-		cancelMsg, _ = msg.Data.(CancelSubMsg)
+		cancelMsg, ok := msg.Data.(CancelSubMsg)
+		if !ok {
+			t.Errorf("Expecting cancelSubMsg, but got %v", msg.Data)
+		}
+		cancelChan <- cancelMsg
 	})
 
-	err := handleStreamData(n1, StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
+	//Error case - subscriber is not set yet.
+	err := handleStreamData(n1, n2.Identity, StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
 	if err != ErrProtocol {
 		t.Errorf("Expecting error because no subscriber has been assigned")
 	}
@@ -454,26 +462,34 @@ func TestHandleBroadcast(t *testing.T) {
 	s1.networkStream = n1.NetworkNode.GetStream(n2.Identity)
 	var seqNoResult uint64
 	var dataResult []byte
+	s1GotMsgChan := make(chan struct{})
 	s1.startWorker(ctxW, n2.Identity, s1.networkStream, func(seqNo uint64, data []byte, eof bool) {
 		seqNoResult = seqNo
 		dataResult = data
+		s1GotMsgChan <- struct{}{}
 	})
-	n1.subscribers["strmID"] = s1
-	err = handleStreamData(n1, StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
-	if err != nil {
-		t.Errorf("handleStreamData error: %v", err)
-	}
+	n1.SetSubscriber("strmID", s1)
+
+	go func() {
+		for {
+			if n1.getSubscriber("strmID") != nil {
+				err = handleStreamData(n1, n2.Identity, StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
+				if err != nil {
+					t.Errorf("handleStreamData error: %v", err)
+				}
+				return
+			} else {
+				time.Sleep(time.Millisecond * 50)
+			}
+		}
+	}()
 
 	//Wait until the result vars are assigned
-	start := time.Now()
-	for time.Since(start) < 1*time.Second {
-		if seqNoResult == 0 {
-			time.Sleep(time.Millisecond * 100)
-		} else {
-			break
-		}
+	select {
+	case <-s1GotMsgChan:
+	case <-time.After(time.Second):
+		t.Errorf("Timed out!")
 	}
-
 	if seqNoResult != 100 {
 		t.Errorf("Expecting seqNo to be 100, but got: %v", seqNoResult)
 	}
@@ -482,16 +498,17 @@ func TestHandleBroadcast(t *testing.T) {
 		t.Errorf("Expecting data to be 'hello', but got: %v", dataResult)
 	}
 
-	//Test cancellation
-	s1.cancelWorker()
+	//Test Unsubscribe
+	if err := s1.Unsubscribe(); err != nil {
+		t.Errorf("Error unsubscribing: %v", err)
+	}
+
 	//Wait for cancelMsg to be assigned
-	start = time.Now()
-	for time.Since(start) < 1*time.Second {
-		if cancelMsg.StrmID == "" {
-			time.Sleep(time.Millisecond * 100)
-		} else {
-			break
-		}
+	var cancelMsg CancelSubMsg
+	select {
+	case cancelMsg = <-cancelChan:
+	case <-time.After(time.Second):
+		t.Errorf("Timed out!")
 	}
 	if s1.working {
 		t.Errorf("Subscriber worker shouldn't be working anymore")
@@ -506,13 +523,11 @@ func TestHandleBroadcast(t *testing.T) {
 
 func TestSendSubscribe(t *testing.T) {
 	glog.Infof("\n\nTesting Subscriber...")
-	n1, n3 := setupNodes(15000, 15001)
-	n2, n4 := simpleNodes(15002, 15003)
+	n1, _ := setupNodes(15000, 15001)
+	n2, _ := simpleNodes(15002, 15003)
 	go n1.SetupProtocol()
 	defer n1.NetworkNode.PeerHost.Close()
-	defer n3.NetworkNode.PeerHost.Close()
 	defer n2.PeerHost.Close()
-	defer n4.PeerHost.Close()
 	connectHosts(n1.NetworkNode.PeerHost, n2.PeerHost)
 
 	var subReq SubReqMsg
@@ -542,6 +557,8 @@ func TestSendSubscribe(t *testing.T) {
 			case CancelSubMsg:
 				cancelMsg, _ = msg.Data.(CancelSubMsg)
 				glog.Infof("Got CancelMsg %v", cancelMsg)
+			default:
+				glog.Infof("Got unknown msg: %v", msg)
 			}
 		}
 	})
@@ -592,22 +609,14 @@ func TestSendSubscribe(t *testing.T) {
 
 	//Call cancel
 	s1.cancelWorker()
-	start = time.Now()
-	for time.Since(start) < 2*time.Second {
-		if cancelMsg.StrmID == "" {
-			time.Sleep(time.Millisecond * 100)
-		} else {
-			break
-		}
-	}
 
-	if cancelMsg.StrmID != strmID {
-		t.Errorf("Expecting to get cancelMsg with StrmID: 'strmID', but got %v", cancelMsg.StrmID)
-	}
+	common.WaitAssert(t, time.Second*1, func() bool {
+		return cancelMsg.StrmID != ""
+	}, fmt.Sprintf("Expecting to get cancelMsg with StrmID: 'strmID', but got %v", cancelMsg.StrmID))
+
 	if s1.working {
 		t.Errorf("subscriber shouldn't be working after 'cancel' is called")
 	}
-
 }
 
 func TestHandleCancel(t *testing.T) {
@@ -704,7 +713,7 @@ func TestHandleSubscribe(t *testing.T) {
 	b1.lastMsgs = []*StreamDataMsg{&StreamDataMsg{SeqNo: 0, StrmID: strmID, Data: []byte("hello")}}
 	n1.broadcasters[strmID] = b1
 	ws := n1.NetworkNode.GetStream(n2.Identity)
-	if err := handleSubReq(n1, SubReqMsg{StrmID: strmID}, ws); err != nil {
+	if err := handleSubReq(n1, SubReqMsg{StrmID: strmID}, n2.Identity); err != nil {
 		t.Errorf("Error handling sub req: %v", err)
 	}
 
@@ -734,7 +743,7 @@ func TestHandleSubscribe(t *testing.T) {
 		t.Errorf("Should have assigned relayer")
 	}
 	ws = n1.NetworkNode.GetStream(n2.Identity)
-	if err := handleSubReq(n1, SubReqMsg{StrmID: strmID2}, ws); err != nil {
+	if err := handleSubReq(n1, SubReqMsg{StrmID: strmID2}, n2.Identity); err != nil {
 		t.Errorf("Error handling sub req: %v", err)
 	}
 	pid := peer.IDHexEncode(ws.Stream.Conn().RemotePeer())
