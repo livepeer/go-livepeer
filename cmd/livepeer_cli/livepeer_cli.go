@@ -107,7 +107,7 @@ func (w *wizard) run() {
 	fmt.Println("+-----------------------------------------------------------+")
 	fmt.Println()
 
-	w.stats(false)
+	w.stats(w.transcoder)
 	// Basics done, loop ad infinitum about what to do
 	for {
 
@@ -202,7 +202,7 @@ func (w *wizard) run() {
 		}
 		switch {
 		case choice == NodeStatus:
-			w.stats(false)
+			w.stats(w.transcoder)
 		case choice == DepositToken:
 			w.deposit()
 		case choice == BroadcastVideo:

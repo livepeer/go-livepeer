@@ -10,10 +10,9 @@ import (
 	"text/tabwriter"
 
 	"github.com/golang/glog"
-	"strings"
 )
 
-func (w *wizard) stats(tips bool) {
+func (w *wizard) stats(showTranscoder bool) {
 	// Observe how the b's and the d's, despite appearing in the
 	// second cell of each line, belong to different columns.
 	// wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight|tabwriter.Debug)
@@ -30,11 +29,12 @@ func (w *wizard) stats(tips bool) {
 	fmt.Fprintf(wtr, "Eth balance: \t%s\n", w.getEthBalance())
 	wtr.Flush()
 
-	if strings.Compare(w.getTranscoderStatus(), "False") == 0 {
-		w.delegatorStats()
-		w.broadcastStats()
-	} else {
+	if showTranscoder {
 		w.transcoderStats()
+		w.delegatorStats()
+	} else {
+		w.broadcastStats()
+		w.delegatorStats()
 	}
 
 }

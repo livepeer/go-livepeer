@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -78,7 +79,7 @@ func (w *wizard) broadcast() {
 			fmt.Printf("Current RTMP setting: http://localhost:%v/streams\n", w.rtmpPort)
 			fmt.Printf("Current HTTP setting: http://localhost:%v/streams\n", w.httpPort)
 			fmt.Printf("Keep it? (Y/n) ")
-			if w.readDefaultString("y") != "y" {
+			if strings.ToLower(w.readDefaultString("y")) != "y" {
 				fmt.Printf("New rtmp port? (default 1935)")
 				w.rtmpPort = w.readDefaultString("1935")
 				fmt.Printf("New http port? (default 8935)")
