@@ -109,19 +109,19 @@ func (w *wizard) broadcast() {
 		}()
 
 		time.Sleep(3 * time.Second)
-		resp, err := http.Get(fmt.Sprintf("http://localhost:%v/streamID", w.httpPort))
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%v/manifestID", w.httpPort))
 		if err != nil {
-			glog.Errorf("Error getting stream ID: %v", err)
+			glog.Errorf("Error getting manifest ID: %v", err)
 			return
 		}
 
 		defer resp.Body.Close()
 		id, err := ioutil.ReadAll(resp.Body)
 		if err != nil || string(id) == "" {
-			glog.Errorf("Error reading stream ID: %v", err)
+			glog.Errorf("Error reading manifest ID: %v", err)
 			return
 		}
-		fmt.Printf("StreamID: %v\n", string(id))
+		fmt.Printf("ManifestID: %v\n", string(id))
 
 		for {
 			fmt.Printf("Type `q` to stop broadcasting\n")
