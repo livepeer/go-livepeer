@@ -28,7 +28,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/console"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
 	bnet "github.com/livepeer/go-livepeer-basicnet"
@@ -94,7 +96,7 @@ func main() {
 	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
 	ethWsUrl := flag.String("ethWsUrl", "", "geth websocket url")
 	testnet := flag.Bool("testnet", false, "Set to true to connect to testnet")
-	controllerAddr := flag.String("controllerAddr", "0xc7ff57decee68ab792a31eb99af132fa2e6889b0", "Protocol smart contract address")
+	controllerAddr := flag.String("controllerAddr", "", "Protocol smart contract address")
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
@@ -105,13 +107,18 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("Livepeer Node Version: 0.1.3-unstable")
+		fmt.Println("Livepeer Node Version: 0.1.4-unstable")
 		return
 	}
 
 	if *testnet {
 		*bootID = "12208a4eb428aa57a74ef0593612adb88077c75c71ad07c3c26e4e7a8d4860083b01"
 		*bootAddr = "/ip4/52.15.174.204/tcp/15000"
+
+		if !*offchain {
+			*ethWsUrl = "ws://ethws-testnet.livepeer.org:8546"
+			*controllerAddr = "0x7a00d2c99bfb46ab868ffffcd0880c794f642326"
+		}
 	}
 
 	//Make sure datadir is present
@@ -201,18 +208,27 @@ func main() {
 				return
 			}
 		} else {
-			//Try loading eth key from datadir
 			keystoreDir = filepath.Join(*datadir, "keystore")
+			//Try loading eth key from datadir
 			if _, err := os.Stat(keystoreDir); !os.IsNotExist(err) {
 				acct, err = getEthAccount(keystoreDir, *ethAcctAddr)
 				if err != nil {
 					glog.Errorf("Cannot get account %v from %v", *ethAcctAddr, *datadir)
+					if acct, err = createEthAccount(keystoreDir); err != nil {
+						glog.Errorf("Cannot create Eth account.")
+						return
+					}
+				}
+			} else {
+				//Try to create a new Eth key
+				if acct, err = createEthAccount(keystoreDir); err != nil {
+					glog.Errorf("Cannot create Eth account.")
 					return
 				}
 			}
 		}
 
-		if acct.Address.Hex() == "" {
+		if acct.Address.Hex() == "0x0000000000000000000000000000000000000000" {
 			glog.Errorf("Cannot find eth account")
 			return
 		}
@@ -613,4 +629,32 @@ func broadcast(rtmpPort int, httpPort int) {
 	} else {
 		glog.Errorf("The broadcast command only support darwin for now.  Please download OBS to broadcast.")
 	}
+}
+
+func createEthAccount(keystoreDir string) (accounts.Account, error) {
+	if err := os.Mkdir(keystoreDir, 0755); err != nil {
+		glog.Errorf("Error creating datadir: %v", err)
+	}
+
+	glog.Infoln("Creating a new Ethereum account.  Your new account is locked with a password. Please give a password. Do not forget this password.")
+	passphrase := getPassphrase(true)
+	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
+	return keyStore.NewAccount(passphrase)
+}
+
+func getPassphrase(confirmation bool) string {
+	password, err := console.Stdin.PromptPassword("Passphrase: ")
+	if err != nil {
+		utils.Fatalf("Failed to read passphrase: %v", err)
+	}
+	if confirmation {
+		confirm, err := console.Stdin.PromptPassword("Repeat passphrase: ")
+		if err != nil {
+			utils.Fatalf("Failed to read passphrase confirmation: %v", err)
+		}
+		if password != confirm {
+			utils.Fatalf("Passphrases do not match")
+		}
+	}
+	return password
 }
