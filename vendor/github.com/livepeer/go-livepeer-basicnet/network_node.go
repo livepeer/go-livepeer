@@ -3,6 +3,7 @@ package basicnet
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/golang/glog"
 
@@ -21,11 +22,12 @@ import (
 )
 
 type NetworkNode struct {
-	Identity peer.ID // the local node's identity
-	Kad      *kad.IpfsDHT
-	PeerHost host.Host // the network host (server+client)
-	Network  *BasicVideoNetwork
-	streams  map[peer.ID]*BasicStream
+	Identity       peer.ID // the local node's identity
+	Kad            *kad.IpfsDHT
+	PeerHost       host.Host // the network host (server+client)
+	Network        *BasicVideoNetwork
+	outStreams     map[peer.ID]*BasicStream
+	outStreamsLock *sync.RWMutex
 }
 
 //NewNode creates a new Livepeerd node.
@@ -76,7 +78,7 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey, f *BasicNot
 	rHost := rhost.Wrap(basicHost, dht)
 
 	glog.V(2).Infof("Created node: %v at %v", peer.IDHexEncode(rHost.ID()), rHost.Addrs())
-	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, streams: streams}
+	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, outStreams: streams, outStreamsLock: &sync.RWMutex{}}
 	f.HandleDisconnect(func(pid peer.ID) {
 		nn.RemoveStream(pid)
 	})
@@ -103,7 +105,7 @@ func constructDHTRouting(ctx context.Context, host host.Host, dstore ds.Batching
 }
 
 func (n *NetworkNode) GetStream(pid peer.ID) *BasicStream {
-	strm, ok := n.streams[pid]
+	strm, ok := n.outStreams[pid]
 	if !ok {
 		strm = n.RefreshStream(pid)
 	}
@@ -112,37 +114,26 @@ func (n *NetworkNode) GetStream(pid peer.ID) *BasicStream {
 
 func (n *NetworkNode) RefreshStream(pid peer.ID) *BasicStream {
 	// glog.Infof("Creating stream from %v to %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid))
-	if s, ok := n.streams[pid]; ok {
-		s.Stream.Close()
+	if s, ok := n.outStreams[pid]; ok {
+		s.Stream.Reset()
 	}
 
 	ns, err := n.PeerHost.NewStream(context.Background(), pid, Protocol)
+	// glog.Infof("Making new stream to: %v", peer.IDHexEncode(pid))
 	if err != nil {
 		glog.Errorf("%v Error creating stream to %v: %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid), err)
 		return nil
 	}
 	strm := NewBasicStream(ns)
-	n.streams[pid] = strm
-
-	//Handle messages that come back from the stream.  Only do this if we are setting up the Livepeer network protocol.
-	if n.Network != nil {
-		go func() {
-			for {
-				err := streamHandler(n.Network, strm)
-				if err != nil {
-					glog.Errorf("Got error handling stream: %v", err)
-					n.Network.NetworkNode.RemoveStream(strm.Stream.Conn().RemotePeer())
-					strm.Stream.Close()
-					return
-				}
-			}
-		}()
-	}
-
+	n.outStreamsLock.Lock()
+	n.outStreams[pid] = strm
+	n.outStreamsLock.Unlock()
 	return strm
 }
 
 func (n *NetworkNode) RemoveStream(pid peer.ID) {
 	// glog.Infof("Removing stream for %v", peer.IDHexEncode(pid))
-	delete(n.streams, pid)
+	n.outStreamsLock.Lock()
+	delete(n.outStreams, pid)
+	n.outStreamsLock.Unlock()
 }

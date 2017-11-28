@@ -31,13 +31,7 @@ type BasicSubscriber struct {
 
 //Subscribe kicks off a go routine that calls the gotData func for every new video chunk
 func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error {
-	// glog.Infof("s: %v", s)
-	// glog.Infof("s.Network: %v", s.Network)
-	// glog.Infof("s.Network.broadcasters:%v", s.Network.broadcasters)
-
-	//Do we already have the broadcaster locally?
-
-	//If we do, just subscribe to it and listen.
+	//Do we already have the broadcaster locally? If we do, just subscribe to it and listen.
 	if b := s.Network.broadcasters[s.StrmID]; b != nil {
 		glog.V(4).Infof("Broadcaster is present, let's return an error for now")
 		//TODO: read from broadcaster
@@ -97,14 +91,14 @@ func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *Basic
 			select {
 			case msg := <-s.msgChan:
 				networkWaitTime := time.Since(start)
-				gotData(msg.SeqNo, msg.Data, false)
+				go gotData(msg.SeqNo, msg.Data, false)
 				glog.V(common.DEBUG).Infof("Subscriber worker inserted segment: %v - took %v in total, %v waiting for data", msg.SeqNo, time.Since(start), networkWaitTime)
 			case <-ctxW.Done():
 				s.networkStream = nil
 				s.working = false
-				glog.V(4).Infof("Done with subscription, sending CancelSubMsg")
+				glog.Infof("Done with subscription, sending CancelSubMsg")
 				//Send EOF
-				gotData(0, nil, true)
+				go gotData(0, nil, true)
 				if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
 					glog.Errorf("Error sending CancelSubMsg during worker cancellation: %v", err)
 				}
@@ -119,9 +113,9 @@ func (s *BasicSubscriber) Unsubscribe() error {
 	if s.cancelWorker != nil {
 		s.cancelWorker()
 	}
-
 	//Remove self from network
 	delete(s.Network.subscribers, s.StrmID)
+
 	return nil
 }
 

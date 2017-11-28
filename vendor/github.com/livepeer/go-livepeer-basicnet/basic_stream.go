@@ -10,7 +10,6 @@ import (
 	net "gx/ipfs/QmNa31VPzC561NWwRsJLE7nGYZYuuD2QfpK2b1q9BK54J1/go-libp2p-net"
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 
-	"github.com/livepeer/go-livepeer/common"
 	multicodec "github.com/multiformats/go-multicodec"
 	mcjson "github.com/multiformats/go-multicodec/json"
 
@@ -66,9 +65,7 @@ func (bs *BasicStream) ReceiveMessage() (Msg, error) {
 
 //SendMessage writes a message into the stream.
 func (bs *BasicStream) SendMessage(opCode Opcode, data interface{}) error {
-	glog.V(common.DEBUG).Infof("Sending msg %v to %v", opCode, peer.IDHexEncode(bs.Stream.Conn().RemotePeer()))
-	bs.el.Lock()
-	defer bs.el.Unlock()
+	// glog.V(common.DEBUG).Infof("Sending msg %v to %v", opCode, peer.IDHexEncode(bs.Stream.Conn().RemotePeer()))
 	msg := Msg{Op: opCode, Data: data}
 	return bs.encodeAndFlush(msg)
 }
@@ -78,6 +75,8 @@ func (bs *BasicStream) encodeAndFlush(n interface{}) error {
 	if bs == nil {
 		fmt.Println("stream is nil")
 	}
+
+	bs.el.Lock()
 	err := bs.enc.Encode(n)
 	if err != nil {
 		glog.Errorf("send message encode error for peer %v: %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), err)
@@ -89,6 +88,7 @@ func (bs *BasicStream) encodeAndFlush(n interface{}) error {
 		glog.Errorf("send message flush error for peer %v: %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), err)
 		return ErrStream
 	}
+	bs.el.Unlock()
 
 	return nil
 }

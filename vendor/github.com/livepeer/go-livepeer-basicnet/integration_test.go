@@ -1,8 +1,132 @@
 package basicnet
 
 import (
+	"context"
+	"fmt"
 	"testing"
+	"time"
+
+	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 )
+
+func TestRestream(t *testing.T) {
+	n1, n2 := setupNodes(15000, 15001)
+	defer n1.NetworkNode.PeerHost.Close()
+	defer n2.NetworkNode.PeerHost.Close()
+
+	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
+	go n1.SetupProtocol()
+	go n2.SetupProtocol()
+
+	//Set up 1 broadcaster on n1
+	strmID1 := fmt.Sprintf("%vOriginalStrm", n1.GetNodeID())
+	n1b1, err := n1.GetBroadcaster(strmID1)
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+
+	//Set up n2
+	sub, err := n2.GetSubscriber(strmID1)
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+
+	common.WaitUntil(time.Second, func() bool {
+		return len(n1.broadcasters) > 0
+	})
+	subChan := make(chan bool)
+	subEofChan := make(chan bool)
+	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
+		if !eof {
+			subChan <- true
+		} else {
+			subEofChan <- true
+		}
+	})
+
+	//Wait until the broadcaster's listener is set up
+	common.WaitUntil(time.Second, func() bool {
+		return len(n1.broadcasters[strmID1].listeners) > 0
+	})
+
+	//Broadcast stream
+	for i := 0; i < 10; i++ {
+		if err := n1b1.Broadcast(0, []byte(fmt.Sprintf("hello, %v", i))); err != nil {
+			t.Errorf("Error broadcasting: %v", err)
+		}
+		time.Sleep(time.Millisecond * 50)
+	}
+
+	//Should get the broadcasted message
+	select {
+	case <-subChan:
+		//Success!
+	case <-time.After(time.Second):
+		t.Errorf("Timed out")
+	}
+
+	//Send Finish
+	if err := n1b1.Finish(); err != nil {
+		t.Errorf("Error finishing stream: %v", err)
+	}
+
+	//Should get an EOF message
+	select {
+	case <-subEofChan:
+		//Success!
+	case <-time.After(time.Second):
+		t.Errorf("Timed out")
+	}
+
+	glog.Infof("\n\nDone with stream1, now stream2\n\n")
+
+	strmID2 := fmt.Sprintf("%vOriginalStrm2", n1.GetNodeID())
+	n1b2, err := n1.GetBroadcaster(strmID2)
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+
+	sub2, err := n2.GetSubscriber(strmID2)
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+
+	common.WaitUntil(time.Second, func() bool {
+		return len(n1.broadcasters) > 1
+	})
+	sub2Chan := make(chan bool)
+	sub2EofChan := make(chan bool)
+	sub2.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
+		if !eof {
+			glog.Infof("n2 got data: %v", data)
+			sub2Chan <- true
+		} else {
+			glog.Infof("n2 go eof")
+			sub2EofChan <- true
+		}
+	})
+
+	//Wait until the broadcaster's listener is set up
+	common.WaitUntil(time.Second, func() bool {
+		return len(n1.broadcasters[strmID2].listeners) > 0
+	})
+	n1b2.Broadcast(0, []byte("hola"))
+	select {
+	case <-sub2Chan:
+		//Success!
+	case <-time.After(time.Second):
+		t.Errorf("Timed out")
+	}
+
+	n1b2.Finish()
+	select {
+	case <-sub2EofChan:
+		//Success!
+	case <-time.After(time.Second):
+		t.Errorf("Timed out")
+	}
+}
 
 func TestABS(t *testing.T) {
 	// //Set up 3 nodes.  n1=broadcaster, n2=transcoder, n3=subscriber
