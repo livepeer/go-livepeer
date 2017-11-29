@@ -180,7 +180,7 @@ func TestTranscode(t *testing.T) {
 		t.Errorf("Error converting broadcaster")
 	}
 	start := time.Now()
-	for time.Since(start) < time.Second*3 {
+	for time.Since(start) < time.Second*5 {
 		if b1.SeqNo == 0 {
 			time.Sleep(100 * time.Millisecond)
 		} else {
