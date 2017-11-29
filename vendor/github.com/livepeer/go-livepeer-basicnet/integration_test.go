@@ -11,13 +11,11 @@ import (
 )
 
 func TestRestream(t *testing.T) {
-	n1, n2 := setupNodes(15000, 15001)
+	n1, n2 := setupNodes(t, 15000, 15001)
 	defer n1.NetworkNode.PeerHost.Close()
 	defer n2.NetworkNode.PeerHost.Close()
 
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
-	go n1.SetupProtocol()
-	go n2.SetupProtocol()
 
 	//Set up 1 broadcaster on n1
 	strmID1 := fmt.Sprintf("%vOriginalStrm", n1.GetNodeID())

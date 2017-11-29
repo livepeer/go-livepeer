@@ -77,6 +77,7 @@ func (bs *BasicStream) encodeAndFlush(n interface{}) error {
 	}
 
 	bs.el.Lock()
+	defer bs.el.Unlock()
 	err := bs.enc.Encode(n)
 	if err != nil {
 		glog.Errorf("send message encode error for peer %v: %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), err)
@@ -88,7 +89,6 @@ func (bs *BasicStream) encodeAndFlush(n interface{}) error {
 		glog.Errorf("send message flush error for peer %v: %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), err)
 		return ErrStream
 	}
-	bs.el.Unlock()
 
 	return nil
 }
