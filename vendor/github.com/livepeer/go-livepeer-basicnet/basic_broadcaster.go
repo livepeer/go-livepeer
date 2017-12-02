@@ -14,7 +14,7 @@ type BasicBroadcaster struct {
 	Network      *BasicVideoNetwork
 	lastMsgs     []*StreamDataMsg
 	q            chan *StreamDataMsg
-	listeners    map[string]*BasicStream
+	listeners    map[string]*BasicOutStream
 	StrmID       string
 	working      bool
 	cancelWorker context.CancelFunc
@@ -62,7 +62,7 @@ func (b *BasicBroadcaster) Finish() error {
 func (br *BasicBroadcaster) AddListener(nw *BasicVideoNetwork, pid peer.ID) {
 	key := peer.IDHexEncode(pid)
 	if _, ok := br.listeners[key]; !ok {
-		br.listeners[key] = nw.NetworkNode.GetStream(pid)
+		br.listeners[key] = nw.NetworkNode.GetOutStream(pid)
 	}
 }
 
@@ -81,7 +81,7 @@ func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 	}
 }
 
-func (b *BasicBroadcaster) sendDataMsg(lid string, l *BasicStream, msg *StreamDataMsg) {
+func (b *BasicBroadcaster) sendDataMsg(lid string, l *BasicOutStream, msg *StreamDataMsg) {
 	if msg == nil {
 		return
 	}

@@ -26,8 +26,8 @@ type NetworkNode struct {
 	Kad            *kad.IpfsDHT
 	PeerHost       host.Host // the network host (server+client)
 	Network        *BasicVideoNetwork
-	outStreams     map[peer.ID]*BasicStream
-	outStreamsLock *sync.RWMutex
+	outStreams     map[peer.ID]*BasicOutStream
+	outStreamsLock *sync.Mutex
 }
 
 //NewNode creates a new Livepeerd node.
@@ -37,7 +37,7 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey, f *BasicNot
 		return nil, err
 	}
 
-	streams := make(map[peer.ID]*BasicStream)
+	streams := make(map[peer.ID]*BasicOutStream)
 
 	// Create a peerstore
 	store := peerstore.NewPeerstore()
@@ -78,7 +78,7 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey, f *BasicNot
 	rHost := rhost.Wrap(basicHost, dht)
 
 	glog.V(2).Infof("Created node: %v at %v", peer.IDHexEncode(rHost.ID()), rHost.Addrs())
-	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, outStreams: streams, outStreamsLock: &sync.RWMutex{}}
+	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, outStreams: streams, outStreamsLock: &sync.Mutex{}}
 	f.HandleDisconnect(func(pid peer.ID) {
 		nn.RemoveStream(pid)
 	})
@@ -104,30 +104,29 @@ func constructDHTRouting(ctx context.Context, host host.Host, dstore ds.Batching
 	return dhtRouting, nil
 }
 
-func (n *NetworkNode) GetStream(pid peer.ID) *BasicStream {
+func (n *NetworkNode) GetOutStream(pid peer.ID) *BasicOutStream {
+	n.outStreamsLock.Lock()
 	strm, ok := n.outStreams[pid]
 	if !ok {
-		strm = n.RefreshStream(pid)
+		strm = n.RefreshOutStream(pid)
 	}
+	n.outStreamsLock.Unlock()
 	return strm
 }
 
-func (n *NetworkNode) RefreshStream(pid peer.ID) *BasicStream {
+func (n *NetworkNode) RefreshOutStream(pid peer.ID) *BasicOutStream {
 	// glog.Infof("Creating stream from %v to %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid))
 	if s, ok := n.outStreams[pid]; ok {
 		s.Stream.Reset()
 	}
 
 	ns, err := n.PeerHost.NewStream(context.Background(), pid, Protocol)
-	// glog.Infof("Making new stream to: %v", peer.IDHexEncode(pid))
 	if err != nil {
 		glog.Errorf("%v Error creating stream to %v: %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid), err)
 		return nil
 	}
-	strm := NewBasicStream(ns)
-	n.outStreamsLock.Lock()
+	strm := NewBasicOutStream(ns)
 	n.outStreams[pid] = strm
-	n.outStreamsLock.Unlock()
 	return strm
 }
 

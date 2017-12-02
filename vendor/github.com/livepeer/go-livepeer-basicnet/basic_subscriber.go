@@ -19,14 +19,14 @@ var ErrSubscriber = errors.New("ErrSubscriber")
 
 //BasicSubscriber keeps track of
 type BasicSubscriber struct {
-	Network       *BasicVideoNetwork
-	host          host.Host
-	msgChan       chan StreamDataMsg
-	networkStream *BasicStream
-	StrmID        string
-	UpstreamPeer  peer.ID
-	working       bool
-	cancelWorker  context.CancelFunc
+	Network *BasicVideoNetwork
+	host    host.Host
+	msgChan chan StreamDataMsg
+	// networkStream *BasicStream
+	StrmID       string
+	UpstreamPeer peer.ID
+	working      bool
+	cancelWorker context.CancelFunc
 }
 
 //Subscribe kicks off a go routine that calls the gotData func for every new video chunk
@@ -57,7 +57,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 		}
 		//Question: Where do we close the stream? If we only close on "Unsubscribe", we may leave some streams open...
 		glog.V(5).Infof("New peer from kademlia: %v", peer.IDHexEncode(p))
-		ns := s.Network.NetworkNode.GetStream(p)
+		ns := s.Network.NetworkNode.GetOutStream(p)
 		if ns != nil {
 			//Send SubReq
 			glog.Infof("Sending Req %v", s.StrmID)
@@ -67,7 +67,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 			ctxW, cancel := context.WithCancel(context.Background())
 			s.cancelWorker = cancel
 			s.working = true
-			s.networkStream = ns
+			// s.networkStream = ns
 			s.UpstreamPeer = p
 			s.startWorker(ctxW, p, ns, gotData)
 			return nil
@@ -80,7 +80,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 	//Call gotData for every new piece of data
 }
 
-func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *BasicStream, gotData func(seqNo uint64, data []byte, eof bool)) {
+func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *BasicOutStream, gotData func(seqNo uint64, data []byte, eof bool)) {
 	//We expect DataStreamMsg to come back
 	go func() {
 		for {
@@ -94,7 +94,7 @@ func (s *BasicSubscriber) startWorker(ctxW context.Context, p peer.ID, ws *Basic
 				go gotData(msg.SeqNo, msg.Data, false)
 				glog.V(common.DEBUG).Infof("Subscriber worker inserted segment: %v - took %v in total, %v waiting for data", msg.SeqNo, time.Since(start), networkWaitTime)
 			case <-ctxW.Done():
-				s.networkStream = nil
+				// s.networkStream = nil
 				s.working = false
 				glog.Infof("Done with subscription, sending CancelSubMsg")
 				//Send EOF

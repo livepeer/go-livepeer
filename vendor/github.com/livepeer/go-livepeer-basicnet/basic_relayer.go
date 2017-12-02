@@ -13,7 +13,7 @@ import (
 //does NOT have a worker - it sends out the chunks to its listeners as soon as it gets one from the network.
 type BasicRelayer struct {
 	UpstreamPeer peer.ID
-	listeners    map[string]*BasicStream
+	listeners    map[string]*BasicOutStream
 	LastRelay    time.Time
 }
 
@@ -56,7 +56,7 @@ func (br *BasicRelayer) RelayMasterPlaylistData(nw *BasicVideoNetwork, mpld Mast
 func (br *BasicRelayer) AddListener(nw *BasicVideoNetwork, pid peer.ID) {
 	key := peer.IDHexEncode(pid)
 	if _, ok := br.listeners[key]; !ok {
-		br.listeners[key] = nw.NetworkNode.GetStream(pid)
+		br.listeners[key] = nw.NetworkNode.GetOutStream(pid)
 	}
 }
 

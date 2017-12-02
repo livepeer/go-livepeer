@@ -126,8 +126,8 @@ func simpleNodes(p1, p2 int) (*NetworkNode, *NetworkNode) {
 	return n1, n2
 }
 
-func simpleHandler(ns net.Stream, txt string) error {
-	ws := NewBasicStream(ns)
+func simpleHandler(host host.Host, ns net.Stream, txt string) error {
+	ws := NewBasicInStream(ns)
 
 	msg, err := ws.ReceiveMessage()
 
@@ -139,13 +139,25 @@ func simpleHandler(ns net.Stream, txt string) error {
 	// time.Sleep(100 * time.Millisecond)
 
 	glog.Infof("Sending %v", txt)
-	ws.SendMessage(0, StreamDataMsg{Data: []byte(txt)})
+	os, err := host.NewStream(context.Background(), ns.Conn().RemotePeer())
+	if err != nil {
+		glog.Errorf("Error creating out stream: %v", err)
+		return err
+	}
+	outStrm := NewBasicOutStream(os)
+	outStrm.SendMessage(0, StreamDataMsg{Data: []byte(txt)})
 	return nil
 }
 
-func simpleHandlerLoop(ws *BasicStream, txt string) {
+func simpleHandlerLoop(host host.Host, ws *BasicInStream, txt string) {
+	msg, err := ws.ReceiveMessage()
+	os, err := host.NewStream(context.Background(), ws.Stream.Conn().RemotePeer())
+	if err != nil {
+		glog.Errorf("Error creating out stream: %v", err)
+	}
+	outStrm := NewBasicOutStream(os)
+
 	for {
-		msg, err := ws.ReceiveMessage()
 
 		if err != nil {
 			glog.Errorf("Got error decoding msg: %v", err)
@@ -153,12 +165,12 @@ func simpleHandlerLoop(ws *BasicStream, txt string) {
 		}
 		glog.Infof("%v Got msg: %v", ws.Stream.Conn().LocalPeer().Pretty(), msg)
 
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 
 		newMsg := Msg{Data: string(msg.Data.([]byte)) + "|" + txt, Op: StreamDataID}
 
 		glog.Infof("Sending %v", newMsg)
-		err = ws.SendMessage(0, newMsg)
+		err = outStrm.SendMessage(0, newMsg)
 		if err != nil {
 			glog.Errorf("Failed to send message %v: %v", newMsg, err)
 		}
@@ -166,7 +178,7 @@ func simpleHandlerLoop(ws *BasicStream, txt string) {
 }
 
 func simpleSend(ns net.Stream, txt string, t *testing.T) {
-	ws := NewBasicStream(ns)
+	ws := NewBasicOutStream(ns)
 	ws.SendMessage(0, txt)
 }
 
@@ -223,7 +235,7 @@ func TestBasic(t *testing.T) {
 	h2.SetStreamHandler(Protocol, func(stream net.Stream) {
 		glog.Infof("h2 handler...")
 		for {
-			if err := simpleHandler(stream, "pong"); err != nil {
+			if err := simpleHandler(h2, stream, "pong"); err != nil {
 				stream.Close()
 				return
 			}
@@ -234,7 +246,7 @@ func TestBasic(t *testing.T) {
 	if err != nil {
 		glog.Fatal(err)
 	}
-	s1 := NewBasicStream(stream)
+	s1 := NewBasicOutStream(stream)
 	s1.SendMessage(0, StreamDataMsg{Data: []byte("ping1")})
 	time.Sleep(time.Millisecond * 200)
 
@@ -254,7 +266,7 @@ func TestUniDirection(t *testing.T) {
 	h2.SetStreamHandler(Protocol, func(stream net.Stream) {
 		glog.Infof("h2 handler...")
 		for {
-			ws := NewBasicStream(stream)
+			ws := NewBasicInStream(stream)
 			msg, err := ws.ReceiveMessage()
 			if err != nil {
 				glog.Errorf("Got error decoding msg: %v", err)
@@ -267,7 +279,7 @@ func TestUniDirection(t *testing.T) {
 	h1.SetStreamHandler(Protocol, func(stream net.Stream) {
 		glog.Infof("h1 handler...")
 		for {
-			ws := NewBasicStream(stream)
+			ws := NewBasicInStream(stream)
 			msg, err := ws.ReceiveMessage()
 			if err != nil {
 				glog.Errorf("Got error decoding msg: %v", err)
@@ -277,11 +289,13 @@ func TestUniDirection(t *testing.T) {
 		}
 	})
 
+	time.Sleep(time.Millisecond * 500)
+
 	stream, err := h1.NewStream(context.Background(), h2.ID(), Protocol)
 	if err != nil {
 		glog.Fatal(err)
 	}
-	s1 := NewBasicStream(stream)
+	s1 := NewBasicOutStream(stream)
 	if err := s1.SendMessage(0, StreamDataMsg{Data: []byte("ping1")}); err != nil {
 		glog.Infof("Error: %v", err)
 	}
@@ -296,7 +310,7 @@ func TestUniDirection(t *testing.T) {
 	if err != nil {
 		glog.Fatal(err)
 	}
-	s2 := NewBasicStream(stream2)
+	s2 := NewBasicOutStream(stream2)
 	s2.SendMessage(0, StreamDataMsg{Data: []byte("pong1")})
 	s2.SendMessage(0, StreamDataMsg{Data: []byte("pong2")})
 	time.Sleep(time.Millisecond * 100)
@@ -328,6 +342,54 @@ func TestProvider(t *testing.T) {
 	select {
 	case pid := <-pidc:
 		glog.Infof("Provider for hello: %v", peer.IDHexEncode(pid.ID))
+	}
+}
+
+func TestConcurrentSend(t *testing.T) {
+	n1, n2 := simpleNodes(15000, 15001)
+	n3, _ := simpleNodes(15002, 15003)
+	connectHosts(n1.PeerHost, n2.PeerHost)
+	connectHosts(n2.PeerHost, n3.PeerHost)
+	n1.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
+	})
+	c := make(chan string, 20)
+	n2.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
+		strm := NewBasicInStream(stream)
+		defer stream.Reset()
+		for {
+			if msg, err := strm.ReceiveMessage(); err != nil {
+				glog.Infof("Error: %v", err)
+				break
+			} else {
+				c <- string(msg.Data.(StreamDataMsg).Data)
+			}
+		}
+	})
+	n3.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
+	})
+
+	go func() {
+		for i := 0; i < 10; i++ {
+			strm := n1.GetOutStream(n2.Identity)
+			strm.SendMessage(StreamDataID, StreamDataMsg{Data: []byte(fmt.Sprintf("%v", i))})
+		}
+	}()
+
+	go func() {
+		for i := 10; i < 20; i++ {
+			strm := n3.GetOutStream(n2.Identity)
+			strm.SendMessage(StreamDataID, StreamDataMsg{Data: []byte(fmt.Sprintf("%v", i))})
+			// time.Sleep(time.Millisecond * 2)
+		}
+	}()
+
+	for i := 0; i < 20; i++ {
+		select {
+		case i := <-c:
+			fmt.Printf("got %v\n", i)
+		case <-time.After(5 * time.Second):
+			t.Errorf("Timed out")
+		}
 	}
 }
 

@@ -94,7 +94,7 @@ func (n *BasicVideoNetwork) GetBroadcaster(strmID string) (lpnet.Broadcaster, er
 			Network:   n,
 			StrmID:    strmID,
 			q:         make(chan *StreamDataMsg),
-			listeners: make(map[string]*BasicStream),
+			listeners: make(map[string]*BasicOutStream),
 			lastMsgs:  make([]*StreamDataMsg, DefaultBroadcasterBufferSize, DefaultBroadcasterBufferSize)}
 
 		n.broadcasters[strmID] = b
@@ -131,7 +131,7 @@ func (n *BasicVideoNetwork) getSubscriber(strmID string) *BasicSubscriber {
 
 //NewRelayer creates a new relayer.
 func (n *BasicVideoNetwork) NewRelayer(strmID string, opcode Opcode) *BasicRelayer {
-	r := &BasicRelayer{listeners: make(map[string]*BasicStream)}
+	r := &BasicRelayer{listeners: make(map[string]*BasicOutStream)}
 	n.relayers[relayerMapKey(strmID, opcode)] = r
 	go func() {
 		timer := time.NewTicker(RelayTicker)
@@ -182,7 +182,7 @@ func (n *BasicVideoNetwork) SendTranscodeResponse(broadcaster string, strmID str
 			continue
 		}
 
-		s := n.NetworkNode.GetStream(pid)
+		s := n.NetworkNode.GetOutStream(pid)
 		if s != nil {
 			if err = s.SendMessage(TranscodeResponseID, TranscodeResponseMsg{StrmID: strmID, Result: transcodedVideos}); err != nil {
 				continue
@@ -230,7 +230,7 @@ func (n *BasicVideoNetwork) getMasterPlaylistWithRelay(strmID string) (chan *m3u
 				continue
 			}
 
-			s := n.NetworkNode.GetStream(pid)
+			s := n.NetworkNode.GetOutStream(pid)
 			if s != nil {
 				if err := s.SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
 					continue
@@ -306,7 +306,7 @@ func (n *BasicVideoNetwork) updateMasterPlaylistWithDHT(strmID string, mpl *m3u8
 func (n *BasicVideoNetwork) SetupProtocol() error {
 	glog.V(4).Infof("\n\nSetting up protocol: %v", Protocol)
 	n.NetworkNode.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
-		ws := NewBasicStream(stream)
+		ws := NewBasicInStream(stream)
 		for {
 			if err := streamHandler(n, ws); err != nil {
 				if err != ErrHandleMsg {
@@ -322,7 +322,7 @@ func (n *BasicVideoNetwork) SetupProtocol() error {
 	return nil
 }
 
-func streamHandler(nw *BasicVideoNetwork, ws *BasicStream) error {
+func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 	msg, err := ws.ReceiveMessage()
 	if err != nil {
 		glog.Errorf("Got error decoding msg from %v: %v (%v).", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()), err, reflect.TypeOf(err))
@@ -408,7 +408,7 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, remotePID peer.ID) er
 		for _, msg := range b.lastMsgs {
 			if msg != nil {
 				// glog.Infof("Sending last msg: %v", msg.SeqNo)
-				b.sendDataMsg(peer.IDHexEncode(remotePID), nw.NetworkNode.GetStream(remotePID), msg)
+				b.sendDataMsg(peer.IDHexEncode(remotePID), nw.NetworkNode.GetOutStream(remotePID), msg)
 				time.Sleep(DefaultBroadcasterBufferSegSendInterval)
 			}
 		}
@@ -448,7 +448,7 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, remotePID peer.ID) er
 			return nil
 		}
 
-		ns := nw.NetworkNode.GetStream(p)
+		ns := nw.NetworkNode.GetOutStream(p)
 		if ns != nil {
 			if err := ns.SendMessage(SubReqID, subReq); err != nil {
 				//Question: Do we want to close the stream here?
@@ -488,7 +488,7 @@ func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) e
 		lpmon.Instance().RemoveRelay(cr.StrmID)
 		//Pass on the cancel req and remove relayer if relayer has no more listeners, unless we still have a subscriber - in which case, just remove the relayer.
 		if len(r.listeners) == 0 {
-			ns := nw.NetworkNode.GetStream(r.UpstreamPeer)
+			ns := nw.NetworkNode.GetOutStream(r.UpstreamPeer)
 			if ns != nil {
 				if err := ns.SendMessage(CancelSubID, cr); err != nil {
 					glog.Errorf("Error relaying cancel message to %v: %v ", peer.IDHexEncode(r.UpstreamPeer), err)
@@ -587,7 +587,7 @@ func handleTranscodeResponse(nw *BasicVideoNetwork, remotePID peer.ID, tr Transc
 			return nil
 		}
 
-		s := nw.NetworkNode.GetStream(p)
+		s := nw.NetworkNode.GetOutStream(p)
 		if s != nil {
 			if err := s.SendMessage(TranscodeResponseID, tr); err != nil {
 				glog.Errorf("Error sending Transcoding Response Message to %v", peer.IDHexEncode(p))
@@ -613,7 +613,7 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, remotePID peer.ID, mplr G
 		//Don't have the playlist locally. Forward to a peer
 		peers, err := closestLocalPeers(nw.NetworkNode.PeerHost.Peerstore(), mplr.StrmID)
 		if err != nil {
-			return nw.NetworkNode.GetStream(remotePID).SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{StrmID: mplr.StrmID, NotFound: true})
+			return nw.NetworkNode.GetOutStream(remotePID).SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{StrmID: mplr.StrmID, NotFound: true})
 		}
 		for _, p := range peers {
 			//Don't send it back to the requesting peer
@@ -626,7 +626,7 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, remotePID peer.ID, mplr G
 				return nil
 			}
 
-			s := nw.NetworkNode.GetStream(p)
+			s := nw.NetworkNode.GetOutStream(p)
 			if s != nil {
 				glog.Infof("Sending msg to %v", peer.IDHexEncode(p))
 				if err := s.SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{StrmID: mplr.StrmID}); err != nil {
@@ -645,14 +645,14 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, remotePID peer.ID, mplr G
 			}
 		}
 		glog.Info("Cannot relay GetMasterPlaylist req to peers")
-		if err := nw.NetworkNode.GetStream(remotePID).SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{StrmID: mplr.StrmID, NotFound: true}); err != nil {
+		if err := nw.NetworkNode.GetOutStream(remotePID).SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{StrmID: mplr.StrmID, NotFound: true}); err != nil {
 			glog.Errorf("Error sending MasterPlaylistData-NotFound: %v", err)
 			return ErrHandleMsg
 		}
 		return nil
 	}
 
-	if err := nw.NetworkNode.GetStream(remotePID).SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{StrmID: mplr.StrmID, MPL: mpl.String()}); err != nil {
+	if err := nw.NetworkNode.GetOutStream(remotePID).SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{StrmID: mplr.StrmID, MPL: mpl.String()}); err != nil {
 		glog.Errorf("Error sending MasterPlaylistData: %v", err)
 		return ErrHandleMsg
 	}
