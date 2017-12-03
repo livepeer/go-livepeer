@@ -214,14 +214,14 @@ func main() {
 				acct, err = getEthAccount(keystoreDir, *ethAcctAddr)
 				if err != nil {
 					glog.Errorf("Cannot get account %v from %v", *ethAcctAddr, *datadir)
-					if acct, err = createEthAccount(keystoreDir); err != nil {
+					if acct, *ethPassword, err = createEthAccount(keystoreDir); err != nil {
 						glog.Errorf("Cannot create Eth account.")
 						return
 					}
 				}
 			} else {
 				//Try to create a new Eth key
-				if acct, err = createEthAccount(keystoreDir); err != nil {
+				if acct, *ethPassword, err = createEthAccount(keystoreDir); err != nil {
 					glog.Errorf("Cannot create Eth account.")
 					return
 				}
@@ -292,10 +292,20 @@ func main() {
 			return
 		}
 
-		client, err := eth.NewClient(acct, *ethPassword, keystoreDir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*controllerAddr), EthRpcTimeout, EthEventTimeout)
-		if err != nil {
-			glog.Errorf("Error creating Eth client: %v", err)
-			return
+		var client *eth.Client
+		for {
+			client, err = eth.NewClient(acct, *ethPassword, keystoreDir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*controllerAddr), EthRpcTimeout, EthEventTimeout)
+			if err != nil {
+				if err == keystore.ErrDecrypt {
+					glog.Infof("Error decrypting using passphrase.  Please provide the passphrase again")
+					*ethPassword = getPassphrase(false)
+					continue
+				}
+				glog.Errorf("Error creating Eth client: %v", err)
+				return
+			} else {
+				break
+			}
 		}
 		n.Eth = client
 		n.EthAccount = acct.Address.String()
@@ -332,6 +342,7 @@ func main() {
 
 		n.Ipfs = ipfsApi
 	}
+
 	//Set up the media server
 	s := server.NewLivepeerServer(*rtmpPort, *httpPort, "", n)
 	ec := make(chan error)
@@ -630,15 +641,16 @@ func broadcast(rtmpPort int, httpPort int) {
 	}
 }
 
-func createEthAccount(keystoreDir string) (accounts.Account, error) {
+func createEthAccount(keystoreDir string) (acct accounts.Account, passphrase string, err error) {
 	if err := os.Mkdir(keystoreDir, 0755); err != nil {
 		glog.Errorf("Error creating datadir: %v", err)
 	}
 
 	glog.Infoln("Creating a new Ethereum account.  Your new account is locked with a password. Please give a password. Do not forget this password.")
-	passphrase := getPassphrase(true)
+	passphrase = getPassphrase(true)
 	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
-	return keyStore.NewAccount(passphrase)
+	acct, err = keyStore.NewAccount(passphrase)
+	return
 }
 
 func getPassphrase(confirmation bool) string {
