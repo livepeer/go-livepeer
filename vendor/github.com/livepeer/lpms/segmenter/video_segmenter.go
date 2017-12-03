@@ -113,6 +113,10 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 		} else {
 			glog.Errorf("Error from ffmpeg: %v", ffmpege)
 		}
+
+		if cleanup {
+			s.Cleanup()
+		}
 		return ffmpege
 	case <-ctx.Done():
 		//Can't close RTMP server, joy4 doesn't support it.
@@ -275,6 +279,7 @@ func (s *FFMpegVideoSegmenter) pollSegment(ctx context.Context, curFn string, ne
 }
 
 func (s *FFMpegVideoSegmenter) Cleanup() {
+	glog.Infof("Cleaning up video segments.....")
 	files, _ := filepath.Glob(path.Join(s.WorkDir, s.StrmID) + "*")
 	for _, fn := range files {
 		os.Remove(fn)
