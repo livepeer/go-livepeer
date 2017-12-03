@@ -66,7 +66,7 @@ type LivepeerServer struct {
 }
 
 func NewLivepeerServer(rtmpPort string, httpPort string, ffmpegPath string, lpNode *core.LivepeerNode) *LivepeerServer {
-	server := lpmscore.New(rtmpPort, httpPort, ffmpegPath, "")
+	server := lpmscore.New(rtmpPort, httpPort, ffmpegPath, "", lpNode.WorkDir)
 	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, FfmpegPath: ffmpegPath, LivepeerNode: lpNode, broadcastRtmpToHLSMap: make(map[string]string)}
 }
 
@@ -196,9 +196,9 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		//Segment the stream (this populates the hls stream)
 		go func() {
-			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions) //TODO: do we need to cancel this thread when the stream finishes?
+			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions)
 			if err != nil {
-				glog.Infof("Error in segmenter: %v, broadcasting finish message", err)
+				// glog.Infof("Error in segmenter: %v, broadcasting finish message", err)
 				if err := s.LivepeerNode.BroadcastFinishMsg(hlsStrmID.String()); err != nil {
 					glog.Errorf("Error broadcaseting finish message: %v", err)
 				}

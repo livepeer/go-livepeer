@@ -7,7 +7,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"os"
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
@@ -27,6 +26,7 @@ type LPMS struct {
 	srsRTMPPort string
 	srsHTTPPort string
 	ffmpegPath  string
+	workDir     string
 }
 
 type transcodeReq struct {
@@ -38,11 +38,11 @@ type transcodeReq struct {
 }
 
 //New creates a new LPMS server object.  It really just brokers everything to the components.
-func New(rtmpPort, httpPort, ffmpegPath, vodPath string) *LPMS {
+func New(rtmpPort, httpPort, ffmpegPath, vodPath, workDir string) *LPMS {
 	server := &joy4rtmp.Server{Addr: (":" + rtmpPort)}
 	player := vidplayer.NewVidPlayer(server, vodPath)
 	listener := &vidlistener.VidListener{RtmpServer: server, FfmpegPath: ffmpegPath}
-	return &LPMS{rtmpServer: server, vidPlayer: player, vidListen: listener, httpPort: httpPort, ffmpegPath: ffmpegPath}
+	return &LPMS{rtmpServer: server, vidPlayer: player, vidListen: listener, httpPort: httpPort, ffmpegPath: ffmpegPath, workDir: workDir}
 }
 
 //Start starts the rtmp and http server
@@ -92,12 +92,10 @@ func (l *LPMS) HandleHLSPlay(
 //SegmentRTMPToHLS takes a rtmp stream and re-packages it into a HLS stream with the specified segmenter options
 func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error {
 	//Invoke Segmenter
-	workDir, _ := os.Getwd()
-	workDir = workDir + "/tmp"
 	localRtmpUrl := "rtmp://localhost" + l.rtmpServer.Addr + "/stream/" + rs.GetStreamID()
 	glog.V(4).Infof("Segment RTMP Req: %v", localRtmpUrl)
 
-	s := segmenter.NewFFMpegVideoSegmenter(workDir, hs.GetStreamID(), localRtmpUrl, segOptions.SegLength, l.ffmpegPath)
+	s := segmenter.NewFFMpegVideoSegmenter(l.workDir, hs.GetStreamID(), localRtmpUrl, segOptions.SegLength, l.ffmpegPath)
 	c := make(chan error, 1)
 	ffmpegCtx, ffmpegCancel := context.WithCancel(context.Background())
 	go func() { c <- s.RTMPToHLS(ffmpegCtx, segOptions, true) }()

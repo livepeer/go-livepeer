@@ -332,7 +332,6 @@ func main() {
 
 		n.Ipfs = ipfsApi
 	}
-
 	//Set up the media server
 	s := server.NewLivepeerServer(*rtmpPort, *httpPort, "", n)
 	ec := make(chan error)
