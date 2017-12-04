@@ -293,19 +293,23 @@ func main() {
 		}
 
 		var client *eth.Client
-		for {
+		for firstTime := true; ; {
 			client, err = eth.NewClient(acct, *ethPassword, keystoreDir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*controllerAddr), EthRpcTimeout, EthEventTimeout)
 			if err != nil {
 				if err == keystore.ErrDecrypt {
-					glog.Infof("Error decrypting using passphrase.  Please provide the passphrase again")
+					if !firstTime {
+						glog.Infof("Error decrypting using passphrase. Please provide the passphrase again.")
+					} else {
+						glog.Infof("Please provide the passphrase.")
+						firstTime = false
+					}
 					*ethPassword = getPassphrase(false)
 					continue
 				}
 				glog.Errorf("Error creating Eth client: %v", err)
 				return
-			} else {
-				break
 			}
+			break
 		}
 		n.Eth = client
 		n.EthAccount = acct.Address.String()
