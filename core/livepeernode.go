@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ericxtang/m3u8"
@@ -38,9 +40,15 @@ var EthEventTimeout = 5 * time.Second
 var EthMinedTxTimeout = 60 * time.Second
 var DefaultMasterPlaylistWaitTime = 60 * time.Second
 var DefaultJobLength = int64(5760) //Avg 1 day in 15 sec blocks
+var ConnFileWriteFreq = 60 * time.Second
 
 //NodeID can be converted from libp2p PeerID.
 type NodeID string
+
+type PeerConn struct {
+	NodeID   string
+	NodeAddr string
+}
 
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
@@ -53,6 +61,7 @@ type LivepeerNode struct {
 	EthPassword  string
 	Ipfs         ipfs.IpfsApi
 	WorkDir      string
+	PeerConns    []PeerConn
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
@@ -62,11 +71,11 @@ func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID
 		return nil, ErrLivepeerNode
 	}
 
-	return &LivepeerNode{VideoDB: NewVideoDB(vn.GetNodeID()), VideoNetwork: vn, Identity: nodeId, Addrs: addrs, Eth: e, WorkDir: wd}, nil
+	return &LivepeerNode{VideoDB: NewVideoDB(vn.GetNodeID()), VideoNetwork: vn, Identity: nodeId, Addrs: addrs, Eth: e, WorkDir: wd, PeerConns: make([]PeerConn, 0)}, nil
 }
 
 //Start sets up the Livepeer protocol and connects the node to the network
-func (n *LivepeerNode) Start(bootID, bootAddr string) error {
+func (n *LivepeerNode) Start(ctx context.Context, bootID, bootAddr string) error {
 	//Set up protocol (to handle incoming streams)
 	if err := n.VideoNetwork.SetupProtocol(); err != nil {
 		glog.Errorf("Error setting up protocol: %v", err)
@@ -74,10 +83,52 @@ func (n *LivepeerNode) Start(bootID, bootAddr string) error {
 	}
 
 	//Connect to bootstrap node.  This currently also kicks off a bootstrap process, which periodically checks for new peers and connect to them.
-	if err := n.VideoNetwork.Connect(bootID, bootAddr); err != nil {
-		glog.Errorf("Cannot connect to node: %v", err)
-		return err
+	if bootID != "" && bootAddr != "" {
+		if err := n.VideoNetwork.Connect(bootID, bootAddr); err != nil {
+			glog.Errorf("Cannot connect to node: %v", err)
+		} else {
+			n.PeerConns = append(n.PeerConns, PeerConn{NodeID: bootID, NodeAddr: bootAddr})
+		}
 	}
+
+	//Load connection information, try and connect to them.
+	bytes, err := ioutil.ReadFile(fmt.Sprintf("%v/conn", n.WorkDir))
+	if err != nil {
+		for _, line := range strings.Split(string(bytes), "\n") {
+			larr := strings.Split(line, "|")
+			if len(larr) == 2 {
+				if err := n.VideoNetwork.Connect(larr[0], larr[1]); err != nil {
+					glog.Errorf("Cannot connect to node: %v", err)
+				} else {
+					n.PeerConns = append(n.PeerConns, PeerConn{NodeID: larr[0], NodeAddr: larr[1]})
+				}
+			}
+		}
+	}
+
+	if len(n.PeerConns) == 0 {
+		glog.Infof("Warning: current node is connected to no peers.")
+	}
+	//Kick off go routine to periodically write connections to a file
+	go func(ctx context.Context) {
+		ticker := time.NewTicker(ConnFileWriteFreq)
+		for {
+			select {
+			case <-ticker.C:
+				if len(n.PeerConns) > 0 {
+					str := ""
+					for _, pc := range n.PeerConns {
+						str = fmt.Sprintf("%v\n%v|%v", str, pc.NodeID, pc.NodeAddr)
+					}
+					if err := ioutil.WriteFile(fmt.Sprintf("%v/conn", n.WorkDir), []byte(str), 0644); err != nil {
+						glog.Errorf("Error writing connection to file system")
+					}
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}(ctx)
 
 	//TODO:Kick off process to periodically monitor peer connection by pinging them
 	return nil
