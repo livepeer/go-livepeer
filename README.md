@@ -19,8 +19,7 @@ For full documentation and a project overview, go to
 The easiest way to install Livepeer is by downloading the `livepeer` and `livepeer_cli` executables from the [release page on Github](https://github.com/livepeer/go-livepeer/releases). 
 
 1. Download the packages for your OS - darwin for Macs and linux for linux. 
-2. Rename them to `livepeer` and `livepeer_cli`
-3. Make sure they have executable permissions by running `chmod +x livepeer` and `chmod +x livepeer_cli`
+2. Untar them and optionally move the executables to your PATH.
 
 ### Option 2: Build from source
 You can also build the executables from scratch.  
@@ -36,42 +35,15 @@ You can also build the executables from scratch.
 ### ffmpeg
 The current version of Livepeer requires [ffmpeg](https://www.ffmpeg.org/).
 
-* On OSX, run
-`brew install ffmpeg --with-ffplay`
+Please get `ffmpeg` from the [ffmpeg-static repo](https://github.com/livepeer/ffmpeg-static), **install it to your PATH** and make sure it can be invoked by the Livepeer node.
 
-* or on Debian based Linux
-`apt-get install ffmpeg`
-
-### geth
-Livepeer requires a local Ethereum node. To set it up, follow the [Ethereum Installation Guide](https://github.com/ethereum/go-ethereum/wiki/Building-Ethereum)  (We have tested with 1.6.7)
-
-### Creating Ethereum Account
-Once the geth installation is complete, create an Ethereum account, that will be used by livepeer.
-
-1. Run the command `geth account new`, it will ask for the password, give a password and remember it for future use.
-2. The completion of command will give you an Account address something like `Address: {3116bca27962d524e3cb7c9b8fbe6bd35ccfabda}`, note the address for future use.
-3. You can check the newly created account using the command `geth account list`.
-
-### Livepeer private Ethereum testnet
-Livepeer is currently only running on a private Ethereum testnet.
-
-1. Create a geth data directory. For example: `mkdir ~/.lpGeth`. 
-  * We recommend creating a new directory even if you already have one, so the Livepeer testing data will be stored separately.
-2. Download the genesis json [lptestnet.json](http://eth-testnet.livepeer.org/lptestnet.json)
-  * It can be saved anywhere. It'll just be used once for the next step
-3. Initialize your local geth node with testnet genesis block.  For example: `geth --datadir ~/.lpGeth init lptestnet.json`
-  * Depending on your geth version, you may see a complaint about 'genesis.number' related to your .json file. To fix the issue, delete the "number" field in the json.
-4. Start `geth` with the network id `858585` and the Livepeer testnet bootnode. For example: `geth --datadir ~/.lpGeth --networkid 858585 --bootnodes "enode://080ebca2373d15762c29ca8d85ddc848f10a7ffc745f7110cacba4694728325d645292cb512d7168323bd0af1650fca825ff54c8dba20aec8878498fae3ff3c6@18.221.67.74:30303"`
-  * Now the geth node should be running, and it should soon start downloading blocks.
 
 ## Running Livepeer
 
 ### Quick start
 - Make sure you have successfully gone through the steps in 'Installing Livepeer' and 'Additional Dependencies'.
 
-- Start `geth ` (see step 4 of 'Livepeer private Ethereum testnet').
-
-- Run `./livepeer -testnet -ethAccountAddr above_generated_address -ethPassword above_type_password` . 
+- Run `./livepeer -testnet`. 
 
 - Run `./livepeer_cli`.
   * You should see a wizard launch in the command line. 
@@ -83,13 +55,13 @@ Livepeer is currently only running on a private Ethereum testnet.
 - Now get some test Livepeer tokens. Pick `Get test Livepeer Token`.  
   * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see your `Token balance` go up.
 
-- To broadcast, run `./livepeer_cli` and pick 'Broadcast Video'.  
-  * You should see your webcam becoming active and a streamID printed on the screen.
+- You should have some test Eth and test Livepeer tokens now.  If that's the case, you are ready to broadcast.
 
-- To see the video, run `./livepeer_cli` and pick 'Stream Video'.
-  * You should see a video stream broadcasted from your webcam.  It may feel a little delayed - that's normal. Video live streaming typically has latency from 15 seconds to a few minutes. We are working on solutions to lower this latency, using techniques like WebRTC, peer-to-peer streaming, and crypto-incentives.
 
 ### Broadcasting
+
+To broadcast, run `./livepeer_cli` and pick 'Broadcast Video'.  
+  * You should see your webcam becoming active and a manifestID printed on the screen.
 
 Sometimes you want to use third-party broadcasting software, especially if you are running the software on Windows or Linux. Livepeer can take any RTMP stream as input, so you can use other popular streaming software to create the video stream. We recommend [OBS](https://obsproject.com/download) or [ffmpeg](https://www.ffmpeg.org/).
 
@@ -101,15 +73,18 @@ Similarly, you can use OBS, and change the setting->stream->URL to `rtmp://local
 
 If the broadcast is successful, you should be able to get a streamID by querying the local node:
 
-`curl http://localhost:8935/streamID`
+`curl http://localhost:8935/manifestID`
 
 ### Streaming
+
+To see the video, run `./livepeer_cli` and pick 'Stream Video'.
+  * You should see a video stream broadcasted from your webcam.  It may feel a little delayed - that's normal. Video live streaming typically has latency from 15 seconds to a few minutes. We are working on solutions to lower this latency, using techniques like WebRTC, peer-to-peer streaming, and crypto-incentives.
 
 Sometimes the stream tool doesn't work.  You can use tools like `ffplay` to view the stream.
 
 For example, after you get the streamID, you can view the stream by running:
 
-`ffplay http://localhost:8935/stream/{streamID}.m3u8`
+`ffplay http://localhost:8935/stream/{manifestID}.m3u8`
 
 ### Becoming a Transcoder
 
