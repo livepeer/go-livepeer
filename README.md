@@ -12,7 +12,7 @@ Building and running this node allows you to:
 * Consume a live stream from the network.
 
 For full documentation and a project overview, go to
-[Livepeer Documentation](https://github.com/livepeer/wiki/wiki)
+[Livepeer Documentation](http://livepeer.readthedocs.io/en/latest/index.html) or [Livepeer Wiki](https://github.com/livepeer/wiki/wiki)
 
 ## Installing Livepeer
 ### Option 1: Download executables
