@@ -171,7 +171,7 @@ func main() {
 		}
 		lpmon.Instance().SetBootNode()
 	} else {
-		if err := n.Start(*bootID, *bootAddr); err != nil {
+		if err := n.Start(context.Background(), *bootID, *bootAddr); err != nil {
 			glog.Errorf("Cannot connect to bootstrap node: %v", err)
 			return
 		}
@@ -279,7 +279,7 @@ func main() {
 				gethUrl = gethipc
 
 			} else {
-				glog.Errorf("Cannot connect to product network yet.")
+				glog.Errorf("Cannot connect to production network yet.")
 				return
 			}
 		}

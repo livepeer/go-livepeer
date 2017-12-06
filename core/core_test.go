@@ -24,6 +24,10 @@ import (
 	"github.com/livepeer/lpms/transcoder"
 )
 
+type StubConnInfo struct {
+	NodeID   string
+	NodeAddr string
+}
 type StubVideoNetwork struct {
 	T            *testing.T
 	broadcasters map[string]*StubBroadcaster
@@ -31,6 +35,7 @@ type StubVideoNetwork struct {
 	strmID       string
 	nodeID       string
 	mplMap       map[string]*m3u8.MasterPlaylist
+	connectInfo  []StubConnInfo
 }
 
 func (n *StubVideoNetwork) String() string { return "" }
@@ -52,8 +57,14 @@ func (n *StubVideoNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error
 func (n *StubVideoNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
 	return &StubSubscriber{T: n.T}, nil
 }
-func (n *StubVideoNetwork) Connect(nodeID, nodeAddr string) error { return nil }
-func (n *StubVideoNetwork) SetupProtocol() error                  { return nil }
+func (n *StubVideoNetwork) Connect(nodeID, nodeAddr string) error {
+	if n.connectInfo == nil {
+		n.connectInfo = make([]StubConnInfo, 0)
+	}
+	n.connectInfo = append(n.connectInfo, StubConnInfo{NodeID: nodeID, NodeAddr: nodeAddr})
+	return nil
+}
+func (n *StubVideoNetwork) SetupProtocol() error { return nil }
 func (n *StubVideoNetwork) SendTranscodeResponse(nid string, sid string, tr map[string]string) error {
 	n.nodeID = nid
 	n.strmID = sid
