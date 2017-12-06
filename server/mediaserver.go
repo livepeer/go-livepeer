@@ -60,14 +60,15 @@ type LivepeerServer struct {
 	FfmpegPath    string
 	LivepeerNode  *core.LivepeerNode
 
-	hlsSubTimer           map[core.StreamID]time.Time
-	hlsWorkerRunning      bool
-	broadcastRtmpToHLSMap map[string]string
+	hlsSubTimer                map[core.StreamID]time.Time
+	hlsWorkerRunning           bool
+	broadcastRtmpToHLSMap      map[string]string
+	broadcastRtmpToManifestMap map[string]string
 }
 
 func NewLivepeerServer(rtmpPort string, httpPort string, ffmpegPath string, lpNode *core.LivepeerNode) *LivepeerServer {
 	server := lpmscore.New(rtmpPort, httpPort, ffmpegPath, "", lpNode.WorkDir)
-	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, FfmpegPath: ffmpegPath, LivepeerNode: lpNode, broadcastRtmpToHLSMap: make(map[string]string)}
+	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, FfmpegPath: ffmpegPath, LivepeerNode: lpNode, broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
 }
 
 //StartServer starts the LPMS server
@@ -239,6 +240,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		//Remember HLS stream so we can remove later
 		s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()] = hlsStrm.GetStreamID()
+		s.broadcastRtmpToManifestMap[rtmpStrm.GetStreamID()] = manifest.GetManifestID()
 
 		if s.LivepeerNode.Eth != nil {
 			//Create Transcode Job Onchain
@@ -250,12 +252,17 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
+		rtmpID := rtmpStrm.GetStreamID()
+		hlsID := s.broadcastRtmpToHLSMap[rtmpID]
+		manifestID := s.broadcastRtmpToManifestMap[rtmpID]
 		//Remove RTMP stream
-		s.LivepeerNode.VideoDB.DeleteStream(core.StreamID(rtmpStrm.GetStreamID()))
+		s.LivepeerNode.VideoDB.DeleteStream(core.StreamID(rtmpID))
 		//Remove HLS stream associated with the RTMP stream
-		s.LivepeerNode.VideoDB.DeleteStream(core.StreamID(s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()]))
-		//Remove the master playlist
-		s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()], nil)
+		s.LivepeerNode.VideoDB.DeleteStream(core.StreamID(hlsID))
+		//Remove Manifest
+		s.LivepeerNode.VideoDB.DeleteHLSManifest(core.ManifestID(manifestID))
+		//Remove the master playlist from the network
+		s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(manifestID, nil)
 		return nil
 	}
 }
@@ -274,6 +281,11 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 		manifest := s.LivepeerNode.VideoDB.GetHLSManifest(manifestID)
 		var mpl *m3u8.MasterPlaylist
 		if manifest == nil {
+			//Return nil if we don't have the playlist locally, and the nodeID is the local node. (No need to go to the network)
+			if string(manifestID.GetNodeID()) == s.LivepeerNode.VideoNetwork.GetNodeID() {
+				return nil, ErrHLSPlay
+			}
+
 			glog.V(common.DEBUG).Infof("Requesting master playlist from network")
 			//Get master playlist from the network
 			mpl = s.LivepeerNode.GetMasterPlaylistFromNetwork(manifestID)
