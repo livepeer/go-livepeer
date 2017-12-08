@@ -84,7 +84,10 @@ func NewBasicVideoNetwork(n *NetworkNode, workDir string) (*BasicVideoNetwork, e
 	//Set up a worker to write connections
 	if workDir != "" {
 		peerCache := NewPeerCache(n.PeerHost.Peerstore(), fmt.Sprintf("%v/conn", workDir))
-		peerCache.LoadPeers(nw)
+		peers := peerCache.LoadPeers()
+		for _, p := range peers {
+			nw.connectPeerInfo(p)
+		}
 		go peerCache.Record(context.Background())
 	}
 	return nw, nil
@@ -178,12 +181,17 @@ func (n *BasicVideoNetwork) Connect(nodeID string, addrs []string) error {
 	}
 
 	info := peerstore.PeerInfo{ID: pid, Addrs: paddrs}
-	if err = n.NetworkNode.PeerHost.Connect(context.Background(), info); err == nil {
-		n.NetworkNode.PeerHost.Peerstore().AddAddrs(pid, paddrs, peerstore.PermanentAddrTTL)
+	return n.connectPeerInfo(info)
+}
+
+func (n *BasicVideoNetwork) connectPeerInfo(info peerstore.PeerInfo) error {
+	if err := n.NetworkNode.PeerHost.Connect(context.Background(), info); err == nil {
+		n.NetworkNode.PeerHost.Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
+		return nil
 	} else {
-		n.NetworkNode.PeerHost.Peerstore().ClearAddrs(pid)
+		n.NetworkNode.PeerHost.Peerstore().ClearAddrs(info.ID)
+		return err
 	}
-	return err
 }
 
 //SendTranscodeResponse tsends the transcode result to the broadcast node.

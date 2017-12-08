@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
+	ma "gx/ipfs/QmXY77cVe7rVRQXZZQRioukUM7aRW3BTcAgJe12MCtb3Ji/go-multiaddr"
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 	"io/ioutil"
 	"strings"
@@ -22,19 +23,33 @@ func NewPeerCache(peerStore peerstore.Peerstore, filename string) *PeerCache {
 }
 
 //LoadPeers Load peer info from a file and try to connect to them
-func (pc *PeerCache) LoadPeers(nw *BasicVideoNetwork) {
+func (pc *PeerCache) LoadPeers() []peerstore.PeerInfo {
 	bytes, err := ioutil.ReadFile(pc.Filename)
+	peers := make([]peerstore.PeerInfo, 0)
 	if err == nil {
 		for _, line := range strings.Split(string(bytes), "\n") {
 			larr := strings.Split(line, "|")
 			if len(larr) == 2 {
-				addrs := strings.Split(larr[1], ",")
-				if err := nw.Connect(larr[0], addrs); err != nil {
-					glog.Errorf("Cannot connect to node: %v", err)
+				pid, err := peer.IDHexDecode(larr[0])
+				if err != nil {
+					continue
 				}
+
+				addrs := strings.Split(larr[1], ",")
+				maAddrs := make([]ma.Multiaddr, 0)
+				for _, addr := range addrs {
+					maAddr, err := ma.NewMultiaddr(addr)
+					if err != nil {
+						continue
+					}
+					maAddrs = append(maAddrs, maAddr)
+				}
+
+				peers = append(peers, peerstore.PeerInfo{ID: pid, Addrs: maAddrs})
 			}
 		}
 	}
+	return peers
 }
 
 //Record Periodically write peers to a file
