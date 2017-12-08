@@ -11,7 +11,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"reflect"
 	"strings"
 	"time"
@@ -84,49 +83,9 @@ func NewBasicVideoNetwork(n *NetworkNode, workDir string) (*BasicVideoNetwork, e
 
 	//Set up a worker to write connections
 	if workDir != "" {
-		//Load connection information, try and connect to them.
-		bytes, err := ioutil.ReadFile(fmt.Sprintf("%v/conn", workDir))
-		if err == nil {
-			for _, line := range strings.Split(string(bytes), "\n") {
-				larr := strings.Split(line, "|")
-				if len(larr) == 2 {
-					addrs := strings.Split(larr[1], ",")
-					if err := nw.Connect(larr[0], addrs); err != nil {
-						glog.Errorf("Cannot connect to node: %v", err)
-					}
-				}
-			}
-		}
-
-		go func(n *NetworkNode) {
-			ticker := time.NewTicker(ConnFileWriteFreq)
-			for {
-				select {
-				case <-ticker.C:
-					peers := n.PeerHost.Peerstore().Peers()
-					// glog.Infof("Writing peers: %v", peers)
-					if len(peers) > 0 {
-						str := ""
-						for _, p := range peers {
-							pInfo := n.PeerHost.Peerstore().PeerInfo(p)
-							if len(pInfo.Addrs) > 0 {
-								addrsStr := make([]string, 0)
-								for _, addr := range pInfo.Addrs {
-									addrsStr = append(addrsStr, addr.String())
-								}
-								str = fmt.Sprintf("%v\n%v|%v", str, peer.IDHexEncode(pInfo.ID), strings.Join(addrsStr, ","))
-							}
-						}
-						// glog.Infof("str: %v", str)
-						if len(str) > 0 {
-							if err := ioutil.WriteFile(fmt.Sprintf("%v/conn", workDir), []byte(str), 0644); err != nil {
-								glog.Errorf("Error writing connection to file system")
-							}
-						}
-					}
-				}
-			}
-		}(n)
+		peerCache := NewPeerCache(n.PeerHost.Peerstore(), fmt.Sprintf("%v/conn", workDir))
+		peerCache.LoadPeers(nw)
+		go peerCache.Record(context.Background())
 	}
 	return nw, nil
 }
@@ -218,8 +177,10 @@ func (n *BasicVideoNetwork) Connect(nodeID string, addrs []string) error {
 		paddrs = append(paddrs, paddr)
 	}
 
-	n.NetworkNode.PeerHost.Peerstore().AddAddrs(pid, paddrs, peerstore.PermanentAddrTTL)
-	if err = n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid}); err != nil {
+	info := peerstore.PeerInfo{ID: pid, Addrs: paddrs}
+	if err = n.NetworkNode.PeerHost.Connect(context.Background(), info); err == nil {
+		n.NetworkNode.PeerHost.Peerstore().AddAddrs(pid, paddrs, peerstore.PermanentAddrTTL)
+	} else {
 		n.NetworkNode.PeerHost.Peerstore().ClearAddrs(pid)
 	}
 	return err
