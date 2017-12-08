@@ -15,7 +15,7 @@ type VideoNetwork interface {
 	UpdateMasterPlaylist(manifestID string, mpl *m3u8.MasterPlaylist) error
 	GetBroadcaster(strmID string) (Broadcaster, error)
 	GetSubscriber(strmID string) (Subscriber, error)
-	Connect(nodeID, nodeAddr string) error
+	Connect(nodeID string, nodeAddr []string) error
 	SetupProtocol() error
 	SendTranscodeResponse(nodeID string, manifestID string, transcodeResult map[string]string) error
 	ReceivedTranscodeResponse(manifestID string, gotResult func(transcodeResult map[string]string))

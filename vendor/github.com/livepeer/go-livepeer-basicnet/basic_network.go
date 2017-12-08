@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"reflect"
 	"strings"
 	"time"
@@ -44,6 +45,8 @@ const DefaultBroadcasterBufferSize = 3
 const DefaultBroadcasterBufferSegSendInterval = time.Second
 const DefaultTranscodeResponseRelayDuplication = 2
 
+var ConnFileWriteFreq = time.Duration(60) * time.Second
+
 type VideoMuxer interface {
 	WriteSegment(seqNo uint64, strmID string, data []byte) error
 }
@@ -68,7 +71,7 @@ func (n *BasicVideoNetwork) String() string {
 }
 
 //NewBasicVideoNetwork creates a libp2p node, handle the basic (push-based) video protocol.
-func NewBasicVideoNetwork(n *NetworkNode) (*BasicVideoNetwork, error) {
+func NewBasicVideoNetwork(n *NetworkNode, workDir string) (*BasicVideoNetwork, error) {
 	nw := &BasicVideoNetwork{
 		NetworkNode:            n,
 		broadcasters:           make(map[string]*BasicBroadcaster),
@@ -78,6 +81,53 @@ func NewBasicVideoNetwork(n *NetworkNode) (*BasicVideoNetwork, error) {
 		mplChans:               make(map[string]chan *m3u8.MasterPlaylist),
 		transResponseCallbacks: make(map[string]func(transcodeResult map[string]string))}
 	n.Network = nw
+
+	//Set up a worker to write connections
+	if workDir != "" {
+		//Load connection information, try and connect to them.
+		bytes, err := ioutil.ReadFile(fmt.Sprintf("%v/conn", workDir))
+		if err == nil {
+			for _, line := range strings.Split(string(bytes), "\n") {
+				larr := strings.Split(line, "|")
+				if len(larr) == 2 {
+					addrs := strings.Split(larr[1], ",")
+					if err := nw.Connect(larr[0], addrs); err != nil {
+						glog.Errorf("Cannot connect to node: %v", err)
+					}
+				}
+			}
+		}
+
+		go func(n *NetworkNode) {
+			ticker := time.NewTicker(ConnFileWriteFreq)
+			for {
+				select {
+				case <-ticker.C:
+					peers := n.PeerHost.Peerstore().Peers()
+					// glog.Infof("Writing peers: %v", peers)
+					if len(peers) > 0 {
+						str := ""
+						for _, p := range peers {
+							pInfo := n.PeerHost.Peerstore().PeerInfo(p)
+							if len(pInfo.Addrs) > 0 {
+								addrsStr := make([]string, 0)
+								for _, addr := range pInfo.Addrs {
+									addrsStr = append(addrsStr, addr.String())
+								}
+								str = fmt.Sprintf("%v\n%v|%v", str, peer.IDHexEncode(pInfo.ID), strings.Join(addrsStr, ","))
+							}
+						}
+						// glog.Infof("str: %v", str)
+						if len(str) > 0 {
+							if err := ioutil.WriteFile(fmt.Sprintf("%v/conn", workDir), []byte(str), 0644); err != nil {
+								glog.Errorf("Error writing connection to file system")
+							}
+						}
+					}
+				}
+			}
+		}(n)
+	}
 	return nw, nil
 }
 
@@ -151,22 +201,28 @@ func (n *BasicVideoNetwork) NewRelayer(strmID string, opcode Opcode) *BasicRelay
 }
 
 //Connect connects a node to the Livepeer network.
-func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
+func (n *BasicVideoNetwork) Connect(nodeID string, addrs []string) error {
 	pid, err := peer.IDHexDecode(nodeID)
 	if err != nil {
 		glog.Errorf("Invalid node ID - %v: %v", nodeID, err)
 		return err
 	}
 
-	var paddr ma.Multiaddr
-	paddr, err = ma.NewMultiaddr(addr)
-	if err != nil {
-		glog.Errorf("Invalid addr: %v", err)
-		return err
+	paddrs := make([]ma.Multiaddr, 0)
+	for _, addr := range addrs {
+		paddr, err := ma.NewMultiaddr(addr)
+		if err != nil {
+			glog.Errorf("Invalid addr: %v", err)
+			return err
+		}
+		paddrs = append(paddrs, paddr)
 	}
 
-	n.NetworkNode.PeerHost.Peerstore().AddAddr(pid, paddr, peerstore.PermanentAddrTTL)
-	return n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid})
+	n.NetworkNode.PeerHost.Peerstore().AddAddrs(pid, paddrs, peerstore.PermanentAddrTTL)
+	if err = n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid}); err != nil {
+		n.NetworkNode.PeerHost.Peerstore().ClearAddrs(pid)
+	}
+	return err
 }
 
 //SendTranscodeResponse tsends the transcode result to the broadcast node.

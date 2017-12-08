@@ -26,7 +26,7 @@ import (
 
 type StubConnInfo struct {
 	NodeID   string
-	NodeAddr string
+	NodeAddr []string
 }
 type StubVideoNetwork struct {
 	T            *testing.T
@@ -57,7 +57,7 @@ func (n *StubVideoNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error
 func (n *StubVideoNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
 	return &StubSubscriber{T: n.T}, nil
 }
-func (n *StubVideoNetwork) Connect(nodeID, nodeAddr string) error {
+func (n *StubVideoNetwork) Connect(nodeID string, nodeAddr []string) error {
 	if n.connectInfo == nil {
 		n.connectInfo = make([]StubConnInfo, 0)
 	}
@@ -328,7 +328,7 @@ func TestNotifyBroadcaster(t *testing.T) {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
 	}
-	nw, err := bnet.NewBasicVideoNetwork(node)
+	nw, err := bnet.NewBasicVideoNetwork(node, "")
 	if err != nil {
 		glog.Errorf("Cannot create network node: %v", err)
 		return
