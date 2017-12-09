@@ -67,7 +67,7 @@ type LivepeerServer struct {
 }
 
 func NewLivepeerServer(rtmpPort string, httpPort string, ffmpegPath string, lpNode *core.LivepeerNode) *LivepeerServer {
-	server := lpmscore.New(rtmpPort, httpPort, ffmpegPath, "", lpNode.WorkDir)
+	server := lpmscore.New(rtmpPort, httpPort, ffmpegPath, "", fmt.Sprintf("%v/.tmp", lpNode.WorkDir))
 	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, FfmpegPath: ffmpegPath, LivepeerNode: lpNode, broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
 }
 

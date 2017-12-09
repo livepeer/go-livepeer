@@ -44,6 +44,8 @@ const DefaultBroadcasterBufferSize = 3
 const DefaultBroadcasterBufferSegSendInterval = time.Second
 const DefaultTranscodeResponseRelayDuplication = 2
 
+var ConnFileWriteFreq = time.Duration(60) * time.Second
+
 type VideoMuxer interface {
 	WriteSegment(seqNo uint64, strmID string, data []byte) error
 }
@@ -68,7 +70,7 @@ func (n *BasicVideoNetwork) String() string {
 }
 
 //NewBasicVideoNetwork creates a libp2p node, handle the basic (push-based) video protocol.
-func NewBasicVideoNetwork(n *NetworkNode) (*BasicVideoNetwork, error) {
+func NewBasicVideoNetwork(n *NetworkNode, workDir string) (*BasicVideoNetwork, error) {
 	nw := &BasicVideoNetwork{
 		NetworkNode:            n,
 		broadcasters:           make(map[string]*BasicBroadcaster),
@@ -78,6 +80,16 @@ func NewBasicVideoNetwork(n *NetworkNode) (*BasicVideoNetwork, error) {
 		mplChans:               make(map[string]chan *m3u8.MasterPlaylist),
 		transResponseCallbacks: make(map[string]func(transcodeResult map[string]string))}
 	n.Network = nw
+
+	//Set up a worker to write connections
+	if workDir != "" {
+		peerCache := NewPeerCache(n.PeerHost.Peerstore(), fmt.Sprintf("%v/conn", workDir))
+		peers := peerCache.LoadPeers()
+		for _, p := range peers {
+			nw.connectPeerInfo(p)
+		}
+		go peerCache.Record(context.Background())
+	}
 	return nw, nil
 }
 
@@ -151,22 +163,35 @@ func (n *BasicVideoNetwork) NewRelayer(strmID string, opcode Opcode) *BasicRelay
 }
 
 //Connect connects a node to the Livepeer network.
-func (n *BasicVideoNetwork) Connect(nodeID, addr string) error {
+func (n *BasicVideoNetwork) Connect(nodeID string, addrs []string) error {
 	pid, err := peer.IDHexDecode(nodeID)
 	if err != nil {
 		glog.Errorf("Invalid node ID - %v: %v", nodeID, err)
 		return err
 	}
 
-	var paddr ma.Multiaddr
-	paddr, err = ma.NewMultiaddr(addr)
-	if err != nil {
-		glog.Errorf("Invalid addr: %v", err)
-		return err
+	paddrs := make([]ma.Multiaddr, 0)
+	for _, addr := range addrs {
+		paddr, err := ma.NewMultiaddr(addr)
+		if err != nil {
+			glog.Errorf("Invalid addr: %v", err)
+			return err
+		}
+		paddrs = append(paddrs, paddr)
 	}
 
-	n.NetworkNode.PeerHost.Peerstore().AddAddr(pid, paddr, peerstore.PermanentAddrTTL)
-	return n.NetworkNode.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: pid})
+	info := peerstore.PeerInfo{ID: pid, Addrs: paddrs}
+	return n.connectPeerInfo(info)
+}
+
+func (n *BasicVideoNetwork) connectPeerInfo(info peerstore.PeerInfo) error {
+	if err := n.NetworkNode.PeerHost.Connect(context.Background(), info); err == nil {
+		n.NetworkNode.PeerHost.Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
+		return nil
+	} else {
+		n.NetworkNode.PeerHost.Peerstore().ClearAddrs(info.ID)
+		return err
+	}
 }
 
 //SendTranscodeResponse tsends the transcode result to the broadcast node.

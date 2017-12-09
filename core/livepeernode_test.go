@@ -1,17 +1,13 @@
 package core
 
 import (
-	"context"
 	"fmt"
-	"io/ioutil"
 	"math/big"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/ericxtang/m3u8"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/golang/glog"
 
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
@@ -198,45 +194,4 @@ func TestClaimVerifyDistributeFee(t *testing.T) {
 	if cm.distributeFeesCalled == false {
 		t.Errorf("Expect distributeFees to be called")
 	}
-}
-
-func TestLoadConnectionFile(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Errorf("Error getting wd: %v", err)
-	}
-	if err := ioutil.WriteFile(fmt.Sprintf("%v/conn", wd), []byte(fmt.Sprintf("%v|%v\n%v|%v\n", "nid1", "addr1", "nid2", "addr2")), 0644); err != nil {
-		t.Errorf("Error writing conn file: %v", err)
-	}
-	nid := NodeID("12201c23641663bf06187a8c154a6c97266d138cb8379c1bc0828122dcc51c83698d")
-	n, err := NewLivepeerNode(&eth.StubClient{}, &StubVideoNetwork{}, nid, []string{""}, wd)
-	if err != nil {
-		t.Errorf("Error creating node: %v", err)
-	}
-
-	ConnFileWriteFreq = 100 * time.Millisecond
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := n.Start(ctx, "bootid", "bootaddr"); err != nil {
-		t.Errorf("Error starting node: %v", err)
-	}
-
-	if len(n.PeerConns) != 3 {
-		glog.Errorf("Expecting 3 peer connections, got: %v", n.PeerConns)
-	}
-
-	// Synchronization is a problem for consistency here, let's skip the file writing test for now
-	// time.Sleep(time.Second)
-	// f, _ := ioutil.ReadFile(fmt.Sprintf("%v/conn", wd))
-	// lines := make([]string, 0)
-	// for _, l := range strings.Split(string(f), "\n") {
-	// 	if l != "" {
-	// 		lines = append(lines, l)
-	// 	}
-	// }
-	// if len(lines) != 3 {
-	// 	t.Errorf("Expecting 3 peer connections in conn file, got %v", lines)
-	// }
-
-	cancel()
-	os.Remove(fmt.Sprintf("%v/conn", wd))
 }

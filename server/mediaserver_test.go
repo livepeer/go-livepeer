@@ -31,7 +31,7 @@ func setupServer() *LivepeerServer {
 			glog.Errorf("Error creating a new node: %v", err)
 			return nil
 		}
-		nw, err := bnet.NewBasicVideoNetwork(node)
+		nw, err := bnet.NewBasicVideoNetwork(node, "")
 		if err != nil {
 			glog.Errorf("Cannot create network node: %v", err)
 			return nil
@@ -68,8 +68,8 @@ func (n *StubNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
 	return n.S, nil
 }
 
-func (n *StubNetwork) Connect(nodeID, nodeAddr string) error { return nil }
-func (n *StubNetwork) SetupProtocol() error                  { return nil }
+func (n *StubNetwork) Connect(nodeID string, nodeAddr []string) error { return nil }
+func (n *StubNetwork) SetupProtocol() error                           { return nil }
 func (b *StubNetwork) SendTranscodeResponse(nodeID string, strmID string, transcodeResult map[string]string) error {
 	return nil
 }
