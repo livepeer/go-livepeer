@@ -236,7 +236,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		if err = s.LivepeerNode.BroadcastManifestToNetwork(manifest); err != nil {
 			glog.Errorf("Error broadasting manifest to network: %v", err)
 		}
-		glog.Infof("\n\nNew HLS Video: %v\nstrmID: %v\n\n", mid, hlsStrmID)
+		glog.Infof("\n\nManifestID: %v\n\n", mid)
+		glog.V(common.SHORT).Infof("\n\nhlsStrmID: %v\n\n", mid)
 
 		//Remember HLS stream so we can remove later
 		s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()] = hlsStrm.GetStreamID()
