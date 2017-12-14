@@ -53,7 +53,7 @@ func (e *StubClient) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
 }
 func (e *StubClient) InitializeRound() (<-chan types.Receipt, <-chan error) { return nil, nil }
 func (e *StubClient) CurrentRoundInitialized() (bool, error)                { return false, nil }
-func (e *StubClient) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
+func (e *StubClient) Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
 	return nil, nil
 }
 func (e *StubClient) IsActiveTranscoder() (bool, error)  { return false, nil }
@@ -164,11 +164,11 @@ func (e *StubClient) GetFaucetAddr() string { return "" }
 func (e *StubClient) RequestTokens() (<-chan types.Receipt, <-chan error) {
 	return nil, nil
 }
-func (e *StubClient) TranscoderPendingPricingInfo() (uint8, uint8, *big.Int, error) {
-	return 0, 0, nil, nil
+func (e *StubClient) TranscoderPendingPricingInfo() (*big.Int, *big.Int, *big.Int, error) {
+	return big.NewInt(0), big.NewInt(0), nil, nil
 }
-func (e *StubClient) TranscoderPricingInfo() (uint8, uint8, *big.Int, error) {
-	return 0, 0, nil, nil
+func (e *StubClient) TranscoderPricingInfo() (*big.Int, *big.Int, *big.Int, error) {
+	return big.NewInt(0), big.NewInt(0), nil, nil
 }
 func (e *StubClient) TranscoderStatus() (string, error)                  { return "", nil }
 func (e *StubClient) Unbond() (<-chan types.Receipt, <-chan error)       { return nil, nil }
@@ -179,4 +179,7 @@ func (e *StubClient) GetBlockInfoByTxHash(ctx context.Context, hash common.Hash)
 func (c *StubClient) GetBlockHashByNumber(ctx context.Context, num *big.Int) (common.Hash, error) {
 	c.BlockNum = num
 	return c.BlockHashToReturn, nil
+}
+func (c *StubClient) IsAssignedTranscoder(maxPricePerSegment *big.Int) bool {
+	return false
 }
