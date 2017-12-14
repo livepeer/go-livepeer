@@ -38,7 +38,7 @@ type LivepeerEthClient interface {
 	Backend() *ethclient.Client
 	Account() accounts.Account
 	RpcTimeout() time.Duration
-	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr, transcoderAddr common.Address) (ethereum.Subscription, error)
+	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr common.Address) (ethereum.Subscription, error)
 	RoundInfo() (*big.Int, *big.Int, *big.Int, error)
 	InitializeRound() (<-chan types.Receipt, <-chan error)
 	Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
@@ -73,7 +73,6 @@ type LivepeerEthClient interface {
 	IsRegisteredTranscoder() (bool, error)
 	TranscoderBond() (*big.Int, error)
 	GetCandidateTranscodersStats() ([]TranscoderStats, error)
-	// GetReserveTranscodersStats() ([]TranscoderStats, error)
 	GetControllerAddr() string
 	GetTokenAddr() string
 	GetFaucetAddr() string
@@ -521,7 +520,7 @@ func (c *Client) SubscribeToApproval() (chan types.Log, ethereum.Subscription, e
 	return logCh, sub, nil
 }
 
-func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr, transcoderAddr common.Address) (ethereum.Subscription, error) {
+func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr common.Address) (ethereum.Subscription, error) {
 	abiJSON, err := abi.JSON(strings.NewReader(contracts.JobsManagerABI))
 	if err != nil {
 		glog.Errorf("Error decoding ABI into JSON: %v", err)
@@ -534,25 +533,11 @@ func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log,
 			Addresses: []common.Address{c.jobsManagerAddr},
 			Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{}, []common.Hash{common.BytesToHash(common.LeftPadBytes(broadcasterAddr[:], 32))}},
 		}
-	} else if !IsNullAddress(transcoderAddr) {
-		q = ethereum.FilterQuery{
-			Addresses: []common.Address{c.jobsManagerAddr},
-			Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(transcoderAddr[:], 32))}},
-		}
 	} else {
 		q = ethereum.FilterQuery{
 			Addresses: []common.Address{c.jobsManagerAddr},
-			Topics: [][]common.Hash{
-				[]common.Hash{abiJSON.Events["NewJob"].Id()},
-				[]common.Hash{common.BytesToHash(common.LeftPadBytes(transcoderAddr[:], 32))},
-				[]common.Hash{common.BytesToHash(common.LeftPadBytes(broadcasterAddr[:], 32))},
-			},
+			Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}},
 		}
-	}
-
-	q = ethereum.FilterQuery{
-		Addresses: []common.Address{c.jobsManagerAddr},
-		Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}},
 	}
 
 	return c.backend.SubscribeFilterLogs(ctx, q, logsCh)

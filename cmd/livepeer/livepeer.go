@@ -318,9 +318,9 @@ func main() {
 		//Create LogMonitor, the addresses act as filters.
 		var logMonitor *eth.LogMonitor
 		if *transcoder {
-			logMonitor = eth.NewLogMonitor(client, common.Address{}, client.Account().Address)
+			logMonitor = eth.NewLogMonitor(client, common.Address{})
 		} else {
-			logMonitor = eth.NewLogMonitor(client, client.Account().Address, common.Address{})
+			logMonitor = eth.NewLogMonitor(client, client.Account().Address)
 		}
 		logMonitor.SubscribeToJobEvents(func(j *eth.Job) {
 			n.VideoDB.AddJid(core.StreamID(j.StreamId), j.JobId)

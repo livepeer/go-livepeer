@@ -13,12 +13,12 @@ type LogMonitor struct {
 	callbacks []func(j *Job)
 }
 
-func NewLogMonitor(eth LivepeerEthClient, broadcasterAddr, transcoderAddr common.Address) *LogMonitor {
+func NewLogMonitor(eth LivepeerEthClient, broadcasterAddr common.Address) *LogMonitor {
 	m := &LogMonitor{callbacks: make([]func(j *Job), 0)}
 
 	go func() {
 		logsCh := make(chan types.Log)
-		logsSub, err := eth.SubscribeToJobEvent(context.Background(), logsCh, broadcasterAddr, transcoderAddr)
+		logsSub, err := eth.SubscribeToJobEvent(context.Background(), logsCh, broadcasterAddr)
 		if err != nil {
 			glog.Errorf("Error subscribing to job event: %v", err)
 		}

@@ -43,7 +43,7 @@ type StubClient struct {
 
 func (e *StubClient) Backend() *ethclient.Client { return nil }
 func (e *StubClient) Account() accounts.Account  { return accounts.Account{} }
-func (e *StubClient) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr, transcoderAddr common.Address) (ethereum.Subscription, error) {
+func (e *StubClient) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr common.Address) (ethereum.Subscription, error) {
 	e.SubLogsCh = logsCh
 	return &StubSubscription{}, nil
 }
