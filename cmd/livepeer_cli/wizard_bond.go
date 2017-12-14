@@ -3,12 +3,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/golang/glog"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"text/tabwriter"
+
+	"github.com/golang/glog"
 
 	"github.com/ethereum/go-ethereum/common"
 	eth "github.com/livepeer/go-livepeer/eth"
@@ -88,19 +89,26 @@ func (w *wizard) allTranscoderStats() map[int]common.Address {
 
 func (w *wizard) bond() {
 	transcoderIds := w.allTranscoderStats()
+	var tAddr common.Address
 	if transcoderIds == nil {
-		return
+		fmt.Printf("Enter the address of the transcoder you would like to bond to - ")
+		strAddr := w.readString()
+		if err := tAddr.UnmarshalText([]byte(strAddr)); err != nil {
+			fmt.Println(err)
+			return
+		}
+	} else {
+		fmt.Printf("Enter the identifier of the transcoder you would like to bond to - ")
+		id := w.readInt()
+		tAddr = transcoderIds[id]
 	}
-
-	fmt.Printf("Enter the identifier of the transcoder you would like to bond to - ")
-	id := w.readInt()
 
 	fmt.Printf("Enter bond amount - ")
 	amount := w.readInt()
 
 	val := url.Values{
 		"amount": {fmt.Sprintf("%v", amount)},
-		"toAddr": {fmt.Sprintf("%v", transcoderIds[id].Hex())},
+		"toAddr": {fmt.Sprintf("%v", tAddr.Hex())},
 	}
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/bond", w.host, w.httpPort), val)

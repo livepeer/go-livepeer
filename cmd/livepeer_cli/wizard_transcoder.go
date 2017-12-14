@@ -30,7 +30,7 @@ func (w *wizard) activateTranscoder() {
 
 	blockRewardCut, feeShare, pricePerSegment := w.promptTranscoderConfig()
 
-	fmt.Printf("Would you like to bond to yourself (you will not be active until someone bonds to you)? (y/n)")
+	fmt.Printf("Would you like to bond to yourself (your transaction will fail if no one has bonded to you, and you don't bond to yourself)? (y/n)")
 	resp := w.read()
 
 	var amount int

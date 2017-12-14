@@ -33,7 +33,7 @@ func NewLogMonitor(eth LivepeerEthClient, broadcasterAddr, transcoderAddr common
 					glog.Infof("logsCh coming back with !ok, quitting...")
 					continue
 				}
-				_, _, jid, strmID, transOptions := ParseNewJobLog(l)
+				_, jid, strmID, transOptions := ParseNewJobLog(l)
 
 				job, err := eth.GetJob(jid)
 				if err != nil {
@@ -43,8 +43,10 @@ func NewLogMonitor(eth LivepeerEthClient, broadcasterAddr, transcoderAddr common
 				job.StreamId = strmID
 				job.TranscodingOptions = transOptions
 
-				for _, cb := range m.callbacks {
-					cb(job)
+				if eth.IsAssignedTranscoder(job.MaxPricePerSegment) {
+					for _, cb := range m.callbacks {
+						cb(job)
+					}
 				}
 			}
 		}
@@ -58,6 +60,7 @@ func (m *LogMonitor) SubscribeToJobEvents(callback func(j *Job)) {
 	m.callbacks = append(m.callbacks, callback)
 }
 
-func ParseNewJobLog(log types.Log) (transcoderAddr common.Address, broadcasterAddr common.Address, jid *big.Int, streamID string, transOptions string) {
-	return common.BytesToAddress(log.Topics[0].Bytes()), common.BytesToAddress(log.Topics[1].Bytes()), new(big.Int).SetBytes(log.Data[0:32]), string(log.Data[128:274]), string(log.Data[306:])
+func ParseNewJobLog(log types.Log) (broadcasterAddr common.Address, jid *big.Int, streamID string, transOptions string) {
+	// glog.Infof("Log Data: %v, logStr: %v, logHex: %v", log.Data, string(log.Data), common.Bytes2Hex(log.Data))
+	return common.BytesToAddress(log.Topics[1].Bytes()), new(big.Int).SetBytes(log.Data[0:32]), string(log.Data[192:338]), string(log.Data[338:])
 }

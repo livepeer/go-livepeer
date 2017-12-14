@@ -279,7 +279,8 @@ func (c *BasicClaimManager) Verify() error {
 
 			//Call Verify
 			dataHashes := [2][32]byte{common.BytesToHash(scm.dataHash), common.BytesToHash(scm.claimConcatTDatahash)}
-			glog.Infof("Calling Verfy with: strmID:%v, segNum:%v, dataHashes[0]:%v, dataHashes[1]:%v, dataStorageHash: %v, broadcasterSig:%v, broadcasterAddr:%v, proof:%v", c.strmID, segNo, common.ToHex(dataHashes[0][:]), common.ToHex(dataHashes[1][:]), dataStorageHash, common.ToHex(scm.bSig), common.ToHex(c.broadcasterAddr.Bytes()), scm.claimProof)
+			currentRound, _, blockNum, _ := c.client.RoundInfo()
+			glog.Infof("Calling Verfy with: roundNum: %v, blockNum:%v, addr:%v, jobID:%v, strmID:%v, segNum:%v, dataHashes[0]:%v, dataHashes[1]:%v, dataStorageHash: %v, broadcasterSig:%v, broadcasterAddr:%v, proof:%v", currentRound, blockNum, c.client.Account().Address.Hex(), c.jobID, c.strmID, segNo, common.ToHex(dataHashes[0][:]), common.ToHex(dataHashes[1][:]), dataStorageHash, common.ToHex(scm.bSig), common.ToHex(c.broadcasterAddr.Bytes()), scm.claimProof)
 			resCh, errCh := c.client.Verify(c.jobID, scm.claimId, big.NewInt(segNo), dataStorageHash, dataHashes, scm.bSig, scm.claimProof)
 			select {
 			case <-resCh:
@@ -336,7 +337,7 @@ func (c *BasicClaimManager) shouldVerifySegment(seqNum int64, start int64, end i
 	err = lpCommon.Retry(PlusOneBlockRetry, PlusOneBlockSleepInterval, func() error {
 		plusOneHash, err = c.client.GetBlockHashByNumber(context.Background(), big.NewInt(blkNum+1))
 		if err != nil {
-			glog.Infof("Failed to fetch blockHash - retry in a bit.")
+			glog.Infof("Failed to fetch blockHash for %v - retry in a bit.", blkNum+1)
 			return err
 		}
 		return nil
