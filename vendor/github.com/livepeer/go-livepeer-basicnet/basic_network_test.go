@@ -34,14 +34,14 @@ func init() {
 func setupNodes(t *testing.T, p1, p2 int) (*BasicVideoNetwork, *BasicVideoNetwork) {
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	no1, _ := NewNode(p1, priv1, pub1, &BasicNotifiee{})
-	n1, _ := NewBasicVideoNetwork(no1)
+	n1, _ := NewBasicVideoNetwork(no1, "")
 	if err := n1.SetupProtocol(); err != nil {
 		t.Errorf("Error creating node: %v", err)
 	}
 
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	no2, _ := NewNode(p2, priv2, pub2, &BasicNotifiee{})
-	n2, _ := NewBasicVideoNetwork(no2)
+	n2, _ := NewBasicVideoNetwork(no2, "")
 	if err := n2.SetupProtocol(); err != nil {
 		t.Errorf("Error creating node: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestReconnect(t *testing.T) {
 
 	//Send a message, it should work
 	s := n2.NetworkNode.GetOutStream(n1.NetworkNode.Identity)
-	if err := s.SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{StrmID: "strmID1"}); err != nil {
+	if err := s.SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{ManifestID: "strmID1"}); err != nil {
 		t.Errorf("Error sending message: %v", err)
 	}
 
@@ -91,7 +91,7 @@ func TestReconnect(t *testing.T) {
 	}
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	no2, _ := NewNode(15001, priv2, pub2, &BasicNotifiee{})
-	n2, _ = NewBasicVideoNetwork(no2)
+	n2, _ = NewBasicVideoNetwork(no2, "")
 	go n2.SetupProtocol()
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
 	s = n2.NetworkNode.GetOutStream(n1.NetworkNode.Identity)
@@ -100,7 +100,7 @@ func TestReconnect(t *testing.T) {
 	}
 
 	//Send should still work
-	if err := s.SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{StrmID: "strmID2"}); err != nil {
+	if err := s.SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{ManifestID: "strmID2"}); err != nil {
 		t.Errorf("Error sending message: %v", err)
 	}
 
@@ -194,7 +194,7 @@ func TestSubPath(t *testing.T) {
 	nodes := make([]*BasicVideoNetwork, 10, 10)
 	for i, id := range ids {
 		n_tmp := newNode(id, dhtLookup[id], hostsLookup[id])
-		n, _ := NewBasicVideoNetwork(n_tmp)
+		n, _ := NewBasicVideoNetwork(n_tmp, "")
 		nodes[i] = n
 		if i != 0 {
 			go n.SetupProtocol()
@@ -266,7 +266,7 @@ func TestSubPeerForwardPath(t *testing.T) {
 	// glog.Infof("keys: %v", keys)
 
 	no1, _ := NewNode(15000, keys[0].Priv, keys[0].Pub, &BasicNotifiee{})
-	n1, _ := NewBasicVideoNetwork(no1)
+	n1, _ := NewBasicVideoNetwork(no1, "")
 	no2, _ := NewNode(15001, keys[1].Priv, keys[1].Pub, &BasicNotifiee{})
 	no3, _ := NewNode(15000, keys[2].Priv, keys[2].Pub, &BasicNotifiee{}) //Make this node unreachable from n1 because it's using the same port
 	defer no1.PeerHost.Close()
@@ -956,7 +956,7 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 		t.Errorf("Expecting to not have the playlist")
 	}
 	// strm := n1.NetworkNode.GetStream(n3.Identity)
-	if err := handleGetMasterPlaylistReq(n1, n3.Identity, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
+	if err := handleGetMasterPlaylistReq(n1, n3.Identity, GetMasterPlaylistReqMsg{ManifestID: strmID}); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 	timer := time.NewTimer(time.Second)
@@ -978,7 +978,7 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 	pl := m3u8.NewMasterPlaylist()
 	pl.Append("testurl", nil, m3u8.VariantParams{Bandwidth: 100})
 	n2.mplMap[strmID] = pl
-	if err := handleGetMasterPlaylistReq(n1, n3.Identity, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
+	if err := handleGetMasterPlaylistReq(n1, n3.Identity, GetMasterPlaylistReqMsg{ManifestID: strmID}); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 
@@ -1005,7 +1005,7 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 		n4Chan <- struct{}{}
 	})
 	connectHosts(n1.NetworkNode.PeerHost, n4.PeerHost)
-	if err := handleGetMasterPlaylistReq(n1, n4.Identity, GetMasterPlaylistReqMsg{StrmID: strmID}); err != nil {
+	if err := handleGetMasterPlaylistReq(n1, n4.Identity, GetMasterPlaylistReqMsg{ManifestID: strmID}); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 	timer = time.NewTimer(time.Second)
@@ -1032,12 +1032,12 @@ func TestHandleMasterPlaylistData(t *testing.T) {
 	defer n4.PeerHost.Close()
 
 	//Set up no relayer and no receiving playlist channel. Should get error
-	strmID := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n1.NetworkNode.Identity))
-	_, ok := n1.mplMap[strmID]
+	manifestID := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n1.NetworkNode.Identity))
+	_, ok := n1.mplMap[manifestID]
 	if ok {
 		t.Errorf("Expecting to not have the playlist")
 	}
-	err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{StrmID: strmID, NotFound: true})
+	err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{ManifestID: manifestID, NotFound: true})
 	if err != ErrHandleMsg {
 		t.Errorf("Expecting ErrHandleMsg, got: %v", err)
 	}
@@ -1051,56 +1051,58 @@ func TestHandleMasterPlaylistData(t *testing.T) {
 	})
 	strm := n1.NetworkNode.GetOutStream(n3.Identity)
 	r := &BasicRelayer{listeners: map[string]*BasicOutStream{peer.IDHexEncode(n3.Identity): strm}}
-	n1.relayers[relayerMapKey(strmID, GetMasterPlaylistReqID)] = r
-	if err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{StrmID: strmID, NotFound: true}); err != nil {
+	n1.relayers[relayerMapKey(manifestID, GetMasterPlaylistReqID)] = r
+	if err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{ManifestID: manifestID, NotFound: true}); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 	timer := time.NewTimer(time.Second)
 	select {
 	case n3data := <-n3Chan:
-		if n3data.StrmID != strmID {
-			t.Errorf("Expecting %v, got %v", strmID, n3data.StrmID)
+		if n3data.ManifestID != manifestID {
+			t.Errorf("Expecting %v, got %v", manifestID, n3data.ManifestID)
 		}
 	case <-timer.C:
 		t.Errorf("Timed out")
 	}
-	delete(n1.relayers, relayerMapKey(strmID, GetMasterPlaylistReqID))
+	delete(n1.relayers, relayerMapKey(manifestID, GetMasterPlaylistReqID))
 
 	//No relayer and NotFound.  Should insert 'nil' into the channel.
-	mplc := make(chan *m3u8.MasterPlaylist)
-	n1.mplChans[strmID] = mplc
+	msgc := make(chan *Msg)
+	n1.msgChans[msgChansKey(GetMasterPlaylistReqID, manifestID)] = msgc
 	//handle in a go routine because we expect something on the channel
 	go func() {
-		if err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{StrmID: strmID, NotFound: true}); err != nil {
+		if err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{ManifestID: manifestID, NotFound: true}); err != nil {
 			t.Errorf("Error: %v", err)
 		}
 	}()
 	timer = time.NewTimer(time.Second)
 	select {
-	case mpl := <-mplc:
-		if mpl != nil {
-			t.Errorf("Expecting nil for mpl")
+	case msg := <-msgc:
+		if msg.Data.(MasterPlaylistDataMsg).NotFound == false {
+			t.Errorf("Expecting NotFound to be true")
 		}
 	case <-timer.C:
 		t.Errorf("Timed out")
 	}
 
 	//No relayer and have an actual playlist.  Should get the playlist.
-	mplc = make(chan *m3u8.MasterPlaylist)
-	n1.mplChans[strmID] = mplc
+	msgc = make(chan *Msg)
+	n1.msgChans[msgChansKey(GetMasterPlaylistReqID, manifestID)] = msgc
+
 	pl := m3u8.NewMasterPlaylist()
 	pl.Append("someurl", nil, m3u8.VariantParams{Bandwidth: 100})
 	//handle in a go routine because we expect something on the channel
 	go func() {
-		if err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{StrmID: strmID, MPL: pl.String()}); err != nil {
+		if err := handleMasterPlaylistDataMsg(n1, MasterPlaylistDataMsg{ManifestID: manifestID, MPL: pl.String()}); err != nil {
 			t.Errorf("Error: %v", err)
 		}
 	}()
 	timer = time.NewTimer(time.Second)
 	select {
-	case mpl := <-mplc:
-		if mpl.String() != pl.String() {
-			t.Errorf("Expecting %v, got %v", pl, mpl)
+	case msg := <-msgc:
+		mplstr := msg.Data.(MasterPlaylistDataMsg).MPL
+		if mplstr != pl.String() {
+			t.Errorf("Expecting %v, got %v", pl, mplstr)
 		}
 	case <-timer.C:
 		t.Errorf("Timed out")
@@ -1113,7 +1115,7 @@ func TestMasterPlaylistIntegration(t *testing.T) {
 
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	no2, _ := NewNode(15003, priv, pub, &BasicNotifiee{})
-	n2, _ := NewBasicVideoNetwork(no2)
+	n2, _ := NewBasicVideoNetwork(no2, "")
 	if err := n2.SetupProtocol(); err != nil {
 		t.Errorf("Error: %v", err)
 	}
@@ -1154,7 +1156,7 @@ func TestMasterPlaylistIntegration(t *testing.T) {
 	//Close down n2, recreate n2 (this could happen when n2 temporarily loses connectivity)
 	n2.NetworkNode.PeerHost.Close()
 	no2, _ = NewNode(15003, priv, pub, &BasicNotifiee{})
-	n2, _ = NewBasicVideoNetwork(no2)
+	n2, _ = NewBasicVideoNetwork(no2, "")
 	go n2.SetupProtocol()
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
 
@@ -1228,5 +1230,64 @@ func TestID(t *testing.T) {
 	pid, err := peer.IDHexDecode(sid)
 	if err != nil {
 		t.Errorf("Error decoding id %v: %v", pid, err)
+	}
+}
+
+func TestNodeStatus(t *testing.T) {
+	glog.Infof("\n\nTesting node status")
+	//Get status from local node
+
+	//Shouldn't find a manifest
+	n1, n2 := setupNodes(t, 15000, 15001)
+	n3, _ := setupNodes(t, 15002, 15003)
+	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
+	connectHosts(n2.NetworkNode.PeerHost, n3.NetworkNode.PeerHost)
+	go n1.SetupProtocol()
+	go n2.SetupProtocol()
+	go n3.SetupProtocol()
+
+	sc, err := n1.GetNodeStatus(n1.GetNodeID())
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	status := <-sc
+	if len(status.Manifests) != 0 {
+		t.Errorf("Expecting no manifests, but got %v", status.Manifests)
+	}
+
+	//Add a manifest
+	mpl := m3u8.NewMasterPlaylist()
+	pl, _ := m3u8.NewMediaPlaylist(10, 10)
+	mpl.Append("test.m3u8", pl, m3u8.VariantParams{Bandwidth: 100000})
+	n1.UpdateMasterPlaylist("testStrm", mpl)
+
+	//Request from self
+	sc, err = n1.GetNodeStatus(n1.GetNodeID())
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	status = <-sc
+	if len(status.Manifests) != 1 {
+		t.Errorf("Expecting 1 manifest, but got %v", status.Manifests)
+	}
+
+	//Request from neighbor
+	sc, err = n2.GetNodeStatus(n1.GetNodeID())
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	status = <-sc
+	if len(status.Manifests) != 1 {
+		t.Errorf("Expecting 1 manifest, but got %v", status.Manifests)
+	}
+
+	//Request from neighbor's neighbor (need relaying)
+	sc, err = n3.GetNodeStatus(n1.GetNodeID())
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	status = <-sc
+	if len(status.Manifests) != 1 {
+		t.Errorf("Expecting 1 manifest, but got %v", status.Manifests)
 	}
 }
