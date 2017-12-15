@@ -452,7 +452,7 @@ func (s *LivepeerServer) StartWebserver() {
 
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		nid := r.FormValue("nodeID")
-		if string(s.LivepeerNode.Identity) == nid {
+		if nid == "" || string(s.LivepeerNode.Identity) == nid {
 			w.Write([]byte(fmt.Sprintf("VideoDB: %v", s.LivepeerNode.VideoDB)))
 			w.Write([]byte(fmt.Sprintf("\n\nVideoNetwork: %v", s.LivepeerNode.VideoNetwork)))
 			w.Write([]byte(fmt.Sprintf("\n\nmediaserver sub timer: %v", s.hlsSubTimer)))
