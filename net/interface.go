@@ -100,11 +100,13 @@ func (n *NodeStatus) FromString(str string) error {
 	for _, mstr := range arr[1:] {
 		//Decode the playlist from a string
 		mstrArr := strings.Split(mstr, "[]")
-		m := m3u8.NewMasterPlaylist()
-		if err := m.DecodeFrom(strings.NewReader(mstrArr[1]), true); err != nil {
-			glog.Errorf("Error decoding playlist: %v", err)
-		} else {
-			manifests[mstrArr[0]] = m
+		if len(mstrArr) == 2 {
+			m := m3u8.NewMasterPlaylist()
+			if err := m.DecodeFrom(strings.NewReader(mstrArr[1]), true); err != nil {
+				glog.Errorf("Error decoding playlist: %v", err)
+			} else {
+				manifests[mstrArr[0]] = m
+			}
 		}
 	}
 	n.Manifests = manifests
