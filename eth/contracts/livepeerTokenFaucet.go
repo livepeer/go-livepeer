@@ -14,7 +14,7 @@ import (
 )
 
 // LivepeerTokenFaucetABI is the input ABI used to generate the binding from.
-const LivepeerTokenFaucetABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"requestWait\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"nextValidRequest\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"request\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"isWhitelisted\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"removeFromWhitelist\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"addToWhitelist\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"requestAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"token\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_token\",\"type\":\"address\"},{\"name\":\"_requestAmount\",\"type\":\"uint256\"},{\"name\":\"_requestWait\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"to\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"Request\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"}]"
+const LivepeerTokenFaucetABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"requestWait\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"nextValidRequest\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"request\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"isWhitelisted\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"removeFromWhitelist\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"addToWhitelist\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"requestAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"token\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_token\",\"type\":\"address\"},{\"name\":\"_requestAmount\",\"type\":\"uint256\"},{\"name\":\"_requestWait\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"to\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"Request\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"}]"
 
 // LivepeerTokenFaucet is an auto generated Go binding around an Ethereum contract.
 type LivepeerTokenFaucet struct {
@@ -301,63 +301,63 @@ func (_LivepeerTokenFaucet *LivepeerTokenFaucetCallerSession) Token() (common.Ad
 
 // AddToWhitelist is a paid mutator transaction binding the contract method 0xe43252d7.
 //
-// Solidity: function addToWhitelist(_addr address) returns(bool)
+// Solidity: function addToWhitelist(_addr address) returns()
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetTransactor) AddToWhitelist(opts *bind.TransactOpts, _addr common.Address) (*types.Transaction, error) {
 	return _LivepeerTokenFaucet.contract.Transact(opts, "addToWhitelist", _addr)
 }
 
 // AddToWhitelist is a paid mutator transaction binding the contract method 0xe43252d7.
 //
-// Solidity: function addToWhitelist(_addr address) returns(bool)
+// Solidity: function addToWhitelist(_addr address) returns()
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetSession) AddToWhitelist(_addr common.Address) (*types.Transaction, error) {
 	return _LivepeerTokenFaucet.Contract.AddToWhitelist(&_LivepeerTokenFaucet.TransactOpts, _addr)
 }
 
 // AddToWhitelist is a paid mutator transaction binding the contract method 0xe43252d7.
 //
-// Solidity: function addToWhitelist(_addr address) returns(bool)
+// Solidity: function addToWhitelist(_addr address) returns()
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetTransactorSession) AddToWhitelist(_addr common.Address) (*types.Transaction, error) {
 	return _LivepeerTokenFaucet.Contract.AddToWhitelist(&_LivepeerTokenFaucet.TransactOpts, _addr)
 }
 
 // RemoveFromWhitelist is a paid mutator transaction binding the contract method 0x8ab1d681.
 //
-// Solidity: function removeFromWhitelist(_addr address) returns(bool)
+// Solidity: function removeFromWhitelist(_addr address) returns()
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetTransactor) RemoveFromWhitelist(opts *bind.TransactOpts, _addr common.Address) (*types.Transaction, error) {
 	return _LivepeerTokenFaucet.contract.Transact(opts, "removeFromWhitelist", _addr)
 }
 
 // RemoveFromWhitelist is a paid mutator transaction binding the contract method 0x8ab1d681.
 //
-// Solidity: function removeFromWhitelist(_addr address) returns(bool)
+// Solidity: function removeFromWhitelist(_addr address) returns()
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetSession) RemoveFromWhitelist(_addr common.Address) (*types.Transaction, error) {
 	return _LivepeerTokenFaucet.Contract.RemoveFromWhitelist(&_LivepeerTokenFaucet.TransactOpts, _addr)
 }
 
 // RemoveFromWhitelist is a paid mutator transaction binding the contract method 0x8ab1d681.
 //
-// Solidity: function removeFromWhitelist(_addr address) returns(bool)
+// Solidity: function removeFromWhitelist(_addr address) returns()
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetTransactorSession) RemoveFromWhitelist(_addr common.Address) (*types.Transaction, error) {
 	return _LivepeerTokenFaucet.Contract.RemoveFromWhitelist(&_LivepeerTokenFaucet.TransactOpts, _addr)
 }
 
 // Request is a paid mutator transaction binding the contract method 0x338cdca1.
 //
-// Solidity: function request() returns(bool)
+// Solidity: function request() returns()
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetTransactor) Request(opts *bind.TransactOpts) (*types.Transaction, error) {
 	return _LivepeerTokenFaucet.contract.Transact(opts, "request")
 }
 
 // Request is a paid mutator transaction binding the contract method 0x338cdca1.
 //
-// Solidity: function request() returns(bool)
+// Solidity: function request() returns()
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetSession) Request() (*types.Transaction, error) {
 	return _LivepeerTokenFaucet.Contract.Request(&_LivepeerTokenFaucet.TransactOpts)
 }
 
 // Request is a paid mutator transaction binding the contract method 0x338cdca1.
 //
-// Solidity: function request() returns(bool)
+// Solidity: function request() returns()
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetTransactorSession) Request() (*types.Transaction, error) {
 	return _LivepeerTokenFaucet.Contract.Request(&_LivepeerTokenFaucet.TransactOpts)
 }

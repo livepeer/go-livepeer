@@ -195,20 +195,20 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		rc, ec := s.LivepeerNode.Eth.Transcoder(uint8(blockRewardCut), uint8(feeShare), big.NewInt(int64(price)))
-		select {
-		case <-rc:
-			if amount > 0 {
-				bondRc, bondEc := s.LivepeerNode.Eth.Bond(big.NewInt(int64(amount)), s.LivepeerNode.Eth.Account().Address)
+		if amount > 0 {
+			bondRc, bondEc := s.LivepeerNode.Eth.Bond(big.NewInt(int64(amount)), s.LivepeerNode.Eth.Account().Address)
+			select {
+			case <-bondRc:
+				rc, ec := s.LivepeerNode.Eth.Transcoder(big.NewInt(int64(blockRewardCut*10000)), big.NewInt(int64(feeShare*10000)), big.NewInt(int64(price)))
 				select {
-				case rec := <-bondRc:
+				case rec := <-rc:
 					glog.Infof("%v", rec)
-				case err := <-bondEc:
-					glog.Errorf("Error bonding: %v", err)
+				case err := <-ec:
+					glog.Errorf("Error creating transcoder: %v", err)
 				}
+			case err := <-bondEc:
+				glog.Errorf("Error bonding: %v", err)
 			}
-		case err := <-ec:
-			glog.Errorf("Error registering as transcoder: %v", err)
 		}
 	})
 
@@ -257,7 +257,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		rc, ec := s.LivepeerNode.Eth.Transcoder(uint8(blockRewardCut), uint8(feeShare), big.NewInt(int64(price)))
+		rc, ec := s.LivepeerNode.Eth.Transcoder(big.NewInt(int64(blockRewardCut*10000)), big.NewInt(int64(feeShare*10000)), big.NewInt(int64(price)))
 		select {
 		case rec := <-rc:
 			glog.Infof("%v", rec)
@@ -568,29 +568,13 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write(data)
 	})
 
-	http.HandleFunc("/reserveTranscodersStats", func(w http.ResponseWriter, r *http.Request) {
-		reserveTranscodersStats, err := s.LivepeerNode.Eth.GetReserveTranscodersStats()
-		if err != nil {
-			w.Write([]byte(""))
-		}
-
-		data, err := json.Marshal(reserveTranscodersStats)
-		if err != nil {
-			glog.Errorf("Error marshalling reserve transcoders stats: %v", err)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
-	})
-
 	http.HandleFunc("/transcoderPendingBlockRewardCut", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			blockRewardCut, _, _, err := s.LivepeerNode.Eth.TranscoderPendingPricingInfo()
 			if err != nil {
 				w.Write([]byte(""))
 			}
-			w.Write([]byte(strconv.Itoa(int(blockRewardCut))))
+			w.Write([]byte(strconv.Itoa(int(blockRewardCut.Int64()))))
 		}
 	})
 
@@ -600,7 +584,7 @@ func (s *LivepeerServer) StartWebserver() {
 			if err != nil {
 				w.Write([]byte(""))
 			}
-			w.Write([]byte(strconv.Itoa(int(feeShare))))
+			w.Write([]byte(strconv.Itoa(int(feeShare.Int64()))))
 		}
 	})
 
@@ -620,7 +604,7 @@ func (s *LivepeerServer) StartWebserver() {
 			if err != nil {
 				w.Write([]byte(""))
 			}
-			w.Write([]byte(strconv.Itoa(int(blockRewardCut))))
+			w.Write([]byte(strconv.Itoa(int(blockRewardCut.Int64()))))
 		}
 	})
 
@@ -630,7 +614,7 @@ func (s *LivepeerServer) StartWebserver() {
 			if err != nil {
 				w.Write([]byte(""))
 			}
-			w.Write([]byte(strconv.Itoa(int(feeShare))))
+			w.Write([]byte(strconv.Itoa(int(feeShare.Int64()))))
 		}
 	})
 

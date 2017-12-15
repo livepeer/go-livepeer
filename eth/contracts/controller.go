@@ -13,7 +13,7 @@ import (
 )
 
 // ControllerABI is the input ABI used to generate the binding from.
-const ControllerABI = "[{\"constant\":false,\"inputs\":[],\"name\":\"unpause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"paused\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"},{\"name\":\"_contract\",\"type\":\"address\"}],\"name\":\"setContract\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"pause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"}],\"name\":\"getContract\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"},{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"updateController\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Pause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Unpause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"}]"
+const ControllerABI = "[{\"constant\":false,\"inputs\":[],\"name\":\"unpause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"paused\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"},{\"name\":\"_contract\",\"type\":\"address\"}],\"name\":\"setContract\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"pause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"}],\"name\":\"getContract\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"},{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"updateController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"id\",\"type\":\"bytes32\"},{\"indexed\":false,\"name\":\"contractAddr\",\"type\":\"address\"}],\"name\":\"SetContract\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Pause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Unpause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"}]"
 
 // Controller is an auto generated Go binding around an Ethereum contract.
 type Controller struct {
@@ -243,21 +243,21 @@ func (_Controller *ControllerTransactorSession) Pause() (*types.Transaction, err
 
 // SetContract is a paid mutator transaction binding the contract method 0x7ed77c9c.
 //
-// Solidity: function setContract(_id bytes32, _contract address) returns(bool)
+// Solidity: function setContract(_id bytes32, _contract address) returns()
 func (_Controller *ControllerTransactor) SetContract(opts *bind.TransactOpts, _id [32]byte, _contract common.Address) (*types.Transaction, error) {
 	return _Controller.contract.Transact(opts, "setContract", _id, _contract)
 }
 
 // SetContract is a paid mutator transaction binding the contract method 0x7ed77c9c.
 //
-// Solidity: function setContract(_id bytes32, _contract address) returns(bool)
+// Solidity: function setContract(_id bytes32, _contract address) returns()
 func (_Controller *ControllerSession) SetContract(_id [32]byte, _contract common.Address) (*types.Transaction, error) {
 	return _Controller.Contract.SetContract(&_Controller.TransactOpts, _id, _contract)
 }
 
 // SetContract is a paid mutator transaction binding the contract method 0x7ed77c9c.
 //
-// Solidity: function setContract(_id bytes32, _contract address) returns(bool)
+// Solidity: function setContract(_id bytes32, _contract address) returns()
 func (_Controller *ControllerTransactorSession) SetContract(_id [32]byte, _contract common.Address) (*types.Transaction, error) {
 	return _Controller.Contract.SetContract(&_Controller.TransactOpts, _id, _contract)
 }
@@ -306,21 +306,21 @@ func (_Controller *ControllerTransactorSession) Unpause() (*types.Transaction, e
 
 // UpdateController is a paid mutator transaction binding the contract method 0xeb5dd94f.
 //
-// Solidity: function updateController(_id bytes32, _controller address) returns(bool)
+// Solidity: function updateController(_id bytes32, _controller address) returns()
 func (_Controller *ControllerTransactor) UpdateController(opts *bind.TransactOpts, _id [32]byte, _controller common.Address) (*types.Transaction, error) {
 	return _Controller.contract.Transact(opts, "updateController", _id, _controller)
 }
 
 // UpdateController is a paid mutator transaction binding the contract method 0xeb5dd94f.
 //
-// Solidity: function updateController(_id bytes32, _controller address) returns(bool)
+// Solidity: function updateController(_id bytes32, _controller address) returns()
 func (_Controller *ControllerSession) UpdateController(_id [32]byte, _controller common.Address) (*types.Transaction, error) {
 	return _Controller.Contract.UpdateController(&_Controller.TransactOpts, _id, _controller)
 }
 
 // UpdateController is a paid mutator transaction binding the contract method 0xeb5dd94f.
 //
-// Solidity: function updateController(_id bytes32, _controller address) returns(bool)
+// Solidity: function updateController(_id bytes32, _controller address) returns()
 func (_Controller *ControllerTransactorSession) UpdateController(_id [32]byte, _controller common.Address) (*types.Transaction, error) {
 	return _Controller.Contract.UpdateController(&_Controller.TransactOpts, _id, _controller)
 }

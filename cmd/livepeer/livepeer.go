@@ -318,9 +318,9 @@ func main() {
 		//Create LogMonitor, the addresses act as filters.
 		var logMonitor *eth.LogMonitor
 		if *transcoder {
-			logMonitor = eth.NewLogMonitor(client, common.Address{}, client.Account().Address)
+			logMonitor = eth.NewLogMonitor(client, common.Address{})
 		} else {
-			logMonitor = eth.NewLogMonitor(client, client.Account().Address, common.Address{})
+			logMonitor = eth.NewLogMonitor(client, client.Account().Address)
 		}
 		logMonitor.SubscribeToJobEvents(func(j *eth.Job) {
 			n.VideoDB.AddJid(core.StreamID(j.StreamId), j.JobId)
@@ -551,15 +551,16 @@ func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
 func txDataToVideoProfile(txData string) ([]lpmscore.VideoProfile, error) {
 	profiles := make([]lpmscore.VideoProfile, 0)
 
-	for i := 0; i < len(txData); i += lpcommon.VideoProfileIDSize {
+	for i := 0; i+lpcommon.VideoProfileIDSize < len(txData); i += lpcommon.VideoProfileIDSize {
 		txp := txData[i : i+lpcommon.VideoProfileIDSize]
 
 		p, ok := lpmscore.VideoProfileLookup[lpcommon.VideoProfileNameLookup[txp]]
 		if !ok {
-			glog.Errorf("Cannot find video profile for job: %v", txp)
-			return nil, core.ErrTranscode
+			// glog.Errorf("Cannot find video profile for job: %v", txp)
+			// return nil, core.ErrTranscode
+		} else {
+			profiles = append(profiles, p)
 		}
-		profiles = append(profiles, p)
 	}
 
 	return profiles, nil

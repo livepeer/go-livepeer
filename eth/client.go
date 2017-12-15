@@ -38,10 +38,10 @@ type LivepeerEthClient interface {
 	Backend() *ethclient.Client
 	Account() accounts.Account
 	RpcTimeout() time.Duration
-	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr, transcoderAddr common.Address) (ethereum.Subscription, error)
+	SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr common.Address) (ethereum.Subscription, error)
 	RoundInfo() (*big.Int, *big.Int, *big.Int, error)
 	InitializeRound() (<-chan types.Receipt, <-chan error)
-	Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
+	Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error)
 	Bond(amount *big.Int, toAddr common.Address) (<-chan types.Receipt, <-chan error)
 	Unbond() (<-chan types.Receipt, <-chan error)
 	WithdrawBond() (<-chan types.Receipt, <-chan error)
@@ -59,8 +59,8 @@ type LivepeerEthClient interface {
 	IsActiveTranscoder() (bool, error)
 	TranscoderStatus() (string, error)
 	TranscoderStake() (*big.Int, error)
-	TranscoderPendingPricingInfo() (uint8, uint8, *big.Int, error)
-	TranscoderPricingInfo() (uint8, uint8, *big.Int, error)
+	TranscoderPendingPricingInfo() (*big.Int, *big.Int, *big.Int, error)
+	TranscoderPricingInfo() (*big.Int, *big.Int, *big.Int, error)
 	DelegatorStatus() (string, error)
 	DelegatorStake() (*big.Int, error)
 	TokenBalance() (*big.Int, error)
@@ -73,7 +73,6 @@ type LivepeerEthClient interface {
 	IsRegisteredTranscoder() (bool, error)
 	TranscoderBond() (*big.Int, error)
 	GetCandidateTranscodersStats() ([]TranscoderStats, error)
-	GetReserveTranscodersStats() ([]TranscoderStats, error)
 	GetControllerAddr() string
 	GetTokenAddr() string
 	GetFaucetAddr() string
@@ -82,6 +81,7 @@ type LivepeerEthClient interface {
 	GetRoundsManagerAddr() string
 	GetBlockInfoByTxHash(ctx context.Context, hash common.Hash) (blkNum *big.Int, blkHash common.Hash, err error)
 	GetBlockHashByNumber(ctx context.Context, num *big.Int) (common.Hash, error)
+	IsAssignedTranscoder(maxPricePerSegment *big.Int) bool
 }
 
 type Client struct {
@@ -109,11 +109,11 @@ type Client struct {
 type TranscoderStats struct {
 	Address                common.Address
 	TotalStake             *big.Int
-	PendingBlockRewardCut  uint8
-	PendingFeeShare        uint8
+	PendingBlockRewardCut  *big.Int
+	PendingFeeShare        *big.Int
 	PendingPricePerSegment *big.Int
-	BlockRewardCut         uint8
-	FeeShare               uint8
+	BlockRewardCut         *big.Int
+	FeeShare               *big.Int
 	PricePerSegment        *big.Int
 }
 
@@ -323,7 +323,8 @@ func (c *Client) InitializeRound() (<-chan types.Receipt, <-chan error) {
 	})
 }
 
-func (c *Client) Transcoder(blockRewardCut uint8, feeShare uint8, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
+func (c *Client) Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
+	glog.Infof("Calling transcoder with blockRewardCut: %v, feeShare: %v, price: %v", blockRewardCut, feeShare, pricePerSegment)
 	return c.WaitForReceipt(func() (*types.Transaction, error) {
 		if tx, err := c.bondingManagerSession.Transcoder(blockRewardCut, feeShare, pricePerSegment); err != nil {
 			return nil, err
@@ -519,7 +520,7 @@ func (c *Client) SubscribeToApproval() (chan types.Log, ethereum.Subscription, e
 	return logCh, sub, nil
 }
 
-func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr, transcoderAddr common.Address) (ethereum.Subscription, error) {
+func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr common.Address) (ethereum.Subscription, error) {
 	abiJSON, err := abi.JSON(strings.NewReader(contracts.JobsManagerABI))
 	if err != nil {
 		glog.Errorf("Error decoding ABI into JSON: %v", err)
@@ -532,19 +533,10 @@ func (c *Client) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log,
 			Addresses: []common.Address{c.jobsManagerAddr},
 			Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{}, []common.Hash{common.BytesToHash(common.LeftPadBytes(broadcasterAddr[:], 32))}},
 		}
-	} else if !IsNullAddress(transcoderAddr) {
-		q = ethereum.FilterQuery{
-			Addresses: []common.Address{c.jobsManagerAddr},
-			Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}, []common.Hash{common.BytesToHash(common.LeftPadBytes(transcoderAddr[:], 32))}},
-		}
 	} else {
 		q = ethereum.FilterQuery{
 			Addresses: []common.Address{c.jobsManagerAddr},
-			Topics: [][]common.Hash{
-				[]common.Hash{abiJSON.Events["NewJob"].Id()},
-				[]common.Hash{common.BytesToHash(common.LeftPadBytes(transcoderAddr[:], 32))},
-				[]common.Hash{common.BytesToHash(common.LeftPadBytes(broadcasterAddr[:], 32))},
-			},
+			Topics:    [][]common.Hash{[]common.Hash{abiJSON.Events["NewJob"].Id()}},
 		}
 	}
 
@@ -599,7 +591,11 @@ func (c *Client) IsRegisteredTranscoder() (bool, error) {
 }
 
 func (c *Client) IsActiveTranscoder() (bool, error) {
-	return c.bondingManagerSession.IsActiveTranscoder(c.account.Address)
+	r, err := c.roundsManagerSession.CurrentRound()
+	if err != nil {
+		return false, err
+	}
+	return c.bondingManagerSession.IsActiveTranscoder(c.Account().Address, r)
 }
 
 func (c *Client) TranscoderBond() (*big.Int, error) {
@@ -634,26 +630,26 @@ func (c *Client) TranscoderStatus() (string, error) {
 	}
 }
 
-func (c *Client) TranscoderPendingPricingInfo() (uint8, uint8, *big.Int, error) {
+func (c *Client) TranscoderPendingPricingInfo() (*big.Int, *big.Int, *big.Int, error) {
 	return c.GetTranscoderPendingPricingInfo(c.account.Address)
 }
 
-func (c *Client) GetTranscoderPendingPricingInfo(addr common.Address) (uint8, uint8, *big.Int, error) {
+func (c *Client) GetTranscoderPendingPricingInfo(addr common.Address) (*big.Int, *big.Int, *big.Int, error) {
 	t, err := c.bondingManagerSession.GetTranscoder(addr)
 	if err != nil {
-		return 0, 0, nil, err
+		return big.NewInt(0), big.NewInt(0), nil, err
 	}
 	return t.PendingBlockRewardCut, t.PendingFeeShare, t.PendingPricePerSegment, nil
 }
 
-func (c *Client) TranscoderPricingInfo() (uint8, uint8, *big.Int, error) {
+func (c *Client) TranscoderPricingInfo() (*big.Int, *big.Int, *big.Int, error) {
 	return c.GetTranscoderPricingInfo(c.account.Address)
 }
 
-func (c *Client) GetTranscoderPricingInfo(addr common.Address) (uint8, uint8, *big.Int, error) {
+func (c *Client) GetTranscoderPricingInfo(addr common.Address) (*big.Int, *big.Int, *big.Int, error) {
 	t, err := c.bondingManagerSession.GetTranscoder(addr)
 	if err != nil {
-		return 0, 0, nil, err
+		return big.NewInt(0), big.NewInt(0), nil, err
 	}
 	return t.BlockRewardCut, t.FeeShare, t.PricePerSegment, nil
 }
@@ -713,6 +709,7 @@ func (c *Client) GetJob(jobID *big.Int) (*Job, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &Job{
 		JobId:              jobID,
 		StreamId:           j.StreamId,
@@ -744,16 +741,16 @@ func (c *Client) GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error) {
 }
 
 func (c *Client) GetCandidateTranscodersStats() ([]TranscoderStats, error) {
-	poolSize, err := c.bondingManagerSession.GetCandidatePoolSize()
-	if err != nil {
-		return nil, err
-	}
-
 	var candidateTranscodersStats []TranscoderStats
-	for i := 0; i < int(poolSize.Int64()); i++ {
-		transcoder, err := c.bondingManagerSession.GetCandidateTranscoderAtPosition(big.NewInt(int64(i)))
+
+	transcoder, err := c.bondingManagerSession.GetFirstTranscoderInPool()
+	for {
 		if err != nil {
 			return nil, err
+		}
+
+		if transcoder.Hex() == "0x0000000000000000000000000000000000000000" {
+			break
 		}
 
 		blockRewardCut, feeShare, pricePerSegment, err := c.GetTranscoderPricingInfo(transcoder)
@@ -784,63 +781,28 @@ func (c *Client) GetCandidateTranscodersStats() ([]TranscoderStats, error) {
 		}
 
 		candidateTranscodersStats = append(candidateTranscodersStats, stats)
+		transcoder, err = c.bondingManagerSession.GetNextTranscoderInPool(transcoder)
 	}
 
 	return candidateTranscodersStats, nil
 }
 
-func (c *Client) GetReserveTranscodersStats() ([]TranscoderStats, error) {
-	poolSize, err := c.bondingManagerSession.GetReservePoolSize()
-	if err != nil {
-		return nil, err
-	}
-
-	if poolSize.Cmp(big.NewInt(0)) == 0 {
-		return nil, nil
-	}
-
-	var reserveTranscodersStats []TranscoderStats
-	for i := 0; i < int(poolSize.Int64()); i++ {
-		transcoder, err := c.bondingManagerSession.GetReserveTranscoderAtPosition(big.NewInt(int64(i)))
-		if err != nil {
-			return nil, err
-		}
-
-		blockRewardCut, feeShare, pricePerSegment, err := c.GetTranscoderPricingInfo(transcoder)
-		if err != nil {
-			return nil, err
-
-		}
-
-		pBlockRewardCut, pFeeShare, pPricePerSegment, err := c.GetTranscoderPendingPricingInfo(transcoder)
-		if err != nil {
-			return nil, err
-		}
-
-		transcoderTotalStake, err := c.bondingManagerSession.TranscoderTotalStake(transcoder)
-		if err != nil {
-			return nil, err
-		}
-
-		stats := TranscoderStats{
-			Address:                transcoder,
-			TotalStake:             transcoderTotalStake,
-			PendingBlockRewardCut:  pBlockRewardCut,
-			PendingFeeShare:        pFeeShare,
-			PendingPricePerSegment: pPricePerSegment,
-			BlockRewardCut:         blockRewardCut,
-			FeeShare:               feeShare,
-			PricePerSegment:        pricePerSegment,
-		}
-
-		reserveTranscodersStats = append(reserveTranscodersStats, stats)
-	}
-
-	return reserveTranscodersStats, nil
-}
-
 func (c *Client) TokenBalance() (*big.Int, error) {
 	return c.tokenSession.BalanceOf(c.account.Address)
+}
+
+func (c *Client) IsAssignedTranscoder(maxPricePerSegment *big.Int) bool {
+	round, _, blockNum, err := c.RoundInfo()
+	if err != nil {
+		return false
+	}
+
+	t, err := c.bondingManagerSession.ElectActiveTranscoder(maxPricePerSegment, blockNum, round)
+	if err != nil {
+		return false
+	}
+
+	return c.Account().Address == t
 }
 
 // HELPERS
