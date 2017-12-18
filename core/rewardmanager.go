@@ -58,7 +58,7 @@ func (r *RewardManager) callReward() {
 		return
 	}
 
-	glog.Infof("lastRewardRount: %v, currentRound: %v", r.lastRewardRound, currentRound)
+	// glog.Infof("lastRewardRount: %v, currentRound: %v", r.lastRewardRound, currentRound)
 	if r.lastRewardRound.Cmp(currentRound) == -1 && active {
 		resCh, errCh := r.client.Reward()
 		select {

@@ -196,9 +196,11 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 
 		if amount > 0 {
+			glog.Infof("Bonding %v...", amount)
 			bondRc, bondEc := s.LivepeerNode.Eth.Bond(big.NewInt(int64(amount)), s.LivepeerNode.Eth.Account().Address)
 			select {
 			case <-bondRc:
+				glog.Infof("Activating Transcoder %v", s.LivepeerNode.Eth.Account().Address)
 				rc, ec := s.LivepeerNode.Eth.Transcoder(big.NewInt(int64(blockRewardCut*10000)), big.NewInt(int64(feeShare*10000)), big.NewInt(int64(price)))
 				select {
 				case rec := <-rc:
@@ -208,6 +210,15 @@ func (s *LivepeerServer) StartWebserver() {
 				}
 			case err := <-bondEc:
 				glog.Errorf("Error bonding: %v", err)
+			}
+		} else {
+			glog.Infof("Activating Transcoder %v", s.LivepeerNode.Eth.Account().Address)
+			rc, ec := s.LivepeerNode.Eth.Transcoder(big.NewInt(int64(blockRewardCut*10000)), big.NewInt(int64(feeShare*10000)), big.NewInt(int64(price)))
+			select {
+			case rec := <-rc:
+				glog.Infof("%v", rec)
+			case err := <-ec:
+				glog.Errorf("Error creating transcoder: %v", err)
 			}
 		}
 	})
