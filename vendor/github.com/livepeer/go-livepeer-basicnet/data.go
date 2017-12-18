@@ -18,6 +18,8 @@ const (
 	TranscodeResponseID
 	GetMasterPlaylistReqID
 	MasterPlaylistDataID
+	NodeStatusReqID
+	NodeStatusDataID
 	SimpleString
 )
 
@@ -58,12 +60,22 @@ type TranscodeResponseMsg struct {
 }
 
 type GetMasterPlaylistReqMsg struct {
-	StrmID string
+	ManifestID string
 }
 
 type MasterPlaylistDataMsg struct {
-	StrmID   string
-	MPL      string
+	ManifestID string
+	MPL        string
+	NotFound   bool
+}
+
+type NodeStatusReqMsg struct {
+	NodeID string
+}
+
+type NodeStatusDataMsg struct {
+	NodeID   string
+	Data     []byte
 	NotFound bool
 }
 
@@ -113,6 +125,18 @@ func (m Msg) MarshalJSON() ([]byte, error) {
 		err := enc.Encode(m.Data.(GetMasterPlaylistReqMsg))
 		if err != nil {
 			return nil, fmt.Errorf("Failed to marshal GetMasterPlaylistReqMsg: %v", err)
+		}
+	case NodeStatusReqMsg:
+		gob.Register(NodeStatusReqMsg{})
+		err := enc.Encode(m.Data.(NodeStatusReqMsg))
+		if err != nil {
+			return nil, fmt.Errorf("Failed to marshal NodeStatusReqMsg: %v", err)
+		}
+	case NodeStatusDataMsg:
+		gob.Register(NodeStatusDataMsg{})
+		err := enc.Encode(m.Data.(NodeStatusDataMsg))
+		if err != nil {
+			return nil, fmt.Errorf("Failed to marshal NodeStatusDataMsg: %v", err)
 		}
 	default:
 		return nil, errors.New("failed to marshal message data")
@@ -183,6 +207,20 @@ func (m *Msg) UnmarshalJSON(b []byte) error {
 			return errors.New("failed to decode GetMasterPlaylistReqMsg")
 		}
 		m.Data = mplr
+	case NodeStatusReqID:
+		var ns NodeStatusReqMsg
+		err := dec.Decode(&ns)
+		if err != nil {
+			return errors.New("failed to decode NodeStatusReqMsg")
+		}
+		m.Data = ns
+	case NodeStatusDataID:
+		var nsd NodeStatusDataMsg
+		err := dec.Decode(&nsd)
+		if err != nil {
+			return errors.New("failed to decode NodeStatusDataMsg")
+		}
+		m.Data = nsd
 	default:
 		return errors.New("failed to decode message data")
 	}

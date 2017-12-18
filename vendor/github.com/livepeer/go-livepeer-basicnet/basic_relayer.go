@@ -53,6 +53,17 @@ func (br *BasicRelayer) RelayMasterPlaylistData(nw *BasicVideoNetwork, mpld Mast
 	return nil
 }
 
+func (br *BasicRelayer) RelayNodeStatusData(nw *BasicVideoNetwork, nsd NodeStatusDataMsg) error {
+	for id, l := range br.listeners {
+		if err := l.SendMessage(NodeStatusDataID, nsd); err != nil {
+			glog.Errorf("Error relaying node status data to %v: %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()), err)
+			delete(br.listeners, id)
+		}
+		br.LastRelay = time.Now()
+	}
+	return nil
+}
+
 func (br *BasicRelayer) AddListener(nw *BasicVideoNetwork, pid peer.ID) {
 	key := peer.IDHexEncode(pid)
 	if _, ok := br.listeners[key]; !ok {

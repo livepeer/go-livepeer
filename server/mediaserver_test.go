@@ -94,6 +94,10 @@ func (b *StubNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterPlayli
 	return nil
 }
 
+func (n *StubNetwork) GetNodeStatus(nodeID string) (chan *net.NodeStatus, error) {
+	return nil, nil
+}
+
 type StubBroadcaster struct {
 	Data map[uint64][]byte
 }

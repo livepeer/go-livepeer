@@ -95,6 +95,10 @@ func (n *StubVideoNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterP
 	return nil
 }
 
+func (n *StubVideoNetwork) GetNodeStatus(nodeID string) (chan *net.NodeStatus, error) {
+	return nil, nil
+}
+
 type StubBroadcaster struct {
 	T         *testing.T
 	StrmID    string
