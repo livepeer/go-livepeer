@@ -351,17 +351,19 @@ func TestNotifyBroadcaster(t *testing.T) {
 	n, _ := NewLivepeerNode(seth, nw, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{}, "./tmp")
 	sn := &StubVideoNetwork{}
 	n.VideoNetwork = sn
+	strmID := "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd1strmID"
+	nid := "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd1"
 
-	err = n.NotifyBroadcaster(n.Identity, "strmid", map[StreamID]lpmscore.VideoProfile{"strmid1": lpmscore.P240p30fps16x9})
+	err = n.NotifyBroadcaster(NodeID(nid), StreamID(strmID), map[StreamID]lpmscore.VideoProfile{"strmid1": lpmscore.P240p30fps16x9})
 	if err != nil {
 		t.Errorf("Error notifying broadcaster: %v", err)
 	}
 
-	if sn.nodeID != string(n.Identity) {
+	if sn.nodeID != string(nid) {
 		t.Errorf("Expecting %v, got %v", n.Identity, sn.nodeID)
 	}
 
-	if sn.strmID != "strmid" {
+	if sn.strmID != strmID {
 		t.Errorf("Expecting strmid, got %v", sn.strmID)
 	}
 
