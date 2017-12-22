@@ -203,6 +203,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			hlsStrm.SetSubscriber(func(seg *stream.HLSSegment, eof bool) {
 				if eof {
 					broadcaster.Finish()
+					return
 				}
 
 				segHash := (&ethTypes.Segment{StreamID: hlsStrm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
