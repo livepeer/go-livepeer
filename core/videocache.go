@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/ericxtang/m3u8"
@@ -61,10 +62,25 @@ func (sc *segCache) GetMediaPlaylist() *m3u8.MediaPlaylist {
 type BasicVideoCache struct {
 	network  net.VideoNetwork
 	segCache map[StreamID]*segCache
+	segLock  sync.Mutex
 }
 
 func NewBasicVideoCache(nw net.VideoNetwork) *BasicVideoCache {
-	return &BasicVideoCache{network: nw, segCache: make(map[StreamID]*segCache)}
+	return &BasicVideoCache{network: nw, segCache: make(map[StreamID]*segCache), segLock: sync.Mutex{}}
+}
+
+func (c *BasicVideoCache) GetCache(strmID StreamID) (*segCache, bool) {
+	c.segLock.Lock()
+	defer c.segLock.Unlock()
+
+	sc, ok := c.segCache[strmID]
+	return sc, ok
+}
+
+func (c *BasicVideoCache) DeleteCache(strmID StreamID) {
+	c.segLock.Lock()
+	defer c.segLock.Unlock()
+	delete(c.segCache, strmID)
 }
 
 func (c *BasicVideoCache) GetHLSMasterPlaylist(manifestID ManifestID) *m3u8.MasterPlaylist {
@@ -97,7 +113,7 @@ func (c *BasicVideoCache) EvictHLSSubscriber(streamID StreamID) {
 
 func (c *BasicVideoCache) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlaylist {
 	//If we have the stream, just return the playlist
-	if cache, ok := c.segCache[streamID]; ok {
+	if cache, ok := c.GetCache(streamID); ok {
 		return cache.GetMediaPlaylist()
 	}
 
@@ -117,7 +133,8 @@ func (c *BasicVideoCache) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlay
 			glog.Infof("Subscriber got msg: %v", seqNo)
 			if eof {
 				//Remove cache entry
-				delete(c.segCache, streamID)
+				c.DeleteCache(streamID)
+				return
 			}
 
 			ss, err := BytesToSignedSegment(data)
