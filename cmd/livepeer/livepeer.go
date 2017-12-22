@@ -322,9 +322,6 @@ func main() {
 		} else {
 			logMonitor = eth.NewLogMonitor(client, client.Account().Address)
 		}
-		logMonitor.SubscribeToJobEvents(func(j *eth.Job) {
-			n.VideoDB.AddJid(core.StreamID(j.StreamId), j.JobId)
-		})
 
 		if *transcoder {
 			if err := setupTranscoder(n, logMonitor); err != nil {

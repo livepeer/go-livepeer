@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/ericxtang/m3u8"
-	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/common"
 )
 
 const DefaultHLSStreamCap = uint(500)
@@ -80,7 +78,7 @@ func (s *BasicHLSVideoStream) AddHLSSegment(seg *HLSSegment) error {
 	if _, ok := s.sqMap[seg.Name]; ok {
 		return nil //Already have the seg.
 	}
-	glog.V(common.VERBOSE).Infof("Adding segment: %v", seg.Name)
+	// glog.V(common.VERBOSE).Infof("Adding segment: %v", seg.Name)
 
 	s.lock.Lock()
 	defer s.lock.Unlock()

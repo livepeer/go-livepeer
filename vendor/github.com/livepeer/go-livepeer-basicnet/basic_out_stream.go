@@ -17,6 +17,30 @@ import (
 
 var ErrOutStream = errors.New("ErrOutStream")
 
+type OutStream interface {
+	SendMessage(opCode Opcode, data interface{}) error
+}
+
+type LocalOutStream struct {
+	sub *BasicSubscriber
+}
+
+func NewLocalOutStream(s *BasicSubscriber) *LocalOutStream {
+	return &LocalOutStream{sub: s}
+}
+
+func (bs *LocalOutStream) SendMessage(opCode Opcode, data interface{}) error {
+	if opCode != StreamDataID {
+		return ErrOutStream
+	}
+	sd, ok := data.(StreamDataMsg)
+	if !ok {
+		return ErrOutStream
+	}
+
+	return bs.sub.InsertData(&sd)
+}
+
 //BasicStream is a libp2p stream wrapped in a reader and a writer.
 type BasicOutStream struct {
 	Stream net.Stream

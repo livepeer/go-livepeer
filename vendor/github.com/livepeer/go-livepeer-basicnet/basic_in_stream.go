@@ -11,6 +11,10 @@ import (
 	"github.com/golang/glog"
 )
 
+type InStream interface {
+	ReceiveMessage() (Msg, error)
+}
+
 //BasicStream is a libp2p stream wrapped in a reader and a writer.
 type BasicInStream struct {
 	Stream net.Stream
