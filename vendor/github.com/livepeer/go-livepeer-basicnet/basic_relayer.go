@@ -18,11 +18,11 @@ type BasicRelayer struct {
 }
 
 //RelayStreamData sends a StreamDataMsg to its listeners
-func (br *BasicRelayer) RelayStreamData(sd StreamDataMsg) error {
+func (br *BasicRelayer) RelayStreamData(sd *StreamDataMsg) error {
 	for strmID, l := range br.listeners {
 		// glog.V(5).Infof("Relaying stream data to listener: %v", l)
 		// glog.Infof("Relaying stream data to listener: %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()))
-		if err := l.SendMessage(StreamDataID, sd); err != nil {
+		if err := l.SendMessage(StreamDataID, *sd); err != nil {
 			glog.Errorf("Error writing data to relayer listener %v: %v", l, err)
 			delete(br.listeners, strmID)
 		}

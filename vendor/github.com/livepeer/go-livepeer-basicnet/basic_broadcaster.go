@@ -14,7 +14,7 @@ type BasicBroadcaster struct {
 	Network      *BasicVideoNetwork
 	lastMsgs     []*StreamDataMsg
 	q            chan *StreamDataMsg
-	listeners    map[string]*BasicOutStream
+	listeners    map[string]OutStream
 	StrmID       string
 	working      bool
 	cancelWorker context.CancelFunc
@@ -46,9 +46,9 @@ func (b *BasicBroadcaster) Finish() error {
 
 	//Send Finish to all the listeners
 	for _, l := range b.listeners {
-		glog.V(5).Infof("Broadcasting finish to %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()))
+		glog.V(5).Infof("Broadcasting finish")
 		if err := l.SendMessage(FinishStreamID, FinishStreamMsg{StrmID: b.StrmID}); err != nil {
-			glog.Errorf("Error broadcasting finish to listener %v: %v", peer.IDHexEncode(l.Stream.Conn().RemotePeer()), err)
+			glog.Errorf("Error broadcasting finish: %v", err)
 		}
 	}
 
@@ -59,10 +59,16 @@ func (b *BasicBroadcaster) Finish() error {
 	return nil
 }
 
-func (br *BasicBroadcaster) AddListener(nw *BasicVideoNetwork, pid peer.ID) {
+func (br *BasicBroadcaster) AddListeningPeer(nw *BasicVideoNetwork, pid peer.ID) {
 	key := peer.IDHexEncode(pid)
 	if _, ok := br.listeners[key]; !ok {
 		br.listeners[key] = nw.NetworkNode.GetOutStream(pid)
+	}
+}
+
+func (br *BasicBroadcaster) AddListeningStream(key string, os OutStream) {
+	if _, ok := br.listeners[key]; !ok {
+		br.listeners[key] = os
 	}
 }
 
@@ -81,7 +87,7 @@ func (b *BasicBroadcaster) broadcastToListeners(ctx context.Context) {
 	}
 }
 
-func (b *BasicBroadcaster) sendDataMsg(lid string, l *BasicOutStream, msg *StreamDataMsg) {
+func (b *BasicBroadcaster) sendDataMsg(lid string, l OutStream, msg *StreamDataMsg) {
 	if msg == nil {
 		return
 	}
@@ -96,6 +102,6 @@ func (b BasicBroadcaster) String() string {
 	return fmt.Sprintf("StreamID: %v, working: %v, q: %v, listeners: %v", b.StrmID, b.working, len(b.q), len(b.listeners))
 }
 
-func (b *BasicBroadcaster) IsWorking() bool {
+func (b *BasicBroadcaster) IsLive() bool {
 	return b.working
 }

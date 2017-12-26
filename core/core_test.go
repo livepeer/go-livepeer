@@ -31,6 +31,7 @@ type StubConnInfo struct {
 type StubVideoNetwork struct {
 	T            *testing.T
 	broadcasters map[string]*StubBroadcaster
+	subscribers  map[string]*StubSubscriber
 	tResult      map[string]string
 	strmID       string
 	nodeID       string
@@ -43,7 +44,7 @@ func (n *StubVideoNetwork) GetNodeID() string {
 	return "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0"
 }
 
-func (n *StubVideoNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error) {
+func (n *StubVideoNetwork) GetBroadcaster(strmID string) (stream.Broadcaster, error) {
 	if n.broadcasters == nil {
 		n.broadcasters = make(map[string]*StubBroadcaster)
 	}
@@ -54,8 +55,12 @@ func (n *StubVideoNetwork) GetBroadcaster(strmID string) (net.Broadcaster, error
 	}
 	return b, nil
 }
-func (n *StubVideoNetwork) GetSubscriber(strmID string) (net.Subscriber, error) {
-	return &StubSubscriber{T: n.T}, nil
+func (n *StubVideoNetwork) GetSubscriber(strmID string) (stream.Subscriber, error) {
+	if s, ok := n.subscribers[strmID]; ok {
+		return s, nil
+	}
+	return nil, ErrNotFound
+	// return &StubSubscriber{T: n.T}, nil
 }
 func (n *StubVideoNetwork) Connect(nodeID string, nodeAddr []string) error {
 	if n.connectInfo == nil {
@@ -75,9 +80,12 @@ func (n *StubVideoNetwork) ReceivedTranscodeResponse(strmID string, gotResult fu
 }
 func (n *StubVideoNetwork) GetMasterPlaylist(nodeID string, strmID string) (chan *m3u8.MasterPlaylist, error) {
 	mplc := make(chan *m3u8.MasterPlaylist)
-	mpl := m3u8.NewMasterPlaylist()
-	pl, _ := m3u8.NewMediaPlaylist(100, 100)
-	mpl.Append("stub.m3u8", pl, m3u8.VariantParams{Bandwidth: 100})
+	mpl, ok := n.mplMap[strmID]
+	if !ok {
+		mpl = m3u8.NewMasterPlaylist()
+		pl, _ := m3u8.NewMediaPlaylist(100, 100)
+		mpl.Append("stub.m3u8", pl, m3u8.VariantParams{Bandwidth: 100})
+	}
 	// glog.Infof("StubNetwork GetMasterPlaylist. mpl: %v", mpl)
 
 	go func() {
@@ -107,8 +115,8 @@ type StubBroadcaster struct {
 	FinishMsg bool
 }
 
-func (n *StubBroadcaster) IsWorking() bool { return true }
-func (n *StubBroadcaster) String() string  { return "" }
+func (n *StubBroadcaster) IsLive() bool   { return true }
+func (n *StubBroadcaster) String() string { return "" }
 func (n *StubBroadcaster) Broadcast(seqNo uint64, data []byte) error {
 	ss, err := BytesToSignedSegment(data)
 	if err != nil {
@@ -137,11 +145,11 @@ type StubSubscriber struct {
 	T *testing.T
 }
 
-func (s *StubSubscriber) IsWorking() bool { return true }
-func (s *StubSubscriber) String() string  { return "" }
+func (s *StubSubscriber) IsLive() bool   { return true }
+func (s *StubSubscriber) String() string { return "" }
 func (s *StubSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error {
 	d, _ := ioutil.ReadFile("./test.ts")
-	newSeg := SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test name", Data: d, Duration: 1}, Sig: []byte("test sig")}
+	newSeg := SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test.ts", Data: d, Duration: 1}, Sig: []byte("test sig")}
 	b, err := SignedSegmentToBytes(newSeg)
 	if err != nil {
 		s.T.Errorf("Error Converting SignedSegment to Bytes: %v", err)
@@ -155,7 +163,9 @@ func (s *StubSubscriber) Unsubscribe() error { return nil }
 
 func TestTranscode(t *testing.T) {
 	//Set up the node
-	n, _ := NewLivepeerNode(nil, &StubVideoNetwork{T: t}, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, ".tmp")
+	stubnet := &StubVideoNetwork{T: t, subscribers: make(map[string]*StubSubscriber)}
+	n, _ := NewLivepeerNode(nil, stubnet, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, ".tmp")
+	stubnet.subscribers["strmID"] = &StubSubscriber{}
 
 	//Call transcode
 	p := []lpmscore.VideoProfile{lpmscore.P144p30fps16x9, lpmscore.P240p30fps16x9}
@@ -341,17 +351,19 @@ func TestNotifyBroadcaster(t *testing.T) {
 	n, _ := NewLivepeerNode(seth, nw, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{}, "./tmp")
 	sn := &StubVideoNetwork{}
 	n.VideoNetwork = sn
+	strmID := "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd1strmID"
+	nid := "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd1"
 
-	err = n.NotifyBroadcaster(n.Identity, "strmid", map[StreamID]lpmscore.VideoProfile{"strmid1": lpmscore.P240p30fps16x9})
+	err = n.NotifyBroadcaster(NodeID(nid), StreamID(strmID), map[StreamID]lpmscore.VideoProfile{"strmid1": lpmscore.P240p30fps16x9})
 	if err != nil {
 		t.Errorf("Error notifying broadcaster: %v", err)
 	}
 
-	if sn.nodeID != string(n.Identity) {
+	if sn.nodeID != string(nid) {
 		t.Errorf("Expecting %v, got %v", n.Identity, sn.nodeID)
 	}
 
-	if sn.strmID != "strmid" {
+	if sn.strmID != strmID {
 		t.Errorf("Expecting strmid, got %v", sn.strmID)
 	}
 

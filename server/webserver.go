@@ -9,10 +9,9 @@ import (
 	"strconv"
 	"strings"
 
+	basicnet "github.com/livepeer/go-livepeer-basicnet"
 	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/transcoder"
-
-	"github.com/livepeer/lpms/stream"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
@@ -413,8 +412,8 @@ func (s *LivepeerServer) StartWebserver() {
 
 			rc, ec := s.LivepeerNode.Eth.Deposit(big.NewInt(int64(amount)))
 			select {
-			case rec := <-rc:
-				glog.Infof("%v", rec)
+			case <-rc:
+				glog.Infof("Deposit successful")
 			case err := <-ec:
 				glog.Errorf("Error depositing: %v", err)
 			}
@@ -431,10 +430,10 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {
-		strmIDs := s.LivepeerNode.VideoDB.GetStreamIDs(stream.HLS)
+		net := s.LivepeerNode.VideoNetwork.(*basicnet.BasicVideoNetwork)
 		ret := make([]map[string]string, 0)
-		for _, strmID := range strmIDs {
-			ret = append(ret, map[string]string{"format": "hls", "streamID": strmID.String()})
+		for _, strmID := range net.GetLocalStreams() {
+			ret = append(ret, map[string]string{"format": "hls", "streamID": strmID})
 		}
 		js, err := json.Marshal(ret)
 		if err != nil {
@@ -462,7 +461,6 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf("VideoDB: %v", s.LivepeerNode.VideoDB)))
 		w.Write([]byte(fmt.Sprintf("\n\nVideoNetwork: %v", s.LivepeerNode.VideoNetwork)))
 		w.Write([]byte(fmt.Sprintf("\n\nmediaserver sub timer: %v", s.hlsSubTimer)))
 	})
