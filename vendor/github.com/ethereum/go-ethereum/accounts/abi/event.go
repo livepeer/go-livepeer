@@ -30,7 +30,7 @@ import (
 type Event struct {
 	Name      string
 	Anonymous bool
-	Inputs    []Argument
+	Inputs    Arguments
 }
 
 // Id returns the canonical representation of the event's signature used by the
