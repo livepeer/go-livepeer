@@ -18,7 +18,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/segmenter"
@@ -134,7 +133,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 		if s.LivepeerNode.Eth != nil {
 			//Check Token Balance
-			b, err := s.LivepeerNode.Eth.TokenBalance()
+			b, err := s.LivepeerNode.Eth.BalanceOf(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
 				glog.Errorf("Error getting token balance:%v", err)
 				return ErrBroadcast
@@ -207,13 +206,10 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				}
 
 				segHash := (&ethTypes.Segment{StreamID: hlsStrm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
-				var sig []byte
-				if c, ok := s.LivepeerNode.Eth.(*eth.Client); ok {
-					sig, err = c.SignSegmentHash(s.LivepeerNode.EthPassword, segHash.Bytes())
-					if err != nil {
-						glog.Errorf("Error signing segment %v-%v: %v", hlsStrm.GetStreamID(), seg.SeqNo, err)
-						return
-					}
+				sig, err := s.LivepeerNode.Eth.Sign(segHash.Bytes())
+				if err != nil {
+					glog.Errorf("Error signing segment %v-%v: %v", hlsStrm.GetStreamID(), seg.SeqNo, err)
+					return
 				}
 
 				//Encode segment into []byte, broadcast it

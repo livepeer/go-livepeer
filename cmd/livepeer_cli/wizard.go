@@ -88,14 +88,13 @@ func (w *wizard) readDefaultInt(def int) int {
 func httpGet(url string) string {
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Error("Error getting node ID: %v")
+		log.Error("Error sending HTTP GET: %v")
 		return ""
 	}
 
 	defer resp.Body.Close()
 	result, err := ioutil.ReadAll(resp.Body)
 	if err != nil || string(result) == "" {
-		// log.Error(fmt.Sprintf("Error reading from: %v - %v", url, err))
 		return ""
 	}
 	return string(result)

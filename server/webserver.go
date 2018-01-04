@@ -16,10 +16,28 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
-	eth "github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 )
+
+var (
+	ErrParseBigInt = fmt.Errorf("failed to parse big integer")
+)
+
+func parseBigInt(num string) (*big.Int, error) {
+	bigNum := new(big.Int)
+	bigNum.SetString(num, 10)
+
+	if bigNum == nil {
+		return nil, ErrParseBigInt
+	} else {
+		return bigNum, nil
+	}
+}
+
+func convertPerc(value int) *big.Int {
+	return big.NewInt(int64(value * 10000))
+}
 
 func (s *LivepeerServer) StartWebserver() {
 	//Temporary endpoint just so we can invoke a transcode job.  IRL this should be invoked by transcoders monitoring the smart contract.
@@ -60,9 +78,9 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide max price per segment")
 			return
 		}
-		price, err := strconv.Atoi(priceStr)
+		price, err := parseBigInt(priceStr)
 		if err != nil {
-			glog.Errorf("Cannot convert max price per segment: %v", err)
+			glog.Error(err)
 			return
 		}
 
@@ -84,7 +102,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		BroadcastPrice = uint64(price)
+		BroadcastPrice = uint64(price.Uint64())
 		BroadcastJobVideoProfiles = profiles
 
 		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
@@ -127,15 +145,51 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write(data)
 	})
 
+	http.HandleFunc("/currentRound", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			currentRound, err := s.LivepeerNode.Eth.CurrentRound()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			w.Write([]byte(currentRound.String()))
+		}
+	})
+
+	http.HandleFunc("/initializeRound", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			if !initialized {
+				tx, err := s.LivepeerNode.Eth.InitializeRound()
+				if err != nil {
+					glog.Error(err)
+					return
+				}
+
+				err = s.LivepeerNode.Eth.CheckTx(tx)
+				if err != nil {
+					glog.Error(err)
+					return
+				}
+			}
+		}
+	})
+
 	//Activate the transcoder on-chain.
 	http.HandleFunc("/activateTranscoder", func(w http.ResponseWriter, r *http.Request) {
-		registered, err := s.LivepeerNode.Eth.IsRegisteredTranscoder()
+		t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
 		if err != nil {
-			glog.Errorf("Error checking for registered transcoder: %v", err)
+			glog.Error(err)
 			return
 		}
 
-		if registered {
+		if t.Status == "Registered" {
 			glog.Error("Transcoder is already registered")
 			return
 		}
@@ -152,7 +206,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 		blockRewardCut, err := strconv.Atoi(blockRewardCutStr)
 		if err != nil {
-			glog.Errorf("Cannot convert block reward cut: %v", err)
+			glog.Error(err)
 			return
 		}
 
@@ -163,7 +217,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 		feeShare, err := strconv.Atoi(feeShareStr)
 		if err != nil {
-			glog.Errorf("Cannot convert fee share: %v", err)
+			glog.Error(err)
 			return
 		}
 
@@ -172,9 +226,9 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide price per segment")
 			return
 		}
-		price, err := strconv.Atoi(priceStr)
+		price, err := parseBigInt(priceStr)
 		if err != nil {
-			glog.Errorf("Cannot convert price per segment: %v", err)
+			glog.Error(err)
 			return
 		}
 
@@ -183,41 +237,39 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide amount")
 			return
 		}
-		amount, err := strconv.Atoi(amountStr)
+		amount, err := parseBigInt(amountStr)
 		if err != nil {
-			glog.Errorf("Cannot convert amount: %v", err)
+			glog.Error(err)
 			return
 		}
 
-		if err := eth.CheckRoundAndInit(s.LivepeerNode.Eth); err != nil {
-			glog.Errorf("Error checking and initializing round: %v", err)
-			return
-		}
-
-		if amount > 0 {
+		if amount.Cmp(big.NewInt(0)) == 1 {
 			glog.Infof("Bonding %v...", amount)
-			bondRc, bondEc := s.LivepeerNode.Eth.Bond(big.NewInt(int64(amount)), s.LivepeerNode.Eth.Account().Address)
-			select {
-			case <-bondRc:
-				glog.Infof("Activating Transcoder %v", s.LivepeerNode.Eth.Account().Address)
-				rc, ec := s.LivepeerNode.Eth.Transcoder(big.NewInt(int64(blockRewardCut*10000)), big.NewInt(int64(feeShare*10000)), big.NewInt(int64(price)))
-				select {
-				case rec := <-rc:
-					glog.Infof("%v", rec)
-				case err := <-ec:
-					glog.Errorf("Error creating transcoder: %v", err)
-				}
-			case err := <-bondEc:
-				glog.Errorf("Error bonding: %v", err)
+
+			tx, err := s.LivepeerNode.Eth.Bond(amount, s.LivepeerNode.Eth.Account().Address)
+			if err != nil {
+				glog.Error(err)
+				return
 			}
-		} else {
-			glog.Infof("Activating Transcoder %v", s.LivepeerNode.Eth.Account().Address)
-			rc, ec := s.LivepeerNode.Eth.Transcoder(big.NewInt(int64(blockRewardCut*10000)), big.NewInt(int64(feeShare*10000)), big.NewInt(int64(price)))
-			select {
-			case rec := <-rc:
-				glog.Infof("%v", rec)
-			case err := <-ec:
-				glog.Errorf("Error creating transcoder: %v", err)
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			glog.Infof("Registering transcoder %v", s.LivepeerNode.Eth.Account().Address.Hex())
+
+			tx, err = s.LivepeerNode.Eth.Transcoder(convertPerc(blockRewardCut), convertPerc(feeShare), price)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
 			}
 		}
 	})
@@ -256,23 +308,22 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide price per segment")
 			return
 		}
-		price, err := strconv.Atoi(priceStr)
+		price, err := parseBigInt(priceStr)
 		if err != nil {
-			glog.Errorf("Cannot convert price per segment: %v", err)
+			glog.Error(err)
 			return
 		}
 
-		if err := eth.CheckRoundAndInit(s.LivepeerNode.Eth); err != nil {
-			glog.Errorf("Error checking and initializing round: %v", err)
+		tx, err := s.LivepeerNode.Eth.Transcoder(convertPerc(blockRewardCut), convertPerc(feeShare), price)
+		if err != nil {
+			glog.Error(err)
 			return
 		}
 
-		rc, ec := s.LivepeerNode.Eth.Transcoder(big.NewInt(int64(blockRewardCut*10000)), big.NewInt(int64(feeShare*10000)), big.NewInt(int64(price)))
-		select {
-		case rec := <-rc:
-			glog.Infof("%v", rec)
-		case err := <-ec:
-			glog.Errorf("Error setting transcoder config: %v", err)
+		err = s.LivepeerNode.Eth.CheckTx(tx)
+		if err != nil {
+			glog.Error(err)
+			return
 		}
 	})
 
@@ -289,7 +340,7 @@ func (s *LivepeerServer) StartWebserver() {
 				glog.Errorf("Need to provide amount")
 				return
 			}
-			amount, err := strconv.Atoi(amountStr)
+			amount, err := parseBigInt(amountStr)
 			if err != nil {
 				glog.Errorf("Cannot convert amount: %v", err)
 				return
@@ -301,93 +352,142 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
-			if err := eth.CheckRoundAndInit(s.LivepeerNode.Eth); err != nil {
-				glog.Errorf("Error checking and initializing round: %v", err)
+			tx, err := s.LivepeerNode.Eth.Bond(amount, common.HexToAddress(toAddr))
+			if err != nil {
+				glog.Error(err)
 				return
 			}
 
-			rc, ec := s.LivepeerNode.Eth.Bond(big.NewInt(int64(amount)), common.HexToAddress(toAddr))
-			select {
-			case rec := <-rc:
-				glog.Infof("%v", rec)
-			case err := <-ec:
-				glog.Errorf("Error bonding: %v", err)
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
 			}
 		}
 	})
 
 	http.HandleFunc("/unbond", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			if err := eth.CheckRoundAndInit(s.LivepeerNode.Eth); err != nil {
-				glog.Errorf("Error checking and initializing round: %v", err)
+			tx, err := s.LivepeerNode.Eth.Unbond()
+			if err != nil {
+				glog.Error(err)
 				return
 			}
 
-			rc, ec := s.LivepeerNode.Eth.Unbond()
-			select {
-			case rec := <-rc:
-				glog.Infof("%v", rec)
-			case err := <-ec:
-				glog.Errorf("Error unbonding: %v", err)
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
 			}
 		}
 	})
 
-	http.HandleFunc("/withdrawBond", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/withdrawStake", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			if err := eth.CheckRoundAndInit(s.LivepeerNode.Eth); err != nil {
-				glog.Errorf("Error checking and initializing round: %v", err)
+			tx, err := s.LivepeerNode.Eth.WithdrawStake()
+			if err != nil {
+				glog.Error(err)
 				return
 			}
 
-			rc, ec := s.LivepeerNode.Eth.WithdrawBond()
-			select {
-			case rec := <-rc:
-				glog.Infof("%v", rec)
-			case err := <-ec:
-				glog.Errorf("Error withdrawing bond: %v", err)
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
 			}
 		}
 	})
 
-	http.HandleFunc("/transcoderStatus", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/withdrawFees", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			status, err := s.LivepeerNode.Eth.TranscoderStatus()
+			tx, err := s.LivepeerNode.Eth.WithdrawFees()
 			if err != nil {
-				w.Write([]byte(""))
+				glog.Error(err)
+				return
 			}
-			w.Write([]byte(status))
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
 		}
 	})
 
-	//Print the transcoder's stake
-	http.HandleFunc("/transcoderStake", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/claimTokenPoolsShares", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			b, err := s.LivepeerNode.Eth.TranscoderStake()
-			if err != nil {
-				w.Write([]byte(""))
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
 			}
-			w.Write([]byte(b.String()))
+
+			endRoundStr := r.FormValue("endRound")
+			if endRoundStr == "" {
+				glog.Errorf("Need to provide amount")
+				return
+			}
+			endRound, err := parseBigInt(endRoundStr)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			tx, err := s.LivepeerNode.Eth.ClaimTokenPoolsShares(endRound)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
 		}
 	})
 
-	http.HandleFunc("/delegatorStatus", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/delegatorInfo", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			status, err := s.LivepeerNode.Eth.DelegatorStatus()
+			d, err := s.LivepeerNode.Eth.GetDelegator(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
-				w.Write([]byte(""))
+				glog.Error(err)
+				return
 			}
-			w.Write([]byte(status))
+
+			data, err := json.Marshal(d)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
 		}
 	})
 
-	http.HandleFunc("/delegatorStake", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/transcoderTokenPoolsForRound", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			s, err := s.LivepeerNode.Eth.DelegatorStake()
+			roundStr := r.URL.Query().Get("round")
+			round, err := parseBigInt(roundStr)
 			if err != nil {
-				w.Write([]byte(""))
+				glog.Error(err)
+				return
 			}
-			w.Write([]byte(s.String()))
+
+			tp, err := s.LivepeerNode.Eth.GetTranscoderTokenPoolsForRound(s.LivepeerNode.Eth.Account().Address, round)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			data, err := json.Marshal(tp)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
 		}
 	})
 
@@ -397,25 +497,31 @@ func (s *LivepeerServer) StartWebserver() {
 				glog.Errorf("Parse Form Error: %v", err)
 				return
 			}
+
 			//Parse amount
 			amountStr := r.FormValue("amount")
 			if amountStr == "" {
 				glog.Errorf("Need to provide amount")
 				return
 			}
-			amount, err := strconv.Atoi(amountStr)
+			amount, err := parseBigInt(amountStr)
 			if err != nil {
-				glog.Errorf("Cannot convert amount: %v", err)
+				glog.Error(err)
 				return
 			}
+
 			glog.Infof("Depositing: %v", amount)
 
-			rc, ec := s.LivepeerNode.Eth.Deposit(big.NewInt(int64(amount)))
-			select {
-			case <-rc:
-				glog.Infof("Deposit successful")
-			case err := <-ec:
-				glog.Errorf("Error depositing: %v", err)
+			tx, err := s.LivepeerNode.Eth.Deposit(amount)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
 			}
 		}
 	})
@@ -502,33 +608,30 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write([]byte(strings.Join(s.LivepeerNode.Addrs, ", ")))
 	})
 
-	http.HandleFunc("/controllerContractAddr", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/contractAddresses", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			w.Write([]byte(s.LivepeerNode.Eth.GetControllerAddr()))
-		}
-	})
+			addrMap := s.LivepeerNode.Eth.ContractAddresses()
 
-	http.HandleFunc("/tokenContractAddr", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			w.Write([]byte(s.LivepeerNode.Eth.GetTokenAddr()))
-		}
-	})
+			data, err := json.Marshal(addrMap)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
 
-	http.HandleFunc("/faucetContractAddr", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			w.Write([]byte(s.LivepeerNode.Eth.GetFaucetAddr()))
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
 		}
 	})
 
 	http.HandleFunc("/ethAddr", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			w.Write([]byte(s.LivepeerNode.EthAccount))
+			w.Write([]byte(s.LivepeerNode.Eth.Account().Address.Hex()))
 		}
 	})
 
 	http.HandleFunc("/tokenBalance", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			b, err := s.LivepeerNode.Eth.TokenBalance()
+			b, err := s.LivepeerNode.Eth.BalanceOf(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
 				w.Write([]byte(""))
 			}
@@ -548,7 +651,7 @@ func (s *LivepeerServer) StartWebserver() {
 
 	http.HandleFunc("/broadcasterDeposit", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			b, err := s.LivepeerNode.Eth.GetBroadcasterDeposit(s.LivepeerNode.Eth.Account().Address)
+			b, err := s.LivepeerNode.Eth.BroadcasterDeposit(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
 				w.Write([]byte(""))
 			}
@@ -556,113 +659,41 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/transcoderBond", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/registeredTranscoders", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			b, err := s.LivepeerNode.Eth.TranscoderBond()
+			transcoders, err := s.LivepeerNode.Eth.RegisteredTranscoders()
 			if err != nil {
-				w.Write([]byte(""))
-			}
-			w.Write([]byte(b.String()))
-		}
-	})
-
-	http.HandleFunc("/isActiveTranscoder", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			reg, err := s.LivepeerNode.Eth.IsRegisteredTranscoder()
-			if err != nil {
-				w.Write([]byte("False"))
-				return
-			}
-			active, err := s.LivepeerNode.Eth.IsActiveTranscoder()
-			if err != nil {
-				w.Write([]byte("False"))
+				glog.Error(err)
 				return
 			}
 
-			if reg && active {
-				w.Write([]byte("True"))
-			} else {
-				w.Write([]byte("False"))
-			}
-			return
-		}
-
-		w.Write([]byte("False"))
-	})
-
-	http.HandleFunc("/candidateTranscodersStats", func(w http.ResponseWriter, r *http.Request) {
-		candidateTranscodersStats, err := s.LivepeerNode.Eth.GetCandidateTranscodersStats()
-		if err != nil {
-			w.Write([]byte(""))
-		}
-
-		data, err := json.Marshal(candidateTranscodersStats)
-		if err != nil {
-			glog.Errorf("Error marshalling all transcoder stats: %v", err)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
-	})
-
-	http.HandleFunc("/transcoderPendingBlockRewardCut", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			blockRewardCut, _, _, err := s.LivepeerNode.Eth.TranscoderPendingPricingInfo()
+			data, err := json.Marshal(transcoders)
 			if err != nil {
-				w.Write([]byte(""))
+				glog.Error(err)
+				return
 			}
-			w.Write([]byte(strconv.Itoa(int(blockRewardCut.Int64()))))
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
 		}
 	})
 
-	http.HandleFunc("/transcoderPendingFeeShare", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/transcoderInfo", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			_, feeShare, _, err := s.LivepeerNode.Eth.TranscoderPendingPricingInfo()
+			t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
-				w.Write([]byte(""))
+				glog.Error(err)
+				return
 			}
-			w.Write([]byte(strconv.Itoa(int(feeShare.Int64()))))
-		}
-	})
 
-	http.HandleFunc("/transcoderPendingPrice", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			_, _, price, err := s.LivepeerNode.Eth.TranscoderPendingPricingInfo()
+			data, err := json.Marshal(t)
 			if err != nil {
-				w.Write([]byte(""))
+				glog.Error(err)
+				return
 			}
-			w.Write([]byte(price.String()))
-		}
-	})
 
-	http.HandleFunc("/transcoderBlockRewardCut", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			blockRewardCut, _, _, err := s.LivepeerNode.Eth.TranscoderPricingInfo()
-			if err != nil {
-				w.Write([]byte(""))
-			}
-			w.Write([]byte(strconv.Itoa(int(blockRewardCut.Int64()))))
-		}
-	})
-
-	http.HandleFunc("/transcoderFeeShare", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			_, feeShare, _, err := s.LivepeerNode.Eth.TranscoderPricingInfo()
-			if err != nil {
-				w.Write([]byte(""))
-			}
-			w.Write([]byte(strconv.Itoa(int(feeShare.Int64()))))
-		}
-	})
-
-	http.HandleFunc("/transcoderPrice", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			_, _, price, err := s.LivepeerNode.Eth.TranscoderPricingInfo()
-			if err != nil {
-				w.Write([]byte(""))
-			}
-			w.Write([]byte(price.String()))
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
 		}
 	})
 
@@ -670,12 +701,16 @@ func (s *LivepeerServer) StartWebserver() {
 		if s.LivepeerNode.Eth != nil {
 			glog.Infof("Requesting tokens from faucet")
 
-			rc, ec := s.LivepeerNode.Eth.RequestTokens()
-			select {
-			case rec := <-rc:
-				glog.Infof("%v", rec)
-			case err := <-ec:
-				glog.Errorf("Error request tokens from faucet: %v", err)
+			tx, err := s.LivepeerNode.Eth.Request()
+			if err != nil {
+				glog.Errorf("Error requesting tokens from faucet: %v", err)
+				return
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Errorf("Error requesting tokens from faucet: %v", err)
+				return
 			}
 		}
 	})

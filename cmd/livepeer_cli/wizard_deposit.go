@@ -17,3 +17,9 @@ func (w *wizard) deposit() {
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/deposit", w.host, w.httpPort), val)
 }
+
+func (w *wizard) withdraw() {
+	fmt.Printf("Current deposit: %v\n", w.getDeposit())
+
+	httpPost(fmt.Sprintf("http://%v:%v/withdraw", w.host, w.httpPort))
+}

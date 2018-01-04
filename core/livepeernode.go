@@ -56,8 +56,7 @@ type LivepeerNode struct {
 	VideoNetwork net.VideoNetwork
 	VideoCache   VideoCache
 	Eth          eth.LivepeerEthClient
-	EthAccount   string
-	EthPassword  string
+	EthServices  []eth.Service
 	Ipfs         ipfs.IpfsApi
 	WorkDir      string
 	PeerConns    []PeerConn
@@ -115,43 +114,24 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.V
 		glog.Errorf("Cannot get current block number: %v", err)
 		return ErrNotFound
 	}
-	resCh, errCh := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], p, big.NewInt(0).Add(blk.Number(), big.NewInt(DefaultJobLength)))
-	select {
-	case <-resCh:
-		glog.Infof("Created broadcast job. Price: %v. Type: %v", p, ethcommon.ToHex(transOpts)[2:])
-	case err := <-errCh:
-		glog.Errorf("Error creating broadcast job: %v", err)
-	}
-	return nil
-}
 
-func (n *LivepeerNode) ClaimVerifyAndDistributeFees(cm ClaimManager) error {
-	//Do the claim, wait until it's finished
-	count, rc, ec := cm.Claim()
-	for count > 0 {
-		select {
-		case res := <-rc:
-			glog.V(common.SHORT).Infof("Claimed work with transaction: %v", res.TxHash)
-			count--
-		case err := <-ec:
-			glog.Errorf("Error claim work: %v", err)
-			count--
-		}
+	tx, err := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], p, big.NewInt(0).Add(blk.Number(), big.NewInt(DefaultJobLength)))
+	if err != nil {
+		return err
 	}
 
-	if err := cm.Verify(); err != nil {
-		glog.Errorf("Verification error: %v", err)
+	err = n.Eth.CheckTx(tx)
+	if err != nil {
+		return err
 	}
 
-	if err := cm.DistributeFees(); err != nil {
-		glog.Errorf("Error distributing fees: %v", err)
-	}
+	glog.Infof("Created broadcast job. Price: %v. Type: %v", p, ethcommon.ToHex(transOpts)[2:])
 
 	return nil
 }
 
 //TranscodeAndBroadcast transcodes one stream into multiple streams (specified by TranscodeConfig), broadcasts the streams, and returns a list of streamIDs.
-func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm ClaimManager, t transcoder.Transcoder) ([]StreamID, error) {
+func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.ClaimManager, t transcoder.Transcoder) ([]StreamID, error) {
 	//Create the broadcasters
 	tProfiles := make([]lpmscore.VideoProfile, len(config.Profiles), len(config.Profiles))
 	resultStrmIDs := make([]StreamID, len(config.Profiles), len(config.Profiles))
@@ -194,7 +174,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 			if cm != nil && config.PerformOnchainClaim {
 				glog.V(common.SHORT).Infof("Stream finished. Claiming work.")
 
-				if err := n.ClaimVerifyAndDistributeFees(cm); err != nil {
+				if err := cm.ClaimVerifyAndDistributeFees(); err != nil {
 					glog.Errorf("Error claiming work: %v", err)
 				}
 			}
@@ -209,7 +189,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 
 			if !sufficient {
 				glog.V(common.SHORT).Infof("Broadcaster does not have enough funds. Claiming work.")
-				if err := n.ClaimVerifyAndDistributeFees(cm); err != nil {
+				if err := cm.ClaimVerifyAndDistributeFees(); err != nil {
 					glog.Errorf("Error claiming work: %v", err)
 				}
 				return
@@ -230,7 +210,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm Clai
 	return resultStrmIDs, nil
 }
 
-func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []byte, cm ClaimManager, t transcoder.Transcoder, resultStrmIDs []StreamID, broadcasters map[StreamID]stream.Broadcaster, config net.TranscodeConfig) {
+func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []byte, cm eth.ClaimManager, t transcoder.Transcoder, resultStrmIDs []StreamID, broadcasters map[StreamID]stream.Broadcaster, config net.TranscodeConfig) {
 	//Do the transcoding
 	start := time.Now()
 	tData, err := t.Transcode(seg.Data)
@@ -326,14 +306,10 @@ func (n *LivepeerNode) BroadcastManifestToNetwork(manifest stream.HLSVideoManife
 func (n *LivepeerNode) BroadcastHLSSegToNetwork(strmID string, seg *stream.HLSSegment, b stream.Broadcaster) error {
 	segHash := (&ethTypes.Segment{StreamID: strmID, SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
 
-	var sig []byte
-	var err error
-	if c, ok := n.Eth.(*eth.Client); ok {
-		sig, err = c.SignSegmentHash(n.EthPassword, segHash.Bytes())
-		if err != nil {
-			glog.Errorf("Error signing segment %v-%v: %v", strmID, seg.SeqNo, err)
-			return err
-		}
+	sig, err := n.Eth.Sign(segHash.Bytes())
+	if err != nil {
+		glog.Errorf("Error signing segment %v-%v: %v", strmID, seg.SeqNo, err)
+		return err
 	}
 
 	//Encode segment into []byte, broadcast it
@@ -431,4 +407,28 @@ func (n *LivepeerNode) NotifyBroadcaster(nid NodeID, strmID StreamID, transcodeS
 		return nil
 	}
 	return n.VideoNetwork.SendTranscodeResponse(string(nid), strmID.String(), ids)
+}
+
+func (n *LivepeerNode) StartEthServices() error {
+	var err error
+	for _, s := range n.EthServices {
+		err = s.Start(context.Background())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (n *LivepeerNode) StopEthServices() error {
+	var err error
+	for _, s := range n.EthServices {
+		err = s.Stop()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

@@ -7,88 +7,80 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"text/tabwriter"
+	"strconv"
+	// "text/tabwriter"
 
 	"github.com/golang/glog"
 
 	"github.com/ethereum/go-ethereum/common"
-	eth "github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/eth"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/olekukonko/tablewriter"
 )
 
-func (w *wizard) allTranscoderStats() map[int]common.Address {
-	transcoderIds := make(map[int]common.Address)
+func (w *wizard) registeredTranscoderStats() map[int]common.Address {
+	transcoders, err := w.getRegisteredTranscoders()
+	if err != nil {
+		glog.Errorf("Error getting registered transcoders: %v", err)
+		return nil
+	}
+
+	transcoderIDs := make(map[int]common.Address)
 	nextId := 0
 
-	fmt.Println("REGISTERED CANDIDATE TRANSCODERS")
+	fmt.Println("REGISTERED TRANSCODERS")
 	fmt.Println("--------------------------------")
 
-	resp, err := http.Get(fmt.Sprintf("http://%v:%v/candidateTranscodersStats", w.host, w.httpPort))
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"ID", "Address", "Active", "Delegated Stake", "Reward Cut (%)", "Fee Share (%)", "Price", "Pending Reward Cut (%)", "Pending Fee Share (%)", "Pending Price"})
+
+	for _, t := range transcoders {
+		table.Append([]string{
+			strconv.FormatInt(int64(nextId), 10),
+			t.Address.Hex(),
+			strconv.FormatBool(t.Active),
+			eth.FormatLPTU(t.DelegatedStake),
+			eth.FormatPerc(t.BlockRewardCut),
+			eth.FormatPerc(t.FeeShare),
+			eth.FormatLPTU(t.PricePerSegment),
+			eth.FormatPerc(t.PendingBlockRewardCut),
+			eth.FormatPerc(t.PendingFeeShare),
+			eth.FormatLPTU(t.PendingPricePerSegment),
+		})
+
+		transcoderIDs[nextId] = t.Address
+		nextId++
+	}
+
+	table.Render()
+
+	return transcoderIDs
+}
+
+func (w *wizard) getRegisteredTranscoders() ([]lpTypes.Transcoder, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/registeredTranscoders", w.host, w.httpPort))
 	if err != nil {
-		glog.Errorf("Error getting node ID: %v", err)
-		return nil
+		return nil, err
 	}
 
 	defer resp.Body.Close()
+
 	result, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		glog.Errorf("Error reading response: %v", err)
-		return nil
+		return nil, err
 	}
 
-	var candidateTranscoderStats []eth.TranscoderStats
-	err = json.Unmarshal(result, &candidateTranscoderStats)
+	var transcoders []lpTypes.Transcoder
+	err = json.Unmarshal(result, &transcoders)
 	if err != nil {
-		glog.Errorf("Error unmarshalling transcoder stats: %v", err)
-		return nil
+		return nil, err
 	}
 
-	wtr := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', 0)
-	fmt.Fprintln(wtr, "Identifier\tAddress\tTotalStake\tBlockRewardCut\tFeeShare\tPricePerSegment\tPendingBlockRewardCut\tPendingFeeShare\tPendingPricePerSegment")
-	for _, stats := range candidateTranscoderStats {
-		fmt.Fprintf(wtr, "%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\n", nextId, stats.Address.Hex(), stats.TotalStake, stats.BlockRewardCut, stats.FeeShare, stats.PricePerSegment, stats.PendingBlockRewardCut, stats.PendingFeeShare, stats.PendingPricePerSegment)
-
-		transcoderIds[nextId] = stats.Address
-		nextId++
-	}
-
-	fmt.Fprintln(wtr, "REGISTERED RESERVE TRANSCODERS")
-	fmt.Fprintln(wtr, "-------------------------------")
-
-	resp, err = http.Get(fmt.Sprintf("http://%v:%v/reserveTranscodersStats", w.host, w.httpPort))
-	if err != nil {
-		glog.Errorf("Error getting node ID: %v", err)
-		return nil
-	}
-
-	defer resp.Body.Close()
-	result, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		glog.Errorf("Error reading response: %v", err)
-		return nil
-	}
-
-	var reserveTranscoderStats []eth.TranscoderStats
-	err = json.Unmarshal(result, &reserveTranscoderStats)
-	if err != nil {
-		glog.Errorf("Error unmarshalling transcoder stats: %v", err)
-		return nil
-	}
-
-	fmt.Fprintln(wtr, "Identifier\tAddress\tTotalStake\tBlockRewardCut\tFeeShare\tPricePerSegment\tPendingBlockRewardCut\tPendingFeeShare\tPendingPricePerSegment")
-	for _, stats := range reserveTranscoderStats {
-		fmt.Fprintf(wtr, "%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\n", nextId, stats.Address.Hex(), stats.TotalStake, stats.BlockRewardCut, stats.FeeShare, stats.PricePerSegment, stats.PendingBlockRewardCut, stats.PendingFeeShare, stats.PendingPricePerSegment)
-
-		transcoderIds[nextId] = stats.Address
-		nextId++
-	}
-
-	wtr.Flush()
-
-	return transcoderIds
+	return transcoders, nil
 }
 
 func (w *wizard) bond() {
-	transcoderIds := w.allTranscoderStats()
+	transcoderIds := w.registeredTranscoderStats()
 	var tAddr common.Address
 	if transcoderIds == nil {
 		fmt.Printf("Enter the address of the transcoder you would like to bond to - ")
@@ -118,6 +110,31 @@ func (w *wizard) unbond() {
 	httpPost(fmt.Sprintf("http://%v:%v/unbond", w.host, w.httpPort))
 }
 
-func (w *wizard) withdrawBond() {
-	httpPost(fmt.Sprintf("http://%v:%v/withdrawBond", w.host, w.httpPort))
+func (w *wizard) withdrawStake() {
+	httpPost(fmt.Sprintf("http://%v:%v/withdrawStake", w.host, w.httpPort))
+}
+
+func (w *wizard) withdrawFees() {
+	httpPost(fmt.Sprintf("http://%v:%v/withdrawFees", w.host, w.httpPort))
+}
+
+func (w *wizard) claimRewardsAndFees() {
+	fmt.Printf("Current round: %v\n", w.currentRound())
+
+	d, err := w.getDelegatorInfo()
+	if err != nil {
+		glog.Error(err)
+		return
+	}
+
+	fmt.Printf("Last claim round: %v\n", d.LastClaimTokenPoolsSharesRound)
+
+	fmt.Printf("Enter end round - ")
+	endRound := w.readInt()
+
+	val := url.Values{
+		"endRound": {fmt.Sprintf("%v", endRound)},
+	}
+
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/claimTokenPoolsShares", w.host, w.httpPort), val)
 }
