@@ -63,7 +63,7 @@ type LivepeerEthClient interface {
 	GetTranscoderTokenPoolsForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error)
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
-	IsAssignedTranscoder(jobID, maxPricePerSegment *big.Int) (bool, error)
+	IsAssignedTranscoder(jobID *big.Int) (bool, error)
 
 	// Jobs
 	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int, endBlock *big.Int) (*types.Transaction, error)
@@ -517,6 +517,8 @@ func (c *client) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
 		BroadcasterAddress: jInfo.BroadcasterAddress,
 		TranscodingOptions: jInfo.TranscodingOptions,
 		TranscoderAddress:  jInfo.TranscoderAddress,
+		CreationRound:      jInfo.CreationRound,
+		CreationBlock:      jInfo.CreationBlock,
 		EndBlock:           jInfo.EndBlock,
 		Escrow:             jInfo.Escrow,
 		Status:             status,
@@ -571,7 +573,7 @@ func (c *client) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
 	return transcoders, nil
 }
 
-func (c *client) IsAssignedTranscoder(jobID, maxPricePerSegment *big.Int) (bool, error) {
+func (c *client) IsAssignedTranscoder(jobID *big.Int) (bool, error) {
 	jInfo, err := c.JobsManagerSession.GetJob(jobID)
 	if err != nil {
 		return false, err
@@ -582,7 +584,7 @@ func (c *client) IsAssignedTranscoder(jobID, maxPricePerSegment *big.Int) (bool,
 		return false, err
 	}
 
-	t, err := c.BondingManagerSession.ElectActiveTranscoder(maxPricePerSegment, jInfo.CreationBlock, currentRound)
+	t, err := c.BondingManagerSession.ElectActiveTranscoder(jInfo.MaxPricePerSegment, jInfo.CreationBlock, currentRound)
 	if err != nil {
 		return false, err
 	}

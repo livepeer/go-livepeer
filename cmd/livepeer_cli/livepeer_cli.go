@@ -108,8 +108,8 @@ func (w *wizard) run() {
 		fmt.Println(" 10. List registered transcoders")
 
 		if w.transcoder {
-			fmt.Println(" 11. Set transcoder config")
-			fmt.Println(" 12. Become a transcoder")
+			fmt.Println(" 11. Become a transcoder")
+			fmt.Println(" 12. Set transcoder config")
 
 			w.doCLIOpt(w.read(), true)
 		} else {

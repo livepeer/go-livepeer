@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -24,6 +25,7 @@ type ClaimManager interface {
 	AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error
 	SufficientBroadcasterDeposit() (bool, error)
 	ClaimVerifyAndDistributeFees() error
+	DidFirstClaim() bool
 }
 
 type claimData struct {
@@ -46,12 +48,15 @@ type BasicClaimManager struct {
 	profiles []lpmscore.VideoProfile
 	pLookup  map[lpmscore.VideoProfile]int
 
-	segClaimMap map[int64]*claimData
-	claimSegs   map[int64][]int64
-	cost        *big.Int
+	segClaimMap   map[int64]*claimData
+	unclaimedSegs map[int64]bool
+	cost          *big.Int
 
 	broadcasterAddr common.Address
 	pricePerSegment *big.Int
+
+	claims     int64
+	claimsLock sync.Mutex
 }
 
 //NewBasicClaimManager creates a new claim manager.
@@ -92,7 +97,13 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, 
 		profiles:        p,
 		pLookup:         pLookup,
 		segClaimMap:     make(map[int64]*claimData),
+		unclaimedSegs:   make(map[int64]bool),
+		claims:          0,
 	}
+}
+
+func (c *BasicClaimManager) DidFirstClaim() bool {
+	return c.claims > 0
 }
 
 //AddReceipt adds a claim for a given video segment.
@@ -121,6 +132,8 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byt
 	cd.tDataHashes[profile] = tDataHash
 
 	c.cost = new(big.Int).Add(c.cost, c.pricePerSegment)
+	c.unclaimedSegs[seqNo] = true
+
 	return nil
 }
 
@@ -150,7 +163,7 @@ func (a SortUint64) Less(i, j int) bool { return a[i] < a[j] }
 func (c *BasicClaimManager) makeRanges() [][2]int64 {
 	//Get seqNos, sort them
 	keys := []int64{}
-	for key := range c.segClaimMap {
+	for key := range c.unclaimedSegs {
 		keys = append(keys, key)
 	}
 	sort.Sort(SortUint64(keys))
@@ -186,11 +199,17 @@ func (c *BasicClaimManager) makeRanges() [][2]int64 {
 	return ranges
 }
 
+func (c *BasicClaimManager) markClaimedSegs(segRange [2]int64) {
+	for segNo := segRange[0]; segNo <= segRange[1]; segNo++ {
+		delete(c.unclaimedSegs, segNo)
+	}
+}
+
 //Claim creates the onchain claim for all the claims added through AddReceipt
 func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 	ranges := c.makeRanges()
 
-	for rangeIdx, segRange := range ranges {
+	for _, segRange := range ranges {
 		//create concat hashes for each seg
 		receiptHashes := make([]common.Hash, segRange[1]-segRange[0]+1)
 		for i := segRange[0]; i <= segRange[1]; i++ {
@@ -219,39 +238,35 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 			continue
 		}
 
+		bigRange := [2]*big.Int{big.NewInt(segRange[0]), big.NewInt(segRange[1])}
+		tx, err := c.client.ClaimWork(c.jobID, bigRange, root.Hash)
+		if err != nil {
+			return err
+		}
+
+		err = c.client.CheckTx(tx)
+		if err != nil {
+			return err
+		}
+
+		glog.Infof("Submitted transcode claim for segments %v - %v", segRange[0], segRange[1])
+
+		c.markClaimedSegs(segRange)
+		c.claims++
+
+		claim, err := c.client.GetClaim(c.jobID, big.NewInt(c.claims-1))
+		if err != nil {
+			return err
+		}
+
+		//Record proofs for each segment in case the segment needs to be verified
+		for i := segRange[0]; i <= segRange[1]; i++ {
+			seg, _ := c.segClaimMap[i]
+			seg.transcodeProof = proofs[i-segRange[0]].Bytes()
+		}
+
 		//Do the claim
-		go func(rangeIdx int, segRange [2]int64) {
-			bigRange := [2]*big.Int{big.NewInt(segRange[0]), big.NewInt(segRange[1])}
-			tx, err := c.client.ClaimWork(c.jobID, bigRange, root.Hash)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			err = c.client.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			glog.Infof("Submitted transcode claim for segments %v - %v", segRange[0], segRange[1])
-
-			claim, err := c.client.GetClaim(c.jobID, big.NewInt(int64(rangeIdx)))
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			glog.Infof("Got claim")
-
-			//Record proofs for each segment in case the segment needs to be verified
-			for i := segRange[0]; i <= segRange[1]; i++ {
-				seg, _ := c.segClaimMap[i]
-				seg.transcodeProof = proofs[i-segRange[0]].Bytes()
-			}
-
-			glog.Infof("got proofs")
-
+		go func(segRange [2]int64, claim *ethTypes.Claim) {
 			// Wait one block for claimBlock + 1 to be mined
 			Wait(c.client.Backend(), RpcTimeout, big.NewInt(1))
 
@@ -260,20 +275,17 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 				return
 			}
 
-			glog.Infof("got plus one block hash %v", plusOneBlk.Hash())
-
 			// Submit for verification if necessary
 			c.verify(claim.ClaimId, claim.ClaimBlock.Int64(), plusOneBlk.Hash(), segRange)
 			// Distribute fees once verification is complete
 			c.distributeFees(claim.ClaimId)
-		}(rangeIdx, segRange)
+		}(segRange, claim)
 	}
 
 	return nil
 }
 
 func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneBlkHash common.Hash, segRange [2]int64) error {
-	glog.Infof("verify")
 	//Get verification rate
 	verifyRate, err := c.client.VerificationRate()
 	if err != nil {
@@ -283,8 +295,6 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 
 	//Iterate through segments, determine which one needs to be verified.
 	for segNo := segRange[0]; segNo <= segRange[1]; segNo++ {
-		glog.Infof("Checking %v for verification", segNo)
-
 		if c.shouldVerifySegment(segNo, segRange[0], segRange[1], claimBlkNum, plusOneBlkHash, verifyRate) {
 			glog.Infof("Segment %v challenged for verification", segNo)
 
@@ -309,6 +319,8 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 				glog.Errorf("Failed to verify segment %v: %v", segNo, err)
 				continue
 			}
+
+			glog.Infof("Verified segment %v", segNo)
 		}
 	}
 
@@ -344,22 +356,20 @@ func (c *BasicClaimManager) distributeFees(claimID *big.Int) error {
 }
 
 func (c *BasicClaimManager) shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, plusOneBlkHash common.Hash, verifyRate uint64) bool {
-	// if seqNum < start || seqNum > end {
-	// 	return false
-	// }
+	if seqNum < start || seqNum > end {
+		return false
+	}
 
-	// bigSeqNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(seqNum).Bytes(), 32)
-	// bigBlkNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(blkNum+1).Bytes(), 32)
+	bigSeqNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(seqNum).Bytes(), 32)
+	bigBlkNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(blkNum+1).Bytes(), 32)
 
-	// combH := crypto.Keccak256(bigBlkNumBytes, plusOneBlkHash.Bytes(), bigSeqNumBytes)
-	// hashNum := new(big.Int).SetBytes(combH)
-	// result := new(big.Int).Mod(hashNum, new(big.Int).SetInt64(int64(verifyRate)))
+	combH := crypto.Keccak256(bigBlkNumBytes, plusOneBlkHash.Bytes(), bigSeqNumBytes)
+	hashNum := new(big.Int).SetBytes(combH)
+	result := new(big.Int).Mod(hashNum, new(big.Int).SetInt64(int64(verifyRate)))
 
-	// if result.Cmp(new(big.Int).SetInt64(int64(0))) == 0 {
-	// 	return true
-	// } else {
-	// 	return false
-	// }
-
-	return true
+	if result.Cmp(new(big.Int).SetInt64(int64(0))) == 0 {
+		return true
+	} else {
+		return false
+	}
 }

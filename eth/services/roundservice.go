@@ -35,7 +35,7 @@ func (s *RoundsService) Start(ctx context.Context) error {
 	}
 
 	headersCh := make(chan *types.Header)
-	sub, err := s.eventMonitor.SubscribeNewBlock(ctx, headersCh, func(h *types.Header) error {
+	sub, err := s.eventMonitor.SubscribeNewBlock(ctx, headersCh, func(h *types.Header) (bool, error) {
 		return s.tryInitializeRound()
 	})
 
@@ -63,30 +63,30 @@ func (s *RoundsService) Stop() error {
 	return nil
 }
 
-func (s *RoundsService) tryInitializeRound() error {
+func (s *RoundsService) tryInitializeRound() (bool, error) {
 	currentRound, err := s.client.CurrentRound()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	lastInitializedRound, err := s.client.LastInitializedRound()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if lastInitializedRound.Cmp(currentRound) == -1 {
 		tx, err := s.client.InitializeRound()
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		err = s.client.CheckTx(tx)
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		glog.Infof("Initialized round %v", currentRound)
 	}
 
-	return nil
+	return true, nil
 }

@@ -43,7 +43,7 @@ func (s *JobService) Start(ctx context.Context) error {
 	}
 
 	logsCh := make(chan types.Log)
-	sub, err := s.eventMonitor.SubscribeNewJob(ctx, logsCh, common.Address{}, func(l types.Log) error {
+	sub, err := s.eventMonitor.SubscribeNewJob(ctx, logsCh, common.Address{}, func(l types.Log) (bool, error) {
 		_, jid, _, _ := parseNewJobLog(l)
 
 		// TODO: store broadcaster address to verify received signed segments
@@ -51,19 +51,19 @@ func (s *JobService) Start(ctx context.Context) error {
 		job, err := s.node.Eth.GetJob(jid)
 		if err != nil {
 			glog.Errorf("Error getting job info: %v", err)
-			return nil
+			return false, err
 		}
 
-		assigned, err := s.node.Eth.IsAssignedTranscoder(jid, job.MaxPricePerSegment)
+		assigned, err := s.node.Eth.IsAssignedTranscoder(jid)
 		if err != nil {
 			glog.Errorf("Error checking for assignment: %v", err)
-			return nil
+			return false, err
 		}
 
 		if assigned {
 			return s.doTranscode(job)
 		} else {
-			return nil
+			return true, nil
 		}
 	})
 
@@ -91,24 +91,26 @@ func (s *JobService) Stop() error {
 	return nil
 }
 
-func (s *JobService) doTranscode(job *lpTypes.Job) error {
+func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 	//Check if broadcaster has enough funds
 	bDeposit, err := s.node.Eth.BroadcasterDeposit(job.BroadcasterAddress)
 	if err != nil {
 		glog.Errorf("Error getting broadcaster deposit: %v", err)
-		return err
+		return false, err
 	}
 
 	if bDeposit.Cmp(big.NewInt(0)) == 0 {
 		glog.Infof("Broadcaster does not have enough funds. Skipping job")
-		return nil
+		return true, nil
 	}
 
 	tProfiles, err := txDataToVideoProfile(job.TranscodingOptions)
 	if err != nil {
 		glog.Errorf("Error processing transcoding options: %v", err)
-		return err
+		return false, err
 	}
+
+	glog.Infof("PROFILES %v", tProfiles)
 
 	//Create transcode config, make sure the profiles are sorted
 	config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: job.JobId, PerformOnchainClaim: true}
@@ -120,14 +122,8 @@ func (s *JobService) doTranscode(job *lpTypes.Job) error {
 	strmIDs, err := s.node.TranscodeAndBroadcast(config, cm, tr)
 	if err != nil {
 		glog.Errorf("Transcode Error: %v", err)
-		return err
+		return false, err
 	}
-
-	// headersCh := make(chan *types.Header)
-	// s.eventMonitor.SubscribeNewBlock(ctx, headersCh, func(h *types.Header) error {
-	// 	// Check if current block is job creation block + 200
-	// 	return s.doFirstClaim(cm)
-	// })
 
 	//Notify Broadcaster
 	sid := core.StreamID(job.StreamId)
@@ -137,24 +133,47 @@ func (s *JobService) doTranscode(job *lpTypes.Job) error {
 	}
 	if err = s.node.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
 		glog.Errorf("Notify Broadcaster Error: %v", err)
+		return true, nil
 	}
 
-	return nil
+	firstClaimBlock := new(big.Int).Add(job.CreationBlock, big.NewInt(200))
+	headersCh := make(chan *types.Header)
+	s.eventMonitor.SubscribeNewBlock(context.Background(), headersCh, func(h *types.Header) (bool, error) {
+		if cm.DidFirstClaim() {
+			// If the first claim has already been made then exit
+			return false, nil
+		}
+
+		// Check if current block is job creation block + 200
+		if h.Number.Cmp(firstClaimBlock) != -1 {
+			glog.Infof("Making the first claim")
+
+			err := cm.ClaimVerifyAndDistributeFees()
+			if err != nil {
+				return false, err
+			} else {
+				// If this claim was successful then the first claim has been made - exit
+				return false, nil
+			}
+		} else {
+			return true, nil
+		}
+	})
+
+	return true, nil
 }
-
-// func (s *JobService) doFirstClaim(cm) {
-
-// }
 
 func txDataToVideoProfile(txData string) ([]lpmscore.VideoProfile, error) {
 	profiles := make([]lpmscore.VideoProfile, 0)
 
-	for i := 0; i+lpcommon.VideoProfileIDSize < len(txData); i += lpcommon.VideoProfileIDSize {
+	glog.Infof("TX DATA: %v", txData)
+
+	for i := 0; i+lpcommon.VideoProfileIDSize <= len(txData); i += lpcommon.VideoProfileIDSize {
 		txp := txData[i : i+lpcommon.VideoProfileIDSize]
 
 		p, ok := lpmscore.VideoProfileLookup[lpcommon.VideoProfileNameLookup[txp]]
 		if !ok {
-			// glog.Errorf("Cannot find video profile for job: %v", txp)
+			glog.Errorf("Cannot find video profile for job: %v", txp)
 			// return nil, core.ErrTranscode
 		} else {
 			profiles = append(profiles, p)

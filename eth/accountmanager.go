@@ -11,6 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/console"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	// "github.com/golang/glog"
 )
 
 var (
@@ -91,13 +93,15 @@ func (am *AccountManager) CreateTransactOpts(gasLimit, gasPrice *big.Int) (*bind
 	}
 
 	return &bind.TransactOpts{
-		From: am.Account.Address,
+		From:     am.Account.Address,
+		GasLimit: gasLimit,
+		GasPrice: gasPrice,
 		Signer: func(signer types.Signer, address common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			if address != am.Account.Address {
 				return nil, errors.New("not authorized to sign this account")
 			}
 
-			signature, err := am.Sign(signer.Hash(tx).Bytes())
+			signature, err := am.keyStore.SignHash(am.Account, signer.Hash(tx).Bytes())
 			if err != nil {
 				return nil, err
 			}
@@ -109,7 +113,10 @@ func (am *AccountManager) CreateTransactOpts(gasLimit, gasPrice *big.Int) (*bind
 
 // Sign byte array message. Account must be unlocked
 func (am *AccountManager) Sign(msg []byte) ([]byte, error) {
-	return am.keyStore.SignHash(am.Account, msg)
+	personalMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, msg)
+	personalHash := crypto.Keccak256([]byte(personalMsg))
+
+	return am.keyStore.SignHash(am.Account, personalHash)
 }
 
 // Get account from keystore using hex address

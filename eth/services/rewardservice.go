@@ -36,7 +36,7 @@ func (s *RewardService) Start(ctx context.Context) error {
 	}
 
 	logsCh := make(chan types.Log)
-	sub, err := s.eventMonitor.SubscribeNewRound(ctx, logsCh, func(l types.Log) error {
+	sub, err := s.eventMonitor.SubscribeNewRound(ctx, logsCh, func(l types.Log) (bool, error) {
 		round := parseNewRoundLog(l)
 		return s.tryReward(round)
 	})
@@ -65,35 +65,35 @@ func (s *RewardService) Stop() error {
 	return nil
 }
 
-func (s *RewardService) tryReward(round *big.Int) error {
+func (s *RewardService) tryReward(round *big.Int) (bool, error) {
 	active, err := s.client.IsActiveTranscoder()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if !active {
 		glog.Infof("Not active for round %v", round)
-		return nil
+		return true, nil
 	}
 
 	tx, err := s.client.Reward()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	err = s.client.CheckTx(tx)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	tp, err := s.client.GetTranscoderTokenPoolsForRound(s.client.Account().Address, round)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	glog.Infof("Called reward for round %v - %v rewards minted", round, eth.FormatLPTU(tp.RewardPool))
 
-	return nil
+	return true, nil
 }
 
 func parseNewRoundLog(log types.Log) (round *big.Int) {

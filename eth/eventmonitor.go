@@ -13,8 +13,8 @@ import (
 	"github.com/livepeer/go-livepeer/eth/contracts"
 )
 
-type logCallback func(types.Log) error
-type headerCallback func(*types.Header) error
+type logCallback func(types.Log) (bool, error)
+type headerCallback func(*types.Header) (bool, error)
 
 type EventMonitor interface {
 	SubscribeNewJob(context.Context, chan types.Log, common.Address, logCallback) (ethereum.Subscription, error)
@@ -109,9 +109,14 @@ func watchLogs(sub ethereum.Subscription, logsCh chan types.Log, cb logCallback)
 				return
 			}
 
-			err := cb(l)
+			watch, err := cb(l)
 			if err != nil {
 				glog.Errorf("Error with log callback: %v", err)
+				return
+			}
+
+			if !watch {
+				glog.Infof("Done watching")
 				return
 			}
 		case err := <-sub.Err():
@@ -129,9 +134,14 @@ func watchBlocks(sub ethereum.Subscription, headersCh chan *types.Header, cb hea
 				return
 			}
 
-			err := cb(h)
+			watch, err := cb(h)
 			if err != nil {
 				glog.Errorf("Error with header callback: %v", err)
+				return
+			}
+
+			if !watch {
+				glog.Infof("Done watching")
 				return
 			}
 		case err := <-sub.Err():
