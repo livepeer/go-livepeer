@@ -99,7 +99,7 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 		return false, err
 	}
 
-	if bDeposit.Cmp(job.MaxPricePerSegment) == 1 {
+	if bDeposit.Cmp(job.MaxPricePerSegment) == -1 {
 		glog.Infof("Broadcaster does not have enough funds. Skipping job")
 		return true, nil
 	}
