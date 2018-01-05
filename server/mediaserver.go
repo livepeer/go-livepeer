@@ -205,11 +205,14 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					return
 				}
 
-				segHash := (&ethTypes.Segment{StreamID: hlsStrm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
-				sig, err := s.LivepeerNode.Eth.Sign(segHash.Bytes())
-				if err != nil {
-					glog.Errorf("Error signing segment %v-%v: %v", hlsStrm.GetStreamID(), seg.SeqNo, err)
-					return
+				var sig []byte
+				if s.LivepeerNode.Eth != nil {
+					segHash := (&ethTypes.Segment{StreamID: hlsStrm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
+					sig, err = s.LivepeerNode.Eth.Sign(segHash.Bytes())
+					if err != nil {
+						glog.Errorf("Error signing segment %v-%v: %v", hlsStrm.GetStreamID(), seg.SeqNo, err)
+						return
+					}
 				}
 
 				//Encode segment into []byte, broadcast it

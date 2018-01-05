@@ -31,12 +31,13 @@ var (
 	RoundsPerTokenSharesClaim = big.NewInt(20)
 
 	ErrCurrentRoundLocked = fmt.Errorf("current round locked")
+	ErrMissingBackend     = fmt.Errorf("missing Ethereum client backend")
 )
 
 type LivepeerEthClient interface {
 	Setup(gasLimit, gasPrice *big.Int) error
 	Account() accounts.Account
-	Backend() *ethclient.Client
+	Backend() (*ethclient.Client, error)
 
 	// Rounds
 	InitializeRound() (*types.Transaction, error)
@@ -265,8 +266,12 @@ func (c *client) Account() accounts.Account {
 	return c.accountManager.Account
 }
 
-func (c *client) Backend() *ethclient.Client {
-	return c.backend
+func (c *client) Backend() (*ethclient.Client, error) {
+	if c.backend == nil {
+		return nil, ErrMissingBackend
+	} else {
+		return c.backend, nil
+	}
 }
 
 // Staking

@@ -641,11 +641,17 @@ func (s *LivepeerServer) StartWebserver() {
 
 	http.HandleFunc("/ethBalance", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			b, err := s.LivepeerNode.Eth.Backend().BalanceAt(context.Background(), s.LivepeerNode.Eth.Account().Address, nil)
+			b, err := s.LivepeerNode.Eth.Backend()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			balance, err := b.BalanceAt(context.Background(), s.LivepeerNode.Eth.Account().Address, nil)
 			if err != nil {
 				w.Write([]byte(""))
 			}
-			w.Write([]byte(b.String()))
+			w.Write([]byte(balance.String()))
 		}
 	})
 

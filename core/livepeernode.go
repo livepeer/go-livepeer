@@ -109,7 +109,13 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.V
 
 	//Call eth client to create the job
 	p := big.NewInt(int64(price))
-	blk, err := n.Eth.Backend().BlockByNumber(context.Background(), nil)
+
+	b, err := n.Eth.Backend()
+	if err != nil {
+		return err
+	}
+
+	blk, err := b.BlockByNumber(context.Background(), nil)
 	if err != nil {
 		glog.Errorf("Cannot get current block number: %v", err)
 		return ErrNotFound

@@ -267,10 +267,16 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 
 		//Do the claim
 		go func(segRange [2]int64, claim *ethTypes.Claim) {
-			// Wait one block for claimBlock + 1 to be mined
-			Wait(c.client.Backend(), RpcTimeout, big.NewInt(1))
+			b, err := c.client.Backend()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
 
-			plusOneBlk, err := c.client.Backend().BlockByNumber(context.Background(), new(big.Int).Add(claim.ClaimBlock, big.NewInt(1)))
+			// Wait one block for claimBlock + 1 to be mined
+			Wait(b, RpcTimeout, big.NewInt(1))
+
+			plusOneBlk, err := b.BlockByNumber(context.Background(), new(big.Int).Add(claim.ClaimBlock, big.NewInt(1)))
 			if err != nil {
 				return
 			}
@@ -338,7 +344,12 @@ func (c *BasicClaimManager) distributeFees(claimID *big.Int) error {
 		return err
 	}
 
-	Wait(c.client.Backend(), RpcTimeout, new(big.Int).Add(verificationPeriod, slashingPeriod))
+	b, err := c.client.Backend()
+	if err != nil {
+		return err
+	}
+
+	Wait(b, RpcTimeout, new(big.Int).Add(verificationPeriod, slashingPeriod))
 
 	tx, err := c.client.DistributeFees(c.jobID, claimID)
 	if err != nil {
