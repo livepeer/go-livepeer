@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"strconv"
 	"text/tabwriter"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -71,7 +72,7 @@ func (w *wizard) transcoderStats() {
 	fmt.Fprintln(wtr, "|TRANSCODER STATS|")
 	fmt.Fprintln(wtr, "+----------------+")
 	fmt.Fprintf(wtr, "Status: \t%s\n", t.Status)
-	fmt.Fprintf(wtr, "Active: \t%s\n", t.Active)
+	fmt.Fprintf(wtr, "Active: \t%s\n", strconv.FormatBool(t.Active))
 	fmt.Fprintf(wtr, "Delegated Stake: \t%s\n", t.DelegatedStake)
 	fmt.Fprintf(wtr, "Block Reward Cut: \t%s\n", t.BlockRewardCut)
 	fmt.Fprintf(wtr, "Fee Share: \t%s\n", t.FeeShare)

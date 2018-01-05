@@ -96,10 +96,10 @@ func (w *wizard) bond() {
 	}
 
 	fmt.Printf("Enter bond amount - ")
-	amount := w.readInt()
+	amount := w.readBigInt()
 
 	val := url.Values{
-		"amount": {fmt.Sprintf("%v", amount)},
+		"amount": {fmt.Sprintf("%v", amount.String())},
 		"toAddr": {fmt.Sprintf("%v", tAddr.Hex())},
 	}
 
@@ -130,10 +130,10 @@ func (w *wizard) claimRewardsAndFees() {
 	fmt.Printf("Last claim round: %v\n", d.LastClaimTokenPoolsSharesRound)
 
 	fmt.Printf("Enter end round - ")
-	endRound := w.readInt()
+	endRound := w.readBigInt()
 
 	val := url.Values{
-		"endRound": {fmt.Sprintf("%v", endRound)},
+		"endRound": {fmt.Sprintf("%v", endRound.String())},
 	}
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/claimTokenPoolsShares", w.host, w.httpPort), val)

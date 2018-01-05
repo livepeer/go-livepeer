@@ -15,29 +15,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 )
-
-var (
-	ErrParseBigInt = fmt.Errorf("failed to parse big integer")
-)
-
-func parseBigInt(num string) (*big.Int, error) {
-	bigNum := new(big.Int)
-	bigNum.SetString(num, 10)
-
-	if bigNum == nil {
-		return nil, ErrParseBigInt
-	} else {
-		return bigNum, nil
-	}
-}
-
-func convertPerc(value int) *big.Int {
-	return big.NewInt(int64(value * 10000))
-}
 
 func (s *LivepeerServer) StartWebserver() {
 	//Temporary endpoint just so we can invoke a transcode job.  IRL this should be invoked by transcoders monitoring the smart contract.
@@ -78,7 +61,7 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide max price per segment")
 			return
 		}
-		price, err := parseBigInt(priceStr)
+		price, err := lpcommon.ParseBigInt(priceStr)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -204,7 +187,7 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide block reward cut")
 			return
 		}
-		blockRewardCut, err := strconv.Atoi(blockRewardCutStr)
+		blockRewardCut, err := strconv.ParseFloat(blockRewardCutStr, 32)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -215,7 +198,7 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide fee share")
 			return
 		}
-		feeShare, err := strconv.Atoi(feeShareStr)
+		feeShare, err := strconv.ParseFloat(feeShareStr, 32)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -226,7 +209,7 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide price per segment")
 			return
 		}
-		price, err := parseBigInt(priceStr)
+		price, err := lpcommon.ParseBigInt(priceStr)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -237,7 +220,7 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide amount")
 			return
 		}
-		amount, err := parseBigInt(amountStr)
+		amount, err := lpcommon.ParseBigInt(amountStr)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -258,19 +241,20 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
-			glog.Infof("Registering transcoder %v", s.LivepeerNode.Eth.Account().Address.Hex())
+		}
 
-			tx, err = s.LivepeerNode.Eth.Transcoder(convertPerc(blockRewardCut), convertPerc(feeShare), price)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
+		glog.Infof("Registering transcoder %v", s.LivepeerNode.Eth.Account().Address.Hex())
 
-			err = s.LivepeerNode.Eth.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
+		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		err = s.LivepeerNode.Eth.CheckTx(tx)
+		if err != nil {
+			glog.Error(err)
+			return
 		}
 	})
 
@@ -286,7 +270,7 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide block reward cut")
 			return
 		}
-		blockRewardCut, err := strconv.Atoi(blockRewardCutStr)
+		blockRewardCut, err := strconv.ParseFloat(blockRewardCutStr, 32)
 		if err != nil {
 			glog.Errorf("Cannot convert block reward cut: %v", err)
 			return
@@ -297,7 +281,7 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide fee share")
 			return
 		}
-		feeShare, err := strconv.Atoi(feeShareStr)
+		feeShare, err := strconv.ParseFloat(feeShareStr, 32)
 		if err != nil {
 			glog.Errorf("Cannot convert fee share: %v", err)
 			return
@@ -308,13 +292,13 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide price per segment")
 			return
 		}
-		price, err := parseBigInt(priceStr)
+		price, err := lpcommon.ParseBigInt(priceStr)
 		if err != nil {
 			glog.Error(err)
 			return
 		}
 
-		tx, err := s.LivepeerNode.Eth.Transcoder(convertPerc(blockRewardCut), convertPerc(feeShare), price)
+		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -340,7 +324,7 @@ func (s *LivepeerServer) StartWebserver() {
 				glog.Errorf("Need to provide amount")
 				return
 			}
-			amount, err := parseBigInt(amountStr)
+			amount, err := lpcommon.ParseBigInt(amountStr)
 			if err != nil {
 				glog.Errorf("Cannot convert amount: %v", err)
 				return
@@ -426,7 +410,7 @@ func (s *LivepeerServer) StartWebserver() {
 				glog.Errorf("Need to provide amount")
 				return
 			}
-			endRound, err := parseBigInt(endRoundStr)
+			endRound, err := lpcommon.ParseBigInt(endRoundStr)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -468,7 +452,7 @@ func (s *LivepeerServer) StartWebserver() {
 	http.HandleFunc("/transcoderTokenPoolsForRound", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			roundStr := r.URL.Query().Get("round")
-			round, err := parseBigInt(roundStr)
+			round, err := lpcommon.ParseBigInt(roundStr)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -504,7 +488,7 @@ func (s *LivepeerServer) StartWebserver() {
 				glog.Errorf("Need to provide amount")
 				return
 			}
-			amount, err := parseBigInt(amountStr)
+			amount, err := lpcommon.ParseBigInt(amountStr)
 			if err != nil {
 				glog.Error(err)
 				return

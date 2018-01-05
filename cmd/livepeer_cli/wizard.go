@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/log"
+	lpcommon "github.com/livepeer/go-livepeer/common"
 )
 
 // // read reads a single line from stdin, trimming if from spaces.
@@ -79,6 +81,70 @@ func (w *wizard) readDefaultInt(def int) int {
 		log.Crit("Failed to read user input", "err", err)
 	}
 	val, err := strconv.Atoi(strings.TrimSpace(text))
+	if err == nil {
+		return val
+	}
+	return def
+}
+
+func (w *wizard) readBigInt() *big.Int {
+	for {
+		fmt.Printf("> ")
+		text, err := w.in.ReadString('\n')
+		if err != nil {
+			log.Crit("Failed to read user input", "err", err)
+		}
+		if text = strings.TrimSpace(text); text == "" {
+			continue
+		}
+		val, err := lpcommon.ParseBigInt(strings.TrimSpace(text))
+		if err != nil {
+			log.Error("Invalid input, expected big integer", "err", err)
+			continue
+		}
+		return val
+	}
+}
+
+func (w *wizard) readDefaultBigInt(def *big.Int) *big.Int {
+	fmt.Printf("> ")
+	text, err := w.in.ReadString('\n')
+	if err != nil {
+		log.Crit("Failed to read user input", "err", err)
+	}
+	val, err := lpcommon.ParseBigInt(strings.TrimSpace(text))
+	if err == nil {
+		return val
+	}
+	return def
+}
+
+func (w *wizard) readFloat() float64 {
+	for {
+		fmt.Printf("> ")
+		text, err := w.in.ReadString('\n')
+		if err != nil {
+			log.Crit("Failed to read user input", "err", err)
+		}
+		if text = strings.TrimSpace(text); text == "" {
+			continue
+		}
+		val, err := strconv.ParseFloat(text, 32)
+		if err != nil {
+			log.Error("Invalid input, expected float", "err", err)
+			continue
+		}
+		return val
+	}
+}
+
+func (w *wizard) readDefaultFloat(def float64) float64 {
+	fmt.Printf("> ")
+	text, err := w.in.ReadString('\n')
+	if err != nil {
+		log.Crit("Failed to read user input", "err", err)
+	}
+	val, err := strconv.ParseFloat(strings.TrimSpace(text), 32)
 	if err == nil {
 		return val
 	}

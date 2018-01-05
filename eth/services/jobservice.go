@@ -110,8 +110,6 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 		return false, err
 	}
 
-	glog.Infof("PROFILES %v", tProfiles)
-
 	//Create transcode config, make sure the profiles are sorted
 	config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: job.JobId, PerformOnchainClaim: true}
 	glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.TranscodingOptions, config)
@@ -165,8 +163,6 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 
 func txDataToVideoProfile(txData string) ([]lpmscore.VideoProfile, error) {
 	profiles := make([]lpmscore.VideoProfile, 0)
-
-	glog.Infof("TX DATA: %v", txData)
 
 	for i := 0; i+lpcommon.VideoProfileIDSize <= len(txData); i += lpcommon.VideoProfileIDSize {
 		txp := txData[i : i+lpcommon.VideoProfileIDSize]

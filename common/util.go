@@ -1,9 +1,26 @@
 package common
 
 import (
+	"fmt"
+	"math/big"
 	"testing"
 	"time"
 )
+
+var (
+	ErrParseBigInt = fmt.Errorf("failed to parse big integer")
+)
+
+func ParseBigInt(num string) (*big.Int, error) {
+	bigNum := new(big.Int)
+	bigNum.SetString(num, 10)
+
+	if bigNum == nil {
+		return nil, ErrParseBigInt
+	} else {
+		return bigNum, nil
+	}
+}
 
 func WaitUntil(waitTime time.Duration, condition func() bool) {
 	start := time.Now()
