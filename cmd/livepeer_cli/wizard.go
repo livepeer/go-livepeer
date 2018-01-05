@@ -129,7 +129,7 @@ func (w *wizard) readFloat() float64 {
 		if text = strings.TrimSpace(text); text == "" {
 			continue
 		}
-		val, err := strconv.ParseFloat(text, 32)
+		val, err := strconv.ParseFloat(text, 64)
 		if err != nil {
 			log.Error("Invalid input, expected float", "err", err)
 			continue
@@ -144,7 +144,7 @@ func (w *wizard) readDefaultFloat(def float64) float64 {
 	if err != nil {
 		log.Crit("Failed to read user input", "err", err)
 	}
-	val, err := strconv.ParseFloat(strings.TrimSpace(text), 32)
+	val, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
 	if err == nil {
 		return val
 	}

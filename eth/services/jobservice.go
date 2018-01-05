@@ -99,7 +99,7 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 		return false, err
 	}
 
-	if bDeposit.Cmp(big.NewInt(0)) == 0 {
+	if bDeposit.Cmp(job.MaxPricePerSegment) == 1 {
 		glog.Infof("Broadcaster does not have enough funds. Skipping job")
 		return true, nil
 	}
@@ -146,12 +146,18 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 		if h.Number.Cmp(firstClaimBlock) != -1 {
 			glog.Infof("Making the first claim")
 
-			err := cm.ClaimVerifyAndDistributeFees()
-			if err != nil {
-				return false, err
+			if cm.CanClaim() {
+				err := cm.ClaimVerifyAndDistributeFees()
+				if err != nil {
+					return false, err
+				} else {
+					// If this claim was successful then the first claim has been made - exit
+					return false, nil
+				}
 			} else {
-				// If this claim was successful then the first claim has been made - exit
-				return false, nil
+				glog.Infof("No segments to claim")
+				// Keep watching
+				return true, nil
 			}
 		} else {
 			return true, nil

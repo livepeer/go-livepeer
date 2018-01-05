@@ -7,7 +7,7 @@ import (
 
 func (w *wizard) deposit() {
 	fmt.Printf("Current deposit: %v\n", w.getDeposit())
-	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
+	fmt.Printf("Current ETH balance: %v\n", w.getEthBalance())
 	fmt.Printf("Enter Deposit Amount - ")
 	amount := w.readBigInt()
 

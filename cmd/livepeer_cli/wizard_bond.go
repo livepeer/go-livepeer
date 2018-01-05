@@ -39,13 +39,13 @@ func (w *wizard) registeredTranscoderStats() map[int]common.Address {
 			strconv.FormatInt(int64(nextId), 10),
 			t.Address.Hex(),
 			strconv.FormatBool(t.Active),
-			eth.FormatLPTU(t.DelegatedStake),
+			eth.FormatUnits(t.DelegatedStake, "LPT"),
 			eth.FormatPerc(t.BlockRewardCut),
 			eth.FormatPerc(t.FeeShare),
-			eth.FormatLPTU(t.PricePerSegment),
+			eth.FormatUnits(t.PricePerSegment, "ETH"),
 			eth.FormatPerc(t.PendingBlockRewardCut),
 			eth.FormatPerc(t.PendingFeeShare),
-			eth.FormatLPTU(t.PendingPricePerSegment),
+			eth.FormatUnits(t.PendingPricePerSegment, "ETH"),
 		})
 
 		transcoderIDs[nextId] = t.Address

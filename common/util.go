@@ -13,9 +13,9 @@ var (
 
 func ParseBigInt(num string) (*big.Int, error) {
 	bigNum := new(big.Int)
-	bigNum.SetString(num, 10)
+	_, ok := bigNum.SetString(num, 10)
 
-	if bigNum == nil {
+	if !ok {
 		return nil, ErrParseBigInt
 	} else {
 		return bigNum, nil

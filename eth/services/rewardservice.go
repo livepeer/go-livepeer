@@ -91,7 +91,7 @@ func (s *RewardService) tryReward(round *big.Int) (bool, error) {
 		return false, err
 	}
 
-	glog.Infof("Called reward for round %v - %v rewards minted", round, eth.FormatLPTU(tp.RewardPool))
+	glog.Infof("Called reward for round %v - %v rewards minted", round, eth.FormatUnits(tp.RewardPool, "LPTU"))
 
 	return true, nil
 }

@@ -94,7 +94,7 @@ func (n *LivepeerNode) Start(ctx context.Context, bootID, bootAddr string) error
 }
 
 //CreateTranscodeJob creates the on-chain transcode job.
-func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.VideoProfile, price uint64) error {
+func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.VideoProfile, price *big.Int) error {
 	if n.Eth == nil {
 		glog.Errorf("Cannot create transcode job, no eth client found")
 		return ErrNotFound
@@ -108,8 +108,6 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.V
 	}
 
 	//Call eth client to create the job
-	p := big.NewInt(int64(price))
-
 	b, err := n.Eth.Backend()
 	if err != nil {
 		return err
@@ -121,7 +119,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.V
 		return ErrNotFound
 	}
 
-	tx, err := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], p, big.NewInt(0).Add(blk.Number(), big.NewInt(DefaultJobLength)))
+	tx, err := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], price, big.NewInt(0).Add(blk.Number(), big.NewInt(DefaultJobLength)))
 	if err != nil {
 		return err
 	}
@@ -131,7 +129,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.V
 		return err
 	}
 
-	glog.Infof("Created broadcast job. Price: %v. Type: %v", p, ethcommon.ToHex(transOpts)[2:])
+	glog.Infof("Created broadcast job. Price: %v. Type: %v", price, ethcommon.ToHex(transOpts)[2:])
 
 	return nil
 }
@@ -180,8 +178,12 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 			if cm != nil && config.PerformOnchainClaim {
 				glog.V(common.SHORT).Infof("Stream finished. Claiming work.")
 
-				if err := cm.ClaimVerifyAndDistributeFees(); err != nil {
-					glog.Errorf("Error claiming work: %v", err)
+				if cm.CanClaim() {
+					if err := cm.ClaimVerifyAndDistributeFees(); err != nil {
+						glog.Errorf("Error claiming work: %v", err)
+					}
+				} else {
+					glog.Infof("No segments to claim")
 				}
 			}
 			return
@@ -195,8 +197,13 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 
 			if !sufficient {
 				glog.V(common.SHORT).Infof("Broadcaster does not have enough funds. Claiming work.")
-				if err := cm.ClaimVerifyAndDistributeFees(); err != nil {
-					glog.Errorf("Error claiming work: %v", err)
+
+				if cm.CanClaim() {
+					if err := cm.ClaimVerifyAndDistributeFees(); err != nil {
+						glog.Errorf("Error claiming work: %v", err)
+					}
+				} else {
+					glog.Infof("No segments to claim")
 				}
 				return
 			}

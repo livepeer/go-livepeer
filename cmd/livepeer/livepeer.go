@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
 	bnet "github.com/livepeer/go-livepeer-basicnet"
+	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/services"
@@ -83,7 +84,7 @@ func main() {
 	bootAddr := flag.String("bootAddr", "", "Bootstrap node addr")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
-	maxPricePerSegment := flag.Int("maxPricePerSegment", 1, "Max price per segment for a broadcast job")
+	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
 	ethKeyPath := flag.String("ethKeyPath", "", "Path for the Eth Key")
@@ -291,9 +292,15 @@ func main() {
 	msCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	bigMaxPricePerSegment, err := lpcommon.ParseBigInt(*maxPricePerSegment)
+	if err != nil {
+		glog.Errorf("Error setting max price per segment: %v", err)
+		return
+	}
+
 	go func() {
 		s.StartWebserver()
-		ec <- s.StartMediaServer(msCtx, *maxPricePerSegment, *transcodingOptions)
+		ec <- s.StartMediaServer(msCtx, bigMaxPricePerSegment, *transcodingOptions)
 	}()
 
 	c := make(chan os.Signal)

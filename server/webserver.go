@@ -85,7 +85,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		BroadcastPrice = uint64(price.Uint64())
+		BroadcastPrice = price
 		BroadcastJobVideoProfiles = profiles
 
 		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
@@ -97,7 +97,7 @@ func (s *LivepeerServer) StartWebserver() {
 			pNames = append(pNames, p.Name)
 		}
 		config := struct {
-			MaxPricePerSegment uint64
+			MaxPricePerSegment *big.Int
 			TranscodingOptions string
 		}{
 			BroadcastPrice,
@@ -187,7 +187,7 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide block reward cut")
 			return
 		}
-		blockRewardCut, err := strconv.ParseFloat(blockRewardCutStr, 32)
+		blockRewardCut, err := strconv.ParseFloat(blockRewardCutStr, 64)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -198,7 +198,7 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide fee share")
 			return
 		}
-		feeShare, err := strconv.ParseFloat(feeShareStr, 32)
+		feeShare, err := strconv.ParseFloat(feeShareStr, 64)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -270,7 +270,7 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide block reward cut")
 			return
 		}
-		blockRewardCut, err := strconv.ParseFloat(blockRewardCutStr, 32)
+		blockRewardCut, err := strconv.ParseFloat(blockRewardCutStr, 64)
 		if err != nil {
 			glog.Errorf("Cannot convert block reward cut: %v", err)
 			return
@@ -281,7 +281,7 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide fee share")
 			return
 		}
-		feeShare, err := strconv.ParseFloat(feeShareStr, 32)
+		feeShare, err := strconv.ParseFloat(feeShareStr, 64)
 		if err != nil {
 			glog.Errorf("Cannot convert fee share: %v", err)
 			return

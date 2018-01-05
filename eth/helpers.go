@@ -11,17 +11,27 @@ import (
 	"github.com/golang/glog"
 )
 
-func FormatLPTU(baseAmount *big.Int) string {
-	lptAmount := FromLPTU(baseAmount)
+func FormatUnits(baseAmount *big.Int, name string) string {
+	amount := FromBaseUnit(baseAmount)
 
-	if lptAmount.Cmp(big.NewFloat(1)) == -1 {
-		return fmt.Sprintf("%v LPTU", baseAmount)
+	if amount.Cmp(big.NewFloat(1)) == -1 {
+		switch name {
+		case "ETH":
+			return fmt.Sprintf("%v WEI", baseAmount)
+		default:
+			return fmt.Sprintf("%v LPTU", baseAmount)
+		}
 	} else {
-		return fmt.Sprintf("%.21f LPT", lptAmount)
+		switch name {
+		case "ETH":
+			return fmt.Sprintf("%v ETH", amount)
+		default:
+			return fmt.Sprintf("%v LPT", amount)
+		}
 	}
 }
 
-func ToLPTU(lptAmount *big.Float) *big.Int {
+func ToBaseUnit(lptAmount *big.Float) *big.Int {
 	decimals := new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 	floatDecimals := new(big.Float).SetInt(decimals)
 	floatBaseAmount := new(big.Float).Mul(lptAmount, floatDecimals)
@@ -32,7 +42,7 @@ func ToLPTU(lptAmount *big.Float) *big.Int {
 	return baseAmount
 }
 
-func FromLPTU(baseAmount *big.Int) *big.Float {
+func FromBaseUnit(baseAmount *big.Int) *big.Float {
 	decimals := new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 	floatDecimals := new(big.Float).SetInt(decimals)
 	floatBaseAmount := new(big.Float).SetInt(baseAmount)
@@ -43,25 +53,20 @@ func FromLPTU(baseAmount *big.Int) *big.Float {
 func FormatPerc(value *big.Int) string {
 	perc := ToPerc(value)
 
-	return fmt.Sprintf("%.21f", perc)
+	return fmt.Sprintf("%v", perc)
 }
 
 func ToPerc(value *big.Int) float64 {
-	divisor := big.NewFloat(10000)
-	floatValue := new(big.Float).SetInt(value)
+	pMultiplier := 10000.0
 
-	perc, _ := new(big.Float).Quo(floatValue, divisor).Float64()
-	return perc
+	return float64(value.Int64()) / pMultiplier
 }
 
 func FromPerc(perc float64) *big.Int {
-	divisor := big.NewFloat(10000)
-	floatValue := new(big.Float).Mul(big.NewFloat(perc), divisor)
+	pMultiplier := 10000.0
+	value := perc * pMultiplier
 
-	value := new(big.Int)
-	floatValue.Int(value)
-
-	return value
+	return big.NewInt(int64(value))
 }
 
 func Wait(backend *ethclient.Client, rpcTimeout time.Duration, blocks *big.Int) error {

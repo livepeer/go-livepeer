@@ -25,6 +25,7 @@ type ClaimManager interface {
 	AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error
 	SufficientBroadcasterDeposit() (bool, error)
 	ClaimVerifyAndDistributeFees() error
+	CanClaim() bool
 	DidFirstClaim() bool
 }
 
@@ -100,6 +101,10 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, 
 		unclaimedSegs:   make(map[int64]bool),
 		claims:          0,
 	}
+}
+
+func (c *BasicClaimManager) CanClaim() bool {
+	return len(c.unclaimedSegs) > 0
 }
 
 func (c *BasicClaimManager) DidFirstClaim() bool {
