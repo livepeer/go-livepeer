@@ -8,11 +8,12 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"text/tabwriter"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/olekukonko/tablewriter"
 )
 
 func (w *wizard) stats(showTranscoder bool) {
@@ -22,21 +23,33 @@ func (w *wizard) stats(showTranscoder bool) {
 		return
 	}
 
-	// Observe how the b's and the d's, despite appearing in the
-	// second cell of each line, belong to different columns.
-	// wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight|tabwriter.Debug)
-	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
-	fmt.Fprintf(wtr, "Node ID: \t%s\n", w.getNodeID())
-	fmt.Fprintf(wtr, "Node Addr: \t%s\n", w.getNodeAddr())
-	fmt.Fprintf(wtr, "RTMP Port: \t%s\n", w.rtmpPort)
-	fmt.Fprintf(wtr, "HTTP Port: \t%s\n", w.httpPort)
-	fmt.Fprintf(wtr, "Controller Address: \t%s\n", addrMap["Controller"].Hex())
-	fmt.Fprintf(wtr, "LivepeerToken Address: \t%s\n", addrMap["LivepeerToken"].Hex())
-	fmt.Fprintf(wtr, "LivepeerTokenFaucet Address: \t%s\n", addrMap["LivepeerTokenFaucet"].Hex())
-	fmt.Fprintf(wtr, "ETH Account: \t%s\n", w.getEthAddr())
-	fmt.Fprintf(wtr, "LPT Balance: \t%s\n", w.getTokenBalance())
-	fmt.Fprintf(wtr, "ETH Balance: \t%s\n", w.getEthBalance())
-	wtr.Flush()
+	fmt.Println("+-----------+")
+	fmt.Println("|NODE STATS|")
+	fmt.Println("+-----------+")
+
+	table := tablewriter.NewWriter(os.Stdout)
+	data := [][]string{
+		[]string{"Node ID", w.getNodeID()},
+		[]string{"Node Addr", w.getNodeAddr()},
+		[]string{"RTMP Port", w.rtmpPort},
+		[]string{"HTTP Port", w.httpPort},
+		[]string{"Controller Address", addrMap["Controller"].Hex()},
+		[]string{"LivepeerToken Address", addrMap["LivepeerToken"].Hex()},
+		[]string{"LivepeerTokenFaucet Address", addrMap["LivepeerTokenFaucet"].Hex()},
+		[]string{"ETH Account", w.getEthAddr()},
+		[]string{"LPT Balance", w.getTokenBalance()},
+		[]string{"ETH Balance", w.getEthBalance()},
+	}
+
+	for _, v := range data {
+		table.Append(v)
+	}
+
+	table.SetAlignment(tablewriter.ALIGN_RIGHT)
+	table.SetCenterSeparator("*")
+	table.SetRowLine(true)
+	table.SetColumnSeparator("|")
+	table.Render()
 
 	if showTranscoder {
 		w.transcoderStats()
@@ -45,19 +58,35 @@ func (w *wizard) stats(showTranscoder bool) {
 		w.broadcastStats()
 		w.delegatorStats()
 	}
+
+	currentRound := w.currentRound()
+
+	fmt.Printf("CURRENT ROUND: %v\n", currentRound)
 }
 
 func (w *wizard) broadcastStats() {
-	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(wtr, "+---------------+")
-	fmt.Fprintln(wtr, "|BROADCAST STATS|")
-	fmt.Fprintln(wtr, "+---------------+")
-	fmt.Fprintf(wtr, "Deposit Amount: \t%s\n", w.getDeposit())
+	fmt.Println("+-----------------+")
+	fmt.Println("|BROADCASTER STATS|")
+	fmt.Println("+-----------------+")
 
 	price, transcodingOptions := w.getBroadcastConfig()
-	fmt.Fprintf(wtr, "Broadcast Job Segment Price: \t%s\n", price)
-	fmt.Fprintf(wtr, "Broadcast Transcoding Options: \t%s\n", transcodingOptions)
-	wtr.Flush()
+
+	table := tablewriter.NewWriter(os.Stdout)
+	data := [][]string{
+		[]string{"Deposit", w.getDeposit()},
+		[]string{"Broadcast Price Per Segment", price.String()},
+		[]string{"Broadcast Transcoding Options", transcodingOptions},
+	}
+
+	for _, v := range data {
+		table.Append(v)
+	}
+
+	table.SetAlignment(tablewriter.ALIGN_RIGHT)
+	table.SetCenterSeparator("*")
+	table.SetRowLine(true)
+	table.SetColumnSeparator("|")
+	table.Render()
 }
 
 func (w *wizard) transcoderStats() {
@@ -67,21 +96,33 @@ func (w *wizard) transcoderStats() {
 		return
 	}
 
-	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(wtr, "+----------------+")
-	fmt.Fprintln(wtr, "|TRANSCODER STATS|")
-	fmt.Fprintln(wtr, "+----------------+")
-	fmt.Fprintf(wtr, "Status: \t%s\n", t.Status)
-	fmt.Fprintf(wtr, "Active: \t%s\n", strconv.FormatBool(t.Active))
-	fmt.Fprintf(wtr, "Delegated Stake: \t%s\n", t.DelegatedStake)
-	fmt.Fprintf(wtr, "Block Reward Cut: \t%s\n", t.BlockRewardCut)
-	fmt.Fprintf(wtr, "Fee Share: \t%s\n", t.FeeShare)
-	fmt.Fprintf(wtr, "Price Per Segment: \t%s\n", t.PricePerSegment)
-	fmt.Fprintf(wtr, "Pending Block Reward Cut: \t%s\n", t.PendingBlockRewardCut)
-	fmt.Fprintf(wtr, "Pending Fee Share: \t%s\n", t.PendingFeeShare)
-	fmt.Fprintf(wtr, "Pending Price Per Segment: \t%s\n", t.PendingPricePerSegment)
-	fmt.Fprintf(wtr, "Last Reward Round: \t%s\n", t.LastRewardRound)
-	wtr.Flush()
+	fmt.Println("+----------------+")
+	fmt.Println("|TRANSCODER STATS|")
+	fmt.Println("+----------------+")
+
+	table := tablewriter.NewWriter(os.Stdout)
+	data := [][]string{
+		[]string{"Status", t.Status},
+		[]string{"Active", strconv.FormatBool(t.Active)},
+		[]string{"Delegated Stake", eth.FormatUnits(t.DelegatedStake, "LPT")},
+		[]string{"Reward Cut (%)", eth.FormatPerc(t.BlockRewardCut)},
+		[]string{"Fee Share (%)", eth.FormatPerc(t.FeeShare)},
+		[]string{"Price Per Segment", eth.FormatUnits(t.PricePerSegment, "ETH")},
+		[]string{"Pending Reward Cut (%)", eth.FormatPerc(t.PendingBlockRewardCut)},
+		[]string{"Pending Fee Share (%)", eth.FormatPerc(t.PendingFeeShare)},
+		[]string{"Pending Price Per Segment", eth.FormatUnits(t.PendingPricePerSegment, "ETH")},
+		[]string{"Last Reward Round", t.LastRewardRound.String()},
+	}
+
+	for _, v := range data {
+		table.Append(v)
+	}
+
+	table.SetAlignment(tablewriter.ALIGN_RIGHT)
+	table.SetCenterSeparator("*")
+	table.SetRowLine(true)
+	table.SetColumnSeparator("|")
+	table.Render()
 }
 
 func (w *wizard) delegatorStats() {
@@ -91,21 +132,33 @@ func (w *wizard) delegatorStats() {
 		return
 	}
 
-	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(wtr, "+---------------+")
-	fmt.Fprintln(wtr, "|DELEGATOR STATS|")
-	fmt.Fprintln(wtr, "+---------------+")
-	fmt.Fprintf(wtr, "Status: \t%s\n", d.Status)
-	fmt.Fprintf(wtr, "Stake: \t%s\n", d.BondedAmount)
-	fmt.Fprintf(wtr, "Fees: \t%s\n", d.Fees)
-	fmt.Fprintf(wtr, "Pending Stake: \t%s\n", d.PendingStake)
-	fmt.Fprintf(wtr, "Pending Fees: \t%s\n", d.PendingFees)
-	fmt.Fprintf(wtr, "Delegated Stake: \t%s\n", d.DelegatedAmount)
-	fmt.Fprintf(wtr, "Delegate Address: \t%s\n", d.DelegateAddress.Hex())
-	fmt.Fprintf(wtr, "Last Claim Token Pools Shares Round: \t%s\n", d.LastClaimTokenPoolsSharesRound)
-	fmt.Fprintf(wtr, "Start Round: \t%s\n", d.StartRound)
-	fmt.Fprintf(wtr, "Withdraw Round: \t%s\n", d.WithdrawRound)
-	wtr.Flush()
+	fmt.Println("+---------------+")
+	fmt.Println("|DELEGATOR STATS|")
+	fmt.Println("+---------------+")
+
+	table := tablewriter.NewWriter(os.Stdout)
+	data := [][]string{
+		[]string{"Status", d.Status},
+		[]string{"Stake", d.BondedAmount.String()},
+		[]string{"Collected Fees", d.Fees.String()},
+		[]string{"Pending Stake", d.PendingStake.String()},
+		[]string{"Pending Fees", d.PendingFees.String()},
+		[]string{"Delegated Stake", d.DelegatedAmount.String()},
+		[]string{"Delegate Address", d.DelegateAddress.Hex()},
+		[]string{"Last Claim Round", d.LastClaimTokenPoolsSharesRound.String()},
+		[]string{"Start Round", d.StartRound.String()},
+		[]string{"Withdraw Round", d.WithdrawRound.String()},
+	}
+
+	for _, v := range data {
+		table.Append(v)
+	}
+
+	table.SetAlignment(tablewriter.ALIGN_RIGHT)
+	table.SetCenterSeparator("*")
+	table.SetRowLine(true)
+	table.SetColumnSeparator("|")
+	table.Render()
 }
 
 func (w *wizard) getNodeID() string {
