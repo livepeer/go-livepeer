@@ -87,7 +87,8 @@ func main() {
 	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
-	ethKeyPath := flag.String("ethKeyPath", "", "Path for the Eth Key")
+	ethPassword := flag.String("ethPassword", "", "Password for existing Eth account address")
+	ethKeystorePath := flag.String("ethKeystorePath", "", "Path for the Eth Key")
 	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
 	ethWsUrl := flag.String("ethWsUrl", "", "geth websocket url")
 	testnet := flag.Bool("testnet", false, "Set to true to connect to testnet")
@@ -178,8 +179,8 @@ func main() {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	} else {
 		var keystoreDir string
-		if _, err := os.Stat(*ethKeyPath); !os.IsNotExist(err) {
-			keystoreDir, _ = filepath.Split(*ethKeyPath)
+		if _, err := os.Stat(*ethKeystorePath); !os.IsNotExist(err) {
+			keystoreDir, _ = filepath.Split(*ethKeystorePath)
 		} else {
 			keystoreDir = filepath.Join(*datadir, "keystore")
 		}
@@ -262,7 +263,7 @@ func main() {
 			bigGasPrice = big.NewInt(int64(*gasPrice))
 		}
 
-		err = client.Setup(bigGasLimit, bigGasPrice)
+		err = client.Setup(*ethPassword, bigGasLimit, bigGasPrice)
 		if err != nil {
 			glog.Errorf("Failed to setup client: %v", err)
 			return

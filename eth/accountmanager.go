@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/console"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	// "github.com/golang/glog"
+	"github.com/golang/glog"
 )
 
 var (
@@ -32,22 +32,29 @@ func NewAccountManager(accountAddr common.Address, keystoreDir string) (*Account
 	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
 
 	acctExists := keyStore.HasAddress(accountAddr)
+	numAccounts := len(keyStore.Accounts())
 
 	var acct accounts.Account
 	var err error
-	if (accountAddr != common.Address{}) && !acctExists {
+	if numAccounts == 0 || ((accountAddr != common.Address{}) && !acctExists) {
+		glog.Infof("Please create a new ETH account")
+
 		// Account does not exist yet, set it up
 		acct, err = createAccount(keyStore)
 		if err != nil {
 			return nil, err
 		}
 	} else {
+		glog.Infof("Found existing ETH account")
+
 		// Account already exists or defaulting to first, load it from keystore
 		acct, err = getAccount(accountAddr, keyStore)
 		if err != nil {
 			return nil, err
 		}
 	}
+
+	glog.Infof("Using ETH account: %v", acct.Address.Hex())
 
 	return &AccountManager{
 		Account:  acct,
@@ -57,10 +64,16 @@ func NewAccountManager(accountAddr common.Address, keystoreDir string) (*Account
 }
 
 // Unlock account indefinitely using underlying keystore
-func (am *AccountManager) Unlock() error {
-	passphrase, err := getPassphrase(false)
-	if err != nil {
-		return err
+func (am *AccountManager) Unlock(passphrase string) error {
+	var err error
+
+	if passphrase == "" {
+		glog.Infof("Passphrase required to unlock ETH account")
+
+		passphrase, err = getPassphrase(false)
+		if err != nil {
+			return err
+		}
 	}
 
 	err = am.keyStore.Unlock(am.Account, passphrase)
@@ -69,6 +82,8 @@ func (am *AccountManager) Unlock() error {
 	}
 
 	am.unlocked = true
+
+	glog.Infof("ETH account %v unlocked", am.Account.Address.Hex())
 
 	return nil
 }
@@ -133,6 +148,8 @@ func getAccount(accountAddr common.Address, keyStore *keystore.KeyStore) (accoun
 
 		return accounts.Account{}, ErrAccountNotFound
 	} else {
+		glog.Infof("Defaulting to first ETH account in keystore %v", accts[0].Address.Hex())
+
 		// Default to first account
 		return accts[0], nil
 	}
