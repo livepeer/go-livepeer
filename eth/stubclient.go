@@ -122,11 +122,12 @@ func (c *StubClient) GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim,
 
 // Parameters
 
-func (c *StubClient) RoundLength() (*big.Int, error)        { return big.NewInt(0), nil }
-func (c *StubClient) UnbondingPeriod() (uint64, error)      { return 0, nil }
-func (c *StubClient) VerificationRate() (uint64, error)     { return 0, nil }
-func (c *StubClient) VerificationPeriod() (*big.Int, error) { return big.NewInt(0), nil }
-func (c *StubClient) SlashingPeriod() (*big.Int, error)     { return big.NewInt(0), nil }
+func (c *StubClient) NumActiveTranscoders() (*big.Int, error) { return big.NewInt(0), nil }
+func (c *StubClient) RoundLength() (*big.Int, error)          { return big.NewInt(0), nil }
+func (c *StubClient) UnbondingPeriod() (uint64, error)        { return 0, nil }
+func (c *StubClient) VerificationRate() (uint64, error)       { return 0, nil }
+func (c *StubClient) VerificationPeriod() (*big.Int, error)   { return big.NewInt(0), nil }
+func (c *StubClient) SlashingPeriod() (*big.Int, error)       { return big.NewInt(0), nil }
 
 // Helpers
 
