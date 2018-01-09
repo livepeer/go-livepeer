@@ -78,6 +78,7 @@ type LivepeerEthClient interface {
 	BroadcasterDeposit(broadcaster common.Address) (*big.Int, error)
 
 	// Parameters
+	NumActiveTranscoders() (*big.Int, error)
 	RoundLength() (*big.Int, error)
 	UnbondingPeriod() (uint64, error)
 	VerificationRate() (uint64, error)
