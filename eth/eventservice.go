@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-type Service interface {
+type EventService interface {
 	Start(context.Context) error
 	Stop() error
 }

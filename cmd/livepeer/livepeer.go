@@ -31,7 +31,7 @@ import (
 	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/eth/services"
+	"github.com/livepeer/go-livepeer/eth/eventservices"
 	"github.com/livepeer/go-livepeer/ipfs"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/server"
@@ -428,15 +428,15 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	n.Ipfs = ipfsApi
 
 	// Create rounds service to initialize round if it has not already been initialized
-	rds := services.NewRoundsService(em, n.Eth)
+	rds := eventservices.NewRoundsService(em, n.Eth)
 	n.EthServices = append(n.EthServices, rds)
 
 	// Create reward service to claim/distribute inflationary rewards every round
-	rs := services.NewRewardService(em, n.Eth)
+	rs := eventservices.NewRewardService(em, n.Eth)
 	n.EthServices = append(n.EthServices, rs)
 
 	// Create job service to listen for new jobs and transcode if assigned to the job
-	js := services.NewJobService(em, n)
+	js := eventservices.NewJobService(em, n)
 	n.EthServices = append(n.EthServices, js)
 
 	// Start services

@@ -56,7 +56,7 @@ type LivepeerNode struct {
 	VideoNetwork net.VideoNetwork
 	VideoCache   VideoCache
 	Eth          eth.LivepeerEthClient
-	EthServices  []eth.Service
+	EthServices  []eth.EventService
 	Ipfs         ipfs.IpfsApi
 	WorkDir      string
 	PeerConns    []PeerConn
@@ -317,12 +317,16 @@ func (n *LivepeerNode) BroadcastManifestToNetwork(manifest stream.HLSVideoManife
 }
 
 func (n *LivepeerNode) BroadcastHLSSegToNetwork(strmID string, seg *stream.HLSSegment, b stream.Broadcaster) error {
-	segHash := (&ethTypes.Segment{StreamID: strmID, SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
+	var sig []byte
+	var err error
+	if n.Eth != nil {
+		segHash := (&ethTypes.Segment{StreamID: strmID, SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
 
-	sig, err := n.Eth.Sign(segHash.Bytes())
-	if err != nil {
-		glog.Errorf("Error signing segment %v-%v: %v", strmID, seg.SeqNo, err)
-		return err
+		sig, err = n.Eth.Sign(segHash.Bytes())
+		if err != nil {
+			glog.Errorf("Error signing segment %v-%v: %v", strmID, seg.SeqNo, err)
+			return err
+		}
 	}
 
 	//Encode segment into []byte, broadcast it

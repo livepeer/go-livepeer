@@ -1,4 +1,4 @@
-package services
+package eventservices
 
 import (
 	"context"
@@ -45,8 +45,6 @@ func (s *JobService) Start(ctx context.Context) error {
 	logsCh := make(chan types.Log)
 	sub, err := s.eventMonitor.SubscribeNewJob(ctx, logsCh, common.Address{}, func(l types.Log) (bool, error) {
 		_, jid, _, _ := parseNewJobLog(l)
-
-		// TODO: store broadcaster address to verify received signed segments
 
 		job, err := s.node.Eth.GetJob(jid)
 		if err != nil {

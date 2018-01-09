@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"strconv"
-	// "text/tabwriter"
 
 	"github.com/golang/glog"
 
@@ -28,8 +27,9 @@ func (w *wizard) registeredTranscoderStats() map[int]common.Address {
 	transcoderIDs := make(map[int]common.Address)
 	nextId := 0
 
-	fmt.Println("REGISTERED TRANSCODERS")
-	fmt.Println("--------------------------------")
+	fmt.Println("+----------------------+")
+	fmt.Println("|REGISTERED TRANSCODERS|")
+	fmt.Println("+----------------------+")
 
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"ID", "Address", "Active", "Delegated Stake", "Reward Cut (%)", "Fee Share (%)", "Price", "Pending Reward Cut (%)", "Pending Fee Share (%)", "Pending Price"})

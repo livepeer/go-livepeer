@@ -100,8 +100,8 @@ func (w *wizard) run() {
 		fmt.Println(" 2. Initialize round")
 		fmt.Println(" 3. Bond")
 		fmt.Println(" 4. Unbond")
-		fmt.Println(" 5. Withdraw stake")
-		fmt.Println(" 6. Withdraw fees")
+		fmt.Println(" 5. Withdraw stake (LPT)")
+		fmt.Println(" 6. Withdraw fees (ETH)")
 		fmt.Println(" 7. Claim rewards and fees")
 		fmt.Println(" 8. Get test LPT")
 		fmt.Println(" 9. Get test ETH")
@@ -113,8 +113,8 @@ func (w *wizard) run() {
 
 			w.doCLIOpt(w.read(), true)
 		} else {
-			fmt.Println(" 11. Deposit ETH")
-			fmt.Println(" 12. Withdraw ETH")
+			fmt.Println(" 11. Deposit (ETH)")
+			fmt.Println(" 12. Withdraw deposit (ETH)")
 			fmt.Println(" 13. Broadcast video")
 			fmt.Println(" 14. Stream video")
 			fmt.Println(" 15. Set broadcast config")

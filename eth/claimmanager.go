@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	RpcTimeout = 5 * time.Second
+	RpcTimeout = 10 * time.Second
 )
 
 type ClaimManager interface {

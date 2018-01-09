@@ -337,8 +337,8 @@ func (c *client) autoClaimTokenPoolsShares() error {
 		return err
 	}
 
-	if dStatus != 0 {
-		// If already registered, auto claim token pools shares
+	if dStatus == 1 {
+		// If already bonded, auto claim token pools shares
 		currentRound, err := c.CurrentRound()
 		if err != nil {
 			return err
@@ -365,8 +365,12 @@ func (c *client) autoClaimTokenPoolsShares() error {
 				return err
 			}
 
+			glog.Infof("Claimed rewards and fees from round %v through %v", lastClaimTokenPoolsSharesRound, endRound)
+
 			lastClaimTokenPoolsSharesRound = endRound
 		}
+
+		glog.Infof("Finished claiming rewards and fees through the current round %v", currentRound)
 	}
 
 	return nil
