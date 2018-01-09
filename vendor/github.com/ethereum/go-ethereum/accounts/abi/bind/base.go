@@ -35,7 +35,7 @@ type SignerFn func(types.Signer, common.Address, *types.Transaction) (*types.Tra
 
 // NonceFetcherFn is a function callback that returns a pointer to the nonce to be used
 // by a transaction if a nonce is not explicitly provided
-type NonceFetcherFn func() (*big.Int, error)
+type NonceFetcherFn func() (uint64, error)
 
 // CallOpts is the collection of options to fine tune a contract call request.
 type CallOpts struct {
@@ -178,12 +178,10 @@ func (c *BoundContract) transact(opts *TransactOpts, contract *common.Address, i
 	}
 	var nonce uint64
 	if opts.Nonce == nil {
-		noncePtr, err := opts.NonceFetcher()
+		nonce, err = opts.NonceFetcher()
 		if err != nil {
 			return nil, err
 		}
-
-		nonce = noncePtr.Uint64()
 	} else {
 		nonce = opts.Nonce.Uint64()
 	}

@@ -112,7 +112,7 @@ type client struct {
 	*contracts.LivepeerTokenFaucetSession
 
 	nonceInitialized bool
-	nextNonce        *big.Int
+	nextNonce        uint64
 	nonceLock        sync.Mutex
 
 	txTimeout time.Duration
@@ -143,7 +143,7 @@ func (c *client) Setup(password string, gasLimit, gasPrice *big.Int) error {
 		return err
 	}
 
-	opts.NonceFetcher = func() (*big.Int, error) {
+	opts.NonceFetcher = func() (uint64, error) {
 		return c.getNonce()
 	}
 
@@ -645,33 +645,30 @@ func (c *client) Sign(msg []byte) ([]byte, error) {
 	return c.accountManager.Sign(msg)
 }
 
-func (c *client) getNonce() (*big.Int, error) {
+func (c *client) getNonce() (uint64, error) {
 	c.nonceLock.Lock()
 	defer c.nonceLock.Unlock()
 
 	if !c.nonceInitialized {
 		netNonce, err := c.backend.PendingNonceAt(context.Background(), c.Account().Address)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 
 		c.nonceInitialized = true
-		c.nextNonce = big.NewInt(int64(netNonce))
+		c.nextNonce = netNonce
 
 		return c.nextNonce, nil
 	} else {
-		uNextNonce := c.nextNonce.Uint64()
-		newNonce := uNextNonce + 1
+		c.nextNonce++
 
 		netNonce, err := c.backend.PendingNonceAt(context.Background(), c.Account().Address)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 
-		if netNonce > newNonce {
-			c.nextNonce.SetUint64(netNonce)
-		} else {
-			c.nextNonce.SetUint64(newNonce)
+		if netNonce > c.nextNonce {
+			c.nextNonce = netNonce
 		}
 
 		return c.nextNonce, nil
