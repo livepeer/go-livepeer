@@ -79,7 +79,14 @@ func (s *RoundsService) tryInitializeRound(blkNum *big.Int, blkHash common.Hash)
 	}
 
 	if lastInitializedRound.Cmp(currentRound) == -1 {
-		shouldInitialize, err := s.shouldInitializeRound(blkNum, blkHash)
+		roundLength, err := s.client.RoundLength()
+		if err != nil {
+			return false, err
+		}
+
+		currentRoundStartBlock := new(big.Int).Mul(currentRound, roundLength)
+
+		shouldInitialize, err := s.shouldInitializeRound(currentRoundStartBlock, blkNum, blkHash)
 		if err != nil {
 			return false, err
 		}
@@ -104,10 +111,11 @@ func (s *RoundsService) tryInitializeRound(blkNum *big.Int, blkHash common.Hash)
 	return true, nil
 }
 
-func (s *RoundsService) shouldInitializeRound(blkNum *big.Int, blkHash common.Hash) (bool, error) {
+func (s *RoundsService) shouldInitializeRound(currentRoundStartBlock *big.Int, blkNum *big.Int, blkHash common.Hash) (bool, error) {
 	// Check to initialize round only in multiples of BlocksToWait blocks
 	// to make sure a previous initializeRound call by someone else is processed
-	blkNumMod := new(big.Int).Mod(blkNum, BlocksToWait)
+	blockDiff := new(big.Int).Sub(blkNum, currentRoundStartBlock)
+	blkNumMod := new(big.Int).Mod(blockDiff, BlocksToWait)
 	if blkNumMod.Cmp(big.NewInt(0)) != 0 {
 		return false, nil
 	}
