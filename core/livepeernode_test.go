@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/types"
-
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
 	lpmscore "github.com/livepeer/lpms/core"
@@ -22,23 +20,9 @@ func (cm *StubClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byt
 	return nil
 }
 func (cm *StubClaimManager) SufficientBroadcasterDeposit() (bool, error) { return true, nil }
-func (cm *StubClaimManager) Claim() (claimCount int, rc chan types.Receipt, ec chan error) {
-	rc = make(chan types.Receipt)
-	ec = make(chan error)
-	go func() {
-		rc <- types.Receipt{}
-		rc <- types.Receipt{}
-	}()
-	return 2, rc, ec
-}
-func (cm *StubClaimManager) Verify() error {
-	cm.verifyCalled = true
-	return nil
-}
-func (cm *StubClaimManager) DistributeFees() error {
-	cm.distributeFeesCalled = true
-	return nil
-}
+func (cm *StubClaimManager) ClaimVerifyAndDistributeFees() error         { return nil }
+func (cm *StubClaimManager) DidFirstClaim() bool                         { return false }
+func (cm *StubClaimManager) CanClaim() bool                              { return true }
 
 type StubTranscoder struct {
 	Profiles  []lpmscore.VideoProfile
@@ -103,24 +87,4 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	}
 
 	//TODO: Should have done the claiming
-}
-func TestClaimVerifyDistributeFee(t *testing.T) {
-	nid := NodeID("12201c23641663bf06187a8c154a6c97266d138cb8379c1bc0828122dcc51c83698d")
-	n, err := NewLivepeerNode(&eth.StubClient{}, &StubVideoNetwork{}, nid, []string{""}, "")
-	if err != nil {
-		t.Errorf("Error: %v", err)
-	}
-
-	cm := &StubClaimManager{}
-	if err := n.ClaimVerifyAndDistributeFees(cm); err != nil {
-		t.Errorf("Error: %v", err)
-	}
-
-	if cm.verifyCalled == false {
-		t.Errorf("Expect verify to be called")
-	}
-
-	if cm.distributeFeesCalled == false {
-		t.Errorf("Expect distributeFees to be called")
-	}
 }

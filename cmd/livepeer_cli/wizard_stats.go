@@ -7,27 +7,49 @@ import (
 	"math/big"
 	"net/http"
 	"os"
-	"text/tabwriter"
+	"strconv"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/eth"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/olekukonko/tablewriter"
 )
 
 func (w *wizard) stats(showTranscoder bool) {
-	// Observe how the b's and the d's, despite appearing in the
-	// second cell of each line, belong to different columns.
-	// wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight|tabwriter.Debug)
-	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
-	fmt.Fprintf(wtr, "Node ID: \t%s\n", w.getNodeID())
-	fmt.Fprintf(wtr, "Node Addr: \t%s\n", w.getNodeAddr())
-	fmt.Fprintf(wtr, "RTMP Port: \t%s\n", w.rtmpPort)
-	fmt.Fprintf(wtr, "HTTP Port: \t%s\n", w.httpPort)
-	fmt.Fprintf(wtr, "Protocol Contract Addr: \t%s\n", w.getControllerAddr())
-	fmt.Fprintf(wtr, "Token Contract Addr: \t%s\n", w.getTokenAddr())
-	fmt.Fprintf(wtr, "Faucet Contract Addr: \t%s\n", w.getFaucetAddr())
-	fmt.Fprintf(wtr, "Account Eth Addr: \t%s\n", w.getEthAddr())
-	fmt.Fprintf(wtr, "Token balance: \t%s\n", w.getTokenBalance())
-	fmt.Fprintf(wtr, "Eth balance: \t%s\n", w.getEthBalance())
-	wtr.Flush()
+	addrMap, err := w.getContractAddresses()
+	if err != nil {
+		glog.Errorf("Error getting contract addresses: %v", err)
+		return
+	}
+
+	fmt.Println("+-----------+")
+	fmt.Println("|NODE STATS|")
+	fmt.Println("+-----------+")
+
+	table := tablewriter.NewWriter(os.Stdout)
+	data := [][]string{
+		[]string{"Node ID", w.getNodeID()},
+		[]string{"Node Addr", w.getNodeAddr()},
+		[]string{"RTMP Port", w.rtmpPort},
+		[]string{"HTTP Port", w.httpPort},
+		[]string{"Controller Address", addrMap["Controller"].Hex()},
+		[]string{"LivepeerToken Address", addrMap["LivepeerToken"].Hex()},
+		[]string{"LivepeerTokenFaucet Address", addrMap["LivepeerTokenFaucet"].Hex()},
+		[]string{"ETH Account", w.getEthAddr()},
+		[]string{"LPT Balance", w.getTokenBalance()},
+		[]string{"ETH Balance", w.getEthBalance()},
+	}
+
+	for _, v := range data {
+		table.Append(v)
+	}
+
+	table.SetAlignment(tablewriter.ALIGN_RIGHT)
+	table.SetCenterSeparator("*")
+	table.SetRowLine(true)
+	table.SetColumnSeparator("|")
+	table.Render()
 
 	if showTranscoder {
 		w.transcoderStats()
@@ -37,47 +59,106 @@ func (w *wizard) stats(showTranscoder bool) {
 		w.delegatorStats()
 	}
 
+	currentRound := w.currentRound()
+
+	fmt.Printf("CURRENT ROUND: %v\n", currentRound)
 }
 
 func (w *wizard) broadcastStats() {
-	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(wtr, "+---------------+")
-	fmt.Fprintln(wtr, "|BROADCAST STATS|")
-	fmt.Fprintln(wtr, "+---------------+")
-	fmt.Fprintf(wtr, "Deposit Amount: \t%s\n", w.getDeposit())
+	fmt.Println("+-----------------+")
+	fmt.Println("|BROADCASTER STATS|")
+	fmt.Println("+-----------------+")
 
 	price, transcodingOptions := w.getBroadcastConfig()
-	fmt.Fprintf(wtr, "Broadcast Job Segment Price: \t%s\n", price)
-	fmt.Fprintf(wtr, "Broadcast Transcoding Options: \t%s\n", transcodingOptions)
-	wtr.Flush()
+
+	table := tablewriter.NewWriter(os.Stdout)
+	data := [][]string{
+		[]string{"Deposit", w.getDeposit()},
+		[]string{"Broadcast Price Per Segment", price.String()},
+		[]string{"Broadcast Transcoding Options", transcodingOptions},
+	}
+
+	for _, v := range data {
+		table.Append(v)
+	}
+
+	table.SetAlignment(tablewriter.ALIGN_RIGHT)
+	table.SetCenterSeparator("*")
+	table.SetRowLine(true)
+	table.SetColumnSeparator("|")
+	table.Render()
 }
 
 func (w *wizard) transcoderStats() {
-	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(wtr, "+----------------+")
-	fmt.Fprintln(wtr, "|TRANSCODER STATS|")
-	fmt.Fprintln(wtr, "+----------------+")
-	fmt.Fprintf(wtr, "Transcoder Status: \t%s\n", w.getTranscoderStatus())
-	fmt.Fprintf(wtr, "Is Active Transcoder: \t%s\n", w.getIsActiveTranscoder())
-	fmt.Fprintf(wtr, "Pending Block Reward Cut: \t%s\n", w.getPendingTranscoderBlockRewardCut())
-	fmt.Fprintf(wtr, "Pending Fee Share: \t%s\n", w.getPendingTranscoderFeeShare())
-	fmt.Fprintf(wtr, "Pending Price: \t%s\n", w.getPendingTranscoderPrice())
-	fmt.Fprintf(wtr, "Block Reward Cut: \t%s\n", w.getTranscoderBlockRewardCut())
-	fmt.Fprintf(wtr, "Fee Share: \t%s\n", w.getTranscoderFeeShare())
-	fmt.Fprintf(wtr, "Price: \t%s\n", w.getTranscoderPrice())
-	fmt.Fprintf(wtr, "Bond: \t%s\n", w.getTranscoderBond())
-	fmt.Fprintf(wtr, "Total Stake: \t%s\n", w.getTranscoderStake())
-	wtr.Flush()
+	t, err := w.getTranscoderInfo()
+	if err != nil {
+		glog.Errorf("Error getting transcoder info: %v", err)
+		return
+	}
+
+	fmt.Println("+----------------+")
+	fmt.Println("|TRANSCODER STATS|")
+	fmt.Println("+----------------+")
+
+	table := tablewriter.NewWriter(os.Stdout)
+	data := [][]string{
+		[]string{"Status", t.Status},
+		[]string{"Active", strconv.FormatBool(t.Active)},
+		[]string{"Delegated Stake", eth.FormatUnits(t.DelegatedStake, "LPT")},
+		[]string{"Reward Cut (%)", eth.FormatPerc(t.BlockRewardCut)},
+		[]string{"Fee Share (%)", eth.FormatPerc(t.FeeShare)},
+		[]string{"Price Per Segment", eth.FormatUnits(t.PricePerSegment, "ETH")},
+		[]string{"Pending Reward Cut (%)", eth.FormatPerc(t.PendingBlockRewardCut)},
+		[]string{"Pending Fee Share (%)", eth.FormatPerc(t.PendingFeeShare)},
+		[]string{"Pending Price Per Segment", eth.FormatUnits(t.PendingPricePerSegment, "ETH")},
+		[]string{"Last Reward Round", t.LastRewardRound.String()},
+	}
+
+	for _, v := range data {
+		table.Append(v)
+	}
+
+	table.SetAlignment(tablewriter.ALIGN_RIGHT)
+	table.SetCenterSeparator("*")
+	table.SetRowLine(true)
+	table.SetColumnSeparator("|")
+	table.Render()
 }
 
 func (w *wizard) delegatorStats() {
-	wtr := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(wtr, "+---------------+")
-	fmt.Fprintln(wtr, "|DELEGATOR STATS|")
-	fmt.Fprintln(wtr, "+---------------+")
-	fmt.Fprintf(wtr, "Delegator Status: \t%s\n", w.getDelegatorStatus())
-	fmt.Fprintf(wtr, "Total Stake: \t%s\n", w.getDelegatorStake())
-	wtr.Flush()
+	d, err := w.getDelegatorInfo()
+	if err != nil {
+		glog.Errorf("Error getting delegator info: %v", err)
+		return
+	}
+
+	fmt.Println("+---------------+")
+	fmt.Println("|DELEGATOR STATS|")
+	fmt.Println("+---------------+")
+
+	table := tablewriter.NewWriter(os.Stdout)
+	data := [][]string{
+		[]string{"Status", d.Status},
+		[]string{"Stake", d.BondedAmount.String()},
+		[]string{"Collected Fees", d.Fees.String()},
+		[]string{"Pending Stake", d.PendingStake.String()},
+		[]string{"Pending Fees", d.PendingFees.String()},
+		[]string{"Delegated Stake", d.DelegatedAmount.String()},
+		[]string{"Delegate Address", d.DelegateAddress.Hex()},
+		[]string{"Last Claim Round", d.LastClaimTokenPoolsSharesRound.String()},
+		[]string{"Start Round", d.StartRound.String()},
+		[]string{"Withdraw Round", d.WithdrawRound.String()},
+	}
+
+	for _, v := range data {
+		table.Append(v)
+	}
+
+	table.SetAlignment(tablewriter.ALIGN_RIGHT)
+	table.SetCenterSeparator("*")
+	table.SetRowLine(true)
+	table.SetColumnSeparator("|")
+	table.Render()
 }
 
 func (w *wizard) getNodeID() string {
@@ -88,28 +169,25 @@ func (w *wizard) getNodeAddr() string {
 	return httpGet(fmt.Sprintf("http://%v:%v/nodeAddrs", w.host, w.httpPort))
 }
 
-func (w *wizard) getControllerAddr() string {
-	addr := httpGet(fmt.Sprintf("http://%v:%v/controllerContractAddr", w.host, w.httpPort))
-	if addr == "" {
-		addr = "Unknown"
+func (w *wizard) getContractAddresses() (map[string]common.Address, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/contractAddresses", w.host, w.httpPort))
+	if err != nil {
+		return nil, err
 	}
-	return addr
-}
 
-func (w *wizard) getTokenAddr() string {
-	addr := httpGet(fmt.Sprintf("http://%v:%v/tokenContractAddr", w.host, w.httpPort))
-	if addr == "" {
-		addr = "Unknown"
+	defer resp.Body.Close()
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
-	return addr
-}
 
-func (w *wizard) getFaucetAddr() string {
-	addr := httpGet(fmt.Sprintf("http://%v:%v/faucetContractAddr", w.host, w.httpPort))
-	if addr == "" {
-		addr = "Unknown"
+	var addrMap map[string]common.Address
+	err = json.Unmarshal(result, &addrMap)
+	if err != nil {
+		return nil, err
 	}
-	return addr
+
+	return addrMap, nil
 }
 
 func (w *wizard) getEthAddr() string {
@@ -144,38 +222,6 @@ func (w *wizard) getDeposit() string {
 	return e
 }
 
-func (w *wizard) getTranscoderStatus() string {
-	return httpGet(fmt.Sprintf("http://%v:%v/transcoderStatus", w.host, w.httpPort))
-}
-
-func (w *wizard) getTranscoderBond() string {
-	e := httpGet(fmt.Sprintf("http://%v:%v/transcoderBond", w.host, w.httpPort))
-	if e == "" {
-		e = "Unknown"
-	}
-	return e
-}
-
-func (w *wizard) getTranscoderStake() string {
-	e := httpGet(fmt.Sprintf("http://%v:%v/transcoderStake", w.host, w.httpPort))
-	if e == "" {
-		e = "Unknown"
-	}
-	return e
-}
-
-func (w *wizard) getDelegatorStatus() string {
-	return httpGet(fmt.Sprintf("http://%v:%v/delegatorStatus", w.host, w.httpPort))
-}
-
-func (w *wizard) getDelegatorStake() string {
-	e := httpGet(fmt.Sprintf("http://%v:%v/delegatorStake", w.host, w.httpPort))
-	if e == "" {
-		e = "Unknown"
-	}
-	return e
-}
-
 func (w *wizard) getBroadcastConfig() (*big.Int, string) {
 	resp, err := http.Get(fmt.Sprintf("http://%v:%v/getBroadcastConfig", w.host, w.httpPort))
 	if err != nil {
@@ -203,30 +249,46 @@ func (w *wizard) getBroadcastConfig() (*big.Int, string) {
 	return config.MaxPricePerSegment, config.TranscodingOptions
 }
 
-func (w *wizard) getIsActiveTranscoder() string {
-	return httpGet(fmt.Sprintf("http://%v:%v/isActiveTranscoder", w.host, w.httpPort))
+func (w *wizard) getTranscoderInfo() (lpTypes.Transcoder, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/transcoderInfo", w.host, w.httpPort))
+	if err != nil {
+		return lpTypes.Transcoder{}, err
+	}
+
+	defer resp.Body.Close()
+
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return lpTypes.Transcoder{}, err
+	}
+
+	var tInfo lpTypes.Transcoder
+	err = json.Unmarshal(result, &tInfo)
+	if err != nil {
+		return lpTypes.Transcoder{}, err
+	}
+
+	return tInfo, nil
 }
 
-func (w *wizard) getTranscoderBlockRewardCut() string {
-	return httpGet(fmt.Sprintf("http://%v:%v/transcoderBlockRewardCut", w.host, w.httpPort))
-}
+func (w *wizard) getDelegatorInfo() (lpTypes.Delegator, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/delegatorInfo", w.host, w.httpPort))
+	if err != nil {
+		return lpTypes.Delegator{}, err
+	}
 
-func (w *wizard) getTranscoderFeeShare() string {
-	return httpGet(fmt.Sprintf("http://%v:%v/transcoderFeeShare", w.host, w.httpPort))
-}
+	defer resp.Body.Close()
 
-func (w *wizard) getTranscoderPrice() string {
-	return httpGet(fmt.Sprintf("http://%v:%v/transcoderPrice", w.host, w.httpPort))
-}
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return lpTypes.Delegator{}, err
+	}
 
-func (w *wizard) getPendingTranscoderBlockRewardCut() string {
-	return httpGet(fmt.Sprintf("http://%v:%v/transcoderPendingBlockRewardCut", w.host, w.httpPort))
-}
+	var dInfo lpTypes.Delegator
+	err = json.Unmarshal(result, &dInfo)
+	if err != nil {
+		return lpTypes.Delegator{}, err
+	}
 
-func (w *wizard) getPendingTranscoderFeeShare() string {
-	return httpGet(fmt.Sprintf("http://%v:%v/transcoderPendingFeeShare", w.host, w.httpPort))
-}
-
-func (w *wizard) getPendingTranscoderPrice() string {
-	return httpGet(fmt.Sprintf("http://%v:%v/transcoderPendingPrice", w.host, w.httpPort))
+	return dInfo, nil
 }

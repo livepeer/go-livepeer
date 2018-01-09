@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/log"
+	lpcommon "github.com/livepeer/go-livepeer/common"
 )
 
 // // read reads a single line from stdin, trimming if from spaces.
@@ -85,17 +87,80 @@ func (w *wizard) readDefaultInt(def int) int {
 	return def
 }
 
+func (w *wizard) readBigInt() *big.Int {
+	for {
+		fmt.Printf("> ")
+		text, err := w.in.ReadString('\n')
+		if err != nil {
+			log.Crit("Failed to read user input", "err", err)
+		}
+		if text = strings.TrimSpace(text); text == "" {
+			continue
+		}
+		val, err := lpcommon.ParseBigInt(strings.TrimSpace(text))
+		if err != nil {
+			log.Error("Invalid input, expected big integer", "err", err)
+			continue
+		}
+		return val
+	}
+}
+
+func (w *wizard) readDefaultBigInt(def *big.Int) *big.Int {
+	fmt.Printf("> ")
+	text, err := w.in.ReadString('\n')
+	if err != nil {
+		log.Crit("Failed to read user input", "err", err)
+	}
+	val, err := lpcommon.ParseBigInt(strings.TrimSpace(text))
+	if err == nil {
+		return val
+	}
+	return def
+}
+
+func (w *wizard) readFloat() float64 {
+	for {
+		fmt.Printf("> ")
+		text, err := w.in.ReadString('\n')
+		if err != nil {
+			log.Crit("Failed to read user input", "err", err)
+		}
+		if text = strings.TrimSpace(text); text == "" {
+			continue
+		}
+		val, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			log.Error("Invalid input, expected float", "err", err)
+			continue
+		}
+		return val
+	}
+}
+
+func (w *wizard) readDefaultFloat(def float64) float64 {
+	fmt.Printf("> ")
+	text, err := w.in.ReadString('\n')
+	if err != nil {
+		log.Crit("Failed to read user input", "err", err)
+	}
+	val, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+	if err == nil {
+		return val
+	}
+	return def
+}
+
 func httpGet(url string) string {
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Error("Error getting node ID: %v")
+		log.Error("Error sending HTTP GET: %v")
 		return ""
 	}
 
 	defer resp.Body.Close()
 	result, err := ioutil.ReadAll(resp.Body)
 	if err != nil || string(result) == "" {
-		// log.Error(fmt.Sprintf("Error reading from: %v - %v", url, err))
 		return ""
 	}
 	return string(result)

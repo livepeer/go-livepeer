@@ -63,6 +63,7 @@ func StartIpfs(ctx context.Context, repoPath string) (*IpfsCoreApi, error) {
 			case <-ctx.Done():
 				glog.Infof("Closing IPFS...")
 				closeIpfs(node, repoPath)
+				return
 			}
 		}
 	}()

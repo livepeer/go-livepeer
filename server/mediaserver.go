@@ -18,7 +18,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	lpmscore "github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/segmenter"
@@ -46,11 +45,8 @@ const EthEventTimeout = 5 * time.Second
 const EthMinedTxTimeout = 60 * time.Second
 
 var HLSWaitTime = time.Second * 45
-var BroadcastPrice = uint64(1)
+var BroadcastPrice = big.NewInt(1)
 var BroadcastJobVideoProfiles = []lpmscore.VideoProfile{lpmscore.P240p30fps4x3, lpmscore.P360p30fps16x9}
-var TranscoderFeeCut = uint8(10)
-var TranscoderRewardCut = uint8(10)
-var TranscoderSegmentPrice = big.NewInt(150)
 var LastHLSStreamID core.StreamID
 var LastManifestID core.ManifestID
 
@@ -75,9 +71,9 @@ func NewLivepeerServer(rtmpPort string, httpPort string, ffmpegPath string, lpNo
 }
 
 //StartServer starts the LPMS server
-func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegment int, transcodingOptions string) error {
+func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegment *big.Int, transcodingOptions string) error {
 	if s.LivepeerNode.Eth != nil {
-		BroadcastPrice = uint64(maxPricePerSegment)
+		BroadcastPrice = maxPricePerSegment
 		bProfiles := make([]lpmscore.VideoProfile, 0)
 		for _, opt := range strings.Split(transcodingOptions, ",") {
 			p, ok := lpmscore.VideoProfileLookup[strings.TrimSpace(opt)]
@@ -133,16 +129,17 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 		if s.LivepeerNode.Eth != nil {
-			//Check Token Balance
-			b, err := s.LivepeerNode.Eth.TokenBalance()
+			// Check deposit
+			deposit, err := s.LivepeerNode.Eth.BroadcasterDeposit(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
-				glog.Errorf("Error getting token balance:%v", err)
+				glog.Errorf("Error getting deposit: %v", err)
 				return ErrBroadcast
 			}
-			glog.Infof("Current token balance for is: %v", b)
 
-			if b.Cmp(big.NewInt(int64(BroadcastPrice))) < 0 {
-				glog.Errorf("Low balance (%v) - cannot start broadcast session", b)
+			glog.Infof("Current deposit is: %v", deposit)
+
+			if deposit.Cmp(BroadcastPrice) < 0 {
+				glog.Errorf("Low deposit (%v) - cannot start broadcast session", deposit)
 				return ErrBroadcast
 			}
 		}
@@ -206,10 +203,10 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					return
 				}
 
-				segHash := (&ethTypes.Segment{StreamID: hlsStrm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
 				var sig []byte
-				if c, ok := s.LivepeerNode.Eth.(*eth.Client); ok {
-					sig, err = c.SignSegmentHash(s.LivepeerNode.EthPassword, segHash.Bytes())
+				if s.LivepeerNode.Eth != nil {
+					segHash := (&ethTypes.Segment{StreamID: hlsStrm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
+					sig, err = s.LivepeerNode.Eth.Sign(segHash.Bytes())
 					if err != nil {
 						glog.Errorf("Error signing segment %v-%v: %v", hlsStrm.GetStreamID(), seg.SeqNo, err)
 						return

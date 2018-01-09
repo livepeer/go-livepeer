@@ -22,32 +22,28 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/livepeer/lpms/transcoder"
-
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/console"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
 	bnet "github.com/livepeer/go-livepeer-basicnet"
 	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/eth/eventservices"
 	"github.com/livepeer/go-livepeer/ipfs"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
-	lpmscore "github.com/livepeer/lpms/core"
 )
 
-var ErrKeygen = errors.New("ErrKeygen")
-var EthRpcTimeout = 10 * time.Second
-var EthEventTimeout = 120 * time.Second
-var ErrIpfs = errors.New("ErrIpfs")
+var (
+	ErrKeygen       = errors.New("ErrKeygen")
+	EthRpcTimeout   = 10 * time.Second
+	EthEventTimeout = 120 * time.Second
+	EthTxTimeout    = 120 * time.Second
+	ErrIpfs         = errors.New("ErrIpfs")
+)
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -88,15 +84,16 @@ func main() {
 	bootAddr := flag.String("bootAddr", "", "Bootstrap node addr")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
-	maxPricePerSegment := flag.Int("maxPricePerSegment", 1, "Max price per segment for a broadcast job")
+	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
-	ethKeyPath := flag.String("ethKeyPath", "", "Path for the Eth Key")
-	ethPassword := flag.String("ethPassword", "", "Eth account password")
+	ethPassword := flag.String("ethPassword", "", "Password for existing Eth account address")
+	ethKeystorePath := flag.String("ethKeystorePath", "", "Path for the Eth Key")
 	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
 	ethWsUrl := flag.String("ethWsUrl", "", "geth websocket url")
 	testnet := flag.Bool("testnet", false, "Set to true to connect to testnet")
 	controllerAddr := flag.String("controllerAddr", "", "Protocol smart contract address")
+	gasLimit := flag.Int("gasLimit", 4000000, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
@@ -181,57 +178,13 @@ func main() {
 	if *offchain {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	} else {
-		var acct accounts.Account
 		var keystoreDir string
-		if _, err := os.Stat(*ethKeyPath); !os.IsNotExist(err) {
-			//Try loading eth key from ethKeyPath
-			data, err := ioutil.ReadFile(*ethKeyPath)
-			if err != nil {
-				glog.Errorf("Cannot read key from %v", *ethKeyPath)
-				return
-			}
-
-			var objmap map[string]*json.RawMessage
-			if err := json.Unmarshal(data, &objmap); err != nil {
-				glog.Errorf("Cannot parse key from %v", *ethKeyPath)
-				return
-			}
-			var addr string
-			if err := json.Unmarshal(*objmap["address"], &addr); err != nil {
-				glog.Errorf("Cannot find address in %v", *ethKeyPath)
-				return
-			}
-			keystoreDir, _ = filepath.Split(*ethKeyPath)
-			acct, err = getEthAccount(keystoreDir, addr)
-			if err != nil {
-				glog.Errorf("Cannot get account %v in %v", addr, keystoreDir)
-				return
-			}
+		if _, err := os.Stat(*ethKeystorePath); !os.IsNotExist(err) {
+			keystoreDir, _ = filepath.Split(*ethKeystorePath)
 		} else {
 			keystoreDir = filepath.Join(*datadir, "keystore")
-			//Try loading eth key from datadir
-			if _, err := os.Stat(keystoreDir); !os.IsNotExist(err) {
-				acct, err = getEthAccount(keystoreDir, *ethAcctAddr)
-				if err != nil {
-					glog.Errorf("Cannot get account %v from %v", *ethAcctAddr, *datadir)
-					if acct, *ethPassword, err = createEthAccount(keystoreDir); err != nil {
-						glog.Errorf("Cannot create Eth account.")
-						return
-					}
-				}
-			} else {
-				//Try to create a new Eth key
-				if acct, *ethPassword, err = createEthAccount(keystoreDir); err != nil {
-					glog.Errorf("Cannot create Eth account.")
-					return
-				}
-			}
 		}
 
-		if acct.Address.Hex() == "0x0000000000000000000000000000000000000000" {
-			glog.Errorf("Cannot find eth account")
-			return
-		}
 		if keystoreDir == "" {
 			glog.Errorf("Cannot find keystore directory")
 			return
@@ -283,7 +236,8 @@ func main() {
 				return
 			}
 		}
-		glog.Infof("Using Eth account: %v", acct.Address.Hex())
+
+		glog.Infof("Setting up client...")
 
 		//Set up eth client
 		backend, err := ethclient.Dial(gethUrl)
@@ -292,56 +246,45 @@ func main() {
 			return
 		}
 
-		var client *eth.Client
-		for firstTime := true; ; {
-			client, err = eth.NewClient(acct, *ethPassword, keystoreDir, backend, big.NewInt(int64(*gasPrice)), common.HexToAddress(*controllerAddr), EthRpcTimeout, EthEventTimeout)
-			if err != nil {
-				if err == keystore.ErrDecrypt {
-					if !firstTime {
-						glog.Infof("Error decrypting using passphrase. Please provide the passphrase again.")
-					} else {
-						glog.Infof("Please provide the passphrase.")
-						firstTime = false
-					}
-					*ethPassword = getPassphrase(false)
-					continue
-				}
-				glog.Errorf("Error creating Eth client: %v", err)
-				return
-			}
-			break
-		}
-		n.Eth = client
-		n.EthAccount = acct.Address.String()
-		n.EthPassword = *ethPassword
-
-		//Create LogMonitor, the addresses act as filters.
-		var logMonitor *eth.LogMonitor
-		if *transcoder {
-			logMonitor = eth.NewLogMonitor(client, common.Address{})
-		} else {
-			logMonitor = eth.NewLogMonitor(client, client.Account().Address)
-		}
-
-		if *transcoder {
-			if err := setupTranscoder(n, logMonitor); err != nil {
-				glog.Errorf("Error setting up transcoder: %v", err)
-				return
-			}
-		}
-	}
-
-	if *transcoder {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		ipfsApi, err := ipfs.StartIpfs(ctx, *ipfsPath)
+		client, err := eth.NewClient(common.HexToAddress(*ethAcctAddr), keystoreDir, backend, common.HexToAddress(*controllerAddr), EthTxTimeout)
 		if err != nil {
-			glog.Errorf("Error starting ipfs: %v", err)
+			glog.Errorf("Failed to create client: %v", err)
 			return
 		}
 
-		n.Ipfs = ipfsApi
+		var bigGasLimit *big.Int
+		var bigGasPrice *big.Int
+
+		if *gasLimit > 0 {
+			bigGasLimit = big.NewInt(int64(*gasLimit))
+		}
+
+		if *gasPrice > 0 {
+			bigGasPrice = big.NewInt(int64(*gasPrice))
+		}
+
+		err = client.Setup(*ethPassword, bigGasLimit, bigGasPrice)
+		if err != nil {
+			glog.Errorf("Failed to setup client: %v", err)
+			return
+		}
+
+		n.Eth = client
+
+		if *transcoder {
+			addrMap := n.Eth.ContractAddresses()
+			em := eth.NewEventMonitor(backend, addrMap)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if err := setupTranscoder(ctx, n, em, *ipfsPath); err != nil {
+				glog.Errorf("Error setting up transcoder: %v", err)
+				return
+			}
+
+			defer n.StopEthServices()
+		}
 	}
 
 	//Set up the media server
@@ -350,9 +293,15 @@ func main() {
 	msCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	bigMaxPricePerSegment, err := lpcommon.ParseBigInt(*maxPricePerSegment)
+	if err != nil {
+		glog.Errorf("Error setting max price per segment: %v", err)
+		return
+	}
+
 	go func() {
 		s.StartWebserver()
-		ec <- s.StartMediaServer(msCtx, *maxPricePerSegment, *transcodingOptions)
+		ec <- s.StartMediaServer(msCtx, bigMaxPricePerSegment, *transcodingOptions)
 	}()
 
 	c := make(chan os.Signal)
@@ -457,110 +406,46 @@ func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 	return priv, pub, nil
 }
 
-func getEthAccount(keystoreDir string, addr string) (accounts.Account, error) {
-	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
-	accts := keyStore.Accounts()
-	if len(accts) == 0 {
-		return accounts.Account{}, fmt.Errorf("ErrGeth")
-	}
-
-	if addr != "" {
-		for _, acct := range accts {
-			if acct.Address == common.HexToAddress(addr) {
-				return acct, nil
-			}
-		}
-
-		glog.Errorf("Cannot find geth account")
-		return accounts.Account{}, fmt.Errorf("ErrGeth")
-	}
-
-	return accts[0], nil
-}
-
-func setupTranscoder(n *core.LivepeerNode, lm *eth.LogMonitor) error {
+func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string) error {
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
-		glog.Errorf("Error getting transcoder state: %v", err)
 		return err
 	}
 
 	if !active {
 		glog.Infof("Transcoder %v is inactive", n.Eth.Account().Address.Hex())
 	} else {
-		s, err := n.Eth.TranscoderStake()
-		if err != nil {
-			glog.Errorf("Error getting transcoder stake: %v", err)
-		}
-		glog.Infof("Transcoder Active. Total Stake: %v", s)
+		glog.Infof("Transcoder %v is active", n.Eth.Account().Address.Hex())
 	}
 
-	rm := core.NewRewardManager(time.Second*5, n.Eth)
-	go rm.Start(context.Background())
+	// Set up IPFS
+	ipfsApi, err := ipfs.StartIpfs(ctx, ipfsPath)
+	if err != nil {
+		return err
+	}
 
-	//Set up callback for when a job is assigned to us (via monitoring the eth log)
-	lm.SubscribeToJobEvents(func(job *eth.Job) {
-		//Check if broadcaster has enough funds
-		bDeposit, err := n.Eth.GetBroadcasterDeposit(job.BroadcasterAddress)
-		if err != nil {
-			glog.Errorf("Error getting broadcaster deposit: %v", err)
-			return
-		}
-		if bDeposit.Cmp(big.NewInt(0)) == 0 {
-			glog.Errorf("Broadcaster does not have enough funds. Skipping job")
-			return
-		}
+	n.Ipfs = ipfsApi
 
-		//Create transcode config, make sure the profiles are sorted
-		tProfiles, err := txDataToVideoProfile(job.TranscodingOptions)
-		if err != nil {
-			glog.Errorf("Error processing job transcoding options: %v", err)
-			return
-		}
+	// Create rounds service to initialize round if it has not already been initialized
+	rds := eventservices.NewRoundsService(em, n.Eth)
+	n.EthServices = append(n.EthServices, rds)
 
-		config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: job.JobId, PerformOnchainClaim: true}
-		glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.TranscodingOptions, config)
+	// Create reward service to claim/distribute inflationary rewards every round
+	rs := eventservices.NewRewardService(em, n.Eth)
+	n.EthServices = append(n.EthServices, rs)
 
-		//Do The Transcoding
-		cm := core.NewBasicClaimManager(job.StreamId, job.JobId, job.BroadcasterAddress, job.MaxPricePerSegment, tProfiles, n.Eth, n.Ipfs)
-		tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.WorkDir)
-		strmIDs, err := n.TranscodeAndBroadcast(config, cm, tr)
-		if err != nil {
-			glog.Errorf("Transcode Error: %v", err)
-			return
-		}
+	// Create job service to listen for new jobs and transcode if assigned to the job
+	js := eventservices.NewJobService(em, n)
+	n.EthServices = append(n.EthServices, js)
 
-		//Notify Broadcaster
-		sid := core.StreamID(job.StreamId)
-		vids := make(map[core.StreamID]lpmscore.VideoProfile)
-		for i, vp := range tProfiles {
-			vids[strmIDs[i]] = vp
-		}
-		if err = n.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
-			glog.Errorf("Notify Broadcaster Error: %v", err)
-		}
-	})
+	// Start services
+	err = n.StartEthServices()
+	if err != nil {
+		return err
+	}
 
 	return nil
-}
-
-func txDataToVideoProfile(txData string) ([]lpmscore.VideoProfile, error) {
-	profiles := make([]lpmscore.VideoProfile, 0)
-
-	for i := 0; i+lpcommon.VideoProfileIDSize < len(txData); i += lpcommon.VideoProfileIDSize {
-		txp := txData[i : i+lpcommon.VideoProfileIDSize]
-
-		p, ok := lpmscore.VideoProfileLookup[lpcommon.VideoProfileNameLookup[txp]]
-		if !ok {
-			// glog.Errorf("Cannot find video profile for job: %v", txp)
-			// return nil, core.ErrTranscode
-		} else {
-			profiles = append(profiles, p)
-		}
-	}
-
-	return profiles, nil
 }
 
 func stream(port string, streamID string) {
@@ -641,33 +526,4 @@ func broadcast(rtmpPort int, httpPort int) {
 	} else {
 		glog.Errorf("The broadcast command only support darwin for now.  Please download OBS to broadcast.")
 	}
-}
-
-func createEthAccount(keystoreDir string) (acct accounts.Account, passphrase string, err error) {
-	if err := os.Mkdir(keystoreDir, 0755); err != nil {
-		glog.Errorf("Error creating datadir: %v", err)
-	}
-
-	glog.Infoln("Creating a new Ethereum account.  Your new account is locked with a password. Please give a password. Do not forget this password.")
-	passphrase = getPassphrase(true)
-	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
-	acct, err = keyStore.NewAccount(passphrase)
-	return
-}
-
-func getPassphrase(confirmation bool) string {
-	password, err := console.Stdin.PromptPassword("Passphrase: ")
-	if err != nil {
-		utils.Fatalf("Failed to read passphrase: %v", err)
-	}
-	if confirmation {
-		confirm, err := console.Stdin.PromptPassword("Repeat passphrase: ")
-		if err != nil {
-			utils.Fatalf("Failed to read passphrase confirmation: %v", err)
-		}
-		if password != confirm {
-			utils.Fatalf("Passphrases do not match")
-		}
-	}
-	return password
 }

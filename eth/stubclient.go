@@ -1,21 +1,14 @@
 package eth
 
 import (
-	"context"
 	"math/big"
-	"time"
 
-	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 )
-
-type StubSubscription struct{}
-
-func (s *StubSubscription) Unsubscribe()      {}
-func (s *StubSubscription) Err() <-chan error { return make(chan error) }
 
 type StubClient struct {
 	StrmID            string
@@ -36,57 +29,69 @@ type StubClient struct {
 	ClaimRoot         map[[32]byte]bool
 	ClaimCounter      int
 	SubLogsCh         chan types.Log
-	JobsMap           map[string]*Job
+	JobsMap           map[string]*lpTypes.Job
 	BlockNum          *big.Int
 	BlockHashToReturn common.Hash
 }
 
-func (e *StubClient) Backend() *ethclient.Client { return nil }
-func (e *StubClient) Account() accounts.Account  { return accounts.Account{} }
-func (e *StubClient) SubscribeToJobEvent(ctx context.Context, logsCh chan types.Log, broadcasterAddr common.Address) (ethereum.Subscription, error) {
-	e.SubLogsCh = logsCh
-	return &StubSubscription{}, nil
-}
-func (e *StubClient) WatchEvent(logsCh <-chan types.Log) (types.Log, error) { return types.Log{}, nil }
-func (e *StubClient) RoundInfo() (*big.Int, *big.Int, *big.Int, error) {
-	return nil, nil, nil, nil
-}
-func (e *StubClient) InitializeRound() (<-chan types.Receipt, <-chan error) { return nil, nil }
-func (e *StubClient) CurrentRoundInitialized() (bool, error)                { return false, nil }
-func (e *StubClient) Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (<-chan types.Receipt, <-chan error) {
+func (e *StubClient) Setup(password string, gasLimit, gasPrice *big.Int) error { return nil }
+func (e *StubClient) Account() accounts.Account                                { return accounts.Account{} }
+func (e *StubClient) Backend() (*ethclient.Client, error)                      { return nil, ErrMissingBackend }
+
+// Rounds
+
+func (e *StubClient) InitializeRound() (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) CurrentRound() (*big.Int, error)              { return big.NewInt(0), nil }
+func (e *StubClient) LastInitializedRound() (*big.Int, error)      { return big.NewInt(0), nil }
+func (e *StubClient) CurrentRoundInitialized() (bool, error)       { return false, nil }
+func (e *StubClient) CurrentRoundLocked() (bool, error)            { return false, nil }
+
+// Token
+
+func (e *StubClient) Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) IsActiveTranscoder() (bool, error)  { return false, nil }
-func (e *StubClient) TranscoderStake() (*big.Int, error) { return nil, nil }
-func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (<-chan types.Receipt, <-chan error) {
+func (e *StubClient) Request() (*types.Transaction, error)            { return nil, nil }
+func (e *StubClient) BalanceOf(addr common.Address) (*big.Int, error) { return big.NewInt(0), nil }
+
+// Staking
+
+func (e *StubClient) Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) ValidRewardTimeWindow() (bool, error)         { return false, nil }
-func (e *StubClient) Reward() (<-chan types.Receipt, <-chan error) { return nil, nil }
-func (e *StubClient) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int, endBlock *big.Int) (<-chan types.Receipt, <-chan error) {
-	e.StrmID = streamId
-	e.TOpts = transcodingOptions
-	e.MaxPrice = maxPricePerSegment
+func (e *StubClient) Reward() (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) JobDetails(id *big.Int) (*big.Int, [32]byte, *big.Int, common.Address, common.Address, *big.Int, error) {
-	return nil, [32]byte{}, nil, common.Address{}, common.Address{}, nil, nil
+func (e *StubClient) Unbond() (*types.Transaction, error)        { return nil, nil }
+func (e *StubClient) WithdrawStake() (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) WithdrawFees() (*types.Transaction, error)  { return nil, nil }
+func (e *StubClient) ClaimTokenPoolsShares(endRound *big.Int) (*types.Transaction, error) {
+	return nil, nil
 }
-func (e *StubClient) SignSegmentHash(passphrase string, hash []byte) ([]byte, error) { return nil, nil }
-func (e *StubClient) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, transcodeClaimsRoot [32]byte) (<-chan types.Receipt, <-chan error) {
+func (e *StubClient) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) { return nil, nil }
+func (e *StubClient) GetDelegator(addr common.Address) (*lpTypes.Delegator, error)   { return nil, nil }
+func (e *StubClient) GetTranscoderTokenPoolsForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
+	return nil, nil
+}
+func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) { return nil, nil }
+func (e *StubClient) IsActiveTranscoder() (bool, error)                     { return false, nil }
+func (e *StubClient) IsAssignedTranscoder(jobID *big.Int) (bool, error)     { return false, nil }
+
+// Jobs
+
+func (e *StubClient) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int, endBlock *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (*types.Transaction, error) {
 	e.ClaimCounter++
 	e.ClaimJid = append(e.ClaimJid, jobId)
 	e.ClaimStart = append(e.ClaimStart, segmentRange[0])
 	e.ClaimEnd = append(e.ClaimEnd, segmentRange[1])
-	e.ClaimRoot[transcodeClaimsRoot] = true
-	rc := make(chan types.Receipt)
-	ec := make(chan error)
-	go func() {
-		rc <- types.Receipt{TxHash: common.StringToHash("ClaimWork")}
-	}()
-	return rc, ec
+	e.ClaimRoot[claimRoot] = true
+	return nil, nil
 }
-func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (<-chan types.Receipt, <-chan error) {
+func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error) {
 	e.Jid = jobId
 	e.SegSeqNum = segmentNumber
 	e.DStorageHash = dataStorageHash
@@ -96,90 +101,35 @@ func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big
 	e.Proof = proof
 	e.VerifyCounter++
 
-	rc := make(chan types.Receipt)
-	go func(rc chan types.Receipt) {
-		time.Sleep(time.Millisecond * 50)
-		rc <- types.Receipt{}
-	}(rc)
-	return rc, nil
-}
-func (e *StubClient) DistributeFees(jobId *big.Int, claimId *big.Int) (<-chan types.Receipt, <-chan error) {
 	return nil, nil
 }
-func (e *StubClient) Transfer(toAddr common.Address, amount *big.Int) (<-chan types.Receipt, <-chan error) {
+func (e *StubClient) DistributeFees(jobId *big.Int, claimId *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (c *StubClient) Deposit(amount *big.Int) (<-chan types.Receipt, <-chan error) {
+func (c *StubClient) Deposit(amount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (c *StubClient) GetBroadcasterDeposit(broadcaster common.Address) (*big.Int, error) {
+func (c *StubClient) Withdraw() (*types.Transaction, error) { return nil, nil }
+func (c *StubClient) BroadcasterDeposit(broadcaster common.Address) (*big.Int, error) {
+	return big.NewInt(0), nil
+}
+func (e *StubClient) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
 	return nil, nil
 }
-func (e *StubClient) TokenBalance() (*big.Int, error) { return big.NewInt(100000), nil }
-func (e *StubClient) WaitUntilNextRound() error       { return nil }
-func (e *StubClient) GetJob(jobID *big.Int) (*Job, error) {
-	return e.JobsMap[jobID.String()], nil
-}
-func (c *StubClient) GetClaim(jobID *big.Int, claimID *big.Int) (*Claim, error) {
+func (c *StubClient) GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, error) {
 	return nil, nil
 }
-func (c *StubClient) IsRegisteredTranscoder() (bool, error) {
-	return false, nil
-}
-func (c *StubClient) RpcTimeout() time.Duration {
-	return time.Millisecond
-}
-func (c *StubClient) TranscoderBond() (*big.Int, error) {
-	return nil, nil
-}
-func (c *StubClient) WithdrawDeposit() (<-chan types.Receipt, <-chan error) {
-	return nil, nil
-}
-func (e *StubClient) VerificationRate() (uint64, error) {
-	return e.VeriRate, nil
-}
-func (e *StubClient) VerificationPeriod() (*big.Int, error) {
-	return nil, nil
-}
-func (e *StubClient) SlashingPeriod() (*big.Int, error) {
-	return nil, nil
-}
-func (e *StubClient) LastRewardRound() (*big.Int, error) {
-	return nil, nil
-}
-func (e *StubClient) GetControllerAddr() string         { return "" }
-func (e *StubClient) GetTokenAddr() string              { return "" }
-func (e *StubClient) GetBondingManagerAddr() string     { return "" }
-func (e *StubClient) GetJobsManagerAddr() string        { return "" }
-func (e *StubClient) GetRoundsManagerAddr() string      { return "" }
-func (e *StubClient) DelegatorStake() (*big.Int, error) { return nil, nil }
-func (e *StubClient) DelegatorStatus() (string, error)  { return "", nil }
-func (e *StubClient) GetCandidateTranscodersStats() ([]TranscoderStats, error) {
-	return []TranscoderStats{}, nil
-}
-func (e *StubClient) GetReserveTranscodersStats() ([]TranscoderStats, error) {
-	return []TranscoderStats{}, nil
-}
-func (e *StubClient) GetFaucetAddr() string { return "" }
-func (e *StubClient) RequestTokens() (<-chan types.Receipt, <-chan error) {
-	return nil, nil
-}
-func (e *StubClient) TranscoderPendingPricingInfo() (*big.Int, *big.Int, *big.Int, error) {
-	return big.NewInt(0), big.NewInt(0), nil, nil
-}
-func (e *StubClient) TranscoderPricingInfo() (*big.Int, *big.Int, *big.Int, error) {
-	return big.NewInt(0), big.NewInt(0), nil, nil
-}
-func (e *StubClient) TranscoderStatus() (string, error)                  { return "", nil }
-func (e *StubClient) Unbond() (<-chan types.Receipt, <-chan error)       { return nil, nil }
-func (e *StubClient) WithdrawBond() (<-chan types.Receipt, <-chan error) { return nil, nil }
-func (e *StubClient) GetBlockInfoByTxHash(ctx context.Context, hash common.Hash) (blkNum *big.Int, blkHash common.Hash, err error) {
-	return big.NewInt(0), hash, nil
-}
-func (c *StubClient) GetBlockHashByNumber(ctx context.Context, num *big.Int) (common.Hash, error) {
-	c.BlockNum = num
-	return c.BlockHashToReturn, nil
-}
-func (c *StubClient) IsAssignedTranscoder(maxPricePerSegment *big.Int) bool {
-	return false
-}
+
+// Parameters
+
+func (c *StubClient) RoundLength() (*big.Int, error)        { return big.NewInt(0), nil }
+func (c *StubClient) UnbondingPeriod() (uint64, error)      { return 0, nil }
+func (c *StubClient) VerificationRate() (uint64, error)     { return 0, nil }
+func (c *StubClient) VerificationPeriod() (*big.Int, error) { return big.NewInt(0), nil }
+func (c *StubClient) SlashingPeriod() (*big.Int, error)     { return big.NewInt(0), nil }
+
+// Helpers
+
+func (c *StubClient) ContractAddresses() map[string]common.Address { return nil }
+func (c *StubClient) CheckTx(tx *types.Transaction) error          { return nil }
+func (e *StubClient) Sign(msg []byte) ([]byte, error)              { return nil, nil }

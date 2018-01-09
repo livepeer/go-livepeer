@@ -54,7 +54,7 @@ func (w *wizard) allTranscodingOptions() map[int]string {
 
 func (w *wizard) setBroadcastConfig() {
 	fmt.Printf("Enter broadcast max price per segment - ")
-	maxPricePerSegment := w.readInt()
+	maxPricePerSegment := w.readBigInt()
 
 	opts := w.allTranscodingOptions()
 	if opts == nil {
@@ -65,7 +65,7 @@ func (w *wizard) setBroadcastConfig() {
 	id := w.readInt()
 
 	val := url.Values{
-		"maxPricePerSegment": {fmt.Sprintf("%v", maxPricePerSegment)},
+		"maxPricePerSegment": {fmt.Sprintf("%v", maxPricePerSegment.String())},
 		"transcodingOptions": {fmt.Sprintf("%v", opts[id])},
 	}
 

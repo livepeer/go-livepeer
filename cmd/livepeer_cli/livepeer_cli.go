@@ -12,23 +12,6 @@ import (
 	"gopkg.in/urfave/cli.v1"
 )
 
-const (
-	NodeStatus                = "1"
-	DepositToken              = "2"
-	BroadcastVideo            = "3"
-	StreamVideo               = "4"
-	SetTranscoderConfig       = "5"
-	SetBroadcastConfig        = "6"
-	Bond                      = "7"
-	UnBond                    = "8"
-	WithdrawBond              = "9"
-	BecomeTranscoder          = "10"
-	GetTestToken              = "11"
-	GetTestEther              = "12"
-	ListRegisteredTranscoders = "13"
-	InvalidOption             = "20"
-)
-
 func main() {
 	app := cli.NewApp()
 	app.Name = "livepeer-cli"
@@ -108,128 +91,102 @@ func (w *wizard) run() {
 	fmt.Println()
 
 	w.stats(w.transcoder)
+
 	// Basics done, loop ad infinitum about what to do
 	for {
-
 		fmt.Println()
 		fmt.Println("What would you like to do? (default = stats)")
 		fmt.Println(" 1. Get node status")
-		var choice string
+		fmt.Println(" 2. Initialize round")
+		fmt.Println(" 3. Bond")
+		fmt.Println(" 4. Unbond")
+		fmt.Println(" 5. Withdraw stake (LPT)")
+		fmt.Println(" 6. Withdraw fees (ETH)")
+		fmt.Println(" 7. Claim rewards and fees")
+		fmt.Println(" 8. Get test LPT")
+		fmt.Println(" 9. Get test ETH")
+		fmt.Println(" 10. List registered transcoders")
 
 		if w.transcoder {
-			fmt.Println(" 2. Set transcoder config")
-			fmt.Println(" 3. Become a transcoder")
-			fmt.Println(" 4. Get test Livepeer Token")
-			fmt.Println(" 5. Get test Ether")
-			fmt.Println(" 6. List registered transcoders")
-			choice = w.read()
-			switch {
-			case choice == "1":
-				choice = NodeStatus
-				break
-			case choice == "2":
-				choice = SetTranscoderConfig
-				break
-			case choice == "3":
-				choice = BecomeTranscoder
-				break
-			case choice == "4":
-				choice = GetTestToken
-				break
-			case choice == "5":
-				choice = GetTestEther
-				break
-			case choice == "6":
-				choice = ListRegisteredTranscoders
-				break
-			default:
-				choice = InvalidOption
+			fmt.Println(" 11. Become a transcoder")
+			fmt.Println(" 12. Set transcoder config")
 
-			}
-
+			w.doCLIOpt(w.read(), true)
 		} else {
+			fmt.Println(" 11. Deposit (ETH)")
+			fmt.Println(" 12. Withdraw deposit (ETH)")
+			fmt.Println(" 13. Broadcast video")
+			fmt.Println(" 14. Stream video")
+			fmt.Println(" 15. Set broadcast config")
 
-			fmt.Println(" 2. Deposit token")
-			fmt.Println(" 3. Broadcast video")
-			fmt.Println(" 4. Stream video")
-			fmt.Println(" 5. Set broadcast config")
-			fmt.Println(" 6. Bond")
-			fmt.Println(" 7. Unbond")
-			fmt.Println(" 8. Withdraw bond")
-			fmt.Println(" 9. Get test Livepeer Token")
-			fmt.Println(" 10. Get test Ether")
-			fmt.Println(" 11. List registered transcoders")
-
-			choice = w.read()
-			switch {
-			case choice == "1":
-				choice = NodeStatus
-				break
-			case choice == "2":
-				choice = DepositToken
-				break
-			case choice == "3":
-				choice = BroadcastVideo
-				break
-			case choice == "4":
-				choice = StreamVideo
-				break
-			case choice == "5":
-				choice = SetBroadcastConfig
-				break
-			case choice == "6":
-				choice = Bond
-				break
-			case choice == "7":
-				choice = UnBond
-				break
-			case choice == "8":
-				choice = WithdrawBond
-				break
-			case choice == "9":
-				choice = GetTestToken
-				break
-			case choice == "10":
-				choice = GetTestEther
-				break
-			case choice == "11":
-				choice = ListRegisteredTranscoders
-				break
-			default:
-				choice = InvalidOption
-			}
-
-		}
-		switch {
-		case choice == NodeStatus:
-			w.stats(w.transcoder)
-		case choice == DepositToken:
-			w.deposit()
-		case choice == BroadcastVideo:
-			w.broadcast()
-		case choice == StreamVideo:
-			w.stream()
-		case choice == SetTranscoderConfig:
-			w.setTranscoderConfig()
-		case choice == SetBroadcastConfig:
-			w.setBroadcastConfig()
-		case choice == Bond:
-			w.bond()
-		case choice == UnBond:
-			w.unbond()
-		case choice == WithdrawBond:
-			w.withdrawBond()
-		case choice == BecomeTranscoder:
-			w.activateTranscoder()
-		case choice == GetTestToken:
-			w.requestTokens()
-		case choice == GetTestEther:
-			fmt.Print("Go to eth-testnet.livepeer.org and use the faucet. (enter to continue)")
-			w.read()
-		case choice == ListRegisteredTranscoders:
-			w.allTranscoderStats()
-		default:
-			log.Error("That's not something I can do")
+			w.doCLIOpt(w.read(), false)
 		}
 	}
+}
+
+func (w *wizard) doCLIOpt(choice string, transcoder bool) {
+	switch choice {
+	case "1":
+		w.stats(w.transcoder)
+		return
+	case "2":
+		w.initializeRound()
+		return
+	case "3":
+		w.bond()
+		return
+	case "4":
+		w.unbond()
+		return
+	case "5":
+		w.withdrawStake()
+		return
+	case "6":
+		w.withdrawFees()
+		return
+	case "7":
+		w.claimRewardsAndFees()
+		return
+	case "8":
+		w.requestTokens()
+		return
+	case "9":
+		fmt.Print("Go to eth-testnet.livepeer.org and use the faucet. (enter to continue)")
+		w.read()
+		return
+	case "10":
+		w.registeredTranscoderStats()
+		return
+	}
+
+	if transcoder {
+		switch choice {
+		case "11":
+			w.activateTranscoder()
+			return
+		case "12":
+			w.setTranscoderConfig()
+			return
+		}
+	} else {
+		switch choice {
+		case "11":
+			w.deposit()
+			return
+		case "12":
+			w.withdraw()
+			return
+		case "13":
+			w.broadcast()
+			return
+		case "14":
+			w.stream()
+			return
+		case "15":
+			w.setBroadcastConfig()
+			return
+		}
+	}
+
+	log.Error("That's not something I can do")
 }

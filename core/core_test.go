@@ -164,7 +164,7 @@ func (s *StubSubscriber) Unsubscribe() error { return nil }
 func TestTranscode(t *testing.T) {
 	//Set up the node
 	stubnet := &StubVideoNetwork{T: t, subscribers: make(map[string]*StubSubscriber)}
-	n, _ := NewLivepeerNode(nil, stubnet, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, ".tmp")
+	n, _ := NewLivepeerNode(&eth.StubClient{}, stubnet, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, ".tmp")
 	stubnet.subscribers["strmID"] = &StubSubscriber{}
 
 	//Call transcode
@@ -175,7 +175,7 @@ func TestTranscode(t *testing.T) {
 		tProfiles[i] = lpmscore.VideoProfileLookup[vp.Name]
 	}
 	tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.WorkDir)
-	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: "strmID", Profiles: p}, nil, tr)
+	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: "strmID", Profiles: p}, &StubClaimManager{}, tr)
 	if err != nil {
 		t.Errorf("Error transcoding: %v", err)
 	}
