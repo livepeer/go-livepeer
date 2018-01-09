@@ -33,6 +33,10 @@ import (
 // sign the transaction before submission.
 type SignerFn func(types.Signer, common.Address, *types.Transaction) (*types.Transaction, error)
 
+// NonceFetcherFn is a function callback that returns a pointer to the nonce to be used
+// by a transaction if a nonce is not explicitly provided
+type NonceFetcherFn func() (*big.Int, error)
+
 // CallOpts is the collection of options to fine tune a contract call request.
 type CallOpts struct {
 	Pending bool           // Whether to operate on the pending state or the last known one
@@ -44,9 +48,10 @@ type CallOpts struct {
 // TransactOpts is the collection of authorization data required to create a
 // valid Ethereum transaction.
 type TransactOpts struct {
-	From   common.Address // Ethereum account to send the transaction from
-	Nonce  *big.Int       // Nonce to use for the transaction execution (nil = use pending state)
-	Signer SignerFn       // Method to use for signing the transaction (mandatory)
+	From         common.Address // Ethereum account to send the transaction from
+	Nonce        *big.Int       // Nonce to use for the transaction execution (nil = use pending state)
+	Signer       SignerFn       // Method to use for signing the transaction (mandatory)
+	NonceFetcher NonceFetcherFn // Method to use for fetching the nonce
 
 	Value    *big.Int // Funds to transfer along along the transaction (nil = 0 = no funds)
 	GasPrice *big.Int // Gas price to use for the transaction execution (nil = gas price oracle)
@@ -173,10 +178,12 @@ func (c *BoundContract) transact(opts *TransactOpts, contract *common.Address, i
 	}
 	var nonce uint64
 	if opts.Nonce == nil {
-		nonce, err = c.transactor.PendingNonceAt(ensureContext(opts.Context), opts.From)
+		noncePtr, err := opts.NonceFetcher()
 		if err != nil {
-			return nil, fmt.Errorf("failed to retrieve account nonce: %v", err)
+			return nil, err
 		}
+
+		nonce = noncePtr.Uint64()
 	} else {
 		nonce = opts.Nonce.Uint64()
 	}
