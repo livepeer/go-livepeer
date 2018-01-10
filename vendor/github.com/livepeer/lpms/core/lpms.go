@@ -104,12 +104,14 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 	segCtx, segCancel := context.WithCancel(context.Background())
 	go func() {
 		c <- func() error {
+			var seg *segmenter.VideoSegment
+			var err error
 			for {
 				if hs == nil {
 					glog.Errorf("HLS Stream is nil")
 					return segmenter.ErrSegmenter
 				}
-				seg, err := s.PollSegment(segCtx)
+				seg, err = s.PollSegment(segCtx)
 				if err != nil {
 					return err
 				}

@@ -94,7 +94,7 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 
 	var cmd *exec.Cmd
 
-	cmd = exec.Command(path.Join(s.ffmpegPath, "ffmpeg"), "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-segment_time", "4", "-muxdelay", "0", "-segment_list", plfn, tsfn)
+	cmd = exec.Command(path.Join(s.ffmpegPath, "ffmpeg"), "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-segment_time", fmt.Sprintf("%v", opt.SegLength.Seconds()), "-muxdelay", "0", "-segment_list", plfn, tsfn)
 
 	err = cmd.Start()
 	if err != nil {
@@ -252,11 +252,12 @@ func (s *FFMpegVideoSegmenter) pollPlaylist(ctx context.Context, fn string, slee
 }
 
 func (s *FFMpegVideoSegmenter) pollSegment(ctx context.Context, curFn string, nextFn string, sleepTime time.Duration) (f []byte, err error) {
+	var content []byte
 	for {
 		//Because FFMpeg keeps appending to the current segment until it's full before moving onto the next segment, we monitor the existance of
 		//the next file as a signal for the completion of the current segment.
 		if _, err := os.Stat(nextFn); err == nil {
-			content, err := ioutil.ReadFile(curFn)
+			content, err = ioutil.ReadFile(curFn)
 			if err != nil {
 				return nil, err
 			}

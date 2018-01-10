@@ -54,7 +54,9 @@ func (s *TestStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) e
 		dst.WritePacket(pkt)
 	}
 }
-func (s *TestStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error     { return nil }
+func (s *TestStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) (chan struct{}, error) {
+	return nil, nil
+}
 func (s *TestStream) WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error                { return nil }
 func (s *TestStream) WriteHLSSegmentToStream(seg stream.HLSSegment) error                 { return nil }
 func (s *TestStream) ReadHLSFromStream(ctx context.Context, buffer stream.HLSMuxer) error { return nil }
@@ -139,7 +141,7 @@ func TestSegmenter(t *testing.T) {
 			t.Errorf("Expecting HLS segment, got %v", seg.Format)
 		}
 
-		timeDiff := seg.Length - time.Second*8
+		timeDiff := seg.Length - time.Second*time.Duration(SegmentTime)
 		if timeDiff > time.Millisecond*500 || timeDiff < -time.Millisecond*500 {
 			t.Errorf("Expecting 2 sec segments, got %v", seg.Length)
 		}

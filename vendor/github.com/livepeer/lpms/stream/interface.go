@@ -45,7 +45,7 @@ type HLSVideoStream interface {
 type RTMPVideoStream interface {
 	VideoStream
 	ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) error
-	WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error
+	WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) (eof chan struct{}, err error)
 	Height() int
 	Width() int
 }

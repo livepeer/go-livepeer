@@ -2,7 +2,6 @@ package vidlistener
 
 import (
 	"context"
-	"io"
 	"net/url"
 	"time"
 
@@ -38,10 +37,13 @@ func (self *VidListener) HandleRTMPPublish(
 		}
 		s := stream.NewBasicRTMPVideoStream(strmID)
 		ctx, cancel := context.WithCancel(context.Background())
-		ec := make(chan error)
-		go func() { ec <- s.WriteRTMPToStream(ctx, conn) }()
+		eof, err := s.WriteRTMPToStream(ctx, conn)
+		if err != nil {
+			cancel()
+			return
+		}
 
-		err := gotStream(conn.URL, s)
+		err = gotStream(conn.URL, s)
 		if err != nil {
 			glog.Errorf("Error RTMP gotStream handler: %v", err)
 			cancel()
@@ -49,11 +51,9 @@ func (self *VidListener) HandleRTMPPublish(
 		}
 
 		select {
-		case err := <-ec:
+		case <-eof:
+			glog.Infof("RTMP publish got eof...")
 			endStream(conn.URL, s)
-			if err != io.EOF {
-				glog.Errorf("Got error writing RTMP: %v", err)
-			}
 			cancel()
 		}
 	}

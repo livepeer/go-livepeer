@@ -55,8 +55,8 @@ func TestStartUpload(t *testing.T) {
 	ctx := context.Background()
 
 	err := tr.StartUpload(ctx, mux, stream)
-	if err != io.EOF {
-		t.Error("Should have gotten EOF, but got:", err)
+	if err != nil {
+		t.Error("Expecting no error, but got:", err)
 	}
 
 	if mux.NumWrites != 12 {
