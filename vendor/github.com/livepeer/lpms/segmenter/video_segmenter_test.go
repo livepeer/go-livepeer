@@ -90,7 +90,8 @@ func TestSegmenter(t *testing.T) {
 	}()
 
 	se := make(chan error, 1)
-	opt := SegmenterOptions{}
+	segLength := time.Second * 4
+	opt := SegmenterOptions{SegLength: segLength}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
@@ -141,9 +142,9 @@ func TestSegmenter(t *testing.T) {
 			t.Errorf("Expecting HLS segment, got %v", seg.Format)
 		}
 
-		timeDiff := seg.Length - time.Second*time.Duration(SegmentTime)
+		timeDiff := seg.Length - segLength
 		if timeDiff > time.Millisecond*500 || timeDiff < -time.Millisecond*500 {
-			t.Errorf("Expecting 2 sec segments, got %v", seg.Length)
+			t.Errorf("Expecting %v sec segments, got %v.  Diff: %v", segLength, seg.Length, timeDiff)
 		}
 
 		fn := "test_" + strconv.Itoa(i) + ".ts"
