@@ -137,8 +137,10 @@ func (s *RoundsService) shouldInitializeRound(currentRoundStartBlock *big.Int, b
 		numActive = numTranscoders
 	}
 
-	hashNum := new(big.Int).SetBytes(blkHash.Bytes())
-	result := new(big.Int).Mod(hashNum, numActive)
+	if numActive.Cmp(big.NewInt(0)) == 0 {
+		// No upcoming active transcoders
+		return false, nil
+	}
 
 	rank := -1
 	for i := 0; i < int(numActive.Int64()); i++ {
@@ -152,6 +154,9 @@ func (s *RoundsService) shouldInitializeRound(currentRoundStartBlock *big.Int, b
 		// Not in the upcoming active set
 		return false, nil
 	}
+
+	hashNum := new(big.Int).SetBytes(blkHash.Bytes())
+	result := new(big.Int).Mod(hashNum, numActive)
 
 	// If blockHash % numActive == my rank, it is my turn to initialize the round
 	// Else it is not my turn to initialize the round
