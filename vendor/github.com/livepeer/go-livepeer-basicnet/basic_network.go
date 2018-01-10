@@ -45,6 +45,7 @@ const RelayTicker = 10 * time.Second
 const DefaultBroadcasterBufferSize = 3
 const DefaultBroadcasterBufferSegSendInterval = time.Second
 const DefaultTranscodeResponseRelayDuplication = 2
+const ConnTimeout = 3 * time.Second
 
 var ConnFileWriteFreq = time.Duration(60) * time.Second
 
@@ -101,6 +102,7 @@ func NewBasicVideoNetwork(n *NetworkNode, workDir string) (*BasicVideoNetwork, e
 		peerCache := NewPeerCache(n.PeerHost.Peerstore(), fmt.Sprintf("%v/conn", workDir))
 		peers := peerCache.LoadPeers()
 		for _, p := range peers {
+			glog.Infof("Connecting to cached peer: %v", p)
 			nw.connectPeerInfo(p)
 		}
 		go peerCache.Record(context.Background())
@@ -200,7 +202,8 @@ func (n *BasicVideoNetwork) Connect(nodeID string, addrs []string) error {
 }
 
 func (n *BasicVideoNetwork) connectPeerInfo(info peerstore.PeerInfo) error {
-	if err := n.NetworkNode.PeerHost.Connect(context.Background(), info); err == nil {
+	ctx, _ := context.WithTimeout(context.Background(), ConnTimeout)
+	if err := n.NetworkNode.PeerHost.Connect(ctx, info); err == nil {
 		n.NetworkNode.PeerHost.Peerstore().AddAddrs(info.ID, info.Addrs, peerstore.PermanentAddrTTL)
 		return nil
 	} else {

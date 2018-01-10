@@ -104,7 +104,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("Livepeer Node Version: 0.1.7-unstable")
+		fmt.Println("Livepeer Node Version: 0.1.8-unstable")
 		return
 	}
 
@@ -114,7 +114,7 @@ func main() {
 
 		if !*offchain {
 			*ethWsUrl = "ws://ethws-testnet.livepeer.org:8546"
-			*controllerAddr = "0x0875085bc9a970055ddb213330c027cd9d26e20e"
+			*controllerAddr = "0xa9e07a6f5661bd24479c8b74b8b9980c5791dcdf"
 		}
 	}
 

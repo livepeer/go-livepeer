@@ -82,6 +82,7 @@ func (n *LivepeerNode) Start(ctx context.Context, bootID, bootAddr string) error
 
 	//Connect to bootstrap node.  This currently also kicks off a bootstrap process, which periodically checks for new peers and connect to them.
 	if bootID != "" && bootAddr != "" {
+		glog.Infof("Connecting to %v %v", bootID, bootAddr)
 		if err := n.VideoNetwork.Connect(bootID, []string{bootAddr}); err != nil {
 			glog.Errorf("Cannot connect to node: %v", err)
 		} else {
