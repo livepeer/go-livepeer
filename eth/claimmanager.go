@@ -366,7 +366,7 @@ func (c *BasicClaimManager) distributeFees(claimID *big.Int) error {
 		return err
 	}
 
-	glog.Infof("Distributed fees for claim %v", claimID)
+	glog.Infof("Distributed fees for job %v claim %v", c.jobID, claimID)
 
 	return nil
 }

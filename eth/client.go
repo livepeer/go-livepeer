@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -110,6 +111,10 @@ type client struct {
 	*contracts.RoundsManagerSession
 	*contracts.LivepeerTokenFaucetSession
 
+	nonceInitialized bool
+	nextNonce        uint64
+	nonceLock        sync.Mutex
+
 	txTimeout time.Duration
 }
 
@@ -136,6 +141,10 @@ func (c *client) Setup(password string, gasLimit, gasPrice *big.Int) error {
 	opts, err := c.accountManager.CreateTransactOpts(gasLimit, gasPrice)
 	if err != nil {
 		return err
+	}
+
+	opts.NonceFetcher = func() (uint64, error) {
+		return c.getNonce()
 	}
 
 	return c.setContracts(opts)
@@ -634,4 +643,34 @@ func (c *client) CheckTx(tx *types.Transaction) error {
 
 func (c *client) Sign(msg []byte) ([]byte, error) {
 	return c.accountManager.Sign(msg)
+}
+
+func (c *client) getNonce() (uint64, error) {
+	c.nonceLock.Lock()
+	defer c.nonceLock.Unlock()
+
+	if !c.nonceInitialized {
+		netNonce, err := c.backend.PendingNonceAt(context.Background(), c.Account().Address)
+		if err != nil {
+			return 0, err
+		}
+
+		c.nonceInitialized = true
+		c.nextNonce = netNonce
+
+		return c.nextNonce, nil
+	} else {
+		c.nextNonce++
+
+		netNonce, err := c.backend.PendingNonceAt(context.Background(), c.Account().Address)
+		if err != nil {
+			return 0, err
+		}
+
+		if netNonce > c.nextNonce {
+			c.nextNonce = netNonce
+		}
+
+		return c.nextNonce, nil
+	}
 }
