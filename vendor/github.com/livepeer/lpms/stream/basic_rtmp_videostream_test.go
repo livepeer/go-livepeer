@@ -82,7 +82,7 @@ func TestWriteBasicRTMP(t *testing.T) {
 	stream := NewBasicRTMPVideoStream("test")
 	//Add a listener
 	l := &PacketsMuxer{}
-	stream.listeners = append(stream.listeners, l)
+	stream.listeners["rand"] = l
 	eof, err := stream.WriteRTMPToStream(context.Background(), &PacketsDemuxer{c: &Counter{Count: 0}})
 	if err != nil {
 		t.Error("Expecting nil, but got: ", err)
@@ -121,7 +121,7 @@ func TestReadBasicRTMPError(t *testing.T) {
 	stream := NewBasicRTMPVideoStream("test")
 	done := make(chan struct{})
 	go func() {
-		if err := stream.ReadRTMPFromStream(context.Background(), &BadHeaderMuxer{}); err != ErrBadHeader {
+		if _, err := stream.ReadRTMPFromStream(context.Background(), &BadHeaderMuxer{}); err != ErrBadHeader {
 			t.Error("Expecting bad header error, but got ", err)
 		}
 		close(done)
@@ -140,8 +140,12 @@ func TestReadBasicRTMPError(t *testing.T) {
 	stream = NewBasicRTMPVideoStream("test")
 	done = make(chan struct{})
 	go func() {
-		if err := stream.ReadRTMPFromStream(context.Background(), &BadPacketMuxer{}); err != nil {
+		eof, err := stream.ReadRTMPFromStream(context.Background(), &BadPacketMuxer{})
+		if err != nil {
 			t.Errorf("Expecting nil, but got %v", err)
+		}
+		select {
+		case <-eof:
 		}
 		start := time.Now()
 		for time.Since(start) < time.Second*2 && len(stream.listeners) > 0 {
@@ -196,7 +200,10 @@ func TestReadBasicRTMP(t *testing.T) {
 	}
 
 	r := &PacketsMuxer{}
-	readErr := stream.ReadRTMPFromStream(context.Background(), r)
+	eof, readErr := stream.ReadRTMPFromStream(context.Background(), r)
+	select {
+	case <-eof:
+	}
 	if readErr != nil {
 		t.Errorf("Expecting no error, but got %v", err)
 	}

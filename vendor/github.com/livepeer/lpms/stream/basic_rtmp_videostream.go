@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -15,7 +16,7 @@ type BasicRTMPVideoStream struct {
 	streamID     string
 	ch           chan *av.Packet
 	src          av.DemuxCloser
-	listeners    []av.MuxCloser
+	listeners    map[string]av.MuxCloser
 	listnersLock *sync.Mutex
 	header       []av.CodecData
 	exitWorker   chan struct{}
@@ -27,7 +28,7 @@ type BasicRTMPVideoStream struct {
 func NewBasicRTMPVideoStream(id string) *BasicRTMPVideoStream {
 	ch := make(chan *av.Packet)
 	eof := make(chan struct{})
-	listeners := make([]av.MuxCloser, 0)
+	listeners := make(map[string]av.MuxCloser)
 	lLock := &sync.Mutex{}
 
 	s := &BasicRTMPVideoStream{streamID: id, listeners: listeners, listnersLock: lLock, ch: ch, EOF: eof}
@@ -36,10 +37,10 @@ func NewBasicRTMPVideoStream(id string) *BasicRTMPVideoStream {
 		for {
 			select {
 			case pkt := <-strm.ch:
-				for i, l := range strm.listeners {
+				for dstid, l := range strm.listeners {
 					if err := l.WritePacket(*pkt); err != nil {
 						lLock.Lock()
-						strm.listeners = append(strm.listeners[:i], strm.listeners[i+1:]...)
+						delete(strm.listeners, dstid)
 						lLock.Unlock()
 					}
 				}
@@ -60,27 +61,33 @@ func (s *BasicRTMPVideoStream) GetStreamFormat() VideoFormat {
 }
 
 //ReadRTMPFromStream reads the content from the RTMP stream out into the dst.
-func (s *BasicRTMPVideoStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) error {
+func (s *BasicRTMPVideoStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) (eof chan struct{}, err error) {
 	defer dst.Close()
 
 	if err := dst.WriteHeader(s.header); err != nil {
-		return err
+		return nil, err
 	}
 
+	dstid := randString()
 	s.listnersLock.Lock()
-	s.listeners = append(s.listeners, dst)
+	s.listeners[dstid] = dst
 	s.listnersLock.Unlock()
 
-	select {
-	case <-s.EOF:
-		if err := dst.WriteTrailer(); err != nil {
-			return err
+	eof = make(chan struct{})
+	go func(ctx context.Context, eof chan struct{}, dstid string, dst av.MuxCloser) {
+		select {
+		case <-s.EOF:
+			dst.WriteTrailer()
+			delete(s.listeners, dstid)
+			eof <- struct{}{}
+		case <-ctx.Done():
+			dst.WriteTrailer()
+			delete(s.listeners, dstid)
+			return
 		}
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	}(ctx, eof, dstid, dst)
 
-	return nil
+	return eof, nil
 }
 
 //WriteRTMPToStream writes a video stream from src into the stream.
@@ -92,26 +99,28 @@ func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.Dem
 	}
 	s.header = h
 
-	go func(eof chan struct{}, ch chan *av.Packet) {
+	eof = make(chan struct{})
+	go func(strmEOF chan struct{}, eof chan struct{}, ch chan *av.Packet) {
 		for {
 			packet, err := src.ReadPacket()
 			if err == io.EOF {
-				glog.Infof("EOF...")
-				close(eof)
+				close(strmEOF)
 				src.Close()
+				eof <- struct{}{}
 				return
 			} else if err != nil {
 				glog.Errorf("Error reading packet from RTMP: %v", err)
-				close(eof)
+				close(strmEOF)
 				src.Close()
+				eof <- struct{}{}
 				return
 			}
 
 			ch <- &packet
 		}
-	}(s.EOF, s.ch)
+	}(s.EOF, eof, s.ch)
 
-	return s.EOF, nil
+	return eof, nil
 }
 
 func (s BasicRTMPVideoStream) String() string {
@@ -136,4 +145,13 @@ func (s BasicRTMPVideoStream) Width() int {
 	}
 
 	return 0
+}
+
+func randString() string {
+	rand.Seed(time.Now().UnixNano())
+	x := make([]byte, 10, 10)
+	for i := 0; i < len(x); i++ {
+		x[i] = byte(rand.Uint32())
+	}
+	return string(x)
 }

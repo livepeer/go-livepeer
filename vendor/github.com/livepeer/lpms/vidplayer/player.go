@@ -61,10 +61,14 @@ func (s *VidPlayer) rtmpServerHandlePlay() func(conn *joy4rtmp.Conn) {
 			return
 		}
 
-		if err = src.ReadRTMPFromStream(context.Background(), conn); err != nil {
+		eof, err := src.ReadRTMPFromStream(context.Background(), conn)
+		if err != nil {
 			if err != io.EOF {
 				glog.Errorf("Error copying RTMP stream: %v", err)
 			}
+		}
+		select {
+		case <-eof:
 			return
 		}
 	}
