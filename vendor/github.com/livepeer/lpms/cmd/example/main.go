@@ -79,12 +79,6 @@ func main() {
 
 			//Segment the video into HLS (If we need multiple outlets for the HLS stream, we'd need to create a buffer.  But here we only have one outlet for the transcoder)
 			hlsStrm = stream.NewBasicHLSVideoStream(randString(10), 3)
-			// tSubscriber, err := transcodeSubscriber(hlsStrm)
-			// if err != nil {
-			// 	glog.Errorf("Error transcoding: %v", err)
-			// }
-			// hlsStrm.SetSubscriber(tSubscriber)
-			// glog.Infof("After set subscriber")
 
 			opt := segmenter.SegmenterOptions{SegLength: 8 * time.Second}
 			var ctx context.Context

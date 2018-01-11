@@ -85,8 +85,6 @@ func (s *BasicRTMPVideoStream) ReadRTMPFromStream(ctx context.Context, dst av.Mu
 
 //WriteRTMPToStream writes a video stream from src into the stream.
 func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) (eof chan struct{}, err error) {
-	// defer src.Close()
-
 	//Set header in case we want to use it.
 	h, err := src.Streams()
 	if err != nil {
