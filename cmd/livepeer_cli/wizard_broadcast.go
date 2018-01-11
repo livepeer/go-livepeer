@@ -115,9 +115,9 @@ func (w *wizard) broadcast() {
 	}
 
 	if deposit.Cmp(big.NewInt(0)) == 0 {
-		fmt.Printf("Your deposit is currently 0\n")
 		fmt.Printf("Please deposit some ETH using the CLI in order broadcast\n")
-		return
+
+		w.deposit()
 	}
 
 	if runtime.GOOS == "darwin" {
