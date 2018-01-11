@@ -104,21 +104,23 @@ func (w *wizard) run() {
 		fmt.Println(" 6. Withdraw stake (LPT)")
 		fmt.Println(" 7. Withdraw fees (ETH)")
 		fmt.Println(" 8. Claim rewards and fees")
-		fmt.Println(" 9. Get test LPT")
-		fmt.Println(" 10. Get test ETH")
-		fmt.Println(" 11. List registered transcoders")
+		fmt.Println(" 9. Transfer LPT")
+		fmt.Println(" 10. Get test LPT")
+		fmt.Println(" 11. Get test ETH")
+		fmt.Println(" 12. List registered transcoders")
 
 		if w.transcoder {
-			fmt.Println(" 12. Become a transcoder")
-			fmt.Println(" 13. Set transcoder config")
+			fmt.Println(" 13. Become a transcoder")
+			fmt.Println(" 14. Set transcoder config")
+			fmt.Println(" 15. Resign as transcoder")
 
 			w.doCLIOpt(w.read(), true)
 		} else {
-			fmt.Println(" 12. Deposit (ETH)")
-			fmt.Println(" 13. Withdraw deposit (ETH)")
-			fmt.Println(" 14. Broadcast video")
-			fmt.Println(" 15. Stream video")
-			fmt.Println(" 16. Set broadcast config")
+			fmt.Println(" 13. Deposit (ETH)")
+			fmt.Println(" 14. Withdraw deposit (ETH)")
+			fmt.Println(" 15. Broadcast video")
+			fmt.Println(" 16. Stream video")
+			fmt.Println(" 17. Set broadcast config")
 
 			w.doCLIOpt(w.read(), false)
 		}
@@ -152,41 +154,47 @@ func (w *wizard) doCLIOpt(choice string, transcoder bool) {
 		w.claimRewardsAndFees()
 		return
 	case "9":
-		w.requestTokens()
+		w.transferTokens()
 		return
 	case "10":
+		w.requestTokens()
+		return
+	case "11":
 		fmt.Print("Go to eth-testnet.livepeer.org and use the faucet. (enter to continue)")
 		w.read()
 		return
-	case "11":
+	case "12":
 		w.registeredTranscoderStats()
 		return
 	}
 
 	if transcoder {
 		switch choice {
-		case "12":
+		case "13":
 			w.activateTranscoder()
 			return
-		case "13":
+		case "14":
 			w.setTranscoderConfig()
+			return
+		case "15":
+			w.resignAsTranscoder()
 			return
 		}
 	} else {
 		switch choice {
-		case "12":
+		case "13":
 			w.deposit()
 			return
-		case "13":
+		case "14":
 			w.withdraw()
 			return
-		case "14":
+		case "15":
 			w.broadcast()
 			return
-		case "15":
+		case "16":
 			w.stream()
 			return
-		case "16":
+		case "17":
 			w.setBroadcastConfig()
 			return
 		}

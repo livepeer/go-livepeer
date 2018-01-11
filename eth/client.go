@@ -56,6 +56,7 @@ type LivepeerEthClient interface {
 
 	// Staking
 	Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error)
+	ResignAsTranscoder() (*types.Transaction, error)
 	Reward() (*types.Transaction, error)
 	Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error)
 	Unbond() (*types.Transaction, error)

@@ -312,6 +312,24 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
+	http.HandleFunc("/resignAsTranscoder", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			tx, err := s.LivepeerNode.Eth.ResignAsTranscoder()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			glog.Infof("Resigned as transcoder")
+		}
+	})
+
 	//Bond some amount of tokens to a transcoder.
 	http.HandleFunc("/bond", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
@@ -808,6 +826,41 @@ func (s *LivepeerServer) StartWebserver() {
 
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(data)
+		}
+	})
+
+	http.HandleFunc("/transferTokens", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			to := r.FormValue("to")
+			if to == "" {
+				glog.Errorf("Need to provide to address")
+				return
+			}
+
+			amountStr := r.FormValue("amount")
+			if amountStr == "" {
+				glog.Errorf("Need to provide amount")
+				return
+			}
+			amount, err := lpcommon.ParseBigInt(amountStr)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			tx, err := s.LivepeerNode.Eth.Transfer(common.HexToAddress(to), amount)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			glog.Infof("Transferred %v to %v", eth.FormatUnits(amount, "LPT"), to)
 		}
 	})
 

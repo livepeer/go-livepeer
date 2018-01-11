@@ -63,3 +63,12 @@ func (w *wizard) setTranscoderConfig() {
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/setTranscoderConfig", w.host, w.httpPort), val)
 }
+
+func (w *wizard) resignAsTranscoder() {
+	fmt.Printf("Would you like to resign as a transcoder? (y/n)")
+	resp := w.read()
+
+	if strings.Compare(strings.ToLower(resp), "y") == 0 {
+		httpPost(fmt.Sprintf("http://%v:%v/resignAsTranscoder", w.host, w.httpPort))
+	}
+}
