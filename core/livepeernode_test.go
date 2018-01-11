@@ -25,12 +25,13 @@ func (cm *StubClaimManager) DidFirstClaim() bool                         { retur
 func (cm *StubClaimManager) CanClaim() bool                              { return true }
 
 type StubTranscoder struct {
-	Profiles  []lpmscore.VideoProfile
-	InputData [][]byte
+	Profiles      []lpmscore.VideoProfile
+	InputData     [][]byte
+	FailTranscode bool
 }
 
 func (t *StubTranscoder) Transcode(d []byte) ([][]byte, error) {
-	if d == nil {
+	if d == nil || t.FailTranscode {
 		return nil, ErrTranscode
 	}
 
@@ -85,6 +86,10 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	if len(n.VideoNetwork.(*StubVideoNetwork).broadcasters) != 2 {
 		t.Errorf("Expecting 2 broadcasters to be created, but got %v", n.VideoNetwork.(*StubVideoNetwork).broadcasters)
 	}
+
+	// Test when transcoder fails
+	tr.FailTranscode = true
+	ids, err = n.TranscodeAndBroadcast(config, &StubClaimManager{}, tr)
 
 	//TODO: Should have done the claiming
 }

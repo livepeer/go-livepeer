@@ -236,7 +236,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	start = time.Now()
 	for i, resultStrmID := range resultStrmIDs {
 		//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
-		if tData[i] == nil {
+		if tData == nil || tData[i] == nil {
 			glog.Errorf("Cannot find transcoded segment for %v", seg.SeqNo)
 			continue
 		}
