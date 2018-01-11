@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	lpcommon "github.com/livepeer/go-livepeer/common"
 )
 
 func (w *wizard) allTranscodingOptions() map[int]string {
@@ -105,6 +107,19 @@ func (w *wizard) idListToVideoProfileList(idList string, opts map[int]string) (s
 }
 
 func (w *wizard) broadcast() {
+	depositStr := w.getDeposit()
+	deposit, err := lpcommon.ParseBigInt(depositStr)
+	if err != nil {
+		glog.Error(err)
+		return
+	}
+
+	if deposit.Cmp(big.NewInt(0)) == 0 {
+		fmt.Printf("Your deposit is currently 0\n")
+		fmt.Printf("Please deposit some ETH using the CLI in order broadcast\n")
+		return
+	}
+
 	if runtime.GOOS == "darwin" {
 		fmt.Println()
 		if w.rtmpPort != "" && w.httpPort != "" {

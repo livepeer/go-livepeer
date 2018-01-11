@@ -529,6 +529,24 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
+	http.HandleFunc("/withdrawDeposit", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			tx, err := s.LivepeerNode.Eth.Withdraw()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			glog.Infof("Withdrew deposit")
+		}
+	})
+
 	//Print the current broadcast HLS streamID
 	http.HandleFunc("/streamID", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(LastHLSStreamID))
