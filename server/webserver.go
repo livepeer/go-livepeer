@@ -18,6 +18,7 @@ import (
 	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 )
@@ -597,6 +598,129 @@ func (s *LivepeerServer) StartWebserver() {
 			addrMap := s.LivepeerNode.Eth.ContractAddresses()
 
 			data, err := json.Marshal(addrMap)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+		}
+	})
+
+	http.HandleFunc("/protocolParameters", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			lp := s.LivepeerNode.Eth
+
+			numActiveTranscoders, err := lp.NumActiveTranscoders()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			roundLength, err := lp.RoundLength()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			roundLockAmount, err := lp.RoundLockAmount()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			unbondingPeriod, err := lp.UnbondingPeriod()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			verificationRate, err := lp.VerificationRate()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			verificationPeriod, err := lp.VerificationPeriod()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			slashingPeriod, err := lp.SlashingPeriod()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			failedVerificationSlashAmount, err := lp.FailedVerificationSlashAmount()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			missedVerificationSlashAmount, err := lp.MissedVerificationSlashAmount()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			doubleClaimSegmentSlashAmount, err := lp.DoubleClaimSegmentSlashAmount()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			finderFee, err := lp.FinderFee()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			inflation, err := lp.Inflation()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			inflationChange, err := lp.InflationChange()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			targetBondingRate, err := lp.TargetBondingRate()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			verificationCodeHash, err := lp.VerificationCodeHash()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			params := &lpTypes.ProtocolParameters{
+				NumActiveTranscoders:          numActiveTranscoders,
+				RoundLength:                   roundLength,
+				RoundLockAmount:               roundLockAmount,
+				UnbondingPeriod:               unbondingPeriod,
+				VerificationRate:              verificationRate,
+				VerificationPeriod:            verificationPeriod,
+				SlashingPeriod:                slashingPeriod,
+				FailedVerificationSlashAmount: failedVerificationSlashAmount,
+				MissedVerificationSlashAmount: missedVerificationSlashAmount,
+				DoubleClaimSegmentSlashAmount: doubleClaimSegmentSlashAmount,
+				FinderFee:                     finderFee,
+				Inflation:                     inflation,
+				InflationChange:               inflationChange,
+				TargetBondingRate:             targetBondingRate,
+				VerificationCodeHash:          verificationCodeHash,
+			}
+
+			data, err := json.Marshal(params)
 			if err != nil {
 				glog.Error(err)
 				return

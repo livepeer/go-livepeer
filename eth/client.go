@@ -8,6 +8,8 @@ package eth
 //go:generate abigen --abi protocol/abi/BondingManager.abi --pkg contracts --type BondingManager --out contracts/bondingManager.go
 //go:generate abigen --abi protocol/abi/JobsManager.abi --pkg contracts --type JobsManager --out contracts/jobsManager.go
 //go:generate abigen --abi protocol/abi/RoundsManager.abi --pkg contracts --type RoundsManager --out contracts/roundsManager.go
+//go:generate abigen --abi protocol/abi/Minter.abi --pkg contracts --type Minter --out contracts/minter.go
+//go:generate abigen --abi protocol/abi/LivepeerVerifier.abi --pkg contracts --type LivepeerVerifier --out contracts/livepeerVerifier.go
 //go:generate abigen --abi protocol/abi/LivepeerTokenFaucet.abi --pkg contracts --type LivepeerTokenFaucet --out contracts/livepeerTokenFaucet.go
 
 import (
@@ -81,10 +83,19 @@ type LivepeerEthClient interface {
 	// Parameters
 	NumActiveTranscoders() (*big.Int, error)
 	RoundLength() (*big.Int, error)
+	RoundLockAmount() (*big.Int, error)
 	UnbondingPeriod() (uint64, error)
 	VerificationRate() (uint64, error)
 	VerificationPeriod() (*big.Int, error)
 	SlashingPeriod() (*big.Int, error)
+	FailedVerificationSlashAmount() (*big.Int, error)
+	MissedVerificationSlashAmount() (*big.Int, error)
+	DoubleClaimSegmentSlashAmount() (*big.Int, error)
+	FinderFee() (*big.Int, error)
+	Inflation() (*big.Int, error)
+	InflationChange() (*big.Int, error)
+	TargetBondingRate() (*big.Int, error)
+	VerificationCodeHash() (string, error)
 
 	// Helpers
 	ContractAddresses() map[string]common.Address
@@ -101,6 +112,8 @@ type client struct {
 	bondingManagerAddr common.Address
 	jobsManagerAddr    common.Address
 	roundsManagerAddr  common.Address
+	minterAddr         common.Address
+	verifierAddr       common.Address
 	faucetAddr         common.Address
 
 	// Embedded contract sessions
@@ -109,6 +122,8 @@ type client struct {
 	*contracts.BondingManagerSession
 	*contracts.JobsManagerSession
 	*contracts.RoundsManagerSession
+	*contracts.MinterSession
+	*contracts.LivepeerVerifierSession
 	*contracts.LivepeerTokenFaucetSession
 
 	nonceInitialized bool
@@ -247,6 +262,48 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 	}
 
 	glog.Infof("RoundsManager: %v", c.roundsManagerAddr.Hex())
+
+	minterAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("Minter")))
+	if err != nil {
+		glog.Errorf("Error getting Minter address: %v", err)
+		return err
+	}
+
+	c.minterAddr = minterAddr
+
+	minter, err := contracts.NewMinter(minterAddr, c.backend)
+	if err != nil {
+		glog.Errorf("Error creating Minter binding: %v", err)
+		return err
+	}
+
+	// Client should never transact with the Minter directly so we don't include transact opts
+	c.MinterSession = &contracts.MinterSession{
+		Contract: minter,
+	}
+
+	glog.Infof("Minter: %v", c.minterAddr.Hex())
+
+	verifierAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("Verifier")))
+	if err != nil {
+		glog.Errorf("Error getting Verifier address: %v", err)
+		return err
+	}
+
+	c.verifierAddr = verifierAddr
+
+	verifier, err := contracts.NewLivepeerVerifier(verifierAddr, c.backend)
+	if err != nil {
+		glog.Errorf("Error creating LivepeerVerifier binding: %v", err)
+		return err
+	}
+
+	// Client should never transact with the Verifier directly so we don't include transact opts
+	c.LivepeerVerifierSession = &contracts.LivepeerVerifierSession{
+		Contract: verifier,
+	}
+
+	glog.Infof("Verifier: %v", c.verifierAddr.Hex())
 
 	faucetAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("LivepeerTokenFaucet")))
 	if err != nil {
@@ -392,6 +449,11 @@ func (c *client) Deposit(amount *big.Int) (*types.Transaction, error) {
 	tx, err := c.JobsManagerSession.Deposit()
 	c.JobsManagerSession.TransactOpts.Value = nil
 	return tx, err
+}
+
+// Disambiguate between the Verifiy method in JobsManager and in Verifier
+func (c *client) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error) {
+	return c.JobsManagerSession.Verify(jobId, claimId, segmentNumber, dataStorageHash, dataHashes, broadcasterSig, proof)
 }
 
 func (c *client) BroadcasterDeposit(addr common.Address) (*big.Int, error) {
@@ -621,6 +683,8 @@ func (c *client) ContractAddresses() map[string]common.Address {
 	addrMap["JobsManager"] = c.jobsManagerAddr
 	addrMap["RoundsManager"] = c.roundsManagerAddr
 	addrMap["BondingManager"] = c.bondingManagerAddr
+	addrMap["Minter"] = c.minterAddr
+	addrMap["Verifier"] = c.verifierAddr
 
 	return addrMap
 }

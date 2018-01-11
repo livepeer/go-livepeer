@@ -64,6 +64,47 @@ func (w *wizard) stats(showTranscoder bool) {
 	fmt.Printf("CURRENT ROUND: %v\n", currentRound)
 }
 
+func (w *wizard) protocolStats() {
+	fmt.Println("+-------------------+}")
+	fmt.Println("|PROTOCOL PARAMETERS|")
+	fmt.Println("+-------------------+")
+
+	params, err := w.getProtocolParameters()
+	if err != nil {
+		glog.Errorf("Error getting protocol parameters: %v", err)
+		return
+	}
+
+	table := tablewriter.NewWriter(os.Stdout)
+	data := [][]string{
+		[]string{"Max # Active Transcoders", params.NumActiveTranscoders.String()},
+		[]string{"RoundLength (Blocks)", params.RoundLength.String()},
+		[]string{"RoundLockAmount (%)", eth.FormatPerc(params.RoundLockAmount)},
+		[]string{"UnbondingPeriod (Rounds)", strconv.Itoa(int(params.UnbondingPeriod))},
+		[]string{"VerificationRate (1 / # of segments)", strconv.Itoa(int(params.VerificationRate))},
+		[]string{"VerificationPeriod (Blocks)", params.VerificationPeriod.String()},
+		[]string{"SlashingPeriod (Blocks)", params.SlashingPeriod.String()},
+		[]string{"FailedVerificationSlashAmount (%)", eth.FormatPerc(params.FailedVerificationSlashAmount)},
+		[]string{"MissedVerificationSlashAmount (%)", eth.FormatPerc(params.MissedVerificationSlashAmount)},
+		[]string{"DoubleClaimSegmentSlashAmount (%)", eth.FormatPerc(params.DoubleClaimSegmentSlashAmount)},
+		[]string{"FinderFee (%)", eth.FormatPerc(params.FinderFee)},
+		[]string{"Inflation (%)", eth.FormatPerc(params.Inflation)},
+		[]string{"InflationChange (%)", eth.FormatPerc(params.InflationChange)},
+		[]string{"TargetBondingRate (%)", eth.FormatPerc(params.TargetBondingRate)},
+		[]string{"VerificationCodeHash", params.VerificationCodeHash},
+	}
+
+	for _, v := range data {
+		table.Append(v)
+	}
+
+	table.SetAlignment(tablewriter.ALIGN_RIGHT)
+	table.SetCenterSeparator("*")
+	table.SetRowLine(true)
+	table.SetColumnSeparator("|")
+	table.Render()
+}
+
 func (w *wizard) broadcastStats() {
 	fmt.Println("+-----------------+")
 	fmt.Println("|BROADCASTER STATS|")
@@ -167,6 +208,28 @@ func (w *wizard) getNodeID() string {
 
 func (w *wizard) getNodeAddr() string {
 	return httpGet(fmt.Sprintf("http://%v:%v/nodeAddrs", w.host, w.httpPort))
+}
+
+func (w *wizard) getProtocolParameters() (lpTypes.ProtocolParameters, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/protocolParameters", w.host, w.httpPort))
+	if err != nil {
+		return lpTypes.ProtocolParameters{}, err
+	}
+
+	defer resp.Body.Close()
+
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return lpTypes.ProtocolParameters{}, err
+	}
+
+	var params lpTypes.ProtocolParameters
+	err = json.Unmarshal(result, &params)
+	if err != nil {
+		return lpTypes.ProtocolParameters{}, err
+	}
+
+	return params, nil
 }
 
 func (w *wizard) getContractAddresses() (map[string]common.Address, error) {
