@@ -22,7 +22,7 @@ type VideoNetwork interface {
 	Connect(nodeID string, nodeAddr []string) error
 	SetupProtocol() error
 	SendTranscodeResponse(nodeID string, manifestID string, transcodeResult map[string]string) error
-	ReceivedTranscodeResponse(manifestID string, gotResult func(transcodeResult map[string]string))
+	ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string))
 	GetNodeStatus(nodeID string) (chan *NodeStatus, error)
 	String() string
 }

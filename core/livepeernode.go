@@ -140,7 +140,6 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 	//Create the broadcasters
 	tProfiles := make([]lpmscore.VideoProfile, len(config.Profiles), len(config.Profiles))
 	resultStrmIDs := make([]StreamID, len(config.Profiles), len(config.Profiles))
-	// tranStrms := make(map[StreamID]stream.HLSVideoStream)
 	variants := make(map[StreamID]*m3u8.Variant)
 	broadcasters := make(map[StreamID]stream.Broadcaster)
 	for i, vp := range config.Profiles {
@@ -268,53 +267,6 @@ func (n *LivepeerNode) BroadcastFinishMsg(strmID string) error {
 	}
 
 	return b.Finish()
-}
-
-func (n *LivepeerNode) BroadcastManifestToNetwork(manifest stream.HLSVideoManifest) error {
-	//Update the playlist
-	mpl, err := manifest.GetManifest()
-	if err != nil {
-		glog.Errorf("Error getting master playlist: %v", err)
-		return ErrBroadcast
-	}
-	if err = n.VideoNetwork.UpdateMasterPlaylist(manifest.GetManifestID(), mpl); err != nil {
-		glog.Errorf("Error updating master playlist: %v", err)
-		return ErrBroadcast
-	}
-
-	//Set up the callback for TranscodeResponse.  We are assuming there is only 1 stream.
-	if len(manifest.GetVideoStreams()) > 1 {
-		glog.Errorf("Currently only support single-stream manifest")
-		return ErrBroadcast
-	}
-	n.VideoNetwork.ReceivedTranscodeResponse(manifest.GetVideoStreams()[0].GetStreamID(), func(result map[string]string) {
-		//Parse through the results
-		for strmID, tProfile := range result {
-			vParams := lpmscore.VideoProfileToVariantParams(lpmscore.VideoProfileLookup[tProfile])
-			pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
-			variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}
-			strm := stream.NewBasicHLSVideoStream(strmID, stream.DefaultHLSStreamWin)
-			if err := manifest.AddVideoStream(strm, variant); err != nil {
-				glog.Errorf("Error adding video stream: %v", err)
-			}
-
-		}
-
-		//Update the master playlist on the network
-		mpl, err := manifest.GetManifest()
-		if err != nil {
-			glog.Errorf("Error getting master playlist: %v", err)
-			return
-		}
-		if err = n.VideoNetwork.UpdateMasterPlaylist(manifest.GetManifestID(), mpl); err != nil {
-			glog.Errorf("Error updating master playlist on network: %v", err)
-			return
-		}
-
-		glog.V(common.SHORT).Infof("Updated master playlist for %v", manifest.GetManifestID())
-	})
-
-	return nil
 }
 
 func (n *LivepeerNode) BroadcastHLSSegToNetwork(strmID string, seg *stream.HLSSegment, b stream.Broadcaster) error {
