@@ -122,3 +122,21 @@ func ParseClaimStatus(s uint8) (string, error) {
 		return "", ErrUnknownClaimStatus
 	}
 }
+
+type ProtocolParameters struct {
+	NumActiveTranscoders          *big.Int
+	RoundLength                   *big.Int
+	RoundLockAmount               *big.Int
+	UnbondingPeriod               uint64
+	VerificationRate              uint64
+	VerificationPeriod            *big.Int
+	SlashingPeriod                *big.Int
+	FailedVerificationSlashAmount *big.Int
+	MissedVerificationSlashAmount *big.Int
+	DoubleClaimSegmentSlashAmount *big.Int
+	FinderFee                     *big.Int
+	Inflation                     *big.Int
+	InflationChange               *big.Int
+	TargetBondingRate             *big.Int
+	VerificationCodeHash          string
+}

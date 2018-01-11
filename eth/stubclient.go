@@ -59,7 +59,8 @@ func (e *StubClient) BalanceOf(addr common.Address) (*big.Int, error) { return b
 func (e *StubClient) Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) Reward() (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) ResignAsTranscoder() (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) Reward() (*types.Transaction, error)             { return nil, nil }
 func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
 	return nil, nil
 }
@@ -122,12 +123,21 @@ func (c *StubClient) GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim,
 
 // Parameters
 
-func (c *StubClient) NumActiveTranscoders() (*big.Int, error) { return big.NewInt(0), nil }
-func (c *StubClient) RoundLength() (*big.Int, error)          { return big.NewInt(0), nil }
-func (c *StubClient) UnbondingPeriod() (uint64, error)        { return 0, nil }
-func (c *StubClient) VerificationRate() (uint64, error)       { return 0, nil }
-func (c *StubClient) VerificationPeriod() (*big.Int, error)   { return big.NewInt(0), nil }
-func (c *StubClient) SlashingPeriod() (*big.Int, error)       { return big.NewInt(0), nil }
+func (c *StubClient) NumActiveTranscoders() (*big.Int, error)          { return big.NewInt(0), nil }
+func (c *StubClient) RoundLength() (*big.Int, error)                   { return big.NewInt(0), nil }
+func (c *StubClient) RoundLockAmount() (*big.Int, error)               { return big.NewInt(0), nil }
+func (c *StubClient) UnbondingPeriod() (uint64, error)                 { return 0, nil }
+func (c *StubClient) VerificationRate() (uint64, error)                { return 0, nil }
+func (c *StubClient) VerificationPeriod() (*big.Int, error)            { return big.NewInt(0), nil }
+func (c *StubClient) SlashingPeriod() (*big.Int, error)                { return big.NewInt(0), nil }
+func (c *StubClient) FailedVerificationSlashAmount() (*big.Int, error) { return big.NewInt(0), nil }
+func (c *StubClient) MissedVerificationSlashAmount() (*big.Int, error) { return big.NewInt(0), nil }
+func (c *StubClient) DoubleClaimSegmentSlashAmount() (*big.Int, error) { return big.NewInt(0), nil }
+func (c *StubClient) FinderFee() (*big.Int, error)                     { return big.NewInt(0), nil }
+func (c *StubClient) Inflation() (*big.Int, error)                     { return big.NewInt(0), nil }
+func (c *StubClient) InflationChange() (*big.Int, error)               { return big.NewInt(0), nil }
+func (c *StubClient) TargetBondingRate() (*big.Int, error)             { return big.NewInt(0), nil }
+func (c *StubClient) VerificationCodeHash() (string, error)            { return "", nil }
 
 // Helpers
 

@@ -18,6 +18,7 @@ import (
 	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 )
@@ -308,6 +309,24 @@ func (s *LivepeerServer) StartWebserver() {
 		if err != nil {
 			glog.Error(err)
 			return
+		}
+	})
+
+	http.HandleFunc("/resignAsTranscoder", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			tx, err := s.LivepeerNode.Eth.ResignAsTranscoder()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			glog.Infof("Resigned as transcoder")
 		}
 	})
 
@@ -607,6 +626,129 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
+	http.HandleFunc("/protocolParameters", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			lp := s.LivepeerNode.Eth
+
+			numActiveTranscoders, err := lp.NumActiveTranscoders()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			roundLength, err := lp.RoundLength()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			roundLockAmount, err := lp.RoundLockAmount()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			unbondingPeriod, err := lp.UnbondingPeriod()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			verificationRate, err := lp.VerificationRate()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			verificationPeriod, err := lp.VerificationPeriod()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			slashingPeriod, err := lp.SlashingPeriod()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			failedVerificationSlashAmount, err := lp.FailedVerificationSlashAmount()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			missedVerificationSlashAmount, err := lp.MissedVerificationSlashAmount()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			doubleClaimSegmentSlashAmount, err := lp.DoubleClaimSegmentSlashAmount()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			finderFee, err := lp.FinderFee()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			inflation, err := lp.Inflation()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			inflationChange, err := lp.InflationChange()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			targetBondingRate, err := lp.TargetBondingRate()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			verificationCodeHash, err := lp.VerificationCodeHash()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			params := &lpTypes.ProtocolParameters{
+				NumActiveTranscoders:          numActiveTranscoders,
+				RoundLength:                   roundLength,
+				RoundLockAmount:               roundLockAmount,
+				UnbondingPeriod:               unbondingPeriod,
+				VerificationRate:              verificationRate,
+				VerificationPeriod:            verificationPeriod,
+				SlashingPeriod:                slashingPeriod,
+				FailedVerificationSlashAmount: failedVerificationSlashAmount,
+				MissedVerificationSlashAmount: missedVerificationSlashAmount,
+				DoubleClaimSegmentSlashAmount: doubleClaimSegmentSlashAmount,
+				FinderFee:                     finderFee,
+				Inflation:                     inflation,
+				InflationChange:               inflationChange,
+				TargetBondingRate:             targetBondingRate,
+				VerificationCodeHash:          verificationCodeHash,
+			}
+
+			data, err := json.Marshal(params)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+		}
+	})
+
 	http.HandleFunc("/ethAddr", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			w.Write([]byte(s.LivepeerNode.Eth.Account().Address.Hex()))
@@ -684,6 +826,41 @@ func (s *LivepeerServer) StartWebserver() {
 
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(data)
+		}
+	})
+
+	http.HandleFunc("/transferTokens", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			to := r.FormValue("to")
+			if to == "" {
+				glog.Errorf("Need to provide to address")
+				return
+			}
+
+			amountStr := r.FormValue("amount")
+			if amountStr == "" {
+				glog.Errorf("Need to provide amount")
+				return
+			}
+			amount, err := lpcommon.ParseBigInt(amountStr)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			tx, err := s.LivepeerNode.Eth.Transfer(common.HexToAddress(to), amount)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			glog.Infof("Transferred %v to %v", eth.FormatUnits(amount, "LPT"), to)
 		}
 	})
 

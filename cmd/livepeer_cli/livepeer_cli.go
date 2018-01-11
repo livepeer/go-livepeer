@@ -97,27 +97,30 @@ func (w *wizard) run() {
 		fmt.Println()
 		fmt.Println("What would you like to do? (default = stats)")
 		fmt.Println(" 1. Get node status")
-		fmt.Println(" 2. Initialize round")
-		fmt.Println(" 3. Bond")
-		fmt.Println(" 4. Unbond")
-		fmt.Println(" 5. Withdraw stake (LPT)")
-		fmt.Println(" 6. Withdraw fees (ETH)")
-		fmt.Println(" 7. Claim rewards and fees")
-		fmt.Println(" 8. Get test LPT")
-		fmt.Println(" 9. Get test ETH")
-		fmt.Println(" 10. List registered transcoders")
+		fmt.Println(" 2. View protocol parameters")
+		fmt.Println(" 3. Initialize round")
+		fmt.Println(" 4. Bond")
+		fmt.Println(" 5. Unbond")
+		fmt.Println(" 6. Withdraw stake (LPT)")
+		fmt.Println(" 7. Withdraw fees (ETH)")
+		fmt.Println(" 8. Claim rewards and fees")
+		fmt.Println(" 9. Transfer LPT")
+		fmt.Println(" 10. Get test LPT")
+		fmt.Println(" 11. Get test ETH")
+		fmt.Println(" 12. List registered transcoders")
 
 		if w.transcoder {
-			fmt.Println(" 11. Become a transcoder")
-			fmt.Println(" 12. Set transcoder config")
+			fmt.Println(" 13. Become a transcoder")
+			fmt.Println(" 14. Set transcoder config")
+			fmt.Println(" 15. Resign as transcoder")
 
 			w.doCLIOpt(w.read(), true)
 		} else {
-			fmt.Println(" 11. Deposit (ETH)")
-			fmt.Println(" 12. Withdraw deposit (ETH)")
-			fmt.Println(" 13. Broadcast video")
-			fmt.Println(" 14. Stream video")
-			fmt.Println(" 15. Set broadcast config")
+			fmt.Println(" 13. Deposit (ETH)")
+			fmt.Println(" 14. Withdraw deposit (ETH)")
+			fmt.Println(" 15. Broadcast video")
+			fmt.Println(" 16. Stream video")
+			fmt.Println(" 17. Set broadcast config")
 
 			w.doCLIOpt(w.read(), false)
 		}
@@ -130,59 +133,68 @@ func (w *wizard) doCLIOpt(choice string, transcoder bool) {
 		w.stats(w.transcoder)
 		return
 	case "2":
-		w.initializeRound()
+		w.protocolStats()
 		return
 	case "3":
-		w.bond()
+		w.initializeRound()
 		return
 	case "4":
-		w.unbond()
+		w.bond()
 		return
 	case "5":
-		w.withdrawStake()
+		w.unbond()
 		return
 	case "6":
-		w.withdrawFees()
+		w.withdrawStake()
 		return
 	case "7":
-		w.claimRewardsAndFees()
+		w.withdrawFees()
 		return
 	case "8":
-		w.requestTokens()
+		w.claimRewardsAndFees()
 		return
 	case "9":
+		w.transferTokens()
+		return
+	case "10":
+		w.requestTokens()
+		return
+	case "11":
 		fmt.Print("Go to eth-testnet.livepeer.org and use the faucet. (enter to continue)")
 		w.read()
 		return
-	case "10":
+	case "12":
 		w.registeredTranscoderStats()
 		return
 	}
 
 	if transcoder {
 		switch choice {
-		case "11":
+		case "13":
 			w.activateTranscoder()
 			return
-		case "12":
+		case "14":
 			w.setTranscoderConfig()
+			return
+		case "15":
+			w.resignAsTranscoder()
 			return
 		}
 	} else {
 		switch choice {
-		case "11":
+		case "13":
 			w.deposit()
 			return
-		case "12":
+		case "14":
 			w.withdraw()
 			return
-		case "13":
+		case "15":
 			w.broadcast()
 			return
-		case "14":
+		case "16":
 			w.stream()
 			return
-		case "15":
+		case "17":
 			w.setBroadcastConfig()
 			return
 		}
