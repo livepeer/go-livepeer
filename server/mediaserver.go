@@ -247,6 +247,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			glog.Errorf("Error broadasting manifest to network: %v", err)
 		}
 
+		//Set up the transcode response callback
 		s.LivepeerNode.VideoNetwork.ReceivedTranscodeResponse(string(hlsStrmID), func(result map[string]string) {
 			//Parse through the results
 			for strmID, tProfile := range result {

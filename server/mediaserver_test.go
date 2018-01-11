@@ -48,9 +48,10 @@ func setupServer(nw net.VideoNetwork) *LivepeerServer {
 }
 
 type StubNetwork struct {
-	B   map[string]*StubBroadcaster
-	S   map[string]*StubSubscriber
-	MPL map[string]*m3u8.MasterPlaylist
+	B                  map[string]*StubBroadcaster
+	S                  map[string]*StubSubscriber
+	MPL                map[string]*m3u8.MasterPlaylist
+	TranscodeCallbacks map[string]func(map[string]string)
 }
 
 func (n *StubNetwork) String() string { return "" }
@@ -72,7 +73,9 @@ func (b *StubNetwork) SendTranscodeResponse(nodeID string, strmID string, transc
 	return nil
 }
 func (b *StubNetwork) ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string)) {
+	b.TranscodeCallbacks[strmID] = gotResult
 }
+
 func (b *StubNetwork) GetMasterPlaylist(nodeID string, strmID string) (chan *m3u8.MasterPlaylist, error) {
 	mplc := make(chan *m3u8.MasterPlaylist)
 	mpl, ok := b.MPL[strmID]
@@ -163,7 +166,13 @@ func (s *StubSegmenter) SubscribeToSegmenter(ctx context.Context, rs stream.RTMP
 
 // Should publish RTMP stream, turn the RTMP stream into HLS, and broadcast the HLS stream.
 func TestGotRTMPStreamHandler(t *testing.T) {
-	stubnet := &StubNetwork{B: make(map[string]*StubBroadcaster), S: make(map[string]*StubSubscriber), MPL: make(map[string]*m3u8.MasterPlaylist)}
+	stubnet := &StubNetwork{
+		B:                  make(map[string]*StubBroadcaster),
+		S:                  make(map[string]*StubSubscriber),
+		MPL:                make(map[string]*m3u8.MasterPlaylist),
+		TranscodeCallbacks: make(map[string]func(map[string]string)),
+	}
+
 	s := setupServer(stubnet)
 	// s.LivepeerNode.VideoNetwork = stubnet
 	s.RTMPSegmenter = &StubSegmenter{}
@@ -208,6 +217,10 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	seg3, _ := core.BytesToSignedSegment(b.Data[3])
 	if seg0.Seg.Name != "seg0.ts" || seg1.Seg.Name != "seg1.ts" || seg2.Seg.Name != "seg2.ts" || seg3.Seg.Name != "seg3.ts" {
 		t.Errorf("Wrong segments: %v, %v, %v, %v", seg0, seg1, seg2, seg3)
+	}
+
+	if len(stubnet.TranscodeCallbacks) != 1 {
+		t.Errorf("Expect callback to be installed: %v", len(stubnet.TranscodeCallbacks))
 	}
 }
 
