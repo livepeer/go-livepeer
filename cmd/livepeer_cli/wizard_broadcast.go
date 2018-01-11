@@ -5,16 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/golang/glog"
+	lpcommon "github.com/livepeer/go-livepeer/common"
 )
 
 func (w *wizard) allTranscodingOptions() map[int]string {
@@ -61,18 +64,62 @@ func (w *wizard) setBroadcastConfig() {
 		return
 	}
 
-	fmt.Printf("Enter the identifier of the transcoding options you would like to use - ")
-	id := w.readInt()
+	fmt.Printf("Enter the identifiers of the video profiles you would like to use (use a comma as the delimiter in a list of identifiers) - ")
+	idList := w.readString()
+
+	transOpts, err := w.idListToVideoProfileList(idList, opts)
+	if err != nil {
+		glog.Error(err)
+		return
+	}
 
 	val := url.Values{
 		"maxPricePerSegment": {fmt.Sprintf("%v", maxPricePerSegment.String())},
-		"transcodingOptions": {fmt.Sprintf("%v", opts[id])},
+		"transcodingOptions": {fmt.Sprintf("%v", transOpts)},
 	}
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/setBroadcastConfig", w.host, w.httpPort), val)
 }
 
+func (w *wizard) idListToVideoProfileList(idList string, opts map[int]string) (string, error) {
+	ids := strings.Split(idList, ",")
+
+	var pListBuf bytes.Buffer
+	for i, id := range ids {
+		val, err := strconv.Atoi(strings.TrimSpace(id))
+		if err != nil {
+			return "", err
+		}
+
+		p, ok := opts[val]
+		if !ok {
+			return "", fmt.Errorf("not a valid identifier")
+		} else {
+			pListBuf.WriteString(p)
+
+			if i < len(ids)-1 {
+				pListBuf.WriteString(",")
+			}
+		}
+	}
+
+	return pListBuf.String(), nil
+}
+
 func (w *wizard) broadcast() {
+	depositStr := w.getDeposit()
+	deposit, err := lpcommon.ParseBigInt(depositStr)
+	if err != nil {
+		glog.Error(err)
+		return
+	}
+
+	if deposit.Cmp(big.NewInt(0)) == 0 {
+		fmt.Printf("Please deposit some ETH using the CLI in order broadcast\n")
+
+		w.deposit()
+	}
+
 	if runtime.GOOS == "darwin" {
 		fmt.Println()
 		if w.rtmpPort != "" && w.httpPort != "" {

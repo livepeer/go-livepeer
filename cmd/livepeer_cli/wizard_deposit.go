@@ -21,5 +21,5 @@ func (w *wizard) deposit() {
 func (w *wizard) withdraw() {
 	fmt.Printf("Current deposit: %v\n", w.getDeposit())
 
-	httpPost(fmt.Sprintf("http://%v:%v/withdraw", w.host, w.httpPort))
+	httpPost(fmt.Sprintf("http://%v:%v/withdrawDeposit", w.host, w.httpPort))
 }
