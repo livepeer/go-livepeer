@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/codec/h264parser"
 )
@@ -50,19 +51,9 @@ func (d NoEOFDemuxer) ReadPacket() (av.Packet, error) {
 
 func TestWriteBasicRTMPErrors(t *testing.T) {
 	stream := NewBasicRTMPVideoStream("test")
-	err := stream.WriteRTMPToStream(context.Background(), BadStreamsDemuxer{})
+	_, err := stream.WriteRTMPToStream(context.Background(), BadStreamsDemuxer{})
 	if err != ErrStreams {
 		t.Error("Expecting Streams Error, but got: ", err)
-	}
-
-	err = stream.WriteRTMPToStream(context.Background(), BadPacketsDemuxer{})
-	if err != ErrPacketRead {
-		t.Error("Expecting Packet Read Error, but got: ", err)
-	}
-
-	err = stream.WriteRTMPToStream(context.Background(), NoEOFDemuxer{c: &Counter{Count: 0}})
-	if err != ErrDroppedRTMPStream {
-		t.Error("Expecting RTMP Dropped Error, but got: ", err)
 	}
 }
 
@@ -71,47 +62,41 @@ type PacketsDemuxer struct {
 	c *Counter
 }
 
-func (d PacketsDemuxer) Close() error { return nil }
-func (d PacketsDemuxer) Streams() ([]av.CodecData, error) {
+func (d *PacketsDemuxer) Close() error { return nil }
+func (d *PacketsDemuxer) Streams() ([]av.CodecData, error) {
 	return []av.CodecData{h264parser.CodecData{}}, nil
 }
-func (d PacketsDemuxer) ReadPacket() (av.Packet, error) {
+func (d *PacketsDemuxer) ReadPacket() (av.Packet, error) {
 	if d.c.Count == 10 {
-		return av.Packet{Data: []byte{0, 0}}, io.EOF
+		return av.Packet{}, io.EOF
 	}
 
+	// glog.Infof("Reading %v", d.c.Count)
+	p := av.Packet{Data: []byte{0, 0}, Idx: int8(d.c.Count)}
 	d.c.Count = d.c.Count + 1
-	return av.Packet{Data: []byte{0, 0}}, nil
+	return p, nil
 }
 
 func TestWriteBasicRTMP(t *testing.T) {
-	// stream := Stream{Buffer: NewStreamBuffer(), StreamID: "test"}
+	glog.Infof("\n\nTestWriteBasicRTMP\n\n")
 	stream := NewBasicRTMPVideoStream("test")
-	err := stream.WriteRTMPToStream(context.Background(), PacketsDemuxer{c: &Counter{Count: 0}})
-
-	if err != io.EOF {
-		t.Error("Expecting EOF, but got: ", err)
+	//Add a listener
+	l := &PacketsMuxer{}
+	stream.listeners["rand"] = l
+	eof, err := stream.WriteRTMPToStream(context.Background(), &PacketsDemuxer{c: &Counter{Count: 0}})
+	if err != nil {
+		t.Error("Expecting nil, but got: ", err)
 	}
 
-	if stream.buffer.len() != 12 { //10 packets, 1 header, 1 trailer
-		t.Error("Expecting buffer length to be 12, but got: ", stream.buffer.len())
+	// Wait for eof
+	select {
+	case <-eof:
 	}
 
-	start := time.Now()
-	for time.Since(start) < time.Second {
-		if len(stream.header) == 0 {
-			time.Sleep(time.Millisecond * 100)
-			continue
-		}
-		break
+	time.Sleep(time.Millisecond * 100) //Sleep to make sure the last segment comes through
+	if len(l.packets) != 10 {
+		t.Errorf("Expecting packets length to be 10, but got: %v", l.packets)
 	}
-	if len(stream.header) == 0 {
-		t.Errorf("Expecting header to be set")
-	}
-
-	// fmt.Println(stream.buffer.q.Get(12))
-
-	//TODO: Test what happens when the buffer is full (should evict everything before the last keyframe)
 }
 
 var ErrBadHeader = errors.New("BadHeader")
@@ -119,58 +104,115 @@ var ErrBadPacket = errors.New("BadPacket")
 
 type BadHeaderMuxer struct{}
 
-func (d BadHeaderMuxer) Close() error                     { return nil }
-func (d BadHeaderMuxer) WriteHeader([]av.CodecData) error { return ErrBadHeader }
-func (d BadHeaderMuxer) WriteTrailer() error              { return nil }
-func (d BadHeaderMuxer) WritePacket(av.Packet) error      { return nil }
+func (d *BadHeaderMuxer) Close() error                     { return nil }
+func (d *BadHeaderMuxer) WriteHeader([]av.CodecData) error { return ErrBadHeader }
+func (d *BadHeaderMuxer) WriteTrailer() error              { return nil }
+func (d *BadHeaderMuxer) WritePacket(av.Packet) error      { return nil }
 
 type BadPacketMuxer struct{}
 
-func (d BadPacketMuxer) Close() error                     { return nil }
-func (d BadPacketMuxer) WriteHeader([]av.CodecData) error { return nil }
-func (d BadPacketMuxer) WriteTrailer() error              { return nil }
-func (d BadPacketMuxer) WritePacket(av.Packet) error      { return ErrBadPacket }
+func (d *BadPacketMuxer) Close() error                     { return nil }
+func (d *BadPacketMuxer) WriteHeader([]av.CodecData) error { return nil }
+func (d *BadPacketMuxer) WriteTrailer() error              { return nil }
+func (d *BadPacketMuxer) WritePacket(av.Packet) error      { return ErrBadPacket }
 
 func TestReadBasicRTMPError(t *testing.T) {
+	glog.Infof("\nTestReadBasicRTMPError\n\n")
 	stream := NewBasicRTMPVideoStream("test")
-	err := stream.WriteRTMPToStream(context.Background(), PacketsDemuxer{c: &Counter{Count: 0}})
-	if err != io.EOF {
-		t.Error("Error setting up the test - while inserting packet.")
+	done := make(chan struct{})
+	go func() {
+		if _, err := stream.ReadRTMPFromStream(context.Background(), &BadHeaderMuxer{}); err != ErrBadHeader {
+			t.Error("Expecting bad header error, but got ", err)
+		}
+		close(done)
+	}()
+	eof, err := stream.WriteRTMPToStream(context.Background(), &PacketsDemuxer{c: &Counter{Count: 0}})
+	if err != nil {
+		t.Error("Error writing RTMP to stream")
 	}
-	err = stream.ReadRTMPFromStream(context.Background(), BadHeaderMuxer{})
-
-	if err != ErrBadHeader {
-		t.Error("Expecting bad header error, but got ", err)
+	select {
+	case <-eof:
+	}
+	select {
+	case <-done:
 	}
 
-	err = stream.ReadRTMPFromStream(context.Background(), BadPacketMuxer{})
-	if err != ErrBadPacket {
-		t.Error("Expecting bad packet error, but got ", err)
+	stream = NewBasicRTMPVideoStream("test")
+	done = make(chan struct{})
+	go func() {
+		eof, err := stream.ReadRTMPFromStream(context.Background(), &BadPacketMuxer{})
+		if err != nil {
+			t.Errorf("Expecting nil, but got %v", err)
+		}
+		select {
+		case <-eof:
+		}
+		start := time.Now()
+		for time.Since(start) < time.Second*2 && len(stream.listeners) > 0 {
+			time.Sleep(time.Millisecond * 100)
+		}
+		if len(stream.listeners) > 0 {
+			t.Errorf("Expecting listener to be removed, but got: %v", stream.listeners)
+		}
+		close(done)
+	}()
+	eof, err = stream.WriteRTMPToStream(context.Background(), &PacketsDemuxer{c: &Counter{Count: 0}})
+	if err != nil {
+		t.Error("Error writing RTMP to stream")
+	}
+	select {
+	case <-eof:
+	}
+	select {
+	case <-done:
 	}
 }
 
 //Test ReadRTMP
-type PacketsMuxer struct{}
+type PacketsMuxer struct {
+	packets []av.Packet
+	header  []av.CodecData
+	trailer bool
+}
 
-func (d PacketsMuxer) Close() error                     { return nil }
-func (d PacketsMuxer) WriteHeader([]av.CodecData) error { return nil }
-func (d PacketsMuxer) WriteTrailer() error              { return nil }
-func (d PacketsMuxer) WritePacket(av.Packet) error      { return nil }
+func (d *PacketsMuxer) Close() error { return nil }
+func (d *PacketsMuxer) WriteHeader(h []av.CodecData) error {
+	d.header = h
+	return nil
+}
+func (d *PacketsMuxer) WriteTrailer() error {
+	d.trailer = true
+	return nil
+}
+func (d *PacketsMuxer) WritePacket(pkt av.Packet) error {
+	if d.packets == nil {
+		d.packets = make([]av.Packet, 0)
+	}
+	d.packets = append(d.packets, pkt)
+	return nil
+}
 
 func TestReadBasicRTMP(t *testing.T) {
 	stream := NewBasicRTMPVideoStream("test")
-	err := stream.WriteRTMPToStream(context.Background(), PacketsDemuxer{c: &Counter{Count: 0}})
-	if err != io.EOF {
+	_, err := stream.WriteRTMPToStream(context.Background(), &PacketsDemuxer{c: &Counter{Count: 0}})
+	if err != nil {
 		t.Error("Error setting up the test - while inserting packet.")
 	}
-	readErr := stream.ReadRTMPFromStream(context.Background(), PacketsMuxer{})
 
-	if readErr != io.EOF {
-		t.Error("Expecting buffer to be empty, but got ", err)
+	r := &PacketsMuxer{}
+	eof, readErr := stream.ReadRTMPFromStream(context.Background(), r)
+	select {
+	case <-eof:
+	}
+	if readErr != nil {
+		t.Errorf("Expecting no error, but got %v", err)
 	}
 
-	if stream.buffer.len() != 0 {
-		t.Error("Expecting buffer length to be 0, but got ", stream.buffer.len())
+	if len(r.header) != 1 {
+		t.Errorf("Expecting header to be set, got %v", r.header)
 	}
 
+	if r.trailer != true {
+		t.Errorf("Expecting trailer to be set, got %v", r.trailer)
+	}
 }

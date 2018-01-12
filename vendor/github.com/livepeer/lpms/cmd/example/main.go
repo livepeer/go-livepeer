@@ -57,7 +57,7 @@ func main() {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	lpms := core.New("1935", "8000", "", "")
+	lpms := core.New("1935", "8000", "", "", "~/lpmsdata")
 
 	//Streams needed for transcoding:
 	var rtmpStrm stream.RTMPVideoStream
@@ -79,13 +79,7 @@ func main() {
 
 			//Segment the video into HLS (If we need multiple outlets for the HLS stream, we'd need to create a buffer.  But here we only have one outlet for the transcoder)
 			hlsStrm = stream.NewBasicHLSVideoStream(randString(10), 3)
-			var subscriber func(*stream.HLSSegment, bool)
-			subscriber, err = transcode(hlsStrm)
-			if err != nil {
-				glog.Errorf("Error transcoding: %v", err)
-			}
-			hlsStrm.SetSubscriber(subscriber)
-			glog.Infof("After set subscriber")
+
 			opt := segmenter.SegmenterOptions{SegLength: 8 * time.Second}
 			var ctx context.Context
 			ctx, cancelSeg = context.WithCancel(context.Background())
@@ -171,13 +165,14 @@ func main() {
 	lpms.Start(context.Background())
 }
 
-func transcode(hlsStream stream.HLSVideoStream) (func(*stream.HLSSegment, bool), error) {
+func transcodeSubscriber(hlsStream stream.HLSVideoStream) (func(*stream.HLSSegment, bool), error) {
 	//Create Transcoder
-	profiles := []transcoder.TranscodeProfile{
-		transcoder.P144p30fps16x9,
-		transcoder.P240p30fps16x9,
-		transcoder.P576p30fps16x9,
+	profiles := []core.VideoProfile{
+		core.P144p30fps16x9,
+		core.P240p30fps16x9,
+		core.P576p30fps16x9,
 	}
+
 	t := transcoder.NewFFMpegSegmentTranscoder(profiles, "", "./tmp")
 
 	//Create variants in the stream

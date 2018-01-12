@@ -1,30 +1,36 @@
 #Test script to run all the tests for continuous integration
 
+echo 'Testing core'
 cd core
 go test -logtostderr=true
 t1=$?
 cd ..
 
+echo 'Testing vidplayer'
 cd vidplayer
 go test -logtostderr=true
 t2=$?
 cd ..
 
+echo 'Testing vidlistener'
 cd vidlistener
 go test -logtostderr=true
 t3=$?
 cd ..
 
+echo 'Testing Stream'
 cd stream
 go test -logtostderr=true
 t4=$?
 cd ..
 
+echo 'Testing Transcoder'
 cd transcoder
 go test -logtostderr=true
 t5=$?
 cd ..
 
+echo 'Testing Segmener'
 cd segmenter
 go test -logtostderr=true
 t6=$?

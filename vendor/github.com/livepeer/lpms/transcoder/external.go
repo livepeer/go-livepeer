@@ -57,7 +57,16 @@ func (et *ExternalTranscoder) LocalSRSUploadMux() (av.MuxCloser, error) {
 func (et *ExternalTranscoder) StartUpload(ctx context.Context, rtmpMux av.MuxCloser, src stream.RTMPVideoStream) error {
 	upErrC := make(chan error, 1)
 
-	go func() { upErrC <- src.ReadRTMPFromStream(ctx, rtmpMux) }()
+	go func() {
+		eof, err := src.ReadRTMPFromStream(ctx, rtmpMux)
+		if err != nil {
+			upErrC <- err
+		}
+		select {
+		case <-eof:
+			upErrC <- io.EOF
+		}
+	}()
 
 	select {
 	case err := <-upErrC:

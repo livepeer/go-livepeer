@@ -30,31 +30,37 @@ func (s TestStream) String() string                       { return "" }
 func (s *TestStream) GetStreamFormat() stream.VideoFormat { return stream.RTMP }
 func (s *TestStream) GetStreamID() string                 { return "test" }
 func (s *TestStream) Len() int64                          { return 0 }
-func (s *TestStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) error {
+func (s *TestStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) (chan struct{}, error) {
 	format.RegisterAll()
 	wd, _ := os.Getwd()
 	file, err := avutil.Open(wd + "/test.flv")
 	if err != nil {
 		fmt.Println("Error opening file: ", err)
-		return err
+		return nil, err
 	}
 	header, err := file.Streams()
 	if err != nil {
 		glog.Errorf("Error reading headers: %v", err)
-		return err
+		return nil, err
 	}
 
 	dst.WriteHeader(header)
-	for {
-		pkt, err := file.ReadPacket()
-		if err == io.EOF {
-			dst.WriteTrailer()
-			return err
+	eof := make(chan struct{})
+	go func(eof chan struct{}) {
+		for {
+			pkt, err := file.ReadPacket()
+			if err == io.EOF {
+				dst.WriteTrailer()
+				eof <- struct{}{}
+			}
+			dst.WritePacket(pkt)
 		}
-		dst.WritePacket(pkt)
-	}
+	}(eof)
+	return eof, nil
 }
-func (s *TestStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) error     { return nil }
+func (s *TestStream) WriteRTMPToStream(ctx context.Context, src av.DemuxCloser) (chan struct{}, error) {
+	return nil, nil
+}
 func (s *TestStream) WriteHLSPlaylistToStream(pl m3u8.MediaPlaylist) error                { return nil }
 func (s *TestStream) WriteHLSSegmentToStream(seg stream.HLSSegment) error                 { return nil }
 func (s *TestStream) ReadHLSFromStream(ctx context.Context, buffer stream.HLSMuxer) error { return nil }
@@ -88,7 +94,8 @@ func TestSegmenter(t *testing.T) {
 	}()
 
 	se := make(chan error, 1)
-	opt := SegmenterOptions{}
+	segLength := time.Second * 4
+	opt := SegmenterOptions{SegLength: segLength}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
@@ -139,9 +146,9 @@ func TestSegmenter(t *testing.T) {
 			t.Errorf("Expecting HLS segment, got %v", seg.Format)
 		}
 
-		timeDiff := seg.Length - time.Second*8
+		timeDiff := seg.Length - segLength
 		if timeDiff > time.Millisecond*500 || timeDiff < -time.Millisecond*500 {
-			t.Errorf("Expecting 2 sec segments, got %v", seg.Length)
+			t.Errorf("Expecting %v sec segments, got %v.  Diff: %v", segLength, seg.Length, timeDiff)
 		}
 
 		fn := "test_" + strconv.Itoa(i) + ".ts"

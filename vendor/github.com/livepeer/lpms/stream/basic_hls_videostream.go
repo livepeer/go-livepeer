@@ -21,7 +21,8 @@ var ErrAddHLSSegment = errors.New("ErrAddHLSSegment")
 //BasicHLSVideoStream is a basic implementation of HLSVideoStream
 type BasicHLSVideoStream struct {
 	plCache    *m3u8.MediaPlaylist //StrmID -> MediaPlaylist
-	sqMap      map[string]*HLSSegment
+	segMap     map[string]*HLSSegment
+	segNames   []string
 	lock       sync.Locker
 	strmID     string
 	subscriber func(*HLSSegment, bool)
@@ -35,12 +36,12 @@ func NewBasicHLSVideoStream(strmID string, wSize uint) *BasicHLSVideoStream {
 	}
 
 	return &BasicHLSVideoStream{
-		plCache: pl,
-		// variant: variant,
-		sqMap:   make(map[string]*HLSSegment),
-		lock:    &sync.Mutex{},
-		strmID:  strmID,
-		winSize: wSize,
+		plCache:  pl,
+		segMap:   make(map[string]*HLSSegment),
+		segNames: make([]string, 0),
+		lock:     &sync.Mutex{},
+		strmID:   strmID,
+		winSize:  wSize,
 	}
 }
 
@@ -66,7 +67,7 @@ func (s *BasicHLSVideoStream) GetStreamPlaylist() (*m3u8.MediaPlaylist, error) {
 
 //GetHLSSegment gets the HLS segment.  It blocks until something is found, or timeout happens.
 func (s *BasicHLSVideoStream) GetHLSSegment(segName string) (*HLSSegment, error) {
-	seg, ok := s.sqMap[segName]
+	seg, ok := s.segMap[segName]
 	if !ok {
 		return nil, ErrNotFound
 	}
@@ -75,7 +76,7 @@ func (s *BasicHLSVideoStream) GetHLSSegment(segName string) (*HLSSegment, error)
 
 //AddHLSSegment adds the hls segment to the right stream
 func (s *BasicHLSVideoStream) AddHLSSegment(seg *HLSSegment) error {
-	if _, ok := s.sqMap[seg.Name]; ok {
+	if _, ok := s.segMap[seg.Name]; ok {
 		return nil //Already have the seg.
 	}
 	// glog.V(common.VERBOSE).Infof("Adding segment: %v", seg.Name)
@@ -83,14 +84,16 @@ func (s *BasicHLSVideoStream) AddHLSSegment(seg *HLSSegment) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	//Add segment to media playlist
+	//Add segment to media playlist and buffer
 	s.plCache.AppendSegment(&m3u8.MediaSegment{SeqId: seg.SeqNo, Duration: seg.Duration, URI: seg.Name})
+	s.segNames = append(s.segNames, seg.Name)
+	s.segMap[seg.Name] = seg
 	if s.plCache.Count() > s.winSize {
 		s.plCache.Remove()
+		toRemove := s.segNames[0]
+		delete(s.segMap, toRemove)
+		s.segNames = s.segNames[1:]
 	}
-
-	//Add to buffer
-	s.sqMap[seg.Name] = seg
 
 	//Call subscriber
 	if s.subscriber != nil {
@@ -107,5 +110,5 @@ func (s *BasicHLSVideoStream) End() {
 }
 
 func (s BasicHLSVideoStream) String() string {
-	return fmt.Sprintf("StreamID: %v, Type: %v, len: %v", s.GetStreamID(), s.GetStreamFormat(), len(s.sqMap))
+	return fmt.Sprintf("StreamID: %v, Type: %v, len: %v", s.GetStreamID(), s.GetStreamFormat(), len(s.segMap))
 }

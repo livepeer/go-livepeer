@@ -69,18 +69,44 @@ func TestAddAndRemove(t *testing.T) {
 	if err := manifest.AddVideoStream(strm2, &m3u8.Variant{URI: "test2.m3u8", Chunklist: pl, VariantParams: m3u8.VariantParams{Bandwidth: 10, Resolution: "10x10"}}); err != nil {
 		t.Errorf("Error adding media playlist: %v", err)
 	}
+	ml, err = manifest.GetManifest()
+	if err != nil {
+		t.Errorf("Error getting master playlist: %v", err)
+	}
+	if len(ml.Variants) != 2 {
+		t.Errorf("Expecting 2 variant, but got: %v", ml.Variants)
+	}
+
+	//Add stream with duplicate name, should fail
 	strm3 := NewBasicHLSVideoStream("test3", DefaultHLSStreamWin)
 	if err := manifest.AddVideoStream(strm3, &m3u8.Variant{URI: "test3.m3u8", Chunklist: pl, VariantParams: m3u8.VariantParams{Bandwidth: 10, Resolution: "10x10"}}); err == nil {
 		t.Errorf("Expecting error because of duplicate variant params")
 	}
-	vstrm, err := manifest.GetVideoStream("wrongName")
+	_, err = manifest.GetVideoStream("wrongName")
 	if err == nil {
 		t.Errorf("Expecting NotFound error because the playlist name is wrong")
 	}
+	ml, err = manifest.GetManifest()
+	if err != nil {
+		t.Errorf("Error getting master playlist: %v", err)
+	}
+	if len(ml.Variants) != 2 {
+		t.Errorf("Expecting 2 variant, but got: %v", ml.Variants)
+	}
+
+}
+
+func TestWindowSize(t *testing.T) {
+	manifest := NewBasicHLSVideoManifest("test_m")
+	pl, _ := m3u8.NewMediaPlaylist(3, 10)
+	strm2 := NewBasicHLSVideoStream("test2", DefaultHLSStreamWin)
+	if err := manifest.AddVideoStream(strm2, &m3u8.Variant{URI: "test2.m3u8", Chunklist: pl, VariantParams: m3u8.VariantParams{Bandwidth: 10, Resolution: "10x10"}}); err != nil {
+		t.Errorf("Error adding media playlist: %v", err)
+	}
 
 	//Add segments to the new stream stream, make sure it respects the window size
-	vstrm, err = manifest.GetVideoStream("test2")
-	segs = []*HLSSegment{}
+	vstrm, err := manifest.GetVideoStream("test2")
+	segs := []*HLSSegment{}
 	vstrm.SetSubscriber(func(seg *HLSSegment, eof bool) {
 		segs = append(segs, seg)
 	})
@@ -121,23 +147,27 @@ func TestAddAndRemove(t *testing.T) {
 	if pltmp.Count() != 3 {
 		t.Errorf("Expecting to only have 3 segments, but got %v", pltmp.Count())
 	}
+	seg1, err := vstrm.GetHLSSegment("seg1.ts")
+	if seg1 != nil {
+		t.Errorf("Expecting seg1.ts to be nil (window is 3), but got %v", seg1)
+	}
+	seg2, err := vstrm.GetHLSSegment("seg2.ts")
+	if seg2 == nil {
+		t.Errorf("Expecting to find seg2")
+	}
 	if len(segs) != 4 {
 		t.Errorf("Callback not invoked")
 	}
 
 	//Now master playlist should have 1 variant
-	ml, err = manifest.GetManifest()
+	ml, err := manifest.GetManifest()
 	if err != nil {
 		t.Errorf("Error getting master playlist: %v", err)
 	}
-	if len(ml.Variants) != 2 {
+	if len(ml.Variants) != 1 {
 		t.Errorf("Expecting 1 variant, but got: %v", ml.Variants)
 	}
-	if ml.Variants[0].URI != "test_s" {
-		t.Errorf("Expecting test_s, but got %v", ml.Variants[0].URI)
+	if ml.Variants[0].URI != "test2.m3u8" {
+		t.Errorf("Expecting test2, but got %v", ml.Variants[0].URI)
 	}
-	if ml.Variants[1].URI != "test2.m3u8" {
-		t.Errorf("Expecting test2.m3u8, but got %v", ml.Variants[1].URI)
-	}
-
 }
