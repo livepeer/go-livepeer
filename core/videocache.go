@@ -148,6 +148,7 @@ func (c *BasicVideoCache) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlay
 				c.segCache[streamID] = cache
 				cache.Insert(&ss.Seg)
 				plChan <- cache.GetMediaPlaylist()
+				return
 			}
 
 			//Add data to cache

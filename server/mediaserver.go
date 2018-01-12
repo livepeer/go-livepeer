@@ -331,8 +331,9 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 		pl := s.LivepeerNode.VideoCache.GetHLSMediaPlaylist(strmID)
 		if pl == nil {
 			return nil, vidplayer.ErrNotFound
+		} else {
+			s.hlsSubTimer[strmID] = time.Now()
 		}
-		s.hlsSubTimer[strmID] = time.Now()
 		return pl, nil
 	}
 }

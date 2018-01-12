@@ -107,15 +107,15 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		//Could be a master playlist, or a media playlist
 		var masterPl *m3u8.MasterPlaylist
 		var mediaPl *m3u8.MediaPlaylist
-		masterPl, err := getMasterPlaylist(r.URL) //Return ErrNoMasterPlaylistID to by past the error case
+		masterPl, err := getMasterPlaylist(r.URL) //Return ErrNotFound to indicate passing to mediaPlayList
 		if err != nil {
-			glog.Errorf("Error getting HLS master playlist: %v", err)
 			if err == ErrNotFound {
-				http.Error(w, "ErrNotFound", 404)
+				//Do nothing here, because the call could be for mediaPlaylist
 			} else {
-				http.Error(w, "Error getting master playlist", 404)
+				glog.Errorf("Error getting HLS master playlist: %v", err)
+				http.Error(w, "Error getting master playlist", 500)
+				return
 			}
-			return
 		}
 		if masterPl != nil && len(masterPl.Variants) > 0 {
 			w.Header().Set("Connection", "keep-alive")
