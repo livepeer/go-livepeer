@@ -52,7 +52,6 @@ func (self *VidListener) HandleRTMPPublish(
 
 		select {
 		case <-eof:
-			glog.Infof("RTMP publish got eof...")
 			endStream(conn.URL, s)
 			cancel()
 		}

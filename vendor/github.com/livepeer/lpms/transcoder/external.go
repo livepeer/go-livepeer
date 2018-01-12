@@ -12,6 +12,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
+	"github.com/nareix/joy4/av/avutil"
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 	cmap "github.com/orcaman/concurrent-map"
 )
@@ -54,26 +55,8 @@ func (et *ExternalTranscoder) LocalSRSUploadMux() (av.MuxCloser, error) {
 
 //StartUpload takes a io.Stream of RTMP stream, and loads it into a local RTMP endpoint.  The streamID will be used as the streaming endpoint.
 //So if you want to create a new stream, make sure to do that before passing in the stream.
-func (et *ExternalTranscoder) StartUpload(ctx context.Context, rtmpMux av.MuxCloser, src stream.RTMPVideoStream) error {
-	upErrC := make(chan error, 1)
-
-	go func() {
-		eof, err := src.ReadRTMPFromStream(ctx, rtmpMux)
-		if err != nil {
-			upErrC <- err
-		}
-		select {
-		case <-eof:
-			upErrC <- io.EOF
-		}
-	}()
-
-	select {
-	case err := <-upErrC:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+func (et *ExternalTranscoder) StartUpload(rtmpMux av.MuxCloser, rtmpDemux av.DemuxCloser) error {
+	return avutil.CopyFile(rtmpMux, rtmpDemux)
 }
 
 //StartDownload pushes hls playlists and segments into the stream as they become available from the transcoder.
