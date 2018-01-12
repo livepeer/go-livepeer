@@ -20,6 +20,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
+	"github.com/livepeer/lpms/vidplayer"
 )
 
 var S *LivepeerServer
@@ -80,7 +81,7 @@ func (b *StubNetwork) GetMasterPlaylist(nodeID string, strmID string) (chan *m3u
 	mplc := make(chan *m3u8.MasterPlaylist)
 	mpl, ok := b.MPL[strmID]
 	if !ok {
-		return nil, ErrNotFound
+		return nil, vidplayer.ErrNotFound
 	}
 
 	go func() {

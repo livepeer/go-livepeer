@@ -25,7 +25,6 @@ import (
 	"github.com/livepeer/lpms/vidplayer"
 )
 
-var ErrNotFound = errors.New("ErrNotFound")
 var ErrAlreadyExists = errors.New("StreamAlreadyExists")
 var ErrRTMPPublish = errors.New("ErrRTMPPublish")
 var ErrBroadcast = errors.New("ErrBroadcast")
@@ -308,13 +307,13 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 	return func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 		manifestID, err := parseManifestID(url.Path)
 		if err != nil {
-			return nil, vidplayer.ErrNotMasterPlaylistID
+			return nil, vidplayer.ErrNotFound
 		}
 
 		//Just load it from the cache (it's already hooked up to the network)
 		manifest := s.LivepeerNode.VideoCache.GetHLSMasterPlaylist(core.ManifestID(manifestID))
 		if manifest == nil {
-			return nil, ErrNotFound
+			return nil, vidplayer.ErrNotFound
 		}
 		return manifest, nil
 	}
@@ -331,7 +330,7 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 		//Get the hls playlist, update the timeout timer
 		pl := s.LivepeerNode.VideoCache.GetHLSMediaPlaylist(strmID)
 		if pl == nil {
-			return nil, ErrNotFound
+			return nil, vidplayer.ErrNotFound
 		}
 		s.hlsSubTimer[strmID] = time.Now()
 		return pl, nil
@@ -347,12 +346,12 @@ func getHLSSegmentHandler(s *LivepeerServer) func(url *url.URL) ([]byte, error) 
 
 		segName := parseSegName(url.Path)
 		if segName == "" {
-			return nil, ErrNotFound
+			return nil, vidplayer.ErrNotFound
 		}
 
 		seg := s.LivepeerNode.VideoCache.GetHLSSegment(strmID, segName)
 		if seg == nil {
-			return nil, ErrNotFound
+			return nil, vidplayer.ErrNotFound
 		} else {
 			return seg.Data, nil
 		}
@@ -373,7 +372,7 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 		strm, ok := s.rtmpStreams[core.StreamID(strmID)]
 		if !ok {
 			glog.Errorf("Cannot find RTMP stream")
-			return nil, ErrNotFound
+			return nil, vidplayer.ErrNotFound
 		}
 
 		//Could use a subscriber, but not going to here because the RTMP stream doesn't need to be available for consumption by multiple views.  It's only for the segmenter.
@@ -413,7 +412,7 @@ func parseManifestID(reqPath string) (core.ManifestID, error) {
 	if mid.IsValid() {
 		return mid, nil
 	} else {
-		return "", ErrNotFound
+		return "", vidplayer.ErrNotFound
 	}
 }
 
@@ -428,7 +427,7 @@ func parseStreamID(reqPath string) (core.StreamID, error) {
 	if sid.IsValid() {
 		return sid, nil
 	} else {
-		return "", ErrNotFound
+		return "", vidplayer.ErrNotFound
 	}
 }
 

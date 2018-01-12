@@ -22,8 +22,7 @@ import (
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
 
-var ErrMasterPlaylistNotFound = errors.New("ErrMasterPlaylistNotFound")
-var ErrNotMasterPlaylistID = errors.New("ErrNotMasterPlaylistID")
+var ErrNotFound = errors.New("ErrNotFound")
 var ErrRTMP = errors.New("ErrRTMP")
 var ErrHLS = errors.New("ErrHLS")
 var PlaylistWaittime = 6 * time.Second
@@ -108,13 +107,15 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		//Could be a master playlist, or a media playlist
 		var masterPl *m3u8.MasterPlaylist
 		var mediaPl *m3u8.MediaPlaylist
-		masterPl, err := getMasterPlaylist(r.URL) //Return ErrNotMasterPlaylistID to by past the error case
+		masterPl, err := getMasterPlaylist(r.URL) //Return ErrNoMasterPlaylistID to by past the error case
 		if err != nil {
-			if err != ErrNotMasterPlaylistID {
-				glog.Errorf("Error getting HLS master playlist: %v", err)
-				http.Error(w, "Error getting HLS master playlist", 500)
-				return
+			glog.Errorf("Error getting HLS master playlist: %v", err)
+			if err == ErrNotFound {
+				http.Error(w, "ErrNotFound", 404)
+			} else {
+				http.Error(w, "Error getting master playlist", 404)
 			}
+			return
 		}
 		if masterPl != nil && len(masterPl.Variants) > 0 {
 			w.Header().Set("Connection", "keep-alive")
@@ -125,7 +126,11 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 
 		mediaPl, err = getMediaPlaylist(r.URL)
 		if err != nil {
-			http.Error(w, "Error getting HLS media playlist", 500)
+			if err == ErrNotFound {
+				http.Error(w, "ErrNotFound", 404)
+			} else {
+				http.Error(w, "Error getting HLS media playlist", 500)
+			}
 			return
 		}
 
@@ -147,13 +152,17 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		_, err = w.Write(seg)
 		if err != nil {
 			glog.Errorf("Error writting HLS segment %v: %v", r.URL, err)
-			http.Error(w, "Error writting segment", 500)
+			if err == ErrNotFound {
+				http.Error(w, "ErrNotFound", 404)
+			} else {
+				http.Error(w, "Error writting segment", 500)
+			}
 			return
 		}
 		return
 	}
 
-	http.Error(w, "Cannot find HTTP video resource: "+r.URL.String(), 500)
+	http.Error(w, "Cannot find HTTP video resource: "+r.URL.String(), 404)
 }
 
 func handleVOD(url *url.URL, vodPath string, w http.ResponseWriter) error {
@@ -162,6 +171,7 @@ func handleVOD(url *url.URL, vodPath string, w http.ResponseWriter) error {
 		dat, err := ioutil.ReadFile(plName)
 		if err != nil {
 			glog.Errorf("Cannot find file: %v", plName)
+			http.Error(w, "ErrNotFound", 404)
 			return ErrHLS
 		}
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(url.Path)))
@@ -175,6 +185,7 @@ func handleVOD(url *url.URL, vodPath string, w http.ResponseWriter) error {
 		dat, err := ioutil.ReadFile(segName)
 		if err != nil {
 			glog.Errorf("Cannot find file: %v", segName)
+			http.Error(w, "ErrNotFound", 404)
 			return ErrHLS
 		}
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(url.Path)))
@@ -182,5 +193,6 @@ func handleVOD(url *url.URL, vodPath string, w http.ResponseWriter) error {
 		w.Write(dat)
 	}
 
+	http.Error(w, "Cannot find HTTP video resource: "+url.String(), 404)
 	return nil
 }
