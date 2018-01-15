@@ -39,10 +39,7 @@ Do the following steps to view a live stream video:
 
 For ffmpeg on osx, run: `ffmpeg -f avfoundation -framerate 30 -pixel_format uyvy422 -i "0:0" -vcodec libx264 -tune zerolatency -b 900k -x264-params keyint=60:min-keyint=60 -f flv rtmp://localhost:1935/stream/test`
 
-For OBS, fill in the information like this:
-
-![OBS Screenshot](https://s3.amazonaws.com/livepeer/obs_screenshot.png)
-
+For OBS, fill in Settings->Stream->URL to be rtmp://localhost:1935
 
 3. If you have successfully uploaded the stream, you should see something like this in the LPMS output
 ```

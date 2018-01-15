@@ -39,6 +39,7 @@ func NewBasicRTMPVideoStream(id string) *BasicRTMPVideoStream {
 			case pkt := <-strm.ch:
 				for dstid, l := range strm.listeners {
 					if err := l.WritePacket(*pkt); err != nil {
+						glog.Infof("RTMP stream got error: %v", err)
 						lLock.Lock()
 						delete(strm.listeners, dstid)
 						lLock.Unlock()
@@ -62,8 +63,6 @@ func (s *BasicRTMPVideoStream) GetStreamFormat() VideoFormat {
 
 //ReadRTMPFromStream reads the content from the RTMP stream out into the dst.
 func (s *BasicRTMPVideoStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) (eof chan struct{}, err error) {
-	defer dst.Close()
-
 	if err := dst.WriteHeader(s.header); err != nil {
 		return nil, err
 	}
@@ -80,6 +79,7 @@ func (s *BasicRTMPVideoStream) ReadRTMPFromStream(ctx context.Context, dst av.Mu
 			dst.WriteTrailer()
 			delete(s.listeners, dstid)
 			eof <- struct{}{}
+			return
 		case <-ctx.Done():
 			dst.WriteTrailer()
 			delete(s.listeners, dstid)

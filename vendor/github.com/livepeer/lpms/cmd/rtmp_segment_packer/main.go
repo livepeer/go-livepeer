@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"strings"
 
 	"time"
@@ -250,7 +252,11 @@ func main() {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	lpms := core.New("1935", "8000", "", "")
+	dir, err := os.Getwd()
+	if err != nil {
+		glog.Infof("Error getting work directory: %v", err)
+	}
+	lpms := core.New("1935", "8000", "", "", fmt.Sprintf("%v/.tmp", dir))
 
 	lpms.HandleRTMPPublish(
 		//makeStreamID

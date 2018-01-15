@@ -1,9 +1,9 @@
 package transcoder
 
 import (
-	"context"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/ericxtang/m3u8"
 	"github.com/livepeer/lpms/stream"
@@ -36,12 +36,10 @@ func (d *PacketsMuxer) WriteHeader([]av.CodecData) error {
 	return nil
 }
 func (d *PacketsMuxer) WriteTrailer() error {
-	// fmt.Println("writing Trailer")
 	d.NumWrites = d.NumWrites + 1
 	return nil
 }
 func (d *PacketsMuxer) WritePacket(av.Packet) error {
-	// fmt.Println("writing packet")
 	d.NumWrites = d.NumWrites + 1
 	return nil
 }
@@ -50,17 +48,19 @@ func TestStartUpload(t *testing.T) {
 	tr := &ExternalTranscoder{}
 	mux := &PacketsMuxer{}
 	demux := &PacketsDemuxer{c: &Counter{}}
-	stream := stream.NewBasicRTMPVideoStream("test")
-	stream.WriteRTMPToStream(context.Background(), demux)
-	ctx := context.Background()
 
-	err := tr.StartUpload(ctx, mux, stream)
-	if err != io.EOF {
-		t.Error("Expecting io.EOF, but got:", err)
+	go func() {
+		if err := tr.StartUpload(mux, demux); err != io.EOF {
+			t.Error("Expecting io.EOF, but got:", err)
+		}
+	}()
+
+	start := time.Now()
+	for time.Since(start) < 2*time.Second && mux.NumWrites < 12 {
+		time.Sleep(time.Millisecond * 100)
 	}
-
-	if mux.NumWrites != 12 {
-		t.Error("Should have written 12 packets. Instead we got:", mux.NumWrites)
+	if mux.NumWrites != 11 {
+		t.Error("Should have written 11 packets. Instead we got:", mux.NumWrites)
 	}
 }
 

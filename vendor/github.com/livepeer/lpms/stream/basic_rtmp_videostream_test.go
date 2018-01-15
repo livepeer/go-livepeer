@@ -59,10 +59,14 @@ func TestWriteBasicRTMPErrors(t *testing.T) {
 
 //Testing WriteRTMP
 type PacketsDemuxer struct {
-	c *Counter
+	c           *Counter
+	CalledClose bool
 }
 
-func (d *PacketsDemuxer) Close() error { return nil }
+func (d *PacketsDemuxer) Close() error {
+	d.CalledClose = true
+	return nil
+}
 func (d *PacketsDemuxer) Streams() ([]av.CodecData, error) {
 	return []av.CodecData{h264parser.CodecData{}}, nil
 }
@@ -71,7 +75,6 @@ func (d *PacketsDemuxer) ReadPacket() (av.Packet, error) {
 		return av.Packet{}, io.EOF
 	}
 
-	// glog.Infof("Reading %v", d.c.Count)
 	p := av.Packet{Data: []byte{0, 0}, Idx: int8(d.c.Count)}
 	d.c.Count = d.c.Count + 1
 	return p, nil
@@ -170,12 +173,16 @@ func TestReadBasicRTMPError(t *testing.T) {
 
 //Test ReadRTMP
 type PacketsMuxer struct {
-	packets []av.Packet
-	header  []av.CodecData
-	trailer bool
+	packets     []av.Packet
+	header      []av.CodecData
+	trailer     bool
+	CalledClose bool
 }
 
-func (d *PacketsMuxer) Close() error { return nil }
+func (d *PacketsMuxer) Close() error {
+	d.CalledClose = true
+	return nil
+}
 func (d *PacketsMuxer) WriteHeader(h []av.CodecData) error {
 	d.header = h
 	return nil
@@ -214,5 +221,9 @@ func TestReadBasicRTMP(t *testing.T) {
 
 	if r.trailer != true {
 		t.Errorf("Expecting trailer to be set, got %v", r.trailer)
+	}
+
+	if r.CalledClose {
+		t.Errorf("The mux should not have been closed.")
 	}
 }
