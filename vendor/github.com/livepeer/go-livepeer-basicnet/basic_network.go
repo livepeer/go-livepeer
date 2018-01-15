@@ -212,7 +212,7 @@ func (n *BasicVideoNetwork) connectPeerInfo(info peerstore.PeerInfo) error {
 	}
 }
 
-//SendTranscodeResponse tsends the transcode result to the broadcast node.
+//SendTranscodeResponse sends the transcode result to the broadcast node.
 func (n *BasicVideoNetwork) SendTranscodeResponse(broadcaster string, strmID string, transcodedVideos map[string]string) error {
 	//Don't do anything if the node is the transcoder and the broadcaster at the same time.
 	if n.GetNodeID() == broadcaster {
@@ -301,6 +301,13 @@ func (n *BasicVideoNetwork) GetMasterPlaylist(p string, manifestID string) (chan
 		}(returnC, mpl)
 
 		return returnC, nil
+	}
+	nid, err := extractNodeID(manifestID)
+	if err != nil {
+		return nil, ErrGetMasterPlaylist
+	}
+	if n.GetNodeID() == peer.IDHexEncode(nid) {
+		return nil, ErrGetMasterPlaylist
 	}
 	return n.getMasterPlaylistWithRelay(manifestID)
 }
