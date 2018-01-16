@@ -53,6 +53,7 @@ func (e *StubClient) Transfer(toAddr common.Address, amount *big.Int) (*types.Tr
 }
 func (e *StubClient) Request() (*types.Transaction, error)            { return nil, nil }
 func (e *StubClient) BalanceOf(addr common.Address) (*big.Int, error) { return big.NewInt(0), nil }
+func (e *StubClient) TotalSupply() (*big.Int, error)                  { return big.NewInt(0), nil }
 
 // Staking
 
@@ -78,6 +79,7 @@ func (e *StubClient) GetTranscoderTokenPoolsForRound(addr common.Address, round 
 func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) { return nil, nil }
 func (e *StubClient) IsActiveTranscoder() (bool, error)                     { return false, nil }
 func (e *StubClient) IsAssignedTranscoder(jobID *big.Int) (bool, error)     { return false, nil }
+func (e *StubClient) GetTotalBonded() (*big.Int, error)                     { return big.NewInt(0), nil }
 
 // Jobs
 
