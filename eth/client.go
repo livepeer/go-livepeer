@@ -53,6 +53,7 @@ type LivepeerEthClient interface {
 	Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error)
 	Request() (*types.Transaction, error)
 	BalanceOf(common.Address) (*big.Int, error)
+	TotalSupply() (*big.Int, error)
 
 	// Staking
 	Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error)
@@ -69,6 +70,7 @@ type LivepeerEthClient interface {
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
 	IsAssignedTranscoder(jobID *big.Int) (bool, error)
+	GetTotalBonded() (*big.Int, error)
 
 	// Jobs
 	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int, endBlock *big.Int) (*types.Transaction, error)

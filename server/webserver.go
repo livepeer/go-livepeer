@@ -738,6 +738,18 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
+			totalBonded, err := lp.GetTotalBonded()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			totalSupply, err := lp.TotalSupply()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
 			params := &lpTypes.ProtocolParameters{
 				NumActiveTranscoders:          numActiveTranscoders,
 				RoundLength:                   roundLength,
@@ -754,6 +766,8 @@ func (s *LivepeerServer) StartWebserver() {
 				InflationChange:               inflationChange,
 				TargetBondingRate:             targetBondingRate,
 				VerificationCodeHash:          verificationCodeHash,
+				TotalBonded:                   totalBonded,
+				TotalSupply:                   totalSupply,
 			}
 
 			data, err := json.Marshal(params)
