@@ -23,6 +23,8 @@ import (
 )
 
 var ErrNotFound = errors.New("ErrNotFound")
+var ErrBadRequest = errors.New("ErrBadRequest")
+var ErrTimeout = errors.New("ErrTimeout")
 var ErrRTMP = errors.New("ErrRTMP")
 var ErrHLS = errors.New("ErrHLS")
 var PlaylistWaittime = 6 * time.Second
@@ -111,6 +113,12 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		if err != nil {
 			if err == ErrNotFound {
 				//Do nothing here, because the call could be for mediaPlaylist
+			} else if err == ErrTimeout {
+				http.Error(w, "ErrTimeout", 408)
+				return
+			} else if err == ErrBadRequest {
+				http.Error(w, "ErrBadRequest", 400)
+				return
 			} else {
 				glog.Errorf("Error getting HLS master playlist: %v", err)
 				http.Error(w, "Error getting master playlist", 500)
@@ -128,6 +136,10 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		if err != nil {
 			if err == ErrNotFound {
 				http.Error(w, "ErrNotFound", 404)
+			} else if err == ErrTimeout {
+				http.Error(w, "ErrTimeout", 408)
+			} else if err == ErrBadRequest {
+				http.Error(w, "ErrBadRequest", 400)
 			} else {
 				http.Error(w, "Error getting HLS media playlist", 500)
 			}
@@ -154,6 +166,10 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 			glog.Errorf("Error writting HLS segment %v: %v", r.URL, err)
 			if err == ErrNotFound {
 				http.Error(w, "ErrNotFound", 404)
+			} else if err == ErrTimeout {
+				http.Error(w, "ErrTimeout", 408)
+			} else if err == ErrBadRequest {
+				http.Error(w, "ErrBadRequest", 400)
 			} else {
 				http.Error(w, "Error writting segment", 500)
 			}
