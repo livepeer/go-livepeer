@@ -75,6 +75,19 @@ func (w *wizard) protocolStats() {
 		return
 	}
 
+	floatTotalBonded := new(big.Float)
+	floatTotalBonded.SetInt(params.TotalBonded)
+	floatTotalSupply := new(big.Float)
+	floatTotalSupply.SetInt(params.TotalSupply)
+
+	var currentParticipationRate *big.Float
+	if floatTotalSupply.Cmp(big.NewFloat(0.0)) == 0 {
+		currentParticipationRate = big.NewFloat(0.0)
+	} else {
+		participationRateRatio := new(big.Float).Quo(floatTotalBonded, floatTotalSupply)
+		currentParticipationRate = new(big.Float).Mul(participationRateRatio, big.NewFloat(100.0))
+	}
+
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
 		[]string{"Max # Active Transcoders", params.NumActiveTranscoders.String()},
@@ -92,6 +105,9 @@ func (w *wizard) protocolStats() {
 		[]string{"InflationChange (%)", eth.FormatPerc(params.InflationChange)},
 		[]string{"TargetBondingRate (%)", eth.FormatPerc(params.TargetBondingRate)},
 		[]string{"VerificationCodeHash", params.VerificationCodeHash},
+		[]string{"Total Bonded", eth.FormatUnits(params.TotalBonded, "LPT")},
+		[]string{"Total Supply", eth.FormatUnits(params.TotalSupply, "LPT")},
+		[]string{"Current Participation Rate (%)", currentParticipationRate.String()},
 	}
 
 	for _, v := range data {

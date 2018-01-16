@@ -139,4 +139,6 @@ type ProtocolParameters struct {
 	InflationChange               *big.Int
 	TargetBondingRate             *big.Int
 	VerificationCodeHash          string
+	TotalBonded                   *big.Int
+	TotalSupply                   *big.Int
 }
