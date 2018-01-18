@@ -135,7 +135,7 @@ func (w *wizard) broadcast() {
 				fmt.Printf("New HTTP setting: http://localhost:%v/streams\n", w.httpPort)
 			}
 		}
-		cmd := exec.Command("ffmpeg", "-f", "avfoundation", "-framerate", "30", "-pixel_format", "uyvy422", "-i", "0:0", "-vcodec", "libx264", "-tune", "zerolatency", "-s", "426x240", "-b", "400k", "-x264-params", "keyint=60:min-keyint=60", "-acodec", "aac", "-ac", "1", "-b:a", "96k", "-f", "flv", fmt.Sprintf("rtmp://localhost:%v/movie", w.rtmpPort))
+		cmd := exec.Command("ffmpeg", "-f", "avfoundation", "-framerate", "30", "-pixel_format", "uyvy422", "-i", "0:0", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-tune", "zerolatency", "-s", "426x240", "-b:v", "400k", "-x264-params", "keyint=60:min-keyint=60", "-c:a", "aac", "-ac", "1", "-b:a", "96k", "-f", "flv", fmt.Sprintf("rtmp://localhost:%v/movie", w.rtmpPort))
 
 		var out bytes.Buffer
 		var stderr bytes.Buffer
