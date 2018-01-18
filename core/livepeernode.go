@@ -188,7 +188,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 						glog.Errorf("Error claiming work: %v", err)
 					}
 				} else {
-					glog.Infof("Not segments to claim")
+					glog.Infof("No segments to claim")
 				}
 			}
 			return

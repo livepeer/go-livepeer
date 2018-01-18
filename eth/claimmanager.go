@@ -126,7 +126,7 @@ func (c *BasicClaimManager) CanClaim() (bool, error) {
 		return false, err
 	}
 
-	if job.TranscoderAddress == c.client.Account().Address || currentBlk.Number().Cmp(new(big.Int).Add(job.CreationBlock, BlocksUntilFirstClaimDeadline)) == -1 {
+	if job.TranscoderAddress == c.client.Account().Address || currentBlk.Number().Cmp(new(big.Int).Add(job.CreationBlock, BlocksUntilFirstClaimDeadline)) != 1 {
 		return true, nil
 	} else {
 		return false, nil
