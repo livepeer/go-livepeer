@@ -22,7 +22,7 @@ func (cm *StubClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byt
 func (cm *StubClaimManager) SufficientBroadcasterDeposit() (bool, error) { return true, nil }
 func (cm *StubClaimManager) ClaimVerifyAndDistributeFees() error         { return nil }
 func (cm *StubClaimManager) DidFirstClaim() bool                         { return false }
-func (cm *StubClaimManager) CanClaim() bool                              { return true }
+func (cm *StubClaimManager) CanClaim() (bool, error)                     { return true, nil }
 
 type StubTranscoder struct {
 	Profiles      []lpmscore.VideoProfile

@@ -132,7 +132,7 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 		return true, nil
 	}
 
-	firstClaimBlock := new(big.Int).Add(job.CreationBlock, big.NewInt(200))
+	firstClaimBlock := new(big.Int).Add(job.CreationBlock, eth.BlocksUntilFirstClaimDeadline)
 	headersCh := make(chan *types.Header)
 	s.eventMonitor.SubscribeNewBlock(context.Background(), headersCh, func(h *types.Header) (bool, error) {
 		if cm.DidFirstClaim() {
@@ -140,11 +140,16 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 			return false, nil
 		}
 
-		// Check if current block is job creation block + 200
+		// Check if current block is job creation block + 230
 		if h.Number.Cmp(firstClaimBlock) != -1 {
 			glog.Infof("Making the first claim")
 
-			if cm.CanClaim() {
+			canClaim, err := cm.CanClaim()
+			if err != nil {
+				return false, err
+			}
+
+			if canClaim {
 				err := cm.ClaimVerifyAndDistributeFees()
 				if err != nil {
 					return false, err
@@ -154,8 +159,8 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 				}
 			} else {
 				glog.Infof("No segments to claim")
-				// Keep watching
-				return true, nil
+				// If there are no segments to claim at this point just stop watching
+				return false, nil
 			}
 		} else {
 			return true, nil

@@ -178,12 +178,17 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 			if cm != nil && config.PerformOnchainClaim {
 				glog.V(common.SHORT).Infof("Stream finished. Claiming work.")
 
-				if cm.CanClaim() {
+				canClaim, err := cm.CanClaim()
+				if err != nil {
+					glog.Error(err)
+				}
+
+				if canClaim {
 					if err := cm.ClaimVerifyAndDistributeFees(); err != nil {
 						glog.Errorf("Error claiming work: %v", err)
 					}
 				} else {
-					glog.Infof("No segments to claim")
+					glog.Infof("Not segments to claim")
 				}
 			}
 			return
@@ -198,7 +203,12 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 			if !sufficient {
 				glog.V(common.SHORT).Infof("Broadcaster does not have enough funds. Claiming work.")
 
-				if cm.CanClaim() {
+				canClaim, err := cm.CanClaim()
+				if err != nil {
+					glog.Error(err)
+				}
+
+				if canClaim {
 					if err := cm.ClaimVerifyAndDistributeFees(); err != nil {
 						glog.Errorf("Error claiming work: %v", err)
 					}
