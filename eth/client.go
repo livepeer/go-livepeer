@@ -31,7 +31,7 @@ import (
 )
 
 var (
-	RoundsPerTokenSharesClaim = big.NewInt(20)
+	RoundsPerTokenSharesClaim = big.NewInt(50)
 
 	ErrCurrentRoundLocked = fmt.Errorf("current round locked")
 	ErrMissingBackend     = fmt.Errorf("missing Ethereum client backend")
@@ -63,7 +63,7 @@ type LivepeerEthClient interface {
 	Unbond() (*types.Transaction, error)
 	WithdrawStake() (*types.Transaction, error)
 	WithdrawFees() (*types.Transaction, error)
-	ClaimTokenPoolsShares(endRound *big.Int) (*types.Transaction, error)
+	ClaimTokenPoolsShares(endRound *big.Int) error
 	GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error)
 	GetDelegator(addr common.Address) (*lpTypes.Delegator, error)
 	GetTranscoderTokenPoolsForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error)
@@ -360,7 +360,12 @@ func (c *client) Transcoder(blockRewardCut, feeShare, pricePerSegment *big.Int) 
 }
 
 func (c *client) Bond(amount *big.Int, to common.Address) (*types.Transaction, error) {
-	if err := c.autoClaimTokenPoolsShares(); err != nil {
+	currentRound, err := c.CurrentRound()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.autoClaimTokenPoolsShares(currentRound); err != nil {
 		return nil, err
 	}
 
@@ -378,7 +383,12 @@ func (c *client) Bond(amount *big.Int, to common.Address) (*types.Transaction, e
 }
 
 func (c *client) Unbond() (*types.Transaction, error) {
-	if err := c.autoClaimTokenPoolsShares(); err != nil {
+	currentRound, err := c.CurrentRound()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.autoClaimTokenPoolsShares(currentRound); err != nil {
 		return nil, err
 	}
 
@@ -386,7 +396,12 @@ func (c *client) Unbond() (*types.Transaction, error) {
 }
 
 func (c *client) WithdrawStake() (*types.Transaction, error) {
-	if err := c.autoClaimTokenPoolsShares(); err != nil {
+	currentRound, err := c.CurrentRound()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.autoClaimTokenPoolsShares(currentRound); err != nil {
 		return nil, err
 	}
 
@@ -394,14 +409,23 @@ func (c *client) WithdrawStake() (*types.Transaction, error) {
 }
 
 func (c *client) WithdrawFees() (*types.Transaction, error) {
-	if err := c.autoClaimTokenPoolsShares(); err != nil {
+	currentRound, err := c.CurrentRound()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.autoClaimTokenPoolsShares(currentRound); err != nil {
 		return nil, err
 	}
 
 	return c.BondingManagerSession.WithdrawFees()
 }
 
-func (c *client) autoClaimTokenPoolsShares() error {
+func (c *client) ClaimTokenPoolsShares(endRound *big.Int) error {
+	return c.autoClaimTokenPoolsShares(endRound)
+}
+
+func (c *client) autoClaimTokenPoolsShares(endRound *big.Int) error {
 	dStatus, err := c.DelegatorStatus(c.Account().Address)
 	if err != nil {
 		return err
@@ -409,11 +433,6 @@ func (c *client) autoClaimTokenPoolsShares() error {
 
 	if dStatus == 1 {
 		// If already bonded, auto claim token pools shares
-		currentRound, err := c.CurrentRound()
-		if err != nil {
-			return err
-		}
-
 		dInfo, err := c.BondingManagerSession.GetDelegator(c.Account().Address)
 		if err != nil {
 			return err
@@ -421,11 +440,11 @@ func (c *client) autoClaimTokenPoolsShares() error {
 
 		lastClaimTokenPoolsSharesRound := dInfo.LastClaimTokenPoolsSharesRound
 
-		var endRound *big.Int
-		for new(big.Int).Sub(currentRound, lastClaimTokenPoolsSharesRound).Cmp(RoundsPerTokenSharesClaim) == 1 {
-			endRound = new(big.Int).Add(lastClaimTokenPoolsSharesRound, RoundsPerTokenSharesClaim)
+		var currentEndRound *big.Int
+		for new(big.Int).Sub(endRound, lastClaimTokenPoolsSharesRound).Cmp(RoundsPerTokenSharesClaim) == 1 {
+			currentEndRound = new(big.Int).Add(lastClaimTokenPoolsSharesRound, RoundsPerTokenSharesClaim)
 
-			tx, err := c.ClaimTokenPoolsShares(endRound)
+			tx, err := c.BondingManagerSession.ClaimTokenPoolsShares(currentEndRound)
 			if err != nil {
 				return err
 			}
@@ -435,12 +454,25 @@ func (c *client) autoClaimTokenPoolsShares() error {
 				return err
 			}
 
-			glog.Infof("Claimed rewards and fees from round %v through %v", lastClaimTokenPoolsSharesRound, endRound)
+			glog.Infof("Claimed rewards and fees from round %v through %v", lastClaimTokenPoolsSharesRound, currentEndRound)
 
-			lastClaimTokenPoolsSharesRound = endRound
+			lastClaimTokenPoolsSharesRound = currentEndRound
 		}
 
-		glog.Infof("Finished claiming rewards and fees through the current round %v", currentRound)
+		// Claim for any remaining rounds s.t. the number of rounds < RoundsPerTokenSharesClaim
+		if lastClaimTokenPoolsSharesRound.Cmp(endRound) == -1 {
+			tx, err := c.BondingManagerSession.ClaimTokenPoolsShares(endRound)
+			if err != nil {
+				return err
+			}
+
+			err = c.CheckTx(tx)
+			if err != nil {
+				return err
+			}
+		}
+
+		glog.Infof("Finished claiming rewards and fees through the end round %v", endRound)
 	}
 
 	return nil

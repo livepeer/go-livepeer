@@ -68,8 +68,8 @@ func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (*types.Transa
 func (e *StubClient) Unbond() (*types.Transaction, error)        { return nil, nil }
 func (e *StubClient) WithdrawStake() (*types.Transaction, error) { return nil, nil }
 func (e *StubClient) WithdrawFees() (*types.Transaction, error)  { return nil, nil }
-func (e *StubClient) ClaimTokenPoolsShares(endRound *big.Int) (*types.Transaction, error) {
-	return nil, nil
+func (e *StubClient) ClaimTokenPoolsShares(endRound *big.Int) error {
+	return nil
 }
 func (e *StubClient) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) { return nil, nil }
 func (e *StubClient) GetDelegator(addr common.Address) (*lpTypes.Delegator, error)   { return nil, nil }

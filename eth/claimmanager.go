@@ -25,7 +25,7 @@ type ClaimManager interface {
 	AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error
 	SufficientBroadcasterDeposit() (bool, error)
 	ClaimVerifyAndDistributeFees() error
-	CanClaim() bool
+	CanClaim() (bool, error)
 	DidFirstClaim() bool
 }
 
@@ -103,8 +103,34 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, 
 	}
 }
 
-func (c *BasicClaimManager) CanClaim() bool {
-	return len(c.unclaimedSegs) > 0
+func (c *BasicClaimManager) CanClaim() (bool, error) {
+	// A transcoder can claim if:
+	// - There are unclaimed segments
+	// - If the on-chain job explicitly stores the transcoder's address OR the transcoder was assigned but did not make the first claim and it is within the first 230 blocks of the job's creation block
+	if len(c.unclaimedSegs) == 0 {
+		return false, nil
+	}
+
+	job, err := c.client.GetJob(c.jobID)
+	if err != nil {
+		return false, err
+	}
+
+	backend, err := c.client.Backend()
+	if err != nil {
+		return false, err
+	}
+
+	currentBlk, err := backend.BlockByNumber(context.Background(), nil)
+	if err != nil {
+		return false, err
+	}
+
+	if job.TranscoderAddress == c.client.Account().Address || currentBlk.Number().Cmp(new(big.Int).Add(job.CreationBlock, BlocksUntilFirstClaimDeadline)) != 1 {
+		return true, nil
+	} else {
+		return false, nil
+	}
 }
 
 func (c *BasicClaimManager) DidFirstClaim() bool {

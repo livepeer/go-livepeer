@@ -435,13 +435,7 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
-			tx, err := s.LivepeerNode.Eth.ClaimTokenPoolsShares(endRound)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			err = s.LivepeerNode.Eth.CheckTx(tx)
+			err = s.LivepeerNode.Eth.ClaimTokenPoolsShares(endRound)
 			if err != nil {
 				glog.Error(err)
 				return

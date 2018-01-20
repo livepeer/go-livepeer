@@ -11,6 +11,10 @@ import (
 	"github.com/golang/glog"
 )
 
+var (
+	BlocksUntilFirstClaimDeadline = big.NewInt(230)
+)
+
 func FormatUnits(baseAmount *big.Int, name string) string {
 	amount := FromBaseUnit(baseAmount)
 
