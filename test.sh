@@ -10,16 +10,21 @@ go test -logtostderr=true
 t2=$?
 cd ..
 
-cd monitor 
+cd monitor
 go test -logtostderr=true
 t3=$?
 cd ..
 
-if (($t1!=0||$t2!=0||$t3!=0))
+cd eth
+go test -logtostderr=true
+t4=$?
+cd ..
+
+if (($t1!=0||$t2!=0||$t3!=0||$t4!=0))
 then
     printf "\n\nSome Tests Failed\n\n"
     exit -1
-else 
+else
     printf "\n\nAll Tests Passed\n\n"
     exit 0
 fi
