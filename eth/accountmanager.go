@@ -67,18 +67,18 @@ func NewAccountManager(accountAddr common.Address, keystoreDir string) (*Account
 func (am *AccountManager) Unlock(passphrase string) error {
 	var err error
 
-	if passphrase == "" {
+	err = am.keyStore.Unlock(am.Account, passphrase)
+	if err != nil {
+		if passphrase != "" {
+			return err
+		}
 		glog.Infof("Passphrase required to unlock ETH account")
 
 		passphrase, err = getPassphrase(false)
+		err = am.keyStore.Unlock(am.Account, passphrase)
 		if err != nil {
 			return err
 		}
-	}
-
-	err = am.keyStore.Unlock(am.Account, passphrase)
-	if err != nil {
-		return err
 	}
 
 	am.unlocked = true
