@@ -112,7 +112,6 @@ func (w *wizard) run() {
 		if w.transcoder {
 			fmt.Println(" 13. Become a transcoder")
 			fmt.Println(" 14. Set transcoder config")
-			fmt.Println(" 15. Resign as transcoder")
 
 			w.doCLIOpt(w.read(), true)
 		} else {
@@ -175,9 +174,6 @@ func (w *wizard) doCLIOpt(choice string, transcoder bool) {
 			return
 		case "14":
 			w.setTranscoderConfig()
-			return
-		case "15":
-			w.resignAsTranscoder()
 			return
 		}
 	} else {

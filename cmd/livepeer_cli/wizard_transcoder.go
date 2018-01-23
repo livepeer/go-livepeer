@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
-	"strings"
 )
 
 func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int) {
@@ -31,14 +30,11 @@ func (w *wizard) activateTranscoder() {
 
 	blockRewardCut, feeShare, pricePerSegment := w.promptTranscoderConfig()
 
-	fmt.Printf("Would you like to bond to yourself (your transaction will fail if no one has bonded to you, and you don't bond to yourself)? (y/n)")
-	resp := w.read()
+	fmt.Printf("You must bond to yourself in order to become a transcoder\n")
 
 	amount := big.NewInt(0)
-	if strings.Compare(strings.ToLower(resp), "y") == 0 {
-		fmt.Printf("Enter bond amount - ")
-		amount = w.readBigInt()
-	}
+	fmt.Printf("Enter bond amount - ")
+	amount = w.readBigInt()
 
 	val := url.Values{
 		"blockRewardCut":  {fmt.Sprintf("%v", blockRewardCut)},
@@ -62,13 +58,4 @@ func (w *wizard) setTranscoderConfig() {
 	}
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/setTranscoderConfig", w.host, w.httpPort), val)
-}
-
-func (w *wizard) resignAsTranscoder() {
-	fmt.Printf("Would you like to resign as a transcoder? (y/n)")
-	resp := w.read()
-
-	if strings.Compare(strings.ToLower(resp), "y") == 0 {
-		httpPost(fmt.Sprintf("http://%v:%v/resignAsTranscoder", w.host, w.httpPort))
-	}
 }

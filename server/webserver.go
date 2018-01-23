@@ -312,24 +312,6 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/resignAsTranscoder", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			tx, err := s.LivepeerNode.Eth.ResignAsTranscoder()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			err = s.LivepeerNode.Eth.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			glog.Infof("Resigned as transcoder")
-		}
-	})
-
 	//Bond some amount of tokens to a transcoder.
 	http.HandleFunc("/bond", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
