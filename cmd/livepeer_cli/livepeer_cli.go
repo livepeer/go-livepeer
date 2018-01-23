@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/livepeer/go-livepeer/core"
 	"gopkg.in/urfave/cli.v1"
 )
 
@@ -43,6 +44,10 @@ func main() {
 		},
 	}
 	app.Action = func(c *cli.Context) error {
+		if c.Bool("version") {
+			fmt.Println("Version: " + core.LivepeerVersion)
+		}
+
 		// Set up the logger to print everything and the random generator
 		log.Root().SetHandler(log.LvlFilterHandler(log.Lvl(c.Int("loglevel")), log.StreamHandler(os.Stdout, log.TerminalFormat(true))))
 		rand.Seed(time.Now().UnixNano())
@@ -60,6 +65,7 @@ func main() {
 
 		return nil
 	}
+	app.Version = core.LivepeerVersion
 	app.Run(os.Args)
 }
 
