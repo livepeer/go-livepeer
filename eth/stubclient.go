@@ -60,8 +60,7 @@ func (e *StubClient) TotalSupply() (*big.Int, error)                  { return b
 func (e *StubClient) Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) ResignAsTranscoder() (*types.Transaction, error) { return nil, nil }
-func (e *StubClient) Reward() (*types.Transaction, error)             { return nil, nil }
+func (e *StubClient) Reward() (*types.Transaction, error) { return nil, nil }
 func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
 	return nil, nil
 }

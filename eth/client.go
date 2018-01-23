@@ -57,7 +57,6 @@ type LivepeerEthClient interface {
 
 	// Staking
 	Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error)
-	ResignAsTranscoder() (*types.Transaction, error)
 	Reward() (*types.Transaction, error)
 	Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error)
 	Unbond() (*types.Transaction, error)
@@ -695,12 +694,12 @@ func (c *client) IsAssignedTranscoder(jobID *big.Int) (bool, error) {
 		return false, err
 	}
 
-	currentRound, err := c.CurrentRound()
+	blk, err := c.backend.BlockByNumber(context.Background(), jInfo.CreationBlock)
 	if err != nil {
 		return false, err
 	}
 
-	t, err := c.BondingManagerSession.ElectActiveTranscoder(jInfo.MaxPricePerSegment, jInfo.CreationBlock, currentRound)
+	t, err := c.BondingManagerSession.ElectActiveTranscoder(jInfo.MaxPricePerSegment, blk.Hash(), jInfo.CreationRound)
 	if err != nil {
 		return false, err
 	}

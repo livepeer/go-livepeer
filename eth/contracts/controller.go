@@ -13,7 +13,7 @@ import (
 )
 
 // ControllerABI is the input ABI used to generate the binding from.
-const ControllerABI = "[{\"constant\":false,\"inputs\":[],\"name\":\"unpause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"paused\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"},{\"name\":\"_contract\",\"type\":\"address\"}],\"name\":\"setContract\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"pause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"}],\"name\":\"getContract\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"},{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"updateController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"id\",\"type\":\"bytes32\"},{\"indexed\":false,\"name\":\"contractAddr\",\"type\":\"address\"}],\"name\":\"SetContract\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Pause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Unpause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"}]"
+const ControllerABI = "[{\"constant\":false,\"inputs\":[],\"name\":\"unpause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"paused\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"}],\"name\":\"getContractInfo\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"},{\"name\":\"\",\"type\":\"bytes20\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"pause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"},{\"name\":\"_contractAddress\",\"type\":\"address\"},{\"name\":\"_gitCommitHash\",\"type\":\"bytes20\"}],\"name\":\"setContractInfo\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"}],\"name\":\"getContract\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_id\",\"type\":\"bytes32\"},{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"updateController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"id\",\"type\":\"bytes32\"},{\"indexed\":false,\"name\":\"contractAddress\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"gitCommitHash\",\"type\":\"bytes20\"}],\"name\":\"SetContractInfo\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Pause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Unpause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"}]"
 
 // Controller is an auto generated Go binding around an Ethereum contract.
 type Controller struct {
@@ -168,6 +168,36 @@ func (_Controller *ControllerCallerSession) GetContract(_id [32]byte) (common.Ad
 	return _Controller.Contract.GetContract(&_Controller.CallOpts, _id)
 }
 
+// GetContractInfo is a free data retrieval call binding the contract method 0x613e2de2.
+//
+// Solidity: function getContractInfo(_id bytes32) constant returns(address, bytes20)
+func (_Controller *ControllerCaller) GetContractInfo(opts *bind.CallOpts, _id [32]byte) (common.Address, [20]byte, error) {
+	var (
+		ret0 = new(common.Address)
+		ret1 = new([20]byte)
+	)
+	out := &[]interface{}{
+		ret0,
+		ret1,
+	}
+	err := _Controller.contract.Call(opts, out, "getContractInfo", _id)
+	return *ret0, *ret1, err
+}
+
+// GetContractInfo is a free data retrieval call binding the contract method 0x613e2de2.
+//
+// Solidity: function getContractInfo(_id bytes32) constant returns(address, bytes20)
+func (_Controller *ControllerSession) GetContractInfo(_id [32]byte) (common.Address, [20]byte, error) {
+	return _Controller.Contract.GetContractInfo(&_Controller.CallOpts, _id)
+}
+
+// GetContractInfo is a free data retrieval call binding the contract method 0x613e2de2.
+//
+// Solidity: function getContractInfo(_id bytes32) constant returns(address, bytes20)
+func (_Controller *ControllerCallerSession) GetContractInfo(_id [32]byte) (common.Address, [20]byte, error) {
+	return _Controller.Contract.GetContractInfo(&_Controller.CallOpts, _id)
+}
+
 // Owner is a free data retrieval call binding the contract method 0x8da5cb5b.
 //
 // Solidity: function owner() constant returns(address)
@@ -241,25 +271,25 @@ func (_Controller *ControllerTransactorSession) Pause() (*types.Transaction, err
 	return _Controller.Contract.Pause(&_Controller.TransactOpts)
 }
 
-// SetContract is a paid mutator transaction binding the contract method 0x7ed77c9c.
+// SetContractInfo is a paid mutator transaction binding the contract method 0xd737c2b0.
 //
-// Solidity: function setContract(_id bytes32, _contract address) returns()
-func (_Controller *ControllerTransactor) SetContract(opts *bind.TransactOpts, _id [32]byte, _contract common.Address) (*types.Transaction, error) {
-	return _Controller.contract.Transact(opts, "setContract", _id, _contract)
+// Solidity: function setContractInfo(_id bytes32, _contractAddress address, _gitCommitHash bytes20) returns()
+func (_Controller *ControllerTransactor) SetContractInfo(opts *bind.TransactOpts, _id [32]byte, _contractAddress common.Address, _gitCommitHash [20]byte) (*types.Transaction, error) {
+	return _Controller.contract.Transact(opts, "setContractInfo", _id, _contractAddress, _gitCommitHash)
 }
 
-// SetContract is a paid mutator transaction binding the contract method 0x7ed77c9c.
+// SetContractInfo is a paid mutator transaction binding the contract method 0xd737c2b0.
 //
-// Solidity: function setContract(_id bytes32, _contract address) returns()
-func (_Controller *ControllerSession) SetContract(_id [32]byte, _contract common.Address) (*types.Transaction, error) {
-	return _Controller.Contract.SetContract(&_Controller.TransactOpts, _id, _contract)
+// Solidity: function setContractInfo(_id bytes32, _contractAddress address, _gitCommitHash bytes20) returns()
+func (_Controller *ControllerSession) SetContractInfo(_id [32]byte, _contractAddress common.Address, _gitCommitHash [20]byte) (*types.Transaction, error) {
+	return _Controller.Contract.SetContractInfo(&_Controller.TransactOpts, _id, _contractAddress, _gitCommitHash)
 }
 
-// SetContract is a paid mutator transaction binding the contract method 0x7ed77c9c.
+// SetContractInfo is a paid mutator transaction binding the contract method 0xd737c2b0.
 //
-// Solidity: function setContract(_id bytes32, _contract address) returns()
-func (_Controller *ControllerTransactorSession) SetContract(_id [32]byte, _contract common.Address) (*types.Transaction, error) {
-	return _Controller.Contract.SetContract(&_Controller.TransactOpts, _id, _contract)
+// Solidity: function setContractInfo(_id bytes32, _contractAddress address, _gitCommitHash bytes20) returns()
+func (_Controller *ControllerTransactorSession) SetContractInfo(_id [32]byte, _contractAddress common.Address, _gitCommitHash [20]byte) (*types.Transaction, error) {
+	return _Controller.Contract.SetContractInfo(&_Controller.TransactOpts, _id, _contractAddress, _gitCommitHash)
 }
 
 // TransferOwnership is a paid mutator transaction binding the contract method 0xf2fde38b.
