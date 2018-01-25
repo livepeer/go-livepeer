@@ -100,7 +100,7 @@ func main() {
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
-	noLogFiles := flag.Bool("noLogFiles", false, "Set to true if log files should not be generated")
+	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
 	version := flag.Bool("version", false, "Print out the version")
 
@@ -291,7 +291,7 @@ func main() {
 	}
 
 	// Set up logging
-	if !*noLogFiles {
+	if !*noIPFSLogFiles {
 		ipfslogging.LdJSONFormatter()
 		logger := &lumberjack.Logger{
 			Filename:   path.Join(*ipfsPath, "logs", "ipfs.log"),
