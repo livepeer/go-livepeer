@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"time"
 
+	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -35,6 +36,7 @@ import (
 	"github.com/livepeer/go-livepeer/ipfs"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/server"
+	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
@@ -98,6 +100,7 @@ func main() {
 	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
+	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
 	version := flag.Bool("version", false, "Print out the version")
 
@@ -285,6 +288,19 @@ func main() {
 
 			defer n.StopEthServices()
 		}
+	}
+
+	// Set up logging
+	if !*noIPFSLogFiles {
+		ipfslogging.LdJSONFormatter()
+		logger := &lumberjack.Logger{
+			Filename:   path.Join(*ipfsPath, "logs", "ipfs.log"),
+			MaxSize:    10, // Megabytes
+			MaxBackups: 3,
+			MaxAge:     30, // Days
+		}
+		ipfslogging.LevelError()
+		ipfslogging.Output(logger)()
 	}
 
 	//Set up the media server
