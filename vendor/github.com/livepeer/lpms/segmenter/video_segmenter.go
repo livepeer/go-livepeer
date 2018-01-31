@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -16,13 +15,12 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/nareix/joy4/av"
-	"github.com/nareix/joy4/format/rtmp"
 )
 
 var ErrSegmenterTimeout = errors.New("SegmenterTimeout")
-var ErrFFMpegSegmenter = errors.New("FFMpegSegmenterError")
 var ErrSegmenter = errors.New("SegmenterError")
 var PlaylistRetryCount = 5
 var PlaylistRetryWait = 500 * time.Millisecond
@@ -54,7 +52,6 @@ type FFMpegVideoSegmenter struct {
 	WorkDir        string
 	LocalRtmpUrl   string
 	StrmID         string
-	ffmpegPath     string
 	curSegment     int
 	curPlaylist    *m3u8.MediaPlaylist
 	curPlWaitTime  time.Duration
@@ -62,12 +59,15 @@ type FFMpegVideoSegmenter struct {
 	SegLen         time.Duration
 }
 
-func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string, segLen time.Duration, ffmpegPath string) *FFMpegVideoSegmenter {
-	return &FFMpegVideoSegmenter{WorkDir: workDir, StrmID: strmID, LocalRtmpUrl: localRtmpUrl, SegLen: segLen, ffmpegPath: ffmpegPath}
+func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string, opt SegmenterOptions) *FFMpegVideoSegmenter {
+	if opt.SegLength == 0 {
+		opt.SegLength = time.Second * 4
+	}
+	return &FFMpegVideoSegmenter{WorkDir: workDir, StrmID: strmID, LocalRtmpUrl: localRtmpUrl, SegLen: opt.SegLength}
 }
 
-//RTMPToHLS invokes the FFMpeg command to do the segmenting.  This method blocks unless killed.
-func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptions, cleanup bool) error {
+//RTMPToHLS invokes FFMpeg to do the segmenting. This method blocks until the segmenter exits.
+func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, cleanup bool) error {
 	//Set up local workdir
 	if _, err := os.Stat(s.WorkDir); os.IsNotExist(err) {
 		err := os.Mkdir(s.WorkDir, 0700)
@@ -76,58 +76,14 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, opt SegmenterOptio
 		}
 	}
 
-	//Test to make sure local RTMP is running.
-	rtmpMux, err := rtmp.Dial(s.LocalRtmpUrl)
-	if err != nil {
-		glog.Errorf("Video Segmenter Error: %v.  Make sure local RTMP stream is available for segmenter.", err)
-		rtmpMux.Close()
-		return err
+	outp := fmt.Sprintf("%s/%s.m3u8", s.WorkDir, s.StrmID)
+	ts_tmpl := fmt.Sprintf("%s/%s", s.WorkDir, s.StrmID) + "_%d.ts"
+	seglen := strconv.FormatFloat(s.SegLen.Seconds(), 'f', 6, 64)
+	ret := ffmpeg.RTMPToHLS(s.LocalRtmpUrl, outp, ts_tmpl, seglen)
+	if cleanup {
+		s.Cleanup()
 	}
-	rtmpMux.Close()
-
-	//Invoke the FFMpeg command
-	plfn := fmt.Sprintf("%s/%s.m3u8", s.WorkDir, s.StrmID)
-	tsfn := s.WorkDir + "/" + s.StrmID + "_%d.ts"
-
-	//This command needs to be manually killed, because ffmpeg doesn't seem to quit after getting a rtmp EOF
-	glog.V(4).Infof("Ffmpeg path: %v", s.ffmpegPath)
-
-	var cmd *exec.Cmd
-
-	cmd = exec.Command(path.Join(s.ffmpegPath, "ffmpeg"), "-i", s.LocalRtmpUrl, "-vcodec", "copy", "-acodec", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "segment", "-segment_time", fmt.Sprintf("%v", opt.SegLength.Seconds()), "-muxdelay", "0", "-segment_list", plfn, tsfn)
-
-	err = cmd.Start()
-	if err != nil {
-		glog.Errorf("Cannot start ffmpeg command.")
-		return err
-	}
-
-	ec := make(chan error, 1)
-	go func() { ec <- cmd.Wait() }()
-
-	select {
-	case ffmpege := <-ec:
-		//Sometimes ffmpeg doesn't return the correct error
-		if ffmpege == nil {
-			ffmpege = ErrFFMpegSegmenter
-		} else {
-			glog.Errorf("Error from ffmpeg: %v", ffmpege)
-		}
-
-		if cleanup {
-			s.Cleanup()
-		}
-		return ffmpege
-	case <-ctx.Done():
-		//Can't close RTMP server, joy4 doesn't support it.
-		//server.Stop()
-		glog.V(4).Infof("VideoSegmenter stopped for %v", s.StrmID)
-		if cleanup {
-			s.Cleanup()
-		}
-		cmd.Process.Kill()
-		return ctx.Err()
-	}
+	return ret
 }
 
 //PollSegment monitors the filesystem and returns a new segment as it becomes available

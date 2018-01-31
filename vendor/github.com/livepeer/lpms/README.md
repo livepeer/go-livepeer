@@ -33,7 +33,7 @@ The test LPMS server exposes a few different endpoints:
 2. `http://localhost:8000/stream/test_hls.m3u8` for consuming the HLS video stream.
 
 Do the following steps to view a live stream video:
-1. Start LPMS by running `go run cmd/runner/main.go`
+1. Start LPMS by running `go run cmd/example/main.go`
 
 2. Upload an RTMP video stream to `rtmp://localhost:1935/stream/test`.  We recommend using ffmpeg or [OBS](https://obsproject.com/download).
 
@@ -46,7 +46,7 @@ For OBS, fill in Settings->Stream->URL to be rtmp://localhost:1935
 I0324 09:44:14.639405   80673 listener.go:28] RTMP server got upstream
 I0324 09:44:14.639429   80673 listener.go:42] Got RTMP Stream: test
 ```
-4. Now you have a RTMP video stream running, we can view it from the server.  Simply run `ffplay http://localhost:8000/stream/test_hls.m3u8`, you should see the hls video playback.
+4. Now you have a RTMP video stream running, we can view it from the server.  Simply run `ffplay http://localhost:8000/stream/test.m3u8`, you should see the hls video playback.
 
 
 ### Integrating LPMS
