@@ -2,10 +2,18 @@ machine:
   environment:
     GOROOT: /usr/local/go
     PATH: $PATH:/opt/circleci/nodejs/v4.2.6/lib/node_modules/ffmpeg-static/bin/linux/x64/
+    PATH: $PATH:/opt/circleci/nodejs/v4.2.6/lib/node_modules/ffmpeg-static/bin/linux/x64/:$HOME/compiled/bin
+    PKG_CONFIG_PATH: $HOME/compiled/lib/pkgconfig
 
 dependencies:
+  pre:
+    - bash ./install_ffmpeg.sh
   cache_directories:
     - "$HOME/.go_workspace/"
+    - "$HOME/nasm"
+    - "$HOME/x264"
+    - "$HOME/ffmpeg"
+    - "$HOME/compiled"
   override:
     - go get github.com/livepeer/go-livepeer/cmd/livepeer
     - go get github.com/golang/glog

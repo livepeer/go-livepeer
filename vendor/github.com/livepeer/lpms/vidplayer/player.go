@@ -70,6 +70,7 @@ func (s *VidPlayer) rtmpServerHandlePlay() func(conn *joy4rtmp.Conn) {
 		}
 		select {
 		case <-eof:
+			conn.Close()
 			return
 		}
 	}

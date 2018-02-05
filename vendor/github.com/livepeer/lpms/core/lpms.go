@@ -10,6 +10,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/vidlistener"
@@ -48,6 +49,8 @@ func New(rtmpPort, httpPort, ffmpegPath, vodPath, workDir string) *LPMS {
 //Start starts the rtmp and http server
 func (l *LPMS) Start(ctx context.Context) error {
 	ec := make(chan error, 1)
+	ffmpeg.InitFFmpeg()
+	defer ffmpeg.DeinitFFmpeg()
 	go func() {
 		glog.Infof("LPMS Server listening on %v", l.rtmpServer.Addr)
 		ec <- l.rtmpServer.ListenAndServe()
@@ -95,10 +98,10 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 	localRtmpUrl := "rtmp://localhost" + l.rtmpServer.Addr + "/stream/" + rs.GetStreamID()
 	glog.V(4).Infof("Segment RTMP Req: %v", localRtmpUrl)
 
-	s := segmenter.NewFFMpegVideoSegmenter(l.workDir, hs.GetStreamID(), localRtmpUrl, segOptions.SegLength, l.ffmpegPath)
+	s := segmenter.NewFFMpegVideoSegmenter(l.workDir, hs.GetStreamID(), localRtmpUrl, segOptions)
 	c := make(chan error, 1)
 	ffmpegCtx, ffmpegCancel := context.WithCancel(context.Background())
-	go func() { c <- s.RTMPToHLS(ffmpegCtx, segOptions, true) }()
+	go func() { c <- s.RTMPToHLS(ffmpegCtx, true) }()
 
 	//Kick off go routine to write HLS segments
 	segCtx, segCancel := context.WithCancel(context.Background())
@@ -131,7 +134,7 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 
 	select {
 	case err := <-c:
-		if err != segmenter.ErrFFMpegSegmenter {
+		if err != nil && err != context.Canceled {
 			glog.Errorf("Error segmenting stream: %v", err)
 		}
 		ffmpegCancel()
@@ -140,7 +143,7 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 	case <-ctx.Done():
 		ffmpegCancel()
 		segCancel()
-		return ctx.Err()
+		return nil
 	}
 }
 

@@ -2,6 +2,7 @@ package segmenter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/vidplayer"
 	"github.com/nareix/joy4/av"
@@ -68,7 +70,34 @@ func (s *TestStream) ReadHLSSegment() (stream.HLSSegment, error)                
 func (s *TestStream) Width() int                                                          { return 0 }
 func (s *TestStream) Height() int                                                         { return 0 }
 
+func RunRTMPToHLS(vs *FFMpegVideoSegmenter, ctx context.Context) error {
+	// hack cuz listener might not be ready
+	t := time.NewTicker(100 * time.Millisecond)
+	max := time.After(3 * time.Second)
+	c := make(chan error, 1)
+	go func() {
+		var err error
+		for _ = range t.C {
+			err = vs.RTMPToHLS(ctx, false)
+			if err == nil || err.Error() != "Connection refused" {
+				break
+			}
+			glog.Infof("Unable to connect start segmenter (%v), retrying", err)
+		}
+		t.Stop()
+		c <- err
+	}()
+	select {
+	case <-max:
+		return errors.New("Segmenter timed out")
+	case err := <-c:
+		return err
+	}
+}
+
 func TestSegmenter(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+	defer ffmpeg.DeinitFFmpeg()
 	wd, _ := os.Getwd()
 	workDir := wd + "/tmp"
 	os.RemoveAll(workDir)
@@ -76,7 +105,8 @@ func TestSegmenter(t *testing.T) {
 	//Create a test stream from stub
 	strm := &TestStream{}
 	strmUrl := fmt.Sprintf("rtmp://localhost:%v/stream/%v", "1935", strm.GetStreamID())
-	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), strmUrl, time.Millisecond*10, "")
+	opt := SegmenterOptions{SegLength: time.Second * 4}
+	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), strmUrl, opt)
 	server := &rtmp.Server{Addr: ":1935"}
 	player := vidplayer.NewVidPlayer(server, "")
 
@@ -93,19 +123,13 @@ func TestSegmenter(t *testing.T) {
 		}
 	}()
 
-	se := make(chan error, 1)
-	segLength := time.Second * 4
-	opt := SegmenterOptions{SegLength: segLength}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
 	//Kick off FFMpeg to create segments
-	go func() { se <- func() error { return vs.RTMPToHLS(ctx, opt, false) }() }()
-	select {
-	case err := <-se:
-		if err != context.DeadlineExceeded {
-			t.Errorf("Should exceed deadline (since it's not a real stream, ffmpeg should finish instantly).  But instead got: %v", err)
-		}
+	err := RunRTMPToHLS(vs, ctx)
+	if err != nil {
+		t.Errorf("Since it's not a real stream, ffmpeg should finish instantly. But instead got: %v", err)
 	}
 
 	pl, err := vs.PollPlaylist(ctx)
@@ -146,9 +170,9 @@ func TestSegmenter(t *testing.T) {
 			t.Errorf("Expecting HLS segment, got %v", seg.Format)
 		}
 
-		timeDiff := seg.Length - segLength
+		timeDiff := seg.Length - opt.SegLength
 		if timeDiff > time.Millisecond*500 || timeDiff < -time.Millisecond*500 {
-			t.Errorf("Expecting %v sec segments, got %v.  Diff: %v", segLength, seg.Length, timeDiff)
+			t.Errorf("Expecting %v sec segments, got %v.  Diff: %v", opt.SegLength, seg.Length, timeDiff)
 		}
 
 		fn := "test_" + strconv.Itoa(i) + ".ts"
@@ -215,7 +239,8 @@ test_6.ts
 }
 
 func TestPollPlaylistError(t *testing.T) {
-	vs := NewFFMpegVideoSegmenter("./sometestdir", "test", "", time.Millisecond*100, "")
+	opt := SegmenterOptions{}
+	vs := NewFFMpegVideoSegmenter("./sometestdir", "test", "", opt)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*50)
 	defer cancel()
 	_, err := vs.PollPlaylist(ctx)
@@ -225,7 +250,8 @@ func TestPollPlaylistError(t *testing.T) {
 }
 
 func TestPollSegmentError(t *testing.T) {
-	vs := NewFFMpegVideoSegmenter("./sometestdir", "test", "", time.Millisecond*10, "")
+	opt := SegmenterOptions{}
+	vs := NewFFMpegVideoSegmenter("./sometestdir", "test", "", opt)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*50)
 	defer cancel()
 	_, err := vs.PollSegment(ctx)
@@ -253,7 +279,8 @@ test_0.ts
 		t.Errorf("Error writing playlist: %v", err)
 	}
 
-	vs := NewFFMpegVideoSegmenter(workDir, "test", "", time.Millisecond*100, "")
+	opt := SegmenterOptions{SegLength: time.Millisecond * 100}
+	vs := NewFFMpegVideoSegmenter(workDir, "test", "", opt)
 	ctx := context.Background()
 	pl, err := vs.PollPlaylist(ctx)
 	if pl == nil {
@@ -290,7 +317,8 @@ test_1.ts
 		t.Errorf("Error writing playlist: %v", err)
 	}
 
-	vs := NewFFMpegVideoSegmenter(workDir, "test", "", time.Millisecond*100, "")
+	opt := SegmenterOptions{SegLength: time.Millisecond * 100}
+	vs := NewFFMpegVideoSegmenter(workDir, "test", "", opt)
 	ctx := context.Background()
 	seg, err := vs.PollSegment(ctx)
 	if seg == nil {
@@ -303,4 +331,77 @@ test_1.ts
 	}
 
 	os.RemoveAll(workDir)
+}
+
+func TestNoRTMPListener(t *testing.T) {
+	url := "rtmp://localhost:19355"
+	opt := SegmenterOptions{}
+	vs := NewFFMpegVideoSegmenter("tmp", "test", url, opt)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	err := vs.RTMPToHLS(ctx, false)
+	if err == nil {
+		t.Errorf("error was unexpectedly nil; is something running on %v?", url)
+	} else if err.Error() != "Connection refused" {
+		t.Error("error was not nil; got ", err)
+	}
+}
+
+type ServerDisconnectStream struct {
+	TestStream
+}
+
+func (s *ServerDisconnectStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) (chan struct{}, error) {
+	file, err := avutil.Open("test.flv")
+	if err != nil {
+		glog.Errorf("Error reading headers: %v", err)
+		return nil, err
+	}
+	header, err := file.Streams()
+	dst.WriteHeader(header)
+	dst.Close()
+	return make(chan struct{}), nil
+}
+
+func TestServerDisconnectMidStream(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+	defer ffmpeg.DeinitFFmpeg()
+	port := "1938" // because we can't yet close the listener on 1935?
+	strm := &ServerDisconnectStream{}
+	strmUrl := fmt.Sprintf("rtmp://localhost:%v/stream/%v", port, strm.GetStreamID())
+	opt := SegmenterOptions{SegLength: time.Second * 4}
+	vs := NewFFMpegVideoSegmenter("tmp", strm.GetStreamID(), strmUrl, opt)
+	server := &rtmp.Server{Addr: ":" + port}
+	player := vidplayer.NewVidPlayer(server, "")
+	player.HandleRTMPPlay(
+		func(url *url.URL) (stream.RTMPVideoStream, error) {
+			return strm, nil
+		})
+
+	//Kick off RTMP server
+	go func() {
+		err := player.RtmpServer.ListenAndServe()
+		if err != nil {
+			t.Errorf("Error kicking off RTMP server: %v", err)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	err := RunRTMPToHLS(vs, ctx)
+	if err == nil || err.Error() != "Input/output error" {
+		t.Error("Expected 'Input/output error' but instead got ", err)
+	}
+}
+
+func TestSegmentDefaults(t *testing.T) {
+	opt := SegmenterOptions{}
+	vs := NewFFMpegVideoSegmenter("", "test", "", opt)
+	if vs.SegLen != 4*time.Second {
+		t.Errorf("Expected 4 second default segment length but got %v", opt.SegLength)
+	}
+	opt = SegmenterOptions{SegLength: 100 * time.Millisecond}
+	vs = NewFFMpegVideoSegmenter("", "test", "", opt)
+	if vs.SegLen != 100*time.Millisecond {
+		t.Errorf("Expected 100ms default segment length but got %v", opt.SegLength)
+	}
 }
