@@ -94,6 +94,7 @@ func main() {
 	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
 	ethWsUrl := flag.String("ethWsUrl", "", "geth websocket url")
 	testnet := flag.Bool("testnet", false, "Set to true to connect to testnet")
+	rinkeby := flag.Bool("rinkeby", false, "Set to true to connect to rinkeby")
 	controllerAddr := flag.String("controllerAddr", "", "Protocol smart contract address")
 	gasLimit := flag.Int("gasLimit", 4000000, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
@@ -118,6 +119,14 @@ func main() {
 		if !*offchain {
 			*ethWsUrl = "ws://ethws-testnet.livepeer.org:8546"
 			*controllerAddr = "0x460e655583c1808d09445645700f4e3bf9740ac0"
+		}
+	} else if *rinkeby {
+		*bootID = "122019c1a1f0d9fa2296dccb972e7478c5163415cd55722dcf0123553f397c45df7e"
+		*bootAddr = "/ip4/18.217.129.34/tcp/15000"
+
+		if !*offchain {
+			*ethWsUrl = "wss://rinkeby.infura.io/ws"
+			*controllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
 		}
 	}
 
