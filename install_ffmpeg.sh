@@ -1,6 +1,7 @@
 set -ex
 
-export PATH=$PATH:"$HOME/compiled/bin"
+export PATH="$HOME/compiled/bin":$PATH
+export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig
 
 if [ ! -e "$HOME/nasm/nasm" ]; then
   # sudo apt-get -y install asciidoc xmlto # this fails :(
@@ -9,7 +10,7 @@ if [ ! -e "$HOME/nasm/nasm" ]; then
   ./autogen.sh
   ./configure --prefix="$HOME/compiled"
   make
-  sudo make install || echo "Installing docs fails but should be OK otherwise"
+  make install || echo "Installing docs fails but should be OK otherwise"
 fi
 
 if [ ! -e "$HOME/x264/x264" ]; then
@@ -17,13 +18,13 @@ if [ ! -e "$HOME/x264/x264" ]; then
   cd "$HOME/x264"
   ./configure --prefix="$HOME/compiled" --enable-pic --enable-static
   make
-  sudo make install-lib-static
+  make install-lib-static
 fi
 
 if [ ! -e "$HOME/ffmpeg/ffmpeg" ]; then
   git clone https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg"
   cd "$HOME/ffmpeg"
-  ./configure --prefix="$HOME/compiled" --enable-gpl --enable-libx264
+  ./configure --prefix="$HOME/compiled" --enable-gpl --enable-libx264 --disable-sdl2
   make
-  sudo make install
+  make install
 fi
