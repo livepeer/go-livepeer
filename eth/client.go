@@ -572,11 +572,13 @@ func (c *client) GetTranscoderEarningsPoolForRound(addr common.Address, round *b
 func (c *client) GetDelegator(addr common.Address) (*lpTypes.Delegator, error) {
 	dInfo, err := c.BondingManagerSession.GetDelegator(addr)
 	if err != nil {
+		glog.Infof("Error getting delegator from bonding manager: %v", err)
 		return nil, err
 	}
 
 	dStatus, err := c.DelegatorStatus(addr)
 	if err != nil {
+		glog.Infof("Error getting status: %v", err)
 		return nil, err
 	}
 
@@ -586,16 +588,19 @@ func (c *client) GetDelegator(addr common.Address) (*lpTypes.Delegator, error) {
 	}
 	currentRound, err := c.CurrentRound()
 	if err != nil {
+		glog.Infof("Error getting current round: %v", err)
 		return nil, err
 	}
 
 	pendingStake, err := c.PendingStake(addr, currentRound)
-	if err != nil {
+	if err != nil && err.Error() != "abi: unmarshalling empty output" {
+		glog.Infof("Error getting pending stake: %v", err)
 		return nil, err
 	}
 
 	pendingFees, err := c.PendingFees(addr, currentRound)
-	if err != nil {
+	if err != nil && err.Error() != "abi: unmarshalling empty output" {
+		glog.Infof("Error getting pending fees: %v", err)
 		return nil, err
 	}
 
