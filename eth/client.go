@@ -31,7 +31,7 @@ import (
 )
 
 var (
-	RoundsPerTokenSharesClaim = big.NewInt(50)
+	RoundsPerEarningsClaim = big.NewInt(50)
 
 	ErrCurrentRoundLocked = fmt.Errorf("current round locked")
 	ErrMissingBackend     = fmt.Errorf("missing Ethereum client backend")
@@ -62,10 +62,10 @@ type LivepeerEthClient interface {
 	Unbond() (*types.Transaction, error)
 	WithdrawStake() (*types.Transaction, error)
 	WithdrawFees() (*types.Transaction, error)
-	ClaimTokenPoolsShares(endRound *big.Int) error
+	ClaimEarnings(endRound *big.Int) error
 	GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error)
 	GetDelegator(addr common.Address) (*lpTypes.Delegator, error)
-	GetTranscoderTokenPoolsForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error)
+	GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error)
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
 	IsAssignedTranscoder(jobID *big.Int) (bool, error)
@@ -89,7 +89,7 @@ type LivepeerEthClient interface {
 	UnbondingPeriod() (uint64, error)
 	VerificationRate() (uint64, error)
 	VerificationPeriod() (*big.Int, error)
-	SlashingPeriod() (*big.Int, error)
+	VerificationSlashingPeriod() (*big.Int, error)
 	FailedVerificationSlashAmount() (*big.Int, error)
 	MissedVerificationSlashAmount() (*big.Int, error)
 	DoubleClaimSegmentSlashAmount() (*big.Int, error)
@@ -98,6 +98,7 @@ type LivepeerEthClient interface {
 	InflationChange() (*big.Int, error)
 	TargetBondingRate() (*big.Int, error)
 	VerificationCodeHash() (string, error)
+	Paused() (bool, error)
 
 	// Helpers
 	ContractAddresses() map[string]common.Address
@@ -364,7 +365,7 @@ func (c *client) Bond(amount *big.Int, to common.Address) (*types.Transaction, e
 		return nil, err
 	}
 
-	if err := c.autoClaimTokenPoolsShares(currentRound); err != nil {
+	if err := c.autoClaimEarnings(currentRound); err != nil {
 		return nil, err
 	}
 
@@ -387,7 +388,7 @@ func (c *client) Unbond() (*types.Transaction, error) {
 		return nil, err
 	}
 
-	if err := c.autoClaimTokenPoolsShares(currentRound); err != nil {
+	if err := c.autoClaimEarnings(currentRound); err != nil {
 		return nil, err
 	}
 
@@ -400,7 +401,7 @@ func (c *client) WithdrawStake() (*types.Transaction, error) {
 		return nil, err
 	}
 
-	if err := c.autoClaimTokenPoolsShares(currentRound); err != nil {
+	if err := c.autoClaimEarnings(currentRound); err != nil {
 		return nil, err
 	}
 
@@ -413,18 +414,18 @@ func (c *client) WithdrawFees() (*types.Transaction, error) {
 		return nil, err
 	}
 
-	if err := c.autoClaimTokenPoolsShares(currentRound); err != nil {
+	if err := c.autoClaimEarnings(currentRound); err != nil {
 		return nil, err
 	}
 
 	return c.BondingManagerSession.WithdrawFees()
 }
 
-func (c *client) ClaimTokenPoolsShares(endRound *big.Int) error {
-	return c.autoClaimTokenPoolsShares(endRound)
+func (c *client) ClaimEarnings(endRound *big.Int) error {
+	return c.autoClaimEarnings(endRound)
 }
 
-func (c *client) autoClaimTokenPoolsShares(endRound *big.Int) error {
+func (c *client) autoClaimEarnings(endRound *big.Int) error {
 	dStatus, err := c.DelegatorStatus(c.Account().Address)
 	if err != nil {
 		return err
@@ -437,13 +438,13 @@ func (c *client) autoClaimTokenPoolsShares(endRound *big.Int) error {
 			return err
 		}
 
-		lastClaimTokenPoolsSharesRound := dInfo.LastClaimTokenPoolsSharesRound
+		lastClaimRound := dInfo.LastClaimRound
 
 		var currentEndRound *big.Int
-		for new(big.Int).Sub(endRound, lastClaimTokenPoolsSharesRound).Cmp(RoundsPerTokenSharesClaim) == 1 {
-			currentEndRound = new(big.Int).Add(lastClaimTokenPoolsSharesRound, RoundsPerTokenSharesClaim)
+		for new(big.Int).Sub(endRound, lastClaimRound).Cmp(RoundsPerEarningsClaim) == 1 {
+			currentEndRound = new(big.Int).Add(lastClaimRound, RoundsPerEarningsClaim)
 
-			tx, err := c.BondingManagerSession.ClaimTokenPoolsShares(currentEndRound)
+			tx, err := c.BondingManagerSession.ClaimEarnings(currentEndRound)
 			if err != nil {
 				return err
 			}
@@ -453,14 +454,14 @@ func (c *client) autoClaimTokenPoolsShares(endRound *big.Int) error {
 				return err
 			}
 
-			glog.Infof("Claimed rewards and fees from round %v through %v", lastClaimTokenPoolsSharesRound, currentEndRound)
+			glog.Infof("Claimed rewards and fees from round %v through %v", lastClaimRound, currentEndRound)
 
-			lastClaimTokenPoolsSharesRound = currentEndRound
+			lastClaimRound = currentEndRound
 		}
 
-		// Claim for any remaining rounds s.t. the number of rounds < RoundsPerTokenSharesClaim
-		if lastClaimTokenPoolsSharesRound.Cmp(endRound) == -1 {
-			tx, err := c.BondingManagerSession.ClaimTokenPoolsShares(endRound)
+		// Claim for any remaining rounds s.t. the number of rounds < RoundsPerEarningsClaim
+		if lastClaimRound.Cmp(endRound) == -1 {
+			tx, err := c.BondingManagerSession.ClaimEarnings(endRound)
 			if err != nil {
 				return err
 			}
@@ -542,10 +543,10 @@ func (c *client) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error)
 	return &lpTypes.Transcoder{
 		Address:                addr,
 		LastRewardRound:        tInfo.LastRewardRound,
-		BlockRewardCut:         tInfo.BlockRewardCut,
+		RewardCut:              tInfo.RewardCut,
 		FeeShare:               tInfo.FeeShare,
 		PricePerSegment:        tInfo.PricePerSegment,
-		PendingBlockRewardCut:  tInfo.PendingBlockRewardCut,
+		PendingRewardCut:       tInfo.PendingRewardCut,
 		PendingFeeShare:        tInfo.PendingFeeShare,
 		PendingPricePerSegment: tInfo.PendingPricePerSegment,
 		DelegatedStake:         delegatedStake,
@@ -554,8 +555,8 @@ func (c *client) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error)
 	}, nil
 }
 
-func (c *client) GetTranscoderTokenPoolsForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
-	tp, err := c.BondingManagerSession.GetTranscoderTokenPoolsForRound(addr, round)
+func (c *client) GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
+	tp, err := c.BondingManagerSession.GetTranscoderEarningsPoolForRound(addr, round)
 	if err != nil {
 		return nil, err
 	}
@@ -583,29 +584,33 @@ func (c *client) GetDelegator(addr common.Address) (*lpTypes.Delegator, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	pendingStake, err := c.PendingStake(addr)
+	currentRound, err := c.CurrentRound()
 	if err != nil {
 		return nil, err
 	}
 
-	pendingFees, err := c.PendingFees(addr)
+	pendingStake, err := c.PendingStake(addr, currentRound)
+	if err != nil {
+		return nil, err
+	}
+
+	pendingFees, err := c.PendingFees(addr, currentRound)
 	if err != nil {
 		return nil, err
 	}
 
 	return &lpTypes.Delegator{
-		Address:                        addr,
-		BondedAmount:                   dInfo.BondedAmount,
-		Fees:                           dInfo.Fees,
-		DelegateAddress:                dInfo.DelegateAddress,
-		DelegatedAmount:                dInfo.DelegatedAmount,
-		StartRound:                     dInfo.StartRound,
-		WithdrawRound:                  dInfo.WithdrawRound,
-		LastClaimTokenPoolsSharesRound: dInfo.LastClaimTokenPoolsSharesRound,
-		PendingStake:                   pendingStake,
-		PendingFees:                    pendingFees,
-		Status:                         status,
+		Address:         addr,
+		BondedAmount:    dInfo.BondedAmount,
+		Fees:            dInfo.Fees,
+		DelegateAddress: dInfo.DelegateAddress,
+		DelegatedAmount: dInfo.DelegatedAmount,
+		StartRound:      dInfo.StartRound,
+		WithdrawRound:   dInfo.WithdrawRound,
+		LastClaimRound:  dInfo.LastClaimRound,
+		PendingStake:    pendingStake,
+		PendingFees:     pendingFees,
+		Status:          status,
 	}, nil
 }
 
@@ -653,14 +658,18 @@ func (c *client) GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, err
 	}
 
 	return &lpTypes.Claim{
-		ClaimId:              claimID,
-		SegmentRange:         cInfo.SegmentRange,
-		ClaimRoot:            cInfo.ClaimRoot,
-		ClaimBlock:           cInfo.ClaimBlock,
-		EndVerificationBlock: cInfo.EndVerificationBlock,
-		EndSlashingBlock:     cInfo.EndSlashingBlock,
-		Status:               status,
+		ClaimId:                      claimID,
+		SegmentRange:                 cInfo.SegmentRange,
+		ClaimRoot:                    cInfo.ClaimRoot,
+		ClaimBlock:                   cInfo.ClaimBlock,
+		EndVerificationBlock:         cInfo.EndVerificationBlock,
+		EndVerificationSlashingBlock: cInfo.EndVerificationSlashingBlock,
+		Status: status,
 	}, nil
+}
+
+func (c *client) Paused() (bool, error) {
+	return c.ControllerSession.Paused()
 }
 
 func (c *client) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {

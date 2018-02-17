@@ -90,6 +90,7 @@ func (w *wizard) protocolStats() {
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
+		[]string{"Protocol Paused", fmt.Sprintf("%t", params.Paused)},
 		[]string{"Max # Active Transcoders", params.NumActiveTranscoders.String()},
 		[]string{"RoundLength (Blocks)", params.RoundLength.String()},
 		[]string{"RoundLockAmount (%)", eth.FormatPerc(params.RoundLockAmount)},
@@ -162,10 +163,10 @@ func (w *wizard) transcoderStats() {
 		[]string{"Status", t.Status},
 		[]string{"Active", strconv.FormatBool(t.Active)},
 		[]string{"Delegated Stake", eth.FormatUnits(t.DelegatedStake, "LPT")},
-		[]string{"Reward Cut (%)", eth.FormatPerc(t.BlockRewardCut)},
+		[]string{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
 		[]string{"Fee Share (%)", eth.FormatPerc(t.FeeShare)},
 		[]string{"Price Per Segment", eth.FormatUnits(t.PricePerSegment, "ETH")},
-		[]string{"Pending Reward Cut (%)", eth.FormatPerc(t.PendingBlockRewardCut)},
+		[]string{"Pending Reward Cut (%)", eth.FormatPerc(t.PendingRewardCut)},
 		[]string{"Pending Fee Share (%)", eth.FormatPerc(t.PendingFeeShare)},
 		[]string{"Pending Price Per Segment", eth.FormatUnits(t.PendingPricePerSegment, "ETH")},
 		[]string{"Last Reward Round", t.LastRewardRound.String()},
@@ -202,7 +203,7 @@ func (w *wizard) delegatorStats() {
 		[]string{"Pending Fees", d.PendingFees.String()},
 		[]string{"Delegated Stake", d.DelegatedAmount.String()},
 		[]string{"Delegate Address", d.DelegateAddress.Hex()},
-		[]string{"Last Claim Round", d.LastClaimTokenPoolsSharesRound.String()},
+		[]string{"Last Claim Round", d.LastClaimRound.String()},
 		[]string{"Start Round", d.StartRound.String()},
 		[]string{"Withdraw Round", d.WithdrawRound.String()},
 	}
