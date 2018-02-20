@@ -593,15 +593,23 @@ func (c *client) GetDelegator(addr common.Address) (*lpTypes.Delegator, error) {
 	}
 
 	pendingStake, err := c.PendingStake(addr, currentRound)
-	if err != nil && err.Error() != "abi: unmarshalling empty output" {
-		glog.Infof("Error getting pending stake: %v", err)
-		return nil, err
+	if err != nil {
+		if err.Error() == "abi: unmarshalling empty output" {
+			pendingStake = big.NewInt(-1)
+		} else {
+			glog.Infof("Error getting pending stake: %v", err)
+			return nil, err
+		}
 	}
 
 	pendingFees, err := c.PendingFees(addr, currentRound)
-	if err != nil && err.Error() != "abi: unmarshalling empty output" {
-		glog.Infof("Error getting pending fees: %v", err)
-		return nil, err
+	if err != nil {
+		if err.Error() == "abi: unmarshalling empty output" {
+			pendingFees = big.NewInt(-1)
+		} else {
+			glog.Infof("Error getting pending fees: %v", err)
+			return nil, err
+		}
 	}
 
 	return &lpTypes.Delegator{
