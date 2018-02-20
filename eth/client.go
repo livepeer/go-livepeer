@@ -31,7 +31,7 @@ import (
 )
 
 var (
-	RoundsPerEarningsClaim = big.NewInt(50)
+	RoundsPerEarningsClaim = big.NewInt(20)
 
 	ErrCurrentRoundLocked = fmt.Errorf("current round locked")
 	ErrMissingBackend     = fmt.Errorf("missing Ethereum client backend")
