@@ -370,7 +370,7 @@ func (c *BasicClaimManager) distributeFees(claimID *big.Int) error {
 		return err
 	}
 
-	slashingPeriod, err := c.client.SlashingPeriod()
+	slashingPeriod, err := c.client.VerificationSlashingPeriod()
 	if err != nil {
 		return err
 	}

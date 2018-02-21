@@ -17,10 +17,10 @@ var (
 type Transcoder struct {
 	Address                common.Address
 	LastRewardRound        *big.Int
-	BlockRewardCut         *big.Int
+	RewardCut              *big.Int
 	FeeShare               *big.Int
 	PricePerSegment        *big.Int
-	PendingBlockRewardCut  *big.Int
+	PendingRewardCut       *big.Int
 	PendingFeeShare        *big.Int
 	PendingPricePerSegment *big.Int
 	DelegatedStake         *big.Int
@@ -40,17 +40,17 @@ func ParseTranscoderStatus(s uint8) (string, error) {
 }
 
 type Delegator struct {
-	Address                        common.Address
-	BondedAmount                   *big.Int
-	Fees                           *big.Int
-	DelegateAddress                common.Address
-	DelegatedAmount                *big.Int
-	StartRound                     *big.Int
-	WithdrawRound                  *big.Int
-	LastClaimTokenPoolsSharesRound *big.Int
-	PendingStake                   *big.Int
-	PendingFees                    *big.Int
-	Status                         string
+	Address         common.Address
+	BondedAmount    *big.Int
+	Fees            *big.Int
+	DelegateAddress common.Address
+	DelegatedAmount *big.Int
+	StartRound      *big.Int
+	WithdrawRound   *big.Int
+	LastClaimRound  *big.Int
+	PendingStake    *big.Int
+	PendingFees     *big.Int
+	Status          string
 }
 
 func ParseDelegatorStatus(s uint8) (string, error) {
@@ -101,13 +101,13 @@ func ParseJobStatus(s uint8) (string, error) {
 }
 
 type Claim struct {
-	ClaimId              *big.Int
-	SegmentRange         [2]*big.Int
-	ClaimRoot            [32]byte
-	ClaimBlock           *big.Int
-	EndVerificationBlock *big.Int
-	EndSlashingBlock     *big.Int
-	Status               string
+	ClaimId                      *big.Int
+	SegmentRange                 [2]*big.Int
+	ClaimRoot                    [32]byte
+	ClaimBlock                   *big.Int
+	EndVerificationBlock         *big.Int
+	EndVerificationSlashingBlock *big.Int
+	Status                       string
 }
 
 func ParseClaimStatus(s uint8) (string, error) {
@@ -141,4 +141,5 @@ type ProtocolParameters struct {
 	VerificationCodeHash          string
 	TotalBonded                   *big.Int
 	TotalSupply                   *big.Int
+	Paused                        bool
 }
