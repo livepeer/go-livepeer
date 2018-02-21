@@ -118,7 +118,7 @@ func main() {
 
 		if !*offchain {
 			*ethWsUrl = "ws://ethws-testnet.livepeer.org:8546"
-			*controllerAddr = "0x460e655583c1808d09445645700f4e3bf9740ac0"
+			*controllerAddr = "0x0ec7c08d2c6a45891680c3de2773ee7aac3d4de4"
 		}
 	} else if *rinkeby {
 		*bootID = "122019c1a1f0d9fa2296dccb972e7478c5163415cd55722dcf0123553f397c45df7e"
