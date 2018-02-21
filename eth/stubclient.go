@@ -45,6 +45,7 @@ func (e *StubClient) CurrentRound() (*big.Int, error)              { return big.
 func (e *StubClient) LastInitializedRound() (*big.Int, error)      { return big.NewInt(0), nil }
 func (e *StubClient) CurrentRoundInitialized() (bool, error)       { return false, nil }
 func (e *StubClient) CurrentRoundLocked() (bool, error)            { return false, nil }
+func (e *StubClient) Paused() (bool, error)                        { return false, nil }
 
 // Token
 
@@ -67,12 +68,12 @@ func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (*types.Transa
 func (e *StubClient) Unbond() (*types.Transaction, error)        { return nil, nil }
 func (e *StubClient) WithdrawStake() (*types.Transaction, error) { return nil, nil }
 func (e *StubClient) WithdrawFees() (*types.Transaction, error)  { return nil, nil }
-func (e *StubClient) ClaimTokenPoolsShares(endRound *big.Int) error {
+func (e *StubClient) ClaimEarnings(endRound *big.Int) error {
 	return nil
 }
 func (e *StubClient) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) { return nil, nil }
 func (e *StubClient) GetDelegator(addr common.Address) (*lpTypes.Delegator, error)   { return nil, nil }
-func (e *StubClient) GetTranscoderTokenPoolsForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
+func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
 	return nil, nil
 }
 func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) { return nil, nil }
@@ -130,7 +131,7 @@ func (c *StubClient) RoundLockAmount() (*big.Int, error)               { return 
 func (c *StubClient) UnbondingPeriod() (uint64, error)                 { return 0, nil }
 func (c *StubClient) VerificationRate() (uint64, error)                { return 0, nil }
 func (c *StubClient) VerificationPeriod() (*big.Int, error)            { return big.NewInt(0), nil }
-func (c *StubClient) SlashingPeriod() (*big.Int, error)                { return big.NewInt(0), nil }
+func (c *StubClient) VerificationSlashingPeriod() (*big.Int, error)    { return big.NewInt(0), nil }
 func (c *StubClient) FailedVerificationSlashAmount() (*big.Int, error) { return big.NewInt(0), nil }
 func (c *StubClient) MissedVerificationSlashAmount() (*big.Int, error) { return big.NewInt(0), nil }
 func (c *StubClient) DoubleClaimSegmentSlashAmount() (*big.Int, error) { return big.NewInt(0), nil }

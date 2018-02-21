@@ -399,7 +399,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/claimTokenPoolsShares", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/claimEarnings", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			if err := r.ParseForm(); err != nil {
 				glog.Errorf("Parse Form Error: %v", err)
@@ -417,7 +417,7 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
-			err = s.LivepeerNode.Eth.ClaimTokenPoolsShares(endRound)
+			err = s.LivepeerNode.Eth.ClaimEarnings(endRound)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -444,7 +444,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/transcoderTokenPoolsForRound", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/transcoderEarningPoolsForRound", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			roundStr := r.URL.Query().Get("round")
 			round, err := lpcommon.ParseBigInt(roundStr)
@@ -453,7 +453,7 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
-			tp, err := s.LivepeerNode.Eth.GetTranscoderTokenPoolsForRound(s.LivepeerNode.Eth.Account().Address, round)
+			tp, err := s.LivepeerNode.Eth.GetTranscoderEarningsPoolForRound(s.LivepeerNode.Eth.Account().Address, round)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -660,7 +660,7 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
-			slashingPeriod, err := lp.SlashingPeriod()
+			slashingPeriod, err := lp.VerificationSlashingPeriod()
 			if err != nil {
 				glog.Error(err)
 				return
@@ -726,6 +726,12 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
+			paused, err := lp.Paused()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
 			params := &lpTypes.ProtocolParameters{
 				NumActiveTranscoders:          numActiveTranscoders,
 				RoundLength:                   roundLength,
@@ -744,6 +750,7 @@ func (s *LivepeerServer) StartWebserver() {
 				VerificationCodeHash:          verificationCodeHash,
 				TotalBonded:                   totalBonded,
 				TotalSupply:                   totalSupply,
+				Paused:                        paused,
 			}
 
 			data, err := json.Marshal(params)

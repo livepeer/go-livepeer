@@ -14,7 +14,7 @@ import (
 )
 
 // RoundsManagerABI is the input ABI used to generate the binding from.
-const RoundsManagerABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundInitialized\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_roundLength\",\"type\":\"uint256\"}],\"name\":\"setRoundLength\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundLocked\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_block\",\"type\":\"uint256\"}],\"name\":\"blockHash\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"lastInitializedRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_roundLength\",\"type\":\"uint256\"},{\"name\":\"_roundLockAmount\",\"type\":\"uint256\"}],\"name\":\"setParameters\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"blockNum\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"roundLength\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundStartBlock\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"initializeRound\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"roundLockAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"round\",\"type\":\"uint256\"}],\"name\":\"NewRound\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"}]"
+const RoundsManagerABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"lastRoundLengthUpdateRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"lastRoundLengthUpdateStartBlock\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"lastInitializedRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"roundLength\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"roundLockAmount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"round\",\"type\":\"uint256\"}],\"name\":\"NewRound\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"name\":\"_roundLength\",\"type\":\"uint256\"}],\"name\":\"setRoundLength\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_roundLockAmount\",\"type\":\"uint256\"}],\"name\":\"setRoundLockAmount\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"initializeRound\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"blockNum\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_block\",\"type\":\"uint256\"}],\"name\":\"blockHash\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRound\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundStartBlock\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundInitialized\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundLocked\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
 
 // RoundsManager is an auto generated Go binding around an Ethereum contract.
 type RoundsManager struct {
@@ -351,6 +351,58 @@ func (_RoundsManager *RoundsManagerCallerSession) LastInitializedRound() (*big.I
 	return _RoundsManager.Contract.LastInitializedRound(&_RoundsManager.CallOpts)
 }
 
+// LastRoundLengthUpdateRound is a free data retrieval call binding the contract method 0x0fe1dfa8.
+//
+// Solidity: function lastRoundLengthUpdateRound() constant returns(uint256)
+func (_RoundsManager *RoundsManagerCaller) LastRoundLengthUpdateRound(opts *bind.CallOpts) (*big.Int, error) {
+	var (
+		ret0 = new(*big.Int)
+	)
+	out := ret0
+	err := _RoundsManager.contract.Call(opts, out, "lastRoundLengthUpdateRound")
+	return *ret0, err
+}
+
+// LastRoundLengthUpdateRound is a free data retrieval call binding the contract method 0x0fe1dfa8.
+//
+// Solidity: function lastRoundLengthUpdateRound() constant returns(uint256)
+func (_RoundsManager *RoundsManagerSession) LastRoundLengthUpdateRound() (*big.Int, error) {
+	return _RoundsManager.Contract.LastRoundLengthUpdateRound(&_RoundsManager.CallOpts)
+}
+
+// LastRoundLengthUpdateRound is a free data retrieval call binding the contract method 0x0fe1dfa8.
+//
+// Solidity: function lastRoundLengthUpdateRound() constant returns(uint256)
+func (_RoundsManager *RoundsManagerCallerSession) LastRoundLengthUpdateRound() (*big.Int, error) {
+	return _RoundsManager.Contract.LastRoundLengthUpdateRound(&_RoundsManager.CallOpts)
+}
+
+// LastRoundLengthUpdateStartBlock is a free data retrieval call binding the contract method 0x668abff7.
+//
+// Solidity: function lastRoundLengthUpdateStartBlock() constant returns(uint256)
+func (_RoundsManager *RoundsManagerCaller) LastRoundLengthUpdateStartBlock(opts *bind.CallOpts) (*big.Int, error) {
+	var (
+		ret0 = new(*big.Int)
+	)
+	out := ret0
+	err := _RoundsManager.contract.Call(opts, out, "lastRoundLengthUpdateStartBlock")
+	return *ret0, err
+}
+
+// LastRoundLengthUpdateStartBlock is a free data retrieval call binding the contract method 0x668abff7.
+//
+// Solidity: function lastRoundLengthUpdateStartBlock() constant returns(uint256)
+func (_RoundsManager *RoundsManagerSession) LastRoundLengthUpdateStartBlock() (*big.Int, error) {
+	return _RoundsManager.Contract.LastRoundLengthUpdateStartBlock(&_RoundsManager.CallOpts)
+}
+
+// LastRoundLengthUpdateStartBlock is a free data retrieval call binding the contract method 0x668abff7.
+//
+// Solidity: function lastRoundLengthUpdateStartBlock() constant returns(uint256)
+func (_RoundsManager *RoundsManagerCallerSession) LastRoundLengthUpdateStartBlock() (*big.Int, error) {
+	return _RoundsManager.Contract.LastRoundLengthUpdateStartBlock(&_RoundsManager.CallOpts)
+}
+
 // RoundLength is a free data retrieval call binding the contract method 0x8b649b94.
 //
 // Solidity: function roundLength() constant returns(uint256)
@@ -471,27 +523,6 @@ func (_RoundsManager *RoundsManagerTransactorSession) SetController(_controller 
 	return _RoundsManager.Contract.SetController(&_RoundsManager.TransactOpts, _controller)
 }
 
-// SetParameters is a paid mutator transaction binding the contract method 0x884870c7.
-//
-// Solidity: function setParameters(_roundLength uint256, _roundLockAmount uint256) returns()
-func (_RoundsManager *RoundsManagerTransactor) SetParameters(opts *bind.TransactOpts, _roundLength *big.Int, _roundLockAmount *big.Int) (*types.Transaction, error) {
-	return _RoundsManager.contract.Transact(opts, "setParameters", _roundLength, _roundLockAmount)
-}
-
-// SetParameters is a paid mutator transaction binding the contract method 0x884870c7.
-//
-// Solidity: function setParameters(_roundLength uint256, _roundLockAmount uint256) returns()
-func (_RoundsManager *RoundsManagerSession) SetParameters(_roundLength *big.Int, _roundLockAmount *big.Int) (*types.Transaction, error) {
-	return _RoundsManager.Contract.SetParameters(&_RoundsManager.TransactOpts, _roundLength, _roundLockAmount)
-}
-
-// SetParameters is a paid mutator transaction binding the contract method 0x884870c7.
-//
-// Solidity: function setParameters(_roundLength uint256, _roundLockAmount uint256) returns()
-func (_RoundsManager *RoundsManagerTransactorSession) SetParameters(_roundLength *big.Int, _roundLockAmount *big.Int) (*types.Transaction, error) {
-	return _RoundsManager.Contract.SetParameters(&_RoundsManager.TransactOpts, _roundLength, _roundLockAmount)
-}
-
 // SetRoundLength is a paid mutator transaction binding the contract method 0x681312f5.
 //
 // Solidity: function setRoundLength(_roundLength uint256) returns()
@@ -511,4 +542,25 @@ func (_RoundsManager *RoundsManagerSession) SetRoundLength(_roundLength *big.Int
 // Solidity: function setRoundLength(_roundLength uint256) returns()
 func (_RoundsManager *RoundsManagerTransactorSession) SetRoundLength(_roundLength *big.Int) (*types.Transaction, error) {
 	return _RoundsManager.Contract.SetRoundLength(&_RoundsManager.TransactOpts, _roundLength)
+}
+
+// SetRoundLockAmount is a paid mutator transaction binding the contract method 0x0b1573b8.
+//
+// Solidity: function setRoundLockAmount(_roundLockAmount uint256) returns()
+func (_RoundsManager *RoundsManagerTransactor) SetRoundLockAmount(opts *bind.TransactOpts, _roundLockAmount *big.Int) (*types.Transaction, error) {
+	return _RoundsManager.contract.Transact(opts, "setRoundLockAmount", _roundLockAmount)
+}
+
+// SetRoundLockAmount is a paid mutator transaction binding the contract method 0x0b1573b8.
+//
+// Solidity: function setRoundLockAmount(_roundLockAmount uint256) returns()
+func (_RoundsManager *RoundsManagerSession) SetRoundLockAmount(_roundLockAmount *big.Int) (*types.Transaction, error) {
+	return _RoundsManager.Contract.SetRoundLockAmount(&_RoundsManager.TransactOpts, _roundLockAmount)
+}
+
+// SetRoundLockAmount is a paid mutator transaction binding the contract method 0x0b1573b8.
+//
+// Solidity: function setRoundLockAmount(_roundLockAmount uint256) returns()
+func (_RoundsManager *RoundsManagerTransactorSession) SetRoundLockAmount(_roundLockAmount *big.Int) (*types.Transaction, error) {
+	return _RoundsManager.Contract.SetRoundLockAmount(&_RoundsManager.TransactOpts, _roundLockAmount)
 }

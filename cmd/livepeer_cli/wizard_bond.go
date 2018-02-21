@@ -40,10 +40,10 @@ func (w *wizard) registeredTranscoderStats() map[int]common.Address {
 			t.Address.Hex(),
 			strconv.FormatBool(t.Active),
 			eth.FormatUnits(t.DelegatedStake, "LPT"),
-			eth.FormatPerc(t.BlockRewardCut),
+			eth.FormatPerc(t.RewardCut),
 			eth.FormatPerc(t.FeeShare),
 			eth.FormatUnits(t.PricePerSegment, "ETH"),
-			eth.FormatPerc(t.PendingBlockRewardCut),
+			eth.FormatPerc(t.PendingRewardCut),
 			eth.FormatPerc(t.PendingFeeShare),
 			eth.FormatUnits(t.PendingPricePerSegment, "ETH"),
 		})
@@ -127,7 +127,7 @@ func (w *wizard) claimRewardsAndFees() {
 		return
 	}
 
-	fmt.Printf("Last claim round: %v\n", d.LastClaimTokenPoolsSharesRound)
+	fmt.Printf("Last claim round: %v\n", d.LastClaimRound)
 
 	fmt.Printf("Enter end round - ")
 	endRound := w.readBigInt()
@@ -136,5 +136,5 @@ func (w *wizard) claimRewardsAndFees() {
 		"endRound": {fmt.Sprintf("%v", endRound.String())},
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/claimTokenPoolsShares", w.host, w.httpPort), val)
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/claimEarnings", w.host, w.httpPort), val)
 }

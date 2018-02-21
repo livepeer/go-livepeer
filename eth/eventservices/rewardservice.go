@@ -86,7 +86,7 @@ func (s *RewardService) tryReward(round *big.Int) (bool, error) {
 		return false, err
 	}
 
-	tp, err := s.client.GetTranscoderTokenPoolsForRound(s.client.Account().Address, round)
+	tp, err := s.client.GetTranscoderEarningsPoolForRound(s.client.Account().Address, round)
 	if err != nil {
 		return false, err
 	}
