@@ -43,13 +43,13 @@ Please get `ffmpeg` from the [ffmpeg-static repo](https://github.com/livepeer/ff
 ### Quick start
 - Make sure you have successfully gone through the steps in 'Installing Livepeer' and 'Additional Dependencies'.
 
-- Run `./livepeer -testnet`. 
+- Run `./livepeer -rinkeby`. 
 
 - Run `./livepeer_cli`.
   * You should see a wizard launch in the command line. 
   * The wizard should print out `Account Eth Addr`, `Token balance`, and `Eth balance`
 
-- Get some test eth from the eth faucet from [http://eth-testnet.livepeer.org/](http://eth-testnet.livepeer.org/). Make sure to use the Eth account address from above. Remember to add 0x as a prefix to address, if not present.
+- Get some test eth for the Rinkeby faucet. Make sure to use the Eth account address from above. Remember to add 0x as a prefix to address, if not present.
   * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see a positive `Eth balance`.
 
 - Now get some test Livepeer tokens. Pick `Get test Livepeer Token`.  
@@ -90,7 +90,7 @@ For example, after you get the streamID, you can view the stream by running:
 
 We'll walk through the steps of becoming a transcoder on the test network.  To learn more about the transcoder, refer to the [Livepeer whitepaper](https://github.com/livepeer/wiki/blob/master/WHITEPAPER.md)
 
-- `livepeer --testnet --transcoder` to start the node as a transcoder.
+- `livepeer --rinkeby --transcoder` to start the node as a transcoder.
 
 - `livepeer_cli` - make sure you have test ether and test Livepeer token.  Refer to the Quick Start section for getting test ether and test tokens.
 
