@@ -165,7 +165,7 @@ func (w *wizard) doCLIOpt(choice string, transcoder bool) {
 		w.requestTokens()
 		return
 	case "11":
-		fmt.Print("Go to eth-testnet.livepeer.org and use the faucet. (enter to continue)")
+		fmt.Print("For Rinkeby, go to the Rinkeby faucet (https://faucet.rinkeby.io/).  For the Livepeer testnet, go to the Livepeer faucet (eth-testnet.livepeer.org). (enter to continue)")
 		w.read()
 		return
 	case "12":

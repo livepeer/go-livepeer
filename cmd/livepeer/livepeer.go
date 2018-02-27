@@ -98,7 +98,7 @@ func main() {
 	controllerAddr := flag.String("controllerAddr", "", "Protocol smart contract address")
 	gasLimit := flag.Int("gasLimit", 4000000, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
-	monitor := flag.Bool("monitor", true, "Set to true to send performance metrics")
+	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
 	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
