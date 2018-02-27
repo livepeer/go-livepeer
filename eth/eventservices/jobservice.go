@@ -134,7 +134,7 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 
 	firstClaimBlock := new(big.Int).Add(job.CreationBlock, eth.BlocksUntilFirstClaimDeadline)
 	headersCh := make(chan *types.Header)
-	s.eventMonitor.SubscribeNewBlock(context.Background(), "FirstClaim", headersCh, func(h *types.Header) (bool, error) {
+	s.eventMonitor.SubscribeNewBlock(context.Background(), fmt.Sprintf("FirstClaimForJob%v", job.JobId), headersCh, func(h *types.Header) (bool, error) {
 		if cm.DidFirstClaim() {
 			// If the first claim has already been made then exit
 			return false, nil
