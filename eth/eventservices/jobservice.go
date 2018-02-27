@@ -43,7 +43,7 @@ func (s *JobService) Start(ctx context.Context) error {
 	}
 
 	logsCh := make(chan types.Log)
-	sub, err := s.eventMonitor.SubscribeNewJob(ctx, logsCh, common.Address{}, func(l types.Log) (bool, error) {
+	sub, err := s.eventMonitor.SubscribeNewJob(ctx, "NewJob", logsCh, common.Address{}, func(l types.Log) (bool, error) {
 		_, jid, _, _ := parseNewJobLog(l)
 
 		job, err := s.node.Eth.GetJob(jid)
@@ -134,7 +134,7 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 
 	firstClaimBlock := new(big.Int).Add(job.CreationBlock, eth.BlocksUntilFirstClaimDeadline)
 	headersCh := make(chan *types.Header)
-	s.eventMonitor.SubscribeNewBlock(context.Background(), headersCh, func(h *types.Header) (bool, error) {
+	s.eventMonitor.SubscribeNewBlock(context.Background(), "FirstClaim", headersCh, func(h *types.Header) (bool, error) {
 		if cm.DidFirstClaim() {
 			// If the first claim has already been made then exit
 			return false, nil

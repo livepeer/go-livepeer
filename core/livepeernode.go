@@ -52,15 +52,16 @@ type PeerConn struct {
 
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
-	Identity     NodeID
-	Addrs        []string
-	VideoNetwork net.VideoNetwork
-	VideoCache   VideoCache
-	Eth          eth.LivepeerEthClient
-	EthServices  []eth.EventService
-	Ipfs         ipfs.IpfsApi
-	WorkDir      string
-	PeerConns    []PeerConn
+	Identity        NodeID
+	Addrs           []string
+	VideoNetwork    net.VideoNetwork
+	VideoCache      VideoCache
+	Eth             eth.LivepeerEthClient
+	EthEventMonitor eth.EventMonitor
+	EthServices     []eth.EventService
+	Ipfs            ipfs.IpfsApi
+	WorkDir         string
+	PeerConns       []PeerConn
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.

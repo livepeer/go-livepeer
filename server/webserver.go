@@ -620,6 +620,21 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
+	http.HandleFunc("/transcoderEventSubscriptions", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			activeEventSubMap := s.LivepeerNode.EthEventMonitor.EventSubscriptions()
+
+			data, err := json.Marshal(activeEventSubMap)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+		}
+	})
+
 	http.HandleFunc("/protocolParameters", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			lp := s.LivepeerNode.Eth

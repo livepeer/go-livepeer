@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/ethereum/go-ethereum"
@@ -17,24 +18,35 @@ type logCallback func(types.Log) (bool, error)
 type headerCallback func(*types.Header) (bool, error)
 
 type EventMonitor interface {
-	SubscribeNewJob(context.Context, chan types.Log, common.Address, logCallback) (ethereum.Subscription, error)
-	SubscribeNewRound(context.Context, chan types.Log, logCallback) (ethereum.Subscription, error)
-	SubscribeNewBlock(context.Context, chan *types.Header, headerCallback) (ethereum.Subscription, error)
+	SubscribeNewJob(context.Context, string, chan types.Log, common.Address, logCallback) (ethereum.Subscription, error)
+	SubscribeNewRound(context.Context, string, chan types.Log, logCallback) (ethereum.Subscription, error)
+	SubscribeNewBlock(context.Context, string, chan *types.Header, headerCallback) (ethereum.Subscription, error)
+	EventSubscriptions() map[string]bool
 }
 
 type eventMonitor struct {
-	backend         *ethclient.Client
-	contractAddrMap map[string]common.Address
+	backend           *ethclient.Client
+	contractAddrMap   map[string]common.Address
+	activeEventSubMap map[string]bool
 }
 
 func NewEventMonitor(backend *ethclient.Client, contractAddrMap map[string]common.Address) EventMonitor {
 	return &eventMonitor{
-		backend:         backend,
-		contractAddrMap: contractAddrMap,
+		backend:           backend,
+		contractAddrMap:   contractAddrMap,
+		activeEventSubMap: make(map[string]bool),
 	}
 }
 
-func (em *eventMonitor) SubscribeNewRound(ctx context.Context, logsCh chan types.Log, cb logCallback) (ethereum.Subscription, error) {
+func (em *eventMonitor) EventSubscriptions() map[string]bool {
+	return em.activeEventSubMap
+}
+
+func (em *eventMonitor) SubscribeNewRound(ctx context.Context, subName string, logsCh chan types.Log, cb logCallback) (ethereum.Subscription, error) {
+	if _, ok := em.activeEventSubMap[subName]; ok {
+		return nil, fmt.Errorf("Event subscription already registered as active with name: %v", subName)
+	}
+
 	abiJSON, err := abi.JSON(strings.NewReader(contracts.RoundsManagerABI))
 	if err != nil {
 		return nil, err
@@ -53,12 +65,18 @@ func (em *eventMonitor) SubscribeNewRound(ctx context.Context, logsCh chan types
 		return nil, err
 	}
 
-	go watchLogs(sub, logsCh, cb)
+	em.setSubActive(subName)
+
+	go em.watchLogs(subName, sub, logsCh, cb)
 
 	return sub, nil
 }
 
-func (em *eventMonitor) SubscribeNewJob(ctx context.Context, logsCh chan types.Log, broadcasterAddr common.Address, cb logCallback) (ethereum.Subscription, error) {
+func (em *eventMonitor) SubscribeNewJob(ctx context.Context, subName string, logsCh chan types.Log, broadcasterAddr common.Address, cb logCallback) (ethereum.Subscription, error) {
+	if _, ok := em.activeEventSubMap[subName]; ok {
+		return nil, fmt.Errorf("Event subscription already registered as active with name: %v", subName)
+	}
+
 	abiJSON, err := abi.JSON(strings.NewReader(contracts.JobsManagerABI))
 	if err != nil {
 		return nil, err
@@ -85,23 +103,41 @@ func (em *eventMonitor) SubscribeNewJob(ctx context.Context, logsCh chan types.L
 		return nil, err
 	}
 
-	go watchLogs(sub, logsCh, cb)
+	em.setSubActive(subName)
+
+	go em.watchLogs(subName, sub, logsCh, cb)
 
 	return sub, nil
 }
 
-func (es *eventMonitor) SubscribeNewBlock(ctx context.Context, headersCh chan *types.Header, cb headerCallback) (ethereum.Subscription, error) {
-	sub, err := es.backend.SubscribeNewHead(ctx, headersCh)
+func (em *eventMonitor) SubscribeNewBlock(ctx context.Context, subName string, headersCh chan *types.Header, cb headerCallback) (ethereum.Subscription, error) {
+	if _, ok := em.activeEventSubMap[subName]; ok {
+		return nil, fmt.Errorf("Event subscription already registered as active with name: %v", subName)
+	}
+
+	sub, err := em.backend.SubscribeNewHead(ctx, headersCh)
 	if err != nil {
 		return nil, err
 	}
 
-	go watchBlocks(sub, headersCh, cb)
+	em.setSubActive(subName)
+
+	go em.watchBlocks(subName, sub, headersCh, cb)
 
 	return sub, nil
 }
 
-func watchLogs(sub ethereum.Subscription, logsCh chan types.Log, cb logCallback) {
+func (em *eventMonitor) setSubActive(subName string) {
+	em.activeEventSubMap[subName] = true
+}
+
+func (em *eventMonitor) setSubInactive(subName string) {
+	em.activeEventSubMap[subName] = false
+}
+
+func (em *eventMonitor) watchLogs(subName string, sub ethereum.Subscription, logsCh chan types.Log, cb logCallback) {
+	defer em.setSubInactive(subName)
+
 	for {
 		select {
 		case l, ok := <-logsCh:
@@ -112,7 +148,6 @@ func watchLogs(sub ethereum.Subscription, logsCh chan types.Log, cb logCallback)
 			watch, err := cb(l)
 			if err != nil {
 				glog.Errorf("Error with log callback: %v", err)
-				return
 			}
 
 			if !watch {
@@ -126,7 +161,9 @@ func watchLogs(sub ethereum.Subscription, logsCh chan types.Log, cb logCallback)
 	}
 }
 
-func watchBlocks(sub ethereum.Subscription, headersCh chan *types.Header, cb headerCallback) {
+func (em *eventMonitor) watchBlocks(subName string, sub ethereum.Subscription, headersCh chan *types.Header, cb headerCallback) {
+	defer em.setSubInactive(subName)
+
 	for {
 		select {
 		case h, ok := <-headersCh:
@@ -137,7 +174,6 @@ func watchBlocks(sub ethereum.Subscription, headersCh chan *types.Header, cb hea
 			watch, err := cb(h)
 			if err != nil {
 				glog.Errorf("Error with header callback: %v", err)
-				return
 			}
 
 			if !watch {

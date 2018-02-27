@@ -39,7 +39,7 @@ func (s *RoundsService) Start(ctx context.Context) error {
 	}
 
 	headersCh := make(chan *types.Header)
-	sub, err := s.eventMonitor.SubscribeNewBlock(ctx, headersCh, func(h *types.Header) (bool, error) {
+	sub, err := s.eventMonitor.SubscribeNewBlock(ctx, "NewRound", headersCh, func(h *types.Header) (bool, error) {
 		return s.tryInitializeRound(h.Number, h.Hash())
 	})
 
@@ -70,25 +70,25 @@ func (s *RoundsService) Stop() error {
 func (s *RoundsService) tryInitializeRound(blkNum *big.Int, blkHash common.Hash) (bool, error) {
 	currentRound, err := s.client.CurrentRound()
 	if err != nil {
-		return false, err
+		return true, err
 	}
 
 	lastInitializedRound, err := s.client.LastInitializedRound()
 	if err != nil {
-		return false, err
+		return true, err
 	}
 
 	if lastInitializedRound.Cmp(currentRound) == -1 {
 		roundLength, err := s.client.RoundLength()
 		if err != nil {
-			return false, err
+			return true, err
 		}
 
 		currentRoundStartBlock := new(big.Int).Mul(currentRound, roundLength)
 
 		shouldInitialize, err := s.shouldInitializeRound(currentRoundStartBlock, blkNum, blkHash)
 		if err != nil {
-			return false, err
+			return true, err
 		}
 
 		if shouldInitialize {
@@ -96,12 +96,36 @@ func (s *RoundsService) tryInitializeRound(blkNum *big.Int, blkHash common.Hash)
 
 			tx, err := s.client.InitializeRound()
 			if err != nil {
-				return false, err
+				return true, err
 			}
 
 			err = s.client.CheckTx(tx)
 			if err != nil {
-				return false, err
+				txErr := err
+				// If the round initialization tx failed, either someone manually
+				// initialized the round already or something else went wrong
+				// First check if someone manually initialized the round by
+				// checking if the current round is now initialized
+				currentRound, err = s.client.CurrentRound()
+				if err != nil {
+					return true, err
+				}
+
+				lastInitializedRound, err = s.client.LastInitializedRound()
+				if err != nil {
+					return true, err
+				}
+
+				if lastInitializedRound.Cmp(currentRound) == -1 {
+					// The current round is not initialized so
+					// no one manually initialized the round so
+					// something else went wrong - stop watching
+					return false, txErr
+				} else {
+					// The current round is initialized so
+					// someone manually initialized the round - keep watching
+					return true, nil
+				}
 			}
 
 			glog.Infof("Initialized round %v", currentRound)
