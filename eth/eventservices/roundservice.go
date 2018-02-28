@@ -68,17 +68,17 @@ func (s *RoundsService) Stop() error {
 }
 
 func (s *RoundsService) tryInitializeRound(blkNum *big.Int, blkHash common.Hash) (bool, error) {
-	currentRound, err := s.client.CurrentRound()
+	initialized, err := s.client.CurrentRoundInitialized()
 	if err != nil {
 		return true, err
 	}
 
-	lastInitializedRound, err := s.client.LastInitializedRound()
-	if err != nil {
-		return true, err
-	}
+	if !initialized {
+		currentRound, err := s.client.CurrentRound()
+		if err != nil {
+			return true, err
+		}
 
-	if lastInitializedRound.Cmp(currentRound) == -1 {
 		roundLength, err := s.client.RoundLength()
 		if err != nil {
 			return true, err
@@ -106,17 +106,12 @@ func (s *RoundsService) tryInitializeRound(blkNum *big.Int, blkHash common.Hash)
 				// initialized the round already or something else went wrong
 				// First check if someone manually initialized the round by
 				// checking if the current round is now initialized
-				currentRound, err = s.client.CurrentRound()
+				initialized, err = s.client.CurrentRoundInitialized()
 				if err != nil {
 					return true, err
 				}
 
-				lastInitializedRound, err = s.client.LastInitializedRound()
-				if err != nil {
-					return true, err
-				}
-
-				if lastInitializedRound.Cmp(currentRound) == -1 {
+				if !initialized {
 					// The current round is not initialized so
 					// no one manually initialized the round so
 					// something else went wrong - stop watching
