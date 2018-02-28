@@ -451,6 +451,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	}
 
 	n.Ipfs = ipfsApi
+	n.EthEventMonitor = em
 
 	// Create rounds service to initialize round if it has not already been initialized
 	rds := eventservices.NewRoundsService(em, n.Eth)

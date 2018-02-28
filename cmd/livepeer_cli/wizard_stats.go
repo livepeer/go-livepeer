@@ -53,6 +53,7 @@ func (w *wizard) stats(showTranscoder bool) {
 
 	if showTranscoder {
 		w.transcoderStats()
+		w.transcoderEventSubscriptions()
 		w.delegatorStats()
 	} else {
 		w.broadcastStats()
@@ -170,6 +171,35 @@ func (w *wizard) transcoderStats() {
 		[]string{"Pending Fee Share (%)", eth.FormatPerc(t.PendingFeeShare)},
 		[]string{"Pending Price Per Segment", eth.FormatUnits(t.PendingPricePerSegment, "ETH")},
 		[]string{"Last Reward Round", t.LastRewardRound.String()},
+	}
+
+	for _, v := range data {
+		table.Append(v)
+	}
+
+	table.SetAlignment(tablewriter.ALIGN_RIGHT)
+	table.SetCenterSeparator("*")
+	table.SetRowLine(true)
+	table.SetColumnSeparator("|")
+	table.Render()
+}
+
+func (w *wizard) transcoderEventSubscriptions() {
+	subMap, err := w.getTranscoderEventSubscriptions()
+	if err != nil {
+		glog.Errorf("Error getting transcoder event subscriptions: %v", err)
+		return
+	}
+
+	fmt.Println("+------------------------------+")
+	fmt.Println("|TRANSCODER EVENT SUBSCRIPTIONS|")
+	fmt.Println("+------------------------------+")
+
+	table := tablewriter.NewWriter(os.Stdout)
+	data := [][]string{
+		[]string{"Watching for new rounds to initialize", strconv.FormatBool(subMap["NewRound"])},
+		[]string{"Watching for initialized rounds to call reward", strconv.FormatBool(subMap["RoundInitialized"])},
+		[]string{"Watching for new jobs", strconv.FormatBool(subMap["NewJob"])},
 	}
 
 	for _, v := range data {
@@ -361,6 +391,28 @@ func (w *wizard) getTranscoderInfo() (lpTypes.Transcoder, error) {
 	}
 
 	return tInfo, nil
+}
+
+func (w *wizard) getTranscoderEventSubscriptions() (map[string]bool, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/transcoderEventSubscriptions", w.host, w.httpPort))
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var subMap map[string]bool
+	err = json.Unmarshal(result, &subMap)
+	if err != nil {
+		return nil, err
+	}
+
+	return subMap, nil
 }
 
 func (w *wizard) getDelegatorInfo() (lpTypes.Delegator, error) {

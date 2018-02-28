@@ -36,7 +36,7 @@ func (s *RewardService) Start(ctx context.Context) error {
 	}
 
 	logsCh := make(chan types.Log)
-	sub, err := s.eventMonitor.SubscribeNewRound(ctx, logsCh, func(l types.Log) (bool, error) {
+	sub, err := s.eventMonitor.SubscribeNewRound(ctx, "RoundInitialized", logsCh, func(l types.Log) (bool, error) {
 		round := parseNewRoundLog(l)
 		return s.tryReward(round)
 	})
