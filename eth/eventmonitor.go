@@ -24,26 +24,41 @@ type EventMonitor interface {
 	EventSubscriptions() map[string]bool
 }
 
+type EventSubscription struct {
+	sub       ethereum.Subscription
+	logsCh    chan types.Log
+	headersCh chan *types.Header
+	active    bool
+}
+
 type eventMonitor struct {
-	backend           *ethclient.Client
-	contractAddrMap   map[string]common.Address
-	activeEventSubMap map[string]bool
+	backend         *ethclient.Client
+	contractAddrMap map[string]common.Address
+	eventSubMap     map[string]*EventSubscription
 }
 
 func NewEventMonitor(backend *ethclient.Client, contractAddrMap map[string]common.Address) EventMonitor {
 	return &eventMonitor{
-		backend:           backend,
-		contractAddrMap:   contractAddrMap,
-		activeEventSubMap: make(map[string]bool),
+		backend:         backend,
+		contractAddrMap: contractAddrMap,
+		eventSubMap:     make(map[string]*EventSubscription),
 	}
 }
 
 func (em *eventMonitor) EventSubscriptions() map[string]bool {
-	return em.activeEventSubMap
+	activeSubMap := make(map[string]bool)
+
+	for k, v := range em.eventSubMap {
+		if v.active {
+			activeSubMap[k] = true
+		}
+	}
+
+	return activeSubMap
 }
 
 func (em *eventMonitor) SubscribeNewRound(ctx context.Context, subName string, logsCh chan types.Log, cb logCallback) (ethereum.Subscription, error) {
-	if _, ok := em.activeEventSubMap[subName]; ok {
+	if _, ok := em.eventSubMap[subName]; ok {
 		return nil, fmt.Errorf("Event subscription already registered as active with name: %v", subName)
 	}
 
@@ -65,15 +80,29 @@ func (em *eventMonitor) SubscribeNewRound(ctx context.Context, subName string, l
 		return nil, err
 	}
 
-	em.setSubActive(subName)
+	em.eventSubMap[subName] = &EventSubscription{
+		sub:    sub,
+		logsCh: logsCh,
+	}
 
-	go em.watchLogs(subName, sub, logsCh, cb)
+	go em.watchLogs(subName, cb, func() {
+		glog.Infof("Trying to resubscribe for %v", subName)
+
+		sub, err = em.backend.SubscribeFilterLogs(ctx, q, logsCh)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		em.eventSubMap[subName].sub = sub
+		em.eventSubMap[subName].logsCh = logsCh
+	})
 
 	return sub, nil
 }
 
 func (em *eventMonitor) SubscribeNewJob(ctx context.Context, subName string, logsCh chan types.Log, broadcasterAddr common.Address, cb logCallback) (ethereum.Subscription, error) {
-	if _, ok := em.activeEventSubMap[subName]; ok {
+	if _, ok := em.eventSubMap[subName]; ok {
 		return nil, fmt.Errorf("Event subscription already registered as active with name: %v", subName)
 	}
 
@@ -103,15 +132,29 @@ func (em *eventMonitor) SubscribeNewJob(ctx context.Context, subName string, log
 		return nil, err
 	}
 
-	em.setSubActive(subName)
+	em.eventSubMap[subName] = &EventSubscription{
+		sub:    sub,
+		logsCh: logsCh,
+	}
 
-	go em.watchLogs(subName, sub, logsCh, cb)
+	go em.watchLogs(subName, cb, func() {
+		glog.Infof("Trying to resubscribe for %v", subName)
+
+		sub, err = em.backend.SubscribeFilterLogs(ctx, q, logsCh)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		em.eventSubMap[subName].sub = sub
+		em.eventSubMap[subName].logsCh = logsCh
+	})
 
 	return sub, nil
 }
 
 func (em *eventMonitor) SubscribeNewBlock(ctx context.Context, subName string, headersCh chan *types.Header, cb headerCallback) (ethereum.Subscription, error) {
-	if _, ok := em.activeEventSubMap[subName]; ok {
+	if _, ok := em.eventSubMap[subName]; ok {
 		return nil, fmt.Errorf("Event subscription already registered as active with name: %v", subName)
 	}
 
@@ -120,58 +163,77 @@ func (em *eventMonitor) SubscribeNewBlock(ctx context.Context, subName string, h
 		return nil, err
 	}
 
-	em.setSubActive(subName)
+	em.eventSubMap[subName] = &EventSubscription{
+		sub:       sub,
+		headersCh: headersCh,
+	}
 
-	go em.watchBlocks(subName, sub, headersCh, cb)
+	go em.watchBlocks(subName, sub, headersCh, cb, func() {
+		glog.Infof("Trying to resubscribe for %v", subName)
+
+		sub, err = em.backend.SubscribeNewHead(ctx, headersCh)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		em.eventSubMap[subName].sub = sub
+		em.eventSubMap[subName].headersCh = headersCh
+	})
 
 	return sub, nil
 }
 
 func (em *eventMonitor) setSubActive(subName string) {
-	em.activeEventSubMap[subName] = true
+	em.eventSubMap[subName].active = true
 }
 
 func (em *eventMonitor) setSubInactive(subName string) {
-	em.activeEventSubMap[subName] = false
+	em.eventSubMap[subName].active = false
 }
 
-func (em *eventMonitor) watchLogs(subName string, sub ethereum.Subscription, logsCh chan types.Log, cb logCallback) {
+func (em *eventMonitor) watchLogs(subName string, eventCb logCallback, errCb func()) {
+	em.setSubActive(subName)
 	defer em.setSubInactive(subName)
 
 	for {
 		select {
-		case l, ok := <-logsCh:
+		case l, ok := <-em.eventSubMap[subName].logsCh:
 			if !ok {
+				glog.Errorf("Logs channel closed")
 				return
 			}
 
-			watch, err := cb(l)
+			watch, err := eventCb(l)
 			if err != nil {
 				glog.Errorf("Error with log callback: %v", err)
 			}
 
 			if !watch {
-				glog.Infof("Done watching")
+				glog.Infof("Done watching for logs")
 				return
 			}
-		case err := <-sub.Err():
+		case err := <-em.eventSubMap[subName].sub.Err():
 			glog.Errorf("Error with log subscription: %v", err)
-			return
+
+			errCb()
 		}
 	}
 }
 
-func (em *eventMonitor) watchBlocks(subName string, sub ethereum.Subscription, headersCh chan *types.Header, cb headerCallback) {
+func (em *eventMonitor) watchBlocks(subName string, sub ethereum.Subscription, headersCh chan *types.Header, eventCb headerCallback, errCb func()) {
+	em.setSubActive(subName)
 	defer em.setSubInactive(subName)
 
 	for {
 		select {
-		case h, ok := <-headersCh:
+		case h, ok := <-em.eventSubMap[subName].headersCh:
 			if !ok {
+				glog.Errorf("Logs channel closed")
 				return
 			}
 
-			watch, err := cb(h)
+			watch, err := eventCb(h)
 			if err != nil {
 				glog.Errorf("Error with header callback: %v", err)
 			}
@@ -180,9 +242,10 @@ func (em *eventMonitor) watchBlocks(subName string, sub ethereum.Subscription, h
 				glog.Infof("Done watching")
 				return
 			}
-		case err := <-sub.Err():
+		case err := <-em.eventSubMap[subName].sub.Err():
 			glog.Errorf("Error with header subscription: %v", err)
-			return
+
+			errCb()
 		}
 	}
 }
