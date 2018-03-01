@@ -47,6 +47,8 @@ const (
 	defaultDialTimeout   = 10 * time.Second // used when dialing if the context has no deadline
 	defaultWriteTimeout  = 10 * time.Second // used for calls if the context has no deadline
 	subscribeTimeout     = 5 * time.Second  // overall timeout eth_subscribe, rpc_modules calls
+
+	failedWriteRetries = 10 // number of times to retry a write if it fails
 )
 
 const (
@@ -259,9 +261,6 @@ func (c *Client) CallContext(ctx context.Context, result interface{}, method str
 	} else {
 		err = c.send(ctx, op, msg)
 	}
-	if err != nil {
-		return err
-	}
 
 	// dispatch has accepted the request and will close the channel it when it quits.
 	switch resp, err := op.wait(ctx); {
@@ -421,7 +420,15 @@ func (c *Client) send(ctx context.Context, op *requestOp, msg interface{}) error
 		log.Trace("", "msg", log.Lazy{Fn: func() string {
 			return fmt.Sprint("sending ", msg)
 		}})
+
+		retries := 0
 		err := c.write(ctx, msg)
+		for err != nil && retries < failedWriteRetries {
+			time.Sleep(1 * time.Second)
+			err = c.write(ctx, msg)
+			retries++
+		}
+
 		c.sendDone <- err
 		return err
 	case <-ctx.Done():

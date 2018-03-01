@@ -789,9 +789,11 @@ func (s *LivepeerServer) StartWebserver() {
 		if s.LivepeerNode.Eth != nil {
 			b, err := s.LivepeerNode.Eth.BalanceOf(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
+				glog.Error(err)
 				w.Write([]byte(""))
+			} else {
+				w.Write([]byte(b.String()))
 			}
-			w.Write([]byte(b.String()))
 		}
 	})
 
@@ -805,9 +807,11 @@ func (s *LivepeerServer) StartWebserver() {
 
 			balance, err := b.BalanceAt(context.Background(), s.LivepeerNode.Eth.Account().Address, nil)
 			if err != nil {
+				glog.Error(err)
 				w.Write([]byte(""))
+			} else {
+				w.Write([]byte(balance.String()))
 			}
-			w.Write([]byte(balance.String()))
 		}
 	})
 
@@ -815,9 +819,11 @@ func (s *LivepeerServer) StartWebserver() {
 		if s.LivepeerNode.Eth != nil {
 			b, err := s.LivepeerNode.Eth.BroadcasterDeposit(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
+				glog.Error(err)
 				w.Write([]byte(""))
+			} else {
+				w.Write([]byte(b.String()))
 			}
-			w.Write([]byte(b.String()))
 		}
 	})
 
