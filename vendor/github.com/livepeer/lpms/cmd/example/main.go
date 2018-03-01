@@ -19,6 +19,7 @@ import (
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/core"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 )
@@ -185,10 +186,10 @@ func main() {
 
 func transcode(hlsStream stream.HLSVideoStream) (func(*stream.HLSSegment, bool), error) {
 	//Create Transcoder
-	profiles := []core.VideoProfile{
-		core.P144p30fps16x9,
-		core.P240p30fps16x9,
-		core.P576p30fps16x9,
+	profiles := []ffmpeg.VideoProfile{
+		ffmpeg.P144p30fps16x9,
+		ffmpeg.P240p30fps16x9,
+		ffmpeg.P576p30fps16x9,
 	}
 	t := transcoder.NewFFMpegSegmentTranscoder(profiles, "", "./tmp")
 

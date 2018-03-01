@@ -1,5 +1,5 @@
 package transcoder
 
 type Transcoder interface {
-	Transcode(d []byte) ([][]byte, error)
+	Transcode(fname string) ([][]byte, error)
 }
