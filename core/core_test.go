@@ -24,6 +24,10 @@ import (
 	"github.com/livepeer/lpms/transcoder"
 )
 
+func Over1Pct(val int, cmp int) bool {
+	return float32(val) > float32(cmp)*1.01 || float32(val) < float32(cmp)*0.99
+}
+
 type StubConnInfo struct {
 	NodeID   string
 	NodeAddr []string
@@ -166,6 +170,8 @@ func TestTranscode(t *testing.T) {
 	stubnet := &StubVideoNetwork{T: t, subscribers: make(map[string]*StubSubscriber)}
 	n, _ := NewLivepeerNode(&eth.StubClient{}, stubnet, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, ".tmp")
 	stubnet.subscribers["strmID"] = &StubSubscriber{}
+	ffmpeg.InitFFmpeg()
+	defer ffmpeg.DeinitFFmpeg()
 
 	//Call transcode
 	p := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
@@ -217,7 +223,7 @@ func TestTranscode(t *testing.T) {
 		t.Errorf("Wrong SeqNo assigned to broadcaster: %v", b1.SeqNo)
 	}
 
-	if len(b1.Data) != 277300 || len(b2.Data) != 378068 {
+	if Over1Pct(len(b1.Data), 155476) || Over1Pct(len(b2.Data), 208304) {
 		t.Errorf("Wrong data assigned to broadcaster: %v, %v", len(b1.Data), len(b2.Data))
 	}
 }

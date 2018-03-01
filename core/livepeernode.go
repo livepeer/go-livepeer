@@ -13,6 +13,10 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/ethereum/go-ethereum/crypto"
+	"io/ioutil"
+	"math/rand"
+	"os"
+	"path"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
@@ -236,9 +240,26 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 }
 
 func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []byte, cm eth.ClaimManager, t transcoder.Transcoder, resultStrmIDs []StreamID, broadcasters map[StreamID]stream.Broadcaster, config net.TranscodeConfig) {
+
+	//Assume d is in the right format, write it to disk
+	inName := randName()
+	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
+		err := os.Mkdir(n.WorkDir, 0700)
+		if err != nil {
+			glog.Errorf("Transcoder cannot create workdir: %v", err)
+			return // TODO return error?
+		}
+	}
+	fname := path.Join(n.WorkDir, inName)
+	defer os.Remove(fname)
+	if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
+		glog.Errorf("Transcoder cannot write file: %v", err)
+		return // TODO return error?
+	}
+
 	//Do the transcoding
 	start := time.Now()
-	tData, err := t.Transcode(seg.Data)
+	tData, err := t.Transcode(fname)
 	if err != nil {
 		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
 		return
@@ -414,4 +435,13 @@ func (n *LivepeerNode) StopEthServices() error {
 	}
 
 	return nil
+}
+
+func randName() string {
+	rand.Seed(time.Now().UnixNano())
+	x := make([]byte, 10, 10)
+	for i := 0; i < len(x); i++ {
+		x[i] = byte(rand.Uint32())
+	}
+	return fmt.Sprintf("%x.ts", x)
 }

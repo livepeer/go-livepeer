@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"testing"
 	"time"
@@ -30,8 +31,9 @@ type StubTranscoder struct {
 	FailTranscode bool
 }
 
-func (t *StubTranscoder) Transcode(d []byte) ([][]byte, error) {
-	if d == nil || t.FailTranscode {
+func (t *StubTranscoder) Transcode(fname string) ([][]byte, error) {
+	d, err := ioutil.ReadFile(fname)
+	if err != nil || t.FailTranscode {
 		return nil, ErrTranscode
 	}
 
@@ -48,12 +50,14 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	nid := NodeID("12201c23641663bf06187a8c154a6c97266d138cb8379c1bc0828122dcc51c83698d")
 	strmID := "strmID"
 	jid := big.NewInt(0)
+	ffmpeg.InitFFmpeg()
+	defer ffmpeg.DeinitFFmpeg()
 	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
 	config := net.TranscodeConfig{StrmID: strmID, Profiles: p, PerformOnchainClaim: false, JobID: jid}
 
 	stubnet := &StubVideoNetwork{subscribers: make(map[string]*StubSubscriber)}
 	stubnet.subscribers[strmID] = &StubSubscriber{}
-	n, err := NewLivepeerNode(&eth.StubClient{}, stubnet, nid, []string{""}, "")
+	n, err := NewLivepeerNode(&eth.StubClient{}, stubnet, nid, []string{""}, ".") // TODO fix empty work dir
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
