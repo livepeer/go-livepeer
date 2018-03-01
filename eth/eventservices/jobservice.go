@@ -14,7 +14,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
-	lpmscore "github.com/livepeer/lpms/core"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/transcoder"
 )
 
@@ -123,7 +123,7 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 
 	//Notify Broadcaster
 	sid := core.StreamID(job.StreamId)
-	vids := make(map[core.StreamID]lpmscore.VideoProfile)
+	vids := make(map[core.StreamID]ffmpeg.VideoProfile)
 	for i, vp := range tProfiles {
 		vids[strmIDs[i]] = vp
 	}
@@ -170,13 +170,13 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 	return true, nil
 }
 
-func txDataToVideoProfile(txData string) ([]lpmscore.VideoProfile, error) {
-	profiles := make([]lpmscore.VideoProfile, 0)
+func txDataToVideoProfile(txData string) ([]ffmpeg.VideoProfile, error) {
+	profiles := make([]ffmpeg.VideoProfile, 0)
 
 	for i := 0; i+lpcommon.VideoProfileIDSize <= len(txData); i += lpcommon.VideoProfileIDSize {
 		txp := txData[i : i+lpcommon.VideoProfileIDSize]
 
-		p, ok := lpmscore.VideoProfileLookup[lpcommon.VideoProfileNameLookup[txp]]
+		p, ok := ffmpeg.VideoProfileLookup[lpcommon.VideoProfileNameLookup[txp]]
 		if !ok {
 			glog.Errorf("Cannot find video profile for job: %v", txp)
 			// return nil, core.ErrTranscode

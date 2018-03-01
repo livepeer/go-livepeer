@@ -8,7 +8,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
-	lpmscore "github.com/livepeer/lpms/core"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
 type StubClaimManager struct {
@@ -16,7 +16,7 @@ type StubClaimManager struct {
 	distributeFeesCalled bool
 }
 
-func (cm *StubClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error {
+func (cm *StubClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile ffmpeg.VideoProfile) error {
 	return nil
 }
 func (cm *StubClaimManager) SufficientBroadcasterDeposit() (bool, error) { return true, nil }
@@ -25,7 +25,7 @@ func (cm *StubClaimManager) DidFirstClaim() bool                         { retur
 func (cm *StubClaimManager) CanClaim() (bool, error)                     { return true, nil }
 
 type StubTranscoder struct {
-	Profiles      []lpmscore.VideoProfile
+	Profiles      []ffmpeg.VideoProfile
 	InputData     [][]byte
 	FailTranscode bool
 }
@@ -48,7 +48,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	nid := NodeID("12201c23641663bf06187a8c154a6c97266d138cb8379c1bc0828122dcc51c83698d")
 	strmID := "strmID"
 	jid := big.NewInt(0)
-	p := []lpmscore.VideoProfile{lpmscore.P720p60fps16x9, lpmscore.P144p30fps16x9}
+	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
 	config := net.TranscodeConfig{StrmID: strmID, Profiles: p, PerformOnchainClaim: false, JobID: jid}
 
 	stubnet := &StubVideoNetwork{subscribers: make(map[string]*StubSubscriber)}

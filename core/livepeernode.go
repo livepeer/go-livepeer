@@ -21,7 +21,7 @@ import (
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/ipfs"
 	"github.com/livepeer/go-livepeer/net"
-	lpmscore "github.com/livepeer/lpms/core"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/transcoder"
 )
@@ -97,14 +97,14 @@ func (n *LivepeerNode) Start(ctx context.Context, bootID, bootAddr string) error
 }
 
 //CreateTranscodeJob creates the on-chain transcode job.
-func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.VideoProfile, price *big.Int) error {
+func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.VideoProfile, price *big.Int) error {
 	if n.Eth == nil {
 		glog.Errorf("Cannot create transcode job, no eth client found")
 		return ErrNotFound
 	}
 
 	//Sort profiles first
-	sort.Sort(lpmscore.ByName(profiles))
+	sort.Sort(ffmpeg.ByName(profiles))
 	transOpts := []byte{}
 	for _, prof := range profiles {
 		transOpts = append(transOpts, crypto.Keccak256([]byte(prof.Name))[0:4]...)
@@ -140,7 +140,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []lpmscore.V
 //TranscodeAndBroadcast transcodes one stream into multiple streams (specified by TranscodeConfig), broadcasts the streams, and returns a list of streamIDs.
 func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.ClaimManager, t transcoder.Transcoder) ([]StreamID, error) {
 	//Create the broadcasters
-	tProfiles := make([]lpmscore.VideoProfile, len(config.Profiles), len(config.Profiles))
+	tProfiles := make([]ffmpeg.VideoProfile, len(config.Profiles), len(config.Profiles))
 	resultStrmIDs := make([]StreamID, len(config.Profiles), len(config.Profiles))
 	variants := make(map[StreamID]*m3u8.Variant)
 	broadcasters := make(map[StreamID]stream.Broadcaster)
@@ -151,14 +151,14 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 			return nil, ErrTranscode
 		}
 		resultStrmIDs[i] = strmID
-		tProfiles[i] = lpmscore.VideoProfileLookup[vp.Name]
+		tProfiles[i] = ffmpeg.VideoProfileLookup[vp.Name]
 
 		pl, err := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
 		if err != nil {
 			glog.Errorf("Error making playlist: %v", err)
 			return nil, ErrTranscode
 		}
-		variants[strmID] = &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: lpmscore.VideoProfileToVariantParams(tProfiles[i])}
+		variants[strmID] = &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: ffmpeg.VideoProfileToVariantParams(tProfiles[i])}
 
 		broadcaster, err := n.VideoNetwork.GetBroadcaster(string(strmID))
 		if err != nil {
@@ -381,7 +381,7 @@ func (n *LivepeerNode) GetMasterPlaylistFromNetwork(mid ManifestID) *m3u8.Master
 }
 
 //NotifyBroadcaster sends a messages to the broadcaster of the video stream, containing the new streamIDs of the transcoded video streams.
-func (n *LivepeerNode) NotifyBroadcaster(nid NodeID, strmID StreamID, transcodeStrmIDs map[StreamID]lpmscore.VideoProfile) error {
+func (n *LivepeerNode) NotifyBroadcaster(nid NodeID, strmID StreamID, transcodeStrmIDs map[StreamID]ffmpeg.VideoProfile) error {
 	ids := make(map[string]string)
 	for sid, p := range transcodeStrmIDs {
 		ids[sid.String()] = p.Name

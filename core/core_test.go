@@ -19,7 +19,7 @@ import (
 	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
-	lpmscore "github.com/livepeer/lpms/core"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/transcoder"
 )
@@ -168,11 +168,11 @@ func TestTranscode(t *testing.T) {
 	stubnet.subscribers["strmID"] = &StubSubscriber{}
 
 	//Call transcode
-	p := []lpmscore.VideoProfile{lpmscore.P144p30fps16x9, lpmscore.P240p30fps16x9}
+	p := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
 
-	tProfiles := make([]lpmscore.VideoProfile, len(p), len(p))
+	tProfiles := make([]ffmpeg.VideoProfile, len(p), len(p))
 	for i, vp := range p {
-		tProfiles[i] = lpmscore.VideoProfileLookup[vp.Name]
+		tProfiles[i] = ffmpeg.VideoProfileLookup[vp.Name]
 	}
 	tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.WorkDir)
 	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: "strmID", Profiles: p}, &StubClaimManager{}, tr)
@@ -354,7 +354,7 @@ func TestNotifyBroadcaster(t *testing.T) {
 	strmID := "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd1strmID"
 	nid := "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd1"
 
-	err = n.NotifyBroadcaster(NodeID(nid), StreamID(strmID), map[StreamID]lpmscore.VideoProfile{"strmid1": lpmscore.P240p30fps16x9})
+	err = n.NotifyBroadcaster(NodeID(nid), StreamID(strmID), map[StreamID]ffmpeg.VideoProfile{"strmid1": ffmpeg.P240p30fps16x9})
 	if err != nil {
 		t.Errorf("Error notifying broadcaster: %v", err)
 	}
@@ -367,8 +367,8 @@ func TestNotifyBroadcaster(t *testing.T) {
 		t.Errorf("Expecting strmid, got %v", sn.strmID)
 	}
 
-	if sn.tResult["strmid1"] != lpmscore.P240p30fps16x9.Name {
-		t.Errorf("Expecting %v, got %v", lpmscore.P240p30fps16x9.Name, sn.tResult["strmid1"])
+	if sn.tResult["strmid1"] != ffmpeg.P240p30fps16x9.Name {
+		t.Errorf("Expecting %v, got %v", ffmpeg.P240p30fps16x9.Name, sn.tResult["strmid1"])
 	}
 }
 
