@@ -232,9 +232,18 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 			glog.Errorf("Error decoding byte array into segment: %v", err)
 		}
 		glog.V(common.DEBUG).Infof("Decoding of segment took %v", time.Since(start))
-		n.transcodeAndBroadcastSeg(&ss.Seg, ss.Sig, cm, t, resultStrmIDs, broadcasters, config)
-		glog.V(common.DEBUG).Infof("Encoding and broadcasting of segment %v took %v", ss.Seg.SeqNo, time.Since(start))
-		glog.V(common.SHORT).Infof("Finished transcoding segment %v, overall took %v\n\n\n", seqNo, time.Since(totalStart))
+
+		//If running in on-chain mode, check that segment was signed by broadcaster ETH address
+		segHash := (&ethTypes.Segment{StreamID: config.StrmID, SegmentSequenceNumber: big.NewInt(int64(seqNo)), DataHash: crypto.Keccak256Hash(ss.Seg.Data)}).Hash()
+		if cm == nil || eth.VerifySig(cm.BroadcasterAddr(), segHash.Bytes(), ss.Sig) {
+			glog.V(common.DEBUG).Infof("Verified segment received from stream broadcaster")
+
+			n.transcodeAndBroadcastSeg(&ss.Seg, ss.Sig, cm, t, resultStrmIDs, broadcasters, config)
+			glog.V(common.DEBUG).Infof("Encoding and broadcasting of segment %v took %v", ss.Seg.SeqNo, time.Since(start))
+			glog.V(common.SHORT).Infof("Finished transcoding segment %v, overall took %v\n\n\n", seqNo, time.Since(totalStart))
+		} else {
+			glog.Errorf("Invalid broadcaster signature for received segment for stream. Dropping segment")
+		}
 	})
 	return resultStrmIDs, nil
 }

@@ -27,6 +27,7 @@ type ClaimManager interface {
 	ClaimVerifyAndDistributeFees() error
 	CanClaim() (bool, error)
 	DidFirstClaim() bool
+	BroadcasterAddr() common.Address
 }
 
 type claimData struct {
@@ -101,6 +102,10 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, 
 		unclaimedSegs:   make(map[int64]bool),
 		claims:          0,
 	}
+}
+
+func (c *BasicClaimManager) BroadcasterAddr() common.Address {
+	return c.broadcasterAddr
 }
 
 func (c *BasicClaimManager) CanClaim() (bool, error) {
