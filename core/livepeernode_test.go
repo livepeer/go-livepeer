@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
@@ -17,6 +18,7 @@ type StubClaimManager struct {
 	distributeFeesCalled bool
 }
 
+func (cm *StubClaimManager) BroadcasterAddr() common.Address { return common.Address{} }
 func (cm *StubClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile ffmpeg.VideoProfile) error {
 	return nil
 }
