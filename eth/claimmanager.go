@@ -14,7 +14,7 @@ import (
 	"github.com/golang/glog"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/ipfs"
-	lpmscore "github.com/livepeer/lpms/core"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
 var (
@@ -22,7 +22,7 @@ var (
 )
 
 type ClaimManager interface {
-	AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error
+	AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile ffmpeg.VideoProfile) error
 	SufficientBroadcasterDeposit() (bool, error)
 	ClaimVerifyAndDistributeFees() error
 	CanClaim() (bool, error)
@@ -33,7 +33,7 @@ type claimData struct {
 	seqNo                int64
 	segData              []byte
 	dataHash             []byte
-	tDataHashes          map[lpmscore.VideoProfile][]byte
+	tDataHashes          map[ffmpeg.VideoProfile][]byte
 	bSig                 []byte
 	transcodeProof       []byte
 	claimConcatTDatahash []byte
@@ -46,8 +46,8 @@ type BasicClaimManager struct {
 
 	strmID   string
 	jobID    *big.Int
-	profiles []lpmscore.VideoProfile
-	pLookup  map[lpmscore.VideoProfile]int
+	profiles []ffmpeg.VideoProfile
+	pLookup  map[ffmpeg.VideoProfile]int
 
 	segClaimMap   map[int64]*claimData
 	unclaimedSegs map[int64]bool
@@ -61,16 +61,16 @@ type BasicClaimManager struct {
 }
 
 //NewBasicClaimManager creates a new claim manager.
-func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []lpmscore.VideoProfile, c LivepeerEthClient, ipfs ipfs.IpfsApi) *BasicClaimManager {
+func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []ffmpeg.VideoProfile, c LivepeerEthClient, ipfs ipfs.IpfsApi) *BasicClaimManager {
 	seqNos := make([][]int64, len(p), len(p))
 	rHashes := make([][]common.Hash, len(p), len(p))
 	sd := make([][][]byte, len(p), len(p))
 	dHashes := make([][]string, len(p), len(p))
 	tHashes := make([][]string, len(p), len(p))
 	sigs := make([][][]byte, len(p), len(p))
-	pLookup := make(map[lpmscore.VideoProfile]int)
+	pLookup := make(map[ffmpeg.VideoProfile]int)
 
-	sort.Sort(lpmscore.ByName(p))
+	sort.Sort(ffmpeg.ByName(p))
 	for i := 0; i < len(p); i++ {
 		sNo := make([]int64, 0)
 		seqNos[i] = sNo
@@ -138,7 +138,7 @@ func (c *BasicClaimManager) DidFirstClaim() bool {
 }
 
 //AddReceipt adds a claim for a given video segment.
-func (c *BasicClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile lpmscore.VideoProfile) error {
+func (c *BasicClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile ffmpeg.VideoProfile) error {
 	dataHash := crypto.Keccak256(data)
 
 	_, ok := c.pLookup[profile]
@@ -152,7 +152,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byt
 			seqNo:       seqNo,
 			segData:     data,
 			dataHash:    dataHash,
-			tDataHashes: make(map[lpmscore.VideoProfile][]byte),
+			tDataHashes: make(map[ffmpeg.VideoProfile][]byte),
 			bSig:        bSig,
 		}
 		c.segClaimMap[seqNo] = cd

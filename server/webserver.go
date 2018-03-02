@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	basicnet "github.com/livepeer/go-livepeer-basicnet"
-	lpmscore "github.com/livepeer/lpms/core"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/transcoder"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -32,7 +32,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps16x9}
+		ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9}
 		tr := transcoder.NewFFMpegSegmentTranscoder(ps, "", s.LivepeerNode.WorkDir)
 		config := net.TranscodeConfig{StrmID: strmID, Profiles: ps}
 		ids, err := s.LivepeerNode.TranscodeAndBroadcast(config, nil, tr)
@@ -41,7 +41,7 @@ func (s *LivepeerServer) StartWebserver() {
 			http.Error(w, "Error transcoding.", 500)
 		}
 
-		vids := make(map[core.StreamID]lpmscore.VideoProfile)
+		vids := make(map[core.StreamID]ffmpeg.VideoProfile)
 		for i, vp := range ps {
 			vids[ids[i]] = vp
 		}
@@ -74,9 +74,9 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		profiles := []lpmscore.VideoProfile{}
+		profiles := []ffmpeg.VideoProfile{}
 		for _, pName := range strings.Split(transcodingOptions, ",") {
-			p, ok := lpmscore.VideoProfileLookup[pName]
+			p, ok := ffmpeg.VideoProfileLookup[pName]
 			if ok {
 				profiles = append(profiles, p)
 			}
@@ -115,8 +115,8 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/getAvailableTranscodingOptions", func(w http.ResponseWriter, r *http.Request) {
-		transcodingOptions := make([]string, 0, len(lpmscore.VideoProfileLookup))
-		for opt := range lpmscore.VideoProfileLookup {
+		transcodingOptions := make([]string, 0, len(ffmpeg.VideoProfileLookup))
+		for opt := range ffmpeg.VideoProfileLookup {
 			transcodingOptions = append(transcodingOptions, opt)
 		}
 

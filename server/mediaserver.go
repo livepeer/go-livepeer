@@ -20,6 +20,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	lpmscore "github.com/livepeer/lpms/core"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/vidplayer"
@@ -45,7 +46,7 @@ const EthMinedTxTimeout = 60 * time.Second
 
 var HLSWaitTime = time.Second * 45
 var BroadcastPrice = big.NewInt(1)
-var BroadcastJobVideoProfiles = []lpmscore.VideoProfile{lpmscore.P240p30fps4x3, lpmscore.P360p30fps16x9}
+var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 var LastHLSStreamID core.StreamID
 var LastManifestID core.ManifestID
 
@@ -73,9 +74,9 @@ func NewLivepeerServer(rtmpPort string, httpPort string, ffmpegPath string, lpNo
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegment *big.Int, transcodingOptions string) error {
 	if s.LivepeerNode.Eth != nil {
 		BroadcastPrice = maxPricePerSegment
-		bProfiles := make([]lpmscore.VideoProfile, 0)
+		bProfiles := make([]ffmpeg.VideoProfile, 0)
 		for _, opt := range strings.Split(transcodingOptions, ",") {
-			p, ok := lpmscore.VideoProfileLookup[strings.TrimSpace(opt)]
+			p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]
 			if ok {
 				bProfiles = append(bProfiles, p)
 			}
@@ -152,16 +153,16 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		s.rtmpStreams[core.StreamID(rtmpStrm.GetStreamID())] = rtmpStrm
 
 		//We try to automatically determine the video profile from the RTMP stream.
-		var vProfile lpmscore.VideoProfile
+		var vProfile ffmpeg.VideoProfile
 		resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
-		for _, vp := range lpmscore.VideoProfileLookup {
+		for _, vp := range ffmpeg.VideoProfileLookup {
 			if vp.Resolution == resolution {
 				vProfile = vp
 				break
 			}
 		}
 		if vProfile.Name == "" {
-			vProfile = lpmscore.P720p30fps16x9
+			vProfile = ffmpeg.P720p30fps16x9
 			glog.Infof("Cannot automatically detect the video profile - setting it to %v", vProfile)
 		}
 
@@ -239,7 +240,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 		LastManifestID = mid
 		manifest := m3u8.NewMasterPlaylist()
-		vParams := lpmscore.VideoProfileToVariantParams(lpmscore.VideoProfileLookup[vProfile.Name])
+		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[vProfile.Name])
 		manifest.Append(fmt.Sprintf("%v.m3u8", hlsStrmID), pl, vParams)
 
 		if err := s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(string(mid), manifest); err != nil {
@@ -250,7 +251,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		s.LivepeerNode.VideoNetwork.ReceivedTranscodeResponse(string(hlsStrmID), func(result map[string]string) {
 			//Parse through the results
 			for strmID, tProfile := range result {
-				vParams := lpmscore.VideoProfileToVariantParams(lpmscore.VideoProfileLookup[tProfile])
+				vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[tProfile])
 				pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
 				variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}
 				manifest.Append(variant.URI, variant.Chunklist, variant.VariantParams)

@@ -11,12 +11,12 @@ import (
 	"github.com/golang/glog"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/ipfs"
-	lpmscore "github.com/livepeer/lpms/core"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
 func TestShouldVerify(t *testing.T) {
 	client := &StubClient{}
-	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
+	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
 	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, client, &ipfs.StubIpfsApi{})
 
 	blkHash := common.Hash([32]byte{0, 2, 4, 42, 2, 3, 4, 4, 4, 2, 21, 1, 1, 24, 134, 0, 02, 43})
@@ -37,24 +37,24 @@ func TestShouldVerify(t *testing.T) {
 }
 
 func TestProfileOrder(t *testing.T) {
-	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
+	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
 	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, &StubClient{}, &ipfs.StubIpfsApi{})
 
-	if cm.profiles[0] != lpmscore.P720p30fps4x3 || cm.profiles[1] != lpmscore.P360p30fps4x3 || cm.profiles[2] != lpmscore.P240p30fps16x9 {
+	if cm.profiles[0] != ffmpeg.P720p30fps4x3 || cm.profiles[1] != ffmpeg.P360p30fps4x3 || cm.profiles[2] != ffmpeg.P240p30fps16x9 {
 		t.Errorf("wrong ordering: %v", cm.profiles)
 	}
 }
 
 func TestAddReceipt(t *testing.T) {
-	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
+	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
 	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, &StubClient{}, &ipfs.StubIpfsApi{})
 
 	//Should get error for adding to a non-existing profile
-	if err := cm.AddReceipt(0, []byte("data"), []byte("tdatahash"), []byte("sig"), lpmscore.P144p30fps16x9); err == nil {
+	if err := cm.AddReceipt(0, []byte("data"), []byte("tdatahash"), []byte("sig"), ffmpeg.P144p30fps16x9); err == nil {
 		t.Errorf("Expecting an error for adding to a non-existing profile.")
 	}
 
-	if err := cm.AddReceipt(0, []byte("data"), []byte("tdatahash"), []byte("sig"), lpmscore.P240p30fps16x9); err != nil {
+	if err := cm.AddReceipt(0, []byte("data"), []byte("tdatahash"), []byte("sig"), ffmpeg.P240p30fps16x9); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 
@@ -66,8 +66,8 @@ func TestAddReceipt(t *testing.T) {
 		t.Errorf("Expecting %v, got %v", string(crypto.Keccak256([]byte("data"))), string(cm.segClaimMap[0].dataHash))
 	}
 
-	if string(cm.segClaimMap[0].tDataHashes[lpmscore.P240p30fps16x9]) != "tdatahash" {
-		t.Errorf("Expecting %v, got %v", "datahash", cm.segClaimMap[0].tDataHashes[lpmscore.P240p30fps16x9])
+	if string(cm.segClaimMap[0].tDataHashes[ffmpeg.P240p30fps16x9]) != "tdatahash" {
+		t.Errorf("Expecting %v, got %v", "datahash", cm.segClaimMap[0].tDataHashes[ffmpeg.P240p30fps16x9])
 	}
 
 	if string(cm.segClaimMap[0].bSig) != "sig" {
@@ -78,7 +78,7 @@ func TestAddReceipt(t *testing.T) {
 //We add 6 ranges (0, 3-13, 15-18, 20-25, 27, 29)
 func setupRanges(t *testing.T) *BasicClaimManager {
 	ethClient := &StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
-	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
+	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
 	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{})
 
 	for _, segRange := range [][2]int64{[2]int64{0, 0}, [2]int64{3, 13}, [2]int64{15, 18}, [2]int64{21, 25}, [2]int64{27, 27}, [2]int64{29, 29}} {
@@ -99,7 +99,7 @@ func setupRanges(t *testing.T) *BasicClaimManager {
 
 	//Add invalid 19 out of order (invalid because it's only a single video profile)
 	i := 19
-	p := lpmscore.P360p30fps4x3
+	p := ffmpeg.P360p30fps4x3
 	data := []byte(fmt.Sprintf("data%v%v", p.Name, i))
 	hash := []byte(fmt.Sprintf("hash%v%v", p.Name, i))
 	sig := []byte(fmt.Sprintf("sig%v%v", p.Name, i))
@@ -122,7 +122,7 @@ func TestRanges(t *testing.T) {
 
 func TestClaimVerifyAndDistributeFees(t *testing.T) {
 	ethClient := &StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
-	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
+	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
 	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{})
 
 	//Add some receipts(0-9)
@@ -132,7 +132,7 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 		data := []byte(fmt.Sprintf("data%v", i))
 		sig := []byte(fmt.Sprintf("sig%v", i))
 		for pi, p := range ps {
-			tHash := []byte(fmt.Sprintf("tHash%v%v", lpmscore.P240p30fps16x9.Name, i))
+			tHash := []byte(fmt.Sprintf("tHash%v%v", ffmpeg.P240p30fps16x9.Name, i))
 			if err := cm.AddReceipt(int64(i), data, tHash, []byte(sig), p); err != nil {
 				t.Errorf("Error: %v", err)
 			}
@@ -155,7 +155,7 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 		data := []byte(fmt.Sprintf("data%v", i))
 		sig := []byte(fmt.Sprintf("sig%v", i))
 		for pi, p := range ps {
-			tHash := []byte(fmt.Sprintf("tHash%v%v", lpmscore.P240p30fps16x9.Name, i))
+			tHash := []byte(fmt.Sprintf("tHash%v%v", ffmpeg.P240p30fps16x9.Name, i))
 			if err := cm.AddReceipt(int64(i), []byte(data), tHash, []byte(sig), p); err != nil {
 				t.Errorf("Error: %v", err)
 			}
@@ -197,7 +197,7 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 
 // func TestVerify(t *testing.T) {
 // 	ethClient := &StubClient{VeriRate: 10}
-// 	ps := []lpmscore.VideoProfile{lpmscore.P240p30fps16x9, lpmscore.P360p30fps4x3, lpmscore.P720p30fps4x3}
+// 	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
 // 	cm := NewBasicClaimManager("strmID", big.NewInt(5), common.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{})
 // 	start := int64(0)
 // 	end := int64(100)
@@ -213,9 +213,9 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 // 	}
 
 // 	//Add a seg that shouldn't trigger
-// 	cm.AddReceipt(seqNum, []byte("data240"), []byte("tDataHash240"), []byte("bSig"), lpmscore.P240p30fps16x9)
-// 	cm.AddReceipt(seqNum, []byte("data360"), []byte("tDataHash360"), []byte("bSig"), lpmscore.P360p30fps4x3)
-// 	cm.AddReceipt(seqNum, []byte("data720"), []byte("tDataHash720"), []byte("bSig"), lpmscore.P720p30fps4x3)
+// 	cm.AddReceipt(seqNum, []byte("data240"), []byte("tDataHash240"), []byte("bSig"), ffmpeg.P240p30fps16x9)
+// 	cm.AddReceipt(seqNum, []byte("data360"), []byte("tDataHash360"), []byte("bSig"), ffmpeg.P360p30fps4x3)
+// 	cm.AddReceipt(seqNum, []byte("data720"), []byte("tDataHash720"), []byte("bSig"), ffmpeg.P720p30fps4x3)
 // 	seg, _ := cm.segClaimMap[seqNum]
 // 	seg.claimStart = start
 // 	seg.claimEnd = end
@@ -230,9 +230,9 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 // 	}
 
 // 	// //Add a seg that SHOULD trigger
-// 	cm.AddReceipt(seqNum, []byte("data240"), []byte("tDataHash240"), []byte("bSig"), lpmscore.P240p30fps16x9)
-// 	cm.AddReceipt(seqNum, []byte("data360"), []byte("tDataHash360"), []byte("bSig"), lpmscore.P360p30fps4x3)
-// 	cm.AddReceipt(seqNum, []byte("data720"), []byte("tDataHash720"), []byte("bSig"), lpmscore.P720p30fps4x3)
+// 	cm.AddReceipt(seqNum, []byte("data240"), []byte("tDataHash240"), []byte("bSig"), ffmpeg.P240p30fps16x9)
+// 	cm.AddReceipt(seqNum, []byte("data360"), []byte("tDataHash360"), []byte("bSig"), ffmpeg.P360p30fps4x3)
+// 	cm.AddReceipt(seqNum, []byte("data720"), []byte("tDataHash720"), []byte("bSig"), ffmpeg.P720p30fps4x3)
 // 	seg, _ = cm.segClaimMap[seqNum]
 // 	seg.claimStart = start
 // 	seg.claimEnd = end

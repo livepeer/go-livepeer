@@ -8,7 +8,7 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
-	lpmscore "github.com/livepeer/lpms/core"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -29,7 +29,7 @@ type VideoNetwork interface {
 
 type TranscodeConfig struct {
 	StrmID              string
-	Profiles            []lpmscore.VideoProfile
+	Profiles            []ffmpeg.VideoProfile
 	PerformOnchainClaim bool
 	JobID               *big.Int
 }
