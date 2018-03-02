@@ -235,7 +235,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 
 		//If running in on-chain mode, check that segment was signed by broadcaster ETH address
 		segHash := (&ethTypes.Segment{StreamID: config.StrmID, SegmentSequenceNumber: big.NewInt(int64(seqNo)), DataHash: crypto.Keccak256Hash(ss.Seg.Data)}).Hash()
-		if cm == nil || eth.VerifySig(cm.BroadcasterAddr(), segHash.Bytes(), ss.Sig) {
+		if cm == nil || (cm.BroadcasterAddr() == common.Address{}) || eth.VerifySig(cm.BroadcasterAddr(), segHash.Bytes(), ss.Sig) {
 			glog.V(common.DEBUG).Infof("Verified segment received from stream broadcaster")
 
 			n.transcodeAndBroadcastSeg(&ss.Seg, ss.Sig, cm, t, resultStrmIDs, broadcasters, config)
