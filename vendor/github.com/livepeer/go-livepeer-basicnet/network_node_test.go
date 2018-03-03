@@ -36,16 +36,16 @@ func TestGetOutStream(t *testing.T) {
 	})
 	connectHosts(no1.PeerHost, no2.PeerHost)
 
+	strm := no1.GetOutStream(no2.Identity)
+	if strm == nil {
+		t.Errorf("Expecting an outstream")
+	}
 	for i := 0; i < 4; i++ {
 		go func(i int) {
-			strm := no1.GetOutStream(no2.Identity)
-			if strm == nil {
-				t.Errorf("Expecting an outstream")
-			}
-			time.Sleep(time.Duration(i) * 100 * time.Millisecond) //Sleep is bad, but we have a libp2p issue here.
 			if err := strm.SendMessage(StreamDataID, StreamDataMsg{Data: []byte(fmt.Sprintf("%v", i))}); err != nil {
 				t.Errorf("Error: %v", err)
 			}
+			time.Sleep(time.Duration(i) * 100 * time.Millisecond) //Sleep is bad, but we have a libp2p issue here.
 		}(i)
 	}
 

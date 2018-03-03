@@ -204,7 +204,7 @@ func simpleSend(ns net.Stream, txt string, t *testing.T) {
 // 	simpleHandler(ns1, "ping")
 // }
 
-func makeRandomHost(port int) host.Host {
+func makeRandomHost(port int) (*kad.IpfsDHT, host.Host) {
 	// Ignoring most errors for brevity
 	// See echo example for more details and better implementation
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
@@ -222,13 +222,15 @@ func makeRandomHost(port int) host.Host {
 		glog.Errorf("Error constructing DHTRouting: %v", err)
 	}
 	rHost := rhost.Wrap(basicHost, dht)
-	return rHost
+	return dht, rHost
 }
 
 func TestBasic(t *testing.T) {
 	glog.Infof("\n\nTest Basic...")
-	h1 := makeRandomHost(10000)
-	h2 := makeRandomHost(10001)
+	_, h1 := makeRandomHost(10000)
+	defer h1.Close()
+	_, h2 := makeRandomHost(10001)
+	defer h2.Close()
 	h1.Peerstore().AddAddrs(h2.ID(), h2.Addrs(), peerstore.PermanentAddrTTL)
 	h2.Peerstore().AddAddrs(h1.ID(), h1.Addrs(), peerstore.PermanentAddrTTL)
 
@@ -258,10 +260,11 @@ func TestBasic(t *testing.T) {
 
 func TestUniDirection(t *testing.T) {
 	glog.Infof("\n\nTest Unidirection...")
-	h1 := makeRandomHost(10000)
-	h2 := makeRandomHost(10001)
-	h1.Peerstore().AddAddrs(h2.ID(), h2.Addrs(), peerstore.PermanentAddrTTL)
-	h2.Peerstore().AddAddrs(h1.ID(), h1.Addrs(), peerstore.PermanentAddrTTL)
+	dht1, h1 := makeRandomHost(10002)
+	defer h1.Close()
+	dht2, h2 := makeRandomHost(10003)
+	defer h2.Close()
+	connect(t, context.Background(), dht1, dht2, h1, h2)
 
 	h2.SetStreamHandler(Protocol, func(stream net.Stream) {
 		glog.Infof("h2 handler...")
@@ -289,7 +292,7 @@ func TestUniDirection(t *testing.T) {
 		}
 	})
 
-	time.Sleep(time.Millisecond * 500)
+	// time.Sleep(time.Millisecond * 2000)
 
 	stream, err := h1.NewStream(context.Background(), h2.ID(), Protocol)
 	if err != nil {
@@ -319,7 +322,11 @@ func TestUniDirection(t *testing.T) {
 
 func TestProvider(t *testing.T) {
 	n1, n2 := simpleNodes(15010, 15011)
+	defer n1.PeerHost.Close()
+	defer n2.PeerHost.Close()
 	n3, n4 := simpleNodes(15012, 15013)
+	defer n3.PeerHost.Close()
+	defer n4.PeerHost.Close()
 	connectHosts(n1.PeerHost, n2.PeerHost)
 	connectHosts(n2.PeerHost, n3.PeerHost)
 	connectHosts(n3.PeerHost, n4.PeerHost)
@@ -347,7 +354,10 @@ func TestProvider(t *testing.T) {
 
 func TestConcurrentSend(t *testing.T) {
 	n1, n2 := simpleNodes(15000, 15001)
+	defer n1.PeerHost.Close()
+	defer n2.PeerHost.Close()
 	n3, _ := simpleNodes(15002, 15003)
+	defer n3.PeerHost.Close()
 	connectHosts(n1.PeerHost, n2.PeerHost)
 	connectHosts(n2.PeerHost, n3.PeerHost)
 	n1.PeerHost.SetStreamHandler(Protocol, func(stream net.Stream) {
