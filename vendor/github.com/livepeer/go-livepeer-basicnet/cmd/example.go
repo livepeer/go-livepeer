@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"io/ioutil"
 	"time"
 
 	net "gx/ipfs/QmNa31VPzC561NWwRsJLE7nGYZYuuD2QfpK2b1q9BK54J1/go-libp2p-net"
@@ -14,6 +13,14 @@ import (
 	"github.com/golang/glog"
 	basicnet "github.com/livepeer/go-livepeer-basicnet"
 )
+
+/**
+To run the example, run:
+
+Node1: go run cmd/example.go -ping
+Node2: go run cmd/example.go -ping -p 15001 -id {Node1ID} -addr {Node1Addr} -i
+
+**/
 
 var timer time.Time
 
@@ -45,23 +52,25 @@ func main() {
 func pingtest(init bool, node *basicnet.NetworkNode, pid peer.ID) {
 	if init {
 		timer = time.Now()
-		strm := node.GetStream(pid)
+		strm := node.GetOutStream(pid)
 		glog.Infof("Sending message")
-		strm.SendMessage(basicnet.SimpleString, "")
+		strm.SendMessage(basicnet.SubReqID, basicnet.SubReqMsg{StrmID: "test"})
 		for {
-			streamHandler(strm)
+			setHandler(node)
 		}
 	} else {
 		setHandler(node)
 		glog.Infof("Done setting handler")
 	}
 
+	glog.Infof("NodeID: %v", peer.IDHexEncode(node.Identity))
+	glog.Infof("NodeAddr: %v", node.PeerHost.Addrs())
 	select {}
 }
 
 func setHandler(n *basicnet.NetworkNode) {
 	n.PeerHost.SetStreamHandler(basicnet.Protocol, func(stream net.Stream) {
-		ws := basicnet.NewBasicStream(stream)
+		ws := basicnet.NewBasicInStream(stream)
 
 		for {
 			if err := streamHandler(ws); err != nil {
@@ -74,7 +83,7 @@ func setHandler(n *basicnet.NetworkNode) {
 	})
 }
 
-func streamHandler(ws *basicnet.BasicStream) error {
+func streamHandler(ws *basicnet.BasicInStream) error {
 	msg, err := ws.ReceiveMessage()
 	if err != nil {
 		glog.Errorf("Got error decoding msg: %v", err)
@@ -84,7 +93,8 @@ func streamHandler(ws *basicnet.BasicStream) error {
 	glog.Infof("%v Recieved msg %v from %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), msg.Op, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
 	glog.Infof("Time since last message recieved: %v", time.Since(timer))
 
-	timer = time.Now()
-	vid, _ := ioutil.ReadFile("./test.ts")
-	return ws.SendMessage(basicnet.StreamDataID, basicnet.StreamDataMsg{Data: vid, SeqNo: 0, StrmID: "test"})
+	// timer = time.Now()
+	// vid, _ := ioutil.ReadFile("./test.ts")
+	// return ws.SendMessage(basicnet.StreamDataID, basicnet.StreamDataMsg{Data: vid, SeqNo: 0, StrmID: "test"})
+	return nil
 }

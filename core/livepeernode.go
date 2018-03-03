@@ -7,18 +7,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/big"
+	"math/rand"
+	"os"
+	"path"
 	"sort"
 	"time"
 
 	"github.com/ericxtang/m3u8"
-	"github.com/ethereum/go-ethereum/crypto"
-	"io/ioutil"
-	"math/rand"
-	"os"
-	"path"
-
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
@@ -128,6 +127,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 
 	tx, err := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], price, big.NewInt(0).Add(blk.Number(), big.NewInt(DefaultJobLength)))
 	if err != nil {
+		glog.Errorf("Error creating transcode job: %v", err)
 		return err
 	}
 

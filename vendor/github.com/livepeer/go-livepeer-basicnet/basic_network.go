@@ -304,9 +304,11 @@ func (n *BasicVideoNetwork) GetMasterPlaylist(p string, manifestID string) (chan
 	}
 	nid, err := extractNodeID(manifestID)
 	if err != nil {
+		glog.Errorf("Error extracting NodeID from: %v", manifestID)
 		return nil, ErrGetMasterPlaylist
 	}
 	if n.GetNodeID() == peer.IDHexEncode(nid) {
+		glog.Errorf("Node ID from manifest:%v is the same as the current node ID: %v", peer.IDHexEncode(nid), n.GetNodeID())
 		return nil, ErrGetMasterPlaylist
 	}
 	return n.getMasterPlaylistWithRelay(manifestID)

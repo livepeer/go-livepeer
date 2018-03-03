@@ -4,12 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"reflect"
-	"sort"
-	"sync"
-	"testing"
-	"time"
-
 	net "gx/ipfs/QmNa31VPzC561NWwRsJLE7nGYZYuuD2QfpK2b1q9BK54J1/go-libp2p-net"
 	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
 	kb "gx/ipfs/QmSAFA8v42u4gpJNy1tb7vW3JiiXiaYDC2b845c2RnNSJL/go-libp2p-kbucket"
@@ -17,10 +11,13 @@ import (
 	kad "gx/ipfs/QmYi2NvTAiv2xTNJNcnuz3iXDDT1ViBwLFXmDb2g7NogAD/go-libp2p-kad-dht"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 	host "gx/ipfs/Qmc1XhrFEiSeBNn3mpfg6gEuYCt5im2gYmNVmncsvmpeAk/go-libp2p-host"
+	"reflect"
+	"sort"
+	"sync"
+	"testing"
+	"time"
 
 	"github.com/ericxtang/m3u8"
-	lpms "github.com/livepeer/lpms/core"
-
 	"github.com/golang/glog"
 )
 
@@ -424,7 +421,7 @@ func TestHandleBroadcast(t *testing.T) {
 	})
 
 	//Error case - subscriber is not set yet.
-	err := handleStreamData(n1, n2.Identity, StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
+	err := handleStreamData(n1, n2.Identity, &StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
 	if err != ErrHandleMsg {
 		t.Errorf("Expecting error because no subscriber has been assigned, got %v", err)
 	}
@@ -439,7 +436,7 @@ func TestHandleBroadcast(t *testing.T) {
 	var seqNoResult uint64
 	var dataResult []byte
 	s1GotMsgChan := make(chan struct{})
-	s1.startWorker(ctxW, n2.Identity, outStrm, func(seqNo uint64, data []byte, eof bool) {
+	s1.startWorker(ctxW, outStrm, func(seqNo uint64, data []byte, eof bool) {
 		seqNoResult = seqNo
 		dataResult = data
 		s1GotMsgChan <- struct{}{}
@@ -449,7 +446,7 @@ func TestHandleBroadcast(t *testing.T) {
 	go func() {
 		for {
 			if n1.getSubscriber("strmID") != nil {
-				err = handleStreamData(n1, n2.Identity, StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
+				err = handleStreamData(n1, n2.Identity, &StreamDataMsg{SeqNo: 100, StrmID: "strmID", Data: []byte("hello")})
 				if err != nil {
 					t.Errorf("handleStreamData error: %v", err)
 				}
@@ -556,7 +553,7 @@ func TestSendSubscribe(t *testing.T) {
 
 	//Wait until the result var is assigned
 	start := time.Now()
-	for time.Since(start) < 1*time.Second {
+	for time.Since(start) < 3*time.Second {
 		if subReq.StrmID == "" {
 			time.Sleep(time.Millisecond * 100)
 		} else {
@@ -572,7 +569,7 @@ func TestSendSubscribe(t *testing.T) {
 		t.Errorf("Subscriber should be working")
 	}
 
-	for start := time.Now(); time.Since(start) < 1*time.Second; {
+	for start := time.Now(); time.Since(start) < 3*time.Second; {
 		if len(result) == 10 {
 			break
 		} else {
@@ -617,7 +614,7 @@ func TestHandleCancel(t *testing.T) {
 	nid2, _ := peer.IDHexDecode("1220fd6156923c7138dc1b4388ab59a3eb0631c4e673499d35d47f1af32f2c92de66")
 	//Put a broadcaster with a single listener in the node, make sure cancel removes the listener
 	strmID1 := "strmID1"
-	b := &BasicBroadcaster{listeners: map[string]*BasicOutStream{peer.IDHexEncode(nid1): nil}}
+	b := &BasicBroadcaster{listeners: map[string]OutStream{peer.IDHexEncode(nid1): nil}}
 	n1.broadcasters[strmID1] = b
 	if err := handleCancelSubReq(n1, CancelSubMsg{StrmID: strmID1}, nid1); err != nil {
 		t.Errorf("Error handling req: %v", err)
@@ -897,7 +894,7 @@ func TestSendTranscodeResponse(t *testing.T) {
 	//Send the message
 	go func() {
 		for i := 0; i < 3; i++ {
-			err := n1.SendTranscodeResponse(peer.IDHexEncode(n3.Identity), fmt.Sprintf("%v:%v", strmID, i), map[string]string{"strmid1": lpms.P240p30fps4x3.Name, "strmid2": lpms.P360p30fps4x3.Name})
+			err := n1.SendTranscodeResponse(peer.IDHexEncode(n3.Identity), fmt.Sprintf("%v:%v", strmID, i), map[string]string{"strmid1": "P240p30fps4x3", "strmid2": "P360p30fps4x3"})
 			if err != nil {
 				t.Errorf("Error sending transcode result: %v", err)
 			}
@@ -907,11 +904,11 @@ func TestSendTranscodeResponse(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		select {
 		case r := <-rc:
-			if r["strmid1"] != lpms.P240p30fps4x3.Name {
-				t.Errorf("Expecting %v, got %v", lpms.P240p30fps4x3.Name, r["strmid1"])
+			if r["strmid1"] != "P240p30fps4x3" {
+				t.Errorf("Expecting %v, got %v", "P240p30fps4x3", r["strmid1"])
 			}
-			if r["strmid2"] != lpms.P360p30fps4x3.Name {
-				t.Errorf("Expecting %v, got %v", lpms.P360p30fps4x3.Name, r["strmid2"])
+			if r["strmid2"] != "P360p30fps4x3" {
+				t.Errorf("Expecting %v, got %v", "P360p30fps4x3", r["strmid2"])
 			}
 		case <-time.After(time.Second * 5):
 			t.Errorf("Timed out")
@@ -1111,17 +1108,12 @@ func TestHandleMasterPlaylistData(t *testing.T) {
 
 func TestMasterPlaylistIntegration(t *testing.T) {
 	glog.Infof("\n\nTesting handle master playlist")
-	n1, n3 := setupNodes(t, 15000, 15001)
-
-	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	no2, _ := NewNode(15003, priv, pub, &BasicNotifiee{})
-	n2, _ := NewBasicVideoNetwork(no2, "")
-	if err := n2.SetupProtocol(); err != nil {
-		t.Errorf("Error: %v", err)
-	}
+	n1, n2 := setupNodes(t, 15000, 15001)
+	n3, n4 := setupNodes(t, 15002, 15003)
 	defer n1.NetworkNode.PeerHost.Close()
 	defer n2.NetworkNode.PeerHost.Close()
 	defer n3.NetworkNode.PeerHost.Close()
+	defer n4.NetworkNode.PeerHost.Close()
 
 	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
 
@@ -1129,7 +1121,7 @@ func TestMasterPlaylistIntegration(t *testing.T) {
 	mpl := m3u8.NewMasterPlaylist()
 	pl, _ := m3u8.NewMediaPlaylist(10, 10)
 	mpl.Append("test.m3u8", pl, m3u8.VariantParams{Bandwidth: 100000})
-	strmID := fmt.Sprintf("%vba1637fd2531f50f9e8f99a37b48d7cfe12fa498ff6da8d6b63279b4632101d5e8b1c872c", peer.IDHexEncode(n1.NetworkNode.Identity))
+	strmID := fmt.Sprintf("%vba1637fd2531f50f9e8f99a37b48d7cfe12fa498ff6da8d6b63279b4632101d5e8b1c872c", peer.IDHexEncode(n2.NetworkNode.Identity))
 
 	//n2 Updates Playlist
 	if err := n2.UpdateMasterPlaylist(strmID, mpl); err != nil {
@@ -1141,50 +1133,14 @@ func TestMasterPlaylistIntegration(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error getting master playlist: %v", err)
 	}
-	timer := time.NewTimer(time.Second * 3)
 	select {
 	case r := <-mplc:
 		vars := r.Variants
 		if len(vars) != 1 {
 			t.Errorf("Expecting 1 variants, but got: %v - %v", len(vars), r)
 		}
-	case <-timer.C:
+	case <-time.After(time.Second * 3):
 		glog.Infof("n2 mplMap: %v", n2.mplMap)
-		t.Errorf("Timed out")
-	}
-
-	//Close down n2, recreate n2 (this could happen when n2 temporarily loses connectivity)
-	n2.NetworkNode.PeerHost.Close()
-	no2, _ = NewNode(15003, priv, pub, &BasicNotifiee{})
-	n2, _ = NewBasicVideoNetwork(no2, "")
-	go n2.SetupProtocol()
-	connectHosts(n1.NetworkNode.PeerHost, n2.NetworkNode.PeerHost)
-
-	//Create Playlist should still work
-	mpl = m3u8.NewMasterPlaylist()
-	pl, _ = m3u8.NewMediaPlaylist(10, 10)
-	mpl.Append("test2.m3u8", pl, m3u8.VariantParams{Bandwidth: 100000})
-	strmID = fmt.Sprintf("%vba1637fd2531f50f9e8f99a37b48d7cfe12fa498ff6da8d6b63279b4632101d5e8b1c872d", peer.IDHexEncode(n1.NetworkNode.Identity))
-	if err := n2.UpdateMasterPlaylist(strmID, mpl); err != nil {
-		t.Errorf("Error updating master playlist: %v", err)
-	}
-
-	//Get Playlist should still work
-	mplc, err = n1.GetMasterPlaylist(n2.GetNodeID(), strmID)
-	if err != nil {
-		t.Errorf("Error getting master playlist: %v", err)
-	}
-	timer = time.NewTimer(time.Second * 3)
-	select {
-	case r := <-mplc:
-		vars := r.Variants
-		if len(vars) != 1 {
-			t.Errorf("Expecting 1 variants, but got: %v - %v", len(vars), r)
-		}
-		if r.Variants[0].URI != "test2.m3u8" {
-			t.Errorf("Expecting test2.m3u8, got %v", r.Variants[0].URI)
-		}
-	case <-timer.C:
 		t.Errorf("Timed out")
 	}
 
@@ -1196,7 +1152,7 @@ func TestMasterPlaylistIntegration(t *testing.T) {
 	mpl = m3u8.NewMasterPlaylist()
 	pl, _ = m3u8.NewMediaPlaylist(10, 10)
 	mpl.Append("test3.m3u8", pl, m3u8.VariantParams{Bandwidth: 100000})
-	strmID = fmt.Sprintf("%vba1637fd2531f50f9e8f99a37b48d7cfe12fa498ff6da8d6b63279b4632101d5e8b1c872f", peer.IDHexEncode(n1.NetworkNode.Identity))
+	strmID = fmt.Sprintf("%vba1637fd2531f50f9e8f99a37b48d7cfe12fa498ff6da8d6b63279b4632101d5e8b1c872f", peer.IDHexEncode(n3.NetworkNode.Identity))
 	if err := n3.UpdateMasterPlaylist(strmID, mpl); err != nil {
 		t.Errorf("Error updating master playlist: %v", err)
 	}

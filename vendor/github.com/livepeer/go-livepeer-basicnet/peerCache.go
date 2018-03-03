@@ -76,7 +76,7 @@ func (pc *PeerCache) Record(ctx context.Context) {
 			}
 			if len(str) > 0 {
 				if err := ioutil.WriteFile(pc.Filename, []byte(str), 0644); err != nil {
-					glog.Errorf("Error writing connection to file system")
+					glog.Errorf("Error writing connection to file system: %v", err)
 				}
 			}
 		case <-ctx.Done():
