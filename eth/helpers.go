@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
 )
@@ -14,6 +15,18 @@ import (
 var (
 	BlocksUntilFirstClaimDeadline = big.NewInt(230)
 )
+
+func VerifySig(addr common.Address, msg, sig []byte) bool {
+	personalMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, msg)
+	personalHash := crypto.Keccak256([]byte(personalMsg))
+
+	pubkey, err := crypto.SigToPub(personalHash, sig)
+	if err != nil {
+		return false
+	}
+
+	return crypto.PubkeyToAddress(*pubkey) == addr
+}
 
 func FormatUnits(baseAmount *big.Int, name string) string {
 	amount := FromBaseUnit(baseAmount)
