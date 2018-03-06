@@ -254,30 +254,14 @@ func (c *Client) CallContext(ctx context.Context, result interface{}, method str
 	if err != nil {
 		return err
 	}
-	op := &requestOp{ids: []json.RawMessage{msg.ID}, resp: make(chan *jsonrpcMessage, 1)}
 
-	if c.isHTTP {
-		err = c.sendHTTP(ctx, op, msg)
-	} else {
-		err = c.send(ctx, op, msg)
-	}
-
-	resp, err := op.wait(ctx)
+	resp, err := c.doSend(ctx, msg)
 
 	retries := 0
-
 	for err != nil && retries < failedWriteRetries {
 		time.Sleep(1 * time.Second)
 
-		op := &requestOp{ids: []json.RawMessage{msg.ID}, resp: make(chan *jsonrpcMessage, 1)}
-
-		if c.isHTTP {
-			err = c.sendHTTP(ctx, op, msg)
-		} else {
-			err = c.send(ctx, op, msg)
-		}
-
-		resp, err = op.wait(ctx)
+		resp, err = c.doSend(ctx, msg)
 		retries++
 	}
 
@@ -430,6 +414,23 @@ func (c *Client) newMessage(method string, paramsIn ...interface{}) (*jsonrpcMes
 	return &jsonrpcMessage{Version: "2.0", ID: c.nextID(), Method: method, Params: params}, nil
 }
 
+func (c *Client) doSend(ctx context.Context, msg *jsonrpcMessage) (*jsonrpcMessage, error) {
+	op := &requestOp{ids: []json.RawMessage{msg.ID}, resp: make(chan *jsonrpcMessage, 1)}
+
+	var err error
+	if c.isHTTP {
+		err = c.sendHTTP(ctx, op, msg)
+	} else {
+		err = c.send(ctx, op, msg)
+	}
+
+	if err != nil {
+		return nil, err
+	} else {
+		return op.wait(ctx)
+	}
+}
+
 // send registers op with the dispatch loop, then sends msg on the connection.
 // if sending fails, op is deregistered.
 func (c *Client) send(ctx context.Context, op *requestOp, msg interface{}) error {
@@ -438,15 +439,7 @@ func (c *Client) send(ctx context.Context, op *requestOp, msg interface{}) error
 		log.Trace("", "msg", log.Lazy{Fn: func() string {
 			return fmt.Sprint("sending ", msg)
 		}})
-
-		retries := 0
 		err := c.write(ctx, msg)
-		for err != nil && retries < failedWriteRetries {
-			time.Sleep(1 * time.Second)
-			err = c.write(ctx, msg)
-			retries++
-		}
-
 		c.sendDone <- err
 		return err
 	case <-ctx.Done():
