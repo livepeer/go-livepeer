@@ -262,15 +262,33 @@ func (c *Client) CallContext(ctx context.Context, result interface{}, method str
 		err = c.send(ctx, op, msg)
 	}
 
+	resp, err := op.wait(ctx)
+
+	retries := 0
+
+	for err != nil && retries < failedWriteRetries {
+		time.Sleep(1 * time.Second)
+
+		op := &requestOp{ids: []json.RawMessage{msg.ID}, resp: make(chan *jsonrpcMessage, 1)}
+
+		if c.isHTTP {
+			err = c.sendHTTP(ctx, op, msg)
+		} else {
+			err = c.send(ctx, op, msg)
+		}
+
+		resp, err = op.wait(ctx)
+		retries++
+	}
+
 	// dispatch has accepted the request and will close the channel it when it quits.
-	switch resp, err := op.wait(ctx); {
-	case err != nil:
+	if err != nil {
 		return err
-	case resp.Error != nil:
+	} else if resp.Error != nil {
 		return resp.Error
-	case len(resp.Result) == 0:
+	} else if len(resp.Result) == 0 {
 		return ErrNoResult
-	default:
+	} else {
 		return json.Unmarshal(resp.Result, &result)
 	}
 }
