@@ -146,23 +146,16 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 	//Create the broadcasters
 	tProfiles := make([]ffmpeg.VideoProfile, len(config.Profiles), len(config.Profiles))
 	resultStrmIDs := make([]StreamID, len(config.Profiles), len(config.Profiles))
-	variants := make(map[StreamID]*m3u8.Variant)
 	broadcasters := make(map[StreamID]stream.Broadcaster)
+	sid := StreamID(config.StrmID)
 	for i, vp := range config.Profiles {
-		strmID, err := MakeStreamID(n.Identity, RandomVideoID(), vp.Name)
+		strmID, err := MakeStreamID(n.Identity, sid.GetVideoID(), vp.Name)
 		if err != nil {
 			glog.Errorf("Error making stream ID: %v", err)
 			return nil, ErrTranscode
 		}
 		resultStrmIDs[i] = strmID
 		tProfiles[i] = ffmpeg.VideoProfileLookup[vp.Name]
-
-		pl, err := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
-		if err != nil {
-			glog.Errorf("Error making playlist: %v", err)
-			return nil, ErrTranscode
-		}
-		variants[strmID] = &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: ffmpeg.VideoProfileToVariantParams(tProfiles[i])}
 
 		broadcaster, err := n.VideoNetwork.GetBroadcaster(string(strmID))
 		if err != nil {
