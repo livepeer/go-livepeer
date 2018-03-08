@@ -29,13 +29,12 @@ type BasicSubscriber struct {
 	runningLock  *sync.Mutex
 	StrmID       string
 	UpstreamPeer peer.ID
-	working      bool
 	cancelWorker context.CancelFunc
 }
 
 func (s *BasicSubscriber) InsertData(sd *StreamDataMsg) error {
 	go func(sd *StreamDataMsg) {
-		if s.working {
+		if s.running {
 			timer := time.NewTimer(InsertDataWaitTime)
 			select {
 			case s.msgChan <- *sd:
@@ -57,7 +56,6 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 
 		ctxW, cancel := context.WithCancel(context.Background())
 		s.cancelWorker = cancel
-		s.working = true
 		s.runningLock.Lock()
 		s.startWorker(ctxW, nil, gotData)
 		s.runningLock.Unlock()
@@ -92,8 +90,6 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 			}
 			ctxW, cancel := context.WithCancel(context.Background())
 			s.cancelWorker = cancel
-			s.working = true
-			// s.networkStream = ns
 			s.UpstreamPeer = p
 			s.runningLock.Lock()
 			s.startWorker(ctxW, ns, gotData)
@@ -130,13 +126,11 @@ func (s *BasicSubscriber) startWorker(ctxW context.Context, ws *BasicOutStream, 
 					networkWaitTime := time.Since(start)
 					glog.V(common.DEBUG).Infof("Subscriber worker inserted segment: %v - took %v in total, %v waiting for data", msg.SeqNo, time.Since(start), networkWaitTime)
 				case <-ctxW.Done():
-					// s.networkStream = nil
-					s.working = false
+					s.running = false
 					glog.Infof("Done with subscription, sending CancelSubMsg")
 					//Send EOF
 					for _, cb := range s.callbacks {
 						go cb(0, nil, true)
-
 					}
 					if ws != nil {
 						if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
@@ -169,9 +163,9 @@ func (s *BasicSubscriber) Unsubscribe() error {
 }
 
 func (s BasicSubscriber) String() string {
-	return fmt.Sprintf("StreamID: %v, working: %v", s.StrmID, s.working)
+	return fmt.Sprintf("StreamID: %v, running: %v", s.StrmID, s.running)
 }
 
 func (s *BasicSubscriber) IsLive() bool {
-	return s.working
+	return s.running
 }

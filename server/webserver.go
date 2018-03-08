@@ -66,7 +66,10 @@ func (s *LivepeerServer) StartWebserver() {
 		for i, vp := range ps {
 			vids[ids[i]] = vp
 			vParams := ffmpeg.VideoProfileToVariantParams(vp)
-			pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
+			pl, err := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
+			if err != nil {
+				glog.Errorf("Error creating new media playlist: %v", err)
+			}
 			variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", ids[i]), Chunklist: pl, VariantParams: vParams}
 			manifest.Append(variant.URI, variant.Chunklist, variant.VariantParams)
 		}
