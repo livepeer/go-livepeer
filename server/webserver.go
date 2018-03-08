@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/ericxtang/m3u8"
 	basicnet "github.com/livepeer/go-livepeer-basicnet"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/transcoder"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -32,6 +35,7 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
+		//Do transcoding
 		ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9}
 		tr := transcoder.NewFFMpegSegmentTranscoder(ps, "", s.LivepeerNode.WorkDir)
 		config := net.TranscodeConfig{StrmID: strmID, Profiles: ps}
@@ -41,12 +45,36 @@ func (s *LivepeerServer) StartWebserver() {
 			http.Error(w, "Error transcoding.", 500)
 		}
 
+		//Get the manifest that contains the stream
+		sid := core.StreamID(strmID)
+		manifestID, _ := core.MakeManifestID(sid.GetNodeID(), sid.GetVideoID())
+		mch, err := s.LivepeerNode.VideoNetwork.GetMasterPlaylist(string(sid.GetNodeID()), manifestID.String())
+		if err != nil {
+			glog.Errorf("Error getting manifest: %v", err)
+			return
+		}
+		var manifest *m3u8.MasterPlaylist
+		select {
+		case manifest = <-mch:
+		case <-time.After(time.Second):
+			glog.Errorf("Get Master Playlist timed out.")
+			return
+		}
+
+		//Update the manifest
 		vids := make(map[core.StreamID]ffmpeg.VideoProfile)
 		for i, vp := range ps {
 			vids[ids[i]] = vp
+			vParams := ffmpeg.VideoProfileToVariantParams(vp)
+			pl, err := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
+			if err != nil {
+				glog.Errorf("Error creating new media playlist: %v", err)
+			}
+			variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", ids[i]), Chunklist: pl, VariantParams: vParams}
+			manifest.Append(variant.URI, variant.Chunklist, variant.VariantParams)
 		}
+		s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(manifestID.String(), manifest)
 
-		sid := core.StreamID(strmID)
 		s.LivepeerNode.NotifyBroadcaster(sid.GetNodeID(), sid, vids)
 	})
 

@@ -169,7 +169,8 @@ func TestTranscode(t *testing.T) {
 	//Set up the node
 	stubnet := &StubVideoNetwork{T: t, subscribers: make(map[string]*StubSubscriber)}
 	n, _ := NewLivepeerNode(&eth.StubClient{}, stubnet, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, ".tmp")
-	stubnet.subscribers["strmID"] = &StubSubscriber{}
+	strmID, _ := MakeStreamID(n.Identity, RandomVideoID(), ffmpeg.P720p30fps4x3.Name)
+	stubnet.subscribers[strmID.String()] = &StubSubscriber{}
 	ffmpeg.InitFFmpeg()
 	defer ffmpeg.DeinitFFmpeg()
 
@@ -181,7 +182,7 @@ func TestTranscode(t *testing.T) {
 		tProfiles[i] = ffmpeg.VideoProfileLookup[vp.Name]
 	}
 	tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.WorkDir)
-	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: "strmID", Profiles: p}, &StubClaimManager{}, tr)
+	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: strmID.String(), Profiles: p}, &StubClaimManager{}, tr)
 	if err != nil {
 		t.Errorf("Error transcoding: %v", err)
 	}

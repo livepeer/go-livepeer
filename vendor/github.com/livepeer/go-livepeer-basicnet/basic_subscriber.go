@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	kb "gx/ipfs/QmSAFA8v42u4gpJNy1tb7vW3JiiXiaYDC2b845c2RnNSJL/go-libp2p-kbucket"
@@ -20,19 +21,20 @@ var ErrSubscriber = errors.New("ErrSubscriber")
 
 //BasicSubscriber keeps track of
 type BasicSubscriber struct {
-	Network *BasicVideoNetwork
-	host    host.Host
-	msgChan chan StreamDataMsg
-	// networkStream *BasicStream
+	Network      *BasicVideoNetwork
+	host         host.Host
+	msgChan      chan StreamDataMsg
+	callbacks    []func(uint64, []byte, bool)
+	running      bool
+	runningLock  *sync.Mutex
 	StrmID       string
 	UpstreamPeer peer.ID
-	working      bool
 	cancelWorker context.CancelFunc
 }
 
 func (s *BasicSubscriber) InsertData(sd *StreamDataMsg) error {
 	go func(sd *StreamDataMsg) {
-		if s.working {
+		if s.running {
 			timer := time.NewTimer(InsertDataWaitTime)
 			select {
 			case s.msgChan <- *sd:
@@ -54,8 +56,9 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 
 		ctxW, cancel := context.WithCancel(context.Background())
 		s.cancelWorker = cancel
-		s.working = true
+		s.runningLock.Lock()
 		s.startWorker(ctxW, nil, gotData)
+		s.runningLock.Unlock()
 		return nil
 	}
 
@@ -87,10 +90,10 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 			}
 			ctxW, cancel := context.WithCancel(context.Background())
 			s.cancelWorker = cancel
-			s.working = true
-			// s.networkStream = ns
 			s.UpstreamPeer = p
+			s.runningLock.Lock()
 			s.startWorker(ctxW, ns, gotData)
+			s.runningLock.Unlock()
 			return nil
 		}
 	}
@@ -102,33 +105,44 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 }
 
 func (s *BasicSubscriber) startWorker(ctxW context.Context, ws *BasicOutStream, gotData func(seqNo uint64, data []byte, eof bool)) {
-	//We expect DataStreamMsg to come back
-	go func() {
-		for {
-			//Get message from the msgChan (inserted from the network by StreamDataMsg)
-			//Call gotData(seqNo, data)
-			//Question: What happens if the handler gets stuck?
-			start := time.Now()
-			select {
-			case msg := <-s.msgChan:
-				networkWaitTime := time.Since(start)
-				go gotData(msg.SeqNo, msg.Data, false)
-				glog.V(common.DEBUG).Infof("Subscriber worker inserted segment: %v - took %v in total, %v waiting for data", msg.SeqNo, time.Since(start), networkWaitTime)
-			case <-ctxW.Done():
-				// s.networkStream = nil
-				s.working = false
-				glog.Infof("Done with subscription, sending CancelSubMsg")
-				//Send EOF
-				go gotData(0, nil, true)
-				if ws != nil {
-					if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
-						glog.Errorf("Error sending CancelSubMsg during worker cancellation: %v", err)
+	if s.running {
+		s.callbacks = append(s.callbacks, gotData)
+	} else {
+		glog.Infof("Starting sub worker")
+		s.callbacks = make([]func(uint64, []byte, bool), 0)
+		s.callbacks = append(s.callbacks, gotData)
+		//We expect DataStreamMsg to come back
+		go func() {
+			for {
+				//Get message from the msgChan (inserted from the network by StreamDataMsg)
+				//Call gotData(seqNo, data)
+				//Question: What happens if the handler gets stuck?
+				start := time.Now()
+				select {
+				case msg := <-s.msgChan:
+					for _, cb := range s.callbacks {
+						go cb(msg.SeqNo, msg.Data, false)
 					}
+					networkWaitTime := time.Since(start)
+					glog.V(common.DEBUG).Infof("Subscriber worker inserted segment: %v - took %v in total, %v waiting for data", msg.SeqNo, time.Since(start), networkWaitTime)
+				case <-ctxW.Done():
+					s.running = false
+					glog.Infof("Done with subscription, sending CancelSubMsg")
+					//Send EOF
+					for _, cb := range s.callbacks {
+						go cb(0, nil, true)
+					}
+					if ws != nil {
+						if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
+							glog.Errorf("Error sending CancelSubMsg during worker cancellation: %v", err)
+						}
+					}
+					return
 				}
-				return
 			}
-		}
-	}()
+		}()
+		s.running = true
+	}
 }
 
 //Unsubscribe unsubscribes from the broadcast
@@ -149,9 +163,9 @@ func (s *BasicSubscriber) Unsubscribe() error {
 }
 
 func (s BasicSubscriber) String() string {
-	return fmt.Sprintf("StreamID: %v, working: %v", s.StrmID, s.working)
+	return fmt.Sprintf("StreamID: %v, running: %v", s.StrmID, s.running)
 }
 
 func (s *BasicSubscriber) IsLive() bool {
-	return s.working
+	return s.running
 }

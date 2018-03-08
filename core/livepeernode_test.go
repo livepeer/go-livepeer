@@ -50,15 +50,15 @@ func (t *StubTranscoder) Transcode(fname string) ([][]byte, error) {
 
 func TestTranscodeAndBroadcast(t *testing.T) {
 	nid := NodeID("12201c23641663bf06187a8c154a6c97266d138cb8379c1bc0828122dcc51c83698d")
-	strmID := "strmID"
+	strmID, _ := MakeStreamID(nid, RandomVideoID(), ffmpeg.P720p30fps4x3.Name)
 	jid := big.NewInt(0)
 	ffmpeg.InitFFmpeg()
 	defer ffmpeg.DeinitFFmpeg()
 	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
-	config := net.TranscodeConfig{StrmID: strmID, Profiles: p, PerformOnchainClaim: false, JobID: jid}
+	config := net.TranscodeConfig{StrmID: strmID.String(), Profiles: p, PerformOnchainClaim: false, JobID: jid}
 
 	stubnet := &StubVideoNetwork{subscribers: make(map[string]*StubSubscriber)}
-	stubnet.subscribers[strmID] = &StubSubscriber{}
+	stubnet.subscribers[strmID.String()] = &StubSubscriber{}
 	n, err := NewLivepeerNode(&eth.StubClient{}, stubnet, nid, []string{""}, ".") // TODO fix empty work dir
 	if err != nil {
 		t.Errorf("Error: %v", err)

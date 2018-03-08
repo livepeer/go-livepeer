@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	net "gx/ipfs/QmNa31VPzC561NWwRsJLE7nGYZYuuD2QfpK2b1q9BK54J1/go-libp2p-net"
@@ -140,7 +141,7 @@ func (n *BasicVideoNetwork) SetBroadcaster(strmID string, b *BasicBroadcaster) {
 func (n *BasicVideoNetwork) GetSubscriber(strmID string) (stream.Subscriber, error) {
 	s, ok := n.subscribers[strmID]
 	if !ok {
-		s = &BasicSubscriber{Network: n, StrmID: strmID, host: n.NetworkNode.PeerHost, msgChan: make(chan StreamDataMsg)}
+		s = &BasicSubscriber{Network: n, StrmID: strmID, host: n.NetworkNode.PeerHost, msgChan: make(chan StreamDataMsg), runningLock: &sync.Mutex{}}
 		n.subscribers[strmID] = s
 		lpmon.Instance().LogSub(strmID)
 	}
