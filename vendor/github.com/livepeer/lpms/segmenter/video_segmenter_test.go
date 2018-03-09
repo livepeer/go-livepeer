@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
+	"path"
 	"testing"
 
 	"time"
@@ -24,6 +26,7 @@ import (
 	"github.com/nareix/joy4/av/avutil"
 	"github.com/nareix/joy4/format"
 	"github.com/nareix/joy4/format/rtmp"
+	"strings"
 )
 
 type TestStream struct{}
@@ -403,5 +406,60 @@ func TestSegmentDefaults(t *testing.T) {
 	vs = NewFFMpegVideoSegmenter("", "test", "", opt)
 	if vs.SegLen != 100*time.Millisecond {
 		t.Errorf("Expected 100ms default segment length but got %v", opt.SegLength)
+	}
+}
+
+func ffprobe_firstframeflags(fname string) (string, error) {
+	cmd := "ffprobe -loglevel quiet -hide_banner -select_streams v -show_packets "
+	cmd = cmd + fname + " | grep flag | head -1"
+	out, err := exec.Command("bash", "-c", cmd).Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+func TestMissingKeyframe(t *testing.T) {
+	// sanity check that test file has a keyframe at the beginning
+	out, err := ffprobe_firstframeflags("test.flv")
+	if err != nil || out != "flags=K_" {
+		t.Errorf("First video packet of test file was not a keyframe '%v' - %v", out, err)
+		return
+	}
+
+	// remove the first keyframe from test file, store in tempfile
+	dir, err := ioutil.TempDir("", "lp-"+t.Name())
+	defer os.RemoveAll(dir)
+	if err != nil {
+		t.Errorf(fmt.Sprintf("Unable to get tempfile ", err))
+		return
+	}
+	fname := path.Join(dir, "tmp.flv")
+	oname := path.Join(dir, "out.m3u8")
+	cmd := "-i test.flv -bsf:v noise=dropamount=10:amount=2147483647 -c:a copy -c:v copy -copyinkf -y " + fname
+	c := exec.Command("ffmpeg", strings.Split(cmd, " ")...)
+	err = c.Run()
+	if err != nil {
+		t.Errorf(fmt.Sprintf("Unable to run 'ffmpeg %v' - %v", cmd, err))
+		return
+	}
+
+	// sanity check tempfile doesn't have a video keyframe at the beginning
+	out, err = ffprobe_firstframeflags(fname)
+	if err != nil || out != "flags=__" {
+		t.Errorf("First video packet of temp file unexpected; %v - %v", out, err)
+		return
+	}
+
+	// actually segment
+	ffmpeg.InitFFmpeg()
+	defer ffmpeg.DeinitFFmpeg()
+	err = ffmpeg.RTMPToHLS(fname, oname, path.Join(dir, "out")+"_%d.ts", "4")
+	if err != nil {
+		t.Errorf("Error segmenting - %v", err)
+		return
+	}
+	// and now check that segmented result does have keyframe at beginning
+	out, err = ffprobe_firstframeflags(path.Join(dir, "out_0.ts"))
+	if err != nil || out != "flags=K_" {
+		t.Errorf("Segment did not have keyframe at beginning %v - %v", out, err)
+		return
 	}
 }

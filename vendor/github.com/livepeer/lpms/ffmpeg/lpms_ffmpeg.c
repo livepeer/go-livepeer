@@ -69,6 +69,7 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time)
   AVCodec *codec        = NULL;
   int64_t prev_ts[2]    = {AV_NOPTS_VALUE, AV_NOPTS_VALUE};
   int stream_map[2]     = {-1, -1};
+  int got_video_kf      = 0;
   AVPacket pkt;
 
   ret = avformat_open_input(&ic, listen, NULL, NULL);
@@ -81,6 +82,7 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time)
   ret = avformat_alloc_output_context2(&oc, ofmt, NULL, outf);
   if (ret < 0) r2h_err("Unable to allocate output context\n");
 
+  // XXX accommodate cases where audio or video is empty
   stream_map[0] = av_find_best_stream(ic, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
   if (stream_map[0] < 0) r2h_err("segmenter: Unable to find video stream\n");
   stream_map[1] = av_find_best_stream(ic, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
@@ -114,6 +116,10 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time)
     ist = ic->streams[pkt.stream_index];
     ost = oc->streams[stream_map[pkt.stream_index]];
     int64_t dts_next = pkt.dts, dts_prev = prev_ts[pkt.stream_index];
+    if (oc->streams[pkt.stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
+        AV_NOPTS_VALUE == dts_prev &&
+        (pkt.flags & AV_PKT_FLAG_KEY)) got_video_kf = 1;
+    if (!got_video_kf) goto r2hloop_end; // skip everyting until first video KF
     if (AV_NOPTS_VALUE == dts_prev) dts_prev = dts_next;
     pkt.pts = av_rescale_q_rnd(pkt.pts, ist->time_base, ost->time_base,
         AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
