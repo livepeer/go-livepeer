@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"net/url"
 	"os"
@@ -191,7 +192,8 @@ func transcode(hlsStream stream.HLSVideoStream) (func(*stream.HLSSegment, bool),
 		ffmpeg.P240p30fps16x9,
 		ffmpeg.P576p30fps16x9,
 	}
-	t := transcoder.NewFFMpegSegmentTranscoder(profiles, "", "./tmp")
+	workDir := "./tmp"
+	t := transcoder.NewFFMpegSegmentTranscoder(profiles, "", workDir)
 
 	//Create variants in the stream
 	strmIDs := make([]string, len(profiles), len(profiles))
@@ -206,8 +208,20 @@ func transcode(hlsStream stream.HLSVideoStream) (func(*stream.HLSSegment, bool),
 		//If we get a new video segment for the original HLS stream, do the transcoding.
 		// glog.Infof("Got seg: %v", seg.Name)
 		// if strmID == hlsStream.GetStreamID() {
+		file, err := ioutil.TempFile(workDir, "example")
+		if err != nil {
+			glog.Errorf("Unable to get tempdir, %v", err)
+		}
+		defer os.Remove(file.Name())
+		if _, err = file.Write(seg.Data); err != nil {
+			glog.Errorf("Unable to write temp file %v", err)
+		}
+		if err = file.Close(); err != nil {
+			glog.Errorf("Unable to close file: %v", err)
+		}
+
 		//Transcode stream
-		tData, err := t.Transcode(seg.Data)
+		tData, err := t.Transcode(file.Name())
 		if err != nil {
 			glog.Errorf("Error transcoding: %v", err)
 		}
