@@ -21,7 +21,6 @@ Node1: go run cmd/example.go -ping
 Node2: go run cmd/example.go -ping -p 15001 -id {Node1ID} -addr {Node1Addr} -i
 
 **/
-
 var timer time.Time
 
 func main() {
@@ -49,7 +48,7 @@ func main() {
 
 }
 
-func pingtest(init bool, node *basicnet.NetworkNode, pid peer.ID) {
+func pingtest(init bool, node *basicnet.BasicNetworkNode, pid peer.ID) {
 	if init {
 		timer = time.Now()
 		strm := node.GetOutStream(pid)
@@ -68,7 +67,7 @@ func pingtest(init bool, node *basicnet.NetworkNode, pid peer.ID) {
 	select {}
 }
 
-func setHandler(n *basicnet.NetworkNode) {
+func setHandler(n *basicnet.BasicNetworkNode) {
 	n.PeerHost.SetStreamHandler(basicnet.Protocol, func(stream net.Stream) {
 		ws := basicnet.NewBasicInStream(stream)
 

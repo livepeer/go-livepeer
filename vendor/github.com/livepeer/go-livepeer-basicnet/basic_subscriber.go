@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	kb "gx/ipfs/QmSAFA8v42u4gpJNy1tb7vW3JiiXiaYDC2b845c2RnNSJL/go-libp2p-kbucket"
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
-	host "gx/ipfs/Qmc1XhrFEiSeBNn3mpfg6gEuYCt5im2gYmNVmncsvmpeAk/go-libp2p-host"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -21,20 +19,19 @@ var ErrSubscriber = errors.New("ErrSubscriber")
 
 //BasicSubscriber keeps track of
 type BasicSubscriber struct {
-	Network      *BasicVideoNetwork
-	host         host.Host
-	msgChan      chan StreamDataMsg
-	callbacks    []func(uint64, []byte, bool)
-	running      bool
-	runningLock  *sync.Mutex
+	Network *BasicVideoNetwork
+	// host    host.Host
+	msgChan chan StreamDataMsg
+	// networkStream *BasicStream
 	StrmID       string
 	UpstreamPeer peer.ID
+	working      bool
 	cancelWorker context.CancelFunc
 }
 
 func (s *BasicSubscriber) InsertData(sd *StreamDataMsg) error {
 	go func(sd *StreamDataMsg) {
-		if s.running {
+		if s.working {
 			timer := time.NewTimer(InsertDataWaitTime)
 			select {
 			case s.msgChan <- *sd:
@@ -56,14 +53,13 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 
 		ctxW, cancel := context.WithCancel(context.Background())
 		s.cancelWorker = cancel
-		s.runningLock.Lock()
+		s.working = true
 		s.startWorker(ctxW, nil, gotData)
-		s.runningLock.Unlock()
 		return nil
 	}
 
 	//If we don't, send subscribe request, listen for response
-	localPeers := s.Network.NetworkNode.PeerHost.Peerstore().Peers()
+	localPeers := s.Network.NetworkNode.GetPeers()
 	if len(localPeers) == 1 {
 		glog.Errorf("No local peers")
 		return ErrSubscriber
@@ -76,7 +72,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 	peers := kb.SortClosestPeers(localPeers, kb.ConvertPeerID(targetPid))
 
 	for _, p := range peers {
-		if p == s.Network.NetworkNode.Identity {
+		if p == s.Network.NetworkNode.ID() {
 			continue
 		}
 		//Question: Where do we close the stream? If we only close on "Unsubscribe", we may leave some streams open...
@@ -90,10 +86,10 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 			}
 			ctxW, cancel := context.WithCancel(context.Background())
 			s.cancelWorker = cancel
+			s.working = true
+			// s.networkStream = ns
 			s.UpstreamPeer = p
-			s.runningLock.Lock()
 			s.startWorker(ctxW, ns, gotData)
-			s.runningLock.Unlock()
 			return nil
 		}
 	}
@@ -105,44 +101,33 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 }
 
 func (s *BasicSubscriber) startWorker(ctxW context.Context, ws *BasicOutStream, gotData func(seqNo uint64, data []byte, eof bool)) {
-	if s.running {
-		s.callbacks = append(s.callbacks, gotData)
-	} else {
-		glog.Infof("Starting sub worker")
-		s.callbacks = make([]func(uint64, []byte, bool), 0)
-		s.callbacks = append(s.callbacks, gotData)
-		//We expect DataStreamMsg to come back
-		go func() {
-			for {
-				//Get message from the msgChan (inserted from the network by StreamDataMsg)
-				//Call gotData(seqNo, data)
-				//Question: What happens if the handler gets stuck?
-				start := time.Now()
-				select {
-				case msg := <-s.msgChan:
-					for _, cb := range s.callbacks {
-						go cb(msg.SeqNo, msg.Data, false)
+	//We expect DataStreamMsg to come back
+	go func() {
+		for {
+			//Get message from the msgChan (inserted from the network by StreamDataMsg)
+			//Call gotData(seqNo, data)
+			//Question: What happens if the handler gets stuck?
+			start := time.Now()
+			select {
+			case msg := <-s.msgChan:
+				networkWaitTime := time.Since(start)
+				go gotData(msg.SeqNo, msg.Data, false)
+				glog.V(common.DEBUG).Infof("Subscriber worker inserted segment: %v - took %v in total, %v waiting for data", msg.SeqNo, time.Since(start), networkWaitTime)
+			case <-ctxW.Done():
+				// s.networkStream = nil
+				s.working = false
+				glog.Infof("Done with subscription, sending CancelSubMsg")
+				//Send EOF
+				go gotData(0, nil, true)
+				if ws != nil {
+					if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
+						glog.Errorf("Error sending CancelSubMsg during worker cancellation: %v", err)
 					}
-					networkWaitTime := time.Since(start)
-					glog.V(common.DEBUG).Infof("Subscriber worker inserted segment: %v - took %v in total, %v waiting for data", msg.SeqNo, time.Since(start), networkWaitTime)
-				case <-ctxW.Done():
-					s.running = false
-					glog.Infof("Done with subscription, sending CancelSubMsg")
-					//Send EOF
-					for _, cb := range s.callbacks {
-						go cb(0, nil, true)
-					}
-					if ws != nil {
-						if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
-							glog.Errorf("Error sending CancelSubMsg during worker cancellation: %v", err)
-						}
-					}
-					return
 				}
+				return
 			}
-		}()
-		s.running = true
-	}
+		}
+	}()
 }
 
 //Unsubscribe unsubscribes from the broadcast
@@ -163,9 +148,9 @@ func (s *BasicSubscriber) Unsubscribe() error {
 }
 
 func (s BasicSubscriber) String() string {
-	return fmt.Sprintf("StreamID: %v, running: %v", s.StrmID, s.running)
+	return fmt.Sprintf("StreamID: %v, working: %v", s.StrmID, s.working)
 }
 
 func (s *BasicSubscriber) IsLive() bool {
-	return s.running
+	return s.working
 }

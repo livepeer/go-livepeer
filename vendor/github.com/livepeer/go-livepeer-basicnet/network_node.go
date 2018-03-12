@@ -4,16 +4,20 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/golang/glog"
 
+	inet "gx/ipfs/QmNa31VPzC561NWwRsJLE7nGYZYuuD2QfpK2b1q9BK54J1/go-libp2p-net"
 	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
+	kb "gx/ipfs/QmSAFA8v42u4gpJNy1tb7vW3JiiXiaYDC2b845c2RnNSJL/go-libp2p-kbucket"
 	addrutil "gx/ipfs/QmVJGsPeK3vwtEyyTxpCs47yjBYMmYsAhEouPDF3Gb2eK3/go-addr-util"
 	ds "gx/ipfs/QmVSase1JP7cq9QkPT46oNwdp9pT6kBkG3oqS14y3QcZjG/go-datastore"
 	swarm "gx/ipfs/QmWpJ4y2vxJ6GZpPfQbpVpQxAYS3UeR6AKNbAHxw7wN3qw/go-libp2p-swarm"
 	ma "gx/ipfs/QmXY77cVe7rVRQXZZQRioukUM7aRW3BTcAgJe12MCtb3Ji/go-multiaddr"
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 	kad "gx/ipfs/QmYi2NvTAiv2xTNJNcnuz3iXDDT1ViBwLFXmDb2g7NogAD/go-libp2p-kad-dht"
+	protocol "gx/ipfs/QmZNkThpqfVXs9GNbexPrfBbXSLNYeKrE7jwFM2oqHbyqN/go-libp2p-protocol"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 	bhost "gx/ipfs/Qmbgce14YTWE2qhE49JVvTBPaHTyz3FaFmqQPyuZAz6C28/go-libp2p/p2p/host/basic"
 	rhost "gx/ipfs/Qmbgce14YTWE2qhE49JVvTBPaHTyz3FaFmqQPyuZAz6C28/go-libp2p/p2p/host/routed"
@@ -21,7 +25,22 @@ import (
 	host "gx/ipfs/Qmc1XhrFEiSeBNn3mpfg6gEuYCt5im2gYmNVmncsvmpeAk/go-libp2p-host"
 )
 
-type NetworkNode struct {
+type NetworkNode interface {
+	ID() peer.ID
+	GetOutStream(pid peer.ID) *BasicOutStream
+	RefreshOutStream(pid peer.ID) *BasicOutStream
+	RemoveStream(pid peer.ID)
+	GetPeers() []peer.ID
+	GetPeerInfo(peer.ID) peerstore.PeerInfo
+	Connect(context.Context, peerstore.PeerInfo) error
+	AddPeer(peerstore.PeerInfo, time.Duration)
+	RemovePeer(peer.ID)
+	ClosestLocalPeers(strmID string) ([]peer.ID, error)
+	GetDHT() *kad.IpfsDHT
+	SetStreamHandler(pid protocol.ID, handler inet.StreamHandler)
+}
+
+type BasicNetworkNode struct {
 	Identity       peer.ID // the local node's identity
 	Kad            *kad.IpfsDHT
 	PeerHost       host.Host // the network host (server+client)
@@ -31,7 +50,7 @@ type NetworkNode struct {
 }
 
 //NewNode creates a new Livepeerd node.
-func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey, f *BasicNotifiee) (*NetworkNode, error) {
+func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey, f *BasicNotifiee) (*BasicNetworkNode, error) {
 	pid, err := peer.IDFromPublicKey(pub)
 	if err != nil {
 		return nil, err
@@ -78,7 +97,7 @@ func NewNode(listenPort int, priv crypto.PrivKey, pub crypto.PubKey, f *BasicNot
 	rHost := rhost.Wrap(basicHost, dht)
 
 	glog.V(2).Infof("Created node: %v at %v", peer.IDHexEncode(rHost.ID()), rHost.Addrs())
-	nn := &NetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, outStreams: streams, outStreamsLock: &sync.Mutex{}}
+	nn := &BasicNetworkNode{Identity: pid, Kad: dht, PeerHost: rHost, outStreams: streams, outStreamsLock: &sync.Mutex{}}
 	f.HandleDisconnect(func(pid peer.ID) {
 		nn.RemoveStream(pid)
 	})
@@ -104,7 +123,7 @@ func constructDHTRouting(ctx context.Context, host host.Host, dstore ds.Batching
 	return dhtRouting, nil
 }
 
-func (n *NetworkNode) GetOutStream(pid peer.ID) *BasicOutStream {
+func (n *BasicNetworkNode) GetOutStream(pid peer.ID) *BasicOutStream {
 	n.outStreamsLock.Lock()
 	strm, ok := n.outStreams[pid]
 	if !ok {
@@ -114,7 +133,7 @@ func (n *NetworkNode) GetOutStream(pid peer.ID) *BasicOutStream {
 	return strm
 }
 
-func (n *NetworkNode) RefreshOutStream(pid peer.ID) *BasicOutStream {
+func (n *BasicNetworkNode) RefreshOutStream(pid peer.ID) *BasicOutStream {
 	// glog.Infof("Creating stream from %v to %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid))
 	if s, ok := n.outStreams[pid]; ok {
 		s.Stream.Reset()
@@ -130,9 +149,56 @@ func (n *NetworkNode) RefreshOutStream(pid peer.ID) *BasicOutStream {
 	return strm
 }
 
-func (n *NetworkNode) RemoveStream(pid peer.ID) {
+func (n *BasicNetworkNode) RemoveStream(pid peer.ID) {
 	// glog.Infof("Removing stream for %v", peer.IDHexEncode(pid))
 	n.outStreamsLock.Lock()
 	delete(n.outStreams, pid)
 	n.outStreamsLock.Unlock()
+}
+
+func (n *BasicNetworkNode) ID() peer.ID {
+	return n.Identity
+}
+
+func (n *BasicNetworkNode) GetPeers() []peer.ID {
+	return n.PeerHost.Peerstore().Peers()
+}
+
+func (n *BasicNetworkNode) GetPeerInfo(p peer.ID) peerstore.PeerInfo {
+	return n.PeerHost.Peerstore().PeerInfo(p)
+}
+
+func (n *BasicNetworkNode) Connect(ctx context.Context, pi peerstore.PeerInfo) error {
+	return n.PeerHost.Connect(ctx, pi)
+}
+
+func (n *BasicNetworkNode) AddPeer(pi peerstore.PeerInfo, ttl time.Duration) {
+	n.PeerHost.Peerstore().AddAddrs(pi.ID, pi.Addrs, ttl)
+}
+
+func (n *BasicNetworkNode) RemovePeer(id peer.ID) {
+	n.PeerHost.Peerstore().ClearAddrs(id)
+}
+
+func (n *BasicNetworkNode) GetDHT() *kad.IpfsDHT {
+	return n.Kad
+}
+
+func (n *BasicNetworkNode) SetStreamHandler(pid protocol.ID, handler inet.StreamHandler) {
+	n.PeerHost.SetStreamHandler(pid, handler)
+}
+
+func (bn *BasicNetworkNode) ClosestLocalPeers(strmID string) ([]peer.ID, error) {
+	targetPid, err := extractNodeID(strmID)
+	if err != nil {
+		glog.Errorf("Error extracting node id from streamID: %v", strmID)
+		return nil, ErrSubscriber
+	}
+	localPeers := bn.PeerHost.Peerstore().Peers()
+	if len(localPeers) == 1 {
+		glog.Errorf("No local peers")
+		return nil, ErrSubscriber
+	}
+
+	return kb.SortClosestPeers(localPeers, kb.ConvertPeerID(targetPid)), nil
 }

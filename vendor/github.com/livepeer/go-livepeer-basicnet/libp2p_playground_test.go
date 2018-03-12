@@ -111,7 +111,7 @@ func connect(t *testing.T, ctx context.Context, a, b *kad.IpfsDHT, ah, bh host.H
 	}
 }
 
-func simpleNodes(p1, p2 int) (*NetworkNode, *NetworkNode) {
+func simpleNodes(p1, p2 int) (*BasicNetworkNode, *BasicNetworkNode) {
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 
