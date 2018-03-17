@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -713,16 +714,28 @@ func (c *client) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
 func (c *client) IsAssignedTranscoder(jobID *big.Int) (bool, error) {
 	jInfo, err := c.JobsManagerSession.GetJob(jobID)
 	if err != nil {
+		glog.Errorf("Error getting job: %v", err)
 		return false, err
 	}
 
-	blk, err := c.backend.BlockByNumber(context.Background(), jInfo.CreationBlock)
-	if err != nil {
+	var blk *types.Block
+	getBlock := func() error {
+		blk, err = c.backend.BlockByNumber(context.Background(), jInfo.CreationBlock)
+		if err != nil {
+			glog.Errorf("Error getting block by number %v: %v. retrying...", jInfo.CreationBlock.String(), err)
+			return err
+		}
+
+		return nil
+	}
+	if err := backoff.Retry(getBlock, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), SubscribeRetry)); err != nil {
+		glog.Errorf("BlockByNumber failed: %v", err)
 		return false, err
 	}
 
 	t, err := c.BondingManagerSession.ElectActiveTranscoder(jInfo.MaxPricePerSegment, blk.Hash(), jInfo.CreationRound)
 	if err != nil {
+		glog.Errorf("Error getting ElectActiveTranscoder: %v", err)
 		return false, err
 	}
 
