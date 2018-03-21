@@ -1,6 +1,7 @@
 package net
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -21,6 +22,7 @@ type VideoNetwork interface {
 	GetNodeID() string
 	Connect(nodeID string, nodeAddr []string) error
 	SetupProtocol() error
+	TranscodeSub(ctx context.Context, strmID string, gotData func(seqNo uint64, data []byte, eof bool)) error
 	SendTranscodeResponse(nodeID string, manifestID string, transcodeResult map[string]string) error
 	ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string))
 	GetNodeStatus(nodeID string) (chan *NodeStatus, error)

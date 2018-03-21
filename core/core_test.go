@@ -110,6 +110,11 @@ func (n *StubVideoNetwork) GetNodeStatus(nodeID string) (chan *net.NodeStatus, e
 	return nil, nil
 }
 
+func (n *StubVideoNetwork) TranscodeSub(ctx context.Context, strmID string, gotData func(seqNo uint64, data []byte, eof bool)) error {
+	sub, _ := n.GetSubscriber(strmID)
+	return sub.Subscribe(ctx, gotData)
+}
+
 type StubBroadcaster struct {
 	T         *testing.T
 	StrmID    string
