@@ -3,7 +3,6 @@ package eth
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -40,7 +39,6 @@ type eventMonitor struct {
 	backend         *ethclient.Client
 	contractAddrMap map[string]common.Address
 	eventSubMap     map[string]*EventSubscription
-	latestBlock     *big.Int
 }
 
 func NewEventMonitor(backend *ethclient.Client, contractAddrMap map[string]common.Address) EventMonitor {
