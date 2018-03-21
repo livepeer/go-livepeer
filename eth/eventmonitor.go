@@ -99,18 +99,14 @@ func (em *eventMonitor) SubscribeNewRound(ctx context.Context, subName string, l
 		return nil
 	}
 
-	b := backoff.NewExponentialBackOff()
-	b.MaxElapsedTime = time.Second * 15
-	if err := backoff.Retry(subscribe, backoff.WithMaxRetries(b, SubscribeRetry)); err != nil {
+	if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 		glog.Infof("SubscribeNewRound error: %v", err)
 		return nil, err
 	}
 
 	go em.watchLogs(subName, cb, func() {
 		glog.Infof("Trying to resubscribe for %v", subName)
-		b := backoff.NewExponentialBackOff()
-		b.MaxElapsedTime = time.Second * 15
-		if err := backoff.Retry(subscribe, backoff.WithMaxRetries(b, SubscribeRetry)); err != nil {
+		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 			glog.Infof("Resubscription error: %v", err)
 			return
 		}
@@ -162,18 +158,14 @@ func (em *eventMonitor) SubscribeNewJob(ctx context.Context, subName string, log
 		return nil
 	}
 
-	b := backoff.NewExponentialBackOff()
-	b.MaxElapsedTime = time.Second * 15
-	if err = backoff.Retry(subscribe, backoff.WithMaxRetries(b, 3)); err != nil {
+	if err = backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 		glog.Errorf("SubscribeNewJob failed: %v", err)
 		return nil, err
 	}
 
 	go em.watchLogs(subName, cb, func() {
 		glog.Infof("Trying to resubscribe for %v", subName)
-		b := backoff.NewExponentialBackOff()
-		b.MaxElapsedTime = time.Second * 15
-		if err := backoff.Retry(subscribe, backoff.WithMaxRetries(b, SubscribeRetry)); err != nil {
+		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 			glog.Errorf("Resubscribe failed: %v", err)
 			return
 		}
@@ -203,18 +195,14 @@ func (em *eventMonitor) SubscribeNewBlock(ctx context.Context, subName string, h
 		}
 		return nil
 	}
-	b := backoff.NewExponentialBackOff()
-	b.MaxElapsedTime = time.Second * 15
-	if err := backoff.Retry(subscribe, backoff.WithMaxRetries(b, SubscribeRetry)); err != nil {
+	if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 		glog.Errorf("SubscribeNewHead failed: %v", err)
 		return nil, err
 	}
 
 	go em.watchBlocks(subName, em.eventSubMap[subName].sub, headersCh, cb, func() {
 		glog.Infof("Trying to resubscribe for %v", subName)
-		b := backoff.NewExponentialBackOff()
-		b.MaxElapsedTime = time.Second * 15
-		if err := backoff.Retry(subscribe, backoff.WithMaxRetries(b, SubscribeRetry)); err != nil {
+		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 			glog.Errorf("Resubscribe failed: %v", err)
 			return
 		}

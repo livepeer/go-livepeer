@@ -130,9 +130,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 		}
 		return nil
 	}
-	bo := backoff.NewExponentialBackOff()
-	bo.MaxElapsedTime = time.Second * 15
-	if err := backoff.Retry(getBlock, backoff.WithMaxRetries(bo, SubscribeRetry)); err != nil {
+	if err := backoff.Retry(getBlock, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 		glog.Errorf("Cannot get current block number: %v", err)
 		return ErrNotFound
 	}
