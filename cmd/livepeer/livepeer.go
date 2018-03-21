@@ -295,6 +295,11 @@ func main() {
 		}
 
 		n.Eth = client
+		node.SetSignFun(client.Sign)
+		node.SetVerifyTranscoderSig(func(data []byte, sig []byte, strmID string) bool {
+			// look up job by stream id, verify from there
+			return true
+		})
 
 		if *transcoder {
 			addrMap := n.Eth.ContractAddresses()

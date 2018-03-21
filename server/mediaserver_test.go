@@ -102,6 +102,10 @@ func (b *StubNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterPlayli
 func (n *StubNetwork) GetNodeStatus(nodeID string) (chan *net.NodeStatus, error) {
 	return nil, nil
 }
+func (n *StubNetwork) TranscodeSub(ctx context.Context, strmID string, gotData func(seqNo uint64, data []byte, eof bool)) error {
+	sub, _ := n.GetSubscriber(strmID)
+	return sub.Subscribe(ctx, gotData)
+}
 
 type StubBroadcaster struct {
 	Data map[uint64][]byte
