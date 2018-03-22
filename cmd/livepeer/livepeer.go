@@ -76,7 +76,6 @@ func main() {
 	if err != nil {
 		glog.Fatalf("Cannot find current user: %v", err)
 	}
-	defaultEthDatadir := fmt.Sprintf("%v/.lpGeth", usr.HomeDir)
 
 	port := flag.Int("p", 15000, "port")
 	httpPort := flag.String("http", "8935", "http port")
@@ -93,7 +92,6 @@ func main() {
 	ethKeystorePath := flag.String("ethKeystorePath", "", "Path for the Eth Key")
 	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
 	ethWsUrl := flag.String("ethWsUrl", "", "geth websocket url")
-	testnet := flag.Bool("testnet", false, "Set to true to connect to testnet")
 	rinkeby := flag.Bool("rinkeby", false, "Set to true to connect to rinkeby")
 	controllerAddr := flag.String("controllerAddr", "", "Protocol smart contract address")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
@@ -112,15 +110,7 @@ func main() {
 		return
 	}
 
-	if *testnet {
-		*bootID = "12208a4eb428aa57a74ef0593612adb88077c75c71ad07c3c26e4e7a8d4860083b01"
-		*bootAddr = "/ip4/52.15.174.204/tcp/15000"
-
-		if !*offchain {
-			*ethWsUrl = "ws://ethws-testnet.livepeer.org:8546"
-			*controllerAddr = "0x0ec7c08d2c6a45891680c3de2773ee7aac3d4de4"
-		}
-	} else if *rinkeby {
+ 	if *rinkeby {
 		*bootID = "122019c1a1f0d9fa2296dccb972e7478c5163415cd55722dcf0123553f397c45df7e"
 		*bootAddr = "/ip4/18.217.129.34/tcp/15000"
 
@@ -186,7 +176,6 @@ func main() {
 		}
 	}
 
-	var gethCmd *exec.Cmd
 	if *offchain {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	} else {
@@ -211,42 +200,8 @@ func main() {
 			//Connect to specified websocket
 			gethUrl = *ethWsUrl
 		} else {
-			//Default behavior - start a Geth node and connect to its IPC
-			if *testnet {
-				gethCmd = exec.Command("geth", "--rpc", "--datadir", defaultEthDatadir, "--networkid=858585", "--bootnodes=enode://a1bd18a737acef008f94857654cfb2470124d1dc826b6248cea0331a7ca82b36d2389566e3aa0a1bc9a5c3c34a61f47601a6cff5279d829fcc60cb632ee88bad@13.58.149.151:30303") //timeout in 3 mins
-				err = gethCmd.Start()
-				if err != nil {
-					glog.Infof("Couldn't start geth: %v", err)
-					return
-				}
-				defer gethCmd.Process.Kill()
-				go func() {
-					err = gethCmd.Wait()
-					if err != nil {
-						glog.Infof("Couldn't start geth: %v", err)
-						os.Exit(1)
-					}
-				}()
-				gethipc := fmt.Sprintf("%v/geth.ipc", defaultEthDatadir)
-				//Wait for gethipc
-				if _, err := os.Stat(gethipc); os.IsNotExist(err) {
-					start := time.Now()
-					glog.V(0).Infof("Waiting to start go-ethereum")
-					for time.Since(start) < time.Second*5 {
-						if _, err := os.Stat(gethipc); os.IsNotExist(err) {
-							time.Sleep(time.Millisecond * 500)
-							continue
-						} else {
-							break
-						}
-					}
-				}
-				gethUrl = gethipc
-
-			} else {
 				glog.Errorf("Cannot connect to production network yet.")
 				return
-			}
 		}
 
 		glog.Infof("Setting up client...")
