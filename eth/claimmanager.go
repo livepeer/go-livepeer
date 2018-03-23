@@ -244,12 +244,12 @@ func (c *BasicClaimManager) markClaimedSegs(segRange [2]int64) {
 
 //Claim creates the onchain claim for all the claims added through AddReceipt
 func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
-	// segs := make([]int64, 0)
-	// for k, _ := range c.unclaimedSegs {
-	// 	segs = append(segs, k)
-	// }
+	segs := make([]int64, 0)
+	for k, _ := range c.unclaimedSegs {
+		segs = append(segs, k)
+	}
 	ranges := c.makeRanges()
-	// glog.Infof("Claiming for segs: , ranges: %v", segs, ranges)
+	glog.Infof("Claiming for segs: , ranges: %v", segs, ranges)
 
 	for _, segRange := range ranges {
 		//create concat hashes for each seg
