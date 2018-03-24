@@ -2,9 +2,12 @@ package eventservices
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -46,8 +49,17 @@ func (s *JobService) Start(ctx context.Context) error {
 	sub, err := s.eventMonitor.SubscribeNewJob(ctx, "NewJob", logsCh, common.Address{}, func(l types.Log) (bool, error) {
 		_, jid, _, _ := parseNewJobLog(l)
 
-		job, err := s.node.Eth.GetJob(jid)
-		if err != nil {
+		var job *lpTypes.Job
+		getJob := func() error {
+			j, err := s.node.Eth.GetJob(jid)
+			if j.StreamId == "" {
+				glog.Errorf("Got empty job for id:%v. Should try again.", jid.Int64())
+				return errors.New("ErrGetJob")
+			}
+			job = j
+			return err
+		}
+		if err := backoff.Retry(getJob, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 			glog.Errorf("Error getting job info: %v", err)
 			return false, err
 		}

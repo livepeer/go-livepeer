@@ -15,8 +15,10 @@ import (
 	"sort"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -44,6 +46,7 @@ var DefaultMasterPlaylistWaitTime = 60 * time.Second
 var DefaultJobLength = int64(5760) //Avg 1 day in 15 sec blocks
 var ConnFileWriteFreq = time.Duration(60) * time.Second
 var LivepeerVersion = "0.1.14-unstable"
+var SubscribeRetry = uint64(3)
 
 //NodeID can be converted from libp2p PeerID.
 type NodeID string
@@ -119,8 +122,15 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 		return err
 	}
 
-	blk, err := b.BlockByNumber(context.Background(), nil)
-	if err != nil {
+	var blk *types.Block
+	getBlock := func() error {
+		blk, err = b.BlockByNumber(context.Background(), nil)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := backoff.Retry(getBlock, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 		glog.Errorf("Cannot get current block number: %v", err)
 		return ErrNotFound
 	}
