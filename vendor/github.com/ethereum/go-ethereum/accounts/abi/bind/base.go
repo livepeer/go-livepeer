@@ -21,12 +21,14 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/golang/glog"
 )
 
 // SignerFn is a signer function callback when a contract requires a method to
@@ -157,6 +159,7 @@ func (c *BoundContract) Transact(opts *TransactOpts, method string, params ...in
 	if err != nil {
 		return nil, err
 	}
+	glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\".  Params: %v \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, params, strings.Repeat("*", 75))
 	return c.transact(opts, &c.address, input)
 }
 
