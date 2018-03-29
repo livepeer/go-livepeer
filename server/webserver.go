@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -10,20 +11,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
-	basicnet "github.com/livepeer/go-livepeer-basicnet"
-	ffmpeg "github.com/livepeer/lpms/ffmpeg"
-	"github.com/livepeer/lpms/stream"
-	"github.com/livepeer/lpms/transcoder"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	basicnet "github.com/livepeer/go-livepeer-basicnet"
 	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"github.com/livepeer/lpms/stream"
+	"github.com/livepeer/lpms/transcoder"
 )
 
 func (s *LivepeerServer) StartWebserver() {
@@ -445,10 +446,24 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
-			err = s.LivepeerNode.Eth.ClaimEarnings(endRound)
-			if err != nil {
-				glog.Error(err)
-				return
+			claim := func() error {
+				init, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
+				if err != nil {
+					glog.Errorf("Trying to claim but round not initalized.")
+					return err
+				}
+				if !init {
+					return errors.New("Round not initialized")
+				}
+				err = s.LivepeerNode.Eth.ClaimEarnings(endRound)
+				if err != nil {
+					return err
+				}
+				return nil
+			}
+
+			if err := backoff.Retry(claim, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*15), 5)); err != nil {
+				glog.Errorf("Error claiming earnings: %v", err)
 			}
 		}
 	})

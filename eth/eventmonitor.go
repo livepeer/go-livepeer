@@ -98,14 +98,14 @@ func (em *eventMonitor) SubscribeNewRound(ctx context.Context, subName string, l
 	}
 
 	if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
-		glog.Infof("SubscribeNewRound error: %v", err)
+		glog.Errorf("SubscribeNewRound error: %v", err)
 		return nil, err
 	}
 
 	go em.watchLogs(subName, cb, func() {
 		glog.Infof("Trying to resubscribe for %v", subName)
 		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
-			glog.Infof("Resubscription error: %v", err)
+			glog.Errorf("Resubscription error: %v", err)
 			return
 		}
 	})
