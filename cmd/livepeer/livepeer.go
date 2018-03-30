@@ -180,10 +180,12 @@ func main() {
 		}
 		lpmon.Instance().SetBootNode()
 	} else {
-		if err := n.Start(context.Background(), *bootID, *bootAddr); err != nil {
-			glog.Errorf("Cannot connect to bootstrap node: %v", err)
-			return
-		}
+		go func() {
+			if err := n.Start(context.Background(), *bootID, *bootAddr); err != nil {
+				glog.Errorf("Cannot connect to bootstrap node: %v", err)
+				return
+			}
+		}()
 	}
 
 	var gethCmd *exec.Cmd
