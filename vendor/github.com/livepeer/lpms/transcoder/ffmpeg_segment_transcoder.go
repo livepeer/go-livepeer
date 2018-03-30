@@ -13,13 +13,12 @@ import (
 
 //SegmentTranscoder transcodes segments individually.  This is a simple wrapper for calling FFMpeg on the command line.
 type FFMpegSegmentTranscoder struct {
-	tProfiles  []ffmpeg.VideoProfile
-	ffmpegPath string
-	workDir    string
+	tProfiles []ffmpeg.VideoProfile
+	workDir   string
 }
 
-func NewFFMpegSegmentTranscoder(ps []ffmpeg.VideoProfile, ffmpegp, workd string) *FFMpegSegmentTranscoder {
-	return &FFMpegSegmentTranscoder{tProfiles: ps, ffmpegPath: ffmpegp, workDir: workd}
+func NewFFMpegSegmentTranscoder(ps []ffmpeg.VideoProfile, workd string) *FFMpegSegmentTranscoder {
+	return &FFMpegSegmentTranscoder{tProfiles: ps, workDir: workd}
 }
 
 func (t *FFMpegSegmentTranscoder) Transcode(fname string) ([][]byte, error) {

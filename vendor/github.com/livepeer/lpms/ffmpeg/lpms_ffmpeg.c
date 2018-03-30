@@ -162,6 +162,7 @@ static void free_output(struct output_ctx *octx)
       avio_closep(&octx->oc->pb);
     }
     avformat_free_context(octx->oc);
+    octx->oc = NULL;
   }
   if (octx->vc) avcodec_free_context(&octx->vc);
   if (octx->ac) avcodec_free_context(&octx->ac);
@@ -734,4 +735,75 @@ transcode_cleanup:
   if (dframe) av_frame_free(&dframe);
   return ret == AVERROR_EOF ? 0 : ret;
 #undef main_err
+}
+
+//
+// Length Checker
+//
+
+struct input_metrics {
+    int64_t first_dts;
+    int64_t total_dts;
+    int packet_count;
+    AVRational time_base;
+};
+
+// Defines the maximum number of media streams
+// (eg, audio, video, subtitles, &c) that can
+// be present within a single input
+#define LPMS_MAX_INPUT_STREAMS 5
+int lpms_length(char *inp, int ts_max, int packet_max)
+{
+#define len_err(str) {\
+  if (!ret) ret = 1; \
+  errstr = str; \
+  goto handle_len_err; \
+}
+    int ret, i            = 0;
+    int nb_streams        = 0;
+    char *errstr          = NULL;
+    AVFormatContext *ic   = NULL;
+    AVRational limit_tb   = {1, 1000}; // MilliSeconds
+    int64_t pts_max       = ts_max;
+    struct input_metrics im[LPMS_MAX_INPUT_STREAMS];
+    AVPacket pkt;
+
+    ret = avformat_open_input(&ic, inp, NULL, NULL);
+    if (ret < 0) len_err("len: Unable to open input\n");
+    if (ic->nb_streams > LPMS_MAX_INPUT_STREAMS) len_err("len: Too many input streams\n");
+
+    av_init_packet(&pkt);
+    nb_streams = ic->nb_streams;
+
+    memset(&im, 0, sizeof im);
+    for (i = 0; i < nb_streams; i++) {
+        im[i].time_base = ic->streams[i]->time_base;
+        im[i].first_dts = AV_NOPTS_VALUE;
+        im[i].total_dts = AV_NOPTS_VALUE;
+    }
+
+    while (1) {
+        struct input_metrics *m;
+        int64_t dur;
+
+        ret = av_read_frame(ic, &pkt);
+        if (ret == AVERROR_EOF) break;
+        if (pkt.stream_index >= nb_streams) len_err("len: Unexpected stream");
+
+        m = &im[pkt.stream_index];
+        if (AV_NOPTS_VALUE == m->first_dts) m->first_dts = pkt.dts;
+        m->total_dts = pkt.dts - m->first_dts;
+        dur = av_rescale_q(m->total_dts, m->time_base, limit_tb);
+        m->packet_count++;
+
+        if (dur > pts_max) len_err("len: duration exceeded maximum\n");
+        if (m->packet_count > packet_max) len_err("len: packets exceeded maximum\n");
+        av_packet_unref(&pkt);
+    }
+
+handle_len_err:
+    av_packet_unref(&pkt);
+    if (errstr) printf("%s", errstr);
+    if (ic) avformat_close_input(&ic);
+    return ret == AVERROR_EOF ? 0 : ret;
 }
