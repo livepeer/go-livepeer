@@ -93,7 +93,7 @@ We'll walk through the steps of becoming a transcoder on the test network.  To l
 
 - `livepeer --rinkeby --transcoder` to start the node as a transcoder.
 
-- `livepeer_cli` - make sure you have test ether and test Livepeer token.  Refer to the Quick Start section for getting test ether and test tokens.
+- `livepeer_cli --transcoder` - make sure you have test ether and test Livepeer token.  Refer to the Quick Start section for getting test ether and test tokens.
 
 - You should see the Transcoder Status as "Not Registered".
 
