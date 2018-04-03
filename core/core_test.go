@@ -153,7 +153,7 @@ func (s *StubSubscriber) IsLive() bool   { return true }
 func (s *StubSubscriber) String() string { return "" }
 func (s *StubSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error {
 	d, _ := ioutil.ReadFile("./test.ts")
-	newSeg := SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test.ts", Data: d, Duration: 1}, Sig: []byte("test sig")}
+	newSeg := SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test.ts", Data: d[0:402696], Duration: 1}, Sig: []byte("test sig")}
 	b, err := SignedSegmentToBytes(newSeg)
 	if err != nil {
 		s.T.Errorf("Error Converting SignedSegment to Bytes: %v", err)
@@ -224,7 +224,7 @@ func TestTranscode(t *testing.T) {
 		t.Errorf("Wrong SeqNo assigned to broadcaster: %v", b1.SeqNo)
 	}
 
-	if Over1Pct(len(b1.Data), 155476) || Over1Pct(len(b2.Data), 208304) {
+	if Over1Pct(len(b1.Data), 65424) || Over1Pct(len(b2.Data), 81968) {
 		t.Errorf("Wrong data assigned to broadcaster: %v, %v", len(b1.Data), len(b2.Data))
 	}
 }

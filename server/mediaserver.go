@@ -36,7 +36,7 @@ const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
 const HLSBufferWindow = uint(5)
 
-var SegOptions = segmenter.SegmenterOptions{SegLength: 8 * time.Second}
+var SegOptions = segmenter.SegmenterOptions{SegLength: 4 * time.Second}
 
 const HLSUnsubWorkerFreq = time.Second * 5
 
