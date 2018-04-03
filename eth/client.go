@@ -69,7 +69,7 @@ type LivepeerEthClient interface {
 	GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error)
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
-	IsAssignedTranscoder(jobID *big.Int) (bool, error)
+	AssignedTranscoder(jobID *big.Int) (common.Address, error)
 	GetTotalBonded() (*big.Int, error)
 
 	// Jobs
@@ -82,6 +82,7 @@ type LivepeerEthClient interface {
 	GetJob(jobID *big.Int) (*lpTypes.Job, error)
 	GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, error)
 	BroadcasterDeposit(broadcaster common.Address) (*big.Int, error)
+	NumJobs() (*big.Int, error)
 
 	// Parameters
 	NumActiveTranscoders() (*big.Int, error)
@@ -711,11 +712,11 @@ func (c *client) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
 	return transcoders, nil
 }
 
-func (c *client) IsAssignedTranscoder(jobID *big.Int) (bool, error) {
+func (c *client) AssignedTranscoder(jobID *big.Int) (common.Address, error) {
 	jInfo, err := c.JobsManagerSession.GetJob(jobID)
 	if err != nil {
 		glog.Errorf("Error getting job: %v", err)
-		return false, err
+		return common.Address{}, err
 	}
 
 	var blk *types.Block
@@ -730,16 +731,16 @@ func (c *client) IsAssignedTranscoder(jobID *big.Int) (bool, error) {
 	}
 	if err := backoff.Retry(getBlock, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), SubscribeRetry)); err != nil {
 		glog.Errorf("BlockByNumber failed: %v", err)
-		return false, err
+		return common.Address{}, err
 	}
 
 	t, err := c.BondingManagerSession.ElectActiveTranscoder(jInfo.MaxPricePerSegment, blk.Hash(), jInfo.CreationRound)
 	if err != nil {
 		glog.Errorf("Error getting ElectActiveTranscoder: %v", err)
-		return false, err
+		return common.Address{}, err
 	}
 
-	return c.Account().Address == t, nil
+	return t, nil
 }
 
 // Helpers

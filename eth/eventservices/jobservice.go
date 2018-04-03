@@ -64,13 +64,13 @@ func (s *JobService) Start(ctx context.Context) error {
 			return false, err
 		}
 
-		assigned, err := s.node.Eth.IsAssignedTranscoder(jid)
+		assignedAddr, err := s.node.Eth.AssignedTranscoder(jid)
 		if err != nil {
 			glog.Errorf("Error checking for assignment: %v", err)
 			return false, err
 		}
 
-		if assigned {
+		if assignedAddr == s.node.Eth.Account().Address {
 			return s.doTranscode(job)
 		} else {
 			return true, nil

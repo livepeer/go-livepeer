@@ -78,8 +78,10 @@ func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, roun
 }
 func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) { return nil, nil }
 func (e *StubClient) IsActiveTranscoder() (bool, error)                     { return false, nil }
-func (e *StubClient) IsAssignedTranscoder(jobID *big.Int) (bool, error)     { return false, nil }
-func (e *StubClient) GetTotalBonded() (*big.Int, error)                     { return big.NewInt(0), nil }
+func (e *StubClient) AssignedTranscoder(jobID *big.Int) (common.Address, error) {
+	return common.Address{}, nil
+}
+func (e *StubClient) GetTotalBonded() (*big.Int, error) { return big.NewInt(0), nil }
 
 // Jobs
 
@@ -122,6 +124,7 @@ func (e *StubClient) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
 func (c *StubClient) GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, error) {
 	return nil, nil
 }
+func (c *StubClient) NumJobs() (*big.Int, error) { return big.NewInt(0), nil }
 
 // Parameters
 

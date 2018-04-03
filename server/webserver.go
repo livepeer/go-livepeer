@@ -288,6 +288,38 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
+	http.HandleFunc("/latestJobs", func(w http.ResponseWriter, r *http.Request) {
+		countStr := r.FormValue("count")
+		if countStr == "" {
+			countStr = "5"
+		}
+		count, err := strconv.ParseInt(countStr, 10, 8)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+		numJobs, err := s.LivepeerNode.Eth.NumJobs()
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+		ts := ""
+		for i := numJobs.Int64() - count; i < numJobs.Int64(); i++ {
+			t, err := s.LivepeerNode.Eth.AssignedTranscoder(big.NewInt(i))
+			if err != nil {
+				glog.Error(err)
+				continue
+			}
+			j, err := s.LivepeerNode.Eth.GetJob(big.NewInt(i))
+			if err != nil {
+				glog.Error(err)
+				continue
+			}
+			ts = fmt.Sprintf("%vJob: %v, Broadcaster: %v, Transcoder: %v\n", ts, i, j.BroadcasterAddress.String(), t.String())
+		}
+		w.Write([]byte(ts))
+	})
+
 	//Set transcoder config on-chain.
 	http.HandleFunc("/setTranscoderConfig", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
