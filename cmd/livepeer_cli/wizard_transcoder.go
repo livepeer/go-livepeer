@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+
+	lpcommon "github.com/livepeer/go-livepeer/common"
 )
 
 func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int) {
@@ -32,9 +34,20 @@ func (w *wizard) activateTranscoder() {
 
 	fmt.Printf("You must bond to yourself in order to become a transcoder\n")
 
+	balBigInt, err := lpcommon.ParseBigInt(w.getTokenBalance())
+	if err != nil {
+		fmt.Printf("Cannot read token balance: %v", w.getTokenBalance())
+		return
+	}
+
 	amount := big.NewInt(0)
-	fmt.Printf("Enter bond amount - ")
-	amount = w.readBigInt()
+	for amount.Cmp(big.NewInt(0)) == 0 || balBigInt.Cmp(amount) < 0 {
+		fmt.Printf("Enter bond amount - ")
+		amount = w.readBigInt()
+		if balBigInt.Cmp(amount) < 0 {
+			fmt.Printf("Must enter an amount smaller than the current balance. ")
+		}
+	}
 
 	val := url.Values{
 		"blockRewardCut":  {fmt.Sprintf("%v", blockRewardCut)},
