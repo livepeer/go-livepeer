@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/ethereum/go-ethereum/common"
+	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/olekukonko/tablewriter"
@@ -95,8 +97,20 @@ func (w *wizard) bond() {
 		tAddr = transcoderIds[id]
 	}
 
-	fmt.Printf("Enter bond amount - ")
-	amount := w.readBigInt()
+	balBigInt, err := lpcommon.ParseBigInt(w.getTokenBalance())
+	if err != nil {
+		fmt.Printf("Cannot read token balance: %v", w.getTokenBalance())
+		return
+	}
+
+	amount := big.NewInt(0)
+	for amount.Cmp(big.NewInt(0)) == 0 || balBigInt.Cmp(amount) < 0 {
+		fmt.Printf("Enter bond amount - ")
+		amount = w.readBigInt()
+		if balBigInt.Cmp(amount) < 0 {
+			fmt.Printf("Must enter an amount smaller than the current balance. ")
+		}
+	}
 
 	val := url.Values{
 		"amount": {fmt.Sprintf("%v", amount.String())},
