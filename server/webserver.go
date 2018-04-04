@@ -37,7 +37,7 @@ func (s *LivepeerServer) StartWebserver() {
 
 		//Do transcoding
 		ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9}
-		tr := transcoder.NewFFMpegSegmentTranscoder(ps, "", s.LivepeerNode.WorkDir)
+		tr := transcoder.NewFFMpegSegmentTranscoder(ps, s.LivepeerNode.WorkDir)
 		config := net.TranscodeConfig{StrmID: strmID, Profiles: ps}
 		ids, err := s.LivepeerNode.TranscodeAndBroadcast(config, nil, tr)
 		if err != nil {

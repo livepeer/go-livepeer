@@ -181,7 +181,7 @@ func TestTranscode(t *testing.T) {
 	for i, vp := range p {
 		tProfiles[i] = ffmpeg.VideoProfileLookup[vp.Name]
 	}
-	tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, "", n.WorkDir)
+	tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, n.WorkDir)
 	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: strmID.String(), Profiles: p}, &StubClaimManager{}, tr)
 	if err != nil {
 		t.Errorf("Error transcoding: %v", err)
