@@ -114,18 +114,19 @@ func (w *wizard) run() {
 		fmt.Println(" 10. Get test LPT")
 		fmt.Println(" 11. Get test ETH")
 		fmt.Println(" 12. List registered transcoders")
+		fmt.Println(" 13. Print last 5 jobs + assignees")
 
 		if w.transcoder {
-			fmt.Println(" 13. Become a transcoder")
-			fmt.Println(" 14. Set transcoder config")
+			fmt.Println(" 14. Become a transcoder")
+			fmt.Println(" 15. Set transcoder config")
 
 			w.doCLIOpt(w.read(), true)
 		} else {
-			fmt.Println(" 13. Deposit (ETH)")
-			fmt.Println(" 14. Withdraw deposit (ETH)")
-			fmt.Println(" 15. Broadcast video")
-			fmt.Println(" 16. Stream video")
-			fmt.Println(" 17. Set broadcast config")
+			fmt.Println(" 14. Deposit (ETH)")
+			fmt.Println(" 15. Withdraw deposit (ETH)")
+			fmt.Println(" 16. Broadcast video")
+			fmt.Println(" 17. Stream video")
+			fmt.Println(" 18. Set broadcast config")
 
 			w.doCLIOpt(w.read(), false)
 		}
@@ -171,32 +172,35 @@ func (w *wizard) doCLIOpt(choice string, transcoder bool) {
 	case "12":
 		w.registeredTranscoderStats()
 		return
+	case "13":
+		w.printLast5Jobs()
+		return
 	}
 
 	if transcoder {
 		switch choice {
-		case "13":
+		case "14":
 			w.activateTranscoder()
 			return
-		case "14":
+		case "15":
 			w.setTranscoderConfig()
 			return
 		}
 	} else {
 		switch choice {
-		case "13":
+		case "14":
 			w.deposit()
 			return
-		case "14":
+		case "15":
 			w.withdraw()
 			return
-		case "15":
+		case "16":
 			w.broadcast()
 			return
-		case "16":
+		case "17":
 			w.stream()
 			return
-		case "17":
+		case "18":
 			w.setBroadcastConfig()
 			return
 		}
