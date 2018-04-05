@@ -70,6 +70,23 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 	return nil
 }
 
+// Check media length up to given limits for timestamp (ms) and packet count.
+// XXX someday return some actual stats, if limits aren't hit
+func CheckMediaLen(fname string, ts_max int, packet_max int) error {
+	f := C.CString(fname)
+	defer C.free(unsafe.Pointer(f))
+	tm := C.int(ts_max)
+	pm := C.int(packet_max)
+	ret := int(C.lpms_length(f, tm, pm))
+	if 0 != ret {
+		if nil == ErrorMap[ret] {
+			return errors.New("MediaStats Failure")
+		}
+		return ErrorMap[ret]
+	}
+	return nil
+}
+
 func InitFFmpeg() {
 	C.lpms_init()
 }

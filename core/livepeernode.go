@@ -269,6 +269,12 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 		return // TODO return error?
 	}
 
+	// Ensure length matches expectations. 4 second + 25% wiggle factor, 60fps
+	err := ffmpeg.CheckMediaLen(fname, 4*1.25*1000, 60*4*1.25)
+	if err != nil {
+		glog.Errorf("Media length check failed: %v", err)
+		return
+	}
 	//Do the transcoding
 	start := time.Now()
 	tData, err := t.Transcode(fname)
