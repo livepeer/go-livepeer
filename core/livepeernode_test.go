@@ -59,7 +59,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	stubnet := &StubVideoNetwork{subscribers: make(map[string]*StubSubscriber)}
 	stubnet.subscribers[strmID.String()] = &StubSubscriber{}
-	n, err := NewLivepeerNode(&eth.StubClient{}, stubnet, nid, ".") // TODO fix empty work dir
+	n, err := NewLivepeerNode(&eth.StubClient{}, stubnet, nid, ".", nil) // TODO fix empty work dir
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}

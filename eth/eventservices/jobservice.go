@@ -80,6 +80,11 @@ func (s *JobService) Start(ctx context.Context) error {
 		return err
 	}
 
+	s.eventMonitor.SubscribeNewBlock(context.Background(), "BlockWatcher", make(chan *types.Header), func(h *types.Header) (bool, error) {
+		s.node.Database.SetLastSeenBlock(h.Number)
+		return true, nil
+	})
+
 	s.logsCh = logsCh
 	s.sub = sub
 

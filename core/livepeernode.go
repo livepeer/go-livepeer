@@ -75,16 +75,17 @@ type LivepeerNode struct {
 	Ipfs            ipfs.IpfsApi
 	WorkDir         string
 	NodeType        NodeType
+	Database        *common.DB
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
-func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID, wd string) (*LivepeerNode, error) {
+func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	if vn == nil {
 		glog.Errorf("Cannot create a LivepeerNode without a VideoNetwork")
 		return nil, ErrLivepeerNode
 	}
 
-	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Eth: e, WorkDir: wd}, nil
+	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Eth: e, WorkDir: wd, Database: dbh}, nil
 }
 
 //Start sets up the Livepeer protocol and connects the node to the network
