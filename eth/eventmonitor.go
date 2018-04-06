@@ -9,10 +9,11 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 )
 
@@ -22,7 +23,7 @@ type logCallback func(types.Log) (bool, error)
 type headerCallback func(*types.Header) (bool, error)
 
 type EventMonitor interface {
-	SubscribeNewJob(context.Context, string, chan types.Log, common.Address, logCallback) (ethereum.Subscription, error)
+	SubscribeNewJob(context.Context, string, chan types.Log, ethcommon.Address, logCallback) (ethereum.Subscription, error)
 	SubscribeNewRound(context.Context, string, chan types.Log, logCallback) (ethereum.Subscription, error)
 	SubscribeNewBlock(context.Context, string, chan *types.Header, headerCallback) (ethereum.Subscription, error)
 	EventSubscriptions() map[string]bool
@@ -37,11 +38,11 @@ type EventSubscription struct {
 
 type eventMonitor struct {
 	backend         *ethclient.Client
-	contractAddrMap map[string]common.Address
+	contractAddrMap map[string]ethcommon.Address
 	eventSubMap     map[string]*EventSubscription
 }
 
-func NewEventMonitor(backend *ethclient.Client, contractAddrMap map[string]common.Address) EventMonitor {
+func NewEventMonitor(backend *ethclient.Client, contractAddrMap map[string]ethcommon.Address) EventMonitor {
 	return &eventMonitor{
 		backend:         backend,
 		contractAddrMap: contractAddrMap,
@@ -75,17 +76,17 @@ func (em *eventMonitor) SubscribeNewRound(ctx context.Context, subName string, l
 	roundsManagerAddr := em.contractAddrMap["RoundsManager"]
 
 	q := ethereum.FilterQuery{
-		Addresses: []common.Address{roundsManagerAddr},
-		Topics:    [][]common.Hash{[]common.Hash{eventId}},
+		Addresses: []ethcommon.Address{roundsManagerAddr},
+		Topics:    [][]ethcommon.Hash{[]ethcommon.Hash{eventId}},
 	}
 
 	subscribe := func() error {
 		sub, err := em.backend.SubscribeFilterLogs(ctx, q, logsCh)
 		if err != nil {
-			glog.Errorf("SubscribeNewRound error: %v. Retrying...", err)
+			glog.V(common.DEBUG).Infof("SubscribeNewRound error: %v. Retrying...", err)
 			return err
 		} else {
-			glog.Infof("SubscribeNewRound successful.")
+			glog.V(common.DEBUG).Infof("SubscribeNewRound successful.")
 		}
 
 		em.eventSubMap[subName] = &EventSubscription{
@@ -103,9 +104,9 @@ func (em *eventMonitor) SubscribeNewRound(ctx context.Context, subName string, l
 	}
 
 	go em.watchLogs(subName, cb, func() {
-		glog.Infof("Trying to resubscribe for %v", subName)
+		glog.V(common.DEBUG).Infof("Trying to resubscribe for %v", subName)
 		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
-			glog.Errorf("Resubscription error: %v", err)
+			glog.V(common.DEBUG).Infof("Resubscription error: %v", err)
 			return
 		}
 	})
@@ -113,7 +114,7 @@ func (em *eventMonitor) SubscribeNewRound(ctx context.Context, subName string, l
 	return em.eventSubMap[subName].sub, nil
 }
 
-func (em *eventMonitor) SubscribeNewJob(ctx context.Context, subName string, logsCh chan types.Log, broadcasterAddr common.Address, cb logCallback) (ethereum.Subscription, error) {
+func (em *eventMonitor) SubscribeNewJob(ctx context.Context, subName string, logsCh chan types.Log, broadcasterAddr ethcommon.Address, cb logCallback) (ethereum.Subscription, error) {
 	if _, ok := em.eventSubMap[subName]; ok {
 		return nil, fmt.Errorf("Event subscription already registered as active with name: %v", subName)
 	}
@@ -129,23 +130,23 @@ func (em *eventMonitor) SubscribeNewJob(ctx context.Context, subName string, log
 	var q ethereum.FilterQuery
 	if !IsNullAddress(broadcasterAddr) {
 		q = ethereum.FilterQuery{
-			Addresses: []common.Address{jobsManagerAddr},
-			Topics:    [][]common.Hash{[]common.Hash{eventId}, []common.Hash{}, []common.Hash{common.BytesToHash(common.LeftPadBytes(broadcasterAddr[:], 32))}},
+			Addresses: []ethcommon.Address{jobsManagerAddr},
+			Topics:    [][]ethcommon.Hash{[]ethcommon.Hash{eventId}, []ethcommon.Hash{}, []ethcommon.Hash{ethcommon.BytesToHash(ethcommon.LeftPadBytes(broadcasterAddr[:], 32))}},
 		}
 	} else {
 		q = ethereum.FilterQuery{
-			Addresses: []common.Address{jobsManagerAddr},
-			Topics:    [][]common.Hash{[]common.Hash{eventId}},
+			Addresses: []ethcommon.Address{jobsManagerAddr},
+			Topics:    [][]ethcommon.Hash{[]ethcommon.Hash{eventId}},
 		}
 	}
 
 	subscribe := func() error {
 		sub, err := em.backend.SubscribeFilterLogs(ctx, q, logsCh)
 		if err != nil {
-			glog.Errorf("SubscribeNewJob error: %v. retrying...", err)
+			glog.V(common.DEBUG).Infof("SubscribeNewJob error: %v. retrying...", err)
 			return err
 		} else {
-			glog.Infof("SubscribedNewJob successful.")
+			glog.V(common.DEBUG).Infof("SubscribedNewJob successful.")
 		}
 
 		em.eventSubMap[subName] = &EventSubscription{
@@ -162,9 +163,9 @@ func (em *eventMonitor) SubscribeNewJob(ctx context.Context, subName string, log
 	}
 
 	go em.watchLogs(subName, cb, func() {
-		glog.Infof("Trying to resubscribe for %v", subName)
+		glog.V(common.DEBUG).Infof("Trying to resubscribe for %v", subName)
 		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
-			glog.Errorf("Resubscribe failed: %v", err)
+			glog.V(common.DEBUG).Infof("Resubscribe failed: %v", err)
 			return
 		}
 	})
@@ -180,10 +181,10 @@ func (em *eventMonitor) SubscribeNewBlock(ctx context.Context, subName string, h
 	subscribe := func() error {
 		sub, err := em.backend.SubscribeNewHead(ctx, headersCh)
 		if err != nil {
-			glog.Errorf("SubscribeNewHead error: %v. retrying...", err)
+			glog.V(common.DEBUG).Infof("SubscribeNewHead error: %v. retrying...", err)
 			return err
 		} else {
-			glog.Infof("SubscribeNewHead successful.")
+			glog.V(common.DEBUG).Infof("SubscribeNewHead successful.")
 		}
 
 		em.eventSubMap[subName] = &EventSubscription{
@@ -199,9 +200,9 @@ func (em *eventMonitor) SubscribeNewBlock(ctx context.Context, subName string, h
 	}
 
 	go em.watchBlocks(subName, em.eventSubMap[subName].sub, headersCh, cb, func() {
-		glog.Infof("Trying to resubscribe for %v", subName)
+		glog.V(common.DEBUG).Infof("Trying to resubscribe for %v", subName)
 		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
-			glog.Errorf("Resubscribe failed: %v", err)
+			glog.V(common.DEBUG).Infof("Resubscribe failed: %v", err)
 			return
 		}
 	})
