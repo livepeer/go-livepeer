@@ -110,7 +110,7 @@ func main() {
 		return
 	}
 
- 	if *rinkeby {
+	if *rinkeby {
 		*bootID = "122019c1a1f0d9fa2296dccb972e7478c5163415cd55722dcf0123553f397c45df7e"
 		*bootAddr = "/ip4/18.217.129.34/tcp/15000"
 
@@ -200,8 +200,8 @@ func main() {
 			//Connect to specified websocket
 			gethUrl = *ethWsUrl
 		} else {
-				glog.Errorf("Cannot connect to production network yet.")
-				return
+			glog.Errorf("Cannot connect to production network yet.")
+			return
 		}
 
 		glog.Infof("Setting up client...")
@@ -387,6 +387,7 @@ func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 }
 
 func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string) error {
+	n.IsTranscoder = true
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {

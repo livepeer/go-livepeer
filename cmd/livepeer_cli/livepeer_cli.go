@@ -38,10 +38,6 @@ func main() {
 			Value: 4,
 			Usage: "log level to emit to the screen",
 		},
-		cli.BoolFlag{
-			Name:  "transcoder",
-			Usage: "transcoder on off flag",
-		},
 	}
 	app.Action = func(c *cli.Context) error {
 		if c.Bool("version") {
@@ -54,13 +50,13 @@ func main() {
 
 		// Start the wizard and relinquish control
 		w := &wizard{
-			endpoint:   fmt.Sprintf("http://%v:%v/status", c.String("host"), c.String("http")),
-			rtmpPort:   c.String("rtmp"),
-			httpPort:   c.String("http"),
-			host:       c.String("host"),
-			transcoder: c.Bool("transcoder"),
-			in:         bufio.NewReader(os.Stdin),
+			endpoint: fmt.Sprintf("http://%v:%v/status", c.String("host"), c.String("http")),
+			rtmpPort: c.String("rtmp"),
+			httpPort: c.String("http"),
+			host:     c.String("host"),
+			in:       bufio.NewReader(os.Stdin),
 		}
+		w.transcoder = w.isTranscoder()
 		w.run()
 
 		return nil

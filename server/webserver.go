@@ -992,4 +992,8 @@ func (s *LivepeerServer) StartWebserver() {
 			}
 		}
 	})
+
+	http.HandleFunc("/IsTranscoder", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.IsTranscoder)))
+	})
 }
