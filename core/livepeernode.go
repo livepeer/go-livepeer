@@ -68,6 +68,7 @@ type LivepeerNode struct {
 	Ipfs            ipfs.IpfsApi
 	WorkDir         string
 	PeerConns       []PeerConn
+	IsTranscoder    bool
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.

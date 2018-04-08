@@ -8,6 +8,11 @@ import (
 	lpcommon "github.com/livepeer/go-livepeer/common"
 )
 
+func (w *wizard) isTranscoder() bool {
+	isT := httpGet(fmt.Sprintf("http://%v:%v/IsTranscoder", w.host, w.httpPort))
+	return isT == "true"
+}
+
 func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int) {
 	var (
 		blockRewardCut  float64
