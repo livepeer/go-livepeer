@@ -696,7 +696,7 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/transcoderEventSubscriptions", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
+		if s.LivepeerNode.Eth != nil && s.LivepeerNode.EthEventMonitor != nil {
 			activeEventSubMap := s.LivepeerNode.EthEventMonitor.EventSubscriptions()
 
 			data, err := json.Marshal(activeEventSubMap)
