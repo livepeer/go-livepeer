@@ -3,6 +3,7 @@ package common
 import (
 	"bytes"
 	"database/sql"
+	"errors"
 	"math/big"
 	"text/template"
 
@@ -17,12 +18,17 @@ type DB struct {
 	updateKV *sql.Stmt
 }
 
+var LivepeerDBVersion = 1
+
+var ErrDBTooNew = errors.New("DB Too New")
+
 var schema = `
 	CREATE TABLE IF NOT EXISTS kv (
 		key STRING PRIMARY KEY,
 		value STRING,
 		updatedAt STRING DEFAULT CURRENT_TIMESTAMP
 	);
+	INSERT OR IGNORE INTO kv(key, value) VALUES('dbVersion', '{{ . }}');
 	INSERT OR IGNORE INTO kv(key, value) VALUES('lastBlock', '0');
 `
 
@@ -38,12 +44,32 @@ func InitDB(dbPath string) (*DB, error) {
 	d.dbh = db
 	schemaBuf := new(bytes.Buffer)
 	tmpl := template.Must(template.New("schema").Parse(schema))
-	tmpl.Execute(schemaBuf, nil)
+	tmpl.Execute(schemaBuf, LivepeerDBVersion)
 	_, err = db.Exec(schemaBuf.String())
 	if err != nil {
 		glog.Error("Error initializing schema ", err)
 		d.Close()
 		return nil, err
+	}
+
+	// Check for correct DB version and upgrade if needed
+	var dbVersion int
+	row := db.QueryRow("SELECT value FROM kv WHERE key = 'dbVersion'")
+	err = row.Scan(&dbVersion)
+	if err != nil {
+		glog.Error("Unable to fetch DB version ", err)
+		d.Close()
+		return nil, err
+	}
+	if dbVersion > LivepeerDBVersion {
+		glog.Error("Database too new")
+		d.Close()
+		return nil, ErrDBTooNew
+	} else if dbVersion < LivepeerDBVersion {
+		// Upgrade stepwise up to the correct version using the migration
+		// procedure for each version
+	} else if dbVersion == LivepeerDBVersion {
+		// all good; nothing to do
 	}
 
 	// updateKV prepared statement

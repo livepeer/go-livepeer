@@ -9,8 +9,12 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+func dbPath(t *testing.T) string {
+	return fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())
+}
+
 func tempDB(t *testing.T) (*DB, *sql.DB, error) {
-	dbpath := fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())
+	dbpath := dbPath(t)
 	dbh, err := InitDB(dbpath)
 	if err != nil {
 		t.Error("Unable to initialize DB ", err)
@@ -67,5 +71,39 @@ func TestDBLastSeenBlock(t *testing.T) {
 	if updated_at != created_at {
 		t.Errorf("Unexpected result from update check; got %v:%v", updated_at, created_at)
 		return
+	}
+}
+
+func TestDBVersion(t *testing.T) {
+	dbh, dbraw, err := tempDB(t)
+	if err != nil {
+		return
+	}
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	// sanity check db version matches
+	var dbVersion int
+	row := dbraw.QueryRow("SELECT value FROM kv WHERE key = 'dbVersion'")
+	err = row.Scan(&dbVersion)
+	if err != nil || dbVersion != LivepeerDBVersion {
+		t.Errorf("Unexpected result from sanity check; got %v - %v", err, dbVersion)
+		return
+	}
+
+	// ensure error when db version > current node version
+	stmt := fmt.Sprintf("UPDATE kv SET value='%v' WHERE key='dbVersion'", LivepeerDBVersion+1)
+	_, err = dbraw.Exec(stmt)
+	if err != nil {
+		t.Error("Could not update dbversion", err)
+		return
+	}
+	dbh2, err := InitDB(dbPath(t))
+	if err == nil || err != ErrDBTooNew {
+		t.Error("Did not get expected error DBTooNew; got ", err)
+		return
+	}
+	if dbh2 != nil {
+		dbh.Close()
 	}
 }
