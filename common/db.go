@@ -7,7 +7,9 @@ import (
 	"math/big"
 	"text/template"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -15,7 +17,19 @@ type DB struct {
 	dbh *sql.DB
 
 	// prepared statements
-	updateKV *sql.Stmt
+	updateKV  *sql.Stmt
+	insertJob *sql.Stmt
+}
+
+type DBJob struct {
+	ID          int64
+	streamID    string
+	price       int64
+	profiles    []ffmpeg.VideoProfile
+	broadcaster ethcommon.Address
+	transcoder  ethcommon.Address
+	startBlock  int64
+	endBlock    int64
 }
 
 var LivepeerDBVersion = 1
@@ -30,7 +44,30 @@ var schema = `
 	);
 	INSERT OR IGNORE INTO kv(key, value) VALUES('dbVersion', '{{ . }}');
 	INSERT OR IGNORE INTO kv(key, value) VALUES('lastBlock', '0');
+
+	CREATE TABLE IF NOT EXISTS jobs (
+		id INTEGER PRIMARY KEY,
+		recordedAt STRING DEFAULT CURRENT_TIMESTAMP,
+		streamID STRING,
+		segmentPrice INTEGER,
+		transcodeOptions STRING,
+		broadcaster STRING,
+		transcoder STRING,
+		startBlock INTEGER,
+		endBlock INTEGER
+	);
 `
+
+func NewDBJob(id *big.Int, streamID string,
+	segmentPrice *big.Int, profiles []ffmpeg.VideoProfile,
+	broadcaster ethcommon.Address, transcoder ethcommon.Address,
+	startBlock *big.Int, endBlock *big.Int) *DBJob {
+	return &DBJob{
+		ID: id.Int64(), streamID: streamID, profiles: profiles,
+		price: segmentPrice.Int64(), broadcaster: broadcaster, transcoder: transcoder,
+		startBlock: startBlock.Int64(), endBlock: endBlock.Int64(),
+	}
+}
 
 func InitDB(dbPath string) (*DB, error) {
 	// XXX need a way to ensure (via unit tests?) that all DB{} fields are
@@ -81,6 +118,15 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.updateKV = stmt
 
+	// insertJob prepared statement
+	stmt, err = db.Prepare("INSERT INTO jobs(id, streamID, segmentPrice, transcodeOptions, broadcaster, transcoder, startBlock, endBlock) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		glog.Error("Unable to prepare insertjob stmt ", err)
+		d.Close()
+		return nil, err
+	}
+	d.insertJob = stmt
+
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -89,6 +135,9 @@ func (db *DB) Close() {
 	glog.V(DEBUG).Info("Closing DB")
 	if db.updateKV != nil {
 		db.updateKV.Close()
+	}
+	if db.insertJob != nil {
+		db.insertJob.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -104,6 +153,21 @@ func (db *DB) SetLastSeenBlock(block *big.Int) error {
 	if err != nil {
 		glog.Error("db: Got err in updating block ", err)
 		return err
+	}
+	return err
+}
+
+func (db *DB) InsertJob(job *DBJob) error {
+	if db == nil {
+		return nil
+	}
+	options := ethcommon.ToHex(ProfilesToTranscodeOpts(job.profiles))
+	glog.V(DEBUG).Info("db: Inserting job ", job.ID)
+	_, err := db.insertJob.Exec(job.ID, job.streamID, job.price, options,
+		job.broadcaster.String(), job.transcoder.String(),
+		job.startBlock, job.endBlock)
+	if err != nil {
+		glog.Error("db: Unable to insert job ", err)
 	}
 	return err
 }

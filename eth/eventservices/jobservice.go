@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
+	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
@@ -70,6 +71,12 @@ func (s *JobService) Start(ctx context.Context) error {
 		}
 
 		if assignedAddr == s.node.Eth.Account().Address {
+			dbjob := lpcommon.NewDBJob(
+				job.JobId, job.StreamId,
+				job.MaxPricePerSegment, job.Profiles,
+				job.BroadcasterAddress, s.node.Eth.Account().Address,
+				job.CreationBlock, job.EndBlock)
+			s.node.Database.InsertJob(dbjob)
 			return s.doTranscode(job)
 		} else {
 			return true, nil
