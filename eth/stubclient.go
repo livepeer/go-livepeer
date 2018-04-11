@@ -149,3 +149,4 @@ func (c *StubClient) VerificationCodeHash() (string, error)            { return 
 func (c *StubClient) ContractAddresses() map[string]common.Address { return nil }
 func (c *StubClient) CheckTx(tx *types.Transaction) error          { return nil }
 func (e *StubClient) Sign(msg []byte) ([]byte, error)              { return nil, nil }
+func (c *StubClient) LatestBlockNum() (*big.Int, error)            { return big.NewInt(0), nil }

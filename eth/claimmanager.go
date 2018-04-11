@@ -121,17 +121,12 @@ func (c *BasicClaimManager) CanClaim() (bool, error) {
 		return false, err
 	}
 
-	backend, err := c.client.Backend()
+	blknum, err := c.client.LatestBlockNum()
 	if err != nil {
 		return false, err
 	}
 
-	currentBlk, err := backend.BlockByNumber(context.Background(), nil)
-	if err != nil {
-		return false, err
-	}
-
-	if job.TranscoderAddress == c.client.Account().Address || currentBlk.Number().Cmp(new(big.Int).Add(job.CreationBlock, BlocksUntilFirstClaimDeadline)) != 1 {
+	if job.TranscoderAddress == c.client.Account().Address || blknum.Cmp(new(big.Int).Add(job.CreationBlock, BlocksUntilFirstClaimDeadline)) != 1 {
 		return true, nil
 	} else {
 		return false, nil
