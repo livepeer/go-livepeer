@@ -140,4 +140,10 @@ func TestDBJobs(t *testing.T) {
 		t.Error("Unexpected error in active jobs ", err, len(jobs))
 		return
 	}
+	// check stop reason filter
+	dbh.SetStopReason(big.NewInt(j.ID), "insufficient lolz")
+	jobs, err = dbh.ActiveJobs(big.NewInt(0))
+	if err != nil || len(jobs) != 2 {
+		t.Error("Unexpected error in active jobs ", err, len(jobs))
+	}
 }

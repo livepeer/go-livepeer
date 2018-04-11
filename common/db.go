@@ -20,6 +20,7 @@ type DB struct {
 	updateKV   *sql.Stmt
 	insertJob  *sql.Stmt
 	selectJobs *sql.Stmt
+	stopReason *sql.Stmt
 }
 
 type DBJob struct {
@@ -31,6 +32,7 @@ type DBJob struct {
 	transcoder  ethcommon.Address
 	startBlock  int64
 	endBlock    int64
+	stopReason  string
 }
 
 var LivepeerDBVersion = 1
@@ -55,7 +57,9 @@ var schema = `
 		broadcaster STRING,
 		transcoder STRING,
 		startBlock INTEGER,
-		endBlock INTEGER
+		endBlock INTEGER,
+		stopReason STRING DEFAULT NULL,
+		stoppedAt STRING DEFAULT NULL
 	);
 `
 
@@ -129,13 +133,22 @@ func InitDB(dbPath string) (*DB, error) {
 	d.insertJob = stmt
 
 	// select all jobs since
-	stmt, err = db.Prepare("SELECT id, streamID, segmentPrice, transcodeOptions, broadcaster, transcoder, startBlock, endBlock FROM jobs WHERE endBlock > ?")
+	stmt, err = db.Prepare("SELECT id, streamID, segmentPrice, transcodeOptions, broadcaster, transcoder, startBlock, endBlock FROM jobs WHERE endBlock > ? AND stopReason IS NULL")
 	if err != nil {
 		glog.Error("Unable to prepare selectjob stmt ", err)
 		d.Close()
 		return nil, err
 	}
 	d.selectJobs = stmt
+
+	// set reason for stopping a job
+	stmt, err = db.Prepare("UPDATE jobs SET stopReason=?, stoppedAt=datetime() WHERE id=?")
+	if err != nil {
+		glog.Error("Unable to prepare stop reason statement ", err)
+		d.Close()
+		return nil, err
+	}
+	d.stopReason = stmt
 
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
@@ -151,6 +164,9 @@ func (db *DB) Close() {
 	}
 	if db.selectJobs != nil {
 		db.selectJobs.Close()
+	}
+	if db.stopReason != nil {
+		db.stopReason.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -216,4 +232,17 @@ func (db *DB) ActiveJobs(since *big.Int) ([]*DBJob, error) {
 		jobs = append(jobs, &job)
 	}
 	return jobs, nil
+}
+
+func (db *DB) SetStopReason(id *big.Int, reason string) error {
+	if db == nil {
+		return nil
+	}
+	glog.V(DEBUG).Infof("db: Setting StopReason for job %v to %v", id, reason)
+	_, err := db.stopReason.Exec(reason, id.Int64())
+	if err != nil {
+		glog.Error("db: Error setting stop reason ", id, err)
+		return err
+	}
+	return nil
 }
