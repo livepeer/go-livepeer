@@ -15,10 +15,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -138,25 +136,11 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 	}
 
 	//Call eth client to create the job
-	b, err := n.Eth.Backend()
+	blknum, err := n.Eth.LatestBlockNum()
 	if err != nil {
-		return err
-	}
-
-	var blk *types.Block
-	getBlock := func() error {
-		blk, err = b.BlockByNumber(context.Background(), nil)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	if err := backoff.Retry(getBlock, backoff.NewConstantBackOff(time.Second*2)); err != nil {
-		glog.Errorf("Cannot get current block number: %v", err)
 		return ErrNotFound
 	}
-
-	tx, err := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], price, big.NewInt(0).Add(blk.Number(), big.NewInt(DefaultJobLength)))
+	tx, err := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], price, big.NewInt(0).Add(blknum, big.NewInt(DefaultJobLength)))
 	if err != nil {
 		glog.Errorf("Error creating transcode job: %v", err)
 		return err

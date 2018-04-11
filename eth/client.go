@@ -106,6 +106,7 @@ type LivepeerEthClient interface {
 	ContractAddresses() map[string]common.Address
 	CheckTx(*types.Transaction) error
 	Sign([]byte) ([]byte, error)
+	LatestBlockNum() (*big.Int, error)
 }
 
 type client struct {
@@ -807,4 +808,21 @@ func (c *client) getNonce() (uint64, error) {
 
 		return c.nextNonce, nil
 	}
+}
+
+func (c *client) LatestBlockNum() (*big.Int, error) {
+	var blk *types.Header
+	var err error
+	getBlock := func() error {
+		blk, err = c.backend.HeaderByNumber(context.Background(), nil)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := backoff.Retry(getBlock, backoff.NewConstantBackOff(time.Second*2)); err != nil {
+		glog.Errorf("Cannot get current block number: %v", err)
+		return nil, err
+	}
+	return blk.Number, nil
 }
