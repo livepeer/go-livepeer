@@ -110,7 +110,7 @@ func (w *wizard) run() {
 		fmt.Println(" 10. Get test LPT")
 		fmt.Println(" 11. Get test ETH")
 		fmt.Println(" 12. List registered transcoders")
-		fmt.Println(" 13. Print last 5 jobs + assignees")
+		fmt.Println(" 13. Print latest jobs")
 
 		if w.transcoder {
 			fmt.Println(" 14. Become a transcoder")

@@ -315,7 +315,7 @@ func (s *LivepeerServer) StartWebserver() {
 				glog.Error(err)
 				continue
 			}
-			ts = fmt.Sprintf("%vJob: %v, Broadcaster: %v, Transcoder: %v\n", ts, i, j.BroadcasterAddress.String(), t.String())
+			ts = fmt.Sprintf("%vJob: %v, Price: %v, Broadcaster: %v, Transcoder: %v\n", ts, i, j.MaxPricePerSegment.String(), j.BroadcasterAddress.String(), t.String())
 		}
 		w.Write([]byte(ts))
 	})
