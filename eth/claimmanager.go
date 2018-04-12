@@ -22,7 +22,7 @@ var (
 )
 
 type ClaimManager interface {
-	AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile ffmpeg.VideoProfile) error
+	AddReceipt(seqNo int64, bData []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte) error
 	SufficientBroadcasterDeposit() (bool, error)
 	ClaimVerifyAndDistributeFees() error
 	CanClaim() (bool, error)
@@ -34,7 +34,6 @@ type claimData struct {
 	seqNo                int64
 	segData              []byte
 	dataHash             []byte
-	tDataHashes          map[ffmpeg.VideoProfile][]byte
 	bSig                 []byte
 	transcodeProof       []byte
 	claimConcatTDatahash []byte
@@ -56,6 +55,7 @@ type BasicClaimManager struct {
 
 	broadcasterAddr common.Address
 	pricePerSegment *big.Int
+	totalSegCost    *big.Int
 
 	claims     int64
 	claimsLock sync.Mutex
@@ -94,6 +94,7 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, 
 		strmID:          sid,
 		jobID:           jid,
 		cost:            big.NewInt(0),
+		totalSegCost:    new(big.Int).Mul(pricePerSegment, big.NewInt(int64(len(p)))),
 		broadcasterAddr: broadcaster,
 		pricePerSegment: pricePerSegment,
 		profiles:        p,
@@ -138,31 +139,43 @@ func (c *BasicClaimManager) DidFirstClaim() bool {
 }
 
 //AddReceipt adds a claim for a given video segment.
-func (c *BasicClaimManager) AddReceipt(seqNo int64, data []byte, tDataHash []byte, bSig []byte, profile ffmpeg.VideoProfile) error {
-	dataHash := crypto.Keccak256(data)
+func (c *BasicClaimManager) AddReceipt(seqNo int64, bData []byte, bSig []byte,
+	tData map[ffmpeg.VideoProfile][]byte) error {
 
-	_, ok := c.pLookup[profile]
-	if !ok {
-		return fmt.Errorf("cannot find profile: %v", profile)
+	_, ok := c.segClaimMap[seqNo]
+	if ok {
+		return fmt.Errorf("Receipt for %v:%v already exists", c.jobID.String(), seqNo)
 	}
 
-	cd, ok := c.segClaimMap[seqNo]
-	if !ok {
-		cd = &claimData{
-			seqNo:       seqNo,
-			segData:     data,
-			dataHash:    dataHash,
-			tDataHashes: make(map[ffmpeg.VideoProfile][]byte),
-			bSig:        bSig,
+	// ensure that all our profiles match up: check that lengths match
+	if len(c.pLookup) != len(tData) {
+		return fmt.Errorf("Mismatched profiles in segment; not claiming")
+		// XXX record error in db
+	}
+
+	// ensure profiles match up, part 2: check for unknown profiles in the list
+	hashes := make([][]byte, len(tData))
+	for profile, td := range tData {
+		i, ok := c.pLookup[profile]
+		if !ok {
+			return fmt.Errorf("cannot find profile: %v", profile)
+			// XXX record error in db
 		}
-		c.segClaimMap[seqNo] = cd
+		hashes[i] = crypto.Keccak256(td) // set index based on profile ordering
 	}
-	if _, ok := cd.tDataHashes[profile]; ok {
-		return fmt.Errorf("receipt for profile %v already exists", profile)
-	}
-	cd.tDataHashes[profile] = tDataHash
+	tHash := crypto.Keccak256(hashes...)
+	bHash := crypto.Keccak256(bData)
 
-	c.cost = new(big.Int).Add(c.cost, c.pricePerSegment)
+	cd := &claimData{
+		seqNo:                seqNo,
+		segData:              bData,
+		dataHash:             bHash,
+		bSig:                 bSig,
+		claimConcatTDatahash: tHash,
+	}
+
+	c.cost = new(big.Int).Add(c.cost, c.totalSegCost)
+	c.segClaimMap[seqNo] = cd
 	c.unclaimedSegs[seqNo] = true
 	// glog.Infof("Added %v. unclaimSegs: %v", seqNo, c.unclaimedSegs)
 
@@ -203,18 +216,8 @@ func (c *BasicClaimManager) makeRanges() [][2]int64 {
 	//Iterate through, check to make sure all tHashes are present (otherwise break and start new range),
 	start := keys[0]
 	ranges := make([][2]int64, 0)
-	for i, key := range keys {
+	for i, _ := range keys {
 		startNewRange := false
-		scm := c.segClaimMap[key]
-
-		//If not all profiles exist in transcoded hashes, remove current key and start new range (don't claim for current segment)
-		for _, p := range c.profiles {
-			if _, ok := scm.tDataHashes[p]; !ok {
-				ranges = append(ranges, [2]int64{start, keys[i-1]})
-				startNewRange = true
-				break
-			}
-		}
 
 		//If the next key is not 1 more than the current key, it's not contiguous - start a new range
 		if startNewRange == false && (i+1 == len(keys) || keys[i+1] != keys[i]+1) {
@@ -250,12 +253,7 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 		//create concat hashes for each seg
 		receiptHashes := make([]common.Hash, segRange[1]-segRange[0]+1)
 		for i := segRange[0]; i <= segRange[1]; i++ {
-			segTDataHashes := make([][]byte, len(c.profiles))
-			for pi, p := range c.profiles {
-				segTDataHashes[pi] = []byte(c.segClaimMap[i].tDataHashes[p])
-			}
 			seg, _ := c.segClaimMap[i]
-			seg.claimConcatTDatahash = crypto.Keccak256(segTDataHashes...)
 
 			receipt := &ethTypes.TranscodeReceipt{
 				StreamID:                 c.strmID,
@@ -343,6 +341,7 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 
 			seg := c.segClaimMap[segNo]
 
+			// XXX load segment data from disk here
 			dataStorageHash, err := c.ipfs.Add(bytes.NewReader(seg.segData))
 			if err != nil {
 				glog.Errorf("Error uploading segment data to IPFS: %v", err)

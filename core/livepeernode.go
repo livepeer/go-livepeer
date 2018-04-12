@@ -287,6 +287,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
 		return
 	}
+	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
 	glog.V(common.DEBUG).Infof("Transcoding of segment %v took %v", seg.SeqNo, time.Since(start))
 
 	//Encode and broadcast the segment
@@ -309,10 +310,11 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 			glog.Errorf("Error inserting transcoded segment into network: %v", err)
 		}
 
-		//Don't do the onchain stuff unless specified
-		if cm != nil && config.PerformOnchainClaim {
-			cm.AddReceipt(int64(seg.SeqNo), seg.Data, crypto.Keccak256(tData[i]), sig, config.Profiles[i])
-		}
+		tProfileData[config.Profiles[i]] = tData[i]
+	}
+	//Don't do the onchain stuff unless specified
+	if cm != nil && config.PerformOnchainClaim {
+		cm.AddReceipt(int64(seg.SeqNo), seg.Data, sig, tProfileData)
 	}
 }
 
