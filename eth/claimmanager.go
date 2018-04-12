@@ -23,7 +23,7 @@ var (
 )
 
 type ClaimManager interface {
-	AddReceipt(seqNo int64, bData []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte) error
+	AddReceipt(seqNo int64, bData []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error
 	SufficientBroadcasterDeposit() (bool, error)
 	ClaimVerifyAndDistributeFees() error
 	CanClaim() (bool, error)
@@ -36,13 +36,14 @@ type claimData struct {
 	segData              []byte
 	dataHash             []byte
 	bSig                 []byte
-	transcodeProof       []byte
 	claimConcatTDatahash []byte
+	transcodeProof       []byte
 }
 
 //BasicClaimManager manages the claim process for a Livepeer transcoder.  Check the Livepeer protocol for more details.
 type BasicClaimManager struct {
 	client LivepeerEthClient
+	db     *common.DB
 	ipfs   ipfs.IpfsApi
 
 	strmID   string
@@ -63,7 +64,7 @@ type BasicClaimManager struct {
 }
 
 //NewBasicClaimManager creates a new claim manager.
-func NewBasicClaimManager(job *ethTypes.Job, c LivepeerEthClient, ipfs ipfs.IpfsApi) *BasicClaimManager {
+func NewBasicClaimManager(job *ethTypes.Job, c LivepeerEthClient, ipfs ipfs.IpfsApi, db *common.DB) *BasicClaimManager {
 	p := job.Profiles
 	seqNos := make([][]int64, len(p), len(p))
 	rHashes := make([][]ethcommon.Hash, len(p), len(p))
@@ -92,6 +93,7 @@ func NewBasicClaimManager(job *ethTypes.Job, c LivepeerEthClient, ipfs ipfs.Ipfs
 
 	return &BasicClaimManager{
 		client:          c,
+		db:              db,
 		ipfs:            ipfs,
 		strmID:          job.StreamId,
 		jobID:           job.JobId,
@@ -142,7 +144,7 @@ func (c *BasicClaimManager) DidFirstClaim() bool {
 
 //AddReceipt adds a claim for a given video segment.
 func (c *BasicClaimManager) AddReceipt(seqNo int64, bData []byte, bSig []byte,
-	tData map[ffmpeg.VideoProfile][]byte) error {
+	tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error {
 
 	_, ok := c.segClaimMap[seqNo]
 	if ok {
@@ -181,6 +183,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64, bData []byte, bSig []byte,
 	c.unclaimedSegs[seqNo] = true
 	// glog.Infof("Added %v. unclaimSegs: %v", seqNo, c.unclaimedSegs)
 
+	c.db.InsertReceipt(c.jobID, seqNo, bHash, bSig, tHash, tStart, tEnd)
 	return nil
 }
 

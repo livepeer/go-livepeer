@@ -267,6 +267,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 		return // TODO return error?
 	}
 
+	transcodeStart := time.Now().UTC()
 	// Ensure length matches expectations. 4 second + 25% wiggle factor, 60fps
 	err := ffmpeg.CheckMediaLen(fname, 4*1.25*1000, 60*4*1.25)
 	if err != nil {
@@ -280,6 +281,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
 		return
 	}
+	transcodeEnd := time.Now().UTC()
 	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
 	glog.V(common.DEBUG).Infof("Transcoding of segment %v took %v", seg.SeqNo, time.Since(start))
 
@@ -307,7 +309,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	}
 	//Don't do the onchain stuff unless specified
 	if cm != nil && config.PerformOnchainClaim {
-		cm.AddReceipt(int64(seg.SeqNo), seg.Data, sig, tProfileData)
+		cm.AddReceipt(int64(seg.SeqNo), seg.Data, sig, tProfileData, transcodeStart, transcodeEnd)
 	}
 }
 

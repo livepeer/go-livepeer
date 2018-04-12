@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -28,7 +29,7 @@ func newJob() *ethTypes.Job {
 
 func TestShouldVerify(t *testing.T) {
 	client := &StubClient{}
-	cm := NewBasicClaimManager(newJob(), client, &ipfs.StubIpfsApi{})
+	cm := NewBasicClaimManager(newJob(), client, &ipfs.StubIpfsApi{}, nil)
 
 	blkHash := ethcommon.Hash([32]byte{0, 2, 4, 42, 2, 3, 4, 4, 4, 2, 21, 1, 1, 24, 134, 0, 02, 43})
 	//Just make sure the results are different
@@ -48,7 +49,7 @@ func TestShouldVerify(t *testing.T) {
 }
 
 func TestProfileOrder(t *testing.T) {
-	cm := NewBasicClaimManager(newJob(), &StubClient{}, &ipfs.StubIpfsApi{})
+	cm := NewBasicClaimManager(newJob(), &StubClient{}, &ipfs.StubIpfsApi{}, nil)
 
 	if cm.profiles[0] != ffmpeg.P720p30fps4x3 || cm.profiles[1] != ffmpeg.P360p30fps4x3 || cm.profiles[2] != ffmpeg.P240p30fps16x9 {
 		t.Errorf("wrong ordering: %v", cm.profiles)
@@ -65,19 +66,21 @@ func hashTData(order []ffmpeg.VideoProfile, td map[ffmpeg.VideoProfile][]byte) [
 
 func TestAddReceipt(t *testing.T) {
 	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
-	cm := NewBasicClaimManager(newJob(), &StubClient{}, &ipfs.StubIpfsApi{})
+	cm := NewBasicClaimManager(newJob(), &StubClient{}, &ipfs.StubIpfsApi{}, nil)
+	tStart := time.Now().UTC()
+	tEnd := tStart
 
 	//Should get error due to a length mismatch
 	td := map[ffmpeg.VideoProfile][]byte{
 		ffmpeg.P360p30fps4x3:  []byte("tdatahash"),
 		ffmpeg.P240p30fps16x9: []byte("tdatahash"),
 	}
-	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td); err == nil {
+	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td, tStart, tEnd); err == nil {
 		t.Error("Expecting an error for mismatched profile legnths.")
 	}
 	//Should get error for adding to a non-existing profile
 	td[ffmpeg.P144p30fps16x9] = []byte("tdatahash")
-	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td); err == nil {
+	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td, tStart, tEnd); err == nil {
 		t.Error("Expecting an error for adding to a non-existing profile.")
 	}
 	// Should pass
@@ -86,11 +89,11 @@ func TestAddReceipt(t *testing.T) {
 		ffmpeg.P240p30fps16x9: []byte("tdatahash"),
 		ffmpeg.P720p30fps4x3:  []byte("tdatahash"),
 	}
-	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td); err != nil {
+	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td, tStart, tEnd); err != nil {
 		t.Error("Unexpected error ", err)
 	}
 	// Should get an error due to an already existing receipt
-	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td); err == nil {
+	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td, tStart, tEnd); err == nil {
 		t.Error("Did not get an error where one was expected")
 	}
 
@@ -116,7 +119,9 @@ func TestAddReceipt(t *testing.T) {
 func setupRanges(t *testing.T) *BasicClaimManager {
 	ethClient := &StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
 	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
-	cm := NewBasicClaimManager(newJob(), ethClient, &ipfs.StubIpfsApi{})
+	cm := NewBasicClaimManager(newJob(), ethClient, &ipfs.StubIpfsApi{}, nil)
+	tStart := time.Now().UTC()
+	tEnd := tStart
 
 	for _, segRange := range [][2]int64{[2]int64{0, 0}, [2]int64{3, 13}, [2]int64{15, 18}, [2]int64{21, 25}, [2]int64{27, 27}, [2]int64{29, 29}} {
 		for i := segRange[0]; i <= segRange[1]; i++ {
@@ -126,7 +131,7 @@ func setupRanges(t *testing.T) *BasicClaimManager {
 			}
 			data := []byte(fmt.Sprintf("data%v", i))
 			sig := []byte(fmt.Sprintf("sig%v", i))
-			if err := cm.AddReceipt(int64(i), data, sig, td); err != nil {
+			if err := cm.AddReceipt(int64(i), data, sig, td, tStart, tEnd); err != nil {
 				t.Errorf("Error: %v", err)
 			}
 			if i == 16 {
@@ -143,7 +148,7 @@ func setupRanges(t *testing.T) *BasicClaimManager {
 	td := map[ffmpeg.VideoProfile][]byte{
 		p: []byte(fmt.Sprintf("hash%v%v", p, i)),
 	}
-	if err := cm.AddReceipt(int64(i), data, sig, td); err == nil {
+	if err := cm.AddReceipt(int64(i), data, sig, td, tStart, tEnd); err == nil {
 		t.Errorf("Did not get an error when expecting one")
 	}
 
@@ -163,7 +168,9 @@ func TestRanges(t *testing.T) {
 func TestClaimVerifyAndDistributeFees(t *testing.T) {
 	ethClient := &StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
 	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
-	cm := NewBasicClaimManager(newJob(), ethClient, &ipfs.StubIpfsApi{})
+	cm := NewBasicClaimManager(newJob(), ethClient, &ipfs.StubIpfsApi{}, nil)
+	tStart := time.Now().UTC()
+	tEnd := tStart
 
 	//Add some receipts(0-9)
 	receiptHashes1 := make([]ethcommon.Hash, 10)
@@ -174,7 +181,7 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 		for _, p := range ps {
 			td[p] = []byte(fmt.Sprintf("tHash%v%v", ffmpeg.P240p30fps16x9.Name, i)) // ???
 		}
-		if err := cm.AddReceipt(int64(i), data, sig, td); err != nil {
+		if err := cm.AddReceipt(int64(i), data, sig, td, tStart, tEnd); err != nil {
 			t.Errorf("Error: %v", err)
 		}
 
@@ -197,7 +204,7 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 		for _, p := range ps {
 			td[p] = []byte(fmt.Sprintf("tHash%v%v", ffmpeg.P240p30fps16x9.Name, i)) // ???
 		}
-		if err := cm.AddReceipt(int64(i), data, sig, td); err != nil {
+		if err := cm.AddReceipt(int64(i), data, sig, td, tStart, tEnd); err != nil {
 			t.Errorf("Error: %v", err)
 		}
 		receipt := &ethTypes.TranscodeReceipt{
@@ -236,7 +243,7 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 // func TestVerify(t *testing.T) {
 // 	ethClient := &StubClient{VeriRate: 10}
 // 	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
-// 	cm := NewBasicClaimManager("strmID", big.NewInt(5), ethcommon.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{})
+// 	cm := NewBasicClaimManager("strmID", big.NewInt(5), ethcommon.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{}, nil)
 // 	start := int64(0)
 // 	end := int64(100)
 // 	blkNum := int64(100)
