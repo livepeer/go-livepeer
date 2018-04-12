@@ -45,17 +45,39 @@ func TestProfileOrder(t *testing.T) {
 	}
 }
 
+func hashTData(order []ffmpeg.VideoProfile, td map[ffmpeg.VideoProfile][]byte) []byte {
+	hashes := make([][]byte, len(td))
+	for i, p := range order {
+		hashes[i] = crypto.Keccak256(td[p])
+	}
+	return crypto.Keccak256(hashes...)
+}
+
 func TestAddReceipt(t *testing.T) {
 	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
 	cm := NewBasicClaimManager("strmID", big.NewInt(5), ethcommon.Address{}, big.NewInt(1), ps, &StubClient{}, &ipfs.StubIpfsApi{})
 
-	//Should get error for adding to a non-existing profile
-	if err := cm.AddReceipt(0, []byte("data"), []byte("tdatahash"), []byte("sig"), ffmpeg.P144p30fps16x9); err == nil {
-		t.Errorf("Expecting an error for adding to a non-existing profile.")
+	//Should get error due to a length mismatch
+	td := map[ffmpeg.VideoProfile][]byte{
+		ffmpeg.P360p30fps4x3:  []byte("tdatahash"),
+		ffmpeg.P240p30fps16x9: []byte("tdatahash"),
 	}
-
-	if err := cm.AddReceipt(0, []byte("data"), []byte("tdatahash"), []byte("sig"), ffmpeg.P240p30fps16x9); err != nil {
-		t.Errorf("Error: %v", err)
+	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td); err == nil {
+		t.Error("Expecting an error for mismatched profile legnths.")
+	}
+	//Should get error for adding to a non-existing profile
+	td[ffmpeg.P144p30fps16x9] = []byte("tdatahash")
+	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td); err == nil {
+		t.Error("Expecting an error for adding to a non-existing profile.")
+	}
+	// Should pass
+	td = map[ffmpeg.VideoProfile][]byte{
+		ffmpeg.P360p30fps4x3:  []byte("tdatahash"),
+		ffmpeg.P240p30fps16x9: []byte("tdatahash"),
+		ffmpeg.P720p30fps4x3:  []byte("tdatahash"),
+	}
+	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td); err != nil {
+		t.Error("Unexpected error ", err)
 	}
 
 	if string(cm.segClaimMap[0].segData) != "data" {
@@ -66,8 +88,9 @@ func TestAddReceipt(t *testing.T) {
 		t.Errorf("Expecting %v, got %v", string(crypto.Keccak256([]byte("data"))), string(cm.segClaimMap[0].dataHash))
 	}
 
-	if string(cm.segClaimMap[0].tDataHashes[ffmpeg.P240p30fps16x9]) != "tdatahash" {
-		t.Errorf("Expecting %v, got %v", "datahash", cm.segClaimMap[0].tDataHashes[ffmpeg.P240p30fps16x9])
+	hash := hashTData(ps, td)
+	if string(cm.segClaimMap[0].claimConcatTDatahash) != string(hash) {
+		t.Errorf("Expecting %v, got %v", ethcommon.ToHex(hash), ethcommon.ToHex(cm.segClaimMap[0].claimConcatTDatahash))
 	}
 
 	if string(cm.segClaimMap[0].bSig) != "sig" {
@@ -83,16 +106,17 @@ func setupRanges(t *testing.T) *BasicClaimManager {
 
 	for _, segRange := range [][2]int64{[2]int64{0, 0}, [2]int64{3, 13}, [2]int64{15, 18}, [2]int64{21, 25}, [2]int64{27, 27}, [2]int64{29, 29}} {
 		for i := segRange[0]; i <= segRange[1]; i++ {
+			td := map[ffmpeg.VideoProfile][]byte{}
 			for _, p := range ps {
-				data := []byte(fmt.Sprintf("data%v%v", p.Name, i))
-				hash := []byte(fmt.Sprintf("hash%v%v", p.Name, i))
-				sig := []byte(fmt.Sprintf("sig%v%v", p.Name, i))
-				if err := cm.AddReceipt(int64(i), []byte(data), hash, []byte(sig), p); err != nil {
-					t.Errorf("Error: %v", err)
-				}
-				if i == 16 {
-					glog.Infof("data: %v", data)
-				}
+				td[p] = []byte(fmt.Sprintf("hash%v%v", p.Name, i))
+			}
+			data := []byte(fmt.Sprintf("data%v", i))
+			sig := []byte(fmt.Sprintf("sig%v", i))
+			if err := cm.AddReceipt(int64(i), data, sig, td); err != nil {
+				t.Errorf("Error: %v", err)
+			}
+			if i == 16 {
+				glog.Infof("data: %v", data)
 			}
 		}
 	}
@@ -101,10 +125,12 @@ func setupRanges(t *testing.T) *BasicClaimManager {
 	i := 19
 	p := ffmpeg.P360p30fps4x3
 	data := []byte(fmt.Sprintf("data%v%v", p.Name, i))
-	hash := []byte(fmt.Sprintf("hash%v%v", p.Name, i))
 	sig := []byte(fmt.Sprintf("sig%v%v", p.Name, i))
-	if err := cm.AddReceipt(int64(i), []byte(data), hash, []byte(sig), p); err != nil {
-		t.Errorf("Error: %v", err)
+	td := map[ffmpeg.VideoProfile][]byte{
+		p: []byte(fmt.Sprintf("hash%v%v", p, i)),
+	}
+	if err := cm.AddReceipt(int64(i), data, sig, td); err == nil {
+		t.Errorf("Did not get an error when expecting one")
 	}
 
 	return cm
@@ -128,21 +154,21 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 	//Add some receipts(0-9)
 	receiptHashes1 := make([]ethcommon.Hash, 10)
 	for i := 0; i < 10; i++ {
-		segTDataHashes := make([][]byte, len(ps))
+		td := make(map[ffmpeg.VideoProfile][]byte, len(ps))
 		data := []byte(fmt.Sprintf("data%v", i))
 		sig := []byte(fmt.Sprintf("sig%v", i))
-		for pi, p := range ps {
-			tHash := []byte(fmt.Sprintf("tHash%v%v", ffmpeg.P240p30fps16x9.Name, i))
-			if err := cm.AddReceipt(int64(i), data, tHash, []byte(sig), p); err != nil {
-				t.Errorf("Error: %v", err)
-			}
-			segTDataHashes[pi] = tHash
+		for _, p := range ps {
+			td[p] = []byte(fmt.Sprintf("tHash%v%v", ffmpeg.P240p30fps16x9.Name, i)) // ???
 		}
+		if err := cm.AddReceipt(int64(i), data, sig, td); err != nil {
+			t.Errorf("Error: %v", err)
+		}
+
 		receipt := &ethTypes.TranscodeReceipt{
 			StreamID:                 "strmID",
 			SegmentSequenceNumber:    big.NewInt(int64(i)),
 			DataHash:                 crypto.Keccak256(data),
-			ConcatTranscodedDataHash: crypto.Keccak256(segTDataHashes...),
+			ConcatTranscodedDataHash: hashTData(ps, td),
 			BroadcasterSig:           []byte(sig),
 		}
 		receiptHashes1[i] = receipt.Hash()
@@ -151,22 +177,20 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 	//Add some receipts(15-24)
 	receiptHashes2 := make([]ethcommon.Hash, 10)
 	for i := 15; i < 25; i++ {
-		segTDataHashes := make([][]byte, len(ps))
+		td := map[ffmpeg.VideoProfile][]byte{}
 		data := []byte(fmt.Sprintf("data%v", i))
 		sig := []byte(fmt.Sprintf("sig%v", i))
-		for pi, p := range ps {
-			tHash := []byte(fmt.Sprintf("tHash%v%v", ffmpeg.P240p30fps16x9.Name, i))
-			if err := cm.AddReceipt(int64(i), []byte(data), tHash, []byte(sig), p); err != nil {
-				t.Errorf("Error: %v", err)
-			}
-
-			segTDataHashes[pi] = tHash
+		for _, p := range ps {
+			td[p] = []byte(fmt.Sprintf("tHash%v%v", ffmpeg.P240p30fps16x9.Name, i)) // ???
+		}
+		if err := cm.AddReceipt(int64(i), data, sig, td); err != nil {
+			t.Errorf("Error: %v", err)
 		}
 		receipt := &ethTypes.TranscodeReceipt{
 			StreamID:                 "strmID",
 			SegmentSequenceNumber:    big.NewInt(int64(i)),
 			DataHash:                 crypto.Keccak256(data),
-			ConcatTranscodedDataHash: crypto.Keccak256(segTDataHashes...),
+			ConcatTranscodedDataHash: hashTData(ps, td),
 			BroadcasterSig:           []byte(sig),
 		}
 		receiptHashes2[i-15] = receipt.Hash()
