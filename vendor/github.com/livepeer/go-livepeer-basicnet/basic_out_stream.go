@@ -92,13 +92,13 @@ func (bs *BasicOutStream) encodeAndFlush(n interface{}) error {
 	err := bs.enc.Encode(n)
 	if err != nil {
 		glog.Errorf("send message encode error for peer %v: %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), err)
-		return ErrOutStream
+		return err
 	}
 
 	err = bs.w.Flush()
 	if err != nil {
 		glog.Errorf("send message flush error for peer %v: %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), err)
-		return ErrOutStream
+		return err
 	}
 
 	return nil

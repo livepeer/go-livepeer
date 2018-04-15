@@ -63,6 +63,7 @@ type BasicVideoNetwork struct {
 	transResponseCallbacks map[string]func(transcodeResult map[string]string)
 	relayers               map[relayerID]*BasicRelayer
 	msgCounts              map[Opcode]int64
+	pingChs                map[string]chan struct{}
 }
 
 func (n *BasicVideoNetwork) String() string {
@@ -94,8 +95,9 @@ func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string) (*BasicVideoNetwo
 		mplMap:                 make(map[string]*m3u8.MasterPlaylist),
 		mplChans:               make(map[string]chan *m3u8.MasterPlaylist),
 		msgChans:               make(map[string]chan *Msg),
-		transResponseCallbacks: make(map[string]func(transcodeResult map[string]string)),
-		msgCounts:              make(map[Opcode]int64)}
+		msgCounts:              make(map[Opcode]int64),
+		pingChs:                make(map[string]chan struct{}),
+		transResponseCallbacks: make(map[string]func(transcodeResult map[string]string))}
 	n.Network = nw
 
 	//Set up a worker to write connections
@@ -453,6 +455,33 @@ func (n *BasicVideoNetwork) nodeStatus() *lpnet.NodeStatus {
 	}
 }
 
+func (n *BasicVideoNetwork) Ping(nid, addr string) (chan struct{}, error) {
+	returnCh := make(chan struct{})
+	id, err := peer.IDHexDecode(nid)
+	if err != nil {
+		return nil, errors.New("ErrBadNodeID")
+	}
+	s := n.NetworkNode.GetOutStream(id)
+	//Send the message, try to reconnect if connection was reset
+	if err := s.SendMessage(PingID, ""); err != nil {
+		if err.Error() == "connection reset" {
+			if err := s.Stream.Conn().Close(); err != nil {
+				glog.Errorf("Error closing conn: %v", err)
+				return nil, err
+			}
+			if err := n.Connect(nid, []string{addr}); err != nil {
+				return nil, err
+			}
+		}
+		s = n.NetworkNode.GetOutStream(id)
+		if err := s.SendMessage(PingID, ""); err != nil {
+			return nil, err
+		}
+	}
+	n.pingChs[nid] = returnCh
+	return returnCh, nil
+}
+
 //SetupProtocol sets up the protocol so we can handle incoming messages
 func (n *BasicVideoNetwork) SetupProtocol() error {
 	glog.V(4).Infof("\n\nSetting up protocol: %v", Protocol)
@@ -563,6 +592,10 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 		}
 		nw.msgCounts[msg.Op]++
 		return handleNodeStatusDataMsg(nw, nsd)
+	case PingID:
+		return handlePing(nw, ws.Stream.Conn().RemotePeer())
+	case PongID:
+		return handlePong(nw, ws.Stream.Conn().RemotePeer())
 	default:
 		glog.V(2).Infof("Unknown Data: %v -- closing stream", msg)
 		// stream.Close()
@@ -924,6 +957,25 @@ func handleNodeStatusDataMsg(nw *BasicVideoNetwork, nsd NodeStatusDataMsg) error
 	}
 
 	ch <- &Msg{Op: NodeStatusDataID, Data: nsd}
+	return nil
+}
+
+func handlePing(nw *BasicVideoNetwork, remotePID peer.ID) error {
+	if err := nw.NetworkNode.GetOutStream(remotePID).SendMessage(PongID, ""); err != nil {
+		glog.Errorf("Error sending Pong: %v", err)
+		return ErrHandleMsg
+	}
+	return nil
+}
+
+func handlePong(nw *BasicVideoNetwork, remotePID peer.ID) error {
+	if nw.pingChs[peer.IDHexEncode(remotePID)] == nil {
+		glog.Errorf("Error handling Pong - cannot find pingCh")
+		return ErrHandleMsg
+	}
+	nw.pingChs[peer.IDHexEncode(remotePID)] <- struct{}{}
+	close(nw.pingChs[peer.IDHexEncode(remotePID)])
+	delete(nw.pingChs, peer.IDHexEncode(remotePID))
 	return nil
 }
 

@@ -20,6 +20,8 @@ const (
 	MasterPlaylistDataID
 	NodeStatusReqID
 	NodeStatusDataID
+	PingID
+	PongID
 	SimpleString
 )
 
@@ -138,6 +140,11 @@ func (m Msg) MarshalJSON() ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Failed to marshal NodeStatusDataMsg: %v", err)
 		}
+	case string:
+		err := enc.Encode(m.Data.(string))
+		if err != nil {
+			return nil, fmt.Errorf("Failed to marshal NodeStatusDataMsg: %v", err)
+		}
 	default:
 		return nil, errors.New("failed to marshal message data")
 	}
@@ -221,6 +228,20 @@ func (m *Msg) UnmarshalJSON(b []byte) error {
 			return errors.New("failed to decode NodeStatusDataMsg")
 		}
 		m.Data = nsd
+	case PingID:
+		var sd string
+		err := dec.Decode(&sd)
+		if err != nil {
+			return errors.New("failed to decode string")
+		}
+		m.Data = sd
+	case PongID:
+		var sd string
+		err := dec.Decode(&sd)
+		if err != nil {
+			return errors.New("failed to decode string")
+		}
+		m.Data = sd
 	default:
 		return errors.New("failed to decode message data")
 	}

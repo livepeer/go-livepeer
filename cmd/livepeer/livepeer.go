@@ -20,9 +20,12 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
+	kb "gx/ipfs/QmSAFA8v42u4gpJNy1tb7vW3JiiXiaYDC2b845c2RnNSJL/go-libp2p-kbucket"
 	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
+	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -46,6 +49,9 @@ var (
 	EthTxTimeout    = 120 * time.Second
 	ErrIpfs         = errors.New("ErrIpfs")
 )
+
+const RinkebyBootNodeIDs = "122019c1a1f0d9fa2296dccb972e7478c5163415cd55722dcf0123553f397c45df7e,1220abded0103eb4e8e46616881e74e88617409ac4012c6958f4086c649f44eacf89,1220afca402fae8dbb0f980ea2d7e873bc07da36d5463516a862c6199bb6383e9e1e"
+const RinkebyBootNodeAddrs = "/ip4/18.217.129.34/tcp/15000,/ip4/52.15.174.204/tcp/15000,/ip4/13.59.47.56/tcp/15000"
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -81,10 +87,11 @@ func main() {
 	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
-	bootID := flag.String("bootID", "", "Bootstrap node ID")
-	bootAddr := flag.String("bootAddr", "", "Bootstrap node addr")
+	bootIDs := flag.String("bootID", "", "Comma-separated bootstrap node IDs")
+	bootAddrs := flag.String("bootAddr", "", "Comma-separated bootstrap node addresses")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
+	gateway := flag.Bool("gateway", false, "Set to true to be a gateway node")
 	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
@@ -111,9 +118,8 @@ func main() {
 	}
 
 	if *rinkeby {
-		*bootID = "122019c1a1f0d9fa2296dccb972e7478c5163415cd55722dcf0123553f397c45df7e"
-		*bootAddr = "/ip4/18.217.129.34/tcp/15000"
-
+		*bootIDs = RinkebyBootNodeIDs
+		*bootAddrs = RinkebyBootNodeAddrs
 		if !*offchain {
 			*ethWsUrl = "wss://rinkeby.infura.io/ws"
 			*controllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
@@ -160,8 +166,17 @@ func main() {
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
+	if *transcoder {
+		n.NodeType = core.Transcoder
+	} else if *bootnode {
+		n.NodeType = core.Bootnode
+	} else if *gateway {
+		n.NodeType = core.Gateway
+	} else {
+		n.NodeType = core.Broadcaster
+	}
 
-	if *bootnode {
+	if *bootnode || *transcoder || *gateway {
 		glog.Infof("\n\nSetting up bootnode")
 		//Setup boostrap node
 		if err := n.VideoNetwork.SetupProtocol(); err != nil {
@@ -169,14 +184,42 @@ func main() {
 			return
 		}
 		lpmon.Instance().SetBootNode()
-	} else {
-		if err := n.Start(context.Background(), *bootID, *bootAddr); err != nil {
+		if err := n.Start(context.Background(), strings.Split(*bootIDs, ","), strings.Split(*bootAddrs, ",")); err != nil {
 			glog.Errorf("Cannot connect to bootstrap node: %v", err)
 			return
 		}
+		n.BootIDs = strings.Split(*bootIDs, ",")
+		n.BootAddrs = strings.Split(*bootAddrs, ",")
+	} else {
+		//Connect to the closest bootnode
+		localNID, err := peer.IDHexDecode(n.VideoNetwork.GetNodeID())
+		if err != nil {
+			glog.Errorf("Cannot load local node ID: %v", n.VideoNetwork.GetNodeID())
+			return
+		}
+
+		indexLookup := make(map[peer.ID]int)
+		bIDs := make([]peer.ID, 0)
+		for i, bootID := range strings.Split(*bootIDs, ",") {
+			id, err := peer.IDHexDecode(bootID)
+			if err != nil {
+				continue
+			}
+			bIDs = append(bIDs, id)
+			indexLookup[id] = i
+		}
+		closestNodeID := kb.SortClosestPeers(bIDs, kb.ConvertPeerID(localNID))[0]
+		closestNodeAddr := strings.Split(*bootAddrs, ",")[indexLookup[closestNodeID]]
+		if err := n.Start(context.Background(), []string{peer.IDHexEncode(closestNodeID)}, []string{closestNodeAddr}); err != nil {
+			glog.Errorf("Cannot connect to bootstrap node: %v", err)
+			return
+		}
+
+		n.BootIDs = []string{peer.IDHexEncode(closestNodeID)}
+		n.BootAddrs = []string{closestNodeAddr}
 	}
 
-	if *offchain {
+	if *offchain || *bootnode || *gateway {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	} else {
 		var keystoreDir string
@@ -387,7 +430,6 @@ func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 }
 
 func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string) error {
-	n.IsTranscoder = true
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
