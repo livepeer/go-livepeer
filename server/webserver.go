@@ -994,6 +994,26 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/IsTranscoder", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.IsTranscoder)))
+		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.Transcoder)))
+	})
+
+	http.HandleFunc("/pingBootnode", func(w http.ResponseWriter, r *http.Request) {
+		result := make(map[string]bool)
+		for i, bootID := range s.LivepeerNode.BootIDs {
+			bootAddr := s.LivepeerNode.BootAddrs[i]
+			responseCh, err := s.LivepeerNode.VideoNetwork.(*basicnet.BasicVideoNetwork).Ping(bootID, bootAddr)
+			if err != nil {
+				glog.Infof("Ping failed for %v", bootID)
+				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = false
+				continue
+			}
+			select {
+			case <-responseCh:
+				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = true
+			case <-time.After(time.Second * 3):
+				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = false
+			}
+		}
+		w.Write([]byte(fmt.Sprintf("%v", result)))
 	})
 }
