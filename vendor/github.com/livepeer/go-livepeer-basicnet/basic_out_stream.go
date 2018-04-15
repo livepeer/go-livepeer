@@ -18,6 +18,7 @@ import (
 var ErrOutStream = errors.New("ErrOutStream")
 
 type OutStream interface {
+	GetRemotePeer() peer.ID
 	SendMessage(opCode Opcode, data interface{}) error
 }
 
@@ -27,6 +28,10 @@ type LocalOutStream struct {
 
 func NewLocalOutStream(s *BasicSubscriber) *LocalOutStream {
 	return &LocalOutStream{sub: s}
+}
+
+func (bs *LocalOutStream) GetRemotePeer() peer.ID {
+	return ""
 }
 
 func (bs *LocalOutStream) SendMessage(opCode Opcode, data interface{}) error {
@@ -63,6 +68,10 @@ func NewBasicOutStream(s net.Stream) *BasicOutStream {
 		enc:    enc,
 		el:     &sync.Mutex{},
 	}
+}
+
+func (bs *BasicOutStream) GetRemotePeer() peer.ID {
+	return bs.Stream.Conn().RemotePeer()
 }
 
 //SendMessage writes a message into the stream.

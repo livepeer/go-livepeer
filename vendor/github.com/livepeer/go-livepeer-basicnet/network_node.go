@@ -136,7 +136,9 @@ func (n *BasicNetworkNode) GetOutStream(pid peer.ID) *BasicOutStream {
 func (n *BasicNetworkNode) RefreshOutStream(pid peer.ID) *BasicOutStream {
 	// glog.Infof("Creating stream from %v to %v", peer.IDHexEncode(n.Identity), peer.IDHexEncode(pid))
 	if s, ok := n.outStreams[pid]; ok {
-		s.Stream.Reset()
+		if err := s.Stream.Reset(); err != nil {
+			glog.Errorf("Error resetting connetion: %v", err)
+		}
 	}
 
 	ns, err := n.PeerHost.NewStream(context.Background(), pid, Protocol)

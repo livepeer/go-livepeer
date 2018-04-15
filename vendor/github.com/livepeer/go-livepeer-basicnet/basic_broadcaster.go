@@ -47,7 +47,7 @@ func (b *BasicBroadcaster) Finish() error {
 	//Send Finish to all the listeners
 	for _, l := range b.listeners {
 		glog.V(5).Infof("Broadcasting finish")
-		if err := l.SendMessage(FinishStreamID, FinishStreamMsg{StrmID: b.StrmID}); err != nil {
+		if err := b.Network.sendMessageWithRetry(l.GetRemotePeer(), l, FinishStreamID, FinishStreamMsg{StrmID: b.StrmID}); err != nil {
 			glog.Errorf("Error broadcasting finish: %v", err)
 		}
 	}
@@ -92,7 +92,7 @@ func (b *BasicBroadcaster) sendDataMsg(lid string, l OutStream, msg *StreamDataM
 		return
 	}
 
-	if err := l.SendMessage(StreamDataID, StreamDataMsg{SeqNo: msg.SeqNo, StrmID: b.StrmID, Data: msg.Data}); err != nil {
+	if err := b.Network.sendMessageWithRetry(l.GetRemotePeer(), l, StreamDataID, StreamDataMsg{SeqNo: msg.SeqNo, StrmID: b.StrmID, Data: msg.Data}); err != nil {
 		glog.Errorf("Error broadcasting segment %v to listener %v: %v", msg.SeqNo, lid, err)
 		delete(b.listeners, lid)
 	}
