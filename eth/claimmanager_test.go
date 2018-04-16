@@ -79,6 +79,10 @@ func TestAddReceipt(t *testing.T) {
 	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td); err != nil {
 		t.Error("Unexpected error ", err)
 	}
+	// Should get an error due to an already existing receipt
+	if err := cm.AddReceipt(0, []byte("data"), []byte("sig"), td); err == nil {
+		t.Error("Did not get an error where one was expected")
+	}
 
 	if string(cm.segClaimMap[0].segData) != "data" {
 		t.Errorf("Expecting %v, got %v", "data", string(cm.segClaimMap[0].segData))
