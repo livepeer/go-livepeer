@@ -549,6 +549,13 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 		return err
 	}
 
+	// Restart jobs as necessary
+	err = js.RestartTranscoder()
+	if err != nil {
+		glog.Errorf("Unable to restart transcoder: %v", err)
+		// non-fatal, so continue
+	}
+
 	return nil
 }
 
