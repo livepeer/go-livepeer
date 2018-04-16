@@ -463,7 +463,7 @@ func (n *BasicVideoNetwork) Ping(nid, addr string) (chan struct{}, error) {
 	}
 	s := n.NetworkNode.GetOutStream(id)
 	//Send the message, try to reconnect if connection was reset
-	if err := s.SendMessage(PingID, ""); err != nil {
+	if err := s.SendMessage(PingID, PingDataMsg("")); err != nil {
 		if err.Error() == "connection reset" {
 			if err := s.Stream.Conn().Close(); err != nil {
 				glog.Errorf("Error closing conn: %v", err)
