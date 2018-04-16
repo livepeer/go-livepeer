@@ -237,17 +237,17 @@ func (m *Msg) UnmarshalJSON(b []byte) error {
 		}
 		m.Data = nsd
 	case PingID:
-		var sd string
+		var sd PingDataMsg
 		err := dec.Decode(&sd)
 		if err != nil {
-			return errors.New("failed to decode string")
+			return errors.New("failed to decode PingDataMsg")
 		}
 		m.Data = sd
 	case PongID:
-		var sd string
+		var sd PongDataMsg
 		err := dec.Decode(&sd)
 		if err != nil {
-			return errors.New("failed to decode string")
+			return errors.New("failed to decode PongDataMsg")
 		}
 		m.Data = sd
 	default:

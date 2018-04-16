@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"strings"
 	"time"
@@ -462,8 +463,9 @@ func (n *BasicVideoNetwork) Ping(nid, addr string) (chan struct{}, error) {
 		return nil, errors.New("ErrBadNodeID")
 	}
 	s := n.NetworkNode.GetOutStream(id)
+	nonce := randStr()
 	//Send the message, try to reconnect if connection was reset
-	if err := s.SendMessage(PingID, PingDataMsg("")); err != nil {
+	if err := s.SendMessage(PingID, PingDataMsg(nonce)); err != nil {
 		if err.Error() == "connection reset" {
 			if err := s.Stream.Conn().Close(); err != nil {
 				glog.Errorf("Error closing conn: %v", err)
@@ -478,7 +480,7 @@ func (n *BasicVideoNetwork) Ping(nid, addr string) (chan struct{}, error) {
 			return nil, err
 		}
 	}
-	n.pingChs[nid] = returnCh
+	n.pingChs[nonce] = returnCh
 	return returnCh, nil
 }
 
@@ -593,9 +595,19 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 		nw.msgCounts[msg.Op]++
 		return handleNodeStatusDataMsg(nw, nsd)
 	case PingID:
-		return handlePing(nw, ws.Stream.Conn().RemotePeer())
+		pd, ok := msg.Data.(PingDataMsg)
+		if !ok {
+			glog.Errorf("Cannot convert PingDataMsg: %v", msg.Data)
+			return ErrProtocol
+		}
+		return handlePing(nw, ws.Stream.Conn().RemotePeer(), pd)
 	case PongID:
-		return handlePong(nw, ws.Stream.Conn().RemotePeer())
+		pd, ok := msg.Data.(PongDataMsg)
+		if !ok {
+			glog.Errorf("Cannot convert PongDataMsg: %v", msg.Data)
+			return ErrProtocol
+		}
+		return handlePong(nw, ws.Stream.Conn().RemotePeer(), pd)
 	default:
 		glog.V(2).Infof("Unknown Data: %v -- closing stream", msg)
 		// stream.Close()
@@ -960,22 +972,22 @@ func handleNodeStatusDataMsg(nw *BasicVideoNetwork, nsd NodeStatusDataMsg) error
 	return nil
 }
 
-func handlePing(nw *BasicVideoNetwork, remotePID peer.ID) error {
-	if err := nw.NetworkNode.GetOutStream(remotePID).SendMessage(PongID, ""); err != nil {
+func handlePing(nw *BasicVideoNetwork, remotePID peer.ID, pd PingDataMsg) error {
+	if err := nw.NetworkNode.GetOutStream(remotePID).SendMessage(PongID, PongDataMsg(pd)); err != nil {
 		glog.Errorf("Error sending Pong: %v", err)
 		return ErrHandleMsg
 	}
 	return nil
 }
 
-func handlePong(nw *BasicVideoNetwork, remotePID peer.ID) error {
-	if nw.pingChs[peer.IDHexEncode(remotePID)] == nil {
+func handlePong(nw *BasicVideoNetwork, remotePID peer.ID, pd PongDataMsg) error {
+	if nw.pingChs[string(pd)] == nil {
 		glog.Errorf("Error handling Pong - cannot find pingCh")
 		return ErrHandleMsg
 	}
-	nw.pingChs[peer.IDHexEncode(remotePID)] <- struct{}{}
-	close(nw.pingChs[peer.IDHexEncode(remotePID)])
-	delete(nw.pingChs, peer.IDHexEncode(remotePID))
+	nw.pingChs[string(pd)] <- struct{}{}
+	close(nw.pingChs[string(pd)])
+	delete(nw.pingChs, string(pd))
 	return nil
 }
 
@@ -1007,4 +1019,13 @@ func (n *BasicVideoNetwork) sendMessageWithRetry(pid peer.ID, strm OutStream, op
 	}
 
 	return nil
+}
+
+func randStr() string {
+	rand.Seed(time.Now().UnixNano())
+	x := make([]byte, 10, 10)
+	for i := 0; i < len(x); i++ {
+		x[i] = byte(rand.Uint32())
+	}
+	return fmt.Sprintf("%x", x)
 }
