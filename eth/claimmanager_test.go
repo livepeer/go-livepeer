@@ -166,7 +166,7 @@ func TestRanges(t *testing.T) {
 }
 
 func TestClaimVerifyAndDistributeFees(t *testing.T) {
-	ethClient := &StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
+	ethClient := &StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool), Claims: make(map[int]*ethTypes.Claim)}
 	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
 	cm := NewBasicClaimManager(newJob(), ethClient, &ipfs.StubIpfsApi{}, nil)
 	tStart := time.Now().UTC()

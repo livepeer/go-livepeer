@@ -32,6 +32,7 @@ type StubClient struct {
 	JobsMap           map[string]*lpTypes.Job
 	BlockNum          *big.Int
 	BlockHashToReturn common.Hash
+	Claims            map[int]*lpTypes.Claim
 }
 
 func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) error { return nil }
@@ -94,6 +95,10 @@ func (e *StubClient) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRo
 	e.ClaimStart = append(e.ClaimStart, segmentRange[0])
 	e.ClaimEnd = append(e.ClaimEnd, segmentRange[1])
 	e.ClaimRoot[claimRoot] = true
+	e.Claims[e.ClaimCounter-1] = &lpTypes.Claim{
+		SegmentRange: segmentRange,
+		ClaimRoot:    claimRoot,
+	}
 	return nil, nil
 }
 func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error) {
@@ -122,7 +127,7 @@ func (e *StubClient) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
 	return nil, nil
 }
 func (c *StubClient) GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, error) {
-	return nil, nil
+	return c.Claims[int(claimID.Int64())], nil
 }
 func (c *StubClient) NumJobs() (*big.Int, error) { return big.NewInt(0), nil }
 

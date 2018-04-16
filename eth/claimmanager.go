@@ -245,6 +245,12 @@ func (c *BasicClaimManager) markClaimedSegs(segRange [2]int64) {
 	}
 }
 
+func (c *BasicClaimManager) setClaimStatus(id int64, status string) {
+	if c.db != nil {
+		c.db.SetClaimStatus(c.jobID, id, status)
+	}
+}
+
 //Claim creates the onchain claim for all the claims added through AddReceipt
 func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 	segs := make([]int64, 0)
@@ -278,26 +284,51 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 			continue
 		}
 
+		// Preemptively guess at the claim ID and confirm after the tx succeeds.
+		// If the ID check fails, we likely had concurrent claims in-flight.
+		claimID := c.claims
+		if c.db != nil {
+			// check db in case we had any concurrent claims
+			claimIDp, _ := c.db.InsertClaim(c.jobID, segRange, root.Hash)
+			claimID = *claimIDp
+		}
+
 		bigRange := [2]*big.Int{big.NewInt(segRange[0]), big.NewInt(segRange[1])}
 		tx, err := c.client.ClaimWork(c.jobID, bigRange, root.Hash)
 		if err != nil {
 			glog.Errorf("Job %v Could not claim work - error %v", c.jobID, err)
+			c.setClaimStatus(claimID, "FAIL submit")
 			return err
 		}
 
 		err = c.client.CheckTx(tx)
 		if err != nil {
 			glog.Errorf("Job %v tx failed %v", c.jobID, tx)
+			c.setClaimStatus(claimID, "FAIL check tx")
 			return err
 		}
 
 		glog.V(common.SHORT).Infof("Job %v Submitted transcode claim for segments %v - %v", c.jobID, segRange[0], segRange[1])
 
 		c.markClaimedSegs(segRange)
-		c.claims++
+		c.claims = claimID + 1
+		c.setClaimStatus(claimID, "Submitted")
 
-		claim, err := c.client.GetClaim(c.jobID, big.NewInt(c.claims-1))
-		if err != nil {
+		claim, err := c.client.GetClaim(c.jobID, big.NewInt(claimID))
+		if err != nil || claim == nil {
+			glog.Errorf("Could not get claim %v: %v", claimID, err)
+			c.setClaimStatus(claimID, "FAIL get claim")
+			return err
+		}
+
+		// Confirm claim ranges and root matches the estimated ID
+		if segRange[0] != claim.SegmentRange[0].Int64() ||
+			segRange[1] != claim.SegmentRange[1].Int64() ||
+			root.Hash != claim.ClaimRoot {
+			err = fmt.Errorf("Job %v claim %v does not match! Expected segments %v ; got %v, expected root %v got %v", c.jobID, claimID, segRange, claim.SegmentRange, root.Hash, claim.ClaimRoot)
+			glog.Error(err.Error())
+			// XXX fix; maybe the user can manually retry the tx for now.
+			c.setClaimStatus(claimID, "FAIL id mismatch")
 			return err
 		}
 
@@ -312,6 +343,7 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 			b, err := c.client.Backend()
 			if err != nil {
 				glog.Error(err)
+				c.setClaimStatus(claimID, "FAIL Unable to get backend: "+err.Error())
 				return
 			}
 
@@ -320,13 +352,14 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 
 			plusOneBlk, err := b.BlockByNumber(context.Background(), new(big.Int).Add(claim.ClaimBlock, big.NewInt(1)))
 			if err != nil {
+				c.setClaimStatus(claimID, "FAIL waiting for block :"+err.Error())
 				return
 			}
 
 			// Submit for verification if necessary
 			c.verify(claim.ClaimId, claim.ClaimBlock.Int64(), plusOneBlk.Hash(), segRange)
 			// Distribute fees once verification is complete
-			c.distributeFees(claim.ClaimId)
+			c.distributeFees(claimID)
 		}(segRange, claim)
 	}
 
@@ -376,35 +409,41 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 	return nil
 }
 
-func (c *BasicClaimManager) distributeFees(claimID *big.Int) error {
+func (c *BasicClaimManager) distributeFees(claimID int64) error {
 	verificationPeriod, err := c.client.VerificationPeriod()
 	if err != nil {
+		c.setClaimStatus(claimID, "FAIL Verification period "+err.Error())
 		return err
 	}
 
 	slashingPeriod, err := c.client.VerificationSlashingPeriod()
 	if err != nil {
+		c.setClaimStatus(claimID, "FAIL Slashing period "+err.Error())
 		return err
 	}
 
 	b, err := c.client.Backend()
 	if err != nil {
+		c.setClaimStatus(claimID, "FAIL Distribute backend "+err.Error())
 		return err
 	}
 
 	Wait(b, RpcTimeout, new(big.Int).Add(verificationPeriod, slashingPeriod))
 
-	tx, err := c.client.DistributeFees(c.jobID, claimID)
+	tx, err := c.client.DistributeFees(c.jobID, big.NewInt(claimID))
 	if err != nil {
+		c.setClaimStatus(claimID, "FAIL Submit distribute "+err.Error())
 		return err
 	}
 
 	err = c.client.CheckTx(tx)
 	if err != nil {
+		c.setClaimStatus(claimID, "FAIL Check distribute txn "+err.Error())
 		return err
 	}
 
 	glog.V(common.SHORT).Infof("Distributed fees for job %v claim %v", c.jobID, claimID)
+	c.setClaimStatus(claimID, "Complete")
 
 	return nil
 }
