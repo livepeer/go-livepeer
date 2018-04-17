@@ -56,10 +56,21 @@ type PeerConn struct {
 	NodeAddr string
 }
 
+type NodeType int
+
+const (
+	Broadcaster NodeType = iota
+	Transcoder
+	Gateway
+	Bootnode
+)
+
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 	Identity        NodeID
 	Addrs           []string
+	BootIDs         []string
+	BootAddrs       []string
 	VideoNetwork    net.VideoNetwork
 	VideoCache      VideoCache
 	Eth             eth.LivepeerEthClient
@@ -67,8 +78,7 @@ type LivepeerNode struct {
 	EthServices     []eth.EventService
 	Ipfs            ipfs.IpfsApi
 	WorkDir         string
-	PeerConns       []PeerConn
-	IsTranscoder    bool
+	NodeType        NodeType
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
@@ -78,25 +88,35 @@ func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID
 		return nil, ErrLivepeerNode
 	}
 
-	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Addrs: addrs, Eth: e, WorkDir: wd, PeerConns: make([]PeerConn, 0)}, nil
+	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Addrs: addrs, Eth: e, WorkDir: wd}, nil
 }
 
 //Start sets up the Livepeer protocol and connects the node to the network
-func (n *LivepeerNode) Start(ctx context.Context, bootID, bootAddr string) error {
+func (n *LivepeerNode) Start(ctx context.Context, bootIDs, bootAddrs []string) error {
+	if len(bootIDs) != len(bootAddrs) {
+		return errors.New("BootIDs and BootAddrs do not match.")
+	}
 	//Set up protocol (to handle incoming streams)
 	if err := n.VideoNetwork.SetupProtocol(); err != nil {
 		glog.Errorf("Error setting up protocol: %v", err)
 		return err
 	}
 
-	//Connect to bootstrap node.  This currently also kicks off a bootstrap process, which periodically checks for new peers and connect to them.
-	if bootID != "" && bootAddr != "" {
-		glog.Infof("Connecting to %v %v", bootID, bootAddr)
-		if err := n.VideoNetwork.Connect(bootID, []string{bootAddr}); err != nil {
-			glog.Errorf("Cannot connect to node: %v", err)
-		} else {
-			n.PeerConns = append(n.PeerConns, PeerConn{NodeID: bootID, NodeAddr: bootAddr})
+	//Connect to bootstrap node.
+	//TODO: Kick off a bootstrap process, which periodically checks for new peers and connect to them.
+	errCount := 0
+	if len(bootIDs) > 0 && len(bootAddrs) > 0 {
+		for i, bootID := range bootIDs {
+			bootAddr := bootAddrs[i]
+			glog.V(common.DEBUG).Infof("Connecting to %v %v", bootID, bootAddr)
+			if err := n.VideoNetwork.Connect(bootID, []string{bootAddr}); err != nil {
+				glog.Errorf("Cannot connect to node: %v", err)
+				errCount++
+			}
 		}
+	}
+	if errCount == len(bootIDs) {
+		glog.Errorf("Current node has no neighbors :(")
 	}
 
 	//TODO:Kick off process to periodically monitor peer connection by pinging them
