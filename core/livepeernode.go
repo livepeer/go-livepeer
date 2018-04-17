@@ -102,15 +102,21 @@ func (n *LivepeerNode) Start(ctx context.Context, bootIDs, bootAddrs []string) e
 		return err
 	}
 
-	//Connect to bootstrap node.  This currently also kicks off a bootstrap process, which periodically checks for new peers and connect to them.
+	//Connect to bootstrap node.
+	//TODO: Kick off a bootstrap process, which periodically checks for new peers and connect to them.
+	errCount := 0
 	if len(bootIDs) > 0 && len(bootAddrs) > 0 {
 		for i, bootID := range bootIDs {
 			bootAddr := bootAddrs[i]
-			glog.Infof("Connecting to %v %v", bootID, bootAddr)
+			glog.V(common.DEBUG).Infof("Connecting to %v %v", bootID, bootAddr)
 			if err := n.VideoNetwork.Connect(bootID, []string{bootAddr}); err != nil {
 				glog.Errorf("Cannot connect to node: %v", err)
+				errCount++
 			}
 		}
+	}
+	if errCount == len(bootIDs) {
+		glog.Errorf("Current node has no neighbors :(")
 	}
 
 	//TODO:Kick off process to periodically monitor peer connection by pinging them

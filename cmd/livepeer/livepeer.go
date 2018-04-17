@@ -177,13 +177,19 @@ func main() {
 	}
 
 	if *bootnode || *transcoder || *gateway {
-		glog.Infof("\n\nSetting up bootnode")
-		//Setup boostrap node
+		//Bootnodes, transcoders and gateway nodes connect to all the bootnodes
+		if *bootnode {
+			glog.Infof("\n\nSetting up bootnode")
+		} else if *transcoder {
+			glog.Infof("\n\nSetting up transcoder")
+		} else if *gateway {
+			glog.Infof("\n\nSetting up gateway node")
+		}
+
 		if err := n.VideoNetwork.SetupProtocol(); err != nil {
 			glog.Errorf("Cannot set up protocol:%v", err)
 			return
 		}
-		lpmon.Instance().SetBootNode()
 		if err := n.Start(context.Background(), strings.Split(*bootIDs, ","), strings.Split(*bootAddrs, ",")); err != nil {
 			glog.Errorf("Cannot connect to bootstrap node: %v", err)
 			return
