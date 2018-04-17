@@ -18,6 +18,7 @@ import (
 var ErrOutStream = errors.New("ErrOutStream")
 
 type OutStream interface {
+	GetRemotePeer() peer.ID
 	SendMessage(opCode Opcode, data interface{}) error
 }
 
@@ -27,6 +28,10 @@ type LocalOutStream struct {
 
 func NewLocalOutStream(s *BasicSubscriber) *LocalOutStream {
 	return &LocalOutStream{sub: s}
+}
+
+func (bs *LocalOutStream) GetRemotePeer() peer.ID {
+	return ""
 }
 
 func (bs *LocalOutStream) SendMessage(opCode Opcode, data interface{}) error {
@@ -65,6 +70,10 @@ func NewBasicOutStream(s net.Stream) *BasicOutStream {
 	}
 }
 
+func (bs *BasicOutStream) GetRemotePeer() peer.ID {
+	return bs.Stream.Conn().RemotePeer()
+}
+
 //SendMessage writes a message into the stream.
 func (bs *BasicOutStream) SendMessage(opCode Opcode, data interface{}) error {
 	// glog.V(common.DEBUG).Infof("Sending msg %v to %v", opCode, peer.IDHexEncode(bs.Stream.Conn().RemotePeer()))
@@ -83,13 +92,13 @@ func (bs *BasicOutStream) encodeAndFlush(n interface{}) error {
 	err := bs.enc.Encode(n)
 	if err != nil {
 		glog.Errorf("send message encode error for peer %v: %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), err)
-		return ErrOutStream
+		return err
 	}
 
 	err = bs.w.Flush()
 	if err != nil {
 		glog.Errorf("send message flush error for peer %v: %v", peer.IDHexEncode(bs.Stream.Conn().RemotePeer()), err)
-		return ErrOutStream
+		return err
 	}
 
 	return nil

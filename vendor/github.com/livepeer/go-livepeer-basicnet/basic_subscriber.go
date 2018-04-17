@@ -81,7 +81,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 		if ns != nil {
 			//Send SubReq
 			glog.Infof("Sending Req %v", s.StrmID)
-			if err := ns.SendMessage(SubReqID, SubReqMsg{StrmID: s.StrmID}); err != nil {
+			if err := s.Network.sendMessageWithRetry(p, ns, SubReqID, SubReqMsg{StrmID: s.StrmID}); err != nil {
 				glog.Errorf("Error sending SubReq to %v: %v", peer.IDHexEncode(p), err)
 			}
 			ctxW, cancel := context.WithCancel(context.Background())
@@ -120,7 +120,7 @@ func (s *BasicSubscriber) startWorker(ctxW context.Context, ws *BasicOutStream, 
 				//Send EOF
 				go gotData(0, nil, true)
 				if ws != nil {
-					if err := ws.SendMessage(CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
+					if err := s.Network.sendMessageWithRetry(ws.Stream.Conn().RemotePeer(), ws, CancelSubID, CancelSubMsg{StrmID: s.StrmID}); err != nil {
 						glog.Errorf("Error sending CancelSubMsg during worker cancellation: %v", err)
 					}
 				}
