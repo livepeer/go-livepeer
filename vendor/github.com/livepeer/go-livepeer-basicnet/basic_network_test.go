@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	net "gx/ipfs/QmNa31VPzC561NWwRsJLE7nGYZYuuD2QfpK2b1q9BK54J1/go-libp2p-net"
-	peerstore "gx/ipfs/QmPgDWmTmuzvP7QE5zwo1TmjbJme9pmZHNujB2453jkCTr/go-libp2p-peerstore"
 	kb "gx/ipfs/QmSAFA8v42u4gpJNy1tb7vW3JiiXiaYDC2b845c2RnNSJL/go-libp2p-kbucket"
 	peer "gx/ipfs/QmXYjuNuxVzXKJCfWasQk1RqkhVLDM9jtUKhqc2WPQmFSB/go-libp2p-peer"
 	kad "gx/ipfs/QmYi2NvTAiv2xTNJNcnuz3iXDDT1ViBwLFXmDb2g7NogAD/go-libp2p-kad-dht"
@@ -26,40 +25,6 @@ func init() {
 	// var logLevel string
 	// flag.StringVar(&logLevel, "logLevel", "6", "test")
 	// flag.Lookup("v").Value.Set(logLevel)
-}
-
-func setupNodes(t *testing.T, p1, p2 int) (*BasicVideoNetwork, *BasicVideoNetwork) {
-	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	no1, _ := NewNode(p1, priv1, pub1, &BasicNotifiee{})
-	n1, _ := NewBasicVideoNetwork(no1, "")
-	if err := n1.SetupProtocol(); err != nil {
-		t.Errorf("Error creating node: %v", err)
-	}
-
-	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	no2, _ := NewNode(p2, priv2, pub2, &BasicNotifiee{})
-	n2, _ := NewBasicVideoNetwork(no2, "")
-	if err := n2.SetupProtocol(); err != nil {
-		t.Errorf("Error creating node: %v", err)
-	}
-
-	return n1, n2
-}
-
-func connectHosts(h1, h2 host.Host) {
-	h1.Peerstore().AddAddrs(h2.ID(), h2.Addrs(), peerstore.PermanentAddrTTL)
-	h2.Peerstore().AddAddrs(h1.ID(), h1.Addrs(), peerstore.PermanentAddrTTL)
-	err := h1.Connect(context.Background(), peerstore.PeerInfo{ID: h2.ID()})
-	if err != nil {
-		glog.Errorf("Cannot connect h1 with h2: %v", err)
-	}
-	err = h2.Connect(context.Background(), peerstore.PeerInfo{ID: h1.ID()})
-	if err != nil {
-		glog.Errorf("Cannot connect h2 with h1: %v", err)
-	}
-
-	// Connection might not be formed right away under high load.  See https://github.com/libp2p/go-libp2p-kad-dht/blob/master/dht_test.go (func connect)
-	time.Sleep(time.Millisecond * 100)
 }
 
 type keyPair struct {
@@ -123,6 +88,12 @@ func TestStream(t *testing.T) {
 	if _, ok := n1.NetworkNode.(*BasicNetworkNode).outStreams[n2.NetworkNode.ID()]; !ok {
 		t.Errorf("Expecting stream to be there")
 	}
+	start := time.Now()
+	for ; n2.msgCounts[SubReqID] != 1 && time.Since(start) < time.Second; time.Sleep(100 * time.Millisecond) {
+	}
+	if n2.msgCounts[SubReqID] != 1 {
+		t.Errorf("Expecting 1 message received by n2")
+	}
 	s21 := n2.NetworkNode.GetOutStream(n1.NetworkNode.ID())
 	if err := s21.SendMessage(SubReqID, SubReqMsg{StrmID: strmID1}); err != nil {
 		t.Errorf("Error: %v", err)
@@ -130,15 +101,51 @@ func TestStream(t *testing.T) {
 	if _, ok := n2.NetworkNode.(*BasicNetworkNode).outStreams[n1.NetworkNode.ID()]; !ok {
 		t.Errorf("Expecting stream to be there")
 	}
+	start = time.Now()
+	for ; n1.msgCounts[SubReqID] != 1 && time.Since(start) < time.Second; time.Sleep(100 * time.Millisecond) {
+	}
+	if n1.msgCounts[SubReqID] != 1 {
+		t.Errorf("Expecting 1 message received by n1")
+	}
+}
 
-	//Now cause a problem - use a bad ID (Cannot cancel a stream that doesn't exist)
-	if err := s12.SendMessage(CancelSubID, SubReqMsg{StrmID: strmID2}); err != nil {
-		t.Errorf("Error: %v", err)
+func TestStreamError(t *testing.T) {
+	glog.Infof("\n\nTesting Stream Error...")
+	n1, n2 := setupNodes(t, 15000, 15001)
+	defer n1.NetworkNode.(*BasicNetworkNode).PeerHost.Close()
+	defer n2.NetworkNode.(*BasicNetworkNode).PeerHost.Close()
+	go n1.SetupProtocol()
+	go n2.SetupProtocol()
+	connectHosts(n1.NetworkNode.(*BasicNetworkNode).PeerHost, n2.NetworkNode.(*BasicNetworkNode).PeerHost)
+
+	strmID2 := fmt.Sprintf("%vstrmID", peer.IDHexEncode(n2.NetworkNode.ID()))
+	s12 := n1.NetworkNode.GetOutStream(n2.NetworkNode.ID())
+
+	//Now cause a problem - use a bad message (Cannot use a StreamDataMsg for CancelSubID)
+	glog.Infof("Sending bad message...")
+	err := s12.enc.Encode("{}")
+	if err != nil {
+		t.Errorf("Error encoding to stream")
 	}
 
-	//Should still be able to use the old stream
-	if err := s21.SendMessage(SubReqID, SubReqMsg{StrmID: strmID1}); err != nil {
+	err = s12.w.Flush()
+	if err != nil {
+		t.Errorf("Error flushing")
+	}
+	time.Sleep(time.Millisecond * 100)
+	if n2.msgCounts[SubReqID] != 0 {
+		t.Errorf("Expecting 0 message received by n2, but got %v", n2.msgCounts[SubReqID])
+	}
+
+	//Should still be able to send even after a bad message was sent
+	if err := n1.SendTranscodeResponse(n2.GetNodeID(), strmID2, map[string]string{"strm": "strm"}); err != nil {
 		t.Errorf("Expecting to not get an error, but got: %v", err)
+	}
+	start := time.Now()
+	for ; n2.msgCounts[TranscodeResponseID] != 1 && time.Since(start) < time.Second; time.Sleep(100 * time.Millisecond) {
+	}
+	if n2.msgCounts[TranscodeResponseID] != 1 {
+		t.Errorf("Expecting 1 message received by n2, but got %v", n1.msgCounts[TranscodeResponseID])
 	}
 }
 
@@ -625,7 +632,7 @@ func TestHandleCancel(t *testing.T) {
 	delete(n1.broadcasters, strmID1)
 
 	//Put a relayer with 2 listeners in the node, make sure cancel removes the listener, then the relayer
-	r := &BasicRelayer{listeners: map[string]*BasicOutStream{peer.IDHexEncode(nid1): nil, peer.IDHexEncode(nid2): nil}}
+	r := &BasicRelayer{listeners: map[string]*BasicOutStream{peer.IDHexEncode(nid1): nil, peer.IDHexEncode(nid2): nil}, Network: n1}
 	n1.relayers[relayerMapKey(strmID1, SubReqID)] = r
 	if err := handleCancelSubReq(n1, CancelSubMsg{StrmID: strmID1}, nid1); err != nil {
 		t.Errorf("Error handling req: %v", err)

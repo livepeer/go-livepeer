@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"strings"
 	"time"
@@ -62,6 +63,8 @@ type BasicVideoNetwork struct {
 	msgChans               map[string]chan *Msg
 	transResponseCallbacks map[string]func(transcodeResult map[string]string)
 	relayers               map[relayerID]*BasicRelayer
+	msgCounts              map[Opcode]int64
+	pingChs                map[string]chan struct{}
 }
 
 func (n *BasicVideoNetwork) String() string {
@@ -93,6 +96,8 @@ func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string) (*BasicVideoNetwo
 		mplMap:                 make(map[string]*m3u8.MasterPlaylist),
 		mplChans:               make(map[string]chan *m3u8.MasterPlaylist),
 		msgChans:               make(map[string]chan *Msg),
+		msgCounts:              make(map[Opcode]int64),
+		pingChs:                make(map[string]chan struct{}),
 		transResponseCallbacks: make(map[string]func(transcodeResult map[string]string))}
 	n.Network = nw
 
@@ -159,7 +164,7 @@ func (n *BasicVideoNetwork) getSubscriber(strmID string) *BasicSubscriber {
 
 //NewRelayer creates a new relayer.
 func (n *BasicVideoNetwork) NewRelayer(strmID string, opcode Opcode) *BasicRelayer {
-	r := &BasicRelayer{listeners: make(map[string]*BasicOutStream)}
+	r := &BasicRelayer{listeners: make(map[string]*BasicOutStream), Network: n}
 	n.relayers[relayerMapKey(strmID, opcode)] = r
 	go func() {
 		timer := time.NewTicker(RelayTicker)
@@ -232,7 +237,7 @@ func (n *BasicVideoNetwork) SendTranscodeResponse(broadcaster string, strmID str
 
 		s := n.NetworkNode.GetOutStream(pid)
 		if s != nil {
-			if err = s.SendMessage(TranscodeResponseID, TranscodeResponseMsg{StrmID: strmID, Result: transcodedVideos}); err != nil {
+			if err = n.sendMessageWithRetry(pid, s, TranscodeResponseID, TranscodeResponseMsg{StrmID: strmID, Result: transcodedVideos}); err != nil {
 				continue
 			}
 			return nil
@@ -268,7 +273,7 @@ func (n *BasicVideoNetwork) getResponseWithRelay(msg Msg, msgKey string, nodeID 
 
 			s := n.NetworkNode.GetOutStream(pid)
 			if s != nil {
-				if err := s.SendMessage(msg.Op, msg.Data); err != nil {
+				if err := n.sendMessageWithRetry(pid, s, msg.Op, msg.Data); err != nil {
 					continue
 				}
 			}
@@ -451,6 +456,34 @@ func (n *BasicVideoNetwork) nodeStatus() *lpnet.NodeStatus {
 	}
 }
 
+func (n *BasicVideoNetwork) Ping(nid, addr string) (chan struct{}, error) {
+	returnCh := make(chan struct{})
+	id, err := peer.IDHexDecode(nid)
+	if err != nil {
+		return nil, errors.New("ErrBadNodeID")
+	}
+	s := n.NetworkNode.GetOutStream(id)
+	nonce := randStr()
+	//Send the message, try to reconnect if connection was reset
+	if err := s.SendMessage(PingID, PingDataMsg(nonce)); err != nil {
+		if err.Error() == "connection reset" {
+			if err := s.Stream.Conn().Close(); err != nil {
+				glog.Errorf("Error closing conn: %v", err)
+				return nil, err
+			}
+			if err := n.Connect(nid, []string{addr}); err != nil {
+				return nil, err
+			}
+		}
+		s = n.NetworkNode.GetOutStream(id)
+		if err := s.SendMessage(PingID, ""); err != nil {
+			return nil, err
+		}
+	}
+	n.pingChs[nonce] = returnCh
+	return returnCh, nil
+}
+
 //SetupProtocol sets up the protocol so we can handle incoming messages
 func (n *BasicVideoNetwork) SetupProtocol() error {
 	glog.V(4).Infof("\n\nSetting up protocol: %v", Protocol)
@@ -487,6 +520,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 			return ErrProtocol
 		}
 		glog.V(5).Infof("Got Sub Req: %v", sr)
+		nw.msgCounts[msg.Op]++
 		return handleSubReq(nw, sr, ws.Stream.Conn().RemotePeer())
 	case CancelSubID:
 		cr, ok := msg.Data.(CancelSubMsg)
@@ -494,6 +528,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 			glog.Errorf("Cannot convert CancelSubMsg: %v", msg.Data)
 			return ErrProtocol
 		}
+		nw.msgCounts[msg.Op]++
 		return handleCancelSubReq(nw, cr, ws.Stream.Conn().RemotePeer())
 	case StreamDataID:
 		//Enque it into the subscriber
@@ -503,6 +538,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 			return ErrProtocol
 		}
 		err := handleStreamData(nw, ws.Stream.Conn().RemotePeer(), &sd)
+		nw.msgCounts[msg.Op]++
 		if err == ErrProtocol {
 			glog.Errorf("Got protocol error, but ignoring it for now")
 			return nil
@@ -515,6 +551,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 			glog.Errorf("Cannot convert FinishStreamMsg: %v", msg.Data)
 			return ErrProtocol
 		}
+		nw.msgCounts[msg.Op]++
 		return handleFinishStream(nw, fs)
 	case TranscodeResponseID:
 		tr, ok := msg.Data.(TranscodeResponseMsg)
@@ -522,6 +559,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 			glog.Errorf("Cannot convert TranscodeResponseMsg: %v", msg.Data)
 			return ErrProtocol
 		}
+		nw.msgCounts[msg.Op]++
 		return handleTranscodeResponse(nw, ws.Stream.Conn().RemotePeer(), tr)
 	case GetMasterPlaylistReqID:
 		//Get the local master playlist from a broadcaster and send it back
@@ -530,6 +568,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 			glog.Errorf("Cannot convert GetMasterPlaylistReqMsg: %v", msg.Data)
 			return ErrProtocol
 		}
+		nw.msgCounts[msg.Op]++
 		return handleGetMasterPlaylistReq(nw, ws.Stream.Conn().RemotePeer(), mplr)
 	case MasterPlaylistDataID:
 		mpld, ok := msg.Data.(MasterPlaylistDataMsg)
@@ -537,6 +576,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 			glog.Errorf("Cannot convert MasterPlaylistDataMsg: %v", msg.Data)
 			return ErrProtocol
 		}
+		nw.msgCounts[msg.Op]++
 		return handleMasterPlaylistDataMsg(nw, mpld)
 	case NodeStatusReqID:
 		nsr, ok := msg.Data.(NodeStatusReqMsg)
@@ -544,6 +584,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 			glog.Errorf("Cannot convert NodeStatusReqMsg: %v", msg)
 			return ErrProtocol
 		}
+		nw.msgCounts[msg.Op]++
 		return handleNodeStatusReqMsg(nw, ws.Stream.Conn().RemotePeer(), nsr)
 	case NodeStatusDataID:
 		nsd, ok := msg.Data.(NodeStatusDataMsg)
@@ -551,7 +592,22 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 			glog.Errorf("Cannot convert NodeStatusDataMsg: %v", msg.Data)
 			return ErrProtocol
 		}
+		nw.msgCounts[msg.Op]++
 		return handleNodeStatusDataMsg(nw, nsd)
+	case PingID:
+		pd, ok := msg.Data.(PingDataMsg)
+		if !ok {
+			glog.Errorf("Cannot convert PingDataMsg: %v", msg.Data)
+			return ErrProtocol
+		}
+		return handlePing(nw, ws.Stream.Conn().RemotePeer(), pd)
+	case PongID:
+		pd, ok := msg.Data.(PongDataMsg)
+		if !ok {
+			glog.Errorf("Cannot convert PongDataMsg: %v", msg.Data)
+			return ErrProtocol
+		}
+		return handlePong(nw, ws.Stream.Conn().RemotePeer(), pd)
 	default:
 		glog.V(2).Infof("Unknown Data: %v -- closing stream", msg)
 		// stream.Close()
@@ -612,7 +668,7 @@ func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, remotePID peer.ID) er
 
 		ns := nw.NetworkNode.GetOutStream(p)
 		if ns != nil {
-			if err := ns.SendMessage(SubReqID, subReq); err != nil {
+			if err := nw.sendMessageWithRetry(p, ns, SubReqID, subReq); err != nil {
 				//Question: Do we want to close the stream here?
 				glog.Errorf("Error relaying subReq to %v: %v.", p, err)
 				continue
@@ -652,7 +708,7 @@ func handleCancelSubReq(nw *BasicVideoNetwork, cr CancelSubMsg, rpeer peer.ID) e
 		if len(r.listeners) == 0 {
 			ns := nw.NetworkNode.GetOutStream(r.UpstreamPeer)
 			if ns != nil {
-				if err := ns.SendMessage(CancelSubID, cr); err != nil {
+				if err := nw.sendMessageWithRetry(r.UpstreamPeer, ns, CancelSubID, cr); err != nil {
 					glog.Errorf("Error relaying cancel message to %v: %v ", peer.IDHexEncode(r.UpstreamPeer), err)
 				}
 				return nil
@@ -753,7 +809,7 @@ func handleTranscodeResponse(nw *BasicVideoNetwork, remotePID peer.ID, tr Transc
 
 		s := nw.NetworkNode.GetOutStream(p)
 		if s != nil {
-			if err := s.SendMessage(TranscodeResponseID, tr); err != nil {
+			if err := nw.sendMessageWithRetry(p, s, TranscodeResponseID, tr); err != nil {
 				glog.Errorf("Error sending Transcoding Response Message to %v", peer.IDHexEncode(p))
 				continue
 			} else {
@@ -777,14 +833,14 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, remotePID peer.ID, mplr G
 		//This IS the node. If we can't find it here, we can't find it anywhere. (NEW YORK NEW YORK)
 		if nid, err := extractNodeID(mplr.ManifestID); err == nil {
 			if peer.IDHexEncode(nid) == nw.GetNodeID() {
-				return nw.NetworkNode.GetOutStream(remotePID).SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{ManifestID: mplr.ManifestID, NotFound: true})
+				return nw.sendMessageWithRetry(remotePID, nw.NetworkNode.GetOutStream(remotePID), MasterPlaylistDataID, MasterPlaylistDataMsg{ManifestID: mplr.ManifestID, NotFound: true})
 			}
 		}
 
 		//Don't have the playlist locally. Forward to a peer
 		peers, err := nw.NetworkNode.ClosestLocalPeers(mplr.ManifestID)
 		if err != nil {
-			return nw.NetworkNode.GetOutStream(remotePID).SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{ManifestID: mplr.ManifestID, NotFound: true})
+			return nw.sendMessageWithRetry(remotePID, nw.NetworkNode.GetOutStream(remotePID), MasterPlaylistDataID, MasterPlaylistDataMsg{ManifestID: mplr.ManifestID, NotFound: true})
 		}
 		for _, p := range peers {
 			//Don't send it back to the requesting peer
@@ -800,7 +856,7 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, remotePID peer.ID, mplr G
 			s := nw.NetworkNode.GetOutStream(p)
 			if s != nil {
 				glog.Infof("Sending msg to %v", peer.IDHexEncode(p))
-				if err := s.SendMessage(GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{ManifestID: mplr.ManifestID}); err != nil {
+				if err := nw.sendMessageWithRetry(p, s, GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{ManifestID: mplr.ManifestID}); err != nil {
 					continue
 				}
 
@@ -816,14 +872,14 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, remotePID peer.ID, mplr G
 			}
 		}
 		glog.Info("Cannot relay GetMasterPlaylist req to peers")
-		if err := nw.NetworkNode.GetOutStream(remotePID).SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{ManifestID: mplr.ManifestID, NotFound: true}); err != nil {
+		if err := nw.sendMessageWithRetry(remotePID, nw.NetworkNode.GetOutStream(remotePID), MasterPlaylistDataID, MasterPlaylistDataMsg{ManifestID: mplr.ManifestID, NotFound: true}); err != nil {
 			glog.Errorf("Error sending MasterPlaylistData-NotFound: %v", err)
 			return ErrHandleMsg
 		}
 		return nil
 	}
 
-	if err := nw.NetworkNode.GetOutStream(remotePID).SendMessage(MasterPlaylistDataID, MasterPlaylistDataMsg{ManifestID: mplr.ManifestID, MPL: mpl.String()}); err != nil {
+	if err := nw.sendMessageWithRetry(remotePID, nw.NetworkNode.GetOutStream(remotePID), MasterPlaylistDataID, MasterPlaylistDataMsg{ManifestID: mplr.ManifestID, MPL: mpl.String()}); err != nil {
 		glog.Errorf("Error sending MasterPlaylistData: %v", err)
 		return ErrHandleMsg
 	}
@@ -850,7 +906,7 @@ func handleMasterPlaylistDataMsg(nw *BasicVideoNetwork, mpld MasterPlaylistDataM
 func handleNodeStatusReqMsg(nw *BasicVideoNetwork, remotePID peer.ID, nsr NodeStatusReqMsg) error {
 	if nsr.NodeID == nw.GetNodeID() {
 		status := nw.nodeStatus().String()
-		if err := nw.NetworkNode.GetOutStream(remotePID).SendMessage(NodeStatusDataID, NodeStatusDataMsg{NodeID: nw.GetNodeID(), Data: []byte(status)}); err != nil {
+		if err := nw.sendMessageWithRetry(remotePID, nw.NetworkNode.GetOutStream(remotePID), NodeStatusDataID, NodeStatusDataMsg{NodeID: nw.GetNodeID(), Data: []byte(status)}); err != nil {
 			glog.Errorf("Error sending NodeStatusData: %v", err)
 			return ErrHandleMsg
 		}
@@ -859,7 +915,7 @@ func handleNodeStatusReqMsg(nw *BasicVideoNetwork, remotePID peer.ID, nsr NodeSt
 		//Don't have the node status locally. Forward to a peer
 		peers, err := nw.NetworkNode.ClosestLocalPeers(nsr.NodeID)
 		if err != nil {
-			return nw.NetworkNode.GetOutStream(remotePID).SendMessage(NodeStatusDataID, NodeStatusDataMsg{NodeID: nsr.NodeID, NotFound: true})
+			return nw.sendMessageWithRetry(remotePID, nw.NetworkNode.GetOutStream(remotePID), NodeStatusDataID, NodeStatusDataMsg{NodeID: nsr.NodeID, NotFound: true})
 		}
 
 		for _, p := range peers {
@@ -876,7 +932,7 @@ func handleNodeStatusReqMsg(nw *BasicVideoNetwork, remotePID peer.ID, nsr NodeSt
 			s := nw.NetworkNode.GetOutStream(p)
 			if s != nil {
 				glog.Infof("Sending msg to %v", peer.IDHexEncode(p))
-				if err := s.SendMessage(NodeStatusReqID, NodeStatusReqMsg{NodeID: nsr.NodeID}); err != nil {
+				if err := nw.sendMessageWithRetry(p, s, NodeStatusReqID, NodeStatusReqMsg{NodeID: nsr.NodeID}); err != nil {
 					continue
 				}
 
@@ -891,7 +947,7 @@ func handleNodeStatusReqMsg(nw *BasicVideoNetwork, remotePID peer.ID, nsr NodeSt
 			}
 		}
 		glog.Info("Cannot relay node status req to peers")
-		if err := nw.NetworkNode.GetOutStream(remotePID).SendMessage(NodeStatusDataID, NodeStatusDataMsg{NodeID: nsr.NodeID, NotFound: true}); err != nil {
+		if err := nw.sendMessageWithRetry(remotePID, nw.NetworkNode.GetOutStream(remotePID), NodeStatusDataID, NodeStatusDataMsg{NodeID: nsr.NodeID, NotFound: true}); err != nil {
 			glog.Errorf("Error sending MasterPlaylistData-NotFound: %v", err)
 			return ErrHandleMsg
 		}
@@ -916,6 +972,25 @@ func handleNodeStatusDataMsg(nw *BasicVideoNetwork, nsd NodeStatusDataMsg) error
 	return nil
 }
 
+func handlePing(nw *BasicVideoNetwork, remotePID peer.ID, pd PingDataMsg) error {
+	if err := nw.NetworkNode.GetOutStream(remotePID).SendMessage(PongID, PongDataMsg(pd)); err != nil {
+		glog.Errorf("Error sending Pong: %v", err)
+		return ErrHandleMsg
+	}
+	return nil
+}
+
+func handlePong(nw *BasicVideoNetwork, remotePID peer.ID, pd PongDataMsg) error {
+	if nw.pingChs[string(pd)] == nil {
+		glog.Errorf("Error handling Pong - cannot find pingCh")
+		return ErrHandleMsg
+	}
+	nw.pingChs[string(pd)] <- struct{}{}
+	close(nw.pingChs[string(pd)])
+	delete(nw.pingChs, string(pd))
+	return nil
+}
+
 func extractNodeID(strmOrManifestID string) (peer.ID, error) {
 	if len(strmOrManifestID) < 68 {
 		return "", ErrProtocol
@@ -933,4 +1008,24 @@ func relayerMapKey(strmID string, opcode Opcode) relayerID {
 
 func msgChansKey(opcode Opcode, key string) string {
 	return fmt.Sprintf("%v|%v", opcode, key)
+}
+
+func (n *BasicVideoNetwork) sendMessageWithRetry(pid peer.ID, strm OutStream, op Opcode, msg interface{}) error {
+	if err := strm.SendMessage(op, msg); err != nil {
+		newStrm := n.NetworkNode.RefreshOutStream(pid)
+		if err := newStrm.SendMessage(op, msg); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func randStr() string {
+	rand.Seed(time.Now().UnixNano())
+	x := make([]byte, 10, 10)
+	for i := 0; i < len(x); i++ {
+		x[i] = byte(rand.Uint32())
+	}
+	return fmt.Sprintf("%x", x)
 }
