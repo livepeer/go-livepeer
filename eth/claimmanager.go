@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
@@ -27,7 +27,7 @@ type ClaimManager interface {
 	ClaimVerifyAndDistributeFees() error
 	CanClaim() (bool, error)
 	DidFirstClaim() bool
-	BroadcasterAddr() common.Address
+	BroadcasterAddr() ethcommon.Address
 }
 
 type claimData struct {
@@ -53,7 +53,7 @@ type BasicClaimManager struct {
 	unclaimedSegs map[int64]bool
 	cost          *big.Int
 
-	broadcasterAddr common.Address
+	broadcasterAddr ethcommon.Address
 	pricePerSegment *big.Int
 	totalSegCost    *big.Int
 
@@ -62,9 +62,9 @@ type BasicClaimManager struct {
 }
 
 //NewBasicClaimManager creates a new claim manager.
-func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, pricePerSegment *big.Int, p []ffmpeg.VideoProfile, c LivepeerEthClient, ipfs ipfs.IpfsApi) *BasicClaimManager {
+func NewBasicClaimManager(sid string, jid *big.Int, broadcaster ethcommon.Address, pricePerSegment *big.Int, p []ffmpeg.VideoProfile, c LivepeerEthClient, ipfs ipfs.IpfsApi) *BasicClaimManager {
 	seqNos := make([][]int64, len(p), len(p))
-	rHashes := make([][]common.Hash, len(p), len(p))
+	rHashes := make([][]ethcommon.Hash, len(p), len(p))
 	sd := make([][][]byte, len(p), len(p))
 	dHashes := make([][]string, len(p), len(p))
 	tHashes := make([][]string, len(p), len(p))
@@ -75,7 +75,7 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, 
 	for i := 0; i < len(p); i++ {
 		sNo := make([]int64, 0)
 		seqNos[i] = sNo
-		rh := make([]common.Hash, 0)
+		rh := make([]ethcommon.Hash, 0)
 		rHashes[i] = rh
 		d := make([][]byte, 0)
 		sd[i] = d
@@ -105,7 +105,7 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster common.Address, 
 	}
 }
 
-func (c *BasicClaimManager) BroadcasterAddr() common.Address {
+func (c *BasicClaimManager) BroadcasterAddr() ethcommon.Address {
 	return c.broadcasterAddr
 }
 
@@ -251,7 +251,7 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 
 	for _, segRange := range ranges {
 		//create concat hashes for each seg
-		receiptHashes := make([]common.Hash, segRange[1]-segRange[0]+1)
+		receiptHashes := make([]ethcommon.Hash, segRange[1]-segRange[0]+1)
 		for i := segRange[0]; i <= segRange[1]; i++ {
 			seg, _ := c.segClaimMap[i]
 
@@ -326,7 +326,7 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 	return nil
 }
 
-func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneBlkHash common.Hash, segRange [2]int64) error {
+func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneBlkHash ethcommon.Hash, segRange [2]int64) error {
 	//Get verification rate
 	verifyRate, err := c.client.VerificationRate()
 	if err != nil {
@@ -348,7 +348,7 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 				continue
 			}
 
-			dataHashes := [2][32]byte{common.BytesToHash(seg.dataHash), common.BytesToHash(seg.claimConcatTDatahash)}
+			dataHashes := [2][32]byte{ethcommon.BytesToHash(seg.dataHash), ethcommon.BytesToHash(seg.claimConcatTDatahash)}
 
 			tx, err := c.client.Verify(c.jobID, claimID, big.NewInt(segNo), dataStorageHash, dataHashes, seg.bSig, seg.transcodeProof)
 			if err != nil {
@@ -402,13 +402,13 @@ func (c *BasicClaimManager) distributeFees(claimID *big.Int) error {
 	return nil
 }
 
-func (c *BasicClaimManager) shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, plusOneBlkHash common.Hash, verifyRate uint64) bool {
+func (c *BasicClaimManager) shouldVerifySegment(seqNum int64, start int64, end int64, blkNum int64, plusOneBlkHash ethcommon.Hash, verifyRate uint64) bool {
 	if seqNum < start || seqNum > end {
 		return false
 	}
 
-	bigSeqNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(seqNum).Bytes(), 32)
-	bigBlkNumBytes := common.LeftPadBytes(new(big.Int).SetInt64(blkNum+1).Bytes(), 32)
+	bigSeqNumBytes := ethcommon.LeftPadBytes(new(big.Int).SetInt64(seqNum).Bytes(), 32)
+	bigBlkNumBytes := ethcommon.LeftPadBytes(new(big.Int).SetInt64(blkNum+1).Bytes(), 32)
 
 	combH := crypto.Keccak256(bigBlkNumBytes, plusOneBlkHash.Bytes(), bigSeqNumBytes)
 	hashNum := new(big.Int).SetBytes(combH)
