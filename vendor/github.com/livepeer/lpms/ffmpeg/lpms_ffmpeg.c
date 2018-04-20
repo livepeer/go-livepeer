@@ -634,7 +634,7 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
   struct input_ctx ictx;
   AVPacket ipkt;
   struct output_ctx outputs[MAX_OUTPUT_SIZE];
-  AVFrame *dframe;
+  AVFrame *dframe = NULL;
 
   memset(&ictx, 0, sizeof ictx);
   memset(outputs, 0, sizeof outputs);

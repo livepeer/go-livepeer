@@ -193,7 +193,7 @@ func transcode(hlsStream stream.HLSVideoStream) (func(*stream.HLSSegment, bool),
 		ffmpeg.P576p30fps16x9,
 	}
 	workDir := "./tmp"
-	t := transcoder.NewFFMpegSegmentTranscoder(profiles, "", workDir)
+	t := transcoder.NewFFMpegSegmentTranscoder(profiles, workDir)
 
 	//Create variants in the stream
 	strmIDs := make([]string, len(profiles), len(profiles))

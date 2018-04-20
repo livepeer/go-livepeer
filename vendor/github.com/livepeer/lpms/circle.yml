@@ -16,7 +16,7 @@ dependencies:
     # - "$HOME/ffmpeg-static"
   override:
     - mkdir -p "$HOME/.go_workspace/src/github.com/livepeer" && cd "$HOME/.go_workspace/src/github.com/livepeer" && rm -rf go-livepeer && git clone https://github.com/livepeer/go-livepeer
-    - cd $HOME/.go_workspace/src/github.com/livepeer && rm -rf lpms && go get github.com/livepeer/lpms/cmd/example && cd lpms && git fetch && git checkout $CIRCLE_BRANCH && git pull
+    - cd $HOME/.go_workspace/src/github.com/livepeer && rm -rf lpms && go get -d github.com/livepeer/lpms/cmd/example && cd lpms && git fetch && git checkout $CIRCLE_BRANCH && git pull && go build cmd/example/*.go
     - npm install -g ffmpeg-static
 
 test:
