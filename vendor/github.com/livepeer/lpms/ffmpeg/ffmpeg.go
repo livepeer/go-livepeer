@@ -40,6 +40,7 @@ func Transcode(input string, workDir string, ps []VideoProfile) error {
 	params := make([]C.output_params, len(ps))
 	for i, param := range ps {
 		oname := C.CString(path.Join(workDir, fmt.Sprintf("out%v%v", i, filepath.Base(input))))
+		defer C.free(unsafe.Pointer(oname))
 		res := strings.Split(param.Resolution, "x")
 		if len(res) < 2 {
 			return ErrTranscoderRes
