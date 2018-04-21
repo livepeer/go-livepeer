@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"strconv"
 
 	lpcommon "github.com/livepeer/go-livepeer/common"
 )
@@ -76,4 +77,24 @@ func (w *wizard) setTranscoderConfig() {
 	}
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/setTranscoderConfig", w.host, w.httpPort), val)
+}
+
+func (w *wizard) callReward() {
+	t, err := w.getTranscoderInfo()
+	if err != nil {
+		fmt.Printf("Error getting transcoder info: %v\n", err)
+		return
+	}
+	c, err := strconv.ParseInt(w.currentRound(), 10, 64)
+	if err != nil {
+		fmt.Printf("Error converting current round: %v\n", c)
+	}
+
+	if c == t.LastRewardRound.Int64() {
+		fmt.Printf("Reward for current round %v already called\n", c)
+		return
+	}
+
+	fmt.Printf("Calling reward for round %v\n", c)
+	httpGet(fmt.Sprintf("http://%v:%v/reward", w.host, w.httpPort))
 }

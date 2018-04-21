@@ -113,8 +113,9 @@ func (w *wizard) run() {
 		fmt.Println(" 13. Print latest jobs")
 
 		if w.transcoder {
-			fmt.Println(" 14. Become a transcoder")
-			fmt.Println(" 15. Set transcoder config")
+			fmt.Println(" 14. Manually invoke \"reward\"")
+			fmt.Println(" 15. Become a transcoder")
+			fmt.Println(" 16. Set transcoder config")
 
 			w.doCLIOpt(w.read(), true)
 		} else {
@@ -176,9 +177,11 @@ func (w *wizard) doCLIOpt(choice string, transcoder bool) {
 	if transcoder {
 		switch choice {
 		case "14":
+			w.callReward()
+		case "15":
 			w.activateTranscoder()
 			return
-		case "15":
+		case "16":
 			w.setTranscoderConfig()
 			return
 		}

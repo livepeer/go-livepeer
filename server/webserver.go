@@ -997,6 +997,20 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.Transcoder)))
 	})
 
+	http.HandleFunc("/reward", func(w http.ResponseWriter, r *http.Request) {
+		glog.Infof("Calling reward")
+		tx, err := s.LivepeerNode.Eth.Reward()
+		if err != nil {
+			glog.Errorf("Error calling reward: %v", err)
+			return
+		}
+		if err := s.LivepeerNode.Eth.CheckTx(tx); err != nil {
+			glog.Errorf("Error calling reward: %v", err)
+			return
+		}
+		glog.Infof("Call to reward successful")
+	})
+
 	http.HandleFunc("/pingBootnode", func(w http.ResponseWriter, r *http.Request) {
 		result := make(map[string]bool)
 		for i, bootID := range s.LivepeerNode.BootIDs {
