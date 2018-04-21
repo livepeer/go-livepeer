@@ -149,7 +149,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64, bData []byte, bSig []byte,
 
 	// ensure that all our profiles match up: check that lengths match
 	if len(c.pLookup) != len(tData) {
-		return fmt.Errorf("Mismatched profiles in segment; not claiming")
+		return fmt.Errorf("Job %v Mismatched profiles in segment; not claiming", c.jobID)
 		// XXX record error in db
 	}
 
@@ -158,7 +158,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64, bData []byte, bSig []byte,
 	for profile, td := range tData {
 		i, ok := c.pLookup[profile]
 		if !ok {
-			return fmt.Errorf("cannot find profile: %v", profile)
+			return fmt.Errorf("Job %v cannot find profile: %v", c.jobID, profile)
 			// XXX record error in db
 		}
 		hashes[i] = crypto.Keccak256(td) // set index based on profile ordering
@@ -247,7 +247,7 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 		segs = append(segs, k)
 	}
 	ranges := c.makeRanges()
-	glog.Infof("Claiming for segs: , ranges: %v", segs, ranges)
+	glog.Infof("Job %v Claiming for segs: %v ranges: %v", c.jobID, segs, ranges)
 
 	for _, segRange := range ranges {
 		//create concat hashes for each seg
@@ -269,22 +269,24 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 		//create merkle root for concat hashes
 		root, proofs, err := ethTypes.NewMerkleTree(receiptHashes)
 		if err != nil {
-			glog.Errorf("Error: %v - creating merkle root for %v", err, receiptHashes)
+			glog.Errorf("Job %v Error: %v - creating merkle root for %v", c.jobID, err, receiptHashes)
 			continue
 		}
 
 		bigRange := [2]*big.Int{big.NewInt(segRange[0]), big.NewInt(segRange[1])}
 		tx, err := c.client.ClaimWork(c.jobID, bigRange, root.Hash)
 		if err != nil {
+			glog.Errorf("Job %v Could not claim work - error %v", c.jobID, err)
 			return err
 		}
 
 		err = c.client.CheckTx(tx)
 		if err != nil {
+			glog.Errorf("Job %v tx failed %v", c.jobID, tx)
 			return err
 		}
 
-		glog.Infof("Submitted transcode claim for segments %v - %v", segRange[0], segRange[1])
+		glog.Infof("Job %v Submitted transcode claim for segments %v - %v", c.jobID, segRange[0], segRange[1])
 
 		c.markClaimedSegs(segRange)
 		c.claims++
@@ -330,21 +332,21 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 	//Get verification rate
 	verifyRate, err := c.client.VerificationRate()
 	if err != nil {
-		glog.Errorf("Error getting verification rate: %v", err)
+		glog.Errorf("Job %v Error getting verification rate: %v", c.jobID, err)
 		return err
 	}
 
 	//Iterate through segments, determine which one needs to be verified.
 	for segNo := segRange[0]; segNo <= segRange[1]; segNo++ {
 		if c.shouldVerifySegment(segNo, segRange[0], segRange[1], claimBlkNum, plusOneBlkHash, verifyRate) {
-			glog.Infof("Segment %v challenged for verification", segNo)
+			glog.Infof("Job %v Segment %v challenged for verification", c.jobID, segNo)
 
 			seg := c.segClaimMap[segNo]
 
 			// XXX load segment data from disk here
 			dataStorageHash, err := c.ipfs.Add(bytes.NewReader(seg.segData))
 			if err != nil {
-				glog.Errorf("Error uploading segment data to IPFS: %v", err)
+				glog.Errorf("Job %v Error uploading segment data to IPFS: %v", c.jobID, err)
 				continue
 			}
 
@@ -352,17 +354,17 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 
 			tx, err := c.client.Verify(c.jobID, claimID, big.NewInt(segNo), dataStorageHash, dataHashes, seg.bSig, seg.transcodeProof)
 			if err != nil {
-				glog.Errorf("Error submitting segment %v for verification: %v", segNo, err)
+				glog.Errorf("Job %v Error submitting segment %v for verification: %v", c.jobID, segNo, err)
 				continue
 			}
 
 			err = c.client.CheckTx(tx)
 			if err != nil {
-				glog.Errorf("Failed to verify segment %v: %v", segNo, err)
+				glog.Errorf("Job %v Failed to verify segment %v: %v", c.jobID, segNo, err)
 				continue
 			}
 
-			glog.Infof("Verified segment %v", segNo)
+			glog.Infof("Job %v Verified segment %v", c.jobID, segNo)
 		}
 	}
 
