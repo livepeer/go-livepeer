@@ -240,7 +240,7 @@ func (em *eventMonitor) watchLogs(subName string, eventCb logCallback, errCb fun
 				return
 			}
 		case err := <-em.eventSubMap[subName].sub.Err():
-			glog.Errorf("Error with log subscription: %v", err)
+			glog.Errorf("Error with log subscription for %v: %v", subName, err)
 
 			errCb()
 		}
@@ -269,7 +269,7 @@ func (em *eventMonitor) watchBlocks(subName string, sub ethereum.Subscription, h
 				return
 			}
 		case err := <-em.eventSubMap[subName].sub.Err():
-			glog.Errorf("Error with header subscription: %v", err)
+			glog.Errorf("Error with header subscription for %v: %v", subName, err)
 
 			errCb()
 		}
