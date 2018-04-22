@@ -34,7 +34,9 @@ func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int) {
 }
 
 func (w *wizard) activateTranscoder() {
+	d, err := w.getDelegatorInfo()
 	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
+	fmt.Printf("Current bonded amount: %v\n", d.BondedAmount.String())
 
 	blockRewardCut, feeShare, pricePerSegment := w.promptTranscoderConfig()
 
@@ -52,6 +54,9 @@ func (w *wizard) activateTranscoder() {
 		amount = w.readBigInt()
 		if balBigInt.Cmp(amount) < 0 {
 			fmt.Printf("Must enter an amount smaller than the current balance. ")
+		}
+		if amount.Cmp(big.NewInt(0)) == 0 && d.BondedAmount.Cmp(big.NewInt(0)) > 0 {
+			break
 		}
 	}
 
