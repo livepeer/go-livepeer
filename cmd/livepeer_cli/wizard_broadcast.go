@@ -106,6 +106,7 @@ func (w *wizard) idListToVideoProfileList(idList string, opts map[int]string) (s
 	return pListBuf.String(), nil
 }
 
+//Deprecated.  Broadcasters are encouraged to use OBS.
 func (w *wizard) broadcast() {
 	depositStr := w.getDeposit()
 	deposit, err := lpcommon.ParseBigInt(depositStr)

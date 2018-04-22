@@ -121,9 +121,7 @@ func (w *wizard) run() {
 		} else {
 			fmt.Println(" 14. Deposit (ETH)")
 			fmt.Println(" 15. Withdraw deposit (ETH)")
-			fmt.Println(" 16. Broadcast video")
-			fmt.Println(" 17. Stream video")
-			fmt.Println(" 18. Set broadcast config")
+			fmt.Println(" 16. Set broadcast config")
 
 			w.doCLIOpt(w.read(), false)
 		}
@@ -194,12 +192,6 @@ func (w *wizard) doCLIOpt(choice string, transcoder bool) {
 			w.withdraw()
 			return
 		case "16":
-			w.broadcast()
-			return
-		case "17":
-			w.stream()
-			return
-		case "18":
 			w.setBroadcastConfig()
 			return
 		}
