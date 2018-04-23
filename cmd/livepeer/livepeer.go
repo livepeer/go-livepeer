@@ -204,25 +204,27 @@ func main() {
 			return
 		}
 
-		indexLookup := make(map[peer.ID]int)
-		bIDs := make([]peer.ID, 0)
-		for i, bootID := range strings.Split(*bootIDs, ",") {
-			id, err := peer.IDHexDecode(bootID)
-			if err != nil {
-				continue
+		if *bootIDs != "" && *bootAddrs != "" {
+			indexLookup := make(map[peer.ID]int)
+			bIDs := make([]peer.ID, 0)
+			for i, bootID := range strings.Split(*bootIDs, ",") {
+				id, err := peer.IDHexDecode(bootID)
+				if err != nil {
+					continue
+				}
+				bIDs = append(bIDs, id)
+				indexLookup[id] = i
 			}
-			bIDs = append(bIDs, id)
-			indexLookup[id] = i
-		}
-		closestNodeID := kb.SortClosestPeers(bIDs, kb.ConvertPeerID(localNID))[0]
-		closestNodeAddr := strings.Split(*bootAddrs, ",")[indexLookup[closestNodeID]]
-		if err := n.Start(context.Background(), []string{peer.IDHexEncode(closestNodeID)}, []string{closestNodeAddr}); err != nil {
-			glog.Errorf("Cannot connect to bootstrap node: %v", err)
-			return
-		}
+			closestNodeID := kb.SortClosestPeers(bIDs, kb.ConvertPeerID(localNID))[0]
+			closestNodeAddr := strings.Split(*bootAddrs, ",")[indexLookup[closestNodeID]]
+			if err := n.Start(context.Background(), []string{peer.IDHexEncode(closestNodeID)}, []string{closestNodeAddr}); err != nil {
+				glog.Errorf("Cannot connect to bootstrap node: %v", err)
+				return
+			}
 
-		n.BootIDs = []string{peer.IDHexEncode(closestNodeID)}
-		n.BootAddrs = []string{closestNodeAddr}
+			n.BootIDs = []string{peer.IDHexEncode(closestNodeID)}
+			n.BootAddrs = []string{closestNodeAddr}
+		}
 	}
 
 	if *offchain || *bootnode || *gateway {
