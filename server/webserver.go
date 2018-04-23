@@ -1019,6 +1019,7 @@ func (s *LivepeerServer) StartWebserver() {
 			if err != nil {
 				glog.Infof("Ping failed for %v", bootID)
 				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = false
+				w.WriteHeader(http.StatusBadRequest)
 				continue
 			}
 			select {
@@ -1026,6 +1027,7 @@ func (s *LivepeerServer) StartWebserver() {
 				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = true
 			case <-time.After(time.Second * 3):
 				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = false
+				w.WriteHeader(http.StatusBadRequest)
 			}
 		}
 		w.Write([]byte(fmt.Sprintf("%v", result)))
