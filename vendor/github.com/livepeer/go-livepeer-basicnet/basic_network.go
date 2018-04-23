@@ -37,6 +37,7 @@ var ErrProtocol = errors.New("ProtocolError")
 var ErrHandleMsg = errors.New("ErrHandleMsg")
 var ErrTranscodeResponse = errors.New("TranscodeResponseError")
 var ErrGetMasterPlaylist = errors.New("ErrGetMasterPlaylist")
+var ErrSendMsg = errors.New("ErrSendMsg")
 var GetMasterPlaylistRelayWait = 10 * time.Second
 var GetResponseWithRelayWait = 10 * time.Second
 
@@ -463,6 +464,9 @@ func (n *BasicVideoNetwork) Ping(nid, addr string) (chan struct{}, error) {
 		return nil, errors.New("ErrBadNodeID")
 	}
 	s := n.NetworkNode.GetOutStream(id)
+	if s == nil {
+		return nil, ErrSendMsg
+	}
 	nonce := randStr()
 	//Send the message, try to reconnect if connection was reset
 	if err := s.SendMessage(PingID, PingDataMsg(nonce)); err != nil {
@@ -476,6 +480,9 @@ func (n *BasicVideoNetwork) Ping(nid, addr string) (chan struct{}, error) {
 			}
 		}
 		s = n.NetworkNode.GetOutStream(id)
+		if s == nil {
+			return nil, ErrSendMsg
+		}
 		if err := s.SendMessage(PingID, ""); err != nil {
 			return nil, err
 		}
@@ -1011,6 +1018,9 @@ func msgChansKey(opcode Opcode, key string) string {
 }
 
 func (n *BasicVideoNetwork) sendMessageWithRetry(pid peer.ID, strm OutStream, op Opcode, msg interface{}) error {
+	if strm == nil {
+		return ErrSendMsg
+	}
 	if err := strm.SendMessage(op, msg); err != nil {
 		newStrm := n.NetworkNode.RefreshOutStream(pid)
 		if err := newStrm.SendMessage(op, msg); err != nil {
