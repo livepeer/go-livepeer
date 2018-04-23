@@ -3,10 +3,10 @@ package basicnet
 import (
 	"bufio"
 
-	net "gx/ipfs/QmNa31VPzC561NWwRsJLE7nGYZYuuD2QfpK2b1q9BK54J1/go-libp2p-net"
+	net "gx/ipfs/QmXfkENeeBvh3zYA51MaSdGUdBjhQ99cP5WQe8zgr6wchG/go-libp2p-net"
 
-	multicodec "github.com/multiformats/go-multicodec"
-	mcjson "github.com/multiformats/go-multicodec/json"
+	multicodec "gx/ipfs/QmRDePEiL4Yupq5EkcK3L3ko3iMgYaqUdLu7xc1kqs7dnV/go-multicodec"
+	mcjson "gx/ipfs/QmRDePEiL4Yupq5EkcK3L3ko3iMgYaqUdLu7xc1kqs7dnV/go-multicodec/json"
 
 	"github.com/golang/glog"
 )

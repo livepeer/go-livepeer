@@ -2,6 +2,8 @@ package ipfs
 
 import (
 	"context"
+	chunk "gx/ipfs/QmWo8jYc19ppG7YoTsrr2kEtLRbARTJho5oNXFTR6B7Peq/go-ipfs-chunker"
+	ipld "gx/ipfs/Qme5bWv7wtjUNGsK2BNGVUFPKiuxWrsqrtvYwCLRw8YFES/go-ipld-format"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,13 +12,10 @@ import (
 	"github.com/ipfs/go-ipfs/core"
 	"github.com/ipfs/go-ipfs/core/coreunix"
 	"github.com/ipfs/go-ipfs/importer/balanced"
-	"github.com/ipfs/go-ipfs/importer/chunk"
 	ihelper "github.com/ipfs/go-ipfs/importer/helpers"
 	"github.com/ipfs/go-ipfs/importer/trickle"
 	"github.com/ipfs/go-ipfs/repo/config"
 	"github.com/ipfs/go-ipfs/repo/fsrepo"
-	lockfile "github.com/ipfs/go-ipfs/repo/fsrepo/lock"
-	node "gx/ipfs/QmPN7cwmpcc4DWXb4KTB9dNAJgjuPY69h3npsMfhRrQL9c/go-ipld-format"
 )
 
 type IpfsApi interface {
@@ -48,7 +47,7 @@ func StartIpfs(ctx context.Context, repoPath string) (*IpfsCoreApi, error) {
 	ncfg := &core.BuildCfg{
 		Repo:      repo,
 		Online:    true,
-		Permament: true,
+		Permanent: true,
 		Routing:   core.DHTOption,
 	}
 
@@ -72,7 +71,7 @@ func StartIpfs(ctx context.Context, repoPath string) (*IpfsCoreApi, error) {
 }
 
 func closeIpfs(node *core.IpfsNode, repoPath string) {
-	repoLockFile := filepath.Join(repoPath, lockfile.LockFile)
+	repoLockFile := filepath.Join(repoPath, fsrepo.LockFile)
 	os.Remove(repoLockFile)
 	node.Close()
 }
@@ -103,14 +102,14 @@ func addAndPin(ctx context.Context, n *core.IpfsNode, r io.Reader) (string, erro
 		Prefix:    fileAdder.Prefix,
 	}
 
-	var node node.Node
+	var node ipld.Node
 	if fileAdder.Trickle {
-		node, err = trickle.TrickleLayout(params.New(chnk))
+		node, err = trickle.Layout(params.New(chnk))
 		if err != nil {
 			return "", err
 		}
 	} else {
-		node, err = balanced.BalancedLayout(params.New(chnk))
+		node, err = balanced.Layout(params.New(chnk))
 		if err != nil {
 			return "", err
 		}

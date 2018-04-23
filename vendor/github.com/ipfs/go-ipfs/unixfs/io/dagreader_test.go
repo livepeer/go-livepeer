@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"strings"
 	"testing"
 
@@ -17,7 +18,7 @@ import (
 
 func TestBasicRead(t *testing.T) {
 	dserv := testu.GetDAGServ()
-	inbuf, node := testu.GetRandomNode(t, dserv, 1024)
+	inbuf, node := testu.GetRandomNode(t, dserv, 1024, testu.UseProtoBufLeaves)
 	ctx, closer := context.WithCancel(context.Background())
 	defer closer()
 
@@ -44,7 +45,7 @@ func TestSeekAndRead(t *testing.T) {
 		inbuf[i] = byte(i)
 	}
 
-	node := testu.GetNode(t, dserv, inbuf)
+	node := testu.GetNode(t, dserv, inbuf, testu.UseProtoBufLeaves)
 	ctx, closer := context.WithCancel(context.Background())
 	defer closer()
 
@@ -72,6 +73,55 @@ func TestSeekAndRead(t *testing.T) {
 	}
 }
 
+func TestSeekAndReadLarge(t *testing.T) {
+	dserv := testu.GetDAGServ()
+	inbuf := make([]byte, 20000)
+	rand.Read(inbuf)
+
+	node := testu.GetNode(t, dserv, inbuf, testu.UseProtoBufLeaves)
+	ctx, closer := context.WithCancel(context.Background())
+	defer closer()
+
+	reader, err := NewDagReader(ctx, node, dserv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = reader.Seek(10000, io.SeekStart)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buf := make([]byte, 100)
+	_, err = io.ReadFull(reader, buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(buf, inbuf[10000:10100]) {
+		t.Fatal("seeked read failed")
+	}
+
+	pbdr := reader.(*PBDagReader)
+	var count int
+	for i, p := range pbdr.promises {
+		if i > 20 && i < 30 {
+			if p == nil {
+				t.Fatal("expected index to be not nil: ", i)
+			}
+			count++
+		} else {
+			if p != nil {
+				t.Fatal("expected index to be nil: ", i)
+			}
+		}
+	}
+	// -1 because we read some and it cleared one
+	if count != preloadSize-1 {
+		t.Fatalf("expected %d preloaded promises, got %d", preloadSize-1, count)
+	}
+}
+
 func TestRelativeSeek(t *testing.T) {
 	dserv := testu.GetDAGServ()
 	ctx, closer := context.WithCancel(context.Background())
@@ -84,7 +134,7 @@ func TestRelativeSeek(t *testing.T) {
 	}
 
 	inbuf[1023] = 1 // force the reader to be 1024 bytes
-	node := testu.GetNode(t, dserv, inbuf)
+	node := testu.GetNode(t, dserv, inbuf, testu.UseProtoBufLeaves)
 
 	reader, err := NewDagReader(ctx, node, dserv)
 	if err != nil {
@@ -159,15 +209,15 @@ func TestBadPBData(t *testing.T) {
 }
 
 func TestMetadataNode(t *testing.T) {
+	ctx, closer := context.WithCancel(context.Background())
+	defer closer()
+
 	dserv := testu.GetDAGServ()
-	rdata, rnode := testu.GetRandomNode(t, dserv, 512)
-	_, err := dserv.Add(rnode)
+	rdata, rnode := testu.GetRandomNode(t, dserv, 512, testu.UseProtoBufLeaves)
+	err := dserv.Add(ctx, rnode)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	ctx, closer := context.WithCancel(context.Background())
-	defer closer()
 
 	data, err := unixfs.BytesForMetadata(&unixfs.Metadata{
 		MimeType: "text",
@@ -203,7 +253,7 @@ func TestMetadataNode(t *testing.T) {
 
 func TestWriteTo(t *testing.T) {
 	dserv := testu.GetDAGServ()
-	inbuf, node := testu.GetRandomNode(t, dserv, 1024)
+	inbuf, node := testu.GetRandomNode(t, dserv, 1024, testu.UseProtoBufLeaves)
 	ctx, closer := context.WithCancel(context.Background())
 	defer closer()
 
@@ -225,7 +275,7 @@ func TestWriteTo(t *testing.T) {
 func TestReaderSzie(t *testing.T) {
 	dserv := testu.GetDAGServ()
 	size := int64(1024)
-	_, node := testu.GetRandomNode(t, dserv, size)
+	_, node := testu.GetRandomNode(t, dserv, size, testu.UseProtoBufLeaves)
 	ctx, closer := context.WithCancel(context.Background())
 	defer closer()
 
