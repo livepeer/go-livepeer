@@ -997,6 +997,20 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.Transcoder)))
 	})
 
+	http.HandleFunc("/reward", func(w http.ResponseWriter, r *http.Request) {
+		glog.Infof("Calling reward")
+		tx, err := s.LivepeerNode.Eth.Reward()
+		if err != nil {
+			glog.Errorf("Error calling reward: %v", err)
+			return
+		}
+		if err := s.LivepeerNode.Eth.CheckTx(tx); err != nil {
+			glog.Errorf("Error calling reward: %v", err)
+			return
+		}
+		glog.Infof("Call to reward successful")
+	})
+
 	http.HandleFunc("/pingBootnode", func(w http.ResponseWriter, r *http.Request) {
 		result := make(map[string]bool)
 		for i, bootID := range s.LivepeerNode.BootIDs {
@@ -1005,6 +1019,7 @@ func (s *LivepeerServer) StartWebserver() {
 			if err != nil {
 				glog.Infof("Ping failed for %v", bootID)
 				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = false
+				w.WriteHeader(http.StatusBadRequest)
 				continue
 			}
 			select {
@@ -1012,6 +1027,7 @@ func (s *LivepeerServer) StartWebserver() {
 				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = true
 			case <-time.After(time.Second * 3):
 				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = false
+				w.WriteHeader(http.StatusBadRequest)
 			}
 		}
 		w.Write([]byte(fmt.Sprintf("%v", result)))

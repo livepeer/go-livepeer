@@ -46,7 +46,7 @@ var (
 	ErrKeygen       = errors.New("ErrKeygen")
 	EthRpcTimeout   = 10 * time.Second
 	EthEventTimeout = 120 * time.Second
-	EthTxTimeout    = 120 * time.Second
+	EthTxTimeout    = 600 * time.Second
 	ErrIpfs         = errors.New("ErrIpfs")
 )
 
@@ -87,8 +87,8 @@ func main() {
 	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
-	bootIDs := flag.String("bootID", "", "Comma-separated bootstrap node IDs")
-	bootAddrs := flag.String("bootAddr", "", "Comma-separated bootstrap node addresses")
+	bootIDs := flag.String("bootIDs", "12203efa6d7276eb95be161138920a7d7be970bf5fdcdf5fb320fca81728ea95dce4,12201a1ec1ff1bce8e37eb1f718c09b3e13ff1f171cb199987cb486883cfde0cd7e9,1220c0c2ec8eb9d354eaf323d08b9c70f19375b5661570550319f88129e97390ca4b", "Comma-separated bootstrap node IDs")
+	bootAddrs := flag.String("bootAddrs", "/ip4/18.218.14.44/tcp/15000,/ip4/18.222.84.190/tcp/15000,/ip4/18.188.164.125/tcp/15000", "Comma-separated bootstrap node addresses")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	gateway := flag.Bool("gateway", false, "Set to true to be a gateway node")
@@ -100,7 +100,7 @@ func main() {
 	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
 	ethWsUrl := flag.String("ethWsUrl", "", "geth websocket url")
 	rinkeby := flag.Bool("rinkeby", false, "Set to true to connect to rinkeby")
-	controllerAddr := flag.String("controllerAddr", "", "Protocol smart contract address")
+	controllerAddr := flag.String("controllerAddr", "0xa2592940a01560b4ff024a0231c7adbf8248a8f1", "Protocol smart contract address")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
@@ -249,8 +249,8 @@ func main() {
 			//Connect to specified websocket
 			gethUrl = *ethWsUrl
 		} else {
-			glog.Errorf("Cannot connect to production network yet.")
-			return
+			*ethWsUrl = "wss://mainnet.infura.io/ws"
+			gethUrl = *ethWsUrl
 		}
 
 		glog.Infof("Setting up client...")

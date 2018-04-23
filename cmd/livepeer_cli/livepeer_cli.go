@@ -113,16 +113,15 @@ func (w *wizard) run() {
 		fmt.Println(" 13. Print latest jobs")
 
 		if w.transcoder {
-			fmt.Println(" 14. Become a transcoder")
-			fmt.Println(" 15. Set transcoder config")
+			fmt.Println(" 14. Manually invoke \"reward\"")
+			fmt.Println(" 15. Become a transcoder")
+			fmt.Println(" 16. Set transcoder config")
 
 			w.doCLIOpt(w.read(), true)
 		} else {
 			fmt.Println(" 14. Deposit (ETH)")
 			fmt.Println(" 15. Withdraw deposit (ETH)")
-			fmt.Println(" 16. Broadcast video")
-			fmt.Println(" 17. Stream video")
-			fmt.Println(" 18. Set broadcast config")
+			fmt.Println(" 16. Set broadcast config")
 
 			w.doCLIOpt(w.read(), false)
 		}
@@ -176,9 +175,11 @@ func (w *wizard) doCLIOpt(choice string, transcoder bool) {
 	if transcoder {
 		switch choice {
 		case "14":
+			w.callReward()
+		case "15":
 			w.activateTranscoder()
 			return
-		case "15":
+		case "16":
 			w.setTranscoderConfig()
 			return
 		}
@@ -191,12 +192,6 @@ func (w *wizard) doCLIOpt(choice string, transcoder bool) {
 			w.withdraw()
 			return
 		case "16":
-			w.broadcast()
-			return
-		case "17":
-			w.stream()
-			return
-		case "18":
 			w.setBroadcastConfig()
 			return
 		}
