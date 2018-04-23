@@ -85,6 +85,7 @@ func (bs *BasicOutStream) SendMessage(opCode Opcode, data interface{}) error {
 func (bs *BasicOutStream) encodeAndFlush(n interface{}) error {
 	if bs == nil {
 		fmt.Println("stream is nil")
+		return ErrOutStream
 	}
 
 	bs.el.Lock()
