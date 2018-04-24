@@ -52,7 +52,7 @@ func TestReconnect(t *testing.T) {
 		t.Errorf("Error closing host: %v", err)
 	}
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	no2, _ := NewNode(15001, priv2, pub2, &BasicNotifiee{})
+	no2, _ := NewNode(addrs(15001), priv2, pub2, &BasicNotifiee{})
 	n2, _ = NewBasicVideoNetwork(no2, "")
 	go n2.SetupProtocol()
 	connectHosts(n1.NetworkNode.(*BasicNetworkNode).PeerHost, n2.NetworkNode.(*BasicNetworkNode).PeerHost)
@@ -269,10 +269,10 @@ func TestSubPeerForwardPath(t *testing.T) {
 	})
 	// glog.Infof("keys: %v", keys)
 
-	no1, _ := NewNode(15000, keys[0].Priv, keys[0].Pub, &BasicNotifiee{})
+	no1, _ := NewNode(addrs(15000), keys[0].Priv, keys[0].Pub, &BasicNotifiee{})
 	n1, _ := NewBasicVideoNetwork(no1, "")
-	no2, _ := NewNode(15001, keys[1].Priv, keys[1].Pub, &BasicNotifiee{})
-	no3, _ := NewNode(15000, keys[2].Priv, keys[2].Pub, &BasicNotifiee{}) //Make this node unreachable from n1 because it's using the same port
+	no2, _ := NewNode(addrs(15001), keys[1].Priv, keys[1].Pub, &BasicNotifiee{})
+	no3, _ := NewNode(addrs(15000), keys[2].Priv, keys[2].Pub, &BasicNotifiee{}) //Make this node unreachable from n1 because it's using the same port
 	defer no1.PeerHost.Close()
 	defer n1.NetworkNode.(*BasicNetworkNode).PeerHost.Close()
 	defer no2.PeerHost.Close()

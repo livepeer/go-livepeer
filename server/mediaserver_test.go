@@ -11,6 +11,8 @@ import (
 
 	"time"
 
+	addrutil "gx/ipfs/QmNSWW3Sb4eju4o2djPQ1L1c2Zj9XN9sMYJL8r1cbxdc6b/go-addr-util"
+	ma "gx/ipfs/QmWWQ2Txc2c6tqjsBpzg5Ar652cHPGNsQQp2SejkNmkUMb/go-multiaddr"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
 	"github.com/ericxtang/m3u8"
@@ -28,7 +30,7 @@ var S *LivepeerServer
 func setupServer(nw net.VideoNetwork) *LivepeerServer {
 	if S == nil {
 		priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-		node, err := bnet.NewNode(15000, priv, pub, &bnet.BasicNotifiee{})
+		node, err := bnet.NewNode(addrs(15000), priv, pub, &bnet.BasicNotifiee{})
 		if err != nil {
 			glog.Errorf("Error creating a new node: %v", err)
 			return nil
@@ -334,4 +336,22 @@ func TestParseSegname(t *testing.T) {
 	if segName != "1220c50f8bc4d2a807aace1e1376496a9d7f7c1408dec2512763c3ca16fe828f6631_01.ts" {
 		t.Errorf("Expecting %v, but %v", "1220c50f8bc4d2a807aace1e1376496a9d7f7c1408dec2512763c3ca16fe828f6631_01.ts", segName)
 	}
+}
+
+func addrs(port int) []ma.Multiaddr {
+	uaddrs, err := addrutil.InterfaceAddresses()
+	if err != nil {
+		return nil
+	}
+	addrs := make([]ma.Multiaddr, len(uaddrs), len(uaddrs))
+	for i, uaddr := range uaddrs {
+		portAddr, err := ma.NewMultiaddr(fmt.Sprintf("/tcp/%d", port))
+		if err != nil {
+			glog.Errorf("Error creating portAddr: %v %v", uaddr, err)
+			return nil
+		}
+		addrs[i] = uaddr.Encapsulate(portAddr)
+	}
+
+	return addrs
 }

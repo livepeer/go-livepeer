@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"time"
 
 	ma "gx/ipfs/QmWWQ2Txc2c6tqjsBpzg5Ar652cHPGNsQQp2SejkNmkUMb/go-multiaddr"
@@ -34,7 +35,8 @@ func main() {
 	flag.Lookup("logtostderr").Value.Set("true")
 
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	node, _ := basicnet.NewNode(*p, priv, pub, &basicnet.BasicNotifiee{})
+	sourceMultiAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", *p))
+	node, _ := basicnet.NewNode([]ma.Multiaddr{sourceMultiAddr}, priv, pub, &basicnet.BasicNotifiee{})
 
 	pid, _ := peer.IDHexDecode(*id)
 	if *id != "" {
