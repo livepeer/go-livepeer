@@ -71,11 +71,17 @@ func NewBasicOutStream(s net.Stream) *BasicOutStream {
 }
 
 func (bs *BasicOutStream) GetRemotePeer() peer.ID {
+	if bs == nil {
+		return ""
+	}
 	return bs.Stream.Conn().RemotePeer()
 }
 
 //SendMessage writes a message into the stream.
 func (bs *BasicOutStream) SendMessage(opCode Opcode, data interface{}) error {
+	if bs == nil {
+		return ErrOutStream
+	}
 	// glog.V(common.DEBUG).Infof("Sending msg %v to %v", opCode, peer.IDHexEncode(bs.Stream.Conn().RemotePeer()))
 	msg := Msg{Op: opCode, Data: data}
 	return bs.encodeAndFlush(msg)
