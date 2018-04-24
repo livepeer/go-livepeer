@@ -224,6 +224,11 @@ func main() {
 
 			n.BootIDs = []string{peer.IDHexEncode(closestNodeID)}
 			n.BootAddrs = []string{closestNodeAddr}
+		} else {
+			if err := n.Start(context.Background(), []string{}, []string{}); err != nil {
+				glog.Errorf("Cannot start node: %v", err)
+				return
+			}
 		}
 	}
 
