@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	addrutil "gx/ipfs/QmNSWW3Sb4eju4o2djPQ1L1c2Zj9XN9sMYJL8r1cbxdc6b/go-addr-util"
+	ma "gx/ipfs/QmWWQ2Txc2c6tqjsBpzg5Ar652cHPGNsQQp2SejkNmkUMb/go-multiaddr"
+	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
+	"io/ioutil"
+	"strings"
 	"testing"
 	"time"
-
-	"strings"
-
-	"io/ioutil"
-
-	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
 	"github.com/ericxtang/m3u8"
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
@@ -344,7 +343,7 @@ func monitorChan(intChan chan int) {
 
 func TestNotifyBroadcaster(t *testing.T) {
 	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	node, err := bnet.NewNode(15000, priv, pub, &bnet.BasicNotifiee{})
+	node, err := bnet.NewNode(addrs(15000), priv, pub, &bnet.BasicNotifiee{})
 	if err != nil {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
@@ -390,4 +389,22 @@ func TestCrypto(t *testing.T) {
 
 	i, _ := binary.Uvarint(ethCrypto.Keccak256(newb, ethCrypto.Keccak256([]byte("abc"))))
 	fmt.Printf("%x\n\n", i%1)
+}
+
+func addrs(port int) []ma.Multiaddr {
+	uaddrs, err := addrutil.InterfaceAddresses()
+	if err != nil {
+		return nil
+	}
+	addrs := make([]ma.Multiaddr, len(uaddrs), len(uaddrs))
+	for i, uaddr := range uaddrs {
+		portAddr, err := ma.NewMultiaddr(fmt.Sprintf("/tcp/%d", port))
+		if err != nil {
+			glog.Errorf("Error creating portAddr: %v %v", uaddr, err)
+			return nil
+		}
+		addrs[i] = uaddr.Encapsulate(portAddr)
+	}
+
+	return addrs
 }

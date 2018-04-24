@@ -2,11 +2,14 @@ package basicnet
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	addrutil "gx/ipfs/QmNSWW3Sb4eju4o2djPQ1L1c2Zj9XN9sMYJL8r1cbxdc6b/go-addr-util"
 	bhost "gx/ipfs/QmNh1kGFFdsPu79KNSaL4NUKUPb4Eiz4KHdMtFY6664RDp/go-libp2p/p2p/host/basic"
 	host "gx/ipfs/QmNmJZL7FQySMtE2BQuLMuZg2EB2CLEunJJUSVSc9YnnbV/go-libp2p-host"
+	ma "gx/ipfs/QmWWQ2Txc2c6tqjsBpzg5Ar652cHPGNsQQp2SejkNmkUMb/go-multiaddr"
 	ds "gx/ipfs/QmXRKBQA4wXP7xWbFiZsR1GP4HV6wMDQ1aWFxZZ4uBcPX9/go-datastore"
 	dssync "gx/ipfs/QmXRKBQA4wXP7xWbFiZsR1GP4HV6wMDQ1aWFxZZ4uBcPX9/go-datastore/sync"
 	peerstore "gx/ipfs/QmXauCuJzmzapetmC6W4TuDJLL1yFFrVzSHoWv8YdbmnxH/go-libp2p-peerstore"
@@ -64,14 +67,14 @@ func setupDHTS(ctx context.Context, n int, t *testing.T) ([]*kad.IpfsDHT, []host
 
 func setupNodes(t *testing.T, p1, p2 int) (*BasicVideoNetwork, *BasicVideoNetwork) {
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	no1, _ := NewNode(p1, priv1, pub1, &BasicNotifiee{})
+	no1, _ := NewNode(addrs(p1), priv1, pub1, &BasicNotifiee{})
 	n1, _ := NewBasicVideoNetwork(no1, "")
 	if err := n1.SetupProtocol(); err != nil {
 		t.Errorf("Error creating node: %v", err)
 	}
 
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	no2, _ := NewNode(p2, priv2, pub2, &BasicNotifiee{})
+	no2, _ := NewNode(addrs(p2), priv2, pub2, &BasicNotifiee{})
 	n2, _ := NewBasicVideoNetwork(no2, "")
 	if err := n2.SetupProtocol(); err != nil {
 		t.Errorf("Error creating node: %v", err)
@@ -128,8 +131,8 @@ func simpleNodes(p1, p2 int) (*BasicNetworkNode, *BasicNetworkNode) {
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 
-	n1, _ := NewNode(p1, priv1, pub1, &BasicNotifiee{})
-	n2, _ := NewNode(p2, priv2, pub2, &BasicNotifiee{})
+	n1, _ := NewNode(addrs(p1), priv1, pub1, &BasicNotifiee{})
+	n2, _ := NewNode(addrs(p2), priv2, pub2, &BasicNotifiee{})
 
 	// n1.PeerHost.Peerstore().AddAddrs(n2.Identity, n2.PeerHost.Addrs(), peerstore.PermanentAddrTTL)
 	// n2.PeerHost.Peerstore().AddAddrs(n1.Identity, n1.PeerHost.Addrs(), peerstore.PermanentAddrTTL)
@@ -137,4 +140,22 @@ func simpleNodes(p1, p2 int) (*BasicNetworkNode, *BasicNetworkNode) {
 	// n2.PeerHost.Connect(context.Background(), peerstore.PeerInfo{ID: n1.Identity})
 
 	return n1, n2
+}
+
+func addrs(port int) []ma.Multiaddr {
+	uaddrs, err := addrutil.InterfaceAddresses()
+	if err != nil {
+		return nil
+	}
+	addrs := make([]ma.Multiaddr, len(uaddrs), len(uaddrs))
+	for i, uaddr := range uaddrs {
+		portAddr, err := ma.NewMultiaddr(fmt.Sprintf("/tcp/%d", port))
+		if err != nil {
+			glog.Errorf("Error creating portAddr: %v %v", uaddr, err)
+			return nil
+		}
+		addrs[i] = uaddr.Encapsulate(portAddr)
+	}
+
+	return addrs
 }

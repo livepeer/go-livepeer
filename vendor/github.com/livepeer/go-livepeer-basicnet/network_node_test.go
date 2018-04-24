@@ -17,9 +17,9 @@ func TestGetOutStream(t *testing.T) {
 	}()
 
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	no1, _ := NewNode(15000, priv1, pub1, &BasicNotifiee{})
+	no1, _ := NewNode(addrs(15000), priv1, pub1, &BasicNotifiee{})
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	no2, _ := NewNode(15001, priv2, pub2, &BasicNotifiee{})
+	no2, _ := NewNode(addrs(15001), priv2, pub2, &BasicNotifiee{})
 	no1.PeerHost.SetStreamHandler(Protocol, func(s net.Stream) {
 	})
 	msgChan := make(chan Msg)

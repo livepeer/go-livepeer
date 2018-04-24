@@ -25,6 +25,7 @@ import (
 
 	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
 	kb "gx/ipfs/QmTH6VLu3WXfbH3nuLdmscgPWuiPZv3GMJ2YCdzBS5z91T/go-libp2p-kbucket"
+	ma "gx/ipfs/QmWWQ2Txc2c6tqjsBpzg5Ar652cHPGNsQQp2SejkNmkUMb/go-multiaddr"
 	peer "gx/ipfs/QmZoWKhxUmZ2seW4BzX6fJkNR8hh9PsGModr7q171yq2SS/go-libp2p-peer"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
@@ -147,7 +148,8 @@ func main() {
 		lpmon.Endpoint = *monhost
 	}
 	notifiee := bnet.NewBasicNotifiee(lpmon.Instance())
-	node, err := bnet.NewNode(*port, priv, pub, notifiee)
+	sourceMultiAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", *port))
+	node, err := bnet.NewNode([]ma.Multiaddr{sourceMultiAddr}, priv, pub, notifiee)
 	if err != nil {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
