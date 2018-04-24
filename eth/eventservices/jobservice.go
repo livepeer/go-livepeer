@@ -191,6 +191,9 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 }
 
 func (s *JobService) RestartTranscoder() error {
+
+	eth.RecoverClaims(s.node.Eth, s.node.Ipfs, s.node.Database)
+
 	blknum, err := s.node.Eth.LatestBlockNum()
 	if err != nil {
 		return err

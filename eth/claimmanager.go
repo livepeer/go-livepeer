@@ -109,6 +109,44 @@ func NewBasicClaimManager(job *ethTypes.Job, c LivepeerEthClient, ipfs ipfs.Ipfs
 	}
 }
 
+func RecoverClaims(c LivepeerEthClient, ipfs ipfs.IpfsApi, db *common.DB) error {
+	// XXX While this will recover claims for jobs that haven't submitted a
+	// claim yet, it doesn't attempt to recover if the node restarts mid-process
+	// eg, between the claim, verify and distributeFees calls.
+	glog.V(common.DEBUG).Info("Initialized DB node")
+	jobReceipts, err := db.UnclaimedReceipts()
+	if err != nil {
+		return err
+	}
+	for jid, receipts := range jobReceipts {
+		glog.V(common.DEBUG).Info("claimmanager: Fetching claims for job ", jid)
+		j, err := c.GetJob(big.NewInt(jid)) // benchmark; may be faster to reconstruct locally?
+		if err != nil {
+			glog.Error("Unable to get job ", jid, err)
+			continue
+		}
+		cm := NewBasicClaimManager(j, c, ipfs, db)
+		for _, r := range receipts {
+			cm.unclaimedSegs[r.SeqNo] = true
+			cm.segClaimMap[r.SeqNo] = &claimData{
+				seqNo:                r.SeqNo,
+				segData:              []byte{},
+				dataHash:             r.BcastHash,
+				bSig:                 r.BcastSig,
+				claimConcatTDatahash: r.TcodeHash,
+			}
+		}
+		go func() {
+			glog.V(common.DEBUG).Info("claimmanager: Starting recovery for ", jid)
+			err := cm.ClaimVerifyAndDistributeFees()
+			if err != nil {
+				glog.Error("Unable to claim/verify/distribute: ", err)
+			}
+		}()
+	}
+	return nil
+}
+
 func (c *BasicClaimManager) BroadcasterAddr() ethcommon.Address {
 	return c.broadcasterAddr
 }
