@@ -1015,7 +1015,7 @@ func (s *LivepeerServer) StartWebserver() {
 		result := make(map[string]bool)
 		for i, bootID := range s.LivepeerNode.BootIDs {
 			bootAddr := s.LivepeerNode.BootAddrs[i]
-			responseCh, err := s.LivepeerNode.VideoNetwork.(*basicnet.BasicVideoNetwork).Ping(bootID, bootAddr)
+			responseCh, err := s.LivepeerNode.VideoNetwork.(*basicnet.BasicVideoNetwork).Ping(bootID)
 			if err != nil {
 				glog.Infof("Ping failed for %v", bootID)
 				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = false
