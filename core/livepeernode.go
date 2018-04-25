@@ -181,11 +181,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 	}
 
 	//Subscribe to broadcast video, do the transcoding, broadcast the transcoded video, do the on-chain claim / verify
-	sub, err := n.VideoCache.GetHLSSubscriber(StreamID(config.StrmID))
-	if err != nil {
-		glog.Errorf("Error getting subscriber for stream %v from network: %v", config.StrmID, err)
-	}
-	sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
+	n.VideoNetwork.TranscodeSub(context.Background(), config.StrmID, func(seqNo uint64, data []byte, eof bool) {
 		glog.V(common.DEBUG).Infof("Starting to transcode segment %v", seqNo)
 		totalStart := time.Now()
 		if eof {

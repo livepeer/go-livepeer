@@ -88,6 +88,7 @@ func main() {
 	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
+	bindIPs := flag.String("bindIPs", "", "Comma-separated list of IPs/ports to bind to")
 	bootIDs := flag.String("bootIDs", "12203efa6d7276eb95be161138920a7d7be970bf5fdcdf5fb320fca81728ea95dce4,12201a1ec1ff1bce8e37eb1f718c09b3e13ff1f171cb199987cb486883cfde0cd7e9,1220c0c2ec8eb9d354eaf323d08b9c70f19375b5661570550319f88129e97390ca4b", "Comma-separated bootstrap node IDs")
 	bootAddrs := flag.String("bootAddrs", "/ip4/18.218.14.44/tcp/15000,/ip4/18.222.84.190/tcp/15000,/ip4/18.188.164.125/tcp/15000", "Comma-separated bootstrap node addresses")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
@@ -109,6 +110,7 @@ func main() {
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
 	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
+	publicIP := flag.String("publicIP", "", "Explicit set node IP address so nodes that need a well-known address can advertise it to the network")
 	version := flag.Bool("version", false, "Print out the version")
 
 	flag.Parse()
@@ -148,8 +150,34 @@ func main() {
 		lpmon.Endpoint = *monhost
 	}
 	notifiee := bnet.NewBasicNotifiee(lpmon.Instance())
-	sourceMultiAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", *port))
-	node, err := bnet.NewNode([]ma.Multiaddr{sourceMultiAddr}, priv, pub, notifiee)
+	var maddrs []ma.Multiaddr
+	if *bindIPs != "" {
+		maddrs = make([]ma.Multiaddr, 0)
+		mas := strings.Split(*bindIPs, ",")
+		i := 0
+		for _, m := range mas {
+			addr, err := ma.NewMultiaddr(m)
+			if err != nil {
+				glog.Errorf("Error creating bindIP %v to multiaddr: %v", m, err)
+				continue // nonfatal
+			}
+			maddrs = append(maddrs, addr)
+			i++
+		}
+	} else if *transcoder {
+		sourceMultiAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", *port))
+		maddrs = []ma.Multiaddr{sourceMultiAddr}
+		if *publicIP != "" {
+			addr, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%d", *publicIP, *port))
+			if err != nil {
+				maddrs = append(maddrs, addr)
+			}
+		}
+	} else {
+		sourceMultiAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", *port))
+		maddrs = []ma.Multiaddr{sourceMultiAddr}
+	}
+	node, err := bnet.NewNode(maddrs, priv, pub, notifiee)
 	if err != nil {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
@@ -295,6 +323,11 @@ func main() {
 		}
 
 		n.Eth = client
+		node.SetSignFun(client.Sign)
+		node.SetVerifyTranscoderSig(func(data []byte, sig []byte, strmID string) bool {
+			// look up job by stream id, verify from there
+			return true
+		})
 
 		if *transcoder {
 			addrMap := n.Eth.ContractAddresses()
