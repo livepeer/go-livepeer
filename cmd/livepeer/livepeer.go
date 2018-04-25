@@ -23,7 +23,6 @@ import (
 	"strings"
 	"time"
 
-	addrutil "gx/ipfs/QmNSWW3Sb4eju4o2djPQ1L1c2Zj9XN9sMYJL8r1cbxdc6b/go-addr-util"
 	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
 	kb "gx/ipfs/QmTH6VLu3WXfbH3nuLdmscgPWuiPZv3GMJ2YCdzBS5z91T/go-libp2p-kbucket"
 	ma "gx/ipfs/QmWWQ2Txc2c6tqjsBpzg5Ar652cHPGNsQQp2SejkNmkUMb/go-multiaddr"
@@ -111,6 +110,7 @@ func main() {
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
 	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
+	publicIP := flag.String("publicIP", "", "Explicit set node IP address so nodes that need a well-known address can advertise it to the network")
 	version := flag.Bool("version", false, "Print out the version")
 
 	flag.Parse()
@@ -165,10 +165,13 @@ func main() {
 			i++
 		}
 	} else if *transcoder {
-		maddrs, err = getAddrs(*port)
-		if err != nil {
-			glog.Errorf("Unable to find addresses to bind on: %v", err)
-			return
+		sourceMultiAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", *port))
+		maddrs = []ma.Multiaddr{sourceMultiAddr}
+		if *publicIP != "" {
+			addr, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%d", *publicIP, *port))
+			if err != nil {
+				maddrs = append(maddrs, addr)
+			}
 		}
 	} else {
 		sourceMultiAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", *port))
@@ -595,22 +598,4 @@ func broadcast(rtmpPort int, httpPort int) {
 	} else {
 		glog.Errorf("The broadcast command only support darwin for now.  Please download OBS to broadcast.")
 	}
-}
-
-func getAddrs(port int) ([]ma.Multiaddr, error) {
-	uaddrs, err := addrutil.InterfaceAddresses()
-	if err != nil {
-		return []ma.Multiaddr{}, err
-	}
-	addrs := make([]ma.Multiaddr, len(uaddrs), len(uaddrs))
-	for i, uaddr := range uaddrs {
-		portAddr, err := ma.NewMultiaddr(fmt.Sprintf("/tcp/%d", port))
-		if err != nil {
-			glog.Errorf("Error creating portAddr: %v %v", uaddr, err)
-			continue // nonfatal, but may lead to an empty addrs[i] slot?
-		}
-		addrs[i] = uaddr.Encapsulate(portAddr)
-	}
-
-	return addrs, nil
 }
