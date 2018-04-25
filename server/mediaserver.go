@@ -31,6 +31,7 @@ var ErrRTMPPublish = errors.New("ErrRTMPPublish")
 var ErrBroadcast = errors.New("ErrBroadcast")
 var ErrHLSPlay = errors.New("ErrHLSPlay")
 var ErrRTMPPlay = errors.New("ErrRTMPPlay")
+var ErrRoundInit = errors.New("ErrRoundInit")
 
 const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
@@ -129,6 +130,16 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 		if s.LivepeerNode.Eth != nil {
+			//Check if round is initialized
+			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
+			if err != nil {
+				glog.Errorf("Could not check whether round was initialized: %v", err)
+				return err
+			}
+			if !initialized {
+				glog.Error("Round was uninitialized; can't create job")
+				return ErrRoundInit
+			}
 			// Check deposit
 			deposit, err := s.LivepeerNode.Eth.BroadcasterDeposit(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
