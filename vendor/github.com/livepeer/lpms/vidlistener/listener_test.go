@@ -63,3 +63,40 @@ func TestListener(t *testing.T) {
 		t.Errorf("Expecting pkt, got nil.  Error: %v", err)
 	}
 }
+
+func TestListenerError(t *testing.T) {
+	server := &joy4rtmp.Server{Addr: ":1938"} // XXX is there a way to stop?
+	badListener := &VidListener{RtmpServer: server}
+
+	failures := 0
+	badListener.HandleRTMPPublish(
+		//makeStreamID
+		func(url *url.URL) string {
+			return "testID"
+		},
+		//gotStream
+		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
+			return fmt.Errorf("Should fail")
+		},
+		//endStream
+		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
+			failures++
+			return nil
+		})
+
+	ffmpegArgs := []string{"-re", "-i", "../data/bunny2.mp4", "-c", "copy", "-f", "flv", "rtmp://localhost:1938/movie"}
+	cmd := exec.Command("ffmpeg", ffmpegArgs...)
+	go badListener.RtmpServer.ListenAndServe()
+	start := time.Now()
+	err := cmd.Run()
+	end := time.Now()
+	if err == nil {
+		t.Error("FFmpeg was not stopped as expected")
+	}
+	if failures == 0 {
+		t.Error("Expected a failure; got none")
+	}
+	if end.Sub(start) > time.Duration(time.Second*1) {
+		t.Error("Took longer than expected; %v", end.Sub(start))
+	}
+}

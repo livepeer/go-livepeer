@@ -257,7 +257,7 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
   }
 
   if (!(fmt->flags & AVFMT_NOFILE)) {
-    avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
+    ret = avio_open(&octx->oc->pb, octx->fname, AVIO_FLAG_WRITE);
     if (ret < 0) em_err("Error opening output file\n");
   }
 

@@ -46,6 +46,8 @@ func (self *VidListener) HandleRTMPPublish(
 		err = gotStream(conn.URL, s)
 		if err != nil {
 			glog.Errorf("Error RTMP gotStream handler: %v", err)
+			endStream(conn.URL, s)
+			conn.Close()
 			cancel()
 			return
 		}
