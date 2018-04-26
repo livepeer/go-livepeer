@@ -117,6 +117,10 @@ type worker struct {
 	currentMu sync.Mutex
 	current   *Work
 
+	snapshotMu    sync.RWMutex
+	snapshotBlock *types.Block
+	snapshotState *state.StateDB
+
 	uncleMu        sync.Mutex
 	possibleUncles map[common.Hash]*types.Block
 
@@ -171,32 +175,28 @@ func (self *worker) setExtra(extra []byte) {
 }
 
 func (self *worker) pending() (*types.Block, *state.StateDB) {
+	if atomic.LoadInt32(&self.mining) == 0 {
+		// return a snapshot to avoid contention on currentMu mutex
+		self.snapshotMu.RLock()
+		defer self.snapshotMu.RUnlock()
+		return self.snapshotBlock, self.snapshotState.Copy()
+	}
+
 	self.currentMu.Lock()
 	defer self.currentMu.Unlock()
-
-	if atomic.LoadInt32(&self.mining) == 0 {
-		return types.NewBlock(
-			self.current.header,
-			self.current.txs,
-			nil,
-			self.current.receipts,
-		), self.current.state.Copy()
-	}
 	return self.current.Block, self.current.state.Copy()
 }
 
 func (self *worker) pendingBlock() *types.Block {
+	if atomic.LoadInt32(&self.mining) == 0 {
+		// return a snapshot to avoid contention on currentMu mutex
+		self.snapshotMu.RLock()
+		defer self.snapshotMu.RUnlock()
+		return self.snapshotBlock
+	}
+
 	self.currentMu.Lock()
 	defer self.currentMu.Unlock()
-
-	if atomic.LoadInt32(&self.mining) == 0 {
-		return types.NewBlock(
-			self.current.header,
-			self.current.txs,
-			nil,
-			self.current.receipts,
-		)
-	}
 	return self.current.Block
 }
 
@@ -268,7 +268,13 @@ func (self *worker) update() {
 				txset := types.NewTransactionsByPriceAndNonce(self.current.signer, txs)
 
 				self.current.commitTransactions(self.mux, txset, self.chain, self.coinbase)
+				self.updateSnapshot()
 				self.currentMu.Unlock()
+			} else {
+				// If we're mining, but nothing is being processed, wake on new transactions
+				if self.config.Clique != nil && self.config.Clique.Period == 0 {
+					self.commitNewWork()
+				}
 			}
 
 		// System stopped
@@ -304,7 +310,7 @@ func (self *worker) wait() {
 			for _, log := range work.state.Logs() {
 				log.BlockHash = block.Hash()
 			}
-			stat, err := self.chain.WriteBlockAndState(block, work.receipts, work.state)
+			stat, err := self.chain.WriteBlockWithState(block, work.receipts, work.state)
 			if err != nil {
 				log.Error("Failed writing block to chain", "err", err)
 				continue
@@ -408,7 +414,6 @@ func (self *worker) commitNewWork() {
 		ParentHash: parent.Hash(),
 		Number:     num.Add(num, common.Big1),
 		GasLimit:   core.CalcGasLimit(parent),
-		GasUsed:    new(big.Int),
 		Extra:      self.extra,
 		Time:       big.NewInt(tstamp),
 	}
@@ -485,6 +490,7 @@ func (self *worker) commitNewWork() {
 		self.unconfirmed.Shift(work.Block.NumberU64() - 1)
 	}
 	self.push(work)
+	self.updateSnapshot()
 }
 
 func (self *worker) commitUncle(work *Work, uncle *types.Header) error {
@@ -502,12 +508,30 @@ func (self *worker) commitUncle(work *Work, uncle *types.Header) error {
 	return nil
 }
 
+func (self *worker) updateSnapshot() {
+	self.snapshotMu.Lock()
+	defer self.snapshotMu.Unlock()
+
+	self.snapshotBlock = types.NewBlock(
+		self.current.header,
+		self.current.txs,
+		nil,
+		self.current.receipts,
+	)
+	self.snapshotState = self.current.state.Copy()
+}
+
 func (env *Work) commitTransactions(mux *event.TypeMux, txs *types.TransactionsByPriceAndNonce, bc *core.BlockChain, coinbase common.Address) {
 	gp := new(core.GasPool).AddGas(env.header.GasLimit)
 
 	var coalescedLogs []*types.Log
 
 	for {
+		// If we don't have enough gas for any further transactions then we're done
+		if gp.Gas() < params.TxGas {
+			log.Trace("Not enough gas for further transactions", "gp", gp)
+			break
+		}
 		// Retrieve the next transaction and abort if all done
 		tx := txs.Peek()
 		if tx == nil {
@@ -583,7 +607,7 @@ func (env *Work) commitTransactions(mux *event.TypeMux, txs *types.TransactionsB
 func (env *Work) commitTransaction(tx *types.Transaction, bc *core.BlockChain, coinbase common.Address, gp *core.GasPool) (error, []*types.Log) {
 	snap := env.state.Snapshot()
 
-	receipt, _, err := core.ApplyTransaction(env.config, bc, &coinbase, gp, env.state, env.header, tx, env.header.GasUsed, vm.Config{})
+	receipt, _, err := core.ApplyTransaction(env.config, bc, &coinbase, gp, env.state, env.header, tx, &env.header.GasUsed, vm.Config{})
 	if err != nil {
 		env.state.RevertToSnapshot(snap)
 		return err, nil

@@ -32,10 +32,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-const (
-	filterTimeout = 300 // filters are considered timeout out after filterTimeout seconds
-)
-
 var (
 	ErrSymAsym              = errors.New("specify either a symmetric or an asymmetric key")
 	ErrInvalidSymmetricKey  = errors.New("invalid symmetric key")
@@ -60,30 +56,7 @@ func NewPublicWhisperAPI(w *Whisper) *PublicWhisperAPI {
 		w:        w,
 		lastUsed: make(map[string]time.Time),
 	}
-
-	go api.run()
 	return api
-}
-
-// run the api event loop.
-// this loop deletes filter that have not been used within filterTimeout
-func (api *PublicWhisperAPI) run() {
-	timeout := time.NewTicker(2 * time.Minute)
-	for {
-		<-timeout.C
-
-		api.mu.Lock()
-		for id, lastUsed := range api.lastUsed {
-			if time.Since(lastUsed).Seconds() >= filterTimeout {
-				delete(api.lastUsed, id)
-				if err := api.w.Unsubscribe(id); err != nil {
-					log.Error("could not unsubscribe whisper filter", "error", err)
-				}
-				log.Debug("delete whisper filter (timeout)", "id", id)
-			}
-		}
-		api.mu.Unlock()
-	}
 }
 
 // Version returns the Whisper sub-protocol version.
@@ -562,7 +535,7 @@ func (api *PublicWhisperAPI) NewMessageFilter(req Criteria) (string, error) {
 	}
 
 	if len(req.Topics) > 0 {
-		topics = make([][]byte, 1)
+		topics = make([][]byte, 0, len(req.Topics))
 		for _, topic := range req.Topics {
 			topics = append(topics, topic[:])
 		}

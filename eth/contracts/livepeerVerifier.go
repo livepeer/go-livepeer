@@ -7,10 +7,12 @@ import (
 	"math/big"
 	"strings"
 
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 )
 
 // LivepeerVerifierABI is the input ABI used to generate the binding from.
@@ -20,6 +22,7 @@ const LivepeerVerifierABI = "[{\"constant\":true,\"inputs\":[{\"name\":\"\",\"ty
 type LivepeerVerifier struct {
 	LivepeerVerifierCaller     // Read-only binding to the contract
 	LivepeerVerifierTransactor // Write-only binding to the contract
+	LivepeerVerifierFilterer   // Log filterer for contract events
 }
 
 // LivepeerVerifierCaller is an auto generated read-only Go binding around an Ethereum contract.
@@ -29,6 +32,11 @@ type LivepeerVerifierCaller struct {
 
 // LivepeerVerifierTransactor is an auto generated write-only Go binding around an Ethereum contract.
 type LivepeerVerifierTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// LivepeerVerifierFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type LivepeerVerifierFilterer struct {
 	contract *bind.BoundContract // Generic contract wrapper for the low level calls
 }
 
@@ -71,16 +79,16 @@ type LivepeerVerifierTransactorRaw struct {
 
 // NewLivepeerVerifier creates a new instance of LivepeerVerifier, bound to a specific deployed contract.
 func NewLivepeerVerifier(address common.Address, backend bind.ContractBackend) (*LivepeerVerifier, error) {
-	contract, err := bindLivepeerVerifier(address, backend, backend)
+	contract, err := bindLivepeerVerifier(address, backend, backend, backend)
 	if err != nil {
 		return nil, err
 	}
-	return &LivepeerVerifier{LivepeerVerifierCaller: LivepeerVerifierCaller{contract: contract}, LivepeerVerifierTransactor: LivepeerVerifierTransactor{contract: contract}}, nil
+	return &LivepeerVerifier{LivepeerVerifierCaller: LivepeerVerifierCaller{contract: contract}, LivepeerVerifierTransactor: LivepeerVerifierTransactor{contract: contract}, LivepeerVerifierFilterer: LivepeerVerifierFilterer{contract: contract}}, nil
 }
 
 // NewLivepeerVerifierCaller creates a new read-only instance of LivepeerVerifier, bound to a specific deployed contract.
 func NewLivepeerVerifierCaller(address common.Address, caller bind.ContractCaller) (*LivepeerVerifierCaller, error) {
-	contract, err := bindLivepeerVerifier(address, caller, nil)
+	contract, err := bindLivepeerVerifier(address, caller, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -89,20 +97,29 @@ func NewLivepeerVerifierCaller(address common.Address, caller bind.ContractCalle
 
 // NewLivepeerVerifierTransactor creates a new write-only instance of LivepeerVerifier, bound to a specific deployed contract.
 func NewLivepeerVerifierTransactor(address common.Address, transactor bind.ContractTransactor) (*LivepeerVerifierTransactor, error) {
-	contract, err := bindLivepeerVerifier(address, nil, transactor)
+	contract, err := bindLivepeerVerifier(address, nil, transactor, nil)
 	if err != nil {
 		return nil, err
 	}
 	return &LivepeerVerifierTransactor{contract: contract}, nil
 }
 
+// NewLivepeerVerifierFilterer creates a new log filterer instance of LivepeerVerifier, bound to a specific deployed contract.
+func NewLivepeerVerifierFilterer(address common.Address, filterer bind.ContractFilterer) (*LivepeerVerifierFilterer, error) {
+	contract, err := bindLivepeerVerifier(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &LivepeerVerifierFilterer{contract: contract}, nil
+}
+
 // bindLivepeerVerifier binds a generic wrapper to an already deployed contract.
-func bindLivepeerVerifier(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor) (*bind.BoundContract, error) {
+func bindLivepeerVerifier(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
 	parsed, err := abi.JSON(strings.NewReader(LivepeerVerifierABI))
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor), nil
+	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -343,25 +360,25 @@ func (_LivepeerVerifier *LivepeerVerifierCallerSession) VerificationCodeHash() (
 	return _LivepeerVerifier.Contract.VerificationCodeHash(&_LivepeerVerifier.CallOpts)
 }
 
-// __callback is a paid mutator transaction binding the contract method 0x9842a37c.
+// Callback is a paid mutator transaction binding the contract method 0x9842a37c.
 //
 // Solidity: function __callback(_requestId uint256, _result bytes32) returns()
-func (_LivepeerVerifier *LivepeerVerifierTransactor) __callback(opts *bind.TransactOpts, _requestId *big.Int, _result [32]byte) (*types.Transaction, error) {
+func (_LivepeerVerifier *LivepeerVerifierTransactor) Callback(opts *bind.TransactOpts, _requestId *big.Int, _result [32]byte) (*types.Transaction, error) {
 	return _LivepeerVerifier.contract.Transact(opts, "__callback", _requestId, _result)
 }
 
-// __callback is a paid mutator transaction binding the contract method 0x9842a37c.
+// Callback is a paid mutator transaction binding the contract method 0x9842a37c.
 //
 // Solidity: function __callback(_requestId uint256, _result bytes32) returns()
-func (_LivepeerVerifier *LivepeerVerifierSession) __callback(_requestId *big.Int, _result [32]byte) (*types.Transaction, error) {
-	return _LivepeerVerifier.Contract.__callback(&_LivepeerVerifier.TransactOpts, _requestId, _result)
+func (_LivepeerVerifier *LivepeerVerifierSession) Callback(_requestId *big.Int, _result [32]byte) (*types.Transaction, error) {
+	return _LivepeerVerifier.Contract.Callback(&_LivepeerVerifier.TransactOpts, _requestId, _result)
 }
 
-// __callback is a paid mutator transaction binding the contract method 0x9842a37c.
+// Callback is a paid mutator transaction binding the contract method 0x9842a37c.
 //
 // Solidity: function __callback(_requestId uint256, _result bytes32) returns()
-func (_LivepeerVerifier *LivepeerVerifierTransactorSession) __callback(_requestId *big.Int, _result [32]byte) (*types.Transaction, error) {
-	return _LivepeerVerifier.Contract.__callback(&_LivepeerVerifier.TransactOpts, _requestId, _result)
+func (_LivepeerVerifier *LivepeerVerifierTransactorSession) Callback(_requestId *big.Int, _result [32]byte) (*types.Transaction, error) {
+	return _LivepeerVerifier.Contract.Callback(&_LivepeerVerifier.TransactOpts, _requestId, _result)
 }
 
 // AddSolver is a paid mutator transaction binding the contract method 0xec58f4b8.
@@ -446,4 +463,555 @@ func (_LivepeerVerifier *LivepeerVerifierSession) Verify(_jobId *big.Int, _claim
 // Solidity: function verify(_jobId uint256, _claimId uint256, _segmentNumber uint256, _transcodingOptions string, _dataStorageHash string, _dataHashes bytes32[2]) returns()
 func (_LivepeerVerifier *LivepeerVerifierTransactorSession) Verify(_jobId *big.Int, _claimId *big.Int, _segmentNumber *big.Int, _transcodingOptions string, _dataStorageHash string, _dataHashes [2][32]byte) (*types.Transaction, error) {
 	return _LivepeerVerifier.Contract.Verify(&_LivepeerVerifier.TransactOpts, _jobId, _claimId, _segmentNumber, _transcodingOptions, _dataStorageHash, _dataHashes)
+}
+
+// LivepeerVerifierCallbackIterator is returned from FilterCallback and is used to iterate over the raw logs and unpacked data for Callback events raised by the LivepeerVerifier contract.
+type LivepeerVerifierCallbackIterator struct {
+	Event *LivepeerVerifierCallback // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *LivepeerVerifierCallbackIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(LivepeerVerifierCallback)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(LivepeerVerifierCallback)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *LivepeerVerifierCallbackIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *LivepeerVerifierCallbackIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// LivepeerVerifierCallback represents a Callback event raised by the LivepeerVerifier contract.
+type LivepeerVerifierCallback struct {
+	RequestId     *big.Int
+	JobId         *big.Int
+	ClaimId       *big.Int
+	SegmentNumber *big.Int
+	Result        bool
+	Raw           types.Log // Blockchain specific contextual infos
+}
+
+// FilterCallback is a free log retrieval operation binding the contract event 0xaa22eba262859195ec25c1d3c94f98248add6d1374bd46df08c78470225df8d3.
+//
+// Solidity: event Callback(requestId indexed uint256, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256, result bool)
+func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterCallback(opts *bind.FilterOpts, requestId []*big.Int, jobId []*big.Int, claimId []*big.Int) (*LivepeerVerifierCallbackIterator, error) {
+
+	var requestIdRule []interface{}
+	for _, requestIdItem := range requestId {
+		requestIdRule = append(requestIdRule, requestIdItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _LivepeerVerifier.contract.FilterLogs(opts, "Callback", requestIdRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return &LivepeerVerifierCallbackIterator{contract: _LivepeerVerifier.contract, event: "Callback", logs: logs, sub: sub}, nil
+}
+
+// WatchCallback is a free log subscription operation binding the contract event 0xaa22eba262859195ec25c1d3c94f98248add6d1374bd46df08c78470225df8d3.
+//
+// Solidity: event Callback(requestId indexed uint256, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256, result bool)
+func (_LivepeerVerifier *LivepeerVerifierFilterer) WatchCallback(opts *bind.WatchOpts, sink chan<- *LivepeerVerifierCallback, requestId []*big.Int, jobId []*big.Int, claimId []*big.Int) (event.Subscription, error) {
+
+	var requestIdRule []interface{}
+	for _, requestIdItem := range requestId {
+		requestIdRule = append(requestIdRule, requestIdItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _LivepeerVerifier.contract.WatchLogs(opts, "Callback", requestIdRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(LivepeerVerifierCallback)
+				if err := _LivepeerVerifier.contract.UnpackLog(event, "Callback", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// LivepeerVerifierParameterUpdateIterator is returned from FilterParameterUpdate and is used to iterate over the raw logs and unpacked data for ParameterUpdate events raised by the LivepeerVerifier contract.
+type LivepeerVerifierParameterUpdateIterator struct {
+	Event *LivepeerVerifierParameterUpdate // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *LivepeerVerifierParameterUpdateIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(LivepeerVerifierParameterUpdate)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(LivepeerVerifierParameterUpdate)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *LivepeerVerifierParameterUpdateIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *LivepeerVerifierParameterUpdateIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// LivepeerVerifierParameterUpdate represents a ParameterUpdate event raised by the LivepeerVerifier contract.
+type LivepeerVerifierParameterUpdate struct {
+	Param string
+	Raw   types.Log // Blockchain specific contextual infos
+}
+
+// FilterParameterUpdate is a free log retrieval operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
+//
+// Solidity: event ParameterUpdate(param string)
+func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterParameterUpdate(opts *bind.FilterOpts) (*LivepeerVerifierParameterUpdateIterator, error) {
+
+	logs, sub, err := _LivepeerVerifier.contract.FilterLogs(opts, "ParameterUpdate")
+	if err != nil {
+		return nil, err
+	}
+	return &LivepeerVerifierParameterUpdateIterator{contract: _LivepeerVerifier.contract, event: "ParameterUpdate", logs: logs, sub: sub}, nil
+}
+
+// WatchParameterUpdate is a free log subscription operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
+//
+// Solidity: event ParameterUpdate(param string)
+func (_LivepeerVerifier *LivepeerVerifierFilterer) WatchParameterUpdate(opts *bind.WatchOpts, sink chan<- *LivepeerVerifierParameterUpdate) (event.Subscription, error) {
+
+	logs, sub, err := _LivepeerVerifier.contract.WatchLogs(opts, "ParameterUpdate")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(LivepeerVerifierParameterUpdate)
+				if err := _LivepeerVerifier.contract.UnpackLog(event, "ParameterUpdate", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// LivepeerVerifierSetControllerIterator is returned from FilterSetController and is used to iterate over the raw logs and unpacked data for SetController events raised by the LivepeerVerifier contract.
+type LivepeerVerifierSetControllerIterator struct {
+	Event *LivepeerVerifierSetController // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *LivepeerVerifierSetControllerIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(LivepeerVerifierSetController)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(LivepeerVerifierSetController)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *LivepeerVerifierSetControllerIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *LivepeerVerifierSetControllerIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// LivepeerVerifierSetController represents a SetController event raised by the LivepeerVerifier contract.
+type LivepeerVerifierSetController struct {
+	Controller common.Address
+	Raw        types.Log // Blockchain specific contextual infos
+}
+
+// FilterSetController is a free log retrieval operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
+//
+// Solidity: event SetController(controller address)
+func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterSetController(opts *bind.FilterOpts) (*LivepeerVerifierSetControllerIterator, error) {
+
+	logs, sub, err := _LivepeerVerifier.contract.FilterLogs(opts, "SetController")
+	if err != nil {
+		return nil, err
+	}
+	return &LivepeerVerifierSetControllerIterator{contract: _LivepeerVerifier.contract, event: "SetController", logs: logs, sub: sub}, nil
+}
+
+// WatchSetController is a free log subscription operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
+//
+// Solidity: event SetController(controller address)
+func (_LivepeerVerifier *LivepeerVerifierFilterer) WatchSetController(opts *bind.WatchOpts, sink chan<- *LivepeerVerifierSetController) (event.Subscription, error) {
+
+	logs, sub, err := _LivepeerVerifier.contract.WatchLogs(opts, "SetController")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(LivepeerVerifierSetController)
+				if err := _LivepeerVerifier.contract.UnpackLog(event, "SetController", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// LivepeerVerifierVerifyRequestIterator is returned from FilterVerifyRequest and is used to iterate over the raw logs and unpacked data for VerifyRequest events raised by the LivepeerVerifier contract.
+type LivepeerVerifierVerifyRequestIterator struct {
+	Event *LivepeerVerifierVerifyRequest // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *LivepeerVerifierVerifyRequestIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(LivepeerVerifierVerifyRequest)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(LivepeerVerifierVerifyRequest)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *LivepeerVerifierVerifyRequestIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *LivepeerVerifierVerifyRequestIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// LivepeerVerifierVerifyRequest represents a VerifyRequest event raised by the LivepeerVerifier contract.
+type LivepeerVerifierVerifyRequest struct {
+	RequestId          *big.Int
+	JobId              *big.Int
+	ClaimId            *big.Int
+	SegmentNumber      *big.Int
+	TranscodingOptions string
+	DataStorageHash    string
+	DataHash           [32]byte
+	TranscodedDataHash [32]byte
+	Raw                types.Log // Blockchain specific contextual infos
+}
+
+// FilterVerifyRequest is a free log retrieval operation binding the contract event 0xf68da1a7e850796ae5473e78db07307108751eec3461dddf5ef610db7dfaaf56.
+//
+// Solidity: event VerifyRequest(requestId indexed uint256, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256, transcodingOptions string, dataStorageHash string, dataHash bytes32, transcodedDataHash bytes32)
+func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterVerifyRequest(opts *bind.FilterOpts, requestId []*big.Int, jobId []*big.Int, claimId []*big.Int) (*LivepeerVerifierVerifyRequestIterator, error) {
+
+	var requestIdRule []interface{}
+	for _, requestIdItem := range requestId {
+		requestIdRule = append(requestIdRule, requestIdItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _LivepeerVerifier.contract.FilterLogs(opts, "VerifyRequest", requestIdRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return &LivepeerVerifierVerifyRequestIterator{contract: _LivepeerVerifier.contract, event: "VerifyRequest", logs: logs, sub: sub}, nil
+}
+
+// WatchVerifyRequest is a free log subscription operation binding the contract event 0xf68da1a7e850796ae5473e78db07307108751eec3461dddf5ef610db7dfaaf56.
+//
+// Solidity: event VerifyRequest(requestId indexed uint256, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256, transcodingOptions string, dataStorageHash string, dataHash bytes32, transcodedDataHash bytes32)
+func (_LivepeerVerifier *LivepeerVerifierFilterer) WatchVerifyRequest(opts *bind.WatchOpts, sink chan<- *LivepeerVerifierVerifyRequest, requestId []*big.Int, jobId []*big.Int, claimId []*big.Int) (event.Subscription, error) {
+
+	var requestIdRule []interface{}
+	for _, requestIdItem := range requestId {
+		requestIdRule = append(requestIdRule, requestIdItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _LivepeerVerifier.contract.WatchLogs(opts, "VerifyRequest", requestIdRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(LivepeerVerifierVerifyRequest)
+				if err := _LivepeerVerifier.contract.UnpackLog(event, "VerifyRequest", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
 }

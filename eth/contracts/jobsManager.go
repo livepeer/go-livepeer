@@ -7,10 +7,12 @@ import (
 	"math/big"
 	"strings"
 
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 )
 
 // JobsManagerABI is the input ABI used to generate the binding from.
@@ -20,6 +22,7 @@ const JobsManagerABI = "[{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":
 type JobsManager struct {
 	JobsManagerCaller     // Read-only binding to the contract
 	JobsManagerTransactor // Write-only binding to the contract
+	JobsManagerFilterer   // Log filterer for contract events
 }
 
 // JobsManagerCaller is an auto generated read-only Go binding around an Ethereum contract.
@@ -29,6 +32,11 @@ type JobsManagerCaller struct {
 
 // JobsManagerTransactor is an auto generated write-only Go binding around an Ethereum contract.
 type JobsManagerTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// JobsManagerFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type JobsManagerFilterer struct {
 	contract *bind.BoundContract // Generic contract wrapper for the low level calls
 }
 
@@ -71,16 +79,16 @@ type JobsManagerTransactorRaw struct {
 
 // NewJobsManager creates a new instance of JobsManager, bound to a specific deployed contract.
 func NewJobsManager(address common.Address, backend bind.ContractBackend) (*JobsManager, error) {
-	contract, err := bindJobsManager(address, backend, backend)
+	contract, err := bindJobsManager(address, backend, backend, backend)
 	if err != nil {
 		return nil, err
 	}
-	return &JobsManager{JobsManagerCaller: JobsManagerCaller{contract: contract}, JobsManagerTransactor: JobsManagerTransactor{contract: contract}}, nil
+	return &JobsManager{JobsManagerCaller: JobsManagerCaller{contract: contract}, JobsManagerTransactor: JobsManagerTransactor{contract: contract}, JobsManagerFilterer: JobsManagerFilterer{contract: contract}}, nil
 }
 
 // NewJobsManagerCaller creates a new read-only instance of JobsManager, bound to a specific deployed contract.
 func NewJobsManagerCaller(address common.Address, caller bind.ContractCaller) (*JobsManagerCaller, error) {
-	contract, err := bindJobsManager(address, caller, nil)
+	contract, err := bindJobsManager(address, caller, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -89,20 +97,29 @@ func NewJobsManagerCaller(address common.Address, caller bind.ContractCaller) (*
 
 // NewJobsManagerTransactor creates a new write-only instance of JobsManager, bound to a specific deployed contract.
 func NewJobsManagerTransactor(address common.Address, transactor bind.ContractTransactor) (*JobsManagerTransactor, error) {
-	contract, err := bindJobsManager(address, nil, transactor)
+	contract, err := bindJobsManager(address, nil, transactor, nil)
 	if err != nil {
 		return nil, err
 	}
 	return &JobsManagerTransactor{contract: contract}, nil
 }
 
+// NewJobsManagerFilterer creates a new log filterer instance of JobsManager, bound to a specific deployed contract.
+func NewJobsManagerFilterer(address common.Address, filterer bind.ContractFilterer) (*JobsManagerFilterer, error) {
+	contract, err := bindJobsManager(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &JobsManagerFilterer{contract: contract}, nil
+}
+
 // bindJobsManager binds a generic wrapper to an already deployed contract.
-func bindJobsManager(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor) (*bind.BoundContract, error) {
+func bindJobsManager(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
 	parsed, err := abi.JSON(strings.NewReader(JobsManagerABI))
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor), nil
+	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -1055,4 +1072,1396 @@ func (_JobsManager *JobsManagerSession) Withdraw() (*types.Transaction, error) {
 // Solidity: function withdraw() returns()
 func (_JobsManager *JobsManagerTransactorSession) Withdraw() (*types.Transaction, error) {
 	return _JobsManager.Contract.Withdraw(&_JobsManager.TransactOpts)
+}
+
+// JobsManagerDepositIterator is returned from FilterDeposit and is used to iterate over the raw logs and unpacked data for Deposit events raised by the JobsManager contract.
+type JobsManagerDepositIterator struct {
+	Event *JobsManagerDeposit // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *JobsManagerDepositIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(JobsManagerDeposit)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(JobsManagerDeposit)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *JobsManagerDepositIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *JobsManagerDepositIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// JobsManagerDeposit represents a Deposit event raised by the JobsManager contract.
+type JobsManagerDeposit struct {
+	Broadcaster common.Address
+	Amount      *big.Int
+	Raw         types.Log // Blockchain specific contextual infos
+}
+
+// FilterDeposit is a free log retrieval operation binding the contract event 0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c.
+//
+// Solidity: event Deposit(broadcaster indexed address, amount uint256)
+func (_JobsManager *JobsManagerFilterer) FilterDeposit(opts *bind.FilterOpts, broadcaster []common.Address) (*JobsManagerDepositIterator, error) {
+
+	var broadcasterRule []interface{}
+	for _, broadcasterItem := range broadcaster {
+		broadcasterRule = append(broadcasterRule, broadcasterItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.FilterLogs(opts, "Deposit", broadcasterRule)
+	if err != nil {
+		return nil, err
+	}
+	return &JobsManagerDepositIterator{contract: _JobsManager.contract, event: "Deposit", logs: logs, sub: sub}, nil
+}
+
+// WatchDeposit is a free log subscription operation binding the contract event 0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c.
+//
+// Solidity: event Deposit(broadcaster indexed address, amount uint256)
+func (_JobsManager *JobsManagerFilterer) WatchDeposit(opts *bind.WatchOpts, sink chan<- *JobsManagerDeposit, broadcaster []common.Address) (event.Subscription, error) {
+
+	var broadcasterRule []interface{}
+	for _, broadcasterItem := range broadcaster {
+		broadcasterRule = append(broadcasterRule, broadcasterItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.WatchLogs(opts, "Deposit", broadcasterRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(JobsManagerDeposit)
+				if err := _JobsManager.contract.UnpackLog(event, "Deposit", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// JobsManagerDistributeFeesIterator is returned from FilterDistributeFees and is used to iterate over the raw logs and unpacked data for DistributeFees events raised by the JobsManager contract.
+type JobsManagerDistributeFeesIterator struct {
+	Event *JobsManagerDistributeFees // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *JobsManagerDistributeFeesIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(JobsManagerDistributeFees)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(JobsManagerDistributeFees)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *JobsManagerDistributeFeesIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *JobsManagerDistributeFeesIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// JobsManagerDistributeFees represents a DistributeFees event raised by the JobsManager contract.
+type JobsManagerDistributeFees struct {
+	Transcoder common.Address
+	JobId      *big.Int
+	ClaimId    *big.Int
+	Fees       *big.Int
+	Raw        types.Log // Blockchain specific contextual infos
+}
+
+// FilterDistributeFees is a free log retrieval operation binding the contract event 0xa9fda9546b61eac5990fddef170f356f0f70c0f75dc7a6821b430218f3d04264.
+//
+// Solidity: event DistributeFees(transcoder indexed address, jobId indexed uint256, claimId indexed uint256, fees uint256)
+func (_JobsManager *JobsManagerFilterer) FilterDistributeFees(opts *bind.FilterOpts, transcoder []common.Address, jobId []*big.Int, claimId []*big.Int) (*JobsManagerDistributeFeesIterator, error) {
+
+	var transcoderRule []interface{}
+	for _, transcoderItem := range transcoder {
+		transcoderRule = append(transcoderRule, transcoderItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.FilterLogs(opts, "DistributeFees", transcoderRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return &JobsManagerDistributeFeesIterator{contract: _JobsManager.contract, event: "DistributeFees", logs: logs, sub: sub}, nil
+}
+
+// WatchDistributeFees is a free log subscription operation binding the contract event 0xa9fda9546b61eac5990fddef170f356f0f70c0f75dc7a6821b430218f3d04264.
+//
+// Solidity: event DistributeFees(transcoder indexed address, jobId indexed uint256, claimId indexed uint256, fees uint256)
+func (_JobsManager *JobsManagerFilterer) WatchDistributeFees(opts *bind.WatchOpts, sink chan<- *JobsManagerDistributeFees, transcoder []common.Address, jobId []*big.Int, claimId []*big.Int) (event.Subscription, error) {
+
+	var transcoderRule []interface{}
+	for _, transcoderItem := range transcoder {
+		transcoderRule = append(transcoderRule, transcoderItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.WatchLogs(opts, "DistributeFees", transcoderRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(JobsManagerDistributeFees)
+				if err := _JobsManager.contract.UnpackLog(event, "DistributeFees", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// JobsManagerFailedVerificationIterator is returned from FilterFailedVerification and is used to iterate over the raw logs and unpacked data for FailedVerification events raised by the JobsManager contract.
+type JobsManagerFailedVerificationIterator struct {
+	Event *JobsManagerFailedVerification // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *JobsManagerFailedVerificationIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(JobsManagerFailedVerification)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(JobsManagerFailedVerification)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *JobsManagerFailedVerificationIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *JobsManagerFailedVerificationIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// JobsManagerFailedVerification represents a FailedVerification event raised by the JobsManager contract.
+type JobsManagerFailedVerification struct {
+	Transcoder    common.Address
+	JobId         *big.Int
+	ClaimId       *big.Int
+	SegmentNumber *big.Int
+	Raw           types.Log // Blockchain specific contextual infos
+}
+
+// FilterFailedVerification is a free log retrieval operation binding the contract event 0x325eefe220fe85167c5d95dfbfc58fd8c17a709a9dda3df44784d7ba83669816.
+//
+// Solidity: event FailedVerification(transcoder indexed address, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256)
+func (_JobsManager *JobsManagerFilterer) FilterFailedVerification(opts *bind.FilterOpts, transcoder []common.Address, jobId []*big.Int, claimId []*big.Int) (*JobsManagerFailedVerificationIterator, error) {
+
+	var transcoderRule []interface{}
+	for _, transcoderItem := range transcoder {
+		transcoderRule = append(transcoderRule, transcoderItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.FilterLogs(opts, "FailedVerification", transcoderRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return &JobsManagerFailedVerificationIterator{contract: _JobsManager.contract, event: "FailedVerification", logs: logs, sub: sub}, nil
+}
+
+// WatchFailedVerification is a free log subscription operation binding the contract event 0x325eefe220fe85167c5d95dfbfc58fd8c17a709a9dda3df44784d7ba83669816.
+//
+// Solidity: event FailedVerification(transcoder indexed address, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256)
+func (_JobsManager *JobsManagerFilterer) WatchFailedVerification(opts *bind.WatchOpts, sink chan<- *JobsManagerFailedVerification, transcoder []common.Address, jobId []*big.Int, claimId []*big.Int) (event.Subscription, error) {
+
+	var transcoderRule []interface{}
+	for _, transcoderItem := range transcoder {
+		transcoderRule = append(transcoderRule, transcoderItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.WatchLogs(opts, "FailedVerification", transcoderRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(JobsManagerFailedVerification)
+				if err := _JobsManager.contract.UnpackLog(event, "FailedVerification", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// JobsManagerNewClaimIterator is returned from FilterNewClaim and is used to iterate over the raw logs and unpacked data for NewClaim events raised by the JobsManager contract.
+type JobsManagerNewClaimIterator struct {
+	Event *JobsManagerNewClaim // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *JobsManagerNewClaimIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(JobsManagerNewClaim)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(JobsManagerNewClaim)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *JobsManagerNewClaimIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *JobsManagerNewClaimIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// JobsManagerNewClaim represents a NewClaim event raised by the JobsManager contract.
+type JobsManagerNewClaim struct {
+	Transcoder common.Address
+	JobId      *big.Int
+	ClaimId    *big.Int
+	Raw        types.Log // Blockchain specific contextual infos
+}
+
+// FilterNewClaim is a free log retrieval operation binding the contract event 0x83bd61fdfc2d435598c85b87527fb51d01971ab4904c8d41410f6d7b2ffb29de.
+//
+// Solidity: event NewClaim(transcoder indexed address, jobId indexed uint256, claimId uint256)
+func (_JobsManager *JobsManagerFilterer) FilterNewClaim(opts *bind.FilterOpts, transcoder []common.Address, jobId []*big.Int) (*JobsManagerNewClaimIterator, error) {
+
+	var transcoderRule []interface{}
+	for _, transcoderItem := range transcoder {
+		transcoderRule = append(transcoderRule, transcoderItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.FilterLogs(opts, "NewClaim", transcoderRule, jobIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return &JobsManagerNewClaimIterator{contract: _JobsManager.contract, event: "NewClaim", logs: logs, sub: sub}, nil
+}
+
+// WatchNewClaim is a free log subscription operation binding the contract event 0x83bd61fdfc2d435598c85b87527fb51d01971ab4904c8d41410f6d7b2ffb29de.
+//
+// Solidity: event NewClaim(transcoder indexed address, jobId indexed uint256, claimId uint256)
+func (_JobsManager *JobsManagerFilterer) WatchNewClaim(opts *bind.WatchOpts, sink chan<- *JobsManagerNewClaim, transcoder []common.Address, jobId []*big.Int) (event.Subscription, error) {
+
+	var transcoderRule []interface{}
+	for _, transcoderItem := range transcoder {
+		transcoderRule = append(transcoderRule, transcoderItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.WatchLogs(opts, "NewClaim", transcoderRule, jobIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(JobsManagerNewClaim)
+				if err := _JobsManager.contract.UnpackLog(event, "NewClaim", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// JobsManagerNewJobIterator is returned from FilterNewJob and is used to iterate over the raw logs and unpacked data for NewJob events raised by the JobsManager contract.
+type JobsManagerNewJobIterator struct {
+	Event *JobsManagerNewJob // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *JobsManagerNewJobIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(JobsManagerNewJob)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(JobsManagerNewJob)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *JobsManagerNewJobIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *JobsManagerNewJobIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// JobsManagerNewJob represents a NewJob event raised by the JobsManager contract.
+type JobsManagerNewJob struct {
+	Broadcaster        common.Address
+	JobId              *big.Int
+	StreamId           string
+	TranscodingOptions string
+	MaxPricePerSegment *big.Int
+	CreationBlock      *big.Int
+	Raw                types.Log // Blockchain specific contextual infos
+}
+
+// FilterNewJob is a free log retrieval operation binding the contract event 0x167f465188f71efa9880c291714e13242987d056e8148687871fae51457ae6e2.
+//
+// Solidity: event NewJob(broadcaster indexed address, jobId uint256, streamId string, transcodingOptions string, maxPricePerSegment uint256, creationBlock uint256)
+func (_JobsManager *JobsManagerFilterer) FilterNewJob(opts *bind.FilterOpts, broadcaster []common.Address) (*JobsManagerNewJobIterator, error) {
+
+	var broadcasterRule []interface{}
+	for _, broadcasterItem := range broadcaster {
+		broadcasterRule = append(broadcasterRule, broadcasterItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.FilterLogs(opts, "NewJob", broadcasterRule)
+	if err != nil {
+		return nil, err
+	}
+	return &JobsManagerNewJobIterator{contract: _JobsManager.contract, event: "NewJob", logs: logs, sub: sub}, nil
+}
+
+// WatchNewJob is a free log subscription operation binding the contract event 0x167f465188f71efa9880c291714e13242987d056e8148687871fae51457ae6e2.
+//
+// Solidity: event NewJob(broadcaster indexed address, jobId uint256, streamId string, transcodingOptions string, maxPricePerSegment uint256, creationBlock uint256)
+func (_JobsManager *JobsManagerFilterer) WatchNewJob(opts *bind.WatchOpts, sink chan<- *JobsManagerNewJob, broadcaster []common.Address) (event.Subscription, error) {
+
+	var broadcasterRule []interface{}
+	for _, broadcasterItem := range broadcaster {
+		broadcasterRule = append(broadcasterRule, broadcasterItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.WatchLogs(opts, "NewJob", broadcasterRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(JobsManagerNewJob)
+				if err := _JobsManager.contract.UnpackLog(event, "NewJob", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// JobsManagerParameterUpdateIterator is returned from FilterParameterUpdate and is used to iterate over the raw logs and unpacked data for ParameterUpdate events raised by the JobsManager contract.
+type JobsManagerParameterUpdateIterator struct {
+	Event *JobsManagerParameterUpdate // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *JobsManagerParameterUpdateIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(JobsManagerParameterUpdate)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(JobsManagerParameterUpdate)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *JobsManagerParameterUpdateIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *JobsManagerParameterUpdateIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// JobsManagerParameterUpdate represents a ParameterUpdate event raised by the JobsManager contract.
+type JobsManagerParameterUpdate struct {
+	Param string
+	Raw   types.Log // Blockchain specific contextual infos
+}
+
+// FilterParameterUpdate is a free log retrieval operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
+//
+// Solidity: event ParameterUpdate(param string)
+func (_JobsManager *JobsManagerFilterer) FilterParameterUpdate(opts *bind.FilterOpts) (*JobsManagerParameterUpdateIterator, error) {
+
+	logs, sub, err := _JobsManager.contract.FilterLogs(opts, "ParameterUpdate")
+	if err != nil {
+		return nil, err
+	}
+	return &JobsManagerParameterUpdateIterator{contract: _JobsManager.contract, event: "ParameterUpdate", logs: logs, sub: sub}, nil
+}
+
+// WatchParameterUpdate is a free log subscription operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
+//
+// Solidity: event ParameterUpdate(param string)
+func (_JobsManager *JobsManagerFilterer) WatchParameterUpdate(opts *bind.WatchOpts, sink chan<- *JobsManagerParameterUpdate) (event.Subscription, error) {
+
+	logs, sub, err := _JobsManager.contract.WatchLogs(opts, "ParameterUpdate")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(JobsManagerParameterUpdate)
+				if err := _JobsManager.contract.UnpackLog(event, "ParameterUpdate", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// JobsManagerPassedVerificationIterator is returned from FilterPassedVerification and is used to iterate over the raw logs and unpacked data for PassedVerification events raised by the JobsManager contract.
+type JobsManagerPassedVerificationIterator struct {
+	Event *JobsManagerPassedVerification // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *JobsManagerPassedVerificationIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(JobsManagerPassedVerification)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(JobsManagerPassedVerification)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *JobsManagerPassedVerificationIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *JobsManagerPassedVerificationIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// JobsManagerPassedVerification represents a PassedVerification event raised by the JobsManager contract.
+type JobsManagerPassedVerification struct {
+	Transcoder    common.Address
+	JobId         *big.Int
+	ClaimId       *big.Int
+	SegmentNumber *big.Int
+	Raw           types.Log // Blockchain specific contextual infos
+}
+
+// FilterPassedVerification is a free log retrieval operation binding the contract event 0x18d2d655e3f8d4b44ce95ed671c3f12339b2863d065ef91e970ac87826f45d8e.
+//
+// Solidity: event PassedVerification(transcoder indexed address, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256)
+func (_JobsManager *JobsManagerFilterer) FilterPassedVerification(opts *bind.FilterOpts, transcoder []common.Address, jobId []*big.Int, claimId []*big.Int) (*JobsManagerPassedVerificationIterator, error) {
+
+	var transcoderRule []interface{}
+	for _, transcoderItem := range transcoder {
+		transcoderRule = append(transcoderRule, transcoderItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.FilterLogs(opts, "PassedVerification", transcoderRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return &JobsManagerPassedVerificationIterator{contract: _JobsManager.contract, event: "PassedVerification", logs: logs, sub: sub}, nil
+}
+
+// WatchPassedVerification is a free log subscription operation binding the contract event 0x18d2d655e3f8d4b44ce95ed671c3f12339b2863d065ef91e970ac87826f45d8e.
+//
+// Solidity: event PassedVerification(transcoder indexed address, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256)
+func (_JobsManager *JobsManagerFilterer) WatchPassedVerification(opts *bind.WatchOpts, sink chan<- *JobsManagerPassedVerification, transcoder []common.Address, jobId []*big.Int, claimId []*big.Int) (event.Subscription, error) {
+
+	var transcoderRule []interface{}
+	for _, transcoderItem := range transcoder {
+		transcoderRule = append(transcoderRule, transcoderItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.WatchLogs(opts, "PassedVerification", transcoderRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(JobsManagerPassedVerification)
+				if err := _JobsManager.contract.UnpackLog(event, "PassedVerification", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// JobsManagerSetControllerIterator is returned from FilterSetController and is used to iterate over the raw logs and unpacked data for SetController events raised by the JobsManager contract.
+type JobsManagerSetControllerIterator struct {
+	Event *JobsManagerSetController // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *JobsManagerSetControllerIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(JobsManagerSetController)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(JobsManagerSetController)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *JobsManagerSetControllerIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *JobsManagerSetControllerIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// JobsManagerSetController represents a SetController event raised by the JobsManager contract.
+type JobsManagerSetController struct {
+	Controller common.Address
+	Raw        types.Log // Blockchain specific contextual infos
+}
+
+// FilterSetController is a free log retrieval operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
+//
+// Solidity: event SetController(controller address)
+func (_JobsManager *JobsManagerFilterer) FilterSetController(opts *bind.FilterOpts) (*JobsManagerSetControllerIterator, error) {
+
+	logs, sub, err := _JobsManager.contract.FilterLogs(opts, "SetController")
+	if err != nil {
+		return nil, err
+	}
+	return &JobsManagerSetControllerIterator{contract: _JobsManager.contract, event: "SetController", logs: logs, sub: sub}, nil
+}
+
+// WatchSetController is a free log subscription operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
+//
+// Solidity: event SetController(controller address)
+func (_JobsManager *JobsManagerFilterer) WatchSetController(opts *bind.WatchOpts, sink chan<- *JobsManagerSetController) (event.Subscription, error) {
+
+	logs, sub, err := _JobsManager.contract.WatchLogs(opts, "SetController")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(JobsManagerSetController)
+				if err := _JobsManager.contract.UnpackLog(event, "SetController", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// JobsManagerVerifyIterator is returned from FilterVerify and is used to iterate over the raw logs and unpacked data for Verify events raised by the JobsManager contract.
+type JobsManagerVerifyIterator struct {
+	Event *JobsManagerVerify // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *JobsManagerVerifyIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(JobsManagerVerify)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(JobsManagerVerify)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *JobsManagerVerifyIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *JobsManagerVerifyIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// JobsManagerVerify represents a Verify event raised by the JobsManager contract.
+type JobsManagerVerify struct {
+	Transcoder    common.Address
+	JobId         *big.Int
+	ClaimId       *big.Int
+	SegmentNumber *big.Int
+	Raw           types.Log // Blockchain specific contextual infos
+}
+
+// FilterVerify is a free log retrieval operation binding the contract event 0x31e97f52032376a943c45aefa03fa9c7467b54ba1d66b85e54686424108209e3.
+//
+// Solidity: event Verify(transcoder indexed address, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256)
+func (_JobsManager *JobsManagerFilterer) FilterVerify(opts *bind.FilterOpts, transcoder []common.Address, jobId []*big.Int, claimId []*big.Int) (*JobsManagerVerifyIterator, error) {
+
+	var transcoderRule []interface{}
+	for _, transcoderItem := range transcoder {
+		transcoderRule = append(transcoderRule, transcoderItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.FilterLogs(opts, "Verify", transcoderRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return &JobsManagerVerifyIterator{contract: _JobsManager.contract, event: "Verify", logs: logs, sub: sub}, nil
+}
+
+// WatchVerify is a free log subscription operation binding the contract event 0x31e97f52032376a943c45aefa03fa9c7467b54ba1d66b85e54686424108209e3.
+//
+// Solidity: event Verify(transcoder indexed address, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256)
+func (_JobsManager *JobsManagerFilterer) WatchVerify(opts *bind.WatchOpts, sink chan<- *JobsManagerVerify, transcoder []common.Address, jobId []*big.Int, claimId []*big.Int) (event.Subscription, error) {
+
+	var transcoderRule []interface{}
+	for _, transcoderItem := range transcoder {
+		transcoderRule = append(transcoderRule, transcoderItem)
+	}
+	var jobIdRule []interface{}
+	for _, jobIdItem := range jobId {
+		jobIdRule = append(jobIdRule, jobIdItem)
+	}
+	var claimIdRule []interface{}
+	for _, claimIdItem := range claimId {
+		claimIdRule = append(claimIdRule, claimIdItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.WatchLogs(opts, "Verify", transcoderRule, jobIdRule, claimIdRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(JobsManagerVerify)
+				if err := _JobsManager.contract.UnpackLog(event, "Verify", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// JobsManagerWithdrawIterator is returned from FilterWithdraw and is used to iterate over the raw logs and unpacked data for Withdraw events raised by the JobsManager contract.
+type JobsManagerWithdrawIterator struct {
+	Event *JobsManagerWithdraw // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *JobsManagerWithdrawIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(JobsManagerWithdraw)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(JobsManagerWithdraw)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *JobsManagerWithdrawIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *JobsManagerWithdrawIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// JobsManagerWithdraw represents a Withdraw event raised by the JobsManager contract.
+type JobsManagerWithdraw struct {
+	Broadcaster common.Address
+	Raw         types.Log // Blockchain specific contextual infos
+}
+
+// FilterWithdraw is a free log retrieval operation binding the contract event 0xf67611512e0a2d90c96fd3f08dca4971bc45fba9dc679eabe839a32abbe58a8e.
+//
+// Solidity: event Withdraw(broadcaster indexed address)
+func (_JobsManager *JobsManagerFilterer) FilterWithdraw(opts *bind.FilterOpts, broadcaster []common.Address) (*JobsManagerWithdrawIterator, error) {
+
+	var broadcasterRule []interface{}
+	for _, broadcasterItem := range broadcaster {
+		broadcasterRule = append(broadcasterRule, broadcasterItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.FilterLogs(opts, "Withdraw", broadcasterRule)
+	if err != nil {
+		return nil, err
+	}
+	return &JobsManagerWithdrawIterator{contract: _JobsManager.contract, event: "Withdraw", logs: logs, sub: sub}, nil
+}
+
+// WatchWithdraw is a free log subscription operation binding the contract event 0xf67611512e0a2d90c96fd3f08dca4971bc45fba9dc679eabe839a32abbe58a8e.
+//
+// Solidity: event Withdraw(broadcaster indexed address)
+func (_JobsManager *JobsManagerFilterer) WatchWithdraw(opts *bind.WatchOpts, sink chan<- *JobsManagerWithdraw, broadcaster []common.Address) (event.Subscription, error) {
+
+	var broadcasterRule []interface{}
+	for _, broadcasterItem := range broadcaster {
+		broadcasterRule = append(broadcasterRule, broadcasterItem)
+	}
+
+	logs, sub, err := _JobsManager.contract.WatchLogs(opts, "Withdraw", broadcasterRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(JobsManagerWithdraw)
+				if err := _JobsManager.contract.UnpackLog(event, "Withdraw", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
 }

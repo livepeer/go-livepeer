@@ -47,6 +47,7 @@ var (
 	headHeaderKey = []byte("LastHeader")
 	headBlockKey  = []byte("LastBlock")
 	headFastKey   = []byte("LastFast")
+	trieSyncKey   = []byte("TrieSync")
 
 	// Data item prefixes (use single byte to avoid mixing data types, avoid `i`).
 	headerPrefix        = []byte("h") // headerPrefix + num (uint64 big endian) + hash -> header
@@ -70,13 +71,13 @@ var (
 
 	ErrChainConfigNotFound = errors.New("ChainConfig not found") // general config not found error
 
-	preimageCounter    = metrics.NewCounter("db/preimage/total")
-	preimageHitCounter = metrics.NewCounter("db/preimage/hits")
+	preimageCounter    = metrics.NewRegisteredCounter("db/preimage/total", nil)
+	preimageHitCounter = metrics.NewRegisteredCounter("db/preimage/hits", nil)
 )
 
-// txLookupEntry is a positional metadata to help looking up the data content of
+// TxLookupEntry is a positional metadata to help looking up the data content of
 // a transaction or receipt given only its hash.
-type txLookupEntry struct {
+type TxLookupEntry struct {
 	BlockHash  common.Hash
 	BlockIndex uint64
 	Index      uint64
@@ -144,6 +145,16 @@ func GetHeadFastBlockHash(db DatabaseReader) common.Hash {
 		return common.Hash{}
 	}
 	return common.BytesToHash(data)
+}
+
+// GetTrieSyncProgress retrieves the number of tries nodes fast synced to allow
+// reportinc correct numbers across restarts.
+func GetTrieSyncProgress(db DatabaseReader) uint64 {
+	data, _ := db.Get(trieSyncKey)
+	if len(data) == 0 {
+		return 0
+	}
+	return new(big.Int).SetBytes(data).Uint64()
 }
 
 // GetHeaderRLP retrieves a block header in its raw RLP database encoding, or nil
@@ -260,7 +271,7 @@ func GetTxLookupEntry(db DatabaseReader, hash common.Hash) (common.Hash, uint64,
 		return common.Hash{}, 0, 0
 	}
 	// Parse and return the contents of the lookup entry
-	var entry txLookupEntry
+	var entry TxLookupEntry
 	if err := rlp.DecodeBytes(data, &entry); err != nil {
 		log.Error("Invalid lookup entry RLP", "hash", hash, "err", err)
 		return common.Hash{}, 0, 0
@@ -296,7 +307,7 @@ func GetTransaction(db DatabaseReader, hash common.Hash) (*types.Transaction, co
 	if len(data) == 0 {
 		return nil, common.Hash{}, 0, 0
 	}
-	var entry txLookupEntry
+	var entry TxLookupEntry
 	if err := rlp.DecodeBytes(data, &entry); err != nil {
 		return nil, common.Hash{}, 0, 0
 	}
@@ -332,14 +343,13 @@ func GetReceipt(db DatabaseReader, hash common.Hash) (*types.Receipt, common.Has
 
 // GetBloomBits retrieves the compressed bloom bit vector belonging to the given
 // section and bit index from the.
-func GetBloomBits(db DatabaseReader, bit uint, section uint64, head common.Hash) []byte {
+func GetBloomBits(db DatabaseReader, bit uint, section uint64, head common.Hash) ([]byte, error) {
 	key := append(append(bloomBitsPrefix, make([]byte, 10)...), head.Bytes()...)
 
 	binary.BigEndian.PutUint16(key[1:], uint16(bit))
 	binary.BigEndian.PutUint64(key[3:], section)
 
-	bits, _ := db.Get(key)
-	return bits
+	return db.Get(key)
 }
 
 // WriteCanonicalHash stores the canonical hash for the given block number.
@@ -371,6 +381,15 @@ func WriteHeadBlockHash(db ethdb.Putter, hash common.Hash) error {
 func WriteHeadFastBlockHash(db ethdb.Putter, hash common.Hash) error {
 	if err := db.Put(headFastKey, hash.Bytes()); err != nil {
 		log.Crit("Failed to store last fast block's hash", "err", err)
+	}
+	return nil
+}
+
+// WriteTrieSyncProgress stores the fast sync trie process counter to support
+// retrieving it across restarts.
+func WriteTrieSyncProgress(db ethdb.Putter, count uint64) error {
+	if err := db.Put(trieSyncKey, new(big.Int).SetUint64(count).Bytes()); err != nil {
+		log.Crit("Failed to store fast sync trie progress", "err", err)
 	}
 	return nil
 }
@@ -465,7 +484,7 @@ func WriteBlockReceipts(db ethdb.Putter, hash common.Hash, number uint64, receip
 func WriteTxLookupEntries(db ethdb.Putter, block *types.Block) error {
 	// Iterate over each transaction and encode its metadata
 	for i, tx := range block.Transactions() {
-		entry := txLookupEntry{
+		entry := TxLookupEntry{
 			BlockHash:  block.Hash(),
 			BlockIndex: block.NumberU64(),
 			Index:      uint64(i),

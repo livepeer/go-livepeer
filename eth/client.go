@@ -785,25 +785,25 @@ func (c *client) getNonce() (uint64, error) {
 	defer c.nonceLock.Unlock()
 
 	if !c.nonceInitialized {
-		netNonce, err := c.backend.PendingNonceAt(context.Background(), c.Account().Address)
+		nextNonce, err := c.backend.PendingNonceAt(context.Background(), c.Account().Address)
 		if err != nil {
 			return 0, err
 		}
 
 		c.nonceInitialized = true
-		c.nextNonce = netNonce
+		c.nextNonce = nextNonce
 
 		return c.nextNonce, nil
 	} else {
 		c.nextNonce++
 
-		netNonce, err := c.backend.PendingNonceAt(context.Background(), c.Account().Address)
+		nextNonce, err := c.backend.PendingNonceAt(context.Background(), c.Account().Address)
 		if err != nil {
 			return 0, err
 		}
 
-		if netNonce > c.nextNonce {
-			c.nextNonce = netNonce
+		if nextNonce > c.nextNonce {
+			c.nextNonce = nextNonce
 		}
 
 		return c.nextNonce, nil
