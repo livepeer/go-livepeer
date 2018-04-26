@@ -39,7 +39,7 @@ var (
 )
 
 type LivepeerEthClient interface {
-	Setup(password string, gasLimit, gasPrice *big.Int) error
+	Setup(password string, gasLimit uint64, gasPrice *big.Int) error
 	Account() accounts.Account
 	Backend() (*ethclient.Client, error)
 
@@ -153,7 +153,7 @@ func NewClient(accountAddr common.Address, keystoreDir string, backend *ethclien
 	}, nil
 }
 
-func (c *client) Setup(password string, gasLimit, gasPrice *big.Int) error {
+func (c *client) Setup(password string, gasLimit uint64, gasPrice *big.Int) error {
 	err := c.accountManager.Unlock(password)
 	if err != nil {
 		return err

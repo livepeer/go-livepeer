@@ -102,14 +102,14 @@ func (am *AccountManager) Lock() error {
 
 // Create transact opts for client use - account must be unlocked
 // Can optionally set gas limit and gas price used
-func (am *AccountManager) CreateTransactOpts(gasLimit, gasPrice *big.Int) (*bind.TransactOpts, error) {
+func (am *AccountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error) {
 	if !am.unlocked {
 		return nil, ErrLocked
 	}
 
 	return &bind.TransactOpts{
 		From:     am.Account.Address,
-		GasLimit: gasLimit.Uint64(),
+		GasLimit: gasLimit,
 		GasPrice: gasPrice,
 		Signer: func(signer types.Signer, address common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			if address != am.Account.Address {
