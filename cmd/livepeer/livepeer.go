@@ -305,18 +305,12 @@ func main() {
 			return
 		}
 
-		var bigGasLimit *big.Int
 		var bigGasPrice *big.Int
-
-		if *gasLimit > 0 {
-			bigGasLimit = big.NewInt(int64(*gasLimit))
-		}
-
 		if *gasPrice > 0 {
 			bigGasPrice = big.NewInt(int64(*gasPrice))
 		}
 
-		err = client.Setup(*ethPassword, bigGasLimit, bigGasPrice)
+		err = client.Setup(*ethPassword, uint64(*gasLimit), bigGasPrice)
 		if err != nil {
 			glog.Errorf("Failed to setup client: %v", err)
 			return

@@ -34,9 +34,9 @@ type StubClient struct {
 	BlockHashToReturn common.Hash
 }
 
-func (e *StubClient) Setup(password string, gasLimit, gasPrice *big.Int) error { return nil }
-func (e *StubClient) Account() accounts.Account                                { return accounts.Account{} }
-func (e *StubClient) Backend() (*ethclient.Client, error)                      { return nil, ErrMissingBackend }
+func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) error { return nil }
+func (e *StubClient) Account() accounts.Account                                       { return accounts.Account{} }
+func (e *StubClient) Backend() (*ethclient.Client, error)                             { return nil, ErrMissingBackend }
 
 // Rounds
 
