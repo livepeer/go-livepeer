@@ -187,5 +187,10 @@ func TestInvalidFile(t *testing.T) {
 		t.Error(err)
 	}
 
-	// XXX test bad output file names / directories
+	// test bad output file names / directories
+	tr = NewFFMpegSegmentTranscoder(configs, "/asdf/qwerty!")
+	_, err = tr.Transcode("test.ts")
+	if err == nil || err.Error() != "No such file or directory" {
+		t.Error(err)
+	}
 }
