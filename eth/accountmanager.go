@@ -109,7 +109,7 @@ func (am *AccountManager) CreateTransactOpts(gasLimit, gasPrice *big.Int) (*bind
 
 	return &bind.TransactOpts{
 		From:     am.Account.Address,
-		GasLimit: gasLimit,
+		GasLimit: gasLimit.Uint64(),
 		GasPrice: gasPrice,
 		Signer: func(signer types.Signer, address common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			if address != am.Account.Address {

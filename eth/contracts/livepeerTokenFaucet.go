@@ -7,10 +7,12 @@ import (
 	"math/big"
 	"strings"
 
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 )
 
 // LivepeerTokenFaucetABI is the input ABI used to generate the binding from.
@@ -20,6 +22,7 @@ const LivepeerTokenFaucetABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"req
 type LivepeerTokenFaucet struct {
 	LivepeerTokenFaucetCaller     // Read-only binding to the contract
 	LivepeerTokenFaucetTransactor // Write-only binding to the contract
+	LivepeerTokenFaucetFilterer   // Log filterer for contract events
 }
 
 // LivepeerTokenFaucetCaller is an auto generated read-only Go binding around an Ethereum contract.
@@ -29,6 +32,11 @@ type LivepeerTokenFaucetCaller struct {
 
 // LivepeerTokenFaucetTransactor is an auto generated write-only Go binding around an Ethereum contract.
 type LivepeerTokenFaucetTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// LivepeerTokenFaucetFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type LivepeerTokenFaucetFilterer struct {
 	contract *bind.BoundContract // Generic contract wrapper for the low level calls
 }
 
@@ -71,16 +79,16 @@ type LivepeerTokenFaucetTransactorRaw struct {
 
 // NewLivepeerTokenFaucet creates a new instance of LivepeerTokenFaucet, bound to a specific deployed contract.
 func NewLivepeerTokenFaucet(address common.Address, backend bind.ContractBackend) (*LivepeerTokenFaucet, error) {
-	contract, err := bindLivepeerTokenFaucet(address, backend, backend)
+	contract, err := bindLivepeerTokenFaucet(address, backend, backend, backend)
 	if err != nil {
 		return nil, err
 	}
-	return &LivepeerTokenFaucet{LivepeerTokenFaucetCaller: LivepeerTokenFaucetCaller{contract: contract}, LivepeerTokenFaucetTransactor: LivepeerTokenFaucetTransactor{contract: contract}}, nil
+	return &LivepeerTokenFaucet{LivepeerTokenFaucetCaller: LivepeerTokenFaucetCaller{contract: contract}, LivepeerTokenFaucetTransactor: LivepeerTokenFaucetTransactor{contract: contract}, LivepeerTokenFaucetFilterer: LivepeerTokenFaucetFilterer{contract: contract}}, nil
 }
 
 // NewLivepeerTokenFaucetCaller creates a new read-only instance of LivepeerTokenFaucet, bound to a specific deployed contract.
 func NewLivepeerTokenFaucetCaller(address common.Address, caller bind.ContractCaller) (*LivepeerTokenFaucetCaller, error) {
-	contract, err := bindLivepeerTokenFaucet(address, caller, nil)
+	contract, err := bindLivepeerTokenFaucet(address, caller, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -89,20 +97,29 @@ func NewLivepeerTokenFaucetCaller(address common.Address, caller bind.ContractCa
 
 // NewLivepeerTokenFaucetTransactor creates a new write-only instance of LivepeerTokenFaucet, bound to a specific deployed contract.
 func NewLivepeerTokenFaucetTransactor(address common.Address, transactor bind.ContractTransactor) (*LivepeerTokenFaucetTransactor, error) {
-	contract, err := bindLivepeerTokenFaucet(address, nil, transactor)
+	contract, err := bindLivepeerTokenFaucet(address, nil, transactor, nil)
 	if err != nil {
 		return nil, err
 	}
 	return &LivepeerTokenFaucetTransactor{contract: contract}, nil
 }
 
+// NewLivepeerTokenFaucetFilterer creates a new log filterer instance of LivepeerTokenFaucet, bound to a specific deployed contract.
+func NewLivepeerTokenFaucetFilterer(address common.Address, filterer bind.ContractFilterer) (*LivepeerTokenFaucetFilterer, error) {
+	contract, err := bindLivepeerTokenFaucet(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &LivepeerTokenFaucetFilterer{contract: contract}, nil
+}
+
 // bindLivepeerTokenFaucet binds a generic wrapper to an already deployed contract.
-func bindLivepeerTokenFaucet(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor) (*bind.BoundContract, error) {
+func bindLivepeerTokenFaucet(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
 	parsed, err := abi.JSON(strings.NewReader(LivepeerTokenFaucetABI))
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor), nil
+	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -381,4 +398,278 @@ func (_LivepeerTokenFaucet *LivepeerTokenFaucetSession) TransferOwnership(newOwn
 // Solidity: function transferOwnership(newOwner address) returns()
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetTransactorSession) TransferOwnership(newOwner common.Address) (*types.Transaction, error) {
 	return _LivepeerTokenFaucet.Contract.TransferOwnership(&_LivepeerTokenFaucet.TransactOpts, newOwner)
+}
+
+// LivepeerTokenFaucetOwnershipTransferredIterator is returned from FilterOwnershipTransferred and is used to iterate over the raw logs and unpacked data for OwnershipTransferred events raised by the LivepeerTokenFaucet contract.
+type LivepeerTokenFaucetOwnershipTransferredIterator struct {
+	Event *LivepeerTokenFaucetOwnershipTransferred // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *LivepeerTokenFaucetOwnershipTransferredIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(LivepeerTokenFaucetOwnershipTransferred)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(LivepeerTokenFaucetOwnershipTransferred)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *LivepeerTokenFaucetOwnershipTransferredIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *LivepeerTokenFaucetOwnershipTransferredIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// LivepeerTokenFaucetOwnershipTransferred represents a OwnershipTransferred event raised by the LivepeerTokenFaucet contract.
+type LivepeerTokenFaucetOwnershipTransferred struct {
+	PreviousOwner common.Address
+	NewOwner      common.Address
+	Raw           types.Log // Blockchain specific contextual infos
+}
+
+// FilterOwnershipTransferred is a free log retrieval operation binding the contract event 0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0.
+//
+// Solidity: event OwnershipTransferred(previousOwner indexed address, newOwner indexed address)
+func (_LivepeerTokenFaucet *LivepeerTokenFaucetFilterer) FilterOwnershipTransferred(opts *bind.FilterOpts, previousOwner []common.Address, newOwner []common.Address) (*LivepeerTokenFaucetOwnershipTransferredIterator, error) {
+
+	var previousOwnerRule []interface{}
+	for _, previousOwnerItem := range previousOwner {
+		previousOwnerRule = append(previousOwnerRule, previousOwnerItem)
+	}
+	var newOwnerRule []interface{}
+	for _, newOwnerItem := range newOwner {
+		newOwnerRule = append(newOwnerRule, newOwnerItem)
+	}
+
+	logs, sub, err := _LivepeerTokenFaucet.contract.FilterLogs(opts, "OwnershipTransferred", previousOwnerRule, newOwnerRule)
+	if err != nil {
+		return nil, err
+	}
+	return &LivepeerTokenFaucetOwnershipTransferredIterator{contract: _LivepeerTokenFaucet.contract, event: "OwnershipTransferred", logs: logs, sub: sub}, nil
+}
+
+// WatchOwnershipTransferred is a free log subscription operation binding the contract event 0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0.
+//
+// Solidity: event OwnershipTransferred(previousOwner indexed address, newOwner indexed address)
+func (_LivepeerTokenFaucet *LivepeerTokenFaucetFilterer) WatchOwnershipTransferred(opts *bind.WatchOpts, sink chan<- *LivepeerTokenFaucetOwnershipTransferred, previousOwner []common.Address, newOwner []common.Address) (event.Subscription, error) {
+
+	var previousOwnerRule []interface{}
+	for _, previousOwnerItem := range previousOwner {
+		previousOwnerRule = append(previousOwnerRule, previousOwnerItem)
+	}
+	var newOwnerRule []interface{}
+	for _, newOwnerItem := range newOwner {
+		newOwnerRule = append(newOwnerRule, newOwnerItem)
+	}
+
+	logs, sub, err := _LivepeerTokenFaucet.contract.WatchLogs(opts, "OwnershipTransferred", previousOwnerRule, newOwnerRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(LivepeerTokenFaucetOwnershipTransferred)
+				if err := _LivepeerTokenFaucet.contract.UnpackLog(event, "OwnershipTransferred", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// LivepeerTokenFaucetRequestIterator is returned from FilterRequest and is used to iterate over the raw logs and unpacked data for Request events raised by the LivepeerTokenFaucet contract.
+type LivepeerTokenFaucetRequestIterator struct {
+	Event *LivepeerTokenFaucetRequest // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *LivepeerTokenFaucetRequestIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(LivepeerTokenFaucetRequest)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(LivepeerTokenFaucetRequest)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *LivepeerTokenFaucetRequestIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *LivepeerTokenFaucetRequestIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// LivepeerTokenFaucetRequest represents a Request event raised by the LivepeerTokenFaucet contract.
+type LivepeerTokenFaucetRequest struct {
+	To     common.Address
+	Amount *big.Int
+	Raw    types.Log // Blockchain specific contextual infos
+}
+
+// FilterRequest is a free log retrieval operation binding the contract event 0xe31c60e37ab1301f69f01b436a1d13486e6c16cc22c888a08c0e64a39230b6ac.
+//
+// Solidity: event Request(to indexed address, amount uint256)
+func (_LivepeerTokenFaucet *LivepeerTokenFaucetFilterer) FilterRequest(opts *bind.FilterOpts, to []common.Address) (*LivepeerTokenFaucetRequestIterator, error) {
+
+	var toRule []interface{}
+	for _, toItem := range to {
+		toRule = append(toRule, toItem)
+	}
+
+	logs, sub, err := _LivepeerTokenFaucet.contract.FilterLogs(opts, "Request", toRule)
+	if err != nil {
+		return nil, err
+	}
+	return &LivepeerTokenFaucetRequestIterator{contract: _LivepeerTokenFaucet.contract, event: "Request", logs: logs, sub: sub}, nil
+}
+
+// WatchRequest is a free log subscription operation binding the contract event 0xe31c60e37ab1301f69f01b436a1d13486e6c16cc22c888a08c0e64a39230b6ac.
+//
+// Solidity: event Request(to indexed address, amount uint256)
+func (_LivepeerTokenFaucet *LivepeerTokenFaucetFilterer) WatchRequest(opts *bind.WatchOpts, sink chan<- *LivepeerTokenFaucetRequest, to []common.Address) (event.Subscription, error) {
+
+	var toRule []interface{}
+	for _, toItem := range to {
+		toRule = append(toRule, toItem)
+	}
+
+	logs, sub, err := _LivepeerTokenFaucet.contract.WatchLogs(opts, "Request", toRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(LivepeerTokenFaucetRequest)
+				if err := _LivepeerTokenFaucet.contract.UnpackLog(event, "Request", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
 }

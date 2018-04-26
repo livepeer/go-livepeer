@@ -7,10 +7,12 @@ import (
 	"math/big"
 	"strings"
 
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 )
 
 // MinterABI is the input ABI used to generate the binding from.
@@ -20,6 +22,7 @@ const MinterABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"currentMintedTok
 type Minter struct {
 	MinterCaller     // Read-only binding to the contract
 	MinterTransactor // Write-only binding to the contract
+	MinterFilterer   // Log filterer for contract events
 }
 
 // MinterCaller is an auto generated read-only Go binding around an Ethereum contract.
@@ -29,6 +32,11 @@ type MinterCaller struct {
 
 // MinterTransactor is an auto generated write-only Go binding around an Ethereum contract.
 type MinterTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// MinterFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type MinterFilterer struct {
 	contract *bind.BoundContract // Generic contract wrapper for the low level calls
 }
 
@@ -71,16 +79,16 @@ type MinterTransactorRaw struct {
 
 // NewMinter creates a new instance of Minter, bound to a specific deployed contract.
 func NewMinter(address common.Address, backend bind.ContractBackend) (*Minter, error) {
-	contract, err := bindMinter(address, backend, backend)
+	contract, err := bindMinter(address, backend, backend, backend)
 	if err != nil {
 		return nil, err
 	}
-	return &Minter{MinterCaller: MinterCaller{contract: contract}, MinterTransactor: MinterTransactor{contract: contract}}, nil
+	return &Minter{MinterCaller: MinterCaller{contract: contract}, MinterTransactor: MinterTransactor{contract: contract}, MinterFilterer: MinterFilterer{contract: contract}}, nil
 }
 
 // NewMinterCaller creates a new read-only instance of Minter, bound to a specific deployed contract.
 func NewMinterCaller(address common.Address, caller bind.ContractCaller) (*MinterCaller, error) {
-	contract, err := bindMinter(address, caller, nil)
+	contract, err := bindMinter(address, caller, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -89,20 +97,29 @@ func NewMinterCaller(address common.Address, caller bind.ContractCaller) (*Minte
 
 // NewMinterTransactor creates a new write-only instance of Minter, bound to a specific deployed contract.
 func NewMinterTransactor(address common.Address, transactor bind.ContractTransactor) (*MinterTransactor, error) {
-	contract, err := bindMinter(address, nil, transactor)
+	contract, err := bindMinter(address, nil, transactor, nil)
 	if err != nil {
 		return nil, err
 	}
 	return &MinterTransactor{contract: contract}, nil
 }
 
+// NewMinterFilterer creates a new log filterer instance of Minter, bound to a specific deployed contract.
+func NewMinterFilterer(address common.Address, filterer bind.ContractFilterer) (*MinterFilterer, error) {
+	contract, err := bindMinter(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &MinterFilterer{contract: contract}, nil
+}
+
 // bindMinter binds a generic wrapper to an already deployed contract.
-func bindMinter(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor) (*bind.BoundContract, error) {
+func bindMinter(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
 	parsed, err := abi.JSON(strings.NewReader(MinterABI))
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor), nil
+	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -533,4 +550,371 @@ func (_Minter *MinterSession) TrustedWithdrawETH(_to common.Address, _amount *bi
 // Solidity: function trustedWithdrawETH(_to address, _amount uint256) returns()
 func (_Minter *MinterTransactorSession) TrustedWithdrawETH(_to common.Address, _amount *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.TrustedWithdrawETH(&_Minter.TransactOpts, _to, _amount)
+}
+
+// MinterParameterUpdateIterator is returned from FilterParameterUpdate and is used to iterate over the raw logs and unpacked data for ParameterUpdate events raised by the Minter contract.
+type MinterParameterUpdateIterator struct {
+	Event *MinterParameterUpdate // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *MinterParameterUpdateIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(MinterParameterUpdate)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(MinterParameterUpdate)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *MinterParameterUpdateIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *MinterParameterUpdateIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// MinterParameterUpdate represents a ParameterUpdate event raised by the Minter contract.
+type MinterParameterUpdate struct {
+	Param string
+	Raw   types.Log // Blockchain specific contextual infos
+}
+
+// FilterParameterUpdate is a free log retrieval operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
+//
+// Solidity: event ParameterUpdate(param string)
+func (_Minter *MinterFilterer) FilterParameterUpdate(opts *bind.FilterOpts) (*MinterParameterUpdateIterator, error) {
+
+	logs, sub, err := _Minter.contract.FilterLogs(opts, "ParameterUpdate")
+	if err != nil {
+		return nil, err
+	}
+	return &MinterParameterUpdateIterator{contract: _Minter.contract, event: "ParameterUpdate", logs: logs, sub: sub}, nil
+}
+
+// WatchParameterUpdate is a free log subscription operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
+//
+// Solidity: event ParameterUpdate(param string)
+func (_Minter *MinterFilterer) WatchParameterUpdate(opts *bind.WatchOpts, sink chan<- *MinterParameterUpdate) (event.Subscription, error) {
+
+	logs, sub, err := _Minter.contract.WatchLogs(opts, "ParameterUpdate")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(MinterParameterUpdate)
+				if err := _Minter.contract.UnpackLog(event, "ParameterUpdate", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// MinterSetControllerIterator is returned from FilterSetController and is used to iterate over the raw logs and unpacked data for SetController events raised by the Minter contract.
+type MinterSetControllerIterator struct {
+	Event *MinterSetController // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *MinterSetControllerIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(MinterSetController)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(MinterSetController)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *MinterSetControllerIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *MinterSetControllerIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// MinterSetController represents a SetController event raised by the Minter contract.
+type MinterSetController struct {
+	Controller common.Address
+	Raw        types.Log // Blockchain specific contextual infos
+}
+
+// FilterSetController is a free log retrieval operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
+//
+// Solidity: event SetController(controller address)
+func (_Minter *MinterFilterer) FilterSetController(opts *bind.FilterOpts) (*MinterSetControllerIterator, error) {
+
+	logs, sub, err := _Minter.contract.FilterLogs(opts, "SetController")
+	if err != nil {
+		return nil, err
+	}
+	return &MinterSetControllerIterator{contract: _Minter.contract, event: "SetController", logs: logs, sub: sub}, nil
+}
+
+// WatchSetController is a free log subscription operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
+//
+// Solidity: event SetController(controller address)
+func (_Minter *MinterFilterer) WatchSetController(opts *bind.WatchOpts, sink chan<- *MinterSetController) (event.Subscription, error) {
+
+	logs, sub, err := _Minter.contract.WatchLogs(opts, "SetController")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(MinterSetController)
+				if err := _Minter.contract.UnpackLog(event, "SetController", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// MinterSetCurrentRewardTokensIterator is returned from FilterSetCurrentRewardTokens and is used to iterate over the raw logs and unpacked data for SetCurrentRewardTokens events raised by the Minter contract.
+type MinterSetCurrentRewardTokensIterator struct {
+	Event *MinterSetCurrentRewardTokens // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *MinterSetCurrentRewardTokensIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(MinterSetCurrentRewardTokens)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(MinterSetCurrentRewardTokens)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *MinterSetCurrentRewardTokensIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *MinterSetCurrentRewardTokensIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// MinterSetCurrentRewardTokens represents a SetCurrentRewardTokens event raised by the Minter contract.
+type MinterSetCurrentRewardTokens struct {
+	CurrentMintableTokens *big.Int
+	CurrentInflation      *big.Int
+	Raw                   types.Log // Blockchain specific contextual infos
+}
+
+// FilterSetCurrentRewardTokens is a free log retrieval operation binding the contract event 0x39567a366345edf17f50c1967a31b597745186c4632f34c4f8ebe06b6890784d.
+//
+// Solidity: event SetCurrentRewardTokens(currentMintableTokens uint256, currentInflation uint256)
+func (_Minter *MinterFilterer) FilterSetCurrentRewardTokens(opts *bind.FilterOpts) (*MinterSetCurrentRewardTokensIterator, error) {
+
+	logs, sub, err := _Minter.contract.FilterLogs(opts, "SetCurrentRewardTokens")
+	if err != nil {
+		return nil, err
+	}
+	return &MinterSetCurrentRewardTokensIterator{contract: _Minter.contract, event: "SetCurrentRewardTokens", logs: logs, sub: sub}, nil
+}
+
+// WatchSetCurrentRewardTokens is a free log subscription operation binding the contract event 0x39567a366345edf17f50c1967a31b597745186c4632f34c4f8ebe06b6890784d.
+//
+// Solidity: event SetCurrentRewardTokens(currentMintableTokens uint256, currentInflation uint256)
+func (_Minter *MinterFilterer) WatchSetCurrentRewardTokens(opts *bind.WatchOpts, sink chan<- *MinterSetCurrentRewardTokens) (event.Subscription, error) {
+
+	logs, sub, err := _Minter.contract.WatchLogs(opts, "SetCurrentRewardTokens")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(MinterSetCurrentRewardTokens)
+				if err := _Minter.contract.UnpackLog(event, "SetCurrentRewardTokens", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
 }
