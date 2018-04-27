@@ -5,6 +5,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
 var (
@@ -78,7 +79,7 @@ type TokenPools struct {
 type Job struct {
 	JobId              *big.Int
 	StreamId           string
-	TranscodingOptions string
+	Profiles           []ffmpeg.VideoProfile
 	MaxPricePerSegment *big.Int
 	BroadcasterAddress common.Address
 	TranscoderAddress  common.Address

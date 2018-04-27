@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
-	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
@@ -114,19 +113,13 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 		return true, nil
 	}
 
-	tProfiles, err := txDataToVideoProfile(job.TranscodingOptions)
-	if err != nil {
-		glog.Errorf("Error processing transcoding options: %v", err)
-		return false, err
-	}
-
 	//Create transcode config, make sure the profiles are sorted
-	config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: tProfiles, JobID: job.JobId, PerformOnchainClaim: true}
-	glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.TranscodingOptions, config)
+	config := net.TranscodeConfig{StrmID: job.StreamId, Profiles: job.Profiles, JobID: job.JobId, PerformOnchainClaim: true}
+	glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.Profiles, config)
 
 	//Do The Transcoding
-	cm := eth.NewBasicClaimManager(job.StreamId, job.JobId, job.BroadcasterAddress, job.MaxPricePerSegment, tProfiles, s.node.Eth, s.node.Ipfs)
-	tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, s.node.WorkDir)
+	cm := eth.NewBasicClaimManager(job.StreamId, job.JobId, job.BroadcasterAddress, job.MaxPricePerSegment, job.Profiles, s.node.Eth, s.node.Ipfs)
+	tr := transcoder.NewFFMpegSegmentTranscoder(job.Profiles, s.node.WorkDir)
 	strmIDs, err := s.node.TranscodeAndBroadcast(config, cm, tr)
 	if err != nil {
 		glog.Errorf("Transcode Error: %v", err)
@@ -136,7 +129,7 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 	//Notify Broadcaster
 	sid := core.StreamID(job.StreamId)
 	vids := make(map[core.StreamID]ffmpeg.VideoProfile)
-	for i, vp := range tProfiles {
+	for i, vp := range job.Profiles {
 		vids[strmIDs[i]] = vp
 	}
 	if err = s.node.NotifyBroadcaster(sid.GetNodeID(), sid, vids); err != nil {
@@ -180,24 +173,6 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 	})
 
 	return true, nil
-}
-
-func txDataToVideoProfile(txData string) ([]ffmpeg.VideoProfile, error) {
-	profiles := make([]ffmpeg.VideoProfile, 0)
-
-	for i := 0; i+lpcommon.VideoProfileIDSize <= len(txData); i += lpcommon.VideoProfileIDSize {
-		txp := txData[i : i+lpcommon.VideoProfileIDSize]
-
-		p, ok := ffmpeg.VideoProfileLookup[lpcommon.VideoProfileNameLookup[txp]]
-		if !ok {
-			glog.Errorf("Cannot find video profile for job: %v", txp)
-			// return nil, core.ErrTranscode
-		} else {
-			profiles = append(profiles, p)
-		}
-	}
-
-	return profiles, nil
 }
 
 func parseNewJobLog(log types.Log) (broadcasterAddr common.Address, jid *big.Int, streamID string, transOptions string) {

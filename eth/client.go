@@ -647,12 +647,17 @@ func (c *client) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
 		return nil, err
 	}
 
+	profiles, err := common.TxDataToVideoProfile(jInfo.TranscodingOptions)
+	if err != nil {
+		return nil, err
+	}
+
 	return &lpTypes.Job{
 		JobId:              jobID,
 		StreamId:           jInfo.StreamId,
+		Profiles:           profiles,
 		MaxPricePerSegment: jInfo.MaxPricePerSegment,
 		BroadcasterAddress: jInfo.BroadcasterAddress,
-		TranscodingOptions: jInfo.TranscodingOptions,
 		TranscoderAddress:  jInfo.TranscoderAddress,
 		CreationRound:      jInfo.CreationRound,
 		CreationBlock:      jInfo.CreationBlock,

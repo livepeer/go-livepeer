@@ -3,8 +3,13 @@ package common
 import (
 	"fmt"
 	"math/big"
+	"sort"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/golang/glog"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
 var (
@@ -58,4 +63,32 @@ func Retry(attempts int, sleep time.Duration, fn func() error) error {
 	}
 
 	return nil
+}
+
+func TxDataToVideoProfile(txData string) ([]ffmpeg.VideoProfile, error) {
+	profiles := make([]ffmpeg.VideoProfile, 0)
+
+	for i := 0; i+VideoProfileIDSize <= len(txData); i += VideoProfileIDSize {
+		txp := txData[i : i+VideoProfileIDSize]
+
+		p, ok := ffmpeg.VideoProfileLookup[VideoProfileNameLookup[txp]]
+		if !ok {
+			glog.Errorf("Cannot find video profile for job: %v", txp)
+			// return nil, core.ErrTranscode
+		} else {
+			profiles = append(profiles, p)
+		}
+	}
+
+	return profiles, nil
+}
+
+func ProfilesToTranscodeOpts(profiles []ffmpeg.VideoProfile) []byte {
+	//Sort profiles first
+	sort.Sort(ffmpeg.ByName(profiles))
+	transOpts := []byte{}
+	for _, prof := range profiles {
+		transOpts = append(transOpts, crypto.Keccak256([]byte(prof.Name))[0:4]...)
+	}
+	return transOpts
 }
