@@ -19,7 +19,7 @@ type StubClaimManager struct {
 }
 
 func (cm *StubClaimManager) BroadcasterAddr() common.Address { return common.Address{} }
-func (cm *StubClaimManager) AddReceipt(seqNo int64, data []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error {
+func (cm *StubClaimManager) AddReceipt(seqNo int64, fname string, data []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error {
 	return nil
 }
 func (cm *StubClaimManager) SufficientBroadcasterDeposit() (bool, error) { return true, nil }

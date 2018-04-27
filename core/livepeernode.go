@@ -260,8 +260,8 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 			return // TODO return error?
 		}
 	}
+	// Create input file from segment. Removed after claiming complete or error
 	fname := path.Join(n.WorkDir, inName)
-	defer os.Remove(fname)
 	if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
 		glog.Errorf("Transcoder cannot write file: %v", err)
 		return // TODO return error?
@@ -272,6 +272,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	err := ffmpeg.CheckMediaLen(fname, 4*1.25*1000, 60*4*1.25)
 	if err != nil {
 		glog.Errorf("Media length check failed: %v", err)
+		os.Remove(fname)
 		return
 	}
 	//Do the transcoding
@@ -279,6 +280,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	tData, err := t.Transcode(fname)
 	if err != nil {
 		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
+		os.Remove(fname)
 		return
 	}
 	transcodeEnd := time.Now().UTC()
@@ -309,7 +311,13 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	}
 	//Don't do the onchain stuff unless specified
 	if cm != nil && config.PerformOnchainClaim {
-		cm.AddReceipt(int64(seg.SeqNo), seg.Data, sig, tProfileData, transcodeStart, transcodeEnd)
+		err = cm.AddReceipt(int64(seg.SeqNo), fname, seg.Data, sig, tProfileData, transcodeStart, transcodeEnd)
+		if err != nil {
+			os.Remove(fname)
+		}
+	} else {
+		// We aren't going through the claim process so remove input immediately
+		os.Remove(fname)
 	}
 }
 

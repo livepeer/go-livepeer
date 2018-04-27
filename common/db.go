@@ -28,6 +28,7 @@ type DB struct {
 	setReceiptClaim   *sql.Stmt
 	setClaimStatus    *sql.Stmt
 	unclaimedReceipts *sql.Stmt
+	receiptsByClaim   *sql.Stmt
 }
 
 type DBJob struct {
@@ -45,6 +46,7 @@ type DBJob struct {
 type DBReceipt struct {
 	JobID     int64
 	SeqNo     int64
+	BcastFile string
 	BcastHash []byte
 	BcastSig  []byte
 	TcodeHash []byte
@@ -194,7 +196,7 @@ func InitDB(dbPath string) (*DB, error) {
 	d.stopReason = stmt
 
 	// Insert receipt prepared statement
-	stmt, err = db.Prepare("INSERT INTO receipts(jobID, seqNo, bcastHash, bcastSig, transcodedHash, transcodeStartedAt, transcodeEndedAt) VALUES(?, ?, ?, ?, ?, ?, ?)")
+	stmt, err = db.Prepare("INSERT INTO receipts(jobID, seqNo, bcastFile, bcastHash, bcastSig, transcodedHash, transcodeStartedAt, transcodeEndedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		glog.Error("Unable to prepare insert segment ", err)
 		d.Close()
@@ -203,13 +205,22 @@ func InitDB(dbPath string) (*DB, error) {
 	d.insertRec = stmt
 
 	// Recover receipt prepared statement
-	stmt, err = db.Prepare("SELECT jobID, seqNo, bcastHash, bcastSig, transcodedHash FROM receipts WHERE claimID IS NULL and errorMsg IS NULL")
+	stmt, err = db.Prepare("SELECT jobID, seqNo, bcastFile, bcastHash, bcastSig, transcodedHash FROM receipts WHERE claimID IS NULL and errorMsg IS NULL")
 	if err != nil {
 		glog.Error("Unable to prepare unclaimed receipts", err)
 		d.Close()
 		return nil, err
 	}
 	d.unclaimedReceipts = stmt
+
+	// Receipts by claim for removing old segments
+	stmt, err = db.Prepare("SELECT bcastFile FROM receipts WHERE claimID = ? AND jobID = ?")
+	if err != nil {
+		glog.Error("Unable to prepare receipts by claim ", err)
+		d.Close()
+		return nil, err
+	}
+	d.receiptsByClaim = stmt
 
 	// Claim related prepared statements
 	stmt, err = db.Prepare("INSERT INTO claims(id, jobID, claimRoot) VALUES(?, ?, ?)")
@@ -265,6 +276,9 @@ func (db *DB) Close() {
 	}
 	if db.unclaimedReceipts != nil {
 		db.unclaimedReceipts.Close()
+	}
+	if db.receiptsByClaim != nil {
+		db.receiptsByClaim.Close()
 	}
 	if db.insertClaim != nil {
 		db.insertClaim.Close()
@@ -355,7 +369,7 @@ func (db *DB) SetStopReason(id *big.Int, reason string) error {
 }
 
 func (db *DB) InsertReceipt(jobID *big.Int, seqNo int64,
-	bcastHash []byte, bcastSig []byte, tcodeHash []byte,
+	bcastFile string, bcastHash []byte, bcastSig []byte, tcodeHash []byte,
 	tcodeStartedAt time.Time, tcodeEndedAt time.Time) error {
 	if db == nil {
 		return nil
@@ -364,7 +378,7 @@ func (db *DB) InsertReceipt(jobID *big.Int, seqNo int64,
 	time2str := func(t time.Time) string {
 		return t.UTC().Format("2006-01-02 15:04:05")
 	}
-	_, err := db.insertRec.Exec(jobID.Int64(), seqNo,
+	_, err := db.insertRec.Exec(jobID.Int64(), seqNo, bcastFile,
 		ethcommon.ToHex(bcastHash), ethcommon.ToHex(bcastSig),
 		ethcommon.ToHex(tcodeHash),
 		time2str(tcodeStartedAt), time2str(tcodeEndedAt))
@@ -388,14 +402,34 @@ func (db *DB) UnclaimedReceipts() (map[int64][]*DBReceipt, error) {
 		var bh string
 		var bs string
 		var th string
-		if err := rows.Scan(&r.JobID, &r.SeqNo, &bh, &bs, &th); err != nil {
-			glog.Error("db: Unable to retch receipt ", err)
+		if err := rows.Scan(&r.JobID, &r.SeqNo, &r.BcastFile, &bh, &bs, &th); err != nil {
+			glog.Error("db: Unable to fetch receipt ", err)
 			continue
 		}
 		r.BcastHash = ethcommon.FromHex(bh)
 		r.BcastSig = ethcommon.FromHex(bs)
 		r.TcodeHash = ethcommon.FromHex(th)
 		receipts[r.JobID] = append(receipts[r.JobID], &r)
+	}
+	return receipts, nil
+}
+
+func (db *DB) ReceiptBCastFilesByClaim(claimID int64, jobID *big.Int) ([]string, error) {
+	glog.V(DEBUG).Info("db: Querying receipts by claim")
+	receipts := []string{}
+	rows, err := db.receiptsByClaim.Query(claimID, jobID.Int64())
+	defer rows.Close()
+	if err != nil {
+		glog.Error("db: Unable to select receipts ", err)
+		return receipts, err
+	}
+	for rows.Next() {
+		var f string
+		if err := rows.Scan(&f); err != nil {
+			glog.Error("db: Unable to fetch receipt ", err)
+			continue
+		}
+		receipts = append(receipts, f)
 	}
 	return receipts, nil
 }

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math/big"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -23,7 +25,7 @@ var (
 )
 
 type ClaimManager interface {
-	AddReceipt(seqNo int64, bData []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error
+	AddReceipt(seqNo int64, bDataFile string, bData []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error
 	SufficientBroadcasterDeposit() (bool, error)
 	ClaimVerifyAndDistributeFees() error
 	CanClaim() (bool, error)
@@ -127,10 +129,15 @@ func RecoverClaims(c LivepeerEthClient, ipfs ipfs.IpfsApi, db *common.DB) error 
 		}
 		cm := NewBasicClaimManager(j, c, ipfs, db)
 		for _, r := range receipts {
+			bData, err := ioutil.ReadFile(r.BcastFile)
+			if err != nil {
+				glog.Error("Unable to read segment data; gambling on verification ", err)
+				bData = []byte{}
+			}
 			cm.unclaimedSegs[r.SeqNo] = true
 			cm.segClaimMap[r.SeqNo] = &claimData{
 				seqNo:                r.SeqNo,
-				segData:              []byte{},
+				segData:              bData,
 				dataHash:             r.BcastHash,
 				bSig:                 r.BcastSig,
 				claimConcatTDatahash: r.TcodeHash,
@@ -181,7 +188,8 @@ func (c *BasicClaimManager) DidFirstClaim() bool {
 }
 
 //AddReceipt adds a claim for a given video segment.
-func (c *BasicClaimManager) AddReceipt(seqNo int64, bData []byte, bSig []byte,
+func (c *BasicClaimManager) AddReceipt(seqNo int64,
+	bDataFile string, bData []byte, bSig []byte,
 	tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error {
 
 	_, ok := c.segClaimMap[seqNo]
@@ -221,7 +229,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64, bData []byte, bSig []byte,
 	c.unclaimedSegs[seqNo] = true
 	// glog.Infof("Added %v. unclaimSegs: %v", seqNo, c.unclaimedSegs)
 
-	c.db.InsertReceipt(c.jobID, seqNo, bHash, bSig, tHash, tStart, tEnd)
+	c.db.InsertReceipt(c.jobID, seqNo, bDataFile, bHash, bSig, tHash, tStart, tEnd)
 	return nil
 }
 
@@ -419,7 +427,6 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 
 			seg := c.segClaimMap[segNo]
 
-			// XXX load segment data from disk here
 			dataStorageHash, err := c.ipfs.Add(bytes.NewReader(seg.segData))
 			if err != nil {
 				glog.Errorf("Job %v Error uploading segment data to IPFS: %v", c.jobID, err)
@@ -481,6 +488,21 @@ func (c *BasicClaimManager) distributeFees(claimID int64) error {
 	}
 
 	glog.V(common.SHORT).Infof("Distributed fees for job %v claim %v", c.jobID, claimID)
+
+	if c.db != nil {
+		// Clean up segments.
+		// Note that if claiming fails for any reason before this point,
+		// the segments will remain disk until cleaned up manually.
+		// This gives users an opportunity to fix up those claims later.
+		segfiles, err := c.db.ReceiptBCastFilesByClaim(claimID, c.jobID)
+		if err != nil {
+			glog.Error("Unable to get receipts filenames by claim ", err)
+		} else {
+			for _, f := range segfiles {
+				os.Remove(f)
+			}
+		}
+	}
 	c.setClaimStatus(claimID, "Complete")
 
 	return nil
