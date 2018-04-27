@@ -36,7 +36,7 @@ func setupServer(nw net.VideoNetwork) *LivepeerServer {
 			return nil
 		}
 		if nw == nil {
-			nw, err = bnet.NewBasicVideoNetwork(node, "")
+			nw, err = bnet.NewBasicVideoNetwork(node, "", "", 0)
 			if err != nil {
 				glog.Errorf("Cannot create network node: %v", err)
 				return nil

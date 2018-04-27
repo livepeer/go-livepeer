@@ -353,7 +353,7 @@ func TestNotifyBroadcaster(t *testing.T) {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
 	}
-	nw, err := bnet.NewBasicVideoNetwork(node, "")
+	nw, err := bnet.NewBasicVideoNetwork(node, "", "", 0)
 	if err != nil {
 		glog.Errorf("Cannot create network node: %v", err)
 		return
