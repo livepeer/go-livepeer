@@ -1004,7 +1004,11 @@ func handleMasterPlaylistDataMsg(nw *BasicVideoNetwork, mpld MasterPlaylistDataM
 		}
 	}
 
-	ch <- &Msg{Op: MasterPlaylistDataID, Data: mpld}
+	select {
+	case ch <- &Msg{Op: MasterPlaylistDataID, Data: mpld}:
+	default:
+		glog.Errorf("Writing on closed channel for MasterPlaylistDataMsg %v", mpld.ManifestID)
+	}
 	return nil
 }
 
