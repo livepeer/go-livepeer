@@ -186,7 +186,11 @@ func main() {
 	for _, addr := range node.PeerHost.Addrs() {
 		addrs = append(addrs, addr.String())
 	}
-	nw, err := bnet.NewBasicVideoNetwork(node, *datadir)
+	if *transcoder && *publicIP == "" {
+		glog.Errorf("Error - transcoder needs to specify publicIP")
+		return
+	}
+	nw, err := bnet.NewBasicVideoNetwork(node, *datadir, *publicIP, *port)
 	if err != nil {
 		glog.Errorf("Cannot create network node: %v", err)
 		return

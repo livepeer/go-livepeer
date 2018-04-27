@@ -61,7 +61,7 @@ func (s *BasicSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint
 
 func (s *BasicSubscriber) TranscoderSubscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error {
 	ts := TranscodeSubMsg{
-		MultiAddrs: s.Network.NetworkNode.Host().Addrs(),
+		MultiAddrs: []ma.Multiaddr{s.Network.publicIP},
 		NodeID:     s.Network.NetworkNode.ID(),
 		StrmID:     s.StrmID,
 	}
