@@ -66,6 +66,7 @@ type BasicVideoNetwork struct {
 	relayers               map[relayerID]*BasicRelayer
 	msgCounts              map[Opcode]int64
 	pingChs                map[string]chan struct{}
+	publicIP               ma.Multiaddr
 }
 
 func (n *BasicVideoNetwork) String() string {
@@ -88,7 +89,16 @@ func (n *BasicVideoNetwork) GetLocalStreams() []string {
 }
 
 //NewBasicVideoNetwork creates a libp2p node, handle the basic (push-based) video protocol.
-func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string) (*BasicVideoNetwork, error) {
+func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string, publicIP string, port int) (*BasicVideoNetwork, error) {
+	var ip ma.Multiaddr
+	var err error
+	if publicIP != "" {
+		ip, err = ma.NewMultiaddr(fmt.Sprintf("/ip4/%v/tcp/%v", publicIP, port))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	nw := &BasicVideoNetwork{
 		NetworkNode:            n,
 		broadcasters:           make(map[string]*BasicBroadcaster),
@@ -99,7 +109,8 @@ func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string) (*BasicVideoNetwo
 		msgChans:               make(map[string]chan *Msg),
 		msgCounts:              make(map[Opcode]int64),
 		pingChs:                make(map[string]chan struct{}),
-		transResponseCallbacks: make(map[string]func(transcodeResult map[string]string))}
+		transResponseCallbacks: make(map[string]func(transcodeResult map[string]string)),
+		publicIP:               ip}
 	n.Network = nw
 
 	//Set up a worker to write connections
@@ -107,7 +118,7 @@ func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string) (*BasicVideoNetwo
 		peerCache := NewPeerCache(n.PeerHost.Peerstore(), fmt.Sprintf("%v/conn", workDir))
 		peers := peerCache.LoadPeers()
 		for _, p := range peers {
-			glog.Infof("Connecting to cached peer: %v", p)
+			glog.Infof("Connecting to cached peer: %v(%v)", peer.IDHexEncode(p.ID), p.Addrs)
 			nw.connectPeerInfo(p)
 		}
 		go peerCache.Record(context.Background())
@@ -231,7 +242,7 @@ func (n *BasicVideoNetwork) TranscodeSub(ctx context.Context, strmID string, got
 func (n *BasicVideoNetwork) SendTranscodeResponse(broadcaster string, strmID string, transcodedVideos map[string]string) error {
 	//Don't do anything if the node is the transcoder and the broadcaster at the same time.
 	if n.GetNodeID() == broadcaster {
-		glog.Infof("CurrentNode: %v, broadcaster: %v", n.GetNodeID(), broadcaster)
+		glog.V(common.SHORT).Infof("CurrentNode: %v, broadcaster: %v", n.GetNodeID(), broadcaster)
 		return nil
 	}
 
@@ -663,7 +674,7 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 }
 
 func handleSubReq(nw *BasicVideoNetwork, subReq SubReqMsg, remotePID peer.ID) error {
-	glog.Infof("Handling sub req for %v", subReq.StrmID)
+	glog.V(common.SHORT).Infof("Handling sub req for %v", subReq.StrmID)
 	return handleSub(nw, SubReqID, subReq.StrmID, subReq, remotePID)
 }
 
@@ -873,12 +884,12 @@ func handleTranscodeResponse(nw *BasicVideoNetwork, remotePID peer.ID, tr Transc
 		}
 		dupCount--
 	}
-	glog.Info("Cannot relay TranscodeResponse to peers")
+	glog.Errorf("Cannot relay TranscodeResponse to peers")
 	return ErrHandleMsg
 }
 
 func handleTranscodeSub(nw *BasicVideoNetwork, conn net.Conn, ts TranscodeSubMsg) error {
-	glog.Infof("%v In handleTranscodeSub; received from %v", nw.NetworkNode.ID(), conn.RemotePeer())
+	glog.V(common.SHORT).Infof("%v In handleTranscodeSub; received from %v", nw.NetworkNode.ID(), peer.IDHexEncode(conn.RemotePeer()))
 	ok := nw.NetworkNode.VerifyTranscoderSig(ts.BytesForSigning(), ts.Sig, ts.StrmID)
 	if !ok {
 		return ErrHandleMsg
@@ -891,7 +902,7 @@ func handleTranscodeSub(nw *BasicVideoNetwork, conn net.Conn, ts TranscodeSubMsg
 	}
 	if string(bcastPid) != string(nw.NetworkNode.ID()) {
 		// we're not the target; re-transmit message
-		glog.Infof("%v Re-transmitting TranscodeSubID to peers", nw.NetworkNode.ID())
+		glog.V(common.SHORT).Infof("%v Re-transmitting TranscodeSubID to peers", nw.NetworkNode.ID())
 		return handleSub(nw, TranscodeSubID, ts.StrmID, ts, conn.RemotePeer())
 	}
 	// open direct connection. first, convert multiaddrs as needed
@@ -907,15 +918,15 @@ func handleTranscodeSub(nw *BasicVideoNetwork, conn net.Conn, ts TranscodeSubMsg
 	cxn_exists := nw.NetworkNode.GetPeerInfo(pid).Addrs != nil
 	// bail out early if we alread have a direct connection
 	if cxn_exists {
-		glog.Infof("%v Already have a direct connection to %v; setting up subscription", nw.NetworkNode.ID(), pid)
+		glog.V(common.SHORT).Infof("%v Already have a direct connection to %v; setting up subscription", nw.NetworkNode.ID(), peer.IDHexEncode(pid))
 		return handleSubReq(nw, SubReqMsg{StrmID: ts.StrmID}, pid)
 	}
 	err = nw.Connect(peer.IDHexEncode(pid), mas)
 	if err != nil {
-		glog.Errorf("%v Unable to connect to transcoder %v : %v", nw.NetworkNode.ID(), pid, err)
+		glog.Errorf("%v Unable to connect to transcoder %v (%v): %v", nw.NetworkNode.ID(), peer.IDHexEncode(pid), mas, err)
 		pid = conn.RemotePeer()
 	} else {
-		glog.Infof("%v Established direct connection to transcoder %v", nw.NetworkNode.ID(), pid)
+		glog.V(common.SHORT).Infof("%v Established direct connection to transcoder %v", nw.NetworkNode.ID(), pid)
 	}
 
 	return handleSubReq(nw, SubReqMsg{StrmID: ts.StrmID}, pid)
@@ -949,7 +960,7 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, remotePID peer.ID, mplr G
 
 			s := nw.NetworkNode.GetOutStream(p)
 			if s != nil {
-				glog.Infof("Sending msg to %v", peer.IDHexEncode(p))
+				glog.V(common.SHORT).Infof("Sending msg to %v", peer.IDHexEncode(p))
 				if err := nw.sendMessageWithRetry(p, s, GetMasterPlaylistReqID, GetMasterPlaylistReqMsg{ManifestID: mplr.ManifestID}); err != nil {
 					continue
 				}
@@ -965,7 +976,7 @@ func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, remotePID peer.ID, mplr G
 				return nil
 			}
 		}
-		glog.Info("Cannot relay GetMasterPlaylist req to peers")
+		glog.Errorf("Cannot relay GetMasterPlaylist req to peers")
 		if err := nw.sendMessageWithRetry(remotePID, nw.NetworkNode.GetOutStream(remotePID), MasterPlaylistDataID, MasterPlaylistDataMsg{ManifestID: mplr.ManifestID, NotFound: true}); err != nil {
 			glog.Errorf("Error sending MasterPlaylistData-NotFound: %v", err)
 			return ErrHandleMsg
@@ -1025,7 +1036,7 @@ func handleNodeStatusReqMsg(nw *BasicVideoNetwork, remotePID peer.ID, nsr NodeSt
 
 			s := nw.NetworkNode.GetOutStream(p)
 			if s != nil {
-				glog.Infof("Sending msg to %v", peer.IDHexEncode(p))
+				glog.V(common.SHORT).Infof("Sending msg to %v", peer.IDHexEncode(p))
 				if err := nw.sendMessageWithRetry(p, s, NodeStatusReqID, NodeStatusReqMsg{NodeID: nsr.NodeID}); err != nil {
 					continue
 				}
@@ -1040,7 +1051,7 @@ func handleNodeStatusReqMsg(nw *BasicVideoNetwork, remotePID peer.ID, nsr NodeSt
 				return nil
 			}
 		}
-		glog.Info("Cannot relay node status req to peers")
+		glog.Errorf("Cannot relay node status req to peers")
 		if err := nw.sendMessageWithRetry(remotePID, nw.NetworkNode.GetOutStream(remotePID), NodeStatusDataID, NodeStatusDataMsg{NodeID: nsr.NodeID, NotFound: true}); err != nil {
 			glog.Errorf("Error sending MasterPlaylistData-NotFound: %v", err)
 			return ErrHandleMsg
