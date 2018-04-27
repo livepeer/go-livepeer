@@ -16,13 +16,15 @@ fi
 if [ ! -e "$HOME/x264/x264" ]; then
   git clone http://git.videolan.org/git/x264.git "$HOME/x264"
   cd "$HOME/x264"
+  # git master as of this writing
+  git checkout 7d0ff22e8c96de126be9d3de4952edd6d1b75a8c
   ./configure --prefix="$HOME/compiled" --enable-pic --enable-static
   make
   make install-lib-static
 fi
 
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
-  git clone https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
+  git clone -b n4.0 https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
   ./configure --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
