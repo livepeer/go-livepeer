@@ -42,7 +42,6 @@ func (d TestMuxer) WritePacket(p av.Packet) error {
 	Packets = append(Packets, p)
 	return nil
 }
-
 func TestSegmentStream(t *testing.T) {
 	// fmt.Printf("Testing Segment Stream")
 	s := NewSegmentStream("test")

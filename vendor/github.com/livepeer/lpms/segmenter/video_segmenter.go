@@ -236,7 +236,7 @@ func (s *FFMpegVideoSegmenter) pollSegment(ctx context.Context, curFn string, ne
 }
 
 func (s *FFMpegVideoSegmenter) Cleanup() {
-	glog.Infof("Cleaning up video segments.....")
+	glog.V(4).Infof("Cleaning up video segments.....")
 	files, _ := filepath.Glob(path.Join(s.WorkDir, s.StrmID) + "*")
 	for _, fn := range files {
 		os.Remove(fn)

@@ -48,6 +48,7 @@ const EthMinedTxTimeout = 60 * time.Second
 var HLSWaitTime = time.Second * 45
 var BroadcastPrice = big.NewInt(1)
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
+var MinDepositSegmentCount = int64(75) //5 mins assuming 4s segments
 var LastHLSStreamID core.StreamID
 var LastManifestID core.ManifestID
 
@@ -56,7 +57,6 @@ type LivepeerServer struct {
 	LPMS          *lpmscore.LPMS
 	HttpPort      string
 	RtmpPort      string
-	FfmpegPath    string
 	LivepeerNode  *core.LivepeerNode
 
 	rtmpStreams                map[core.StreamID]stream.RTMPVideoStream
@@ -66,9 +66,19 @@ type LivepeerServer struct {
 	broadcastRtmpToManifestMap map[string]string
 }
 
-func NewLivepeerServer(rtmpPort string, httpPort string, ffmpegPath string, lpNode *core.LivepeerNode) *LivepeerServer {
-	server := lpmscore.New(rtmpPort, httpPort, ffmpegPath, "", fmt.Sprintf("%v/.tmp", lpNode.WorkDir))
-	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, FfmpegPath: ffmpegPath, LivepeerNode: lpNode, rtmpStreams: make(map[core.StreamID]stream.RTMPVideoStream), broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
+func NewLivepeerServer(rtmpPort string, httpPort string, lpNode *core.LivepeerNode) *LivepeerServer {
+	startRtmp := true
+	startHttp := true
+	switch lpNode.NodeType {
+	case core.Bootnode:
+		startRtmp = false
+	case core.Transcoder:
+		startRtmp = false
+	case core.Gateway:
+		startRtmp = false
+	}
+	server := lpmscore.New(rtmpPort, httpPort, "", fmt.Sprintf("%v/.tmp", lpNode.WorkDir), startRtmp, startHttp)
+	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, LivepeerNode: lpNode, rtmpStreams: make(map[core.StreamID]stream.RTMPVideoStream), broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
 }
 
 //StartServer starts the LPMS server
@@ -83,7 +93,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 			}
 		}
 		BroadcastJobVideoProfiles = bProfiles
-		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
+		glog.V(common.SHORT).Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
 	}
 
 	//Start HLS unsubscribe worker
@@ -137,7 +147,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				return err
 			}
 			if !initialized {
-				glog.Error("Round was uninitialized; can't create job")
+				glog.Infof("Round was uninitialized, can't create job. Please try again in a few blocks.")
 				return ErrRoundInit
 			}
 			// Check deposit
@@ -147,9 +157,10 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				return ErrBroadcast
 			}
 
-			glog.Infof("Current deposit is: %v", deposit)
+			glog.V(common.SHORT).Infof("Current deposit is: %v", deposit)
 
-			if deposit.Cmp(BroadcastPrice) < 0 {
+			minDeposit := big.NewInt(0).Mul(BroadcastPrice, big.NewInt(MinDepositSegmentCount))
+			if deposit.Cmp(minDeposit) < 0 {
 				glog.Errorf("Low deposit (%v) - cannot start broadcast session", deposit)
 				return ErrBroadcast
 			}
@@ -174,7 +185,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 		if vProfile.Name == "" {
 			vProfile = ffmpeg.P720p30fps16x9
-			glog.Infof("Cannot automatically detect the video profile - setting it to %v", vProfile)
+			glog.V(common.SHORT).Infof("Cannot automatically detect the video profile - setting it to %v", vProfile)
 		}
 
 		//Create a new HLS StreamID.  If streamID is passed in, use that one.  Otherwise, generate a random ID.
@@ -236,7 +247,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions)
 			if err != nil {
-				// glog.Infof("Error in segmenter: %v, broadcasting finish message", err)
 				if err := s.LivepeerNode.BroadcastFinishMsg(hlsStrmID.String()); err != nil {
 					glog.Errorf("Error broadcaseting finish message: %v", err)
 				}
@@ -275,7 +285,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			}
 		})
 
-		glog.Infof("\n\nManifestID: %v\n\n", mid)
+		glog.Infof("\n\nVideo Created With ManifestID: %v\n\n", mid)
 		glog.V(common.SHORT).Infof("\n\nhlsStrmID: %v\n\n", hlsStrmID)
 
 		//Remember HLS stream so we can remove later
@@ -376,7 +386,6 @@ func getHLSSegmentHandler(s *LivepeerServer) func(url *url.URL) ([]byte, error) 
 //Start RTMP Play Handlers
 func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVideoStream, error) {
 	return func(url *url.URL) (stream.RTMPVideoStream, error) {
-		// glog.Infof("Got req: ", url.Path)
 		strmID, err := parseStreamID(url.Path)
 		if err != nil {
 			glog.Errorf("Error parsing streamID with url %v - %v", url.Path, err)
@@ -405,7 +414,7 @@ func (s *LivepeerServer) startHlsUnsubscribeWorker(limit time.Duration, freq tim
 		time.Sleep(freq)
 		for sid, t := range s.hlsSubTimer {
 			if time.Since(t) > limit {
-				glog.Infof("Inactive HLS Stream %v - unsubscribing", sid)
+				glog.V(common.SHORT).Infof("Inactive HLS Stream %v - unsubscribing", sid)
 				s.LivepeerNode.VideoCache.EvictHLSSubscriber(sid)
 				s.LivepeerNode.UnsubscribeFromNetwork(sid)
 				delete(s.hlsSubTimer, sid)

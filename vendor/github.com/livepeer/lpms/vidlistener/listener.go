@@ -20,7 +20,6 @@ type LocalStream struct {
 
 type VidListener struct {
 	RtmpServer *joy4rtmp.Server
-	FfmpegPath string
 }
 
 func (self *VidListener) HandleRTMPPublish(
