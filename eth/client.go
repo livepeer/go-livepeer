@@ -22,11 +22,12 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 )
@@ -51,25 +52,25 @@ type LivepeerEthClient interface {
 	CurrentRoundLocked() (bool, error)
 
 	// Token
-	Transfer(toAddr common.Address, amount *big.Int) (*types.Transaction, error)
+	Transfer(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error)
 	Request() (*types.Transaction, error)
-	BalanceOf(common.Address) (*big.Int, error)
+	BalanceOf(ethcommon.Address) (*big.Int, error)
 	TotalSupply() (*big.Int, error)
 
 	// Staking
 	Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error)
 	Reward() (*types.Transaction, error)
-	Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error)
+	Bond(amount *big.Int, toAddr ethcommon.Address) (*types.Transaction, error)
 	Unbond() (*types.Transaction, error)
 	WithdrawStake() (*types.Transaction, error)
 	WithdrawFees() (*types.Transaction, error)
 	ClaimEarnings(endRound *big.Int) error
-	GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error)
-	GetDelegator(addr common.Address) (*lpTypes.Delegator, error)
-	GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error)
+	GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, error)
+	GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error)
+	GetTranscoderEarningsPoolForRound(addr ethcommon.Address, round *big.Int) (*lpTypes.TokenPools, error)
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
-	AssignedTranscoder(jobID *big.Int) (common.Address, error)
+	AssignedTranscoder(jobID *big.Int) (ethcommon.Address, error)
 	GetTotalBonded() (*big.Int, error)
 
 	// Jobs
@@ -81,7 +82,7 @@ type LivepeerEthClient interface {
 	Withdraw() (*types.Transaction, error)
 	GetJob(jobID *big.Int) (*lpTypes.Job, error)
 	GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, error)
-	BroadcasterDeposit(broadcaster common.Address) (*big.Int, error)
+	BroadcasterDeposit(broadcaster ethcommon.Address) (*big.Int, error)
 	NumJobs() (*big.Int, error)
 
 	// Parameters
@@ -103,7 +104,7 @@ type LivepeerEthClient interface {
 	Paused() (bool, error)
 
 	// Helpers
-	ContractAddresses() map[string]common.Address
+	ContractAddresses() map[string]ethcommon.Address
 	CheckTx(*types.Transaction) error
 	Sign([]byte) ([]byte, error)
 	LatestBlockNum() (*big.Int, error)
@@ -113,14 +114,14 @@ type client struct {
 	accountManager *AccountManager
 	backend        *ethclient.Client
 
-	controllerAddr     common.Address
-	tokenAddr          common.Address
-	bondingManagerAddr common.Address
-	jobsManagerAddr    common.Address
-	roundsManagerAddr  common.Address
-	minterAddr         common.Address
-	verifierAddr       common.Address
-	faucetAddr         common.Address
+	controllerAddr     ethcommon.Address
+	tokenAddr          ethcommon.Address
+	bondingManagerAddr ethcommon.Address
+	jobsManagerAddr    ethcommon.Address
+	roundsManagerAddr  ethcommon.Address
+	minterAddr         ethcommon.Address
+	verifierAddr       ethcommon.Address
+	faucetAddr         ethcommon.Address
 
 	// Embedded contract sessions
 	*contracts.ControllerSession
@@ -139,7 +140,7 @@ type client struct {
 	txTimeout time.Duration
 }
 
-func NewClient(accountAddr common.Address, keystoreDir string, backend *ethclient.Client, controllerAddr common.Address, txTimeout time.Duration) (LivepeerEthClient, error) {
+func NewClient(accountAddr ethcommon.Address, keystoreDir string, backend *ethclient.Client, controllerAddr ethcommon.Address, txTimeout time.Duration) (LivepeerEthClient, error) {
 	am, err := NewAccountManager(accountAddr, keystoreDir)
 	if err != nil {
 		return nil, err
@@ -183,7 +184,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.Infof("Controller: %v", c.controllerAddr.Hex())
+	glog.V(common.SHORT).Infof("Controller: %v", c.controllerAddr.Hex())
 
 	tokenAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("LivepeerToken")))
 	if err != nil {
@@ -204,7 +205,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.Infof("LivepeerToken: %v", c.tokenAddr.Hex())
+	glog.V(common.SHORT).Infof("LivepeerToken: %v", c.tokenAddr.Hex())
 
 	bondingManagerAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("BondingManager")))
 	if err != nil {
@@ -225,7 +226,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.Infof("BondingManager: %v", c.bondingManagerAddr.Hex())
+	glog.V(common.SHORT).Infof("BondingManager: %v", c.bondingManagerAddr.Hex())
 
 	jobsManagerAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("JobsManager")))
 	if err != nil {
@@ -246,7 +247,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.Infof("JobsManager: %v", c.jobsManagerAddr.Hex())
+	glog.V(common.SHORT).Infof("JobsManager: %v", c.jobsManagerAddr.Hex())
 
 	roundsManagerAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("RoundsManager")))
 	if err != nil {
@@ -267,7 +268,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.Infof("RoundsManager: %v", c.roundsManagerAddr.Hex())
+	glog.V(common.SHORT).Infof("RoundsManager: %v", c.roundsManagerAddr.Hex())
 
 	minterAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("Minter")))
 	if err != nil {
@@ -288,7 +289,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		Contract: minter,
 	}
 
-	glog.Infof("Minter: %v", c.minterAddr.Hex())
+	glog.V(common.SHORT).Infof("Minter: %v", c.minterAddr.Hex())
 
 	verifierAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("Verifier")))
 	if err != nil {
@@ -309,7 +310,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		Contract: verifier,
 	}
 
-	glog.Infof("Verifier: %v", c.verifierAddr.Hex())
+	glog.V(common.SHORT).Infof("Verifier: %v", c.verifierAddr.Hex())
 
 	faucetAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("LivepeerTokenFaucet")))
 	if err != nil {
@@ -330,7 +331,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.Infof("LivepeerTokenFaucet: %v", c.faucetAddr.Hex())
+	glog.V(common.SHORT).Infof("LivepeerTokenFaucet: %v", c.faucetAddr.Hex())
 
 	return nil
 }
@@ -362,7 +363,7 @@ func (c *client) Transcoder(blockRewardCut, feeShare, pricePerSegment *big.Int) 
 	}
 }
 
-func (c *client) Bond(amount *big.Int, to common.Address) (*types.Transaction, error) {
+func (c *client) Bond(amount *big.Int, to ethcommon.Address) (*types.Transaction, error) {
 	currentRound, err := c.CurrentRound()
 	if err != nil {
 		return nil, err
@@ -457,7 +458,7 @@ func (c *client) autoClaimEarnings(endRound *big.Int) error {
 				return err
 			}
 
-			glog.Infof("Claimed rewards and fees from round %v through %v", lastClaimRound, currentEndRound)
+			glog.V(common.SHORT).Infof("Claimed rewards and fees from round %v through %v", lastClaimRound, currentEndRound)
 
 			lastClaimRound = currentEndRound
 		}
@@ -475,7 +476,7 @@ func (c *client) autoClaimEarnings(endRound *big.Int) error {
 			}
 		}
 
-		glog.Infof("Finished claiming rewards and fees through the end round %v", endRound)
+		glog.V(common.SHORT).Infof("Finished claiming rewards and fees through the end round %v", endRound)
 	}
 
 	return nil
@@ -494,7 +495,7 @@ func (c *client) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int
 	return c.JobsManagerSession.Verify(jobId, claimId, segmentNumber, dataStorageHash, dataHashes, broadcasterSig, proof)
 }
 
-func (c *client) BroadcasterDeposit(addr common.Address) (*big.Int, error) {
+func (c *client) BroadcasterDeposit(addr ethcommon.Address) (*big.Int, error) {
 	b, err := c.Broadcasters(addr)
 	if err != nil {
 		return nil, err
@@ -512,7 +513,7 @@ func (c *client) IsActiveTranscoder() (bool, error) {
 	return c.BondingManagerSession.IsActiveTranscoder(c.Account().Address, r)
 }
 
-func (c *client) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) {
+func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, error) {
 	tInfo, err := c.BondingManagerSession.GetTranscoder(addr)
 	if err != nil {
 		return nil, err
@@ -558,7 +559,7 @@ func (c *client) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error)
 	}, nil
 }
 
-func (c *client) GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
+func (c *client) GetTranscoderEarningsPoolForRound(addr ethcommon.Address, round *big.Int) (*lpTypes.TokenPools, error) {
 	tp, err := c.BondingManagerSession.GetTranscoderEarningsPoolForRound(addr, round)
 	if err != nil {
 		return nil, err
@@ -572,16 +573,16 @@ func (c *client) GetTranscoderEarningsPoolForRound(addr common.Address, round *b
 	}, nil
 }
 
-func (c *client) GetDelegator(addr common.Address) (*lpTypes.Delegator, error) {
+func (c *client) GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error) {
 	dInfo, err := c.BondingManagerSession.GetDelegator(addr)
 	if err != nil {
-		glog.Infof("Error getting delegator from bonding manager: %v", err)
+		glog.Errorf("Error getting delegator from bonding manager: %v", err)
 		return nil, err
 	}
 
 	dStatus, err := c.DelegatorStatus(addr)
 	if err != nil {
-		glog.Infof("Error getting status: %v", err)
+		glog.Errorf("Error getting status: %v", err)
 		return nil, err
 	}
 
@@ -591,7 +592,7 @@ func (c *client) GetDelegator(addr common.Address) (*lpTypes.Delegator, error) {
 	}
 	currentRound, err := c.CurrentRound()
 	if err != nil {
-		glog.Infof("Error getting current round: %v", err)
+		glog.Errorf("Error getting current round: %v", err)
 		return nil, err
 	}
 
@@ -600,7 +601,7 @@ func (c *client) GetDelegator(addr common.Address) (*lpTypes.Delegator, error) {
 		if err.Error() == "abi: unmarshalling empty output" {
 			pendingStake = big.NewInt(-1)
 		} else {
-			glog.Infof("Error getting pending stake: %v", err)
+			glog.Errorf("Error getting pending stake: %v", err)
 			return nil, err
 		}
 	}
@@ -610,7 +611,7 @@ func (c *client) GetDelegator(addr common.Address) (*lpTypes.Delegator, error) {
 		if err.Error() == "abi: unmarshalling empty output" {
 			pendingFees = big.NewInt(-1)
 		} else {
-			glog.Infof("Error getting pending fees: %v", err)
+			glog.Errorf("Error getting pending fees: %v", err)
 			return nil, err
 		}
 	}
@@ -669,7 +670,7 @@ func (c *client) GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, err
 
 	status, err := lpTypes.ParseClaimStatus(cInfo.Status)
 	if err != nil {
-		glog.Infof("%v", cInfo)
+		glog.V(common.SHORT).Infof("%v", cInfo)
 		return nil, err
 	}
 
@@ -713,11 +714,11 @@ func (c *client) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
 	return transcoders, nil
 }
 
-func (c *client) AssignedTranscoder(jobID *big.Int) (common.Address, error) {
+func (c *client) AssignedTranscoder(jobID *big.Int) (ethcommon.Address, error) {
 	jInfo, err := c.JobsManagerSession.GetJob(jobID)
 	if err != nil {
 		glog.Errorf("Error getting job: %v", err)
-		return common.Address{}, err
+		return ethcommon.Address{}, err
 	}
 
 	var blk *types.Block
@@ -732,13 +733,13 @@ func (c *client) AssignedTranscoder(jobID *big.Int) (common.Address, error) {
 	}
 	if err := backoff.Retry(getBlock, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), SubscribeRetry)); err != nil {
 		glog.Errorf("BlockByNumber failed: %v", err)
-		return common.Address{}, err
+		return ethcommon.Address{}, err
 	}
 
 	t, err := c.BondingManagerSession.ElectActiveTranscoder(jInfo.MaxPricePerSegment, blk.Hash(), jInfo.CreationRound)
 	if err != nil {
 		glog.Errorf("Error getting ElectActiveTranscoder: %v", err)
-		return common.Address{}, err
+		return ethcommon.Address{}, err
 	}
 
 	return t, nil
@@ -746,8 +747,8 @@ func (c *client) AssignedTranscoder(jobID *big.Int) (common.Address, error) {
 
 // Helpers
 
-func (c *client) ContractAddresses() map[string]common.Address {
-	addrMap := make(map[string]common.Address)
+func (c *client) ContractAddresses() map[string]ethcommon.Address {
+	addrMap := make(map[string]ethcommon.Address)
 	addrMap["Controller"] = c.controllerAddr
 	addrMap["LivepeerToken"] = c.tokenAddr
 	addrMap["LivepeerTokenFaucet"] = c.faucetAddr
