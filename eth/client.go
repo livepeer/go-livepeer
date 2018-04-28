@@ -658,6 +658,7 @@ func (c *client) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
 		CreationBlock:      jInfo.CreationBlock,
 		EndBlock:           jInfo.EndBlock,
 		Escrow:             jInfo.Escrow,
+		TotalClaims:        jInfo.TotalClaims,
 		Status:             status,
 	}, nil
 }

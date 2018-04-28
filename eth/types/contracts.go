@@ -86,6 +86,7 @@ type Job struct {
 	CreationBlock      *big.Int
 	EndBlock           *big.Int
 	Escrow             *big.Int
+	TotalClaims        *big.Int
 	Status             string
 }
 
