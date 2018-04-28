@@ -118,7 +118,7 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 	glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.Profiles, config)
 
 	//Do The Transcoding
-	cm := eth.NewBasicClaimManager(job.StreamId, job.JobId, job.BroadcasterAddress, job.MaxPricePerSegment, job.Profiles, s.node.Eth, s.node.Ipfs)
+	cm := eth.NewBasicClaimManager(job, s.node.Eth, s.node.Ipfs)
 	tr := transcoder.NewFFMpegSegmentTranscoder(job.Profiles, s.node.WorkDir)
 	strmIDs, err := s.node.TranscodeAndBroadcast(config, cm, tr)
 	if err != nil {

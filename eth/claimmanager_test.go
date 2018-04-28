@@ -14,10 +14,21 @@ import (
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
+func newJob() *ethTypes.Job {
+	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
+	return &ethTypes.Job{
+		JobId:              big.NewInt(5),
+		StreamId:           "strmID",
+		Profiles:           ps,
+		MaxPricePerSegment: big.NewInt(1),
+		BroadcasterAddress: ethcommon.Address{},
+		TotalClaims:        big.NewInt(0),
+	}
+}
+
 func TestShouldVerify(t *testing.T) {
 	client := &StubClient{}
-	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
-	cm := NewBasicClaimManager("strmID", big.NewInt(5), ethcommon.Address{}, big.NewInt(1), ps, client, &ipfs.StubIpfsApi{})
+	cm := NewBasicClaimManager(newJob(), client, &ipfs.StubIpfsApi{})
 
 	blkHash := ethcommon.Hash([32]byte{0, 2, 4, 42, 2, 3, 4, 4, 4, 2, 21, 1, 1, 24, 134, 0, 02, 43})
 	//Just make sure the results are different
@@ -37,8 +48,7 @@ func TestShouldVerify(t *testing.T) {
 }
 
 func TestProfileOrder(t *testing.T) {
-	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
-	cm := NewBasicClaimManager("strmID", big.NewInt(5), ethcommon.Address{}, big.NewInt(1), ps, &StubClient{}, &ipfs.StubIpfsApi{})
+	cm := NewBasicClaimManager(newJob(), &StubClient{}, &ipfs.StubIpfsApi{})
 
 	if cm.profiles[0] != ffmpeg.P720p30fps4x3 || cm.profiles[1] != ffmpeg.P360p30fps4x3 || cm.profiles[2] != ffmpeg.P240p30fps16x9 {
 		t.Errorf("wrong ordering: %v", cm.profiles)
@@ -55,7 +65,7 @@ func hashTData(order []ffmpeg.VideoProfile, td map[ffmpeg.VideoProfile][]byte) [
 
 func TestAddReceipt(t *testing.T) {
 	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
-	cm := NewBasicClaimManager("strmID", big.NewInt(5), ethcommon.Address{}, big.NewInt(1), ps, &StubClient{}, &ipfs.StubIpfsApi{})
+	cm := NewBasicClaimManager(newJob(), &StubClient{}, &ipfs.StubIpfsApi{})
 
 	//Should get error due to a length mismatch
 	td := map[ffmpeg.VideoProfile][]byte{
@@ -106,7 +116,7 @@ func TestAddReceipt(t *testing.T) {
 func setupRanges(t *testing.T) *BasicClaimManager {
 	ethClient := &StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
 	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
-	cm := NewBasicClaimManager("strmID", big.NewInt(5), ethcommon.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{})
+	cm := NewBasicClaimManager(newJob(), ethClient, &ipfs.StubIpfsApi{})
 
 	for _, segRange := range [][2]int64{[2]int64{0, 0}, [2]int64{3, 13}, [2]int64{15, 18}, [2]int64{21, 25}, [2]int64{27, 27}, [2]int64{29, 29}} {
 		for i := segRange[0]; i <= segRange[1]; i++ {
@@ -153,7 +163,7 @@ func TestRanges(t *testing.T) {
 func TestClaimVerifyAndDistributeFees(t *testing.T) {
 	ethClient := &StubClient{ClaimStart: make([]*big.Int, 0), ClaimEnd: make([]*big.Int, 0), ClaimJid: make([]*big.Int, 0), ClaimRoot: make(map[[32]byte]bool)}
 	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
-	cm := NewBasicClaimManager("strmID", big.NewInt(5), ethcommon.Address{}, big.NewInt(1), ps, ethClient, &ipfs.StubIpfsApi{})
+	cm := NewBasicClaimManager(newJob(), ethClient, &ipfs.StubIpfsApi{})
 
 	//Add some receipts(0-9)
 	receiptHashes1 := make([]ethcommon.Hash, 10)
