@@ -202,6 +202,10 @@ func main() {
 		glog.Errorf("Error - transcoder needs to specify publicIP")
 		return
 	}
+	if *transcoder && *publicIP == "" {
+		glog.Errorf("Error - transcoder needs to specify publicIP")
+		return
+	}
 	nw, err := bnet.NewBasicVideoNetwork(node, *datadir, *publicIP, *port)
 	if err != nil {
 		glog.Errorf("Cannot create network node: %v", err)
