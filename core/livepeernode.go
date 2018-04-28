@@ -66,7 +66,6 @@ const (
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 	Identity        NodeID
-	Addrs           []string
 	BootIDs         []string
 	BootAddrs       []string
 	VideoNetwork    net.VideoNetwork
@@ -80,13 +79,13 @@ type LivepeerNode struct {
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
-func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID, addrs []string, wd string) (*LivepeerNode, error) {
+func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID, wd string) (*LivepeerNode, error) {
 	if vn == nil {
 		glog.Errorf("Cannot create a LivepeerNode without a VideoNetwork")
 		return nil, ErrLivepeerNode
 	}
 
-	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Addrs: addrs, Eth: e, WorkDir: wd}, nil
+	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Eth: e, WorkDir: wd}, nil
 }
 
 //Start sets up the Livepeer protocol and connects the node to the network
@@ -108,15 +107,14 @@ func (n *LivepeerNode) Start(ctx context.Context, bootIDs, bootAddrs []string) e
 			bootAddr := bootAddrs[i]
 			glog.V(common.DEBUG).Infof("Connecting to %v %v", bootID, bootAddr)
 			if err := n.VideoNetwork.Connect(bootID, []string{bootAddr}); err != nil {
-				glog.Errorf("Cannot connect to node: %v", err)
+				glog.V(common.SHORT).Infof("Cannot connect to boot node %v: %v", bootID, err)
 				errCount++
 			}
 		}
 	}
 	if errCount == len(bootIDs) {
-		glog.Errorf("Current node has no neighbors :(")
+		glog.Errorf("Current node cannot connect to any neighbors")
 	}
-
 	//TODO:Kick off process to periodically monitor peer connection by pinging them
 	return nil
 }

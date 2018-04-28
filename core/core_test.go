@@ -172,7 +172,7 @@ func (s *StubSubscriber) Unsubscribe() error { return nil }
 func TestTranscode(t *testing.T) {
 	//Set up the node
 	stubnet := &StubVideoNetwork{T: t, subscribers: make(map[string]*StubSubscriber)}
-	n, _ := NewLivepeerNode(&eth.StubClient{}, stubnet, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{"test"}, ".tmp")
+	n, _ := NewLivepeerNode(&eth.StubClient{}, stubnet, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", ".tmp")
 	strmID, _ := MakeStreamID(n.Identity, RandomVideoID(), ffmpeg.P720p30fps4x3.Name)
 	stubnet.subscribers[strmID.String()] = &StubSubscriber{}
 	ffmpeg.InitFFmpeg()
@@ -359,7 +359,7 @@ func TestNotifyBroadcaster(t *testing.T) {
 		return
 	}
 	seth := &eth.StubClient{}
-	n, _ := NewLivepeerNode(seth, nw, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", []string{}, "./tmp")
+	n, _ := NewLivepeerNode(seth, nw, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", "./tmp")
 	sn := &StubVideoNetwork{}
 	n.VideoNetwork = sn
 	strmID := "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd1strmID"

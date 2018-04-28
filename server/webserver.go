@@ -677,7 +677,8 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/nodeAddrs", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(strings.Join(s.LivepeerNode.Addrs, ", ")))
+		addrs := s.LivepeerNode.VideoNetwork.(*basicnet.BasicVideoNetwork).NetworkNode.(*basicnet.BasicNetworkNode).PeerHost.Addrs()
+		w.Write([]byte(fmt.Sprintf("%v", addrs)))
 	})
 
 	http.HandleFunc("/contractAddresses", func(w http.ResponseWriter, r *http.Request) {

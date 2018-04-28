@@ -29,11 +29,11 @@ import (
 	peer "gx/ipfs/QmZoWKhxUmZ2seW4BzX6fJkNR8hh9PsGModr7q171yq2SS/go-libp2p-peer"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
-	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
 	bnet "github.com/livepeer/go-livepeer-basicnet"
-	lpcommon "github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/eventservices"
@@ -53,6 +53,8 @@ var (
 
 const RinkebyBootNodeIDs = "122019c1a1f0d9fa2296dccb972e7478c5163415cd55722dcf0123553f397c45df7e,1220abded0103eb4e8e46616881e74e88617409ac4012c6958f4086c649f44eacf89,1220afca402fae8dbb0f980ea2d7e873bc07da36d5463516a862c6199bb6383e9e1e"
 const RinkebyBootNodeAddrs = "/ip4/18.217.129.34/tcp/15000,/ip4/52.15.174.204/tcp/15000,/ip4/13.59.47.56/tcp/15000"
+const MainnetBootNodeIDs = "122018ef62657724948b236e9523d928d892965e0fdd679beb643f2353556d0aef78,122051f483e4ae0477773540a4ac0e845eac5a51e0883338970270b8af2c02084a66,12208d9eaed4e66382e86fea8956bd7cf0fbd6fbd0146375aa2fa4aaa43467a5dfac,1220bf3b27668b43ce76ca3ca1878ac3aab5009ce64e2305703c9120c90d0f381e1f,1220c079d0cd80d3b82b6ee8b1d91ec09c3172fee8468765ff5dbd43a6c1d5be4443"
+const MainnetBootNodeAddrs = "/ip4/18.188.233.37/tcp/15000,/ip4/18.219.112.164/tcp/15000,/ip4/18.222.5.113/tcp/15000,/ip4/18.221.147.73/tcp/15000,/ip4/18.216.88.163/tcp/15000"
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -89,8 +91,8 @@ func main() {
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
 	bindIPs := flag.String("bindIPs", "", "Comma-separated list of IPs/ports to bind to")
-	bootIDs := flag.String("bootIDs", "12203efa6d7276eb95be161138920a7d7be970bf5fdcdf5fb320fca81728ea95dce4,12201a1ec1ff1bce8e37eb1f718c09b3e13ff1f171cb199987cb486883cfde0cd7e9,1220c0c2ec8eb9d354eaf323d08b9c70f19375b5661570550319f88129e97390ca4b", "Comma-separated bootstrap node IDs")
-	bootAddrs := flag.String("bootAddrs", "/ip4/18.218.14.44/tcp/15000,/ip4/18.222.84.190/tcp/15000,/ip4/18.188.164.125/tcp/15000", "Comma-separated bootstrap node addresses")
+	bootIDs := flag.String("bootIDs", "", "Comma-separated bootstrap node IDs")
+	bootAddrs := flag.String("bootAddrs", "", "Comma-separated bootstrap node addresses")
 	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	gateway := flag.Bool("gateway", false, "Set to true to be a gateway node")
@@ -102,7 +104,7 @@ func main() {
 	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
 	ethWsUrl := flag.String("ethWsUrl", "", "geth websocket url")
 	rinkeby := flag.Bool("rinkeby", false, "Set to true to connect to rinkeby")
-	controllerAddr := flag.String("controllerAddr", "0xa2592940a01560b4ff024a0231c7adbf8248a8f1", "Protocol smart contract address")
+	controllerAddr := flag.String("controllerAddr", "", "Protocol smart contract address")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
@@ -121,11 +123,34 @@ func main() {
 	}
 
 	if *rinkeby {
-		*bootIDs = RinkebyBootNodeIDs
-		*bootAddrs = RinkebyBootNodeAddrs
+		if *bootIDs == "" {
+			*bootIDs = RinkebyBootNodeIDs
+		}
+		if *bootAddrs == "" {
+			*bootAddrs = RinkebyBootNodeAddrs
+		}
 		if !*offchain {
-			*ethWsUrl = "wss://rinkeby.infura.io/ws"
-			*controllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
+			if *ethWsUrl == "" {
+				*ethWsUrl = "wss://rinkeby.infura.io/ws"
+			}
+			if *controllerAddr == "" {
+				*controllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
+			}
+		}
+	} else {
+		if *bootIDs == "" {
+			*bootIDs = MainnetBootNodeIDs
+		}
+		if *bootAddrs == "" {
+			*bootAddrs = MainnetBootNodeAddrs
+		}
+		if !*offchain {
+			if *ethWsUrl == "" {
+				*ethWsUrl = "wss://mainnet.infura.io/ws"
+			}
+			if *controllerAddr == "" {
+				*controllerAddr = "0xa2592940a01560b4ff024a0231c7adbf8248a8f1"
+			}
 		}
 	}
 
@@ -164,15 +189,6 @@ func main() {
 			maddrs = append(maddrs, addr)
 			i++
 		}
-	} else if *transcoder {
-		sourceMultiAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", *port))
-		maddrs = []ma.Multiaddr{sourceMultiAddr}
-		if *publicIP != "" {
-			addr, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%d", *publicIP, *port))
-			if err != nil {
-				maddrs = append(maddrs, addr)
-			}
-		}
 	} else {
 		sourceMultiAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", *port))
 		maddrs = []ma.Multiaddr{sourceMultiAddr}
@@ -182,9 +198,9 @@ func main() {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
 	}
-	addrs := make([]string, 0)
-	for _, addr := range node.PeerHost.Addrs() {
-		addrs = append(addrs, addr.String())
+	if *transcoder && *publicIP == "" {
+		glog.Errorf("Error - transcoder needs to specify publicIP")
+		return
 	}
 	if *transcoder && *publicIP == "" {
 		glog.Errorf("Error - transcoder needs to specify publicIP")
@@ -196,7 +212,7 @@ func main() {
 		return
 	}
 
-	n, err := core.NewLivepeerNode(nil, nw, core.NodeID(nw.GetNodeID()), addrs, *datadir)
+	n, err := core.NewLivepeerNode(nil, nw, core.NodeID(nw.GetNodeID()), *datadir)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
@@ -212,14 +228,6 @@ func main() {
 
 	if *bootnode || *transcoder || *gateway {
 		//Bootnodes, transcoders and gateway nodes connect to all the bootnodes
-		if *bootnode {
-			glog.Infof("\n\nSetting up bootnode")
-		} else if *transcoder {
-			glog.Infof("\n\nSetting up transcoder")
-		} else if *gateway {
-			glog.Infof("\n\nSetting up gateway node")
-		}
-
 		if err := n.VideoNetwork.SetupProtocol(); err != nil {
 			glog.Errorf("Cannot set up protocol:%v", err)
 			return
@@ -290,11 +298,9 @@ func main() {
 			//Connect to specified websocket
 			gethUrl = *ethWsUrl
 		} else {
-			*ethWsUrl = "wss://mainnet.infura.io/ws"
-			gethUrl = *ethWsUrl
+			glog.Errorf("Need to specify ethIpcPath or ethWsUrl")
+			return
 		}
-
-		glog.Infof("Setting up client...")
 
 		//Set up eth client
 		backend, err := ethclient.Dial(gethUrl)
@@ -303,7 +309,7 @@ func main() {
 			return
 		}
 
-		client, err := eth.NewClient(common.HexToAddress(*ethAcctAddr), keystoreDir, backend, common.HexToAddress(*controllerAddr), EthTxTimeout)
+		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, backend, ethcommon.HexToAddress(*controllerAddr), EthTxTimeout)
 		if err != nil {
 			glog.Errorf("Failed to create client: %v", err)
 			return
@@ -357,12 +363,12 @@ func main() {
 	}
 
 	//Set up the media server
-	s := server.NewLivepeerServer(*rtmpPort, *httpPort, "", n)
+	s := server.NewLivepeerServer(*rtmpPort, *httpPort, n)
 	ec := make(chan error)
 	msCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bigMaxPricePerSegment, err := lpcommon.ParseBigInt(*maxPricePerSegment)
+	bigMaxPricePerSegment, err := common.ParseBigInt(*maxPricePerSegment)
 	if err != nil {
 		glog.Errorf("Error setting max price per segment: %v", err)
 		return
@@ -372,6 +378,18 @@ func main() {
 		s.StartWebserver()
 		ec <- s.StartMediaServer(msCtx, bigMaxPricePerSegment, *transcodingOptions)
 	}()
+
+	switch n.NodeType {
+	case core.Transcoder:
+		glog.Infof("***Livepeer Running in Transcoder Mode***")
+	case core.Gateway:
+		glog.Infof("***Livepeer Running in Gateway Mode***")
+	case core.Bootnode:
+		glog.Infof("***Livepeer Running in Bootnode Mode***")
+	case core.Broadcaster:
+		glog.Infof("***Livepeer Running in Broadcaster Mode***")
+		glog.Infof("Video Ingest Endpoint - rtmp://localhost:%v", *rtmpPort)
+	}
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt)

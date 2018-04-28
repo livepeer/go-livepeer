@@ -8,11 +8,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/console"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 )
 
 var (
@@ -28,7 +29,7 @@ type AccountManager struct {
 	keyStore *keystore.KeyStore
 }
 
-func NewAccountManager(accountAddr common.Address, keystoreDir string) (*AccountManager, error) {
+func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (*AccountManager, error) {
 	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
 
 	acctExists := keyStore.HasAddress(accountAddr)
@@ -36,7 +37,7 @@ func NewAccountManager(accountAddr common.Address, keystoreDir string) (*Account
 
 	var acct accounts.Account
 	var err error
-	if numAccounts == 0 || ((accountAddr != common.Address{}) && !acctExists) {
+	if numAccounts == 0 || ((accountAddr != ethcommon.Address{}) && !acctExists) {
 		glog.Infof("Please create a new ETH account")
 
 		// Account does not exist yet, set it up
@@ -45,7 +46,7 @@ func NewAccountManager(accountAddr common.Address, keystoreDir string) (*Account
 			return nil, err
 		}
 	} else {
-		glog.Infof("Found existing ETH account")
+		glog.V(common.SHORT).Infof("Found existing ETH account")
 
 		// Account already exists or defaulting to first, load it from keystore
 		acct, err = getAccount(accountAddr, keyStore)
@@ -54,7 +55,7 @@ func NewAccountManager(accountAddr common.Address, keystoreDir string) (*Account
 		}
 	}
 
-	glog.Infof("Using ETH account: %v", acct.Address.Hex())
+	glog.V(common.SHORT).Infof("Using ETH account: %v", acct.Address.Hex())
 
 	return &AccountManager{
 		Account:  acct,
@@ -83,7 +84,7 @@ func (am *AccountManager) Unlock(passphrase string) error {
 
 	am.unlocked = true
 
-	glog.Infof("ETH account %v unlocked", am.Account.Address.Hex())
+	glog.V(common.SHORT).Infof("ETH account %v unlocked", am.Account.Address.Hex())
 
 	return nil
 }
@@ -111,7 +112,7 @@ func (am *AccountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int)
 		From:     am.Account.Address,
 		GasLimit: gasLimit,
 		GasPrice: gasPrice,
-		Signer: func(signer types.Signer, address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+		Signer: func(signer types.Signer, address ethcommon.Address, tx *types.Transaction) (*types.Transaction, error) {
 			if address != am.Account.Address {
 				return nil, errors.New("not authorized to sign this account")
 			}
@@ -136,10 +137,10 @@ func (am *AccountManager) Sign(msg []byte) ([]byte, error) {
 
 // Get account from keystore using hex address
 // If no hex address is provided, default to the first account
-func getAccount(accountAddr common.Address, keyStore *keystore.KeyStore) (accounts.Account, error) {
+func getAccount(accountAddr ethcommon.Address, keyStore *keystore.KeyStore) (accounts.Account, error) {
 	accts := keyStore.Accounts()
 
-	if (accountAddr != common.Address{}) {
+	if (accountAddr != ethcommon.Address{}) {
 		for _, acct := range accts {
 			if acct.Address == accountAddr {
 				return acct, nil
@@ -148,7 +149,7 @@ func getAccount(accountAddr common.Address, keyStore *keystore.KeyStore) (accoun
 
 		return accounts.Account{}, ErrAccountNotFound
 	} else {
-		glog.Infof("Defaulting to first ETH account in keystore %v", accts[0].Address.Hex())
+		glog.V(common.SHORT).Infof("Defaulting to first ETH account in keystore %v", accts[0].Address.Hex())
 
 		// Default to first account
 		return accts[0], nil

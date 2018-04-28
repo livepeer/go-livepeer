@@ -118,7 +118,7 @@ func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string, publicIP string, 
 		peerCache := NewPeerCache(n.PeerHost.Peerstore(), fmt.Sprintf("%v/conn", workDir))
 		peers := peerCache.LoadPeers()
 		for _, p := range peers {
-			glog.Infof("Connecting to cached peer: %v(%v)", peer.IDHexEncode(p.ID), p.Addrs)
+			glog.V(common.SHORT).Infof("Connecting to cached peer: %v(%v)", peer.IDHexEncode(p.ID), p.Addrs)
 			nw.connectPeerInfo(p)
 		}
 		go peerCache.Record(context.Background())

@@ -120,11 +120,35 @@ func DeployContract(opts *TransactOpts, abi abi.ABI, bytecode []byte, backend Co
 	return c.address, tx, c, nil
 }
 
+//Adding retry logic here to deal with Infura's websocket instability.
+func (c *BoundContract) Call(opts *CallOpts, result interface{}, method string, params ...interface{}) error {
+	retryCount := 3
+	var err error
+	var output []byte
+	retry := true
+
+	for i := 0; i < retryCount && retry == true; i++ {
+		output, err = c.call(opts, result, method, params...)
+		if err != nil && (err.Error() == "EOF" || err.Error() == "tls: use of closed connection") {
+			retry = true
+			glog.V(4).Infof("Retrying %v call the blockchain: %v", method, i)
+		} else {
+			retry = false
+		}
+	}
+
+	if output != nil {
+		return c.abi.Unpack(result, method, output)
+	} else {
+		return errors.New("ErrNoResult")
+	}
+}
+
 // Call invokes the (constant) contract method with params as input values and
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (c *BoundContract) Call(opts *CallOpts, result interface{}, method string, params ...interface{}) error {
+func (c *BoundContract) call(opts *CallOpts, result interface{}, method string, params ...interface{}) ([]byte, error) {
 	// Don't crash on a lazy user
 	if opts == nil {
 		opts = new(CallOpts)
@@ -132,7 +156,7 @@ func (c *BoundContract) Call(opts *CallOpts, result interface{}, method string, 
 	// Pack the input, call and unpack the results
 	input, err := c.abi.Pack(method, params...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var (
 		msg    = ethereum.CallMsg{From: opts.From, To: &c.address, Data: input}
@@ -143,15 +167,15 @@ func (c *BoundContract) Call(opts *CallOpts, result interface{}, method string, 
 	if opts.Pending {
 		pb, ok := c.caller.(PendingContractCaller)
 		if !ok {
-			return ErrNoPendingState
+			return nil, ErrNoPendingState
 		}
 		output, err = pb.PendingCallContract(ctx, msg)
 		if err == nil && len(output) == 0 {
 			// Make sure we have a contract to operate on, and bail out otherwise.
 			if code, err = pb.PendingCodeAt(ctx, c.address); err != nil {
-				return err
+				return nil, err
 			} else if len(code) == 0 {
-				return ErrNoCode
+				return nil, ErrNoCode
 			}
 		}
 	} else {
@@ -159,16 +183,16 @@ func (c *BoundContract) Call(opts *CallOpts, result interface{}, method string, 
 		if err == nil && len(output) == 0 {
 			// Make sure we have a contract to operate on, and bail out otherwise.
 			if code, err = c.caller.CodeAt(ctx, c.address, nil); err != nil {
-				return err
+				return nil, err
 			} else if len(code) == 0 {
-				return ErrNoCode
+				return nil, ErrNoCode
 			}
 		}
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return c.abi.Unpack(result, method, output)
+	return output, nil
 }
 
 // Transact invokes the (paid) contract method with params as input values.
@@ -178,8 +202,13 @@ func (c *BoundContract) Transact(opts *TransactOpts, method string, params ...in
 	if err != nil {
 		return nil, err
 	}
-	glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\".  Params: %v \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, params, strings.Repeat("*", 75))
-	return c.transact(opts, &c.address, input)
+	tx, err := c.transact(opts, &c.address, input)
+	if err == nil {
+		glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\".  Hash: \"%v\".  Params: %v \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, tx.Hash().String(), params, strings.Repeat("*", 75))
+	} else {
+		glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\".  Hash: \"%v\".  Params: %v \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, tx.Hash().String(), params, err, strings.Repeat("*", 75))
+	}
+	return tx, err
 }
 
 // Transfer initiates a plain transaction to move funds to the contract, calling

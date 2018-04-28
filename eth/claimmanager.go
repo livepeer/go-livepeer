@@ -12,6 +12,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/ipfs"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
@@ -247,7 +248,7 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 		segs = append(segs, k)
 	}
 	ranges := c.makeRanges()
-	glog.Infof("Job %v Claiming for segs: %v ranges: %v", c.jobID, segs, ranges)
+	glog.V(common.SHORT).Infof("Job %v Claiming for segs: %v ranges: %v", c.jobID, segs, ranges)
 
 	for _, segRange := range ranges {
 		//create concat hashes for each seg
@@ -286,7 +287,7 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 			return err
 		}
 
-		glog.Infof("Job %v Submitted transcode claim for segments %v - %v", c.jobID, segRange[0], segRange[1])
+		glog.V(common.SHORT).Infof("Job %v Submitted transcode claim for segments %v - %v", c.jobID, segRange[0], segRange[1])
 
 		c.markClaimedSegs(segRange)
 		c.claims++
@@ -339,7 +340,7 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 	//Iterate through segments, determine which one needs to be verified.
 	for segNo := segRange[0]; segNo <= segRange[1]; segNo++ {
 		if c.shouldVerifySegment(segNo, segRange[0], segRange[1], claimBlkNum, plusOneBlkHash, verifyRate) {
-			glog.Infof("Job %v Segment %v challenged for verification", c.jobID, segNo)
+			glog.V(common.SHORT).Infof("Job %v Segment %v challenged for verification", c.jobID, segNo)
 
 			seg := c.segClaimMap[segNo]
 
@@ -364,7 +365,7 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 				continue
 			}
 
-			glog.Infof("Job %v Verified segment %v", c.jobID, segNo)
+			glog.V(common.SHORT).Infof("Job %v Verified segment %v", c.jobID, segNo)
 		}
 	}
 
@@ -399,7 +400,7 @@ func (c *BasicClaimManager) distributeFees(claimID *big.Int) error {
 		return err
 	}
 
-	glog.Infof("Distributed fees for job %v claim %v", c.jobID, claimID)
+	glog.V(common.SHORT).Infof("Distributed fees for job %v claim %v", c.jobID, claimID)
 
 	return nil
 }
