@@ -27,34 +27,37 @@ func (self *VidListener) HandleRTMPPublish(
 	gotStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error,
 	endStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error) {
 
-	self.RtmpServer.HandlePublish = func(conn *joy4rtmp.Conn) {
-		glog.V(2).Infof("RTMP server got upstream: %v", conn.URL)
+	if self.RtmpServer != nil {
+		self.RtmpServer.HandlePublish = func(conn *joy4rtmp.Conn) {
+			glog.V(2).Infof("RTMP server got upstream: %v", conn.URL)
 
-		strmID := makeStreamID(conn.URL)
-		if strmID == "" {
-			return
-		}
-		s := stream.NewBasicRTMPVideoStream(strmID)
-		ctx, cancel := context.WithCancel(context.Background())
-		eof, err := s.WriteRTMPToStream(ctx, conn)
-		if err != nil {
-			cancel()
-			return
+			strmID := makeStreamID(conn.URL)
+			if strmID == "" {
+				return
+			}
+			s := stream.NewBasicRTMPVideoStream(strmID)
+			ctx, cancel := context.WithCancel(context.Background())
+			eof, err := s.WriteRTMPToStream(ctx, conn)
+			if err != nil {
+				cancel()
+				return
+			}
+
+			err = gotStream(conn.URL, s)
+			if err != nil {
+				glog.Errorf("Error RTMP gotStream handler: %v", err)
+				endStream(conn.URL, s)
+				conn.Close()
+				cancel()
+				return
+			}
+
+			select {
+			case <-eof:
+				endStream(conn.URL, s)
+				cancel()
+			}
 		}
 
-		err = gotStream(conn.URL, s)
-		if err != nil {
-			glog.Errorf("Error RTMP gotStream handler: %v", err)
-			endStream(conn.URL, s)
-			conn.Close()
-			cancel()
-			return
-		}
-
-		select {
-		case <-eof:
-			endStream(conn.URL, s)
-			cancel()
-		}
 	}
 }
