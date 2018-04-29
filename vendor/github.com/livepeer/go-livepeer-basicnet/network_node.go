@@ -74,6 +74,11 @@ func NewNode(listenAddrs []ma.Multiaddr, priv crypto.PrivKey, pub crypto.PubKey,
 		store,
 		&BasicReporter{})
 
+	if err != nil {
+		glog.Errorf("Unable to create swarm: %v", err)
+		return nil, err
+	}
+
 	netwrk.Notify(f)
 	basicHost := bhost.New(netwrk, bhost.NATPortMap)
 
