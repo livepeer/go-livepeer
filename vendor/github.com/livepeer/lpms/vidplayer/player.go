@@ -40,7 +40,9 @@ func defaultRtmpPlayHandler(url *url.URL) (stream.RTMPVideoStream, error) { retu
 //NewVidPlayer creates a new video player
 func NewVidPlayer(rtmpS *joy4rtmp.Server, vodPath string) *VidPlayer {
 	player := &VidPlayer{RtmpServer: rtmpS, VodPath: vodPath, rtmpPlayHandler: defaultRtmpPlayHandler}
-	rtmpS.HandlePlay = player.rtmpServerHandlePlay()
+	if rtmpS != nil {
+		rtmpS.HandlePlay = player.rtmpServerHandlePlay()
+	}
 	return player
 }
 
