@@ -23,6 +23,7 @@ import (
 	peer "gx/ipfs/QmZoWKhxUmZ2seW4BzX6fJkNR8hh9PsGModr7q171yq2SS/go-libp2p-peer"
 
 	"github.com/ericxtang/m3u8"
+	"github.com/ericxtang/timecache"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
@@ -40,6 +41,7 @@ var ErrGetMasterPlaylist = errors.New("ErrGetMasterPlaylist")
 var ErrSendMsg = errors.New("ErrSendMsg")
 var GetMasterPlaylistRelayWait = 10 * time.Second
 var GetResponseWithRelayWait = 10 * time.Second
+var MsgSentTimeCacheDuration = 2 * time.Second
 
 const RelayGCTime = 60 * time.Second
 const RelayTicker = 10 * time.Second
@@ -66,6 +68,7 @@ type BasicVideoNetwork struct {
 	relayers               map[relayerID]*BasicRelayer
 	msgCounts              map[Opcode]int64
 	pingChs                map[string]chan struct{}
+	msgSentCache           *timecache.TimeCache
 	publicIP               ma.Multiaddr
 }
 
@@ -110,6 +113,7 @@ func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string, publicIP string, 
 		msgCounts:              make(map[Opcode]int64),
 		pingChs:                make(map[string]chan struct{}),
 		transResponseCallbacks: make(map[string]func(transcodeResult map[string]string)),
+		msgSentCache:           timecache.NewTimeCache(MsgSentTimeCacheDuration),
 		publicIP:               ip}
 	n.Network = nw
 
@@ -560,8 +564,16 @@ func streamHandler(nw *BasicVideoNetwork, ws *BasicInStream) error {
 		glog.Errorf("Got error decoding msg from %v: %v (%v).", peer.IDHexEncode(ws.Stream.Conn().RemotePeer()), err, reflect.TypeOf(err))
 		return err
 	}
-	// glog.V(4).Infof("%v Received a message %v from %v", peer.IDHexEncode(ws.Stream.Conn().LocalPeer()), msg.Op, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
+
 	glog.V(4).Infof("Received a message %v from %v", msg.Op, peer.IDHexEncode(ws.Stream.Conn().RemotePeer()))
+	if msg.Op == GetMasterPlaylistReqID || msg.Op == MasterPlaylistDataID {
+		if nw.msgSentCache.Has(msgSentCacheKey(ws.Stream.Conn().RemotePeer(), msg.Op, msg.Data)) {
+			//Drop the incoming message
+			return nil
+		}
+		nw.msgSentCache.Add(msgSentCacheKey(ws.Stream.Conn().RemotePeer(), msg.Op, msg.Data))
+	}
+
 	switch msg.Op {
 	case SubReqID:
 		sr, ok := msg.Data.(SubReqMsg)
@@ -935,7 +947,7 @@ func handleTranscodeSub(nw *BasicVideoNetwork, conn net.Conn, ts TranscodeSubMsg
 func handleGetMasterPlaylistReq(nw *BasicVideoNetwork, remotePID peer.ID, mplr GetMasterPlaylistReqMsg) error {
 	mpl, ok := nw.mplMap[mplr.ManifestID]
 	if !ok {
-		//This IS the node. If we can't find it here, we can't find it anywhere. (NEW YORK NEW YORK)
+		//This IS the node. If we can't find it here, we can't find it anywhere.
 		if nid, err := extractNodeID(mplr.ManifestID); err == nil {
 			if peer.IDHexEncode(nid) == nw.GetNodeID() {
 				return nw.sendMessageWithRetry(remotePID, nw.NetworkNode.GetOutStream(remotePID), MasterPlaylistDataID, MasterPlaylistDataMsg{ManifestID: mplr.ManifestID, NotFound: true})
@@ -1117,6 +1129,17 @@ func relayerMapKey(strmID string, opcode Opcode) relayerID {
 
 func msgChansKey(opcode Opcode, key string) string {
 	return fmt.Sprintf("%v|%v", opcode, key)
+}
+
+func msgSentCacheKey(p peer.ID, opcode Opcode, msg interface{}) string {
+	switch opcode {
+	case GetMasterPlaylistReqID:
+		return fmt.Sprintf("%v|%v|%v", peer.IDHexEncode(p), opcode, msg.(GetMasterPlaylistReqMsg).ManifestID)
+	case MasterPlaylistDataID:
+		return fmt.Sprintf("%v|%v|%v", peer.IDHexEncode(p), opcode, msg.(MasterPlaylistDataMsg).ManifestID)
+	default:
+		return randStr()
+	}
 }
 
 func (n *BasicVideoNetwork) sendMessageWithRetry(pid peer.ID, strm OutStream, op Opcode, msg interface{}) error {
