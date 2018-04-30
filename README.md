@@ -27,17 +27,11 @@ You can also build the executables from scratch.
 
 1. If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
 
-2. You can fetch and build the `livepeer` binaries in one step by running `go get github.com/livepeer/go-livepeer/cmd/livepeer` in terminal. The binaries should be built and put in $GOPATH/bin.
+2. You can fetch the code running `go get github.com/livepeer/go-livepeer/cmd/livepeer` in terminal.
 
-3. If you already have the code, you can simply run `go build ./cmd/livepeer/livepeer.go` from the project root directory. To get latest version, `git pull` from the project root directory.
+3. You need to install `ffmpeg` as a dependency.  Run `./install_ffmpeg.sh`.  This will install the dependencies in `~/compiled`.
 
-## Additional Dependencies and Setup
-
-### ffmpeg
-The current version of Livepeer requires [ffmpeg](https://www.ffmpeg.org/).
-
-Please get `ffmpeg` from the [ffmpeg-static repo](https://github.com/livepeer/ffmpeg-static), **install it to your PATH** and make sure it can be invoked by the Livepeer node.
-
+4. You can now run `PKG_CONFIG_PATH=~/compiled/lib/pkgconfig go build ./cmd/livepeer/livepeer.go` from the project root directory. To get latest version, `git pull` from the project root directory.
 
 ## Running Livepeer
 
@@ -78,10 +72,7 @@ If the broadcast is successful, you should be able to get a streamID by querying
 
 ### Streaming
 
-To see the video, run `./livepeer_cli` and pick 'Stream Video'.
-  * You should see a video stream broadcasted from your webcam.  It may feel a little delayed - that's normal. Video live streaming typically has latency from 15 seconds to a few minutes. We are working on solutions to lower this latency, using techniques like WebRTC, peer-to-peer streaming, and crypto-incentives.
-
-Sometimes the stream tool doesn't work.  You can use tools like `ffplay` to view the stream.
+You can use tools like `ffplay` or `VLC` to view the stream.
 
 For example, after you get the streamID, you can view the stream by running:
 
@@ -93,7 +84,7 @@ We'll walk through the steps of becoming a transcoder on the test network.  To l
 
 - `livepeer --rinkeby --transcoder` to start the node as a transcoder.
 
-- `livepeer_cli --transcoder` - make sure you have test ether and test Livepeer token.  Refer to the Quick Start section for getting test ether and test tokens.
+- `livepeer_cli` - make sure you have test ether and test Livepeer token.  Refer to the Quick Start section for getting test ether and test tokens.
 
 - You should see the Transcoder Status as "Not Registered".
 
