@@ -53,8 +53,10 @@ var (
 
 const RinkebyBootNodeIDs = "122019c1a1f0d9fa2296dccb972e7478c5163415cd55722dcf0123553f397c45df7e,1220abded0103eb4e8e46616881e74e88617409ac4012c6958f4086c649f44eacf89,1220afca402fae8dbb0f980ea2d7e873bc07da36d5463516a862c6199bb6383e9e1e"
 const RinkebyBootNodeAddrs = "/ip4/18.217.129.34/tcp/15000,/ip4/52.15.174.204/tcp/15000,/ip4/13.59.47.56/tcp/15000"
+const RinkebyControllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
 const MainnetBootNodeIDs = "122018ef62657724948b236e9523d928d892965e0fdd679beb643f2353556d0aef78,122051f483e4ae0477773540a4ac0e845eac5a51e0883338970270b8af2c02084a66,12208d9eaed4e66382e86fea8956bd7cf0fbd6fbd0146375aa2fa4aaa43467a5dfac,1220bf3b27668b43ce76ca3ca1878ac3aab5009ce64e2305703c9120c90d0f381e1f,1220c079d0cd80d3b82b6ee8b1d91ec09c3172fee8468765ff5dbd43a6c1d5be4443"
 const MainnetBootNodeAddrs = "/ip4/18.188.233.37/tcp/15000,/ip4/18.219.112.164/tcp/15000,/ip4/18.222.5.113/tcp/15000,/ip4/18.221.147.73/tcp/15000,/ip4/18.216.88.163/tcp/15000"
+const MainnetControllerAddr = "0xa94e49bdbb0bfdb920ec1e441b1c408ead94c9bc"
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -134,8 +136,9 @@ func main() {
 				*ethWsUrl = "wss://rinkeby.infura.io/ws"
 			}
 			if *controllerAddr == "" {
-				*controllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
+				*controllerAddr = RinkebyControllerAddr
 			}
+			glog.Infof("***Livepeer is running on the Rinkeby test network: %v***", RinkebyControllerAddr)
 		}
 	} else {
 		if *bootIDs == "" {
@@ -149,8 +152,9 @@ func main() {
 				*ethWsUrl = "wss://mainnet.infura.io/ws"
 			}
 			if *controllerAddr == "" {
-				*controllerAddr = "0xa2592940a01560b4ff024a0231c7adbf8248a8f1"
+				*controllerAddr = MainnetControllerAddr
 			}
+			glog.Infof("***Livepeer is running on the Ethereum main network: %v***", MainnetControllerAddr)
 		}
 	}
 
