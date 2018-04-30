@@ -930,7 +930,6 @@ func TestSendTranscodeResponse(t *testing.T) {
 	// 	glog.Infof("relayer should have 1 listener, but got: %v", r.listeners[peer.IDHexEncode(n3.Identity)])
 	// }
 }
-
 func TestHandleGetMasterPlaylist(t *testing.T) {
 	n1, n2 := setupNodes(t, 15000, 15001)
 	n3, n4 := simpleNodes(15003, 15004)
@@ -948,7 +947,11 @@ func TestHandleGetMasterPlaylist(t *testing.T) {
 			if err != nil {
 				break
 			}
-			n3Chan <- msg.Data.(MasterPlaylistDataMsg)
+			switch msg.Data.(type) {
+			case MasterPlaylistDataMsg:
+				n3Chan <- msg.Data.(MasterPlaylistDataMsg)
+			default:
+			}
 		}
 	})
 
