@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -12,7 +13,7 @@ import (
 )
 
 func dbPath(t *testing.T) string {
-	return fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())
+	return fmt.Sprintf("file:%s?mode=memory&cache=shared&_foreign_keys=1", t.Name())
 }
 
 func tempDB(t *testing.T) (*DB, *sql.DB, error) {
@@ -145,5 +146,62 @@ func TestDBJobs(t *testing.T) {
 	jobs, err = dbh.ActiveJobs(big.NewInt(0))
 	if err != nil || len(jobs) != 2 {
 		t.Error("Unexpected error in active jobs ", err, len(jobs))
+	}
+}
+
+func TestDBReceipts(t *testing.T) {
+	dbh, dbraw, err := tempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	jid := big.NewInt(0)
+	ir := func(j *big.Int, seq int) error {
+		b := []byte("")
+		n := time.Now()
+		return dbh.InsertReceipt(j, int64(seq), "", b, b, b, n, n)
+	}
+	err = ir(jid, 1)
+	if err == nil {
+		t.Error("Expected foreign key constraint to fail; nonexistent job")
+		return
+	}
+	job := NewStubJob()
+	dbh.InsertJob(job)
+	err = ir(jid, 1)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = ir(jid, 1)
+	if err == nil {
+		t.Error("Expected constraint to fail; duplicate seq id")
+		return
+	}
+	err = ir(jid, 2)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// insert receipt for a different job, but same seqid
+	job = NewStubJob()
+	job.ID = 1
+	dbh.InsertJob(job)
+	err = ir(big.NewInt(job.ID), 1)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// check unclaimed receipts
+	receipts, err := dbh.UnclaimedReceipts()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if len(receipts) != 2 {
+		t.Error("Unxpected number of jobs in receipts")
+		return
+	}
+	if len(receipts[0]) != 2 || len(receipts[1]) != 1 {
+		t.Error("Unexpected number of receipts for job")
+		return
 	}
 }
