@@ -718,6 +718,17 @@ func handleSub(nw *BasicVideoNetwork, opCode Opcode, strmID string, submsg inter
 		return ErrHandleMsg
 	}
 
+	// ensure we're not actually the target of the (nonexistent) subscription
+	source, err := extractNodeID(strmID)
+	if err == nil && source == nw.NetworkNode.ID() {
+		glog.V(common.SHORT).Infof("Closing subscription to unknown job: %v", strmID)
+		ns := nw.NetworkNode.GetOutStream(remotePID)
+		if ns != nil {
+			nw.sendMessageWithRetry(remotePID, ns, FinishStreamID, FinishStreamMsg{StrmID: strmID})
+		}
+		return nil
+	}
+
 	//Send Sub Req to the network
 	for _, p := range peers {
 		//Don't send it back to the requesting peer
