@@ -104,7 +104,7 @@ func main() {
 	ethPassword := flag.String("ethPassword", "", "Password for existing Eth account address")
 	ethKeystorePath := flag.String("ethKeystorePath", "", "Path for the Eth Key")
 	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
-	ethWsUrl := flag.String("ethWsUrl", "", "geth websocket url")
+	ethUrl := flag.String("ethUrl", "", "geth/parity rpc or websocket url")
 	rinkeby := flag.Bool("rinkeby", false, "Set to true to connect to rinkeby")
 	devenv := flag.Bool("devenv", false, "Set to true to enable devenv")
 	controllerAddr := flag.String("controllerAddr", "", "Protocol smart contract address")
@@ -133,8 +133,12 @@ func main() {
 			*bootAddrs = RinkebyBootNodeAddrs
 		}
 		if !*offchain {
-			if *ethWsUrl == "" {
-				*ethWsUrl = "wss://rinkeby.infura.io/ws"
+			if *ethUrl == "" {
+				if *transcoder {
+					*ethUrl = "wss://rinkeby.infura.io/ws"
+				} else {
+					*ethUrl = "https://rinkeby.infura.io/cFwU3koCZdTqiH6VE4fj"
+				}
 			}
 			if *controllerAddr == "" {
 				*controllerAddr = RinkebyControllerAddr
@@ -150,8 +154,12 @@ func main() {
 			*bootAddrs = MainnetBootNodeAddrs
 		}
 		if !*offchain {
-			if *ethWsUrl == "" {
-				*ethWsUrl = "wss://mainnet.infura.io/ws"
+			if *ethUrl == "" {
+				if *transcoder {
+					*ethUrl = "wss://mainnet.infura.io/ws"
+				} else {
+					*ethUrl = "https://mainnet.infura.io/cFwU3koCZdTqiH6VE4fj"
+				}
 			}
 			if *controllerAddr == "" {
 				*controllerAddr = MainnetControllerAddr
@@ -300,9 +308,9 @@ func main() {
 		if *ethIpcPath != "" {
 			//Connect to specified IPC file
 			gethUrl = *ethIpcPath
-		} else if *ethWsUrl != "" {
+		} else if *ethUrl != "" {
 			//Connect to specified websocket
-			gethUrl = *ethWsUrl
+			gethUrl = *ethUrl
 		} else {
 			glog.Errorf("Need to specify ethIpcPath or ethWsUrl")
 			return
