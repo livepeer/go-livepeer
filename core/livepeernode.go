@@ -173,7 +173,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 	}
 
 	//Subscribe to broadcast video, do the transcoding, broadcast the transcoded video, do the on-chain claim / verify
-	n.VideoNetwork.TranscodeSub(context.Background(), config.StrmID, func(seqNo uint64, data []byte, eof bool) {
+	err := n.VideoNetwork.TranscodeSub(context.Background(), config.StrmID, func(seqNo uint64, data []byte, eof bool) {
 		glog.V(common.DEBUG).Infof("Starting to transcode segment %v", seqNo)
 		totalStart := time.Now()
 		if eof {
@@ -241,6 +241,9 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 			glog.Errorf("Invalid broadcaster signature for received segment for stream. Dropping segment")
 		}
 	})
+	if err != nil {
+		return nil, err
+	}
 	return resultStrmIDs, nil
 }
 
