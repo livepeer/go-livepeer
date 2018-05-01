@@ -56,7 +56,7 @@ const RinkebyBootNodeAddrs = "/ip4/18.217.129.34/tcp/15000,/ip4/52.15.174.204/tc
 const RinkebyControllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
 const MainnetBootNodeIDs = "122018ef62657724948b236e9523d928d892965e0fdd679beb643f2353556d0aef78,122051f483e4ae0477773540a4ac0e845eac5a51e0883338970270b8af2c02084a66,12208d9eaed4e66382e86fea8956bd7cf0fbd6fbd0146375aa2fa4aaa43467a5dfac,1220bf3b27668b43ce76ca3ca1878ac3aab5009ce64e2305703c9120c90d0f381e1f,1220c079d0cd80d3b82b6ee8b1d91ec09c3172fee8468765ff5dbd43a6c1d5be4443"
 const MainnetBootNodeAddrs = "/ip4/18.188.233.37/tcp/15000,/ip4/18.219.112.164/tcp/15000,/ip4/18.222.5.113/tcp/15000,/ip4/18.221.147.73/tcp/15000,/ip4/18.216.88.163/tcp/15000"
-const MainnetControllerAddr = "0xa94e49bdbb0bfdb920ec1e441b1c408ead94c9bc"
+const MainnetControllerAddr = "0xf96d54e490317c557a967abfa5d6e33006be69b3"
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -210,7 +210,7 @@ func main() {
 		glog.Errorf("Error - transcoder needs to specify publicIP")
 		return
 	}
-	nw, err := bnet.NewBasicVideoNetwork(node, *datadir, *publicIP, *port)
+	nw, err := bnet.NewBasicVideoNetwork(node, *publicIP, *port)
 	if err != nil {
 		glog.Errorf("Cannot create network node: %v", err)
 		return

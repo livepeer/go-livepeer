@@ -92,7 +92,7 @@ func (n *BasicVideoNetwork) GetLocalStreams() []string {
 }
 
 //NewBasicVideoNetwork creates a libp2p node, handle the basic (push-based) video protocol.
-func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string, publicIP string, port int) (*BasicVideoNetwork, error) {
+func NewBasicVideoNetwork(n *BasicNetworkNode, publicIP string, port int) (*BasicVideoNetwork, error) {
 	var ip ma.Multiaddr
 	var err error
 	if publicIP != "" {
@@ -117,16 +117,6 @@ func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string, publicIP string, 
 		publicIP:               ip}
 	n.Network = nw
 
-	//Set up a worker to write connections
-	if workDir != "" {
-		peerCache := NewPeerCache(n.PeerHost.Peerstore(), fmt.Sprintf("%v/conn", workDir))
-		peers := peerCache.LoadPeers()
-		for _, p := range peers {
-			glog.V(common.SHORT).Infof("Connecting to cached peer: %v(%v)", peer.IDHexEncode(p.ID), p.Addrs)
-			nw.connectPeerInfo(p)
-		}
-		go peerCache.Record(context.Background())
-	}
 	return nw, nil
 }
 

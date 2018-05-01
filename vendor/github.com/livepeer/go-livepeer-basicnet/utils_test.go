@@ -69,14 +69,14 @@ func setupNodes(t *testing.T, p1, p2 int) (*BasicVideoNetwork, *BasicVideoNetwor
 	MsgSentTimeCacheDuration = 0 * time.Millisecond
 	priv1, pub1, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	no1, _ := NewNode(addrs(p1), priv1, pub1, &BasicNotifiee{})
-	n1, _ := NewBasicVideoNetwork(no1, "", "127.0.0.1", p1)
+	n1, _ := NewBasicVideoNetwork(no1, "127.0.0.1", p1)
 	if err := n1.SetupProtocol(); err != nil {
 		t.Errorf("Error creating node: %v", err)
 	}
 
 	priv2, pub2, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	no2, _ := NewNode(addrs(p2), priv2, pub2, &BasicNotifiee{})
-	n2, _ := NewBasicVideoNetwork(no2, "", "127.0.0.1", p2)
+	n2, _ := NewBasicVideoNetwork(no2, "127.0.0.1", p2)
 	if err := n2.SetupProtocol(); err != nil {
 		t.Errorf("Error creating node: %v", err)
 	}
