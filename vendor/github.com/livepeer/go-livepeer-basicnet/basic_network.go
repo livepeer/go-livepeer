@@ -92,7 +92,7 @@ func (n *BasicVideoNetwork) GetLocalStreams() []string {
 }
 
 //NewBasicVideoNetwork creates a libp2p node, handle the basic (push-based) video protocol.
-func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string, publicIP string, port int) (*BasicVideoNetwork, error) {
+func NewBasicVideoNetwork(n *BasicNetworkNode, publicIP string, port int) (*BasicVideoNetwork, error) {
 	var ip ma.Multiaddr
 	var err error
 	if publicIP != "" {
@@ -117,16 +117,6 @@ func NewBasicVideoNetwork(n *BasicNetworkNode, workDir string, publicIP string, 
 		publicIP:               ip}
 	n.Network = nw
 
-	//Set up a worker to write connections
-	if workDir != "" {
-		peerCache := NewPeerCache(n.PeerHost.Peerstore(), fmt.Sprintf("%v/conn", workDir))
-		peers := peerCache.LoadPeers()
-		for _, p := range peers {
-			glog.V(common.SHORT).Infof("Connecting to cached peer: %v(%v)", peer.IDHexEncode(p.ID), p.Addrs)
-			nw.connectPeerInfo(p)
-		}
-		go peerCache.Record(context.Background())
-	}
 	return nw, nil
 }
 
@@ -726,6 +716,17 @@ func handleSub(nw *BasicVideoNetwork, opCode Opcode, strmID string, submsg inter
 	if err != nil {
 		glog.Errorf("Error getting closest local node: %v", err)
 		return ErrHandleMsg
+	}
+
+	// ensure we're not actually the target of the (nonexistent) subscription
+	source, err := extractNodeID(strmID)
+	if err == nil && source == nw.NetworkNode.ID() {
+		glog.V(common.SHORT).Infof("Closing subscription to unknown job: %v", strmID)
+		ns := nw.NetworkNode.GetOutStream(remotePID)
+		if ns != nil {
+			nw.sendMessageWithRetry(remotePID, ns, FinishStreamID, FinishStreamMsg{StrmID: strmID})
+		}
+		return nil
 	}
 
 	//Send Sub Req to the network
