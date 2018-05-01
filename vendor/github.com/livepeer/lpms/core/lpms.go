@@ -20,14 +20,11 @@ import (
 )
 
 type LPMS struct {
-	rtmpServer      *joy4rtmp.Server
-	vidPlayer       *vidplayer.VidPlayer
-	vidListen       *vidlistener.VidListener
-	httpPort        string
-	srsRTMPPort     string
-	srsHTTPPort     string
-	workDir         string
-	startHTTPServer bool
+	rtmpServer *joy4rtmp.Server
+	vidPlayer  *vidplayer.VidPlayer
+	vidListen  *vidlistener.VidListener
+	workDir    string
+	httpAddr   string
 }
 
 type transcodeReq struct {
@@ -38,15 +35,40 @@ type transcodeReq struct {
 	StreamID string
 }
 
-//New creates a new LPMS server object.  It really just brokers everything to the components.
-func New(rtmpPort, httpPort, vodPath, workDir string, startRTMP, startHTTP bool) *LPMS {
-	var rtmpServer *joy4rtmp.Server
-	if startRTMP {
-		rtmpServer = &joy4rtmp.Server{Addr: (":" + rtmpPort)}
+type LPMSOpts struct {
+	RtmpPort     string
+	RtmpDisabled bool
+	RtmpHost     string
+	HttpPort     string
+	HttpDisabled bool
+	HttpHost     string
+	VodPath      string
+	WorkDir      string
+}
+
+func defaultLPMSOpts(opts *LPMSOpts) {
+	if opts.RtmpPort == "" {
+		opts.RtmpPort = "1935"
 	}
-	player := vidplayer.NewVidPlayer(rtmpServer, vodPath)
+	if opts.HttpPort == "" {
+		opts.HttpPort = "8935"
+	}
+}
+
+//New creates a new LPMS server object.  It really just brokers everything to the components.
+func New(opts *LPMSOpts) *LPMS {
+	defaultLPMSOpts(opts)
+	var rtmpServer *joy4rtmp.Server
+	if !opts.RtmpDisabled {
+		rtmpServer = &joy4rtmp.Server{Addr: (opts.RtmpHost + ":" + opts.RtmpPort)}
+	}
+	var httpAddr string
+	if !opts.HttpDisabled {
+		httpAddr = opts.HttpHost + ":" + opts.HttpPort
+	}
+	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath)
 	listener := &vidlistener.VidListener{RtmpServer: rtmpServer}
-	return &LPMS{rtmpServer: rtmpServer, vidPlayer: player, vidListen: listener, httpPort: httpPort, workDir: workDir, startHTTPServer: startHTTP}
+	return &LPMS{rtmpServer: rtmpServer, vidPlayer: player, vidListen: listener, workDir: opts.WorkDir, httpAddr: httpAddr}
 }
 
 //Start starts the rtmp and http server
@@ -56,18 +78,19 @@ func (l *LPMS) Start(ctx context.Context) error {
 	defer ffmpeg.DeinitFFmpeg()
 	if l.rtmpServer != nil {
 		go func() {
-			glog.V(4).Infof("LPMS Server listening on %v", l.rtmpServer.Addr)
+			glog.V(4).Infof("LPMS Server listening on rtmp://%v", l.rtmpServer.Addr)
 			ec <- l.rtmpServer.ListenAndServe()
 		}()
 	}
-	if l.startHTTPServer {
+	startHTTP := l.httpAddr != ""
+	if startHTTP {
 		go func() {
-			glog.V(4).Infof("HTTP Server listening on :%v", l.httpPort)
-			ec <- http.ListenAndServe(":"+l.httpPort, nil)
+			glog.V(4).Infof("HTTP Server listening on http://%v", l.httpAddr)
+			ec <- http.ListenAndServe(l.httpAddr, nil)
 		}()
 	}
 
-	if l.rtmpServer != nil || l.startHTTPServer {
+	if l.rtmpServer != nil || startHTTP {
 		select {
 		case err := <-ec:
 			glog.Errorf("LPMS Server Error: %v.  Quitting...", err)

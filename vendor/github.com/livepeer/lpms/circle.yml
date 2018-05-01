@@ -1,7 +1,7 @@
 machine:
   environment:
     GOROOT: /usr/local/go
-    PATH: $PATH:/opt/circleci/nodejs/v4.2.6/lib/node_modules/ffmpeg-static/bin/linux/x64/:$HOME/compiled/bin
+    PATH: $PATH:$HOME/compiled/bin
     PKG_CONFIG_PATH: "$HOME/compiled/lib/pkgconfig"
 
 dependencies:
@@ -13,11 +13,9 @@ dependencies:
     - "$HOME/x264"
     - "$HOME/ffmpeg"
     - "$HOME/compiled"
-    # - "$HOME/ffmpeg-static"
   override:
     - mkdir -p "$HOME/.go_workspace/src/github.com/livepeer" && cd "$HOME/.go_workspace/src/github.com/livepeer" && rm -rf go-livepeer && git clone https://github.com/livepeer/go-livepeer
     - cd $HOME/.go_workspace/src/github.com/livepeer && rm -rf lpms && go get -d github.com/livepeer/lpms/cmd/example && cd lpms && git fetch && git checkout $CIRCLE_BRANCH && git pull && go build cmd/example/*.go
-    - npm install -g ffmpeg-static
 
 test:
   override:
