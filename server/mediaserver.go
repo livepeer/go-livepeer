@@ -66,11 +66,11 @@ type LivepeerServer struct {
 	broadcastRtmpToManifestMap map[string]string
 }
 
-func NewLivepeerServer(rtmpPort string, httpPort string, lpNode *core.LivepeerNode) *LivepeerServer {
+func NewLivepeerServer(rtmpPort string, httpPort string, httpIP string, lpNode *core.LivepeerNode) *LivepeerServer {
 	opts := lpmscore.LPMSOpts{
 		RtmpPort: rtmpPort, RtmpDisabled: true,
-		HttpPort: httpPort,
-		WorkDir:  lpNode.WorkDir,
+		HttpPort: httpPort, HttpHost: httpIP,
+		WorkDir: lpNode.WorkDir,
 	}
 	switch lpNode.NodeType {
 	case core.Broadcaster:
