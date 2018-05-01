@@ -12,7 +12,6 @@ import (
 	"math/rand"
 	"os"
 	"path"
-	"sort"
 	"time"
 
 	"github.com/ericxtang/m3u8"
@@ -126,12 +125,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 		return ErrNotFound
 	}
 
-	//Sort profiles first
-	sort.Sort(ffmpeg.ByName(profiles))
-	transOpts := []byte{}
-	for _, prof := range profiles {
-		transOpts = append(transOpts, crypto.Keccak256([]byte(prof.Name))[0:4]...)
-	}
+	transOpts := common.ProfilesToTranscodeOpts(profiles)
 
 	//Call eth client to create the job
 	blknum, err := n.Eth.LatestBlockNum()

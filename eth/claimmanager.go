@@ -63,7 +63,8 @@ type BasicClaimManager struct {
 }
 
 //NewBasicClaimManager creates a new claim manager.
-func NewBasicClaimManager(sid string, jid *big.Int, broadcaster ethcommon.Address, pricePerSegment *big.Int, p []ffmpeg.VideoProfile, c LivepeerEthClient, ipfs ipfs.IpfsApi) *BasicClaimManager {
+func NewBasicClaimManager(job *ethTypes.Job, c LivepeerEthClient, ipfs ipfs.IpfsApi) *BasicClaimManager {
+	p := job.Profiles
 	seqNos := make([][]int64, len(p), len(p))
 	rHashes := make([][]ethcommon.Hash, len(p), len(p))
 	sd := make([][][]byte, len(p), len(p))
@@ -92,17 +93,17 @@ func NewBasicClaimManager(sid string, jid *big.Int, broadcaster ethcommon.Addres
 	return &BasicClaimManager{
 		client:          c,
 		ipfs:            ipfs,
-		strmID:          sid,
-		jobID:           jid,
+		strmID:          job.StreamId,
+		jobID:           job.JobId,
 		cost:            big.NewInt(0),
-		totalSegCost:    new(big.Int).Mul(pricePerSegment, big.NewInt(int64(len(p)))),
-		broadcasterAddr: broadcaster,
-		pricePerSegment: pricePerSegment,
+		totalSegCost:    new(big.Int).Mul(job.MaxPricePerSegment, big.NewInt(int64(len(p)))),
+		broadcasterAddr: job.BroadcasterAddress,
+		pricePerSegment: job.MaxPricePerSegment,
 		profiles:        p,
 		pLookup:         pLookup,
 		segClaimMap:     make(map[int64]*claimData),
 		unclaimedSegs:   make(map[int64]bool),
-		claims:          0,
+		claims:          job.TotalClaims.Int64(),
 	}
 }
 
