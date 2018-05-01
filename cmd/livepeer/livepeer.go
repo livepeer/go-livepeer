@@ -106,6 +106,7 @@ func main() {
 	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
 	ethWsUrl := flag.String("ethWsUrl", "", "geth websocket url")
 	rinkeby := flag.Bool("rinkeby", false, "Set to true to connect to rinkeby")
+	devenv := flag.Bool("devenv", false, "Set to true to enable devenv")
 	controllerAddr := flag.String("controllerAddr", "", "Protocol smart contract address")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 4000000000, "Gas price for ETH transactions")
@@ -140,6 +141,7 @@ func main() {
 			}
 			glog.Infof("***Livepeer is running on the Rinkeby test network: %v***", RinkebyControllerAddr)
 		}
+	} else if *devenv {
 	} else {
 		if *bootIDs == "" {
 			*bootIDs = MainnetBootNodeIDs
