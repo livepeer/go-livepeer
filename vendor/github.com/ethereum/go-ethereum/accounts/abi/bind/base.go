@@ -206,7 +206,7 @@ func (c *BoundContract) Transact(opts *TransactOpts, method string, params ...in
 	if err == nil {
 		glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\".  Hash: \"%v\".  Params: %v \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, tx.Hash().String(), params, strings.Repeat("*", 75))
 	} else {
-		glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\".  Hash: \"%v\".  Params: %v \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, tx.Hash().String(), params, err, strings.Repeat("*", 75))
+		glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\".  Params: %v \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, params, err, strings.Repeat("*", 75))
 	}
 	return tx, err
 }
