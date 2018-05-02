@@ -65,7 +65,7 @@ func main() {
 		glog.Infof("Error getting work directory: %v", err)
 	}
 	glog.Infof("Settig working directory %v", fmt.Sprintf("%v/.tmp", dir))
-	lpms := core.New("1935", "8000", "", fmt.Sprintf("%v/.tmp", dir), true, true)
+	lpms := core.New(&core.LPMSOpts{WorkDir: fmt.Sprintf("%v/.tmp", dir)})
 
 	//Streams needed for transcoding:
 	var rtmpStrm stream.RTMPVideoStream

@@ -66,18 +66,17 @@ type LivepeerServer struct {
 	broadcastRtmpToManifestMap map[string]string
 }
 
-func NewLivepeerServer(rtmpPort string, httpPort string, lpNode *core.LivepeerNode) *LivepeerServer {
-	startRtmp := true
-	startHttp := true
-	switch lpNode.NodeType {
-	case core.Bootnode:
-		startRtmp = false
-	case core.Transcoder:
-		startRtmp = false
-	case core.Gateway:
-		startRtmp = false
+func NewLivepeerServer(rtmpPort string, rtmpIP string, httpPort string, httpIP string, lpNode *core.LivepeerNode) *LivepeerServer {
+	opts := lpmscore.LPMSOpts{
+		RtmpPort: rtmpPort, RtmpHost: rtmpIP, RtmpDisabled: true,
+		HttpPort: httpPort, HttpHost: httpIP,
+		WorkDir: lpNode.WorkDir,
 	}
-	server := lpmscore.New(rtmpPort, httpPort, "", fmt.Sprintf("%v/.tmp", lpNode.WorkDir), startRtmp, startHttp)
+	switch lpNode.NodeType {
+	case core.Broadcaster:
+		opts.RtmpDisabled = false
+	}
+	server := lpmscore.New(&opts)
 	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, LivepeerNode: lpNode, rtmpStreams: make(map[core.StreamID]stream.RTMPVideoStream), broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
 }
 

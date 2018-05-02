@@ -92,6 +92,8 @@ func main() {
 	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
+	rtmpIP := flag.String("rtmpIP", "127.0.0.1", "IP to bind for HTTP RPC commands")
+	httpIP := flag.String("httpIP", "127.0.0.1", "IP to bind for HTTP RPC commands")
 	bindIPs := flag.String("bindIPs", "", "Comma-separated list of IPs/ports to bind to")
 	bootIDs := flag.String("bootIDs", "", "Comma-separated bootstrap node IDs")
 	bootAddrs := flag.String("bootAddrs", "", "Comma-separated bootstrap node addresses")
@@ -369,7 +371,7 @@ func main() {
 	}
 
 	//Set up the media server
-	s := server.NewLivepeerServer(*rtmpPort, *httpPort, n)
+	s := server.NewLivepeerServer(*rtmpPort, *rtmpIP, *httpPort, *httpIP, n)
 	ec := make(chan error)
 	msCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -394,7 +396,7 @@ func main() {
 		glog.Infof("***Livepeer Running in Bootnode Mode***")
 	case core.Broadcaster:
 		glog.Infof("***Livepeer Running in Broadcaster Mode***")
-		glog.Infof("Video Ingest Endpoint - rtmp://localhost:%v", *rtmpPort)
+		glog.Infof("Video Ingest Endpoint - rtmp://%v:%v", *rtmpIP, *rtmpPort)
 	}
 
 	c := make(chan os.Signal)
