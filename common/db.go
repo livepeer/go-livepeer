@@ -78,6 +78,8 @@ var schema = `
 		stopReason STRING DEFAULT NULL,
 		stoppedAt STRING DEFAULT NULL
 	);
+	-- Index to avoid a full jobs table scan during recovery
+	CREATE INDEX IF NOT EXISTS idx_jobs_endblock_stopreason ON jobs(endBlock, stopReason);
 
 	CREATE TABLE IF NOT EXISTS claims (
 		id INTEGER,
@@ -106,6 +108,7 @@ var schema = `
 		FOREIGN KEY(jobID) REFERENCES jobs(id),
 		FOREIGN KEY(claimID, jobID) REFERENCES claims(id, jobID)
 	);
+	CREATE INDEX IF NOT EXISTS idx_receipts_claimid_errormsg ON receipts(claimID, errorMsg);
 `
 
 func NewDBJob(id *big.Int, streamID string,
