@@ -176,6 +176,7 @@ func (w *wizard) doCLIOpt(choice string, transcoder bool) {
 		switch choice {
 		case "14":
 			w.callReward()
+			return
 		case "15":
 			w.activateTranscoder()
 			return
