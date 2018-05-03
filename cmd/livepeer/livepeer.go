@@ -118,6 +118,7 @@ func main() {
 	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
 	publicIP := flag.String("publicIP", "", "Explicit set node IP address so nodes that need a well-known address can advertise it to the network")
+	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	version := flag.Bool("version", false, "Print out the version")
 
 	flag.Parse()
@@ -356,7 +357,7 @@ func main() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			if err := setupTranscoder(ctx, n, em, *ipfsPath); err != nil {
+			if err := setupTranscoder(ctx, n, em, *ipfsPath, *initializeRound); err != nil {
 				glog.Errorf("Error setting up transcoder: %v", err)
 				return
 			}
@@ -509,7 +510,7 @@ func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 	return priv, pub, nil
 }
 
-func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string) error {
+func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool) error {
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
@@ -531,9 +532,13 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	n.Ipfs = ipfsApi
 	n.EthEventMonitor = em
 
-	// Create rounds service to initialize round if it has not already been initialized
-	rds := eventservices.NewRoundsService(em, n.Eth)
-	n.EthServices = append(n.EthServices, rds)
+	if initializeRound {
+		glog.Infof("Transcoder %v will automatically initialize new rounds", n.Eth.Account().Address.Hex())
+
+		// Create rounds service to initialize round if it has not already been initialized
+		rds := eventservices.NewRoundsService(em, n.Eth)
+		n.EthServices = append(n.EthServices, rds)
+	}
 
 	// Create reward service to claim/distribute inflationary rewards every round
 	rs := eventservices.NewRewardService(em, n.Eth)
