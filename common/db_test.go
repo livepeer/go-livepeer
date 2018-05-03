@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -12,7 +13,7 @@ import (
 )
 
 func dbPath(t *testing.T) string {
-	return fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())
+	return fmt.Sprintf("file:%s?mode=memory&cache=shared&_foreign_keys=1", t.Name())
 }
 
 func tempDB(t *testing.T) (*DB, *sql.DB, error) {
@@ -145,5 +146,173 @@ func TestDBJobs(t *testing.T) {
 	jobs, err = dbh.ActiveJobs(big.NewInt(0))
 	if err != nil || len(jobs) != 2 {
 		t.Error("Unexpected error in active jobs ", err, len(jobs))
+	}
+}
+
+func TestDBReceipts(t *testing.T) {
+	dbh, dbraw, err := tempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	jid := big.NewInt(0)
+	ir := func(j *big.Int, seq int) error {
+		b := []byte("")
+		n := time.Now()
+		return dbh.InsertReceipt(j, int64(seq), "", b, b, b, n, n)
+	}
+	err = ir(jid, 1)
+	if err == nil {
+		t.Error("Expected foreign key constraint to fail; nonexistent job")
+		return
+	}
+	job := NewStubJob()
+	dbh.InsertJob(job)
+	err = ir(jid, 1)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = ir(jid, 1)
+	if err == nil {
+		t.Error("Expected constraint to fail; duplicate seq id")
+		return
+	}
+	err = ir(jid, 2)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// insert receipt for a different job, but same seqid
+	job = NewStubJob()
+	job.ID = 1
+	dbh.InsertJob(job)
+	err = ir(big.NewInt(job.ID), 1)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// check unclaimed receipts
+	receipts, err := dbh.UnclaimedReceipts()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if len(receipts) != 2 {
+		t.Error("Unxpected number of jobs in receipts")
+		return
+	}
+	if len(receipts[0]) != 2 || len(receipts[1]) != 1 {
+		t.Error("Unexpected number of receipts for job")
+		return
+	}
+}
+
+func TestDBClaims(t *testing.T) {
+	dbh, dbraw, err := tempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	ir := func(j int64, seq int) error {
+		b := []byte("")
+		n := time.Now()
+		return dbh.InsertReceipt(big.NewInt(j), int64(seq), "", b, b, b, n, n)
+	}
+
+	job := NewStubJob()
+	dbh.InsertJob(job)
+	ir(job.ID, 0)
+	ir(job.ID, 1)
+	ir(job.ID, 4)
+	ir(job.ID, 5)
+	job.ID++
+	dbh.InsertJob(job)
+	ir(job.ID, 1)
+	ir(job.ID, 2)
+
+	cidp, err := dbh.InsertClaim(big.NewInt(0), [2]int64{0, 1}, [32]byte{})
+	if err != nil || cidp == nil {
+		t.Errorf("Error inserting claim %v %v", err, cidp)
+		return
+	}
+	cidp, err = dbh.InsertClaim(big.NewInt(0), [2]int64{4, 5}, [32]byte{})
+	if err != nil || cidp == nil {
+		t.Errorf("Error inserting claim %v %v", err, cidp)
+		return
+	}
+	cidp, err = dbh.InsertClaim(big.NewInt(1), [2]int64{1, 2}, [32]byte{})
+	if err != nil || cidp == nil {
+		t.Errorf("Error inserting claim %v %v", err, cidp)
+		return
+	}
+	// check job 0 claim 0
+	var nbreceipts int
+	row := dbraw.QueryRow("SELECT count(*) FROM receipts WHERE claimID = 0 AND jobID = 0")
+	err = row.Scan(&nbreceipts)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if nbreceipts != 2 {
+		t.Error("Mismatched receipts for claim: expected 2 got %d", nbreceipts)
+		return
+	}
+	// check job 0 claim 1
+	row = dbraw.QueryRow("SELECT count(*) FROM receipts WHERE claimID = 1 AND jobID = 0")
+	err = row.Scan(&nbreceipts)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if nbreceipts != 2 {
+		t.Error("Mismatched receipts for claim: expected 2 got %d", nbreceipts)
+		return
+	}
+	// check job 1 claim 0
+	row = dbraw.QueryRow("SELECT count(*) FROM receipts WHERE claimID = 0 AND jobID = 1")
+	err = row.Scan(&nbreceipts)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if nbreceipts != 2 {
+		t.Error("Mismatched receipts for claim: expected 2 got %d", nbreceipts)
+		return
+	}
+	// Sanity check number of claims
+	var nbclaims int
+	row = dbraw.QueryRow("SELECT count(*) FROM claims")
+	err = row.Scan(&nbclaims)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if nbclaims != 3 {
+		t.Error("Unexpected number of claims; expected 3 total, got ", nbclaims)
+		return
+	}
+	// check claim status
+	var status string
+	q := "SELECT status FROM claims WHERE jobID = 0 AND id = 1"
+	s := "over the moon"
+	row = dbraw.QueryRow(q)
+	err = row.Scan(&status)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// sanity check value
+	if status == s {
+		t.Error("Expected some status value other than ", status)
+		return
+	}
+	err = dbh.SetClaimStatus(big.NewInt(0), 1, s)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	row = dbraw.QueryRow(q)
+	err = row.Scan(&status)
+	if err != nil || status != s {
+		t.Errorf("Unexpected: error %v, got %v but wanted %v", err, status, s)
+		return
 	}
 }

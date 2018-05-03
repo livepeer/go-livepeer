@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math/big"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -23,7 +25,7 @@ var (
 )
 
 type ClaimManager interface {
-	AddReceipt(seqNo int64, bData []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte) error
+	AddReceipt(seqNo int64, bDataFile string, bData []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error
 	SufficientBroadcasterDeposit() (bool, error)
 	ClaimVerifyAndDistributeFees() error
 	CanClaim() (bool, error)
@@ -36,13 +38,14 @@ type claimData struct {
 	segData              []byte
 	dataHash             []byte
 	bSig                 []byte
-	transcodeProof       []byte
 	claimConcatTDatahash []byte
+	transcodeProof       []byte
 }
 
 //BasicClaimManager manages the claim process for a Livepeer transcoder.  Check the Livepeer protocol for more details.
 type BasicClaimManager struct {
 	client LivepeerEthClient
+	db     *common.DB
 	ipfs   ipfs.IpfsApi
 
 	strmID   string
@@ -63,7 +66,7 @@ type BasicClaimManager struct {
 }
 
 //NewBasicClaimManager creates a new claim manager.
-func NewBasicClaimManager(job *ethTypes.Job, c LivepeerEthClient, ipfs ipfs.IpfsApi) *BasicClaimManager {
+func NewBasicClaimManager(job *ethTypes.Job, c LivepeerEthClient, ipfs ipfs.IpfsApi, db *common.DB) *BasicClaimManager {
 	p := job.Profiles
 	seqNos := make([][]int64, len(p), len(p))
 	rHashes := make([][]ethcommon.Hash, len(p), len(p))
@@ -92,6 +95,7 @@ func NewBasicClaimManager(job *ethTypes.Job, c LivepeerEthClient, ipfs ipfs.Ipfs
 
 	return &BasicClaimManager{
 		client:          c,
+		db:              db,
 		ipfs:            ipfs,
 		strmID:          job.StreamId,
 		jobID:           job.JobId,
@@ -105,6 +109,49 @@ func NewBasicClaimManager(job *ethTypes.Job, c LivepeerEthClient, ipfs ipfs.Ipfs
 		unclaimedSegs:   make(map[int64]bool),
 		claims:          job.TotalClaims.Int64(),
 	}
+}
+
+func RecoverClaims(c LivepeerEthClient, ipfs ipfs.IpfsApi, db *common.DB) error {
+	// XXX While this will recover claims for jobs that haven't submitted a
+	// claim yet, it doesn't attempt to recover if the node restarts mid-process
+	// eg, between the claim, verify and distributeFees calls.
+	glog.V(common.DEBUG).Info("Initialized DB node")
+	jobReceipts, err := db.UnclaimedReceipts()
+	if err != nil {
+		return err
+	}
+	for jid, receipts := range jobReceipts {
+		glog.V(common.DEBUG).Info("claimmanager: Fetching claims for job ", jid)
+		j, err := c.GetJob(big.NewInt(jid)) // benchmark; may be faster to reconstruct locally?
+		if err != nil {
+			glog.Error("Unable to get job ", jid, err)
+			continue
+		}
+		cm := NewBasicClaimManager(j, c, ipfs, db)
+		for _, r := range receipts {
+			bData, err := ioutil.ReadFile(r.BcastFile)
+			if err != nil {
+				glog.Error("Unable to read segment data; gambling on verification ", err)
+				bData = []byte{}
+			}
+			cm.unclaimedSegs[r.SeqNo] = true
+			cm.segClaimMap[r.SeqNo] = &claimData{
+				seqNo:                r.SeqNo,
+				segData:              bData,
+				dataHash:             r.BcastHash,
+				bSig:                 r.BcastSig,
+				claimConcatTDatahash: r.TcodeHash,
+			}
+		}
+		go func() {
+			glog.V(common.DEBUG).Info("claimmanager: Starting recovery for ", jid)
+			err := cm.ClaimVerifyAndDistributeFees()
+			if err != nil {
+				glog.Error("Unable to claim/verify/distribute: ", err)
+			}
+		}()
+	}
+	return nil
 }
 
 func (c *BasicClaimManager) BroadcasterAddr() ethcommon.Address {
@@ -141,8 +188,9 @@ func (c *BasicClaimManager) DidFirstClaim() bool {
 }
 
 //AddReceipt adds a claim for a given video segment.
-func (c *BasicClaimManager) AddReceipt(seqNo int64, bData []byte, bSig []byte,
-	tData map[ffmpeg.VideoProfile][]byte) error {
+func (c *BasicClaimManager) AddReceipt(seqNo int64,
+	bDataFile string, bData []byte, bSig []byte,
+	tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error {
 
 	_, ok := c.segClaimMap[seqNo]
 	if ok {
@@ -181,6 +229,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64, bData []byte, bSig []byte,
 	c.unclaimedSegs[seqNo] = true
 	// glog.Infof("Added %v. unclaimSegs: %v", seqNo, c.unclaimedSegs)
 
+	c.db.InsertReceipt(c.jobID, seqNo, bDataFile, bHash, bSig, tHash, tStart, tEnd)
 	return nil
 }
 
@@ -242,6 +291,12 @@ func (c *BasicClaimManager) markClaimedSegs(segRange [2]int64) {
 	}
 }
 
+func (c *BasicClaimManager) setClaimStatus(id int64, status string) {
+	if c.db != nil {
+		c.db.SetClaimStatus(c.jobID, id, status)
+	}
+}
+
 //Claim creates the onchain claim for all the claims added through AddReceipt
 func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 	segs := make([]int64, 0)
@@ -275,26 +330,51 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 			continue
 		}
 
+		// Preemptively guess at the claim ID and confirm after the tx succeeds.
+		// If the ID check fails, we likely had concurrent claims in-flight.
+		claimID := c.claims
+		if c.db != nil {
+			// check db in case we had any concurrent claims
+			claimIDp, _ := c.db.InsertClaim(c.jobID, segRange, root.Hash)
+			claimID = *claimIDp
+		}
+
 		bigRange := [2]*big.Int{big.NewInt(segRange[0]), big.NewInt(segRange[1])}
 		tx, err := c.client.ClaimWork(c.jobID, bigRange, root.Hash)
 		if err != nil {
 			glog.Errorf("Job %v Could not claim work - error %v", c.jobID, err)
+			c.setClaimStatus(claimID, "FAIL submit")
 			return err
 		}
 
 		err = c.client.CheckTx(tx)
 		if err != nil {
 			glog.Errorf("Job %v tx failed %v", c.jobID, tx)
+			c.setClaimStatus(claimID, "FAIL check tx")
 			return err
 		}
 
 		glog.V(common.SHORT).Infof("Job %v Submitted transcode claim for segments %v - %v", c.jobID, segRange[0], segRange[1])
 
 		c.markClaimedSegs(segRange)
-		c.claims++
+		c.claims = claimID + 1
+		c.setClaimStatus(claimID, "Submitted")
 
-		claim, err := c.client.GetClaim(c.jobID, big.NewInt(c.claims-1))
-		if err != nil {
+		claim, err := c.client.GetClaim(c.jobID, big.NewInt(claimID))
+		if err != nil || claim == nil {
+			glog.Errorf("Could not get claim %v: %v", claimID, err)
+			c.setClaimStatus(claimID, "FAIL get claim")
+			return err
+		}
+
+		// Confirm claim ranges and root matches the estimated ID
+		if segRange[0] != claim.SegmentRange[0].Int64() ||
+			segRange[1] != claim.SegmentRange[1].Int64() ||
+			root.Hash != claim.ClaimRoot {
+			err = fmt.Errorf("Job %v claim %v does not match! Expected segments %v ; got %v, expected root %v got %v", c.jobID, claimID, segRange, claim.SegmentRange, root.Hash, claim.ClaimRoot)
+			glog.Error(err.Error())
+			// XXX fix; maybe the user can manually retry the tx for now.
+			c.setClaimStatus(claimID, "FAIL id mismatch")
 			return err
 		}
 
@@ -309,6 +389,7 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 			b, err := c.client.Backend()
 			if err != nil {
 				glog.Error(err)
+				c.setClaimStatus(claimID, "FAIL Unable to get backend: "+err.Error())
 				return
 			}
 
@@ -317,13 +398,14 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 
 			plusOneBlk, err := b.BlockByNumber(context.Background(), new(big.Int).Add(claim.ClaimBlock, big.NewInt(1)))
 			if err != nil {
+				c.setClaimStatus(claimID, "FAIL waiting for block :"+err.Error())
 				return
 			}
 
 			// Submit for verification if necessary
 			c.verify(claim.ClaimId, claim.ClaimBlock.Int64(), plusOneBlk.Hash(), segRange)
 			// Distribute fees once verification is complete
-			c.distributeFees(claim.ClaimId)
+			c.distributeFees(claimID)
 		}(segRange, claim)
 	}
 
@@ -345,7 +427,6 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 
 			seg := c.segClaimMap[segNo]
 
-			// XXX load segment data from disk here
 			dataStorageHash, err := c.ipfs.Add(bytes.NewReader(seg.segData))
 			if err != nil {
 				glog.Errorf("Job %v Error uploading segment data to IPFS: %v", c.jobID, err)
@@ -373,35 +454,56 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 	return nil
 }
 
-func (c *BasicClaimManager) distributeFees(claimID *big.Int) error {
+func (c *BasicClaimManager) distributeFees(claimID int64) error {
 	verificationPeriod, err := c.client.VerificationPeriod()
 	if err != nil {
+		c.setClaimStatus(claimID, "FAIL Verification period "+err.Error())
 		return err
 	}
 
 	slashingPeriod, err := c.client.VerificationSlashingPeriod()
 	if err != nil {
+		c.setClaimStatus(claimID, "FAIL Slashing period "+err.Error())
 		return err
 	}
 
 	b, err := c.client.Backend()
 	if err != nil {
+		c.setClaimStatus(claimID, "FAIL Distribute backend "+err.Error())
 		return err
 	}
 
 	Wait(b, RpcTimeout, new(big.Int).Add(verificationPeriod, slashingPeriod))
 
-	tx, err := c.client.DistributeFees(c.jobID, claimID)
+	tx, err := c.client.DistributeFees(c.jobID, big.NewInt(claimID))
 	if err != nil {
+		c.setClaimStatus(claimID, "FAIL Submit distribute "+err.Error())
 		return err
 	}
 
 	err = c.client.CheckTx(tx)
 	if err != nil {
+		c.setClaimStatus(claimID, "FAIL Check distribute txn "+err.Error())
 		return err
 	}
 
 	glog.V(common.SHORT).Infof("Distributed fees for job %v claim %v", c.jobID, claimID)
+
+	if c.db != nil {
+		// Clean up segments.
+		// Note that if claiming fails for any reason before this point,
+		// the segments will remain disk until cleaned up manually.
+		// This gives users an opportunity to fix up those claims later.
+		segfiles, err := c.db.ReceiptBCastFilesByClaim(claimID, c.jobID)
+		if err != nil {
+			glog.Error("Unable to get receipts filenames by claim ", err)
+		} else {
+			for _, f := range segfiles {
+				os.Remove(f)
+			}
+		}
+	}
+	c.setClaimStatus(claimID, "Complete")
 
 	return nil
 }

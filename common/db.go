@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math/big"
 	"text/template"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
@@ -17,10 +18,17 @@ type DB struct {
 	dbh *sql.DB
 
 	// prepared statements
-	updateKV   *sql.Stmt
-	insertJob  *sql.Stmt
-	selectJobs *sql.Stmt
-	stopReason *sql.Stmt
+	updateKV          *sql.Stmt
+	insertJob         *sql.Stmt
+	selectJobs        *sql.Stmt
+	stopReason        *sql.Stmt
+	insertRec         *sql.Stmt
+	insertClaim       *sql.Stmt
+	countClaims       *sql.Stmt
+	setReceiptClaim   *sql.Stmt
+	setClaimStatus    *sql.Stmt
+	unclaimedReceipts *sql.Stmt
+	receiptsByClaim   *sql.Stmt
 }
 
 type DBJob struct {
@@ -33,6 +41,15 @@ type DBJob struct {
 	startBlock  int64
 	endBlock    int64
 	stopReason  string
+}
+
+type DBReceipt struct {
+	JobID     int64
+	SeqNo     int64
+	BcastFile string
+	BcastHash []byte
+	BcastSig  []byte
+	TcodeHash []byte
 }
 
 var LivepeerDBVersion = 1
@@ -61,6 +78,37 @@ var schema = `
 		stopReason STRING DEFAULT NULL,
 		stoppedAt STRING DEFAULT NULL
 	);
+	-- Index to avoid a full jobs table scan during recovery
+	CREATE INDEX IF NOT EXISTS idx_jobs_endblock_stopreason ON jobs(endBlock, stopReason);
+
+	CREATE TABLE IF NOT EXISTS claims (
+		id INTEGER,
+		jobID INTEGER,
+		claimRoot STRING,
+		claimBlock INTEGER,
+		claimedAt STRING DEFAULT CURRENT_TIMESTAMP,
+		updatedAt STRING DEFAULT CURRENT_TIMESTAMP,
+		status STRING DEFAULT 'Created',
+		PRIMARY KEY(id, jobID),
+		FOREIGN KEY(jobID) REFERENCES jobs(id)
+	);
+
+	CREATE TABLE IF NOT EXISTS receipts (
+		jobID INTEGER NOT NULL,
+		claimID INTEGER,
+		seqNo INTEGER NOT NULL,
+		bcastFile STRING,
+		bcastHash STRING,
+		bcastSig STRING,
+		transcodedHash STRING,
+		transcodeStartedAt STRING,
+		transcodeEndedAt STRING,
+		errorMsg STRING DEFAULT NULL,
+		PRIMARY KEY(jobID, seqNo),
+		FOREIGN KEY(jobID) REFERENCES jobs(id),
+		FOREIGN KEY(claimID, jobID) REFERENCES claims(id, jobID)
+	);
+	CREATE INDEX IF NOT EXISTS idx_receipts_claimid_errormsg ON receipts(claimID, errorMsg);
 `
 
 func NewDBJob(id *big.Int, streamID string,
@@ -150,6 +198,64 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.stopReason = stmt
 
+	// Insert receipt prepared statement
+	stmt, err = db.Prepare("INSERT INTO receipts(jobID, seqNo, bcastFile, bcastHash, bcastSig, transcodedHash, transcodeStartedAt, transcodeEndedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		glog.Error("Unable to prepare insert segment ", err)
+		d.Close()
+		return nil, err
+	}
+	d.insertRec = stmt
+
+	// Recover receipt prepared statement
+	stmt, err = db.Prepare("SELECT jobID, seqNo, bcastFile, bcastHash, bcastSig, transcodedHash FROM receipts WHERE claimID IS NULL and errorMsg IS NULL")
+	if err != nil {
+		glog.Error("Unable to prepare unclaimed receipts", err)
+		d.Close()
+		return nil, err
+	}
+	d.unclaimedReceipts = stmt
+
+	// Receipts by claim for removing old segments
+	stmt, err = db.Prepare("SELECT bcastFile FROM receipts WHERE claimID = ? AND jobID = ?")
+	if err != nil {
+		glog.Error("Unable to prepare receipts by claim ", err)
+		d.Close()
+		return nil, err
+	}
+	d.receiptsByClaim = stmt
+
+	// Claim related prepared statements
+	stmt, err = db.Prepare("INSERT INTO claims(id, jobID, claimRoot) VALUES(?, ?, ?)")
+	if err != nil {
+		glog.Error("Unable to prepare insert claims ", err)
+		d.Close()
+		return nil, err
+	}
+	d.insertClaim = stmt
+	stmt, err = db.Prepare("SELECT count(*) FROM claims WHERE jobID=?")
+	if err != nil {
+		glog.Error("Unable to prepare claim count ", err)
+		d.Close()
+		return nil, err
+	}
+	d.countClaims = stmt
+	stmt, err = db.Prepare("UPDATE receipts SET claimID = ? WHERE jobID = ? AND seqNo BETWEEN ? AND ?")
+	if err != nil {
+		glog.Error("Unable to prepare setclaimid ", err)
+		d.Close()
+		return nil, err
+	}
+	d.setReceiptClaim = stmt
+
+	stmt, err = db.Prepare("UPDATE claims SET status=?, updatedAt=datetime() WHERE jobID=? AND id=?")
+	if err != nil {
+		glog.Error("Unable to prepare  setclaimstatus ", err)
+		d.Close()
+		return nil, err
+	}
+	d.setClaimStatus = stmt
+
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -167,6 +273,24 @@ func (db *DB) Close() {
 	}
 	if db.stopReason != nil {
 		db.stopReason.Close()
+	}
+	if db.insertRec != nil {
+		db.insertRec.Close()
+	}
+	if db.unclaimedReceipts != nil {
+		db.unclaimedReceipts.Close()
+	}
+	if db.receiptsByClaim != nil {
+		db.receiptsByClaim.Close()
+	}
+	if db.insertClaim != nil {
+		db.insertClaim.Close()
+	}
+	if db.setReceiptClaim != nil {
+		db.setReceiptClaim.Close()
+	}
+	if db.setClaimStatus != nil {
+		db.setClaimStatus.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -242,6 +366,123 @@ func (db *DB) SetStopReason(id *big.Int, reason string) error {
 	_, err := db.stopReason.Exec(reason, id.Int64())
 	if err != nil {
 		glog.Error("db: Error setting stop reason ", id, err)
+		return err
+	}
+	return nil
+}
+
+func (db *DB) InsertReceipt(jobID *big.Int, seqNo int64,
+	bcastFile string, bcastHash []byte, bcastSig []byte, tcodeHash []byte,
+	tcodeStartedAt time.Time, tcodeEndedAt time.Time) error {
+	if db == nil {
+		return nil
+	}
+	glog.V(DEBUG).Infof("db: Inserting receipt for job %v - %v", jobID.String(), seqNo)
+	time2str := func(t time.Time) string {
+		return t.UTC().Format("2006-01-02 15:04:05")
+	}
+	_, err := db.insertRec.Exec(jobID.Int64(), seqNo, bcastFile,
+		ethcommon.ToHex(bcastHash), ethcommon.ToHex(bcastSig),
+		ethcommon.ToHex(tcodeHash),
+		time2str(tcodeStartedAt), time2str(tcodeEndedAt))
+	if err != nil {
+		glog.Error("db: Error inserting segment ", jobID, err)
+		return err
+	}
+	return nil
+}
+func (db *DB) UnclaimedReceipts() (map[int64][]*DBReceipt, error) {
+	receipts := make(map[int64][]*DBReceipt)
+	glog.V(DEBUG).Info("db: Querying unclaimed receipts")
+	rows, err := db.unclaimedReceipts.Query()
+	defer rows.Close()
+	if err != nil {
+		glog.Error("db: Unable to select receipts ", err)
+		return receipts, err
+	}
+	for rows.Next() {
+		var r DBReceipt
+		var bh string
+		var bs string
+		var th string
+		if err := rows.Scan(&r.JobID, &r.SeqNo, &r.BcastFile, &bh, &bs, &th); err != nil {
+			glog.Error("db: Unable to fetch receipt ", err)
+			continue
+		}
+		r.BcastHash = ethcommon.FromHex(bh)
+		r.BcastSig = ethcommon.FromHex(bs)
+		r.TcodeHash = ethcommon.FromHex(th)
+		receipts[r.JobID] = append(receipts[r.JobID], &r)
+	}
+	return receipts, nil
+}
+
+func (db *DB) ReceiptBCastFilesByClaim(claimID int64, jobID *big.Int) ([]string, error) {
+	glog.V(DEBUG).Info("db: Querying receipts by claim")
+	receipts := []string{}
+	rows, err := db.receiptsByClaim.Query(claimID, jobID.Int64())
+	defer rows.Close()
+	if err != nil {
+		glog.Error("db: Unable to select receipts ", err)
+		return receipts, err
+	}
+	for rows.Next() {
+		var f string
+		if err := rows.Scan(&f); err != nil {
+			glog.Error("db: Unable to fetch receipt ", err)
+			continue
+		}
+		receipts = append(receipts, f)
+	}
+	return receipts, nil
+}
+
+func (db *DB) InsertClaim(jobID *big.Int, segRange [2]int64,
+	root [32]byte) (*int64, error) {
+	glog.V(DEBUG).Infof("Inserting claim for job %v", jobID)
+	tx, err := db.dbh.Begin()
+	if err != nil {
+		glog.Error("Unable to begin tx ", err)
+		return nil, err
+	}
+	var claimID int64
+	insert := tx.Stmt(db.insertClaim)
+	count := tx.Stmt(db.countClaims)
+	update := tx.Stmt(db.setReceiptClaim)
+	row := count.QueryRow(jobID.Int64())
+	err = row.Scan(&claimID)
+	if err != nil {
+		glog.Error("Unable to count claims ", err)
+		tx.Rollback()
+		return nil, err
+	}
+	glog.V(DEBUG).Infof("Guessed claim ID to be %v for job %v", claimID, jobID)
+	_, err = insert.Exec(claimID, jobID.Int64(), ethcommon.ToHex(root[:]))
+	if err != nil {
+		glog.Error("Unable to insert claim ", err)
+		tx.Rollback()
+		return nil, err
+	}
+	_, err = update.Exec(claimID, jobID.Int64(), segRange[0], segRange[1])
+	if err != nil {
+		glog.Error("Unable to update segments with claims ", err)
+		tx.Rollback()
+		return nil, err
+	}
+	err = tx.Commit()
+	if err != nil {
+		glog.Error("Unable to commit tx ", err)
+		tx.Rollback()
+		return nil, err
+	}
+	return &claimID, nil
+}
+
+func (db *DB) SetClaimStatus(jobID *big.Int, id int64, status string) error {
+	glog.V(DEBUG).Infof("db: Setting ClaimStatus for job %v claim %v to %v", jobID, id, status)
+	_, err := db.setClaimStatus.Exec(status, jobID.Int64(), id)
+	if err != nil {
+		glog.Error("db: Error setting claim status ", id, err)
 		return err
 	}
 	return nil
