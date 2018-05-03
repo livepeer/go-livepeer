@@ -202,11 +202,15 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 			sufficient, err := cm.SufficientBroadcasterDeposit()
 			if err != nil {
 				glog.Errorf("Error checking broadcaster funds: %v", err)
+				// Give the benefit of doubt in case of an unrelated issue
+				// while checking funds
+				sufficient = true
 			}
 
 			if !sufficient {
 				glog.V(common.SHORT).Infof("Broadcaster does not have enough funds. Claiming work.")
 
+				n.Database.SetStopReason(config.JobID, "Low deposit")
 				canClaim, err := cm.CanClaim()
 				if err != nil {
 					glog.Error(err)
@@ -219,6 +223,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 				} else {
 					glog.Infof("No segments to claim")
 				}
+				n.UnsubscribeFromNetwork(StreamID(config.StrmID))
 				return
 			}
 		}
