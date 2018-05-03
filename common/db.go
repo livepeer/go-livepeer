@@ -7,7 +7,9 @@ import (
 	"math/big"
 	"text/template"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -15,7 +17,22 @@ type DB struct {
 	dbh *sql.DB
 
 	// prepared statements
-	updateKV *sql.Stmt
+	updateKV   *sql.Stmt
+	insertJob  *sql.Stmt
+	selectJobs *sql.Stmt
+	stopReason *sql.Stmt
+}
+
+type DBJob struct {
+	ID          int64
+	streamID    string
+	price       int64
+	profiles    []ffmpeg.VideoProfile
+	broadcaster ethcommon.Address
+	transcoder  ethcommon.Address
+	startBlock  int64
+	endBlock    int64
+	stopReason  string
 }
 
 var LivepeerDBVersion = 1
@@ -30,7 +47,32 @@ var schema = `
 	);
 	INSERT OR IGNORE INTO kv(key, value) VALUES('dbVersion', '{{ . }}');
 	INSERT OR IGNORE INTO kv(key, value) VALUES('lastBlock', '0');
+
+	CREATE TABLE IF NOT EXISTS jobs (
+		id INTEGER PRIMARY KEY,
+		recordedAt STRING DEFAULT CURRENT_TIMESTAMP,
+		streamID STRING,
+		segmentPrice INTEGER,
+		transcodeOptions STRING,
+		broadcaster STRING,
+		transcoder STRING,
+		startBlock INTEGER,
+		endBlock INTEGER,
+		stopReason STRING DEFAULT NULL,
+		stoppedAt STRING DEFAULT NULL
+	);
 `
+
+func NewDBJob(id *big.Int, streamID string,
+	segmentPrice *big.Int, profiles []ffmpeg.VideoProfile,
+	broadcaster ethcommon.Address, transcoder ethcommon.Address,
+	startBlock *big.Int, endBlock *big.Int) *DBJob {
+	return &DBJob{
+		ID: id.Int64(), streamID: streamID, profiles: profiles,
+		price: segmentPrice.Int64(), broadcaster: broadcaster, transcoder: transcoder,
+		startBlock: startBlock.Int64(), endBlock: endBlock.Int64(),
+	}
+}
 
 func InitDB(dbPath string) (*DB, error) {
 	// XXX need a way to ensure (via unit tests?) that all DB{} fields are
@@ -81,6 +123,33 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.updateKV = stmt
 
+	// insertJob prepared statement
+	stmt, err = db.Prepare("INSERT INTO jobs(id, streamID, segmentPrice, transcodeOptions, broadcaster, transcoder, startBlock, endBlock) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		glog.Error("Unable to prepare insertjob stmt ", err)
+		d.Close()
+		return nil, err
+	}
+	d.insertJob = stmt
+
+	// select all jobs since
+	stmt, err = db.Prepare("SELECT id, streamID, segmentPrice, transcodeOptions, broadcaster, transcoder, startBlock, endBlock FROM jobs WHERE endBlock > ? AND stopReason IS NULL")
+	if err != nil {
+		glog.Error("Unable to prepare selectjob stmt ", err)
+		d.Close()
+		return nil, err
+	}
+	d.selectJobs = stmt
+
+	// set reason for stopping a job
+	stmt, err = db.Prepare("UPDATE jobs SET stopReason=?, stoppedAt=datetime() WHERE id=?")
+	if err != nil {
+		glog.Error("Unable to prepare stop reason statement ", err)
+		d.Close()
+		return nil, err
+	}
+	d.stopReason = stmt
+
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -89,6 +158,15 @@ func (db *DB) Close() {
 	glog.V(DEBUG).Info("Closing DB")
 	if db.updateKV != nil {
 		db.updateKV.Close()
+	}
+	if db.insertJob != nil {
+		db.insertJob.Close()
+	}
+	if db.selectJobs != nil {
+		db.selectJobs.Close()
+	}
+	if db.stopReason != nil {
+		db.stopReason.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -106,4 +184,65 @@ func (db *DB) SetLastSeenBlock(block *big.Int) error {
 		return err
 	}
 	return err
+}
+
+func (db *DB) InsertJob(job *DBJob) error {
+	if db == nil {
+		return nil
+	}
+	options := ethcommon.ToHex(ProfilesToTranscodeOpts(job.profiles))
+	glog.V(DEBUG).Info("db: Inserting job ", job.ID)
+	_, err := db.insertJob.Exec(job.ID, job.streamID, job.price, options,
+		job.broadcaster.String(), job.transcoder.String(),
+		job.startBlock, job.endBlock)
+	if err != nil {
+		glog.Error("db: Unable to insert job ", err)
+	}
+	return err
+}
+
+func (db *DB) ActiveJobs(since *big.Int) ([]*DBJob, error) {
+	if db == nil {
+		return []*DBJob{}, nil
+	}
+	glog.V(DEBUG).Info("db: Querying active jobs since ", since)
+	rows, err := db.selectJobs.Query(since.Int64())
+	if err != nil {
+		glog.Error("db: Unable to select jobs ", err)
+		return nil, err
+	}
+	defer rows.Close()
+	jobs := []*DBJob{}
+	for rows.Next() {
+		var job DBJob
+		var transcoder string
+		var broadcaster string
+		var options string
+		if err := rows.Scan(&job.ID, &job.streamID, &job.price, &options, &broadcaster, &transcoder, &job.startBlock, &job.endBlock); err != nil {
+			glog.Error("db: Unable to fetch job ", err)
+			continue
+		}
+		profiles, err := TxDataToVideoProfile(string(ethcommon.FromHex(options)))
+		if err != nil {
+			glog.Error("Unable to convert transcode options into ffmpeg profile ", err)
+		}
+		job.transcoder = ethcommon.HexToAddress(transcoder)
+		job.broadcaster = ethcommon.HexToAddress(broadcaster)
+		job.profiles = profiles
+		jobs = append(jobs, &job)
+	}
+	return jobs, nil
+}
+
+func (db *DB) SetStopReason(id *big.Int, reason string) error {
+	if db == nil {
+		return nil
+	}
+	glog.V(DEBUG).Infof("db: Setting StopReason for job %v to %v", id, reason)
+	_, err := db.stopReason.Exec(reason, id.Int64())
+	if err != nil {
+		glog.Error("db: Error setting stop reason ", id, err)
+		return err
+	}
+	return nil
 }

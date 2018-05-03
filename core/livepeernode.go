@@ -178,6 +178,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 		glog.V(common.DEBUG).Infof("Starting to transcode segment %v", seqNo)
 		totalStart := time.Now()
 		if eof {
+			n.Database.SetStopReason(config.JobID, "Stream finished")
 			if cm != nil && config.PerformOnchainClaim {
 				glog.V(common.SHORT).Infof("Stream finished. Claiming work.")
 
