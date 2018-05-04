@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
@@ -128,10 +129,16 @@ func (l *LPMS) HandleHLSPlay(
 
 //SegmentRTMPToHLS takes a rtmp stream and re-packages it into a HLS stream with the specified segmenter options
 func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error {
-	//Invoke Segmenter
-	localRtmpUrl := "rtmp://localhost" + l.rtmpServer.Addr + "/stream/" + rs.GetStreamID()
+	// set localhost if necessary. Check more problematic addrs? [::] ?
+	rtmpAddr := l.rtmpServer.Addr
+	if strings.HasPrefix(rtmpAddr, "0.0.0.0") {
+		rtmpAddr = "127.0.0.1" + rtmpAddr[len("0.0.0.0"):]
+	}
+	localRtmpUrl := "rtmp://" + rtmpAddr + "/stream/" + rs.GetStreamID()
+
 	glog.V(4).Infof("Segment RTMP Req: %v", localRtmpUrl)
 
+	//Invoke Segmenter
 	s := segmenter.NewFFMpegVideoSegmenter(l.workDir, hs.GetStreamID(), localRtmpUrl, segOptions)
 	c := make(chan error, 1)
 	ffmpegCtx, ffmpegCancel := context.WithCancel(context.Background())
