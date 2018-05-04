@@ -31,7 +31,6 @@ func (w *wizard) stats(showTranscoder bool) {
 	data := [][]string{
 		[]string{"Node ID", w.getNodeID()},
 		[]string{"Node Addr", w.getNodeAddr()},
-		[]string{"RTMP Port", w.rtmpPort},
 		[]string{"HTTP Port", w.httpPort},
 		[]string{"Controller Address", addrMap["Controller"].Hex()},
 		[]string{"LivepeerToken Address", addrMap["LivepeerToken"].Hex()},

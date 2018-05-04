@@ -51,12 +51,12 @@ func main() {
 		// Start the wizard and relinquish control
 		w := &wizard{
 			endpoint: fmt.Sprintf("http://%v:%v/status", c.String("host"), c.String("http")),
-			rtmpPort: c.String("rtmp"),
 			httpPort: c.String("http"),
 			host:     c.String("host"),
 			in:       bufio.NewReader(os.Stdin),
 		}
 		w.transcoder = w.isTranscoder()
+		w.rinkeby = w.onRinkeby()
 		w.run()
 
 		return nil
@@ -67,10 +67,10 @@ func main() {
 
 type wizard struct {
 	endpoint   string // Local livepeer node
-	rtmpPort   string
 	httpPort   string
 	host       string
 	transcoder bool
+	rinkeby    bool
 	in         *bufio.Reader // Wrapper around stdin to allow reading user input
 }
 
@@ -78,7 +78,7 @@ func (w *wizard) run() {
 	// Make sure there is a local node running
 	_, err := http.Get(w.endpoint)
 	if err != nil {
-		log.Error(fmt.Sprintf("Cannot find local node. Is your node running on http:%v and rtmp:%v?", w.httpPort, w.rtmpPort))
+		log.Error(fmt.Sprintf("Cannot find local node. Is your node running on http:%v?", w.httpPort))
 		return
 	}
 
@@ -100,35 +100,33 @@ func (w *wizard) run() {
 		fmt.Println("What would you like to do? (default = stats)")
 		fmt.Println(" 1. Get node status")
 		fmt.Println(" 2. View protocol parameters")
-		fmt.Println(" 3. Initialize round")
-		fmt.Println(" 4. Bond")
-		fmt.Println(" 5. Unbond")
-		fmt.Println(" 6. Withdraw stake (LPT)")
-		fmt.Println(" 7. Withdraw fees (ETH)")
-		fmt.Println(" 8. Claim rewards and fees")
-		fmt.Println(" 9. Transfer LPT")
-		fmt.Println(" 10. Get test LPT")
-		fmt.Println(" 11. Get test ETH")
-		fmt.Println(" 12. List registered transcoders")
-		fmt.Println(" 13. Print latest jobs")
-
+		fmt.Println(" 3. List registered transcoders")
+		fmt.Println(" 4. Print latest jobs")
+		fmt.Println(" 5. Invoke \"initialize round\"")
+		fmt.Println(" 6. Invoke \"bond\"")
+		fmt.Println(" 7. Invoke \"unbond\"")
+		fmt.Println(" 8. Invoke \"withdraw stake\" (LPT)")
+		fmt.Println(" 9. Invoke \"withdraw fees\" (ETH)")
+		fmt.Println(" 10. Invoke \"claim\" (for rewards and fees)")
+		fmt.Println(" 11. Invoke \"transfer\" (LPT)")
 		if w.transcoder {
-			fmt.Println(" 14. Manually invoke \"reward\"")
-			fmt.Println(" 15. Become a transcoder")
-			fmt.Println(" 16. Set transcoder config")
-
-			w.doCLIOpt(w.read(), true)
+			fmt.Println(" 12. Invoke \"reward\"")
+			fmt.Println(" 13. Invoke multi-step \"become a transcoder\"")
+			fmt.Println(" 14. Set transcoder config")
 		} else {
-			fmt.Println(" 14. Deposit (ETH)")
-			fmt.Println(" 15. Withdraw deposit (ETH)")
-			fmt.Println(" 16. Set broadcast config")
-
-			w.doCLIOpt(w.read(), false)
+			fmt.Println(" 12. Invoke \"deposit\" (ETH)")
+			fmt.Println(" 13. Invoke \"withdraw deposit\" (ETH)")
+			fmt.Println(" 14. Set broadcast config")
 		}
+		if w.rinkeby {
+			fmt.Println(" 15. Get test LPT")
+			fmt.Println(" 16. Get test ETH")
+		}
+		w.doCLIOpt(w.read())
 	}
 }
 
-func (w *wizard) doCLIOpt(choice string, transcoder bool) {
+func (w *wizard) doCLIOpt(choice string) {
 	switch choice {
 	case "1":
 		w.stats(w.transcoder)
@@ -137,66 +135,74 @@ func (w *wizard) doCLIOpt(choice string, transcoder bool) {
 		w.protocolStats()
 		return
 	case "3":
-		w.initializeRound()
-		return
-	case "4":
-		w.bond()
-		return
-	case "5":
-		w.unbond()
-		return
-	case "6":
-		w.withdrawStake()
-		return
-	case "7":
-		w.withdrawFees()
-		return
-	case "8":
-		w.claimRewardsAndFees()
-		return
-	case "9":
-		w.transferTokens()
-		return
-	case "10":
-		w.requestTokens()
-		return
-	case "11":
-		fmt.Print("For Rinkeby, go to the Rinkeby faucet (https://faucet.rinkeby.io/).  For the Livepeer testnet, go to the Livepeer faucet (eth-testnet.livepeer.org). (enter to continue)")
-		w.read()
-		return
-	case "12":
 		w.registeredTranscoderStats()
 		return
-	case "13":
+	case "4":
 		w.printLast5Jobs()
 		return
+	case "5":
+		w.initializeRound()
+		return
+	case "6":
+		w.bond()
+		return
+	case "7":
+		w.unbond()
+		return
+	case "8":
+		w.withdrawStake()
+		return
+	case "9":
+		w.withdrawFees()
+		return
+	case "10":
+		w.claimRewardsAndFees()
+		return
+	case "11":
+		w.transferTokens()
 	}
 
-	if transcoder {
+	if w.transcoder {
 		switch choice {
-		case "14":
+		case "12":
 			w.callReward()
-			return
-		case "15":
+		case "13":
 			w.activateTranscoder()
 			return
-		case "16":
+		case "14":
 			w.setTranscoderConfig()
 			return
 		}
 	} else {
 		switch choice {
-		case "14":
+		case "12":
 			w.deposit()
 			return
-		case "15":
+		case "13":
 			w.withdraw()
 			return
-		case "16":
+		case "14":
 			w.setBroadcastConfig()
 			return
 		}
 	}
 
+	if w.rinkeby {
+		switch choice {
+		case "15":
+			w.requestTokens()
+			return
+		case "16":
+			fmt.Print("For Rinkeby Eth, go to the Rinkeby faucet (https://faucet.rinkeby.io/).")
+			w.read()
+			return
+		}
+	}
+
 	log.Error("That's not something I can do")
+}
+
+func (w *wizard) onRinkeby() bool {
+	nID := httpGet(fmt.Sprintf("http://%v:%v/EthNetworkID", w.host, w.httpPort))
+	return nID == "4"
 }
