@@ -4,7 +4,6 @@ Livepeer is a peer-to-peer global video live streaming network.  The Golp projec
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,14 +11,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
-	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"os/user"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -60,28 +56,6 @@ const MainnetControllerAddr = "0xf96d54e490317c557a967abfa5d6e33006be69b3"
 
 func main() {
 	flag.Set("logtostderr", "true")
-
-	//Stream Command
-	streamCmd := flag.NewFlagSet("stream", flag.ExitOnError)
-	streamID := streamCmd.String("id", "", "Stream ID")
-	srPort := streamCmd.String("http", "8935", "http port for the video")
-
-	//Broadcast Command
-	broadcastCmd := flag.NewFlagSet("broadcast", flag.ExitOnError)
-	brtmp := broadcastCmd.Int("rtmp", 1935, "RTMP port for broadcasting.")
-	bhttp := broadcastCmd.Int("http", 8935, "HTTP port for getting broadcast streamID.")
-
-	if len(os.Args) > 1 {
-		if os.Args[1] == "stream" {
-			streamCmd.Parse(os.Args[2:])
-			stream(*srPort, *streamID)
-			return
-		} else if os.Args[1] == "broadcast" {
-			broadcastCmd.Parse(os.Args[2:])
-			broadcast(*brtmp, *bhttp)
-			return
-		}
-	}
 
 	usr, err := user.Current()
 	if err != nil {
@@ -555,84 +529,4 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	}
 
 	return nil
-}
-
-func stream(port string, streamID string) {
-	start := time.Now()
-	if streamID == "" {
-		glog.Errorf("Need to specify streamID via -id")
-		return
-	}
-
-	//Fetch local stream playlist - this will request from the network so we know the stream is here
-	url := fmt.Sprintf("http://localhost:%v/stream/%v.m3u8", port, streamID)
-	res, err := http.Get(url)
-	if err != nil {
-		glog.Fatal(err)
-	}
-	_, err = ioutil.ReadAll(res.Body)
-	res.Body.Close()
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	cmd := exec.Command("ffplay", "-timeout", "180000000", url) //timeout in 3 mins
-	glog.Infof("url: %v", url)
-	err = cmd.Start()
-	if err != nil {
-		glog.Infof("Couldn't start the stream.  Make sure a local Livepeer node is running on port %v", port)
-		os.Exit(1)
-	}
-	glog.Infof("Now streaming")
-	err = cmd.Wait()
-	if err != nil {
-		glog.Infof("Couldn't start the stream.  Make sure a local Livepeer node is running on port %v", port)
-		os.Exit(1)
-	}
-
-	if time.Since(start) < time.Second {
-		glog.Infof("Error: Make sure local Livepeer node is running on port %v", port)
-	} else {
-		glog.Infof("Finished the stream")
-	}
-	return
-}
-
-//Run ffmpeg - only works on OSX
-func broadcast(rtmpPort int, httpPort int) {
-	if runtime.GOOS == "darwin" {
-		cmd := exec.Command("ffmpeg", "-f", "avfoundation", "-framerate", "30", "-pixel_format", "uyvy422", "-i", "0:0", "-vcodec", "libx264", "-tune", "zerolatency", "-b", "1000k", "-x264-params", "keyint=60:min-keyint=60", "-acodec", "aac", "-ac", "1", "-b:a", "96k", "-f", "flv", fmt.Sprintf("rtmp://localhost:%v/movie", rtmpPort))
-
-		var out bytes.Buffer
-		var stderr bytes.Buffer
-		cmd.Stdout = &out
-		cmd.Stderr = &stderr
-		err := cmd.Start()
-		if err != nil {
-			glog.Infof("Couldn't broadcast the stream: %v %v", err, stderr.String())
-			os.Exit(1)
-		}
-
-		glog.Infof("Now broadcasting - %v%v", out.String(), stderr.String())
-
-		time.Sleep(3 * time.Second)
-		resp, err := http.Get(fmt.Sprintf("http://localhost:%v/streamID", httpPort))
-		if err != nil {
-			glog.Errorf("Error getting stream ID: %v", err)
-		} else {
-			defer resp.Body.Close()
-			id, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				glog.Errorf("Error reading stream ID: %v", err)
-			}
-			glog.Infof("StreamID: %v", string(id))
-		}
-
-		if err = cmd.Wait(); err != nil {
-			glog.Errorf("Error running broadcast: %v\n%v", err, stderr.String())
-			return
-		}
-	} else {
-		glog.Errorf("The broadcast command only support darwin for now.  Please download OBS to broadcast.")
-	}
 }

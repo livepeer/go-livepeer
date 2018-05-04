@@ -998,6 +998,19 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.Transcoder)))
 	})
 
+	http.HandleFunc("/EthNetworkID", func(w http.ResponseWriter, r *http.Request) {
+		be, err := s.LivepeerNode.Eth.Backend()
+		if err != nil {
+			glog.Errorf("Error getting eth backend: %v", err)
+			return
+		}
+		networkID, err := be.NetworkID(context.Background())
+		if err != nil {
+			glog.Errorf("Error getting eth network ID: %v", err)
+		}
+		w.Write([]byte(networkID.String()))
+	})
+
 	http.HandleFunc("/reward", func(w http.ResponseWriter, r *http.Request) {
 		glog.Infof("Calling reward")
 		tx, err := s.LivepeerNode.Eth.Reward()
