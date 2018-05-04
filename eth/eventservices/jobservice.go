@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
+	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
@@ -70,6 +71,12 @@ func (s *JobService) Start(ctx context.Context) error {
 		}
 
 		if assignedAddr == s.node.Eth.Account().Address {
+			dbjob := lpcommon.NewDBJob(
+				job.JobId, job.StreamId,
+				job.MaxPricePerSegment, job.Profiles,
+				job.BroadcasterAddress, s.node.Eth.Account().Address,
+				job.CreationBlock, job.EndBlock)
+			s.node.Database.InsertJob(dbjob)
 			return s.doTranscode(job)
 		} else {
 			return true, nil
@@ -79,6 +86,11 @@ func (s *JobService) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	s.eventMonitor.SubscribeNewBlock(context.Background(), "BlockWatcher", make(chan *types.Header), func(h *types.Header) (bool, error) {
+		s.node.Database.SetLastSeenBlock(h.Number)
+		return true, nil
+	})
 
 	s.logsCh = logsCh
 	s.sub = sub
@@ -110,6 +122,7 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 
 	if bDeposit.Cmp(job.MaxPricePerSegment) == -1 {
 		glog.Infof("Broadcaster does not have enough funds. Skipping job")
+		s.node.Database.SetStopReason(job.JobId, "Insufficient deposit")
 		return true, nil
 	}
 
@@ -118,11 +131,13 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 	glog.Infof("Transcoder got job %v - strmID: %v, tData: %v, config: %v", job.JobId, job.StreamId, job.Profiles, config)
 
 	//Do The Transcoding
-	cm := eth.NewBasicClaimManager(job, s.node.Eth, s.node.Ipfs)
+	cm := eth.NewBasicClaimManager(job, s.node.Eth, s.node.Ipfs, s.node.Database)
 	tr := transcoder.NewFFMpegSegmentTranscoder(job.Profiles, s.node.WorkDir)
 	strmIDs, err := s.node.TranscodeAndBroadcast(config, cm, tr)
 	if err != nil {
-		glog.Errorf("Transcode Error: %v", err)
+		reason := fmt.Sprintf("Transcode error: %v", err)
+		glog.Errorf(reason)
+		s.node.Database.SetStopReason(job.JobId, reason)
 		return false, err
 	}
 
@@ -173,6 +188,35 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 	})
 
 	return true, nil
+}
+
+func (s *JobService) RestartTranscoder() error {
+
+	eth.RecoverClaims(s.node.Eth, s.node.Ipfs, s.node.Database)
+
+	blknum, err := s.node.Eth.LatestBlockNum()
+	if err != nil {
+		return err
+	}
+	// fetch active jobs
+	jobs, err := s.node.Database.ActiveJobs(blknum)
+	if err != nil {
+		glog.Error("Could not fetch active jobs ", err)
+		return err
+	}
+	for _, j := range jobs {
+		job, err := s.node.Eth.GetJob(big.NewInt(j.ID)) // benchmark; may be faster to reconstruct locally?
+		if err != nil {
+			glog.Error("Unable to get job for ", j.ID, err)
+			continue
+		}
+		res, err := s.doTranscode(job)
+		if !res || err != nil {
+			glog.Error("Unable to restore transcoding of ", j.ID, err)
+			continue
+		}
+	}
+	return nil
 }
 
 func parseNewJobLog(log types.Log) (broadcasterAddr common.Address, jid *big.Int, streamID string, transOptions string) {

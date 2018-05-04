@@ -75,16 +75,17 @@ type LivepeerNode struct {
 	Ipfs            ipfs.IpfsApi
 	WorkDir         string
 	NodeType        NodeType
+	Database        *common.DB
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
-func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID, wd string) (*LivepeerNode, error) {
+func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	if vn == nil {
 		glog.Errorf("Cannot create a LivepeerNode without a VideoNetwork")
 		return nil, ErrLivepeerNode
 	}
 
-	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Eth: e, WorkDir: wd}, nil
+	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Eth: e, WorkDir: wd, Database: dbh}, nil
 }
 
 //Start sets up the Livepeer protocol and connects the node to the network
@@ -177,6 +178,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 		glog.V(common.DEBUG).Infof("Starting to transcode segment %v", seqNo)
 		totalStart := time.Now()
 		if eof {
+			n.Database.SetStopReason(config.JobID, "Stream finished")
 			if cm != nil && config.PerformOnchainClaim {
 				glog.V(common.SHORT).Infof("Stream finished. Claiming work.")
 
@@ -258,17 +260,19 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 			return // TODO return error?
 		}
 	}
+	// Create input file from segment. Removed after claiming complete or error
 	fname := path.Join(n.WorkDir, inName)
-	defer os.Remove(fname)
 	if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
 		glog.Errorf("Transcoder cannot write file: %v", err)
 		return // TODO return error?
 	}
 
+	transcodeStart := time.Now().UTC()
 	// Ensure length matches expectations. 4 second + 25% wiggle factor, 60fps
 	err := ffmpeg.CheckMediaLen(fname, 4*1.25*1000, 60*4*1.25)
 	if err != nil {
 		glog.Errorf("Media length check failed: %v", err)
+		os.Remove(fname)
 		return
 	}
 	//Do the transcoding
@@ -276,8 +280,10 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	tData, err := t.Transcode(fname)
 	if err != nil {
 		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
+		os.Remove(fname)
 		return
 	}
+	transcodeEnd := time.Now().UTC()
 	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
 	glog.V(common.DEBUG).Infof("Transcoding of segment %v took %v", seg.SeqNo, time.Since(start))
 
@@ -305,7 +311,13 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	}
 	//Don't do the onchain stuff unless specified
 	if cm != nil && config.PerformOnchainClaim {
-		cm.AddReceipt(int64(seg.SeqNo), seg.Data, sig, tProfileData)
+		err = cm.AddReceipt(int64(seg.SeqNo), fname, seg.Data, sig, tProfileData, transcodeStart, transcodeEnd)
+		if err != nil {
+			os.Remove(fname)
+		}
+	} else {
+		// We aren't going through the claim process so remove input immediately
+		os.Remove(fname)
 	}
 }
 

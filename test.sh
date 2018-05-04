@@ -20,7 +20,12 @@ go test -logtostderr=true
 t4=$?
 cd ..
 
-if (($t1!=0||$t2!=0||$t3!=0||$t4!=0))
+cd common
+go test -logtostderr=true
+t5=$?
+cd ..
+
+if (($t1!=0||$t2!=0||$t3!=0||$t4!=0||$t5!=0))
 then
     printf "\n\nSome Tests Failed\n\n"
     exit -1

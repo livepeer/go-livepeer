@@ -179,6 +179,14 @@ func main() {
 		}
 	}
 
+	//Set up DB
+	dbh, err := common.InitDB(*datadir + "/lp.sqlite3")
+	if err != nil {
+		glog.Errorf("Error opening DB", err)
+		return
+	}
+	defer dbh.Close()
+
 	//Take care of priv/pub keypair
 	priv, pub, err := getLPKeys(*datadir)
 	if err != nil {
@@ -229,7 +237,7 @@ func main() {
 		return
 	}
 
-	n, err := core.NewLivepeerNode(nil, nw, core.NodeID(nw.GetNodeID()), *datadir)
+	n, err := core.NewLivepeerNode(nil, nw, core.NodeID(nw.GetNodeID()), *datadir, dbh)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
@@ -552,6 +560,13 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	err = n.StartEthServices()
 	if err != nil {
 		return err
+	}
+
+	// Restart jobs as necessary
+	err = js.RestartTranscoder()
+	if err != nil {
+		glog.Errorf("Unable to restart transcoder: %v", err)
+		// non-fatal, so continue
 	}
 
 	return nil
