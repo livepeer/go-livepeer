@@ -10,6 +10,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/ipfs"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
@@ -65,10 +66,12 @@ func hashTData(order []ffmpeg.VideoProfile, td map[ffmpeg.VideoProfile][]byte) [
 }
 
 func TestAddReceipt(t *testing.T) {
+	db, _ := common.InitDB(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())) // NOTE foreign keys are disabled; enable if a test begins depending on them
 	ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps4x3, ffmpeg.P720p30fps4x3}
-	cm := NewBasicClaimManager(newJob(), &StubClient{}, &ipfs.StubIpfsApi{}, nil)
+	cm := NewBasicClaimManager(newJob(), &StubClient{}, &ipfs.StubIpfsApi{}, db)
 	tStart := time.Now().UTC()
 	tEnd := tStart
+	defer db.Close()
 
 	//Should get error due to a length mismatch
 	td := map[ffmpeg.VideoProfile][]byte{
@@ -112,6 +115,31 @@ func TestAddReceipt(t *testing.T) {
 
 	if string(cm.segClaimMap[0].bSig) != "sig" {
 		t.Errorf("Expecting %v, got %v", "sig", string(cm.segClaimMap[0].bSig))
+	}
+
+	// Simulate recovery: insert a receipt in the DB then insert another with
+	// the same seqNo the normal way. Should fail due to double claims
+
+	// Sanity check that the segment doesn't exist already
+	if _, ok := cm.unclaimedSegs[1]; ok {
+		t.Error("Expected segment 1 to be unclaimed")
+	}
+	// fake it with the db insertion
+	err := db.InsertReceipt(cm.jobID, 1, "", []byte{}, []byte{}, []byte{}, tStart, tEnd)
+	if err != nil {
+		t.Error(err)
+	}
+	// normal insertion
+	err = cm.AddReceipt(1, "", []byte{}, []byte{}, td, tStart, tEnd)
+	if err == nil {
+		t.Error("Expecting error; inserting duplicate claim!")
+	}
+	// ensure we don't have data inadvertedly sitting around our data structures
+	if _, ok := cm.unclaimedSegs[1]; ok {
+		t.Error("Expected segment 1 to be unclaimed")
+	}
+	if _, ok := cm.segClaimMap[1]; ok {
+		t.Error("Expected segment 1 to be unclaimed")
 	}
 }
 
