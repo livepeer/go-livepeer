@@ -224,12 +224,15 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64,
 		claimConcatTDatahash: tHash,
 	}
 
+	if err := c.db.InsertReceipt(c.jobID, seqNo, bDataFile, bHash, bSig, tHash, tStart, tEnd); err != nil {
+		return err
+	}
+
 	c.cost = new(big.Int).Add(c.cost, c.totalSegCost)
 	c.segClaimMap[seqNo] = cd
 	c.unclaimedSegs[seqNo] = true
 	// glog.Infof("Added %v. unclaimSegs: %v", seqNo, c.unclaimedSegs)
 
-	c.db.InsertReceipt(c.jobID, seqNo, bDataFile, bHash, bSig, tHash, tStart, tEnd)
 	return nil
 }
 
