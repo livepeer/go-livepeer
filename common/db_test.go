@@ -204,6 +204,39 @@ func TestDBReceipts(t *testing.T) {
 		t.Error("Unexpected number of receipts for job")
 		return
 	}
+
+	// Receipt checking functions.
+
+	// Ensure that the receipt we just inserted exists
+	exists, err := dbh.ReceiptExists(big.NewInt(job.ID), 1)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if !exists {
+		t.Error("Expected segment to exist in DB")
+		return
+	}
+	// Ensure a nonexistent receipt does not exist: valid job, invalid seg
+	exists, err = dbh.ReceiptExists(big.NewInt(job.ID), 10)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if exists {
+		t.Error("Did not expect a segment to exist")
+		return
+	}
+	// Ensure a nonexistent receipt does not exist: invalid job, seg exists elsewhere
+	exists, err = dbh.ReceiptExists(big.NewInt(10), 1)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if exists {
+		t.Error("Did not expect a segment to exist")
+		return
+	}
 }
 
 func TestDBClaims(t *testing.T) {

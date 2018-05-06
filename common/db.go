@@ -23,6 +23,7 @@ type DB struct {
 	selectJobs        *sql.Stmt
 	stopReason        *sql.Stmt
 	insertRec         *sql.Stmt
+	checkRec          *sql.Stmt
 	insertClaim       *sql.Stmt
 	countClaims       *sql.Stmt
 	setReceiptClaim   *sql.Stmt
@@ -207,6 +208,15 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.insertRec = stmt
 
+	// Check if receipt with the given seqno exists
+	stmt, err = db.Prepare("SELECT 1 FROM receipts WHERE jobID=? AND seqNo=?")
+	if err != nil {
+		glog.Error("Unable to prepare segment exists statement")
+		d.Close()
+		return nil, err
+	}
+	d.checkRec = stmt
+
 	// Recover receipt prepared statement
 	stmt, err = db.Prepare("SELECT jobID, seqNo, bcastFile, bcastHash, bcastSig, transcodedHash FROM receipts WHERE claimID IS NULL and errorMsg IS NULL")
 	if err != nil {
@@ -369,6 +379,23 @@ func (db *DB) SetStopReason(id *big.Int, reason string) error {
 		return err
 	}
 	return nil
+}
+
+func (db *DB) ReceiptExists(jobID *big.Int, seqNo uint64) (bool, error) {
+	if db == nil {
+		return false, nil
+	}
+	glog.V(DEBUG).Infof("db: Checking receipt %v for job %v", seqNo, jobID)
+	var res int
+	err := db.checkRec.QueryRow(jobID.Int64(), seqNo).Scan(&res)
+	if err != nil && err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		glog.Error("Could not check receipt existence ", err)
+		return false, err
+	}
+	return true, nil
 }
 
 func (db *DB) InsertReceipt(jobID *big.Int, seqNo int64,

@@ -251,6 +251,15 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 
 func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []byte, cm eth.ClaimManager, t transcoder.Transcoder, resultStrmIDs []StreamID, broadcasters map[StreamID]stream.Broadcaster, config net.TranscodeConfig) {
 
+	// Prevent unnecessary work, check for replayed sequence numbers.
+	// NOTE: If we ever process segments from the same job concurrently,
+	// we may still end up doing work multiple times. But this is OK for now.
+	hasReceipt, err := n.Database.ReceiptExists(config.JobID, seg.SeqNo)
+	if err != nil || hasReceipt {
+		glog.Errorf("Got a DB error (%v) or receipt exists (%v)", err, hasReceipt)
+		return // TODO return error?
+	}
+
 	//Assume d is in the right format, write it to disk
 	inName := randName()
 	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
@@ -269,8 +278,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 
 	transcodeStart := time.Now().UTC()
 	// Ensure length matches expectations. 4 second + 25% wiggle factor, 60fps
-	err := ffmpeg.CheckMediaLen(fname, 4*1.25*1000, 60*4*1.25)
-	if err != nil {
+	if err := ffmpeg.CheckMediaLen(fname, 4*1.25*1000, 60*4*1.25); err != nil {
 		glog.Errorf("Media length check failed: %v", err)
 		os.Remove(fname)
 		return
