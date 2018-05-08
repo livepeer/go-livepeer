@@ -165,6 +165,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			}
 		}
 
+		// We can only have one concurrent stream for now
+		if len(s.rtmpStreams) > 0 {
+			return ErrAlreadyExists
+		}
+
 		//Check if stream ID already exists
 		if _, ok := s.rtmpStreams[core.StreamID(rtmpStrm.GetStreamID())]; ok {
 			return ErrAlreadyExists
