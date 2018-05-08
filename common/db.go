@@ -10,6 +10,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -30,6 +31,7 @@ type DB struct {
 	setClaimStatus    *sql.Stmt
 	unclaimedReceipts *sql.Stmt
 	receiptsByClaim   *sql.Stmt
+	insertBcast       *sql.Stmt
 }
 
 type DBJob struct {
@@ -110,6 +112,23 @@ var schema = `
 		FOREIGN KEY(claimID, jobID) REFERENCES claims(id, jobID)
 	);
 	CREATE INDEX IF NOT EXISTS idx_receipts_claimid_errormsg ON receipts(claimID, errorMsg);
+
+	CREATE TABLE IF NOT EXISTS broadcasts (
+		id INTEGER PRIMARY KEY,
+		recordedAt STRING DEFAULT CURRENT_TIMESTAMP,
+		streamID STRING,
+		segmentPrice INTEGER,
+		segmentCount INTEGER DEFAULT 0,
+		transcodeOptions STRING,
+		broadcaster STRING,
+		transcoder STRING,
+		startBlock INTEGER,
+		endBlock INTEGER,
+		stopReason STRING DEFAULT NULL,
+		stoppedAt STRING DEFAULT NULL
+	);
+	-- Index to avoid a full table scan
+	CREATE INDEX IF NOT EXISTS idx_broadcasts_endblock_stopreason ON broadcasts(endBlock, stopReason);
 `
 
 func NewDBJob(id *big.Int, streamID string,
@@ -266,6 +285,15 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.setClaimStatus = stmt
 
+	// Broadcast related
+	stmt, err = db.Prepare("INSERT INTO broadcasts(id, streamID, segmentPrice, transcodeOptions, broadcaster, transcoder, startBlock, endBlock) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		glog.Error("Unable to prepare broadcast insertion ", err)
+		d.Close()
+		return nil, err
+	}
+	d.insertBcast = stmt
+
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -287,6 +315,9 @@ func (db *DB) Close() {
 	if db.insertRec != nil {
 		db.insertRec.Close()
 	}
+	if db.checkRec != nil {
+		db.checkRec.Close()
+	}
 	if db.unclaimedReceipts != nil {
 		db.unclaimedReceipts.Close()
 	}
@@ -301,6 +332,9 @@ func (db *DB) Close() {
 	}
 	if db.setClaimStatus != nil {
 		db.setClaimStatus.Close()
+	}
+	if db.insertBcast != nil {
+		db.insertBcast.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -513,4 +547,17 @@ func (db *DB) SetClaimStatus(jobID *big.Int, id int64, status string) error {
 		return err
 	}
 	return nil
+}
+
+func (db *DB) InsertBroadcast(job *lpTypes.Job) error {
+	options := ethcommon.ToHex(ProfilesToTranscodeOpts(job.Profiles))[2:]
+	glog.V(DEBUG).Info("db: Inserting broadcast ", job.JobId)
+	_, err := db.insertBcast.Exec(job.JobId.Int64(), job.StreamId,
+		job.MaxPricePerSegment.Int64(), options,
+		job.BroadcasterAddress.String(), job.TranscoderAddress.String(),
+		job.CreationBlock.Int64(), job.EndBlock.Int64())
+	if err != nil {
+		glog.Error("db: Unable to insert job ", err)
+	}
+	return err
 }
