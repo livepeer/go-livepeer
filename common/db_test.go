@@ -113,10 +113,26 @@ func TestDBVersion(t *testing.T) {
 
 func NewStubJob() *DBJob {
 	return &DBJob{
-		ID: 0, streamID: "1", price: 0, profiles: []ffmpeg.VideoProfile{},
-		broadcaster: ethcommon.Address{}, Transcoder: ethcommon.Address{},
+		ID: 0, streamID: "1", price: 0,
+		profiles: []ffmpeg.VideoProfile{
+			ffmpeg.P720p60fps16x9,
+			ffmpeg.P360p30fps4x3,
+			ffmpeg.P144p30fps16x9,
+		}, broadcaster: ethcommon.Address{}, Transcoder: ethcommon.Address{},
 		startBlock: 1, endBlock: 2,
 	}
+}
+
+func profilesMatch(j1 []ffmpeg.VideoProfile, j2 []ffmpeg.VideoProfile) bool {
+	if len(j1) != len(j2) {
+		return false
+	}
+	for i, v := range j1 {
+		if j2[i] != v {
+			return false
+		}
+	}
+	return true
 }
 
 func TestDBJobs(t *testing.T) {
@@ -140,6 +156,9 @@ func TestDBJobs(t *testing.T) {
 	if err != nil || len(jobs) != 1 || jobs[0].ID != 2 {
 		t.Error("Unexpected error in active jobs ", err, len(jobs))
 		return
+	}
+	if !profilesMatch(jobs[0].profiles, j.profiles) {
+		t.Error("Mismatched profiles in query")
 	}
 	// check stop reason filter
 	dbh.SetStopReason(big.NewInt(j.ID), "insufficient lolz")
