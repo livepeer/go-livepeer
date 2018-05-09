@@ -32,6 +32,7 @@ type DB struct {
 	unclaimedReceipts *sql.Stmt
 	receiptsByClaim   *sql.Stmt
 	insertBcast       *sql.Stmt
+	selectBcasts      *sql.Stmt
 }
 
 type DBJob struct {
@@ -44,6 +45,7 @@ type DBJob struct {
 	startBlock  int64
 	endBlock    int64
 	stopReason  string
+	Segments    int64
 }
 
 type DBReceipt struct {
@@ -139,6 +141,19 @@ func NewDBJob(id *big.Int, streamID string,
 		ID: id.Int64(), streamID: streamID, profiles: profiles,
 		price: segmentPrice.Int64(), broadcaster: broadcaster, Transcoder: transcoder,
 		startBlock: startBlock.Int64(), endBlock: endBlock.Int64(),
+	}
+}
+
+func DBJobToEthJob(j *DBJob) *lpTypes.Job {
+	return &lpTypes.Job{
+		JobId:              big.NewInt(j.ID),
+		StreamId:           j.streamID,
+		MaxPricePerSegment: big.NewInt(j.price),
+		Profiles:           j.profiles,
+		BroadcasterAddress: j.broadcaster,
+		TranscoderAddress:  j.Transcoder,
+		CreationBlock:      big.NewInt(j.startBlock),
+		EndBlock:           big.NewInt(j.endBlock),
 	}
 }
 
@@ -294,6 +309,15 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.insertBcast = stmt
 
+	// select all broadcasts since
+	stmt, err = db.Prepare("SELECT id, streamID, segmentPrice, segmentCount, transcodeOptions, broadcaster, transcoder, startBlock, endBlock FROM broadcasts WHERE endBlock > ? AND stopReason IS NULL")
+	if err != nil {
+		glog.Error("Unable to prepare selectbroadcast stmt ", err)
+		d.Close()
+		return nil, err
+	}
+	d.selectBcasts = stmt
+
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -335,6 +359,9 @@ func (db *DB) Close() {
 	}
 	if db.insertBcast != nil {
 		db.insertBcast.Close()
+	}
+	if db.selectBcasts != nil {
+		db.selectBcasts.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -560,4 +587,37 @@ func (db *DB) InsertBroadcast(job *lpTypes.Job) error {
 		glog.Error("db: Unable to insert job ", err)
 	}
 	return err
+}
+
+func (db *DB) ActiveBroadcasts(since *big.Int) ([]*DBJob, error) {
+	if db == nil {
+		return []*DBJob{}, nil
+	}
+	glog.V(DEBUG).Info("db: Querying active broadcasts since ", since)
+	rows, err := db.selectBcasts.Query(since.Int64())
+	if err != nil {
+		glog.Error("db: Unable to select jobs ", err)
+		return nil, err
+	}
+	defer rows.Close()
+	jobs := []*DBJob{}
+	for rows.Next() {
+		var job DBJob
+		var transcoder string
+		var broadcaster string
+		var options string
+		if err := rows.Scan(&job.ID, &job.streamID, &job.price, &job.Segments, &options, &broadcaster, &transcoder, &job.startBlock, &job.endBlock); err != nil {
+			glog.Error("db: Unable to fetch job ", err)
+			continue
+		}
+		profiles, err := TxDataToVideoProfile(options)
+		if err != nil {
+			glog.Error("Unable to convert transcode options into ffmpeg profile ", err)
+		}
+		job.Transcoder = ethcommon.HexToAddress(transcoder)
+		job.broadcaster = ethcommon.HexToAddress(broadcaster)
+		job.profiles = profiles
+		jobs = append(jobs, &job)
+	}
+	return jobs, nil
 }
