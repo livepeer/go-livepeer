@@ -114,7 +114,7 @@ func TestDBVersion(t *testing.T) {
 func NewStubJob() *DBJob {
 	return &DBJob{
 		ID: 0, streamID: "1", price: 0, profiles: []ffmpeg.VideoProfile{},
-		broadcaster: ethcommon.Address{}, transcoder: ethcommon.Address{},
+		broadcaster: ethcommon.Address{}, Transcoder: ethcommon.Address{},
 		startBlock: 1, endBlock: 2,
 	}
 }

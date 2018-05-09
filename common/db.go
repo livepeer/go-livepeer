@@ -38,7 +38,7 @@ type DBJob struct {
 	price       int64
 	profiles    []ffmpeg.VideoProfile
 	broadcaster ethcommon.Address
-	transcoder  ethcommon.Address
+	Transcoder  ethcommon.Address
 	startBlock  int64
 	endBlock    int64
 	stopReason  string
@@ -118,7 +118,7 @@ func NewDBJob(id *big.Int, streamID string,
 	startBlock *big.Int, endBlock *big.Int) *DBJob {
 	return &DBJob{
 		ID: id.Int64(), streamID: streamID, profiles: profiles,
-		price: segmentPrice.Int64(), broadcaster: broadcaster, transcoder: transcoder,
+		price: segmentPrice.Int64(), broadcaster: broadcaster, Transcoder: transcoder,
 		startBlock: startBlock.Int64(), endBlock: endBlock.Int64(),
 	}
 }
@@ -327,7 +327,7 @@ func (db *DB) InsertJob(job *DBJob) error {
 	options := ethcommon.ToHex(ProfilesToTranscodeOpts(job.profiles))
 	glog.V(DEBUG).Info("db: Inserting job ", job.ID)
 	_, err := db.insertJob.Exec(job.ID, job.streamID, job.price, options,
-		job.broadcaster.String(), job.transcoder.String(),
+		job.broadcaster.String(), job.Transcoder.String(),
 		job.startBlock, job.endBlock)
 	if err != nil {
 		glog.Error("db: Unable to insert job ", err)
@@ -360,7 +360,7 @@ func (db *DB) ActiveJobs(since *big.Int) ([]*DBJob, error) {
 		if err != nil {
 			glog.Error("Unable to convert transcode options into ffmpeg profile ", err)
 		}
-		job.transcoder = ethcommon.HexToAddress(transcoder)
+		job.Transcoder = ethcommon.HexToAddress(transcoder)
 		job.broadcaster = ethcommon.HexToAddress(broadcaster)
 		job.profiles = profiles
 		jobs = append(jobs, &job)
