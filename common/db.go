@@ -324,7 +324,7 @@ func (db *DB) InsertJob(job *DBJob) error {
 	if db == nil {
 		return nil
 	}
-	options := ethcommon.ToHex(ProfilesToTranscodeOpts(job.profiles))
+	options := ethcommon.ToHex(ProfilesToTranscodeOpts(job.profiles))[2:]
 	glog.V(DEBUG).Info("db: Inserting job ", job.ID)
 	_, err := db.insertJob.Exec(job.ID, job.streamID, job.price, options,
 		job.broadcaster.String(), job.Transcoder.String(),
@@ -356,7 +356,7 @@ func (db *DB) ActiveJobs(since *big.Int) ([]*DBJob, error) {
 			glog.Error("db: Unable to fetch job ", err)
 			continue
 		}
-		profiles, err := TxDataToVideoProfile(string(ethcommon.FromHex(options)))
+		profiles, err := TxDataToVideoProfile(options)
 		if err != nil {
 			glog.Error("Unable to convert transcode options into ffmpeg profile ", err)
 		}
