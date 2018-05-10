@@ -50,7 +50,7 @@ void lpms_deinit()
 // Segmenter
 //
 
-int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time)
+int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char *seg_start)
 {
 #define r2h_err(str) {\
   if (!ret) ret = 1; \
@@ -98,6 +98,7 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time)
 
   av_dict_set(&md, "hls_time", seg_time, 0);
   av_dict_set(&md, "hls_segment_filename", ts_tmpl, 0);
+  av_dict_set(&md, "start_number", seg_start, 0);
   ret = avformat_write_header(oc, &md);
   if (ret < 0) r2h_err("Error writing header\n");
 

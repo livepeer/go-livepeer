@@ -28,6 +28,7 @@ var PlaylistRetryWait = 500 * time.Millisecond
 type SegmenterOptions struct {
 	EnforceKeyframe bool //Enforce each segment starts with a keyframe
 	SegLength       time.Duration
+	StartSeq        int
 }
 
 type VideoSegment struct {
@@ -63,7 +64,7 @@ func NewFFMpegVideoSegmenter(workDir string, strmID string, localRtmpUrl string,
 	if opt.SegLength == 0 {
 		opt.SegLength = time.Second * 4
 	}
-	return &FFMpegVideoSegmenter{WorkDir: workDir, StrmID: strmID, LocalRtmpUrl: localRtmpUrl, SegLen: opt.SegLength}
+	return &FFMpegVideoSegmenter{WorkDir: workDir, StrmID: strmID, LocalRtmpUrl: localRtmpUrl, SegLen: opt.SegLength, curSegment: opt.StartSeq}
 }
 
 //RTMPToHLS invokes FFMpeg to do the segmenting. This method blocks until the segmenter exits.
@@ -79,7 +80,7 @@ func (s *FFMpegVideoSegmenter) RTMPToHLS(ctx context.Context, cleanup bool) erro
 	outp := fmt.Sprintf("%s/%s.m3u8", s.WorkDir, s.StrmID)
 	ts_tmpl := fmt.Sprintf("%s/%s", s.WorkDir, s.StrmID) + "_%d.ts"
 	seglen := strconv.FormatFloat(s.SegLen.Seconds(), 'f', 6, 64)
-	ret := ffmpeg.RTMPToHLS(s.LocalRtmpUrl, outp, ts_tmpl, seglen)
+	ret := ffmpeg.RTMPToHLS(s.LocalRtmpUrl, outp, ts_tmpl, seglen, s.curSegment)
 	if cleanup {
 		s.Cleanup()
 	}

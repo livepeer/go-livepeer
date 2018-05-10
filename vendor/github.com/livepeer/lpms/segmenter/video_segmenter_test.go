@@ -241,6 +241,75 @@ test_6.ts
 	os.RemoveAll(workDir)
 }
 
+func TestSetStartSeq(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+	defer ffmpeg.DeinitFFmpeg()
+	wd, _ := os.Getwd()
+	workDir := wd + "/tmp"
+	os.RemoveAll(workDir)
+
+	startSeq := 1234 // Base value
+
+	//Create a test stream from stub
+	strm := &TestStream{}
+	strmUrl := fmt.Sprintf("rtmp://localhost:%v/stream/%v", "1936", strm.GetStreamID())
+	opt := SegmenterOptions{SegLength: time.Second * 4, StartSeq: startSeq}
+	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), strmUrl, opt)
+	server := &rtmp.Server{Addr: ":1936"}
+	player := vidplayer.NewVidPlayer(server, "")
+
+	player.HandleRTMPPlay(
+		func(url *url.URL) (stream.RTMPVideoStream, error) {
+			return strm, nil
+		})
+
+	//Kick off RTMP server
+	go func() {
+		err := player.RtmpServer.ListenAndServe()
+		if err != nil {
+			t.Errorf("Error kicking off RTMP server: %v", err)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	//Kick off FFMpeg to create segments
+	err := RunRTMPToHLS(vs, ctx)
+	if err != nil {
+		t.Errorf("Since it's not a real stream, ffmpeg should finish instantly. But instead got: %v", err)
+	}
+
+	if vs.curSegment != startSeq {
+		t.Errorf("Segment counter should start with %v.  But got: %v", startSeq, vs.curSegment)
+	}
+
+	for j := 0; j < 2; j++ {
+		seg, err := vs.PollSegment(ctx)
+		i := startSeq + j
+
+		if err != nil {
+			t.Errorf("Got error: %v", err)
+		}
+
+		if vs.curSegment != i+1 {
+			t.Errorf("Segment counter should move to %v.But got: %v", i+1, vs.curSegment)
+		}
+
+		fn := "test_" + strconv.Itoa(i) + ".ts"
+		if seg.Name != fn {
+			t.Errorf("Expecting %v, got %v", fn, seg.Name)
+		}
+
+		if seg.SeqNo != uint64(i) {
+			t.Errorf("Expecting SeqNo %v, got %v", uint(i), seg.SeqNo)
+		}
+	}
+
+	//Clean up
+	os.RemoveAll(workDir)
+}
+
 func TestPollPlaylistError(t *testing.T) {
 	opt := SegmenterOptions{}
 	vs := NewFFMpegVideoSegmenter("./sometestdir", "test", "", opt)
@@ -451,7 +520,7 @@ func TestMissingKeyframe(t *testing.T) {
 	// actually segment
 	ffmpeg.InitFFmpeg()
 	defer ffmpeg.DeinitFFmpeg()
-	err = ffmpeg.RTMPToHLS(fname, oname, path.Join(dir, "out")+"_%d.ts", "4")
+	err = ffmpeg.RTMPToHLS(fname, oname, path.Join(dir, "out")+"_%d.ts", "4", 0)
 	if err != nil {
 		t.Errorf("Error segmenting - %v", err)
 		return

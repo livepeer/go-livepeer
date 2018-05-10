@@ -18,16 +18,18 @@ import "C"
 
 var ErrTranscoderRes = errors.New("TranscoderInvalidResolution")
 
-func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string) error {
+func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
 	inp := C.CString(localRTMPUrl)
 	outp := C.CString(outM3U8)
 	ts_tmpl := C.CString(tmpl)
 	seglen := C.CString(seglen_secs)
-	ret := int(C.lpms_rtmp2hls(inp, outp, ts_tmpl, seglen))
+	segstart := C.CString(fmt.Sprintf("%v", seg_start))
+	ret := int(C.lpms_rtmp2hls(inp, outp, ts_tmpl, seglen, segstart))
 	C.free(unsafe.Pointer(inp))
 	C.free(unsafe.Pointer(outp))
 	C.free(unsafe.Pointer(ts_tmpl))
 	C.free(unsafe.Pointer(seglen))
+	C.free(unsafe.Pointer(segstart))
 	if 0 != ret {
 		glog.Infof("RTMP2HLS Transmux Return : %v\n", Strerror(ret))
 		return ErrorMap[ret]
