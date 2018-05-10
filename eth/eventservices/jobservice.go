@@ -52,6 +52,10 @@ func (s *JobService) Start(ctx context.Context) error {
 		var job *lpTypes.Job
 		getJob := func() error {
 			j, err := s.node.Eth.GetJob(jid)
+			if err != nil || j == nil {
+				glog.Errorf("Unable to get job %v, try again. Error: %v", jid, err)
+				return err
+			}
 			if j.StreamId == "" {
 				glog.Errorf("Got empty job for id:%v. Should try again.", jid.Int64())
 				return errors.New("ErrGetJob")
