@@ -406,7 +406,7 @@ func (db *DB) InsertReceipt(jobID *big.Int, seqNo int64,
 	}
 	glog.V(DEBUG).Infof("db: Inserting receipt for job %v - %v", jobID.String(), seqNo)
 	time2str := func(t time.Time) string {
-		return t.UTC().Format("2006-01-02 15:04:05")
+		return t.UTC().Format("2006-01-02 15:04:05.000")
 	}
 	_, err := db.insertRec.Exec(jobID.Int64(), seqNo, bcastFile,
 		ethcommon.ToHex(bcastHash), ethcommon.ToHex(bcastSig),
