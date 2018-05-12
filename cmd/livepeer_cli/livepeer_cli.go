@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -74,6 +75,55 @@ type wizard struct {
 	in         *bufio.Reader // Wrapper around stdin to allow reading user input
 }
 
+type wizardOpt struct {
+	desc          string
+	invoke        func()
+	rinkeby       bool
+	transcoder    bool
+	notTranscoder bool
+}
+
+func (w *wizard) initializeOptions() []wizardOpt {
+	options := []wizardOpt{
+		{desc: "Get node status", invoke: func() { w.stats(w.transcoder) }},
+		{desc: "View protocol parameters", invoke: w.protocolStats},
+		{desc: "List registered transcoders", invoke: func() { w.registeredTranscoderStats() }},
+		{desc: "Print latest jobs", invoke: w.printLast5Jobs},
+		{desc: "Invoke \"initialize round\"", invoke: w.initializeRound},
+		{desc: "Invoke \"bond\"", invoke: w.bond},
+		{desc: "Invoke \"unbond\"", invoke: w.unbond},
+		{desc: "Invoke \"withdraw stake\" (LPT)", invoke: w.withdrawStake},
+		{desc: "Invoke \"withdraw fees\" (ETH)", invoke: w.withdrawFees},
+		{desc: "Invoke \"claim\" (for rewards and fees)", invoke: w.claimRewardsAndFees},
+		{desc: "Invoke \"transfer\" (LPT)", invoke: w.transferTokens},
+		{desc: "Invoke \"reward\"", invoke: w.callReward, transcoder: true},
+		{desc: "Invoke multi-step \"become a transcoder\"", invoke: w.activateTranscoder, transcoder: true},
+		{desc: "Set transcoder config", invoke: w.setTranscoderConfig, transcoder: true},
+		{desc: "Invoke \"deposit\" (ETH)", invoke: w.deposit, notTranscoder: true},
+		{desc: "Invoke \"withdraw deposit\" (ETH)", invoke: w.withdraw, notTranscoder: true},
+		{desc: "Set broadcast config", invoke: w.setBroadcastConfig, notTranscoder: true},
+		{desc: "Get test LPT", invoke: w.requestTokens, rinkeby: true},
+		{desc: "Get test ETH", invoke: func() {
+			fmt.Print("For Rinkeby Eth, go to the Rinkeby faucet (https://faucet.rinkeby.io/).")
+			w.read()
+		}, rinkeby: true},
+	}
+	return options
+}
+
+func (w *wizard) filterOptions(options []wizardOpt) []wizardOpt {
+	filtered := make([]wizardOpt, 0, len(options))
+	for _, opt := range options {
+		if opt.rinkeby && !w.rinkeby {
+			continue
+		}
+		if !opt.transcoder && !opt.notTranscoder || w.transcoder && opt.transcoder || !w.transcoder && opt.notTranscoder {
+			filtered = append(filtered, opt)
+		}
+	}
+	return filtered
+}
+
 func (w *wizard) run() {
 	// Make sure there is a local node running
 	_, err := http.Get(w.endpoint)
@@ -93,112 +143,26 @@ func (w *wizard) run() {
 	fmt.Println()
 
 	w.stats(w.transcoder)
+	options := w.filterOptions(w.initializeOptions())
 
 	// Basics done, loop ad infinitum about what to do
 	for {
 		fmt.Println()
 		fmt.Println("What would you like to do? (default = stats)")
-		fmt.Println(" 1. Get node status")
-		fmt.Println(" 2. View protocol parameters")
-		fmt.Println(" 3. List registered transcoders")
-		fmt.Println(" 4. Print latest jobs")
-		fmt.Println(" 5. Invoke \"initialize round\"")
-		fmt.Println(" 6. Invoke \"bond\"")
-		fmt.Println(" 7. Invoke \"unbond\"")
-		fmt.Println(" 8. Invoke \"withdraw stake\" (LPT)")
-		fmt.Println(" 9. Invoke \"withdraw fees\" (ETH)")
-		fmt.Println(" 10. Invoke \"claim\" (for rewards and fees)")
-		fmt.Println(" 11. Invoke \"transfer\" (LPT)")
-		if w.transcoder {
-			fmt.Println(" 12. Invoke \"reward\"")
-			fmt.Println(" 13. Invoke multi-step \"become a transcoder\"")
-			fmt.Println(" 14. Set transcoder config")
-		} else {
-			fmt.Println(" 12. Invoke \"deposit\" (ETH)")
-			fmt.Println(" 13. Invoke \"withdraw deposit\" (ETH)")
-			fmt.Println(" 14. Set broadcast config")
+		for i, opt := range options {
+			fmt.Printf("%d. %s\n", i+1, opt.desc)
 		}
-		if w.rinkeby {
-			fmt.Println(" 15. Get test LPT")
-			fmt.Println(" 16. Get test ETH")
-		}
-		w.doCLIOpt(w.read())
+		w.doCLIOpt(w.read(), options)
 	}
 }
 
-func (w *wizard) doCLIOpt(choice string) {
-	switch choice {
-	case "1":
-		w.stats(w.transcoder)
+func (w *wizard) doCLIOpt(choice string, options []wizardOpt) {
+	index, err := strconv.ParseInt(choice, 10, 64)
+	index--
+	if err == nil && index >= 0 && index < int64(len(options)) {
+		options[index].invoke()
 		return
-	case "2":
-		w.protocolStats()
-		return
-	case "3":
-		w.registeredTranscoderStats()
-		return
-	case "4":
-		w.printLast5Jobs()
-		return
-	case "5":
-		w.initializeRound()
-		return
-	case "6":
-		w.bond()
-		return
-	case "7":
-		w.unbond()
-		return
-	case "8":
-		w.withdrawStake()
-		return
-	case "9":
-		w.withdrawFees()
-		return
-	case "10":
-		w.claimRewardsAndFees()
-		return
-	case "11":
-		w.transferTokens()
 	}
-
-	if w.transcoder {
-		switch choice {
-		case "12":
-			w.callReward()
-		case "13":
-			w.activateTranscoder()
-			return
-		case "14":
-			w.setTranscoderConfig()
-			return
-		}
-	} else {
-		switch choice {
-		case "12":
-			w.deposit()
-			return
-		case "13":
-			w.withdraw()
-			return
-		case "14":
-			w.setBroadcastConfig()
-			return
-		}
-	}
-
-	if w.rinkeby {
-		switch choice {
-		case "15":
-			w.requestTokens()
-			return
-		case "16":
-			fmt.Print("For Rinkeby Eth, go to the Rinkeby faucet (https://faucet.rinkeby.io/).")
-			w.read()
-			return
-		}
-	}
-
 	log.Error("That's not something I can do")
 }
 
