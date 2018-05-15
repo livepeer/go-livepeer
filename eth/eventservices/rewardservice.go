@@ -3,10 +3,8 @@ package eventservices
 import (
 	"context"
 	"fmt"
-	"math/big"
+	"time"
 
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
 )
@@ -14,88 +12,99 @@ import (
 var (
 	ErrRewardServiceStarted = fmt.Errorf("reward service already started")
 	ErrRewardServiceStopped = fmt.Errorf("reward service already stopped")
+
+	TryRewardPollingInterval = time.Minute * 30 // Poll to try to call reward once 30 minutes
 )
 
 type RewardService struct {
-	eventMonitor eth.EventMonitor
 	client       eth.LivepeerEthClient
-	sub          ethereum.Subscription
-	logsCh       chan types.Log
+	working      bool
+	cancelWorker context.CancelFunc
 }
 
-func NewRewardService(eventMonitor eth.EventMonitor, client eth.LivepeerEthClient) *RewardService {
+func NewRewardService(client eth.LivepeerEthClient) *RewardService {
 	return &RewardService{
-		eventMonitor: eventMonitor,
-		client:       client,
+		client: client,
 	}
 }
 
 func (s *RewardService) Start(ctx context.Context) error {
-	if s.sub != nil {
+	if s.working {
 		return ErrRewardServiceStarted
 	}
 
-	logsCh := make(chan types.Log)
-	sub, err := s.eventMonitor.SubscribeNewRound(ctx, "RoundInitialized", logsCh, func(l types.Log) (bool, error) {
-		round := parseNewRoundLog(l)
-		return s.tryReward(round)
-	})
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	s.cancelWorker = cancel
 
-	if err != nil {
-		return err
-	}
+	tickCh := time.NewTicker(TryRewardPollingInterval).C
 
-	s.logsCh = logsCh
-	s.sub = sub
+	go func(ctx context.Context) {
+		for {
+			select {
+			case <-tickCh:
+				err := s.tryReward()
+				if err != nil {
+					glog.Errorf("Error trying to call reward: %v", err)
+				}
+			case <-ctx.Done():
+				glog.V(5).Infof("Reward service done")
+				return
+			}
+		}
+	}(cancelCtx)
+
+	s.working = true
 
 	return nil
 }
 
 func (s *RewardService) Stop() error {
-	if s.sub == nil {
+	if !s.working {
 		return ErrRewardServiceStopped
 	}
 
-	close(s.logsCh)
-	s.sub.Unsubscribe()
-
-	s.logsCh = nil
-	s.sub = nil
+	s.cancelWorker()
+	s.working = false
 
 	return nil
 }
 
-func (s *RewardService) tryReward(round *big.Int) (bool, error) {
+func (s *RewardService) tryReward() error {
+	currentRound, err := s.client.CurrentRound()
+	if err != nil {
+		return err
+	}
+
+	t, err := s.client.GetTranscoder(s.client.Account().Address)
+	if err != nil {
+		return err
+	}
+
 	active, err := s.client.IsActiveTranscoder()
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	if !active {
-		glog.Infof("Not active for round %v", round)
-		return true, nil
+	if t.LastRewardRound.Cmp(currentRound) == -1 && active {
+		tx, err := s.client.Reward()
+		if err != nil {
+			return err
+		}
+
+		err = s.client.CheckTx(tx)
+		if err != nil {
+			return err
+		}
+
+		tp, err := s.client.GetTranscoderEarningsPoolForRound(s.client.Account().Address, currentRound)
+		if err != nil {
+			return err
+		}
+
+		glog.Infof("Called reward for round %v - %v rewards minted", currentRound, eth.FormatUnits(tp.RewardPool, "LPTU"))
+
+		return nil
 	}
 
-	tx, err := s.client.Reward()
-	if err != nil {
-		return false, err
-	}
-
-	err = s.client.CheckTx(tx)
-	if err != nil {
-		return false, err
-	}
-
-	tp, err := s.client.GetTranscoderEarningsPoolForRound(s.client.Account().Address, round)
-	if err != nil {
-		return false, err
-	}
-
-	glog.Infof("Called reward for round %v - %v rewards minted", round, eth.FormatUnits(tp.RewardPool, "LPTU"))
-
-	return true, nil
-}
-
-func parseNewRoundLog(log types.Log) (round *big.Int) {
-	return new(big.Int).SetBytes(log.Data[0:32])
+	return nil
 }
