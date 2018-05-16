@@ -523,7 +523,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	}
 
 	// Create reward service to claim/distribute inflationary rewards every round
-	rs := eventservices.NewRewardService(em, n.Eth)
+	rs := eventservices.NewRewardService(n.Eth)
 	n.EthServices = append(n.EthServices, rs)
 
 	// Create job service to listen for new jobs and transcode if assigned to the job
