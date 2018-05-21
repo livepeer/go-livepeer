@@ -367,6 +367,20 @@ func (c *client) Backend() (*ethclient.Client, error) {
 	}
 }
 
+// Rounds
+func (c *client) InitializeRound() (*types.Transaction, error) {
+	i, err := c.RoundsManagerSession.CurrentRoundInitialized()
+	if err != nil {
+		return nil, err
+	}
+	if i {
+		glog.V(common.SHORT).Infof("Round already initialized")
+		return nil, errors.New("ErrRoundInitialized")
+	} else {
+		return c.RoundsManagerSession.InitializeRound()
+	}
+}
+
 // Staking
 
 func (c *client) Transcoder(blockRewardCut, feeShare, pricePerSegment *big.Int) (*types.Transaction, error) {

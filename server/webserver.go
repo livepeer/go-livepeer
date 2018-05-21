@@ -172,25 +172,28 @@ func (s *LivepeerServer) StartWebserver() {
 
 	http.HandleFunc("/initializeRound", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
+			tx, err := s.LivepeerNode.Eth.InitializeRound()
 			if err != nil {
 				glog.Error(err)
 				return
 			}
 
-			if !initialized {
-				tx, err := s.LivepeerNode.Eth.InitializeRound()
-				if err != nil {
-					glog.Error(err)
-					return
-				}
-
-				err = s.LivepeerNode.Eth.CheckTx(tx)
-				if err != nil {
-					glog.Error(err)
-					return
-				}
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
 			}
+		}
+	})
+
+	http.HandleFunc("/roundInitialized", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+			w.Write([]byte(fmt.Sprintf("%v", initialized)))
 		}
 	})
 
