@@ -14,6 +14,7 @@ package eth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -108,6 +109,8 @@ type LivepeerEthClient interface {
 	CheckTx(*types.Transaction) error
 	Sign([]byte) ([]byte, error)
 	LatestBlockNum() (*big.Int, error)
+	GetGasInfo() (uint64, *big.Int)
+	SetGasInfo(uint64, *big.Int) error
 }
 
 type client struct {
@@ -136,6 +139,8 @@ type client struct {
 	nonceInitialized bool
 	nextNonce        uint64
 	nonceLock        sync.Mutex
+	gasLimit         uint64
+	gasPrice         *big.Int
 
 	txTimeout time.Duration
 }
@@ -160,6 +165,10 @@ func (c *client) Setup(password string, gasLimit uint64, gasPrice *big.Int) erro
 		return err
 	}
 
+	return c.SetGasInfo(gasLimit, gasPrice)
+}
+
+func (c *client) SetGasInfo(gasLimit uint64, gasPrice *big.Int) error {
 	opts, err := c.accountManager.CreateTransactOpts(gasLimit, gasPrice)
 	if err != nil {
 		return err
@@ -169,7 +178,17 @@ func (c *client) Setup(password string, gasLimit uint64, gasPrice *big.Int) erro
 		return c.getNonce()
 	}
 
-	return c.setContracts(opts)
+	if err := c.setContracts(opts); err != nil {
+		return err
+	} else {
+		c.gasLimit = gasLimit
+		c.gasPrice = gasPrice
+		return nil
+	}
+}
+
+func (c *client) GetGasInfo() (gasLimit uint64, gasPrice *big.Int) {
+	return c.gasLimit, c.gasPrice
 }
 
 func (c *client) setContracts(opts *bind.TransactOpts) error {

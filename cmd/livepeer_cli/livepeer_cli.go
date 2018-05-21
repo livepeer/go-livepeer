@@ -102,6 +102,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Invoke \"deposit\" (ETH)", invoke: w.deposit, notTranscoder: true},
 		{desc: "Invoke \"withdraw deposit\" (ETH)", invoke: w.withdraw, notTranscoder: true},
 		{desc: "Set broadcast config", invoke: w.setBroadcastConfig, notTranscoder: true},
+		{desc: "Set Eth gas price", invoke: w.setGasPrice},
 		{desc: "Get test LPT", invoke: w.requestTokens, rinkeby: true},
 		{desc: "Get test ETH", invoke: func() {
 			fmt.Print("For Rinkeby Eth, go to the Rinkeby faucet (https://faucet.rinkeby.io/).")

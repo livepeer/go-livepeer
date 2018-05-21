@@ -435,3 +435,13 @@ func (w *wizard) getDelegatorInfo() (lpTypes.Delegator, error) {
 
 	return dInfo, nil
 }
+
+func (w *wizard) getGasPrice() string {
+	g := httpGet(fmt.Sprintf("http://%v:%v/gasPrice", w.host, w.httpPort))
+	if g == "" {
+		g = "Unknown"
+	} else if g == "0" {
+		g = "automatic"
+	}
+	return g
+}
