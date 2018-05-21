@@ -172,25 +172,28 @@ func (s *LivepeerServer) StartWebserver() {
 
 	http.HandleFunc("/initializeRound", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
+			tx, err := s.LivepeerNode.Eth.InitializeRound()
 			if err != nil {
 				glog.Error(err)
 				return
 			}
 
-			if !initialized {
-				tx, err := s.LivepeerNode.Eth.InitializeRound()
-				if err != nil {
-					glog.Error(err)
-					return
-				}
-
-				err = s.LivepeerNode.Eth.CheckTx(tx)
-				if err != nil {
-					glog.Error(err)
-					return
-				}
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
 			}
+		}
+	})
+
+	http.HandleFunc("/roundInitialized", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+			w.Write([]byte(fmt.Sprintf("%v", initialized)))
 		}
 	})
 
@@ -1045,5 +1048,32 @@ func (s *LivepeerServer) StartWebserver() {
 			}
 		}
 		w.Write([]byte(fmt.Sprintf("%v", result)))
+	})
+
+	http.HandleFunc("/gasPrice", func(w http.ResponseWriter, r *http.Request) {
+		_, gprice := s.LivepeerNode.Eth.GetGasInfo()
+		w.Write([]byte(gprice.String()))
+	})
+
+	http.HandleFunc("/setGasPrice", func(w http.ResponseWriter, r *http.Request) {
+		amount := r.FormValue("amount")
+		if amount == "" {
+			glog.Errorf("Need to set amount")
+			return
+		}
+
+		gprice, err := lpcommon.ParseBigInt(amount)
+		if err != nil {
+			glog.Errorf("Parsing failed for price: %v", err)
+			return
+		}
+		if amount == "0" {
+			gprice = nil
+		}
+
+		glimit, _ := s.LivepeerNode.Eth.GetGasInfo()
+		if err := s.LivepeerNode.Eth.SetGasInfo(glimit, gprice); err != nil {
+			glog.Errorf("Error setting price info: %v", err)
+		}
 	})
 }
