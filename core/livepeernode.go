@@ -71,7 +71,7 @@ type LivepeerNode struct {
 	VideoCache      VideoCache
 	Eth             eth.LivepeerEthClient
 	EthEventMonitor eth.EventMonitor
-	EthServices     []eth.EventService
+	EthServices     map[string]eth.EventService
 	Ipfs            ipfs.IpfsApi
 	WorkDir         string
 	NodeType        NodeType
@@ -85,7 +85,7 @@ func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID
 		return nil, ErrLivepeerNode
 	}
 
-	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Eth: e, WorkDir: wd, Database: dbh}, nil
+	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Eth: e, WorkDir: wd, Database: dbh, EthServices: make(map[string]eth.EventService)}, nil
 }
 
 //Start sets up the Livepeer protocol and connects the node to the network

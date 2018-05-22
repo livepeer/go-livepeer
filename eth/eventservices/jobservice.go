@@ -116,6 +116,10 @@ func (s *JobService) Stop() error {
 	return nil
 }
 
+func (s *JobService) IsWorking() bool {
+	return s.sub != nil
+}
+
 func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 	//Check if broadcaster has enough funds
 	bDeposit, err := s.node.Eth.BroadcasterDeposit(job.BroadcasterAddress)

@@ -107,6 +107,7 @@ func (em *eventMonitor) SubscribeNewRound(ctx context.Context, subName string, l
 		glog.V(common.DEBUG).Infof("Trying to resubscribe for %v", subName)
 		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 			glog.V(common.DEBUG).Infof("Resubscription error: %v", err)
+			em.eventSubMap[subName] = nil
 			return
 		}
 	})
@@ -166,6 +167,7 @@ func (em *eventMonitor) SubscribeNewJob(ctx context.Context, subName string, log
 		glog.V(common.DEBUG).Infof("Trying to resubscribe for %v", subName)
 		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 			glog.V(common.DEBUG).Infof("Resubscribe failed: %v", err)
+			em.eventSubMap[subName] = nil
 			return
 		}
 	})
@@ -203,6 +205,7 @@ func (em *eventMonitor) SubscribeNewBlock(ctx context.Context, subName string, h
 		glog.V(common.DEBUG).Infof("Trying to resubscribe for %v", subName)
 		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 			glog.V(common.DEBUG).Infof("Resubscribe failed: %v", err)
+			em.eventSubMap[subName] = nil
 			return
 		}
 	})

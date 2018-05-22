@@ -519,16 +519,16 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 
 		// Create rounds service to initialize round if it has not already been initialized
 		rds := eventservices.NewRoundsService(em, n.Eth)
-		n.EthServices = append(n.EthServices, rds)
+		n.EthServices["RoundsService"] = rds
 	}
 
 	// Create reward service to claim/distribute inflationary rewards every round
 	rs := eventservices.NewRewardService(n.Eth)
-	n.EthServices = append(n.EthServices, rs)
+	n.EthServices["RewardService"] = rs
 
 	// Create job service to listen for new jobs and transcode if assigned to the job
 	js := eventservices.NewJobService(em, n)
-	n.EthServices = append(n.EthServices, js)
+	n.EthServices["JobService"] = js
 
 	// Start services
 	err = n.StartEthServices()

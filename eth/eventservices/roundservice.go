@@ -67,6 +67,10 @@ func (s *RoundsService) Stop() error {
 	return nil
 }
 
+func (s *RoundsService) IsWorking() bool {
+	return s.sub != nil
+}
+
 func (s *RoundsService) tryInitializeRound(blkNum *big.Int, blkHash common.Hash) (bool, error) {
 	initialized, err := s.client.CurrentRoundInitialized()
 	if err != nil {

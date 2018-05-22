@@ -69,6 +69,10 @@ func (s *RewardService) Stop() error {
 	return nil
 }
 
+func (s *RewardService) IsWorking() bool {
+	return s.working
+}
+
 func (s *RewardService) tryReward() error {
 	currentRound, err := s.client.CurrentRound()
 	if err != nil {

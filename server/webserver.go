@@ -701,9 +701,21 @@ func (s *LivepeerServer) StartWebserver() {
 
 	http.HandleFunc("/transcoderEventSubscriptions", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil && s.LivepeerNode.EthEventMonitor != nil {
-			activeEventSubMap := s.LivepeerNode.EthEventMonitor.EventSubscriptions()
+			rewardWorking := false
+			if s.LivepeerNode.EthServices["RewardService"] != nil && s.LivepeerNode.EthServices["RewardService"].IsWorking() {
+				rewardWorking = true
+			}
+			roundWorking := false
+			if s.LivepeerNode.EthServices["RoundService"] != nil && s.LivepeerNode.EthServices["RoundService"].IsWorking() {
+				roundWorking = true
+			}
+			jobWorking := false
+			if s.LivepeerNode.EthServices["JobService"] != nil && s.LivepeerNode.EthServices["JobService"].IsWorking() {
+				jobWorking = true
+			}
 
-			data, err := json.Marshal(activeEventSubMap)
+			m := map[string]bool{"JobService": jobWorking, "RewardService": rewardWorking, "RoundsService": roundWorking}
+			data, err := json.Marshal(m)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -1052,7 +1064,11 @@ func (s *LivepeerServer) StartWebserver() {
 
 	http.HandleFunc("/gasPrice", func(w http.ResponseWriter, r *http.Request) {
 		_, gprice := s.LivepeerNode.Eth.GetGasInfo()
-		w.Write([]byte(gprice.String()))
+		if gprice == nil {
+			w.Write([]byte("0"))
+		} else {
+			w.Write([]byte(gprice.String()))
+		}
 	})
 
 	http.HandleFunc("/setGasPrice", func(w http.ResponseWriter, r *http.Request) {
