@@ -1052,7 +1052,11 @@ func (s *LivepeerServer) StartWebserver() {
 
 	http.HandleFunc("/gasPrice", func(w http.ResponseWriter, r *http.Request) {
 		_, gprice := s.LivepeerNode.Eth.GetGasInfo()
-		w.Write([]byte(gprice.String()))
+		if gprice == nil {
+			w.Write([]byte("0"))
+		} else {
+			w.Write([]byte(gprice.String()))
+		}
 	})
 
 	http.HandleFunc("/setGasPrice", func(w http.ResponseWriter, r *http.Request) {
