@@ -7,4 +7,5 @@ import (
 type EventService interface {
 	Start(context.Context) error
 	Stop() error
+	IsWorking() bool
 }

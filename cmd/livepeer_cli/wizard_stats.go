@@ -196,9 +196,9 @@ func (w *wizard) transcoderEventSubscriptions() {
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
-		[]string{"Watching for new rounds to initialize", strconv.FormatBool(subMap["NewRound"])},
-		[]string{"Watching for initialized rounds to call reward", strconv.FormatBool(subMap["RoundInitialized"])},
-		[]string{"Watching for new jobs", strconv.FormatBool(subMap["NewJob"])},
+		[]string{"Watching for new rounds to initialize", strconv.FormatBool(subMap["RoundService"])},
+		[]string{"Watching for initialized rounds to call reward", strconv.FormatBool(subMap["RewardService"])},
+		[]string{"Watching for new jobs", strconv.FormatBool(subMap["JobService"])},
 	}
 
 	for _, v := range data {
