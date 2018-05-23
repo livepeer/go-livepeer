@@ -43,30 +43,7 @@ func TestEvictMasterPlaylist(t *testing.T) {
 	}
 }
 
-func TestGetHLSSubscriber(t *testing.T) {
-	stubnet := &StubVideoNetwork{
-		subscribers: make(map[string]*StubSubscriber),
-	}
-	c := NewBasicVideoCache(stubnet)
-	strmID := "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test"
-
-	_, err := c.GetHLSSubscriber(StreamID(strmID))
-	if err == nil {
-		t.Errorf("Expecting ErrNotFound, got nil")
-	}
-
-	stubnet.subscribers[strmID] = &StubSubscriber{}
-	sub, err := c.GetHLSSubscriber(StreamID(strmID))
-	if sub == nil || err != nil {
-		t.Errorf("Error getting subscriber: %v %v", sub, err)
-	}
-}
-
-func TestEvictHLSSubscriber(t *testing.T) {
-	//so simple...
-}
-
-func TestGetHLSMediaPlaylist(t *testing.T) {
+func TestGetAndEvictHLSMediaPlaylist(t *testing.T) {
 	stubnet := &StubVideoNetwork{
 		subscribers: make(map[string]*StubSubscriber),
 	}
@@ -88,8 +65,31 @@ func TestGetHLSMediaPlaylist(t *testing.T) {
 	if s.URI != "test.ts" {
 		t.Errorf("Expecting test.ts, got %v", s.URI)
 	}
+
+	//Test evict (first need to simulate that stream has stopped)
+	delete(stubnet.subscribers, strmID)
+	c.EvictHLSStream(StreamID(strmID))
+	pl = c.GetHLSMediaPlaylist(StreamID(strmID))
+	if pl != nil {
+		t.Errorf("Expecting no pl, got %v", pl)
+	}
 }
 
-func TestGetHLSSegment(t *testing.T) {
-	//so simple...
+func TestGetHLSSubscriber(t *testing.T) {
+	stubnet := &StubVideoNetwork{
+		subscribers: make(map[string]*StubSubscriber),
+	}
+	c := NewBasicVideoCache(stubnet)
+	strmID := "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test"
+
+	_, err := c.getHLSSubscriber(StreamID(strmID))
+	if err == nil {
+		t.Errorf("Expecting ErrNotFound, got nil")
+	}
+
+	stubnet.subscribers[strmID] = &StubSubscriber{}
+	sub, err := c.getHLSSubscriber(StreamID(strmID))
+	if sub == nil || err != nil {
+		t.Errorf("Error getting subscriber: %v %v", sub, err)
+	}
 }

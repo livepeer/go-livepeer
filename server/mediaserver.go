@@ -311,8 +311,6 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		manifestID := s.broadcastRtmpToManifestMap[rtmpID]
 		//Remove RTMP stream
 		delete(s.rtmpStreams, core.StreamID(rtmpID))
-		//Remove HLS stream from the network - only need to remove the original HLS stream because the other streams in the manifest are not on the current node (they are on the transcoding node)
-		s.LivepeerNode.VideoCache.EvictHLSSubscriber(core.StreamID(hlsID))
 		if b, err := s.LivepeerNode.VideoNetwork.GetBroadcaster(hlsID); err != nil {
 			glog.Errorf("Error getting broadcaster from network: %v", err)
 		} else {
@@ -322,6 +320,8 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		s.LivepeerNode.VideoCache.EvictHLSMasterPlaylist(core.ManifestID(manifestID))
 		//Remove the master playlist from the network
 		s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(manifestID, nil)
+		//Remove the stream from cache
+		s.LivepeerNode.VideoCache.EvictHLSStream(core.StreamID(hlsID))
 		return nil
 	}
 }
@@ -419,7 +419,6 @@ func (s *LivepeerServer) startHlsUnsubscribeWorker(limit time.Duration, freq tim
 		for sid, t := range s.hlsSubTimer {
 			if time.Since(t) > limit {
 				glog.V(common.SHORT).Infof("Inactive HLS Stream %v - unsubscribing", sid)
-				s.LivepeerNode.VideoCache.EvictHLSSubscriber(sid)
 				s.LivepeerNode.UnsubscribeFromNetwork(sid)
 				delete(s.hlsSubTimer, sid)
 			}

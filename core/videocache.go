@@ -20,8 +20,7 @@ type VideoCache interface {
 	EvictHLSMasterPlaylist(manifestID ManifestID)
 	GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlaylist
 	GetHLSSegment(streamID StreamID, segName string) *stream.HLSSegment
-	GetHLSSubscriber(streamID StreamID) (stream.Subscriber, error)
-	EvictHLSSubscriber(streamID StreamID)
+	EvictHLSStream(streamID StreamID) error
 }
 
 type segCache struct {
@@ -103,12 +102,8 @@ func (c *BasicVideoCache) EvictHLSMasterPlaylist(manifestID ManifestID) {
 	return
 }
 
-func (c *BasicVideoCache) GetHLSSubscriber(streamID StreamID) (stream.Subscriber, error) {
+func (c *BasicVideoCache) getHLSSubscriber(streamID StreamID) (stream.Subscriber, error) {
 	return c.network.GetSubscriber(string(streamID))
-}
-
-func (c *BasicVideoCache) EvictHLSSubscriber(streamID StreamID) {
-	return
 }
 
 func (c *BasicVideoCache) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlaylist {
@@ -121,7 +116,7 @@ func (c *BasicVideoCache) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlay
 	plChan := make(chan *m3u8.MediaPlaylist)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func(ctx context.Context, plChan chan *m3u8.MediaPlaylist, streamID StreamID) {
-		sub, err := c.GetHLSSubscriber(streamID)
+		sub, err := c.getHLSSubscriber(streamID)
 		if err != nil {
 			glog.Errorf("Error getting subscriber for %v: %v", streamID, err)
 			close(plChan)
@@ -178,4 +173,9 @@ func (c *BasicVideoCache) GetHLSSegment(streamID StreamID, segName string) *stre
 	} else {
 		return cache.GetSeg(segName)
 	}
+}
+
+func (c *BasicVideoCache) EvictHLSStream(streamID StreamID) error {
+	c.DeleteCache(streamID)
+	return nil
 }
