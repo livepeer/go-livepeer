@@ -4,14 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 
 	repo "github.com/ipfs/go-ipfs/repo"
 
-	badgerds "gx/ipfs/QmPAiAmc3qhTFwzWnKpxr6WCXGZ5mqpaQ2YEwSTnwyduHo/go-ds-badger"
-	humanize "gx/ipfs/QmPSBJL4momYnE7DcUyk2DVhD6rH488ZmHBGLbxNdhU44K/go-humanize"
 	flatfs "gx/ipfs/QmPiYdqnkkiPEffrWq2M3Phb3NT8r49kqUXMev2hkkM7uV/go-ds-flatfs"
 	levelds "gx/ipfs/QmVVhwMHaGHPgZY6pi8hbWGLSgMcZUSdEhJBChjxhBMCoy/go-ds-leveldb"
 	ds "gx/ipfs/QmXRKBQA4wXP7xWbFiZsR1GP4HV6wMDQ1aWFxZZ4uBcPX9/go-datastore"
@@ -58,13 +55,12 @@ var datastores map[string]ConfigFromMap
 
 func init() {
 	datastores = map[string]ConfigFromMap{
-		"mount":    MountDatastoreConfig,
-		"flatfs":   FlatfsDatastoreConfig,
-		"levelds":  LeveldsDatastoreConfig,
-		"badgerds": BadgerdsDatastoreConfig,
-		"mem":      MemDatastoreConfig,
-		"log":      LogDatastoreConfig,
-		"measure":  MeasureDatastoreConfig,
+		"mount":   MountDatastoreConfig,
+		"flatfs":  FlatfsDatastoreConfig,
+		"levelds": LeveldsDatastoreConfig,
+		"mem":     MemDatastoreConfig,
+		"log":     LogDatastoreConfig,
+		"measure": MeasureDatastoreConfig,
 	}
 }
 
@@ -336,77 +332,4 @@ func (c measureDatastoreConfig) Create(path string) (repo.Datastore, error) {
 		return nil, err
 	}
 	return measure.New(c.prefix, child), nil
-}
-
-type badgerdsDatastoreConfig struct {
-	path       string
-	syncWrites bool
-
-	vlogFileSize int64
-}
-
-// BadgerdsDatastoreConfig returns a configuration stub for a badger datastore
-// from the given parameters
-func BadgerdsDatastoreConfig(params map[string]interface{}) (DatastoreConfig, error) {
-	var c badgerdsDatastoreConfig
-	var ok bool
-
-	c.path, ok = params["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("'path' field is missing or not string")
-	}
-
-	sw, ok := params["syncWrites"]
-	if !ok {
-		c.syncWrites = true
-	} else {
-		if swb, ok := sw.(bool); ok {
-			c.syncWrites = swb
-		} else {
-			return nil, fmt.Errorf("'syncWrites' field was not a boolean")
-		}
-	}
-
-	vls, ok := params["vlogFileSize"]
-	if !ok {
-		// default to 1GiB
-		c.vlogFileSize = badgerds.DefaultOptions.ValueLogFileSize
-	} else {
-		if vlogSize, ok := vls.(string); ok {
-			s, err := humanize.ParseBytes(vlogSize)
-			if err != nil {
-				return nil, err
-			}
-			c.vlogFileSize = int64(s)
-		} else {
-			return nil, fmt.Errorf("'vlogFileSize' field was not a string")
-		}
-	}
-
-	return &c, nil
-}
-
-func (c *badgerdsDatastoreConfig) DiskSpec() DiskSpec {
-	return map[string]interface{}{
-		"type": "badgerds",
-		"path": c.path,
-	}
-}
-
-func (c *badgerdsDatastoreConfig) Create(path string) (repo.Datastore, error) {
-	p := c.path
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(path, p)
-	}
-
-	err := os.MkdirAll(p, 0755)
-	if err != nil {
-		return nil, err
-	}
-
-	defopts := badgerds.DefaultOptions
-	defopts.SyncWrites = c.syncWrites
-	defopts.ValueLogFileSize = c.vlogFileSize
-
-	return badgerds.NewDatastore(p, &defopts)
 }
