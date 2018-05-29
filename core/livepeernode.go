@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/ericxtang/m3u8"
@@ -72,11 +73,14 @@ type LivepeerNode struct {
 	Eth             eth.LivepeerEthClient
 	EthEventMonitor eth.EventMonitor
 	EthServices     map[string]eth.EventService
+	ClaimManagers   map[int64]eth.ClaimManager
 	Ipfs            ipfs.IpfsApi
 	WorkDir         string
 	NodeType        NodeType
 	Database        *common.DB
 	MonitorMetrics  bool
+
+	claimMutex *sync.Mutex
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
@@ -86,7 +90,7 @@ func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID
 		return nil, ErrLivepeerNode
 	}
 
-	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Eth: e, WorkDir: wd, Database: dbh, EthServices: make(map[string]eth.EventService)}, nil
+	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Eth: e, WorkDir: wd, Database: dbh, EthServices: make(map[string]eth.EventService), ClaimManagers: make(map[int64]eth.ClaimManager), claimMutex: &sync.Mutex{}}, nil
 }
 
 //Start sets up the Livepeer protocol and connects the node to the network
@@ -472,6 +476,28 @@ func (n *LivepeerNode) StopEthServices() error {
 	}
 
 	return nil
+}
+
+func (n *LivepeerNode) GetClaimManager(job *ethTypes.Job) (eth.ClaimManager, error) {
+	n.claimMutex.Lock()
+	defer n.claimMutex.Unlock()
+	if job == nil {
+		glog.Error("Nil job")
+		return nil, fmt.Errorf("Nil job")
+	}
+	jobId := job.JobId.Int64()
+	// XXX we should clear entries after some period of inactivity
+	if cm, ok := n.ClaimManagers[jobId]; ok {
+		return cm, nil
+	}
+	// no claimmanager exists yet; check if we're assigned the job
+	if n.Eth == nil {
+		return nil, nil
+	}
+	glog.Infof("Creating new claim manager for job %v", jobId)
+	cm := eth.NewBasicClaimManager(job, n.Eth, n.Ipfs, n.Database)
+	n.ClaimManagers[jobId] = cm
+	return cm, nil
 }
 
 func randName() string {

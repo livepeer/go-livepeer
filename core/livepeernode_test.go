@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/eth"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
@@ -98,4 +99,50 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	ids, err = n.TranscodeAndBroadcast(config, &StubClaimManager{}, tr)
 
 	//TODO: Should have done the claiming
+}
+
+func TestNodeClaimManager(t *testing.T) {
+	nid := NodeID("12201c23641663bf06187a8c154a6c97266d138cb8379c1bc0828122dcc51c83698d")
+	stubnet := &StubVideoNetwork{subscribers: make(map[string]*StubSubscriber)}
+	n, err := NewLivepeerNode(nil, stubnet, nid, ".", nil)
+
+	job := &lpTypes.Job{
+		JobId:              big.NewInt(15),
+		MaxPricePerSegment: big.NewInt(1),
+		Profiles:           []ffmpeg.VideoProfile{},
+		TotalClaims:        big.NewInt(0),
+	}
+
+	// test claimmanager existence via manual insertion
+	n.ClaimManagers[15] = &StubClaimManager{}
+	cm, err := n.GetClaimManager(job)
+	if err != nil || cm == nil {
+		t.Error("Did not retrieve claimmanager ", cm, err)
+		return
+	}
+
+	job.JobId = big.NewInt(10)
+
+	// test with a nil eth client
+	cm, err = n.GetClaimManager(job)
+	if err != nil || cm != nil {
+		t.Error("Claimmanager unexpected result %v %v", cm, err)
+		return
+	}
+
+	// test with a nonexisting job
+	stubClient := eth.StubClient{}
+	n.Eth = &stubClient
+	cm, err = n.GetClaimManager(nil)
+	if err == nil || err.Error() != "Nil job" {
+		t.Error("Expected nil job ", err)
+		return
+	}
+
+	// test creating a new claimmanager
+	cm, err = n.GetClaimManager(job)
+	if err != nil || cm == nil {
+		t.Error("Expected claimmanager from job ", cm, err)
+		return
+	}
 }
