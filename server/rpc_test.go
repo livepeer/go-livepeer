@@ -121,3 +121,56 @@ func TestRPCCreds(t *testing.T) {
 		t.Error("Orchestrator unexpectedly validated")
 	}
 }
+
+func TestRPCSeg(t *testing.T) {
+	b := StubBroadcaster2()
+	baddr := ethcrypto.PubkeyToAddress(b.priv.PublicKey)
+
+	j := StubJob()
+	j.JobId = big.NewInt(1234)
+	j.BroadcasterAddress = baddr
+
+	segData := &SegData{Seq: 4, Hash: ethcommon.RightPadBytes([]byte("browns"), 32)}
+	creds, err := genSegCreds(b, j.StreamId, segData)
+	if err != nil {
+		t.Error("Unable to generate seg creds ", err)
+		return
+	}
+	if _, ok := verifySegCreds(j, creds); !ok {
+		t.Error("Unable to verify seg creds")
+		return
+	}
+
+	// test invalid jobid
+	oldSid := j.StreamId
+	j.StreamId = j.StreamId + j.StreamId
+	if _, ok := verifySegCreds(j, creds); ok {
+		t.Error("Unexpectedly verified seg creds: invalid jobid")
+		return
+	}
+	j.StreamId = oldSid
+
+	// test invalid bcast addr
+	oldAddr := j.BroadcasterAddress
+	key, _ := ethcrypto.GenerateKey()
+	j.BroadcasterAddress = ethcrypto.PubkeyToAddress(key.PublicKey)
+	if _, ok := verifySegCreds(j, creds); ok {
+		t.Error("Unexpectedly verified seg creds: invalid bcast addr")
+		return
+	}
+	j.BroadcasterAddress = oldAddr
+
+	// sanity check
+	if _, ok := verifySegCreds(j, creds); !ok {
+		t.Error("Sanity check failed")
+		return
+	}
+
+	// test corrupt creds
+	idx := len(creds) / 2
+	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
+	if _, ok := verifySegCreds(j, kreds); ok {
+		t.Error("Unexpectedly verified bad creds")
+		return
+	}
+}

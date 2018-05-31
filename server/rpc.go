@@ -167,6 +167,49 @@ func verifyCreds(orch Orchestrator, creds string) (*AuthToken, bool) {
 	return &token, true
 }
 
+func genSegCreds(bcast Broadcaster, streamId string, segData *SegData) (string, error) {
+	seg := &lpTypes.Segment{
+		StreamID:              streamId,
+		SegmentSequenceNumber: big.NewInt(segData.Seq),
+		DataHash:              ethcommon.BytesToHash(segData.Hash),
+	}
+	sig, err := bcast.Sign(seg.Flatten())
+	if err != nil {
+		return "", nil
+	}
+	segData.Sig = sig
+	data, err := proto.Marshal(segData)
+	if err != nil {
+		glog.Error("Unable to marshal ", err)
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(data), nil
+}
+
+func verifySegCreds(job *lpTypes.Job, segCreds string) bool {
+	buf, err := base64.StdEncoding.DecodeString(segCreds)
+	if err != nil {
+		glog.Error("Unable to base64-decode ", err)
+		return false
+	}
+	var segData SegData
+	err = proto.Unmarshal(buf, &segData)
+	if err != nil {
+		glog.Error("Unable to unmarshal ", err)
+		return false
+	}
+	seg := &lpTypes.Segment{
+		StreamID:              job.StreamId,
+		SegmentSequenceNumber: big.NewInt(segData.Seq),
+		DataHash:              ethcommon.BytesToHash(segData.Hash),
+	}
+	if !verifyMsgSig(job.BroadcasterAddress, string(seg.Flatten()), segData.Sig) {
+		glog.Error("Sig check failed")
+		return false
+	}
+	return true
+}
+
 func GetTranscoder(context context.Context, orch Orchestrator, req *TranscoderRequest) (*TranscoderInfo, error) {
 	glog.Info("Got transcoder request for job ", req.JobId)
 	job, err := orch.GetJob(req.JobId)
@@ -202,6 +245,17 @@ func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
+
+	job, err := orch.GetJob(token.JobId)
+	if err != nil || job == nil {
+		glog.Error("Could not get job ", err)
+		http.Error(w, "Not Found", http.StatusNotFound)
+	}
+
+	// check the segment sig from the broadcaster
+	seg := r.Header.Get("Livepeer-Segment")
+	verifySegCreds(job, seg)
+
 	w.Write([]byte("The segment has been successfully transcoded."))
 }
 
