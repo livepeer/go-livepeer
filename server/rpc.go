@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -18,6 +19,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/lpms/stream"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -42,6 +44,7 @@ type Orchestrator interface {
 	Address() ethcommon.Address
 	Sign([]byte) ([]byte, error)
 	GetJob(int64) (*lpTypes.Job, error)
+	TranscodeSeg(*lpTypes.Job, *core.SignedSegment) error
 }
 
 // Orchestator interface methods
@@ -78,6 +81,11 @@ func (orch *orchestrator) Sign(msg []byte) ([]byte, error) {
 
 func (orch *orchestrator) Address() ethcommon.Address {
 	return orch.address
+}
+
+func (orch *orchestrator) TranscodeSeg(job *lpTypes.Job, ss *core.SignedSegment) error {
+	orch.node.TranscodeSegment(job, ss)
+	return nil
 }
 
 // grpc methods
@@ -186,17 +194,17 @@ func genSegCreds(bcast Broadcaster, streamId string, segData *SegData) (string, 
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func verifySegCreds(job *lpTypes.Job, segCreds string) bool {
+func verifySegCreds(job *lpTypes.Job, segCreds string) (*SegData, bool) {
 	buf, err := base64.StdEncoding.DecodeString(segCreds)
 	if err != nil {
 		glog.Error("Unable to base64-decode ", err)
-		return false
+		return nil, false
 	}
 	var segData SegData
 	err = proto.Unmarshal(buf, &segData)
 	if err != nil {
 		glog.Error("Unable to unmarshal ", err)
-		return false
+		return nil, false
 	}
 	seg := &lpTypes.Segment{
 		StreamID:              job.StreamId,
@@ -205,9 +213,9 @@ func verifySegCreds(job *lpTypes.Job, segCreds string) bool {
 	}
 	if !verifyMsgSig(job.BroadcasterAddress, string(seg.Flatten()), segData.Sig) {
 		glog.Error("Sig check failed")
-		return false
+		return nil, false
 	}
-	return true
+	return &segData, true
 }
 
 func GetTranscoder(context context.Context, orch Orchestrator, req *TranscoderRequest) (*TranscoderInfo, error) {
@@ -233,6 +241,7 @@ func GetTranscoder(context context.Context, orch Orchestrator, req *TranscoderRe
 }
 
 func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
+	// check the credentials from the orchestrator
 	authType := r.Header.Get("Authorization")
 	creds := r.Header.Get("Credentials")
 	if AuthType_LPE != authType {
@@ -250,13 +259,46 @@ func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	if err != nil || job == nil {
 		glog.Error("Could not get job ", err)
 		http.Error(w, "Not Found", http.StatusNotFound)
+		return
 	}
 
 	// check the segment sig from the broadcaster
 	seg := r.Header.Get("Livepeer-Segment")
-	verifySegCreds(job, seg)
+	segData, ok := verifySegCreds(job, seg)
+	if !ok {
+		glog.Error("Could not verify segment creds")
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 
-	w.Write([]byte("The segment has been successfully transcoded."))
+	// download the segment and check the hash
+	data, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		glog.Error("Could not read request body")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	hash := crypto.Keccak256(data)
+	if !bytes.Equal(hash, segData.Hash) {
+		glog.Error("Mismatched hash for body; rejecting")
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	ss := core.SignedSegment{
+		Seg: stream.HLSSegment{
+			SeqNo: uint64(segData.Seq),
+			Data:  data,
+		},
+		Sig: segData.Sig,
+	}
+	if err := orch.TranscodeSeg(job, &ss); err != nil {
+		glog.Error("Could not transcode ", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write([]byte(fmt.Sprintf("Successfully transcoded segment %v", segData.Seq)))
 }
 
 type lphttp struct {
@@ -290,10 +332,10 @@ func StartTranscodeServer(bind string, publicURI *url.URL, node *core.LivepeerNo
 	}
 
 	glog.Info("Listening for RPC on ", bind)
-	srv := http.Server {
-		Addr: bind,
-		Handler: &lp,
-		ReadTimeout: HTTPTimeout,
+	srv := http.Server{
+		Addr:         bind,
+		Handler:      &lp,
+		ReadTimeout:  HTTPTimeout,
 		WriteTimeout: HTTPTimeout,
 	}
 	srv.ListenAndServeTLS(cert, key)
@@ -303,7 +345,7 @@ func StartBroadcastClient(orchestratorServer string, node *core.LivepeerNode, jo
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	httpc := &http.Client{
 		Transport: &http.Transport{TLSClientConfig: tlsConfig},
-		Timeout: HTTPTimeout,
+		Timeout:   HTTPTimeout,
 	}
 	uri, err := url.Parse(orchestratorServer)
 	if err != nil {
