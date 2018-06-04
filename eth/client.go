@@ -110,6 +110,8 @@ type LivepeerEthClient interface {
 	VerificationCodeHash() (string, error)
 	Paused() (bool, error)
 
+	WatchForJob(string) (*lpTypes.Job, error)
+
 	// Helpers
 	ContractAddresses() map[string]ethcommon.Address
 	CheckTx(*types.Transaction) error
@@ -936,6 +938,66 @@ func (c *client) ReplaceTransaction(tx *types.Transaction, method string, gasPri
 	}
 
 	return newSignedTx, err
+}
+
+// Watch for a new job matching the given streamId.
+// Since this job will be fresh, not all fields will be populated!
+// After receiving the job, validate the fields that are expected.
+func (c *client) WatchForJob(streamId string) (*lpTypes.Job, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.txTimeout)
+	defer cancel()
+	var job *lpTypes.Job
+	jobWatcher := func() error {
+		sink := make(chan *contracts.JobsManagerNewJob)
+		sub, err := c.JobsManagerSession.Contract.JobsManagerFilterer.WatchNewJob(nil, sink, []ethcommon.Address{c.Account().Address})
+		if err != nil {
+			glog.Error("Unable to start job watcher ", err)
+			return err
+		}
+		select {
+		case newJob := <-sink:
+			sub.Unsubscribe()
+			if newJob.StreamId == streamId {
+				// might be faster to reconstruct the job locally?
+				j, err := c.GetJob(newJob.JobId)
+				if err != nil {
+					glog.Error("Unable to fetch job after watching: ", err)
+					// maybe perform/retry the job lookup outside this loop
+					// but a retry may be unlikely to succeed, depending on the error
+					// Manually create the job for now.
+					// May have important fields missing!!!
+					profiles, err := common.TxDataToVideoProfile(newJob.TranscodingOptions)
+					if err != nil {
+						glog.Error("Invalid transcoding options for job")
+					}
+					j = &lpTypes.Job{
+						BroadcasterAddress: newJob.Broadcaster,
+						StreamId:           newJob.StreamId,
+						MaxPricePerSegment: newJob.MaxPricePerSegment,
+						CreationBlock:      newJob.CreationBlock,
+						Profiles:           profiles,
+					}
+				}
+				job = j
+				return nil
+			}
+			// mismatched streamid; maybe we had concurrent listeners so retry
+			glog.Errorf("Watched for job; got mismatched stream Id %v; expecting %v",
+				newJob.StreamId, streamId)
+			return fmt.Errorf("MismatchedStreamId")
+		case errChan := <-sub.Err():
+			sub.Unsubscribe()
+			glog.Errorf("Error subscribing to new job %v; retrying", errChan)
+			return fmt.Errorf("SubscribeError")
+		case <-ctx.Done():
+			sub.Unsubscribe()
+			glog.Errorf("Job watcher timeout exceeded; stopping")
+			return fmt.Errorf("JobWatchTimeout")
+		}
+	}
+
+	err := backoff.Retry(jobWatcher, backoff.NewConstantBackOff(time.Second*2))
+	return job, err
 }
 
 func (c *client) getNonce() (uint64, error) {

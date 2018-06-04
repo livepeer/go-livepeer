@@ -125,10 +125,10 @@ func (n *LivepeerNode) Start(ctx context.Context, bootIDs, bootAddrs []string) e
 }
 
 //CreateTranscodeJob creates the on-chain transcode job.
-func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.VideoProfile, price *big.Int) error {
+func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.VideoProfile, price *big.Int) (*ethTypes.Job, error) {
 	if n.Eth == nil {
 		glog.Errorf("Cannot create transcode job, no eth client found")
-		return ErrNotFound
+		return nil, ErrNotFound
 	}
 
 	transOpts := common.ProfilesToTranscodeOpts(profiles)
@@ -136,22 +136,25 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 	//Call eth client to create the job
 	blknum, err := n.Eth.LatestBlockNum()
 	if err != nil {
-		return ErrNotFound
+		return nil, ErrNotFound
 	}
-	tx, err := n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], price, big.NewInt(0).Add(blknum, big.NewInt(DefaultJobLength)))
+
+	_, err = n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], price, big.NewInt(0).Add(blknum, big.NewInt(DefaultJobLength)))
 	if err != nil {
 		glog.Errorf("Error creating transcode job: %v", err)
-		return err
+		return nil, err
 	}
 
-	err = n.Eth.CheckTx(tx)
+	job, err := n.Eth.WatchForJob(strmID.String())
 	if err != nil {
-		return err
+		glog.Error("Unable to monitor for job ", err)
+		return nil, err
 	}
+	glog.V(common.DEBUG).Info("Got a new job from the blockchain: ", job.JobId)
 
-	glog.Infof("Created broadcast job. Price: %v. Type: %v", price, ethcommon.ToHex(transOpts)[2:])
+	glog.Infof("Created broadcast job. Id: %v Price: %v. Type: %v", job.JobId, price, ethcommon.ToHex(transOpts)[2:])
 
-	return nil
+	return job, nil
 }
 
 //TranscodeAndBroadcast transcodes one stream into multiple streams (specified by TranscodeConfig), broadcasts the streams, and returns a list of streamIDs.
