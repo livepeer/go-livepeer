@@ -97,6 +97,7 @@ type broadcaster struct {
 	node  *core.LivepeerNode
 	httpc *http.Client
 	job   *lpTypes.Job
+	tinfo *TranscoderInfo
 }
 
 type Broadcaster interface {
@@ -104,6 +105,8 @@ type Broadcaster interface {
 	Job() *lpTypes.Job
 	SetHTTPClient(*http.Client)
 	GetHTTPClient() *http.Client
+	SetTranscoderInfo(*TranscoderInfo)
+	GetTranscoderInfo() *TranscoderInfo
 }
 
 func (bcast *broadcaster) Sign(msg []byte) ([]byte, error) {
@@ -120,6 +123,12 @@ func (bcast *broadcaster) GetHTTPClient() *http.Client {
 }
 func (bcast *broadcaster) SetHTTPClient(hc *http.Client) {
 	bcast.httpc = hc
+}
+func (bcast *broadcaster) GetTranscoderInfo() *TranscoderInfo {
+	return bcast.tinfo
+}
+func (bcast *broadcaster) SetTranscoderInfo(t *TranscoderInfo) {
+	bcast.tinfo = t
 }
 
 func genTranscoderReq(b Broadcaster, jid int64) (*TranscoderRequest, error) {
@@ -371,6 +380,44 @@ func StartBroadcastClient(orchestratorServer string, node *core.LivepeerNode, jo
 		glog.Error("Could not get transcoder: ", err)
 		return nil, err
 	}
+	b.tinfo = r
 
 	return &b, nil
+}
+
+func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment) {
+	hc := bcast.GetHTTPClient()
+	segData := &SegData{
+		Seq:  int64(seg.SeqNo),
+		Hash: crypto.Keccak256(seg.Data),
+	}
+	segCreds, err := genSegCreds(bcast, bcast.Job().StreamId, segData)
+	if err != nil {
+		return
+	}
+	ti := bcast.GetTranscoderInfo()
+	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(seg.Data))
+	if err != nil {
+		glog.Error("Could not generate trascode request to ", ti.Transcoder)
+		return
+	}
+
+	req.Header.Set("Authorization", ti.AuthType)
+	req.Header.Set("Credentials", ti.Credentials)
+	req.Header.Set("Livepeer-Segment", segCreds)
+	req.Header.Set("Content-Type", "video/MP2T")
+
+	glog.Infof("Submitting segment %v : %v bytes", seg.SeqNo, len(seg.Data))
+	resp, err := hc.Do(req)
+	if err != nil {
+		glog.Error("Unable to submit segment ", seg.SeqNo, err)
+		return
+	}
+	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		glog.Error("Unable to read response body ", err)
+		return
+	}
+	glog.Info(string(data))
 }

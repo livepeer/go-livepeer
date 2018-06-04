@@ -61,6 +61,11 @@ func (r *stubOrchestrator) GetHTTPClient() *http.Client {
 }
 func (r *stubOrchestrator) SetHTTPClient(ti *http.Client) {
 }
+func (r *stubOrchestrator) GetTranscoderInfo() *TranscoderInfo {
+	return nil
+}
+func (r *stubOrchestrator) SetTranscoderInfo(ti *TranscoderInfo) {
+}
 func StubBroadcaster2() *stubOrchestrator {
 	return StubOrchestrator() // lazy; leverage subtyping for interface commonalities
 }

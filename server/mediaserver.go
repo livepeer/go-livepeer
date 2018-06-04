@@ -18,6 +18,7 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 
 	"github.com/ericxtang/m3u8"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -190,6 +191,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 		s.VideoNonceLock.Unlock()
 
+		var rpcBcast *broadcaster
 		if s.LivepeerNode.Eth != nil {
 			//Check if round is initialized
 			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
@@ -304,6 +306,10 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						glog.Errorf("Error broadcasting to network: %v", err)
 					}
 				}
+
+				if rpcBcast != nil {
+					SubmitSegment(rpcBcast, seg)
+				}
 			})
 
 			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions)
@@ -362,7 +368,29 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		if s.LivepeerNode.Eth != nil {
 			//Create Transcode Job Onchain
-			go s.LivepeerNode.CreateTranscodeJob(hlsStrmID, BroadcastJobVideoProfiles, BroadcastPrice)
+			go func() {
+				job, err := s.LivepeerNode.CreateTranscodeJob(hlsStrmID, BroadcastJobVideoProfiles, BroadcastPrice)
+				if err != nil {
+					return // XXX feed back error?
+				}
+				tca, err := s.LivepeerNode.Eth.AssignedTranscoder(job.JobId)
+				if err != nil {
+					return // XXX feed back error?
+				}
+				if (tca == ethcommon.Address{}) {
+					glog.Error("A transcoder was not assigned! Ensure the broadcast price meets the minimum for the transcoder pool")
+					return // XXX feed back error?
+				}
+				serviceUri, err := s.LivepeerNode.Eth.GetServiceURI(tca)
+				if err != nil || serviceUri == "" {
+					glog.Error("Unable to retrieve Service URI for %v: %v", tca, err)
+					return // XXX feed back error?
+				}
+				rpcBcast, err = StartBroadcastClient(serviceUri, s.LivepeerNode, job)
+				if err != nil {
+					return // XXX feed back error?
+				}
+			}()
 		}
 		return nil
 	}
