@@ -162,6 +162,7 @@ func (w *wizard) transcoderStats() {
 	data := [][]string{
 		[]string{"Status", t.Status},
 		[]string{"Active", strconv.FormatBool(t.Active)},
+		[]string{"Service URI", t.ServiceURI},
 		[]string{"Delegated Stake", eth.FormatUnits(t.DelegatedStake, "LPT")},
 		[]string{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
 		[]string{"Fee Share (%)", eth.FormatPerc(t.FeeShare)},

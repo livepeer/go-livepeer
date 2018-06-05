@@ -259,6 +259,12 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
+		serviceURI := r.FormValue("serviceURI")
+		if serviceURI == "" {
+			glog.Errorf("Need to provide a service URI")
+			return
+		}
+
 		if amount.Cmp(big.NewInt(0)) == 1 {
 			glog.Infof("Bonding %v...", amount)
 
@@ -279,6 +285,20 @@ func (s *LivepeerServer) StartWebserver() {
 		glog.Infof("Registering transcoder %v", s.LivepeerNode.Eth.Account().Address.Hex())
 
 		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		err = s.LivepeerNode.Eth.CheckTx(tx)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		glog.Infof("Storing service URI %v in service registry...", serviceURI)
+
+		tx, err = s.LivepeerNode.Eth.SetServiceURI(serviceURI)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -363,7 +383,25 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
+		serviceURI := r.FormValue("serviceURI")
+
+		glog.Infof("Setting transcoder config - Reward Cut: %v Fee Share: %v Price: %v", eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+
 		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		err = s.LivepeerNode.Eth.CheckTx(tx)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		glog.Infof("Storing service URI %v in service registry...", serviceURI)
+
+		tx, err = s.LivepeerNode.Eth.SetServiceURI(serviceURI)
 		if err != nil {
 			glog.Error(err)
 			return

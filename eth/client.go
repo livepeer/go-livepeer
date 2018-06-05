@@ -5,6 +5,7 @@ package eth
 
 //go:generate abigen --abi protocol/abi/Controller.abi --pkg contracts --type Controller --out contracts/controller.go
 //go:generate abigen --abi protocol/abi/LivepeerToken.abi --pkg contracts --type LivepeerToken --out contracts/livepeerToken.go
+//go:generate abigen --abi protocol/abi/ServiceRegistry.abi --pkg contracts --type ServiceRegistry --out contracts/serviceRegistry.go
 //go:generate abigen --abi protocol/abi/BondingManager.abi --pkg contracts --type BondingManager --out contracts/bondingManager.go
 //go:generate abigen --abi protocol/abi/JobsManager.abi --pkg contracts --type JobsManager --out contracts/jobsManager.go
 //go:generate abigen --abi protocol/abi/RoundsManager.abi --pkg contracts --type RoundsManager --out contracts/roundsManager.go
@@ -58,6 +59,10 @@ type LivepeerEthClient interface {
 	Request() (*types.Transaction, error)
 	BalanceOf(ethcommon.Address) (*big.Int, error)
 	TotalSupply() (*big.Int, error)
+
+	// Service Registry
+	SetServiceURI(serviceURI string) (*types.Transaction, error)
+	GetServiceURI(addr ethcommon.Address) (string, error)
 
 	// Staking
 	Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error)
@@ -119,18 +124,20 @@ type client struct {
 	accountManager *AccountManager
 	backend        *ethclient.Client
 
-	controllerAddr     ethcommon.Address
-	tokenAddr          ethcommon.Address
-	bondingManagerAddr ethcommon.Address
-	jobsManagerAddr    ethcommon.Address
-	roundsManagerAddr  ethcommon.Address
-	minterAddr         ethcommon.Address
-	verifierAddr       ethcommon.Address
-	faucetAddr         ethcommon.Address
+	controllerAddr      ethcommon.Address
+	tokenAddr           ethcommon.Address
+	serviceRegistryAddr ethcommon.Address
+	bondingManagerAddr  ethcommon.Address
+	jobsManagerAddr     ethcommon.Address
+	roundsManagerAddr   ethcommon.Address
+	minterAddr          ethcommon.Address
+	verifierAddr        ethcommon.Address
+	faucetAddr          ethcommon.Address
 
 	// Embedded contract sessions
 	*contracts.ControllerSession
 	*contracts.LivepeerTokenSession
+	*contracts.ServiceRegistrySession
 	*contracts.BondingManagerSession
 	*contracts.JobsManagerSession
 	*contracts.RoundsManagerSession
@@ -227,6 +234,27 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 	}
 
 	glog.V(common.SHORT).Infof("LivepeerToken: %v", c.tokenAddr.Hex())
+
+	serviceRegistryAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("ServiceRegistry")))
+	if err != nil {
+		glog.Errorf("Error getting ServiceRegistry address: %v", err)
+		return err
+	}
+
+	c.serviceRegistryAddr = serviceRegistryAddr
+
+	serviceRegistry, err := contracts.NewServiceRegistry(serviceRegistryAddr, c.backend)
+	if err != nil {
+		glog.Errorf("Error creating ServiceRegistry binding: %v", err)
+		return err
+	}
+
+	c.ServiceRegistrySession = &contracts.ServiceRegistrySession{
+		Contract:     serviceRegistry,
+		TransactOpts: *opts,
+	}
+
+	glog.V(common.SHORT).Infof("ServiceRegistry: %v", c.serviceRegistryAddr.Hex())
 
 	bondingManagerAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("BondingManager")))
 	if err != nil {
@@ -598,8 +626,14 @@ func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, err
 		return nil, err
 	}
 
+	serviceURI, err := c.GetServiceURI(addr)
+	if err != nil {
+		return nil, err
+	}
+
 	return &lpTypes.Transcoder{
 		Address:                addr,
+		ServiceURI:             serviceURI,
 		LastRewardRound:        tInfo.LastRewardRound,
 		RewardCut:              tInfo.RewardCut,
 		FeeShare:               tInfo.FeeShare,

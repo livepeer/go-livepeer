@@ -14,7 +14,7 @@ func (w *wizard) isTranscoder() bool {
 	return isT == "true"
 }
 
-func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int) {
+func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int, string) {
 	var (
 		blockRewardCut  float64
 		feeShare        float64
@@ -30,7 +30,10 @@ func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int) {
 	fmt.Printf("Enter price per segment in Wei (default: 1) - ")
 	pricePerSegment = w.readDefaultBigInt(big.NewInt(1))
 
-	return blockRewardCut, feeShare, pricePerSegment
+	fmt.Printf("Enter service URI - ")
+	serviceURI := w.readString()
+
+	return blockRewardCut, feeShare, pricePerSegment, serviceURI
 }
 
 func (w *wizard) activateTranscoder() {
@@ -38,7 +41,7 @@ func (w *wizard) activateTranscoder() {
 	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
 	fmt.Printf("Current bonded amount: %v\n", d.BondedAmount.String())
 
-	blockRewardCut, feeShare, pricePerSegment := w.promptTranscoderConfig()
+	blockRewardCut, feeShare, pricePerSegment, serviceURI := w.promptTranscoderConfig()
 
 	fmt.Printf("You must bond to yourself in order to become a transcoder\n")
 
@@ -64,6 +67,7 @@ func (w *wizard) activateTranscoder() {
 		"blockRewardCut":  {fmt.Sprintf("%v", blockRewardCut)},
 		"feeShare":        {fmt.Sprintf("%v", feeShare)},
 		"pricePerSegment": {fmt.Sprintf("%v", pricePerSegment.String())},
+		"serviceURI":      {fmt.Sprintf("%v", serviceURI)},
 		"amount":          {fmt.Sprintf("%v", amount.String())},
 	}
 
@@ -73,12 +77,13 @@ func (w *wizard) activateTranscoder() {
 func (w *wizard) setTranscoderConfig() {
 	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
 
-	blockRewardCut, feeShare, pricePerSegment := w.promptTranscoderConfig()
+	blockRewardCut, feeShare, pricePerSegment, serviceURI := w.promptTranscoderConfig()
 
 	val := url.Values{
 		"blockRewardCut":  {fmt.Sprintf("%v", blockRewardCut)},
 		"feeShare":        {fmt.Sprintf("%v", feeShare)},
 		"pricePerSegment": {fmt.Sprintf("%v", pricePerSegment.String())},
+		"serviceURI":      {fmt.Sprintf("%v", serviceURI)},
 	}
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/setTranscoderConfig", w.host, w.httpPort), val)

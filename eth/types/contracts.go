@@ -17,6 +17,7 @@ var (
 
 type Transcoder struct {
 	Address                common.Address
+	ServiceURI             string
 	LastRewardRound        *big.Int
 	RewardCut              *big.Int
 	FeeShare               *big.Int

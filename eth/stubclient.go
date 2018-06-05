@@ -57,6 +57,11 @@ func (e *StubClient) Request() (*types.Transaction, error)            { return n
 func (e *StubClient) BalanceOf(addr common.Address) (*big.Int, error) { return big.NewInt(0), nil }
 func (e *StubClient) TotalSupply() (*big.Int, error)                  { return big.NewInt(0), nil }
 
+// Service Registry
+
+func (e *StubClient) SetServiceURI(serviceURI string) (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) GetServiceURI(addr common.Address) (string, error)           { return "", nil }
+
 // Staking
 
 func (e *StubClient) Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error) {
