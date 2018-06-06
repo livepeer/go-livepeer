@@ -161,8 +161,8 @@ func (c *StubClient) CheckTx(tx *types.Transaction) error          { return nil 
 func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, gasPrice *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (c *StubClient) Sign(msg []byte) ([]byte, error)   { return nil, nil }
-func (c *StubClient) LatestBlockNum() (*big.Int, error) { return big.NewInt(0), nil }
-func (c *StubClient) GetGasInfo() (uint64, *big.Int)    { return 0, nil }
-func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
+func (c *StubClient) Sign(msg []byte) ([]byte, error)          { return nil, nil }
+func (c *StubClient) LatestBlockNum() (*big.Int, error)        { return big.NewInt(0), nil }
+func (c *StubClient) GetGasInfo() (uint64, *big.Int)           { return 0, nil }
+func (c *StubClient) SetGasInfo(uint64, *big.Int) error        { return nil }
 func (c *StubClient) WatchForJob(string) (*lpTypes.Job, error) { return nil, nil }
