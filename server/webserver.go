@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -264,6 +265,10 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Need to provide a service URI")
 			return
 		}
+		if _, err := url.ParseRequestURI(serviceURI); err != nil {
+			glog.Error(err)
+			return
+		}
 
 		if amount.Cmp(big.NewInt(0)) == 1 {
 			glog.Infof("Bonding %v...", amount)
@@ -384,6 +389,10 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 
 		serviceURI := r.FormValue("serviceURI")
+		if _, err := url.ParseRequestURI(serviceURI); err != nil {
+			glog.Error(err)
+			return
+		}
 
 		glog.Infof("Setting transcoder config - Reward Cut: %v Fee Share: %v Price: %v", eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
 

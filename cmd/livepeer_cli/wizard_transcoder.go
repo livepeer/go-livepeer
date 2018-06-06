@@ -31,7 +31,10 @@ func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int, string) {
 	pricePerSegment = w.readDefaultBigInt(big.NewInt(1))
 
 	fmt.Printf("Enter service URI - ")
-	serviceURI := w.readString()
+	serviceURI := w.readStringAndValidate(func(in string) error {
+		_, err := url.ParseRequestURI(in)
+		return err
+	})
 
 	return blockRewardCut, feeShare, pricePerSegment, serviceURI
 }

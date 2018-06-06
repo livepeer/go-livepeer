@@ -39,6 +39,24 @@ func (w *wizard) readString() string {
 	}
 }
 
+// readStringAndValidate reads a single line from stdin, trims spaces and
+// checks that the string passes a condition defined by the provided validation function
+func (w *wizard) readStringAndValidate(validate func(in string) error) string {
+	for {
+		fmt.Printf("> ")
+		text, err := w.in.ReadString('\n')
+		if err != nil {
+			log.Crit("Failed to read user input", "err", err)
+		}
+		text = strings.TrimSpace(text)
+		if err := validate(text); err != nil {
+			log.Error("Failed to validate input", "err", err)
+			continue
+		}
+		return text
+	}
+}
+
 // readDefaultString reads a single line from stdin, trimming if from spaces. If
 // an empty line is entered, the default value is returned.
 func (w *wizard) readDefaultString(def string) string {
