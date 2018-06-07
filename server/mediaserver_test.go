@@ -196,6 +196,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 		t.Errorf("Expecting publish error because stream already exists, but got: %v", err)
 	}
 	delete(s.rtmpStreams, "strmID")
+	delete(s.VideoNonce, "strmID")
 
 	//Try to handle test RTMP data.
 	b := &StubBroadcaster{Data: make(map[uint64][]byte)}

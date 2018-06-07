@@ -76,6 +76,7 @@ type LivepeerNode struct {
 	WorkDir         string
 	NodeType        NodeType
 	Database        *common.DB
+	MonitorMetrics  bool
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.

@@ -8,10 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/livepeer/go-livepeer/monitor"
 
 	"github.com/ericxtang/m3u8"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -53,11 +57,13 @@ var LastHLSStreamID core.StreamID
 var LastManifestID core.ManifestID
 
 type LivepeerServer struct {
-	RTMPSegmenter lpmscore.RTMPSegmenter
-	LPMS          *lpmscore.LPMS
-	HttpPort      string
-	RtmpPort      string
-	LivepeerNode  *core.LivepeerNode
+	RTMPSegmenter  lpmscore.RTMPSegmenter
+	LPMS           *lpmscore.LPMS
+	HttpPort       string
+	RtmpPort       string
+	LivepeerNode   *core.LivepeerNode
+	VideoNonce     map[string]uint64
+	VideoNonceLock *sync.Mutex
 
 	rtmpStreams                map[core.StreamID]stream.RTMPVideoStream
 	hlsSubTimer                map[core.StreamID]time.Time
@@ -77,7 +83,7 @@ func NewLivepeerServer(rtmpPort string, rtmpIP string, httpPort string, httpIP s
 		opts.RtmpDisabled = false
 	}
 	server := lpmscore.New(&opts)
-	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, LivepeerNode: lpNode, rtmpStreams: make(map[core.StreamID]stream.RTMPVideoStream), broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
+	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, LivepeerNode: lpNode, VideoNonce: map[string]uint64{}, VideoNonceLock: &sync.Mutex{}, rtmpStreams: make(map[core.StreamID]stream.RTMPVideoStream), broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
 }
 
 //StartServer starts the LPMS server
@@ -138,6 +144,22 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
+		// For now, only allow a single stream
+		if len(s.rtmpStreams) > 0 {
+			return ErrAlreadyExists
+		}
+
+		s.VideoNonceLock.Lock()
+		nonce, ok := s.VideoNonce[rtmpStrm.GetStreamID()]
+		if !ok {
+			nonce = rand.Uint64()
+			s.VideoNonce[rtmpStrm.GetStreamID()] = nonce
+		} else {
+			// We can only have one concurrent stream for now
+			return ErrAlreadyExists
+		}
+		s.VideoNonceLock.Unlock()
+
 		if s.LivepeerNode.Eth != nil {
 			//Check if round is initialized
 			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
@@ -161,13 +183,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			minDeposit := big.NewInt(0).Mul(BroadcastPrice, big.NewInt(MinDepositSegmentCount))
 			if deposit.Cmp(minDeposit) < 0 {
 				glog.Errorf("Low deposit (%v) - cannot start broadcast session", deposit)
+				if s.LivepeerNode.MonitorMetrics {
+					monitor.LogStreamCreateFailed(rtmpStrm.GetStreamID(), nonce, "LowDeposit")
+				}
 				return ErrBroadcast
 			}
-		}
-
-		// We can only have one concurrent stream for now
-		if len(s.rtmpStreams) > 0 {
-			return ErrAlreadyExists
 		}
 
 		//Check if stream ID already exists
@@ -220,6 +240,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 		LastHLSStreamID = hlsStrmID
 
+		streamStarted := false
 		//Segment the stream, insert the segments into the broadcaster
 		go func(broadcaster stream.Broadcaster, rtmpStrm stream.RTMPVideoStream) {
 			hlsStrm := stream.NewBasicHLSVideoStream(string(hlsStrmID), stream.DefaultHLSStreamWin)
@@ -229,6 +250,12 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					return
 				}
 
+				if streamStarted == false {
+					streamStarted = true
+					if s.LivepeerNode.MonitorMetrics {
+						monitor.LogStreamStartedEvent(hlsStrmID.String(), nonce)
+					}
+				}
 				var sig []byte
 				if s.LivepeerNode.Eth != nil {
 					segHash := (&ethTypes.Segment{StreamID: hlsStrm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
@@ -255,6 +282,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					glog.Errorf("Error broadcaseting finish message: %v", err)
 				}
 			}
+
 		}(broadcaster, rtmpStrm)
 
 		//Create the manifest and broadcast it (so the video can be consumed by itself without transcoding)
@@ -270,6 +298,9 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		if err := s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(string(mid), manifest); err != nil {
 			glog.Errorf("Error broadasting manifest to network: %v", err)
+		}
+		if s.LivepeerNode.MonitorMetrics {
+			monitor.LogStreamCreatedEvent(mid.String(), nonce)
 		}
 
 		//Set up the transcode response callback
@@ -322,6 +353,15 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(manifestID, nil)
 		//Remove the stream from cache
 		s.LivepeerNode.VideoCache.EvictHLSStream(core.StreamID(hlsID))
+
+		if s.LivepeerNode.MonitorMetrics {
+			s.VideoNonceLock.Lock()
+			if _, ok := s.VideoNonce[rtmpStrm.GetStreamID()]; ok {
+				monitor.LogStreamEndedEvent(manifestID, s.VideoNonce[rtmpStrm.GetStreamID()])
+				delete(s.VideoNonce, rtmpStrm.GetStreamID())
+			}
+			s.VideoNonceLock.Unlock()
+		}
 		return nil
 	}
 }
