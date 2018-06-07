@@ -72,6 +72,7 @@ func (s *TestStream) ReadHLSFromStream(ctx context.Context, buffer stream.HLSMux
 func (s *TestStream) ReadHLSSegment() (stream.HLSSegment, error)                          { return stream.HLSSegment{}, nil }
 func (s *TestStream) Width() int                                                          { return 0 }
 func (s *TestStream) Height() int                                                         { return 0 }
+func (s *TestStream) Close()                                                              {}
 
 func RunRTMPToHLS(vs *FFMpegVideoSegmenter, ctx context.Context) error {
 	// hack cuz listener might not be ready

@@ -766,7 +766,7 @@ int lpms_length(char *inp, int ts_max, int packet_max)
     AVRational limit_tb   = {1, 1000}; // MilliSeconds
     int64_t pts_max       = ts_max;
     struct input_metrics im[LPMS_MAX_INPUT_STREAMS];
-    AVPacket pkt;
+    AVPacket pkt          = {0};
 
     ret = avformat_open_input(&ic, inp, NULL, NULL);
     if (ret < 0) len_err("len: Unable to open input\n");
