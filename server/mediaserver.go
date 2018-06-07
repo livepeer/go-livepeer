@@ -254,6 +254,9 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				if err := s.LivepeerNode.BroadcastFinishMsg(hlsStrmID.String()); err != nil {
 					glog.Errorf("Error broadcaseting finish message: %v", err)
 				}
+				// Stop the incoming RTMP connection.
+				// TODO retry segmentation if err != SegmenterTimeout; may be recoverable
+				rtmpStrm.Close()
 			}
 		}(broadcaster, rtmpStrm)
 
