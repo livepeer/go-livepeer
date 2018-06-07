@@ -50,4 +50,9 @@ func TestLength(t *testing.T) {
 		t.Error("Did not get an error on nb packets check where one was expected")
 	}
 
+	// check invalid file
+	err = CheckMediaLen("nonexistent", ts, nb_packets)
+	if err == nil || err.Error() != "No such file or directory" {
+		t.Error("Did not get the expected error: ", err)
+	}
 }

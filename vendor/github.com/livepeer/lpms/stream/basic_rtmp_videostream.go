@@ -15,12 +15,12 @@ import (
 type BasicRTMPVideoStream struct {
 	streamID     string
 	ch           chan *av.Packet
-	src          av.DemuxCloser
 	listeners    map[string]av.MuxCloser
 	listnersLock *sync.Mutex
 	header       []av.CodecData
-	exitWorker   chan struct{}
 	EOF          chan struct{}
+	closed       bool
+	closeLock    *sync.Mutex
 	RTMPTimeout  time.Duration
 }
 
@@ -30,8 +30,9 @@ func NewBasicRTMPVideoStream(id string) *BasicRTMPVideoStream {
 	eof := make(chan struct{})
 	listeners := make(map[string]av.MuxCloser)
 	lLock := &sync.Mutex{}
+	cLock := &sync.Mutex{}
 
-	s := &BasicRTMPVideoStream{streamID: id, listeners: listeners, listnersLock: lLock, ch: ch, EOF: eof}
+	s := &BasicRTMPVideoStream{streamID: id, listeners: listeners, listnersLock: lLock, ch: ch, EOF: eof, closeLock: cLock, closed: false}
 	//Automatically start a worker that reads packets.  There is no buffering of the video packets.
 	go func(strm *BasicRTMPVideoStream) {
 		for {
@@ -100,27 +101,41 @@ func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.Dem
 	s.header = h
 
 	eof = make(chan struct{})
-	go func(strmEOF chan struct{}, eof chan struct{}, ch chan *av.Packet) {
+	go func(ch chan *av.Packet) {
 		for {
 			packet, err := src.ReadPacket()
-			if err == io.EOF {
-				close(strmEOF)
-				src.Close()
-				eof <- struct{}{}
-				return
-			} else if err != nil {
-				glog.Errorf("Error reading packet from RTMP: %v", err)
-				close(strmEOF)
-				src.Close()
-				eof <- struct{}{}
+			if err != nil {
+				if err != io.EOF {
+					glog.Errorf("Error reading packet from RTMP: %v", err)
+				}
+				s.Close()
 				return
 			}
 
 			ch <- &packet
 		}
-	}(s.EOF, eof, s.ch)
+	}(s.ch)
+
+	go func(strmEOF chan struct{}, eof chan struct{}) {
+		select {
+		case <-strmEOF:
+			src.Close()
+			eof <- struct{}{}
+		}
+	}(s.EOF, eof)
 
 	return eof, nil
+}
+
+func (s *BasicRTMPVideoStream) Close() {
+	s.closeLock.Lock()
+	defer s.closeLock.Unlock()
+	if s.closed {
+		return
+	}
+	s.closed = true
+	glog.V(2).Infof("Closing RTMP %v", s.streamID)
+	close(s.EOF)
 }
 
 func (s BasicRTMPVideoStream) String() string {
