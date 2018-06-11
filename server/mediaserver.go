@@ -390,6 +390,18 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				if err != nil {
 					return // XXX feed back error?
 				}
+				// Update the master playlist based on the streamids from the transcoder
+				for strmID, tProfile := range rpcBcast.tinfo.StreamIds {
+					vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[tProfile])
+					pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
+					variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}
+					manifest.Append(variant.URI, variant.Chunklist, variant.VariantParams)
+				}
+				// Update the master playlist on the network
+				if err = s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(string(mid), manifest); err != nil {
+					glog.Errorf("Error updating master playlist on network: %v", err)
+					return // XXX feed back error?
+				}
 			}()
 		}
 		return nil

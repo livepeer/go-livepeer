@@ -44,6 +44,9 @@ func (r *stubOrchestrator) Address() ethcommon.Address {
 func (r *stubOrchestrator) TranscodeSeg(job *lpTypes.Job, seg *core.SignedSegment) error {
 	return nil
 }
+func (r *stubOrchestrator) StreamIDs(job *lpTypes.Job) ([]core.StreamID, error) {
+	return []core.StreamID{}, nil
+}
 
 func StubOrchestrator() *stubOrchestrator {
 	pk, err := ethcrypto.GenerateKey()
