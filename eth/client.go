@@ -17,10 +17,12 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -36,6 +38,7 @@ import (
 var (
 	RoundsPerEarningsClaim = big.NewInt(20)
 
+	ErrReplacingMinedTx   = fmt.Errorf("trying to replace already mined tx")
 	ErrCurrentRoundLocked = fmt.Errorf("current round locked")
 	ErrMissingBackend     = fmt.Errorf("missing Ethereum client backend")
 )
@@ -107,6 +110,7 @@ type LivepeerEthClient interface {
 	// Helpers
 	ContractAddresses() map[string]ethcommon.Address
 	CheckTx(*types.Transaction) error
+	ReplaceTransaction(*types.Transaction, string, *big.Int) (*types.Transaction, error)
 	Sign([]byte) ([]byte, error)
 	LatestBlockNum() (*big.Int, error)
 	GetGasInfo() (uint64, *big.Int)
@@ -818,6 +822,69 @@ func (c *client) CheckTx(tx *types.Transaction) error {
 
 func (c *client) Sign(msg []byte) ([]byte, error) {
 	return c.accountManager.Sign(msg)
+}
+
+func (c *client) ReplaceTransaction(tx *types.Transaction, method string, gasPrice *big.Int) (*types.Transaction, error) {
+	_, pending, err := c.backend.TransactionByHash(context.Background(), tx.Hash())
+	// Only return here if the error is not related to the tx not being found
+	// Presumably the provided tx was already broadcasted at some point, so even if for some reason the
+	// node being used cannot find it, the originally broadcasted tx is still valid and might be sitting somewhere
+	if err != nil && err != ethereum.NotFound {
+		return nil, err
+	}
+	// If tx was found
+	// If `pending` is true, the tx was mined and included in a block
+	if err == nil && !pending {
+		return nil, ErrReplacingMinedTx
+	}
+
+	// Updated gas price must be at least 10% greater than the gas price used for the original transaction in order
+	// to submit a replacement transaction with the same nonce. 10% is not defined by the protocol, but is the default required price bump
+	// used by many clients: https://github.com/ethereum/go-ethereum/blob/01a7e267dc6d7bbef94882542bbd01bd712f5548/core/tx_pool.go#L148
+	// We add a little extra in addition to the 10% price bump just to be sure
+	minGasPrice := big.NewInt(0).Add(big.NewInt(0).Add(tx.GasPrice(), big.NewInt(0).Div(tx.GasPrice(), big.NewInt(10))), big.NewInt(10))
+
+	// If gas price is not provided, use minimum gas price that satisfies the 10% required price bump
+	if gasPrice == nil {
+		gasPrice = minGasPrice
+	}
+
+	// Check that gas price meets minimum price bump requirement
+	if gasPrice.Cmp(minGasPrice) == -1 {
+		return nil, fmt.Errorf("Provided gas price does not satisfy required price bump to replace transaction %v", tx.Hash())
+	}
+
+	suggestedGasPrice, err := c.backend.SuggestGasPrice(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	// If the suggested gas price is higher than the bumped gas price, use the suggested gas price
+	// This is to account for any wild market gas price increases between the time of the original tx submission and time
+	// of replacement tx submission
+	// Note: If the suggested gas price is lower than the bumped gas price because market gas prices have dropped
+	// since the time of the original tx submission we cannot use the lower suggested gas price and we still need to use
+	// the bumped gas price in order to properly replace a still pending tx
+	if suggestedGasPrice.Cmp(gasPrice) == 1 {
+		gasPrice = suggestedGasPrice
+	}
+
+	// Replacement raw tx uses same fields as old tx (reusing the same nonce is crucial) except the gas price is updated
+	newRawTx := types.NewTransaction(tx.Nonce(), *tx.To(), tx.Value(), tx.Gas(), gasPrice, tx.Data())
+
+	newSignedTx, err := c.accountManager.SignTx(types.HomesteadSigner{}, newRawTx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = c.backend.SendTransaction(context.Background(), newSignedTx)
+	if err == nil {
+		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Hash: \"%v\".  Gas Price: %v \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, newSignedTx.Hash().String(), newSignedTx.GasPrice().String(), strings.Repeat("*", 75))
+	} else {
+		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Gas Price: %v \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, newSignedTx.GasPrice().String(), err, strings.Repeat("*", 75))
+	}
+
+	return newSignedTx, err
 }
 
 func (c *client) getNonce() (uint64, error) {
