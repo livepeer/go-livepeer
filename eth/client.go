@@ -847,26 +847,26 @@ func (c *client) ReplaceTransaction(tx *types.Transaction, method string, gasPri
 	// If gas price is not provided, use minimum gas price that satisfies the 10% required price bump
 	if gasPrice == nil {
 		gasPrice = minGasPrice
+
+		suggestedGasPrice, err := c.backend.SuggestGasPrice(context.Background())
+		if err != nil {
+			return nil, err
+		}
+
+		// If the suggested gas price is higher than the bumped gas price, use the suggested gas price
+		// This is to account for any wild market gas price increases between the time of the original tx submission and time
+		// of replacement tx submission
+		// Note: If the suggested gas price is lower than the bumped gas price because market gas prices have dropped
+		// since the time of the original tx submission we cannot use the lower suggested gas price and we still need to use
+		// the bumped gas price in order to properly replace a still pending tx
+		if suggestedGasPrice.Cmp(gasPrice) == 1 {
+			gasPrice = suggestedGasPrice
+		}
 	}
 
 	// Check that gas price meets minimum price bump requirement
 	if gasPrice.Cmp(minGasPrice) == -1 {
 		return nil, fmt.Errorf("Provided gas price does not satisfy required price bump to replace transaction %v", tx.Hash())
-	}
-
-	suggestedGasPrice, err := c.backend.SuggestGasPrice(context.Background())
-	if err != nil {
-		return nil, err
-	}
-
-	// If the suggested gas price is higher than the bumped gas price, use the suggested gas price
-	// This is to account for any wild market gas price increases between the time of the original tx submission and time
-	// of replacement tx submission
-	// Note: If the suggested gas price is lower than the bumped gas price because market gas prices have dropped
-	// since the time of the original tx submission we cannot use the lower suggested gas price and we still need to use
-	// the bumped gas price in order to properly replace a still pending tx
-	if suggestedGasPrice.Cmp(gasPrice) == 1 {
-		gasPrice = suggestedGasPrice
 	}
 
 	// Replacement raw tx uses same fields as old tx (reusing the same nonce is crucial) except the gas price is updated
