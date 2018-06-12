@@ -117,14 +117,19 @@ func (am *AccountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int)
 				return nil, errors.New("not authorized to sign this account")
 			}
 
-			signature, err := am.keyStore.SignHash(am.Account, signer.Hash(tx).Bytes())
-			if err != nil {
-				return nil, err
-			}
-
-			return tx.WithSignature(signer, signature)
+			return am.SignTx(signer, tx)
 		},
 	}, nil
+}
+
+// Sign a transaction. Account must be unlocked
+func (am *AccountManager) SignTx(signer types.Signer, tx *types.Transaction) (*types.Transaction, error) {
+	signature, err := am.keyStore.SignHash(am.Account, signer.Hash(tx).Bytes())
+	if err != nil {
+		return nil, err
+	}
+
+	return tx.WithSignature(signer, signature)
 }
 
 // Sign byte array message. Account must be unlocked

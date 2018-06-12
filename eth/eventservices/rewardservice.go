@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
 )
@@ -18,6 +19,7 @@ var (
 
 type RewardService struct {
 	client       eth.LivepeerEthClient
+	pendingTx    *types.Transaction
 	working      bool
 	cancelWorker context.CancelFunc
 }
@@ -79,6 +81,11 @@ func (s *RewardService) tryReward() error {
 		return err
 	}
 
+	initialized, err := s.client.CurrentRoundInitialized()
+	if err != nil {
+		return err
+	}
+
 	t, err := s.client.GetTranscoder(s.client.Account().Address)
 	if err != nil {
 		return err
@@ -89,16 +96,47 @@ func (s *RewardService) tryReward() error {
 		return err
 	}
 
-	if t.LastRewardRound.Cmp(currentRound) == -1 && active {
-		tx, err := s.client.Reward()
-		if err != nil {
-			return err
+	if t.LastRewardRound.Cmp(currentRound) == -1 && initialized && active {
+		var (
+			tx  *types.Transaction
+			err error
+		)
+
+		if s.pendingTx != nil {
+			// Previous attempt to call reward() still pending
+			// Replace pending tx by bumping gas price
+			tx, err = s.client.ReplaceTransaction(s.pendingTx, "reward", nil)
+			if err != nil {
+				if err == eth.ErrReplacingMinedTx {
+					// Pending tx confirmed so we should not try to replace next time
+					s.pendingTx = nil
+				}
+
+				return err
+			}
+		} else {
+			// No previous attempt to call reward(), invoke with next nonce
+			tx, err = s.client.Reward()
+			if err != nil {
+				return err
+			}
 		}
 
 		err = s.client.CheckTx(tx)
 		if err != nil {
+			if err == context.DeadlineExceeded {
+				glog.Infof("Reward tx did not confirm within defined time window - will try to replace pending tx next time")
+
+				// Tx did not confirm within defined time window
+				// Store pending tx
+				s.pendingTx = tx
+			}
+
 			return err
 		}
+
+		// Transaction confirmed so there is no pending call for reward()
+		s.pendingTx = nil
 
 		tp, err := s.client.GetTranscoderEarningsPoolForRound(s.client.Account().Address, currentRound)
 		if err != nil {

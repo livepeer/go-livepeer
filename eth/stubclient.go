@@ -153,7 +153,10 @@ func (c *StubClient) VerificationCodeHash() (string, error)            { return 
 
 func (c *StubClient) ContractAddresses() map[string]common.Address { return nil }
 func (c *StubClient) CheckTx(tx *types.Transaction) error          { return nil }
-func (e *StubClient) Sign(msg []byte) ([]byte, error)              { return nil, nil }
-func (c *StubClient) LatestBlockNum() (*big.Int, error)            { return big.NewInt(0), nil }
-func (c *StubClient) GetGasInfo() (uint64, *big.Int)               { return 0, nil }
-func (c *StubClient) SetGasInfo(uint64, *big.Int) error            { return nil }
+func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, gasPrice *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (c *StubClient) Sign(msg []byte) ([]byte, error)   { return nil, nil }
+func (c *StubClient) LatestBlockNum() (*big.Int, error) { return big.NewInt(0), nil }
+func (c *StubClient) GetGasInfo() (uint64, *big.Int)    { return 0, nil }
+func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
