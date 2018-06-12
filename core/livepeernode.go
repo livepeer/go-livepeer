@@ -226,8 +226,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 				n.claimMutex.Unlock()
 				return
 			case chanData := <-segChan:
-				n.transcodeAndBroadcastSeg(&chanData.seg.Seg, chanData.seg.Sig, cm, tr, resultStrmIDs, broadcasters, config)
-				chanData.res <- nil
+				chanData.res <- n.transcodeAndBroadcastSeg(&chanData.seg.Seg, chanData.seg.Sig, cm, tr, resultStrmIDs, broadcasters, config)
 			}
 			cancel()
 		}
@@ -252,12 +251,12 @@ func (n *LivepeerNode) getSegmentChan(job *ethTypes.Job) (SegmentChan, error) {
 	return sc, nil
 }
 
-func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) {
+func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) error {
 	glog.V(common.DEBUG).Infof("Starting to transcode segment %v", ss.Seg.SeqNo)
 	ch, err := n.getSegmentChan(job)
 	if err != nil {
 		glog.Error("Could not find segment chan ", err)
-		return // XXX respond to caller
+		return err
 	}
 	segChan := &SegChanData{seg: ss, res: make(chan error, 1)}
 	select {
@@ -266,14 +265,15 @@ func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) {
 	default:
 		// sending segChan should not block; if it does, the channel is busy
 		glog.Error("Transcoder was busy with a previous segment!")
+		return fmt.Errorf("TranscoderBusy")
 	}
 	select {
 	case err := <-segChan.res:
 		if err != nil {
-			// XXX respond to caller
+			return err
 		}
 	}
-	// XXX respond to caller
+	return nil
 }
 
 //TranscodeAndBroadcast transcodes one stream into multiple streams (specified by TranscodeConfig), broadcasts the streams, and returns a list of streamIDs.
@@ -377,7 +377,7 @@ func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.
 	return resultStrmIDs, nil
 }
 
-func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []byte, cm eth.ClaimManager, t transcoder.Transcoder, resultStrmIDs []StreamID, broadcasters map[StreamID]stream.Broadcaster, config net.TranscodeConfig) {
+func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []byte, cm eth.ClaimManager, t transcoder.Transcoder, resultStrmIDs []StreamID, broadcasters map[StreamID]stream.Broadcaster, config net.TranscodeConfig) error {
 
 	// Prevent unnecessary work, check for replayed sequence numbers.
 	// NOTE: If we ever process segments from the same job concurrently,
@@ -385,7 +385,10 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	hasReceipt, err := n.Database.ReceiptExists(config.JobID, seg.SeqNo)
 	if err != nil || hasReceipt {
 		glog.Errorf("Got a DB error (%v) or receipt exists (%v)", err, hasReceipt)
-		return // TODO return error?
+		if err == nil {
+			err = fmt.Errorf("DuplicateSequence")
+		}
+		return err
 	}
 
 	//Assume d is in the right format, write it to disk
@@ -394,14 +397,14 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 		err := os.Mkdir(n.WorkDir, 0700)
 		if err != nil {
 			glog.Errorf("Transcoder cannot create workdir: %v", err)
-			return // TODO return error?
+			return err
 		}
 	}
 	// Create input file from segment. Removed after claiming complete or error
 	fname := path.Join(n.WorkDir, inName)
 	if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
 		glog.Errorf("Transcoder cannot write file: %v", err)
-		return // TODO return error?
+		return err
 	}
 
 	transcodeStart := time.Now().UTC()
@@ -409,7 +412,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	if err := ffmpeg.CheckMediaLen(fname, 4*1.25*1000, 60*4*1.25); err != nil {
 		glog.Errorf("Media length check failed: %v", err)
 		os.Remove(fname)
-		return
+		return err
 	}
 	//Do the transcoding
 	start := time.Now()
@@ -417,7 +420,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	if err != nil {
 		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
 		os.Remove(fname)
-		return
+		return err
 	}
 	transcodeEnd := time.Now().UTC()
 	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
@@ -450,11 +453,13 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 		err = cm.AddReceipt(int64(seg.SeqNo), fname, seg.Data, sig, tProfileData, transcodeStart, transcodeEnd)
 		if err != nil {
 			os.Remove(fname)
+			return err
 		}
 	} else {
 		// We aren't going through the claim process so remove input immediately
 		os.Remove(fname)
 	}
+	return nil
 }
 
 func (n *LivepeerNode) BroadcastFinishMsg(strmID string) error {

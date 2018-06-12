@@ -100,8 +100,7 @@ func (orch *orchestrator) StreamIDs(job *lpTypes.Job) ([]core.StreamID, error) {
 }
 
 func (orch *orchestrator) TranscodeSeg(job *lpTypes.Job, ss *core.SignedSegment) error {
-	orch.node.TranscodeSegment(job, ss)
-	return nil
+	return orch.node.TranscodeSegment(job, ss)
 }
 
 // grpc methods
