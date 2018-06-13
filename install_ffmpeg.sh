@@ -1,6 +1,6 @@
 set -ex
 
-export PATH="$HOME/compiled/bin":$PATH
+export PATH="$HOME/compiled/bin":"$PATH"
 export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig
 
 if [ ! -e "$HOME/nasm/nasm" ]; then

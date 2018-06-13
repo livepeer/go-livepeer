@@ -297,6 +297,9 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 
 	//Encode and broadcast the segment
 	start = time.Now()
+    
+    added_transcoded := false
+    
 	for i, resultStrmID := range resultStrmIDs {
 		//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
 		if tData[i] == nil {
@@ -316,6 +319,15 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 		}
 
 		tProfileData[config.Profiles[i]] = tData[i]
+
+        if !added_transcoded {
+            if err := ioutil.WriteFile(fname + ".transcoded", tData[i], 0644); err != nil {
+	   	         glog.Errorf("Transcoder cannot write file: %v", err)
+		         return // TODO return error?
+   	        }
+            added_transcoded = true
+        }
+
 	}
 	//Don't do the onchain stuff unless specified
 	if cm != nil && config.PerformOnchainClaim {

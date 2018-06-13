@@ -10,6 +10,10 @@ import (
 	"sort"
 	"sync"
 	"time"
+    
+    "golang.org/x/crypto/sha3"
+//    "encoding/hex"
+    "io"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -24,6 +28,87 @@ var (
 	RpcTimeout = 10 * time.Second
 )
 
+///////////////////////////////
+
+func makeMerkle(arr [][]byte, idx int, level uint) []byte {
+    zeroword := []byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+    if level == 0 {
+        if idx < len(arr) {
+            return arr[idx]
+        } else {
+            return zeroword
+        }
+    } else {
+        hash := sha3.NewLegacyKeccak256()
+        hash.Write(makeMerkle(arr, idx, level-1))
+        hash.Write(makeMerkle(arr, idx + (1 << (level-1)), level-1))
+        return hash.Sum(nil)
+    }
+}
+
+func intToBytes32(i int) [32]byte {
+    res := [32]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+    for j := 0; j < 32; j++ {
+        res[j] = byte(i)
+        i = i/256
+    }
+    return res
+}
+
+func getHash(arr [][]byte) []byte {
+    return makeMerkle(arr, 0, depth(uint(len(arr)*2 - 1)))
+}
+
+func depth(x uint) uint {
+    if x <= 1 {
+        return 0
+    } else {
+        return 1 + depth(x/2)
+    }
+}
+
+func check(e error) {
+    if e != nil {
+        panic(e)
+    }
+}
+
+func fileHash(fname string) []byte {
+    zeroword := []byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+
+    // fmt.Println("Reading file", fname)
+    
+    // open file
+    f, err := os.Open(fname)
+    check(err)
+
+    // read the file
+    arr := [][]byte{}
+    
+    last := 1
+    for last != 0 {
+        w := make([]byte, 16)
+        // n, err := io.ReadAtLeast(f, w, 16)
+        n, err := f.Read(w)
+        if err == io.EOF {
+            last = 0
+        } else {
+            check(err)
+        }
+        last = n
+        arr = append(arr, w)
+    }
+
+    // need to have at least two elements now
+    for len(arr) < 2 {
+        arr = append(arr, zeroword)
+    }
+
+    return getHash(arr)
+}
+
+///////////////////////////////
+
 type ClaimManager interface {
 	AddReceipt(seqNo int64, bDataFile string, bData []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error
 	SufficientBroadcasterDeposit() (bool, error)
@@ -36,6 +121,8 @@ type ClaimManager interface {
 type claimData struct {
 	seqNo                int64
 	segData              []byte
+	segDataT             []byte
+    tbHash               []byte
 	dataHash             []byte
 	bSig                 []byte
 	claimConcatTDatahash []byte
@@ -134,10 +221,20 @@ func RecoverClaims(c LivepeerEthClient, ipfs ipfs.IpfsApi, db *common.DB) error 
 				glog.Error("Unable to read segment data; gambling on verification ", err)
 				bData = []byte{}
 			}
+			bDataT, err := ioutil.ReadFile(r.BcastFile + ".transcoded")
+			if err != nil {
+                glog.Error("Unable to read segment data (transcoded); gambling on verification ", err)
+				bDataT = []byte{}
+			}
+			
+            tbHash := fileHash(r.BcastFile + ".transcoded")
+            
 			cm.unclaimedSegs[r.SeqNo] = true
 			cm.segClaimMap[r.SeqNo] = &claimData{
 				seqNo:                r.SeqNo,
 				segData:              bData,
+				segDataT:             bDataT,
+				tbHash:               tbHash,
 				dataHash:             r.BcastHash,
 				bSig:                 r.BcastSig,
 				claimConcatTDatahash: r.TcodeHash,
@@ -427,16 +524,21 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 	for segNo := segRange[0]; segNo <= segRange[1]; segNo++ {
 		if c.shouldVerifySegment(segNo, segRange[0], segRange[1], claimBlkNum, plusOneBlkHash, verifyRate) {
 			glog.V(common.SHORT).Infof("Job %v Segment %v challenged for verification", c.jobID, segNo)
-
+            
+            // 
 			seg := c.segClaimMap[segNo]
 
-			dataStorageHash, err := c.ipfs.Add(bytes.NewReader(seg.segData))
+			dataStorageHash, err := c.ipfs.Add(bytes.NewReader(seg.segDataT))
 			if err != nil {
 				glog.Errorf("Job %v Error uploading segment data to IPFS: %v", c.jobID, err)
 				continue
 			}
 
-			dataHashes := [2][32]byte{ethcommon.BytesToHash(seg.dataHash), ethcommon.BytesToHash(seg.claimConcatTDatahash)}
+			// dataHashes := [2][32]byte{ethcommon.BytesToHash(seg.dataHash), ethcommon.BytesToHash(seg.claimConcatTDatahash)}
+            
+            
+            
+            dataHashes := [2][32]byte{ethcommon.BytesToHash(seg.tbHash), intToBytes32(len(seg.segDataT))}
 
 			tx, err := c.client.Verify(c.jobID, claimID, big.NewInt(segNo), dataStorageHash, dataHashes, seg.bSig, seg.transcodeProof)
 			if err != nil {
