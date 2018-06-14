@@ -188,33 +188,33 @@ func genToken(orch Orchestrator, job *lpTypes.Job) (string, error) {
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func verifyToken(orch Orchestrator, creds string) (*lpTypes.Job, bool) {
+func verifyToken(orch Orchestrator, creds string) (*lpTypes.Job, error) {
 	buf, err := base64.StdEncoding.DecodeString(creds)
 	if err != nil {
 		glog.Error("Unable to base64-decode ", err)
-		return nil, false
+		return nil, err
 	}
 	var token AuthToken
 	err = proto.Unmarshal(buf, &token)
 	if err != nil {
 		glog.Error("Unable to unmarshal ", err)
-		return nil, false
+		return nil, err
 	}
 	if !verifyMsgSig(orch.Address(), fmt.Sprintf("%v", token.JobId), token.Sig) {
 		glog.Error("Sig check failed")
-		return nil, false
+		return nil, fmt.Errorf("Token sig check failed")
 	}
 	job, err := orch.GetJob(token.JobId)
 	if err != nil || job == nil {
 		glog.Error("Could not get job ", err)
-		return nil, false
+		return nil, fmt.Errorf("Missing job")
 	}
 	blk := orch.CurrentBlock()
 	if blk.Cmp(job.CreationBlock) == -1 || blk.Cmp(job.EndBlock) == 1 {
 		glog.Errorf("Job %v too early or expired", job.JobId)
-		return nil, false
+		return nil, fmt.Errorf("Job out of range")
 	}
-	return job, true
+	return job, nil
 }
 
 func genSegCreds(bcast Broadcaster, streamId string, segData *SegData) (string, error) {
@@ -236,17 +236,17 @@ func genSegCreds(bcast Broadcaster, streamId string, segData *SegData) (string, 
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func verifySegCreds(job *lpTypes.Job, segCreds string) (*SegData, bool) {
+func verifySegCreds(job *lpTypes.Job, segCreds string) (*SegData, error) {
 	buf, err := base64.StdEncoding.DecodeString(segCreds)
 	if err != nil {
 		glog.Error("Unable to base64-decode ", err)
-		return nil, false
+		return nil, err
 	}
 	var segData SegData
 	err = proto.Unmarshal(buf, &segData)
 	if err != nil {
 		glog.Error("Unable to unmarshal ", err)
-		return nil, false
+		return nil, err
 	}
 	seg := &lpTypes.Segment{
 		StreamID:              job.StreamId,
@@ -255,9 +255,9 @@ func verifySegCreds(job *lpTypes.Job, segCreds string) (*SegData, bool) {
 	}
 	if !verifyMsgSig(job.BroadcasterAddress, string(seg.Flatten()), segData.Sig) {
 		glog.Error("Sig check failed")
-		return nil, false
+		return nil, fmt.Errorf("Segment sig check failed")
 	}
-	return &segData, true
+	return &segData, nil
 }
 
 func GetTranscoder(context context.Context, orch Orchestrator, req *TranscoderRequest) (*TranscoderInfo, error) {
@@ -301,18 +301,18 @@ func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	job, ok := verifyToken(orch, creds)
-	if !ok {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	job, err := verifyToken(orch, creds)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 
 	// check the segment sig from the broadcaster
 	seg := r.Header.Get("Livepeer-Segment")
-	segData, ok := verifySegCreds(job, seg)
-	if !ok {
+	segData, err := verifySegCreds(job, seg)
+	if err != nil {
 		glog.Error("Could not verify segment creds")
-		http.Error(w, "Forbidden", http.StatusForbidden)
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 

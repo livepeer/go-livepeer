@@ -123,38 +123,38 @@ func TestRPCCreds(t *testing.T) {
 	if err != nil {
 		t.Error("Unable to generate creds from req ", err)
 	}
-	if _, ok := verifyToken(r, creds); !ok {
-		t.Error("Creds did not validate")
+	if _, err := verifyToken(r, creds); err != nil {
+		t.Error("Creds did not validate: ", err)
 	}
 
 	// corrupt the creds
 	idx := len(creds) / 2
 	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
-	if _, ok := verifyToken(r, kreds); ok {
-		t.Error("Creds unexpectedly validated")
+	if _, err := verifyToken(r, kreds); err == nil || err.Error() != "illegal base64 data at input byte 46" {
+		t.Error("Creds unexpectedly validated", err)
 	}
 
 	// wrong orchestrator
-	if _, ok := verifyToken(StubOrchestrator(), creds); ok {
-		t.Error("Orchestrator unexpectedly validated")
+	if _, err := verifyToken(StubOrchestrator(), creds); err == nil || err.Error() != "Token sig check failed" {
+		t.Error("Orchestrator unexpectedly validated", err)
 	}
 
 	// too early
 	r.block = big.NewInt(-1)
-	if _, ok := verifyToken(r, creds); ok {
-		t.Error("Early block unexpectedly validated")
+	if _, err := verifyToken(r, creds); err == nil || err.Error() != "Job out of range" {
+		t.Error("Early block unexpectedly validated", err)
 	}
 
 	// too late
 	r.block = big.NewInt(100)
-	if _, ok := verifyToken(r, creds); ok {
-		t.Error("Late block unexpectedly validated")
+	if _, err := verifyToken(r, creds); err == nil || err.Error() != "Job out of range" {
+		t.Error("Late block unexpectedly validated", err)
 	}
 
 	// reset to sanity check once again
 	r.block = big.NewInt(5)
-	if _, ok := verifyToken(r, creds); !ok {
-		t.Error("Block did not validate")
+	if _, err := verifyToken(r, creds); err != nil {
+		t.Error("Block did not validate", err)
 	}
 }
 
@@ -172,16 +172,16 @@ func TestRPCSeg(t *testing.T) {
 		t.Error("Unable to generate seg creds ", err)
 		return
 	}
-	if _, ok := verifySegCreds(j, creds); !ok {
-		t.Error("Unable to verify seg creds")
+	if _, err := verifySegCreds(j, creds); err != nil {
+		t.Error("Unable to verify seg creds", err)
 		return
 	}
 
 	// test invalid jobid
 	oldSid := j.StreamId
 	j.StreamId = j.StreamId + j.StreamId
-	if _, ok := verifySegCreds(j, creds); ok {
-		t.Error("Unexpectedly verified seg creds: invalid jobid")
+	if _, err := verifySegCreds(j, creds); err == nil || err.Error() != "Segment sig check failed" {
+		t.Error("Unexpectedly verified seg creds: invalid jobid", err)
 		return
 	}
 	j.StreamId = oldSid
@@ -190,23 +190,20 @@ func TestRPCSeg(t *testing.T) {
 	oldAddr := j.BroadcasterAddress
 	key, _ := ethcrypto.GenerateKey()
 	j.BroadcasterAddress = ethcrypto.PubkeyToAddress(key.PublicKey)
-	if _, ok := verifySegCreds(j, creds); ok {
-		t.Error("Unexpectedly verified seg creds: invalid bcast addr")
-		return
+	if _, err := verifySegCreds(j, creds); err == nil || err.Error() != "Segment sig check failed" {
+		t.Error("Unexpectedly verified seg creds: invalid bcast addr", err)
 	}
 	j.BroadcasterAddress = oldAddr
 
 	// sanity check
-	if _, ok := verifySegCreds(j, creds); !ok {
-		t.Error("Sanity check failed")
-		return
+	if _, err := verifySegCreds(j, creds); err != nil {
+		t.Error("Sanity check failed", err)
 	}
 
 	// test corrupt creds
 	idx := len(creds) / 2
 	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
-	if _, ok := verifySegCreds(j, kreds); ok {
-		t.Error("Unexpectedly verified bad creds")
-		return
+	if _, err := verifySegCreds(j, kreds); err == nil || err.Error() != "illegal base64 data at input byte 70" {
+		t.Error("Unexpectedly verified bad creds", err)
 	}
 }
