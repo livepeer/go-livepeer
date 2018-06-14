@@ -167,7 +167,10 @@ func (w *wizard) doCLIOpt(choice string, options []wizardOpt) {
 	log.Error("That's not something I can do")
 }
 
+var RinkebyNetworkId = "4"
+var DevenvNetworkId = "54321"
+
 func (w *wizard) onRinkeby() bool {
 	nID := httpGet(fmt.Sprintf("http://%v:%v/EthNetworkID", w.host, w.httpPort))
-	return nID == "4"
+	return nID == RinkebyNetworkId || nID == DevenvNetworkId
 }
