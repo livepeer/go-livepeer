@@ -57,7 +57,7 @@ func main() {
 			in:       bufio.NewReader(os.Stdin),
 		}
 		w.transcoder = w.isTranscoder()
-		w.rinkeby = w.onRinkeby()
+		w.testnet = w.onTestnet()
 		w.run()
 
 		return nil
@@ -71,14 +71,14 @@ type wizard struct {
 	httpPort   string
 	host       string
 	transcoder bool
-	rinkeby    bool
+	testnet    bool
 	in         *bufio.Reader // Wrapper around stdin to allow reading user input
 }
 
 type wizardOpt struct {
 	desc          string
 	invoke        func()
-	rinkeby       bool
+	testnet       bool
 	transcoder    bool
 	notTranscoder bool
 }
@@ -103,11 +103,11 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Invoke \"withdraw deposit\" (ETH)", invoke: w.withdraw, notTranscoder: true},
 		{desc: "Set broadcast config", invoke: w.setBroadcastConfig, notTranscoder: true},
 		{desc: "Set Eth gas price", invoke: w.setGasPrice},
-		{desc: "Get test LPT", invoke: w.requestTokens, rinkeby: true},
+		{desc: "Get test LPT", invoke: w.requestTokens, testnet: true},
 		{desc: "Get test ETH", invoke: func() {
 			fmt.Print("For Rinkeby Eth, go to the Rinkeby faucet (https://faucet.rinkeby.io/).")
 			w.read()
-		}, rinkeby: true},
+		}, testnet: true},
 	}
 	return options
 }
@@ -115,7 +115,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 func (w *wizard) filterOptions(options []wizardOpt) []wizardOpt {
 	filtered := make([]wizardOpt, 0, len(options))
 	for _, opt := range options {
-		if opt.rinkeby && !w.rinkeby {
+		if opt.testnet && !w.testnet {
 			continue
 		}
 		if !opt.transcoder && !opt.notTranscoder || w.transcoder && opt.transcoder || !w.transcoder && opt.notTranscoder {
@@ -170,7 +170,7 @@ func (w *wizard) doCLIOpt(choice string, options []wizardOpt) {
 var RinkebyNetworkId = "4"
 var DevenvNetworkId = "54321"
 
-func (w *wizard) onRinkeby() bool {
+func (w *wizard) onTestnet() bool {
 	nID := httpGet(fmt.Sprintf("http://%v:%v/EthNetworkID", w.host, w.httpPort))
 	return nID == RinkebyNetworkId || nID == DevenvNetworkId
 }
