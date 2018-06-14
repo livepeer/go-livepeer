@@ -132,7 +132,7 @@ func (w *wizard) broadcastStats() {
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
 		[]string{"Deposit", w.getDeposit()},
-		[]string{"Broadcast Price Per Segment", price.String()},
+		[]string{"Broadcast Price Per Segment in Wei", price.String()},
 		[]string{"Broadcast Transcoding Options", transcodingOptions},
 	}
 
