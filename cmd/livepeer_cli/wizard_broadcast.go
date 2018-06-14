@@ -51,7 +51,7 @@ func (w *wizard) allTranscodingOptions() map[int]string {
 }
 
 func (w *wizard) setBroadcastConfig() {
-	fmt.Printf("Enter broadcast max price per segment - ")
+	fmt.Printf("Enter broadcast max price per segment in Wei - ")
 	maxPricePerSegment := w.readBigInt()
 
 	opts := w.allTranscodingOptions()

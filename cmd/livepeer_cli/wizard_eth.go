@@ -7,7 +7,7 @@ import (
 
 func (w *wizard) setGasPrice() {
 	fmt.Printf("Current gas price: %v\n", w.getGasPrice())
-	fmt.Printf("Enter new gas price (enter \"0\" for automatic)")
+	fmt.Printf("Enter new gas price in Wei (enter \"0\" for automatic)")
 	amount := w.readBigInt()
 
 	val := url.Values{

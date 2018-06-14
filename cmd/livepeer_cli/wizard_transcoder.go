@@ -27,7 +27,7 @@ func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int) {
 	fmt.Printf("Enter fee share percentage (default: 5) - ")
 	feeShare = w.readDefaultFloat(5.0)
 
-	fmt.Printf("Enter price per segment (default: 1) - ")
+	fmt.Printf("Enter price per segment in Wei (default: 1) - ")
 	pricePerSegment = w.readDefaultBigInt(big.NewInt(1))
 
 	return blockRewardCut, feeShare, pricePerSegment
