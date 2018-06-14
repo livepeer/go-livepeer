@@ -20,15 +20,21 @@ func StubJob() *lpTypes.Job {
 		StreamId:           "abc",
 		BroadcasterAddress: ethcommon.Address{},
 		TranscoderAddress:  ethcommon.Address{},
+		CreationBlock:      big.NewInt(0),
+		EndBlock:           big.NewInt(10),
 	}
 }
 
 type stubOrchestrator struct {
-	priv *ecdsa.PrivateKey
+	priv  *ecdsa.PrivateKey
+	block *big.Int
 }
 
 func (r *stubOrchestrator) Transcoder() string {
 	return "abc"
+}
+func (r *stubOrchestrator) CurrentBlock() *big.Int {
+	return r.block
 }
 func (r *stubOrchestrator) GetJob(jid int64) (*lpTypes.Job, error) {
 	return StubJob(), nil
@@ -53,7 +59,7 @@ func StubOrchestrator() *stubOrchestrator {
 	if err != nil {
 		return &stubOrchestrator{}
 	}
-	return &stubOrchestrator{priv: pk}
+	return &stubOrchestrator{priv: pk, block: big.NewInt(5)}
 }
 
 func (r *stubOrchestrator) Job() *lpTypes.Job {
@@ -113,24 +119,42 @@ func TestRPCCreds(t *testing.T) {
 	j := StubJob()
 	r := StubOrchestrator()
 
-	creds, err := genCreds(r, j)
+	creds, err := genToken(r, j)
 	if err != nil {
 		t.Error("Unable to generate creds from req ", err)
 	}
-	if _, ok := verifyCreds(r, creds); !ok {
+	if _, ok := verifyToken(r, creds); !ok {
 		t.Error("Creds did not validate")
 	}
 
 	// corrupt the creds
 	idx := len(creds) / 2
 	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
-	if _, ok := verifyCreds(r, kreds); ok {
+	if _, ok := verifyToken(r, kreds); ok {
 		t.Error("Creds unexpectedly validated")
 	}
 
 	// wrong orchestrator
-	if _, ok := verifyCreds(StubOrchestrator(), creds); ok {
+	if _, ok := verifyToken(StubOrchestrator(), creds); ok {
 		t.Error("Orchestrator unexpectedly validated")
+	}
+
+	// too early
+	r.block = big.NewInt(-1)
+	if _, ok := verifyToken(r, creds); ok {
+		t.Error("Early block unexpectedly validated")
+	}
+
+	// too late
+	r.block = big.NewInt(100)
+	if _, ok := verifyToken(r, creds); ok {
+		t.Error("Late block unexpectedly validated")
+	}
+
+	// reset to sanity check once again
+	r.block = big.NewInt(5)
+	if _, ok := verifyToken(r, creds); !ok {
+		t.Error("Block did not validate")
 	}
 }
 

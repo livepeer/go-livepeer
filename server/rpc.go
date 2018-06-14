@@ -43,6 +43,7 @@ type Orchestrator interface {
 	Transcoder() string
 	Address() ethcommon.Address
 	Sign([]byte) ([]byte, error)
+	CurrentBlock() *big.Int
 	GetJob(int64) (*lpTypes.Job, error)
 	TranscodeSeg(*lpTypes.Job, *core.SignedSegment) error
 	StreamIDs(*lpTypes.Job) ([]core.StreamID, error)
@@ -51,6 +52,14 @@ type Orchestrator interface {
 // Orchestator interface methods
 func (orch *orchestrator) Transcoder() string {
 	return orch.transcoder
+}
+
+func (orch *orchestrator) CurrentBlock() *big.Int {
+	if orch.node == nil || orch.node.Eth == nil {
+		return nil
+	}
+	block, _ := orch.node.Eth.LatestBlockNum()
+	return block
 }
 
 func (orch *orchestrator) GetJob(jid int64) (*lpTypes.Job, error) {
@@ -167,7 +176,6 @@ func verifyTranscoderReq(orch Orchestrator, req *TranscoderRequest, job *lpTypes
 }
 
 func genToken(orch Orchestrator, job *lpTypes.Job) (string, error) {
-	// TODO add issuance and expiry
 	sig, err := orch.Sign([]byte(fmt.Sprintf("%v", job.JobId)))
 	if err != nil {
 		return "", err
@@ -180,7 +188,7 @@ func genToken(orch Orchestrator, job *lpTypes.Job) (string, error) {
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func verifyCreds(orch Orchestrator, creds string) (*AuthToken, bool) {
+func verifyToken(orch Orchestrator, creds string) (*lpTypes.Job, bool) {
 	buf, err := base64.StdEncoding.DecodeString(creds)
 	if err != nil {
 		glog.Error("Unable to base64-decode ", err)
@@ -196,7 +204,17 @@ func verifyCreds(orch Orchestrator, creds string) (*AuthToken, bool) {
 		glog.Error("Sig check failed")
 		return nil, false
 	}
-	return &token, true
+	job, err := orch.GetJob(token.JobId)
+	if err != nil || job == nil {
+		glog.Error("Could not get job ", err)
+		return nil, false
+	}
+	blk := orch.CurrentBlock()
+	if blk.Cmp(job.CreationBlock) == -1 || blk.Cmp(job.EndBlock) == 1 {
+		glog.Errorf("Job %v too early or expired", job.JobId)
+		return nil, false
+	}
+	return job, true
 }
 
 func genSegCreds(bcast Broadcaster, streamId string, segData *SegData) (string, error) {
@@ -252,7 +270,7 @@ func GetTranscoder(context context.Context, orch Orchestrator, req *TranscoderRe
 	if !verifyTranscoderReq(orch, req, job) {
 		return nil, fmt.Errorf("Invalid transcoder request")
 	}
-	creds, err := genCreds(orch, job)
+	creds, err := genToken(orch, job)
 	if err != nil {
 		return nil, err
 	}
@@ -283,16 +301,9 @@ func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	token, ok := verifyCreds(orch, creds)
+	job, ok := verifyToken(orch, creds)
 	if !ok {
 		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	job, err := orch.GetJob(token.JobId)
-	if err != nil || job == nil {
-		glog.Error("Could not get job ", err)
-		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 
