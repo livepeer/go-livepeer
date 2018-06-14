@@ -74,6 +74,7 @@ func TestRPCCert(t *testing.T) {
 	}
 
 	// ensure that when invoking again, the same cert is returned
+	/* XXX re-enable when we make certs persistent
 	cf, kf, err = getCert(url, wd)
 	if err != nil {
 		t.Error("Could not get cert/key ", err)
@@ -86,7 +87,7 @@ func TestRPCCert(t *testing.T) {
 	if !bytes.Equal(kh, kh1) || !bytes.Equal(ch, ch1) {
 		t.Error("Mismatched cert checksum")
 		return
-	}
+	}*/
 
 	// ensure that when a cert is missing, a new key/cert is generated
 	err = os.Remove(cf)
