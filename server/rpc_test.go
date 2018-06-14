@@ -87,6 +87,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 	j := StubJob()
 	j.JobId = big.NewInt(1234)
 	j.BroadcasterAddress = ethcrypto.PubkeyToAddress(b.priv.PublicKey)
+	j.TranscoderAddress = ethcrypto.PubkeyToAddress(o.priv.PublicKey)
 
 	req, err := genTranscoderReq(b, j.JobId.Int64())
 	if err != nil {
@@ -107,11 +108,17 @@ func TestRPCTranscoderReq(t *testing.T) {
 		t.Error("Sanity check failed")
 	}
 
+	// wrong transcoder
+	if verifyTranscoderReq(StubOrchestrator(), req, j) {
+		t.Error("Did not expect verification to pass; should mismatch transcoder")
+	}
+
 	// wrong broadcaster
 	j.BroadcasterAddress = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey)
 	if verifyTranscoderReq(o, req, j) {
-		t.Error("Did not expect verification to pass; should mismatch key")
+		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
+
 }
 
 func TestRPCCreds(t *testing.T) {
