@@ -196,7 +196,9 @@ func (c *client) GetGasInfo() (gasLimit uint64, gasPrice *big.Int) {
 }
 
 func (c *client) setContracts(opts *bind.TransactOpts) error {
-	controller, err := contracts.NewController(c.controllerAddr, c.backend)
+    glog.Errorf("Making contracts")
+
+    controller, err := contracts.NewController(c.controllerAddr, c.backend)
 	if err != nil {
 		glog.Errorf("Error creating Controller binding: %v", err)
 		return err
