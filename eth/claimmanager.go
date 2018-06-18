@@ -49,7 +49,7 @@ func makeMerkle(arr [][]byte, idx int, level uint) []byte {
 func intToBytes32(i int) [32]byte {
     res := [32]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
     for j := 0; j < 32; j++ {
-        res[j] = byte(i)
+        res[31-j] = byte(i)
         i = i/256
     }
     return res
@@ -227,7 +227,10 @@ func RecoverClaims(c LivepeerEthClient, ipfs ipfs.IpfsApi, db *common.DB) error 
 				bDataT = []byte{}
 			}
 			
+            
             tbHash := fileHash(r.BcastFile + ".transcoded")
+            
+            glog.Error("File hash: ", tbHash, ". length: ", len(bDataT))
             
 			cm.unclaimedSegs[r.SeqNo] = true
 			cm.segClaimMap[r.SeqNo] = &claimData{
@@ -313,11 +316,24 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64,
 	tHash := crypto.Keccak256(hashes...)
 	bHash := crypto.Keccak256(bData)
 
+	bDataT, err := ioutil.ReadFile(bDataFile + ".transcoded")
+			if err != nil {
+                glog.Error("Unable to read segment data (transcoded); gambling on verification ", err)
+				bDataT = []byte{}
+	}
+    
+    tbHash := fileHash(bDataFile + ".transcoded")
+
+    glog.Error("File hash: ", tbHash, ". length: ", len(bDataT))
+    
+    
 	cd := &claimData{
 		seqNo:                seqNo,
 		segData:              bData,
+		segDataT:             bDataT,
 		dataHash:             bHash,
 		bSig:                 bSig,
+        tbHash:               tbHash,
 		claimConcatTDatahash: tHash,
 	}
 
@@ -535,7 +551,7 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 			}
 
 			// dataHashes := [2][32]byte{ethcommon.BytesToHash(seg.dataHash), ethcommon.BytesToHash(seg.claimConcatTDatahash)}
-            
+            glog.Error("What now? why is it not queried from DB? ", seg.tbHash, len(seg.segDataT))
             
             
             dataHashes := [2][32]byte{ethcommon.BytesToHash(seg.tbHash), intToBytes32(len(seg.segDataT))}
