@@ -84,7 +84,7 @@ func (am *AccountManager) Unlock(passphrase string) error {
 
 	am.unlocked = true
 
-	glog.Infof("ETH account %v unlocked", am.Account.Address.Hex())
+	glog.Infof("Unlocked ETH account: %v", am.Account.Address.Hex())
 
 	return nil
 }
