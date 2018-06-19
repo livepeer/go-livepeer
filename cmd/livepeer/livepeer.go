@@ -167,12 +167,6 @@ func main() {
 		glog.Errorf("Error getting keys: %v", err)
 		return
 	}
-
-	//Create Livepeer Node
-	if *monitor {
-		glog.Info("Monitor is set to 'true' by default.  If you want to disable it, use -monitor=false when starting Livepeer.")
-		lpmon.Endpoint = *monhost
-	}
 	notifiee := bnet.NewBasicNotifiee(lpmon.Instance())
 	var maddrs []ma.Multiaddr
 	if *bindIPs != "" {
@@ -346,6 +340,13 @@ func main() {
 
 			defer n.StopEthServices()
 		}
+	}
+
+	//Create Livepeer Node
+	if *monitor {
+		glog.Info("Monitor is set to 'true' by default.  If you want to disable it, use -monitor=false when starting Livepeer.")
+		lpmon.Endpoint = *monhost
+		n.MonitorMetrics = true
 	}
 
 	// Set up logging
