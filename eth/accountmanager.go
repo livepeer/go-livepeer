@@ -55,7 +55,7 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (*Acco
 		}
 	}
 
-	glog.V(common.SHORT).Infof("Using ETH account: %v", acct.Address.Hex())
+	glog.Infof("Using ETH account: %v", acct.Address.Hex())
 
 	return &AccountManager{
 		Account:  acct,
@@ -73,7 +73,7 @@ func (am *AccountManager) Unlock(passphrase string) error {
 		if passphrase != "" {
 			return err
 		}
-		glog.Infof("Passphrase required to unlock ETH account")
+		glog.Infof("Passphrase required to unlock ETH account %v", am.Account.Address.Hex())
 
 		passphrase, err = getPassphrase(false)
 		err = am.keyStore.Unlock(am.Account, passphrase)
@@ -84,7 +84,7 @@ func (am *AccountManager) Unlock(passphrase string) error {
 
 	am.unlocked = true
 
-	glog.V(common.SHORT).Infof("ETH account %v unlocked", am.Account.Address.Hex())
+	glog.Infof("ETH account %v unlocked", am.Account.Address.Hex())
 
 	return nil
 }
