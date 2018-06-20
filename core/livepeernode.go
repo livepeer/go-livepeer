@@ -391,6 +391,20 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 		return err
 	}
 
+	// Check deposit
+	if cm != nil && config.PerformOnchainClaim {
+		sufficient, err := cm.SufficientBroadcasterDeposit()
+		if err != nil {
+			glog.Errorf("Error checking broadcaster deposit for job %v: %v", config.JobID, err)
+			// Give the benefit of doubt in case of an unrelated issue
+			sufficient = true
+		}
+		if !sufficient {
+			glog.Error("Insufficient deposit for job ", config.JobID)
+			return fmt.Errorf("Insufficient deposit")
+		}
+	}
+
 	//Assume d is in the right format, write it to disk
 	inName := randName()
 	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
