@@ -81,10 +81,9 @@ func (s *JobService) Start(ctx context.Context) error {
 				job.BroadcasterAddress, s.node.Eth.Account().Address,
 				job.CreationBlock, job.EndBlock)
 			s.node.Database.InsertJob(dbjob)
-			return s.doTranscode(job)
-		} else {
-			return true, nil
+			s.firstClaim(job)
 		}
+		return true, nil
 	})
 
 	if err != nil {
@@ -204,7 +203,8 @@ func (s *JobService) doTranscode(job *lpTypes.Job) (bool, error) {
 
 func (s *JobService) RestartTranscoder() error {
 
-	eth.RecoverClaims(s.node.Eth, s.node.Ipfs, s.node.Database)
+	return eth.RecoverClaims(s.node.Eth, s.node.Ipfs, s.node.Database)
+	// Intentionally skip all the below. Remove after some grace period.
 
 	blknum, err := s.node.Eth.LatestBlockNum()
 	if err != nil {
@@ -229,6 +229,51 @@ func (s *JobService) RestartTranscoder() error {
 		}
 	}
 	return nil
+}
+
+func (s *JobService) firstClaim(job *lpTypes.Job) {
+	cm, err := s.node.GetClaimManager(job)
+	if err != nil {
+		glog.Error("Could not get claim manager: ", err)
+		return
+	}
+	firstClaimBlock := new(big.Int).Add(job.CreationBlock, eth.BlocksUntilFirstClaimDeadline)
+	headersCh := make(chan *types.Header)
+	sub, err := s.eventMonitor.SubscribeNewBlock(context.Background(), fmt.Sprintf("FirstClaimForJob%v", job.JobId), headersCh, func(h *types.Header) (bool, error) {
+		if cm.DidFirstClaim() {
+			// If the first claim has already been made then exit
+			return false, nil
+		}
+
+		// Check if current block is job creation block + 230
+		if h.Number.Cmp(firstClaimBlock) != -1 {
+			glog.Infof("Making the first claim")
+
+			canClaim, err := cm.CanClaim()
+			if err != nil {
+				return false, err
+			}
+
+			if canClaim {
+				err := cm.ClaimVerifyAndDistributeFees()
+				if err != nil {
+					return false, err
+				} else {
+					// If this claim was successful then the first claim has been made - exit
+					return false, nil
+				}
+			} else {
+				glog.Infof("No segments to claim")
+				// If there are no segments to claim at this point just stop watching
+				return false, nil
+			}
+		} else {
+			return true, nil
+		}
+	})
+	if err == nil {
+		sub.Unsubscribe()
+	}
 }
 
 func parseNewJobLog(log types.Log) (broadcasterAddr common.Address, jid *big.Int, streamID string, transOptions string) {
