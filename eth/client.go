@@ -77,7 +77,7 @@ type LivepeerEthClient interface {
 	GetTranscoderEarningsPoolForRound(addr ethcommon.Address, round *big.Int) (*lpTypes.TokenPools, error)
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
-	AssignedTranscoder(jobID *big.Int) (ethcommon.Address, error)
+	AssignedTranscoder(*lpTypes.Job) (ethcommon.Address, error)
 	GetTotalBonded() (*big.Int, error)
 
 	// Jobs
@@ -810,15 +810,10 @@ func (c *client) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
 	return transcoders, nil
 }
 
-func (c *client) AssignedTranscoder(jobID *big.Int) (ethcommon.Address, error) {
-	jInfo, err := c.JobsManagerSession.GetJob(jobID)
-	if err != nil {
-		glog.Errorf("Error getting job: %v", err)
-		return ethcommon.Address{}, err
-	}
-
+func (c *client) AssignedTranscoder(jInfo *lpTypes.Job) (ethcommon.Address, error) {
 	var blk *types.Block
 	getBlock := func() error {
+		var err error
 		blk, err = c.backend.BlockByNumber(context.Background(), jInfo.CreationBlock)
 		if err != nil {
 			glog.Errorf("Error getting block by number %v: %v. retrying...", jInfo.CreationBlock.String(), err)

@@ -68,7 +68,7 @@ func (s *JobService) Start(ctx context.Context) error {
 			return false, err
 		}
 
-		assignedAddr, err := s.node.Eth.AssignedTranscoder(jid)
+		assignedAddr, err := s.node.Eth.AssignedTranscoder(job)
 		if err != nil {
 			glog.Errorf("Error checking for assignment: %v", err)
 			return false, err

@@ -71,7 +71,7 @@ func (orch *orchestrator) GetJob(jid int64) (*lpTypes.Job, error) {
 		return nil, err
 	}
 	if (job.TranscoderAddress == ethcommon.Address{}) {
-		ta, err := orch.node.Eth.AssignedTranscoder(job.JobId)
+		ta, err := orch.node.Eth.AssignedTranscoder(job)
 		if err != nil {
 			glog.Error("Could not get assigned transcoder for job %v", jid)
 			// continue here without a valid transcoder address

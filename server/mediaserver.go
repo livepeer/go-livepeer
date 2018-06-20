@@ -373,7 +373,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				if err != nil {
 					return // XXX feed back error?
 				}
-				tca, err := s.LivepeerNode.Eth.AssignedTranscoder(job.JobId)
+				tca, err := s.LivepeerNode.Eth.AssignedTranscoder(job)
 				if err != nil {
 					return // XXX feed back error?
 				}
