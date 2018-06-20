@@ -304,7 +304,7 @@ func TestDBClaims(t *testing.T) {
 		return
 	}
 	if nbreceipts != 2 {
-		t.Error("Mismatched receipts for claim: expected 2 got %d", nbreceipts)
+		t.Errorf("Mismatched receipts for claim: expected 2 got %d", nbreceipts)
 		return
 	}
 	// check job 0 claim 1
@@ -315,7 +315,7 @@ func TestDBClaims(t *testing.T) {
 		return
 	}
 	if nbreceipts != 2 {
-		t.Error("Mismatched receipts for claim: expected 2 got %d", nbreceipts)
+		t.Errorf("Mismatched receipts for claim: expected 2 got %d", nbreceipts)
 		return
 	}
 	// check job 1 claim 0
@@ -326,7 +326,7 @@ func TestDBClaims(t *testing.T) {
 		return
 	}
 	if nbreceipts != 2 {
-		t.Error("Mismatched receipts for claim: expected 2 got %d", nbreceipts)
+		t.Errorf("Mismatched receipts for claim: expected 2 got %d", nbreceipts)
 		return
 	}
 	// Sanity check number of claims

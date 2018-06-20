@@ -117,7 +117,7 @@ func TestNodeClaimManager(t *testing.T) {
 	n.ClaimManagers[15] = &StubClaimManager{}
 	cm, err := n.GetClaimManager(job)
 	if err != nil || cm == nil {
-		t.Error("Did not retrieve claimmanager ", cm, err)
+		t.Errorf("Did not retrieve claimmanager %v %v", cm, err)
 		return
 	}
 
@@ -126,7 +126,7 @@ func TestNodeClaimManager(t *testing.T) {
 	// test with a nil eth client
 	cm, err = n.GetClaimManager(job)
 	if err != nil || cm != nil {
-		t.Error("Claimmanager unexpected result %v %v", cm, err)
+		t.Errorf("Claimmanager unexpected result %v %v", cm, err)
 		return
 	}
 
