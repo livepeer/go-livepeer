@@ -5,13 +5,26 @@ import (
 	"math/big"
 	"net/url"
 	"strconv"
+	"strings"
 
 	lpcommon "github.com/livepeer/go-livepeer/common"
 )
 
+const defaultRPCPort = "4433"
+
 func (w *wizard) isTranscoder() bool {
 	isT := httpGet(fmt.Sprintf("http://%v:%v/IsTranscoder", w.host, w.httpPort))
 	return isT == "true"
+}
+
+func myHostPort() string {
+	// TODO Fall back to try other services if this one fails. Ask a peer?
+	// 	http://myexternalip.com
+	// 	http://api.ident.me
+	// 	http://whatismyipaddress.com/api
+	// 	http://ipinfo.io/ip
+	ip := strings.TrimSpace(httpGet("https://api.ipify.org/?format=text"))
+	return ip + ":" + defaultRPCPort
 }
 
 func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int, string) {
@@ -30,10 +43,21 @@ func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int, string) {
 	fmt.Printf("Enter price per segment in Wei (default: 1) - ")
 	pricePerSegment = w.readDefaultBigInt(big.NewInt(1))
 
-	fmt.Printf("Enter service URI - ")
-	serviceURI := w.readStringAndValidate(func(in string) error {
-		_, err := url.ParseRequestURI(in)
-		return err
+	addr := myHostPort()
+	fmt.Printf("Enter the public host:port of node (default: %v)", addr)
+	serviceURI := w.readStringAndValidate(func(in string) (string, error) {
+		if "" == in {
+			in = addr
+		}
+		in = "https://" + in
+		uri, err := url.ParseRequestURI(in)
+		if err != nil {
+			return "", err
+		}
+		if uri.Port() == "" {
+			return "", fmt.Errorf("Missing Port")
+		}
+		return in, nil
 	})
 
 	return blockRewardCut, feeShare, pricePerSegment, serviceURI
@@ -75,6 +99,8 @@ func (w *wizard) activateTranscoder() {
 	}
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/activateTranscoder", w.host, w.httpPort), val)
+	// TODO we should confirm if the transaction was actually sent
+	fmt.Println("\nTransaction sent. Once confirmed, please restart your node.")
 }
 
 func (w *wizard) setTranscoderConfig() {
@@ -90,6 +116,8 @@ func (w *wizard) setTranscoderConfig() {
 	}
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/setTranscoderConfig", w.host, w.httpPort), val)
+	// TODO we should confirm if the transaction was actually sent
+	fmt.Println("\nTransaction sent. Once confirmed, please restart your node if the ServiceURI has been reset")
 }
 
 func (w *wizard) callReward() {

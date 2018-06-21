@@ -41,7 +41,7 @@ func (w *wizard) readString() string {
 
 // readStringAndValidate reads a single line from stdin, trims spaces and
 // checks that the string passes a condition defined by the provided validation function
-func (w *wizard) readStringAndValidate(validate func(in string) error) string {
+func (w *wizard) readStringAndValidate(validate func(in string) (string, error)) string {
 	for {
 		fmt.Printf("> ")
 		text, err := w.in.ReadString('\n')
@@ -49,11 +49,12 @@ func (w *wizard) readStringAndValidate(validate func(in string) error) string {
 			log.Crit("Failed to read user input", "err", err)
 		}
 		text = strings.TrimSpace(text)
-		if err := validate(text); err != nil {
+		validText, err := validate(text)
+		if err != nil {
 			log.Error("Failed to validate input", "err", err)
 			continue
 		}
-		return text
+		return validText
 	}
 }
 
