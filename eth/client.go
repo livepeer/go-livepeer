@@ -36,8 +36,6 @@ import (
 )
 
 var (
-	RoundsPerEarningsClaim = big.NewInt(20)
-
 	ErrReplacingMinedTx   = fmt.Errorf("trying to replace already mined tx")
 	ErrCurrentRoundLocked = fmt.Errorf("current round locked")
 	ErrMissingBackend     = fmt.Errorf("missing Ethereum client backend")
@@ -406,18 +404,27 @@ func (c *client) Bond(amount *big.Int, to ethcommon.Address) (*types.Transaction
 		return nil, err
 	}
 
-	if err := c.autoClaimEarnings(currentRound); err != nil {
+	if err := c.autoClaimEarnings(currentRound, false); err != nil {
 		return nil, err
 	}
 
-	tx, err := c.Approve(c.bondingManagerAddr, amount)
+	allowance, err := c.Allowance(c.Account().Address, c.bondingManagerAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.CheckTx(tx)
-	if err != nil {
-		return nil, err
+	// If existing allowance set by account for BondingManager is
+	// less than the bond amount, approve the necessary amount
+	if allowance.Cmp(amount) == -1 {
+		tx, err := c.Approve(c.bondingManagerAddr, amount)
+		if err != nil {
+			return nil, err
+		}
+
+		err = c.CheckTx(tx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return c.BondingManagerSession.Bond(amount, to)
@@ -429,7 +436,7 @@ func (c *client) Unbond() (*types.Transaction, error) {
 		return nil, err
 	}
 
-	if err := c.autoClaimEarnings(currentRound); err != nil {
+	if err := c.autoClaimEarnings(currentRound, false); err != nil {
 		return nil, err
 	}
 
@@ -442,7 +449,7 @@ func (c *client) WithdrawStake() (*types.Transaction, error) {
 		return nil, err
 	}
 
-	if err := c.autoClaimEarnings(currentRound); err != nil {
+	if err := c.autoClaimEarnings(currentRound, false); err != nil {
 		return nil, err
 	}
 
@@ -455,7 +462,7 @@ func (c *client) WithdrawFees() (*types.Transaction, error) {
 		return nil, err
 	}
 
-	if err := c.autoClaimEarnings(currentRound); err != nil {
+	if err := c.autoClaimEarnings(currentRound, false); err != nil {
 		return nil, err
 	}
 
@@ -463,17 +470,21 @@ func (c *client) WithdrawFees() (*types.Transaction, error) {
 }
 
 func (c *client) ClaimEarnings(endRound *big.Int) error {
-	return c.autoClaimEarnings(endRound)
+	return c.autoClaimEarnings(endRound, true)
 }
 
-func (c *client) autoClaimEarnings(endRound *big.Int) error {
+func (c *client) autoClaimEarnings(endRound *big.Int, allRounds bool) error {
 	dStatus, err := c.DelegatorStatus(c.Account().Address)
 	if err != nil {
 		return err
 	}
 
+	maxRoundsPerClaim, err := c.MaxEarningsClaimsRounds()
+	if err != nil {
+		return err
+	}
+
 	if dStatus == 1 {
-		// If already bonded, auto claim token pools shares
 		dInfo, err := c.BondingManagerSession.GetDelegator(c.Account().Address)
 		if err != nil {
 			return err
@@ -482,8 +493,12 @@ func (c *client) autoClaimEarnings(endRound *big.Int) error {
 		lastClaimRound := dInfo.LastClaimRound
 
 		var currentEndRound *big.Int
-		for new(big.Int).Sub(endRound, lastClaimRound).Cmp(RoundsPerEarningsClaim) == 1 {
-			currentEndRound = new(big.Int).Add(lastClaimRound, RoundsPerEarningsClaim)
+
+		// Keep claiming `maxRoundsPerClaim` at a time until there are <= `maxRoundsPerClaim` rounds
+		// At this point, any subsequent bonding action will automatically claim through the rest of the rounds
+		// so we do not need to submit an additional `claimEarnings()` transaction
+		for new(big.Int).Sub(endRound, lastClaimRound).Cmp(maxRoundsPerClaim) == 1 {
+			currentEndRound = new(big.Int).Add(lastClaimRound, maxRoundsPerClaim)
 
 			tx, err := c.BondingManagerSession.ClaimEarnings(currentEndRound)
 			if err != nil {
@@ -495,13 +510,13 @@ func (c *client) autoClaimEarnings(endRound *big.Int) error {
 				return err
 			}
 
-			glog.V(common.SHORT).Infof("Claimed rewards and fees from round %v through %v", lastClaimRound, currentEndRound)
+			glog.V(common.SHORT).Infof("Claimed earnings from round %v through %v", lastClaimRound, currentEndRound)
 
 			lastClaimRound = currentEndRound
 		}
 
-		// Claim for any remaining rounds s.t. the number of rounds < RoundsPerEarningsClaim
-		if lastClaimRound.Cmp(endRound) == -1 {
+		// If `allRounds` is true and there are remaining rounds to be claimed through, claim earnings for them
+		if allRounds && lastClaimRound.Cmp(endRound) == -1 {
 			tx, err := c.BondingManagerSession.ClaimEarnings(endRound)
 			if err != nil {
 				return err
@@ -511,9 +526,11 @@ func (c *client) autoClaimEarnings(endRound *big.Int) error {
 			if err != nil {
 				return err
 			}
-		}
 
-		glog.V(common.SHORT).Infof("Finished claiming rewards and fees through the end round %v", endRound)
+			glog.V(common.SHORT).Infof("Finished claiming earnings through the end round %v", endRound)
+		} else {
+			glog.V(common.SHORT).Infof("Finished claiming earnings through round %v. Remaining rounds can be automatically claimed through a bonding action", lastClaimRound)
+		}
 	}
 
 	return nil
