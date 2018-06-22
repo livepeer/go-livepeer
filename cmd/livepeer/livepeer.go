@@ -91,7 +91,6 @@ func main() {
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
 	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
-	publicIP := flag.String("publicIP", "", "Explicit set node IP address so nodes that need a well-known address can advertise it to the network")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	version := flag.Bool("version", false, "Print out the version")
 
@@ -191,15 +190,7 @@ func main() {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
 	}
-	if *transcoder && *publicIP == "" {
-		glog.Errorf("Error - transcoder needs to specify publicIP")
-		return
-	}
-	if *transcoder && *publicIP == "" {
-		glog.Errorf("Error - transcoder needs to specify publicIP")
-		return
-	}
-	nw, err := bnet.NewBasicVideoNetwork(node, *publicIP, *port)
+	nw, err := bnet.NewBasicVideoNetwork(node, "127.0.0.1", *port)
 	if err != nil {
 		glog.Errorf("Cannot create network node: %v", err)
 		return
