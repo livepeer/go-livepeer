@@ -1,0 +1,43 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/golang:1.10.3-stretch
+    working_directory: /go/src/github.com/livepeer/go-livepeer
+
+    environment:
+        PKG_CONFIG_PATH: $HOME/compiled/lib/pkgconfig
+        TEST_RESULTS: /tmp/test-results
+
+    steps:
+      - checkout
+      - run: mkdir -p $TEST_RESULTS
+
+      - restore_cache:
+          keys:
+            - v3-pkg-cache
+
+      - run: sudo apt-get update && sudo apt-get -y install build-essential pkg-config autoconf
+      - run: ./install_ffmpeg.sh
+      - run: go get github.com/golang/glog
+      - run: go get github.com/ericxtang/m3u8
+      - run: go get -u google.golang.org/grpc
+      - run: go get github.com/jstemmer/go-junit-report
+
+      - run:
+          name: Run unit tests
+          command: |
+            trap "go-junit-report <${TEST_RESULTS}/go-test.out > ${TEST_RESULTS}/go-test-report.xml" EXIT
+            PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig /bin/bash test.sh 2>&1 | tee $TEST_RESULTS/go-test.out
+
+      - save_cache:
+          key: v3-pkg-cache
+          paths:
+            - "/go/pkg"
+            - "/home/circleci/compiled"
+            - "/home/circleci/nasm/nasm"
+            - "/home/circleci/x264/x264"
+            - "/home/circleci/ffmpeg/libavcodec/libavcodec.a"
+
+      - store_test_results:
+          path: /tmp/test-results
