@@ -107,7 +107,7 @@ func (s *RewardService) tryReward() error {
 			// Replace pending tx by bumping gas price
 			tx, err = s.client.ReplaceTransaction(s.pendingTx, "reward", nil)
 			if err != nil {
-				if err == eth.ErrReplacingMinedTx {
+				if err == eth.ErrReplacingMinedTx || err.Error() == "nonce too low" {
 					// Pending tx confirmed so we should not try to replace next time
 					s.pendingTx = nil
 				}
