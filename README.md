@@ -33,6 +33,8 @@ You can also build the executables from scratch.
 
 4. You can now run `PKG_CONFIG_PATH=~/compiled/lib/pkgconfig go build ./cmd/livepeer/livepeer.go` from the project root directory. To get latest version, `git pull` from the project root directory.
 
+5. To run tests in locall run `./test.sh`, to run in docker container run `./test_docker.sh`
+
 ## Running Livepeer
 
 ### Quick start
