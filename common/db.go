@@ -33,6 +33,7 @@ type DB struct {
 	receiptsByClaim   *sql.Stmt
 	insertBcast       *sql.Stmt
 	selectBcasts      *sql.Stmt
+	setSegmentCount   *sql.Stmt
 }
 
 type DBJob struct {
@@ -318,6 +319,15 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.selectBcasts = stmt
 
+	// update segment count
+	stmt, err = db.Prepare("UPDATE broadcasts SET segmentCount = ? WHERE id = ?")
+	if err != nil {
+		glog.Error("Unable to prepare set segment count ", err)
+		d.Close()
+		return nil, err
+	}
+	d.setSegmentCount = stmt
+
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -362,6 +372,9 @@ func (db *DB) Close() {
 	}
 	if db.selectBcasts != nil {
 		db.selectBcasts.Close()
+	}
+	if db.setSegmentCount != nil {
+		db.setSegmentCount.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -620,4 +633,14 @@ func (db *DB) ActiveBroadcasts(since *big.Int) ([]*DBJob, error) {
 		jobs = append(jobs, &job)
 	}
 	return jobs, nil
+}
+
+func (db *DB) SetSegmentCount(jobID *big.Int, count int64) error {
+	glog.V(DEBUG).Infof("db: Setting segment count for job %v to %v", jobID, count)
+	_, err := db.setSegmentCount.Exec(count, jobID.Int64())
+	if err != nil {
+		glog.Errorf("db: Error setting segment count to %v for job %v: %vo status ", count, jobID, err)
+		return err
+	}
+	return nil
 }

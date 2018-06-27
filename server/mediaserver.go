@@ -191,6 +191,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 		s.VideoNonceLock.Unlock()
 
+		var jobId *big.Int
 		var rpcBcast *broadcaster
 		if s.LivepeerNode.Eth != nil {
 			//Check if round is initialized
@@ -288,6 +289,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						monitor.LogStreamStartedEvent(hlsStrmID.String(), nonce)
 					}
 				}
+
+				if jobId != nil {
+					s.LivepeerNode.Database.SetSegmentCount(jobId, int64(seg.SeqNo))
+				}
+
 				var sig []byte
 				if s.LivepeerNode.Eth != nil {
 					segHash := (&ethTypes.Segment{StreamID: hlsStrm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
@@ -373,6 +379,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				if err != nil {
 					return // XXX feed back error?
 				}
+				jobId = job.JobId
 				tca, err := s.LivepeerNode.Eth.AssignedTranscoder(job)
 				if err != nil {
 					return // XXX feed back error?
