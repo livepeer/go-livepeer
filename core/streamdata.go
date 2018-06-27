@@ -86,6 +86,13 @@ func (id *ManifestID) GetVideoID() []byte {
 	return vid
 }
 
+func (id StreamID) ManifestIDFromStreamID() ManifestID {
+	// Ignore error since StreamID should be a valid object;
+	// getting the node and video IDs don't fail (unless it segfaults)
+	mid, _ := MakeManifestID(id.GetNodeID(), id.GetVideoID())
+	return mid
+}
+
 func (id *ManifestID) IsValid() bool {
 	return len(*id) == (NodeIDLength + 2*HashLength)
 }

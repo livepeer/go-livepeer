@@ -163,6 +163,19 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 	}
 	glog.V(common.DEBUG).Info("Got a new job from the blockchain: ", job.JobId)
 
+	tca, err := n.Eth.AssignedTranscoder(job)
+	if err != nil {
+		glog.Error("A transcoder was not assigned! Ensure the broadcast price meets the minimum for the transcoder pool")
+		// not fatal at this point; continue
+	}
+	job.TranscoderAddress = tca
+
+	err = n.Database.InsertBroadcast(job)
+	if err != nil {
+		glog.Error("Unable to insert broadcast ", err)
+		// not fatal; continue
+	}
+
 	glog.Infof("Created broadcast job. Id: %v Price: %v. Type: %v", job.JobId, price, ethcommon.ToHex(transOpts)[2:])
 
 	return job, nil

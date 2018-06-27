@@ -18,7 +18,6 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 
 	"github.com/ericxtang/m3u8"
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -171,6 +170,39 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		}
 		return id.String()
 	}
+}
+
+func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.MasterPlaylist) (*broadcaster, error) {
+	tca := job.TranscoderAddress
+	serviceUri, err := s.LivepeerNode.Eth.GetServiceURI(tca)
+	if err != nil || serviceUri == "" {
+		glog.Error("Unable to retrieve the Service URI for %v: %v", tca, err)
+		if err == nil {
+			err = fmt.Errorf("Empty Service URI")
+		}
+		return nil, err
+	}
+	rpcBcast, err := StartBroadcastClient(serviceUri, s.LivepeerNode, job)
+	if err != nil {
+		glog.Error("Unable to start broadcast client for ", job.JobId)
+		return nil, err
+	}
+	// Update the master playlist based on the streamids from the transcoder
+	for strmID, tProfile := range rpcBcast.tinfo.StreamIds {
+		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[tProfile])
+		pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
+		variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}
+		manifest.Append(variant.URI, variant.Chunklist, variant.VariantParams)
+	}
+
+	// Update the master playlist on the network
+	mid := core.StreamID(job.StreamId).ManifestIDFromStreamID()
+	if err = s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(string(mid), manifest); err != nil {
+		glog.Errorf("Error updating master playlist on network: %v", err)
+		return nil, err
+	}
+
+	return rpcBcast, nil
 }
 
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
@@ -380,33 +412,9 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					return // XXX feed back error?
 				}
 				jobId = job.JobId
-				tca, err := s.LivepeerNode.Eth.AssignedTranscoder(job)
+
+				rpcBcast, err = s.startBroadcast(job, manifest)
 				if err != nil {
-					return // XXX feed back error?
-				}
-				if (tca == ethcommon.Address{}) {
-					glog.Error("A transcoder was not assigned! Ensure the broadcast price meets the minimum for the transcoder pool")
-					return // XXX feed back error?
-				}
-				serviceUri, err := s.LivepeerNode.Eth.GetServiceURI(tca)
-				if err != nil || serviceUri == "" {
-					glog.Error("Unable to retrieve Service URI for %v: %v", tca, err)
-					return // XXX feed back error?
-				}
-				rpcBcast, err = StartBroadcastClient(serviceUri, s.LivepeerNode, job)
-				if err != nil {
-					return // XXX feed back error?
-				}
-				// Update the master playlist based on the streamids from the transcoder
-				for strmID, tProfile := range rpcBcast.tinfo.StreamIds {
-					vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[tProfile])
-					pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
-					variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}
-					manifest.Append(variant.URI, variant.Chunklist, variant.VariantParams)
-				}
-				// Update the master playlist on the network
-				if err = s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(string(mid), manifest); err != nil {
-					glog.Errorf("Error updating master playlist on network: %v", err)
 					return // XXX feed back error?
 				}
 			}()
