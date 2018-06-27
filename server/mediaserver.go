@@ -41,7 +41,7 @@ const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
 const HLSBufferWindow = uint(5)
 
-var SegOptions = segmenter.SegmenterOptions{SegLength: 4 * time.Second}
+const SegLen = 4 * time.Second
 
 const HLSUnsubWorkerFreq = time.Second * 5
 
@@ -52,7 +52,8 @@ const EthMinedTxTimeout = 60 * time.Second
 var HLSWaitTime = time.Second * 45
 var BroadcastPrice = big.NewInt(1)
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
-var MinDepositSegmentCount = int64(75) //5 mins assuming 4s segments
+var MinDepositSegmentCount = int64(75)     // 5 mins assuming 4s segments
+var MinJobBlocksRemaining = big.NewInt(40) // 10 mins assuming 15s blocks
 var LastHLSStreamID core.StreamID
 var LastManifestID core.ManifestID
 
@@ -223,9 +224,40 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 		s.VideoNonceLock.Unlock()
 
+		startSeq := 0
+		manifest := m3u8.NewMasterPlaylist()
 		var jobId *big.Int
 		var rpcBcast *broadcaster
 		if s.LivepeerNode.Eth != nil {
+
+			// First check if we already have a job that can be reused
+			blknum, err := s.LivepeerNode.Eth.LatestBlockNum()
+			if err != nil {
+				glog.Error("Unable to fetch latest block number ", err)
+				return err
+			}
+
+			until := big.NewInt(0).Add(blknum, MinJobBlocksRemaining)
+			bcasts, err := s.LivepeerNode.Database.ActiveBroadcasts(until)
+			if err != nil {
+				glog.Error("Unable to find active broadcasts ", err)
+			}
+
+			for _, b := range bcasts {
+				// check if assigned transcoder is still valid.
+				if _, err := s.LivepeerNode.Eth.GetTranscoder(b.Transcoder); err == nil {
+					rpcBcast, err = s.startBroadcast(common.DBJobToEthJob(b), manifest)
+					if err == nil {
+						startSeq = int(b.Segments) + 1
+						jobId = big.NewInt(b.ID)
+						break
+					}
+				}
+			}
+		}
+
+		if s.LivepeerNode.Eth != nil && jobId == nil {
+
 			//Check if round is initialized
 			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
 			if err != nil {
@@ -350,7 +382,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				}
 			})
 
-			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions)
+			segOptions := segmenter.SegmenterOptions{
+				StartSeq:  startSeq,
+				SegLength: SegLen,
+			}
+			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, segOptions)
 			if err != nil {
 				if err := s.LivepeerNode.BroadcastFinishMsg(hlsStrmID.String()); err != nil {
 					glog.Errorf("Error broadcaseting finish message: %v", err)
@@ -369,7 +405,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			return ErrRTMPPublish
 		}
 		LastManifestID = mid
-		manifest := m3u8.NewMasterPlaylist()
 		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[vProfile.Name])
 		manifest.Append(fmt.Sprintf("%v.m3u8", hlsStrmID), pl, vParams)
 
@@ -404,7 +439,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()] = string(hlsStrmID)
 		s.broadcastRtmpToManifestMap[rtmpStrm.GetStreamID()] = string(mid)
 
-		if s.LivepeerNode.Eth != nil {
+		if jobId == nil && s.LivepeerNode.Eth != nil {
 			//Create Transcode Job Onchain
 			go func() {
 				job, err := s.LivepeerNode.CreateTranscodeJob(hlsStrmID, BroadcastJobVideoProfiles, BroadcastPrice)
