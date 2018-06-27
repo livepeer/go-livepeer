@@ -268,8 +268,12 @@ func (c *BasicClaimManager) makeRanges() [][2]int64 {
 	sort.Sort(SortUint64(keys))
 
 	//Iterate through, check to make sure all tHashes are present (otherwise break and start new range),
-	start := keys[0]
 	ranges := make([][2]int64, 0)
+	if len(keys) <= 0 {
+		glog.V(common.DEBUG).Info("Could not make range; empty keys")
+		return ranges
+	}
+	start := keys[0]
 	for i, _ := range keys {
 		startNewRange := false
 

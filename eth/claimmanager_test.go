@@ -191,6 +191,13 @@ func TestRanges(t *testing.T) {
 	if len(ranges) != 6 {
 		t.Errorf("Expecting 6 ranges, got %v", ranges)
 	}
+
+	// No unclaimed segs; this crashed at one point.
+	cm.unclaimedSegs = map[int64]bool{}
+	ranges = cm.makeRanges()
+	if len(ranges) != 0 {
+		t.Error("Expected 0 ranges, got ", ranges)
+	}
 }
 
 func TestClaimVerifyAndDistributeFees(t *testing.T) {
