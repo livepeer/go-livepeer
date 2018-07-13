@@ -17,6 +17,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/monitor"
 
+	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
@@ -48,6 +49,8 @@ const HLSUnsubWorkerFreq = time.Second * 5
 const EthRpcTimeout = 5 * time.Second
 const EthEventTimeout = 5 * time.Second
 const EthMinedTxTimeout = 60 * time.Second
+
+const BroadcastRetry = 15 * time.Second
 
 var HLSWaitTime = time.Second * 45
 var BroadcastPrice = big.NewInt(1)
@@ -448,10 +451,26 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				}
 				jobId = job.JobId
 
-				rpcBcast, err = s.startBroadcast(job, manifest)
-				if err != nil {
-					return // XXX feed back error?
+				// Connect to the orchestrator. If it fails, retry for as long
+				// as the RTMP stream is alive; maybe the orchestrator hasn't
+				// received the block containing the job yet
+				broadcastFunc := func() error {
+					rpcBcast, err = s.startBroadcast(job, manifest)
+					if err != nil {
+						// Should be logged upstream
+					}
+					s.VideoNonceLock.Lock()
+					_, active := s.VideoNonce[rtmpStrm.GetStreamID()]
+					s.VideoNonceLock.Unlock()
+					if active {
+						return err
+					}
+					return nil // stop if inactive
 				}
+				expb := backoff.NewExponentialBackOff()
+				expb.MaxInterval = BroadcastRetry
+				expb.MaxElapsedTime = 0
+				backoff.Retry(broadcastFunc, expb)
 			}()
 		}
 		return nil

@@ -29,10 +29,10 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
-const HTTPTimeout = 4 * time.Second
+const HTTPTimeout = 8 * time.Second
+const GRPCTimeout = 4 * time.Second
 
 const AuthType_LPE = "Livepeer-Eth-1"
-
 
 type orchestrator struct {
 	transcoder string
@@ -429,7 +429,7 @@ func StartBroadcastClient(orchestratorServer string, node *core.LivepeerNode, jo
 	}
 	defer conn.Close()
 	c := NewOrchestratorClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), GRPCTimeout)
 	defer cancel()
 
 	b := broadcaster{node: node, httpc: httpc, job: job}
