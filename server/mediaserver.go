@@ -427,14 +427,14 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		//Remove the stream from cache
 		s.LivepeerNode.VideoCache.EvictHLSStream(core.StreamID(hlsID))
 
-		if s.LivepeerNode.MonitorMetrics {
-			s.VideoNonceLock.Lock()
-			if _, ok := s.VideoNonce[rtmpStrm.GetStreamID()]; ok {
+		s.VideoNonceLock.Lock()
+		if _, ok := s.VideoNonce[rtmpStrm.GetStreamID()]; ok {
+			if s.LivepeerNode.MonitorMetrics {
 				monitor.LogStreamEndedEvent(manifestID, s.VideoNonce[rtmpStrm.GetStreamID()])
-				delete(s.VideoNonce, rtmpStrm.GetStreamID())
 			}
-			s.VideoNonceLock.Unlock()
+			delete(s.VideoNonce, rtmpStrm.GetStreamID())
 		}
+		s.VideoNonceLock.Unlock()
 		return nil
 	}
 }
