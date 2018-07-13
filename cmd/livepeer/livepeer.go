@@ -316,6 +316,11 @@ func main() {
 			return true
 		})
 
+		defer n.StopEthServices()
+
+		// Setup unbonding service to manage unbonding locks
+		n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
+
 		if *transcoder {
 			addrMap := n.Eth.ContractAddresses()
 			em := eth.NewEventMonitor(backend, addrMap)
@@ -327,8 +332,6 @@ func main() {
 				glog.Errorf("Error setting up transcoder: %v", err)
 				return
 			}
-
-			defer n.StopEthServices()
 		}
 	}
 

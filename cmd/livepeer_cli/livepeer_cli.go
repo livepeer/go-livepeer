@@ -92,6 +92,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Invoke \"initialize round\"", invoke: w.initializeRound},
 		{desc: "Invoke \"bond\"", invoke: w.bond},
 		{desc: "Invoke \"unbond\"", invoke: w.unbond},
+		{desc: "Invoke \"rebond\"", invoke: w.rebond},
 		{desc: "Invoke \"withdraw stake\" (LPT)", invoke: w.withdrawStake},
 		{desc: "Invoke \"withdraw fees\" (ETH)", invoke: w.withdrawFees},
 		{desc: "Invoke \"claim\" (for rewards and fees)", invoke: w.claimRewardsAndFees},

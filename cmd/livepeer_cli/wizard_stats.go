@@ -247,7 +247,6 @@ func (w *wizard) delegatorStats() {
 		[]string{"Delegate Address", d.DelegateAddress.Hex()},
 		[]string{"Last Claim Round", d.LastClaimRound.String()},
 		[]string{"Start Round", d.StartRound.String()},
-		[]string{"Withdraw Round", d.WithdrawRound.String()},
 	}
 
 	for _, v := range data {

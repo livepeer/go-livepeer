@@ -14,6 +14,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	basicnet "github.com/livepeer/go-livepeer-basicnet"
 	lpcommon "github.com/livepeer/go-livepeer/common"
@@ -195,17 +196,6 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		amountStr := r.FormValue("amount")
-		if amountStr == "" {
-			glog.Errorf("Need to provide amount")
-			return
-		}
-		amount, err := lpcommon.ParseBigInt(amountStr)
-		if err != nil {
-			glog.Error(err)
-			return
-		}
-
 		serviceURI := r.FormValue("serviceURI")
 		if serviceURI == "" {
 			glog.Errorf("Need to provide a service URI")
@@ -216,10 +206,17 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		if amount.Cmp(big.NewInt(0)) == 1 {
-			glog.Infof("Bonding %v...", amount)
+		unbondingLockIDStr := r.FormValue("unbondingLockId")
+		if unbondingLockIDStr != "" {
+			unbondingLockID, err := lpcommon.ParseBigInt(unbondingLockIDStr)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
 
-			tx, err := s.LivepeerNode.Eth.Bond(amount, s.LivepeerNode.Eth.Account().Address)
+			glog.Infof("Rebonding with unbonding lock %v...", unbondingLockID)
+
+			tx, err := s.LivepeerNode.Eth.RebondFromUnbonded(s.LivepeerNode.Eth.Account().Address, unbondingLockID)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -230,7 +227,31 @@ func (s *LivepeerServer) StartWebserver() {
 				glog.Error(err)
 				return
 			}
+		}
 
+		amountStr := r.FormValue("amount")
+		if amountStr != "" {
+			amount, err := lpcommon.ParseBigInt(amountStr)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			if amount.Cmp(big.NewInt(0)) == 1 {
+				glog.Infof("Bonding %v...", amount)
+
+				tx, err := s.LivepeerNode.Eth.Bond(amount, s.LivepeerNode.Eth.Account().Address)
+				if err != nil {
+					glog.Error(err)
+					return
+				}
+
+				err = s.LivepeerNode.Eth.CheckTx(tx)
+				if err != nil {
+					glog.Error(err)
+					return
+				}
+			}
 		}
 
 		glog.Infof("Registering transcoder %v", s.LivepeerNode.Eth.Account().Address.Hex())
@@ -408,9 +429,62 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
+	http.HandleFunc("/rebond", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
+			}
+
+			unbondingLockIDStr := r.FormValue("unbondingLockId")
+			if unbondingLockIDStr == "" {
+				glog.Errorf("Need to provide unbondingLockId")
+				return
+			}
+			unbondingLockID, err := lpcommon.ParseBigInt(unbondingLockIDStr)
+			if err != nil {
+				glog.Errorf("Cannot convert unbondingLockId: %v", err)
+				return
+			}
+
+			var tx *types.Transaction
+
+			toAddr := r.FormValue("toAddr")
+			if toAddr != "" {
+				// toAddr provided - invoke rebondFromUnbonded()
+				tx, err = s.LivepeerNode.Eth.RebondFromUnbonded(common.HexToAddress(toAddr), unbondingLockID)
+			} else {
+				// toAddr not provided - invoke rebond()
+				tx, err = s.LivepeerNode.Eth.Rebond(unbondingLockID)
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+		}
+	})
+
 	http.HandleFunc("/unbond", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			tx, err := s.LivepeerNode.Eth.Unbond()
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
+			}
+
+			amountStr := r.FormValue("amount")
+			if amountStr == "" {
+				glog.Errorf("Need to provide amount")
+				return
+			}
+			amount, err := lpcommon.ParseBigInt(amountStr)
+			if err != nil {
+				glog.Errorf("Cannot convert amount: %v", err)
+				return
+			}
+
+			tx, err := s.LivepeerNode.Eth.Unbond(amount)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -426,7 +500,22 @@ func (s *LivepeerServer) StartWebserver() {
 
 	http.HandleFunc("/withdrawStake", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			tx, err := s.LivepeerNode.Eth.WithdrawStake()
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
+			}
+
+			unbondingLockIDStr := r.FormValue("unbondingLockId")
+			if unbondingLockIDStr == "" {
+				glog.Errorf("Need to provide unbondingLockID")
+				return
+			}
+			unbondingLockID, err := lpcommon.ParseBigInt(unbondingLockIDStr)
+			if err != nil {
+				glog.Errorf("Cannot convert unbondingLockId: %v", err)
+				return
+			}
+			tx, err := s.LivepeerNode.Eth.WithdrawStake(unbondingLockID)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -437,6 +526,41 @@ func (s *LivepeerServer) StartWebserver() {
 				glog.Error(err)
 				return
 			}
+		}
+	})
+
+	http.HandleFunc("/unbondingLocks", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Database != nil {
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
+			}
+
+			var currentRound *big.Int
+
+			withdrawableStr := r.FormValue("withdrawable")
+			if withdrawable, err := strconv.ParseBool(withdrawableStr); withdrawable {
+				currentRound, err = s.LivepeerNode.Eth.CurrentRound()
+				if err != nil {
+					glog.Error(err)
+					return
+				}
+			}
+
+			unbondingLocks, err := s.LivepeerNode.Database.UnbondingLocks(currentRound)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			data, err := json.Marshal(unbondingLocks)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
 		}
 	})
 

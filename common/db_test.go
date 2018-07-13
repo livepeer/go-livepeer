@@ -75,6 +75,17 @@ func TestDBLastSeenBlock(t *testing.T) {
 		t.Errorf("Unexpected result from update check; got %v:%v", updated_at, created_at)
 		return
 	}
+
+	// test getter function
+	blk, err := dbh.LastSeenBlock()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if blk.Int64() != blkval {
+		t.Errorf("Unexpected result from getter; expected %v, got %v", blkval, blk.Int64())
+		return
+	}
 }
 
 func TestDBVersion(t *testing.T) {
@@ -365,6 +376,157 @@ func TestDBClaims(t *testing.T) {
 	err = row.Scan(&status)
 	if err != nil || status != s {
 		t.Errorf("Unexpected: error %v, got %v but wanted %v", err, status, s)
+		return
+	}
+}
+
+func TestDBUnbondingLocks(t *testing.T) {
+	dbh, dbraw, err := tempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	delegator := ethcommon.Address{}
+
+	// Check insertion
+	err = dbh.InsertUnbondingLock(big.NewInt(0), delegator, big.NewInt(10), big.NewInt(100))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = dbh.InsertUnbondingLock(big.NewInt(1), delegator, big.NewInt(10), big.NewInt(100))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = dbh.InsertUnbondingLock(big.NewInt(2), delegator, big.NewInt(10), big.NewInt(100))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// Check # of unbonding locks
+	var numUnbondingLocks int
+	row := dbraw.QueryRow("SELECT count(*) FROM unbondingLocks")
+	err = row.Scan(&numUnbondingLocks)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if numUnbondingLocks != 3 {
+		t.Error("Unexpected number of unbonding locks; expected 3 total, got ", numUnbondingLocks)
+		return
+	}
+
+	// Check for failure with duplicate ID
+	err = dbh.InsertUnbondingLock(big.NewInt(0), delegator, big.NewInt(10), big.NewInt(100))
+	if err == nil {
+		t.Error("Expected constraint to fail; duplicate unbonding lock ID and delegator")
+		return
+	}
+
+	// Check retrieving when all unbonding locks are unused
+	unbondingLocks, err := dbh.UnbondingLocks(nil)
+	if err != nil {
+		t.Error("Error retrieving unbonding locks ", err)
+		return
+	}
+	if len(unbondingLocks) != 3 {
+		t.Error("Unexpected number of unbonding locks; expected 3 total, got ", len(unbondingLocks))
+		return
+	}
+	if unbondingLocks[0].ID != 0 {
+		t.Error("Unexpected unbonding lock ID; expected 0, got ", unbondingLocks[0].ID)
+		return
+	}
+	if unbondingLocks[0].Delegator != delegator {
+		t.Errorf("Unexpected unbonding lock delegator; expected %v, got %v", delegator, unbondingLocks[0].Delegator)
+		return
+	}
+	if unbondingLocks[0].Amount.Cmp(big.NewInt(10)) != 0 {
+		t.Errorf("Unexpected unbonding lock amount; expected 10, got %v", unbondingLocks[0].Amount)
+		return
+	}
+	if unbondingLocks[0].WithdrawRound != 100 {
+		t.Errorf("Unexpected unbonding lock withdraw round; expected 100, got %v", unbondingLocks[0].WithdrawRound)
+		return
+	}
+
+	// Check update
+	err = dbh.UseUnbondingLock(big.NewInt(0), delegator, big.NewInt(15))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	var usedBlock int64
+	row = dbraw.QueryRow("SELECT usedBlock FROM unbondingLocks WHERE id = 0 AND delegator = ?", delegator.Hex())
+	err = row.Scan(&usedBlock)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if usedBlock != 15 {
+		t.Errorf("Unexpected used block; expected 15, got %v", usedBlock)
+		return
+	}
+	err = dbh.UseUnbondingLock(big.NewInt(1), delegator, big.NewInt(16))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	row = dbraw.QueryRow("SELECT usedBlock FROM unbondingLocks WHERE id = 1 AND delegator = ?", delegator.Hex())
+	err = row.Scan(&usedBlock)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if usedBlock != 16 {
+		t.Errorf("Unexpected used block; expected 16; got %v", usedBlock)
+		return
+	}
+
+	// Check retrieving when some unbonding locks are used
+	unbondingLocks, err = dbh.UnbondingLocks(nil)
+	if err != nil {
+		t.Error("Error retrieving unbonding locks ", err)
+		return
+	}
+	if len(unbondingLocks) != 1 {
+		t.Error("Unexpected number of unbonding locks; expected 1 total, got ", len(unbondingLocks))
+		return
+	}
+
+	err = dbh.InsertUnbondingLock(big.NewInt(3), delegator, big.NewInt(10), big.NewInt(150))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = dbh.InsertUnbondingLock(big.NewInt(4), delegator, big.NewInt(10), big.NewInt(200))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// Check retrieving withdrawable unbonding locks
+	unbondingLocks, err = dbh.UnbondingLocks(big.NewInt(99))
+	if err != nil {
+		t.Error("Error retrieving unbonding locks ", err)
+		return
+	}
+	if len(unbondingLocks) != 0 {
+		t.Error("Unexpected number of withdrawable unbonding locks; expected 0, got ", len(unbondingLocks))
+		return
+	}
+	unbondingLocks, err = dbh.UnbondingLocks(big.NewInt(150))
+	if err != nil {
+		t.Error("Error retrieving unbonding locks ", err)
+		return
+	}
+	if len(unbondingLocks) != 2 {
+		t.Error("Unexpected number of unbonding locks; expected 2, got ", len(unbondingLocks))
 		return
 	}
 }

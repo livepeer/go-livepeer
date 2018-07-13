@@ -3,10 +3,12 @@ package eth
 import (
 	"math/big"
 
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 )
 
@@ -75,9 +77,15 @@ func (e *StubClient) Reward() (*types.Transaction, error) { return nil, nil }
 func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) Unbond() (*types.Transaction, error)        { return nil, nil }
-func (e *StubClient) WithdrawStake() (*types.Transaction, error) { return nil, nil }
-func (e *StubClient) WithdrawFees() (*types.Transaction, error)  { return nil, nil }
+func (e *StubClient) Rebond(*big.Int) (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) RebondFromUnbonded(common.Address, *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) Unbond(*big.Int) (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) WithdrawStake(*big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) WithdrawFees() (*types.Transaction, error) { return nil, nil }
 func (e *StubClient) ClaimEarnings(endRound *big.Int) error {
 	return nil
 }
@@ -171,4 +179,13 @@ func (c *StubClient) GetGasInfo() (uint64, *big.Int)    { return 0, nil }
 func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
 func (c *StubClient) WatchForJob(j string) (*lpTypes.Job, error) {
 	return c.JobsMap[j], c.WatchJobError
+}
+func (c *StubClient) WatchForUnbond(*big.Int, chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error) {
+	return nil, nil
+}
+func (c *StubClient) WatchForRebond(*big.Int, chan *contracts.BondingManagerRebond) (ethereum.Subscription, error) {
+	return nil, nil
+}
+func (c *StubClient) WatchForWithdrawStake(*big.Int, chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error) {
+	return nil, nil
 }

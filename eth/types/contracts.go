@@ -42,17 +42,17 @@ func ParseTranscoderStatus(s uint8) (string, error) {
 }
 
 type Delegator struct {
-	Address         common.Address
-	BondedAmount    *big.Int
-	Fees            *big.Int
-	DelegateAddress common.Address
-	DelegatedAmount *big.Int
-	StartRound      *big.Int
-	WithdrawRound   *big.Int
-	LastClaimRound  *big.Int
-	PendingStake    *big.Int
-	PendingFees     *big.Int
-	Status          string
+	Address             common.Address
+	BondedAmount        *big.Int
+	Fees                *big.Int
+	DelegateAddress     common.Address
+	DelegatedAmount     *big.Int
+	StartRound          *big.Int
+	LastClaimRound      *big.Int
+	NextUnbondingLockId *big.Int
+	PendingStake        *big.Int
+	PendingFees         *big.Int
+	Status              string
 }
 
 func ParseDelegatorStatus(s uint8) (string, error) {
@@ -62,8 +62,6 @@ func ParseDelegatorStatus(s uint8) (string, error) {
 	case 1:
 		return "Bonded", nil
 	case 2:
-		return "Unbonding", nil
-	case 3:
 		return "Unbonded", nil
 	default:
 		return "", ErrUnknownDelegatorStatus
