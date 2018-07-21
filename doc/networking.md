@@ -116,11 +116,15 @@ Processing a `/segment` request consists of the following steps:
 
 #### Response:
 
-200 ok if transcoding succeeded. Otherwise, a 400- or 500- error is returned, usually with a description of the error.
+200 OK after the upload has been processed. If the transcode subsequently fails, an  error message is returned. If there was an error in uploading or verifying the uploaded data, a 400- or 500- HTTP status code returned along with an error message. Otherwise, a success or error message is returned in the body.
 
 ### Notes
 
 Currently, the stringified error is dumped directly into non-200 responses. This gives broadcasters more information to diagnose problems with remote transcoders. However, we may not want to return such details forever, as this may leak internal information that is best left private to a transcoder.
+
+Clients can use the difference in time between the request submissing and the 200ok to approximate the upload time. The time between the 200ok and receiving the response body approximates the transcode time.
+
+There is an end-to-end request timeout of 8 seconds. However, live streams where segments consistently take more than 4 seconds to process (the segment length) are likely to be outrun by players, leading to stuttering.
 
 ## TLS Certificates
 

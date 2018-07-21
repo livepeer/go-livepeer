@@ -347,6 +347,11 @@ func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Send down 200OK early as an indication that the upload completed
+	// Any further errors come through the response body
+	w.WriteHeader(http.StatusOK)
+	w.(http.Flusher).Flush()
+
 	ss := core.SignedSegment{
 		Seg: stream.HLSSegment{
 			SeqNo: uint64(segData.Seq),
@@ -356,7 +361,7 @@ func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := orch.TranscodeSeg(job, &ss); err != nil {
 		glog.Error("Could not transcode ", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		w.Write([]byte(fmt.Sprintf("Error transcoding segment %v : %v", segData.Seq, err)))
 		return
 	}
 
@@ -466,11 +471,13 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment) {
 		glog.Error("Unable to submit segment ", seg.SeqNo, err)
 		return
 	}
+	glog.Infof("Uploaded segment %v", seg.SeqNo)
+
 	defer resp.Body.Close()
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		glog.Error("Unable to read response body ", err)
+		glog.Error(fmt.Sprintf("Unable to read response body for segment %v : %v", seg.SeqNo, err))
 		return
 	}
-	glog.Info(string(data))
+	glog.Infof("Response for segment %v: %s", seg.SeqNo, string(data))
 }
