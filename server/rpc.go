@@ -15,6 +15,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"golang.org/x/net/http2"
 
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -411,7 +412,7 @@ func StartTranscodeServer(bind string, publicURI *url.URL, node *core.LivepeerNo
 func StartBroadcastClient(orchestratorServer string, node *core.LivepeerNode, job *lpTypes.Job) (*broadcaster, error) {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	httpc := &http.Client{
-		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+		Transport: &http2.Transport{TLSClientConfig: tlsConfig},
 		Timeout:   HTTPTimeout,
 	}
 	uri, err := url.Parse(orchestratorServer)

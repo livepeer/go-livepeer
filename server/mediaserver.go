@@ -308,7 +308,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				}
 
 				if rpcBcast != nil {
-					SubmitSegment(rpcBcast, seg)
+					go func() { SubmitSegment(rpcBcast, seg) }()
 				}
 			})
 
