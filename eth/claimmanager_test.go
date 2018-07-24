@@ -1,8 +1,11 @@
 package eth
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -73,6 +76,23 @@ func TestAddReceipt(t *testing.T) {
 	tEnd := tStart
 	defer db.Close()
 
+	bcastFile, err := ioutil.TempFile("", "data")
+	if err != nil {
+		t.Error("Unable to open tempfile ", err)
+	}
+	bf := bcastFile.Name()
+	defer os.Remove(bf)
+	bd, err := ioutil.ReadAll(bcastFile)
+	if err != nil {
+		t.Error("Unable to read tempfile ", err)
+	}
+	bcastFile.Close()
+
+	// Sanity check the file that is read hashes to what's expected
+	if bytes.Equal(crypto.Keccak256(bd), crypto.Keccak256([]byte("data"))) {
+		t.Error("File data hash did not match raw hash")
+	}
+
 	//Should get error due to a length mismatch
 	td := map[ffmpeg.VideoProfile][]byte{
 		ffmpeg.P360p30fps4x3:  []byte("tdatahash"),
@@ -92,7 +112,7 @@ func TestAddReceipt(t *testing.T) {
 		ffmpeg.P240p30fps16x9: []byte("tdatahash"),
 		ffmpeg.P720p30fps4x3:  []byte("tdatahash"),
 	}
-	if err := cm.AddReceipt(0, "", []byte("data"), []byte("sig"), td, tStart, tEnd); err != nil {
+	if err := cm.AddReceipt(0, bf, []byte("data"), []byte("sig"), td, tStart, tEnd); err != nil {
 		t.Error("Unexpected error ", err)
 	}
 	// Should get an error due to an already existing receipt
@@ -100,8 +120,8 @@ func TestAddReceipt(t *testing.T) {
 		t.Error("Did not get an error where one was expected")
 	}
 
-	if string(cm.segClaimMap[0].segData) != "data" {
-		t.Errorf("Expecting %v, got %v", "data", string(cm.segClaimMap[0].segData))
+	if string(cm.segClaimMap[0].bFile) != bf {
+		t.Errorf("Expecting %v, got %v", cm.segClaimMap[0].bFile, bf)
 	}
 
 	if string(cm.segClaimMap[0].dataHash) != string(crypto.Keccak256([]byte("data"))) { //appended by ipfs.StubIpfsApi
@@ -125,7 +145,7 @@ func TestAddReceipt(t *testing.T) {
 		t.Error("Expected segment 1 to be unclaimed")
 	}
 	// fake it with the db insertion
-	err := db.InsertReceipt(cm.jobID, 1, "", []byte{}, []byte{}, []byte{}, tStart, tEnd)
+	err = db.InsertReceipt(cm.jobID, 1, "", []byte{}, []byte{}, []byte{}, tStart, tEnd)
 	if err != nil {
 		t.Error(err)
 	}
