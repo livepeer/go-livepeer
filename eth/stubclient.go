@@ -30,9 +30,13 @@ type StubClient struct {
 	ClaimCounter      int
 	SubLogsCh         chan types.Log
 	JobsMap           map[string]*lpTypes.Job
+	TranscoderAddress common.Address
 	BlockNum          *big.Int
 	BlockHashToReturn common.Hash
 	Claims            map[int]*lpTypes.Claim
+	LatestBlockError  error
+	JobError          error
+	WatchJobError     error
 }
 
 func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) error { return nil }
@@ -85,14 +89,14 @@ func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, roun
 func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) { return nil, nil }
 func (e *StubClient) IsActiveTranscoder() (bool, error)                     { return false, nil }
 func (e *StubClient) AssignedTranscoder(job *lpTypes.Job) (common.Address, error) {
-	return common.Address{}, nil
+	return e.TranscoderAddress, nil
 }
 func (e *StubClient) GetTotalBonded() (*big.Int, error) { return big.NewInt(0), nil }
 
 // Jobs
 
 func (e *StubClient) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int, endBlock *big.Int) (*types.Transaction, error) {
-	return nil, nil
+	return nil, e.JobError
 }
 func (e *StubClient) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (*types.Transaction, error) {
 	e.ClaimCounter++
@@ -161,8 +165,10 @@ func (c *StubClient) CheckTx(tx *types.Transaction) error          { return nil 
 func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, gasPrice *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (c *StubClient) Sign(msg []byte) ([]byte, error)          { return nil, nil }
-func (c *StubClient) LatestBlockNum() (*big.Int, error)        { return big.NewInt(0), nil }
-func (c *StubClient) GetGasInfo() (uint64, *big.Int)           { return 0, nil }
-func (c *StubClient) SetGasInfo(uint64, *big.Int) error        { return nil }
-func (c *StubClient) WatchForJob(string) (*lpTypes.Job, error) { return nil, nil }
+func (c *StubClient) Sign(msg []byte) ([]byte, error)   { return nil, nil }
+func (c *StubClient) LatestBlockNum() (*big.Int, error) { return big.NewInt(0), c.LatestBlockError }
+func (c *StubClient) GetGasInfo() (uint64, *big.Int)    { return 0, nil }
+func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
+func (c *StubClient) WatchForJob(j string) (*lpTypes.Job, error) {
+	return c.JobsMap[j], c.WatchJobError
+}

@@ -146,7 +146,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 	//Call eth client to create the job
 	blknum, err := n.Eth.LatestBlockNum()
 	if err != nil {
-		return nil, ErrNotFound
+		return nil, err
 	}
 
 	_, err = n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], price, big.NewInt(0).Add(blknum, big.NewInt(DefaultJobLength)))
