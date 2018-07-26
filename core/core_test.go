@@ -5,20 +5,20 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
-	//"strings"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/ericxtang/m3u8"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
-	//"github.com/livepeer/lpms/transcoder"
 )
 
 func Over1Pct(val int, cmp int) bool {
@@ -31,7 +31,7 @@ type StubConnInfo struct {
 }
 type StubVideoNetwork struct {
 	T            *testing.T
-	broadcasters map[string]*StubBroadcaster
+	broadcasters map[StreamID]stream.Broadcaster
 	subscribers  map[string]*StubSubscriber
 	tResult      map[string]string
 	strmID       string
@@ -45,13 +45,14 @@ func (n *StubVideoNetwork) GetNodeID() string {
 	return "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0"
 }
 
-func (n *StubVideoNetwork) GetBroadcaster(strmID string) (stream.Broadcaster, error) {
+func (n *StubVideoNetwork) GetBroadcaster(sid string) (stream.Broadcaster, error) {
 	if n.broadcasters == nil {
-		n.broadcasters = make(map[string]*StubBroadcaster)
+		n.broadcasters = make(map[StreamID]stream.Broadcaster)
 	}
+	strmID := StreamID(sid)
 	b, ok := n.broadcasters[strmID]
 	if !ok {
-		b = &StubBroadcaster{T: n.T, StrmID: strmID}
+		b = &StubBroadcaster{T: n.T, StrmID: sid}
 		n.broadcasters[strmID] = b
 	}
 	return b, nil
@@ -189,70 +190,83 @@ func StubJob(n *LivepeerNode) *lpTypes.Job {
 func TestTranscode(t *testing.T) {
 	//Set up the node
 	stubnet := &StubVideoNetwork{T: t, subscribers: make(map[string]*StubSubscriber)}
-	n, _ := NewLivepeerNode(nil, stubnet, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", ".tmp", nil)
+	seth := &eth.StubClient{}
+	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	defer db.Close()
+	tmp, _ := ioutil.TempDir("", "")
+	n, _ := NewLivepeerNode(seth, stubnet, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", tmp, db)
+	defer os.RemoveAll(tmp)
 	job := StubJob(n)
-	stubnet.subscribers[job.StreamId] = &StubSubscriber{}
 	ffmpeg.InitFFmpeg()
 	defer ffmpeg.DeinitFFmpeg()
 
-	//Call transcode
+	// Sanity check full flow.
 	ss := StubSegment()
 	err := n.TranscodeSegment(job, ss)
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
 
-	/*tProfiles := make([]ffmpeg.VideoProfile, len(p), len(p))
-	for i, vp := range p {
-		tProfiles[i] = ffmpeg.VideoProfileLookup[vp.Name]
-	}
-	tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, n.WorkDir)
-	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: strmID.String(), Profiles: p}, &StubClaimManager{}, tr)
-	if err != nil {
-		t.Errorf("Error transcoding: %v", err)
+	if len(stubnet.broadcasters) != len(job.Profiles) && len(job.Profiles) != 2 {
+		t.Error("Job profile count did not match broadcasters")
 	}
 
-	if !strings.HasSuffix(ids[0].String(), "P144p30fps16x9") {
-		t.Errorf("Bad id0: %v", ids[0])
-	}
-
-	if !strings.HasSuffix(ids[1].String(), "P240p30fps16x9") {
-		t.Errorf("Bad id1: %v", ids[1])
-	}
-
-	b1tmp, err := n.VideoNetwork.GetBroadcaster(ids[0].String())
-	if err != nil {
-		t.Errorf("Error getting broadcaster: %v", err)
-	}
-	b2tmp, err := n.VideoNetwork.GetBroadcaster(ids[1].String())
-	if err != nil {
-		t.Errorf("Error getting broadcaster: %v", err)
-	}
-	b1, ok := b1tmp.(*StubBroadcaster)
-	if !ok {
-		t.Errorf("Error converting broadcaster")
-	}
-	b2, ok := b2tmp.(*StubBroadcaster)
-	if !ok {
-		t.Errorf("Error converting broadcaster")
-	}
-	start := time.Now()
-	for time.Since(start) < time.Second*5 {
-		if b1.SeqNo == 0 {
-			time.Sleep(100 * time.Millisecond)
-		} else {
-			break
+	// Check transcode result
+	has_144p, has_240p := false, false
+	for k, v := range stubnet.broadcasters {
+		b, ok := v.(*StubBroadcaster)
+		if !ok {
+			t.Error("Error converting broadcaster")
+		}
+		if b.SeqNo != 100 {
+			t.Error("Wrong SeqNo assigned to broadcaser ", b.SeqNo)
+		}
+		r := k.GetRendition()
+		if r == "P144p30fps16x9" {
+			if Over1Pct(len(b.Data), 65424) {
+				t.Errorf("Wrong data assigned to broadcaster: %v", len(b.Data))
+			} else {
+				has_144p = true
+			}
+		} else if r == "P240p30fps16x9" {
+			if Over1Pct(len(b.Data), 81968) {
+				t.Errorf("Wrong data assigned to broadcaster: %v", len(b.Data))
+			} else {
+				has_240p = true
+			}
 		}
 	}
-
-	if b1.SeqNo != 100 || b2.SeqNo != 100 {
-		t.Errorf("Wrong SeqNo assigned to broadcaster: %v", b1.SeqNo)
+	if !has_144p || !has_240p {
+		t.Error("Missing some expected tests")
 	}
 
-	if Over1Pct(len(b1.Data), 65424) || Over1Pct(len(b2.Data), 81968) {
-		t.Errorf("Wrong data assigned to broadcaster: %v, %v", len(b1.Data), len(b2.Data))
+	// check duplicate sequence in DB
+	err = n.TranscodeSegment(job, ss)
+	if err.Error() != "DuplicateSequence" {
+		t.Error("Unexpected error when checking duplicate seqs ", err)
 	}
-	*/
+
+	// Check segment too long
+	d, _ := ioutil.ReadFile("test.ts")
+	ssd := ss.Seg.Data
+	ss.Seg.Data = d
+	ss.Seg.SeqNo += 1
+	err = n.TranscodeSegment(job, ss)
+	if err.Error() != "MediaStats Failure" {
+		t.Error("Unexpected error when checking mediastats ", err)
+	}
+	ss.Seg.Data = ssd
+
+	// Check insufficient deposit
+	job.JobId = big.NewInt(10) // force a new job with a new price
+	job.MaxPricePerSegment = big.NewInt(1000)
+	err = n.TranscodeSegment(job, ss)
+	if err.Error() != "Insufficient deposit" {
+		t.Error("Unexpected error when checking deposit ", err)
+	}
+
+	// TODO check transcode loop expiry, claim manager submission, etc
+
 }
 
 type Vint interface {
@@ -361,8 +375,6 @@ func TestCreateTranscodeJob(t *testing.T) {
 	}
 	seth.WatchJobError = nil
 }
-
-// TODO add tests for resulting streamIDs from TranscodeSegmentLoop
 
 func TestCrypto(t *testing.T) {
 	blkNumB := make([]byte, 8)

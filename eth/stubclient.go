@@ -130,7 +130,7 @@ func (c *StubClient) Deposit(amount *big.Int) (*types.Transaction, error) {
 }
 func (c *StubClient) Withdraw() (*types.Transaction, error) { return nil, nil }
 func (c *StubClient) BroadcasterDeposit(broadcaster common.Address) (*big.Int, error) {
-	return big.NewInt(0), nil
+	return big.NewInt(10), nil
 }
 func (e *StubClient) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
 	return nil, nil
