@@ -175,7 +175,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 		// not fatal; continue
 	}
 
-	glog.Infof("Created broadcast job. Id: %v Price: %v. Type: %v", job.JobId, price, ethcommon.ToHex(transOpts)[2:])
+	glog.Infof("Created broadcast job. Id: %v, Price: %v, Transcoder:%v, Type: %v", job.JobId, job.MaxPricePerSegment, job.TranscoderAddress.Hex(), ethcommon.ToHex(transOpts)[2:])
 
 	return job, nil
 }

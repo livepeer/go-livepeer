@@ -179,7 +179,7 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 	tca := job.TranscoderAddress
 	serviceUri, err := s.LivepeerNode.Eth.GetServiceURI(tca)
 	if err != nil || serviceUri == "" {
-		glog.Error("Unable to retrieve the Service URI for %v: %v", tca, err)
+		glog.Errorf("Unable to retrieve the Service URI for %v: %v", tca.Hex(), err)
 		if err == nil {
 			err = fmt.Errorf("Empty Service URI")
 		}
@@ -281,7 +281,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 			minDeposit := big.NewInt(0).Mul(BroadcastPrice, big.NewInt(MinDepositSegmentCount))
 			if deposit.Cmp(minDeposit) < 0 {
-				glog.Errorf("Low deposit (%v) - cannot start broadcast session", deposit)
+				glog.Errorf("Low deposit (%v) - cannot start broadcast session.  Need at least %v", deposit, minDeposit)
 				if s.LivepeerNode.MonitorMetrics {
 					monitor.LogStreamCreateFailed(rtmpStrm.GetStreamID(), nonce, "LowDeposit")
 				}
