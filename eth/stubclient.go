@@ -180,12 +180,21 @@ func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
 func (c *StubClient) WatchForJob(j string) (*lpTypes.Job, error) {
 	return c.JobsMap[j], c.WatchJobError
 }
-func (c *StubClient) WatchForUnbond(*big.Int, chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error) {
+func (c *StubClient) ProcessHistoricalUnbond(*big.Int, func(chan *contracts.BondingManagerUnbond) error) error {
+	return nil
+}
+func (c *StubClient) WatchForUnbond(chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error) {
 	return nil, nil
 }
-func (c *StubClient) WatchForRebond(*big.Int, chan *contracts.BondingManagerRebond) (ethereum.Subscription, error) {
+func (c *StubClient) ProcessHistoricalRebond(*big.Int, func(chan *contracts.BondingManagerRebond) error) error {
+	return nil
+}
+func (c *StubClient) WatchForRebond(chan *contracts.BondingManagerRebond) (ethereum.Subscription, error) {
 	return nil, nil
 }
-func (c *StubClient) WatchForWithdrawStake(*big.Int, chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error) {
+func (c *StubClient) ProcessHistoricalWithdrawStake(*big.Int, func(chan *contracts.BondingManagerWithdrawStake) error) error {
+	return nil
+}
+func (c *StubClient) WatchForWithdrawStake(chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error) {
 	return nil, nil
 }

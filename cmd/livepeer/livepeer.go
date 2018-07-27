@@ -318,13 +318,15 @@ func main() {
 
 		defer n.StopEthServices()
 
+		addrMap := n.Eth.ContractAddresses()
+		em := eth.NewEventMonitor(backend, addrMap)
+
+		// Setup block service to receive headers from the head of the chain
+		n.EthServices["BlockService"] = eventservices.NewBlockService(em, dbh)
 		// Setup unbonding service to manage unbonding locks
 		n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
 
 		if *transcoder {
-			addrMap := n.Eth.ContractAddresses()
-			em := eth.NewEventMonitor(backend, addrMap)
-
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -332,6 +334,13 @@ func main() {
 				glog.Errorf("Error setting up transcoder: %v", err)
 				return
 			}
+		}
+
+		// Start services
+		err = n.StartEthServices()
+		if err != nil {
+			glog.Errorf("Failed to start ETH services: %v", err)
+			return
 		}
 	}
 
@@ -552,12 +561,6 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	// Create job service to listen for new jobs and transcode if assigned to the job
 	js := eventservices.NewJobService(em, n)
 	n.EthServices["JobService"] = js
-
-	// Start services
-	err = n.StartEthServices()
-	if err != nil {
-		return err
-	}
 
 	// Restart jobs as necessary
 	err = js.RestartTranscoder()

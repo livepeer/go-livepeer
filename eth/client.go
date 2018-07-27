@@ -112,11 +112,14 @@ type LivepeerEthClient interface {
 	VerificationCodeHash() (string, error)
 	Paused() (bool, error)
 
-	// Watchers
+	// Events
 	WatchForJob(string) (*lpTypes.Job, error)
-	WatchForUnbond(*big.Int, chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error)
-	WatchForRebond(*big.Int, chan *contracts.BondingManagerRebond) (ethereum.Subscription, error)
-	WatchForWithdrawStake(*big.Int, chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error)
+	ProcessHistoricalUnbond(*big.Int, func(*contracts.BondingManagerUnbond) error) error
+	WatchForUnbond(chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error)
+	ProcessHistoricalRebond(*big.Int, func(*contracts.BondingManagerRebond) error) error
+	WatchForRebond(chan *contracts.BondingManagerRebond) (ethereum.Subscription, error)
+	ProcessHistoricalWithdrawStake(*big.Int, func(*contracts.BondingManagerWithdrawStake) error) error
+	WatchForWithdrawStake(chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error)
 
 	// Helpers
 	ContractAddresses() map[string]ethcommon.Address
@@ -1053,17 +1056,32 @@ func (c *client) LatestBlockNum() (*big.Int, error) {
 	return blk.Number, nil
 }
 
-func (c *client) WatchForUnbond(startBlock *big.Int, sink chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error) {
+func (c *client) ProcessHistoricalUnbond(startBlock *big.Int, cb func(*contracts.BondingManagerUnbond) error) error {
+	// Retrieve historical logs starting from startBlock
+	// WatchForUnbond() will not emit past logs
+	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
+	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterUnbond(filterOpts, nil, []ethcommon.Address{c.Account().Address})
+	if err != nil {
+		return err
+	}
+
+	for it.Next() {
+		if err := cb(it.Event); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *client) WatchForUnbond(sink chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error) {
 	var (
 		sub ethereum.Subscription
 		err error
 	)
 
-	sb := startBlock.Uint64()
-	watchOpts := &bind.WatchOpts{Start: &sb}
-
 	unbondWatcher := func() error {
-		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchUnbond(watchOpts, sink, nil, []ethcommon.Address{c.Account().Address})
+		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchUnbond(nil, sink, nil, []ethcommon.Address{c.Account().Address})
 		if err != nil {
 			glog.Error("Unable to start Unbond watcher ", err)
 			return err
@@ -1077,17 +1095,32 @@ func (c *client) WatchForUnbond(startBlock *big.Int, sink chan *contracts.Bondin
 	return sub, err
 }
 
-func (c *client) WatchForRebond(startBlock *big.Int, sink chan *contracts.BondingManagerRebond) (ethereum.Subscription, error) {
+func (c *client) ProcessHistoricalRebond(startBlock *big.Int, cb func(*contracts.BondingManagerRebond) error) error {
+	// Retrieve historical logs starting from startBlock
+	// WatchRebond() will not emit past logs
+	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
+	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterRebond(filterOpts, nil, []ethcommon.Address{c.Account().Address})
+	if err != nil {
+		return err
+	}
+
+	for it.Next() {
+		if err := cb(it.Event); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *client) WatchForRebond(sink chan *contracts.BondingManagerRebond) (ethereum.Subscription, error) {
 	var (
 		sub ethereum.Subscription
 		err error
 	)
 
-	sb := startBlock.Uint64()
-	watchOpts := &bind.WatchOpts{Start: &sb}
-
 	rebondWatcher := func() error {
-		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchRebond(watchOpts, sink, nil, []ethcommon.Address{c.Account().Address})
+		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchRebond(nil, sink, nil, []ethcommon.Address{c.Account().Address})
 		if err != nil {
 			glog.Error("Unable to start Rebond watcher ", err)
 			return err
@@ -1101,17 +1134,33 @@ func (c *client) WatchForRebond(startBlock *big.Int, sink chan *contracts.Bondin
 	return sub, err
 }
 
-func (c *client) WatchForWithdrawStake(startBlock *big.Int, sink chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error) {
+func (c *client) ProcessHistoricalWithdrawStake(startBlock *big.Int, cb func(*contracts.BondingManagerWithdrawStake) error) error {
+	// Retrieve historical logs starting from startBlock
+	// WatchWithdrawStake() will not emit past logs
+	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
+	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterWithdrawStake(filterOpts, []ethcommon.Address{c.Account().Address})
+	if err != nil {
+		return err
+	}
+
+	// Pass any relevant events into sink
+	for it.Next() {
+		if err := cb(it.Event); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *client) WatchForWithdrawStake(sink chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error) {
 	var (
 		sub ethereum.Subscription
 		err error
 	)
 
-	sb := startBlock.Uint64()
-	watchOpts := &bind.WatchOpts{Start: &sb}
-
 	withdrawStakeWatcher := func() error {
-		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchWithdrawStake(watchOpts, sink, []ethcommon.Address{c.Account().Address})
+		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchWithdrawStake(nil, sink, []ethcommon.Address{c.Account().Address})
 		if err != nil {
 			glog.Error("Unable start WithdrawStake watcher ", err)
 			return err
