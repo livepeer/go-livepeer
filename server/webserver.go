@@ -536,6 +536,37 @@ func (s *LivepeerServer) StartWebserver() {
 				return
 			}
 
+			dAddr := s.LivepeerNode.Eth.Account().Address
+
+			d, err := s.LivepeerNode.Eth.GetDelegator(dAddr)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+			latestUnbondingLockID, err := s.LivepeerNode.Database.LatestUnbondingLockID()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			// Update unbonding locks in local DB if necessary
+			for i := new(big.Int).Add(latestUnbondingLockID, big.NewInt(1)); i.Cmp(d.NextUnbondingLockId) < 0; i = new(big.Int).Add(i, big.NewInt(1)) {
+				lock, err := s.LivepeerNode.Eth.GetDelegatorUnbondingLock(dAddr, i)
+				if err != nil {
+					glog.Error(err)
+					continue
+				}
+				// If lock has been used (i.e. withdrawRound == 0) do not insert into DB
+				// Note: We do not know what block at which a lock was used when querying the contract directly (as opposed to using events)
+				// As a result, instead of having a lock entry in the DB with the usedBlock column set, we do not insert a lock entry at all
+				if lock.WithdrawRound.Cmp(big.NewInt(0)) == 1 {
+					if err := s.LivepeerNode.Database.InsertUnbondingLock(i, dAddr, lock.Amount, lock.WithdrawRound); err != nil {
+						glog.Error(err)
+						continue
+					}
+				}
+			}
+
 			var currentRound *big.Int
 
 			withdrawableStr := r.FormValue("withdrawable")

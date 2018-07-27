@@ -91,6 +91,9 @@ func (e *StubClient) ClaimEarnings(endRound *big.Int) error {
 }
 func (e *StubClient) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) { return nil, nil }
 func (e *StubClient) GetDelegator(addr common.Address) (*lpTypes.Delegator, error)   { return nil, nil }
+func (e *StubClient) GetDelegatorUnbondingLock(addr common.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error) {
+	return nil, nil
+}
 func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
 	return nil, nil
 }
@@ -180,19 +183,19 @@ func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
 func (c *StubClient) WatchForJob(j string) (*lpTypes.Job, error) {
 	return c.JobsMap[j], c.WatchJobError
 }
-func (c *StubClient) ProcessHistoricalUnbond(*big.Int, func(chan *contracts.BondingManagerUnbond) error) error {
+func (c *StubClient) ProcessHistoricalUnbond(*big.Int, func(*contracts.BondingManagerUnbond) error) error {
 	return nil
 }
 func (c *StubClient) WatchForUnbond(chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error) {
 	return nil, nil
 }
-func (c *StubClient) ProcessHistoricalRebond(*big.Int, func(chan *contracts.BondingManagerRebond) error) error {
+func (c *StubClient) ProcessHistoricalRebond(*big.Int, func(*contracts.BondingManagerRebond) error) error {
 	return nil
 }
 func (c *StubClient) WatchForRebond(chan *contracts.BondingManagerRebond) (ethereum.Subscription, error) {
 	return nil, nil
 }
-func (c *StubClient) ProcessHistoricalWithdrawStake(*big.Int, func(chan *contracts.BondingManagerWithdrawStake) error) error {
+func (c *StubClient) ProcessHistoricalWithdrawStake(*big.Int, func(*contracts.BondingManagerWithdrawStake) error) error {
 	return nil
 }
 func (c *StubClient) WatchForWithdrawStake(chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error) {

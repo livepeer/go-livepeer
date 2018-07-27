@@ -68,6 +68,13 @@ func ParseDelegatorStatus(s uint8) (string, error) {
 	}
 }
 
+type UnbondingLock struct {
+	ID               *big.Int
+	DelegatorAddress common.Address
+	Amount           *big.Int
+	WithdrawRound    *big.Int
+}
+
 type TokenPools struct {
 	RewardPool     *big.Int
 	FeePool        *big.Int

@@ -76,6 +76,7 @@ type LivepeerEthClient interface {
 	ClaimEarnings(endRound *big.Int) error
 	GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, error)
 	GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error)
+	GetDelegatorUnbondingLock(addr ethcommon.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error)
 	GetTranscoderEarningsPoolForRound(addr ethcommon.Address, round *big.Int) (*lpTypes.TokenPools, error)
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
@@ -740,6 +741,20 @@ func (c *client) GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error
 		PendingStake:        pendingStake,
 		PendingFees:         pendingFees,
 		Status:              status,
+	}, nil
+}
+
+func (c *client) GetDelegatorUnbondingLock(addr ethcommon.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error) {
+	lock, err := c.BondingManagerSession.GetDelegatorUnbondingLock(addr, unbondingLockId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &lpTypes.UnbondingLock{
+		ID:               unbondingLockId,
+		DelegatorAddress: addr,
+		Amount:           lock.Amount,
+		WithdrawRound:    lock.WithdrawRound,
 	}, nil
 }
 
