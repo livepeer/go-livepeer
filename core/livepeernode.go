@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
@@ -162,12 +163,25 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 	}
 	glog.V(common.DEBUG).Info("Got a new job from the blockchain: ", job.JobId)
 
-	tca, err := n.Eth.AssignedTranscoder(job)
-	if err != nil {
-		glog.Error("A transcoder was not assigned! Ensure the broadcast price meets the minimum for the transcoder pool")
-		// not fatal at this point; continue
+	assignedTranscoder := func() error {
+		tca, err := n.Eth.AssignedTranscoder(job)
+		if err == nil && (tca == ethcommon.Address{}) {
+			glog.Error("A transcoder was not assigned! Ensure the broadcast price meets the minimum for the transcoder pool")
+			err = fmt.Errorf("EmptyTranscoder")
+		}
+		if err != nil {
+			glog.Error("Retrying transcoder assignment lookup because of ", err)
+			return err
+		}
+		job.TranscoderAddress = tca
+		return nil
 	}
-	job.TranscoderAddress = tca
+	boff := backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*2), 30)
+	err = backoff.Retry(assignedTranscoder, boff) // retry for 1 minute max
+	if err != nil {
+		// not fatal at this point; continue
+		glog.Error("Error getting assigned transcoder ", err)
+	}
 
 	err = n.Database.InsertBroadcast(job)
 	if err != nil {
