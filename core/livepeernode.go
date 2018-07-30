@@ -88,7 +88,6 @@ type LivepeerNode struct {
 	WorkDir         string
 	NodeType        NodeType
 	Database        *common.DB
-	MonitorMetrics  bool
 
 	claimMutex   *sync.Mutex
 	segmentMutex *sync.Mutex

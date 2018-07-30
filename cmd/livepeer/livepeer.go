@@ -89,7 +89,7 @@ func main() {
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 0, "Gas price for ETH transactions")
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
-	monhost := flag.String("monitorhost", "http://viz.livepeer.org:8081/metrics", "host name for the metrics data collector")
+	monhost := flag.String("monitorhost", "http://metrics.livepeer.org/v2/", "host name for the metrics data collector")
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
 	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
@@ -120,6 +120,7 @@ func main() {
 			}
 			glog.Infof("***Livepeer is running on the Rinkeby test network: %v***", RinkebyControllerAddr)
 		}
+		lpmon.SetNetwork("rinkeby")
 	} else if *devenv {
 	} else {
 		if *bootIDs == "" {
@@ -137,6 +138,7 @@ func main() {
 			}
 			glog.Infof("***Livepeer is running on the Ethereum main network: %v***", MainnetControllerAddr)
 		}
+		lpmon.SetNetwork("mainnet")
 	}
 
 	//Make sure datadir is present
@@ -343,8 +345,9 @@ func main() {
 	//Create Livepeer Node
 	if *monitor {
 		glog.Info("Monitor is set to 'true' by default.  If you want to disable it, use -monitor=false when starting Livepeer.")
-		lpmon.Endpoint = *monhost
-		n.MonitorMetrics = true
+		glog.Infof("Monitoring endpoint: %s", *monhost)
+		lpmon.Enabled = true
+		lpmon.SetURLBase(*monhost)
 	}
 
 	// Set up logging
