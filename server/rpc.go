@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -13,13 +14,14 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"golang.org/x/net/http2"
 
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/lpms/stream"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -365,7 +367,6 @@ func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(fmt.Sprintf("Error transcoding segment %v : %v", segData.Seq, err)))
 		return
 	}
-
 	w.Write([]byte(fmt.Sprintf("Successfully transcoded segment %v", segData.Seq)))
 }
 
@@ -425,7 +426,7 @@ func StartBroadcastClient(orchestratorServer string, node *core.LivepeerNode, jo
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	if err != nil {
 		glog.Error("Did not connect: ", err)
-		return nil, err
+		return nil, errors.New("Did not connect: " + err.Error())
 	}
 	defer conn.Close()
 	c := NewOrchestratorClient(conn)
@@ -437,14 +438,17 @@ func StartBroadcastClient(orchestratorServer string, node *core.LivepeerNode, jo
 	r, err := c.GetTranscoder(ctx, req)
 	if err != nil {
 		glog.Error("Could not get transcoder: ", err)
-		return nil, err
+		return nil, errors.New("Could not get transcoder: " + err.Error())
 	}
 	b.tinfo = r
 
 	return &b, nil
 }
 
-func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment) {
+func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
+	if monitor.Enabled {
+		monitor.SegmentUploadStart(nonce, seg.SeqNo)
+	}
 	hc := bcast.GetHTTPClient()
 	segData := &SegData{
 		Seq:  int64(seg.SeqNo),
@@ -452,12 +456,18 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment) {
 	}
 	segCreds, err := genSegCreds(bcast, bcast.Job().StreamId, segData)
 	if err != nil {
+		if monitor.Enabled {
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
+		}
 		return
 	}
 	ti := bcast.GetTranscoderInfo()
 	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(seg.Data))
 	if err != nil {
 		glog.Error("Could not generate trascode request to ", ti.Transcoder)
+		if monitor.Enabled {
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
+		}
 		return
 	}
 
@@ -467,18 +477,42 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment) {
 	req.Header.Set("Content-Type", "video/MP2T")
 
 	glog.Infof("Submitting segment %v : %v bytes", seg.SeqNo, len(seg.Data))
+	start := time.Now()
 	resp, err := hc.Do(req)
+	uploadDur := time.Since(start)
 	if err != nil {
 		glog.Error("Unable to submit segment ", seg.SeqNo, err)
+		if monitor.Enabled {
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
+		}
 		return
 	}
 	glog.Infof("Uploaded segment %v", seg.SeqNo)
+	if monitor.Enabled {
+		monitor.LogSegmentUploaded(nonce, seg.SeqNo, uploadDur)
+	}
 
 	defer resp.Body.Close()
 	data, err := ioutil.ReadAll(resp.Body)
+	tookAllDur := time.Since(start)
 	if err != nil {
 		glog.Error(fmt.Sprintf("Unable to read response body for segment %v : %v", seg.SeqNo, err))
+		if monitor.Enabled {
+			monitor.LogSegmentTranscodeFailed(nonce, seg.SeqNo, err.Error())
+		}
 		return
 	}
-	glog.Infof("Response for segment %v: %s", seg.SeqNo, string(data))
+	transcodeDur := tookAllDur - uploadDur
+
+	dataStr := string(data)
+	glog.Infof("Response for segment %v: %s", seg.SeqNo, dataStr)
+	if strings.Contains(dataStr, "Error transcoding segment") {
+		if monitor.Enabled {
+			monitor.LogSegmentTranscodeFailed(nonce, seg.SeqNo, dataStr[strings.Index(dataStr, ":")+2:])
+		}
+	} else {
+		if monitor.Enabled {
+			monitor.LogSegmentTranscoded(nonce, seg.SeqNo, transcodeDur, tookAllDur)
+		}
+	}
 }

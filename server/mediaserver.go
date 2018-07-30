@@ -188,6 +188,9 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 	rpcBcast, err := StartBroadcastClient(serviceUri, s.LivepeerNode, job)
 	if err != nil {
 		glog.Error("Unable to start broadcast client for ", job.JobId)
+		if s.LivepeerNode.MonitorMetrics {
+			monitor.LogStartBroadcastClientFailed(serviceUri, tca.Hex(), job.JobId.Uint64(), err.Error())
+		}
 		return nil, err
 	}
 	// Update the master playlist based on the streamids from the transcoder
@@ -248,10 +251,14 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			for _, b := range bcasts {
 				// check if assigned transcoder is still valid.
 				if _, err := s.LivepeerNode.Eth.GetTranscoder(b.Transcoder); err == nil {
-					rpcBcast, err = s.startBroadcast(common.DBJobToEthJob(b), manifest)
+					job := common.DBJobToEthJob(b)
+					rpcBcast, err = s.startBroadcast(job, manifest)
 					if err == nil {
 						startSeq = int(b.Segments) + 1
 						jobId = big.NewInt(b.ID)
+						if s.LivepeerNode.MonitorMetrics {
+							monitor.LogJobReusedEvent(job, startSeq, nonce)
+						}
 						break
 					}
 				}
@@ -268,6 +275,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			}
 			if !initialized {
 				glog.Infof("Round was uninitialized, can't create job. Please try again in a few blocks.")
+				// todo send to metrics ?
 				return ErrRoundInit
 			}
 			// Check deposit
@@ -283,7 +291,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			if deposit.Cmp(minDeposit) < 0 {
 				glog.Errorf("Low deposit (%v) - cannot start broadcast session.  Need at least %v", deposit, minDeposit)
 				if s.LivepeerNode.MonitorMetrics {
-					monitor.LogStreamCreateFailed(rtmpStrm.GetStreamID(), nonce, "LowDeposit")
+					monitor.LogStreamCreateFailed(nonce, "LowDeposit")
 				}
 				return ErrBroadcast
 			}
@@ -352,8 +360,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				if streamStarted == false {
 					streamStarted = true
 					if s.LivepeerNode.MonitorMetrics {
-						monitor.LogStreamStartedEvent(hlsStrmID.String(), nonce)
+						monitor.LogStreamStartedEvent(nonce)
 					}
+				}
+				if s.LivepeerNode.MonitorMetrics {
+					monitor.LogSegmentEmerged(nonce, seg.SeqNo)
 				}
 
 				if jobId != nil {
@@ -380,7 +391,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				}
 
 				if rpcBcast != nil {
-					go func() { SubmitSegment(rpcBcast, seg) }()
+					go SubmitSegment(rpcBcast, seg, nonce)
 				}
 			})
 
@@ -414,7 +425,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			glog.Errorf("Error broadasting manifest to network: %v", err)
 		}
 		if s.LivepeerNode.MonitorMetrics {
-			monitor.LogStreamCreatedEvent(mid.String(), nonce)
+			monitor.LogStreamCreatedEvent(hlsStrmID.String(), nonce)
 		}
 
 		glog.Infof("\n\nVideo Created With ManifestID: %v\n\n", mid)
@@ -432,6 +443,9 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					return // XXX feed back error?
 				}
 				jobId = job.JobId
+				if s.LivepeerNode.MonitorMetrics {
+					monitor.LogJobCreatedEvent(job, nonce)
+				}
 
 				// Connect to the orchestrator. If it fails, retry for as long
 				// as the RTMP stream is alive; maybe the orchestrator hasn't
@@ -481,7 +495,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		s.VideoNonceLock.Lock()
 		if _, ok := s.VideoNonce[rtmpStrm.GetStreamID()]; ok {
 			if s.LivepeerNode.MonitorMetrics {
-				monitor.LogStreamEndedEvent(manifestID, s.VideoNonce[rtmpStrm.GetStreamID()])
+				monitor.LogStreamEndedEvent(s.VideoNonce[rtmpStrm.GetStreamID()])
 			}
 			delete(s.VideoNonce, rtmpStrm.GetStreamID())
 		}

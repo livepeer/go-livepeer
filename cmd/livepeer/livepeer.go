@@ -120,6 +120,7 @@ func main() {
 			}
 			glog.Infof("***Livepeer is running on the Rinkeby test network: %v***", RinkebyControllerAddr)
 		}
+		lpmon.SetNetwork("rinkeby")
 	} else if *devenv {
 	} else {
 		if *bootIDs == "" {
@@ -137,6 +138,7 @@ func main() {
 			}
 			glog.Infof("***Livepeer is running on the Ethereum main network: %v***", MainnetControllerAddr)
 		}
+		lpmon.SetNetwork("mainnet")
 	}
 
 	//Make sure datadir is present
