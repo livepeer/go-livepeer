@@ -748,18 +748,25 @@ func (db *DB) UseUnbondingLock(id *big.Int, delegator ethcommon.Address, usedBlo
 	return nil
 }
 
-func (db *DB) LatestUnbondingLockID() (*big.Int, error) {
-	glog.V(DEBUG).Infof("db: Getting latest unbonding lock ID")
+func (db *DB) UnbondingLockIDs() ([]*big.Int, error) {
+	glog.V(DEBUG).Infof("db: Querying unbonding lock IDs")
 
-	var latestUnbondingLockID int64
-	row := db.dbh.QueryRow("SELECT MAX(id) FROM unbondingLocks")
-	err := row.Scan(&latestUnbondingLockID)
+	rows, err := db.dbh.Query("SELECT id FROM unbondingLocks")
 	if err != nil {
-		glog.Error("db: Got err in retrieving latest unbonding lockID ", err)
+		glog.Error("db: Unable to select unbonding lock IDs ", err)
 		return nil, err
 	}
-
-	return big.NewInt(latestUnbondingLockID), nil
+	defer rows.Close()
+	unbondingLockIDs := []*big.Int{}
+	for rows.Next() {
+		var unbondingLockID int64
+		if err := rows.Scan(&unbondingLockID); err != nil {
+			glog.Error("db: Unable to fetch unbonding lock ID ", err)
+			continue
+		}
+		unbondingLockIDs = append(unbondingLockIDs, big.NewInt(unbondingLockID))
+	}
+	return unbondingLockIDs, nil
 }
 
 func (db *DB) UnbondingLocks(currentRound *big.Int) ([]*DBUnbondingLock, error) {

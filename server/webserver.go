@@ -543,26 +543,41 @@ func (s *LivepeerServer) StartWebserver() {
 				glog.Error(err)
 				return
 			}
-			latestUnbondingLockID, err := s.LivepeerNode.Database.LatestUnbondingLockID()
+
+			// Query for local IDs
+			unbondingLockIDs, err := s.LivepeerNode.Database.UnbondingLockIDs()
 			if err != nil {
 				glog.Error(err)
 				return
 			}
 
-			// Update unbonding locks in local DB if necessary
-			for i := new(big.Int).Add(latestUnbondingLockID, big.NewInt(1)); i.Cmp(d.NextUnbondingLockId) < 0; i = new(big.Int).Add(i, big.NewInt(1)) {
-				lock, err := s.LivepeerNode.Eth.GetDelegatorUnbondingLock(dAddr, i)
-				if err != nil {
-					glog.Error(err)
-					continue
+			if big.NewInt(int64(len(unbondingLockIDs))).Cmp(d.NextUnbondingLockId) < 0 {
+				// Generate all possible IDs
+				missingUnbondingLockIDs := make(map[*big.Int]bool)
+				for i := big.NewInt(0); i.Cmp(d.NextUnbondingLockId) < 0; i = new(big.Int).Add(i, big.NewInt(1)) {
+					missingUnbondingLockIDs[i] = true
 				}
-				// If lock has been used (i.e. withdrawRound == 0) do not insert into DB
-				// Note: We do not know what block at which a lock was used when querying the contract directly (as opposed to using events)
-				// As a result, instead of having a lock entry in the DB with the usedBlock column set, we do not insert a lock entry at all
-				if lock.WithdrawRound.Cmp(big.NewInt(0)) == 1 {
-					if err := s.LivepeerNode.Database.InsertUnbondingLock(i, dAddr, lock.Amount, lock.WithdrawRound); err != nil {
+
+				// Use local IDs to determine which IDs are missing
+				for _, id := range unbondingLockIDs {
+					delete(missingUnbondingLockIDs, id)
+				}
+
+				// Update unbonding locks in local DB if necessary
+				for id := range missingUnbondingLockIDs {
+					lock, err := s.LivepeerNode.Eth.GetDelegatorUnbondingLock(dAddr, id)
+					if err != nil {
 						glog.Error(err)
 						continue
+					}
+					// If lock has been used (i.e. withdrawRound == 0) do not insert into DB
+					// Note: We do not know what block at which a lock was used when querying the contract directly (as opposed to using events)
+					// As a result, instead of having a lock entry in the DB with the usedBlock column set, we do not insert a lock entry at all
+					if lock.WithdrawRound.Cmp(big.NewInt(0)) == 1 {
+						if err := s.LivepeerNode.Database.InsertUnbondingLock(id, dAddr, lock.Amount, lock.WithdrawRound); err != nil {
+							glog.Error(err)
+							continue
+						}
 					}
 				}
 			}

@@ -408,17 +408,6 @@ func TestDBUnbondingLocks(t *testing.T) {
 		return
 	}
 
-	// Check latest unbonding lock ID
-	id, err := dbh.LatestUnbondingLockID()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if id.Cmp(big.NewInt(2)) != 0 {
-		t.Error("Unexpected latest unbonding lock ID; expected 2, got ", id)
-		return
-	}
-
 	// Check # of unbonding locks
 	var numUnbondingLocks int
 	row := dbraw.QueryRow("SELECT count(*) FROM unbondingLocks")
@@ -429,6 +418,21 @@ func TestDBUnbondingLocks(t *testing.T) {
 	}
 	if numUnbondingLocks != 3 {
 		t.Error("Unexpected number of unbonding locks; expected 3 total, got ", numUnbondingLocks)
+		return
+	}
+
+	// Check unbonding lock IDs
+	unbondingLockIDs, err := dbh.UnbondingLockIDs()
+	if err != nil {
+		t.Error("Error retrieving unbonding lock IDs ", err)
+		return
+	}
+	if len(unbondingLockIDs) != 3 {
+		t.Error("Unexpected number of unbonding lock IDs; expected 3, got ", len(unbondingLockIDs))
+		return
+	}
+	if unbondingLockIDs[0].Cmp(big.NewInt(0)) != 0 {
+		t.Error("Unexpected unbonding lock ID; expected 0, got ", unbondingLockIDs[0])
 		return
 	}
 
