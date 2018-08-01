@@ -130,11 +130,7 @@ func main() {
 		}
 		if !*offchain {
 			if *ethUrl == "" {
-				if *transcoder {
-					*ethUrl = "wss://mainnet.infura.io/ws"
-				} else {
-					*ethUrl = "https://mainnet.infura.io/cFwU3koCZdTqiH6VE4fj"
-				}
+				*ethUrl = "wss://mainnet.infura.io/ws"
 			}
 			if *controllerAddr == "" {
 				*controllerAddr = MainnetControllerAddr
