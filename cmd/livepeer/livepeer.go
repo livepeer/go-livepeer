@@ -120,6 +120,7 @@ func main() {
 			}
 			glog.Infof("***Livepeer is running on the Rinkeby test network: %v***", RinkebyControllerAddr)
 		}
+		lpmon.SetNetwork("rinkeby")
 	} else if *devenv {
 	} else {
 		if *bootIDs == "" {
@@ -130,17 +131,14 @@ func main() {
 		}
 		if !*offchain {
 			if *ethUrl == "" {
-				if *transcoder {
-					*ethUrl = "wss://mainnet.infura.io/ws"
-				} else {
-					*ethUrl = "https://mainnet.infura.io/cFwU3koCZdTqiH6VE4fj"
-				}
+				*ethUrl = "wss://mainnet.infura.io/ws"
 			}
 			if *controllerAddr == "" {
 				*controllerAddr = MainnetControllerAddr
 			}
 			glog.Infof("***Livepeer is running on the Ethereum main network: %v***", MainnetControllerAddr)
 		}
+		lpmon.SetNetwork("mainnet")
 	}
 
 	//Make sure datadir is present
@@ -316,10 +314,17 @@ func main() {
 			return true
 		})
 
-		if *transcoder {
-			addrMap := n.Eth.ContractAddresses()
-			em := eth.NewEventMonitor(backend, addrMap)
+		defer n.StopEthServices()
 
+		addrMap := n.Eth.ContractAddresses()
+		em := eth.NewEventMonitor(backend, addrMap)
+
+		// Setup block service to receive headers from the head of the chain
+		n.EthServices["BlockService"] = eventservices.NewBlockService(em, dbh)
+		// Setup unbonding service to manage unbonding locks
+		n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
+
+		if *transcoder {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -327,8 +332,13 @@ func main() {
 				glog.Errorf("Error setting up transcoder: %v", err)
 				return
 			}
+		}
 
-			defer n.StopEthServices()
+		// Start services
+		err = n.StartEthServices()
+		if err != nil {
+			glog.Errorf("Failed to start ETH services: %v", err)
+			return
 		}
 	}
 
@@ -549,12 +559,6 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	// Create job service to listen for new jobs and transcode if assigned to the job
 	js := eventservices.NewJobService(em, n)
 	n.EthServices["JobService"] = js
-
-	// Start services
-	err = n.StartEthServices()
-	if err != nil {
-		return err
-	}
 
 	// Restart jobs as necessary
 	err = js.RestartTranscoder()
