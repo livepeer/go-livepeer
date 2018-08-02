@@ -68,12 +68,15 @@ type LivepeerEthClient interface {
 	Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error)
 	Reward() (*types.Transaction, error)
 	Bond(amount *big.Int, toAddr ethcommon.Address) (*types.Transaction, error)
-	Unbond() (*types.Transaction, error)
-	WithdrawStake() (*types.Transaction, error)
+	Rebond(unbondingLockID *big.Int) (*types.Transaction, error)
+	RebondFromUnbonded(toAddr ethcommon.Address, unbondingLockID *big.Int) (*types.Transaction, error)
+	Unbond(amount *big.Int) (*types.Transaction, error)
+	WithdrawStake(unbondingLockID *big.Int) (*types.Transaction, error)
 	WithdrawFees() (*types.Transaction, error)
 	ClaimEarnings(endRound *big.Int) error
 	GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, error)
 	GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error)
+	GetDelegatorUnbondingLock(addr ethcommon.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error)
 	GetTranscoderEarningsPoolForRound(addr ethcommon.Address, round *big.Int) (*lpTypes.TokenPools, error)
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
@@ -110,7 +113,14 @@ type LivepeerEthClient interface {
 	VerificationCodeHash() (string, error)
 	Paused() (bool, error)
 
+	// Events
 	WatchForJob(string) (*lpTypes.Job, error)
+	ProcessHistoricalUnbond(*big.Int, func(*contracts.BondingManagerUnbond) error) error
+	WatchForUnbond(chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error)
+	ProcessHistoricalRebond(*big.Int, func(*contracts.BondingManagerRebond) error) error
+	WatchForRebond(chan *contracts.BondingManagerRebond) (ethereum.Subscription, error)
+	ProcessHistoricalWithdrawStake(*big.Int, func(*contracts.BondingManagerWithdrawStake) error) error
+	WatchForWithdrawStake(chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error)
 
 	// Helpers
 	ContractAddresses() map[string]ethcommon.Address
@@ -460,7 +470,7 @@ func (c *client) Bond(amount *big.Int, to ethcommon.Address) (*types.Transaction
 	return c.BondingManagerSession.Bond(amount, to)
 }
 
-func (c *client) Unbond() (*types.Transaction, error) {
+func (c *client) Rebond(unbondingLockID *big.Int) (*types.Transaction, error) {
 	currentRound, err := c.CurrentRound()
 	if err != nil {
 		return nil, err
@@ -470,10 +480,10 @@ func (c *client) Unbond() (*types.Transaction, error) {
 		return nil, err
 	}
 
-	return c.BondingManagerSession.Unbond()
+	return c.BondingManagerSession.Rebond(unbondingLockID)
 }
 
-func (c *client) WithdrawStake() (*types.Transaction, error) {
+func (c *client) RebondFromUnbonded(toAddr ethcommon.Address, unbondingLockID *big.Int) (*types.Transaction, error) {
 	currentRound, err := c.CurrentRound()
 	if err != nil {
 		return nil, err
@@ -483,7 +493,20 @@ func (c *client) WithdrawStake() (*types.Transaction, error) {
 		return nil, err
 	}
 
-	return c.BondingManagerSession.WithdrawStake()
+	return c.BondingManagerSession.RebondFromUnbonded(toAddr, unbondingLockID)
+}
+
+func (c *client) Unbond(amount *big.Int) (*types.Transaction, error) {
+	currentRound, err := c.CurrentRound()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.autoClaimEarnings(currentRound, false); err != nil {
+		return nil, err
+	}
+
+	return c.BondingManagerSession.Unbond(amount)
 }
 
 func (c *client) WithdrawFees() (*types.Transaction, error) {
@@ -707,17 +730,31 @@ func (c *client) GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error
 	}
 
 	return &lpTypes.Delegator{
-		Address:         addr,
-		BondedAmount:    dInfo.BondedAmount,
-		Fees:            dInfo.Fees,
-		DelegateAddress: dInfo.DelegateAddress,
-		DelegatedAmount: dInfo.DelegatedAmount,
-		StartRound:      dInfo.StartRound,
-		WithdrawRound:   dInfo.WithdrawRound,
-		LastClaimRound:  dInfo.LastClaimRound,
-		PendingStake:    pendingStake,
-		PendingFees:     pendingFees,
-		Status:          status,
+		Address:             addr,
+		BondedAmount:        dInfo.BondedAmount,
+		Fees:                dInfo.Fees,
+		DelegateAddress:     dInfo.DelegateAddress,
+		DelegatedAmount:     dInfo.DelegatedAmount,
+		StartRound:          dInfo.StartRound,
+		LastClaimRound:      dInfo.LastClaimRound,
+		NextUnbondingLockId: dInfo.NextUnbondingLockId,
+		PendingStake:        pendingStake,
+		PendingFees:         pendingFees,
+		Status:              status,
+	}, nil
+}
+
+func (c *client) GetDelegatorUnbondingLock(addr ethcommon.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error) {
+	lock, err := c.BondingManagerSession.GetDelegatorUnbondingLock(addr, unbondingLockId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &lpTypes.UnbondingLock{
+		ID:               unbondingLockId,
+		DelegatorAddress: addr,
+		Amount:           lock.Amount,
+		WithdrawRound:    lock.WithdrawRound,
 	}, nil
 }
 
@@ -1032,4 +1069,122 @@ func (c *client) LatestBlockNum() (*big.Int, error) {
 		return nil, err
 	}
 	return blk.Number, nil
+}
+
+func (c *client) ProcessHistoricalUnbond(startBlock *big.Int, cb func(*contracts.BondingManagerUnbond) error) error {
+	// Retrieve historical logs starting from startBlock
+	// WatchForUnbond() will not emit past logs
+	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
+	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterUnbond(filterOpts, nil, []ethcommon.Address{c.Account().Address})
+	if err != nil {
+		return err
+	}
+
+	for it.Next() {
+		if err := cb(it.Event); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *client) WatchForUnbond(sink chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error) {
+	var (
+		sub ethereum.Subscription
+		err error
+	)
+
+	unbondWatcher := func() error {
+		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchUnbond(nil, sink, nil, []ethcommon.Address{c.Account().Address})
+		if err != nil {
+			glog.Error("Unable to start Unbond watcher ", err)
+			return err
+		}
+
+		return nil
+	}
+
+	err = backoff.Retry(unbondWatcher, backoff.NewConstantBackOff(time.Second*2))
+
+	return sub, err
+}
+
+func (c *client) ProcessHistoricalRebond(startBlock *big.Int, cb func(*contracts.BondingManagerRebond) error) error {
+	// Retrieve historical logs starting from startBlock
+	// WatchRebond() will not emit past logs
+	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
+	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterRebond(filterOpts, nil, []ethcommon.Address{c.Account().Address})
+	if err != nil {
+		return err
+	}
+
+	for it.Next() {
+		if err := cb(it.Event); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *client) WatchForRebond(sink chan *contracts.BondingManagerRebond) (ethereum.Subscription, error) {
+	var (
+		sub ethereum.Subscription
+		err error
+	)
+
+	rebondWatcher := func() error {
+		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchRebond(nil, sink, nil, []ethcommon.Address{c.Account().Address})
+		if err != nil {
+			glog.Error("Unable to start Rebond watcher ", err)
+			return err
+		}
+
+		return nil
+	}
+
+	err = backoff.Retry(rebondWatcher, backoff.NewConstantBackOff(time.Second*2))
+
+	return sub, err
+}
+
+func (c *client) ProcessHistoricalWithdrawStake(startBlock *big.Int, cb func(*contracts.BondingManagerWithdrawStake) error) error {
+	// Retrieve historical logs starting from startBlock
+	// WatchWithdrawStake() will not emit past logs
+	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
+	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterWithdrawStake(filterOpts, []ethcommon.Address{c.Account().Address})
+	if err != nil {
+		return err
+	}
+
+	// Pass any relevant events into sink
+	for it.Next() {
+		if err := cb(it.Event); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *client) WatchForWithdrawStake(sink chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error) {
+	var (
+		sub ethereum.Subscription
+		err error
+	)
+
+	withdrawStakeWatcher := func() error {
+		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchWithdrawStake(nil, sink, []ethcommon.Address{c.Account().Address})
+		if err != nil {
+			glog.Error("Unable start WithdrawStake watcher ", err)
+			return err
+		}
+
+		return nil
+	}
+
+	err = backoff.Retry(withdrawStakeWatcher, backoff.NewConstantBackOff(time.Second*2))
+
+	return sub, err
 }

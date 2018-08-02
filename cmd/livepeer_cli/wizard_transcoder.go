@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/golang/glog"
 	lpcommon "github.com/livepeer/go-livepeer/common"
 )
 
@@ -65,37 +66,80 @@ func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int, string) {
 
 func (w *wizard) activateTranscoder() {
 	d, err := w.getDelegatorInfo()
+	if err != nil {
+		glog.Errorf("Error getting delegator info: %v", err)
+		return
+	}
+
 	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
 	fmt.Printf("Current bonded amount: %v\n", d.BondedAmount.String())
 
 	blockRewardCut, feeShare, pricePerSegment, serviceURI := w.promptTranscoderConfig()
-
-	fmt.Printf("You must bond to yourself in order to become a transcoder\n")
-
-	balBigInt, err := lpcommon.ParseBigInt(w.getTokenBalance())
-	if err != nil {
-		fmt.Printf("Cannot read token balance: %v", w.getTokenBalance())
-		return
-	}
-
-	amount := big.NewInt(0)
-	for amount.Cmp(big.NewInt(0)) == 0 || balBigInt.Cmp(amount) < 0 {
-		fmt.Printf("Enter bond amount - ")
-		amount = w.readBigInt()
-		if balBigInt.Cmp(amount) < 0 {
-			fmt.Printf("Must enter an amount smaller than the current balance. ")
-		}
-		if amount.Cmp(big.NewInt(0)) == 0 && d.BondedAmount.Cmp(big.NewInt(0)) > 0 {
-			break
-		}
-	}
 
 	val := url.Values{
 		"blockRewardCut":  {fmt.Sprintf("%v", blockRewardCut)},
 		"feeShare":        {fmt.Sprintf("%v", feeShare)},
 		"pricePerSegment": {fmt.Sprintf("%v", pricePerSegment.String())},
 		"serviceURI":      {fmt.Sprintf("%v", serviceURI)},
-		"amount":          {fmt.Sprintf("%v", amount.String())},
+	}
+
+	if d.BondedAmount.Cmp(big.NewInt(0)) <= 0 || d.DelegateAddress != d.Address {
+		fmt.Printf("You must bond to yourself in order to become a transcoder\n")
+
+		rebond := false
+
+		unbondingLockIDs := w.unbondingLockStats(false)
+		if unbondingLockIDs != nil && len(unbondingLockIDs) > 0 {
+			fmt.Printf("You have some unbonding locks. Would you like to use one to rebond to yourself? (y/n) - ")
+
+			input := ""
+			for {
+				input = w.readString()
+				if input == "y" || input == "n" {
+					break
+				}
+				fmt.Printf("Enter (y)es or (n)o\n")
+			}
+
+			if input == "y" {
+				rebond = true
+
+				unbondingLockID := int64(-1)
+
+				for {
+					fmt.Printf("Enter the identifier of the unbonding lock you would like to rebond to yourself with - ")
+					unbondingLockID = int64(w.readInt())
+					if _, ok := unbondingLockIDs[unbondingLockID]; ok {
+						break
+					}
+					fmt.Printf("Must enter a valid unbonding lock ID\n")
+				}
+
+				val["unbondingLockId"] = []string{fmt.Sprintf("%v", strconv.FormatInt(unbondingLockID, 10))}
+			}
+		}
+
+		if !rebond {
+			balBigInt, err := lpcommon.ParseBigInt(w.getTokenBalance())
+			if err != nil {
+				fmt.Printf("Cannot read token balance: %v", w.getTokenBalance())
+				return
+			}
+
+			amount := big.NewInt(0)
+			for amount.Cmp(big.NewInt(0)) == 0 || balBigInt.Cmp(amount) < 0 {
+				fmt.Printf("Enter bond amount - ")
+				amount = w.readBigInt()
+				if balBigInt.Cmp(amount) < 0 {
+					fmt.Printf("Must enter an amount smaller than the current balance. ")
+				}
+				if amount.Cmp(big.NewInt(0)) == 0 && d.BondedAmount.Cmp(big.NewInt(0)) > 0 {
+					break
+				}
+			}
+
+			val["amount"] = []string{fmt.Sprintf("%v", amount.String())}
+		}
 	}
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/activateTranscoder", w.host, w.httpPort), val)

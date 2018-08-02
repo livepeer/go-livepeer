@@ -3,10 +3,12 @@ package eth
 import (
 	"math/big"
 
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 )
 
@@ -75,14 +77,23 @@ func (e *StubClient) Reward() (*types.Transaction, error) { return nil, nil }
 func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) Unbond() (*types.Transaction, error)        { return nil, nil }
-func (e *StubClient) WithdrawStake() (*types.Transaction, error) { return nil, nil }
-func (e *StubClient) WithdrawFees() (*types.Transaction, error)  { return nil, nil }
+func (e *StubClient) Rebond(*big.Int) (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) RebondFromUnbonded(common.Address, *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) Unbond(*big.Int) (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) WithdrawStake(*big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) WithdrawFees() (*types.Transaction, error) { return nil, nil }
 func (e *StubClient) ClaimEarnings(endRound *big.Int) error {
 	return nil
 }
 func (e *StubClient) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) { return nil, nil }
 func (e *StubClient) GetDelegator(addr common.Address) (*lpTypes.Delegator, error)   { return nil, nil }
+func (e *StubClient) GetDelegatorUnbondingLock(addr common.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error) {
+	return nil, nil
+}
 func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
 	return nil, nil
 }
@@ -171,4 +182,22 @@ func (c *StubClient) GetGasInfo() (uint64, *big.Int)    { return 0, nil }
 func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
 func (c *StubClient) WatchForJob(j string) (*lpTypes.Job, error) {
 	return c.JobsMap[j], c.WatchJobError
+}
+func (c *StubClient) ProcessHistoricalUnbond(*big.Int, func(*contracts.BondingManagerUnbond) error) error {
+	return nil
+}
+func (c *StubClient) WatchForUnbond(chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error) {
+	return nil, nil
+}
+func (c *StubClient) ProcessHistoricalRebond(*big.Int, func(*contracts.BondingManagerRebond) error) error {
+	return nil
+}
+func (c *StubClient) WatchForRebond(chan *contracts.BondingManagerRebond) (ethereum.Subscription, error) {
+	return nil, nil
+}
+func (c *StubClient) ProcessHistoricalWithdrawStake(*big.Int, func(*contracts.BondingManagerWithdrawStake) error) error {
+	return nil
+}
+func (c *StubClient) WatchForWithdrawStake(chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error) {
+	return nil, nil
 }
