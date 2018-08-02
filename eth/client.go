@@ -953,28 +953,20 @@ func (c *client) WatchForJob(streamId string) (*lpTypes.Job, error) {
 		case newJob := <-sink:
 			sub.Unsubscribe()
 			if newJob.StreamId == streamId {
-				// might be faster to reconstruct the job locally?
-				j, err := c.GetJob(newJob.JobId)
-				if err != nil {
-					glog.Error("Unable to fetch job after watching: ", err)
-					// maybe perform/retry the job lookup outside this loop
-					// but a retry may be unlikely to succeed, depending on the error
-					// Manually create the job for now.
-					// May have important fields missing!!!
-					profiles, err := common.TxDataToVideoProfile(newJob.TranscodingOptions)
+				// TODO reconstruct job locally once we have
+				// EndBlock and CreationRound as part of the event
+				getJob := func() error {
+					var err error
+					job, err = c.GetJob(newJob.JobId)
+					if job.MaxPricePerSegment.Int64() == 0 {
+						err = errors.New("EmptyJob")
+					}
 					if err != nil {
-						glog.Error("Invalid transcoding options for job")
+						glog.Errorf("Could not get job %v because of %v; retrying ", newJob.JobId, err)
 					}
-					j = &lpTypes.Job{
-						BroadcasterAddress: newJob.Broadcaster,
-						StreamId:           newJob.StreamId,
-						MaxPricePerSegment: newJob.MaxPricePerSegment,
-						CreationBlock:      newJob.CreationBlock,
-						Profiles:           profiles,
-					}
+					return err
 				}
-				job = j
-				return nil
+				return backoff.Retry(getJob, backoff.NewConstantBackOff(2*time.Second))
 			}
 			// mismatched streamid; maybe we had concurrent listeners so retry
 			glog.Errorf("Watched for job; got mismatched stream Id %v; expecting %v",

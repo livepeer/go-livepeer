@@ -590,6 +590,9 @@ func (db *DB) SetClaimStatus(jobID *big.Int, id int64, status string) error {
 }
 
 func (db *DB) InsertBroadcast(job *lpTypes.Job) error {
+	if db == nil {
+		return nil
+	}
 	options := ethcommon.ToHex(ProfilesToTranscodeOpts(job.Profiles))[2:]
 	glog.V(DEBUG).Info("db: Inserting broadcast ", job.JobId)
 	_, err := db.insertBcast.Exec(job.JobId.Int64(), job.StreamId,

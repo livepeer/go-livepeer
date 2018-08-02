@@ -4,23 +4,21 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	addrutil "gx/ipfs/QmNSWW3Sb4eju4o2djPQ1L1c2Zj9XN9sMYJL8r1cbxdc6b/go-addr-util"
-	ma "gx/ipfs/QmWWQ2Txc2c6tqjsBpzg5Ar652cHPGNsQQp2SejkNmkUMb/go-multiaddr"
-	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 	"io/ioutil"
-	"strings"
+	"math/big"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/ericxtang/m3u8"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/golang/glog"
-	bnet "github.com/livepeer/go-livepeer-basicnet"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
-	"github.com/livepeer/lpms/transcoder"
 )
 
 func Over1Pct(val int, cmp int) bool {
@@ -33,7 +31,7 @@ type StubConnInfo struct {
 }
 type StubVideoNetwork struct {
 	T            *testing.T
-	broadcasters map[string]*StubBroadcaster
+	broadcasters map[StreamID]stream.Broadcaster
 	subscribers  map[string]*StubSubscriber
 	tResult      map[string]string
 	strmID       string
@@ -47,13 +45,14 @@ func (n *StubVideoNetwork) GetNodeID() string {
 	return "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0"
 }
 
-func (n *StubVideoNetwork) GetBroadcaster(strmID string) (stream.Broadcaster, error) {
+func (n *StubVideoNetwork) GetBroadcaster(sid string) (stream.Broadcaster, error) {
 	if n.broadcasters == nil {
-		n.broadcasters = make(map[string]*StubBroadcaster)
+		n.broadcasters = make(map[StreamID]stream.Broadcaster)
 	}
+	strmID := StreamID(sid)
 	b, ok := n.broadcasters[strmID]
 	if !ok {
-		b = &StubBroadcaster{T: n.T, StrmID: strmID}
+		b = &StubBroadcaster{T: n.T, StrmID: sid}
 		n.broadcasters[strmID] = b
 	}
 	return b, nil
@@ -149,6 +148,11 @@ func (n *StubBroadcaster) Finish() error {
 	return nil
 }
 
+func StubSegment() *SignedSegment {
+	d, _ := ioutil.ReadFile("./test.ts")
+	return &SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test.ts", Data: d[0:402696], Duration: 1}, Sig: []byte("test sig")}
+}
+
 type StubSubscriber struct {
 	T *testing.T
 }
@@ -156,9 +160,8 @@ type StubSubscriber struct {
 func (s *StubSubscriber) IsLive() bool   { return true }
 func (s *StubSubscriber) String() string { return "" }
 func (s *StubSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error {
-	d, _ := ioutil.ReadFile("./test.ts")
-	newSeg := SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test.ts", Data: d[0:402696], Duration: 1}, Sig: []byte("test sig")}
-	b, err := SignedSegmentToBytes(newSeg)
+	newSeg := StubSegment()
+	b, err := SignedSegmentToBytes(*newSeg)
 	if err != nil {
 		s.T.Errorf("Error Converting SignedSegment to Bytes: %v", err)
 	}
@@ -169,68 +172,101 @@ func (s *StubSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint6
 }
 func (s *StubSubscriber) Unsubscribe() error { return nil }
 
+func StubJob(n *LivepeerNode) *lpTypes.Job {
+	streamId, _ := MakeStreamID(n.Identity, RandomVideoID(), ffmpeg.P720p30fps4x3.Name)
+	return &lpTypes.Job{
+		JobId:              big.NewInt(0),
+		StreamId:           string(streamId),
+		BroadcasterAddress: ethcommon.Address{},
+		TranscoderAddress:  ethcommon.Address{},
+		CreationBlock:      big.NewInt(0),
+		EndBlock:           big.NewInt(10),
+		MaxPricePerSegment: big.NewInt(1),
+		TotalClaims:        big.NewInt(0),
+		Profiles:           []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9},
+	}
+}
+
 func TestTranscode(t *testing.T) {
 	//Set up the node
 	stubnet := &StubVideoNetwork{T: t, subscribers: make(map[string]*StubSubscriber)}
-	n, _ := NewLivepeerNode(&eth.StubClient{}, stubnet, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", ".tmp", nil)
-	strmID, _ := MakeStreamID(n.Identity, RandomVideoID(), ffmpeg.P720p30fps4x3.Name)
-	stubnet.subscribers[strmID.String()] = &StubSubscriber{}
+	seth := &eth.StubClient{}
+	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	defer db.Close()
+	tmp, _ := ioutil.TempDir("", "")
+	n, _ := NewLivepeerNode(seth, stubnet, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", tmp, db)
+	defer os.RemoveAll(tmp)
+	job := StubJob(n)
 	ffmpeg.InitFFmpeg()
 	defer ffmpeg.DeinitFFmpeg()
 
-	//Call transcode
-	p := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-
-	tProfiles := make([]ffmpeg.VideoProfile, len(p), len(p))
-	for i, vp := range p {
-		tProfiles[i] = ffmpeg.VideoProfileLookup[vp.Name]
-	}
-	tr := transcoder.NewFFMpegSegmentTranscoder(tProfiles, n.WorkDir)
-	ids, err := n.TranscodeAndBroadcast(net.TranscodeConfig{StrmID: strmID.String(), Profiles: p}, &StubClaimManager{}, tr)
+	// Sanity check full flow.
+	ss := StubSegment()
+	err := n.TranscodeSegment(job, ss)
 	if err != nil {
-		t.Errorf("Error transcoding: %v", err)
+		t.Error("Error transcoding ", err)
 	}
 
-	if !strings.HasSuffix(ids[0].String(), "P144p30fps16x9") {
-		t.Errorf("Bad id0: %v", ids[0])
+	if len(stubnet.broadcasters) != len(job.Profiles) && len(job.Profiles) != 2 {
+		t.Error("Job profile count did not match broadcasters")
 	}
 
-	if !strings.HasSuffix(ids[1].String(), "P240p30fps16x9") {
-		t.Errorf("Bad id1: %v", ids[1])
-	}
-
-	b1tmp, err := n.VideoNetwork.GetBroadcaster(ids[0].String())
-	if err != nil {
-		t.Errorf("Error getting broadcaster: %v", err)
-	}
-	b2tmp, err := n.VideoNetwork.GetBroadcaster(ids[1].String())
-	if err != nil {
-		t.Errorf("Error getting broadcaster: %v", err)
-	}
-	b1, ok := b1tmp.(*StubBroadcaster)
-	if !ok {
-		t.Errorf("Error converting broadcaster")
-	}
-	b2, ok := b2tmp.(*StubBroadcaster)
-	if !ok {
-		t.Errorf("Error converting broadcaster")
-	}
-	start := time.Now()
-	for time.Since(start) < time.Second*5 {
-		if b1.SeqNo == 0 {
-			time.Sleep(100 * time.Millisecond)
-		} else {
-			break
+	// Check transcode result
+	has_144p, has_240p := false, false
+	for k, v := range stubnet.broadcasters {
+		b, ok := v.(*StubBroadcaster)
+		if !ok {
+			t.Error("Error converting broadcaster")
+		}
+		if b.SeqNo != 100 {
+			t.Error("Wrong SeqNo assigned to broadcaser ", b.SeqNo)
+		}
+		r := k.GetRendition()
+		if r == "P144p30fps16x9" {
+			if Over1Pct(len(b.Data), 65424) {
+				t.Errorf("Wrong data assigned to broadcaster: %v", len(b.Data))
+			} else {
+				has_144p = true
+			}
+		} else if r == "P240p30fps16x9" {
+			if Over1Pct(len(b.Data), 81968) {
+				t.Errorf("Wrong data assigned to broadcaster: %v", len(b.Data))
+			} else {
+				has_240p = true
+			}
 		}
 	}
-
-	if b1.SeqNo != 100 || b2.SeqNo != 100 {
-		t.Errorf("Wrong SeqNo assigned to broadcaster: %v", b1.SeqNo)
+	if !has_144p || !has_240p {
+		t.Error("Missing some expected tests")
 	}
 
-	if Over1Pct(len(b1.Data), 65424) || Over1Pct(len(b2.Data), 81968) {
-		t.Errorf("Wrong data assigned to broadcaster: %v, %v", len(b1.Data), len(b2.Data))
+	// check duplicate sequence in DB
+	err = n.TranscodeSegment(job, ss)
+	if err.Error() != "DuplicateSequence" {
+		t.Error("Unexpected error when checking duplicate seqs ", err)
 	}
+
+	// Check segment too long
+	d, _ := ioutil.ReadFile("test.ts")
+	ssd := ss.Seg.Data
+	ss.Seg.Data = d
+	ss.Seg.SeqNo += 1
+	err = n.TranscodeSegment(job, ss)
+	if err.Error() != "MediaStats Failure" {
+		t.Error("Unexpected error when checking mediastats ", err)
+	}
+	ss.Seg.Data = ssd
+
+	// Check insufficient deposit
+	job.JobId = big.NewInt(10) // force a new job with a new price
+	job.MaxPricePerSegment = big.NewInt(1000)
+	err = n.TranscodeSegment(job, ss)
+	if err.Error() != "Insufficient deposit" {
+		t.Error("Unexpected error when checking deposit ", err)
+	}
+
+	// TODO check transcode loop expiry, claim manager submission, etc
+
 }
 
 type Vint interface {
@@ -284,19 +320,6 @@ func chanRoutine(ctx context.Context, boolChan chan bool) chan int {
 	return intChan
 }
 
-func forroutine(ctx context.Context, intChan chan int) {
-	go func() {
-		for i := 0; ; i++ {
-			intChan <- i
-			time.Sleep(500 * time.Millisecond)
-		}
-	}()
-	select {
-	case <-ctx.Done():
-		fmt.Println("Done")
-	}
-}
-
 func monitorChan(intChan chan int) {
 	for {
 		select {
@@ -306,81 +329,51 @@ func monitorChan(intChan chan int) {
 	}
 }
 
-// func TestCreateTranscodeJob(t *testing.T) {
-// priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-// node, err := bnet.NewNode(15000, priv, pub, nil)
-// if err != nil {
-// 	glog.Errorf("Error creating a new node: %v", err)
-// 	return
-// }
-// nw, err := bnet.NewBasicVideoNetwork(node)
-// if err != nil {
-// 	glog.Errorf("Cannot create network node: %v", err)
-// 	return
-// }
+func TestCreateTranscodeJob(t *testing.T) {
+	nw := &StubVideoNetwork{}
+	seth := &eth.StubClient{JobsMap: make(map[string]*lpTypes.Job)}
+	n, _ := NewLivepeerNode(seth, nw, "", "./tmp", nil)
+	j := StubJob(n)
+	seth.JobsMap[j.StreamId] = j
 
-// seth := &eth.StubClient{}
-// n, _ := NewLivepeerNode(seth, nw, "./tmp")
-// strmID, _ := MakeStreamID(n.Identity, RandomVideoID(), "")
-// err = n.CreateTranscodeJob(strmID, []types.VideoProfile{types.P720p60fps16x9}, 999999999999)
-// if err == nil {
-// 	t.Errorf("Expecting error since no broadcast stream in streamDB")
-// }
-
-// n.StreamDB.AddNewHLSStream(strmID)
-// err = n.CreateTranscodeJob(strmID, []types.VideoProfile{types.P720p60fps16x9}, 999999999999)
-// if err != nil {
-// 	t.Errorf("Error creating transcoding job")
-// }
-
-// if seth.StrmID != strmID.String() {
-// 	t.Errorf("Expecting strmID to be: %v", strmID)
-// }
-
-// if strings.Trim(string(seth.TOpts[:]), "\x00") != types.P720p60fps16x9.Name {
-// 	t.Errorf("Expecting transcode options to be %v, but got %v", types.P720p60fps16x9.Name, string(seth.TOpts[:]))
-// }
-
-// if big.NewInt(999999999999).Cmp(seth.MaxPrice) != 0 {
-// 	t.Errorf("Expecting price to be 999999999999, got but %v", seth.MaxPrice)
-// }
-// }
-
-func TestNotifyBroadcaster(t *testing.T) {
-	priv, pub, _ := crypto.GenerateKeyPair(crypto.RSA, 2048)
-	node, err := bnet.NewNode(addrs(15000), priv, pub, &bnet.BasicNotifiee{})
-	if err != nil {
-		glog.Errorf("Error creating a new node: %v", err)
-		return
+	cjt := func(n *LivepeerNode) (*lpTypes.Job, error) {
+		return n.CreateTranscodeJob(StreamID(j.StreamId), j.Profiles, j.MaxPricePerSegment)
 	}
-	nw, err := bnet.NewBasicVideoNetwork(node, "", 0)
-	if err != nil {
-		glog.Errorf("Cannot create network node: %v", err)
-		return
-	}
-	seth := &eth.StubClient{}
-	n, _ := NewLivepeerNode(seth, nw, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", "./tmp", nil)
-	sn := &StubVideoNetwork{}
-	n.VideoNetwork = sn
-	strmID := "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd1strmID"
-	nid := "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd1"
+	seth.TranscoderAddress = ethcommon.BytesToAddress([]byte("Job Transcoder Addr"))
 
-	err = n.NotifyBroadcaster(NodeID(nid), StreamID(strmID), map[StreamID]ffmpeg.VideoProfile{"strmid1": ffmpeg.P240p30fps16x9})
-	if err != nil {
-		t.Errorf("Error notifying broadcaster: %v", err)
+	// test success
+	if _, err := cjt(n); err != nil {
+		t.Error("Error creating transcode job ", err)
+	}
+	if j.TranscoderAddress != seth.TranscoderAddress {
+		t.Error("Did not have expected transcoder assigned ", j.TranscoderAddress)
 	}
 
-	if sn.nodeID != string(nid) {
-		t.Errorf("Expecting %v, got %v", n.Identity, sn.nodeID)
+	// test missing eth client
+	n1, _ := NewLivepeerNode(nil, nw, "", "./tmp", nil)
+	if _, err := cjt(n1); err != ErrNotFound {
+		t.Error("Did not receive expected error; got ", err)
 	}
 
-	if sn.strmID != strmID {
-		t.Errorf("Expecting strmid, got %v", sn.strmID)
-	}
+	// test various error conditions from ethclient
 
-	if sn.tResult["strmid1"] != ffmpeg.P240p30fps16x9.Name {
-		t.Errorf("Expecting %v, got %v", ffmpeg.P240p30fps16x9.Name, sn.tResult["strmid1"])
+	seth.LatestBlockError = fmt.Errorf("LatestBlockError")
+	if _, err := cjt(n); err != seth.LatestBlockError {
+		t.Error("Did not receive expected error; got ", err)
 	}
+	seth.LatestBlockError = nil
+
+	seth.JobError = fmt.Errorf("JobError")
+	if _, err := cjt(n); err != seth.JobError {
+		t.Error("Did not receive expeced error; got ", err)
+	}
+	seth.JobError = nil
+
+	seth.WatchJobError = fmt.Errorf("WatchJobError")
+	if _, err := cjt(n); err != seth.WatchJobError {
+		t.Error("Did not receive expected error; got ", err)
+	}
+	seth.WatchJobError = nil
 }
 
 func TestCrypto(t *testing.T) {
@@ -394,22 +387,4 @@ func TestCrypto(t *testing.T) {
 
 	i, _ := binary.Uvarint(ethCrypto.Keccak256(newb, ethCrypto.Keccak256([]byte("abc"))))
 	fmt.Printf("%x\n\n", i%1)
-}
-
-func addrs(port int) []ma.Multiaddr {
-	uaddrs, err := addrutil.InterfaceAddresses()
-	if err != nil {
-		return nil
-	}
-	addrs := make([]ma.Multiaddr, len(uaddrs), len(uaddrs))
-	for i, uaddr := range uaddrs {
-		portAddr, err := ma.NewMultiaddr(fmt.Sprintf("/tcp/%d", port))
-		if err != nil {
-			glog.Errorf("Error creating portAddr: %v %v", uaddr, err)
-			return nil
-		}
-		addrs[i] = uaddr.Encapsulate(portAddr)
-	}
-
-	return addrs
 }

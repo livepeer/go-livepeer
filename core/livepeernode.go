@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ericxtang/m3u8"
+	"github.com/cenkalti/backoff"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
@@ -147,7 +147,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 	//Call eth client to create the job
 	blknum, err := n.Eth.LatestBlockNum()
 	if err != nil {
-		return nil, ErrNotFound
+		return nil, err
 	}
 
 	_, err = n.Eth.Job(strmID.String(), ethcommon.ToHex(transOpts)[2:], price, big.NewInt(0).Add(blknum, big.NewInt(DefaultJobLength)))
@@ -163,12 +163,25 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 	}
 	glog.V(common.DEBUG).Info("Got a new job from the blockchain: ", job.JobId)
 
-	tca, err := n.Eth.AssignedTranscoder(job)
-	if err != nil {
-		glog.Error("A transcoder was not assigned! Ensure the broadcast price meets the minimum for the transcoder pool")
-		// not fatal at this point; continue
+	assignedTranscoder := func() error {
+		tca, err := n.Eth.AssignedTranscoder(job)
+		if err == nil && (tca == ethcommon.Address{}) {
+			glog.Error("A transcoder was not assigned! Ensure the broadcast price meets the minimum for the transcoder pool")
+			err = fmt.Errorf("EmptyTranscoder")
+		}
+		if err != nil {
+			glog.Error("Retrying transcoder assignment lookup because of ", err)
+			return err
+		}
+		job.TranscoderAddress = tca
+		return nil
 	}
-	job.TranscoderAddress = tca
+	boff := backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*2), 30)
+	err = backoff.Retry(assignedTranscoder, boff) // retry for 1 minute max
+	if err != nil {
+		// not fatal at this point; continue
+		glog.Error("Error getting assigned transcoder ", err)
+	}
 
 	err = n.Database.InsertBroadcast(job)
 	if err != nil {
@@ -176,7 +189,7 @@ func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.Vid
 		// not fatal; continue
 	}
 
-	glog.Infof("Created broadcast job. Id: %v Price: %v. Type: %v", job.JobId, price, ethcommon.ToHex(transOpts)[2:])
+	glog.Infof("Created broadcast job. Id: %v, Price: %v, Transcoder:%v, Type: %v", job.JobId, job.MaxPricePerSegment, job.TranscoderAddress.Hex(), ethcommon.ToHex(transOpts)[2:])
 
 	return job, nil
 }
@@ -287,107 +300,6 @@ func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) er
 		}
 	}
 	return nil
-}
-
-//TranscodeAndBroadcast transcodes one stream into multiple streams (specified by TranscodeConfig), broadcasts the streams, and returns a list of streamIDs.
-// Deprecated. Remove after some grace period.
-func (n *LivepeerNode) TranscodeAndBroadcast(config net.TranscodeConfig, cm eth.ClaimManager, t transcoder.Transcoder) ([]StreamID, error) {
-	//Create the broadcasters
-	tProfiles := make([]ffmpeg.VideoProfile, len(config.Profiles), len(config.Profiles))
-	resultStrmIDs := make([]StreamID, len(config.Profiles), len(config.Profiles))
-	broadcasters := make(map[StreamID]stream.Broadcaster)
-	sid := StreamID(config.StrmID)
-	for i, vp := range config.Profiles {
-		strmID, err := MakeStreamID(n.Identity, sid.GetVideoID(), vp.Name)
-		if err != nil {
-			glog.Errorf("Error making stream ID: %v", err)
-			return nil, ErrTranscode
-		}
-		resultStrmIDs[i] = strmID
-		tProfiles[i] = ffmpeg.VideoProfileLookup[vp.Name]
-
-		broadcaster, err := n.VideoNetwork.GetBroadcaster(string(strmID))
-		if err != nil {
-			glog.Errorf("Error making new stream: %v", err)
-			return nil, ErrTranscode
-		}
-		broadcasters[strmID] = broadcaster
-	}
-
-	//Subscribe to broadcast video, do the transcoding, broadcast the transcoded video, do the on-chain claim / verify
-	err := n.VideoNetwork.TranscodeSub(context.Background(), config.StrmID, func(seqNo uint64, data []byte, eof bool) {
-		glog.V(common.DEBUG).Infof("Starting to transcode segment %v", seqNo)
-		totalStart := time.Now()
-		if eof {
-			n.Database.SetStopReason(config.JobID, "Stream finished")
-			if cm != nil && config.PerformOnchainClaim {
-				glog.V(common.SHORT).Infof("Stream finished. Claiming work.")
-
-				canClaim, err := cm.CanClaim()
-				if err != nil {
-					glog.Error(err)
-				}
-
-				if canClaim {
-					if err := cm.ClaimVerifyAndDistributeFees(); err != nil {
-						glog.Errorf("Error claiming work: %v", err)
-					}
-				} else {
-					glog.Infof("No segments to claim")
-				}
-			}
-			return
-		}
-
-		if cm != nil && config.PerformOnchainClaim {
-			sufficient, err := cm.SufficientBroadcasterDeposit()
-			if err != nil {
-				glog.Errorf("Error checking broadcaster funds: %v", err)
-			}
-
-			if !sufficient {
-				glog.V(common.SHORT).Infof("Broadcaster does not have enough funds. Claiming work.")
-
-				canClaim, err := cm.CanClaim()
-				if err != nil {
-					glog.Error(err)
-				}
-
-				if canClaim {
-					if err := cm.ClaimVerifyAndDistributeFees(); err != nil {
-						glog.Errorf("Error claiming work: %v", err)
-					}
-				} else {
-					glog.Infof("No segments to claim")
-				}
-				return
-			}
-		}
-
-		//Decode the segment
-		start := time.Now()
-		ss, err := BytesToSignedSegment(data)
-		if err != nil {
-			glog.Errorf("Error decoding byte array into segment: %v", err)
-		}
-		glog.V(common.DEBUG).Infof("Decoding of segment took %v", time.Since(start))
-
-		//If running in on-chain mode, check that segment was signed by broadcaster ETH address
-		segHash := (&ethTypes.Segment{StreamID: config.StrmID, SegmentSequenceNumber: big.NewInt(int64(seqNo)), DataHash: crypto.Keccak256Hash(ss.Seg.Data)}).Hash()
-		if cm == nil || (cm.BroadcasterAddr() == ethcommon.Address{}) || eth.VerifySig(cm.BroadcasterAddr(), segHash.Bytes(), ss.Sig) {
-			glog.V(common.DEBUG).Infof("Verified segment received from stream broadcaster")
-
-			n.transcodeAndBroadcastSeg(&ss.Seg, ss.Sig, cm, t, resultStrmIDs, broadcasters, config)
-			glog.V(common.DEBUG).Infof("Encoding and broadcasting of segment %v took %v", ss.Seg.SeqNo, time.Since(start))
-			glog.V(common.SHORT).Infof("Finished transcoding segment %v, overall took %v\n\n\n", seqNo, time.Since(totalStart))
-		} else {
-			glog.Errorf("Invalid broadcaster signature for received segment for stream. Dropping segment")
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-	return resultStrmIDs, nil
 }
 
 func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []byte, cm eth.ClaimManager, t transcoder.Transcoder, resultStrmIDs []StreamID, broadcasters map[StreamID]stream.Broadcaster, config net.TranscodeConfig) error {
@@ -525,42 +437,6 @@ func (n *LivepeerNode) BroadcastHLSSegToNetwork(strmID string, seg *stream.HLSSe
 	return nil
 }
 
-//SubscribeFromNetwork subscribes to a stream on the network.  Returns the stream as a reference.
-func (n *LivepeerNode) SubscribeFromNetwork(ctx context.Context, strmID StreamID, strm stream.HLSVideoStream) error {
-	glog.V(common.DEBUG).Infof("Subscribe from network: %v", strmID)
-	sub, err := n.VideoNetwork.GetSubscriber(strmID.String())
-	if err != nil {
-		glog.Errorf("Error getting subscriber: %v", err)
-		return err
-	}
-
-	return sub.Subscribe(context.Background(), func(seqNo uint64, data []byte, eof bool) {
-		//1 - the subscriber quits
-		if eof {
-			glog.Infof("Got EOF, unsubscribing to %v", strmID)
-			if err := sub.Unsubscribe(); err != nil {
-				glog.Errorf("Unsubscribe error: %v", err)
-				return
-			}
-			strm.End()
-			return
-		}
-
-		//Decode data into HLSSegment
-		ss, err := BytesToSignedSegment(data)
-		if err != nil {
-			glog.Errorf("Error decoding byte array into segment: %v", err)
-			return
-		}
-
-		//Add segment into a HLS buffer in VideoDB
-		// glog.Infof("Inserting seg %v into stream %v", ss.Seg.Name, strmID)
-		if err = strm.AddHLSSegment(&ss.Seg); err != nil {
-			glog.Errorf("Error adding segment: %v", err)
-		}
-	})
-}
-
 //UnsubscribeFromNetwork unsubscribes to a stream on the network.
 func (n *LivepeerNode) UnsubscribeFromNetwork(strmID StreamID) error {
 	s, err := n.VideoNetwork.GetSubscriber(strmID.String())
@@ -576,37 +452,6 @@ func (n *LivepeerNode) UnsubscribeFromNetwork(strmID StreamID) error {
 	}
 
 	return nil
-}
-
-//GetMasterPlaylistFromNetwork blocks until it gets the playlist, or it times out.
-func (n *LivepeerNode) GetMasterPlaylistFromNetwork(mid ManifestID) *m3u8.MasterPlaylist {
-	timer := time.NewTimer(DefaultMasterPlaylistWaitTime)
-	plChan, err := n.VideoNetwork.GetMasterPlaylist(string(mid.GetNodeID()), mid.String())
-	if err != nil {
-		glog.Errorf("Error getting master playlist: %v", err)
-		return nil
-	}
-	select {
-	case pl := <-plChan:
-		//Got pl
-		return pl
-	case <-timer.C:
-		//timed out
-		return nil
-	}
-
-}
-
-//NotifyBroadcaster sends a messages to the broadcaster of the video stream, containing the new streamIDs of the transcoded video streams.
-func (n *LivepeerNode) NotifyBroadcaster(nid NodeID, strmID StreamID, transcodeStrmIDs map[StreamID]ffmpeg.VideoProfile) error {
-	ids := make(map[string]string)
-	for sid, p := range transcodeStrmIDs {
-		ids[sid.String()] = p.Name
-	}
-	if nid == n.Identity {
-		return nil
-	}
-	return n.VideoNetwork.SendTranscodeResponse(string(nid), strmID.String(), ids)
 }
 
 func (n *LivepeerNode) StartEthServices() error {
