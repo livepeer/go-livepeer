@@ -10,6 +10,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -30,6 +31,9 @@ type DB struct {
 	setClaimStatus    *sql.Stmt
 	unclaimedReceipts *sql.Stmt
 	receiptsByClaim   *sql.Stmt
+	insertBcast       *sql.Stmt
+	selectBcasts      *sql.Stmt
+	setSegmentCount   *sql.Stmt
 }
 
 type DBJob struct {
@@ -42,6 +46,7 @@ type DBJob struct {
 	startBlock  int64
 	endBlock    int64
 	stopReason  string
+	Segments    int64
 }
 
 type DBReceipt struct {
@@ -110,6 +115,23 @@ var schema = `
 		FOREIGN KEY(claimID, jobID) REFERENCES claims(id, jobID)
 	);
 	CREATE INDEX IF NOT EXISTS idx_receipts_claimid_errormsg ON receipts(claimID, errorMsg);
+
+	CREATE TABLE IF NOT EXISTS broadcasts (
+		id INTEGER PRIMARY KEY,
+		recordedAt STRING DEFAULT CURRENT_TIMESTAMP,
+		streamID STRING,
+		segmentPrice INTEGER,
+		segmentCount INTEGER DEFAULT 0,
+		transcodeOptions STRING,
+		broadcaster STRING,
+		transcoder STRING,
+		startBlock INTEGER,
+		endBlock INTEGER,
+		stopReason STRING DEFAULT NULL,
+		stoppedAt STRING DEFAULT NULL
+	);
+	-- Index to avoid a full table scan
+	CREATE INDEX IF NOT EXISTS idx_broadcasts_endblock_stopreason ON broadcasts(endBlock, stopReason);
 `
 
 func NewDBJob(id *big.Int, streamID string,
@@ -120,6 +142,19 @@ func NewDBJob(id *big.Int, streamID string,
 		ID: id.Int64(), streamID: streamID, profiles: profiles,
 		price: segmentPrice.Int64(), broadcaster: broadcaster, Transcoder: transcoder,
 		startBlock: startBlock.Int64(), endBlock: endBlock.Int64(),
+	}
+}
+
+func DBJobToEthJob(j *DBJob) *lpTypes.Job {
+	return &lpTypes.Job{
+		JobId:              big.NewInt(j.ID),
+		StreamId:           j.streamID,
+		MaxPricePerSegment: big.NewInt(j.price),
+		Profiles:           j.profiles,
+		BroadcasterAddress: j.broadcaster,
+		TranscoderAddress:  j.Transcoder,
+		CreationBlock:      big.NewInt(j.startBlock),
+		EndBlock:           big.NewInt(j.endBlock),
 	}
 }
 
@@ -266,6 +301,33 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.setClaimStatus = stmt
 
+	// Broadcast related
+	stmt, err = db.Prepare("INSERT INTO broadcasts(id, streamID, segmentPrice, transcodeOptions, broadcaster, transcoder, startBlock, endBlock) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		glog.Error("Unable to prepare broadcast insertion ", err)
+		d.Close()
+		return nil, err
+	}
+	d.insertBcast = stmt
+
+	// select all broadcasts since
+	stmt, err = db.Prepare("SELECT id, streamID, segmentPrice, segmentCount, transcodeOptions, broadcaster, transcoder, startBlock, endBlock FROM broadcasts WHERE endBlock > ? AND stopReason IS NULL")
+	if err != nil {
+		glog.Error("Unable to prepare selectbroadcast stmt ", err)
+		d.Close()
+		return nil, err
+	}
+	d.selectBcasts = stmt
+
+	// update segment count
+	stmt, err = db.Prepare("UPDATE broadcasts SET segmentCount = ? WHERE id = ?")
+	if err != nil {
+		glog.Error("Unable to prepare set segment count ", err)
+		d.Close()
+		return nil, err
+	}
+	d.setSegmentCount = stmt
+
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -287,6 +349,9 @@ func (db *DB) Close() {
 	if db.insertRec != nil {
 		db.insertRec.Close()
 	}
+	if db.checkRec != nil {
+		db.checkRec.Close()
+	}
 	if db.unclaimedReceipts != nil {
 		db.unclaimedReceipts.Close()
 	}
@@ -301,6 +366,15 @@ func (db *DB) Close() {
 	}
 	if db.setClaimStatus != nil {
 		db.setClaimStatus.Close()
+	}
+	if db.insertBcast != nil {
+		db.insertBcast.Close()
+	}
+	if db.selectBcasts != nil {
+		db.selectBcasts.Close()
+	}
+	if db.setSegmentCount != nil {
+		db.setSegmentCount.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -510,6 +584,62 @@ func (db *DB) SetClaimStatus(jobID *big.Int, id int64, status string) error {
 	_, err := db.setClaimStatus.Exec(status, jobID.Int64(), id)
 	if err != nil {
 		glog.Error("db: Error setting claim status ", id, err)
+		return err
+	}
+	return nil
+}
+
+func (db *DB) InsertBroadcast(job *lpTypes.Job) error {
+	options := ethcommon.ToHex(ProfilesToTranscodeOpts(job.Profiles))[2:]
+	glog.V(DEBUG).Info("db: Inserting broadcast ", job.JobId)
+	_, err := db.insertBcast.Exec(job.JobId.Int64(), job.StreamId,
+		job.MaxPricePerSegment.Int64(), options,
+		job.BroadcasterAddress.String(), job.TranscoderAddress.String(),
+		job.CreationBlock.Int64(), job.EndBlock.Int64())
+	if err != nil {
+		glog.Error("db: Unable to insert job ", err)
+	}
+	return err
+}
+
+func (db *DB) ActiveBroadcasts(since *big.Int) ([]*DBJob, error) {
+	if db == nil {
+		return []*DBJob{}, nil
+	}
+	glog.V(DEBUG).Info("db: Querying active broadcasts since ", since)
+	rows, err := db.selectBcasts.Query(since.Int64())
+	if err != nil {
+		glog.Error("db: Unable to select jobs ", err)
+		return nil, err
+	}
+	defer rows.Close()
+	jobs := []*DBJob{}
+	for rows.Next() {
+		var job DBJob
+		var transcoder string
+		var broadcaster string
+		var options string
+		if err := rows.Scan(&job.ID, &job.streamID, &job.price, &job.Segments, &options, &broadcaster, &transcoder, &job.startBlock, &job.endBlock); err != nil {
+			glog.Error("db: Unable to fetch job ", err)
+			continue
+		}
+		profiles, err := TxDataToVideoProfile(options)
+		if err != nil {
+			glog.Error("Unable to convert transcode options into ffmpeg profile ", err)
+		}
+		job.Transcoder = ethcommon.HexToAddress(transcoder)
+		job.broadcaster = ethcommon.HexToAddress(broadcaster)
+		job.profiles = profiles
+		jobs = append(jobs, &job)
+	}
+	return jobs, nil
+}
+
+func (db *DB) SetSegmentCount(jobID *big.Int, count int64) error {
+	glog.V(DEBUG).Infof("db: Setting segment count for job %v to %v", jobID, count)
+	_, err := db.setSegmentCount.Exec(count, jobID.Int64())
+	if err != nil {
+		glog.Errorf("db: Error setting segment count to %v for job %v: %vo status ", count, jobID, err)
 		return err
 	}
 	return nil
