@@ -1,10 +1,8 @@
 package eth
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"os"
 	"sort"
@@ -35,7 +33,7 @@ type ClaimManager interface {
 
 type claimData struct {
 	seqNo                int64
-	segData              []byte
+	bFile                string
 	dataHash             []byte
 	bSig                 []byte
 	claimConcatTDatahash []byte
@@ -129,15 +127,10 @@ func RecoverClaims(c LivepeerEthClient, ipfs ipfs.IpfsApi, db *common.DB) error 
 		}
 		cm := NewBasicClaimManager(j, c, ipfs, db)
 		for _, r := range receipts {
-			bData, err := ioutil.ReadFile(r.BcastFile)
-			if err != nil {
-				glog.Error("Unable to read segment data; gambling on verification ", err)
-				bData = []byte{}
-			}
 			cm.unclaimedSegs[r.SeqNo] = true
 			cm.segClaimMap[r.SeqNo] = &claimData{
 				seqNo:                r.SeqNo,
-				segData:              bData,
+				bFile:                r.BcastFile,
 				dataHash:             r.BcastHash,
 				bSig:                 r.BcastSig,
 				claimConcatTDatahash: r.TcodeHash,
@@ -218,7 +211,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64,
 
 	cd := &claimData{
 		seqNo:                seqNo,
-		segData:              bData,
+		bFile:                bDataFile,
 		dataHash:             bHash,
 		bSig:                 bSig,
 		claimConcatTDatahash: tHash,
@@ -268,8 +261,12 @@ func (c *BasicClaimManager) makeRanges() [][2]int64 {
 	sort.Sort(SortUint64(keys))
 
 	//Iterate through, check to make sure all tHashes are present (otherwise break and start new range),
-	start := keys[0]
 	ranges := make([][2]int64, 0)
+	if len(keys) <= 0 {
+		glog.V(common.DEBUG).Info("Could not make range; empty keys")
+		return ranges
+	}
+	start := keys[0]
 	for i, _ := range keys {
 		startNewRange := false
 
@@ -430,7 +427,13 @@ func (c *BasicClaimManager) verify(claimID *big.Int, claimBlkNum int64, plusOneB
 
 			seg := c.segClaimMap[segNo]
 
-			dataStorageHash, err := c.ipfs.Add(bytes.NewReader(seg.segData))
+			file, err := os.Open(seg.bFile)
+			if err != nil {
+				glog.Error("Could not open file for verification! ", err)
+				continue
+			}
+			defer file.Close()
+			dataStorageHash, err := c.ipfs.Add(file)
 			if err != nil {
 				glog.Errorf("Job %v Error uploading segment data to IPFS: %v", c.jobID, err)
 				continue

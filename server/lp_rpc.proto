@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package server;
+
+// RPC calls implemented by the orchestrator
+service Orchestrator {
+
+  // Called by the broadcaster to request transcoder info from an orchestrator.
+  rpc GetTranscoder(TranscoderRequest) returns (TranscoderInfo);
+}
+
+// This request is sent by the broadcaster in `GetTranscoder` to request
+// information on which transcoder to use.
+message TranscoderRequest {
+
+  // ID of the job that the broadcaster needs a transcoder for
+  int64 jobId = 1;
+
+  // Broadcaster's signature over the jobId
+  bytes sig   = 2;
+}
+
+// The orchestrator sends this in response to `GetTranscoder`, containing the
+// transcoder URI, associated credentials authorizing the broadcaster to
+// use the transcoder, and miscellaneous data related to the job.
+message TranscoderInfo {
+
+  // URI of the transcoder to use for submitting segments
+  string transcoder  = 1;
+
+  // Signals the authentication method to expect within `credentials`. This
+  // field is opaque to the broadcaster, and should be passed to the transcoder.
+  string authType    = 2;
+
+  // Credentials to verify the request has been authorized by an orchestrator.
+  // This field is opaque to the broadcaster.
+  string credentials = 3;
+
+  // Transcoded streamId list to update the master manifest on the broadcaster.
+  map<string, string> streamIds = 16;
+}
+
+// AuthToken is sent by the orchestrator and encoded in the `credentials` field
+// This record is opaque to the broadcaster and is only relevant between the
+// orchestrator and the transcoder.
+message AuthToken {
+
+  // Signature of the orchestrator over the remaining fields
+  bytes sig   = 1;
+
+  int64 jobId = 16;
+}
+
+// Data included by the broadcaster when submitting a segment for transcoding.
+message SegData {
+
+  // Sequence number of the segment to be transcoded
+  int64 seq  = 1;
+
+  // Hash of the segment data to be transcoded
+  bytes hash = 2;
+
+  // Broadcaster signature for the segment. Corresponds to:
+  // broadcaster.sign(streamId | seqNo | dataHash)
+  // where streamId is derived from the jobId
+  bytes sig  = 3;
+}

@@ -57,8 +57,7 @@ You can also build the executables from scratch.
 
 ### Broadcasting
 
-To broadcast, run `./livepeer_cli` and pick 'Broadcast Video'.  
-  * You should see your webcam becoming active and a manifestID printed on the screen.
+For full details, read the [Broadcasting guide](http://livepeer.readthedocs.io/en/latest/broadcasting.html).
 
 Sometimes you want to use third-party broadcasting software, especially if you are running the software on Windows or Linux. Livepeer can take any RTMP stream as input, so you can use other popular streaming software to create the video stream. We recommend [OBS](https://obsproject.com/download) or [ffmpeg](https://www.ffmpeg.org/).
 
@@ -66,7 +65,7 @@ By default, the RTMP port is 1935.  For example, if you are using OSX with ffmpe
 
 `ffmpeg -f avfoundation -framerate 30 -pixel_format uyvy422 -i "0:0" -vcodec libx264 -tune zerolatency -b 1000k -x264-params keyint=60:min-keyint=60 -acodec aac -ac 1 -b:a 96k -f flv rtmp://localhost:1935/movie`
 
-Similarly, you can use OBS, and change the setting->stream->URL to `rtmp://localhost:1935/movie`
+Similarly, you can use OBS, and change the Settings->Stream->URL to `rtmp://localhost:1935/movie` , along with the keyframe interval to 4 seconds, via `Settings -> Output -> Output Mode (Advanced) -> Streaming tab -> Keyframe Interval 4`.
 
 If the broadcast is successful, you should be able to get a streamID by querying the local node:
 
@@ -82,7 +81,7 @@ For example, after you get the streamID, you can view the stream by running:
 
 ### Becoming a Transcoder
 
-We'll walk through the steps of becoming a transcoder on the test network.  To learn more about the transcoder, refer to the [Livepeer whitepaper](https://github.com/livepeer/wiki/blob/master/WHITEPAPER.md)
+We'll walk through the steps of becoming a transcoder on the test network.  To learn more about the transcoder, refer to the [Livepeer whitepaper](https://github.com/livepeer/wiki/blob/master/WHITEPAPER.md) and the [Transcoding guide](http://livepeer.readthedocs.io/en/latest/transcoding.html).
 
 - `livepeer --rinkeby --transcoder` to start the node as a transcoder.
 
@@ -94,6 +93,7 @@ We'll walk through the steps of becoming a transcoder on the test network.  To l
 
 - Wait for the next round to start, and your transcoder will become active.
 
+- If running on Rinkeby or mainnet, ensure your transcoder is publicly available in order to receive jobs from broadcasters.
 
 ## Contribution
 Thank you for your interest in contributing to the core software of Livepeer.

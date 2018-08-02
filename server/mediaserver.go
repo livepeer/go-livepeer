@@ -17,6 +17,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/monitor"
 
+	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
@@ -41,7 +42,7 @@ const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
 const HLSBufferWindow = uint(5)
 
-var SegOptions = segmenter.SegmenterOptions{SegLength: 4 * time.Second}
+const SegLen = 4 * time.Second
 
 const HLSUnsubWorkerFreq = time.Second * 5
 
@@ -49,10 +50,13 @@ const EthRpcTimeout = 5 * time.Second
 const EthEventTimeout = 5 * time.Second
 const EthMinedTxTimeout = 60 * time.Second
 
+const BroadcastRetry = 15 * time.Second
+
 var HLSWaitTime = time.Second * 45
 var BroadcastPrice = big.NewInt(1)
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
-var MinDepositSegmentCount = int64(75) //5 mins assuming 4s segments
+var MinDepositSegmentCount = int64(75)     // 5 mins assuming 4s segments
+var MinJobBlocksRemaining = big.NewInt(40) // 10 mins assuming 15s blocks
 var LastHLSStreamID core.StreamID
 var LastManifestID core.ManifestID
 
@@ -67,7 +71,6 @@ type LivepeerServer struct {
 
 	rtmpStreams                map[core.StreamID]stream.RTMPVideoStream
 	hlsSubTimer                map[core.StreamID]time.Time
-	hlsWorkerRunning           bool
 	broadcastRtmpToHLSMap      map[string]string
 	broadcastRtmpToManifestMap map[string]string
 }
@@ -119,11 +122,41 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 		ec <- s.LPMS.Start(lpmsCtx)
 	}()
 
+	ts := make(chan struct{}, 1)
+	if s.LivepeerNode.NodeType == core.Transcoder {
+		go func() {
+			port := ":4433" // default port; should it be 443 instead?
+			// fetch service URI and extract port, if any.
+			serviceURI := "https://localhost" + port // XXX do better; cmdarg?
+			if s.LivepeerNode.Eth != nil {
+				var err error
+				addr := s.LivepeerNode.Eth.Account().Address
+				serviceURI, err = s.LivepeerNode.Eth.GetServiceURI(addr)
+				if err != nil || serviceURI == "" {
+					glog.Error("Transcoder does not have a service URI set; may be unreachable")
+				}
+			}
+			uri, err := url.Parse(serviceURI) // should be publicly accessible
+			if err == nil && uri.Port() != "" {
+				port = ":" + uri.Port() // bind to all interfaces by default
+			}
+			if err != nil {
+				glog.Error("Service URI invalid; transcoder may be unreachable")
+			}
+			StartTranscodeServer(port, uri, s.LivepeerNode)
+			ts <- struct{}{}
+		}()
+	}
+
 	select {
 	case err := <-ec:
 		glog.Infof("LPMS Server Error: %v.  Quitting...", err)
 		cancel()
 		return err
+	case <-ts:
+		glog.Info("Transcoder server down. Quitting...")
+		cancel()
+		return errors.New("TranscoderServerDown")
 	case <-ctx.Done():
 		cancel()
 		return ctx.Err()
@@ -140,6 +173,39 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		}
 		return id.String()
 	}
+}
+
+func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.MasterPlaylist) (*broadcaster, error) {
+	tca := job.TranscoderAddress
+	serviceUri, err := s.LivepeerNode.Eth.GetServiceURI(tca)
+	if err != nil || serviceUri == "" {
+		glog.Errorf("Unable to retrieve the Service URI for %v: %v", tca.Hex(), err)
+		if err == nil {
+			err = fmt.Errorf("Empty Service URI")
+		}
+		return nil, err
+	}
+	rpcBcast, err := StartBroadcastClient(serviceUri, s.LivepeerNode, job)
+	if err != nil {
+		glog.Error("Unable to start broadcast client for ", job.JobId)
+		return nil, err
+	}
+	// Update the master playlist based on the streamids from the transcoder
+	for strmID, tProfile := range rpcBcast.tinfo.StreamIds {
+		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[tProfile])
+		pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
+		variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}
+		manifest.Append(variant.URI, variant.Chunklist, variant.VariantParams)
+	}
+
+	// Update the master playlist on the network
+	mid := core.StreamID(job.StreamId).ManifestIDFromStreamID()
+	if err = s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(string(mid), manifest); err != nil {
+		glog.Errorf("Error updating master playlist on network: %v", err)
+		return nil, err
+	}
+
+	return rpcBcast, nil
 }
 
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
@@ -160,7 +226,40 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 		s.VideoNonceLock.Unlock()
 
+		startSeq := 0
+		manifest := m3u8.NewMasterPlaylist()
+		var jobId *big.Int
+		var rpcBcast *broadcaster
 		if s.LivepeerNode.Eth != nil {
+
+			// First check if we already have a job that can be reused
+			blknum, err := s.LivepeerNode.Eth.LatestBlockNum()
+			if err != nil {
+				glog.Error("Unable to fetch latest block number ", err)
+				return err
+			}
+
+			until := big.NewInt(0).Add(blknum, MinJobBlocksRemaining)
+			bcasts, err := s.LivepeerNode.Database.ActiveBroadcasts(until)
+			if err != nil {
+				glog.Error("Unable to find active broadcasts ", err)
+			}
+
+			for _, b := range bcasts {
+				// check if assigned transcoder is still valid.
+				if _, err := s.LivepeerNode.Eth.GetTranscoder(b.Transcoder); err == nil {
+					rpcBcast, err = s.startBroadcast(common.DBJobToEthJob(b), manifest)
+					if err == nil {
+						startSeq = int(b.Segments) + 1
+						jobId = big.NewInt(b.ID)
+						break
+					}
+				}
+			}
+		}
+
+		if s.LivepeerNode.Eth != nil && jobId == nil {
+
 			//Check if round is initialized
 			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
 			if err != nil {
@@ -182,7 +281,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 			minDeposit := big.NewInt(0).Mul(BroadcastPrice, big.NewInt(MinDepositSegmentCount))
 			if deposit.Cmp(minDeposit) < 0 {
-				glog.Errorf("Low deposit (%v) - cannot start broadcast session", deposit)
+				glog.Errorf("Low deposit (%v) - cannot start broadcast session.  Need at least %v", deposit, minDeposit)
 				if s.LivepeerNode.MonitorMetrics {
 					monitor.LogStreamCreateFailed(rtmpStrm.GetStreamID(), nonce, "LowDeposit")
 				}
@@ -256,6 +355,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						monitor.LogStreamStartedEvent(hlsStrmID.String(), nonce)
 					}
 				}
+
+				if jobId != nil {
+					s.LivepeerNode.Database.SetSegmentCount(jobId, int64(seg.SeqNo))
+				}
+
 				var sig []byte
 				if s.LivepeerNode.Eth != nil {
 					segHash := (&ethTypes.Segment{StreamID: hlsStrm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
@@ -274,9 +378,17 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						glog.Errorf("Error broadcasting to network: %v", err)
 					}
 				}
+
+				if rpcBcast != nil {
+					go func() { SubmitSegment(rpcBcast, seg) }()
+				}
 			})
 
-			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, SegOptions)
+			segOptions := segmenter.SegmenterOptions{
+				StartSeq:  startSeq,
+				SegLength: SegLen,
+			}
+			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, segOptions)
 			if err != nil {
 				if err := s.LivepeerNode.BroadcastFinishMsg(hlsStrmID.String()); err != nil {
 					glog.Errorf("Error broadcaseting finish message: %v", err)
@@ -295,7 +407,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			return ErrRTMPPublish
 		}
 		LastManifestID = mid
-		manifest := m3u8.NewMasterPlaylist()
 		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[vProfile.Name])
 		manifest.Append(fmt.Sprintf("%v.m3u8", hlsStrmID), pl, vParams)
 
@@ -306,23 +417,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			monitor.LogStreamCreatedEvent(mid.String(), nonce)
 		}
 
-		//Set up the transcode response callback
-		s.LivepeerNode.VideoNetwork.ReceivedTranscodeResponse(string(hlsStrmID), func(result map[string]string) {
-			//Parse through the results
-			for strmID, tProfile := range result {
-				vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[tProfile])
-				pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
-				variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}
-				manifest.Append(variant.URI, variant.Chunklist, variant.VariantParams)
-			}
-
-			//Update the master playlist on the network
-			if err = s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(string(mid), manifest); err != nil {
-				glog.Errorf("Error updating master playlist on network: %v", err)
-				return
-			}
-		})
-
 		glog.Infof("\n\nVideo Created With ManifestID: %v\n\n", mid)
 		glog.V(common.SHORT).Infof("\n\nhlsStrmID: %v\n\n", hlsStrmID)
 
@@ -330,9 +424,36 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()] = string(hlsStrmID)
 		s.broadcastRtmpToManifestMap[rtmpStrm.GetStreamID()] = string(mid)
 
-		if s.LivepeerNode.Eth != nil {
+		if jobId == nil && s.LivepeerNode.Eth != nil {
 			//Create Transcode Job Onchain
-			go s.LivepeerNode.CreateTranscodeJob(hlsStrmID, BroadcastJobVideoProfiles, BroadcastPrice)
+			go func() {
+				job, err := s.LivepeerNode.CreateTranscodeJob(hlsStrmID, BroadcastJobVideoProfiles, BroadcastPrice)
+				if err != nil {
+					return // XXX feed back error?
+				}
+				jobId = job.JobId
+
+				// Connect to the orchestrator. If it fails, retry for as long
+				// as the RTMP stream is alive; maybe the orchestrator hasn't
+				// received the block containing the job yet
+				broadcastFunc := func() error {
+					rpcBcast, err = s.startBroadcast(job, manifest)
+					if err != nil {
+						// Should be logged upstream
+					}
+					s.VideoNonceLock.Lock()
+					_, active := s.VideoNonce[rtmpStrm.GetStreamID()]
+					s.VideoNonceLock.Unlock()
+					if active {
+						return err
+					}
+					return nil // stop if inactive
+				}
+				expb := backoff.NewExponentialBackOff()
+				expb.MaxInterval = BroadcastRetry
+				expb.MaxElapsedTime = 0
+				backoff.Retry(broadcastFunc, expb)
+			}()
 		}
 		return nil
 	}
@@ -357,14 +478,14 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		//Remove the stream from cache
 		s.LivepeerNode.VideoCache.EvictHLSStream(core.StreamID(hlsID))
 
-		if s.LivepeerNode.MonitorMetrics {
-			s.VideoNonceLock.Lock()
-			if _, ok := s.VideoNonce[rtmpStrm.GetStreamID()]; ok {
+		s.VideoNonceLock.Lock()
+		if _, ok := s.VideoNonce[rtmpStrm.GetStreamID()]; ok {
+			if s.LivepeerNode.MonitorMetrics {
 				monitor.LogStreamEndedEvent(manifestID, s.VideoNonce[rtmpStrm.GetStreamID()])
-				delete(s.VideoNonce, rtmpStrm.GetStreamID())
 			}
-			s.VideoNonceLock.Unlock()
+			delete(s.VideoNonce, rtmpStrm.GetStreamID())
 		}
+		s.VideoNonceLock.Unlock()
 		return nil
 	}
 }
@@ -455,8 +576,6 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 // //HLS video streams need to be timed out.  When the viewer is no longer watching the stream, we send a Unsubscribe message to the network.
 func (s *LivepeerServer) startHlsUnsubscribeWorker(limit time.Duration, freq time.Duration) {
-	s.hlsWorkerRunning = true
-	defer func() { s.hlsWorkerRunning = false }()
 	for {
 		time.Sleep(freq)
 		for sid, t := range s.hlsSubTimer {

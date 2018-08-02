@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/ericxtang/m3u8"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	basicnet "github.com/livepeer/go-livepeer-basicnet"
 	lpcommon "github.com/livepeer/go-livepeer/common"
@@ -21,63 +22,10 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
-	"github.com/livepeer/lpms/stream"
-	"github.com/livepeer/lpms/transcoder"
 )
 
 func (s *LivepeerServer) StartWebserver() {
-	//Temporary endpoint just so we can invoke a transcode job.  IRL this should be invoked by transcoders monitoring the smart contract.
-	http.HandleFunc("/transcode", func(w http.ResponseWriter, r *http.Request) {
-		strmID := r.URL.Query().Get("strmID")
-		if strmID == "" {
-			http.Error(w, "Need to specify strmID", 500)
-			return
-		}
-
-		//Do transcoding
-		ps := []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9}
-		tr := transcoder.NewFFMpegSegmentTranscoder(ps, s.LivepeerNode.WorkDir)
-		config := net.TranscodeConfig{StrmID: strmID, Profiles: ps}
-		ids, err := s.LivepeerNode.TranscodeAndBroadcast(config, nil, tr)
-		if err != nil {
-			glog.Errorf("Error transcoding: %v", err)
-			http.Error(w, "Error transcoding.", 500)
-		}
-
-		//Get the manifest that contains the stream
-		sid := core.StreamID(strmID)
-		manifestID, _ := core.MakeManifestID(sid.GetNodeID(), sid.GetVideoID())
-		mch, err := s.LivepeerNode.VideoNetwork.GetMasterPlaylist(string(sid.GetNodeID()), manifestID.String())
-		if err != nil {
-			glog.Errorf("Error getting manifest: %v", err)
-			return
-		}
-		var manifest *m3u8.MasterPlaylist
-		select {
-		case manifest = <-mch:
-		case <-time.After(time.Second):
-			glog.Errorf("Get Master Playlist timed out.")
-			return
-		}
-
-		//Update the manifest
-		vids := make(map[core.StreamID]ffmpeg.VideoProfile)
-		for i, vp := range ps {
-			vids[ids[i]] = vp
-			vParams := ffmpeg.VideoProfileToVariantParams(vp)
-			pl, err := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
-			if err != nil {
-				glog.Errorf("Error creating new media playlist: %v", err)
-			}
-			variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", ids[i]), Chunklist: pl, VariantParams: vParams}
-			manifest.Append(variant.URI, variant.Chunklist, variant.VariantParams)
-		}
-		s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(manifestID.String(), manifest)
-
-		s.LivepeerNode.NotifyBroadcaster(sid.GetNodeID(), sid, vids)
-	})
 
 	//Set the broadcast config for creating onchain jobs.
 	http.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
@@ -248,21 +196,27 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
-		amountStr := r.FormValue("amount")
-		if amountStr == "" {
-			glog.Errorf("Need to provide amount")
+		serviceURI := r.FormValue("serviceURI")
+		if serviceURI == "" {
+			glog.Errorf("Need to provide a service URI")
 			return
 		}
-		amount, err := lpcommon.ParseBigInt(amountStr)
-		if err != nil {
+		if _, err := url.ParseRequestURI(serviceURI); err != nil {
 			glog.Error(err)
 			return
 		}
 
-		if amount.Cmp(big.NewInt(0)) == 1 {
-			glog.Infof("Bonding %v...", amount)
+		unbondingLockIDStr := r.FormValue("unbondingLockId")
+		if unbondingLockIDStr != "" {
+			unbondingLockID, err := lpcommon.ParseBigInt(unbondingLockIDStr)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
 
-			tx, err := s.LivepeerNode.Eth.Bond(amount, s.LivepeerNode.Eth.Account().Address)
+			glog.Infof("Rebonding with unbonding lock %v...", unbondingLockID)
+
+			tx, err := s.LivepeerNode.Eth.RebondFromUnbonded(s.LivepeerNode.Eth.Account().Address, unbondingLockID)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -273,12 +227,50 @@ func (s *LivepeerServer) StartWebserver() {
 				glog.Error(err)
 				return
 			}
+		}
 
+		amountStr := r.FormValue("amount")
+		if amountStr != "" {
+			amount, err := lpcommon.ParseBigInt(amountStr)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			if amount.Cmp(big.NewInt(0)) == 1 {
+				glog.Infof("Bonding %v...", amount)
+
+				tx, err := s.LivepeerNode.Eth.Bond(amount, s.LivepeerNode.Eth.Account().Address)
+				if err != nil {
+					glog.Error(err)
+					return
+				}
+
+				err = s.LivepeerNode.Eth.CheckTx(tx)
+				if err != nil {
+					glog.Error(err)
+					return
+				}
+			}
 		}
 
 		glog.Infof("Registering transcoder %v", s.LivepeerNode.Eth.Account().Address.Hex())
 
 		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		err = s.LivepeerNode.Eth.CheckTx(tx)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		glog.Infof("Storing service URI %v in service registry...", serviceURI)
+
+		tx, err = s.LivepeerNode.Eth.SetServiceURI(serviceURI)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -308,12 +300,12 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 		ts := ""
 		for i := numJobs.Int64() - count; i < numJobs.Int64(); i++ {
-			t, err := s.LivepeerNode.Eth.AssignedTranscoder(big.NewInt(i))
+			j, err := s.LivepeerNode.Eth.GetJob(big.NewInt(i))
 			if err != nil {
 				glog.Error(err)
 				continue
 			}
-			j, err := s.LivepeerNode.Eth.GetJob(big.NewInt(i))
+			t, err := s.LivepeerNode.Eth.AssignedTranscoder(j)
 			if err != nil {
 				glog.Error(err)
 				continue
@@ -363,7 +355,29 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 
+		serviceURI := r.FormValue("serviceURI")
+		if _, err := url.ParseRequestURI(serviceURI); err != nil {
+			glog.Error(err)
+			return
+		}
+
+		glog.Infof("Setting transcoder config - Reward Cut: %v Fee Share: %v Price: %v", eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+
 		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		err = s.LivepeerNode.Eth.CheckTx(tx)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		glog.Infof("Storing service URI %v in service registry...", serviceURI)
+
+		tx, err = s.LivepeerNode.Eth.SetServiceURI(serviceURI)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -415,9 +429,62 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
+	http.HandleFunc("/rebond", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth != nil {
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
+			}
+
+			unbondingLockIDStr := r.FormValue("unbondingLockId")
+			if unbondingLockIDStr == "" {
+				glog.Errorf("Need to provide unbondingLockId")
+				return
+			}
+			unbondingLockID, err := lpcommon.ParseBigInt(unbondingLockIDStr)
+			if err != nil {
+				glog.Errorf("Cannot convert unbondingLockId: %v", err)
+				return
+			}
+
+			var tx *types.Transaction
+
+			toAddr := r.FormValue("toAddr")
+			if toAddr != "" {
+				// toAddr provided - invoke rebondFromUnbonded()
+				tx, err = s.LivepeerNode.Eth.RebondFromUnbonded(common.HexToAddress(toAddr), unbondingLockID)
+			} else {
+				// toAddr not provided - invoke rebond()
+				tx, err = s.LivepeerNode.Eth.Rebond(unbondingLockID)
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+		}
+	})
+
 	http.HandleFunc("/unbond", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			tx, err := s.LivepeerNode.Eth.Unbond()
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
+			}
+
+			amountStr := r.FormValue("amount")
+			if amountStr == "" {
+				glog.Errorf("Need to provide amount")
+				return
+			}
+			amount, err := lpcommon.ParseBigInt(amountStr)
+			if err != nil {
+				glog.Errorf("Cannot convert amount: %v", err)
+				return
+			}
+
+			tx, err := s.LivepeerNode.Eth.Unbond(amount)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -433,7 +500,22 @@ func (s *LivepeerServer) StartWebserver() {
 
 	http.HandleFunc("/withdrawStake", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			tx, err := s.LivepeerNode.Eth.WithdrawStake()
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
+			}
+
+			unbondingLockIDStr := r.FormValue("unbondingLockId")
+			if unbondingLockIDStr == "" {
+				glog.Errorf("Need to provide unbondingLockID")
+				return
+			}
+			unbondingLockID, err := lpcommon.ParseBigInt(unbondingLockIDStr)
+			if err != nil {
+				glog.Errorf("Cannot convert unbondingLockId: %v", err)
+				return
+			}
+			tx, err := s.LivepeerNode.Eth.WithdrawStake(unbondingLockID)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -444,6 +526,87 @@ func (s *LivepeerServer) StartWebserver() {
 				glog.Error(err)
 				return
 			}
+		}
+	})
+
+	http.HandleFunc("/unbondingLocks", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Database != nil {
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
+			}
+
+			dAddr := s.LivepeerNode.Eth.Account().Address
+
+			d, err := s.LivepeerNode.Eth.GetDelegator(dAddr)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			// Query for local IDs
+			unbondingLockIDs, err := s.LivepeerNode.Database.UnbondingLockIDs()
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			if big.NewInt(int64(len(unbondingLockIDs))).Cmp(d.NextUnbondingLockId) < 0 {
+				// Generate all possible IDs
+				missingUnbondingLockIDs := make(map[*big.Int]bool)
+				for i := big.NewInt(0); i.Cmp(d.NextUnbondingLockId) < 0; i = new(big.Int).Add(i, big.NewInt(1)) {
+					missingUnbondingLockIDs[i] = true
+				}
+
+				// Use local IDs to determine which IDs are missing
+				for _, id := range unbondingLockIDs {
+					delete(missingUnbondingLockIDs, id)
+				}
+
+				// Update unbonding locks in local DB if necessary
+				for id := range missingUnbondingLockIDs {
+					lock, err := s.LivepeerNode.Eth.GetDelegatorUnbondingLock(dAddr, id)
+					if err != nil {
+						glog.Error(err)
+						continue
+					}
+					// If lock has been used (i.e. withdrawRound == 0) do not insert into DB
+					// Note: We do not know what block at which a lock was used when querying the contract directly (as opposed to using events)
+					// As a result, instead of having a lock entry in the DB with the usedBlock column set, we do not insert a lock entry at all
+					if lock.WithdrawRound.Cmp(big.NewInt(0)) == 1 {
+						if err := s.LivepeerNode.Database.InsertUnbondingLock(id, dAddr, lock.Amount, lock.WithdrawRound); err != nil {
+							glog.Error(err)
+							continue
+						}
+					}
+				}
+			}
+
+			var currentRound *big.Int
+
+			withdrawableStr := r.FormValue("withdrawable")
+			if withdrawable, err := strconv.ParseBool(withdrawableStr); withdrawable {
+				currentRound, err = s.LivepeerNode.Eth.CurrentRound()
+				if err != nil {
+					glog.Error(err)
+					return
+				}
+			}
+
+			unbondingLocks, err := s.LivepeerNode.Database.UnbondingLocks(currentRound)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			data, err := json.Marshal(unbondingLocks)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
 		}
 	})
 

@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"os/user"
@@ -91,7 +93,7 @@ func main() {
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
 	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
-	publicIP := flag.String("publicIP", "", "Explicit set node IP address so nodes that need a well-known address can advertise it to the network")
+	publicAddr := flag.String("publicAddr", "", "Public address that broadcasters can use to contact this node; may be an IP or hostname. If used, should match the on-chain ServiceURI set via livepeer_cli")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	version := flag.Bool("version", false, "Print out the version")
 
@@ -111,11 +113,7 @@ func main() {
 		}
 		if !*offchain {
 			if *ethUrl == "" {
-				if *transcoder {
-					*ethUrl = "wss://rinkeby.infura.io/ws"
-				} else {
-					*ethUrl = "https://rinkeby.infura.io/cFwU3koCZdTqiH6VE4fj"
-				}
+				*ethUrl = "wss://rinkeby.infura.io/ws"
 			}
 			if *controllerAddr == "" {
 				*controllerAddr = RinkebyControllerAddr
@@ -132,11 +130,7 @@ func main() {
 		}
 		if !*offchain {
 			if *ethUrl == "" {
-				if *transcoder {
-					*ethUrl = "wss://mainnet.infura.io/ws"
-				} else {
-					*ethUrl = "https://mainnet.infura.io/cFwU3koCZdTqiH6VE4fj"
-				}
+				*ethUrl = "wss://mainnet.infura.io/ws"
 			}
 			if *controllerAddr == "" {
 				*controllerAddr = MainnetControllerAddr
@@ -191,15 +185,7 @@ func main() {
 		glog.Errorf("Error creating a new node: %v", err)
 		return
 	}
-	if *transcoder && *publicIP == "" {
-		glog.Errorf("Error - transcoder needs to specify publicIP")
-		return
-	}
-	if *transcoder && *publicIP == "" {
-		glog.Errorf("Error - transcoder needs to specify publicIP")
-		return
-	}
-	nw, err := bnet.NewBasicVideoNetwork(node, *publicIP, *port)
+	nw, err := bnet.NewBasicVideoNetwork(node, "127.0.0.1", *port)
 	if err != nil {
 		glog.Errorf("Cannot create network node: %v", err)
 		return
@@ -326,19 +312,31 @@ func main() {
 			return true
 		})
 
-		if *transcoder {
-			addrMap := n.Eth.ContractAddresses()
-			em := eth.NewEventMonitor(backend, addrMap)
+		defer n.StopEthServices()
 
+		addrMap := n.Eth.ContractAddresses()
+		em := eth.NewEventMonitor(backend, addrMap)
+
+		// Setup block service to receive headers from the head of the chain
+		n.EthServices["BlockService"] = eventservices.NewBlockService(em, dbh)
+		// Setup unbonding service to manage unbonding locks
+		n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
+
+		if *transcoder {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			if err := setupTranscoder(ctx, n, em, *ipfsPath, *initializeRound); err != nil {
+			if err := setupTranscoder(ctx, n, em, *ipfsPath, *initializeRound, *publicAddr); err != nil {
 				glog.Errorf("Error setting up transcoder: %v", err)
 				return
 			}
+		}
 
-			defer n.StopEthServices()
+		// Start services
+		err = n.StartEthServices()
+		if err != nil {
+			glog.Errorf("Failed to start ETH services: %v", err)
+			return
 		}
 	}
 
@@ -493,7 +491,7 @@ func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 	return priv, pub, nil
 }
 
-func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool) error {
+func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool, publicAddr string) error {
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
@@ -504,6 +502,35 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 		glog.Infof("Transcoder %v is inactive", n.Eth.Account().Address.Hex())
 	} else {
 		glog.Infof("Transcoder %v is active", n.Eth.Account().Address.Hex())
+	}
+
+	if publicAddr == "" {
+		// TODO probably should put this (along w wizard GETs) into common code
+		resp, err := http.Get("https://api.ipify.org?format=text")
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			glog.Error("Could not look up public IP address")
+			return err
+		}
+		publicAddr = strings.TrimSpace(string(body))
+	}
+	uriStr, err := n.Eth.GetServiceURI(n.Eth.Account().Address)
+	if err != nil {
+		glog.Error("Could not get service URI")
+		return err
+	}
+	uri, err := url.ParseRequestURI(uriStr)
+	if err != nil {
+		glog.Error("Could not parse service URI")
+		uri, _ = url.ParseRequestURI("http://127.0.0.1")
+	}
+	if uri.Hostname() != publicAddr {
+		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -publicAddr", uri.Hostname(), publicAddr)
+		// TODO remove '&& false' after all transcoders have set a service URI
+		if active && false {
+			return fmt.Errorf("Mismatched service address")
+		}
 	}
 
 	// Set up IPFS
@@ -530,12 +557,6 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	// Create job service to listen for new jobs and transcode if assigned to the job
 	js := eventservices.NewJobService(em, n)
 	n.EthServices["JobService"] = js
-
-	// Start services
-	err = n.StartEthServices()
-	if err != nil {
-		return err
-	}
 
 	// Restart jobs as necessary
 	err = js.RestartTranscoder()

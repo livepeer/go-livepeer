@@ -3,10 +3,12 @@ package eth
 import (
 	"math/big"
 
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 )
 
@@ -30,9 +32,13 @@ type StubClient struct {
 	ClaimCounter      int
 	SubLogsCh         chan types.Log
 	JobsMap           map[string]*lpTypes.Job
+	TranscoderAddress common.Address
 	BlockNum          *big.Int
 	BlockHashToReturn common.Hash
 	Claims            map[int]*lpTypes.Claim
+	LatestBlockError  error
+	JobError          error
+	WatchJobError     error
 }
 
 func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) error { return nil }
@@ -57,6 +63,11 @@ func (e *StubClient) Request() (*types.Transaction, error)            { return n
 func (e *StubClient) BalanceOf(addr common.Address) (*big.Int, error) { return big.NewInt(0), nil }
 func (e *StubClient) TotalSupply() (*big.Int, error)                  { return big.NewInt(0), nil }
 
+// Service Registry
+
+func (e *StubClient) SetServiceURI(serviceURI string) (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) GetServiceURI(addr common.Address) (string, error)           { return "", nil }
+
 // Staking
 
 func (e *StubClient) Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error) {
@@ -66,28 +77,37 @@ func (e *StubClient) Reward() (*types.Transaction, error) { return nil, nil }
 func (e *StubClient) Bond(amount *big.Int, toAddr common.Address) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) Unbond() (*types.Transaction, error)        { return nil, nil }
-func (e *StubClient) WithdrawStake() (*types.Transaction, error) { return nil, nil }
-func (e *StubClient) WithdrawFees() (*types.Transaction, error)  { return nil, nil }
+func (e *StubClient) Rebond(*big.Int) (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) RebondFromUnbonded(common.Address, *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) Unbond(*big.Int) (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) WithdrawStake(*big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) WithdrawFees() (*types.Transaction, error) { return nil, nil }
 func (e *StubClient) ClaimEarnings(endRound *big.Int) error {
 	return nil
 }
 func (e *StubClient) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) { return nil, nil }
 func (e *StubClient) GetDelegator(addr common.Address) (*lpTypes.Delegator, error)   { return nil, nil }
+func (e *StubClient) GetDelegatorUnbondingLock(addr common.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error) {
+	return nil, nil
+}
 func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
 	return nil, nil
 }
 func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) { return nil, nil }
 func (e *StubClient) IsActiveTranscoder() (bool, error)                     { return false, nil }
-func (e *StubClient) AssignedTranscoder(jobID *big.Int) (common.Address, error) {
-	return common.Address{}, nil
+func (e *StubClient) AssignedTranscoder(job *lpTypes.Job) (common.Address, error) {
+	return e.TranscoderAddress, nil
 }
 func (e *StubClient) GetTotalBonded() (*big.Int, error) { return big.NewInt(0), nil }
 
 // Jobs
 
 func (e *StubClient) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int, endBlock *big.Int) (*types.Transaction, error) {
-	return nil, nil
+	return nil, e.JobError
 }
 func (e *StubClient) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (*types.Transaction, error) {
 	e.ClaimCounter++
@@ -121,7 +141,7 @@ func (c *StubClient) Deposit(amount *big.Int) (*types.Transaction, error) {
 }
 func (c *StubClient) Withdraw() (*types.Transaction, error) { return nil, nil }
 func (c *StubClient) BroadcasterDeposit(broadcaster common.Address) (*big.Int, error) {
-	return big.NewInt(0), nil
+	return big.NewInt(10), nil
 }
 func (e *StubClient) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
 	return nil, nil
@@ -157,6 +177,27 @@ func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, ga
 	return nil, nil
 }
 func (c *StubClient) Sign(msg []byte) ([]byte, error)   { return nil, nil }
-func (c *StubClient) LatestBlockNum() (*big.Int, error) { return big.NewInt(0), nil }
+func (c *StubClient) LatestBlockNum() (*big.Int, error) { return big.NewInt(0), c.LatestBlockError }
 func (c *StubClient) GetGasInfo() (uint64, *big.Int)    { return 0, nil }
 func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
+func (c *StubClient) WatchForJob(j string) (*lpTypes.Job, error) {
+	return c.JobsMap[j], c.WatchJobError
+}
+func (c *StubClient) ProcessHistoricalUnbond(*big.Int, func(*contracts.BondingManagerUnbond) error) error {
+	return nil
+}
+func (c *StubClient) WatchForUnbond(chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error) {
+	return nil, nil
+}
+func (c *StubClient) ProcessHistoricalRebond(*big.Int, func(*contracts.BondingManagerRebond) error) error {
+	return nil
+}
+func (c *StubClient) WatchForRebond(chan *contracts.BondingManagerRebond) (ethereum.Subscription, error) {
+	return nil, nil
+}
+func (c *StubClient) ProcessHistoricalWithdrawStake(*big.Int, func(*contracts.BondingManagerWithdrawStake) error) error {
+	return nil
+}
+func (c *StubClient) WatchForWithdrawStake(chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error) {
+	return nil, nil
+}
