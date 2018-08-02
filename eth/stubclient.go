@@ -84,7 +84,7 @@ func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, roun
 }
 func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) { return nil, nil }
 func (e *StubClient) IsActiveTranscoder() (bool, error)                     { return false, nil }
-func (e *StubClient) AssignedTranscoder(jobID *big.Int) (common.Address, error) {
+func (e *StubClient) AssignedTranscoder(job *lpTypes.Job) (common.Address, error) {
 	return common.Address{}, nil
 }
 func (e *StubClient) GetTotalBonded() (*big.Int, error) { return big.NewInt(0), nil }
@@ -161,7 +161,8 @@ func (c *StubClient) CheckTx(tx *types.Transaction) error          { return nil 
 func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, gasPrice *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (c *StubClient) Sign(msg []byte) ([]byte, error)   { return nil, nil }
-func (c *StubClient) LatestBlockNum() (*big.Int, error) { return big.NewInt(0), nil }
-func (c *StubClient) GetGasInfo() (uint64, *big.Int)    { return 0, nil }
-func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
+func (c *StubClient) Sign(msg []byte) ([]byte, error)          { return nil, nil }
+func (c *StubClient) LatestBlockNum() (*big.Int, error)        { return big.NewInt(0), nil }
+func (c *StubClient) GetGasInfo() (uint64, *big.Int)           { return 0, nil }
+func (c *StubClient) SetGasInfo(uint64, *big.Int) error        { return nil }
+func (c *StubClient) WatchForJob(string) (*lpTypes.Job, error) { return nil, nil }

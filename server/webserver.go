@@ -333,12 +333,12 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 		ts := ""
 		for i := numJobs.Int64() - count; i < numJobs.Int64(); i++ {
-			t, err := s.LivepeerNode.Eth.AssignedTranscoder(big.NewInt(i))
+			j, err := s.LivepeerNode.Eth.GetJob(big.NewInt(i))
 			if err != nil {
 				glog.Error(err)
 				continue
 			}
-			j, err := s.LivepeerNode.Eth.GetJob(big.NewInt(i))
+			t, err := s.LivepeerNode.Eth.AssignedTranscoder(j)
 			if err != nil {
 				glog.Error(err)
 				continue
