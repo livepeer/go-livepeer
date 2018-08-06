@@ -230,10 +230,11 @@ func LogSegmentTranscodeFailed(nonce, seqNo uint64, reason string) {
 	sendPost(e)
 }
 
-func LogStartBroadcastClientFailed(serviceURI, transcoderAddress string, jobID uint64, reason string) {
+func LogStartBroadcastClientFailed(nonce uint64, serviceURI, transcoderAddress string, jobID uint64, reason string) {
 	glog.Infof("Logging LogStartBroadcastClientFailed...")
 	e := &event{
-		Name: "StartBroadcastClientFailed",
+		Name:  "StartBroadcastClientFailed",
+		Nonce: strconv.FormatUint(nonce, 10),
 		Properties: map[string]interface{}{
 			"jobID":             jobID,
 			"serviceURI":        serviceURI,

@@ -175,7 +175,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 	}
 }
 
-func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.MasterPlaylist) (*broadcaster, error) {
+func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.MasterPlaylist, nonce uint64) (*broadcaster, error) {
 	tca := job.TranscoderAddress
 	serviceUri, err := s.LivepeerNode.Eth.GetServiceURI(tca)
 	if err != nil || serviceUri == "" {
@@ -189,7 +189,7 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 	if err != nil {
 		glog.Error("Unable to start broadcast client for ", job.JobId)
 		if monitor.Enabled {
-			monitor.LogStartBroadcastClientFailed(serviceUri, tca.Hex(), job.JobId.Uint64(), err.Error())
+			monitor.LogStartBroadcastClientFailed(nonce, serviceUri, tca.Hex(), job.JobId.Uint64(), err.Error())
 		}
 		return nil, err
 	}
@@ -252,7 +252,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				// check if assigned transcoder is still valid.
 				if _, err := s.LivepeerNode.Eth.GetTranscoder(b.Transcoder); err == nil {
 					job := common.DBJobToEthJob(b)
-					rpcBcast, err = s.startBroadcast(job, manifest)
+					rpcBcast, err = s.startBroadcast(job, manifest, nonce)
 					if err == nil {
 						startSeq = int(b.Segments) + 1
 						jobId = big.NewInt(b.ID)
@@ -451,7 +451,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				// as the RTMP stream is alive; maybe the orchestrator hasn't
 				// received the block containing the job yet
 				broadcastFunc := func() error {
-					rpcBcast, err = s.startBroadcast(job, manifest)
+					rpcBcast, err = s.startBroadcast(job, manifest, nonce)
 					if err != nil {
 						// Should be logged upstream
 					}
