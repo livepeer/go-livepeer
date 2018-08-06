@@ -28,115 +28,90 @@ type event struct {
 	Properties map[string]interface{} `json:"properties"`
 }
 
-var eventsURLBase string
 var eventsURL string
 
-var network = "rinkeby"
-
-func SetNetwork(n string) {
-	network = n
-	eventsURL = eventsURLBase + n + "/events"
-}
-
-func SetURLBase(urlBase string) {
-	eventsURLBase = urlBase
-	eventsURL = eventsURLBase + network + "/events"
+func SetURL(url string) {
+	eventsURL = url
 }
 
 func LogJobCreatedEvent(job *ethTypes.Job, nonce uint64) {
-	e := &event{
-		Name:  "JobCreated",
-		Nonce: strconv.FormatUint(nonce, 10),
-		Properties: map[string]interface{}{
-			"jobID":              job.JobId.Uint64(),
-			"streamID":           job.StreamId,
-			"broadcasterAddress": job.BroadcasterAddress.Hex(),
-			"transcoderAddress":  job.TranscoderAddress.Hex(),
-			"creationRound":      job.CreationRound.Uint64(),
-			"creationBlock":      job.CreationBlock.Uint64(),
-			"endBlock":           job.EndBlock.Uint64(),
-		},
+	glog.Infof("Logging JobCreated...")
+
+	props := map[string]interface{}{
+		"jobID":              job.JobId.Uint64(),
+		"streamID":           job.StreamId,
+		"broadcasterAddress": job.BroadcasterAddress.Hex(),
+		"transcoderAddress":  job.TranscoderAddress.Hex(),
+		"creationRound":      job.CreationRound.Uint64(),
+		"creationBlock":      job.CreationBlock.Uint64(),
+		"endBlock":           job.EndBlock.Uint64(),
 	}
 
-	sendPost(e)
+	sendPost("JobCreated", nonce, props)
 }
 
 func LogJobReusedEvent(job *ethTypes.Job, startSeq int, nonce uint64) {
-	e := &event{
-		Name:  "JobReused",
-		Nonce: strconv.FormatUint(nonce, 10),
-		Properties: map[string]interface{}{
-			"jobID":              job.JobId.Uint64(),
-			"streamID":           job.StreamId,
-			"broadcasterAddress": job.BroadcasterAddress.Hex(),
-			"transcoderAddress":  job.TranscoderAddress.Hex(),
-			"creationBlock":      job.CreationBlock.Uint64(),
-			"endBlock":           job.EndBlock.Uint64(),
-			"startSeq":           startSeq,
-		},
+	glog.Infof("Logging JobReused...")
+
+	props := map[string]interface{}{
+		"jobID":              job.JobId.Uint64(),
+		"streamID":           job.StreamId,
+		"broadcasterAddress": job.BroadcasterAddress.Hex(),
+		"transcoderAddress":  job.TranscoderAddress.Hex(),
+		"creationBlock":      job.CreationBlock.Uint64(),
+		"endBlock":           job.EndBlock.Uint64(),
+		"startSeq":           startSeq,
 	}
 
-	sendPost(e)
+	sendPost("JobReused", nonce, props)
 }
 
 func LogStreamCreatedEvent(hlsStrmID string, nonce uint64) {
-	e := &event{
-		Name:  "StreamCreated",
-		Nonce: strconv.FormatUint(nonce, 10),
-		Properties: map[string]interface{}{
-			"hlsStrmID": hlsStrmID,
-		},
+	glog.Infof("Logging StreamCreated...")
+
+	props := map[string]interface{}{
+		"hlsStrmID": hlsStrmID,
 	}
 
-	sendPost(e)
+	sendPost("StreamCreated", nonce, props)
 }
 
 func LogStreamStartedEvent(nonce uint64) {
-	e := &event{
-		Name:  "StreamStarted",
-		Nonce: strconv.FormatUint(nonce, 10),
-	}
+	glog.Infof("Logging StreamStarted...")
 
-	sendPost(e)
+	sendPost("StreamStarted", nonce, nil)
 }
 
 func LogStreamEndedEvent(nonce uint64) {
-	e := &event{
-		Name:  "StreamEnded",
-		Nonce: strconv.FormatUint(nonce, 10),
-	}
+	glog.Infof("Logging StreamEnded...")
 
-	sendPost(e)
+	sendPost("StreamEnded", nonce, nil)
 }
 
 func LogStreamCreateFailed(nonce uint64, reason string) {
 	glog.Infof("Logging StreamCreateFailed...")
-	e := &event{
-		Name:  "StreamCreateFailed",
-		Nonce: strconv.FormatUint(nonce, 10),
-		Properties: map[string]interface{}{
-			"reason": reason,
-		},
+
+	props := map[string]interface{}{
+		"reason": reason,
 	}
 
-	sendPost(e)
+	sendPost("StreamCreateFailed", nonce, props)
 }
 
 func LogSegmentUploadFailed(nonce, seqNo uint64, reason string) {
-	glog.Infof("Logging LogSegmentUploadFailed...")
-	e := &event{
-		Name:  "SegmentUploadFailed",
-		Nonce: strconv.FormatUint(nonce, 10),
-		Properties: map[string]interface{}{
-			"reason": reason,
-			"seqNo":  seqNo,
-		},
+	glog.Infof("Logging SegmentUploadFailed...")
+
+	props := map[string]interface{}{
+		"reason": reason,
+		"seqNo":  seqNo,
 	}
 
-	sendPost(e)
+	sendPost("SegmentUploadFailed", nonce, props)
 }
 
 func LogSegmentEmerged(nonce, seqNo uint64) {
+	glog.Infof("Logging SegmentEmerged...")
+
 	var sincePrevious time.Duration
 	now := time.Now()
 	if metrics.lastSegmentNonce == nonce {
@@ -147,16 +122,12 @@ func LogSegmentEmerged(nonce, seqNo uint64) {
 		metrics.lastSeqNo = int64(seqNo) - 1
 	}
 	metrics.lastSegmentEmergedAt = now
-	e := &event{
-		Name:  "SegmentEmerged",
-		Nonce: strconv.FormatUint(nonce, 10),
-		Properties: map[string]interface{}{
-			"seqNo":         seqNo,
-			"sincePrevious": uint64(sincePrevious / time.Millisecond),
-		},
+	props := map[string]interface{}{
+		"seqNo":         seqNo,
+		"sincePrevious": uint64(sincePrevious / time.Millisecond),
 	}
 
-	sendPost(e)
+	sendPost("SegmentEmerged", nonce, props)
 }
 
 func SegmentUploadStart(nonce, seqNo uint64) {
@@ -166,94 +137,88 @@ func SegmentUploadStart(nonce, seqNo uint64) {
 }
 
 func LogSegmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
-	e := &event{
-		Name:  "SegmentUploaded",
-		Nonce: strconv.FormatUint(nonce, 10),
-		Properties: map[string]interface{}{
-			"seqNo":          seqNo,
-			"uploadDuration": uint64(uploadDur / time.Millisecond),
-		},
+	glog.Infof("Logging SegmentUploaded...")
+
+	props := map[string]interface{}{
+		"seqNo":          seqNo,
+		"uploadDuration": uint64(uploadDur / time.Millisecond),
 	}
 
-	sendPost(e)
+	sendPost("SegmentUploaded", nonce, props)
 }
 
-func detectSeqDif(e *event, nonce, seqNo uint64) {
+func detectSeqDif(props map[string]interface{}, nonce, seqNo uint64) {
 	if metrics.lastSegmentNonce == nonce {
 		seqDif := int64(seqNo) - metrics.lastSeqNo
 		metrics.lastSeqNo = int64(seqNo)
 		if seqDif != 1 {
-			e.Properties["seqNoDif"] = seqDif
+			props["seqNoDif"] = seqDif
 		}
 	}
 }
 
 func LogSegmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Duration) {
-	glog.Infof("Logging LogSegmentTranscoded...")
+	glog.Infof("Logging SegmentTranscoded...")
+
 	if metrics.lastSegmentNonce == nonce {
 		metrics.segmentsInFlight--
 	}
-	e := &event{
-		Name:  "SegmentTranscoded",
-		Nonce: strconv.FormatUint(nonce, 10),
-		Properties: map[string]interface{}{
-			"seqNo":             seqNo,
-			"transcodeDuration": uint64(transcodeDur / time.Millisecond),
-			"totalDuration":     uint64(totalDur / time.Millisecond),
-			"segmentsInFlight":  metrics.segmentsInFlight,
-		},
+	props := map[string]interface{}{
+		"seqNo":             seqNo,
+		"transcodeDuration": uint64(transcodeDur / time.Millisecond),
+		"totalDuration":     uint64(totalDur / time.Millisecond),
+		"segmentsInFlight":  metrics.segmentsInFlight,
 	}
 	if metrics.segmentsInFlight != 0 {
-		e.Properties["segmentsInFlight"] = metrics.segmentsInFlight
+		props["segmentsInFlight"] = metrics.segmentsInFlight
 	}
-	detectSeqDif(e, nonce, seqNo)
+	detectSeqDif(props, nonce, seqNo)
 
-	sendPost(e)
+	sendPost("SegmentTranscoded", nonce, props)
 }
 
 func LogSegmentTranscodeFailed(nonce, seqNo uint64, reason string) {
-	glog.Infof("Logging LogSegmentTranscodeFailed...")
+	glog.Infof("Logging SegmentTranscodeFailed...")
+
 	if metrics.lastSegmentNonce == nonce {
 		metrics.segmentsInFlight--
 	}
-	e := &event{
-		Name:  "SegmentTranscodeFailed",
-		Nonce: strconv.FormatUint(nonce, 10),
-		Properties: map[string]interface{}{
-			"reason":           reason,
-			"seqNo":            seqNo,
-			"segmentsInFlight": metrics.segmentsInFlight,
-		},
+	props := map[string]interface{}{
+		"reason":           reason,
+		"seqNo":            seqNo,
+		"segmentsInFlight": metrics.segmentsInFlight,
 	}
-	detectSeqDif(e, nonce, seqNo)
+	detectSeqDif(props, nonce, seqNo)
 
-	sendPost(e)
+	sendPost("SegmentTranscodeFailed", nonce, props)
 }
 
 func LogStartBroadcastClientFailed(nonce uint64, serviceURI, transcoderAddress string, jobID uint64, reason string) {
-	glog.Infof("Logging LogStartBroadcastClientFailed...")
-	e := &event{
-		Name:  "StartBroadcastClientFailed",
-		Nonce: strconv.FormatUint(nonce, 10),
-		Properties: map[string]interface{}{
-			"jobID":             jobID,
-			"serviceURI":        serviceURI,
-			"reason":            reason,
-			"transcoderAddress": transcoderAddress,
-		},
+	glog.Infof("Logging StartBroadcastClientFailed...")
+
+	props := map[string]interface{}{
+		"jobID":             jobID,
+		"serviceURI":        serviceURI,
+		"reason":            reason,
+		"transcoderAddress": transcoderAddress,
 	}
 
-	sendPost(e)
+	sendPost("StartBroadcastClientFailed", nonce, props)
 }
 
-func sendPost(e *event) {
-	if eventsURLBase == "" {
+func sendPost(name string, nonce uint64, props map[string]interface{}) {
+	if eventsURL == "" {
 		return
 	}
-	go _sendPost(e)
+	go _sendPost(name, nonce, props)
 }
 
-func _sendPost(e *event) {
+func _sendPost(name string, nonce uint64, props map[string]interface{}) {
+	e := &event{
+		Name:       name,
+		Nonce:      strconv.FormatUint(nonce, 10),
+		Properties: props,
+	}
 	jsonStr, err := json.Marshal(e)
 	if err != nil {
 		glog.Errorf("Error sending event to logger.")
