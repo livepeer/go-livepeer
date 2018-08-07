@@ -76,7 +76,7 @@ func (orch *orchestrator) GetJob(jid int64) (*lpTypes.Job, error) {
 	if (job.TranscoderAddress == ethcommon.Address{}) {
 		ta, err := orch.node.Eth.AssignedTranscoder(job)
 		if err != nil {
-			glog.Error("Could not get assigned transcoder for job %v", jid)
+			glog.Errorf("Could not get assigned transcoder for job %v, err: %s", jid, err.Error())
 			// continue here without a valid transcoder address
 		} else {
 			job.TranscoderAddress = ta
@@ -488,11 +488,12 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		return
 	}
 	if resp.StatusCode != 200 {
-		errs := fmt.Sprintf("Error submitting segment %d: code %d error %s", seg.SeqNo, resp.StatusCode,
-			resp.Status)
-		glog.Error(errs)
+		defer resp.Body.Close()
+		data, _ := ioutil.ReadAll(resp.Body)
+		glog.Errorf("Error submitting segment %d: code %d error %s", seg.SeqNo, resp.StatusCode, string(data))
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, errs)
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, fmt.Sprintf("Code: %d Error: %s", resp.StatusCode,
+				strings.TrimSpace(string(data))))
 		}
 		return
 	}
