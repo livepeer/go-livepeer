@@ -167,7 +167,6 @@ func LogSegmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Durat
 		"seqNo":             seqNo,
 		"transcodeDuration": uint64(transcodeDur / time.Millisecond),
 		"totalDuration":     uint64(totalDur / time.Millisecond),
-		"segmentsInFlight":  metrics.segmentsInFlight,
 	}
 	if metrics.segmentsInFlight != 0 {
 		props["segmentsInFlight"] = metrics.segmentsInFlight
@@ -184,9 +183,11 @@ func LogSegmentTranscodeFailed(nonce, seqNo uint64, reason string) {
 		metrics.segmentsInFlight--
 	}
 	props := map[string]interface{}{
-		"reason":           reason,
-		"seqNo":            seqNo,
-		"segmentsInFlight": metrics.segmentsInFlight,
+		"reason": reason,
+		"seqNo":  seqNo,
+	}
+	if metrics.segmentsInFlight != 0 {
+		props["segmentsInFlight"] = metrics.segmentsInFlight
 	}
 	detectSeqDif(props, nonce, seqNo)
 
