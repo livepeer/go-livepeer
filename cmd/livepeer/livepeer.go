@@ -22,15 +22,12 @@ import (
 	"time"
 
 	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
-	kb "gx/ipfs/QmTH6VLu3WXfbH3nuLdmscgPWuiPZv3GMJ2YCdzBS5z91T/go-libp2p-kbucket"
-	ma "gx/ipfs/QmWWQ2Txc2c6tqjsBpzg5Ar652cHPGNsQQp2SejkNmkUMb/go-multiaddr"
 	peer "gx/ipfs/QmZoWKhxUmZ2seW4BzX6fJkNR8hh9PsGModr7q171yq2SS/go-libp2p-peer"
 	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
-	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -42,18 +39,11 @@ import (
 )
 
 var (
-	ErrKeygen       = errors.New("ErrKeygen")
-	EthRpcTimeout   = 10 * time.Second
-	EthEventTimeout = 120 * time.Second
-	EthTxTimeout    = 600 * time.Second
-	ErrIpfs         = errors.New("ErrIpfs")
+	ErrKeygen    = errors.New("ErrKeygen")
+	EthTxTimeout = 600 * time.Second
 )
 
-const RinkebyBootNodeIDs = "122019c1a1f0d9fa2296dccb972e7478c5163415cd55722dcf0123553f397c45df7e,1220abded0103eb4e8e46616881e74e88617409ac4012c6958f4086c649f44eacf89,1220afca402fae8dbb0f980ea2d7e873bc07da36d5463516a862c6199bb6383e9e1e"
-const RinkebyBootNodeAddrs = "/ip4/18.217.129.34/tcp/15000,/ip4/52.15.174.204/tcp/15000,/ip4/13.59.47.56/tcp/15000"
 const RinkebyControllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
-const MainnetBootNodeIDs = "122018ef62657724948b236e9523d928d892965e0fdd679beb643f2353556d0aef78,122051f483e4ae0477773540a4ac0e845eac5a51e0883338970270b8af2c02084a66,12208d9eaed4e66382e86fea8956bd7cf0fbd6fbd0146375aa2fa4aaa43467a5dfac,1220bf3b27668b43ce76ca3ca1878ac3aab5009ce64e2305703c9120c90d0f381e1f,1220c079d0cd80d3b82b6ee8b1d91ec09c3172fee8468765ff5dbd43a6c1d5be4443"
-const MainnetBootNodeAddrs = "/ip4/18.188.233.37/tcp/15000,/ip4/18.219.112.164/tcp/15000,/ip4/18.222.5.113/tcp/15000,/ip4/18.221.147.73/tcp/15000,/ip4/18.216.88.163/tcp/15000"
 const MainnetControllerAddr = "0xf96d54e490317c557a967abfa5d6e33006be69b3"
 
 func main() {
@@ -64,18 +54,12 @@ func main() {
 		glog.Fatalf("Cannot find current user: %v", err)
 	}
 
-	port := flag.Int("p", 15000, "port")
 	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
 	rtmpIP := flag.String("rtmpIP", "127.0.0.1", "IP to bind for HTTP RPC commands")
 	httpIP := flag.String("httpIP", "127.0.0.1", "IP to bind for HTTP RPC commands")
-	bindIPs := flag.String("bindIPs", "", "Comma-separated list of IPs/ports to bind to")
-	bootIDs := flag.String("bootIDs", "", "Comma-separated bootstrap node IDs")
-	bootAddrs := flag.String("bootAddrs", "", "Comma-separated bootstrap node addresses")
-	bootnode := flag.Bool("bootnode", false, "Set to true if starting bootstrap node")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
-	gateway := flag.Bool("gateway", false, "Set to true to be a gateway node")
 	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
@@ -105,12 +89,6 @@ func main() {
 	}
 
 	if *rinkeby {
-		if *bootIDs == "" {
-			*bootIDs = RinkebyBootNodeIDs
-		}
-		if *bootAddrs == "" {
-			*bootAddrs = RinkebyBootNodeAddrs
-		}
 		if !*offchain {
 			if *ethUrl == "" {
 				*ethUrl = "wss://rinkeby.infura.io/ws"
@@ -125,12 +103,6 @@ func main() {
 		}
 	} else if *devenv {
 	} else {
-		if *bootIDs == "" {
-			*bootIDs = MainnetBootNodeIDs
-		}
-		if *bootAddrs == "" {
-			*bootAddrs = MainnetBootNodeAddrs
-		}
 		if !*offchain {
 			if *ethUrl == "" {
 				*ethUrl = "wss://mainnet.infura.io/ws"
@@ -162,104 +134,27 @@ func main() {
 	defer dbh.Close()
 
 	//Take care of priv/pub keypair
-	priv, pub, err := getLPKeys(*datadir)
+	_, pub, err := getLPKeys(*datadir)
 	if err != nil {
 		glog.Errorf("Error getting keys: %v", err)
 		return
 	}
-	notifiee := bnet.NewBasicNotifiee(lpmon.Instance())
-	var maddrs []ma.Multiaddr
-	if *bindIPs != "" {
-		maddrs = make([]ma.Multiaddr, 0)
-		mas := strings.Split(*bindIPs, ",")
-		i := 0
-		for _, m := range mas {
-			addr, err := ma.NewMultiaddr(m)
-			if err != nil {
-				glog.Errorf("Error creating bindIP %v to multiaddr: %v", m, err)
-				continue // nonfatal
-			}
-			maddrs = append(maddrs, addr)
-			i++
-		}
-	} else {
-		sourceMultiAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", *port))
-		maddrs = []ma.Multiaddr{sourceMultiAddr}
-	}
-	node, err := bnet.NewNode(maddrs, priv, pub, notifiee)
-	if err != nil {
-		glog.Errorf("Error creating a new node: %v", err)
-		return
-	}
-	nw, err := bnet.NewBasicVideoNetwork(node, "127.0.0.1", *port)
-	if err != nil {
-		glog.Errorf("Cannot create network node: %v", err)
-		return
-	}
 
-	n, err := core.NewLivepeerNode(nil, nw, core.NodeID(nw.GetNodeID()), *datadir, dbh)
+	nodeId, err := peer.IDFromPublicKey(pub) // TODO simplify this
+	if err != nil {
+		glog.Error("Error retrieving node ID ", err)
+	}
+	n, err := core.NewLivepeerNode(nil, nil, core.NodeID(nodeId), *datadir, dbh)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
 	if *transcoder {
 		n.NodeType = core.Transcoder
-	} else if *bootnode {
-		n.NodeType = core.Bootnode
-	} else if *gateway {
-		n.NodeType = core.Gateway
 	} else {
 		n.NodeType = core.Broadcaster
 	}
 
-	if *bootnode || *transcoder || *gateway {
-		//Bootnodes, transcoders and gateway nodes connect to all the bootnodes
-		if err := n.VideoNetwork.SetupProtocol(); err != nil {
-			glog.Errorf("Cannot set up protocol:%v", err)
-			return
-		}
-		if err := n.Start(context.Background(), strings.Split(*bootIDs, ","), strings.Split(*bootAddrs, ",")); err != nil {
-			glog.Errorf("Cannot connect to bootstrap node: %v", err)
-			return
-		}
-		n.BootIDs = strings.Split(*bootIDs, ",")
-		n.BootAddrs = strings.Split(*bootAddrs, ",")
-	} else {
-		//Connect to the closest bootnode
-		localNID, err := peer.IDHexDecode(n.VideoNetwork.GetNodeID())
-		if err != nil {
-			glog.Errorf("Cannot load local node ID: %v", n.VideoNetwork.GetNodeID())
-			return
-		}
-
-		if *bootIDs != "" && *bootAddrs != "" {
-			indexLookup := make(map[peer.ID]int)
-			bIDs := make([]peer.ID, 0)
-			for i, bootID := range strings.Split(*bootIDs, ",") {
-				id, err := peer.IDHexDecode(bootID)
-				if err != nil {
-					continue
-				}
-				bIDs = append(bIDs, id)
-				indexLookup[id] = i
-			}
-			closestNodeID := kb.SortClosestPeers(bIDs, kb.ConvertPeerID(localNID))[0]
-			closestNodeAddr := strings.Split(*bootAddrs, ",")[indexLookup[closestNodeID]]
-			if err := n.Start(context.Background(), []string{peer.IDHexEncode(closestNodeID)}, []string{closestNodeAddr}); err != nil {
-				glog.Errorf("Cannot connect to bootstrap node: %v", err)
-				return
-			}
-
-			n.BootIDs = []string{peer.IDHexEncode(closestNodeID)}
-			n.BootAddrs = []string{closestNodeAddr}
-		} else {
-			if err := n.Start(context.Background(), []string{}, []string{}); err != nil {
-				glog.Errorf("Cannot start node: %v", err)
-				return
-			}
-		}
-	}
-
-	if *offchain || *bootnode || *gateway {
+	if *offchain {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	} else {
 		var keystoreDir string
@@ -312,11 +207,6 @@ func main() {
 		}
 
 		n.Eth = client
-		node.SetSignFun(client.Sign)
-		node.SetVerifyTranscoderSig(func(data []byte, sig []byte, strmID string) bool {
-			// look up job by stream id, verify from there
-			return true
-		})
 
 		defer n.StopEthServices()
 
@@ -387,10 +277,6 @@ func main() {
 	switch n.NodeType {
 	case core.Transcoder:
 		glog.Infof("***Livepeer Running in Transcoder Mode***")
-	case core.Gateway:
-		glog.Infof("***Livepeer Running in Gateway Mode***")
-	case core.Bootnode:
-		glog.Infof("***Livepeer Running in Bootnode Mode***")
 	case core.Broadcaster:
 		glog.Infof("***Livepeer Running in Broadcaster Mode***")
 		glog.Infof("Video Ingest Endpoint - rtmp://%v:%v", *rtmpIP, *rtmpPort)

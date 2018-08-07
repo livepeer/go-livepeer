@@ -41,45 +41,7 @@ type StubVideoNetwork struct {
 }
 
 func (n *StubVideoNetwork) String() string { return "" }
-func (n *StubVideoNetwork) GetNodeID() string {
-	return "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0"
-}
 
-func (n *StubVideoNetwork) GetBroadcaster(sid string) (stream.Broadcaster, error) {
-	if n.broadcasters == nil {
-		n.broadcasters = make(map[StreamID]stream.Broadcaster)
-	}
-	strmID := StreamID(sid)
-	b, ok := n.broadcasters[strmID]
-	if !ok {
-		b = &StubBroadcaster{T: n.T, StrmID: sid}
-		n.broadcasters[strmID] = b
-	}
-	return b, nil
-}
-func (n *StubVideoNetwork) GetSubscriber(strmID string) (stream.Subscriber, error) {
-	if s, ok := n.subscribers[strmID]; ok {
-		return s, nil
-	}
-	return nil, ErrNotFound
-	// return &StubSubscriber{T: n.T}, nil
-}
-func (n *StubVideoNetwork) Connect(nodeID string, nodeAddr []string) error {
-	if n.connectInfo == nil {
-		n.connectInfo = make([]StubConnInfo, 0)
-	}
-	n.connectInfo = append(n.connectInfo, StubConnInfo{NodeID: nodeID, NodeAddr: nodeAddr})
-	return nil
-}
-func (n *StubVideoNetwork) SetupProtocol() error { return nil }
-func (n *StubVideoNetwork) SendTranscodeResponse(nid string, sid string, tr map[string]string) error {
-	n.nodeID = nid
-	n.strmID = sid
-	n.tResult = tr
-	return nil
-}
-func (n *StubVideoNetwork) ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string)) {
-}
 func (n *StubVideoNetwork) GetMasterPlaylist(nodeID string, strmID string) (chan *m3u8.MasterPlaylist, error) {
 	mplc := make(chan *m3u8.MasterPlaylist)
 	mpl, ok := n.mplMap[strmID]
@@ -107,11 +69,6 @@ func (n *StubVideoNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterP
 
 func (n *StubVideoNetwork) GetNodeStatus(nodeID string) (chan *net.NodeStatus, error) {
 	return nil, nil
-}
-
-func (n *StubVideoNetwork) TranscodeSub(ctx context.Context, strmID string, gotData func(seqNo uint64, data []byte, eof bool)) error {
-	sub, _ := n.GetSubscriber(strmID)
-	return sub.Subscribe(ctx, gotData)
 }
 
 type StubBroadcaster struct {

@@ -17,7 +17,6 @@ import (
 
 	"github.com/cenkalti/backoff"
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
@@ -31,36 +30,18 @@ import (
 
 var ErrLivepeerNode = errors.New("ErrLivepeerNode")
 var ErrTranscode = errors.New("ErrTranscode")
-var ErrBroadcastTimeout = errors.New("ErrBroadcastTimeout")
-var ErrBroadcastJob = errors.New("ErrBroadcastJob")
-var ErrBroadcast = errors.New("ErrBroadcast")
-var ErrEOF = errors.New("ErrEOF")
 var ErrNotFound = errors.New("ErrNotFound")
-var BroadcastTimeout = time.Second * 30
-var EthRpcTimeout = 5 * time.Second
-var EthEventTimeout = 5 * time.Second
-var EthMinedTxTimeout = 60 * time.Second
-var DefaultMasterPlaylistWaitTime = 60 * time.Second
 var DefaultJobLength = int64(5760) //Avg 1 day in 15 sec blocks
-var ConnFileWriteFreq = time.Duration(60) * time.Second
 var LivepeerVersion = "0.2.4-unstable"
-var SubscribeRetry = uint64(3)
 
 //NodeID can be converted from libp2p PeerID.
 type NodeID string
-
-type PeerConn struct {
-	NodeID   string
-	NodeAddr string
-}
 
 type NodeType int
 
 const (
 	Broadcaster NodeType = iota
 	Transcoder
-	Gateway
-	Bootnode
 )
 
 const TranscodeLoopTimeout = 10 * time.Minute
@@ -75,8 +56,6 @@ type SegChanData struct {
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 	Identity        NodeID
-	BootIDs         []string
-	BootAddrs       []string
 	VideoNetwork    net.VideoNetwork
 	VideoCache      VideoCache
 	Eth             eth.LivepeerEthClient
@@ -101,37 +80,6 @@ func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID
 	}
 
 	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Eth: e, WorkDir: wd, Database: dbh, EthServices: make(map[string]eth.EventService), ClaimManagers: make(map[int64]eth.ClaimManager), SegmentChans: make(map[int64]SegmentChan), claimMutex: &sync.Mutex{}, segmentMutex: &sync.Mutex{}}, nil
-}
-
-//Start sets up the Livepeer protocol and connects the node to the network
-func (n *LivepeerNode) Start(ctx context.Context, bootIDs, bootAddrs []string) error {
-	if len(bootIDs) != len(bootAddrs) {
-		return errors.New("BootIDs and BootAddrs do not match.")
-	}
-	//Set up protocol (to handle incoming streams)
-	if err := n.VideoNetwork.SetupProtocol(); err != nil {
-		glog.Errorf("Error setting up protocol: %v", err)
-		return err
-	}
-
-	//Connect to bootstrap node.
-	//TODO: Kick off a bootstrap process, which periodically checks for new peers and connect to them.
-	errCount := 0
-	if len(bootIDs) > 0 && len(bootAddrs) > 0 {
-		for i, bootID := range bootIDs {
-			bootAddr := bootAddrs[i]
-			glog.V(common.DEBUG).Infof("Connecting to %v %v", bootID, bootAddr)
-			if err := n.VideoNetwork.Connect(bootID, []string{bootAddr}); err != nil {
-				glog.V(common.SHORT).Infof("Cannot connect to boot node %v: %v", bootID, err)
-				errCount++
-			}
-		}
-	}
-	if errCount == len(bootIDs) {
-		glog.Errorf("Current node cannot connect to any neighbors")
-	}
-	//TODO:Kick off process to periodically monitor peer connection by pinging them
-	return nil
 }
 
 //CreateTranscodeJob creates the on-chain transcode job.
@@ -200,7 +148,6 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 		return err
 	}
 	resultStrmIDs := make([]StreamID, len(job.Profiles), len(job.Profiles))
-	broadcasters := make(map[StreamID]stream.Broadcaster)
 	sid := StreamID(job.StreamId)
 	for i, vp := range job.Profiles {
 		strmID, err := MakeStreamID(n.Identity, sid.GetVideoID(), vp.Name)
@@ -209,12 +156,6 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 			return err
 		}
 		resultStrmIDs[i] = strmID
-		broadcaster, err := n.VideoNetwork.GetBroadcaster(string(strmID))
-		if err != nil {
-			glog.Errorf("Error making new stream: %v", err)
-			return err
-		}
-		broadcasters[strmID] = broadcaster
 	}
 	tr := transcoder.NewFFMpegSegmentTranscoder(job.Profiles, n.WorkDir)
 	config := net.TranscodeConfig{
@@ -251,7 +192,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 				n.claimMutex.Unlock()
 				return
 			case chanData := <-segChan:
-				chanData.res <- n.transcodeAndBroadcastSeg(&chanData.seg.Seg, chanData.seg.Sig, cm, tr, resultStrmIDs, broadcasters, config)
+				chanData.res <- n.transcodeAndBroadcastSeg(&chanData.seg.Seg, chanData.seg.Sig, cm, tr, resultStrmIDs, config)
 			}
 			cancel()
 		}
@@ -301,7 +242,7 @@ func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) er
 	return nil
 }
 
-func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []byte, cm eth.ClaimManager, t transcoder.Transcoder, resultStrmIDs []StreamID, broadcasters map[StreamID]stream.Broadcaster, config net.TranscodeConfig) error {
+func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []byte, cm eth.ClaimManager, t transcoder.Transcoder, resultStrmIDs []StreamID, config net.TranscodeConfig) error {
 
 	// Prevent unnecessary work, check for replayed sequence numbers.
 	// NOTE: If we ever process segments from the same job concurrently,
@@ -366,24 +307,12 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 
 	//Encode and broadcast the segment
 	start = time.Now()
-	for i, resultStrmID := range resultStrmIDs {
+	for i, _ := range resultStrmIDs {
 		//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
 		if tData[i] == nil {
 			glog.Errorf("Cannot find transcoded segment for %v", seg.SeqNo)
 			continue
 		}
-
-		newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: fmt.Sprintf("%v_%d.ts", resultStrmID, seg.SeqNo), Data: tData[i], Duration: seg.Duration}
-		broadcaster, ok := broadcasters[resultStrmID]
-		if !ok {
-			// glog.Errorf("Cannot find stream for %v", tranStrms)
-			glog.Errorf("Cannot find broadcaster for %v", resultStrmID)
-			continue
-		}
-		if err := n.BroadcastHLSSegToNetwork(string(resultStrmID), newSeg, broadcaster); err != nil {
-			glog.Errorf("Error inserting transcoded segment into network: %v", err)
-		}
-
 		tProfileData[config.Profiles[i]] = tData[i]
 	}
 	//Don't do the onchain stuff unless specified
@@ -397,59 +326,6 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 		// We aren't going through the claim process so remove input immediately
 		os.Remove(fname)
 	}
-	return nil
-}
-
-func (n *LivepeerNode) BroadcastFinishMsg(strmID string) error {
-	b, err := n.VideoNetwork.GetBroadcaster(strmID)
-	if err != nil {
-		glog.Errorf("Error getting broadcaster from network: %v", err)
-		return err
-	}
-
-	return b.Finish()
-}
-
-func (n *LivepeerNode) BroadcastHLSSegToNetwork(strmID string, seg *stream.HLSSegment, b stream.Broadcaster) error {
-	var sig []byte
-	var err error
-	if n.Eth != nil {
-		segHash := (&ethTypes.Segment{StreamID: strmID, SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
-
-		sig, err = n.Eth.Sign(segHash.Bytes())
-		if err != nil {
-			glog.Errorf("Error signing segment %v-%v: %v", strmID, seg.SeqNo, err)
-			return err
-		}
-	}
-
-	//Encode segment into []byte, broadcast it
-	if ssb, err := SignedSegmentToBytes(SignedSegment{Seg: *seg, Sig: sig}); err == nil {
-		if err = b.Broadcast(seg.SeqNo, ssb); err != nil {
-			glog.Errorf("Error broadcasting segment to network: %v", err)
-		}
-	} else {
-		glog.Errorf("Error encoding segment to []byte: %v", err)
-		return err
-	}
-
-	return nil
-}
-
-//UnsubscribeFromNetwork unsubscribes to a stream on the network.
-func (n *LivepeerNode) UnsubscribeFromNetwork(strmID StreamID) error {
-	s, err := n.VideoNetwork.GetSubscriber(strmID.String())
-	if err != nil {
-		glog.Errorf("Error getting subscriber when unsubscribing from network: %v", err)
-		return ErrNotFound
-	}
-
-	err = s.Unsubscribe()
-	if err != nil {
-		glog.Errorf("Error unsubscribing from network: %v", err)
-		return err
-	}
-
 	return nil
 }
 

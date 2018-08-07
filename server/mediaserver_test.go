@@ -17,7 +17,6 @@ import (
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
-	bnet "github.com/livepeer/go-livepeer-basicnet"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/segmenter"
@@ -42,7 +41,7 @@ func setupServer(nw net.VideoNetwork) *LivepeerServer {
 				return nil
 			}
 		}
-		n, _ := core.NewLivepeerNode(nil, nw, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", "./tmp", nil)
+		n, _ := core.NewLivepeerNode(nil, nil, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", "./tmp", nil)
 		S = NewLivepeerServer("1935", "127.0.0.1", "8080", "127.0.0.1", n)
 		go S.StartMediaServer(context.Background(), big.NewInt(0), "")
 		go S.StartWebserver()
@@ -51,33 +50,11 @@ func setupServer(nw net.VideoNetwork) *LivepeerServer {
 }
 
 type StubNetwork struct {
-	B                  map[string]*StubBroadcaster
-	S                  map[string]*StubSubscriber
 	MPL                map[string]*m3u8.MasterPlaylist
 	TranscodeCallbacks map[string]func(map[string]string)
 }
 
 func (n *StubNetwork) String() string { return "" }
-func (n *StubNetwork) GetNodeID() string {
-	return "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2"
-}
-
-func (n *StubNetwork) GetBroadcaster(strmID string) (stream.Broadcaster, error) {
-	return n.B[strmID], nil
-}
-
-func (n *StubNetwork) GetSubscriber(strmID string) (stream.Subscriber, error) {
-	return n.S[strmID], nil
-}
-
-func (n *StubNetwork) Connect(nodeID string, nodeAddr []string) error { return nil }
-func (n *StubNetwork) SetupProtocol() error                           { return nil }
-func (b *StubNetwork) SendTranscodeResponse(nodeID string, strmID string, transcodeResult map[string]string) error {
-	return nil
-}
-func (b *StubNetwork) ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string)) {
-	b.TranscodeCallbacks[strmID] = gotResult
-}
 
 func (b *StubNetwork) GetMasterPlaylist(nodeID string, strmID string) (chan *m3u8.MasterPlaylist, error) {
 	mplc := make(chan *m3u8.MasterPlaylist)
@@ -101,10 +78,6 @@ func (b *StubNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterPlayli
 
 func (n *StubNetwork) GetNodeStatus(nodeID string) (chan *net.NodeStatus, error) {
 	return nil, nil
-}
-func (n *StubNetwork) TranscodeSub(ctx context.Context, strmID string, gotData func(seqNo uint64, data []byte, eof bool)) error {
-	sub, _ := n.GetSubscriber(strmID)
-	return sub.Subscribe(ctx, gotData)
 }
 
 type StubBroadcaster struct {

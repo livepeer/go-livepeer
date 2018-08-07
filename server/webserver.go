@@ -16,12 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
-	basicnet "github.com/livepeer/go-livepeer-basicnet"
 	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
-	lpmon "github.com/livepeer/go-livepeer/monitor"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
@@ -774,32 +772,14 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {
-		net := s.LivepeerNode.VideoNetwork.(*basicnet.BasicVideoNetwork)
+		// XXX fetch local streams?
 		ret := make([]map[string]string, 0)
-		for _, strmID := range net.GetLocalStreams() {
-			ret = append(ret, map[string]string{"format": "hls", "streamID": strmID})
-		}
 		js, err := json.Marshal(ret)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(js)
-	})
-
-	http.HandleFunc("/peersCount", func(w http.ResponseWriter, r *http.Request) {
-		ret := make(map[string]int)
-		ret["count"] = lpmon.Instance().GetPeerCount()
-
-		js, err := json.Marshal(ret)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(js)
 	})
@@ -839,12 +819,7 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	http.HandleFunc("/nodeID", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(s.LivepeerNode.VideoNetwork.GetNodeID()))
-	})
-
-	http.HandleFunc("/nodeAddrs", func(w http.ResponseWriter, r *http.Request) {
-		addrs := s.LivepeerNode.VideoNetwork.(*basicnet.BasicVideoNetwork).NetworkNode.(*basicnet.BasicNetworkNode).PeerHost.Addrs()
-		w.Write([]byte(fmt.Sprintf("%v", addrs)))
+		w.Write([]byte(s.LivepeerNode.Identity))
 	})
 
 	http.HandleFunc("/contractAddresses", func(w http.ResponseWriter, r *http.Request) {
@@ -1201,28 +1176,6 @@ func (s *LivepeerServer) StartWebserver() {
 			return
 		}
 		glog.Infof("Call to reward successful")
-	})
-
-	http.HandleFunc("/pingBootnode", func(w http.ResponseWriter, r *http.Request) {
-		result := make(map[string]bool)
-		for i, bootID := range s.LivepeerNode.BootIDs {
-			bootAddr := s.LivepeerNode.BootAddrs[i]
-			responseCh, err := s.LivepeerNode.VideoNetwork.(*basicnet.BasicVideoNetwork).Ping(bootID)
-			if err != nil {
-				glog.Infof("Ping failed for %v", bootID)
-				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = false
-				w.WriteHeader(http.StatusBadRequest)
-				continue
-			}
-			select {
-			case <-responseCh:
-				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = true
-			case <-time.After(time.Second * 3):
-				result[fmt.Sprintf("%v,%v", bootID, bootAddr)] = false
-				w.WriteHeader(http.StatusBadRequest)
-			}
-		}
-		w.Write([]byte(fmt.Sprintf("%v", result)))
 	})
 
 	http.HandleFunc("/gasPrice", func(w http.ResponseWriter, r *http.Request) {

@@ -19,7 +19,6 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -43,13 +42,7 @@ const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
 const HLSBufferWindow = uint(5)
 
 const SegLen = 4 * time.Second
-
 const HLSUnsubWorkerFreq = time.Second * 5
-
-const EthRpcTimeout = 5 * time.Second
-const EthEventTimeout = 5 * time.Second
-const EthMinedTxTimeout = 60 * time.Second
-
 const BroadcastRetry = 15 * time.Second
 
 var HLSWaitTime = time.Second * 45
@@ -339,21 +332,15 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			return ErrRTMPPublish
 		}
 
-		//Get a broadcaster from the network
-		broadcaster, err := s.LivepeerNode.VideoNetwork.GetBroadcaster(string(hlsStrmID))
-		if err != nil {
-			glog.Errorf("Error creating HLS stream for segmentation: %v", err)
-			return ErrRTMPPublish
-		}
 		LastHLSStreamID = hlsStrmID
 
 		streamStarted := false
 		//Segment the stream, insert the segments into the broadcaster
-		go func(broadcaster stream.Broadcaster, rtmpStrm stream.RTMPVideoStream) {
+		go func(rtmpStrm stream.RTMPVideoStream) {
 			hlsStrm := stream.NewBasicHLSVideoStream(string(hlsStrmID), stream.DefaultHLSStreamWin)
 			hlsStrm.SetSubscriber(func(seg *stream.HLSSegment, eof bool) {
 				if eof {
-					broadcaster.Finish()
+					// XXX update HLS manifest
 					return
 				}
 
@@ -371,25 +358,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					s.LivepeerNode.Database.SetSegmentCount(jobId, int64(seg.SeqNo))
 				}
 
-				var sig []byte
-				if s.LivepeerNode.Eth != nil {
-					segHash := (&ethTypes.Segment{StreamID: hlsStrm.GetStreamID(), SegmentSequenceNumber: big.NewInt(int64(seg.SeqNo)), DataHash: crypto.Keccak256Hash(seg.Data)}).Hash()
-					sig, err = s.LivepeerNode.Eth.Sign(segHash.Bytes())
-					if err != nil {
-						glog.Errorf("Error signing segment %v-%v: %v", hlsStrm.GetStreamID(), seg.SeqNo, err)
-						return
-					}
-				}
-
-				//Encode segment into []byte, broadcast it
-				if ssb, err := core.SignedSegmentToBytes(core.SignedSegment{Seg: *seg, Sig: sig}); err != nil {
-					glog.Errorf("Error signing segment: %v", seg.SeqNo)
-				} else {
-					if err := broadcaster.Broadcast(seg.SeqNo, ssb); err != nil {
-						glog.Errorf("Error broadcasting to network: %v", err)
-					}
-				}
-
 				if rpcBcast != nil {
 					go SubmitSegment(rpcBcast, seg, nonce)
 				}
@@ -401,15 +369,14 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			}
 			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, segOptions)
 			if err != nil {
-				if err := s.LivepeerNode.BroadcastFinishMsg(hlsStrmID.String()); err != nil {
-					glog.Errorf("Error broadcaseting finish message: %v", err)
-				}
+				// TODO update manifest
+
 				// Stop the incoming RTMP connection.
 				// TODO retry segmentation if err != SegmenterTimeout; may be recoverable
 				rtmpStrm.Close()
 			}
 
-		}(broadcaster, rtmpStrm)
+		}(rtmpStrm)
 
 		//Create the manifest and broadcast it (so the video can be consumed by itself without transcoding)
 		mid, err := core.MakeManifestID(hlsStrmID.GetNodeID(), hlsStrmID.GetVideoID())
@@ -480,11 +447,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		manifestID := s.broadcastRtmpToManifestMap[rtmpID]
 		//Remove RTMP stream
 		delete(s.rtmpStreams, core.StreamID(rtmpID))
-		if b, err := s.LivepeerNode.VideoNetwork.GetBroadcaster(hlsID); err != nil {
-			glog.Errorf("Error getting broadcaster from network: %v", err)
-		} else {
-			b.Finish()
-		}
+		// XXX update HLS manifest
 		//Remove Manifest
 		s.LivepeerNode.VideoCache.EvictHLSMasterPlaylist(core.ManifestID(manifestID))
 		//Remove the master playlist from the network
@@ -595,7 +558,6 @@ func (s *LivepeerServer) startHlsUnsubscribeWorker(limit time.Duration, freq tim
 		for sid, t := range s.hlsSubTimer {
 			if time.Since(t) > limit {
 				glog.V(common.SHORT).Infof("Inactive HLS Stream %v - unsubscribing", sid)
-				s.LivepeerNode.UnsubscribeFromNetwork(sid)
 				delete(s.hlsSubTimer, sid)
 			}
 		}

@@ -1,7 +1,6 @@
 package net
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -10,21 +9,12 @@ import (
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
-	"github.com/livepeer/lpms/stream"
 )
 
 //VideoNetwork describes the interface for a Livepeer node network-layer library.
 type VideoNetwork interface {
 	GetMasterPlaylist(nodeID string, manifestID string) (chan *m3u8.MasterPlaylist, error)
-	GetSubscriber(strmID string) (stream.Subscriber, error)
 	UpdateMasterPlaylist(manifestID string, mpl *m3u8.MasterPlaylist) error
-	GetBroadcaster(strmID string) (stream.Broadcaster, error)
-	GetNodeID() string
-	Connect(nodeID string, nodeAddr []string) error
-	SetupProtocol() error
-	TranscodeSub(ctx context.Context, strmID string, gotData func(seqNo uint64, data []byte, eof bool)) error
-	SendTranscodeResponse(nodeID string, manifestID string, transcodeResult map[string]string) error
-	ReceivedTranscodeResponse(strmID string, gotResult func(transcodeResult map[string]string))
 	GetNodeStatus(nodeID string) (chan *NodeStatus, error)
 	String() string
 }
@@ -34,10 +24,6 @@ type TranscodeConfig struct {
 	Profiles            []ffmpeg.VideoProfile
 	PerformOnchainClaim bool
 	JobID               *big.Int
-}
-
-type Transcoder interface {
-	Transcode(strmID string, config TranscodeConfig, gotPlaylist func(masterPlaylist []byte)) error
 }
 
 type NodeStatus struct {

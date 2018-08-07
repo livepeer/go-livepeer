@@ -1,12 +1,10 @@
 package core
 
 import (
-	"context"
 	"sync"
 	"time"
 
 	"github.com/ericxtang/m3u8"
-	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/stream"
 )
@@ -102,10 +100,6 @@ func (c *BasicVideoCache) EvictHLSMasterPlaylist(manifestID ManifestID) {
 	return
 }
 
-func (c *BasicVideoCache) getHLSSubscriber(streamID StreamID) (stream.Subscriber, error) {
-	return c.network.GetSubscriber(string(streamID))
-}
-
 func (c *BasicVideoCache) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlaylist {
 	//If we have the stream, just return the playlist
 	if cache, ok := c.GetCache(streamID); ok {
@@ -113,58 +107,8 @@ func (c *BasicVideoCache) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlay
 	}
 
 	//If we don't already have the stream, subscribe and return the playlist
-	plChan := make(chan *m3u8.MediaPlaylist)
-	ctx, cancel := context.WithCancel(context.Background())
-	go func(ctx context.Context, plChan chan *m3u8.MediaPlaylist, streamID StreamID) {
-		sub, err := c.getHLSSubscriber(streamID)
-		if err != nil {
-			glog.Errorf("Error getting subscriber for %v: %v", streamID, err)
-			close(plChan)
-			return
-		}
-		glog.Infof("Subscriber for stream: %v - %v", streamID, sub)
-		subCtx, cancelSub := context.WithCancel(context.Background())
-		sub.Subscribe(subCtx, func(seqNo uint64, data []byte, eof bool) {
-			glog.Infof("Subscriber got msg: %v", seqNo)
-			if eof {
-				//Remove cache entry
-				c.DeleteCache(streamID)
-				return
-			}
-
-			ss, err := BytesToSignedSegment(data)
-			if err != nil {
-				glog.Errorf("Error converting bytes to segment: %v", err)
-			}
-			//If first data, insert pl into chan
-			cache, ok := c.segCache[streamID]
-			if !ok {
-				cache = newSegCache(SegCacheLen)
-				c.segCache[streamID] = cache
-				cache.Insert(&ss.Seg)
-				plChan <- cache.GetMediaPlaylist()
-				return
-			}
-
-			//Add data to cache
-			cache.Insert(&ss.Seg)
-		})
-
-		select {
-		case <-ctx.Done():
-			cancelSub()
-		}
-	}(ctx, plChan, streamID)
-
-	//Wait for some time until we get the playlist
-	timer := time.NewTimer(GetMediaPlaylistWaitTime)
-	select {
-	case pl := <-plChan:
-		return pl
-	case <-timer.C:
-		cancel()
-		return nil
-	}
+	//XXX implement
+	return nil
 }
 
 func (c *BasicVideoCache) GetHLSSegment(streamID StreamID, segName string) *stream.HLSSegment {
