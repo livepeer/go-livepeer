@@ -487,6 +487,15 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		}
 		return
 	}
+	if resp.StatusCode != 200 {
+		errs := fmt.Sprintf("Error submitting segment %d: code %d error %s", seg.SeqNo, resp.StatusCode,
+			resp.Status)
+		glog.Error(errs)
+		if monitor.Enabled {
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, errs)
+		}
+		return
+	}
 	glog.Infof("Uploaded segment %v", seg.SeqNo)
 	if monitor.Enabled {
 		monitor.LogSegmentUploaded(nonce, seg.SeqNo, uploadDur)
