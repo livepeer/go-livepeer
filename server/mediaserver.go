@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -61,6 +62,7 @@ type LivepeerServer struct {
 	LivepeerNode   *core.LivepeerNode
 	VideoNonce     map[string]uint64
 	VideoNonceLock *sync.Mutex
+	HttpMux        *http.ServeMux
 
 	rtmpStreams                map[core.StreamID]stream.RTMPVideoStream
 	hlsSubTimer                map[core.StreamID]time.Time
@@ -77,9 +79,11 @@ func NewLivepeerServer(rtmpPort string, rtmpIP string, httpPort string, httpIP s
 	switch lpNode.NodeType {
 	case core.Broadcaster:
 		opts.RtmpDisabled = false
+	case core.Transcoder:
+		opts.HttpMux = http.NewServeMux()
 	}
 	server := lpmscore.New(&opts)
-	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, LivepeerNode: lpNode, VideoNonce: map[string]uint64{}, VideoNonceLock: &sync.Mutex{}, rtmpStreams: make(map[core.StreamID]stream.RTMPVideoStream), broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
+	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, HttpPort: httpPort, RtmpPort: rtmpPort, LivepeerNode: lpNode, VideoNonce: map[string]uint64{}, VideoNonceLock: &sync.Mutex{}, HttpMux: opts.HttpMux, rtmpStreams: make(map[core.StreamID]stream.RTMPVideoStream), broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
 }
 
 //StartServer starts the LPMS server
@@ -112,7 +116,11 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 	lpmsCtx, cancel := context.WithCancel(context.Background())
 	ec := make(chan error, 1)
 	go func() {
-		ec <- s.LPMS.Start(lpmsCtx)
+		if err := s.LPMS.Start(lpmsCtx); err != nil {
+			// typically triggered if there's an error with broadcaster LPMS
+			// transcoder LPMS should return without an error
+			ec <- s.LPMS.Start(lpmsCtx)
+		}
 	}()
 
 	select {

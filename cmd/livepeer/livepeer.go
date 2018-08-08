@@ -280,7 +280,7 @@ func main() {
 			return
 		}
 		orch := core.NewOrchestrator(s.LivepeerNode)
-		server.StartTranscodeServer(orch, n.WorkDir)
+		server.StartTranscodeServer(orch, s.HttpMux, n.WorkDir)
 		tc <- struct{}{}
 	}()
 

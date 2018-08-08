@@ -288,12 +288,13 @@ func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func StartTranscodeServer(orch Orchestrator, workDir string) {
+// XXX do something about the implicit start of the http mux? this smells
+func StartTranscodeServer(orch Orchestrator, mux *http.ServeMux, workDir string) {
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
 		orchRpc:      s,
-		transRpc:     http.NewServeMux(),
+		transRpc:     mux,
 	}
 	RegisterOrchestratorServer(s, &lp)
 	lp.transRpc.HandleFunc("/segment", lp.ServeSegment)
