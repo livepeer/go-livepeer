@@ -32,7 +32,7 @@ import (
 )
 
 const HTTPTimeout = 8 * time.Second
-const GRPCTimeout = 4 * time.Second
+const GRPCTimeout = 8 * time.Second
 
 const AuthType_LPE = "Livepeer-Eth-1"
 
@@ -180,20 +180,20 @@ func verifyMsgSig(addr ethcommon.Address, msg string, sig []byte) bool {
 	return eth.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
 }
 
-func verifyTranscoderReq(orch Orchestrator, req *TranscoderRequest, job *lpTypes.Job) bool {
+func verifyTranscoderReq(orch Orchestrator, req *TranscoderRequest, job *lpTypes.Job) error {
 	if orch.Address() != job.TranscoderAddress {
 		glog.Error("Transcoder was not assigned")
-		return false
+		return fmt.Errorf("Transcoder was not assigned")
 	}
 	if !blockInRange(orch, job) {
 		glog.Error("Job out of range")
-		return false
+		return fmt.Errorf("Job out of range")
 	}
 	if !verifyMsgSig(job.BroadcasterAddress, fmt.Sprintf("%v", job.JobId), req.Sig) {
-		glog.Error("Transcoder req sig check failed")
-		return false
+		glog.Error("transcoder req sig check failed")
+		return fmt.Errorf("transcoder req sig check failed")
 	}
-	return true
+	return nil
 }
 
 func genToken(orch Orchestrator, job *lpTypes.Job) (string, error) {
@@ -228,7 +228,7 @@ func verifyToken(orch Orchestrator, creds string) (*lpTypes.Job, error) {
 	job, err := orch.GetJob(token.JobId)
 	if err != nil || job == nil {
 		glog.Error("Could not get job ", err)
-		return nil, fmt.Errorf("Missing job")
+		return nil, fmt.Errorf("Missing job (%s)", err.Error())
 	}
 	if !blockInRange(orch, job) {
 		glog.Errorf("Job %v too early or expired", job.JobId)
@@ -285,10 +285,10 @@ func GetTranscoder(context context.Context, orch Orchestrator, req *TranscoderRe
 	job, err := orch.GetJob(req.JobId)
 	if err != nil {
 		glog.Error("Unable to get job ", err)
-		return nil, err
+		return nil, fmt.Errorf("Unable to get job (%s)", err.Error())
 	}
-	if !verifyTranscoderReq(orch, req, job) {
-		return nil, fmt.Errorf("Invalid transcoder request")
+	if err := verifyTranscoderReq(orch, req, job); err != nil {
+		return nil, fmt.Errorf("Invalid transcoder request (%v)", err)
 	}
 	creds, err := genToken(orch, job)
 	if err != nil {
