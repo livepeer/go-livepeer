@@ -159,18 +159,19 @@ func TestTranscode(t *testing.T) {
 
 	// Sanity check full flow.
 	ss := StubSegment()
-	err := n.TranscodeSegment(job, ss)
+	ids, err := n.TranscodeSegment(job, ss)
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
 
-	if len(stubnet.broadcasters) != len(job.Profiles) && len(job.Profiles) != 2 {
+	if len(ids) != len(job.Profiles) && len(job.Profiles) != 2 {
 		t.Error("Job profile count did not match broadcasters")
 	}
 
 	// Check transcode result
+	// XXX fix
 	has_144p, has_240p := false, false
-	for k, v := range stubnet.broadcasters {
+	for k, v := range ids {
 		b, ok := v.(*StubBroadcaster)
 		if !ok {
 			t.Error("Error converting broadcaster")
@@ -198,7 +199,7 @@ func TestTranscode(t *testing.T) {
 	}
 
 	// check duplicate sequence in DB
-	err = n.TranscodeSegment(job, ss)
+	_, err = n.TranscodeSegment(job, ss)
 	if err.Error() != "DuplicateSequence" {
 		t.Error("Unexpected error when checking duplicate seqs ", err)
 	}
@@ -208,7 +209,7 @@ func TestTranscode(t *testing.T) {
 	ssd := ss.Seg.Data
 	ss.Seg.Data = d
 	ss.Seg.SeqNo += 1
-	err = n.TranscodeSegment(job, ss)
+	_, err = n.TranscodeSegment(job, ss)
 	if err.Error() != "MediaStats Failure" {
 		t.Error("Unexpected error when checking mediastats ", err)
 	}
@@ -217,7 +218,7 @@ func TestTranscode(t *testing.T) {
 	// Check insufficient deposit
 	job.JobId = big.NewInt(10) // force a new job with a new price
 	job.MaxPricePerSegment = big.NewInt(1000)
-	err = n.TranscodeSegment(job, ss)
+	_, err = n.TranscodeSegment(job, ss)
 	if err.Error() != "Insufficient deposit" {
 		t.Error("Unexpected error when checking deposit ", err)
 	}

@@ -42,7 +42,7 @@ type Orchestrator interface {
 	Sign([]byte) ([]byte, error)
 	CurrentBlock() *big.Int
 	GetJob(int64) (*lpTypes.Job, error)
-	TranscodeSeg(*lpTypes.Job, *core.SignedSegment) error
+	TranscodeSeg(*lpTypes.Job, *core.SignedSegment) (*core.TranscodeResult, error)
 	StreamIDs(*lpTypes.Job) ([]core.StreamID, error)
 }
 
@@ -266,7 +266,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		},
 		Sig: segData.Sig,
 	}
-	if err := orch.TranscodeSeg(job, &ss); err != nil {
+	if _, err := orch.TranscodeSeg(job, &ss); err != nil {
 		glog.Error("Could not transcode ", err)
 		w.Write([]byte(fmt.Sprintf("Error transcoding segment %v : %v", segData.Seq, err)))
 		return
