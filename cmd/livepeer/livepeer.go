@@ -54,11 +54,9 @@ func main() {
 		glog.Fatalf("Cannot find current user: %v", err)
 	}
 
-	httpPort := flag.String("http", "8935", "http port")
 	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
-	rtmpIP := flag.String("rtmpIP", "127.0.0.1", "IP to bind for HTTP RPC commands")
-	httpIP := flag.String("httpIP", "127.0.0.1", "IP to bind for HTTP RPC commands")
+	rtmpIP := flag.String("rtmpIP", "127.0.0.1", "IP to bind for RTMP commands")
 	cliAddr := flag.String("cliAddr", "127.0.0.1:8935", "Address to bind for  CLI commands")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
@@ -238,6 +236,16 @@ func main() {
 		}
 	}
 
+	if n.NodeType == core.Broadcaster {
+		// default lpms listener for broadcaster; same as default rpc port
+		// TODO provide an option to disable this?
+		// TODO we might want to split this up into httpAddr (for listener)
+		//		and the publicAddr to mark service URIs
+		if "" == *publicAddr {
+			*publicAddr = "127.0.0.1:4433"
+		}
+	}
+
 	//Create Livepeer Node
 	if *monitor {
 		glog.Info("Monitor is set to 'true' by default.  If you want to disable it, use -monitor=false when starting Livepeer.")
@@ -260,7 +268,7 @@ func main() {
 	}
 
 	//Set up the media server
-	s := server.NewLivepeerServer(*rtmpPort, *rtmpIP, *httpPort, *httpIP, n)
+	s := server.NewLivepeerServer(*rtmpPort, *rtmpIP, *publicAddr, n)
 	ec := make(chan error)
 	tc := make(chan struct{})
 	wc := make(chan struct{})
