@@ -44,7 +44,7 @@ func setupServer(nw net.VideoNetwork) *LivepeerServer {
 		n, _ := core.NewLivepeerNode(nil, nil, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", "./tmp", nil)
 		S = NewLivepeerServer("1935", "127.0.0.1", "8080", "127.0.0.1", n)
 		go S.StartMediaServer(context.Background(), big.NewInt(0), "")
-		go S.StartWebserver()
+		go S.StartWebserver("127.0.0.1:8935")
 	}
 	return S
 }
