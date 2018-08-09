@@ -121,7 +121,7 @@ func main() {
 			glog.Infof("***Livepeer is running on the Rinkeby test network: %v***", RinkebyControllerAddr)
 		}
 		if *monitor && *monhost == "" {
-			*monhost = "http://metrics.livepeer.org/v2/rinkeby/events"
+			*monhost = "http://metrics-rinkeby.livepeer.org/api/events"
 		}
 	} else if *devenv {
 	} else {
@@ -141,7 +141,7 @@ func main() {
 			glog.Infof("***Livepeer is running on the Ethereum main network: %v***", MainnetControllerAddr)
 		}
 		if *monitor && *monhost == "" {
-			*monhost = "http://metrics.livepeer.org/v2/mainnet/events"
+			*monhost = "http://metrics-mainnet.livepeer.org/api/events"
 		}
 	}
 
