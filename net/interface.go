@@ -3,12 +3,10 @@ package net
 import (
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
-	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
 //VideoNetwork describes the interface for a Livepeer node network-layer library.
@@ -19,13 +17,6 @@ type VideoNetwork interface {
 	// TODO do we need this?
 	GetNodeStatus(nodeID string) (chan *NodeStatus, error)
 	String() string
-}
-
-type TranscodeConfig struct {
-	StrmID              string
-	Profiles            []ffmpeg.VideoProfile
-	PerformOnchainClaim bool
-	JobID               *big.Int
 }
 
 type NodeStatus struct {

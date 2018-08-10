@@ -18,7 +18,6 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
-	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/transcoder"
@@ -114,6 +113,15 @@ type SegChanData struct {
 
 type SegmentChan chan *SegChanData
 
+type transcodeConfig struct {
+	StrmID        string
+	Profiles      []ffmpeg.VideoProfile
+	ResultStrmIDs []StreamID
+	ClaimManager  eth.ClaimManager
+	JobID         *big.Int
+	Transcoder    transcoder.Transcoder
+}
+
 func (n *LivepeerNode) getSegmentChan(job *ethTypes.Job) (SegmentChan, error) {
 	// concurrency concerns here? what if a chan is added mid-call?
 	n.segmentMutex.Lock()
@@ -156,7 +164,9 @@ func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) er
 	return nil
 }
 
-func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []byte, cm eth.ClaimManager, t transcoder.Transcoder, resultStrmIDs []StreamID, config net.TranscodeConfig) error {
+func (n *LivepeerNode) transcodeAndBroadcastSeg(config transcodeConfig, ss *SignedSegment) error {
+
+	seg := ss.Seg
 
 	// Prevent unnecessary work, check for replayed sequence numbers.
 	// NOTE: If we ever process segments from the same job concurrently,
@@ -171,8 +181,8 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	}
 
 	// Check deposit
-	if cm != nil && config.PerformOnchainClaim {
-		sufficient, err := cm.SufficientBroadcasterDeposit()
+	if config.ClaimManager != nil {
+		sufficient, err := config.ClaimManager.SufficientBroadcasterDeposit()
 		if err != nil {
 			glog.Errorf("Error checking broadcaster deposit for job %v: %v", config.JobID, err)
 			// Give the benefit of doubt in case of an unrelated issue
@@ -209,7 +219,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 	}
 	//Do the transcoding
 	start := time.Now()
-	tData, err := t.Transcode(fname)
+	tData, err := config.Transcoder.Transcode(fname)
 	if err != nil {
 		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
 		os.Remove(fname)
@@ -221,7 +231,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 
 	//Encode and broadcast the segment
 	start = time.Now()
-	for i, r := range resultStrmIDs {
+	for i, r := range config.ResultStrmIDs {
 		//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
 		if tData[i] == nil {
 			glog.Errorf("Cannot find transcoded segment for %v", seg.SeqNo)
@@ -232,8 +242,8 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 		n.VideoCache.InsertHLSSegment(r, newSeg)
 	}
 	//Don't do the onchain stuff unless specified
-	if cm != nil && config.PerformOnchainClaim {
-		err = cm.AddReceipt(int64(seg.SeqNo), fname, seg.Data, sig, tProfileData, transcodeStart, transcodeEnd)
+	if config.ClaimManager != nil {
+		err = config.ClaimManager.AddReceipt(int64(seg.SeqNo), fname, seg.Data, ss.Sig, tProfileData, transcodeStart, transcodeEnd)
 		if err != nil {
 			os.Remove(fname)
 			return err
@@ -262,11 +272,13 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 		resultStrmIDs[i] = strmID
 	}
 	tr := transcoder.NewFFMpegSegmentTranscoder(job.Profiles, n.WorkDir)
-	config := net.TranscodeConfig{
-		StrmID:              job.StreamId,
-		Profiles:            job.Profiles,
-		JobID:               job.JobId,
-		PerformOnchainClaim: cm != nil,
+	config := transcodeConfig{
+		StrmID:        job.StreamId,
+		Profiles:      job.Profiles,
+		ResultStrmIDs: resultStrmIDs,
+		JobID:         job.JobId,
+		ClaimManager:  cm,
+		Transcoder:    tr,
 	}
 	go func() {
 		for {
@@ -296,7 +308,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 				n.claimMutex.Unlock()
 				return
 			case chanData := <-segChan:
-				chanData.res <- n.transcodeAndBroadcastSeg(&chanData.seg.Seg, chanData.seg.Sig, cm, tr, resultStrmIDs, config)
+				chanData.res <- n.transcodeAndBroadcastSeg(config, chanData.seg)
 			}
 			cancel()
 		}
