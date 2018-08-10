@@ -243,7 +243,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(config transcodeConfig, ss *Sign
 	}
 	//Don't do the onchain stuff unless specified
 	if config.ClaimManager != nil {
-		err = config.ClaimManager.AddReceipt(int64(seg.SeqNo), fname, seg.Data, ss.Sig, tProfileData, transcodeStart, transcodeEnd)
+		_, err = config.ClaimManager.AddReceipt(int64(seg.SeqNo), fname, seg.Data, ss.Sig, tProfileData, transcodeStart, transcodeEnd)
 		if err != nil {
 			os.Remove(fname)
 			return err
