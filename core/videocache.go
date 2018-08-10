@@ -17,6 +17,7 @@ type VideoCache interface {
 	GetHLSMasterPlaylist(manifestID ManifestID) *m3u8.MasterPlaylist
 	EvictHLSMasterPlaylist(manifestID ManifestID)
 	GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlaylist
+	InsertHLSSegment(streamID StreamID, seg *stream.HLSSegment)
 	GetHLSSegment(streamID StreamID, segName string) *stream.HLSSegment
 	EvictHLSStream(streamID StreamID) error
 }
@@ -105,10 +106,18 @@ func (c *BasicVideoCache) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlay
 	if cache, ok := c.GetCache(streamID); ok {
 		return cache.GetMediaPlaylist()
 	}
-
-	//If we don't already have the stream, subscribe and return the playlist
-	//XXX implement
 	return nil
+}
+
+func (c *BasicVideoCache) InsertHLSSegment(streamID StreamID, seg *stream.HLSSegment) {
+	c.segLock.Lock()
+	defer c.segLock.Unlock()
+	sc, ok := c.segCache[streamID]
+	if !ok {
+		sc = newSegCache(SegCacheLen)
+		c.segCache[streamID] = sc
+	}
+	sc.Insert(seg)
 }
 
 func (c *BasicVideoCache) GetHLSSegment(streamID StreamID, segName string) *stream.HLSSegment {

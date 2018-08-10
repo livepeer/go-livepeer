@@ -233,13 +233,15 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(seg *stream.HLSSegment, sig []by
 
 	//Encode and broadcast the segment
 	start = time.Now()
-	for i, _ := range resultStrmIDs {
+	for i, r := range resultStrmIDs {
 		//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
 		if tData[i] == nil {
 			glog.Errorf("Cannot find transcoded segment for %v", seg.SeqNo)
 			continue
 		}
 		tProfileData[config.Profiles[i]] = tData[i]
+		newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: fmt.Sprintf("%v_%d.ts", r, seg.SeqNo), Data: tData[i], Duration: seg.Duration}
+		n.VideoCache.InsertHLSSegment(r, newSeg)
 	}
 	//Don't do the onchain stuff unless specified
 	if cm != nil && config.PerformOnchainClaim {
