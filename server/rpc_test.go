@@ -93,13 +93,13 @@ func TestRPCTranscoderReq(t *testing.T) {
 	if err != nil {
 		t.Error("Unable to create transcoder req ", req)
 	}
-	if !verifyTranscoderReq(o, req, j) { // normal case
+	if verifyTranscoderReq(o, req, j) != nil { // normal case
 		t.Error("Unable to verify transcoder request")
 	}
 
 	// mismatched jobid
 	req, _ = genTranscoderReq(b, 999)
-	if verifyTranscoderReq(o, req, j) {
+	if verifyTranscoderReq(o, req, j) == nil {
 		t.Error("Did not expect verification to pass; should mismatch sig")
 	}
 
@@ -109,13 +109,13 @@ func TestRPCTranscoderReq(t *testing.T) {
 	}
 
 	// wrong transcoder
-	if verifyTranscoderReq(StubOrchestrator(), req, j) {
+	if verifyTranscoderReq(StubOrchestrator(), req, j) == nil {
 		t.Error("Did not expect verification to pass; should mismatch transcoder")
 	}
 
 	// wrong broadcaster
 	j.BroadcasterAddress = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey)
-	if verifyTranscoderReq(o, req, j) {
+	if verifyTranscoderReq(o, req, j) == nil {
 		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
 
