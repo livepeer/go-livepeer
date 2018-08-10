@@ -266,12 +266,45 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		},
 		Sig: segData.Sig,
 	}
-	if _, err := orch.TranscodeSeg(job, &ss); err != nil {
+
+	res, err := orch.TranscodeSeg(job, &ss)
+
+	// sanity check
+	if err != nil && len(res.Urls) != len(job.Profiles) {
+		err = fmt.Errorf("Mismatched result lengths")
+	}
+
+	// construct the response
+	var result isTranscodeResult_Result
+	if err != nil {
 		glog.Error("Could not transcode ", err)
-		w.Write([]byte(fmt.Sprintf("Error transcoding segment %v : %v", segData.Seq, err)))
+		result = &TranscodeResult_Error{Error: err.Error()}
+	} else {
+		segments := make([]*TranscodedSegmentData, len(res.Urls))
+		for i, v := range res.Urls {
+			d := &TranscodedSegmentData{
+				Url: orch.ServiceURI().String() + "/stream/" + v,
+			}
+			segments[i] = d
+		}
+		result = &TranscodeResult_Data{
+			Data: &TranscodeData{
+				Segments: segments,
+				Sig:      res.Sig,
+			},
+		}
+	}
+
+	tr := &TranscodeResult{
+		Seq:    segData.Seq,
+		Result: result,
+	}
+	buf, err := proto.Marshal(tr)
+	if err != nil {
+		glog.Error("Unable to marshal transcode result ", err)
 		return
 	}
-	w.Write([]byte(fmt.Sprintf("Successfully transcoded segment %v", segData.Seq)))
+	w.Write(buf)
 }
 
 // grpc methods
