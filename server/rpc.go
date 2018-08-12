@@ -424,8 +424,9 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		}
 		return
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode != 200 {
-		defer resp.Body.Close()
 		data, _ := ioutil.ReadAll(resp.Body)
 		glog.Errorf("Error submitting segment %d: code %d error %s", seg.SeqNo, resp.StatusCode, string(data))
 		if monitor.Enabled {
@@ -439,27 +440,50 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		monitor.LogSegmentUploaded(nonce, seg.SeqNo, uploadDur)
 	}
 
-	defer resp.Body.Close()
 	data, err := ioutil.ReadAll(resp.Body)
 	tookAllDur := time.Since(start)
+
 	if err != nil {
 		glog.Error(fmt.Sprintf("Unable to read response body for segment %v : %v", seg.SeqNo, err))
 		if monitor.Enabled {
-			monitor.LogSegmentTranscodeFailed(nonce, seg.SeqNo, err.Error())
+			monitor.LogSegmentTranscodeFailed("ReadBody", nonce, seg.SeqNo, err)
 		}
 		return
 	}
 	transcodeDur := tookAllDur - uploadDur
 
-	dataStr := string(data)
-	glog.Infof("Response for segment %v: %s", seg.SeqNo, dataStr)
-	if strings.Contains(dataStr, "Error transcoding segment") {
+	var tr TranscodeResult
+	err = proto.Unmarshal(data, &tr)
+	if err != nil {
+		glog.Error(fmt.Sprintf("Unable to parse response for segment %v : %v", seg.SeqNo, err))
 		if monitor.Enabled {
-			monitor.LogSegmentTranscodeFailed(nonce, seg.SeqNo, dataStr[strings.Index(dataStr, ":")+2:])
+			monitor.LogSegmentTranscodeFailed("ParseResponse", nonce, seg.SeqNo, err)
 		}
-	} else {
-		if monitor.Enabled {
-			monitor.LogSegmentTranscoded(nonce, seg.SeqNo, transcodeDur, tookAllDur)
-		}
+		return
 	}
+
+	// check for errors and exit early if there's anything unusual
+	switch res := tr.Result.(type) {
+	case *TranscodeResult_Error:
+		if monitor.Enabled {
+			glog.Error("Transcode failed for segment %v: %v", seg.SeqNo, err)
+			err = fmt.Errorf(res.Error)
+			monitor.LogSegmentTranscodeFailed("Transcode", nonce, seg.SeqNo, err)
+		}
+		return
+	case *TranscodeResult_Data:
+		// fall through here for the normal case
+	default:
+		glog.Error("Unexpected or unset transcode response field for ", seg.SeqNo)
+		err = fmt.Errorf("UnknownResponse")
+		monitor.LogSegmentTranscodeFailed("UnknownResponse", nonce, seg.SeqNo, err)
+		return
+	}
+
+	// transcode succeeded; continue processing response
+	if monitor.Enabled {
+		monitor.LogSegmentTranscoded(nonce, seg.SeqNo, transcodeDur, tookAllDur)
+	}
+
+	glog.Info("Successfully transcoded segment ", seg.SeqNo)
 }
