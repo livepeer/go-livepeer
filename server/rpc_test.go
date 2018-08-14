@@ -70,10 +70,10 @@ func (r *stubOrchestrator) GetHTTPClient() *http.Client {
 }
 func (r *stubOrchestrator) SetHTTPClient(ti *http.Client) {
 }
-func (r *stubOrchestrator) GetTranscoderInfo() *TranscoderInfo {
+func (r *stubOrchestrator) GetTranscoderInfo() interface{} {
 	return nil
 }
-func (r *stubOrchestrator) SetTranscoderInfo(ti *TranscoderInfo) {
+func (r *stubOrchestrator) SetTranscoderInfo(ti interface{}) {
 }
 func StubBroadcaster2() *stubOrchestrator {
 	return StubOrchestrator() // lazy; leverage subtyping for interface commonalities

@@ -4,17 +4,58 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"time"
 
 	"github.com/cenkalti/backoff"
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/livepeer/go-livepeer/common"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
 var ErrNotFound = errors.New("ErrNotFound")
+
+// Broadcaster RPC interface implementation
+
+type broadcaster struct {
+	node  *LivepeerNode
+	httpc *http.Client
+	job   *ethTypes.Job
+	tinfo interface{}
+}
+
+func (bcast *broadcaster) Sign(msg []byte) ([]byte, error) {
+	if bcast.node == nil || bcast.node.Eth == nil {
+		return []byte{}, fmt.Errorf("Cannot sign; missing eth client")
+	}
+	return bcast.node.Eth.Sign(crypto.Keccak256(msg))
+}
+func (bcast *broadcaster) Job() *ethTypes.Job {
+	return bcast.job
+}
+func (bcast *broadcaster) GetHTTPClient() *http.Client {
+	return bcast.httpc
+}
+func (bcast *broadcaster) SetHTTPClient(hc *http.Client) {
+	bcast.httpc = hc
+}
+func (bcast *broadcaster) GetTranscoderInfo() interface{} {
+	return bcast.tinfo
+}
+func (bcast *broadcaster) SetTranscoderInfo(t interface{}) {
+	bcast.tinfo = t
+}
+func NewBroadcaster(node *LivepeerNode, job *ethTypes.Job) *broadcaster {
+	return &broadcaster{
+		node: node,
+		job:  job,
+	}
+}
 
 //CreateTranscodeJob creates the on-chain transcode job.
 func (n *LivepeerNode) CreateTranscodeJob(strmID StreamID, profiles []ffmpeg.VideoProfile, price *big.Int) (*ethTypes.Job, error) {

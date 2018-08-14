@@ -120,42 +120,13 @@ func (o *orchestrator) GetTranscoder(context context.Context, req *TranscoderReq
 	return GetTranscoder(context, o, req)
 }
 
-type broadcaster struct {
-	node  *core.LivepeerNode
-	httpc *http.Client
-	job   *lpTypes.Job
-	tinfo *TranscoderInfo
-}
-
 type Broadcaster interface {
 	Sign([]byte) ([]byte, error)
 	Job() *lpTypes.Job
 	SetHTTPClient(*http.Client)
 	GetHTTPClient() *http.Client
-	SetTranscoderInfo(*TranscoderInfo)
-	GetTranscoderInfo() *TranscoderInfo
-}
-
-func (bcast *broadcaster) Sign(msg []byte) ([]byte, error) {
-	if bcast.node == nil || bcast.node.Eth == nil {
-		return []byte{}, fmt.Errorf("Cannot sign; missing eth client")
-	}
-	return bcast.node.Eth.Sign(crypto.Keccak256(msg))
-}
-func (bcast *broadcaster) Job() *lpTypes.Job {
-	return bcast.job
-}
-func (bcast *broadcaster) GetHTTPClient() *http.Client {
-	return bcast.httpc
-}
-func (bcast *broadcaster) SetHTTPClient(hc *http.Client) {
-	bcast.httpc = hc
-}
-func (bcast *broadcaster) GetTranscoderInfo() *TranscoderInfo {
-	return bcast.tinfo
-}
-func (bcast *broadcaster) SetTranscoderInfo(t *TranscoderInfo) {
-	bcast.tinfo = t
+	SetTranscoderInfo(interface{})
+	GetTranscoderInfo() interface{}
 }
 
 func genTranscoderReq(b Broadcaster, jid int64) (*TranscoderRequest, error) {
@@ -410,7 +381,7 @@ func StartTranscodeServer(bind string, publicURI *url.URL, node *core.LivepeerNo
 	srv.ListenAndServeTLS(cert, key)
 }
 
-func StartBroadcastClient(orchestratorServer string, node *core.LivepeerNode, job *lpTypes.Job) (*broadcaster, error) {
+func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	httpc := &http.Client{
 		Transport: &http2.Transport{TLSClientConfig: tlsConfig},
@@ -419,30 +390,30 @@ func StartBroadcastClient(orchestratorServer string, node *core.LivepeerNode, jo
 	uri, err := url.Parse(orchestratorServer)
 	if err != nil {
 		glog.Error("Could not parse orchestrator URI: ", err)
-		return nil, err
+		return err
 	}
 	glog.Infof("Connecting RPC to %v", orchestratorServer)
 	conn, err := grpc.Dial(uri.Host,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	if err != nil {
 		glog.Error("Did not connect: ", err)
-		return nil, errors.New("Did not connect: " + err.Error())
+		return errors.New("Did not connect: " + err.Error())
 	}
 	defer conn.Close()
 	c := NewOrchestratorClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), GRPCTimeout)
 	defer cancel()
 
-	b := broadcaster{node: node, httpc: httpc, job: job}
-	req, err := genTranscoderReq(&b, job.JobId.Int64())
+	bcast.SetHTTPClient(httpc)
+	req, err := genTranscoderReq(bcast, bcast.Job().JobId.Int64())
 	r, err := c.GetTranscoder(ctx, req)
 	if err != nil {
 		glog.Error("Could not get transcoder: ", err)
-		return nil, errors.New("Could not get transcoder: " + err.Error())
+		return errors.New("Could not get transcoder: " + err.Error())
 	}
-	b.tinfo = r
+	bcast.SetTranscoderInfo(r)
 
-	return &b, nil
+	return nil
 }
 
 func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
@@ -461,7 +432,7 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		}
 		return
 	}
-	ti := bcast.GetTranscoderInfo()
+	ti := (bcast.GetTranscoderInfo()).(*TranscoderInfo)
 	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(seg.Data))
 	if err != nil {
 		glog.Error("Could not generate trascode request to ", ti.Transcoder)

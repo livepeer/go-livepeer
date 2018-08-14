@@ -168,7 +168,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 	}
 }
 
-func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.MasterPlaylist, nonce uint64) (*broadcaster, error) {
+func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.MasterPlaylist, nonce uint64) (Broadcaster, error) {
 	tca := job.TranscoderAddress
 	serviceUri, err := s.LivepeerNode.Eth.GetServiceURI(tca)
 	if err != nil || serviceUri == "" {
@@ -178,7 +178,8 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 		}
 		return nil, err
 	}
-	rpcBcast, err := StartBroadcastClient(serviceUri, s.LivepeerNode, job)
+	rpcBcast := core.NewBroadcaster(s.LivepeerNode, job)
+	err = StartBroadcastClient(rpcBcast, serviceUri)
 	if err != nil {
 		glog.Error("Unable to start broadcast client for ", job.JobId)
 		if monitor.Enabled {
@@ -187,7 +188,8 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 		return nil, err
 	}
 	// Update the master playlist based on the streamids from the transcoder
-	for strmID, tProfile := range rpcBcast.tinfo.StreamIds {
+	tinfo := (rpcBcast.GetTranscoderInfo()).(*TranscoderInfo)
+	for strmID, tProfile := range tinfo.StreamIds {
 		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[tProfile])
 		pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
 		variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}
@@ -225,7 +227,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		startSeq := 0
 		manifest := m3u8.NewMasterPlaylist()
 		var jobId *big.Int
-		var rpcBcast *broadcaster
+		var rpcBcast Broadcaster
 		if s.LivepeerNode.Eth != nil {
 
 			// First check if we already have a job that can be reused
