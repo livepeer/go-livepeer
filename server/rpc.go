@@ -382,7 +382,7 @@ func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
 	return nil
 }
 
-func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
+func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*TranscodeData, error) {
 	if monitor.Enabled {
 		monitor.SegmentUploadStart(nonce, seg.SeqNo)
 	}
@@ -396,7 +396,7 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		if monitor.Enabled {
 			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
 		}
-		return
+		return nil, err
 	}
 	ti := (bcast.GetTranscoderInfo()).(*TranscoderInfo)
 	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(seg.Data))
@@ -405,7 +405,7 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		if monitor.Enabled {
 			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
 		}
-		return
+		return nil, err
 	}
 
 	req.Header.Set("Authorization", ti.AuthType)
@@ -422,7 +422,7 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		if monitor.Enabled {
 			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
 		}
-		return
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -433,7 +433,7 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, fmt.Sprintf("Code: %d Error: %s", resp.StatusCode,
 				strings.TrimSpace(string(data))))
 		}
-		return
+		return nil, err
 	}
 	glog.Infof("Uploaded segment %v", seg.SeqNo)
 	if monitor.Enabled {
@@ -448,7 +448,7 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		if monitor.Enabled {
 			monitor.LogSegmentTranscodeFailed("ReadBody", nonce, seg.SeqNo, err)
 		}
-		return
+		return nil, err
 	}
 	transcodeDur := tookAllDur - uploadDur
 
@@ -459,10 +459,11 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		if monitor.Enabled {
 			monitor.LogSegmentTranscodeFailed("ParseResponse", nonce, seg.SeqNo, err)
 		}
-		return
+		return nil, err
 	}
 
 	// check for errors and exit early if there's anything unusual
+	var tdata *TranscodeData
 	switch res := tr.Result.(type) {
 	case *TranscodeResult_Error:
 		if monitor.Enabled {
@@ -470,14 +471,15 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 			err = fmt.Errorf(res.Error)
 			monitor.LogSegmentTranscodeFailed("Transcode", nonce, seg.SeqNo, err)
 		}
-		return
+		return nil, err
 	case *TranscodeResult_Data:
 		// fall through here for the normal case
+		tdata = res.Data
 	default:
 		glog.Error("Unexpected or unset transcode response field for ", seg.SeqNo)
 		err = fmt.Errorf("UnknownResponse")
 		monitor.LogSegmentTranscodeFailed("UnknownResponse", nonce, seg.SeqNo, err)
-		return
+		return nil, err
 	}
 
 	// transcode succeeded; continue processing response
@@ -486,4 +488,6 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 	}
 
 	glog.Info("Successfully transcoded segment ", seg.SeqNo)
+
+	return tdata, nil
 }

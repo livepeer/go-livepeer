@@ -5,8 +5,10 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"math/rand"
 	"net/http"
@@ -313,6 +315,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		LastHLSStreamID = hlsStrmID
 
 		streamStarted := false
+		httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 		//Segment the stream, insert the segments into the broadcaster
 		go func(rtmpStrm stream.RTMPVideoStream) {
 			hlsStrm := stream.NewBasicHLSVideoStream(string(hlsStrmID), stream.DefaultHLSStreamWin)
@@ -337,7 +340,47 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				}
 
 				if rpcBcast != nil {
-					go SubmitSegment(rpcBcast, seg, nonce)
+					go func() {
+						// send segment to the transcoder
+						res, err := SubmitSegment(rpcBcast, seg, nonce)
+						if err != nil {
+							return
+						}
+
+						// download transcoded segments from the transcoder
+						gotErr := false // only send one error msg per segment list
+						errFunc := func(ev, url string, err error) {
+							glog.Errorf("%v error with segment %v: %v (URL: %v)", ev, seg.SeqNo, err, url)
+							if monitor.Enabled && !gotErr {
+								monitor.LogSegmentTranscodeFailed(ev, nonce, seg.SeqNo, err)
+								gotErr = true
+							}
+						}
+						dlFunc := func(url string) {
+							res, err := httpc.Get(url)
+							if err != nil {
+								errFunc("Retrieval", url, err)
+								return
+							}
+							// TODO persist this to disk.
+							// Should make videocache read from disk as well
+							data, err := ioutil.ReadAll(res.Body)
+							if err != nil {
+								errFunc("Download", url, err)
+								return
+							}
+							sid, err := parseStreamID(url)
+							if err != nil {
+								errFunc("StreamID", url, err)
+								return
+							}
+							newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: parseSegName(url), Data: data, Duration: seg.Duration}
+							s.LivepeerNode.VideoCache.InsertHLSSegment(sid, newSeg)
+						}
+						for _, v := range res.Segments {
+							go dlFunc(v.Url)
+						}
+					}()
 				}
 			})
 
