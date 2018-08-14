@@ -260,6 +260,7 @@ func main() {
 	//Set up the media server
 	s := server.NewLivepeerServer(*rtmpPort, *rtmpIP, *httpPort, *httpIP, n)
 	ec := make(chan error)
+	tc := make(chan struct{})
 	msCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -272,6 +273,14 @@ func main() {
 	go func() {
 		s.StartWebserver()
 		ec <- s.StartMediaServer(msCtx, bigMaxPricePerSegment, *transcodingOptions)
+	}()
+	go func() {
+		if core.Transcoder != n.NodeType {
+			return
+		}
+		orch := core.NewOrchestrator(s.LivepeerNode)
+		server.StartTranscodeServer(orch, n.WorkDir)
+		tc <- struct{}{}
 	}()
 
 	switch n.NodeType {
@@ -290,6 +299,9 @@ func main() {
 		return
 	case <-msCtx.Done():
 		glog.Infof("MediaServer Done()")
+		return
+	case <-tc:
+		glog.Infof("Transcoder server shut down")
 		return
 	case sig := <-c:
 		glog.Infof("Exiting Livepeer: %v", sig)

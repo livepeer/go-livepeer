@@ -115,24 +115,11 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 		ec <- s.LPMS.Start(lpmsCtx)
 	}()
 
-	ts := make(chan struct{}, 1)
-	if s.LivepeerNode.NodeType == core.Transcoder {
-		go func() {
-			orch := core.NewOrchestrator(s.LivepeerNode)
-			StartTranscodeServer(orch, s.LivepeerNode.WorkDir)
-			ts <- struct{}{}
-		}()
-	}
-
 	select {
 	case err := <-ec:
 		glog.Infof("LPMS Server Error: %v.  Quitting...", err)
 		cancel()
 		return err
-	case <-ts:
-		glog.Info("Transcoder server down. Quitting...")
-		cancel()
-		return errors.New("TranscoderServerDown")
 	case <-ctx.Done():
 		cancel()
 		return ctx.Err()
