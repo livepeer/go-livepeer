@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sync"
 
 	"github.com/golang/glog"
@@ -46,6 +47,7 @@ type LivepeerNode struct {
 	WorkDir         string
 	NodeType        NodeType
 	Database        *common.DB
+	ServiceURI      *url.URL
 
 	claimMutex   *sync.Mutex
 	segmentMutex *sync.Mutex

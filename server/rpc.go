@@ -289,7 +289,7 @@ func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // XXX do something about the implicit start of the http mux? this smells
-func StartTranscodeServer(orch Orchestrator, mux *http.ServeMux, workDir string) {
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string) {
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
@@ -302,14 +302,6 @@ func StartTranscodeServer(orch Orchestrator, mux *http.ServeMux, workDir string)
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
 		return // XXX return error
-	}
-
-	// Determine the interface binding; just the port for now.
-	// TODO split the service URI from the listening iface
-	bind := ":4433"
-	uri := orch.ServiceURI()
-	if uri != nil && uri.Port() != "" {
-		bind = ":" + uri.Port()
 	}
 
 	glog.Info("Listening for RPC on ", bind)

@@ -57,6 +57,7 @@ func main() {
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
 	rtmpAddr := flag.String("rtmpAddr", "127.0.0.1:1935", "IP to bind for RTMP commands")
 	cliAddr := flag.String("cliAddr", "127.0.0.1:8935", "Address to bind for  CLI commands")
+	httpAddr := flag.String("httpAddr", "", "Address to bind for HTTP commands")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
@@ -75,7 +76,7 @@ func main() {
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
 	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
-	publicAddr := flag.String("publicAddr", "", "Public address that broadcasters can use to contact this node; may be an IP or hostname. If used, should match the on-chain ServiceURI set via livepeer_cli")
+	serviceAddr := flag.String("serviceAddr", "", "Transcoder only. Public address:port that broadcasters can use to contact this node; may be an IP or hostname. If used, should match the on-chain ServiceURI set via livepeer_cli")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	version := flag.Bool("version", false, "Print out the version")
 
@@ -221,7 +222,7 @@ func main() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			if err := setupTranscoder(ctx, n, em, *ipfsPath, *initializeRound, *publicAddr); err != nil {
+			if err := setupTranscoder(ctx, n, em, *ipfsPath, *initializeRound, *serviceAddr); err != nil {
 				glog.Errorf("Error setting up transcoder: %v", err)
 				return
 			}
@@ -238,10 +239,14 @@ func main() {
 	if n.NodeType == core.Broadcaster {
 		// default lpms listener for broadcaster; same as default rpc port
 		// TODO provide an option to disable this?
-		// TODO we might want to split this up into httpAddr (for listener)
-		//		and the publicAddr to mark service URIs
-		if "" == *publicAddr {
-			*publicAddr = "127.0.0.1:4433"
+		if "" == *httpAddr {
+			*httpAddr = "127.0.0.1:4433"
+		}
+	} else if n.NodeType == core.Transcoder {
+		// if http addr is not provided, listen to all ifaces
+		// take the port to listen to from the service URI
+		if "" == *httpAddr {
+			*httpAddr = ":" + n.ServiceURI.Port()
 		}
 	}
 
@@ -267,7 +272,7 @@ func main() {
 	}
 
 	//Set up the media server
-	s := server.NewLivepeerServer(*rtmpAddr, *publicAddr, n)
+	s := server.NewLivepeerServer(*rtmpAddr, *httpAddr, n)
 	ec := make(chan error)
 	tc := make(chan struct{})
 	wc := make(chan struct{})
@@ -292,7 +297,7 @@ func main() {
 			return
 		}
 		orch := core.NewOrchestrator(s.LivepeerNode)
-		server.StartTranscodeServer(orch, s.HttpMux, n.WorkDir)
+		server.StartTranscodeServer(orch, *httpAddr, s.HttpMux, n.WorkDir)
 		tc <- struct{}{}
 	}()
 
@@ -411,7 +416,7 @@ func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
 	return priv, pub, nil
 }
 
-func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool, publicAddr string) error {
+func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool, serviceUri string) error {
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
@@ -424,7 +429,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 		glog.Infof("Transcoder %v is active", n.Eth.Account().Address.Hex())
 	}
 
-	if publicAddr == "" {
+	if serviceUri == "" {
 		// TODO probably should put this (along w wizard GETs) into common code
 		resp, err := http.Get("https://api.ipify.org?format=text")
 		defer resp.Body.Close()
@@ -433,20 +438,27 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 			glog.Error("Could not look up public IP address")
 			return err
 		}
-		publicAddr = strings.TrimSpace(string(body))
+		serviceUri = "https://" + strings.TrimSpace(string(body)) + ":4433"
+	} else {
+		serviceUri = "https://" + serviceUri
+	}
+	suri, err := url.ParseRequestURI(serviceUri)
+	if err != nil {
+		glog.Error("Could not parse local service URI ", err)
+		return err // this is fatal; should at least infer a valid uri
 	}
 	uriStr, err := n.Eth.GetServiceURI(n.Eth.Account().Address)
 	if err != nil {
-		glog.Error("Could not get service URI")
+		glog.Error("Could not get service URI; transcoder may be unreachable")
 		return err
 	}
 	uri, err := url.ParseRequestURI(uriStr)
 	if err != nil {
-		glog.Error("Could not parse service URI")
-		uri, _ = url.ParseRequestURI("http://127.0.0.1")
+		glog.Error("Could not parse service URI; transcoder may be unreachable")
+		uri, _ = url.ParseRequestURI("http://127.0.0.1:4433")
 	}
-	if uri.Hostname() != publicAddr {
-		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -publicAddr", uri.Hostname(), publicAddr)
+	if uri.Hostname() != suri.Hostname() || uri.Port() != suri.Port() {
+		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceUri", uri, suri)
 		// TODO remove '&& false' after all transcoders have set a service URI
 		if active && false {
 			return fmt.Errorf("Mismatched service address")
@@ -461,6 +473,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 
 	n.Ipfs = ipfsApi
 	n.EthEventMonitor = em
+	n.ServiceURI = suri
 
 	if initializeRound {
 		glog.Infof("Transcoder %v will automatically initialize new rounds", n.Eth.Account().Address.Hex())

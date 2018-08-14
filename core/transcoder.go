@@ -28,13 +28,12 @@ const TranscodeLoopTimeout = 10 * time.Minute
 
 // Transcoder / orchestrator RPC interface implementation
 type orchestrator struct {
-	serviceUri *url.URL
-	address    ethcommon.Address
-	node       *LivepeerNode
+	address ethcommon.Address
+	node    *LivepeerNode
 }
 
 func (orch *orchestrator) ServiceURI() *url.URL {
-	return orch.serviceUri
+	return orch.node.ServiceURI
 }
 
 func (orch *orchestrator) CurrentBlock() *big.Int {
@@ -97,23 +96,12 @@ func (orch *orchestrator) TranscodeSeg(job *ethTypes.Job, ss *SignedSegment) err
 
 func NewOrchestrator(n *LivepeerNode) *orchestrator {
 	var addr ethcommon.Address
-	uri, _ := url.Parse("https://localhost:4433") // set via cli args; differentiate between listening iface and blockchain service uri
 	if n.Eth != nil {
-		var err error
 		addr = n.Eth.Account().Address
-		stringUri, err := n.Eth.GetServiceURI(addr)
-		if err != nil || stringUri == "" {
-			glog.Error("Transcoder does not have a service URI set; may be unreachable")
-		}
-		uri, err = url.Parse(stringUri)
-		if err != nil {
-			glog.Error("Service URI invalid; transcoder may be unreachable. ", err)
-		}
 	}
 	return &orchestrator{
-		node:       n,
-		address:    addr,
-		serviceUri: uri,
+		node:    n,
+		address: addr,
 	}
 }
 
