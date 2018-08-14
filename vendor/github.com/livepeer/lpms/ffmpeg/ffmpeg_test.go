@@ -10,7 +10,6 @@ import (
 
 func TestLength(t *testing.T) {
 	InitFFmpeg()
-	defer DeinitFFmpeg()
 	inp := "../transcoder/test.ts"
 	// Extract packet count of sample from ffprobe
 	// XXX enhance MediaLength to actually return media stats

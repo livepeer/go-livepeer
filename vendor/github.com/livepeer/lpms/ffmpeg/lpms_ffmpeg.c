@@ -37,13 +37,7 @@ struct output_ctx {
 
 void lpms_init()
 {
-  avformat_network_init();
   av_log_set_level(AV_LOG_WARNING);
-}
-
-void lpms_deinit()
-{
-  avformat_network_deinit();
 }
 
 //

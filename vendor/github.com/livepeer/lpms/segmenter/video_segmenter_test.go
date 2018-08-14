@@ -101,7 +101,6 @@ func RunRTMPToHLS(vs *FFMpegVideoSegmenter, ctx context.Context) error {
 
 func TestSegmenter(t *testing.T) {
 	ffmpeg.InitFFmpeg()
-	defer ffmpeg.DeinitFFmpeg()
 	wd, _ := os.Getwd()
 	workDir := wd + "/tmp"
 	os.RemoveAll(workDir)
@@ -112,7 +111,7 @@ func TestSegmenter(t *testing.T) {
 	opt := SegmenterOptions{SegLength: time.Second * 4}
 	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), strmUrl, opt)
 	server := &rtmp.Server{Addr: ":1935"}
-	player := vidplayer.NewVidPlayer(server, "")
+	player := vidplayer.NewVidPlayer(server, "", nil)
 
 	player.HandleRTMPPlay(
 		func(url *url.URL) (stream.RTMPVideoStream, error) {
@@ -244,7 +243,6 @@ test_6.ts
 
 func TestSetStartSeq(t *testing.T) {
 	ffmpeg.InitFFmpeg()
-	defer ffmpeg.DeinitFFmpeg()
 	wd, _ := os.Getwd()
 	workDir := wd + "/tmp"
 	os.RemoveAll(workDir)
@@ -257,7 +255,7 @@ func TestSetStartSeq(t *testing.T) {
 	opt := SegmenterOptions{SegLength: time.Second * 4, StartSeq: startSeq}
 	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), strmUrl, opt)
 	server := &rtmp.Server{Addr: ":1936"}
-	player := vidplayer.NewVidPlayer(server, "")
+	player := vidplayer.NewVidPlayer(server, "", nil)
 
 	player.HandleRTMPPlay(
 		func(url *url.URL) (stream.RTMPVideoStream, error) {
@@ -438,14 +436,13 @@ func (s *ServerDisconnectStream) ReadRTMPFromStream(ctx context.Context, dst av.
 
 func TestServerDisconnectMidStream(t *testing.T) {
 	ffmpeg.InitFFmpeg()
-	defer ffmpeg.DeinitFFmpeg()
 	port := "1938" // because we can't yet close the listener on 1935?
 	strm := &ServerDisconnectStream{}
 	strmUrl := fmt.Sprintf("rtmp://localhost:%v/stream/%v", port, strm.GetStreamID())
 	opt := SegmenterOptions{SegLength: time.Second * 4}
 	vs := NewFFMpegVideoSegmenter("tmp", strm.GetStreamID(), strmUrl, opt)
 	server := &rtmp.Server{Addr: ":" + port}
-	player := vidplayer.NewVidPlayer(server, "")
+	player := vidplayer.NewVidPlayer(server, "", nil)
 	player.HandleRTMPPlay(
 		func(url *url.URL) (stream.RTMPVideoStream, error) {
 			return strm, nil
@@ -520,7 +517,6 @@ func TestMissingKeyframe(t *testing.T) {
 
 	// actually segment
 	ffmpeg.InitFFmpeg()
-	defer ffmpeg.DeinitFFmpeg()
 	err = ffmpeg.RTMPToHLS(fname, oname, path.Join(dir, "out")+"_%d.ts", "4", 0)
 	if err != nil {
 		t.Errorf("Error segmenting - %v", err)
