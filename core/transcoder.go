@@ -229,12 +229,15 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(config transcodeConfig, ss *Sign
 		return terr(err)
 	}
 	transcodeEnd := time.Now().UTC()
+	if len(tData) != len(config.ResultStrmIDs) {
+		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v", len(tData), len(config.ResultStrmIDs))
+		return terr(fmt.Errorf("MismatchedSegments"))
+	}
 	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
 	glog.V(common.DEBUG).Infof("Transcoding of segment %v took %v", seg.SeqNo, time.Since(start))
 
 	//Encode and broadcast the segment
 	var tr TranscodeResult
-	start = time.Now()
 	for i, r := range config.ResultStrmIDs {
 		//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
 		if tData[i] == nil {

@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"regexp"
 	"testing"
 	"time"
 
@@ -30,14 +31,8 @@ type StubConnInfo struct {
 	NodeAddr []string
 }
 type StubVideoNetwork struct {
-	T            *testing.T
-	broadcasters map[StreamID]stream.Broadcaster
-	subscribers  map[string]*StubSubscriber
-	tResult      map[string]string
-	strmID       string
-	nodeID       string
-	mplMap       map[string]*m3u8.MasterPlaylist
-	connectInfo  []StubConnInfo
+	T      *testing.T
+	mplMap map[string]*m3u8.MasterPlaylist
 }
 
 func (n *StubVideoNetwork) String() string { return "" }
@@ -50,7 +45,7 @@ func (n *StubVideoNetwork) GetMasterPlaylist(nodeID string, strmID string) (chan
 		pl, _ := m3u8.NewMediaPlaylist(100, 100)
 		mpl.Append("stub.m3u8", pl, m3u8.VariantParams{Bandwidth: 100})
 	}
-	// glog.Infof("StubNetwork GetMasterPlaylist. mpl: %v", mpl)
+	fmt.Errorf("StubNetwork GetMasterPlaylist. mpl: %v", mpl)
 
 	go func() {
 		mplc <- mpl
@@ -110,25 +105,6 @@ func StubSegment() *SignedSegment {
 	return &SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test.ts", Data: d[0:402696], Duration: 1}, Sig: []byte("test sig")}
 }
 
-type StubSubscriber struct {
-	T *testing.T
-}
-
-func (s *StubSubscriber) IsLive() bool   { return true }
-func (s *StubSubscriber) String() string { return "" }
-func (s *StubSubscriber) Subscribe(ctx context.Context, gotData func(seqNo uint64, data []byte, eof bool)) error {
-	newSeg := StubSegment()
-	b, err := SignedSegmentToBytes(*newSeg)
-	if err != nil {
-		s.T.Errorf("Error Converting SignedSegment to Bytes: %v", err)
-	}
-
-	// glog.Infof("Returning seg 100: %v", len(b))
-	gotData(100, b, false)
-	return nil
-}
-func (s *StubSubscriber) Unsubscribe() error { return nil }
-
 func StubJob(n *LivepeerNode) *lpTypes.Job {
 	streamId, _ := MakeStreamID(n.Identity, RandomVideoID(), ffmpeg.P720p30fps4x3.Name)
 	return &lpTypes.Job{
@@ -146,7 +122,7 @@ func StubJob(n *LivepeerNode) *lpTypes.Job {
 
 func TestTranscode(t *testing.T) {
 	//Set up the node
-	stubnet := &StubVideoNetwork{T: t, subscribers: make(map[string]*StubSubscriber)}
+	stubnet := &StubVideoNetwork{T: t}
 	seth := &eth.StubClient{}
 	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
 	defer db.Close()
@@ -155,31 +131,32 @@ func TestTranscode(t *testing.T) {
 	defer os.RemoveAll(tmp)
 	job := StubJob(n)
 	ffmpeg.InitFFmpeg()
-	defer ffmpeg.DeinitFFmpeg()
 
 	// Sanity check full flow.
 	ss := StubSegment()
-	ids, err := n.TranscodeSegment(job, ss)
+	tr, err := n.TranscodeSegment(job, ss)
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
 
-	if len(ids) != len(job.Profiles) && len(job.Profiles) != 2 {
+	if len(tr.Urls) != len(job.Profiles) && len(job.Profiles) != 2 {
 		t.Error("Job profile count did not match broadcasters")
 	}
 
 	// Check transcode result
 	// XXX fix
 	has_144p, has_240p := false, false
-	for k, v := range ids {
-		b, ok := v.(*StubBroadcaster)
-		if !ok {
-			t.Error("Error converting broadcaster")
+	for _, v := range tr.Urls {
+		rgx, _ := regexp.Compile("[[:alnum:]]+")
+		sid := StreamID(rgx.FindString(v)) // trim off the training "_100.ts"
+		b := n.VideoCache.GetHLSSegment(sid, v)
+		if b == nil {
+			t.Error("Error converting broadcaster ", sid.GetRendition())
 		}
 		if b.SeqNo != 100 {
 			t.Error("Wrong SeqNo assigned to broadcaser ", b.SeqNo)
 		}
-		r := k.GetRendition()
+		r := sid.GetRendition()
 		if r == "P144p30fps16x9" {
 			if Over1Pct(len(b.Data), 65424) {
 				t.Errorf("Wrong data assigned to broadcaster: %v", len(b.Data))
