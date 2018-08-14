@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package server;
+package net;
 
 // RPC calls implemented by the orchestrator
 service Orchestrator {
