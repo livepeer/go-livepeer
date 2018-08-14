@@ -36,88 +36,14 @@ const GRPCTimeout = 8 * time.Second
 
 const AuthType_LPE = "Livepeer-Eth-1"
 
-type orchestrator struct {
-	transcoder string
-	address    ethcommon.Address
-	node       *core.LivepeerNode
-}
-
 type Orchestrator interface {
-	Transcoder() string
+	ServiceURI() *url.URL
 	Address() ethcommon.Address
 	Sign([]byte) ([]byte, error)
 	CurrentBlock() *big.Int
 	GetJob(int64) (*lpTypes.Job, error)
 	TranscodeSeg(*lpTypes.Job, *core.SignedSegment) error
 	StreamIDs(*lpTypes.Job) ([]core.StreamID, error)
-}
-
-// Orchestator interface methods
-func (orch *orchestrator) Transcoder() string {
-	return orch.transcoder
-}
-
-func (orch *orchestrator) CurrentBlock() *big.Int {
-	if orch.node == nil || orch.node.Eth == nil {
-		return nil
-	}
-	block, _ := orch.node.Eth.LatestBlockNum()
-	return block
-}
-
-func (orch *orchestrator) GetJob(jid int64) (*lpTypes.Job, error) {
-	if orch.node == nil || orch.node.Eth == nil {
-		return nil, fmt.Errorf("Cannot get job; missing eth client")
-	}
-	job, err := orch.node.Eth.GetJob(big.NewInt(jid))
-	if err != nil {
-		return nil, err
-	}
-	if (job.TranscoderAddress == ethcommon.Address{}) {
-		ta, err := orch.node.Eth.AssignedTranscoder(job)
-		if err != nil {
-			glog.Errorf("Could not get assigned transcoder for job %v, err: %s", jid, err.Error())
-			// continue here without a valid transcoder address
-		} else {
-			job.TranscoderAddress = ta
-		}
-	}
-	return job, nil
-}
-
-func (orch *orchestrator) Sign(msg []byte) ([]byte, error) {
-	if orch.node == nil || orch.node.Eth == nil {
-		return []byte{}, fmt.Errorf("Cannot sign; missing eth client")
-	}
-	return orch.node.Eth.Sign(crypto.Keccak256(msg))
-}
-
-func (orch *orchestrator) Address() ethcommon.Address {
-	return orch.address
-}
-
-func (orch *orchestrator) StreamIDs(job *lpTypes.Job) ([]core.StreamID, error) {
-	streamIds := make([]core.StreamID, len(job.Profiles))
-	sid := core.StreamID(job.StreamId)
-	vid := sid.GetVideoID()
-	for i, p := range job.Profiles {
-		strmId, err := core.MakeStreamID(orch.node.Identity, vid, p.Name)
-		if err != nil {
-			glog.Error("Error making stream ID: ", err)
-			return []core.StreamID{}, err
-		}
-		streamIds[i] = strmId
-	}
-	return streamIds, nil
-}
-
-func (orch *orchestrator) TranscodeSeg(job *lpTypes.Job, ss *core.SignedSegment) error {
-	return orch.node.TranscodeSegment(job, ss)
-}
-
-// grpc methods
-func (o *orchestrator) GetTranscoder(context context.Context, req *TranscoderRequest) (*TranscoderInfo, error) {
-	return GetTranscoder(context, o, req)
 }
 
 type Broadcaster interface {
@@ -275,7 +201,7 @@ func GetTranscoder(context context.Context, orch Orchestrator, req *TranscoderRe
 	}
 
 	tr := TranscoderInfo{
-		Transcoder:  orch.Transcoder(),
+		Transcoder:  orch.ServiceURI().String(), // currently,  orchestrator == transcoder
 		AuthType:    AuthType_LPE,
 		Credentials: creds,
 		StreamIds:   stringStreamIds,
@@ -283,7 +209,14 @@ func GetTranscoder(context context.Context, orch Orchestrator, req *TranscoderRe
 	return &tr, nil
 }
 
-func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
+type lphttp struct {
+	orchestrator Orchestrator
+	orchRpc      *grpc.Server
+	transRpc     *http.ServeMux
+}
+
+func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
+	orch := h.orchestrator
 	// check the credentials from the orchestrator
 	authType := r.Header.Get("Authorization")
 	creds := r.Header.Get("Credentials")
@@ -341,34 +274,41 @@ func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(fmt.Sprintf("Successfully transcoded segment %v", segData.Seq)))
 }
 
-type lphttp struct {
-	orchestrator *grpc.Server
-	transcoder   *http.ServeMux
+// grpc methods
+func (h *lphttp) GetTranscoder(context context.Context, req *TranscoderRequest) (*TranscoderInfo, error) {
+	return GetTranscoder(context, h.orchestrator, req)
 }
 
 func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ct := r.Header.Get("Content-Type")
 	if r.ProtoMajor == 2 && strings.HasPrefix(ct, "application/grpc") {
-		h.orchestrator.ServeHTTP(w, r)
+		h.orchRpc.ServeHTTP(w, r)
 	} else {
-		h.transcoder.ServeHTTP(w, r)
+		h.transRpc.ServeHTTP(w, r)
 	}
 }
 
-func StartTranscodeServer(bind string, publicURI *url.URL, node *core.LivepeerNode) {
+func StartTranscodeServer(orch Orchestrator, workDir string) {
 	s := grpc.NewServer()
-	addr := node.Eth.Account().Address
-	orch := orchestrator{transcoder: publicURI.String(), node: node, address: addr}
-	RegisterOrchestratorServer(s, &orch)
 	lp := lphttp{
-		orchestrator: s,
-		transcoder:   http.NewServeMux(),
+		orchestrator: orch,
+		orchRpc:      s,
+		transRpc:     http.NewServeMux(),
 	}
-	lp.transcoder.HandleFunc("/segment", orch.ServeSegment)
+	RegisterOrchestratorServer(s, &lp)
+	lp.transRpc.HandleFunc("/segment", lp.ServeSegment)
 
-	cert, key, err := getCert(publicURI, node.WorkDir)
+	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
 		return // XXX return error
+	}
+
+	// Determine the interface binding; just the port for now.
+	// TODO split the service URI from the listening iface
+	bind := ":4433"
+	uri := orch.ServiceURI()
+	if uri != nil && uri.Port() != "" {
+		bind = ":" + uri.Port()
 	}
 
 	glog.Info("Listening for RPC on ", bind)

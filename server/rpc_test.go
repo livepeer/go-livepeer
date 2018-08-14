@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/url"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -30,8 +31,9 @@ type stubOrchestrator struct {
 	block *big.Int
 }
 
-func (r *stubOrchestrator) Transcoder() string {
-	return "abc"
+func (r *stubOrchestrator) ServiceURI() *url.URL {
+	url, _ := url.Parse("http://localhost:1234")
+	return url
 }
 func (r *stubOrchestrator) CurrentBlock() *big.Int {
 	return r.block

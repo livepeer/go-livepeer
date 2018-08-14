@@ -4,12 +4,17 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"math/rand"
+	"net/url"
 	"os"
 	"path"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
@@ -21,12 +26,105 @@ import (
 
 const TranscodeLoopTimeout = 10 * time.Minute
 
-type SegmentChan chan *SegChanData
+// Transcoder / orchestrator RPC interface implementation
+type orchestrator struct {
+	serviceUri *url.URL
+	address    ethcommon.Address
+	node       *LivepeerNode
+}
+
+func (orch *orchestrator) ServiceURI() *url.URL {
+	return orch.serviceUri
+}
+
+func (orch *orchestrator) CurrentBlock() *big.Int {
+	if orch.node == nil || orch.node.Eth == nil {
+		return nil
+	}
+	block, _ := orch.node.Eth.LatestBlockNum()
+	return block
+}
+
+func (orch *orchestrator) GetJob(jid int64) (*ethTypes.Job, error) {
+	if orch.node == nil || orch.node.Eth == nil {
+		return nil, fmt.Errorf("Cannot get job; missing eth client")
+	}
+	job, err := orch.node.Eth.GetJob(big.NewInt(jid))
+	if err != nil {
+		return nil, err
+	}
+	if (job.TranscoderAddress == ethcommon.Address{}) {
+		ta, err := orch.node.Eth.AssignedTranscoder(job)
+		if err != nil {
+			glog.Errorf("Could not get assigned transcoder for job %v, err: %s", jid, err.Error())
+			// continue here without a valid transcoder address
+		} else {
+			job.TranscoderAddress = ta
+		}
+	}
+	return job, nil
+}
+
+func (orch *orchestrator) Sign(msg []byte) ([]byte, error) {
+	if orch.node == nil || orch.node.Eth == nil {
+		return []byte{}, fmt.Errorf("Cannot sign; missing eth client")
+	}
+	return orch.node.Eth.Sign(crypto.Keccak256(msg))
+}
+
+func (orch *orchestrator) Address() ethcommon.Address {
+	return orch.address
+}
+
+func (orch *orchestrator) StreamIDs(job *ethTypes.Job) ([]StreamID, error) {
+	streamIds := make([]StreamID, len(job.Profiles))
+	sid := StreamID(job.StreamId)
+	vid := sid.GetVideoID()
+	for i, p := range job.Profiles {
+		strmId, err := MakeStreamID(orch.node.Identity, vid, p.Name)
+		if err != nil {
+			glog.Error("Error making stream ID: ", err)
+			return []StreamID{}, err
+		}
+		streamIds[i] = strmId
+	}
+	return streamIds, nil
+}
+
+func (orch *orchestrator) TranscodeSeg(job *ethTypes.Job, ss *SignedSegment) error {
+	return orch.node.TranscodeSegment(job, ss)
+}
+
+func NewOrchestrator(n *LivepeerNode) *orchestrator {
+	var addr ethcommon.Address
+	uri, _ := url.Parse("https://localhost:4433") // set via cli args; differentiate between listening iface and blockchain service uri
+	if n.Eth != nil {
+		var err error
+		addr = n.Eth.Account().Address
+		stringUri, err := n.Eth.GetServiceURI(addr)
+		if err != nil || stringUri == "" {
+			glog.Error("Transcoder does not have a service URI set; may be unreachable")
+		}
+		uri, err = url.Parse(stringUri)
+		if err != nil {
+			glog.Error("Service URI invalid; transcoder may be unreachable. ", err)
+		}
+	}
+	return &orchestrator{
+		node:       n,
+		address:    addr,
+		serviceUri: uri,
+	}
+}
+
+// LivepeerNode transcode methods
 
 type SegChanData struct {
 	seg *SignedSegment
 	res chan error
 }
+
+type SegmentChan chan *SegChanData
 
 func (n *LivepeerNode) getSegmentChan(job *ethTypes.Job) (SegmentChan, error) {
 	// concurrency concerns here? what if a chan is added mid-call?

@@ -118,25 +118,8 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 	ts := make(chan struct{}, 1)
 	if s.LivepeerNode.NodeType == core.Transcoder {
 		go func() {
-			port := ":4433" // default port; should it be 443 instead?
-			// fetch service URI and extract port, if any.
-			serviceURI := "https://localhost" + port // XXX do better; cmdarg?
-			if s.LivepeerNode.Eth != nil {
-				var err error
-				addr := s.LivepeerNode.Eth.Account().Address
-				serviceURI, err = s.LivepeerNode.Eth.GetServiceURI(addr)
-				if err != nil || serviceURI == "" {
-					glog.Error("Transcoder does not have a service URI set; may be unreachable")
-				}
-			}
-			uri, err := url.Parse(serviceURI) // should be publicly accessible
-			if err == nil && uri.Port() != "" {
-				port = ":" + uri.Port() // bind to all interfaces by default
-			}
-			if err != nil {
-				glog.Error("Service URI invalid; transcoder may be unreachable")
-			}
-			StartTranscodeServer(port, uri, s.LivepeerNode)
+			orch := core.NewOrchestrator(s.LivepeerNode)
+			StartTranscodeServer(orch, s.LivepeerNode.WorkDir)
 			ts <- struct{}{}
 		}()
 	}
