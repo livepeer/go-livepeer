@@ -15,6 +15,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
@@ -26,7 +27,7 @@ type broadcaster struct {
 	node  *LivepeerNode
 	httpc *http.Client
 	job   *ethTypes.Job
-	tinfo interface{}
+	tinfo *net.TranscoderInfo
 }
 
 func (bcast *broadcaster) Sign(msg []byte) ([]byte, error) {
@@ -44,10 +45,10 @@ func (bcast *broadcaster) GetHTTPClient() *http.Client {
 func (bcast *broadcaster) SetHTTPClient(hc *http.Client) {
 	bcast.httpc = hc
 }
-func (bcast *broadcaster) GetTranscoderInfo() interface{} {
+func (bcast *broadcaster) GetTranscoderInfo() *net.TranscoderInfo {
 	return bcast.tinfo
 }
-func (bcast *broadcaster) SetTranscoderInfo(t interface{}) {
+func (bcast *broadcaster) SetTranscoderInfo(t *net.TranscoderInfo) {
 	bcast.tinfo = t
 }
 func NewBroadcaster(node *LivepeerNode, job *ethTypes.Job) *broadcaster {

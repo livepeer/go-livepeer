@@ -166,7 +166,7 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 		return nil, err
 	}
 	// Update the master playlist based on the streamids from the transcoder
-	tinfo := (rpcBcast.GetTranscoderInfo()).(*TranscoderInfo)
+	tinfo := rpcBcast.GetTranscoderInfo()
 	for strmID, tProfile := range tinfo.StreamIds {
 		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[tProfile])
 		pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)

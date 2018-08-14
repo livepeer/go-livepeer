@@ -13,6 +13,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/core"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
 )
 
 func StubJob() *lpTypes.Job {
@@ -72,10 +73,10 @@ func (r *stubOrchestrator) GetHTTPClient() *http.Client {
 }
 func (r *stubOrchestrator) SetHTTPClient(ti *http.Client) {
 }
-func (r *stubOrchestrator) GetTranscoderInfo() interface{} {
+func (r *stubOrchestrator) GetTranscoderInfo() *net.TranscoderInfo {
 	return nil
 }
-func (r *stubOrchestrator) SetTranscoderInfo(ti interface{}) {
+func (r *stubOrchestrator) SetTranscoderInfo(ti *net.TranscoderInfo) {
 }
 func StubBroadcaster2() *stubOrchestrator {
 	return StubOrchestrator() // lazy; leverage subtyping for interface commonalities
@@ -175,7 +176,7 @@ func TestRPCSeg(t *testing.T) {
 	j.JobId = big.NewInt(1234)
 	j.BroadcasterAddress = baddr
 
-	segData := &SegData{Seq: 4, Hash: ethcommon.RightPadBytes([]byte("browns"), 32)}
+	segData := &net.SegData{Seq: 4, Hash: ethcommon.RightPadBytes([]byte("browns"), 32)}
 	creds, err := genSegCreds(b, j.StreamId, segData)
 	if err != nil {
 		t.Error("Unable to generate seg creds ", err)
