@@ -24,45 +24,6 @@ func Over1Pct(val int, cmp int) bool {
 	return float32(val) > float32(cmp)*1.01 || float32(val) < float32(cmp)*0.99
 }
 
-type StubConnInfo struct {
-	NodeID   string
-	NodeAddr []string
-}
-
-type StubBroadcaster struct {
-	T         *testing.T
-	StrmID    string
-	SeqNo     uint64
-	Data      []byte
-	FinishMsg bool
-}
-
-func (n *StubBroadcaster) IsLive() bool   { return true }
-func (n *StubBroadcaster) String() string { return "" }
-func (n *StubBroadcaster) Broadcast(seqNo uint64, data []byte) error {
-	ss, err := BytesToSignedSegment(data)
-	if err != nil {
-		n.T.Errorf("Error Converting bytes to SignedSegment: %v", err)
-	}
-
-	if n.SeqNo == 0 {
-		n.SeqNo = ss.Seg.SeqNo
-	} else {
-		n.T.Errorf("Already assigned")
-	}
-
-	if n.Data == nil {
-		n.Data = ss.Seg.Data
-	} else {
-		n.T.Errorf("Already assigned")
-	}
-	return nil
-}
-func (n *StubBroadcaster) Finish() error {
-	n.FinishMsg = true
-	return nil
-}
-
 func StubSegment() *SignedSegment {
 	d, _ := ioutil.ReadFile("./test.ts")
 	return &SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test.ts", Data: d[0:402696], Duration: 1}, Sig: []byte("test sig")}
