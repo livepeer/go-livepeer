@@ -178,7 +178,7 @@ func verifySegCreds(job *lpTypes.Job, segCreds string) (*net.SegData, error) {
 	return &segData, nil
 }
 
-func GetTranscoder(context context.Context, orch Orchestrator, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
+func getTranscoder(context context.Context, orch Orchestrator, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
 	glog.Info("Got transcoder request for job ", req.JobId)
 	job, err := orch.GetJob(req.JobId)
 	if err != nil {
@@ -310,7 +310,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 // grpc methods
 func (h *lphttp) GetTranscoder(context context.Context, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
-	return GetTranscoder(context, h.orchestrator, req)
+	return getTranscoder(context, h.orchestrator, req)
 }
 
 func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
