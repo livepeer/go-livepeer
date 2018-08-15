@@ -41,7 +41,7 @@ type LivepeerNode struct {
 
 	// Common fields
 	Identity        NodeID
-	VideoCache      VideoCache
+	VideoSource     VideoSource
 	Eth             eth.LivepeerEthClient
 	EthEventMonitor eth.EventMonitor
 	EthServices     map[string]eth.EventService
@@ -63,7 +63,7 @@ type LivepeerNode struct {
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
 func NewLivepeerNode(e eth.LivepeerEthClient, nodeId NodeID, wd string, dbh *common.DB) (*LivepeerNode, error) {
 
-	return &LivepeerNode{VideoCache: NewBasicVideoCache(), Identity: nodeId, Eth: e, WorkDir: wd, Database: dbh, EthServices: make(map[string]eth.EventService), ClaimManagers: make(map[int64]eth.ClaimManager), SegmentChans: make(map[int64]SegmentChan), claimMutex: &sync.Mutex{}, segmentMutex: &sync.Mutex{}}, nil
+	return &LivepeerNode{VideoSource: NewBasicVideoSource(), Identity: nodeId, Eth: e, WorkDir: wd, Database: dbh, EthServices: make(map[string]eth.EventService), ClaimManagers: make(map[int64]eth.ClaimManager), SegmentChans: make(map[int64]SegmentChan), claimMutex: &sync.Mutex{}, segmentMutex: &sync.Mutex{}}, nil
 }
 
 func (n *LivepeerNode) StartEthServices() error {

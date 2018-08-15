@@ -110,7 +110,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 
 	start := time.Now()
 	for time.Since(start) < time.Second*2 {
-		pl := s.LivepeerNode.VideoCache.GetHLSMediaPlaylist(sid)
+		pl := s.LivepeerNode.VideoSource.GetHLSMediaPlaylist(sid)
 		if pl == nil || len(pl.Segments) != 4 {
 			time.Sleep(100 * time.Millisecond)
 			continue
@@ -119,7 +119,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 		}
 	}
 
-	pl := s.LivepeerNode.VideoCache.GetHLSMediaPlaylist(sid)
+	pl := s.LivepeerNode.VideoSource.GetHLSMediaPlaylist(sid)
 	if pl == nil {
 		t.Error("Expected media playlist; got none")
 	}
@@ -145,7 +145,7 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	//Set up the stubnet so it already has a manifest with a local stream
 	mpl := m3u8.NewMasterPlaylist()
 	mpl.Append("strm.m3u8", nil, m3u8.VariantParams{Bandwidth: 100})
-	s.LivepeerNode.VideoCache.UpdateHLSMasterPlaylist("12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd210f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0", mpl)
+	s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist("12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd210f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0", mpl)
 	if len(mpl.Variants) != 1 {
 		t.Errorf("Expecting 1 variant, but got %v", mpl)
 	}

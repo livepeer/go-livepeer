@@ -87,7 +87,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	// Check playlist was updated
 	for _, v := range strmIds {
-		pl := n.VideoCache.GetHLSMediaPlaylist(v)
+		pl := n.VideoSource.GetHLSMediaPlaylist(v)
 		if pl == nil {
 			t.Error("Expected media playlist; got none")
 		}

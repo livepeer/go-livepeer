@@ -176,7 +176,7 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 
 	// Update the master playlist on the network
 	mid := core.StreamID(job.StreamId).ManifestIDFromStreamID()
-	s.LivepeerNode.VideoCache.UpdateHLSMasterPlaylist(mid, manifest)
+	s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist(mid, manifest)
 
 	return rpcBcast, nil
 }
@@ -336,7 +336,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					s.LivepeerNode.Database.SetSegmentCount(jobId, int64(seg.SeqNo))
 				}
 
-				s.LivepeerNode.VideoCache.InsertHLSSegment(hlsStrmID, seg)
+				s.LivepeerNode.VideoSource.InsertHLSSegment(hlsStrmID, seg)
 
 				if rpcBcast != nil {
 					go func() {
@@ -374,7 +374,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 								return
 							}
 							newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: parseSegName(url), Data: data, Duration: seg.Duration}
-							s.LivepeerNode.VideoCache.InsertHLSSegment(sid, newSeg)
+							s.LivepeerNode.VideoSource.InsertHLSSegment(sid, newSeg)
 						}
 						for _, v := range res.Segments {
 							go dlFunc(v.Url)
@@ -408,7 +408,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[vProfile.Name])
 		manifest.Append(fmt.Sprintf("%v.m3u8", hlsStrmID), pl, vParams)
 
-		s.LivepeerNode.VideoCache.UpdateHLSMasterPlaylist(mid, manifest)
+		s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist(mid, manifest)
 
 		if monitor.Enabled {
 			monitor.LogStreamCreatedEvent(hlsStrmID.String(), nonce)
@@ -468,9 +468,9 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		delete(s.rtmpStreams, core.StreamID(rtmpID))
 		// XXX update HLS manifest
 		//Remove Manifest
-		s.LivepeerNode.VideoCache.EvictHLSMasterPlaylist(core.ManifestID(manifestID))
+		s.LivepeerNode.VideoSource.EvictHLSMasterPlaylist(core.ManifestID(manifestID))
 		//Remove the stream from cache
-		s.LivepeerNode.VideoCache.EvictHLSStream(core.StreamID(hlsID))
+		s.LivepeerNode.VideoSource.EvictHLSStream(core.StreamID(hlsID))
 
 		s.VideoNonceLock.Lock()
 		if _, ok := s.VideoNonce[rtmpStrm.GetStreamID()]; ok {
@@ -495,7 +495,7 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 		}
 
 		//Just load it from the cache (it's already hooked up to the network)
-		manifest := s.LivepeerNode.VideoCache.GetHLSMasterPlaylist(core.ManifestID(manifestID))
+		manifest := s.LivepeerNode.VideoSource.GetHLSMasterPlaylist(core.ManifestID(manifestID))
 		if manifest == nil {
 			return nil, vidplayer.ErrNotFound
 		}
@@ -512,7 +512,7 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 		}
 
 		//Get the hls playlist, update the timeout timer
-		pl := s.LivepeerNode.VideoCache.GetHLSMediaPlaylist(strmID)
+		pl := s.LivepeerNode.VideoSource.GetHLSMediaPlaylist(strmID)
 		if pl == nil {
 			return nil, vidplayer.ErrNotFound
 		} else {
@@ -534,7 +534,7 @@ func getHLSSegmentHandler(s *LivepeerServer) func(url *url.URL) ([]byte, error) 
 			return nil, vidplayer.ErrNotFound
 		}
 
-		seg := s.LivepeerNode.VideoCache.GetHLSSegment(strmID, segName)
+		seg := s.LivepeerNode.VideoSource.GetHLSSegment(strmID, segName)
 		if seg == nil {
 			return nil, vidplayer.ErrNotFound
 		} else {

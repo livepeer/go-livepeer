@@ -72,7 +72,7 @@ func TestTranscode(t *testing.T) {
 	for _, v := range tr.Urls {
 		rgx, _ := regexp.Compile("[[:alnum:]]+")
 		sid := StreamID(rgx.FindString(v)) // trim off the training "_100.ts"
-		b := n.VideoCache.GetHLSSegment(sid, v)
+		b := n.VideoSource.GetHLSSegment(sid, v)
 		if b == nil {
 			t.Error("Error converting broadcaster ", sid.GetRendition())
 		}

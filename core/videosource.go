@@ -13,7 +13,7 @@ var GetMasterPlaylistWaitTime = time.Second * 5
 var GetMediaPlaylistWaitTime = time.Second * 10
 var SegCacheLen = 10
 
-type VideoCache interface {
+type VideoSource interface {
 	GetHLSMasterPlaylist(manifestID ManifestID) *m3u8.MasterPlaylist
 	UpdateHLSMasterPlaylist(manifestID ManifestID, mpl *m3u8.MasterPlaylist)
 	EvictHLSMasterPlaylist(manifestID ManifestID)
@@ -60,7 +60,7 @@ func (sc *segCache) GetMediaPlaylist() *m3u8.MediaPlaylist {
 	return pl
 }
 
-type BasicVideoCache struct {
+type BasicVideoSource struct {
 	segCache map[StreamID]*segCache
 	segLock  sync.Mutex
 
@@ -68,11 +68,11 @@ type BasicVideoCache struct {
 	masterPLock sync.Mutex
 }
 
-func NewBasicVideoCache() *BasicVideoCache {
-	return &BasicVideoCache{segCache: make(map[StreamID]*segCache), segLock: sync.Mutex{}, masterPLock: sync.Mutex{}, masterPList: make(map[ManifestID]*m3u8.MasterPlaylist)}
+func NewBasicVideoSource() VideoSource {
+	return &BasicVideoSource{segCache: make(map[StreamID]*segCache), segLock: sync.Mutex{}, masterPLock: sync.Mutex{}, masterPList: make(map[ManifestID]*m3u8.MasterPlaylist)}
 }
 
-func (c *BasicVideoCache) GetCache(strmID StreamID) (*segCache, bool) {
+func (c *BasicVideoSource) GetCache(strmID StreamID) (*segCache, bool) {
 	c.segLock.Lock()
 	defer c.segLock.Unlock()
 
@@ -80,13 +80,13 @@ func (c *BasicVideoCache) GetCache(strmID StreamID) (*segCache, bool) {
 	return sc, ok
 }
 
-func (c *BasicVideoCache) DeleteCache(strmID StreamID) {
+func (c *BasicVideoSource) DeleteCache(strmID StreamID) {
 	c.segLock.Lock()
 	defer c.segLock.Unlock()
 	delete(c.segCache, strmID)
 }
 
-func (c *BasicVideoCache) GetHLSMasterPlaylist(manifestID ManifestID) *m3u8.MasterPlaylist {
+func (c *BasicVideoSource) GetHLSMasterPlaylist(manifestID ManifestID) *m3u8.MasterPlaylist {
 	c.masterPLock.Lock()
 	defer c.masterPLock.Unlock()
 	pl, ok := c.masterPList[manifestID]
@@ -96,7 +96,7 @@ func (c *BasicVideoCache) GetHLSMasterPlaylist(manifestID ManifestID) *m3u8.Mast
 	return pl
 }
 
-func (c *BasicVideoCache) UpdateHLSMasterPlaylist(manifestID ManifestID, mpl *m3u8.MasterPlaylist) {
+func (c *BasicVideoSource) UpdateHLSMasterPlaylist(manifestID ManifestID, mpl *m3u8.MasterPlaylist) {
 	c.masterPLock.Lock()
 	defer c.masterPLock.Unlock()
 	if mpl == nil {
@@ -106,11 +106,11 @@ func (c *BasicVideoCache) UpdateHLSMasterPlaylist(manifestID ManifestID, mpl *m3
 	}
 }
 
-func (c *BasicVideoCache) EvictHLSMasterPlaylist(manifestID ManifestID) {
+func (c *BasicVideoSource) EvictHLSMasterPlaylist(manifestID ManifestID) {
 	c.UpdateHLSMasterPlaylist(manifestID, nil)
 }
 
-func (c *BasicVideoCache) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlaylist {
+func (c *BasicVideoSource) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlaylist {
 	//If we have the stream, just return the playlist
 	if cache, ok := c.GetCache(streamID); ok {
 		return cache.GetMediaPlaylist()
@@ -118,7 +118,7 @@ func (c *BasicVideoCache) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlay
 	return nil
 }
 
-func (c *BasicVideoCache) InsertHLSSegment(streamID StreamID, seg *stream.HLSSegment) {
+func (c *BasicVideoSource) InsertHLSSegment(streamID StreamID, seg *stream.HLSSegment) {
 	c.segLock.Lock()
 	defer c.segLock.Unlock()
 	sc, ok := c.segCache[streamID]
@@ -129,7 +129,7 @@ func (c *BasicVideoCache) InsertHLSSegment(streamID StreamID, seg *stream.HLSSeg
 	sc.Insert(seg)
 }
 
-func (c *BasicVideoCache) GetHLSSegment(streamID StreamID, segName string) *stream.HLSSegment {
+func (c *BasicVideoSource) GetHLSSegment(streamID StreamID, segName string) *stream.HLSSegment {
 	if cache, ok := c.segCache[streamID]; !ok {
 		return nil
 	} else {
@@ -137,12 +137,12 @@ func (c *BasicVideoCache) GetHLSSegment(streamID StreamID, segName string) *stre
 	}
 }
 
-func (c *BasicVideoCache) EvictHLSStream(streamID StreamID) error {
+func (c *BasicVideoSource) EvictHLSStream(streamID StreamID) error {
 	c.DeleteCache(streamID)
 	return nil
 }
 
-func (c *BasicVideoCache) GetNodeStatus(nodeID string) *net.NodeStatus {
+func (c *BasicVideoSource) GetNodeStatus(nodeID string) *net.NodeStatus {
 	// not threadsafe; need to deep copy the playlist
 	c.masterPLock.Lock()
 	defer c.masterPLock.Unlock()

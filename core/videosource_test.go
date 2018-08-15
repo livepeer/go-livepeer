@@ -7,7 +7,7 @@ import (
 )
 
 func TestGetMasterPlaylist(t *testing.T) {
-	c := NewBasicVideoCache()
+	c := NewBasicVideoSource()
 	pl := m3u8.NewMasterPlaylist()
 	pl.Append("test1.m3u8", nil, m3u8.VariantParams{Bandwidth: 100})
 	c.UpdateHLSMasterPlaylist("122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test", pl)
@@ -19,7 +19,7 @@ func TestGetMasterPlaylist(t *testing.T) {
 }
 
 func TestEvictMasterPlaylist(t *testing.T) {
-	c := NewBasicVideoCache()
+	c := NewBasicVideoSource()
 	pl := m3u8.NewMasterPlaylist()
 	pl.Append("test1.m3u8", nil, m3u8.VariantParams{Bandwidth: 100})
 	c.UpdateHLSMasterPlaylist("122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test", pl)
@@ -37,7 +37,7 @@ func TestEvictMasterPlaylist(t *testing.T) {
 }
 
 func TestGetAndEvictHLSMediaPlaylist(t *testing.T) {
-	c := NewBasicVideoCache()
+	c := NewBasicVideoSource()
 	strmID := "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test"
 
 	pl := c.GetHLSMediaPlaylist(StreamID(strmID))

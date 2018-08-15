@@ -246,7 +246,7 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 		}
 		tProfileData[config.Profiles[i]] = tData[i]
 		newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: fmt.Sprintf("%v_%d.ts", r, seg.SeqNo), Data: tData[i], Duration: seg.Duration}
-		n.VideoCache.InsertHLSSegment(r, newSeg)
+		n.VideoSource.InsertHLSSegment(r, newSeg)
 		tr.Urls = append(tr.Urls, newSeg.Name)
 	}
 	//Don't do the onchain stuff unless specified
