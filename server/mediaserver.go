@@ -339,6 +339,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					s.LivepeerNode.Database.SetSegmentCount(jobId, int64(seg.SeqNo))
 				}
 
+				s.LivepeerNode.VideoCache.InsertHLSSegment(hlsStrmID, seg)
+
 				if rpcBcast != nil {
 					go func() {
 						// send segment to the transcoder
