@@ -1,19 +1,23 @@
 /*
 Core contains the main functionality of the Livepeer node.
+
+The logical orgnization of the `core` module is as follows:
+
+livepeernode.go: Main struct definition and code that is common to all node types.
+broadcaster.go: Code that is called only when the node is in broadcaster mode.
+orchestrator.go: Code that is called only when the node is in orchestrator mode.
+
 */
 package core
 
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/url"
 	"sync"
 
-	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
-	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/ipfs"
 )
 
@@ -34,19 +38,24 @@ const (
 
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
+
+	// Common fields
 	Identity        NodeID
 	VideoCache      VideoCache
 	Eth             eth.LivepeerEthClient
 	EthEventMonitor eth.EventMonitor
 	EthServices     map[string]eth.EventService
-	ClaimManagers   map[int64]eth.ClaimManager
-	SegmentChans    map[int64]SegmentChan
-	Ipfs            ipfs.IpfsApi
 	WorkDir         string
 	NodeType        NodeType
 	Database        *common.DB
-	ServiceURI      *url.URL
 
+	// Transcoder public fields
+	ClaimManagers map[int64]eth.ClaimManager
+	SegmentChans  map[int64]SegmentChan
+	Ipfs          ipfs.IpfsApi
+	ServiceURI    *url.URL
+
+	// Transcoder private fields
 	claimMutex   *sync.Mutex
 	segmentMutex *sync.Mutex
 }
@@ -91,26 +100,4 @@ func (n *LivepeerNode) StopEthServices() error {
 	}
 
 	return nil
-}
-
-func (n *LivepeerNode) GetClaimManager(job *ethTypes.Job) (eth.ClaimManager, error) {
-	n.claimMutex.Lock()
-	defer n.claimMutex.Unlock()
-	if job == nil {
-		glog.Error("Nil job")
-		return nil, fmt.Errorf("Nil job")
-	}
-	jobId := job.JobId.Int64()
-	// XXX we should clear entries after some period of inactivity
-	if cm, ok := n.ClaimManagers[jobId]; ok {
-		return cm, nil
-	}
-	// no claimmanager exists yet; check if we're assigned the job
-	if n.Eth == nil {
-		return nil, nil
-	}
-	glog.Infof("Creating new claim manager for job %v", jobId)
-	cm := eth.NewBasicClaimManager(job, n.Eth, n.Ipfs, n.Database)
-	n.ClaimManagers[jobId] = cm
-	return cm, nil
 }
