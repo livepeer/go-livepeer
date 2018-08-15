@@ -139,12 +139,11 @@ func main() {
 		return
 	}
 
-	nw := core.NewLocalNetwork()
 	nodeId, err := peer.IDFromPublicKey(pub) // TODO do we need this id?
 	if err != nil {
 		glog.Error("Error retrieving node ID ", err)
 	}
-	n, err := core.NewLivepeerNode(nil, nw, core.NodeID(peer.IDHexEncode(nodeId)), *datadir, dbh)
+	n, err := core.NewLivepeerNode(nil, core.NodeID(peer.IDHexEncode(nodeId)), *datadir, dbh)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}

@@ -13,53 +13,20 @@ import (
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
-	"github.com/livepeer/lpms/vidplayer"
 )
 
 var S *LivepeerServer
 
-func setupServer(nw net.VideoNetwork) *LivepeerServer {
+func setupServer() *LivepeerServer {
 	if S == nil {
-		n, _ := core.NewLivepeerNode(nil, nw, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", "./tmp", nil)
-		S = NewLivepeerServer("127.0.0.1:1935", "127.0.0.1:8080", n)
+		n, _ := core.NewLivepeerNode(nil, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", "./tmp", nil)
+		S = NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
 		go S.StartMediaServer(context.Background(), big.NewInt(0), "")
-		go S.StartWebserver("127.0.0.1:8935")
+		go S.StartWebserver("127.0.0.1:8938")
 	}
 	return S
-}
-
-type StubNetwork struct {
-	MPL                map[string]*m3u8.MasterPlaylist
-	TranscodeCallbacks map[string]func(map[string]string)
-}
-
-func (n *StubNetwork) String() string { return "" }
-
-func (b *StubNetwork) GetMasterPlaylist(nodeID string, strmID string) (chan *m3u8.MasterPlaylist, error) {
-	mplc := make(chan *m3u8.MasterPlaylist)
-	mpl, ok := b.MPL[strmID]
-	if !ok {
-		return nil, vidplayer.ErrNotFound
-	}
-
-	go func() {
-		mplc <- mpl
-		close(mplc)
-	}()
-
-	return mplc, nil
-}
-
-func (b *StubNetwork) UpdateMasterPlaylist(strmID string, mpl *m3u8.MasterPlaylist) error {
-	b.MPL[strmID] = mpl
-	return nil
-}
-
-func (n *StubNetwork) GetNodeStatus(nodeID string) (chan *net.NodeStatus, error) {
-	return nil, nil
 }
 
 type StubSubscriber struct {
@@ -117,12 +84,7 @@ func (s *StubSegmenter) SubscribeToSegmenter(ctx context.Context, rs stream.RTMP
 
 // Should publish RTMP stream, turn the RTMP stream into HLS, and broadcast the HLS stream.
 func TestGotRTMPStreamHandler(t *testing.T) {
-	stubnet := &StubNetwork{
-		MPL:                make(map[string]*m3u8.MasterPlaylist),
-		TranscodeCallbacks: make(map[string]func(map[string]string)),
-	}
-
-	s := setupServer(stubnet)
+	s := setupServer()
 	s.RTMPSegmenter = &StubSegmenter{}
 	handler := gotRTMPStreamHandler(s)
 
@@ -177,17 +139,17 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 
 func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	glog.Infof("\n\nTestGetHLSMasterPlaylistHandler...\n")
-	stubnet := &StubNetwork{MPL: make(map[string]*m3u8.MasterPlaylist)}
+
+	s := setupServer()
 
 	//Set up the stubnet so it already has a manifest with a local stream
 	mpl := m3u8.NewMasterPlaylist()
 	mpl.Append("strm.m3u8", nil, m3u8.VariantParams{Bandwidth: 100})
-	stubnet.MPL["12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd210f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0"] = mpl
+	s.LivepeerNode.VideoCache.UpdateHLSMasterPlaylist("12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd210f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0", mpl)
 	if len(mpl.Variants) != 1 {
 		t.Errorf("Expecting 1 variant, but got %v", mpl)
 	}
 
-	s := setupServer(stubnet)
 	handler := getHLSMasterPlaylistHandler(s)
 	url, _ := url.Parse("http://localhost/stream/12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd210f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0.m3u8")
 
@@ -200,8 +162,8 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	if len(pl.Variants) != 1 {
 		t.Errorf("Expecting 1 variant, but got %v", pl)
 	}
-	if pl.Variants[0].URI != "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd210f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0.m3u8" {
-		t.Errorf("Expecting 12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd210f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0.m3u8, but got: %v", pl.Variants[0].URI)
+	if pl.Variants[0].URI != "strm.m3u8" {
+		t.Errorf("Expecting strm.m3u8, but got: %v", pl.Variants[0].URI)
 	}
 }
 

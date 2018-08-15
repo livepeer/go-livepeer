@@ -15,7 +15,6 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/ipfs"
-	"github.com/livepeer/go-livepeer/net"
 )
 
 var ErrLivepeerNode = errors.New("ErrLivepeerNode")
@@ -36,7 +35,6 @@ const (
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 	Identity        NodeID
-	VideoNetwork    net.VideoNetwork
 	VideoCache      VideoCache
 	Eth             eth.LivepeerEthClient
 	EthEventMonitor eth.EventMonitor
@@ -54,13 +52,9 @@ type LivepeerNode struct {
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
-func NewLivepeerNode(e eth.LivepeerEthClient, vn net.VideoNetwork, nodeId NodeID, wd string, dbh *common.DB) (*LivepeerNode, error) {
-	if vn == nil {
-		glog.Errorf("Cannot create a LivepeerNode without a VideoNetwork")
-		return nil, ErrLivepeerNode
-	}
+func NewLivepeerNode(e eth.LivepeerEthClient, nodeId NodeID, wd string, dbh *common.DB) (*LivepeerNode, error) {
 
-	return &LivepeerNode{VideoCache: NewBasicVideoCache(vn), VideoNetwork: vn, Identity: nodeId, Eth: e, WorkDir: wd, Database: dbh, EthServices: make(map[string]eth.EventService), ClaimManagers: make(map[int64]eth.ClaimManager), SegmentChans: make(map[int64]SegmentChan), claimMutex: &sync.Mutex{}, segmentMutex: &sync.Mutex{}}, nil
+	return &LivepeerNode{VideoCache: NewBasicVideoCache(), Identity: nodeId, Eth: e, WorkDir: wd, Database: dbh, EthServices: make(map[string]eth.EventService), ClaimManagers: make(map[int64]eth.ClaimManager), SegmentChans: make(map[int64]SegmentChan), claimMutex: &sync.Mutex{}, segmentMutex: &sync.Mutex{}}, nil
 }
 
 func (n *LivepeerNode) StartEthServices() error {

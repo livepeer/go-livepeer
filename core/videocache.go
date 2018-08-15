@@ -15,11 +15,14 @@ var SegCacheLen = 10
 
 type VideoCache interface {
 	GetHLSMasterPlaylist(manifestID ManifestID) *m3u8.MasterPlaylist
+	UpdateHLSMasterPlaylist(manifestID ManifestID, mpl *m3u8.MasterPlaylist)
 	EvictHLSMasterPlaylist(manifestID ManifestID)
 	GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlaylist
 	InsertHLSSegment(streamID StreamID, seg *stream.HLSSegment)
 	GetHLSSegment(streamID StreamID, segName string) *stream.HLSSegment
 	EvictHLSStream(streamID StreamID) error
+
+	GetNodeStatus(nodeID string) *net.NodeStatus
 }
 
 type segCache struct {
@@ -58,13 +61,15 @@ func (sc *segCache) GetMediaPlaylist() *m3u8.MediaPlaylist {
 }
 
 type BasicVideoCache struct {
-	network  net.VideoNetwork
 	segCache map[StreamID]*segCache
 	segLock  sync.Mutex
+
+	masterPList map[ManifestID]*m3u8.MasterPlaylist
+	masterPLock sync.Mutex
 }
 
-func NewBasicVideoCache(nw net.VideoNetwork) *BasicVideoCache {
-	return &BasicVideoCache{network: nw, segCache: make(map[StreamID]*segCache), segLock: sync.Mutex{}}
+func NewBasicVideoCache() *BasicVideoCache {
+	return &BasicVideoCache{segCache: make(map[StreamID]*segCache), segLock: sync.Mutex{}, masterPLock: sync.Mutex{}, masterPList: make(map[ManifestID]*m3u8.MasterPlaylist)}
 }
 
 func (c *BasicVideoCache) GetCache(strmID StreamID) (*segCache, bool) {
@@ -82,23 +87,27 @@ func (c *BasicVideoCache) DeleteCache(strmID StreamID) {
 }
 
 func (c *BasicVideoCache) GetHLSMasterPlaylist(manifestID ManifestID) *m3u8.MasterPlaylist {
-	plc, err := c.network.GetMasterPlaylist(string(manifestID.GetNodeID()), string(manifestID))
-	if err != nil {
+	c.masterPLock.Lock()
+	defer c.masterPLock.Unlock()
+	pl, ok := c.masterPList[manifestID]
+	if !ok {
 		return nil
 	}
+	return pl
+}
 
-	timer := time.NewTimer(GetMasterPlaylistWaitTime)
-	select {
-	case pl := <-plc:
-		return pl
-	case <-timer.C:
-		return nil
+func (c *BasicVideoCache) UpdateHLSMasterPlaylist(manifestID ManifestID, mpl *m3u8.MasterPlaylist) {
+	c.masterPLock.Lock()
+	defer c.masterPLock.Unlock()
+	if mpl == nil {
+		delete(c.masterPList, manifestID)
+	} else {
+		c.masterPList[manifestID] = mpl
 	}
 }
 
 func (c *BasicVideoCache) EvictHLSMasterPlaylist(manifestID ManifestID) {
-	c.network.UpdateMasterPlaylist(string(manifestID), nil)
-	return
+	c.UpdateHLSMasterPlaylist(manifestID, nil)
 }
 
 func (c *BasicVideoCache) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlaylist {
@@ -131,4 +140,15 @@ func (c *BasicVideoCache) GetHLSSegment(streamID StreamID, segName string) *stre
 func (c *BasicVideoCache) EvictHLSStream(streamID StreamID) error {
 	c.DeleteCache(streamID)
 	return nil
+}
+
+func (c *BasicVideoCache) GetNodeStatus(nodeID string) *net.NodeStatus {
+	// not threadsafe; need to deep copy the playlist
+	c.masterPLock.Lock()
+	defer c.masterPLock.Unlock()
+	m := make(map[string]*m3u8.MasterPlaylist, 0)
+	for k, v := range c.masterPList {
+		m[string(k)] = v
+	}
+	return &net.NodeStatus{NodeID: nodeID, Manifests: m}
 }

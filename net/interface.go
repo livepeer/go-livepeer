@@ -9,16 +9,6 @@ import (
 	"github.com/golang/glog"
 )
 
-//VideoNetwork describes the interface for a Livepeer node network-layer library.
-type VideoNetwork interface {
-	// TODO can we make this a straight playlist instead of a chan?
-	GetMasterPlaylist(nodeID string, manifestID string) (chan *m3u8.MasterPlaylist, error)
-	UpdateMasterPlaylist(manifestID string, mpl *m3u8.MasterPlaylist) error
-	// TODO do we need this?
-	GetNodeStatus(nodeID string) (chan *NodeStatus, error)
-	String() string
-}
-
 type NodeStatus struct {
 	NodeID    string
 	Manifests map[string]*m3u8.MasterPlaylist

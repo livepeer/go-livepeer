@@ -7,13 +7,10 @@ import (
 )
 
 func TestGetMasterPlaylist(t *testing.T) {
-	stubnet := &StubVideoNetwork{
-		mplMap: make(map[string]*m3u8.MasterPlaylist),
-	}
-	c := NewBasicVideoCache(stubnet)
+	c := NewBasicVideoCache()
 	pl := m3u8.NewMasterPlaylist()
 	pl.Append("test1.m3u8", nil, m3u8.VariantParams{Bandwidth: 100})
-	stubnet.mplMap["122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test"] = pl
+	c.UpdateHLSMasterPlaylist("122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test", pl)
 
 	testpl := c.GetHLSMasterPlaylist("122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test")
 	if testpl.String() != pl.String() {
@@ -22,13 +19,10 @@ func TestGetMasterPlaylist(t *testing.T) {
 }
 
 func TestEvictMasterPlaylist(t *testing.T) {
-	stubnet := &StubVideoNetwork{
-		mplMap: make(map[string]*m3u8.MasterPlaylist),
-	}
-	c := NewBasicVideoCache(stubnet)
+	c := NewBasicVideoCache()
 	pl := m3u8.NewMasterPlaylist()
 	pl.Append("test1.m3u8", nil, m3u8.VariantParams{Bandwidth: 100})
-	stubnet.mplMap["122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test"] = pl
+	c.UpdateHLSMasterPlaylist("122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test", pl)
 
 	testpl := c.GetHLSMasterPlaylist("122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test")
 	if testpl.String() != pl.String() {
@@ -43,8 +37,7 @@ func TestEvictMasterPlaylist(t *testing.T) {
 }
 
 func TestGetAndEvictHLSMediaPlaylist(t *testing.T) {
-	stubnet := &StubVideoNetwork{}
-	c := NewBasicVideoCache(stubnet)
+	c := NewBasicVideoCache()
 	strmID := "122011e494a06b20bf7a80f40e80d538675cc0b168c21912d33e0179617d5d4fe4e0Test"
 
 	pl := c.GetHLSMediaPlaylist(StreamID(strmID))

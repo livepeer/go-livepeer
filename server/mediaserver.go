@@ -176,10 +176,7 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 
 	// Update the master playlist on the network
 	mid := core.StreamID(job.StreamId).ManifestIDFromStreamID()
-	if err = s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(string(mid), manifest); err != nil {
-		glog.Errorf("Error updating master playlist on network: %v", err)
-		return nil, err
-	}
+	s.LivepeerNode.VideoCache.UpdateHLSMasterPlaylist(mid, manifest)
 
 	return rpcBcast, nil
 }
@@ -411,9 +408,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[vProfile.Name])
 		manifest.Append(fmt.Sprintf("%v.m3u8", hlsStrmID), pl, vParams)
 
-		if err := s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(string(mid), manifest); err != nil {
-			glog.Errorf("Error broadasting manifest to network: %v", err)
-		}
+		s.LivepeerNode.VideoCache.UpdateHLSMasterPlaylist(mid, manifest)
+
 		if monitor.Enabled {
 			monitor.LogStreamCreatedEvent(hlsStrmID.String(), nonce)
 		}
@@ -473,8 +469,6 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		// XXX update HLS manifest
 		//Remove Manifest
 		s.LivepeerNode.VideoCache.EvictHLSMasterPlaylist(core.ManifestID(manifestID))
-		//Remove the master playlist from the network
-		s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(manifestID, nil)
 		//Remove the stream from cache
 		s.LivepeerNode.VideoCache.EvictHLSStream(core.StreamID(hlsID))
 
