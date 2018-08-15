@@ -21,7 +21,7 @@ var S *LivepeerServer
 
 func setupServer() *LivepeerServer {
 	if S == nil {
-		n, _ := core.NewLivepeerNode(nil, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", "./tmp", nil)
+		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		S = NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
 		go S.StartMediaServer(context.Background(), big.NewInt(0), "")
 		go S.StartWebserver("127.0.0.1:8938")
@@ -88,7 +88,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	s.RTMPSegmenter = &StubSegmenter{}
 	handler := gotRTMPStreamHandler(s)
 
-	hlsStrmID := string(s.LivepeerNode.Identity + "10f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0")
+	hlsStrmID := "10f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0"
 	url, _ := url.Parse(fmt.Sprintf("rtmp://localhost:1935/movie?hlsStrmID=%v", hlsStrmID))
 	strm := stream.NewBasicRTMPVideoStream("strmID")
 
@@ -145,13 +145,13 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	//Set up the stubnet so it already has a manifest with a local stream
 	mpl := m3u8.NewMasterPlaylist()
 	mpl.Append("strm.m3u8", nil, m3u8.VariantParams{Bandwidth: 100})
-	s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist("12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd210f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0", mpl)
+	s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist("10f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0", mpl)
 	if len(mpl.Variants) != 1 {
 		t.Errorf("Expecting 1 variant, but got %v", mpl)
 	}
 
 	handler := getHLSMasterPlaylistHandler(s)
-	url, _ := url.Parse("http://localhost/stream/12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd210f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0.m3u8")
+	url, _ := url.Parse("http://localhost/stream/10f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0.m3u8")
 
 	//Test get master playlist
 	pl, err := handler(url)
