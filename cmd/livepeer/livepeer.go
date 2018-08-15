@@ -45,6 +45,7 @@ var (
 
 const RinkebyControllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
 const MainnetControllerAddr = "0xf96d54e490317c557a967abfa5d6e33006be69b3"
+const RpcPort = "8935"
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -56,7 +57,7 @@ func main() {
 
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
 	rtmpAddr := flag.String("rtmpAddr", "127.0.0.1:1935", "IP to bind for RTMP commands")
-	cliAddr := flag.String("cliAddr", "127.0.0.1:8935", "Address to bind for  CLI commands")
+	cliAddr := flag.String("cliAddr", "127.0.0.1:7935", "Address to bind for  CLI commands")
 	httpAddr := flag.String("httpAddr", "", "Address to bind for HTTP commands")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
@@ -239,7 +240,7 @@ func main() {
 		// default lpms listener for broadcaster; same as default rpc port
 		// TODO provide an option to disable this?
 		if "" == *httpAddr {
-			*httpAddr = "127.0.0.1:4433"
+			*httpAddr = "127.0.0.1:" + RpcPort
 		}
 	} else if n.NodeType == core.Transcoder {
 		// if http addr is not provided, listen to all ifaces
@@ -437,7 +438,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 			glog.Error("Could not look up public IP address")
 			return err
 		}
-		serviceUri = "https://" + strings.TrimSpace(string(body)) + ":4433"
+		serviceUri = "https://" + strings.TrimSpace(string(body)) + ":" + RpcPort
 	} else {
 		serviceUri = "https://" + serviceUri
 	}
@@ -454,7 +455,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	uri, err := url.ParseRequestURI(uriStr)
 	if err != nil {
 		glog.Error("Could not parse service URI; transcoder may be unreachable")
-		uri, _ = url.ParseRequestURI("http://127.0.0.1:4433")
+		uri, _ = url.ParseRequestURI("http://127.0.0.1:" + RpcPort)
 	}
 	if uri.Hostname() != suri.Hostname() || uri.Port() != suri.Port() {
 		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceUri", uri, suri)
