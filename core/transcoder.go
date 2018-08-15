@@ -153,20 +153,20 @@ func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) (*
 		glog.Error("Could not find segment chan ", err)
 		return nil, err
 	}
-	segChan := &SegChanData{seg: ss, res: make(chan *TranscodeResult, 1)}
+	segChanData := &SegChanData{seg: ss, res: make(chan *TranscodeResult, 1)}
 	select {
-	case ch <- segChan:
+	case ch <- segChanData:
 		glog.V(common.DEBUG).Info("Submitted segment to transcode loop")
 	default:
 		// sending segChan should not block; if it does, the channel is busy
 		glog.Error("Transcoder was busy with a previous segment!")
 		return nil, fmt.Errorf("TranscoderBusy")
 	}
-	res := <-segChan.res
+	res := <-segChanData.res
 	return res, res.Err
 }
 
-func (n *LivepeerNode) transcodeAndBroadcastSeg(config transcodeConfig, ss *SignedSegment) *TranscodeResult {
+func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSegment) *TranscodeResult {
 
 	seg := ss.Seg
 	terr := func(err error) *TranscodeResult { return &TranscodeResult{Err: err} }
@@ -317,7 +317,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 				n.claimMutex.Unlock()
 				return
 			case chanData := <-segChan:
-				chanData.res <- n.transcodeAndBroadcastSeg(config, chanData.seg)
+				chanData.res <- n.transcodeAndCacheSeg(config, chanData.seg)
 			}
 			cancel()
 		}
