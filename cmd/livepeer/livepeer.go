@@ -54,9 +54,8 @@ func main() {
 		glog.Fatalf("Cannot find current user: %v", err)
 	}
 
-	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
-	rtmpIP := flag.String("rtmpIP", "127.0.0.1", "IP to bind for RTMP commands")
+	rtmpAddr := flag.String("rtmpAddr", "127.0.0.1:1935", "IP to bind for RTMP commands")
 	cliAddr := flag.String("cliAddr", "127.0.0.1:8935", "Address to bind for  CLI commands")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
@@ -268,7 +267,7 @@ func main() {
 	}
 
 	//Set up the media server
-	s := server.NewLivepeerServer(*rtmpPort, *rtmpIP, *publicAddr, n)
+	s := server.NewLivepeerServer(*rtmpAddr, *publicAddr, n)
 	ec := make(chan error)
 	tc := make(chan struct{})
 	wc := make(chan struct{})
@@ -302,7 +301,7 @@ func main() {
 		glog.Infof("***Livepeer Running in Transcoder Mode***")
 	case core.Broadcaster:
 		glog.Infof("***Livepeer Running in Broadcaster Mode***")
-		glog.Infof("Video Ingest Endpoint - rtmp://%v:%v", *rtmpIP, *rtmpPort)
+		glog.Infof("Video Ingest Endpoint - rtmp:/%v", *rtmpAddr)
 	}
 
 	c := make(chan os.Signal)

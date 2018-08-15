@@ -57,7 +57,6 @@ var LastManifestID core.ManifestID
 type LivepeerServer struct {
 	RTMPSegmenter  lpmscore.RTMPSegmenter
 	LPMS           *lpmscore.LPMS
-	RtmpPort       string
 	LivepeerNode   *core.LivepeerNode
 	VideoNonce     map[string]uint64
 	VideoNonceLock *sync.Mutex
@@ -69,9 +68,9 @@ type LivepeerServer struct {
 	broadcastRtmpToManifestMap map[string]string
 }
 
-func NewLivepeerServer(rtmpPort string, rtmpIP string, httpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
+func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
 	opts := lpmscore.LPMSOpts{
-		RtmpPort: rtmpPort, RtmpHost: rtmpIP, RtmpDisabled: true,
+		RtmpAddr: rtmpAddr, RtmpDisabled: true,
 		HttpAddr: httpAddr,
 		WorkDir:  lpNode.WorkDir,
 	}
@@ -82,7 +81,7 @@ func NewLivepeerServer(rtmpPort string, rtmpIP string, httpAddr string, lpNode *
 		opts.HttpMux = http.NewServeMux()
 	}
 	server := lpmscore.New(&opts)
-	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, RtmpPort: rtmpPort, LivepeerNode: lpNode, VideoNonce: map[string]uint64{}, VideoNonceLock: &sync.Mutex{}, HttpMux: opts.HttpMux, rtmpStreams: make(map[core.StreamID]stream.RTMPVideoStream), broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
+	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, VideoNonce: map[string]uint64{}, VideoNonceLock: &sync.Mutex{}, HttpMux: opts.HttpMux, rtmpStreams: make(map[core.StreamID]stream.RTMPVideoStream), broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
 }
 
 //StartServer starts the LPMS server
