@@ -473,7 +473,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 
 	n.Ipfs = ipfsApi
 	n.EthEventMonitor = em
-	n.ServiceURI = suri
+	n.ServiceURI = uri
 
 	if initializeRound {
 		glog.Infof("Transcoder %v will automatically initialize new rounds", n.Eth.Account().Address.Hex())
