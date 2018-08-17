@@ -61,6 +61,12 @@ func (s *JobService) Start(ctx context.Context) error {
 				glog.Errorf("Got empty job for id:%v. Should try again.", jid.Int64())
 				return errors.New("ErrGetJob")
 			}
+			assignedAddr, err := s.node.Eth.AssignedTranscoder(j)
+			if err != nil {
+				glog.Errorf("Error checking for job %v assignment: %v", jid, err)
+				return err
+			}
+			j.TranscoderAddress = assignedAddr
 			job = j
 			return err
 		}
@@ -69,13 +75,7 @@ func (s *JobService) Start(ctx context.Context) error {
 			return false, err
 		}
 
-		assignedAddr, err := s.node.Eth.AssignedTranscoder(job)
-		if err != nil {
-			glog.Errorf("Error checking for assignment: %v", err)
-			return false, err
-		}
-
-		if assignedAddr == s.node.Eth.Account().Address {
+		if job.TranscoderAddress == s.node.Eth.Account().Address {
 			dbjob := lpcommon.NewDBJob(
 				job.JobId, job.StreamId,
 				job.MaxPricePerSegment, job.Profiles,
