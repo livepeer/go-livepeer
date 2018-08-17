@@ -175,7 +175,10 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 	}
 
 	// Update the master playlist on the network
-	mid := core.StreamID(job.StreamId).ManifestIDFromStreamID()
+	mid, err := core.StreamID(job.StreamId).ManifestIDFromStreamID()
+	if err != nil {
+		return nil, err
+	}
 	s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist(mid, manifest)
 
 	return rpcBcast, nil

@@ -26,7 +26,19 @@ func TestStreamID(t *testing.T) {
 		t.Error("Streamid not valid")
 	}
 
+	// invalid videoid
+	if _, err := MakeStreamID([]byte("abc"), "def"); err != ErrStreamID {
+		t.Error("Did not receive expected error; ", err)
+	}
+	// invalid rendition
+	if _, err := MakeStreamID(vid, ""); err != ErrStreamID {
+		t.Error("Did not receive expected streamid error ", err)
+	}
+	// force a too-short streamid
 	bad := StreamID("streamid")
+	if bad.GetVideoID() != nil {
+		t.Error("Expected a nil videoid from streamid")
+	}
 	if bad.IsValid() {
 		t.Error("Did not expect streamid to be valid")
 	}
@@ -34,19 +46,38 @@ func TestStreamID(t *testing.T) {
 
 func TestManifestID(t *testing.T) {
 	vid := RandomVideoID()
-	mid, _ := MakeManifestID(vid)
+	mid, err := MakeManifestID(vid)
+
+	if err != nil || !mid.IsValid() {
+		t.Error("Error or invalid manifestid ", err)
+	}
 
 	if bytes.Compare(mid.GetVideoID(), vid) != 0 {
 		t.Error("Manifest ID did not match video ID")
 	}
 
 	sid, _ := MakeStreamID(vid, ffmpeg.P144p30fps16x9.Name)
-	msid := sid.ManifestIDFromStreamID()
-	if mid.String() != msid.String() {
-		t.Error("Manifest was not properly derived from stream ID")
+	msid, err := sid.ManifestIDFromStreamID()
+	if mid.String() != msid.String() || err != nil {
+		t.Error("Manifest was not properly derived from stream ID ", err)
 	}
 
 	if bytes.Compare(vid, msid.GetVideoID()) != 0 {
 		t.Error("Derived manifest did not match video ID")
+	}
+
+	//invalid manifestid
+	if _, err := MakeManifestID([]byte("abc")); err != ErrManifestID {
+		t.Error("Did not receive expected manifestid error ", err)
+	}
+	bad := ManifestID("manifestid")
+	if bad.GetVideoID() != nil {
+		t.Error("Expected nil videoid from manifestid")
+	}
+	if _, err := StreamID("bad").ManifestIDFromStreamID(); err != ErrManifestID {
+		t.Error("Expected manifestid error from bad streamid ", err)
+	}
+	if bad.IsValid() {
+		t.Error("did not expect manifestd to be valid")
 	}
 }

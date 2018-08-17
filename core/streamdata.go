@@ -34,12 +34,15 @@ type StreamID string
 
 func MakeStreamID(id []byte, rendition string) (StreamID, error) {
 	if len(id) != HashLength || rendition == "" {
-		return "", ErrManifestID
+		return "", ErrStreamID
 	}
 	return StreamID(fmt.Sprintf("%x%v", id, rendition)), nil
 }
 
 func (id *StreamID) GetVideoID() []byte {
+	if len(*id) < 2*HashLength {
+		return nil
+	}
 	vid, err := hex.DecodeString(string((*id)[:2*HashLength]))
 	if err != nil {
 		return nil
@@ -63,10 +66,16 @@ func (id StreamID) String() string {
 type ManifestID string
 
 func MakeManifestID(id []byte) (ManifestID, error) {
+	if len(id) != HashLength {
+		return ManifestID(""), ErrManifestID
+	}
 	return ManifestID(fmt.Sprintf("%x", id)), nil
 }
 
 func (id *ManifestID) GetVideoID() []byte {
+	if len(*id) < 2*HashLength {
+		return nil
+	}
 	vid, err := hex.DecodeString(string((*id)[:2*HashLength]))
 	if err != nil {
 		return nil
@@ -74,11 +83,12 @@ func (id *ManifestID) GetVideoID() []byte {
 	return vid
 }
 
-func (id StreamID) ManifestIDFromStreamID() ManifestID {
-	// Ignore error since StreamID should be a valid object;
-	// getting the node and video IDs don't fail (unless it segfaults)
-	mid, _ := MakeManifestID(id.GetVideoID())
-	return mid
+func (id StreamID) ManifestIDFromStreamID() (ManifestID, error) {
+	if !id.IsValid() {
+		return "", ErrManifestID
+	}
+	mid, err := MakeManifestID(id.GetVideoID())
+	return mid, err
 }
 
 func (id *ManifestID) IsValid() bool {
