@@ -458,7 +458,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 		uri, _ = url.ParseRequestURI("http://127.0.0.1:" + RpcPort)
 	}
 	if uri.Hostname() != suri.Hostname() || uri.Port() != suri.Port() {
-		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceUri", uri, suri)
+		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceAddr", uri, suri)
 		// TODO remove '&& false' after all transcoders have set a service URI
 		if active && false {
 			return fmt.Errorf("Mismatched service address")

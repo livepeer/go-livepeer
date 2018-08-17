@@ -271,7 +271,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	res, err := orch.TranscodeSeg(job, &ss)
 
 	// sanity check
-	if err != nil && len(res.Urls) != len(job.Profiles) {
+	if err == nil && len(res.Urls) != len(job.Profiles) {
 		err = fmt.Errorf("Mismatched result lengths")
 	}
 
@@ -467,9 +467,9 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 	var tdata *net.TranscodeData
 	switch res := tr.Result.(type) {
 	case *net.TranscodeResult_Error:
+		err = fmt.Errorf(res.Error)
+		glog.Errorf("Transcode failed for segment %v: %v", seg.SeqNo, err)
 		if monitor.Enabled {
-			glog.Error("Transcode failed for segment %v: %v", seg.SeqNo, err)
-			err = fmt.Errorf(res.Error)
 			monitor.LogSegmentTranscodeFailed("Transcode", nonce, seg.SeqNo, err)
 		}
 		return nil, err
@@ -479,7 +479,9 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 	default:
 		glog.Error("Unexpected or unset transcode response field for ", seg.SeqNo)
 		err = fmt.Errorf("UnknownResponse")
-		monitor.LogSegmentTranscodeFailed("UnknownResponse", nonce, seg.SeqNo, err)
+		if monitor.Enabled {
+			monitor.LogSegmentTranscodeFailed("UnknownResponse", nonce, seg.SeqNo, err)
+		}
 		return nil, err
 	}
 
