@@ -335,7 +335,11 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 		claimID := c.claims
 		if c.db != nil {
 			// check db in case we had any concurrent claims
-			claimIDp, _ := c.db.InsertClaim(c.jobID, segRange, root.Hash)
+			claimIDp, err := c.db.InsertClaim(c.jobID, segRange, root.Hash)
+			if err != nil {
+				glog.Errorf("Job %v Error: %v - inserting claim into DB", c.jobID, err)
+				continue
+			}
 			claimID = *claimIDp
 		}
 
