@@ -65,7 +65,6 @@ type LivepeerServer struct {
 	HttpMux        *http.ServeMux
 
 	rtmpStreams                map[core.StreamID]stream.RTMPVideoStream
-	hlsSubTimer                map[core.StreamID]time.Time
 	broadcastRtmpToHLSMap      map[string]string
 	broadcastRtmpToManifestMap map[string]string
 }
@@ -100,10 +99,6 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 		BroadcastJobVideoProfiles = bProfiles
 		glog.V(common.SHORT).Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
 	}
-
-	//Start HLS unsubscribe worker
-	s.hlsSubTimer = make(map[core.StreamID]time.Time)
-	go s.startHlsUnsubscribeWorker(time.Second*30, HLSUnsubWorkerFreq)
 
 	//LPMS handlers for handling RTMP video
 	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
@@ -514,9 +509,8 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 		pl := s.LivepeerNode.VideoSource.GetHLSMediaPlaylist(strmID)
 		if pl == nil {
 			return nil, vidplayer.ErrNotFound
-		} else {
-			s.hlsSubTimer[strmID] = time.Now()
 		}
+
 		return pl, nil
 	}
 }
@@ -566,19 +560,6 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 //End RTMP Handlers
 
 //Helper Methods Begin
-
-// //HLS video streams need to be timed out.  When the viewer is no longer watching the stream, we send a Unsubscribe message to the network.
-func (s *LivepeerServer) startHlsUnsubscribeWorker(limit time.Duration, freq time.Duration) {
-	for {
-		time.Sleep(freq)
-		for sid, t := range s.hlsSubTimer {
-			if time.Since(t) > limit {
-				glog.V(common.SHORT).Infof("Inactive HLS Stream %v - unsubscribing", sid)
-				delete(s.hlsSubTimer, sid)
-			}
-		}
-	}
-}
 
 func parseManifestID(reqPath string) (core.ManifestID, error) {
 	var strmID string

@@ -792,7 +792,6 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 
 	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(fmt.Sprintf("\n\nVideoSource: %v", s.LivepeerNode.VideoSource)))
-		w.Write([]byte(fmt.Sprintf("\n\nmediaserver sub timer: %v", s.hlsSubTimer)))
 	})
 
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
