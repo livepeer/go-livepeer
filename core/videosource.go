@@ -107,6 +107,17 @@ func (c *BasicVideoSource) UpdateHLSMasterPlaylist(manifestID ManifestID, mpl *m
 }
 
 func (c *BasicVideoSource) EvictHLSMasterPlaylist(manifestID ManifestID) {
+	c.masterPLock.Lock()
+	mpl := c.masterPList[manifestID]
+	if mpl != nil {
+		for _, variant := range mpl.Variants {
+			if len(variant.URI) > 5 {
+				streamID := variant.URI[:len(variant.URI)-5] // remove .m3u8 from end
+				c.DeleteCache(StreamID(streamID))
+			}
+		}
+	}
+	c.masterPLock.Unlock()
 	c.UpdateHLSMasterPlaylist(manifestID, nil)
 }
 

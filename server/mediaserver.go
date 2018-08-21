@@ -65,7 +65,6 @@ type LivepeerServer struct {
 	HttpMux        *http.ServeMux
 
 	rtmpStreams                map[core.StreamID]stream.RTMPVideoStream
-	broadcastRtmpToHLSMap      map[string]string
 	broadcastRtmpToManifestMap map[string]string
 }
 
@@ -82,7 +81,7 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 		opts.HttpMux = http.NewServeMux()
 	}
 	server := lpmscore.New(&opts)
-	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, VideoNonce: map[string]uint64{}, VideoNonceLock: &sync.Mutex{}, HttpMux: opts.HttpMux, rtmpStreams: make(map[core.StreamID]stream.RTMPVideoStream), broadcastRtmpToHLSMap: make(map[string]string), broadcastRtmpToManifestMap: make(map[string]string)}
+	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, VideoNonce: map[string]uint64{}, VideoNonceLock: &sync.Mutex{}, HttpMux: opts.HttpMux, rtmpStreams: make(map[core.StreamID]stream.RTMPVideoStream), broadcastRtmpToManifestMap: make(map[string]string)}
 }
 
 //StartServer starts the LPMS server
@@ -335,6 +334,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				if rpcBcast != nil {
 					go func() {
 						// send segment to the transcoder
+						glog.Infof("starting to submit segment %d", seg.SeqNo)
 						res, err := SubmitSegment(rpcBcast, seg, nonce)
 						if err != nil {
 							return
@@ -411,8 +411,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		glog.Infof("\n\nVideo Created With ManifestID: %v\n\n", mid)
 		glog.V(common.SHORT).Infof("\n\nhlsStrmID: %v\n\n", hlsStrmID)
 
-		//Remember HLS stream so we can remove later
-		s.broadcastRtmpToHLSMap[rtmpStrm.GetStreamID()] = string(hlsStrmID)
 		s.broadcastRtmpToManifestMap[rtmpStrm.GetStreamID()] = string(mid)
 
 		if jobId == nil && s.LivepeerNode.Eth != nil {
@@ -456,15 +454,12 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 		rtmpID := rtmpStrm.GetStreamID()
-		hlsID := s.broadcastRtmpToHLSMap[rtmpID]
 		manifestID := s.broadcastRtmpToManifestMap[rtmpID]
 		//Remove RTMP stream
 		delete(s.rtmpStreams, core.StreamID(rtmpID))
 		// XXX update HLS manifest
 		//Remove Manifest
 		s.LivepeerNode.VideoSource.EvictHLSMasterPlaylist(core.ManifestID(manifestID))
-		//Remove the stream from cache
-		s.LivepeerNode.VideoSource.EvictHLSStream(core.StreamID(hlsID))
 
 		s.VideoNonceLock.Lock()
 		if _, ok := s.VideoNonce[rtmpStrm.GetStreamID()]; ok {
