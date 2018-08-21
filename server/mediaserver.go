@@ -137,7 +137,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 //RTMP Publish Handlers
 func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID string) {
 	return func(url *url.URL) (strmID string) {
-		id, err := core.MakeStreamID(s.LivepeerNode.Identity, core.RandomVideoID(), "RTMP")
+		id, err := core.MakeStreamID(core.RandomVideoID(), "RTMP")
 		if err != nil {
 			glog.Errorf("Error making stream ID")
 			return ""
@@ -175,11 +175,11 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 	}
 
 	// Update the master playlist on the network
-	mid := core.StreamID(job.StreamId).ManifestIDFromStreamID()
-	if err = s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(string(mid), manifest); err != nil {
-		glog.Errorf("Error updating master playlist on network: %v", err)
+	mid, err := core.StreamID(job.StreamId).ManifestIDFromStreamID()
+	if err != nil {
 		return nil, err
 	}
+	s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist(mid, manifest)
 
 	return rpcBcast, nil
 }
@@ -295,15 +295,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		//Create a new HLS StreamID.  If streamID is passed in, use that one.  Otherwise, generate a random ID.
 		hlsStrmID := core.StreamID(url.Query().Get("hlsStrmID"))
 		if hlsStrmID == "" {
-			hlsStrmID, err = core.MakeStreamID(s.LivepeerNode.Identity, core.RandomVideoID(), vProfile.Name)
+			hlsStrmID, err = core.MakeStreamID(core.RandomVideoID(), vProfile.Name)
 			if err != nil {
 				glog.Errorf("Error making stream ID")
 				return ErrRTMPPublish
 			}
-		}
-		if hlsStrmID.GetNodeID() != s.LivepeerNode.Identity {
-			glog.Errorf("Cannot create a HLS stream with Node ID: %v", hlsStrmID.GetNodeID())
-			return ErrRTMPPublish
 		}
 
 		pl, err := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
@@ -338,6 +334,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				if jobId != nil {
 					s.LivepeerNode.Database.SetSegmentCount(jobId, int64(seg.SeqNo))
 				}
+
+				s.LivepeerNode.VideoSource.InsertHLSSegment(hlsStrmID, seg)
 
 				if rpcBcast != nil {
 					go func() {
@@ -375,7 +373,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 								return
 							}
 							newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: parseSegName(url), Data: data, Duration: seg.Duration}
-							s.LivepeerNode.VideoCache.InsertHLSSegment(sid, newSeg)
+							s.LivepeerNode.VideoSource.InsertHLSSegment(sid, newSeg)
 						}
 						for _, v := range res.Segments {
 							go dlFunc(v.Url)
@@ -400,7 +398,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}(rtmpStrm)
 
 		//Create the manifest and broadcast it (so the video can be consumed by itself without transcoding)
-		mid, err := core.MakeManifestID(hlsStrmID.GetNodeID(), hlsStrmID.GetVideoID())
+		mid, err := core.MakeManifestID(hlsStrmID.GetVideoID())
 		if err != nil {
 			glog.Errorf("Error creating manifest id: %v", err)
 			return ErrRTMPPublish
@@ -409,9 +407,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[vProfile.Name])
 		manifest.Append(fmt.Sprintf("%v.m3u8", hlsStrmID), pl, vParams)
 
-		if err := s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(string(mid), manifest); err != nil {
-			glog.Errorf("Error broadasting manifest to network: %v", err)
-		}
+		s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist(mid, manifest)
+
 		if monitor.Enabled {
 			monitor.LogStreamCreatedEvent(hlsStrmID.String(), nonce)
 		}
@@ -470,11 +467,9 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		delete(s.rtmpStreams, core.StreamID(rtmpID))
 		// XXX update HLS manifest
 		//Remove Manifest
-		s.LivepeerNode.VideoCache.EvictHLSMasterPlaylist(core.ManifestID(manifestID))
-		//Remove the master playlist from the network
-		s.LivepeerNode.VideoNetwork.UpdateMasterPlaylist(manifestID, nil)
+		s.LivepeerNode.VideoSource.EvictHLSMasterPlaylist(core.ManifestID(manifestID))
 		//Remove the stream from cache
-		s.LivepeerNode.VideoCache.EvictHLSStream(core.StreamID(hlsID))
+		s.LivepeerNode.VideoSource.EvictHLSStream(core.StreamID(hlsID))
 
 		s.VideoNonceLock.Lock()
 		if _, ok := s.VideoNonce[rtmpStrm.GetStreamID()]; ok {
@@ -499,7 +494,7 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 		}
 
 		//Just load it from the cache (it's already hooked up to the network)
-		manifest := s.LivepeerNode.VideoCache.GetHLSMasterPlaylist(core.ManifestID(manifestID))
+		manifest := s.LivepeerNode.VideoSource.GetHLSMasterPlaylist(core.ManifestID(manifestID))
 		if manifest == nil {
 			return nil, vidplayer.ErrNotFound
 		}
@@ -516,7 +511,7 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 		}
 
 		//Get the hls playlist, update the timeout timer
-		pl := s.LivepeerNode.VideoCache.GetHLSMediaPlaylist(strmID)
+		pl := s.LivepeerNode.VideoSource.GetHLSMediaPlaylist(strmID)
 		if pl == nil {
 			return nil, vidplayer.ErrNotFound
 		} else {
@@ -538,7 +533,7 @@ func getHLSSegmentHandler(s *LivepeerServer) func(url *url.URL) ([]byte, error) 
 			return nil, vidplayer.ErrNotFound
 		}
 
-		seg := s.LivepeerNode.VideoCache.GetHLSSegment(strmID, segName)
+		seg := s.LivepeerNode.VideoSource.GetHLSSegment(strmID, segName)
 		if seg == nil {
 			return nil, vidplayer.ErrNotFound
 		} else {

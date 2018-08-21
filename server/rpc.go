@@ -34,6 +34,7 @@ import (
 
 const HTTPTimeout = 8 * time.Second
 const GRPCTimeout = 8 * time.Second
+const GRPCConnectTimeout = 3 * time.Second
 
 const AuthType_LPE = "Livepeer-Eth-1"
 
@@ -178,7 +179,7 @@ func verifySegCreds(job *lpTypes.Job, segCreds string) (*net.SegData, error) {
 	return &segData, nil
 }
 
-func GetTranscoder(context context.Context, orch Orchestrator, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
+func getTranscoder(context context.Context, orch Orchestrator, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
 	glog.Info("Got transcoder request for job ", req.JobId)
 	job, err := orch.GetJob(req.JobId)
 	if err != nil {
@@ -244,7 +245,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// download the segment and check the hash
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		glog.Error("Could not read request body")
+		glog.Error("Could not read request body", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -271,7 +272,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	res, err := orch.TranscodeSeg(job, &ss)
 
 	// sanity check
-	if err != nil && len(res.Urls) != len(job.Profiles) {
+	if err == nil && len(res.Urls) != len(job.Profiles) {
 		err = fmt.Errorf("Mismatched result lengths")
 	}
 
@@ -310,7 +311,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 // grpc methods
 func (h *lphttp) GetTranscoder(context context.Context, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
-	return GetTranscoder(context, h.orchestrator, req)
+	return getTranscoder(context, h.orchestrator, req)
 }
 
 func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -361,7 +362,9 @@ func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
 	}
 	glog.Infof("Connecting RPC to %v", orchestratorServer)
 	conn, err := grpc.Dial(uri.Host,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithBlock(),
+		grpc.WithTimeout(GRPCConnectTimeout))
 	if err != nil {
 		glog.Error("Did not connect: ", err)
 		return errors.New("Did not connect: " + err.Error())
@@ -375,7 +378,7 @@ func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
 	req, err := genTranscoderReq(bcast, bcast.Job().JobId.Int64())
 	r, err := c.GetTranscoder(ctx, req)
 	if err != nil {
-		glog.Error("Could not get transcoder: ", err)
+		glog.Errorf("Could not get transcoder for job %d: %s", bcast.Job().JobId.Int64(), err.Error())
 		return errors.New("Could not get transcoder: " + err.Error())
 	}
 	bcast.SetTranscoderInfo(r)
@@ -429,12 +432,12 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)
-		glog.Errorf("Error submitting segment %d: code %d error %s", seg.SeqNo, resp.StatusCode, string(data))
+		glog.Errorf("Error submitting segment %d: code %d error %v", seg.SeqNo, resp.StatusCode, string(data))
 		if monitor.Enabled {
 			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, fmt.Sprintf("Code: %d Error: %s", resp.StatusCode,
 				strings.TrimSpace(string(data))))
 		}
-		return nil, err
+		return nil, fmt.Errorf(string(data))
 	}
 	glog.Infof("Uploaded segment %v", seg.SeqNo)
 	if monitor.Enabled {
@@ -467,9 +470,9 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 	var tdata *net.TranscodeData
 	switch res := tr.Result.(type) {
 	case *net.TranscodeResult_Error:
+		err = fmt.Errorf(res.Error)
+		glog.Errorf("Transcode failed for segment %v: %v", seg.SeqNo, err)
 		if monitor.Enabled {
-			glog.Error("Transcode failed for segment %v: %v", seg.SeqNo, err)
-			err = fmt.Errorf(res.Error)
 			monitor.LogSegmentTranscodeFailed("Transcode", nonce, seg.SeqNo, err)
 		}
 		return nil, err
@@ -479,7 +482,9 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 	default:
 		glog.Error("Unexpected or unset transcode response field for ", seg.SeqNo)
 		err = fmt.Errorf("UnknownResponse")
-		monitor.LogSegmentTranscodeFailed("UnknownResponse", nonce, seg.SeqNo, err)
+		if monitor.Enabled {
+			monitor.LogSegmentTranscodeFailed("UnknownResponse", nonce, seg.SeqNo, err)
+		}
 		return nil, err
 	}
 
