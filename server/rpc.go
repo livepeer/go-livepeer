@@ -34,6 +34,7 @@ import (
 
 const HTTPTimeout = 8 * time.Second
 const GRPCTimeout = 8 * time.Second
+const GRPCConnectTimeout = 3 * time.Second
 
 const AuthType_LPE = "Livepeer-Eth-1"
 
@@ -244,7 +245,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// download the segment and check the hash
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		glog.Error("Could not read request body")
+		glog.Error("Could not read request body", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -361,7 +362,9 @@ func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
 	}
 	glog.Infof("Connecting RPC to %v", orchestratorServer)
 	conn, err := grpc.Dial(uri.Host,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithBlock(),
+		grpc.WithTimeout(GRPCConnectTimeout))
 	if err != nil {
 		glog.Error("Did not connect: ", err)
 		return errors.New("Did not connect: " + err.Error())
@@ -375,7 +378,7 @@ func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
 	req, err := genTranscoderReq(bcast, bcast.Job().JobId.Int64())
 	r, err := c.GetTranscoder(ctx, req)
 	if err != nil {
-		glog.Error("Could not get transcoder: ", err)
+		glog.Errorf("Could not get transcoder for job %d: %s", bcast.Job().JobId.Int64(), err.Error())
 		return errors.New("Could not get transcoder: " + err.Error())
 	}
 	bcast.SetTranscoderInfo(r)
