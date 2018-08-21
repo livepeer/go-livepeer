@@ -22,7 +22,7 @@ type VideoSource interface {
 	GetHLSSegment(streamID StreamID, segName string) *stream.HLSSegment
 	EvictHLSStream(streamID StreamID) error
 
-	GetNodeStatus(nodeID string) *net.NodeStatus
+	GetNodeStatus() *net.NodeStatus
 }
 
 type segCache struct {
@@ -142,7 +142,7 @@ func (c *BasicVideoSource) EvictHLSStream(streamID StreamID) error {
 	return nil
 }
 
-func (c *BasicVideoSource) GetNodeStatus(nodeID string) *net.NodeStatus {
+func (c *BasicVideoSource) GetNodeStatus() *net.NodeStatus {
 	// not threadsafe; need to deep copy the playlist
 	c.masterPLock.Lock()
 	defer c.masterPLock.Unlock()
@@ -150,5 +150,5 @@ func (c *BasicVideoSource) GetNodeStatus(nodeID string) *net.NodeStatus {
 	for k, v := range c.masterPList {
 		m[string(k)] = v
 	}
-	return &net.NodeStatus{NodeID: nodeID, Manifests: m}
+	return &net.NodeStatus{Manifests: m}
 }

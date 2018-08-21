@@ -137,7 +137,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 //RTMP Publish Handlers
 func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID string) {
 	return func(url *url.URL) (strmID string) {
-		id, err := core.MakeStreamID(s.LivepeerNode.Identity, core.RandomVideoID(), "RTMP")
+		id, err := core.MakeStreamID(core.RandomVideoID(), "RTMP")
 		if err != nil {
 			glog.Errorf("Error making stream ID")
 			return ""
@@ -175,7 +175,10 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 	}
 
 	// Update the master playlist on the network
-	mid := core.StreamID(job.StreamId).ManifestIDFromStreamID()
+	mid, err := core.StreamID(job.StreamId).ManifestIDFromStreamID()
+	if err != nil {
+		return nil, err
+	}
 	s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist(mid, manifest)
 
 	return rpcBcast, nil
@@ -292,15 +295,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		//Create a new HLS StreamID.  If streamID is passed in, use that one.  Otherwise, generate a random ID.
 		hlsStrmID := core.StreamID(url.Query().Get("hlsStrmID"))
 		if hlsStrmID == "" {
-			hlsStrmID, err = core.MakeStreamID(s.LivepeerNode.Identity, core.RandomVideoID(), vProfile.Name)
+			hlsStrmID, err = core.MakeStreamID(core.RandomVideoID(), vProfile.Name)
 			if err != nil {
 				glog.Errorf("Error making stream ID")
 				return ErrRTMPPublish
 			}
-		}
-		if hlsStrmID.GetNodeID() != s.LivepeerNode.Identity {
-			glog.Errorf("Cannot create a HLS stream with Node ID: %v", hlsStrmID.GetNodeID())
-			return ErrRTMPPublish
 		}
 
 		pl, err := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
@@ -399,7 +398,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}(rtmpStrm)
 
 		//Create the manifest and broadcast it (so the video can be consumed by itself without transcoding)
-		mid, err := core.MakeManifestID(hlsStrmID.GetNodeID(), hlsStrmID.GetVideoID())
+		mid, err := core.MakeManifestID(hlsStrmID.GetVideoID())
 		if err != nil {
 			glog.Errorf("Error creating manifest id: %v", err)
 			return ErrRTMPPublish

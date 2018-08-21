@@ -79,7 +79,7 @@ func (orch *orchestrator) StreamIDs(job *ethTypes.Job) ([]StreamID, error) {
 	sid := StreamID(job.StreamId)
 	vid := sid.GetVideoID()
 	for i, p := range job.Profiles {
-		strmId, err := MakeStreamID(orch.node.Identity, vid, p.Name)
+		strmId, err := MakeStreamID(vid, p.Name)
 		if err != nil {
 			glog.Error("Error making stream ID: ", err)
 			return []StreamID{}, err
@@ -273,7 +273,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 	resultStrmIDs := make([]StreamID, len(job.Profiles), len(job.Profiles))
 	sid := StreamID(job.StreamId)
 	for i, vp := range job.Profiles {
-		strmID, err := MakeStreamID(n.Identity, sid.GetVideoID(), vp.Name)
+		strmID, err := MakeStreamID(sid.GetVideoID(), vp.Name)
 		if err != nil {
 			glog.Error("Error making stream ID: ", err)
 			return err

@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -22,8 +21,6 @@ import (
 	"time"
 
 	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
-	peer "gx/ipfs/QmZoWKhxUmZ2seW4BzX6fJkNR8hh9PsGModr7q171yq2SS/go-libp2p-peer"
-	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -133,18 +130,7 @@ func main() {
 	}
 	defer dbh.Close()
 
-	//Take care of priv/pub keypair
-	_, pub, err := getLPKeys(*datadir)
-	if err != nil {
-		glog.Errorf("Error getting keys: %v", err)
-		return
-	}
-
-	nodeId, err := peer.IDFromPublicKey(pub) // TODO do we need this id?
-	if err != nil {
-		glog.Error("Error retrieving node ID ", err)
-	}
-	n, err := core.NewLivepeerNode(nil, core.NodeID(peer.IDHexEncode(nodeId)), *datadir, dbh)
+	n, err := core.NewLivepeerNode(nil, *datadir, dbh)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
@@ -328,92 +314,6 @@ func main() {
 		time.Sleep(time.Millisecond * 500) //Give time for other processes to shut down completely
 		return
 	}
-}
-
-type LPKeyFile struct {
-	Pub  string
-	Priv string
-}
-
-func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
-	gen := false
-	var priv crypto.PrivKey
-	var pub crypto.PubKey
-	var privb []byte
-	var pubb []byte
-	var err error
-
-	if datadir != "" {
-		f, e := ioutil.ReadFile(path.Join(datadir, "keys.json"))
-		if e != nil {
-			gen = true
-		}
-
-		var keyf LPKeyFile
-		if gen == false {
-			if err := json.Unmarshal(f, &keyf); err != nil {
-				gen = true
-			}
-		}
-
-		if gen == false {
-			privb, err = crypto.ConfigDecodeKey(keyf.Priv)
-			if err != nil {
-				gen = true
-			}
-		}
-
-		if gen == false {
-			pubb, err = crypto.ConfigDecodeKey(keyf.Pub)
-			if err != nil {
-				gen = true
-			}
-		}
-
-		if gen == false {
-			priv, err = crypto.UnmarshalPrivateKey(privb)
-			if err != nil {
-				gen = true
-			}
-
-		}
-
-		if gen == false {
-			pub, err = crypto.UnmarshalPublicKey(pubb)
-			if err != nil {
-				gen = true
-			}
-		}
-	}
-
-	if gen == true || pub == nil || priv == nil {
-		glog.Errorf("Cannot file keys in data dir %v, creating new keys", datadir)
-		priv, pub, err := crypto.GenerateKeyPair(crypto.RSA, 2048)
-		if err != nil {
-			glog.Errorf("Error generating keypair: %v", err)
-			return nil, nil, ErrKeygen
-		}
-
-		privb, _ := priv.Bytes()
-		pubb, _ := pub.Bytes()
-
-		//Write keys to datadir
-		if datadir != "" {
-			kf := LPKeyFile{Priv: crypto.ConfigEncodeKey(privb), Pub: crypto.ConfigEncodeKey(pubb)}
-			kfb, err := json.Marshal(kf)
-			if err != nil {
-				glog.Errorf("Error writing keyfile to datadir: %v", err)
-			} else {
-				if err := ioutil.WriteFile(path.Join(datadir, "keys.json"), kfb, 0644); err != nil {
-					glog.Errorf("Error writing keyfile to datadir: %v", err)
-				}
-			}
-		}
-
-		return priv, pub, nil
-	}
-
-	return priv, pub, nil
 }
 
 func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool, serviceUri string) error {

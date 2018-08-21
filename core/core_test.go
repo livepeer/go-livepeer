@@ -30,7 +30,7 @@ func StubSegment() *SignedSegment {
 }
 
 func StubJob(n *LivepeerNode) *lpTypes.Job {
-	streamId, _ := MakeStreamID(n.Identity, RandomVideoID(), ffmpeg.P720p30fps4x3.Name)
+	streamId, _ := MakeStreamID(RandomVideoID(), ffmpeg.P720p30fps4x3.Name)
 	return &lpTypes.Job{
 		JobId:              big.NewInt(0),
 		StreamId:           string(streamId),
@@ -50,7 +50,7 @@ func TestTranscode(t *testing.T) {
 	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
 	defer db.Close()
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, "12209433a695c8bf34ef6a40863cfe7ed64266d876176aee13732293b63ba1637fd2", tmp, db)
+	n, _ := NewLivepeerNode(seth, tmp, db)
 	defer os.RemoveAll(tmp)
 	job := StubJob(n)
 	ffmpeg.InitFFmpeg()
@@ -189,7 +189,7 @@ func monitorChan(intChan chan int) {
 
 func TestCreateTranscodeJob(t *testing.T) {
 	seth := &eth.StubClient{JobsMap: make(map[string]*lpTypes.Job)}
-	n, _ := NewLivepeerNode(seth, "", "./tmp", nil)
+	n, _ := NewLivepeerNode(seth, "./tmp", nil)
 	j := StubJob(n)
 	seth.JobsMap[j.StreamId] = j
 
@@ -207,7 +207,7 @@ func TestCreateTranscodeJob(t *testing.T) {
 	}
 
 	// test missing eth client
-	n1, _ := NewLivepeerNode(nil, "", "./tmp", nil)
+	n1, _ := NewLivepeerNode(nil, "./tmp", nil)
 	if _, err := cjt(n1); err != ErrNotFound {
 		t.Error("Did not receive expected error; got ", err)
 	}
