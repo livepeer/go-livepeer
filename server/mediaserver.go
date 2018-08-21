@@ -4,6 +4,7 @@ Package server is the place we integrate the Livepeer node with the LPMS media s
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -216,10 +217,26 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				glog.Error("Unable to find active broadcasts ", err)
 			}
 
+			getReusableBroadcast := func(b *common.DBJob) (*ethTypes.Job, bool) {
+				job := common.DBJobToEthJob(b)
+
+				// Transcoder must still be registered
+				if t, err := s.LivepeerNode.Eth.GetTranscoder(b.Transcoder); err != nil || t.Status == "Not Registered" {
+					return job, false
+				}
+
+				// Transcode options must be the same
+				if bytes.Compare(common.ProfilesToTranscodeOpts(job.Profiles), common.ProfilesToTranscodeOpts(BroadcastJobVideoProfiles)) != 0 {
+					return job, false
+				}
+
+				// Existing job with a max price per segment <= current desired price is acceptable
+				return job, job.MaxPricePerSegment.Cmp(BroadcastPrice) <= 0
+			}
+
 			for _, b := range bcasts {
-				// check if assigned transcoder is still valid.
-				if _, err := s.LivepeerNode.Eth.GetTranscoder(b.Transcoder); err == nil {
-					job := common.DBJobToEthJob(b)
+				// check if job has acceptable price, transcoding options and valid assigned transcoder
+				if job, reusable := getReusableBroadcast(b); reusable {
 					rpcBcast, err = s.startBroadcast(job, manifest, nonce)
 					if err == nil {
 						startSeq = int(b.Segments) + 1
