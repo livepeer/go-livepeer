@@ -189,6 +189,10 @@ func InitDB(dbPath string) (*DB, error) {
 		glog.Error("Unable to open DB ", dbPath, err)
 		return nil, err
 	}
+	// The DB connection might be used in multiple goroutines (i.e. when recovering claims during node restart)
+	// resulting in concurrent access. SQLite can only handle one writer at a time, so if concurrent writes occur
+	// we can encounter a `database is locked` error. To avoid concurrent writes, we limit SQLite to a single connection
+	db.SetMaxOpenConns(1)
 	d.dbh = db
 	schemaBuf := new(bytes.Buffer)
 	tmpl := template.Must(template.New("schema").Parse(schema))
