@@ -21,13 +21,8 @@ func main() {
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "http",
-			Usage: "local http port",
-			Value: "8935",
-		},
-		cli.StringFlag{
-			Name:  "rtmp",
-			Usage: "local rtmp port",
-			Value: "1935",
+			Usage: "local cli port",
+			Value: "7935",
 		},
 		cli.StringFlag{
 			Name:  "host",

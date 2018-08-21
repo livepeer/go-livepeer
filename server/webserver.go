@@ -791,29 +791,20 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 	})
 
 	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf("\n\nVideoNetwork: %v", s.LivepeerNode.VideoNetwork)))
+		w.Write([]byte(fmt.Sprintf("\n\nVideoSource: %v", s.LivepeerNode.VideoSource)))
 		w.Write([]byte(fmt.Sprintf("\n\nmediaserver sub timer: %v", s.hlsSubTimer)))
 	})
 
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		nid := r.FormValue("nodeID")
-
-		if nid == "" {
-			nid = string(s.LivepeerNode.Identity)
-		}
-
-		statusc, err := s.LivepeerNode.VideoNetwork.GetNodeStatus(nid)
-		if err == nil {
-			status := <-statusc
+		status := s.LivepeerNode.VideoSource.GetNodeStatus()
+		if status != nil {
 			mstrs := make(map[string]string, 0)
 			for mid, m := range status.Manifests {
-				mstrs[mid] = m.String()
+				mstrs[string(mid)] = m.String()
 			}
 			d := struct {
-				NodeID    string
 				Manifests map[string]string
 			}{
-				NodeID:    status.NodeID,
 				Manifests: mstrs,
 			}
 			if data, err := json.Marshal(d); err == nil {
@@ -822,10 +813,6 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 				return
 			}
 		}
-	})
-
-	mux.HandleFunc("/nodeID", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(s.LivepeerNode.Identity))
 	})
 
 	mux.HandleFunc("/contractAddresses", func(w http.ResponseWriter, r *http.Request) {

@@ -1,7 +1,6 @@
 package net
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -9,18 +8,7 @@ import (
 	"github.com/golang/glog"
 )
 
-//VideoNetwork describes the interface for a Livepeer node network-layer library.
-type VideoNetwork interface {
-	// TODO can we make this a straight playlist instead of a chan?
-	GetMasterPlaylist(nodeID string, manifestID string) (chan *m3u8.MasterPlaylist, error)
-	UpdateMasterPlaylist(manifestID string, mpl *m3u8.MasterPlaylist) error
-	// TODO do we need this?
-	GetNodeStatus(nodeID string) (chan *NodeStatus, error)
-	String() string
-}
-
 type NodeStatus struct {
-	NodeID    string
 	Manifests map[string]*m3u8.MasterPlaylist
 }
 
@@ -29,20 +17,14 @@ func (n NodeStatus) String() string {
 	for mid, m := range n.Manifests {
 		mstrs = append(mstrs, fmt.Sprintf("%v[]%v", mid, m.String()))
 	}
-	str := fmt.Sprintf("%v|%v", n.NodeID, strings.Join(mstrs, "|"))
-	return str
+	return strings.Join(mstrs, "|")
 }
 
 func (n *NodeStatus) FromString(str string) error {
 	arr := strings.Split(str, "|")
-	if len(arr[0]) != 68 {
-		return errors.New("Wrong format for NodeStatus")
-	} else {
-		n.NodeID = arr[0]
-	}
 
 	manifests := make(map[string]*m3u8.MasterPlaylist, 0)
-	for _, mstr := range arr[1:] {
+	for _, mstr := range arr {
 		//Decode the playlist from a string
 		mstrArr := strings.Split(mstr, "[]")
 		if len(mstrArr) == 2 {

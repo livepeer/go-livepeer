@@ -51,28 +51,26 @@ func (t *StubTranscoder) Transcode(fname string) ([][]byte, error) {
 }
 
 func TestTranscodeAndBroadcast(t *testing.T) {
-	nid := NodeID("12201c23641663bf06187a8c154a6c97266d138cb8379c1bc0828122dcc51c83698d")
-	strmID, _ := MakeStreamID(nid, RandomVideoID(), ffmpeg.P720p30fps4x3.Name)
+	strmID, _ := MakeStreamID(RandomVideoID(), ffmpeg.P720p30fps4x3.Name)
 	jid := big.NewInt(0)
 	ffmpeg.InitFFmpeg()
 	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
 	tr := &StubTranscoder{Profiles: p}
 	mkid := func(p ffmpeg.VideoProfile) StreamID {
-		s, _ := MakeStreamID(nid, strmID.GetVideoID(), p.Name)
+		s, _ := MakeStreamID(strmID.GetVideoID(), p.Name)
 		return s
 	}
 	strmIds := []StreamID{mkid(p[0]), mkid(p[1])}
 	cm := StubClaimManager{}
 	config := transcodeConfig{StrmID: strmID.String(), Profiles: p, ResultStrmIDs: strmIds, ClaimManager: &cm, JobID: jid, Transcoder: tr}
 
-	stubnet := &StubVideoNetwork{}
-	n, err := NewLivepeerNode(&eth.StubClient{}, stubnet, nid, ".", nil) // TODO fix empty work dir
+	n, err := NewLivepeerNode(&eth.StubClient{}, ".", nil) // TODO fix empty work dir
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
 
 	ss := StubSegment()
-	res := n.transcodeAndBroadcastSeg(config, ss)
+	res := n.transcodeAndCacheSeg(config, ss)
 	if res.Err != nil {
 		t.Errorf("Error: %v", res.Err)
 	}
@@ -88,7 +86,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	// Check playlist was updated
 	for _, v := range strmIds {
-		pl := n.VideoCache.GetHLSMediaPlaylist(v)
+		pl := n.VideoSource.GetHLSMediaPlaylist(v)
 		if pl == nil {
 			t.Error("Expected media playlist; got none")
 		}
@@ -104,7 +102,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	// Test when transcoder fails
 	tr.FailTranscode = true
-	res = n.transcodeAndBroadcastSeg(config, ss)
+	res = n.transcodeAndCacheSeg(config, ss)
 	if res.Err == nil {
 		t.Error("Expecting a transcode error")
 	}
@@ -112,7 +110,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	// Test when the number of results mismatchches expectations
 	tr.Profiles = []ffmpeg.VideoProfile{p[0]}
-	res = n.transcodeAndBroadcastSeg(config, ss)
+	res = n.transcodeAndCacheSeg(config, ss)
 	if res.Err == nil || res.Err.Error() != "MismatchedSegments" {
 		t.Error("Did not get mismatched segments as expected")
 	}
@@ -123,9 +121,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 }
 
 func TestNodeClaimManager(t *testing.T) {
-	nid := NodeID("12201c23641663bf06187a8c154a6c97266d138cb8379c1bc0828122dcc51c83698d")
-	stubnet := &StubVideoNetwork{}
-	n, err := NewLivepeerNode(nil, stubnet, nid, ".", nil)
+	n, err := NewLivepeerNode(nil, ".", nil)
 
 	job := &lpTypes.Job{
 		JobId:              big.NewInt(15),

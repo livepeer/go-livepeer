@@ -79,7 +79,7 @@ func (orch *orchestrator) StreamIDs(job *ethTypes.Job) ([]StreamID, error) {
 	sid := StreamID(job.StreamId)
 	vid := sid.GetVideoID()
 	for i, p := range job.Profiles {
-		strmId, err := MakeStreamID(orch.node.Identity, vid, p.Name)
+		strmId, err := MakeStreamID(vid, p.Name)
 		if err != nil {
 			glog.Error("Error making stream ID: ", err)
 			return []StreamID{}, err
@@ -153,20 +153,20 @@ func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) (*
 		glog.Error("Could not find segment chan ", err)
 		return nil, err
 	}
-	segChan := &SegChanData{seg: ss, res: make(chan *TranscodeResult, 1)}
+	segChanData := &SegChanData{seg: ss, res: make(chan *TranscodeResult, 1)}
 	select {
-	case ch <- segChan:
+	case ch <- segChanData:
 		glog.V(common.DEBUG).Info("Submitted segment to transcode loop")
 	default:
 		// sending segChan should not block; if it does, the channel is busy
 		glog.Error("Transcoder was busy with a previous segment!")
 		return nil, fmt.Errorf("TranscoderBusy")
 	}
-	res := <-segChan.res
+	res := <-segChanData.res
 	return res, res.Err
 }
 
-func (n *LivepeerNode) transcodeAndBroadcastSeg(config transcodeConfig, ss *SignedSegment) *TranscodeResult {
+func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSegment) *TranscodeResult {
 
 	seg := ss.Seg
 	terr := func(err error) *TranscodeResult { return &TranscodeResult{Err: err} }
@@ -246,7 +246,7 @@ func (n *LivepeerNode) transcodeAndBroadcastSeg(config transcodeConfig, ss *Sign
 		}
 		tProfileData[config.Profiles[i]] = tData[i]
 		newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: fmt.Sprintf("%v_%d.ts", r, seg.SeqNo), Data: tData[i], Duration: seg.Duration}
-		n.VideoCache.InsertHLSSegment(r, newSeg)
+		n.VideoSource.InsertHLSSegment(r, newSeg)
 		tr.Urls = append(tr.Urls, newSeg.Name)
 	}
 	//Don't do the onchain stuff unless specified
@@ -273,7 +273,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 	resultStrmIDs := make([]StreamID, len(job.Profiles), len(job.Profiles))
 	sid := StreamID(job.StreamId)
 	for i, vp := range job.Profiles {
-		strmID, err := MakeStreamID(n.Identity, sid.GetVideoID(), vp.Name)
+		strmID, err := MakeStreamID(sid.GetVideoID(), vp.Name)
 		if err != nil {
 			glog.Error("Error making stream ID: ", err)
 			return err
@@ -317,12 +317,34 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 				n.claimMutex.Unlock()
 				return
 			case chanData := <-segChan:
-				chanData.res <- n.transcodeAndBroadcastSeg(config, chanData.seg)
+				chanData.res <- n.transcodeAndCacheSeg(config, chanData.seg)
 			}
 			cancel()
 		}
 	}()
 	return nil
+}
+
+func (n *LivepeerNode) GetClaimManager(job *ethTypes.Job) (eth.ClaimManager, error) {
+	n.claimMutex.Lock()
+	defer n.claimMutex.Unlock()
+	if job == nil {
+		glog.Error("Nil job")
+		return nil, fmt.Errorf("Nil job")
+	}
+	jobId := job.JobId.Int64()
+	// XXX we should clear entries after some period of inactivity
+	if cm, ok := n.ClaimManagers[jobId]; ok {
+		return cm, nil
+	}
+	// no claimmanager exists yet; check if we're assigned the job
+	if n.Eth == nil {
+		return nil, nil
+	}
+	glog.Infof("Creating new claim manager for job %v", jobId)
+	cm := eth.NewBasicClaimManager(job, n.Eth, n.Ipfs, n.Database)
+	n.ClaimManagers[jobId] = cm
+	return cm, nil
 }
 
 func randName() string {
