@@ -23,10 +23,16 @@ import (
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
-func (s *LivepeerServer) StartWebserver() {
+func (s *LivepeerServer) StartWebserver(bindAddr string) {
+
+	mux := http.NewServeMux()
+	srv := &http.Server{
+		Addr:    bindAddr,
+		Handler: mux,
+	}
 
 	//Set the broadcast config for creating onchain jobs.
-	http.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			glog.Errorf("Parse Form Error: %v", err)
 			return
@@ -67,7 +73,7 @@ func (s *LivepeerServer) StartWebserver() {
 		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
 	})
 
-	http.HandleFunc("/getBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/getBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
 		pNames := []string{}
 		for _, p := range BroadcastJobVideoProfiles {
 			pNames = append(pNames, p.Name)
@@ -89,7 +95,7 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write(data)
 	})
 
-	http.HandleFunc("/getAvailableTranscodingOptions", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/getAvailableTranscodingOptions", func(w http.ResponseWriter, r *http.Request) {
 		transcodingOptions := make([]string, 0, len(ffmpeg.VideoProfileLookup))
 		for opt := range ffmpeg.VideoProfileLookup {
 			transcodingOptions = append(transcodingOptions, opt)
@@ -104,7 +110,7 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write(data)
 	})
 
-	http.HandleFunc("/currentRound", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/currentRound", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			currentRound, err := s.LivepeerNode.Eth.CurrentRound()
 			if err != nil {
@@ -116,7 +122,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/initializeRound", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/initializeRound", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			tx, err := s.LivepeerNode.Eth.InitializeRound()
 			if err != nil {
@@ -132,7 +138,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/roundInitialized", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/roundInitialized", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
 			if err != nil {
@@ -144,7 +150,7 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	//Activate the transcoder on-chain.
-	http.HandleFunc("/activateTranscoder", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/activateTranscoder", func(w http.ResponseWriter, r *http.Request) {
 		t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
 		if err != nil {
 			glog.Error(err)
@@ -281,7 +287,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/latestJobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/latestJobs", func(w http.ResponseWriter, r *http.Request) {
 		countStr := r.FormValue("count")
 		if countStr == "" {
 			countStr = "5"
@@ -314,7 +320,7 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	//Set transcoder config on-chain.
-	http.HandleFunc("/setTranscoderConfig", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/setTranscoderConfig", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			glog.Errorf("Parse Form Error: %v", err)
 			return
@@ -389,7 +395,7 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	//Bond some amount of tokens to a transcoder.
-	http.HandleFunc("/bond", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/bond", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			if err := r.ParseForm(); err != nil {
 				glog.Errorf("Parse Form Error: %v", err)
@@ -427,7 +433,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/rebond", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rebond", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			if err := r.ParseForm(); err != nil {
 				glog.Errorf("Parse Form Error: %v", err)
@@ -464,7 +470,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/unbond", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/unbond", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			if err := r.ParseForm(); err != nil {
 				glog.Errorf("Parse Form Error: %v", err)
@@ -496,7 +502,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/withdrawStake", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/withdrawStake", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			if err := r.ParseForm(); err != nil {
 				glog.Errorf("Parse Form Error: %v", err)
@@ -527,7 +533,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/unbondingLocks", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/unbondingLocks", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Database != nil {
 			if err := r.ParseForm(); err != nil {
 				glog.Errorf("Parse Form Error: %v", err)
@@ -608,7 +614,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/withdrawFees", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/withdrawFees", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			tx, err := s.LivepeerNode.Eth.WithdrawFees()
 			if err != nil {
@@ -624,7 +630,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/claimEarnings", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/claimEarnings", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			if err := r.ParseForm(); err != nil {
 				glog.Errorf("Parse Form Error: %v", err)
@@ -664,7 +670,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/delegatorInfo", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/delegatorInfo", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			d, err := s.LivepeerNode.Eth.GetDelegator(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
@@ -683,7 +689,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/transcoderEarningPoolsForRound", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/transcoderEarningPoolsForRound", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			roundStr := r.URL.Query().Get("round")
 			round, err := lpcommon.ParseBigInt(roundStr)
@@ -709,7 +715,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/deposit", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/deposit", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			if err := r.ParseForm(); err != nil {
 				glog.Errorf("Parse Form Error: %v", err)
@@ -744,7 +750,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/withdrawDeposit", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/withdrawDeposit", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			tx, err := s.LivepeerNode.Eth.Withdraw()
 			if err != nil {
@@ -763,15 +769,15 @@ func (s *LivepeerServer) StartWebserver() {
 	})
 
 	//Print the current broadcast HLS streamID
-	http.HandleFunc("/streamID", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/streamID", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(LastHLSStreamID))
 	})
 
-	http.HandleFunc("/manifestID", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/manifestID", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(LastManifestID))
 	})
 
-	http.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {
 		// XXX fetch local streams?
 		ret := make([]map[string]string, 0)
 		js, err := json.Marshal(ret)
@@ -784,30 +790,21 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write(js)
 	})
 
-	http.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf("\n\nVideoNetwork: %v", s.LivepeerNode.VideoNetwork)))
+	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(fmt.Sprintf("\n\nVideoSource: %v", s.LivepeerNode.VideoSource)))
 		w.Write([]byte(fmt.Sprintf("\n\nmediaserver sub timer: %v", s.hlsSubTimer)))
 	})
 
-	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		nid := r.FormValue("nodeID")
-
-		if nid == "" {
-			nid = string(s.LivepeerNode.Identity)
-		}
-
-		statusc, err := s.LivepeerNode.VideoNetwork.GetNodeStatus(nid)
-		if err == nil {
-			status := <-statusc
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		status := s.LivepeerNode.VideoSource.GetNodeStatus()
+		if status != nil {
 			mstrs := make(map[string]string, 0)
 			for mid, m := range status.Manifests {
-				mstrs[mid] = m.String()
+				mstrs[string(mid)] = m.String()
 			}
 			d := struct {
-				NodeID    string
 				Manifests map[string]string
 			}{
-				NodeID:    status.NodeID,
 				Manifests: mstrs,
 			}
 			if data, err := json.Marshal(d); err == nil {
@@ -818,11 +815,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/nodeID", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(s.LivepeerNode.Identity))
-	})
-
-	http.HandleFunc("/contractAddresses", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/contractAddresses", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			addrMap := s.LivepeerNode.Eth.ContractAddresses()
 
@@ -837,7 +830,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/transcoderEventSubscriptions", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/transcoderEventSubscriptions", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil && s.LivepeerNode.EthEventMonitor != nil {
 			rewardWorking := false
 			if s.LivepeerNode.EthServices["RewardService"] != nil && s.LivepeerNode.EthServices["RewardService"].IsWorking() {
@@ -864,7 +857,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/protocolParameters", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/protocolParameters", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			lp := s.LivepeerNode.Eth
 
@@ -1008,13 +1001,13 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/ethAddr", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ethAddr", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			w.Write([]byte(s.LivepeerNode.Eth.Account().Address.Hex()))
 		}
 	})
 
-	http.HandleFunc("/tokenBalance", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/tokenBalance", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			b, err := s.LivepeerNode.Eth.BalanceOf(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
@@ -1026,7 +1019,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/ethBalance", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ethBalance", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			b, err := s.LivepeerNode.Eth.Backend()
 			if err != nil {
@@ -1044,7 +1037,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/broadcasterDeposit", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/broadcasterDeposit", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			b, err := s.LivepeerNode.Eth.BroadcasterDeposit(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
@@ -1056,7 +1049,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/registeredTranscoders", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/registeredTranscoders", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			transcoders, err := s.LivepeerNode.Eth.RegisteredTranscoders()
 			if err != nil {
@@ -1075,7 +1068,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/transcoderInfo", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/transcoderInfo", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
@@ -1094,7 +1087,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/transferTokens", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/transferTokens", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			to := r.FormValue("to")
 			if to == "" {
@@ -1129,7 +1122,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/requestTokens", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/requestTokens", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			glog.Infof("Requesting tokens from faucet")
 
@@ -1147,11 +1140,11 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/IsTranscoder", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/IsTranscoder", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.Transcoder)))
 	})
 
-	http.HandleFunc("/EthNetworkID", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/EthNetworkID", func(w http.ResponseWriter, r *http.Request) {
 		be, err := s.LivepeerNode.Eth.Backend()
 		if err != nil {
 			glog.Errorf("Error getting eth backend: %v", err)
@@ -1164,7 +1157,7 @@ func (s *LivepeerServer) StartWebserver() {
 		w.Write([]byte(networkID.String()))
 	})
 
-	http.HandleFunc("/reward", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/reward", func(w http.ResponseWriter, r *http.Request) {
 		glog.Infof("Calling reward")
 		tx, err := s.LivepeerNode.Eth.Reward()
 		if err != nil {
@@ -1178,7 +1171,7 @@ func (s *LivepeerServer) StartWebserver() {
 		glog.Infof("Call to reward successful")
 	})
 
-	http.HandleFunc("/gasPrice", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/gasPrice", func(w http.ResponseWriter, r *http.Request) {
 		_, gprice := s.LivepeerNode.Eth.GetGasInfo()
 		if gprice == nil {
 			w.Write([]byte("0"))
@@ -1187,7 +1180,7 @@ func (s *LivepeerServer) StartWebserver() {
 		}
 	})
 
-	http.HandleFunc("/setGasPrice", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/setGasPrice", func(w http.ResponseWriter, r *http.Request) {
 		amount := r.FormValue("amount")
 		if amount == "" {
 			glog.Errorf("Need to set amount")
@@ -1208,4 +1201,8 @@ func (s *LivepeerServer) StartWebserver() {
 			glog.Errorf("Error setting price info: %v", err)
 		}
 	})
+
+	glog.Info("CLI server listening on ", bindAddr)
+	srv.ListenAndServe()
+
 }

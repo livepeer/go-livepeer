@@ -23,7 +23,7 @@ var (
 )
 
 type ClaimManager interface {
-	AddReceipt(seqNo int64, bDataFile string, bData []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error
+	AddReceipt(seqNo int64, bDataFile string, bData []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) ([]byte, error)
 	SufficientBroadcasterDeposit() (bool, error)
 	ClaimVerifyAndDistributeFees() error
 	CanClaim() (bool, error)
@@ -183,16 +183,16 @@ func (c *BasicClaimManager) DidFirstClaim() bool {
 //AddReceipt adds a claim for a given video segment.
 func (c *BasicClaimManager) AddReceipt(seqNo int64,
 	bDataFile string, bData []byte, bSig []byte,
-	tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) error {
+	tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) ([]byte, error) {
 
 	_, ok := c.segClaimMap[seqNo]
 	if ok {
-		return fmt.Errorf("Receipt for %v:%v already exists", c.jobID.String(), seqNo)
+		return []byte{}, fmt.Errorf("Receipt for %v:%v already exists", c.jobID.String(), seqNo)
 	}
 
 	// ensure that all our profiles match up: check that lengths match
 	if len(c.pLookup) != len(tData) {
-		return fmt.Errorf("Job %v Mismatched profiles in segment; not claiming", c.jobID)
+		return []byte{}, fmt.Errorf("Job %v Mismatched profiles in segment; not claiming", c.jobID)
 		// XXX record error in db
 	}
 
@@ -201,7 +201,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64,
 	for profile, td := range tData {
 		i, ok := c.pLookup[profile]
 		if !ok {
-			return fmt.Errorf("Job %v cannot find profile: %v", c.jobID, profile)
+			return []byte{}, fmt.Errorf("Job %v cannot find profile: %v", c.jobID, profile)
 			// XXX record error in db
 		}
 		hashes[i] = crypto.Keccak256(td) // set index based on profile ordering
@@ -218,7 +218,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64,
 	}
 
 	if err := c.db.InsertReceipt(c.jobID, seqNo, bDataFile, bHash, bSig, tHash, tStart, tEnd); err != nil {
-		return err
+		return []byte{}, err
 	}
 
 	c.cost = new(big.Int).Add(c.cost, c.totalSegCost)
@@ -226,7 +226,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64,
 	c.unclaimedSegs[seqNo] = true
 	// glog.Infof("Added %v. unclaimSegs: %v", seqNo, c.unclaimedSegs)
 
-	return nil
+	return tHash, nil
 }
 
 func (c *BasicClaimManager) SufficientBroadcasterDeposit() (bool, error) {

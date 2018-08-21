@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -22,8 +21,6 @@ import (
 	"time"
 
 	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
-	peer "gx/ipfs/QmZoWKhxUmZ2seW4BzX6fJkNR8hh9PsGModr7q171yq2SS/go-libp2p-peer"
-	crypto "gx/ipfs/QmaPbCnUMBohSGo3KnxEa2bHqyJVVeEEcwtqJAYxerieBo/go-libp2p-crypto"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -45,6 +42,7 @@ var (
 
 const RinkebyControllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
 const MainnetControllerAddr = "0xf96d54e490317c557a967abfa5d6e33006be69b3"
+const RpcPort = "8935"
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -54,11 +52,10 @@ func main() {
 		glog.Fatalf("Cannot find current user: %v", err)
 	}
 
-	httpPort := flag.String("http", "8935", "http port")
-	rtmpPort := flag.String("rtmp", "1935", "rtmp port")
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
-	rtmpIP := flag.String("rtmpIP", "127.0.0.1", "IP to bind for HTTP RPC commands")
-	httpIP := flag.String("httpIP", "127.0.0.1", "IP to bind for HTTP RPC commands")
+	rtmpAddr := flag.String("rtmpAddr", "127.0.0.1:1935", "IP to bind for RTMP commands")
+	cliAddr := flag.String("cliAddr", "127.0.0.1:7935", "Address to bind for  CLI commands")
+	httpAddr := flag.String("httpAddr", "", "Address to bind for HTTP commands")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
@@ -77,7 +74,7 @@ func main() {
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
 	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
-	publicAddr := flag.String("publicAddr", "", "Public address that broadcasters can use to contact this node; may be an IP or hostname. If used, should match the on-chain ServiceURI set via livepeer_cli")
+	serviceAddr := flag.String("serviceAddr", "", "Transcoder only. Public address:port that broadcasters can use to contact this node; may be an IP or hostname. If used, should match the on-chain ServiceURI set via livepeer_cli")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	version := flag.Bool("version", false, "Print out the version")
 
@@ -133,19 +130,7 @@ func main() {
 	}
 	defer dbh.Close()
 
-	//Take care of priv/pub keypair
-	_, pub, err := getLPKeys(*datadir)
-	if err != nil {
-		glog.Errorf("Error getting keys: %v", err)
-		return
-	}
-
-	nw := core.NewLocalNetwork()
-	nodeId, err := peer.IDFromPublicKey(pub) // TODO do we need this id?
-	if err != nil {
-		glog.Error("Error retrieving node ID ", err)
-	}
-	n, err := core.NewLivepeerNode(nil, nw, core.NodeID(peer.IDHexEncode(nodeId)), *datadir, dbh)
+	n, err := core.NewLivepeerNode(nil, *datadir, dbh)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
@@ -223,7 +208,7 @@ func main() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			if err := setupTranscoder(ctx, n, em, *ipfsPath, *initializeRound, *publicAddr); err != nil {
+			if err := setupTranscoder(ctx, n, em, *ipfsPath, *initializeRound, *serviceAddr); err != nil {
 				glog.Errorf("Error setting up transcoder: %v", err)
 				return
 			}
@@ -234,6 +219,20 @@ func main() {
 		if err != nil {
 			glog.Errorf("Failed to start ETH services: %v", err)
 			return
+		}
+	}
+
+	if n.NodeType == core.Broadcaster {
+		// default lpms listener for broadcaster; same as default rpc port
+		// TODO provide an option to disable this?
+		if "" == *httpAddr {
+			*httpAddr = "127.0.0.1:" + RpcPort
+		}
+	} else if n.NodeType == core.Transcoder {
+		// if http addr is not provided, listen to all ifaces
+		// take the port to listen to from the service URI
+		if "" == *httpAddr {
+			*httpAddr = ":" + n.ServiceURI.Port()
 		}
 	}
 
@@ -259,9 +258,10 @@ func main() {
 	}
 
 	//Set up the media server
-	s := server.NewLivepeerServer(*rtmpPort, *rtmpIP, *httpPort, *httpIP, n)
+	s := server.NewLivepeerServer(*rtmpAddr, *httpAddr, n)
 	ec := make(chan error)
 	tc := make(chan struct{})
+	wc := make(chan struct{})
 	msCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -272,7 +272,10 @@ func main() {
 	}
 
 	go func() {
-		s.StartWebserver()
+		s.StartWebserver(*cliAddr)
+		close(wc)
+	}()
+	go func() {
 		ec <- s.StartMediaServer(msCtx, bigMaxPricePerSegment, *transcodingOptions)
 	}()
 	go func() {
@@ -280,7 +283,7 @@ func main() {
 			return
 		}
 		orch := core.NewOrchestrator(s.LivepeerNode)
-		server.StartTranscodeServer(orch, n.WorkDir)
+		server.StartTranscodeServer(orch, *httpAddr, s.HttpMux, n.WorkDir)
 		tc <- struct{}{}
 	}()
 
@@ -289,7 +292,7 @@ func main() {
 		glog.Infof("***Livepeer Running in Transcoder Mode***")
 	case core.Broadcaster:
 		glog.Infof("***Livepeer Running in Broadcaster Mode***")
-		glog.Infof("Video Ingest Endpoint - rtmp://%v:%v", *rtmpIP, *rtmpPort)
+		glog.Infof("Video Ingest Endpoint - rtmp:/%v", *rtmpAddr)
 	}
 
 	c := make(chan os.Signal)
@@ -303,6 +306,8 @@ func main() {
 		return
 	case <-tc:
 		glog.Infof("Transcoder server shut down")
+	case <-wc:
+		glog.Infof("CLI webserver shut down")
 		return
 	case sig := <-c:
 		glog.Infof("Exiting Livepeer: %v", sig)
@@ -311,93 +316,7 @@ func main() {
 	}
 }
 
-type LPKeyFile struct {
-	Pub  string
-	Priv string
-}
-
-func getLPKeys(datadir string) (crypto.PrivKey, crypto.PubKey, error) {
-	gen := false
-	var priv crypto.PrivKey
-	var pub crypto.PubKey
-	var privb []byte
-	var pubb []byte
-	var err error
-
-	if datadir != "" {
-		f, e := ioutil.ReadFile(path.Join(datadir, "keys.json"))
-		if e != nil {
-			gen = true
-		}
-
-		var keyf LPKeyFile
-		if gen == false {
-			if err := json.Unmarshal(f, &keyf); err != nil {
-				gen = true
-			}
-		}
-
-		if gen == false {
-			privb, err = crypto.ConfigDecodeKey(keyf.Priv)
-			if err != nil {
-				gen = true
-			}
-		}
-
-		if gen == false {
-			pubb, err = crypto.ConfigDecodeKey(keyf.Pub)
-			if err != nil {
-				gen = true
-			}
-		}
-
-		if gen == false {
-			priv, err = crypto.UnmarshalPrivateKey(privb)
-			if err != nil {
-				gen = true
-			}
-
-		}
-
-		if gen == false {
-			pub, err = crypto.UnmarshalPublicKey(pubb)
-			if err != nil {
-				gen = true
-			}
-		}
-	}
-
-	if gen == true || pub == nil || priv == nil {
-		glog.Errorf("Cannot file keys in data dir %v, creating new keys", datadir)
-		priv, pub, err := crypto.GenerateKeyPair(crypto.RSA, 2048)
-		if err != nil {
-			glog.Errorf("Error generating keypair: %v", err)
-			return nil, nil, ErrKeygen
-		}
-
-		privb, _ := priv.Bytes()
-		pubb, _ := pub.Bytes()
-
-		//Write keys to datadir
-		if datadir != "" {
-			kf := LPKeyFile{Priv: crypto.ConfigEncodeKey(privb), Pub: crypto.ConfigEncodeKey(pubb)}
-			kfb, err := json.Marshal(kf)
-			if err != nil {
-				glog.Errorf("Error writing keyfile to datadir: %v", err)
-			} else {
-				if err := ioutil.WriteFile(path.Join(datadir, "keys.json"), kfb, 0644); err != nil {
-					glog.Errorf("Error writing keyfile to datadir: %v", err)
-				}
-			}
-		}
-
-		return priv, pub, nil
-	}
-
-	return priv, pub, nil
-}
-
-func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool, publicAddr string) error {
+func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool, serviceUri string) error {
 	//Check if transcoder is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
@@ -410,7 +329,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 		glog.Infof("Transcoder %v is active", n.Eth.Account().Address.Hex())
 	}
 
-	if publicAddr == "" {
+	if serviceUri == "" {
 		// TODO probably should put this (along w wizard GETs) into common code
 		resp, err := http.Get("https://api.ipify.org?format=text")
 		defer resp.Body.Close()
@@ -419,20 +338,27 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 			glog.Error("Could not look up public IP address")
 			return err
 		}
-		publicAddr = strings.TrimSpace(string(body))
+		serviceUri = "https://" + strings.TrimSpace(string(body)) + ":" + RpcPort
+	} else {
+		serviceUri = "https://" + serviceUri
+	}
+	suri, err := url.ParseRequestURI(serviceUri)
+	if err != nil {
+		glog.Error("Could not parse local service URI ", err)
+		return err // this is fatal; should at least infer a valid uri
 	}
 	uriStr, err := n.Eth.GetServiceURI(n.Eth.Account().Address)
 	if err != nil {
-		glog.Error("Could not get service URI")
+		glog.Error("Could not get service URI; transcoder may be unreachable")
 		return err
 	}
 	uri, err := url.ParseRequestURI(uriStr)
 	if err != nil {
-		glog.Error("Could not parse service URI")
-		uri, _ = url.ParseRequestURI("http://127.0.0.1")
+		glog.Error("Could not parse service URI; transcoder may be unreachable")
+		uri, _ = url.ParseRequestURI("http://127.0.0.1:" + RpcPort)
 	}
-	if uri.Hostname() != publicAddr {
-		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -publicAddr", uri.Hostname(), publicAddr)
+	if uri.Hostname() != suri.Hostname() || uri.Port() != suri.Port() {
+		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceAddr", uri, suri)
 		// TODO remove '&& false' after all transcoders have set a service URI
 		if active && false {
 			return fmt.Errorf("Mismatched service address")
@@ -447,6 +373,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 
 	n.Ipfs = ipfsApi
 	n.EthEventMonitor = em
+	n.ServiceURI = uri
 
 	if initializeRound {
 		glog.Infof("Transcoder %v will automatically initialize new rounds", n.Eth.Account().Address.Hex())

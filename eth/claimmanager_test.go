@@ -98,12 +98,12 @@ func TestAddReceipt(t *testing.T) {
 		ffmpeg.P360p30fps4x3:  []byte("tdatahash"),
 		ffmpeg.P240p30fps16x9: []byte("tdatahash"),
 	}
-	if err := cm.AddReceipt(0, "", []byte("data"), []byte("sig"), td, tStart, tEnd); err == nil {
+	if _, err := cm.AddReceipt(0, "", []byte("data"), []byte("sig"), td, tStart, tEnd); err == nil {
 		t.Error("Expecting an error for mismatched profile legnths.")
 	}
 	//Should get error for adding to a non-existing profile
 	td[ffmpeg.P144p30fps16x9] = []byte("tdatahash")
-	if err := cm.AddReceipt(0, "", []byte("data"), []byte("sig"), td, tStart, tEnd); err == nil {
+	if _, err := cm.AddReceipt(0, "", []byte("data"), []byte("sig"), td, tStart, tEnd); err == nil {
 		t.Error("Expecting an error for adding to a non-existing profile.")
 	}
 	// Should pass
@@ -112,11 +112,11 @@ func TestAddReceipt(t *testing.T) {
 		ffmpeg.P240p30fps16x9: []byte("tdatahash"),
 		ffmpeg.P720p30fps4x3:  []byte("tdatahash"),
 	}
-	if err := cm.AddReceipt(0, bf, []byte("data"), []byte("sig"), td, tStart, tEnd); err != nil {
+	if _, err := cm.AddReceipt(0, bf, []byte("data"), []byte("sig"), td, tStart, tEnd); err != nil {
 		t.Error("Unexpected error ", err)
 	}
 	// Should get an error due to an already existing receipt
-	if err := cm.AddReceipt(0, "", []byte("data"), []byte("sig"), td, tStart, tEnd); err == nil {
+	if _, err := cm.AddReceipt(0, "", []byte("data"), []byte("sig"), td, tStart, tEnd); err == nil {
 		t.Error("Did not get an error where one was expected")
 	}
 
@@ -150,7 +150,7 @@ func TestAddReceipt(t *testing.T) {
 		t.Error(err)
 	}
 	// normal insertion
-	err = cm.AddReceipt(1, "", []byte{}, []byte{}, td, tStart, tEnd)
+	_, err = cm.AddReceipt(1, "", []byte{}, []byte{}, td, tStart, tEnd)
 	if err == nil {
 		t.Error("Expecting error; inserting duplicate claim!")
 	}
@@ -179,7 +179,7 @@ func setupRanges(t *testing.T) *BasicClaimManager {
 			}
 			data := []byte(fmt.Sprintf("data%v", i))
 			sig := []byte(fmt.Sprintf("sig%v", i))
-			if err := cm.AddReceipt(int64(i), "", data, sig, td, tStart, tEnd); err != nil {
+			if _, err := cm.AddReceipt(int64(i), "", data, sig, td, tStart, tEnd); err != nil {
 				t.Errorf("Error: %v", err)
 			}
 			if i == 16 {
@@ -196,7 +196,7 @@ func setupRanges(t *testing.T) *BasicClaimManager {
 	td := map[ffmpeg.VideoProfile][]byte{
 		p: []byte(fmt.Sprintf("hash%v%v", p, i)),
 	}
-	if err := cm.AddReceipt(int64(i), "", data, sig, td, tStart, tEnd); err == nil {
+	if _, err := cm.AddReceipt(int64(i), "", data, sig, td, tStart, tEnd); err == nil {
 		t.Errorf("Did not get an error when expecting one")
 	}
 
@@ -236,7 +236,7 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 		for _, p := range ps {
 			td[p] = []byte(fmt.Sprintf("tHash%v%v", ffmpeg.P240p30fps16x9.Name, i)) // ???
 		}
-		if err := cm.AddReceipt(int64(i), "", data, sig, td, tStart, tEnd); err != nil {
+		if _, err := cm.AddReceipt(int64(i), "", data, sig, td, tStart, tEnd); err != nil {
 			t.Errorf("Error: %v", err)
 		}
 
@@ -259,7 +259,7 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 		for _, p := range ps {
 			td[p] = []byte(fmt.Sprintf("tHash%v%v", ffmpeg.P240p30fps16x9.Name, i)) // ???
 		}
-		if err := cm.AddReceipt(int64(i), "", data, sig, td, tStart, tEnd); err != nil {
+		if _, err := cm.AddReceipt(int64(i), "", data, sig, td, tStart, tEnd); err != nil {
 			t.Errorf("Error: %v", err)
 		}
 		receipt := &ethTypes.TranscodeReceipt{

@@ -37,22 +37,27 @@ type transcodeReq struct {
 }
 
 type LPMSOpts struct {
-	RtmpPort     string
+	RtmpAddr     string
 	RtmpDisabled bool
-	RtmpHost     string
-	HttpPort     string
+	HttpAddr     string
 	HttpDisabled bool
-	HttpHost     string
 	VodPath      string
 	WorkDir      string
+
+	// Pass in a custom HTTP mux.
+	// Useful if a non-default mux needs to be used.
+	// The caller is responsible for setting up the listener
+	// on the mux; LPMS won't initialize it.
+	// If set, HttpPort and HttpDisabled are ignored.
+	HttpMux *http.ServeMux
 }
 
 func defaultLPMSOpts(opts *LPMSOpts) {
-	if opts.RtmpPort == "" {
-		opts.RtmpPort = "1935"
+	if opts.RtmpAddr == "" {
+		opts.RtmpAddr = "127.0.0.1:1935"
 	}
-	if opts.HttpPort == "" {
-		opts.HttpPort = "8935"
+	if opts.HttpAddr == "" {
+		opts.HttpAddr = "127.0.0.1:7935"
 	}
 }
 
@@ -61,22 +66,21 @@ func New(opts *LPMSOpts) *LPMS {
 	defaultLPMSOpts(opts)
 	var rtmpServer *joy4rtmp.Server
 	if !opts.RtmpDisabled {
-		rtmpServer = &joy4rtmp.Server{Addr: (opts.RtmpHost + ":" + opts.RtmpPort)}
+		rtmpServer = &joy4rtmp.Server{Addr: opts.RtmpAddr}
 	}
 	var httpAddr string
-	if !opts.HttpDisabled {
-		httpAddr = opts.HttpHost + ":" + opts.HttpPort
+	if !opts.HttpDisabled && opts.HttpMux == nil {
+		httpAddr = opts.HttpAddr
 	}
-	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath)
+	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath, opts.HttpMux)
 	listener := &vidlistener.VidListener{RtmpServer: rtmpServer}
 	return &LPMS{rtmpServer: rtmpServer, vidPlayer: player, vidListen: listener, workDir: opts.WorkDir, httpAddr: httpAddr}
 }
 
-//Start starts the rtmp and http server
+//Start starts the rtmp and http servers, and initializes ffmpeg
 func (l *LPMS) Start(ctx context.Context) error {
 	ec := make(chan error, 1)
 	ffmpeg.InitFFmpeg()
-	defer ffmpeg.DeinitFFmpeg()
 	if l.rtmpServer != nil {
 		go func() {
 			glog.V(4).Infof("LPMS Server listening on rtmp://%v", l.rtmpServer.Addr)

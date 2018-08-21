@@ -19,11 +19,11 @@ For full documentation and a project overview, go to
 ### Option 1: Download executables
 The easiest way to install Livepeer is by downloading the `livepeer` and `livepeer_cli` executables from the [release page on Github](https://github.com/livepeer/go-livepeer/releases). 
 
-1. Download the packages for your OS - darwin for Macs and linux for linux. 
+1. Download the packages for your OS - darwin for Macs and linux for linux.
 2. Untar them and optionally move the executables to your PATH.
 
 ### Option 2: Build from source
-You can also build the executables from scratch.  
+You can also build the executables from scratch.
 
 1. If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
 
@@ -40,16 +40,16 @@ You can also build the executables from scratch.
 ### Quick start
 - Make sure you have successfully gone through the steps in 'Installing Livepeer' and 'Additional Dependencies'.
 
-- Run `./livepeer -rinkeby`. 
+- Run `./livepeer -rinkeby`.
 
 - Run `./livepeer_cli`.
-  * You should see a wizard launch in the command line. 
+  * You should see a wizard launch in the command line.
   * The wizard should print out `Account Eth Addr`, `Token balance`, and `Eth balance`
 
 - Get some test eth for the Rinkeby faucet. Make sure to use the Eth account address from above. Remember to add 0x as a prefix to address, if not present.
   * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see a positive `Eth balance`.
 
-- Now get some test Livepeer tokens. Pick `Get test Livepeer Token`.  
+- Now get some test Livepeer tokens. Pick `Get test Livepeer Token`.
   * You can check that the request is successful by going to `livepeer_cli` and selecting `Get node status`. You should see your `Token balance` go up.
 
 - You should have some test Eth and test Livepeer tokens now.  If that's the case, you are ready to broadcast.
@@ -67,7 +67,7 @@ By default, the RTMP port is 1935.  For example, if you are using OSX with ffmpe
 
 Similarly, you can use OBS, and change the Settings->Stream->URL to `rtmp://localhost:1935/movie` , along with the keyframe interval to 4 seconds, via `Settings -> Output -> Output Mode (Advanced) -> Streaming tab -> Keyframe Interval 4`.
 
-If the broadcast is successful, you should be able to get a streamID by querying the local node:
+If the broadcast is successful, you should be able to get a streamID by querying the local node's CLI API:
 
 `curl http://localhost:8935/manifestID`
 
@@ -79,6 +79,8 @@ For example, after you get the streamID, you can view the stream by running:
 
 `ffplay http://localhost:8935/stream/{manifestID}.m3u8`
 
+Note that the default HTTP port or playback (8935) is different from the CLI API port (7935) that is used for node management and diagnostics!
+
 ### Becoming a Transcoder
 
 We'll walk through the steps of becoming a transcoder on the test network.  To learn more about the transcoder, refer to the [Livepeer whitepaper](https://github.com/livepeer/wiki/blob/master/WHITEPAPER.md) and the [Transcoding guide](http://livepeer.readthedocs.io/en/latest/transcoding.html).
@@ -89,11 +91,11 @@ We'll walk through the steps of becoming a transcoder on the test network.  To l
 
 - You should see the Transcoder Status as "Not Registered".
 
-- Pick "Become a transcoder" in the wizard.  Make sure to choose "bond to yourself".  If Successful, you should see the Transcoder Status change to "Registered"
+- Pick "Become a transcoder" in the wizard.  Make sure to choose "bond to yourself".  Follow the rest of the prompts, including confirming the transcoder's public IP and port on the blockchain. If Successful, you should see the Transcoder Status change to "Registered"
 
 - Wait for the next round to start, and your transcoder will become active.
 
-- If running on Rinkeby or mainnet, ensure your transcoder is publicly available in order to receive jobs from broadcasters.
+- If running on Rinkeby or mainnet, ensure your transcoder is *publicly accessible* in order to receive jobs from broadcasters. The only port that is required to be public is the one that was set during the transcoder registration step (default 8935).
 
 ## Contribution
 Thank you for your interest in contributing to the core software of Livepeer.
