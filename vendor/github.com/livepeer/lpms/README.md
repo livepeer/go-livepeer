@@ -9,22 +9,21 @@ as input format and RTMP/HLS as output formats.
 LPMS can be integrated into another service, or run as a standalone service.  To try LPMS as a 
 standalone service, simply get the package:
 ```
-go get github.com/livepeer/lpms
+go get -d github.com/livepeer/lpms/cmd/example
 ```
 
-Go to the lpms root directory, and run 
+Go to the lpms root directory at `$GOPATH/src/github.com/livepeer/lpms`. If needed, install the required dependencies; see the Requirements section below. Then build the sample app and run it:
+
 ```
-./lpms
+go build cmd/example/main.go
+./example
 ```
 
 ### Requirements
 
-LPMS requires ffmpeg.  To install it on OSX, use homebrew.  As a part of this installation, `ffmpeg` and `ffplay` should be installed as commandline utilities.
+LPMS requires libavcodec (ffmpeg) and friends. See `install_ffmpeg.sh` . Running this script will install everything in `~/compiled`. In order to build LPMS, the dependent libraries need to be discoverable by pkg-config and golang. If you installed everything with `install_ffmpeg.sh` , then run `export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig:$PKG_CONFIG_PATH` so the deps are picked up.
 
-```
-//This may take a few minutes
-brew install ffmpeg --with-sdl2 --with-libx264
-```
+Running golang unit tests (`test.sh`) requires the `ffmpeg` and `ffprobe` executables in addition to the libraries. However, none of these are run-time requirements; the executables are not used outside of testing, and the libraries are statically linked by default. Note that dynamic linking may substantially speed up rebuilds if doing heavy development.
 
 ### Testing out LPMS
 

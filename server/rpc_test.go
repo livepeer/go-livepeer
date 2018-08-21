@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/url"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/core"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
 )
 
 func StubJob() *lpTypes.Job {
@@ -30,8 +32,9 @@ type stubOrchestrator struct {
 	block *big.Int
 }
 
-func (r *stubOrchestrator) Transcoder() string {
-	return "abc"
+func (r *stubOrchestrator) ServiceURI() *url.URL {
+	url, _ := url.Parse("http://localhost:1234")
+	return url
 }
 func (r *stubOrchestrator) CurrentBlock() *big.Int {
 	return r.block
@@ -47,8 +50,8 @@ func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
 func (r *stubOrchestrator) Address() ethcommon.Address {
 	return ethcrypto.PubkeyToAddress(r.priv.PublicKey)
 }
-func (r *stubOrchestrator) TranscodeSeg(job *lpTypes.Job, seg *core.SignedSegment) error {
-	return nil
+func (r *stubOrchestrator) TranscodeSeg(job *lpTypes.Job, seg *core.SignedSegment) (*core.TranscodeResult, error) {
+	return nil, nil
 }
 func (r *stubOrchestrator) StreamIDs(job *lpTypes.Job) ([]core.StreamID, error) {
 	return []core.StreamID{}, nil
@@ -70,10 +73,10 @@ func (r *stubOrchestrator) GetHTTPClient() *http.Client {
 }
 func (r *stubOrchestrator) SetHTTPClient(ti *http.Client) {
 }
-func (r *stubOrchestrator) GetTranscoderInfo() *TranscoderInfo {
+func (r *stubOrchestrator) GetTranscoderInfo() *net.TranscoderInfo {
 	return nil
 }
-func (r *stubOrchestrator) SetTranscoderInfo(ti *TranscoderInfo) {
+func (r *stubOrchestrator) SetTranscoderInfo(ti *net.TranscoderInfo) {
 }
 func StubBroadcaster2() *stubOrchestrator {
 	return StubOrchestrator() // lazy; leverage subtyping for interface commonalities
@@ -173,7 +176,7 @@ func TestRPCSeg(t *testing.T) {
 	j.JobId = big.NewInt(1234)
 	j.BroadcasterAddress = baddr
 
-	segData := &SegData{Seq: 4, Hash: ethcommon.RightPadBytes([]byte("browns"), 32)}
+	segData := &net.SegData{Seq: 4, Hash: ethcommon.RightPadBytes([]byte("browns"), 32)}
 	creds, err := genSegCreds(b, j.StreamId, segData)
 	if err != nil {
 		t.Error("Unable to generate seg creds ", err)

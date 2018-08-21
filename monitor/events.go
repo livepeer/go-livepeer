@@ -176,14 +176,14 @@ func LogSegmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Durat
 	sendPost("SegmentTranscoded", nonce, props)
 }
 
-func LogSegmentTranscodeFailed(nonce, seqNo uint64, reason string) {
-	glog.Infof("Logging SegmentTranscodeFailed...")
+func LogSegmentTranscodeFailed(ev string, nonce, seqNo uint64, err error) {
+	glog.Info("Logging ", ev)
 
 	if metrics.lastSegmentNonce == nonce {
 		metrics.segmentsInFlight--
 	}
 	props := map[string]interface{}{
-		"reason": reason,
+		"reason": err.Error(),
 		"seqNo":  seqNo,
 	}
 	if metrics.segmentsInFlight != 0 {
@@ -191,7 +191,7 @@ func LogSegmentTranscodeFailed(nonce, seqNo uint64, reason string) {
 	}
 	detectSeqDif(props, nonce, seqNo)
 
-	sendPost("SegmentTranscodeFailed", nonce, props)
+	sendPost(ev, nonce, props)
 }
 
 func LogStartBroadcastClientFailed(nonce uint64, serviceURI, transcoderAddress string, jobID uint64, reason string) {

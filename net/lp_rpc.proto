@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package server;
+package net;
 
 // RPC calls implemented by the orchestrator
 service Orchestrator {
@@ -64,4 +64,35 @@ message SegData {
   // broadcaster.sign(streamId | seqNo | dataHash)
   // where streamId is derived from the jobId
   bytes sig  = 3;
+}
+
+// Individual transcoded segment data.
+message TranscodedSegmentData {
+
+    // URL where the transcoded data can be downloaded from
+    string url = 1;
+
+}
+
+// A set of transcoded segments following the profiles specified in the jo .
+message TranscodeData {
+
+    // Transcoded data, in the order specified in the job options
+    repeated TranscodedSegmentData segments = 1;
+
+    // Signature of the hash of the concatenated hashes
+    bytes sig = 2;
+}
+
+// Response that a transcoder sends after transcoding a segment.
+message TranscodeResult {
+
+    // Sequence number of the transcoded results.
+    int64 seq = 1;
+
+    // Result of transcoding can be an error, or successful with more info
+    oneof result {
+        string error = 2;
+        TranscodeData data = 3;
+    }
 }

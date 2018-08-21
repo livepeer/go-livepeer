@@ -44,7 +44,11 @@ func (s *JobService) Start(ctx context.Context) error {
 
 	logsCh := make(chan types.Log)
 	sub, err := s.eventMonitor.SubscribeNewJob(ctx, "NewJob", logsCh, common.Address{}, func(l types.Log) (bool, error) {
-		_, jid, _, _ := parseNewJobLog(l)
+		jid := parseNewJobLog(l)
+		if jid == nil {
+			// Return true to ignore this log and continue monitoring for new jobs
+			return true, errors.New("InvalidJobLog")
+		}
 
 		var job *lpTypes.Job
 		getJob := func() error {
@@ -57,6 +61,12 @@ func (s *JobService) Start(ctx context.Context) error {
 				glog.Errorf("Got empty job for id:%v. Should try again.", jid.Int64())
 				return errors.New("ErrGetJob")
 			}
+			assignedAddr, err := s.node.Eth.AssignedTranscoder(j)
+			if err != nil {
+				glog.Errorf("Error checking for job %v assignment: %v", jid, err)
+				return err
+			}
+			j.TranscoderAddress = assignedAddr
 			job = j
 			return err
 		}
@@ -65,13 +75,7 @@ func (s *JobService) Start(ctx context.Context) error {
 			return false, err
 		}
 
-		assignedAddr, err := s.node.Eth.AssignedTranscoder(job)
-		if err != nil {
-			glog.Errorf("Error checking for assignment: %v", err)
-			return false, err
-		}
-
-		if assignedAddr == s.node.Eth.Account().Address {
+		if job.TranscoderAddress == s.node.Eth.Account().Address {
 			dbjob := lpcommon.NewDBJob(
 				job.JobId, job.StreamId,
 				job.MaxPricePerSegment, job.Profiles,
@@ -161,6 +165,10 @@ func (s *JobService) firstClaim(job *lpTypes.Job) {
 	}
 }
 
-func parseNewJobLog(log types.Log) (broadcasterAddr common.Address, jid *big.Int, streamID string, transOptions string) {
-	return common.BytesToAddress(log.Topics[1].Bytes()), new(big.Int).SetBytes(log.Data[0:32]), string(log.Data[192:338]), string(log.Data[338:])
+func parseNewJobLog(log types.Log) (jid *big.Int) {
+	if len(log.Data) < 32 {
+		glog.Error("Malformed job event log!")
+		return nil
+	}
+	return new(big.Int).SetBytes(log.Data[0:32])
 }

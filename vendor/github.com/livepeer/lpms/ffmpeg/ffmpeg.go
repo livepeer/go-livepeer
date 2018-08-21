@@ -93,7 +93,3 @@ func CheckMediaLen(fname string, ts_max int, packet_max int) error {
 func InitFFmpeg() {
 	C.lpms_init()
 }
-
-func DeinitFFmpeg() {
-	C.lpms_deinit()
-}

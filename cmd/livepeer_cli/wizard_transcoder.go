@@ -11,7 +11,7 @@ import (
 	lpcommon "github.com/livepeer/go-livepeer/common"
 )
 
-const defaultRPCPort = "4433"
+const defaultRPCPort = "8935"
 
 func (w *wizard) isTranscoder() bool {
 	isT := httpGet(fmt.Sprintf("http://%v:%v/IsTranscoder", w.host, w.httpPort))

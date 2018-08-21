@@ -17,8 +17,7 @@ var ErrStreamID = errors.New("ErrStreamID")
 var ErrManifestID = errors.New("ErrManifestID")
 
 const (
-	HashLength   = 32
-	NodeIDLength = 68
+	HashLength = 32
 )
 
 func RandomVideoID() []byte {
@@ -30,22 +29,21 @@ func RandomVideoID() []byte {
 	return x
 }
 
-//StreamID is NodeID|VideoID|Rendition
+//StreamID is VideoID|Rendition
 type StreamID string
 
-func MakeStreamID(nodeID NodeID, id []byte, rendition string) (StreamID, error) {
-	if len(nodeID) != NodeIDLength || len(id) == 0 || rendition == "" {
-		return "", ErrManifestID
+func MakeStreamID(id []byte, rendition string) (StreamID, error) {
+	if len(id) != HashLength || rendition == "" {
+		return "", ErrStreamID
 	}
-	return StreamID(fmt.Sprintf("%v%x%v", nodeID, id, rendition)), nil
-}
-
-func (id *StreamID) GetNodeID() NodeID {
-	return NodeID((*id)[:NodeIDLength])
+	return StreamID(fmt.Sprintf("%x%v", id, rendition)), nil
 }
 
 func (id *StreamID) GetVideoID() []byte {
-	vid, err := hex.DecodeString(string((*id)[NodeIDLength : NodeIDLength+(2*HashLength)]))
+	if len(*id) < 2*HashLength {
+		return nil
+	}
+	vid, err := hex.DecodeString(string((*id)[:2*HashLength]))
 	if err != nil {
 		return nil
 	}
@@ -53,48 +51,48 @@ func (id *StreamID) GetVideoID() []byte {
 }
 
 func (id *StreamID) GetRendition() string {
-	return string((*id)[NodeIDLength+2*HashLength:])
+	return string((*id)[2*HashLength:])
 }
 
 func (id *StreamID) IsValid() bool {
-	return len(*id) > (NodeIDLength + 2*HashLength)
+	return len(*id) > 2*HashLength
 }
 
 func (id StreamID) String() string {
 	return string(id)
 }
 
-//ManifestID is NodeID|VideoID
+//ManifestID is VideoID
 type ManifestID string
 
-func MakeManifestID(nodeID NodeID, id []byte) (ManifestID, error) {
-	if nodeID == "" || len(nodeID) != NodeIDLength {
-		return "", ErrStreamID
+func MakeManifestID(id []byte) (ManifestID, error) {
+	if len(id) != HashLength {
+		return ManifestID(""), ErrManifestID
 	}
-	return ManifestID(fmt.Sprintf("%v%x", nodeID, id)), nil
-}
-
-func (id *ManifestID) GetNodeID() NodeID {
-	return NodeID((*id)[:NodeIDLength])
+	return ManifestID(fmt.Sprintf("%x", id)), nil
 }
 
 func (id *ManifestID) GetVideoID() []byte {
-	vid, err := hex.DecodeString(string((*id)[NodeIDLength : NodeIDLength+(2*HashLength)]))
+	if len(*id) < 2*HashLength {
+		return nil
+	}
+	vid, err := hex.DecodeString(string((*id)[:2*HashLength]))
 	if err != nil {
 		return nil
 	}
 	return vid
 }
 
-func (id StreamID) ManifestIDFromStreamID() ManifestID {
-	// Ignore error since StreamID should be a valid object;
-	// getting the node and video IDs don't fail (unless it segfaults)
-	mid, _ := MakeManifestID(id.GetNodeID(), id.GetVideoID())
-	return mid
+func (id StreamID) ManifestIDFromStreamID() (ManifestID, error) {
+	if !id.IsValid() {
+		return "", ErrManifestID
+	}
+	mid, err := MakeManifestID(id.GetVideoID())
+	return mid, err
 }
 
 func (id *ManifestID) IsValid() bool {
-	return len(*id) == (NodeIDLength + 2*HashLength)
+	return len(*id) == 2*HashLength
 }
 
 func (id ManifestID) String() string {

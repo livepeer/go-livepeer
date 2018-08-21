@@ -33,13 +33,17 @@ type VidPlayer struct {
 	RtmpServer      *joy4rtmp.Server
 	rtmpPlayHandler func(url *url.URL) (stream.RTMPVideoStream, error)
 	VodPath         string
+	mux             *http.ServeMux
 }
 
 func defaultRtmpPlayHandler(url *url.URL) (stream.RTMPVideoStream, error) { return nil, ErrRTMP }
 
 //NewVidPlayer creates a new video player
-func NewVidPlayer(rtmpS *joy4rtmp.Server, vodPath string) *VidPlayer {
-	player := &VidPlayer{RtmpServer: rtmpS, VodPath: vodPath, rtmpPlayHandler: defaultRtmpPlayHandler}
+func NewVidPlayer(rtmpS *joy4rtmp.Server, vodPath string, mux *http.ServeMux) *VidPlayer {
+	if mux == nil {
+		mux = http.DefaultServeMux
+	}
+	player := &VidPlayer{RtmpServer: rtmpS, VodPath: vodPath, rtmpPlayHandler: defaultRtmpPlayHandler, mux: mux}
 	if rtmpS != nil {
 		rtmpS.HandlePlay = player.rtmpServerHandlePlay()
 	}
@@ -83,11 +87,11 @@ func (s *VidPlayer) HandleHLSPlay(
 	getMediaPlaylist func(url *url.URL) (*m3u8.MediaPlaylist, error),
 	getSegment func(url *url.URL) ([]byte, error)) {
 
-	http.HandleFunc("/stream/", func(w http.ResponseWriter, r *http.Request) {
+	s.mux.HandleFunc("/stream/", func(w http.ResponseWriter, r *http.Request) {
 		handleLive(w, r, getMasterPlaylist, getMediaPlaylist, getSegment)
 	})
 
-	http.HandleFunc("/vod/", func(w http.ResponseWriter, r *http.Request) {
+	s.mux.HandleFunc("/vod/", func(w http.ResponseWriter, r *http.Request) {
 		handleVOD(r.URL, s.VodPath, w)
 	})
 }

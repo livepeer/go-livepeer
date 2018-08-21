@@ -22,6 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/stream"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -33,98 +34,18 @@ import (
 
 const HTTPTimeout = 8 * time.Second
 const GRPCTimeout = 8 * time.Second
+const GRPCConnectTimeout = 3 * time.Second
 
 const AuthType_LPE = "Livepeer-Eth-1"
 
-type orchestrator struct {
-	transcoder string
-	address    ethcommon.Address
-	node       *core.LivepeerNode
-}
-
 type Orchestrator interface {
-	Transcoder() string
+	ServiceURI() *url.URL
 	Address() ethcommon.Address
 	Sign([]byte) ([]byte, error)
 	CurrentBlock() *big.Int
 	GetJob(int64) (*lpTypes.Job, error)
-	TranscodeSeg(*lpTypes.Job, *core.SignedSegment) error
+	TranscodeSeg(*lpTypes.Job, *core.SignedSegment) (*core.TranscodeResult, error)
 	StreamIDs(*lpTypes.Job) ([]core.StreamID, error)
-}
-
-// Orchestator interface methods
-func (orch *orchestrator) Transcoder() string {
-	return orch.transcoder
-}
-
-func (orch *orchestrator) CurrentBlock() *big.Int {
-	if orch.node == nil || orch.node.Eth == nil {
-		return nil
-	}
-	block, _ := orch.node.Eth.LatestBlockNum()
-	return block
-}
-
-func (orch *orchestrator) GetJob(jid int64) (*lpTypes.Job, error) {
-	if orch.node == nil || orch.node.Eth == nil {
-		return nil, fmt.Errorf("Cannot get job; missing eth client")
-	}
-	job, err := orch.node.Eth.GetJob(big.NewInt(jid))
-	if err != nil {
-		return nil, err
-	}
-	if (job.TranscoderAddress == ethcommon.Address{}) {
-		ta, err := orch.node.Eth.AssignedTranscoder(job)
-		if err != nil {
-			glog.Errorf("Could not get assigned transcoder for job %v, err: %s", jid, err.Error())
-			// continue here without a valid transcoder address
-		} else {
-			job.TranscoderAddress = ta
-		}
-	}
-	return job, nil
-}
-
-func (orch *orchestrator) Sign(msg []byte) ([]byte, error) {
-	if orch.node == nil || orch.node.Eth == nil {
-		return []byte{}, fmt.Errorf("Cannot sign; missing eth client")
-	}
-	return orch.node.Eth.Sign(crypto.Keccak256(msg))
-}
-
-func (orch *orchestrator) Address() ethcommon.Address {
-	return orch.address
-}
-
-func (orch *orchestrator) StreamIDs(job *lpTypes.Job) ([]core.StreamID, error) {
-	streamIds := make([]core.StreamID, len(job.Profiles))
-	sid := core.StreamID(job.StreamId)
-	vid := sid.GetVideoID()
-	for i, p := range job.Profiles {
-		strmId, err := core.MakeStreamID(orch.node.Identity, vid, p.Name)
-		if err != nil {
-			glog.Error("Error making stream ID: ", err)
-			return []core.StreamID{}, err
-		}
-		streamIds[i] = strmId
-	}
-	return streamIds, nil
-}
-
-func (orch *orchestrator) TranscodeSeg(job *lpTypes.Job, ss *core.SignedSegment) error {
-	return orch.node.TranscodeSegment(job, ss)
-}
-
-// grpc methods
-func (o *orchestrator) GetTranscoder(context context.Context, req *TranscoderRequest) (*TranscoderInfo, error) {
-	return GetTranscoder(context, o, req)
-}
-
-type broadcaster struct {
-	node  *core.LivepeerNode
-	httpc *http.Client
-	job   *lpTypes.Job
-	tinfo *TranscoderInfo
 }
 
 type Broadcaster interface {
@@ -132,38 +53,16 @@ type Broadcaster interface {
 	Job() *lpTypes.Job
 	SetHTTPClient(*http.Client)
 	GetHTTPClient() *http.Client
-	SetTranscoderInfo(*TranscoderInfo)
-	GetTranscoderInfo() *TranscoderInfo
+	SetTranscoderInfo(*net.TranscoderInfo)
+	GetTranscoderInfo() *net.TranscoderInfo
 }
 
-func (bcast *broadcaster) Sign(msg []byte) ([]byte, error) {
-	if bcast.node == nil || bcast.node.Eth == nil {
-		return []byte{}, fmt.Errorf("Cannot sign; missing eth client")
-	}
-	return bcast.node.Eth.Sign(crypto.Keccak256(msg))
-}
-func (bcast *broadcaster) Job() *lpTypes.Job {
-	return bcast.job
-}
-func (bcast *broadcaster) GetHTTPClient() *http.Client {
-	return bcast.httpc
-}
-func (bcast *broadcaster) SetHTTPClient(hc *http.Client) {
-	bcast.httpc = hc
-}
-func (bcast *broadcaster) GetTranscoderInfo() *TranscoderInfo {
-	return bcast.tinfo
-}
-func (bcast *broadcaster) SetTranscoderInfo(t *TranscoderInfo) {
-	bcast.tinfo = t
-}
-
-func genTranscoderReq(b Broadcaster, jid int64) (*TranscoderRequest, error) {
+func genTranscoderReq(b Broadcaster, jid int64) (*net.TranscoderRequest, error) {
 	sig, err := b.Sign([]byte(fmt.Sprintf("%v", jid)))
 	if err != nil {
 		return nil, err
 	}
-	return &TranscoderRequest{JobId: jid, Sig: sig}, nil
+	return &net.TranscoderRequest{JobId: jid, Sig: sig}, nil
 }
 
 func blockInRange(orch Orchestrator, job *lpTypes.Job) bool {
@@ -180,7 +79,7 @@ func verifyMsgSig(addr ethcommon.Address, msg string, sig []byte) bool {
 	return eth.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
 }
 
-func verifyTranscoderReq(orch Orchestrator, req *TranscoderRequest, job *lpTypes.Job) error {
+func verifyTranscoderReq(orch Orchestrator, req *net.TranscoderRequest, job *lpTypes.Job) error {
 	if orch.Address() != job.TranscoderAddress {
 		glog.Error("Transcoder was not assigned")
 		return fmt.Errorf("Transcoder was not assigned")
@@ -201,7 +100,7 @@ func genToken(orch Orchestrator, job *lpTypes.Job) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	data, err := proto.Marshal(&AuthToken{JobId: job.JobId.Int64(), Sig: sig})
+	data, err := proto.Marshal(&net.AuthToken{JobId: job.JobId.Int64(), Sig: sig})
 	if err != nil {
 		glog.Error("Unable to marshal ", err)
 		return "", err
@@ -215,7 +114,7 @@ func verifyToken(orch Orchestrator, creds string) (*lpTypes.Job, error) {
 		glog.Error("Unable to base64-decode ", err)
 		return nil, err
 	}
-	var token AuthToken
+	var token net.AuthToken
 	err = proto.Unmarshal(buf, &token)
 	if err != nil {
 		glog.Error("Unable to unmarshal ", err)
@@ -237,7 +136,7 @@ func verifyToken(orch Orchestrator, creds string) (*lpTypes.Job, error) {
 	return job, nil
 }
 
-func genSegCreds(bcast Broadcaster, streamId string, segData *SegData) (string, error) {
+func genSegCreds(bcast Broadcaster, streamId string, segData *net.SegData) (string, error) {
 	seg := &lpTypes.Segment{
 		StreamID:              streamId,
 		SegmentSequenceNumber: big.NewInt(segData.Seq),
@@ -256,13 +155,13 @@ func genSegCreds(bcast Broadcaster, streamId string, segData *SegData) (string, 
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func verifySegCreds(job *lpTypes.Job, segCreds string) (*SegData, error) {
+func verifySegCreds(job *lpTypes.Job, segCreds string) (*net.SegData, error) {
 	buf, err := base64.StdEncoding.DecodeString(segCreds)
 	if err != nil {
 		glog.Error("Unable to base64-decode ", err)
 		return nil, err
 	}
-	var segData SegData
+	var segData net.SegData
 	err = proto.Unmarshal(buf, &segData)
 	if err != nil {
 		glog.Error("Unable to unmarshal ", err)
@@ -280,7 +179,7 @@ func verifySegCreds(job *lpTypes.Job, segCreds string) (*SegData, error) {
 	return &segData, nil
 }
 
-func GetTranscoder(context context.Context, orch Orchestrator, req *TranscoderRequest) (*TranscoderInfo, error) {
+func getTranscoder(context context.Context, orch Orchestrator, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
 	glog.Info("Got transcoder request for job ", req.JobId)
 	job, err := orch.GetJob(req.JobId)
 	if err != nil {
@@ -303,8 +202,8 @@ func GetTranscoder(context context.Context, orch Orchestrator, req *TranscoderRe
 		stringStreamIds[s.String()] = job.Profiles[i].Name
 	}
 
-	tr := TranscoderInfo{
-		Transcoder:  orch.Transcoder(),
+	tr := net.TranscoderInfo{
+		Transcoder:  orch.ServiceURI().String(), // currently,  orchestrator == transcoder
 		AuthType:    AuthType_LPE,
 		Credentials: creds,
 		StreamIds:   stringStreamIds,
@@ -312,7 +211,14 @@ func GetTranscoder(context context.Context, orch Orchestrator, req *TranscoderRe
 	return &tr, nil
 }
 
-func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
+type lphttp struct {
+	orchestrator Orchestrator
+	orchRpc      *grpc.Server
+	transRpc     *http.ServeMux
+}
+
+func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
+	orch := h.orchestrator
 	// check the credentials from the orchestrator
 	authType := r.Header.Get("Authorization")
 	creds := r.Header.Get("Credentials")
@@ -339,7 +245,7 @@ func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// download the segment and check the hash
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		glog.Error("Could not read request body")
+		glog.Error("Could not read request body", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -362,40 +268,73 @@ func (orch *orchestrator) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		},
 		Sig: segData.Sig,
 	}
-	if err := orch.TranscodeSeg(job, &ss); err != nil {
+
+	res, err := orch.TranscodeSeg(job, &ss)
+
+	// sanity check
+	if err == nil && len(res.Urls) != len(job.Profiles) {
+		err = fmt.Errorf("Mismatched result lengths")
+	}
+
+	// construct the response
+	var result net.TranscodeResult
+	if err != nil {
 		glog.Error("Could not transcode ", err)
-		w.Write([]byte(fmt.Sprintf("Error transcoding segment %v : %v", segData.Seq, err)))
+		result = net.TranscodeResult{Result: &net.TranscodeResult_Error{Error: err.Error()}}
+	} else {
+		segments := make([]*net.TranscodedSegmentData, len(res.Urls))
+		for i, v := range res.Urls {
+			d := &net.TranscodedSegmentData{
+				Url: orch.ServiceURI().String() + "/stream/" + v,
+			}
+			segments[i] = d
+		}
+		result = net.TranscodeResult{Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{
+				Segments: segments,
+				Sig:      res.Sig,
+			}},
+		}
+	}
+
+	tr := &net.TranscodeResult{
+		Seq:    segData.Seq,
+		Result: result.Result,
+	}
+	buf, err := proto.Marshal(tr)
+	if err != nil {
+		glog.Error("Unable to marshal transcode result ", err)
 		return
 	}
-	w.Write([]byte(fmt.Sprintf("Successfully transcoded segment %v", segData.Seq)))
+	w.Write(buf)
 }
 
-type lphttp struct {
-	orchestrator *grpc.Server
-	transcoder   *http.ServeMux
+// grpc methods
+func (h *lphttp) GetTranscoder(context context.Context, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
+	return getTranscoder(context, h.orchestrator, req)
 }
 
 func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ct := r.Header.Get("Content-Type")
 	if r.ProtoMajor == 2 && strings.HasPrefix(ct, "application/grpc") {
-		h.orchestrator.ServeHTTP(w, r)
+		h.orchRpc.ServeHTTP(w, r)
 	} else {
-		h.transcoder.ServeHTTP(w, r)
+		h.transRpc.ServeHTTP(w, r)
 	}
 }
 
-func StartTranscodeServer(bind string, publicURI *url.URL, node *core.LivepeerNode) {
+// XXX do something about the implicit start of the http mux? this smells
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string) {
 	s := grpc.NewServer()
-	addr := node.Eth.Account().Address
-	orch := orchestrator{transcoder: publicURI.String(), node: node, address: addr}
-	RegisterOrchestratorServer(s, &orch)
 	lp := lphttp{
-		orchestrator: s,
-		transcoder:   http.NewServeMux(),
+		orchestrator: orch,
+		orchRpc:      s,
+		transRpc:     mux,
 	}
-	lp.transcoder.HandleFunc("/segment", orch.ServeSegment)
+	net.RegisterOrchestratorServer(s, &lp)
+	lp.transRpc.HandleFunc("/segment", lp.ServeSegment)
 
-	cert, key, err := getCert(publicURI, node.WorkDir)
+	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
 		return // XXX return error
 	}
@@ -410,7 +349,7 @@ func StartTranscodeServer(bind string, publicURI *url.URL, node *core.LivepeerNo
 	srv.ListenAndServeTLS(cert, key)
 }
 
-func StartBroadcastClient(orchestratorServer string, node *core.LivepeerNode, job *lpTypes.Job) (*broadcaster, error) {
+func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	httpc := &http.Client{
 		Transport: &http2.Transport{TLSClientConfig: tlsConfig},
@@ -419,38 +358,40 @@ func StartBroadcastClient(orchestratorServer string, node *core.LivepeerNode, jo
 	uri, err := url.Parse(orchestratorServer)
 	if err != nil {
 		glog.Error("Could not parse orchestrator URI: ", err)
-		return nil, err
+		return err
 	}
 	glog.Infof("Connecting RPC to %v", orchestratorServer)
 	conn, err := grpc.Dial(uri.Host,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		grpc.WithBlock(),
+		grpc.WithTimeout(GRPCConnectTimeout))
 	if err != nil {
 		glog.Error("Did not connect: ", err)
-		return nil, errors.New("Did not connect: " + err.Error())
+		return errors.New("Did not connect: " + err.Error())
 	}
 	defer conn.Close()
-	c := NewOrchestratorClient(conn)
+	c := net.NewOrchestratorClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), GRPCTimeout)
 	defer cancel()
 
-	b := broadcaster{node: node, httpc: httpc, job: job}
-	req, err := genTranscoderReq(&b, job.JobId.Int64())
+	bcast.SetHTTPClient(httpc)
+	req, err := genTranscoderReq(bcast, bcast.Job().JobId.Int64())
 	r, err := c.GetTranscoder(ctx, req)
 	if err != nil {
-		glog.Error("Could not get transcoder: ", err)
-		return nil, errors.New("Could not get transcoder: " + err.Error())
+		glog.Errorf("Could not get transcoder for job %d: %s", bcast.Job().JobId.Int64(), err.Error())
+		return errors.New("Could not get transcoder: " + err.Error())
 	}
-	b.tinfo = r
+	bcast.SetTranscoderInfo(r)
 
-	return &b, nil
+	return nil
 }
 
-func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
+func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*net.TranscodeData, error) {
 	if monitor.Enabled {
 		monitor.SegmentUploadStart(nonce, seg.SeqNo)
 	}
 	hc := bcast.GetHTTPClient()
-	segData := &SegData{
+	segData := &net.SegData{
 		Seq:  int64(seg.SeqNo),
 		Hash: crypto.Keccak256(seg.Data),
 	}
@@ -459,7 +400,7 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		if monitor.Enabled {
 			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
 		}
-		return
+		return nil, err
 	}
 	ti := bcast.GetTranscoderInfo()
 	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(seg.Data))
@@ -468,7 +409,7 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		if monitor.Enabled {
 			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
 		}
-		return
+		return nil, err
 	}
 
 	req.Header.Set("Authorization", ti.AuthType)
@@ -485,44 +426,74 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) {
 		if monitor.Enabled {
 			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
 		}
-		return
+		return nil, err
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode != 200 {
-		defer resp.Body.Close()
 		data, _ := ioutil.ReadAll(resp.Body)
-		glog.Errorf("Error submitting segment %d: code %d error %s", seg.SeqNo, resp.StatusCode, string(data))
+		glog.Errorf("Error submitting segment %d: code %d error %v", seg.SeqNo, resp.StatusCode, string(data))
 		if monitor.Enabled {
 			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, fmt.Sprintf("Code: %d Error: %s", resp.StatusCode,
 				strings.TrimSpace(string(data))))
 		}
-		return
+		return nil, fmt.Errorf(string(data))
 	}
 	glog.Infof("Uploaded segment %v", seg.SeqNo)
 	if monitor.Enabled {
 		monitor.LogSegmentUploaded(nonce, seg.SeqNo, uploadDur)
 	}
 
-	defer resp.Body.Close()
 	data, err := ioutil.ReadAll(resp.Body)
 	tookAllDur := time.Since(start)
+
 	if err != nil {
 		glog.Error(fmt.Sprintf("Unable to read response body for segment %v : %v", seg.SeqNo, err))
 		if monitor.Enabled {
-			monitor.LogSegmentTranscodeFailed(nonce, seg.SeqNo, err.Error())
+			monitor.LogSegmentTranscodeFailed("ReadBody", nonce, seg.SeqNo, err)
 		}
-		return
+		return nil, err
 	}
 	transcodeDur := tookAllDur - uploadDur
 
-	dataStr := string(data)
-	glog.Infof("Response for segment %v: %s", seg.SeqNo, dataStr)
-	if strings.Contains(dataStr, "Error transcoding segment") {
+	var tr net.TranscodeResult
+	err = proto.Unmarshal(data, &tr)
+	if err != nil {
+		glog.Error(fmt.Sprintf("Unable to parse response for segment %v : %v", seg.SeqNo, err))
 		if monitor.Enabled {
-			monitor.LogSegmentTranscodeFailed(nonce, seg.SeqNo, dataStr[strings.Index(dataStr, ":")+2:])
+			monitor.LogSegmentTranscodeFailed("ParseResponse", nonce, seg.SeqNo, err)
 		}
-	} else {
-		if monitor.Enabled {
-			monitor.LogSegmentTranscoded(nonce, seg.SeqNo, transcodeDur, tookAllDur)
-		}
+		return nil, err
 	}
+
+	// check for errors and exit early if there's anything unusual
+	var tdata *net.TranscodeData
+	switch res := tr.Result.(type) {
+	case *net.TranscodeResult_Error:
+		err = fmt.Errorf(res.Error)
+		glog.Errorf("Transcode failed for segment %v: %v", seg.SeqNo, err)
+		if monitor.Enabled {
+			monitor.LogSegmentTranscodeFailed("Transcode", nonce, seg.SeqNo, err)
+		}
+		return nil, err
+	case *net.TranscodeResult_Data:
+		// fall through here for the normal case
+		tdata = res.Data
+	default:
+		glog.Error("Unexpected or unset transcode response field for ", seg.SeqNo)
+		err = fmt.Errorf("UnknownResponse")
+		if monitor.Enabled {
+			monitor.LogSegmentTranscodeFailed("UnknownResponse", nonce, seg.SeqNo, err)
+		}
+		return nil, err
+	}
+
+	// transcode succeeded; continue processing response
+	if monitor.Enabled {
+		monitor.LogSegmentTranscoded(nonce, seg.SeqNo, transcodeDur, tookAllDur)
+	}
+
+	glog.Info("Successfully transcoded segment ", seg.SeqNo)
+
+	return tdata, nil
 }
