@@ -170,6 +170,9 @@ func (w *wizard) bond() {
 	for amount.Cmp(big.NewInt(0)) == 0 || balBigInt.Cmp(amount) < 0 {
 		fmt.Printf("Enter bond amount - ")
 		amount = w.readBigInt()
+		if amount.Cmp(big.NewInt(0)) == 0 {
+			break
+		}
 		if balBigInt.Cmp(amount) < 0 {
 			fmt.Printf("Must enter an amount smaller than the current balance. ")
 		}
