@@ -272,18 +272,26 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			return
 		}
 
-		glog.Infof("Storing service URI %v in service registry...", serviceURI)
-
-		tx, err = s.LivepeerNode.Eth.SetServiceURI(serviceURI)
+		currentServiceURI, err := s.LivepeerNode.Eth.GetServiceURI(s.LivepeerNode.Eth.Account().Address)
 		if err != nil {
 			glog.Error(err)
 			return
 		}
 
-		err = s.LivepeerNode.Eth.CheckTx(tx)
-		if err != nil {
-			glog.Error(err)
-			return
+		if currentServiceURI != serviceURI {
+			glog.Infof("Storing service URI %v in service registry...", serviceURI)
+
+			tx, err = s.LivepeerNode.Eth.SetServiceURI(serviceURI)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
 		}
 	})
 
@@ -365,32 +373,43 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			return
 		}
 
-		glog.Infof("Setting transcoder config - Reward Cut: %v Fee Share: %v Price: %v", eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
-
-		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+		t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
 		if err != nil {
 			glog.Error(err)
 			return
 		}
 
-		err = s.LivepeerNode.Eth.CheckTx(tx)
-		if err != nil {
-			glog.Error(err)
-			return
+		if t.PendingRewardCut.Cmp(eth.FromPerc(blockRewardCut)) != 0 || t.PendingFeeShare.Cmp(eth.FromPerc(feeShare)) != 0 || t.PendingPricePerSegment.Cmp(price) != 0 {
+			glog.Infof("Setting transcoder config - Reward Cut: %v Fee Share: %v Price: %v", eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+
+			tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
 		}
 
-		glog.Infof("Storing service URI %v in service registry...", serviceURI)
+		if t.ServiceURI != serviceURI {
+			glog.Infof("Storing service URI %v in service registry...", serviceURI)
 
-		tx, err = s.LivepeerNode.Eth.SetServiceURI(serviceURI)
-		if err != nil {
-			glog.Error(err)
-			return
-		}
+			tx, err := s.LivepeerNode.Eth.SetServiceURI(serviceURI)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
 
-		err = s.LivepeerNode.Eth.CheckTx(tx)
-		if err != nil {
-			glog.Error(err)
-			return
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
 		}
 	})
 
