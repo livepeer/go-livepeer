@@ -72,7 +72,10 @@ func blockInRange(orch Orchestrator, job *lpTypes.Job) bool {
 		// May be offchain or have internal errors in fetching a block.
 		return true
 	}
-	return !(blk.Cmp(job.CreationBlock) == -1 || blk.Cmp(job.EndBlock) == 1)
+
+	canClaim := job.FirstClaimSubmitted || blk.Cmp(new(big.Int).Add(job.CreationBlock, big.NewInt(256))) <= 0
+
+	return canClaim && !(blk.Cmp(job.CreationBlock) == -1 || blk.Cmp(job.EndBlock) == 1)
 }
 
 func verifyMsgSig(addr ethcommon.Address, msg string, sig []byte) bool {

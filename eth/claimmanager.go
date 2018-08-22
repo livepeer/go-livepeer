@@ -26,8 +26,7 @@ type ClaimManager interface {
 	AddReceipt(seqNo int64, bDataFile string, bData []byte, bSig []byte, tData map[ffmpeg.VideoProfile][]byte, tStart time.Time, tEnd time.Time) ([]byte, error)
 	SufficientBroadcasterDeposit() (bool, error)
 	ClaimVerifyAndDistributeFees() error
-	CanClaim() (bool, error)
-	DidFirstClaim() bool
+	CanClaim(*big.Int, *ethTypes.Job) (bool, error)
 	BroadcasterAddr() ethcommon.Address
 }
 
@@ -136,13 +135,28 @@ func RecoverClaims(c LivepeerEthClient, ipfs ipfs.IpfsApi, db *common.DB) error 
 				claimConcatTDatahash: r.TcodeHash,
 			}
 		}
-		go func() {
-			glog.V(common.DEBUG).Info("claimmanager: Starting recovery for ", jid)
-			err := cm.ClaimVerifyAndDistributeFees()
-			if err != nil {
-				glog.Error("Unable to claim/verify/distribute: ", err)
-			}
-		}()
+
+		lastSeenBlock, err := db.LastSeenBlock()
+		if err != nil {
+			glog.Error("Unable to get last seen block ", err)
+			continue
+		}
+
+		canClaim, err := cm.CanClaim(lastSeenBlock, j)
+		if err != nil {
+			glog.Error("Unable to check if the transcoder can claim ", err)
+			continue
+		}
+
+		if canClaim {
+			go func() {
+				glog.V(common.DEBUG).Info("claimmanager: Starting recovery for ", jid)
+				err := cm.ClaimVerifyAndDistributeFees()
+				if err != nil {
+					glog.Error("Unable to claim/verify/distribute: ", err)
+				}
+			}()
+		}
 	}
 	return nil
 }
@@ -151,33 +165,18 @@ func (c *BasicClaimManager) BroadcasterAddr() ethcommon.Address {
 	return c.broadcasterAddr
 }
 
-func (c *BasicClaimManager) CanClaim() (bool, error) {
-	// A transcoder can claim if:
-	// - There are unclaimed segments
-	// - If the on-chain job explicitly stores the transcoder's address OR the transcoder was assigned but did not make the first claim and it is within the first 230 blocks of the job's creation block
+func (c *BasicClaimManager) CanClaim(currentBlockNum *big.Int, job *ethTypes.Job) (bool, error) {
+	// A transcoder can claim if there are unclaimed segments
 	if len(c.unclaimedSegs) == 0 {
 		return false, nil
 	}
 
-	job, err := c.client.GetJob(c.jobID)
-	if err != nil {
-		return false, err
-	}
-
-	blknum, err := c.client.LatestBlockNum()
-	if err != nil {
-		return false, err
-	}
-
-	if job.TranscoderAddress == c.client.Account().Address || blknum.Cmp(new(big.Int).Add(job.CreationBlock, BlocksUntilFirstClaimDeadline)) != 1 {
+	// A transcoder can claim if the first claim for the job has been submitted or we are within the 256 blocks of the job creation block
+	if job.FirstClaimSubmitted || currentBlockNum.Cmp(new(big.Int).Add(job.CreationBlock, big.NewInt(256))) <= 0 {
 		return true, nil
 	} else {
 		return false, nil
 	}
-}
-
-func (c *BasicClaimManager) DidFirstClaim() bool {
-	return c.claims > 0
 }
 
 //AddReceipt adds a claim for a given video segment.
@@ -398,11 +397,14 @@ func (c *BasicClaimManager) ClaimVerifyAndDistributeFees() error {
 			}
 
 			// Wait one block for claimBlock + 1 to be mined
-			Wait(b, RpcTimeout, big.NewInt(1))
+			if err := Wait(c.db, big.NewInt(1)); err != nil {
+				c.setClaimStatus(claimID, "FAIL Waiting for post claim block "+err.Error())
+				return
+			}
 
 			plusOneBlk, err := b.BlockByNumber(context.Background(), new(big.Int).Add(claim.ClaimBlock, big.NewInt(1)))
 			if err != nil {
-				c.setClaimStatus(claimID, "FAIL waiting for block :"+err.Error())
+				c.setClaimStatus(claimID, "FAIL Getting post claim block "+err.Error())
 				return
 			}
 
@@ -477,13 +479,10 @@ func (c *BasicClaimManager) distributeFees(claimID int64) error {
 		return err
 	}
 
-	b, err := c.client.Backend()
-	if err != nil {
-		c.setClaimStatus(claimID, "FAIL Distribute backend "+err.Error())
+	if err := Wait(c.db, new(big.Int).Add(verificationPeriod, slashingPeriod)); err != nil {
+		c.setClaimStatus(claimID, "FAIL Wait through verification and slashing period "+err.Error())
 		return err
 	}
-
-	Wait(b, RpcTimeout, new(big.Int).Add(verificationPeriod, slashingPeriod))
 
 	tx, err := c.client.DistributeFees(c.jobID, big.NewInt(claimID))
 	if err != nil {

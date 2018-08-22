@@ -8,167 +8,226 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/ethereum/go-ethereum"
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 )
 
 var (
 	ErrJobServiceStarted  = fmt.Errorf("job service already started")
 	ErrJobServicedStopped = fmt.Errorf("job service already stopped")
+
+	CheckFirstClaimPollingInterval = time.Second * 15
 )
 
 type JobService struct {
-	eventMonitor eth.EventMonitor
 	node         *core.LivepeerNode
-	sub          ethereum.Subscription
-	logsCh       chan types.Log
+	working      bool
+	cancelWorker context.CancelFunc
+	resubscribe  bool
 }
 
-func NewJobService(eventMonitor eth.EventMonitor, node *core.LivepeerNode) *JobService {
+func NewJobService(node *core.LivepeerNode) *JobService {
 	return &JobService{
-		eventMonitor: eventMonitor,
-		node:         node,
+		node:        node,
+		resubscribe: true,
 	}
+}
+
+func (s *JobService) RestartTranscoder() error {
+	return eth.RecoverClaims(s.node.Eth, s.node.Ipfs, s.node.Database)
 }
 
 func (s *JobService) Start(ctx context.Context) error {
-	if s.sub != nil {
+	if s.working {
 		return ErrJobServiceStarted
 	}
 
-	logsCh := make(chan types.Log)
-	sub, err := s.eventMonitor.SubscribeNewJob(ctx, "NewJob", logsCh, common.Address{}, func(l types.Log) (bool, error) {
-		jid := parseNewJobLog(l)
-		if jid == nil {
-			// Return true to ignore this log and continue monitoring for new jobs
-			return true, errors.New("InvalidJobLog")
-		}
+	ctx, cancel := context.WithCancel(ctx)
+	s.cancelWorker = cancel
 
-		var job *lpTypes.Job
-		getJob := func() error {
-			j, err := s.node.Eth.GetJob(jid)
-			if err != nil || j == nil {
-				glog.Errorf("Unable to get job %v, try again. Error: %v", jid, err)
-				return err
-			}
-			if j.StreamId == "" {
-				glog.Errorf("Got empty job for id:%v. Should try again.", jid.Int64())
-				return errors.New("ErrGetJob")
-			}
-			assignedAddr, err := s.node.Eth.AssignedTranscoder(j)
-			if err != nil {
-				glog.Errorf("Error checking for job %v assignment: %v", jid, err)
-				return err
-			}
-			j.TranscoderAddress = assignedAddr
-			job = j
-			return err
-		}
-		if err := backoff.Retry(getJob, backoff.NewConstantBackOff(time.Second*2)); err != nil {
-			glog.Errorf("Error getting job info: %v", err)
-			return false, err
-		}
-
-		if job.TranscoderAddress == s.node.Eth.Account().Address {
-			dbjob := lpcommon.NewDBJob(
-				job.JobId, job.StreamId,
-				job.MaxPricePerSegment, job.Profiles,
-				job.BroadcasterAddress, s.node.Eth.Account().Address,
-				job.CreationBlock, job.EndBlock)
-			s.node.Database.InsertJob(dbjob)
-			s.firstClaim(job)
-		}
-		return true, nil
-	})
-
-	if err != nil {
+	if err := s.processHistoricalEvents(ctx); err != nil {
 		return err
 	}
 
-	s.logsCh = logsCh
-	s.sub = sub
+	go func() {
+		var (
+			newJobSink = make(chan *contracts.JobsManagerNewJob)
+			newJobSub  ethereum.Subscription
+			err        error
+		)
+
+		for {
+			if s.resubscribe {
+				newJobSub, err = s.node.Eth.WatchForNewJob(true, newJobSink)
+				if err != nil {
+					glog.Error(err)
+				} else {
+					s.resubscribe = false
+				}
+			}
+
+			select {
+			case newJob := <-newJobSink:
+				if err = s.processNewJob(ctx, newJob); err != nil {
+					glog.Error(err)
+				}
+			case newJobErr := <-newJobSub.Err():
+				newJobSub.Unsubscribe()
+				s.resubscribe = true
+
+				glog.Error("Error with NewJob subscription ", newJobErr)
+			case <-ctx.Done():
+				newJobSub.Unsubscribe()
+
+				glog.Error("Received cancellation from job service; stopping")
+
+				return
+			}
+		}
+	}()
 
 	return nil
 }
 
 func (s *JobService) Stop() error {
-	if s.sub == nil {
+	if !s.working {
 		return ErrJobServicedStopped
 	}
 
-	close(s.logsCh)
-	s.sub.Unsubscribe()
-
-	s.logsCh = nil
-	s.sub = nil
+	s.cancelWorker()
+	s.working = false
 
 	return nil
 }
 
 func (s *JobService) IsWorking() bool {
-	return s.sub != nil
+	return s.working
 }
 
-func (s *JobService) RestartTranscoder() error {
-
-	return eth.RecoverClaims(s.node.Eth, s.node.Ipfs, s.node.Database)
-}
-
-func (s *JobService) firstClaim(job *lpTypes.Job) {
+func (s *JobService) firstClaim(ctx context.Context, job *lpTypes.Job) error {
 	cm, err := s.node.GetClaimManager(job)
 	if err != nil {
-		glog.Error("Could not get claim manager: ", err)
-		return
+		return err
 	}
-	firstClaimBlock := new(big.Int).Add(job.CreationBlock, eth.BlocksUntilFirstClaimDeadline)
-	headersCh := make(chan *types.Header)
-	sub, err := s.eventMonitor.SubscribeNewBlock(context.Background(), fmt.Sprintf("FirstClaimForJob%v", job.JobId), headersCh, func(h *types.Header) (bool, error) {
-		if cm.DidFirstClaim() {
-			// If the first claim has already been made then exit
-			return false, nil
-		}
 
-		// Check if current block is job creation block + 230
-		if h.Number.Cmp(firstClaimBlock) != -1 {
-			glog.Infof("Making the first claim")
+	tickCh := time.NewTicker(CheckFirstClaimPollingInterval).C
 
-			canClaim, err := cm.CanClaim()
-			if err != nil {
-				return false, err
-			}
-
-			if canClaim {
-				err := cm.ClaimVerifyAndDistributeFees()
+	go func() {
+		for {
+			select {
+			case <-tickCh:
+				lastSeenBlock, err := s.node.Database.LastSeenBlock()
 				if err != nil {
-					return false, err
-				} else {
-					// If this claim was successful then the first claim has been made - exit
-					return false, nil
+					glog.Error("Error getting last seen block ", err)
+					continue
 				}
-			} else {
-				glog.Infof("No segments to claim")
-				// If there are no segments to claim at this point just stop watching
-				return false, nil
+
+				firstClaimBlock := new(big.Int).Add(job.CreationBlock, eth.BlocksUntilFirstClaimDeadline)
+
+				// Check if we should submit the first claim
+				if lastSeenBlock.Cmp(firstClaimBlock) >= 0 {
+					canClaim, err := cm.CanClaim(lastSeenBlock, job)
+					if err != nil {
+						glog.Errorf("Error checking if the transcoder can claim ", err)
+						continue
+					}
+
+					if canClaim {
+						err := cm.ClaimVerifyAndDistributeFees()
+						if err != nil {
+							glog.Errorf("Error executing first claim process ", err)
+							continue
+						}
+
+						glog.Infof("Executed first claim process for job %v", job.JobId)
+					}
+
+					return
+				}
+			case <-ctx.Done():
+				return
 			}
-		} else {
-			return true, nil
 		}
-	})
-	if err == nil {
-		sub.Unsubscribe()
-	}
+	}()
+
+	return nil
 }
 
-func parseNewJobLog(log types.Log) (jid *big.Int) {
-	if len(log.Data) < 32 {
-		glog.Error("Malformed job event log!")
+func (s *JobService) processNewJob(ctx context.Context, newJob *contracts.JobsManagerNewJob) error {
+	var job *lpTypes.Job
+
+	getJob := func() error {
+		j, err := s.node.Eth.GetJob(newJob.JobId)
+		if err != nil || j == nil {
+			return err
+		}
+		if j == nil {
+			glog.Errorf("Unable to get job %v. Should try again.", newJob.JobId)
+			return errors.New("ErrGetJob")
+		}
+		if j.StreamId == "" {
+			glog.Errorf("Got job %v with empty stream ID. Should try again.", newJob.JobId)
+			return errors.New("ErrGetJob")
+		}
+
+		job = j
+
+		if (job.TranscoderAddress == common.Address{}) {
+			transcoderAddress, err := s.node.Eth.AssignedTranscoder(job)
+			if err != nil {
+				return err
+			}
+
+			job.TranscoderAddress = transcoderAddress
+		}
+
 		return nil
 	}
-	return new(big.Int).SetBytes(log.Data[0:32])
+
+	if err := backoff.Retry(getJob, backoff.NewConstantBackOff(time.Second*2)); err != nil {
+		glog.Errorf("Error getting job info: %v", err)
+		return err
+	}
+
+	if job.TranscoderAddress == s.node.Eth.Account().Address {
+		dbjob := lpcommon.NewDBJob(
+			job.JobId, job.StreamId,
+			job.MaxPricePerSegment, job.Profiles,
+			job.BroadcasterAddress, job.TranscoderAddress,
+			job.CreationBlock, job.EndBlock)
+		if err := s.node.Database.InsertJob(dbjob); err != nil {
+			return err
+		}
+
+		if err := s.firstClaim(ctx, job); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *JobService) processHistoricalEvents(ctx context.Context) error {
+	startBlock, err := s.node.Database.LastSeenBlock()
+	if err != nil {
+		return err
+	}
+
+	if err := s.node.Eth.ProcessHistoricalNewJob(startBlock, true, func(newJob *contracts.JobsManagerNewJob) error {
+		if err := s.processNewJob(ctx, newJob); err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }

@@ -83,18 +83,19 @@ type TokenPools struct {
 }
 
 type Job struct {
-	JobId              *big.Int
-	StreamId           string
-	Profiles           []ffmpeg.VideoProfile
-	MaxPricePerSegment *big.Int
-	BroadcasterAddress common.Address
-	TranscoderAddress  common.Address
-	CreationRound      *big.Int
-	CreationBlock      *big.Int
-	EndBlock           *big.Int
-	Escrow             *big.Int
-	TotalClaims        *big.Int
-	Status             string
+	JobId               *big.Int
+	StreamId            string
+	Profiles            []ffmpeg.VideoProfile
+	MaxPricePerSegment  *big.Int
+	BroadcasterAddress  common.Address
+	TranscoderAddress   common.Address
+	CreationRound       *big.Int
+	CreationBlock       *big.Int
+	EndBlock            *big.Int
+	Escrow              *big.Int
+	TotalClaims         *big.Int
+	Status              string
+	FirstClaimSubmitted bool
 }
 
 func ParseJobStatus(s uint8) (string, error) {

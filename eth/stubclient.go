@@ -183,6 +183,12 @@ func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
 func (c *StubClient) WatchForJob(j string) (*lpTypes.Job, error) {
 	return c.JobsMap[j], c.WatchJobError
 }
+func (c *StubClient) ProcessHistoricalNewJob(*big.Int, bool, func(*contracts.JobsManagerNewJob) error) error {
+	return nil
+}
+func (c *StubClient) WatchForNewJob(bool, chan *contracts.JobsManagerNewJob) (ethereum.Subscription, error) {
+	return nil, nil
+}
 func (c *StubClient) ProcessHistoricalUnbond(*big.Int, func(*contracts.BondingManagerUnbond) error) error {
 	return nil
 }

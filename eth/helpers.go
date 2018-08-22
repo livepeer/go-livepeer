@@ -1,19 +1,18 @@
 package eth
 
 import (
-	"context"
 	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
+	lpcommon "github.com/livepeer/go-livepeer/common"
 )
 
 var (
-	BlocksUntilFirstClaimDeadline = big.NewInt(230)
+	BlocksUntilFirstClaimDeadline = big.NewInt(200)
 )
 
 func VerifySig(addr common.Address, msg, sig []byte) bool {
@@ -86,24 +85,34 @@ func FromPerc(perc float64) *big.Int {
 	return big.NewInt(int64(value))
 }
 
-func Wait(backend *ethclient.Client, rpcTimeout time.Duration, blocks *big.Int) error {
-	ctx, _ := context.WithTimeout(context.Background(), rpcTimeout)
+func Wait(db *lpcommon.DB, blocks *big.Int) error {
+	var (
+		lastSeenBlock *big.Int
+		err           error
+	)
 
-	block, err := backend.BlockByNumber(ctx, nil)
+	lastSeenBlock, err = db.LastSeenBlock()
 	if err != nil {
 		return err
 	}
 
-	targetBlockNum := new(big.Int).Add(block.Number(), blocks)
+	targetBlock := new(big.Int).Add(lastSeenBlock, blocks)
+	tickCh := time.NewTicker(15 * time.Second).C
 
 	glog.Infof("Waiting %v blocks...", blocks)
 
-	for block.Number().Cmp(targetBlockNum) == -1 {
-		ctx, _ = context.WithTimeout(context.Background(), rpcTimeout)
+	for {
+		select {
+		case <-tickCh:
+			if lastSeenBlock.Cmp(targetBlock) >= 0 {
+				return nil
+			}
 
-		block, err = backend.BlockByNumber(ctx, nil)
-		if err != nil {
-			return err
+			lastSeenBlock, err = db.LastSeenBlock()
+			if err != nil {
+				glog.Error("Error getting last seen block ", err)
+				continue
+			}
 		}
 	}
 
