@@ -238,7 +238,6 @@ func main() {
 
 	//Create Livepeer Node
 	if *monitor {
-		glog.Info("Monitor is set to 'true' by default.  If you want to disable it, use -monitor=false when starting Livepeer.")
 		glog.Infof("Monitoring endpoint: %s", *monhost)
 		lpmon.Enabled = true
 		lpmon.SetURL(*monhost)
