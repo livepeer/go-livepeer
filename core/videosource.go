@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -111,8 +112,8 @@ func (c *BasicVideoSource) EvictHLSMasterPlaylist(manifestID ManifestID) {
 	mpl := c.masterPList[manifestID]
 	if mpl != nil {
 		for _, variant := range mpl.Variants {
-			if len(variant.URI) > 5 {
-				streamID := variant.URI[:len(variant.URI)-5] // remove .m3u8 from end
+			if strings.Contains(variant.URI, ".m3u8") {
+				streamID := strings.Replace(variant.URI, ".m3u8", "", -1) // remove .m3u8 from end
 				c.DeleteCache(StreamID(streamID))
 			}
 		}
