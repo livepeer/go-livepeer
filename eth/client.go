@@ -115,6 +115,8 @@ type LivepeerEthClient interface {
 
 	// Events
 	WatchForJob(string) (*lpTypes.Job, error)
+	ProcessHistoricalNewJob(*big.Int, bool, func(*contracts.JobsManagerNewJob) error) error
+	WatchForNewJob(bool, chan *contracts.JobsManagerNewJob) (ethereum.Subscription, error)
 	ProcessHistoricalUnbond(*big.Int, func(*contracts.BondingManagerUnbond) error) error
 	WatchForUnbond(chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error)
 	ProcessHistoricalRebond(*big.Int, func(*contracts.BondingManagerRebond) error) error
@@ -792,6 +794,9 @@ func (c *client) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
 		Escrow:             jInfo.Escrow,
 		TotalClaims:        jInfo.TotalClaims,
 		Status:             status,
+		// If the job returned from the contract does not have a transcoder address,
+		// the first claim has not been submitted by the assigned transcoder yet
+		FirstClaimSubmitted: jInfo.TranscoderAddress != ethcommon.Address{},
 	}, nil
 }
 
@@ -1069,6 +1074,56 @@ func (c *client) LatestBlockNum() (*big.Int, error) {
 		return nil, err
 	}
 	return blk.Number, nil
+}
+
+func (c *client) ProcessHistoricalNewJob(startBlock *big.Int, isTranscoder bool, cb func(*contracts.JobsManagerNewJob) error) error {
+	// Retrieve historical jobs starting from startBlock
+	// WatchForNewJob() will not emit past logs
+	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
+
+	var broadcaster []ethcommon.Address
+	if !isTranscoder {
+		broadcaster = []ethcommon.Address{c.Account().Address}
+	}
+
+	it, err := c.JobsManagerSession.Contract.JobsManagerFilterer.FilterNewJob(filterOpts, broadcaster)
+	if err != nil {
+		return err
+	}
+
+	for it.Next() {
+		if err := cb(it.Event); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *client) WatchForNewJob(isTranscoder bool, sink chan *contracts.JobsManagerNewJob) (ethereum.Subscription, error) {
+	var (
+		sub ethereum.Subscription
+		err error
+	)
+
+	var broadcaster []ethcommon.Address
+	if !isTranscoder {
+		broadcaster = []ethcommon.Address{c.Account().Address}
+	}
+
+	newJobWatcher := func() error {
+		sub, err = c.JobsManagerSession.Contract.JobsManagerFilterer.WatchNewJob(nil, sink, broadcaster)
+		if err != nil {
+			glog.Error("Unable to start NewJob watcher ", err)
+			return err
+		}
+
+		return nil
+	}
+
+	err = backoff.Retry(newJobWatcher, backoff.NewConstantBackOff(time.Second*2))
+
+	return sub, err
 }
 
 func (c *client) ProcessHistoricalUnbond(startBlock *big.Int, cb func(*contracts.BondingManagerUnbond) error) error {

@@ -388,7 +388,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	n.EthServices["RewardService"] = rs
 
 	// Create job service to listen for new jobs and transcode if assigned to the job
-	js := eventservices.NewJobService(em, n)
+	js := eventservices.NewJobService(n)
 	n.EthServices["JobService"] = js
 
 	// Restart jobs as necessary
