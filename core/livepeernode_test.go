@@ -24,10 +24,9 @@ func (cm *StubClaimManager) AddReceipt(seqNo int64, fname string, data []byte, b
 	cm.receiptAdded = true
 	return []byte{}, nil
 }
-func (cm *StubClaimManager) SufficientBroadcasterDeposit() (bool, error) { return true, nil }
-func (cm *StubClaimManager) ClaimVerifyAndDistributeFees() error         { return nil }
-func (cm *StubClaimManager) DidFirstClaim() bool                         { return false }
-func (cm *StubClaimManager) CanClaim() (bool, error)                     { return true, nil }
+func (cm *StubClaimManager) SufficientBroadcasterDeposit() (bool, error)   { return true, nil }
+func (cm *StubClaimManager) ClaimVerifyAndDistributeFees() error           { return nil }
+func (cm *StubClaimManager) CanClaim(*big.Int, *lpTypes.Job) (bool, error) { return true, nil }
 
 type StubTranscoder struct {
 	Profiles      []ffmpeg.VideoProfile

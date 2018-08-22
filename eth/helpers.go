@@ -105,7 +105,7 @@ func Wait(db *lpcommon.DB, blocks *big.Int) error {
 		select {
 		case <-tickCh:
 			if lastSeenBlock.Cmp(targetBlock) >= 0 {
-				break
+				return nil
 			}
 
 			lastSeenBlock, err = db.LastSeenBlock()
