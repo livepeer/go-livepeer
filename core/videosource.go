@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -107,6 +108,17 @@ func (c *BasicVideoSource) UpdateHLSMasterPlaylist(manifestID ManifestID, mpl *m
 }
 
 func (c *BasicVideoSource) EvictHLSMasterPlaylist(manifestID ManifestID) {
+	c.masterPLock.Lock()
+	mpl := c.masterPList[manifestID]
+	if mpl != nil {
+		for _, variant := range mpl.Variants {
+			if strings.Contains(variant.URI, ".m3u8") {
+				streamID := strings.Replace(variant.URI, ".m3u8", "", -1) // remove .m3u8 from end
+				c.DeleteCache(StreamID(streamID))
+			}
+		}
+	}
+	c.masterPLock.Unlock()
 	c.UpdateHLSMasterPlaylist(manifestID, nil)
 }
 
