@@ -198,6 +198,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 		s.VideoNonceLock.Unlock()
 
+		jobStreamId := ""
 		startSeq := 0
 		manifest := m3u8.NewMasterPlaylist()
 		var jobId *big.Int
@@ -241,6 +242,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					if err == nil {
 						startSeq = int(b.Segments) + 1
 						jobId = big.NewInt(b.ID)
+						jobStreamId = job.StreamId
 						if monitor.Enabled {
 							monitor.LogJobReusedEvent(job, startSeq, nonce)
 						}
@@ -304,9 +306,14 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			glog.V(common.SHORT).Infof("Cannot automatically detect the video profile - setting it to %v", vProfile)
 		}
 
-		//Create a new HLS StreamID.  If streamID is passed in, use that one.  Otherwise, generate a random ID.
+		//Create a HLS StreamID
+		//If streamID is passed in, use that one
+		//Else if we are reusing an active broadcast, use the old streamID
+		//Else generate a random ID
 		hlsStrmID := core.StreamID(url.Query().Get("hlsStrmID"))
-		if hlsStrmID == "" {
+		if hlsStrmID == "" && jobId != nil && jobStreamId != "" {
+			hlsStrmID = core.StreamID(jobStreamId)
+		} else if hlsStrmID == "" {
 			hlsStrmID, err = core.MakeStreamID(core.RandomVideoID(), vProfile.Name)
 			if err != nil {
 				glog.Errorf("Error making stream ID")
