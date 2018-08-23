@@ -34,5 +34,5 @@ func (w *wizard) withdraw() {
 	// We don't run str2eth here to facilitate copy-pasting
 	fmt.Printf("Current deposit in Wei: %v\n", w.getDeposit())
 
-	httpPost(fmt.Sprintf("http://%v:%v/withdrawDeposit", w.host, w.httpPort))
+	fmt.Println(httpPost(fmt.Sprintf("http://%v:%v/withdrawDeposit", w.host, w.httpPort)))
 }

@@ -774,16 +774,20 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			tx, err := s.LivepeerNode.Eth.Withdraw()
 			if err != nil {
 				glog.Error(err)
+				w.Write([]byte(err.Error()))
 				return
 			}
 
 			err = s.LivepeerNode.Eth.CheckTx(tx)
 			if err != nil {
 				glog.Error(err)
+				w.Write([]byte(err.Error()))
 				return
 			}
 
-			glog.Infof("Withdrew deposit")
+			mes := "Withdrew deposit"
+			glog.Infof(mes)
+			w.Write([]byte(mes))
 		}
 	})
 
