@@ -42,6 +42,11 @@ var (
 	ErrMissingBackend     = fmt.Errorf("missing Ethereum client backend")
 )
 
+type BroadcasterEthInfo struct {
+	Deposit       *big.Int
+	WithdrawBlock *big.Int
+}
+
 type LivepeerEthClient interface {
 	Setup(password string, gasLimit uint64, gasPrice *big.Int) error
 	Account() accounts.Account
@@ -92,7 +97,7 @@ type LivepeerEthClient interface {
 	Withdraw() (*types.Transaction, error)
 	GetJob(jobID *big.Int) (*lpTypes.Job, error)
 	GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, error)
-	BroadcasterDeposit(broadcaster ethcommon.Address) (*big.Int, error)
+	Broadcaster(broadcaster ethcommon.Address) (*BroadcasterEthInfo, error)
 	NumJobs() (*big.Int, error)
 
 	// Parameters
@@ -599,18 +604,42 @@ func (c *client) Deposit(amount *big.Int) (*types.Transaction, error) {
 	return tx, err
 }
 
+func (c *client) Withdraw() (*types.Transaction, error) {
+	b, err := c.Broadcaster(c.Account().Address)
+	if err != nil || b.WithdrawBlock == nil {
+		glog.Errorf("Error fetching broadcaster info: %v", err)
+		return nil, err
+	}
+	withdrawBlock := b.WithdrawBlock
+
+	latest, err := c.LatestBlockNum()
+	if err != nil {
+		glog.Errorf("Error fetching latest block: %v", latest)
+		return nil, err
+	}
+
+	if withdrawBlock.Cmp(latest) > 0 {
+		return nil, errors.New(fmt.Sprintf("Error: withdraw block (%v) is later than current block (%v).", withdrawBlock.String(), latest.String()))
+	} else {
+		return c.JobsManagerSession.Withdraw()
+	}
+}
+
 // Disambiguate between the Verifiy method in JobsManager and in Verifier
 func (c *client) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error) {
 	return c.JobsManagerSession.Verify(jobId, claimId, segmentNumber, dataStorageHash, dataHashes, broadcasterSig, proof)
 }
 
-func (c *client) BroadcasterDeposit(addr ethcommon.Address) (*big.Int, error) {
+func (c *client) Broadcaster(addr ethcommon.Address) (*BroadcasterEthInfo, error) {
 	b, err := c.Broadcasters(addr)
 	if err != nil {
 		return nil, err
 	}
 
-	return b.Deposit, nil
+	return &BroadcasterEthInfo{
+		Deposit:       b.Deposit,
+		WithdrawBlock: b.WithdrawBlock,
+	}, nil
 }
 
 func (c *client) IsActiveTranscoder() (bool, error) {

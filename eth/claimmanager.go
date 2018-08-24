@@ -231,7 +231,7 @@ func (c *BasicClaimManager) AddReceipt(seqNo int64,
 }
 
 func (c *BasicClaimManager) SufficientBroadcasterDeposit() (bool, error) {
-	bDeposit, err := c.client.BroadcasterDeposit(c.broadcasterAddr)
+	b, err := c.client.Broadcaster(c.broadcasterAddr)
 	if err != nil {
 		glog.Errorf("Error getting broadcaster deposit: %v", err)
 		return false, err
@@ -239,7 +239,7 @@ func (c *BasicClaimManager) SufficientBroadcasterDeposit() (bool, error) {
 
 	//If broadcaster does not have enough for a segment, return false
 	//If broadcaster has enough for at least one transcoded segment, return true
-	currDeposit := new(big.Int).Sub(bDeposit, c.cost)
+	currDeposit := new(big.Int).Sub(b.Deposit, c.cost)
 	if new(big.Int).Sub(currDeposit, new(big.Int).Mul(big.NewInt(int64(len(c.profiles))), c.pricePerSegment)).Cmp(big.NewInt(0)) == -1 {
 		return false, nil
 	} else {

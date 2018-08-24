@@ -128,10 +128,19 @@ func (w *wizard) broadcastStats() {
 	price, transcodingOptions := w.getBroadcastConfig()
 
 	table := tablewriter.NewWriter(os.Stdout)
-	data := [][]string{
-		[]string{"Deposit", w.getDeposit()},
-		[]string{"Broadcast Price Per Segment in Wei", price.String()},
-		[]string{"Broadcast Transcoding Options", transcodingOptions},
+	b, err := w.getBroadcaster()
+	var data [][]string
+	if err != nil {
+		data = [][]string{
+			[]string{"error", err.Error()},
+		}
+	} else {
+		data = [][]string{
+			[]string{"Deposit", b["deposit"]},
+			[]string{"Withdraw Block", fmt.Sprintf("%v (current - %v)", b["withdrawBlock"], w.latestBlock())},
+			[]string{"Broadcast Price Per Segment in Wei", price.String()},
+			[]string{"Broadcast Transcoding Options", transcodingOptions},
+		}
 	}
 
 	for _, v := range data {
@@ -325,12 +334,27 @@ func (w *wizard) getEthBalance() string {
 	return e
 }
 
-func (w *wizard) getDeposit() string {
-	e := httpGet(fmt.Sprintf("http://%v:%v/broadcasterDeposit", w.host, w.httpPort))
-	if e == "" {
-		e = "Unknown"
+func (w *wizard) getBroadcaster() (map[string]string, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/broadcaster", w.host, w.httpPort))
+	if err != nil {
+		glog.Errorf("Error getting broadcaster info.")
+		return nil, err
 	}
-	return e
+	defer resp.Body.Close()
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		glog.Errorf("Error reading broadcaster info %v", err)
+		return nil, err
+	}
+
+	var ret map[string]string
+	err = json.Unmarshal(result, &ret)
+	if err != nil {
+		glog.Errorf("Error parsing broadcaster info %v", err)
+		return nil, err
+	}
+
+	return ret, nil
 }
 
 func (w *wizard) getBroadcastConfig() (*big.Int, string) {
@@ -434,4 +458,8 @@ func (w *wizard) getGasPrice() string {
 		g = "automatic"
 	}
 	return g
+}
+
+func (w *wizard) latestBlock() string {
+	return httpGet(fmt.Sprintf("http://%v:%v/latestBlock", w.host, w.httpPort))
 }

@@ -781,7 +781,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		if s.LivepeerNode.Eth != nil {
 			tx, err := s.LivepeerNode.Eth.Withdraw()
 			if err != nil {
-				glog.Error(err)
+				w.Write([]byte(err.Error()))
 				return
 			}
 
@@ -1063,15 +1063,26 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 	})
 
-	mux.HandleFunc("/broadcasterDeposit", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/broadcaster", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			b, err := s.LivepeerNode.Eth.BroadcasterDeposit(s.LivepeerNode.Eth.Account().Address)
-			if err != nil {
-				glog.Error(err)
-				w.Write([]byte(""))
-			} else {
-				w.Write([]byte(b.String()))
+			b, err := s.LivepeerNode.Eth.Broadcaster(s.LivepeerNode.Eth.Account().Address)
+
+			if err != nil || b.Deposit == nil || b.WithdrawBlock == nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
 			}
+
+			ret := make(map[string]string, 0)
+			ret["deposit"] = b.Deposit.String()
+			ret["withdrawBlock"] = b.WithdrawBlock.String()
+			js, err := json.Marshal(ret)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(js)
 		}
 	})
 
@@ -1225,6 +1236,16 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		glimit, _ := s.LivepeerNode.Eth.GetGasInfo()
 		if err := s.LivepeerNode.Eth.SetGasInfo(glimit, gprice); err != nil {
 			glog.Errorf("Error setting price info: %v", err)
+		}
+	})
+
+	mux.HandleFunc("/latestBlock", func(w http.ResponseWriter, r *http.Request) {
+		b, err := s.LivepeerNode.Database.LastSeenBlock()
+		if err != nil {
+			glog.Errorf("Error getting latest block number - %v", err)
+			w.Write([]byte("0"))
+		} else {
+			w.Write([]byte(b.String()))
 		}
 	})
 

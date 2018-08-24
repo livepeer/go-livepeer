@@ -148,8 +148,8 @@ func (c *StubClient) Deposit(amount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
 func (c *StubClient) Withdraw() (*types.Transaction, error) { return nil, nil }
-func (c *StubClient) BroadcasterDeposit(broadcaster common.Address) (*big.Int, error) {
-	return big.NewInt(10), nil
+func (c *StubClient) Broadcaster(broadcaster common.Address) (*BroadcasterEthInfo, error) {
+	return nil, nil
 }
 func (e *StubClient) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
 	return e.JobsMap[jobID.String()], nil

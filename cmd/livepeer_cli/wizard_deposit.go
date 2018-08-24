@@ -18,7 +18,12 @@ func str2eth(v string) string {
 }
 
 func (w *wizard) deposit() {
-	fmt.Printf("Current deposit: %v\n", str2eth(w.getDeposit()))
+	b, err := w.getBroadcaster()
+	if err != nil {
+		fmt.Printf("Error getting deposit: %v", err)
+	} else {
+		fmt.Printf("Current deposit: %v\n", str2eth(b["deposit"]))
+	}
 	fmt.Printf("Current balance: %v\n", str2eth(w.getEthBalance()))
 	fmt.Printf("Enter Deposit Amount in Wei - ")
 	amount := w.readBigInt()
@@ -32,7 +37,15 @@ func (w *wizard) deposit() {
 
 func (w *wizard) withdraw() {
 	// We don't run str2eth here to facilitate copy-pasting
-	fmt.Printf("Current deposit in Wei: %v\n", w.getDeposit())
+	b, err := w.getBroadcaster()
+	if err != nil {
+		fmt.Printf("Error getting deposit: %v", err)
+	} else {
+		fmt.Printf("Current deposit in Wei: %v\n", b["deposit"])
+	}
 
-	httpPost(fmt.Sprintf("http://%v:%v/withdrawDeposit", w.host, w.httpPort))
+	ret := httpPost(fmt.Sprintf("http://%v:%v/withdrawDeposit", w.host, w.httpPort))
+	if ret != "" {
+		fmt.Println(ret)
+	}
 }
