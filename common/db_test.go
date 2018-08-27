@@ -1,7 +1,6 @@
 package common
 
 import (
-	"database/sql"
 	"fmt"
 	"math/big"
 	"testing"
@@ -12,27 +11,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func dbPath(t *testing.T) string {
-	return fmt.Sprintf("file:%s?mode=memory&cache=shared&_foreign_keys=1", t.Name())
-}
-
-func tempDB(t *testing.T) (*DB, *sql.DB, error) {
-	dbpath := dbPath(t)
-	dbh, err := InitDB(dbpath)
-	if err != nil {
-		t.Error("Unable to initialize DB ", err)
-		return nil, nil, err
-	}
-	raw, err := sql.Open("sqlite3", dbpath)
-	if err != nil {
-		t.Error("Unable to open raw sqlite db ", err)
-		return nil, nil, err
-	}
-	return dbh, raw, nil
-}
-
 func TestDBLastSeenBlock(t *testing.T) {
-	dbh, dbraw, err := tempDB(t)
+	dbh, dbraw, err := TempDB(t)
 	if err != nil {
 		return
 	}
@@ -89,7 +69,7 @@ func TestDBLastSeenBlock(t *testing.T) {
 }
 
 func TestDBVersion(t *testing.T) {
-	dbh, dbraw, err := tempDB(t)
+	dbh, dbraw, err := TempDB(t)
 	if err != nil {
 		return
 	}
@@ -147,7 +127,7 @@ func profilesMatch(j1 []ffmpeg.VideoProfile, j2 []ffmpeg.VideoProfile) bool {
 }
 
 func TestDBJobs(t *testing.T) {
-	dbh, dbraw, err := tempDB(t)
+	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
 	j := NewStubJob()
@@ -180,7 +160,7 @@ func TestDBJobs(t *testing.T) {
 }
 
 func TestDBReceipts(t *testing.T) {
-	dbh, dbraw, err := tempDB(t)
+	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
 	jid := big.NewInt(0)
@@ -270,7 +250,7 @@ func TestDBReceipts(t *testing.T) {
 }
 
 func TestDBClaims(t *testing.T) {
-	dbh, dbraw, err := tempDB(t)
+	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
 
@@ -381,7 +361,7 @@ func TestDBClaims(t *testing.T) {
 }
 
 func TestDBUnbondingLocks(t *testing.T) {
-	dbh, dbraw, err := tempDB(t)
+	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
 	if err != nil {

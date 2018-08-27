@@ -155,6 +155,11 @@ func (s *UnbondingService) processHistoricalEvents() error {
 		return err
 	}
 
+	//Exit early if LastSeenBlock is zero (starting with a new db)
+	if startBlock.Cmp(big.NewInt(0)) == 0 {
+		return nil
+	}
+
 	if err := s.client.ProcessHistoricalUnbond(startBlock, func(newUnbond *contracts.BondingManagerUnbond) error {
 		// Insert new unbonding lock into database
 		if err := s.db.InsertUnbondingLock(newUnbond.UnbondingLockId, newUnbond.Delegator, newUnbond.Amount, newUnbond.WithdrawRound); err != nil {
