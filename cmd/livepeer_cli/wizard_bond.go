@@ -34,7 +34,7 @@ func (w *wizard) registeredTranscoderStats() map[int]common.Address {
 	fmt.Println("+----------------------+")
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "Address", "Active", "Delegated Stake", "Reward Cut (%)", "Fee Share (%)", "Price", "Pending Reward Cut (%)", "Pending Fee Share (%)", "Pending Price"})
+	table.SetHeader([]string{"ID", "Address", "Active", "Delegated Stake", "Reward Cut (%)", "Fee Share (%)", "Price", "Pending Reward Cut (%)", "Pending Fee Share (%)", "Pending Price", "Service URI"})
 
 	for _, t := range transcoders {
 		table.Append([]string{
@@ -48,6 +48,7 @@ func (w *wizard) registeredTranscoderStats() map[int]common.Address {
 			eth.FormatPerc(t.PendingRewardCut),
 			eth.FormatPerc(t.PendingFeeShare),
 			eth.FormatUnits(t.PendingPricePerSegment, "ETH"),
+			t.ServiceURI,
 		})
 
 		transcoderIDs[nextId] = t.Address
