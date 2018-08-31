@@ -42,7 +42,9 @@ var (
 
 const RinkebyControllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
 const MainnetControllerAddr = "0xf96d54e490317c557a967abfa5d6e33006be69b3"
+const RtmpPort = "1935"
 const RpcPort = "8935"
+const CliPort = "7935"
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -53,8 +55,8 @@ func main() {
 	}
 
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
-	rtmpAddr := flag.String("rtmpAddr", "127.0.0.1:1935", "IP to bind for RTMP commands")
-	cliAddr := flag.String("cliAddr", "127.0.0.1:7935", "Address to bind for  CLI commands")
+	rtmpAddr := flag.String("rtmpAddr", "127.0.0.1:"+RtmpPort, "Address to bind for RTMP commands")
+	cliAddr := flag.String("cliAddr", "127.0.0.1:"+CliPort, "Address to bind for  CLI commands")
 	httpAddr := flag.String("httpAddr", "", "Address to bind for HTTP commands")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
@@ -225,16 +227,14 @@ func main() {
 	if n.NodeType == core.Broadcaster {
 		// default lpms listener for broadcaster; same as default rpc port
 		// TODO provide an option to disable this?
-		if "" == *httpAddr {
-			*httpAddr = "127.0.0.1:" + RpcPort
-		}
+		*rtmpAddr = defaultAddr(*rtmpAddr, "127.0.0.1", RtmpPort)
+		*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
 	} else if n.NodeType == core.Transcoder {
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
-		if "" == *httpAddr {
-			*httpAddr = ":" + n.ServiceURI.Port()
-		}
+		*httpAddr = defaultAddr(*httpAddr, "", n.ServiceURI.Port())
 	}
+	*cliAddr = defaultAddr(*cliAddr, "127.0.0.1", CliPort)
 
 	//Create Livepeer Node
 	if *monitor {
@@ -291,7 +291,7 @@ func main() {
 		glog.Infof("***Livepeer Running in Transcoder Mode***")
 	case core.Broadcaster:
 		glog.Infof("***Livepeer Running in Broadcaster Mode***")
-		glog.Infof("Video Ingest Endpoint - rtmp:/%v", *rtmpAddr)
+		glog.Infof("Video Ingest Endpoint - rtmp://%v", *rtmpAddr)
 	}
 
 	c := make(chan os.Signal)
@@ -398,4 +398,18 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	}
 
 	return nil
+}
+
+func defaultAddr(addr, defaultHost, defaultPort string) string {
+	if addr == "" {
+		return defaultHost + ":" + defaultPort
+	}
+	if addr[0] == ':' {
+		return defaultHost + addr
+	}
+	// not IPv6 safe
+	if !strings.Contains(addr, ":") {
+		return addr + ":" + defaultPort
+	}
+	return addr
 }
