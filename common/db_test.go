@@ -1,6 +1,7 @@
 package common
 
 import (
+	"database/sql"
 	"fmt"
 	"math/big"
 	"testing"
@@ -156,6 +157,32 @@ func TestDBJobs(t *testing.T) {
 	jobs, err = dbh.ActiveJobs(big.NewInt(0))
 	if err != nil || len(jobs) != 2 {
 		t.Error("Unexpected error in active jobs ", err, len(jobs))
+	}
+
+	// test getting a job
+	dbjob, err := dbh.GetJob(j.ID)
+	if err != nil {
+		t.Error("Unexpected error when fetching job ", err)
+	}
+	if dbjob.ID != j.ID || dbjob.StopReason.String != "insufficient lolz" ||
+		!profilesMatch(dbjob.profiles, j.profiles) ||
+		dbjob.Transcoder != j.Transcoder ||
+		dbjob.broadcaster != j.broadcaster ||
+		dbjob.startBlock != j.startBlock || dbjob.endBlock != j.endBlock {
+		t.Error("Job mismatch ")
+	}
+	// should be a nonexistent job
+	dbjob, err = dbh.GetJob(100)
+	if err != sql.ErrNoRows {
+		t.Error("Missing error or unexpected error", err)
+	}
+	// job with a null stop reason
+	dbjob, err = dbh.GetJob(1)
+	if err != nil {
+		t.Error("Unexpected error ", err)
+	}
+	if dbjob.StopReason.Valid {
+		t.Error("Unexpected stop reason ", dbjob.StopReason.String)
 	}
 }
 
