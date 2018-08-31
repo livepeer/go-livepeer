@@ -23,6 +23,35 @@ import (
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
+func (s *LivepeerServer) setServiceURI(serviceURI string) error {
+
+	parsedURI, err := url.Parse(serviceURI)
+	if err != nil {
+		glog.Error(err)
+		return err
+	}
+
+	glog.Infof("Storing service URI %v in service registry...", serviceURI)
+
+	tx, err := s.LivepeerNode.Eth.SetServiceURI(serviceURI)
+	if err != nil {
+		glog.Error(err)
+		return err
+	}
+
+	err = s.LivepeerNode.Eth.CheckTx(tx)
+	if err != nil {
+		glog.Error(err)
+		return err
+	}
+
+	// Avoids a restart if only the host has been changed.
+	// If the port has been changed, a restart is still needed.
+	s.LivepeerNode.ServiceURI = parsedURI
+
+	return nil
+}
+
 func (s *LivepeerServer) StartWebserver(bindAddr string) {
 
 	mux := http.NewServeMux()
@@ -279,17 +308,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 
 		if currentServiceURI != serviceURI {
-			glog.Infof("Storing service URI %v in service registry...", serviceURI)
-
-			tx, err = s.LivepeerNode.Eth.SetServiceURI(serviceURI)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			err = s.LivepeerNode.Eth.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
+			if err := s.setServiceURI(serviceURI); err != nil {
 				return
 			}
 		}
@@ -396,20 +415,9 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 
 		if t.ServiceURI != serviceURI {
-			glog.Infof("Storing service URI %v in service registry...", serviceURI)
-
-			tx, err := s.LivepeerNode.Eth.SetServiceURI(serviceURI)
-			if err != nil {
-				glog.Error(err)
+			if err := s.setServiceURI(serviceURI); err != nil {
 				return
 			}
-
-			err = s.LivepeerNode.Eth.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
 		}
 	})
 
