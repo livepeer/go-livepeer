@@ -5,17 +5,17 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
-	lpcommon "github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/common"
 )
 
 var (
 	BlocksUntilFirstClaimDeadline = big.NewInt(200)
 )
 
-func VerifySig(addr common.Address, msg, sig []byte) bool {
+func VerifySig(addr ethcommon.Address, msg, sig []byte) bool {
 	personalMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, msg)
 	personalHash := crypto.Keccak256([]byte(personalMsg))
 
@@ -85,7 +85,7 @@ func FromPerc(perc float64) *big.Int {
 	return big.NewInt(int64(value))
 }
 
-func Wait(db *lpcommon.DB, blocks *big.Int) error {
+func Wait(db *common.DB, blocks *big.Int) error {
 	var (
 		lastSeenBlock *big.Int
 		err           error
@@ -119,6 +119,6 @@ func Wait(db *lpcommon.DB, blocks *big.Int) error {
 	return nil
 }
 
-func IsNullAddress(addr common.Address) bool {
-	return addr == common.Address{}
+func IsNullAddress(addr ethcommon.Address) bool {
+	return addr == ethcommon.Address{}
 }
