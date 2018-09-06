@@ -712,6 +712,15 @@ func (db *DB) InsertClaim(jobID *big.Int, segRange [2]int64,
 	return &claimID, nil
 }
 
+func (db *DB) CountClaims(jobID *big.Int) (int64, error) {
+	var count int64
+	if err := db.countClaims.QueryRow(jobID.Int64()).Scan(&count); err != nil {
+		// no claims
+		return 0, err
+	}
+	return count, nil
+}
+
 func (db *DB) SetClaimStatus(jobID *big.Int, id int64, status string) error {
 	glog.V(DEBUG).Infof("db: Setting ClaimStatus for job %v claim %v to %v", jobID, id, status)
 	_, err := db.setClaimStatus.Exec(status, jobID.Int64(), id)

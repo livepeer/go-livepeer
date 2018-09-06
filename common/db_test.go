@@ -348,7 +348,7 @@ func TestDBClaims(t *testing.T) {
 		return
 	}
 	// Sanity check number of claims
-	var nbclaims int
+	var nbclaims int64
 	row = dbraw.QueryRow("SELECT count(*) FROM claims")
 	err = row.Scan(&nbclaims)
 	if err != nil {
@@ -384,6 +384,25 @@ func TestDBClaims(t *testing.T) {
 	if err != nil || status != s {
 		t.Errorf("Unexpected: error %v, got %v but wanted %v", err, status, s)
 		return
+	}
+
+	// Check count claims for a given job
+	nbclaims, err = dbh.CountClaims(big.NewInt(0))
+	if err != nil || nbclaims != 2 {
+		t.Errorf("Unexpected number of claims; expected 2 got %v; error %v", nbclaims, err)
+		return
+	}
+	// Check count claims for a nonexistent job
+	nbclaims, err = dbh.CountClaims(big.NewInt(-1))
+	if err != nil || nbclaims != 0 {
+		t.Errorf("Unexpected number of claims; expected 0 got %v; error %v", nbclaims, err)
+	}
+	// Check count claims for a job with no claims
+	job.ID++
+	dbh.InsertJob(job)
+	nbclaims, err = dbh.CountClaims(big.NewInt(job.ID))
+	if err != nil || nbclaims != 0 {
+		t.Errorf("Unexpected number of claims; expected 0 got %v; error %v", nbclaims, err)
 	}
 }
 
