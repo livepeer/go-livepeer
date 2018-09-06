@@ -74,8 +74,7 @@ func TestGetJob(t *testing.T) {
 	n.Database = db
 
 	sj := StubJob(n)
-	dbjob := common.NewDBJob(sj.JobId, sj.StreamId, sj.MaxPricePerSegment, sj.Profiles,
-		sj.BroadcasterAddress, sj.TranscoderAddress, sj.CreationBlock, sj.EndBlock)
+	dbjob := eth.EthJobToDBJob(sj)
 	db.InsertJob(dbjob)
 	db.InsertClaim(sj.JobId, [2]int64{1, 10}, [32]byte{})
 

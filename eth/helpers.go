@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 )
 
 var (
@@ -121,4 +122,15 @@ func Wait(db *common.DB, blocks *big.Int) error {
 
 func IsNullAddress(addr ethcommon.Address) bool {
 	return addr == ethcommon.Address{}
+}
+
+func EthJobToDBJob(job *lpTypes.Job) *common.DBJob {
+	if job == nil {
+		return nil
+	}
+	return common.NewDBJob(
+		job.JobId, job.StreamId,
+		job.MaxPricePerSegment, job.Profiles,
+		job.BroadcasterAddress, job.TranscoderAddress,
+		job.CreationBlock, job.EndBlock)
 }

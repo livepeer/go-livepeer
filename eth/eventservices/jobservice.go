@@ -11,7 +11,6 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
-	lpcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/contracts"
@@ -196,11 +195,7 @@ func (s *JobService) processNewJob(ctx context.Context, newJob *contracts.JobsMa
 	}
 
 	if job.TranscoderAddress == s.node.Eth.Account().Address {
-		dbjob := lpcommon.NewDBJob(
-			job.JobId, job.StreamId,
-			job.MaxPricePerSegment, job.Profiles,
-			job.BroadcasterAddress, job.TranscoderAddress,
-			job.CreationBlock, job.EndBlock)
+		dbjob := eth.EthJobToDBJob(job)
 		if err := s.node.Database.InsertJob(dbjob); err != nil {
 			return err
 		}
