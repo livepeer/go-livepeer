@@ -184,6 +184,13 @@ func TestDBJobs(t *testing.T) {
 	if dbjob.StopReason.Valid {
 		t.Error("Unexpected stop reason ", dbjob.StopReason.String)
 	}
+
+	// should have an invalid profile
+	dbraw.Exec("UPDATE jobs SET transcodeOptions = 'invalid' WHERE id = 1")
+	_, err = dbh.GetJob(1)
+	if err != ErrProfile {
+		t.Error("Unexpected result from invalid profile ", err)
+	}
 }
 
 func TestDBReceipts(t *testing.T) {

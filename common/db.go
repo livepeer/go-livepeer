@@ -559,7 +559,7 @@ func (db *DB) GetJob(id int64) (*DBJob, error) {
 	}
 	profiles, err := TxDataToVideoProfile(options)
 	if err != nil {
-		glog.Error("Unable to convert transcode options into ffmpeg profile ", err)
+		return nil, err
 	}
 	job.Transcoder = ethcommon.HexToAddress(transcoder)
 	job.broadcaster = ethcommon.HexToAddress(broadcaster)
