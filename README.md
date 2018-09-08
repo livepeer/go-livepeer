@@ -40,7 +40,7 @@ You can also build the executables from scratch.
 ### Quick start
 - Make sure you have successfully gone through the steps in 'Installing Livepeer' and 'Additional Dependencies'.
 
-- Run `./livepeer -rinkeby`.
+- Run `./livepeer -rinkeby -currentManifest`.
 
 - Run `./livepeer_cli`.
   * You should see a wizard launch in the command line.
@@ -69,7 +69,7 @@ Similarly, you can use OBS, and change the Settings->Stream->URL to `rtmp://loca
 
 If the broadcast is successful, you should be able to get a streamID by querying the local node's CLI API:
 
-`curl http://localhost:8935/manifestID`
+`curl http://localhost:7935/manifestID`
 
 ### Streaming
 
@@ -77,7 +77,7 @@ You can use tools like `ffplay` or `VLC` to view the stream.
 
 For example, after you get the streamID, you can view the stream by running:
 
-`ffplay http://localhost:8935/stream/{manifestID}.m3u8`
+`ffplay http://localhost:8935/stream/current.m3u8`
 
 Note that the default HTTP port or playback (8935) is different from the CLI API port (7935) that is used for node management and diagnostics!
 
