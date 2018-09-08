@@ -65,6 +65,8 @@ type LivepeerServer struct {
 	VideoNonceLock *sync.Mutex
 	HttpMux        *http.ServeMux
 
+	ExposeCurrentManifest bool
+
 	rtmpStreams                map[core.StreamID]stream.RTMPVideoStream
 	broadcastRtmpToManifestMap map[string]string
 }
@@ -502,9 +504,14 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 //HLS Play Handlers
 func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 	return func(url *url.URL) (*m3u8.MasterPlaylist, error) {
-		manifestID, err := parseManifestID(url.Path)
-		if err != nil {
-			return nil, vidplayer.ErrNotFound
+		var manifestID core.ManifestID
+		if s.ExposeCurrentManifest && "/stream/current.m3u8" == strings.ToLower(url.Path) {
+			manifestID = LastManifestID
+		} else {
+			var err error
+			if manifestID, err = parseManifestID(url.Path); err != nil {
+				return nil, vidplayer.ErrNotFound
+			}
 		}
 
 		//Just load it from the cache (it's already hooked up to the network)

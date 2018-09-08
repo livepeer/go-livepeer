@@ -59,6 +59,7 @@ func main() {
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
+	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
 	ethPassword := flag.String("ethPassword", "", "Password for existing Eth account address")
 	ethKeystorePath := flag.String("ethKeystorePath", "", "Path for the Eth Key")
@@ -268,6 +269,11 @@ func main() {
 	if err != nil {
 		glog.Errorf("Error setting max price per segment: %v", err)
 		return
+	}
+
+	if *currentManifest {
+		glog.Info("Current ManifestID will be available over ", *httpAddr)
+		s.ExposeCurrentManifest = *currentManifest
 	}
 
 	go func() {
