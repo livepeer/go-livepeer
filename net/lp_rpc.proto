@@ -74,7 +74,7 @@ message TranscodedSegmentData {
 
 }
 
-// A set of transcoded segments following the profiles specified in the jo .
+// A set of transcoded segments following the profiles specified in the job.
 message TranscodeData {
 
     // Transcoded data, in the order specified in the job options
