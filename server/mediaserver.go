@@ -19,7 +19,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/net"
 
 	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
@@ -143,7 +145,9 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 	}
 }
 
-func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.MasterPlaylist, nonce uint64) (Broadcaster, error) {
+func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.MasterPlaylist,
+	nonce uint64, profileName string) (Broadcaster, error) {
+
 	tca := job.TranscoderAddress
 	serviceUri, err := s.LivepeerNode.Eth.GetServiceURI(tca)
 	if err != nil || serviceUri == "" {
@@ -153,8 +157,19 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 		}
 		return nil, err
 	}
+	mid, err := core.StreamID(job.StreamId).ManifestIDFromStreamID()
+	if err != nil {
+		return nil, err
+	}
 	rpcBcast := core.NewBroadcaster(s.LivepeerNode, job)
-	err = StartBroadcastClient(rpcBcast, serviceUri)
+	jid := job.JobId.Int64()
+	// XXX can we generalize this?
+	if drivers.Storages[0].IsExternal() {
+		iosSession := drivers.Storages[0].StartSession(jid, string(mid), nonce)
+		rpcBcast.SetOutputOS(iosSession)
+	}
+
+	err = StartBroadcastClient(rpcBcast, serviceUri, nonce)
 	if err != nil {
 		glog.Error("Unable to start broadcast client for ", job.JobId)
 		if monitor.Enabled {
@@ -164,20 +179,17 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, manifest *m3u8.Master
 	}
 	// Update the master playlist based on the streamids from the transcoder
 	tinfo := rpcBcast.GetTranscoderInfo()
+	if len(tinfo.PreferredIOS) > 0 {
+		transcodersIOS := drivers.NewDriver(tinfo.PreferredIOS[0].Storage, tinfo.PreferredIOS[0])
+		transcodersIOSsession := transcodersIOS.StartSession(jid, string(mid), nonce)
+		rpcBcast.SetInputOS(transcodersIOSsession)
+	}
 	for strmID, tProfile := range tinfo.StreamIds {
-		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[tProfile])
-		pl, _ := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
-		variant := &m3u8.Variant{URI: fmt.Sprintf("%v.m3u8", strmID), Chunklist: pl, VariantParams: vParams}
-		manifest.Append(variant.URI, variant.Chunklist, variant.VariantParams)
+		for _, os := range drivers.Storages {
+			session := os.StartSession(jid, string(mid), nonce)
+			s.LivepeerNode.VideoSource.AddStream(mid, core.StreamID(strmID), tProfile, session, false, false)
+		}
 	}
-
-	// Update the master playlist on the network
-	mid, err := core.StreamID(job.StreamId).ManifestIDFromStreamID()
-	if err != nil {
-		return nil, err
-	}
-	s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist(mid, manifest)
-
 	return rpcBcast, nil
 }
 
@@ -198,6 +210,20 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			return ErrAlreadyExists
 		}
 		s.VideoNonceLock.Unlock()
+
+		//We try to automatically determine the video profile from the RTMP stream.
+		var vProfile ffmpeg.VideoProfile
+		resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
+		for _, vp := range ffmpeg.VideoProfileLookup {
+			if vp.Resolution == resolution {
+				vProfile = vp
+				break
+			}
+		}
+		if vProfile.Name == "" {
+			vProfile = ffmpeg.P720p30fps16x9
+			glog.V(common.SHORT).Infof("Cannot automatically detect the video profile - setting it to %v", vProfile)
+		}
 
 		jobStreamId := ""
 		startSeq := 0
@@ -239,7 +265,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			for _, b := range bcasts {
 				// check if job has acceptable price, transcoding options and valid assigned transcoder
 				if job, reusable := getReusableBroadcast(b); reusable {
-					rpcBcast, err = s.startBroadcast(job, manifest, nonce)
+					rpcBcast, err = s.startBroadcast(job, manifest, nonce, vProfile.Name)
 					if err == nil {
 						startSeq = int(b.Segments) + 1
 						jobId = big.NewInt(b.ID)
@@ -293,20 +319,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		//Add stream to stream store
 		s.rtmpStreams[core.StreamID(rtmpStrm.GetStreamID())] = rtmpStrm
 
-		//We try to automatically determine the video profile from the RTMP stream.
-		var vProfile ffmpeg.VideoProfile
-		resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
-		for _, vp := range ffmpeg.VideoProfileLookup {
-			if vp.Resolution == resolution {
-				vProfile = vp
-				break
-			}
-		}
-		if vProfile.Name == "" {
-			vProfile = ffmpeg.P720p30fps16x9
-			glog.V(common.SHORT).Infof("Cannot automatically detect the video profile - setting it to %v", vProfile)
-		}
-
 		//Create a HLS StreamID
 		//If streamID is passed in, use that one
 		//Else if we are reusing an active broadcast, use the old streamID
@@ -320,12 +332,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				glog.Errorf("Error making stream ID")
 				return ErrRTMPPublish
 			}
-		}
-
-		pl, err := m3u8.NewMediaPlaylist(stream.DefaultHLSStreamWin, stream.DefaultHLSStreamCap)
-		if err != nil {
-			glog.Errorf("Error creating playlist: %v", err)
-			return ErrRTMPPublish
 		}
 
 		LastHLSStreamID = hlsStrmID
@@ -355,13 +361,32 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					s.LivepeerNode.Database.SetSegmentCount(jobId, int64(seg.SeqNo))
 				}
 
-				s.LivepeerNode.VideoSource.InsertHLSSegment(hlsStrmID, seg)
+				stored, err := s.LivepeerNode.VideoSource.InsertHLSSegment(hlsStrmID, seg)
+				if err != nil {
+					glog.Error("Error saving segment:", err)
+				}
 
 				if rpcBcast != nil {
 					go func() {
 						// send segment to the transcoder
-						glog.Infof("starting to submit segment %d", seg.SeqNo)
-						res, err := SubmitSegment(rpcBcast, seg, nonce)
+						glog.V(common.DEBUG).Infof("starting to submit segment %d with name %s", seg.SeqNo, seg.Name)
+						// input storage that was negotiated with orchestrator (only in case it is not owned by B)
+						ios := rpcBcast.GetInputOS()
+						var turl *net.TypedURI
+						var err error
+						if ios != nil {
+							turl, _, err = ios.SaveData(string(hlsStrmID), seg.Name, seg.Data)
+							if err != nil {
+								glog.Error("Error saving segment to OS", err)
+								if monitor.Enabled {
+									monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
+								}
+								return
+							}
+						} else if len(stored) > 0 && drivers.IsExternal(stored[0]) {
+							turl = stored[0]
+						}
+						res, err := SubmitSegment(rpcBcast, seg, nonce, turl)
 						if err != nil {
 							return
 						}
@@ -376,6 +401,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 							}
 						}
 						dlFunc := func(url string) {
+							glog.V(common.DEBUG).Infof("starting legacy download %s", url)
 							res, err := httpc.Get(url)
 							if err != nil {
 								errFunc("Retrieval", url, err)
@@ -393,11 +419,40 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 								errFunc("StreamID", url, err)
 								return
 							}
+							glog.V(common.DEBUG).Infof("legacy downloaded sid %s seg name %s", sid, parseSegName(url))
 							newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: parseSegName(url), Data: data, Duration: seg.Duration}
 							s.LivepeerNode.VideoSource.InsertHLSSegment(sid, newSeg)
 						}
+						dlFromOSFunc := func(turi *net.TypedURI) {
+							data, err := drivers.GetSegmentData(turi)
+							if err != nil {
+								errFunc("Download", turi.Uri, err)
+								return
+							}
+							glog.V(common.DEBUG).Infof("segment downloaded from %s sid %s seg name %s",
+								turi.Storage, turi.StreamID, parseSegNameSimple(turi.Uri))
+							newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo,
+								Name: parseSegNameSimple(turi.Uri),
+								Data: data, Duration: seg.Duration}
+							s.LivepeerNode.VideoSource.InsertHLSSegment(core.StreamID(turi.StreamID), newSeg)
+						}
+						glog.V(common.DEBUG).Infof("Got result from transcode: %+v", res)
 						for _, v := range res.Segments {
-							go dlFunc(v.Url)
+							if len(v.Urls) == 0 {
+								// old orchestrator
+								go dlFunc(v.Url)
+							} else {
+								for _, turi := range v.Urls {
+									inserted, err := s.LivepeerNode.VideoSource.InsertLink(turi, seg.SeqNo)
+									if err != nil {
+										glog.Error("Error inserting link", turi, err)
+									}
+									if !inserted || drivers.LocalSaveMode {
+										go dlFromOSFunc(turi)
+									}
+									break
+								}
+							}
 						}
 					}()
 				}
@@ -425,10 +480,15 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			return ErrRTMPPublish
 		}
 		LastManifestID = mid
-		vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[vProfile.Name])
-		manifest.Append(fmt.Sprintf("%v.m3u8", hlsStrmID), pl, vParams)
 
-		s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist(mid, manifest)
+		var jid int64
+		if jobId != nil {
+			jid = jobId.Int64()
+		}
+		for _, os := range drivers.Storages {
+			session := os.StartSession(jid, string(mid), nonce)
+			s.LivepeerNode.VideoSource.AddStream(mid, hlsStrmID, vProfile.Name, session, false, false)
+		}
 
 		if monitor.Enabled {
 			monitor.LogStreamCreatedEvent(hlsStrmID.String(), nonce)
@@ -455,7 +515,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				// as the RTMP stream is alive; maybe the orchestrator hasn't
 				// received the block containing the job yet
 				broadcastFunc := func() error {
-					rpcBcast, err = s.startBroadcast(job, manifest, nonce)
+					rpcBcast, err = s.startBroadcast(job, manifest, nonce, vProfile.Name)
 					if err != nil {
 						// Should be logged upstream
 					}
@@ -483,7 +543,6 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		manifestID := s.broadcastRtmpToManifestMap[rtmpID]
 		//Remove RTMP stream
 		delete(s.rtmpStreams, core.StreamID(rtmpID))
-		// XXX update HLS manifest
 		//Remove Manifest
 		s.LivepeerNode.VideoSource.EvictHLSMasterPlaylist(core.ManifestID(manifestID))
 
@@ -515,7 +574,7 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 		}
 
 		//Just load it from the cache (it's already hooked up to the network)
-		manifest := s.LivepeerNode.VideoSource.GetHLSMasterPlaylist(core.ManifestID(manifestID))
+		manifest := s.LivepeerNode.VideoSource.GetLiveHLSMasterPlaylist(core.ManifestID(manifestID))
 		if manifest == nil {
 			return nil, vidplayer.ErrNotFound
 		}
@@ -532,7 +591,7 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 		}
 
 		//Get the hls playlist, update the timeout timer
-		pl := s.LivepeerNode.VideoSource.GetHLSMediaPlaylist(strmID)
+		pl := s.LivepeerNode.VideoSource.GetLiveHLSMediaPlaylist(strmID)
 		if pl == nil {
 			return nil, vidplayer.ErrNotFound
 		}
@@ -543,22 +602,18 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 
 func getHLSSegmentHandler(s *LivepeerServer) func(url *url.URL) ([]byte, error) {
 	return func(url *url.URL) ([]byte, error) {
-		strmID, err := parseStreamID(url.Path)
-		if err != nil {
-			glog.Errorf("Error parsing streamID: %v", err)
-		}
-
 		segName := parseSegName(url.Path)
 		if segName == "" {
 			return nil, vidplayer.ErrNotFound
 		}
-
-		seg := s.LivepeerNode.VideoSource.GetHLSSegment(strmID, segName)
-		if seg == nil {
+		if drivers.LocalOSinstance == nil {
 			return nil, vidplayer.ErrNotFound
-		} else {
-			return seg.Data, nil
 		}
+		data := drivers.LocalOSinstance.GetData(segName)
+		if len(data) > 0 {
+			return data, nil
+		}
+		return nil, vidplayer.ErrNotFound
 	}
 }
 
@@ -615,6 +670,11 @@ func parseStreamID(reqPath string) (core.StreamID, error) {
 	} else {
 		return "", vidplayer.ErrNotFound
 	}
+}
+
+func parseSegNameSimple(reqPath string) string {
+	parts := strings.Split(reqPath, "/")
+	return parts[len(parts)-1]
 }
 
 func parseSegName(reqPath string) string {

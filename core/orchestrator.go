@@ -110,6 +110,10 @@ func (orch *orchestrator) TranscodeSeg(job *ethTypes.Job, ss *SignedSegment) (*T
 	return orch.node.TranscodeSegment(job, ss)
 }
 
+func (orch *orchestrator) VideoSource() VideoSource {
+	return orch.node.VideoSource
+}
+
 func NewOrchestrator(n *LivepeerNode) *orchestrator {
 	var addr ethcommon.Address
 	if n.Eth != nil {
@@ -128,6 +132,7 @@ type TranscodeResult struct {
 	Err  error
 	Urls []string
 	Sig  []byte
+	Data [][]byte
 }
 
 type SegChanData struct {
@@ -263,8 +268,8 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 		}
 		tProfileData[config.Profiles[i]] = tData[i]
 		newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: fmt.Sprintf("%v_%d.ts", r, seg.SeqNo), Data: tData[i], Duration: seg.Duration}
-		n.VideoSource.InsertHLSSegment(r, newSeg)
 		tr.Urls = append(tr.Urls, newSeg.Name)
+		tr.Data = append(tr.Data, tData[i])
 	}
 	//Don't do the onchain stuff unless specified
 	if config.ClaimManager != nil {

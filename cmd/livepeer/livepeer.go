@@ -21,12 +21,14 @@ import (
 	"time"
 
 	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
+	protonet "github.com/livepeer/go-livepeer/net"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/eventservices"
 	"github.com/livepeer/go-livepeer/ipfs"
@@ -79,6 +81,10 @@ func main() {
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
 	serviceAddr := flag.String("serviceAddr", "", "Transcoder only. Public address:port that broadcasters can use to contact this node; may be an IP or hostname. If used, should match the on-chain ServiceURI set via livepeer_cli")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
+	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
+	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
+	localSave := flag.Bool("localSave", false, "Setting this to true will make node to save all segments to local disk")
+
 	version := flag.Bool("version", false, "Print out the version")
 
 	flag.Parse()
@@ -133,7 +139,9 @@ func main() {
 	}
 	defer dbh.Close()
 
-	n, err := core.NewLivepeerNode(nil, *datadir, dbh)
+
+	vs := core.NewCombinedVideoSource()
+	n, err := core.NewLivepeerNode(vs, nil, *datadir, dbh)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
@@ -225,7 +233,42 @@ func main() {
 		}
 	}
 
+	drivers.LocalSaveMode = *localSave
+	drivers.DataDir = *datadir
+
+	if *s3bucket != "" && *s3creds == "" || *s3bucket == "" && *s3creds != "" {
+		glog.Error("Should specify both s3bucket and s3creds")
+		return
+	}
+	if *s3bucket != "" {
+		s3bp := strings.Split(*s3bucket, "/")
+		drivers.S3REGION = s3bp[0]
+		drivers.S3BUCKET = s3bp[1]
+	}
+
+	// XXX get s3 credentials from local env vars?
+	var s3OS drivers.OSDriver
+	if *s3bucket != "" && *s3creds != "" {
+		info := &protonet.OSInfo{
+			Storage: "s3",
+			S3Info:  &protonet.S3OSInfo{},
+		}
+		br := strings.Split(*s3bucket, "/")
+		info.S3Info.Region = br[0]
+		info.S3Info.Bucket = br[1]
+		cr := strings.Split(*s3creds, "/")
+		info.S3Info.AccessKey = cr[0]
+		info.S3Info.AccessKeySecret = cr[1]
+		s3OS = drivers.NewDriver("s3", info)
+	}
 	if n.NodeType == core.Broadcaster {
+		if s3OS != nil {
+			drivers.AddStorageInstance(s3OS)
+		}
+		if drivers.LocalSaveMode || s3OS == nil {
+			drivers.LocalStorage = drivers.NewDriver("local", nil)
+		}
+
 		// default lpms listener for broadcaster; same as default rpc port
 		// TODO provide an option to disable this?
 		*rtmpAddr = defaultAddr(*rtmpAddr, "127.0.0.1", RtmpPort)
@@ -236,6 +279,10 @@ func main() {
 		*httpAddr = defaultAddr(*httpAddr, "", n.ServiceURI.Port())
 	}
 	*cliAddr = defaultAddr(*cliAddr, "127.0.0.1", CliPort)
+
+	if drivers.LocalStorage != nil {
+		drivers.AddStorageInstance(drivers.LocalStorage)
+	}
 
 	//Create Livepeer Node
 	if *monitor {
@@ -288,7 +335,7 @@ func main() {
 			return
 		}
 		orch := core.NewOrchestrator(s.LivepeerNode)
-		server.StartTranscodeServer(orch, *httpAddr, s.HttpMux, n.WorkDir)
+		server.StartTranscodeServer(orch, *httpAddr, s.HttpMux, n.WorkDir, s3OS)
 		tc <- struct{}{}
 	}()
 
@@ -370,11 +417,20 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 		}
 	}
 
+	loi := &protonet.OSInfo{
+		Storage: "local",
+		LocalInfo: &protonet.LocalOSInfo{
+			BaseURL: uri.String(),
+		},
+	}
+	drivers.LocalStorage = drivers.NewDriver("local", loi)
+
 	// Set up IPFS
 	ipfsApi, err := ipfs.StartIpfs(ctx, ipfsPath)
 	if err != nil {
 		return err
 	}
+	drivers.SetIpfsAPI(ipfsApi)
 
 	n.Ipfs = ipfsApi
 	n.EthEventMonitor = em

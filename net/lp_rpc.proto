@@ -18,6 +18,50 @@ message TranscoderRequest {
 
   // Broadcaster's signature over the jobId
   bytes sig   = 2;
+
+  // Broadcaster proposes output storage to orchestrator
+  repeated OSInfo proposedOOS = 3;
+
+  // nonce - unique identificator of video stream, used in folder name there data saved in storage
+  // (folder name matters when transcoder puts trasncoded data into B's owned storage).
+  uint64 nonce = 5;
+}
+
+/*
+  OSInfo needed to negotiate storages that will be used.
+  It carries info needed to write to the storage.
+*/
+message OSInfo {
+  // Storage type: s3, ipfs.
+  string storage = 1;
+
+  S3OSInfo s3info = 16;
+
+  LocalOSInfo localInfo = 17;
+}
+
+message S3OSInfo {
+  // Configured S3 bucket name
+  string bucket = 1;
+  // Configured S3 region
+  string region = 2;
+  // POST policy that S3 owner node creates to give write access to other node.
+  string policy = 3;
+  // Signature for POST policy.
+  string signature = 4;
+  // Needed for POST policy.
+  string xAmzCredential = 5;
+  // Needed for POST policy.
+  string xAmzDate = 6;
+  // S3 access key. Not sent ower network, here for local configuration.
+  string accessKey = 16;
+  // S3 access key secret. Not sent ower network, here for local configuration.
+  string accessKeySecret = 17;
+}
+
+// here for local configuration
+message LocalOSInfo {
+  string baseURL = 1;
 }
 
 // The orchestrator sends this in response to `GetTranscoder`, containing the
@@ -38,6 +82,9 @@ message TranscoderInfo {
 
   // Transcoded streamId list to update the master manifest on the broadcaster.
   map<string, string> streamIds = 16;
+
+  // Orchestrator returns info about own input object storage, if it wants it to be used.
+  repeated OSInfo preferredIOS = 32;
 }
 
 // AuthToken is sent by the orchestrator and encoded in the `credentials` field
@@ -72,6 +119,27 @@ message TranscodedSegmentData {
     // URL where the transcoded data can be downloaded from
     string url = 1;
 
+    repeated TypedURI urls = 2;
+}
+
+/*
+  TypedURI contains information needed to access segment written to specific storage.
+  Plus it contains presentation of this segment in the manifest.
+  Potentially it can contain credentials for reading data from storage
+  (for now all we write should be public).
+  */
+message TypedURI {
+  // ipfs, s3, ...
+  string storage = 1;
+  // Can be specific to storage driver. For now local and S3 storages contails absolute URL,
+  // ipfs contains just hash of file.
+  string uri = 2;
+  // URI to be placed in manifest
+  // for IPFS it is always will be ipfs://hash
+  // for others it will be just segment's name.
+  string uri_in_manifest = 4;
+
+  string streamID = 5;
 }
 
 // A set of transcoded segments following the profiles specified in the jo .

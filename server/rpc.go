@@ -19,6 +19,8 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/monitor"
@@ -46,6 +48,7 @@ type Orchestrator interface {
 	GetJob(int64) (*lpTypes.Job, error)
 	TranscodeSeg(*lpTypes.Job, *core.SignedSegment) (*core.TranscodeResult, error)
 	StreamIDs(*lpTypes.Job) ([]core.StreamID, error)
+	VideoSource() core.VideoSource
 }
 
 type Broadcaster interface {
@@ -55,14 +58,18 @@ type Broadcaster interface {
 	GetHTTPClient() *http.Client
 	SetTranscoderInfo(*net.TranscoderInfo)
 	GetTranscoderInfo() *net.TranscoderInfo
+	SetInputOS(ios drivers.OSSession)
+	GetInputOS() drivers.OSSession
+	SetOutputOS(oos drivers.OSSession)
+	GetOutputOS() drivers.OSSession
 }
 
-func genTranscoderReq(b Broadcaster, jid int64) (*net.TranscoderRequest, error) {
+func genTranscoderReq(b Broadcaster, jid int64, nonce uint64) (*net.TranscoderRequest, error) {
 	sig, err := b.Sign([]byte(fmt.Sprintf("%v", jid)))
 	if err != nil {
 		return nil, err
 	}
-	return &net.TranscoderRequest{JobId: jid, Sig: sig}, nil
+	return &net.TranscoderRequest{JobId: jid, Sig: sig, Nonce: nonce}, nil
 }
 
 func jobClaimable(orch Orchestrator, job *lpTypes.Job) bool {
@@ -188,42 +195,17 @@ func verifySegCreds(job *lpTypes.Job, segCreds string) (*net.SegData, error) {
 	return &segData, nil
 }
 
-func getTranscoder(context context.Context, orch Orchestrator, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
-	glog.Info("Got transcoder request for job ", req.JobId)
-	job, err := orch.GetJob(req.JobId)
-	if err != nil {
-		glog.Error("Unable to get job ", err)
-		return nil, fmt.Errorf("Unable to get job (%s)", err.Error())
-	}
-	if err := verifyTranscoderReq(orch, req, job); err != nil {
-		return nil, fmt.Errorf("Invalid transcoder request (%v)", err)
-	}
-	creds, err := genToken(orch, job)
-	if err != nil {
-		return nil, err
-	}
-	sids, err := orch.StreamIDs(job)
-	if err != nil {
-		return nil, err
-	}
-	stringStreamIds := make(map[string]string)
-	for i, s := range sids {
-		stringStreamIds[s.String()] = job.Profiles[i].Name
-	}
-
-	tr := net.TranscoderInfo{
-		Transcoder:  orch.ServiceURI().String(), // currently,  orchestrator == transcoder
-		AuthType:    AuthType_LPE,
-		Credentials: creds,
-		StreamIds:   stringStreamIds,
-	}
-	return &tr, nil
-}
-
 type lphttp struct {
 	orchestrator Orchestrator
 	orchRpc      *grpc.Server
 	transRpc     *http.ServeMux
+	// own external object storage
+	externalOS    drivers.OSDriver
+}
+
+type storagePair struct {
+	is drivers.OSSession
+	os drivers.OSSession
 }
 
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
@@ -258,6 +240,23 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	if r.Header.Get("Content-Type") == "application/vnd+livepeer.typeduri" {
+		var turi net.TypedURI
+		err = proto.Unmarshal(data, &turi)
+		if err != nil {
+			glog.Error("Invalid typed uri ", turi)
+			http.Error(w, "BadRequest", http.StatusBadRequest)
+			return
+		}
+		glog.V(common.DEBUG).Infof("Got typed uri data from broadcaster: %+v", turi)
+		data, err = drivers.GetSegmentData(&turi)
+		if err != nil {
+			glog.Errorf("Error getting input segment %v from input OS: %v", turi, err)
+			http.Error(w, "BadRequest", http.StatusBadRequest)
+			return
+		}
+	}
+
 	hash := crypto.Keccak256(data)
 	if !bytes.Equal(hash, segData.Hash) {
 		glog.Error("Mismatched hash for body; rejecting")
@@ -297,6 +296,22 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 				Url: orch.ServiceURI().String() + "/stream/" + v,
 			}
 			segments[i] = d
+
+			// XXX getting StreamID out of name. Maybe we should return StreamID explicitly?
+			nameParts := strings.Split(v, "_")
+			streamID := nameParts[0]
+
+			tSeg := &stream.HLSSegment{
+				SeqNo: uint64(segData.Seq),
+				Name:  v,
+				Data:  data,
+			}
+			turis, err := h.orchestrator.VideoSource().InsertHLSSegment(core.StreamID(streamID), tSeg)
+			if err != nil || turis == nil {
+				glog.Warning(err)
+				// XXX how to handle?
+			}
+			d.Urls = turis
 		}
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Data{
 			Data: &net.TranscodeData{
@@ -320,7 +335,65 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 // grpc methods
 func (h *lphttp) GetTranscoder(context context.Context, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
-	return getTranscoder(context, h.orchestrator, req)
+	glog.Info("Got transcoder request for job ", req.JobId)
+	job, err := h.orchestrator.GetJob(req.JobId)
+	if err != nil {
+		glog.Error("Unable to get job ", err)
+		return nil, fmt.Errorf("Unable to get job (%s)", err.Error())
+	}
+	if err := verifyTranscoderReq(h.orchestrator, req, job); err != nil {
+		return nil, fmt.Errorf("Invalid transcoder request (%v)", err)
+	}
+	creds, err := genToken(h.orchestrator, job)
+	if err != nil {
+		return nil, err
+	}
+	sids, err := h.orchestrator.StreamIDs(job)
+	if err != nil {
+		return nil, err
+	}
+	stringStreamIds := make(map[string]string)
+	for i, s := range sids {
+		stringStreamIds[s.String()] = job.Profiles[i].Name
+	}
+	jsid := core.StreamID(job.StreamId)
+	mid, err := core.MakeManifestID(jsid.GetVideoID())
+	if err != nil {
+		// XXX what to do?
+		glog.Errorf("Error creating manifest id: %v", err)
+	}
+	smid := string(mid)
+	var ios, oos drivers.OSSession
+	ownOS := false
+	if len(req.ProposedOOS) > 0 {
+		proposed := req.ProposedOOS[0]
+		oosd := drivers.NewDriver(proposed.Storage, proposed)
+		oos = oosd.StartSession(req.JobId, smid, req.Nonce)
+	} else if h.externalOS != nil {
+		ios = h.externalOS.StartSession(req.JobId, smid, req.Nonce)
+		oos = h.externalOS.StartSession(req.JobId, smid, req.Nonce)
+		ownOS = true
+	}
+	// XXX we need to find way to cleanup these sessions
+	localOSSession := drivers.LocalStorage.StartSession(req.JobId, smid, req.Nonce)
+	for i, s := range sids {
+		if oos != nil {
+			h.orchestrator.VideoSource().AddStream(mid, s, job.Profiles[i].Name, oos, true, ownOS)
+		}
+		h.orchestrator.VideoSource().AddStream(mid, s, job.Profiles[i].Name, localOSSession, false, false)
+	}
+
+	tr := net.TranscoderInfo{
+		Transcoder:  h.orchestrator.ServiceURI().String(), // currently,  orchestrator == transcoder
+		AuthType:    AuthType_LPE,
+		Credentials: creds,
+		StreamIds:   stringStreamIds,
+	}
+	if ios != nil {
+		piso := ios.GetInfo()
+		tr.PreferredIOS = []*net.OSInfo{&piso}
+	}
+	return &tr, nil
 }
 
 func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -333,12 +406,15 @@ func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // XXX do something about the implicit start of the http mux? this smells
-func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string) {
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string,
+	externalOS drivers.OSDriver) {
+
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
 		orchRpc:      s,
 		transRpc:     mux,
+		externalOS: externalOS,
 	}
 	net.RegisterOrchestratorServer(s, &lp)
 	lp.transRpc.HandleFunc("/segment", lp.ServeSegment)
@@ -358,7 +434,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	srv.ListenAndServeTLS(cert, key)
 }
 
-func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
+func StartBroadcastClient(bcast Broadcaster, orchestratorServer string, nonce uint64) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	httpc := &http.Client{
 		Transport: &http2.Transport{TLSClientConfig: tlsConfig},
@@ -384,7 +460,12 @@ func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
 	defer cancel()
 
 	bcast.SetHTTPClient(httpc)
-	req, err := genTranscoderReq(bcast, bcast.Job().JobId.Int64())
+	req, err := genTranscoderReq(bcast, bcast.Job().JobId.Int64(), nonce)
+	oos := bcast.GetOutputOS()
+	if oos != nil {
+		osInfo := oos.GetInfo()
+		req.ProposedOOS = []*net.OSInfo{&osInfo}
+	}
 	r, err := c.GetTranscoder(ctx, req)
 	if err != nil {
 		glog.Errorf("Could not get transcoder for job %d: %s", bcast.Job().JobId.Int64(), err.Error())
@@ -395,7 +476,8 @@ func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
 	return nil
 }
 
-func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*net.TranscodeData, error) {
+// XXX probably we should move this to Broadcaster interface?
+func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64, body *net.TypedURI) (*net.TranscodeData, error) {
 	if monitor.Enabled {
 		monitor.SegmentUploadStart(nonce, seg.SeqNo)
 	}
@@ -404,6 +486,7 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 		Seq:  int64(seg.SeqNo),
 		Hash: crypto.Keccak256(seg.Data),
 	}
+	var err error
 	segCreds, err := genSegCreds(bcast, bcast.Job().StreamId, segData)
 	if err != nil {
 		if monitor.Enabled {
@@ -412,7 +495,15 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 		return nil, err
 	}
 	ti := bcast.GetTranscoderInfo()
-	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(seg.Data))
+	data := seg.Data
+	if body != nil {
+		data, err = proto.Marshal(body)
+		if err != nil {
+			glog.Error("Unable to marshal ", err)
+			return nil, err
+		}
+	}
+	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(data))
 	if err != nil {
 		glog.Error("Could not generate trascode request to ", ti.Transcoder)
 		if monitor.Enabled {
@@ -424,7 +515,11 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 	req.Header.Set("Authorization", ti.AuthType)
 	req.Header.Set("Credentials", ti.Credentials)
 	req.Header.Set("Livepeer-Segment", segCreds)
-	req.Header.Set("Content-Type", "video/MP2T")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/vnd+livepeer.typeduri")
+	} else {
+		req.Header.Set("Content-Type", "video/MP2T")
+	}
 
 	glog.Infof("Submitting segment %v : %v bytes", seg.SeqNo, len(seg.Data))
 	start := time.Now()
@@ -453,7 +548,7 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 		monitor.LogSegmentUploaded(nonce, seg.SeqNo, uploadDur)
 	}
 
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err = ioutil.ReadAll(resp.Body)
 	tookAllDur := time.Since(start)
 
 	if err != nil {
