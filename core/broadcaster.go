@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/livepeer/go-livepeer/drivers"
+
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
 
@@ -28,8 +30,22 @@ type broadcaster struct {
 	httpc *http.Client
 	job   *ethTypes.Job
 	tinfo *net.TranscoderInfo
+	ios   drivers.OSSession
+	oos   drivers.OSSession
 }
 
+func (bcast *broadcaster) SetOrchestratorOS(ios drivers.OSSession) {
+	bcast.ios = ios
+}
+func (bcast *broadcaster) GetOrchestratorOS() drivers.OSSession {
+	return bcast.ios
+}
+func (bcast *broadcaster) SetBroadcasterOS(oos drivers.OSSession) {
+	bcast.oos = oos
+}
+func (bcast *broadcaster) GetBroadcasterOS() drivers.OSSession {
+	return bcast.oos
+}
 func (bcast *broadcaster) Sign(msg []byte) ([]byte, error) {
 	if bcast.node == nil || bcast.node.Eth == nil {
 		return []byte{}, fmt.Errorf("Cannot sign; missing eth client")

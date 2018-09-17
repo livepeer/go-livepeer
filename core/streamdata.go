@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -51,6 +52,10 @@ func (id *StreamID) GetVideoID() []byte {
 }
 
 func (id *StreamID) GetRendition() string {
+	// XXX add tests
+	if len(*id) < 2*HashLength {
+		return ""
+	}
 	return string((*id)[2*HashLength:])
 }
 
@@ -103,6 +108,7 @@ func (id ManifestID) String() string {
 type SignedSegment struct {
 	Seg stream.HLSSegment
 	Sig []byte
+	OS  *net.OSInfo
 }
 
 //Convenience function to convert between SignedSegments and byte slices to put on the wire.

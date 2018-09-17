@@ -96,7 +96,7 @@ func (s *RoundsService) tryInitializeRound(blkNum *big.Int, blkHash common.Hash)
 		}
 
 		if shouldInitialize {
-			glog.Infof("New round - preparing to initialize round to join active set")
+			glog.Infof("New round - preparing to initialize round to join active set, current round is %d", currentRound)
 
 			tx, err := s.client.InitializeRound()
 			if err != nil {

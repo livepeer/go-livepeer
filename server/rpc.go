@@ -18,7 +18,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/monitor"
@@ -57,6 +59,10 @@ type Broadcaster interface {
 	GetHTTPClient() *http.Client
 	SetTranscoderInfo(*net.TranscoderInfo)
 	GetTranscoderInfo() *net.TranscoderInfo
+	SetOrchestratorOS(drivers.OSSession)
+	GetOrchestratorOS() drivers.OSSession
+	SetBroadcasterOS(drivers.OSSession)
+	GetBroadcasterOS() drivers.OSSession
 }
 
 func genTranscoderReq(b Broadcaster, jid int64) (*net.TranscoderRequest, error) {
@@ -212,12 +218,19 @@ func getTranscoder(context context.Context, orch Orchestrator, req *net.Transcod
 	for i, s := range sids {
 		stringStreamIds[s.String()] = job.Profiles[i].Name
 	}
-
 	tr := net.TranscoderInfo{
 		Transcoder:  orch.ServiceURI().String(), // currently,  orchestrator == transcoder
 		AuthType:    AuthType_LPE,
 		Credentials: creds,
 		StreamIds:   stringStreamIds,
+	}
+	mid, err := core.StreamID(job.StreamId).ManifestIDFromStreamID()
+	if err != nil {
+		return nil, err
+	}
+	os := drivers.NodeStorage.NewSession(string(mid))
+	if os != nil && os.IsExternal() {
+		tr.Storage = []*net.OSInfo{os.GetInfo()}
 	}
 	return &tr, nil
 }
@@ -260,6 +273,27 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	if r.Header.Get("Content-Type") == "application/vnd+livepeer.uri" {
+		uri := string(data)
+		glog.V(common.DEBUG).Infof("Start getting segment from %s", uri)
+		start := time.Now()
+		data, err = drivers.GetSegmentData(uri)
+		took := time.Since(start)
+		glog.V(common.DEBUG).Infof("Getting segment from %s took %s", uri, took)
+		if err != nil {
+			glog.Errorf("Error getting input segment %v from input OS: %v", uri, err)
+			http.Error(w, "BadRequest", http.StatusBadRequest)
+			return
+		}
+		if took > HTTPTimeout {
+			// download from object storage took more time when broadcaster will be waiting for result
+			// so there is no point to start transcoding process
+			glog.Errorf(" Getting segment from %s took too long, aborting", uri)
+			http.Error(w, "BadRequest", http.StatusBadRequest)
+		}
+	}
+
 	hash := crypto.Keccak256(data)
 	if !bytes.Equal(hash, segData.Hash) {
 		glog.Error("Mismatched hash for body; rejecting")
@@ -272,19 +306,39 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.(http.Flusher).Flush()
 
+	var prefOS *net.OSInfo
+	if len(segData.Storage) > 0 {
+		prefOS = segData.Storage[0]
+	}
 	ss := core.SignedSegment{
 		Seg: stream.HLSSegment{
 			SeqNo: uint64(segData.Seq),
 			Data:  data,
 		},
 		Sig: segData.Sig,
+		OS:  prefOS,
 	}
 
 	res, err := orch.TranscodeSeg(job, &ss)
 
 	// sanity check
-	if err == nil && len(res.Urls) != len(job.Profiles) {
+	if err == nil && len(res.Data) != len(job.Profiles) {
 		err = fmt.Errorf("Mismatched result lengths")
+	}
+
+	// Upload to OS and construct segment result set
+	var segments []*net.TranscodedSegmentData
+	for i := 0; err == nil && i < len(res.Data); i++ {
+		name := fmt.Sprintf("%s/%d.ts", job.Profiles[i].Name, segData.Seq)
+		uri, err := res.OS.SaveData(name, res.Data[i])
+		if err != nil {
+			glog.Error("Could not upload segment ", segData.Seq)
+			break
+		}
+		d := &net.TranscodedSegmentData{
+			Url: uri,
+		}
+		segments = append(segments, d)
 	}
 
 	// construct the response
@@ -293,13 +347,6 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		glog.Error("Could not transcode ", err)
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Error{Error: err.Error()}}
 	} else {
-		segments := make([]*net.TranscodedSegmentData, len(res.Urls))
-		for i, v := range res.Urls {
-			d := &net.TranscodedSegmentData{
-				Url: orch.ServiceURI().String() + "/stream/" + v,
-			}
-			segments[i] = d
-		}
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Data{
 			Data: &net.TranscodeData{
 				Segments: segments,
@@ -406,6 +453,13 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 		Seq:  int64(seg.SeqNo),
 		Hash: crypto.Keccak256(seg.Data),
 	}
+	uploaded := seg.Name != "" // hijack seg.Name to convey the uploaded URI
+
+	// send credentials for our own storage
+	if bos := bcast.GetBroadcasterOS(); bos != nil && bos.IsExternal() {
+		segData.Storage = []*net.OSInfo{bos.GetInfo()}
+	}
+
 	segCreds, err := genSegCreds(bcast, bcast.Job().StreamId, segData)
 	if err != nil {
 		if monitor.Enabled {
@@ -413,8 +467,13 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 		}
 		return nil, err
 	}
+	data := seg.Data
+	if uploaded {
+		data = []byte(seg.Name)
+	}
+
 	ti := bcast.GetTranscoderInfo()
-	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(seg.Data))
+	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(data))
 	if err != nil {
 		glog.Error("Could not generate trascode request to ", ti.Transcoder)
 		if monitor.Enabled {
@@ -426,9 +485,13 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 	req.Header.Set("Authorization", ti.AuthType)
 	req.Header.Set("Credentials", ti.Credentials)
 	req.Header.Set("Livepeer-Segment", segCreds)
-	req.Header.Set("Content-Type", "video/MP2T")
+	if uploaded {
+		req.Header.Set("Content-Type", "application/vnd+livepeer.uri")
+	} else {
+		req.Header.Set("Content-Type", "video/MP2T")
+	}
 
-	glog.Infof("Submitting segment %v : %v bytes", seg.SeqNo, len(seg.Data))
+	glog.Infof("Submitting segment %v : %v bytes", seg.SeqNo, len(data))
 	start := time.Now()
 	resp, err := hc.Do(req)
 	uploadDur := time.Since(start)
@@ -456,7 +519,7 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 		monitor.LogSegmentUploaded(nonce, seg.SeqNo, uploadDur)
 	}
 
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err = ioutil.ReadAll(resp.Body)
 	tookAllDur := time.Since(start)
 
 	if err != nil {

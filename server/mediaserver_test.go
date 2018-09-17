@@ -10,9 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/drivers"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 )
@@ -20,6 +21,7 @@ import (
 var S *LivepeerServer
 
 func setupServer() *LivepeerServer {
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
 	if S == nil {
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		S = NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
@@ -88,13 +90,17 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	s.RTMPSegmenter = &StubSegmenter{}
 	handler := gotRTMPStreamHandler(s)
 
-	hlsStrmID := "10f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0"
+	vProfile := ffmpeg.P720p30fps16x9
+	hlsStrmID, err := core.MakeStreamID(core.RandomVideoID(), vProfile.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
 	url, _ := url.Parse(fmt.Sprintf("rtmp://localhost:1935/movie?hlsStrmID=%v", hlsStrmID))
 	strm := stream.NewBasicRTMPVideoStream("strmID")
 
 	//Stream already exists
 	s.rtmpStreams["strmID"] = strm
-	err := handler(url, strm)
+	err = handler(url, strm)
 	if err != ErrAlreadyExists {
 		t.Errorf("Expecting publish error because stream already exists, but got: %v", err)
 	}
@@ -110,7 +116,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 
 	start := time.Now()
 	for time.Since(start) < time.Second*2 {
-		pl := s.LivepeerNode.VideoSource.GetHLSMediaPlaylist(sid)
+		pl := s.CurrentPlaylist.GetHLSMediaPlaylist(sid)
 		if pl == nil || len(pl.Segments) != 4 {
 			time.Sleep(100 * time.Millisecond)
 			continue
@@ -118,8 +124,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 			break
 		}
 	}
-
-	pl := s.LivepeerNode.VideoSource.GetHLSMediaPlaylist(sid)
+	pl := s.CurrentPlaylist.GetHLSMediaPlaylist(sid)
 	if pl == nil {
 		t.Error("Expected media playlist; got none")
 	}
@@ -128,42 +133,69 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 		t.Errorf("Should have recieved 4 data chunks, got: %v", pl.Count())
 	}
 
-	seg0 := pl.Segments[0]
-	seg1 := pl.Segments[1]
-	seg2 := pl.Segments[2]
-	seg3 := pl.Segments[3]
-	if seg0.URI != "seg0.ts" || seg1.URI != "seg1.ts" || seg2.URI != "seg2.ts" || seg3.URI != "seg3.ts" {
-		t.Errorf("Wrong segments: %v, %v, %v, %v", seg0, seg1, seg2, seg3)
+	mid, err := core.MakeManifestID(hlsStrmID.GetVideoID())
+	if err != nil {
+		t.Fatal(err)
 	}
+	rendition := hlsStrmID.GetRendition()
+	for i := 0; i < 4; i++ {
+		seg := pl.Segments[i]
+		shouldSegName := fmt.Sprintf("%s/%s/%d.ts", mid, rendition, i)
+		t.Log(shouldSegName)
+		if seg.URI != shouldSegName {
+			t.Fatalf("Wrong segment, should have URI %s, has %s", shouldSegName, seg.URI)
+		}
+	}
+	delete(s.rtmpStreams, "strmID")
+	delete(s.VideoNonce, "strmID")
 }
 
 func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	glog.Infof("\n\nTestGetHLSMasterPlaylistHandler...\n")
 
 	s := setupServer()
+	handler := gotRTMPStreamHandler(s)
 
-	//Set up the stubnet so it already has a manifest with a local stream
-	mpl := m3u8.NewMasterPlaylist()
-	mpl.Append("strm.m3u8", nil, m3u8.VariantParams{Bandwidth: 100})
-	s.LivepeerNode.VideoSource.UpdateHLSMasterPlaylist("10f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0", mpl)
-	if len(mpl.Variants) != 1 {
-		t.Errorf("Expecting 1 variant, but got %v", mpl)
+	vProfile := ffmpeg.P720p30fps16x9
+	hlsStrmID, err := core.MakeStreamID(core.RandomVideoID(), vProfile.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url, _ := url.Parse(fmt.Sprintf("rtmp://localhost:1935/movie?hlsStrmID=%v", hlsStrmID))
+	strm := stream.NewBasicRTMPVideoStream("strmID")
+
+	if err := handler(url, strm); err != nil {
+		t.Errorf("Error: %v", err)
 	}
 
-	handler := getHLSMasterPlaylistHandler(s)
-	url, _ := url.Parse("http://localhost/stream/10f6afa01868f11f5722434aa4a0769842e04fac75dfaccece208c5710fd52e0.m3u8")
+	segName := "test_seg/1.ts"
+	err = s.CurrentPlaylist.InsertHLSSegment(hlsStrmID, 1, segName, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mid, err := core.MakeManifestID(hlsStrmID.GetVideoID())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mlHandler := getHLSMasterPlaylistHandler(s)
+	url2, _ := url.Parse(fmt.Sprintf("http://localhost/stream/%s.m3u8", mid))
 
 	//Test get master playlist
-	pl, err := handler(url)
+	pl, err := mlHandler(url2)
 	if err != nil {
 		t.Errorf("Error handling getHLSMasterPlaylist: %v", err)
+	}
+	if pl == nil {
+		t.Fatal("Expected playlist; got none")
 	}
 
 	if len(pl.Variants) != 1 {
 		t.Errorf("Expecting 1 variant, but got %v", pl)
 	}
-	if pl.Variants[0].URI != "strm.m3u8" {
-		t.Errorf("Expecting strm.m3u8, but got: %v", pl.Variants[0].URI)
+	mediaPLName := fmt.Sprintf("%s.m3u8", hlsStrmID)
+	if pl.Variants[0].URI != mediaPLName {
+		t.Errorf("Expecting %s, but got: %s", mediaPLName, pl.Variants[0].URI)
 	}
 }
 

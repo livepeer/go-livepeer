@@ -804,7 +804,7 @@ func (db *DB) UseUnbondingLock(id *big.Int, delegator ethcommon.Address, usedBlo
 	glog.V(DEBUG).Infof("db: Using unbonding lock %v for delegator %v", id, delegator.Hex())
 	_, err := db.useUnbondingLock.Exec(usedBlock.Int64(), id.Int64(), delegator.Hex())
 	if err != nil {
-		glog.Error("db: Error using unbonding lock %v for delegator %v: %v", id, delegator.Hex(), err)
+		glog.Errorf("db: Error using unbonding lock %v for delegator %v: %v", id, delegator.Hex(), err)
 		return err
 	}
 	return nil
