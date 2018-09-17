@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -63,10 +64,12 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	cm := StubClaimManager{}
 	config := transcodeConfig{StrmID: strmID.String(), Profiles: p, ResultStrmIDs: strmIds, ClaimManager: &cm, JobID: jid, Transcoder: tr}
 
-	n, err := NewLivepeerNode(&eth.StubClient{}, ".", nil) // TODO fix empty work dir
+	tmpdir, _ := ioutil.TempDir("", "")
+	n, err := NewLivepeerNode(&eth.StubClient{}, tmpdir, nil)
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
+	defer os.RemoveAll(tmpdir)
 
 	ss := StubSegment()
 	res := n.transcodeAndCacheSeg(config, ss)
@@ -120,7 +123,9 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 }
 
 func TestNodeClaimManager(t *testing.T) {
-	n, err := NewLivepeerNode(nil, ".", nil)
+	tmpdir, _ := ioutil.TempDir("", "")
+	n, err := NewLivepeerNode(nil, tmpdir, nil)
+	defer os.RemoveAll(tmpdir)
 
 	job := &lpTypes.Job{
 		JobId:              big.NewInt(15),

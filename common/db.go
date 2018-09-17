@@ -22,6 +22,7 @@ type DB struct {
 	updateKV                   *sql.Stmt
 	insertJob                  *sql.Stmt
 	selectJobs                 *sql.Stmt
+	getJob                     *sql.Stmt
 	stopReason                 *sql.Stmt
 	insertRec                  *sql.Stmt
 	checkRec                   *sql.Stmt
@@ -49,8 +50,9 @@ type DBJob struct {
 	Transcoder  ethcommon.Address
 	startBlock  int64
 	endBlock    int64
-	stopReason  string
+	StopReason  sql.NullString
 	Segments    int64
+	Claims      int64
 }
 
 type DBReceipt struct {
@@ -169,14 +171,16 @@ func NewDBJob(id *big.Int, streamID string,
 
 func DBJobToEthJob(j *DBJob) *lpTypes.Job {
 	return &lpTypes.Job{
-		JobId:              big.NewInt(j.ID),
-		StreamId:           j.streamID,
-		MaxPricePerSegment: big.NewInt(j.price),
-		Profiles:           j.profiles,
-		BroadcasterAddress: j.broadcaster,
-		TranscoderAddress:  j.Transcoder,
-		CreationBlock:      big.NewInt(j.startBlock),
-		EndBlock:           big.NewInt(j.endBlock),
+		JobId:               big.NewInt(j.ID),
+		StreamId:            j.streamID,
+		MaxPricePerSegment:  big.NewInt(j.price),
+		Profiles:            j.profiles,
+		BroadcasterAddress:  j.broadcaster,
+		TranscoderAddress:   j.Transcoder,
+		CreationBlock:       big.NewInt(j.startBlock),
+		EndBlock:            big.NewInt(j.endBlock),
+		TotalClaims:         big.NewInt(j.Claims),
+		FirstClaimSubmitted: j.Claims > 0,
 	}
 }
 
@@ -250,6 +254,15 @@ func InitDB(dbPath string) (*DB, error) {
 		return nil, err
 	}
 	d.selectJobs = stmt
+
+	// get a single job
+	stmt, err = db.Prepare("SELECT id, streamID, segmentPrice, transcodeOptions, broadcaster, transcoder, startBlock, endBlock, stopReason FROM jobs WHERE id = ?")
+	if err != nil {
+		glog.Error("Unable to prepare getjob stmt ", err)
+		d.Close()
+		return nil, err
+	}
+	d.getJob = stmt
 
 	// set reason for stopping a job
 	stmt, err = db.Prepare("UPDATE jobs SET stopReason=?, stoppedAt=datetime() WHERE id=?")
@@ -399,6 +412,9 @@ func (db *DB) Close() {
 	if db.selectJobs != nil {
 		db.selectJobs.Close()
 	}
+	if db.getJob != nil {
+		db.getJob.Close()
+	}
 	if db.stopReason != nil {
 		db.stopReason.Close()
 	}
@@ -524,6 +540,39 @@ func (db *DB) ActiveJobs(since *big.Int) ([]*DBJob, error) {
 		jobs = append(jobs, &job)
 	}
 	return jobs, nil
+}
+
+func (db *DB) GetJob(id int64) (*DBJob, error) {
+	if db == nil {
+		return nil, nil
+	}
+	glog.V(DEBUG).Info("db: Getting job for ", id)
+	var job DBJob
+	var transcoder string
+	var broadcaster string
+	var options string
+	if err := db.getJob.QueryRow(id).Scan(&job.ID, &job.streamID, &job.price,
+		&options, &broadcaster, &transcoder, &job.startBlock, &job.endBlock, &job.StopReason); err != nil {
+		// nonexistent job; this case will be fairly common
+		// don't need to print an error here
+		return nil, err
+	}
+	profiles, err := TxDataToVideoProfile(options)
+	if err != nil {
+		return nil, err
+	}
+	job.Transcoder = ethcommon.HexToAddress(transcoder)
+	job.broadcaster = ethcommon.HexToAddress(broadcaster)
+	job.profiles = profiles
+
+	// The claim count is an approximation!!
+	// The count will be incorrect if a claim for this job was ever
+	// submitted outside this node
+	if err := db.countClaims.QueryRow(&id).Scan(&job.Claims); err != nil {
+		glog.Error("Unable to retrieve claim count for job ", id, err)
+	}
+
+	return &job, nil
 }
 
 func (db *DB) SetStopReason(id *big.Int, reason string) error {
@@ -661,6 +710,15 @@ func (db *DB) InsertClaim(jobID *big.Int, segRange [2]int64,
 		return nil, err
 	}
 	return &claimID, nil
+}
+
+func (db *DB) CountClaims(jobID *big.Int) (int64, error) {
+	var count int64
+	if err := db.countClaims.QueryRow(jobID.Int64()).Scan(&count); err != nil {
+		// no claims
+		return 0, err
+	}
+	return count, nil
 }
 
 func (db *DB) SetClaimStatus(jobID *big.Int, id int64, status string) error {

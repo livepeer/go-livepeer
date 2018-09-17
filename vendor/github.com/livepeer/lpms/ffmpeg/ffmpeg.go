@@ -38,6 +38,9 @@ func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs str
 }
 
 func Transcode(input string, workDir string, ps []VideoProfile) error {
+	if len(ps) <= 0 {
+		return nil
+	}
 	inp := C.CString(input)
 	params := make([]C.output_params, len(ps))
 	for i, param := range ps {

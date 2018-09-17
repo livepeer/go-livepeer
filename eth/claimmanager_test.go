@@ -28,6 +28,8 @@ func newJob() *ethTypes.Job {
 		MaxPricePerSegment: big.NewInt(1),
 		BroadcasterAddress: ethcommon.Address{},
 		TotalClaims:        big.NewInt(0),
+		CreationBlock:      big.NewInt(100),
+		EndBlock:           big.NewInt(200),
 	}
 }
 
@@ -292,6 +294,132 @@ func TestClaimVerifyAndDistributeFees(t *testing.T) {
 	}
 	if _, ok := ethClient.ClaimRoot[[32]byte(root2.Hash)]; !ok {
 		t.Errorf("Expecting claim to have root %v, but got %v", [32]byte(root2.Hash), ethClient.ClaimRoot)
+	}
+}
+
+func TestRecoverClaims(t *testing.T) {
+	// this whole thing is timing sensitive; fix?
+
+	sc := &StubClient{ClaimRoot: make(map[[32]byte]bool), Claims: make(map[int]*ethTypes.Claim)}
+	db, dbraw, err := common.TempDB(t)
+	if err != nil {
+		t.Error(t)
+	}
+	defer db.Close()
+	defer dbraw.Close()
+
+	// empty db
+	err = RecoverClaims(sc, &ipfs.StubIpfsApi{}, db)
+	if err != nil {
+		t.Error(t)
+	}
+
+	// claims are async so sleep for a bit
+	time.Sleep(1 * time.Second)
+
+	var claims int
+	err = dbraw.QueryRow("SELECT count(*) FROM claims").Scan(&claims)
+	if err != nil || claims != 0 {
+		t.Errorf("Unexpected claims got %v error %v", claims, err)
+	}
+
+	j := newJob()
+	jid := j.JobId
+	db.InsertJob(EthJobToDBJob(j))
+
+	db.InsertReceipt(jid, 1, "bcastfile", []byte("sig"), []byte("tcodehash"), []byte("bcasthash"), time.Now(), time.Now())
+	db.InsertReceipt(jid, 2, "bcastfile", []byte("sig"), []byte("tcodehash"), []byte("bcasthash"), time.Now(), time.Now())
+	db.InsertReceipt(jid, 3, "bcastfile", []byte("sig"), []byte("tcodehash"), []byte("bcasthash"), time.Now(), time.Now())
+	db.InsertReceipt(jid, 8, "bcastfile", []byte("sig"), []byte("tcodehash"), []byte("bcasthash"), time.Now(), time.Now())
+	db.InsertReceipt(jid, 9, "bcastfile", []byte("sig"), []byte("tcodehash"), []byte("bcasthash"), time.Now(), time.Now())
+
+	j.JobId = big.NewInt(0).Add(jid, jid)
+	db.InsertJob(EthJobToDBJob(j))
+
+	db.InsertReceipt(j.JobId, 1, "bcastfile", []byte("sig"), []byte("tcodehash"), []byte("bcasthash"), time.Now(), time.Now())
+	db.InsertReceipt(j.JobId, 2, "bcastfile", []byte("sig"), []byte("tcodehash"), []byte("bcasthash"), time.Now(), time.Now())
+
+	// sanity check receipts and claims in db
+	receipts, err := db.UnclaimedReceipts()
+	if err != nil || (len(receipts) != 2 && len(receipts[0]) != 5 && len(receipts[1]) != 2) {
+		t.Error("Receipts ", err)
+	}
+	jc, err := db.CountClaims(jid)
+	if err != nil || jc != 0 {
+		t.Error("Claims ", err)
+	}
+
+	err = RecoverClaims(sc, &ipfs.StubIpfsApi{}, db)
+	if err != nil {
+		t.Error(t)
+	}
+
+	// claims are async so sleep for a bit
+	time.Sleep(1 * time.Second)
+
+	dbraw.QueryRow("SELECT count(*) FROM claims").Scan(&claims)
+	jc1, _ := db.CountClaims(jid)
+	jc2, _ := db.CountClaims(j.JobId)
+	if claims != 3 || sc.ClaimCounter != 3 || jc1 != 2 || jc2 != 1 {
+		t.Error("Unexpected claims ", claims, sc.ClaimCounter, jc1, jc2)
+	}
+
+	// all receipts should have been claimed
+	receipts, err = db.UnclaimedReceipts()
+	if err != nil || len(receipts) != 0 {
+		t.Error("Receipts ", err, len(receipts))
+	}
+
+	// ensure imdepotency
+	err = RecoverClaims(sc, &ipfs.StubIpfsApi{}, db)
+	if err != nil {
+		t.Error(t)
+	}
+
+	// claims are async so sleep for a bit
+	time.Sleep(1 * time.Second)
+
+	err = dbraw.QueryRow("SELECT count(*) FROM claims").Scan(&claims)
+	if err != nil || claims != 3 || sc.ClaimCounter != 3 {
+		t.Errorf("Unexpected claims got %v error %v", claims, err)
+	}
+
+	// now move forward the block count and check if claims can be submitted
+	db.SetLastSeenBlock(big.NewInt(1000))
+
+	// existing job that has submitted a claim; can submit another
+	db.InsertReceipt(jid, 4, "bcastfile", []byte("sig"), []byte("tcodehash"), []byte("bcasthash"), time.Now(), time.Now())
+	dbj, _ := db.GetJob(jid.Int64())
+	j = common.DBJobToEthJob(dbj)
+	lsb, _ := db.LastSeenBlock()
+	if lsb.Int64()-j.CreationBlock.Int64() <= 256 { // sanity check
+		t.Error("Not > 256 blocks after creation")
+	}
+
+	// new job, blocks > 256 and hasn't submitted a claim; can't claim anymore
+	j.JobId = big.NewInt(99)
+	db.InsertJob(EthJobToDBJob(j))
+	db.InsertReceipt(j.JobId, 1, "bcastfile", []byte("sig"), []byte("tcodehash"), []byte("bcasthash"), time.Now(), time.Now())
+	db.InsertReceipt(j.JobId, 2, "bcastfile", []byte("sig"), []byte("tcodehash"), []byte("bcasthash"), time.Now(), time.Now())
+
+	receipts, _ = db.UnclaimedReceipts()
+	if len(receipts) != 2 && len(receipts[0]) != 1 && len(receipts[1]) != 2 {
+		t.Error("Receipts after 256 blocks")
+	}
+
+	err = RecoverClaims(sc, &ipfs.StubIpfsApi{}, db)
+	if err != nil {
+		t.Error(t)
+	}
+
+	// claims are async so sleep for a bit
+	time.Sleep(1 * time.Second)
+
+	dbraw.QueryRow("SELECT count(*) FROM claims").Scan(&claims)
+	jc1, _ = db.CountClaims(jid)
+	jc2, _ = db.CountClaims(j.JobId)
+	if claims != 4 || sc.ClaimCounter != 4 || jc1 != 3 || jc2 != 0 {
+		t.Error("Unexpected claims ", claims, sc.ClaimCounter, jc1, jc2)
 	}
 }
 

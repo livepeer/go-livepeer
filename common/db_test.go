@@ -1,6 +1,7 @@
 package common
 
 import (
+	"database/sql"
 	"fmt"
 	"math/big"
 	"testing"
@@ -156,6 +157,39 @@ func TestDBJobs(t *testing.T) {
 	jobs, err = dbh.ActiveJobs(big.NewInt(0))
 	if err != nil || len(jobs) != 2 {
 		t.Error("Unexpected error in active jobs ", err, len(jobs))
+	}
+
+	// test getting a job
+	dbjob, err := dbh.GetJob(j.ID)
+	if err != nil {
+		t.Error("Unexpected error when fetching job ", err)
+	}
+	if dbjob.ID != j.ID || dbjob.StopReason.String != "insufficient lolz" ||
+		!profilesMatch(dbjob.profiles, j.profiles) ||
+		dbjob.Transcoder != j.Transcoder ||
+		dbjob.broadcaster != j.broadcaster ||
+		dbjob.startBlock != j.startBlock || dbjob.endBlock != j.endBlock {
+		t.Error("Job mismatch ")
+	}
+	// should be a nonexistent job
+	dbjob, err = dbh.GetJob(100)
+	if err != sql.ErrNoRows {
+		t.Error("Missing error or unexpected error", err)
+	}
+	// job with a null stop reason
+	dbjob, err = dbh.GetJob(1)
+	if err != nil {
+		t.Error("Unexpected error ", err)
+	}
+	if dbjob.StopReason.Valid {
+		t.Error("Unexpected stop reason ", dbjob.StopReason.String)
+	}
+
+	// should have an invalid profile
+	dbraw.Exec("UPDATE jobs SET transcodeOptions = 'invalid' WHERE id = 1")
+	_, err = dbh.GetJob(1)
+	if err != ErrProfile {
+		t.Error("Unexpected result from invalid profile ", err)
 	}
 }
 
@@ -321,7 +355,7 @@ func TestDBClaims(t *testing.T) {
 		return
 	}
 	// Sanity check number of claims
-	var nbclaims int
+	var nbclaims int64
 	row = dbraw.QueryRow("SELECT count(*) FROM claims")
 	err = row.Scan(&nbclaims)
 	if err != nil {
@@ -357,6 +391,25 @@ func TestDBClaims(t *testing.T) {
 	if err != nil || status != s {
 		t.Errorf("Unexpected: error %v, got %v but wanted %v", err, status, s)
 		return
+	}
+
+	// Check count claims for a given job
+	nbclaims, err = dbh.CountClaims(big.NewInt(0))
+	if err != nil || nbclaims != 2 {
+		t.Errorf("Unexpected number of claims; expected 2 got %v; error %v", nbclaims, err)
+		return
+	}
+	// Check count claims for a nonexistent job
+	nbclaims, err = dbh.CountClaims(big.NewInt(-1))
+	if err != nil || nbclaims != 0 {
+		t.Errorf("Unexpected number of claims; expected 0 got %v; error %v", nbclaims, err)
+	}
+	// Check count claims for a job with no claims
+	job.ID++
+	dbh.InsertJob(job)
+	nbclaims, err = dbh.CountClaims(big.NewInt(job.ID))
+	if err != nil || nbclaims != 0 {
+		t.Errorf("Unexpected number of claims; expected 0 got %v; error %v", nbclaims, err)
 	}
 }
 

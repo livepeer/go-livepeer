@@ -14,6 +14,7 @@ import (
 
 var (
 	ErrParseBigInt = fmt.Errorf("failed to parse big integer")
+	ErrProfile     = fmt.Errorf("failed to parse profile")
 )
 
 func ParseBigInt(num string) (*big.Int, error) {
@@ -68,16 +69,22 @@ func Retry(attempts int, sleep time.Duration, fn func() error) error {
 func TxDataToVideoProfile(txData string) ([]ffmpeg.VideoProfile, error) {
 	profiles := make([]ffmpeg.VideoProfile, 0)
 
+	if len(txData) == 0 {
+		return profiles, nil
+	}
+	if len(txData) < VideoProfileIDSize {
+		return nil, ErrProfile
+	}
+
 	for i := 0; i+VideoProfileIDSize <= len(txData); i += VideoProfileIDSize {
 		txp := txData[i : i+VideoProfileIDSize]
 
 		p, ok := ffmpeg.VideoProfileLookup[VideoProfileNameLookup[txp]]
 		if !ok {
 			glog.Errorf("Cannot find video profile for job: %v", txp)
-			// return nil, core.ErrTranscode
-		} else {
-			profiles = append(profiles, p)
+			return nil, ErrProfile // monitor to see if this is too aggressive
 		}
+		profiles = append(profiles, p)
 	}
 
 	return profiles, nil

@@ -65,7 +65,13 @@ func genTranscoderReq(b Broadcaster, jid int64) (*net.TranscoderRequest, error) 
 	return &net.TranscoderRequest{JobId: jid, Sig: sig}, nil
 }
 
-func blockInRange(orch Orchestrator, job *lpTypes.Job) bool {
+func jobClaimable(orch Orchestrator, job *lpTypes.Job) bool {
+	if len(job.Profiles) <= 0 {
+		// This is just to be extra cautious:
+		// We don't need to do any work, so nothing to claim
+		return false
+	}
+
 	blk := orch.CurrentBlock()
 	if blk == nil {
 		// The benefit of doubt.
@@ -87,7 +93,7 @@ func verifyTranscoderReq(orch Orchestrator, req *net.TranscoderRequest, job *lpT
 		glog.Error("Transcoder was not assigned")
 		return fmt.Errorf("Transcoder was not assigned")
 	}
-	if !blockInRange(orch, job) {
+	if !jobClaimable(orch, job) {
 		glog.Error("Job out of range")
 		return fmt.Errorf("Job out of range")
 	}
@@ -132,7 +138,7 @@ func verifyToken(orch Orchestrator, creds string) (*lpTypes.Job, error) {
 		glog.Error("Could not get job ", err)
 		return nil, fmt.Errorf("Missing job (%s)", err.Error())
 	}
-	if !blockInRange(orch, job) {
+	if !jobClaimable(orch, job) {
 		glog.Errorf("Job %v too early or expired", job.JobId)
 		return nil, fmt.Errorf("Job out of range")
 	}

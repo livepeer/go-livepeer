@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -36,16 +37,32 @@ func (orch *orchestrator) ServiceURI() *url.URL {
 }
 
 func (orch *orchestrator) CurrentBlock() *big.Int {
-	if orch.node == nil || orch.node.Eth == nil {
+	if orch.node == nil || orch.node.Database == nil {
 		return nil
 	}
-	block, _ := orch.node.Eth.LatestBlockNum()
+	block, _ := orch.node.Database.LastSeenBlock()
 	return block
 }
 
 func (orch *orchestrator) GetJob(jid int64) (*ethTypes.Job, error) {
-	if orch.node == nil || orch.node.Eth == nil {
-		return nil, fmt.Errorf("Cannot get job; missing eth client")
+	if orch.node == nil || orch.node.Database == nil {
+		return nil, fmt.Errorf("Cannot get job; missing database")
+	}
+	dbjob, err := orch.node.Database.GetJob(jid)
+	if err == nil && dbjob != nil {
+		if !dbjob.StopReason.Valid {
+			return common.DBJobToEthJob(dbjob), nil
+		}
+		glog.Info("Requested a job that has been stopped: ", dbjob.StopReason)
+		return nil, fmt.Errorf("Job stopped")
+	}
+	if err != sql.ErrNoRows {
+		glog.Errorf("Unexpected error when querying job from DB: \"%v\". Querying blockchain", err)
+	} else {
+		glog.Infof("Job did not exist in DB. Querying blockchain ")
+	}
+	if orch.node.Eth == nil {
+		return nil, fmt.Errorf("Cannot get job; missing Eth client")
 	}
 	job, err := orch.node.Eth.GetJob(big.NewInt(jid))
 	if err != nil {

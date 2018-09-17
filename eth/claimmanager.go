@@ -119,11 +119,13 @@ func RecoverClaims(c LivepeerEthClient, ipfs ipfs.IpfsApi, db *common.DB) error 
 	}
 	for jid, receipts := range jobReceipts {
 		glog.V(common.DEBUG).Info("claimmanager: Fetching claims for job ", jid)
-		j, err := c.GetJob(big.NewInt(jid)) // benchmark; may be faster to reconstruct locally?
+		dbj, err := db.GetJob(jid)
 		if err != nil {
 			glog.Error("Unable to get job ", jid, err)
 			continue
 		}
+		j := common.DBJobToEthJob(dbj)
+
 		cm := NewBasicClaimManager(j, c, ipfs, db)
 		for _, r := range receipts {
 			cm.unclaimedSegs[r.SeqNo] = true
