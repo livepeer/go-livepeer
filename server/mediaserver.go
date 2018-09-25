@@ -85,7 +85,7 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 	switch lpNode.NodeType {
 	case core.Broadcaster:
 		opts.RtmpDisabled = false
-	case core.Transcoder:
+	case core.OrchestratorNode:
 		opts.HttpMux = http.NewServeMux()
 	}
 	server := lpmscore.New(&opts)

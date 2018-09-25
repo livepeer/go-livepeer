@@ -30,7 +30,8 @@ type NodeType int
 
 const (
 	Broadcaster NodeType = iota
-	Transcoder
+	OrchestratorNode
+	TranscoderNode
 )
 
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
@@ -49,6 +50,7 @@ type LivepeerNode struct {
 	SegmentChans  map[int64]SegmentChan
 	Ipfs          ipfs.IpfsApi
 	ServiceURI    *url.URL
+	OrchSecret    string
 
 	// Transcoder private fields
 	claimMutex   *sync.Mutex

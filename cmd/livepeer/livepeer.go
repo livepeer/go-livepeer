@@ -59,7 +59,8 @@ func main() {
 	rtmpAddr := flag.String("rtmpAddr", "127.0.0.1:"+RtmpPort, "Address to bind for RTMP commands")
 	cliAddr := flag.String("cliAddr", "127.0.0.1:"+CliPort, "Address to bind for  CLI commands")
 	httpAddr := flag.String("httpAddr", "", "Address to bind for HTTP commands")
-	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
+	orchAndTrans := flag.Bool("transcoder", false, "Set to true to be a orchestrator+transcoder")
+	orchestrator := flag.Bool("orchestrator", false, "Set to true to be a standalone orchestrator")
 	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
@@ -84,6 +85,9 @@ func main() {
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
 
 	version := flag.Bool("version", false, "Print out the version")
+	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
+	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
+	var transcoder bool
 
 	flag.Parse()
 
@@ -92,8 +96,17 @@ func main() {
 		return
 	}
 
+	if *orchAddr != "" {
+		if *orchSecret == "" {
+			glog.Error("Running a standalone transcoder requires both -orchAddr and -orchSecret")
+			return
+		}
+		*orchAddr = defaultAddr(*orchAddr, "127.0.0.1", RpcPort)
+		transcoder = true
+	}
+
 	if *rinkeby {
-		if !*offchain {
+		if !*offchain && !transcoder {
 			if *ethUrl == "" {
 				*ethUrl = "wss://rinkeby.infura.io/ws"
 			}
@@ -112,7 +125,7 @@ func main() {
 	} else if *devenv {
 		*datadir = *datadir + "/devenv"
 	} else {
-		if !*offchain {
+		if !*offchain && !transcoder {
 			if *ethUrl == "" {
 				*ethUrl = "wss://mainnet.infura.io/ws"
 			}
@@ -127,6 +140,11 @@ func main() {
 		if *monitor && *monhost == "" {
 			*monhost = "http://metrics-mainnet.livepeer.org/api/events"
 		}
+	}
+
+	if *orchAndTrans {
+		transcoder = true
+		*orchestrator = true
 	}
 
 	//Make sure datadir is present
@@ -149,8 +167,15 @@ func main() {
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
-	if *transcoder {
-		n.NodeType = core.Transcoder
+
+	if *orchSecret != "" {
+		n.OrchSecret = *orchSecret
+	}
+
+	if *orchestrator {
+		n.NodeType = core.OrchestratorNode
+	} else if transcoder {
+		n.NodeType = core.TranscoderNode
 	} else {
 		n.NodeType = core.Broadcaster
 	}
@@ -219,12 +244,12 @@ func main() {
 		// Setup unbonding service to manage unbonding locks
 		n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
 
-		if *transcoder {
+		if *orchestrator {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
 			if err := setupTranscoder(ctx, n, em, *ipfsPath, *initializeRound, *serviceAddr); err != nil {
-				glog.Errorf("Error setting up transcoder: %v", err)
+				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
 		}
@@ -259,7 +284,7 @@ func main() {
 		// TODO provide an option to disable this?
 		*rtmpAddr = defaultAddr(*rtmpAddr, "127.0.0.1", RtmpPort)
 		*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
-	} else if n.NodeType == core.Transcoder {
+	} else if n.NodeType == core.OrchestratorNode {
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
 		*httpAddr = defaultAddr(*httpAddr, "", n.ServiceURI.Port())
@@ -323,7 +348,7 @@ func main() {
 	}()
 
 	go func() {
-		if core.Transcoder != n.NodeType {
+		if core.OrchestratorNode != n.NodeType {
 			return
 		}
 		orch := core.NewOrchestrator(s.LivepeerNode)
@@ -344,11 +369,13 @@ func main() {
 	}()
 
 	switch n.NodeType {
-	case core.Transcoder:
-		glog.Infof("***Livepeer Running in Transcoder Mode***")
+	case core.OrchestratorNode:
+		glog.Infof("***Livepeer Running in Orchestrator Mode***")
 	case core.Broadcaster:
 		glog.Infof("***Livepeer Running in Broadcaster Mode***")
 		glog.Infof("Video Ingest Endpoint - rtmp://%v", *rtmpAddr)
+	case core.TranscoderNode:
+		glog.Infof("**Liveepeer Running in Transcoder Mode***")
 	}
 
 	c := make(chan os.Signal)
@@ -373,7 +400,7 @@ func main() {
 }
 
 func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool, serviceUri string) error {
-	//Check if transcoder is active
+	//Check if orchestrator is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
 		return err
@@ -407,17 +434,17 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	}
 	uriStr, err := n.Eth.GetServiceURI(n.Eth.Account().Address)
 	if err != nil {
-		glog.Error("Could not get service URI; transcoder may be unreachable")
+		glog.Error("Could not get service URI; orchestrator may be unreachable")
 		return err
 	}
 	uri, err := url.ParseRequestURI(uriStr)
 	if err != nil {
-		glog.Error("Could not parse service URI; transcoder may be unreachable")
+		glog.Error("Could not parse service URI; orchestrator may be unreachable")
 		uri, _ = url.ParseRequestURI("http://127.0.0.1:" + RpcPort)
 	}
 	if uri.Hostname() != suri.Hostname() || uri.Port() != suri.Port() {
 		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceAddr", uri, suri)
-		// TODO remove '&& false' after all transcoders have set a service URI
+		// TODO remove '&& false' after all orchestrators have set a service URI
 		if active && false {
 			return fmt.Errorf("Mismatched service address")
 		}
@@ -456,7 +483,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	// Restart jobs as necessary
 	err = js.RestartTranscoder()
 	if err != nil {
-		glog.Errorf("Unable to restart transcoder: %v", err)
+		glog.Errorf("Unable to restart orchestrator: %v", err)
 		// non-fatal, so continue
 	}
 

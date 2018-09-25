@@ -1167,7 +1167,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 	})
 
 	mux.HandleFunc("/IsTranscoder", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.Transcoder)))
+		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.OrchestratorNode)))
 	})
 
 	mux.HandleFunc("/EthNetworkID", func(w http.ResponseWriter, r *http.Request) {
