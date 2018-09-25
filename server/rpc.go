@@ -478,14 +478,18 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 	// check for errors and exit early if there's anything unusual
 	var tdata *net.TranscodeData
 	switch res := tr.Result.(type) {
+
 	case *net.TranscodeResult_Error:
 		err = fmt.Errorf(res.Error)
 		glog.Errorf("Transcode failed for segment %v: %v", seg.SeqNo, err)
-		glog.Info("Ensure the keyframe interval is 4 seconds or less")
+		if err.Error() == "MediaStats Failure" {
+			glog.Info("Ensure the keyframe interval is 4 seconds or less")
+		}
 		if monitor.Enabled {
 			monitor.LogSegmentTranscodeFailed("Transcode", nonce, seg.SeqNo, err)
 		}
 		return nil, err
+
 	case *net.TranscodeResult_Data:
 		// fall through here for the normal case
 		tdata = res.Data
