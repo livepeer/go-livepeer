@@ -86,7 +86,7 @@ func CheckMediaLen(fname string, ts_max int, packet_max int) error {
 	ret := int(C.lpms_length(f, tm, pm))
 	if 0 != ret {
 		if nil == ErrorMap[ret] {
-			return errors.New("MediStats Failure")
+			return errors.New("MediaStats Failure")
 		}
 		return ErrorMap[ret]
 	}

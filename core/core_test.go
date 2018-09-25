@@ -110,7 +110,7 @@ func TestTranscode(t *testing.T) {
 	ss.Seg.Data = d
 	ss.Seg.SeqNo += 1
 	_, err = n.TranscodeSegment(job, ss)
-	if err.Error() != "keyframe interval in broadcaster software is set to 0" {
+	if err.Error() != "MediaStats Failure" {
 		t.Error("Unexpected error when checking mediastats ", err)
 	}
 	ss.Seg.Data = ssd
