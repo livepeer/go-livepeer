@@ -233,7 +233,7 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 	transcodeStart := time.Now().UTC()
 	// Ensure length matches expectations. 4 second + 25% wiggle factor, 60fps
 	if err := ffmpeg.CheckMediaLen(fname, 4*1.25*1000, 60*4*1.25); err != nil {
-		glog.Errorf("Media length check failed: %v", err)
+		glog.Errorf("Keyframe interval possibly > 4 seconds: %v", err)
 		os.Remove(fname)
 		return terr(err)
 	}
