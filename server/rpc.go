@@ -478,7 +478,6 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 	// check for errors and exit early if there's anything unusual
 	var tdata *net.TranscodeData
 	switch res := tr.Result.(type) {
-
 	case *net.TranscodeResult_Error:
 		err = fmt.Errorf(res.Error)
 		glog.Errorf("Transcode failed for segment %v: %v", seg.SeqNo, err)
@@ -489,7 +488,6 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 			monitor.LogSegmentTranscodeFailed("Transcode", nonce, seg.SeqNo, err)
 		}
 		return nil, err
-
 	case *net.TranscodeResult_Data:
 		// fall through here for the normal case
 		tdata = res.Data
