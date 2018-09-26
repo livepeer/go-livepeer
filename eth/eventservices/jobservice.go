@@ -213,6 +213,10 @@ func (s *JobService) processHistoricalEvents(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	//Exit early if LastSeenBlock is zero (starting with a new db)
+	if startBlock.Cmp(big.NewInt(0)) == 0 {
+		return nil
+	}
 
 	if err := s.node.Eth.ProcessHistoricalNewJob(startBlock, true, func(newJob *contracts.JobsManagerNewJob) error {
 		if err := s.processNewJob(ctx, newJob); err != nil {
