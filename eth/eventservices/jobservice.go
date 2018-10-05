@@ -50,8 +50,9 @@ func (s *JobService) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	s.cancelWorker = cancel
 
-	if err := s.processHistoricalEvents(ctx); err != nil {
-		return err
+	startBlock, err := s.node.Database.LastSeenBlock()
+	if err == nil {
+		go s.processHistoricalEvents(ctx, startBlock)
 	}
 
 	go func() {
@@ -110,6 +111,9 @@ func (s *JobService) IsWorking() bool {
 }
 
 func (s *JobService) firstClaim(ctx context.Context, job *lpTypes.Job) error {
+	// We might want to check for the latest block
+	// (from the blockchain, not the local DB)
+	// and skip creating the claimmanager if the job is too old
 	cm, err := s.node.GetClaimManager(job)
 	if err != nil {
 		return err
@@ -208,11 +212,7 @@ func (s *JobService) processNewJob(ctx context.Context, newJob *contracts.JobsMa
 	return nil
 }
 
-func (s *JobService) processHistoricalEvents(ctx context.Context) error {
-	startBlock, err := s.node.Database.LastSeenBlock()
-	if err != nil {
-		return err
-	}
+func (s *JobService) processHistoricalEvents(ctx context.Context, startBlock *big.Int) error {
 	//Exit early if LastSeenBlock is zero (starting with a new db)
 	if startBlock.Cmp(big.NewInt(0)) == 0 {
 		return nil
