@@ -10,10 +10,19 @@ service Orchestrator {
   rpc Ping(PingPong) returns (PingPong);
 }
 
+service Transcoder {
+
+  // Called by the transcoder to register to an orchestrator. The orchestrator
+  // notifies registered transcoders of segments as they come in.
+  rpc RegisterTranscoder(RegisterRequest) returns (stream NotifySegment);
+}
+
 message PingPong {
   // Implementation defined
   bytes value = 1;
+
 }
+
 
 // This request is sent by the broadcaster in `GetTranscoder` to request
 // information on which transcoder to use.
@@ -144,4 +153,20 @@ message TranscodeResult {
         string error = 2;
         TranscodeData data = 3;
     }
+}
+
+// Sent by the transcoder to register itself to the orchestrator.
+message RegisterRequest {
+
+    // Shared secret for auth
+    string secret = 1;
+}
+
+// Sent by the transcoder
+message NotifySegment {
+
+    string url      = 1;
+
+    int64 taskId   = 16;
+    bytes profiles = 17;
 }

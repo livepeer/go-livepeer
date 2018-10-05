@@ -56,6 +56,10 @@ type LivepeerNode struct {
 	// Transcoder private fields
 	claimMutex   *sync.Mutex
 	segmentMutex *sync.Mutex
+	tcoderMutex  *sync.RWMutex
+	taskMutex    *sync.RWMutex
+	taskChans    map[int64]TranscoderChan
+	taskCount    int64
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
@@ -69,7 +73,11 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		SegmentChans:  make(map[int64]SegmentChan),
 		claimMutex:    &sync.Mutex{},
 		segmentMutex:  &sync.Mutex{},
+		tcoderMutex:   &sync.RWMutex{},
+		taskMutex:     &sync.RWMutex{},
+		taskChans:     make(map[int64]TranscoderChan),
 	}, nil
+
 }
 
 func (n *LivepeerNode) StartEthServices() error {

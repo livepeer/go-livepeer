@@ -180,6 +180,9 @@ func main() {
 		n.NodeType = core.OrchestratorNode
 	} else if transcoder {
 		n.NodeType = core.TranscoderNode
+		glog.Info("***Livepeer is in transcoder mode ***")
+		server.RunTranscoder(n, *orchAddr)
+		return
 	} else {
 		n.NodeType = core.BroadcasterNode
 	}
