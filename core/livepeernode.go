@@ -29,7 +29,7 @@ var LivepeerVersion = "0.3.1-unstable"
 type NodeType int
 
 const (
-	Broadcaster NodeType = iota
+	BroadcasterNode NodeType = iota
 	OrchestratorNode
 	TranscoderNode
 )
