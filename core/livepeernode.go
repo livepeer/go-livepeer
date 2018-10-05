@@ -51,6 +51,7 @@ type LivepeerNode struct {
 	Ipfs          ipfs.IpfsApi
 	ServiceURI    *url.URL
 	OrchSecret    string
+	Transcoder    Transcoder
 
 	// Transcoder private fields
 	claimMutex   *sync.Mutex

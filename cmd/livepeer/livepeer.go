@@ -172,6 +172,10 @@ func main() {
 		n.OrchSecret = *orchSecret
 	}
 
+	if transcoder {
+		n.Transcoder = core.NewLocalTranscoder(*datadir)
+	}
+
 	if *orchestrator {
 		n.NodeType = core.OrchestratorNode
 	} else if transcoder {
