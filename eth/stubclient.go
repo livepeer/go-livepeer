@@ -185,7 +185,7 @@ func (c *StubClient) WatchForJob(j string) (*lpTypes.Job, error) {
 	return c.JobsMap[j], c.WatchJobError
 }
 func (c *StubClient) ProcessHistoricalNewJob(*big.Int, bool, func(*contracts.JobsManagerNewJob) error) error {
-	return nil
+	return c.WatchJobError
 }
 func (c *StubClient) WatchForNewJob(bool, chan *contracts.JobsManagerNewJob) (ethereum.Subscription, error) {
 	return nil, nil
