@@ -186,7 +186,13 @@ func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) (*
 func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSegment) *TranscodeResult {
 
 	seg := ss.Seg
-	terr := func(err error) *TranscodeResult { return &TranscodeResult{Err: err} }
+	var fnamep *string
+	terr := func(err error) *TranscodeResult {
+		if fnamep != nil {
+			os.Remove(*fnamep)
+		}
+		return &TranscodeResult{Err: err}
+	}
 
 	// Prevent unnecessary work, check for replayed sequence numbers.
 	// NOTE: If we ever process segments from the same job concurrently,
@@ -225,6 +231,7 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 	}
 	// Create input file from segment. Removed after claiming complete or error
 	fname := path.Join(n.WorkDir, inName)
+	fnamep = &fname
 	if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
 		glog.Errorf("Transcoder cannot write file: %v", err)
 		return terr(err)
@@ -234,7 +241,6 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 	// Ensure length matches expectations. 4 second + 25% wiggle factor, 60fps
 	if err := ffmpeg.CheckMediaLen(fname, 4*1.25*1000, 60*4*1.25); err != nil {
 		glog.Errorf("Media length check failed: %v", err)
-		os.Remove(fname)
 		return terr(err)
 	}
 	//Do the transcoding
@@ -242,7 +248,6 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 	tData, err := config.Transcoder.Transcode(fname)
 	if err != nil {
 		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
-		os.Remove(fname)
 		return terr(err)
 	}
 	transcodeEnd := time.Now().UTC()
@@ -270,7 +275,6 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 	if config.ClaimManager != nil {
 		hashes, err := config.ClaimManager.AddReceipt(int64(seg.SeqNo), fname, seg.Data, ss.Sig, tProfileData, transcodeStart, transcodeEnd)
 		if err != nil {
-			os.Remove(fname)
 			return terr(err)
 		}
 		tr.Sig, tr.Err = n.Eth.Sign(hashes)
