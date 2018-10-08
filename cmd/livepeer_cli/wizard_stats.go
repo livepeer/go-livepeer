@@ -16,7 +16,7 @@ import (
 	"github.com/olekukonko/tablewriter"
 )
 
-func (w *wizard) stats(showTranscoder bool) {
+func (w *wizard) stats(showOrchestrator bool) {
 	addrMap, err := w.getContractAddresses()
 	if err != nil {
 		glog.Errorf("Error getting contract addresses: %v", err)
@@ -48,9 +48,9 @@ func (w *wizard) stats(showTranscoder bool) {
 	table.SetColumnSeparator("|")
 	table.Render()
 
-	if showTranscoder {
-		w.transcoderStats()
-		w.transcoderEventSubscriptions()
+	if showOrchestrator {
+		w.orchestratorStats()
+		w.orchestratorEventSubscriptions()
 		w.delegatorStats()
 	} else {
 		w.broadcastStats()
@@ -89,7 +89,7 @@ func (w *wizard) protocolStats() {
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
 		[]string{"Protocol Paused", fmt.Sprintf("%t", params.Paused)},
-		[]string{"Max # Active Transcoders", params.NumActiveTranscoders.String()},
+		[]string{"Max # Active Orchestrators", params.NumActiveTranscoders.String()},
 		[]string{"RoundLength (Blocks)", params.RoundLength.String()},
 		[]string{"RoundLockAmount (%)", eth.FormatPerc(params.RoundLockAmount)},
 		[]string{"UnbondingPeriod (Rounds)", strconv.Itoa(int(params.UnbondingPeriod))},
@@ -145,16 +145,16 @@ func (w *wizard) broadcastStats() {
 	table.Render()
 }
 
-func (w *wizard) transcoderStats() {
-	t, err := w.getTranscoderInfo()
+func (w *wizard) orchestratorStats() {
+	t, err := w.getOrchestratorInfo()
 	if err != nil {
-		glog.Errorf("Error getting transcoder info: %v", err)
+		glog.Errorf("Error getting orchestrator info: %v", err)
 		return
 	}
 
-	fmt.Println("+----------------+")
-	fmt.Println("|TRANSCODER STATS|")
-	fmt.Println("+----------------+")
+	fmt.Println("+------------------+")
+	fmt.Println("|ORCHESTRATOR STATS|")
+	fmt.Println("+------------------+")
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
@@ -182,16 +182,16 @@ func (w *wizard) transcoderStats() {
 	table.Render()
 }
 
-func (w *wizard) transcoderEventSubscriptions() {
-	subMap, err := w.getTranscoderEventSubscriptions()
+func (w *wizard) orchestratorEventSubscriptions() {
+	subMap, err := w.getOrchestratorEventSubscriptions()
 	if err != nil {
-		glog.Errorf("Error getting transcoder event subscriptions: %v", err)
+		glog.Errorf("Error getting orchestrator event subscriptions: %v", err)
 		return
 	}
 
-	fmt.Println("+------------------------------+")
-	fmt.Println("|TRANSCODER EVENT SUBSCRIPTIONS|")
-	fmt.Println("+------------------------------+")
+	fmt.Println("+--------------------------------+")
+	fmt.Println("|ORCHESTRATOR EVENT SUBSCRIPTIONS|")
+	fmt.Println("+--------------------------------+")
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
@@ -360,8 +360,8 @@ func (w *wizard) getBroadcastConfig() (*big.Int, string) {
 	return config.MaxPricePerSegment, config.TranscodingOptions
 }
 
-func (w *wizard) getTranscoderInfo() (lpTypes.Transcoder, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%v:%v/transcoderInfo", w.host, w.httpPort))
+func (w *wizard) getOrchestratorInfo() (lpTypes.Transcoder, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/orchestratorInfo", w.host, w.httpPort))
 	if err != nil {
 		return lpTypes.Transcoder{}, err
 	}
@@ -382,8 +382,8 @@ func (w *wizard) getTranscoderInfo() (lpTypes.Transcoder, error) {
 	return tInfo, nil
 }
 
-func (w *wizard) getTranscoderEventSubscriptions() (map[string]bool, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%v:%v/transcoderEventSubscriptions", w.host, w.httpPort))
+func (w *wizard) getOrchestratorEventSubscriptions() (map[string]bool, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/orchestratorEventSubscriptions", w.host, w.httpPort))
 	if err != nil {
 		return nil, err
 	}

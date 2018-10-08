@@ -51,7 +51,7 @@ func main() {
 			host:     c.String("host"),
 			in:       bufio.NewReader(os.Stdin),
 		}
-		w.transcoder = w.isTranscoder()
+		w.orchestrator = w.isOrchestrator()
 		w.testnet = w.onTestnet()
 		w.run()
 
@@ -62,27 +62,27 @@ func main() {
 }
 
 type wizard struct {
-	endpoint   string // Local livepeer node
-	httpPort   string
-	host       string
-	transcoder bool
-	testnet    bool
-	in         *bufio.Reader // Wrapper around stdin to allow reading user input
+	endpoint     string // Local livepeer node
+	httpPort     string
+	host         string
+	orchestrator bool
+	testnet      bool
+	in           *bufio.Reader // Wrapper around stdin to allow reading user input
 }
 
 type wizardOpt struct {
-	desc          string
-	invoke        func()
-	testnet       bool
-	transcoder    bool
-	notTranscoder bool
+	desc            string
+	invoke          func()
+	testnet         bool
+	orchestrator    bool
+	notOrchestrator bool
 }
 
 func (w *wizard) initializeOptions() []wizardOpt {
 	options := []wizardOpt{
-		{desc: "Get node status", invoke: func() { w.stats(w.transcoder) }},
+		{desc: "Get node status", invoke: func() { w.stats(w.orchestrator) }},
 		{desc: "View protocol parameters", invoke: w.protocolStats},
-		{desc: "List registered transcoders", invoke: func() { w.registeredTranscoderStats() }},
+		{desc: "List registered orchestrators", invoke: func() { w.registeredOrchestratorStats() }},
 		{desc: "Print latest jobs", invoke: w.printLast5Jobs},
 		{desc: "Invoke \"initialize round\"", invoke: w.initializeRound},
 		{desc: "Invoke \"bond\"", invoke: w.bond},
@@ -92,12 +92,12 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Invoke \"withdraw fees\" (ETH)", invoke: w.withdrawFees},
 		{desc: "Invoke \"claim\" (for rewards and fees)", invoke: w.claimRewardsAndFees},
 		{desc: "Invoke \"transfer\" (LPT)", invoke: w.transferTokens},
-		{desc: "Invoke \"reward\"", invoke: w.callReward, transcoder: true},
-		{desc: "Invoke multi-step \"become a transcoder\"", invoke: w.activateTranscoder, transcoder: true},
-		{desc: "Set transcoder config", invoke: w.setTranscoderConfig, transcoder: true},
-		{desc: "Invoke \"deposit\" (ETH)", invoke: w.deposit, notTranscoder: true},
-		{desc: "Invoke \"withdraw deposit\" (ETH)", invoke: w.withdraw, notTranscoder: true},
-		{desc: "Set broadcast config", invoke: w.setBroadcastConfig, notTranscoder: true},
+		{desc: "Invoke \"reward\"", invoke: w.callReward, orchestrator: true},
+		{desc: "Invoke multi-step \"become an orchestrator\"", invoke: w.activateOrchestrator, orchestrator: true},
+		{desc: "Set orchestrator config", invoke: w.setOrchestratorConfig, orchestrator: true},
+		{desc: "Invoke \"deposit\" (ETH)", invoke: w.deposit, notOrchestrator: true},
+		{desc: "Invoke \"withdraw deposit\" (ETH)", invoke: w.withdraw, notOrchestrator: true},
+		{desc: "Set broadcast config", invoke: w.setBroadcastConfig, notOrchestrator: true},
 		{desc: "Set Eth gas price", invoke: w.setGasPrice},
 		{desc: "Get test LPT", invoke: w.requestTokens, testnet: true},
 		{desc: "Get test ETH", invoke: func() {
@@ -114,7 +114,7 @@ func (w *wizard) filterOptions(options []wizardOpt) []wizardOpt {
 		if opt.testnet && !w.testnet {
 			continue
 		}
-		if !opt.transcoder && !opt.notTranscoder || w.transcoder && opt.transcoder || !w.transcoder && opt.notTranscoder {
+		if !opt.orchestrator && !opt.notOrchestrator || w.orchestrator && opt.orchestrator || !w.orchestrator && opt.notOrchestrator {
 			filtered = append(filtered, opt)
 		}
 	}
@@ -139,7 +139,7 @@ func (w *wizard) run() {
 	fmt.Println("+-----------------------------------------------------------+")
 	fmt.Println()
 
-	w.stats(w.transcoder)
+	w.stats(w.orchestrator)
 	options := w.filterOptions(w.initializeOptions())
 
 	// Basics done, loop ad infinitum about what to do

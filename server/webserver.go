@@ -178,8 +178,8 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 	})
 
-	//Activate the transcoder on-chain.
-	mux.HandleFunc("/activateTranscoder", func(w http.ResponseWriter, r *http.Request) {
+	//Activate the orchestrator on-chain.
+	mux.HandleFunc("/activateOrchestrator", func(w http.ResponseWriter, r *http.Request) {
 		t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
 		if err != nil {
 			glog.Error(err)
@@ -187,7 +187,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 
 		if t.Status == "Registered" {
-			glog.Error("Transcoder is already registered")
+			glog.Error("Orchestrator is already registered")
 			return
 		}
 
@@ -287,7 +287,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			}
 		}
 
-		glog.Infof("Registering transcoder %v", s.LivepeerNode.Eth.Account().Address.Hex())
+		glog.Infof("Registering orchestrator %v", s.LivepeerNode.Eth.Account().Address.Hex())
 
 		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
 		if err != nil {
@@ -347,7 +347,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 	})
 
 	//Set transcoder config on-chain.
-	mux.HandleFunc("/setTranscoderConfig", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/setOrchestratorConfig", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			glog.Errorf("Parse Form Error: %v", err)
 			return
@@ -399,7 +399,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 
 		if t.PendingRewardCut.Cmp(eth.FromPerc(blockRewardCut)) != 0 || t.PendingFeeShare.Cmp(eth.FromPerc(feeShare)) != 0 || t.PendingPricePerSegment.Cmp(price) != 0 {
-			glog.Infof("Setting transcoder config - Reward Cut: %v Fee Share: %v Price: %v", eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+			glog.Infof("Setting orchestrator config - Reward Cut: %v Fee Share: %v Price: %v", eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
 
 			tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
 			if err != nil {
@@ -421,7 +421,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 	})
 
-	//Bond some amount of tokens to a transcoder.
+	//Bond some amount of tokens to an orchestrator.
 	mux.HandleFunc("/bond", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			if err := r.ParseForm(); err != nil {
@@ -716,7 +716,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 	})
 
-	mux.HandleFunc("/transcoderEarningPoolsForRound", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/orchestratorEarningPoolsForRound", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			roundStr := r.URL.Query().Get("round")
 			round, err := lpcommon.ParseBigInt(roundStr)
@@ -856,7 +856,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 	})
 
-	mux.HandleFunc("/transcoderEventSubscriptions", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/orchestratorEventSubscriptions", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil && s.LivepeerNode.EthEventMonitor != nil {
 			rewardWorking := false
 			if s.LivepeerNode.EthServices["RewardService"] != nil && s.LivepeerNode.EthServices["RewardService"].IsWorking() {
@@ -887,7 +887,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		if s.LivepeerNode.Eth != nil {
 			lp := s.LivepeerNode.Eth
 
-			numActiveTranscoders, err := lp.NumActiveTranscoders()
+			numActiveOrchestrators, err := lp.NumActiveTranscoders()
 			if err != nil {
 				glog.Error(err)
 				return
@@ -996,7 +996,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			}
 
 			params := &lpTypes.ProtocolParameters{
-				NumActiveTranscoders:          numActiveTranscoders,
+				NumActiveTranscoders:          numActiveOrchestrators,
 				RoundLength:                   roundLength,
 				RoundLockAmount:               roundLockAmount,
 				UnbondingPeriod:               unbondingPeriod,
@@ -1075,15 +1075,15 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 	})
 
-	mux.HandleFunc("/registeredTranscoders", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/registeredOrchestrators", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			transcoders, err := s.LivepeerNode.Eth.RegisteredTranscoders()
+			orchestrators, err := s.LivepeerNode.Eth.RegisteredTranscoders()
 			if err != nil {
 				glog.Error(err)
 				return
 			}
 
-			data, err := json.Marshal(transcoders)
+			data, err := json.Marshal(orchestrators)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -1094,7 +1094,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 	})
 
-	mux.HandleFunc("/transcoderInfo", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/orchestratorInfo", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
 			if err != nil {
@@ -1166,7 +1166,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 	})
 
-	mux.HandleFunc("/IsTranscoder", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/IsOrchestrator", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.OrchestratorNode)))
 	})
 
