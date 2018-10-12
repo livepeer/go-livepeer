@@ -399,6 +399,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 								errFunc("Retrieval", url, err)
 								return
 							}
+							defer res.Body.Close()
 							// TODO persist this to disk.
 							// Should make videocache read from disk as well
 							data, err := ioutil.ReadAll(res.Body)
