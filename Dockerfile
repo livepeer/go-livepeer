@@ -5,7 +5,7 @@ WORKDIR /go/src/github.com/livepeer/go-livepeer
 COPY . .
 
 RUN curl -sL https://deb.nodesource.com/setup_8.x | bash -
-RUN apt-get update && apt-get -y install build-essential pkg-config autoconf nodejs
+RUN apt-get update && apt-get -y install build-essential pkg-config autoconf nodejs gnutls-dev
 RUN ./install_ffmpeg.sh
 RUN go get github.com/golang/glog
 RUN go get github.com/ericxtang/m3u8

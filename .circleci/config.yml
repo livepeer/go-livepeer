@@ -17,7 +17,7 @@ jobs:
           keys:
             - v3-pkg-cache
 
-      - run: sudo apt-get update && sudo apt-get -y install build-essential pkg-config autoconf
+      - run: sudo apt-get update && sudo apt-get -y install build-essential pkg-config autoconf gnutls-dev
       - run: ./install_ffmpeg.sh
       - run: go get github.com/golang/glog
       - run: go get github.com/ericxtang/m3u8
