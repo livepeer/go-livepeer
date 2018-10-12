@@ -54,6 +54,7 @@ func TestTranscode(t *testing.T) {
 	n, _ := NewLivepeerNode(seth, tmp, db)
 	defer os.RemoveAll(tmp)
 	job := StubJob(n)
+	n.Transcoder = NewLocalTranscoder(tmp)
 	ffmpeg.InitFFmpeg()
 
 	// Sanity check full flow.
