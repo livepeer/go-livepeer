@@ -11,7 +11,7 @@ import (
 	"unsafe"
 )
 
-// #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale
+// #cgo pkg-config: libavformat libavfilter libavcodec libavutil libswscale gnutls
 // #include <stdlib.h>
 // #include "lpms_ffmpeg.h"
 import "C"

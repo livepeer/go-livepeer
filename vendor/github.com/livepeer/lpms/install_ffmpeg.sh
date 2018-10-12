@@ -26,7 +26,7 @@ fi
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone -b n4.0 https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
-  ./configure --prefix="$HOME/compiled" --enable-libx264 --enable-gpl --enable-static
+  ./configure --prefix="$HOME/compiled" --enable-libx264 --enable-gnutls --enable-gpl --enable-static
   make
   make install
 fi

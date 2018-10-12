@@ -46,7 +46,9 @@ type VideoPlaylist struct {
 	Data *m3u8.MediaPlaylist
 }
 
-type VideoSegmenter interface{}
+type VideoSegmenter interface {
+	RTMPToHLS(ctx context.Context, cleanup bool) error
+}
 
 //FFMpegVideoSegmenter segments a RTMP stream by invoking FFMpeg and monitoring the file system.
 type FFMpegVideoSegmenter struct {

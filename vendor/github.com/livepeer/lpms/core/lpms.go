@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
@@ -19,6 +20,9 @@ import (
 
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
+
+var RetryCount = 3
+var SegmenterRetryWait = 500 * time.Millisecond
 
 type LPMS struct {
 	rtmpServer *joy4rtmp.Server
@@ -146,7 +150,7 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 	s := segmenter.NewFFMpegVideoSegmenter(l.workDir, hs.GetStreamID(), localRtmpUrl, segOptions)
 	c := make(chan error, 1)
 	ffmpegCtx, ffmpegCancel := context.WithCancel(context.Background())
-	go func() { c <- s.RTMPToHLS(ffmpegCtx, true) }()
+	go func() { c <- rtmpToHLS(s, ffmpegCtx, true) }()
 
 	//Kick off go routine to write HLS segments
 	segCtx, segCancel := context.WithCancel(context.Background())
@@ -159,10 +163,21 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 					glog.Errorf("HLS Stream is nil")
 					return segmenter.ErrSegmenter
 				}
-				seg, err = s.PollSegment(segCtx)
+
+				for i := 1; i <= RetryCount; i++ {
+					seg, err = s.PollSegment(segCtx)
+					if err == nil || err == context.Canceled || err == context.DeadlineExceeded {
+						break
+					} else if i < RetryCount {
+						glog.Errorf("Error polling Segment: %v, Retrying", err)
+						time.Sleep(SegmenterRetryWait)
+					}
+				}
+
 				if err != nil {
 					return err
 				}
+
 				ss := stream.HLSSegment{SeqNo: seg.SeqNo, Data: seg.Data, Name: seg.Name, Duration: seg.Length.Seconds()}
 				// glog.Infof("Writing stream: %v, duration:%v, len:%v", ss.Name, ss.Duration, len(seg.Data))
 				if err = hs.AddHLSSegment(&ss); err != nil {
@@ -190,6 +205,20 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 		segCancel()
 		return nil
 	}
+}
+
+func rtmpToHLS(s segmenter.VideoSegmenter, ctx context.Context, cleanup bool) error {
+	var err error
+	for i := 1; i <= RetryCount; i++ {
+		err = s.RTMPToHLS(ctx, cleanup)
+		if err == nil {
+			break
+		} else if i < RetryCount {
+			glog.Errorf("Error Invoking Segmenter: %v, Retrying", err)
+			time.Sleep(SegmenterRetryWait)
+		}
+	}
+	return err
 }
 
 // //HandleTranscode kicks off a transcoding process, keeps a local HLS buffer, and returns the new stream ID.
