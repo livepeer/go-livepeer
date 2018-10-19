@@ -101,7 +101,9 @@ func main() {
 		if *monitor && *monhost == "" {
 			*monhost = "http://metrics-rinkeby.livepeer.org/api/events"
 		}
+		*datadir = *datadir + "/rinkeby"
 	} else if *devenv {
+		*datadir = *datadir + "/dev"
 	} else {
 		if !*offchain {
 			if *ethUrl == "" {
@@ -115,6 +117,7 @@ func main() {
 		if *monitor && *monhost == "" {
 			*monhost = "http://metrics-mainnet.livepeer.org/api/events"
 		}
+		*datadir = *datadir + "/mainnet"
 	}
 
 	//Make sure datadir is present
