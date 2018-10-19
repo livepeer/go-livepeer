@@ -54,6 +54,7 @@ func (s *JobService) Start(ctx context.Context) error {
 	if err == nil {
 		go s.processHistoricalEvents(ctx, startBlock)
 	}
+	s.working = true
 
 	go func() {
 		var (
