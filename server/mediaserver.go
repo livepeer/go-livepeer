@@ -414,7 +414,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 							newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: parseSegName(url), Data: data, Duration: seg.Duration}
 							s.LivepeerNode.VideoSource.InsertHLSSegment(sid, newSeg)
 
-							segHashes[i] = crypto.Keccak256(data)
+							hash := crypto.Keccak256(data)
+							SegHashLock.Lock()
+							segHashes[i] = hash
+							SegHashLock.Unlock()
+
 						}
 
 						for i, v := range res.Segments {
@@ -431,7 +435,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						}
 						cond.L.Unlock()
 
-						if !eth.VerifySig(job.TranscoderAddress, crypto.Keccak256(segHashes...), res.Sig) {
+						if !eth.VerifySig(rpcBcast.Job().TranscoderAddress, crypto.Keccak256(segHashes...), res.Sig) {
 							glog.Errorf( "Sig check failed")
 							return
 						}
