@@ -23,9 +23,11 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	lpmscore "github.com/livepeer/lpms/core"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
@@ -375,7 +377,23 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 								gotErr = true
 							}
 						}
-						dlFunc := func(url string) {
+
+						segHashes := make([][]byte, len(res.Segments))
+						n := len(res.Segments)
+						SegHashLock := &sync.Mutex{}
+						cond := sync.NewCond(SegHashLock)
+
+						dlFunc := func(url string, i int) {
+
+							defer func() {
+								cond.L.Lock()
+								n--
+								if n == 0 {
+									cond.Signal()
+								}
+								cond.L.Unlock()
+							}()
+
 							res, err := httpc.Get(url)
 							if err != nil {
 								errFunc("Retrieval", url, err)
@@ -395,9 +413,27 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 							}
 							newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: parseSegName(url), Data: data, Duration: seg.Duration}
 							s.LivepeerNode.VideoSource.InsertHLSSegment(sid, newSeg)
+
+							hash := crypto.Keccak256(data)
+							SegHashLock.Lock()
+							segHashes[i] = hash
+							SegHashLock.Unlock()
+
 						}
-						for _, v := range res.Segments {
-							go dlFunc(v.Url)
+
+						for i, v := range res.Segments {
+							go dlFunc(v.Url, i)
+						}
+
+						cond.L.Lock()
+						for n != 0 {
+							cond.Wait()
+						}
+						cond.L.Unlock()
+
+						if !eth.VerifySig(rpcBcast.Job().TranscoderAddress, crypto.Keccak256(segHashes...), res.Sig) {
+							glog.Errorf("Sig check failed")
+							return
 						}
 					}()
 				}
