@@ -9,8 +9,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"math/big"
 	"io/ioutil"
+	"math/big"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -23,10 +23,10 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	lpmscore "github.com/livepeer/lpms/core"
@@ -381,7 +381,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						segHashes := make([][]byte, len(res.Segments))
 						n := len(res.Segments)
 						SegHashLock := &sync.Mutex{}
-						cond :=sync.NewCond(SegHashLock)
+						cond := sync.NewCond(SegHashLock)
 
 						dlFunc := func(url string, i int) {
 
@@ -426,17 +426,13 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						}
 
 						cond.L.Lock()
-						for {
-							if n != 0 {
-								cond.Wait()
-							} else {
-								break
-							}
+						for n != 0 {
+							cond.Wait()
 						}
 						cond.L.Unlock()
 
 						if !eth.VerifySig(rpcBcast.Job().TranscoderAddress, crypto.Keccak256(segHashes...), res.Sig) {
-							glog.Errorf( "Sig check failed")
+							glog.Errorf("Sig check failed")
 							return
 						}
 					}()
