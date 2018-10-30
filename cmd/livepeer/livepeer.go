@@ -103,7 +103,7 @@ func main() {
 		}
 		*datadir = *datadir + "/rinkeby"
 	} else if *devenv {
-		*datadir = *datadir + "/dev"
+		*datadir = *datadir + "/devenv"
 	} else {
 		if !*offchain {
 			if *ethUrl == "" {
