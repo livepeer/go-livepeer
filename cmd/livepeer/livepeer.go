@@ -89,9 +89,7 @@ func main() {
 	}
 
 	if *rinkeby {
-		*datadir = *datadir + "/rinkeby"
 		if !*offchain {
-			*datadir = *datadir + "/offchain"
 			if *ethUrl == "" {
 				*ethUrl = "wss://rinkeby.infura.io/ws"
 			}
@@ -99,16 +97,18 @@ func main() {
 				*controllerAddr = RinkebyControllerAddr
 			}
 			glog.Infof("***Livepeer is running on the Rinkeby test network: %v***", RinkebyControllerAddr)
+			*datadir = *datadir + "/rinkeby"
+		} else {
+			*datadir = *datadir + "/offchain"
 		}
+
 		if *monitor && *monhost == "" {
 			*monhost = "http://metrics-rinkeby.livepeer.org/api/events"
 		}
 	} else if *devenv {
 		*datadir = *datadir + "/devenv"
 	} else {
-		*datadir = *datadir + "/mainnet"
 		if !*offchain {
-			*datadir = *datadir + "/offchain"
 			if *ethUrl == "" {
 				*ethUrl = "wss://mainnet.infura.io/ws"
 			}
@@ -116,6 +116,9 @@ func main() {
 				*controllerAddr = MainnetControllerAddr
 			}
 			glog.Infof("***Livepeer is running on the Ethereum main network: %v***", MainnetControllerAddr)
+			*datadir = *datadir + "/mainnet"
+		} else {
+			*datadir = *datadir + "/offchain"
 		}
 		if *monitor && *monhost == "" {
 			*monhost = "http://metrics-mainnet.livepeer.org/api/events"
