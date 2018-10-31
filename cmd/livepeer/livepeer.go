@@ -89,7 +89,9 @@ func main() {
 	}
 
 	if *rinkeby {
+		*datadir = *datadir + "/rinkeby"
 		if !*offchain {
+			*datadir = *datadir + "/offchain"
 			if *ethUrl == "" {
 				*ethUrl = "wss://rinkeby.infura.io/ws"
 			}
@@ -101,11 +103,12 @@ func main() {
 		if *monitor && *monhost == "" {
 			*monhost = "http://metrics-rinkeby.livepeer.org/api/events"
 		}
-		*datadir = *datadir + "/rinkeby"
 	} else if *devenv {
 		*datadir = *datadir + "/devenv"
 	} else {
+		*datadir = *datadir + "/mainnet"
 		if !*offchain {
+			*datadir = *datadir + "/offchain"
 			if *ethUrl == "" {
 				*ethUrl = "wss://mainnet.infura.io/ws"
 			}
@@ -117,7 +120,6 @@ func main() {
 		if *monitor && *monhost == "" {
 			*monhost = "http://metrics-mainnet.livepeer.org/api/events"
 		}
-		*datadir = *datadir + "/mainnet"
 	}
 
 	//Make sure datadir is present
