@@ -174,3 +174,13 @@ func TestParseSegname(t *testing.T) {
 		t.Errorf("Expecting %v, but %v", "1220c50f8bc4d2a807aace1e1376496a9d7f7c1408dec2512763c3ca16fe828f6631_01.ts", segName)
 	}
 }
+
+func TestShouldStopStream(t *testing.T) {
+	if shouldStopStream(fmt.Errorf("some random error string")) {
+		t.Error("Expected shouldStopStream=false for a random error")
+	}
+
+	if !shouldStopStream(fmt.Errorf(JobOutOfRangeError)) {
+		t.Errorf("Expected shouldStopStream=true for %v", JobOutOfRangeError)
+	}
+}

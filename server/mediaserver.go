@@ -365,6 +365,10 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						glog.Infof("starting to submit segment %d", seg.SeqNo)
 						res, err := SubmitSegment(rpcBcast, seg, nonce)
 						if err != nil {
+							if shouldStopStream(err) {
+								glog.Warningf("Stopping current stream due to: %v", err)
+								rtmpStrm.Close()
+							}
 							return
 						}
 
@@ -662,4 +666,9 @@ func parseSegName(reqPath string) string {
 		segName = strings.Replace(match, "/stream/", "", -1)
 	}
 	return segName
+}
+
+func shouldStopStream(err error) bool {
+	trimmed := strings.TrimSpace(err.Error())
+	return trimmed == JobOutOfRangeError
 }
