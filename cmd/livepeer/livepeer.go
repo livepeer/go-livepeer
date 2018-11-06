@@ -97,11 +97,16 @@ func main() {
 				*controllerAddr = RinkebyControllerAddr
 			}
 			glog.Infof("***Livepeer is running on the Rinkeby test network: %v***", RinkebyControllerAddr)
+			*datadir = *datadir + "/rinkeby"
+		} else {
+			*datadir = *datadir + "/offchain"
 		}
+
 		if *monitor && *monhost == "" {
 			*monhost = "http://metrics-rinkeby.livepeer.org/api/events"
 		}
 	} else if *devenv {
+		*datadir = *datadir + "/devenv"
 	} else {
 		if !*offchain {
 			if *ethUrl == "" {
@@ -111,6 +116,9 @@ func main() {
 				*controllerAddr = MainnetControllerAddr
 			}
 			glog.Infof("***Livepeer is running on the Ethereum main network: %v***", MainnetControllerAddr)
+			*datadir = *datadir + "/mainnet"
+		} else {
+			*datadir = *datadir + "/offchain"
 		}
 		if *monitor && *monhost == "" {
 			*monhost = "http://metrics-mainnet.livepeer.org/api/events"
