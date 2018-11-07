@@ -38,6 +38,8 @@ const GRPCConnectTimeout = 3 * time.Second
 
 const AuthType_LPE = "Livepeer-Eth-1"
 
+const JobOutOfRangeError = "Job out of range"
+
 type Orchestrator interface {
 	ServiceURI() *url.URL
 	Address() ethcommon.Address
@@ -94,8 +96,8 @@ func verifyTranscoderReq(orch Orchestrator, req *net.TranscoderRequest, job *lpT
 		return fmt.Errorf("Transcoder was not assigned")
 	}
 	if !jobClaimable(orch, job) {
-		glog.Error("Job out of range")
-		return fmt.Errorf("Job out of range")
+		glog.Error(JobOutOfRangeError)
+		return fmt.Errorf(JobOutOfRangeError)
 	}
 	if !verifyMsgSig(job.BroadcasterAddress, fmt.Sprintf("%v", job.JobId), req.Sig) {
 		glog.Error("transcoder req sig check failed")
@@ -140,7 +142,7 @@ func verifyToken(orch Orchestrator, creds string) (*lpTypes.Job, error) {
 	}
 	if !jobClaimable(orch, job) {
 		glog.Errorf("Job %v too early or expired", job.JobId)
-		return nil, fmt.Errorf("Job out of range")
+		return nil, fmt.Errorf(JobOutOfRangeError)
 	}
 	return job, nil
 }
@@ -441,12 +443,13 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)
+		errorString := strings.TrimSpace(string(data))
 		glog.Errorf("Error submitting segment %d: code %d error %v", seg.SeqNo, resp.StatusCode, string(data))
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, fmt.Sprintf("Code: %d Error: %s", resp.StatusCode,
-				strings.TrimSpace(string(data))))
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo,
+				fmt.Sprintf("Code: %d Error: %s", resp.StatusCode, errorString))
 		}
-		return nil, fmt.Errorf(string(data))
+		return nil, fmt.Errorf(errorString)
 	}
 	glog.Infof("Uploaded segment %v", seg.SeqNo)
 	if monitor.Enabled {
