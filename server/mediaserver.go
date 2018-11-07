@@ -374,10 +374,10 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 						// download transcoded segments from the transcoder
 						gotErr := false // only send one error msg per segment list
-						errFunc := func(ev, url string, err error) {
-							glog.Errorf("%v error with segment %v: %v (URL: %v)", ev, seg.SeqNo, err, url)
+						errFunc := func(subType, url string, err error) {
+							glog.Errorf("%v error with segment %v: %v (URL: %v)", subType, seg.SeqNo, err, url)
 							if monitor.Enabled && !gotErr {
-								monitor.LogSegmentTranscodeFailed(ev, nonce, seg.SeqNo, err)
+								monitor.LogSegmentTranscodeFailed(subType, nonce, seg.SeqNo, err)
 								gotErr = true
 							}
 						}
