@@ -669,6 +669,5 @@ func parseSegName(reqPath string) string {
 }
 
 func shouldStopStream(err error) bool {
-	trimmed := strings.TrimSpace(err.Error())
-	return trimmed == JobOutOfRangeError
+	return err.Error() == JobOutOfRangeError
 }

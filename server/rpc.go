@@ -443,12 +443,13 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)
+		errorString := strings.TrimSpace(string(data))
 		glog.Errorf("Error submitting segment %d: code %d error %v", seg.SeqNo, resp.StatusCode, string(data))
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, fmt.Sprintf("Code: %d Error: %s", resp.StatusCode,
-				strings.TrimSpace(string(data))))
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo,
+				fmt.Sprintf("Code: %d Error: %s", resp.StatusCode, errorString))
 		}
-		return nil, fmt.Errorf(string(data))
+		return nil, fmt.Errorf(errorString)
 	}
 	glog.Infof("Uploaded segment %v", seg.SeqNo)
 	if monitor.Enabled {
