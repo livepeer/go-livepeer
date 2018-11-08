@@ -1,14 +1,17 @@
 package server
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"fmt"
 	"math/big"
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/livepeer/go-livepeer/core"
@@ -55,6 +58,7 @@ func (r *stubOrchestrator) ServiceURI() *url.URL {
 	url, _ := url.Parse("http://localhost:1234")
 	return url
 }
+
 func (r *stubOrchestrator) CurrentBlock() *big.Int {
 	return r.block
 }
@@ -285,5 +289,24 @@ func TestRPCSeg(t *testing.T) {
 	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
 	if _, err := verifySegCreds(j, kreds); err == nil || err.Error() != "illegal base64 data at input byte 70" {
 		t.Error("Unexpectedly verified bad creds", err)
+	}
+}
+
+func testPing(t *testing.T) {
+	o := StubOrchestrator()
+
+	tsSignature, _ := o.Sign([]byte(fmt.Sprintf("%v", time.Now())))
+	pingSent := crypto.Keccak256(tsSignature)
+	req := &net.PingPong{Value: pingSent}
+
+	pong, err := ping(context.Background(), req, o)
+	if err != nil {
+		t.Error("Unable to send Ping request")
+	}
+
+	verified := verifyMsgSig(o.Address(), string(pong.Value), pingSent)
+
+	if !verified {
+		t.Error("Unable to verify response from ping request")
 	}
 }
