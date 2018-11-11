@@ -20,12 +20,51 @@ message TranscoderRequest {
   bytes sig   = 2;
 }
 
+/*
+  OSInfo needed to negotiate storages that will be used.
+  It carries info needed to write to the storage.
+*/
+message OSInfo {
+
+  enum StorageType {
+    DIRECT = 0;
+    S3     = 1;
+    IPFS   = 2;
+  }
+
+  // Storage type: direct, s3, ipfs.
+  StorageType storageType = 1;
+
+  S3OSInfo s3info = 16;
+}
+
+message S3OSInfo {
+
+  // Host to use to connect to S3
+  string host = 1;
+
+  // Key (prefix) to use when uploading the object.
+  string key = 2;
+
+  // POST policy that S3 owner node creates to give write access to other node.
+  string policy = 3;
+
+  // Signature for POST policy.
+  string signature = 4;
+
+  // Needed for POST policy.
+  string xAmzCredential = 5;
+
+  // Needed for POST policy.
+  string xAmzDate = 6;
+}
+
 // The orchestrator sends this in response to `GetTranscoder`, containing the
 // transcoder URI, associated credentials authorizing the broadcaster to
 // use the transcoder, and miscellaneous data related to the job.
 message TranscoderInfo {
 
-  // URI of the transcoder to use for submitting segments
+  // URI of the transcoder to use for submitting segments.
   string transcoder  = 1;
 
   // Signals the authentication method to expect within `credentials`. This
@@ -38,6 +77,9 @@ message TranscoderInfo {
 
   // Transcoded streamId list to update the master manifest on the broadcaster.
   map<string, string> streamIds = 16;
+
+  // Orchestrator returns info about own input object storage, if it wants it to be used.
+  repeated OSInfo storage = 32;
 }
 
 // AuthToken is sent by the orchestrator and encoded in the `credentials` field
@@ -64,14 +106,15 @@ message SegData {
   // broadcaster.sign(streamId | seqNo | dataHash)
   // where streamId is derived from the jobId
   bytes sig  = 3;
+
+  repeated OSInfo storage = 4;
 }
 
 // Individual transcoded segment data.
 message TranscodedSegmentData {
 
-    // URL where the transcoded data can be downloaded from
+    // URL where the transcoded data can be downloaded from.
     string url = 1;
-
 }
 
 // A set of transcoded segments following the profiles specified in the job.

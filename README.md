@@ -81,6 +81,12 @@ For example, after you get the streamID, you can view the stream by running:
 
 Note that the default HTTP port or playback (8935) is different from the CLI API port (7935) that is used for node management and diagnostics!
 
+### Using Amazon S3 for storing stream's data
+
+You can use S3 to store source and transcoded data.
+For that livepeer should be run like this `livepeer -s3bucket region/bucket -s3creds accessKey/accessKeySecret`. Stream's data will be saved into directory `MANIFESTID_NONCE`, where MANIFESTID - id of the manifest associeated with stream, NONCE - random number that uniquely identifies this stream. In this directory will be saved all the segments data, plus manifest, named `MANIFESTID_full.m3u8`.
+Livepeer node doesn't do any storage management, it only saves data and never deletes it.
+
 ### Becoming a Transcoder
 
 We'll walk through the steps of becoming a transcoder on the test network.  To learn more about the transcoder, refer to the [Livepeer whitepaper](https://github.com/livepeer/wiki/blob/master/WHITEPAPER.md) and the [Transcoding guide](http://livepeer.readthedocs.io/en/latest/transcoding.html).

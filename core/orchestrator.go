@@ -17,10 +17,12 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	ethTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
+
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
-	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/transcoder"
 )
 
@@ -123,11 +125,11 @@ func NewOrchestrator(n *LivepeerNode) *orchestrator {
 
 // LivepeerNode transcode methods
 
-// XXX maybe reuse protobuf response struct somehow
 type TranscodeResult struct {
 	Err  error
-	Urls []string
 	Sig  []byte
+	Data [][]byte
+	OS   drivers.OSSession
 }
 
 type SegChanData struct {
@@ -144,9 +146,10 @@ type transcodeConfig struct {
 	ClaimManager  eth.ClaimManager
 	JobID         *big.Int
 	Transcoder    transcoder.Transcoder
+	OS            drivers.OSSession
 }
 
-func (n *LivepeerNode) getSegmentChan(job *ethTypes.Job) (SegmentChan, error) {
+func (n *LivepeerNode) getSegmentChan(job *ethTypes.Job, os *net.OSInfo) (SegmentChan, error) {
 	// concurrency concerns here? what if a chan is added mid-call?
 	n.segmentMutex.Lock()
 	defer n.segmentMutex.Unlock()
@@ -157,7 +160,7 @@ func (n *LivepeerNode) getSegmentChan(job *ethTypes.Job) (SegmentChan, error) {
 	sc := make(SegmentChan, 1)
 	glog.V(common.DEBUG).Info("Creating new segment chan for job ", jobId)
 	n.SegmentChans[jobId] = sc
-	if err := n.transcodeSegmentLoop(job, sc); err != nil {
+	if err := n.transcodeSegmentLoop(job, os, sc); err != nil {
 		return nil, err
 	}
 	return sc, nil
@@ -165,7 +168,7 @@ func (n *LivepeerNode) getSegmentChan(job *ethTypes.Job) (SegmentChan, error) {
 
 func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) (*TranscodeResult, error) {
 	glog.V(common.DEBUG).Infof("Starting to transcode segment %v", ss.Seg.SeqNo)
-	ch, err := n.getSegmentChan(job)
+	ch, err := n.getSegmentChan(job, ss.OS)
 	if err != nil {
 		glog.Error("Could not find segment chan ", err)
 		return nil, err
@@ -173,7 +176,7 @@ func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) (*
 	segChanData := &SegChanData{seg: ss, res: make(chan *TranscodeResult, 1)}
 	select {
 	case ch <- segChanData:
-		glog.V(common.DEBUG).Info("Submitted segment to transcode loop")
+		glog.V(common.DEBUG).Info("Submitted segment to transcode loop ", ss.Seg.SeqNo)
 	default:
 		// sending segChan should not block; if it does, the channel is busy
 		glog.Error("Transcoder was busy with a previous segment!")
@@ -258,18 +261,15 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
 	glog.V(common.DEBUG).Infof("Transcoding of segment %v took %v", seg.SeqNo, time.Since(start))
 
-	//Encode and broadcast the segment
+	// Prepare the result object
 	var tr TranscodeResult
-	for i, r := range config.ResultStrmIDs {
-		//Insert the transcoded segments into the streams (streams are already broadcasted to the network)
+	for i, _ := range config.ResultStrmIDs {
 		if tData[i] == nil {
 			glog.Errorf("Cannot find transcoded segment for %v", seg.SeqNo)
 			continue
 		}
 		tProfileData[config.Profiles[i]] = tData[i]
-		newSeg := &stream.HLSSegment{SeqNo: seg.SeqNo, Name: fmt.Sprintf("%v_%d.ts", r, seg.SeqNo), Data: tData[i], Duration: seg.Duration}
-		n.VideoSource.InsertHLSSegment(r, newSeg)
-		tr.Urls = append(tr.Urls, newSeg.Name)
+		tr.Data = append(tr.Data, tData[i])
 	}
 	//Don't do the onchain stuff unless specified
 	if config.ClaimManager != nil {
@@ -282,10 +282,11 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 		// We aren't going through the claim process so remove input immediately
 		os.Remove(fname)
 	}
+	tr.OS = config.OS
 	return &tr
 }
 
-func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentChan) error {
+func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, osInfo *net.OSInfo, segChan SegmentChan) error {
 	glog.V(common.DEBUG).Info("Starting transcode segment loop for ", job.StreamId)
 	cm, err := n.GetClaimManager(job)
 	if err != nil {
@@ -301,6 +302,21 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 		}
 		resultStrmIDs[i] = strmID
 	}
+
+	// determine appropriate OS to use
+	os := drivers.NewSession(osInfo)
+	if os == nil {
+		// no preference (or unknown pref), so use our own
+		if drivers.NodeStorage == nil {
+			return fmt.Errorf("Missing local storage")
+		}
+		mid, err := sid.ManifestIDFromStreamID()
+		if err != nil {
+			return err
+		}
+		os = drivers.NodeStorage.NewSession(string(mid))
+	}
+
 	tr := transcoder.NewFFMpegSegmentTranscoder(job.Profiles, n.WorkDir)
 	config := transcodeConfig{
 		StrmID:        job.StreamId,
@@ -309,6 +325,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 		JobID:         job.JobId,
 		ClaimManager:  cm,
 		Transcoder:    tr,
+		OS:            os,
 	}
 	go func() {
 		for {
@@ -318,6 +335,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, segChan SegmentCh
 			case <-ctx.Done():
 				// timeout; clean up goroutine here
 				jid := job.JobId.Int64()
+				os.EndSession()
 				glog.V(common.DEBUG).Info("Segment loop timed out; closing ", jid)
 				n.segmentMutex.Lock()
 				if _, ok := n.SegmentChans[jid]; ok {

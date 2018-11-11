@@ -27,6 +27,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/eventservices"
 	"github.com/livepeer/go-livepeer/ipfs"
@@ -79,6 +80,9 @@ func main() {
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
 	serviceAddr := flag.String("serviceAddr", "", "Transcoder only. Public address:port that broadcasters can use to contact this node; may be an IP or hostname. If used, should match the on-chain ServiceURI set via livepeer_cli")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
+	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
+	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
+
 	version := flag.Bool("version", false, "Print out the version")
 
 	flag.Parse()
@@ -233,6 +237,23 @@ func main() {
 		}
 	}
 
+	if *s3bucket != "" && *s3creds == "" || *s3bucket == "" && *s3creds != "" {
+		glog.Error("Should specify both s3bucket and s3creds")
+		return
+	}
+	if *s3bucket != "" {
+		s3bp := strings.Split(*s3bucket, "/")
+		drivers.S3REGION = s3bp[0]
+		drivers.S3BUCKET = s3bp[1]
+	}
+
+	// XXX get s3 credentials from local env vars?
+	if *s3bucket != "" && *s3creds != "" {
+		br := strings.Split(*s3bucket, "/")
+		cr := strings.Split(*s3creds, "/")
+		drivers.NodeStorage = drivers.NewS3Driver(br[0], br[1], cr[0], cr[1])
+	}
+
 	if n.NodeType == core.Broadcaster {
 		// default lpms listener for broadcaster; same as default rpc port
 		// TODO provide an option to disable this?
@@ -244,6 +265,15 @@ func main() {
 		*httpAddr = defaultAddr(*httpAddr, "", n.ServiceURI.Port())
 	}
 	*cliAddr = defaultAddr(*cliAddr, "127.0.0.1", CliPort)
+
+	if drivers.NodeStorage == nil {
+		// base URI will be empty for broadcasters; that's OK
+		base := ""
+		if n.ServiceURI != nil {
+			base = n.ServiceURI.String()
+		}
+		drivers.NodeStorage = drivers.NewMemoryDriver(base)
+	}
 
 	//Create Livepeer Node
 	if *monitor {
@@ -383,6 +413,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	if err != nil {
 		return err
 	}
+	drivers.SetIpfsAPI(ipfsApi)
 
 	n.Ipfs = ipfsApi
 	n.EthEventMonitor = em

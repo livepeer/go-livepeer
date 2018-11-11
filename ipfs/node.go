@@ -5,8 +5,14 @@ import (
 	chunk "gx/ipfs/QmWo8jYc19ppG7YoTsrr2kEtLRbARTJho5oNXFTR6B7Peq/go-ipfs-chunker"
 	ipld "gx/ipfs/Qme5bWv7wtjUNGsK2BNGVUFPKiuxWrsqrtvYwCLRw8YFES/go-ipld-format"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
+
+	files "gx/ipfs/QmceUdzxkimdYsgtX733uNgzf1DLHyBKN6ehGSp85ayppM/go-ipfs-cmdkit/files"
+
+	mfs "github.com/ipfs/go-ipfs/mfs"
+	unixfs "github.com/ipfs/go-ipfs/unixfs"
 
 	"github.com/golang/glog"
 	"github.com/ipfs/go-ipfs/core"
@@ -14,12 +20,18 @@ import (
 	"github.com/ipfs/go-ipfs/importer/balanced"
 	ihelper "github.com/ipfs/go-ipfs/importer/helpers"
 	"github.com/ipfs/go-ipfs/importer/trickle"
+	"github.com/ipfs/go-ipfs/path"
+	resolver "github.com/ipfs/go-ipfs/path/resolver"
 	"github.com/ipfs/go-ipfs/repo/config"
 	"github.com/ipfs/go-ipfs/repo/fsrepo"
+	uio "github.com/ipfs/go-ipfs/unixfs/io"
 )
 
 type IpfsApi interface {
 	Add(r io.Reader) (string, error)
+	// Adds file to existing dir or to new one
+	// returns hash of the new dir
+	AddToDir(dir, fileName string, r io.Reader) (string, error)
 }
 
 type IpfsCoreApi core.IpfsNode
@@ -77,11 +89,86 @@ func closeIpfs(node *core.IpfsNode, repoPath string) {
 }
 
 func (ipfs *IpfsCoreApi) Add(r io.Reader) (string, error) {
-	node := ipfs.node()
-	return addAndPin(node.Context(), node, r)
+	return addAndPin(ipfs.node(), r)
 }
 
-func addAndPin(ctx context.Context, n *core.IpfsNode, r io.Reader) (string, error) {
+func (ipfs *IpfsCoreApi) AddToDir(dirHash, fileName string, r io.Reader) (string, error) {
+	n := ipfs.node()
+
+	file := files.NewReaderFile(fileName, fileName, ioutil.NopCloser(r), nil)
+	fileAdder, err := coreunix.NewAdder(n.Context(), n.Pinning, n.Blockstore, n.DAG)
+	if err != nil {
+		return "", err
+	}
+	fileAdder.Wrap = true
+	fileAdder.Pin = true
+	rnode := unixfs.EmptyDirNode()
+	mr, err := mfs.NewRoot(n.Context(), n.DAG, rnode, nil)
+	if err != nil {
+		return "", err
+	}
+	if dirHash != "" {
+		p, err := path.ParsePath(dirHash)
+		if err != nil {
+			return "", err
+		}
+
+		r := &resolver.Resolver{
+			DAG:         n.DAG,
+			ResolveOnce: uio.ResolveUnixfsOnce,
+		}
+
+		dagnode, err := core.Resolve(n.Context(), n.Namesys, r, p)
+		if err != nil {
+			return "", err
+		}
+		dir, err := uio.NewDirectoryFromNode(n.DAG, dagnode)
+		if err != nil && err != uio.ErrNotADir {
+			return "", err
+		}
+
+		var links []*ipld.Link
+		if dir == nil {
+			links = dagnode.Links()
+		} else {
+			links, err = dir.Links(n.Context())
+			if err != nil {
+				return "", err
+			}
+		}
+		for _, link := range links {
+			lnode, err := link.GetNode(n.Context(), n.DAG)
+			if err != nil {
+				return "", err
+			}
+			if err := mfs.PutNode(mr, link.Name, lnode); err != nil {
+				return "", err
+			}
+		}
+		fileAdder.SetMfsRoot(mr)
+	}
+	defer n.Blockstore.PinLock().Unlock()
+
+	err = fileAdder.AddFile(file)
+	if err != nil {
+		return "", err
+	}
+
+	dagnode, err := fileAdder.Finalize()
+	if err != nil {
+		return "", err
+	}
+
+	err = fileAdder.PinRoot()
+	if err != nil {
+		return "", err
+	}
+
+	c := dagnode.Cid()
+	return c.String(), nil
+}
+
+func addAndPin(n *core.IpfsNode, r io.Reader) (string, error) {
 	defer n.Blockstore.PinLock().Unlock()
 
 	fileAdder, err := coreunix.NewAdder(n.Context(), n.Pinning, n.Blockstore, n.DAG)

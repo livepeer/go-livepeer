@@ -12,6 +12,7 @@ import (
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/drivers"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -33,6 +34,21 @@ type stubOrchestrator struct {
 	priv  *ecdsa.PrivateKey
 	block *big.Int
 	job   *lpTypes.Job
+}
+
+func (r *stubOrchestrator) SetBroadcasterOS(ios drivers.OSSession) {
+}
+func (r *stubOrchestrator) GetBroadcasterOS() drivers.OSSession {
+	return nil
+}
+func (r *stubOrchestrator) SetOrchestratorOS(oos drivers.OSSession) {
+}
+func (r *stubOrchestrator) GetOrchestratorOS() drivers.OSSession {
+	return nil
+}
+func (r *stubOrchestrator) GetIno() *url.URL {
+	url, _ := url.Parse("http://localhost:1234")
+	return url
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
