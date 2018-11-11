@@ -33,14 +33,17 @@ func NewMemoryDriver(baseURI string) *MemoryOS {
 }
 
 func (ostore *MemoryOS) NewSession(path string) OSSession {
+	ostore.lock.Lock()
+	defer ostore.lock.Unlock()
+	if session, ok := ostore.sessions[path]; ok {
+		return session
+	}
 	session := &MemorySession{
 		os:     ostore,
 		path:   path + "/",
 		dCache: make(map[string]*dataCache),
 		dLock:  sync.RWMutex{},
 	}
-	ostore.lock.Lock()
-	defer ostore.lock.Unlock()
 	ostore.sessions[path] = session
 	return session
 }
