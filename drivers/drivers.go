@@ -67,12 +67,17 @@ func getSegmentDataHTTP(uri string) ([]byte, error) {
 	glog.V(common.VERBOSE).Info("Downloading ", uri)
 	resp, err := httpc.Get(uri)
 	if err != nil {
+		glog.Error("Error getting HTTP ", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		glog.Error("Non-200 response ", resp.Status)
+		return nil, fmt.Errorf(resp.Status)
+	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		glog.Error(`Error reading body:` + err.Error())
+		glog.Error("Error reading body: ", err)
 		return nil, err
 	}
 	glog.V(common.VERBOSE).Info("Downloaded ", uri)
