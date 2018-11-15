@@ -780,9 +780,9 @@ func (db *DB) ActiveBroadcasts(since *big.Int) ([]*DBJob, error) {
 	return jobs, nil
 }
 
-func (db *DB) SetSegmentCount(jobID *big.Int, count int64) error {
+func (db *DB) SetSegmentCount(jobID string, count int64) error {
 	glog.V(DEBUG).Infof("db: Setting segment count for job %v to %v", jobID, count)
-	_, err := db.setSegmentCount.Exec(count, jobID.Int64())
+	_, err := db.setSegmentCount.Exec(count, jobID)
 	if err != nil {
 		glog.Errorf("db: Error setting segment count to %v for job %v: %vo status ", count, jobID, err)
 		return err

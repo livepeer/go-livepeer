@@ -195,7 +195,7 @@ func LogSegmentTranscodeFailed(subType string, nonce, seqNo uint64, err error) {
 	sendPost("SegmentTranscodeFailed", nonce, props)
 }
 
-func LogStartBroadcastClientFailed(nonce uint64, serviceURI, transcoderAddress string, jobID uint64, reason string) {
+func LogStartBroadcastClientFailed(nonce uint64, serviceURI, transcoderAddress string, jobID string, reason string) {
 	glog.Infof("Logging StartBroadcastClientFailed...")
 
 	props := map[string]interface{}{

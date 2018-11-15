@@ -29,7 +29,7 @@ message PingPong {
 message TranscoderRequest {
 
   // ID of the job that the broadcaster needs a transcoder for
-  int64 jobId = 1;
+  string jobId = 1;
 
   // Broadcaster's signature over the jobId
   bytes sig   = 2;
@@ -105,7 +105,7 @@ message AuthToken {
   // Signature of the orchestrator over the remaining fields
   bytes sig   = 1;
 
-  int64 jobId = 16;
+  string jobId = 16;
 }
 
 // Data included by the broadcaster when submitting a segment for transcoding.
