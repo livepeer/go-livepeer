@@ -4,7 +4,6 @@ Package server is the place we integrate the Livepeer node with the LPMS media s
 package server
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -18,9 +17,9 @@ import (
 	"sync"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/drivers"
-	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 
@@ -29,7 +28,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	lpmscore "github.com/livepeer/lpms/core"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
@@ -60,6 +58,8 @@ var MinDepositSegmentCount = int64(75)     // 5 mins assuming 4s segments
 var MinJobBlocksRemaining = big.NewInt(40) // 10 mins assuming 15s blocks
 var LastHLSStreamID core.StreamID
 var LastManifestID core.ManifestID
+
+var profileName = "360p"
 
 type LivepeerServer struct {
 	RTMPSegmenter   lpmscore.RTMPSegmenter
@@ -148,9 +148,8 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 	}
 }
 
-func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, nonce uint64) (Broadcaster, error) {
-
-	tca := job.TranscoderAddress
+func (s *LivepeerServer) startBroadcast(transcoderAddress ethcommon.Address, jobId string, nonce uint64) (Broadcaster, error) {
+	tca := transcoderAddress
 	serviceUri, err := s.LivepeerNode.Eth.GetServiceURI(tca)
 	if err != nil || serviceUri == "" {
 		glog.Errorf("Unable to retrieve the Service URI for %v: %v", tca.Hex(), err)
@@ -159,13 +158,13 @@ func (s *LivepeerServer) startBroadcast(job *ethTypes.Job, nonce uint64) (Broadc
 		}
 		return nil, err
 	}
-	rpcBcast := core.NewBroadcaster(s.LivepeerNode, job)
+	rpcBcast := core.NewBroadcaster(s.LivepeerNode, jobId)
 
 	err = StartBroadcastClient(rpcBcast, serviceUri)
 	if err != nil {
-		glog.Error("Unable to start broadcast client for ", job.JobId)
+		glog.Error("Unable to start broadcast client for ", jobId)
 		if monitor.Enabled {
-			monitor.LogStartBroadcastClientFailed(nonce, serviceUri, tca.Hex(), job.JobId.Uint64(), err.Error())
+			monitor.LogStartBroadcastClientFailed(nonce, serviceUri, tca.Hex(), jobId, err.Error())
 		}
 		return nil, err
 	}
@@ -214,61 +213,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		jobStreamId := ""
 		startSeq := 0
-		var currentJob *ethTypes.Job
-		var jobId *big.Int
+		var jobId string
 		var rpcBcast Broadcaster
 		var cpl core.PlaylistManager
-		if s.LivepeerNode.Eth != nil {
 
-			// First check if we already have a job that can be reused
-			blknum, err := s.LivepeerNode.Eth.LatestBlockNum()
-			if err != nil {
-				glog.Error("Unable to fetch latest block number ", err)
-				return err
-			}
-
-			until := big.NewInt(0).Add(blknum, MinJobBlocksRemaining)
-			bcasts, err := s.LivepeerNode.Database.ActiveBroadcasts(until)
-			if err != nil {
-				glog.Error("Unable to find active broadcasts ", err)
-			}
-
-			getReusableBroadcast := func(b *common.DBJob) (*ethTypes.Job, bool) {
-				job := common.DBJobToEthJob(b)
-
-				// Transcoder must still be registered
-				if t, err := s.LivepeerNode.Eth.GetTranscoder(b.Transcoder); err != nil || t.Status == "Not Registered" {
-					return job, false
-				}
-
-				// Transcode options must be the same
-				if bytes.Compare(common.ProfilesToTranscodeOpts(job.Profiles), common.ProfilesToTranscodeOpts(BroadcastJobVideoProfiles)) != 0 {
-					return job, false
-				}
-
-				// Existing job with a max price per segment <= current desired price is acceptable
-				return job, job.MaxPricePerSegment.Cmp(BroadcastPrice) <= 0
-			}
-
-			for _, b := range bcasts {
-				// check if job has acceptable price, transcoding options and valid assigned transcoder
-				if job, reusable := getReusableBroadcast(b); reusable {
-					rpcBcast, err = s.startBroadcast(job, nonce)
-					if err == nil {
-						startSeq = int(b.Segments) + 1
-						jobId = big.NewInt(b.ID)
-						jobStreamId = job.StreamId
-						currentJob = job
-						if monitor.Enabled {
-							monitor.LogJobReusedEvent(job, startSeq, nonce)
-						}
-						break
-					}
-				}
-			}
-		}
-
-		if s.LivepeerNode.Eth != nil && jobId == nil {
+		if s.LivepeerNode.Eth != nil && jobId == "" {
 
 			//Check if round is initialized
 			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
@@ -313,7 +262,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		//Else if we are reusing an active broadcast, use the old streamID
 		//Else generate a random ID
 		hlsStrmID := core.StreamID(url.Query().Get("hlsStrmID"))
-		if hlsStrmID == "" && jobId != nil && jobStreamId != "" {
+		if hlsStrmID == "" && jobId != "" && jobStreamId != "" {
 			hlsStrmID = core.StreamID(jobStreamId)
 		} else if hlsStrmID == "" {
 			hlsStrmID, err = core.MakeStreamID(core.RandomVideoID(), vProfile.Name)
@@ -349,7 +298,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					monitor.LogSegmentEmerged(nonce, seg.SeqNo)
 				}
 
-				if jobId != nil {
+				if jobId != "" { // ANGIE - DATABASE.SETSEGMENTCOUNT NEEDS TO BE UPDATED TO TAKE A STRING
 					s.LivepeerNode.Database.SetSegmentCount(jobId, int64(seg.SeqNo))
 				}
 
@@ -433,7 +382,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 									errFunc("Download", url, err)
 									return
 								}
-								name := fmt.Sprintf("%s/%d.ts", currentJob.Profiles[i].Name, seg.SeqNo)
+								// ANGIE - replace 360p with job profiles once we have them
+								name := fmt.Sprintf("%s/%d.ts", profileName, seg.SeqNo)
 								newUrl, err := bos.SaveData(name, data)
 								if err != nil {
 									errFunc("SaveData", url, err)
@@ -448,7 +398,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 							}
 
 							// hoist this out so we only do it once
-							sid, _ := core.MakeStreamID(hlsStrmID.GetVideoID(), currentJob.Profiles[i].Name)
+							// ANGIE - replace 360p with job profiles once we have them
+							sid, _ := core.MakeStreamID(hlsStrmID.GetVideoID(), profileName)
 							err = cpl.InsertHLSSegment(sid, seg.SeqNo, url, seg.Duration)
 							if err != nil {
 								errFunc("Playlist", url, err)
@@ -466,10 +417,10 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						}
 						cond.L.Unlock()
 
-						if !eth.VerifySig(rpcBcast.Job().TranscoderAddress, crypto.Keccak256(segHashes...), res.Sig) {
-							glog.Error("Sig check failed for segment ", seg.SeqNo)
-							return
-						}
+						// if !eth.VerifySig(transcoderAddress, crypto.Keccak256(segHashes...), res.Sig) { // ANGIE - GET TRANSCODER ADDRESS HERE
+						// 	glog.Error("Sig check failed for segment ", seg.SeqNo)
+						// 	return
+						// }
 						glog.V(common.DEBUG).Info("Successfully validated segment ", seg.SeqNo)
 					}()
 				}
@@ -519,24 +470,20 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		s.broadcastRtmpToManifestMap[rtmpStrm.GetStreamID()] = string(mid)
 
-		if jobId == nil && s.LivepeerNode.Eth != nil {
+		if jobId == "" && s.LivepeerNode.Eth != nil {
 			//Create Transcode Job Onchain
 			go func() {
-				job, err := s.LivepeerNode.CreateTranscodeJob(hlsStrmID, BroadcastJobVideoProfiles, BroadcastPrice)
 				if err != nil {
 					return // XXX feed back error?
 				}
-				jobId = job.JobId
-				currentJob = job
-				if monitor.Enabled {
-					monitor.LogJobCreatedEvent(job, nonce)
-				}
+				jobId = hlsStrmID.String() //ANGIE - is this the right ID to use?
 
 				// Connect to the orchestrator. If it fails, retry for as long
 				// as the RTMP stream is alive; maybe the orchestrator hasn't
 				// received the block containing the job yet
 				broadcastFunc := func() error {
-					rpcBcast, err = s.startBroadcast(job, nonce)
+					transcoderAddress := ethcommon.BytesToAddress([]byte("111 Transcoder Address 1"))
+					rpcBcast, err = s.startBroadcast(transcoderAddress, jobId, nonce) // ANGIE - TRANSCODER ADDRESS
 					if err != nil {
 						// Should be logged upstream
 					} else {
