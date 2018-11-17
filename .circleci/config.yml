@@ -3,7 +3,7 @@ jobs:
   run-test:
     docker:
       - image: circleci/golang:1.10.3-stretch
-    working_directory: /go/src/github.com/ericxtang/go-livepeer
+    working_directory: /go/src/github.com/livepeer/go-livepeer
 
     environment:
         PKG_CONFIG_PATH: $HOME/compiled/lib/pkgconfig
@@ -46,7 +46,7 @@ jobs:
   build-and-release:
     docker:
       - image: circleci/golang:1.10.3-stretch
-    working_directory: /go/src/github.com/ericxtang/go-livepeer
+    working_directory: /go/src/github.com/livepeer/go-livepeer
 
     steps:
       - checkout
