@@ -7,6 +7,12 @@ service Orchestrator {
 
   // Called by the broadcaster to request transcoder info from an orchestrator.
   rpc GetTranscoder(TranscoderRequest) returns (TranscoderInfo);
+  rpc Ping(PingPong) returns (PingPong);
+}
+
+message PingPong {
+  // Implementation defined
+  bytes value = 1;
 }
 
 // This request is sent by the broadcaster in `GetTranscoder` to request

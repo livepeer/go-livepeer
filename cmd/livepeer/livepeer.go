@@ -321,13 +321,26 @@ func main() {
 	go func() {
 		ec <- s.StartMediaServer(msCtx, bigMaxPricePerSegment, *transcodingOptions)
 	}()
+
 	go func() {
 		if core.Transcoder != n.NodeType {
 			return
 		}
 		orch := core.NewOrchestrator(s.LivepeerNode)
-		server.StartTranscodeServer(orch, *httpAddr, s.HttpMux, n.WorkDir)
-		tc <- struct{}{}
+
+		go func() {
+			server.StartTranscodeServer(orch, *httpAddr, s.HttpMux, n.WorkDir)
+			tc <- struct{}{}
+		}()
+
+		// check whether or not the transcoder is available
+		time.Sleep(2 * time.Second)
+		transcoderAvailable := server.CheckTranscoderAvailability(orch)
+		if !transcoderAvailable {
+			// shut down transcoder
+			tc <- struct{}{}
+		}
+
 	}()
 
 	switch n.NodeType {
