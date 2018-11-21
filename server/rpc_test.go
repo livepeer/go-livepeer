@@ -292,7 +292,7 @@ func TestRPCSeg(t *testing.T) {
 	}
 }
 
-func testPing(t *testing.T) {
+func TestPing(t *testing.T) {
 	o := StubOrchestrator()
 
 	tsSignature, _ := o.Sign([]byte(fmt.Sprintf("%v", time.Now())))
@@ -304,7 +304,7 @@ func testPing(t *testing.T) {
 		t.Error("Unable to send Ping request")
 	}
 
-	verified := verifyMsgSig(o.Address(), string(pong.Value), pingSent)
+	verified := verifyMsgSig(o.Address(), string(pingSent), pong.Value)
 
 	if !verified {
 		t.Error("Unable to verify response from ping request")

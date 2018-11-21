@@ -96,7 +96,7 @@ func CheckTranscoderAvailability(orch Orchestrator) bool {
 		return false
 	}
 
-	return verifyMsgSig(orch.Address(), string(pong.Value), ping)
+	return verifyMsgSig(orch.Address(), string(ping), pong.Value)
 }
 
 func startOrchestratorClient(url_string string) (net.OrchestratorClient, error) {
