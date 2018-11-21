@@ -385,6 +385,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 		glog.Infof("Transcoder %v is active", n.Eth.Account().Address.Hex())
 	}
 
+	serviceUriSpecified := false
 	if serviceUri == "" {
 		// TODO probably should put this (along w wizard GETs) into common code
 		resp, err := http.Get("https://api.ipify.org?format=text")
@@ -397,6 +398,7 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 		serviceUri = "https://" + strings.TrimSpace(string(body)) + ":" + RpcPort
 	} else {
 		serviceUri = "https://" + serviceUri
+		serviceUriSpecified = true
 	}
 	suri, err := url.ParseRequestURI(serviceUri)
 	if err != nil {
@@ -419,6 +421,9 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 		if active && false {
 			return fmt.Errorf("Mismatched service address")
 		}
+	}
+	if serviceUriSpecified {
+		uri = suri
 	}
 
 	// Set up IPFS

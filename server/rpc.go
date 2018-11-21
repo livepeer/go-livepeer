@@ -118,7 +118,6 @@ func startOrchestratorClient(url_string string) (net.OrchestratorClient, error) 
 		glog.Error("Did not connect: ", err)
 		return nil, errors.New("Did not connect: " + err.Error())
 	}
-	defer conn.Close()
 	c := net.NewOrchestratorClient(conn)
 
 	return c, nil
