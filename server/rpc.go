@@ -82,10 +82,11 @@ func CheckTranscoderAvailability(orch Orchestrator) bool {
 
 	ping := crypto.Keccak256(ts_signature)
 
-	orch_client, err := startOrchestratorClient(orch.ServiceURI().String())
+	orch_client, conn, err := startOrchestratorClient(orch.ServiceURI().String())
 	if err != nil {
 		return false
 	}
+	defer conn.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), GRPCTimeout)
 	defer cancel()
@@ -99,12 +100,12 @@ func CheckTranscoderAvailability(orch Orchestrator) bool {
 	return verifyMsgSig(orch.Address(), string(ping), pong.Value)
 }
 
-func startOrchestratorClient(url_string string) (net.OrchestratorClient, error) {
+func startOrchestratorClient(url_string string) (net.OrchestratorClient, *grpc.ClientConn, error) {
 	uri, err := url.Parse(url_string)
 
 	if err != nil {
 		glog.Error("Could not parse orchestrator URI: ", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
@@ -116,11 +117,11 @@ func startOrchestratorClient(url_string string) (net.OrchestratorClient, error) 
 		grpc.WithTimeout(GRPCConnectTimeout))
 	if err != nil {
 		glog.Error("Did not connect: ", err)
-		return nil, errors.New("Did not connect: " + err.Error())
+		return nil, nil, errors.New("Did not connect: " + err.Error())
 	}
 	c := net.NewOrchestratorClient(conn)
 
-	return c, nil
+	return c, conn, nil
 }
 
 func jobClaimable(orch Orchestrator, job *lpTypes.Job) bool {
@@ -472,10 +473,11 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 }
 
 func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
-	c, err := startOrchestratorClient(orchestratorServer)
+	c, conn, err := startOrchestratorClient(orchestratorServer)
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 
 	httpc := &http.Client{
