@@ -19,6 +19,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/ipfs"
+	"github.com/livepeer/go-livepeer/net"
 )
 
 var ErrLivepeerNode = errors.New("ErrLivepeerNode")
@@ -46,12 +47,13 @@ type LivepeerNode struct {
 	Database        *common.DB
 
 	// Transcoder public fields
-	ClaimManagers map[int64]eth.ClaimManager
-	SegmentChans  map[int64]SegmentChan
-	Ipfs          ipfs.IpfsApi
-	ServiceURI    *url.URL
-	OrchSecret    string
-	Transcoder    Transcoder
+	ClaimManagers        map[int64]eth.ClaimManager
+	SegmentChans         map[int64]SegmentChan
+	OrchestratorSelector net.OrchestratorSelector
+	Ipfs                 ipfs.IpfsApi
+	ServiceURI           *url.URL
+	OrchSecret           string
+	Transcoder           Transcoder
 
 	// Transcoder private fields
 	claimMutex   *sync.Mutex
