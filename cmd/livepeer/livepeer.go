@@ -189,6 +189,17 @@ func main() {
 		n.NodeType = core.BroadcasterNode
 	}
 
+	if n.NodeType == core.BroadcasterNode {
+		if *orchAddr == "" {
+			glog.Info("No orchestrator specified; transcoding will not happen")
+		} else {
+			n.OrchestratorSelector = discovery.NewOffchainOrchestrator(n, *orchAddr)
+			if n.OrchestratorSelector == nil {
+				return
+			}
+		}
+	}
+
 	if *offchain {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	} else {
