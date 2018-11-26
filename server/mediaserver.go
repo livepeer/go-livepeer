@@ -151,15 +151,11 @@ func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSes
 
 	rpcBcast := core.NewBroadcaster(s.LivepeerNode)
 
-	tinfo, err := GetOrchestratorInfo(rpcBcast, serviceUri)
-	if err != nil {
-		glog.Error("Unable to start broadcast client for ", jobId)
-		if monitor.Enabled {
-			monitor.LogStartBroadcastClientFailed(nonce, serviceUri, tca.Hex(), jobId, err.Error())
-		}
+	tinfos, err := s.LivepeerNode.OrchestratorSelector.GetOrchestrators(1)
+	if len(tinfos) <= 0 || err != nil {
 		return nil, err
 	}
-	rpcBcast.SetTranscoderInfo(tinfo)
+	tinfo := tinfos[0]
 
 	// set OSes
 	var orchOS drivers.OSSession
