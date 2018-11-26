@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
@@ -41,6 +40,7 @@ var ErrHLSPlay = errors.New("ErrHLSPlay")
 var ErrRTMPPlay = errors.New("ErrRTMPPlay")
 var ErrRoundInit = errors.New("ErrRoundInit")
 var ErrStorage = errors.New("ErrStorage")
+var ErrDiscovery = errors.New("ErrDiscovery")
 
 const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
@@ -148,6 +148,10 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 }
 
 func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSession, error) {
+
+	if s.LivepeerNode.OrchestratorSelector == nil {
+		return nil, ErrDiscovery
+	}
 
 	rpcBcast := core.NewBroadcaster(s.LivepeerNode)
 
