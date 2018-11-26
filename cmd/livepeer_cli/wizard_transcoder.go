@@ -13,8 +13,8 @@ import (
 
 const defaultRPCPort = "8935"
 
-func (w *wizard) isTranscoder() bool {
-	isT := httpGet(fmt.Sprintf("http://%v:%v/IsTranscoder", w.host, w.httpPort))
+func (w *wizard) isOrchestrator() bool {
+	isT := httpGet(fmt.Sprintf("http://%v:%v/IsOrchestrator", w.host, w.httpPort))
 	return isT == "true"
 }
 
@@ -28,7 +28,7 @@ func myHostPort() string {
 	return ip + ":" + defaultRPCPort
 }
 
-func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int, string) {
+func (w *wizard) promptOrchestratorConfig() (float64, float64, *big.Int, string) {
 	var (
 		blockRewardCut  float64
 		feeShare        float64
@@ -64,7 +64,7 @@ func (w *wizard) promptTranscoderConfig() (float64, float64, *big.Int, string) {
 	return blockRewardCut, feeShare, pricePerSegment, serviceURI
 }
 
-func (w *wizard) activateTranscoder() {
+func (w *wizard) activateOrchestrator() {
 	d, err := w.getDelegatorInfo()
 	if err != nil {
 		glog.Errorf("Error getting delegator info: %v", err)
@@ -74,7 +74,7 @@ func (w *wizard) activateTranscoder() {
 	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
 	fmt.Printf("Current bonded amount: %v\n", d.BondedAmount.String())
 
-	blockRewardCut, feeShare, pricePerSegment, serviceURI := w.promptTranscoderConfig()
+	blockRewardCut, feeShare, pricePerSegment, serviceURI := w.promptOrchestratorConfig()
 
 	val := url.Values{
 		"blockRewardCut":  {fmt.Sprintf("%v", blockRewardCut)},
@@ -84,7 +84,7 @@ func (w *wizard) activateTranscoder() {
 	}
 
 	if d.BondedAmount.Cmp(big.NewInt(0)) <= 0 || d.DelegateAddress != d.Address {
-		fmt.Printf("You must bond to yourself in order to become a transcoder\n")
+		fmt.Printf("You must bond to yourself in order to become a orchestrator\n")
 
 		rebond := false
 
@@ -142,15 +142,15 @@ func (w *wizard) activateTranscoder() {
 		}
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/activateTranscoder", w.host, w.httpPort), val)
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/activateOrchestrator", w.host, w.httpPort), val)
 	// TODO we should confirm if the transaction was actually sent
 	fmt.Println("\nTransaction sent. Once confirmed, please restart your node.")
 }
 
-func (w *wizard) setTranscoderConfig() {
+func (w *wizard) setOrchestratorConfig() {
 	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
 
-	blockRewardCut, feeShare, pricePerSegment, serviceURI := w.promptTranscoderConfig()
+	blockRewardCut, feeShare, pricePerSegment, serviceURI := w.promptOrchestratorConfig()
 
 	val := url.Values{
 		"blockRewardCut":  {fmt.Sprintf("%v", blockRewardCut)},
@@ -159,15 +159,15 @@ func (w *wizard) setTranscoderConfig() {
 		"serviceURI":      {fmt.Sprintf("%v", serviceURI)},
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/setTranscoderConfig", w.host, w.httpPort), val)
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/setOrchestratorConfig", w.host, w.httpPort), val)
 	// TODO we should confirm if the transaction was actually sent
 	fmt.Println("\nTransaction sent. Once confirmed, please restart your node if the ServiceURI has been reset")
 }
 
 func (w *wizard) callReward() {
-	t, err := w.getTranscoderInfo()
+	t, err := w.getOrchestratorInfo()
 	if err != nil {
-		fmt.Printf("Error getting transcoder info: %v\n", err)
+		fmt.Printf("Error getting orchestrator info: %v\n", err)
 		return
 	}
 	c, err := strconv.ParseInt(w.currentRound(), 10, 64)

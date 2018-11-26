@@ -40,7 +40,7 @@ func (ostore *MemoryOS) NewSession(path string) OSSession {
 	}
 	session := &MemorySession{
 		os:     ostore,
-		path:   path + "/",
+		path:   path,
 		dCache: make(map[string]*dataCache),
 		dLock:  sync.RWMutex{},
 	}
@@ -94,7 +94,7 @@ func (ostore *MemorySession) GetInfo() *net.OSInfo {
 
 func (ostore *MemorySession) SaveData(name string, data []byte) (string, error) {
 
-	path, file := path.Split(ostore.path + name)
+	path, file := path.Split(ostore.getAbsolutePath(name))
 
 	ostore.dLock.Lock()
 	defer ostore.dLock.Unlock()
@@ -118,8 +118,12 @@ func (ostore *MemorySession) getCacheForStream(streamID string) *dataCache {
 	return sc
 }
 
+func (ostore *MemorySession) getAbsolutePath(name string) string {
+	return path.Clean(ostore.path + "/" + name)
+}
+
 func (ostore *MemorySession) getAbsoluteURI(name string) string {
-	name = ostore.path + name
+	name = ostore.getAbsolutePath(name)
 	if ostore.os.baseURI != "" {
 		return ostore.os.baseURI + "/stream/" + name
 	}

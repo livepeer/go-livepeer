@@ -29,8 +29,9 @@ var LivepeerVersion = "0.3.1-unstable"
 type NodeType int
 
 const (
-	Broadcaster NodeType = iota
-	Transcoder
+	BroadcasterNode NodeType = iota
+	OrchestratorNode
+	TranscoderNode
 )
 
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
@@ -49,10 +50,16 @@ type LivepeerNode struct {
 	SegmentChans  map[int64]SegmentChan
 	Ipfs          ipfs.IpfsApi
 	ServiceURI    *url.URL
+	OrchSecret    string
+	Transcoder    Transcoder
 
 	// Transcoder private fields
 	claimMutex   *sync.Mutex
 	segmentMutex *sync.Mutex
+	tcoderMutex  *sync.RWMutex
+	taskMutex    *sync.RWMutex
+	taskChans    map[int64]TranscoderChan
+	taskCount    int64
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
@@ -66,7 +73,11 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		SegmentChans:  make(map[int64]SegmentChan),
 		claimMutex:    &sync.Mutex{},
 		segmentMutex:  &sync.Mutex{},
+		tcoderMutex:   &sync.RWMutex{},
+		taskMutex:     &sync.RWMutex{},
+		taskChans:     make(map[int64]TranscoderChan),
 	}, nil
+
 }
 
 func (n *LivepeerNode) StartEthServices() error {

@@ -19,24 +19,24 @@ import (
 	"github.com/olekukonko/tablewriter"
 )
 
-func (w *wizard) registeredTranscoderStats() map[int]common.Address {
-	transcoders, err := w.getRegisteredTranscoders()
+func (w *wizard) registeredOrchestratorStats() map[int]common.Address {
+	orchestrators, err := w.getRegisteredOrchestrators()
 	if err != nil {
-		glog.Errorf("Error getting registered transcoders: %v", err)
+		glog.Errorf("Error getting registered orchestrators: %v", err)
 		return nil
 	}
 
-	transcoderIDs := make(map[int]common.Address)
+	orchestratorIDs := make(map[int]common.Address)
 	nextId := 0
 
-	fmt.Println("+----------------------+")
-	fmt.Println("|REGISTERED TRANSCODERS|")
-	fmt.Println("+----------------------+")
+	fmt.Println("+------------------------+")
+	fmt.Println("|REGISTERED ORCHESTRATORS|")
+	fmt.Println("+------------------------+")
 
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"ID", "Address", "Active", "Delegated Stake", "Reward Cut (%)", "Fee Share (%)", "Price", "Pending Reward Cut (%)", "Pending Fee Share (%)", "Pending Price", "Service URI"})
 
-	for _, t := range transcoders {
+	for _, t := range orchestrators {
 		table.Append([]string{
 			strconv.FormatInt(int64(nextId), 10),
 			t.Address.Hex(),
@@ -51,17 +51,17 @@ func (w *wizard) registeredTranscoderStats() map[int]common.Address {
 			t.ServiceURI,
 		})
 
-		transcoderIDs[nextId] = t.Address
+		orchestratorIDs[nextId] = t.Address
 		nextId++
 	}
 
 	table.Render()
 
-	return transcoderIDs
+	return orchestratorIDs
 }
 
-func (w *wizard) getRegisteredTranscoders() ([]lpTypes.Transcoder, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%v:%v/registeredTranscoders", w.host, w.httpPort))
+func (w *wizard) getRegisteredOrchestrators() ([]lpTypes.Transcoder, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/registeredOrchestrators", w.host, w.httpPort))
 	if err != nil {
 		return nil, err
 	}
@@ -73,13 +73,13 @@ func (w *wizard) getRegisteredTranscoders() ([]lpTypes.Transcoder, error) {
 		return nil, err
 	}
 
-	var transcoders []lpTypes.Transcoder
-	err = json.Unmarshal(result, &transcoders)
+	var orchestrators []lpTypes.Transcoder
+	err = json.Unmarshal(result, &orchestrators)
 	if err != nil {
 		return nil, err
 	}
 
-	return transcoders, nil
+	return orchestrators, nil
 }
 
 func (w *wizard) unbondingLockStats(withdrawable bool) map[int64]bool {
@@ -146,19 +146,19 @@ func (w *wizard) getUnbondingLocks(withdrawable bool) ([]lpcommon.DBUnbondingLoc
 }
 
 func (w *wizard) bond() {
-	transcoderIds := w.registeredTranscoderStats()
+	orchestratorIds := w.registeredOrchestratorStats()
 	var tAddr common.Address
-	if transcoderIds == nil {
-		fmt.Printf("Enter the address of the transcoder you would like to bond to - ")
+	if orchestratorIds == nil {
+		fmt.Printf("Enter the address of the orchestrator you would like to bond to - ")
 		strAddr := w.readString()
 		if err := tAddr.UnmarshalText([]byte(strAddr)); err != nil {
 			fmt.Println(err)
 			return
 		}
 	} else {
-		fmt.Printf("Enter the identifier of the transcoder you would like to bond to - ")
+		fmt.Printf("Enter the identifier of the orchestrator you would like to bond to - ")
 		id := w.readInt()
-		tAddr = transcoderIds[id]
+		tAddr = orchestratorIds[id]
 	}
 
 	balBigInt, err := lpcommon.ParseBigInt(w.getTokenBalance())
@@ -226,19 +226,19 @@ func (w *wizard) rebond() {
 
 		var toAddr common.Address
 
-		transcoderIds := w.registeredTranscoderStats()
+		orchestratorIds := w.registeredOrchestratorStats()
 
-		if transcoderIds == nil {
-			fmt.Printf("Enter the address of the transcoder you would like to rebond to - ")
+		if orchestratorIds == nil {
+			fmt.Printf("Enter the address of the orchestrator you would like to rebond to - ")
 			strAddr := w.readString()
 			if err := toAddr.UnmarshalText([]byte(strAddr)); err != nil {
 				fmt.Println(err)
 				return
 			}
 		} else {
-			fmt.Printf("Enter the identifier of the transcoder you would like to rebond to - ")
-			transcoderID := w.readInt()
-			toAddr = transcoderIds[transcoderID]
+			fmt.Printf("Enter the identifier of the orchestrator you would like to rebond to - ")
+			orchestratorID := w.readInt()
+			toAddr = orchestratorIds[orchestratorID]
 		}
 
 		val["toAddr"] = []string{fmt.Sprintf("%v", toAddr.Hex())}

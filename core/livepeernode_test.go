@@ -35,7 +35,7 @@ type StubTranscoder struct {
 	FailTranscode bool
 }
 
-func (t *StubTranscoder) Transcode(fname string) ([][]byte, error) {
+func (t *StubTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
 	d, err := ioutil.ReadFile(fname)
 	if err != nil || t.FailTranscode {
 		return nil, ErrTranscode
@@ -64,7 +64,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	}
 	strmIds := []StreamID{mkid(p[0]), mkid(p[1])}
 	cm := StubClaimManager{}
-	config := transcodeConfig{StrmID: strmID.String(), Profiles: p, ResultStrmIDs: strmIds, ClaimManager: &cm, JobID: jid, Transcoder: tr}
+	config := transcodeConfig{StrmID: strmID.String(), Profiles: p, ResultStrmIDs: strmIds, ClaimManager: &cm, JobID: jid}
 
 	tmpdir, _ := ioutil.TempDir("", "")
 	n, err := NewLivepeerNode(&eth.StubClient{}, tmpdir, nil)
@@ -72,6 +72,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 		t.Errorf("Error: %v", err)
 	}
 	defer os.RemoveAll(tmpdir)
+	n.Transcoder = tr
 
 	ss := StubSegment()
 	res := n.transcodeAndCacheSeg(config, ss)

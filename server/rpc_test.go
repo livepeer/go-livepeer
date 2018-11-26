@@ -101,6 +101,13 @@ func (r *stubOrchestrator) GetTranscoderInfo() *net.TranscoderInfo {
 }
 func (r *stubOrchestrator) SetTranscoderInfo(ti *net.TranscoderInfo) {
 }
+func (r *stubOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
+}
+func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {
+}
+func (r *stubOrchestrator) TranscoderSecret() string {
+	return ""
+}
 func StubBroadcaster2() *stubOrchestrator {
 	return StubOrchestrator() // lazy; leverage subtyping for interface commonalities
 }

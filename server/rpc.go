@@ -45,11 +45,15 @@ const JobOutOfRangeError = "Job out of range"
 type Orchestrator interface {
 	ServiceURI() *url.URL
 	Address() ethcommon.Address
+	TranscoderSecret() string
 	Sign([]byte) ([]byte, error)
 	CurrentBlock() *big.Int
 	GetJob(int64) (*lpTypes.Job, error)
 	TranscodeSeg(*lpTypes.Job, *core.SignedSegment) (*core.TranscodeResult, error)
 	StreamIDs(*lpTypes.Job) ([]core.StreamID, error)
+
+	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer)
+	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 }
 
 type Broadcaster interface {
@@ -335,8 +339,9 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	uri := ""
 	if r.Header.Get("Content-Type") == "application/vnd+livepeer.uri" {
-		uri := string(data)
+		uri = string(data)
 		glog.V(common.DEBUG).Infof("Start getting segment from %s", uri)
 		start := time.Now()
 		data, err = drivers.GetSegmentData(uri)
@@ -375,6 +380,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		Seg: stream.HLSSegment{
 			SeqNo: uint64(segData.Seq),
 			Data:  data,
+			Name:  uri,
 		},
 		Sig: segData.Sig,
 		OS:  prefOS,
@@ -455,7 +461,9 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		transRpc:     mux,
 	}
 	net.RegisterOrchestratorServer(s, &lp)
+	net.RegisterTranscoderServer(s, &lp)
 	lp.transRpc.HandleFunc("/segment", lp.ServeSegment)
+	lp.transRpc.HandleFunc("/transcodeResults", lp.TranscodeResults)
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
@@ -464,10 +472,11 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 
 	glog.Info("Listening for RPC on ", bind)
 	srv := http.Server{
-		Addr:         bind,
-		Handler:      &lp,
-		ReadTimeout:  HTTPTimeout,
-		WriteTimeout: HTTPTimeout,
+		Addr:    bind,
+		Handler: &lp,
+		// XXX doesn't handle streaming RPC well; split remote transcoder RPC?
+		//ReadTimeout:  HTTPTimeout,
+		//WriteTimeout: HTTPTimeout,
 	}
 	srv.ListenAndServeTLS(cert, key)
 }
