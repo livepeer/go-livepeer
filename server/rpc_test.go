@@ -25,6 +25,10 @@ type stubOrchestrator struct {
 	jobId string
 }
 
+func (r *stubOrchestrator) Address() *ethcommon.Address {
+	return nil
+}
+
 func (r *stubOrchestrator) JobId() string {
 	return "iamajobidstring"
 }
@@ -105,11 +109,10 @@ func TestRPCTranscoderReq(t *testing.T) {
 	// o := StubOrchestrator()
 	b := StubBroadcaster2()
 
-	jobId := StubJob()
 	// broadcasterAddress := ethcrypto.PubkeyToAddress(b.priv.PublicKey)
 	// transcoderAddress := ethcrypto.PubkeyToAddress(o.priv.PublicKey)
 
-	req, err := genTranscoderReq(b, jobId)
+	req, err := genTranscoderReq(b)
 	if err != nil {
 		t.Error("Unable to create transcoder req ", req)
 	}
