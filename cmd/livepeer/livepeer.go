@@ -87,6 +87,7 @@ func main() {
 	version := flag.Bool("version", false, "Print out the version")
 	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
+	standaloneTranscoder := flag.Bool("standaloneTranscoder", false, "Set to true to be a standalone transcoder")
 	var transcoder bool
 
 	flag.Parse()
@@ -97,12 +98,13 @@ func main() {
 	}
 
 	if *orchAddr != "" {
-		if *orchSecret == "" {
+		if *standaloneTranscoder && *orchSecret == "" {
 			glog.Error("Running a standalone transcoder requires both -orchAddr and -orchSecret")
 			return
+		} else if *standaloneTranscoder {
+			transcoder = true
 		}
 		*orchAddr = defaultAddr(*orchAddr, "127.0.0.1", RpcPort)
-		transcoder = true
 	}
 
 	if *rinkeby {
