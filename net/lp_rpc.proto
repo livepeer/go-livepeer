@@ -28,10 +28,10 @@ message PingPong {
 // information on which transcoder to use.
 message TranscoderRequest {
 
-  // ID of the job that the broadcaster needs a transcoder for
-  string jobId = 1;
+  // Ethereum address of the broadcaster
+  bytes address = 1;
 
-  // Broadcaster's signature over the jobId
+  // Broadcaster's signature over its address
   bytes sig   = 2;
 }
 
