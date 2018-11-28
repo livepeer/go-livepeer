@@ -71,8 +71,9 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	defer os.RemoveAll(tmpdir)
 	n.Transcoder = tr
 
+	md := &SegTranscodingMetadata{Profiles: p}
 	ss := StubSegment()
-	res := n.transcodeAndCacheSeg(config, ss)
+	res := n.transcodeSeg(config, ss, md)
 	if res.Err != nil {
 		t.Errorf("Error: %v", res.Err)
 	}
@@ -104,7 +105,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	// Test when transcoder fails
 	tr.FailTranscode = true
-	res = n.transcodeAndCacheSeg(config, ss)
+	res = n.transcodeSeg(config, ss, md)
 	if res.Err == nil {
 		t.Error("Expecting a transcode error")
 	}
@@ -112,7 +113,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	// Test when the number of results mismatchches expectations
 	tr.Profiles = []ffmpeg.VideoProfile{p[0]}
-	res = n.transcodeAndCacheSeg(config, ss)
+	res = n.transcodeSeg(config, ss, md)
 	if res.Err == nil || res.Err.Error() != "MismatchedSegments" {
 		t.Error("Did not get mismatched segments as expected")
 	}

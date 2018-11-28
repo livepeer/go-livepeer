@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"sort"
@@ -123,4 +124,8 @@ func ProfilesToTranscodeOpts(profiles []ffmpeg.VideoProfile) []byte {
 		transOpts = append(transOpts, crypto.Keccak256([]byte(prof.Name))[0:4]...)
 	}
 	return transOpts
+}
+
+func ProfilesToHex(profiles []ffmpeg.VideoProfile) string {
+	return hex.EncodeToString(ProfilesToTranscodeOpts(profiles))
 }

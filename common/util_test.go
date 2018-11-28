@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"testing"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
@@ -44,4 +45,20 @@ func TestVideoProfileBytes(t *testing.T) {
 	if err != nil || res[1] != ffmpeg.P240p30fps16x9 || res[0] != ffmpeg.P360p30fps16x9 {
 		t.Error("Unexpected profile! ", err, res)
 	}
+}
+
+func TestProfilesToHex(t *testing.T) {
+	// Sanity checking against an existing eth impl that we know works
+	compare := func(profiles []ffmpeg.VideoProfile) {
+		b1 := ethcommon.ToHex(ProfilesToTranscodeOpts(profiles))[2:]
+		b2 := ProfilesToHex(profiles)
+		if b1 != b2 {
+			t.Error("Unequal profile hex ")
+		}
+	}
+	// XXX double check which one is wrong! ethcommon method produces "0" zero string
+	// compare(nil)
+	// compare([]ffmpeg.VideoProfile{})
+	compare([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9})
+	compare([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9})
 }

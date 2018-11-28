@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -31,35 +29,6 @@ func setupServer() *LivepeerServer {
 	return S
 }
 
-type StubSubscriber struct {
-	working         bool
-	subscribeCalled bool
-}
-
-func (s *StubSubscriber) IsLive() bool   { return s.working }
-func (s *StubSubscriber) String() string { return "" }
-func (s *StubSubscriber) Subscribe(ctx context.Context, f func(seqNo uint64, data []byte, eof bool)) error {
-	// This does nothing right now; remove?
-	glog.Infof("Calling StubSubscriber!!!")
-	s.subscribeCalled = true
-	s1 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 0, Name: "strmID_01.ts", Data: []byte("test data"), Duration: 8.001}}
-	s2 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 1, Name: "strmID_02.ts", Data: []byte("test data"), Duration: 8.001}}
-	s3 := core.SignedSegment{Seg: stream.HLSSegment{SeqNo: 2, Name: "strmID_03.ts", Data: []byte("test data"), Duration: 8.001}}
-	for i, s := range []core.SignedSegment{s1, s2, s3} {
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-		err := enc.Encode(s)
-		if err != nil {
-			glog.Errorf("Error encoding segment to []byte: %v", err)
-			continue
-		}
-		f(uint64(i), buf.Bytes(), false)
-	}
-	s.working = true
-	return nil
-}
-func (s *StubSubscriber) Unsubscribe() error { return nil }
-
 type StubSegmenter struct{}
 
 func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error {
@@ -77,11 +46,6 @@ func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVide
 		glog.Errorf("Error adding hls seg3")
 	}
 	return nil
-}
-
-func (s *StubSegmenter) SubscribeToSegmenter(ctx context.Context, rs stream.RTMPVideoStream, segOptions segmenter.SegmenterOptions) (stream.Subscriber, error) {
-	sub := &StubSubscriber{}
-	return sub, nil
 }
 
 // Should publish RTMP stream, turn the RTMP stream into HLS, and broadcast the HLS stream.
