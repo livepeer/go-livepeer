@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/base64"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -11,18 +12,21 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/golang/protobuf/proto"
+
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/lpms/stream"
 )
 
 type stubOrchestrator struct {
-	priv  *ecdsa.PrivateKey
-	block *big.Int
-	jobId string
+	priv    *ecdsa.PrivateKey
+	block   *big.Int
+	signErr error
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
@@ -147,18 +151,21 @@ func TestRPCTranscoderReq(t *testing.T) {
 // }
 
 func TestRPCSeg(t *testing.T) {
+	mid, _ := core.MakeManifestID(core.RandomVideoID())
 	b := StubBroadcaster2()
 	o := StubOrchestrator()
+	s := &BroadcastSession{
+		Broadcaster: b,
+		ManifestID:  mid,
+	}
 
 	baddr := ethcrypto.PubkeyToAddress(b.priv.PublicKey)
 
-	StreamId := StubJob()
-	jobId := StubJob()
 	broadcasterAddress = baddr
 
-	segData := &net.SegData{Seq: 4, Hash: ethcommon.RightPadBytes([]byte("browns"), 32)}
+	segData := &stream.HLSSegment{}
 
-	creds, err := genSegCreds(b, StreamId, segData)
+	creds, err := genSegCreds(s, segData)
 	if err != nil {
 		t.Error("Unable to generate seg creds ", err)
 		return
@@ -168,20 +175,18 @@ func TestRPCSeg(t *testing.T) {
 		return
 	}
 
-	// test invalid jobid
-	// oldSid := StreamId
-	// StreamId = StreamId + StreamId
-	// if _, err := verifySegCreds(o, jobId, creds); err == nil || err.Error() != "Segment sig check failed" {
-	// 	t.Error("Unexpectedly verified seg creds: invalid jobid", err)
-	// 	return
-	// }
-	// StreamId = oldSid
+	// error signing
+	b.signErr = fmt.Errorf("SignErr")
+	if _, err := genSegCreds(s, segData); err != b.signErr {
+		t.Error("Generating seg creds ", err)
+	}
+	b.signErr = nil
 
 	// test invalid bcast addr
 	oldAddr := broadcasterAddress
 	key, _ := ethcrypto.GenerateKey()
 	broadcasterAddress = ethcrypto.PubkeyToAddress(key.PublicKey)
-	if _, err := verifySegCreds(o, creds); err == nil || err.Error() != "Segment sig check failed" {
+	if _, err := verifySegCreds(o, creds); err != ErrSegSig {
 		t.Error("Unexpectedly verified seg creds: invalid bcast addr", err)
 	}
 	broadcasterAddress = oldAddr
@@ -194,16 +199,37 @@ func TestRPCSeg(t *testing.T) {
 	// test corrupt creds
 	idx := len(creds) / 2
 	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
-	if _, err := verifySegCreds(o, kreds); err == nil || err.Error() != "illegal base64 data at input byte 70" {
+	if _, err := verifySegCreds(o, kreds); err != ErrSegEncoding {
 		t.Error("Unexpectedly verified bad creds", err)
 	}
+
+	corruptSegData := func(segData *net.SegData, expectedErr error) {
+		data, _ := proto.Marshal(segData)
+		creds = base64.StdEncoding.EncodeToString(data)
+		if _, err := verifySegCreds(o, creds); err != expectedErr {
+			t.Errorf("Expected to fail with '%v' but got '%v'", expectedErr, err)
+		}
+	}
+
+	// corrupt manifest id
+	corruptSegData(&net.SegData{}, core.ErrManifestID)
+	corruptSegData(&net.SegData{ManifestId: []byte("abc")}, core.ErrManifestID)
+
+	// corrupt profiles
+	corruptSegData(&net.SegData{Profiles: []byte("abc")}, common.ErrProfile)
+
+	// corrupt sig
+	sd := &net.SegData{ManifestId: s.ManifestID.GetVideoID()}
+	corruptSegData(sd, ErrSegSig) // missing sig
+	sd.Sig = []byte("abc")
+	corruptSegData(sd, ErrSegSig) // invalid sig
 }
 
 func TestPing(t *testing.T) {
 	o := StubOrchestrator()
 
 	tsSignature, _ := o.Sign([]byte(fmt.Sprintf("%v", time.Now())))
-	pingSent := crypto.Keccak256(tsSignature)
+	pingSent := ethcrypto.Keccak256(tsSignature)
 	req := &net.PingPong{Value: pingSent}
 
 	pong, err := ping(context.Background(), req, o)
