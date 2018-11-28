@@ -25,30 +25,8 @@ type stubOrchestrator struct {
 	jobId string
 }
 
-func (r *stubOrchestrator) Address() *ethcommon.Address {
-	return nil
-}
-
-func (r *stubOrchestrator) JobId() string {
-	return "iamajobidstring"
-}
-
 func StubJob() string {
 	return "iamajobstring"
-}
-func (r *stubOrchestrator) SetBroadcasterOS(ios drivers.OSSession) {
-}
-func (r *stubOrchestrator) GetBroadcasterOS() drivers.OSSession {
-	return nil
-}
-func (r *stubOrchestrator) SetOrchestratorOS(oos drivers.OSSession) {
-}
-func (r *stubOrchestrator) GetOrchestratorOS() drivers.OSSession {
-	return nil
-}
-func (r *stubOrchestrator) GetIno() *url.URL {
-	url, _ := url.Parse("http://localhost:1234")
-	return url
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
@@ -83,16 +61,6 @@ func StubOrchestrator() *stubOrchestrator {
 	return &stubOrchestrator{priv: pk, block: big.NewInt(5), jobId: StubJob()}
 }
 
-func (r *stubOrchestrator) GetHTTPClient() *http.Client {
-	return nil
-}
-func (r *stubOrchestrator) SetHTTPClient(ti *http.Client) {
-}
-func (r *stubOrchestrator) GetTranscoderInfo() *net.TranscoderInfo {
-	return nil
-}
-func (r *stubOrchestrator) SetTranscoderInfo(ti *net.TranscoderInfo) {
-}
 func (r *stubOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
 }
 func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {

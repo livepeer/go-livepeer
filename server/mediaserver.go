@@ -148,17 +148,9 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 	}
 }
 
-func (s *LivepeerServer) startBroadcast(transcoderAddress ethcommon.Address, jobId string, nonce uint64) (Broadcaster, error) {
-	tca := transcoderAddress
-	serviceUri, err := s.LivepeerNode.Eth.GetServiceURI(tca)
-	if err != nil || serviceUri == "" {
-		glog.Errorf("Unable to retrieve the Service URI for %v: %v", tca.Hex(), err)
-		if err == nil {
-			err = fmt.Errorf("Empty Service URI")
-		}
-		return nil, err
-	}
-	rpcBcast := core.NewBroadcaster(s.LivepeerNode, jobId)
+func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSession, error) {
+
+	rpcBcast := core.NewBroadcaster(s.LivepeerNode)
 
 	tinfo, err := GetOrchestratorInfo(rpcBcast, serviceUri)
 	if err != nil {
@@ -171,12 +163,19 @@ func (s *LivepeerServer) startBroadcast(transcoderAddress ethcommon.Address, job
 	rpcBcast.SetTranscoderInfo(tinfo)
 
 	// set OSes
+	var orchOS drivers.OSSession
 	if len(tinfo.Storage) > 0 {
-		transcodersIOS := drivers.NewSession(tinfo.Storage[0])
-		rpcBcast.SetOrchestratorOS(transcodersIOS)
+		orchOS = drivers.NewSession(tinfo.Storage[0])
 	}
 
-	return rpcBcast, nil
+	return &BroadcastSession{
+		Broadcaster:      rpcBcast,
+		ManifestID:       cpl.ManifestID(),
+		Profiles:         BroadcastJobVideoProfiles,
+		OrchestratorInfo: tinfo,
+		OrchestratorOS:   orchOS,
+		BroadcasterOS:    cpl.GetOSSession(),
+	}, nil
 }
 
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
@@ -211,13 +210,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			glog.V(common.SHORT).Infof("Cannot automatically detect the video profile - setting it to %v", vProfile)
 		}
 
-		jobStreamId := ""
 		startSeq := 0
-		var jobId string
-		var rpcBcast Broadcaster
+		var sess *BroadcastSession
 		var cpl core.PlaylistManager
 
-		if s.LivepeerNode.Eth != nil && jobId == "" {
+		if s.LivepeerNode.Eth != nil {
 
 			//Check if round is initialized
 			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
@@ -259,12 +256,9 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		//Create a HLS StreamID
 		//If streamID is passed in, use that one
-		//Else if we are reusing an active broadcast, use the old streamID
 		//Else generate a random ID
 		hlsStrmID := core.StreamID(url.Query().Get("hlsStrmID"))
-		if hlsStrmID == "" && jobId != "" && jobStreamId != "" {
-			hlsStrmID = core.StreamID(jobStreamId)
-		} else if hlsStrmID == "" {
+		if hlsStrmID == "" {
 			hlsStrmID, err = core.MakeStreamID(core.RandomVideoID(), vProfile.Name)
 			if err != nil {
 				glog.Errorf("Error making stream ID")
@@ -298,10 +292,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					monitor.LogSegmentEmerged(nonce, seg.SeqNo)
 				}
 
-				if jobId != "" { // ANGIE - DATABASE.SETSEGMENTCOUNT NEEDS TO BE UPDATED TO TAKE A STRING
-					s.LivepeerNode.Database.SetSegmentCount(jobId, int64(seg.SeqNo))
-				}
-
 				seg.Name = "" // hijack seg.Name to convey the uploaded URI
 				name := fmt.Sprintf("%s/%d.ts", vProfile.Name, seg.SeqNo)
 				uri, err := cpl.GetOSSession().SaveData(name, seg.Data)
@@ -323,10 +313,10 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					}
 				}
 
-				if rpcBcast != nil {
+				if sess != nil {
 					go func() {
 						// storage the orchestrator prefers
-						if ios := rpcBcast.GetOrchestratorOS(); ios != nil {
+						if ios := sess.OrchestratorOS; ios != nil {
 							// XXX handle case when orch expects direct upload
 							uri, err := ios.SaveData(name, seg.Data)
 							if err != nil {
@@ -342,7 +332,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						// send segment to the orchestrator
 						glog.V(common.DEBUG).Infof("Submitting segment %d", seg.SeqNo)
 
-						res, err := SubmitSegment(rpcBcast, seg, nonce)
+						res, err := SubmitSegment(sess, seg, nonce)
 						if err != nil {
 							if shouldStopStream(err) {
 								glog.Warningf("Stopping current stream due to: %v", err)
@@ -376,7 +366,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 								cond.L.Unlock()
 							}()
 
-							if bos := rpcBcast.GetBroadcasterOS(); bos != nil && !drivers.IsOwnExternal(url) {
+							if bos := sess.BroadcasterOS; bos != nil && !drivers.IsOwnExternal(url) {
 								data, err := drivers.GetSegmentData(url)
 								if err != nil {
 									errFunc("Download", url, err)
@@ -458,9 +448,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 		s.CurrentPlaylist = core.NewBasicPlaylistManager(mid, storage)
 		cpl = s.CurrentPlaylist
-		if rpcBcast != nil {
-			rpcBcast.SetBroadcasterOS(storage)
-		}
 
 		if monitor.Enabled {
 			monitor.LogStreamCreatedEvent(hlsStrmID.String(), nonce)
@@ -471,24 +458,22 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		s.broadcastRtmpToManifestMap[rtmpStrm.GetStreamID()] = string(mid)
 
-		if jobId == "" && s.LivepeerNode.Eth != nil {
+		if s.LivepeerNode.Eth != nil {
 			//Create Transcode Job Onchain
 			go func() {
 				if err != nil {
 					return // XXX feed back error?
 				}
-				jobId = hlsStrmID.String() //ANGIE - is this the right ID to use?
 
 				// Connect to the orchestrator. If it fails, retry for as long
 				// as the RTMP stream is alive; maybe the orchestrator hasn't
 				// received the block containing the job yet
 				broadcastFunc := func() error {
-					transcoderAddress := ethcommon.BytesToAddress([]byte("111 Transcoder Address 1"))
-					rpcBcast, err = s.startBroadcast(transcoderAddress, jobId, nonce) // ANGIE - TRANSCODER ADDRESS
-					if err != nil {
+					sess, err = s.startBroadcast(cpl)
+					if err == ErrDiscovery {
+						return err // discovery disabled, don't retry
+					} else if err != nil {
 						// Should be logged upstream
-					} else {
-						rpcBcast.SetBroadcasterOS(storage)
 					}
 					s.VideoNonceLock.Lock()
 					_, active := s.VideoNonce[rtmpStrm.GetStreamID()]
