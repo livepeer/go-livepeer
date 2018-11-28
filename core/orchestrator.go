@@ -22,6 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/transcoder"
 )
 
@@ -77,8 +78,8 @@ func (orch *orchestrator) StreamIDs(jobId string) ([]StreamID, error) {
 	return streamIds, nil
 }
 
-func (orch *orchestrator) TranscodeSeg(jobId int64, ss *SignedSegment) (*TranscodeResult, error) {
-	return orch.node.TranscodeSegment(jobId, ss)
+func (orch *orchestrator) TranscodeSeg(jobId int64, md *SegmentMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
+	return orch.node.TranscodeSegment(jobId, md, seg)
 }
 
 func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
@@ -110,8 +111,9 @@ type TranscodeResult struct {
 }
 
 type SegChanData struct {
-	seg *SignedSegment
+	md  *SegmentMetadata
 	res chan *TranscodeResult
+	seg *stream.HLSSegment
 }
 
 type RemoteTranscoderResult struct {
@@ -177,17 +179,17 @@ func (n *LivepeerNode) getSegmentChan(jobId int64, os *net.OSInfo) (SegmentChan,
 	return sc, nil
 }
 
-func (n *LivepeerNode) TranscodeSegment(jobId int64, ss *SignedSegment) (*TranscodeResult, error) {
-	glog.V(common.DEBUG).Infof("Starting to transcode segment %v", ss.Seg.SeqNo)
-	ch, err := n.getSegmentChan(jobId, ss.OS)
+func (n *LivepeerNode) TranscodeSegment(jobId int64, md *SegmentMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
+	glog.V(common.DEBUG).Infof("Starting to transcode segment %v", md.Seq)
+	ch, err := n.getSegmentChan(jobId, md.OS)
 	if err != nil {
 		glog.Error("Could not find segment chan ", err)
 		return nil, err
 	}
-	segChanData := &SegChanData{seg: ss, res: make(chan *TranscodeResult, 1)}
+	segChanData := &SegChanData{md: md, res: make(chan *TranscodeResult, 1), seg: seg}
 	select {
 	case ch <- segChanData:
-		glog.V(common.DEBUG).Info("Submitted segment to transcode loop ", ss.Seg.SeqNo)
+		glog.V(common.DEBUG).Info("Submitted segment to transcode loop ", md.Seq)
 	default:
 		// sending segChan should not block; if it does, the channel is busy
 		glog.Error("Transcoder was busy with a previous segment!")
@@ -197,9 +199,7 @@ func (n *LivepeerNode) TranscodeSegment(jobId int64, ss *SignedSegment) (*Transc
 	return res, res.Err
 }
 
-func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSegment) *TranscodeResult {
-
-	seg := ss.Seg
+func (n *LivepeerNode) transcodeSeg(config transcodeConfig, md *SegmentMetadata, seg *stream.HLSSegment) *TranscodeResult {
 	var fnamep *string
 	terr := func(err error) *TranscodeResult {
 		if fnamep != nil {
@@ -348,7 +348,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(jobId int64, osInfo *net.OSInfo, seg
 				n.segmentMutex.Unlock()
 				return
 			case chanData := <-segChan:
-				chanData.res <- n.transcodeAndCacheSeg(config, chanData.seg)
+				chanData.res <- n.transcodeSeg(config, chanData.md, chanData.seg)
 			}
 			cancel()
 		}

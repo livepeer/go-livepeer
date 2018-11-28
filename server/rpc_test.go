@@ -25,10 +25,6 @@ type stubOrchestrator struct {
 	jobId string
 }
 
-func StubJob() string {
-	return "iamajobstring"
-}
-
 func (r *stubOrchestrator) ServiceURI() *url.URL {
 	url, _ := url.Parse("http://localhost:1234")
 	return url
@@ -46,7 +42,7 @@ func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
 func (r *stubOrchestrator) Address() ethcommon.Address {
 	return ethcrypto.PubkeyToAddress(r.priv.PublicKey)
 }
-func (r *stubOrchestrator) TranscodeSeg(jobId int64, seg *core.SignedSegment) (*core.TranscodeResult, error) {
+func (r *stubOrchestrator) TranscodeSeg(jobId int64, md *core.SegmentMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
 	return nil, nil
 }
 func (r *stubOrchestrator) StreamIDs(jobId string) ([]core.StreamID, error) {
@@ -58,7 +54,7 @@ func StubOrchestrator() *stubOrchestrator {
 	if err != nil {
 		return &stubOrchestrator{}
 	}
-	return &stubOrchestrator{priv: pk, block: big.NewInt(5), jobId: StubJob()}
+	return &stubOrchestrator{priv: pk, block: big.NewInt(5)}
 }
 
 func (r *stubOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
@@ -167,7 +163,7 @@ func TestRPCSeg(t *testing.T) {
 		t.Error("Unable to generate seg creds ", err)
 		return
 	}
-	if _, err := verifySegCreds(o, jobId, creds); err != nil {
+	if _, err := verifySegCreds(o, creds); err != nil {
 		t.Error("Unable to verify seg creds", err)
 		return
 	}
@@ -185,20 +181,20 @@ func TestRPCSeg(t *testing.T) {
 	oldAddr := broadcasterAddress
 	key, _ := ethcrypto.GenerateKey()
 	broadcasterAddress = ethcrypto.PubkeyToAddress(key.PublicKey)
-	if _, err := verifySegCreds(o, jobId, creds); err == nil || err.Error() != "Segment sig check failed" {
+	if _, err := verifySegCreds(o, creds); err == nil || err.Error() != "Segment sig check failed" {
 		t.Error("Unexpectedly verified seg creds: invalid bcast addr", err)
 	}
 	broadcasterAddress = oldAddr
 
 	// sanity check
-	if _, err := verifySegCreds(o, jobId, creds); err != nil {
+	if _, err := verifySegCreds(o, creds); err != nil {
 		t.Error("Sanity check failed", err)
 	}
 
 	// test corrupt creds
 	idx := len(creds) / 2
 	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
-	if _, err := verifySegCreds(o, jobId, kreds); err == nil || err.Error() != "illegal base64 data at input byte 70" {
+	if _, err := verifySegCreds(o, kreds); err == nil || err.Error() != "illegal base64 data at input byte 70" {
 		t.Error("Unexpectedly verified bad creds", err)
 	}
 }
