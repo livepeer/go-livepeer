@@ -9,7 +9,7 @@ import (
 	"time"
 
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
-	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -17,9 +17,9 @@ func Over1Pct(val int, cmp int) bool {
 	return float32(val) > float32(cmp)*1.01 || float32(val) < float32(cmp)*0.99
 }
 
-func StubSegment() *SignedSegment {
+func StubSegment() *stream.HLSSegment {
 	d, _ := ioutil.ReadFile("./test.ts")
-	return &SignedSegment{Seg: stream.HLSSegment{SeqNo: 100, Name: "test.ts", Data: d[0:402696], Duration: 1}, Sig: []byte("test sig")}
+	return &stream.HLSSegment{SeqNo: 100, Name: "test.ts", Data: d[0:402696], Duration: 1}
 }
 
 func StubJobId() int64 {
