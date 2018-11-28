@@ -90,6 +90,31 @@ func TxDataToVideoProfile(txData string) ([]ffmpeg.VideoProfile, error) {
 	return profiles, nil
 }
 
+func BytesToVideoProfile(txData []byte) ([]ffmpeg.VideoProfile, error) {
+	profiles := make([]ffmpeg.VideoProfile, 0)
+
+	if len(txData) == 0 {
+		return profiles, nil
+	}
+	if len(txData) < VideoProfileIDBytes {
+		return nil, ErrProfile
+	}
+
+	for i := 0; i+VideoProfileIDBytes <= len(txData); i += VideoProfileIDBytes {
+		var txp [VideoProfileIDBytes]byte
+		copy(txp[:], txData[i:i+VideoProfileIDBytes])
+
+		p, ok := ffmpeg.VideoProfileLookup[VideoProfileByteLookup[txp]]
+		if !ok {
+			glog.Errorf("Cannot find video profile for job: %v", txp)
+			return nil, ErrProfile // monitor to see if this is too aggressive
+		}
+		profiles = append(profiles, p)
+	}
+
+	return profiles, nil
+}
+
 func ProfilesToTranscodeOpts(profiles []ffmpeg.VideoProfile) []byte {
 	//Sort profiles first
 	sort.Sort(ffmpeg.ByName(profiles))
