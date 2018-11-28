@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
-	"net/http"
 	"net/url"
 	"testing"
 	"time"
@@ -18,7 +17,6 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/stream"
 )
@@ -39,6 +37,9 @@ func (r *stubOrchestrator) CurrentBlock() *big.Int {
 }
 
 func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
+	if r.signErr != nil {
+		return nil, r.signErr
+	}
 	hash := ethcrypto.Keccak256(msg)
 	ethMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, hash)
 	return ethcrypto.Sign(ethcrypto.Keccak256([]byte(ethMsg)), r.priv)
@@ -74,74 +75,35 @@ func StubBroadcaster2() *stubOrchestrator {
 
 func TestRPCTranscoderReq(t *testing.T) {
 
-	// o := StubOrchestrator()
+	o := StubOrchestrator()
 	b := StubBroadcaster2()
-
-	// broadcasterAddress := ethcrypto.PubkeyToAddress(b.priv.PublicKey)
-	// transcoderAddress := ethcrypto.PubkeyToAddress(o.priv.PublicKey)
 
 	req, err := genTranscoderReq(b)
 	if err != nil {
 		t.Error("Unable to create transcoder req ", req)
 	}
-	// if verifyTranscoderReq(o, req, j) != nil { // normal case
-	// 	t.Error("Unable to verify transcoder request")
-	// }
+	if verifyTranscoderReq(o, req) != nil { // normal case
+		t.Error("Unable to verify transcoder request")
+	}
 
-	// // mismatched jobid
-	// req, _ = genTranscoderReq(b, 999)
-	// if verifyTranscoderReq(o, req, j) == nil {
-	// 	t.Error("Did not expect verification to pass; should mismatch sig")
-	// }
+	// wrong broadcaster
+	req.Address = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey).Bytes()
+	if verifyTranscoderReq(o, req) == nil {
+		t.Error("Did not expect verification to pass; should mismatch broadcaster")
+	}
 
-	// req, _ = genTranscoderReq(b, jobId) // reset job
-	// if req.JobId != jobId {             // sanity check
-	// 	t.Error("Sanity check failed")
-	// }
+	// invalid address
+	req.Address = []byte("#non-hex address!")
+	if verifyTranscoderReq(o, req) == nil {
+		t.Error("Did not expect verification to pass; should mismatch broadcaster")
+	}
 
-	// // wrong transcoder
-	// if verifyTranscoderReq(StubOrchestrator(), req, j) == nil {
-	// 	t.Error("Did not expect verification to pass; should mismatch transcoder")
-	// }
-
-	// // wrong broadcaster
-	// broadcasterAddress = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey)
-	// if verifyTranscoderReq(o, req, j) == nil {
-	// 	t.Error("Did not expect verification to pass; should mismatch broadcaster")
-	// }
-	// broadcasterAddress = ethcrypto.PubkeyToAddress(b.priv.PublicKey)
-
-	// job is too early
-	// o.block = big.NewInt(-1)
-	// if err := verifyTranscoderReq(o, req, j); err == nil || err.Error() != "Job out of range" {
-	// 	t.Error("Early request unexpectedly validated", err)
-	// }
-
-	// // job is too late
-	// o.block = big.NewInt(0).Add(j.EndBlock, big.NewInt(1))
-	// if err := verifyTranscoderReq(o, req, j); err == nil || err.Error() != "Job out of range" {
-	// 	t.Error("Late request unexpectedly validated", err)
-	// }
-
-	// // can't claim
-	// o.block = big.NewInt(0).Add(j.CreationBlock, big.NewInt(257))
-	// if err := verifyTranscoderReq(o, req, j); err == nil || err.Error() != "Job out of range" {
-	// 	t.Error("Unclaimable request unexpectedly validated", err)
-	// }
-
-	// // can now claim with a prior claim
-	// j.FirstClaimSubmitted = true
-	// if err := verifyTranscoderReq(o, req, j); err != nil {
-	// 	t.Error("Request not validated as expected validated", err)
-	// }
-
-	// // empty profiles
-	// j.Profiles = []ffmpeg.VideoProfile{}
-	// if err := verifyTranscoderReq(o, req, j); err == nil || err.Error() != "Job out of range" {
-	// 	t.Error("Unclaimable request unexpectedly validated", err)
-	// }
-	// j.Profiles = StubJob().Profiles
-
+	// error signing
+	b.signErr = fmt.Errorf("Signing error")
+	_, err = genTranscoderReq(b)
+	if err == nil {
+		t.Error("Did not expect to generate a transcoder request with invalid address")
+	}
 }
 
 // func TestGenToken(t *testing.T) {
