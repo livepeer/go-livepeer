@@ -1,6 +1,13 @@
 package common
 
-var VideoProfileIDSize = 8
+import (
+	"encoding/hex"
+)
+
+const VideoProfileIDSize = 8
+const VideoProfileIDBytes = 4
+
+type VideoProfileByteMap map[[VideoProfileIDBytes]byte]string
 
 var VideoProfileNameLookup = map[string]string{
 	"a7ac137a": "P720p60fps16x9",
@@ -13,3 +20,19 @@ var VideoProfileNameLookup = map[string]string{
 	"d435c53a": "P240p30fps4x3",
 	"fca40bf9": "P144p30fps16x9",
 }
+
+func makeVideoProfileByteMap() VideoProfileByteMap {
+	var ret = make(VideoProfileByteMap, 0)
+	for k, v := range VideoProfileNameLookup {
+		b, err := hex.DecodeString(k)
+		if err != nil || len(b) != VideoProfileIDBytes {
+			continue
+		}
+		var key [VideoProfileIDBytes]byte
+		copy(key[:], b)
+		ret[key] = v
+	}
+	return ret
+}
+
+var VideoProfileByteLookup = makeVideoProfileByteMap()
