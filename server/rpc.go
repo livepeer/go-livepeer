@@ -153,7 +153,8 @@ func verifyMsgSig(addr ethcommon.Address, msg string, sig []byte) bool {
 }
 
 func verifyTranscoderReq(orch Orchestrator, req *net.TranscoderRequest) error {
-	if !verifyMsgSig(ethcommon.BytesToAddress(req.Address), string(req.Address), req.Sig) {
+	addr := ethcommon.BytesToAddress(req.Address)
+	if !verifyMsgSig(addr, addr.Hex(), req.Sig) {
 		glog.Error("transcoder req sig check failed")
 		return fmt.Errorf("transcoder req sig check failed")
 	}
