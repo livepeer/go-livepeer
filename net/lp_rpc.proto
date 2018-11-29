@@ -6,7 +6,7 @@ package net;
 service Orchestrator {
 
   // Called by the broadcaster to request transcoder info from an orchestrator.
-  rpc GetTranscoder(TranscoderRequest) returns (TranscoderInfo);
+  rpc GetOrchestrator(OrchestratorRequest) returns (OrchestratorInfo);
   rpc Ping(PingPong) returns (PingPong);
 }
 
@@ -26,7 +26,7 @@ message PingPong {
 
 // This request is sent by the broadcaster in `GetTranscoder` to request
 // information on which transcoder to use.
-message TranscoderRequest {
+message OrchestratorRequest {
 
   // Ethereum address of the broadcaster
   bytes address = 1;
@@ -74,9 +74,9 @@ message S3OSInfo {
   string xAmzDate = 6;
 }
 
-// The orchestrator sends this in response to `GetTranscoder`, containing
+// The orchestrator sends this in response to `GetOrchestrator`, containing
 // miscellaneous data related to the job.
-message TranscoderInfo {
+message OrchestratorInfo {
 
   // URI of the transcoder to use for submitting segments.
   string transcoder  = 1;

@@ -26,7 +26,7 @@ func NewOffchainOrchestrator(node *core.LivepeerNode, address string) *offchainO
 	return &offchainOrchestrator{bcast: bcast, uri: uri}
 }
 
-func (o *offchainOrchestrator) GetOrchestrators(numOrchestrators int) ([]*net.TranscoderInfo, error) {
+func (o *offchainOrchestrator) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
 	tinfo, err := server.GetOrchestratorInfo(o.bcast, o.uri)
-	return []*net.TranscoderInfo{tinfo}, err
+	return []*net.OrchestratorInfo{tinfo}, err
 }
