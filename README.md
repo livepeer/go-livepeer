@@ -84,14 +84,14 @@ Note that the default HTTP port or playback (8935) is different from the CLI API
 ### Using Amazon S3 for storing stream's data
 
 You can use S3 to store source and transcoded data.
-For that livepeer should be run like this `livepeer -s3bucket region/bucket -s3creds accessKey/accessKeySecret`. Stream's data will be saved into directory `MANIFESTID_NONCE`, where MANIFESTID - id of the manifest associeated with stream, NONCE - random number that uniquely identifies this stream. In this directory will be saved all the segments data, plus manifest, named `MANIFESTID_full.m3u8`.
+For that livepeer should be run like this `livepeer -s3bucket region/bucket -s3creds accessKey/accessKeySecret`. Stream's data will be saved into directory `MANIFESTID`, where MANIFESTID - id of the manifest associated with stream. In this directory will be saved all the segments data, plus manifest, named `MANIFESTID_full.m3u8`.
 Livepeer node doesn't do any storage management, it only saves data and never deletes it.
 
-### Becoming a Transcoder
+### Becoming an Orchestrator
 
 We'll walk through the steps of becoming a transcoder on the test network.  To learn more about the transcoder, refer to the [Livepeer whitepaper](https://github.com/livepeer/wiki/blob/master/WHITEPAPER.md) and the [Transcoding guide](http://livepeer.readthedocs.io/en/latest/transcoding.html).
 
-- `livepeer --rinkeby --transcoder` to start the node as a transcoder.
+- `livepeer --rinkeby --transcoder` to start the node as an orchestrator with an attached local transcoder .
 
 - `livepeer_cli` - make sure you have test ether and test Livepeer token.  Refer to the Quick Start section for getting test ether and test tokens.
 
@@ -101,7 +101,21 @@ We'll walk through the steps of becoming a transcoder on the test network.  To l
 
 - Wait for the next round to start, and your transcoder will become active.
 
-- If running on Rinkeby or mainnet, ensure your transcoder is *publicly accessible* in order to receive jobs from broadcasters. The only port that is required to be public is the one that was set during the transcoder registration step (default 8935).
+- If running on Rinkeby or mainnet, ensure your orchestrator is *publicly accessible* in order to receive jobs from broadcasters. The only port that is required to be public is the one that was set during the transcoder registration step (default 8935).
+
+### Standalone Orchestrators
+
+Orchestrators can be run in standalone mode without an attached transcoder. Standalone transcoders will need to connect to this orchestrator in order for the orchestrator to process jobs.
+
+- `livepeer --rinkeby --orchestrator -orchSecret asdf`
+
+The orchSecret is a shared secret used to authenticate remote transcoders. It can be any arbitrary string.
+
+### Standalone Transcoders
+
+A standalone transcoder can be run which connects to a remote orchestrator. The orchestrator will send transcoding tasks to this transcoder as segments come in.
+
+- `livepeer -standaloneTranscoder -orchAddr 127.0.0.1:8935 -orchSecret asdf`
 
 ## Contribution
 Thank you for your interest in contributing to the core software of Livepeer.

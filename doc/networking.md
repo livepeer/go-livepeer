@@ -6,81 +6,47 @@
 [Sequence diagram source](https://sequencediagram.org/index.html#initialData=C4S2BsFMAIBkQG6QA6UgJ2gOUsA7gPboDWIAdgObQIBMAUHcgIbqgDGIzZw0ASpBRABnYOgCedAELoCTACZsmIjAFoAfP0EjxALmgB5dGwAWkbU2BE+kAI51Nw0WJXrpshUuAY9hk2dEWVvxCyAxu8orK6Oq+puaW6DoAOmQAKuhMZEJsBHIY1nbhHlEAPC6x-hkJOumZ2bn5AJJkAGYEDAzgBAShRZFe0Wq1WTl5idAAygIAtpDcBVIyEZ4YZSrD9WN6UxSz88Ghc3J0QA)
 
 
-## Terminology
-
-1. **Claimable** : A job is claimable if the current block is within 256 blocks of the job's creation, or a claim has already been submitted for the job.
-
 ## Broadcaster to Registry
 
-The broadcaster does an on-chain lookup to retrieve the orchestrator's ServiceURI in order to initiate an transcoding job.
+The broadcaster does an on-chain lookup to retrieve the orchestrator's ServiceURI in order to discover prices, capabilities and to initiate an transcoding job.
 
 ## Broadcaster to Orchestrator:
 
-### gRPC `GetTranscoder`
+### gRPC `GetOrchestrator : OrchestratorRequest -> OrchestratorInfo`
 
-This is called by the broadcaster to request information on a transcoder from an orchestrator. The request contains the following data:
+The `GetOrchestrator` method is called by the broadcaster to discover information about an orchestrator. The request contains the following data:
 
 ```protobuf
-// This request is sent by the broadcaster in `GetTranscoder` to request
-// information on which transcoder to use.
-message TranscoderRequest {
+// This request is sent by the broadcaster in `GetOrchestrator` to request
+// information on the orchestrator.
+message OrchestratorRequest {
 
-  // ID of the job that the broadcaster needs a transcoder for
-  int64 jobId = 1;
+  // Ethereum address of the broadcaster
+  bytes address = 1;
 
-  // Broadcaster's signature over the jobId
-  bytes sig   = 2;
+  // Broadcaster's signature over its hex-encoded address
+  bytes sig     = 2;
 }
 ```
 
-The `sig` field is the broadcaster's signature using its Ethereum key, over the jobId expressed as a string. The signature consists of the resulting bytes without any further encoding.
-`sig = broadcaster.Sign(jobId.String())`
+The `sig` field is the broadcaster's signature using its Ethereum key, over the broadcaster's public Ethereum address, expressed as a hex-encoded string. The signature consists of the resulting bytes without any further encoding.
+`sig = broadcaster.Sign(address.Hex())`
 
-Verification of `TranscoderRequest` consists of the following steps:
-1. Fetch the job based on JobId.
-    * TODO distinguish if an orchestrator is lagging behind and hasn't yet received the block with the job. Might require incorporating the node's **current** block number into the request.
-2. Ensure the orchestrator is assigned to the job.
-3. Ensure the current block falls within the valid range of `CreationBlock` ... `EndBlock` for the job.
-4. Ensure the job is still claimable.
-5. Verify that the signature comes from the broadcaster.
+Verification of `OrchestratorRequest` consists of the following steps:
+1. Check the signature `sig` was produced by the address given by `address`.
 
-The `TranscoderInfo` response contains:
+The `OrchestratorInfo` response contains:
 
 ```protobuf
-// The orchestrator sends this in response to `GetTranscoder`, containing the
-// transcoder URI, associated credentials authorizing the broadcaster to
-// use the transcoder, and miscellaneous data related to the job.
-message TranscoderInfo {
+// The orchestrator sends this in response to `GetOrchestrator`, containing the
+// miscellaneous data related to the job.
+message OrchestratorInfo {
 
-  // URI of the transcoder to use for submitting segments
-  string transcoder  = 1;
+  // URI of the orchestrator to use for submitting segments
+  string orchestrator = 1;
 
-  // Signals the authentication method to expect within `credentials`. This
-  // field is opaque to the broadcaster, and should be passed to the transcoder.
-  string authType    = 2;
-
-  // Credentials to verify the request has been authorized by an orchestrator.
-  // This field is opaque to the broadcaster.
-  string credentials = 3;
-
-  // Transcoded streamId list to update the master manifest on the broadcaster.
-  map<string, string> streamIds = 16;
-}
-```
-
-### Notes
-The authorization token will become more useful when the transcoder and orchestrator are separate entities. Additionally, the auth token can incorporate additional fields to avoid an on-chain lookup, such as the StreamID, token start time, and approximate job end time. This is stored as a base64-encoded, serialized protbuf struct.
-
-```protobuf
-// AuthToken is sent by the orchestrator and encoded in the `credentials` field
-// This record is opaque to the broadcaster and is only relevant between the
-// orchestrator and the transcoder.
-message AuthToken {
-
-  // Signature of the orchestrator over the remaining fields
-  bytes sig   = 1;
-
-  int64 jobId = 16;
+  // Orchestrator's preferred object storage, if any
+  repeated OSInfo storage = 32;
 }
 ```
 
@@ -88,38 +54,49 @@ message AuthToken {
 
 ### POST `/segment`
 
-Invoked each by the broadcaster for each segment that needs to be transcoded. The transcoder address is taken from the `transcoder` field in `TranscoderInfo`.
+Invoked each by the broadcaster for each segment that needs to be transcoded. The orchestrator address is taken from the `orchestrator` field in `OrchestratorInfo`.
 
 #### Required Headers:
 
-* **Authorization**
-Taken from the `authType` field in TranscoderInfo.
-* **Credentials**
-Taken from the `credentials` field in TranscoderInfo.
 * **Livepeer-Segment**
 Proves that the broadcaster generated this segment. Serialized protobuf struct, base64 encoded.
 ```protobuf
+// Data included by the broadcaster when submitting a segment for transcoding.
 message SegData {
-  int64 seq  = 1;
-  bytes hash = 2;
-  bytes sig  = 3;
+
+  // Manifest ID this segment belongs to
+  bytes manifestId = 1;
+
+  // Sequence number of the segment to be transcoded
+  int64 seq        = 2;
+
+  // Hash of the segment data to be transcoded
+  bytes hash       = 3;
+
+  // Transcoding profiles to use
+  bytes profiles   = 4;
+
+  // Broadcaster signature for the segment. Corresponds to:
+  // broadcaster.sign(manifestId | seqNo | dataHash | profiles)
+  bytes sig        = 5;
+
+  // Broadcaster's preferred storage medium(s)
+  repeated OSInfo storage = 32;
 }
 ```
 * Content-Type
-`video/MP2T`
+`video/MP2T` or `application/vnd+livepeer.uri`
 
-The composition of the body (and certain headers) varies based on the content-type. For the content-type of `video/MP2T` , the body is composed of the bytes of the segment.
+The composition of the body (and certain headers) varies based on the content-type. For the content-type of `video/MP2T` , the body is composed of the bytes of the segment. For the content-type of `application/vnd+livepeer.uri`, the body holds a URI where the data can be downloaded from.
 
 Processing a `/segment` request consists of the following steps:
 
-1. Verify the credentials generated by the orchestrator
-2. Verify that the job hasn't expired and is still claimable.
-3. Verify the segment signature from the broadcaster.
-4. Download the body
-5. Verify the keccak256 hash of the body matches `SegData.hash`
-6. Return 200 OK header. If any of the above steps fail, a non-200 response is returned.
-7. Transcoder performs additional checks and transcodes the segment.
-8. Return a `TranscodeResult` body based on the results of the transcode.
+1. Verify the segment signature from the broadcaster.
+1. Download the body
+1. Verify the keccak256 hash of the body matches `SegData.hash`
+1. Return 200 OK header. If any of the above steps fail, a non-200 response is returned.
+1. Transcoder performs additional checks and transcodes the segment.
+1. Return a `TranscodeResult` body based on the results of the transcode.
 
 #### Response:
 
@@ -174,3 +151,22 @@ Self-signed, with the DNSName field is set to the host name as specified in the 
 Orchestrator/transcoder certificates are self-signed, and generated anew each time the node starts up. The current TLS implementation in the broadcaster will fail out if the DNSName field does not match, otherwise the self-signed certificate is not verified.
 
 IPs will also work in the DNS Name field (at least, the go client does not fail out). However, this may be problematic for orchestrators that are on unstable IPs or otherwise "move around". Arguably, orchestrators shouldn't move around, so perhaps this would serve to discourage that mode of operation.
+
+## Design Considerations
+
+### gRPC and HTTP
+
+The division of the protocol into gRPC and plain-HTTP parts may seem odd. There
+is a method to the madness: gRPC messages are encoded using Protocol Buffers,
+and Protocol Buffers was not designed to handle [large blobs of data](https://developers.google.com/protocol-buffers/docs/techniques#large-data).
+Hence, when we need to transmit a large blob (such as a video segment), the
+transmission is done through raw HTTP. For purposes other than sending large
+blobs, gRPC gives us a convenient framework for building network protocols.
+
+### Upgrade Path
+
+See the [official recommendations](https://developers.google.com/protocol-buffers/docs/proto#updating)
+for updating Protocol Buffers messages. The same principles of "add but don't
+modify or remove fields" carry over to gRPC service definitions: new services
+can be added, but names should not be changed, nor should services be removed
+unless the intent is to break backwards compatibility.
