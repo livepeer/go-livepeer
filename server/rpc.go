@@ -74,17 +74,17 @@ type BroadcastSession struct {
 	Broadcaster      Broadcaster
 	ManifestID       core.ManifestID
 	Profiles         []ffmpeg.VideoProfile
-	OrchestratorInfo *net.TranscoderInfo
+	OrchestratorInfo *net.OrchestratorInfo
 	OrchestratorOS   drivers.OSSession
 	BroadcasterOS    drivers.OSSession
 }
 
-func genTranscoderReq(b Broadcaster) (*net.TranscoderRequest, error) {
+func genTranscoderReq(b Broadcaster) (*net.OrchestratorRequest, error) {
 	sig, err := b.Sign([]byte(fmt.Sprintf("%v", b.Address().Hex())))
 	if err != nil {
 		return nil, err
 	}
-	return &net.TranscoderRequest{Address: b.Address().Bytes(), Sig: sig}, nil
+	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: sig}, nil
 }
 
 func CheckOrchestratorAvailability(orch Orchestrator) bool {
@@ -152,7 +152,7 @@ func verifyMsgSig(addr ethcommon.Address, msg string, sig []byte) bool {
 	return eth.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
 }
 
-func verifyTranscoderReq(orch Orchestrator, req *net.TranscoderRequest) error {
+func verifyTranscoderReq(orch Orchestrator, req *net.OrchestratorRequest) error {
 	addr := ethcommon.BytesToAddress(req.Address)
 	if !verifyMsgSig(addr, addr.Hex(), req.Sig) {
 		glog.Error("transcoder req sig check failed")
@@ -253,7 +253,7 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 	return &net.PingPong{Value: value}, nil
 }
 
-func getTranscoder(context context.Context, orch Orchestrator, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
+func getOrchestrator(context context.Context, orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
 	jobId := ""                                         // jobId prob not needed here anymore
 	glog.Info("Got transcoder request for job ", jobId) // ANGIE - GET JOB/STREAMIDS FROM ELSEWHERE
 	if err := verifyTranscoderReq(orch, req); err != nil {
@@ -269,7 +269,7 @@ func getTranscoder(context context.Context, orch Orchestrator, req *net.Transcod
 		stringStreamIds[s.String()] = profiles[i].Name
 	}
 
-	tr := net.TranscoderInfo{
+	tr := net.OrchestratorInfo{
 		Transcoder: orch.ServiceURI().String(), // currently,  orchestrator == transcoder
 		StreamIds:  stringStreamIds,
 	}
@@ -396,8 +396,8 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 }
 
 // grpc methods
-func (h *lphttp) GetTranscoder(context context.Context, req *net.TranscoderRequest) (*net.TranscoderInfo, error) {
-	return getTranscoder(context, h.orchestrator, req)
+func (h *lphttp) GetOrchestrator(context context.Context, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
+	return getOrchestrator(context, h.orchestrator, req)
 }
 
 func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong, error) {
@@ -442,7 +442,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	srv.ListenAndServeTLS(cert, key)
 }
 
-func GetOrchestratorInfo(bcast Broadcaster, orchestratorServer *url.URL) (*net.TranscoderInfo, error) {
+func GetOrchestratorInfo(bcast Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 	c, conn, err := startOrchestratorClient(orchestratorServer)
 	if err != nil {
 		return nil, err
@@ -453,7 +453,7 @@ func GetOrchestratorInfo(bcast Broadcaster, orchestratorServer *url.URL) (*net.T
 	defer cancel()
 
 	req, err := genTranscoderReq(bcast)
-	r, err := c.GetTranscoder(ctx, req)
+	r, err := c.GetOrchestrator(ctx, req)
 	if err != nil {
 		glog.Error("Could not get transcoder %v: %v", orchestratorServer, err)
 		return nil, errors.New("Could not get transcoder: " + err.Error())

@@ -9,7 +9,7 @@ import (
 )
 
 type OrchestratorSelector interface {
-	GetOrchestrators(int) ([]*TranscoderInfo, error)
+	GetOrchestrators(int) ([]*OrchestratorInfo, error)
 }
 
 type NodeStatus struct {
