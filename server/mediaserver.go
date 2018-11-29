@@ -457,37 +457,31 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		s.broadcastRtmpToManifestMap[rtmpStrm.GetStreamID()] = string(mid)
 
-		if s.LivepeerNode.Eth != nil {
-			//Create Transcode Job Onchain
-			go func() {
-				if err != nil {
-					return // XXX feed back error?
+		//Create Transcode Job Onchain
+		go func() {
+			// Connect to the orchestrator. If it fails, retry for as long
+			// as the RTMP stream is alive; maybe the orchestrator hasn't
+			// received the block containing the job yet
+			broadcastFunc := func() error {
+				sess, err = s.startBroadcast(cpl)
+				if err == ErrDiscovery {
+					return err // discovery disabled, don't retry
+				} else if err != nil {
+					// Should be logged upstream
 				}
-
-				// Connect to the orchestrator. If it fails, retry for as long
-				// as the RTMP stream is alive; maybe the orchestrator hasn't
-				// received the block containing the job yet
-				broadcastFunc := func() error {
-					sess, err = s.startBroadcast(cpl)
-					if err == ErrDiscovery {
-						return err // discovery disabled, don't retry
-					} else if err != nil {
-						// Should be logged upstream
-					}
-					s.VideoNonceLock.Lock()
-					_, active := s.VideoNonce[rtmpStrm.GetStreamID()]
-					s.VideoNonceLock.Unlock()
-					if active {
-						return err
-					}
-					return nil // stop if inactive
+				s.VideoNonceLock.Lock()
+				_, active := s.VideoNonce[rtmpStrm.GetStreamID()]
+				s.VideoNonceLock.Unlock()
+				if active {
+					return err
 				}
-				expb := backoff.NewExponentialBackOff()
-				expb.MaxInterval = BroadcastRetry
-				expb.MaxElapsedTime = 0
-				backoff.Retry(broadcastFunc, expb)
-			}()
-		}
+				return nil // stop if inactive
+			}
+			expb := backoff.NewExponentialBackOff()
+			expb.MaxInterval = BroadcastRetry
+			expb.MaxElapsedTime = 0
+			backoff.Retry(broadcastFunc, expb)
+		}()
 		return nil
 	}
 }
