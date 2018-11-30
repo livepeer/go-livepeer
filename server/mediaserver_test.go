@@ -175,8 +175,4 @@ func TestShouldStopStream(t *testing.T) {
 	if shouldStopStream(fmt.Errorf("some random error string")) {
 		t.Error("Expected shouldStopStream=false for a random error")
 	}
-
-	if !shouldStopStream(fmt.Errorf(JobOutOfRangeError)) {
-		t.Errorf("Expected shouldStopStream=true for %v", JobOutOfRangeError)
-	}
 }

@@ -23,12 +23,9 @@ import (
 
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
-	"github.com/livepeer/lpms/transcoder"
 )
 
 const TranscodeLoopTimeout = 10 * time.Minute
-
-var profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9} // ANGIE - MUST REMOVE THIS ONCE PROFILES IN JOB
 
 // Transcoder / orchestrator RPC interface implementation
 type orchestrator struct {
@@ -61,21 +58,6 @@ func (orch *orchestrator) Address() ethcommon.Address {
 
 func (orch *orchestrator) TranscoderSecret() string {
 	return orch.node.OrchSecret
-}
-
-func (orch *orchestrator) StreamIDs(jobId string) ([]StreamID, error) {
-	streamIds := make([]StreamID, len(profiles))
-	sid := StreamID(jobId)
-	vid := sid.GetVideoID()
-	for i, p := range profiles {
-		strmId, err := MakeStreamID(vid, p.Name)
-		if err != nil {
-			glog.Error("Error making stream ID: ", err)
-			return []StreamID{}, err
-		}
-		streamIds[i] = strmId
-	}
-	return streamIds, nil
 }
 
 func (orch *orchestrator) TranscodeSeg(md *SegmentMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
@@ -125,11 +107,8 @@ type SegmentChan chan *SegChanData
 type TranscoderChan chan *RemoteTranscoderResult
 
 type transcodeConfig struct {
-	ResultStrmIDs []StreamID
-	JobID         string // ANGIE - WE'LL HAVE TO DELETE EITHER STREAMIDS OR JOBID
-	Transcoder    transcoder.Transcoder
-	OS            drivers.OSSession
-	LocalOS       drivers.OSSession
+	OS      drivers.OSSession
+	LocalOS drivers.OSSession
 }
 
 func (n *LivepeerNode) getTaskChan(taskId int64) (TranscoderChan, error) {
@@ -260,14 +239,14 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, md *SegmentMetadata,
 
 	//Do the transcoding
 	start := time.Now()
-	tData, err := transcoder.Transcode(url, profiles)
+	tData, err := transcoder.Transcode(url, md.Profiles)
 	if err != nil {
 		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
 		return terr(err)
 	}
 	// transcodeEnd := time.Now().UTC()
-	if len(tData) != len(config.ResultStrmIDs) {
-		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v", len(tData), len(config.ResultStrmIDs))
+	if len(tData) != len(md.Profiles) {
+		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v", len(tData), len(md.Profiles))
 		return terr(fmt.Errorf("MismatchedSegments"))
 	}
 	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
@@ -275,12 +254,12 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, md *SegmentMetadata,
 
 	// Prepare the result object
 	var tr TranscodeResult
-	for i, _ := range config.ResultStrmIDs {
+	for i, _ := range md.Profiles {
 		if tData[i] == nil {
 			glog.Errorf("Cannot find transcoded segment for %v", seg.SeqNo)
 			continue
 		}
-		tProfileData[profiles[i]] = tData[i] // ANGIE - PROFILES MUST BE REPLACED HERE
+		tProfileData[md.Profiles[i]] = tData[i]
 		tr.Data = append(tr.Data, tData[i])
 	}
 	os.Remove(fname)
@@ -305,13 +284,9 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegmentMetadata, segChan Segment
 		os = los
 	}
 
-	tr := transcoder.NewFFMpegSegmentTranscoder(profiles, n.WorkDir) // ANGIE - FIX PROFILES
 	config := transcodeConfig{
-		ResultStrmIDs: resultStrmIDs,
-		JobID:         string(jobId),
-		Transcoder:    tr,
-		OS:            os,
-		LocalOS:       los,
+		OS:      os,
+		LocalOS: los,
 	}
 	go func() {
 		for {
