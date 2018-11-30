@@ -81,9 +81,6 @@ message OrchestratorInfo {
   // URI of the transcoder to use for submitting segments.
   string transcoder  = 1;
 
-  // Transcoded streamId list to update the master manifest on the broadcaster.
-  map<string, string> streamIds = 16;
-
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
 }

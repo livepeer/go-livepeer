@@ -42,8 +42,6 @@ const GRPCTimeout = 8 * time.Second
 const GRPCConnectTimeout = 3 * time.Second
 const StoragePrefixIdLength = 8
 
-const JobOutOfRangeError = "Job out of range"
-
 var ErrSegSig = errors.New("ErrSegSig")
 var ErrSegEncoding = errors.New("ErrorSegEncoding")
 
@@ -60,7 +58,6 @@ type Orchestrator interface {
 	Sign([]byte) ([]byte, error)
 	CurrentBlock() *big.Int
 	TranscodeSeg(*core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
-	StreamIDs(string) ([]core.StreamID, error) // ANGIE - THIS NEEDS TO BE EDITED. WE MIGHT NEED TO GET STREAMIDS ELSEWHERE
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 }
@@ -255,24 +252,12 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 }
 
 func getOrchestrator(context context.Context, orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
-	jobId := ""                                         // jobId prob not needed here anymore
-	glog.Info("Got transcoder request for job ", jobId) // ANGIE - GET JOB/STREAMIDS FROM ELSEWHERE
 	if err := verifyOrchestratorReq(orch, req); err != nil {
 		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
-	}
-	sids, err := orch.StreamIDs(jobId)
-	if err != nil {
-		return nil, err
-	}
-	stringStreamIds := make(map[string]string)
-
-	for i, s := range sids {
-		stringStreamIds[s.String()] = profiles[i].Name
 	}
 
 	tr := net.OrchestratorInfo{
 		Transcoder: orch.ServiceURI().String(), // currently,  orchestrator == transcoder
-		StreamIds:  stringStreamIds,
 	}
 
 	storagePrefix := core.RandomIdGenerator(StoragePrefixIdLength)
@@ -355,7 +340,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// Upload to OS and construct segment result set
 	var segments []*net.TranscodedSegmentData
 	for i := 0; err == nil && i < len(res.Data); i++ {
-		name := fmt.Sprintf("%s/%d.ts", profiles[i].Name, segData.Seq) // ANGIE - NEED TO EDIT OUT JOB PROFILES
+		name := fmt.Sprintf("%s/%d.ts", segData.Profiles[i].Name, segData.Seq) // ANGIE - NEED TO EDIT OUT JOB PROFILES
 		uri, err := res.OS.SaveData(name, res.Data[i])
 		if err != nil {
 			glog.Error("Could not upload segment ", segData.Seq)

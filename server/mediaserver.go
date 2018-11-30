@@ -58,8 +58,6 @@ var MinJobBlocksRemaining = big.NewInt(40) // 10 mins assuming 15s blocks
 var LastHLSStreamID core.StreamID
 var LastManifestID core.ManifestID
 
-var profileName = "360p"
-
 type LivepeerServer struct {
 	RTMPSegmenter   lpmscore.RTMPSegmenter
 	LPMS            *lpmscore.LPMS
@@ -222,7 +220,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				return err
 			}
 			if !initialized {
-				glog.Infof("Round was uninitialized, can't create job. Please try again in a few blocks.")
+				glog.Infof("Round was uninitialized. Please try again in a few blocks.")
 				// todo send to metrics ?
 				return ErrRoundInit
 			}
@@ -371,8 +369,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 									errFunc("Download", url, err)
 									return
 								}
-								// ANGIE - replace 360p with job profiles once we have them
-								name := fmt.Sprintf("%s/%d.ts", profileName, seg.SeqNo)
+								name := fmt.Sprintf("%s/%d.ts", sess.Profiles[i].Name, seg.SeqNo)
 								newUrl, err := bos.SaveData(name, data)
 								if err != nil {
 									errFunc("SaveData", url, err)
@@ -387,8 +384,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 							}
 
 							// hoist this out so we only do it once
-							// ANGIE - replace 360p with job profiles once we have them
-							sid, _ := core.MakeStreamID(hlsStrmID.GetVideoID(), profileName)
+							sid, _ := core.MakeStreamID(hlsStrmID.GetVideoID(), sess.Profiles[i].Name)
 							err = cpl.InsertHLSSegment(sid, seg.SeqNo, url, seg.Duration)
 							if err != nil {
 								errFunc("Playlist", url, err)
@@ -662,5 +658,5 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 }
 
 func shouldStopStream(err error) bool {
-	return err.Error() == JobOutOfRangeError
+	return false
 }
