@@ -255,7 +255,7 @@ func main() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			if err := setupTranscoder(ctx, n, em, *ipfsPath, *initializeRound, *serviceAddr); err != nil {
+			if err := setupOrchestrator(ctx, n, em, *ipfsPath, *initializeRound); err != nil {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
@@ -292,6 +292,11 @@ func main() {
 		*rtmpAddr = defaultAddr(*rtmpAddr, "127.0.0.1", RtmpPort)
 		*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
 	} else if n.NodeType == core.OrchestratorNode {
+		n.ServiceURI, err = getServiceURI(n, *serviceAddr)
+		if err != nil {
+			glog.Error("Error getting service URI: ", err)
+			return
+		}
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
 		*httpAddr = defaultAddr(*httpAddr, "", n.ServiceURI.Port())
@@ -406,7 +411,53 @@ func main() {
 	}
 }
 
-func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool, serviceUri string) error {
+// ServiceURI checking steps:
+// If passed in via -serviceAddr: return that
+// Else: get inferred address.
+// If offchain: return inferred address
+// Else: get on-chain sURI
+// If on-chain sURI mismatches inferred address: print warning
+// Return on-chain sURI
+func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
+	// Passed in via CLI
+	if serviceAddr != "" {
+		return url.ParseRequestURI("https://" + serviceAddr)
+	}
+
+	// Infer address
+	// TODO probably should put this (along w wizard GETs) into common code
+	resp, err := http.Get("https://api.ipify.org?format=text")
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		glog.Error("Could not look up public IP address")
+		return nil, err
+	}
+	addr := "https://" + strings.TrimSpace(string(body)) + ":" + RpcPort
+	inferredUri, err := url.ParseRequestURI(addr)
+	if n.Eth == nil {
+		// we won't be looking up onchain sURI so use the inferred one
+		return inferredUri, err
+	}
+
+	// On-chain lookup and matching with inferred public address
+	addr, err = n.Eth.GetServiceURI(n.Eth.Account().Address)
+	if err != nil {
+		glog.Error("Could not get service URI; orchestrator may be unreachable")
+		return nil, err
+	}
+	ethUri, err := url.ParseRequestURI(addr)
+	if err != nil {
+		glog.Error("Could not parse service URI; orchestrator may be unreachable")
+		ethUri, _ = url.ParseRequestURI("http://127.0.0.1:" + RpcPort)
+	}
+	if ethUri.Hostname() != inferredUri.Hostname() || ethUri.Port() != inferredUri.Port() {
+		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceAddr", ethUri, inferredUri)
+	}
+	return ethUri, nil
+}
+
+func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool) error {
 	//Check if orchestrator is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
@@ -414,50 +465,9 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 	}
 
 	if !active {
-		glog.Infof("Transcoder %v is inactive", n.Eth.Account().Address.Hex())
+		glog.Infof("Orchestrator %v is inactive", n.Eth.Account().Address.Hex())
 	} else {
-		glog.Infof("Transcoder %v is active", n.Eth.Account().Address.Hex())
-	}
-
-	serviceUriSpecified := false
-	if serviceUri == "" {
-		// TODO probably should put this (along w wizard GETs) into common code
-		resp, err := http.Get("https://api.ipify.org?format=text")
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			glog.Error("Could not look up public IP address")
-			return err
-		}
-		serviceUri = "https://" + strings.TrimSpace(string(body)) + ":" + RpcPort
-	} else {
-		serviceUri = "https://" + serviceUri
-		serviceUriSpecified = true
-	}
-	suri, err := url.ParseRequestURI(serviceUri)
-	if err != nil {
-		glog.Error("Could not parse local service URI ", err)
-		return err // this is fatal; should at least infer a valid uri
-	}
-	uriStr, err := n.Eth.GetServiceURI(n.Eth.Account().Address)
-	if err != nil {
-		glog.Error("Could not get service URI; orchestrator may be unreachable")
-		return err
-	}
-	uri, err := url.ParseRequestURI(uriStr)
-	if err != nil {
-		glog.Error("Could not parse service URI; orchestrator may be unreachable")
-		uri, _ = url.ParseRequestURI("http://127.0.0.1:" + RpcPort)
-	}
-	if uri.Hostname() != suri.Hostname() || uri.Port() != suri.Port() {
-		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceAddr", uri, suri)
-		// TODO remove '&& false' after all orchestrators have set a service URI
-		if active && false {
-			return fmt.Errorf("Mismatched service address")
-		}
-	}
-	if serviceUriSpecified {
-		uri = suri
+		glog.Infof("Orchestrator %v is active", n.Eth.Account().Address.Hex())
 	}
 
 	// Set up IPFS
@@ -469,10 +479,9 @@ func setupTranscoder(ctx context.Context, n *core.LivepeerNode, em eth.EventMoni
 
 	n.Ipfs = ipfsApi
 	n.EthEventMonitor = em
-	n.ServiceURI = uri
 
 	if initializeRound {
-		glog.Infof("Transcoder %v will automatically initialize new rounds", n.Eth.Account().Address.Hex())
+		glog.Infof("Orchestrator %v will automatically initialize new rounds", n.Eth.Account().Address.Hex())
 
 		// Create rounds service to initialize round if it has not already been initialized
 		rds := eventservices.NewRoundsService(em, n.Eth)
