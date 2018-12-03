@@ -77,7 +77,7 @@ func genTranscoderReq(b Broadcaster, jid int64) (*net.TranscoderRequest, error) 
 	return &net.TranscoderRequest{JobId: jid, Sig: sig}, nil
 }
 
-func CheckTranscoderAvailability(orch Orchestrator) bool {
+func CheckOrchestratorAvailability(orch Orchestrator) bool {
 	ts := time.Now()
 	ts_signature, err := orch.Sign([]byte(fmt.Sprintf("%v", ts)))
 	if err != nil {
