@@ -78,8 +78,8 @@ func (orch *orchestrator) StreamIDs(jobId string) ([]StreamID, error) {
 	return streamIds, nil
 }
 
-func (orch *orchestrator) TranscodeSeg(jobId int64, md *SegmentMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
-	return orch.node.TranscodeSegment(jobId, md, seg)
+func (orch *orchestrator) TranscodeSeg(md *SegmentMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
+	return orch.node.TranscodeSegment(md, seg)
 }
 
 func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
@@ -163,25 +163,25 @@ func (n *LivepeerNode) removeTaskChan(taskId int64) {
 	delete(n.taskChans, taskId)
 }
 
-func (n *LivepeerNode) getSegmentChan(jobId int64, os *net.OSInfo) (SegmentChan, error) {
+func (n *LivepeerNode) getSegmentChan(md *SegmentMetadata) (SegmentChan, error) {
 	// concurrency concerns here? what if a chan is added mid-call?
 	n.segmentMutex.Lock()
 	defer n.segmentMutex.Unlock()
-	if sc, ok := n.SegmentChans[jobId]; ok {
+	if sc, ok := n.SegmentChans[md.ManifestID]; ok {
 		return sc, nil
 	}
 	sc := make(SegmentChan, 1)
-	glog.V(common.DEBUG).Info("Creating new segment chan for job ", jobId)
-	n.SegmentChans[jobId] = sc
-	if err := n.transcodeSegmentLoop(jobId, os, sc); err != nil {
+	glog.V(common.DEBUG).Info("Creating new segment chan for manifest ", md.ManifestID)
+	n.SegmentChans[md.ManifestID] = sc
+	if err := n.transcodeSegmentLoop(md, sc); err != nil {
 		return nil, err
 	}
 	return sc, nil
 }
 
-func (n *LivepeerNode) TranscodeSegment(jobId int64, md *SegmentMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
+func (n *LivepeerNode) TranscodeSegment(md *SegmentMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
 	glog.V(common.DEBUG).Infof("Starting to transcode segment %v", md.Seq)
-	ch, err := n.getSegmentChan(jobId, md.OS)
+	ch, err := n.getSegmentChan(md)
 	if err != nil {
 		glog.Error("Could not find segment chan ", err)
 		return nil, err
@@ -250,8 +250,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, md *SegmentMetadata,
 	} else {
 		// Need to store segment in our local OS
 		var err error
-		sid := StreamID(config.JobID)
-		name := fmt.Sprintf("%s/%d.ts", sid.GetRendition(), seg.SeqNo)
+		name := fmt.Sprintf("%d.ts", seg.SeqNo)
 		url, err = config.LocalOS.SaveData(name, seg.Data)
 		if err != nil {
 			return terr(err)
@@ -289,33 +288,18 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, md *SegmentMetadata,
 	return &tr
 }
 
-func (n *LivepeerNode) transcodeSegmentLoop(jobId int64, osInfo *net.OSInfo, segChan SegmentChan) error {
-	glog.V(common.DEBUG).Info("Starting transcode segment loop for ", jobId)        // ANGIE - NO STREAMID ?
-	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9} // ANGIE - NEED TO FIGURE OUT WHAT TO USE INSTEAD OF PROFILES, AND WHETHER TO USE JOBID HERE
-	resultStrmIDs := make([]StreamID, len(profiles), len(profiles))
-
-	sid := StreamID(jobId)
-	for i, vp := range profiles {
-		strmID, err := MakeStreamID(sid.GetVideoID(), vp.Name)
-		if err != nil {
-			glog.Error("Error making stream ID: ", err)
-			return err
-		}
-		resultStrmIDs[i] = strmID
-	}
+func (n *LivepeerNode) transcodeSegmentLoop(md *SegmentMetadata, segChan SegmentChan) error {
+	glog.V(common.DEBUG).Info("Starting transcode segment loop for ", md.ManifestID)
 
 	// Set up local OS for any remote transcoders to use if necessary
 	if drivers.NodeStorage == nil {
 		return fmt.Errorf("Missing local storage")
 	}
-	mid, err := sid.ManifestIDFromStreamID()
-	if err != nil {
-		return err
-	}
-	los := drivers.NodeStorage.NewSession(string(mid))
+
+	los := drivers.NodeStorage.NewSession(string(md.ManifestID))
 
 	// determine appropriate OS to use
-	os := drivers.NewSession(osInfo)
+	os := drivers.NewSession(md.OS)
 	if os == nil {
 		// no preference (or unknown pref), so use our own
 		os = los
@@ -336,14 +320,13 @@ func (n *LivepeerNode) transcodeSegmentLoop(jobId int64, osInfo *net.OSInfo, seg
 			select {
 			case <-ctx.Done():
 				// timeout; clean up goroutine here
-				jid := jobId
 				os.EndSession()
 				los.EndSession()
-				glog.V(common.DEBUG).Info("Segment loop timed out; closing ", jid)
+				glog.V(common.DEBUG).Info("Segment loop timed out; closing ", md.ManifestID)
 				n.segmentMutex.Lock()
-				if _, ok := n.SegmentChans[jid]; ok {
-					close(n.SegmentChans[jid])
-					delete(n.SegmentChans, jid)
+				if _, ok := n.SegmentChans[md.ManifestID]; ok {
+					close(n.SegmentChans[md.ManifestID])
+					delete(n.SegmentChans, md.ManifestID)
 				}
 				n.segmentMutex.Unlock()
 				return

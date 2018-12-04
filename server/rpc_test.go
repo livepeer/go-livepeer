@@ -47,7 +47,7 @@ func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
 func (r *stubOrchestrator) Address() ethcommon.Address {
 	return ethcrypto.PubkeyToAddress(r.priv.PublicKey)
 }
-func (r *stubOrchestrator) TranscodeSeg(jobId int64, md *core.SegmentMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
+func (r *stubOrchestrator) TranscodeSeg(md *core.SegmentMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
 	return nil, nil
 }
 func (r *stubOrchestrator) StreamIDs(jobId string) ([]core.StreamID, error) {

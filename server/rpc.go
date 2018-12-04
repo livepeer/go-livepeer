@@ -40,6 +40,7 @@ var broadcasterAddress = ethcommon.BytesToAddress([]byte("111 Transcoder Address
 const HTTPTimeout = 8 * time.Second
 const GRPCTimeout = 8 * time.Second
 const GRPCConnectTimeout = 3 * time.Second
+const StoragePrefixIdLength = 8
 
 const JobOutOfRangeError = "Job out of range"
 
@@ -58,7 +59,7 @@ type Orchestrator interface {
 	TranscoderSecret() string
 	Sign([]byte) ([]byte, error)
 	CurrentBlock() *big.Int
-	TranscodeSeg(int64, *core.SegmentMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
+	TranscodeSeg(*core.SegmentMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	StreamIDs(string) ([]core.StreamID, error) // ANGIE - THIS NEEDS TO BE EDITED. WE MIGHT NEED TO GET STREAMIDS ELSEWHERE
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
@@ -273,11 +274,10 @@ func getOrchestrator(context context.Context, orch Orchestrator, req *net.Orches
 		Transcoder: orch.ServiceURI().String(), // currently,  orchestrator == transcoder
 		StreamIds:  stringStreamIds,
 	}
-	mid, err := core.StreamID(jobId).ManifestIDFromStreamID()
-	if err != nil {
-		return nil, err
-	}
-	os := drivers.NodeStorage.NewSession(string(mid))
+
+	storagePrefix := core.RandomIdGenerator(StoragePrefixIdLength)
+	os := drivers.NodeStorage.NewSession(string(storagePrefix))
+
 	if os != nil && os.IsExternal() {
 		tr.Storage = []*net.OSInfo{os.GetInfo()}
 	}
@@ -350,9 +350,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		Name:  uri,
 	}
 
-	fmt.Print("jobId needs to be changed into string", jobId)
-	// res, err := orch.TranscodeSeg(int64(jobId), segData, &hlsStream) // ANGIE - NEED TO CHANGE ALL JOBIDS IN TRANSCODING LOOP INTO STRINGS
-	res, err := orch.TranscodeSeg(int64(123), segData, &hlsStream) // ANGIE - NEED TO CHANGE ALL JOBIDS IN TRANSCODING LOOP INTO STRINGS
+	res, err := orch.TranscodeSeg(segData, &hlsStream) // ANGIE - NEED TO CHANGE ALL JOBIDS IN TRANSCODING LOOP INTO STRINGS
 
 	// Upload to OS and construct segment result set
 	var segments []*net.TranscodedSegmentData
@@ -444,6 +442,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 
 func GetOrchestratorInfo(bcast Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 	c, conn, err := startOrchestratorClient(orchestratorServer)
+
 	if err != nil {
 		return nil, err
 	}

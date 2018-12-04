@@ -44,8 +44,12 @@ func (md *SegmentMetadata) Flatten() []byte {
 }
 
 func RandomVideoID() []byte {
+	return RandomIdGenerator(HashLength)
+}
+
+func RandomIdGenerator(length uint) []byte {
 	rand.Seed(time.Now().UnixNano())
-	x := make([]byte, HashLength, HashLength)
+	x := make([]byte, length, length)
 	for i := 0; i < len(x); i++ {
 		x[i] = byte(rand.Uint32())
 	}
