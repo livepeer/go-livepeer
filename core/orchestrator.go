@@ -47,9 +47,16 @@ func (orch *orchestrator) CurrentBlock() *big.Int {
 
 func (orch *orchestrator) Sign(msg []byte) ([]byte, error) {
 	if orch.node == nil || orch.node.Eth == nil {
-		return []byte{}, fmt.Errorf("Cannot sign; missing eth client")
+		return []byte{}, nil
 	}
 	return orch.node.Eth.Sign(crypto.Keccak256(msg))
+}
+
+func (orch *orchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
+	if orch.node == nil || orch.node.Eth == nil {
+		return true
+	}
+	return eth.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
 }
 
 func (orch *orchestrator) Address() ethcommon.Address {

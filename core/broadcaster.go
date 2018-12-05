@@ -2,7 +2,6 @@ package core
 
 import (
 	"errors"
-	"fmt"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -18,7 +17,7 @@ type broadcaster struct {
 
 func (bcast *broadcaster) Sign(msg []byte) ([]byte, error) {
 	if bcast.node == nil || bcast.node.Eth == nil {
-		return []byte{}, fmt.Errorf("Cannot sign; missing eth client")
+		return []byte{}, nil
 	}
 	return bcast.node.Eth.Sign(crypto.Keccak256(msg))
 }
