@@ -21,7 +21,6 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
-	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
@@ -56,6 +55,7 @@ type Orchestrator interface {
 	Address() ethcommon.Address
 	TranscoderSecret() string
 	Sign([]byte) ([]byte, error)
+	VerifySig(ethcommon.Address, string, []byte) bool
 	CurrentBlock() *big.Int
 	TranscodeSeg(*core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer)
@@ -109,7 +109,7 @@ func CheckOrchestratorAvailability(orch Orchestrator) bool {
 		return false
 	}
 
-	return verifyMsgSig(orch.Address(), string(ping), pong.Value)
+	return orch.VerifySig(orch.Address(), string(ping), pong.Value)
 }
 
 func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.ClientConn, error) {
@@ -146,13 +146,9 @@ func jobClaimable(orch Orchestrator, job *lpTypes.Job) bool {
 	return canClaim && !(blk.Cmp(job.CreationBlock) == -1 || blk.Cmp(job.EndBlock) == 1)
 }
 
-func verifyMsgSig(addr ethcommon.Address, msg string, sig []byte) bool {
-	return eth.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
-}
-
 func verifyOrchestratorReq(orch Orchestrator, req *net.OrchestratorRequest) error {
 	addr := ethcommon.BytesToAddress(req.Address)
-	if !verifyMsgSig(addr, addr.Hex(), req.Sig) {
+	if !orch.VerifySig(addr, addr.Hex(), req.Sig) {
 		glog.Error("orchestrator req sig check failed")
 		return fmt.Errorf("orchestrator req sig check failed")
 	}
@@ -233,7 +229,7 @@ func verifySegCreds(orch Orchestrator, segCreds string) (*core.SegTranscodingMet
 		OS:         os,
 	}
 
-	if !verifyMsgSig(broadcasterAddress, string(md.Flatten()), segData.Sig) {
+	if !orch.VerifySig(broadcasterAddress, string(md.Flatten()), segData.Sig) {
 		glog.Error("Sig check failed")
 		return nil, ErrSegSig
 	}

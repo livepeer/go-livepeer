@@ -17,6 +17,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/stream"
 )
@@ -44,6 +45,11 @@ func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
 	ethMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, hash)
 	return ethcrypto.Sign(ethcrypto.Keccak256([]byte(ethMsg)), r.priv)
 }
+
+func (r *stubOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
+	return eth.VerifySig(addr, ethcrypto.Keccak256([]byte(msg)), sig)
+}
+
 func (r *stubOrchestrator) Address() ethcommon.Address {
 	return ethcrypto.PubkeyToAddress(r.priv.PublicKey)
 }
@@ -199,7 +205,7 @@ func TestPing(t *testing.T) {
 		t.Error("Unable to send Ping request")
 	}
 
-	verified := verifyMsgSig(o.Address(), string(pingSent), pong.Value)
+	verified := o.VerifySig(o.Address(), string(pingSent), pong.Value)
 
 	if !verified {
 		t.Error("Unable to verify response from ping request")
