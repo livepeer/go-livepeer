@@ -78,31 +78,31 @@ func TestRPCTranscoderReq(t *testing.T) {
 	o := StubOrchestrator()
 	b := StubBroadcaster2()
 
-	req, err := genTranscoderReq(b)
+	req, err := genOrchestratorReq(b)
 	if err != nil {
-		t.Error("Unable to create transcoder req ", req)
+		t.Error("Unable to create orchestrator req ", req)
 	}
-	if verifyTranscoderReq(o, req) != nil { // normal case
-		t.Error("Unable to verify transcoder request")
+	if verifyOrchestratorReq(o, req) != nil { // normal case
+		t.Error("Unable to verify orchestrator request")
 	}
 
 	// wrong broadcaster
 	req.Address = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey).Bytes()
-	if verifyTranscoderReq(o, req) == nil {
+	if verifyOrchestratorReq(o, req) == nil {
 		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
 
 	// invalid address
 	req.Address = []byte("#non-hex address!")
-	if verifyTranscoderReq(o, req) == nil {
+	if verifyOrchestratorReq(o, req) == nil {
 		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
 
 	// error signing
 	b.signErr = fmt.Errorf("Signing error")
-	_, err = genTranscoderReq(b)
+	_, err = genOrchestratorReq(b)
 	if err == nil {
-		t.Error("Did not expect to generate a transcoder request with invalid address")
+		t.Error("Did not expect to generate a orchestrator request with invalid address")
 	}
 }
 
