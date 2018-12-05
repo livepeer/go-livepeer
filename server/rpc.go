@@ -79,7 +79,7 @@ type BroadcastSession struct {
 	BroadcasterOS    drivers.OSSession
 }
 
-func genTranscoderReq(b Broadcaster) (*net.OrchestratorRequest, error) {
+func genOrchestratorReq(b Broadcaster) (*net.OrchestratorRequest, error) {
 	sig, err := b.Sign([]byte(fmt.Sprintf("%v", b.Address().Hex())))
 	if err != nil {
 		return nil, err
@@ -152,11 +152,11 @@ func verifyMsgSig(addr ethcommon.Address, msg string, sig []byte) bool {
 	return eth.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
 }
 
-func verifyTranscoderReq(orch Orchestrator, req *net.OrchestratorRequest) error {
+func verifyOrchestratorReq(orch Orchestrator, req *net.OrchestratorRequest) error {
 	addr := ethcommon.BytesToAddress(req.Address)
 	if !verifyMsgSig(addr, addr.Hex(), req.Sig) {
-		glog.Error("transcoder req sig check failed")
-		return fmt.Errorf("transcoder req sig check failed")
+		glog.Error("orchestrator req sig check failed")
+		return fmt.Errorf("orchestrator req sig check failed")
 	}
 	return nil
 }
@@ -256,8 +256,8 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 func getOrchestrator(context context.Context, orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
 	jobId := ""                                         // jobId prob not needed here anymore
 	glog.Info("Got transcoder request for job ", jobId) // ANGIE - GET JOB/STREAMIDS FROM ELSEWHERE
-	if err := verifyTranscoderReq(orch, req); err != nil {
-		return nil, fmt.Errorf("Invalid transcoder request (%v)", err)
+	if err := verifyOrchestratorReq(orch, req); err != nil {
+		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
 	}
 	sids, err := orch.StreamIDs(jobId)
 	if err != nil {
@@ -452,11 +452,11 @@ func GetOrchestratorInfo(bcast Broadcaster, orchestratorServer *url.URL) (*net.O
 	ctx, cancel := context.WithTimeout(context.Background(), GRPCTimeout)
 	defer cancel()
 
-	req, err := genTranscoderReq(bcast)
+	req, err := genOrchestratorReq(bcast)
 	r, err := c.GetOrchestrator(ctx, req)
 	if err != nil {
-		glog.Error("Could not get transcoder %v: %v", orchestratorServer, err)
-		return nil, errors.New("Could not get transcoder: " + err.Error())
+		glog.Errorf("Could not get orchestrator %v: %v", orchestratorServer, err)
+		return nil, errors.New("Could not get orchestrator: " + err.Error())
 	}
 
 	return r, nil
