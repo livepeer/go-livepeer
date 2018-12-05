@@ -22,6 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 )
 
+var ErrTranscoderAvail = errors.New("ErrTranscoderUnavailable")
 var ErrLivepeerNode = errors.New("ErrLivepeerNode")
 var ErrTranscode = errors.New("ErrTranscode")
 var DefaultJobLength = int64(5760) //Avg 1 day in 15 sec blocks
