@@ -151,10 +151,10 @@ func (n *LivepeerNode) getSegmentChan(md *SegmentMetadata) (SegmentChan, error) 
 	}
 	sc := make(SegmentChan, 1)
 	glog.V(common.DEBUG).Info("Creating new segment chan for manifest ", md.ManifestID)
-	n.SegmentChans[md.ManifestID] = sc
 	if err := n.transcodeSegmentLoop(md, sc); err != nil {
 		return nil, err
 	}
+	n.SegmentChans[md.ManifestID] = sc
 	return sc, nil
 }
 

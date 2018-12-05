@@ -9,7 +9,10 @@ import (
 	"testing"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/livepeer/go-livepeer/net"
 
@@ -224,4 +227,51 @@ func (s *StubServerStream) SendMsg(m interface{}) error {
 }
 func (s *StubServerStream) RecvMsg(m interface{}) error {
 	return nil
+}
+
+func StubSegmentMetadata() *SegmentMetadata {
+	return &SegmentMetadata{
+		ManifestID: ManifestID("abcdef"),
+		Seq:        1234,
+		Hash:       ethcommon.BytesToHash(ethcommon.RightPadBytes([]byte("browns"), 32)),
+		Profiles:   []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9},
+		OS:         &net.OSInfo{StorageType: net.OSInfo_IPFS},
+	}
+}
+
+func TestGetSegmentChan(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	segData := StubSegmentMetadata()
+
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	sc, err := n.getSegmentChan(segData)
+	if err != nil {
+		t.Error("error with getSegmentChan", err)
+	}
+
+	if sc != n.SegmentChans[segData.ManifestID] {
+		t.Error("SegmentChans mapping did not include channel")
+	}
+
+	drivers.NodeStorage = nil
+	node, _ := NewLivepeerNode(nil, "", nil)
+
+	sc, storageError := node.getSegmentChan(segData)
+	if storageError.Error() != "Missing local storage" {
+		t.Error("transcodingLoop did not fail when expected to", storageError)
+	}
+
+	if sc == n.SegmentChans[segData.ManifestID] {
+		t.Error("SegmentChans mapping included new channel when expected to return an err/nil")
+	}
+
+	sc, storageErr := node.getSegmentChan(segData)
+	if storageErr.Error() != "Missing local storage" {
+		t.Error("transcodingLoop did not fail when expected to", storageErr)
+	}
+
+	if sc == n.SegmentChans[segData.ManifestID] {
+		t.Error("SegmentChans mapping included new channel when expected to return an err/nil")
+	}
+
 }
