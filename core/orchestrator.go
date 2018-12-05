@@ -213,7 +213,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, md *SegmentMetadata,
 	n.tcoderMutex.RLock()
 	if n.Transcoder == nil {
 		n.tcoderMutex.RUnlock()
-		return terr(fmt.Errorf("No transcoders available on orchestrator"))
+		return terr(ErrTranscoderAvail)
 	}
 	transcoder = n.Transcoder
 	n.tcoderMutex.RUnlock()

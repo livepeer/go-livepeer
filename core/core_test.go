@@ -5,10 +5,15 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
@@ -28,83 +33,49 @@ func StubJobId() int64 {
 
 var videoProfiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
 
-// func TestTranscode(t *testing.T) {
-// 	//Set up the node
-// 	drivers.NodeStorage = drivers.NewMemoryDriver("")
-// 	seth := &eth.StubClient{}
-// 	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
-// 	defer db.Close()
-// 	tmp, _ := ioutil.TempDir("", "")
-// 	n, _ := NewLivepeerNode(seth, tmp, db)
-// 	defer os.RemoveAll(tmp)
-// 	jobId := StubJobId()
-// 	ffmpeg.InitFFmpeg()
+func TestTranscode(t *testing.T) {
+	//Set up the node
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	defer db.Close()
+	seth := &eth.StubClient{}
+	tmp, _ := ioutil.TempDir("", "")
+	n, _ := NewLivepeerNode(seth, tmp, db)
+	defer os.RemoveAll(tmp)
+	ffmpeg.InitFFmpeg()
 
-// 	// Sanity check full flow.
-// 	ss := StubSegment()
-// 	tr, err := n.TranscodeSegment(jobId, ss)
-// 	if err != nil {
-// 		t.Error("Error transcoding ", err)
-// 	}
+	ss := StubSegment()
+	md := &SegmentMetadata{Profiles: videoProfiles}
 
-// 	if len(tr.Data) != len(videoProfiles) && len(videoProfiles) != 2 {
-// 		t.Error("Job profile count did not match broadcasters")
-// 	}
+	// Check nil transcoder.
+	tr, err := n.TranscodeSegment(md, ss)
+	if err != ErrTranscoderAvail {
+		t.Error("Error transcoding ", err)
+	}
 
-// 	// Check transcode result
-// 	// XXX fix - we don't have this data here now
-// 	/*
-// 		has_144p, has_240p := false, false
-// 		for _, v := range tr.Data {
-// 			rgx, _ := regexp.Compile("[[:alnum:]]+")
-// 			sid := StreamID(rgx.FindString(v)) // trim off the training "_100.ts"
-// 			b := n.VideoSource.GetHLSSegment(sid, v)
-// 			if b == nil {
-// 				t.Error("Error converting broadcaster ", sid.GetRendition())
-// 			}
-// 			if b.SeqNo != 100 {
-// 				t.Error("Wrong SeqNo assigned to broadcaser ", b.SeqNo)
-// 			}
-// 			r := sid.GetRendition()
-// 			if r == "P144p30fps16x9" {
-// 				if Over1Pct(len(b.Data), 65424) {
-// 					t.Errorf("Wrong data assigned to broadcaster: %v", len(b.Data))
-// 				} else {
-// 					has_144p = true
-// 				}
-// 			} else if r == "P240p30fps16x9" {
-// 				if Over1Pct(len(b.Data), 81968) {
-// 					t.Errorf("Wrong data assigned to broadcaster: %v", len(b.Data))
-// 				} else {
-// 					has_240p = true
-// 				}
-// 			}
-// 		}
-// 		if !has_144p || !has_240p {
-// 			t.Error("Missing some expected tests")
-// 		}
-// 	*/
+	// Sanity check full flow.
+	n.Transcoder = NewLocalTranscoder(tmp)
+	tr, err = n.TranscodeSegment(md, ss)
+	if err != nil {
+		t.Error("Error transcoding ", err)
+	}
 
-// 	// check duplicate sequence in DB
-// 	_, err = n.TranscodeSegment(jobId, ss)
-// 	if err.Error() != "DuplicateSequence" {
-// 		t.Error("Unexpected error when checking duplicate seqs ", err)
-// 	}
+	if len(tr.Data) != len(videoProfiles) && len(videoProfiles) != 2 {
+		t.Error("Job profile count did not match broadcasters")
+	}
 
-// 	// Check segment too long
-// 	d, _ := ioutil.ReadFile("test.ts")
-// 	ssd := ss.Seg.Data
-// 	ss.Seg.Data = d
-// 	ss.Seg.SeqNo += 1
-// 	_, err = n.TranscodeSegment(jobId, ss)
-// 	if err.Error() != "MediaStats Failure" {
-// 		t.Error("Unexpected error when checking mediastats ", err)
-// 	}
-// 	ss.Seg.Data = ssd
+	// 	Check transcode result
+	if Over1Pct(len(tr.Data[0]), 65424) { // 144p
+		t.Error("Unexpected transcode result ", len(tr.Data[0]))
+	}
+	if Over1Pct(len(tr.Data[1]), 81968) { // 240p
+		t.Error("Unexpected transcode result ", len(tr.Data[1]))
+	}
 
-// 	// TODO check transcode loop expiry, claim manager submission, etc
-// }
+	// TODO check transcode loop expiry, storage, sig construction, etc
+}
 
+// XXX unclear what the tests below check
 type Vint interface {
 	Call(nums ...int)
 }
