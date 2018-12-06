@@ -41,8 +41,6 @@ const HTTPTimeout = 8 * time.Second
 const GRPCTimeout = 8 * time.Second
 const GRPCConnectTimeout = 3 * time.Second
 
-const AuthType_LPE = "Livepeer-Eth-1"
-
 const JobOutOfRangeError = "Job out of range"
 
 type Orchestrator interface {
@@ -166,40 +164,6 @@ func verifyTranscoderReq(orch Orchestrator, req *net.TranscoderRequest, jobId st
 	return nil
 }
 
-func genToken(orch Orchestrator, jobId string) (string, error) { // ANGIE - NEED TO GET JOBID FROM ELSEWHERE
-	sig, err := orch.Sign([]byte(fmt.Sprintf("%v", jobId)))
-	if err != nil {
-		return "", err
-	}
-	data, err := proto.Marshal(&net.AuthToken{JobId: jobId, Sig: sig})
-	if err != nil {
-		glog.Error("Unable to marshal ", err)
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(data), nil
-}
-
-func verifyToken(orch Orchestrator, creds string) (string, error) {
-	buf, err := base64.StdEncoding.DecodeString(creds)
-	if err != nil {
-		glog.Error("Unable to base64-decode ", err)
-		return "", err
-	}
-	var token net.AuthToken
-	err = proto.Unmarshal(buf, &token)
-	if err != nil {
-		glog.Error("Unable to unmarshal ", err)
-		return "", err
-	}
-
-	if !verifyMsgSig(orch.Address(), fmt.Sprintf("%v", token.JobId), token.Sig) {
-		glog.Error("Sig check failed")
-		return "", fmt.Errorf("Token sig check failed")
-	}
-
-	return token.JobId, nil
-}
-
 func genSegCreds(bcast Broadcaster, streamId string, segData *net.SegData) (string, error) {
 	seg := &lpTypes.Segment{
 		StreamID:              streamId,
@@ -261,10 +225,6 @@ func getTranscoder(context context.Context, orch Orchestrator, req *net.Transcod
 	if err := verifyTranscoderReq(orch, req, jobId); err != nil {
 		return nil, fmt.Errorf("Invalid transcoder request (%v)", err)
 	}
-	creds, err := genToken(orch, jobId)
-	if err != nil {
-		return nil, err
-	}
 	sids, err := orch.StreamIDs(jobId)
 	if err != nil {
 		return nil, err
@@ -276,10 +236,8 @@ func getTranscoder(context context.Context, orch Orchestrator, req *net.Transcod
 	}
 
 	tr := net.TranscoderInfo{
-		Transcoder:  orch.ServiceURI().String(), // currently,  orchestrator == transcoder
-		AuthType:    AuthType_LPE,
-		Credentials: creds,
-		StreamIds:   stringStreamIds,
+		Transcoder: orch.ServiceURI().String(), // currently,  orchestrator == transcoder
+		StreamIds:  stringStreamIds,
 	}
 	mid, err := core.StreamID(jobId).ManifestIDFromStreamID()
 	if err != nil {
@@ -300,20 +258,6 @@ type lphttp struct {
 
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	orch := h.orchestrator
-	// check the credentials from the orchestrator
-	authType := r.Header.Get("Authorization")
-	creds := r.Header.Get("Credentials")
-	if AuthType_LPE != authType {
-		glog.Error("Invalid auth type ", authType)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	jobId, err := verifyToken(orch, creds)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
 
 	// check the segment sig from the broadcaster
 	seg := r.Header.Get("Livepeer-Segment")
@@ -536,8 +480,6 @@ func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*ne
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", ti.AuthType)
-	req.Header.Set("Credentials", ti.Credentials)
 	req.Header.Set("Livepeer-Segment", segCreds)
 	if uploaded {
 		req.Header.Set("Content-Type", "application/vnd+livepeer.uri")
