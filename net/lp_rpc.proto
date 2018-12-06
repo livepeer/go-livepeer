@@ -74,38 +74,18 @@ message S3OSInfo {
   string xAmzDate = 6;
 }
 
-// The orchestrator sends this in response to `GetTranscoder`, containing the
-// transcoder URI, associated credentials authorizing the broadcaster to
-// use the transcoder, and miscellaneous data related to the job.
+// The orchestrator sends this in response to `GetTranscoder`, containing
+// miscellaneous data related to the job.
 message TranscoderInfo {
 
   // URI of the transcoder to use for submitting segments.
   string transcoder  = 1;
-
-  // Signals the authentication method to expect within `credentials`. This
-  // field is opaque to the broadcaster, and should be passed to the transcoder.
-  string authType    = 2;
-
-  // Credentials to verify the request has been authorized by an orchestrator.
-  // This field is opaque to the broadcaster.
-  string credentials = 3;
 
   // Transcoded streamId list to update the master manifest on the broadcaster.
   map<string, string> streamIds = 16;
 
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
-}
-
-// AuthToken is sent by the orchestrator and encoded in the `credentials` field
-// This record is opaque to the broadcaster and is only relevant between the
-// orchestrator and the transcoder.
-message AuthToken {
-
-  // Signature of the orchestrator over the remaining fields
-  bytes sig   = 1;
-
-  string jobId = 16;
 }
 
 // Data included by the broadcaster when submitting a segment for transcoding.
