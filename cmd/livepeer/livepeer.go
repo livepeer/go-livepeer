@@ -187,11 +187,32 @@ func main() {
 		n.NodeType = core.OrchestratorNode
 	} else if transcoder {
 		n.NodeType = core.TranscoderNode
+	} else {
+		n.NodeType = core.BroadcasterNode
+	}
+
+	if *monitor {
+		glog.Infof("Monitoring endpoint: %s", *monhost)
+		lpmon.Enabled = true
+		nodeID := *ethAcctAddr
+		if nodeID == "" {
+			hn, _ := os.Hostname()
+			nodeID = hn
+		}
+		nodeType := "bctr"
+		switch n.NodeType {
+		case core.OrchestratorNode:
+			nodeType = "orch"
+		case core.TranscoderNode:
+			nodeType = "trcr"
+		}
+		lpmon.Init(*monhost, nodeType, nodeID)
+	}
+
+	if n.NodeType == core.TranscoderNode {
 		glog.Info("***Livepeer is in transcoder mode ***")
 		server.RunTranscoder(n, *orchAddr)
 		return
-	} else {
-		n.NodeType = core.BroadcasterNode
 	}
 
 	if n.NodeType == core.BroadcasterNode {
@@ -331,11 +352,6 @@ func main() {
 	}
 
 	//Create Livepeer Node
-	if *monitor {
-		glog.Infof("Monitoring endpoint: %s", *monhost)
-		lpmon.Enabled = true
-		lpmon.SetURL(*monhost)
-	}
 
 	// Set up logging
 	if !*noIPFSLogFiles {

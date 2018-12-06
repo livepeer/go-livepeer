@@ -11,7 +11,7 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-const LIVE_LIST_LENGTH uint = 10
+const LIVE_LIST_LENGTH uint = 6
 
 //	PlaylistManager manages playlists and data for one video stream, backed by one object storage.
 type PlaylistManager interface {
