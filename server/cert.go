@@ -28,11 +28,11 @@ func genCert(host string, priv *ecdsa.PrivateKey) ([]byte, error) {
 		SerialNumber:          serial,
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(certExpiry), // XXX fix fix fix
-		KeyUsage:              x509.KeyUsageCertSign,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		DNSNames:              []string{host},
 		BasicConstraintsValid: true,
-		IsCA: true,
+		IsCA:                  true,
 	}
 	cert, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &priv.PublicKey, priv)
 	if err != nil {
