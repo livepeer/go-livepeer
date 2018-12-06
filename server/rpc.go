@@ -85,7 +85,7 @@ func CheckOrchestratorAvailability(orch Orchestrator) bool {
 
 	ping := crypto.Keccak256(ts_signature)
 
-	orch_client, conn, err := startOrchestratorClient(orch.ServiceURI().String())
+	orch_client, conn, err := startOrchestratorClient(orch.ServiceURI())
 	if err != nil {
 		return false
 	}
@@ -103,16 +103,7 @@ func CheckOrchestratorAvailability(orch Orchestrator) bool {
 	return verifyMsgSig(orch.Address(), string(ping), pong.Value)
 }
 
-func startOrchestratorClient(url_string string) (net.OrchestratorClient, *grpc.ClientConn, error) {
-	uri, err := url.Parse(url_string)
-
-	if err != nil {
-		glog.Error("Could not parse orchestrator URI: ", err)
-		return nil, nil, err
-	}
-
-	tlsConfig := &tls.Config{InsecureSkipVerify: true}
-
+func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.ClientConn, error) {
 	glog.Infof("Connecting RPC to %v", uri)
 	conn, err := grpc.Dial(uri.Host,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
@@ -414,10 +405,10 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	srv.ListenAndServeTLS(cert, key)
 }
 
-func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
+func GetOrchestratorInfo(bcast Broadcaster, orchestratorServer *url.URL) (*net.TranscoderInfo, error) {
 	c, conn, err := startOrchestratorClient(orchestratorServer)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer conn.Close()
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
@@ -434,12 +425,11 @@ func StartBroadcastClient(bcast Broadcaster, orchestratorServer string) error {
 	req, err := genTranscoderReq(bcast, bcast.JobId())
 	r, err := c.GetTranscoder(ctx, req)
 	if err != nil {
-		glog.Errorf("Could not get transcoder for job %d: %s", bcast.JobId(), err.Error())
-		return errors.New("Could not get transcoder: " + err.Error())
+		glog.Error("Could not get transcoder %v: %v", orchestratorServer, err)
+		return nil, errors.New("Could not get transcoder: " + err.Error())
 	}
-	bcast.SetTranscoderInfo(r)
 
-	return nil
+	return r, nil
 }
 
 func SubmitSegment(bcast Broadcaster, seg *stream.HLSSegment, nonce uint64) (*net.TranscodeData, error) {
