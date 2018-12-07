@@ -30,7 +30,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/eventservices"
-	"github.com/livepeer/go-livepeer/ipfs"
+	//"github.com/livepeer/go-livepeer/ipfs" until we re-enable IPFS
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/server"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
@@ -472,13 +472,13 @@ func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, em eth.EventMo
 	}
 
 	// Set up IPFS
-	ipfsApi, err := ipfs.StartIpfs(ctx, ipfsPath)
+	/*ipfsApi, err := ipfs.StartIpfs(ctx, ipfsPath)
 	if err != nil {
 		return err
 	}
 	drivers.SetIpfsAPI(ipfsApi)
 
-	n.Ipfs = ipfsApi
+	n.Ipfs = ipfsApi*/
 	n.EthEventMonitor = em
 
 	if initializeRound {
