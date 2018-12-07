@@ -12,7 +12,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"path"
 	"regexp"
 	"strings"
 	"sync"
@@ -631,21 +630,24 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 
 func getHLSSegmentHandler(s *LivepeerServer) func(url *url.URL) ([]byte, error) {
 	return func(url *url.URL) ([]byte, error) {
+		// Strip the /stream/ prefix
 		segName := parseSegName(url.Path)
 		if segName == "" || drivers.NodeStorage == nil {
+			glog.Error("SegName not found or storage nil")
 			return nil, vidplayer.ErrNotFound
 		}
-		strmID, err := parseStreamIDFromSeg(segName)
-		if err != nil {
-			glog.Errorf("Error parsing for stream id: %v", err)
+		parts := strings.SplitN(segName, "/", 2)
+		if len(parts) <= 0 {
+			glog.Error("Unexpected path structure")
 			return nil, vidplayer.ErrNotFound
 		}
-		mid, _ := strmID.ManifestIDFromStreamID()
 		memoryOS, ok := drivers.NodeStorage.(*drivers.MemoryOS)
 		if !ok {
 			return nil, vidplayer.ErrNotFound
 		}
-		os := memoryOS.GetSession(string(mid))
+		// We index the session by the first entry of the path, eg
+		// <session>/<more-path>/<data>
+		os := memoryOS.GetSession(parts[0])
 		if os == nil {
 			return nil, vidplayer.ErrNotFound
 		}
@@ -695,12 +697,6 @@ func parseManifestID(reqPath string) (core.ManifestID, error) {
 	} else {
 		return "", vidplayer.ErrNotFound
 	}
-}
-
-func parseStreamIDFromSeg(reqPath string) (core.StreamID, error) {
-	// this function is the pinnacle of laziness
-	path, _ := path.Split(reqPath) // remove trailing filename
-	return parseStreamID("/stream/" + strings.Replace(path, "/", "", -1))
 }
 
 func parseStreamID(reqPath string) (core.StreamID, error) {
