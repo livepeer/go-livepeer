@@ -19,8 +19,10 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/ipfs"
+	"github.com/livepeer/go-livepeer/net"
 )
 
+var ErrTranscoderAvail = errors.New("ErrTranscoderUnavailable")
 var ErrLivepeerNode = errors.New("ErrLivepeerNode")
 var ErrTranscode = errors.New("ErrTranscode")
 var DefaultJobLength = int64(5760) //Avg 1 day in 15 sec blocks
@@ -46,12 +48,13 @@ type LivepeerNode struct {
 	Database        *common.DB
 
 	// Transcoder public fields
-	ClaimManagers map[int64]eth.ClaimManager
-	SegmentChans  map[int64]SegmentChan
-	Ipfs          ipfs.IpfsApi
-	ServiceURI    *url.URL
-	OrchSecret    string
-	Transcoder    Transcoder
+	ClaimManagers        map[int64]eth.ClaimManager
+	SegmentChans         map[ManifestID]SegmentChan
+	OrchestratorSelector net.OrchestratorSelector
+	Ipfs                 ipfs.IpfsApi
+	ServiceURI           *url.URL
+	OrchSecret           string
+	Transcoder           Transcoder
 
 	// Transcoder private fields
 	claimMutex   *sync.Mutex
@@ -70,7 +73,7 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		Database:      dbh,
 		EthServices:   make(map[string]eth.EventService),
 		ClaimManagers: make(map[int64]eth.ClaimManager),
-		SegmentChans:  make(map[int64]SegmentChan),
+		SegmentChans:  make(map[ManifestID]SegmentChan),
 		claimMutex:    &sync.Mutex{},
 		segmentMutex:  &sync.Mutex{},
 		tcoderMutex:   &sync.RWMutex{},

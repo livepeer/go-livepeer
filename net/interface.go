@@ -8,6 +8,10 @@ import (
 	"github.com/golang/glog"
 )
 
+type OrchestratorSelector interface {
+	GetOrchestrators(int) ([]*OrchestratorInfo, error)
+}
+
 type NodeStatus struct {
 	Manifests map[string]*m3u8.MasterPlaylist
 }

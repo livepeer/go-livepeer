@@ -1,17 +1,19 @@
 package core
 
 import (
-	"bytes"
-	"encoding/gob"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"math/rand"
 	"time"
 
-	"github.com/golang/glog"
+	ethcommon "github.com/ethereum/go-ethereum/common"
+
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/lpms/stream"
+
+	"github.com/livepeer/lpms/ffmpeg"
 )
 
 var ErrStreamID = errors.New("ErrStreamID")
@@ -21,9 +23,33 @@ const (
 	HashLength = 32
 )
 
+type SegTranscodingMetadata struct {
+	ManifestID ManifestID
+	Seq        int64
+	Hash       ethcommon.Hash
+	Profiles   []ffmpeg.VideoProfile
+	OS         *net.OSInfo
+}
+
+func (md *SegTranscodingMetadata) Flatten() []byte {
+	profiles := common.ProfilesToHex(md.Profiles)
+	seq := big.NewInt(md.Seq).Bytes()
+	buf := make([]byte, len(md.ManifestID)+32+len(md.Hash.Bytes())+len(profiles))
+	i := copy(buf[0:], []byte(md.ManifestID))
+	i += copy(buf[i:], ethcommon.LeftPadBytes(seq, 32))
+	i += copy(buf[i:], md.Hash.Bytes())
+	i += copy(buf[i:], []byte(profiles))
+	// i += copy(buf[i:], []byte(s.OS))
+	return buf
+}
+
 func RandomVideoID() []byte {
+	return RandomIdGenerator(HashLength)
+}
+
+func RandomIdGenerator(length uint) []byte {
 	rand.Seed(time.Now().UnixNano())
-	x := make([]byte, HashLength, HashLength)
+	x := make([]byte, length, length)
 	for i := 0; i < len(x); i++ {
 		x[i] = byte(rand.Uint32())
 	}
@@ -102,35 +128,4 @@ func (id *ManifestID) IsValid() bool {
 
 func (id ManifestID) String() string {
 	return string(id)
-}
-
-//Segment and its signature by the broadcaster
-type SignedSegment struct {
-	Seg stream.HLSSegment
-	Sig []byte
-	OS  *net.OSInfo
-}
-
-//Convenience function to convert between SignedSegments and byte slices to put on the wire.
-func SignedSegmentToBytes(ss SignedSegment) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(ss)
-	if err != nil {
-		glog.Errorf("Error encoding segment to []byte: %v", err)
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-//Convenience function to convert between SignedSegments and byte slices to put on the wire.
-func BytesToSignedSegment(data []byte) (SignedSegment, error) {
-	dec := gob.NewDecoder(bytes.NewReader(data))
-	var ss SignedSegment
-	err := dec.Decode(&ss)
-	if err != nil {
-		glog.Errorf("Error decoding byte array into segment: %v", err)
-		return SignedSegment{}, err
-	}
-	return ss, nil
 }

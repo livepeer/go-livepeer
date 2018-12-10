@@ -27,6 +27,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/discovery"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/eventservices"
@@ -79,14 +80,14 @@ func main() {
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
 	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
 	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
-	serviceAddr := flag.String("serviceAddr", "", "Transcoder only. Public address:port that broadcasters can use to contact this node; may be an IP or hostname. If used, should match the on-chain ServiceURI set via livepeer_cli")
+	serviceAddr := flag.String("serviceAddr", "", "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
-
 	version := flag.Bool("version", false, "Print out the version")
 	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
+	standaloneTranscoder := flag.Bool("standaloneTranscoder", false, "Set to true to be a standalone transcoder")
 	var transcoder bool
 
 	flag.Parse()
@@ -97,12 +98,13 @@ func main() {
 	}
 
 	if *orchAddr != "" {
-		if *orchSecret == "" {
+		if *standaloneTranscoder && *orchSecret == "" {
 			glog.Error("Running a standalone transcoder requires both -orchAddr and -orchSecret")
 			return
+		} else if *standaloneTranscoder {
+			transcoder = true
 		}
 		*orchAddr = defaultAddr(*orchAddr, "127.0.0.1", RpcPort)
-		transcoder = true
 	}
 
 	if *rinkeby {
@@ -185,6 +187,17 @@ func main() {
 		return
 	} else {
 		n.NodeType = core.BroadcasterNode
+	}
+
+	if n.NodeType == core.BroadcasterNode {
+		if *orchAddr == "" {
+			glog.Info("No orchestrator specified; transcoding will not happen")
+		} else {
+			n.OrchestratorSelector = discovery.NewOffchainOrchestrator(n, *orchAddr)
+			if n.OrchestratorSelector == nil {
+				return
+			}
+		}
 	}
 
 	if *offchain {

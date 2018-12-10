@@ -3,55 +3,29 @@ package server
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/base64"
 	"fmt"
 	"math/big"
-	"net/http"
 	"net/url"
 	"testing"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/golang/protobuf/proto"
+
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
-	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/lpms/ffmpeg"
+	"github.com/livepeer/lpms/stream"
 )
 
-func StubJob() *lpTypes.Job {
-	return &lpTypes.Job{
-		JobId:              big.NewInt(0),
-		StreamId:           "abc",
-		Profiles:           []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9},
-		BroadcasterAddress: ethcommon.Address{},
-		TranscoderAddress:  ethcommon.Address{},
-		CreationBlock:      big.NewInt(0),
-		EndBlock:           big.NewInt(500),
-	}
-}
-
 type stubOrchestrator struct {
-	priv  *ecdsa.PrivateKey
-	block *big.Int
-	job   *lpTypes.Job
-}
-
-func (r *stubOrchestrator) SetBroadcasterOS(ios drivers.OSSession) {
-}
-func (r *stubOrchestrator) GetBroadcasterOS() drivers.OSSession {
-	return nil
-}
-func (r *stubOrchestrator) SetOrchestratorOS(oos drivers.OSSession) {
-}
-func (r *stubOrchestrator) GetOrchestratorOS() drivers.OSSession {
-	return nil
-}
-func (r *stubOrchestrator) GetIno() *url.URL {
-	url, _ := url.Parse("http://localhost:1234")
-	return url
+	priv    *ecdsa.PrivateKey
+	block   *big.Int
+	signErr error
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
@@ -62,21 +36,27 @@ func (r *stubOrchestrator) ServiceURI() *url.URL {
 func (r *stubOrchestrator) CurrentBlock() *big.Int {
 	return r.block
 }
-func (r *stubOrchestrator) GetJob(jid int64) (*lpTypes.Job, error) {
-	return r.job, nil
-}
+
 func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
+	if r.signErr != nil {
+		return nil, r.signErr
+	}
 	hash := ethcrypto.Keccak256(msg)
 	ethMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, hash)
 	return ethcrypto.Sign(ethcrypto.Keccak256([]byte(ethMsg)), r.priv)
 }
+
+func (r *stubOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
+	return eth.VerifySig(addr, ethcrypto.Keccak256([]byte(msg)), sig)
+}
+
 func (r *stubOrchestrator) Address() ethcommon.Address {
 	return ethcrypto.PubkeyToAddress(r.priv.PublicKey)
 }
-func (r *stubOrchestrator) TranscodeSeg(job *lpTypes.Job, seg *core.SignedSegment) (*core.TranscodeResult, error) {
+func (r *stubOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) StreamIDs(job *lpTypes.Job) ([]core.StreamID, error) {
+func (r *stubOrchestrator) StreamIDs(jobId string) ([]core.StreamID, error) {
 	return []core.StreamID{}, nil
 }
 
@@ -85,22 +65,9 @@ func StubOrchestrator() *stubOrchestrator {
 	if err != nil {
 		return &stubOrchestrator{}
 	}
-	return &stubOrchestrator{priv: pk, block: big.NewInt(5), job: StubJob()}
+	return &stubOrchestrator{priv: pk, block: big.NewInt(5)}
 }
 
-func (r *stubOrchestrator) Job() *lpTypes.Job {
-	return nil
-}
-func (r *stubOrchestrator) GetHTTPClient() *http.Client {
-	return nil
-}
-func (r *stubOrchestrator) SetHTTPClient(ti *http.Client) {
-}
-func (r *stubOrchestrator) GetTranscoderInfo() *net.TranscoderInfo {
-	return nil
-}
-func (r *stubOrchestrator) SetTranscoderInfo(ti *net.TranscoderInfo) {
-}
 func (r *stubOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
 }
 func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {
@@ -117,193 +84,114 @@ func TestRPCTranscoderReq(t *testing.T) {
 	o := StubOrchestrator()
 	b := StubBroadcaster2()
 
-	j := StubJob()
-	j.JobId = big.NewInt(1234)
-	j.BroadcasterAddress = ethcrypto.PubkeyToAddress(b.priv.PublicKey)
-	j.TranscoderAddress = ethcrypto.PubkeyToAddress(o.priv.PublicKey)
-
-	req, err := genTranscoderReq(b, j.JobId.Int64())
+	req, err := genOrchestratorReq(b)
 	if err != nil {
-		t.Error("Unable to create transcoder req ", req)
+		t.Error("Unable to create orchestrator req ", req)
 	}
-	if verifyTranscoderReq(o, req, j) != nil { // normal case
-		t.Error("Unable to verify transcoder request")
-	}
-
-	// mismatched jobid
-	req, _ = genTranscoderReq(b, 999)
-	if verifyTranscoderReq(o, req, j) == nil {
-		t.Error("Did not expect verification to pass; should mismatch sig")
-	}
-
-	req, _ = genTranscoderReq(b, j.JobId.Int64()) // reset job
-	if req.JobId != j.JobId.Int64() {             // sanity check
-		t.Error("Sanity check failed")
-	}
-
-	// wrong transcoder
-	if verifyTranscoderReq(StubOrchestrator(), req, j) == nil {
-		t.Error("Did not expect verification to pass; should mismatch transcoder")
+	if verifyOrchestratorReq(o, req) != nil { // normal case
+		t.Error("Unable to verify orchestrator request")
 	}
 
 	// wrong broadcaster
-	j.BroadcasterAddress = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey)
-	if verifyTranscoderReq(o, req, j) == nil {
+	req.Address = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey).Bytes()
+	if verifyOrchestratorReq(o, req) == nil {
 		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
-	j.BroadcasterAddress = ethcrypto.PubkeyToAddress(b.priv.PublicKey)
 
-	// job is too early
-	o.block = big.NewInt(-1)
-	if err := verifyTranscoderReq(o, req, j); err == nil || err.Error() != "Job out of range" {
-		t.Error("Early request unexpectedly validated", err)
+	// invalid address
+	req.Address = []byte("#non-hex address!")
+	if verifyOrchestratorReq(o, req) == nil {
+		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
 
-	// job is too late
-	o.block = big.NewInt(0).Add(j.EndBlock, big.NewInt(1))
-	if err := verifyTranscoderReq(o, req, j); err == nil || err.Error() != "Job out of range" {
-		t.Error("Late request unexpectedly validated", err)
+	// error signing
+	b.signErr = fmt.Errorf("Signing error")
+	_, err = genOrchestratorReq(b)
+	if err == nil {
+		t.Error("Did not expect to generate a orchestrator request with invalid address")
 	}
-
-	// can't claim
-	o.block = big.NewInt(0).Add(j.CreationBlock, big.NewInt(257))
-	if err := verifyTranscoderReq(o, req, j); err == nil || err.Error() != "Job out of range" {
-		t.Error("Unclaimable request unexpectedly validated", err)
-	}
-
-	// can now claim with a prior claim
-	j.FirstClaimSubmitted = true
-	if err := verifyTranscoderReq(o, req, j); err != nil {
-		t.Error("Request not validated as expected validated", err)
-	}
-
-	// empty profiles
-	j.Profiles = []ffmpeg.VideoProfile{}
-	if err := verifyTranscoderReq(o, req, j); err == nil || err.Error() != "Job out of range" {
-		t.Error("Unclaimable request unexpectedly validated", err)
-	}
-	j.Profiles = StubJob().Profiles
-
-}
-
-func TestRPCCreds(t *testing.T) {
-
-	r := StubOrchestrator()
-
-	creds, err := genToken(r, r.job)
-	if err != nil {
-		t.Error("Unable to generate creds from req ", err)
-	}
-	if _, err := verifyToken(r, creds); err != nil {
-		t.Error("Creds did not validate: ", err)
-	}
-
-	// corrupt the creds
-	idx := len(creds) / 2
-	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
-	if _, err := verifyToken(r, kreds); err == nil || err.Error() != "illegal base64 data at input byte 46" {
-		t.Error("Creds unexpectedly validated", err)
-	}
-
-	// wrong orchestrator
-	if _, err := verifyToken(StubOrchestrator(), creds); err == nil || err.Error() != "Token sig check failed" {
-		t.Error("Orchestrator unexpectedly validated", err)
-	}
-
-	// too early
-	r.block = big.NewInt(-1)
-	if _, err := verifyToken(r, creds); err == nil || err.Error() != "Job out of range" {
-		t.Error("Early block unexpectedly validated", err)
-	}
-
-	// too late
-	r.block = big.NewInt(0).Add(r.job.EndBlock, big.NewInt(1))
-	if _, err := verifyToken(r, creds); err == nil || err.Error() != "Job out of range" {
-		t.Error("Late block unexpectedly validated", err)
-	}
-
-	// can't claim
-	r.block = big.NewInt(0).Add(r.job.CreationBlock, big.NewInt(257))
-	if _, err := verifyToken(r, creds); err == nil || err.Error() != "Job out of range" {
-		t.Error("Unclaimable job unexpectedly validated", err)
-	}
-
-	// can now claim with a prior claim
-	r.job.FirstClaimSubmitted = true
-	if _, err := verifyToken(r, creds); err != nil {
-		t.Error("Block did not validate", err)
-	}
-
-	// empty profiles
-	r.job.Profiles = []ffmpeg.VideoProfile{}
-	if _, err := verifyToken(r, creds); err.Error() != "Job out of range" {
-		t.Error("Unclaimable job unexpectedly validated", err)
-	}
-
-	// reset to sanity check once again
-	r.job = StubJob()
-	r.block = big.NewInt(0)
-	if _, err := verifyToken(r, creds); err != nil {
-		t.Error("Block did not validate", err)
-	}
-
 }
 
 func TestRPCSeg(t *testing.T) {
+	mid, _ := core.MakeManifestID(core.RandomVideoID())
 	b := StubBroadcaster2()
+	o := StubOrchestrator()
+	s := &BroadcastSession{
+		Broadcaster: b,
+		ManifestID:  mid,
+	}
+
 	baddr := ethcrypto.PubkeyToAddress(b.priv.PublicKey)
 
-	j := StubJob()
-	j.JobId = big.NewInt(1234)
-	j.BroadcasterAddress = baddr
+	broadcasterAddress = baddr
 
-	segData := &net.SegData{Seq: 4, Hash: ethcommon.RightPadBytes([]byte("browns"), 32)}
-	creds, err := genSegCreds(b, j.StreamId, segData)
+	segData := &stream.HLSSegment{}
+
+	creds, err := genSegCreds(s, segData)
 	if err != nil {
 		t.Error("Unable to generate seg creds ", err)
 		return
 	}
-	if _, err := verifySegCreds(j, creds); err != nil {
+	if _, err := verifySegCreds(o, creds); err != nil {
 		t.Error("Unable to verify seg creds", err)
 		return
 	}
 
-	// test invalid jobid
-	oldSid := j.StreamId
-	j.StreamId = j.StreamId + j.StreamId
-	if _, err := verifySegCreds(j, creds); err == nil || err.Error() != "Segment sig check failed" {
-		t.Error("Unexpectedly verified seg creds: invalid jobid", err)
-		return
+	// error signing
+	b.signErr = fmt.Errorf("SignErr")
+	if _, err := genSegCreds(s, segData); err != b.signErr {
+		t.Error("Generating seg creds ", err)
 	}
-	j.StreamId = oldSid
+	b.signErr = nil
 
 	// test invalid bcast addr
-	oldAddr := j.BroadcasterAddress
+	oldAddr := broadcasterAddress
 	key, _ := ethcrypto.GenerateKey()
-	j.BroadcasterAddress = ethcrypto.PubkeyToAddress(key.PublicKey)
-	if _, err := verifySegCreds(j, creds); err == nil || err.Error() != "Segment sig check failed" {
+	broadcasterAddress = ethcrypto.PubkeyToAddress(key.PublicKey)
+	if _, err := verifySegCreds(o, creds); err != ErrSegSig {
 		t.Error("Unexpectedly verified seg creds: invalid bcast addr", err)
 	}
-	j.BroadcasterAddress = oldAddr
+	broadcasterAddress = oldAddr
 
 	// sanity check
-	if _, err := verifySegCreds(j, creds); err != nil {
+	if _, err := verifySegCreds(o, creds); err != nil {
 		t.Error("Sanity check failed", err)
 	}
 
 	// test corrupt creds
 	idx := len(creds) / 2
 	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
-	if _, err := verifySegCreds(j, kreds); err == nil || err.Error() != "illegal base64 data at input byte 70" {
+	if _, err := verifySegCreds(o, kreds); err != ErrSegEncoding {
 		t.Error("Unexpectedly verified bad creds", err)
 	}
+
+	corruptSegData := func(segData *net.SegData, expectedErr error) {
+		data, _ := proto.Marshal(segData)
+		creds = base64.StdEncoding.EncodeToString(data)
+		if _, err := verifySegCreds(o, creds); err != expectedErr {
+			t.Errorf("Expected to fail with '%v' but got '%v'", expectedErr, err)
+		}
+	}
+
+	// corrupt manifest id
+	corruptSegData(&net.SegData{}, core.ErrManifestID)
+	corruptSegData(&net.SegData{ManifestId: []byte("abc")}, core.ErrManifestID)
+
+	// corrupt profiles
+	corruptSegData(&net.SegData{Profiles: []byte("abc")}, common.ErrProfile)
+
+	// corrupt sig
+	sd := &net.SegData{ManifestId: s.ManifestID.GetVideoID()}
+	corruptSegData(sd, ErrSegSig) // missing sig
+	sd.Sig = []byte("abc")
+	corruptSegData(sd, ErrSegSig) // invalid sig
 }
 
 func TestPing(t *testing.T) {
 	o := StubOrchestrator()
 
 	tsSignature, _ := o.Sign([]byte(fmt.Sprintf("%v", time.Now())))
-	pingSent := crypto.Keccak256(tsSignature)
+	pingSent := ethcrypto.Keccak256(tsSignature)
 	req := &net.PingPong{Value: pingSent}
 
 	pong, err := ping(context.Background(), req, o)
@@ -311,7 +199,7 @@ func TestPing(t *testing.T) {
 		t.Error("Unable to send Ping request")
 	}
 
-	verified := verifyMsgSig(o.Address(), string(pingSent), pong.Value)
+	verified := o.VerifySig(o.Address(), string(pingSent), pong.Value)
 
 	if !verified {
 		t.Error("Unable to verify response from ping request")

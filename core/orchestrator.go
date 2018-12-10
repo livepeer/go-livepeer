@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -23,7 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
-	"github.com/livepeer/lpms/transcoder"
+	"github.com/livepeer/lpms/stream"
 )
 
 const TranscodeLoopTimeout = 10 * time.Minute
@@ -46,47 +45,18 @@ func (orch *orchestrator) CurrentBlock() *big.Int {
 	return block
 }
 
-func (orch *orchestrator) GetJob(jid int64) (*ethTypes.Job, error) {
-	if orch.node == nil || orch.node.Database == nil {
-		return nil, fmt.Errorf("Cannot get job; missing database")
-	}
-	dbjob, err := orch.node.Database.GetJob(jid)
-	if err == nil && dbjob != nil {
-		if !dbjob.StopReason.Valid {
-			return common.DBJobToEthJob(dbjob), nil
-		}
-		glog.Info("Requested a job that has been stopped: ", dbjob.StopReason)
-		return nil, fmt.Errorf("Job stopped")
-	}
-	if err != sql.ErrNoRows {
-		glog.Errorf("Unexpected error when querying job from DB: \"%v\". Querying blockchain", err)
-	} else {
-		glog.Infof("Job did not exist in DB. Querying blockchain ")
-	}
-	if orch.node.Eth == nil {
-		return nil, fmt.Errorf("Cannot get job; missing Eth client")
-	}
-	job, err := orch.node.Eth.GetJob(big.NewInt(jid))
-	if err != nil {
-		return nil, err
-	}
-	if (job.TranscoderAddress == ethcommon.Address{}) {
-		ta, err := orch.node.Eth.AssignedTranscoder(job)
-		if err != nil {
-			glog.Errorf("Could not get assigned transcoder for job %v, err: %s", jid, err.Error())
-			// continue here without a valid transcoder address
-		} else {
-			job.TranscoderAddress = ta
-		}
-	}
-	return job, nil
-}
-
 func (orch *orchestrator) Sign(msg []byte) ([]byte, error) {
 	if orch.node == nil || orch.node.Eth == nil {
-		return []byte{}, fmt.Errorf("Cannot sign; missing eth client")
+		return []byte{}, nil
 	}
 	return orch.node.Eth.Sign(crypto.Keccak256(msg))
+}
+
+func (orch *orchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
+	if orch.node == nil || orch.node.Eth == nil {
+		return true
+	}
+	return eth.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
 }
 
 func (orch *orchestrator) Address() ethcommon.Address {
@@ -97,23 +67,8 @@ func (orch *orchestrator) TranscoderSecret() string {
 	return orch.node.OrchSecret
 }
 
-func (orch *orchestrator) StreamIDs(job *ethTypes.Job) ([]StreamID, error) {
-	streamIds := make([]StreamID, len(job.Profiles))
-	sid := StreamID(job.StreamId)
-	vid := sid.GetVideoID()
-	for i, p := range job.Profiles {
-		strmId, err := MakeStreamID(vid, p.Name)
-		if err != nil {
-			glog.Error("Error making stream ID: ", err)
-			return []StreamID{}, err
-		}
-		streamIds[i] = strmId
-	}
-	return streamIds, nil
-}
-
-func (orch *orchestrator) TranscodeSeg(job *ethTypes.Job, ss *SignedSegment) (*TranscodeResult, error) {
-	return orch.node.TranscodeSegment(job, ss)
+func (orch *orchestrator) TranscodeSeg(md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
+	return orch.node.sendToTranscodeLoop(md, seg)
 }
 
 func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
@@ -145,7 +100,8 @@ type TranscodeResult struct {
 }
 
 type SegChanData struct {
-	seg *SignedSegment
+	seg *stream.HLSSegment
+	md  *SegTranscodingMetadata
 	res chan *TranscodeResult
 }
 
@@ -158,14 +114,8 @@ type SegmentChan chan *SegChanData
 type TranscoderChan chan *RemoteTranscoderResult
 
 type transcodeConfig struct {
-	StrmID        string
-	Profiles      []ffmpeg.VideoProfile
-	ResultStrmIDs []StreamID
-	ClaimManager  eth.ClaimManager
-	JobID         *big.Int
-	Transcoder    transcoder.Transcoder
-	OS            drivers.OSSession
-	LocalOS       drivers.OSSession
+	OS      drivers.OSSession
+	LocalOS drivers.OSSession
 }
 
 func (n *LivepeerNode) getTaskChan(taskId int64) (TranscoderChan, error) {
@@ -199,34 +149,33 @@ func (n *LivepeerNode) removeTaskChan(taskId int64) {
 	delete(n.taskChans, taskId)
 }
 
-func (n *LivepeerNode) getSegmentChan(job *ethTypes.Job, os *net.OSInfo) (SegmentChan, error) {
+func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, error) {
 	// concurrency concerns here? what if a chan is added mid-call?
 	n.segmentMutex.Lock()
 	defer n.segmentMutex.Unlock()
-	jobId := job.JobId.Int64()
-	if sc, ok := n.SegmentChans[jobId]; ok {
+	if sc, ok := n.SegmentChans[md.ManifestID]; ok {
 		return sc, nil
 	}
 	sc := make(SegmentChan, 1)
-	glog.V(common.DEBUG).Info("Creating new segment chan for job ", jobId)
-	n.SegmentChans[jobId] = sc
-	if err := n.transcodeSegmentLoop(job, os, sc); err != nil {
+	glog.V(common.DEBUG).Info("Creating new segment chan for manifest ", md.ManifestID)
+	if err := n.transcodeSegmentLoop(md, sc); err != nil {
 		return nil, err
 	}
+	n.SegmentChans[md.ManifestID] = sc
 	return sc, nil
 }
 
-func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) (*TranscodeResult, error) {
-	glog.V(common.DEBUG).Infof("Starting to transcode segment %v", ss.Seg.SeqNo)
-	ch, err := n.getSegmentChan(job, ss.OS)
+func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
+	glog.V(common.DEBUG).Infof("Starting to transcode segment %v", md.Seq)
+	ch, err := n.getSegmentChan(md)
 	if err != nil {
 		glog.Error("Could not find segment chan ", err)
 		return nil, err
 	}
-	segChanData := &SegChanData{seg: ss, res: make(chan *TranscodeResult, 1)}
+	segChanData := &SegChanData{seg: seg, md: md, res: make(chan *TranscodeResult, 1)}
 	select {
 	case ch <- segChanData:
-		glog.V(common.DEBUG).Info("Submitted segment to transcode loop ", ss.Seg.SeqNo)
+		glog.V(common.DEBUG).Info("Submitted segment to transcode loop ", md.Seq)
 	default:
 		// sending segChan should not block; if it does, the channel is busy
 		glog.Error("Transcoder was busy with a previous segment!")
@@ -236,9 +185,7 @@ func (n *LivepeerNode) TranscodeSegment(job *ethTypes.Job, ss *SignedSegment) (*
 	return res, res.Err
 }
 
-func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSegment) *TranscodeResult {
-
-	seg := ss.Seg
+func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegment, md *SegTranscodingMetadata) *TranscodeResult {
 	var fnamep *string
 	terr := func(err error) *TranscodeResult {
 		if fnamep != nil {
@@ -250,28 +197,6 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 	// Prevent unnecessary work, check for replayed sequence numbers.
 	// NOTE: If we ever process segments from the same job concurrently,
 	// we may still end up doing work multiple times. But this is OK for now.
-	hasReceipt, err := n.Database.ReceiptExists(config.JobID, seg.SeqNo)
-	if err != nil || hasReceipt {
-		glog.Errorf("Got a DB error (%v) or receipt exists (%v)", err, hasReceipt)
-		if err == nil {
-			err = fmt.Errorf("DuplicateSequence")
-		}
-		return terr(err)
-	}
-
-	// Check deposit
-	if config.ClaimManager != nil {
-		sufficient, err := config.ClaimManager.SufficientBroadcasterDeposit()
-		if err != nil {
-			glog.Errorf("Error checking broadcaster deposit for job %v: %v", config.JobID, err)
-			// Give the benefit of doubt in case of an unrelated issue
-			sufficient = true
-		}
-		if !sufficient {
-			glog.Error("Insufficient deposit for job ", config.JobID)
-			return terr(fmt.Errorf("Insufficient deposit"))
-		}
-	}
 
 	//Assume d is in the right format, write it to disk
 	inName := randName()
@@ -290,19 +215,12 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 		return terr(err)
 	}
 
-	transcodeStart := time.Now().UTC()
-	// Ensure length matches expectations. 4 second + 25% wiggle factor, 60fps
-	if err := ffmpeg.CheckMediaLen(fname, 4*1.25*1000, 60*4*1.25); err != nil {
-		glog.Errorf("Media length check failed: %v", err)
-		return terr(err)
-	}
-
 	// Check if there's a transcoder available
 	var transcoder Transcoder
 	n.tcoderMutex.RLock()
 	if n.Transcoder == nil {
 		n.tcoderMutex.RUnlock()
-		return terr(fmt.Errorf("No transcoders available on orchestrator"))
+		return terr(ErrTranscoderAvail)
 	}
 	transcoder = n.Transcoder
 	n.tcoderMutex.RUnlock()
@@ -317,8 +235,8 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 		url = seg.Name
 	} else {
 		// Need to store segment in our local OS
-		sid := StreamID(config.StrmID)
-		name := fmt.Sprintf("%s/%d.ts", sid.GetRendition(), seg.SeqNo)
+		var err error
+		name := fmt.Sprintf("%d.ts", seg.SeqNo)
 		url, err = config.LocalOS.SaveData(name, seg.Data)
 		if err != nil {
 			return terr(err)
@@ -328,14 +246,14 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 
 	//Do the transcoding
 	start := time.Now()
-	tData, err := transcoder.Transcode(url, config.Profiles)
+	tData, err := transcoder.Transcode(url, md.Profiles)
 	if err != nil {
 		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
 		return terr(err)
 	}
-	transcodeEnd := time.Now().UTC()
-	if len(tData) != len(config.ResultStrmIDs) {
-		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v", len(tData), len(config.ResultStrmIDs))
+	// transcodeEnd := time.Now().UTC()
+	if len(tData) != len(md.Profiles) {
+		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v", len(tData), len(md.Profiles))
 		return terr(fmt.Errorf("MismatchedSegments"))
 	}
 	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
@@ -343,73 +261,39 @@ func (n *LivepeerNode) transcodeAndCacheSeg(config transcodeConfig, ss *SignedSe
 
 	// Prepare the result object
 	var tr TranscodeResult
-	for i, _ := range config.ResultStrmIDs {
+	for i, _ := range md.Profiles {
 		if tData[i] == nil {
 			glog.Errorf("Cannot find transcoded segment for %v", seg.SeqNo)
 			continue
 		}
-		tProfileData[config.Profiles[i]] = tData[i]
+		tProfileData[md.Profiles[i]] = tData[i]
 		tr.Data = append(tr.Data, tData[i])
 	}
-	//Don't do the onchain stuff unless specified
-	if config.ClaimManager != nil {
-		hashes, err := config.ClaimManager.AddReceipt(int64(seg.SeqNo), fname, seg.Data, ss.Sig, tProfileData, transcodeStart, transcodeEnd)
-		if err != nil {
-			return terr(err)
-		}
-		tr.Sig, tr.Err = n.Eth.Sign(hashes)
-	} else {
-		// We aren't going through the claim process so remove input immediately
-		os.Remove(fname)
-	}
+	os.Remove(fname)
 	tr.OS = config.OS
 	return &tr
 }
 
-func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, osInfo *net.OSInfo, segChan SegmentChan) error {
-	glog.V(common.DEBUG).Info("Starting transcode segment loop for ", job.StreamId)
-	cm, err := n.GetClaimManager(job)
-	if err != nil {
-		return err
-	}
-	resultStrmIDs := make([]StreamID, len(job.Profiles), len(job.Profiles))
-	sid := StreamID(job.StreamId)
-	for i, vp := range job.Profiles {
-		strmID, err := MakeStreamID(sid.GetVideoID(), vp.Name)
-		if err != nil {
-			glog.Error("Error making stream ID: ", err)
-			return err
-		}
-		resultStrmIDs[i] = strmID
-	}
+func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan SegmentChan) error {
+	glog.V(common.DEBUG).Info("Starting transcode segment loop for ", md.ManifestID)
 
 	// Set up local OS for any remote transcoders to use if necessary
 	if drivers.NodeStorage == nil {
 		return fmt.Errorf("Missing local storage")
 	}
-	mid, err := sid.ManifestIDFromStreamID()
-	if err != nil {
-		return err
-	}
-	los := drivers.NodeStorage.NewSession(string(mid))
+
+	los := drivers.NodeStorage.NewSession(string(md.ManifestID))
 
 	// determine appropriate OS to use
-	os := drivers.NewSession(osInfo)
+	os := drivers.NewSession(md.OS)
 	if os == nil {
 		// no preference (or unknown pref), so use our own
 		os = los
 	}
 
-	tr := transcoder.NewFFMpegSegmentTranscoder(job.Profiles, n.WorkDir)
 	config := transcodeConfig{
-		StrmID:        job.StreamId,
-		Profiles:      job.Profiles,
-		ResultStrmIDs: resultStrmIDs,
-		JobID:         job.JobId,
-		ClaimManager:  cm,
-		Transcoder:    tr,
-		OS:            os,
-		LocalOS:       los,
+		OS:      os,
+		LocalOS: los,
 	}
 	go func() {
 		for {
@@ -418,30 +302,18 @@ func (n *LivepeerNode) transcodeSegmentLoop(job *ethTypes.Job, osInfo *net.OSInf
 			select {
 			case <-ctx.Done():
 				// timeout; clean up goroutine here
-				jid := job.JobId.Int64()
 				os.EndSession()
 				los.EndSession()
-				glog.V(common.DEBUG).Info("Segment loop timed out; closing ", jid)
+				glog.V(common.DEBUG).Info("Segment loop timed out; closing ", md.ManifestID)
 				n.segmentMutex.Lock()
-				if _, ok := n.SegmentChans[jid]; ok {
-					close(n.SegmentChans[jid])
-					delete(n.SegmentChans, jid)
+				if _, ok := n.SegmentChans[md.ManifestID]; ok {
+					close(n.SegmentChans[md.ManifestID])
+					delete(n.SegmentChans, md.ManifestID)
 				}
 				n.segmentMutex.Unlock()
-				n.claimMutex.Lock()
-				if cm, ok := n.ClaimManagers[jid]; ok {
-					go func() {
-						err := cm.ClaimVerifyAndDistributeFees()
-						if err != nil {
-							glog.Errorf("Error claiming work for job %v: %v", jid, err)
-						}
-					}()
-					delete(n.ClaimManagers, jid)
-				}
-				n.claimMutex.Unlock()
 				return
 			case chanData := <-segChan:
-				chanData.res <- n.transcodeAndCacheSeg(config, chanData.seg)
+				chanData.res <- n.transcodeSeg(config, chanData.seg, chanData.md)
 			}
 			cancel()
 		}
