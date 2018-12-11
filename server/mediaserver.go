@@ -132,7 +132,23 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 //RTMP Publish Handlers
 func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID string) {
 	return func(url *url.URL) (strmID string) {
-		id, err := core.MakeStreamID(core.RandomVideoID(), "RTMP")
+		//Create a StreamID
+		//If streamID is passed in, use that one
+		//Else create one
+		var vid []byte
+		qid := core.StreamID(url.Query().Get("hlsStrmID"))
+		if qid != "" {
+			vid = qid.GetVideoID()
+			if vid == nil {
+				glog.Error("Error parsing hlsStrmID")
+				return ""
+			}
+		} else {
+			vid = core.RandomVideoID()
+		}
+
+		// Generate RTMP part of StreamID
+		id, err := core.MakeStreamID(vid, "RTMP")
 		if err != nil {
 			glog.Errorf("Error making stream ID")
 			return ""
@@ -248,11 +264,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		s.rtmpStreams[core.StreamID(rtmpStrm.GetStreamID())] = rtmpStrm
 
 		//Create a HLS StreamID
-		//If streamID is passed in, use that one
-		//Else generate a random ID
+		//If streamID is passed in, use that one to capture the rendition
+		//Else use RTMP manifest ID as base
 		hlsStrmID := core.StreamID(url.Query().Get("hlsStrmID"))
 		if hlsStrmID == "" {
-			hlsStrmID, err = core.MakeStreamID(core.RandomVideoID(), vProfile.Name)
+			hlsStrmID, err = core.MakeStreamID(mid.GetVideoID(), vProfile.Name)
 			if err != nil {
 				glog.Errorf("Error making stream ID")
 				return ErrRTMPPublish
