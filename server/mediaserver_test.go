@@ -108,20 +108,31 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	url, _ := url.Parse(fmt.Sprintf("rtmp://localhost:1935/movie?hlsStrmID=%v", hlsStrmID))
-	strm := stream.NewBasicRTMPVideoStream("strmID")
+	strm := stream.NewBasicRTMPVideoStream(hlsStrmID.String())
 
-	//Stream already exists
-	s.rtmpStreams["strmID"] = strm
-	err = handler(url, strm)
-	if err != ErrAlreadyExists {
-		t.Errorf("Expecting publish error because stream already exists, but got: %v", err)
+	// Check for invalid Stream ID
+	badStream := stream.NewBasicRTMPVideoStream("strmID")
+	if err := handler(url, badStream); err != core.ErrManifestID {
+		t.Error("Expected invalid manifest ID ", err)
 	}
-	delete(s.rtmpStreams, "strmID")
-	delete(s.VideoNonce, "strmID")
+
+	// Check for invalid node storage
+	oldStorage := drivers.NodeStorage
+	drivers.NodeStorage = nil
+	if err := handler(url, strm); err != ErrStorage {
+		t.Error("Expected storage error ", err)
+	}
+	drivers.NodeStorage = oldStorage
 
 	//Try to handle test RTMP data.
 	if err := handler(url, strm); err != nil {
 		t.Errorf("Error: %v", err)
+	}
+
+	//Stream already exists
+	err = handler(url, strm)
+	if err != ErrAlreadyExists {
+		t.Errorf("Expecting publish error because stream already exists, but got: %v", err)
 	}
 
 	sid := core.StreamID(hlsStrmID)
@@ -158,8 +169,6 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 			t.Fatalf("Wrong segment, should have URI %s, has %s", shouldSegName, seg.URI)
 		}
 	}
-	delete(s.rtmpStreams, "strmID")
-	delete(s.VideoNonce, "strmID")
 }
 
 func TestGetHLSMasterPlaylistHandler(t *testing.T) {
@@ -174,7 +183,7 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	url, _ := url.Parse(fmt.Sprintf("rtmp://localhost:1935/movie?hlsStrmID=%v", hlsStrmID))
-	strm := stream.NewBasicRTMPVideoStream("strmID")
+	strm := stream.NewBasicRTMPVideoStream(hlsStrmID.String())
 
 	if err := handler(url, strm); err != nil {
 		t.Errorf("Error: %v", err)
