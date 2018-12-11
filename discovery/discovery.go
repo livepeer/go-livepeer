@@ -10,12 +10,12 @@ import (
 	"github.com/golang/glog"
 )
 
-type offchainOrchestrator struct {
-	uri   *url.URL
+type offchainOrchestrators struct {
+	uri   []*url.URL
 	bcast server.Broadcaster
 }
 
-func NewOffchainOrchestrator(node *core.LivepeerNode, address string) *offchainOrchestrator {
+func NewOffchainOrchestrator(node *core.LivepeerNode, address string) *offchainOrchestrators {
 	addr := "https://" + address
 	uri, err := url.ParseRequestURI(addr)
 	if err != nil {
@@ -23,10 +23,19 @@ func NewOffchainOrchestrator(node *core.LivepeerNode, address string) *offchainO
 		return nil
 	}
 	bcast := core.NewBroadcaster(node)
-	return &offchainOrchestrator{bcast: bcast, uri: uri}
+	return &offchainOrchestrators{bcast: bcast, uri: []*url.URL{uri}}
 }
 
-func (o *offchainOrchestrator) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
-	tinfo, err := server.GetOrchestratorInfo(o.bcast, o.uri)
-	return []*net.OrchestratorInfo{tinfo}, err
+func (o *offchainOrchestrators) GetOrchestrators(numOrchestrators int) ([][]*net.OrchestratorInfo, error) {
+	glog.Infof("\n\nwe're in GET ORCHESTRATORS!\n\n")
+	var orchInfo [][]*net.OrchestratorInfo
+	for _, uri := range o.uri {
+		glog.Infof("\n\nwe're in GET ORCHESTRATORS.....looping time!\n\n")
+		tinfo, err := server.GetOrchestratorInfo(o.bcast, uri)
+		if err != nil {
+			return nil, nil
+		}
+		orchInfo = append(orchInfo, []*net.OrchestratorInfo{tinfo})
+	}
+	return orchInfo, nil
 }

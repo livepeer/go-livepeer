@@ -157,7 +157,7 @@ func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSes
 	if len(tinfos) <= 0 || err != nil {
 		return nil, err
 	}
-	tinfo := tinfos[0]
+	tinfo := tinfos[0][0]
 
 	// set OSes
 	var orchOS drivers.OSSession
