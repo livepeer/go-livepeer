@@ -11,6 +11,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
@@ -27,6 +28,14 @@ func setupServer() *LivepeerServer {
 		go S.StartWebserver("127.0.0.1:8938")
 	}
 	return S
+}
+
+type stubDiscovery struct {
+	infos []*net.OrchestratorInfo
+}
+
+func (d *stubDiscovery) GetOrchestrators(num int) ([]*net.OrchestratorInfo, error) {
+	return d.infos, nil
 }
 
 type StubSegmenter struct{}
@@ -46,6 +55,45 @@ func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVide
 		glog.Errorf("Error adding hls seg3")
 	}
 	return nil
+}
+
+func TestStartBroadcast(t *testing.T) {
+	s := setupServer()
+
+	// Empty discovery
+	mid := core.ManifestID(core.RandomVideoID())
+	storage := drivers.NodeStorage.NewSession(string(mid))
+	pl := core.NewBasicPlaylistManager(mid, storage)
+	if _, err := s.startBroadcast(pl); err != ErrDiscovery {
+		t.Error("Expected error with discovery")
+	}
+
+	sd := &stubDiscovery{}
+	// Discovery returned no orchestrators
+	s.LivepeerNode.OrchestratorSelector = sd
+	if sess, _ := s.startBroadcast(pl); sess != nil {
+		t.Error("Expected nil session")
+	}
+
+	// populate stub discovery
+	sd.infos = []*net.OrchestratorInfo{
+		&net.OrchestratorInfo{},
+		&net.OrchestratorInfo{},
+	}
+	sess, _ := s.startBroadcast(pl)
+	if sess == nil {
+		t.Error("Expected nil session")
+	}
+	// Sanity check a few easy fields
+	if sess.ManifestID != mid {
+		t.Error("Expected manifest id")
+	}
+	if sess.BroadcasterOS != storage {
+		t.Error("Unexpected broadcaster OS")
+	}
+	if sess.OrchestratorInfo != sd.infos[0] || sd.infos[0] == sd.infos[1] {
+		t.Error("Unexpected orchestrator info")
+	}
 }
 
 // Should publish RTMP stream, turn the RTMP stream into HLS, and broadcast the HLS stream.
