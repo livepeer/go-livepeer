@@ -59,15 +59,15 @@ var LastManifestID core.ManifestID
 type rtmpConnection struct {
 	nonce  uint64
 	stream stream.RTMPVideoStream
+	pl     core.PlaylistManager
 	sess   *BroadcastSession
 }
 
 type LivepeerServer struct {
-	RTMPSegmenter   lpmscore.RTMPSegmenter
-	LPMS            *lpmscore.LPMS
-	LivepeerNode    *core.LivepeerNode
-	HttpMux         *http.ServeMux
-	CurrentPlaylist core.PlaylistManager
+	RTMPSegmenter lpmscore.RTMPSegmenter
+	LPMS          *lpmscore.LPMS
+	LivepeerNode  *core.LivepeerNode
+	HttpMux       *http.ServeMux
 
 	ExposeCurrentManifest bool
 
@@ -219,6 +219,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			glog.Error("Invalid RTMP stream ID")
 			return err
 		}
+		if drivers.NodeStorage == nil {
+			glog.Error("Missing node storage")
+			return ErrStorage
+		}
+		storage := drivers.NodeStorage.NewSession(string(mid))
 		s.connectionLock.Lock()
 		_, exists := s.rtmpConnections[mid]
 		if exists {
@@ -230,6 +235,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		cxn := &rtmpConnection{
 			nonce:  nonce,
 			stream: rtmpStrm,
+			pl:     core.NewBasicPlaylistManager(mid, storage),
 		}
 		s.rtmpConnections[mid] = cxn
 		s.connectionLock.Unlock()
@@ -250,8 +256,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 
 		startSeq := 0
+		cpl := cxn.pl
 		var sess *BroadcastSession
-		var cpl core.PlaylistManager
 
 		if s.LivepeerNode.Eth != nil {
 
@@ -306,10 +312,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			hlsStrm.SetSubscriber(func(seg *stream.HLSSegment, eof bool) {
 				if eof {
 					// XXX update HLS manifest
-					return
-				}
-
-				if cpl == nil {
 					return
 				}
 
@@ -459,17 +461,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		}(rtmpStrm)
 
-		if drivers.NodeStorage == nil {
-			glog.Error("Missing node storage")
-			return ErrStorage
-		}
-		storage := drivers.NodeStorage.NewSession(string(mid))
-		if s.CurrentPlaylist != nil {
-			s.CurrentPlaylist.Cleanup()
-		}
-		s.CurrentPlaylist = core.NewBasicPlaylistManager(mid, storage)
-		cpl = s.CurrentPlaylist
-
 		if monitor.Enabled {
 			monitor.LogStreamCreatedEvent(hlsStrmID.String(), nonce)
 		}
@@ -515,17 +506,14 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			return err
 		}
 		//Remove RTMP stream
-		if s.CurrentPlaylist != nil {
-			s.CurrentPlaylist.Cleanup()
-			s.CurrentPlaylist = nil
-		}
 		s.connectionLock.Lock()
 		defer s.connectionLock.Unlock()
 		cxn, ok := s.rtmpConnections[mid]
-		if !ok {
+		if !ok || cxn.pl == nil {
 			glog.Error("Attempted to end unknown stream with manifest ID ", mid)
 			return ErrUnknownStream
 		}
+		cxn.pl.Cleanup()
 		if monitor.Enabled {
 			monitor.LogStreamEndedEvent(cxn.nonce)
 		}
@@ -540,10 +528,6 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 //HLS Play Handlers
 func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 	return func(url *url.URL) (*m3u8.MasterPlaylist, error) {
-		cpl := s.CurrentPlaylist
-		if cpl == nil {
-			return nil, vidplayer.ErrNotFound
-		}
 		var manifestID core.ManifestID
 		if s.ExposeCurrentManifest && "/stream/current.m3u8" == strings.ToLower(url.Path) {
 			manifestID = LastManifestID
@@ -553,6 +537,14 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 				return nil, vidplayer.ErrNotFound
 			}
 		}
+
+		s.connectionLock.RLock()
+		defer s.connectionLock.RUnlock()
+		cxn, ok := s.rtmpConnections[manifestID]
+		if !ok || cxn.pl == nil {
+			return nil, vidplayer.ErrNotFound
+		}
+		cpl := cxn.pl
 
 		if cpl.ManifestID() != manifestID {
 			return nil, vidplayer.ErrNotFound
@@ -568,13 +560,20 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 			glog.Errorf("Error parsing for stream id: %v", err)
 			return nil, err
 		}
-
-		cpl := s.CurrentPlaylist
-		if cpl == nil {
+		mid, err := core.StreamID(strmID).ManifestIDFromStreamID()
+		if err != nil {
+			glog.Errorf("Error parsing manifest ID ", err)
+			return nil, err
+		}
+		s.connectionLock.RLock()
+		defer s.connectionLock.RUnlock()
+		cxn, ok := s.rtmpConnections[mid]
+		if !ok || cxn.pl == nil {
 			return nil, vidplayer.ErrNotFound
 		}
+
 		//Get the hls playlist
-		pl := cpl.GetHLSMediaPlaylist(strmID)
+		pl := cxn.pl.GetHLSMediaPlaylist(strmID)
 		if pl == nil {
 			return nil, vidplayer.ErrNotFound
 		}
@@ -683,11 +682,28 @@ func parseSegName(reqPath string) string {
 func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 	// not threadsafe; need to deep copy the playlist
 	m := make(map[string]*m3u8.MasterPlaylist, 0)
-	cpl := s.CurrentPlaylist
-	if cpl != nil {
+
+	s.connectionLock.RLock()
+	defer s.connectionLock.RUnlock()
+	for _, cxn := range s.rtmpConnections {
+		if cxn.sess == nil || cxn.pl == nil {
+			continue
+		}
+		cpl := cxn.pl
 		m[string(cpl.ManifestID())] = cpl.GetHLSMasterPlaylist()
 	}
 	return &net.NodeStatus{Manifests: m}
+}
+
+// Debug helpers
+func (s *LivepeerServer) LatestPlaylist() core.PlaylistManager {
+	s.connectionLock.RLock()
+	defer s.connectionLock.RUnlock()
+	cxn, ok := s.rtmpConnections[LastManifestID]
+	if !ok || cxn.pl == nil {
+		return nil
+	}
+	return cxn.pl
 }
 
 func shouldStopStream(err error) bool {

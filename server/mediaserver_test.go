@@ -139,7 +139,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 
 	start := time.Now()
 	for time.Since(start) < time.Second*2 {
-		pl := s.CurrentPlaylist.GetHLSMediaPlaylist(sid)
+		pl := s.LatestPlaylist().GetHLSMediaPlaylist(sid)
 		if pl == nil || len(pl.Segments) != 4 {
 			time.Sleep(100 * time.Millisecond)
 			continue
@@ -147,7 +147,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 			break
 		}
 	}
-	pl := s.CurrentPlaylist.GetHLSMediaPlaylist(sid)
+	pl := s.LatestPlaylist().GetHLSMediaPlaylist(sid)
 	if pl == nil {
 		t.Error("Expected media playlist; got none")
 	}
@@ -190,7 +190,7 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	}
 
 	segName := "test_seg/1.ts"
-	err = s.CurrentPlaylist.InsertHLSSegment(hlsStrmID, 1, segName, 12)
+	err = s.LatestPlaylist().InsertHLSSegment(hlsStrmID, 1, segName, 12)
 	if err != nil {
 		t.Fatal(err)
 	}
