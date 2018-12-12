@@ -20,3 +20,4 @@
 <!--- If you're unsure about any of these, don't hesitate to ask. We're here to help! -->
 - [ ] README and other documentation updated
 - [ ] Node runs in OSX and devenv
+- [ ] All tests in `./test.sh` pass
