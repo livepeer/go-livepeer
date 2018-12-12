@@ -31,6 +31,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/eventservices"
+
 	//"github.com/livepeer/go-livepeer/ipfs" until we re-enable IPFS
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/server"
@@ -49,6 +50,10 @@ const RpcPort = "8935"
 const CliPort = "7935"
 
 func main() {
+	// Override the default flag set since there are dependencies that
+	// incorrectly add their own flags (specifically, due to the 'testing'
+	// package being linked)
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	flag.Set("logtostderr", "true")
 
 	usr, err := user.Current()
