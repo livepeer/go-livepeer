@@ -138,14 +138,14 @@ func (s *JobService) firstClaim(ctx context.Context, job *lpTypes.Job) error {
 				if lastSeenBlock.Cmp(firstClaimBlock) >= 0 {
 					canClaim, err := cm.CanClaim(lastSeenBlock, job)
 					if err != nil {
-						glog.Errorf("Error checking if the transcoder can claim ", err)
+						glog.Errorf("Error checking if the transcoder can claim %v", err)
 						continue
 					}
 
 					if canClaim {
 						err := cm.ClaimVerifyAndDistributeFees()
 						if err != nil {
-							glog.Errorf("Error executing first claim process ", err)
+							glog.Errorf("Error executing first claim process %v", err)
 							continue
 						}
 
