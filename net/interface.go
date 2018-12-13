@@ -8,7 +8,7 @@ import (
 	"github.com/golang/glog"
 )
 
-type OrchestratorSelector interface {
+type OrchestratorPool interface {
 	GetOrchestrators(int) ([]*OrchestratorInfo, error)
 }
 

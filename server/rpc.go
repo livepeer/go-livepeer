@@ -421,16 +421,12 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	srv.ListenAndServeTLS(cert, key)
 }
 
-func GetOrchestratorInfo(bcast Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+func GetOrchestratorInfo(ctx context.Context, bcast Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 	c, conn, err := startOrchestratorClient(orchestratorServer)
-
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), GRPCTimeout)
-	defer cancel()
 
 	req, err := genOrchestratorReq(bcast)
 	r, err := c.GetOrchestrator(ctx, req)

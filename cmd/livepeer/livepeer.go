@@ -100,7 +100,7 @@ func main() {
 
 	var orchAddresses []string
 
-	if *orchAddr != "" {
+	if len(*orchAddr) > 0 {
 		if *standaloneTranscoder && *orchSecret == "" {
 			glog.Error("Running a standalone transcoder requires both -orchAddr and -orchSecret")
 			return
@@ -191,24 +191,24 @@ func main() {
 	} else if transcoder {
 		n.NodeType = core.TranscoderNode
 		glog.Info("***Livepeer is in transcoder mode ***")
-		server.RunTranscoder(n, orchAddresses[0])
+		if len(orchAddresses) > 0 {
+			server.RunTranscoder(n, orchAddresses[0])
+		} else {
+			glog.Errorf("No orchestrator specified; transcoding will not happen")
+		}
 		return
 	} else {
 		n.NodeType = core.BroadcasterNode
 	}
 
 	if n.NodeType == core.BroadcasterNode {
-		if orchAddresses[0] == "" {
-			glog.Info("No orchestrator specified; transcoding will not happen")
+		if len(orchAddresses) <= 0 {
+			n.OrchestratorPool = discovery.NewOffchainOrchestratorFromOnchainList(n)
 		} else {
-			if len(orchAddresses) > 0 {
-				n.OrchestratorSelector = discovery.NewOffchainOrchestrator(n, orchAddresses[0])
-				if n.OrchestratorSelector == nil {
-					return
-				}
-			} else {
-				n.OrchestratorSelector = discovery.NewOffchainOrchestratorFromOnchainList(n)
-			}
+			n.OrchestratorPool = discovery.NewOffchainOrchestrator(n, orchAddresses)
+		}
+		if n.OrchestratorPool == nil {
+			glog.Errorf("No orchestrator specified; transcoding will not happen")
 		}
 	}
 
