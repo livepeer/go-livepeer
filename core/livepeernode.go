@@ -13,8 +13,10 @@ package core
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
@@ -67,6 +69,7 @@ type LivepeerNode struct {
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
+	rand.Seed(time.Now().UnixNano())
 	return &LivepeerNode{
 		Eth:           e,
 		WorkDir:       wd,

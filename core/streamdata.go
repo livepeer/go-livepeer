@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
-	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 
@@ -48,7 +47,6 @@ func RandomVideoID() []byte {
 }
 
 func RandomIdGenerator(length uint) []byte {
-	rand.Seed(time.Now().UnixNano())
 	x := make([]byte, length, length)
 	for i := 0; i < len(x); i++ {
 		x[i] = byte(rand.Uint32())
