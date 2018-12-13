@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,9 +39,16 @@ func (d *stubDiscovery) GetOrchestrators(num int) ([]*net.OrchestratorInfo, erro
 	return d.infos, nil
 }
 
-type StubSegmenter struct{}
+type StubSegmenter struct {
+	skip bool
+}
 
 func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error {
+	if s.skip {
+		// prevents spamming the console w error logging
+		// when segment can't be submitted successfully
+		return nil
+	}
 	glog.Infof("Calling StubSegmenter")
 	if err := hs.AddHLSSegment(&stream.HLSSegment{SeqNo: 0, Name: "seg0.ts"}); err != nil {
 		glog.Errorf("Error adding hls seg0")
@@ -96,6 +104,79 @@ func TestStartBroadcast(t *testing.T) {
 	}
 }
 
+func TestCreateRTMPStreamHandler(t *testing.T) {
+	s := setupServer()
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	handler := gotRTMPStreamHandler(s)
+	createSid := createRTMPStreamIDHandler(s)
+	endHandler := endRTMPStreamHandler(s)
+
+	// Test hlsStreamID query param
+	expectedSid, _ := core.MakeStreamID(core.RandomVideoID(), "RTMP")
+	u, _ := url.Parse("rtmp://localhost?hlsStrmID=" + expectedSid.String())
+	if sid := createSid(u); sid != expectedSid.String() {
+		t.Error("Unexpected streamid")
+	}
+	// Test normal case
+	u, _ = url.Parse("rtmp://localhost")
+	st := stream.NewBasicRTMPVideoStream(createSid(u))
+	if st.GetStreamID() == "" {
+		t.Error("Empty streamid")
+	}
+	// Populate internal state with s1
+	if err := handler(u, st); err != nil {
+		t.Error("Handler failed ", err)
+	}
+	// Test collisions via stream reuse
+	u, _ = url.Parse("rtmp://localhost?hlsStrmID=" + st.GetStreamID())
+	if sid := createSid(u); sid != "" {
+		t.Error("Expected failure due to naming collision")
+	}
+	// Ensure the stream ID is reusable after the stream ends
+	if err := endHandler(u, st); err != nil {
+		t.Error("Could not clean up stream")
+	}
+	if sid := createSid(u); sid != st.GetStreamID() {
+		t.Error("Mismatched streamid during stream reuse")
+	}
+	// Test invalid ManifestID
+	u, _ = url.Parse("rtmp://localhost?hlsStrmID=abc")
+	if sid := createSid(u); sid != "" {
+		t.Error("Failed to create streamid")
+	}
+}
+
+func TestEndRTMPStreamHandler(t *testing.T) {
+	s := setupServer()
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	createSid := createRTMPStreamIDHandler(s)
+	handler := gotRTMPStreamHandler(s)
+	endHandler := endRTMPStreamHandler(s)
+	u, _ := url.Parse("rtmp://localhost")
+	sid := createSid(u)
+	st := stream.NewBasicRTMPVideoStream(sid)
+
+	// Nonexistent stream
+	if err := endHandler(u, st); err != ErrUnknownStream {
+		t.Error("Expected unknown stream ", err)
+	}
+	// Stream has Invalid manifest ID
+	if err := endHandler(u, stream.NewBasicRTMPVideoStream("abc")); err != core.ErrManifestID {
+		t.Error("Expected invalid manifest")
+	}
+	// Normal case: clean up existing stream
+	if err := handler(u, st); err != nil {
+		t.Error("Handler failed ", err)
+	}
+	if err := endHandler(u, st); err != nil {
+		t.Error("Did  not end stream ", err)
+	}
+	// Check behavior on calling `endHandler` twice
+	if err := endHandler(u, st); err != ErrUnknownStream {
+		t.Error("Stream was not cleaned up properly ", err)
+	}
+}
+
 // Should publish RTMP stream, turn the RTMP stream into HLS, and broadcast the HLS stream.
 func TestGotRTMPStreamHandler(t *testing.T) {
 	s := setupServer()
@@ -129,6 +210,18 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 		t.Errorf("Error: %v", err)
 	}
 
+	// Check assigned IDs
+	mid, err := rtmpManifestID(strm)
+	if err != nil {
+		t.Error(err)
+	}
+	if s.LatestPlaylist().ManifestID() != mid || LastManifestID != mid {
+		t.Error("Unexpected Manifest ID")
+	}
+	if LastHLSStreamID != hlsStrmID {
+		t.Error("Unexpected Stream ID")
+	}
+
 	//Stream already exists
 	err = handler(url, strm)
 	if err != ErrAlreadyExists {
@@ -156,10 +249,6 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 		t.Errorf("Should have recieved 4 data chunks, got: %v", pl.Count())
 	}
 
-	mid, err := core.MakeManifestID(hlsStrmID.GetVideoID())
-	if err != nil {
-		t.Fatal(err)
-	}
 	rendition := hlsStrmID.GetRendition()
 	for i := 0; i < 4; i++ {
 		seg := pl.Segments[i]
@@ -169,6 +258,59 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 			t.Fatalf("Wrong segment, should have URI %s, has %s", shouldSegName, seg.URI)
 		}
 	}
+}
+
+func TestMultiStream(t *testing.T) {
+	s := setupServer()
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	handler := gotRTMPStreamHandler(s)
+	createSid := createRTMPStreamIDHandler(s)
+	u, _ := url.Parse("rtmp://localhost")
+
+	handleStream := func(i int) {
+		st := stream.NewBasicRTMPVideoStream(createSid(u))
+		if err := handler(u, st); err != nil {
+			t.Error("Could not handle stream ", i, err)
+		}
+	}
+
+	// test synchronous
+	const syncStreams = 10
+	for i := 0; i < syncStreams; i++ {
+		handleStream(i)
+	}
+
+	// test more streams, somewhat concurrently
+	mut := sync.Mutex{}
+	completed := syncStreams
+	ch := make(chan struct{})
+	const asyncStreams = 500
+	for i := completed; i < asyncStreams; i++ {
+		go func(i int) {
+			handleStream(i)
+			mut.Lock()
+			completed++
+			mut.Unlock()
+			if completed >= asyncStreams {
+				ch <- struct{}{}
+			}
+		}(i)
+	}
+	// block until complete
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	select {
+	case <-ch:
+		close(ch)
+		if len(s.rtmpConnections) < asyncStreams {
+			t.Error("Did not have expected number of streams", len(s.rtmpConnections))
+		}
+	case <-ctx.Done():
+		t.Error("Timed out at ", completed)
+		close(ch)
+	}
+
+	// probably should test (concurrent) cleanups as well
 }
 
 func TestGetHLSMasterPlaylistHandler(t *testing.T) {
