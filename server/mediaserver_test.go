@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"net/url"
 	"sync"
 	"testing"
@@ -112,12 +114,16 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	endHandler := endRTMPStreamHandler(s)
 
 	// Test hlsStreamID query param
-	expectedSid, _ := core.MakeStreamID(core.RandomVideoID(), "RTMP")
+	rand.Seed(123)
+	key := hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
+	expectedSid, _ := core.MakeStreamID(core.RandomVideoID(), key)
+	rand.Seed(123)
 	u, _ := url.Parse("rtmp://localhost?hlsStrmID=" + expectedSid.String())
 	if sid := createSid(u); sid != expectedSid.String() {
 		t.Error("Unexpected streamid")
 	}
 	// Test normal case
+	rand.Seed(123)
 	u, _ = url.Parse("rtmp://localhost")
 	st := stream.NewBasicRTMPVideoStream(createSid(u))
 	if st.GetStreamID() == "" {
@@ -128,7 +134,7 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 		t.Error("Handler failed ", err)
 	}
 	// Test collisions via stream reuse
-	u, _ = url.Parse("rtmp://localhost?hlsStrmID=" + st.GetStreamID())
+	rand.Seed(123)
 	if sid := createSid(u); sid != "" {
 		t.Error("Expected failure due to naming collision")
 	}
@@ -136,6 +142,7 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	if err := endHandler(u, st); err != nil {
 		t.Error("Could not clean up stream")
 	}
+	rand.Seed(123)
 	if sid := createSid(u); sid != st.GetStreamID() {
 		t.Error("Mismatched streamid during stream reuse")
 	}

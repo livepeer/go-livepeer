@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -46,6 +47,7 @@ var ErrUnknownStream = errors.New("ErrUnknownStream")
 const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
 const HLSBufferWindow = uint(5)
+const StreamKeyBytes = 6
 
 const SegLen = 4 * time.Second
 const BroadcastRetry = 15 * time.Second
@@ -167,7 +169,8 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		}
 
 		// Generate RTMP part of StreamID
-		id, err := core.MakeStreamID(vid, "RTMP")
+		key := hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
+		id, err := core.MakeStreamID(vid, key)
 		if err != nil {
 			glog.Errorf("Error making stream ID")
 			return ""
