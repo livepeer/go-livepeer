@@ -201,17 +201,6 @@ func main() {
 		n.NodeType = core.BroadcasterNode
 	}
 
-	if n.NodeType == core.BroadcasterNode {
-		if len(orchAddresses) <= 0 {
-			n.OrchestratorPool = discovery.NewOffchainOrchestratorFromOnchainList(n)
-		} else {
-			n.OrchestratorPool = discovery.NewOffchainOrchestrator(n, orchAddresses)
-		}
-		if n.OrchestratorPool == nil {
-			glog.Errorf("No orchestrator specified; transcoding will not happen")
-		}
-	}
-
 	if *offchain {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	} else {
@@ -335,6 +324,17 @@ func main() {
 			base = n.ServiceURI.String()
 		}
 		drivers.NodeStorage = drivers.NewMemoryDriver(base)
+	}
+
+	if n.NodeType == core.BroadcasterNode {
+		if len(orchAddresses) > 0 {
+			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchAddresses)
+		} else if !*offchain {
+			n.OrchestratorPool = discovery.NewOnchainOrchestratorPool(n)
+		}
+		if n.OrchestratorPool == nil {
+			glog.Errorf("No orchestrator specified; transcoding will not happen")
+		}
 	}
 
 	//Create Livepeer Node

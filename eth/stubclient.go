@@ -40,6 +40,11 @@ type StubClient struct {
 	JobError                     error
 	WatchJobError                error
 	ProcessHistoricalUnbondError error
+	Orchestrators                []*lpTypes.Transcoder
+}
+
+type stubTranscoder struct {
+	ServiceURI string
 }
 
 func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) error { return nil }
@@ -98,8 +103,10 @@ func (e *StubClient) GetDelegatorUnbondingLock(addr common.Address, unbondingLoc
 func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
 	return nil, nil
 }
-func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) { return nil, nil }
-func (e *StubClient) IsActiveTranscoder() (bool, error)                     { return false, nil }
+func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
+	return e.Orchestrators, nil
+}
+func (e *StubClient) IsActiveTranscoder() (bool, error) { return false, nil }
 func (e *StubClient) AssignedTranscoder(job *lpTypes.Job) (common.Address, error) {
 	return e.TranscoderAddress, nil
 }

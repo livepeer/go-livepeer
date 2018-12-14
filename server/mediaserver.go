@@ -148,6 +148,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSession, error) {
 
 	if s.LivepeerNode.OrchestratorPool == nil {
+		glog.Info("No orchestrators specified; not transcoding")
 		return nil, ErrDiscovery
 	}
 
@@ -461,7 +462,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			broadcastFunc := func() error {
 				sess, err = s.startBroadcast(cpl)
 				if err == ErrDiscovery {
-					return err // discovery disabled, don't retry
+					return nil // discovery disabled, don't retry
 				} else if err != nil {
 					// Should be logged upstream
 				}

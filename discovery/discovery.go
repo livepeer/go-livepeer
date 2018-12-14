@@ -16,12 +16,12 @@ import (
 
 const GetOrchestratorsTimeoutLoop = 3 * time.Second
 
-type offchainOrchestrators struct {
+type orchestratorPool struct {
 	uri   []*url.URL
 	bcast server.Broadcaster
 }
 
-func NewOffchainOrchestrator(node *core.LivepeerNode, addresses []string) *offchainOrchestrators {
+func NewOrchestratorPool(node *core.LivepeerNode, addresses []string) *orchestratorPool {
 	var uris []*url.URL
 
 	for _, addr := range addresses {
@@ -41,10 +41,10 @@ func NewOffchainOrchestrator(node *core.LivepeerNode, addresses []string) *offch
 	}
 
 	bcast := core.NewBroadcaster(node)
-	return &offchainOrchestrators{bcast: bcast, uri: uris}
+	return &orchestratorPool{bcast: bcast, uri: uris}
 }
 
-func NewOffchainOrchestratorFromOnchainList(node *core.LivepeerNode) *offchainOrchestrators {
+func NewOnchainOrchestratorPool(node *core.LivepeerNode) *orchestratorPool {
 	// if livepeer running in offchain mode, return nil
 	if node.Eth == nil {
 		return nil
@@ -61,10 +61,10 @@ func NewOffchainOrchestratorFromOnchainList(node *core.LivepeerNode) *offchainOr
 		addresses = append(addresses, orch.ServiceURI)
 	}
 
-	return NewOffchainOrchestrator(node, addresses)
+	return NewOrchestratorPool(node, addresses)
 }
 
-func (o *offchainOrchestrators) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
+func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), GetOrchestratorsTimeoutLoop)
 	orchInfos := []*net.OrchestratorInfo{}
 	orchChan := make(chan struct{})
