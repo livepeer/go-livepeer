@@ -38,8 +38,12 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (*Acco
 	var acct accounts.Account
 	var err error
 	if numAccounts == 0 || ((accountAddr != ethcommon.Address{}) && !acctExists) {
-		glog.Infof("Please create a new ETH account")
-
+		glog.Infof("No Ethereum account found. Creating a new account")
+		glog.Infof("This process will create a new Ethereum account for this Livepeer node")
+		glog.Infof("Please enter a passphrase to encrypt the Private Keystore file for the Ethereum account.")
+		glog.Infof("This process will ask for this passphrase every time it is launched")
+		glog.Infof("(no characters will appear in Terminal when the passphrase is entered)")
+		
 		// Account does not exist yet, set it up
 		acct, err = createAccount(keyStore)
 		if err != nil {
@@ -55,7 +59,7 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (*Acco
 		}
 	}
 
-	glog.Infof("Using ETH account: %v", acct.Address.Hex())
+	glog.Infof("Using Ethereum account: %v", acct.Address.Hex())
 
 	return &AccountManager{
 		Account:  acct,
@@ -73,7 +77,7 @@ func (am *AccountManager) Unlock(passphrase string) error {
 		if passphrase != "" {
 			return err
 		}
-		glog.Infof("Passphrase required to unlock ETH account %v", am.Account.Address.Hex())
+		glog.Infof("Please enter the passphrase to unlock Ethereum account %v", am.Account.Address.Hex())
 
 		passphrase, err = getPassphrase(false)
 		err = am.keyStore.Unlock(am.Account, passphrase)
