@@ -43,7 +43,7 @@ func (md *SegTranscodingMetadata) Flatten() []byte {
 	return buf
 }
 
-func RandomIdGenerator(length uint) []byte {
+var RandomIdGenerator = func(length uint) []byte {
 	x := make([]byte, length, length)
 	for i := 0; i < len(x); i++ {
 		x[i] = byte(rand.Uint32())
