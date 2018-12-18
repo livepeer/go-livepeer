@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"strings"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 
@@ -19,7 +20,7 @@ var ErrStreamID = errors.New("ErrStreamID")
 var ErrManifestID = errors.New("ErrManifestID")
 
 const (
-	HashLength = 32
+	DefaultManifestIDLength = 4
 )
 
 type SegTranscodingMetadata struct {
@@ -42,10 +43,6 @@ func (md *SegTranscodingMetadata) Flatten() []byte {
 	return buf
 }
 
-func RandomVideoID() []byte {
-	return RandomIdGenerator(HashLength)
-}
-
 func RandomIdGenerator(length uint) []byte {
 	x := make([]byte, length, length)
 	for i := 0; i < len(x); i++ {
@@ -54,76 +51,44 @@ func RandomIdGenerator(length uint) []byte {
 	return x
 }
 
-//StreamID is VideoID|Rendition
-type StreamID string
+type ManifestID string
 
-func MakeStreamID(id []byte, rendition string) (StreamID, error) {
-	if len(id) != HashLength || rendition == "" {
-		return "", ErrStreamID
-	}
-	return StreamID(fmt.Sprintf("%x%v", id, rendition)), nil
+// The StreamID represents a particular variant of a stream.
+type StreamID struct {
+	// Base playback ID that related renditions are grouped under
+	ManifestID ManifestID
+
+	// Specifies the stream variant: the HLS source, transcoding profile, etc.
+	// Also used for RTMP: when unguessable,this can function as a stream key.
+	Rendition string
 }
 
-func (id *StreamID) GetVideoID() []byte {
-	if len(*id) < 2*HashLength {
-		return nil
+func MakeStreamIDFromString(mid string, rendition string) StreamID {
+	return StreamID{
+		ManifestID: ManifestID(mid),
+		Rendition:  rendition,
 	}
-	vid, err := hex.DecodeString(string((*id)[:2*HashLength]))
-	if err != nil {
-		return nil
-	}
-	return vid
 }
 
-func (id *StreamID) GetRendition() string {
-	// XXX add tests
-	if len(*id) < 2*HashLength {
-		return ""
-	}
-	return string((*id)[2*HashLength:])
+func MakeStreamID(mid ManifestID, profile *ffmpeg.VideoProfile) StreamID {
+	return MakeStreamIDFromString(string(mid), profile.Name)
 }
 
-func (id *StreamID) IsValid() bool {
-	return len(*id) > 2*HashLength
+func SplitStreamIDString(str string) StreamID {
+	parts := strings.SplitN(str, "/", 2)
+	if len(parts) <= 0 {
+		return MakeStreamIDFromString("", "")
+	}
+	if len(parts) == 1 {
+		return MakeStreamIDFromString(parts[0], "")
+	}
+	return MakeStreamIDFromString(parts[0], parts[1])
 }
 
 func (id StreamID) String() string {
-	return string(id)
+	return fmt.Sprintf("%v/%v", id.ManifestID, id.Rendition)
 }
 
-//ManifestID is VideoID
-type ManifestID string
-
-func MakeManifestID(id []byte) (ManifestID, error) {
-	if len(id) != HashLength {
-		return ManifestID(""), ErrManifestID
-	}
-	return ManifestID(fmt.Sprintf("%x", id)), nil
-}
-
-func (id *ManifestID) GetVideoID() []byte {
-	if len(*id) < 2*HashLength {
-		return nil
-	}
-	vid, err := hex.DecodeString(string((*id)[:2*HashLength]))
-	if err != nil {
-		return nil
-	}
-	return vid
-}
-
-func (id StreamID) ManifestIDFromStreamID() (ManifestID, error) {
-	if !id.IsValid() {
-		return "", ErrManifestID
-	}
-	mid, err := MakeManifestID(id.GetVideoID())
-	return mid, err
-}
-
-func (id *ManifestID) IsValid() bool {
-	return len(*id) == 2*HashLength
-}
-
-func (id ManifestID) String() string {
-	return string(id)
+func RandomManifestID() ManifestID {
+	return ManifestID(hex.EncodeToString(RandomIdGenerator(DefaultManifestIDLength)))
 }

@@ -22,6 +22,7 @@ func TestSegmentFlatten(t *testing.T) {
 	}
 }
 
+/*
 func TestStreamID(t *testing.T) {
 	vid := RandomVideoID()
 	id, err := MakeStreamID(vid, ffmpeg.P144p30fps16x9.Name)
@@ -95,3 +96,4 @@ func TestManifestID(t *testing.T) {
 		t.Error("did not expect manifestd to be valid")
 	}
 }
+*/
