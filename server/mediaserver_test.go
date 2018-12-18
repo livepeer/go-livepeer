@@ -167,12 +167,12 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	key := hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
 	expectedSid := core.MakeStreamIDFromString(string(core.RandomManifestID()), key)
 	rand.Seed(123)
-	u, _ := url.Parse("rtmp://localhost?hlsStrmID=" + expectedSid.String())
+	u, _ := url.Parse("rtmp://localhost?hlsStrmID=" + expectedSid.String()) // with key
 	if sid := createSid(u); sid != expectedSid.String() {
 		t.Error("Unexpected streamid")
 	}
 	expectedMid := core.RandomManifestID()
-	u, _ = url.Parse("rtmp://localhost?hlsStrmID=" + string(expectedMid))
+	u, _ = url.Parse("rtmp://localhost?hlsStrmID=" + string(expectedMid)) // without key
 	rand.Seed(123)
 	if sid := createSid(u); sid != string(expectedMid)+"/"+key {
 		t.Error("Unexpected streamid")
@@ -200,6 +200,21 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	rand.Seed(123)
 	if sid := createSid(u); sid != st.GetStreamID() {
 		t.Error("Mismatched streamid during stream reuse")
+	}
+
+	// Test a couple of odd cases; subset of parseManifestID checks
+	// (Would be nice to stub out parseManifestID to receive stronger
+	//  transitive assurance via existing parseManifestID tests)
+	testHlsQueryParam := func(inp string) {
+		rand.Seed(123)
+		u, _ := url.Parse("rtmp://localhost?hlsStrmID=" + url.QueryEscape(inp))
+		if sid := createSid(u); sid != st.GetStreamID() {
+			t.Errorf("Unexpected StreamID for '%v' ; expected '%v' for input '%v'", sid, st.GetStreamID(), inp)
+		}
+	}
+	inputs := []string{"  /  ", ".m3u8", "/stream/", "stream/.m3u8"}
+	for _, v := range inputs {
+		testHlsQueryParam(v)
 	}
 }
 
@@ -238,19 +253,19 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 
 	vProfile := ffmpeg.P720p30fps16x9
 	hlsStrmID := core.MakeStreamID(core.ManifestID("ghijkl"), &vProfile)
-	url, _ := url.Parse(fmt.Sprintf("rtmp://localhost:1935/movie?hlsStrmID=%v", hlsStrmID))
+	u, _ := url.Parse(fmt.Sprintf("rtmp://localhost:1935/movie?hlsStrmID=%v", url.QueryEscape(hlsStrmID.String())))
 	strm := stream.NewBasicRTMPVideoStream(hlsStrmID.String())
 
 	// Check for invalid node storage
 	oldStorage := drivers.NodeStorage
 	drivers.NodeStorage = nil
-	if err := handler(url, strm); err != ErrStorage {
+	if err := handler(u, strm); err != ErrStorage {
 		t.Error("Expected storage error ", err)
 	}
 	drivers.NodeStorage = oldStorage
 
 	//Try to handle test RTMP data.
-	if err := handler(url, strm); err != nil {
+	if err := handler(u, strm); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 
@@ -264,7 +279,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	}
 
 	//Stream already exists
-	if err := handler(url, strm); err != ErrAlreadyExists {
+	if err := handler(u, strm); err != ErrAlreadyExists {
 		t.Errorf("Expecting publish error because stream already exists, but got: %v", err)
 	}
 
@@ -294,6 +309,29 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 		if seg.URI != shouldSegName {
 			t.Fatalf("Wrong segment, should have URI %s, has %s", shouldSegName, seg.URI)
 		}
+	}
+
+	// Test a couple of odd cases; subset of parseStreamID checks
+	// (Would be nice to stub out parseStreamID to receive stronger
+	//  transitive assurance via existing parseStreamID tests)
+	rand.Seed(456)
+	mid = core.RandomManifestID()
+	st := stream.NewBasicRTMPVideoStream(string(mid))
+	expectedStrm := core.MakeStreamID(mid, &vProfile)
+	testHlsQueryParam := func(inp string) {
+		u, _ := url.Parse("rtmp://localhost?hlsStrmID=" + url.QueryEscape(inp))
+		if err := handler(u, st); err != nil {
+			t.Errorf("Unexpected error handling '%v' ; error %v", inp, err)
+		}
+		if LastHLSStreamID.String() != expectedStrm.String() {
+			t.Errorf("Unexpected StreamID for '%v' ; expected '%v' for input '%v'", LastHLSStreamID, expectedStrm, inp)
+		}
+		endHandler := endRTMPStreamHandler(s)
+		endHandler(u, st)
+	}
+	inputs := []string{"  /  ", ".m3u8", "/stream/", "stream/.m3u8", expectedStrm.String(), "/stream/" + expectedStrm.String()}
+	for _, v := range inputs {
+		testHlsQueryParam(v)
 	}
 }
 
@@ -399,10 +437,65 @@ func TestCleanStreamPrefix(t *testing.T) {
 	if segName != "1220c50f8bc4d2a807aace1e1376496a9d7f7c1408dec2512763c3ca16fe828f6631_01.ts" {
 		t.Errorf("Expecting %v, but %v", "1220c50f8bc4d2a807aace1e1376496a9d7f7c1408dec2512763c3ca16fe828f6631_01.ts", segName)
 	}
+
+	str := cleanStreamPrefix("")
+	if str != "" {
+		t.Error("Expected empty stream prefix; got ", str)
+	}
+	str = cleanStreamPrefix("  /  //  ///  / abc def")
+	if str != "abc def" {
+		t.Error("Unexpected value after prefix cleaning; got ", str)
+	}
+
+	str = cleanStreamPrefix("  /  //  ///  / stream/abc def")
+	if str != "abc def" {
+		t.Error("Unexpected value after prefix cleaning; got ", str)
+	}
 }
 
 func TestShouldStopStream(t *testing.T) {
 	if shouldStopStream(fmt.Errorf("some random error string")) {
 		t.Error("Expected shouldStopStream=false for a random error")
 	}
+}
+
+func TestParseManifestID(t *testing.T) {
+	checkMid := func(inp string, exp string) {
+		mid := parseManifestID(inp)
+		if mid != core.ManifestID(exp) {
+			t.Errorf("Unexpected ManifestID; expected '%v' got '%v' with input '%v'", exp, mid, inp)
+		}
+	}
+
+	emptyExpects := []string{"", "/", "///", "  /  ", "/stream/", "stream/", "/stream///", " stream/", "stream/.m3u8", "stream//.m3u8"}
+	for _, v := range emptyExpects {
+		checkMid(v, "")
+	}
+
+	abcExpects := []string{"/stream/abc.m3u8", "/stream/abc/def.m3u8", "stream/abc/def.m3u8", "/abc/def/m3u8", "abc/def.m3u8", "abc/def", "abc/", "abc//", "abc", "  abc", "  /abc", "/abc.m3u8"}
+	for _, v := range abcExpects {
+		checkMid(v, "abc")
+	}
+
+	checkMid("/stream/stream/stream", "stream")
+}
+
+func TestParseStreamID(t *testing.T) {
+	checkSid := func(inp string, exp core.StreamID) {
+		sid := parseStreamID(inp)
+		if sid.ManifestID != exp.ManifestID || sid.Rendition != exp.Rendition {
+			t.Errorf("Unexpected StreamID; expected '%v' got '%v' with input '%v'", exp, sid, inp)
+		}
+	}
+
+	checkSid("stream/", core.StreamID{})
+	checkSid("stream/.m3u8", core.StreamID{})
+	checkSid("stream/abc  .m3u8", core.StreamID{ManifestID: "abc  "})
+	checkSid("/stream/abc/def  .m3u8", core.StreamID{ManifestID: "abc", Rendition: "def  "})
+	checkSid("/stream/stream/stream/stream", core.StreamID{ManifestID: "stream", Rendition: "stream/stream"})
+	checkSid("/abc", core.StreamID{ManifestID: "abc"})
+	checkSid("/abc.m3u8", core.StreamID{ManifestID: "abc"})
+	checkSid("//abc", core.StreamID{ManifestID: "abc"})
+	checkSid("abc/def//ghi", core.StreamID{ManifestID: "abc", Rendition: "def//ghi"})
+	checkSid("abc/def.m3u8/ghi.ts", core.StreamID{ManifestID: "abc", Rendition: "def.m3u8/ghi"})
 }
