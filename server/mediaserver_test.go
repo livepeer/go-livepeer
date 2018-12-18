@@ -308,8 +308,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	rendition := hlsStrmID.GetRendition()
 	for i := 0; i < 4; i++ {
 		seg := pl.Segments[i]
-		shouldSegName := fmt.Sprintf("%s/%s/%d.ts", mid, rendition, i)
-		t.Log(shouldSegName)
+		shouldSegName := fmt.Sprintf("/stream/%s/%s/%d.ts", mid, rendition, i)
 		if seg.URI != shouldSegName {
 			t.Fatalf("Wrong segment, should have URI %s, has %s", shouldSegName, seg.URI)
 		}
