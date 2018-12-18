@@ -317,7 +317,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		streamStarted := false
 		//Segment the stream, insert the segments into the broadcaster
 		go func(rtmpStrm stream.RTMPVideoStream) {
-			hlsStrm := stream.NewBasicHLSVideoStream(string(hlsStrmID), stream.DefaultHLSStreamWin)
+			hid := hex.EncodeToString(core.RandomVideoID()) // ffmpeg m3u8 output name
+			hlsStrm := stream.NewBasicHLSVideoStream(hid, stream.DefaultHLSStreamWin)
 			hlsStrm.SetSubscriber(func(seg *stream.HLSSegment, eof bool) {
 				if eof {
 					// XXX update HLS manifest
