@@ -8,15 +8,15 @@ import (
 )
 
 type stubSigVerifier struct {
-	shouldVerify bool
+	verifyResult bool
 }
 
-func (sv *stubSigVerifier) SetShouldVerify(shouldVerify bool) {
-	sv.shouldVerify = shouldVerify
+func (sv *stubSigVerifier) SetVerifyResult(verifyResult bool) {
+	sv.verifyResult = verifyResult
 }
 
-func (sv *stubSigVerifier) Verify(addr ethcommon.Address, sig []byte, msg []byte) bool {
-	return sv.shouldVerify
+func (sv *stubSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool {
+	return sv.verifyResult
 }
 
 type stubBroker struct {

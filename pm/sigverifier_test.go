@@ -25,52 +25,44 @@ func TestVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	signerPrivKey, err := crypto.GenerateKey()
+	unapprovedSignerPrivKey, err := crypto.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	signer := crypto.PubkeyToAddress(signerPrivKey.PublicKey)
+	unapprovedSignerSig, err := crypto.Sign(personalHash, unapprovedSignerPrivKey)
 
-	signerSig, err := crypto.Sign(personalHash, signerPrivKey)
-
-	b := &stubBroker{
-		usedTickets:     make(map[ethcommon.Hash]bool),
-		approvedSigners: make(map[ethcommon.Address]bool),
-	}
+	b := newStubBroker()
 
 	sv := NewApprovedSigVerifier(b)
 
 	// Test invalid signature for non-approved signer
-	valid, err := sv.Verify(sender, signerSig, msg)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if valid {
-		t.Fatal("expected invalid signature for non-approved signer")
+	if valid := sv.Verify(sender, msg, unapprovedSignerSig); valid {
+		t.Error("expected invalid signature for non-approved signer")
 	}
 
 	// Test valid signature for approved signer
-	// Approve signer
-	b.ApproveSigners([]ethcommon.Address{signer})
-
-	valid, err = sv.Verify(sender, signerSig, msg)
+	approvedSignerPrivKey, err := crypto.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if !valid {
-		t.Fatal("expected valid signature for approved signer")
+	approvedSigner := crypto.PubkeyToAddress(approvedSignerPrivKey.PublicKey)
+
+	approvedSignerSig, err := crypto.Sign(personalHash, approvedSignerPrivKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Approve signer
+	b.ApproveSigners([]ethcommon.Address{approvedSigner})
+
+	if valid := sv.Verify(sender, msg, approvedSignerSig); !valid {
+		t.Error("expected valid signature for approved signer")
 	}
 
 	// Test valid signature for sender
-	valid, err = sv.Verify(sender, senderSig, msg)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !valid {
-		t.Fatal("expected valid signature for sender")
+	if valid := sv.Verify(sender, msg, senderSig); !valid {
+		t.Error("expected valid signature for sender")
 	}
 }

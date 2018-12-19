@@ -1,11 +1,18 @@
 package pm
 
 import (
-	"fmt"
+	"errors"
 	"math/big"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+)
+
+var (
+	errInvalidTicketRecipient     = errors.New("invalid ticket recipient")
+	errInvalidTicketSender        = errors.New("invalid ticket sender")
+	errInvalidTicketRecipientRand = errors.New("invalid recipientRand for ticket recipientRandHash")
+	errInvalidTicketSignature     = errors.New("invalid ticket signature")
 )
 
 // Validator is an interface which describes an object capable
@@ -20,8 +27,6 @@ type Validator interface {
 }
 
 // validator is an implementation of the Validator interface
-// that relies on an implementation of the Broker interface to provide
-// a set of already used tickets
 type validator struct {
 	addr        ethcommon.Address
 	broker      Broker
@@ -40,28 +45,19 @@ func NewValidator(addr ethcommon.Address, broker Broker, sigVerifier SigVerifier
 // ValidateTicket checks if a ticket is valid
 func (v *validator) ValidateTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
 	if ticket.Recipient != v.addr {
-		return fmt.Errorf("invalid ticket recipient")
+		return errInvalidTicketRecipient
 	}
 
 	if (ticket.Sender == ethcommon.Address{}) {
-		return fmt.Errorf("invalid ticket sender")
+		return errInvalidTicketSender
 	}
 
 	if crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size)) != ticket.RecipientRandHash {
-		return fmt.Errorf("invalid preimage provided for hash commitment recipientRandHash")
+		return errInvalidTicketRecipientRand
 	}
 
-	used, err := v.broker.IsUsedTicket(ticket)
-	if err != nil {
-		return err
-	}
-
-	if used {
-		return fmt.Errorf("ticket has already been used")
-	}
-
-	if !v.sigVerifier.Verify(ticket.Sender, sig, ticket.Hash().Bytes()) {
-		return fmt.Errorf("invalid sender signature over ticket hash")
+	if !v.sigVerifier.Verify(ticket.Sender, ticket.Hash().Bytes(), sig) {
+		return errInvalidTicketSignature
 	}
 
 	return nil

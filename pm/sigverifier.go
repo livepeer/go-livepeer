@@ -12,7 +12,7 @@ import (
 type SigVerifier interface {
 	// Verify checks if a provided signature over a message
 	// is valid for a given ETH address
-	Verify(addr ethcommon.Address, sig []byte, msg []byte) bool
+	Verify(addr ethcommon.Address, msg, sig []byte) bool
 }
 
 // ApprovedSigVerifier is an implementation of the SigVerifier interface
@@ -33,26 +33,26 @@ func NewApprovedSigVerifier(broker Broker) *ApprovedSigVerifier {
 
 // Verify checks if a provided signature over a message
 // is valid for a given ETH address
-func (sv *ApprovedSigVerifier) Verify(addr ethcommon.Address, sig []byte, msg []byte) (bool, error) {
+func (sv *ApprovedSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool {
 	personalMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, msg)
 	personalHash := crypto.Keccak256([]byte(personalMsg))
 
 	pubkey, err := crypto.SigToPub(personalHash, sig)
 	if err != nil {
-		return false, err
+		return false
 	}
 
 	rec := crypto.PubkeyToAddress(*pubkey)
 
 	if addr == rec {
 		// If recovered address matches, return early
-		return true, nil
+		return true
 	}
 
 	approved, err := sv.broker.IsApprovedSigner(addr, rec)
 	if err != nil {
-		return false, err
+		return false
 	}
 
-	return approved, nil
+	return approved
 }
