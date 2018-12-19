@@ -8,16 +8,14 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func TestIsValidTicket(t *testing.T) {
+func TestValidateTicket(t *testing.T) {
 	recipient := ethcommon.HexToAddress("73AEd7b5dEb30222fa896f399d46cC99c7BEe57F")
 	sender := ethcommon.HexToAddress("A69cdA26600c155cF2c150964Bdb5371ac3f606F")
 	sig := []byte("foo")
 	recipientRand := big.NewInt(10)
 	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size))
 
-	b := &stubBroker{
-		usedTickets: make(map[ethcommon.Hash]bool),
-	}
+	b := newStubBroker()
 	sv := &stubSigVerifier{
 		shouldVerify: true,
 	}
@@ -34,8 +32,7 @@ func TestIsValidTicket(t *testing.T) {
 		RecipientRandHash: recipientRandHash,
 	}
 
-	valid, err := v.IsValidTicket(ticket, sig, recipientRand)
-	if err == nil || valid {
+	if err := v.ValidateTicket(ticket, sig, recipientRand); err == nil {
 		t.Fatal("expected invalid recipient (null address)")
 	}
 
@@ -49,8 +46,7 @@ func TestIsValidTicket(t *testing.T) {
 		RecipientRandHash: recipientRandHash,
 	}
 
-	valid, err = v.IsValidTicket(ticket, sig, recipientRand)
-	if err == nil || valid {
+	if err := v.ValidateTicket(ticket, sig, recipientRand); err == nil {
 		t.Fatal("expected invalid recipient (non-null address)")
 	}
 
@@ -64,8 +60,7 @@ func TestIsValidTicket(t *testing.T) {
 		RecipientRandHash: recipientRandHash,
 	}
 
-	valid, err = v.IsValidTicket(ticket, sig, recipientRand)
-	if err == nil || valid {
+	if err := v.ValidateTicket(ticket, sig, recipientRand); err == nil {
 		t.Fatal("expected invalid sender")
 	}
 
@@ -79,8 +74,7 @@ func TestIsValidTicket(t *testing.T) {
 		RecipientRandHash: ethcommon.Hash{},
 	}
 
-	valid, err = v.IsValidTicket(ticket, sig, recipientRand)
-	if err == nil || valid {
+	if err := v.ValidateTicket(ticket, sig, recipientRand); err == nil {
 		t.Fatal("expected invalid preimage for commitment recipientRandHash")
 	}
 
@@ -96,8 +90,7 @@ func TestIsValidTicket(t *testing.T) {
 	// Set ticket as used in stub broker
 	b.RedeemWinningTicket(ticket, sig, recipientRand)
 
-	valid, err = v.IsValidTicket(ticket, sig, recipientRand)
-	if err == nil || valid {
+	if err := v.ValidateTicket(ticket, sig, recipientRand); err == nil {
 		t.Fatal("expected used ticket")
 	}
 
@@ -112,20 +105,18 @@ func TestIsValidTicket(t *testing.T) {
 		RecipientRandHash: recipientRandHash,
 	}
 	// Set signature verification to return false
-	sv.shouldVerify = false
+	sv.SetShouldVerify(false)
 
-	valid, err = v.IsValidTicket(ticket, sig, recipientRand)
-	if err == nil || valid {
+	if err := v.ValidateTicket(ticket, sig, recipientRand); err == nil {
 		t.Fatal("expected invalid signature")
 	}
 
 	// Test valid ticket
 	// Set signature verification to return true
-	sv.shouldVerify = true
+	sv.SetShouldVerify(true)
 
-	valid, err = v.IsValidTicket(ticket, sig, recipientRand)
-	if err == nil || valid {
-		t.Fatal("expected valid ticket")
+	if err := v.ValidateTicket(ticket, sig, recipientRand); err != nil {
+		t.Fatalf("expected valid ticket: %v", err)
 	}
 }
 

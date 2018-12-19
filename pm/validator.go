@@ -11,11 +11,11 @@ import (
 // Validator is an interface which describes an object capable
 // of validating tickets
 type Validator interface {
-	// IsValidTicket checks if a ticket is valid
-	IsValidTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) (bool, error)
+	// ValidateTicket checks if a ticket is valid
+	ValidateTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error
 
 	// IsWinningTicket checks if a ticket won
-	// Note: This method does not check if a ticket is valid which is done using IsValidTicket
+	// Note: This method does not check if a ticket is valid which is done using ValidateTicket
 	IsWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) bool
 }
 
@@ -37,34 +37,34 @@ func NewValidator(addr ethcommon.Address, broker Broker, sigVerifier SigVerifier
 	}
 }
 
-// IsValidTicket checks if a ticket is valid
-func (v *validator) IsValidTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) (bool, error) {
+// ValidateTicket checks if a ticket is valid
+func (v *validator) ValidateTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
 	if ticket.Recipient != v.addr {
-		return false, fmt.Errorf("invalid ticket recipient")
+		return fmt.Errorf("invalid ticket recipient")
 	}
 
 	if (ticket.Sender == ethcommon.Address{}) {
-		return false, fmt.Errorf("invalid ticket sender")
+		return fmt.Errorf("invalid ticket sender")
 	}
 
-	if crypto.Keccak256Hash(recipientRand.Bytes()) != ticket.RecipientRandHash {
-		return false, fmt.Errorf("invalid preimage provided for hash commitment recipientRandHash")
+	if crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size)) != ticket.RecipientRandHash {
+		return fmt.Errorf("invalid preimage provided for hash commitment recipientRandHash")
 	}
 
 	used, err := v.broker.IsUsedTicket(ticket)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	if used {
-		return false, fmt.Errorf("ticket has already been used")
+		return fmt.Errorf("ticket has already been used")
 	}
 
-	if v.sigVerifier.Verify(ticket.Sender, sig, ticket.Hash().Bytes()) {
-		return false, fmt.Errorf("invalid sender signature over ticket hash")
+	if !v.sigVerifier.Verify(ticket.Sender, sig, ticket.Hash().Bytes()) {
+		return fmt.Errorf("invalid sender signature over ticket hash")
 	}
 
-	return true, nil
+	return nil
 }
 
 // IsWinningTicket checks if a ticket won

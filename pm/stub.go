@@ -1,6 +1,7 @@
 package pm
 
 import (
+	"fmt"
 	"math/big"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -10,13 +11,28 @@ type stubSigVerifier struct {
 	shouldVerify bool
 }
 
+func (sv *stubSigVerifier) SetShouldVerify(shouldVerify bool) {
+	sv.shouldVerify = shouldVerify
+}
+
 func (sv *stubSigVerifier) Verify(addr ethcommon.Address, sig []byte, msg []byte) bool {
 	return sv.shouldVerify
 }
 
 type stubBroker struct {
+	deposits        map[ethcommon.Address]*big.Int
+	penaltyEscrows  map[ethcommon.Address]*big.Int
 	usedTickets     map[ethcommon.Hash]bool
 	approvedSigners map[ethcommon.Address]bool
+}
+
+func newStubBroker() *stubBroker {
+	return &stubBroker{
+		deposits:        make(map[ethcommon.Address]*big.Int),
+		penaltyEscrows:  make(map[ethcommon.Address]*big.Int),
+		usedTickets:     make(map[ethcommon.Hash]bool),
+		approvedSigners: make(map[ethcommon.Address]bool),
+	}
 }
 
 func (b *stubBroker) FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) error {
@@ -69,10 +85,53 @@ func (b *stubBroker) IsApprovedSigner(sender ethcommon.Address, signer ethcommon
 	return b.approvedSigners[signer], nil
 }
 
+func (b *stubBroker) SetDeposit(addr ethcommon.Address, amount *big.Int) {
+	b.deposits[addr] = amount
+}
+
 func (b *stubBroker) GetDeposit(addr ethcommon.Address) (*big.Int, error) {
-	return big.NewInt(0), nil
+	deposit, ok := b.deposits[addr]
+	if !ok {
+		return nil, fmt.Errorf("no deposit for %x", addr)
+	}
+
+	return deposit, nil
+}
+
+func (b *stubBroker) SetPenaltyEscrow(addr ethcommon.Address, amount *big.Int) {
+	b.penaltyEscrows[addr] = amount
 }
 
 func (b *stubBroker) GetPenaltyEscrow(addr ethcommon.Address) (*big.Int, error) {
-	return big.NewInt(0), nil
+	penaltyEscrow, ok := b.penaltyEscrows[addr]
+	if !ok {
+		return nil, fmt.Errorf("no penalty escrow for %x", addr)
+	}
+
+	return penaltyEscrow, nil
+}
+
+type stubValidator struct {
+	isValidTicket   bool
+	isWinningTicket bool
+}
+
+func (v *stubValidator) SetIsValidTicket(isValidTicket bool) {
+	v.isValidTicket = isValidTicket
+}
+
+func (v *stubValidator) SetIsWinningTicket(isWinningTicket bool) {
+	v.isWinningTicket = isWinningTicket
+}
+
+func (v *stubValidator) ValidateTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+	if !v.isValidTicket {
+		return fmt.Errorf("invalid ticket")
+	}
+
+	return nil
+}
+
+func (v *stubValidator) IsWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) bool {
+	return v.isWinningTicket
 }
