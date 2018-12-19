@@ -50,13 +50,13 @@ type LivepeerNode struct {
 	Database        *common.DB
 
 	// Transcoder public fields
-	ClaimManagers        map[int64]eth.ClaimManager
-	SegmentChans         map[ManifestID]SegmentChan
-	OrchestratorSelector net.OrchestratorSelector
-	Ipfs                 ipfs.IpfsApi
-	ServiceURI           *url.URL
-	OrchSecret           string
-	Transcoder           Transcoder
+	ClaimManagers    map[int64]eth.ClaimManager
+	SegmentChans     map[ManifestID]SegmentChan
+	OrchestratorPool net.OrchestratorPool
+	Ipfs             ipfs.IpfsApi
+	ServiceURI       *url.URL
+	OrchSecret       string
+	Transcoder       Transcoder
 
 	// Transcoder private fields
 	claimMutex   *sync.Mutex

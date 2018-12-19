@@ -102,14 +102,21 @@ func main() {
 		return
 	}
 
-	if *orchAddr != "" {
+	var orchAddresses []string
+
+	if len(*orchAddr) > 0 {
 		if *standaloneTranscoder && *orchSecret == "" {
 			glog.Error("Running a standalone transcoder requires both -orchAddr and -orchSecret")
 			return
 		} else if *standaloneTranscoder {
 			transcoder = true
 		}
-		*orchAddr = defaultAddr(*orchAddr, "127.0.0.1", RpcPort)
+
+		orchAddresses = strings.Split(*orchAddr, ",")
+		for i := range orchAddresses {
+			orchAddresses[i] = strings.TrimSpace(orchAddresses[i])
+			orchAddresses[i] = defaultAddr(orchAddresses[i], "127.0.0.1", RpcPort)
+		}
 	}
 
 	if *rinkeby {
@@ -211,19 +218,12 @@ func main() {
 
 	if n.NodeType == core.TranscoderNode {
 		glog.Info("***Livepeer is in transcoder mode ***")
-		server.RunTranscoder(n, *orchAddr)
-		return
-	}
-
-	if n.NodeType == core.BroadcasterNode {
-		if *orchAddr == "" {
-			glog.Info("No orchestrator specified; transcoding will not happen")
+		if len(orchAddresses) > 0 {
+			server.RunTranscoder(n, orchAddresses[0])
 		} else {
-			n.OrchestratorSelector = discovery.NewOffchainOrchestrator(n, *orchAddr)
-			if n.OrchestratorSelector == nil {
-				return
-			}
+			glog.Errorf("No orchestrator specified; transcoding will not happen")
 		}
+		return
 	}
 
 	if *offchain {
@@ -349,6 +349,17 @@ func main() {
 			base = n.ServiceURI.String()
 		}
 		drivers.NodeStorage = drivers.NewMemoryDriver(base)
+	}
+
+	if n.NodeType == core.BroadcasterNode {
+		if len(orchAddresses) > 0 {
+			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchAddresses)
+		} else if !*offchain {
+			n.OrchestratorPool = discovery.NewOnchainOrchestratorPool(n)
+		}
+		if n.OrchestratorPool == nil {
+			glog.Errorf("No orchestrator specified; transcoding will not happen")
+		}
 	}
 
 	//Create Livepeer Node
