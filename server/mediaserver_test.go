@@ -255,6 +255,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	hlsStrmID := core.MakeStreamID(core.ManifestID("ghijkl"), &vProfile)
 	u, _ := url.Parse(fmt.Sprintf("rtmp://localhost:1935/movie?hlsStrmID=%v", url.QueryEscape(hlsStrmID.String())))
 	strm := stream.NewBasicRTMPVideoStream(hlsStrmID.String())
+	expectedSid := core.MakeStreamIDFromString(string(hlsStrmID.ManifestID), "source")
 
 	// Check for invalid node storage
 	oldStorage := drivers.NodeStorage
@@ -285,7 +286,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 
 	start := time.Now()
 	for time.Since(start) < time.Second*2 {
-		pl := s.LatestPlaylist().GetHLSMediaPlaylist(hlsStrmID)
+		pl := s.LatestPlaylist().GetHLSMediaPlaylist(expectedSid.Rendition)
 		if pl == nil || len(pl.Segments) != 4 {
 			time.Sleep(100 * time.Millisecond)
 			continue
@@ -293,19 +294,18 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 			break
 		}
 	}
-	pl := s.LatestPlaylist().GetHLSMediaPlaylist(hlsStrmID)
+	pl := s.LatestPlaylist().GetHLSMediaPlaylist(expectedSid.Rendition)
 	if pl == nil {
-		t.Error("Expected media playlist; got none ", hlsStrmID)
+		t.Error("Expected media playlist; got none ", expectedSid)
 	}
 
 	if pl.Count() != 4 {
 		t.Errorf("Should have recieved 4 data chunks, got: %v", pl.Count())
 	}
 
-	rendition := hlsStrmID.Rendition
 	for i := 0; i < 4; i++ {
 		seg := pl.Segments[i]
-		shouldSegName := fmt.Sprintf("/stream/%s/%s/%d.ts", mid, rendition, i)
+		shouldSegName := fmt.Sprintf("/stream/%s/%s/%d.ts", mid, expectedSid.Rendition, i)
 		if seg.URI != shouldSegName {
 			t.Fatalf("Wrong segment, should have URI %s, has %s", shouldSegName, seg.URI)
 		}
@@ -316,7 +316,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	//  transitive assurance via existing parseStreamID tests)
 	mid = core.RandomManifestID()
 	st := stream.NewBasicRTMPVideoStream(string(mid))
-	expectedStrm := core.MakeStreamID(mid, &vProfile)
+	expectedStrm := core.MakeStreamIDFromString(string(mid), "source")
 	testHlsQueryParam := func(inp string) {
 		u, _ := url.Parse("rtmp://localhost?hlsStrmID=" + url.QueryEscape(inp))
 		if err := handler(u, st); err != nil {
@@ -396,14 +396,14 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	vProfile := ffmpeg.P720p30fps16x9
 	hlsStrmID := core.MakeStreamID(core.RandomManifestID(), &vProfile)
 	url, _ := url.Parse(fmt.Sprintf("rtmp://localhost:1935/movie?hlsStrmID=%v", hlsStrmID))
-	strm := stream.NewBasicRTMPVideoStream(hlsStrmID.String())
+	strm := stream.NewBasicRTMPVideoStream(string(hlsStrmID.ManifestID) + "/source")
 
 	if err := handler(url, strm); err != nil {
 		t.Errorf("Error: %v", err)
 	}
 
 	segName := "test_seg/1.ts"
-	err := s.LatestPlaylist().InsertHLSSegment(hlsStrmID, 1, segName, 12)
+	err := s.LatestPlaylist().InsertHLSSegment(&vProfile, 1, segName, 12)
 	if err != nil {
 		t.Fatal(err)
 	}
