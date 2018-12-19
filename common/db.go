@@ -19,12 +19,19 @@ type DB struct {
 	dbh *sql.DB
 
 	// prepared statements
+	selectOrchs                *sql.Stmt
+	updateOrchs                *sql.Stmt
 	updateKV                   *sql.Stmt
 	insertUnbondingLock        *sql.Stmt
 	useUnbondingLock           *sql.Stmt
 	unbondingLocks             *sql.Stmt
 	withdrawableUnbondingLocks *sql.Stmt
 	insertWinningTicket        *sql.Stmt
+}
+
+type DBOrch struct {
+	ServiceURI   string
+	EthereumAddr string
 }
 
 type DBUnbondingLock struct {
@@ -46,6 +53,13 @@ var schema = `
 	);
 	INSERT OR IGNORE INTO kv(key, value) VALUES('dbVersion', '{{ . }}');
 	INSERT OR IGNORE INTO kv(key, value) VALUES('lastBlock', '0');
+
+	CREATE TABLE IF NOT EXISTS orchestrators (
+		ethereumAddr STRING PRIMARY KEY,
+		createdAt STRING DEFAULT CURRENT_TIMESTAMP,
+		updatedAt STRING DEFAULT CURRENT_TIMESTAMP,
+		serviceURI STRING
+	);
 
 	CREATE TABLE IF NOT EXISTS unbondingLocks (
 		id INTEGER NOT NULL,
@@ -72,6 +86,10 @@ var schema = `
 
 	CREATE INDEX IF NOT EXISTS idx_winningtickets_sessionid ON winningTickets(sessionID);
 `
+
+func NewDBOrch(serviceURI string, orchAddr string) *DBOrch {
+	return &DBOrch{ServiceURI: serviceURI, EthereumAddr: orchAddr}
+}
 
 func InitDB(dbPath string) (*DB, error) {
 	// XXX need a way to ensure (via unit tests?) that all DB{} fields are
@@ -117,8 +135,26 @@ func InitDB(dbPath string) (*DB, error) {
 		// all good; nothing to do
 	}
 
+	// select all orchestrators updated in the last 24 hours
+	stmt, err := db.Prepare("SELECT serviceURI, ethereumAddr FROM orchestrators WHERE updatedAt >= datetime('now','-1 day')")
+	if err != nil {
+		glog.Error("Unable to select orchestrators updated in the past 24 hours", err)
+		d.Close()
+		return nil, err
+	}
+	d.selectOrchs = stmt
+
+	// updateOrchestrators statement
+	stmt, err = db.Prepare("INSERT OR REPLACE INTO orchestrators(updatedAt, serviceURI, ethereumAddr) VALUES(datetime(), ?, ?)")
+	if err != nil {
+		glog.Error("Unable to prepare updateOrchestrators stmt ", err)
+		d.Close()
+		return nil, err
+	}
+	d.updateOrchs = stmt
+
 	// updateKV prepared statement
-	stmt, err := db.Prepare("UPDATE kv SET value=?, updatedAt = datetime() WHERE key=?")
+	stmt, err = db.Prepare("UPDATE kv SET value=?, updatedAt = datetime() WHERE key=?")
 	if err != nil {
 		glog.Error("Unable to prepare updatekv stmt ", err)
 		d.Close()
@@ -171,6 +207,12 @@ func InitDB(dbPath string) (*DB, error) {
 
 func (db *DB) Close() {
 	glog.V(DEBUG).Info("Closing DB")
+	if db.updateOrchs != nil {
+		db.updateOrchs.Close()
+	}
+	if db.selectOrchs != nil {
+		db.selectOrchs.Close()
+	}
 	if db.updateKV != nil {
 		db.updateKV.Close()
 	}
@@ -221,6 +263,45 @@ func (db *DB) LastSeenBlock() (*big.Int, error) {
 	}
 
 	return big.NewInt(lastSeenBlock), nil
+}
+
+func (db *DB) UpdateOrchs(orch *DBOrch) error {
+	if db == nil {
+		return nil
+	}
+	_, err := db.updateOrchs.Exec(orch.ServiceURI, orch.EthereumAddr)
+	if err != nil {
+		glog.Error("db: Unable to update orchestrator ", err)
+	}
+
+	return err
+}
+
+func (db *DB) SelectOrchs() ([]*DBOrch, error) {
+	if db == nil {
+		return nil, nil
+	}
+
+	rows, err := db.selectOrchs.Query()
+	defer rows.Close()
+	if err != nil {
+		glog.Error("db: Unable to get orchestrators updated in the last 24 hours", err)
+		return nil, err
+	}
+	orchs := []*DBOrch{}
+	for rows.Next() {
+		var orch DBOrch
+		var serviceURI string
+		var ethereumAddr string
+		if err := rows.Scan(&serviceURI, &ethereumAddr); err != nil {
+			glog.Error("db: Unable to fetch orchestrator ", err)
+			continue
+		}
+		orch.ServiceURI = serviceURI
+		orch.EthereumAddr = ethereumAddr
+		orchs = append(orchs, &orch)
+	}
+	return orchs, nil
 }
 
 func (db *DB) InsertUnbondingLock(id *big.Int, delegator ethcommon.Address, amount, withdrawRound *big.Int) error {

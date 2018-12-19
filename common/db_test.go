@@ -106,6 +106,13 @@ func TestDBVersion(t *testing.T) {
 	}
 }
 
+func NewStubOrch(serviceURI string, ethereumAddr string) *DBOrch {
+	return &DBOrch{
+		ServiceURI:   serviceURI,
+		EthereumAddr: ethereumAddr,
+	}
+}
+
 func profilesMatch(j1 []ffmpeg.VideoProfile, j2 []ffmpeg.VideoProfile) bool {
 	if len(j1) != len(j2) {
 		return false
@@ -116,6 +123,47 @@ func profilesMatch(j1 []ffmpeg.VideoProfile, j2 []ffmpeg.VideoProfile) bool {
 		}
 	}
 	return true
+}
+
+func TestDBOrchestrators(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	orch := NewStubOrch("127.0.0.1:8936", "0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe")
+	err = dbh.UpdateOrchs(orch)
+
+	if err != nil {
+		t.Error("Unexpected error in update orchs: ", err)
+	}
+
+	orchs, err := dbh.SelectOrchs()
+	if err != nil || len(orchs) != 1 || orchs[0].ServiceURI != orch.ServiceURI {
+		t.Error("Unexpected error in update orchs: ", err)
+	}
+
+	orchUpdate := NewStubOrch("127.0.0.1:8937", "0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe")
+	err = dbh.UpdateOrchs(orchUpdate)
+
+	if err != nil {
+		t.Error("Unexpected error in update orchs: ", err)
+	}
+
+	orchs, err = dbh.SelectOrchs()
+	if err != nil || len(orchs) != 1 || orchs[0].ServiceURI != orchUpdate.ServiceURI {
+		t.Error("Unexpected error in update orchs: ", err)
+	}
+
+	orchAdd := NewStubOrch("127.0.0.1:8938", "0x5eD8Cee6b63b1c6AFce3AD7c92f4fD7E1B8fAd9F")
+	err = dbh.UpdateOrchs(orchAdd)
+
+	if err != nil {
+		t.Error("Unexpected error in update orchs: ", err)
+	}
+	orchs, err = dbh.SelectOrchs()
+	if err != nil || len(orchs) != 2 || orchs[1].ServiceURI != orchAdd.ServiceURI {
+		t.Error("Unexpected error in update orchs: ", err)
+	}
 }
 
 func TestDBUnbondingLocks(t *testing.T) {

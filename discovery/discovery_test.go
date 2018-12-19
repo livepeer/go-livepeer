@@ -41,6 +41,17 @@ func StubOrchestrators(addresses []string) []*lpTypes.Transcoder {
 	return orchestrators
 }
 
+func TestNewDBOrchestrators(t *testing.T) {
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+	orchestrators := StubOrchestrators(addresses)
+	dbOrchs, err := NewDBOrchestrators(node, orchestrators)
+
+	if err != nil || len(dbOrchs) != 3 || dbOrchs[2].ServiceURI != "https://127.0.0.1:8938" {
+		t.Error("NewDBOrchestrator not created: ", err)
+	}
+}
+
 func TestNewOrchestratorPool(t *testing.T) {
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
