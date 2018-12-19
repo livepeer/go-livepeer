@@ -53,13 +53,14 @@ func main() {
 	// Override the default flag set since there are dependencies that
 	// incorrectly add their own flags (specifically, due to the 'testing'
 	// package being linked)
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	flag.Set("logtostderr", "true")
-
 	usr, err := user.Current()
 	if err != nil {
 		glog.Fatalf("Cannot find current user: %v", err)
 	}
+	vFlag := flag.Lookup("v") //We preserve this flag before resetting all the flags.  Not a scalable approach, but it'll do for now.  More discussions here - https://github.com/livepeer/go-livepeer/pull/617
+
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
 	rtmpAddr := flag.String("rtmpAddr", "127.0.0.1:"+RtmpPort, "Address to bind for RTMP commands")
@@ -93,9 +94,12 @@ func main() {
 	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
 	standaloneTranscoder := flag.Bool("standaloneTranscoder", false, "Set to true to be a standalone transcoder")
-	var transcoder bool
+	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
 
 	flag.Parse()
+	vFlag.Value.Set(*verbosity)
+
+	var transcoder bool
 
 	if *version {
 		fmt.Println("Livepeer Node Version: " + core.LivepeerVersion)
