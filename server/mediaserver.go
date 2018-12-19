@@ -147,7 +147,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		//Create a ManifestID
 		//If manifestID is passed in, use that one
 		//Else create one
-		mid := parseManifestID(url.Query().Get("hlsStrmID"))
+		mid := parseManifestID(url.Query().Get("manifestID"))
 		if mid == "" {
 			mid = core.RandomManifestID()
 		}
@@ -275,13 +275,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			// TODO: Check broadcaster's deposit with TicketBroker
 		}
 
-		//Create a HLS StreamID
-		//If streamID is passed in, use that one to capture the rendition
-		//Else use RTMP manifest ID as base
-		hlsStrmID := parseStreamID(url.Query().Get("hlsStrmID"))
-		if hlsStrmID.ManifestID == "" || hlsStrmID.Rendition == "" {
-			hlsStrmID = core.MakeStreamID(mid, &vProfile)
-		}
+		hlsStrmID := core.MakeStreamID(mid, &vProfile)
 
 		LastHLSStreamID = hlsStrmID
 
