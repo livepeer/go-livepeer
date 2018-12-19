@@ -818,7 +818,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 	})
 
 	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf("\n\nCurrentPlaylist: %v", s.CurrentPlaylist)))
+		w.Write([]byte(fmt.Sprintf("\n\nLatestPlaylist: %v", s.LatestPlaylist())))
 	})
 
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
