@@ -206,8 +206,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		LastManifestID = mid
 
 		startSeq := 0
-		cpl := cxn.pl
-		var sess *BroadcastSession
 
 		if s.LivepeerNode.Eth != nil {
 			// TODO: Check broadcaster's deposit with TicketBroker
@@ -257,31 +255,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		glog.V(common.SHORT).Infof("\n\nhlsStrmID: %v\n\n", hlsStrmID)
 
 		//Create Transcode Job Onchain
-		go func() {
-			// Connect to the orchestrator. If it fails, retry for as long
-			// as the RTMP stream is alive; maybe the orchestrator hasn't
-			// received the block containing the job yet
-			broadcastFunc := func() error {
-				sess, err = selectOrchestrator(s.LivepeerNode, cpl)
-				if err == ErrDiscovery {
-					return nil // discovery disabled, don't retry
-				} else if err != nil {
-					// Should be logged upstream
-				}
-				s.connectionLock.Lock()
-				defer s.connectionLock.Unlock()
-				cxn, active := s.rtmpConnections[mid]
-				if active {
-					cxn.sess = sess
-					return err
-				}
-				return nil // stop if inactive
-			}
-			expb := backoff.NewExponentialBackOff()
-			expb.MaxInterval = BroadcastRetry
-			expb.MaxElapsedTime = 0
-			backoff.Retry(broadcastFunc, expb)
-		}()
+		go s.startSession(cxn)
 		return nil
 	}
 }
@@ -305,6 +279,35 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		return nil
 	}
+}
+
+func (s *LivepeerServer) startSession(cxn *rtmpConnection) {
+
+	mid := rtmpManifestID(cxn.stream)
+	cpl := cxn.pl
+
+	// Connect to the orchestrator. If it fails, retry for as long
+	// as the RTMP stream is alive
+	broadcastFunc := func() error {
+		sess, err := selectOrchestrator(s.LivepeerNode, cpl)
+		if err == ErrDiscovery {
+			return nil // discovery disabled, don't retry
+		} else if err != nil {
+			// Should be logged upstream
+		}
+		s.connectionLock.Lock()
+		defer s.connectionLock.Unlock()
+		cxn, active := s.rtmpConnections[mid]
+		if active {
+			cxn.sess = sess
+			return err
+		}
+		return nil // stop if inactive
+	}
+	expb := backoff.NewExponentialBackOff()
+	expb.MaxInterval = BroadcastRetry
+	expb.MaxElapsedTime = 0
+	backoff.Retry(broadcastFunc, expb)
 }
 
 //End RTMP Publish Handlers
