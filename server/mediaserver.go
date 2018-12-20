@@ -43,6 +43,7 @@ var ErrRTMPPlay = errors.New("ErrRTMPPlay")
 var ErrRoundInit = errors.New("ErrRoundInit")
 var ErrStorage = errors.New("ErrStorage")
 var ErrDiscovery = errors.New("ErrDiscovery")
+var ErrNoOrchs = errors.New("ErrNoOrchs")
 var ErrUnknownStream = errors.New("ErrUnknownStream")
 
 const HLSWaitInterval = time.Second
@@ -176,8 +177,11 @@ func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSes
 	rpcBcast := core.NewBroadcaster(s.LivepeerNode)
 
 	tinfos, err := s.LivepeerNode.OrchestratorPool.GetOrchestrators(1)
-	if len(tinfos) <= 0 || err != nil {
+	if len(tinfos) <= 0 {
 		glog.Info("No orchestrators found; not transcoding. Error: ", err)
+		return nil, ErrNoOrchs
+	}
+	if err != nil {
 		return nil, err
 	}
 	tinfo := tinfos[0]
