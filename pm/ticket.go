@@ -14,6 +14,18 @@ const (
 	bytes32Size = 32
 )
 
+// TicketParams represents the parameters defined by a receiver that a sender must adhere to when
+// sending tickets to receiver.
+type TicketParams struct {
+	FaceValue *big.Int
+
+	WinProb *big.Int
+
+	RecipientRandHash ethcommon.Hash
+
+	Seed *big.Int
+}
+
 // Ticket is lottery ticket payment in a probabilistic micropayment protocol
 // The expected value of the ticket constitutes the payment and can be
 // calculated using the ticket's face value and winning probability
