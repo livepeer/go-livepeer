@@ -226,11 +226,12 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	}()
 }
 
+var sessionErrStrings = []string{"dial tcp", "unexpected EOF", core.ErrOrchBusy.Error()}
+
 func generateSessionErrors() *regexp.Regexp {
 	// Given a list [err1, err2, err3] generates a regexp `(err1)|(err2)|(err3)`
-	errStrings := []string{"dial tcp", "unexpected EOF", "TranscoderBusy"}
 	groups := []string{}
-	for _, v := range errStrings {
+	for _, v := range sessionErrStrings {
 		groups = append(groups, fmt.Sprintf("(%v)", v))
 	}
 	return regexp.MustCompile(strings.Join(groups, "|"))
