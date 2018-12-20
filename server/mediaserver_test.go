@@ -80,7 +80,7 @@ func TestStartBroadcast(t *testing.T) {
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
-	s.LivepeerNode.OrchestratorSelector = sd
+	s.LivepeerNode.OrchestratorPool = sd
 	if sess, _ := s.startBroadcast(pl); sess != nil {
 		t.Error("Expected nil session")
 	}
