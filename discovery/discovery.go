@@ -7,9 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
 
@@ -53,29 +51,11 @@ func NewOnchainOrchestratorPool(node *core.LivepeerNode) *orchestratorPool {
 		return nil
 	}
 
-	ticker := time.NewTicker(1 * time.Hour)
-	// quit := make(chan struct{})
-	var orchestrators []*lpTypes.Transcoder
-	go func(node *core.LivepeerNode) {
-		for {
-			select {
-			case <-ticker.C:
-				orchestrators, err := node.Eth.RegisteredTranscoders()
-				if err != nil {
-					glog.Error("Could not refresh DB list of orchestrators: ", err)
-					return
-				}
-				_, dbOrchErr := NewDBOrchestrators(node, orchestrators)
-				if dbOrchErr != nil {
-					glog.Error("Could not refresh DB list of orchestrators: NewDBOrchestrators err")
-					return
-				}
-				// case <-quit:
-				// 	ticker.Stop()
-				// 	return
-			}
-		}
-	}(node)
+	orchestrators, err := node.Eth.RegisteredTranscoders()
+	if err != nil {
+		glog.Error("Could not refresh DB list of orchestrators: ", err)
+		return nil
+	}
 
 	var addresses []string
 	for _, orch := range orchestrators {
@@ -83,46 +63,6 @@ func NewOnchainOrchestratorPool(node *core.LivepeerNode) *orchestratorPool {
 	}
 
 	return NewOrchestratorPool(node, addresses)
-}
-
-func NewDBOrchestrators(node *core.LivepeerNode, orchs []*lpTypes.Transcoder) ([]*common.DBOrch, error) {
-	var dbOrchs []*common.DBOrch
-	if orchs == nil {
-		glog.Error("No new DB orchestrators created: no orchestrators found onchain")
-		return dbOrchs, nil
-	}
-
-	for _, orch := range orchs {
-		dbOrch := EthOrchToDBOrch(orch)
-		if err := node.Database.UpdateOrchs(dbOrch); err != nil {
-			glog.Error("Error updating Orchestrator in DB: ", err)
-			return nil, err
-		}
-		dbOrchs = append(dbOrchs, dbOrch)
-	}
-	return dbOrchs, nil
-}
-
-func EthOrchToDBOrch(orch *lpTypes.Transcoder) *common.DBOrch {
-	if orch == nil {
-		return nil
-	}
-	return common.NewDBOrch(orch.ServiceURI, orch.Address.String())
-}
-
-func GetOrchestratorsFromDB(node *core.LivepeerNode, numOrchestrators int) ([]*net.OrchestratorInfo, error) {
-	// Get orchestrators that have been updated in the past 24h
-	orchs, err := node.Database.SelectOrchs()
-	if err != nil {
-		return nil, err
-	}
-	var addresses []string
-	for _, orch := range orchs {
-		addr := orch.ServiceURI
-		addresses = append(addresses, addr)
-	}
-	offchainOrchList := NewOrchestratorPool(node, addresses)
-	return offchainOrchList.GetOrchestrators(numOrchestrators)
 }
 
 func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {

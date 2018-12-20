@@ -377,7 +377,7 @@ func main() {
 		if len(orchAddresses) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchAddresses)
 		} else if !*offchain {
-			n.OrchestratorPool = discovery.NewOnchainOrchestratorPool(n)
+			n.OrchestratorPool = discovery.NewDBOrchestratorPoolCache(n)
 		}
 		if n.OrchestratorPool == nil {
 			glog.Errorf("No orchestrator specified; transcoding will not happen")

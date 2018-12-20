@@ -178,6 +178,7 @@ func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSes
 
 	tinfos, err := s.LivepeerNode.OrchestratorPool.GetOrchestrators(1)
 	if len(tinfos) <= 0 || err != nil {
+		glog.Info("No orchestrators found; not transcoding. Error: ", err)
 		return nil, err
 	}
 	tinfo := tinfos[0]
