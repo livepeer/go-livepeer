@@ -2,18 +2,74 @@ package server
 
 import (
 	"fmt"
+	"math/big"
 	"sync"
 
 	"github.com/golang/glog"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/livepeer/lpms/stream"
 )
+
+func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager) (*BroadcastSession, error) {
+
+	if n.OrchestratorPool == nil {
+		glog.Info("No orchestrators specified; not transcoding")
+		return nil, ErrDiscovery
+	}
+
+	rpcBcast := core.NewBroadcaster(n)
+
+	tinfos, err := n.OrchestratorPool.GetOrchestrators(1)
+	if len(tinfos) <= 0 {
+		glog.Info("No orchestrators found; not transcoding. Error: ", err)
+		return nil, ErrNoOrchs
+	}
+	if err != nil {
+		return nil, err
+	}
+	tinfo := tinfos[0]
+
+	var sessionID string
+
+	if n.Sender != nil {
+		protoParams := tinfo.TicketParams
+		params := pm.TicketParams{
+			Recipient:         ethcommon.BytesToAddress(protoParams.Recipient),
+			FaceValue:         new(big.Int).SetBytes(protoParams.FaceValue),
+			WinProb:           new(big.Int).SetBytes(protoParams.WinProb),
+			RecipientRandHash: ethcommon.BytesToHash(protoParams.RecipientRandHash),
+			Seed:              new(big.Int).SetBytes(protoParams.Seed),
+		}
+
+		sessionID = n.Sender.StartSession(params)
+	}
+
+	// set OSes
+	var orchOS drivers.OSSession
+	if len(tinfo.Storage) > 0 {
+		orchOS = drivers.NewSession(tinfo.Storage[0])
+	}
+
+	return &BroadcastSession{
+		Broadcaster:      rpcBcast,
+		ManifestID:       cpl.ManifestID(),
+		Profiles:         BroadcastJobVideoProfiles,
+		OrchestratorInfo: tinfo,
+		OrchestratorOS:   orchOS,
+		BroadcasterOS:    cpl.GetOSSession(),
+		Sender:           n.Sender,
+		PMSessionID:      sessionID,
+	}, nil
+}
 
 func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 

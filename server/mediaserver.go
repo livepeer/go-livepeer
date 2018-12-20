@@ -21,7 +21,6 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
@@ -167,58 +166,6 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 }
 
-func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSession, error) {
-
-	if s.LivepeerNode.OrchestratorPool == nil {
-		glog.Info("No orchestrators specified; not transcoding")
-		return nil, ErrDiscovery
-	}
-
-	rpcBcast := core.NewBroadcaster(s.LivepeerNode)
-
-	tinfos, err := s.LivepeerNode.OrchestratorPool.GetOrchestrators(1)
-	if len(tinfos) <= 0 {
-		glog.Info("No orchestrators found; not transcoding. Error: ", err)
-		return nil, ErrNoOrchs
-	}
-	if err != nil {
-		return nil, err
-	}
-	tinfo := tinfos[0]
-
-	var sessionID string
-
-	if s.LivepeerNode.Sender != nil {
-		protoParams := tinfo.TicketParams
-		params := pm.TicketParams{
-			Recipient:         ethcommon.BytesToAddress(protoParams.Recipient),
-			FaceValue:         new(big.Int).SetBytes(protoParams.FaceValue),
-			WinProb:           new(big.Int).SetBytes(protoParams.WinProb),
-			RecipientRandHash: ethcommon.BytesToHash(protoParams.RecipientRandHash),
-			Seed:              new(big.Int).SetBytes(protoParams.Seed),
-		}
-
-		sessionID = s.LivepeerNode.Sender.StartSession(params)
-	}
-
-	// set OSes
-	var orchOS drivers.OSSession
-	if len(tinfo.Storage) > 0 {
-		orchOS = drivers.NewSession(tinfo.Storage[0])
-	}
-
-	return &BroadcastSession{
-		Broadcaster:      rpcBcast,
-		ManifestID:       cpl.ManifestID(),
-		Profiles:         BroadcastJobVideoProfiles,
-		OrchestratorInfo: tinfo,
-		OrchestratorOS:   orchOS,
-		BroadcasterOS:    cpl.GetOSSession(),
-		Sender:           s.LivepeerNode.Sender,
-		PMSessionID:      sessionID,
-	}, nil
-}
-
 func rtmpManifestID(rtmpStrm stream.RTMPVideoStream) core.ManifestID {
 	return parseManifestID(rtmpStrm.GetStreamID())
 }
@@ -315,7 +262,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			// as the RTMP stream is alive; maybe the orchestrator hasn't
 			// received the block containing the job yet
 			broadcastFunc := func() error {
-				sess, err = s.startBroadcast(cpl)
+				sess, err = selectOrchestrator(s.LivepeerNode, cpl)
 				if err == ErrDiscovery {
 					return nil // discovery disabled, don't retry
 				} else if err != nil {
