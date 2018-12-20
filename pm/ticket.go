@@ -14,6 +14,8 @@ const (
 	bytes32Size = 32
 )
 
+// TicketParams represents the parameters defined by a receiver that a sender must adhere to when
+// sending tickets to receiver.
 type TicketParams struct {
 	FaceValue *big.Int
 
