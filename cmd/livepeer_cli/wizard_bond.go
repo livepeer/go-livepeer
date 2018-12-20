@@ -100,13 +100,21 @@ func (w *wizard) unbondingLockStats(withdrawable bool) map[int64]bool {
 	fmt.Println("+---------------+")
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "Amount", "Withdraw Round"})
-
+	table.SetHeader([]string{"ID", "Amount", "Withdraw Round", "Can Withdraw"})
 	for _, u := range unbondingLocks {
+		currentRound  := w.currentRound()
+		withdrawRound := strconv.FormatInt(u.WithdrawRound, 10)
+		
+		canWithdraw := "no"
+		if withdrawRound <= currentRound {
+			canWithdraw = "yes"
+		}
+
 		table.Append([]string{
 			strconv.FormatInt(u.ID, 10),
 			eth.FormatUnits(u.Amount, "LPT"),
-			strconv.FormatInt(u.WithdrawRound, 10),
+			withdrawRound,
+			canWithdraw,
 		})
 
 		unbondingLockIDs[u.ID] = true
@@ -295,7 +303,7 @@ func (w *wizard) unbond() {
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/unbond", w.host, w.httpPort), val)
 }
 
-func (w *wizard) withdrawStake() {
+func (w *wizard)  withdrawStake() {
 	dInfo, err := w.getDelegatorInfo()
 	if err != nil {
 		glog.Error("Error getting delegator info: %v", err)

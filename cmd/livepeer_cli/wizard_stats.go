@@ -51,11 +51,12 @@ func (w *wizard) stats(showOrchestrator bool) {
 	if showOrchestrator {
 		w.orchestratorStats()
 		w.orchestratorEventSubscriptions()
-		w.delegatorStats()
 	} else {
 		w.broadcastStats()
-		w.delegatorStats()
 	}
+	
+	w.delegatorStats()
+	w.unbondingLockStats(false)
 
 	currentRound := w.currentRound()
 
