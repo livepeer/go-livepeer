@@ -18,8 +18,6 @@ import (
 	"sync"
 	"time"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
@@ -63,10 +61,11 @@ var LastHLSStreamID core.StreamID
 var LastManifestID core.ManifestID
 
 type rtmpConnection struct {
-	nonce  uint64
-	stream stream.RTMPVideoStream
-	pl     core.PlaylistManager
-	sess   *BroadcastSession
+	nonce   uint64
+	stream  stream.RTMPVideoStream
+	pl      core.PlaylistManager
+	sess    *BroadcastSession
+	profile *ffmpeg.VideoProfile
 }
 
 type LivepeerServer struct {
@@ -230,6 +229,13 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			return ErrStorage
 		}
 		storage := drivers.NodeStorage.NewSession(string(mid))
+		// Build the source video profile from the RTMP stream.
+		resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
+		vProfile := ffmpeg.VideoProfile{
+			Name:       "source",
+			Resolution: resolution,
+			Bitrate:    "4000k", // Fix this
+		}
 		s.connectionLock.Lock()
 		_, exists := s.rtmpConnections[mid]
 		if exists {
@@ -239,21 +245,14 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 		nonce := rand.Uint64()
 		cxn := &rtmpConnection{
-			nonce:  nonce,
-			stream: rtmpStrm,
-			pl:     core.NewBasicPlaylistManager(mid, storage),
+			nonce:   nonce,
+			stream:  rtmpStrm,
+			pl:      core.NewBasicPlaylistManager(mid, storage),
+			profile: &vProfile,
 		}
 		s.rtmpConnections[mid] = cxn
 		s.connectionLock.Unlock()
 		LastManifestID = mid
-
-		// Build the source video profile from the RTMP stream.
-		resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
-		vProfile := ffmpeg.VideoProfile{
-			Name:       "source",
-			Resolution: resolution,
-			Bitrate:    "4000k", // Fix this
-		}
 
 		startSeq := 0
 		cpl := cxn.pl
@@ -277,143 +276,13 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					// XXX update HLS manifest
 					return
 				}
-
 				if streamStarted == false {
 					streamStarted = true
 					if monitor.Enabled {
 						monitor.LogStreamStartedEvent(nonce)
 					}
 				}
-				if monitor.Enabled {
-					monitor.LogSegmentEmerged(nonce, seg.SeqNo)
-				}
-
-				seg.Name = "" // hijack seg.Name to convey the uploaded URI
-				name := fmt.Sprintf("%s/%d.ts", vProfile.Name, seg.SeqNo)
-				uri, err := cpl.GetOSSession().SaveData(name, seg.Data)
-				if err != nil {
-					glog.Errorf("Error saving segment %d: %v", seg.SeqNo, err)
-					if monitor.Enabled {
-						monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
-					}
-					return
-				}
-				if cpl.GetOSSession().IsExternal() {
-					seg.Name = uri // hijack seg.Name to convey the uploaded URI
-				}
-				err = cpl.InsertHLSSegment(&vProfile, seg.SeqNo, uri, seg.Duration)
-				if monitor.Enabled {
-					monitor.LogSourceSegmentAppeared(nonce, seg.SeqNo, string(mid), vProfile.Name)
-					glog.V(6).Infof("Appeared segment %d", seg.SeqNo)
-				}
-				if err != nil {
-					glog.Errorf("Error inserting segment %d: %v", seg.SeqNo, err)
-					if monitor.Enabled {
-						monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
-					}
-				}
-
-				if sess != nil {
-					go func() {
-						// storage the orchestrator prefers
-						if ios := sess.OrchestratorOS; ios != nil {
-							// XXX handle case when orch expects direct upload
-							uri, err := ios.SaveData(name, seg.Data)
-							if err != nil {
-								glog.Error("Error saving segment to OS ", err)
-								if monitor.Enabled {
-									monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
-								}
-								return
-							}
-							seg.Name = uri // hijack seg.Name to convey the uploaded URI
-						}
-
-						// send segment to the orchestrator
-						glog.V(common.DEBUG).Infof("Submitting segment %d", seg.SeqNo)
-
-						res, err := SubmitSegment(sess, seg, nonce)
-						if err != nil {
-							if shouldStopStream(err) {
-								glog.Warningf("Stopping current stream due to: %v", err)
-								rtmpStrm.Close()
-							}
-							return
-						}
-
-						// download transcoded segments from the transcoder
-						gotErr := false // only send one error msg per segment list
-						errFunc := func(subType, url string, err error) {
-							glog.Errorf("%v error with segment %v: %v (URL: %v)", subType, seg.SeqNo, err, url)
-							if monitor.Enabled && !gotErr {
-								monitor.LogSegmentTranscodeFailed(subType, nonce, seg.SeqNo, err)
-								gotErr = true
-							}
-						}
-
-						segHashes := make([][]byte, len(res.Segments))
-						n := len(res.Segments)
-						SegHashLock := &sync.Mutex{}
-						cond := sync.NewCond(SegHashLock)
-
-						dlFunc := func(url string, i int) {
-							defer func() {
-								cond.L.Lock()
-								n--
-								if n == 0 {
-									cond.Signal()
-								}
-								cond.L.Unlock()
-							}()
-
-							if bos := sess.BroadcasterOS; bos != nil && !drivers.IsOwnExternal(url) {
-								data, err := drivers.GetSegmentData(url)
-								if err != nil {
-									errFunc("Download", url, err)
-									return
-								}
-								name := fmt.Sprintf("%s/%d.ts", sess.Profiles[i].Name, seg.SeqNo)
-								newUrl, err := bos.SaveData(name, data)
-								if err != nil {
-									errFunc("SaveData", url, err)
-									return
-								}
-								url = newUrl
-
-								hash := crypto.Keccak256(data)
-								SegHashLock.Lock()
-								segHashes[i] = hash
-								SegHashLock.Unlock()
-							}
-
-							if monitor.Enabled {
-								monitor.LogTranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
-							}
-							err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
-							if err != nil {
-								errFunc("Playlist", url, err)
-								return
-							}
-						}
-
-						for i, v := range res.Segments {
-							go dlFunc(v.Url, i)
-						}
-
-						cond.L.Lock()
-						for n != 0 {
-							cond.Wait()
-						}
-						cond.L.Unlock()
-
-						// if !eth.VerifySig(transcoderAddress, crypto.Keccak256(segHashes...), res.Sig) { // need transcoder address here
-						// 	glog.Error("Sig check failed for segment ", seg.SeqNo)
-						// 	return
-						// }
-
-						glog.V(common.DEBUG).Info("Successfully validated segment ", seg.SeqNo)
-					}()
-				}
+				processSegment(cxn, seg)
 			})
 
 			segOptions := segmenter.SegmenterOptions{
