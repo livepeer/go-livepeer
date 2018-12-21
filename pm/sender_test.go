@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -16,17 +17,17 @@ func TestStartSession_GivenSomeRecipientRandHash_UsesItAsSessionId(t *testing.T)
 	sender := defaultSender(t)
 	recipient := ethcommon.Address{}
 	ticketParams := defaultTicketParams(t)
-	expectedSessionId := hashToHex(ticketParams.RecipientRandHash)
+	expectedSessionID := hashToHex(ticketParams.RecipientRandHash)
 
-	sessionId := sender.StartSession(recipient, TicketParams{
+	sessionID := sender.StartSession(recipient, TicketParams{
 		FaceValue:         big.NewInt(0),
 		WinProb:           big.NewInt(0),
 		Seed:              big.NewInt(0),
 		RecipientRandHash: ticketParams.RecipientRandHash,
 	})
 
-	if sessionId != expectedSessionId {
-		t.Errorf("expected %v to equal %v", sessionId, expectedSessionId)
+	if sessionID != expectedSessionID {
+		t.Errorf("expected %v to equal %v", sessionID, expectedSessionID)
 	}
 }
 
@@ -39,8 +40,8 @@ func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
 	ch := make(chan struct{})
 	for i := 0; i < 100; i++ {
 		ticketParams := defaultTicketParams(t)
-		expectedSessionId := hashToHex(ticketParams.RecipientRandHash)
-		sessions = append(sessions, expectedSessionId)
+		expectedSessionID := hashToHex(ticketParams.RecipientRandHash)
+		sessions = append(sessions, expectedSessionID)
 
 		go func() {
 			sender.StartSession(recipient, TicketParams{
@@ -58,10 +59,10 @@ func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
 	// waiting for all session to be created
 	<-ch
 
-	for _, sessionId := range sessions {
-		_, ok := sender.sessions.Load(sessionId)
+	for _, sessionID := range sessions {
+		_, ok := sender.sessions.Load(sessionID)
 		if !ok {
-			t.Errorf("expected to find sessionId in sender. sessionId: %v", sessionId)
+			t.Errorf("expected to find sessionID in sender. sessionID: %v", sessionID)
 		}
 	}
 }
@@ -129,9 +130,69 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 	}
 }
 
-// TODO sign error test
+func TestCreateTicket_GivenSigningError_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	recipient := randAddressOrFatal(t)
+	ticketParams := defaultTicketParams(t)
+	sessionID := sender.StartSession(recipient, ticketParams)
+	am := sender.accountManager.(*stubAccountManager)
+	am.signShouldFail = true
+
+	_, _, _, err := sender.CreateTicket(sessionID)
+
+	if err == nil {
+		t.Errorf("expected an error when trying to sign the ticket")
+	}
+	if !strings.Contains(err.Error(), "error signing") {
+		t.Errorf("expected error to contain 'error signing' but instead got: %v", err.Error())
+	}
+}
+
 func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCorrectly(t *testing.T) {
-	// TODO
+	totalTickets := 100
+	lock := sync.RWMutex{}
+	sender := defaultSender(t)
+	recipient := randAddressOrFatal(t)
+	ticketParams := defaultTicketParams(t)
+	sessionID := sender.StartSession(recipient, ticketParams)
+
+	var ticketCount int32
+	ch := make(chan struct{})
+	var tickets []*Ticket
+	for i := 0; i < totalTickets; i++ {
+
+		go func() {
+			ticket, _, _, _ := sender.CreateTicket(sessionID)
+
+			lock.Lock()
+			tickets = append(tickets, ticket)
+			lock.Unlock()
+
+			currentCount := atomic.AddInt32(&ticketCount, 1)
+			if currentCount >= int32(totalTickets) {
+				ch <- struct{}{}
+			}
+		}()
+	}
+	// waiting for all session to be created
+	<-ch
+
+	sessionUntyped, ok := sender.sessions.Load(sessionID)
+	if !ok {
+		t.Fatalf("failed to find session with ID %v", sessionID)
+	}
+	session := sessionUntyped.(*Session)
+	if session.senderNonce != uint64(totalTickets) {
+		t.Errorf("expected end state SenderNonce %d to be %d", session.senderNonce, totalTickets)
+	}
+
+	uniqueNonces := make(map[uint64]bool)
+	for _, ticket := range tickets {
+		uniqueNonces[ticket.SenderNonce] = true
+	}
+	if len(uniqueNonces) != totalTickets {
+		t.Errorf("expected unique nonces count %d to be %d", len(uniqueNonces), totalTickets)
+	}
 }
 
 func defaultSender(t *testing.T) *DefaultSender {
