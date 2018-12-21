@@ -141,6 +141,7 @@ func (v *stubValidator) IsWinningTicket(ticket *Ticket, sig []byte, recipientRan
 
 type stubAccountManager struct {
 	account         accounts.Account
+	saveSignRequest bool
 	lastSignRequest []byte
 	signResponse    []byte
 	signShouldFail  bool
@@ -163,7 +164,9 @@ func (am *stubAccountManager) SignTx(signer types.Signer, tx *types.Transaction)
 }
 
 func (am *stubAccountManager) Sign(msg []byte) ([]byte, error) {
-	am.lastSignRequest = msg
+	if am.saveSignRequest {
+		am.lastSignRequest = msg
+	}
 	if am.signShouldFail {
 		return nil, fmt.Errorf("stub returning error as requested")
 	}

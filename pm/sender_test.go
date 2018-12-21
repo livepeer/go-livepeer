@@ -84,6 +84,7 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 	sender := defaultSender(t)
 	am := sender.accountManager.(*stubAccountManager)
 	am.signShouldFail = false
+	am.saveSignRequest = true
 	am.signResponse = randBytesOrFatal(42, t)
 	senderAddress := sender.accountManager.Account().Address
 	recipient := randAddressOrFatal(t)
