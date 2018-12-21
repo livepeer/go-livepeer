@@ -135,7 +135,7 @@ type LivepeerEthClient interface {
 }
 
 type client struct {
-	accountManager *AccountManager
+	accountManager AccountManager
 	backend        *ethclient.Client
 
 	controllerAddr      ethcommon.Address
@@ -400,7 +400,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 }
 
 func (c *client) Account() accounts.Account {
-	return c.accountManager.Account
+	return c.accountManager.Account()
 }
 
 func (c *client) Backend() (*ethclient.Client, error) {
@@ -819,7 +819,7 @@ func (c *client) GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, err
 		ClaimBlock:                   cInfo.ClaimBlock,
 		EndVerificationBlock:         cInfo.EndVerificationBlock,
 		EndVerificationSlashingBlock: cInfo.EndVerificationSlashingBlock,
-		Status: status,
+		Status:                       status,
 	}, nil
 }
 

@@ -22,14 +22,23 @@ var (
 	ErrPassphraseMismatch = fmt.Errorf("passphrases do not match")
 )
 
-type AccountManager struct {
-	Account accounts.Account
+type AccountManager interface {
+	Unlock(passphrase string) error
+	Lock() error
+	CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error)
+	SignTx(signer types.Signer, tx *types.Transaction) (*types.Transaction, error)
+	Sign(msg []byte) ([]byte, error)
+	Account() accounts.Account
+}
+
+type DefaultAccountManager struct {
+	account accounts.Account
 
 	unlocked bool
 	keyStore *keystore.KeyStore
 }
 
-func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (*AccountManager, error) {
+func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (AccountManager, error) {
 	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
 
 	acctExists := keyStore.HasAddress(accountAddr)
@@ -43,7 +52,7 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (*Acco
 		glog.Infof("Please enter a passphrase to encrypt the Private Keystore file for the Ethereum account.")
 		glog.Infof("This process will ask for this passphrase every time it is launched")
 		glog.Infof("(no characters will appear in Terminal when the passphrase is entered)")
-		
+
 		// Account does not exist yet, set it up
 		acct, err = createAccount(keyStore)
 		if err != nil {
@@ -61,26 +70,26 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (*Acco
 
 	glog.Infof("Using Ethereum account: %v", acct.Address.Hex())
 
-	return &AccountManager{
-		Account:  acct,
+	return &DefaultAccountManager{
+		account:  acct,
 		unlocked: false,
 		keyStore: keyStore,
 	}, nil
 }
 
 // Unlock account indefinitely using underlying keystore
-func (am *AccountManager) Unlock(passphrase string) error {
+func (am *DefaultAccountManager) Unlock(passphrase string) error {
 	var err error
 
-	err = am.keyStore.Unlock(am.Account, passphrase)
+	err = am.keyStore.Unlock(am.account, passphrase)
 	if err != nil {
 		if passphrase != "" {
 			return err
 		}
-		glog.Infof("Please enter the passphrase to unlock Ethereum account %v", am.Account.Address.Hex())
+		glog.Infof("Please enter the passphrase to unlock Ethereum account %v", am.account.Address.Hex())
 
 		passphrase, err = getPassphrase(false)
-		err = am.keyStore.Unlock(am.Account, passphrase)
+		err = am.keyStore.Unlock(am.account, passphrase)
 		if err != nil {
 			return err
 		}
@@ -88,14 +97,14 @@ func (am *AccountManager) Unlock(passphrase string) error {
 
 	am.unlocked = true
 
-	glog.Infof("Unlocked ETH account: %v", am.Account.Address.Hex())
+	glog.Infof("Unlocked ETH account: %v", am.account.Address.Hex())
 
 	return nil
 }
 
 // Lock account using underlying keystore and remove associated private key from memory
-func (am *AccountManager) Lock() error {
-	err := am.keyStore.Lock(am.Account.Address)
+func (am *DefaultAccountManager) Lock() error {
+	err := am.keyStore.Lock(am.account.Address)
 	if err != nil {
 		return err
 	}
@@ -107,17 +116,17 @@ func (am *AccountManager) Lock() error {
 
 // Create transact opts for client use - account must be unlocked
 // Can optionally set gas limit and gas price used
-func (am *AccountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error) {
+func (am *DefaultAccountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error) {
 	if !am.unlocked {
 		return nil, ErrLocked
 	}
 
 	return &bind.TransactOpts{
-		From:     am.Account.Address,
+		From:     am.account.Address,
 		GasLimit: gasLimit,
 		GasPrice: gasPrice,
 		Signer: func(signer types.Signer, address ethcommon.Address, tx *types.Transaction) (*types.Transaction, error) {
-			if address != am.Account.Address {
+			if address != am.account.Address {
 				return nil, errors.New("not authorized to sign this account")
 			}
 
@@ -127,8 +136,8 @@ func (am *AccountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int)
 }
 
 // Sign a transaction. Account must be unlocked
-func (am *AccountManager) SignTx(signer types.Signer, tx *types.Transaction) (*types.Transaction, error) {
-	signature, err := am.keyStore.SignHash(am.Account, signer.Hash(tx).Bytes())
+func (am *DefaultAccountManager) SignTx(signer types.Signer, tx *types.Transaction) (*types.Transaction, error) {
+	signature, err := am.keyStore.SignHash(am.account, signer.Hash(tx).Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -137,11 +146,15 @@ func (am *AccountManager) SignTx(signer types.Signer, tx *types.Transaction) (*t
 }
 
 // Sign byte array message. Account must be unlocked
-func (am *AccountManager) Sign(msg []byte) ([]byte, error) {
+func (am *DefaultAccountManager) Sign(msg []byte) ([]byte, error) {
 	personalMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, msg)
 	personalHash := crypto.Keccak256([]byte(personalMsg))
 
-	return am.keyStore.SignHash(am.Account, personalHash)
+	return am.keyStore.SignHash(am.account, personalHash)
+}
+
+func (am *DefaultAccountManager) Account() accounts.Account {
+	return am.account
 }
 
 // Get account from keystore using hex address
