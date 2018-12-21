@@ -8,9 +8,6 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
-func hexToHash(in string) ethcommon.Hash {
-	return ethcommon.BytesToHash(ethcommon.FromHex(in))
-}
 func TestHash(t *testing.T) {
 	exp := hexToHash("24d4264d5ea56ba4362c8f535308005b2df1f9f77c34b4a61f6b5c3bef151b53")
 	ticket := &Ticket{
