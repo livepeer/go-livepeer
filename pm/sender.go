@@ -10,6 +10,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Sender enables starting multiple probabilistic micropayment sessions with multiple recipients
+// and create tickets that adhere to each session's params and unique nonce requirements.
 type Sender interface {
 	StartSession(recipient ethcommon.Address, ticketParams TicketParams) string
 
@@ -18,7 +20,7 @@ type Sender interface {
 	// Later: support receiving new recipientRandHash values mid-stream
 }
 
-type Session struct {
+type session struct {
 	senderNonce uint64
 
 	recipient ethcommon.Address
@@ -26,22 +28,23 @@ type Session struct {
 	ticketParams TicketParams
 }
 
-type DefaultSender struct {
+type defaultSender struct {
 	accountManager eth.AccountManager
 
 	sessions sync.Map
 }
 
+// NewSender creates a new Sender instance.
 func NewSender(accountManager eth.AccountManager) Sender {
-	return &DefaultSender{
+	return &defaultSender{
 		accountManager: accountManager,
 	}
 }
 
-func (s *DefaultSender) StartSession(recipient ethcommon.Address, ticketParams TicketParams) string {
+func (s *defaultSender) StartSession(recipient ethcommon.Address, ticketParams TicketParams) string {
 	sessionID := hashToHex(ticketParams.RecipientRandHash)
 
-	s.sessions.Store(sessionID, &Session{
+	s.sessions.Store(sessionID, &session{
 		recipient:    recipient,
 		ticketParams: ticketParams,
 		senderNonce:  0,
@@ -50,14 +53,14 @@ func (s *DefaultSender) StartSession(recipient ethcommon.Address, ticketParams T
 	return sessionID
 }
 
-func (s *DefaultSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
+func (s *defaultSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
 	recipientRandHash := hexToHash(sessionID)
 
 	tempSession, ok := s.sessions.Load(sessionID)
 	if !ok {
 		return nil, nil, nil, errors.Errorf("cannot create a ticket for an unknown session: %+v", sessionID)
 	}
-	session := tempSession.(*Session)
+	session := tempSession.(*session)
 
 	senderNonce := atomic.AddUint64(&session.senderNonce, 1)
 
