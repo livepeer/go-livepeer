@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type stubSigVerifier struct {
@@ -134,4 +137,39 @@ func (v *stubValidator) ValidateTicket(ticket *Ticket, sig []byte, recipientRand
 
 func (v *stubValidator) IsWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) bool {
 	return v.isWinningTicket
+}
+
+type stubAccountManager struct {
+	account         accounts.Account
+	lastSignRequest []byte
+	signResponse    []byte
+	signShouldFail  bool
+}
+
+func (am *stubAccountManager) Unlock(passphrase string) error {
+	return nil
+}
+
+func (am *stubAccountManager) Lock() error {
+	return nil
+}
+
+func (am *stubAccountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error) {
+	return nil, nil
+}
+
+func (am *stubAccountManager) SignTx(signer types.Signer, tx *types.Transaction) (*types.Transaction, error) {
+	return nil, nil
+}
+
+func (am *stubAccountManager) Sign(msg []byte) ([]byte, error) {
+	am.lastSignRequest = msg
+	if am.signShouldFail {
+		return nil, fmt.Errorf("stub returning error as requested")
+	}
+	return am.signResponse, nil
+}
+
+func (am *stubAccountManager) Account() accounts.Account {
+	return am.account
 }

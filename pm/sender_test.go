@@ -3,15 +3,17 @@ package pm
 import (
 	"crypto/rand"
 	"math/big"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
 func TestStartSession_GivenSomeRecipientRandHash_UsesItAsSessionId(t *testing.T) {
-	sender := NewSender(ethcommon.Address{})
+	sender := defaultSender(t)
 	recipient := ethcommon.Address{}
 	ticketParams := defaultTicketParams(t)
 	expectedSessionId := hashToHex(ticketParams.RecipientRandHash)
@@ -29,7 +31,7 @@ func TestStartSession_GivenSomeRecipientRandHash_UsesItAsSessionId(t *testing.T)
 }
 
 func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
-	sender := NewSender(ethcommon.Address{})
+	sender := defaultSender(t)
 	recipient := ethcommon.Address{}
 
 	var sessions []string
@@ -56,9 +58,8 @@ func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
 	// waiting for all session to be created
 	<-ch
 
-	ds := sender.(*DefaultSender)
 	for _, sessionId := range sessions {
-		_, ok := ds.sessions.Load(sessionId)
+		_, ok := sender.sessions.Load(sessionId)
 		if !ok {
 			t.Errorf("expected to find sessionId in sender. sessionId: %v", sessionId)
 		}
@@ -66,7 +67,7 @@ func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
 }
 
 func TestCreateTicket_GivenNonexistentSession_ReturnsError(t *testing.T) {
-	sender := NewSender(ethcommon.Address{})
+	sender := defaultSender(t)
 
 	_, _, _, err := sender.CreateTicket("foo")
 
@@ -79,8 +80,11 @@ func TestCreateTicket_GivenNonexistentSession_ReturnsError(t *testing.T) {
 }
 
 func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T) {
-	senderAddress := randAddressOrFatal(t)
-	sender := NewSender(senderAddress)
+	sender := defaultSender(t)
+	am := sender.accountManager.(*stubAccountManager)
+	am.signShouldFail = false
+	am.signResponse = randBytesOrFatal(42, t)
+	senderAddress := sender.accountManager.Account().Address
 	recipient := randAddressOrFatal(t)
 	recipientRandHash := randHashOrFatal(t)
 	ticketParams := TicketParams{
@@ -89,9 +93,9 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 		Seed:              big.NewInt(3333),
 		RecipientRandHash: recipientRandHash,
 	}
-	sessionId := sender.StartSession(recipient, ticketParams)
+	sessionID := sender.StartSession(recipient, ticketParams)
 
-	ticket, actualSeed, _, err := sender.CreateTicket(sessionId)
+	ticket, actualSeed, actualSig, err := sender.CreateTicket(sessionID)
 
 	if err != nil {
 		t.Errorf("error tryint to create a ticket: %v", err)
@@ -117,12 +121,28 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 	if actualSeed != ticketParams.Seed {
 		t.Errorf("expected actual seed %d to be %d", actualSeed, ticketParams.Seed)
 	}
-
-	// TODO Sig
+	if !reflect.DeepEqual(actualSig, am.signResponse) {
+		t.Errorf("expected actual sig %v to be %v", actualSig, am.signResponse)
+	}
+	if !reflect.DeepEqual(am.lastSignRequest, ticket.Hash().Bytes()) {
+		t.Errorf("expected sig message bytes %v to be %v", am.lastSignRequest, ticket.Hash().Bytes())
+	}
 }
 
+// TODO sign error test
 func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCorrectly(t *testing.T) {
 	// TODO
+}
+
+func defaultSender(t *testing.T) *DefaultSender {
+	account := accounts.Account{
+		Address: randAddressOrFatal(t),
+	}
+	am := &stubAccountManager{
+		account: account,
+	}
+	sender := NewSender(am)
+	return sender.(*DefaultSender)
 }
 
 func defaultTicketParams(t *testing.T) TicketParams {
@@ -136,8 +156,7 @@ func defaultTicketParams(t *testing.T) TicketParams {
 }
 
 func randHashOrFatal(t *testing.T) ethcommon.Hash {
-	key := make([]byte, 32)
-	_, err := rand.Read(key)
+	key, err := randBytes(32)
 
 	if err != nil {
 		t.Fatalf("failed generating random hash: %v", err)
@@ -148,8 +167,7 @@ func randHashOrFatal(t *testing.T) ethcommon.Hash {
 }
 
 func randAddressOrFatal(t *testing.T) ethcommon.Address {
-	key := make([]byte, addressSize)
-	_, err := rand.Read(key)
+	key, err := randBytes(addressSize)
 
 	if err != nil {
 		t.Fatalf("failed generating random address: %v", err)
@@ -157,4 +175,22 @@ func randAddressOrFatal(t *testing.T) ethcommon.Address {
 	}
 
 	return ethcommon.BytesToAddress(key[:])
+}
+
+func randBytesOrFatal(size int, t *testing.T) []byte {
+	res, err := randBytes(size)
+
+	if err != nil {
+		t.Fatalf("failed generating random bytes: %v", err)
+		return nil
+	}
+
+	return res
+}
+
+func randBytes(size int) ([]byte, error) {
+	key := make([]byte, size)
+	_, err := rand.Read(key)
+
+	return key, err
 }
