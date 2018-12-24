@@ -54,7 +54,7 @@ func (s *defaultSender) StartSession(recipient ethcommon.Address, ticketParams T
 }
 
 func (s *defaultSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
-	recipientRandHash := hexToHash(sessionID)
+	recipientRandHash := ethcommon.HexToHash(sessionID)
 
 	tempSession, ok := s.sessions.Load(sessionID)
 	if !ok {
