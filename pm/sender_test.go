@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -36,8 +35,8 @@ func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
 	recipient := ethcommon.Address{}
 
 	var sessions []string
-	var sessionCount int32
-	ch := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(100)
 	for i := 0; i < 100; i++ {
 		ticketParams := defaultTicketParams(t)
 		expectedSessionID := ticketParams.RecipientRandHash.Hex()
@@ -50,14 +49,10 @@ func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
 				Seed:              big.NewInt(0),
 				RecipientRandHash: ticketParams.RecipientRandHash,
 			})
-			currentCount := atomic.AddInt32(&sessionCount, 1)
-			if currentCount >= 100 {
-				ch <- struct{}{}
-			}
+			wg.Done()
 		}()
 	}
-	// waiting for all session to be created
-	<-ch
+	wg.Wait()
 
 	for _, sessionID := range sessions {
 		_, ok := sender.sessions.Load(sessionID)
@@ -157,8 +152,8 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 	ticketParams := defaultTicketParams(t)
 	sessionID := sender.StartSession(recipient, ticketParams)
 
-	var ticketCount int32
-	ch := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(totalTickets)
 	var tickets []*Ticket
 	for i := 0; i < totalTickets; i++ {
 
@@ -169,14 +164,10 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 			tickets = append(tickets, ticket)
 			lock.Unlock()
 
-			currentCount := atomic.AddInt32(&ticketCount, 1)
-			if currentCount >= int32(totalTickets) {
-				ch <- struct{}{}
-			}
+			wg.Done()
 		}()
 	}
-	// waiting for all session to be created
-	<-ch
+	wg.Wait()
 
 	sessionUntyped, ok := sender.sessions.Load(sessionID)
 	if !ok {
