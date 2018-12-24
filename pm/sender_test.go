@@ -1,9 +1,9 @@
 package pm
 
 import (
+	"bytes"
 	"crypto/rand"
 	"math/big"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -95,7 +95,7 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 	ticket, actualSeed, actualSig, err := sender.CreateTicket(sessionID)
 
 	if err != nil {
-		t.Errorf("error tryint to create a ticket: %v", err)
+		t.Errorf("error trying to create a ticket: %v", err)
 	}
 	if ticket.Sender != senderAddress {
 		t.Errorf("expected ticket sender %v to be %v", ticket.Sender, senderAddress)
@@ -118,10 +118,10 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 	if actualSeed != ticketParams.Seed {
 		t.Errorf("expected actual seed %d to be %d", actualSeed, ticketParams.Seed)
 	}
-	if !reflect.DeepEqual(actualSig, am.signResponse) {
+	if !bytes.Equal(actualSig, am.signResponse) {
 		t.Errorf("expected actual sig %v to be %v", actualSig, am.signResponse)
 	}
-	if !reflect.DeepEqual(am.lastSignRequest, ticket.Hash().Bytes()) {
+	if !bytes.Equal(am.lastSignRequest, ticket.Hash().Bytes()) {
 		t.Errorf("expected sig message bytes %v to be %v", am.lastSignRequest, ticket.Hash().Bytes())
 	}
 }
