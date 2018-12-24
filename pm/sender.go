@@ -42,7 +42,7 @@ func NewSender(accountManager eth.AccountManager) Sender {
 }
 
 func (s *defaultSender) StartSession(recipient ethcommon.Address, ticketParams TicketParams) string {
-	sessionID := hashToHex(ticketParams.RecipientRandHash)
+	sessionID := ticketParams.RecipientRandHash.Hex()
 
 	s.sessions.Store(sessionID, &session{
 		recipient:    recipient,

@@ -17,7 +17,7 @@ func TestStartSession_GivenSomeRecipientRandHash_UsesItAsSessionId(t *testing.T)
 	sender := defaultNewSender(t)
 	recipient := ethcommon.Address{}
 	ticketParams := defaultTicketParams(t)
-	expectedSessionID := hashToHex(ticketParams.RecipientRandHash)
+	expectedSessionID := ticketParams.RecipientRandHash.Hex()
 
 	sessionID := sender.StartSession(recipient, TicketParams{
 		FaceValue:         big.NewInt(0),
@@ -40,7 +40,7 @@ func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
 	ch := make(chan struct{})
 	for i := 0; i < 100; i++ {
 		ticketParams := defaultTicketParams(t)
-		expectedSessionID := hashToHex(ticketParams.RecipientRandHash)
+		expectedSessionID := ticketParams.RecipientRandHash.Hex()
 		sessions = append(sessions, expectedSessionID)
 
 		go func() {
