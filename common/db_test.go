@@ -597,18 +597,19 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	senderNonce := uint64(123)
 	recipientRand := big.NewInt(4567)
 	sig := randBytesOrFatal(42, t)
+	sessionID := "foo bar"
 
-	err = dbh.InsertWinningTicket(sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig)
+	err = dbh.InsertWinningTicket(sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig, sessionID)
 
 	if err != nil {
 		t.Errorf("Failed to insert winning ticket with error: %v", err)
 	}
 
-	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig FROM winningTickets")
-	var actualSender, actualRecipient string
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig, sessionID FROM winningTickets")
+	var actualSender, actualRecipient, actualSessionID string
 	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
 	var actualSenderNonce uint64
-	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualSig)
+	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualSig, &actualSessionID)
 
 	if actualSender != sender.Hex() {
 		t.Errorf("expected sender %v to equal %v", actualSender, sender.Hex())
@@ -633,6 +634,9 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	}
 	if !bytes.Equal(actualSig, sig) {
 		t.Errorf("expected sig %v to equal %v", actualSig, sig)
+	}
+	if actualSessionID != sessionID {
+		t.Errorf("expeceted sessionID %v to equal %v", actualSessionID, sessionID)
 	}
 
 	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM winningTickets", dbraw, t)

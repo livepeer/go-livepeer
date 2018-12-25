@@ -165,7 +165,8 @@ var schema = `
 		winProb BLOB,
 		senderNonce INTEGER,
 		recipientRand BLOB,
-		sig BLOB
+		sig BLOB,
+		sessionID STRING
 	);
 `
 
@@ -409,7 +410,7 @@ func InitDB(dbPath string) (*DB, error) {
 	d.withdrawableUnbondingLocks = stmt
 
 	// Winning tickets prepared statements
-	stmt, err = db.Prepare("INSERT INTO winningTickets(sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig) VALUES(?, ?, ?, ?, ?, ?, ?)")
+	stmt, err = db.Prepare("INSERT INTO winningTickets(sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig, sessionID) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		glog.Error("Unable to prepare insertWinningTicket ", err)
 		d.Close()
@@ -899,10 +900,10 @@ func (db *DB) UnbondingLocks(currentRound *big.Int) ([]*DBUnbondingLock, error) 
 	return unbondingLocks, nil
 }
 
-func (db *DB) InsertWinningTicket(sender ethcommon.Address, recipient ethcommon.Address, faceValue *big.Int, winProb *big.Int, senderNonce uint64, recipientRand *big.Int, sig []byte) error {
+func (db *DB) InsertWinningTicket(sender ethcommon.Address, recipient ethcommon.Address, faceValue *big.Int, winProb *big.Int, senderNonce uint64, recipientRand *big.Int, sig []byte, sessionID string) error {
 	glog.V(DEBUG).Infof("db: Inserting winning ticket from %v, recipientRand %d, senderNonce %d", sender.Hex(), recipientRand, senderNonce)
 
-	_, err := db.insertWinningTicket.Exec(sender.Hex(), recipient.Hex(), faceValue.Bytes(), winProb.Bytes(), senderNonce, recipientRand.Bytes(), sig)
+	_, err := db.insertWinningTicket.Exec(sender.Hex(), recipient.Hex(), faceValue.Bytes(), winProb.Bytes(), senderNonce, recipientRand.Bytes(), sig, sessionID)
 
 	if err != nil {
 		// TODO wrap with custom error
