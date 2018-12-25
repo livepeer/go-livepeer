@@ -35,7 +35,12 @@ go test -logtostderr=true
 t7=$?
 cd ..
 
-if (($t1!=0||$t2!=0||$t3!=0||$t4!=0||$t5!=0||$t6!=0||t7!=0))
+cd pm
+go test -logtostderr=true
+t8=$?
+cd ..
+
+if (($t1!=0||$t2!=0||$t3!=0||$t4!=0||$t5!=0||$t6!=0||t7!=0||t8!=0))
 then
     printf "\n\nSome Tests Failed\n\n"
     exit -1
