@@ -163,7 +163,7 @@ var schema = `
 		recipient STRING,
 		faceValue BLOB,
 		winProb BLOB,
-		senderNonce UNSIGNED BIG INT,
+		senderNonce INTEGER,
 		recipientRand BLOB,
 		sig BLOB
 	);
