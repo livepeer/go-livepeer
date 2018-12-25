@@ -3,6 +3,7 @@ package pm
 import (
 	"fmt"
 	"math/big"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -11,9 +12,12 @@ import (
 )
 
 type stubTicketStore struct {
-	tickets        map[string][]*Ticket
-	sigs           map[string][][]byte
-	recipientRands map[string][]*big.Int
+	tickets         map[string][]*Ticket
+	sigs            map[string][][]byte
+	recipientRands  map[string][]*big.Int
+	storeShouldFail bool
+	loadShouldFail  bool
+	lock            sync.RWMutex
 }
 
 func newStubTicketStore() *stubTicketStore {
@@ -25,6 +29,13 @@ func newStubTicketStore() *stubTicketStore {
 }
 
 func (ts *stubTicketStore) Store(sessionID string, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+	ts.lock.Lock()
+	defer ts.lock.Unlock()
+
+	if ts.storeShouldFail {
+		return fmt.Errorf("stub error")
+	}
+
 	ts.tickets[sessionID] = append(ts.tickets[sessionID], ticket)
 	ts.sigs[sessionID] = append(ts.sigs[sessionID], sig)
 	ts.recipientRands[sessionID] = append(ts.recipientRands[sessionID], recipientRand)
@@ -33,6 +44,13 @@ func (ts *stubTicketStore) Store(sessionID string, ticket *Ticket, sig []byte, r
 }
 
 func (ts *stubTicketStore) Load(sessionID string) ([]*Ticket, [][]byte, []*big.Int, error) {
+	ts.lock.RLock()
+	defer ts.lock.RUnlock()
+
+	if ts.loadShouldFail {
+		return nil, nil, nil, fmt.Errorf("stub error")
+	}
+
 	return ts.tickets[sessionID], ts.sigs[sessionID], ts.recipientRands[sessionID], nil
 }
 
@@ -49,10 +67,11 @@ func (sv *stubSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool 
 }
 
 type stubBroker struct {
-	deposits        map[ethcommon.Address]*big.Int
-	penaltyEscrows  map[ethcommon.Address]*big.Int
-	usedTickets     map[ethcommon.Hash]bool
-	approvedSigners map[ethcommon.Address]bool
+	deposits         map[ethcommon.Address]*big.Int
+	penaltyEscrows   map[ethcommon.Address]*big.Int
+	usedTickets      map[ethcommon.Hash]bool
+	approvedSigners  map[ethcommon.Address]bool
+	redeemShouldFail bool
 }
 
 func newStubBroker() *stubBroker {
@@ -101,6 +120,10 @@ func (b *stubBroker) Withdraw() error {
 }
 
 func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+	if b.redeemShouldFail {
+		return fmt.Errorf("stub error")
+	}
+
 	b.usedTickets[ticket.Hash()] = true
 
 	return nil

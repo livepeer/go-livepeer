@@ -12,17 +12,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-var (
-	errInvalidRecipientRandFromSeed = errors.New("invalid recipientRand generated from seed")
-	errInvalidRecipientRandRevealed = errors.New("invalid already revealed recipientRand")
-
-	errInvalidTicketFaceValue   = errors.New("invalid ticket faceValue")
-	errInvalidTicketWinProb     = errors.New("invalid ticket winProb")
-	errInvalidTicketSenderNonce = errors.New("invalid ticket senderNonce")
-
-	errZeroDepositAndPenaltyEscrow = errors.New("sender has zero deposit and penalty escrow")
-)
-
 // Recipient is an interface which describes an object capable
 // of receiving tickets
 type Recipient interface {
@@ -56,8 +45,24 @@ type recipient struct {
 	winProb   *big.Int
 }
 
-// NewRecipient creates an instance of a recipient
-func NewRecipient(broker Broker, val Validator, store TicketStore, secret [32]byte, faceValue *big.Int, winProb *big.Int) Recipient {
+// NewRecipient creates an instance of a recipient with an
+// automatically generated random secret
+func NewRecipient(broker Broker, val Validator, store TicketStore, faceValue *big.Int, winProb *big.Int) (Recipient, error) {
+	randBytes := make([]byte, 32)
+	if _, err := rand.Read(randBytes); err != nil {
+		return nil, err
+	}
+
+	var secret [32]byte
+	copy(secret[:], randBytes[:32])
+
+	return NewRecipientWithSecret(broker, val, store, secret, faceValue, winProb), nil
+}
+
+// NewRecipientWithSecret creates an instance of a recipient with a user provided
+// secret. In most cases, NewRecipient should be used instead which will
+// automatically generate a random secret
+func NewRecipientWithSecret(broker Broker, val Validator, store TicketStore, secret [32]byte, faceValue *big.Int, winProb *big.Int) Recipient {
 	return &recipient{
 		broker:       broker,
 		val:          val,
@@ -74,15 +79,15 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (bo
 	recipientRand := r.rand(seed, ticket.Sender)
 
 	if crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size)) != ticket.RecipientRandHash {
-		return false, errInvalidRecipientRandFromSeed
+		return false, errors.Errorf("invalid recipientRand generated from seed %v", seed)
 	}
 
 	if ticket.FaceValue.Cmp(r.faceValue) != 0 {
-		return false, errInvalidTicketFaceValue
+		return false, errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue)
 	}
 
 	if ticket.WinProb.Cmp(r.winProb) != 0 {
-		return false, errInvalidTicketWinProb
+		return false, errors.Errorf("invalid ticket winProb %v", ticket.WinProb)
 	}
 
 	if err := r.val.ValidateTicket(ticket, sig, recipientRand); err != nil {
@@ -90,7 +95,7 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (bo
 	}
 
 	if !r.validRand(recipientRand) {
-		return false, errInvalidRecipientRandRevealed
+		return false, errors.Errorf("invalid already revealed recipientRand %v", recipientRand)
 	}
 
 	if err := r.updateSenderNonce(recipientRand, ticket.SenderNonce); err != nil {
@@ -155,22 +160,26 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 		return err
 	}
 
+	// TODO: Consider a smarter strategy here in the future
+	// Ex. If deposit < transaction cost, do not try to redeem
 	if deposit.Cmp(big.NewInt(0)) == 0 && penaltyEscrow.Cmp(big.NewInt(0)) == 0 {
-		return errZeroDepositAndPenaltyEscrow
+		return errors.Errorf("sender %v has zero deposit and penalty escrow", ticket.Sender)
 	}
 
-	// We are about to reveal recipientRand on-chain so invalidate it locally
-	if err := r.updateInvalidRands(recipientRand); err != nil {
+	// Assume that that this call will return immediately if there
+	// is an error in transaction submission. Else, the function will kick off
+	// a goroutine and then return to the caller
+	if err := r.broker.RedeemWinningTicket(ticket, sig, recipientRand); err != nil {
 		return err
 	}
+
+	// If there is no error, the transaction has been submitted. As a result,
+	// we assume that recipientRand has been revealed so we should invalidate it locally
+	r.updateInvalidRands(recipientRand)
 
 	// After we invalidate recipientRand we can clear the memory used to track
 	// its latest senderNonce
 	r.clearSenderNonce(recipientRand)
-
-	if err := r.broker.RedeemWinningTicket(ticket, sig, recipientRand); err != nil {
-		return err
-	}
 
 	return nil
 }
@@ -187,13 +196,8 @@ func (r *recipient) validRand(rand *big.Int) bool {
 	return !ok
 }
 
-func (r *recipient) updateInvalidRands(rand *big.Int) error {
-	_, loaded := r.invalidRands.LoadOrStore(rand.String(), true)
-	if loaded {
-		return errInvalidRecipientRandRevealed
-	}
-
-	return nil
+func (r *recipient) updateInvalidRands(rand *big.Int) {
+	r.invalidRands.Store(rand.String(), true)
 }
 
 func (r *recipient) updateSenderNonce(rand *big.Int, senderNonce uint64) error {
@@ -203,7 +207,7 @@ func (r *recipient) updateSenderNonce(rand *big.Int, senderNonce uint64) error {
 	randStr := rand.String()
 	nonce, ok := r.senderNonces[randStr]
 	if ok && senderNonce <= nonce {
-		return errInvalidTicketSenderNonce
+		return errors.Errorf("invalid ticket senderNonce %v - highest seen is %v", senderNonce, nonce)
 	}
 
 	r.senderNonces[randStr] = senderNonce
