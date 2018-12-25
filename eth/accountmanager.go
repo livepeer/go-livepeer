@@ -31,7 +31,7 @@ type AccountManager interface {
 	Account() accounts.Account
 }
 
-type DefaultAccountManager struct {
+type accountManager struct {
 	account accounts.Account
 
 	unlocked bool
@@ -70,7 +70,7 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (Accou
 
 	glog.Infof("Using Ethereum account: %v", acct.Address.Hex())
 
-	return &DefaultAccountManager{
+	return &accountManager{
 		account:  acct,
 		unlocked: false,
 		keyStore: keyStore,
@@ -78,7 +78,7 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (Accou
 }
 
 // Unlock account indefinitely using underlying keystore
-func (am *DefaultAccountManager) Unlock(passphrase string) error {
+func (am *accountManager) Unlock(passphrase string) error {
 	var err error
 
 	err = am.keyStore.Unlock(am.account, passphrase)
@@ -103,7 +103,7 @@ func (am *DefaultAccountManager) Unlock(passphrase string) error {
 }
 
 // Lock account using underlying keystore and remove associated private key from memory
-func (am *DefaultAccountManager) Lock() error {
+func (am *accountManager) Lock() error {
 	err := am.keyStore.Lock(am.account.Address)
 	if err != nil {
 		return err
@@ -116,7 +116,7 @@ func (am *DefaultAccountManager) Lock() error {
 
 // Create transact opts for client use - account must be unlocked
 // Can optionally set gas limit and gas price used
-func (am *DefaultAccountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error) {
+func (am *accountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error) {
 	if !am.unlocked {
 		return nil, ErrLocked
 	}
@@ -136,7 +136,7 @@ func (am *DefaultAccountManager) CreateTransactOpts(gasLimit uint64, gasPrice *b
 }
 
 // Sign a transaction. Account must be unlocked
-func (am *DefaultAccountManager) SignTx(signer types.Signer, tx *types.Transaction) (*types.Transaction, error) {
+func (am *accountManager) SignTx(signer types.Signer, tx *types.Transaction) (*types.Transaction, error) {
 	signature, err := am.keyStore.SignHash(am.account, signer.Hash(tx).Bytes())
 	if err != nil {
 		return nil, err
@@ -146,14 +146,14 @@ func (am *DefaultAccountManager) SignTx(signer types.Signer, tx *types.Transacti
 }
 
 // Sign byte array message. Account must be unlocked
-func (am *DefaultAccountManager) Sign(msg []byte) ([]byte, error) {
+func (am *accountManager) Sign(msg []byte) ([]byte, error) {
 	personalMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, msg)
 	personalHash := crypto.Keccak256([]byte(personalMsg))
 
 	return am.keyStore.SignHash(am.account, personalHash)
 }
 
-func (am *DefaultAccountManager) Account() accounts.Account {
+func (am *accountManager) Account() accounts.Account {
 	return am.account
 }
 

@@ -28,7 +28,7 @@ type session struct {
 	ticketParams TicketParams
 }
 
-type defaultSender struct {
+type sender struct {
 	accountManager eth.AccountManager
 
 	sessions sync.Map
@@ -36,12 +36,12 @@ type defaultSender struct {
 
 // NewSender creates a new Sender instance.
 func NewSender(accountManager eth.AccountManager) Sender {
-	return &defaultSender{
+	return &sender{
 		accountManager: accountManager,
 	}
 }
 
-func (s *defaultSender) StartSession(recipient ethcommon.Address, ticketParams TicketParams) string {
+func (s *sender) StartSession(recipient ethcommon.Address, ticketParams TicketParams) string {
 	sessionID := ticketParams.RecipientRandHash.Hex()
 
 	s.sessions.Store(sessionID, &session{
@@ -53,7 +53,7 @@ func (s *defaultSender) StartSession(recipient ethcommon.Address, ticketParams T
 	return sessionID
 }
 
-func (s *defaultSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
+func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
 	recipientRandHash := ethcommon.HexToHash(sessionID)
 
 	tempSession, ok := s.sessions.Load(sessionID)

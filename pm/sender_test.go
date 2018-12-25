@@ -13,7 +13,7 @@ import (
 )
 
 func TestStartSession_GivenSomeRecipientRandHash_UsesItAsSessionId(t *testing.T) {
-	sender := defaultNewSender(t)
+	sender := defaultSender(t)
 	recipient := ethcommon.Address{}
 	ticketParams := defaultTicketParams(t)
 	expectedSessionID := ticketParams.RecipientRandHash.Hex()
@@ -31,7 +31,7 @@ func TestStartSession_GivenSomeRecipientRandHash_UsesItAsSessionId(t *testing.T)
 }
 
 func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
-	sender := defaultNewSender(t)
+	sender := defaultSender(t)
 	recipient := ethcommon.Address{}
 
 	var sessions []string
@@ -63,7 +63,7 @@ func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
 }
 
 func TestCreateTicket_GivenNonexistentSession_ReturnsError(t *testing.T) {
-	sender := defaultNewSender(t)
+	sender := defaultSender(t)
 
 	_, _, _, err := sender.CreateTicket("foo")
 
@@ -76,7 +76,7 @@ func TestCreateTicket_GivenNonexistentSession_ReturnsError(t *testing.T) {
 }
 
 func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T) {
-	sender := defaultNewSender(t)
+	sender := defaultSender(t)
 	am := sender.accountManager.(*stubAccountManager)
 	am.signShouldFail = false
 	am.saveSignRequest = true
@@ -127,7 +127,7 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 }
 
 func TestCreateTicket_GivenSigningError_ReturnsError(t *testing.T) {
-	sender := defaultNewSender(t)
+	sender := defaultSender(t)
 	recipient := randAddressOrFatal(t)
 	ticketParams := defaultTicketParams(t)
 	sessionID := sender.StartSession(recipient, ticketParams)
@@ -147,7 +147,7 @@ func TestCreateTicket_GivenSigningError_ReturnsError(t *testing.T) {
 func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCorrectly(t *testing.T) {
 	totalTickets := 100
 	lock := sync.RWMutex{}
-	sender := defaultNewSender(t)
+	sender := defaultSender(t)
 	recipient := randAddressOrFatal(t)
 	ticketParams := defaultTicketParams(t)
 	sessionID := sender.StartSession(recipient, ticketParams)
@@ -187,15 +187,15 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 	}
 }
 
-func defaultNewSender(t *testing.T) *defaultSender {
+func defaultSender(t *testing.T) *sender {
 	account := accounts.Account{
 		Address: randAddressOrFatal(t),
 	}
 	am := &stubAccountManager{
 		account: account,
 	}
-	sender := NewSender(am)
-	return sender.(*defaultSender)
+	s := NewSender(am)
+	return s.(*sender)
 }
 
 func defaultTicketParams(t *testing.T) TicketParams {
