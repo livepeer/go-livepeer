@@ -29,8 +29,9 @@ type Recipient interface {
 	// ReceiveTicket validates and processes a received ticket
 	ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (won bool, err error)
 
-	// RedeemWinningTicket redeems a winning ticket with the broker
-	RedeemWinningTicket(ticketID ethcommon.Hash) error
+	// RedeemWinningTicket redeems all winning tickets with the broker
+	// for a session ID
+	RedeemWinningTickets(sessionID string) error
 
 	// TicketParams returns the recipient's currently accepted ticket parameters
 	// for a provided sender ETH adddress
@@ -97,7 +98,7 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (bo
 	}
 
 	if r.val.IsWinningTicket(ticket, sig, recipientRand) {
-		if err := r.store.Store(ticket, sig, recipientRand); err != nil {
+		if err := r.store.Store(ticket.RecipientRandHash.Hex(), ticket, sig, recipientRand); err != nil {
 			return true, err
 		}
 
@@ -107,13 +108,43 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (bo
 	return false, nil
 }
 
-// RedeemWinningTicket redeems a winning ticket with the broker
-func (r *recipient) RedeemWinningTicket(ticketID ethcommon.Hash) error {
-	ticket, sig, recipientRand, err := r.store.Load(ticketID)
+// RedeemWinningTicket redeems all winning tickets with the broker
+// for a session ID
+func (r *recipient) RedeemWinningTickets(sessionID string) error {
+	tickets, sigs, recipientRands, err := r.store.Load(sessionID)
 	if err != nil {
 		return err
 	}
 
+	for i := 0; i < len(tickets); i++ {
+		if err := r.redeemWinningTicket(tickets[i], sigs[i], recipientRands[i]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// TicketParams returns the recipient's currently accepted ticket parameters
+func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
+	randBytes := make([]byte, 32)
+	if _, err := rand.Read(randBytes); err != nil {
+		return nil, err
+	}
+
+	seed := new(big.Int).SetBytes(randBytes)
+	recipientRand := r.rand(seed, sender)
+	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size))
+
+	return &TicketParams{
+		FaceValue:         r.faceValue,
+		WinProb:           r.winProb,
+		RecipientRandHash: recipientRandHash,
+		Seed:              seed,
+	}, nil
+}
+
+func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
 	deposit, err := r.broker.GetDeposit(ticket.Sender)
 	if err != nil {
 		return err
@@ -142,25 +173,6 @@ func (r *recipient) RedeemWinningTicket(ticketID ethcommon.Hash) error {
 	}
 
 	return nil
-}
-
-// TicketParams returns the recipient's currently accepted ticket parameters
-func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
-	randBytes := make([]byte, 32)
-	if _, err := rand.Read(randBytes); err != nil {
-		return nil, err
-	}
-
-	seed := new(big.Int).SetBytes(randBytes)
-	recipientRand := r.rand(seed, sender)
-	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size))
-
-	return &TicketParams{
-		FaceValue:         r.faceValue,
-		WinProb:           r.winProb,
-		RecipientRandHash: recipientRandHash,
-		Seed:              seed,
-	}, nil
 }
 
 func (r *recipient) rand(seed *big.Int, sender ethcommon.Address) *big.Int {

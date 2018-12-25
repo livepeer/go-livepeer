@@ -11,30 +11,29 @@ import (
 )
 
 type stubTicketStore struct {
-	tickets        map[ethcommon.Hash]*Ticket
-	sigs           map[ethcommon.Hash][]byte
-	recipientRands map[ethcommon.Hash]*big.Int
+	tickets        map[string][]*Ticket
+	sigs           map[string][][]byte
+	recipientRands map[string][]*big.Int
 }
 
 func newStubTicketStore() *stubTicketStore {
 	return &stubTicketStore{
-		tickets:        make(map[ethcommon.Hash]*Ticket),
-		sigs:           make(map[ethcommon.Hash][]byte),
-		recipientRands: make(map[ethcommon.Hash]*big.Int),
+		tickets:        make(map[string][]*Ticket),
+		sigs:           make(map[string][][]byte),
+		recipientRands: make(map[string][]*big.Int),
 	}
 }
 
-func (ts *stubTicketStore) Store(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
-	ticketID := ticket.Hash()
-	ts.tickets[ticketID] = ticket
-	ts.sigs[ticketID] = sig
-	ts.recipientRands[ticketID] = recipientRand
+func (ts *stubTicketStore) Store(sessionID string, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+	ts.tickets[sessionID] = append(ts.tickets[sessionID], ticket)
+	ts.sigs[sessionID] = append(ts.sigs[sessionID], sig)
+	ts.recipientRands[sessionID] = append(ts.recipientRands[sessionID], recipientRand)
 
 	return nil
 }
 
-func (ts *stubTicketStore) Load(ticketID ethcommon.Hash) (*Ticket, []byte, *big.Int, error) {
-	return ts.tickets[ticketID], ts.sigs[ticketID], ts.recipientRands[ticketID], nil
+func (ts *stubTicketStore) Load(sessionID string) ([]*Ticket, [][]byte, []*big.Int, error) {
+	return ts.tickets[sessionID], ts.sigs[sessionID], ts.recipientRands[sessionID], nil
 }
 
 type stubSigVerifier struct {

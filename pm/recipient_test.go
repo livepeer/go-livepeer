@@ -1,9 +1,9 @@
 package pm
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/hex"
 	"math/big"
 	"testing"
 
@@ -152,20 +152,24 @@ func TestReceiveTicket(t *testing.T) {
 		t.Errorf("expected valid winning ticket")
 	}
 
-	storeTicket, storeSig, storeRecipientRand, err := ts.Load(ticket.Hash())
+	storeTickets, storeSigs, storeRecipientRands, err := ts.Load(ticket.RecipientRandHash.Hex())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if storeTicket.Hash() != ticket.Hash() {
-		t.Errorf("expected store ticket hash %v, got %v", ticket.Hash(), storeTicket.Hash())
+	if len(storeTickets) != 1 || len(storeSigs) != 1 || len(storeRecipientRands) != 1 {
+		t.Errorf("expected 1 stored ticket, got %v", len(storeTickets))
 	}
 
-	if hex.EncodeToString(storeSig) != hex.EncodeToString(sig) {
-		t.Errorf("expected store sig 0x%x, got 0x%x", sig, storeSig)
+	if storeTickets[0].Hash() != ticket.Hash() {
+		t.Errorf("expected store ticket hash %v, got %v", ticket.Hash(), storeTickets[0].Hash())
 	}
 
-	if crypto.Keccak256Hash(ethcommon.LeftPadBytes(storeRecipientRand.Bytes(), uint256Size)) != ticket.RecipientRandHash {
+	if !bytes.Equal(storeSigs[0], sig) {
+		t.Errorf("expected store sig 0x%x, got 0x%x", sig, storeSigs[0])
+	}
+
+	if crypto.Keccak256Hash(ethcommon.LeftPadBytes(storeRecipientRands[0].Bytes(), uint256Size)) != ticket.RecipientRandHash {
 		t.Error("expected store recipientRand to match ticket recipientRandHash")
 	}
 
@@ -174,7 +178,7 @@ func TestReceiveTicket(t *testing.T) {
 	b.SetDeposit(sender, big.NewInt(0))
 	b.SetPenaltyEscrow(sender, big.NewInt(500))
 	// Redeem ticket to invalidate recipientRand
-	if err := r.RedeemWinningTicket(ticket.Hash()); err != nil {
+	if err := r.RedeemWinningTickets(ticket.RecipientRandHash.Hex()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -251,7 +255,7 @@ func TestReceiveTicket(t *testing.T) {
 	}
 }
 
-func TestRedeemWinningTicket(t *testing.T) {
+func TestRedeemWinningTickets(t *testing.T) {
 	sender := ethcommon.HexToAddress("A69cdA26600c155cF2c150964Bdb5371ac3f606F")
 	b := newStubBroker()
 	v := &stubValidator{}
@@ -293,7 +297,7 @@ func TestRedeemWinningTicket(t *testing.T) {
 		t.Fail()
 	}
 
-	err = r.RedeemWinningTicket(ticket.Hash())
+	err = r.RedeemWinningTickets(ticket.RecipientRandHash.Hex())
 	if err == nil {
 		t.Error("expected zero deposit and penalty escrow error")
 	}
@@ -306,7 +310,7 @@ func TestRedeemWinningTicket(t *testing.T) {
 	b.SetDeposit(sender, big.NewInt(0))
 	b.SetPenaltyEscrow(sender, big.NewInt(500))
 
-	if err := r.RedeemWinningTicket(ticket.Hash()); err != nil {
+	if err := r.RedeemWinningTickets(ticket.RecipientRandHash.Hex()); err != nil {
 		t.Error(err)
 	}
 
@@ -345,7 +349,7 @@ func TestRedeemWinningTicket(t *testing.T) {
 		t.Fatal()
 	}
 
-	if err := r.RedeemWinningTicket(ticket.Hash()); err != nil {
+	if err := r.RedeemWinningTickets(ticket.RecipientRandHash.Hex()); err != nil {
 		t.Error(err)
 	}
 
@@ -360,7 +364,7 @@ func TestRedeemWinningTicket(t *testing.T) {
 	// Test invalid recipientRand revealed error
 	// This should fail because we use the same ticket with a recipientRand
 	// already invalidated
-	err = r.RedeemWinningTicket(ticket.Hash())
+	err = r.RedeemWinningTickets(ticket.RecipientRandHash.Hex())
 	if err == nil {
 		t.Error("expected invalid recipientRand revealed error")
 	}
