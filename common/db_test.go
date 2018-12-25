@@ -1,6 +1,8 @@
 package common
 
 import (
+	"bytes"
+	"crypto/rand"
 	"database/sql"
 	"fmt"
 	"math/big"
@@ -577,4 +579,114 @@ func TestDBUnbondingLocks(t *testing.T) {
 		t.Error("Unexpected number of unbonding locks; expected 2, got ", len(unbondingLocks))
 		return
 	}
+}
+
+func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	sender := randAddressOrFatal(t)
+	recipient := randAddressOrFatal(t)
+	faceValue := big.NewInt(1234)
+	winProb := big.NewInt(2345)
+	senderNonce := uint64(123)
+	recipientRand := big.NewInt(4567)
+	sig := randBytesOrFatal(42, t)
+
+	err = dbh.InsertWinningTicket(sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig)
+
+	if err != nil {
+		t.Errorf("Failed to insert winning ticket with error: %v", err)
+	}
+
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig FROM winningTickets")
+	var actualSender, actualRecipient string
+	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
+	var actualSenderNonce uint64
+	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualSig)
+
+	if actualSender != sender.Hex() {
+		t.Errorf("expected sender %v to equal %v", actualSender, sender.Hex())
+	}
+	if actualRecipient != recipient.Hex() {
+		t.Errorf("expected recipient %v to equal %v", actualRecipient, recipient.Hex())
+	}
+	actualFaceValue := bytesToBigInt(actualFaceValueBytes)
+	if actualFaceValue.Cmp(faceValue) != 0 {
+		t.Errorf("expected faceValue %d to equal %d", actualFaceValue, faceValue)
+	}
+	actualWinProb := bytesToBigInt(actualWinProbBytes)
+	if actualWinProb.Cmp(winProb) != 0 {
+		t.Errorf("expected winProb %d to equal %d", actualWinProb, winProb)
+	}
+	if actualSenderNonce != senderNonce {
+		t.Errorf("expected senderNonce %d to equal %d", actualSenderNonce, senderNonce)
+	}
+	actualRecipientRand := bytesToBigInt(actualRecipientRandBytes)
+	if actualRecipientRand.Cmp(recipientRand) != 0 {
+		t.Errorf("expected recipientRand %d to equal %d", actualRecipientRand, recipientRand)
+	}
+	if !bytes.Equal(actualSig, sig) {
+		t.Errorf("expected sig %v to equal %v", actualSig, sig)
+	}
+
+	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM winningTickets", dbraw, t)
+	if ticketsCount != 1 {
+		t.Errorf("expected db ticket count %d to be 1", ticketsCount)
+	}
+}
+
+// TODO same test but with max values
+
+func getRowCountOrFatal(query string, dbraw *sql.DB, t *testing.T) int {
+	var count int
+	row := dbraw.QueryRow(query)
+	err := row.Scan(&count)
+
+	if err != nil {
+		t.Fatalf("error getting db table count, cannot proceed: %v", err)
+		return -1
+	}
+
+	return count
+}
+
+func randAddressOrFatal(t *testing.T) ethcommon.Address {
+	key, err := randBytes(20)
+
+	if err != nil {
+		t.Fatalf("failed generating random address: %v", err)
+		return ethcommon.Address{}
+	}
+
+	return ethcommon.BytesToAddress(key[:])
+}
+
+func randBytesOrFatal(size int, t *testing.T) []byte {
+	res, err := randBytes(size)
+
+	if err != nil {
+		t.Fatalf("failed generating random bytes: %v", err)
+		return nil
+	}
+
+	return res
+}
+
+func randBytes(size int) ([]byte, error) {
+	key := make([]byte, size)
+	_, err := rand.Read(key)
+
+	return key, err
+}
+
+func bytesToBigInt(buf []byte) *big.Int {
+	res := big.NewInt(0)
+	res.SetBytes(buf)
+	return res
 }

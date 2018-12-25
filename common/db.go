@@ -39,6 +39,7 @@ type DB struct {
 	useUnbondingLock           *sql.Stmt
 	unbondingLocks             *sql.Stmt
 	withdrawableUnbondingLocks *sql.Stmt
+	insertWinningTicket        *sql.Stmt
 }
 
 type DBJob struct {
@@ -156,6 +157,16 @@ var schema = `
 	);
 	-- Index to only retrieve unbonding locks that have not been used
 	CREATE INDEX IF NOT EXISTS idx_unbondinglocks_usedblock ON unbondingLocks(usedBlock);
+
+	CREATE TABLE IF NOT EXISTS winningTickets (
+		sender STRING,
+		recipient STRING,
+		faceValue BLOB,
+		winProb BLOB,
+		senderNonce UNSIGNED BIG INT,
+		recipientRand BLOB,
+		sig BLOB
+	);
 `
 
 func NewDBJob(id *big.Int, streamID string,
@@ -397,6 +408,15 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.withdrawableUnbondingLocks = stmt
 
+	// Winning tickets prepared statements
+	stmt, err = db.Prepare("INSERT INTO winningTickets(sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig) VALUES(?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		glog.Error("Unable to prepare insertWinningTicket ", err)
+		d.Close()
+		return nil, err
+	}
+	d.insertWinningTicket = stmt
+
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -459,6 +479,9 @@ func (db *DB) Close() {
 	}
 	if db.withdrawableUnbondingLocks != nil {
 		db.withdrawableUnbondingLocks.Close()
+	}
+	if db.insertWinningTicket != nil {
+		db.insertWinningTicket.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -874,4 +897,16 @@ func (db *DB) UnbondingLocks(currentRound *big.Int) ([]*DBUnbondingLock, error) 
 		unbondingLocks = append(unbondingLocks, &unbondingLock)
 	}
 	return unbondingLocks, nil
+}
+
+func (db *DB) InsertWinningTicket(sender ethcommon.Address, recipient ethcommon.Address, faceValue *big.Int, winProb *big.Int, senderNonce uint64, recipientRand *big.Int, sig []byte) error {
+	glog.V(DEBUG).Infof("db: Inserting winning ticket from %v, recipientRand %d, senderNonce %d", sender.Hex(), recipientRand, senderNonce)
+
+	_, err := db.insertWinningTicket.Exec(sender.Hex(), recipient.Hex(), faceValue.Bytes(), winProb.Bytes(), senderNonce, recipientRand.Bytes(), sig)
+
+	if err != nil {
+		// TODO wrap with custom error
+		return err
+	}
+	return nil
 }
