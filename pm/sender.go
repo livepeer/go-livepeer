@@ -58,7 +58,7 @@ func (s *defaultSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byt
 
 	tempSession, ok := s.sessions.Load(sessionID)
 	if !ok {
-		return nil, nil, nil, errors.Errorf("cannot create a ticket for an unknown session: %+v", sessionID)
+		return nil, nil, nil, errors.Errorf("cannot create a ticket for an unknown session: %v", sessionID)
 	}
 	session := tempSession.(*session)
 
