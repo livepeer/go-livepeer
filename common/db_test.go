@@ -616,18 +616,18 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	if actualRecipient != recipient.Hex() {
 		t.Errorf("expected recipient %v to equal %v", actualRecipient, recipient.Hex())
 	}
-	actualFaceValue := bytesToBigInt(actualFaceValueBytes)
+	actualFaceValue := new(big.Int).SetBytes(actualFaceValueBytes)
 	if actualFaceValue.Cmp(faceValue) != 0 {
 		t.Errorf("expected faceValue %d to equal %d", actualFaceValue, faceValue)
 	}
-	actualWinProb := bytesToBigInt(actualWinProbBytes)
+	actualWinProb := new(big.Int).SetBytes(actualWinProbBytes)
 	if actualWinProb.Cmp(winProb) != 0 {
 		t.Errorf("expected winProb %d to equal %d", actualWinProb, winProb)
 	}
 	if actualSenderNonce != senderNonce {
 		t.Errorf("expected senderNonce %d to equal %d", actualSenderNonce, senderNonce)
 	}
-	actualRecipientRand := bytesToBigInt(actualRecipientRandBytes)
+	actualRecipientRand := new(big.Int).SetBytes(actualRecipientRandBytes)
 	if actualRecipientRand.Cmp(recipientRand) != 0 {
 		t.Errorf("expected recipientRand %d to equal %d", actualRecipientRand, recipientRand)
 	}
@@ -683,10 +683,4 @@ func randBytes(size int) ([]byte, error) {
 	_, err := rand.Read(key)
 
 	return key, err
-}
-
-func bytesToBigInt(buf []byte) *big.Int {
-	res := big.NewInt(0)
-	res.SetBytes(buf)
-	return res
 }
