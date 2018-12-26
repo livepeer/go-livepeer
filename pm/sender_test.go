@@ -76,11 +76,11 @@ func TestCreateTicket_GivenNonexistentSession_ReturnsError(t *testing.T) {
 
 func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T) {
 	sender := defaultSender(t)
-	am := sender.accountManager.(*stubAccountManager)
+	am := sender.signer.(*stubSigner)
 	am.signShouldFail = false
 	am.saveSignRequest = true
 	am.signResponse = randBytesOrFatal(42, t)
-	senderAddress := sender.accountManager.Account().Address
+	senderAddress := sender.signer.Account().Address
 	recipient := randAddressOrFatal(t)
 	recipientRandHash := randHashOrFatal(t)
 	ticketParams := TicketParams{
@@ -130,7 +130,7 @@ func TestCreateTicket_GivenSigningError_ReturnsError(t *testing.T) {
 	recipient := randAddressOrFatal(t)
 	ticketParams := defaultTicketParams(t)
 	sessionID := sender.StartSession(recipient, ticketParams)
-	am := sender.accountManager.(*stubAccountManager)
+	am := sender.signer.(*stubSigner)
 	am.signShouldFail = true
 
 	_, _, _, err := sender.CreateTicket(sessionID)
@@ -190,7 +190,7 @@ func defaultSender(t *testing.T) *sender {
 	account := accounts.Account{
 		Address: randAddressOrFatal(t),
 	}
-	am := &stubAccountManager{
+	am := &stubSigner{
 		account: account,
 	}
 	s := NewSender(am)

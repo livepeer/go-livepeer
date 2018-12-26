@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/livepeer/go-livepeer/eth"
 	"github.com/pkg/errors"
 )
 
@@ -29,15 +28,15 @@ type session struct {
 }
 
 type sender struct {
-	accountManager eth.AccountManager
+	signer Signer
 
 	sessions sync.Map
 }
 
 // NewSender creates a new Sender instance.
-func NewSender(accountManager eth.AccountManager) Sender {
+func NewSender(signer Signer) Sender {
 	return &sender{
-		accountManager: accountManager,
+		signer: signer,
 	}
 }
 
@@ -67,13 +66,13 @@ func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, erro
 	ticket := &Ticket{
 		Recipient:         session.recipient,
 		RecipientRandHash: recipientRandHash,
-		Sender:            s.accountManager.Account().Address,
+		Sender:            s.signer.Account().Address,
 		SenderNonce:       senderNonce,
 		FaceValue:         session.ticketParams.FaceValue,
 		WinProb:           session.ticketParams.WinProb,
 	}
 
-	sig, err := s.accountManager.Sign(ticket.Hash().Bytes())
+	sig, err := s.signer.Sign(ticket.Hash().Bytes())
 	if err != nil {
 		return nil, nil, nil, errors.Wrapf(err, "error signing ticket for session: %v", sessionID)
 	}
