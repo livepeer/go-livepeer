@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math/big"
+	"reflect"
 	"testing"
 	"time"
 
@@ -590,17 +591,7 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 		t.Error(err)
 		return
 	}
-
-	sessionID := "foo bar"
-	ticket := &pm.Ticket{
-		Sender:      randAddressOrFatal(t),
-		Recipient:   randAddressOrFatal(t),
-		FaceValue:   big.NewInt(1234),
-		WinProb:     big.NewInt(2345),
-		SenderNonce: uint64(123),
-	}
-	sig := randBytesOrFatal(42, t)
-	recipientRand := big.NewInt(4567)
+	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
 
 	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
 
@@ -648,7 +639,154 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	}
 }
 
-// TODO same test but with max values
+// TODO
+// same test but with max values
+// tests with errors
+
+func TestLoadtWinningTicket_GivenStoredTicket_LoadsItCorrectly(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
+	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
+	if err != nil {
+		t.Fatalf("unexpected errro storing ticket: %v", err)
+	}
+
+	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets(sessionID)
+	if err != nil {
+		t.Fatalf("unexpected error loading tickets: %v", err)
+	}
+	if len(tickets) != 1 || len(sigs) != 1 || len(recipientRands) != 1 {
+		t.Errorf("expected one item per slice but got unexpected number of results. tickets: %d, sigs: %d, recipientRands: %d", len(tickets), len(sigs), len(recipientRands))
+	}
+	actualTicket := tickets[0]
+	actualSig := sigs[0]
+	actualRecipientRand := recipientRands[0]
+
+	if !reflect.DeepEqual(actualTicket, ticket) {
+		t.Errorf("expected ticket %v to equal %v", actualTicket, ticket)
+	}
+	if !bytes.Equal(actualSig, sig) {
+		t.Errorf("expected sig %v to equal %v", actualSig, sig)
+	}
+	if actualRecipientRand.Cmp(recipientRand) != 0 {
+		t.Errorf("expected recipientRand %d to equal %d", actualRecipientRand, recipientRand)
+	}
+}
+
+func TestLoadtWinningTicket_GivenStoredTicketsFromDifferentSessions_OnlyLoadsFromSpecificSessionID(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// Two tickets in the first session
+	firstSessionID := "first session"
+	_, ticket0, sig0, recipientRand0 := defaultWinningTicket(t)
+	err = dbh.StoreWinningTicket(firstSessionID, ticket0, sig0, recipientRand0)
+	if err != nil {
+		t.Fatalf("unexpected errro storing ticket: %v", err)
+	}
+
+	_, ticket1, sig1, recipientRand1 := defaultWinningTicket(t)
+	err = dbh.StoreWinningTicket(firstSessionID, ticket1, sig1, recipientRand1)
+	if err != nil {
+		t.Fatalf("unexpected errro storing ticket: %v", err)
+	}
+
+	// One ticket in the second session
+	secondSessionID := "second session"
+	_, ticket2, sig2, recipientRand2 := defaultWinningTicket(t)
+	err = dbh.StoreWinningTicket(secondSessionID, ticket2, sig2, recipientRand2)
+	if err != nil {
+		t.Fatalf("unexpected errro storing ticket: %v", err)
+	}
+
+	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets(firstSessionID)
+	if err != nil {
+		t.Fatalf("unexpected error loading tickets: %v", err)
+	}
+	if len(tickets) != 2 || len(sigs) != 2 || len(recipientRands) != 2 {
+		t.Errorf("expected one item per slice but got unexpected number of results. tickets: %d, sigs: %d, recipientRands: %d", len(tickets), len(sigs), len(recipientRands))
+	}
+
+	if !reflect.DeepEqual(tickets[0], ticket0) {
+		t.Errorf("expected ticket %v to equal %v", tickets[0], ticket0)
+	}
+	if !bytes.Equal(sigs[0], sig0) {
+		t.Errorf("expected sig %v to equal %v", sigs[0], sig0)
+	}
+	if recipientRands[0].Cmp(recipientRand0) != 0 {
+		t.Errorf("expected recipientRand %d to equal %d", recipientRands[0], recipientRand0)
+	}
+	if !reflect.DeepEqual(tickets[1], ticket1) {
+		t.Errorf("expected ticket %v to equal %v", tickets[1], ticket1)
+	}
+	if !bytes.Equal(sigs[1], sig1) {
+		t.Errorf("expected sig %v to equal %v", sigs[1], sig1)
+	}
+	if recipientRands[1].Cmp(recipientRand1) != 0 {
+		t.Errorf("expected recipientRand %d to equal %d", recipientRands[1], recipientRand1)
+	}
+}
+
+func TestLoadtWinningTicket_GivenNonexistentSessionID_ReturnsEmptySlicesNoError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets("some sessionID")
+	if err != nil {
+		t.Errorf("unexpected error loading nonexistent session: %v", err)
+	}
+	if len(tickets) != 0 || len(sigs) != 0 || len(recipientRands) != 0 {
+		t.Errorf("expected zero items per slice but got unexpected number of results. tickets: %d, sigs: %d, recipientRands: %d", len(tickets), len(sigs), len(recipientRands))
+	}
+}
+
+func TestLoadtWinningTicket_GivenEmptySessionID_ReturnsEmptySlicesNoError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets("")
+	if err != nil {
+		t.Errorf("unexpected error loading nonexistent session: %v", err)
+	}
+	if len(tickets) != 0 || len(sigs) != 0 || len(recipientRands) != 0 {
+		t.Errorf("expected zero items per slice but got unexpected number of results. tickets: %d, sigs: %d, recipientRands: %d", len(tickets), len(sigs), len(recipientRands))
+	}
+}
+
+func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) {
+	sessionID = "foo bar"
+	ticket = &pm.Ticket{
+		Sender:      randAddressOrFatal(t),
+		Recipient:   randAddressOrFatal(t),
+		FaceValue:   big.NewInt(1234),
+		WinProb:     big.NewInt(2345),
+		SenderNonce: uint64(123),
+	}
+	sig = randBytesOrFatal(42, t)
+	recipientRand = big.NewInt(4567)
+	return
+}
 
 func getRowCountOrFatal(query string, dbraw *sql.DB, t *testing.T) int {
 	var count int

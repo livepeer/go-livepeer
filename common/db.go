@@ -20,27 +20,28 @@ type DB struct {
 	dbh *sql.DB
 
 	// prepared statements
-	updateKV                   *sql.Stmt
-	insertJob                  *sql.Stmt
-	selectJobs                 *sql.Stmt
-	getJob                     *sql.Stmt
-	stopReason                 *sql.Stmt
-	insertRec                  *sql.Stmt
-	checkRec                   *sql.Stmt
-	insertClaim                *sql.Stmt
-	countClaims                *sql.Stmt
-	setReceiptClaim            *sql.Stmt
-	setClaimStatus             *sql.Stmt
-	unclaimedReceipts          *sql.Stmt
-	receiptsByClaim            *sql.Stmt
-	insertBcast                *sql.Stmt
-	selectBcasts               *sql.Stmt
-	setSegmentCount            *sql.Stmt
-	insertUnbondingLock        *sql.Stmt
-	useUnbondingLock           *sql.Stmt
-	unbondingLocks             *sql.Stmt
-	withdrawableUnbondingLocks *sql.Stmt
-	insertWinningTicket        *sql.Stmt
+	updateKV                      *sql.Stmt
+	insertJob                     *sql.Stmt
+	selectJobs                    *sql.Stmt
+	getJob                        *sql.Stmt
+	stopReason                    *sql.Stmt
+	insertRec                     *sql.Stmt
+	checkRec                      *sql.Stmt
+	insertClaim                   *sql.Stmt
+	countClaims                   *sql.Stmt
+	setReceiptClaim               *sql.Stmt
+	setClaimStatus                *sql.Stmt
+	unclaimedReceipts             *sql.Stmt
+	receiptsByClaim               *sql.Stmt
+	insertBcast                   *sql.Stmt
+	selectBcasts                  *sql.Stmt
+	setSegmentCount               *sql.Stmt
+	insertUnbondingLock           *sql.Stmt
+	useUnbondingLock              *sql.Stmt
+	unbondingLocks                *sql.Stmt
+	withdrawableUnbondingLocks    *sql.Stmt
+	insertWinningTicket           *sql.Stmt
+	selectWinningTicketsBySession *sql.Stmt
 }
 
 type DBJob struct {
@@ -419,6 +420,14 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.insertWinningTicket = stmt
 
+	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig, sessionID FROM winningTickets WHERE sessionID = ?")
+	if err != nil {
+		glog.Error("Unable to prepare selectWinningTicketsBySession ", err)
+		d.Close()
+		return nil, err
+	}
+	d.selectWinningTicketsBySession = stmt
+
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -484,6 +493,9 @@ func (db *DB) Close() {
 	}
 	if db.insertWinningTicket != nil {
 		db.insertWinningTicket.Close()
+	}
+	if db.selectWinningTicketsBySession != nil {
+		db.selectWinningTicketsBySession.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -911,4 +923,42 @@ func (db *DB) StoreWinningTicket(sessionID string, ticket *pm.Ticket, sig []byte
 		return err
 	}
 	return nil
+}
+
+func (db *DB) LoadWinningTickets(sessionID string) (tickets []*pm.Ticket, sigs [][]byte, recipientRands []*big.Int, err error) {
+	rows, err := db.selectWinningTicketsBySession.Query(sessionID)
+	defer rows.Close()
+
+	if err != nil {
+		// TODO wrap with custom error
+		return nil, nil, nil, err
+	}
+
+	for rows.Next() {
+		var sender, recipient, sessionID string
+		var faceValue, winProb, recipientRandBytes, sig []byte
+		var senderNonce uint64
+
+		err = rows.Scan(&sender, &recipient, &faceValue, &winProb, &senderNonce, &recipientRandBytes, &sig, &sessionID)
+		if err != nil {
+			// TODO
+			return
+		}
+
+		ticket := &pm.Ticket{
+			Sender:      ethcommon.HexToAddress(sender),
+			Recipient:   ethcommon.HexToAddress(recipient),
+			FaceValue:   new(big.Int).SetBytes(faceValue),
+			WinProb:     new(big.Int).SetBytes(winProb),
+			SenderNonce: senderNonce,
+			// TODO RecipientRandHash
+		}
+		recipientRand := new(big.Int).SetBytes(recipientRandBytes)
+
+		tickets = append(tickets, ticket)
+		sigs = append(sigs, sig)
+		recipientRands = append(recipientRands, recipientRand)
+	}
+
+	return
 }
