@@ -18,6 +18,17 @@ func newRecipientFixture(t *testing.T) (ethcommon.Address, *stubBroker, *stubVal
 	return randAddressOrFatal(t), newStubBroker(), &stubValidator{}, newStubTicketStore(), big.NewInt(100), big.NewInt(100), []byte("foo")
 }
 
+func newTicket(sender ethcommon.Address, params *TicketParams, senderNonce uint64) *Ticket {
+	return &Ticket{
+		Recipient:         ethcommon.Address{},
+		Sender:            sender,
+		FaceValue:         params.FaceValue,
+		WinProb:           params.WinProb,
+		SenderNonce:       senderNonce,
+		RecipientRandHash: params.RecipientRandHash,
+	}
+}
+
 func genRecipientRand(sender ethcommon.Address, secret [32]byte, seed *big.Int) *big.Int {
 	h := hmac.New(sha256.New, secret[:])
 	h.Write(append(seed.Bytes(), sender.Bytes()...))
@@ -41,14 +52,7 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidSeed(t *testing.T) {
 	}
 
 	// Test invalid recipientRand from seed (invalid seed)
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       0,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, 0)
 
 	// Using invalid seed
 	invalidSeed := new(big.Int).Add(params.Seed, big.NewInt(99))
@@ -78,14 +82,7 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidSender(t *testing.T) {
 	}
 
 	// Test invalid recipientRand from seed (invalid sender)
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            ethcommon.Address{}, // Using invalid sender
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       0,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(ethcommon.Address{}, params, 0)
 
 	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
@@ -113,14 +110,8 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidRecipientRandHash(t *testing.
 	}
 
 	// Test invalid recipientRand from seed (invalid recipientRandHash)
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       0,
-		RecipientRandHash: randHashOrFatal(t), // Using invalid recipientRandHash
-	}
+	ticket := newTicket(sender, params, 0)
+	ticket.RecipientRandHash = randHashOrFatal(t) // Using invalid recipientRandHash
 
 	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
@@ -148,14 +139,8 @@ func TestReceiveTicket_InvalidFaceValue(t *testing.T) {
 	}
 
 	// Test invalid faceValue
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         big.NewInt(0), // Using invalid faceValue
-		WinProb:           winProb,
-		SenderNonce:       0,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, 0)
+	ticket.FaceValue = big.NewInt(0) // Using invalid faceValue
 
 	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
@@ -183,14 +168,8 @@ func TestReceiveTicket_InvalidWinProb(t *testing.T) {
 	}
 
 	// Test invalid winProb
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           big.NewInt(0), // Using invalid winProb
-		SenderNonce:       0,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, 0)
+	ticket.WinProb = big.NewInt(0) // Using invalid winProb
 
 	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
@@ -218,14 +197,7 @@ func TestReceiveTicket_InvalidTicket(t *testing.T) {
 	}
 
 	// Test invalid ticket
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       0,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, 0)
 
 	if _, err := r.ReceiveTicket(ticket, sig, params.Seed); err == nil {
 		t.Error("expected invalid ticket error")
@@ -248,14 +220,7 @@ func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
 
 	// Test valid non-winning ticket
 	newSenderNonce := uint64(3)
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       newSenderNonce,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, newSenderNonce)
 
 	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
@@ -290,14 +255,7 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 
 	// Test valid winning ticket
 	newSenderNonce := uint64(3)
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       newSenderNonce,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, newSenderNonce)
 
 	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
@@ -361,14 +319,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 
 	// Test valid winning ticket
 	newSenderNonce := uint64(3)
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       newSenderNonce,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, newSenderNonce)
 
 	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
@@ -419,14 +370,7 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	}
 
 	// Test invalid recipientRand revealed
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       0,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, 0)
 
 	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
@@ -439,14 +383,7 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	}
 
 	// New ticket with same invalid recipientRand, but updated senderNonce
-	ticket = &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       1,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket = newTicket(sender, params, 1)
 
 	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
@@ -475,14 +412,7 @@ func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
 
 	// Test invalid senderNonce
 	// Receive senderNonce = 0
-	ticket0 := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       0,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket0 := newTicket(sender, params, 0)
 
 	_, err = r.ReceiveTicket(ticket0, sig, params.Seed)
 	if err != nil {
@@ -490,14 +420,7 @@ func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
 	}
 
 	// Receive senderNonce = 1
-	ticket1 := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       1,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket1 := newTicket(sender, params, 1)
 
 	_, err = r.ReceiveTicket(ticket1, sig, params.Seed)
 	if err != nil {
@@ -548,14 +471,7 @@ func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
 		go func(senderNonce uint64) {
 			defer wg.Done()
 
-			ticket := &Ticket{
-				Recipient:         ethcommon.Address{},
-				Sender:            sender,
-				FaceValue:         faceValue,
-				WinProb:           winProb,
-				SenderNonce:       senderNonce,
-				RecipientRandHash: params.RecipientRandHash,
-			}
+			ticket := newTicket(sender, params, senderNonce)
 
 			_, err := r.ReceiveTicket(ticket, sig, params.Seed)
 			if err != nil {
@@ -607,14 +523,7 @@ func TestRedeemWinningTickets_SingleTicket_GetDepositError(t *testing.T) {
 	b.SetPenaltyEscrow(sender, big.NewInt(0))
 
 	// Test get deposit error
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       0,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, 0)
 
 	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
@@ -650,14 +559,7 @@ func TestRedeemWinningTickets_SingleTicket_GetPenaltyEscrowError(t *testing.T) {
 	b.SetDeposit(sender, big.NewInt(0))
 
 	// Test get penalty escrow error
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       0,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, 0)
 
 	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
@@ -694,14 +596,7 @@ func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testin
 	b.SetPenaltyEscrow(sender, big.NewInt(0))
 
 	// Test zero deposit and penalty escrow error
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       0,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, 0)
 
 	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
@@ -740,14 +635,7 @@ func TestRedeemWinningTickets_SingleTicket_RedeemError(t *testing.T) {
 	b.redeemShouldFail = true
 
 	// Test redeem error
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       2,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, 2)
 
 	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
@@ -800,14 +688,7 @@ func TestRedeemWinningTickets_SingleTicket(t *testing.T) {
 	b.SetPenaltyEscrow(sender, big.NewInt(500))
 
 	// Test single ticket
-	ticket := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       2,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket := newTicket(sender, params, 2)
 
 	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
@@ -861,14 +742,7 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 
 	// Test multiple tickets
 	// Receive ticket 0
-	ticket0 := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       2,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	ticket0 := newTicket(sender, params, 2)
 
 	won, err := r.ReceiveTicket(ticket0, sig, params.Seed)
 	if err != nil {
@@ -878,15 +752,8 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
-	// Receive ticket 2
-	ticket1 := &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         faceValue,
-		WinProb:           winProb,
-		SenderNonce:       3,
-		RecipientRandHash: params.RecipientRandHash,
-	}
+	// Receive ticket 1
+	ticket1 := newTicket(sender, params, 3)
 
 	won, err = r.ReceiveTicket(ticket1, sig, params.Seed)
 	if err != nil {
