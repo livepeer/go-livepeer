@@ -14,8 +14,35 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func newRecipientFixture(t *testing.T) (ethcommon.Address, *stubBroker, *stubValidator, *stubTicketStore, *big.Int, *big.Int, []byte) {
-	return randAddressOrFatal(t), newStubBroker(), &stubValidator{}, newStubTicketStore(), big.NewInt(100), big.NewInt(100), []byte("foo")
+func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *stubValidator, *stubTicketStore, *big.Int, *big.Int, []byte) {
+	sender := randAddressOrFatal(t)
+
+	b := newStubBroker()
+	b.SetDeposit(sender, big.NewInt(500))
+	b.SetPenaltyEscrow(sender, big.NewInt(500))
+
+	v := &stubValidator{}
+	v.SetIsValidTicket(true)
+
+	return sender, b, v, newStubTicketStore(), big.NewInt(100), big.NewInt(100), []byte("foo")
+}
+
+func newRecipientOrFatal(t *testing.T, b Broker, v Validator, ts TicketStore, faceValue *big.Int, winProb *big.Int) Recipient {
+	r, err := NewRecipient(b, v, ts, faceValue, winProb)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return r
+}
+
+func ticketParamsOrFatal(t *testing.T, r Recipient, sender ethcommon.Address) *TicketParams {
+	params, err := r.TicketParams(sender)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return params
 }
 
 func newTicket(sender ethcommon.Address, params *TicketParams, senderNonce uint64) *Ticket {
@@ -36,27 +63,16 @@ func genRecipientRand(sender ethcommon.Address, secret [32]byte, seed *big.Int) 
 }
 
 func TestReceiveTicket_InvalidRecipientRand_InvalidSeed(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Config stub validator with valid non-winning tickets
-	v.SetIsValidTicket(true)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test invalid recipientRand from seed (invalid seed)
 	ticket := newTicket(sender, params, 0)
 
 	// Using invalid seed
 	invalidSeed := new(big.Int).Add(params.Seed, big.NewInt(99))
-	_, _, err = r.ReceiveTicket(ticket, sig, invalidSeed)
+	_, _, err := r.ReceiveTicket(ticket, sig, invalidSeed)
 	if err == nil {
 		t.Error("expected invalid recipientRand generated from seed error")
 	}
@@ -66,25 +82,14 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidSeed(t *testing.T) {
 }
 
 func TestReceiveTicket_InvalidRecipientRand_InvalidSender(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Config stub validator with valid non-winning tickets
-	v.SetIsValidTicket(true)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test invalid recipientRand from seed (invalid sender)
 	ticket := newTicket(ethcommon.Address{}, params, 0)
 
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid recipientRand from seed error")
 	}
@@ -94,26 +99,15 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidSender(t *testing.T) {
 }
 
 func TestReceiveTicket_InvalidRecipientRand_InvalidRecipientRandHash(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Config stub validator with valid non-winning tickets
-	v.SetIsValidTicket(true)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test invalid recipientRand from seed (invalid recipientRandHash)
 	ticket := newTicket(sender, params, 0)
 	ticket.RecipientRandHash = randHashOrFatal(t) // Using invalid recipientRandHash
 
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid recipientRand from seed error")
 	}
@@ -123,26 +117,15 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidRecipientRandHash(t *testing.
 }
 
 func TestReceiveTicket_InvalidFaceValue(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Config stub validator with valid non-winning tickets
-	v.SetIsValidTicket(true)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test invalid faceValue
 	ticket := newTicket(sender, params, 0)
 	ticket.FaceValue = big.NewInt(0) // Using invalid faceValue
 
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid faceValue error")
 	}
@@ -152,26 +135,15 @@ func TestReceiveTicket_InvalidFaceValue(t *testing.T) {
 }
 
 func TestReceiveTicket_InvalidWinProb(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Config stub validator with valid non-winning tickets
-	v.SetIsValidTicket(true)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test invalid winProb
 	ticket := newTicket(sender, params, 0)
 	ticket.WinProb = big.NewInt(0) // Using invalid winProb
 
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid winProb error")
 	}
@@ -181,42 +153,30 @@ func TestReceiveTicket_InvalidWinProb(t *testing.T) {
 }
 
 func TestReceiveTicket_InvalidTicket(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Config stub validator with invalid non-winning tickets
-	v.SetIsValidTicket(false)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test invalid ticket
 	ticket := newTicket(sender, params, 0)
 
-	if _, _, err := r.ReceiveTicket(ticket, sig, params.Seed); err == nil {
-		t.Error("expected invalid ticket error")
+	// Config stub validator with invalid non-winning tickets
+	v.SetIsValidTicket(false)
+
+	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	if err == nil {
+		t.Error("expected validator invalid ticket error")
+	}
+	if err != nil && !strings.Contains(err.Error(), "validator invalid ticket error") {
+		t.Errorf("expected validator invalid ticket error, got %v", err)
 	}
 }
 
 func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-
-	// Config stub validator with valid non-winning tickets
-	v.SetIsValidTicket(true)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test valid non-winning ticket
 	newSenderNonce := uint64(3)
@@ -242,23 +202,17 @@ func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
 }
 
 func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-
-	// Config stub validator with valid winning tickets
-	v.SetIsValidTicket(true)
-	v.SetIsWinningTicket(true)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test valid winning ticket
 	newSenderNonce := uint64(3)
 	ticket := newTicket(sender, params, newSenderNonce)
+
+	// Config stub validator with valid winning tickets
+	v.SetIsWinningTicket(true)
 
 	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
@@ -307,29 +261,26 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 }
 
 func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-
-	// Config stub validator with valid winning tickets
-	v.SetIsValidTicket(true)
-	v.SetIsWinningTicket(true)
-	// Config stub ticket store to fail store
-	ts.storeShouldFail = true
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test valid winning ticket
 	newSenderNonce := uint64(3)
 	ticket := newTicket(sender, params, newSenderNonce)
 
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	// Config stub validator with valid winning tickets
+	v.SetIsWinningTicket(true)
+	// Config stub ticket store to fail store
+	ts.storeShouldFail = true
+
+	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
-		t.Error("expected ticket store error")
+		t.Error("expected ticket store store error")
+	}
+	if err != nil && !strings.Contains(err.Error(), "ticket store store error") {
+		t.Errorf("expected ticket store store error, got %v", err)
 	}
 
 	recipientRand := genRecipientRand(sender, secret, params.Seed)
@@ -356,29 +307,17 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 }
 
 func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Config stub validator with invalid non-winning tickets
-	v.SetIsValidTicket(true)
-	v.SetIsWinningTicket(true)
-	// Config stub broker with zero deposit and non-zero penalty escrow
-	b.SetDeposit(sender, big.NewInt(0))
-	b.SetPenaltyEscrow(sender, big.NewInt(500))
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test invalid recipientRand revealed
 	ticket := newTicket(sender, params, 0)
 
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	// Config stub validator with valid winning tickets
+	v.SetIsWinningTicket(true)
+
+	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,26 +340,15 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 }
 
 func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Config stub validator with valid non-winning tickets
-	v.SetIsValidTicket(true)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test invalid senderNonce
 	// Receive senderNonce = 0
 	ticket0 := newTicket(sender, params, 0)
 
-	_, _, err = r.ReceiveTicket(ticket0, sig, params.Seed)
+	_, _, err := r.ReceiveTicket(ticket0, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,20 +381,9 @@ func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
 }
 
 func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Config stub validator with valid non-winning tickets
-	v.SetIsValidTicket(true)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	var wg sync.WaitGroup
 	var errCount uint64
@@ -494,39 +411,28 @@ func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
 }
 
 func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {
-	_, b, v, ts, faceValue, winProb, _ := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, b, v, ts, faceValue, winProb, _ := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
 
 	// Config stub ticket store to fail load
 	ts.loadShouldFail = true
 
-	if err := r.RedeemWinningTickets("foo"); err == nil {
-		t.Error("expected ticket store error")
+	err := r.RedeemWinningTickets("foo")
+	if err == nil {
+		t.Error("expected ticket store load error")
+	}
+	if err != nil && !strings.Contains(err.Error(), "ticket store load error") {
+		t.Errorf("expected ticket store load error, got %v", err)
 	}
 }
 
 func TestRedeemWinningTickets_SingleTicket_GetDepositError(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Config stub validator with valid winning tickets
-	v.SetIsValidTicket(true)
 	v.SetIsWinningTicket(true)
-	// Config stub broker with zero penalty escrow
-	b.SetPenaltyEscrow(sender, big.NewInt(0))
 
 	// Test get deposit error
 	ticket := newTicket(sender, params, 0)
@@ -539,30 +445,25 @@ func TestRedeemWinningTickets_SingleTicket_GetDepositError(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
+	// Config stub broker to fail getting deposit
+	b.getDepositShouldFail = true
+
 	err = r.RedeemWinningTickets(sessionID)
 	if err == nil {
-		t.Error("expected get deposit error")
+		t.Error("expected broker get deposit error")
+	}
+	if err != nil && !strings.Contains(err.Error(), "broker get deposit error") {
+		t.Errorf("execpted broker get deposit error, got %v", err)
 	}
 }
 
 func TestRedeemWinningTickets_SingleTicket_GetPenaltyEscrowError(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Config stub validator with valid winning tickets
-	v.SetIsValidTicket(true)
 	v.SetIsWinningTicket(true)
-	// Config stub broker with zero deposit
-	b.SetDeposit(sender, big.NewInt(0))
 
 	// Test get penalty escrow error
 	ticket := newTicket(sender, params, 0)
@@ -575,31 +476,25 @@ func TestRedeemWinningTickets_SingleTicket_GetPenaltyEscrowError(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
+	// Config stub broker to fail getting penalty escrow
+	b.getPenaltyEscrowShouldFail = true
+
 	err = r.RedeemWinningTickets(sessionID)
 	if err == nil {
-		t.Error("expected get penalty escrow error")
+		t.Error("expected broker get penalty escrow error")
+	}
+	if err != nil && !strings.Contains(err.Error(), "broker get penalty escrow error") {
+		t.Errorf("expected broker get penalty escrow error, got %v", err)
 	}
 }
 
 func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
-
-	r, err := NewRecipient(b, v, ts, faceValue, winProb)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Config stub validator with valid winning tickets
-	v.SetIsValidTicket(true)
 	v.SetIsWinningTicket(true)
-	// Config stub broker with zero deposit and penalty escrow
-	b.SetDeposit(sender, big.NewInt(0))
-	b.SetPenaltyEscrow(sender, big.NewInt(0))
 
 	// Test zero deposit and penalty escrow error
 	ticket := newTicket(sender, params, 0)
@@ -612,6 +507,10 @@ func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testin
 		t.Fatal("expected valid winning ticket")
 	}
 
+	// Config stub broker with zero deposit and penalty escrow
+	b.SetDeposit(sender, big.NewInt(0))
+	b.SetPenaltyEscrow(sender, big.NewInt(0))
+
 	err = r.RedeemWinningTickets(sessionID)
 	if err == nil {
 		t.Error("expected zero deposit and penalty escrow error")
@@ -622,23 +521,13 @@ func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testin
 }
 
 func TestRedeemWinningTickets_SingleTicket_RedeemError(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Config stub validator with valid winning tickets
-	v.SetIsValidTicket(true)
 	v.SetIsWinningTicket(true)
-	// Config stub broker with zero deposit and penalty escrow and to fail redemption
-	b.SetDeposit(sender, big.NewInt(0))
-	b.SetPenaltyEscrow(sender, big.NewInt(500))
-	b.redeemShouldFail = true
 
 	// Test redeem error
 	ticket := newTicket(sender, params, 2)
@@ -651,9 +540,15 @@ func TestRedeemWinningTickets_SingleTicket_RedeemError(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
+	// Config stub broker to fail redeem
+	b.redeemShouldFail = true
+
 	err = r.RedeemWinningTickets(sessionID)
 	if err == nil {
-		t.Error("expected ticket redemption error")
+		t.Error("expected broker redeem error")
+	}
+	if err != nil && !strings.Contains(err.Error(), "broker redeem error") {
+		t.Errorf("expected broker redeem error, got %v", err)
 	}
 
 	used, err := b.IsUsedTicket(ticket)
@@ -676,22 +571,13 @@ func TestRedeemWinningTickets_SingleTicket_RedeemError(t *testing.T) {
 }
 
 func TestRedeemWinningTickets_SingleTicket(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Config stub validator with valid winning tickets
-	v.SetIsValidTicket(true)
 	v.SetIsWinningTicket(true)
-	// Config stub broker with zero deposit and penalty escrow and to fail redemption
-	b.SetDeposit(sender, big.NewInt(0))
-	b.SetPenaltyEscrow(sender, big.NewInt(500))
 
 	// Test single ticket
 	ticket := newTicket(sender, params, 2)
@@ -729,22 +615,13 @@ func TestRedeemWinningTickets_SingleTicket(t *testing.T) {
 }
 
 func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixture(t)
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	params := ticketParamsOrFatal(t, r, sender)
 
 	// Config stub validator with valid winning tickets
-	v.SetIsValidTicket(true)
 	v.SetIsWinningTicket(true)
-	// Config stub broker with zero deposit and penalty escrow and to fail redemption
-	b.SetDeposit(sender, big.NewInt(0))
-	b.SetPenaltyEscrow(sender, big.NewInt(500))
 
 	// Test multiple tickets
 	// Receive ticket 0
@@ -802,9 +679,8 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 }
 
 func TestTicketParams(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, _ := newRecipientFixture(t)
+	sender, b, v, ts, faceValue, winProb, _ := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
 
 	// Test correct params returned
