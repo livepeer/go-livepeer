@@ -15,12 +15,10 @@ func TestValidateTicket(t *testing.T) {
 	recipientRand := big.NewInt(10)
 	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size))
 
-	b := newStubBroker()
-
 	sv := &stubSigVerifier{}
 	sv.SetVerifyResult(true)
 
-	v := NewValidator(recipient, b, sv)
+	v := NewValidator(recipient, sv)
 
 	// Test invalid recipient (null address)
 	ticket := &Ticket{
@@ -131,12 +129,10 @@ func TestIsWinningTicket(t *testing.T) {
 	recipientRand := big.NewInt(10)
 	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size))
 
-	b := newStubBroker()
-
 	sv := &stubSigVerifier{}
 	sv.SetVerifyResult(true)
 
-	v := NewValidator(recipient, b, sv)
+	v := NewValidator(recipient, sv)
 
 	// Test non-winning ticket
 	ticket := &Ticket{

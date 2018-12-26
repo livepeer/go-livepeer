@@ -1,11 +1,11 @@
 package pm
 
 import (
-	"errors"
 	"math/big"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -29,15 +29,13 @@ type Validator interface {
 // validator is an implementation of the Validator interface
 type validator struct {
 	addr        ethcommon.Address
-	broker      Broker
 	sigVerifier SigVerifier
 }
 
 // NewValidator returns an instance of a validator
-func NewValidator(addr ethcommon.Address, broker Broker, sigVerifier SigVerifier) Validator {
+func NewValidator(addr ethcommon.Address, sigVerifier SigVerifier) Validator {
 	return &validator{
 		addr:        addr,
-		broker:      broker,
 		sigVerifier: sigVerifier,
 	}
 }
