@@ -20,7 +20,7 @@ type Sender interface {
 }
 
 type session struct {
-	senderNonce uint64
+	senderNonce uint32
 
 	recipient ethcommon.Address
 
@@ -61,7 +61,7 @@ func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, erro
 	}
 	session := tempSession.(*session)
 
-	senderNonce := atomic.AddUint64(&session.senderNonce, 1)
+	senderNonce := atomic.AddUint32(&session.senderNonce, 1)
 
 	ticket := &Ticket{
 		Recipient:         session.recipient,

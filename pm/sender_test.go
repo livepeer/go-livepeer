@@ -173,11 +173,11 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 		t.Fatalf("failed to find session with ID %v", sessionID)
 	}
 	session := sessionUntyped.(*session)
-	if session.senderNonce != uint64(totalTickets) {
+	if session.senderNonce != uint32(totalTickets) {
 		t.Errorf("expected end state SenderNonce %d to be %d", session.senderNonce, totalTickets)
 	}
 
-	uniqueNonces := make(map[uint64]bool)
+	uniqueNonces := make(map[uint32]bool)
 	for _, ticket := range tickets {
 		uniqueNonces[ticket.SenderNonce] = true
 	}

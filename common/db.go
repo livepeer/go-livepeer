@@ -937,7 +937,7 @@ func (db *DB) LoadWinningTickets(sessionID string) (tickets []*pm.Ticket, sigs [
 	for rows.Next() {
 		var sender, recipient, sessionID string
 		var faceValue, winProb, recipientRandBytes, sig []byte
-		var senderNonce uint64
+		var senderNonce uint32
 
 		err = rows.Scan(&sender, &recipient, &faceValue, &winProb, &senderNonce, &recipientRandBytes, &sig, &sessionID)
 		if err != nil {

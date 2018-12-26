@@ -38,7 +38,7 @@ type recipient struct {
 
 	invalidRands sync.Map
 
-	senderNonces     map[string]uint64
+	senderNonces     map[string]uint32
 	senderNoncesLock sync.Mutex
 
 	faceValue *big.Int
@@ -69,7 +69,7 @@ func NewRecipientWithSecret(broker Broker, val Validator, store TicketStore, sec
 		store:        store,
 		secret:       secret,
 		faceValue:    faceValue,
-		senderNonces: make(map[string]uint64),
+		senderNonces: make(map[string]uint32),
 		winProb:      winProb,
 	}
 }
@@ -200,7 +200,7 @@ func (r *recipient) updateInvalidRands(rand *big.Int) {
 	r.invalidRands.Store(rand.String(), true)
 }
 
-func (r *recipient) updateSenderNonce(rand *big.Int, senderNonce uint64) error {
+func (r *recipient) updateSenderNonce(rand *big.Int, senderNonce uint32) error {
 	r.senderNoncesLock.Lock()
 	defer r.senderNoncesLock.Unlock()
 

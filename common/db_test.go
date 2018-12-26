@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 	"testing"
@@ -602,7 +603,66 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig, sessionID FROM winningTickets")
 	var actualSender, actualRecipient, actualSessionID string
 	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
-	var actualSenderNonce uint64
+	var actualSenderNonce uint32
+	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualSig, &actualSessionID)
+
+	if actualSender != ticket.Sender.Hex() {
+		t.Errorf("expected sender %v to equal %v", actualSender, ticket.Sender.Hex())
+	}
+	if actualRecipient != ticket.Recipient.Hex() {
+		t.Errorf("expected recipient %v to equal %v", actualRecipient, ticket.Recipient.Hex())
+	}
+	actualFaceValue := new(big.Int).SetBytes(actualFaceValueBytes)
+	if actualFaceValue.Cmp(ticket.FaceValue) != 0 {
+		t.Errorf("expected faceValue %d to equal %d", actualFaceValue, ticket.FaceValue)
+	}
+	actualWinProb := new(big.Int).SetBytes(actualWinProbBytes)
+	if actualWinProb.Cmp(ticket.WinProb) != 0 {
+		t.Errorf("expected winProb %d to equal %d", actualWinProb, ticket.WinProb)
+	}
+	if actualSenderNonce != ticket.SenderNonce {
+		t.Errorf("expected senderNonce %d to equal %d", actualSenderNonce, ticket.SenderNonce)
+	}
+	actualRecipientRand := new(big.Int).SetBytes(actualRecipientRandBytes)
+	if actualRecipientRand.Cmp(recipientRand) != 0 {
+		t.Errorf("expected recipientRand %d to equal %d", actualRecipientRand, recipientRand)
+	}
+	if !bytes.Equal(actualSig, sig) {
+		t.Errorf("expected sig %v to equal %v", actualSig, sig)
+	}
+	if actualSessionID != sessionID {
+		t.Errorf("expeceted sessionID %v to equal %v", actualSessionID, sessionID)
+	}
+
+	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM winningTickets", dbraw, t)
+	if ticketsCount != 1 {
+		t.Errorf("expected db ticket count %d to be 1", ticketsCount)
+	}
+}
+func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
+	ticket.FaceValue = maxUint256OrFatal(t)
+	ticket.WinProb = maxUint256OrFatal(t)
+	ticket.SenderNonce = math.MaxUint32
+
+	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
+
+	if err != nil {
+		t.Errorf("Failed to insert winning ticket with error: %v", err)
+	}
+
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig, sessionID FROM winningTickets")
+	var actualSender, actualRecipient, actualSessionID string
+	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
+	var actualSenderNonce uint32
 	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualSig, &actualSessionID)
 
 	if actualSender != ticket.Sender.Hex() {
@@ -781,7 +841,7 @@ func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, si
 		Recipient:   randAddressOrFatal(t),
 		FaceValue:   big.NewInt(1234),
 		WinProb:     big.NewInt(2345),
-		SenderNonce: uint64(123),
+		SenderNonce: uint32(123),
 	}
 	sig = randBytesOrFatal(42, t)
 	recipientRand = big.NewInt(4567)
@@ -828,4 +888,12 @@ func randBytes(size int) ([]byte, error) {
 	_, err := rand.Read(key)
 
 	return key, err
+}
+
+func maxUint256OrFatal(t *testing.T) *big.Int {
+	n, ok := new(big.Int).SetString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16)
+	if !ok {
+		t.Fatalf("unexpected error creating max value of uint256")
+	}
+	return n
 }

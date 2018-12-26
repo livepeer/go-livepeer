@@ -18,7 +18,7 @@ func newRecipientFixture(t *testing.T) (ethcommon.Address, *stubBroker, *stubVal
 	return randAddressOrFatal(t), newStubBroker(), &stubValidator{}, newStubTicketStore(), big.NewInt(100), big.NewInt(100), []byte("foo")
 }
 
-func newTicket(sender ethcommon.Address, params *TicketParams, senderNonce uint64) *Ticket {
+func newTicket(sender ethcommon.Address, params *TicketParams, senderNonce uint32) *Ticket {
 	return &Ticket{
 		Recipient:         ethcommon.Address{},
 		Sender:            sender,
@@ -219,7 +219,7 @@ func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
 	}
 
 	// Test valid non-winning ticket
-	newSenderNonce := uint64(3)
+	newSenderNonce := uint32(3)
 	ticket := newTicket(sender, params, newSenderNonce)
 
 	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
@@ -254,7 +254,7 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 	}
 
 	// Test valid winning ticket
-	newSenderNonce := uint64(3)
+	newSenderNonce := uint32(3)
 	ticket := newTicket(sender, params, newSenderNonce)
 
 	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
@@ -318,7 +318,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 	}
 
 	// Test valid winning ticket
-	newSenderNonce := uint64(3)
+	newSenderNonce := uint32(3)
 	ticket := newTicket(sender, params, newSenderNonce)
 
 	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
@@ -468,7 +468,7 @@ func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
 
-		go func(senderNonce uint64) {
+		go func(senderNonce uint32) {
 			defer wg.Done()
 
 			ticket := newTicket(sender, params, senderNonce)
@@ -477,7 +477,7 @@ func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
 			if err != nil {
 				atomic.AddUint64(&errCount, 1)
 			}
-		}(uint64(i))
+		}(uint32(i))
 	}
 
 	wg.Wait()
