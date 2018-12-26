@@ -103,7 +103,7 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (bo
 	}
 
 	if r.val.IsWinningTicket(ticket, sig, recipientRand) {
-		if err := r.store.Store(ticket.RecipientRandHash.Hex(), ticket, sig, recipientRand); err != nil {
+		if err := r.store.StoreWinningTicket(ticket.RecipientRandHash.Hex(), ticket, sig, recipientRand); err != nil {
 			return true, err
 		}
 
@@ -116,7 +116,7 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (bo
 // RedeemWinningTicket redeems all winning tickets with the broker
 // for a session ID
 func (r *recipient) RedeemWinningTickets(sessionID string) error {
-	tickets, sigs, recipientRands, err := r.store.Load(sessionID)
+	tickets, sigs, recipientRands, err := r.store.LoadWinningTickets(sessionID)
 	if err != nil {
 		return err
 	}

@@ -27,7 +27,7 @@ func newStubTicketStore() *stubTicketStore {
 	}
 }
 
-func (ts *stubTicketStore) Store(sessionID string, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+func (ts *stubTicketStore) StoreWinningTicket(sessionID string, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 
@@ -42,7 +42,7 @@ func (ts *stubTicketStore) Store(sessionID string, ticket *Ticket, sig []byte, r
 	return nil
 }
 
-func (ts *stubTicketStore) Load(sessionID string) ([]*Ticket, [][]byte, []*big.Int, error) {
+func (ts *stubTicketStore) LoadWinningTickets(sessionID string) ([]*Ticket, [][]byte, []*big.Int, error) {
 	ts.lock.RLock()
 	defer ts.lock.RUnlock()
 
