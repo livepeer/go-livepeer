@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -590,16 +591,18 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 		return
 	}
 
-	sender := randAddressOrFatal(t)
-	recipient := randAddressOrFatal(t)
-	faceValue := big.NewInt(1234)
-	winProb := big.NewInt(2345)
-	senderNonce := uint64(123)
-	recipientRand := big.NewInt(4567)
-	sig := randBytesOrFatal(42, t)
 	sessionID := "foo bar"
+	ticket := &pm.Ticket{
+		Sender:      randAddressOrFatal(t),
+		Recipient:   randAddressOrFatal(t),
+		FaceValue:   big.NewInt(1234),
+		WinProb:     big.NewInt(2345),
+		SenderNonce: uint64(123),
+	}
+	sig := randBytesOrFatal(42, t)
+	recipientRand := big.NewInt(4567)
 
-	err = dbh.InsertWinningTicket(sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig, sessionID)
+	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
 
 	if err != nil {
 		t.Errorf("Failed to insert winning ticket with error: %v", err)
@@ -611,22 +614,22 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	var actualSenderNonce uint64
 	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualSig, &actualSessionID)
 
-	if actualSender != sender.Hex() {
-		t.Errorf("expected sender %v to equal %v", actualSender, sender.Hex())
+	if actualSender != ticket.Sender.Hex() {
+		t.Errorf("expected sender %v to equal %v", actualSender, ticket.Sender.Hex())
 	}
-	if actualRecipient != recipient.Hex() {
-		t.Errorf("expected recipient %v to equal %v", actualRecipient, recipient.Hex())
+	if actualRecipient != ticket.Recipient.Hex() {
+		t.Errorf("expected recipient %v to equal %v", actualRecipient, ticket.Recipient.Hex())
 	}
 	actualFaceValue := new(big.Int).SetBytes(actualFaceValueBytes)
-	if actualFaceValue.Cmp(faceValue) != 0 {
-		t.Errorf("expected faceValue %d to equal %d", actualFaceValue, faceValue)
+	if actualFaceValue.Cmp(ticket.FaceValue) != 0 {
+		t.Errorf("expected faceValue %d to equal %d", actualFaceValue, ticket.FaceValue)
 	}
 	actualWinProb := new(big.Int).SetBytes(actualWinProbBytes)
-	if actualWinProb.Cmp(winProb) != 0 {
-		t.Errorf("expected winProb %d to equal %d", actualWinProb, winProb)
+	if actualWinProb.Cmp(ticket.WinProb) != 0 {
+		t.Errorf("expected winProb %d to equal %d", actualWinProb, ticket.WinProb)
 	}
-	if actualSenderNonce != senderNonce {
-		t.Errorf("expected senderNonce %d to equal %d", actualSenderNonce, senderNonce)
+	if actualSenderNonce != ticket.SenderNonce {
+		t.Errorf("expected senderNonce %d to equal %d", actualSenderNonce, ticket.SenderNonce)
 	}
 	actualRecipientRand := new(big.Int).SetBytes(actualRecipientRandBytes)
 	if actualRecipientRand.Cmp(recipientRand) != 0 {

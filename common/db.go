@@ -11,6 +11,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -900,10 +901,10 @@ func (db *DB) UnbondingLocks(currentRound *big.Int) ([]*DBUnbondingLock, error) 
 	return unbondingLocks, nil
 }
 
-func (db *DB) InsertWinningTicket(sender ethcommon.Address, recipient ethcommon.Address, faceValue *big.Int, winProb *big.Int, senderNonce uint64, recipientRand *big.Int, sig []byte, sessionID string) error {
-	glog.V(DEBUG).Infof("db: Inserting winning ticket from %v, recipientRand %d, senderNonce %d", sender.Hex(), recipientRand, senderNonce)
+func (db *DB) StoreWinningTicket(sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) error {
+	glog.V(DEBUG).Infof("db: Inserting winning ticket from %v, recipientRand %d, senderNonce %d", ticket.Sender.Hex(), recipientRand, ticket.SenderNonce)
 
-	_, err := db.insertWinningTicket.Exec(sender.Hex(), recipient.Hex(), faceValue.Bytes(), winProb.Bytes(), senderNonce, recipientRand.Bytes(), sig, sessionID)
+	_, err := db.insertWinningTicket.Exec(ticket.Sender.Hex(), ticket.Recipient.Hex(), ticket.FaceValue.Bytes(), ticket.WinProb.Bytes(), ticket.SenderNonce, recipientRand.Bytes(), sig, sessionID)
 
 	if err != nil {
 		// TODO wrap with custom error
