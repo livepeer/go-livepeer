@@ -56,7 +56,7 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidSeed(t *testing.T) {
 
 	// Using invalid seed
 	invalidSeed := new(big.Int).Add(params.Seed, big.NewInt(99))
-	_, err = r.ReceiveTicket(ticket, sig, invalidSeed)
+	_, _, err = r.ReceiveTicket(ticket, sig, invalidSeed)
 	if err == nil {
 		t.Error("expected invalid recipientRand generated from seed error")
 	}
@@ -84,7 +84,7 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidSender(t *testing.T) {
 	// Test invalid recipientRand from seed (invalid sender)
 	ticket := newTicket(ethcommon.Address{}, params, 0)
 
-	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid recipientRand from seed error")
 	}
@@ -113,7 +113,7 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidRecipientRandHash(t *testing.
 	ticket := newTicket(sender, params, 0)
 	ticket.RecipientRandHash = randHashOrFatal(t) // Using invalid recipientRandHash
 
-	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid recipientRand from seed error")
 	}
@@ -142,7 +142,7 @@ func TestReceiveTicket_InvalidFaceValue(t *testing.T) {
 	ticket := newTicket(sender, params, 0)
 	ticket.FaceValue = big.NewInt(0) // Using invalid faceValue
 
-	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid faceValue error")
 	}
@@ -171,7 +171,7 @@ func TestReceiveTicket_InvalidWinProb(t *testing.T) {
 	ticket := newTicket(sender, params, 0)
 	ticket.WinProb = big.NewInt(0) // Using invalid winProb
 
-	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid winProb error")
 	}
@@ -199,7 +199,7 @@ func TestReceiveTicket_InvalidTicket(t *testing.T) {
 	// Test invalid ticket
 	ticket := newTicket(sender, params, 0)
 
-	if _, err := r.ReceiveTicket(ticket, sig, params.Seed); err == nil {
+	if _, _, err := r.ReceiveTicket(ticket, sig, params.Seed); err == nil {
 		t.Error("expected invalid ticket error")
 	}
 }
@@ -222,12 +222,15 @@ func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
 	newSenderNonce := uint64(3)
 	ticket := newTicket(sender, params, newSenderNonce)
 
-	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
 		t.Error(err)
 	}
 	if won {
 		t.Errorf("expected valid non-winning ticket")
+	}
+	if sessionID != "" {
+		t.Errorf("expected empty sessionID for valid non-winning ticket")
 	}
 
 	recipientRand := genRecipientRand(sender, secret, params.Seed)
@@ -257,12 +260,15 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 	newSenderNonce := uint64(3)
 	ticket := newTicket(sender, params, newSenderNonce)
 
-	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
 		t.Error(err)
 	}
 	if !won {
 		t.Errorf("expected valid winning ticket")
+	}
+	if sessionID != ticket.RecipientRandHash.Hex() {
+		t.Errorf("expected sessionID %s, got %s", ticket.RecipientRandHash.Hex(), sessionID)
 	}
 
 	recipientRand := genRecipientRand(sender, secret, params.Seed)
@@ -321,7 +327,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 	newSenderNonce := uint64(3)
 	ticket := newTicket(sender, params, newSenderNonce)
 
-	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected ticket store error")
 	}
@@ -372,7 +378,7 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	// Test invalid recipientRand revealed
 	ticket := newTicket(sender, params, 0)
 
-	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +391,7 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	// New ticket with same invalid recipientRand, but updated senderNonce
 	ticket = newTicket(sender, params, 1)
 
-	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid recipientRand revealed error")
 	}
@@ -414,7 +420,7 @@ func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
 	// Receive senderNonce = 0
 	ticket0 := newTicket(sender, params, 0)
 
-	_, err = r.ReceiveTicket(ticket0, sig, params.Seed)
+	_, _, err = r.ReceiveTicket(ticket0, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,13 +428,13 @@ func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
 	// Receive senderNonce = 1
 	ticket1 := newTicket(sender, params, 1)
 
-	_, err = r.ReceiveTicket(ticket1, sig, params.Seed)
+	_, _, err = r.ReceiveTicket(ticket1, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Replay senderNonce = 1 (new nonce = highest seen nonce)
-	_, err = r.ReceiveTicket(ticket1, sig, params.Seed)
+	_, _, err = r.ReceiveTicket(ticket1, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid senderNonce (new nonce = highest seen nonce) error")
 	}
@@ -437,7 +443,7 @@ func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
 	}
 
 	// Replay senderNonce = 0 (new nonce < highest seen nonce)
-	_, err = r.ReceiveTicket(ticket0, sig, params.Seed)
+	_, _, err = r.ReceiveTicket(ticket0, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid senderNonce (new nonce < highest seen nonce) error")
 	}
@@ -473,7 +479,7 @@ func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
 
 			ticket := newTicket(sender, params, senderNonce)
 
-			_, err := r.ReceiveTicket(ticket, sig, params.Seed)
+			_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 			if err != nil {
 				atomic.AddUint64(&errCount, 1)
 			}
@@ -525,7 +531,7 @@ func TestRedeemWinningTickets_SingleTicket_GetDepositError(t *testing.T) {
 	// Test get deposit error
 	ticket := newTicket(sender, params, 0)
 
-	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -533,7 +539,7 @@ func TestRedeemWinningTickets_SingleTicket_GetDepositError(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
-	err = r.RedeemWinningTickets(ticket.RecipientRandHash.Hex())
+	err = r.RedeemWinningTickets(sessionID)
 	if err == nil {
 		t.Error("expected get deposit error")
 	}
@@ -561,7 +567,7 @@ func TestRedeemWinningTickets_SingleTicket_GetPenaltyEscrowError(t *testing.T) {
 	// Test get penalty escrow error
 	ticket := newTicket(sender, params, 0)
 
-	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -569,7 +575,7 @@ func TestRedeemWinningTickets_SingleTicket_GetPenaltyEscrowError(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
-	err = r.RedeemWinningTickets(ticket.RecipientRandHash.Hex())
+	err = r.RedeemWinningTickets(sessionID)
 	if err == nil {
 		t.Error("expected get penalty escrow error")
 	}
@@ -598,7 +604,7 @@ func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testin
 	// Test zero deposit and penalty escrow error
 	ticket := newTicket(sender, params, 0)
 
-	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -606,7 +612,7 @@ func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testin
 		t.Fatal("expected valid winning ticket")
 	}
 
-	err = r.RedeemWinningTickets(ticket.RecipientRandHash.Hex())
+	err = r.RedeemWinningTickets(sessionID)
 	if err == nil {
 		t.Error("expected zero deposit and penalty escrow error")
 	}
@@ -637,7 +643,7 @@ func TestRedeemWinningTickets_SingleTicket_RedeemError(t *testing.T) {
 	// Test redeem error
 	ticket := newTicket(sender, params, 2)
 
-	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -645,7 +651,7 @@ func TestRedeemWinningTickets_SingleTicket_RedeemError(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
-	err = r.RedeemWinningTickets(ticket.RecipientRandHash.Hex())
+	err = r.RedeemWinningTickets(sessionID)
 	if err == nil {
 		t.Error("expected ticket redemption error")
 	}
@@ -690,7 +696,7 @@ func TestRedeemWinningTickets_SingleTicket(t *testing.T) {
 	// Test single ticket
 	ticket := newTicket(sender, params, 2)
 
-	won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -698,7 +704,7 @@ func TestRedeemWinningTickets_SingleTicket(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
-	err = r.RedeemWinningTickets(ticket.RecipientRandHash.Hex())
+	err = r.RedeemWinningTickets(sessionID)
 	if err != nil {
 		t.Error(err)
 	}
@@ -744,7 +750,7 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 	// Receive ticket 0
 	ticket0 := newTicket(sender, params, 2)
 
-	won, err := r.ReceiveTicket(ticket0, sig, params.Seed)
+	sessionID, won, err := r.ReceiveTicket(ticket0, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -755,7 +761,7 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 	// Receive ticket 1
 	ticket1 := newTicket(sender, params, 3)
 
-	won, err = r.ReceiveTicket(ticket1, sig, params.Seed)
+	_, won, err = r.ReceiveTicket(ticket1, sig, params.Seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -763,7 +769,7 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
-	err = r.RedeemWinningTickets(params.RecipientRandHash.Hex())
+	err = r.RedeemWinningTickets(sessionID)
 	if err != nil {
 		t.Error(err)
 	}
