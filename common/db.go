@@ -3,7 +3,6 @@ package common
 import (
 	"bytes"
 	"database/sql"
-	"errors"
 	"math/big"
 	"text/template"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/pkg/errors"
 )
 
 type DB struct {
@@ -920,8 +920,7 @@ func (db *DB) StoreWinningTicket(sessionID string, ticket *pm.Ticket, sig []byte
 	_, err := db.insertWinningTicket.Exec(ticket.Sender.Hex(), ticket.Recipient.Hex(), ticket.FaceValue.Bytes(), ticket.WinProb.Bytes(), ticket.SenderNonce, recipientRand.Bytes(), ticket.RecipientRandHash.Hex(), sig, sessionID)
 
 	if err != nil {
-		// TODO wrap with custom error
-		return err
+		return errors.Wrapf(err, "failed inserting winning ticket. sessionID: %v, ticket: %v", sessionID, ticket)
 	}
 	return nil
 }
@@ -931,8 +930,8 @@ func (db *DB) LoadWinningTickets(sessionID string) (tickets []*pm.Ticket, sigs [
 	defer rows.Close()
 
 	if err != nil {
-		// TODO wrap with custom error
-		return nil, nil, nil, err
+		err = errors.Wrapf(err, "failed loading winning tickets for sessionID %v", sessionID)
+		return
 	}
 
 	for rows.Next() {
@@ -942,7 +941,7 @@ func (db *DB) LoadWinningTickets(sessionID string) (tickets []*pm.Ticket, sigs [
 
 		err = rows.Scan(&sender, &recipient, &faceValue, &winProb, &senderNonce, &recipientRandBytes, &recipientRandHash, &sig, &sessionID)
 		if err != nil {
-			// TODO
+			err = errors.Wrapf(err, "failed scanning a winning ticket row for sessionID %v", sessionID)
 			return
 		}
 
