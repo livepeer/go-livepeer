@@ -267,7 +267,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test valid winning ticket
-	newSenderNonce := uint64(3)
+	newSenderNonce := uint32(3)
 	ticket := newTicket(sender, params, newSenderNonce)
 
 	// Config stub validator with valid winning tickets
