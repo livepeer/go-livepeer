@@ -50,7 +50,6 @@ type LivepeerNode struct {
 	Database        *common.DB
 
 	// Transcoder public fields
-	ClaimManagers    map[int64]eth.ClaimManager
 	SegmentChans     map[ManifestID]SegmentChan
 	OrchestratorPool net.OrchestratorPool
 	Ipfs             ipfs.IpfsApi
@@ -59,7 +58,6 @@ type LivepeerNode struct {
 	Transcoder       Transcoder
 
 	// Transcoder private fields
-	claimMutex   *sync.Mutex
 	segmentMutex *sync.Mutex
 	tcoderMutex  *sync.RWMutex
 	taskMutex    *sync.RWMutex
@@ -71,17 +69,15 @@ type LivepeerNode struct {
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
 	return &LivepeerNode{
-		Eth:           e,
-		WorkDir:       wd,
-		Database:      dbh,
-		EthServices:   make(map[string]eth.EventService),
-		ClaimManagers: make(map[int64]eth.ClaimManager),
-		SegmentChans:  make(map[ManifestID]SegmentChan),
-		claimMutex:    &sync.Mutex{},
-		segmentMutex:  &sync.Mutex{},
-		tcoderMutex:   &sync.RWMutex{},
-		taskMutex:     &sync.RWMutex{},
-		taskChans:     make(map[int64]TranscoderChan),
+		Eth:          e,
+		WorkDir:      wd,
+		Database:     dbh,
+		EthServices:  make(map[string]eth.EventService),
+		SegmentChans: make(map[ManifestID]SegmentChan),
+		segmentMutex: &sync.Mutex{},
+		tcoderMutex:  &sync.RWMutex{},
+		taskMutex:    &sync.RWMutex{},
+		taskChans:    make(map[int64]TranscoderChan),
 	}, nil
 
 }

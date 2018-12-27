@@ -23,7 +23,6 @@ type logCallback func(types.Log) (bool, error)
 type headerCallback func(*types.Header) (bool, error)
 
 type EventMonitor interface {
-	SubscribeNewJob(context.Context, string, chan types.Log, ethcommon.Address, logCallback) (ethereum.Subscription, error)
 	SubscribeNewRound(context.Context, string, chan types.Log, logCallback) (ethereum.Subscription, error)
 	SubscribeNewBlock(context.Context, string, chan *types.Header, headerCallback) (ethereum.Subscription, error)
 	EventSubscriptions() map[string]bool
@@ -107,66 +106,6 @@ func (em *eventMonitor) SubscribeNewRound(ctx context.Context, subName string, l
 		glog.V(common.DEBUG).Infof("Trying to resubscribe for %v", subName)
 		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
 			glog.V(common.DEBUG).Infof("Resubscription error: %v", err)
-			em.eventSubMap[subName] = nil
-			return
-		}
-	})
-
-	return em.eventSubMap[subName].sub, nil
-}
-
-func (em *eventMonitor) SubscribeNewJob(ctx context.Context, subName string, logsCh chan types.Log, broadcasterAddr ethcommon.Address, cb logCallback) (ethereum.Subscription, error) {
-	if _, ok := em.eventSubMap[subName]; ok {
-		return nil, fmt.Errorf("Event subscription already registered as active with name: %v", subName)
-	}
-
-	abiJSON, err := abi.JSON(strings.NewReader(contracts.JobsManagerABI))
-	if err != nil {
-		return nil, err
-	}
-
-	eventId := abiJSON.Events["NewJob"].Id()
-	jobsManagerAddr := em.contractAddrMap["JobsManager"]
-
-	var q ethereum.FilterQuery
-	if !IsNullAddress(broadcasterAddr) {
-		q = ethereum.FilterQuery{
-			Addresses: []ethcommon.Address{jobsManagerAddr},
-			Topics:    [][]ethcommon.Hash{[]ethcommon.Hash{eventId}, []ethcommon.Hash{}, []ethcommon.Hash{ethcommon.BytesToHash(ethcommon.LeftPadBytes(broadcasterAddr[:], 32))}},
-		}
-	} else {
-		q = ethereum.FilterQuery{
-			Addresses: []ethcommon.Address{jobsManagerAddr},
-			Topics:    [][]ethcommon.Hash{[]ethcommon.Hash{eventId}},
-		}
-	}
-
-	subscribe := func() error {
-		sub, err := em.backend.SubscribeFilterLogs(ctx, q, logsCh)
-		if err != nil {
-			glog.V(common.DEBUG).Infof("SubscribeNewJob error: %v. retrying...", err)
-			return err
-		} else {
-			glog.V(common.DEBUG).Infof("SubscribedNewJob successful.")
-		}
-
-		em.eventSubMap[subName] = &EventSubscription{
-			sub:    sub,
-			logsCh: logsCh,
-			active: true,
-		}
-		return nil
-	}
-
-	if err = backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
-		glog.Errorf("SubscribeNewJob failed: %v", err)
-		return nil, err
-	}
-
-	go em.watchLogs(subName, cb, func() {
-		glog.V(common.DEBUG).Infof("Trying to resubscribe for %v", subName)
-		if err := backoff.Retry(subscribe, backoff.NewConstantBackOff(time.Second*2)); err != nil {
-			glog.V(common.DEBUG).Infof("Resubscribe failed: %v", err)
 			em.eventSubMap[subName] = nil
 			return
 		}

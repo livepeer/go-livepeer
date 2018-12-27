@@ -542,17 +542,6 @@ func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, em eth.EventMo
 	rs := eventservices.NewRewardService(n.Eth)
 	n.EthServices["RewardService"] = rs
 
-	// Create job service to listen for new jobs and transcode if assigned to the job
-	js := eventservices.NewJobService(n)
-	n.EthServices["JobService"] = js
-
-	// Restart jobs as necessary
-	err = js.RestartTranscoder()
-	if err != nil {
-		glog.Errorf("Unable to restart orchestrator: %v", err)
-		// non-fatal, so continue
-	}
-
 	return nil
 }
 

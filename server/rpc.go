@@ -21,7 +21,6 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
-	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
@@ -125,25 +124,6 @@ func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.Client
 	c := net.NewOrchestratorClient(conn)
 
 	return c, conn, nil
-}
-
-func jobClaimable(orch Orchestrator, job *lpTypes.Job) bool {
-	if len(job.Profiles) <= 0 {
-		// This is just to be extra cautious:
-		// We don't need to do any work, so nothing to claim
-		return false
-	}
-
-	blk := orch.CurrentBlock()
-	if blk == nil {
-		// The benefit of doubt.
-		// May be offchain or have internal errors in fetching a block.
-		return true
-	}
-
-	canClaim := job.FirstClaimSubmitted || blk.Cmp(new(big.Int).Add(job.CreationBlock, big.NewInt(256))) <= 0
-
-	return canClaim && !(blk.Cmp(job.CreationBlock) == -1 || blk.Cmp(job.EndBlock) == 1)
 }
 
 func verifyOrchestratorReq(orch Orchestrator, req *net.OrchestratorRequest) error {
