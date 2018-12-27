@@ -1,13 +1,11 @@
 package common
 
 import (
-	"bytes"
 	"crypto/rand"
 	"database/sql"
 	"fmt"
 	"math"
 	"math/big"
-	"reflect"
 	"testing"
 	"time"
 
@@ -15,6 +13,7 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDBLastSeenBlock(t *testing.T) {
@@ -606,42 +605,21 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	var actualSenderNonce uint32
 	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualSessionID)
 
-	if actualSender != ticket.Sender.Hex() {
-		t.Errorf("expected sender %v to equal %v", actualSender, ticket.Sender.Hex())
-	}
-	if actualRecipient != ticket.Recipient.Hex() {
-		t.Errorf("expected recipient %v to equal %v", actualRecipient, ticket.Recipient.Hex())
-	}
-	actualFaceValue := new(big.Int).SetBytes(actualFaceValueBytes)
-	if actualFaceValue.Cmp(ticket.FaceValue) != 0 {
-		t.Errorf("expected faceValue %d to equal %d", actualFaceValue, ticket.FaceValue)
-	}
-	actualWinProb := new(big.Int).SetBytes(actualWinProbBytes)
-	if actualWinProb.Cmp(ticket.WinProb) != 0 {
-		t.Errorf("expected winProb %d to equal %d", actualWinProb, ticket.WinProb)
-	}
-	if actualSenderNonce != ticket.SenderNonce {
-		t.Errorf("expected senderNonce %d to equal %d", actualSenderNonce, ticket.SenderNonce)
-	}
-	actualRecipientRand := new(big.Int).SetBytes(actualRecipientRandBytes)
-	if actualRecipientRand.Cmp(recipientRand) != 0 {
-		t.Errorf("expected recipientRand %d to equal %d", actualRecipientRand, recipientRand)
-	}
-	if ethcommon.HexToHash(actualRecipientRandHash) != ticket.RecipientRandHash {
-		t.Errorf("expected recipientRandHash %v to equal %v", ethcommon.HexToHash(actualRecipientRandHash), ticket.RecipientRandHash)
-	}
-	if !bytes.Equal(actualSig, sig) {
-		t.Errorf("expected sig %v to equal %v", actualSig, sig)
-	}
-	if actualSessionID != sessionID {
-		t.Errorf("expeceted sessionID %v to equal %v", actualSessionID, sessionID)
-	}
+	assert := assert.New(t)
+	assert.Equal(ticket.Sender.Hex(), actualSender)
+	assert.Equal(ticket.Recipient.Hex(), actualRecipient)
+	assert.Equal(ticket.FaceValue, new(big.Int).SetBytes(actualFaceValueBytes))
+	assert.Equal(ticket.WinProb, new(big.Int).SetBytes(actualWinProbBytes))
+	assert.Equal(ticket.SenderNonce, actualSenderNonce)
+	assert.Equal(recipientRand, new(big.Int).SetBytes(actualRecipientRandBytes))
+	assert.Equal(ticket.RecipientRandHash, ethcommon.HexToHash(actualRecipientRandHash))
+	assert.Equal(sig, actualSig)
+	assert.Equal(sessionID, actualSessionID)
 
 	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM winningTickets", dbraw, t)
-	if ticketsCount != 1 {
-		t.Errorf("expected db ticket count %d to be 1", ticketsCount)
-	}
+	assert.Equal(1, ticketsCount)
 }
+
 func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
@@ -668,45 +646,22 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	var actualSenderNonce uint32
 	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualSessionID)
 
-	if actualSender != ticket.Sender.Hex() {
-		t.Errorf("expected sender %v to equal %v", actualSender, ticket.Sender.Hex())
-	}
-	if actualRecipient != ticket.Recipient.Hex() {
-		t.Errorf("expected recipient %v to equal %v", actualRecipient, ticket.Recipient.Hex())
-	}
-	actualFaceValue := new(big.Int).SetBytes(actualFaceValueBytes)
-	if actualFaceValue.Cmp(ticket.FaceValue) != 0 {
-		t.Errorf("expected faceValue %d to equal %d", actualFaceValue, ticket.FaceValue)
-	}
-	actualWinProb := new(big.Int).SetBytes(actualWinProbBytes)
-	if actualWinProb.Cmp(ticket.WinProb) != 0 {
-		t.Errorf("expected winProb %d to equal %d", actualWinProb, ticket.WinProb)
-	}
-	if actualSenderNonce != ticket.SenderNonce {
-		t.Errorf("expected senderNonce %d to equal %d", actualSenderNonce, ticket.SenderNonce)
-	}
-	actualRecipientRand := new(big.Int).SetBytes(actualRecipientRandBytes)
-	if actualRecipientRand.Cmp(recipientRand) != 0 {
-		t.Errorf("expected recipientRand %d to equal %d", actualRecipientRand, recipientRand)
-	}
-	if ethcommon.HexToHash(actualRecipientRandHash) != ticket.RecipientRandHash {
-		t.Errorf("expected recipientRandHash %v to equal %v", ethcommon.HexToHash(actualRecipientRandHash), ticket.RecipientRandHash)
-	}
-	if !bytes.Equal(actualSig, sig) {
-		t.Errorf("expected sig %v to equal %v", actualSig, sig)
-	}
-	if actualSessionID != sessionID {
-		t.Errorf("expeceted sessionID %v to equal %v", actualSessionID, sessionID)
-	}
+	assert := assert.New(t)
+	assert.Equal(ticket.Sender.Hex(), actualSender)
+	assert.Equal(ticket.Recipient.Hex(), actualRecipient)
+	assert.Equal(ticket.FaceValue, new(big.Int).SetBytes(actualFaceValueBytes))
+	assert.Equal(ticket.WinProb, new(big.Int).SetBytes(actualWinProbBytes))
+	assert.Equal(ticket.SenderNonce, actualSenderNonce)
+	assert.Equal(recipientRand, new(big.Int).SetBytes(actualRecipientRandBytes))
+	assert.Equal(ticket.RecipientRandHash, ethcommon.HexToHash(actualRecipientRandHash))
+	assert.Equal(sig, actualSig)
+	assert.Equal(sessionID, actualSessionID)
 
 	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM winningTickets", dbraw, t)
-	if ticketsCount != 1 {
-		t.Errorf("expected db ticket count %d to be 1", ticketsCount)
-	}
+	assert.Equal(1, ticketsCount)
 }
 
 // TODO
-// same test but with max values
 // tests with errors
 
 func TestLoadtWinningTicket_GivenStoredTicket_LoadsItCorrectly(t *testing.T) {
@@ -734,15 +689,10 @@ func TestLoadtWinningTicket_GivenStoredTicket_LoadsItCorrectly(t *testing.T) {
 	actualSig := sigs[0]
 	actualRecipientRand := recipientRands[0]
 
-	if !reflect.DeepEqual(actualTicket, ticket) {
-		t.Errorf("expected ticket %v to equal %v", actualTicket, ticket)
-	}
-	if !bytes.Equal(actualSig, sig) {
-		t.Errorf("expected sig %v to equal %v", actualSig, sig)
-	}
-	if actualRecipientRand.Cmp(recipientRand) != 0 {
-		t.Errorf("expected recipientRand %d to equal %d", actualRecipientRand, recipientRand)
-	}
+	assert := assert.New(t)
+	assert.Equal(ticket, actualTicket)
+	assert.Equal(sig, actualSig)
+	assert.Equal(recipientRand, actualRecipientRand)
 }
 
 func TestLoadtWinningTicket_GivenStoredTicketsFromDifferentSessions_OnlyLoadsFromSpecificSessionID(t *testing.T) {
@@ -777,31 +727,18 @@ func TestLoadtWinningTicket_GivenStoredTicketsFromDifferentSessions_OnlyLoadsFro
 	}
 
 	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets(firstSessionID)
-	if err != nil {
-		t.Fatalf("unexpected error loading tickets: %v", err)
-	}
-	if len(tickets) != 2 || len(sigs) != 2 || len(recipientRands) != 2 {
-		t.Errorf("expected one item per slice but got unexpected number of results. tickets: %d, sigs: %d, recipientRands: %d", len(tickets), len(sigs), len(recipientRands))
-	}
 
-	if !reflect.DeepEqual(tickets[0], ticket0) {
-		t.Errorf("expected ticket %v to equal %v", tickets[0], ticket0)
-	}
-	if !bytes.Equal(sigs[0], sig0) {
-		t.Errorf("expected sig %v to equal %v", sigs[0], sig0)
-	}
-	if recipientRands[0].Cmp(recipientRand0) != 0 {
-		t.Errorf("expected recipientRand %d to equal %d", recipientRands[0], recipientRand0)
-	}
-	if !reflect.DeepEqual(tickets[1], ticket1) {
-		t.Errorf("expected ticket %v to equal %v", tickets[1], ticket1)
-	}
-	if !bytes.Equal(sigs[1], sig1) {
-		t.Errorf("expected sig %v to equal %v", sigs[1], sig1)
-	}
-	if recipientRands[1].Cmp(recipientRand1) != 0 {
-		t.Errorf("expected recipientRand %d to equal %d", recipientRands[1], recipientRand1)
-	}
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Len(tickets, 2)
+	assert.Len(sigs, 2)
+	assert.Len(recipientRands, 2)
+	assert.Equal(ticket0, tickets[0])
+	assert.Equal(sig0, sigs[0])
+	assert.Equal(recipientRand0, recipientRands[0])
+	assert.Equal(ticket1, tickets[1])
+	assert.Equal(sig1, sigs[1])
+	assert.Equal(recipientRand1, recipientRands[1])
 }
 
 func TestLoadtWinningTicket_GivenNonexistentSessionID_ReturnsEmptySlicesNoError(t *testing.T) {
@@ -814,12 +751,12 @@ func TestLoadtWinningTicket_GivenNonexistentSessionID_ReturnsEmptySlicesNoError(
 	}
 
 	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets("some sessionID")
-	if err != nil {
-		t.Errorf("unexpected error loading nonexistent session: %v", err)
-	}
-	if len(tickets) != 0 || len(sigs) != 0 || len(recipientRands) != 0 {
-		t.Errorf("expected zero items per slice but got unexpected number of results. tickets: %d, sigs: %d, recipientRands: %d", len(tickets), len(sigs), len(recipientRands))
-	}
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Len(tickets, 0)
+	assert.Len(sigs, 0)
+	assert.Len(recipientRands, 0)
 }
 
 func TestLoadtWinningTicket_GivenEmptySessionID_ReturnsEmptySlicesNoError(t *testing.T) {
@@ -832,12 +769,12 @@ func TestLoadtWinningTicket_GivenEmptySessionID_ReturnsEmptySlicesNoError(t *tes
 	}
 
 	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets("")
-	if err != nil {
-		t.Errorf("unexpected error loading nonexistent session: %v", err)
-	}
-	if len(tickets) != 0 || len(sigs) != 0 || len(recipientRands) != 0 {
-		t.Errorf("expected zero items per slice but got unexpected number of results. tickets: %d, sigs: %d, recipientRands: %d", len(tickets), len(sigs), len(recipientRands))
-	}
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Len(tickets, 0)
+	assert.Len(sigs, 0)
+	assert.Len(recipientRands, 0)
 }
 
 func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) {
