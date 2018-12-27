@@ -600,11 +600,11 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 		t.Errorf("Failed to insert winning ticket with error: %v", err)
 	}
 
-	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig, sessionID FROM winningTickets")
-	var actualSender, actualRecipient, actualSessionID string
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets")
+	var actualSender, actualRecipient, actualRecipientRandHash, actualSessionID string
 	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
 	var actualSenderNonce uint32
-	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualSig, &actualSessionID)
+	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualSessionID)
 
 	if actualSender != ticket.Sender.Hex() {
 		t.Errorf("expected sender %v to equal %v", actualSender, ticket.Sender.Hex())
@@ -626,6 +626,9 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	actualRecipientRand := new(big.Int).SetBytes(actualRecipientRandBytes)
 	if actualRecipientRand.Cmp(recipientRand) != 0 {
 		t.Errorf("expected recipientRand %d to equal %d", actualRecipientRand, recipientRand)
+	}
+	if ethcommon.HexToHash(actualRecipientRandHash) != ticket.RecipientRandHash {
+		t.Errorf("expected recipientRandHash %v to equal %v", ethcommon.HexToHash(actualRecipientRandHash), ticket.RecipientRandHash)
 	}
 	if !bytes.Equal(actualSig, sig) {
 		t.Errorf("expected sig %v to equal %v", actualSig, sig)
@@ -659,11 +662,11 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 		t.Errorf("Failed to insert winning ticket with error: %v", err)
 	}
 
-	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig, sessionID FROM winningTickets")
-	var actualSender, actualRecipient, actualSessionID string
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets")
+	var actualSender, actualRecipient, actualRecipientRandHash, actualSessionID string
 	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
 	var actualSenderNonce uint32
-	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualSig, &actualSessionID)
+	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualSessionID)
 
 	if actualSender != ticket.Sender.Hex() {
 		t.Errorf("expected sender %v to equal %v", actualSender, ticket.Sender.Hex())
@@ -685,6 +688,9 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	actualRecipientRand := new(big.Int).SetBytes(actualRecipientRandBytes)
 	if actualRecipientRand.Cmp(recipientRand) != 0 {
 		t.Errorf("expected recipientRand %d to equal %d", actualRecipientRand, recipientRand)
+	}
+	if ethcommon.HexToHash(actualRecipientRandHash) != ticket.RecipientRandHash {
+		t.Errorf("expected recipientRandHash %v to equal %v", ethcommon.HexToHash(actualRecipientRandHash), ticket.RecipientRandHash)
 	}
 	if !bytes.Equal(actualSig, sig) {
 		t.Errorf("expected sig %v to equal %v", actualSig, sig)
@@ -837,11 +843,12 @@ func TestLoadtWinningTicket_GivenEmptySessionID_ReturnsEmptySlicesNoError(t *tes
 func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) {
 	sessionID = "foo bar"
 	ticket = &pm.Ticket{
-		Sender:      randAddressOrFatal(t),
-		Recipient:   randAddressOrFatal(t),
-		FaceValue:   big.NewInt(1234),
-		WinProb:     big.NewInt(2345),
-		SenderNonce: uint32(123),
+		Sender:            randAddressOrFatal(t),
+		Recipient:         randAddressOrFatal(t),
+		FaceValue:         big.NewInt(1234),
+		WinProb:           big.NewInt(2345),
+		SenderNonce:       uint32(123),
+		RecipientRandHash: pm.RandHashOrFatal(t),
 	}
 	sig = randBytesOrFatal(42, t)
 	recipientRand = big.NewInt(4567)

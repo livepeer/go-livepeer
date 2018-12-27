@@ -167,6 +167,7 @@ var schema = `
 		winProb BLOB,
 		senderNonce INTEGER,
 		recipientRand BLOB,
+		recipientRandHash STRING,
 		sig BLOB,
 		sessionID STRING
 	);
@@ -412,7 +413,7 @@ func InitDB(dbPath string) (*DB, error) {
 	d.withdrawableUnbondingLocks = stmt
 
 	// Winning tickets prepared statements
-	stmt, err = db.Prepare("INSERT INTO winningTickets(sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig, sessionID) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+	stmt, err = db.Prepare("INSERT INTO winningTickets(sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		glog.Error("Unable to prepare insertWinningTicket ", err)
 		d.Close()
@@ -420,7 +421,7 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.insertWinningTicket = stmt
 
-	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, sig, sessionID FROM winningTickets WHERE sessionID = ?")
+	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets WHERE sessionID = ?")
 	if err != nil {
 		glog.Error("Unable to prepare selectWinningTicketsBySession ", err)
 		d.Close()
@@ -916,7 +917,7 @@ func (db *DB) UnbondingLocks(currentRound *big.Int) ([]*DBUnbondingLock, error) 
 func (db *DB) StoreWinningTicket(sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) error {
 	glog.V(DEBUG).Infof("db: Inserting winning ticket from %v, recipientRand %d, senderNonce %d", ticket.Sender.Hex(), recipientRand, ticket.SenderNonce)
 
-	_, err := db.insertWinningTicket.Exec(ticket.Sender.Hex(), ticket.Recipient.Hex(), ticket.FaceValue.Bytes(), ticket.WinProb.Bytes(), ticket.SenderNonce, recipientRand.Bytes(), sig, sessionID)
+	_, err := db.insertWinningTicket.Exec(ticket.Sender.Hex(), ticket.Recipient.Hex(), ticket.FaceValue.Bytes(), ticket.WinProb.Bytes(), ticket.SenderNonce, recipientRand.Bytes(), ticket.RecipientRandHash.Hex(), sig, sessionID)
 
 	if err != nil {
 		// TODO wrap with custom error
@@ -935,23 +936,23 @@ func (db *DB) LoadWinningTickets(sessionID string) (tickets []*pm.Ticket, sigs [
 	}
 
 	for rows.Next() {
-		var sender, recipient, sessionID string
+		var sender, recipient, recipientRandHash, sessionID string
 		var faceValue, winProb, recipientRandBytes, sig []byte
 		var senderNonce uint32
 
-		err = rows.Scan(&sender, &recipient, &faceValue, &winProb, &senderNonce, &recipientRandBytes, &sig, &sessionID)
+		err = rows.Scan(&sender, &recipient, &faceValue, &winProb, &senderNonce, &recipientRandBytes, &recipientRandHash, &sig, &sessionID)
 		if err != nil {
 			// TODO
 			return
 		}
 
 		ticket := &pm.Ticket{
-			Sender:      ethcommon.HexToAddress(sender),
-			Recipient:   ethcommon.HexToAddress(recipient),
-			FaceValue:   new(big.Int).SetBytes(faceValue),
-			WinProb:     new(big.Int).SetBytes(winProb),
-			SenderNonce: senderNonce,
-			// TODO RecipientRandHash
+			Sender:            ethcommon.HexToAddress(sender),
+			Recipient:         ethcommon.HexToAddress(recipient),
+			FaceValue:         new(big.Int).SetBytes(faceValue),
+			WinProb:           new(big.Int).SetBytes(winProb),
+			SenderNonce:       senderNonce,
+			RecipientRandHash: ethcommon.HexToHash(recipientRandHash),
 		}
 		recipientRand := new(big.Int).SetBytes(recipientRandBytes)
 

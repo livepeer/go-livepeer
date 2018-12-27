@@ -111,7 +111,7 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidRecipientRandHash(t *testing.
 
 	// Test invalid recipientRand from seed (invalid recipientRandHash)
 	ticket := newTicket(sender, params, 0)
-	ticket.RecipientRandHash = randHashOrFatal(t) // Using invalid recipientRandHash
+	ticket.RecipientRandHash = RandHashOrFatal(t) // Using invalid recipientRandHash
 
 	_, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {

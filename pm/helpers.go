@@ -7,7 +7,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
-func randHashOrFatal(t *testing.T) ethcommon.Hash {
+func RandHashOrFatal(t *testing.T) ethcommon.Hash {
 	key, err := randBytes(32)
 
 	if err != nil {

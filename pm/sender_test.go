@@ -82,7 +82,7 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 	am.signResponse = randBytesOrFatal(42, t)
 	senderAddress := sender.signer.Account().Address
 	recipient := randAddressOrFatal(t)
-	recipientRandHash := randHashOrFatal(t)
+	recipientRandHash := RandHashOrFatal(t)
 	ticketParams := TicketParams{
 		FaceValue:         big.NewInt(1111),
 		WinProb:           big.NewInt(2222),
@@ -198,7 +198,7 @@ func defaultSender(t *testing.T) *sender {
 }
 
 func defaultTicketParams(t *testing.T) TicketParams {
-	recipientRandHash := randHashOrFatal(t)
+	recipientRandHash := RandHashOrFatal(t)
 	return TicketParams{
 		FaceValue:         big.NewInt(0),
 		WinProb:           big.NewInt(0),
