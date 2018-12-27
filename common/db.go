@@ -929,7 +929,7 @@ func (db *DB) StoreWinningTicket(sessionID string, ticket *pm.Ticket, sig []byte
 	_, err := db.insertWinningTicket.Exec(ticket.Sender.Hex(), ticket.Recipient.Hex(), ticket.FaceValue.Bytes(), ticket.WinProb.Bytes(), ticket.SenderNonce, recipientRand.Bytes(), ticket.RecipientRandHash.Hex(), sig, sessionID)
 
 	if err != nil {
-		return errors.Wrapf(err, "failed inserting winning ticket. sessionID: %v, ticket: %v", sessionID, ticket)
+		return errors.Wrapf(err, "failed inserting winning ticket for sessionID: %v, ticket: %v", sessionID, ticket)
 	}
 	return nil
 }

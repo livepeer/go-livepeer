@@ -15,7 +15,7 @@ import (
 )
 
 func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *stubValidator, *stubTicketStore, *big.Int, *big.Int, []byte) {
-	sender := randAddressOrFatal(t)
+	sender := RandAddressOrFatal(t)
 
 	b := newStubBroker()
 	b.SetDeposit(sender, big.NewInt(500))

@@ -1,7 +1,6 @@
 package common
 
 import (
-	"crypto/rand"
 	"database/sql"
 	"fmt"
 	"math"
@@ -14,6 +13,7 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDBLastSeenBlock(t *testing.T) {
@@ -587,17 +587,13 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require := require.New(t)
+	require.Nil(err)
+
 	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
 
 	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
-
-	if err != nil {
-		t.Errorf("Failed to insert winning ticket with error: %v", err)
-	}
+	require.Nil(err)
 
 	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets")
 	var actualSender, actualRecipient, actualRecipientRandHash, actualSessionID string
@@ -624,10 +620,8 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require := require.New(t)
+	require.Nil(err)
 
 	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
 	ticket.FaceValue = maxUint256OrFatal(t)
@@ -635,10 +629,7 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	ticket.SenderNonce = math.MaxUint32
 
 	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
-
-	if err != nil {
-		t.Errorf("Failed to insert winning ticket with error: %v", err)
-	}
+	require.Nil(err)
 
 	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets")
 	var actualSender, actualRecipient, actualRecipientRandHash, actualSessionID string
@@ -665,11 +656,10 @@ func TestStoreWinningTicket_GivenNilTicket_ReturnsError(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	sig := randBytesOrFatal(42, t)
+	require := require.New(t)
+	require.Nil(err)
+
+	sig := pm.RandBytesOrFatal(42, t)
 	recipientRand := new(big.Int).SetInt64(1234)
 
 	err = dbh.StoreWinningTicket("sessionID", nil, sig, recipientRand)
@@ -683,10 +673,9 @@ func TestStoreWinningTicket_GivenNilSig_ReturnsError(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require := require.New(t)
+	require.Nil(err)
+
 	sessionID, ticket, _, recipientRand := defaultWinningTicket(t)
 
 	err = dbh.StoreWinningTicket(sessionID, ticket, nil, recipientRand)
@@ -700,10 +689,9 @@ func TestStoreWinningTicket_GivenNilRecipientRand_ReturnsError(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require := require.New(t)
+	require.Nil(err)
+
 	sessionID, ticket, sig, _ := defaultWinningTicket(t)
 
 	err = dbh.StoreWinningTicket(sessionID, ticket, sig, nil)
@@ -713,67 +701,54 @@ func TestStoreWinningTicket_GivenNilRecipientRand_ReturnsError(t *testing.T) {
 	assert.Contains(err.Error(), "nil recipientRand")
 }
 
-func TestLoadtWinningTicket_GivenStoredTicket_LoadsItCorrectly(t *testing.T) {
+func TestLoadWinningTicket_GivenStoredTicket_LoadsItCorrectly(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require := require.New(t)
+	require.Nil(err)
+
 	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
 	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
-	if err != nil {
-		t.Fatalf("unexpected errro storing ticket: %v", err)
-	}
+	require.Nil(err)
 
 	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets(sessionID)
-	if err != nil {
-		t.Fatalf("unexpected error loading tickets: %v", err)
-	}
-	if len(tickets) != 1 || len(sigs) != 1 || len(recipientRands) != 1 {
-		t.Errorf("expected one item per slice but got unexpected number of results. tickets: %d, sigs: %d, recipientRands: %d", len(tickets), len(sigs), len(recipientRands))
-	}
+	require.Nil(err)
+
+	assert := assert.New(t)
+	assert.Len(tickets, 1)
+	assert.Len(sigs, 1)
+	assert.Len(recipientRands, 1)
 	actualTicket := tickets[0]
 	actualSig := sigs[0]
 	actualRecipientRand := recipientRands[0]
-
-	assert := assert.New(t)
 	assert.Equal(ticket, actualTicket)
 	assert.Equal(sig, actualSig)
 	assert.Equal(recipientRand, actualRecipientRand)
 }
 
-func TestLoadtWinningTicket_GivenStoredTicketsFromDifferentSessions_OnlyLoadsFromSpecificSessionID(t *testing.T) {
+func TestLoadWinningTicket_GivenStoredTicketsFromDifferentSessions_OnlyLoadsFromSpecificSessionID(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require := require.New(t)
+	require.Nil(err)
 
 	// Two tickets in the first session
 	firstSessionID := "first session"
 	_, ticket0, sig0, recipientRand0 := defaultWinningTicket(t)
 	err = dbh.StoreWinningTicket(firstSessionID, ticket0, sig0, recipientRand0)
-	if err != nil {
-		t.Fatalf("unexpected errro storing ticket: %v", err)
-	}
+	require.Nil(err)
 
 	_, ticket1, sig1, recipientRand1 := defaultWinningTicket(t)
 	err = dbh.StoreWinningTicket(firstSessionID, ticket1, sig1, recipientRand1)
-	if err != nil {
-		t.Fatalf("unexpected errro storing ticket: %v", err)
-	}
+	require.Nil(err)
 
 	// One ticket in the second session
 	secondSessionID := "second session"
 	_, ticket2, sig2, recipientRand2 := defaultWinningTicket(t)
 	err = dbh.StoreWinningTicket(secondSessionID, ticket2, sig2, recipientRand2)
-	if err != nil {
-		t.Fatalf("unexpected errro storing ticket: %v", err)
-	}
+	require.Nil(err)
 
 	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets(firstSessionID)
 
@@ -790,14 +765,12 @@ func TestLoadtWinningTicket_GivenStoredTicketsFromDifferentSessions_OnlyLoadsFro
 	assert.Equal(recipientRand1, recipientRands[1])
 }
 
-func TestLoadtWinningTicket_GivenNonexistentSessionID_ReturnsEmptySlicesNoError(t *testing.T) {
+func TestLoadWinningTicket_GivenNonexistentSessionID_ReturnsEmptySlicesNoError(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require := require.New(t)
+	require.Nil(err)
 
 	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets("some sessionID")
 
@@ -808,14 +781,12 @@ func TestLoadtWinningTicket_GivenNonexistentSessionID_ReturnsEmptySlicesNoError(
 	assert.Len(recipientRands, 0)
 }
 
-func TestLoadtWinningTicket_GivenEmptySessionID_ReturnsEmptySlicesNoError(t *testing.T) {
+func TestLoadWinningTicket_GivenEmptySessionID_ReturnsEmptySlicesNoError(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	require := require.New(t)
+	require.Nil(err)
 
 	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets("")
 
@@ -829,14 +800,14 @@ func TestLoadtWinningTicket_GivenEmptySessionID_ReturnsEmptySlicesNoError(t *tes
 func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) {
 	sessionID = "foo bar"
 	ticket = &pm.Ticket{
-		Sender:            randAddressOrFatal(t),
-		Recipient:         randAddressOrFatal(t),
+		Sender:            pm.RandAddressOrFatal(t),
+		Recipient:         pm.RandAddressOrFatal(t),
 		FaceValue:         big.NewInt(1234),
 		WinProb:           big.NewInt(2345),
 		SenderNonce:       uint32(123),
 		RecipientRandHash: pm.RandHashOrFatal(t),
 	}
-	sig = randBytesOrFatal(42, t)
+	sig = pm.RandBytesOrFatal(42, t)
 	recipientRand = big.NewInt(4567)
 	return
 }
@@ -845,42 +816,9 @@ func getRowCountOrFatal(query string, dbraw *sql.DB, t *testing.T) int {
 	var count int
 	row := dbraw.QueryRow(query)
 	err := row.Scan(&count)
-
-	if err != nil {
-		t.Fatalf("error getting db table count, cannot proceed: %v", err)
-		return -1
-	}
+	require.Nil(t, err)
 
 	return count
-}
-
-func randAddressOrFatal(t *testing.T) ethcommon.Address {
-	key, err := randBytes(20)
-
-	if err != nil {
-		t.Fatalf("failed generating random address: %v", err)
-		return ethcommon.Address{}
-	}
-
-	return ethcommon.BytesToAddress(key[:])
-}
-
-func randBytesOrFatal(size int, t *testing.T) []byte {
-	res, err := randBytes(size)
-
-	if err != nil {
-		t.Fatalf("failed generating random bytes: %v", err)
-		return nil
-	}
-
-	return res
-}
-
-func randBytes(size int) ([]byte, error) {
-	key := make([]byte, size)
-	_, err := rand.Read(key)
-
-	return key, err
 }
 
 func maxUint256OrFatal(t *testing.T) *big.Int {

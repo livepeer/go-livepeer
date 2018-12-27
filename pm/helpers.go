@@ -18,7 +18,7 @@ func RandHashOrFatal(t *testing.T) ethcommon.Hash {
 	return ethcommon.BytesToHash(key[:])
 }
 
-func randAddressOrFatal(t *testing.T) ethcommon.Address {
+func RandAddressOrFatal(t *testing.T) ethcommon.Address {
 	key, err := randBytes(addressSize)
 
 	if err != nil {
@@ -29,7 +29,7 @@ func randAddressOrFatal(t *testing.T) ethcommon.Address {
 	return ethcommon.BytesToAddress(key[:])
 }
 
-func randBytesOrFatal(size int, t *testing.T) []byte {
+func RandBytesOrFatal(size int, t *testing.T) []byte {
 	res, err := randBytes(size)
 
 	if err != nil {
