@@ -915,6 +915,15 @@ func (db *DB) UnbondingLocks(currentRound *big.Int) ([]*DBUnbondingLock, error) 
 }
 
 func (db *DB) StoreWinningTicket(sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) error {
+	if ticket == nil {
+		return errors.New("cannot store nil ticket")
+	}
+	if sig == nil {
+		return errors.New("cannot store nil sig")
+	}
+	if recipientRand == nil {
+		return errors.New("cannot store nil recipientRand")
+	}
 	glog.V(DEBUG).Infof("db: Inserting winning ticket from %v, recipientRand %d, senderNonce %d", ticket.Sender.Hex(), recipientRand, ticket.SenderNonce)
 
 	_, err := db.insertWinningTicket.Exec(ticket.Sender.Hex(), ticket.Recipient.Hex(), ticket.FaceValue.Bytes(), ticket.WinProb.Bytes(), ticket.SenderNonce, recipientRand.Bytes(), ticket.RecipientRandHash.Hex(), sig, sessionID)

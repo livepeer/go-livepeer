@@ -661,8 +661,57 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	assert.Equal(1, ticketsCount)
 }
 
-// TODO
-// tests with errors
+func TestStoreWinningTicket_GivenNilTicket_ReturnsError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	sig := randBytesOrFatal(42, t)
+	recipientRand := new(big.Int).SetInt64(1234)
+
+	err = dbh.StoreWinningTicket("sessionID", nil, sig, recipientRand)
+
+	assert := assert.New(t)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "nil ticket")
+}
+
+func TestStoreWinningTicket_GivenNilSig_ReturnsError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	sessionID, ticket, _, recipientRand := defaultWinningTicket(t)
+
+	err = dbh.StoreWinningTicket(sessionID, ticket, nil, recipientRand)
+
+	assert := assert.New(t)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "nil sig")
+}
+
+func TestStoreWinningTicket_GivenNilRecipientRand_ReturnsError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	sessionID, ticket, sig, _ := defaultWinningTicket(t)
+
+	err = dbh.StoreWinningTicket(sessionID, ticket, sig, nil)
+
+	assert := assert.New(t)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "nil recipientRand")
+}
 
 func TestLoadtWinningTicket_GivenStoredTicket_LoadsItCorrectly(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
