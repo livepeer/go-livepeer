@@ -32,7 +32,7 @@ func (ts *stubTicketStore) StoreWinningTicket(sessionID string, ticket *Ticket, 
 	defer ts.lock.Unlock()
 
 	if ts.storeShouldFail {
-		return fmt.Errorf("stub error")
+		return fmt.Errorf("stub ticket store store error")
 	}
 
 	ts.tickets[sessionID] = append(ts.tickets[sessionID], ticket)
@@ -47,7 +47,7 @@ func (ts *stubTicketStore) LoadWinningTickets(sessionID string) ([]*Ticket, [][]
 	defer ts.lock.RUnlock()
 
 	if ts.loadShouldFail {
-		return nil, nil, nil, fmt.Errorf("stub error")
+		return nil, nil, nil, fmt.Errorf("stub ticket store load error")
 	}
 
 	return ts.tickets[sessionID], ts.sigs[sessionID], ts.recipientRands[sessionID], nil
@@ -66,11 +66,13 @@ func (sv *stubSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool 
 }
 
 type stubBroker struct {
-	deposits         map[ethcommon.Address]*big.Int
-	penaltyEscrows   map[ethcommon.Address]*big.Int
-	usedTickets      map[ethcommon.Hash]bool
-	approvedSigners  map[ethcommon.Address]bool
-	redeemShouldFail bool
+	deposits                   map[ethcommon.Address]*big.Int
+	penaltyEscrows             map[ethcommon.Address]*big.Int
+	usedTickets                map[ethcommon.Hash]bool
+	approvedSigners            map[ethcommon.Address]bool
+	redeemShouldFail           bool
+	getDepositShouldFail       bool
+	getPenaltyEscrowShouldFail bool
 }
 
 func newStubBroker() *stubBroker {
@@ -120,7 +122,7 @@ func (b *stubBroker) Withdraw() error {
 
 func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
 	if b.redeemShouldFail {
-		return fmt.Errorf("stub error")
+		return fmt.Errorf("stub broker redeem error")
 	}
 
 	b.usedTickets[ticket.Hash()] = true
@@ -141,12 +143,11 @@ func (b *stubBroker) SetDeposit(addr ethcommon.Address, amount *big.Int) {
 }
 
 func (b *stubBroker) GetDeposit(addr ethcommon.Address) (*big.Int, error) {
-	deposit, ok := b.deposits[addr]
-	if !ok {
-		return nil, fmt.Errorf("no deposit for 0x%x", addr)
+	if b.getDepositShouldFail {
+		return nil, fmt.Errorf("stub broker get deposit error")
 	}
 
-	return deposit, nil
+	return b.deposits[addr], nil
 }
 
 func (b *stubBroker) SetPenaltyEscrow(addr ethcommon.Address, amount *big.Int) {
@@ -154,12 +155,11 @@ func (b *stubBroker) SetPenaltyEscrow(addr ethcommon.Address, amount *big.Int) {
 }
 
 func (b *stubBroker) GetPenaltyEscrow(addr ethcommon.Address) (*big.Int, error) {
-	penaltyEscrow, ok := b.penaltyEscrows[addr]
-	if !ok {
-		return nil, fmt.Errorf("no penalty escrow for 0x%x", addr)
+	if b.getPenaltyEscrowShouldFail {
+		return nil, fmt.Errorf("stub broker get penalty escrow error")
 	}
 
-	return penaltyEscrow, nil
+	return b.penaltyEscrows[addr], nil
 }
 
 type stubValidator struct {
@@ -177,7 +177,7 @@ func (v *stubValidator) SetIsWinningTicket(isWinningTicket bool) {
 
 func (v *stubValidator) ValidateTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
 	if !v.isValidTicket {
-		return fmt.Errorf("invalid ticket")
+		return fmt.Errorf("stub validator invalid ticket error")
 	}
 
 	return nil

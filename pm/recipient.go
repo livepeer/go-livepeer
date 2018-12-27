@@ -16,7 +16,7 @@ import (
 // of receiving tickets
 type Recipient interface {
 	// ReceiveTicket validates and processes a received ticket
-	ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (won bool, err error)
+	ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error)
 
 	// RedeemWinningTicket redeems all winning tickets with the broker
 	// for a session ID
@@ -75,42 +75,43 @@ func NewRecipientWithSecret(broker Broker, val Validator, store TicketStore, sec
 }
 
 // ReceiveTicket validates and processes a received ticket
-func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (bool, error) {
+func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (string, bool, error) {
 	recipientRand := r.rand(seed, ticket.Sender)
 
 	if crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size)) != ticket.RecipientRandHash {
-		return false, errors.Errorf("invalid recipientRand generated from seed %v", seed)
+		return "", false, errors.Errorf("invalid recipientRand generated from seed %v", seed)
 	}
 
 	if ticket.FaceValue.Cmp(r.faceValue) != 0 {
-		return false, errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue)
+		return "", false, errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue)
 	}
 
 	if ticket.WinProb.Cmp(r.winProb) != 0 {
-		return false, errors.Errorf("invalid ticket winProb %v", ticket.WinProb)
+		return "", false, errors.Errorf("invalid ticket winProb %v", ticket.WinProb)
 	}
 
 	if err := r.val.ValidateTicket(ticket, sig, recipientRand); err != nil {
-		return false, err
+		return "", false, err
 	}
 
 	if !r.validRand(recipientRand) {
-		return false, errors.Errorf("invalid already revealed recipientRand %v", recipientRand)
+		return "", false, errors.Errorf("invalid already revealed recipientRand %v", recipientRand)
 	}
 
 	if err := r.updateSenderNonce(recipientRand, ticket.SenderNonce); err != nil {
-		return false, err
+		return "", false, err
 	}
 
 	if r.val.IsWinningTicket(ticket, sig, recipientRand) {
-		if err := r.store.StoreWinningTicket(ticket.RecipientRandHash.Hex(), ticket, sig, recipientRand); err != nil {
-			return true, err
+		sessionID := ticket.RecipientRandHash.Hex()
+		if err := r.store.StoreWinningTicket(sessionID, ticket, sig, recipientRand); err != nil {
+			return "", true, err
 		}
 
-		return true, nil
+		return sessionID, true, nil
 	}
 
-	return false, nil
+	return "", false, nil
 }
 
 // RedeemWinningTicket redeems all winning tickets with the broker
