@@ -131,7 +131,7 @@ func TestTranscodeLoop_GivenOnePMSession_RedeemsOneSession(t *testing.T) {
 	n.PMSessions[md.ManifestID][sessionID] = true
 	n.pmSessionsMutex.Unlock()
 
-	recipient.On("RedeemWinningTickets", sessionID).Return(nil)
+	recipient.On("RedeemWinningTickets", []string{sessionID}[:]).Return(nil)
 
 	_, err := n.sendToTranscodeLoop(md, ss)
 	require.Nil(err)

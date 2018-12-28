@@ -247,8 +247,8 @@ func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int)
 	return args.String(0), args.Bool(1), args.Error(2)
 }
 
-func (m *MockRecipient) RedeemWinningTickets(sessionID string) error {
-	args := m.MethodCalled("RedeemWinningTickets", sessionID)
+func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
+	args := m.MethodCalled("RedeemWinningTickets", sessionIDs)
 	return args.Error(0)
 }
 

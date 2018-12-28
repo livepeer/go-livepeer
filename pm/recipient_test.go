@@ -324,7 +324,7 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	}
 
 	// Redeem ticket to invalidate recipientRand
-	if err := r.RedeemWinningTickets(ticket.RecipientRandHash.Hex()); err != nil {
+	if err := r.RedeemWinningTickets([]string{ticket.RecipientRandHash.Hex()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -418,7 +418,7 @@ func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {
 	// Config stub ticket store to fail load
 	ts.loadShouldFail = true
 
-	err := r.RedeemWinningTickets("foo")
+	err := r.RedeemWinningTickets([]string{"foo"})
 	if err == nil {
 		t.Error("expected ticket store load error")
 	}
@@ -449,7 +449,7 @@ func TestRedeemWinningTickets_SingleTicket_GetDepositError(t *testing.T) {
 	// Config stub broker to fail getting deposit
 	b.getDepositShouldFail = true
 
-	err = r.RedeemWinningTickets(sessionID)
+	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
 		t.Error("expected broker get deposit error")
 	}
@@ -480,7 +480,7 @@ func TestRedeemWinningTickets_SingleTicket_GetPenaltyEscrowError(t *testing.T) {
 	// Config stub broker to fail getting penalty escrow
 	b.getPenaltyEscrowShouldFail = true
 
-	err = r.RedeemWinningTickets(sessionID)
+	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
 		t.Error("expected broker get penalty escrow error")
 	}
@@ -512,7 +512,7 @@ func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testin
 	b.SetDeposit(sender, big.NewInt(0))
 	b.SetPenaltyEscrow(sender, big.NewInt(0))
 
-	err = r.RedeemWinningTickets(sessionID)
+	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
 		t.Error("expected zero deposit and penalty escrow error")
 	}
@@ -544,7 +544,7 @@ func TestRedeemWinningTickets_SingleTicket_RedeemError(t *testing.T) {
 	// Config stub broker to fail redeem
 	b.redeemShouldFail = true
 
-	err = r.RedeemWinningTickets(sessionID)
+	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
 		t.Error("expected broker redeem error")
 	}
@@ -591,7 +591,7 @@ func TestRedeemWinningTickets_SingleTicket(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
-	err = r.RedeemWinningTickets(sessionID)
+	err = r.RedeemWinningTickets([]string{sessionID})
 	if err != nil {
 		t.Error(err)
 	}
@@ -647,7 +647,7 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
-	err = r.RedeemWinningTickets(sessionID)
+	err = r.RedeemWinningTickets([]string{sessionID})
 	if err != nil {
 		t.Error(err)
 	}

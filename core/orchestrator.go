@@ -320,10 +320,9 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 				}
 				n.segmentMutex.Unlock()
 				if n.Recipient != nil {
-					n.pmSessionsMutex.Lock()
-					defer n.pmSessionsMutex.Unlock()
-					for sessionID := range n.PMSessions[md.ManifestID] {
-						n.Recipient.RedeemWinningTickets(sessionID)
+					sessionIDs := getPMSessionIDsByManifestID(n, md.ManifestID)
+					if len(sessionIDs) > 0 {
+						n.Recipient.RedeemWinningTickets(sessionIDs)
 						// TODO do something with err
 					}
 				}
@@ -426,6 +425,18 @@ func NewRemoteTranscoder(n *LivepeerNode, stream net.Transcoder_RegisterTranscod
 		stream: stream,
 		eof:    make(chan struct{}, 1),
 	}
+}
+
+func getPMSessionIDsByManifestID(n *LivepeerNode, m ManifestID) []string {
+	n.pmSessionsMutex.Lock()
+	defer n.pmSessionsMutex.Unlock()
+	sessionIDs := make([]string, len(n.PMSessions[m]))
+	i := 0
+	for sessionID := range n.PMSessions[m] {
+		sessionIDs[i] = sessionID
+		i++
+	}
+	return sessionIDs
 }
 
 func randName() string {

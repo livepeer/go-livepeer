@@ -19,8 +19,8 @@ type Recipient interface {
 	ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error)
 
 	// RedeemWinningTicket redeems all winning tickets with the broker
-	// for a session ID
-	RedeemWinningTickets(sessionID string) error
+	// for a all sessionIDs
+	RedeemWinningTickets(sessionIDs []string) error
 
 	// TicketParams returns the recipient's currently accepted ticket parameters
 	// for a provided sender ETH adddress
@@ -116,8 +116,8 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 
 // RedeemWinningTicket redeems all winning tickets with the broker
 // for a session ID
-func (r *recipient) RedeemWinningTickets(sessionID string) error {
-	tickets, sigs, recipientRands, err := r.store.LoadWinningTickets([]string{sessionID})
+func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
+	tickets, sigs, recipientRands, err := r.store.LoadWinningTickets(sessionIDs)
 	if err != nil {
 		return err
 	}
