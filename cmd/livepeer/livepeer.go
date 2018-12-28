@@ -183,7 +183,7 @@ func main() {
 
 	// TODO create a real Recipient instance once we have the dependencies ready (specifically
 	// we need ETH client to implement the Broker interface)
-	n, err := core.NewLivepeerNode(nil, *datadir, dbh, nil)
+	n, err := core.NewLivepeerNode(nil, *datadir, dbh)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
@@ -304,6 +304,8 @@ func main() {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
+
+			// TODO setup Recipient here
 		}
 
 		// Start services

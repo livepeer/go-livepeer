@@ -43,7 +43,7 @@ func TestTranscode(t *testing.T) {
 	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db, new(pm.MockRecipient))
+	n, _ := NewLivepeerNode(seth, tmp, db)
 	defer os.RemoveAll(tmp)
 	ffmpeg.InitFFmpeg()
 
@@ -85,7 +85,7 @@ func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T
 	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db, new(pm.MockRecipient))
+	n, _ := NewLivepeerNode(seth, tmp, db)
 	defer os.RemoveAll(tmp)
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()
@@ -115,7 +115,8 @@ func TestTranscodeLoop_GivenOnePMSession_RedeemsOneSession(t *testing.T) {
 	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db, recipient)
+	n, _ := NewLivepeerNode(seth, tmp, db)
+	n.Recipient = recipient
 	defer os.RemoveAll(tmp)
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()

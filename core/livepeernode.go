@@ -73,13 +73,12 @@ type LivepeerNode struct {
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
-func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB, recipient pm.Recipient) (*LivepeerNode, error) {
+func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
 	return &LivepeerNode{
 		Eth:             e,
 		WorkDir:         wd,
 		Database:        dbh,
-		Recipient:       recipient,
 		EthServices:     make(map[string]eth.EventService),
 		ClaimManagers:   make(map[int64]eth.ClaimManager),
 		SegmentChans:    make(map[ManifestID]SegmentChan),

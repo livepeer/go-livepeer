@@ -12,7 +12,6 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
-	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/livepeer/go-livepeer/net"
@@ -22,7 +21,7 @@ import (
 
 func TestCurrentBlock(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "")
-	n, err := NewLivepeerNode(nil, tmpdir, nil, new(pm.MockRecipient))
+	n, err := NewLivepeerNode(nil, tmpdir, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -59,7 +58,7 @@ func TestCurrentBlock(t *testing.T) {
 }
 
 func TestServeTranscoder(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil, new(pm.MockRecipient))
+	n, _ := NewLivepeerNode(nil, "", nil)
 	strm := &StubTranscoderServer{}
 
 	// test that a transcoder was created
@@ -82,7 +81,7 @@ func TestServeTranscoder(t *testing.T) {
 }
 
 func TestRemoteTranscoder(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil, new(pm.MockRecipient))
+	n, _ := NewLivepeerNode(nil, "", nil)
 	initTranscoder := func() (*RemoteTranscoder, *StubTranscoderServer) {
 		strm := &StubTranscoderServer{node: n}
 		tc := NewRemoteTranscoder(n, strm)
@@ -124,7 +123,7 @@ func TestRemoteTranscoder(t *testing.T) {
 }
 
 func TestTaskChan(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil, new(pm.MockRecipient))
+	n, _ := NewLivepeerNode(nil, "", nil)
 	// Sanity check task ID
 	if n.taskCount != 0 {
 		t.Error("Unexpected taskid")
@@ -241,7 +240,7 @@ func StubSegTranscodingMetadata() *SegTranscodingMetadata {
 }
 
 func TestGetSegmentChan(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil, new(pm.MockRecipient))
+	n, _ := NewLivepeerNode(nil, "", nil)
 	segData := StubSegTranscodingMetadata()
 
 	drivers.NodeStorage = drivers.NewMemoryDriver("")
@@ -255,7 +254,7 @@ func TestGetSegmentChan(t *testing.T) {
 	}
 
 	drivers.NodeStorage = nil
-	node, _ := NewLivepeerNode(nil, "", nil, new(pm.MockRecipient))
+	node, _ := NewLivepeerNode(nil, "", nil)
 
 	sc, storageError := node.getSegmentChan(segData)
 	if storageError.Error() != "Missing local storage" {

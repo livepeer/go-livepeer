@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/livepeer/go-livepeer/drivers"
-	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
@@ -39,7 +38,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	config := transcodeConfig{LocalOS: storage, OS: storage}
 
 	tmpdir, _ := ioutil.TempDir("", "")
-	n, err := NewLivepeerNode(nil, tmpdir, nil, new(pm.MockRecipient))
+	n, err := NewLivepeerNode(nil, tmpdir, nil)
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
