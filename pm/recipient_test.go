@@ -10,6 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -646,6 +649,53 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 	if _, ok := r.(*recipient).senderNonces[recipientRand.String()]; ok {
 		t.Error("expected to clear senderNonce memory")
 	}
+}
+
+func TestRedeemWinningTickets_MultipleTicketsFromMultipleSessions(t *testing.T) {
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
+	// Config stub validator with valid winning tickets
+	v.SetIsWinningTicket(true)
+	require := require.New(t)
+
+	params0 := ticketParamsOrFatal(t, r, sender)
+	ticket0 := newTicket(sender, params0, 1)
+	sessionID1, won, err := r.ReceiveTicket(ticket0, sig, params0.Seed)
+	require.Nil(err)
+	require.True(won)
+
+	params1 := ticketParamsOrFatal(t, r, sender)
+	ticket1 := newTicket(sender, params1, 1)
+	sessionID2, won, err := r.ReceiveTicket(ticket1, sig, params1.Seed)
+	require.Nil(err)
+	require.True(won)
+
+	require.NotEqual(sessionID1, sessionID2)
+
+	err = r.RedeemWinningTickets([]string{sessionID1, sessionID2})
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	used, err := b.IsUsedTicket(ticket0)
+	require.Nil(err)
+	assert.True(used)
+	used, err = b.IsUsedTicket(ticket1)
+	require.Nil(err)
+	assert.True(used)
+
+	recipientRand0 := genRecipientRand(sender, secret, params0.Seed)
+	recipientRand1 := genRecipientRand(sender, secret, params1.Seed)
+
+	_, ok := r.(*recipient).invalidRands.Load(recipientRand0.String())
+	assert.True(ok)
+	_, ok = r.(*recipient).invalidRands.Load(recipientRand1.String())
+	assert.True(ok)
+
+	_, ok = r.(*recipient).senderNonces[recipientRand0.String()]
+	assert.False(ok)
+	_, ok = r.(*recipient).senderNonces[recipientRand1.String()]
+	assert.False(ok)
 }
 
 func TestTicketParams(t *testing.T) {
