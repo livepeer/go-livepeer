@@ -10,10 +10,13 @@ import (
 	"time"
 
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
@@ -40,7 +43,7 @@ func TestTranscode(t *testing.T) {
 	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db)
+	n, _ := NewLivepeerNode(seth, tmp, db, new(pm.MockRecipient))
 	defer os.RemoveAll(tmp)
 	ffmpeg.InitFFmpeg()
 
@@ -73,6 +76,85 @@ func TestTranscode(t *testing.T) {
 	}
 
 	// TODO check transcode loop expiry, storage, sig construction, etc
+}
+
+func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T) {
+	//Set up the node
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	defer db.Close()
+	seth := &eth.StubClient{}
+	tmp, _ := ioutil.TempDir("", "")
+	n, _ := NewLivepeerNode(seth, tmp, db, new(pm.MockRecipient))
+	defer os.RemoveAll(tmp)
+	ffmpeg.InitFFmpeg()
+	ss := StubSegment()
+	md := &SegTranscodingMetadata{Profiles: videoProfiles}
+	n.Transcoder = NewLocalTranscoder(tmp)
+
+	transcodeLoopTimeout = 100 * time.Millisecond
+	assert := assert.New(t)
+	require := require.New(t)
+
+	_, err := n.sendToTranscodeLoop(md, ss)
+	require.Nil(err)
+	segChan := getSegChan(n, md.ManifestID)
+	require.NotNil(segChan)
+
+	waitForTranscoderLoopTimeout(n, md.ManifestID)
+
+	segChan = getSegChan(n, md.ManifestID)
+	assert.Nil(segChan)
+}
+
+func TestTranscodeLoop_GivenOnePMSession_RedeemsOneSession(t *testing.T) {
+	recipient := new(pm.MockRecipient)
+	//Set up the node
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	defer db.Close()
+	seth := &eth.StubClient{}
+	tmp, _ := ioutil.TempDir("", "")
+	n, _ := NewLivepeerNode(seth, tmp, db, recipient)
+	defer os.RemoveAll(tmp)
+	ffmpeg.InitFFmpeg()
+	ss := StubSegment()
+	md := &SegTranscodingMetadata{Profiles: videoProfiles}
+	n.Transcoder = NewLocalTranscoder(tmp)
+
+	transcodeLoopTimeout = 100 * time.Millisecond
+	require := require.New(t)
+
+	sessionID := "some session ID"
+	n.pmSessionsMutex.Lock()
+	n.PMSessions[md.ManifestID] = make(map[string]bool)
+	n.PMSessions[md.ManifestID][sessionID] = true
+	n.pmSessionsMutex.Unlock()
+
+	recipient.On("RedeemWinningTickets", sessionID).Return(nil)
+
+	_, err := n.sendToTranscodeLoop(md, ss)
+	require.Nil(err)
+	waitForTranscoderLoopTimeout(n, md.ManifestID)
+
+	recipient.AssertExpectations(t)
+}
+
+func waitForTranscoderLoopTimeout(n *LivepeerNode, m ManifestID) {
+	for i := 0; i < 3; i++ {
+		time.Sleep(transcodeLoopTimeout * 2)
+		segChan := getSegChan(n, m)
+		if segChan == nil {
+			return
+		}
+	}
+}
+
+func getSegChan(n *LivepeerNode, m ManifestID) SegmentChan {
+	n.segmentMutex.Lock()
+	defer n.segmentMutex.Unlock()
+
+	return n.SegmentChans[m]
 }
 
 // XXX unclear what the tests below check

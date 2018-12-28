@@ -26,7 +26,7 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-const TranscodeLoopTimeout = 10 * time.Minute
+var transcodeLoopTimeout = 10 * time.Minute
 
 // Transcoder / orchestrator RPC interface implementation
 type orchestrator struct {
@@ -306,7 +306,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 	go func() {
 		for {
 			// XXX make context timeout configurable
-			ctx, cancel := context.WithTimeout(context.Background(), TranscodeLoopTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), transcodeLoopTimeout)
 			select {
 			case <-ctx.Done():
 				// timeout; clean up goroutine here
@@ -319,6 +319,14 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 					delete(n.SegmentChans, md.ManifestID)
 				}
 				n.segmentMutex.Unlock()
+				if n.Recipient != nil {
+					n.pmSessionsMutex.Lock()
+					defer n.pmSessionsMutex.Unlock()
+					for sessionID := range n.PMSessions[md.ManifestID] {
+						n.Recipient.RedeemWinningTickets(sessionID)
+						// TODO do something with err
+					}
+				}
 				return
 			case chanData := <-segChan:
 				chanData.res <- n.transcodeSeg(config, chanData.seg, chanData.md)

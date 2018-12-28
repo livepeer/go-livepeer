@@ -8,12 +8,13 @@ import (
 
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/pm"
 )
 
 func TestProcessHistoricalJobs(t *testing.T) {
 	seth := &eth.StubClient{}
 	seth.WatchJobError = fmt.Errorf("Historical job error")
-	n, err := core.NewLivepeerNode(seth, ".", nil)
+	n, err := core.NewLivepeerNode(seth, ".", nil, new(pm.MockRecipient))
 	if err != nil {
 		t.Error(err)
 	}

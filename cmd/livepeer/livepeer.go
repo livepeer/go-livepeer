@@ -181,7 +181,9 @@ func main() {
 	}
 	defer dbh.Close()
 
-	n, err := core.NewLivepeerNode(nil, *datadir, dbh)
+	// TODO create a real Recipient instance once we have the dependencies ready (specifically
+	// we need ETH client to implement the Broker interface)
+	n, err := core.NewLivepeerNode(nil, *datadir, dbh, nil)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}

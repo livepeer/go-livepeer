@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livepeer/go-livepeer/pm"
+
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/ipfs"
@@ -52,6 +54,8 @@ type LivepeerNode struct {
 	// Transcoder public fields
 	ClaimManagers    map[int64]eth.ClaimManager
 	SegmentChans     map[ManifestID]SegmentChan
+	Recipient        pm.Recipient
+	PMSessions       map[ManifestID]map[string]bool
 	OrchestratorPool net.OrchestratorPool
 	Ipfs             ipfs.IpfsApi
 	ServiceURI       *url.URL
@@ -59,29 +63,33 @@ type LivepeerNode struct {
 	Transcoder       Transcoder
 
 	// Transcoder private fields
-	claimMutex   *sync.Mutex
-	segmentMutex *sync.Mutex
-	tcoderMutex  *sync.RWMutex
-	taskMutex    *sync.RWMutex
-	taskChans    map[int64]TranscoderChan
-	taskCount    int64
+	claimMutex      *sync.Mutex
+	segmentMutex    *sync.Mutex
+	pmSessionsMutex *sync.Mutex
+	tcoderMutex     *sync.RWMutex
+	taskMutex       *sync.RWMutex
+	taskChans       map[int64]TranscoderChan
+	taskCount       int64
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
-func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
+func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB, recipient pm.Recipient) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
 	return &LivepeerNode{
-		Eth:           e,
-		WorkDir:       wd,
-		Database:      dbh,
-		EthServices:   make(map[string]eth.EventService),
-		ClaimManagers: make(map[int64]eth.ClaimManager),
-		SegmentChans:  make(map[ManifestID]SegmentChan),
-		claimMutex:    &sync.Mutex{},
-		segmentMutex:  &sync.Mutex{},
-		tcoderMutex:   &sync.RWMutex{},
-		taskMutex:     &sync.RWMutex{},
-		taskChans:     make(map[int64]TranscoderChan),
+		Eth:             e,
+		WorkDir:         wd,
+		Database:        dbh,
+		Recipient:       recipient,
+		EthServices:     make(map[string]eth.EventService),
+		ClaimManagers:   make(map[int64]eth.ClaimManager),
+		SegmentChans:    make(map[ManifestID]SegmentChan),
+		PMSessions:      make(map[ManifestID]map[string]bool),
+		claimMutex:      &sync.Mutex{},
+		segmentMutex:    &sync.Mutex{},
+		pmSessionsMutex: &sync.Mutex{},
+		tcoderMutex:     &sync.RWMutex{},
+		taskMutex:       &sync.RWMutex{},
+		taskChans:       make(map[int64]TranscoderChan),
 	}, nil
 
 }

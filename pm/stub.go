@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/mock"
 )
 
 type stubTicketStore struct {
@@ -214,4 +215,25 @@ func (s *stubSigner) Sign(msg []byte) ([]byte, error) {
 
 func (s *stubSigner) Account() accounts.Account {
 	return s.account
+}
+
+// MockRecipient is useful for testing components that depend on pm.Recipient, such as
+// LivepeerNode
+type MockRecipient struct {
+	mock.Mock
+}
+
+func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error) {
+	args := m.MethodCalled("ReceiveTicket", ticket, sig, seed)
+	return args.String(0), args.Bool(1), args.Error(2)
+}
+
+func (m *MockRecipient) RedeemWinningTickets(sessionID string) error {
+	args := m.MethodCalled("RedeemWinningTickets", sessionID)
+	return args.Error(0)
+}
+
+func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
+	args := m.MethodCalled("TicketParams", sender)
+	return args.Get(0).(*TicketParams), args.Error(1)
 }

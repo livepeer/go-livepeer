@@ -15,6 +15,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
@@ -25,7 +26,7 @@ var S *LivepeerServer
 func setupServer() *LivepeerServer {
 	drivers.NodeStorage = drivers.NewMemoryDriver("")
 	if S == nil {
-		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
+		n, _ := core.NewLivepeerNode(nil, "./tmp", nil, new(pm.MockRecipient))
 		S = NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
 		go S.StartMediaServer(context.Background(), big.NewInt(0), "")
 		go S.StartWebserver("127.0.0.1:8938")

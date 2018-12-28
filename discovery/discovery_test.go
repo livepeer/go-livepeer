@@ -7,6 +7,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
 )
 
@@ -24,7 +25,7 @@ func StubOrchestratorPool(addresses []string) *stubOrchestratorPool {
 			uris = append(uris, uri)
 		}
 	}
-	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node, _ := core.NewLivepeerNode(nil, "", nil, new(pm.MockRecipient))
 	bcast := core.NewBroadcaster(node)
 
 	return &stubOrchestratorPool{bcast: bcast, uri: uris}
@@ -42,7 +43,7 @@ func StubOrchestrators(addresses []string) []*lpTypes.Transcoder {
 }
 
 func TestNewOrchestratorPool(t *testing.T) {
-	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node, _ := core.NewLivepeerNode(nil, "", nil, new(pm.MockRecipient))
 	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
 	expectedOffchainOrch := StubOrchestratorPool(addresses)
 
