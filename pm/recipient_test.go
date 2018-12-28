@@ -232,7 +232,7 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce)
 	}
 
-	storeTickets, storeSigs, storeRecipientRands, err := ts.LoadWinningTickets(ticket.RecipientRandHash.Hex())
+	storeTickets, storeSigs, storeRecipientRands, err := ts.LoadWinningTickets([]string{ticket.RecipientRandHash.Hex()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +291,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce)
 	}
 
-	storeTickets, storeSigs, storeRecipientRands, err := ts.LoadWinningTickets(ticket.RecipientRandHash.Hex())
+	storeTickets, storeSigs, storeRecipientRands, err := ts.LoadWinningTickets([]string{ticket.RecipientRandHash.Hex()})
 	if err != nil {
 		t.Fatal(err)
 	}

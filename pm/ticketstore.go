@@ -13,5 +13,5 @@ type TicketStore interface {
 
 	// Load fetches all persisted tickets in the store with their signatures and recipientRands
 	// for a session ID
-	LoadWinningTickets(sessionID string) (tickets []*Ticket, sigs [][]byte, recipientRands []*big.Int, err error)
+	LoadWinningTickets(sessionIDs []string) (tickets []*Ticket, sigs [][]byte, recipientRands []*big.Int, err error)
 }
