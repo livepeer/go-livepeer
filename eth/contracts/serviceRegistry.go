@@ -4,6 +4,7 @@
 package contracts
 
 import (
+	"math/big"
 	"strings"
 
 	ethereum "github.com/ethereum/go-ethereum"
@@ -14,8 +15,20 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 )
 
+// Reference imports to suppress errors if they are not otherwise used.
+var (
+	_ = big.NewInt
+	_ = strings.NewReader
+	_ = ethereum.NotFound
+	_ = abi.U256
+	_ = bind.Bind
+	_ = common.Big1
+	_ = types.BloomLookup
+	_ = event.NewSubscription
+)
+
 // ServiceRegistryABI is the input ABI used to generate the binding from.
-const ServiceRegistryABI = "[{\"constant\":true,\"inputs\":[{\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"getServiceURI\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_serviceURI\",\"type\":\"string\"}],\"name\":\"setServiceURI\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"addr\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"serviceURI\",\"type\":\"string\"}],\"name\":\"ServiceURIUpdate\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"}]"
+const ServiceRegistryABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"addr\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"serviceURI\",\"type\":\"string\"}],\"name\":\"ServiceURIUpdate\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"name\":\"_serviceURI\",\"type\":\"string\"}],\"name\":\"setServiceURI\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"getServiceURI\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
 
 // ServiceRegistry is an auto generated Go binding around an Ethereum contract.
 type ServiceRegistry struct {
@@ -187,7 +200,7 @@ func (_ServiceRegistry *ServiceRegistryCallerSession) Controller() (common.Addre
 
 // GetServiceURI is a free data retrieval call binding the contract method 0x214c2a4b.
 //
-// Solidity: function getServiceURI(_addr address) constant returns(string)
+// Solidity: function getServiceURI(address _addr) constant returns(string)
 func (_ServiceRegistry *ServiceRegistryCaller) GetServiceURI(opts *bind.CallOpts, _addr common.Address) (string, error) {
 	var (
 		ret0 = new(string)
@@ -199,14 +212,14 @@ func (_ServiceRegistry *ServiceRegistryCaller) GetServiceURI(opts *bind.CallOpts
 
 // GetServiceURI is a free data retrieval call binding the contract method 0x214c2a4b.
 //
-// Solidity: function getServiceURI(_addr address) constant returns(string)
+// Solidity: function getServiceURI(address _addr) constant returns(string)
 func (_ServiceRegistry *ServiceRegistrySession) GetServiceURI(_addr common.Address) (string, error) {
 	return _ServiceRegistry.Contract.GetServiceURI(&_ServiceRegistry.CallOpts, _addr)
 }
 
 // GetServiceURI is a free data retrieval call binding the contract method 0x214c2a4b.
 //
-// Solidity: function getServiceURI(_addr address) constant returns(string)
+// Solidity: function getServiceURI(address _addr) constant returns(string)
 func (_ServiceRegistry *ServiceRegistryCallerSession) GetServiceURI(_addr common.Address) (string, error) {
 	return _ServiceRegistry.Contract.GetServiceURI(&_ServiceRegistry.CallOpts, _addr)
 }
@@ -239,42 +252,42 @@ func (_ServiceRegistry *ServiceRegistryCallerSession) TargetContractId() ([32]by
 
 // SetController is a paid mutator transaction binding the contract method 0x92eefe9b.
 //
-// Solidity: function setController(_controller address) returns()
+// Solidity: function setController(address _controller) returns()
 func (_ServiceRegistry *ServiceRegistryTransactor) SetController(opts *bind.TransactOpts, _controller common.Address) (*types.Transaction, error) {
 	return _ServiceRegistry.contract.Transact(opts, "setController", _controller)
 }
 
 // SetController is a paid mutator transaction binding the contract method 0x92eefe9b.
 //
-// Solidity: function setController(_controller address) returns()
+// Solidity: function setController(address _controller) returns()
 func (_ServiceRegistry *ServiceRegistrySession) SetController(_controller common.Address) (*types.Transaction, error) {
 	return _ServiceRegistry.Contract.SetController(&_ServiceRegistry.TransactOpts, _controller)
 }
 
 // SetController is a paid mutator transaction binding the contract method 0x92eefe9b.
 //
-// Solidity: function setController(_controller address) returns()
+// Solidity: function setController(address _controller) returns()
 func (_ServiceRegistry *ServiceRegistryTransactorSession) SetController(_controller common.Address) (*types.Transaction, error) {
 	return _ServiceRegistry.Contract.SetController(&_ServiceRegistry.TransactOpts, _controller)
 }
 
 // SetServiceURI is a paid mutator transaction binding the contract method 0x5f11301b.
 //
-// Solidity: function setServiceURI(_serviceURI string) returns()
+// Solidity: function setServiceURI(string _serviceURI) returns()
 func (_ServiceRegistry *ServiceRegistryTransactor) SetServiceURI(opts *bind.TransactOpts, _serviceURI string) (*types.Transaction, error) {
 	return _ServiceRegistry.contract.Transact(opts, "setServiceURI", _serviceURI)
 }
 
 // SetServiceURI is a paid mutator transaction binding the contract method 0x5f11301b.
 //
-// Solidity: function setServiceURI(_serviceURI string) returns()
+// Solidity: function setServiceURI(string _serviceURI) returns()
 func (_ServiceRegistry *ServiceRegistrySession) SetServiceURI(_serviceURI string) (*types.Transaction, error) {
 	return _ServiceRegistry.Contract.SetServiceURI(&_ServiceRegistry.TransactOpts, _serviceURI)
 }
 
 // SetServiceURI is a paid mutator transaction binding the contract method 0x5f11301b.
 //
-// Solidity: function setServiceURI(_serviceURI string) returns()
+// Solidity: function setServiceURI(string _serviceURI) returns()
 func (_ServiceRegistry *ServiceRegistryTransactorSession) SetServiceURI(_serviceURI string) (*types.Transaction, error) {
 	return _ServiceRegistry.Contract.SetServiceURI(&_ServiceRegistry.TransactOpts, _serviceURI)
 }
@@ -354,7 +367,7 @@ type ServiceRegistryParameterUpdate struct {
 
 // FilterParameterUpdate is a free log retrieval operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
 //
-// Solidity: event ParameterUpdate(param string)
+// Solidity: event ParameterUpdate(string param)
 func (_ServiceRegistry *ServiceRegistryFilterer) FilterParameterUpdate(opts *bind.FilterOpts) (*ServiceRegistryParameterUpdateIterator, error) {
 
 	logs, sub, err := _ServiceRegistry.contract.FilterLogs(opts, "ParameterUpdate")
@@ -366,7 +379,7 @@ func (_ServiceRegistry *ServiceRegistryFilterer) FilterParameterUpdate(opts *bin
 
 // WatchParameterUpdate is a free log subscription operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
 //
-// Solidity: event ParameterUpdate(param string)
+// Solidity: event ParameterUpdate(string param)
 func (_ServiceRegistry *ServiceRegistryFilterer) WatchParameterUpdate(opts *bind.WatchOpts, sink chan<- *ServiceRegistryParameterUpdate) (event.Subscription, error) {
 
 	logs, sub, err := _ServiceRegistry.contract.WatchLogs(opts, "ParameterUpdate")
@@ -477,7 +490,7 @@ type ServiceRegistryServiceURIUpdate struct {
 
 // FilterServiceURIUpdate is a free log retrieval operation binding the contract event 0xfbb63068732c85741c9f8e61caffaabe038d577bfafd2d2dcc0e352a4f653a4c.
 //
-// Solidity: event ServiceURIUpdate(addr indexed address, serviceURI string)
+// Solidity: event ServiceURIUpdate(address indexed addr, string serviceURI)
 func (_ServiceRegistry *ServiceRegistryFilterer) FilterServiceURIUpdate(opts *bind.FilterOpts, addr []common.Address) (*ServiceRegistryServiceURIUpdateIterator, error) {
 
 	var addrRule []interface{}
@@ -494,7 +507,7 @@ func (_ServiceRegistry *ServiceRegistryFilterer) FilterServiceURIUpdate(opts *bi
 
 // WatchServiceURIUpdate is a free log subscription operation binding the contract event 0xfbb63068732c85741c9f8e61caffaabe038d577bfafd2d2dcc0e352a4f653a4c.
 //
-// Solidity: event ServiceURIUpdate(addr indexed address, serviceURI string)
+// Solidity: event ServiceURIUpdate(address indexed addr, string serviceURI)
 func (_ServiceRegistry *ServiceRegistryFilterer) WatchServiceURIUpdate(opts *bind.WatchOpts, sink chan<- *ServiceRegistryServiceURIUpdate, addr []common.Address) (event.Subscription, error) {
 
 	var addrRule []interface{}
@@ -609,7 +622,7 @@ type ServiceRegistrySetController struct {
 
 // FilterSetController is a free log retrieval operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
 //
-// Solidity: event SetController(controller address)
+// Solidity: event SetController(address controller)
 func (_ServiceRegistry *ServiceRegistryFilterer) FilterSetController(opts *bind.FilterOpts) (*ServiceRegistrySetControllerIterator, error) {
 
 	logs, sub, err := _ServiceRegistry.contract.FilterLogs(opts, "SetController")
@@ -621,7 +634,7 @@ func (_ServiceRegistry *ServiceRegistryFilterer) FilterSetController(opts *bind.
 
 // WatchSetController is a free log subscription operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
 //
-// Solidity: event SetController(controller address)
+// Solidity: event SetController(address controller)
 func (_ServiceRegistry *ServiceRegistryFilterer) WatchSetController(opts *bind.WatchOpts, sink chan<- *ServiceRegistrySetController) (event.Subscription, error) {
 
 	logs, sub, err := _ServiceRegistry.contract.WatchLogs(opts, "SetController")

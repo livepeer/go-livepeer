@@ -15,8 +15,20 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 )
 
+// Reference imports to suppress errors if they are not otherwise used.
+var (
+	_ = big.NewInt
+	_ = strings.NewReader
+	_ = ethereum.NotFound
+	_ = abi.U256
+	_ = bind.Bind
+	_ = common.Big1
+	_ = types.BloomLookup
+	_ = event.NewSubscription
+)
+
 // LivepeerTokenABI is the input ABI used to generate the binding from.
-const LivepeerTokenABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"mintingFinished\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"name\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_spender\",\"type\":\"address\"},{\"name\":\"_value\",\"type\":\"uint256\"}],\"name\":\"approve\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"totalSupply\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_from\",\"type\":\"address\"},{\"name\":\"_to\",\"type\":\"address\"},{\"name\":\"_value\",\"type\":\"uint256\"}],\"name\":\"transferFrom\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"decimals\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_to\",\"type\":\"address\"},{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"mint\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"burn\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"version\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_spender\",\"type\":\"address\"},{\"name\":\"_subtractedValue\",\"type\":\"uint256\"}],\"name\":\"decreaseApproval\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_owner\",\"type\":\"address\"}],\"name\":\"balanceOf\",\"outputs\":[{\"name\":\"balance\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"finishMinting\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"symbol\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_to\",\"type\":\"address\"},{\"name\":\"_value\",\"type\":\"uint256\"}],\"name\":\"transfer\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_spender\",\"type\":\"address\"},{\"name\":\"_addedValue\",\"type\":\"uint256\"}],\"name\":\"increaseApproval\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_owner\",\"type\":\"address\"},{\"name\":\"_spender\",\"type\":\"address\"}],\"name\":\"allowance\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"burner\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"value\",\"type\":\"uint256\"}],\"name\":\"Burn\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"to\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"Mint\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"MintFinished\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"owner\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"spender\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"value\",\"type\":\"uint256\"}],\"name\":\"Approval\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"from\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"to\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"value\",\"type\":\"uint256\"}],\"name\":\"Transfer\",\"type\":\"event\"}]"
+const LivepeerTokenABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"mintingFinished\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"name\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"spender\",\"type\":\"address\"},{\"name\":\"value\",\"type\":\"uint256\"}],\"name\":\"approve\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"totalSupply\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"from\",\"type\":\"address\"},{\"name\":\"to\",\"type\":\"address\"},{\"name\":\"value\",\"type\":\"uint256\"}],\"name\":\"transferFrom\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"decimals\",\"outputs\":[{\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"spender\",\"type\":\"address\"},{\"name\":\"addedValue\",\"type\":\"uint256\"}],\"name\":\"increaseAllowance\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_to\",\"type\":\"address\"},{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"mint\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"burn\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"version\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"balanceOf\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"finishMinting\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"symbol\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"spender\",\"type\":\"address\"},{\"name\":\"subtractedValue\",\"type\":\"uint256\"}],\"name\":\"decreaseAllowance\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"to\",\"type\":\"address\"},{\"name\":\"value\",\"type\":\"uint256\"}],\"name\":\"transfer\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"owner\",\"type\":\"address\"},{\"name\":\"spender\",\"type\":\"address\"}],\"name\":\"allowance\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"burner\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"value\",\"type\":\"uint256\"}],\"name\":\"Burn\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"to\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"Mint\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"MintFinished\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"from\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"to\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"value\",\"type\":\"uint256\"}],\"name\":\"Transfer\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"owner\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"spender\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"value\",\"type\":\"uint256\"}],\"name\":\"Approval\",\"type\":\"event\"}]"
 
 // LivepeerToken is an auto generated Go binding around an Ethereum contract.
 type LivepeerToken struct {
@@ -162,54 +174,54 @@ func (_LivepeerToken *LivepeerTokenTransactorRaw) Transact(opts *bind.TransactOp
 
 // Allowance is a free data retrieval call binding the contract method 0xdd62ed3e.
 //
-// Solidity: function allowance(_owner address, _spender address) constant returns(uint256)
-func (_LivepeerToken *LivepeerTokenCaller) Allowance(opts *bind.CallOpts, _owner common.Address, _spender common.Address) (*big.Int, error) {
+// Solidity: function allowance(address owner, address spender) constant returns(uint256)
+func (_LivepeerToken *LivepeerTokenCaller) Allowance(opts *bind.CallOpts, owner common.Address, spender common.Address) (*big.Int, error) {
 	var (
 		ret0 = new(*big.Int)
 	)
 	out := ret0
-	err := _LivepeerToken.contract.Call(opts, out, "allowance", _owner, _spender)
+	err := _LivepeerToken.contract.Call(opts, out, "allowance", owner, spender)
 	return *ret0, err
 }
 
 // Allowance is a free data retrieval call binding the contract method 0xdd62ed3e.
 //
-// Solidity: function allowance(_owner address, _spender address) constant returns(uint256)
-func (_LivepeerToken *LivepeerTokenSession) Allowance(_owner common.Address, _spender common.Address) (*big.Int, error) {
-	return _LivepeerToken.Contract.Allowance(&_LivepeerToken.CallOpts, _owner, _spender)
+// Solidity: function allowance(address owner, address spender) constant returns(uint256)
+func (_LivepeerToken *LivepeerTokenSession) Allowance(owner common.Address, spender common.Address) (*big.Int, error) {
+	return _LivepeerToken.Contract.Allowance(&_LivepeerToken.CallOpts, owner, spender)
 }
 
 // Allowance is a free data retrieval call binding the contract method 0xdd62ed3e.
 //
-// Solidity: function allowance(_owner address, _spender address) constant returns(uint256)
-func (_LivepeerToken *LivepeerTokenCallerSession) Allowance(_owner common.Address, _spender common.Address) (*big.Int, error) {
-	return _LivepeerToken.Contract.Allowance(&_LivepeerToken.CallOpts, _owner, _spender)
+// Solidity: function allowance(address owner, address spender) constant returns(uint256)
+func (_LivepeerToken *LivepeerTokenCallerSession) Allowance(owner common.Address, spender common.Address) (*big.Int, error) {
+	return _LivepeerToken.Contract.Allowance(&_LivepeerToken.CallOpts, owner, spender)
 }
 
 // BalanceOf is a free data retrieval call binding the contract method 0x70a08231.
 //
-// Solidity: function balanceOf(_owner address) constant returns(balance uint256)
-func (_LivepeerToken *LivepeerTokenCaller) BalanceOf(opts *bind.CallOpts, _owner common.Address) (*big.Int, error) {
+// Solidity: function balanceOf(address owner) constant returns(uint256)
+func (_LivepeerToken *LivepeerTokenCaller) BalanceOf(opts *bind.CallOpts, owner common.Address) (*big.Int, error) {
 	var (
 		ret0 = new(*big.Int)
 	)
 	out := ret0
-	err := _LivepeerToken.contract.Call(opts, out, "balanceOf", _owner)
+	err := _LivepeerToken.contract.Call(opts, out, "balanceOf", owner)
 	return *ret0, err
 }
 
 // BalanceOf is a free data retrieval call binding the contract method 0x70a08231.
 //
-// Solidity: function balanceOf(_owner address) constant returns(balance uint256)
-func (_LivepeerToken *LivepeerTokenSession) BalanceOf(_owner common.Address) (*big.Int, error) {
-	return _LivepeerToken.Contract.BalanceOf(&_LivepeerToken.CallOpts, _owner)
+// Solidity: function balanceOf(address owner) constant returns(uint256)
+func (_LivepeerToken *LivepeerTokenSession) BalanceOf(owner common.Address) (*big.Int, error) {
+	return _LivepeerToken.Contract.BalanceOf(&_LivepeerToken.CallOpts, owner)
 }
 
 // BalanceOf is a free data retrieval call binding the contract method 0x70a08231.
 //
-// Solidity: function balanceOf(_owner address) constant returns(balance uint256)
-func (_LivepeerToken *LivepeerTokenCallerSession) BalanceOf(_owner common.Address) (*big.Int, error) {
-	return _LivepeerToken.Contract.BalanceOf(&_LivepeerToken.CallOpts, _owner)
+// Solidity: function balanceOf(address owner) constant returns(uint256)
+func (_LivepeerToken *LivepeerTokenCallerSession) BalanceOf(owner common.Address) (*big.Int, error) {
+	return _LivepeerToken.Contract.BalanceOf(&_LivepeerToken.CallOpts, owner)
 }
 
 // Decimals is a free data retrieval call binding the contract method 0x313ce567.
@@ -396,65 +408,65 @@ func (_LivepeerToken *LivepeerTokenCallerSession) Version() (string, error) {
 
 // Approve is a paid mutator transaction binding the contract method 0x095ea7b3.
 //
-// Solidity: function approve(_spender address, _value uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenTransactor) Approve(opts *bind.TransactOpts, _spender common.Address, _value *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.contract.Transact(opts, "approve", _spender, _value)
+// Solidity: function approve(address spender, uint256 value) returns(bool)
+func (_LivepeerToken *LivepeerTokenTransactor) Approve(opts *bind.TransactOpts, spender common.Address, value *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.contract.Transact(opts, "approve", spender, value)
 }
 
 // Approve is a paid mutator transaction binding the contract method 0x095ea7b3.
 //
-// Solidity: function approve(_spender address, _value uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenSession) Approve(_spender common.Address, _value *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.Contract.Approve(&_LivepeerToken.TransactOpts, _spender, _value)
+// Solidity: function approve(address spender, uint256 value) returns(bool)
+func (_LivepeerToken *LivepeerTokenSession) Approve(spender common.Address, value *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.Contract.Approve(&_LivepeerToken.TransactOpts, spender, value)
 }
 
 // Approve is a paid mutator transaction binding the contract method 0x095ea7b3.
 //
-// Solidity: function approve(_spender address, _value uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenTransactorSession) Approve(_spender common.Address, _value *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.Contract.Approve(&_LivepeerToken.TransactOpts, _spender, _value)
+// Solidity: function approve(address spender, uint256 value) returns(bool)
+func (_LivepeerToken *LivepeerTokenTransactorSession) Approve(spender common.Address, value *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.Contract.Approve(&_LivepeerToken.TransactOpts, spender, value)
 }
 
 // Burn is a paid mutator transaction binding the contract method 0x42966c68.
 //
-// Solidity: function burn(_amount uint256) returns()
+// Solidity: function burn(uint256 _amount) returns()
 func (_LivepeerToken *LivepeerTokenTransactor) Burn(opts *bind.TransactOpts, _amount *big.Int) (*types.Transaction, error) {
 	return _LivepeerToken.contract.Transact(opts, "burn", _amount)
 }
 
 // Burn is a paid mutator transaction binding the contract method 0x42966c68.
 //
-// Solidity: function burn(_amount uint256) returns()
+// Solidity: function burn(uint256 _amount) returns()
 func (_LivepeerToken *LivepeerTokenSession) Burn(_amount *big.Int) (*types.Transaction, error) {
 	return _LivepeerToken.Contract.Burn(&_LivepeerToken.TransactOpts, _amount)
 }
 
 // Burn is a paid mutator transaction binding the contract method 0x42966c68.
 //
-// Solidity: function burn(_amount uint256) returns()
+// Solidity: function burn(uint256 _amount) returns()
 func (_LivepeerToken *LivepeerTokenTransactorSession) Burn(_amount *big.Int) (*types.Transaction, error) {
 	return _LivepeerToken.Contract.Burn(&_LivepeerToken.TransactOpts, _amount)
 }
 
-// DecreaseApproval is a paid mutator transaction binding the contract method 0x66188463.
+// DecreaseAllowance is a paid mutator transaction binding the contract method 0xa457c2d7.
 //
-// Solidity: function decreaseApproval(_spender address, _subtractedValue uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenTransactor) DecreaseApproval(opts *bind.TransactOpts, _spender common.Address, _subtractedValue *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.contract.Transact(opts, "decreaseApproval", _spender, _subtractedValue)
+// Solidity: function decreaseAllowance(address spender, uint256 subtractedValue) returns(bool)
+func (_LivepeerToken *LivepeerTokenTransactor) DecreaseAllowance(opts *bind.TransactOpts, spender common.Address, subtractedValue *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.contract.Transact(opts, "decreaseAllowance", spender, subtractedValue)
 }
 
-// DecreaseApproval is a paid mutator transaction binding the contract method 0x66188463.
+// DecreaseAllowance is a paid mutator transaction binding the contract method 0xa457c2d7.
 //
-// Solidity: function decreaseApproval(_spender address, _subtractedValue uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenSession) DecreaseApproval(_spender common.Address, _subtractedValue *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.Contract.DecreaseApproval(&_LivepeerToken.TransactOpts, _spender, _subtractedValue)
+// Solidity: function decreaseAllowance(address spender, uint256 subtractedValue) returns(bool)
+func (_LivepeerToken *LivepeerTokenSession) DecreaseAllowance(spender common.Address, subtractedValue *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.Contract.DecreaseAllowance(&_LivepeerToken.TransactOpts, spender, subtractedValue)
 }
 
-// DecreaseApproval is a paid mutator transaction binding the contract method 0x66188463.
+// DecreaseAllowance is a paid mutator transaction binding the contract method 0xa457c2d7.
 //
-// Solidity: function decreaseApproval(_spender address, _subtractedValue uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenTransactorSession) DecreaseApproval(_spender common.Address, _subtractedValue *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.Contract.DecreaseApproval(&_LivepeerToken.TransactOpts, _spender, _subtractedValue)
+// Solidity: function decreaseAllowance(address spender, uint256 subtractedValue) returns(bool)
+func (_LivepeerToken *LivepeerTokenTransactorSession) DecreaseAllowance(spender common.Address, subtractedValue *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.Contract.DecreaseAllowance(&_LivepeerToken.TransactOpts, spender, subtractedValue)
 }
 
 // FinishMinting is a paid mutator transaction binding the contract method 0x7d64bcb4.
@@ -478,107 +490,107 @@ func (_LivepeerToken *LivepeerTokenTransactorSession) FinishMinting() (*types.Tr
 	return _LivepeerToken.Contract.FinishMinting(&_LivepeerToken.TransactOpts)
 }
 
-// IncreaseApproval is a paid mutator transaction binding the contract method 0xd73dd623.
+// IncreaseAllowance is a paid mutator transaction binding the contract method 0x39509351.
 //
-// Solidity: function increaseApproval(_spender address, _addedValue uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenTransactor) IncreaseApproval(opts *bind.TransactOpts, _spender common.Address, _addedValue *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.contract.Transact(opts, "increaseApproval", _spender, _addedValue)
+// Solidity: function increaseAllowance(address spender, uint256 addedValue) returns(bool)
+func (_LivepeerToken *LivepeerTokenTransactor) IncreaseAllowance(opts *bind.TransactOpts, spender common.Address, addedValue *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.contract.Transact(opts, "increaseAllowance", spender, addedValue)
 }
 
-// IncreaseApproval is a paid mutator transaction binding the contract method 0xd73dd623.
+// IncreaseAllowance is a paid mutator transaction binding the contract method 0x39509351.
 //
-// Solidity: function increaseApproval(_spender address, _addedValue uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenSession) IncreaseApproval(_spender common.Address, _addedValue *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.Contract.IncreaseApproval(&_LivepeerToken.TransactOpts, _spender, _addedValue)
+// Solidity: function increaseAllowance(address spender, uint256 addedValue) returns(bool)
+func (_LivepeerToken *LivepeerTokenSession) IncreaseAllowance(spender common.Address, addedValue *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.Contract.IncreaseAllowance(&_LivepeerToken.TransactOpts, spender, addedValue)
 }
 
-// IncreaseApproval is a paid mutator transaction binding the contract method 0xd73dd623.
+// IncreaseAllowance is a paid mutator transaction binding the contract method 0x39509351.
 //
-// Solidity: function increaseApproval(_spender address, _addedValue uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenTransactorSession) IncreaseApproval(_spender common.Address, _addedValue *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.Contract.IncreaseApproval(&_LivepeerToken.TransactOpts, _spender, _addedValue)
+// Solidity: function increaseAllowance(address spender, uint256 addedValue) returns(bool)
+func (_LivepeerToken *LivepeerTokenTransactorSession) IncreaseAllowance(spender common.Address, addedValue *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.Contract.IncreaseAllowance(&_LivepeerToken.TransactOpts, spender, addedValue)
 }
 
 // Mint is a paid mutator transaction binding the contract method 0x40c10f19.
 //
-// Solidity: function mint(_to address, _amount uint256) returns(bool)
+// Solidity: function mint(address _to, uint256 _amount) returns(bool)
 func (_LivepeerToken *LivepeerTokenTransactor) Mint(opts *bind.TransactOpts, _to common.Address, _amount *big.Int) (*types.Transaction, error) {
 	return _LivepeerToken.contract.Transact(opts, "mint", _to, _amount)
 }
 
 // Mint is a paid mutator transaction binding the contract method 0x40c10f19.
 //
-// Solidity: function mint(_to address, _amount uint256) returns(bool)
+// Solidity: function mint(address _to, uint256 _amount) returns(bool)
 func (_LivepeerToken *LivepeerTokenSession) Mint(_to common.Address, _amount *big.Int) (*types.Transaction, error) {
 	return _LivepeerToken.Contract.Mint(&_LivepeerToken.TransactOpts, _to, _amount)
 }
 
 // Mint is a paid mutator transaction binding the contract method 0x40c10f19.
 //
-// Solidity: function mint(_to address, _amount uint256) returns(bool)
+// Solidity: function mint(address _to, uint256 _amount) returns(bool)
 func (_LivepeerToken *LivepeerTokenTransactorSession) Mint(_to common.Address, _amount *big.Int) (*types.Transaction, error) {
 	return _LivepeerToken.Contract.Mint(&_LivepeerToken.TransactOpts, _to, _amount)
 }
 
 // Transfer is a paid mutator transaction binding the contract method 0xa9059cbb.
 //
-// Solidity: function transfer(_to address, _value uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenTransactor) Transfer(opts *bind.TransactOpts, _to common.Address, _value *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.contract.Transact(opts, "transfer", _to, _value)
+// Solidity: function transfer(address to, uint256 value) returns(bool)
+func (_LivepeerToken *LivepeerTokenTransactor) Transfer(opts *bind.TransactOpts, to common.Address, value *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.contract.Transact(opts, "transfer", to, value)
 }
 
 // Transfer is a paid mutator transaction binding the contract method 0xa9059cbb.
 //
-// Solidity: function transfer(_to address, _value uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenSession) Transfer(_to common.Address, _value *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.Contract.Transfer(&_LivepeerToken.TransactOpts, _to, _value)
+// Solidity: function transfer(address to, uint256 value) returns(bool)
+func (_LivepeerToken *LivepeerTokenSession) Transfer(to common.Address, value *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.Contract.Transfer(&_LivepeerToken.TransactOpts, to, value)
 }
 
 // Transfer is a paid mutator transaction binding the contract method 0xa9059cbb.
 //
-// Solidity: function transfer(_to address, _value uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenTransactorSession) Transfer(_to common.Address, _value *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.Contract.Transfer(&_LivepeerToken.TransactOpts, _to, _value)
+// Solidity: function transfer(address to, uint256 value) returns(bool)
+func (_LivepeerToken *LivepeerTokenTransactorSession) Transfer(to common.Address, value *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.Contract.Transfer(&_LivepeerToken.TransactOpts, to, value)
 }
 
 // TransferFrom is a paid mutator transaction binding the contract method 0x23b872dd.
 //
-// Solidity: function transferFrom(_from address, _to address, _value uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenTransactor) TransferFrom(opts *bind.TransactOpts, _from common.Address, _to common.Address, _value *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.contract.Transact(opts, "transferFrom", _from, _to, _value)
+// Solidity: function transferFrom(address from, address to, uint256 value) returns(bool)
+func (_LivepeerToken *LivepeerTokenTransactor) TransferFrom(opts *bind.TransactOpts, from common.Address, to common.Address, value *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.contract.Transact(opts, "transferFrom", from, to, value)
 }
 
 // TransferFrom is a paid mutator transaction binding the contract method 0x23b872dd.
 //
-// Solidity: function transferFrom(_from address, _to address, _value uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenSession) TransferFrom(_from common.Address, _to common.Address, _value *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.Contract.TransferFrom(&_LivepeerToken.TransactOpts, _from, _to, _value)
+// Solidity: function transferFrom(address from, address to, uint256 value) returns(bool)
+func (_LivepeerToken *LivepeerTokenSession) TransferFrom(from common.Address, to common.Address, value *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.Contract.TransferFrom(&_LivepeerToken.TransactOpts, from, to, value)
 }
 
 // TransferFrom is a paid mutator transaction binding the contract method 0x23b872dd.
 //
-// Solidity: function transferFrom(_from address, _to address, _value uint256) returns(bool)
-func (_LivepeerToken *LivepeerTokenTransactorSession) TransferFrom(_from common.Address, _to common.Address, _value *big.Int) (*types.Transaction, error) {
-	return _LivepeerToken.Contract.TransferFrom(&_LivepeerToken.TransactOpts, _from, _to, _value)
+// Solidity: function transferFrom(address from, address to, uint256 value) returns(bool)
+func (_LivepeerToken *LivepeerTokenTransactorSession) TransferFrom(from common.Address, to common.Address, value *big.Int) (*types.Transaction, error) {
+	return _LivepeerToken.Contract.TransferFrom(&_LivepeerToken.TransactOpts, from, to, value)
 }
 
 // TransferOwnership is a paid mutator transaction binding the contract method 0xf2fde38b.
 //
-// Solidity: function transferOwnership(newOwner address) returns()
+// Solidity: function transferOwnership(address newOwner) returns()
 func (_LivepeerToken *LivepeerTokenTransactor) TransferOwnership(opts *bind.TransactOpts, newOwner common.Address) (*types.Transaction, error) {
 	return _LivepeerToken.contract.Transact(opts, "transferOwnership", newOwner)
 }
 
 // TransferOwnership is a paid mutator transaction binding the contract method 0xf2fde38b.
 //
-// Solidity: function transferOwnership(newOwner address) returns()
+// Solidity: function transferOwnership(address newOwner) returns()
 func (_LivepeerToken *LivepeerTokenSession) TransferOwnership(newOwner common.Address) (*types.Transaction, error) {
 	return _LivepeerToken.Contract.TransferOwnership(&_LivepeerToken.TransactOpts, newOwner)
 }
 
 // TransferOwnership is a paid mutator transaction binding the contract method 0xf2fde38b.
 //
-// Solidity: function transferOwnership(newOwner address) returns()
+// Solidity: function transferOwnership(address newOwner) returns()
 func (_LivepeerToken *LivepeerTokenTransactorSession) TransferOwnership(newOwner common.Address) (*types.Transaction, error) {
 	return _LivepeerToken.Contract.TransferOwnership(&_LivepeerToken.TransactOpts, newOwner)
 }
@@ -660,7 +672,7 @@ type LivepeerTokenApproval struct {
 
 // FilterApproval is a free log retrieval operation binding the contract event 0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925.
 //
-// Solidity: event Approval(owner indexed address, spender indexed address, value uint256)
+// Solidity: event Approval(address indexed owner, address indexed spender, uint256 value)
 func (_LivepeerToken *LivepeerTokenFilterer) FilterApproval(opts *bind.FilterOpts, owner []common.Address, spender []common.Address) (*LivepeerTokenApprovalIterator, error) {
 
 	var ownerRule []interface{}
@@ -681,7 +693,7 @@ func (_LivepeerToken *LivepeerTokenFilterer) FilterApproval(opts *bind.FilterOpt
 
 // WatchApproval is a free log subscription operation binding the contract event 0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925.
 //
-// Solidity: event Approval(owner indexed address, spender indexed address, value uint256)
+// Solidity: event Approval(address indexed owner, address indexed spender, uint256 value)
 func (_LivepeerToken *LivepeerTokenFilterer) WatchApproval(opts *bind.WatchOpts, sink chan<- *LivepeerTokenApproval, owner []common.Address, spender []common.Address) (event.Subscription, error) {
 
 	var ownerRule []interface{}
@@ -801,7 +813,7 @@ type LivepeerTokenBurn struct {
 
 // FilterBurn is a free log retrieval operation binding the contract event 0xcc16f5dbb4873280815c1ee09dbd06736cffcc184412cf7a71a0fdb75d397ca5.
 //
-// Solidity: event Burn(burner indexed address, value uint256)
+// Solidity: event Burn(address indexed burner, uint256 value)
 func (_LivepeerToken *LivepeerTokenFilterer) FilterBurn(opts *bind.FilterOpts, burner []common.Address) (*LivepeerTokenBurnIterator, error) {
 
 	var burnerRule []interface{}
@@ -818,7 +830,7 @@ func (_LivepeerToken *LivepeerTokenFilterer) FilterBurn(opts *bind.FilterOpts, b
 
 // WatchBurn is a free log subscription operation binding the contract event 0xcc16f5dbb4873280815c1ee09dbd06736cffcc184412cf7a71a0fdb75d397ca5.
 //
-// Solidity: event Burn(burner indexed address, value uint256)
+// Solidity: event Burn(address indexed burner, uint256 value)
 func (_LivepeerToken *LivepeerTokenFilterer) WatchBurn(opts *bind.WatchOpts, sink chan<- *LivepeerTokenBurn, burner []common.Address) (event.Subscription, error) {
 
 	var burnerRule []interface{}
@@ -934,7 +946,7 @@ type LivepeerTokenMint struct {
 
 // FilterMint is a free log retrieval operation binding the contract event 0x0f6798a560793a54c3bcfe86a93cde1e73087d944c0ea20544137d4121396885.
 //
-// Solidity: event Mint(to indexed address, amount uint256)
+// Solidity: event Mint(address indexed to, uint256 amount)
 func (_LivepeerToken *LivepeerTokenFilterer) FilterMint(opts *bind.FilterOpts, to []common.Address) (*LivepeerTokenMintIterator, error) {
 
 	var toRule []interface{}
@@ -951,7 +963,7 @@ func (_LivepeerToken *LivepeerTokenFilterer) FilterMint(opts *bind.FilterOpts, t
 
 // WatchMint is a free log subscription operation binding the contract event 0x0f6798a560793a54c3bcfe86a93cde1e73087d944c0ea20544137d4121396885.
 //
-// Solidity: event Mint(to indexed address, amount uint256)
+// Solidity: event Mint(address indexed to, uint256 amount)
 func (_LivepeerToken *LivepeerTokenFilterer) WatchMint(opts *bind.WatchOpts, sink chan<- *LivepeerTokenMint, to []common.Address) (event.Subscription, error) {
 
 	var toRule []interface{}
@@ -1188,7 +1200,7 @@ type LivepeerTokenOwnershipTransferred struct {
 
 // FilterOwnershipTransferred is a free log retrieval operation binding the contract event 0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0.
 //
-// Solidity: event OwnershipTransferred(previousOwner indexed address, newOwner indexed address)
+// Solidity: event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
 func (_LivepeerToken *LivepeerTokenFilterer) FilterOwnershipTransferred(opts *bind.FilterOpts, previousOwner []common.Address, newOwner []common.Address) (*LivepeerTokenOwnershipTransferredIterator, error) {
 
 	var previousOwnerRule []interface{}
@@ -1209,7 +1221,7 @@ func (_LivepeerToken *LivepeerTokenFilterer) FilterOwnershipTransferred(opts *bi
 
 // WatchOwnershipTransferred is a free log subscription operation binding the contract event 0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0.
 //
-// Solidity: event OwnershipTransferred(previousOwner indexed address, newOwner indexed address)
+// Solidity: event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
 func (_LivepeerToken *LivepeerTokenFilterer) WatchOwnershipTransferred(opts *bind.WatchOpts, sink chan<- *LivepeerTokenOwnershipTransferred, previousOwner []common.Address, newOwner []common.Address) (event.Subscription, error) {
 
 	var previousOwnerRule []interface{}
@@ -1330,7 +1342,7 @@ type LivepeerTokenTransfer struct {
 
 // FilterTransfer is a free log retrieval operation binding the contract event 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef.
 //
-// Solidity: event Transfer(from indexed address, to indexed address, value uint256)
+// Solidity: event Transfer(address indexed from, address indexed to, uint256 value)
 func (_LivepeerToken *LivepeerTokenFilterer) FilterTransfer(opts *bind.FilterOpts, from []common.Address, to []common.Address) (*LivepeerTokenTransferIterator, error) {
 
 	var fromRule []interface{}
@@ -1351,7 +1363,7 @@ func (_LivepeerToken *LivepeerTokenFilterer) FilterTransfer(opts *bind.FilterOpt
 
 // WatchTransfer is a free log subscription operation binding the contract event 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef.
 //
-// Solidity: event Transfer(from indexed address, to indexed address, value uint256)
+// Solidity: event Transfer(address indexed from, address indexed to, uint256 value)
 func (_LivepeerToken *LivepeerTokenFilterer) WatchTransfer(opts *bind.WatchOpts, sink chan<- *LivepeerTokenTransfer, from []common.Address, to []common.Address) (event.Subscription, error) {
 
 	var fromRule []interface{}

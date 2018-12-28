@@ -18,7 +18,6 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
-	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 
@@ -327,28 +326,6 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 		}
 	}()
 	return nil
-}
-
-func (n *LivepeerNode) GetClaimManager(job *ethTypes.Job) (eth.ClaimManager, error) {
-	n.claimMutex.Lock()
-	defer n.claimMutex.Unlock()
-	if job == nil {
-		glog.Error("Nil job")
-		return nil, fmt.Errorf("Nil job")
-	}
-	jobId := job.JobId.Int64()
-	// XXX we should clear entries after some period of inactivity
-	if cm, ok := n.ClaimManagers[jobId]; ok {
-		return cm, nil
-	}
-	// no claimmanager exists yet; check if we're assigned the job
-	if n.Eth == nil {
-		return nil, nil
-	}
-	glog.Infof("Creating new claim manager for job %v", jobId)
-	cm := eth.NewBasicClaimManager(job, n.Eth, n.Ipfs, n.Database)
-	n.ClaimManagers[jobId] = cm
-	return cm, nil
 }
 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer) {

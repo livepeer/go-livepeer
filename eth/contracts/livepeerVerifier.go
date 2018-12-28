@@ -15,8 +15,20 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 )
 
+// Reference imports to suppress errors if they are not otherwise used.
+var (
+	_ = big.NewInt
+	_ = strings.NewReader
+	_ = ethereum.NotFound
+	_ = abi.U256
+	_ = bind.Bind
+	_ = common.Big1
+	_ = types.BloomLookup
+	_ = event.NewSubscription
+)
+
 // LivepeerVerifierABI is the input ABI used to generate the binding from.
-const LivepeerVerifierABI = "[{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"isSolver\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"verificationCodeHash\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"requestCount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"requests\",\"outputs\":[{\"name\":\"jobId\",\"type\":\"uint256\"},{\"name\":\"claimId\",\"type\":\"uint256\"},{\"name\":\"segmentNumber\",\"type\":\"uint256\"},{\"name\":\"commitHash\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"solvers\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"},{\"name\":\"_solvers\",\"type\":\"address[]\"},{\"name\":\"_verificationCodeHash\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"requestId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"claimId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"segmentNumber\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"transcodingOptions\",\"type\":\"string\"},{\"indexed\":false,\"name\":\"dataStorageHash\",\"type\":\"string\"},{\"indexed\":false,\"name\":\"dataHash\",\"type\":\"bytes32\"},{\"indexed\":false,\"name\":\"transcodedDataHash\",\"type\":\"bytes32\"}],\"name\":\"VerifyRequest\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"requestId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"claimId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"segmentNumber\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"result\",\"type\":\"bool\"}],\"name\":\"Callback\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"name\":\"_verificationCodeHash\",\"type\":\"string\"}],\"name\":\"setVerificationCodeHash\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_solver\",\"type\":\"address\"}],\"name\":\"addSolver\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"},{\"name\":\"_transcodingOptions\",\"type\":\"string\"},{\"name\":\"_dataStorageHash\",\"type\":\"string\"},{\"name\":\"_dataHashes\",\"type\":\"bytes32[2]\"}],\"name\":\"verify\",\"outputs\":[],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_requestId\",\"type\":\"uint256\"},{\"name\":\"_result\",\"type\":\"bytes32\"}],\"name\":\"__callback\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getPrice\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
+const LivepeerVerifierABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"verificationCodeHash\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"solver\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"requestCount\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"requests\",\"outputs\":[{\"name\":\"jobId\",\"type\":\"uint256\"},{\"name\":\"claimId\",\"type\":\"uint256\"},{\"name\":\"segmentNumber\",\"type\":\"uint256\"},{\"name\":\"commitHash\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"},{\"name\":\"_solver\",\"type\":\"address\"},{\"name\":\"_verificationCodeHash\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"requestId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"claimId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"segmentNumber\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"transcodingOptions\",\"type\":\"string\"},{\"indexed\":false,\"name\":\"dataStorageHash\",\"type\":\"string\"},{\"indexed\":false,\"name\":\"dataHash\",\"type\":\"bytes32\"},{\"indexed\":false,\"name\":\"transcodedDataHash\",\"type\":\"bytes32\"}],\"name\":\"VerifyRequest\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"requestId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":true,\"name\":\"claimId\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"segmentNumber\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"result\",\"type\":\"bool\"}],\"name\":\"Callback\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"solver\",\"type\":\"address\"}],\"name\":\"SolverUpdate\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"name\":\"_verificationCodeHash\",\"type\":\"string\"}],\"name\":\"setVerificationCodeHash\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_solver\",\"type\":\"address\"}],\"name\":\"setSolver\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_jobId\",\"type\":\"uint256\"},{\"name\":\"_claimId\",\"type\":\"uint256\"},{\"name\":\"_segmentNumber\",\"type\":\"uint256\"},{\"name\":\"_transcodingOptions\",\"type\":\"string\"},{\"name\":\"_dataStorageHash\",\"type\":\"string\"},{\"name\":\"_dataHashes\",\"type\":\"bytes32[2]\"}],\"name\":\"verify\",\"outputs\":[],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_requestId\",\"type\":\"uint256\"},{\"name\":\"_result\",\"type\":\"bytes32\"}],\"name\":\"__callback\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getPrice\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
 
 // LivepeerVerifier is an auto generated Go binding around an Ethereum contract.
 type LivepeerVerifier struct {
@@ -212,32 +224,6 @@ func (_LivepeerVerifier *LivepeerVerifierCallerSession) GetPrice() (*big.Int, er
 	return _LivepeerVerifier.Contract.GetPrice(&_LivepeerVerifier.CallOpts)
 }
 
-// IsSolver is a free data retrieval call binding the contract method 0x02cc250d.
-//
-// Solidity: function isSolver( address) constant returns(bool)
-func (_LivepeerVerifier *LivepeerVerifierCaller) IsSolver(opts *bind.CallOpts, arg0 common.Address) (bool, error) {
-	var (
-		ret0 = new(bool)
-	)
-	out := ret0
-	err := _LivepeerVerifier.contract.Call(opts, out, "isSolver", arg0)
-	return *ret0, err
-}
-
-// IsSolver is a free data retrieval call binding the contract method 0x02cc250d.
-//
-// Solidity: function isSolver( address) constant returns(bool)
-func (_LivepeerVerifier *LivepeerVerifierSession) IsSolver(arg0 common.Address) (bool, error) {
-	return _LivepeerVerifier.Contract.IsSolver(&_LivepeerVerifier.CallOpts, arg0)
-}
-
-// IsSolver is a free data retrieval call binding the contract method 0x02cc250d.
-//
-// Solidity: function isSolver( address) constant returns(bool)
-func (_LivepeerVerifier *LivepeerVerifierCallerSession) IsSolver(arg0 common.Address) (bool, error) {
-	return _LivepeerVerifier.Contract.IsSolver(&_LivepeerVerifier.CallOpts, arg0)
-}
-
 // RequestCount is a free data retrieval call binding the contract method 0x5badbe4c.
 //
 // Solidity: function requestCount() constant returns(uint256)
@@ -266,7 +252,7 @@ func (_LivepeerVerifier *LivepeerVerifierCallerSession) RequestCount() (*big.Int
 
 // Requests is a free data retrieval call binding the contract method 0x81d12c58.
 //
-// Solidity: function requests( uint256) constant returns(jobId uint256, claimId uint256, segmentNumber uint256, commitHash bytes32)
+// Solidity: function requests(uint256 ) constant returns(uint256 jobId, uint256 claimId, uint256 segmentNumber, bytes32 commitHash)
 func (_LivepeerVerifier *LivepeerVerifierCaller) Requests(opts *bind.CallOpts, arg0 *big.Int) (struct {
 	JobId         *big.Int
 	ClaimId       *big.Int
@@ -286,7 +272,7 @@ func (_LivepeerVerifier *LivepeerVerifierCaller) Requests(opts *bind.CallOpts, a
 
 // Requests is a free data retrieval call binding the contract method 0x81d12c58.
 //
-// Solidity: function requests( uint256) constant returns(jobId uint256, claimId uint256, segmentNumber uint256, commitHash bytes32)
+// Solidity: function requests(uint256 ) constant returns(uint256 jobId, uint256 claimId, uint256 segmentNumber, bytes32 commitHash)
 func (_LivepeerVerifier *LivepeerVerifierSession) Requests(arg0 *big.Int) (struct {
 	JobId         *big.Int
 	ClaimId       *big.Int
@@ -298,7 +284,7 @@ func (_LivepeerVerifier *LivepeerVerifierSession) Requests(arg0 *big.Int) (struc
 
 // Requests is a free data retrieval call binding the contract method 0x81d12c58.
 //
-// Solidity: function requests( uint256) constant returns(jobId uint256, claimId uint256, segmentNumber uint256, commitHash bytes32)
+// Solidity: function requests(uint256 ) constant returns(uint256 jobId, uint256 claimId, uint256 segmentNumber, bytes32 commitHash)
 func (_LivepeerVerifier *LivepeerVerifierCallerSession) Requests(arg0 *big.Int) (struct {
 	JobId         *big.Int
 	ClaimId       *big.Int
@@ -308,30 +294,30 @@ func (_LivepeerVerifier *LivepeerVerifierCallerSession) Requests(arg0 *big.Int) 
 	return _LivepeerVerifier.Contract.Requests(&_LivepeerVerifier.CallOpts, arg0)
 }
 
-// Solvers is a free data retrieval call binding the contract method 0x92ce765e.
+// Solver is a free data retrieval call binding the contract method 0x49a7a26d.
 //
-// Solidity: function solvers( uint256) constant returns(address)
-func (_LivepeerVerifier *LivepeerVerifierCaller) Solvers(opts *bind.CallOpts, arg0 *big.Int) (common.Address, error) {
+// Solidity: function solver() constant returns(address)
+func (_LivepeerVerifier *LivepeerVerifierCaller) Solver(opts *bind.CallOpts) (common.Address, error) {
 	var (
 		ret0 = new(common.Address)
 	)
 	out := ret0
-	err := _LivepeerVerifier.contract.Call(opts, out, "solvers", arg0)
+	err := _LivepeerVerifier.contract.Call(opts, out, "solver")
 	return *ret0, err
 }
 
-// Solvers is a free data retrieval call binding the contract method 0x92ce765e.
+// Solver is a free data retrieval call binding the contract method 0x49a7a26d.
 //
-// Solidity: function solvers( uint256) constant returns(address)
-func (_LivepeerVerifier *LivepeerVerifierSession) Solvers(arg0 *big.Int) (common.Address, error) {
-	return _LivepeerVerifier.Contract.Solvers(&_LivepeerVerifier.CallOpts, arg0)
+// Solidity: function solver() constant returns(address)
+func (_LivepeerVerifier *LivepeerVerifierSession) Solver() (common.Address, error) {
+	return _LivepeerVerifier.Contract.Solver(&_LivepeerVerifier.CallOpts)
 }
 
-// Solvers is a free data retrieval call binding the contract method 0x92ce765e.
+// Solver is a free data retrieval call binding the contract method 0x49a7a26d.
 //
-// Solidity: function solvers( uint256) constant returns(address)
-func (_LivepeerVerifier *LivepeerVerifierCallerSession) Solvers(arg0 *big.Int) (common.Address, error) {
-	return _LivepeerVerifier.Contract.Solvers(&_LivepeerVerifier.CallOpts, arg0)
+// Solidity: function solver() constant returns(address)
+func (_LivepeerVerifier *LivepeerVerifierCallerSession) Solver() (common.Address, error) {
+	return _LivepeerVerifier.Contract.Solver(&_LivepeerVerifier.CallOpts)
 }
 
 // VerificationCodeHash is a free data retrieval call binding the contract method 0x41af1524.
@@ -362,105 +348,105 @@ func (_LivepeerVerifier *LivepeerVerifierCallerSession) VerificationCodeHash() (
 
 // Callback is a paid mutator transaction binding the contract method 0x9842a37c.
 //
-// Solidity: function __callback(_requestId uint256, _result bytes32) returns()
+// Solidity: function __callback(uint256 _requestId, bytes32 _result) returns()
 func (_LivepeerVerifier *LivepeerVerifierTransactor) Callback(opts *bind.TransactOpts, _requestId *big.Int, _result [32]byte) (*types.Transaction, error) {
 	return _LivepeerVerifier.contract.Transact(opts, "__callback", _requestId, _result)
 }
 
 // Callback is a paid mutator transaction binding the contract method 0x9842a37c.
 //
-// Solidity: function __callback(_requestId uint256, _result bytes32) returns()
+// Solidity: function __callback(uint256 _requestId, bytes32 _result) returns()
 func (_LivepeerVerifier *LivepeerVerifierSession) Callback(_requestId *big.Int, _result [32]byte) (*types.Transaction, error) {
 	return _LivepeerVerifier.Contract.Callback(&_LivepeerVerifier.TransactOpts, _requestId, _result)
 }
 
 // Callback is a paid mutator transaction binding the contract method 0x9842a37c.
 //
-// Solidity: function __callback(_requestId uint256, _result bytes32) returns()
+// Solidity: function __callback(uint256 _requestId, bytes32 _result) returns()
 func (_LivepeerVerifier *LivepeerVerifierTransactorSession) Callback(_requestId *big.Int, _result [32]byte) (*types.Transaction, error) {
 	return _LivepeerVerifier.Contract.Callback(&_LivepeerVerifier.TransactOpts, _requestId, _result)
 }
 
-// AddSolver is a paid mutator transaction binding the contract method 0xec58f4b8.
-//
-// Solidity: function addSolver(_solver address) returns()
-func (_LivepeerVerifier *LivepeerVerifierTransactor) AddSolver(opts *bind.TransactOpts, _solver common.Address) (*types.Transaction, error) {
-	return _LivepeerVerifier.contract.Transact(opts, "addSolver", _solver)
-}
-
-// AddSolver is a paid mutator transaction binding the contract method 0xec58f4b8.
-//
-// Solidity: function addSolver(_solver address) returns()
-func (_LivepeerVerifier *LivepeerVerifierSession) AddSolver(_solver common.Address) (*types.Transaction, error) {
-	return _LivepeerVerifier.Contract.AddSolver(&_LivepeerVerifier.TransactOpts, _solver)
-}
-
-// AddSolver is a paid mutator transaction binding the contract method 0xec58f4b8.
-//
-// Solidity: function addSolver(_solver address) returns()
-func (_LivepeerVerifier *LivepeerVerifierTransactorSession) AddSolver(_solver common.Address) (*types.Transaction, error) {
-	return _LivepeerVerifier.Contract.AddSolver(&_LivepeerVerifier.TransactOpts, _solver)
-}
-
 // SetController is a paid mutator transaction binding the contract method 0x92eefe9b.
 //
-// Solidity: function setController(_controller address) returns()
+// Solidity: function setController(address _controller) returns()
 func (_LivepeerVerifier *LivepeerVerifierTransactor) SetController(opts *bind.TransactOpts, _controller common.Address) (*types.Transaction, error) {
 	return _LivepeerVerifier.contract.Transact(opts, "setController", _controller)
 }
 
 // SetController is a paid mutator transaction binding the contract method 0x92eefe9b.
 //
-// Solidity: function setController(_controller address) returns()
+// Solidity: function setController(address _controller) returns()
 func (_LivepeerVerifier *LivepeerVerifierSession) SetController(_controller common.Address) (*types.Transaction, error) {
 	return _LivepeerVerifier.Contract.SetController(&_LivepeerVerifier.TransactOpts, _controller)
 }
 
 // SetController is a paid mutator transaction binding the contract method 0x92eefe9b.
 //
-// Solidity: function setController(_controller address) returns()
+// Solidity: function setController(address _controller) returns()
 func (_LivepeerVerifier *LivepeerVerifierTransactorSession) SetController(_controller common.Address) (*types.Transaction, error) {
 	return _LivepeerVerifier.Contract.SetController(&_LivepeerVerifier.TransactOpts, _controller)
 }
 
+// SetSolver is a paid mutator transaction binding the contract method 0x1f879433.
+//
+// Solidity: function setSolver(address _solver) returns()
+func (_LivepeerVerifier *LivepeerVerifierTransactor) SetSolver(opts *bind.TransactOpts, _solver common.Address) (*types.Transaction, error) {
+	return _LivepeerVerifier.contract.Transact(opts, "setSolver", _solver)
+}
+
+// SetSolver is a paid mutator transaction binding the contract method 0x1f879433.
+//
+// Solidity: function setSolver(address _solver) returns()
+func (_LivepeerVerifier *LivepeerVerifierSession) SetSolver(_solver common.Address) (*types.Transaction, error) {
+	return _LivepeerVerifier.Contract.SetSolver(&_LivepeerVerifier.TransactOpts, _solver)
+}
+
+// SetSolver is a paid mutator transaction binding the contract method 0x1f879433.
+//
+// Solidity: function setSolver(address _solver) returns()
+func (_LivepeerVerifier *LivepeerVerifierTransactorSession) SetSolver(_solver common.Address) (*types.Transaction, error) {
+	return _LivepeerVerifier.Contract.SetSolver(&_LivepeerVerifier.TransactOpts, _solver)
+}
+
 // SetVerificationCodeHash is a paid mutator transaction binding the contract method 0x4862e650.
 //
-// Solidity: function setVerificationCodeHash(_verificationCodeHash string) returns()
+// Solidity: function setVerificationCodeHash(string _verificationCodeHash) returns()
 func (_LivepeerVerifier *LivepeerVerifierTransactor) SetVerificationCodeHash(opts *bind.TransactOpts, _verificationCodeHash string) (*types.Transaction, error) {
 	return _LivepeerVerifier.contract.Transact(opts, "setVerificationCodeHash", _verificationCodeHash)
 }
 
 // SetVerificationCodeHash is a paid mutator transaction binding the contract method 0x4862e650.
 //
-// Solidity: function setVerificationCodeHash(_verificationCodeHash string) returns()
+// Solidity: function setVerificationCodeHash(string _verificationCodeHash) returns()
 func (_LivepeerVerifier *LivepeerVerifierSession) SetVerificationCodeHash(_verificationCodeHash string) (*types.Transaction, error) {
 	return _LivepeerVerifier.Contract.SetVerificationCodeHash(&_LivepeerVerifier.TransactOpts, _verificationCodeHash)
 }
 
 // SetVerificationCodeHash is a paid mutator transaction binding the contract method 0x4862e650.
 //
-// Solidity: function setVerificationCodeHash(_verificationCodeHash string) returns()
+// Solidity: function setVerificationCodeHash(string _verificationCodeHash) returns()
 func (_LivepeerVerifier *LivepeerVerifierTransactorSession) SetVerificationCodeHash(_verificationCodeHash string) (*types.Transaction, error) {
 	return _LivepeerVerifier.Contract.SetVerificationCodeHash(&_LivepeerVerifier.TransactOpts, _verificationCodeHash)
 }
 
 // Verify is a paid mutator transaction binding the contract method 0x8c118cf1.
 //
-// Solidity: function verify(_jobId uint256, _claimId uint256, _segmentNumber uint256, _transcodingOptions string, _dataStorageHash string, _dataHashes bytes32[2]) returns()
+// Solidity: function verify(uint256 _jobId, uint256 _claimId, uint256 _segmentNumber, string _transcodingOptions, string _dataStorageHash, bytes32[2] _dataHashes) returns()
 func (_LivepeerVerifier *LivepeerVerifierTransactor) Verify(opts *bind.TransactOpts, _jobId *big.Int, _claimId *big.Int, _segmentNumber *big.Int, _transcodingOptions string, _dataStorageHash string, _dataHashes [2][32]byte) (*types.Transaction, error) {
 	return _LivepeerVerifier.contract.Transact(opts, "verify", _jobId, _claimId, _segmentNumber, _transcodingOptions, _dataStorageHash, _dataHashes)
 }
 
 // Verify is a paid mutator transaction binding the contract method 0x8c118cf1.
 //
-// Solidity: function verify(_jobId uint256, _claimId uint256, _segmentNumber uint256, _transcodingOptions string, _dataStorageHash string, _dataHashes bytes32[2]) returns()
+// Solidity: function verify(uint256 _jobId, uint256 _claimId, uint256 _segmentNumber, string _transcodingOptions, string _dataStorageHash, bytes32[2] _dataHashes) returns()
 func (_LivepeerVerifier *LivepeerVerifierSession) Verify(_jobId *big.Int, _claimId *big.Int, _segmentNumber *big.Int, _transcodingOptions string, _dataStorageHash string, _dataHashes [2][32]byte) (*types.Transaction, error) {
 	return _LivepeerVerifier.Contract.Verify(&_LivepeerVerifier.TransactOpts, _jobId, _claimId, _segmentNumber, _transcodingOptions, _dataStorageHash, _dataHashes)
 }
 
 // Verify is a paid mutator transaction binding the contract method 0x8c118cf1.
 //
-// Solidity: function verify(_jobId uint256, _claimId uint256, _segmentNumber uint256, _transcodingOptions string, _dataStorageHash string, _dataHashes bytes32[2]) returns()
+// Solidity: function verify(uint256 _jobId, uint256 _claimId, uint256 _segmentNumber, string _transcodingOptions, string _dataStorageHash, bytes32[2] _dataHashes) returns()
 func (_LivepeerVerifier *LivepeerVerifierTransactorSession) Verify(_jobId *big.Int, _claimId *big.Int, _segmentNumber *big.Int, _transcodingOptions string, _dataStorageHash string, _dataHashes [2][32]byte) (*types.Transaction, error) {
 	return _LivepeerVerifier.Contract.Verify(&_LivepeerVerifier.TransactOpts, _jobId, _claimId, _segmentNumber, _transcodingOptions, _dataStorageHash, _dataHashes)
 }
@@ -544,7 +530,7 @@ type LivepeerVerifierCallback struct {
 
 // FilterCallback is a free log retrieval operation binding the contract event 0xaa22eba262859195ec25c1d3c94f98248add6d1374bd46df08c78470225df8d3.
 //
-// Solidity: event Callback(requestId indexed uint256, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256, result bool)
+// Solidity: event Callback(uint256 indexed requestId, uint256 indexed jobId, uint256 indexed claimId, uint256 segmentNumber, bool result)
 func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterCallback(opts *bind.FilterOpts, requestId []*big.Int, jobId []*big.Int, claimId []*big.Int) (*LivepeerVerifierCallbackIterator, error) {
 
 	var requestIdRule []interface{}
@@ -569,7 +555,7 @@ func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterCallback(opts *bind.Fil
 
 // WatchCallback is a free log subscription operation binding the contract event 0xaa22eba262859195ec25c1d3c94f98248add6d1374bd46df08c78470225df8d3.
 //
-// Solidity: event Callback(requestId indexed uint256, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256, result bool)
+// Solidity: event Callback(uint256 indexed requestId, uint256 indexed jobId, uint256 indexed claimId, uint256 segmentNumber, bool result)
 func (_LivepeerVerifier *LivepeerVerifierFilterer) WatchCallback(opts *bind.WatchOpts, sink chan<- *LivepeerVerifierCallback, requestId []*big.Int, jobId []*big.Int, claimId []*big.Int) (event.Subscription, error) {
 
 	var requestIdRule []interface{}
@@ -692,7 +678,7 @@ type LivepeerVerifierParameterUpdate struct {
 
 // FilterParameterUpdate is a free log retrieval operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
 //
-// Solidity: event ParameterUpdate(param string)
+// Solidity: event ParameterUpdate(string param)
 func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterParameterUpdate(opts *bind.FilterOpts) (*LivepeerVerifierParameterUpdateIterator, error) {
 
 	logs, sub, err := _LivepeerVerifier.contract.FilterLogs(opts, "ParameterUpdate")
@@ -704,7 +690,7 @@ func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterParameterUpdate(opts *b
 
 // WatchParameterUpdate is a free log subscription operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
 //
-// Solidity: event ParameterUpdate(param string)
+// Solidity: event ParameterUpdate(string param)
 func (_LivepeerVerifier *LivepeerVerifierFilterer) WatchParameterUpdate(opts *bind.WatchOpts, sink chan<- *LivepeerVerifierParameterUpdate) (event.Subscription, error) {
 
 	logs, sub, err := _LivepeerVerifier.contract.WatchLogs(opts, "ParameterUpdate")
@@ -814,7 +800,7 @@ type LivepeerVerifierSetController struct {
 
 // FilterSetController is a free log retrieval operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
 //
-// Solidity: event SetController(controller address)
+// Solidity: event SetController(address controller)
 func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterSetController(opts *bind.FilterOpts) (*LivepeerVerifierSetControllerIterator, error) {
 
 	logs, sub, err := _LivepeerVerifier.contract.FilterLogs(opts, "SetController")
@@ -826,7 +812,7 @@ func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterSetController(opts *bin
 
 // WatchSetController is a free log subscription operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
 //
-// Solidity: event SetController(controller address)
+// Solidity: event SetController(address controller)
 func (_LivepeerVerifier *LivepeerVerifierFilterer) WatchSetController(opts *bind.WatchOpts, sink chan<- *LivepeerVerifierSetController) (event.Subscription, error) {
 
 	logs, sub, err := _LivepeerVerifier.contract.WatchLogs(opts, "SetController")
@@ -841,6 +827,128 @@ func (_LivepeerVerifier *LivepeerVerifierFilterer) WatchSetController(opts *bind
 				// New log arrived, parse the event and forward to the user
 				event := new(LivepeerVerifierSetController)
 				if err := _LivepeerVerifier.contract.UnpackLog(event, "SetController", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// LivepeerVerifierSolverUpdateIterator is returned from FilterSolverUpdate and is used to iterate over the raw logs and unpacked data for SolverUpdate events raised by the LivepeerVerifier contract.
+type LivepeerVerifierSolverUpdateIterator struct {
+	Event *LivepeerVerifierSolverUpdate // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *LivepeerVerifierSolverUpdateIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(LivepeerVerifierSolverUpdate)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(LivepeerVerifierSolverUpdate)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *LivepeerVerifierSolverUpdateIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *LivepeerVerifierSolverUpdateIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// LivepeerVerifierSolverUpdate represents a SolverUpdate event raised by the LivepeerVerifier contract.
+type LivepeerVerifierSolverUpdate struct {
+	Solver common.Address
+	Raw    types.Log // Blockchain specific contextual infos
+}
+
+// FilterSolverUpdate is a free log retrieval operation binding the contract event 0xace515c35c46c2bef1424779ab5938a69fd660a490ba0a4863392ee28000666f.
+//
+// Solidity: event SolverUpdate(address solver)
+func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterSolverUpdate(opts *bind.FilterOpts) (*LivepeerVerifierSolverUpdateIterator, error) {
+
+	logs, sub, err := _LivepeerVerifier.contract.FilterLogs(opts, "SolverUpdate")
+	if err != nil {
+		return nil, err
+	}
+	return &LivepeerVerifierSolverUpdateIterator{contract: _LivepeerVerifier.contract, event: "SolverUpdate", logs: logs, sub: sub}, nil
+}
+
+// WatchSolverUpdate is a free log subscription operation binding the contract event 0xace515c35c46c2bef1424779ab5938a69fd660a490ba0a4863392ee28000666f.
+//
+// Solidity: event SolverUpdate(address solver)
+func (_LivepeerVerifier *LivepeerVerifierFilterer) WatchSolverUpdate(opts *bind.WatchOpts, sink chan<- *LivepeerVerifierSolverUpdate) (event.Subscription, error) {
+
+	logs, sub, err := _LivepeerVerifier.contract.WatchLogs(opts, "SolverUpdate")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(LivepeerVerifierSolverUpdate)
+				if err := _LivepeerVerifier.contract.UnpackLog(event, "SolverUpdate", log); err != nil {
 					return err
 				}
 				event.Raw = log
@@ -943,7 +1051,7 @@ type LivepeerVerifierVerifyRequest struct {
 
 // FilterVerifyRequest is a free log retrieval operation binding the contract event 0xf68da1a7e850796ae5473e78db07307108751eec3461dddf5ef610db7dfaaf56.
 //
-// Solidity: event VerifyRequest(requestId indexed uint256, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256, transcodingOptions string, dataStorageHash string, dataHash bytes32, transcodedDataHash bytes32)
+// Solidity: event VerifyRequest(uint256 indexed requestId, uint256 indexed jobId, uint256 indexed claimId, uint256 segmentNumber, string transcodingOptions, string dataStorageHash, bytes32 dataHash, bytes32 transcodedDataHash)
 func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterVerifyRequest(opts *bind.FilterOpts, requestId []*big.Int, jobId []*big.Int, claimId []*big.Int) (*LivepeerVerifierVerifyRequestIterator, error) {
 
 	var requestIdRule []interface{}
@@ -968,7 +1076,7 @@ func (_LivepeerVerifier *LivepeerVerifierFilterer) FilterVerifyRequest(opts *bin
 
 // WatchVerifyRequest is a free log subscription operation binding the contract event 0xf68da1a7e850796ae5473e78db07307108751eec3461dddf5ef610db7dfaaf56.
 //
-// Solidity: event VerifyRequest(requestId indexed uint256, jobId indexed uint256, claimId indexed uint256, segmentNumber uint256, transcodingOptions string, dataStorageHash string, dataHash bytes32, transcodedDataHash bytes32)
+// Solidity: event VerifyRequest(uint256 indexed requestId, uint256 indexed jobId, uint256 indexed claimId, uint256 segmentNumber, string transcodingOptions, string dataStorageHash, bytes32 dataHash, bytes32 transcodedDataHash)
 func (_LivepeerVerifier *LivepeerVerifierFilterer) WatchVerifyRequest(opts *bind.WatchOpts, sink chan<- *LivepeerVerifierVerifyRequest, requestId []*big.Int, jobId []*big.Int, claimId []*big.Int) (event.Subscription, error) {
 
 	var requestIdRule []interface{}

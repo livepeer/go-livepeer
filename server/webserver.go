@@ -314,38 +314,6 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 	})
 
-	mux.HandleFunc("/latestJobs", func(w http.ResponseWriter, r *http.Request) {
-		countStr := r.FormValue("count")
-		if countStr == "" {
-			countStr = "5"
-		}
-		count, err := strconv.ParseInt(countStr, 10, 8)
-		if err != nil {
-			glog.Error(err)
-			return
-		}
-		numJobs, err := s.LivepeerNode.Eth.NumJobs()
-		if err != nil {
-			glog.Error(err)
-			return
-		}
-		ts := ""
-		for i := numJobs.Int64() - count; i < numJobs.Int64(); i++ {
-			j, err := s.LivepeerNode.Eth.GetJob(big.NewInt(i))
-			if err != nil {
-				glog.Error(err)
-				continue
-			}
-			t, err := s.LivepeerNode.Eth.AssignedTranscoder(j)
-			if err != nil {
-				glog.Error(err)
-				continue
-			}
-			ts = fmt.Sprintf("%vJob: %v, Price: %v, Broadcaster: %v, Transcoder: %v\n", ts, i, j.MaxPricePerSegment.String(), j.BroadcasterAddress.String(), t.String())
-		}
-		w.Write([]byte(ts))
-	})
-
 	//Set transcoder config on-chain.
 	mux.HandleFunc("/setOrchestratorConfig", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -742,59 +710,6 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 	})
 
-	mux.HandleFunc("/deposit", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			if err := r.ParseForm(); err != nil {
-				glog.Errorf("Parse Form Error: %v", err)
-				return
-			}
-
-			//Parse amount
-			amountStr := r.FormValue("amount")
-			if amountStr == "" {
-				glog.Errorf("Need to provide amount")
-				return
-			}
-			amount, err := lpcommon.ParseBigInt(amountStr)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			glog.Infof("Depositing: %v", amount)
-
-			tx, err := s.LivepeerNode.Eth.Deposit(amount)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			err = s.LivepeerNode.Eth.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-		}
-	})
-
-	mux.HandleFunc("/withdrawDeposit", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			tx, err := s.LivepeerNode.Eth.Withdraw()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			err = s.LivepeerNode.Eth.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			glog.Infof("Withdrew deposit")
-		}
-	})
-
 	//Print the current broadcast HLS streamID
 	mux.HandleFunc("/streamID", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(LastHLSStreamID))
@@ -911,48 +826,6 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 				return
 			}
 
-			verificationRate, err := lp.VerificationRate()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			verificationPeriod, err := lp.VerificationPeriod()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			slashingPeriod, err := lp.VerificationSlashingPeriod()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			failedVerificationSlashAmount, err := lp.FailedVerificationSlashAmount()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			missedVerificationSlashAmount, err := lp.MissedVerificationSlashAmount()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			doubleClaimSegmentSlashAmount, err := lp.DoubleClaimSegmentSlashAmount()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			finderFee, err := lp.FinderFee()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
 			inflation, err := lp.Inflation()
 			if err != nil {
 				glog.Error(err)
@@ -966,12 +839,6 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			}
 
 			targetBondingRate, err := lp.TargetBondingRate()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			verificationCodeHash, err := lp.VerificationCodeHash()
 			if err != nil {
 				glog.Error(err)
 				return
@@ -996,24 +863,16 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			}
 
 			params := &lpTypes.ProtocolParameters{
-				NumActiveTranscoders:          numActiveOrchestrators,
-				RoundLength:                   roundLength,
-				RoundLockAmount:               roundLockAmount,
-				UnbondingPeriod:               unbondingPeriod,
-				VerificationRate:              verificationRate,
-				VerificationPeriod:            verificationPeriod,
-				SlashingPeriod:                slashingPeriod,
-				FailedVerificationSlashAmount: failedVerificationSlashAmount,
-				MissedVerificationSlashAmount: missedVerificationSlashAmount,
-				DoubleClaimSegmentSlashAmount: doubleClaimSegmentSlashAmount,
-				FinderFee:                     finderFee,
-				Inflation:                     inflation,
-				InflationChange:               inflationChange,
-				TargetBondingRate:             targetBondingRate,
-				VerificationCodeHash:          verificationCodeHash,
-				TotalBonded:                   totalBonded,
-				TotalSupply:                   totalSupply,
-				Paused:                        paused,
+				NumActiveTranscoders: numActiveOrchestrators,
+				RoundLength:          roundLength,
+				RoundLockAmount:      roundLockAmount,
+				UnbondingPeriod:      unbondingPeriod,
+				Inflation:            inflation,
+				InflationChange:      inflationChange,
+				TargetBondingRate:    targetBondingRate,
+				TotalBonded:          totalBonded,
+				TotalSupply:          totalSupply,
+				Paused:               paused,
 			}
 
 			data, err := json.Marshal(params)
@@ -1059,18 +918,6 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 				w.Write([]byte(""))
 			} else {
 				w.Write([]byte(balance.String()))
-			}
-		}
-	})
-
-	mux.HandleFunc("/broadcasterDeposit", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			b, err := s.LivepeerNode.Eth.BroadcasterDeposit(s.LivepeerNode.Eth.Account().Address)
-			if err != nil {
-				glog.Error(err)
-				w.Write([]byte(""))
-			} else {
-				w.Write([]byte(b.String()))
 			}
 		}
 	})
