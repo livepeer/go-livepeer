@@ -13,6 +13,7 @@ import (
 
 var (
 	BlocksUntilFirstClaimDeadline = big.NewInt(200)
+	maxUint256                    = new(big.Int).Sub(new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil), big.NewInt(1))
 )
 
 func VerifySig(addr ethcommon.Address, msg, sig []byte) bool {
@@ -79,10 +80,12 @@ func ToPerc(value *big.Int) float64 {
 }
 
 func FromPerc(perc float64) *big.Int {
-	pMultiplier := 10000.0
-	value := perc * pMultiplier
+	return fromPerc(perc, big.NewFloat(10000.0))
+}
 
-	return big.NewInt(int64(value))
+func FromPercOfUint256(perc float64) *big.Int {
+	multiplier := new(big.Float).SetInt(new(big.Int).Div(maxUint256, big.NewInt(100)))
+	return fromPerc(perc, multiplier)
 }
 
 func Wait(db *common.DB, blocks *big.Int) error {
@@ -121,4 +124,10 @@ func Wait(db *common.DB, blocks *big.Int) error {
 
 func IsNullAddress(addr ethcommon.Address) bool {
 	return addr == ethcommon.Address{}
+}
+
+func fromPerc(perc float64, multiplier *big.Float) *big.Int {
+	floatRes := new(big.Float).Mul(big.NewFloat(perc), multiplier)
+	intRes, _ := floatRes.Int(nil)
+	return intRes
 }

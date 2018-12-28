@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -169,7 +171,16 @@ func TestTranscodeLoop_GivenMultiplePMSession_RedeemsAllSessions(t *testing.T) {
 	n.PMSessions[md.ManifestID][sessionIDs[1]] = true
 	n.pmSessionsMutex.Unlock()
 
-	recipient.On("RedeemWinningTickets", sessionIDs).Return(nil)
+	// Need to use this because the order of the string slice used to call this function
+	// later cannot be guaranteed, since they are coming from a map's keys.
+	argsMatcher := mock.MatchedBy(func(IDs []string) bool {
+		sort.Strings(sessionIDs)
+		sort.Strings(IDs)
+
+		return reflect.DeepEqual(sessionIDs, IDs)
+	})
+
+	recipient.On("RedeemWinningTickets", argsMatcher).Return(nil)
 
 	_, err := n.sendToTranscodeLoop(md, ss)
 	require.Nil(err)

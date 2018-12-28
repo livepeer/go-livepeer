@@ -325,8 +325,8 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	require.Nil(err)
 
 	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
-	ticket.FaceValue = maxUint256OrFatal(t)
-	ticket.WinProb = maxUint256OrFatal(t)
+	ticket.FaceValue = MaxUint256OrFatal(t)
+	ticket.WinProb = MaxUint256OrFatal(t)
 	ticket.SenderNonce = math.MaxUint32
 
 	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
@@ -552,12 +552,4 @@ func getRowCountOrFatal(query string, dbraw *sql.DB, t *testing.T) int {
 	require.Nil(t, err)
 
 	return count
-}
-
-func maxUint256OrFatal(t *testing.T) *big.Int {
-	n, ok := new(big.Int).SetString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16)
-	if !ok {
-		t.Fatalf("unexpected error creating max value of uint256")
-	}
-	return n
 }
