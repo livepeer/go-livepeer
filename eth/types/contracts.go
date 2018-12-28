@@ -5,14 +5,11 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
 var (
 	ErrUnknownTranscoderStatus = fmt.Errorf("unknown transcoder status")
 	ErrUnknownDelegatorStatus  = fmt.Errorf("unknown delegator status")
-	ErrUnknownJobStatus        = fmt.Errorf("unknown job status")
-	ErrUnknownClaimStatus      = fmt.Errorf("unknown claim status")
 )
 
 type Transcoder struct {
@@ -80,56 +77,6 @@ type TokenPools struct {
 	FeePool        *big.Int
 	TotalStake     *big.Int
 	ClaimableStake *big.Int
-}
-
-type Job struct {
-	JobId               *big.Int
-	StreamId            string
-	Profiles            []ffmpeg.VideoProfile
-	MaxPricePerSegment  *big.Int
-	BroadcasterAddress  common.Address
-	TranscoderAddress   common.Address
-	CreationRound       *big.Int
-	CreationBlock       *big.Int
-	EndBlock            *big.Int
-	Escrow              *big.Int
-	TotalClaims         *big.Int
-	Status              string
-	FirstClaimSubmitted bool
-}
-
-func ParseJobStatus(s uint8) (string, error) {
-	switch s {
-	case 0:
-		return "Inactive", nil
-	case 1:
-		return "Active", nil
-	default:
-		return "", ErrUnknownJobStatus
-	}
-}
-
-type Claim struct {
-	ClaimId                      *big.Int
-	SegmentRange                 [2]*big.Int
-	ClaimRoot                    [32]byte
-	ClaimBlock                   *big.Int
-	EndVerificationBlock         *big.Int
-	EndVerificationSlashingBlock *big.Int
-	Status                       string
-}
-
-func ParseClaimStatus(s uint8) (string, error) {
-	switch s {
-	case 0:
-		return "Pending", nil
-	case 1:
-		return "Slashed", nil
-	case 2:
-		return "Complete", nil
-	default:
-		return "", ErrUnknownClaimStatus
-	}
 }
 
 type ProtocolParameters struct {

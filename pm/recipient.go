@@ -151,26 +151,21 @@ func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error
 }
 
 func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
-	deposit, err := r.broker.GetDeposit(ticket.Sender)
-	if err != nil {
-		return err
-	}
-
-	penaltyEscrow, err := r.broker.GetPenaltyEscrow(ticket.Sender)
+	sender, err := r.broker.Senders(ticket.Sender)
 	if err != nil {
 		return err
 	}
 
 	// TODO: Consider a smarter strategy here in the future
 	// Ex. If deposit < transaction cost, do not try to redeem
-	if deposit.Cmp(big.NewInt(0)) == 0 && penaltyEscrow.Cmp(big.NewInt(0)) == 0 {
+	if sender.Deposit.Cmp(big.NewInt(0)) == 0 && sender.PenaltyEscrow.Cmp(big.NewInt(0)) == 0 {
 		return errors.Errorf("sender %v has zero deposit and penalty escrow", ticket.Sender)
 	}
 
 	// Assume that that this call will return immediately if there
 	// is an error in transaction submission. Else, the function will kick off
 	// a goroutine and then return to the caller
-	if err := r.broker.RedeemWinningTicket(ticket, sig, recipientRand); err != nil {
+	if _, err := r.broker.RedeemWinningTicket(ticket, sig, recipientRand); err != nil {
 		return err
 	}
 

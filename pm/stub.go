@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -86,13 +87,12 @@ func (sv *stubSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool 
 }
 
 type stubBroker struct {
-	deposits                   map[ethcommon.Address]*big.Int
-	penaltyEscrows             map[ethcommon.Address]*big.Int
-	usedTickets                map[ethcommon.Hash]bool
-	approvedSigners            map[ethcommon.Address]bool
-	redeemShouldFail           bool
-	getDepositShouldFail       bool
-	getPenaltyEscrowShouldFail bool
+	deposits          map[ethcommon.Address]*big.Int
+	penaltyEscrows    map[ethcommon.Address]*big.Int
+	usedTickets       map[ethcommon.Hash]bool
+	approvedSigners   map[ethcommon.Address]bool
+	redeemShouldFail  bool
+	sendersShouldFail bool
 }
 
 func newStubBroker() *stubBroker {
@@ -104,50 +104,50 @@ func newStubBroker() *stubBroker {
 	}
 }
 
-func (b *stubBroker) FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) error {
-	return nil
+func (b *stubBroker) FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) (*types.Transaction, error) {
+	return nil, nil
 }
 
-func (b *stubBroker) FundDeposit(amount *big.Int) error {
-	return nil
+func (b *stubBroker) FundDeposit(amount *big.Int) (*types.Transaction, error) {
+	return nil, nil
 }
 
-func (b *stubBroker) FundPenaltyEscrow(amount *big.Int) error {
-	return nil
+func (b *stubBroker) FundPenaltyEscrow(amount *big.Int) (*types.Transaction, error) {
+	return nil, nil
 }
 
-func (b *stubBroker) ApproveSigners(signers []ethcommon.Address) error {
+func (b *stubBroker) ApproveSigners(signers []ethcommon.Address) (*types.Transaction, error) {
 	for i := 0; i < len(signers); i++ {
 		b.approvedSigners[signers[i]] = true
 	}
 
-	return nil
+	return nil, nil
 }
 
-func (b *stubBroker) RequestSignersRevocation(signers []ethcommon.Address) error {
-	return nil
+func (b *stubBroker) RequestSignersRevocation(signers []ethcommon.Address) (*types.Transaction, error) {
+	return nil, nil
 }
 
-func (b *stubBroker) Unlock() error {
-	return nil
+func (b *stubBroker) Unlock() (*types.Transaction, error) {
+	return nil, nil
 }
 
-func (b *stubBroker) CancelUnlock() error {
-	return nil
+func (b *stubBroker) CancelUnlock() (*types.Transaction, error) {
+	return nil, nil
 }
 
-func (b *stubBroker) Withdraw() error {
-	return nil
+func (b *stubBroker) Withdraw() (*types.Transaction, error) {
+	return nil, nil
 }
 
-func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error) {
 	if b.redeemShouldFail {
-		return fmt.Errorf("stub broker redeem error")
+		return nil, fmt.Errorf("stub broker redeem error")
 	}
 
 	b.usedTickets[ticket.Hash()] = true
 
-	return nil
+	return nil, nil
 }
 
 func (b *stubBroker) IsUsedTicket(ticket *Ticket) (bool, error) {
@@ -162,24 +162,25 @@ func (b *stubBroker) SetDeposit(addr ethcommon.Address, amount *big.Int) {
 	b.deposits[addr] = amount
 }
 
-func (b *stubBroker) GetDeposit(addr ethcommon.Address) (*big.Int, error) {
-	if b.getDepositShouldFail {
-		return nil, fmt.Errorf("stub broker get deposit error")
-	}
-
-	return b.deposits[addr], nil
-}
-
 func (b *stubBroker) SetPenaltyEscrow(addr ethcommon.Address, amount *big.Int) {
 	b.penaltyEscrows[addr] = amount
 }
 
-func (b *stubBroker) GetPenaltyEscrow(addr ethcommon.Address) (*big.Int, error) {
-	if b.getPenaltyEscrowShouldFail {
-		return nil, fmt.Errorf("stub broker get penalty escrow error")
+func (b *stubBroker) Senders(addr ethcommon.Address) (sender struct {
+	Deposit       *big.Int
+	PenaltyEscrow *big.Int
+	WithdrawBlock *big.Int
+}, err error) {
+	if b.sendersShouldFail {
+		err = fmt.Errorf("stub broker senders error")
+		return
 	}
 
-	return b.penaltyEscrows[addr], nil
+	sender.Deposit = b.deposits[addr]
+	sender.PenaltyEscrow = b.penaltyEscrows[addr]
+	sender.WithdrawBlock = big.NewInt(0)
+
+	return
 }
 
 type stubValidator struct {

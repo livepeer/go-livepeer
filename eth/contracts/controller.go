@@ -4,6 +4,7 @@
 package contracts
 
 import (
+	"math/big"
 	"strings"
 
 	ethereum "github.com/ethereum/go-ethereum"
@@ -12,6 +13,18 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
+)
+
+// Reference imports to suppress errors if they are not otherwise used.
+var (
+	_ = big.NewInt
+	_ = strings.NewReader
+	_ = ethereum.NotFound
+	_ = abi.U256
+	_ = bind.Bind
+	_ = common.Big1
+	_ = types.BloomLookup
+	_ = event.NewSubscription
 )
 
 // ControllerABI is the input ABI used to generate the binding from.
@@ -161,7 +174,7 @@ func (_Controller *ControllerTransactorRaw) Transact(opts *bind.TransactOpts, me
 
 // GetContract is a free data retrieval call binding the contract method 0xe16c7d98.
 //
-// Solidity: function getContract(_id bytes32) constant returns(address)
+// Solidity: function getContract(bytes32 _id) constant returns(address)
 func (_Controller *ControllerCaller) GetContract(opts *bind.CallOpts, _id [32]byte) (common.Address, error) {
 	var (
 		ret0 = new(common.Address)
@@ -173,21 +186,21 @@ func (_Controller *ControllerCaller) GetContract(opts *bind.CallOpts, _id [32]by
 
 // GetContract is a free data retrieval call binding the contract method 0xe16c7d98.
 //
-// Solidity: function getContract(_id bytes32) constant returns(address)
+// Solidity: function getContract(bytes32 _id) constant returns(address)
 func (_Controller *ControllerSession) GetContract(_id [32]byte) (common.Address, error) {
 	return _Controller.Contract.GetContract(&_Controller.CallOpts, _id)
 }
 
 // GetContract is a free data retrieval call binding the contract method 0xe16c7d98.
 //
-// Solidity: function getContract(_id bytes32) constant returns(address)
+// Solidity: function getContract(bytes32 _id) constant returns(address)
 func (_Controller *ControllerCallerSession) GetContract(_id [32]byte) (common.Address, error) {
 	return _Controller.Contract.GetContract(&_Controller.CallOpts, _id)
 }
 
 // GetContractInfo is a free data retrieval call binding the contract method 0x613e2de2.
 //
-// Solidity: function getContractInfo(_id bytes32) constant returns(address, bytes20)
+// Solidity: function getContractInfo(bytes32 _id) constant returns(address, bytes20)
 func (_Controller *ControllerCaller) GetContractInfo(opts *bind.CallOpts, _id [32]byte) (common.Address, [20]byte, error) {
 	var (
 		ret0 = new(common.Address)
@@ -203,14 +216,14 @@ func (_Controller *ControllerCaller) GetContractInfo(opts *bind.CallOpts, _id [3
 
 // GetContractInfo is a free data retrieval call binding the contract method 0x613e2de2.
 //
-// Solidity: function getContractInfo(_id bytes32) constant returns(address, bytes20)
+// Solidity: function getContractInfo(bytes32 _id) constant returns(address, bytes20)
 func (_Controller *ControllerSession) GetContractInfo(_id [32]byte) (common.Address, [20]byte, error) {
 	return _Controller.Contract.GetContractInfo(&_Controller.CallOpts, _id)
 }
 
 // GetContractInfo is a free data retrieval call binding the contract method 0x613e2de2.
 //
-// Solidity: function getContractInfo(_id bytes32) constant returns(address, bytes20)
+// Solidity: function getContractInfo(bytes32 _id) constant returns(address, bytes20)
 func (_Controller *ControllerCallerSession) GetContractInfo(_id [32]byte) (common.Address, [20]byte, error) {
 	return _Controller.Contract.GetContractInfo(&_Controller.CallOpts, _id)
 }
@@ -290,42 +303,42 @@ func (_Controller *ControllerTransactorSession) Pause() (*types.Transaction, err
 
 // SetContractInfo is a paid mutator transaction binding the contract method 0xd737c2b0.
 //
-// Solidity: function setContractInfo(_id bytes32, _contractAddress address, _gitCommitHash bytes20) returns()
+// Solidity: function setContractInfo(bytes32 _id, address _contractAddress, bytes20 _gitCommitHash) returns()
 func (_Controller *ControllerTransactor) SetContractInfo(opts *bind.TransactOpts, _id [32]byte, _contractAddress common.Address, _gitCommitHash [20]byte) (*types.Transaction, error) {
 	return _Controller.contract.Transact(opts, "setContractInfo", _id, _contractAddress, _gitCommitHash)
 }
 
 // SetContractInfo is a paid mutator transaction binding the contract method 0xd737c2b0.
 //
-// Solidity: function setContractInfo(_id bytes32, _contractAddress address, _gitCommitHash bytes20) returns()
+// Solidity: function setContractInfo(bytes32 _id, address _contractAddress, bytes20 _gitCommitHash) returns()
 func (_Controller *ControllerSession) SetContractInfo(_id [32]byte, _contractAddress common.Address, _gitCommitHash [20]byte) (*types.Transaction, error) {
 	return _Controller.Contract.SetContractInfo(&_Controller.TransactOpts, _id, _contractAddress, _gitCommitHash)
 }
 
 // SetContractInfo is a paid mutator transaction binding the contract method 0xd737c2b0.
 //
-// Solidity: function setContractInfo(_id bytes32, _contractAddress address, _gitCommitHash bytes20) returns()
+// Solidity: function setContractInfo(bytes32 _id, address _contractAddress, bytes20 _gitCommitHash) returns()
 func (_Controller *ControllerTransactorSession) SetContractInfo(_id [32]byte, _contractAddress common.Address, _gitCommitHash [20]byte) (*types.Transaction, error) {
 	return _Controller.Contract.SetContractInfo(&_Controller.TransactOpts, _id, _contractAddress, _gitCommitHash)
 }
 
 // TransferOwnership is a paid mutator transaction binding the contract method 0xf2fde38b.
 //
-// Solidity: function transferOwnership(newOwner address) returns()
+// Solidity: function transferOwnership(address newOwner) returns()
 func (_Controller *ControllerTransactor) TransferOwnership(opts *bind.TransactOpts, newOwner common.Address) (*types.Transaction, error) {
 	return _Controller.contract.Transact(opts, "transferOwnership", newOwner)
 }
 
 // TransferOwnership is a paid mutator transaction binding the contract method 0xf2fde38b.
 //
-// Solidity: function transferOwnership(newOwner address) returns()
+// Solidity: function transferOwnership(address newOwner) returns()
 func (_Controller *ControllerSession) TransferOwnership(newOwner common.Address) (*types.Transaction, error) {
 	return _Controller.Contract.TransferOwnership(&_Controller.TransactOpts, newOwner)
 }
 
 // TransferOwnership is a paid mutator transaction binding the contract method 0xf2fde38b.
 //
-// Solidity: function transferOwnership(newOwner address) returns()
+// Solidity: function transferOwnership(address newOwner) returns()
 func (_Controller *ControllerTransactorSession) TransferOwnership(newOwner common.Address) (*types.Transaction, error) {
 	return _Controller.Contract.TransferOwnership(&_Controller.TransactOpts, newOwner)
 }
@@ -353,21 +366,21 @@ func (_Controller *ControllerTransactorSession) Unpause() (*types.Transaction, e
 
 // UpdateController is a paid mutator transaction binding the contract method 0xeb5dd94f.
 //
-// Solidity: function updateController(_id bytes32, _controller address) returns()
+// Solidity: function updateController(bytes32 _id, address _controller) returns()
 func (_Controller *ControllerTransactor) UpdateController(opts *bind.TransactOpts, _id [32]byte, _controller common.Address) (*types.Transaction, error) {
 	return _Controller.contract.Transact(opts, "updateController", _id, _controller)
 }
 
 // UpdateController is a paid mutator transaction binding the contract method 0xeb5dd94f.
 //
-// Solidity: function updateController(_id bytes32, _controller address) returns()
+// Solidity: function updateController(bytes32 _id, address _controller) returns()
 func (_Controller *ControllerSession) UpdateController(_id [32]byte, _controller common.Address) (*types.Transaction, error) {
 	return _Controller.Contract.UpdateController(&_Controller.TransactOpts, _id, _controller)
 }
 
 // UpdateController is a paid mutator transaction binding the contract method 0xeb5dd94f.
 //
-// Solidity: function updateController(_id bytes32, _controller address) returns()
+// Solidity: function updateController(bytes32 _id, address _controller) returns()
 func (_Controller *ControllerTransactorSession) UpdateController(_id [32]byte, _controller common.Address) (*types.Transaction, error) {
 	return _Controller.Contract.UpdateController(&_Controller.TransactOpts, _id, _controller)
 }
@@ -448,7 +461,7 @@ type ControllerOwnershipTransferred struct {
 
 // FilterOwnershipTransferred is a free log retrieval operation binding the contract event 0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0.
 //
-// Solidity: event OwnershipTransferred(previousOwner indexed address, newOwner indexed address)
+// Solidity: event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
 func (_Controller *ControllerFilterer) FilterOwnershipTransferred(opts *bind.FilterOpts, previousOwner []common.Address, newOwner []common.Address) (*ControllerOwnershipTransferredIterator, error) {
 
 	var previousOwnerRule []interface{}
@@ -469,7 +482,7 @@ func (_Controller *ControllerFilterer) FilterOwnershipTransferred(opts *bind.Fil
 
 // WatchOwnershipTransferred is a free log subscription operation binding the contract event 0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0.
 //
-// Solidity: event OwnershipTransferred(previousOwner indexed address, newOwner indexed address)
+// Solidity: event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
 func (_Controller *ControllerFilterer) WatchOwnershipTransferred(opts *bind.WatchOpts, sink chan<- *ControllerOwnershipTransferred, previousOwner []common.Address, newOwner []common.Address) (event.Subscription, error) {
 
 	var previousOwnerRule []interface{}
@@ -711,7 +724,7 @@ type ControllerSetContractInfo struct {
 
 // FilterSetContractInfo is a free log retrieval operation binding the contract event 0xf9a6cf519167d81bc5cb3d26c60c0c9a19704aa908c148e82a861b570f4cd2d7.
 //
-// Solidity: event SetContractInfo(id bytes32, contractAddress address, gitCommitHash bytes20)
+// Solidity: event SetContractInfo(bytes32 id, address contractAddress, bytes20 gitCommitHash)
 func (_Controller *ControllerFilterer) FilterSetContractInfo(opts *bind.FilterOpts) (*ControllerSetContractInfoIterator, error) {
 
 	logs, sub, err := _Controller.contract.FilterLogs(opts, "SetContractInfo")
@@ -723,7 +736,7 @@ func (_Controller *ControllerFilterer) FilterSetContractInfo(opts *bind.FilterOp
 
 // WatchSetContractInfo is a free log subscription operation binding the contract event 0xf9a6cf519167d81bc5cb3d26c60c0c9a19704aa908c148e82a861b570f4cd2d7.
 //
-// Solidity: event SetContractInfo(id bytes32, contractAddress address, gitCommitHash bytes20)
+// Solidity: event SetContractInfo(bytes32 id, address contractAddress, bytes20 gitCommitHash)
 func (_Controller *ControllerFilterer) WatchSetContractInfo(opts *bind.WatchOpts, sink chan<- *ControllerSetContractInfo) (event.Subscription, error) {
 
 	logs, sub, err := _Controller.contract.WatchLogs(opts, "SetContractInfo")

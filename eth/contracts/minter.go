@@ -15,8 +15,20 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 )
 
+// Reference imports to suppress errors if they are not otherwise used.
+var (
+	_ = big.NewInt
+	_ = strings.NewReader
+	_ = ethereum.NotFound
+	_ = abi.U256
+	_ = bind.Bind
+	_ = common.Big1
+	_ = types.BloomLookup
+	_ = event.NewSubscription
+)
+
 // MinterABI is the input ABI used to generate the binding from.
-const MinterABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"currentMintedTokens\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetBondingRate\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentMintableTokens\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"inflationChange\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"inflation\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"},{\"name\":\"_inflation\",\"type\":\"uint256\"},{\"name\":\"_inflationChange\",\"type\":\"uint256\"},{\"name\":\"_targetBondingRate\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"currentMintableTokens\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"currentInflation\",\"type\":\"uint256\"}],\"name\":\"SetCurrentRewardTokens\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"name\":\"_targetBondingRate\",\"type\":\"uint256\"}],\"name\":\"setTargetBondingRate\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_inflationChange\",\"type\":\"uint256\"}],\"name\":\"setInflationChange\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_newMinter\",\"type\":\"address\"}],\"name\":\"migrateToNewMinter\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_fracNum\",\"type\":\"uint256\"},{\"name\":\"_fracDenom\",\"type\":\"uint256\"}],\"name\":\"createReward\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_to\",\"type\":\"address\"},{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedTransferTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedBurnTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_to\",\"type\":\"address\"},{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedWithdrawETH\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"depositETH\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"setCurrentRewardTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getController\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
+const MinterABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"currentMintedTokens\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetBondingRate\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentMintableTokens\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"inflationChange\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"inflation\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"},{\"name\":\"_inflation\",\"type\":\"uint256\"},{\"name\":\"_inflationChange\",\"type\":\"uint256\"},{\"name\":\"_targetBondingRate\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"currentMintableTokens\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"currentInflation\",\"type\":\"uint256\"}],\"name\":\"SetCurrentRewardTokens\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"name\":\"_targetBondingRate\",\"type\":\"uint256\"}],\"name\":\"setTargetBondingRate\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_inflationChange\",\"type\":\"uint256\"}],\"name\":\"setInflationChange\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_newMinter\",\"type\":\"address\"}],\"name\":\"migrateToNewMinter\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_fracNum\",\"type\":\"uint256\"},{\"name\":\"_fracDenom\",\"type\":\"uint256\"}],\"name\":\"createReward\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_to\",\"type\":\"address\"},{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedTransferTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedBurnTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_to\",\"type\":\"address\"},{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedWithdrawETH\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"trustedDepositETH\",\"outputs\":[],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedBurnETH\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"setCurrentRewardTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getController\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
 
 // Minter is an auto generated Go binding around an Ethereum contract.
 type Minter struct {
@@ -344,84 +356,63 @@ func (_Minter *MinterCallerSession) TargetBondingRate() (*big.Int, error) {
 
 // CreateReward is a paid mutator transaction binding the contract method 0x7dbedad5.
 //
-// Solidity: function createReward(_fracNum uint256, _fracDenom uint256) returns(uint256)
+// Solidity: function createReward(uint256 _fracNum, uint256 _fracDenom) returns(uint256)
 func (_Minter *MinterTransactor) CreateReward(opts *bind.TransactOpts, _fracNum *big.Int, _fracDenom *big.Int) (*types.Transaction, error) {
 	return _Minter.contract.Transact(opts, "createReward", _fracNum, _fracDenom)
 }
 
 // CreateReward is a paid mutator transaction binding the contract method 0x7dbedad5.
 //
-// Solidity: function createReward(_fracNum uint256, _fracDenom uint256) returns(uint256)
+// Solidity: function createReward(uint256 _fracNum, uint256 _fracDenom) returns(uint256)
 func (_Minter *MinterSession) CreateReward(_fracNum *big.Int, _fracDenom *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.CreateReward(&_Minter.TransactOpts, _fracNum, _fracDenom)
 }
 
 // CreateReward is a paid mutator transaction binding the contract method 0x7dbedad5.
 //
-// Solidity: function createReward(_fracNum uint256, _fracDenom uint256) returns(uint256)
+// Solidity: function createReward(uint256 _fracNum, uint256 _fracDenom) returns(uint256)
 func (_Minter *MinterTransactorSession) CreateReward(_fracNum *big.Int, _fracDenom *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.CreateReward(&_Minter.TransactOpts, _fracNum, _fracDenom)
 }
 
-// DepositETH is a paid mutator transaction binding the contract method 0xf6326fb3.
-//
-// Solidity: function depositETH() returns(bool)
-func (_Minter *MinterTransactor) DepositETH(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _Minter.contract.Transact(opts, "depositETH")
-}
-
-// DepositETH is a paid mutator transaction binding the contract method 0xf6326fb3.
-//
-// Solidity: function depositETH() returns(bool)
-func (_Minter *MinterSession) DepositETH() (*types.Transaction, error) {
-	return _Minter.Contract.DepositETH(&_Minter.TransactOpts)
-}
-
-// DepositETH is a paid mutator transaction binding the contract method 0xf6326fb3.
-//
-// Solidity: function depositETH() returns(bool)
-func (_Minter *MinterTransactorSession) DepositETH() (*types.Transaction, error) {
-	return _Minter.Contract.DepositETH(&_Minter.TransactOpts)
-}
-
 // MigrateToNewMinter is a paid mutator transaction binding the contract method 0x18d217ad.
 //
-// Solidity: function migrateToNewMinter(_newMinter address) returns()
+// Solidity: function migrateToNewMinter(address _newMinter) returns()
 func (_Minter *MinterTransactor) MigrateToNewMinter(opts *bind.TransactOpts, _newMinter common.Address) (*types.Transaction, error) {
 	return _Minter.contract.Transact(opts, "migrateToNewMinter", _newMinter)
 }
 
 // MigrateToNewMinter is a paid mutator transaction binding the contract method 0x18d217ad.
 //
-// Solidity: function migrateToNewMinter(_newMinter address) returns()
+// Solidity: function migrateToNewMinter(address _newMinter) returns()
 func (_Minter *MinterSession) MigrateToNewMinter(_newMinter common.Address) (*types.Transaction, error) {
 	return _Minter.Contract.MigrateToNewMinter(&_Minter.TransactOpts, _newMinter)
 }
 
 // MigrateToNewMinter is a paid mutator transaction binding the contract method 0x18d217ad.
 //
-// Solidity: function migrateToNewMinter(_newMinter address) returns()
+// Solidity: function migrateToNewMinter(address _newMinter) returns()
 func (_Minter *MinterTransactorSession) MigrateToNewMinter(_newMinter common.Address) (*types.Transaction, error) {
 	return _Minter.Contract.MigrateToNewMinter(&_Minter.TransactOpts, _newMinter)
 }
 
 // SetController is a paid mutator transaction binding the contract method 0x92eefe9b.
 //
-// Solidity: function setController(_controller address) returns()
+// Solidity: function setController(address _controller) returns()
 func (_Minter *MinterTransactor) SetController(opts *bind.TransactOpts, _controller common.Address) (*types.Transaction, error) {
 	return _Minter.contract.Transact(opts, "setController", _controller)
 }
 
 // SetController is a paid mutator transaction binding the contract method 0x92eefe9b.
 //
-// Solidity: function setController(_controller address) returns()
+// Solidity: function setController(address _controller) returns()
 func (_Minter *MinterSession) SetController(_controller common.Address) (*types.Transaction, error) {
 	return _Minter.Contract.SetController(&_Minter.TransactOpts, _controller)
 }
 
 // SetController is a paid mutator transaction binding the contract method 0x92eefe9b.
 //
-// Solidity: function setController(_controller address) returns()
+// Solidity: function setController(address _controller) returns()
 func (_Minter *MinterTransactorSession) SetController(_controller common.Address) (*types.Transaction, error) {
 	return _Minter.Contract.SetController(&_Minter.TransactOpts, _controller)
 }
@@ -449,105 +440,147 @@ func (_Minter *MinterTransactorSession) SetCurrentRewardTokens() (*types.Transac
 
 // SetInflationChange is a paid mutator transaction binding the contract method 0x010e3c1c.
 //
-// Solidity: function setInflationChange(_inflationChange uint256) returns()
+// Solidity: function setInflationChange(uint256 _inflationChange) returns()
 func (_Minter *MinterTransactor) SetInflationChange(opts *bind.TransactOpts, _inflationChange *big.Int) (*types.Transaction, error) {
 	return _Minter.contract.Transact(opts, "setInflationChange", _inflationChange)
 }
 
 // SetInflationChange is a paid mutator transaction binding the contract method 0x010e3c1c.
 //
-// Solidity: function setInflationChange(_inflationChange uint256) returns()
+// Solidity: function setInflationChange(uint256 _inflationChange) returns()
 func (_Minter *MinterSession) SetInflationChange(_inflationChange *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.SetInflationChange(&_Minter.TransactOpts, _inflationChange)
 }
 
 // SetInflationChange is a paid mutator transaction binding the contract method 0x010e3c1c.
 //
-// Solidity: function setInflationChange(_inflationChange uint256) returns()
+// Solidity: function setInflationChange(uint256 _inflationChange) returns()
 func (_Minter *MinterTransactorSession) SetInflationChange(_inflationChange *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.SetInflationChange(&_Minter.TransactOpts, _inflationChange)
 }
 
 // SetTargetBondingRate is a paid mutator transaction binding the contract method 0x77bde142.
 //
-// Solidity: function setTargetBondingRate(_targetBondingRate uint256) returns()
+// Solidity: function setTargetBondingRate(uint256 _targetBondingRate) returns()
 func (_Minter *MinterTransactor) SetTargetBondingRate(opts *bind.TransactOpts, _targetBondingRate *big.Int) (*types.Transaction, error) {
 	return _Minter.contract.Transact(opts, "setTargetBondingRate", _targetBondingRate)
 }
 
 // SetTargetBondingRate is a paid mutator transaction binding the contract method 0x77bde142.
 //
-// Solidity: function setTargetBondingRate(_targetBondingRate uint256) returns()
+// Solidity: function setTargetBondingRate(uint256 _targetBondingRate) returns()
 func (_Minter *MinterSession) SetTargetBondingRate(_targetBondingRate *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.SetTargetBondingRate(&_Minter.TransactOpts, _targetBondingRate)
 }
 
 // SetTargetBondingRate is a paid mutator transaction binding the contract method 0x77bde142.
 //
-// Solidity: function setTargetBondingRate(_targetBondingRate uint256) returns()
+// Solidity: function setTargetBondingRate(uint256 _targetBondingRate) returns()
 func (_Minter *MinterTransactorSession) SetTargetBondingRate(_targetBondingRate *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.SetTargetBondingRate(&_Minter.TransactOpts, _targetBondingRate)
 }
 
+// TrustedBurnETH is a paid mutator transaction binding the contract method 0xf518ead2.
+//
+// Solidity: function trustedBurnETH(uint256 _amount) returns()
+func (_Minter *MinterTransactor) TrustedBurnETH(opts *bind.TransactOpts, _amount *big.Int) (*types.Transaction, error) {
+	return _Minter.contract.Transact(opts, "trustedBurnETH", _amount)
+}
+
+// TrustedBurnETH is a paid mutator transaction binding the contract method 0xf518ead2.
+//
+// Solidity: function trustedBurnETH(uint256 _amount) returns()
+func (_Minter *MinterSession) TrustedBurnETH(_amount *big.Int) (*types.Transaction, error) {
+	return _Minter.Contract.TrustedBurnETH(&_Minter.TransactOpts, _amount)
+}
+
+// TrustedBurnETH is a paid mutator transaction binding the contract method 0xf518ead2.
+//
+// Solidity: function trustedBurnETH(uint256 _amount) returns()
+func (_Minter *MinterTransactorSession) TrustedBurnETH(_amount *big.Int) (*types.Transaction, error) {
+	return _Minter.Contract.TrustedBurnETH(&_Minter.TransactOpts, _amount)
+}
+
 // TrustedBurnTokens is a paid mutator transaction binding the contract method 0xc7ee98c2.
 //
-// Solidity: function trustedBurnTokens(_amount uint256) returns()
+// Solidity: function trustedBurnTokens(uint256 _amount) returns()
 func (_Minter *MinterTransactor) TrustedBurnTokens(opts *bind.TransactOpts, _amount *big.Int) (*types.Transaction, error) {
 	return _Minter.contract.Transact(opts, "trustedBurnTokens", _amount)
 }
 
 // TrustedBurnTokens is a paid mutator transaction binding the contract method 0xc7ee98c2.
 //
-// Solidity: function trustedBurnTokens(_amount uint256) returns()
+// Solidity: function trustedBurnTokens(uint256 _amount) returns()
 func (_Minter *MinterSession) TrustedBurnTokens(_amount *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.TrustedBurnTokens(&_Minter.TransactOpts, _amount)
 }
 
 // TrustedBurnTokens is a paid mutator transaction binding the contract method 0xc7ee98c2.
 //
-// Solidity: function trustedBurnTokens(_amount uint256) returns()
+// Solidity: function trustedBurnTokens(uint256 _amount) returns()
 func (_Minter *MinterTransactorSession) TrustedBurnTokens(_amount *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.TrustedBurnTokens(&_Minter.TransactOpts, _amount)
 }
 
+// TrustedDepositETH is a paid mutator transaction binding the contract method 0x9020d522.
+//
+// Solidity: function trustedDepositETH() returns()
+func (_Minter *MinterTransactor) TrustedDepositETH(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _Minter.contract.Transact(opts, "trustedDepositETH")
+}
+
+// TrustedDepositETH is a paid mutator transaction binding the contract method 0x9020d522.
+//
+// Solidity: function trustedDepositETH() returns()
+func (_Minter *MinterSession) TrustedDepositETH() (*types.Transaction, error) {
+	return _Minter.Contract.TrustedDepositETH(&_Minter.TransactOpts)
+}
+
+// TrustedDepositETH is a paid mutator transaction binding the contract method 0x9020d522.
+//
+// Solidity: function trustedDepositETH() returns()
+func (_Minter *MinterTransactorSession) TrustedDepositETH() (*types.Transaction, error) {
+	return _Minter.Contract.TrustedDepositETH(&_Minter.TransactOpts)
+}
+
 // TrustedTransferTokens is a paid mutator transaction binding the contract method 0xe7a49c2b.
 //
-// Solidity: function trustedTransferTokens(_to address, _amount uint256) returns()
+// Solidity: function trustedTransferTokens(address _to, uint256 _amount) returns()
 func (_Minter *MinterTransactor) TrustedTransferTokens(opts *bind.TransactOpts, _to common.Address, _amount *big.Int) (*types.Transaction, error) {
 	return _Minter.contract.Transact(opts, "trustedTransferTokens", _to, _amount)
 }
 
 // TrustedTransferTokens is a paid mutator transaction binding the contract method 0xe7a49c2b.
 //
-// Solidity: function trustedTransferTokens(_to address, _amount uint256) returns()
+// Solidity: function trustedTransferTokens(address _to, uint256 _amount) returns()
 func (_Minter *MinterSession) TrustedTransferTokens(_to common.Address, _amount *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.TrustedTransferTokens(&_Minter.TransactOpts, _to, _amount)
 }
 
 // TrustedTransferTokens is a paid mutator transaction binding the contract method 0xe7a49c2b.
 //
-// Solidity: function trustedTransferTokens(_to address, _amount uint256) returns()
+// Solidity: function trustedTransferTokens(address _to, uint256 _amount) returns()
 func (_Minter *MinterTransactorSession) TrustedTransferTokens(_to common.Address, _amount *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.TrustedTransferTokens(&_Minter.TransactOpts, _to, _amount)
 }
 
 // TrustedWithdrawETH is a paid mutator transaction binding the contract method 0x20283da9.
 //
-// Solidity: function trustedWithdrawETH(_to address, _amount uint256) returns()
+// Solidity: function trustedWithdrawETH(address _to, uint256 _amount) returns()
 func (_Minter *MinterTransactor) TrustedWithdrawETH(opts *bind.TransactOpts, _to common.Address, _amount *big.Int) (*types.Transaction, error) {
 	return _Minter.contract.Transact(opts, "trustedWithdrawETH", _to, _amount)
 }
 
 // TrustedWithdrawETH is a paid mutator transaction binding the contract method 0x20283da9.
 //
-// Solidity: function trustedWithdrawETH(_to address, _amount uint256) returns()
+// Solidity: function trustedWithdrawETH(address _to, uint256 _amount) returns()
 func (_Minter *MinterSession) TrustedWithdrawETH(_to common.Address, _amount *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.TrustedWithdrawETH(&_Minter.TransactOpts, _to, _amount)
 }
 
 // TrustedWithdrawETH is a paid mutator transaction binding the contract method 0x20283da9.
 //
-// Solidity: function trustedWithdrawETH(_to address, _amount uint256) returns()
+// Solidity: function trustedWithdrawETH(address _to, uint256 _amount) returns()
 func (_Minter *MinterTransactorSession) TrustedWithdrawETH(_to common.Address, _amount *big.Int) (*types.Transaction, error) {
 	return _Minter.Contract.TrustedWithdrawETH(&_Minter.TransactOpts, _to, _amount)
 }
@@ -627,7 +660,7 @@ type MinterParameterUpdate struct {
 
 // FilterParameterUpdate is a free log retrieval operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
 //
-// Solidity: event ParameterUpdate(param string)
+// Solidity: event ParameterUpdate(string param)
 func (_Minter *MinterFilterer) FilterParameterUpdate(opts *bind.FilterOpts) (*MinterParameterUpdateIterator, error) {
 
 	logs, sub, err := _Minter.contract.FilterLogs(opts, "ParameterUpdate")
@@ -639,7 +672,7 @@ func (_Minter *MinterFilterer) FilterParameterUpdate(opts *bind.FilterOpts) (*Mi
 
 // WatchParameterUpdate is a free log subscription operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
 //
-// Solidity: event ParameterUpdate(param string)
+// Solidity: event ParameterUpdate(string param)
 func (_Minter *MinterFilterer) WatchParameterUpdate(opts *bind.WatchOpts, sink chan<- *MinterParameterUpdate) (event.Subscription, error) {
 
 	logs, sub, err := _Minter.contract.WatchLogs(opts, "ParameterUpdate")
@@ -749,7 +782,7 @@ type MinterSetController struct {
 
 // FilterSetController is a free log retrieval operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
 //
-// Solidity: event SetController(controller address)
+// Solidity: event SetController(address controller)
 func (_Minter *MinterFilterer) FilterSetController(opts *bind.FilterOpts) (*MinterSetControllerIterator, error) {
 
 	logs, sub, err := _Minter.contract.FilterLogs(opts, "SetController")
@@ -761,7 +794,7 @@ func (_Minter *MinterFilterer) FilterSetController(opts *bind.FilterOpts) (*Mint
 
 // WatchSetController is a free log subscription operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
 //
-// Solidity: event SetController(controller address)
+// Solidity: event SetController(address controller)
 func (_Minter *MinterFilterer) WatchSetController(opts *bind.WatchOpts, sink chan<- *MinterSetController) (event.Subscription, error) {
 
 	logs, sub, err := _Minter.contract.WatchLogs(opts, "SetController")
@@ -872,7 +905,7 @@ type MinterSetCurrentRewardTokens struct {
 
 // FilterSetCurrentRewardTokens is a free log retrieval operation binding the contract event 0x39567a366345edf17f50c1967a31b597745186c4632f34c4f8ebe06b6890784d.
 //
-// Solidity: event SetCurrentRewardTokens(currentMintableTokens uint256, currentInflation uint256)
+// Solidity: event SetCurrentRewardTokens(uint256 currentMintableTokens, uint256 currentInflation)
 func (_Minter *MinterFilterer) FilterSetCurrentRewardTokens(opts *bind.FilterOpts) (*MinterSetCurrentRewardTokensIterator, error) {
 
 	logs, sub, err := _Minter.contract.FilterLogs(opts, "SetCurrentRewardTokens")
@@ -884,7 +917,7 @@ func (_Minter *MinterFilterer) FilterSetCurrentRewardTokens(opts *bind.FilterOpt
 
 // WatchSetCurrentRewardTokens is a free log subscription operation binding the contract event 0x39567a366345edf17f50c1967a31b597745186c4632f34c4f8ebe06b6890784d.
 //
-// Solidity: event SetCurrentRewardTokens(currentMintableTokens uint256, currentInflation uint256)
+// Solidity: event SetCurrentRewardTokens(uint256 currentMintableTokens, uint256 currentInflation)
 func (_Minter *MinterFilterer) WatchSetCurrentRewardTokens(opts *bind.WatchOpts, sink chan<- *MinterSetCurrentRewardTokens) (event.Subscription, error) {
 
 	logs, sub, err := _Minter.contract.WatchLogs(opts, "SetCurrentRewardTokens")

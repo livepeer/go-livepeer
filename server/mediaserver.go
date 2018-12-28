@@ -277,23 +277,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				// todo send to metrics ?
 				return ErrRoundInit
 			}
-			// Check deposit
-			deposit, err := s.LivepeerNode.Eth.BroadcasterDeposit(s.LivepeerNode.Eth.Account().Address)
-			if err != nil {
-				glog.Errorf("Error getting deposit: %v", err)
-				return ErrBroadcast
-			}
 
-			glog.V(common.SHORT).Infof("Current deposit is: %v", deposit)
-
-			minDeposit := big.NewInt(0).Mul(BroadcastPrice, big.NewInt(MinDepositSegmentCount))
-			if deposit.Cmp(minDeposit) < 0 {
-				glog.Errorf("Low deposit (%v) - cannot start broadcast session.  Need at least %v", deposit, minDeposit)
-				if monitor.Enabled {
-					monitor.LogStreamCreateFailed(nonce, "LowDeposit")
-				}
-				return ErrBroadcast
-			}
+			// TODO: Check broadcaster's deposit with TicketBroker
 		}
 
 		//Create a HLS StreamID

@@ -427,7 +427,7 @@ func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {
 	}
 }
 
-func TestRedeemWinningTickets_SingleTicket_GetDepositError(t *testing.T) {
+func TestRedeemWinningTickets_SingleTicket_SendersError(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
 	params := ticketParamsOrFatal(t, r, sender)
@@ -447,45 +447,14 @@ func TestRedeemWinningTickets_SingleTicket_GetDepositError(t *testing.T) {
 	}
 
 	// Config stub broker to fail getting deposit
-	b.getDepositShouldFail = true
+	b.sendersShouldFail = true
 
 	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
-		t.Error("expected broker get deposit error")
+		t.Error("expected broker senders error")
 	}
-	if err != nil && !strings.Contains(err.Error(), "broker get deposit error") {
-		t.Errorf("execpted broker get deposit error, got %v", err)
-	}
-}
-
-func TestRedeemWinningTickets_SingleTicket_GetPenaltyEscrowError(t *testing.T) {
-	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
-
-	// Config stub validator with valid winning tickets
-	v.SetIsWinningTicket(true)
-
-	// Test get penalty escrow error
-	ticket := newTicket(sender, params, 0)
-
-	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !won {
-		t.Fatal("expected valid winning ticket")
-	}
-
-	// Config stub broker to fail getting penalty escrow
-	b.getPenaltyEscrowShouldFail = true
-
-	err = r.RedeemWinningTickets([]string{sessionID})
-	if err == nil {
-		t.Error("expected broker get penalty escrow error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "broker get penalty escrow error") {
-		t.Errorf("expected broker get penalty escrow error, got %v", err)
+	if err != nil && !strings.Contains(err.Error(), "broker senders error") {
+		t.Errorf("execpted broker senders error, got %v", err)
 	}
 }
 

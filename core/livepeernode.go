@@ -52,7 +52,6 @@ type LivepeerNode struct {
 	Database        *common.DB
 
 	// Transcoder public fields
-	ClaimManagers    map[int64]eth.ClaimManager
 	SegmentChans     map[ManifestID]SegmentChan
 	Recipient        pm.Recipient
 	PMSessions       map[ManifestID]map[string]bool
@@ -63,7 +62,6 @@ type LivepeerNode struct {
 	Transcoder       Transcoder
 
 	// Transcoder private fields
-	claimMutex      *sync.Mutex
 	segmentMutex    *sync.Mutex
 	pmSessionsMutex *sync.Mutex
 	tcoderMutex     *sync.RWMutex
@@ -80,10 +78,8 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		WorkDir:         wd,
 		Database:        dbh,
 		EthServices:     make(map[string]eth.EventService),
-		ClaimManagers:   make(map[int64]eth.ClaimManager),
 		SegmentChans:    make(map[ManifestID]SegmentChan),
 		PMSessions:      make(map[ManifestID]map[string]bool),
-		claimMutex:      &sync.Mutex{},
 		segmentMutex:    &sync.Mutex{},
 		pmSessionsMutex: &sync.Mutex{},
 		tcoderMutex:     &sync.RWMutex{},
