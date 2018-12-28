@@ -3,13 +3,14 @@ package common
 import (
 	"bytes"
 	"database/sql"
-	"errors"
 	"math/big"
 	"text/template"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/pm"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/pkg/errors"
 )
 
 type DB struct {
@@ -21,6 +22,8 @@ type DB struct {
 	useUnbondingLock           *sql.Stmt
 	unbondingLocks             *sql.Stmt
 	withdrawableUnbondingLocks *sql.Stmt
+	insertWinningTicket           *sql.Stmt
+	selectWinningTicketsBySession *sql.Stmt
 }
 
 type DBUnbondingLock struct {
@@ -53,6 +56,18 @@ var schema = `
 	);
 	-- Index to only retrieve unbonding locks that have not been used
 	CREATE INDEX IF NOT EXISTS idx_unbondinglocks_usedblock ON unbondingLocks(usedBlock);
+
+	CREATE TABLE IF NOT EXISTS winningTickets (
+		sender STRING,
+		recipient STRING,
+		faceValue BLOB,
+		winProb BLOB,
+		senderNonce INTEGER,
+		recipientRand BLOB,
+		recipientRandHash STRING,
+		sig BLOB,
+		sessionID STRING
+	);
 `
 
 func InitDB(dbPath string) (*DB, error) {
@@ -138,6 +153,23 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.withdrawableUnbondingLocks = stmt
 
+	// Winning tickets prepared statements
+	stmt, err = db.Prepare("INSERT INTO winningTickets(sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		glog.Error("Unable to prepare insertWinningTicket ", err)
+		d.Close()
+		return nil, err
+	}
+	d.insertWinningTicket = stmt
+
+	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets WHERE sessionID = ?")
+	if err != nil {
+		glog.Error("Unable to prepare selectWinningTicketsBySession ", err)
+		d.Close()
+		return nil, err
+	}
+	d.selectWinningTicketsBySession = stmt
+
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -158,6 +190,12 @@ func (db *DB) Close() {
 	}
 	if db.withdrawableUnbondingLocks != nil {
 		db.withdrawableUnbondingLocks.Close()
+	}
+	if db.insertWinningTicket != nil {
+		db.insertWinningTicket.Close()
+	}
+	if db.selectWinningTicketsBySession != nil {
+		db.selectWinningTicketsBySession.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -277,4 +315,62 @@ func (db *DB) UnbondingLocks(currentRound *big.Int) ([]*DBUnbondingLock, error) 
 		unbondingLocks = append(unbondingLocks, &unbondingLock)
 	}
 	return unbondingLocks, nil
+}
+
+func (db *DB) StoreWinningTicket(sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) error {
+	if ticket == nil {
+		return errors.New("cannot store nil ticket")
+	}
+	if sig == nil {
+		return errors.New("cannot store nil sig")
+	}
+	if recipientRand == nil {
+		return errors.New("cannot store nil recipientRand")
+	}
+	glog.V(DEBUG).Infof("db: Inserting winning ticket from %v, recipientRand %d, senderNonce %d", ticket.Sender.Hex(), recipientRand, ticket.SenderNonce)
+
+	_, err := db.insertWinningTicket.Exec(ticket.Sender.Hex(), ticket.Recipient.Hex(), ticket.FaceValue.Bytes(), ticket.WinProb.Bytes(), ticket.SenderNonce, recipientRand.Bytes(), ticket.RecipientRandHash.Hex(), sig, sessionID)
+
+	if err != nil {
+		return errors.Wrapf(err, "failed inserting winning ticket for sessionID: %v, ticket: %v", sessionID, ticket)
+	}
+	return nil
+}
+
+func (db *DB) LoadWinningTickets(sessionID string) (tickets []*pm.Ticket, sigs [][]byte, recipientRands []*big.Int, err error) {
+	rows, err := db.selectWinningTicketsBySession.Query(sessionID)
+	defer rows.Close()
+
+	if err != nil {
+		err = errors.Wrapf(err, "failed loading winning tickets for sessionID %v", sessionID)
+		return
+	}
+
+	for rows.Next() {
+		var sender, recipient, recipientRandHash, sessionID string
+		var faceValue, winProb, recipientRandBytes, sig []byte
+		var senderNonce uint32
+
+		err = rows.Scan(&sender, &recipient, &faceValue, &winProb, &senderNonce, &recipientRandBytes, &recipientRandHash, &sig, &sessionID)
+		if err != nil {
+			err = errors.Wrapf(err, "failed scanning a winning ticket row for sessionID %v", sessionID)
+			return
+		}
+
+		ticket := &pm.Ticket{
+			Sender:            ethcommon.HexToAddress(sender),
+			Recipient:         ethcommon.HexToAddress(recipient),
+			FaceValue:         new(big.Int).SetBytes(faceValue),
+			WinProb:           new(big.Int).SetBytes(winProb),
+			SenderNonce:       senderNonce,
+			RecipientRandHash: ethcommon.HexToHash(recipientRandHash),
+		}
+		recipientRand := new(big.Int).SetBytes(recipientRandBytes)
+
+		tickets = append(tickets, ticket)
+		sigs = append(sigs, sig)
+		recipientRands = append(recipientRands, recipientRand)
+	}
+
+	return
 }

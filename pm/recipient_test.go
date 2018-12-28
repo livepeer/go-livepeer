@@ -15,7 +15,7 @@ import (
 )
 
 func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *stubValidator, *stubTicketStore, *big.Int, *big.Int, []byte) {
-	sender := randAddressOrFatal(t)
+	sender := RandAddressOrFatal(t)
 
 	b := newStubBroker()
 	b.SetDeposit(sender, big.NewInt(500))
@@ -45,7 +45,7 @@ func ticketParamsOrFatal(t *testing.T, r Recipient, sender ethcommon.Address) *T
 	return params
 }
 
-func newTicket(sender ethcommon.Address, params *TicketParams, senderNonce uint64) *Ticket {
+func newTicket(sender ethcommon.Address, params *TicketParams, senderNonce uint32) *Ticket {
 	return &Ticket{
 		Recipient:         ethcommon.Address{},
 		Sender:            sender,
@@ -105,7 +105,7 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidRecipientRandHash(t *testing.
 
 	// Test invalid recipientRand from seed (invalid recipientRandHash)
 	ticket := newTicket(sender, params, 0)
-	ticket.RecipientRandHash = randHashOrFatal(t) // Using invalid recipientRandHash
+	ticket.RecipientRandHash = RandHashOrFatal(t) // Using invalid recipientRandHash
 
 	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
@@ -179,7 +179,7 @@ func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
 	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test valid non-winning ticket
-	newSenderNonce := uint64(3)
+	newSenderNonce := uint32(3)
 	ticket := newTicket(sender, params, newSenderNonce)
 
 	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
@@ -208,7 +208,7 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test valid winning ticket
-	newSenderNonce := uint64(3)
+	newSenderNonce := uint32(3)
 	ticket := newTicket(sender, params, newSenderNonce)
 
 	// Config stub validator with valid winning tickets
@@ -232,7 +232,7 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce)
 	}
 
-	storeTickets, storeSigs, storeRecipientRands, err := ts.Load(ticket.RecipientRandHash.Hex())
+	storeTickets, storeSigs, storeRecipientRands, err := ts.LoadWinningTickets(ticket.RecipientRandHash.Hex())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 	params := ticketParamsOrFatal(t, r, sender)
 
 	// Test valid winning ticket
-	newSenderNonce := uint64(3)
+	newSenderNonce := uint32(3)
 	ticket := newTicket(sender, params, newSenderNonce)
 
 	// Config stub validator with valid winning tickets
@@ -276,6 +276,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 	ts.storeShouldFail = true
 
 	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
+
 	if err == nil {
 		t.Error("expected ticket store store error")
 	}
@@ -290,7 +291,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce)
 	}
 
-	storeTickets, storeSigs, storeRecipientRands, err := ts.Load(ticket.RecipientRandHash.Hex())
+	storeTickets, storeSigs, storeRecipientRands, err := ts.LoadWinningTickets(ticket.RecipientRandHash.Hex())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +392,7 @@ func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
 
-		go func(senderNonce uint64) {
+		go func(senderNonce uint32) {
 			defer wg.Done()
 
 			ticket := newTicket(sender, params, senderNonce)
@@ -400,7 +401,7 @@ func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
 			if err != nil {
 				atomic.AddUint64(&errCount, 1)
 			}
-		}(uint64(i))
+		}(uint32(i))
 	}
 
 	wg.Wait()

@@ -2,12 +2,16 @@ package common
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDBLastSeenBlock(t *testing.T) {
@@ -277,4 +281,250 @@ func TestDBUnbondingLocks(t *testing.T) {
 		t.Error("Unexpected number of unbonding locks; expected 2, got ", len(unbondingLocks))
 		return
 	}
+}
+
+func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
+
+	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
+	require.Nil(err)
+
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets")
+	var actualSender, actualRecipient, actualRecipientRandHash, actualSessionID string
+	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
+	var actualSenderNonce uint32
+	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualSessionID)
+
+	assert := assert.New(t)
+	assert.Equal(ticket.Sender.Hex(), actualSender)
+	assert.Equal(ticket.Recipient.Hex(), actualRecipient)
+	assert.Equal(ticket.FaceValue, new(big.Int).SetBytes(actualFaceValueBytes))
+	assert.Equal(ticket.WinProb, new(big.Int).SetBytes(actualWinProbBytes))
+	assert.Equal(ticket.SenderNonce, actualSenderNonce)
+	assert.Equal(recipientRand, new(big.Int).SetBytes(actualRecipientRandBytes))
+	assert.Equal(ticket.RecipientRandHash, ethcommon.HexToHash(actualRecipientRandHash))
+	assert.Equal(sig, actualSig)
+	assert.Equal(sessionID, actualSessionID)
+
+	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM winningTickets", dbraw, t)
+	assert.Equal(1, ticketsCount)
+}
+
+func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
+	ticket.FaceValue = maxUint256OrFatal(t)
+	ticket.WinProb = maxUint256OrFatal(t)
+	ticket.SenderNonce = math.MaxUint32
+
+	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
+	require.Nil(err)
+
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets")
+	var actualSender, actualRecipient, actualRecipientRandHash, actualSessionID string
+	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
+	var actualSenderNonce uint32
+	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualSessionID)
+
+	assert := assert.New(t)
+	assert.Equal(ticket.Sender.Hex(), actualSender)
+	assert.Equal(ticket.Recipient.Hex(), actualRecipient)
+	assert.Equal(ticket.FaceValue, new(big.Int).SetBytes(actualFaceValueBytes))
+	assert.Equal(ticket.WinProb, new(big.Int).SetBytes(actualWinProbBytes))
+	assert.Equal(ticket.SenderNonce, actualSenderNonce)
+	assert.Equal(recipientRand, new(big.Int).SetBytes(actualRecipientRandBytes))
+	assert.Equal(ticket.RecipientRandHash, ethcommon.HexToHash(actualRecipientRandHash))
+	assert.Equal(sig, actualSig)
+	assert.Equal(sessionID, actualSessionID)
+
+	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM winningTickets", dbraw, t)
+	assert.Equal(1, ticketsCount)
+}
+
+func TestStoreWinningTicket_GivenNilTicket_ReturnsError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	sig := pm.RandBytesOrFatal(42, t)
+	recipientRand := new(big.Int).SetInt64(1234)
+
+	err = dbh.StoreWinningTicket("sessionID", nil, sig, recipientRand)
+
+	assert := assert.New(t)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "nil ticket")
+}
+
+func TestStoreWinningTicket_GivenNilSig_ReturnsError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	sessionID, ticket, _, recipientRand := defaultWinningTicket(t)
+
+	err = dbh.StoreWinningTicket(sessionID, ticket, nil, recipientRand)
+
+	assert := assert.New(t)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "nil sig")
+}
+
+func TestStoreWinningTicket_GivenNilRecipientRand_ReturnsError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	sessionID, ticket, sig, _ := defaultWinningTicket(t)
+
+	err = dbh.StoreWinningTicket(sessionID, ticket, sig, nil)
+
+	assert := assert.New(t)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "nil recipientRand")
+}
+
+func TestLoadWinningTicket_GivenStoredTicket_LoadsItCorrectly(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
+	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
+	require.Nil(err)
+
+	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets(sessionID)
+	require.Nil(err)
+
+	assert := assert.New(t)
+	assert.Len(tickets, 1)
+	assert.Len(sigs, 1)
+	assert.Len(recipientRands, 1)
+	actualTicket := tickets[0]
+	actualSig := sigs[0]
+	actualRecipientRand := recipientRands[0]
+	assert.Equal(ticket, actualTicket)
+	assert.Equal(sig, actualSig)
+	assert.Equal(recipientRand, actualRecipientRand)
+}
+
+func TestLoadWinningTicket_GivenStoredTicketsFromDifferentSessions_OnlyLoadsFromSpecificSessionID(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	// Two tickets in the first session
+	firstSessionID := "first session"
+	_, ticket0, sig0, recipientRand0 := defaultWinningTicket(t)
+	err = dbh.StoreWinningTicket(firstSessionID, ticket0, sig0, recipientRand0)
+	require.Nil(err)
+
+	_, ticket1, sig1, recipientRand1 := defaultWinningTicket(t)
+	err = dbh.StoreWinningTicket(firstSessionID, ticket1, sig1, recipientRand1)
+	require.Nil(err)
+
+	// One ticket in the second session
+	secondSessionID := "second session"
+	_, ticket2, sig2, recipientRand2 := defaultWinningTicket(t)
+	err = dbh.StoreWinningTicket(secondSessionID, ticket2, sig2, recipientRand2)
+	require.Nil(err)
+
+	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets(firstSessionID)
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Len(tickets, 2)
+	assert.Len(sigs, 2)
+	assert.Len(recipientRands, 2)
+	assert.Equal(ticket0, tickets[0])
+	assert.Equal(sig0, sigs[0])
+	assert.Equal(recipientRand0, recipientRands[0])
+	assert.Equal(ticket1, tickets[1])
+	assert.Equal(sig1, sigs[1])
+	assert.Equal(recipientRand1, recipientRands[1])
+}
+
+func TestLoadWinningTicket_GivenNonexistentSessionID_ReturnsEmptySlicesNoError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets("some sessionID")
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Len(tickets, 0)
+	assert.Len(sigs, 0)
+	assert.Len(recipientRands, 0)
+}
+
+func TestLoadWinningTicket_GivenEmptySessionID_ReturnsEmptySlicesNoError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets("")
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Len(tickets, 0)
+	assert.Len(sigs, 0)
+	assert.Len(recipientRands, 0)
+}
+
+func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) {
+	sessionID = "foo bar"
+	ticket = &pm.Ticket{
+		Sender:            pm.RandAddressOrFatal(t),
+		Recipient:         pm.RandAddressOrFatal(t),
+		FaceValue:         big.NewInt(1234),
+		WinProb:           big.NewInt(2345),
+		SenderNonce:       uint32(123),
+		RecipientRandHash: pm.RandHashOrFatal(t),
+	}
+	sig = pm.RandBytesOrFatal(42, t)
+	recipientRand = big.NewInt(4567)
+	return
+}
+
+func getRowCountOrFatal(query string, dbraw *sql.DB, t *testing.T) int {
+	var count int
+	row := dbraw.QueryRow(query)
+	err := row.Scan(&count)
+	require.Nil(t, err)
+
+	return count
+}
+
+func maxUint256OrFatal(t *testing.T) *big.Int {
+	n, ok := new(big.Int).SetString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16)
+	if !ok {
+		t.Fatalf("unexpected error creating max value of uint256")
+	}
+	return n
 }

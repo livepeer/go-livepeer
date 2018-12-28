@@ -38,7 +38,7 @@ type recipient struct {
 
 	invalidRands sync.Map
 
-	senderNonces     map[string]uint64
+	senderNonces     map[string]uint32
 	senderNoncesLock sync.Mutex
 
 	faceValue *big.Int
@@ -69,7 +69,7 @@ func NewRecipientWithSecret(broker Broker, val Validator, store TicketStore, sec
 		store:        store,
 		secret:       secret,
 		faceValue:    faceValue,
-		senderNonces: make(map[string]uint64),
+		senderNonces: make(map[string]uint32),
 		winProb:      winProb,
 	}
 }
@@ -104,8 +104,7 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 
 	if r.val.IsWinningTicket(ticket, sig, recipientRand) {
 		sessionID := ticket.RecipientRandHash.Hex()
-
-		if err := r.store.Store(sessionID, ticket, sig, recipientRand); err != nil {
+		if err := r.store.StoreWinningTicket(sessionID, ticket, sig, recipientRand); err != nil {
 			return "", true, err
 		}
 
@@ -118,7 +117,7 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 // RedeemWinningTicket redeems all winning tickets with the broker
 // for a session ID
 func (r *recipient) RedeemWinningTickets(sessionID string) error {
-	tickets, sigs, recipientRands, err := r.store.Load(sessionID)
+	tickets, sigs, recipientRands, err := r.store.LoadWinningTickets(sessionID)
 	if err != nil {
 		return err
 	}
@@ -202,7 +201,7 @@ func (r *recipient) updateInvalidRands(rand *big.Int) {
 	r.invalidRands.Store(rand.String(), true)
 }
 
-func (r *recipient) updateSenderNonce(rand *big.Int, senderNonce uint64) error {
+func (r *recipient) updateSenderNonce(rand *big.Int, senderNonce uint32) error {
 	r.senderNoncesLock.Lock()
 	defer r.senderNoncesLock.Unlock()
 

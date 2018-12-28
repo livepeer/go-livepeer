@@ -76,13 +76,13 @@ func TestCreateTicket_GivenNonexistentSession_ReturnsError(t *testing.T) {
 
 func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T) {
 	sender := defaultSender(t)
-	am := sender.accountManager.(*stubAccountManager)
+	am := sender.signer.(*stubSigner)
 	am.signShouldFail = false
 	am.saveSignRequest = true
-	am.signResponse = randBytesOrFatal(42, t)
-	senderAddress := sender.accountManager.Account().Address
-	recipient := randAddressOrFatal(t)
-	recipientRandHash := randHashOrFatal(t)
+	am.signResponse = RandBytesOrFatal(42, t)
+	senderAddress := sender.signer.Account().Address
+	recipient := RandAddressOrFatal(t)
+	recipientRandHash := RandHashOrFatal(t)
 	ticketParams := TicketParams{
 		FaceValue:         big.NewInt(1111),
 		WinProb:           big.NewInt(2222),
@@ -127,10 +127,10 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 
 func TestCreateTicket_GivenSigningError_ReturnsError(t *testing.T) {
 	sender := defaultSender(t)
-	recipient := randAddressOrFatal(t)
+	recipient := RandAddressOrFatal(t)
 	ticketParams := defaultTicketParams(t)
 	sessionID := sender.StartSession(recipient, ticketParams)
-	am := sender.accountManager.(*stubAccountManager)
+	am := sender.signer.(*stubSigner)
 	am.signShouldFail = true
 
 	_, _, _, err := sender.CreateTicket(sessionID)
@@ -147,7 +147,7 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 	totalTickets := 100
 	lock := sync.RWMutex{}
 	sender := defaultSender(t)
-	recipient := randAddressOrFatal(t)
+	recipient := RandAddressOrFatal(t)
 	ticketParams := defaultTicketParams(t)
 	sessionID := sender.StartSession(recipient, ticketParams)
 
@@ -173,11 +173,11 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 		t.Fatalf("failed to find session with ID %v", sessionID)
 	}
 	session := sessionUntyped.(*session)
-	if session.senderNonce != uint64(totalTickets) {
+	if session.senderNonce != uint32(totalTickets) {
 		t.Errorf("expected end state SenderNonce %d to be %d", session.senderNonce, totalTickets)
 	}
 
-	uniqueNonces := make(map[uint64]bool)
+	uniqueNonces := make(map[uint32]bool)
 	for _, ticket := range tickets {
 		uniqueNonces[ticket.SenderNonce] = true
 	}
@@ -188,9 +188,9 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 
 func defaultSender(t *testing.T) *sender {
 	account := accounts.Account{
-		Address: randAddressOrFatal(t),
+		Address: RandAddressOrFatal(t),
 	}
-	am := &stubAccountManager{
+	am := &stubSigner{
 		account: account,
 	}
 	s := NewSender(am)
@@ -198,7 +198,7 @@ func defaultSender(t *testing.T) *sender {
 }
 
 func defaultTicketParams(t *testing.T) TicketParams {
-	recipientRandHash := randHashOrFatal(t)
+	recipientRandHash := RandHashOrFatal(t)
 	return TicketParams{
 		FaceValue:         big.NewInt(0),
 		WinProb:           big.NewInt(0),

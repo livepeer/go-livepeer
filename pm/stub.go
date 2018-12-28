@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type stubTicketStore struct {
@@ -28,7 +27,7 @@ func newStubTicketStore() *stubTicketStore {
 	}
 }
 
-func (ts *stubTicketStore) Store(sessionID string, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+func (ts *stubTicketStore) StoreWinningTicket(sessionID string, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 
@@ -43,7 +42,7 @@ func (ts *stubTicketStore) Store(sessionID string, ticket *Ticket, sig []byte, r
 	return nil
 }
 
-func (ts *stubTicketStore) Load(sessionID string) ([]*Ticket, [][]byte, []*big.Int, error) {
+func (ts *stubTicketStore) LoadWinningTickets(sessionID string) ([]*Ticket, [][]byte, []*big.Int, error) {
 	ts.lock.RLock()
 	defer ts.lock.RUnlock()
 
@@ -188,7 +187,7 @@ func (v *stubValidator) IsWinningTicket(ticket *Ticket, sig []byte, recipientRan
 	return v.isWinningTicket
 }
 
-type stubAccountManager struct {
+type stubSigner struct {
 	account         accounts.Account
 	saveSignRequest bool
 	lastSignRequest []byte
@@ -196,32 +195,23 @@ type stubAccountManager struct {
 	signShouldFail  bool
 }
 
-func (am *stubAccountManager) Unlock(passphrase string) error {
-	return nil
-}
-
-func (am *stubAccountManager) Lock() error {
-	return nil
-}
-
-func (am *stubAccountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error) {
+// TODO remove this function
+// NOTE: Keeping this function for now because removing it causes the tests to fail when run with the
+// logtostderr flag.
+func (s *stubSigner) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error) {
 	return nil, nil
 }
 
-func (am *stubAccountManager) SignTx(signer types.Signer, tx *types.Transaction) (*types.Transaction, error) {
-	return nil, nil
-}
-
-func (am *stubAccountManager) Sign(msg []byte) ([]byte, error) {
-	if am.saveSignRequest {
-		am.lastSignRequest = msg
+func (s *stubSigner) Sign(msg []byte) ([]byte, error) {
+	if s.saveSignRequest {
+		s.lastSignRequest = msg
 	}
-	if am.signShouldFail {
+	if s.signShouldFail {
 		return nil, fmt.Errorf("stub returning error as requested")
 	}
-	return am.signResponse, nil
+	return s.signResponse, nil
 }
 
-func (am *stubAccountManager) Account() accounts.Account {
-	return am.account
+func (s *stubSigner) Account() accounts.Account {
+	return s.account
 }

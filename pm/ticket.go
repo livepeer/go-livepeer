@@ -45,7 +45,7 @@ type Ticket struct {
 
 	// SenderNonce is the monotonically increasing counter that makes
 	// each ticket unique given a particular recipientRand value
-	SenderNonce uint64
+	SenderNonce uint32
 
 	// RecipientRandHash is the 32 byte keccak-256 hash commitment to a random number
 	// provided by the recipient. In order for the recipient to redeem
@@ -66,7 +66,7 @@ func (t *Ticket) flatten() []byte {
 	i += copy(buf[i:], t.Sender.Bytes())
 	i += copy(buf[i:], ethcommon.LeftPadBytes(t.FaceValue.Bytes(), uint256Size))
 	i += copy(buf[i:], ethcommon.LeftPadBytes(t.WinProb.Bytes(), uint256Size))
-	i += copy(buf[i:], ethcommon.LeftPadBytes(new(big.Int).SetUint64(t.SenderNonce).Bytes(), uint256Size))
+	i += copy(buf[i:], ethcommon.LeftPadBytes(new(big.Int).SetUint64(uint64(t.SenderNonce)).Bytes(), uint256Size))
 	i += copy(buf[i:], t.RecipientRandHash.Bytes())
 
 	return buf
