@@ -172,6 +172,8 @@ var schema = `
 		sig BLOB,
 		sessionID STRING
 	);
+
+	CREATE INDEX IF NOT EXISTS idx_winningtickets_sessionid ON winningTickets(sessionID);
 `
 
 func NewDBJob(id *big.Int, streamID string,
