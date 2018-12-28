@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
+	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -201,6 +202,40 @@ func TestTranscodeLoop_GivenNoPMSession_DoesntTryToRedeem(t *testing.T) {
 	waitForTranscoderLoopTimeout(n, md.ManifestID)
 
 	recipient.AssertNotCalled(t, "RedeemWinningTickets", mock.Anything)
+}
+
+func TestTranscodeLoop_GivenRedeemError_ErrorLogIsWritten(t *testing.T) {
+	recipient := new(pm.MockRecipient)
+	//Set up the node
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	defer db.Close()
+	seth := &eth.StubClient{}
+	tmp, _ := ioutil.TempDir("", "")
+	n, _ := NewLivepeerNode(seth, tmp, db)
+	n.Recipient = recipient
+	defer os.RemoveAll(tmp)
+	ffmpeg.InitFFmpeg()
+	ss := StubSegment()
+	md := &SegTranscodingMetadata{Profiles: videoProfiles}
+	n.Transcoder = NewLocalTranscoder(tmp)
+	transcodeLoopTimeout = 100 * time.Millisecond
+	require := require.New(t)
+
+	sessionID := "some session ID"
+	n.pmSessionsMutex.Lock()
+	n.PMSessions[md.ManifestID] = make(map[string]bool)
+	n.PMSessions[md.ManifestID][sessionID] = true
+	n.pmSessionsMutex.Unlock()
+	recipient.On("RedeemWinningTickets", mock.Anything).Return(fmt.Errorf("some error"))
+
+	errorLogsBefore := glog.Stats.Error.Lines()
+	_, err := n.sendToTranscodeLoop(md, ss)
+	require.Nil(err)
+	waitForTranscoderLoopTimeout(n, md.ManifestID)
+	errorLogsAfter := glog.Stats.Error.Lines()
+
+	assert.Equal(t, int64(1), errorLogsAfter-errorLogsBefore)
 }
 
 func waitForTranscoderLoopTimeout(n *LivepeerNode, m ManifestID) {

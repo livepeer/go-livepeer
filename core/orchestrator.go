@@ -321,8 +321,10 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 				if n.Recipient != nil {
 					sessionIDs := getPMSessionIDsByManifestID(n, md.ManifestID)
 					if len(sessionIDs) > 0 {
-						n.Recipient.RedeemWinningTickets(sessionIDs)
-						// TODO do something with err
+						err := n.Recipient.RedeemWinningTickets(sessionIDs)
+						if err != nil {
+							glog.Errorf("Error redeeming winning tickets for manifestID %v and sessions %v. Errors: %+v", md.ManifestID, sessionIDs, err)
+						}
 					}
 				}
 				return
