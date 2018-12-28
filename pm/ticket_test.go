@@ -9,13 +9,13 @@ import (
 )
 
 func TestHash(t *testing.T) {
-	exp := ethcommon.HexToHash("24d4264d5ea56ba4362c8f535308005b2df1f9f77c34b4a61f6b5c3bef151b53")
+	exp := ethcommon.HexToHash("e1393fc7f6de093780674022f96cb8e3872235167d037c04d554e58c0e63d280")
 	ticket := &Ticket{
 		Recipient:         ethcommon.Address{},
 		Sender:            ethcommon.Address{},
 		FaceValue:         big.NewInt(0),
 		WinProb:           big.NewInt(0),
-		SenderNonce:       math.MaxUint64,
+		SenderNonce:       math.MaxUint32,
 		RecipientRandHash: ethcommon.Hash{},
 	}
 	h := ticket.Hash()
