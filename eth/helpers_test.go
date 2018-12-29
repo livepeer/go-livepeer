@@ -4,7 +4,6 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,16 +16,13 @@ func TestFromPerc_DefaultDenominator(t *testing.T) {
 }
 
 func TestFromPercOfUint256_Given100Percent_ResultWithinEpsilon(t *testing.T) {
-	maxBigInt := common.MaxUint256OrFatal(t)
-
 	actual := FromPercOfUint256(100.0)
 
-	diff := new(big.Int).Sub(maxBigInt, actual)
+	diff := new(big.Int).Sub(maxUint256, actual)
 	assert.True(t, diff.Int64() < 100)
 }
 func TestFromPercOfUint256_Given50Percent_ResultWithinEpsilon(t *testing.T) {
-	maxBigInt := common.MaxUint256OrFatal(t)
-	half := new(big.Int).Div(maxBigInt, big.NewInt(2))
+	half := new(big.Int).Div(maxUint256, big.NewInt(2))
 
 	actual := FromPercOfUint256(50.0)
 

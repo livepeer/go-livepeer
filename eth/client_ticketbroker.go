@@ -69,8 +69,3 @@ func (c *client) IsUsedTicket(ticket *pm.Ticket) (bool, error) {
 
 	return c.LivepeerETHTicketBrokerSession.UsedTickets(ticketHash)
 }
-
-// ApproveSigners approves a set of ETH addresses to sign on behalf of the sender
-func (c *client) ApproveSigners(signers []ethcommon.Address) (*types.Transaction, error) {
-	return c.LivepeerETHTicketBrokerSession.ApproveSigners(signers)
-}

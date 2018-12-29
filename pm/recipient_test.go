@@ -661,19 +661,19 @@ func TestRedeemWinningTickets_MultipleTicketsFromMultipleSessions(t *testing.T) 
 
 	params0 := ticketParamsOrFatal(t, r, sender)
 	ticket0 := newTicket(sender, params0, 1)
-	sessionID1, won, err := r.ReceiveTicket(ticket0, sig, params0.Seed)
+	sessionID0, won, err := r.ReceiveTicket(ticket0, sig, params0.Seed)
 	require.Nil(err)
 	require.True(won)
 
 	params1 := ticketParamsOrFatal(t, r, sender)
 	ticket1 := newTicket(sender, params1, 1)
-	sessionID2, won, err := r.ReceiveTicket(ticket1, sig, params1.Seed)
+	sessionID1, won, err := r.ReceiveTicket(ticket1, sig, params1.Seed)
 	require.Nil(err)
 	require.True(won)
 
-	require.NotEqual(sessionID1, sessionID2)
+	require.NotEqual(sessionID0, sessionID1)
 
-	err = r.RedeemWinningTickets([]string{sessionID1, sessionID2})
+	err = r.RedeemWinningTickets([]string{sessionID0, sessionID1})
 
 	assert := assert.New(t)
 	assert.Nil(err)

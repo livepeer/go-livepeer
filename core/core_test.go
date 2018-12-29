@@ -132,8 +132,8 @@ func TestTranscodeLoop_GivenOnePMSession_RedeemsOneSession(t *testing.T) {
 
 	sessionID := "some session ID"
 	n.pmSessionsMutex.Lock()
-	n.PMSessions[md.ManifestID] = make(map[string]bool)
-	n.PMSessions[md.ManifestID][sessionID] = true
+	n.pmSessions[md.ManifestID] = make(map[string]bool)
+	n.pmSessions[md.ManifestID][sessionID] = true
 	n.pmSessionsMutex.Unlock()
 
 	recipient.On("RedeemWinningTickets", []string{sessionID}[:]).Return(nil)
@@ -166,9 +166,9 @@ func TestTranscodeLoop_GivenMultiplePMSession_RedeemsAllSessions(t *testing.T) {
 
 	sessionIDs := []string{"first session ID", "second session ID"}
 	n.pmSessionsMutex.Lock()
-	n.PMSessions[md.ManifestID] = make(map[string]bool)
-	n.PMSessions[md.ManifestID][sessionIDs[0]] = true
-	n.PMSessions[md.ManifestID][sessionIDs[1]] = true
+	n.pmSessions[md.ManifestID] = make(map[string]bool)
+	n.pmSessions[md.ManifestID][sessionIDs[0]] = true
+	n.pmSessions[md.ManifestID][sessionIDs[1]] = true
 	n.pmSessionsMutex.Unlock()
 
 	// Need to use this because the order of the string slice used to call this function
@@ -187,6 +187,42 @@ func TestTranscodeLoop_GivenMultiplePMSession_RedeemsAllSessions(t *testing.T) {
 	waitForTranscoderLoopTimeout(n, md.ManifestID)
 
 	recipient.AssertExpectations(t)
+}
+
+func TestTranscodeLoop_GivenMultiplePMSession_CleansSessionIDMemoryCache(t *testing.T) {
+	recipient := new(pm.MockRecipient)
+	//Set up the node
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	defer db.Close()
+	seth := &eth.StubClient{}
+	tmp, _ := ioutil.TempDir("", "")
+	n, _ := NewLivepeerNode(seth, tmp, db)
+	n.Recipient = recipient
+	defer os.RemoveAll(tmp)
+	ffmpeg.InitFFmpeg()
+	ss := StubSegment()
+	md := &SegTranscodingMetadata{Profiles: videoProfiles}
+	n.Transcoder = NewLocalTranscoder(tmp)
+
+	transcodeLoopTimeout = 100 * time.Millisecond
+	require := require.New(t)
+
+	sessionIDs := []string{"first session ID", "second session ID"}
+	n.pmSessionsMutex.Lock()
+	n.pmSessions[md.ManifestID] = make(map[string]bool)
+	n.pmSessions[md.ManifestID][sessionIDs[0]] = true
+	n.pmSessions[md.ManifestID][sessionIDs[1]] = true
+	n.pmSessionsMutex.Unlock()
+	recipient.On("RedeemWinningTickets", mock.Anything).Return(nil)
+
+	_, err := n.sendToTranscodeLoop(md, ss)
+	require.Nil(err)
+	waitForTranscoderLoopTimeout(n, md.ManifestID)
+
+	n.pmSessionsMutex.Lock()
+	assert.NotContains(t, n.pmSessions, md.ManifestID)
+	n.pmSessionsMutex.Unlock()
 }
 
 func TestTranscodeLoop_GivenNoPMSession_DoesntTryToRedeem(t *testing.T) {
@@ -235,8 +271,8 @@ func TestTranscodeLoop_GivenRedeemError_ErrorLogIsWritten(t *testing.T) {
 
 	sessionID := "some session ID"
 	n.pmSessionsMutex.Lock()
-	n.PMSessions[md.ManifestID] = make(map[string]bool)
-	n.PMSessions[md.ManifestID][sessionID] = true
+	n.pmSessions[md.ManifestID] = make(map[string]bool)
+	n.pmSessions[md.ManifestID][sessionID] = true
 	n.pmSessionsMutex.Unlock()
 	recipient.On("RedeemWinningTickets", mock.Anything).Return(fmt.Errorf("some error"))
 
@@ -247,6 +283,40 @@ func TestTranscodeLoop_GivenRedeemError_ErrorLogIsWritten(t *testing.T) {
 	errorLogsAfter := glog.Stats.Error.Lines()
 
 	assert.Equal(t, int64(1), errorLogsAfter-errorLogsBefore)
+}
+
+func TestTranscodeLoop_GivenRedeemError_StillCleanspmSessionsCache(t *testing.T) {
+	recipient := new(pm.MockRecipient)
+	//Set up the node
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	defer db.Close()
+	seth := &eth.StubClient{}
+	tmp, _ := ioutil.TempDir("", "")
+	n, _ := NewLivepeerNode(seth, tmp, db)
+	n.Recipient = recipient
+	defer os.RemoveAll(tmp)
+	ffmpeg.InitFFmpeg()
+	ss := StubSegment()
+	md := &SegTranscodingMetadata{Profiles: videoProfiles}
+	n.Transcoder = NewLocalTranscoder(tmp)
+	transcodeLoopTimeout = 100 * time.Millisecond
+	require := require.New(t)
+
+	sessionID := "some session ID"
+	n.pmSessionsMutex.Lock()
+	n.pmSessions[md.ManifestID] = make(map[string]bool)
+	n.pmSessions[md.ManifestID][sessionID] = true
+	n.pmSessionsMutex.Unlock()
+	recipient.On("RedeemWinningTickets", mock.Anything).Return(fmt.Errorf("some error"))
+
+	_, err := n.sendToTranscodeLoop(md, ss)
+	require.Nil(err)
+	waitForTranscoderLoopTimeout(n, md.ManifestID)
+
+	n.pmSessionsMutex.Lock()
+	assert.NotContains(t, n.pmSessions, md.ManifestID)
+	n.pmSessionsMutex.Unlock()
 }
 
 func waitForTranscoderLoopTimeout(n *LivepeerNode, m ManifestID) {

@@ -255,5 +255,11 @@ func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
 
 func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
 	args := m.MethodCalled("TicketParams", sender)
-	return args.Get(0).(*TicketParams), args.Error(1)
+
+	var params *TicketParams
+	if args.Get(0) != nil {
+		params = args.Get(0).(*TicketParams)
+	}
+
+	return params, args.Error(1)
 }

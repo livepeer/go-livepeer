@@ -54,7 +54,7 @@ type LivepeerNode struct {
 	// Transcoder public fields
 	SegmentChans     map[ManifestID]SegmentChan
 	Recipient        pm.Recipient
-	PMSessions       map[ManifestID]map[string]bool
+	pmSessions       map[ManifestID]map[string]bool
 	OrchestratorPool net.OrchestratorPool
 	Ipfs             ipfs.IpfsApi
 	ServiceURI       *url.URL
@@ -79,7 +79,7 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		Database:        dbh,
 		EthServices:     make(map[string]eth.EventService),
 		SegmentChans:    make(map[ManifestID]SegmentChan),
-		PMSessions:      make(map[ManifestID]map[string]bool),
+		pmSessions:      make(map[ManifestID]map[string]bool),
 		segmentMutex:    &sync.Mutex{},
 		pmSessionsMutex: &sync.Mutex{},
 		tcoderMutex:     &sync.RWMutex{},
