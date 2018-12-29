@@ -244,17 +244,17 @@ type MockRecipient struct {
 }
 
 func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error) {
-	args := m.MethodCalled("ReceiveTicket", ticket, sig, seed)
+	args := m.Called(ticket, sig, seed)
 	return args.String(0), args.Bool(1), args.Error(2)
 }
 
 func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
-	args := m.MethodCalled("RedeemWinningTickets", sessionIDs)
+	args := m.Called(sessionIDs)
 	return args.Error(0)
 }
 
 func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
-	args := m.MethodCalled("TicketParams", sender)
+	args := m.Called(sender)
 
 	var params *TicketParams
 	if args.Get(0) != nil {

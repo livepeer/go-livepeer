@@ -111,7 +111,7 @@ func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T
 	assert.Nil(segChan)
 }
 
-func TestTranscodeLoop_GivenOnePMSession_RedeemsOneSession(t *testing.T) {
+func TestTranscodeLoop_GivenOnePMSessionAtVideoSessionTimeout_RedeemsOneSession(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver("")
@@ -145,7 +145,7 @@ func TestTranscodeLoop_GivenOnePMSession_RedeemsOneSession(t *testing.T) {
 	recipient.AssertExpectations(t)
 }
 
-func TestTranscodeLoop_GivenMultiplePMSession_RedeemsAllSessions(t *testing.T) {
+func TestTranscodeLoop_GivenMultiplePMSessionAtVideoSessionTimeout_RedeemsAllSessions(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver("")
@@ -189,7 +189,7 @@ func TestTranscodeLoop_GivenMultiplePMSession_RedeemsAllSessions(t *testing.T) {
 	recipient.AssertExpectations(t)
 }
 
-func TestTranscodeLoop_GivenMultiplePMSession_CleansSessionIDMemoryCache(t *testing.T) {
+func TestTranscodeLoop_GivenMultiplePMSessionsAtVideoSessionTimeout_CleansSessionIDMemoryCache(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver("")
@@ -225,7 +225,7 @@ func TestTranscodeLoop_GivenMultiplePMSession_CleansSessionIDMemoryCache(t *test
 	n.pmSessionsMutex.Unlock()
 }
 
-func TestTranscodeLoop_GivenNoPMSession_DoesntTryToRedeem(t *testing.T) {
+func TestTranscodeLoop_GivenNoPMSessionAtVideoSessionTimeout_DoesntTryToRedeem(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver("")
@@ -251,7 +251,7 @@ func TestTranscodeLoop_GivenNoPMSession_DoesntTryToRedeem(t *testing.T) {
 	recipient.AssertNotCalled(t, "RedeemWinningTickets", mock.Anything)
 }
 
-func TestTranscodeLoop_GivenRedeemError_ErrorLogIsWritten(t *testing.T) {
+func TestTranscodeLoop_GivenRedeemErrorAtVideoSessionTimeout_ErrorLogIsWritten(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver("")
@@ -285,7 +285,7 @@ func TestTranscodeLoop_GivenRedeemError_ErrorLogIsWritten(t *testing.T) {
 	assert.Equal(t, int64(1), errorLogsAfter-errorLogsBefore)
 }
 
-func TestTranscodeLoop_GivenRedeemError_StillCleanspmSessionsCache(t *testing.T) {
+func TestTranscodeLoop_GivenRedeemErrorAtVideoSessionTimeout_StillCleanspmSessionsCache(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver("")

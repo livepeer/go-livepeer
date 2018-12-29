@@ -54,7 +54,6 @@ type LivepeerNode struct {
 	// Transcoder public fields
 	SegmentChans     map[ManifestID]SegmentChan
 	Recipient        pm.Recipient
-	pmSessions       map[ManifestID]map[string]bool
 	OrchestratorPool net.OrchestratorPool
 	Ipfs             ipfs.IpfsApi
 	ServiceURI       *url.URL
@@ -62,6 +61,7 @@ type LivepeerNode struct {
 	Transcoder       Transcoder
 
 	// Transcoder private fields
+	pmSessions      map[ManifestID]map[string]bool
 	segmentMutex    *sync.Mutex
 	pmSessionsMutex *sync.Mutex
 	tcoderMutex     *sync.RWMutex
