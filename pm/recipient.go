@@ -115,7 +115,7 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 }
 
 // RedeemWinningTicket redeems all winning tickets with the broker
-// for a session ID
+// for a all sessionIDs
 func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 	tickets, sigs, recipientRands, err := r.store.LoadWinningTickets(sessionIDs)
 	if err != nil {
