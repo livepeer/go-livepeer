@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/livepeer/go-livepeer/pm"
+
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/ipfs"
@@ -51,6 +53,7 @@ type LivepeerNode struct {
 
 	// Transcoder public fields
 	SegmentChans     map[ManifestID]SegmentChan
+	Recipient        pm.Recipient
 	OrchestratorPool net.OrchestratorPool
 	Ipfs             ipfs.IpfsApi
 	ServiceURI       *url.URL
@@ -58,26 +61,30 @@ type LivepeerNode struct {
 	Transcoder       Transcoder
 
 	// Transcoder private fields
-	segmentMutex *sync.Mutex
-	tcoderMutex  *sync.RWMutex
-	taskMutex    *sync.RWMutex
-	taskChans    map[int64]TranscoderChan
-	taskCount    int64
+	pmSessions      map[ManifestID]map[string]bool
+	segmentMutex    *sync.Mutex
+	pmSessionsMutex *sync.Mutex
+	tcoderMutex     *sync.RWMutex
+	taskMutex       *sync.RWMutex
+	taskChans       map[int64]TranscoderChan
+	taskCount       int64
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
 	return &LivepeerNode{
-		Eth:          e,
-		WorkDir:      wd,
-		Database:     dbh,
-		EthServices:  make(map[string]eth.EventService),
-		SegmentChans: make(map[ManifestID]SegmentChan),
-		segmentMutex: &sync.Mutex{},
-		tcoderMutex:  &sync.RWMutex{},
-		taskMutex:    &sync.RWMutex{},
-		taskChans:    make(map[int64]TranscoderChan),
+		Eth:             e,
+		WorkDir:         wd,
+		Database:        dbh,
+		EthServices:     make(map[string]eth.EventService),
+		SegmentChans:    make(map[ManifestID]SegmentChan),
+		pmSessions:      make(map[ManifestID]map[string]bool),
+		segmentMutex:    &sync.Mutex{},
+		pmSessionsMutex: &sync.Mutex{},
+		tcoderMutex:     &sync.RWMutex{},
+		taskMutex:       &sync.RWMutex{},
+		taskChans:       make(map[int64]TranscoderChan),
 	}, nil
 
 }

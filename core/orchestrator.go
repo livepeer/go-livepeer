@@ -17,15 +17,15 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
-	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
-const TranscodeLoopTimeout = 10 * time.Minute
+var transcodeLoopTimeout = 10 * time.Minute
 
 // Transcoder / orchestrator RPC interface implementation
 type orchestrator struct {
@@ -56,7 +56,7 @@ func (orch *orchestrator) VerifySig(addr ethcommon.Address, msg string, sig []by
 	if orch.node == nil || orch.node.Eth == nil {
 		return true
 	}
-	return eth.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
+	return pm.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
 }
 
 func (orch *orchestrator) Address() ethcommon.Address {
@@ -305,7 +305,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 	go func() {
 		for {
 			// XXX make context timeout configurable
-			ctx, cancel := context.WithTimeout(context.Background(), TranscodeLoopTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), transcodeLoopTimeout)
 			select {
 			case <-ctx.Done():
 				// timeout; clean up goroutine here
@@ -318,6 +318,15 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 					delete(n.SegmentChans, md.ManifestID)
 				}
 				n.segmentMutex.Unlock()
+				if n.Recipient != nil {
+					sessionIDs := getAndClearPMSessionIDsByManifestID(n, md.ManifestID)
+					if len(sessionIDs) > 0 {
+						err := n.Recipient.RedeemWinningTickets(sessionIDs)
+						if err != nil {
+							glog.Errorf("Error redeeming winning tickets for manifestID %v and sessions %v. Errors: %+v", md.ManifestID, sessionIDs, err)
+						}
+					}
+				}
 				return
 			case chanData := <-segChan:
 				chanData.res <- n.transcodeSeg(config, chanData.seg, chanData.md)
@@ -395,6 +404,21 @@ func NewRemoteTranscoder(n *LivepeerNode, stream net.Transcoder_RegisterTranscod
 		stream: stream,
 		eof:    make(chan struct{}, 1),
 	}
+}
+
+func getAndClearPMSessionIDsByManifestID(n *LivepeerNode, m ManifestID) []string {
+	n.pmSessionsMutex.Lock()
+	defer n.pmSessionsMutex.Unlock()
+	sessionIDs := make([]string, len(n.pmSessions[m]))
+	i := 0
+	for sessionID := range n.pmSessions[m] {
+		sessionIDs[i] = sessionID
+		i++
+	}
+
+	delete(n.pmSessions, m)
+
+	return sessionIDs
 }
 
 func randName() string {

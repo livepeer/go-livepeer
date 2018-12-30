@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livepeer/go-livepeer/pm"
+
 	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -95,6 +97,8 @@ func main() {
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
 	standaloneTranscoder := flag.Bool("standaloneTranscoder", false, "Set to true to be a standalone transcoder")
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
+	faceValue := flag.Float64("faceValue", 0, "The faceValue to expect in PM tickets, denominated in ETH (e.g. 0.3)")
+	winProb := flag.Float64("winProb", 0, "The win probability to expect in PM tickets, as a percent float between 0 and 100 (e.g. 5.3)")
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
@@ -300,6 +304,16 @@ func main() {
 
 			if err := setupOrchestrator(ctx, n, em, *ipfsPath, *initializeRound); err != nil {
 				glog.Errorf("Error setting up orchestrator: %v", err)
+				return
+			}
+
+			sigVerifier := &pm.DefaultSigVerifier{}
+			validator := pm.NewValidator(n.Eth.Account().Address, sigVerifier)
+			faceValueInWei := eth.ToBaseUnit(big.NewFloat(*faceValue))
+			winProbBigInt := eth.FromPercOfUint256(*winProb)
+			n.Recipient, err = pm.NewRecipient(n.Eth, validator, n.Database, faceValueInWei, winProbBigInt)
+			if err != nil {
+				glog.Errorf("Error setting up PM recipient: %v", err)
 				return
 			}
 		}

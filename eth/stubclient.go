@@ -6,10 +6,12 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/pm"
 )
 
 type StubClient struct {
@@ -87,6 +89,49 @@ func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
 }
 func (e *StubClient) IsActiveTranscoder() (bool, error) { return false, nil }
 func (e *StubClient) GetTotalBonded() (*big.Int, error) { return big.NewInt(0), nil }
+
+// TicketBroker
+func (e *StubClient) FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) (*types.Transaction, error) {
+	return nil, nil
+
+}
+func (e *StubClient) FundDeposit(amount *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) FundPenaltyEscrow(amount *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) ApproveSigners(signers []ethcommon.Address) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) RequestSignersRevocation(signers []ethcommon.Address) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) Unlock() (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) CancelUnlock() (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) Withdraw() (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) IsUsedTicket(ticket *pm.Ticket) (bool, error) {
+	return true, nil
+}
+func (e *StubClient) IsApprovedSigner(sender ethcommon.Address, signer ethcommon.Address) (bool, error) {
+	return true, nil
+}
+func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
+	Deposit       *big.Int
+	PenaltyEscrow *big.Int
+	WithdrawBlock *big.Int
+}, err error) {
+	return
+}
 
 // Parameters
 

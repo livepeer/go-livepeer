@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"database/sql"
 	"math/big"
+	"strconv"
+	"strings"
 	"text/template"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -22,8 +24,7 @@ type DB struct {
 	useUnbondingLock           *sql.Stmt
 	unbondingLocks             *sql.Stmt
 	withdrawableUnbondingLocks *sql.Stmt
-	insertWinningTicket           *sql.Stmt
-	selectWinningTicketsBySession *sql.Stmt
+	insertWinningTicket        *sql.Stmt
 }
 
 type DBUnbondingLock struct {
@@ -68,6 +69,8 @@ var schema = `
 		sig BLOB,
 		sessionID STRING
 	);
+
+	CREATE INDEX IF NOT EXISTS idx_winningtickets_sessionid ON winningTickets(sessionID);
 `
 
 func InitDB(dbPath string) (*DB, error) {
@@ -162,14 +165,6 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.insertWinningTicket = stmt
 
-	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets WHERE sessionID = ?")
-	if err != nil {
-		glog.Error("Unable to prepare selectWinningTicketsBySession ", err)
-		d.Close()
-		return nil, err
-	}
-	d.selectWinningTicketsBySession = stmt
-
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -193,9 +188,6 @@ func (db *DB) Close() {
 	}
 	if db.insertWinningTicket != nil {
 		db.insertWinningTicket.Close()
-	}
-	if db.selectWinningTicketsBySession != nil {
-		db.selectWinningTicketsBySession.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -337,12 +329,12 @@ func (db *DB) StoreWinningTicket(sessionID string, ticket *pm.Ticket, sig []byte
 	return nil
 }
 
-func (db *DB) LoadWinningTickets(sessionID string) (tickets []*pm.Ticket, sigs [][]byte, recipientRands []*big.Int, err error) {
-	rows, err := db.selectWinningTicketsBySession.Query(sessionID)
+func (db *DB) LoadWinningTickets(sessionIDs []string) (tickets []*pm.Ticket, sigs [][]byte, recipientRands []*big.Int, err error) {
+	rows, err := db.dbh.Query(buildWinningTicketsQuery(sessionIDs))
 	defer rows.Close()
 
 	if err != nil {
-		err = errors.Wrapf(err, "failed loading winning tickets for sessionID %v", sessionID)
+		err = errors.Wrapf(err, "failed loading winning tickets for sessionIDs %v", sessionIDs)
 		return
 	}
 
@@ -373,4 +365,16 @@ func (db *DB) LoadWinningTickets(sessionID string) (tickets []*pm.Ticket, sigs [
 	}
 
 	return
+}
+
+// We are building a query string instead of using a prepared statement because prepared statements don't
+// support IN queries. We want to use IN for the performance benefit, rather than running len(sessionIDs)
+// queries.
+// The known risk with string queries is SQL injection, however in this case all sessionID values are generated
+// by O, so such injections are not likely.
+func buildWinningTicketsQuery(sessionIDs []string) string {
+	for i := 0; i < len(sessionIDs); i++ {
+		sessionIDs[i] = strconv.Quote(sessionIDs[i])
+	}
+	return "SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets WHERE sessionID IN (" + strings.Join(sessionIDs, ", ") + ")"
 }

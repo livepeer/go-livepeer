@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/stretchr/testify/mock"
 )
 
 type stubTicketStore struct {
@@ -43,7 +44,7 @@ func (ts *stubTicketStore) StoreWinningTicket(sessionID string, ticket *Ticket, 
 	return nil
 }
 
-func (ts *stubTicketStore) LoadWinningTickets(sessionID string) ([]*Ticket, [][]byte, []*big.Int, error) {
+func (ts *stubTicketStore) LoadWinningTickets(sessionIDs []string) ([]*Ticket, [][]byte, []*big.Int, error) {
 	ts.lock.RLock()
 	defer ts.lock.RUnlock()
 
@@ -51,7 +52,26 @@ func (ts *stubTicketStore) LoadWinningTickets(sessionID string) ([]*Ticket, [][]
 		return nil, nil, nil, fmt.Errorf("stub ticket store load error")
 	}
 
-	return ts.tickets[sessionID], ts.sigs[sessionID], ts.recipientRands[sessionID], nil
+	allTix := make([]*Ticket, 0)
+	allSigs := make([][]byte, 0)
+	allRecipientRands := make([]*big.Int, 0)
+
+	for _, sessionID := range sessionIDs {
+		tickets := ts.tickets[sessionID]
+		if tickets != nil && len(tickets) > 0 {
+			allTix = append(allTix, tickets...)
+		}
+		sigs := ts.sigs[sessionID]
+		if sigs != nil && len(sigs) > 0 {
+			allSigs = append(allSigs, sigs...)
+		}
+		recipientRands := ts.recipientRands[sessionID]
+		if recipientRands != nil && len(recipientRands) > 0 {
+			allRecipientRands = append(allRecipientRands, recipientRands...)
+		}
+	}
+
+	return allTix, allSigs, allRecipientRands, nil
 }
 
 type stubSigVerifier struct {
@@ -215,4 +235,31 @@ func (s *stubSigner) Sign(msg []byte) ([]byte, error) {
 
 func (s *stubSigner) Account() accounts.Account {
 	return s.account
+}
+
+// MockRecipient is useful for testing components that depend on pm.Recipient, such as
+// LivepeerNode
+type MockRecipient struct {
+	mock.Mock
+}
+
+func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error) {
+	args := m.Called(ticket, sig, seed)
+	return args.String(0), args.Bool(1), args.Error(2)
+}
+
+func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
+	args := m.Called(sessionIDs)
+	return args.Error(0)
+}
+
+func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
+	args := m.Called(sender)
+
+	var params *TicketParams
+	if args.Get(0) != nil {
+		params = args.Get(0).(*TicketParams)
+	}
+
+	return params, args.Error(1)
 }

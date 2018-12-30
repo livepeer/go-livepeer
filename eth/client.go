@@ -34,6 +34,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/pm"
 )
 
 var (
@@ -81,6 +82,24 @@ type LivepeerEthClient interface {
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
 	GetTotalBonded() (*big.Int, error)
+
+	// TicketBroker
+	FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) (*types.Transaction, error)
+	FundDeposit(amount *big.Int) (*types.Transaction, error)
+	FundPenaltyEscrow(amount *big.Int) (*types.Transaction, error)
+	ApproveSigners(signers []ethcommon.Address) (*types.Transaction, error)
+	RequestSignersRevocation(signers []ethcommon.Address) (*types.Transaction, error)
+	Unlock() (*types.Transaction, error)
+	CancelUnlock() (*types.Transaction, error)
+	Withdraw() (*types.Transaction, error)
+	RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error)
+	IsUsedTicket(ticket *pm.Ticket) (bool, error)
+	IsApprovedSigner(sender ethcommon.Address, signer ethcommon.Address) (bool, error)
+	Senders(addr ethcommon.Address) (struct {
+		Deposit       *big.Int
+		PenaltyEscrow *big.Int
+		WithdrawBlock *big.Int
+	}, error)
 
 	// Parameters
 	NumActiveTranscoders() (*big.Int, error)

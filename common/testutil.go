@@ -3,6 +3,7 @@ package common
 import (
 	"database/sql"
 	"fmt"
+	"math/big"
 	"testing"
 )
 
@@ -23,4 +24,12 @@ func TempDB(t *testing.T) (*DB, *sql.DB, error) {
 		return nil, nil, err
 	}
 	return dbh, raw, nil
+}
+
+func MaxUint256OrFatal(t *testing.T) *big.Int {
+	n, ok := new(big.Int).SetString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16)
+	if !ok {
+		t.Fatalf("unexpected error creating max value of uint256")
+	}
+	return n
 }

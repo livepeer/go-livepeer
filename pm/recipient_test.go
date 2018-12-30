@@ -10,6 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -232,7 +235,7 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce)
 	}
 
-	storeTickets, storeSigs, storeRecipientRands, err := ts.LoadWinningTickets(ticket.RecipientRandHash.Hex())
+	storeTickets, storeSigs, storeRecipientRands, err := ts.LoadWinningTickets([]string{ticket.RecipientRandHash.Hex()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +294,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce)
 	}
 
-	storeTickets, storeSigs, storeRecipientRands, err := ts.LoadWinningTickets(ticket.RecipientRandHash.Hex())
+	storeTickets, storeSigs, storeRecipientRands, err := ts.LoadWinningTickets([]string{ticket.RecipientRandHash.Hex()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +327,7 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	}
 
 	// Redeem ticket to invalidate recipientRand
-	if err := r.RedeemWinningTickets(ticket.RecipientRandHash.Hex()); err != nil {
+	if err := r.RedeemWinningTickets([]string{ticket.RecipientRandHash.Hex()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -418,7 +421,7 @@ func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {
 	// Config stub ticket store to fail load
 	ts.loadShouldFail = true
 
-	err := r.RedeemWinningTickets("foo")
+	err := r.RedeemWinningTickets([]string{"foo"})
 	if err == nil {
 		t.Error("expected ticket store load error")
 	}
@@ -449,7 +452,7 @@ func TestRedeemWinningTickets_SingleTicket_SendersError(t *testing.T) {
 	// Config stub broker to fail getting deposit
 	b.sendersShouldFail = true
 
-	err = r.RedeemWinningTickets(sessionID)
+	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
 		t.Error("expected broker senders error")
 	}
@@ -481,7 +484,7 @@ func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testin
 	b.SetDeposit(sender, big.NewInt(0))
 	b.SetPenaltyEscrow(sender, big.NewInt(0))
 
-	err = r.RedeemWinningTickets(sessionID)
+	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
 		t.Error("expected zero deposit and penalty escrow error")
 	}
@@ -513,7 +516,7 @@ func TestRedeemWinningTickets_SingleTicket_RedeemError(t *testing.T) {
 	// Config stub broker to fail redeem
 	b.redeemShouldFail = true
 
-	err = r.RedeemWinningTickets(sessionID)
+	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
 		t.Error("expected broker redeem error")
 	}
@@ -560,7 +563,7 @@ func TestRedeemWinningTickets_SingleTicket(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
-	err = r.RedeemWinningTickets(sessionID)
+	err = r.RedeemWinningTickets([]string{sessionID})
 	if err != nil {
 		t.Error(err)
 	}
@@ -616,7 +619,7 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
-	err = r.RedeemWinningTickets(sessionID)
+	err = r.RedeemWinningTickets([]string{sessionID})
 	if err != nil {
 		t.Error(err)
 	}
@@ -646,6 +649,53 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 	if _, ok := r.(*recipient).senderNonces[recipientRand.String()]; ok {
 		t.Error("expected to clear senderNonce memory")
 	}
+}
+
+func TestRedeemWinningTickets_MultipleTicketsFromMultipleSessions(t *testing.T) {
+	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
+	// Config stub validator with valid winning tickets
+	v.SetIsWinningTicket(true)
+	require := require.New(t)
+
+	params0 := ticketParamsOrFatal(t, r, sender)
+	ticket0 := newTicket(sender, params0, 1)
+	sessionID0, won, err := r.ReceiveTicket(ticket0, sig, params0.Seed)
+	require.Nil(err)
+	require.True(won)
+
+	params1 := ticketParamsOrFatal(t, r, sender)
+	ticket1 := newTicket(sender, params1, 1)
+	sessionID1, won, err := r.ReceiveTicket(ticket1, sig, params1.Seed)
+	require.Nil(err)
+	require.True(won)
+
+	require.NotEqual(sessionID0, sessionID1)
+
+	err = r.RedeemWinningTickets([]string{sessionID0, sessionID1})
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	used, err := b.IsUsedTicket(ticket0)
+	require.Nil(err)
+	assert.True(used)
+	used, err = b.IsUsedTicket(ticket1)
+	require.Nil(err)
+	assert.True(used)
+
+	recipientRand0 := genRecipientRand(sender, secret, params0.Seed)
+	recipientRand1 := genRecipientRand(sender, secret, params1.Seed)
+
+	_, ok := r.(*recipient).invalidRands.Load(recipientRand0.String())
+	assert.True(ok)
+	_, ok = r.(*recipient).invalidRands.Load(recipientRand1.String())
+	assert.True(ok)
+
+	_, ok = r.(*recipient).senderNonces[recipientRand0.String()]
+	assert.False(ok)
+	_, ok = r.(*recipient).senderNonces[recipientRand1.String()]
+	assert.False(ok)
 }
 
 func TestTicketParams(t *testing.T) {
