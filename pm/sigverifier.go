@@ -15,6 +15,15 @@ type SigVerifier interface {
 	Verify(addr ethcommon.Address, msg, sig []byte) bool
 }
 
+// DefaultSigVerifier is client-side-only implementation of sig verification, i.e. not relying on
+// any smart contract inputs.
+type DefaultSigVerifier struct {
+}
+
+func (sv *DefaultSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool {
+	return VerifySig(addr, msg, sig)
+}
+
 // ApprovedSigVerifier is an implementation of the SigVerifier interface
 // that relies on an implementation of the Broker interface to provide a registry
 // mapping ETH addresses to approved signer sets. This implementation will

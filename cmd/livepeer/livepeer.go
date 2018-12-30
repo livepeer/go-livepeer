@@ -307,7 +307,7 @@ func main() {
 				return
 			}
 
-			sigVerifier := pm.NewApprovedSigVerifier(n.Eth)
+			sigVerifier := &pm.DefaultSigVerifier{}
 			validator := pm.NewValidator(n.Eth.Account().Address, sigVerifier)
 			faceValueInWei := eth.ToBaseUnit(big.NewFloat(*faceValue))
 			winProbBigInt := eth.FromPercOfUint256(*winProb)
