@@ -12,7 +12,94 @@ import (
 	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/stretchr/testify/mock"
 )
+
+type MockClient struct {
+	mock.Mock
+
+	// Embed StubClient to call its methods with MockClient
+	// as the receiver so that MockClient implements the LivepeerETHClient
+	// interface
+	*StubClient
+}
+
+// TicketBroker
+
+func (m *MockClient) FundAndApproveSigners(depositAmount, penaltyEscrowAmount *big.Int, signers []common.Address) (*types.Transaction, error) {
+	args := m.Called(depositAmount, penaltyEscrowAmount, signers)
+
+	arg0 := args.Get(0)
+	if arg0 == nil {
+		return nil, args.Error(1)
+	}
+
+	return arg0.(*types.Transaction), args.Error(1)
+}
+
+func (m *MockClient) FundDeposit(amount *big.Int) (*types.Transaction, error) {
+	args := m.Called(amount)
+
+	arg0 := args.Get(0)
+	if arg0 == nil {
+		return nil, args.Error(1)
+	}
+
+	return arg0.(*types.Transaction), args.Error(1)
+}
+
+func (m *MockClient) Senders(addr common.Address) (sender struct {
+	Deposit       *big.Int
+	PenaltyEscrow *big.Int
+	WithdrawBlock *big.Int
+}, err error) {
+	args := m.Called(addr)
+
+	arg0 := args.Get(0)
+	if arg0 != nil {
+		sender.Deposit = arg0.(*big.Int)
+	}
+	arg1 := args.Get(1)
+	if arg1 != nil {
+		sender.PenaltyEscrow = arg1.(*big.Int)
+	}
+	arg2 := args.Get(2)
+	if arg2 != nil {
+		sender.WithdrawBlock = arg2.(*big.Int)
+	}
+
+	err = args.Error(3)
+
+	return
+}
+
+func (m *MockClient) MinPenaltyEscrow() (*big.Int, error) {
+	args := m.Called()
+
+	arg0 := args.Get(0)
+	if arg0 == nil {
+		return nil, args.Error(1)
+	}
+
+	return arg0.(*big.Int), args.Error(1)
+}
+
+func (m *MockClient) Account() accounts.Account {
+	args := m.Called()
+
+	arg0 := args.Get(0)
+	if arg0 == nil {
+		return accounts.Account{}
+	}
+
+	return arg0.(accounts.Account)
+}
+
+func (m *MockClient) CheckTx(tx *types.Transaction) error {
+	args := m.Called()
+
+	return args.Error(0)
+}
 
 type StubClient struct {
 	SubLogsCh                    chan types.Log
@@ -132,6 +219,9 @@ func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
 }, err error) {
 	return
 }
+func (e *StubClient) MinPenaltyEscrow() (*big.Int, error) {
+	return nil, nil
+}
 
 // Parameters
 
@@ -146,7 +236,9 @@ func (c *StubClient) TargetBondingRate() (*big.Int, error)    { return big.NewIn
 // Helpers
 
 func (c *StubClient) ContractAddresses() map[string]common.Address { return nil }
-func (c *StubClient) CheckTx(tx *types.Transaction) error          { return nil }
+func (c *StubClient) CheckTx(tx *types.Transaction) error {
+	return nil
+}
 func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, gasPrice *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }

@@ -100,6 +100,7 @@ type LivepeerEthClient interface {
 		PenaltyEscrow *big.Int
 		WithdrawBlock *big.Int
 	}, error)
+	MinPenaltyEscrow() (*big.Int, error)
 
 	// Parameters
 	NumActiveTranscoders() (*big.Int, error)
