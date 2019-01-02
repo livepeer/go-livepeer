@@ -157,6 +157,26 @@ func (w *wizard) readFloat() float64 {
 	}
 }
 
+func (w *wizard) readFloatAndValidate(validate func(in float64) (float64, error)) float64 {
+	for {
+		fmt.Printf("> ")
+		text, err := w.in.ReadString('\n')
+		if err != nil {
+			log.Crit("Failed to read user input", "err", err)
+		}
+		if text = strings.TrimSpace(text); text == "" {
+			continue
+		}
+		val, err := strconv.ParseFloat(text, 64)
+		validFloat, err := validate(val)
+		if err != nil {
+			log.Error("Failed to validate input", "err", err)
+			continue
+		}
+		return validFloat
+	}
+}
+
 func (w *wizard) readDefaultFloat(def float64) float64 {
 	fmt.Printf("> ")
 	text, err := w.in.ReadString('\n')
