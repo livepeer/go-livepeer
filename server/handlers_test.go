@@ -343,6 +343,71 @@ func TestSenderInfoHandler_Success(t *testing.T) {
 	assert.Equal(withdrawBlock, sender.WithdrawBlock)
 }
 
+func TestTicketBrokerParamsHandler_MissingClient(t *testing.T) {
+	handler := ticketBrokerParamsHandler(nil)
+
+	resp := httpResp(handler, "GET", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
+}
+
+func TestTicketBrokerParamsHandler_MinPenaltyEscrowError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := ticketBrokerParamsHandler(client)
+
+	client.On("MinPenaltyEscrow").Return(nil, errors.New("MinPenaltyEscrow error"))
+
+	resp := httpResp(handler, "GET", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not query TicketBroker minPenaltyEscrow", strings.TrimSpace(string(body)))
+}
+
+func TestTicketBrokerParamsHandler_UnlockPeriodError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := ticketBrokerParamsHandler(client)
+
+	client.On("MinPenaltyEscrow").Return(big.NewInt(50), nil)
+	client.On("UnlockPeriod").Return(nil, errors.New("UnlockPeriod error"))
+
+	resp := httpResp(handler, "GET", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not query TicketBroker unlockPeriod", strings.TrimSpace(string(body)))
+}
+
+func TestTicketBrokerParamsHandler_Success(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := ticketBrokerParamsHandler(client)
+	minPenaltyEscrow := big.NewInt(50)
+	unlockPeriod := big.NewInt(51)
+
+	client.On("MinPenaltyEscrow").Return(minPenaltyEscrow, nil)
+	client.On("UnlockPeriod").Return(unlockPeriod, nil)
+
+	resp := httpResp(handler, "GET", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	var params struct {
+		MinPenaltyEscrow *big.Int
+		UnlockPeriod     *big.Int
+	}
+	err := json.Unmarshal(body, &params)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+	assert.Equal(minPenaltyEscrow, params.MinPenaltyEscrow)
+	assert.Equal(unlockPeriod, params.UnlockPeriod)
+}
+
 func httpResp(handler http.Handler, method string, body io.Reader) *http.Response {
 	req := httptest.NewRequest(method, "http://example.com", body)
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")

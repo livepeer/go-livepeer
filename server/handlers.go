@@ -137,3 +137,45 @@ func senderInfoHandler(client eth.LivepeerEthClient) http.Handler {
 		w.Write(data)
 	})
 }
+
+func ticketBrokerParamsHandler(client eth.LivepeerEthClient) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			logAndRespondWithError(w, "missing ETH client", http.StatusInternalServerError)
+			return
+		}
+
+		minPenaltyEscrow, err := client.MinPenaltyEscrow()
+		if err != nil {
+			glog.Error(err)
+			logAndRespondWithError(w, "could not query TicketBroker minPenaltyEscrow", http.StatusInternalServerError)
+			return
+		}
+
+		unlockPeriod, err := client.UnlockPeriod()
+		if err != nil {
+			glog.Error(err)
+			logAndRespondWithError(w, "could not query TicketBroker unlockPeriod", http.StatusInternalServerError)
+			return
+		}
+
+		params := struct {
+			MinPenaltyEscrow *big.Int
+			UnlockPeriod     *big.Int
+		}{
+			minPenaltyEscrow,
+			unlockPeriod,
+		}
+
+		data, err := json.Marshal(params)
+		if err != nil {
+			glog.Error(err)
+			logAndRespondWithError(w, "could not query TicketBroker params", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
+	})
+}

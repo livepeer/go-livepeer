@@ -1080,6 +1080,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 	mux.Handle("/fundAndApproveSigners", mustHaveFormParams(fundAndApproveSignersHandler(s.LivepeerNode.Eth), "amount"))
 	mux.Handle("/fundDeposit", mustHaveFormParams(fundDepositHandler(s.LivepeerNode.Eth), "amount"))
 	mux.Handle("/senderInfo", senderInfoHandler(s.LivepeerNode.Eth))
+	mux.Handle("/ticketBrokerParams", ticketBrokerParamsHandler(s.LivepeerNode.Eth))
 
 	glog.Info("CLI server listening on ", bindAddr)
 	srv.ListenAndServe()

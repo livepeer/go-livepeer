@@ -84,6 +84,17 @@ func (m *MockClient) MinPenaltyEscrow() (*big.Int, error) {
 	return arg0.(*big.Int), args.Error(1)
 }
 
+func (m *MockClient) UnlockPeriod() (*big.Int, error) {
+	args := m.Called()
+
+	arg0 := args.Get(0)
+	if arg0 == nil {
+		return nil, args.Error(1)
+	}
+
+	return arg0.(*big.Int), args.Error(1)
+}
+
 func (m *MockClient) Account() accounts.Account {
 	args := m.Called()
 
