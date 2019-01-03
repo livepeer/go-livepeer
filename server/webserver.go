@@ -1079,6 +1079,9 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 
 	mux.Handle("/fundAndApproveSigners", mustHaveFormParams(fundAndApproveSignersHandler(s.LivepeerNode.Eth), "amount"))
 	mux.Handle("/fundDeposit", mustHaveFormParams(fundDepositHandler(s.LivepeerNode.Eth), "amount"))
+	mux.Handle("/unlock", unlockHandler(s.LivepeerNode.Eth))
+	mux.Handle("/cancelUnlock", cancelUnlockHandler(s.LivepeerNode.Eth))
+	mux.Handle("/withdraw", withdrawHandler(s.LivepeerNode.Eth))
 	mux.Handle("/senderInfo", senderInfoHandler(s.LivepeerNode.Eth))
 	mux.Handle("/ticketBrokerParams", ticketBrokerParamsHandler(s.LivepeerNode.Eth))
 

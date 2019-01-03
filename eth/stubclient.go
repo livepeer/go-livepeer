@@ -15,6 +15,26 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+func mockTransaction(args mock.Arguments, idx int) *types.Transaction {
+	arg := args.Get(idx)
+
+	if arg == nil {
+		return nil
+	}
+
+	return arg.(*types.Transaction)
+}
+
+func mockBigInt(args mock.Arguments, idx int) *big.Int {
+	arg := args.Get(idx)
+
+	if arg == nil {
+		return nil
+	}
+
+	return arg.(*big.Int)
+}
+
 type MockClient struct {
 	mock.Mock
 
@@ -28,24 +48,27 @@ type MockClient struct {
 
 func (m *MockClient) FundAndApproveSigners(depositAmount, penaltyEscrowAmount *big.Int, signers []common.Address) (*types.Transaction, error) {
 	args := m.Called(depositAmount, penaltyEscrowAmount, signers)
-
-	arg0 := args.Get(0)
-	if arg0 == nil {
-		return nil, args.Error(1)
-	}
-
-	return arg0.(*types.Transaction), args.Error(1)
+	return mockTransaction(args, 0), args.Error(1)
 }
 
 func (m *MockClient) FundDeposit(amount *big.Int) (*types.Transaction, error) {
 	args := m.Called(amount)
+	return mockTransaction(args, 0), args.Error(1)
+}
 
-	arg0 := args.Get(0)
-	if arg0 == nil {
-		return nil, args.Error(1)
-	}
+func (m *MockClient) Unlock() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
 
-	return arg0.(*types.Transaction), args.Error(1)
+func (m *MockClient) CancelUnlock() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) Withdraw() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
 }
 
 func (m *MockClient) Senders(addr common.Address) (sender struct {
@@ -54,20 +77,9 @@ func (m *MockClient) Senders(addr common.Address) (sender struct {
 	WithdrawBlock *big.Int
 }, err error) {
 	args := m.Called(addr)
-
-	arg0 := args.Get(0)
-	if arg0 != nil {
-		sender.Deposit = arg0.(*big.Int)
-	}
-	arg1 := args.Get(1)
-	if arg1 != nil {
-		sender.PenaltyEscrow = arg1.(*big.Int)
-	}
-	arg2 := args.Get(2)
-	if arg2 != nil {
-		sender.WithdrawBlock = arg2.(*big.Int)
-	}
-
+	sender.Deposit = mockBigInt(args, 0)
+	sender.PenaltyEscrow = mockBigInt(args, 1)
+	sender.WithdrawBlock = mockBigInt(args, 2)
 	err = args.Error(3)
 
 	return
@@ -75,24 +87,12 @@ func (m *MockClient) Senders(addr common.Address) (sender struct {
 
 func (m *MockClient) MinPenaltyEscrow() (*big.Int, error) {
 	args := m.Called()
-
-	arg0 := args.Get(0)
-	if arg0 == nil {
-		return nil, args.Error(1)
-	}
-
-	return arg0.(*big.Int), args.Error(1)
+	return mockBigInt(args, 0), args.Error(1)
 }
 
 func (m *MockClient) UnlockPeriod() (*big.Int, error) {
 	args := m.Called()
-
-	arg0 := args.Get(0)
-	if arg0 == nil {
-		return nil, args.Error(1)
-	}
-
-	return arg0.(*big.Int), args.Error(1)
+	return mockBigInt(args, 0), args.Error(1)
 }
 
 func (m *MockClient) Account() accounts.Account {
@@ -108,8 +108,12 @@ func (m *MockClient) Account() accounts.Account {
 
 func (m *MockClient) CheckTx(tx *types.Transaction) error {
 	args := m.Called()
-
 	return args.Error(0)
+}
+
+func (m *MockClient) LatestBlockNum() (*big.Int, error) {
+	args := m.Called()
+	return mockBigInt(args, 0), args.Error(1)
 }
 
 type StubClient struct {

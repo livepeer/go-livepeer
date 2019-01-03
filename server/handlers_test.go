@@ -286,6 +286,231 @@ func TestFundDepositHandler_Success(t *testing.T) {
 	assert.Equal("fundDeposit success", strings.TrimSpace(string(body)))
 }
 
+func TestUnlockHandler_MissingClient(t *testing.T) {
+	handler := unlockHandler(nil)
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
+}
+
+func TestUnlockHandler_TransactionSubmissionError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := unlockHandler(client)
+
+	client.On("Unlock").Return(nil, errors.New("Unlock error"))
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not execute unlock", strings.TrimSpace(string(body)))
+}
+
+func TestUnlockHandler_TransactionWaitError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := unlockHandler(client)
+
+	client.On("Unlock").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not execute unlock", strings.TrimSpace(string(body)))
+}
+
+func TestUnlockHandler_Success(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := unlockHandler(client)
+
+	client.On("Unlock").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+	assert.Equal("unlock success", strings.TrimSpace(string(body)))
+}
+
+func TestCancelUnlockHandler_MissingClient(t *testing.T) {
+	handler := cancelUnlockHandler(nil)
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
+}
+
+func TestCancelUnlockHandler_TransactionSubmissionError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := cancelUnlockHandler(client)
+
+	client.On("CancelUnlock").Return(nil, errors.New("CancelUnlock error"))
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not execute cancelUnlock", strings.TrimSpace(string(body)))
+}
+
+func TestCancelUnlockHandler_TransactionWaitError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := cancelUnlockHandler(client)
+
+	client.On("CancelUnlock").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not execute cancelUnlock", strings.TrimSpace(string(body)))
+}
+
+func TestCancelUnlockHandler_Success(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := cancelUnlockHandler(client)
+
+	client.On("CancelUnlock").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+	assert.Equal("cancelUnlock success", strings.TrimSpace(string(body)))
+}
+
+func TestWithdrawHandler_MissingClient(t *testing.T) {
+	handler := withdrawHandler(nil)
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
+}
+
+func TestWithdrawHandler_SendersError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawHandler(client)
+	addr := ethcommon.Address{}
+
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("Senders", mock.Anything).Return(nil, nil, nil, errors.New("Senders error"))
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not query sender info", strings.TrimSpace(string(body)))
+}
+
+func TestWithdrawHandler_LatestBlockNumError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawHandler(client)
+	addr := ethcommon.Address{}
+
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("Senders", mock.Anything).Return(nil, nil, big.NewInt(50), nil)
+	client.On("LatestBlockNum").Return(nil, errors.New("LatestBlockNum error"))
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not query current block", strings.TrimSpace(string(body)))
+}
+
+func TestWithdrawHandler_InUnlockPeriod(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawHandler(client)
+	addr := ethcommon.Address{}
+
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("Senders", mock.Anything).Return(nil, nil, big.NewInt(50), nil)
+	client.On("LatestBlockNum").Return(big.NewInt(49), nil)
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+	assert.Equal("sender is in unlock period", strings.TrimSpace(string(body)))
+}
+func TestWithdrawHandler_TransactionSubmissionError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawHandler(client)
+	addr := ethcommon.Address{}
+
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("Senders", mock.Anything).Return(nil, nil, big.NewInt(50), nil)
+	client.On("LatestBlockNum").Return(big.NewInt(51), nil)
+	client.On("Withdraw").Return(nil, errors.New("Withdraw error"))
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not execute withdraw", strings.TrimSpace(string(body)))
+}
+func TestWithdrawHandler_TransactionWaitError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawHandler(client)
+	addr := ethcommon.Address{}
+
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("Senders", mock.Anything).Return(nil, nil, big.NewInt(50), nil)
+	client.On("LatestBlockNum").Return(big.NewInt(51), nil)
+	client.On("Withdraw").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not execute withdraw", strings.TrimSpace(string(body)))
+}
+
+func TestWithdrawHandler_Success(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawHandler(client)
+	addr := ethcommon.Address{}
+
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("Senders", mock.Anything).Return(nil, nil, big.NewInt(50), nil)
+	client.On("LatestBlockNum").Return(big.NewInt(51), nil)
+	client.On("Withdraw").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
+
+	resp := httpResp(handler, "POST", nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+	assert.Equal("withdraw success", strings.TrimSpace(string(body)))
+}
+
 func TestSenderInfoHandler_MissingClient(t *testing.T) {
 	handler := senderInfoHandler(nil)
 
