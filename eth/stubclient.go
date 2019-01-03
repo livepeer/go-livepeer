@@ -237,6 +237,9 @@ func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
 func (e *StubClient) MinPenaltyEscrow() (*big.Int, error) {
 	return nil, nil
 }
+func (e *StubClient) UnlockPeriod() (*big.Int, error) {
+	return nil, nil
+}
 
 // Parameters
 
