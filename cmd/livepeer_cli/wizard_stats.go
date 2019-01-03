@@ -137,6 +137,10 @@ func (w *wizard) broadcastStats() {
 		table.Append(v)
 	}
 
+	if sender.WithdrawBlock.Cmp(big.NewInt(0)) > 0 && (sender.Deposit.Cmp(big.NewInt(0)) > 0 || sender.PenaltyEscrow.Cmp(big.NewInt(0)) > 0) {
+		table.Append([]string{"Withdraw Block", sender.WithdrawBlock.String()})
+	}
+
 	table.SetAlignment(tablewriter.ALIGN_RIGHT)
 	table.SetCenterSeparator("*")
 	table.SetRowLine(true)

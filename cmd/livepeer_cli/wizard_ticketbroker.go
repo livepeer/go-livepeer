@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -59,7 +60,7 @@ func (w *wizard) fundAndApproveSigners(currDeposit *big.Int, currPenaltyEscrow *
 	form := url.Values{
 		"amount": {eth.ToBaseUnit(big.NewFloat(amount)).String()},
 	}
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/fundAndApproveSigners", w.host, w.httpPort), form)
+	fmt.Println(httpPostWithParams(fmt.Sprintf("http://%v:%v/fundAndApproveSigners", w.host, w.httpPort), form))
 }
 
 func (w *wizard) fundDeposit(currDeposit *big.Int) {
@@ -72,7 +73,96 @@ func (w *wizard) fundDeposit(currDeposit *big.Int) {
 	form := url.Values{
 		"amount": {eth.ToBaseUnit(big.NewFloat(amount)).String()},
 	}
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/fundDeposit", w.host, w.httpPort), form)
+	fmt.Println(httpPostWithParams(fmt.Sprintf("http://%v:%v/fundDeposit", w.host, w.httpPort), form))
+}
+
+func (w *wizard) unlock() {
+	sender, err := w.senderInfo()
+	if err != nil {
+		glog.Errorf("Error getting sender info: %v", err)
+		return
+	}
+
+	if sender.WithdrawBlock.Cmp(big.NewInt(0)) > 0 {
+		fmt.Println("Already in the unlock period")
+		return
+	}
+
+	fmt.Printf("Current Deposit: %v\n", eth.FormatUnits(sender.Deposit, "ETH"))
+	fmt.Printf("Current Penalty Escrow: %v\n", eth.FormatUnits(sender.PenaltyEscrow, "ETH"))
+
+	fmt.Printf("Would you like initiate the unlock period? (y/n) - ")
+
+	input := w.readStringAndValidate(func(in string) (string, error) {
+		if in != "y" && in != "n" {
+			return "", errors.New("Enter (y)es or (n)o")
+		}
+
+		return in, nil
+	})
+	if input == "n" {
+		return
+	}
+
+	fmt.Println(httpPost(fmt.Sprintf("http://%v:%v/unlock", w.host, w.httpPort)))
+}
+
+func (w *wizard) cancelUnlock() {
+	sender, err := w.senderInfo()
+	if err != nil {
+		glog.Errorf("Error getting sender info: %v", err)
+		return
+	}
+
+	if sender.WithdrawBlock.Cmp(big.NewInt(0)) <= 0 {
+		fmt.Println("Unlock period has not been initiated")
+		return
+	}
+
+	fmt.Printf("Withdraw Block: %v\n", sender.WithdrawBlock)
+
+	fmt.Printf("Would you like to cancel the unlock period? (y/n) - ")
+
+	input := w.readStringAndValidate(func(in string) (string, error) {
+		if in != "y" && in != "n" {
+			return "", errors.New("Enter (y)es or (n)o")
+		}
+
+		return in, nil
+	})
+	if input == "n" {
+		return
+	}
+
+	fmt.Println(httpPost(fmt.Sprintf("http://%v:%v/cancelUnlock", w.host, w.httpPort)))
+}
+
+func (w *wizard) withdraw() {
+	sender, err := w.senderInfo()
+	if err != nil {
+		glog.Errorf("Error getting sender info: %v", err)
+		return
+	}
+
+	if sender.WithdrawBlock.Cmp(big.NewInt(0)) <= 0 {
+		fmt.Println("Unlock period has not been initiated")
+		return
+	}
+
+	fmt.Printf("Would you like to withdraw? (y/n) - ")
+
+	input := w.readStringAndValidate(func(in string) (string, error) {
+		if in != "y" && in != "n" {
+			return "", errors.New("Enter (y)es or (n)o")
+		}
+
+		return in, nil
+	})
+	if input == "n" {
+		return
+	}
+
+	fmt.Println(httpPost(fmt.Sprintf("http://%v:%v/withdraw", w.host, w.httpPort)))
 }
 
 func (w *wizard) senderInfo() (sender struct {
