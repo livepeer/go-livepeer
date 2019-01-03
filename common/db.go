@@ -20,7 +20,7 @@ type DB struct {
 
 	// prepared statements
 	selectOrchs                *sql.Stmt
-	updateOrchs                *sql.Stmt
+	updateOrch                 *sql.Stmt
 	updateKV                   *sql.Stmt
 	insertUnbondingLock        *sql.Stmt
 	useUnbondingLock           *sql.Stmt
@@ -56,8 +56,8 @@ var schema = `
 
 	CREATE TABLE IF NOT EXISTS orchestrators (
 		ethereumAddr STRING PRIMARY KEY,
-		createdAt STRING DEFAULT CURRENT_TIMESTAMP,
-		updatedAt STRING DEFAULT CURRENT_TIMESTAMP,
+		createdAt STRING DEFAULT CURRENT_TIMESTAMP NOT NULL,
+		updatedAt STRING DEFAULT CURRENT_TIMESTAMP NOT NULL,
 		serviceURI STRING
 	);
 
@@ -145,13 +145,13 @@ func InitDB(dbPath string) (*DB, error) {
 	d.selectOrchs = stmt
 
 	// updateOrchestrators statement
-	stmt, err = db.Prepare("INSERT OR REPLACE INTO orchestrators(updatedAt, serviceURI, ethereumAddr) VALUES(datetime(), ?, ?)")
+	stmt, err = db.Prepare("INSERT OR REPLACE INTO orchestrators(updatedAt, serviceURI, ethereumAddr, createdAt) VALUES(datetime(), ?1, ?2, (SELECT createdAt FROM orchestrators WHERE ethereumAddr = ?2))")
 	if err != nil {
 		glog.Error("Unable to prepare updateOrchestrators stmt ", err)
 		d.Close()
 		return nil, err
 	}
-	d.updateOrchs = stmt
+	d.updateOrch = stmt
 
 	// updateKV prepared statement
 	stmt, err = db.Prepare("UPDATE kv SET value=?, updatedAt = datetime() WHERE key=?")
@@ -207,8 +207,8 @@ func InitDB(dbPath string) (*DB, error) {
 
 func (db *DB) Close() {
 	glog.V(DEBUG).Info("Closing DB")
-	if db.updateOrchs != nil {
-		db.updateOrchs.Close()
+	if db.updateOrch != nil {
+		db.updateOrch.Close()
 	}
 	if db.selectOrchs != nil {
 		db.selectOrchs.Close()
@@ -265,11 +265,12 @@ func (db *DB) LastSeenBlock() (*big.Int, error) {
 	return big.NewInt(lastSeenBlock), nil
 }
 
-func (db *DB) UpdateOrchs(orch *DBOrch) error {
-	if db == nil {
+func (db *DB) UpdateOrch(orch *DBOrch) error {
+	if db == nil || orch == nil || orch.ServiceURI == "" || orch.EthereumAddr == "" {
 		return nil
 	}
-	_, err := db.updateOrchs.Exec(orch.ServiceURI, orch.EthereumAddr)
+
+	_, err := db.updateOrch.Exec(orch.ServiceURI, orch.EthereumAddr)
 	if err != nil {
 		glog.Error("db: Unable to update orchestrator ", err)
 	}

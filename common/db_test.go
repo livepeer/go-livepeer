@@ -106,13 +106,6 @@ func TestDBVersion(t *testing.T) {
 	}
 }
 
-func NewStubOrch(serviceURI string, ethereumAddr string) *DBOrch {
-	return &DBOrch{
-		ServiceURI:   serviceURI,
-		EthereumAddr: ethereumAddr,
-	}
-}
-
 func profilesMatch(j1 []ffmpeg.VideoProfile, j2 []ffmpeg.VideoProfile) bool {
 	if len(j1) != len(j2) {
 		return false
@@ -125,45 +118,83 @@ func profilesMatch(j1 []ffmpeg.VideoProfile, j2 []ffmpeg.VideoProfile) bool {
 	return true
 }
 
-func TestDBOrchestrators(t *testing.T) {
+func TestSelectUpdateOrchs_EmptyOrNilInputs_NoError(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
 
-	orch := NewStubOrch("127.0.0.1:8936", "0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe")
-	err = dbh.UpdateOrchs(orch)
+	// selecting empty set of orchs
+	orchs, err := dbh.SelectOrchs()
+	require.Nil(err)
+	assert.Empty(orchs)
 
-	if err != nil {
-		t.Error("Unexpected error in update orchs: ", err)
-	}
+	// updating a nil value
+	err = dbh.UpdateOrch(nil)
+	require.Nil(err)
+}
+
+func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
+
+	// adding row
+	orchAddress := string(pm.RandBytes(32))
+	orch := NewDBOrch("127.0.0.1:8936", orchAddress)
+
+	err = dbh.UpdateOrch(orch)
+	require.Nil(err)
 
 	orchs, err := dbh.SelectOrchs()
-	if err != nil || len(orchs) != 1 || orchs[0].ServiceURI != orch.ServiceURI {
-		t.Error("Unexpected error in update orchs: ", err)
-	}
+	require.Nil(err)
+	assert.Len(orchs, 1)
+	assert.Equal(orchs[0].ServiceURI, orch.ServiceURI)
 
-	orchUpdate := NewStubOrch("127.0.0.1:8937", "0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe")
-	err = dbh.UpdateOrchs(orchUpdate)
+	// updating row with same orchAddress
+	orchUpdate := NewDBOrch("127.0.0.1:8937", orchAddress)
+	err = dbh.UpdateOrch(orchUpdate)
+	require.Nil(err)
 
-	if err != nil {
-		t.Error("Unexpected error in update orchs: ", err)
-	}
+	updatedOrch, err := dbh.SelectOrchs()
+	assert.Len(updatedOrch, 1)
+	assert.Equal(updatedOrch[0].ServiceURI, orchUpdate.ServiceURI)
+}
 
-	orchs, err = dbh.SelectOrchs()
-	if err != nil || len(orchs) != 1 || orchs[0].ServiceURI != orchUpdate.ServiceURI {
-		t.Error("Unexpected error in update orchs: ", err)
-	}
+func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
 
-	orchAdd := NewStubOrch("127.0.0.1:8938", "0x5eD8Cee6b63b1c6AFce3AD7c92f4fD7E1B8fAd9F")
-	err = dbh.UpdateOrchs(orchAdd)
+	// adding one row
+	orchAddress := string(pm.RandBytes(32))
+	orch := NewDBOrch("127.0.0.1:8936", orchAddress)
+	err = dbh.UpdateOrch(orch)
+	require.Nil(err)
 
-	if err != nil {
-		t.Error("Unexpected error in update orchs: ", err)
-	}
-	orchs, err = dbh.SelectOrchs()
-	if err != nil || len(orchs) != 2 || orchs[1].ServiceURI != orchAdd.ServiceURI {
-		t.Error("Unexpected error in update orchs: ", err)
-	}
+	orchs, err := dbh.SelectOrchs()
+	require.Nil(err)
+	assert.Len(orchs, 1)
+	assert.Equal(orchs[0].ServiceURI, orch.ServiceURI)
+
+	// adding second row
+	orchAddress = string(pm.RandBytes(32))
+	orchAdd := NewDBOrch("127.0.0.1:8938", orchAddress)
+	err = dbh.UpdateOrch(orchAdd)
+	require.Nil(err)
+
+	orchsUpdated, err := dbh.SelectOrchs()
+	require.Nil(err)
+	assert.Len(orchsUpdated, 2)
+	assert.Equal(orchsUpdated[1].ServiceURI, orchAdd.ServiceURI)
 }
 
 func TestDBUnbondingLocks(t *testing.T) {
