@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -428,4 +429,24 @@ func (w *wizard) getGasPrice() string {
 		g = "automatic"
 	}
 	return g
+}
+
+func (w *wizard) currentBlock() (*big.Int, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/currentBlock", w.host, w.httpPort))
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("http response status not ok")
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return new(big.Int).SetBytes(body), nil
 }

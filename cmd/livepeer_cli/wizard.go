@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -56,6 +57,18 @@ func (w *wizard) readStringAndValidate(validate func(in string) (string, error))
 		}
 		return validText
 	}
+}
+
+// readStringYesOrNot reads a single line from stdin, trims spaces and
+// checks that the string is either y or n
+func (w *wizard) readStringYesOrNo() string {
+	return w.readStringAndValidate(func(in string) (string, error) {
+		if in != "y" && in != "n" {
+			return "", errors.New("Enter y or n")
+		}
+
+		return in, nil
+	})
 }
 
 // readDefaultString reads a single line from stdin, trimming if from spaces. If
@@ -175,6 +188,29 @@ func (w *wizard) readFloatAndValidate(validate func(in float64) (float64, error)
 		}
 		return validFloat
 	}
+}
+
+func (w *wizard) readPositiveFloat() float64 {
+	return w.readFloatAndValidate(func(in float64) (float64, error) {
+		if in < 0 {
+			return 0, errors.New("value must be positive")
+		}
+
+		return in, nil
+	})
+}
+
+func (w *wizard) readPositiveFloatAndValidate(validate func(in float64) (float64, error)) float64 {
+	return w.readFloatAndValidate(func(in float64) (float64, error) {
+		if in < 0 {
+			return 0, errors.New("value must be positive")
+		}
+		if _, err := validate(in); err != nil {
+			return 0, err
+		}
+
+		return in, nil
+	})
 }
 
 func (w *wizard) readDefaultFloat(def float64) float64 {
