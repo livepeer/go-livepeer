@@ -12,22 +12,29 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 )
 
-func logAndRespondWithError(w http.ResponseWriter, errMsg string, code int) {
-	glog.Error(errMsg)
+func respondWith500(w http.ResponseWriter, errMsg string) {
+	respondWithError(w, errMsg, http.StatusInternalServerError)
+}
+
+func respondWith400(w http.ResponseWriter, errMsg string) {
+	respondWithError(w, errMsg, http.StatusBadRequest)
+}
+
+func respondWithError(w http.ResponseWriter, errMsg string, code int) {
+	glog.Errorf("HTTP Response Error %v: %v", code, errMsg)
 	http.Error(w, errMsg, code)
 }
 
 func mustHaveFormParams(h http.Handler, params ...string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "parse form error", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("parse form error: %v", err))
 			return
 		}
 
 		for _, param := range params {
 			if r.FormValue(param) == "" {
-				logAndRespondWithError(w, fmt.Sprintf("missing form param: %s", param), http.StatusBadRequest)
+				respondWith400(w, fmt.Sprintf("missing form param: %s", param))
 				return
 			}
 		}
@@ -36,45 +43,59 @@ func mustHaveFormParams(h http.Handler, params ...string) http.Handler {
 	})
 }
 
+// BlockGetter is an interface which describes an object capable
+// of getting blocks
+type BlockGetter interface {
+	// LastSeenBlock returns the last seen block number
+	LastSeenBlock() (*big.Int, error)
+}
+
+func currentBlockHandler(getter BlockGetter) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if getter == nil {
+			respondWith500(w, "missing block getter")
+			return
+		}
+
+		blk, err := getter.LastSeenBlock()
+		if err != nil {
+			respondWith500(w, fmt.Sprintf("could not query last seen block: %v", err))
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write(blk.Bytes())
+	})
+}
+
 func fundAndApproveSignersHandler(client eth.LivepeerEthClient) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {
-			logAndRespondWithError(w, "missing ETH client", http.StatusInternalServerError)
+			respondWith500(w, "missing ETH client")
 			return
 		}
 
-		amount, err := common.ParseBigInt(r.FormValue("amount"))
+		depositAmount, err := common.ParseBigInt(r.FormValue("depositAmount"))
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "invalid amount", http.StatusBadRequest)
+			respondWith400(w, fmt.Sprintf("invalid depositAmount: %v", err))
 			return
 		}
 
-		penaltyEscrowAmount, err := client.MinPenaltyEscrow()
+		penaltyEscrowAmount, err := common.ParseBigInt(r.FormValue("penaltyEscrowAmount"))
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not execute fundAndApproveSigners", http.StatusInternalServerError)
+			respondWith400(w, fmt.Sprintf("invalid penaltyEscrowAmount: %v", err))
 			return
 		}
-
-		if amount.Cmp(penaltyEscrowAmount) < 0 {
-			logAndRespondWithError(w, "amount is not sufficient for minimum penalty escrow", http.StatusBadRequest)
-			return
-		}
-
-		depositAmount := new(big.Int).Sub(amount, penaltyEscrowAmount)
 
 		tx, err := client.FundAndApproveSigners(depositAmount, penaltyEscrowAmount, []ethcommon.Address{})
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not execute fundAndApproveSigners", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not execute fundAndApproveSigners: %v", err))
 			return
 		}
 
 		err = client.CheckTx(tx)
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not execute fundAndApproveSigners", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not execute fundAndApproveSigners: %v", err))
 			return
 		}
 
@@ -86,28 +107,25 @@ func fundAndApproveSignersHandler(client eth.LivepeerEthClient) http.Handler {
 func fundDepositHandler(client eth.LivepeerEthClient) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {
-			logAndRespondWithError(w, "missing ETH client", http.StatusInternalServerError)
+			respondWith500(w, "missing ETH client")
 			return
 		}
 
 		amount, err := common.ParseBigInt(r.FormValue("amount"))
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "invalid amount", http.StatusBadRequest)
+			respondWith400(w, fmt.Sprintf("invalid amount: %v", err))
 			return
 		}
 
 		tx, err := client.FundDeposit(amount)
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not execute fundDeposit", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not execute fundDeposit: %v", err))
 			return
 		}
 
 		err = client.CheckTx(tx)
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not execute fundDeposit", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not execute fundDeposit: %v", err))
 			return
 		}
 
@@ -119,21 +137,19 @@ func fundDepositHandler(client eth.LivepeerEthClient) http.Handler {
 func unlockHandler(client eth.LivepeerEthClient) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {
-			logAndRespondWithError(w, "missing ETH client", http.StatusInternalServerError)
+			respondWith500(w, "missing ETH client")
 			return
 		}
 
 		tx, err := client.Unlock()
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not execute unlock", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not execute unlock: %v", err))
 			return
 		}
 
 		err = client.CheckTx(tx)
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not execute unlock", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not execute unlock: %v", err))
 			return
 		}
 
@@ -145,21 +161,19 @@ func unlockHandler(client eth.LivepeerEthClient) http.Handler {
 func cancelUnlockHandler(client eth.LivepeerEthClient) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {
-			logAndRespondWithError(w, "missing ETH client", http.StatusInternalServerError)
+			respondWith500(w, "missing ETH client")
 			return
 		}
 
 		tx, err := client.CancelUnlock()
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not execute cancelUnlock", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not execute cancelUnlock: %v", err))
 			return
 		}
 
 		err = client.CheckTx(tx)
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not execute cancelUnlock", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not execute cancelUnlock: %v", err))
 			return
 		}
 
@@ -171,40 +185,19 @@ func cancelUnlockHandler(client eth.LivepeerEthClient) http.Handler {
 func withdrawHandler(client eth.LivepeerEthClient) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {
-			logAndRespondWithError(w, "missing ETH client", http.StatusInternalServerError)
-			return
-		}
-
-		sender, err := client.Senders(client.Account().Address)
-		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not query sender info", http.StatusInternalServerError)
-			return
-		}
-
-		currBlk, err := client.LatestBlockNum()
-		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not query current block", http.StatusInternalServerError)
-			return
-		}
-
-		if sender.WithdrawBlock.Cmp(currBlk) > 0 {
-			logAndRespondWithError(w, "sender is in unlock period", http.StatusBadRequest)
+			respondWith500(w, "missing ETH client")
 			return
 		}
 
 		tx, err := client.Withdraw()
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not execute withdraw", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not execute withdraw: %v", err))
 			return
 		}
 
 		err = client.CheckTx(tx)
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not execute withdraw", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not execute withdraw: %v", err))
 			return
 		}
 
@@ -216,21 +209,19 @@ func withdrawHandler(client eth.LivepeerEthClient) http.Handler {
 func senderInfoHandler(client eth.LivepeerEthClient) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {
-			logAndRespondWithError(w, "missing ETH client", http.StatusInternalServerError)
+			respondWith500(w, "missing ETH client")
 			return
 		}
 
 		sender, err := client.Senders(client.Account().Address)
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not query sender info", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not query sender info: %v", err))
 			return
 		}
 
 		data, err := json.Marshal(sender)
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not query sender info", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not query sender info: %v", err))
 			return
 		}
 
@@ -243,21 +234,19 @@ func senderInfoHandler(client eth.LivepeerEthClient) http.Handler {
 func ticketBrokerParamsHandler(client eth.LivepeerEthClient) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {
-			logAndRespondWithError(w, "missing ETH client", http.StatusInternalServerError)
+			respondWith500(w, "missing ETH client")
 			return
 		}
 
 		minPenaltyEscrow, err := client.MinPenaltyEscrow()
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not query TicketBroker minPenaltyEscrow", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not query TicketBroker minPenaltyEscrow: %v", err))
 			return
 		}
 
 		unlockPeriod, err := client.UnlockPeriod()
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not query TicketBroker unlockPeriod", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not query TicketBroker unlockPeriod: %v", err))
 			return
 		}
 
@@ -271,8 +260,7 @@ func ticketBrokerParamsHandler(client eth.LivepeerEthClient) http.Handler {
 
 		data, err := json.Marshal(params)
 		if err != nil {
-			glog.Error(err)
-			logAndRespondWithError(w, "could not query TicketBroker params", http.StatusInternalServerError)
+			respondWith500(w, fmt.Sprintf("could not query TicketBroker params: %v", err))
 			return
 		}
 
