@@ -263,3 +263,35 @@ func (m *MockRecipient) TicketParams(sender ethcommon.Address) *TicketParams {
 
 	return params
 }
+
+// MockSender is useful for testing components that depend on pm.Sender
+type MockSender struct {
+	mock.Mock
+}
+
+func (m *MockSender) StartSession(recipient ethcommon.Address, ticketParams TicketParams) string {
+	args := m.Called(recipient, ticketParams)
+	return args.String(0)
+}
+
+func (m *MockSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
+	args := m.Called(sessionID)
+
+	var ticket *Ticket
+	var seed *big.Int
+	var sig []byte
+
+	if args.Get(0) != nil {
+		ticket = args.Get(0).(*Ticket)
+	}
+
+	if args.Get(1) != nil {
+		seed = args.Get(1).(*big.Int)
+	}
+
+	if args.Get(2) != nil {
+		sig = args.Get(2).([]byte)
+	}
+
+	return ticket, seed, sig, args.Error(3)
+}

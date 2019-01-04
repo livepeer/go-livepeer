@@ -318,6 +318,10 @@ func main() {
 			}
 		}
 
+		if n.NodeType == core.BroadcasterNode {
+			n.Sender = pm.NewSender(n.Eth)
+		}
+
 		// Start services
 		err = n.StartEthServices()
 		if err != nil {

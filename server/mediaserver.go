@@ -17,10 +17,12 @@ import (
 	"sync"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
@@ -195,6 +197,20 @@ func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSes
 	}
 	tinfo := tinfos[0]
 
+	var sessionID string
+
+	if s.LivepeerNode.Sender != nil {
+		protoParams := tinfo.TicketParams
+		params := pm.TicketParams{
+			FaceValue:         new(big.Int).SetBytes(protoParams.FaceValue),
+			WinProb:           new(big.Int).SetBytes(protoParams.WinProb),
+			RecipientRandHash: ethcommon.BytesToHash(protoParams.RecipientRandHash),
+			Seed:              new(big.Int).SetBytes(protoParams.Seed),
+		}
+
+		sessionID = s.LivepeerNode.Sender.StartSession(ethcommon.BytesToAddress(protoParams.Recipient), params)
+	}
+
 	// set OSes
 	var orchOS drivers.OSSession
 	if len(tinfo.Storage) > 0 {
@@ -208,6 +224,8 @@ func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSes
 		OrchestratorInfo: tinfo,
 		OrchestratorOS:   orchOS,
 		BroadcasterOS:    cpl.GetOSSession(),
+		Sender:           s.LivepeerNode.Sender,
+		PMSessionID:      sessionID,
 	}, nil
 }
 
