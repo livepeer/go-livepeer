@@ -8,7 +8,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/drivers"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
-	"github.com/livepeer/lpms/stream"
 )
 
 const LIVE_LIST_LENGTH uint = 6
@@ -96,34 +95,18 @@ func (mgr *BasicPlaylistManager) InsertHLSSegment(profile *ffmpeg.VideoProfile, 
 	return mgr.addToMediaPlaylist(uri, seqNo, duration, mpl)
 }
 
-func (mgr *BasicPlaylistManager) mediaSegmentFromURI(uri string, seqNo uint64, duration float64) *m3u8.MediaSegment {
-	mseg := new(m3u8.MediaSegment)
-	mseg.URI = uri
-	mseg.SeqId = seqNo
-	mseg.Duration = duration
-	return mseg
-}
-
 func (mgr *BasicPlaylistManager) addToMediaPlaylist(uri string, seqNo uint64, duration float64,
 	mpl *m3u8.MediaPlaylist) error {
 
-	mseg := mgr.mediaSegmentFromURI(uri, seqNo, duration)
+	mseg := newMediaSegment(uri, seqNo, duration)
 	if mpl.Count() >= mpl.WinSize() {
 		mpl.Remove()
 	}
 	if mpl.Count() == 0 {
 		mpl.SeqNo = mseg.SeqId
 	}
+	// XXX This probably should be using mpl.InsertSegment instead
 	return mpl.AppendSegment(mseg)
-}
-
-func (mgr *BasicPlaylistManager) makeMediaSegment(seg *stream.HLSSegment, url string) *m3u8.MediaSegment {
-	mseg := new(m3u8.MediaSegment)
-	mseg.URI = url
-	mseg.Duration = seg.Duration
-	mseg.Title = seg.Name
-	mseg.SeqId = seg.SeqNo
-	return mseg
 }
 
 // GetHLSMasterPlaylist ..
@@ -134,4 +117,12 @@ func (mgr *BasicPlaylistManager) GetHLSMasterPlaylist() *m3u8.MasterPlaylist {
 // GetHLSMediaPlaylist ...
 func (mgr *BasicPlaylistManager) GetHLSMediaPlaylist(rendition string) *m3u8.MediaPlaylist {
 	return mgr.getPL(rendition)
+}
+
+func newMediaSegment(uri string, seqNo uint64, duration float64) *m3u8.MediaSegment {
+	return &m3u8.MediaSegment{
+		URI:      uri,
+		SeqId:    seqNo,
+		Duration: duration,
+	}
 }
