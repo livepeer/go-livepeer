@@ -70,27 +70,30 @@ func (mgr *BasicPlaylistManager) getPL(rendition string) *m3u8.MediaPlaylist {
 	return mpl
 }
 
-func (mgr *BasicPlaylistManager) createPL(profile *ffmpeg.VideoProfile) *m3u8.MediaPlaylist {
+func (mgr *BasicPlaylistManager) getOrCreatePL(profile *ffmpeg.VideoProfile) (*m3u8.MediaPlaylist, error) {
+	mgr.mapSync.Lock()
+	defer mgr.mapSync.Unlock()
+	if pl, ok := mgr.mediaLists[profile.Name]; ok {
+		return pl, nil
+	}
 	mpl, err := m3u8.NewMediaPlaylist(LIVE_LIST_LENGTH, LIVE_LIST_LENGTH)
 	if err != nil {
 		glog.Error(err)
-		return nil
+		return nil, err
 	}
-	mgr.mapSync.Lock()
 	mgr.mediaLists[profile.Name] = mpl
-	mgr.mapSync.Unlock()
 	vParams := ffmpeg.VideoProfileToVariantParams(*profile)
 	url := fmt.Sprintf("%v/%v.m3u8", mgr.manifestID, profile.Name)
 	mgr.masterPList.Append(url, mpl, vParams)
-	return mpl
+	return mpl, nil
 }
 
 func (mgr *BasicPlaylistManager) InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo uint64, uri string,
 	duration float64) error {
 
-	mpl := mgr.getPL(profile.Name)
-	if mpl == nil {
-		mpl = mgr.createPL(profile)
+	mpl, err := mgr.getOrCreatePL(profile)
+	if err != nil {
+		return err
 	}
 	return mgr.addToMediaPlaylist(uri, seqNo, duration, mpl)
 }
