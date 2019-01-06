@@ -1,14 +1,20 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
@@ -26,6 +32,7 @@ type stubOrchestrator struct {
 	priv    *ecdsa.PrivateKey
 	block   *big.Int
 	signErr error
+	mock.Mock
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
@@ -58,6 +65,11 @@ func (r *stubOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *st
 }
 func (r *stubOrchestrator) StreamIDs(jobId string) ([]core.StreamID, error) {
 	return []core.StreamID{}, nil
+}
+
+func (r *stubOrchestrator) ProcessPayment(payment net.Payment, manifestID core.ManifestID) error {
+	args := r.Called(payment, manifestID)
+	return args.Error(0)
 }
 
 func StubOrchestrator() *stubOrchestrator {
@@ -203,5 +215,105 @@ func TestPing(t *testing.T) {
 
 	if !verified {
 		t.Error("Unable to verify response from ping request")
+	}
+}
+
+func TestProcessPayment_GivenInvalidBase64_ReturnsError(t *testing.T) {
+	orch := StubOrchestrator()
+	manifestID := core.ManifestID("some manifest")
+	header := "not base64"
+
+	err := processPayment(orch, header, manifestID)
+
+	assert.Contains(t, err.Error(), "base64")
+}
+
+func TestProcessPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
+	orch := StubOrchestrator()
+	manifestID := core.ManifestID("some manifest")
+	data := pm.RandBytesOrFatal(123, t)
+	header := base64.StdEncoding.EncodeToString(data)
+
+	err := processPayment(orch, header, manifestID)
+
+	assert.Contains(t, err.Error(), "protobuf")
+}
+
+func TestProcessPayment_GivenValidHeader_InvokesOrchFunction(t *testing.T) {
+	orch := StubOrchestrator()
+	manifestID := core.ManifestID("some manifest")
+	protoTicket := defaultTicket(t)
+	protoPayment := defaultPayment(t, protoTicket)
+	data, err := proto.Marshal(protoPayment)
+	require.Nil(t, err)
+	header := base64.StdEncoding.EncodeToString(data)
+	// Had to use this long-winded arg matcher because simple equality and DeepEqual didn't work
+	argMatcher := mock.MatchedBy(func(actualPayment net.Payment) bool {
+		if !bytes.Equal(actualPayment.Ticket.Recipient, protoTicket.Recipient) {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Ticket.Sender, protoTicket.Sender) {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Ticket.FaceValue, protoTicket.FaceValue) {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Ticket.WinProb, protoTicket.WinProb) {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Ticket.RecipientRandHash, protoTicket.RecipientRandHash) {
+			return false
+		}
+		if actualPayment.Ticket.SenderNonce != protoTicket.SenderNonce {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Sig, protoPayment.Sig) {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Seed, protoPayment.Seed) {
+			return false
+		}
+		return true
+	})
+
+	orch.On("ProcessPayment", argMatcher, manifestID).Return(nil).Once()
+
+	err = processPayment(orch, header, manifestID)
+
+	assert.Nil(t, err)
+	orch.AssertExpectations(t)
+}
+
+func TestProcessPayment_GivenErrorFromOrch_ForwardsTheError(t *testing.T) {
+	orch := StubOrchestrator()
+	manifestID := core.ManifestID("some manifest")
+	protoTicket := defaultTicket(t)
+	protoPayment := defaultPayment(t, protoTicket)
+	data, err := proto.Marshal(protoPayment)
+	require.Nil(t, err)
+	header := base64.StdEncoding.EncodeToString(data)
+	orch.On("ProcessPayment", mock.Anything, mock.Anything).Return(errors.New("error from mock")).Once()
+
+	err = processPayment(orch, header, manifestID)
+
+	assert.Equal(t, "error from mock", err.Error())
+}
+
+func defaultPayment(t *testing.T, ticket *net.Ticket) *net.Payment {
+	return &net.Payment{
+		Ticket: ticket,
+		Sig:    pm.RandBytesOrFatal(123, t),
+		Seed:   pm.RandBytesOrFatal(123, t),
+	}
+}
+
+func defaultTicket(t *testing.T) *net.Ticket {
+	return &net.Ticket{
+		Recipient:         pm.RandBytesOrFatal(123, t),
+		Sender:            pm.RandBytesOrFatal(123, t),
+		FaceValue:         pm.RandBytesOrFatal(123, t),
+		WinProb:           pm.RandBytesOrFatal(123, t),
+		SenderNonce:       456,
+		RecipientRandHash: pm.RandBytesOrFatal(123, t),
 	}
 }

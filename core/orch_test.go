@@ -2,17 +2,26 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
+	"math/rand"
 	"os"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+
+	"github.com/livepeer/go-livepeer/pm"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
+	"github.com/stretchr/testify/require"
 
 	"github.com/livepeer/go-livepeer/net"
 
@@ -274,4 +283,163 @@ func TestGetSegmentChan(t *testing.T) {
 		t.Error("SegmentChans mapping included new channel when expected to return an err/nil")
 	}
 
+}
+
+func TestProcessPayment_GivenRecipientError_ReturnsError(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "")
+	n, err := NewLivepeerNode(nil, tmpdir, nil)
+	require.Nil(t, err)
+	defer os.RemoveAll(tmpdir)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, errors.New("mock error"))
+
+	err = orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+
+	assert.Contains(t, err.Error(), "mock error")
+}
+
+func TestProcessPayment_GivenWinningTicketAndRecipientError_DoesNotCacheSessionID(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "")
+	n, err := NewLivepeerNode(nil, tmpdir, nil)
+	require.Nil(t, err)
+	defer os.RemoveAll(tmpdir)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", true, errors.New("mock error"))
+
+	err = orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+
+	assert.Empty(t, n.pmSessions)
+}
+
+func TestProcessPayment_GivenLosingTicket_DoesNotCacheSessionID(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "")
+	n, err := NewLivepeerNode(nil, tmpdir, nil)
+	require.Nil(t, err)
+	defer os.RemoveAll(tmpdir)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
+
+	err = orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Empty(n.pmSessions)
+}
+
+func TestProcessPayment_GivenWinningTicket_CachesSessionID(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "")
+	n, err := NewLivepeerNode(nil, tmpdir, nil)
+	require.Nil(t, err)
+	defer os.RemoveAll(tmpdir)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	sessionID := "some sessionID"
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
+
+	err = orch.ProcessPayment(defaultPayment(t), manifestID)
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Contains(n.pmSessions, manifestID)
+	assert.Contains(n.pmSessions[manifestID], sessionID)
+}
+
+func TestProcessPayment_GivenWinningTicketsInMultipleSessions_CachesAllSessionIDs(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "")
+	n, err := NewLivepeerNode(nil, tmpdir, nil)
+	require.Nil(t, err)
+	defer os.RemoveAll(tmpdir)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	sessionID0 := "first sessionID"
+	sessionID1 := "second sessionID"
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID0, true, nil).Once()
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID1, true, nil).Once()
+	assert := assert.New(t)
+
+	err = orch.ProcessPayment(defaultPayment(t), manifestID)
+	assert.Nil(err)
+	err = orch.ProcessPayment(defaultPayment(t), manifestID)
+	assert.Nil(err)
+
+	assert.Contains(n.pmSessions, manifestID)
+	assert.Contains(n.pmSessions[manifestID], sessionID0)
+	assert.Contains(n.pmSessions[manifestID], sessionID1)
+}
+
+func TestProcessPayment_GivenConcurrentWinningTickets_CachesAllSessionIDs(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "")
+	n, err := NewLivepeerNode(nil, tmpdir, nil)
+	require.Nil(t, err)
+	defer os.RemoveAll(tmpdir)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestIDs := make([]string, 5)
+	for i := 0; i < 5; i++ {
+		manifestIDs = append(manifestIDs, randString())
+	}
+	sessionIDs := make([]string, 100)
+	for i := 0; i < 100; i++ {
+		sessionIDs[i] = randString()
+	}
+	for i := 0; i < len(sessionIDs); i++ {
+		recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionIDs[i], true, nil).Once()
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(sessionIDs))
+	for i := 0; i < len(sessionIDs); i++ {
+		manifestID := manifestIDs[rand.Intn(len(manifestIDs))]
+		go func() {
+			orch.ProcessPayment(defaultPayment(t), ManifestID(manifestID))
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	actualSessionIDs := make([]string, len(sessionIDs))
+	i := 0
+	for _, sessionsMap := range n.pmSessions {
+		for sessionID := range sessionsMap {
+			actualSessionIDs[i] = sessionID
+			i++
+		}
+	}
+	assert := assert.New(t)
+	assert.ElementsMatch(sessionIDs, actualSessionIDs)
+}
+
+func defaultPayment(t *testing.T) net.Payment {
+	ticket := &net.Ticket{
+		Recipient:         pm.RandBytesOrFatal(123, t),
+		Sender:            pm.RandBytesOrFatal(123, t),
+		FaceValue:         pm.RandBytesOrFatal(123, t),
+		WinProb:           pm.RandBytesOrFatal(123, t),
+		SenderNonce:       456,
+		RecipientRandHash: pm.RandBytesOrFatal(123, t),
+	}
+	return net.Payment{
+		Ticket: ticket,
+		Sig:    pm.RandBytesOrFatal(123, t),
+		Seed:   pm.RandBytesOrFatal(123, t),
+	}
+}
+
+func randString() string {
+	x := make([]byte, 42)
+	for i := 0; i < len(x); i++ {
+		x[i] = byte(rand.Uint32())
+	}
+	return fmt.Sprintf("%x", x)
 }

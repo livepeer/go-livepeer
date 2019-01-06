@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -31,6 +30,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	"github.com/pkg/errors"
 )
 
 var broadcasterAddress = ethcommon.BytesToAddress([]byte("111 Transcoder Address 1")) // need to remove hard-coded broadcaster address
@@ -39,6 +39,7 @@ const HTTPTimeout = 8 * time.Second
 const GRPCTimeout = 8 * time.Second
 const GRPCConnectTimeout = 3 * time.Second
 const StoragePrefixIdLength = 8
+const PaymentHeader = "Livepeer-Payment"
 
 var ErrSegSig = errors.New("ErrSegSig")
 var ErrSegEncoding = errors.New("ErrorSegEncoding")
@@ -59,6 +60,7 @@ type Orchestrator interface {
 	TranscodeSeg(*core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
+	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
 }
 
 type Broadcaster interface {
@@ -251,6 +253,20 @@ type lphttp struct {
 	transRpc     *http.ServeMux
 }
 
+func processPayment(orch Orchestrator, header string, manifestID core.ManifestID) error {
+	buf, err := base64.StdEncoding.DecodeString(header)
+	if err != nil {
+		return errors.Wrap(err, "base64 decode error")
+	}
+	var payment net.Payment
+	err = proto.Unmarshal(buf, &payment)
+	if err != nil {
+		return errors.Wrap(err, "protobuf unmarshal error")
+	}
+
+	return orch.ProcessPayment(payment, manifestID)
+}
+
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	orch := h.orchestrator
 
@@ -262,6 +278,11 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		glog.Error("Could not verify segment creds")
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
+	}
+
+	err = processPayment(orch, r.Header.Get(PaymentHeader), segData.ManifestID)
+	if err != nil {
+		glog.Errorf("Error processing payment: %v", err)
 	}
 
 	// download the segment and check the hash
