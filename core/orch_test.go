@@ -420,6 +420,33 @@ func TestProcessPayment_GivenConcurrentWinningTickets_CachesAllSessionIDs(t *tes
 	assert.ElementsMatch(sessionIDs, actualSessionIDs)
 }
 
+func TestTicketParams(t *testing.T) {
+	tmpdir, _ := ioutil.TempDir("", "")
+	n, err := NewLivepeerNode(nil, tmpdir, nil)
+	require.Nil(t, err)
+	defer os.RemoveAll(tmpdir)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	expectedParams := &pm.TicketParams{
+		FaceValue:         big.NewInt(1234),
+		WinProb:           big.NewInt(2345),
+		Seed:              big.NewInt(3456),
+		RecipientRandHash: pm.RandHash(),
+	}
+	recipient.On("TicketParams", mock.Anything).Return(expectedParams)
+	orch := NewOrchestrator(n)
+	orch.address = pm.RandAddress()
+
+	actualParams := orch.TicketParams(pm.RandAddress())
+
+	assert := assert.New(t)
+	assert.Equal(orch.address.Bytes(), actualParams.Recipient)
+	assert.Equal(expectedParams.FaceValue.Bytes(), actualParams.FaceValue)
+	assert.Equal(expectedParams.WinProb.Bytes(), actualParams.WinProb)
+	assert.Equal(expectedParams.RecipientRandHash.Bytes(), actualParams.RecipientRandHash)
+	assert.Equal(expectedParams.Seed.Bytes(), actualParams.Seed)
+}
+
 func defaultPayment(t *testing.T) net.Payment {
 	ticket := &net.Ticket{
 		Recipient:         pm.RandBytes(123),

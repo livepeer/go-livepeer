@@ -61,6 +61,7 @@ type Orchestrator interface {
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
+	TicketParams(sender ethcommon.Address) *net.TicketParams
 }
 
 type Broadcaster interface {
@@ -128,9 +129,8 @@ func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.Client
 	return c, conn, nil
 }
 
-func verifyOrchestratorReq(orch Orchestrator, req *net.OrchestratorRequest) error {
-	addr := ethcommon.BytesToAddress(req.Address)
-	if !orch.VerifySig(addr, addr.Hex(), req.Sig) {
+func verifyOrchestratorReq(orch Orchestrator, addr ethcommon.Address, sig []byte) error {
+	if !orch.VerifySig(addr, addr.Hex(), sig) {
 		glog.Error("orchestrator req sig check failed")
 		return fmt.Errorf("orchestrator req sig check failed")
 	}
@@ -229,8 +229,9 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 	return &net.PingPong{Value: value}, nil
 }
 
-func getOrchestrator(context context.Context, orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
-	if err := verifyOrchestratorReq(orch, req); err != nil {
+func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
+	addr := ethcommon.BytesToAddress(req.Address)
+	if err := verifyOrchestratorReq(orch, addr, req.Sig); err != nil {
 		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
 	}
 
@@ -244,6 +245,9 @@ func getOrchestrator(context context.Context, orch Orchestrator, req *net.Orches
 	if os != nil && os.IsExternal() {
 		tr.Storage = []*net.OSInfo{os.GetInfo()}
 	}
+
+	tr.TicketParams = orch.TicketParams(addr)
+
 	return &tr, nil
 }
 
@@ -377,7 +381,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 // grpc methods
 func (h *lphttp) GetOrchestrator(context context.Context, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
-	return getOrchestrator(context, h.orchestrator, req)
+	return getOrchestrator(h.orchestrator, req)
 }
 
 func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong, error) {

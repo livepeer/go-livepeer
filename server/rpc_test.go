@@ -23,6 +23,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/stream"
@@ -70,6 +71,10 @@ func (r *stubOrchestrator) ProcessPayment(payment net.Payment, manifestID core.M
 	return nil
 }
 
+func (r *stubOrchestrator) TicketParams(sender ethcommon.Address) *net.TicketParams {
+	return nil
+}
+
 func StubOrchestrator() *stubOrchestrator {
 	pk, err := ethcrypto.GenerateKey()
 	if err != nil {
@@ -98,19 +103,21 @@ func TestRPCTranscoderReq(t *testing.T) {
 	if err != nil {
 		t.Error("Unable to create orchestrator req ", req)
 	}
-	if verifyOrchestratorReq(o, req) != nil { // normal case
+
+	addr := ethcommon.BytesToAddress(req.Address)
+	if verifyOrchestratorReq(o, addr, req.Sig) != nil { // normal case
 		t.Error("Unable to verify orchestrator request")
 	}
 
 	// wrong broadcaster
-	req.Address = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey).Bytes()
-	if verifyOrchestratorReq(o, req) == nil {
+	addr = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey)
+	if verifyOrchestratorReq(o, addr, req.Sig) == nil {
 		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
 
 	// invalid address
-	req.Address = []byte("#non-hex address!")
-	if verifyOrchestratorReq(o, req) == nil {
+	addr = ethcommon.BytesToAddress([]byte("#non-hex address!"))
+	if verifyOrchestratorReq(o, addr, req.Sig) == nil {
 		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
 
@@ -297,8 +304,47 @@ func TestProcessPayment_GivenErrorFromOrch_ForwardsTheError(t *testing.T) {
 	assert.Equal(t, "error from mock", err.Error())
 }
 
+func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {
+	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	uri := "http://someuri.com"
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("TicketParams", mock.Anything).Return(nil)
+
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Equal(uri, oInfo.Transcoder)
 }
 
+func TestGetOrchestrator_GivenInvalidSig_ReturnsError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(false)
+
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Contains(err.Error(), "sig")
+	assert.Nil(oInfo)
+}
+
+func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
+	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	uri := "http://someuri.com"
+	expectedParams := defaultTicketParams()
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("TicketParams", mock.Anything).Return(expectedParams)
+
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Equal(expectedParams, oInfo.TicketParams)
 }
 
 type mockOrchestrator struct {
@@ -343,6 +389,25 @@ func (o *mockOrchestrator) ProcessPayment(payment net.Payment, manifestID core.M
 	args := o.Called(payment, manifestID)
 	return args.Error(0)
 }
+
+func (o *mockOrchestrator) TicketParams(sender ethcommon.Address) *net.TicketParams {
+	args := o.Called(sender)
+	if args.Get(0) != nil {
+		return args.Get(0).(*net.TicketParams)
+	}
+	return nil
+}
+
+func defaultTicketParams() *net.TicketParams {
+	return &net.TicketParams{
+		Recipient:         pm.RandBytes(123),
+		FaceValue:         pm.RandBytes(123),
+		WinProb:           pm.RandBytes(123),
+		RecipientRandHash: pm.RandBytes(123),
+		Seed:              pm.RandBytes(123),
+	}
+}
+
 func defaultPayment(t *testing.T, ticket *net.Ticket) *net.Payment {
 	return &net.Payment{
 		Ticket: ticket,

@@ -103,6 +103,17 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	return nil
 }
 
+func (orch *orchestrator) TicketParams(sender ethcommon.Address) *net.TicketParams {
+	params := orch.node.Recipient.TicketParams(sender)
+	return &net.TicketParams{
+		Recipient:         orch.address.Bytes(),
+		FaceValue:         params.FaceValue.Bytes(),
+		WinProb:           params.WinProb.Bytes(),
+		RecipientRandHash: params.RecipientRandHash.Bytes(),
+		Seed:              params.Seed.Bytes(),
+	}
+}
+
 func NewOrchestrator(n *LivepeerNode) *orchestrator {
 	var addr ethcommon.Address
 	if n.Eth != nil {
