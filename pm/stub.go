@@ -253,7 +253,7 @@ func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
 	return args.Error(0)
 }
 
-func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
+func (m *MockRecipient) TicketParams(sender ethcommon.Address) *TicketParams {
 	args := m.Called(sender)
 
 	var params *TicketParams
@@ -261,5 +261,5 @@ func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, e
 		params = args.Get(0).(*TicketParams)
 	}
 
-	return params, args.Error(1)
+	return params
 }

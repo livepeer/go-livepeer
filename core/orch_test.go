@@ -422,17 +422,17 @@ func TestProcessPayment_GivenConcurrentWinningTickets_CachesAllSessionIDs(t *tes
 
 func defaultPayment(t *testing.T) net.Payment {
 	ticket := &net.Ticket{
-		Recipient:         pm.RandBytesOrFatal(123, t),
-		Sender:            pm.RandBytesOrFatal(123, t),
-		FaceValue:         pm.RandBytesOrFatal(123, t),
-		WinProb:           pm.RandBytesOrFatal(123, t),
+		Recipient:         pm.RandBytes(123),
+		Sender:            pm.RandBytes(123),
+		FaceValue:         pm.RandBytes(123),
+		WinProb:           pm.RandBytes(123),
 		SenderNonce:       456,
-		RecipientRandHash: pm.RandBytesOrFatal(123, t),
+		RecipientRandHash: pm.RandBytes(123),
 	}
 	return net.Payment{
 		Ticket: ticket,
-		Sig:    pm.RandBytesOrFatal(123, t),
-		Seed:   pm.RandBytesOrFatal(123, t),
+		Sig:    pm.RandBytes(123),
+		Seed:   pm.RandBytes(123),
 	}
 }
 

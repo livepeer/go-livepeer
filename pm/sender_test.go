@@ -79,10 +79,10 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 	am := sender.signer.(*stubSigner)
 	am.signShouldFail = false
 	am.saveSignRequest = true
-	am.signResponse = RandBytesOrFatal(42, t)
+	am.signResponse = RandBytes(42)
 	senderAddress := sender.signer.Account().Address
-	recipient := RandAddressOrFatal(t)
-	recipientRandHash := RandHashOrFatal(t)
+	recipient := RandAddress()
+	recipientRandHash := RandHash()
 	ticketParams := TicketParams{
 		FaceValue:         big.NewInt(1111),
 		WinProb:           big.NewInt(2222),
@@ -127,7 +127,7 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 
 func TestCreateTicket_GivenSigningError_ReturnsError(t *testing.T) {
 	sender := defaultSender(t)
-	recipient := RandAddressOrFatal(t)
+	recipient := RandAddress()
 	ticketParams := defaultTicketParams(t)
 	sessionID := sender.StartSession(recipient, ticketParams)
 	am := sender.signer.(*stubSigner)
@@ -147,7 +147,7 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 	totalTickets := 100
 	lock := sync.RWMutex{}
 	sender := defaultSender(t)
-	recipient := RandAddressOrFatal(t)
+	recipient := RandAddress()
 	ticketParams := defaultTicketParams(t)
 	sessionID := sender.StartSession(recipient, ticketParams)
 
@@ -188,7 +188,7 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 
 func defaultSender(t *testing.T) *sender {
 	account := accounts.Account{
-		Address: RandAddressOrFatal(t),
+		Address: RandAddress(),
 	}
 	am := &stubSigner{
 		account: account,
@@ -198,7 +198,7 @@ func defaultSender(t *testing.T) *sender {
 }
 
 func defaultTicketParams(t *testing.T) TicketParams {
-	recipientRandHash := RandHashOrFatal(t)
+	recipientRandHash := RandHash()
 	return TicketParams{
 		FaceValue:         big.NewInt(0),
 		WinProb:           big.NewInt(0),

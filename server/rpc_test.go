@@ -32,7 +32,6 @@ type stubOrchestrator struct {
 	priv    *ecdsa.PrivateKey
 	block   *big.Int
 	signErr error
-	mock.Mock
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
@@ -68,8 +67,7 @@ func (r *stubOrchestrator) StreamIDs(jobId string) ([]core.StreamID, error) {
 }
 
 func (r *stubOrchestrator) ProcessPayment(payment net.Payment, manifestID core.ManifestID) error {
-	args := r.Called(payment, manifestID)
-	return args.Error(0)
+	return nil
 }
 
 func StubOrchestrator() *stubOrchestrator {
@@ -231,7 +229,7 @@ func TestProcessPayment_GivenInvalidBase64_ReturnsError(t *testing.T) {
 func TestProcessPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
 	orch := &mockOrchestrator{}
 	manifestID := core.ManifestID("some manifest")
-	data := pm.RandBytesOrFatal(123, t)
+	data := pm.RandBytes(123)
 	header := base64.StdEncoding.EncodeToString(data)
 
 	err := processPayment(orch, header, manifestID)
@@ -299,23 +297,8 @@ func TestProcessPayment_GivenErrorFromOrch_ForwardsTheError(t *testing.T) {
 	assert.Equal(t, "error from mock", err.Error())
 }
 
-func defaultPayment(t *testing.T, ticket *net.Ticket) *net.Payment {
-	return &net.Payment{
-		Ticket: ticket,
-		Sig:    pm.RandBytesOrFatal(123, t),
-		Seed:   pm.RandBytesOrFatal(123, t),
-	}
 }
 
-func defaultTicket(t *testing.T) *net.Ticket {
-	return &net.Ticket{
-		Recipient:         pm.RandBytesOrFatal(123, t),
-		Sender:            pm.RandBytesOrFatal(123, t),
-		FaceValue:         pm.RandBytesOrFatal(123, t),
-		WinProb:           pm.RandBytesOrFatal(123, t),
-		SenderNonce:       456,
-		RecipientRandHash: pm.RandBytesOrFatal(123, t),
-	}
 }
 
 type mockOrchestrator struct {
@@ -323,8 +306,8 @@ type mockOrchestrator struct {
 }
 
 func (o *mockOrchestrator) ServiceURI() *url.URL {
-	o.Called()
-	return nil
+	args := o.Called()
+	return args.Get(0).(*url.URL)
 }
 func (o *mockOrchestrator) Address() ethcommon.Address {
 	o.Called()
@@ -359,4 +342,22 @@ func (o *mockOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscod
 func (o *mockOrchestrator) ProcessPayment(payment net.Payment, manifestID core.ManifestID) error {
 	args := o.Called(payment, manifestID)
 	return args.Error(0)
+}
+func defaultPayment(t *testing.T, ticket *net.Ticket) *net.Payment {
+	return &net.Payment{
+		Ticket: ticket,
+		Sig:    pm.RandBytes(123),
+		Seed:   pm.RandBytes(123),
+	}
+}
+
+func defaultTicket(t *testing.T) *net.Ticket {
+	return &net.Ticket{
+		Recipient:         pm.RandBytes(123),
+		Sender:            pm.RandBytes(123),
+		FaceValue:         pm.RandBytes(123),
+		WinProb:           pm.RandBytes(123),
+		SenderNonce:       456,
+		RecipientRandHash: pm.RandBytes(123),
+	}
 }

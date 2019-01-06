@@ -1,9 +1,8 @@
 package pm
 
 import (
-	"crypto/rand"
 	"fmt"
-	"testing"
+	"math/rand"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -22,42 +21,18 @@ func VerifySig(addr ethcommon.Address, msg, sig []byte) bool {
 	return crypto.PubkeyToAddress(*pubkey) == addr
 }
 
-func RandHashOrFatal(t *testing.T) ethcommon.Hash {
-	key, err := randBytes(32)
-
-	if err != nil {
-		t.Fatalf("failed generating random hash: %v", err)
-		return ethcommon.Hash{}
-	}
-
-	return ethcommon.BytesToHash(key[:])
+func RandHash() ethcommon.Hash {
+	return ethcommon.BytesToHash(RandBytes(32))
 }
 
-func RandAddressOrFatal(t *testing.T) ethcommon.Address {
-	key, err := randBytes(addressSize)
-
-	if err != nil {
-		t.Fatalf("failed generating random address: %v", err)
-		return ethcommon.Address{}
-	}
-
-	return ethcommon.BytesToAddress(key[:])
+func RandAddress() ethcommon.Address {
+	return ethcommon.BytesToAddress(RandBytes(addressSize))
 }
 
-func RandBytesOrFatal(size int, t *testing.T) []byte {
-	res, err := randBytes(size)
-
-	if err != nil {
-		t.Fatalf("failed generating random bytes: %v", err)
-		return nil
+func RandBytes(size uint) []byte {
+	x := make([]byte, size, size)
+	for i := 0; i < len(x); i++ {
+		x[i] = byte(rand.Uint32())
 	}
-
-	return res
-}
-
-func randBytes(size int) ([]byte, error) {
-	key := make([]byte, size)
-	_, err := rand.Read(key)
-
-	return key, err
+	return x
 }
