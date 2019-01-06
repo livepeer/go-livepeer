@@ -57,8 +57,6 @@ const BroadcastRetry = 15 * time.Second
 var BroadcastPrice = big.NewInt(1)
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 var MinDepositSegmentCount = int64(75) // 5 mins assuming 4s segments
-var LastHLSStreamID core.StreamID
-var LastManifestID core.ManifestID
 
 type rtmpConnection struct {
 	nonce   uint64
@@ -83,7 +81,11 @@ type LivepeerServer struct {
 
 	ExposeCurrentManifest bool
 
+	// Thread sensitive fields. All accesses to the
+	// following fields should be protected by `connectionLock`
 	rtmpConnections map[core.ManifestID]*rtmpConnection
+	lastHLSStreamID core.StreamID
+	lastManifestID  core.ManifestID
 	connectionLock  *sync.RWMutex
 }
 
@@ -214,8 +216,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			eof:      make(chan struct{}),
 		}
 		s.rtmpConnections[mid] = cxn
-		LastManifestID = mid
-		LastHLSStreamID = hlsStrmID
+		s.lastManifestID = mid
+		s.lastHLSStreamID = hlsStrmID
 		s.connectionLock.Unlock()
 
 		startSeq := 0
@@ -379,7 +381,7 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 	return func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 		var manifestID core.ManifestID
 		if s.ExposeCurrentManifest && "/stream/current.m3u8" == strings.ToLower(url.Path) {
-			manifestID = LastManifestID
+			manifestID = s.LastManifestID()
 		} else {
 			sid := parseStreamID(url.Path)
 			if sid.Rendition != "" {
@@ -495,6 +497,18 @@ func parseManifestID(reqPath string) core.ManifestID {
 	return parseStreamID(reqPath).ManifestID
 }
 
+func (s *LivepeerServer) LastManifestID() core.ManifestID {
+	s.connectionLock.RLock()
+	defer s.connectionLock.RUnlock()
+	return s.lastManifestID
+}
+
+func (s *LivepeerServer) LastHLSStreamID() core.StreamID {
+	s.connectionLock.RLock()
+	defer s.connectionLock.RUnlock()
+	return s.lastHLSStreamID
+}
+
 func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 	// not threadsafe; need to deep copy the playlist
 	m := make(map[string]*m3u8.MasterPlaylist, 0)
@@ -515,7 +529,7 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 func (s *LivepeerServer) LatestPlaylist() core.PlaylistManager {
 	s.connectionLock.RLock()
 	defer s.connectionLock.RUnlock()
-	cxn, ok := s.rtmpConnections[LastManifestID]
+	cxn, ok := s.rtmpConnections[s.lastManifestID]
 	if !ok || cxn.pl == nil {
 		return nil
 	}

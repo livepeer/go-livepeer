@@ -291,11 +291,11 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 
 	// Check assigned IDs
 	mid := rtmpManifestID(strm)
-	if s.LatestPlaylist().ManifestID() != mid || LastManifestID != mid {
+	if s.LatestPlaylist().ManifestID() != mid {
 		t.Error("Unexpected Manifest ID")
 	}
-	if LastHLSStreamID != expectedSid {
-		t.Error("Unexpected Stream ID ", LastHLSStreamID, expectedSid)
+	if s.LastHLSStreamID() != expectedSid {
+		t.Error("Unexpected Stream ID ", s.LastHLSStreamID(), expectedSid)
 	}
 
 	//Stream already exists
@@ -323,6 +323,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	}
 
 	for i := 0; i < 4; i++ {
+		// XXX we shouldn't do this. Need threadsafe accessors for playlist
 		seg := pl.Segments[i]
 		shouldSegName := fmt.Sprintf("/stream/%s/%s/%d.ts", mid, expectedSid.Rendition, i)
 		if seg.URI != shouldSegName {
