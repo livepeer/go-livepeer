@@ -352,22 +352,22 @@ func TestMultiStream(t *testing.T) {
 	}
 
 	// test more streams, somewhat concurrently
-	mut := sync.Mutex{}
-	completed := syncStreams
-	ch := make(chan struct{})
+	var wg sync.WaitGroup
 	const asyncStreams = 500
-	for i := completed; i < asyncStreams; i++ {
+	for i := syncStreams; i < asyncStreams; i++ {
+		wg.Add(1)
 		go func(i int) {
+			defer wg.Done()
 			handleStream(i)
-			mut.Lock()
-			completed++
-			mut.Unlock()
-			if completed >= asyncStreams {
-				ch <- struct{}{}
-			}
 		}(i)
 	}
+
 	// block until complete
+	ch := make(chan struct{})
+	go func() {
+		wg.Wait()
+		ch <- struct{}{}
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	select {
@@ -377,7 +377,7 @@ func TestMultiStream(t *testing.T) {
 			t.Error("Did not have expected number of streams", len(s.rtmpConnections))
 		}
 	case <-ctx.Done():
-		t.Error("Timed out at ", completed)
+		t.Error("Timed out")
 		close(ch)
 	}
 

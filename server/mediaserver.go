@@ -194,6 +194,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			Resolution: resolution,
 			Bitrate:    "4000k", // Fix this
 		}
+		hlsStrmID := core.MakeStreamID(mid, &vProfile)
 		s.connectionLock.Lock()
 		_, exists := s.rtmpConnections[mid]
 		if exists {
@@ -213,18 +214,15 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			eof:      make(chan struct{}),
 		}
 		s.rtmpConnections[mid] = cxn
-		s.connectionLock.Unlock()
 		LastManifestID = mid
+		LastHLSStreamID = hlsStrmID
+		s.connectionLock.Unlock()
 
 		startSeq := 0
 
 		if s.LivepeerNode.Eth != nil {
 			// TODO: Check broadcaster's deposit with TicketBroker
 		}
-
-		hlsStrmID := core.MakeStreamID(mid, &vProfile)
-
-		LastHLSStreamID = hlsStrmID
 
 		streamStarted := false
 		//Segment the stream, insert the segments into the broadcaster
