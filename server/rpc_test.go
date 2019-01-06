@@ -219,7 +219,7 @@ func TestPing(t *testing.T) {
 }
 
 func TestProcessPayment_GivenInvalidBase64_ReturnsError(t *testing.T) {
-	orch := StubOrchestrator()
+	orch := &mockOrchestrator{}
 	manifestID := core.ManifestID("some manifest")
 	header := "not base64"
 
@@ -229,7 +229,7 @@ func TestProcessPayment_GivenInvalidBase64_ReturnsError(t *testing.T) {
 }
 
 func TestProcessPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
-	orch := StubOrchestrator()
+	orch := &mockOrchestrator{}
 	manifestID := core.ManifestID("some manifest")
 	data := pm.RandBytesOrFatal(123, t)
 	header := base64.StdEncoding.EncodeToString(data)
@@ -240,7 +240,7 @@ func TestProcessPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
 }
 
 func TestProcessPayment_GivenValidHeader_InvokesOrchFunction(t *testing.T) {
-	orch := StubOrchestrator()
+	orch := &mockOrchestrator{}
 	manifestID := core.ManifestID("some manifest")
 	protoTicket := defaultTicket(t)
 	protoPayment := defaultPayment(t, protoTicket)
@@ -285,7 +285,7 @@ func TestProcessPayment_GivenValidHeader_InvokesOrchFunction(t *testing.T) {
 }
 
 func TestProcessPayment_GivenErrorFromOrch_ForwardsTheError(t *testing.T) {
-	orch := StubOrchestrator()
+	orch := &mockOrchestrator{}
 	manifestID := core.ManifestID("some manifest")
 	protoTicket := defaultTicket(t)
 	protoPayment := defaultPayment(t, protoTicket)
@@ -316,4 +316,47 @@ func defaultTicket(t *testing.T) *net.Ticket {
 		SenderNonce:       456,
 		RecipientRandHash: pm.RandBytesOrFatal(123, t),
 	}
+}
+
+type mockOrchestrator struct {
+	mock.Mock
+}
+
+func (o *mockOrchestrator) ServiceURI() *url.URL {
+	o.Called()
+	return nil
+}
+func (o *mockOrchestrator) Address() ethcommon.Address {
+	o.Called()
+	return ethcommon.Address{}
+}
+func (o *mockOrchestrator) TranscoderSecret() string {
+	o.Called()
+	return ""
+}
+func (o *mockOrchestrator) Sign(msg []byte) ([]byte, error) {
+	o.Called(msg)
+	return nil, nil
+}
+func (o *mockOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
+	args := o.Called(addr, msg, sig)
+	return args.Bool(0)
+}
+func (o *mockOrchestrator) CurrentBlock() *big.Int {
+	o.Called()
+	return nil
+}
+func (o *mockOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
+	o.Called(md, seg)
+	return nil, nil
+}
+func (o *mockOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
+	o.Called(stream)
+}
+func (o *mockOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {
+	o.Called(job, res)
+}
+func (o *mockOrchestrator) ProcessPayment(payment net.Payment, manifestID core.ManifestID) error {
+	args := o.Called(payment, manifestID)
+	return args.Error(0)
 }
