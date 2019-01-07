@@ -12,7 +12,109 @@ import (
 	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/stretchr/testify/mock"
 )
+
+func mockTransaction(args mock.Arguments, idx int) *types.Transaction {
+	arg := args.Get(idx)
+
+	if arg == nil {
+		return nil
+	}
+
+	return arg.(*types.Transaction)
+}
+
+func mockBigInt(args mock.Arguments, idx int) *big.Int {
+	arg := args.Get(idx)
+
+	if arg == nil {
+		return nil
+	}
+
+	return arg.(*big.Int)
+}
+
+type MockClient struct {
+	mock.Mock
+
+	// Embed StubClient to call its methods with MockClient
+	// as the receiver so that MockClient implements the LivepeerETHClient
+	// interface
+	*StubClient
+}
+
+// TicketBroker
+
+func (m *MockClient) FundAndApproveSigners(depositAmount, penaltyEscrowAmount *big.Int, signers []common.Address) (*types.Transaction, error) {
+	args := m.Called(depositAmount, penaltyEscrowAmount, signers)
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) FundDeposit(amount *big.Int) (*types.Transaction, error) {
+	args := m.Called(amount)
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) Unlock() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) CancelUnlock() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) Withdraw() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) Senders(addr common.Address) (sender struct {
+	Deposit       *big.Int
+	PenaltyEscrow *big.Int
+	WithdrawBlock *big.Int
+}, err error) {
+	args := m.Called(addr)
+	sender.Deposit = mockBigInt(args, 0)
+	sender.PenaltyEscrow = mockBigInt(args, 1)
+	sender.WithdrawBlock = mockBigInt(args, 2)
+	err = args.Error(3)
+
+	return
+}
+
+func (m *MockClient) MinPenaltyEscrow() (*big.Int, error) {
+	args := m.Called()
+	return mockBigInt(args, 0), args.Error(1)
+}
+
+func (m *MockClient) UnlockPeriod() (*big.Int, error) {
+	args := m.Called()
+	return mockBigInt(args, 0), args.Error(1)
+}
+
+func (m *MockClient) Account() accounts.Account {
+	args := m.Called()
+
+	arg0 := args.Get(0)
+	if arg0 == nil {
+		return accounts.Account{}
+	}
+
+	return arg0.(accounts.Account)
+}
+
+func (m *MockClient) CheckTx(tx *types.Transaction) error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockClient) LatestBlockNum() (*big.Int, error) {
+	args := m.Called()
+	return mockBigInt(args, 0), args.Error(1)
+}
 
 type StubClient struct {
 	SubLogsCh                    chan types.Log
@@ -132,6 +234,12 @@ func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
 }, err error) {
 	return
 }
+func (e *StubClient) MinPenaltyEscrow() (*big.Int, error) {
+	return nil, nil
+}
+func (e *StubClient) UnlockPeriod() (*big.Int, error) {
+	return nil, nil
+}
 
 // Parameters
 
@@ -146,7 +254,9 @@ func (c *StubClient) TargetBondingRate() (*big.Int, error)    { return big.NewIn
 // Helpers
 
 func (c *StubClient) ContractAddresses() map[string]common.Address { return nil }
-func (c *StubClient) CheckTx(tx *types.Transaction) error          { return nil }
+func (c *StubClient) CheckTx(tx *types.Transaction) error {
+	return nil
+}
 func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, gasPrice *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
