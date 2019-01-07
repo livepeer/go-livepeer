@@ -196,7 +196,7 @@ func (v *stubValidator) SetIsWinningTicket(isWinningTicket bool) {
 	v.isWinningTicket = isWinningTicket
 }
 
-func (v *stubValidator) ValidateTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+func (v *stubValidator) ValidateTicket(recipient ethcommon.Address, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
 	if !v.isValidTicket {
 		return fmt.Errorf("stub validator invalid ticket error")
 	}
@@ -269,8 +269,8 @@ type MockSender struct {
 	mock.Mock
 }
 
-func (m *MockSender) StartSession(recipient ethcommon.Address, ticketParams TicketParams) string {
-	args := m.Called(recipient, ticketParams)
+func (m *MockSender) StartSession(ticketParams TicketParams) string {
+	args := m.Called(ticketParams)
 	return args.String(0)
 }
 

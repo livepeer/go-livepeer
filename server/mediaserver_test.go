@@ -123,15 +123,15 @@ func TestStartBroadcast(t *testing.T) {
 	sender := &pm.MockSender{}
 	s.LivepeerNode.Sender = sender
 
-	recipient := pm.RandAddressOrFatal(t)
 	params := pm.TicketParams{
+		Recipient:         pm.RandAddress(),
 		FaceValue:         big.NewInt(1234),
 		WinProb:           big.NewInt(5678),
-		RecipientRandHash: pm.RandHashOrFatal(t),
+		RecipientRandHash: pm.RandHash(),
 		Seed:              big.NewInt(7777),
 	}
 	protoParams := &net.TicketParams{
-		Recipient:         recipient.Bytes(),
+		Recipient:         params.Recipient.Bytes(),
 		FaceValue:         params.FaceValue.Bytes(),
 		WinProb:           params.WinProb.Bytes(),
 		RecipientRandHash: params.RecipientRandHash.Bytes(),
@@ -145,7 +145,7 @@ func TestStartBroadcast(t *testing.T) {
 	}
 
 	expSessionID := "foo"
-	sender.On("StartSession", recipient, params).Return(expSessionID)
+	sender.On("StartSession", params).Return(expSessionID)
 
 	sess, err := s.startBroadcast(pl)
 	require.Nil(t, err)

@@ -202,13 +202,14 @@ func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSes
 	if s.LivepeerNode.Sender != nil {
 		protoParams := tinfo.TicketParams
 		params := pm.TicketParams{
+			Recipient:         ethcommon.BytesToAddress(protoParams.Recipient),
 			FaceValue:         new(big.Int).SetBytes(protoParams.FaceValue),
 			WinProb:           new(big.Int).SetBytes(protoParams.WinProb),
 			RecipientRandHash: ethcommon.BytesToHash(protoParams.RecipientRandHash),
 			Seed:              new(big.Int).SetBytes(protoParams.Seed),
 		}
 
-		sessionID = s.LivepeerNode.Sender.StartSession(ethcommon.BytesToAddress(protoParams.Recipient), params)
+		sessionID = s.LivepeerNode.Sender.StartSession(params)
 	}
 
 	// set OSes

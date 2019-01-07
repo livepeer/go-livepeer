@@ -18,9 +18,6 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 
 	"github.com/golang/protobuf/proto"
 
@@ -245,15 +242,15 @@ func TestGenPayment(t *testing.T) {
 
 	// Test payment creation
 	ticket := &pm.Ticket{
-		Recipient:         pm.RandAddressOrFatal(t),
-		Sender:            pm.RandAddressOrFatal(t),
+		Recipient:         pm.RandAddress(),
+		Sender:            pm.RandAddress(),
 		FaceValue:         big.NewInt(1234),
 		WinProb:           big.NewInt(5678),
 		SenderNonce:       777,
-		RecipientRandHash: pm.RandHashOrFatal(t),
+		RecipientRandHash: pm.RandHash(),
 	}
 	seed := big.NewInt(7777)
-	sig := pm.RandBytesOrFatal(42, t)
+	sig := pm.RandBytes(42)
 
 	sender.On("CreateTicket", mock.Anything).Return(ticket, seed, sig, nil).Once()
 

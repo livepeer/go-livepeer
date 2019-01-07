@@ -248,7 +248,6 @@ func genPayment(sess *BroadcastSession) (string, error) {
 
 	data, err := proto.Marshal(protoPayment)
 	if err != nil {
-		glog.Error("Unable to marshal ", err)
 		return "", err
 	}
 

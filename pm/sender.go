@@ -12,7 +12,7 @@ import (
 // Sender enables starting multiple probabilistic micropayment sessions with multiple recipients
 // and create tickets that adhere to each session's params and unique nonce requirements.
 type Sender interface {
-	StartSession(recipient ethcommon.Address, ticketParams TicketParams) string
+	StartSession(ticketParams TicketParams) string
 
 	CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error)
 
@@ -21,8 +21,6 @@ type Sender interface {
 
 type session struct {
 	senderNonce uint32
-
-	recipient ethcommon.Address
 
 	ticketParams TicketParams
 }
@@ -40,11 +38,10 @@ func NewSender(signer Signer) Sender {
 	}
 }
 
-func (s *sender) StartSession(recipient ethcommon.Address, ticketParams TicketParams) string {
+func (s *sender) StartSession(ticketParams TicketParams) string {
 	sessionID := ticketParams.RecipientRandHash.Hex()
 
 	s.sessions.Store(sessionID, &session{
-		recipient:    recipient,
 		ticketParams: ticketParams,
 		senderNonce:  0,
 	})
@@ -64,7 +61,7 @@ func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, erro
 	senderNonce := atomic.AddUint32(&session.senderNonce, 1)
 
 	ticket := &Ticket{
-		Recipient:         session.recipient,
+		Recipient:         session.ticketParams.Recipient,
 		RecipientRandHash: recipientRandHash,
 		Sender:            s.signer.Account().Address,
 		SenderNonce:       senderNonce,
