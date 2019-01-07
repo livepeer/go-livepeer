@@ -81,6 +81,10 @@ func (orch *orchestrator) TranscoderResults(tcId int64, res *RemoteTranscoderRes
 }
 
 func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID ManifestID) error {
+	if orch.node == nil || orch.node.Recipient == nil {
+		return nil
+	}
+
 	ticket := &pm.Ticket{
 		Recipient:         ethcommon.BytesToAddress(payment.Ticket.Recipient),
 		Sender:            ethcommon.BytesToAddress(payment.Ticket.Sender),
@@ -104,6 +108,10 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 }
 
 func (orch *orchestrator) TicketParams(sender ethcommon.Address) *net.TicketParams {
+	if orch.node == nil || orch.node.Recipient == nil {
+		return nil
+	}
+
 	params := orch.node.Recipient.TicketParams(sender)
 	return &net.TicketParams{
 		Recipient:         orch.address.Bytes(),

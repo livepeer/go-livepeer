@@ -21,7 +21,6 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
-	"github.com/stretchr/testify/require"
 
 	"github.com/livepeer/go-livepeer/net"
 
@@ -286,46 +285,37 @@ func TestGetSegmentChan(t *testing.T) {
 }
 
 func TestProcessPayment_GivenRecipientError_ReturnsError(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "")
-	n, err := NewLivepeerNode(nil, tmpdir, nil)
-	require.Nil(t, err)
-	defer os.RemoveAll(tmpdir)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, errors.New("mock error"))
 
-	err = orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
 
 	assert.Contains(t, err.Error(), "mock error")
 }
 
 func TestProcessPayment_GivenWinningTicketAndRecipientError_DoesNotCacheSessionID(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "")
-	n, err := NewLivepeerNode(nil, tmpdir, nil)
-	require.Nil(t, err)
-	defer os.RemoveAll(tmpdir)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", true, errors.New("mock error"))
 
-	err = orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
 
 	assert.Empty(t, n.pmSessions)
 }
 
 func TestProcessPayment_GivenLosingTicket_DoesNotCacheSessionID(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "")
-	n, err := NewLivepeerNode(nil, tmpdir, nil)
-	require.Nil(t, err)
-	defer os.RemoveAll(tmpdir)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
 
-	err = orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
 
 	assert := assert.New(t)
 	assert.Nil(err)
@@ -333,10 +323,7 @@ func TestProcessPayment_GivenLosingTicket_DoesNotCacheSessionID(t *testing.T) {
 }
 
 func TestProcessPayment_GivenWinningTicket_CachesSessionID(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "")
-	n, err := NewLivepeerNode(nil, tmpdir, nil)
-	require.Nil(t, err)
-	defer os.RemoveAll(tmpdir)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -344,7 +331,7 @@ func TestProcessPayment_GivenWinningTicket_CachesSessionID(t *testing.T) {
 	sessionID := "some sessionID"
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
 
-	err = orch.ProcessPayment(defaultPayment(t), manifestID)
+	err := orch.ProcessPayment(defaultPayment(t), manifestID)
 
 	assert := assert.New(t)
 	assert.Nil(err)
@@ -353,10 +340,7 @@ func TestProcessPayment_GivenWinningTicket_CachesSessionID(t *testing.T) {
 }
 
 func TestProcessPayment_GivenWinningTicketsInMultipleSessions_CachesAllSessionIDs(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "")
-	n, err := NewLivepeerNode(nil, tmpdir, nil)
-	require.Nil(t, err)
-	defer os.RemoveAll(tmpdir)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -367,7 +351,7 @@ func TestProcessPayment_GivenWinningTicketsInMultipleSessions_CachesAllSessionID
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID1, true, nil).Once()
 	assert := assert.New(t)
 
-	err = orch.ProcessPayment(defaultPayment(t), manifestID)
+	err := orch.ProcessPayment(defaultPayment(t), manifestID)
 	assert.Nil(err)
 	err = orch.ProcessPayment(defaultPayment(t), manifestID)
 	assert.Nil(err)
@@ -378,10 +362,7 @@ func TestProcessPayment_GivenWinningTicketsInMultipleSessions_CachesAllSessionID
 }
 
 func TestProcessPayment_GivenConcurrentWinningTickets_CachesAllSessionIDs(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "")
-	n, err := NewLivepeerNode(nil, tmpdir, nil)
-	require.Nil(t, err)
-	defer os.RemoveAll(tmpdir)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -420,11 +401,26 @@ func TestProcessPayment_GivenConcurrentWinningTickets_CachesAllSessionIDs(t *tes
 	assert.ElementsMatch(sessionIDs, actualSessionIDs)
 }
 
+func TestProcessPayment_GivenNilNode_ReturnsNilError(t *testing.T) {
+	orch := &orchestrator{}
+
+	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+
+	assert.Nil(t, err)
+}
+
+func TestProcessPayment_GivenNilRecipient_ReturnsNilError(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	orch := NewOrchestrator(n)
+	n.Recipient = nil
+
+	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+
+	assert.Nil(t, err)
+}
+
 func TestTicketParams(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "")
-	n, err := NewLivepeerNode(nil, tmpdir, nil)
-	require.Nil(t, err)
-	defer os.RemoveAll(tmpdir)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	expectedParams := &pm.TicketParams{
@@ -445,6 +441,24 @@ func TestTicketParams(t *testing.T) {
 	assert.Equal(expectedParams.WinProb.Bytes(), actualParams.WinProb)
 	assert.Equal(expectedParams.RecipientRandHash.Bytes(), actualParams.RecipientRandHash)
 	assert.Equal(expectedParams.Seed.Bytes(), actualParams.Seed)
+}
+
+func TestTicketParams_GivenNilNode_ReturnsNil(t *testing.T) {
+	orch := &orchestrator{}
+
+	params := orch.TicketParams(ethcommon.Address{})
+
+	assert.Nil(t, params)
+}
+
+func TestTicketParams_GivenNilRecipient_ReturnsNil(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	orch := NewOrchestrator(n)
+	n.Recipient = nil
+
+	params := orch.TicketParams(ethcommon.Address{})
+
+	assert.Nil(t, params)
 }
 
 func defaultPayment(t *testing.T) net.Payment {
