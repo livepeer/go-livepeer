@@ -286,6 +286,8 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	err = processPayment(orch, r.Header.Get(PaymentHeader), segData.ManifestID)
 	if err != nil {
 		glog.Errorf("Error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusPaymentRequired)
+		return
 	}
 
 	// download the segment and check the hash
