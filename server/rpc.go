@@ -236,7 +236,8 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 	}
 
 	tr := net.OrchestratorInfo{
-		Transcoder: orch.ServiceURI().String(), // currently,  orchestrator == transcoder
+		Transcoder:   orch.ServiceURI().String(), // currently,  orchestrator == transcoder
+		TicketParams: orch.TicketParams(addr),
 	}
 
 	storagePrefix := core.RandomIdGenerator(StoragePrefixIdLength)
@@ -245,8 +246,6 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 	if os != nil && os.IsExternal() {
 		tr.Storage = []*net.OSInfo{os.GetInfo()}
 	}
-
-	tr.TicketParams = orch.TicketParams(addr)
 
 	return &tr, nil
 }
