@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	ethTypes "github.com/livepeer/go-livepeer/eth/types"
 )
 
 var Enabled bool
@@ -84,38 +83,6 @@ func LogSegmentTranscodeEnded(seqNo uint64, manifestID string) {
 	}
 
 	sendPost("SegmentTranscodeEnded", 0, props)
-}
-
-func LogJobCreatedEvent(job *ethTypes.Job, nonce uint64) {
-	glog.Infof("Logging JobCreated...")
-
-	props := map[string]interface{}{
-		"jobID":              job.JobId.Uint64(),
-		"streamID":           job.StreamId,
-		"broadcasterAddress": job.BroadcasterAddress.Hex(),
-		"transcoderAddress":  job.TranscoderAddress.Hex(),
-		"creationRound":      job.CreationRound.Uint64(),
-		"creationBlock":      job.CreationBlock.Uint64(),
-		"endBlock":           job.EndBlock.Uint64(),
-	}
-
-	sendPost("JobCreated", nonce, props)
-}
-
-func LogJobReusedEvent(job *ethTypes.Job, startSeq int, nonce uint64) {
-	glog.Infof("Logging JobReused...")
-
-	props := map[string]interface{}{
-		"jobID":              job.JobId.Uint64(),
-		"streamID":           job.StreamId,
-		"broadcasterAddress": job.BroadcasterAddress.Hex(),
-		"transcoderAddress":  job.TranscoderAddress.Hex(),
-		"creationBlock":      job.CreationBlock.Uint64(),
-		"endBlock":           job.EndBlock.Uint64(),
-		"startSeq":           startSeq,
-	}
-
-	sendPost("JobReused", nonce, props)
 }
 
 func LogStreamCreatedEvent(hlsStrmID string, nonce uint64) {

@@ -17,8 +17,8 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -47,7 +47,7 @@ func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
 }
 
 func (r *stubOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
-	return eth.VerifySig(addr, ethcrypto.Keccak256([]byte(msg)), sig)
+	return pm.VerifySig(addr, ethcrypto.Keccak256([]byte(msg)), sig)
 }
 
 func (r *stubOrchestrator) Address() ethcommon.Address {

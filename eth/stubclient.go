@@ -6,39 +6,122 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/pm"
+	"github.com/stretchr/testify/mock"
 )
 
+func mockTransaction(args mock.Arguments, idx int) *types.Transaction {
+	arg := args.Get(idx)
+
+	if arg == nil {
+		return nil
+	}
+
+	return arg.(*types.Transaction)
+}
+
+func mockBigInt(args mock.Arguments, idx int) *big.Int {
+	arg := args.Get(idx)
+
+	if arg == nil {
+		return nil
+	}
+
+	return arg.(*big.Int)
+}
+
+type MockClient struct {
+	mock.Mock
+
+	// Embed StubClient to call its methods with MockClient
+	// as the receiver so that MockClient implements the LivepeerETHClient
+	// interface
+	*StubClient
+}
+
+// TicketBroker
+
+func (m *MockClient) FundAndApproveSigners(depositAmount, penaltyEscrowAmount *big.Int, signers []common.Address) (*types.Transaction, error) {
+	args := m.Called(depositAmount, penaltyEscrowAmount, signers)
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) FundDeposit(amount *big.Int) (*types.Transaction, error) {
+	args := m.Called(amount)
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) Unlock() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) CancelUnlock() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) Withdraw() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) Senders(addr common.Address) (sender struct {
+	Deposit       *big.Int
+	PenaltyEscrow *big.Int
+	WithdrawBlock *big.Int
+}, err error) {
+	args := m.Called(addr)
+	sender.Deposit = mockBigInt(args, 0)
+	sender.PenaltyEscrow = mockBigInt(args, 1)
+	sender.WithdrawBlock = mockBigInt(args, 2)
+	err = args.Error(3)
+
+	return
+}
+
+func (m *MockClient) MinPenaltyEscrow() (*big.Int, error) {
+	args := m.Called()
+	return mockBigInt(args, 0), args.Error(1)
+}
+
+func (m *MockClient) UnlockPeriod() (*big.Int, error) {
+	args := m.Called()
+	return mockBigInt(args, 0), args.Error(1)
+}
+
+func (m *MockClient) Account() accounts.Account {
+	args := m.Called()
+
+	arg0 := args.Get(0)
+	if arg0 == nil {
+		return accounts.Account{}
+	}
+
+	return arg0.(accounts.Account)
+}
+
+func (m *MockClient) CheckTx(tx *types.Transaction) error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockClient) LatestBlockNum() (*big.Int, error) {
+	args := m.Called()
+	return mockBigInt(args, 0), args.Error(1)
+}
+
 type StubClient struct {
-	StrmID                       string
-	TOpts                        string
-	MaxPrice                     *big.Int
-	Jid                          *big.Int
-	SegSeqNum                    *big.Int
-	VeriRate                     uint64
-	DStorageHash                 string
-	DHash                        [32]byte
-	TDHash                       [32]byte
-	BSig                         []byte
-	Proof                        []byte
-	VerifyCounter                int
-	ClaimJid                     []*big.Int
-	ClaimStart                   []*big.Int
-	ClaimEnd                     []*big.Int
-	ClaimRoot                    map[[32]byte]bool
-	ClaimCounter                 int
 	SubLogsCh                    chan types.Log
-	JobsMap                      map[string]*lpTypes.Job
 	TranscoderAddress            common.Address
 	BlockNum                     *big.Int
 	BlockHashToReturn            common.Hash
-	Claims                       map[int]*lpTypes.Claim
 	LatestBlockError             error
-	JobError                     error
-	WatchJobError                error
 	ProcessHistoricalUnbondError error
 	Orchestrators                []*lpTypes.Transcoder
 }
@@ -107,80 +190,73 @@ func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
 	return e.Orchestrators, nil
 }
 func (e *StubClient) IsActiveTranscoder() (bool, error) { return false, nil }
-func (e *StubClient) AssignedTranscoder(job *lpTypes.Job) (common.Address, error) {
-	return e.TranscoderAddress, nil
-}
 func (e *StubClient) GetTotalBonded() (*big.Int, error) { return big.NewInt(0), nil }
 
-// Jobs
+// TicketBroker
+func (e *StubClient) FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) (*types.Transaction, error) {
+	return nil, nil
 
-func (e *StubClient) Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int, endBlock *big.Int) (*types.Transaction, error) {
-	return nil, e.JobError
 }
-func (e *StubClient) ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (*types.Transaction, error) {
-	e.ClaimCounter++
-	e.ClaimJid = append(e.ClaimJid, jobId)
-	e.ClaimStart = append(e.ClaimStart, segmentRange[0])
-	e.ClaimEnd = append(e.ClaimEnd, segmentRange[1])
-	e.ClaimRoot[claimRoot] = true
-	e.Claims[e.ClaimCounter-1] = &lpTypes.Claim{
-		SegmentRange: segmentRange,
-		ClaimRoot:    claimRoot,
-	}
+func (e *StubClient) FundDeposit(amount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error) {
-	e.Jid = jobId
-	e.SegSeqNum = segmentNumber
-	e.DStorageHash = dataStorageHash
-	e.DHash = dataHashes[0]
-	e.TDHash = dataHashes[1]
-	e.BSig = broadcasterSig
-	e.Proof = proof
-	e.VerifyCounter++
-
+func (e *StubClient) FundPenaltyEscrow(amount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) DistributeFees(jobId *big.Int, claimId *big.Int) (*types.Transaction, error) {
+func (e *StubClient) ApproveSigners(signers []ethcommon.Address) (*types.Transaction, error) {
 	return nil, nil
 }
-func (c *StubClient) Deposit(amount *big.Int) (*types.Transaction, error) {
+func (e *StubClient) RequestSignersRevocation(signers []ethcommon.Address) (*types.Transaction, error) {
 	return nil, nil
 }
-func (c *StubClient) Withdraw() (*types.Transaction, error) { return nil, nil }
-func (c *StubClient) BroadcasterDeposit(broadcaster common.Address) (*big.Int, error) {
-	return big.NewInt(10), nil
+func (e *StubClient) Unlock() (*types.Transaction, error) {
+	return nil, nil
 }
-func (e *StubClient) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
-	return e.JobsMap[jobID.String()], nil
+func (e *StubClient) CancelUnlock() (*types.Transaction, error) {
+	return nil, nil
 }
-func (c *StubClient) GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, error) {
-	return c.Claims[int(claimID.Int64())], nil
+func (e *StubClient) Withdraw() (*types.Transaction, error) {
+	return nil, nil
 }
-func (c *StubClient) NumJobs() (*big.Int, error) { return big.NewInt(0), nil }
+func (e *StubClient) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+func (e *StubClient) IsUsedTicket(ticket *pm.Ticket) (bool, error) {
+	return true, nil
+}
+func (e *StubClient) IsApprovedSigner(sender ethcommon.Address, signer ethcommon.Address) (bool, error) {
+	return true, nil
+}
+func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
+	Deposit       *big.Int
+	PenaltyEscrow *big.Int
+	WithdrawBlock *big.Int
+}, err error) {
+	return
+}
+func (e *StubClient) MinPenaltyEscrow() (*big.Int, error) {
+	return nil, nil
+}
+func (e *StubClient) UnlockPeriod() (*big.Int, error) {
+	return nil, nil
+}
 
 // Parameters
 
-func (c *StubClient) NumActiveTranscoders() (*big.Int, error)          { return big.NewInt(0), nil }
-func (c *StubClient) RoundLength() (*big.Int, error)                   { return big.NewInt(0), nil }
-func (c *StubClient) RoundLockAmount() (*big.Int, error)               { return big.NewInt(0), nil }
-func (c *StubClient) UnbondingPeriod() (uint64, error)                 { return 0, nil }
-func (c *StubClient) VerificationRate() (uint64, error)                { return 0, nil }
-func (c *StubClient) VerificationPeriod() (*big.Int, error)            { return big.NewInt(0), nil }
-func (c *StubClient) VerificationSlashingPeriod() (*big.Int, error)    { return big.NewInt(0), nil }
-func (c *StubClient) FailedVerificationSlashAmount() (*big.Int, error) { return big.NewInt(0), nil }
-func (c *StubClient) MissedVerificationSlashAmount() (*big.Int, error) { return big.NewInt(0), nil }
-func (c *StubClient) DoubleClaimSegmentSlashAmount() (*big.Int, error) { return big.NewInt(0), nil }
-func (c *StubClient) FinderFee() (*big.Int, error)                     { return big.NewInt(0), nil }
-func (c *StubClient) Inflation() (*big.Int, error)                     { return big.NewInt(0), nil }
-func (c *StubClient) InflationChange() (*big.Int, error)               { return big.NewInt(0), nil }
-func (c *StubClient) TargetBondingRate() (*big.Int, error)             { return big.NewInt(0), nil }
-func (c *StubClient) VerificationCodeHash() (string, error)            { return "", nil }
+func (c *StubClient) NumActiveTranscoders() (*big.Int, error) { return big.NewInt(0), nil }
+func (c *StubClient) RoundLength() (*big.Int, error)          { return big.NewInt(0), nil }
+func (c *StubClient) RoundLockAmount() (*big.Int, error)      { return big.NewInt(0), nil }
+func (c *StubClient) UnbondingPeriod() (uint64, error)        { return 0, nil }
+func (c *StubClient) Inflation() (*big.Int, error)            { return big.NewInt(0), nil }
+func (c *StubClient) InflationChange() (*big.Int, error)      { return big.NewInt(0), nil }
+func (c *StubClient) TargetBondingRate() (*big.Int, error)    { return big.NewInt(0), nil }
 
 // Helpers
 
 func (c *StubClient) ContractAddresses() map[string]common.Address { return nil }
-func (c *StubClient) CheckTx(tx *types.Transaction) error          { return nil }
+func (c *StubClient) CheckTx(tx *types.Transaction) error {
+	return nil
+}
 func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, gasPrice *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
@@ -188,15 +264,6 @@ func (c *StubClient) Sign(msg []byte) ([]byte, error)   { return nil, nil }
 func (c *StubClient) LatestBlockNum() (*big.Int, error) { return big.NewInt(0), c.LatestBlockError }
 func (c *StubClient) GetGasInfo() (uint64, *big.Int)    { return 0, nil }
 func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
-func (c *StubClient) WatchForJob(j string) (*lpTypes.Job, error) {
-	return c.JobsMap[j], c.WatchJobError
-}
-func (c *StubClient) ProcessHistoricalNewJob(*big.Int, bool, func(*contracts.JobsManagerNewJob) error) error {
-	return c.WatchJobError
-}
-func (c *StubClient) WatchForNewJob(bool, chan *contracts.JobsManagerNewJob) (ethereum.Subscription, error) {
-	return nil, nil
-}
 func (c *StubClient) ProcessHistoricalUnbond(*big.Int, func(*contracts.BondingManagerUnbond) error) error {
 	return c.ProcessHistoricalUnbondError
 }

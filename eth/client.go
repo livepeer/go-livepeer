@@ -7,7 +7,7 @@ package eth
 //go:generate abigen --abi protocol/abi/LivepeerToken.abi --pkg contracts --type LivepeerToken --out contracts/livepeerToken.go
 //go:generate abigen --abi protocol/abi/ServiceRegistry.abi --pkg contracts --type ServiceRegistry --out contracts/serviceRegistry.go
 //go:generate abigen --abi protocol/abi/BondingManager.abi --pkg contracts --type BondingManager --out contracts/bondingManager.go
-//go:generate abigen --abi protocol/abi/JobsManager.abi --pkg contracts --type JobsManager --out contracts/jobsManager.go
+//go:generate abigen --abi protocol/abi/LivepeerETHTicketBroker.abi --pkg contracts --type LivepeerETHTicketBroker --out contracts/livepeerETHTicketBroker.go
 //go:generate abigen --abi protocol/abi/RoundsManager.abi --pkg contracts --type RoundsManager --out contracts/roundsManager.go
 //go:generate abigen --abi protocol/abi/Minter.abi --pkg contracts --type Minter --out contracts/minter.go
 //go:generate abigen --abi protocol/abi/LivepeerVerifier.abi --pkg contracts --type LivepeerVerifier --out contracts/livepeerVerifier.go
@@ -34,6 +34,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/pm"
 )
 
 var (
@@ -80,43 +81,39 @@ type LivepeerEthClient interface {
 	GetTranscoderEarningsPoolForRound(addr ethcommon.Address, round *big.Int) (*lpTypes.TokenPools, error)
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
-	AssignedTranscoder(*lpTypes.Job) (ethcommon.Address, error)
 	GetTotalBonded() (*big.Int, error)
 
-	// Jobs
-	Job(streamId string, transcodingOptions string, maxPricePerSegment *big.Int, endBlock *big.Int) (*types.Transaction, error)
-	ClaimWork(jobId *big.Int, segmentRange [2]*big.Int, claimRoot [32]byte) (*types.Transaction, error)
-	Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error)
-	DistributeFees(jobId *big.Int, claimId *big.Int) (*types.Transaction, error)
-	Deposit(amount *big.Int) (*types.Transaction, error)
+	// TicketBroker
+	FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) (*types.Transaction, error)
+	FundDeposit(amount *big.Int) (*types.Transaction, error)
+	FundPenaltyEscrow(amount *big.Int) (*types.Transaction, error)
+	ApproveSigners(signers []ethcommon.Address) (*types.Transaction, error)
+	RequestSignersRevocation(signers []ethcommon.Address) (*types.Transaction, error)
+	Unlock() (*types.Transaction, error)
+	CancelUnlock() (*types.Transaction, error)
 	Withdraw() (*types.Transaction, error)
-	GetJob(jobID *big.Int) (*lpTypes.Job, error)
-	GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, error)
-	BroadcasterDeposit(broadcaster ethcommon.Address) (*big.Int, error)
-	NumJobs() (*big.Int, error)
+	RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error)
+	IsUsedTicket(ticket *pm.Ticket) (bool, error)
+	IsApprovedSigner(sender ethcommon.Address, signer ethcommon.Address) (bool, error)
+	Senders(addr ethcommon.Address) (struct {
+		Deposit       *big.Int
+		PenaltyEscrow *big.Int
+		WithdrawBlock *big.Int
+	}, error)
+	MinPenaltyEscrow() (*big.Int, error)
+	UnlockPeriod() (*big.Int, error)
 
 	// Parameters
 	NumActiveTranscoders() (*big.Int, error)
 	RoundLength() (*big.Int, error)
 	RoundLockAmount() (*big.Int, error)
 	UnbondingPeriod() (uint64, error)
-	VerificationRate() (uint64, error)
-	VerificationPeriod() (*big.Int, error)
-	VerificationSlashingPeriod() (*big.Int, error)
-	FailedVerificationSlashAmount() (*big.Int, error)
-	MissedVerificationSlashAmount() (*big.Int, error)
-	DoubleClaimSegmentSlashAmount() (*big.Int, error)
-	FinderFee() (*big.Int, error)
 	Inflation() (*big.Int, error)
 	InflationChange() (*big.Int, error)
 	TargetBondingRate() (*big.Int, error)
-	VerificationCodeHash() (string, error)
 	Paused() (bool, error)
 
 	// Events
-	WatchForJob(string) (*lpTypes.Job, error)
-	ProcessHistoricalNewJob(*big.Int, bool, func(*contracts.JobsManagerNewJob) error) error
-	WatchForNewJob(bool, chan *contracts.JobsManagerNewJob) (ethereum.Subscription, error)
 	ProcessHistoricalUnbond(*big.Int, func(*contracts.BondingManagerUnbond) error) error
 	WatchForUnbond(chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error)
 	ProcessHistoricalRebond(*big.Int, func(*contracts.BondingManagerRebond) error) error
@@ -135,14 +132,14 @@ type LivepeerEthClient interface {
 }
 
 type client struct {
-	accountManager *AccountManager
+	accountManager AccountManager
 	backend        *ethclient.Client
 
 	controllerAddr      ethcommon.Address
 	tokenAddr           ethcommon.Address
 	serviceRegistryAddr ethcommon.Address
 	bondingManagerAddr  ethcommon.Address
-	jobsManagerAddr     ethcommon.Address
+	ticketBrokerAddr    ethcommon.Address
 	roundsManagerAddr   ethcommon.Address
 	minterAddr          ethcommon.Address
 	verifierAddr        ethcommon.Address
@@ -153,7 +150,7 @@ type client struct {
 	*contracts.LivepeerTokenSession
 	*contracts.ServiceRegistrySession
 	*contracts.BondingManagerSession
-	*contracts.JobsManagerSession
+	*contracts.LivepeerETHTicketBrokerSession
 	*contracts.RoundsManagerSession
 	*contracts.MinterSession
 	*contracts.LivepeerVerifierSession
@@ -291,26 +288,26 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 
 	glog.V(common.SHORT).Infof("BondingManager: %v", c.bondingManagerAddr.Hex())
 
-	jobsManagerAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("JobsManager")))
+	brokerAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("TicketBroker")))
 	if err != nil {
-		glog.Errorf("Error getting JobsManager address: %v", err)
+		glog.Errorf("Error getting TicketBroker address: %v", err)
 		return err
 	}
 
-	c.jobsManagerAddr = jobsManagerAddr
+	c.ticketBrokerAddr = brokerAddr
 
-	jobsManager, err := contracts.NewJobsManager(jobsManagerAddr, c.backend)
+	broker, err := contracts.NewLivepeerETHTicketBroker(brokerAddr, c.backend)
 	if err != nil {
-		glog.Errorf("Error creating JobsManager binding: %v", err)
+		glog.Errorf("Error creating TicketBroker binding: %v", err)
 		return err
 	}
 
-	c.JobsManagerSession = &contracts.JobsManagerSession{
-		Contract:     jobsManager,
+	c.LivepeerETHTicketBrokerSession = &contracts.LivepeerETHTicketBrokerSession{
+		Contract:     broker,
 		TransactOpts: *opts,
 	}
 
-	glog.V(common.SHORT).Infof("JobsManager: %v", c.jobsManagerAddr.Hex())
+	glog.V(common.SHORT).Infof("TicketBroker: %v", c.ticketBrokerAddr.Hex())
 
 	roundsManagerAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("RoundsManager")))
 	if err != nil {
@@ -400,7 +397,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 }
 
 func (c *client) Account() accounts.Account {
-	return c.accountManager.Account
+	return c.accountManager.Account()
 }
 
 func (c *client) Backend() (*ethclient.Client, error) {
@@ -591,28 +588,6 @@ func (c *client) autoClaimEarnings(endRound *big.Int, allRounds bool) error {
 	return nil
 }
 
-func (c *client) Deposit(amount *big.Int) (*types.Transaction, error) {
-	c.JobsManagerSession.TransactOpts.Value = amount
-
-	tx, err := c.JobsManagerSession.Deposit()
-	c.JobsManagerSession.TransactOpts.Value = nil
-	return tx, err
-}
-
-// Disambiguate between the Verifiy method in JobsManager and in Verifier
-func (c *client) Verify(jobId *big.Int, claimId *big.Int, segmentNumber *big.Int, dataStorageHash string, dataHashes [2][32]byte, broadcasterSig []byte, proof []byte) (*types.Transaction, error) {
-	return c.JobsManagerSession.Verify(jobId, claimId, segmentNumber, dataStorageHash, dataHashes, broadcasterSig, proof)
-}
-
-func (c *client) BroadcasterDeposit(addr ethcommon.Address) (*big.Int, error) {
-	b, err := c.Broadcasters(addr)
-	if err != nil {
-		return nil, err
-	}
-
-	return b.Deposit, nil
-}
-
 func (c *client) IsActiveTranscoder() (bool, error) {
 	r, err := c.CurrentRound()
 	if err != nil {
@@ -760,69 +735,6 @@ func (c *client) GetDelegatorUnbondingLock(addr ethcommon.Address, unbondingLock
 	}, nil
 }
 
-func (c *client) GetJob(jobID *big.Int) (*lpTypes.Job, error) {
-	jInfo, err := c.JobsManagerSession.GetJob(jobID)
-	if err != nil {
-		return nil, err
-	}
-
-	jStatus, err := c.JobStatus(jobID)
-	if err != nil {
-		return nil, err
-	}
-
-	status, err := lpTypes.ParseJobStatus(jStatus)
-	if err != nil {
-		return nil, err
-	}
-
-	profiles, err := common.TxDataToVideoProfile(jInfo.TranscodingOptions)
-	if err != nil {
-		return nil, err
-	}
-
-	return &lpTypes.Job{
-		JobId:              jobID,
-		StreamId:           jInfo.StreamId,
-		Profiles:           profiles,
-		MaxPricePerSegment: jInfo.MaxPricePerSegment,
-		BroadcasterAddress: jInfo.BroadcasterAddress,
-		TranscoderAddress:  jInfo.TranscoderAddress,
-		CreationRound:      jInfo.CreationRound,
-		CreationBlock:      jInfo.CreationBlock,
-		EndBlock:           jInfo.EndBlock,
-		Escrow:             jInfo.Escrow,
-		TotalClaims:        jInfo.TotalClaims,
-		Status:             status,
-		// If the job returned from the contract does not have a transcoder address,
-		// the first claim has not been submitted by the assigned transcoder yet
-		FirstClaimSubmitted: jInfo.TranscoderAddress != ethcommon.Address{},
-	}, nil
-}
-
-func (c *client) GetClaim(jobID *big.Int, claimID *big.Int) (*lpTypes.Claim, error) {
-	cInfo, err := c.JobsManagerSession.GetClaim(jobID, claimID)
-	if err != nil {
-		return nil, err
-	}
-
-	status, err := lpTypes.ParseClaimStatus(cInfo.Status)
-	if err != nil {
-		glog.V(common.SHORT).Infof("%v", cInfo)
-		return nil, err
-	}
-
-	return &lpTypes.Claim{
-		ClaimId:                      claimID,
-		SegmentRange:                 cInfo.SegmentRange,
-		ClaimRoot:                    cInfo.ClaimRoot,
-		ClaimBlock:                   cInfo.ClaimBlock,
-		EndVerificationBlock:         cInfo.EndVerificationBlock,
-		EndVerificationSlashingBlock: cInfo.EndVerificationSlashingBlock,
-		Status: status,
-	}, nil
-}
-
 func (c *client) Paused() (bool, error) {
 	return c.ControllerSession.Paused()
 }
@@ -852,32 +764,6 @@ func (c *client) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
 	return transcoders, nil
 }
 
-func (c *client) AssignedTranscoder(jInfo *lpTypes.Job) (ethcommon.Address, error) {
-	var blk *types.Block
-	getBlock := func() error {
-		var err error
-		blk, err = c.backend.BlockByNumber(context.Background(), jInfo.CreationBlock)
-		if err != nil {
-			glog.Errorf("Error getting block by number %v: %v. retrying...", jInfo.CreationBlock.String(), err)
-			return err
-		}
-
-		return nil
-	}
-	if err := backoff.Retry(getBlock, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), SubscribeRetry)); err != nil {
-		glog.Errorf("BlockByNumber failed: %v", err)
-		return ethcommon.Address{}, err
-	}
-
-	t, err := c.BondingManagerSession.ElectActiveTranscoder(jInfo.MaxPricePerSegment, blk.Hash(), jInfo.CreationRound)
-	if err != nil {
-		glog.Errorf("Error getting ElectActiveTranscoder: %v", err)
-		return ethcommon.Address{}, err
-	}
-
-	return t, nil
-}
-
 // Helpers
 
 func (c *client) ContractAddresses() map[string]ethcommon.Address {
@@ -885,11 +771,10 @@ func (c *client) ContractAddresses() map[string]ethcommon.Address {
 	addrMap["Controller"] = c.controllerAddr
 	addrMap["LivepeerToken"] = c.tokenAddr
 	addrMap["LivepeerTokenFaucet"] = c.faucetAddr
-	addrMap["JobsManager"] = c.jobsManagerAddr
+	addrMap["TicketBroker"] = c.ticketBrokerAddr
 	addrMap["RoundsManager"] = c.roundsManagerAddr
 	addrMap["BondingManager"] = c.bondingManagerAddr
 	addrMap["Minter"] = c.minterAddr
-	addrMap["Verifier"] = c.verifierAddr
 
 	return addrMap
 }
@@ -977,58 +862,6 @@ func (c *client) ReplaceTransaction(tx *types.Transaction, method string, gasPri
 	return newSignedTx, err
 }
 
-// Watch for a new job matching the given streamId.
-// Since this job will be fresh, not all fields will be populated!
-// After receiving the job, validate the fields that are expected.
-func (c *client) WatchForJob(streamId string) (*lpTypes.Job, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.txTimeout)
-	defer cancel()
-	var job *lpTypes.Job
-	jobWatcher := func() error {
-		sink := make(chan *contracts.JobsManagerNewJob)
-		sub, err := c.JobsManagerSession.Contract.JobsManagerFilterer.WatchNewJob(nil, sink, []ethcommon.Address{c.Account().Address})
-		if err != nil {
-			glog.Error("Unable to start job watcher ", err)
-			return err
-		}
-		select {
-		case newJob := <-sink:
-			sub.Unsubscribe()
-			if newJob.StreamId == streamId {
-				// TODO reconstruct job locally once we have
-				// EndBlock and CreationRound as part of the event
-				getJob := func() error {
-					var err error
-					job, err = c.GetJob(newJob.JobId)
-					if job.MaxPricePerSegment.Int64() == 0 {
-						err = errors.New("EmptyJob")
-					}
-					if err != nil {
-						glog.Errorf("Could not get job %v because of %v; retrying ", newJob.JobId, err)
-					}
-					return err
-				}
-				return backoff.Retry(getJob, backoff.NewConstantBackOff(2*time.Second))
-			}
-			// mismatched streamid; maybe we had concurrent listeners so retry
-			glog.Errorf("Watched for job; got mismatched stream Id %v; expecting %v",
-				newJob.StreamId, streamId)
-			return fmt.Errorf("MismatchedStreamId")
-		case errChan := <-sub.Err():
-			sub.Unsubscribe()
-			glog.Errorf("Error subscribing to new job %v; retrying", errChan)
-			return fmt.Errorf("SubscribeError")
-		case <-ctx.Done():
-			sub.Unsubscribe()
-			glog.Errorf("Job watcher timeout exceeded; stopping")
-			return fmt.Errorf("JobWatchTimeout")
-		}
-	}
-
-	err := backoff.Retry(jobWatcher, backoff.NewConstantBackOff(time.Second*2))
-	return job, err
-}
-
 func (c *client) getNonce() (uint64, error) {
 	c.nonceLock.Lock()
 	defer c.nonceLock.Unlock()
@@ -1074,56 +907,6 @@ func (c *client) LatestBlockNum() (*big.Int, error) {
 		return nil, err
 	}
 	return blk.Number, nil
-}
-
-func (c *client) ProcessHistoricalNewJob(startBlock *big.Int, isTranscoder bool, cb func(*contracts.JobsManagerNewJob) error) error {
-	// Retrieve historical jobs starting from startBlock
-	// WatchForNewJob() will not emit past logs
-	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
-
-	var broadcaster []ethcommon.Address
-	if !isTranscoder {
-		broadcaster = []ethcommon.Address{c.Account().Address}
-	}
-
-	it, err := c.JobsManagerSession.Contract.JobsManagerFilterer.FilterNewJob(filterOpts, broadcaster)
-	if err != nil {
-		return err
-	}
-
-	for it.Next() {
-		if err := cb(it.Event); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (c *client) WatchForNewJob(isTranscoder bool, sink chan *contracts.JobsManagerNewJob) (ethereum.Subscription, error) {
-	var (
-		sub ethereum.Subscription
-		err error
-	)
-
-	var broadcaster []ethcommon.Address
-	if !isTranscoder {
-		broadcaster = []ethcommon.Address{c.Account().Address}
-	}
-
-	newJobWatcher := func() error {
-		sub, err = c.JobsManagerSession.Contract.JobsManagerFilterer.WatchNewJob(nil, sink, broadcaster)
-		if err != nil {
-			glog.Error("Unable to start NewJob watcher ", err)
-			return err
-		}
-
-		return nil
-	}
-
-	err = backoff.Retry(newJobWatcher, backoff.NewConstantBackOff(time.Second*2))
-
-	return sub, err
 }
 
 func (c *client) ProcessHistoricalUnbond(startBlock *big.Int, cb func(*contracts.BondingManagerUnbond) error) error {

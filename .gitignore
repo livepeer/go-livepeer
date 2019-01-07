@@ -15,3 +15,7 @@
 .glide/
 
 eth/protocol
+
+# Our compiled binary
+livepeer
+/livepeer_cli
