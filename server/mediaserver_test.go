@@ -37,22 +37,28 @@ func setupServer() *LivepeerServer {
 }
 
 type stubDiscovery struct {
-	infos        []*net.OrchestratorInfo
-	waitGetOrch  chan struct{}
-	lock         *sync.Mutex // make the race detector happy
+	infos       []*net.OrchestratorInfo
+	waitGetOrch chan struct{}
+
+	// typically the following fields have to be wrapped by `lock`
+	// makes the race detector happy
+	lock         *sync.Mutex
 	getOrchCalls int
+	getOrchError error
 }
 
 func (d *stubDiscovery) GetOrchestrators(num int) ([]*net.OrchestratorInfo, error) {
 	if d.waitGetOrch != nil {
 		<-d.waitGetOrch
 	}
+	var err error
 	if d.lock != nil {
 		d.lock.Lock()
 		d.getOrchCalls++
+		err = d.getOrchError
 		d.lock.Unlock()
 	}
-	return d.infos, nil
+	return d.infos, err
 }
 
 type StubSegmenter struct {
@@ -421,6 +427,65 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	}
 }
 
+func TestStartSession(t *testing.T) {
+	assert := assert.New(t)
+	s := setupServer()
+	mid := core.SplitStreamIDString(t.Name()).ManifestID
+	storage := drivers.NodeStorage.NewSession(string(mid))
+	strm := stream.NewBasicRTMPVideoStream(string(mid))
+	cxn := &rtmpConnection{
+		lock:   &sync.RWMutex{},
+		pl:     core.NewBasicPlaylistManager(mid, storage),
+		stream: strm,
+	}
+	sd := &stubDiscovery{
+		lock:  &sync.Mutex{},
+		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{}},
+	}
+	s.LivepeerNode.OrchestratorPool = sd
+
+	assert.Equal(0, sd.getOrchCalls) // sanity check
+
+	// return nil given an error if session doesn't exist
+	sd.getOrchError = fmt.Errorf("StubError")
+	assert.Nil(s.startSession(cxn))
+	assert.Equal(1, sd.getOrchCalls)
+	sd.getOrchError = nil
+
+	// return nil if no discovery set
+	s.LivepeerNode.OrchestratorPool = nil
+	assert.Nil(s.startSession(cxn))
+	assert.Equal(1, sd.getOrchCalls)
+	s.LivepeerNode.OrchestratorPool = sd
+
+	// ensure a single try works
+	s.connectionLock.Lock()
+	s.rtmpConnections[mid] = cxn
+	s.connectionLock.Unlock()
+	assert.NotNil(s.startSession(cxn))
+	assert.Equal(2, sd.getOrchCalls)
+
+	// ensure errors result in retries
+	sd.lock.Lock()
+	sd.getOrchCalls = 0                       // reset
+	sd.getOrchError = fmt.Errorf("StubError") // inital error
+	sd.lock.Unlock()
+	sd.waitGetOrch = make(chan struct{})
+	sessionWait := make(chan *BroadcastSession)
+	go func() {
+		sessionWait <- s.startSession(cxn)
+	}()
+	for i := 0; i < 3; i++ {
+		sd.waitGetOrch <- struct{}{} // invoke getOrch a few times
+	}
+	sd.lock.Lock()
+	sd.getOrchError = nil // magically remove the error.
+	sd.lock.Unlock()
+	sd.waitGetOrch <- struct{}{} // invoke getOrch again
+	sess := <-sessionWait
+	assert.NotNil(sess)
+	assert.Equal(4, sd.getOrchCalls)
+}
 
 func TestSessionListener(t *testing.T) {
 	assert := assert.New(t)
