@@ -303,9 +303,11 @@ func TestProcessPayment_GivenWinningTicketAndRecipientError_DoesNotCacheSessionI
 	orch := NewOrchestrator(n)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", true, errors.New("mock error"))
 
-	orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
 
-	assert.Empty(t, n.pmSessions)
+	assert := assert.New(t)
+	assert.NotNil(err)
+	assert.Empty(n.pmSessions)
 }
 
 func TestProcessPayment_GivenLosingTicket_DoesNotCacheSessionID(t *testing.T) {
