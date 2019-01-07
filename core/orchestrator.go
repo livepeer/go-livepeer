@@ -114,7 +114,7 @@ func (orch *orchestrator) TicketParams(sender ethcommon.Address) *net.TicketPara
 
 	params := orch.node.Recipient.TicketParams(sender)
 	return &net.TicketParams{
-		Recipient:         orch.address.Bytes(),
+		Recipient:         params.Recipient.Bytes(),
 		FaceValue:         params.FaceValue.Bytes(),
 		WinProb:           params.WinProb.Bytes(),
 		RecipientRandHash: params.RecipientRandHash.Bytes(),
