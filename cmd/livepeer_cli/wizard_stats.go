@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -117,16 +118,28 @@ func (w *wizard) broadcastStats() {
 	fmt.Println("|BROADCASTER STATS|")
 	fmt.Println("+-----------------+")
 
+	sender, err := w.senderInfo()
+	if err != nil {
+		glog.Errorf("Error getting sender info: %v", err)
+		return
+	}
+
 	price, transcodingOptions := w.getBroadcastConfig()
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
 		[]string{"Broadcast Price Per Segment in Wei", price.String()},
 		[]string{"Broadcast Transcoding Options", transcodingOptions},
+		[]string{"Deposit", eth.FormatUnits(sender.Deposit, "ETH")},
+		[]string{"Penalty Escrow", eth.FormatUnits(sender.PenaltyEscrow, "ETH")},
 	}
 
 	for _, v := range data {
 		table.Append(v)
+	}
+
+	if sender.WithdrawBlock.Cmp(big.NewInt(0)) > 0 && (sender.Deposit.Cmp(big.NewInt(0)) > 0 || sender.PenaltyEscrow.Cmp(big.NewInt(0)) > 0) {
+		table.Append([]string{"Withdraw Block", sender.WithdrawBlock.String()})
 	}
 
 	table.SetAlignment(tablewriter.ALIGN_RIGHT)
@@ -416,4 +429,24 @@ func (w *wizard) getGasPrice() string {
 		g = "automatic"
 	}
 	return g
+}
+
+func (w *wizard) currentBlock() (*big.Int, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/currentBlock", w.host, w.httpPort))
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("http response status not ok")
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return new(big.Int).SetBytes(body), nil
 }
