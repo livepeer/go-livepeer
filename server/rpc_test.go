@@ -1,14 +1,20 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
@@ -17,6 +23,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/stream"
@@ -60,6 +67,14 @@ func (r *stubOrchestrator) StreamIDs(jobId string) ([]core.StreamID, error) {
 	return []core.StreamID{}, nil
 }
 
+func (r *stubOrchestrator) ProcessPayment(payment net.Payment, manifestID core.ManifestID) error {
+	return nil
+}
+
+func (r *stubOrchestrator) TicketParams(sender ethcommon.Address) *net.TicketParams {
+	return nil
+}
+
 func StubOrchestrator() *stubOrchestrator {
 	pk, err := ethcrypto.GenerateKey()
 	if err != nil {
@@ -88,19 +103,21 @@ func TestRPCTranscoderReq(t *testing.T) {
 	if err != nil {
 		t.Error("Unable to create orchestrator req ", req)
 	}
-	if verifyOrchestratorReq(o, req) != nil { // normal case
+
+	addr := ethcommon.BytesToAddress(req.Address)
+	if verifyOrchestratorReq(o, addr, req.Sig) != nil { // normal case
 		t.Error("Unable to verify orchestrator request")
 	}
 
 	// wrong broadcaster
-	req.Address = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey).Bytes()
-	if verifyOrchestratorReq(o, req) == nil {
+	addr = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey)
+	if verifyOrchestratorReq(o, addr, req.Sig) == nil {
 		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
 
 	// invalid address
-	req.Address = []byte("#non-hex address!")
-	if verifyOrchestratorReq(o, req) == nil {
+	addr = ethcommon.BytesToAddress([]byte("#non-hex address!"))
+	if verifyOrchestratorReq(o, addr, req.Sig) == nil {
 		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
 
@@ -203,5 +220,222 @@ func TestPing(t *testing.T) {
 
 	if !verified {
 		t.Error("Unable to verify response from ping request")
+	}
+}
+
+func TestProcessPayment_GivenInvalidBase64_ReturnsError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	manifestID := core.ManifestID("some manifest")
+	header := "not base64"
+
+	err := processPayment(orch, header, manifestID)
+
+	assert.Contains(t, err.Error(), "base64")
+}
+
+func TestProcessPayment_GivenEmptyHeader_ReturnsOrchsReturnValue(t *testing.T) {
+	orch := &mockOrchestrator{}
+	manifestID := core.ManifestID("some manifest")
+	orch.On("ProcessPayment", mock.Anything, mock.Anything).Return(errors.New("error from mock")).Once()
+
+	err := processPayment(orch, "", manifestID)
+
+	assert.Contains(t, err.Error(), "error from mock")
+}
+
+func TestProcessPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	manifestID := core.ManifestID("some manifest")
+	data := pm.RandBytes(123)
+	header := base64.StdEncoding.EncodeToString(data)
+
+	err := processPayment(orch, header, manifestID)
+
+	assert.Contains(t, err.Error(), "protobuf")
+}
+
+func TestProcessPayment_GivenValidHeader_InvokesOrchFunction(t *testing.T) {
+	orch := &mockOrchestrator{}
+	manifestID := core.ManifestID("some manifest")
+	protoTicket := defaultTicket(t)
+	protoPayment := defaultPayment(t, protoTicket)
+	data, err := proto.Marshal(protoPayment)
+	require.Nil(t, err)
+	header := base64.StdEncoding.EncodeToString(data)
+	// Had to use this long-winded arg matcher because simple equality and DeepEqual didn't work
+	argMatcher := mock.MatchedBy(func(actualPayment net.Payment) bool {
+		if !bytes.Equal(actualPayment.Ticket.Recipient, protoTicket.Recipient) {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Ticket.Sender, protoTicket.Sender) {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Ticket.FaceValue, protoTicket.FaceValue) {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Ticket.WinProb, protoTicket.WinProb) {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Ticket.RecipientRandHash, protoTicket.RecipientRandHash) {
+			return false
+		}
+		if actualPayment.Ticket.SenderNonce != protoTicket.SenderNonce {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Sig, protoPayment.Sig) {
+			return false
+		}
+		if !bytes.Equal(actualPayment.Seed, protoPayment.Seed) {
+			return false
+		}
+		return true
+	})
+
+	orch.On("ProcessPayment", argMatcher, manifestID).Return(nil).Once()
+
+	err = processPayment(orch, header, manifestID)
+
+	assert.Nil(t, err)
+	orch.AssertExpectations(t)
+}
+
+func TestProcessPayment_GivenErrorFromOrch_ForwardsTheError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	manifestID := core.ManifestID("some manifest")
+	protoTicket := defaultTicket(t)
+	protoPayment := defaultPayment(t, protoTicket)
+	data, err := proto.Marshal(protoPayment)
+	require.Nil(t, err)
+	header := base64.StdEncoding.EncodeToString(data)
+	orch.On("ProcessPayment", mock.Anything, mock.Anything).Return(errors.New("error from mock")).Once()
+
+	err = processPayment(orch, header, manifestID)
+
+	assert.Equal(t, "error from mock", err.Error())
+}
+
+func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {
+	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	uri := "http://someuri.com"
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("TicketParams", mock.Anything).Return(nil)
+
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Equal(uri, oInfo.Transcoder)
+}
+
+func TestGetOrchestrator_GivenInvalidSig_ReturnsError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(false)
+
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Contains(err.Error(), "sig")
+	assert.Nil(oInfo)
+}
+
+func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
+	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	uri := "http://someuri.com"
+	expectedParams := defaultTicketParams()
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("TicketParams", mock.Anything).Return(expectedParams)
+
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Equal(expectedParams, oInfo.TicketParams)
+}
+
+type mockOrchestrator struct {
+	mock.Mock
+}
+
+func (o *mockOrchestrator) ServiceURI() *url.URL {
+	args := o.Called()
+	if args.Get(0) != nil {
+		return args.Get(0).(*url.URL)
+	}
+	return nil
+}
+func (o *mockOrchestrator) Address() ethcommon.Address {
+	o.Called()
+	return ethcommon.Address{}
+}
+func (o *mockOrchestrator) TranscoderSecret() string {
+	o.Called()
+	return ""
+}
+func (o *mockOrchestrator) Sign(msg []byte) ([]byte, error) {
+	o.Called(msg)
+	return nil, nil
+}
+func (o *mockOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
+	args := o.Called(addr, msg, sig)
+	return args.Bool(0)
+}
+func (o *mockOrchestrator) CurrentBlock() *big.Int {
+	o.Called()
+	return nil
+}
+func (o *mockOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
+	o.Called(md, seg)
+	return nil, nil
+}
+func (o *mockOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
+	o.Called(stream)
+}
+func (o *mockOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {
+	o.Called(job, res)
+}
+func (o *mockOrchestrator) ProcessPayment(payment net.Payment, manifestID core.ManifestID) error {
+	args := o.Called(payment, manifestID)
+	return args.Error(0)
+}
+
+func (o *mockOrchestrator) TicketParams(sender ethcommon.Address) *net.TicketParams {
+	args := o.Called(sender)
+	if args.Get(0) != nil {
+		return args.Get(0).(*net.TicketParams)
+	}
+	return nil
+}
+
+func defaultTicketParams() *net.TicketParams {
+	return &net.TicketParams{
+		Recipient:         pm.RandBytes(123),
+		FaceValue:         pm.RandBytes(123),
+		WinProb:           pm.RandBytes(123),
+		RecipientRandHash: pm.RandBytes(123),
+		Seed:              pm.RandBytes(123),
+	}
+}
+
+func defaultPayment(t *testing.T, ticket *net.Ticket) *net.Payment {
+	return &net.Payment{
+		Ticket: ticket,
+		Sig:    pm.RandBytes(123),
+		Seed:   pm.RandBytes(123),
+	}
+}
+
+func defaultTicket(t *testing.T) *net.Ticket {
+	return &net.Ticket{
+		Recipient:         pm.RandBytes(123),
+		Sender:            pm.RandBytes(123),
+		FaceValue:         pm.RandBytes(123),
+		WinProb:           pm.RandBytes(123),
+		SenderNonce:       456,
+		RecipientRandHash: pm.RandBytes(123),
 	}
 }

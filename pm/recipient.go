@@ -24,7 +24,7 @@ type Recipient interface {
 
 	// TicketParams returns the recipient's currently accepted ticket parameters
 	// for a provided sender ETH adddress
-	TicketParams(sender ethcommon.Address) (*TicketParams, error)
+	TicketParams(sender ethcommon.Address) *TicketParams
 }
 
 // recipient is an implementation of the Recipient interface that
@@ -132,11 +132,8 @@ func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 }
 
 // TicketParams returns the recipient's currently accepted ticket parameters
-func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
-	randBytes := make([]byte, 32)
-	if _, err := rand.Read(randBytes); err != nil {
-		return nil, err
-	}
+func (r *recipient) TicketParams(sender ethcommon.Address) *TicketParams {
+	randBytes := RandBytes(32)
 
 	seed := new(big.Int).SetBytes(randBytes)
 	recipientRand := r.rand(seed, sender)
@@ -147,7 +144,7 @@ func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error
 		WinProb:           r.winProb,
 		RecipientRandHash: recipientRandHash,
 		Seed:              seed,
-	}, nil
+	}
 }
 
 func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {

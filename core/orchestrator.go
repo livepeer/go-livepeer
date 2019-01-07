@@ -14,6 +14,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	"github.com/pkg/errors"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
@@ -77,6 +78,48 @@ func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscod
 
 func (orch *orchestrator) TranscoderResults(tcId int64, res *RemoteTranscoderResult) {
 	orch.node.transcoderResults(tcId, res)
+}
+
+func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID ManifestID) error {
+	if orch.node == nil || orch.node.Recipient == nil {
+		return nil
+	}
+
+	ticket := &pm.Ticket{
+		Recipient:         ethcommon.BytesToAddress(payment.Ticket.Recipient),
+		Sender:            ethcommon.BytesToAddress(payment.Ticket.Sender),
+		FaceValue:         new(big.Int).SetBytes(payment.Ticket.FaceValue),
+		WinProb:           new(big.Int).SetBytes(payment.Ticket.WinProb),
+		SenderNonce:       payment.Ticket.SenderNonce,
+		RecipientRandHash: ethcommon.BytesToHash(payment.Ticket.RecipientRandHash),
+	}
+	seed := new(big.Int).SetBytes(payment.Seed)
+
+	sessionID, won, err := orch.node.Recipient.ReceiveTicket(ticket, payment.Sig, seed)
+	if err != nil {
+		return errors.Wrapf(err, "error receiving ticket for payment %v for manifest %v", payment, manifestID)
+	}
+
+	if won {
+		cachePMSessionID(orch.node, manifestID, sessionID)
+	}
+
+	return nil
+}
+
+func (orch *orchestrator) TicketParams(sender ethcommon.Address) *net.TicketParams {
+	if orch.node == nil || orch.node.Recipient == nil {
+		return nil
+	}
+
+	params := orch.node.Recipient.TicketParams(sender)
+	return &net.TicketParams{
+		Recipient:         orch.address.Bytes(),
+		FaceValue:         params.FaceValue.Bytes(),
+		WinProb:           params.WinProb.Bytes(),
+		RecipientRandHash: params.RecipientRandHash.Bytes(),
+		Seed:              params.Seed.Bytes(),
+	}
 }
 
 func NewOrchestrator(n *LivepeerNode) *orchestrator {
@@ -404,6 +447,15 @@ func NewRemoteTranscoder(n *LivepeerNode, stream net.Transcoder_RegisterTranscod
 		stream: stream,
 		eof:    make(chan struct{}, 1),
 	}
+}
+
+func cachePMSessionID(n *LivepeerNode, m ManifestID, s string) {
+	n.pmSessionsMutex.Lock()
+	defer n.pmSessionsMutex.Unlock()
+	if _, ok := n.pmSessions[m]; !ok {
+		n.pmSessions[m] = make(map[string]bool)
+	}
+	n.pmSessions[m][s] = true
 }
 
 func getAndClearPMSessionIDsByManifestID(n *LivepeerNode, m ManifestID) []string {

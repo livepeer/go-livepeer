@@ -360,7 +360,7 @@ func TestStoreWinningTicket_GivenNilTicket_ReturnsError(t *testing.T) {
 	require := require.New(t)
 	require.Nil(err)
 
-	sig := pm.RandBytesOrFatal(42, t)
+	sig := pm.RandBytes(42)
 	recipientRand := new(big.Int).SetInt64(1234)
 
 	err = dbh.StoreWinningTicket("sessionID", nil, sig, recipientRand)
@@ -533,14 +533,14 @@ func TestLoadWinningTickets_GivenTwoSessionsWithTickets_ReturnsAllTickets(t *tes
 func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) {
 	sessionID = "foo bar"
 	ticket = &pm.Ticket{
-		Sender:            pm.RandAddressOrFatal(t),
-		Recipient:         pm.RandAddressOrFatal(t),
+		Sender:            pm.RandAddress(),
+		Recipient:         pm.RandAddress(),
 		FaceValue:         big.NewInt(1234),
 		WinProb:           big.NewInt(2345),
 		SenderNonce:       uint32(123),
-		RecipientRandHash: pm.RandHashOrFatal(t),
+		RecipientRandHash: pm.RandHash(),
 	}
-	sig = pm.RandBytesOrFatal(42, t)
+	sig = pm.RandBytes(42)
 	recipientRand = big.NewInt(4567)
 	return
 }

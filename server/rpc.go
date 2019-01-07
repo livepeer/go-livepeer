@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -31,6 +30,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	"github.com/pkg/errors"
 )
 
 var broadcasterAddress = ethcommon.BytesToAddress([]byte("111 Transcoder Address 1")) // need to remove hard-coded broadcaster address
@@ -39,6 +39,7 @@ const HTTPTimeout = 8 * time.Second
 const GRPCTimeout = 8 * time.Second
 const GRPCConnectTimeout = 3 * time.Second
 const StoragePrefixIdLength = 8
+const PaymentHeader = "Livepeer-Payment"
 
 var ErrSegSig = errors.New("ErrSegSig")
 var ErrSegEncoding = errors.New("ErrorSegEncoding")
@@ -59,6 +60,8 @@ type Orchestrator interface {
 	TranscodeSeg(*core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
+	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
+	TicketParams(sender ethcommon.Address) *net.TicketParams
 }
 
 type Broadcaster interface {
@@ -126,9 +129,8 @@ func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.Client
 	return c, conn, nil
 }
 
-func verifyOrchestratorReq(orch Orchestrator, req *net.OrchestratorRequest) error {
-	addr := ethcommon.BytesToAddress(req.Address)
-	if !orch.VerifySig(addr, addr.Hex(), req.Sig) {
+func verifyOrchestratorReq(orch Orchestrator, addr ethcommon.Address, sig []byte) error {
+	if !orch.VerifySig(addr, addr.Hex(), sig) {
 		glog.Error("orchestrator req sig check failed")
 		return fmt.Errorf("orchestrator req sig check failed")
 	}
@@ -227,13 +229,15 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 	return &net.PingPong{Value: value}, nil
 }
 
-func getOrchestrator(context context.Context, orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
-	if err := verifyOrchestratorReq(orch, req); err != nil {
+func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
+	addr := ethcommon.BytesToAddress(req.Address)
+	if err := verifyOrchestratorReq(orch, addr, req.Sig); err != nil {
 		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
 	}
 
 	tr := net.OrchestratorInfo{
-		Transcoder: orch.ServiceURI().String(), // currently,  orchestrator == transcoder
+		Transcoder:   orch.ServiceURI().String(), // currently,  orchestrator == transcoder
+		TicketParams: orch.TicketParams(addr),
 	}
 
 	storagePrefix := core.RandomIdGenerator(StoragePrefixIdLength)
@@ -242,6 +246,7 @@ func getOrchestrator(context context.Context, orch Orchestrator, req *net.Orches
 	if os != nil && os.IsExternal() {
 		tr.Storage = []*net.OSInfo{os.GetInfo()}
 	}
+
 	return &tr, nil
 }
 
@@ -249,6 +254,20 @@ type lphttp struct {
 	orchestrator Orchestrator
 	orchRpc      *grpc.Server
 	transRpc     *http.ServeMux
+}
+
+func processPayment(orch Orchestrator, header string, manifestID core.ManifestID) error {
+	buf, err := base64.StdEncoding.DecodeString(header)
+	if err != nil {
+		return errors.Wrap(err, "base64 decode error")
+	}
+	var payment net.Payment
+	err = proto.Unmarshal(buf, &payment)
+	if err != nil {
+		return errors.Wrap(err, "protobuf unmarshal error")
+	}
+
+	return orch.ProcessPayment(payment, manifestID)
 }
 
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
@@ -261,6 +280,13 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		glog.Error("Could not verify segment creds")
 		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+
+	err = processPayment(orch, r.Header.Get(PaymentHeader), segData.ManifestID)
+	if err != nil {
+		glog.Errorf("Error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusPaymentRequired)
 		return
 	}
 
@@ -356,7 +382,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 // grpc methods
 func (h *lphttp) GetOrchestrator(context context.Context, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
-	return getOrchestrator(context, h.orchestrator, req)
+	return getOrchestrator(h.orchestrator, req)
 }
 
 func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong, error) {

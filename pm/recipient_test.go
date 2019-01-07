@@ -18,7 +18,7 @@ import (
 )
 
 func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *stubValidator, *stubTicketStore, *big.Int, *big.Int, []byte) {
-	sender := RandAddressOrFatal(t)
+	sender := RandAddress()
 
 	b := newStubBroker()
 	b.SetDeposit(sender, big.NewInt(500))
@@ -40,10 +40,7 @@ func newRecipientOrFatal(t *testing.T, b Broker, v Validator, ts TicketStore, fa
 }
 
 func ticketParamsOrFatal(t *testing.T, r Recipient, sender ethcommon.Address) *TicketParams {
-	params, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	params := r.TicketParams(sender)
 
 	return params
 }
@@ -68,7 +65,7 @@ func genRecipientRand(sender ethcommon.Address, secret [32]byte, seed *big.Int) 
 func TestReceiveTicket_InvalidRecipientRand_InvalidSeed(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Test invalid recipientRand from seed (invalid seed)
 	ticket := newTicket(sender, params, 0)
@@ -87,7 +84,7 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidSeed(t *testing.T) {
 func TestReceiveTicket_InvalidRecipientRand_InvalidSender(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Test invalid recipientRand from seed (invalid sender)
 	ticket := newTicket(ethcommon.Address{}, params, 0)
@@ -104,11 +101,11 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidSender(t *testing.T) {
 func TestReceiveTicket_InvalidRecipientRand_InvalidRecipientRandHash(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Test invalid recipientRand from seed (invalid recipientRandHash)
 	ticket := newTicket(sender, params, 0)
-	ticket.RecipientRandHash = RandHashOrFatal(t) // Using invalid recipientRandHash
+	ticket.RecipientRandHash = RandHash() // Using invalid recipientRandHash
 
 	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
@@ -122,7 +119,7 @@ func TestReceiveTicket_InvalidRecipientRand_InvalidRecipientRandHash(t *testing.
 func TestReceiveTicket_InvalidFaceValue(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Test invalid faceValue
 	ticket := newTicket(sender, params, 0)
@@ -140,7 +137,7 @@ func TestReceiveTicket_InvalidFaceValue(t *testing.T) {
 func TestReceiveTicket_InvalidWinProb(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Test invalid winProb
 	ticket := newTicket(sender, params, 0)
@@ -158,7 +155,7 @@ func TestReceiveTicket_InvalidWinProb(t *testing.T) {
 func TestReceiveTicket_InvalidTicket(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Test invalid ticket
 	ticket := newTicket(sender, params, 0)
@@ -179,7 +176,7 @@ func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Test valid non-winning ticket
 	newSenderNonce := uint32(3)
@@ -208,7 +205,7 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Test valid winning ticket
 	newSenderNonce := uint32(3)
@@ -267,7 +264,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Test valid winning ticket
 	newSenderNonce := uint32(3)
@@ -313,7 +310,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Test invalid recipientRand revealed
 	ticket := newTicket(sender, params, 0)
@@ -346,7 +343,7 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Test invalid senderNonce
 	// Receive senderNonce = 0
@@ -387,7 +384,7 @@ func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
 func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	var wg sync.WaitGroup
 	var errCount uint64
@@ -433,7 +430,7 @@ func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {
 func TestRedeemWinningTickets_SingleTicket_SendersError(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Config stub validator with valid winning tickets
 	v.SetIsWinningTicket(true)
@@ -464,7 +461,7 @@ func TestRedeemWinningTickets_SingleTicket_SendersError(t *testing.T) {
 func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, b, v, ts, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Config stub validator with valid winning tickets
 	v.SetIsWinningTicket(true)
@@ -497,7 +494,7 @@ func TestRedeemWinningTickets_SingleTicket_RedeemError(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Config stub validator with valid winning tickets
 	v.SetIsWinningTicket(true)
@@ -547,7 +544,7 @@ func TestRedeemWinningTickets_SingleTicket(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Config stub validator with valid winning tickets
 	v.SetIsWinningTicket(true)
@@ -591,7 +588,7 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
-	params := ticketParamsOrFatal(t, r, sender)
+	params := r.TicketParams(sender)
 
 	// Config stub validator with valid winning tickets
 	v.SetIsWinningTicket(true)
@@ -704,10 +701,7 @@ func TestTicketParams(t *testing.T) {
 	r := NewRecipientWithSecret(b, v, ts, secret, faceValue, winProb)
 
 	// Test correct params returned
-	params1, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	params1 := r.TicketParams(sender)
 
 	if params1.FaceValue.Cmp(faceValue) != 0 {
 		t.Errorf("expected faceValue %d got %d", faceValue, params1.FaceValue)
@@ -724,10 +718,7 @@ func TestTicketParams(t *testing.T) {
 	}
 
 	// Test correct params returned and different seed + recipientRandHash
-	params2, err := r.TicketParams(sender)
-	if err != nil {
-		t.Fatal(err)
-	}
+	params2 := r.TicketParams(sender)
 
 	if params2.FaceValue.Cmp(faceValue) != 0 {
 		t.Errorf("expected faceValue %d got %d", faceValue, params2.FaceValue)
