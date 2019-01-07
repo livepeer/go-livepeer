@@ -34,6 +34,7 @@ type recipient struct {
 	broker Broker
 	store  TicketStore
 
+	addr   ethcommon.Address
 	secret [32]byte
 
 	invalidRands sync.Map
@@ -47,7 +48,7 @@ type recipient struct {
 
 // NewRecipient creates an instance of a recipient with an
 // automatically generated random secret
-func NewRecipient(broker Broker, val Validator, store TicketStore, faceValue *big.Int, winProb *big.Int) (Recipient, error) {
+func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, faceValue *big.Int, winProb *big.Int) (Recipient, error) {
 	randBytes := make([]byte, 32)
 	if _, err := rand.Read(randBytes); err != nil {
 		return nil, err
@@ -56,17 +57,18 @@ func NewRecipient(broker Broker, val Validator, store TicketStore, faceValue *bi
 	var secret [32]byte
 	copy(secret[:], randBytes[:32])
 
-	return NewRecipientWithSecret(broker, val, store, secret, faceValue, winProb), nil
+	return NewRecipientWithSecret(addr, broker, val, store, secret, faceValue, winProb), nil
 }
 
 // NewRecipientWithSecret creates an instance of a recipient with a user provided
 // secret. In most cases, NewRecipient should be used instead which will
 // automatically generate a random secret
-func NewRecipientWithSecret(broker Broker, val Validator, store TicketStore, secret [32]byte, faceValue *big.Int, winProb *big.Int) Recipient {
+func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, secret [32]byte, faceValue *big.Int, winProb *big.Int) Recipient {
 	return &recipient{
 		broker:       broker,
 		val:          val,
 		store:        store,
+		addr:         addr,
 		secret:       secret,
 		faceValue:    faceValue,
 		senderNonces: make(map[string]uint32),
@@ -90,7 +92,7 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 		return "", false, errors.Errorf("invalid ticket winProb %v", ticket.WinProb)
 	}
 
-	if err := r.val.ValidateTicket(ticket, sig, recipientRand); err != nil {
+	if err := r.val.ValidateTicket(r.addr, ticket, sig, recipientRand); err != nil {
 		return "", false, err
 	}
 
@@ -140,6 +142,7 @@ func (r *recipient) TicketParams(sender ethcommon.Address) *TicketParams {
 	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size))
 
 	return &TicketParams{
+		Recipient:         r.addr,
 		FaceValue:         r.faceValue,
 		WinProb:           r.winProb,
 		RecipientRandHash: recipientRandHash,

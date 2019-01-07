@@ -308,14 +308,18 @@ func main() {
 			}
 
 			sigVerifier := &pm.DefaultSigVerifier{}
-			validator := pm.NewValidator(n.Eth.Account().Address, sigVerifier)
+			validator := pm.NewValidator(sigVerifier)
 			faceValueInWei := eth.ToBaseUnit(big.NewFloat(*faceValue))
 			winProbBigInt := eth.FromPercOfUint256(*winProb)
-			n.Recipient, err = pm.NewRecipient(n.Eth, validator, n.Database, faceValueInWei, winProbBigInt)
+			n.Recipient, err = pm.NewRecipient(n.Eth.Account().Address, n.Eth, validator, n.Database, faceValueInWei, winProbBigInt)
 			if err != nil {
 				glog.Errorf("Error setting up PM recipient: %v", err)
 				return
 			}
+		}
+
+		if n.NodeType == core.BroadcasterNode {
+			n.Sender = pm.NewSender(n.Eth)
 		}
 
 		// Start services

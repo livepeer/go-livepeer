@@ -11,6 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livepeer/go-livepeer/pm"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
@@ -70,6 +74,10 @@ func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVide
 func TestStartBroadcast(t *testing.T) {
 	s := setupServer()
 
+	defer func() {
+		s.LivepeerNode.Sender = nil
+	}()
+
 	// Empty discovery
 	mid := core.ManifestID(core.RandomVideoID())
 	storage := drivers.NodeStorage.NewSession(string(mid))
@@ -104,6 +112,47 @@ func TestStartBroadcast(t *testing.T) {
 	if sess.OrchestratorInfo != sd.infos[0] || sd.infos[0] == sd.infos[1] {
 		t.Error("Unexpected orchestrator info")
 	}
+	if sess.Sender != nil {
+		t.Error("Unexpected sender")
+	}
+	if sess.PMSessionID != "" {
+		t.Error("Unexpected PM sessionID")
+	}
+
+	// Test start PM session
+	sender := &pm.MockSender{}
+	s.LivepeerNode.Sender = sender
+
+	params := pm.TicketParams{
+		Recipient:         pm.RandAddress(),
+		FaceValue:         big.NewInt(1234),
+		WinProb:           big.NewInt(5678),
+		RecipientRandHash: pm.RandHash(),
+		Seed:              big.NewInt(7777),
+	}
+	protoParams := &net.TicketParams{
+		Recipient:         params.Recipient.Bytes(),
+		FaceValue:         params.FaceValue.Bytes(),
+		WinProb:           params.WinProb.Bytes(),
+		RecipientRandHash: params.RecipientRandHash.Bytes(),
+		Seed:              params.Seed.Bytes(),
+	}
+
+	sd.infos = []*net.OrchestratorInfo{
+		&net.OrchestratorInfo{
+			TicketParams: protoParams,
+		},
+	}
+
+	expSessionID := "foo"
+	sender.On("StartSession", params).Return(expSessionID)
+
+	sess, err := s.startBroadcast(pl)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+	assert.Equal(sender, sess.Sender)
+	assert.Equal(expSessionID, sess.PMSessionID)
 }
 
 func TestCreateRTMPStreamHandler(t *testing.T) {

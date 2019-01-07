@@ -204,6 +204,71 @@ func TestRPCSeg(t *testing.T) {
 	corruptSegData(sd, ErrSegSig) // invalid sig
 }
 
+func TestGenPayment(t *testing.T) {
+	mid, _ := core.MakeManifestID(core.RandomVideoID())
+	b := StubBroadcaster2()
+	s := &BroadcastSession{
+		Broadcaster: b,
+		ManifestID:  mid,
+	}
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Test missing sender
+	payment, err := genPayment(s)
+	assert.Equal("", payment)
+	assert.Nil(err)
+
+	sender := &pm.MockSender{}
+	s.Sender = sender
+
+	// Test CreateTicket error
+	sender.On("CreateTicket", mock.Anything).Return(nil, nil, nil, errors.New("CreateTicket error")).Once()
+
+	_, err = genPayment(s)
+	assert.Equal("CreateTicket error", err.Error())
+
+	decodePayment := func(payment string) net.Payment {
+		buf, err := base64.StdEncoding.DecodeString(payment)
+		assert.Nil(err)
+
+		var protoPayment net.Payment
+		err = proto.Unmarshal(buf, &protoPayment)
+		assert.Nil(err)
+
+		return protoPayment
+	}
+
+	// Test payment creation
+	ticket := &pm.Ticket{
+		Recipient:         pm.RandAddress(),
+		Sender:            pm.RandAddress(),
+		FaceValue:         big.NewInt(1234),
+		WinProb:           big.NewInt(5678),
+		SenderNonce:       777,
+		RecipientRandHash: pm.RandHash(),
+	}
+	seed := big.NewInt(7777)
+	sig := pm.RandBytes(42)
+
+	sender.On("CreateTicket", mock.Anything).Return(ticket, seed, sig, nil).Once()
+
+	payment, err = genPayment(s)
+	require.Nil(err)
+
+	protoPayment := decodePayment(payment)
+	protoTicket := protoPayment.Ticket
+	assert.Equal(ticket.Recipient, ethcommon.BytesToAddress(protoTicket.Recipient))
+	assert.Equal(ticket.Sender, ethcommon.BytesToAddress(protoTicket.Sender))
+	assert.Equal(ticket.FaceValue, new(big.Int).SetBytes(protoTicket.FaceValue))
+	assert.Equal(ticket.WinProb, new(big.Int).SetBytes(protoTicket.WinProb))
+	assert.Equal(ticket.SenderNonce, protoTicket.SenderNonce)
+	assert.Equal(ticket.RecipientRandHash, ethcommon.BytesToHash(protoTicket.RecipientRandHash))
+	assert.Equal(sig, protoPayment.Sig)
+	assert.Equal(seed, new(big.Int).SetBytes(protoPayment.Seed))
+}
+
 func TestPing(t *testing.T) {
 	o := StubOrchestrator()
 

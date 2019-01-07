@@ -426,6 +426,7 @@ func TestTicketParams(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	expectedParams := &pm.TicketParams{
+		Recipient:         pm.RandAddress(),
 		FaceValue:         big.NewInt(1234),
 		WinProb:           big.NewInt(2345),
 		Seed:              big.NewInt(3456),
@@ -433,12 +434,11 @@ func TestTicketParams(t *testing.T) {
 	}
 	recipient.On("TicketParams", mock.Anything).Return(expectedParams)
 	orch := NewOrchestrator(n)
-	orch.address = pm.RandAddress()
 
 	actualParams := orch.TicketParams(pm.RandAddress())
 
 	assert := assert.New(t)
-	assert.Equal(orch.address.Bytes(), actualParams.Recipient)
+	assert.Equal(expectedParams.Recipient.Bytes(), actualParams.Recipient)
 	assert.Equal(expectedParams.FaceValue.Bytes(), actualParams.FaceValue)
 	assert.Equal(expectedParams.WinProb.Bytes(), actualParams.WinProb)
 	assert.Equal(expectedParams.RecipientRandHash.Bytes(), actualParams.RecipientRandHash)

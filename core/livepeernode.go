@@ -60,6 +60,9 @@ type LivepeerNode struct {
 	OrchSecret       string
 	Transcoder       Transcoder
 
+	// Broadcaster public fields
+	Sender pm.Sender
+
 	// Transcoder private fields
 	pmSessions      map[ManifestID]map[string]bool
 	segmentMutex    *sync.Mutex
