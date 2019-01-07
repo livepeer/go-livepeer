@@ -147,7 +147,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		//Create a ManifestID
 		//If manifestID is passed in, use that one
 		//Else create one
-		mid := parseManifestID(url.Query().Get("hlsStrmID"))
+		mid := parseManifestID(url.Query().Get("manifestID"))
 		if mid == "" {
 			mid = core.RandomManifestID()
 		}
@@ -246,18 +246,12 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		s.connectionLock.Unlock()
 		LastManifestID = mid
 
-		//We try to automatically determine the video profile from the RTMP stream.
-		var vProfile ffmpeg.VideoProfile
+		// Build the source video profile from the RTMP stream.
 		resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
-		for _, vp := range ffmpeg.VideoProfileLookup {
-			if vp.Resolution == resolution {
-				vProfile = vp
-				break
-			}
-		}
-		if vProfile.Name == "" {
-			vProfile = ffmpeg.P720p30fps16x9
-			glog.V(common.SHORT).Infof("Cannot automatically detect the video profile - setting it to %v", vProfile)
+		vProfile := ffmpeg.VideoProfile{
+			Name:       "source",
+			Resolution: resolution,
+			Bitrate:    "4000k", // Fix this
 		}
 
 		startSeq := 0
@@ -281,13 +275,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			// TODO: Check broadcaster's deposit with TicketBroker
 		}
 
-		//Create a HLS StreamID
-		//If streamID is passed in, use that one to capture the rendition
-		//Else use RTMP manifest ID as base
-		hlsStrmID := parseStreamID(url.Query().Get("hlsStrmID"))
-		if hlsStrmID.ManifestID == "" || hlsStrmID.Rendition == "" {
-			hlsStrmID = core.MakeStreamID(mid, &vProfile)
-		}
+		hlsStrmID := core.MakeStreamID(mid, &vProfile)
 
 		LastHLSStreamID = hlsStrmID
 
@@ -325,7 +313,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				if cpl.GetOSSession().IsExternal() {
 					seg.Name = uri // hijack seg.Name to convey the uploaded URI
 				}
-				err = cpl.InsertHLSSegment(hlsStrmID, seg.SeqNo, uri, seg.Duration)
+				err = cpl.InsertHLSSegment(&vProfile, seg.SeqNo, uri, seg.Duration)
 				if monitor.Enabled {
 					monitor.LogSourceSegmentAppeared(nonce, seg.SeqNo, string(mid), vProfile.Name)
 					glog.V(6).Infof("Appeared segment %d", seg.SeqNo)
@@ -410,12 +398,10 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 								SegHashLock.Unlock()
 							}
 
-							// hoist this out so we only do it once
-							sid := core.MakeStreamID(mid, &sess.Profiles[i])
-							err = cpl.InsertHLSSegment(sid, seg.SeqNo, url, seg.Duration)
 							if monitor.Enabled {
 								monitor.LogTranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
 							}
+							err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
 							if err != nil {
 								errFunc("Playlist", url, err)
 								return
@@ -557,7 +543,7 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 		}
 
 		//Get the hls playlist
-		pl := cxn.pl.GetHLSMediaPlaylist(strmID)
+		pl := cxn.pl.GetHLSMediaPlaylist(strmID.Rendition)
 		if pl == nil {
 			return nil, vidplayer.ErrNotFound
 		}

@@ -2,7 +2,6 @@ package core
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 
 	"github.com/ericxtang/m3u8"
@@ -16,7 +15,7 @@ func TestGetMasterPlaylist(t *testing.T) {
 	mid := hlsStrmID.ManifestID
 	c := NewBasicPlaylistManager(mid, nil)
 	segName := "test_seg/1.ts"
-	err := c.InsertHLSSegment(hlsStrmID, 1, segName, 12)
+	err := c.InsertHLSSegment(&vProfile, 1, segName, 12)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +27,7 @@ func TestGetMasterPlaylist(t *testing.T) {
 		t.Errorf("Expecting %v, got %v", pl.String(), testpl.String())
 	}
 
-	mpl := c.GetHLSMediaPlaylist(hlsStrmID)
+	mpl := c.GetHLSMediaPlaylist(vProfile.Name)
 	if mpl == nil {
 		t.Fatalf("Expecting pl, got nil")
 	}
@@ -39,18 +38,19 @@ func TestGetMasterPlaylist(t *testing.T) {
 }
 
 func TestForWrongStream(t *testing.T) {
+	/* Mismatched streams don't really happen anymore
 	vProfile := ffmpeg.P144p30fps16x9
 	hlsStrmID := MakeStreamID(RandomManifestID(), &vProfile)
 	mid := hlsStrmID.ManifestID
 	c := NewBasicPlaylistManager(mid, nil)
-	hlsStrmID2 := MakeStreamID(RandomManifestID(), &vProfile)
-	err := c.InsertHLSSegment(hlsStrmID2, 1, "test_uri", 12)
+	err := c.InsertHLSSegment(&vProfile, 1, "test_uri", 12)
 	if err == nil {
 		t.Fatalf("Should fail here")
 	}
 	if !strings.Contains(err.Error(), "Wrong manifest id") {
 		t.Fatalf("Wrong error, should contain 'Wrong stream id', but has %s", err.Error())
 	}
+	*/
 }
 
 func TestCleanup(t *testing.T) {

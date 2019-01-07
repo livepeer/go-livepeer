@@ -18,11 +18,11 @@ type PlaylistManager interface {
 	ManifestID() ManifestID
 	// Implicitly creates master and media playlists
 	// Inserts in media playlist given a link to a segment
-	InsertHLSSegment(streamID StreamID, seqNo uint64, uri string, duration float64) error
+	InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo uint64, uri string, duration float64) error
 
 	GetHLSMasterPlaylist() *m3u8.MasterPlaylist
 
-	GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlaylist
+	GetHLSMediaPlaylist(rendition string) *m3u8.MediaPlaylist
 
 	GetOSSession() drivers.OSSession
 
@@ -34,7 +34,7 @@ type BasicPlaylistManager struct {
 	manifestID     ManifestID
 	// Live playlist used for broadcasting
 	masterPList *m3u8.MasterPlaylist
-	mediaLists  map[StreamID]*m3u8.MediaPlaylist
+	mediaLists  map[string]*m3u8.MediaPlaylist
 	mapSync     *sync.RWMutex
 }
 
@@ -46,7 +46,7 @@ func NewBasicPlaylistManager(manifestID ManifestID,
 		storageSession: storageSession,
 		manifestID:     manifestID,
 		masterPList:    m3u8.NewMasterPlaylist(),
-		mediaLists:     make(map[StreamID]*m3u8.MediaPlaylist),
+		mediaLists:     make(map[string]*m3u8.MediaPlaylist),
 		mapSync:        &sync.RWMutex{},
 	}
 	return bplm
@@ -64,55 +64,34 @@ func (mgr *BasicPlaylistManager) GetOSSession() drivers.OSSession {
 	return mgr.storageSession
 }
 
-func (mgr *BasicPlaylistManager) isRightStream(streamID StreamID) error {
-	mid := streamID.ManifestID
-	if mid != mgr.manifestID {
-		return fmt.Errorf("Wrong manifest id (%s), should be %s", mid, mgr.manifestID)
-	}
-	return nil
-}
-
-func (mgr *BasicPlaylistManager) hasSegment(mpl *m3u8.MediaPlaylist, seqNum uint64) bool {
-	for _, seg := range mpl.Segments {
-		if seg != nil && seg.SeqId == seqNum {
-			return true
-		}
-	}
-	return false
-}
-
-func (mgr *BasicPlaylistManager) getPL(streamID StreamID) *m3u8.MediaPlaylist {
+func (mgr *BasicPlaylistManager) getPL(rendition string) *m3u8.MediaPlaylist {
 	mgr.mapSync.RLock()
-	mpl := mgr.mediaLists[streamID]
+	mpl := mgr.mediaLists[rendition]
 	mgr.mapSync.RUnlock()
 	return mpl
 }
 
-func (mgr *BasicPlaylistManager) createPL(streamID StreamID) *m3u8.MediaPlaylist {
+func (mgr *BasicPlaylistManager) createPL(profile *ffmpeg.VideoProfile) *m3u8.MediaPlaylist {
 	mpl, err := m3u8.NewMediaPlaylist(LIVE_LIST_LENGTH, LIVE_LIST_LENGTH)
 	if err != nil {
 		glog.Error(err)
 		return nil
 	}
 	mgr.mapSync.Lock()
-	mgr.mediaLists[streamID] = mpl
+	mgr.mediaLists[profile.Name] = mpl
 	mgr.mapSync.Unlock()
-	sid := streamID.String()
-	vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[streamID.Rendition])
-	url := sid + ".m3u8"
+	vParams := ffmpeg.VideoProfileToVariantParams(*profile)
+	url := fmt.Sprintf("%v/%v.m3u8", mgr.manifestID, profile.Name)
 	mgr.masterPList.Append(url, mpl, vParams)
 	return mpl
 }
 
-func (mgr *BasicPlaylistManager) InsertHLSSegment(streamID StreamID, seqNo uint64, uri string,
+func (mgr *BasicPlaylistManager) InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo uint64, uri string,
 	duration float64) error {
 
-	if err := mgr.isRightStream(streamID); err != nil {
-		return err
-	}
-	mpl := mgr.getPL(streamID)
+	mpl := mgr.getPL(profile.Name)
 	if mpl == nil {
-		mpl = mgr.createPL(streamID)
+		mpl = mgr.createPL(profile)
 	}
 	return mgr.addToMediaPlaylist(uri, seqNo, duration, mpl)
 }
@@ -153,6 +132,6 @@ func (mgr *BasicPlaylistManager) GetHLSMasterPlaylist() *m3u8.MasterPlaylist {
 }
 
 // GetHLSMediaPlaylist ...
-func (mgr *BasicPlaylistManager) GetHLSMediaPlaylist(streamID StreamID) *m3u8.MediaPlaylist {
-	return mgr.mediaLists[streamID]
+func (mgr *BasicPlaylistManager) GetHLSMediaPlaylist(rendition string) *m3u8.MediaPlaylist {
+	return mgr.getPL(rendition)
 }
