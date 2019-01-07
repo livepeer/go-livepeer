@@ -17,7 +17,7 @@ import (
 const GetOrchestratorsTimeoutLoop = 3 * time.Second
 
 type orchestratorPool struct {
-	uri   []*url.URL
+	uris  []*url.URL
 	bcast server.Broadcaster
 }
 
@@ -41,18 +41,19 @@ func NewOrchestratorPool(node *core.LivepeerNode, addresses []string) *orchestra
 	}
 
 	bcast := core.NewBroadcaster(node)
-	return &orchestratorPool{bcast: bcast, uri: uris}
+	return &orchestratorPool{bcast: bcast, uris: uris}
 }
 
 func NewOnchainOrchestratorPool(node *core.LivepeerNode) *orchestratorPool {
 	// if livepeer running in offchain mode, return nil
 	if node.Eth == nil {
+		glog.Error("Could not refresh DB list of orchestrators: LivepeerNode nil")
 		return nil
 	}
 
 	orchestrators, err := node.Eth.RegisteredTranscoders()
 	if err != nil {
-		glog.Error(err)
+		glog.Error("Could not refresh DB list of orchestrators: ", err)
 		return nil
 	}
 
@@ -81,12 +82,12 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 			orchInfos = append(orchInfos, info)
 			numSuccessResp++
 		}
-		if numSuccessResp >= numOrchestrators || numResp >= len(o.uri) {
+		if numSuccessResp >= numOrchestrators || numResp >= len(o.uris) {
 			orchChan <- struct{}{}
 		}
 	}
 
-	for _, uri := range o.uri {
+	for _, uri := range o.uris {
 		go getOrchInfo(uri)
 	}
 
