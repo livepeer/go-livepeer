@@ -123,9 +123,9 @@ func (ostore *MemorySession) getAbsolutePath(name string) string {
 }
 
 func (ostore *MemorySession) getAbsoluteURI(name string) string {
-	name = ostore.getAbsolutePath(name)
+	name = "/stream/" + ostore.getAbsolutePath(name)
 	if ostore.os.baseURI != "" {
-		return ostore.os.baseURI + "/stream/" + name
+		return ostore.os.baseURI + name
 	}
 	return name
 }

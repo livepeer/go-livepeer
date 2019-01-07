@@ -65,12 +65,9 @@ func (mgr *BasicPlaylistManager) GetOSSession() drivers.OSSession {
 }
 
 func (mgr *BasicPlaylistManager) isRightStream(streamID StreamID) error {
-	mid, err := streamID.ManifestIDFromStreamID()
-	if err != nil {
-		return err
-	}
+	mid := streamID.ManifestID
 	if mid != mgr.manifestID {
-		return fmt.Errorf("Wrong sream id (%s), should be %s", streamID, mid)
+		return fmt.Errorf("Wrong manifest id (%s), should be %s", mid, mgr.manifestID)
 	}
 	return nil
 }
@@ -100,8 +97,8 @@ func (mgr *BasicPlaylistManager) createPL(streamID StreamID) *m3u8.MediaPlaylist
 	mgr.mapSync.Lock()
 	mgr.mediaLists[streamID] = mpl
 	mgr.mapSync.Unlock()
-	sid := string(streamID)
-	vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[streamID.GetRendition()])
+	sid := streamID.String()
+	vParams := ffmpeg.VideoProfileToVariantParams(ffmpeg.VideoProfileLookup[streamID.Rendition])
 	url := sid + ".m3u8"
 	mgr.masterPList.Append(url, mpl, vParams)
 	return mpl

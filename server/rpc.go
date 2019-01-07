@@ -163,7 +163,7 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 
 	// Generate serialized segment info
 	segData := &net.SegData{
-		ManifestId: md.ManifestID.GetVideoID(),
+		ManifestId: []byte(md.ManifestID),
 		Seq:        md.Seq,
 		Hash:       hash,
 		Profiles:   common.ProfilesToTranscodeOpts(sess.Profiles),
@@ -195,11 +195,7 @@ func verifySegCreds(orch Orchestrator, segCreds string) (*core.SegTranscodingMet
 		glog.Error("Unable to deserialize profiles ", err)
 		return nil, err
 	}
-	mid, err := core.MakeManifestID(segData.ManifestId)
-	if err != nil {
-		glog.Error("Unable to deserialize manifest ID ", err)
-		return nil, err
-	}
+	mid := core.ManifestID(segData.ManifestId)
 
 	var os *net.OSInfo
 	if len(segData.Storage) > 0 {
