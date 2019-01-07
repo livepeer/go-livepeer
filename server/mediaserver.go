@@ -343,7 +343,11 @@ func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
 		cv.Signal()
 	}
 	glog.V(common.DEBUG).Info("Starting broadcast listener for ", cxn.pl.ManifestID())
+	finished := false
 	for {
+		if finished {
+			break
+		}
 		select {
 
 		case <-cxn.needOrch:
@@ -363,6 +367,7 @@ func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
 			}()
 
 		case <-cxn.eof:
+			finished = true
 			break
 		}
 	}

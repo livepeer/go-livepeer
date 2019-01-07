@@ -37,10 +37,21 @@ func setupServer() *LivepeerServer {
 }
 
 type stubDiscovery struct {
-	infos []*net.OrchestratorInfo
+	infos        []*net.OrchestratorInfo
+	waitGetOrch  chan struct{}
+	lock         *sync.Mutex // make the race detector happy
+	getOrchCalls int
 }
 
 func (d *stubDiscovery) GetOrchestrators(num int) ([]*net.OrchestratorInfo, error) {
+	if d.waitGetOrch != nil {
+		<-d.waitGetOrch
+	}
+	if d.lock != nil {
+		d.lock.Lock()
+		d.getOrchCalls++
+		d.lock.Unlock()
+	}
 	return d.infos, nil
 }
 
@@ -408,6 +419,129 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	if pl.Variants[0].URI != mediaPLName {
 		t.Errorf("Expecting %s, but got: %s", mediaPLName, pl.Variants[0].URI)
 	}
+}
+
+
+func TestSessionListener(t *testing.T) {
+	assert := assert.New(t)
+
+	s := setupServer()
+	sd := &stubDiscovery{
+		lock:  &sync.Mutex{},
+		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{}},
+	}
+	s.LivepeerNode.OrchestratorPool = sd
+	mid := core.SplitStreamIDString(t.Name()).ManifestID
+	storage := drivers.NodeStorage.NewSession(string(mid))
+	strm := stream.NewBasicRTMPVideoStream(string(mid))
+	cxn := &rtmpConnection{
+		needOrch: make(chan struct{}),
+		lock:     &sync.RWMutex{},
+		eof:      make(chan struct{}),
+		pl:       core.NewBasicPlaylistManager(mid, storage),
+		stream:   strm,
+	}
+
+	s.connectionLock.Lock()
+	s.rtmpConnections[mid] = cxn
+	s.connectionLock.Unlock()
+
+	listenerStopped := make(chan struct{})
+	go func() {
+		s.startSessionListener(cxn)
+		listenerStopped <- struct{}{}
+	}()
+
+	// sanity check
+	cxn.lock.RLock()
+	assert.Nil(cxn.sess)
+	cxn.lock.RUnlock()
+
+	// test getting a single orch; ensure session populated
+	cxn.needOrch <- struct{}{}
+	time.Sleep(100 * time.Millisecond)
+	cxn.lock.RLock()
+	assert.NotNil(cxn.sess)
+	cxn.lock.RUnlock()
+	assert.Equal(1, sd.getOrchCalls)
+
+	// multiple calls to inflight needOrch should only invoke startSession once
+	sd.waitGetOrch = make(chan struct{})
+	for i := 0; i < 100; i++ {
+		cxn.needOrch <- struct{}{}
+	}
+	sd.waitGetOrch <- struct{}{}
+	time.Sleep(100 * time.Millisecond)
+	sd.lock.Lock()
+	assert.Equal(sd.getOrchCalls, 2)
+	sd.lock.Unlock()
+
+	// test termination
+	cxn.eof <- struct{}{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	finished := false
+	select {
+	case <-listenerStopped:
+		finished = true
+		cancel()
+	case <-ctx.Done():
+		assert.True(finished, "Session listener did not complete")
+	}
+}
+
+func TestSessionAssigment_WithTerminatedConnection(t *testing.T) {
+
+	// If an RTMP connection is terminated with orchestrator selection inflight,
+	// ensure that the returned session is *not* assigned to the connection
+
+	// For this test case, simply test session assignment with a cxn that is
+	// not registered with the LivepeerServer, simulating a dangling cxn
+
+	assert := assert.New(t)
+
+	s := setupServer()
+	sd := &stubDiscovery{
+		lock:  &sync.Mutex{},
+		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{}},
+	}
+	s.LivepeerNode.OrchestratorPool = sd
+	mid := core.SplitStreamIDString(t.Name()).ManifestID
+	storage := drivers.NodeStorage.NewSession(string(mid))
+	strm := stream.NewBasicRTMPVideoStream(string(mid))
+	cxn := &rtmpConnection{
+		needOrch: make(chan struct{}),
+		lock:     &sync.RWMutex{},
+		eof:      make(chan struct{}),
+		pl:       core.NewBasicPlaylistManager(mid, storage),
+		stream:   strm,
+	}
+
+	// sanity: nil session
+	cxn.lock.Lock()
+	assert.Nil(cxn.sess) // nil session
+	cxn.lock.Unlock()
+
+	// sanity: non-registered cxn
+	s.connectionLock.Lock()
+	_, cxnExists := s.rtmpConnections[mid]
+	assert.False(cxnExists) // nonexistent cxn
+	s.connectionLock.Unlock()
+
+	// sanity: startSession returns a non-nil session with a non-registered cxn
+	assert.NotNil(s.startSession(cxn))
+	assert.Equal(1, sd.getOrchCalls)
+
+	// start session listener with non-registered cxn
+	go s.startSessionListener(cxn)
+
+	cxn.needOrch <- struct{}{} // signal session listener
+
+	time.Sleep(100 * time.Millisecond)
+	cxn.lock.RLock()
+	assert.Nil(cxn.sess) // the important check
+	cxn.lock.RUnlock()
+	assert.Equal(2, sd.getOrchCalls)
 }
 
 func TestCleanStreamPrefix(t *testing.T) {
