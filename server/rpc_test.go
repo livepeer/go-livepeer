@@ -353,7 +353,10 @@ type mockOrchestrator struct {
 
 func (o *mockOrchestrator) ServiceURI() *url.URL {
 	args := o.Called()
-	return args.Get(0).(*url.URL)
+	if args.Get(0) != nil {
+		return args.Get(0).(*url.URL)
+	}
+	return nil
 }
 func (o *mockOrchestrator) Address() ethcommon.Address {
 	o.Called()
