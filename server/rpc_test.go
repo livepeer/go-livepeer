@@ -233,6 +233,16 @@ func TestProcessPayment_GivenInvalidBase64_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "base64")
 }
 
+func TestProcessPayment_GivenEmptyHeader_ReturnsOrchsReturnValue(t *testing.T) {
+	orch := &mockOrchestrator{}
+	manifestID := core.ManifestID("some manifest")
+	orch.On("ProcessPayment", mock.Anything, mock.Anything).Return(errors.New("error from mock")).Once()
+
+	err := processPayment(orch, "", manifestID)
+
+	assert.Contains(t, err.Error(), "error from mock")
+}
+
 func TestProcessPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
 	orch := &mockOrchestrator{}
 	manifestID := core.ManifestID("some manifest")
