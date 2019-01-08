@@ -34,8 +34,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-var broadcasterAddress = ethcommon.BytesToAddress([]byte("111 Transcoder Address 1")) // need to remove hard-coded broadcaster address
-
 const HTTPTimeout = 8 * time.Second
 const GRPCTimeout = 8 * time.Second
 const GRPCConnectTimeout = 3 * time.Second
@@ -178,7 +176,7 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func verifySegCreds(orch Orchestrator, segCreds string) (*core.SegTranscodingMetadata, error) {
+func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, error) {
 	buf, err := base64.StdEncoding.DecodeString(segCreds)
 	if err != nil {
 		glog.Error("Unable to base64-decode ", err)
@@ -210,7 +208,7 @@ func verifySegCreds(orch Orchestrator, segCreds string) (*core.SegTranscodingMet
 		OS:         os,
 	}
 
-	if !orch.VerifySig(broadcasterAddress, string(md.Flatten()), segData.Sig) {
+	if !orch.VerifySig(broadcaster, string(md.Flatten()), segData.Sig) {
 		glog.Error("Sig check failed")
 		return nil, ErrSegSig
 	}
@@ -250,6 +248,27 @@ func genPayment(sess *BroadcastSession) (string, error) {
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
+func getPayment(header string) (net.Payment, error) {
+	buf, err := base64.StdEncoding.DecodeString(header)
+	if err != nil {
+		return net.Payment{}, errors.Wrap(err, "base64 decode error")
+	}
+	var payment net.Payment
+	if err := proto.Unmarshal(buf, &payment); err != nil {
+		return net.Payment{}, errors.Wrap(err, "protobuf unmarshal error")
+	}
+
+	return payment, nil
+}
+
+func getPaymentSender(payment net.Payment) ethcommon.Address {
+	if payment.Ticket == nil || payment.Ticket.Sender == nil {
+		return ethcommon.Address{}
+	}
+
+	return ethcommon.BytesToAddress(payment.Ticket.Sender)
+}
+
 func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.PingPong, error) {
 	glog.Info("Received Ping request")
 	value, err := orch.Sign(req.Value)
@@ -287,35 +306,27 @@ type lphttp struct {
 	transRpc     *http.ServeMux
 }
 
-func processPayment(orch Orchestrator, header string, manifestID core.ManifestID) error {
-	buf, err := base64.StdEncoding.DecodeString(header)
-	if err != nil {
-		return errors.Wrap(err, "base64 decode error")
-	}
-	var payment net.Payment
-	err = proto.Unmarshal(buf, &payment)
-	if err != nil {
-		return errors.Wrap(err, "protobuf unmarshal error")
-	}
-
-	return orch.ProcessPayment(payment, manifestID)
-}
-
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	orch := h.orchestrator
+
+	payment, err := getPayment(r.Header.Get(PaymentHeader))
+	if err != nil {
+		glog.Error("Could not parse payment")
+		http.Error(w, err.Error(), http.StatusPaymentRequired)
+		return
+	}
 
 	// check the segment sig from the broadcaster
 	seg := r.Header.Get("Livepeer-Segment")
 
-	segData, err := verifySegCreds(orch, seg) // ANGIE : NEED BROADCASTER ADDRESS FROM PM
+	segData, err := verifySegCreds(orch, seg, getPaymentSender(payment))
 	if err != nil {
 		glog.Error("Could not verify segment creds")
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 
-	err = processPayment(orch, r.Header.Get(PaymentHeader), segData.ManifestID)
-	if err != nil {
+	if err := orch.ProcessPayment(payment, segData.ManifestID); err != nil {
 		glog.Errorf("Error processing payment: %v", err)
 		http.Error(w, err.Error(), http.StatusPaymentRequired)
 		return

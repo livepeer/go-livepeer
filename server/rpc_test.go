@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
@@ -140,8 +139,6 @@ func TestRPCSeg(t *testing.T) {
 
 	baddr := ethcrypto.PubkeyToAddress(b.priv.PublicKey)
 
-	broadcasterAddress = baddr
-
 	segData := &stream.HLSSegment{}
 
 	creds, err := genSegCreds(s, segData)
@@ -149,7 +146,7 @@ func TestRPCSeg(t *testing.T) {
 		t.Error("Unable to generate seg creds ", err)
 		return
 	}
-	if _, err := verifySegCreds(o, creds); err != nil {
+	if _, err := verifySegCreds(o, creds, baddr); err != nil {
 		t.Error("Unable to verify seg creds", err)
 		return
 	}
@@ -162,30 +159,30 @@ func TestRPCSeg(t *testing.T) {
 	b.signErr = nil
 
 	// test invalid bcast addr
-	oldAddr := broadcasterAddress
+	oldAddr := baddr
 	key, _ := ethcrypto.GenerateKey()
-	broadcasterAddress = ethcrypto.PubkeyToAddress(key.PublicKey)
-	if _, err := verifySegCreds(o, creds); err != ErrSegSig {
+	baddr = ethcrypto.PubkeyToAddress(key.PublicKey)
+	if _, err := verifySegCreds(o, creds, baddr); err != ErrSegSig {
 		t.Error("Unexpectedly verified seg creds: invalid bcast addr", err)
 	}
-	broadcasterAddress = oldAddr
+	baddr = oldAddr
 
 	// sanity check
-	if _, err := verifySegCreds(o, creds); err != nil {
+	if _, err := verifySegCreds(o, creds, baddr); err != nil {
 		t.Error("Sanity check failed", err)
 	}
 
 	// test corrupt creds
 	idx := len(creds) / 2
 	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
-	if _, err := verifySegCreds(o, kreds); err != ErrSegEncoding {
+	if _, err := verifySegCreds(o, kreds, baddr); err != ErrSegEncoding {
 		t.Error("Unexpectedly verified bad creds", err)
 	}
 
 	corruptSegData := func(segData *net.SegData, expectedErr error) {
 		data, _ := proto.Marshal(segData)
 		creds = base64.StdEncoding.EncodeToString(data)
-		if _, err := verifySegCreds(o, creds); err != expectedErr {
+		if _, err := verifySegCreds(o, creds, baddr); err != expectedErr {
 			t.Errorf("Expected to fail with '%v' but got '%v'", expectedErr, err)
 		}
 	}
@@ -284,95 +281,75 @@ func TestPing(t *testing.T) {
 	}
 }
 
-func TestProcessPayment_GivenInvalidBase64_ReturnsError(t *testing.T) {
-	orch := &mockOrchestrator{}
-	manifestID := core.ManifestID("some manifest")
+func TestGetPayment_GivenInvalidBase64_ReturnsError(t *testing.T) {
 	header := "not base64"
 
-	err := processPayment(orch, header, manifestID)
+	_, err := getPayment(header)
 
 	assert.Contains(t, err.Error(), "base64")
 }
 
-func TestProcessPayment_GivenEmptyHeader_ReturnsOrchsReturnValue(t *testing.T) {
-	orch := &mockOrchestrator{}
-	manifestID := core.ManifestID("some manifest")
-	orch.On("ProcessPayment", mock.Anything, mock.Anything).Return(errors.New("error from mock")).Once()
+func TestGetPayment_GivenEmptyHeader_ReturnsEmptyPayment(t *testing.T) {
+	payment, err := getPayment("")
 
-	err := processPayment(orch, "", manifestID)
-
-	assert.Contains(t, err.Error(), "error from mock")
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Nil(payment.Ticket)
+	assert.Nil(payment.Sig)
+	assert.Nil(payment.Seed)
 }
 
-func TestProcessPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
-	orch := &mockOrchestrator{}
-	manifestID := core.ManifestID("some manifest")
+func TestGetPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
 	data := pm.RandBytes(123)
 	header := base64.StdEncoding.EncodeToString(data)
 
-	err := processPayment(orch, header, manifestID)
+	_, err := getPayment(header)
 
 	assert.Contains(t, err.Error(), "protobuf")
 }
 
-func TestProcessPayment_GivenValidHeader_InvokesOrchFunction(t *testing.T) {
-	orch := &mockOrchestrator{}
-	manifestID := core.ManifestID("some manifest")
+func TestGetPayment_GivenValidHeader_ReturnsPayment(t *testing.T) {
 	protoTicket := defaultTicket(t)
 	protoPayment := defaultPayment(t, protoTicket)
 	data, err := proto.Marshal(protoPayment)
 	require.Nil(t, err)
 	header := base64.StdEncoding.EncodeToString(data)
-	// Had to use this long-winded arg matcher because simple equality and DeepEqual didn't work
-	argMatcher := mock.MatchedBy(func(actualPayment net.Payment) bool {
-		if !bytes.Equal(actualPayment.Ticket.Recipient, protoTicket.Recipient) {
-			return false
-		}
-		if !bytes.Equal(actualPayment.Ticket.Sender, protoTicket.Sender) {
-			return false
-		}
-		if !bytes.Equal(actualPayment.Ticket.FaceValue, protoTicket.FaceValue) {
-			return false
-		}
-		if !bytes.Equal(actualPayment.Ticket.WinProb, protoTicket.WinProb) {
-			return false
-		}
-		if !bytes.Equal(actualPayment.Ticket.RecipientRandHash, protoTicket.RecipientRandHash) {
-			return false
-		}
-		if actualPayment.Ticket.SenderNonce != protoTicket.SenderNonce {
-			return false
-		}
-		if !bytes.Equal(actualPayment.Sig, protoPayment.Sig) {
-			return false
-		}
-		if !bytes.Equal(actualPayment.Seed, protoPayment.Seed) {
-			return false
-		}
-		return true
-	})
 
-	orch.On("ProcessPayment", argMatcher, manifestID).Return(nil).Once()
+	payment, err := getPayment(header)
 
-	err = processPayment(orch, header, manifestID)
-
-	assert.Nil(t, err)
-	orch.AssertExpectations(t)
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Equal(protoTicket.Recipient, payment.Ticket.Recipient)
+	assert.Equal(protoTicket.Sender, payment.Ticket.Sender)
+	assert.Equal(protoTicket.FaceValue, payment.Ticket.FaceValue)
+	assert.Equal(protoTicket.WinProb, payment.Ticket.WinProb)
+	assert.Equal(protoTicket.SenderNonce, payment.Ticket.SenderNonce)
+	assert.Equal(protoTicket.RecipientRandHash, payment.Ticket.RecipientRandHash)
+	assert.Equal(protoPayment.Sig, payment.Sig)
+	assert.Equal(protoPayment.Seed, payment.Seed)
 }
 
-func TestProcessPayment_GivenErrorFromOrch_ForwardsTheError(t *testing.T) {
-	orch := &mockOrchestrator{}
-	manifestID := core.ManifestID("some manifest")
+func TestGetPaymentSender_GivenPaymentTicketIsNil(t *testing.T) {
 	protoTicket := defaultTicket(t)
 	protoPayment := defaultPayment(t, protoTicket)
-	data, err := proto.Marshal(protoPayment)
-	require.Nil(t, err)
-	header := base64.StdEncoding.EncodeToString(data)
-	orch.On("ProcessPayment", mock.Anything, mock.Anything).Return(errors.New("error from mock")).Once()
+	protoPayment.Ticket = nil
 
-	err = processPayment(orch, header, manifestID)
+	assert.Equal(t, ethcommon.Address{}, getPaymentSender(*protoPayment))
+}
 
-	assert.Equal(t, "error from mock", err.Error())
+func TestGetPaymentSender_GivenPaymentTicketSenderIsNil(t *testing.T) {
+	protoTicket := defaultTicket(t)
+	protoTicket.Sender = nil
+	protoPayment := defaultPayment(t, protoTicket)
+
+	assert.Equal(t, ethcommon.Address{}, getPaymentSender(*protoPayment))
+}
+
+func TestGetPaymentSender_GivenValidPaymentTicket(t *testing.T) {
+	protoTicket := defaultTicket(t)
+	protoPayment := defaultPayment(t, protoTicket)
+
+	assert.Equal(t, ethcommon.BytesToAddress(protoTicket.Sender), getPaymentSender(*protoPayment))
 }
 
 func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {

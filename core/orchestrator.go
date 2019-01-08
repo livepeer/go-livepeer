@@ -101,6 +101,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	}
 
 	if won {
+		glog.V(common.DEBUG).Info("Received winning ticket")
 		cachePMSessionID(orch.node, manifestID, sessionID)
 	}
 

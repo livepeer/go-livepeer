@@ -260,19 +260,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		var sess *BroadcastSession
 
 		if s.LivepeerNode.Eth != nil {
-
-			//Check if round is initialized
-			initialized, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
-			if err != nil {
-				glog.Errorf("Could not check whether round was initialized: %v", err)
-				return err
-			}
-			if !initialized {
-				glog.Infof("Round was uninitialized. Please try again in a few blocks.")
-				// todo send to metrics ?
-				return ErrRoundInit
-			}
-
 			// TODO: Check broadcaster's deposit with TicketBroker
 		}
 
