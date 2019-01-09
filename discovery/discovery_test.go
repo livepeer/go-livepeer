@@ -46,6 +46,24 @@ func StubOrchestrators(addresses []string) []*lpTypes.Transcoder {
 	return orchestrators
 }
 
+func TestCacheRegisteredTranscoders_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+	orchestrators := StubOrchestrators(addresses)
+
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node.Database = dbh
+	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
+
+	err = cacheRegisteredTranscoders(node)
+	require.Nil(err)
+}
+
 func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
 	dbh, dbraw, err := common.TempDB(t)
 	defer dbh.Close()

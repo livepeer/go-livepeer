@@ -14,7 +14,7 @@ import (
 	"github.com/golang/glog"
 )
 
-const GetOrchestratorsTimeoutLoop = 3 * time.Second
+const GetOrchestratorsTimeoutLoop = 1 * time.Hour
 
 type orchestratorPool struct {
 	uris  []*url.URL
