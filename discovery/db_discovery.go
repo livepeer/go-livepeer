@@ -26,17 +26,13 @@ func NewDBOrchestratorPoolCache(node *core.LivepeerNode) *DBOrchestratorPoolCach
 		return nil
 	}
 
+	_ = cacheRegisteredTranscoders(node)
+
 	ticker := getTicker()
 	go func(node *core.LivepeerNode) {
 		for _ = range ticker.C {
-			orchestrators, err := node.Eth.RegisteredTranscoders()
+			err := cacheRegisteredTranscoders(node)
 			if err != nil {
-				glog.Error("Could not refresh DB list of orchestrators: ", err)
-				continue
-			}
-			_, dbOrchErr := cacheDBOrchs(node, orchestrators)
-			if dbOrchErr != nil {
-				glog.Error("Could not refresh DB list of orchestrators: cacheDBOrchs err")
 				continue
 			}
 		}
@@ -65,6 +61,21 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 	}
 
 	return orchInfos, nil
+}
+
+func cacheRegisteredTranscoders(node *core.LivepeerNode) error {
+	orchestrators, err := node.Eth.RegisteredTranscoders()
+	if err != nil {
+		glog.Error("Could not refresh DB list of orchestrators: ", err)
+		return err
+	}
+	_, dbOrchErr := cacheDBOrchs(node, orchestrators)
+	if dbOrchErr != nil {
+		glog.Error("Could not refresh DB list of orchestrators: cacheDBOrchs err")
+		return err
+	}
+
+	return nil
 }
 
 func cacheDBOrchs(node *core.LivepeerNode, orchs []*lpTypes.Transcoder) ([]*common.DBOrch, error) {
