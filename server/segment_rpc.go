@@ -27,6 +27,7 @@ import (
 )
 
 const PaymentHeader = "Livepeer-Payment"
+const SegmentHeader = "Livepeer-Segment"
 
 var ErrSegEncoding = errors.New("ErrorSegEncoding")
 var ErrSegSig = errors.New("ErrSegSig")
@@ -48,7 +49,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check the segment sig from the broadcaster
-	seg := r.Header.Get("Livepeer-Segment")
+	seg := r.Header.Get(SegmentHeader)
 
 	segData, err := verifySegCreds(orch, seg, getPaymentSender(payment))
 	if err != nil {
@@ -252,8 +253,8 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
-	req.Header.Set("Livepeer-Segment", segCreds)
-	req.Header.Set("Livepeer-Payment", payment)
+	req.Header.Set(SegmentHeader, segCreds)
+	req.Header.Set(PaymentHeader, payment)
 	if uploaded {
 		req.Header.Set("Content-Type", "application/vnd+livepeer.uri")
 	} else {

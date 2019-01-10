@@ -414,6 +414,32 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 	assert.Equal(expectedParams, oInfo.TicketParams)
 }
 
+type mockOSSession struct {
+	mock.Mock
+}
+
+func (s *mockOSSession) SaveData(name string, data []byte) (string, error) {
+	args := s.Called()
+	return args.String(0), args.Error(1)
+}
+
+func (s *mockOSSession) EndSession() {
+	s.Called()
+}
+
+func (s *mockOSSession) GetInfo() *net.OSInfo {
+	args := s.Called()
+	if args.Get(0) != nil {
+		return args.Get(0).(*net.OSInfo)
+	}
+	return nil
+}
+
+func (s *mockOSSession) IsExternal() bool {
+	args := s.Called()
+	return args.Bool(0)
+}
+
 type mockOrchestrator struct {
 	mock.Mock
 }
@@ -446,8 +472,14 @@ func (o *mockOrchestrator) CurrentBlock() *big.Int {
 	return nil
 }
 func (o *mockOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
-	o.Called(md, seg)
-	return nil, nil
+	args := o.Called(md, seg)
+
+	var res *core.TranscodeResult
+	if args.Get(0) != nil {
+		res = args.Get(0).(*core.TranscodeResult)
+	}
+
+	return res, args.Error(1)
 }
 func (o *mockOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
 	o.Called(stream)
