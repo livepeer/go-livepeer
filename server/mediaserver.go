@@ -35,11 +35,7 @@ import (
 )
 
 var ErrAlreadyExists = errors.New("StreamAlreadyExists")
-var ErrRTMPPublish = errors.New("ErrRTMPPublish")
 var ErrBroadcast = errors.New("ErrBroadcast")
-var ErrHLSPlay = errors.New("ErrHLSPlay")
-var ErrRTMPPlay = errors.New("ErrRTMPPlay")
-var ErrRoundInit = errors.New("ErrRoundInit")
 var ErrStorage = errors.New("ErrStorage")
 var ErrDiscovery = errors.New("ErrDiscovery")
 var ErrNoOrchs = errors.New("ErrNoOrchs")
@@ -51,12 +47,10 @@ const HLSBufferWindow = uint(5)
 const StreamKeyBytes = 6
 
 const SegLen = 2 * time.Second
-const HLSUnsubWorkerFreq = time.Second * 5
 const BroadcastRetry = 15 * time.Second
 
 var BroadcastPrice = big.NewInt(1)
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
-var MinDepositSegmentCount = int64(75) // 5 mins assuming 4s segments
 
 type rtmpConnection struct {
 	mid     core.ManifestID
