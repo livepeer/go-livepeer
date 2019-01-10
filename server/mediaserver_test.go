@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"net/url"
 	"sync"
 	"testing"
@@ -426,6 +427,56 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	if pl.Variants[0].URI != mediaPLName {
 		t.Errorf("Expecting %s, but got: %s", mediaPLName, pl.Variants[0].URI)
 	}
+}
+
+func TestRegisterConnection(t *testing.T) {
+	assert := assert.New(t)
+	s := setupServer()
+	mid := core.SplitStreamIDString(t.Name()).ManifestID
+	strm := stream.NewBasicRTMPVideoStream(string(mid))
+
+	// Should return an error if missing node storage
+	drivers.NodeStorage = nil
+	_, err := s.registerConnection(strm)
+	assert.Equal(err, ErrStorage)
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+
+	// normal success case
+	rand.Seed(123)
+	cxn, err := s.registerConnection(strm)
+	assert.NotNil(cxn)
+	assert.Nil(err)
+
+	// Check some properties of the cxn / server
+	assert.Equal(mid, cxn.mid)
+	assert.Equal("source", cxn.profile.Name)
+	assert.Equal(uint64(0x4a68998bed5c40f1), cxn.nonce)
+
+	assert.Equal(mid, s.LastManifestID())
+	assert.Equal(string(mid)+"/source", s.LastHLSStreamID().String())
+
+	// Should return an error if creating another cxn with the same mid
+	_, err = s.registerConnection(strm)
+	assert.Equal(err, ErrAlreadyExists)
+
+	// Ensure thread-safety under -race
+	var wg sync.WaitGroup
+	for i := 0; i < 500; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			name := fmt.Sprintf("%v_%v", t.Name(), i)
+			mid := core.SplitStreamIDString(name).ManifestID
+			strm := stream.NewBasicRTMPVideoStream(string(mid))
+			cxn, err := s.registerConnection(strm)
+
+			assert.Nil(err)
+			assert.NotNil(cxn)
+			assert.Equal(mid, cxn.mid)
+		}(i)
+	}
+	wg.Wait()
+
 }
 
 func TestStartSession(t *testing.T) {

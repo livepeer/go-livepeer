@@ -59,6 +59,7 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 var MinDepositSegmentCount = int64(75) // 5 mins assuming 4s segments
 
 type rtmpConnection struct {
+	mid     core.ManifestID
 	nonce   uint64
 	stream  stream.RTMPVideoStream
 	pl      core.PlaylistManager
@@ -182,48 +183,18 @@ func rtmpManifestID(rtmpStrm stream.RTMPVideoStream) core.ManifestID {
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 
-		// Set up the connection tracking
-		mid := rtmpManifestID(rtmpStrm)
-		if drivers.NodeStorage == nil {
-			glog.Error("Missing node storage")
-			return ErrStorage
+		cxn, err := s.registerConnection(rtmpStrm)
+		if err != nil {
+			return err
 		}
-		storage := drivers.NodeStorage.NewSession(string(mid))
-		// Build the source video profile from the RTMP stream.
-		resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
-		vProfile := ffmpeg.VideoProfile{
-			Name:       "source",
-			Resolution: resolution,
-			Bitrate:    "4000k", // Fix this
-		}
-		hlsStrmID := core.MakeStreamID(mid, &vProfile)
-		s.connectionLock.Lock()
-		_, exists := s.rtmpConnections[mid]
-		if exists {
-			// We can only have one concurrent stream per ManifestID
-			s.connectionLock.Unlock()
-			return ErrAlreadyExists
-		}
-		nonce := rand.Uint64()
-		cxn := &rtmpConnection{
-			nonce:   nonce,
-			stream:  rtmpStrm,
-			pl:      core.NewBasicPlaylistManager(mid, storage),
-			profile: &vProfile,
-			lock:    &sync.RWMutex{},
 
-			needOrch: make(chan struct{}),
-			eof:      make(chan struct{}),
-		}
-		s.rtmpConnections[mid] = cxn
-		s.lastManifestID = mid
-		s.lastHLSStreamID = hlsStrmID
-		s.connectionLock.Unlock()
-
+		mid := cxn.mid
+		nonce := cxn.nonce
 		startSeq := 0
 
 		if s.LivepeerNode.Eth != nil {
 			// TODO: Check broadcaster's deposit with TicketBroker
+			//       (perhaps within registerConnection?)
 		}
 
 		streamStarted := false
@@ -263,7 +234,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 
 		glog.Infof("\n\nVideo Created With ManifestID: %v\n\n", mid)
-		glog.V(common.SHORT).Infof("\n\nhlsStrmID: %v\n\n", hlsStrmID)
 
 		//Create Transcode Job Onchain
 		go s.startSessionListener(cxn)
@@ -292,6 +262,47 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		return nil
 	}
+}
+
+func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*rtmpConnection, error) {
+	// Set up the connection tracking
+	mid := rtmpManifestID(rtmpStrm)
+	if drivers.NodeStorage == nil {
+		glog.Error("Missing node storage")
+		return nil, ErrStorage
+	}
+	storage := drivers.NodeStorage.NewSession(string(mid))
+	// Build the source video profile from the RTMP stream.
+	resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
+	vProfile := ffmpeg.VideoProfile{
+		Name:       "source",
+		Resolution: resolution,
+		Bitrate:    "4000k", // Fix this
+	}
+	hlsStrmID := core.MakeStreamID(mid, &vProfile)
+	s.connectionLock.Lock()
+	defer s.connectionLock.Unlock()
+	_, exists := s.rtmpConnections[mid]
+	if exists {
+		// We can only have one concurrent stream per ManifestID
+		return nil, ErrAlreadyExists
+	}
+	cxn := &rtmpConnection{
+		mid:     mid,
+		nonce:   rand.Uint64(),
+		stream:  rtmpStrm,
+		pl:      core.NewBasicPlaylistManager(mid, storage),
+		profile: &vProfile,
+		lock:    &sync.RWMutex{},
+
+		needOrch: make(chan struct{}),
+		eof:      make(chan struct{}),
+	}
+	s.rtmpConnections[mid] = cxn
+	s.lastManifestID = mid
+	s.lastHLSStreamID = hlsStrmID
+
+	return cxn, nil
 }
 
 func (s *LivepeerServer) startSession(cxn *rtmpConnection) *BroadcastSession {
