@@ -39,6 +39,7 @@ const GRPCTimeout = 8 * time.Second
 const GRPCConnectTimeout = 3 * time.Second
 const StoragePrefixIdLength = 8
 const PaymentHeader = "Livepeer-Payment"
+const SegmentHeader = "Livepeer-Segment"
 
 var ErrSegSig = errors.New("ErrSegSig")
 var ErrSegEncoding = errors.New("ErrorSegEncoding")
@@ -306,120 +307,120 @@ type lphttp struct {
 	transRpc     *http.ServeMux
 }
 
-func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
-	orch := h.orchestrator
-
-	payment, err := getPayment(r.Header.Get(PaymentHeader))
-	if err != nil {
-		glog.Error("Could not parse payment")
-		http.Error(w, err.Error(), http.StatusPaymentRequired)
-		return
-	}
-
-	// check the segment sig from the broadcaster
-	seg := r.Header.Get("Livepeer-Segment")
-
-	segData, err := verifySegCreds(orch, seg, getPaymentSender(payment))
-	if err != nil {
-		glog.Error("Could not verify segment creds")
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
-
-	if err := orch.ProcessPayment(payment, segData.ManifestID); err != nil {
-		glog.Errorf("Error processing payment: %v", err)
-		http.Error(w, err.Error(), http.StatusPaymentRequired)
-		return
-	}
-
-	// download the segment and check the hash
-	data, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		glog.Error("Could not read request body", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	uri := ""
-	if r.Header.Get("Content-Type") == "application/vnd+livepeer.uri" {
-		uri = string(data)
-		glog.V(common.DEBUG).Infof("Start getting segment from %s", uri)
-		start := time.Now()
-		data, err = drivers.GetSegmentData(uri)
-		took := time.Since(start)
-		glog.V(common.DEBUG).Infof("Getting segment from %s took %s", uri, took)
+func serveSegmentHandler(orch Orchestrator) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		payment, err := getPayment(r.Header.Get(PaymentHeader))
 		if err != nil {
-			glog.Errorf("Error getting input segment %v from input OS: %v", uri, err)
-			http.Error(w, "BadRequest", http.StatusBadRequest)
+			glog.Error("Could not parse payment")
+			http.Error(w, err.Error(), http.StatusPaymentRequired)
 			return
 		}
-		if took > HTTPTimeout {
-			// download from object storage took more time when broadcaster will be waiting for result
-			// so there is no point to start transcoding process
-			glog.Errorf(" Getting segment from %s took too long, aborting", uri)
-			http.Error(w, "BadRequest", http.StatusBadRequest)
-		}
-	}
 
-	hash := crypto.Keccak256(data)
-	if !bytes.Equal(hash, segData.Hash.Bytes()) {
-		glog.Error("Mismatched hash for body; rejecting")
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
+		// check the segment sig from the broadcaster
+		seg := r.Header.Get(SegmentHeader)
 
-	// Send down 200OK early as an indication that the upload completed
-	// Any further errors come through the response body
-	w.WriteHeader(http.StatusOK)
-	w.(http.Flusher).Flush()
-
-	hlsStream := stream.HLSSegment{
-		SeqNo: uint64(segData.Seq),
-		Data:  data,
-		Name:  uri,
-	}
-
-	res, err := orch.TranscodeSeg(segData, &hlsStream) // ANGIE - NEED TO CHANGE ALL JOBIDS IN TRANSCODING LOOP INTO STRINGS
-
-	// Upload to OS and construct segment result set
-	var segments []*net.TranscodedSegmentData
-	for i := 0; err == nil && i < len(res.Data); i++ {
-		name := fmt.Sprintf("%s/%d.ts", segData.Profiles[i].Name, segData.Seq) // ANGIE - NEED TO EDIT OUT JOB PROFILES
-		uri, err := res.OS.SaveData(name, res.Data[i])
+		segData, err := verifySegCreds(orch, seg, getPaymentSender(payment))
 		if err != nil {
-			glog.Error("Could not upload segment ", segData.Seq)
-			break
+			glog.Error("Could not verify segment creds")
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
 		}
-		d := &net.TranscodedSegmentData{
-			Url: uri,
-		}
-		segments = append(segments, d)
-	}
 
-	// construct the response
-	var result net.TranscodeResult
-	if err != nil {
-		glog.Error("Could not transcode ", err)
-		result = net.TranscodeResult{Result: &net.TranscodeResult_Error{Error: err.Error()}}
-	} else {
-		result = net.TranscodeResult{Result: &net.TranscodeResult_Data{
-			Data: &net.TranscodeData{
-				Segments: segments,
-				Sig:      res.Sig,
-			}},
+		if err := orch.ProcessPayment(payment, segData.ManifestID); err != nil {
+			glog.Errorf("Error processing payment: %v", err)
+			http.Error(w, err.Error(), http.StatusPaymentRequired)
+			return
 		}
-	}
 
-	tr := &net.TranscodeResult{
-		Seq:    segData.Seq,
-		Result: result.Result,
-	}
-	buf, err := proto.Marshal(tr)
-	if err != nil {
-		glog.Error("Unable to marshal transcode result ", err)
-		return
-	}
-	w.Write(buf)
+		// download the segment and check the hash
+		data, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			glog.Error("Could not read request body", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		uri := ""
+		if r.Header.Get("Content-Type") == "application/vnd+livepeer.uri" {
+			uri = string(data)
+			glog.V(common.DEBUG).Infof("Start getting segment from %s", uri)
+			start := time.Now()
+			data, err = drivers.GetSegmentData(uri)
+			took := time.Since(start)
+			glog.V(common.DEBUG).Infof("Getting segment from %s took %s", uri, took)
+			if err != nil {
+				glog.Errorf("Error getting input segment %v from input OS: %v", uri, err)
+				http.Error(w, "BadRequest", http.StatusBadRequest)
+				return
+			}
+			if took > HTTPTimeout {
+				// download from object storage took more time when broadcaster will be waiting for result
+				// so there is no point to start transcoding process
+				glog.Errorf(" Getting segment from %s took too long, aborting", uri)
+				http.Error(w, "BadRequest", http.StatusBadRequest)
+			}
+		}
+
+		hash := crypto.Keccak256(data)
+		if !bytes.Equal(hash, segData.Hash.Bytes()) {
+			glog.Error("Mismatched hash for body; rejecting")
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		// Send down 200OK early as an indication that the upload completed
+		// Any further errors come through the response body
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+
+		hlsStream := stream.HLSSegment{
+			SeqNo: uint64(segData.Seq),
+			Data:  data,
+			Name:  uri,
+		}
+
+		res, err := orch.TranscodeSeg(segData, &hlsStream) // ANGIE - NEED TO CHANGE ALL JOBIDS IN TRANSCODING LOOP INTO STRINGS
+
+		// Upload to OS and construct segment result set
+		var segments []*net.TranscodedSegmentData
+		for i := 0; err == nil && i < len(res.Data); i++ {
+			name := fmt.Sprintf("%s/%d.ts", segData.Profiles[i].Name, segData.Seq) // ANGIE - NEED TO EDIT OUT JOB PROFILES
+			uri, err := res.OS.SaveData(name, res.Data[i])
+			if err != nil {
+				glog.Error("Could not upload segment ", segData.Seq)
+				break
+			}
+			d := &net.TranscodedSegmentData{
+				Url: uri,
+			}
+			segments = append(segments, d)
+		}
+
+		// construct the response
+		var result net.TranscodeResult
+		if err != nil {
+			glog.Error("Could not transcode ", err)
+			result = net.TranscodeResult{Result: &net.TranscodeResult_Error{Error: err.Error()}}
+		} else {
+			result = net.TranscodeResult{Result: &net.TranscodeResult_Data{
+				Data: &net.TranscodeData{
+					Segments: segments,
+					Sig:      res.Sig,
+				}},
+			}
+		}
+
+		tr := &net.TranscodeResult{
+			Seq:    segData.Seq,
+			Result: result.Result,
+		}
+		buf, err := proto.Marshal(tr)
+		if err != nil {
+			glog.Error("Unable to marshal transcode result ", err)
+			return
+		}
+		w.Write(buf)
+	})
 }
 
 // grpc methods
@@ -444,13 +445,12 @@ func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string) {
 	s := grpc.NewServer()
 	lp := lphttp{
-		orchestrator: orch,
-		orchRpc:      s,
-		transRpc:     mux,
+		orchRpc:  s,
+		transRpc: mux,
 	}
 	net.RegisterOrchestratorServer(s, &lp)
 	net.RegisterTranscoderServer(s, &lp)
-	lp.transRpc.HandleFunc("/segment", lp.ServeSegment)
+	lp.transRpc.Handle("/segment", serveSegmentHandler(orch))
 	lp.transRpc.HandleFunc("/transcodeResults", lp.TranscodeResults)
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)

@@ -1,13 +1,17 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/big"
+	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +29,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
+	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -395,6 +400,265 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 	assert.Equal(expectedParams, oInfo.TicketParams)
 }
 
+func TestServeSegmentHandler_ParsePaymentError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	headers := map[string]string{
+		PaymentHeader: "foo",
+	}
+	resp := httpPostResp(handler, nil, headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusPaymentRequired, resp.StatusCode)
+	assert.Contains(strings.TrimSpace(string(body)), "base64")
+}
+
+func TestServeSegmentHandler_VerifySegCredsError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	headers := map[string]string{
+		PaymentHeader: "",
+		SegmentHeader: "foo",
+	}
+	resp := httpPostResp(handler, nil, headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusForbidden, resp.StatusCode)
+	assert.Equal(ErrSegEncoding.Error(), strings.TrimSpace(string(body)))
+}
+
+func TestServeSegmentHandler_ProcessPaymentError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: StubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+	}
+	creds, err := genSegCreds(s, &stream.HLSSegment{})
+	require.Nil(t, err)
+
+	orch.On("ProcessPayment", mock.Anything, mock.Anything).Return(errors.New("ProcessPayment error"))
+
+	headers := map[string]string{
+		PaymentHeader: "",
+		SegmentHeader: creds,
+	}
+	resp := httpPostResp(handler, nil, headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusPaymentRequired, resp.StatusCode)
+	assert.Equal("ProcessPayment error", strings.TrimSpace(string(body)))
+}
+
+// TODO: Test for OS errors getting segment data
+
+func TestServeSegmentHandler_MismatchHashError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: StubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+	}
+	creds, err := genSegCreds(s, &stream.HLSSegment{})
+	require.Nil(t, err)
+
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+
+	headers := map[string]string{
+		PaymentHeader: "",
+		SegmentHeader: creds,
+	}
+	resp := httpPostResp(handler, bytes.NewReader([]byte("foo")), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusForbidden, resp.StatusCode)
+	assert.Equal("Forbidden", strings.TrimSpace(string(body)))
+}
+
+func TestServeSegmentHandler_TranscodeSegError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: StubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
+
+	headers := map[string]string{
+		PaymentHeader: "",
+		SegmentHeader: creds,
+	}
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	var tr net.TranscodeResult
+	err = proto.Unmarshal(body, &tr)
+	require.Nil(err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	res, ok := tr.Result.(*net.TranscodeResult_Error)
+	assert.True(ok)
+	assert.Equal("TranscodeSeg error", res.Error)
+}
+
+func TestServeSegmentHandler_ReturnSingleTranscodedSegmentData(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: StubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		Profiles: []ffmpeg.VideoProfile{
+			ffmpeg.P720p60fps16x9,
+		},
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+
+	tRes := &core.TranscodeResult{
+		Data: [][]byte{
+			[]byte("foo"),
+		},
+		Sig: []byte("foo"),
+		OS:  drivers.NewMemoryDriver("").NewSession(""),
+	}
+	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+
+	headers := map[string]string{
+		PaymentHeader: "",
+		SegmentHeader: creds,
+	}
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	var tr net.TranscodeResult
+	err = proto.Unmarshal(body, &tr)
+	require.Nil(err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	res, ok := tr.Result.(*net.TranscodeResult_Data)
+	assert.True(ok)
+	assert.Equal([]byte("foo"), res.Data.Sig)
+	assert.Equal(1, len(res.Data.Segments))
+}
+
+func TestServeSegmentHandler_ReturnMultipleTranscodedSegmentData(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: StubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		Profiles: []ffmpeg.VideoProfile{
+			ffmpeg.P720p60fps16x9,
+			ffmpeg.P240p30fps16x9,
+		},
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+
+	tRes := &core.TranscodeResult{
+		Data: [][]byte{
+			[]byte("foo"),
+			[]byte("foo"),
+		},
+		Sig: []byte("foo"),
+		OS:  drivers.NewMemoryDriver("").NewSession(""),
+	}
+	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+
+	headers := map[string]string{
+		PaymentHeader: "",
+		SegmentHeader: creds,
+	}
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	var tr net.TranscodeResult
+	err = proto.Unmarshal(body, &tr)
+	require.Nil(err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	res, ok := tr.Result.(*net.TranscodeResult_Data)
+	assert.True(ok)
+	assert.Equal([]byte("foo"), res.Data.Sig)
+	assert.Equal(2, len(res.Data.Segments))
+}
+
+// TODO: Test for missing segments that failed upload
+
 type mockOrchestrator struct {
 	mock.Mock
 }
@@ -427,8 +691,14 @@ func (o *mockOrchestrator) CurrentBlock() *big.Int {
 	return nil
 }
 func (o *mockOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
-	o.Called(md, seg)
-	return nil, nil
+	args := o.Called(md, seg)
+
+	var res *core.TranscodeResult
+	if args.Get(0) != nil {
+		res = args.Get(0).(*core.TranscodeResult)
+	}
+
+	return res, args.Error(1)
 }
 func (o *mockOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
 	o.Called(stream)

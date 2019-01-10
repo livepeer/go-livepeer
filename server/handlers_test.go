@@ -45,7 +45,7 @@ func dummyHandler() http.Handler {
 func TestMustHaveFormParams_NoParamsRequired(t *testing.T) {
 	handler := mustHaveFormParams(dummyHandler())
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -56,7 +56,7 @@ func TestMustHaveFormParams_NoParamsRequired(t *testing.T) {
 func TestMustHaveFormParams_SingleParamRequiredNotProvided(t *testing.T) {
 	handler := mustHaveFormParams(dummyHandler(), "a")
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -70,7 +70,7 @@ func TestMustHaveFormParams_SingleParamRequiredAndProvided(t *testing.T) {
 	form := url.Values{
 		"a": {"foo"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -84,7 +84,7 @@ func TestMustHaveFormParams_MultipleParamsRequiredOneNotProvided(t *testing.T) {
 	form := url.Values{
 		"a": {"foo"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -98,7 +98,7 @@ func TestMustHaveFormParams_MultipleParamsRequiredAllProvided(t *testing.T) {
 		"a": {"foo"},
 		"b": {"foo"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -109,7 +109,7 @@ func TestMustHaveFormParams_MultipleParamsRequiredAllProvided(t *testing.T) {
 func TestCurrentBlockHandler_MissingBlockGetter(t *testing.T) {
 	handler := currentBlockHandler(nil)
 
-	resp := httpResp(handler, "GET", nil)
+	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -123,7 +123,7 @@ func TestCurrentBlockHandler_LastSeenBlockError(t *testing.T) {
 
 	getter.On("LastSeenBlock").Return(nil, errors.New("LastSeenBlock error"))
 
-	resp := httpResp(handler, "GET", nil)
+	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -137,7 +137,7 @@ func TestCurrentBlockHandler_Success(t *testing.T) {
 
 	getter.On("LastSeenBlock").Return(big.NewInt(50), nil)
 
-	resp := httpResp(handler, "GET", nil)
+	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -148,7 +148,7 @@ func TestCurrentBlockHandler_Success(t *testing.T) {
 func TestFundAndApproveSignersHandler_MissingClient(t *testing.T) {
 	handler := fundAndApproveSignersHandler(nil)
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -163,7 +163,7 @@ func TestFundAndApproveSignersHandler_InvalidDepositAmount(t *testing.T) {
 	form := url.Values{
 		"depositAmount": {"foo"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -179,7 +179,7 @@ func TestFundAndApproveSignersHandler_InvalidPenaltyEscrowAmount(t *testing.T) {
 		"depositAmount":       {"100"},
 		"penaltyEscrowAmount": {"foo"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -197,7 +197,7 @@ func TestFundAndApproveSignersHandler_TransactionSubmissionError(t *testing.T) {
 		"depositAmount":       {"50"},
 		"penaltyEscrowAmount": {"50"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -216,7 +216,7 @@ func TestFundAndApproveSignersHandler_TransactionWaitError(t *testing.T) {
 		"depositAmount":       {"50"},
 		"penaltyEscrowAmount": {"50"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -235,7 +235,7 @@ func TestFundAndApproveSignersHandler_Success(t *testing.T) {
 		"depositAmount":       {"50"},
 		"penaltyEscrowAmount": {"50"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -246,7 +246,7 @@ func TestFundAndApproveSignersHandler_Success(t *testing.T) {
 func TestFundDepositHandler_MissingClient(t *testing.T) {
 	handler := fundDepositHandler(nil)
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -261,7 +261,7 @@ func TestFundDepositHandler_InvalidAmount(t *testing.T) {
 	form := url.Values{
 		"amount": {"foo"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -278,7 +278,7 @@ func TestFundDepositHandler_TransactionSubmissionError(t *testing.T) {
 	form := url.Values{
 		"amount": {"100"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -296,7 +296,7 @@ func TestFundDepositHandler_TransactionWaitError(t *testing.T) {
 	form := url.Values{
 		"amount": {"100"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -314,7 +314,7 @@ func TestFundDepositHandler_Success(t *testing.T) {
 	form := url.Values{
 		"amount": {"100"},
 	}
-	resp := httpResp(handler, "POST", strings.NewReader(form.Encode()))
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -325,7 +325,7 @@ func TestFundDepositHandler_Success(t *testing.T) {
 func TestUnlockHandler_MissingClient(t *testing.T) {
 	handler := unlockHandler(nil)
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -339,7 +339,7 @@ func TestUnlockHandler_TransactionSubmissionError(t *testing.T) {
 
 	client.On("Unlock").Return(nil, errors.New("Unlock error"))
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -354,7 +354,7 @@ func TestUnlockHandler_TransactionWaitError(t *testing.T) {
 	client.On("Unlock").Return(nil, nil)
 	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -369,7 +369,7 @@ func TestUnlockHandler_Success(t *testing.T) {
 	client.On("Unlock").Return(nil, nil)
 	client.On("CheckTx", mock.Anything).Return(nil)
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -380,7 +380,7 @@ func TestUnlockHandler_Success(t *testing.T) {
 func TestCancelUnlockHandler_MissingClient(t *testing.T) {
 	handler := cancelUnlockHandler(nil)
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -394,7 +394,7 @@ func TestCancelUnlockHandler_TransactionSubmissionError(t *testing.T) {
 
 	client.On("CancelUnlock").Return(nil, errors.New("CancelUnlock error"))
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -409,7 +409,7 @@ func TestCancelUnlockHandler_TransactionWaitError(t *testing.T) {
 	client.On("CancelUnlock").Return(nil, nil)
 	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -424,7 +424,7 @@ func TestCancelUnlockHandler_Success(t *testing.T) {
 	client.On("CancelUnlock").Return(nil, nil)
 	client.On("CheckTx", mock.Anything).Return(nil)
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -435,7 +435,7 @@ func TestCancelUnlockHandler_Success(t *testing.T) {
 func TestWithdrawHandler_MissingClient(t *testing.T) {
 	handler := withdrawHandler(nil)
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -449,7 +449,7 @@ func TestWithdrawHandler_TransactionSubmissionError(t *testing.T) {
 
 	client.On("Withdraw").Return(nil, errors.New("Withdraw error"))
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -463,7 +463,7 @@ func TestWithdrawHandler_TransactionWaitError(t *testing.T) {
 	client.On("Withdraw").Return(nil, nil)
 	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -478,7 +478,7 @@ func TestWithdrawHandler_Success(t *testing.T) {
 	client.On("Withdraw").Return(nil, nil)
 	client.On("CheckTx", mock.Anything).Return(nil)
 
-	resp := httpResp(handler, "POST", nil)
+	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -489,7 +489,7 @@ func TestWithdrawHandler_Success(t *testing.T) {
 func TestSenderInfoHandler_MissingClient(t *testing.T) {
 	handler := senderInfoHandler(nil)
 
-	resp := httpResp(handler, "GET", nil)
+	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -505,7 +505,7 @@ func TestSenderInfoHandler_SendersError(t *testing.T) {
 	client.On("Account").Return(accounts.Account{Address: addr})
 	client.On("Senders", addr).Return(nil, nil, nil, errors.New("Senders error"))
 
-	resp := httpResp(handler, "GET", nil)
+	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -525,7 +525,7 @@ func TestSenderInfoHandler_Success(t *testing.T) {
 	client.On("Account").Return(accounts.Account{Address: addr})
 	client.On("Senders", addr).Return(deposit, penaltyEscrow, withdrawBlock, nil)
 
-	resp := httpResp(handler, "GET", nil)
+	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	var sender struct {
@@ -546,7 +546,7 @@ func TestSenderInfoHandler_Success(t *testing.T) {
 func TestTicketBrokerParamsHandler_MissingClient(t *testing.T) {
 	handler := ticketBrokerParamsHandler(nil)
 
-	resp := httpResp(handler, "GET", nil)
+	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -560,7 +560,7 @@ func TestTicketBrokerParamsHandler_MinPenaltyEscrowError(t *testing.T) {
 
 	client.On("MinPenaltyEscrow").Return(nil, errors.New("MinPenaltyEscrow error"))
 
-	resp := httpResp(handler, "GET", nil)
+	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -575,7 +575,7 @@ func TestTicketBrokerParamsHandler_UnlockPeriodError(t *testing.T) {
 	client.On("MinPenaltyEscrow").Return(big.NewInt(50), nil)
 	client.On("UnlockPeriod").Return(nil, errors.New("UnlockPeriod error"))
 
-	resp := httpResp(handler, "GET", nil)
+	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
@@ -592,7 +592,7 @@ func TestTicketBrokerParamsHandler_Success(t *testing.T) {
 	client.On("MinPenaltyEscrow").Return(minPenaltyEscrow, nil)
 	client.On("UnlockPeriod").Return(unlockPeriod, nil)
 
-	resp := httpResp(handler, "GET", nil)
+	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	var params struct {
@@ -608,9 +608,30 @@ func TestTicketBrokerParamsHandler_Success(t *testing.T) {
 	assert.Equal(unlockPeriod, params.UnlockPeriod)
 }
 
-func httpResp(handler http.Handler, method string, body io.Reader) *http.Response {
+func httpPostFormResp(handler http.Handler, body io.Reader) *http.Response {
+	headers := map[string]string{
+		"Content-Type": "application/x-www-form-urlencoded",
+	}
+
+	return httpPostResp(handler, body, headers)
+}
+
+func httpPostResp(handler http.Handler, body io.Reader, headers map[string]string) *http.Response {
+	return httpResp(handler, "POST", body, headers)
+}
+
+func httpGetResp(handler http.Handler) *http.Response {
+	return httpResp(handler, "GET", nil, nil)
+}
+
+func httpResp(handler http.Handler, method string, body io.Reader, headers map[string]string) *http.Response {
 	req := httptest.NewRequest(method, "http://example.com", body)
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	if headers != nil {
+		for k, v := range headers {
+			req.Header.Add(k, v)
+		}
+	}
 
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
