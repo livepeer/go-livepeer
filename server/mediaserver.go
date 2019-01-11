@@ -327,10 +327,17 @@ func (s *LivepeerServer) startSession(cxn *rtmpConnection) *BroadcastSession {
 
 func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
 	mut := cxn.lock
-	cv := sync.NewCond(mut)
-	pending := false
+	sem := make(chan struct{}, 1)
 	runStartSession := func() {
-		sess := s.startSession(cxn)
+		// Quickly lock-unlock to avoid blocking longer than necessary
+		mut.Lock()
+		cxn.sess = nil
+		mut.Unlock()
+
+		sess := s.startSession(cxn) // this could take awhile
+
+		// Retain the connectionLock for the rest of the function to ensure
+		// we don't terminate the stream *then* assign the session to the cxn
 		s.connectionLock.RLock()
 		defer s.connectionLock.RUnlock()
 		if _, active := s.rtmpConnections[cxn.pl.ManifestID()]; !active {
@@ -339,8 +346,6 @@ func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
 		mut.Lock()
 		defer mut.Unlock()
 		cxn.sess = sess
-		pending = false
-		cv.Signal()
 	}
 	glog.V(common.DEBUG).Info("Starting broadcast listener for ", cxn.pl.ManifestID())
 	finished := false
@@ -352,17 +357,12 @@ func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
 
 		case <-cxn.needOrch:
 			go func() {
-				mut.Lock()
-				defer mut.Unlock()
-				if pending {
-					// Skip if we already have a request inflight
-					return
-				}
-				cxn.sess = nil
-				pending = true
-				go runStartSession()
-				for pending {
-					cv.Wait()
+				select {
+				case sem <- struct{}{}:
+					runStartSession()
+					<-sem
+				default:
+					break
 				}
 			}()
 
