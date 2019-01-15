@@ -301,7 +301,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 
 func (s *LivepeerServer) startSession(cxn *rtmpConnection) *BroadcastSession {
 
-	mid := rtmpManifestID(cxn.stream)
+	mid := cxn.mid
 	cpl := cxn.pl
 	var sess *BroadcastSession
 
@@ -345,14 +345,14 @@ func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
 		// we don't terminate the stream *then* assign the session to the cxn
 		s.connectionLock.RLock()
 		defer s.connectionLock.RUnlock()
-		if _, active := s.rtmpConnections[cxn.pl.ManifestID()]; !active {
+		if _, active := s.rtmpConnections[cxn.mid]; !active {
 			sess = nil // don't assign if stream terminated
 		}
 		mut.Lock()
 		defer mut.Unlock()
 		cxn.sess = sess
 	}
-	glog.V(common.DEBUG).Info("Starting broadcast listener for ", cxn.pl.ManifestID())
+	glog.V(common.DEBUG).Info("Starting broadcast listener for ", cxn.mid)
 	finished := false
 	for {
 		if finished {
@@ -376,7 +376,7 @@ func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
 			break
 		}
 	}
-	glog.V(common.DEBUG).Info("Stopping broadcast listener for ", cxn.pl.ManifestID())
+	glog.V(common.DEBUG).Info("Stopping broadcast listener for ", cxn.mid)
 }
 
 //End RTMP Publish Handlers

@@ -486,6 +486,7 @@ func TestStartSession(t *testing.T) {
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	strm := stream.NewBasicRTMPVideoStream(string(mid))
 	cxn := &rtmpConnection{
+		mid:    mid,
 		lock:   &sync.RWMutex{},
 		pl:     core.NewBasicPlaylistManager(mid, storage),
 		stream: strm,
@@ -498,7 +499,7 @@ func TestStartSession(t *testing.T) {
 
 	assert.Equal(0, sd.getOrchCalls) // sanity check
 
-	// return nil given an error if session doesn't exist
+	// return nil given an error if session isn't registered
 	sd.getOrchError = fmt.Errorf("StubError")
 	assert.Nil(s.startSession(cxn))
 	assert.Equal(1, sd.getOrchCalls)
@@ -549,19 +550,11 @@ func TestSessionListener(t *testing.T) {
 	}
 	s.LivepeerNode.OrchestratorPool = sd
 	mid := core.SplitStreamIDString(t.Name()).ManifestID
-	storage := drivers.NodeStorage.NewSession(string(mid))
 	strm := stream.NewBasicRTMPVideoStream(string(mid))
-	cxn := &rtmpConnection{
-		needOrch: make(chan struct{}),
-		lock:     &sync.RWMutex{},
-		eof:      make(chan struct{}),
-		pl:       core.NewBasicPlaylistManager(mid, storage),
-		stream:   strm,
-	}
+	cxn, err := s.registerConnection(strm)
 
-	s.connectionLock.Lock()
-	s.rtmpConnections[mid] = cxn
-	s.connectionLock.Unlock()
+	assert.Nil(err) // sanity check
+	assert.NotNil(cxn)
 
 	listenerStopped := make(chan struct{})
 	go func() {
@@ -627,6 +620,7 @@ func TestSessionAssigment_WithTerminatedConnection(t *testing.T) {
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	strm := stream.NewBasicRTMPVideoStream(string(mid))
 	cxn := &rtmpConnection{
+		mid:      mid,
 		needOrch: make(chan struct{}),
 		lock:     &sync.RWMutex{},
 		eof:      make(chan struct{}),
