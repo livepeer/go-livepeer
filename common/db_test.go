@@ -118,6 +118,85 @@ func profilesMatch(j1 []ffmpeg.VideoProfile, j2 []ffmpeg.VideoProfile) bool {
 	return true
 }
 
+func TestSelectUpdateOrchs_EmptyOrNilInputs_NoError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
+
+	// selecting empty set of orchs
+	orchs, err := dbh.SelectOrchs()
+	require.Nil(err)
+	assert.Empty(orchs)
+
+	// updating a nil value
+	err = dbh.UpdateOrch(nil)
+	require.Nil(err)
+}
+
+func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
+
+	// adding row
+	orchAddress := string(pm.RandBytes(32))
+	orch := NewDBOrch("127.0.0.1:8936", orchAddress)
+
+	err = dbh.UpdateOrch(orch)
+	require.Nil(err)
+
+	orchs, err := dbh.SelectOrchs()
+	require.Nil(err)
+	assert.Len(orchs, 1)
+	assert.Equal(orchs[0].ServiceURI, orch.ServiceURI)
+
+	// updating row with same orchAddress
+	orchUpdate := NewDBOrch("127.0.0.1:8937", orchAddress)
+	err = dbh.UpdateOrch(orchUpdate)
+	require.Nil(err)
+
+	updatedOrch, err := dbh.SelectOrchs()
+	assert.Len(updatedOrch, 1)
+	assert.Equal(updatedOrch[0].ServiceURI, orchUpdate.ServiceURI)
+}
+
+func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
+
+	// adding one row
+	orchAddress := string(pm.RandBytes(32))
+	orch := NewDBOrch("127.0.0.1:8936", orchAddress)
+	err = dbh.UpdateOrch(orch)
+	require.Nil(err)
+
+	orchs, err := dbh.SelectOrchs()
+	require.Nil(err)
+	assert.Len(orchs, 1)
+	assert.Equal(orchs[0].ServiceURI, orch.ServiceURI)
+
+	// adding second row
+	orchAddress = string(pm.RandBytes(32))
+	orchAdd := NewDBOrch("127.0.0.1:8938", orchAddress)
+	err = dbh.UpdateOrch(orchAdd)
+	require.Nil(err)
+
+	orchsUpdated, err := dbh.SelectOrchs()
+	require.Nil(err)
+	assert.Len(orchsUpdated, 2)
+	assert.Equal(orchsUpdated[1].ServiceURI, orchAdd.ServiceURI)
+}
+
 func TestDBUnbondingLocks(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
@@ -360,7 +439,7 @@ func TestStoreWinningTicket_GivenNilTicket_ReturnsError(t *testing.T) {
 	require := require.New(t)
 	require.Nil(err)
 
-	sig := pm.RandBytesOrFatal(42, t)
+	sig := pm.RandBytes(42)
 	recipientRand := new(big.Int).SetInt64(1234)
 
 	err = dbh.StoreWinningTicket("sessionID", nil, sig, recipientRand)
@@ -533,14 +612,14 @@ func TestLoadWinningTickets_GivenTwoSessionsWithTickets_ReturnsAllTickets(t *tes
 func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) {
 	sessionID = "foo bar"
 	ticket = &pm.Ticket{
-		Sender:            pm.RandAddressOrFatal(t),
-		Recipient:         pm.RandAddressOrFatal(t),
+		Sender:            pm.RandAddress(),
+		Recipient:         pm.RandAddress(),
 		FaceValue:         big.NewInt(1234),
 		WinProb:           big.NewInt(2345),
 		SenderNonce:       uint32(123),
-		RecipientRandHash: pm.RandHashOrFatal(t),
+		RecipientRandHash: pm.RandHash(),
 	}
-	sig = pm.RandBytesOrFatal(42, t)
+	sig = pm.RandBytes(42)
 	recipientRand = big.NewInt(4567)
 	return
 }

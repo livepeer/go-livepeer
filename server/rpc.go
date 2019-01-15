@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -23,6 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 
@@ -31,14 +31,14 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	"github.com/pkg/errors"
 )
-
-var broadcasterAddress = ethcommon.BytesToAddress([]byte("111 Transcoder Address 1")) // need to remove hard-coded broadcaster address
 
 const HTTPTimeout = 8 * time.Second
 const GRPCTimeout = 8 * time.Second
 const GRPCConnectTimeout = 3 * time.Second
 const StoragePrefixIdLength = 8
+const PaymentHeader = "Livepeer-Payment"
 
 var ErrSegSig = errors.New("ErrSegSig")
 var ErrSegEncoding = errors.New("ErrorSegEncoding")
@@ -59,6 +59,8 @@ type Orchestrator interface {
 	TranscodeSeg(*core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
+	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
+	TicketParams(sender ethcommon.Address) *net.TicketParams
 }
 
 type Broadcaster interface {
@@ -74,6 +76,8 @@ type BroadcastSession struct {
 	OrchestratorInfo *net.OrchestratorInfo
 	OrchestratorOS   drivers.OSSession
 	BroadcasterOS    drivers.OSSession
+	Sender           pm.Sender
+	PMSessionID      string
 }
 
 func genOrchestratorReq(b Broadcaster) (*net.OrchestratorRequest, error) {
@@ -126,9 +130,8 @@ func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.Client
 	return c, conn, nil
 }
 
-func verifyOrchestratorReq(orch Orchestrator, req *net.OrchestratorRequest) error {
-	addr := ethcommon.BytesToAddress(req.Address)
-	if !orch.VerifySig(addr, addr.Hex(), req.Sig) {
+func verifyOrchestratorReq(orch Orchestrator, addr ethcommon.Address, sig []byte) error {
+	if !orch.VerifySig(addr, addr.Hex(), sig) {
 		glog.Error("orchestrator req sig check failed")
 		return fmt.Errorf("orchestrator req sig check failed")
 	}
@@ -158,7 +161,7 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 
 	// Generate serialized segment info
 	segData := &net.SegData{
-		ManifestId: md.ManifestID.GetVideoID(),
+		ManifestId: []byte(md.ManifestID),
 		Seq:        md.Seq,
 		Hash:       hash,
 		Profiles:   common.ProfilesToTranscodeOpts(sess.Profiles),
@@ -173,7 +176,7 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func verifySegCreds(orch Orchestrator, segCreds string) (*core.SegTranscodingMetadata, error) {
+func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, error) {
 	buf, err := base64.StdEncoding.DecodeString(segCreds)
 	if err != nil {
 		glog.Error("Unable to base64-decode ", err)
@@ -190,11 +193,7 @@ func verifySegCreds(orch Orchestrator, segCreds string) (*core.SegTranscodingMet
 		glog.Error("Unable to deserialize profiles ", err)
 		return nil, err
 	}
-	mid, err := core.MakeManifestID(segData.ManifestId)
-	if err != nil {
-		glog.Error("Unable to deserialize manifest ID ", err)
-		return nil, err
-	}
+	mid := core.ManifestID(segData.ManifestId)
 
 	var os *net.OSInfo
 	if len(segData.Storage) > 0 {
@@ -209,12 +208,65 @@ func verifySegCreds(orch Orchestrator, segCreds string) (*core.SegTranscodingMet
 		OS:         os,
 	}
 
-	if !orch.VerifySig(broadcasterAddress, string(md.Flatten()), segData.Sig) {
+	if !orch.VerifySig(broadcaster, string(md.Flatten()), segData.Sig) {
 		glog.Error("Sig check failed")
 		return nil, ErrSegSig
 	}
 
 	return md, nil
+}
+
+func genPayment(sess *BroadcastSession) (string, error) {
+	if sess.Sender == nil {
+		return "", nil
+	}
+
+	ticket, seed, sig, err := sess.Sender.CreateTicket(sess.PMSessionID)
+	if err != nil {
+		return "", err
+	}
+
+	protoTicket := &net.Ticket{
+		Recipient:         ticket.Recipient.Bytes(),
+		Sender:            ticket.Sender.Bytes(),
+		FaceValue:         ticket.FaceValue.Bytes(),
+		WinProb:           ticket.WinProb.Bytes(),
+		SenderNonce:       ticket.SenderNonce,
+		RecipientRandHash: ticket.RecipientRandHash.Bytes(),
+	}
+	protoPayment := &net.Payment{
+		Ticket: protoTicket,
+		Sig:    sig,
+		Seed:   seed.Bytes(),
+	}
+
+	data, err := proto.Marshal(protoPayment)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.StdEncoding.EncodeToString(data), nil
+}
+
+func getPayment(header string) (net.Payment, error) {
+	buf, err := base64.StdEncoding.DecodeString(header)
+	if err != nil {
+		return net.Payment{}, errors.Wrap(err, "base64 decode error")
+	}
+	var payment net.Payment
+	if err := proto.Unmarshal(buf, &payment); err != nil {
+		return net.Payment{}, errors.Wrap(err, "protobuf unmarshal error")
+	}
+
+	return payment, nil
+}
+
+func getPaymentSender(payment net.Payment) ethcommon.Address {
+	if payment.Ticket == nil || payment.Ticket.Sender == nil {
+		return ethcommon.Address{}
+	}
+
+	return ethcommon.BytesToAddress(payment.Ticket.Sender)
 }
 
 func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.PingPong, error) {
@@ -227,13 +279,15 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 	return &net.PingPong{Value: value}, nil
 }
 
-func getOrchestrator(context context.Context, orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
-	if err := verifyOrchestratorReq(orch, req); err != nil {
+func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
+	addr := ethcommon.BytesToAddress(req.Address)
+	if err := verifyOrchestratorReq(orch, addr, req.Sig); err != nil {
 		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
 	}
 
 	tr := net.OrchestratorInfo{
-		Transcoder: orch.ServiceURI().String(), // currently,  orchestrator == transcoder
+		Transcoder:   orch.ServiceURI().String(), // currently,  orchestrator == transcoder
+		TicketParams: orch.TicketParams(addr),
 	}
 
 	storagePrefix := core.RandomIdGenerator(StoragePrefixIdLength)
@@ -242,6 +296,7 @@ func getOrchestrator(context context.Context, orch Orchestrator, req *net.Orches
 	if os != nil && os.IsExternal() {
 		tr.Storage = []*net.OSInfo{os.GetInfo()}
 	}
+
 	return &tr, nil
 }
 
@@ -254,13 +309,26 @@ type lphttp struct {
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	orch := h.orchestrator
 
+	payment, err := getPayment(r.Header.Get(PaymentHeader))
+	if err != nil {
+		glog.Error("Could not parse payment")
+		http.Error(w, err.Error(), http.StatusPaymentRequired)
+		return
+	}
+
 	// check the segment sig from the broadcaster
 	seg := r.Header.Get("Livepeer-Segment")
 
-	segData, err := verifySegCreds(orch, seg) // ANGIE : NEED BROADCASTER ADDRESS FROM PM
+	segData, err := verifySegCreds(orch, seg, getPaymentSender(payment))
 	if err != nil {
 		glog.Error("Could not verify segment creds")
 		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+
+	if err := orch.ProcessPayment(payment, segData.ManifestID); err != nil {
+		glog.Errorf("Error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusPaymentRequired)
 		return
 	}
 
@@ -356,7 +424,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 // grpc methods
 func (h *lphttp) GetOrchestrator(context context.Context, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
-	return getOrchestrator(context, h.orchestrator, req)
+	return getOrchestrator(h.orchestrator, req)
 }
 
 func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong, error) {
@@ -436,6 +504,11 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		data = []byte(seg.Name)
 	}
 
+	payment, err := genPayment(sess)
+	if err != nil {
+		glog.Errorf("Could not create payment: %v", err)
+	}
+
 	ti := sess.OrchestratorInfo
 	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(data))
 	if err != nil {
@@ -447,6 +520,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	}
 
 	req.Header.Set("Livepeer-Segment", segCreds)
+	req.Header.Set("Livepeer-Payment", payment)
 	if uploaded {
 		req.Header.Set("Content-Type", "application/vnd+livepeer.uri")
 	} else {

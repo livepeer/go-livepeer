@@ -2,6 +2,8 @@ package core
 
 import (
 	"bytes"
+	"fmt"
+	"math/rand"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -22,76 +24,102 @@ func TestSegmentFlatten(t *testing.T) {
 	}
 }
 
-func TestStreamID(t *testing.T) {
-	vid := RandomVideoID()
-	id, err := MakeStreamID(vid, ffmpeg.P144p30fps16x9.Name)
-	if err != nil {
-		t.Error("Error making StreamID ", err)
-	}
-
-	if bytes.Compare(vid, id.GetVideoID()) != 0 {
-		t.Errorf("Expecting: %v, got %v", vid, id.GetVideoID())
-	}
-
-	if ffmpeg.P144p30fps16x9.Name != id.GetRendition() {
-		t.Error("Rendition not matching")
-	}
-	if !id.IsValid() {
-		t.Error("Streamid not valid")
-	}
-
-	// invalid videoid
-	if _, err := MakeStreamID([]byte("abc"), "def"); err != ErrStreamID {
-		t.Error("Did not receive expected error; ", err)
-	}
-	// invalid rendition
-	if _, err := MakeStreamID(vid, ""); err != ErrStreamID {
-		t.Error("Did not receive expected streamid error ", err)
-	}
-	// force a too-short streamid
-	bad := StreamID("streamid")
-	if bad.GetVideoID() != nil {
-		t.Error("Expected a nil videoid from streamid")
-	}
-	if bad.IsValid() {
-		t.Error("Did not expect streamid to be valid")
+func TestRandomIdGenerator(t *testing.T) {
+	rand.Seed(123)
+	res := RandomIdGenerator(DefaultManifestIDLength)
+	if !bytes.Equal(res, []byte{0x17, 0xb3, 0x36, 0xb6}) {
+		t.Error("Unexpected RNG result")
 	}
 }
 
-func TestManifestID(t *testing.T) {
-	vid := RandomVideoID()
-	mid, err := MakeManifestID(vid)
-
-	if err != nil || !mid.IsValid() {
-		t.Error("Error or invalid manifestid ", err)
+func TestStreamID(t *testing.T) {
+	RandomIdGenerator = func(length uint) []byte {
+		return []byte{0xFE, 0xED, 0xF0, 0x0D}
 	}
+	mid := RandomManifestID()
+	profile := ffmpeg.P144p30fps16x9
 
-	if bytes.Compare(mid.GetVideoID(), vid) != 0 {
-		t.Error("Manifest ID did not match video ID")
-	}
-
-	sid, _ := MakeStreamID(vid, ffmpeg.P144p30fps16x9.Name)
-	msid, err := sid.ManifestIDFromStreamID()
-	if mid.String() != msid.String() || err != nil {
-		t.Error("Manifest was not properly derived from stream ID ", err)
+	// Test random manifest ID generation
+	if string(mid) != "feedf00d" {
+		t.Error("Unexpected ManifestID ", mid)
 	}
 
-	if bytes.Compare(vid, msid.GetVideoID()) != 0 {
-		t.Error("Derived manifest did not match video ID")
+	// Test normal cases
+	id := MakeStreamID(mid, &profile)
+	if id.ManifestID != mid || id.Rendition != profile.Name {
+		t.Error("Unexpected StreamID ", id)
 	}
 
-	//invalid manifestid
-	if _, err := MakeManifestID([]byte("abc")); err != ErrManifestID {
-		t.Error("Did not receive expected manifestid error ", err)
+	id = MakeStreamIDFromString(string(mid), profile.Name)
+	if id.ManifestID != mid || id.Rendition != profile.Name {
+		t.Error("Unexpected StreamID ", id)
 	}
-	bad := ManifestID("manifestid")
-	if bad.GetVideoID() != nil {
-		t.Error("Expected nil videoid from manifestid")
+
+	id = SplitStreamIDString(fmt.Sprintf("%v/%v", mid, profile.Name))
+	if id.ManifestID != mid || id.Rendition != profile.Name {
+		t.Error("Unexpected StreamID ", id)
 	}
-	if _, err := StreamID("bad").ManifestIDFromStreamID(); err != ErrManifestID {
-		t.Error("Expected manifestid error from bad streamid ", err)
+
+	// Test missing ManifestID
+	id = SplitStreamIDString("/" + profile.Name)
+	if id.ManifestID != ManifestID("") || id.Rendition != profile.Name {
+		t.Error("Unexpected StreamID ", id)
 	}
-	if bad.IsValid() {
-		t.Error("did not expect manifestd to be valid")
+	id = SplitStreamIDString("//" + profile.Name)
+	if id.ManifestID != ManifestID("") || id.Rendition != "/"+profile.Name {
+		t.Error("Unexpected StreamID ", id)
+	}
+
+	// Test missing rendition
+	id = SplitStreamIDString(string(mid))
+	if id.ManifestID != mid || id.Rendition != "" {
+		t.Error("Unexpected StreamID ", id)
+	}
+	id = SplitStreamIDString(string(mid) + "/")
+	if id.ManifestID != mid || id.Rendition != "" {
+		t.Error("Unexpected StreamID ", id)
+	}
+	id = SplitStreamIDString(string(mid) + "//")
+	if id.ManifestID != mid || id.Rendition != "/" {
+		t.Error("Unexpected StreamID ", id)
+	}
+
+	// Test missing ManifestID and rendition
+	id = SplitStreamIDString("")
+	if id.ManifestID != ManifestID("") || id.Rendition != "" {
+		t.Error("Unexpected StreamID ", id)
+	}
+	id = SplitStreamIDString("/")
+	if id.ManifestID != ManifestID("") || id.Rendition != "" {
+		t.Error("Unexpected StreamID ", id)
+	}
+	id = SplitStreamIDString("//")
+	if id.ManifestID != ManifestID("") || id.Rendition != "/" {
+		t.Error("Unexpected StreamID ", id)
+	}
+	id = SplitStreamIDString("///")
+	if id.ManifestID != ManifestID("") || id.Rendition != "//" {
+		t.Error("Unexpected StreamID ", id)
+	}
+
+	// Test some unusual cases -- these should all technically be acceptable
+	// (Acceptable until we decide they're not)
+	id = SplitStreamIDString("../../..")
+	if id.ManifestID != ".." || id.Rendition != "../.." {
+		t.Error("Unexpected StreamID ", id)
+	}
+	id = SplitStreamIDString("  /  /  ")
+	if id.ManifestID != "  " || id.Rendition != "  /  " {
+		t.Error("Unexpected StreamID ", id)
+	}
+
+	// Test stringification
+	id = MakeStreamID(mid, &profile)
+	if id.String() != fmt.Sprintf("%v/%v", mid, profile.Name) {
+		t.Error("Unexpected StreamID ", id)
+	}
+	id = SplitStreamIDString("")
+	if id.String() != "/" {
+		t.Error("Unexpected StreamID ", id)
 	}
 }

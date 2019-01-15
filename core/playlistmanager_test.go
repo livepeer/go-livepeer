@@ -2,7 +2,6 @@ package core
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 
 	"github.com/ericxtang/m3u8"
@@ -12,23 +11,23 @@ import (
 
 func TestGetMasterPlaylist(t *testing.T) {
 	vProfile := ffmpeg.P144p30fps16x9
-	hlsStrmID, _ := MakeStreamID(RandomVideoID(), vProfile.Name)
-	mid, _ := hlsStrmID.ManifestIDFromStreamID()
+	hlsStrmID := MakeStreamID(RandomManifestID(), &vProfile)
+	mid := hlsStrmID.ManifestID
 	c := NewBasicPlaylistManager(mid, nil)
 	segName := "test_seg/1.ts"
-	err := c.InsertHLSSegment(hlsStrmID, 1, segName, 12)
+	err := c.InsertHLSSegment(&vProfile, 1, segName, 12)
 	if err != nil {
 		t.Fatal(err)
 	}
 	pl := m3u8.NewMasterPlaylist()
-	pl.Append(string(hlsStrmID)+".m3u8", nil, ffmpeg.VideoProfileToVariantParams(vProfile))
+	pl.Append(hlsStrmID.String()+".m3u8", nil, ffmpeg.VideoProfileToVariantParams(vProfile))
 	testpl := c.GetHLSMasterPlaylist()
 
 	if testpl.String() != pl.String() {
 		t.Errorf("Expecting %v, got %v", pl.String(), testpl.String())
 	}
 
-	mpl := c.GetHLSMediaPlaylist(hlsStrmID)
+	mpl := c.GetHLSMediaPlaylist(vProfile.Name)
 	if mpl == nil {
 		t.Fatalf("Expecting pl, got nil")
 	}
@@ -39,24 +38,25 @@ func TestGetMasterPlaylist(t *testing.T) {
 }
 
 func TestForWrongStream(t *testing.T) {
+	/* Mismatched streams don't really happen anymore
 	vProfile := ffmpeg.P144p30fps16x9
-	hlsStrmID, _ := MakeStreamID(RandomVideoID(), vProfile.Name)
-	mid, _ := hlsStrmID.ManifestIDFromStreamID()
+	hlsStrmID := MakeStreamID(RandomManifestID(), &vProfile)
+	mid := hlsStrmID.ManifestID
 	c := NewBasicPlaylistManager(mid, nil)
-	hlsStrmID2, _ := MakeStreamID(RandomVideoID(), vProfile.Name)
-	err := c.InsertHLSSegment(hlsStrmID2, 1, "test_uri", 12)
+	err := c.InsertHLSSegment(&vProfile, 1, "test_uri", 12)
 	if err == nil {
 		t.Fatalf("Should fail here")
 	}
-	if !strings.Contains(err.Error(), "Wrong sream id") {
+	if !strings.Contains(err.Error(), "Wrong manifest id") {
 		t.Fatalf("Wrong error, should contain 'Wrong stream id', but has %s", err.Error())
 	}
+	*/
 }
 
 func TestCleanup(t *testing.T) {
 	vProfile := ffmpeg.P144p30fps16x9
-	hlsStrmID, _ := MakeStreamID(RandomVideoID(), vProfile.Name)
-	mid, _ := hlsStrmID.ManifestIDFromStreamID()
+	hlsStrmID := MakeStreamID(RandomManifestID(), &vProfile)
+	mid := hlsStrmID.ManifestID
 	osd := drivers.NewMemoryDriver("test://some.host")
 	osSession := osd.NewSession("testPath")
 	memoryOS := osSession.(*drivers.MemorySession)

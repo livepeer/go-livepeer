@@ -43,7 +43,10 @@ var videoProfiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30f
 func TestTranscode(t *testing.T) {
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver("")
-	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	db, err := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	if err != nil {
+		t.Error("Error initializing DB: ", err)
+	}
 	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")

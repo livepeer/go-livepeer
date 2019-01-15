@@ -18,7 +18,7 @@ func TestValidateTicket(t *testing.T) {
 	sv := &stubSigVerifier{}
 	sv.SetVerifyResult(true)
 
-	v := NewValidator(recipient, sv)
+	v := NewValidator(sv)
 
 	// Test invalid recipient (null address)
 	ticket := &Ticket{
@@ -30,7 +30,7 @@ func TestValidateTicket(t *testing.T) {
 		RecipientRandHash: recipientRandHash,
 	}
 
-	err := v.ValidateTicket(ticket, sig, recipientRand)
+	err := v.ValidateTicket(recipient, ticket, sig, recipientRand)
 	if err == nil {
 		t.Error("expected invalid recipient (null address) error")
 	}
@@ -48,7 +48,7 @@ func TestValidateTicket(t *testing.T) {
 		RecipientRandHash: recipientRandHash,
 	}
 
-	err = v.ValidateTicket(ticket, sig, recipientRand)
+	err = v.ValidateTicket(recipient, ticket, sig, recipientRand)
 	if err == nil {
 		t.Error("expected invalid recipient (non-null address) error")
 	}
@@ -66,7 +66,7 @@ func TestValidateTicket(t *testing.T) {
 		RecipientRandHash: recipientRandHash,
 	}
 
-	err = v.ValidateTicket(ticket, sig, recipientRand)
+	err = v.ValidateTicket(recipient, ticket, sig, recipientRand)
 	if err == nil {
 		t.Error("expected invalid sender error")
 	}
@@ -84,7 +84,7 @@ func TestValidateTicket(t *testing.T) {
 		RecipientRandHash: ethcommon.Hash{},
 	}
 
-	err = v.ValidateTicket(ticket, sig, recipientRand)
+	err = v.ValidateTicket(recipient, ticket, sig, recipientRand)
 	if err == nil {
 		t.Error("expected invalid recipientRand for recipientRandHash error")
 	}
@@ -105,7 +105,7 @@ func TestValidateTicket(t *testing.T) {
 		RecipientRandHash: recipientRandHash,
 	}
 
-	err = v.ValidateTicket(ticket, sig, recipientRand)
+	err = v.ValidateTicket(recipient, ticket, sig, recipientRand)
 	if err == nil {
 		t.Error("expected invalid signature error")
 	}
@@ -117,7 +117,7 @@ func TestValidateTicket(t *testing.T) {
 	// Set signature verification to return true
 	sv.SetVerifyResult(true)
 
-	if err := v.ValidateTicket(ticket, sig, recipientRand); err != nil {
+	if err := v.ValidateTicket(recipient, ticket, sig, recipientRand); err != nil {
 		t.Errorf("expected valid ticket, got error %v", err)
 	}
 }
@@ -132,7 +132,7 @@ func TestIsWinningTicket(t *testing.T) {
 	sv := &stubSigVerifier{}
 	sv.SetVerifyResult(true)
 
-	v := NewValidator(recipient, sv)
+	v := NewValidator(sv)
 
 	// Test non-winning ticket
 	ticket := &Ticket{

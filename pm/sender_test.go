@@ -14,10 +14,11 @@ import (
 func TestStartSession_GivenSomeRecipientRandHash_UsesItAsSessionId(t *testing.T) {
 	sender := defaultSender(t)
 	recipient := ethcommon.Address{}
-	ticketParams := defaultTicketParams(t)
+	ticketParams := defaultTicketParams(t, recipient)
 	expectedSessionID := ticketParams.RecipientRandHash.Hex()
 
-	sessionID := sender.StartSession(recipient, TicketParams{
+	sessionID := sender.StartSession(TicketParams{
+		Recipient:         recipient,
 		FaceValue:         big.NewInt(0),
 		WinProb:           big.NewInt(0),
 		Seed:              big.NewInt(0),
@@ -37,12 +38,13 @@ func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(100)
 	for i := 0; i < 100; i++ {
-		ticketParams := defaultTicketParams(t)
+		ticketParams := defaultTicketParams(t, recipient)
 		expectedSessionID := ticketParams.RecipientRandHash.Hex()
 		sessions = append(sessions, expectedSessionID)
 
 		go func() {
-			sender.StartSession(recipient, TicketParams{
+			sender.StartSession(TicketParams{
+				Recipient:         recipient,
 				FaceValue:         big.NewInt(0),
 				WinProb:           big.NewInt(0),
 				Seed:              big.NewInt(0),
@@ -79,17 +81,18 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 	am := sender.signer.(*stubSigner)
 	am.signShouldFail = false
 	am.saveSignRequest = true
-	am.signResponse = RandBytesOrFatal(42, t)
+	am.signResponse = RandBytes(42)
 	senderAddress := sender.signer.Account().Address
-	recipient := RandAddressOrFatal(t)
-	recipientRandHash := RandHashOrFatal(t)
+	recipient := RandAddress()
+	recipientRandHash := RandHash()
 	ticketParams := TicketParams{
+		Recipient:         recipient,
 		FaceValue:         big.NewInt(1111),
 		WinProb:           big.NewInt(2222),
 		Seed:              big.NewInt(3333),
 		RecipientRandHash: recipientRandHash,
 	}
-	sessionID := sender.StartSession(recipient, ticketParams)
+	sessionID := sender.StartSession(ticketParams)
 
 	ticket, actualSeed, actualSig, err := sender.CreateTicket(sessionID)
 
@@ -127,9 +130,9 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 
 func TestCreateTicket_GivenSigningError_ReturnsError(t *testing.T) {
 	sender := defaultSender(t)
-	recipient := RandAddressOrFatal(t)
-	ticketParams := defaultTicketParams(t)
-	sessionID := sender.StartSession(recipient, ticketParams)
+	recipient := RandAddress()
+	ticketParams := defaultTicketParams(t, recipient)
+	sessionID := sender.StartSession(ticketParams)
 	am := sender.signer.(*stubSigner)
 	am.signShouldFail = true
 
@@ -147,9 +150,9 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 	totalTickets := 100
 	lock := sync.RWMutex{}
 	sender := defaultSender(t)
-	recipient := RandAddressOrFatal(t)
-	ticketParams := defaultTicketParams(t)
-	sessionID := sender.StartSession(recipient, ticketParams)
+	recipient := RandAddress()
+	ticketParams := defaultTicketParams(t, recipient)
+	sessionID := sender.StartSession(ticketParams)
 
 	var wg sync.WaitGroup
 	wg.Add(totalTickets)
@@ -188,7 +191,7 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 
 func defaultSender(t *testing.T) *sender {
 	account := accounts.Account{
-		Address: RandAddressOrFatal(t),
+		Address: RandAddress(),
 	}
 	am := &stubSigner{
 		account: account,
@@ -197,9 +200,10 @@ func defaultSender(t *testing.T) *sender {
 	return s.(*sender)
 }
 
-func defaultTicketParams(t *testing.T) TicketParams {
-	recipientRandHash := RandHashOrFatal(t)
+func defaultTicketParams(t *testing.T, recipient ethcommon.Address) TicketParams {
+	recipientRandHash := RandHash()
 	return TicketParams{
+		Recipient:         recipient,
 		FaceValue:         big.NewInt(0),
 		WinProb:           big.NewInt(0),
 		Seed:              big.NewInt(0),

@@ -196,7 +196,7 @@ func (v *stubValidator) SetIsWinningTicket(isWinningTicket bool) {
 	v.isWinningTicket = isWinningTicket
 }
 
-func (v *stubValidator) ValidateTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+func (v *stubValidator) ValidateTicket(recipient ethcommon.Address, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
 	if !v.isValidTicket {
 		return fmt.Errorf("stub validator invalid ticket error")
 	}
@@ -253,7 +253,7 @@ func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
 	return args.Error(0)
 }
 
-func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
+func (m *MockRecipient) TicketParams(sender ethcommon.Address) *TicketParams {
 	args := m.Called(sender)
 
 	var params *TicketParams
@@ -261,5 +261,37 @@ func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, e
 		params = args.Get(0).(*TicketParams)
 	}
 
-	return params, args.Error(1)
+	return params
+}
+
+// MockSender is useful for testing components that depend on pm.Sender
+type MockSender struct {
+	mock.Mock
+}
+
+func (m *MockSender) StartSession(ticketParams TicketParams) string {
+	args := m.Called(ticketParams)
+	return args.String(0)
+}
+
+func (m *MockSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
+	args := m.Called(sessionID)
+
+	var ticket *Ticket
+	var seed *big.Int
+	var sig []byte
+
+	if args.Get(0) != nil {
+		ticket = args.Get(0).(*Ticket)
+	}
+
+	if args.Get(1) != nil {
+		seed = args.Get(1).(*big.Int)
+	}
+
+	if args.Get(2) != nil {
+		sig = args.Get(2).([]byte)
+	}
+
+	return ticket, seed, sig, args.Error(3)
 }

@@ -19,7 +19,7 @@ var (
 // of validating tickets
 type Validator interface {
 	// ValidateTicket checks if a ticket is valid
-	ValidateTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error
+	ValidateTicket(recipient ethcommon.Address, ticket *Ticket, sig []byte, recipientRand *big.Int) error
 
 	// IsWinningTicket checks if a ticket won
 	// Note: This method does not check if a ticket is valid which is done using ValidateTicket
@@ -28,21 +28,19 @@ type Validator interface {
 
 // validator is an implementation of the Validator interface
 type validator struct {
-	addr        ethcommon.Address
 	sigVerifier SigVerifier
 }
 
 // NewValidator returns an instance of a validator
-func NewValidator(addr ethcommon.Address, sigVerifier SigVerifier) Validator {
+func NewValidator(sigVerifier SigVerifier) Validator {
 	return &validator{
-		addr:        addr,
 		sigVerifier: sigVerifier,
 	}
 }
 
 // ValidateTicket checks if a ticket is valid
-func (v *validator) ValidateTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
-	if ticket.Recipient != v.addr {
+func (v *validator) ValidateTicket(recipient ethcommon.Address, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+	if ticket.Recipient != recipient {
 		return errInvalidTicketRecipient
 	}
 
