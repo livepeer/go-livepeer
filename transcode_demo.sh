@@ -1,4 +1,4 @@
-manifest=$(curl -s 'localhost:7935/status' | jq -r '.[][]' 2> /dev/null)
+manifest=$(curl -s 'localhost:8935/stream/current.m3u8' 2> /dev/null)
 sid1=$(echo $manifest| cut -d' ' -f 4)
 sid2=$(echo $manifest| cut -d' ' -f 6)
 sid3=$(echo $manifest| cut -d' ' -f 8)
