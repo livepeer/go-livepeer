@@ -36,9 +36,20 @@ import (
 // sign the transaction before submission.
 type SignerFn func(types.Signer, common.Address, *types.Transaction) (*types.Transaction, error)
 
-// NonceFetcherFn is a function callback that returns a pointer to the nonce to be used
-// by a transaction if a nonce is not explicitly provided
-type NonceFetcherFn func() (uint64, error)
+// NonceManager is an interface which describes an object capable
+// of managing transaction nonces
+type NonceManager interface {
+	// Lock locks the provided address. The caller should always call Lock before
+	// calling Next or Update
+	Lock(addr common.Address)
+	// Unlock unlocks the provided address. The caller should always call Unlock
+	// after finishing calls to Next or Update
+	Unlock(addr common.Address)
+	// Next returns the next transaction nonce to be used for the provided address
+	Next(addr common.Address) (uint64, error)
+	// Update uses the last nonce for the provided address to update the next transaction nonce
+	Update(addr common.Address, nonce uint64)
+}
 
 // CallOpts is the collection of options to fine tune a contract call request.
 type CallOpts struct {
@@ -54,7 +65,7 @@ type TransactOpts struct {
 	From         common.Address // Ethereum account to send the transaction from
 	Nonce        *big.Int       // Nonce to use for the transaction execution (nil = use pending state)
 	Signer       SignerFn       // Method to use for signing the transaction (mandatory)
-	NonceFetcher NonceFetcherFn // Method to use for fetching the nonce
+	NonceManager NonceManager   // Object used to manage transaction nonces
 
 	Value    *big.Int // Funds to transfer along along the transaction (nil = 0 = no funds)
 	GasPrice *big.Int // Gas price to use for the transaction execution (nil = gas price oracle)
@@ -229,9 +240,25 @@ func (c *BoundContract) transact(opts *TransactOpts, contract *common.Address, i
 	}
 	var nonce uint64
 	if opts.Nonce == nil {
-		nonce, err = opts.NonceFetcher()
-		if err != nil {
-			return nil, err
+		if opts.NonceManager != nil {
+			opts.NonceManager.Lock(opts.From)
+			defer func() {
+				if err == nil {
+					opts.NonceManager.Update(opts.From, nonce)
+				}
+
+				opts.NonceManager.Unlock(opts.From)
+			}()
+
+			nonce, err = opts.NonceManager.Next(opts.From)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			nonce, err = c.transactor.PendingNonceAt(ensureContext(opts.Context), opts.From)
+			if err != nil {
+				return nil, fmt.Errorf("failed to retrieve account nonce: %v", err)
+			}
 		}
 	} else {
 		nonce = opts.Nonce.Uint64()
