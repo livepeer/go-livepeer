@@ -307,6 +307,16 @@ func main() {
 				return
 			}
 
+			if *faceValue < float64(0) {
+				glog.Errorf("-faceValue must be greater than 0, but %v provided. Restart the node with a different valid value for -faceValue", *faceValue)
+				return
+			}
+
+			if *winProb < float64(0) || *winProb > float64(100) {
+				glog.Errorf("-winProb must be between 0 and 100, but %v provided. Restart the node with a different valid value for -winProb", *winProb)
+				return
+			}
+
 			sigVerifier := &pm.DefaultSigVerifier{}
 			validator := pm.NewValidator(sigVerifier)
 			faceValueInWei := eth.ToBaseUnit(big.NewFloat(*faceValue))
