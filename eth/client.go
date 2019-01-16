@@ -190,6 +190,8 @@ func (c *client) SetGasInfo(gasLimit uint64, gasPrice *big.Int) error {
 		return err
 	}
 
+	opts.NonceManager = NewNonceManager(c.backend)
+
 	if err := c.setContracts(opts); err != nil {
 		return err
 	} else {
