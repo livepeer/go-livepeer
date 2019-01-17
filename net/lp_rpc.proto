@@ -68,10 +68,12 @@ message S3OSInfo {
   string signature = 4;
 
   // Needed for POST policy.
-  string xAmzCredential = 5;
+  string credential = 5;
 
   // Needed for POST policy.
   string xAmzDate = 6;
+
+  bool isGoogle = 7;
 }
 
 // The orchestrator sends this in response to `GetOrchestrator`, containing

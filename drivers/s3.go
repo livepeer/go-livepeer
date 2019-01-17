@@ -38,47 +38,51 @@ type s3OS struct {
 	awsAccessKeyID     string
 	awsSecretAccessKey string
 	s3svc              *s3.S3
+	gsSigner           *gsSigner
+	isGoogle           bool
 }
 
 type s3Session struct {
-	host           string
-	key            string
-	policy         string
-	signature      string
-	xAmzCredential string
-	xAmzDate       string
-	driver         *s3OS
+	host       string
+	key        string
+	policy     string
+	signature  string
+	credential string
+	xAmzDate   string
+	isGoogle   bool
 }
 
 // S3BUCKET s3 bucket owned by this node
 var S3BUCKET string
 
-// S3REGION region of s3 bucket owned by this node
-var S3REGION string
-
-func s3Host(bucket string) string {
+func s3Host(bucket string, isGoogle bool) string {
+	if isGoogle {
+		return fmt.Sprintf("https://%s.storage.googleapis.com", bucket)
+	}
 	return fmt.Sprintf("https://%s.s3.amazonaws.com", bucket)
 }
 
 // IsOwnStorageS3 returns true if turi points to S3 bucket owned by this node
 func IsOwnStorageS3(uri string) bool {
-	return strings.HasPrefix(uri, s3Host(S3BUCKET))
+	return strings.HasPrefix(uri, s3Host(S3BUCKET, true)) ||
+		strings.HasPrefix(uri, s3Host(S3BUCKET, false))
 }
 
 func newS3Session(info *net.S3OSInfo) OSSession {
 	return &s3Session{
-		host:           info.Host,
-		key:            info.Key,
-		policy:         info.Policy,
-		signature:      info.Signature,
-		xAmzDate:       info.XAmzDate,
-		xAmzCredential: info.XAmzCredential,
+		host:       info.Host,
+		key:        info.Key,
+		policy:     info.Policy,
+		signature:  info.Signature,
+		xAmzDate:   info.XAmzDate,
+		credential: info.Credential,
+		isGoogle:   info.IsGoogle,
 	}
 }
 
 func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
 	os := &s3OS{
-		host:               s3Host(bucket),
+		host:               s3Host(bucket, false),
 		region:             region,
 		bucket:             bucket,
 		awsAccessKeyID:     accessKey,
@@ -93,16 +97,22 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
 }
 
 func (os *s3OS) NewSession(path string) OSSession {
-	policy, signature, xAmzCredential, xAmzDate := createPolicy(os.awsAccessKeyID,
-		os.bucket, os.region, os.awsSecretAccessKey, path)
+	var policy, signature, credential, xAmzDate string
+	if os.isGoogle {
+		policy, signature = gsCreatePolicy(os.gsSigner, os.bucket, os.region, path)
+		credential = os.gsSigner.clientEmail()
+	} else {
+		policy, signature, credential, xAmzDate = createPolicy(os.awsAccessKeyID,
+			os.bucket, os.region, os.awsSecretAccessKey, path)
+	}
 	return &s3Session{
-		driver:         os,
-		host:           s3Host(os.bucket),
-		key:            path + "/",
-		policy:         policy,
-		signature:      signature,
-		xAmzCredential: xAmzCredential,
-		xAmzDate:       xAmzDate,
+		host:       s3Host(os.bucket, os.isGoogle),
+		key:        path + "/",
+		policy:     policy,
+		signature:  signature,
+		credential: credential,
+		xAmzDate:   xAmzDate,
+		isGoogle:   os.isGoogle,
 	}
 }
 
@@ -139,12 +149,13 @@ func (os *s3Session) GetInfo() *net.OSInfo {
 	return &net.OSInfo{
 		StorageType: net.OSInfo_S3,
 		S3Info: &net.S3OSInfo{
-			Host:           os.host,
-			Key:            os.key,
-			Policy:         os.policy,
-			Signature:      os.signature,
-			XAmzCredential: os.xAmzCredential,
-			XAmzDate:       os.xAmzDate,
+			Host:       os.host,
+			Key:        os.key,
+			Policy:     os.policy,
+			Signature:  os.signature,
+			Credential: os.credential,
+			XAmzDate:   os.xAmzDate,
+			IsGoogle:   os.isGoogle,
 		},
 	}
 }
@@ -155,14 +166,19 @@ func (os *s3Session) postData(fileName string, buffer []byte) (string, error) {
 	fileType := http.DetectContentType(buffer)
 	path, fileName := path.Split(os.key + fileName)
 	fields := map[string]string{
-		"acl":              "public-read",
-		"Content-Type":     fileType,
-		"key":              path + "${filename}",
-		"policy":           os.policy,
-		"x-amz-algorithm":  "AWS4-HMAC-SHA256",
-		"x-amz-credential": os.xAmzCredential,
-		"x-amz-date":       os.xAmzDate,
-		"x-amz-signature":  os.signature,
+		"acl":          "public-read",
+		"Content-Type": fileType,
+		"key":          path + "${filename}",
+		"policy":       os.policy,
+	}
+	if os.isGoogle {
+		fields["GoogleAccessId"] = os.credential
+		fields["signature"] = os.signature
+	} else {
+		fields["x-amz-algorithm"] = "AWS4-HMAC-SHA256"
+		fields["x-amz-credential"] = os.credential
+		fields["x-amz-date"] = os.xAmzDate
+		fields["x-amz-signature"] = os.signature
 	}
 	req, err := newfileUploadRequest(os.host, fields, fileBytes, fileName)
 	if err != nil {
