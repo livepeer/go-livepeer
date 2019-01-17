@@ -93,7 +93,7 @@ func (w *wizard) fundAndApproveSigners(currDeposit *big.Int, currPenaltyEscrow *
 }
 
 func (w *wizard) fundDeposit(currDeposit *big.Int) {
-	fmt.Printf("Current Deposit: %v\n", currDeposit)
+	fmt.Printf("Current Deposit: %v\n", eth.FormatUnits(currDeposit, "ETH"))
 
 	fmt.Printf("Enter deposit amount in ETH - ")
 
