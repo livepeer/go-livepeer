@@ -1,13 +1,9 @@
 package core
 
 import (
-	"errors"
-
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
-
-var ErrNotFound = errors.New("ErrNotFound")
 
 // Broadcaster RPC interface implementation
 
