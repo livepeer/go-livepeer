@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -156,11 +155,8 @@ type client struct {
 	*contracts.LivepeerVerifierSession
 	*contracts.LivepeerTokenFaucetSession
 
-	nonceInitialized bool
-	nextNonce        uint64
-	nonceLock        sync.Mutex
-	gasLimit         uint64
-	gasPrice         *big.Int
+	gasLimit uint64
+	gasPrice *big.Int
 
 	txTimeout time.Duration
 }
@@ -194,9 +190,7 @@ func (c *client) SetGasInfo(gasLimit uint64, gasPrice *big.Int) error {
 		return err
 	}
 
-	opts.NonceFetcher = func() (uint64, error) {
-		return c.getNonce()
-	}
+	opts.NonceManager = NewNonceManager(c.backend)
 
 	if err := c.setContracts(opts); err != nil {
 		return err
@@ -860,36 +854,6 @@ func (c *client) ReplaceTransaction(tx *types.Transaction, method string, gasPri
 	}
 
 	return newSignedTx, err
-}
-
-func (c *client) getNonce() (uint64, error) {
-	c.nonceLock.Lock()
-	defer c.nonceLock.Unlock()
-
-	if !c.nonceInitialized {
-		nextNonce, err := c.backend.PendingNonceAt(context.Background(), c.Account().Address)
-		if err != nil {
-			return 0, err
-		}
-
-		c.nonceInitialized = true
-		c.nextNonce = nextNonce
-
-		return c.nextNonce, nil
-	} else {
-		c.nextNonce++
-
-		nextNonce, err := c.backend.PendingNonceAt(context.Background(), c.Account().Address)
-		if err != nil {
-			return 0, err
-		}
-
-		if nextNonce > c.nextNonce {
-			c.nextNonce = nextNonce
-		}
-
-		return c.nextNonce, nil
-	}
 }
 
 func (c *client) LatestBlockNum() (*big.Int, error) {
