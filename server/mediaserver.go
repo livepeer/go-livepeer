@@ -102,18 +102,16 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 
 //StartServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegment *big.Int, transcodingOptions string) error {
-	if s.LivepeerNode.Eth != nil {
-		BroadcastPrice = maxPricePerSegment
-		bProfiles := make([]ffmpeg.VideoProfile, 0)
-		for _, opt := range strings.Split(transcodingOptions, ",") {
-			p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]
-			if ok {
-				bProfiles = append(bProfiles, p)
-			}
+	bProfiles := make([]ffmpeg.VideoProfile, 0)
+	for _, opt := range strings.Split(transcodingOptions, ",") {
+		p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]
+		if ok {
+			bProfiles = append(bProfiles, p)
 		}
-		BroadcastJobVideoProfiles = bProfiles
-		glog.V(common.SHORT).Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
 	}
+	BroadcastJobVideoProfiles = bProfiles
+
+	glog.V(common.SHORT).Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
 
 	//LPMS handlers for handling RTMP video
 	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
