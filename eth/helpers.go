@@ -18,7 +18,7 @@ var (
 func FormatUnits(baseAmount *big.Int, name string) string {
 	amount := FromBaseUnit(baseAmount)
 
-	if amount.Cmp(big.NewFloat(1)) == -1 {
+	if amount.Cmp(big.NewFloat(0.01)) == -1 {
 		switch name {
 		case "ETH":
 			return fmt.Sprintf("%v WEI", baseAmount)
