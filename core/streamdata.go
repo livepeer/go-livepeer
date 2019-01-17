@@ -16,7 +16,6 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
-var ErrStreamID = errors.New("ErrStreamID")
 var ErrManifestID = errors.New("ErrManifestID")
 
 const (

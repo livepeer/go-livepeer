@@ -78,7 +78,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	nonce := cxn.nonce
 	rtmpStrm := cxn.stream
 	cpl := cxn.pl
-	mid := rtmpManifestID(rtmpStrm)
+	mid := cxn.mid
 	vProfile := cxn.profile
 
 	cxn.lock.RLock()

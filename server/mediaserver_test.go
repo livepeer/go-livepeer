@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"net/url"
 	"sync"
 	"testing"
@@ -291,11 +292,11 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 
 	// Check assigned IDs
 	mid := rtmpManifestID(strm)
-	if s.LatestPlaylist().ManifestID() != mid || LastManifestID != mid {
+	if s.LatestPlaylist().ManifestID() != mid {
 		t.Error("Unexpected Manifest ID")
 	}
-	if LastHLSStreamID != expectedSid {
-		t.Error("Unexpected Stream ID ", LastHLSStreamID, expectedSid)
+	if s.LastHLSStreamID() != expectedSid {
+		t.Error("Unexpected Stream ID ", s.LastHLSStreamID(), expectedSid)
 	}
 
 	//Stream already exists
@@ -323,6 +324,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	}
 
 	for i := 0; i < 4; i++ {
+		// XXX we shouldn't do this. Need threadsafe accessors for playlist
 		seg := pl.Segments[i]
 		shouldSegName := fmt.Sprintf("/stream/%s/%s/%d.ts", mid, expectedSid.Rendition, i)
 		if seg.URI != shouldSegName {
@@ -352,22 +354,22 @@ func TestMultiStream(t *testing.T) {
 	}
 
 	// test more streams, somewhat concurrently
-	mut := sync.Mutex{}
-	completed := syncStreams
-	ch := make(chan struct{})
+	var wg sync.WaitGroup
 	const asyncStreams = 500
-	for i := completed; i < asyncStreams; i++ {
+	for i := syncStreams; i < asyncStreams; i++ {
+		wg.Add(1)
 		go func(i int) {
+			defer wg.Done()
 			handleStream(i)
-			mut.Lock()
-			completed++
-			mut.Unlock()
-			if completed >= asyncStreams {
-				ch <- struct{}{}
-			}
 		}(i)
 	}
+
 	// block until complete
+	ch := make(chan struct{})
+	go func() {
+		wg.Wait()
+		ch <- struct{}{}
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	select {
@@ -377,7 +379,7 @@ func TestMultiStream(t *testing.T) {
 			t.Error("Did not have expected number of streams", len(s.rtmpConnections))
 		}
 	case <-ctx.Done():
-		t.Error("Timed out at ", completed)
+		t.Error("Timed out")
 		close(ch)
 	}
 
@@ -427,6 +429,56 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	}
 }
 
+func TestRegisterConnection(t *testing.T) {
+	assert := assert.New(t)
+	s := setupServer()
+	mid := core.SplitStreamIDString(t.Name()).ManifestID
+	strm := stream.NewBasicRTMPVideoStream(string(mid))
+
+	// Should return an error if missing node storage
+	drivers.NodeStorage = nil
+	_, err := s.registerConnection(strm)
+	assert.Equal(err, ErrStorage)
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+
+	// normal success case
+	rand.Seed(123)
+	cxn, err := s.registerConnection(strm)
+	assert.NotNil(cxn)
+	assert.Nil(err)
+
+	// Check some properties of the cxn / server
+	assert.Equal(mid, cxn.mid)
+	assert.Equal("source", cxn.profile.Name)
+	assert.Equal(uint64(0x4a68998bed5c40f1), cxn.nonce)
+
+	assert.Equal(mid, s.LastManifestID())
+	assert.Equal(string(mid)+"/source", s.LastHLSStreamID().String())
+
+	// Should return an error if creating another cxn with the same mid
+	_, err = s.registerConnection(strm)
+	assert.Equal(err, ErrAlreadyExists)
+
+	// Ensure thread-safety under -race
+	var wg sync.WaitGroup
+	for i := 0; i < 500; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			name := fmt.Sprintf("%v_%v", t.Name(), i)
+			mid := core.SplitStreamIDString(name).ManifestID
+			strm := stream.NewBasicRTMPVideoStream(string(mid))
+			cxn, err := s.registerConnection(strm)
+
+			assert.Nil(err)
+			assert.NotNil(cxn)
+			assert.Equal(mid, cxn.mid)
+		}(i)
+	}
+	wg.Wait()
+
+}
+
 func TestStartSession(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()
@@ -434,6 +486,7 @@ func TestStartSession(t *testing.T) {
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	strm := stream.NewBasicRTMPVideoStream(string(mid))
 	cxn := &rtmpConnection{
+		mid:    mid,
 		lock:   &sync.RWMutex{},
 		pl:     core.NewBasicPlaylistManager(mid, storage),
 		stream: strm,
@@ -446,7 +499,7 @@ func TestStartSession(t *testing.T) {
 
 	assert.Equal(0, sd.getOrchCalls) // sanity check
 
-	// return nil given an error if session doesn't exist
+	// return nil given an error if session isn't registered
 	sd.getOrchError = fmt.Errorf("StubError")
 	assert.Nil(s.startSession(cxn))
 	assert.Equal(1, sd.getOrchCalls)
@@ -497,19 +550,11 @@ func TestSessionListener(t *testing.T) {
 	}
 	s.LivepeerNode.OrchestratorPool = sd
 	mid := core.SplitStreamIDString(t.Name()).ManifestID
-	storage := drivers.NodeStorage.NewSession(string(mid))
 	strm := stream.NewBasicRTMPVideoStream(string(mid))
-	cxn := &rtmpConnection{
-		needOrch: make(chan struct{}),
-		lock:     &sync.RWMutex{},
-		eof:      make(chan struct{}),
-		pl:       core.NewBasicPlaylistManager(mid, storage),
-		stream:   strm,
-	}
+	cxn, err := s.registerConnection(strm)
 
-	s.connectionLock.Lock()
-	s.rtmpConnections[mid] = cxn
-	s.connectionLock.Unlock()
+	assert.Nil(err) // sanity check
+	assert.NotNil(cxn)
 
 	listenerStopped := make(chan struct{})
 	go func() {
@@ -575,6 +620,7 @@ func TestSessionAssigment_WithTerminatedConnection(t *testing.T) {
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	strm := stream.NewBasicRTMPVideoStream(string(mid))
 	cxn := &rtmpConnection{
+		mid:      mid,
 		needOrch: make(chan struct{}),
 		lock:     &sync.RWMutex{},
 		eof:      make(chan struct{}),
