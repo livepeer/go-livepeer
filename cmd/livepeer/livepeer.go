@@ -380,24 +380,21 @@ func main() {
 		*rtmpAddr = defaultAddr(*rtmpAddr, "127.0.0.1", RtmpPort)
 		*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
 	} else if n.NodeType == core.OrchestratorNode {
-		n.ServiceURI, err = getServiceURI(n, *serviceAddr)
+		suri, err := getServiceURI(n, *serviceAddr)
 		if err != nil {
 			glog.Error("Error getting service URI: ", err)
 			return
 		}
+		n.SetServiceURI(suri)
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
-		*httpAddr = defaultAddr(*httpAddr, "", n.ServiceURI.Port())
+		*httpAddr = defaultAddr(*httpAddr, "", n.GetServiceURI().Port())
 	}
 	*cliAddr = defaultAddr(*cliAddr, "127.0.0.1", CliPort)
 
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK
-		base := ""
-		if n.ServiceURI != nil {
-			base = n.ServiceURI.String()
-		}
-		drivers.NodeStorage = drivers.NewMemoryDriver(base)
+		drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
 	}
 
 	if n.NodeType == core.BroadcasterNode {

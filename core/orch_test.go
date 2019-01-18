@@ -251,7 +251,7 @@ func TestGetSegmentChan(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	segData := StubSegTranscodingMetadata()
 
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	sc, err := n.getSegmentChan(segData)
 	if err != nil {
 		t.Error("error with getSegmentChan", err)

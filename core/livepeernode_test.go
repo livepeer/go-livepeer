@@ -3,11 +3,15 @@ package core
 import (
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
 	"testing"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type StubTranscoder struct {
@@ -34,7 +38,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
 	tr := &StubTranscoder{Profiles: p}
-	storage := drivers.NewMemoryDriver("").NewSession("")
+	storage := drivers.NewMemoryDriver(nil).NewSession("")
 	config := transcodeConfig{LocalOS: storage, OS: storage}
 
 	tmpdir, _ := ioutil.TempDir("", "")
@@ -90,4 +94,30 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 		t.Error("Did not get mismatched segments as expected")
 	}
 	tr.Profiles = p
+}
+
+func TestServiceURIChange(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	n, err := NewLivepeerNode(nil, "", nil)
+	require.Nil(err)
+
+	sUrl, err := url.Parse("test://testurl.com")
+	require.Nil(err)
+	n.SetServiceURI(sUrl)
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
+	sesh := drivers.NodeStorage.NewSession("testpath")
+	savedUrl, err := sesh.SaveData("testdata1", []byte{0, 0, 0})
+	require.Nil(err)
+	assert.Equal("test://testurl.com/stream/testpath/testdata1", savedUrl)
+
+	glog.Infof("Setting service URL to newurl")
+	newUrl, err := url.Parse("test://newurl.com")
+	n.SetServiceURI(newUrl)
+	require.Nil(err)
+	url, err := sesh.SaveData("testdata2", []byte{0, 0, 0})
+	require.Nil(err)
+	assert.Equal("test://newurl.com/stream/testpath/testdata2", url)
 }

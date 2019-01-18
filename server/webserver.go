@@ -47,7 +47,7 @@ func (s *LivepeerServer) setServiceURI(serviceURI string) error {
 
 	// Avoids a restart if only the host has been changed.
 	// If the port has been changed, a restart is still needed.
-	s.LivepeerNode.ServiceURI = parsedURI
+	s.LivepeerNode.SetServiceURI(parsedURI)
 
 	return nil
 }

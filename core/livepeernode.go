@@ -54,7 +54,6 @@ type LivepeerNode struct {
 	Recipient        pm.Recipient
 	OrchestratorPool net.OrchestratorPool
 	Ipfs             ipfs.IpfsApi
-	ServiceURI       *url.URL
 	OrchSecret       string
 	Transcoder       Transcoder
 
@@ -62,6 +61,7 @@ type LivepeerNode struct {
 	Sender pm.Sender
 
 	// Transcoder private fields
+	serviceURI      *url.URL
 	pmSessions      map[ManifestID]map[string]bool
 	pmSessionsMutex *sync.Mutex
 	segmentMutex    *sync.RWMutex
@@ -124,4 +124,15 @@ func (n *LivepeerNode) StopEthServices() error {
 	}
 
 	return nil
+}
+
+func (n *LivepeerNode) GetServiceURI() *url.URL {
+	return n.serviceURI
+}
+
+func (n *LivepeerNode) SetServiceURI(newUrl *url.URL) {
+	if newUrl != nil && n.serviceURI != nil {
+		*n.serviceURI = *newUrl
+	}
+	n.serviceURI = newUrl //for nil cases
 }

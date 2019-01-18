@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"fmt"
+	"net/url"
 	"path"
 	"sync"
 
@@ -11,7 +12,7 @@ import (
 var dataCacheLen = 12
 
 type MemoryOS struct {
-	baseURI  string
+	baseURI  *url.URL
 	sessions map[string]*MemorySession
 	lock     sync.RWMutex
 }
@@ -24,7 +25,7 @@ type MemorySession struct {
 	dLock  sync.RWMutex
 }
 
-func NewMemoryDriver(baseURI string) *MemoryOS {
+func NewMemoryDriver(baseURI *url.URL) *MemoryOS {
 	return &MemoryOS{
 		baseURI:  baseURI,
 		sessions: make(map[string]*MemorySession),
@@ -93,7 +94,6 @@ func (ostore *MemorySession) GetInfo() *net.OSInfo {
 }
 
 func (ostore *MemorySession) SaveData(name string, data []byte) (string, error) {
-
 	path, file := path.Split(ostore.getAbsolutePath(name))
 
 	ostore.dLock.Lock()
@@ -124,8 +124,8 @@ func (ostore *MemorySession) getAbsolutePath(name string) string {
 
 func (ostore *MemorySession) getAbsoluteURI(name string) string {
 	name = "/stream/" + ostore.getAbsolutePath(name)
-	if ostore.os.baseURI != "" {
-		return ostore.os.baseURI + name
+	if ostore.os.baseURI != nil {
+		return ostore.os.baseURI.String() + name
 	}
 	return name
 }
