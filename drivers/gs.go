@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"time"
+
+	"github.com/livepeer/go-livepeer/net"
 )
 
 type (
@@ -28,11 +30,25 @@ type (
 		AuthProviderX509CertURL string `json:"auth_provider_x509_cert_url,omitempty"`
 		ClientX509CertURL       string `json:"client_x509_cert_url,omitempty"`
 	}
+
 	gsSigner struct {
 		jsKey     *gsKeyJSON
 		parsedKey *rsa.PrivateKey
 	}
+
+	gsOS struct {
+		s3OS
+		gsSigner *gsSigner
+	}
+
+	gsSession struct {
+		s3Session
+	}
 )
+
+func gsHost(bucket string) string {
+	return fmt.Sprintf("https://%s.storage.googleapis.com", bucket)
+}
 
 func gsParseKey(key []byte) (*rsa.PrivateKey, error) {
 	if block, _ := pem.Decode(key); block != nil {
@@ -53,10 +69,11 @@ func gsParseKey(key []byte) (*rsa.PrivateKey, error) {
 }
 
 func NewGoogleDriver(bucket, keyFileName string) (OSDriver, error) {
-	os := &s3OS{
-		host:     s3Host(bucket, true),
-		bucket:   bucket,
-		isGoogle: true,
+	os := &gsOS{
+		s3OS: s3OS{
+			host:   gsHost(bucket),
+			bucket: bucket,
+		},
 	}
 	rawFile, err := ioutil.ReadFile(keyFileName)
 	if err != nil {
@@ -75,6 +92,36 @@ func NewGoogleDriver(bucket, keyFileName string) (OSDriver, error) {
 		parsedKey: parsedKey,
 	}
 	return os, nil
+}
+
+func (os *gsOS) NewSession(path string) OSSession {
+	var policy, signature = gsCreatePolicy(os.gsSigner, os.bucket, os.region, path)
+
+	sess := os.s3OS.NewSession(path).(*s3Session)
+	sess.credential = os.gsSigner.clientEmail()
+	sess.host = gsHost(os.bucket)
+	sess.policy = policy
+	sess.signature = signature
+	return &gsSession{s3Session: *sess}
+}
+
+func (os *gsSession) SaveData(name string, data []byte) (string, error) {
+	fields := map[string]string{
+		"GoogleAccessId": os.credential,
+		"signature":      os.signature,
+	}
+	return os.saveData(name, data, fields)
+}
+
+func (os *gsSession) GetInfo() *net.OSInfo {
+	oi := os.s3Session.GetInfo()
+	oi.StorageType = net.OSInfo_GOOGLE
+	return oi
+}
+
+func newGSSession(info *net.S3OSInfo) OSSession {
+	sess := newS3Session(info).(*s3Session)
+	return &gsSession{s3Session: *sess}
 }
 
 // gsCreatePolicy returns policy, signature

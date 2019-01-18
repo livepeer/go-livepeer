@@ -38,8 +38,6 @@ type s3OS struct {
 	awsAccessKeyID     string
 	awsSecretAccessKey string
 	s3svc              *s3.S3
-	gsSigner           *gsSigner
-	isGoogle           bool
 }
 
 type s3Session struct {
@@ -49,23 +47,19 @@ type s3Session struct {
 	signature  string
 	credential string
 	xAmzDate   string
-	isGoogle   bool
 }
 
 // S3BUCKET s3 bucket owned by this node
 var S3BUCKET string
 
-func s3Host(bucket string, isGoogle bool) string {
-	if isGoogle {
-		return fmt.Sprintf("https://%s.storage.googleapis.com", bucket)
-	}
+func s3Host(bucket string) string {
 	return fmt.Sprintf("https://%s.s3.amazonaws.com", bucket)
 }
 
 // IsOwnStorageS3 returns true if turi points to S3 bucket owned by this node
 func IsOwnStorageS3(uri string) bool {
-	return strings.HasPrefix(uri, s3Host(S3BUCKET, true)) ||
-		strings.HasPrefix(uri, s3Host(S3BUCKET, false))
+	return strings.HasPrefix(uri, s3Host(S3BUCKET)) ||
+		strings.HasPrefix(uri, gsHost(S3BUCKET))
 }
 
 func newS3Session(info *net.S3OSInfo) OSSession {
@@ -76,13 +70,12 @@ func newS3Session(info *net.S3OSInfo) OSSession {
 		signature:  info.Signature,
 		xAmzDate:   info.XAmzDate,
 		credential: info.Credential,
-		isGoogle:   info.IsGoogle,
 	}
 }
 
 func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
 	os := &s3OS{
-		host:               s3Host(bucket, false),
+		host:               s3Host(bucket),
 		region:             region,
 		bucket:             bucket,
 		awsAccessKeyID:     accessKey,
@@ -97,22 +90,19 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
 }
 
 func (os *s3OS) NewSession(path string) OSSession {
-	var policy, signature, credential, xAmzDate string
-	if os.isGoogle {
-		policy, signature = gsCreatePolicy(os.gsSigner, os.bucket, os.region, path)
-		credential = os.gsSigner.clientEmail()
-	} else {
+	var policy, signature, credential, xAmzDate, host string
+	if os.awsAccessKeyID != "" {
 		policy, signature, credential, xAmzDate = createPolicy(os.awsAccessKeyID,
 			os.bucket, os.region, os.awsSecretAccessKey, path)
+		host = s3Host(os.bucket)
 	}
 	return &s3Session{
-		host:       s3Host(os.bucket, os.isGoogle),
+		host:       host,
 		key:        path + "/",
 		policy:     policy,
 		signature:  signature,
 		credential: credential,
 		xAmzDate:   xAmzDate,
-		isGoogle:   os.isGoogle,
 	}
 }
 
@@ -124,11 +114,20 @@ func (os *s3Session) EndSession() {
 }
 
 func (os *s3Session) SaveData(name string, data []byte) (string, error) {
+	fields := map[string]string{
+		"x-amz-algorithm":  "AWS4-HMAC-SHA256",
+		"x-amz-credential": os.credential,
+		"x-amz-date":       os.xAmzDate,
+		"x-amz-signature":  os.signature,
+	}
+	return os.saveData(name, data, fields)
+}
 
+func (os *s3Session) saveData(name string, data []byte, specificFields map[string]string) (string, error) {
 	// tentativeUrl just used for logging
 	tentativeURL := os.host + "/" + os.key + name
 	glog.V(common.VERBOSE).Infof("Saving to S3 %s", tentativeURL)
-	path, err := os.postData(name, data)
+	path, err := os.postData(name, data, specificFields)
 	if err != nil {
 		// handle error
 		glog.Errorf("Save S3 error: %v", err)
@@ -146,8 +145,7 @@ func (os *s3Session) getAbsURL(path string) string {
 }
 
 func (os *s3Session) GetInfo() *net.OSInfo {
-	return &net.OSInfo{
-		StorageType: net.OSInfo_S3,
+	oi := &net.OSInfo{
 		S3Info: &net.S3OSInfo{
 			Host:       os.host,
 			Key:        os.key,
@@ -155,13 +153,14 @@ func (os *s3Session) GetInfo() *net.OSInfo {
 			Signature:  os.signature,
 			Credential: os.credential,
 			XAmzDate:   os.xAmzDate,
-			IsGoogle:   os.isGoogle,
 		},
+		StorageType: net.OSInfo_S3,
 	}
+	return oi
 }
 
 // if s3 storage is not our own, we are saving data into it using POST request
-func (os *s3Session) postData(fileName string, buffer []byte) (string, error) {
+func (os *s3Session) postData(fileName string, buffer []byte, specificFields map[string]string) (string, error) {
 	fileBytes := bytes.NewReader(buffer)
 	fileType := http.DetectContentType(buffer)
 	path, fileName := path.Split(os.key + fileName)
@@ -171,14 +170,8 @@ func (os *s3Session) postData(fileName string, buffer []byte) (string, error) {
 		"key":          path + "${filename}",
 		"policy":       os.policy,
 	}
-	if os.isGoogle {
-		fields["GoogleAccessId"] = os.credential
-		fields["signature"] = os.signature
-	} else {
-		fields["x-amz-algorithm"] = "AWS4-HMAC-SHA256"
-		fields["x-amz-credential"] = os.credential
-		fields["x-amz-date"] = os.xAmzDate
-		fields["x-amz-signature"] = os.signature
+	for k, v := range specificFields {
+		fields[k] = v
 	}
 	req, err := newfileUploadRequest(os.host, fields, fileBytes, fileName)
 	if err != nil {

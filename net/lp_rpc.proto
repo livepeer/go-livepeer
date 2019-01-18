@@ -42,9 +42,10 @@ message OrchestratorRequest {
 message OSInfo {
 
   enum StorageType {
-    DIRECT = 0;
-    S3     = 1;
-    IPFS   = 2;
+    DIRECT     = 0;
+    S3         = 1;
+    IPFS       = 2;
+    GOOGLE     = 3;
   }
 
   // Storage type: direct, s3, ipfs.
@@ -72,8 +73,6 @@ message S3OSInfo {
 
   // Needed for POST policy.
   string xAmzDate = 6;
-
-  bool isGoogle = 7;
 }
 
 // The orchestrator sends this in response to `GetOrchestrator`, containing
