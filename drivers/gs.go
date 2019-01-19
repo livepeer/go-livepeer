@@ -40,10 +40,6 @@ type (
 		s3OS
 		gsSigner *gsSigner
 	}
-
-	gsSession struct {
-		s3Session
-	}
 )
 
 func gsHost(bucket string) string {
@@ -96,32 +92,36 @@ func NewGoogleDriver(bucket, keyFileName string) (OSDriver, error) {
 
 func (os *gsOS) NewSession(path string) OSSession {
 	var policy, signature = gsCreatePolicy(os.gsSigner, os.bucket, os.region, path)
-
-	sess := os.s3OS.NewSession(path).(*s3Session)
-	sess.credential = os.gsSigner.clientEmail()
-	sess.host = gsHost(os.bucket)
-	sess.policy = policy
-	sess.signature = signature
-	return &gsSession{s3Session: *sess}
-}
-
-func (os *gsSession) SaveData(name string, data []byte) (string, error) {
-	fields := map[string]string{
-		"GoogleAccessId": os.credential,
-		"signature":      os.signature,
+	sess := &s3Session{
+		host:        gsHost(os.bucket),
+		key:         path,
+		policy:      policy,
+		signature:   signature,
+		credential:  os.gsSigner.clientEmail(),
+		storageType: net.OSInfo_GOOGLE,
 	}
-	return os.saveData(name, data, fields)
-}
-
-func (os *gsSession) GetInfo() *net.OSInfo {
-	oi := os.s3Session.GetInfo()
-	oi.StorageType = net.OSInfo_GOOGLE
-	return oi
+	sess.fields = gsGetFields(sess)
+	return sess
 }
 
 func newGSSession(info *net.S3OSInfo) OSSession {
-	sess := newS3Session(info).(*s3Session)
-	return &gsSession{s3Session: *sess}
+	sess := &s3Session{
+		host:        info.Host,
+		key:         info.Key,
+		policy:      info.Policy,
+		signature:   info.Signature,
+		credential:  info.Credential,
+		storageType: net.OSInfo_GOOGLE,
+	}
+	sess.fields = gsGetFields(sess)
+	return sess
+}
+
+func gsGetFields(sess *s3Session) map[string]string {
+	return map[string]string{
+		"GoogleAccessId": sess.credential,
+		"signature":      sess.signature,
+	}
 }
 
 // gsCreatePolicy returns policy, signature

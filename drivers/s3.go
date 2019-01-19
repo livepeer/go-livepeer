@@ -41,12 +41,14 @@ type s3OS struct {
 }
 
 type s3Session struct {
-	host       string
-	key        string
-	policy     string
-	signature  string
-	credential string
-	xAmzDate   string
+	host        string
+	key         string
+	policy      string
+	signature   string
+	credential  string
+	xAmzDate    string
+	storageType net.OSInfo_StorageType
+	fields      map[string]string
 }
 
 // S3BUCKET s3 bucket owned by this node
@@ -63,14 +65,17 @@ func IsOwnStorageS3(uri string) bool {
 }
 
 func newS3Session(info *net.S3OSInfo) OSSession {
-	return &s3Session{
-		host:       info.Host,
-		key:        info.Key,
-		policy:     info.Policy,
-		signature:  info.Signature,
-		xAmzDate:   info.XAmzDate,
-		credential: info.Credential,
+	sess := &s3Session{
+		host:        info.Host,
+		key:         info.Key,
+		policy:      info.Policy,
+		signature:   info.Signature,
+		xAmzDate:    info.XAmzDate,
+		credential:  info.Credential,
+		storageType: net.OSInfo_S3,
 	}
+	sess.fields = s3GetFields(sess)
+	return sess
 }
 
 func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
@@ -90,19 +95,26 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
 }
 
 func (os *s3OS) NewSession(path string) OSSession {
-	var policy, signature, credential, xAmzDate, host string
-	if os.awsAccessKeyID != "" {
-		policy, signature, credential, xAmzDate = createPolicy(os.awsAccessKeyID,
-			os.bucket, os.region, os.awsSecretAccessKey, path)
-		host = s3Host(os.bucket)
-	}
-	return &s3Session{
-		host:       host,
-		key:        path + "/",
+	policy, signature, credential, xAmzDate := createPolicy(os.awsAccessKeyID,
+		os.bucket, os.region, os.awsSecretAccessKey, path)
+	sess := &s3Session{
+		host:       s3Host(os.bucket),
+		key:        path,
 		policy:     policy,
 		signature:  signature,
 		credential: credential,
 		xAmzDate:   xAmzDate,
+	}
+	sess.fields = s3GetFields(sess)
+	return sess
+}
+
+func s3GetFields(sess *s3Session) map[string]string {
+	return map[string]string{
+		"x-amz-algorithm":  "AWS4-HMAC-SHA256",
+		"x-amz-credential": sess.credential,
+		"x-amz-date":       sess.xAmzDate,
+		"x-amz-signature":  sess.signature,
 	}
 }
 
@@ -114,20 +126,10 @@ func (os *s3Session) EndSession() {
 }
 
 func (os *s3Session) SaveData(name string, data []byte) (string, error) {
-	fields := map[string]string{
-		"x-amz-algorithm":  "AWS4-HMAC-SHA256",
-		"x-amz-credential": os.credential,
-		"x-amz-date":       os.xAmzDate,
-		"x-amz-signature":  os.signature,
-	}
-	return os.saveData(name, data, fields)
-}
-
-func (os *s3Session) saveData(name string, data []byte, specificFields map[string]string) (string, error) {
 	// tentativeUrl just used for logging
-	tentativeURL := os.host + "/" + os.key + name
+	tentativeURL := path.Join(os.host, os.key, name)
 	glog.V(common.VERBOSE).Infof("Saving to S3 %s", tentativeURL)
-	path, err := os.postData(name, data, specificFields)
+	path, err := os.postData(name, data)
 	if err != nil {
 		// handle error
 		glog.Errorf("Save S3 error: %v", err)
@@ -154,23 +156,23 @@ func (os *s3Session) GetInfo() *net.OSInfo {
 			Credential: os.credential,
 			XAmzDate:   os.xAmzDate,
 		},
-		StorageType: net.OSInfo_S3,
+		StorageType: os.storageType,
 	}
 	return oi
 }
 
 // if s3 storage is not our own, we are saving data into it using POST request
-func (os *s3Session) postData(fileName string, buffer []byte, specificFields map[string]string) (string, error) {
+func (os *s3Session) postData(fileName string, buffer []byte) (string, error) {
 	fileBytes := bytes.NewReader(buffer)
 	fileType := http.DetectContentType(buffer)
-	path, fileName := path.Split(os.key + fileName)
+	path, fileName := path.Split(path.Join(os.key, fileName))
 	fields := map[string]string{
 		"acl":          "public-read",
 		"Content-Type": fileType,
 		"key":          path + "${filename}",
 		"policy":       os.policy,
 	}
-	for k, v := range specificFields {
+	for k, v := range os.fields {
 		fields[k] = v
 	}
 	req, err := newfileUploadRequest(os.host, fields, fileBytes, fileName)
