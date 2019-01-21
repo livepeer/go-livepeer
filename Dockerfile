@@ -11,5 +11,8 @@ RUN go get github.com/golang/glog
 RUN go get github.com/ericxtang/m3u8
 RUN go get github.com/aws/aws-sdk-go/aws
 RUN go get -u google.golang.org/grpc
+RUN cd ./cmd/livepeer
+RUN go get ./...
+RUN go build -v -o /tmp/livepeer .
 
 CMD ["/bin/bash", "/go/src/github.com/livepeer/go-livepeer/test.sh"]
