@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"strings"
 	"time"
 
 	"github.com/livepeer/go-livepeer/net"
@@ -41,6 +42,11 @@ type (
 		gsSigner *gsSigner
 	}
 )
+
+// IsOwnStorageGS returns true if uri points to Google Cloud Storage bucket owned by this node
+func IsOwnStorageGS(uri string) bool {
+	return strings.HasPrefix(uri, gsHost(S3BUCKET))
+}
 
 func gsHost(bucket string) string {
 	return fmt.Sprintf("https://%s.storage.googleapis.com", bucket)

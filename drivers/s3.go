@@ -58,10 +58,9 @@ func s3Host(bucket string) string {
 	return fmt.Sprintf("https://%s.s3.amazonaws.com", bucket)
 }
 
-// IsOwnStorageS3 returns true if turi points to S3 bucket owned by this node
+// IsOwnStorageS3 returns true if uri points to S3 bucket owned by this node
 func IsOwnStorageS3(uri string) bool {
-	return strings.HasPrefix(uri, s3Host(S3BUCKET)) ||
-		strings.HasPrefix(uri, gsHost(S3BUCKET))
+	return strings.HasPrefix(uri, s3Host(S3BUCKET))
 }
 
 func newS3Session(info *net.S3OSInfo) OSSession {

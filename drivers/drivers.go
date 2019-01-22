@@ -49,7 +49,7 @@ func NewSession(info *net.OSInfo) OSSession {
 }
 
 func IsOwnExternal(uri string) bool {
-	return IsOwnStorageS3(uri)
+	return IsOwnStorageS3(uri) || IsOwnStorageGS(uri)
 }
 
 func GetSegmentData(uri string) ([]byte, error) {
