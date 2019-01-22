@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"math/rand"
@@ -11,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts"
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -435,9 +439,38 @@ func TestRegisterConnection(t *testing.T) {
 	mid := core.SplitStreamIDString(t.Name()).ManifestID
 	strm := stream.NewBasicRTMPVideoStream(string(mid))
 
-	// Should return an error if missing node storage
-	drivers.NodeStorage = nil
+	// Switch to on-chain mode
+	c := &eth.MockClient{}
+	addr := ethcommon.Address{}
+	s.LivepeerNode.Eth = c
+
+	// Should return an error if in on-chain mode and fail to get sender deposit
+	c.On("Account").Return(accounts.Account{Address: addr})
+	c.On("Senders", addr).Return(nil, nil, nil, errors.New("Senders error")).Once()
+
 	_, err := s.registerConnection(strm)
+	assert.Equal("Senders error", err.Error())
+
+	// Should return an error if in on-chain mode and sender deposit is 0
+	c.On("Senders", addr).Return(big.NewInt(0), nil, nil, nil).Once()
+
+	_, err = s.registerConnection(strm)
+	assert.Equal(ErrLowDeposit, err)
+
+	// Remove node storage
+	drivers.NodeStorage = nil
+
+	// Should return a different error if in on-chain mode and sender deposit > 0
+	c.On("Senders", addr).Return(big.NewInt(1), nil, nil, nil).Once()
+
+	_, err = s.registerConnection(strm)
+	assert.NotEqual(ErrLowDeposit, err)
+
+	// Switch to off-chain mode
+	s.LivepeerNode.Eth = nil
+
+	// Should return an error if missing node storage
+	_, err = s.registerConnection(strm)
 	assert.Equal(err, ErrStorage)
 	drivers.NodeStorage = drivers.NewMemoryDriver("")
 

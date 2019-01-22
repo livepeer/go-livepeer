@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 
@@ -36,6 +37,7 @@ import (
 
 var ErrAlreadyExists = errors.New("StreamAlreadyExists")
 var ErrBroadcast = errors.New("ErrBroadcast")
+var ErrLowDeposit = errors.New("ErrLowDeposit")
 var ErrStorage = errors.New("ErrStorage")
 var ErrDiscovery = errors.New("ErrDiscovery")
 var ErrNoOrchs = errors.New("ErrNoOrchs")
@@ -102,6 +104,11 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 
 //StartServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegment *big.Int, transcodingOptions string) error {
+	if s.LivepeerNode.Eth != nil {
+		BroadcastPrice = maxPricePerSegment
+		glog.V(common.SHORT).Infof("Transcode Job Price: %v", eth.FormatUnits(BroadcastPrice, "ETH"))
+	}
+
 	bProfiles := make([]ffmpeg.VideoProfile, 0)
 	for _, opt := range strings.Split(transcodingOptions, ",") {
 		p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]
@@ -111,7 +118,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 	}
 	BroadcastJobVideoProfiles = bProfiles
 
-	glog.V(common.SHORT).Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
+	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
 	//LPMS handlers for handling RTMP video
 	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
@@ -184,11 +191,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		nonce := cxn.nonce
 		startSeq := 0
 
-		if s.LivepeerNode.Eth != nil {
-			// TODO: Check broadcaster's deposit with TicketBroker
-			//       (perhaps within registerConnection?)
-		}
-
 		streamStarted := false
 		//Segment the stream, insert the segments into the broadcaster
 		go func(rtmpStrm stream.RTMPVideoStream) {
@@ -257,6 +259,26 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 }
 
 func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*rtmpConnection, error) {
+	nonce := rand.Uint64()
+
+	// If running in on-chain mode, check for a reasonable deposit
+	if s.LivepeerNode.Eth != nil {
+		sender, err := s.LivepeerNode.Eth.Senders(s.LivepeerNode.Eth.Account().Address)
+		if err != nil {
+			return nil, err
+		}
+
+		if sender.Deposit.Cmp(big.NewInt(0)) <= 0 {
+			glog.Errorf("No deposit - cannot start broadcast session")
+
+			if monitor.Enabled {
+				monitor.LogStreamCreateFailed(nonce, "LowDeposit")
+			}
+
+			return nil, ErrLowDeposit
+		}
+	}
+
 	// Set up the connection tracking
 	mid := rtmpManifestID(rtmpStrm)
 	if drivers.NodeStorage == nil {
@@ -281,7 +303,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 	cxn := &rtmpConnection{
 		mid:     mid,
-		nonce:   rand.Uint64(),
+		nonce:   nonce,
 		stream:  rtmpStrm,
 		pl:      core.NewBasicPlaylistManager(mid, storage),
 		profile: &vProfile,
