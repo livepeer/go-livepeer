@@ -85,6 +85,70 @@ func TestTranscode(t *testing.T) {
 	// TODO check transcode loop expiry, storage, sig construction, etc
 }
 
+func StubTranscodeConfig() transcodeConfig {
+	return transcodeConfig{
+		OS:      nil,
+		LocalOS: nil,
+	}
+}
+
+func TestTranscodeSeg_OffchainMode_ReturnsEmptySignature(t *testing.T) {
+	//Set up the node
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	db, err := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	require := require.New(t)
+	require.Nil(err)
+	defer db.Close()
+
+	tmp, err := ioutil.TempDir("", "")
+	require.Nil(err)
+	n, err := NewLivepeerNode(nil, tmp, db)
+	require.Nil(err)
+
+	// mock transcoder
+	n.Transcoder = NewLocalTranscoder(tmp)
+	ffmpeg.InitFFmpeg()
+	defer os.RemoveAll(tmp)
+
+	// mock transcodeSeg
+	transcodeConfig := StubTranscodeConfig()
+	segment := StubSegment()
+	segmentMetadata := &SegTranscodingMetadata{Profiles: videoProfiles}
+	transcodeResult := n.transcodeSeg(transcodeConfig, segment, segmentMetadata)
+
+	assert := assert.New(t)
+	assert.Nil(transcodeResult.Sig)
+}
+
+func TestTranscodeSeg_OnchainMode_ReturnsSignature(t *testing.T) {
+	//Set up the node
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	db, err := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
+	require := require.New(t)
+	require.Nil(err)
+	defer db.Close()
+
+	tmp, err := ioutil.TempDir("", "")
+	require.Nil(err)
+	seth := &eth.StubClient{}
+	n, err := NewLivepeerNode(seth, tmp, db)
+	require.Nil(err)
+
+	// mock transcoder
+	n.Transcoder = NewLocalTranscoder(tmp)
+	ffmpeg.InitFFmpeg()
+	defer os.RemoveAll(tmp)
+
+	// mock transcodeSeg
+	transcodeConfig := StubTranscodeConfig()
+	segment := StubSegment()
+	segmentMetadata := &SegTranscodingMetadata{Profiles: videoProfiles}
+	transcodeResult := n.transcodeSeg(transcodeConfig, segment, segmentMetadata)
+
+	assert := assert.New(t)
+	assert.NotNil(transcodeResult.Sig)
+}
+
 func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T) {
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
