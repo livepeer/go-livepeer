@@ -43,9 +43,11 @@ type (
 	}
 )
 
+var GSBUCKET string
+
 // IsOwnStorageGS returns true if uri points to Google Cloud Storage bucket owned by this node
 func IsOwnStorageGS(uri string) bool {
-	return strings.HasPrefix(uri, gsHost(S3BUCKET))
+	return strings.HasPrefix(uri, gsHost(GSBUCKET))
 }
 
 func gsHost(bucket string) string {

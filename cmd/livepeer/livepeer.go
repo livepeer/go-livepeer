@@ -363,6 +363,7 @@ func main() {
 	}
 
 	if *gsBucket != "" && *gsKey != "" {
+		drivers.GSBUCKET = *gsBucket
 		drivers.NodeStorage, err = drivers.NewGoogleDriver(*gsBucket, *gsKey)
 		if err != nil {
 			glog.Error("Error creating Google Storage driver:", err)
