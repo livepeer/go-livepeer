@@ -290,7 +290,7 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 		TicketParams: orch.TicketParams(addr),
 	}
 
-	storagePrefix := core.RandomIdGenerator(StoragePrefixIdLength)
+	storagePrefix := core.RandomManifestID()
 	os := drivers.NodeStorage.NewSession(string(storagePrefix))
 
 	if os != nil && os.IsExternal() {
