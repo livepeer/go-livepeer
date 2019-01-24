@@ -92,6 +92,8 @@ func main() {
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
+	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
+	gsKey := flag.String("gskey", "", "Google Storage private key file name (in json format)")
 	version := flag.Bool("version", false, "Print out the version")
 	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
@@ -346,8 +348,11 @@ func main() {
 	}
 	if *s3bucket != "" {
 		s3bp := strings.Split(*s3bucket, "/")
-		drivers.S3REGION = s3bp[0]
 		drivers.S3BUCKET = s3bp[1]
+	}
+	if *gsBucket != "" && *gsKey == "" || *gsBucket == "" && *gsKey != "" {
+		glog.Error("Should specify both gsbucket and gskey")
+		return
 	}
 
 	// XXX get s3 credentials from local env vars?
@@ -355,6 +360,15 @@ func main() {
 		br := strings.Split(*s3bucket, "/")
 		cr := strings.Split(*s3creds, "/")
 		drivers.NodeStorage = drivers.NewS3Driver(br[0], br[1], cr[0], cr[1])
+	}
+
+	if *gsBucket != "" && *gsKey != "" {
+		drivers.GSBUCKET = *gsBucket
+		drivers.NodeStorage, err = drivers.NewGoogleDriver(*gsBucket, *gsKey)
+		if err != nil {
+			glog.Error("Error creating Google Storage driver:", err)
+			return
+		}
 	}
 
 	if n.NodeType == core.BroadcasterNode {
