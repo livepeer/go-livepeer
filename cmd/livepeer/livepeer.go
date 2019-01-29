@@ -519,6 +519,10 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	// Infer address
 	// TODO probably should put this (along w wizard GETs) into common code
 	resp, err := http.Get("https://api.ipify.org?format=text")
+	if err != nil {
+		glog.Error("Could not look up public IP address")
+		return nil, err
+	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
