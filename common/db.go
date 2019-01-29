@@ -240,7 +240,7 @@ func (db *DB) SetLastSeenBlock(block *big.Int) error {
 	if db == nil {
 		return nil
 	}
-	glog.V(DEBUG).Info("db: Setting LastSeenBlock to ", block)
+	glog.V(VERBOSE).Info("db: Setting LastSeenBlock to ", block)
 	_, err := db.updateKV.Exec(block.String(), "lastBlock")
 	if err != nil {
 		glog.Error("db: Got err in updating block ", err)
