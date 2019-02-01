@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"math/rand"
 	"net/url"
 	"strings"
 	"sync"
@@ -20,6 +21,8 @@ type orchestratorPool struct {
 	uris  []*url.URL
 	bcast server.Broadcaster
 }
+
+var perm = func(len int) []int { return rand.Perm(len) }
 
 func NewOrchestratorPool(node *core.LivepeerNode, addresses []string) *orchestratorPool {
 	var uris []*url.URL
@@ -40,8 +43,14 @@ func NewOrchestratorPool(node *core.LivepeerNode, addresses []string) *orchestra
 		glog.Error("Could not parse orchAddresses given - no URIs returned ")
 	}
 
+	var randomizedUris []*url.URL
+	for _, i := range perm(len(uris)) {
+		uri := uris[i]
+		randomizedUris = append(randomizedUris, uri)
+	}
+
 	bcast := core.NewBroadcaster(node)
-	return &orchestratorPool{bcast: bcast, uris: uris}
+	return &orchestratorPool{bcast: bcast, uris: randomizedUris}
 }
 
 func NewOnchainOrchestratorPool(node *core.LivepeerNode) *orchestratorPool {
@@ -93,12 +102,18 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 
 	select {
 	case <-ctx.Done():
-		glog.Info("Done fetching orch info for orchestrators, context timeout: ", orchInfos)
+		respLock.Lock()
+		returnOrchs := orchInfos[:numOrchestrators]
+		respLock.Unlock()
+		glog.Info("Done fetching orch info for orchestrators, context timeout: ", returnOrchs)
 		cancel()
-		return orchInfos, nil
+		return returnOrchs, nil
 	case <-orchChan:
-		glog.Info("Done fetching orch info for orchestrators, numResponses fetched: ", orchInfos)
+		respLock.Lock()
+		returnOrchs := orchInfos[:numOrchestrators]
+		respLock.Unlock()
+		glog.Info("Done fetching orch info for orchestrators, numResponses fetched: ", returnOrchs)
 		cancel()
-		return orchInfos, nil
+		return returnOrchs, nil
 	}
 }
