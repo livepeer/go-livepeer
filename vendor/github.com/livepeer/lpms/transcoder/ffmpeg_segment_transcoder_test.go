@@ -178,7 +178,7 @@ func TestInvalidFile(t *testing.T) {
 	// test invalid output params
 	vp := ffmpeg.VideoProfile{
 		Name: "OddDimension", Bitrate: "100k", Framerate: 10,
-		AspectRatio: "6:5", Resolution: "852x481"}
+		AspectRatio: "6:5", Resolution: "853x481"}
 	st, err := NewStreamTest(t, []ffmpeg.VideoProfile{vp})
 	defer st.Close()
 	if err != nil {
