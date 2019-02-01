@@ -26,6 +26,12 @@ jobs:
       - run: go get github.com/jstemmer/go-junit-report
       - run: go get github.com/pkg/errors
       - run: go get github.com/stretchr/testify
+      - run: go get github.com/alecthomas/gometalinter && gometalinter --install
+
+      - run:
+          name: Lint
+          command: |
+            gometalinter --disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm
 
       - run:
           name: Run unit tests

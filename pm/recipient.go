@@ -18,7 +18,7 @@ type Recipient interface {
 	// ReceiveTicket validates and processes a received ticket
 	ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error)
 
-	// RedeemWinningTicket redeems all winning tickets with the broker
+	// RedeemWinningTickets redeems all winning tickets with the broker
 	// for a all sessionIDs
 	RedeemWinningTickets(sessionIDs []string) error
 

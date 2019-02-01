@@ -20,6 +20,8 @@ type SigVerifier interface {
 type DefaultSigVerifier struct {
 }
 
+// Verify checks if a provided signature over a message
+// is valid for a given ETH address
 func (sv *DefaultSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool {
 	return VerifySig(addr, msg, sig)
 }
