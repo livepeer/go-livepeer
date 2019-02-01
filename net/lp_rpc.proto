@@ -82,7 +82,7 @@ message OrchestratorInfo {
   // URI of the transcoder to use for submitting segments.
   string transcoder  = 1;
 
-  // Required parameters for probabilistic micropayment tickets
+  // Parameters for probabilistic micropayment tickets
   TicketParams ticket_params = 2;
 
   // Orchestrator returns info about own input object storage, if it wants it to be used.
