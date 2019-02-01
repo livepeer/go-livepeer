@@ -41,39 +41,40 @@ type s3OS struct {
 }
 
 type s3Session struct {
-	host           string
-	key            string
-	policy         string
-	signature      string
-	xAmzCredential string
-	xAmzDate       string
-	driver         *s3OS
+	host        string
+	key         string
+	policy      string
+	signature   string
+	credential  string
+	xAmzDate    string
+	storageType net.OSInfo_StorageType
+	fields      map[string]string
 }
 
 // S3BUCKET s3 bucket owned by this node
 var S3BUCKET string
 
-// S3REGION region of s3 bucket owned by this node
-var S3REGION string
-
 func s3Host(bucket string) string {
 	return fmt.Sprintf("https://%s.s3.amazonaws.com", bucket)
 }
 
-// IsOwnStorageS3 returns true if turi points to S3 bucket owned by this node
+// IsOwnStorageS3 returns true if uri points to S3 bucket owned by this node
 func IsOwnStorageS3(uri string) bool {
 	return strings.HasPrefix(uri, s3Host(S3BUCKET))
 }
 
 func newS3Session(info *net.S3OSInfo) OSSession {
-	return &s3Session{
-		host:           info.Host,
-		key:            info.Key,
-		policy:         info.Policy,
-		signature:      info.Signature,
-		xAmzDate:       info.XAmzDate,
-		xAmzCredential: info.XAmzCredential,
+	sess := &s3Session{
+		host:        info.Host,
+		key:         info.Key,
+		policy:      info.Policy,
+		signature:   info.Signature,
+		xAmzDate:    info.XAmzDate,
+		credential:  info.Credential,
+		storageType: net.OSInfo_S3,
 	}
+	sess.fields = s3GetFields(sess)
+	return sess
 }
 
 func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
@@ -93,16 +94,26 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
 }
 
 func (os *s3OS) NewSession(path string) OSSession {
-	policy, signature, xAmzCredential, xAmzDate := createPolicy(os.awsAccessKeyID,
+	policy, signature, credential, xAmzDate := createPolicy(os.awsAccessKeyID,
 		os.bucket, os.region, os.awsSecretAccessKey, path)
-	return &s3Session{
-		driver:         os,
-		host:           s3Host(os.bucket),
-		key:            path + "/",
-		policy:         policy,
-		signature:      signature,
-		xAmzCredential: xAmzCredential,
-		xAmzDate:       xAmzDate,
+	sess := &s3Session{
+		host:       s3Host(os.bucket),
+		key:        path,
+		policy:     policy,
+		signature:  signature,
+		credential: credential,
+		xAmzDate:   xAmzDate,
+	}
+	sess.fields = s3GetFields(sess)
+	return sess
+}
+
+func s3GetFields(sess *s3Session) map[string]string {
+	return map[string]string{
+		"x-amz-algorithm":  "AWS4-HMAC-SHA256",
+		"x-amz-credential": sess.credential,
+		"x-amz-date":       sess.xAmzDate,
+		"x-amz-signature":  sess.signature,
 	}
 }
 
@@ -114,9 +125,8 @@ func (os *s3Session) EndSession() {
 }
 
 func (os *s3Session) SaveData(name string, data []byte) (string, error) {
-
 	// tentativeUrl just used for logging
-	tentativeURL := os.host + "/" + os.key + name
+	tentativeURL := path.Join(os.host, os.key, name)
 	glog.V(common.VERBOSE).Infof("Saving to S3 %s", tentativeURL)
 	path, err := os.postData(name, data)
 	if err != nil {
@@ -136,33 +146,33 @@ func (os *s3Session) getAbsURL(path string) string {
 }
 
 func (os *s3Session) GetInfo() *net.OSInfo {
-	return &net.OSInfo{
-		StorageType: net.OSInfo_S3,
+	oi := &net.OSInfo{
 		S3Info: &net.S3OSInfo{
-			Host:           os.host,
-			Key:            os.key,
-			Policy:         os.policy,
-			Signature:      os.signature,
-			XAmzCredential: os.xAmzCredential,
-			XAmzDate:       os.xAmzDate,
+			Host:       os.host,
+			Key:        os.key,
+			Policy:     os.policy,
+			Signature:  os.signature,
+			Credential: os.credential,
+			XAmzDate:   os.xAmzDate,
 		},
+		StorageType: os.storageType,
 	}
+	return oi
 }
 
 // if s3 storage is not our own, we are saving data into it using POST request
 func (os *s3Session) postData(fileName string, buffer []byte) (string, error) {
 	fileBytes := bytes.NewReader(buffer)
 	fileType := http.DetectContentType(buffer)
-	path, fileName := path.Split(os.key + fileName)
+	path, fileName := path.Split(path.Join(os.key, fileName))
 	fields := map[string]string{
-		"acl":              "public-read",
-		"Content-Type":     fileType,
-		"key":              path + "${filename}",
-		"policy":           os.policy,
-		"x-amz-algorithm":  "AWS4-HMAC-SHA256",
-		"x-amz-credential": os.xAmzCredential,
-		"x-amz-date":       os.xAmzDate,
-		"x-amz-signature":  os.signature,
+		"acl":          "public-read",
+		"Content-Type": fileType,
+		"key":          path + "${filename}",
+		"policy":       os.policy,
+	}
+	for k, v := range os.fields {
+		fields[k] = v
 	}
 	req, err := newfileUploadRequest(os.host, fields, fileBytes, fileName)
 	if err != nil {

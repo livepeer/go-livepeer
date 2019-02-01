@@ -42,12 +42,14 @@ func NewSession(info *net.OSInfo) OSSession {
 		return newIPFSSession()
 	case net.OSInfo_S3:
 		return newS3Session(info.S3Info)
+	case net.OSInfo_GOOGLE:
+		return newGSSession(info.S3Info)
 	}
 	return nil
 }
 
 func IsOwnExternal(uri string) bool {
-	return IsOwnStorageS3(uri)
+	return IsOwnStorageS3(uri) || IsOwnStorageGS(uri)
 }
 
 func GetSegmentData(uri string) ([]byte, error) {
