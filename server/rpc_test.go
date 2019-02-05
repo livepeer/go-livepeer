@@ -29,9 +29,10 @@ import (
 )
 
 type stubOrchestrator struct {
-	priv    *ecdsa.PrivateKey
-	block   *big.Int
-	signErr error
+	priv       *ecdsa.PrivateKey
+	block      *big.Int
+	signErr    error
+	sessCapErr error
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
@@ -82,6 +83,9 @@ func StubOrchestrator() *stubOrchestrator {
 	return &stubOrchestrator{priv: pk, block: big.NewInt(5)}
 }
 
+func (r *stubOrchestrator) CheckCapacity(mid core.ManifestID) error {
+	return r.sessCapErr
+}
 func (r *stubOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
 }
 func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {
@@ -119,6 +123,14 @@ func TestRPCTranscoderReq(t *testing.T) {
 	if verifyOrchestratorReq(o, addr, req.Sig) == nil {
 		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
+	addr = ethcommon.BytesToAddress(req.Address)
+
+	// at capacity
+	o.sessCapErr = fmt.Errorf("At capacity")
+	if err := verifyOrchestratorReq(o, addr, req.Sig); err != o.sessCapErr {
+		t.Errorf("Expected %v; got %v", o.sessCapErr, err)
+	}
+	o.sessCapErr = nil
 
 	// error signing
 	b.signErr = fmt.Errorf("Signing error")
@@ -195,6 +207,13 @@ func TestRPCSeg(t *testing.T) {
 	corruptSegData(sd, ErrSegSig) // missing sig
 	sd.Sig = []byte("abc")
 	corruptSegData(sd, ErrSegSig) // invalid sig
+
+	// at capacity
+	sd = &net.SegData{ManifestId: []byte(s.ManifestID)}
+	sd.Sig, _ = b.Sign((&core.SegTranscodingMetadata{ManifestID: s.ManifestID}).Flatten())
+	o.sessCapErr = fmt.Errorf("At capacity")
+	corruptSegData(sd, o.sessCapErr)
+	o.sessCapErr = nil
 }
 
 func TestGenPayment(t *testing.T) {
@@ -446,6 +465,10 @@ func (o *mockOrchestrator) TicketParams(sender ethcommon.Address) *net.TicketPar
 	if args.Get(0) != nil {
 		return args.Get(0).(*net.TicketParams)
 	}
+	return nil
+}
+
+func (o *mockOrchestrator) CheckCapacity(mid core.ManifestID) error {
 	return nil
 }
 

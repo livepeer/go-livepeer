@@ -261,6 +261,18 @@ func TestGetSegmentChan(t *testing.T) {
 		t.Error("SegmentChans mapping did not include channel")
 	}
 
+	// Test max sessions
+	oldTranscodeSessions := MaxTranscodeSessions
+	MaxTranscodeSessions = 0
+	if _, err := n.getSegmentChan(segData); err != nil {
+		t.Error("Existing mid should continue processing even when O is at capacity: ", err)
+	}
+	segData.ManifestID = ManifestID(t.Name())
+	if _, err := n.getSegmentChan(segData); err != ErrOrchCap {
+		t.Error("Didn't fail when orch cap hit: ", err)
+	}
+	MaxTranscodeSessions = oldTranscodeSessions
+
 	// Test what happens when invoking the transcode loop fails
 	drivers.NodeStorage = nil // will make the transcode loop fail
 	node, _ := NewLivepeerNode(nil, "", nil)
@@ -286,6 +298,29 @@ func TestGetSegmentChan(t *testing.T) {
 		t.Error("SegmentChans mapping included new channel when expected to return an err/nil")
 	}
 
+}
+
+func TestOrchCheckCapacity(t *testing.T) {
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	n, _ := NewLivepeerNode(nil, "", nil)
+	o := NewOrchestrator(n)
+	md := StubSegTranscodingMetadata()
+	cap := MaxTranscodeSessions
+	assert := assert.New(t)
+
+	// happy case
+	assert.Nil(o.CheckCapacity(md.ManifestID))
+
+	// capped case
+	MaxTranscodeSessions = 0
+	assert.Equal(ErrOrchCap, o.CheckCapacity(md.ManifestID))
+
+	// ensure existing segment chans pass while cap is active
+	MaxTranscodeSessions = cap
+	_, err := n.getSegmentChan(md) // store md into segment chans
+	assert.Nil(err)
+	MaxTranscodeSessions = 0
+	assert.Nil(o.CheckCapacity(md.ManifestID))
 }
 
 func TestProcessPayment_GivenRecipientError_ReturnsError(t *testing.T) {
