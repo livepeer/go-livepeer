@@ -56,6 +56,7 @@ type Orchestrator interface {
 	Sign([]byte) ([]byte, error)
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CurrentBlock() *big.Int
+	CheckCapacity(core.ManifestID) error
 	TranscodeSeg(*core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
@@ -135,7 +136,7 @@ func verifyOrchestratorReq(orch Orchestrator, addr ethcommon.Address, sig []byte
 		glog.Error("orchestrator req sig check failed")
 		return fmt.Errorf("orchestrator req sig check failed")
 	}
-	return nil
+	return orch.CheckCapacity("")
 }
 
 func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error) {
@@ -211,6 +212,11 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 	if !orch.VerifySig(broadcaster, string(md.Flatten()), segData.Sig) {
 		glog.Error("Sig check failed")
 		return nil, ErrSegSig
+	}
+
+	if err := orch.CheckCapacity(mid); err != nil {
+		glog.Error("Cannot process manifest: ", err)
+		return nil, err
 	}
 
 	return md, nil

@@ -101,6 +101,7 @@ func main() {
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
 	faceValue := flag.Float64("faceValue", 0, "The faceValue to expect in PM tickets, denominated in ETH (e.g. 0.3)")
 	winProb := flag.Float64("winProb", 0, "The win probability to expect in PM tickets, as a percent float between 0 and 100 (e.g. 5.3)")
+	maxSessions := flag.Int("maxSessions", 10, "Orchestrator only. Maximum number of concurrent transcoding sessions")
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
@@ -370,6 +371,8 @@ func main() {
 			return
 		}
 	}
+
+	core.MaxTranscodeSessions = *maxSessions
 
 	if n.NodeType == core.BroadcasterNode {
 		// default lpms listener for broadcaster; same as default rpc port

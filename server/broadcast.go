@@ -226,7 +226,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	}()
 }
 
-var sessionErrStrings = []string{"dial tcp", "unexpected EOF", core.ErrOrchBusy.Error()}
+var sessionErrStrings = []string{"dial tcp", "unexpected EOF", core.ErrOrchBusy.Error(), core.ErrOrchCap.Error()}
 
 func generateSessionErrors() *regexp.Regexp {
 	// Given a list [err1, err2, err3] generates a regexp `(err1)|(err2)|(err3)`

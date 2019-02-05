@@ -27,7 +27,9 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-var transcodeLoopTimeout = 10 * time.Minute
+var MaxTranscodeSessions = 10
+
+var transcodeLoopTimeout = 1 * time.Minute
 
 // Transcoder / orchestrator RPC interface implementation
 type orchestrator struct {
@@ -67,6 +69,18 @@ func (orch *orchestrator) Address() ethcommon.Address {
 
 func (orch *orchestrator) TranscoderSecret() string {
 	return orch.node.OrchSecret
+}
+
+func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
+	orch.node.segmentMutex.RLock()
+	defer orch.node.segmentMutex.RUnlock()
+	if _, ok := orch.node.SegmentChans[mid]; ok {
+		return nil
+	}
+	if len(orch.node.SegmentChans) >= MaxTranscodeSessions {
+		return ErrOrchCap
+	}
+	return nil
 }
 
 func (orch *orchestrator) TranscodeSeg(md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
@@ -138,6 +152,7 @@ func NewOrchestrator(n *LivepeerNode) *orchestrator {
 // LivepeerNode transcode methods
 
 var ErrOrchBusy = ogErrors.New("OrchestratorBusy")
+var ErrOrchCap = ogErrors.New("OrchestratorCapped")
 
 type TranscodeResult struct {
 	Err  error
@@ -202,6 +217,9 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 	defer n.segmentMutex.Unlock()
 	if sc, ok := n.SegmentChans[md.ManifestID]; ok {
 		return sc, nil
+	}
+	if len(n.SegmentChans) >= MaxTranscodeSessions {
+		return nil, ErrOrchCap
 	}
 	sc := make(SegmentChan, 1)
 	glog.V(common.DEBUG).Info("Creating new segment chan for manifest ", md.ManifestID)
