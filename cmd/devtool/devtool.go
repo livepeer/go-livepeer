@@ -153,6 +153,22 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	glog.Info("Done requesting tokens.")
 	time.Sleep(4 * time.Second)
 
+	var depositAmount *big.Int = big.NewInt(int64(5000))
+
+	glog.Infof("Depositing: %v", depositAmount)
+
+	tx, err = client.FundDeposit(depositAmount)
+	if err != nil {
+		glog.Error(err)
+		return
+	}
+	err = client.CheckTx(tx)
+	if err != nil {
+		glog.Error(err)
+		return
+	}
+	glog.Info("Done depositing")
+
 	if !isBroadcaster {
 		// XXX TODO curl -X "POST" http://localhost:$transcoderCliPort/initializeRound
 		time.Sleep(3 * time.Second)
