@@ -3,13 +3,18 @@ package server
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"net/url"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts"
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,11 +42,28 @@ func setupServer() *LivepeerServer {
 }
 
 type stubDiscovery struct {
-	infos []*net.OrchestratorInfo
+	infos       []*net.OrchestratorInfo
+	waitGetOrch chan struct{}
+
+	// typically the following fields have to be wrapped by `lock`
+	// makes the race detector happy
+	lock         *sync.Mutex
+	getOrchCalls int
+	getOrchError error
 }
 
 func (d *stubDiscovery) GetOrchestrators(num int) ([]*net.OrchestratorInfo, error) {
-	return d.infos, nil
+	if d.waitGetOrch != nil {
+		<-d.waitGetOrch
+	}
+	var err error
+	if d.lock != nil {
+		d.lock.Lock()
+		d.getOrchCalls++
+		err = d.getOrchError
+		d.lock.Unlock()
+	}
+	return d.infos, err
 }
 
 type StubSegmenter struct {
@@ -70,7 +92,7 @@ func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVide
 	return nil
 }
 
-func TestStartBroadcast(t *testing.T) {
+func TestSelectOrchestrator(t *testing.T) {
 	s := setupServer()
 
 	defer func() {
@@ -81,14 +103,14 @@ func TestStartBroadcast(t *testing.T) {
 	mid := core.RandomManifestID()
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	pl := core.NewBasicPlaylistManager(mid, storage)
-	if _, err := s.startBroadcast(pl); err != ErrDiscovery {
+	if _, err := selectOrchestrator(s.LivepeerNode, pl); err != ErrDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, _ := s.startBroadcast(pl); sess != nil {
+	if sess, err := selectOrchestrator(s.LivepeerNode, pl); sess != nil || err != ErrNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -97,7 +119,7 @@ func TestStartBroadcast(t *testing.T) {
 		&net.OrchestratorInfo{},
 		&net.OrchestratorInfo{},
 	}
-	sess, _ := s.startBroadcast(pl)
+	sess, _ := selectOrchestrator(s.LivepeerNode, pl)
 	if sess == nil {
 		t.Error("Expected nil session")
 	}
@@ -146,7 +168,7 @@ func TestStartBroadcast(t *testing.T) {
 	expSessionID := "foo"
 	sender.On("StartSession", params).Return(expSessionID)
 
-	sess, err := s.startBroadcast(pl)
+	sess, err := selectOrchestrator(s.LivepeerNode, pl)
 	require.Nil(t, err)
 
 	assert := assert.New(t)
@@ -274,11 +296,11 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 
 	// Check assigned IDs
 	mid := rtmpManifestID(strm)
-	if s.LatestPlaylist().ManifestID() != mid || LastManifestID != mid {
+	if s.LatestPlaylist().ManifestID() != mid {
 		t.Error("Unexpected Manifest ID")
 	}
-	if LastHLSStreamID != expectedSid {
-		t.Error("Unexpected Stream ID ", LastHLSStreamID, expectedSid)
+	if s.LastHLSStreamID() != expectedSid {
+		t.Error("Unexpected Stream ID ", s.LastHLSStreamID(), expectedSid)
 	}
 
 	//Stream already exists
@@ -306,6 +328,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	}
 
 	for i := 0; i < 4; i++ {
+		// XXX we shouldn't do this. Need threadsafe accessors for playlist
 		seg := pl.Segments[i]
 		shouldSegName := fmt.Sprintf("/stream/%s/%s/%d.ts", mid, expectedSid.Rendition, i)
 		if seg.URI != shouldSegName {
@@ -335,22 +358,22 @@ func TestMultiStream(t *testing.T) {
 	}
 
 	// test more streams, somewhat concurrently
-	mut := sync.Mutex{}
-	completed := syncStreams
-	ch := make(chan struct{})
+	var wg sync.WaitGroup
 	const asyncStreams = 500
-	for i := completed; i < asyncStreams; i++ {
+	for i := syncStreams; i < asyncStreams; i++ {
+		wg.Add(1)
 		go func(i int) {
+			defer wg.Done()
 			handleStream(i)
-			mut.Lock()
-			completed++
-			mut.Unlock()
-			if completed >= asyncStreams {
-				ch <- struct{}{}
-			}
 		}(i)
 	}
+
 	// block until complete
+	ch := make(chan struct{})
+	go func() {
+		wg.Wait()
+		ch <- struct{}{}
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	select {
@@ -360,7 +383,7 @@ func TestMultiStream(t *testing.T) {
 			t.Error("Did not have expected number of streams", len(s.rtmpConnections))
 		}
 	case <-ctx.Done():
-		t.Error("Timed out at ", completed)
+		t.Error("Timed out")
 		close(ch)
 	}
 
@@ -408,6 +431,261 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	if pl.Variants[0].URI != mediaPLName {
 		t.Errorf("Expecting %s, but got: %s", mediaPLName, pl.Variants[0].URI)
 	}
+}
+
+func TestRegisterConnection(t *testing.T) {
+	assert := assert.New(t)
+	s := setupServer()
+	mid := core.SplitStreamIDString(t.Name()).ManifestID
+	strm := stream.NewBasicRTMPVideoStream(string(mid))
+
+	// Switch to on-chain mode
+	c := &eth.MockClient{}
+	addr := ethcommon.Address{}
+	s.LivepeerNode.Eth = c
+
+	// Should return an error if in on-chain mode and fail to get sender deposit
+	c.On("Account").Return(accounts.Account{Address: addr})
+	c.On("Senders", addr).Return(nil, nil, nil, errors.New("Senders error")).Once()
+
+	_, err := s.registerConnection(strm)
+	assert.Equal("Senders error", err.Error())
+
+	// Should return an error if in on-chain mode and sender deposit is 0
+	c.On("Senders", addr).Return(big.NewInt(0), nil, nil, nil).Once()
+
+	_, err = s.registerConnection(strm)
+	assert.Equal(ErrLowDeposit, err)
+
+	// Remove node storage
+	drivers.NodeStorage = nil
+
+	// Should return a different error if in on-chain mode and sender deposit > 0
+	c.On("Senders", addr).Return(big.NewInt(1), nil, nil, nil).Once()
+
+	_, err = s.registerConnection(strm)
+	assert.NotEqual(ErrLowDeposit, err)
+
+	// Switch to off-chain mode
+	s.LivepeerNode.Eth = nil
+
+	// Should return an error if missing node storage
+	_, err = s.registerConnection(strm)
+	assert.Equal(err, ErrStorage)
+	drivers.NodeStorage = drivers.NewMemoryDriver("")
+
+	// normal success case
+	rand.Seed(123)
+	cxn, err := s.registerConnection(strm)
+	assert.NotNil(cxn)
+	assert.Nil(err)
+
+	// Check some properties of the cxn / server
+	assert.Equal(mid, cxn.mid)
+	assert.Equal("source", cxn.profile.Name)
+	assert.Equal(uint64(0x4a68998bed5c40f1), cxn.nonce)
+
+	assert.Equal(mid, s.LastManifestID())
+	assert.Equal(string(mid)+"/source", s.LastHLSStreamID().String())
+
+	// Should return an error if creating another cxn with the same mid
+	_, err = s.registerConnection(strm)
+	assert.Equal(err, ErrAlreadyExists)
+
+	// Ensure thread-safety under -race
+	var wg sync.WaitGroup
+	for i := 0; i < 500; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			name := fmt.Sprintf("%v_%v", t.Name(), i)
+			mid := core.SplitStreamIDString(name).ManifestID
+			strm := stream.NewBasicRTMPVideoStream(string(mid))
+			cxn, err := s.registerConnection(strm)
+
+			assert.Nil(err)
+			assert.NotNil(cxn)
+			assert.Equal(mid, cxn.mid)
+		}(i)
+	}
+	wg.Wait()
+
+}
+
+func TestStartSession(t *testing.T) {
+	assert := assert.New(t)
+	s := setupServer()
+	mid := core.SplitStreamIDString(t.Name()).ManifestID
+	storage := drivers.NodeStorage.NewSession(string(mid))
+	strm := stream.NewBasicRTMPVideoStream(string(mid))
+	cxn := &rtmpConnection{
+		mid:    mid,
+		lock:   &sync.RWMutex{},
+		pl:     core.NewBasicPlaylistManager(mid, storage),
+		stream: strm,
+	}
+	sd := &stubDiscovery{
+		lock:  &sync.Mutex{},
+		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{}},
+	}
+	s.LivepeerNode.OrchestratorPool = sd
+
+	assert.Equal(0, sd.getOrchCalls) // sanity check
+
+	// return nil given an error if session isn't registered
+	sd.getOrchError = fmt.Errorf("StubError")
+	assert.Nil(s.startSession(cxn))
+	assert.Equal(1, sd.getOrchCalls)
+	sd.getOrchError = nil
+
+	// return nil if no discovery set
+	s.LivepeerNode.OrchestratorPool = nil
+	assert.Nil(s.startSession(cxn))
+	assert.Equal(1, sd.getOrchCalls)
+	s.LivepeerNode.OrchestratorPool = sd
+
+	// ensure a single try works
+	s.connectionLock.Lock()
+	s.rtmpConnections[mid] = cxn
+	s.connectionLock.Unlock()
+	assert.NotNil(s.startSession(cxn))
+	assert.Equal(2, sd.getOrchCalls)
+
+	// ensure errors result in retries
+	sd.lock.Lock()
+	sd.getOrchCalls = 0                       // reset
+	sd.getOrchError = fmt.Errorf("StubError") // inital error
+	sd.lock.Unlock()
+	sd.waitGetOrch = make(chan struct{})
+	sessionWait := make(chan *BroadcastSession)
+	go func() {
+		sessionWait <- s.startSession(cxn)
+	}()
+	for i := 0; i < 3; i++ {
+		sd.waitGetOrch <- struct{}{} // invoke getOrch a few times
+	}
+	sd.lock.Lock()
+	sd.getOrchError = nil // magically remove the error.
+	sd.lock.Unlock()
+	sd.waitGetOrch <- struct{}{} // invoke getOrch again
+	sess := <-sessionWait
+	assert.NotNil(sess)
+	assert.Equal(4, sd.getOrchCalls)
+}
+
+func TestSessionListener(t *testing.T) {
+	assert := assert.New(t)
+
+	s := setupServer()
+	sd := &stubDiscovery{
+		lock:  &sync.Mutex{},
+		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{}},
+	}
+	s.LivepeerNode.OrchestratorPool = sd
+	mid := core.SplitStreamIDString(t.Name()).ManifestID
+	strm := stream.NewBasicRTMPVideoStream(string(mid))
+	cxn, err := s.registerConnection(strm)
+
+	assert.Nil(err) // sanity check
+	assert.NotNil(cxn)
+
+	listenerStopped := make(chan struct{})
+	go func() {
+		s.startSessionListener(cxn)
+		listenerStopped <- struct{}{}
+	}()
+
+	// sanity check
+	cxn.lock.RLock()
+	assert.Nil(cxn.sess)
+	cxn.lock.RUnlock()
+
+	// test getting a single orch; ensure session populated
+	cxn.needOrch <- struct{}{}
+	time.Sleep(100 * time.Millisecond)
+	cxn.lock.RLock()
+	assert.NotNil(cxn.sess)
+	cxn.lock.RUnlock()
+	assert.Equal(1, sd.getOrchCalls)
+
+	// multiple calls to inflight needOrch should only invoke startSession once
+	sd.waitGetOrch = make(chan struct{})
+	for i := 0; i < 100; i++ {
+		cxn.needOrch <- struct{}{}
+	}
+	sd.waitGetOrch <- struct{}{}
+	time.Sleep(100 * time.Millisecond)
+	sd.lock.Lock()
+	assert.Equal(sd.getOrchCalls, 2)
+	sd.lock.Unlock()
+
+	// test termination
+	cxn.eof <- struct{}{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	finished := false
+	select {
+	case <-listenerStopped:
+		finished = true
+		cancel()
+	case <-ctx.Done():
+		assert.True(finished, "Session listener did not complete")
+	}
+}
+
+func TestSessionAssigment_WithTerminatedConnection(t *testing.T) {
+
+	// If an RTMP connection is terminated with orchestrator selection inflight,
+	// ensure that the returned session is *not* assigned to the connection
+
+	// For this test case, simply test session assignment with a cxn that is
+	// not registered with the LivepeerServer, simulating a dangling cxn
+
+	assert := assert.New(t)
+
+	s := setupServer()
+	sd := &stubDiscovery{
+		lock:  &sync.Mutex{},
+		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{}},
+	}
+	s.LivepeerNode.OrchestratorPool = sd
+	mid := core.SplitStreamIDString(t.Name()).ManifestID
+	storage := drivers.NodeStorage.NewSession(string(mid))
+	strm := stream.NewBasicRTMPVideoStream(string(mid))
+	cxn := &rtmpConnection{
+		mid:      mid,
+		needOrch: make(chan struct{}),
+		lock:     &sync.RWMutex{},
+		eof:      make(chan struct{}),
+		pl:       core.NewBasicPlaylistManager(mid, storage),
+		stream:   strm,
+	}
+
+	// sanity: nil session
+	cxn.lock.Lock()
+	assert.Nil(cxn.sess) // nil session
+	cxn.lock.Unlock()
+
+	// sanity: non-registered cxn
+	s.connectionLock.Lock()
+	_, cxnExists := s.rtmpConnections[mid]
+	assert.False(cxnExists) // nonexistent cxn
+	s.connectionLock.Unlock()
+
+	// sanity: startSession returns a non-nil session with a non-registered cxn
+	assert.NotNil(s.startSession(cxn))
+	assert.Equal(1, sd.getOrchCalls)
+
+	// start session listener with non-registered cxn
+	go s.startSessionListener(cxn)
+
+	cxn.needOrch <- struct{}{} // signal session listener
+
+	time.Sleep(100 * time.Millisecond)
+	cxn.lock.RLock()
+	assert.Nil(cxn.sess) // the important check
+	cxn.lock.RUnlock()
+	assert.Equal(2, sd.getOrchCalls)
 }
 
 func TestCleanStreamPrefix(t *testing.T) {

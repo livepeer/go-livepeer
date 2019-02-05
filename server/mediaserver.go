@@ -18,12 +18,10 @@ import (
 	"sync"
 	"time"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
@@ -38,13 +36,11 @@ import (
 )
 
 var ErrAlreadyExists = errors.New("StreamAlreadyExists")
-var ErrRTMPPublish = errors.New("ErrRTMPPublish")
 var ErrBroadcast = errors.New("ErrBroadcast")
-var ErrHLSPlay = errors.New("ErrHLSPlay")
-var ErrRTMPPlay = errors.New("ErrRTMPPlay")
-var ErrRoundInit = errors.New("ErrRoundInit")
+var ErrLowDeposit = errors.New("ErrLowDeposit")
 var ErrStorage = errors.New("ErrStorage")
 var ErrDiscovery = errors.New("ErrDiscovery")
+var ErrNoOrchs = errors.New("ErrNoOrchs")
 var ErrUnknownStream = errors.New("ErrUnknownStream")
 
 const HLSWaitInterval = time.Second
@@ -53,20 +49,25 @@ const HLSBufferWindow = uint(5)
 const StreamKeyBytes = 6
 
 const SegLen = 2 * time.Second
-const HLSUnsubWorkerFreq = time.Second * 5
 const BroadcastRetry = 15 * time.Second
 
 var BroadcastPrice = big.NewInt(1)
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
-var MinDepositSegmentCount = int64(75) // 5 mins assuming 4s segments
-var LastHLSStreamID core.StreamID
-var LastManifestID core.ManifestID
 
 type rtmpConnection struct {
-	nonce  uint64
-	stream stream.RTMPVideoStream
-	pl     core.PlaylistManager
-	sess   *BroadcastSession
+	mid     core.ManifestID
+	nonce   uint64
+	stream  stream.RTMPVideoStream
+	pl      core.PlaylistManager
+	profile *ffmpeg.VideoProfile
+
+	needOrch chan struct{}
+	eof      chan struct{}
+
+	// Thread sensitive fields. All accesses to the
+	// following fields should be protected by `lock`
+	sess *BroadcastSession
+	lock *sync.RWMutex
 }
 
 type LivepeerServer struct {
@@ -77,7 +78,11 @@ type LivepeerServer struct {
 
 	ExposeCurrentManifest bool
 
+	// Thread sensitive fields. All accesses to the
+	// following fields should be protected by `connectionLock`
 	rtmpConnections map[core.ManifestID]*rtmpConnection
+	lastHLSStreamID core.StreamID
+	lastManifestID  core.ManifestID
 	connectionLock  *sync.RWMutex
 }
 
@@ -101,16 +106,19 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegment *big.Int, transcodingOptions string) error {
 	if s.LivepeerNode.Eth != nil {
 		BroadcastPrice = maxPricePerSegment
-		bProfiles := make([]ffmpeg.VideoProfile, 0)
-		for _, opt := range strings.Split(transcodingOptions, ",") {
-			p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]
-			if ok {
-				bProfiles = append(bProfiles, p)
-			}
-		}
-		BroadcastJobVideoProfiles = bProfiles
-		glog.V(common.SHORT).Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
+		glog.V(common.SHORT).Infof("Transcode Job Price: %v", eth.FormatUnits(BroadcastPrice, "ETH"))
 	}
+
+	bProfiles := make([]ffmpeg.VideoProfile, 0)
+	for _, opt := range strings.Split(transcodingOptions, ",") {
+		p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]
+		if ok {
+			bProfiles = append(bProfiles, p)
+		}
+	}
+	BroadcastJobVideoProfiles = bProfiles
+
+	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
 	//LPMS handlers for handling RTMP video
 	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
@@ -167,55 +175,6 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 }
 
-func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSession, error) {
-
-	if s.LivepeerNode.OrchestratorPool == nil {
-		glog.Info("No orchestrators specified; not transcoding")
-		return nil, ErrDiscovery
-	}
-
-	rpcBcast := core.NewBroadcaster(s.LivepeerNode)
-
-	tinfos, err := s.LivepeerNode.OrchestratorPool.GetOrchestrators(1)
-	if len(tinfos) <= 0 || err != nil {
-		glog.Info("No orchestrators found; not transcoding. Error: ", err)
-		return nil, err
-	}
-	tinfo := tinfos[0]
-
-	var sessionID string
-
-	if s.LivepeerNode.Sender != nil {
-		protoParams := tinfo.TicketParams
-		params := pm.TicketParams{
-			Recipient:         ethcommon.BytesToAddress(protoParams.Recipient),
-			FaceValue:         new(big.Int).SetBytes(protoParams.FaceValue),
-			WinProb:           new(big.Int).SetBytes(protoParams.WinProb),
-			RecipientRandHash: ethcommon.BytesToHash(protoParams.RecipientRandHash),
-			Seed:              new(big.Int).SetBytes(protoParams.Seed),
-		}
-
-		sessionID = s.LivepeerNode.Sender.StartSession(params)
-	}
-
-	// set OSes
-	var orchOS drivers.OSSession
-	if len(tinfo.Storage) > 0 {
-		orchOS = drivers.NewSession(tinfo.Storage[0])
-	}
-
-	return &BroadcastSession{
-		Broadcaster:      rpcBcast,
-		ManifestID:       cpl.ManifestID(),
-		Profiles:         BroadcastJobVideoProfiles,
-		OrchestratorInfo: tinfo,
-		OrchestratorOS:   orchOS,
-		BroadcasterOS:    cpl.GetOSSession(),
-		Sender:           s.LivepeerNode.Sender,
-		PMSessionID:      sessionID,
-	}, nil
-}
-
 func rtmpManifestID(rtmpStrm stream.RTMPVideoStream) core.ManifestID {
 	return parseManifestID(rtmpStrm.GetStreamID())
 }
@@ -223,49 +182,14 @@ func rtmpManifestID(rtmpStrm stream.RTMPVideoStream) core.ManifestID {
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 
-		// Set up the connection tracking
-		mid := rtmpManifestID(rtmpStrm)
-		if drivers.NodeStorage == nil {
-			glog.Error("Missing node storage")
-			return ErrStorage
-		}
-		storage := drivers.NodeStorage.NewSession(string(mid))
-		s.connectionLock.Lock()
-		_, exists := s.rtmpConnections[mid]
-		if exists {
-			// We can only have one concurrent stream per ManifestID
-			s.connectionLock.Unlock()
-			return ErrAlreadyExists
-		}
-		nonce := rand.Uint64()
-		cxn := &rtmpConnection{
-			nonce:  nonce,
-			stream: rtmpStrm,
-			pl:     core.NewBasicPlaylistManager(mid, storage),
-		}
-		s.rtmpConnections[mid] = cxn
-		s.connectionLock.Unlock()
-		LastManifestID = mid
-
-		// Build the source video profile from the RTMP stream.
-		resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
-		vProfile := ffmpeg.VideoProfile{
-			Name:       "source",
-			Resolution: resolution,
-			Bitrate:    "4000k", // Fix this
+		cxn, err := s.registerConnection(rtmpStrm)
+		if err != nil {
+			return err
 		}
 
+		mid := cxn.mid
+		nonce := cxn.nonce
 		startSeq := 0
-		cpl := cxn.pl
-		var sess *BroadcastSession
-
-		if s.LivepeerNode.Eth != nil {
-			// TODO: Check broadcaster's deposit with TicketBroker
-		}
-
-		hlsStrmID := core.MakeStreamID(mid, &vProfile)
-
-		LastHLSStreamID = hlsStrmID
 
 		streamStarted := false
 		//Segment the stream, insert the segments into the broadcaster
@@ -277,143 +201,13 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					// XXX update HLS manifest
 					return
 				}
-
 				if streamStarted == false {
 					streamStarted = true
 					if monitor.Enabled {
 						monitor.LogStreamStartedEvent(nonce)
 					}
 				}
-				if monitor.Enabled {
-					monitor.LogSegmentEmerged(nonce, seg.SeqNo)
-				}
-
-				seg.Name = "" // hijack seg.Name to convey the uploaded URI
-				name := fmt.Sprintf("%s/%d.ts", vProfile.Name, seg.SeqNo)
-				uri, err := cpl.GetOSSession().SaveData(name, seg.Data)
-				if err != nil {
-					glog.Errorf("Error saving segment %d: %v", seg.SeqNo, err)
-					if monitor.Enabled {
-						monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
-					}
-					return
-				}
-				if cpl.GetOSSession().IsExternal() {
-					seg.Name = uri // hijack seg.Name to convey the uploaded URI
-				}
-				err = cpl.InsertHLSSegment(&vProfile, seg.SeqNo, uri, seg.Duration)
-				if monitor.Enabled {
-					monitor.LogSourceSegmentAppeared(nonce, seg.SeqNo, string(mid), vProfile.Name)
-					glog.V(6).Infof("Appeared segment %d", seg.SeqNo)
-				}
-				if err != nil {
-					glog.Errorf("Error inserting segment %d: %v", seg.SeqNo, err)
-					if monitor.Enabled {
-						monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
-					}
-				}
-
-				if sess != nil {
-					go func() {
-						// storage the orchestrator prefers
-						if ios := sess.OrchestratorOS; ios != nil {
-							// XXX handle case when orch expects direct upload
-							uri, err := ios.SaveData(name, seg.Data)
-							if err != nil {
-								glog.Error("Error saving segment to OS ", err)
-								if monitor.Enabled {
-									monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
-								}
-								return
-							}
-							seg.Name = uri // hijack seg.Name to convey the uploaded URI
-						}
-
-						// send segment to the orchestrator
-						glog.V(common.DEBUG).Infof("Submitting segment %d", seg.SeqNo)
-
-						res, err := SubmitSegment(sess, seg, nonce)
-						if err != nil {
-							if shouldStopStream(err) {
-								glog.Warningf("Stopping current stream due to: %v", err)
-								rtmpStrm.Close()
-							}
-							return
-						}
-
-						// download transcoded segments from the transcoder
-						gotErr := false // only send one error msg per segment list
-						errFunc := func(subType, url string, err error) {
-							glog.Errorf("%v error with segment %v: %v (URL: %v)", subType, seg.SeqNo, err, url)
-							if monitor.Enabled && !gotErr {
-								monitor.LogSegmentTranscodeFailed(subType, nonce, seg.SeqNo, err)
-								gotErr = true
-							}
-						}
-
-						segHashes := make([][]byte, len(res.Segments))
-						n := len(res.Segments)
-						SegHashLock := &sync.Mutex{}
-						cond := sync.NewCond(SegHashLock)
-
-						dlFunc := func(url string, i int) {
-							defer func() {
-								cond.L.Lock()
-								n--
-								if n == 0 {
-									cond.Signal()
-								}
-								cond.L.Unlock()
-							}()
-
-							if bos := sess.BroadcasterOS; bos != nil && !drivers.IsOwnExternal(url) {
-								data, err := drivers.GetSegmentData(url)
-								if err != nil {
-									errFunc("Download", url, err)
-									return
-								}
-								name := fmt.Sprintf("%s/%d.ts", sess.Profiles[i].Name, seg.SeqNo)
-								newUrl, err := bos.SaveData(name, data)
-								if err != nil {
-									errFunc("SaveData", url, err)
-									return
-								}
-								url = newUrl
-
-								hash := crypto.Keccak256(data)
-								SegHashLock.Lock()
-								segHashes[i] = hash
-								SegHashLock.Unlock()
-							}
-
-							if monitor.Enabled {
-								monitor.LogTranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
-							}
-							err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
-							if err != nil {
-								errFunc("Playlist", url, err)
-								return
-							}
-						}
-
-						for i, v := range res.Segments {
-							go dlFunc(v.Url, i)
-						}
-
-						cond.L.Lock()
-						for n != 0 {
-							cond.Wait()
-						}
-						cond.L.Unlock()
-
-						// if !eth.VerifySig(transcoderAddress, crypto.Keccak256(segHashes...), res.Sig) { // need transcoder address here
-						// 	glog.Error("Sig check failed for segment ", seg.SeqNo)
-						// 	return
-						// }
-
-						glog.V(common.DEBUG).Info("Successfully validated segment ", seg.SeqNo)
-					}()
-				}
+				processSegment(cxn, seg)
 			})
 
 			segOptions := segmenter.SegmenterOptions{
@@ -434,34 +228,10 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 
 		glog.Infof("\n\nVideo Created With ManifestID: %v\n\n", mid)
-		glog.V(common.SHORT).Infof("\n\nhlsStrmID: %v\n\n", hlsStrmID)
 
 		//Create Transcode Job Onchain
-		go func() {
-			// Connect to the orchestrator. If it fails, retry for as long
-			// as the RTMP stream is alive; maybe the orchestrator hasn't
-			// received the block containing the job yet
-			broadcastFunc := func() error {
-				sess, err = s.startBroadcast(cpl)
-				if err == ErrDiscovery {
-					return nil // discovery disabled, don't retry
-				} else if err != nil {
-					// Should be logged upstream
-				}
-				s.connectionLock.Lock()
-				defer s.connectionLock.Unlock()
-				cxn, active := s.rtmpConnections[mid]
-				if active {
-					cxn.sess = sess
-					return err
-				}
-				return nil // stop if inactive
-			}
-			expb := backoff.NewExponentialBackOff()
-			expb.MaxInterval = BroadcastRetry
-			expb.MaxElapsedTime = 0
-			backoff.Retry(broadcastFunc, expb)
-		}()
+		go s.startSessionListener(cxn)
+		cxn.needOrch <- struct{}{}
 		return nil
 	}
 }
@@ -481,10 +251,152 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		if monitor.Enabled {
 			monitor.LogStreamEndedEvent(cxn.nonce)
 		}
+		cxn.eof <- struct{}{}
 		delete(s.rtmpConnections, mid)
 
 		return nil
 	}
+}
+
+func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*rtmpConnection, error) {
+	nonce := rand.Uint64()
+
+	// If running in on-chain mode, check for a reasonable deposit
+	if s.LivepeerNode.Eth != nil {
+		sender, err := s.LivepeerNode.Eth.Senders(s.LivepeerNode.Eth.Account().Address)
+		if err != nil {
+			return nil, err
+		}
+
+		if sender.Deposit.Cmp(big.NewInt(0)) <= 0 {
+			glog.Errorf("No deposit - cannot start broadcast session")
+
+			if monitor.Enabled {
+				monitor.LogStreamCreateFailed(nonce, "LowDeposit")
+			}
+
+			return nil, ErrLowDeposit
+		}
+	}
+
+	// Set up the connection tracking
+	mid := rtmpManifestID(rtmpStrm)
+	if drivers.NodeStorage == nil {
+		glog.Error("Missing node storage")
+		return nil, ErrStorage
+	}
+	storage := drivers.NodeStorage.NewSession(string(mid))
+	// Build the source video profile from the RTMP stream.
+	resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
+	vProfile := ffmpeg.VideoProfile{
+		Name:       "source",
+		Resolution: resolution,
+		Bitrate:    "4000k", // Fix this
+	}
+	hlsStrmID := core.MakeStreamID(mid, &vProfile)
+	s.connectionLock.Lock()
+	defer s.connectionLock.Unlock()
+	_, exists := s.rtmpConnections[mid]
+	if exists {
+		// We can only have one concurrent stream per ManifestID
+		return nil, ErrAlreadyExists
+	}
+	cxn := &rtmpConnection{
+		mid:     mid,
+		nonce:   nonce,
+		stream:  rtmpStrm,
+		pl:      core.NewBasicPlaylistManager(mid, storage),
+		profile: &vProfile,
+		lock:    &sync.RWMutex{},
+
+		needOrch: make(chan struct{}),
+		eof:      make(chan struct{}),
+	}
+	s.rtmpConnections[mid] = cxn
+	s.lastManifestID = mid
+	s.lastHLSStreamID = hlsStrmID
+
+	return cxn, nil
+}
+
+func (s *LivepeerServer) startSession(cxn *rtmpConnection) *BroadcastSession {
+
+	mid := cxn.mid
+	cpl := cxn.pl
+	var sess *BroadcastSession
+
+	// Connect to the orchestrator. If it fails, retry for as long
+	// as the RTMP stream is alive
+	broadcastFunc := func() error {
+		var err error
+		sess, err = selectOrchestrator(s.LivepeerNode, cpl)
+		if err == ErrDiscovery {
+			return nil // discovery disabled, don't retry
+		} else if err != nil {
+			// Should be logged upstream
+		}
+		s.connectionLock.RLock()
+		defer s.connectionLock.RUnlock()
+		_, active := s.rtmpConnections[mid]
+		if active {
+			return err
+		}
+		return nil // stop if inactive
+	}
+	expb := backoff.NewExponentialBackOff()
+	expb.MaxInterval = BroadcastRetry
+	expb.MaxElapsedTime = 0
+	backoff.Retry(broadcastFunc, expb)
+	return sess
+}
+
+func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
+	mut := cxn.lock
+	sem := make(chan struct{}, 1)
+	runStartSession := func() {
+		// Quickly lock-unlock to avoid blocking longer than necessary
+		mut.Lock()
+		cxn.sess = nil
+		mut.Unlock()
+
+		sess := s.startSession(cxn) // this could take awhile
+
+		// Retain the connectionLock for the rest of the function to ensure
+		// we don't terminate the stream *then* assign the session to the cxn
+		s.connectionLock.RLock()
+		defer s.connectionLock.RUnlock()
+		if _, active := s.rtmpConnections[cxn.mid]; !active {
+			sess = nil // don't assign if stream terminated
+		}
+		mut.Lock()
+		defer mut.Unlock()
+		cxn.sess = sess
+	}
+	glog.V(common.DEBUG).Info("Starting broadcast listener for ", cxn.mid)
+	finished := false
+	for {
+		if finished {
+			break
+		}
+		select {
+
+		case <-cxn.needOrch:
+			go func() {
+				select {
+				case sem <- struct{}{}:
+					runStartSession()
+					<-sem
+				default:
+					break
+				}
+			}()
+
+		case <-cxn.eof:
+			finished = true
+			break
+		}
+	}
+	glog.V(common.DEBUG).Info("Stopping broadcast listener for ", cxn.mid)
 }
 
 //End RTMP Publish Handlers
@@ -494,7 +406,7 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 	return func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 		var manifestID core.ManifestID
 		if s.ExposeCurrentManifest && "/stream/current.m3u8" == strings.ToLower(url.Path) {
-			manifestID = LastManifestID
+			manifestID = s.LastManifestID()
 		} else {
 			sid := parseStreamID(url.Path)
 			if sid.Rendition != "" {
@@ -610,6 +522,18 @@ func parseManifestID(reqPath string) core.ManifestID {
 	return parseStreamID(reqPath).ManifestID
 }
 
+func (s *LivepeerServer) LastManifestID() core.ManifestID {
+	s.connectionLock.RLock()
+	defer s.connectionLock.RUnlock()
+	return s.lastManifestID
+}
+
+func (s *LivepeerServer) LastHLSStreamID() core.StreamID {
+	s.connectionLock.RLock()
+	defer s.connectionLock.RUnlock()
+	return s.lastHLSStreamID
+}
+
 func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 	// not threadsafe; need to deep copy the playlist
 	m := make(map[string]*m3u8.MasterPlaylist, 0)
@@ -630,7 +554,7 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 func (s *LivepeerServer) LatestPlaylist() core.PlaylistManager {
 	s.connectionLock.RLock()
 	defer s.connectionLock.RUnlock()
-	cxn, ok := s.rtmpConnections[LastManifestID]
+	cxn, ok := s.rtmpConnections[s.lastManifestID]
 	if !ok || cxn.pl == nil {
 		return nil
 	}

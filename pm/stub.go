@@ -237,22 +237,26 @@ func (s *stubSigner) Account() accounts.Account {
 	return s.account
 }
 
-// MockRecipient is useful for testing components that depend on pm.Recipient, such as
-// LivepeerNode
+// MockRecipient is useful for testing components that depend on pm.Recipient
 type MockRecipient struct {
 	mock.Mock
 }
 
+// ReceiveTicket validates and processes a received ticket
 func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error) {
 	args := m.Called(ticket, sig, seed)
 	return args.String(0), args.Bool(1), args.Error(2)
 }
 
+// RedeemWinningTickets redeems all winning tickets with the broker
+// for a all sessionIDs
 func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
 	args := m.Called(sessionIDs)
 	return args.Error(0)
 }
 
+// TicketParams returns the recipient's currently accepted ticket parameters
+// for a provided sender ETH adddress
 func (m *MockRecipient) TicketParams(sender ethcommon.Address) *TicketParams {
 	args := m.Called(sender)
 
@@ -269,11 +273,15 @@ type MockSender struct {
 	mock.Mock
 }
 
+// StartSession creates a session for a given set of ticket params which tracks information
+// for creating new tickets
 func (m *MockSender) StartSession(ticketParams TicketParams) string {
 	args := m.Called(ticketParams)
 	return args.String(0)
 }
 
+// CreateTicket returns a new ticket, seed (which the recipient can use to derive its random number),
+// and signature over the new ticket for a given session ID
 func (m *MockSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
 	args := m.Called(sessionID)
 

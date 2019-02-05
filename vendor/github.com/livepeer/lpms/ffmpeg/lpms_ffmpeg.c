@@ -93,6 +93,7 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char 
   av_dict_set(&md, "hls_time", seg_time, 0);
   av_dict_set(&md, "hls_segment_filename", ts_tmpl, 0);
   av_dict_set(&md, "start_number", seg_start, 0);
+  av_dict_set(&md, "hls_flags", "delete_segments", 0);
   ret = avformat_write_header(oc, &md);
   if (ret < 0) r2h_err("Error writing header\n");
 
@@ -107,8 +108,8 @@ int lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char* seg_time, char 
     if (pkt.stream_index == stream_map[0]) pkt.stream_index = 0;
     else if (pkt.stream_index == stream_map[1]) pkt.stream_index = 1;
     else goto r2hloop_end;
-    ist = ic->streams[pkt.stream_index];
-    ost = oc->streams[stream_map[pkt.stream_index]];
+    ist = ic->streams[stream_map[pkt.stream_index]];
+    ost = oc->streams[pkt.stream_index];
     int64_t dts_next = pkt.dts, dts_prev = prev_ts[pkt.stream_index];
     if (oc->streams[pkt.stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
         AV_NOPTS_VALUE == dts_prev &&
@@ -240,6 +241,7 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (fmt->flags & AVFMT_GLOBALHEADER) ac->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     ret = avcodec_open2(ac, codec, NULL);
     if (ret < 0) em_err("Error opening audio encoder\n");
+    av_buffersink_set_frame_size(octx->af.sink_ctx, ac->frame_size);
 
     // audio stream in muxer
     st = avformat_new_stream(oc, NULL);
@@ -649,7 +651,8 @@ int lpms_transcode(char *inp, output_params *params, int nb_outputs)
     if (params[i].fps.den) octx->fps = params[i].fps;
     if (ictx.vc) {
       char filter_str[256];
-      snprintf(filter_str, sizeof filter_str, "fps=fps=%d/%d,scale=%dx%d:force_original_aspect_ratio=decrease", octx->fps.num, octx->fps.den, octx->width, octx->height);
+      // preserve aspect ratio along the larger dimension when rescaling
+      snprintf(filter_str, sizeof filter_str, "fps=fps=%d/%d,scale='w=if(gte(iw,ih),%d,-2):h=if(lt(iw, ih),%d,-2)'", octx->fps.num, octx->fps.den, octx->width, octx->height);
       ret = init_video_filters(&ictx, octx, filter_str);
       if (ret < 0) main_err("Unable to open video filter");
     }

@@ -42,9 +42,10 @@ message OrchestratorRequest {
 message OSInfo {
 
   enum StorageType {
-    DIRECT = 0;
-    S3     = 1;
-    IPFS   = 2;
+    DIRECT     = 0;
+    S3         = 1;
+    IPFS       = 2;
+    GOOGLE     = 3;
   }
 
   // Storage type: direct, s3, ipfs.
@@ -68,7 +69,7 @@ message S3OSInfo {
   string signature = 4;
 
   // Needed for POST policy.
-  string xAmzCredential = 5;
+  string credential = 5;
 
   // Needed for POST policy.
   string xAmzDate = 6;
@@ -81,7 +82,7 @@ message OrchestratorInfo {
   // URI of the transcoder to use for submitting segments.
   string transcoder  = 1;
 
-  // Required parameters for probabilistic micropayment tickets
+  // Parameters for probabilistic micropayment tickets
   TicketParams ticket_params = 2;
 
   // Orchestrator returns info about own input object storage, if it wants it to be used.

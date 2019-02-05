@@ -712,11 +712,11 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 
 	//Print the current broadcast HLS streamID
 	mux.HandleFunc("/streamID", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(LastHLSStreamID.String()))
+		w.Write([]byte(s.LastHLSStreamID().String()))
 	})
 
 	mux.HandleFunc("/manifestID", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(LastManifestID))
+		w.Write([]byte(s.LastManifestID()))
 	})
 
 	mux.HandleFunc("/localStreams", func(w http.ResponseWriter, r *http.Request) {

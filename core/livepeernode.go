@@ -27,9 +27,7 @@ import (
 )
 
 var ErrTranscoderAvail = errors.New("ErrTranscoderUnavailable")
-var ErrLivepeerNode = errors.New("ErrLivepeerNode")
 var ErrTranscode = errors.New("ErrTranscode")
-var DefaultJobLength = int64(5760) //Avg 1 day in 15 sec blocks
 var LivepeerVersion = "0.3.1-unstable"
 
 type NodeType int

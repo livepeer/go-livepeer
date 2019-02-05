@@ -62,6 +62,7 @@ var schema = `
 	);
 
 	CREATE TABLE IF NOT EXISTS unbondingLocks (
+		createdAt STRING DEFAULT CURRENT_TIMESTAMP,
 		id INTEGER NOT NULL,
 		delegator STRING,
 		amount TEXT,
@@ -73,6 +74,7 @@ var schema = `
 	CREATE INDEX IF NOT EXISTS idx_unbondinglocks_usedblock ON unbondingLocks(usedBlock);
 
 	CREATE TABLE IF NOT EXISTS winningTickets (
+		createdAt STRING DEFAULT CURRENT_TIMESTAMP,
 		sender STRING,
 		recipient STRING,
 		faceValue BLOB,
@@ -240,7 +242,7 @@ func (db *DB) SetLastSeenBlock(block *big.Int) error {
 	if db == nil {
 		return nil
 	}
-	glog.V(DEBUG).Info("db: Setting LastSeenBlock to ", block)
+	glog.V(VERBOSE).Info("db: Setting LastSeenBlock to ", block)
 	_, err := db.updateKV.Exec(block.String(), "lastBlock")
 	if err != nil {
 		glog.Error("db: Got err in updating block ", err)

@@ -17,5 +17,5 @@
 eth/protocol
 
 # Our compiled binary
-livepeer
+/livepeer
 /livepeer_cli

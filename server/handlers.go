@@ -221,7 +221,7 @@ func senderInfoHandler(client eth.LivepeerEthClient) http.Handler {
 
 		data, err := json.Marshal(sender)
 		if err != nil {
-			respondWith500(w, fmt.Sprintf("could not query sender info: %v", err))
+			respondWith500(w, fmt.Sprintf("could not parse sender info: %v", err))
 			return
 		}
 
