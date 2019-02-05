@@ -40,6 +40,8 @@ var (
 	ErrReplacingMinedTx   = fmt.Errorf("trying to replace already mined tx")
 	ErrCurrentRoundLocked = fmt.Errorf("current round locked")
 	ErrMissingBackend     = fmt.Errorf("missing Ethereum client backend")
+
+	RPCTimeout = 20 * time.Second
 )
 
 type LivepeerEthClient interface {
@@ -876,7 +878,9 @@ func (c *client) LatestBlockNum() (*big.Int, error) {
 func (c *client) ProcessHistoricalUnbond(startBlock *big.Int, cb func(*contracts.BondingManagerUnbond) error) error {
 	// Retrieve historical logs starting from startBlock
 	// WatchForUnbond() will not emit past logs
-	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
+	filterOpts, cancel := filterOptsWithTimeout(startBlock.Uint64())
+	defer cancel()
+
 	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterUnbond(filterOpts, nil, []ethcommon.Address{c.Account().Address})
 	if err != nil {
 		return err
@@ -915,7 +919,9 @@ func (c *client) WatchForUnbond(sink chan *contracts.BondingManagerUnbond) (ethe
 func (c *client) ProcessHistoricalRebond(startBlock *big.Int, cb func(*contracts.BondingManagerRebond) error) error {
 	// Retrieve historical logs starting from startBlock
 	// WatchRebond() will not emit past logs
-	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
+	filterOpts, cancel := filterOptsWithTimeout(startBlock.Uint64())
+	defer cancel()
+
 	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterRebond(filterOpts, nil, []ethcommon.Address{c.Account().Address})
 	if err != nil {
 		return err
@@ -954,7 +960,9 @@ func (c *client) WatchForRebond(sink chan *contracts.BondingManagerRebond) (ethe
 func (c *client) ProcessHistoricalWithdrawStake(startBlock *big.Int, cb func(*contracts.BondingManagerWithdrawStake) error) error {
 	// Retrieve historical logs starting from startBlock
 	// WatchWithdrawStake() will not emit past logs
-	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
+	filterOpts, cancel := filterOptsWithTimeout(startBlock.Uint64())
+	defer cancel()
+
 	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterWithdrawStake(filterOpts, []ethcommon.Address{c.Account().Address})
 	if err != nil {
 		return err
@@ -989,4 +997,13 @@ func (c *client) WatchForWithdrawStake(sink chan *contracts.BondingManagerWithdr
 	err = backoff.Retry(withdrawStakeWatcher, backoff.NewConstantBackOff(time.Second*2))
 
 	return sub, err
+}
+
+func filterOptsWithTimeout(start uint64) (*bind.FilterOpts, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), RPCTimeout)
+
+	return &bind.FilterOpts{
+		Start:   start,
+		Context: ctx,
+	}, cancel
 }
