@@ -261,7 +261,8 @@ func TestGetSegmentChan(t *testing.T) {
 		t.Error("SegmentChans mapping did not include channel")
 	}
 
-	drivers.NodeStorage = nil
+	// Test what happens when invoking the transcode loop fails
+	drivers.NodeStorage = nil // will make the transcode loop fail
 	node, _ := NewLivepeerNode(nil, "", nil)
 
 	sc, storageError := node.getSegmentChan(segData)
@@ -269,16 +270,19 @@ func TestGetSegmentChan(t *testing.T) {
 		t.Error("transcodingLoop did not fail when expected to", storageError)
 	}
 
-	if sc == n.SegmentChans[segData.ManifestID] {
+	if _, ok := node.SegmentChans[segData.ManifestID]; ok {
 		t.Error("SegmentChans mapping included new channel when expected to return an err/nil")
 	}
 
+	// The following tests may seem identical to the two cases above
+	// however, calling `getSegmentChan` used to hang on the invocation after an
+	// error. Reproducing the scenario here but should not hang.
 	sc, storageErr := node.getSegmentChan(segData)
 	if storageErr.Error() != "Missing local storage" {
 		t.Error("transcodingLoop did not fail when expected to", storageErr)
 	}
 
-	if sc == n.SegmentChans[segData.ManifestID] {
+	if _, ok := node.SegmentChans[segData.ManifestID]; ok {
 		t.Error("SegmentChans mapping included new channel when expected to return an err/nil")
 	}
 
