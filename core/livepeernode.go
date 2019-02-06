@@ -61,7 +61,7 @@ type LivepeerNode struct {
 	Sender pm.Sender
 
 	// Transcoder private fields
-	serviceURI      *url.URL
+	serviceURI      url.URL
 	pmSessions      map[ManifestID]map[string]bool
 	pmSessionsMutex *sync.Mutex
 	segmentMutex    *sync.RWMutex
@@ -127,12 +127,9 @@ func (n *LivepeerNode) StopEthServices() error {
 }
 
 func (n *LivepeerNode) GetServiceURI() *url.URL {
-	return n.serviceURI
+	return &n.serviceURI
 }
 
 func (n *LivepeerNode) SetServiceURI(newUrl *url.URL) {
-	if newUrl != nil && n.serviceURI != nil {
-		*n.serviceURI = *newUrl
-	}
-	n.serviceURI = newUrl //for nil cases
+	n.serviceURI = *newUrl
 }
