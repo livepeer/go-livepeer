@@ -43,7 +43,7 @@ func (s *UnbondingService) Start(ctx context.Context) error {
 	}
 
 	if err := s.processHistoricalEvents(); err != nil {
-		return err
+		glog.Errorf("failed to process historical events: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
