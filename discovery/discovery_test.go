@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"math/rand"
 	"net/url"
 	"testing"
 
@@ -99,30 +100,27 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
-	expectedOffchainOrch := StubOrchestratorPool(addresses)
+	expected := []string{"https://127.0.0.1:8938", "https://127.0.0.1:8937", "https://127.0.0.1:8936"}
 	assert := assert.New(t)
-	require := require.New(t)
 
 	// creating NewOrchestratorPool with orch addresses
-	offchainOrch := NewOrchestratorPool(node, addresses)
-	for i, uri := range offchainOrch.uris {
-		assert.Equal(uri.String(), expectedOffchainOrch.uris[i].String())
-	}
+	rand.Seed(321)
+	perm = func(len int) []int { return rand.Perm(3) }
 
-	// creating new OrchestratorPool with different first value
-	addresses[0] = "https://127.0.0.1:89"
-	expectedOffchainOrch = StubOrchestratorPool(addresses)
-	assert.NotEqual(offchainOrch.uris[0].String(), expectedOffchainOrch.uris[0].String())
+	offchainOrch := NewOrchestratorPool(node, addresses)
+
+	for i, uri := range offchainOrch.uris {
+		assert.Equal(uri.String(), expected[i])
+	}
 
 	orchestrators := StubOrchestrators(addresses)
 	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
 
-	expectedRegisteredTranscoders, err := node.Eth.RegisteredTranscoders()
-	require.Nil(err)
-
 	// testing NewOnchainOrchestratorPool
+	rand.Seed(321)
+	perm = func(len int) []int { return rand.Perm(3) }
 	offchainOrchFromOnchainList := NewOnchainOrchestratorPool(node)
 	for i, uri := range offchainOrchFromOnchainList.uris {
-		assert.Equal(uri.String(), expectedRegisteredTranscoders[i].ServiceURI)
+		assert.Equal(uri.String(), expected[i])
 	}
 }
