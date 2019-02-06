@@ -354,9 +354,9 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	}
 
 	segHash := crypto.Keccak256(segHashes...)
-	tr.Sig, err = n.Eth.Sign(segHash)
-	if err != nil {
-		glog.Error("Unable to sign hash of transcoded segment hashes")
+	tr.Sig, tr.Err = n.Eth.Sign(segHash)
+	if tr.Err != nil {
+		glog.Error("Unable to sign hash of transcoded segment hashes: ", tr.Err)
 	}
 	return &tr
 }

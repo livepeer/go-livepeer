@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/pm"
@@ -43,15 +42,10 @@ var videoProfiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30f
 func TestTranscode(t *testing.T) {
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	db, err := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
-	if err != nil {
-		t.Error("Error initializing DB: ", err)
-	}
-	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db)
 	defer os.RemoveAll(tmp)
+	n, _ := NewLivepeerNode(seth, tmp, nil)
 	ffmpeg.InitFFmpeg()
 
 	ss := StubSegment()
@@ -85,79 +79,51 @@ func TestTranscode(t *testing.T) {
 	// TODO check transcode loop expiry, storage, sig construction, etc
 }
 
-func StubTranscodeConfig() transcodeConfig {
-	return transcodeConfig{
-		OS:      nil,
-		LocalOS: nil,
+func TestTranscodeSeg(t *testing.T) {
+	tmp, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(tmp)
+
+	profiles := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
+	n, _ := NewLivepeerNode(nil, tmp, nil)
+	n.Transcoder = &StubTranscoder{Profiles: profiles}
+
+	conf := transcodeConfig{LocalOS: (drivers.NewMemoryDriver(nil)).NewSession("")}
+	md := &SegTranscodingMetadata{Profiles: profiles}
+	seg := StubSegment()
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Test offchain mode
+	require.Nil(n.Eth) // sanity check the offchain precondition of a nil eth
+	res := n.transcodeSeg(conf, seg, md)
+	assert.Nil(res.Err)
+	assert.Nil(res.Sig)
+	// sanity check results
+	resBytes, _ := n.Transcoder.Transcode("", profiles)
+	assert.Equal(resBytes, res.Data)
+
+	// Test onchain mode
+	n.Eth = &eth.StubClient{}
+	res = n.transcodeSeg(conf, seg, md)
+	assert.Nil(res.Err)
+	assert.NotNil(res.Sig)
+	// check sig
+	resHashes := make([][]byte, len(profiles))
+	for i, v := range resBytes {
+		resHashes[i] = ethCrypto.Keccak256(v)
 	}
-}
-
-func TestTranscodeSeg_OffchainMode_ReturnsEmptySignature(t *testing.T) {
-	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
-	db, err := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
-	require := require.New(t)
-	require.Nil(err)
-	defer db.Close()
-
-	tmp, err := ioutil.TempDir("", "")
-	require.Nil(err)
-	n, err := NewLivepeerNode(nil, tmp, db)
-	require.Nil(err)
-
-	// mock transcoder
-	n.Transcoder = NewLocalTranscoder(tmp)
-	ffmpeg.InitFFmpeg()
-	defer os.RemoveAll(tmp)
-
-	// mock transcodeSeg
-	transcodeConfig := StubTranscodeConfig()
-	segment := StubSegment()
-	segmentMetadata := &SegTranscodingMetadata{Profiles: videoProfiles}
-	transcodeResult := n.transcodeSeg(transcodeConfig, segment, segmentMetadata)
-
-	assert := assert.New(t)
-	assert.Nil(transcodeResult.Sig)
-}
-
-func TestTranscodeSeg_OnchainMode_ReturnsSignature(t *testing.T) {
-	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
-	db, err := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
-	require := require.New(t)
-	require.Nil(err)
-	defer db.Close()
-
-	tmp, err := ioutil.TempDir("", "")
-	require.Nil(err)
-	seth := &eth.StubClient{}
-	n, err := NewLivepeerNode(seth, tmp, db)
-	require.Nil(err)
-
-	// mock transcoder
-	n.Transcoder = NewLocalTranscoder(tmp)
-	ffmpeg.InitFFmpeg()
-	defer os.RemoveAll(tmp)
-
-	// mock transcodeSeg
-	transcodeConfig := StubTranscodeConfig()
-	segment := StubSegment()
-	segmentMetadata := &SegTranscodingMetadata{Profiles: videoProfiles}
-	transcodeResult := n.transcodeSeg(transcodeConfig, segment, segmentMetadata)
-
-	assert := assert.New(t)
-	assert.NotNil(transcodeResult.Sig)
+	resHash := ethCrypto.Keccak256(resHashes...)
+	assert.Equal(resHash, res.Sig)
 }
 
 func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T) {
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
-	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db)
 	defer os.RemoveAll(tmp)
+	n, _ := NewLivepeerNode(seth, tmp, nil)
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()
 	md := &SegTranscodingMetadata{Profiles: videoProfiles}
@@ -182,13 +148,11 @@ func TestTranscodeLoop_GivenOnePMSessionAtVideoSessionTimeout_RedeemsOneSession(
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
-	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db)
-	n.Recipient = recipient
 	defer os.RemoveAll(tmp)
+	n, _ := NewLivepeerNode(seth, tmp, nil)
+	n.Recipient = recipient
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()
 	md := &SegTranscodingMetadata{Profiles: videoProfiles}
@@ -216,13 +180,11 @@ func TestTranscodeLoop_GivenMultiplePMSessionAtVideoSessionTimeout_RedeemsAllSes
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
-	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db)
-	n.Recipient = recipient
 	defer os.RemoveAll(tmp)
+	n, _ := NewLivepeerNode(seth, tmp, nil)
+	n.Recipient = recipient
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()
 	md := &SegTranscodingMetadata{Profiles: videoProfiles}
@@ -260,13 +222,11 @@ func TestTranscodeLoop_GivenMultiplePMSessionsAtVideoSessionTimeout_CleansSessio
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
-	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db)
-	n.Recipient = recipient
 	defer os.RemoveAll(tmp)
+	n, _ := NewLivepeerNode(seth, tmp, nil)
+	n.Recipient = recipient
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()
 	md := &SegTranscodingMetadata{Profiles: videoProfiles}
@@ -296,13 +256,11 @@ func TestTranscodeLoop_GivenNoPMSessionAtVideoSessionTimeout_DoesntTryToRedeem(t
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
-	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db)
-	n.Recipient = recipient
 	defer os.RemoveAll(tmp)
+	n, _ := NewLivepeerNode(seth, tmp, nil)
+	n.Recipient = recipient
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()
 	md := &SegTranscodingMetadata{Profiles: videoProfiles}
@@ -322,13 +280,11 @@ func TestTranscodeLoop_GivenRedeemErrorAtVideoSessionTimeout_ErrorLogIsWritten(t
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
-	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db)
-	n.Recipient = recipient
 	defer os.RemoveAll(tmp)
+	n, _ := NewLivepeerNode(seth, tmp, nil)
+	n.Recipient = recipient
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()
 	md := &SegTranscodingMetadata{Profiles: videoProfiles}
@@ -356,13 +312,11 @@ func TestTranscodeLoop_GivenRedeemErrorAtVideoSessionTimeout_StillCleanspmSessio
 	recipient := new(pm.MockRecipient)
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
-	defer db.Close()
 	seth := &eth.StubClient{}
 	tmp, _ := ioutil.TempDir("", "")
-	n, _ := NewLivepeerNode(seth, tmp, db)
-	n.Recipient = recipient
 	defer os.RemoveAll(tmp)
+	n, _ := NewLivepeerNode(seth, tmp, nil)
+	n.Recipient = recipient
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()
 	md := &SegTranscodingMetadata{Profiles: videoProfiles}
