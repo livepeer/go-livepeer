@@ -1,0 +1,49 @@
+# Docker file for building livepeer binary on debian
+FROM debian:stretch as builder
+
+ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
+WORKDIR /root
+
+RUN apt update \
+    && apt install -y build-essential pkg-config autoconf gnutls-dev git
+
+COPY install_ffmpeg.sh install_ffmpeg.sh
+RUN ./install_ffmpeg.sh
+
+
+FROM golang:1-stretch as builder2
+ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
+WORKDIR /root
+RUN apt update \
+    && apt install -y \
+    git gcc g++ gnutls-dev 
+    # git gcc g++ gnutls-dev linux-headers
+COPY --from=builder /root/compiled /root/compiled/
+
+ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
+WORKDIR /go/src/github.com/livepeer/go-livepeer
+
+RUN go get github.com/golang/glog
+RUN go get github.com/ericxtang/m3u8
+RUN go get github.com/aws/aws-sdk-go/aws
+RUN go get -u google.golang.org/grpc
+RUN go get github.com/pkg/errors
+RUN go get github.com/stretchr/testify/mock
+
+COPY . .
+RUN go build -v cmd/livepeer/livepeer.go
+
+FROM debian:stretch-slim
+
+WORKDIR /root
+# RUN apt update && apt install -y gnutls-dev ca-certificates
+# RUN apt update && apt install -y gnutls-dev ca-certificates jq && apt clean
+# RUN apt update && apt install -y gnutls ca-certificates jq && apt clean
+RUN apt update && apt install -y  ca-certificates jq && apt clean
+RUN mkdir -p /root/lpDev/mainnet
+RUN mkdir -p /root/.lpData/mainnet/keystore && \
+  mkdir -p /root/.lpData/rinkeby/keystore && \
+  mkdir -p /root/.lpData/devenv/keystore && mkdir -p /root/.lpData/offchain/keystore
+COPY --from=builder2 /go/src/github.com/livepeer/go-livepeer/livepeer /usr/bin/livepeer
+
+# Build Docker image: docker build -t livepeerbinary:debian -f Dockerfile.debian .
