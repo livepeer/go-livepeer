@@ -217,10 +217,11 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 		}
 		cond.L.Unlock()
 
-		// if !eth.VerifySig(transcoderAddress, crypto.Keccak256(segHashes...), res.Sig) { // need transcoder address here
-		// 	glog.Error("Sig check failed for segment ", seg.SeqNo)
-		// 	return
-		// }
+		ticketParams := cxn.sess.OrchestratorInfo.GetTicketParams()
+		if !pm.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
+			glog.Error("Sig check failed for segment ", seg.SeqNo)
+			return
+		}
 
 		glog.V(common.DEBUG).Info("Successfully validated segment ", seg.SeqNo)
 	}()
