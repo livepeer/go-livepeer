@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/drivers"
-	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 
@@ -103,12 +102,7 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 }
 
 //StartServer starts the LPMS server
-func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegment *big.Int, transcodingOptions string) error {
-	if s.LivepeerNode.Eth != nil {
-		BroadcastPrice = maxPricePerSegment
-		glog.V(common.SHORT).Infof("Transcode Job Price: %v", eth.FormatUnits(BroadcastPrice, "ETH"))
-	}
-
+func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string) error {
 	bProfiles := make([]ffmpeg.VideoProfile, 0)
 	for _, opt := range strings.Split(transcodingOptions, ",") {
 		p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]

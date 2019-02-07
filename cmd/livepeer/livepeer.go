@@ -45,8 +45,6 @@ var (
 	EthTxTimeout = 600 * time.Second
 )
 
-const RinkebyControllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
-const MainnetControllerAddr = "0xf96d54e490317c557a967abfa5d6e33006be69b3"
 const RtmpPort = "1935"
 const RpcPort = "8935"
 const CliPort = "7935"
@@ -60,67 +58,92 @@ func main() {
 	if err != nil {
 		glog.Fatalf("Cannot find current user: %v", err)
 	}
-	vFlag := flag.Lookup("v") //We preserve this flag before resetting all the flags.  Not a scalable approach, but it'll do for now.  More discussions here - https://github.com/livepeer/go-livepeer/pull/617
-
+	vFlag := flag.Lookup("v")
+	//We preserve this flag before resetting all the flags.  Not a scalable approach, but it'll do for now.  More discussions here - https://github.com/livepeer/go-livepeer/pull/617
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
-	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
+	// Network & Addresses:
+	network := flag.String("network", "", "Network to connect to")
 	rtmpAddr := flag.String("rtmpAddr", "127.0.0.1:"+RtmpPort, "Address to bind for RTMP commands")
 	cliAddr := flag.String("cliAddr", "127.0.0.1:"+CliPort, "Address to bind for  CLI commands")
 	httpAddr := flag.String("httpAddr", "", "Address to bind for HTTP commands")
-	orchAndTrans := flag.Bool("transcoder", false, "Set to true to be a orchestrator+transcoder")
-	orchestrator := flag.Bool("orchestrator", false, "Set to true to be a standalone orchestrator")
-	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
+	serviceAddr := flag.String("serviceAddr", "", "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
+	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
+
+	// Transcoding:
+	orchestrator := flag.Bool("orchestrator", false, "Set to true to be an orchestrator")
+	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
+	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
+	maxSessions := flag.Int("maxSessions", 10, "Orchestrator only. Maximum number of concurrent transcoding sessions")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
+
+	// Onchain:
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
 	ethPassword := flag.String("ethPassword", "", "Password for existing Eth account address")
 	ethKeystorePath := flag.String("ethKeystorePath", "", "Path for the Eth Key")
-	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
 	ethUrl := flag.String("ethUrl", "", "geth/parity rpc or websocket url")
-	rinkeby := flag.Bool("rinkeby", false, "Set to true to connect to rinkeby")
-	devenv := flag.Bool("devenv", false, "Set to true to enable devenv")
-	controllerAddr := flag.String("controllerAddr", "", "Protocol smart contract address")
+	ethController := flag.String("ethController", "", "Protocol smart contract address")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 0, "Gas price for ETH transactions")
-	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
-	monhost := flag.String("monitorhost", "", "host name for the metrics data collector")
-	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
-	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
-	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
-	serviceAddr := flag.String("serviceAddr", "", "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
+	faceValue := flag.Float64("faceValue", 0, "The faceValue to expect in PM tickets, denominated in ETH (e.g. 0.3)")
+	winProb := flag.Float64("winProb", 0, "The win probability to expect in PM tickets, as a percent float between 0 and 100 (e.g. 5.3)")
+
+	// Metrics & logging:
+	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
+	monHost := flag.String("monitorhost", "", "host name for the metrics data collector")
+	version := flag.Bool("version", false, "Print out the version")
+	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
+	logIPFS := flag.Bool("logIPFS", false, "Set to true if log files should not be generated") // unused until we re-enable IPFS
+
+	// Storage:
+	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
+	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path") // unused until we re-enable IPFS
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
 	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
 	gsKey := flag.String("gskey", "", "Google Storage private key file name (in json format)")
-	version := flag.Bool("version", false, "Print out the version")
-	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
-	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
-	standaloneTranscoder := flag.Bool("standaloneTranscoder", false, "Set to true to be a standalone transcoder")
-	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
-	faceValue := flag.Float64("faceValue", 0, "The faceValue to expect in PM tickets, denominated in ETH (e.g. 0.3)")
-	winProb := flag.Float64("winProb", 0, "The win probability to expect in PM tickets, as a percent float between 0 and 100 (e.g. 5.3)")
-	maxSessions := flag.Int("maxSessions", 10, "Orchestrator only. Maximum number of concurrent transcoding sessions")
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
-
-	var transcoder bool
 
 	if *version {
 		fmt.Println("Livepeer Node Version: " + core.LivepeerVersion)
 		return
 	}
 
-	var orchAddresses []string
+	type NetworkConfig struct {
+		ethUrl        string
+		ethController string
+		monHost       string
+	}
 
+	configOptions := map[string]*NetworkConfig{
+		"rinkeby": {
+			ethUrl:        "wss://rinkeby.infura.io/ws",
+			ethController: "0x37dc71366ec655093b9930bc816e16e6b587f968",
+			monHost:       "http://metrics-rinkeby.livepeer.org/api/events",
+		},
+		"mainnet": {
+			ethUrl:        "wss://mainnet.infura.io/ws",
+			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
+			monHost:       "http://metrics-mainnet.livepeer.org/api/events",
+		},
+	}
+
+	// temporary until we fully separate transcoder and orch nodes
+	if *transcoder || *orchestrator {
+		*transcoder = true
+		*orchestrator = true
+	}
+
+	// If multiple orchAddresses specified, make sure other necessary flags present and clean up the list
+	var orchAddresses []string
 	if len(*orchAddr) > 0 {
-		if *standaloneTranscoder && *orchSecret == "" {
-			glog.Error("Running a standalone transcoder requires both -orchAddr and -orchSecret")
+		if *transcoder && !*orchestrator && *orchSecret == "" {
+			glog.Error("Running a standalone transcoder/orchestrator requires both -orchAddr and -orchSecret")
 			return
-		} else if *standaloneTranscoder {
-			transcoder = true
 		}
 
 		orchAddresses = strings.Split(*orchAddr, ",")
@@ -130,47 +153,30 @@ func main() {
 		}
 	}
 
-	if *rinkeby {
-		if !*offchain && !transcoder {
-			if *ethUrl == "" {
-				*ethUrl = "wss://rinkeby.infura.io/ws"
+	/// Setting config options based on specified network
+	if *network != "" {
+		if netw, ok := configOptions[*network]; ok {
+			if *orchestrator {
+				if *ethUrl == "" {
+					*ethUrl = netw.ethUrl
+				}
+				if *ethController == "" {
+					*ethController = netw.ethController
+				}
 			}
-			if *controllerAddr == "" {
-				*controllerAddr = RinkebyControllerAddr
+			if *monitor && *monHost == "" {
+				*monHost = netw.monHost
 			}
-			glog.Infof("***Livepeer is running on the Rinkeby test network: %v***", RinkebyControllerAddr)
-			*datadir = *datadir + "/rinkeby"
+			glog.Infof("***Livepeer is running on the %v*** network: %v***", *network, *ethController)
 		} else {
-			*datadir = *datadir + "/offchain"
+			glog.Infof("***Livepeer is running on the %v*** network", *network)
 		}
-
-		if *monitor && *monhost == "" {
-			*monhost = "http://metrics-rinkeby.livepeer.org/api/events"
-		}
-	} else if *devenv {
-		*datadir = *datadir + "/devenv"
 	} else {
-		if !*offchain && !transcoder {
-			if *ethUrl == "" {
-				*ethUrl = "wss://mainnet.infura.io/ws"
-			}
-			if *controllerAddr == "" {
-				*controllerAddr = MainnetControllerAddr
-			}
-			glog.Infof("***Livepeer is running on the Ethereum main network: %v***", MainnetControllerAddr)
-			*datadir = *datadir + "/mainnet"
-		} else {
-			*datadir = *datadir + "/offchain"
-		}
-		if *monitor && *monhost == "" {
-			*monhost = "http://metrics-mainnet.livepeer.org/api/events"
-		}
+		*network = "offchain"
+		glog.Infof("***Livepeer is in off-chain mode***")
 	}
 
-	if *orchAndTrans {
-		transcoder = true
-		*orchestrator = true
-	}
+	*datadir = *datadir + "/" + *network
 
 	//Make sure datadir is present
 	if _, err := os.Stat(*datadir); os.IsNotExist(err) {
@@ -197,20 +203,20 @@ func main() {
 		n.OrchSecret = *orchSecret
 	}
 
-	if transcoder {
+	if *transcoder {
 		n.Transcoder = core.NewLocalTranscoder(*datadir)
 	}
 
 	if *orchestrator {
 		n.NodeType = core.OrchestratorNode
-	} else if transcoder {
+	} else if *transcoder {
 		n.NodeType = core.TranscoderNode
 	} else {
 		n.NodeType = core.BroadcasterNode
 	}
 
 	if *monitor {
-		glog.Infof("Monitoring endpoint: %s", *monhost)
+		glog.Infof("Monitoring endpoint: %s", *monHost)
 		lpmon.Enabled = true
 		nodeID := *ethAcctAddr
 		if nodeID == "" {
@@ -224,7 +230,7 @@ func main() {
 		case core.TranscoderNode:
 			nodeType = "trcr"
 		}
-		lpmon.Init(*monhost, nodeType, nodeID)
+		lpmon.Init(*monHost, nodeType, nodeID)
 	}
 
 	if n.NodeType == core.TranscoderNode {
@@ -237,7 +243,7 @@ func main() {
 		return
 	}
 
-	if *offchain {
+	if *network == "offchain" {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	} else {
 		var keystoreDir string
@@ -254,14 +260,14 @@ func main() {
 
 		//Get the Eth client connection information
 		gethUrl := ""
-		if *ethIpcPath != "" {
+		if *ethUrl != "" {
 			//Connect to specified IPC file
-			gethUrl = *ethIpcPath
+			gethUrl = *ethUrl
 		} else if *ethUrl != "" {
 			//Connect to specified websocket
 			gethUrl = *ethUrl
 		} else {
-			glog.Errorf("Need to specify ethIpcPath or ethWsUrl")
+			glog.Errorf("Need to specify ethUrl or ethWsUrl")
 			return
 		}
 
@@ -272,7 +278,7 @@ func main() {
 			return
 		}
 
-		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, backend, ethcommon.HexToAddress(*controllerAddr), EthTxTimeout)
+		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, backend, ethcommon.HexToAddress(*ethController), EthTxTimeout)
 		if err != nil {
 			glog.Errorf("Failed to create client: %v", err)
 			return
@@ -400,7 +406,7 @@ func main() {
 	if n.NodeType == core.BroadcasterNode {
 		if len(orchAddresses) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchAddresses)
-		} else if !*offchain {
+		} else if *network != "offchain" {
 			n.OrchestratorPool = discovery.NewDBOrchestratorPoolCache(n)
 		}
 		if n.OrchestratorPool == nil {
@@ -411,7 +417,7 @@ func main() {
 	//Create Livepeer Node
 
 	// Set up logging
-	if !*noIPFSLogFiles {
+	if !*logIPFS {
 		ipfslogging.LdJSONFormatter()
 		logger := &lumberjack.Logger{
 			Filename:   path.Join(*ipfsPath, "logs", "ipfs.log"),
@@ -431,7 +437,6 @@ func main() {
 	msCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bigMaxPricePerSegment, err := common.ParseBigInt(*maxPricePerSegment)
 	if err != nil {
 		glog.Errorf("Error setting max price per segment: %v", err)
 		return
@@ -447,7 +452,7 @@ func main() {
 		close(wc)
 	}()
 	go func() {
-		ec <- s.StartMediaServer(msCtx, bigMaxPricePerSegment, *transcodingOptions)
+		ec <- s.StartMediaServer(msCtx, *transcodingOptions)
 	}()
 
 	go func() {
