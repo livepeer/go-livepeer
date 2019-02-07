@@ -5,7 +5,7 @@ export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig
 
 if [ ! -e "$HOME/nasm/nasm" ]; then
   # sudo apt-get -y install asciidoc xmlto # this fails :(
-  git clone -b nasm-2.13.02 http://repo.or.cz/nasm.git "$HOME/nasm"
+  git clone -b nasm-2.14.02 http://repo.or.cz/nasm.git "$HOME/nasm"
   cd "$HOME/nasm"
   ./autogen.sh
   ./configure --prefix="$HOME/compiled"
