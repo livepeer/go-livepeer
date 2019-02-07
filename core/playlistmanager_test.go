@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"net/url"
 	"testing"
 
 	"github.com/ericxtang/m3u8"
@@ -145,7 +146,8 @@ func TestCleanup(t *testing.T) {
 	vProfile := ffmpeg.P144p30fps16x9
 	hlsStrmID := MakeStreamID(RandomManifestID(), &vProfile)
 	mid := hlsStrmID.ManifestID
-	osd := drivers.NewMemoryDriver("test://some.host")
+	url, _ := url.ParseRequestURI("test://some.host")
+	osd := drivers.NewMemoryDriver(url)
 	osSession := osd.NewSession("testPath")
 	memoryOS := osSession.(*drivers.MemorySession)
 	testData := []byte{1, 2, 3, 4}

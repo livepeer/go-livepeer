@@ -42,7 +42,7 @@ var videoProfiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30f
 
 func TestTranscode(t *testing.T) {
 	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	db, err := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
 	if err != nil {
 		t.Error("Error initializing DB: ", err)
@@ -87,7 +87,7 @@ func TestTranscode(t *testing.T) {
 
 func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T) {
 	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
 	defer db.Close()
 	seth := &eth.StubClient{}
@@ -117,7 +117,7 @@ func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T
 func TestTranscodeLoop_GivenOnePMSessionAtVideoSessionTimeout_RedeemsOneSession(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
 	defer db.Close()
 	seth := &eth.StubClient{}
@@ -151,7 +151,7 @@ func TestTranscodeLoop_GivenOnePMSessionAtVideoSessionTimeout_RedeemsOneSession(
 func TestTranscodeLoop_GivenMultiplePMSessionAtVideoSessionTimeout_RedeemsAllSessions(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
 	defer db.Close()
 	seth := &eth.StubClient{}
@@ -195,7 +195,7 @@ func TestTranscodeLoop_GivenMultiplePMSessionAtVideoSessionTimeout_RedeemsAllSes
 func TestTranscodeLoop_GivenMultiplePMSessionsAtVideoSessionTimeout_CleansSessionIDMemoryCache(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
 	defer db.Close()
 	seth := &eth.StubClient{}
@@ -231,7 +231,7 @@ func TestTranscodeLoop_GivenMultiplePMSessionsAtVideoSessionTimeout_CleansSessio
 func TestTranscodeLoop_GivenNoPMSessionAtVideoSessionTimeout_DoesntTryToRedeem(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
 	defer db.Close()
 	seth := &eth.StubClient{}
@@ -257,7 +257,7 @@ func TestTranscodeLoop_GivenNoPMSessionAtVideoSessionTimeout_DoesntTryToRedeem(t
 func TestTranscodeLoop_GivenRedeemErrorAtVideoSessionTimeout_ErrorLogIsWritten(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
 	defer db.Close()
 	seth := &eth.StubClient{}
@@ -291,7 +291,7 @@ func TestTranscodeLoop_GivenRedeemErrorAtVideoSessionTimeout_ErrorLogIsWritten(t
 func TestTranscodeLoop_GivenRedeemErrorAtVideoSessionTimeout_StillCleanspmSessionsCache(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	db, _ := common.InitDB("file:TestTranscode?mode=memory&cache=shared")
 	defer db.Close()
 	seth := &eth.StubClient{}

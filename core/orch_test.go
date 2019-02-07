@@ -251,7 +251,7 @@ func TestGetSegmentChan(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	segData := StubSegTranscodingMetadata()
 
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	sc, err := n.getSegmentChan(segData)
 	if err != nil {
 		t.Error("error with getSegmentChan", err)
@@ -301,7 +301,8 @@ func TestGetSegmentChan(t *testing.T) {
 }
 
 func TestOrchCheckCapacity(t *testing.T) {
-	drivers.NodeStorage = drivers.NewMemoryDriver("")
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	n, _ := NewLivepeerNode(nil, "", nil)
 	o := NewOrchestrator(n)
 	md := StubSegTranscodingMetadata()
