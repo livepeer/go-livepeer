@@ -63,7 +63,7 @@ func main() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	// Network & Addresses:
-	network := flag.String("network", "", "Network to connect to")
+	network := flag.String("network", "offchain", "Network to connect to")
 	rtmpAddr := flag.String("rtmpAddr", "127.0.0.1:"+RtmpPort, "Address to bind for RTMP commands")
 	cliAddr := flag.String("cliAddr", "127.0.0.1:"+CliPort, "Address to bind for  CLI commands")
 	httpAddr := flag.String("httpAddr", "", "Address to bind for HTTP commands")
@@ -73,6 +73,7 @@ func main() {
 	// Transcoding:
 	orchestrator := flag.Bool("orchestrator", false, "Set to true to be an orchestrator")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
+	broadcaster := flag.Bool("broadcaster", false, "Set to true to be a broadcaster")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
 	maxSessions := flag.Int("maxSessions", 10, "Orchestrator only. Maximum number of concurrent transcoding sessions")
@@ -92,7 +93,7 @@ func main() {
 
 	// Metrics & logging:
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
-	monHost := flag.String("monitorhost", "", "host name for the metrics data collector")
+	monUrl := flag.String("monUrl", "", "host name for the metrics data collector")
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
 	logIPFS := flag.Bool("logIPFS", false, "Set to true if log files should not be generated") // unused until we re-enable IPFS
@@ -116,29 +117,23 @@ func main() {
 	type NetworkConfig struct {
 		ethUrl        string
 		ethController string
-		monHost       string
+		monUrl        string
 	}
 
 	configOptions := map[string]*NetworkConfig{
 		"rinkeby": {
 			ethUrl:        "wss://rinkeby.infura.io/ws",
 			ethController: "0x37dc71366ec655093b9930bc816e16e6b587f968",
-			monHost:       "http://metrics-rinkeby.livepeer.org/api/events",
+			monUrl:        "http://metrics-rinkeby.livepeer.org/api/events",
 		},
 		"mainnet": {
 			ethUrl:        "wss://mainnet.infura.io/ws",
 			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
-			monHost:       "http://metrics-mainnet.livepeer.org/api/events",
+			monUrl:        "http://metrics-mainnet.livepeer.org/api/events",
 		},
 	}
 
-	// temporary until we fully separate transcoder and orch nodes
-	if *transcoder || *orchestrator {
-		*transcoder = true
-		*orchestrator = true
-	}
-
-	// If multiple orchAddresses specified, make sure other necessary flags present and clean up the list
+	// If multiple orchAddresses specified, ensure other necessary flags present and clean up list
 	var orchAddresses []string
 	if len(*orchAddr) > 0 {
 		if *transcoder && !*orchestrator && *orchSecret == "" {
@@ -153,30 +148,25 @@ func main() {
 		}
 	}
 
-	/// Setting config options based on specified network
-	if *network != "" {
-		if netw, ok := configOptions[*network]; ok {
-			if *orchestrator {
-				if *ethUrl == "" {
-					*ethUrl = netw.ethUrl
-				}
-				if *ethController == "" {
-					*ethController = netw.ethController
-				}
-			}
-			if *monitor && *monHost == "" {
-				*monHost = netw.monHost
-			}
-			glog.Infof("***Livepeer is running on the %v*** network: %v***", *network, *ethController)
-		} else {
-			glog.Infof("***Livepeer is running on the %v*** network", *network)
+	// Setting config options based on specified network
+	if netw, ok := configOptions[*network]; ok {
+		if *ethUrl == "" {
+			*ethUrl = netw.ethUrl
 		}
+		if *ethController == "" {
+			*ethController = netw.ethController
+		}
+		if *monitor && *monUrl == "" {
+			*monUrl = netw.monUrl
+		}
+		glog.Infof("***Livepeer is running on the %v*** network: %v***", *network, *ethController)
 	} else {
-		*network = "offchain"
-		glog.Infof("***Livepeer is in off-chain mode***")
+		glog.Infof("***Livepeer is running on the %v*** network", *network)
 	}
 
-	*datadir = *datadir + "/" + *network
+	if *datadir == "" {
+		*datadir = filepath.Join(usr.HomeDir, ".lpData", *network)
+	}
 
 	//Make sure datadir is present
 	if _, err := os.Stat(*datadir); os.IsNotExist(err) {
@@ -211,12 +201,12 @@ func main() {
 		n.NodeType = core.OrchestratorNode
 	} else if *transcoder {
 		n.NodeType = core.TranscoderNode
-	} else {
+	} else if *broadcaster {
 		n.NodeType = core.BroadcasterNode
 	}
 
 	if *monitor {
-		glog.Infof("Monitoring endpoint: %s", *monHost)
+		glog.Infof("Monitoring endpoint: %s", *monUrl)
 		lpmon.Enabled = true
 		nodeID := *ethAcctAddr
 		if nodeID == "" {
@@ -230,7 +220,7 @@ func main() {
 		case core.TranscoderNode:
 			nodeType = "trcr"
 		}
-		lpmon.Init(*monHost, nodeType, nodeID)
+		lpmon.Init(*monUrl, nodeType, nodeID)
 	}
 
 	if n.NodeType == core.TranscoderNode {
@@ -259,20 +249,13 @@ func main() {
 		}
 
 		//Get the Eth client connection information
-		gethUrl := ""
-		if *ethUrl != "" {
-			//Connect to specified IPC file
-			gethUrl = *ethUrl
-		} else if *ethUrl != "" {
-			//Connect to specified websocket
-			gethUrl = *ethUrl
-		} else {
-			glog.Errorf("Need to specify ethUrl or ethWsUrl")
+		if *ethUrl == "" {
+			glog.Error("Need to specify ethUrl")
 			return
 		}
 
 		//Set up eth client
-		backend, err := ethclient.Dial(gethUrl)
+		backend, err := ethclient.Dial(*ethUrl)
 		if err != nil {
 			glog.Errorf("Failed to connect to Ethereum client: %v", err)
 			return
@@ -388,8 +371,7 @@ func main() {
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)
 		if err != nil {
-			glog.Error("Error getting service URI: ", err)
-			return
+			glog.Fatal("Error getting service URI: ", err)
 		}
 		n.SetServiceURI(suri)
 		// if http addr is not provided, listen to all ifaces
@@ -417,7 +399,7 @@ func main() {
 	//Create Livepeer Node
 
 	// Set up logging
-	if !*logIPFS {
+	if *logIPFS {
 		ipfslogging.LdJSONFormatter()
 		logger := &lumberjack.Logger{
 			Filename:   path.Join(*ipfsPath, "logs", "ipfs.log"),
