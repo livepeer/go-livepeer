@@ -30,7 +30,37 @@ RUN go get -u google.golang.org/grpc
 RUN go get github.com/pkg/errors
 RUN go get github.com/stretchr/testify/mock
 
-COPY . .
+COPY vendor vendor
+COPY .deps .deps
+
+# this will pre-build and cache files in /vendor dir
+RUN go list -v -export $(cat .deps)
+
+# ipfs, monitor and pm dirs special cased as presumanbly being
+# less frequent changed
+# adding 'export` to other dirs probably won't add any improvements
+# to re-build speed
+COPY ipfs ipfs
+RUN go list -v -export github.com/livepeer/go-livepeer/ipfs
+COPY monitor monitor
+RUN go list -v -export github.com/livepeer/go-livepeer/monitor
+COPY pm pm
+RUN go list -v -export github.com/livepeer/go-livepeer/pm
+
+# RUN go list -export all
+# RUN find vendor -maxdepth 2 -mindepth 2 -type d -exec sh -c 'go install -i github.com/myorg/myproject/{}/... || true' \;
+# COPY main.go .
+
+# COPY . .
+COPY cmd cmd
+COPY common common
+COPY core core
+COPY server server
+COPY discovery discovery
+COPY drivers drivers
+COPY net net
+COPY eth eth
+
 RUN go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(git describe --always --long --dirty)" -v cmd/livepeer/livepeer.go
 
 FROM debian:stretch-slim
