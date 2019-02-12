@@ -745,8 +745,10 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			}
 			d := struct {
 				Manifests map[string]string
+				Version   string
 			}{
 				Manifests: mstrs,
+				Version:   core.LivepeerVersion,
 			}
 			if data, err := json.Marshal(d); err == nil {
 				w.Header().Set("Content-Type", "application/json")
