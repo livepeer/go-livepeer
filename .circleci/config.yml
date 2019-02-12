@@ -34,7 +34,7 @@ jobs:
             gometalinter --disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm
 
       - run:
-          name: Complie CLI binary
+          name: Compile CLI binary
           command: |
             PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig go build -v cmd/livepeer_cli/*
 
