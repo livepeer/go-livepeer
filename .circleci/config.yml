@@ -36,7 +36,7 @@ jobs:
       - run:
           name: Complie CLI binary
           command: |
-            go build -v cmd/livepeer_cli/*
+            PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig go build -v cmd/livepeer_cli/*
 
       - run:
           name: Run unit tests
