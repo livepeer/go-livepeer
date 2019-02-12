@@ -48,7 +48,7 @@ func (w *wizard) registeredOrchestratorStats() map[int]common.Address {
 			eth.FormatPerc(t.PendingRewardCut),
 			eth.FormatPerc(t.PendingFeeShare),
 			eth.FormatUnits(t.PendingPricePerSegment, "ETH"),
-			t.GetServiceURI(),
+			t.ServiceURI,
 		})
 
 		orchestratorIDs[nextId] = t.Address
