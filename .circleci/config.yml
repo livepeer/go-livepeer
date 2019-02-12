@@ -34,6 +34,11 @@ jobs:
             gometalinter --disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm
 
       - run:
+          name: Complie CLI binary
+          command: |
+            go build -v cmd/livepeer_cli/*
+
+      - run:
           name: Run unit tests
           command: |
             trap "go-junit-report <${TEST_RESULTS}/go-test.out > ${TEST_RESULTS}/go-test-report.xml" EXIT
