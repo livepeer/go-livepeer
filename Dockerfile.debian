@@ -31,7 +31,7 @@ RUN go get github.com/pkg/errors
 RUN go get github.com/stretchr/testify/mock
 
 COPY . .
-RUN go build -v cmd/livepeer/livepeer.go
+RUN go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(git describe --always --long --dirty)" -v cmd/livepeer/livepeer.go
 
 FROM debian:stretch-slim
 
@@ -39,7 +39,7 @@ WORKDIR /root
 # RUN apt update && apt install -y gnutls-dev ca-certificates
 # RUN apt update && apt install -y gnutls-dev ca-certificates jq && apt clean
 # RUN apt update && apt install -y gnutls ca-certificates jq && apt clean
-RUN apt update && apt install -y  ca-certificates jq && apt clean
+RUN apt update && apt install -y  ca-certificates jq libgnutls30 && apt clean
 RUN mkdir -p /root/lpDev/mainnet
 RUN mkdir -p /root/.lpData/mainnet/keystore && \
   mkdir -p /root/.lpData/rinkeby/keystore && \
