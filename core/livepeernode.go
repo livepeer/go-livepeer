@@ -28,7 +28,12 @@ import (
 
 var ErrTranscoderAvail = errors.New("ErrTranscoderUnavailable")
 var ErrTranscode = errors.New("ErrTranscode")
-var LivepeerVersion = "0.3.1-unstable"
+
+// LivepeerVersion node version
+// content of this constant will be set at build time,
+// using -ldflags, combining content of `VERSION` file and
+// output of the `git describe` command.
+var LivepeerVersion = "undefined"
 
 type NodeType int
 
