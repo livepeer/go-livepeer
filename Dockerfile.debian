@@ -46,12 +46,9 @@ COPY monitor monitor
 RUN go list -v -export github.com/livepeer/go-livepeer/monitor
 COPY pm pm
 RUN go list -v -export github.com/livepeer/go-livepeer/pm
+COPY VERSION VERSION
 
-# RUN go list -export all
-# RUN find vendor -maxdepth 2 -mindepth 2 -type d -exec sh -c 'go install -i github.com/myorg/myproject/{}/... || true' \;
-# COPY main.go .
 
-# COPY . .
 COPY cmd cmd
 COPY common common
 COPY core core
@@ -60,15 +57,13 @@ COPY discovery discovery
 COPY drivers drivers
 COPY net net
 COPY eth eth
+COPY .git.describe .git.describe
 
-RUN go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(git describe --always --long --dirty)" -v cmd/livepeer/livepeer.go
+RUN go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)" -v cmd/livepeer/livepeer.go
 
 FROM debian:stretch-slim
 
 WORKDIR /root
-# RUN apt update && apt install -y gnutls-dev ca-certificates
-# RUN apt update && apt install -y gnutls-dev ca-certificates jq && apt clean
-# RUN apt update && apt install -y gnutls ca-certificates jq && apt clean
 RUN apt update && apt install -y  ca-certificates jq libgnutls30 && apt clean
 RUN mkdir -p /root/lpDev/mainnet
 RUN mkdir -p /root/.lpData/mainnet/keystore && \
