@@ -217,7 +217,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 		}
 		cond.L.Unlock()
 
-		ticketParams := cxn.sess.OrchestratorInfo.GetTicketParams()
+		ticketParams := sess.OrchestratorInfo.GetTicketParams()
 		if !pm.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
 			glog.Error("Sig check failed for segment ", seg.SeqNo)
 			return
