@@ -103,6 +103,9 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 	select {
 	case <-ctx.Done():
 		respLock.Lock()
+		if len(orchInfos) < numOrchestrators {
+			numOrchestrators = len(orchInfos)
+		}
 		returnOrchs := orchInfos[:numOrchestrators]
 		respLock.Unlock()
 		glog.Info("Done fetching orch info for orchestrators, context timeout: ", returnOrchs)
@@ -110,6 +113,9 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 		return returnOrchs, nil
 	case <-orchChan:
 		respLock.Lock()
+		if len(orchInfos) < numOrchestrators {
+			numOrchestrators = len(orchInfos)
+		}
 		returnOrchs := orchInfos[:numOrchestrators]
 		respLock.Unlock()
 		glog.Info("Done fetching orch info for orchestrators, numResponses fetched: ", returnOrchs)
