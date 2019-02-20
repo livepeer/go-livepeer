@@ -31,10 +31,15 @@ RUN go get github.com/pkg/errors
 RUN go get github.com/stretchr/testify/mock
 
 COPY vendor vendor
-COPY .deps .deps
+# .dockerbuild.deps contains list of packages used by go-client
+# needed to build them before building our code so it will be cached
+# by docker and reused on next builds.
+# it was generated manually by running `go build -v` and capturing output
+# should be updated only if we remove some dependency from vendor dir
+COPY .dockerbuild.deps .dockerbuild.deps
 
 # this will pre-build and cache files in /vendor dir
-RUN go list -v -export $(cat .deps)
+RUN go list -v -export $(cat .dockerbuild.deps)
 
 # ipfs, monitor and pm dirs special cased as presumanbly being
 # less frequent changed
