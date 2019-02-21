@@ -99,7 +99,7 @@ func main() {
 	logIPFS := flag.Bool("logIPFS", false, "Set to true if log files should not be generated") // unused until we re-enable IPFS
 
 	// Storage:
-	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
+	datadir := flag.String("datadir", "", "data directory")
 	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path") // unused until we re-enable IPFS
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
@@ -165,13 +165,17 @@ func main() {
 	}
 
 	if *datadir == "" {
-		*datadir = filepath.Join(usr.HomeDir, ".lpData", *network)
+		homedir := os.Getenv("HOME")
+		if homedir == "" {
+			homedir = usr.HomeDir
+		}
+		*datadir = filepath.Join(homedir, ".lpData", *network)
 	}
 
 	//Make sure datadir is present
 	if _, err := os.Stat(*datadir); os.IsNotExist(err) {
 		glog.Infof("Creating data dir: %v", *datadir)
-		if err = os.Mkdir(*datadir, 0755); err != nil {
+		if err = os.MkdirAll(*datadir, 0755); err != nil {
 			glog.Errorf("Error creating datadir: %v", err)
 		}
 	}
