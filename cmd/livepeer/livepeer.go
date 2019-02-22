@@ -372,6 +372,18 @@ func main() {
 		// TODO provide an option to disable this?
 		*rtmpAddr = defaultAddr(*rtmpAddr, "127.0.0.1", RtmpPort)
 		*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
+
+		// Set up orchestrator discovery
+		if len(orchAddresses) > 0 {
+			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchAddresses)
+		} else if *network != "offchain" {
+			n.OrchestratorPool = discovery.NewDBOrchestratorPoolCache(n)
+		}
+		if n.OrchestratorPool == nil {
+			// Not a fatal error; may continue operating in segment-only mode
+			glog.Error("No orchestrator specified; transcoding will not happen")
+		}
+
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)
 		if err != nil {
@@ -391,17 +403,6 @@ func main() {
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK
 		drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
-	}
-
-	if n.NodeType == core.BroadcasterNode {
-		if len(orchAddresses) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchAddresses)
-		} else if *network != "offchain" {
-			n.OrchestratorPool = discovery.NewDBOrchestratorPoolCache(n)
-		}
-		if n.OrchestratorPool == nil {
-			glog.Errorf("No orchestrator specified; transcoding will not happen")
-		}
 	}
 
 	//Create Livepeer Node
