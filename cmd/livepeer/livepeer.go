@@ -202,6 +202,8 @@ func main() {
 		n.NodeType = core.TranscoderNode
 	} else if *broadcaster {
 		n.NodeType = core.BroadcasterNode
+	} else {
+		glog.Fatalf("Node type not set; must be one of -broadcaster, -transcoder or -orchestrator")
 	}
 
 	if *monitor {
