@@ -136,11 +136,6 @@ func main() {
 	// If multiple orchAddresses specified, ensure other necessary flags present and clean up list
 	var orchAddresses []string
 	if len(*orchAddr) > 0 {
-		if *transcoder && !*orchestrator && *orchSecret == "" {
-			glog.Error("Running a standalone transcoder/orchestrator requires both -orchAddr and -orchSecret")
-			return
-		}
-
 		orchAddresses = strings.Split(*orchAddr, ",")
 		for i := range orchAddresses {
 			orchAddresses[i] = strings.TrimSpace(orchAddresses[i])
@@ -229,10 +224,13 @@ func main() {
 
 	if n.NodeType == core.TranscoderNode {
 		glog.Info("***Livepeer is in transcoder mode ***")
+		if n.OrchSecret == "" {
+			glog.Fatal("Missing -orchSecret")
+		}
 		if len(orchAddresses) > 0 {
 			server.RunTranscoder(n, orchAddresses[0])
 		} else {
-			glog.Errorf("No orchestrator specified; transcoding will not happen")
+			glog.Fatal("Missing -orchAddr")
 		}
 		return
 	}
@@ -381,6 +379,10 @@ func main() {
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
 		*httpAddr = defaultAddr(*httpAddr, "", n.GetServiceURI().Port())
+
+		if n.Transcoder == nil && n.OrchSecret == "" {
+			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
+		}
 	}
 	*cliAddr = defaultAddr(*cliAddr, "127.0.0.1", CliPort)
 
