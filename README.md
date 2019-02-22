@@ -40,7 +40,7 @@ You can also build the executables from scratch.
 ### Quick start
 - Make sure you have successfully gone through the steps in 'Installing Livepeer' and 'Additional Dependencies'.
 
-- Run `./livepeer -network rinkeby -currentManifest`.
+- Run `./livepeer -broadcaster -network rinkeby -currentManifest`.
 
 - Run `./livepeer_cli`.
   * You should see a wizard launch in the command line.
@@ -91,7 +91,7 @@ Livepeer node doesn't do any storage management, it only saves data and never de
 
 We'll walk through the steps of becoming a transcoder on the test network.  To learn more about the transcoder, refer to the [Livepeer whitepaper](https://github.com/livepeer/wiki/blob/master/WHITEPAPER.md) and the [Transcoding guide](http://livepeer.readthedocs.io/en/latest/transcoding.html).
 
-- `livepeer --network rinkeby --transcoder=true` to start the node as an orchestrator with an attached local transcoder .
+- `livepeer -orchestrator -transcoder -network rinkeby` to start the node as an orchestrator with an attached local transcoder .
 
 - `livepeer_cli` - make sure you have test ether and test Livepeer token.  Refer to the Quick Start section for getting test ether and test tokens.
 
@@ -107,7 +107,7 @@ We'll walk through the steps of becoming a transcoder on the test network.  To l
 
 Orchestrators can be run in standalone mode without an attached transcoder. Standalone transcoders will need to connect to this orchestrator in order for the orchestrator to process jobs.
 
-- `livepeer --network rinkeby --orchestrator=true -orchSecret asdf`
+- `livepeer -network rinkeby -orchestrator -orchSecret asdf`
 
 The orchSecret is a shared secret used to authenticate remote transcoders. It can be any arbitrary string.
 
@@ -115,7 +115,7 @@ The orchSecret is a shared secret used to authenticate remote transcoders. It ca
 
 A standalone transcoder can be run which connects to a remote orchestrator. The orchestrator will send transcoding tasks to this transcoder as segments come in.
 
-- `livepeer -transcoder=true -orchAddr 127.0.0.1:8935 -orchSecret asdf`
+- `livepeer -transcoder -orchAddr 127.0.0.1:8935 -orchSecret asdf`
 
 ## Contribution
 Thank you for your interest in contributing to the core software of Livepeer.
