@@ -1,3 +1,10 @@
 **/.git
-!.git/HEAD
-!.git/refs/heads
+livepeer
+livepeer_cli
+.lpdev2/
+Dockerfile
+Dockerfile.alpine
+Dockerfile.debian
+*.json
+doc/
+Makefile
