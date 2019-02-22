@@ -454,7 +454,6 @@ golang.org/x/net/trace
 github.com/livepeer/go-livepeer/vendor/gx/ipfs/QmQtBcHtRy9BxjawZjWJBn8aSKbqraBnQiVsc3wt9w9TTn/goupnp
 golang.org/x/net/http2
 github.com/livepeer/go-livepeer/vendor/gx/ipfs/QmWjNfGgm61ABELTxPDwvNDm18j1EmQiPt9zXkCSEYgMDm/spdystream
-github.com/livepeer/go-livepeer/vendor/github.com/livepeer/streamingviz/data
 github.com/livepeer/go-livepeer/vendor/gx/ipfs/QmQtBcHtRy9BxjawZjWJBn8aSKbqraBnQiVsc3wt9w9TTn/goupnp/dcps/internetgateway1
 github.com/aws/aws-sdk-go/aws/request
 github.com/aws/aws-sdk-go/private/protocol/eventstream
