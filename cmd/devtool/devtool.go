@@ -32,8 +32,8 @@ var (
 	endpoint                  = "ws://localhost:8546/"
 	gethMiningAccount         = "87da6a8c6e9eff15d703fc2773e32f6af8dbe301"
 	gethMiningAccountOverride = false
-	controllerAddr            = "0x04B9De88c81cda06165CF65a908e5f1EFBB9493B"
-	controllerAddrOverride    = false
+	ethController             = "0x04B9De88c81cda06165CF65a908e5f1EFBB9493B"
+	ethControllerOverride     = false
 )
 
 func main() {
@@ -41,7 +41,7 @@ func main() {
 	baseDataDir := flag.String("datadir", ".lpdev2", "default data directory")
 	endpointAddr := flag.String("endpoint", "", "Geth endpoint to connect to")
 	miningAccountFlag := flag.String("miningaccount", "", "Override geth mining account (usually not needed)")
-	controllerAddrFlag := flag.String("controller", "", "Override controller address (usually not needed)")
+	ethControllerFlag := flag.String("controller", "", "Override controller address (usually not needed)")
 
 	flag.Parse()
 	if *endpointAddr != "" {
@@ -51,9 +51,9 @@ func main() {
 		gethMiningAccount = *miningAccountFlag
 		gethMiningAccountOverride = true
 	}
-	if *controllerAddrFlag != "" {
-		controllerAddr = *controllerAddrFlag
-		controllerAddrOverride = true
+	if *ethControllerFlag != "" {
+		ethController = *ethControllerFlag
+		ethControllerOverride = true
 	}
 	args := flag.Args()
 	goodToGo := false
@@ -87,13 +87,12 @@ func main() {
 	acc := createKey(tempKeystoreDir)
 	glog.Infof("Using account %s", acc)
 	dataDir := filepath.Join(*baseDataDir, t+"_"+acc)
-	dataDirToCreate := filepath.Join(dataDir, "devenv")
-	err = os.MkdirAll(dataDirToCreate, 0755)
+	err = os.MkdirAll(dataDir, 0755)
 	if err != nil {
 		glog.Fatalf("Can't create directory %v", err)
 	}
 
-	keystoreDir := filepath.Join(dataDirToCreate, "keystore")
+	keystoreDir := filepath.Join(dataDir, "keystore")
 	err = os.Rename(tempKeystoreDir, keystoreDir)
 	if err != nil {
 		glog.Fatal(err)
@@ -120,10 +119,10 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		glog.Errorf("Failed to connect to Ethereum client: %v", err)
 		return
 	}
-	glog.Infof("Using controller address %s", controllerAddr)
+	glog.Infof("Using controller address %s", ethController)
 
 	client, err := eth.NewClient(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, backend,
-		ethcommon.HexToAddress(controllerAddr), ethTxTimeout)
+		ethcommon.HexToAddress(ethController), ethTxTimeout)
 	if err != nil {
 		glog.Errorf("Failed to create client: %v", err)
 		return
@@ -253,19 +252,23 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 
 func createRunScript(ethAcctAddr, dataDir string, isBroadcaster bool) {
 	script := "#!/bin/bash\n"
-	script += fmt.Sprintf(`./livepeer -v 99 -controllerAddr %s -datadir ./%s \
+	script += fmt.Sprintf(`./livepeer -v 99 -ethController %s -datadir ./%s \
     -ethAcctAddr %s \
     -ethUrl %s \
     -ethPassword "" \
-    -gasPrice 200 -gasLimit 2000000 -devenv=true \
+    -gasPrice 200 -gasLimit 2000000 -network=devenv \
     -monitor=false -currentManifest=true `,
-		controllerAddr, dataDir, ethAcctAddr, endpoint)
+		ethController, dataDir, ethAcctAddr, endpoint)
 
 	if !isBroadcaster {
 		script += fmt.Sprintf(` -initializeRound=true \
-    -serviceAddr 127.0.0.1:8936 -httpAddr 127.0.0.1:8936  -transcoder \
+    -serviceAddr 127.0.0.1:8936 -httpAddr 127.0.0.1:8936  -transcoder=true -orchestrator=true \
     -cliAddr 127.0.0.1:7936 -ipfsPath ./%s/trans
     `, dataDir)
+	}
+
+	if isBroadcaster {
+		script += fmt.Sprint(` -broadcaster=true`)
 	}
 
 	glog.Info(script)
@@ -331,9 +334,9 @@ func remoteConsole(destAccountAddr string) error {
 	}
 	defer console.Stop(false)
 
-	if !controllerAddrOverride {
+	if !ethControllerOverride {
 		// f9a6cf519167d81bc5cb3d26c60c0c9a19704aa908c148e82a861b570f4cd2d7 - SetContractInfo event
-		getControllerAddressScript := `
+		getEthControllerScript := `
 		var logs = [];
 		var filter = web3.eth.filter({ fromBlock: 0, toBlock: "latest",
 			topics: ["0xf9a6cf519167d81bc5cb3d26c60c0c9a19704aa908c148e82a861b570f4cd2d7"]});
@@ -342,17 +345,17 @@ func remoteConsole(destAccountAddr string) error {
 		});
 		console.log(logs[0][0].address);''
 	`
-		glog.Infof("Running eth script: %s", getControllerAddressScript)
-		err = console.Evaluate(getControllerAddressScript)
+		glog.Infof("Running eth script: %s", getEthControllerScript)
+		err = console.Evaluate(getEthControllerScript)
 		if err != nil {
 			glog.Error(err)
 		}
 		if printer.Len() == 0 {
 			glog.Fatal("Can't find deployed controller")
 		}
-		controllerAddr = strings.Split(printer.String(), "\n")[0]
+		ethController = strings.Split(printer.String(), "\n")[0]
 
-		glog.Infof("Found controller address: %s", controllerAddr)
+		glog.Infof("Found controller address: %s", ethController)
 	}
 
 	script := fmt.Sprintf("eth.sendTransaction({from: \"%s\", to: \"%s\", value: web3.toWei(834, \"ether\")})",

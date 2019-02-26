@@ -36,7 +36,7 @@ func setupServer() *LivepeerServer {
 	if S == nil {
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		S = NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
-		go S.StartMediaServer(context.Background(), big.NewInt(0), "")
+		go S.StartMediaServer(context.Background(), "")
 		go S.StartWebserver("127.0.0.1:8938")
 	}
 	return S
