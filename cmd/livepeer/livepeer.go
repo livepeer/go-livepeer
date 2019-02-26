@@ -76,7 +76,7 @@ func main() {
 	broadcaster := flag.Bool("broadcaster", false, "Set to true to be a broadcaster")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
-	maxSessions := flag.Int("maxSessions", 10, "Orchestrator only. Maximum number of concurrent transcoding sessions")
+	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator or maximum number or RTMP streams for Broadcaster")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 
 	// Onchain:
@@ -365,7 +365,7 @@ func main() {
 		}
 	}
 
-	core.MaxTranscodeSessions = *maxSessions
+	core.MaxSessions = *maxSessions
 
 	if n.NodeType == core.BroadcasterNode {
 		// default lpms listener for broadcaster; same as default rpc port
