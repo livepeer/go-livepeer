@@ -177,23 +177,28 @@ func TestSelectOrchestrator(t *testing.T) {
 	assert.Equal(expSessionID, sess.PMSessionID)
 }
 
-func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
-	s := setupServer()
-	s.RTMPSegmenter = &StubSegmenter{skip: true}
+func TestCreateRTMPStreamHandlerCap(t *testing.T) {
+	s := &LivepeerServer{
+		connectionLock:  &sync.RWMutex{},
+		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
+	}
 	createSid := createRTMPStreamIDHandler(s)
-	WebhookURL = "http://localhost:8938/notexisting"
 	u, _ := url.Parse("http://hot/something/?manifestID=id1")
+	oldMaxSessions := core.MaxSessions
+	core.MaxSessions = 1
+	// happy case
 	sid := createSid(u)
-	if sid != "" {
-		t.Error("Webhook auth failed")
+	mid := parseManifestID(sid)
+	if mid != "id1" {
+		t.Error("Stream should be allowd", sid)
 	}
-	WebhookURL = "http://localhost:8938/status"
-	u, _ = url.Parse("http://hot/something/?manifestID=id2")
+	s.rtmpConnections[core.ManifestID("id")] = nil
+	// capped case
 	sid = createSid(u)
-	if sid == "" {
-		t.Error("Webhook auth failed 2")
+	if sid != "" {
+		t.Error("Stream should be denied because of capacity cap")
 	}
-	WebhookURL = ""
+	core.MaxSessions = oldMaxSessions
 }
 
 func TestCreateRTMPStreamHandler(t *testing.T) {
@@ -358,6 +363,8 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 }
 
 func TestMultiStream(t *testing.T) {
+	// set unlimited sessions because this tests creates 500 streams
+	core.MaxSessions = 0
 	//Turning off logging to stderr because this test prints ALOT of logs.
 	//Ideally we would record the flag value and set it back instead of hardcoding the value,
 	// but the `flag` doesn't allow easy access to existing flag value.

@@ -164,6 +164,11 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 		// Ensure there's no concurrent StreamID with the same name
 		s.connectionLock.RLock()
+		if core.MaxSessions > 0 && len(s.rtmpConnections) >= core.MaxSessions {
+			glog.Error("Too many connections")
+			s.connectionLock.RUnlock()
+			return ""
+		}
 		if _, exists := s.rtmpConnections[mid]; exists {
 			glog.Error("Manifest already exists ", mid)
 			s.connectionLock.RUnlock()
