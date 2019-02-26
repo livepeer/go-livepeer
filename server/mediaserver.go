@@ -54,6 +54,8 @@ const BroadcastRetry = 15 * time.Second
 var BroadcastPrice = big.NewInt(1)
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
+var WebhookURL string
+
 type rtmpConnection struct {
 	mid     core.ManifestID
 	nonce   uint64
@@ -162,9 +164,15 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 		// Ensure there's no concurrent StreamID with the same name
 		s.connectionLock.RLock()
-		defer s.connectionLock.RUnlock()
 		if _, exists := s.rtmpConnections[mid]; exists {
 			glog.Error("Manifest already exists ", mid)
+			s.connectionLock.RUnlock()
+			return ""
+		}
+		s.connectionLock.RUnlock()
+
+		if !authenticateStream(string(mid)) {
+			glog.Error("Authentication denied for ", mid)
 			return ""
 		}
 
@@ -173,6 +181,20 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		return core.MakeStreamIDFromString(string(mid), key).String()
 	}
 
+}
+
+func authenticateStream(mid string) bool {
+	if WebhookURL == "" {
+		return true
+	}
+	url := WebhookURL + "?ManifestID=" + mid
+	resp, err := http.Get(url)
+	if err != nil {
+		glog.Infof("Error contacting %s: %v", url, err)
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == 200
 }
 
 func rtmpManifestID(rtmpStrm stream.RTMPVideoStream) core.ManifestID {

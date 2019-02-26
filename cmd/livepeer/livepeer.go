@@ -102,6 +102,7 @@ func main() {
 	faceValue := flag.Float64("faceValue", 0, "The faceValue to expect in PM tickets, denominated in ETH (e.g. 0.3)")
 	winProb := flag.Float64("winProb", 0, "The win probability to expect in PM tickets, as a percent float between 0 and 100 (e.g. 5.3)")
 	maxSessions := flag.Int("maxSessions", 10, "Orchestrator only. Maximum number of concurrent transcoding sessions")
+	webhookURL := flag.String("webhookUrl", "", "Authentication webhook URL")
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
@@ -379,6 +380,19 @@ func main() {
 		// TODO provide an option to disable this?
 		*rtmpAddr = defaultAddr(*rtmpAddr, "127.0.0.1", RtmpPort)
 		*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
+		if *webhookURL != "" {
+			p, err := url.ParseRequestURI(*webhookURL)
+			if err != nil {
+				glog.Errorf("Error in webhook URL: %v", err)
+				return
+			}
+			if p.Scheme != "http" && p.Scheme != "https" {
+				glog.Error("Webhook URL should be HTTP or HTTP")
+				return
+			}
+			glog.Infof("Using webhook url %s", *webhookURL)
+			server.WebhookURL = *webhookURL
+		}
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)
 		if err != nil {
