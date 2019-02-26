@@ -177,6 +177,25 @@ func TestSelectOrchestrator(t *testing.T) {
 	assert.Equal(expSessionID, sess.PMSessionID)
 }
 
+func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
+	s := setupServer()
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	createSid := createRTMPStreamIDHandler(s)
+	WebhookURL = "http://localhost:8938/notexisting"
+	u, _ := url.Parse("http://hot/something/?manifestID=id1")
+	sid := createSid(u)
+	if sid != "" {
+		t.Error("Webhook auth failed")
+	}
+	WebhookURL = "http://localhost:8938/status"
+	u, _ = url.Parse("http://hot/something/?manifestID=id2")
+	sid = createSid(u)
+	if sid == "" {
+		t.Error("Webhook auth failed 2")
+	}
+	WebhookURL = ""
+}
+
 func TestCreateRTMPStreamHandler(t *testing.T) {
 
 	// Monkey patch rng to avoid unpredictability even when seeding
