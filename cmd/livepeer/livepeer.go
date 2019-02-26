@@ -106,6 +106,9 @@ func main() {
 	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
 	gsKey := flag.String("gskey", "", "Google Storage private key file name (in json format)")
 
+	// API
+	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
+
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
 
@@ -383,7 +386,10 @@ func main() {
 			// Not a fatal error; may continue operating in segment-only mode
 			glog.Error("No orchestrator specified; transcoding will not happen")
 		}
-
+		var err error
+		if server.AuthWebhookURL, err = getAuthWebhookURL(*authWebhookURL); err != nil {
+			glog.Fatal("Error setting auth webhook URL ", err)
+		}
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)
 		if err != nil {
@@ -497,6 +503,21 @@ func main() {
 		time.Sleep(time.Millisecond * 500) //Give time for other processes to shut down completely
 		return
 	}
+}
+
+func getAuthWebhookURL(u string) (string, error) {
+	if u == "" {
+		return "", nil
+	}
+	p, err := url.ParseRequestURI(u)
+	if err != nil {
+		return "", err
+	}
+	if p.Scheme != "http" && p.Scheme != "https" {
+		return "", errors.New("Webhook URL should be HTTP or HTTP")
+	}
+	glog.Infof("Using webhook url %s", u)
+	return u, nil
 }
 
 // ServiceURI checking steps:
