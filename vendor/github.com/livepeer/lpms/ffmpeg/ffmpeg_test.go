@@ -113,6 +113,53 @@ func TestSegmenter_StreamOrdering(t *testing.T) {
 	run(cmd)
 }
 
+func TestSegmenter_DropLatePackets(t *testing.T) {
+	// Certain sources sometimes send packets with out-of-order FLV timestamps
+	// (eg, ManyCam on Android when the phone can't keep up)
+	// Ensure we drop these packets
+
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	// Craft an input with an out-of-order timestamp
+	cmd := `
+		set -eux
+		cd "$0"
+		# borrow segmenter test file, rewrite a timestamp
+		cp "$1/../segmenter/test.flv" test.flv
+
+		# Sanity check the last few timestamps are monotonic : 18867,18900,18933
+		ffprobe -loglevel quiet -show_packets -select_streams v test.flv | grep dts= | tail -3 | tr '\n' ',' | grep dts=18867,dts=18900,dts=18933,
+
+		# replace ts 18900 at position 2052736 with ts 18833 (0x4991 hex)
+		printf '\x49\x91' | dd of=test.flv bs=1 seek=2052736 count=2 conv=notrunc
+		# sanity check timestamps are now 18867,18833,18933
+		ffprobe -loglevel quiet -show_packets -select_streams v test.flv | grep dts= | tail -3 | tr '\n' ',' | grep dts=18867,dts=18833,dts=18933,
+
+		# sanity check number of frames
+		ffprobe -loglevel quiet -count_packets -show_streams -select_streams v test.flv | grep nb_read_packets=569
+	`
+	run(cmd)
+
+	err := RTMPToHLS(dir+"/test.flv", dir+"/out.m3u8", dir+"/out_%d.ts", "100", 0)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Now ensure things are as expected
+	cmd = `
+		set -eux
+		cd "$0"
+
+		# check monotonic timestamps (rescaled for the 90khz mpegts timebase)
+		ffprobe -loglevel quiet -show_packets -select_streams v out_0.ts | grep dts= | tail -3 | tr '\n' ',' | grep dts=1694970,dts=1698030,dts=1703970,
+
+		# check that we dropped the packet
+		ffprobe -loglevel quiet -count_packets -show_streams -select_streams v out_0.ts | grep nb_read_packets=568
+	`
+	run(cmd)
+}
+
 func TestTranscoder_UnevenRes(t *testing.T) {
 	// Ensure transcoding still works on input with uneven resolutions
 	// and that aspect ratio is maintained

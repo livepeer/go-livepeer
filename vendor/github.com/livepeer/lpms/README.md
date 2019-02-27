@@ -50,36 +50,34 @@ I0324 09:44:14.639429   80673 listener.go:42] Got RTMP Stream: test
 
 ### Integrating LPMS
 
-LPMS exposes a few different methods for customization. As an example, take a look at `cmd/lpms.go`.
+LPMS exposes a few different methods for customization. As an example, take a look at `cmd/main.go`.
 
 To create a new LPMS server:
 ```
-//Specify ports you want the server to run on, and which port SRS is running on (should be specified)
-//in srs.conf
-lpms := lpms.New("1936", "8000", "2436", "7936")
+// Specify ports you want the server to run on, and the working directory for
+// temporary files. See `core/lpms.go` for a full list of LPMSOpts
+opts := lpms.LPMSOpts {
+    RtmpAddr: "127.0.0.1:1935",
+    HttpAddr: "127.0.0.1:7935",
+    WorkDir:  "/tmp"
+}
+lpms := lpms.New(&opts)
 ```
 
 To handle RTMP publish:
 ```
 	lpms.HandleRTMPPublish(
 		//getStreamID
-		func(reqPath string) (string, error) {
-			return getStreamIDFromPath(reqPath), nil
+		func(url *url.URL) (strmID string) {
+			return getStreamIDFromPath(reqPath)
 		},
 		//getStream
-		func(reqPath string) (stream.Stream, stream.Stream, error) {
-			rtmpStreamID := getStreamIDFromPath(reqPath)
-			hlsStreamID := rtmpStreamID + "_hls"
-			rtmpStream := stream.NewVideoStream(rtmpStreamID, stream.RTMP)
-			hlsStream := stream.NewVideoStream(hlsStreamID, stream.HLS)
-			streamDB.db[rtmpStreamID] = rtmpStream
-			streamDB.db[hlsStreamID] = hlsStream
-			return rtmpStream, hlsStream, nil
+		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
+			return nil
 		},
 		//finishStream
-		func(rtmpID string, hlsID string) {
-			delete(streamDB.db, rtmpID)
-			delete(streamDB.db, hlsID)
+		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
+			return nil
 		})
 ```
 
