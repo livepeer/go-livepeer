@@ -94,4 +94,14 @@ res=0
 ./livepeer -transcoder || res=$?
 [ $res -ne 0 ]
 
+# exit early if webhhok url is not http
+res=0
+./livepeer -broadcaster -authWebhookUrl tcp://host/ || res=$?
+[ $res -ne 0 ]
+
+# exit early if webhook url is not properly formatted
+res=0
+./livepeer -broadcaster -authWebhookUrl http\\://host/ || res=$?
+[ $res -ne 0 ]
+
 rm -rf "$TMPDIR"
