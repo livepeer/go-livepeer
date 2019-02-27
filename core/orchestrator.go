@@ -27,8 +27,6 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-var MaxTranscodeSessions = 10
-
 var transcodeLoopTimeout = 1 * time.Minute
 
 // Transcoder / orchestrator RPC interface implementation
@@ -77,7 +75,7 @@ func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
 	if _, ok := orch.node.SegmentChans[mid]; ok {
 		return nil
 	}
-	if len(orch.node.SegmentChans) >= MaxTranscodeSessions {
+	if len(orch.node.SegmentChans) >= MaxSessions {
 		return ErrOrchCap
 	}
 	return nil
@@ -218,7 +216,7 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 	if sc, ok := n.SegmentChans[md.ManifestID]; ok {
 		return sc, nil
 	}
-	if len(n.SegmentChans) >= MaxTranscodeSessions {
+	if len(n.SegmentChans) >= MaxSessions {
 		return nil, ErrOrchCap
 	}
 	sc := make(SegmentChan, 1)

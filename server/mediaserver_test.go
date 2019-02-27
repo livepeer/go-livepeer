@@ -177,6 +177,30 @@ func TestSelectOrchestrator(t *testing.T) {
 	assert.Equal(expSessionID, sess.PMSessionID)
 }
 
+func TestCreateRTMPStreamHandlerCap(t *testing.T) {
+	s := &LivepeerServer{
+		connectionLock:  &sync.RWMutex{},
+		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
+	}
+	createSid := createRTMPStreamIDHandler(s)
+	u, _ := url.Parse("http://hot/something/?manifestID=id1")
+	oldMaxSessions := core.MaxSessions
+	core.MaxSessions = 1
+	// happy case
+	sid := createSid(u)
+	mid := parseManifestID(sid)
+	if mid != "id1" {
+		t.Error("Stream should be allowd", sid)
+	}
+	s.rtmpConnections[core.ManifestID("id")] = nil
+	// capped case
+	sid = createSid(u)
+	if sid != "" {
+		t.Error("Stream should be denied because of capacity cap")
+	}
+	core.MaxSessions = oldMaxSessions
+}
+
 func TestCreateRTMPStreamHandler(t *testing.T) {
 
 	// Monkey patch rng to avoid unpredictability even when seeding
@@ -339,6 +363,8 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 }
 
 func TestMultiStream(t *testing.T) {
+	// set unlimited sessions because this tests creates 500 streams
+	core.MaxSessions = 0
 	//Turning off logging to stderr because this test prints ALOT of logs.
 	//Ideally we would record the flag value and set it back instead of hardcoding the value,
 	// but the `flag` doesn't allow easy access to existing flag value.
