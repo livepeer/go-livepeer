@@ -93,7 +93,7 @@ type StreamTest struct {
 func NewStreamTest(t *testing.T, configs []ffmpeg.VideoProfile) (*StreamTest, error) {
 	d, err := ioutil.TempDir("", "lp-"+t.Name())
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Unable to get tempdir ", err))
+		return nil, errors.New(fmt.Sprintf("Unable to get tempdir %v", err))
 	}
 	f := fmt.Sprintf("%v/tmp.ts", d)
 	tr := NewFFMpegSegmentTranscoder(configs, "./")
@@ -113,7 +113,7 @@ func (s *StreamTest) CmdCompareSize(cmd string, sz int) error {
 	}
 	r, err := s.Transcoder.Transcode(s.Tempfile)
 	if err != nil {
-		return errors.New(fmt.Sprintf("Error transcoding ", err))
+		return errors.New(fmt.Sprintf("Error transcoding %v", err))
 	}
 	if Over1Pct(len(r[0]), sz) {
 		errors.New(fmt.Sprintf("Expecting output to be within 1pct of %v, got %v (%v)", sz, len(r[0]), float32(len(r[0]))/float32(sz)))

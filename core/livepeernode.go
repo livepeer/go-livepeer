@@ -35,6 +35,8 @@ var ErrTranscode = errors.New("ErrTranscode")
 // output of the `git describe` command.
 var LivepeerVersion = "undefined"
 
+var MaxSessions = 10
+
 type NodeType int
 
 const (

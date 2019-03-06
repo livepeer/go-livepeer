@@ -17,6 +17,8 @@ import (
 
 	"io/ioutil"
 
+	"strings"
+
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -26,7 +28,6 @@ import (
 	"github.com/nareix/joy4/av/avutil"
 	"github.com/nareix/joy4/format"
 	"github.com/nareix/joy4/format/rtmp"
-	"strings"
 )
 
 type TestStream struct{}
@@ -495,7 +496,7 @@ func TestMissingKeyframe(t *testing.T) {
 	dir, err := ioutil.TempDir("", "lp-"+t.Name())
 	defer os.RemoveAll(dir)
 	if err != nil {
-		t.Errorf(fmt.Sprintf("Unable to get tempfile ", err))
+		t.Errorf(fmt.Sprintf("Unable to get tempfile %v", err))
 		return
 	}
 	fname := path.Join(dir, "tmp.flv")

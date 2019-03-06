@@ -6,8 +6,10 @@ package server
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"math/rand"
 	"net/http"
@@ -19,7 +21,6 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/drivers"
-	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 
@@ -54,6 +55,8 @@ const BroadcastRetry = 15 * time.Second
 var BroadcastPrice = big.NewInt(1)
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
+var AuthWebhookURL string
+
 type rtmpConnection struct {
 	mid     core.ManifestID
 	nonce   uint64
@@ -86,6 +89,10 @@ type LivepeerServer struct {
 	connectionLock  *sync.RWMutex
 }
 
+type authWebhookResponse struct {
+	ManifestID string `json:"manifestID"`
+}
+
 func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
 	opts := lpmscore.LPMSOpts{
 		RtmpAddr: rtmpAddr, RtmpDisabled: true,
@@ -103,12 +110,7 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 }
 
 //StartServer starts the LPMS server
-func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegment *big.Int, transcodingOptions string) error {
-	if s.LivepeerNode.Eth != nil {
-		BroadcastPrice = maxPricePerSegment
-		glog.V(common.SHORT).Infof("Transcode Job Price: %v", eth.FormatUnits(BroadcastPrice, "ETH"))
-	}
-
+func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string) error {
 	bProfiles := make([]ffmpeg.VideoProfile, 0)
 	for _, opt := range strings.Split(transcodingOptions, ",") {
 		p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]
@@ -152,10 +154,21 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, maxPricePerSegmen
 //RTMP Publish Handlers
 func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID string) {
 	return func(url *url.URL) (strmID string) {
-		//Create a ManifestID
-		//If manifestID is passed in, use that one
+		//Check webhook for ManifestID
+		//If ManifestID is returned from webhook, use it
+		//Else check URL for ManifestID
+		//If ManifestID is passed in URL, use that one
 		//Else create one
-		mid := parseManifestID(url.Query().Get("manifestID"))
+		var mid core.ManifestID
+		var err error
+		if mid, err = authenticateStream(url.String()); err != nil {
+			glog.Error("Authentication denied for ", err)
+			return ""
+		}
+
+		if mid == "" {
+			mid = parseManifestID(url.Query().Get("manifestID"))
+		}
 		if mid == "" {
 			mid = core.RandomManifestID()
 		}
@@ -163,6 +176,10 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		// Ensure there's no concurrent StreamID with the same name
 		s.connectionLock.RLock()
 		defer s.connectionLock.RUnlock()
+		if core.MaxSessions > 0 && len(s.rtmpConnections) >= core.MaxSessions {
+			glog.Error("Too many connections")
+			return ""
+		}
 		if _, exists := s.rtmpConnections[mid]; exists {
 			glog.Error("Manifest already exists ", mid)
 			return ""
@@ -172,7 +189,36 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		key := hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
 		return core.MakeStreamIDFromString(string(mid), key).String()
 	}
+}
 
+func authenticateStream(url string) (core.ManifestID, error) {
+	if AuthWebhookURL == "" {
+		return "", nil
+	}
+	payload := fmt.Sprintf(`{"url":"%s"}"`, url)
+	body := strings.NewReader(payload)
+
+	resp, err := http.Post(AuthWebhookURL, "application/json", body)
+	if err != nil {
+		return "", err
+	}
+	rbody, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return "", errors.New(resp.Status)
+	}
+	if len(rbody) == 0 {
+		return "", nil
+	}
+	var authResp authWebhookResponse
+	err = json.Unmarshal(rbody, &authResp)
+	if err != nil {
+		return "", err
+	}
+	if authResp.ManifestID == "" {
+		return "", errors.New("Empty manifest id not allowed")
+	}
+	return core.ManifestID(authResp.ManifestID), nil
 }
 
 func rtmpManifestID(rtmpStrm stream.RTMPVideoStream) core.ManifestID {

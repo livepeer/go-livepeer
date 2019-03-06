@@ -39,7 +39,11 @@ func TestRTMP(t *testing.T) {
 	}
 	handler(&joy4rtmp.Conn{})
 	if !handler1Called {
-		t.Errorf("Handler not called")
+		t.Errorf("Handler1 not called")
+	}
+
+	if !handler2Called {
+		t.Errorf("Handler2 not called")
 	}
 
 	//TODO: Should add a test for writing to the stream.

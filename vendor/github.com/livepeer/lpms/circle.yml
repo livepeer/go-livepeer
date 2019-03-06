@@ -8,11 +8,12 @@ dependencies:
   pre:
     - bash ./install_ffmpeg.sh
   cache_directories:
-    - "$HOME/.go_workspace/"
-    - "$HOME/nasm"
-    - "$HOME/x264"
-    - "$HOME/ffmpeg"
-    - "$HOME/compiled"
+    - "/usr/local/go/pkg"
+    - "/home/ubuntu/.go_workspace/"
+    - "/home/ubuntu/nasm"
+    - "/home/ubuntu/x264"
+    - "/home/ubuntu/ffmpeg"
+    - "/home/ubuntu/compiled"
   override:
     - mkdir -p "$HOME/.go_workspace/src/github.com/livepeer" && cd "$HOME/.go_workspace/src/github.com/livepeer" && rm -rf go-livepeer && git clone https://github.com/livepeer/go-livepeer
     - cd $HOME/.go_workspace/src/github.com/livepeer && rm -rf lpms && go get -d github.com/livepeer/lpms/cmd/example && cd lpms && git fetch && git checkout $CIRCLE_BRANCH && git pull && go build cmd/example/*.go

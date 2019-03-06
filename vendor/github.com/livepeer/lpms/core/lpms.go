@@ -24,12 +24,14 @@ import (
 var RetryCount = 3
 var SegmenterRetryWait = 500 * time.Millisecond
 
+// LPMS struct is the container of all the LPMS server related tools.
 type LPMS struct {
-	rtmpServer *joy4rtmp.Server
-	vidPlayer  *vidplayer.VidPlayer
-	vidListen  *vidlistener.VidListener
-	workDir    string
-	httpAddr   string
+	// rtmpServer *joy4rtmp.Server
+	vidPlayer   *vidplayer.VidPlayer
+	vidListener *vidlistener.VidListener
+	workDir     string
+	httpAddr    string
+	rtmpAddr    string
 }
 
 type transcodeReq struct {
@@ -78,17 +80,17 @@ func New(opts *LPMSOpts) *LPMS {
 	}
 	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath, opts.HttpMux)
 	listener := &vidlistener.VidListener{RtmpServer: rtmpServer}
-	return &LPMS{rtmpServer: rtmpServer, vidPlayer: player, vidListen: listener, workDir: opts.WorkDir, httpAddr: httpAddr}
+	return &LPMS{vidPlayer: player, vidListener: listener, workDir: opts.WorkDir, rtmpAddr: opts.RtmpAddr, httpAddr: httpAddr}
 }
 
 //Start starts the rtmp and http servers, and initializes ffmpeg
 func (l *LPMS) Start(ctx context.Context) error {
 	ec := make(chan error, 1)
 	ffmpeg.InitFFmpeg()
-	if l.rtmpServer != nil {
+	if l.vidListener.RtmpServer != nil {
 		go func() {
-			glog.V(4).Infof("LPMS Server listening on rtmp://%v", l.rtmpServer.Addr)
-			ec <- l.rtmpServer.ListenAndServe()
+			glog.V(4).Infof("LPMS Server listening on rtmp://%v", l.vidListener.RtmpServer.Addr)
+			ec <- l.vidListener.RtmpServer.ListenAndServe()
 		}()
 	}
 	startHTTP := l.httpAddr != ""
@@ -99,7 +101,7 @@ func (l *LPMS) Start(ctx context.Context) error {
 		}()
 	}
 
-	if l.rtmpServer != nil || startHTTP {
+	if l.vidListener.RtmpServer != nil || startHTTP {
 		select {
 		case err := <-ec:
 			glog.Errorf("LPMS Server Error: %v.  Quitting...", err)
@@ -112,13 +114,13 @@ func (l *LPMS) Start(ctx context.Context) error {
 	return nil
 }
 
-//HandleRTMPPublish offload to the video listener
+//HandleRTMPPublish offload to the video listener.  To understand how it works, look at videoListener.HandleRTMPPublish.
 func (l *LPMS) HandleRTMPPublish(
 	makeStreamID func(url *url.URL) (strmID string),
 	gotStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error),
 	endStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error) {
 
-	l.vidListen.HandleRTMPPublish(makeStreamID, gotStream, endStream)
+	l.vidListener.HandleRTMPPublish(makeStreamID, gotStream, endStream)
 }
 
 //HandleRTMPPlay offload to the video player
@@ -138,7 +140,7 @@ func (l *LPMS) HandleHLSPlay(
 //SegmentRTMPToHLS takes a rtmp stream and re-packages it into a HLS stream with the specified segmenter options
 func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error {
 	// set localhost if necessary. Check more problematic addrs? [::] ?
-	rtmpAddr := l.rtmpServer.Addr
+	rtmpAddr := l.rtmpAddr
 	if strings.HasPrefix(rtmpAddr, "0.0.0.0") {
 		rtmpAddr = "127.0.0.1" + rtmpAddr[len("0.0.0.0"):]
 	}
@@ -220,68 +222,3 @@ func rtmpToHLS(s segmenter.VideoSegmenter, ctx context.Context, cleanup bool) er
 	}
 	return err
 }
-
-// //HandleTranscode kicks off a transcoding process, keeps a local HLS buffer, and returns the new stream ID.
-// //stream is the video stream you want to be transcoded.  getNewStreamID gives you a way to name the transcoded stream.
-// func (l *LPMS) HandleTranscode(getInStream func(ctx context.Context, streamID string) (stream.Stream, error), getOutStream func(ctx context.Context, streamID string) (stream.Stream, error)) {
-// 	http.HandleFunc("/transcode", func(w http.ResponseWriter, r *http.Request) {
-// 		ctx, _ := context.WithCancel(context.Background())
-
-// 		//parse transcode request
-// 		decoder := json.NewDecoder(r.Body)
-// 		var tReq transcodeReq
-// 		if r.Body == nil {
-// 			http.Error(w, "Please send a request body", 400)
-// 			return
-// 		}
-// 		err := decoder.Decode(&tReq)
-// 		if err != nil {
-// 			http.Error(w, err.Error(), 400)
-// 			return
-// 		}
-
-// 		//Get the RTMP Stream
-// 		inStream, err := getInStream(ctx, tReq.StreamID)
-// 		if err != nil {
-// 			http.Error(w, err.Error(), 400)
-// 			return
-// 		}
-
-// 		//Get the HLS Stream
-// 		newStream, err := getOutStream(ctx, tReq.StreamID)
-// 		if err != nil {
-// 			http.Error(w, err.Error(), 400)
-// 		}
-
-// 		ec := make(chan error, 1)
-// 		go func() { ec <- l.doTranscoding(ctx, inStream, newStream) }()
-
-// 		w.Write([]byte("New Stream: " + newStream.GetStreamID()))
-// 	})
-// }
-
-// func (l *LPMS) doTranscoding(ctx context.Context, inStream stream.Stream, newStream stream.Stream) error {
-// 	t := transcoder.New(l.srsRTMPPort, l.srsHTTPPort, newStream.GetStreamID())
-// 	//Should kick off a goroutine for this, so we can return the new streamID rightaway.
-
-// 	tranMux, err := t.LocalSRSUploadMux()
-// 	if err != nil {
-// 		return err
-// 		// http.Error(w, "Cannot create a connection with local transcoder", 400)
-// 	}
-
-// 	uec := make(chan error, 1)
-// 	go func() { uec <- t.StartUpload(ctx, tranMux, inStream) }()
-// 	dec := make(chan error, 1)
-// 	go func() { dec <- t.StartDownload(ctx, newStream) }()
-
-// 	select {
-// 	case err := <-uec:
-// 		return err
-// 		// http.Error(w, "Cannot upload stream to transcoder: "+err.Error(), 400)
-// 	case err := <-dec:
-// 		return err
-// 		// http.Error(w, "Cannot download stream from transcoder: "+err.Error(), 400)
-// 	}
-
-// }

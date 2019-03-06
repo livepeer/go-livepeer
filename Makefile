@@ -12,3 +12,9 @@ livepeer:
 .PHONY: livepeer_cli
 livepeer_cli:
 	go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty)" cmd/livepeer_cli/*.go
+
+.PHONY: localdocker
+localdocker:
+	git describe --always --long --dirty > .git.describe
+	docker build -t livepeerbinary:debian -f Dockerfile.debian .
+	rm .git.describe

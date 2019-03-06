@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"sync"
 	"testing"
@@ -36,7 +38,7 @@ func setupServer() *LivepeerServer {
 	if S == nil {
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		S = NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
-		go S.StartMediaServer(context.Background(), big.NewInt(0), "")
+		go S.StartMediaServer(context.Background(), "")
 		go S.StartWebserver("127.0.0.1:8938")
 	}
 	return S
@@ -175,6 +177,82 @@ func TestSelectOrchestrator(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal(sender, sess.Sender)
 	assert.Equal(expSessionID, sess.PMSessionID)
+}
+
+func TestCreateRTMPStreamHandlerCap(t *testing.T) {
+	s := &LivepeerServer{
+		connectionLock:  &sync.RWMutex{},
+		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
+	}
+	createSid := createRTMPStreamIDHandler(s)
+	u, _ := url.Parse("http://hot/something/?manifestID=id1")
+	oldMaxSessions := core.MaxSessions
+	core.MaxSessions = 1
+	// happy case
+	sid := createSid(u)
+	mid := parseManifestID(sid)
+	if mid != "id1" {
+		t.Error("Stream should be allowd", sid)
+	}
+	s.rtmpConnections[core.ManifestID("id")] = nil
+	// capped case
+	sid = createSid(u)
+	if sid != "" {
+		t.Error("Stream should be denied because of capacity cap")
+	}
+	core.MaxSessions = oldMaxSessions
+}
+
+func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
+	s := setupServer()
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	createSid := createRTMPStreamIDHandler(s)
+
+	AuthWebhookURL = "http://localhost:8938/notexisting"
+	u, _ := url.Parse("http://hot/something/?manifestID=id1")
+	sid := createSid(u)
+	if sid != "" {
+		t.Error("Webhook auth failed")
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(nil)
+	}))
+	defer ts.Close()
+	AuthWebhookURL = ts.URL
+	sid = createSid(u)
+	if sid == "" {
+		t.Error("On empty response with 200 code should pass")
+	}
+	ts2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"manifestID":""}`))
+	}))
+	defer ts.Close()
+	AuthWebhookURL = ts2.URL
+	sid = createSid(u)
+	if sid != "" {
+		t.Error("Should not pass in returned manifest id is empty")
+	}
+	ts3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{manifestID:"XX"}`))
+	}))
+	defer ts3.Close()
+	AuthWebhookURL = ts3.URL
+	sid = createSid(u)
+	if sid != "" {
+		t.Error("Should not pass if returned json is invalid")
+	}
+	ts4 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"manifestID":"xy"}`))
+	}))
+	defer ts4.Close()
+	AuthWebhookURL = ts4.URL
+	sid = createSid(u)
+	mid := parseManifestID(sid)
+	if mid != "xy" {
+		t.Error("Should set manifest id to one provided by webhook")
+	}
+	AuthWebhookURL = ""
 }
 
 func TestCreateRTMPStreamHandler(t *testing.T) {
@@ -339,6 +417,8 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 }
 
 func TestMultiStream(t *testing.T) {
+	// set unlimited sessions because this tests creates 500 streams
+	core.MaxSessions = 0
 	//Turning off logging to stderr because this test prints ALOT of logs.
 	//Ideally we would record the flag value and set it back instead of hardcoding the value,
 	// but the `flag` doesn't allow easy access to existing flag value.

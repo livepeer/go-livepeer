@@ -55,7 +55,7 @@ func (m *BasicHLSVideoManifest) GetVideoStreams() []HLSVideoStream {
 func (m *BasicHLSVideoManifest) AddVideoStream(strm HLSVideoStream, variant *m3u8.Variant) error {
 	_, ok := m.streamMap[strm.GetStreamID()]
 	if ok {
-		glog.Errorf("Video %v already in manifest stream map")
+		glog.Errorf("Video %v already in manifest stream map", strm.GetStreamID())
 		return ErrVideoManifest
 	}
 
