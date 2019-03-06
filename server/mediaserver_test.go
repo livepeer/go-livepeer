@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"math/rand"
 	"net/http"
@@ -203,6 +205,10 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 	core.MaxSessions = oldMaxSessions
 }
 
+type authWebhookReq struct {
+	url string `json:"url"`
+}
+
 func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	s := setupServer()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
@@ -216,6 +222,15 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	}
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		out, _ := ioutil.ReadAll(r.Body)
+		var req authWebhookReq
+		err := json.Unmarshal(out, &req)
+		if err != nil {
+			fmt.Printf("Error parsing URL: %v\n", err)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+
 		w.Write(nil)
 	}))
 	defer ts.Close()
