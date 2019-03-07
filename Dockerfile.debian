@@ -11,7 +11,7 @@ COPY install_ffmpeg.sh install_ffmpeg.sh
 RUN ./install_ffmpeg.sh
 
 
-FROM golang:1-stretch as builder2
+FROM golang:1.11-stretch as builder2
 ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
 WORKDIR /root
 RUN apt update \
