@@ -4,6 +4,7 @@ Package server is the place we integrate the Livepeer node with the LPMS media s
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -195,10 +196,14 @@ func authenticateStream(url string) (core.ManifestID, error) {
 	if AuthWebhookURL == "" {
 		return "", nil
 	}
-	payload := fmt.Sprintf(`{"url":"%s"}"`, url)
-	body := strings.NewReader(payload)
 
-	resp, err := http.Post(AuthWebhookURL, "application/json", body)
+	values := map[string]string{"url": url}
+	jsonValue, err := json.Marshal(values)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.Post(AuthWebhookURL, "application/json", bytes.NewBuffer(jsonValue))
+
 	if err != nil {
 		return "", err
 	}
