@@ -72,6 +72,10 @@ func stubGetSeg(url *url.URL) ([]byte, error) {
 	return []byte("testseg"), nil
 }
 
+func stubGetSegNotFound(url *url.URL) ([]byte, error) {
+	return nil, ErrNotFound
+}
+
 func TestHLS(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handleLive(rec, httptest.NewRequest("GET", "/badpath", strings.NewReader("")), stubGetMasterPL, stubGetMediaPL, stubGetSeg)
@@ -121,6 +125,13 @@ func TestHLS(t *testing.T) {
 	}
 	if string(res) != "testseg" {
 		t.Errorf("Expecting testseg, got %v", string(res))
+	}
+
+	//Test not found segment
+	rec = httptest.NewRecorder()
+	handleLive(rec, httptest.NewRequest("GET", "/seg.ts", strings.NewReader("")), stubGetMasterPL, stubGetMediaPL, stubGetSegNotFound)
+	if rec.Result().StatusCode != 404 {
+		t.Errorf("Expecting 404, but got %v", rec.Result().StatusCode)
 	}
 }
 

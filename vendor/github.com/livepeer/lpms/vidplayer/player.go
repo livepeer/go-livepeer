@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"strconv"
 
 	"strings"
 
@@ -107,6 +108,7 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "LPMS only accepts HLS requests over HTTP (m3u8, ts).", 500)
 	}
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 	w.Header().Set("Cache-Control", "max-age=5")
 
 	if strings.HasSuffix(r.URL.Path, ".m3u8") {
@@ -161,12 +163,18 @@ func handleLive(w http.ResponseWriter, r *http.Request,
 		seg, err := getSegment(r.URL)
 		if err != nil {
 			glog.Errorf("Error getting segment %v: %v", r.URL, err)
-			http.Error(w, "Error getting segment", 500)
+			if err == ErrNotFound {
+				http.Error(w, "ErrNotFound", 404)
+			} else {
+				http.Error(w, "Error getting segment", 500)
+			}
 			return
 		}
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(r.URL.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Content-Length", strconv.Itoa(len(seg)))
 		_, err = w.Write(seg)
 		if err != nil {
 			glog.Errorf("Error writting HLS segment %v: %v", r.URL, err)
@@ -198,6 +206,7 @@ func handleVOD(url *url.URL, vodPath string, w http.ResponseWriter) error {
 		}
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(url.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 		w.Header().Set("Cache-Control", "max-age=5")
 		w.Write(dat)
 	}
@@ -212,6 +221,7 @@ func handleVOD(url *url.URL, vodPath string, w http.ResponseWriter) error {
 		}
 		w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(url.Path)))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 		w.Write(dat)
 	}
 
