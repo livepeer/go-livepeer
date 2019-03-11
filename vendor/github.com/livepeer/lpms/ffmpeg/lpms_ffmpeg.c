@@ -203,7 +203,6 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
     if (octx->fps.den) vc->time_base = av_inv_q(octx->fps);
     if (octx->bitrate) vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
-    vc->thread_count = 1;
     vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     /*
