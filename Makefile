@@ -16,5 +16,8 @@ livepeer_cli:
 .PHONY: localdocker
 localdocker:
 	git describe --always --long --dirty > .git.describe
-	docker build -t livepeerbinary:debian -f Dockerfile.debian .
+	# docker build -t livepeerbinary:debian -f Dockerfile.debian .
+	# Manually build our context... this is hacky but docker refuses to support symlinks
+	# or selectable .dockerignore files
+	-tar ch --exclude=.git . | docker build -t livepeerbinary:debian -f docker/Dockerfile.debian -
 	rm .git.describe
