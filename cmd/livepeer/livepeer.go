@@ -125,12 +125,12 @@ func main() {
 
 	configOptions := map[string]*NetworkConfig{
 		"rinkeby": {
-			ethUrl:        "wss://rinkeby.infura.io/ws/v3/782e9e1c60a841409224d10896cf06fc",
+			ethUrl:        "wss://rinkeby.infura.io/ws/v3/09642b98164d43eb890939eb9a7ec500",
 			ethController: "0x37dc71366ec655093b9930bc816e16e6b587f968",
 			monUrl:        "http://metrics-rinkeby.livepeer.org/api/events",
 		},
 		"mainnet": {
-			ethUrl:        "wss://mainnet.infura.io/ws/v3/782e9e1c60a841409224d10896cf06fc",
+			ethUrl:        "wss://mainnet.infura.io/ws/v3/be11162798084102a3519541eded12f6",
 			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
 			monUrl:        "http://metrics-mainnet.livepeer.org/api/events",
 		},
