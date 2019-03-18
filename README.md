@@ -71,6 +71,11 @@ If the broadcast is successful, you should be able to get a streamID by querying
 
 `curl http://localhost:7935/manifestID`
 
+#### Authentication of incoming RTMP streams
+
+Incoming RTMP streams can be authenicating using RTMP Authentication Webhook functionality, details is [here](doc/rtmpwebhookauth.md).
+
+
 ### Streaming
 
 You can use tools like `ffplay` or `VLC` to view the stream.
