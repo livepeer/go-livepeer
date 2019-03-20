@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/transcoder"
@@ -21,12 +23,13 @@ type LocalTranscoder struct {
 func (lt *LocalTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
 	tr := transcoder.NewFFMpegSegmentTranscoder(profiles, lt.workDir)
 	mid, seqNo, parseErr := parseURI(fname)
+	start := time.Now()
 	if monitor.Enabled && parseErr == nil {
 		monitor.LogSegmentTranscodeStarting(seqNo, mid)
 	}
 	data, err := tr.Transcode(fname)
 	if monitor.Enabled && parseErr == nil {
-		monitor.LogSegmentTranscodeEnded(seqNo, mid)
+		monitor.LogSegmentTranscodeEnded(seqNo, mid, time.Since(start), common.ProfilesNames(profiles))
 	}
 	return data, err
 }

@@ -224,7 +224,7 @@ func main() {
 		case core.TranscoderNode:
 			nodeType = "trcr"
 		}
-		lpmon.Init(*monUrl, nodeType, nodeID)
+		lpmon.Init(*monUrl, nodeType, nodeID, core.LivepeerVersion)
 	}
 
 	if n.NodeType == core.TranscoderNode {
@@ -369,6 +369,9 @@ func main() {
 	}
 
 	core.MaxSessions = *maxSessions
+	if lpmon.Enabled {
+		lpmon.MaxSessions(core.MaxSessions)
+	}
 
 	if n.NodeType == core.BroadcasterNode {
 		// default lpms listener for broadcaster; same as default rpc port
