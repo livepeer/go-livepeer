@@ -11,6 +11,9 @@ RUN go get github.com/aws/aws-sdk-go/aws
 RUN go get -u google.golang.org/grpc
 RUN go get github.com/pkg/errors
 RUN go get github.com/stretchr/testify/mock
+RUN go get -u -v go.opencensus.io/stats
+RUN go get -u -v go.opencensus.io/tag
+RUN go get -u -v go.opencensus.io/exporter/prometheus
 
 COPY install_ffmpeg.sh install_ffmpeg.sh
 RUN ./install_ffmpeg.sh
