@@ -129,7 +129,7 @@ func LogSegmentUploadFailed(nonce, seqNo uint64, reason string) {
 }
 
 func LogTranscodedSegmentAppeared(nonce, seqNo uint64, profile string) {
-	glog.Infof("Logging LogTranscodedSegmentAppeared...")
+	glog.Infof("Logging LogTranscodedSegmentAppeared... ", nonce, seqNo, profile)
 	props := map[string]interface{}{
 		"seqNo":   seqNo,
 		"profile": profile,
@@ -218,7 +218,7 @@ func LogSegmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Durat
 }
 
 func LogSegmentTranscodeFailed(subType string, nonce, seqNo uint64, err error) {
-	glog.Info("Logging LogSegmentTranscodeFailed", subType)
+	glog.Info("Logging LogSegmentTranscodeFailed ", subType, nonce, seqNo)
 
 	if metrics.lastSegmentNonce == nonce {
 		metrics.segmentsInFlight--
