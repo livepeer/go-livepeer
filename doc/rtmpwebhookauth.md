@@ -22,7 +22,8 @@ Webhook can respond with zero body - in that case `ManifestID` for the stream wi
 
 ```json
 {
-    "manifestID": "StrigThatIsIDofManifest"
+    "manifestID": "ManifestIDString",
+    "streamKey":  "SecretKey"
 }
 ```
 and Livepeer node will use returned `ManifestID` for the stream.

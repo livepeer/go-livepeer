@@ -187,7 +187,7 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
 	}
 	createSid := createRTMPStreamIDHandler(s)
-	u, _ := url.Parse("http://hot/something/?manifestID=id1")
+	u, _ := url.Parse("http://hot/id1")
 	oldMaxSessions := core.MaxSessions
 	core.MaxSessions = 1
 	// happy case
@@ -215,7 +215,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	createSid := createRTMPStreamIDHandler(s)
 
 	AuthWebhookURL = "http://localhost:8938/notexisting"
-	u, _ := url.Parse("http://hot/something/?manifestID=id1")
+	u, _ := url.Parse("http://hot/something/id1")
 	sid := createSid(u)
 	if sid != "" {
 		t.Error("Webhook auth failed")
@@ -288,12 +288,20 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	// Test hlsStreamID query param
 	key := hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
 	expectedSid := core.MakeStreamIDFromString("ghijkl", key)
-	u, _ := url.Parse("rtmp://localhost?manifestID=" + expectedSid.String()) // with key
+	u, _ := url.Parse("rtmp://localhost/" + expectedSid.String()) // with key
+	if sid := createSid(u); sid != expectedSid.String() {
+		t.Error("Unexpected streamid")
+	}
+	u, _ = url.Parse("rtmp://localhost/stream/" + expectedSid.String()) // with stream
 	if sid := createSid(u); sid != expectedSid.String() {
 		t.Error("Unexpected streamid")
 	}
 	expectedMid := "mnopq"
-	u, _ = url.Parse("rtmp://localhost?manifestID=" + string(expectedMid)) // without key
+	u, _ = url.Parse("rtmp://localhost/" + string(expectedMid)) // without key
+	if sid := createSid(u); sid != string(expectedMid)+"/"+key {
+		t.Error("Unexpected streamid")
+	}
+	u, _ = url.Parse("rtmp://localhost/stream/" + string(expectedMid)) // with stream, without key
 	if sid := createSid(u); sid != string(expectedMid)+"/"+key {
 		t.Error("Unexpected streamid")
 	}
@@ -325,7 +333,7 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	testManifestIDQueryParam := func(inp string) {
 		// This isn't a great test because if the query param ever changes,
 		// this test will still pass
-		u, _ := url.Parse("rtmp://localhost?manifestID=" + url.QueryEscape(inp))
+		u, _ := url.Parse("rtmp://localhost/" + inp)
 		if sid := createSid(u); sid != st.GetStreamID() {
 			t.Errorf("Unexpected StreamID for '%v' ; expected '%v' for input '%v'", sid, st.GetStreamID(), inp)
 		}
