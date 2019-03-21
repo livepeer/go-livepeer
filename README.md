@@ -40,7 +40,7 @@ You can also build the executables from scratch.
 ### Quick start
 - Make sure you have successfully gone through the steps in 'Installing Livepeer' and 'Additional Dependencies'.
 
-- Run `./livepeer -broadcaster -network rinkeby -currentManifest`.
+- Run `./livepeer -broadcaster -network rinkeby`.
 
 - Run `./livepeer_cli`.
   * You should see a wizard launch in the command line.
@@ -67,9 +67,11 @@ By default, the RTMP port is 1935.  For example, if you are using OSX with ffmpe
 
 Similarly, you can use OBS, and change the Settings->Stream->URL to `rtmp://localhost:1935/movie` , along with the keyframe interval to 4 seconds, via `Settings -> Output -> Output Mode (Advanced) -> Streaming tab -> Keyframe Interval 4`.
 
-If the broadcast is successful, you should be able to get a streamID by querying the local node's CLI API:
+If the broadcast is successful, you should be able to access the stream at:
 
-`curl http://localhost:7935/manifestID`
+`http://localhost:8935/stream/movie.m3u8`
+
+where the "movie" stream name is taken from the path in the RTMP URL.
 
 #### Authentication of incoming RTMP streams
 
@@ -80,9 +82,9 @@ Incoming RTMP streams can be authenicating using RTMP Authentication Webhook fun
 
 You can use tools like `ffplay` or `VLC` to view the stream.
 
-For example, after you get the streamID, you can view the stream by running:
+For example, after you start streaming to `rtmp://localhost/movie`, you can view the stream by running:
 
-`ffplay http://localhost:8935/stream/current.m3u8`
+`ffplay http://localhost:8935/stream/movie.m3u8`
 
 Note that the default HTTP port or playback (8935) is different from the CLI API port (7935) that is used for node management and diagnostics!
 

@@ -168,7 +168,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		}
 
 		if mid == "" {
-			mid = parseManifestID(url.Query().Get("manifestID"))
+			mid = parseStreamID(url.Path).ManifestID
 		}
 		if mid == "" {
 			mid = core.RandomManifestID()
