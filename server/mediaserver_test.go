@@ -187,7 +187,7 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
 	}
 	createSid := createRTMPStreamIDHandler(s)
-	u, _ := url.Parse("http://hot/id1")
+	u, _ := url.Parse("http://hot/id1/secret")
 	oldMaxSessions := core.MaxSessions
 	core.MaxSessions = 1
 	// happy case
@@ -196,7 +196,10 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 	if mid != "id1" {
 		t.Error("Stream should be allowd", sid)
 	}
-	s.rtmpConnections[core.ManifestID("id")] = nil
+	if sid != "id1/secret" {
+		t.Error("Stream id/key did not match ", sid)
+	}
+	s.rtmpConnections[core.ManifestID("id1")] = nil
 	// capped case
 	sid = createSid(u)
 	if sid != "" {
@@ -267,6 +270,16 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	if mid != "xy" {
 		t.Error("Should set manifest id to one provided by webhook")
 	}
+	ts5 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"manifestID":"xyz", "streamKey":"zyx"}`))
+	}))
+	defer ts5.Close()
+	AuthWebhookURL = ts5.URL
+	sid = createSid(u)
+	mid = parseManifestID(sid)
+	if mid != "xyz" || sid != "xyz/zyx" {
+		t.Error("Should set manifest / streamkey  to one provided by webhook")
+	}
 	AuthWebhookURL = ""
 }
 
@@ -285,9 +298,8 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	createSid := createRTMPStreamIDHandler(s)
 	endHandler := endRTMPStreamHandler(s)
 
-	// Test hlsStreamID query param
-	key := hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
-	expectedSid := core.MakeStreamIDFromString("ghijkl", key)
+	// Test default path structure
+	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
 	u, _ := url.Parse("rtmp://localhost/" + expectedSid.String()) // with key
 	if sid := createSid(u); sid != expectedSid.String() {
 		t.Error("Unexpected streamid")
@@ -297,6 +309,7 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 		t.Error("Unexpected streamid")
 	}
 	expectedMid := "mnopq"
+	key := hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
 	u, _ = url.Parse("rtmp://localhost/" + string(expectedMid)) // without key
 	if sid := createSid(u); sid != string(expectedMid)+"/"+key {
 		t.Error("Unexpected streamid")

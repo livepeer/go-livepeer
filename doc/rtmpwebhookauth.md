@@ -12,7 +12,7 @@ For example, if incoming RTMP request was made to `rtmp://livepeer.node:1935/som
 
 ```json
 {
-    "url": "rtmp://livepeer.node:1935/something?manifestID=manifest"
+    "url": "rtmp://livepeer.node:1935/manifest"
 }
 ```
 
@@ -29,5 +29,8 @@ Webhook can respond with zero body - in that case `ManifestID` for the stream wi
 and Livepeer node will use returned `ManifestID` for the stream.
 
 `ManifestID`, returned from webhook or provided in url shouldn't have backslahes in it, any other alpha-numeric characters allowed in url will do.
+
+An optional streamKey can be passed in to protect the RTMP from playback. If the
+streamKey is omitted, then a random key is generated.
 
 There is simple webhook authentication server [example](https://github.com/livepeer/go-livepeer/blob/master/cmd/simple_auth_server/simple_auth_server.go).
