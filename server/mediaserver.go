@@ -92,6 +92,7 @@ type LivepeerServer struct {
 
 type authWebhookResponse struct {
 	ManifestID string `json:"manifestID"`
+	StreamKey  string `json:"streamKey"`
 }
 
 func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
@@ -160,15 +161,21 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		//Else check URL for ManifestID
 		//If ManifestID is passed in URL, use that one
 		//Else create one
+		var resp *authWebhookResponse
 		var mid core.ManifestID
 		var err error
-		if mid, err = authenticateStream(url.String()); err != nil {
+		var key string
+		if resp, err = authenticateStream(url.String()); err != nil {
 			glog.Error("Authentication denied for ", err)
 			return ""
 		}
+		if resp != nil {
+			mid, key = parseStreamID(resp.ManifestID).ManifestID, resp.StreamKey
+		}
 
 		if mid == "" {
-			mid = parseStreamID(url.Path).ManifestID
+			sid := parseStreamID(url.Path)
+			mid, key = sid.ManifestID, sid.Rendition
 		}
 		if mid == "" {
 			mid = core.RandomManifestID()
@@ -187,43 +194,45 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		}
 
 		// Generate RTMP part of StreamID
-		key := hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
+		if key == "" {
+			key = hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
+		}
 		return core.MakeStreamIDFromString(string(mid), key).String()
 	}
 }
 
-func authenticateStream(url string) (core.ManifestID, error) {
+func authenticateStream(url string) (*authWebhookResponse, error) {
 	if AuthWebhookURL == "" {
-		return "", nil
+		return nil, nil
 	}
 
 	values := map[string]string{"url": url}
 	jsonValue, err := json.Marshal(values)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	resp, err := http.Post(AuthWebhookURL, "application/json", bytes.NewBuffer(jsonValue))
 
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	rbody, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return "", errors.New(resp.Status)
+		return nil, errors.New(resp.Status)
 	}
 	if len(rbody) == 0 {
-		return "", nil
+		return nil, nil
 	}
 	var authResp authWebhookResponse
 	err = json.Unmarshal(rbody, &authResp)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if authResp.ManifestID == "" {
-		return "", errors.New("Empty manifest id not allowed")
+		return nil, errors.New("Empty manifest id not allowed")
 	}
-	return core.ManifestID(authResp.ManifestID), nil
+	return &authResp, nil
 }
 
 func rtmpManifestID(rtmpStrm stream.RTMPVideoStream) core.ManifestID {
