@@ -112,14 +112,14 @@ func TestSelectOrchestrator(t *testing.T) {
 	mid := core.RandomManifestID()
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	pl := core.NewBasicPlaylistManager(mid, storage)
-	if _, err := selectOrchestrator(s.LivepeerNode, pl); err != ErrDiscovery {
+	if _, err := selectOrchestrator(s.LivepeerNode, pl, 4); err != ErrDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(s.LivepeerNode, pl); sess != nil || err != ErrNoOrchs {
+	if sess, err := selectOrchestrator(s.LivepeerNode, pl, 4); sess != nil || err != ErrNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -128,7 +128,7 @@ func TestSelectOrchestrator(t *testing.T) {
 		&net.OrchestratorInfo{},
 		&net.OrchestratorInfo{},
 	}
-	sess, _ := selectOrchestrator(s.LivepeerNode, pl)
+	sess, _ := selectOrchestrator(s.LivepeerNode, pl, 4)
 
 	if len(sess) != len(sd.infos) {
 		t.Error("Expected session length of 2")
@@ -204,7 +204,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	expSessionID2 := "fool"
 	sender.On("StartSession", params2).Return(expSessionID2)
 
-	sess, err := selectOrchestrator(s.LivepeerNode, pl)
+	sess, err := selectOrchestrator(s.LivepeerNode, pl, 4)
 	require.Nil(t, err)
 
 	assert := assert.New(t)
@@ -765,7 +765,7 @@ func TestSessionListener(t *testing.T) {
 	cxn.lock.RLock()
 	assert.NotNil(cxn.sess)
 	cxn.lock.RUnlock()
-	assert.Equal(1, sd.getOrchCalls)
+	assert.Equal(2, sd.getOrchCalls)
 
 	// multiple calls to inflight needOrch should only invoke startSession once
 	sd.waitGetOrch = make(chan struct{})
@@ -775,7 +775,7 @@ func TestSessionListener(t *testing.T) {
 	sd.waitGetOrch <- struct{}{}
 	time.Sleep(100 * time.Millisecond)
 	sd.lock.Lock()
-	assert.Equal(sd.getOrchCalls, 2)
+	assert.Equal(sd.getOrchCalls, 3)
 	sd.lock.Unlock()
 
 	// test termination
@@ -845,6 +845,68 @@ func TestSessionAssigment_WithTerminatedConnection(t *testing.T) {
 	assert.Nil(cxn.sess) // the important check
 	cxn.lock.RUnlock()
 	assert.Equal(2, sd.getOrchCalls)
+}
+
+func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
+	assert := assert.New(t)
+
+	s := setupServer()
+	// populate stub discovery
+	sd := &stubDiscovery{}
+	sd.infos = []*net.OrchestratorInfo{
+		&net.OrchestratorInfo{Transcoder: "transcoder1"},
+		&net.OrchestratorInfo{Transcoder: "transcoder2"},
+	}
+	s.LivepeerNode.OrchestratorPool = sd
+
+	// create RTMPStream handler methods
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	createSid := createRTMPStreamIDHandler(s)
+	handler := gotRTMPStreamHandler(s)
+	endHandler := endRTMPStreamHandler(s)
+
+	// create BasicRTMPVideoStream and extract ManifestID
+	u, _ := url.Parse("rtmp://localhost")
+	sid := createSid(u)
+	st := stream.NewBasicRTMPVideoStream(sid)
+	mid := rtmpManifestID(st)
+
+	// assert that ManifestID has not been added to rtmpConnections yet
+	_, exists := s.rtmpConnections[mid]
+	assert.Equal(exists, false)
+
+	// assert stream starts successfully
+	err := handler(u, st)
+	assert.Nil(err)
+
+	// assert sessManager is running and has right number of sessions
+	cxn, exists := s.rtmpConnections[mid]
+	assert.Equal(exists, true)
+	assert.Equal(cxn.sessManager.finished, false)
+	assert.Len(cxn.sessManager.sessList, 2)
+	assert.Len(cxn.sessManager.sessMap, 2)
+
+	// assert stream ends successfully
+	err = endHandler(u, st)
+	assert.Nil(err)
+
+	// assert sessManager is not running and has no sessions
+	_, exists = s.rtmpConnections[mid]
+	assert.Equal(exists, false)
+	assert.Equal(cxn.sessManager.finished, true)
+	assert.Len(cxn.sessManager.sessList, 0)
+	assert.Len(cxn.sessManager.sessMap, 0)
+
+	// assert stream starts successfully again
+	err = handler(u, st)
+	assert.Nil(err)
+
+	// assert sessManager is running and has right number of sessions
+	cxn, exists = s.rtmpConnections[mid]
+	assert.Equal(exists, true)
+	assert.Equal(cxn.sessManager.finished, false)
+	assert.Len(cxn.sessManager.sessList, 2)
+	assert.Len(cxn.sessManager.sessMap, 2)
 }
 
 func TestCleanStreamPrefix(t *testing.T) {

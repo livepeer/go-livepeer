@@ -59,11 +59,12 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 var AuthWebhookURL string
 
 type rtmpConnection struct {
-	mid     core.ManifestID
-	nonce   uint64
-	stream  stream.RTMPVideoStream
-	pl      core.PlaylistManager
-	profile *ffmpeg.VideoProfile
+	mid         core.ManifestID
+	nonce       uint64
+	stream      stream.RTMPVideoStream
+	pl          core.PlaylistManager
+	profile     *ffmpeg.VideoProfile
+	sessManager *BroadcastSessionsManager
 
 	needOrch chan struct{}
 	eof      chan struct{}
@@ -307,6 +308,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			glog.Error("Attempted to end unknown stream with manifest ID ", mid)
 			return ErrUnknownStream
 		}
+		cxn.sessManager.cleanup()
 		cxn.pl.Cleanup()
 		glog.Infof("Ended stream with id=%s", mid)
 		cxn.eof <- struct{}{}
@@ -363,16 +365,18 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		// We can only have one concurrent stream per ManifestID
 		return nil, ErrAlreadyExists
 	}
-	cxn := &rtmpConnection{
-		mid:     mid,
-		nonce:   nonce,
-		stream:  rtmpStrm,
-		pl:      core.NewBasicPlaylistManager(mid, storage),
-		profile: &vProfile,
-		lock:    &sync.RWMutex{},
 
-		needOrch: make(chan struct{}),
-		eof:      make(chan struct{}),
+	playlist := core.NewBasicPlaylistManager(mid, storage)
+	cxn := &rtmpConnection{
+		mid:         mid,
+		nonce:       nonce,
+		stream:      rtmpStrm,
+		pl:          playlist,
+		profile:     &vProfile,
+		lock:        &sync.RWMutex{},
+		sessManager: NewSessionManager(s.LivepeerNode, playlist),
+		needOrch:    make(chan struct{}),
+		eof:         make(chan struct{}),
 	}
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
