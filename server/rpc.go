@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -48,6 +49,80 @@ type Orchestrator interface {
 type Broadcaster interface {
 	Address() ethcommon.Address
 	Sign([]byte) ([]byte, error)
+}
+
+type BroadcastSessionsManager struct {
+	broadcastSessions []*BroadcastSession
+	sessLock          *sync.Mutex
+}
+
+// func (bsm *BroadcastSessionsManager) selectFromList(node *core.LivepeerNode, pl core.PlaylistManager) *BroadcastSession {
+func (bsm *BroadcastSessionsManager) selectFromList() *BroadcastSession {
+	// bsm.checkStatusOfList(numOrchs, node, pl)
+	bsm.checkStatusOfList()
+
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+
+	sess, sessions := bsm.broadcastSessions[0], bsm.broadcastSessions[1:]
+	bsm.broadcastSessions = sessions
+
+	return sess
+}
+
+func (bsm *BroadcastSessionsManager) removeFromList(session *BroadcastSession) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	var sessions []*BroadcastSession
+	for i, s := range bsm.broadcastSessions {
+		if s == session {
+			sessions = append(bsm.broadcastSessions[:i], bsm.broadcastSessions[i+1:]...)
+			break
+		}
+	}
+	bsm.broadcastSessions = sessions
+}
+
+func (bsm *BroadcastSessionsManager) addToList(sess *BroadcastSession) {
+	bsm.sessLock.Lock()
+	bsm.broadcastSessions = append(bsm.broadcastSessions, sess)
+	bsm.sessLock.Unlock()
+}
+
+// func (bsm *BroadcastSessionsManager) checkStatusOfList(numOrchs int, node *core.LivepeerNode, pl core.PlaylistManager) {
+func (bsm *BroadcastSessionsManager) checkStatusOfList() {
+	var newBroadcastSessions []*BroadcastSession
+	defaultNumOrchs := int(HTTPTimeout / SegLen)
+	reqLengthOfList := defaultNumOrchs * 3
+
+	bsm.sessLock.Lock()
+	if len(bsm.broadcastSessions) < defaultNumOrchs {
+		bsm.sessLock.Unlock()
+		// newBroadcastSessions, err := selectOrchestrator(node, pl)
+		newBroadcastSessions = []*BroadcastSession{}
+		// if err != nil {
+		// 	return
+		// }
+		glog.Info(newBroadcastSessions)
+	} else {
+		return
+	}
+
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	// include all O's being used successfully in refreshed list
+	for _, currentSess := range bsm.broadcastSessions {
+		for _, newSess := range newBroadcastSessions {
+			if len(bsm.broadcastSessions) < reqLengthOfList {
+				if newSess != currentSess {
+					bsm.broadcastSessions = append(bsm.broadcastSessions, newSess)
+				}
+			} else {
+				return
+			}
+		}
+	}
+	return
 }
 
 // Session-specific state for broadcasters
