@@ -31,7 +31,8 @@ func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager) (*Broadc
 
 	rpcBcast := core.NewBroadcaster(n)
 
-	tinfos, err := n.OrchestratorPool.GetOrchestrators(1)
+	defaultNumOrchs := HTTPTimeout / SegLen
+	tinfos, err := n.OrchestratorPool.GetOrchestrators(int(defaultNumOrchs))
 	if len(tinfos) <= 0 {
 		glog.Info("No orchestrators found; not transcoding. Error: ", err)
 		return nil, ErrNoOrchs
