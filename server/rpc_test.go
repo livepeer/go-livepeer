@@ -565,17 +565,23 @@ func TestSelect(t *testing.T) {
 	assert := assert.New(t)
 	assert.Len(bsm.broadcastSessions, 2)
 
+	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
+	mid := core.SplitStreamIDString(t.Name()).ManifestID
+	drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
+	storage := drivers.NodeStorage.NewSession(string(mid))
+	pl := core.NewBasicPlaylistManager(mid, storage)
+
 	// assert last session selected and broadcastSessions is correct length
-	sess := bsm.selectSession()
+	sess := bsm.selectSession(n, pl)
 	assert.Equal(expectedSess1, sess)
 	assert.Len(bsm.broadcastSessions, 1)
 
-	sess = bsm.selectSession()
+	sess = bsm.selectSession(n, pl)
 	assert.Equal(expectedSess2, sess)
 	assert.Len(bsm.broadcastSessions, 0)
 
 	// assert no session is selected from empty list
-	sess = bsm.selectSession()
+	sess = bsm.selectSession(n, pl)
 	assert.Nil(sess)
 	assert.Len(bsm.broadcastSessions, 0)
 }
@@ -607,7 +613,7 @@ func TestRemoveSession(t *testing.T) {
 	assert.Len(bsm.broadcastSessMap, 0)
 }
 
-func TestCompleteSession(t *testing.T) {
+func TestCompleteSessions(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
 	sess1 := bsm.broadcastSessions[0]
 	bsm.broadcastSessions = []*BroadcastSession{bsm.broadcastSessions[0]}
@@ -634,11 +640,45 @@ func TestCompleteSession(t *testing.T) {
 	assert.Equal(sess1, bsm.broadcastSessions[1])
 }
 
-// note: once selectOrchestrator is integrated into statusOfList(), must beef up this test
 func TestRefreshSessions(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
-	bsm.refreshSessions()
+
+	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	mid := core.RandomManifestID()
+	storage := drivers.NodeStorage.NewSession(string(mid))
+	pl := core.NewBasicPlaylistManager(mid, storage)
+
+	sess1 := bsm.broadcastSessions[0]
+	sess2 := bsm.broadcastSessions[1]
 
 	assert := assert.New(t)
 	assert.Len(bsm.broadcastSessions, 2)
+	assert.Len(bsm.broadcastSessMap, 2)
+
+	// monkey patching the result of `selectOrchestrator` to include same sessions already in bsm.broadcastSessions
+	selectOrchs = func(n *core.LivepeerNode, pl core.PlaylistManager) ([]*BroadcastSession, error) {
+		return []*BroadcastSession{sess1, sess2}, nil
+	}
+
+	// asserting that pre-existing sessions are not added to broadcastSessions or broadcastSessMap
+	bsm.refreshSessions(n, pl)
+	assert.Len(bsm.broadcastSessions, 2)
+	assert.Len(bsm.broadcastSessMap, 2)
+
+	sess3 := StubBroadcastSession("transcoder3")
+	sess4 := StubBroadcastSession("transcoder4")
+
+	selectOrchs = func(n *core.LivepeerNode, pl core.PlaylistManager) ([]*BroadcastSession, error) {
+		return []*BroadcastSession{sess3, sess4}, nil
+	}
+
+	// asserting that new sessions are added to broadcastSessions and broadcastSessMap
+	bsm.refreshSessions(n, pl)
+	assert.Len(bsm.broadcastSessions, 4)
+	assert.Len(bsm.broadcastSessMap, 4)
+
+	// asserting that new sessions were added to the beginning of the list
+	assert.Equal(bsm.broadcastSessions[0], sess3)
+	assert.Equal(bsm.broadcastSessions[1], sess4)
 }

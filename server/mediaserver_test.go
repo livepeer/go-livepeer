@@ -94,6 +94,7 @@ func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVide
 	if err := hs.AddHLSSegment(&stream.HLSSegment{SeqNo: 3, Name: "seg3.ts"}); err != nil {
 		glog.Errorf("Error adding hls seg3")
 	}
+
 	return nil
 }
 
@@ -674,10 +675,11 @@ func TestStartSession(t *testing.T) {
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	strm := stream.NewBasicRTMPVideoStream(string(mid))
 	cxn := &rtmpConnection{
-		mid:    mid,
-		lock:   &sync.RWMutex{},
-		pl:     core.NewBasicPlaylistManager(mid, storage),
-		stream: strm,
+		mid:         mid,
+		lock:        &sync.RWMutex{},
+		pl:          core.NewBasicPlaylistManager(mid, storage),
+		stream:      strm,
+		sessManager: &BroadcastSessionsManager{broadcastSessions: []*BroadcastSession{}, sessLock: &sync.Mutex{}},
 	}
 	sd := &stubDiscovery{
 		lock:  &sync.Mutex{},
@@ -712,7 +714,7 @@ func TestStartSession(t *testing.T) {
 	sd.getOrchError = fmt.Errorf("StubError") // inital error
 	sd.lock.Unlock()
 	sd.waitGetOrch = make(chan struct{})
-	sessionWait := make(chan *BroadcastSession)
+	sessionWait := make(chan []*BroadcastSession)
 	go func() {
 		sessionWait <- s.startSession(cxn)
 	}()
@@ -734,7 +736,7 @@ func TestSessionListener(t *testing.T) {
 	s := setupServer()
 	sd := &stubDiscovery{
 		lock:  &sync.Mutex{},
-		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{}},
+		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{Transcoder: "transcoder1"}},
 	}
 	s.LivepeerNode.OrchestratorPool = sd
 	mid := core.SplitStreamIDString(t.Name()).ManifestID
@@ -743,6 +745,7 @@ func TestSessionListener(t *testing.T) {
 
 	assert.Nil(err) // sanity check
 	assert.NotNil(cxn)
+	assert.NotNil(cxn.sessManager)
 
 	listenerStopped := make(chan struct{})
 	go func() {
@@ -752,19 +755,21 @@ func TestSessionListener(t *testing.T) {
 
 	// sanity check
 	cxn.lock.RLock()
-	assert.Nil(cxn.sess)
+	assert.Len(cxn.sessManager.broadcastSessions, 0)
 	cxn.lock.RUnlock()
 
 	// test getting a single orch; ensure session populated
 	cxn.needOrch <- struct{}{}
 	time.Sleep(100 * time.Millisecond)
 	cxn.lock.RLock()
-	assert.NotNil(cxn.sess)
+	assert.Len(cxn.sessManager.broadcastSessions, 1)
+	assert.Equal(cxn.sessManager.broadcastSessions[0].OrchestratorInfo.Transcoder, "transcoder1")
 	cxn.lock.RUnlock()
 	assert.Equal(1, sd.getOrchCalls)
 
 	// multiple calls to inflight needOrch should only invoke startSession once
 	sd.waitGetOrch = make(chan struct{})
+
 	for i := 0; i < 100; i++ {
 		cxn.needOrch <- struct{}{}
 	}
@@ -772,6 +777,8 @@ func TestSessionListener(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	sd.lock.Lock()
 	assert.Equal(sd.getOrchCalls, 2)
+	assert.Len(cxn.sessManager.broadcastSessions, 1)
+	assert.Equal(cxn.sessManager.broadcastSessions[0].OrchestratorInfo.Transcoder, "transcoder1")
 	sd.lock.Unlock()
 
 	// test termination
@@ -801,24 +808,25 @@ func TestSessionAssigment_WithTerminatedConnection(t *testing.T) {
 	s := setupServer()
 	sd := &stubDiscovery{
 		lock:  &sync.Mutex{},
-		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{}},
+		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{Transcoder: "transcoder1"}},
 	}
 	s.LivepeerNode.OrchestratorPool = sd
 	mid := core.SplitStreamIDString(t.Name()).ManifestID
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	strm := stream.NewBasicRTMPVideoStream(string(mid))
 	cxn := &rtmpConnection{
-		mid:      mid,
-		needOrch: make(chan struct{}),
-		lock:     &sync.RWMutex{},
-		eof:      make(chan struct{}),
-		pl:       core.NewBasicPlaylistManager(mid, storage),
-		stream:   strm,
+		mid:         mid,
+		needOrch:    make(chan struct{}),
+		lock:        &sync.RWMutex{},
+		eof:         make(chan struct{}),
+		pl:          core.NewBasicPlaylistManager(mid, storage),
+		stream:      strm,
+		sessManager: &BroadcastSessionsManager{broadcastSessions: []*BroadcastSession{}, sessLock: &sync.Mutex{}},
 	}
 
 	// sanity: nil session
 	cxn.lock.Lock()
-	assert.Nil(cxn.sess) // nil session
+	assert.Len(cxn.sessManager.broadcastSessions, 0) // nil session
 	cxn.lock.Unlock()
 
 	// sanity: non-registered cxn
@@ -828,7 +836,9 @@ func TestSessionAssigment_WithTerminatedConnection(t *testing.T) {
 	s.connectionLock.Unlock()
 
 	// sanity: startSession returns a non-nil session with a non-registered cxn
-	assert.NotNil(s.startSession(cxn))
+	sess := s.startSession(cxn)
+	assert.Len(sess, 1)
+	assert.Equal(sess[0].OrchestratorInfo.Transcoder, "transcoder1")
 	assert.Equal(1, sd.getOrchCalls)
 
 	// start session listener with non-registered cxn
@@ -838,7 +848,7 @@ func TestSessionAssigment_WithTerminatedConnection(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 	cxn.lock.RLock()
-	assert.Nil(cxn.sess) // the important check
+	assert.Len(cxn.sessManager.broadcastSessions, 0) // the important check
 	cxn.lock.RUnlock()
 	assert.Equal(2, sd.getOrchCalls)
 }

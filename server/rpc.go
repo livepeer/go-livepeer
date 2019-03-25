@@ -57,7 +57,7 @@ type BroadcastSessionsManager struct {
 	sessLock          *sync.Mutex
 }
 
-func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
+func (bsm *BroadcastSessionsManager) selectSession(node *core.LivepeerNode, pl core.PlaylistManager) *BroadcastSession {
 	// minOrchs is maximum number of inflight sessions
 	minOrchs := int(HTTPTimeout / SegLen)
 	bsm.sessLock.Lock()
@@ -65,7 +65,7 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 	numSess := len(bsm.broadcastSessions)
 
 	if numSess < minOrchs {
-		go bsm.refreshSessions()
+		go bsm.refreshSessions(node, pl)
 	}
 
 	if numSess <= 0 {
@@ -93,8 +93,15 @@ func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
 	}
 }
 
-func (bsm *BroadcastSessionsManager) refreshSessions() {
-	newBroadcastSessions := []*BroadcastSession{}
+var selectOrchs = func(n *core.LivepeerNode, pl core.PlaylistManager) ([]*BroadcastSession, error) {
+	return selectOrchestrator(n, pl)
+}
+
+func (bsm *BroadcastSessionsManager) refreshSessions(node *core.LivepeerNode, pl core.PlaylistManager) {
+	newBroadcastSessions, err := selectOrchs(node, pl)
+	if err != nil {
+		return
+	}
 
 	// include all O's being used successfully in refreshed list
 	if len(newBroadcastSessions) <= 0 {

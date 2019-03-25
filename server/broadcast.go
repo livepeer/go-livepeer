@@ -86,7 +86,7 @@ func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager) ([]*Broa
 	return sessions, nil
 }
 
-func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
+func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment, node *core.LivepeerNode) {
 
 	nonce := cxn.nonce
 	rtmpStrm := cxn.stream
@@ -95,7 +95,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	vProfile := cxn.profile
 
 	cxn.lock.RLock()
-	sess := cxn.sess
+	sess := cxn.sessManager.selectSession(node, cxn.pl)
 	cxn.lock.RUnlock()
 
 	if monitor.Enabled {
@@ -157,6 +157,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 
 		res, err := SubmitSegment(sess, seg, nonce)
 		if err != nil {
+			cxn.sessManager.removeSession(sess)
 			if shouldStopStream(err) {
 				glog.Warningf("Stopping current stream due to: %v", err)
 				rtmpStrm.Close()
@@ -166,6 +167,8 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 				cxn.needOrch <- struct{}{}
 			}
 			return
+		} else {
+			cxn.sessManager.completeSession(sess)
 		}
 
 		// download transcoded segments from the transcoder

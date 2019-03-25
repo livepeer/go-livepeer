@@ -268,7 +268,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						monitor.LogStreamStartedEvent(nonce)
 					}
 				}
-				processSegment(cxn, seg)
+				processSegment(cxn, seg, s.LivepeerNode)
 			})
 
 			segOptions := segmenter.SegmenterOptions{
@@ -365,15 +365,19 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		return nil, ErrAlreadyExists
 	}
 	cxn := &rtmpConnection{
-		mid:         mid,
-		nonce:       nonce,
-		stream:      rtmpStrm,
-		pl:          core.NewBasicPlaylistManager(mid, storage),
-		profile:     &vProfile,
-		lock:        &sync.RWMutex{},
-		sessManager: &BroadcastSessionsManager{broadcastSessions: []*BroadcastSession{}, sessLock: &sync.Mutex{}},
-		needOrch:    make(chan struct{}),
-		eof:         make(chan struct{}),
+		mid:     mid,
+		nonce:   nonce,
+		stream:  rtmpStrm,
+		pl:      core.NewBasicPlaylistManager(mid, storage),
+		profile: &vProfile,
+		lock:    &sync.RWMutex{},
+		sessManager: &BroadcastSessionsManager{
+			broadcastSessions: []*BroadcastSession{},
+			sessLock:          &sync.Mutex{},
+			broadcastSessMap:  make(map[string]*BroadcastSession),
+		},
+		needOrch: make(chan struct{}),
+		eof:      make(chan struct{}),
 	}
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
@@ -385,7 +389,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	return cxn, nil
 }
 
-func (s *LivepeerServer) startSession(cxn *rtmpConnection) *BroadcastSession {
+func (s *LivepeerServer) startSession(cxn *rtmpConnection) []*BroadcastSession {
 
 	mid := cxn.mid
 	cpl := cxn.pl
@@ -413,10 +417,7 @@ func (s *LivepeerServer) startSession(cxn *rtmpConnection) *BroadcastSession {
 	expb.MaxInterval = BroadcastRetry
 	expb.MaxElapsedTime = 0
 	backoff.Retry(broadcastFunc, expb)
-	if len(sess) > 0 {
-		return sess[0]
-	}
-	return nil
+	return sess
 }
 
 func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
@@ -439,7 +440,10 @@ func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
 		}
 		mut.Lock()
 		defer mut.Unlock()
-		cxn.sess = sess
+		cxn.sessManager.broadcastSessions = sess
+		for _, s := range sess {
+			cxn.sessManager.broadcastSessMap[s.OrchestratorInfo.Transcoder] = s
+		}
 	}
 	glog.V(common.DEBUG).Info("Starting broadcast listener for ", cxn.mid)
 	finished := false
