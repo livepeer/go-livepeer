@@ -73,6 +73,8 @@ If the broadcast is successful, you should be able to access the stream at:
 
 where the "movie" stream name is taken from the path in the RTMP URL.
 
+See the documentation on [RTMP ingest](doc/ingest.md) for more details.
+
 #### Authentication of incoming RTMP streams
 
 Incoming RTMP streams can be authenicating using RTMP Authentication Webhook functionality, details is [here](doc/rtmpwebhookauth.md).
