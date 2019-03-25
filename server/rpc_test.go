@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -531,4 +532,57 @@ func defaultTicket(t *testing.T) *net.Ticket {
 		SenderNonce:       456,
 		RecipientRandHash: pm.RandBytes(123),
 	}
+}
+
+func StubBroadcastSessionsManager() *BroadcastSessionsManager {
+	sess1 := &BroadcastSession{
+		Broadcaster: StubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+	}
+	sess2 := &BroadcastSession{
+		Broadcaster: StubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+	}
+	return &BroadcastSessionsManager{broadcastSessions: []*BroadcastSession{sess1, sess2}, sessLock: &sync.Mutex{}}
+}
+
+func TestSelectFromList(t *testing.T) {
+	bsm := StubBroadcastSessionsManager()
+	expectedSess := bsm.broadcastSessions[1]
+
+	assert := assert.New(t)
+	assert.Len(bsm.broadcastSessions, 2)
+
+	sess := bsm.selectFromList()
+	assert.Equal(expectedSess, sess)
+	assert.Len(bsm.broadcastSessions, 1)
+
+	bsm = &BroadcastSessionsManager{broadcastSessions: []*BroadcastSession{}, sessLock: &sync.Mutex{}}
+	assert.Len(bsm.broadcastSessions, 0)
+
+	sess = bsm.selectFromList()
+	assert.Nil(sess)
+	assert.Len(bsm.broadcastSessions, 0)
+}
+
+func TestAddToList(t *testing.T) {
+	bsm := StubBroadcastSessionsManager()
+	sess := &BroadcastSession{
+		Broadcaster: StubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+	}
+
+	bsm.addToList(sess)
+	assert := assert.New(t)
+	assert.Equal(sess, bsm.broadcastSessions[2])
+	assert.Len(bsm.broadcastSessions, 3)
+}
+
+// note: once selectOrchestrator is integrated into statusOfList(), must beef up this test
+func TestStatusOfList(t *testing.T) {
+	bsm := StubBroadcastSessionsManager()
+	bsm.checkStatusOfList()
+
+	assert := assert.New(t)
+	assert.Len(bsm.broadcastSessions, 2)
 }

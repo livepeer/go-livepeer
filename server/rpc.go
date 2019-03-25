@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -48,6 +49,84 @@ type Orchestrator interface {
 type Broadcaster interface {
 	Address() ethcommon.Address
 	Sign([]byte) ([]byte, error)
+}
+
+type BroadcastSessionsManager struct {
+	broadcastSessions []*BroadcastSession
+	sessLock          *sync.Mutex
+}
+
+func (bsm *BroadcastSessionsManager) selectFromList() *BroadcastSession {
+	bsm.checkStatusOfList()
+
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+
+	if len(bsm.broadcastSessions) > 0 {
+		last := len(bsm.broadcastSessions) - 1
+		sess, sessions := bsm.broadcastSessions[last], bsm.broadcastSessions[:last]
+		bsm.broadcastSessions = sessions
+		return sess
+	}
+	return nil
+}
+
+func (bsm *BroadcastSessionsManager) addToList(sess *BroadcastSession) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+
+	for _, currentSess := range bsm.broadcastSessions {
+		if currentSess == sess {
+			return
+		}
+	}
+	bsm.broadcastSessions = append(bsm.broadcastSessions, sess)
+}
+
+func (bsm *BroadcastSessionsManager) checkStatusOfList() {
+	var newBroadcastSessions []*BroadcastSession
+	// minOrchs is maximum number of inflight sessions
+	minOrchs := int(HTTPTimeout / SegLen)
+	reqLengthOfList := minOrchs * 2
+
+	if len(bsm.broadcastSessions) < minOrchs {
+		newBroadcastSessions = []*BroadcastSession{}
+		// newBroadcastSessions, err := selectOrchestrator(node, pl)
+		// if err != nil {
+		// 	return
+		// }
+		glog.Info(newBroadcastSessions)
+	} else {
+		return
+	}
+
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+
+	// include all O's being used successfully in refreshed list
+	var newSessionsMap map[*BroadcastSession]bool
+	if len(newBroadcastSessions) > 0 {
+
+		for _, newSess := range newBroadcastSessions {
+			newSessionsMap[newSess] = true
+		}
+
+		if len(bsm.broadcastSessions) > 0 {
+			for _, currentSess := range bsm.broadcastSessions {
+				if _, ok := newSessionsMap[currentSess]; ok {
+					delete(newSessionsMap, currentSess)
+				}
+			}
+		}
+
+		if len(newSessionsMap) > 0 {
+			for sess, _ := range newSessionsMap {
+				if len(bsm.broadcastSessions) < reqLengthOfList {
+					bsm.broadcastSessions = append(bsm.broadcastSessions, sess)
+				}
+			}
+		}
+	}
 }
 
 // Session-specific state for broadcasters

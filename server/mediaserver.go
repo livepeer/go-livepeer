@@ -59,11 +59,12 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 var AuthWebhookURL string
 
 type rtmpConnection struct {
-	mid     core.ManifestID
-	nonce   uint64
-	stream  stream.RTMPVideoStream
-	pl      core.PlaylistManager
-	profile *ffmpeg.VideoProfile
+	mid         core.ManifestID
+	nonce       uint64
+	stream      stream.RTMPVideoStream
+	pl          core.PlaylistManager
+	profile     *ffmpeg.VideoProfile
+	sessManager *BroadcastSessionsManager
 
 	needOrch chan struct{}
 	eof      chan struct{}
@@ -364,15 +365,15 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		return nil, ErrAlreadyExists
 	}
 	cxn := &rtmpConnection{
-		mid:     mid,
-		nonce:   nonce,
-		stream:  rtmpStrm,
-		pl:      core.NewBasicPlaylistManager(mid, storage),
-		profile: &vProfile,
-		lock:    &sync.RWMutex{},
-
-		needOrch: make(chan struct{}),
-		eof:      make(chan struct{}),
+		mid:         mid,
+		nonce:       nonce,
+		stream:      rtmpStrm,
+		pl:          core.NewBasicPlaylistManager(mid, storage),
+		profile:     &vProfile,
+		lock:        &sync.RWMutex{},
+		sessManager: &BroadcastSessionsManager{broadcastSessions: []*BroadcastSession{}, sessLock: &sync.Mutex{}},
+		needOrch:    make(chan struct{}),
+		eof:         make(chan struct{}),
 	}
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
