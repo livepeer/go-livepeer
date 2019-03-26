@@ -88,7 +88,7 @@ func main() {
 	if *rinkeby {
 		if !*offchain {
 			if *ethUrl == "" {
-				*ethUrl = "wss://rinkeby.infura.io/ws"
+				*ethUrl = "wss://rinkeby.infura.io/ws/v3/09642b98164d43eb890939eb9a7ec500"
 			}
 			if *controllerAddr == "" {
 				*controllerAddr = RinkebyControllerAddr
@@ -102,7 +102,7 @@ func main() {
 	} else {
 		if !*offchain {
 			if *ethUrl == "" {
-				*ethUrl = "wss://mainnet.infura.io/ws"
+				*ethUrl = "wss://mainnet.infura.io/ws/v3/be11162798084102a3519541eded12f6"
 			}
 			if *controllerAddr == "" {
 				*controllerAddr = MainnetControllerAddr
