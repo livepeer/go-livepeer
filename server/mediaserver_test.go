@@ -125,23 +125,29 @@ func TestSelectOrchestrator(t *testing.T) {
 		&net.OrchestratorInfo{},
 	}
 	sess, _ := selectOrchestrator(s.LivepeerNode, pl)
-	if sess == nil {
-		t.Error("Expected nil session")
+
+	if len(sess) != len(sd.infos) {
+		t.Error("Expected session length of 2")
 	}
+
+	if sess == nil {
+		t.Error("Expected non-nil session")
+	}
+
 	// Sanity check a few easy fields
-	if sess.ManifestID != mid {
+	if sess[0].ManifestID != mid {
 		t.Error("Expected manifest id")
 	}
-	if sess.BroadcasterOS != storage {
+	if sess[0].BroadcasterOS != storage {
 		t.Error("Unexpected broadcaster OS")
 	}
-	if sess.OrchestratorInfo != sd.infos[0] || sd.infos[0] == sd.infos[1] {
+	if sess[0].OrchestratorInfo != sd.infos[0] || sd.infos[0] == sd.infos[1] {
 		t.Error("Unexpected orchestrator info")
 	}
-	if sess.Sender != nil {
+	if sess[0].Sender != nil {
 		t.Error("Unexpected sender")
 	}
-	if sess.PMSessionID != "" {
+	if sess[0].PMSessionID != "" {
 		t.Error("Unexpected PM sessionID")
 	}
 
@@ -164,21 +170,46 @@ func TestSelectOrchestrator(t *testing.T) {
 		Seed:              params.Seed.Bytes(),
 	}
 
+	params2 := pm.TicketParams{
+		Recipient:         pm.RandAddress(),
+		FaceValue:         big.NewInt(1234),
+		WinProb:           big.NewInt(5678),
+		RecipientRandHash: pm.RandHash(),
+		Seed:              big.NewInt(7777),
+	}
+	protoParams2 := &net.TicketParams{
+		Recipient:         params2.Recipient.Bytes(),
+		FaceValue:         params2.FaceValue.Bytes(),
+		WinProb:           params2.WinProb.Bytes(),
+		RecipientRandHash: params2.RecipientRandHash.Bytes(),
+		Seed:              params2.Seed.Bytes(),
+	}
+
 	sd.infos = []*net.OrchestratorInfo{
 		&net.OrchestratorInfo{
 			TicketParams: protoParams,
+		},
+		&net.OrchestratorInfo{
+			TicketParams: protoParams2,
 		},
 	}
 
 	expSessionID := "foo"
 	sender.On("StartSession", params).Return(expSessionID)
 
+	expSessionID2 := "fool"
+	sender.On("StartSession", params2).Return(expSessionID2)
+
 	sess, err := selectOrchestrator(s.LivepeerNode, pl)
 	require.Nil(t, err)
 
 	assert := assert.New(t)
-	assert.Equal(sender, sess.Sender)
-	assert.Equal(expSessionID, sess.PMSessionID)
+	assert.Len(sess, 2)
+	assert.Equal(sender, sess[0].Sender)
+	assert.Equal(expSessionID, sess[0].PMSessionID)
+	assert.Equal(expSessionID2, sess[1].PMSessionID)
+	assert.Equal(sess[0].OrchestratorInfo, &net.OrchestratorInfo{TicketParams: protoParams})
+	assert.Equal(sess[1].OrchestratorInfo, &net.OrchestratorInfo{TicketParams: protoParams2})
 }
 
 func TestCreateRTMPStreamHandlerCap(t *testing.T) {
