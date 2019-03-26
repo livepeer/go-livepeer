@@ -390,7 +390,7 @@ func (s *LivepeerServer) startSession(cxn *rtmpConnection) *BroadcastSession {
 
 	mid := cxn.mid
 	cpl := cxn.pl
-	var sess *BroadcastSession
+	var sess []*BroadcastSession
 
 	// Connect to the orchestrator. If it fails, retry for as long
 	// as the RTMP stream is alive
@@ -414,7 +414,10 @@ func (s *LivepeerServer) startSession(cxn *rtmpConnection) *BroadcastSession {
 	expb.MaxInterval = BroadcastRetry
 	expb.MaxElapsedTime = 0
 	backoff.Retry(broadcastFunc, expb)
-	return sess
+	if len(sess) > 0 {
+		return sess[0]
+	}
+	return nil
 }
 
 func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
