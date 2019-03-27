@@ -56,50 +56,42 @@ type BroadcastSessionsManager struct {
 	sessLock          *sync.Mutex
 }
 
-// func (bsm *BroadcastSessionsManager) selectFromList(node *core.LivepeerNode, pl core.PlaylistManager) *BroadcastSession {
 func (bsm *BroadcastSessionsManager) selectFromList() *BroadcastSession {
-	// bsm.checkStatusOfList(numOrchs, node, pl)
 	bsm.checkStatusOfList()
 
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 
-	sess, sessions := bsm.broadcastSessions[0], bsm.broadcastSessions[1:]
-	bsm.broadcastSessions = sessions
-
-	return sess
-}
-
-func (bsm *BroadcastSessionsManager) removeFromList(session *BroadcastSession) {
-	bsm.sessLock.Lock()
-	defer bsm.sessLock.Unlock()
-	var sessions []*BroadcastSession
-	for i, s := range bsm.broadcastSessions {
-		if s == session {
-			sessions = append(bsm.broadcastSessions[:i], bsm.broadcastSessions[i+1:]...)
-			break
-		}
+	if len(bsm.broadcastSessions) > 0 {
+		last := len(bsm.broadcastSessions) - 1
+		sess, sessions := bsm.broadcastSessions[last], bsm.broadcastSessions[:last]
+		bsm.broadcastSessions = sessions
+		return sess
 	}
-	bsm.broadcastSessions = sessions
+	return nil
 }
 
 func (bsm *BroadcastSessionsManager) addToList(sess *BroadcastSession) {
 	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+
+	for _, currentSess := range bsm.broadcastSessions {
+		if currentSess == sess {
+			return
+		}
+	}
 	bsm.broadcastSessions = append(bsm.broadcastSessions, sess)
-	bsm.sessLock.Unlock()
 }
 
-// func (bsm *BroadcastSessionsManager) checkStatusOfList(numOrchs int, node *core.LivepeerNode, pl core.PlaylistManager) {
 func (bsm *BroadcastSessionsManager) checkStatusOfList() {
 	var newBroadcastSessions []*BroadcastSession
-	defaultNumOrchs := int(HTTPTimeout / SegLen)
-	reqLengthOfList := defaultNumOrchs * 3
+	// minOrchs is maximum number of inflight sessions
+	minOrchs := int(HTTPTimeout / SegLen)
+	reqLengthOfList := minOrchs * 2
 
-	bsm.sessLock.Lock()
-	if len(bsm.broadcastSessions) < defaultNumOrchs {
-		bsm.sessLock.Unlock()
-		// newBroadcastSessions, err := selectOrchestrator(node, pl)
+	if len(bsm.broadcastSessions) < minOrchs {
 		newBroadcastSessions = []*BroadcastSession{}
+		// newBroadcastSessions, err := selectOrchestrator(node, pl)
 		// if err != nil {
 		// 	return
 		// }
@@ -110,19 +102,31 @@ func (bsm *BroadcastSessionsManager) checkStatusOfList() {
 
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
+
 	// include all O's being used successfully in refreshed list
-	for _, currentSess := range bsm.broadcastSessions {
+	var newSessionsMap map[*BroadcastSession]bool
+	if len(newBroadcastSessions) > 0 {
+
 		for _, newSess := range newBroadcastSessions {
-			if len(bsm.broadcastSessions) < reqLengthOfList {
-				if newSess != currentSess {
-					bsm.broadcastSessions = append(bsm.broadcastSessions, newSess)
+			newSessionsMap[newSess] = true
+		}
+
+		if len(bsm.broadcastSessions) > 0 {
+			for _, currentSess := range bsm.broadcastSessions {
+				if _, ok := newSessionsMap[currentSess]; ok {
+					delete(newSessionsMap, currentSess)
 				}
-			} else {
-				return
+			}
+		}
+
+		if len(newSessionsMap) > 0 {
+			for sess, _ := range newSessionsMap {
+				if len(bsm.broadcastSessions) < reqLengthOfList {
+					bsm.broadcastSessions = append(bsm.broadcastSessions, sess)
+				}
 			}
 		}
 	}
-	return
 }
 
 // Session-specific state for broadcasters

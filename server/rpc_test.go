@@ -19,7 +19,6 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -547,29 +546,26 @@ func StubBroadcastSessionsManager() *BroadcastSessionsManager {
 	return &BroadcastSessionsManager{broadcastSessions: []*BroadcastSession{sess1, sess2}, sessLock: &sync.Mutex{}}
 }
 
-func TestSelectFromList_Successt(t *testing.T) {
+func TestSelectFromList(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
-	expectedSess := bsm.broadcastSessions[0]
-	sess := bsm.selectFromList()
+	expectedSess := bsm.broadcastSessions[1]
 
 	assert := assert.New(t)
+	assert.Len(bsm.broadcastSessions, 2)
+
+	sess := bsm.selectFromList()
 	assert.Equal(expectedSess, sess)
 	assert.Len(bsm.broadcastSessions, 1)
+
+	bsm = &BroadcastSessionsManager{broadcastSessions: []*BroadcastSession{}, sessLock: &sync.Mutex{}}
+	assert.Len(bsm.broadcastSessions, 0)
+
+	sess = bsm.selectFromList()
+	assert.Nil(sess)
+	assert.Len(bsm.broadcastSessions, 0)
 }
 
-func TestRemoveFromList_Successt(t *testing.T) {
-	bsm := StubBroadcastSessionsManager()
-	expectedSess := bsm.broadcastSessions[0]
-	remove := bsm.broadcastSessions[1]
-	bsm.removeFromList(remove)
-	glog.Error(remove)
-
-	assert := assert.New(t)
-	assert.Equal(expectedSess, bsm.broadcastSessions[0])
-	assert.Len(bsm.broadcastSessions, 1)
-}
-
-func TestAddToList_Success(t *testing.T) {
+func TestAddToList(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
 	sess := &BroadcastSession{
 		Broadcaster: StubBroadcaster2(),
@@ -583,7 +579,7 @@ func TestAddToList_Success(t *testing.T) {
 }
 
 // note: once selectOrchestrator is integrated into statusOfList(), must beef up this test
-func TestStatusOfList_Success(t *testing.T) {
+func TestStatusOfList(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
 	bsm.checkStatusOfList()
 
