@@ -503,14 +503,14 @@ func TestSenderInfoHandler_SendersError(t *testing.T) {
 	addr := ethcommon.Address{}
 
 	client.On("Account").Return(accounts.Account{Address: addr})
-	client.On("Senders", addr).Return(nil, nil, nil, errors.New("Senders error"))
+	client.On("Senders", addr).Return(big.NewInt(0), big.NewInt(0), big.NewInt(0), nil)
 
 	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not query sender info: Senders error", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusOK, resp.StatusCode)
+	assert.Equal("{\"Deposit\":0,\"PenaltyEscrow\":0,\"WithdrawBlock\":0}", strings.TrimSpace(string(body)))
 }
 
 func TestSenderInfoHandler_Success(t *testing.T) {
