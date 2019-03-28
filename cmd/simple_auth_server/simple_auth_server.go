@@ -3,44 +3,57 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"path"
+	"regexp"
+	"strings"
+
+	"github.com/livepeer/go-livepeer/core"
 )
 
 type authWebhookReq struct {
-	url string `json:"url"`
+	Url string `json:"url"`
 }
 
 func main() {
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
-		out, _ := ioutil.ReadAll(r.Body)
-		fmt.Printf("RTMP URL: %v", string(out))
-
+		decoder := json.NewDecoder(r.Body)
 		var req authWebhookReq
-		err := json.Unmarshal(out, &req)
+		err := decoder.Decode(&req)
 		if err != nil {
 			fmt.Printf("Error parsing URL: %v\n", err)
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 
-		u, err := url.Parse(req.url)
-		m, _ := url.ParseQuery(u.RawQuery)
-		mid := m.Get("ManifestID")
+		var mid core.ManifestID
+		u, err := url.Parse(req.Url)
+		mid = parseStreamID(u.String()).ManifestID
 
-		if mid != "" {
-			fmt.Printf("Using %v as ManifestID", mid)
-			w.Write([]byte(fmt.Sprintf("{\"ManifestID\":\"%v\"}", mid)))
-		} else {
-			fmt.Printf("Using \"abc\" as ManifestID")
-			w.Write([]byte(`{"ManifestID":"abc"}`))
+		if mid == "" {
+			mid = core.RandomManifestID()
+			fmt.Printf("Generated random manifestID: %v\n", mid)
 		}
+		w.Write([]byte(fmt.Sprintf("{\"ManifestID\":\"%v\"}", mid)))
 	})
 
+	fmt.Println("Listening on localhost:8000")
 	err := http.ListenAndServe(":8000", nil) // set listen port
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
+}
+
+var StreamPrefix = regexp.MustCompile(`.*[ /](stream/)?`)
+
+func cleanStreamPrefix(reqPath string) string {
+	return StreamPrefix.ReplaceAllString(reqPath, "")
+}
+
+func parseStreamID(reqPath string) core.StreamID {
+	// remove extension and create streamid
+	p := strings.TrimSuffix(reqPath, path.Ext(reqPath))
+	return core.SplitStreamIDString(cleanStreamPrefix(p))
 }
