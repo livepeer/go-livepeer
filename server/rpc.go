@@ -53,80 +53,66 @@ type Broadcaster interface {
 
 type BroadcastSessionsManager struct {
 	broadcastSessions []*BroadcastSession
+	broadcastSessMap  map[string]*BroadcastSession
 	sessLock          *sync.Mutex
 }
 
-func (bsm *BroadcastSessionsManager) selectFromList() *BroadcastSession {
-	bsm.checkStatusOfList()
-
-	bsm.sessLock.Lock()
-	defer bsm.sessLock.Unlock()
-
-	if len(bsm.broadcastSessions) > 0 {
-		last := len(bsm.broadcastSessions) - 1
-		sess, sessions := bsm.broadcastSessions[last], bsm.broadcastSessions[:last]
-		bsm.broadcastSessions = sessions
-		return sess
-	}
-	return nil
-}
-
-func (bsm *BroadcastSessionsManager) addToList(sess *BroadcastSession) {
-	bsm.sessLock.Lock()
-	defer bsm.sessLock.Unlock()
-
-	for _, currentSess := range bsm.broadcastSessions {
-		if currentSess == sess {
-			return
-		}
-	}
-	bsm.broadcastSessions = append(bsm.broadcastSessions, sess)
-}
-
-func (bsm *BroadcastSessionsManager) checkStatusOfList() {
-	var newBroadcastSessions []*BroadcastSession
+func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 	// minOrchs is maximum number of inflight sessions
 	minOrchs := int(HTTPTimeout / SegLen)
-	reqLengthOfList := minOrchs * 2
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	numSess := len(bsm.broadcastSessions)
 
-	if len(bsm.broadcastSessions) < minOrchs {
-		newBroadcastSessions = []*BroadcastSession{}
-		// newBroadcastSessions, err := selectOrchestrator(node, pl)
-		// if err != nil {
-		// 	return
-		// }
-		glog.Info(newBroadcastSessions)
-	} else {
+	if numSess < minOrchs {
+		go bsm.refreshSessions()
+	}
+
+	if numSess <= 0 {
+		return nil
+	}
+
+	last := numSess - 1
+	sess, sessions := bsm.broadcastSessions[last], bsm.broadcastSessions[:last]
+	bsm.broadcastSessions = sessions
+	return sess
+}
+
+func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {
+	bsm.sessLock.Lock()
+	delete(bsm.broadcastSessMap, session.OrchestratorInfo.Transcoder)
+	bsm.sessLock.Unlock()
+}
+
+func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+
+	if _, ok := bsm.broadcastSessMap[sess.OrchestratorInfo.Transcoder]; ok {
+		bsm.broadcastSessions = append(bsm.broadcastSessions, sess)
+	}
+}
+
+func (bsm *BroadcastSessionsManager) refreshSessions() {
+	newBroadcastSessions := []*BroadcastSession{}
+
+	// include all O's being used successfully in refreshed list
+	if len(newBroadcastSessions) <= 0 {
 		return
 	}
 
+	uniqueSessions := make([]*BroadcastSession, 0, len(newBroadcastSessions))
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 
-	// include all O's being used successfully in refreshed list
-	var newSessionsMap map[*BroadcastSession]bool
-	if len(newBroadcastSessions) > 0 {
-
-		for _, newSess := range newBroadcastSessions {
-			newSessionsMap[newSess] = true
+	for _, sess := range newBroadcastSessions {
+		if _, ok := bsm.broadcastSessMap[sess.OrchestratorInfo.Transcoder]; ok {
+			continue
 		}
-
-		if len(bsm.broadcastSessions) > 0 {
-			for _, currentSess := range bsm.broadcastSessions {
-				if _, ok := newSessionsMap[currentSess]; ok {
-					delete(newSessionsMap, currentSess)
-				}
-			}
-		}
-
-		if len(newSessionsMap) > 0 {
-			for sess, _ := range newSessionsMap {
-				if len(bsm.broadcastSessions) < reqLengthOfList {
-					bsm.broadcastSessions = append(bsm.broadcastSessions, sess)
-				}
-			}
-		}
+		uniqueSessions = append(uniqueSessions, sess)
+		bsm.broadcastSessMap[sess.OrchestratorInfo.Transcoder] = sess
 	}
+	bsm.broadcastSessions = append(uniqueSessions, bsm.broadcastSessions...)
 }
 
 // Session-specific state for broadcasters
