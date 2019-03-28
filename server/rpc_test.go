@@ -534,54 +534,110 @@ func defaultTicket(t *testing.T) *net.Ticket {
 	}
 }
 
-func StubBroadcastSessionsManager() *BroadcastSessionsManager {
-	sess1 := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
+func StubBroadcastSession(transcoder string) *BroadcastSession {
+	return &BroadcastSession{
+		Broadcaster:      StubBroadcaster2(),
+		ManifestID:       core.RandomManifestID(),
+		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: transcoder},
 	}
-	sess2 := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-	}
-	return &BroadcastSessionsManager{broadcastSessions: []*BroadcastSession{sess1, sess2}, sessLock: &sync.Mutex{}}
 }
 
-func TestSelectFromList(t *testing.T) {
-	bsm := StubBroadcastSessionsManager()
-	expectedSess := bsm.broadcastSessions[1]
+func StubBroadcastSessionsManager() *BroadcastSessionsManager {
+	sess1 := StubBroadcastSession("transcoder1")
+	sess2 := StubBroadcastSession("transcoder2")
 
+	return &BroadcastSessionsManager{
+		broadcastSessions: []*BroadcastSession{sess1, sess2},
+		broadcastSessMap: map[string]*BroadcastSession{
+			sess1.OrchestratorInfo.Transcoder: sess1,
+			sess2.OrchestratorInfo.Transcoder: sess2,
+		},
+		sessLock: &sync.Mutex{},
+	}
+}
+
+func TestSelect(t *testing.T) {
+	bsm := StubBroadcastSessionsManager()
+	expectedSess1 := bsm.broadcastSessions[1]
+	expectedSess2 := bsm.broadcastSessions[0]
+
+	// assert that initial lengths are as expected
 	assert := assert.New(t)
 	assert.Len(bsm.broadcastSessions, 2)
 
-	sess := bsm.selectFromList()
-	assert.Equal(expectedSess, sess)
+	// assert last session selected and broadcastSessions is correct length
+	sess := bsm.selectSession()
+	assert.Equal(expectedSess1, sess)
 	assert.Len(bsm.broadcastSessions, 1)
 
-	bsm = &BroadcastSessionsManager{broadcastSessions: []*BroadcastSession{}, sessLock: &sync.Mutex{}}
+	sess = bsm.selectSession()
+	assert.Equal(expectedSess2, sess)
 	assert.Len(bsm.broadcastSessions, 0)
 
-	sess = bsm.selectFromList()
+	// assert no session is selected from empty list
+	sess = bsm.selectSession()
 	assert.Nil(sess)
 	assert.Len(bsm.broadcastSessions, 0)
 }
 
-func TestAddToList(t *testing.T) {
+func TestRemoveSession(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
-	sess := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-	}
+	sess1 := bsm.broadcastSessions[0]
+	sess2 := bsm.broadcastSessions[1]
 
-	bsm.addToList(sess)
 	assert := assert.New(t)
-	assert.Equal(sess, bsm.broadcastSessions[2])
-	assert.Len(bsm.broadcastSessions, 3)
+	assert.Len(bsm.broadcastSessMap, 2)
+
+	// remove session in map
+	assert.NotNil(bsm.broadcastSessMap[sess1.OrchestratorInfo.Transcoder])
+	bsm.removeSession(sess1)
+	assert.Nil(bsm.broadcastSessMap[sess1.OrchestratorInfo.Transcoder])
+	assert.Len(bsm.broadcastSessMap, 1)
+
+	// remove nonexistent session
+	assert.Nil(bsm.broadcastSessMap[sess1.OrchestratorInfo.Transcoder])
+	bsm.removeSession(sess1)
+	assert.Nil(bsm.broadcastSessMap[sess1.OrchestratorInfo.Transcoder])
+	assert.Len(bsm.broadcastSessMap, 1)
+
+	// remove last session in map
+	assert.NotNil(bsm.broadcastSessMap[sess2.OrchestratorInfo.Transcoder])
+	bsm.removeSession(sess2)
+	assert.Nil(bsm.broadcastSessMap[sess2.OrchestratorInfo.Transcoder])
+	assert.Len(bsm.broadcastSessMap, 0)
+}
+
+func TestCompleteSession(t *testing.T) {
+	bsm := StubBroadcastSessionsManager()
+	sess1 := bsm.broadcastSessions[0]
+	bsm.broadcastSessions = []*BroadcastSession{bsm.broadcastSessions[0]}
+
+	// assert that initial lengths are as expected
+	assert := assert.New(t)
+	assert.Len(bsm.broadcastSessions, 1)
+	assert.Len(bsm.broadcastSessMap, 2)
+
+	bsm.completeSession(sess1)
+
+	// assert that session already in broadcastSessMap is added back to broadcastSessions
+	assert.Len(bsm.broadcastSessions, 2)
+	assert.Len(bsm.broadcastSessMap, 2)
+	assert.Equal(sess1, bsm.broadcastSessions[0])
+	assert.Equal(sess1, bsm.broadcastSessMap[sess1.OrchestratorInfo.Transcoder])
+
+	sess3 := StubBroadcastSession("transcoder3")
+
+	// assert that session not in broadcastSessMap is not added to broadcastSessions
+	bsm.completeSession(sess3)
+	assert.Len(bsm.broadcastSessions, 2)
+	assert.Len(bsm.broadcastSessMap, 2)
+	assert.Equal(sess1, bsm.broadcastSessions[1])
 }
 
 // note: once selectOrchestrator is integrated into statusOfList(), must beef up this test
-func TestStatusOfList(t *testing.T) {
+func TestRefreshSessions(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
-	bsm.checkStatusOfList()
+	bsm.refreshSessions()
 
 	assert := assert.New(t)
 	assert.Len(bsm.broadcastSessions, 2)
