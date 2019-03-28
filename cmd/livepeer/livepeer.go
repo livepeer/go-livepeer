@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livepeer/go-livepeer/common/log"
 	"github.com/livepeer/go-livepeer/pm"
 
 	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
@@ -97,6 +98,7 @@ func main() {
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
 	logIPFS := flag.Bool("logIPFS", false, "Set to true if log files should not be generated") // unused until we re-enable IPFS
+	lokiURL := flag.String("lokiUrl", "", "Grafana's Loki URL to forward logs to")
 
 	// Storage:
 	datadir := flag.String("datadir", "", "data directory")
@@ -111,6 +113,11 @@ func main() {
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
+
+	if *lokiURL != "" {
+		hn, _ := os.Hostname()
+		log.ForwardLogsToLoki(*lokiURL, hn)
+	}
 
 	if *version {
 		fmt.Println("Livepeer Node Version: " + core.LivepeerVersion)

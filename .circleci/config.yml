@@ -30,6 +30,9 @@ jobs:
       - run: go get -u -v go.opencensus.io/stats
       - run: go get -u -v go.opencensus.io/tag
       - run: go get -u -v go.opencensus.io/exporter/prometheus
+      - run: go get -u -v github.com/gogo/protobuf/proto
+      - run: go get -u -v github.com/golang/snappy
+      - run: go get -u -v github.com/livepeer/loki-client/client
 
       - run:
           name: Lint

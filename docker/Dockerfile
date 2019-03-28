@@ -14,6 +14,9 @@ RUN go get github.com/stretchr/testify/mock
 RUN go get -u -v go.opencensus.io/stats
 RUN go get -u -v go.opencensus.io/tag
 RUN go get -u -v go.opencensus.io/exporter/prometheus
+RUN go get -u -v github.com/gogo/protobuf/proto
+RUN go get -u -v github.com/golang/snappy
+RUN go get -u -v github.com/livepeer/loki-client/client
 
 COPY install_ffmpeg.sh install_ffmpeg.sh
 RUN ./install_ffmpeg.sh
