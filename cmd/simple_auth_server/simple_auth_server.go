@@ -35,11 +35,15 @@ func main() {
 		if mid == "" {
 			mid = core.RandomManifestID()
 			fmt.Printf("Generated random manifestID: %v\n", mid)
+		} else if mid == "fizz" {
+			mid = "buzz"
+			fmt.Printf("Detected \"fizz\" as manifestID. Crazy! Renaming to \"buzz\".\n")
 		}
+		fmt.Printf("Stream started with manifestID: %v\n", mid)
 		w.Write([]byte(fmt.Sprintf("{\"ManifestID\":\"%v\"}", mid)))
 	})
 
-	fmt.Println("Listening on localhost:8000")
+	fmt.Println("Listening on localhost:8000/auth\nTry something crazy - stream with \"fizz\" as the manifestID.")
 	err := http.ListenAndServe(":8000", nil) // set listen port
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
