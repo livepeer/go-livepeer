@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"regexp"
@@ -117,6 +118,9 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	// Return early under a few circumstances:
 	// View-only (non-transcoded) streams or mid-failover
 	if sess == nil {
+		if monitor.Enabled {
+			monitor.LogSegmentTranscodeFailed("NoOrchestrators", nonce, seg.SeqNo, errors.New("No Orchestrators Error"))
+		}
 		return
 	}
 
