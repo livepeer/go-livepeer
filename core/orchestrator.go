@@ -23,6 +23,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
@@ -225,6 +226,9 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 		return nil, err
 	}
 	n.SegmentChans[md.ManifestID] = sc
+	if lpmon.Enabled {
+		lpmon.CurrentSessions(len(n.SegmentChans))
+	}
 	return sc, nil
 }
 
@@ -323,10 +327,12 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v", len(tData), len(md.Profiles))
 		return terr(fmt.Errorf("MismatchedSegments"))
 	}
+	took := time.Since(start)
 	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
-	glog.V(common.DEBUG).Infof("Transcoding of segment %v took %v", seg.SeqNo, time.Since(start))
+	glog.V(common.DEBUG).Infof("Transcoding of segment %v took %v", seg.SeqNo, took)
 	if isLocal && monitor.Enabled {
-		monitor.LogSegmentTranscodeEnded(seg.SeqNo, string(md.ManifestID))
+		monitor.LogSegmentTranscodeEnded(seg.SeqNo, string(md.ManifestID), took,
+			common.ProfilesNames(md.Profiles))
 	}
 
 	// Prepare the result object
@@ -394,6 +400,9 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 				if _, ok := n.SegmentChans[md.ManifestID]; ok {
 					close(n.SegmentChans[md.ManifestID])
 					delete(n.SegmentChans, md.ManifestID)
+					if lpmon.Enabled {
+						lpmon.CurrentSessions(len(n.SegmentChans))
+					}
 				}
 				n.segmentMutex.Unlock()
 				if n.Recipient != nil {
