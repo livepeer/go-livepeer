@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,4 +129,13 @@ func ProfilesToTranscodeOpts(profiles []ffmpeg.VideoProfile) []byte {
 
 func ProfilesToHex(profiles []ffmpeg.VideoProfile) string {
 	return hex.EncodeToString(ProfilesToTranscodeOpts(profiles))
+}
+
+func ProfilesNames(profiles []ffmpeg.VideoProfile) string {
+	names := make(sort.StringSlice, 0, len(profiles))
+	for _, p := range profiles {
+		names = append(names, p.Name)
+	}
+	names.Sort()
+	return strings.Join(names, ",")
 }

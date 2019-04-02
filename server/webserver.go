@@ -20,6 +20,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/monitor"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
@@ -1088,6 +1089,12 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 	mux.Handle("/withdraw", withdrawHandler(s.LivepeerNode.Eth))
 	mux.Handle("/senderInfo", senderInfoHandler(s.LivepeerNode.Eth))
 	mux.Handle("/ticketBrokerParams", ticketBrokerParamsHandler(s.LivepeerNode.Eth))
+
+	// Metrics
+	if monitor.Enabled {
+		mux.Handle("/metrics", monitor.Exporter)
+
+	}
 
 	glog.Info("CLI server listening on ", bindAddr)
 	srv.ListenAndServe()
