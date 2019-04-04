@@ -215,8 +215,20 @@ func senderInfoHandler(client eth.LivepeerEthClient) http.Handler {
 
 		sender, err := client.Senders(client.Account().Address)
 		if err != nil {
-			respondWith500(w, fmt.Sprintf("could not query sender info: %v", err))
-			return
+			if err.Error() == "ErrNoResult" {
+				type Sender struct {
+					Deposit       *big.Int
+					PenaltyEscrow *big.Int
+					WithdrawBlock *big.Int
+				}
+				sender = Sender{
+					Deposit:       big.NewInt(0),
+					PenaltyEscrow: big.NewInt(0),
+					WithdrawBlock: big.NewInt(0),
+				}
+			} else {
+				respondWith500(w, fmt.Sprintf("could not query sender info: %v", err))
+			}
 		}
 
 		data, err := json.Marshal(sender)
