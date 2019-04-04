@@ -55,9 +55,20 @@ type BroadcastSessionsManager struct {
 	broadcastSessions []*BroadcastSession
 	broadcastSessMap  map[string]*BroadcastSession
 	sessLock          *sync.Mutex
+	createSessions    func() ([]*BroadcastSession, error)
 }
 
-func (bsm *BroadcastSessionsManager) selectSession(node *core.LivepeerNode, pl core.PlaylistManager) *BroadcastSession {
+func NewSessionManager(node *core.LivepeerNode, pl core.PlaylistManager) *BroadcastSessionsManager {
+	bsm := &BroadcastSessionsManager{
+		broadcastSessMap: make(map[string]*BroadcastSession),
+		createSessions:   func() ([]*BroadcastSession, error) { return selectOrchestrator(node, pl) },
+		sessLock:         &sync.Mutex{},
+	}
+	bsm.refreshSessions()
+	return bsm
+}
+
+func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 	// minOrchs is maximum number of inflight sessions
 	minOrchs := int(HTTPTimeout / SegLen)
 	bsm.sessLock.Lock()
@@ -65,7 +76,7 @@ func (bsm *BroadcastSessionsManager) selectSession(node *core.LivepeerNode, pl c
 	numSess := len(bsm.broadcastSessions)
 
 	if numSess < minOrchs {
-		go bsm.refreshSessions(node, pl)
+		go bsm.refreshSessions()
 	}
 
 	if numSess <= 0 {
@@ -97,8 +108,8 @@ var selectOrchs = func(n *core.LivepeerNode, pl core.PlaylistManager) ([]*Broadc
 	return selectOrchestrator(n, pl)
 }
 
-func (bsm *BroadcastSessionsManager) refreshSessions(node *core.LivepeerNode, pl core.PlaylistManager) {
-	newBroadcastSessions, err := selectOrchs(node, pl)
+func (bsm *BroadcastSessionsManager) refreshSessions() {
+	newBroadcastSessions, err := bsm.createSessions()
 	if err != nil {
 		return
 	}

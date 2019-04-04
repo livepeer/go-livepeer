@@ -675,11 +675,15 @@ func TestStartSession(t *testing.T) {
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	strm := stream.NewBasicRTMPVideoStream(string(mid))
 	cxn := &rtmpConnection{
-		mid:         mid,
-		lock:        &sync.RWMutex{},
-		pl:          core.NewBasicPlaylistManager(mid, storage),
-		stream:      strm,
-		sessManager: &BroadcastSessionsManager{broadcastSessions: []*BroadcastSession{}, sessLock: &sync.Mutex{}},
+		mid:    mid,
+		lock:   &sync.RWMutex{},
+		pl:     core.NewBasicPlaylistManager(mid, storage),
+		stream: strm,
+		sessManager: &BroadcastSessionsManager{
+			broadcastSessions: []*BroadcastSession{},
+			sessLock:          &sync.Mutex{},
+			createSessions:    func() ([]*BroadcastSession, error) { return []*BroadcastSession{}, nil },
+		},
 	}
 	sd := &stubDiscovery{
 		lock:  &sync.Mutex{},
@@ -753,19 +757,20 @@ func TestSessionListener(t *testing.T) {
 		listenerStopped <- struct{}{}
 	}()
 
-	// sanity check
+	// ensure session populated (happens in NewSessionManager, refreshSessions)
 	cxn.lock.RLock()
-	assert.Len(cxn.sessManager.broadcastSessions, 0)
+	assert.Len(cxn.sessManager.broadcastSessions, 1)
+	assert.Equal(cxn.sessManager.broadcastSessions[0].OrchestratorInfo.Transcoder, "transcoder1")
+	assert.Equal(1, sd.getOrchCalls)
 	cxn.lock.RUnlock()
 
-	// test getting a single orch; ensure session populated
+	// test single call to needOrch
 	cxn.needOrch <- struct{}{}
 	time.Sleep(100 * time.Millisecond)
 	cxn.lock.RLock()
 	assert.Len(cxn.sessManager.broadcastSessions, 1)
-	assert.Equal(cxn.sessManager.broadcastSessions[0].OrchestratorInfo.Transcoder, "transcoder1")
 	cxn.lock.RUnlock()
-	assert.Equal(1, sd.getOrchCalls)
+	assert.Equal(2, sd.getOrchCalls)
 
 	// multiple calls to inflight needOrch should only invoke startSession once
 	sd.waitGetOrch = make(chan struct{})
@@ -776,7 +781,7 @@ func TestSessionListener(t *testing.T) {
 	sd.waitGetOrch <- struct{}{}
 	time.Sleep(100 * time.Millisecond)
 	sd.lock.Lock()
-	assert.Equal(sd.getOrchCalls, 2)
+	assert.Equal(sd.getOrchCalls, 3)
 	assert.Len(cxn.sessManager.broadcastSessions, 1)
 	assert.Equal(cxn.sessManager.broadcastSessions[0].OrchestratorInfo.Transcoder, "transcoder1")
 	sd.lock.Unlock()

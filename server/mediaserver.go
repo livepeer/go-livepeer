@@ -268,7 +268,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						monitor.LogStreamStartedEvent(nonce)
 					}
 				}
-				processSegment(cxn, seg, s.LivepeerNode)
+				processSegment(cxn, seg)
 			})
 
 			segOptions := segmenter.SegmenterOptions{
@@ -364,20 +364,18 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		// We can only have one concurrent stream per ManifestID
 		return nil, ErrAlreadyExists
 	}
+
+	playlist := core.NewBasicPlaylistManager(mid, storage)
 	cxn := &rtmpConnection{
-		mid:     mid,
-		nonce:   nonce,
-		stream:  rtmpStrm,
-		pl:      core.NewBasicPlaylistManager(mid, storage),
-		profile: &vProfile,
-		lock:    &sync.RWMutex{},
-		sessManager: &BroadcastSessionsManager{
-			broadcastSessions: []*BroadcastSession{},
-			sessLock:          &sync.Mutex{},
-			broadcastSessMap:  make(map[string]*BroadcastSession),
-		},
-		needOrch: make(chan struct{}),
-		eof:      make(chan struct{}),
+		mid:         mid,
+		nonce:       nonce,
+		stream:      rtmpStrm,
+		pl:          playlist,
+		profile:     &vProfile,
+		lock:        &sync.RWMutex{},
+		sessManager: NewSessionManager(s.LivepeerNode, playlist),
+		needOrch:    make(chan struct{}),
+		eof:         make(chan struct{}),
 	}
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
