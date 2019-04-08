@@ -547,8 +547,8 @@ func StubBroadcastSessionsManager() *BroadcastSessionsManager {
 	sess2 := StubBroadcastSession("transcoder2")
 
 	return &BroadcastSessionsManager{
-		broadcastSessions: []*BroadcastSession{sess1, sess2},
-		broadcastSessMap: map[string]*BroadcastSession{
+		sessList: []*BroadcastSession{sess1, sess2},
+		sessMap: map[string]*BroadcastSession{
 			sess1.OrchestratorInfo.Transcoder: sess1,
 			sess2.OrchestratorInfo.Transcoder: sess2,
 		},
@@ -561,98 +561,98 @@ func StubBroadcastSessionsManager() *BroadcastSessionsManager {
 
 func TestSelect(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
-	expectedSess1 := bsm.broadcastSessions[1]
-	expectedSess2 := bsm.broadcastSessions[0]
+	expectedSess1 := bsm.sessList[1]
+	expectedSess2 := bsm.sessList[0]
 
 	// assert that initial lengths are as expected
 	assert := assert.New(t)
-	assert.Len(bsm.broadcastSessions, 2)
+	assert.Len(bsm.sessList, 2)
 
-	// assert last session selected and broadcastSessions is correct length
+	// assert last session selected and sessList is correct length
 	sess := bsm.selectSession()
 	assert.Equal(expectedSess1, sess)
-	assert.Len(bsm.broadcastSessions, 1)
+	assert.Len(bsm.sessList, 1)
 
 	sess = bsm.selectSession()
 	assert.Equal(expectedSess2, sess)
-	assert.Len(bsm.broadcastSessions, 0)
+	assert.Len(bsm.sessList, 0)
 
 	// assert no session is selected from empty list
 	sess = bsm.selectSession()
 	assert.Nil(sess)
-	assert.Len(bsm.broadcastSessions, 0)
+	assert.Len(bsm.sessList, 0)
 }
 
 func TestRemoveSession(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
-	sess1 := bsm.broadcastSessions[0]
-	sess2 := bsm.broadcastSessions[1]
+	sess1 := bsm.sessList[0]
+	sess2 := bsm.sessList[1]
 
 	assert := assert.New(t)
-	assert.Len(bsm.broadcastSessMap, 2)
+	assert.Len(bsm.sessMap, 2)
 
 	// remove session in map
-	assert.NotNil(bsm.broadcastSessMap[sess1.OrchestratorInfo.Transcoder])
+	assert.NotNil(bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
 	bsm.removeSession(sess1)
-	assert.Nil(bsm.broadcastSessMap[sess1.OrchestratorInfo.Transcoder])
-	assert.Len(bsm.broadcastSessMap, 1)
+	assert.Nil(bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
+	assert.Len(bsm.sessMap, 1)
 
 	// remove nonexistent session
-	assert.Nil(bsm.broadcastSessMap[sess1.OrchestratorInfo.Transcoder])
+	assert.Nil(bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
 	bsm.removeSession(sess1)
-	assert.Nil(bsm.broadcastSessMap[sess1.OrchestratorInfo.Transcoder])
-	assert.Len(bsm.broadcastSessMap, 1)
+	assert.Nil(bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
+	assert.Len(bsm.sessMap, 1)
 
 	// remove last session in map
-	assert.NotNil(bsm.broadcastSessMap[sess2.OrchestratorInfo.Transcoder])
+	assert.NotNil(bsm.sessMap[sess2.OrchestratorInfo.Transcoder])
 	bsm.removeSession(sess2)
-	assert.Nil(bsm.broadcastSessMap[sess2.OrchestratorInfo.Transcoder])
-	assert.Len(bsm.broadcastSessMap, 0)
+	assert.Nil(bsm.sessMap[sess2.OrchestratorInfo.Transcoder])
+	assert.Len(bsm.sessMap, 0)
 }
 
 func TestCompleteSessions(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
-	sess1 := bsm.broadcastSessions[0]
-	bsm.broadcastSessions = []*BroadcastSession{bsm.broadcastSessions[0]}
+	sess1 := bsm.sessList[0]
+	bsm.sessList = []*BroadcastSession{bsm.sessList[0]}
 
 	// assert that initial lengths are as expected
 	assert := assert.New(t)
-	assert.Len(bsm.broadcastSessions, 1)
-	assert.Len(bsm.broadcastSessMap, 2)
+	assert.Len(bsm.sessList, 1)
+	assert.Len(bsm.sessMap, 2)
 
 	bsm.completeSession(sess1)
 
-	// assert that session already in broadcastSessMap is added back to broadcastSessions
-	assert.Len(bsm.broadcastSessions, 2)
-	assert.Len(bsm.broadcastSessMap, 2)
-	assert.Equal(sess1, bsm.broadcastSessions[0])
-	assert.Equal(sess1, bsm.broadcastSessMap[sess1.OrchestratorInfo.Transcoder])
+	// assert that session already in sessMap is added back to sessList
+	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessMap, 2)
+	assert.Equal(sess1, bsm.sessList[0])
+	assert.Equal(sess1, bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
 
 	sess3 := StubBroadcastSession("transcoder3")
 
-	// assert that session not in broadcastSessMap is not added to broadcastSessions
+	// assert that session not in sessMap is not added to sessList
 	bsm.completeSession(sess3)
-	assert.Len(bsm.broadcastSessions, 2)
-	assert.Len(bsm.broadcastSessMap, 2)
-	assert.Equal(sess1, bsm.broadcastSessions[1])
+	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessMap, 2)
+	assert.Equal(sess1, bsm.sessList[1])
 }
 
 func TestRefreshSessions(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
-	sess1 := bsm.broadcastSessions[0]
-	sess2 := bsm.broadcastSessions[1]
+	sess1 := bsm.sessList[0]
+	sess2 := bsm.sessList[1]
 	bsm.createSessions = func() ([]*BroadcastSession, error) {
 		return []*BroadcastSession{sess1, sess2}, nil
 	}
 
 	assert := assert.New(t)
-	assert.Len(bsm.broadcastSessions, 2)
-	assert.Len(bsm.broadcastSessMap, 2)
+	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessMap, 2)
 
-	// asserting that pre-existing sessions are not added to broadcastSessions or broadcastSessMap
+	// asserting that pre-existing sessions are not added to sessList or sessMap
 	bsm.refreshSessions()
-	assert.Len(bsm.broadcastSessions, 2)
-	assert.Len(bsm.broadcastSessMap, 2)
+	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessMap, 2)
 
 	sess3 := StubBroadcastSession("transcoder3")
 	sess4 := StubBroadcastSession("transcoder4")
@@ -661,12 +661,12 @@ func TestRefreshSessions(t *testing.T) {
 		return []*BroadcastSession{sess3, sess4}, nil
 	}
 
-	// asserting that new sessions are added to broadcastSessions and broadcastSessMap
+	// asserting that new sessions are added to sessList and sessMap
 	bsm.refreshSessions()
-	assert.Len(bsm.broadcastSessions, 4)
-	assert.Len(bsm.broadcastSessMap, 4)
+	assert.Len(bsm.sessList, 4)
+	assert.Len(bsm.sessMap, 4)
 
 	// asserting that new sessions were added to the beginning of the list
-	assert.Equal(bsm.broadcastSessions[0], sess3)
-	assert.Equal(bsm.broadcastSessions[1], sess4)
+	assert.Equal(bsm.sessList[0], sess3)
+	assert.Equal(bsm.sessList[1], sess4)
 }
