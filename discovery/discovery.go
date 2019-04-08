@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
 
@@ -90,6 +91,8 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 		if err == nil {
 			orchInfos = append(orchInfos, info)
 			numSuccessResp++
+		} else if monitor.Enabled {
+			monitor.LogDiscoveryError(err.Error())
 		}
 		if numSuccessResp >= numOrchestrators || numResp >= len(o.uris) {
 			orchChan <- struct{}{}

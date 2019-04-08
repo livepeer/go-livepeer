@@ -311,6 +311,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		if monitor.Enabled {
 			monitor.LogStreamEndedEvent(cxn.nonce)
 		}
+		glog.Infof("Ended stream with id=%s", mid)
 		cxn.eof <- struct{}{}
 		delete(s.rtmpConnections, mid)
 		if monitor.Enabled {
