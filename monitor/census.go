@@ -3,11 +3,13 @@ package monitor
 import (
 	"context"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/golang/glog"
 
+	rprom "github.com/prometheus/client_golang/prometheus"
 	"go.opencensus.io/exporter/prometheus"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/stats/view"
@@ -23,6 +25,8 @@ const (
 	SegmentUploadErrorUnknown               SegmentUploadError    = "Unknown"
 	SegmentUploadErrorGenCreds              SegmentUploadError    = "GenCreds"
 	SegmentUploadErrorOS                    SegmentUploadError    = "ObjectStorage"
+	SegmentUploadErrorSessionEnded          SegmentUploadError    = "SessionEnded"
+	SegmentUploadErrorTimeout               SegmentUploadError    = "Timeout"
 	SegmentTranscodeErrorUnknown            SegmentTranscodeError = "Unknown"
 	SegmentTranscodeErrorUnknownResponse    SegmentTranscodeError = "UnknownResponse"
 	SegmentTranscodeErrorTranscode          SegmentTranscodeError = "Transcode"
@@ -63,6 +67,7 @@ type (
 		mStreamEnded                  *stats.Int64Measure
 		mMaxSessions                  *stats.Int64Measure
 		mCurrentSessions              *stats.Int64Measure
+		mDiscoveryError               *stats.Int64Measure
 		mSuccessRate                  *stats.Float64Measure
 		mTranscodeTime                *stats.Float64Measure
 		mTranscodeLatency             *stats.Float64Measure
@@ -126,6 +131,7 @@ func initCensus(nodeType, nodeID, version string) {
 	census.mStreamEnded = stats.Int64("stream_ended_total", "StreamEnded", "tot")
 	census.mMaxSessions = stats.Int64("max_sessions_total", "MaxSessions", "tot")
 	census.mCurrentSessions = stats.Int64("current_sessions_total", "Number of currently transcded streams", "tot")
+	census.mDiscoveryError = stats.Int64("discovery_errors_total", "Number of discover errors", "tot")
 	census.mSuccessRate = stats.Float64("success_rate", "Success rate", "per")
 	census.mTranscodeTime = stats.Float64("transcode_time_seconds", "Transcoding time", "sec")
 	census.mTranscodeLatency = stats.Float64("transcode_latency_seconds",
@@ -305,13 +311,24 @@ func initCensus(nodeType, nodeID, version string) {
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
+		&view.View{
+			Name:        "discovery_errors_total",
+			Measure:     census.mDiscoveryError,
+			Description: "Number of discover errors",
+			TagKeys:     append([]tag.Key{census.kErrorCode}, baseTags...),
+			Aggregation: view.Count(),
+		},
 	}
 	// Register the views
 	if err := view.Register(views...); err != nil {
 		glog.Fatalf("Failed to register views: %v", err)
 	}
+	registry := rprom.NewRegistry()
+	registry.MustRegister(rprom.NewProcessCollector(rprom.ProcessCollectorOpts{}))
+	registry.MustRegister(rprom.NewGoCollector())
 	pe, err := prometheus.NewExporter(prometheus.Options{
 		Namespace: "livepeer",
+		Registry:  registry,
 	})
 	if err != nil {
 		glog.Fatalf("Failed to create the Prometheus stats exporter: %v", err)
@@ -326,6 +343,22 @@ func initCensus(nodeType, nodeID, version string) {
 	}
 	go census.timeoutWatcher(ctx)
 	Exporter = pe
+}
+
+// LogDiscoveryError records discovery error
+func LogDiscoveryError(code string) {
+	glog.Error("Discovery error=" + code)
+	if strings.Contains(code, "OrchestratorCapped") {
+		code = "OrchestratorCapped"
+	} else if strings.Contains(code, "Canceled") {
+		code = "Canceled"
+	}
+	ctx, err := tag.New(census.ctx, tag.Insert(census.kErrorCode, code))
+	if err != nil {
+		glog.Error("Error creating context", err)
+		return
+	}
+	stats.Record(ctx, census.mDiscoveryError.M(1))
 }
 
 func (cen *censusMetricsCounter) successRate() float64 {

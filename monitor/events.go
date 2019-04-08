@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -128,7 +129,15 @@ func LogStreamCreateFailed(nonce uint64, reason string) {
 }
 
 func LogSegmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, reason string) {
+	if code == SegmentUploadErrorUnknown {
+		if strings.Contains(reason, "Client.Timeout") {
+			code = SegmentUploadErrorTimeout
+		} else if reason == "Session ended" {
+			code = SegmentUploadErrorSessionEnded
+		}
+	}
 	glog.Errorf("Logging SegmentUploadFailed... code=%v reason='%s'", code, reason)
+
 	census.segmentUploadFailed(nonce, seqNo, code)
 
 	props := map[string]interface{}{
