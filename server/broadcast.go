@@ -155,14 +155,13 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 
 		res, err := SubmitSegment(sess, seg, nonce)
 		if err != nil {
-			cxn.sessManager.removeSession(sess)
 			if shouldStopStream(err) {
 				glog.Warningf("Stopping current stream due to: %v", err)
 				rtmpStrm.Close()
 				return
 			}
 			if shouldStopSession(err) {
-				cxn.needOrch <- struct{}{}
+				cxn.sessManager.removeSession(sess)
 			}
 			return
 		}
