@@ -62,13 +62,20 @@ func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager) (*Broadc
 		orchOS = drivers.NewSession(tinfo.Storage[0])
 	}
 
+	bcastOS := cpl.GetOSSession()
+	if bcastOS.IsExternal() {
+		// Give each O its own OS session to prevent front running uploads
+		pfx := fmt.Sprintf("%v/%v", cpl.ManifestID(), core.RandomManifestID())
+		bcastOS = drivers.NodeStorage.NewSession(pfx)
+	}
+
 	return &BroadcastSession{
 		Broadcaster:      rpcBcast,
 		ManifestID:       cpl.ManifestID(),
 		Profiles:         BroadcastJobVideoProfiles,
 		OrchestratorInfo: tinfo,
 		OrchestratorOS:   orchOS,
-		BroadcasterOS:    cpl.GetOSSession(),
+		BroadcasterOS:    bcastOS,
 		Sender:           n.Sender,
 		PMSessionID:      sessionID,
 	}, nil
