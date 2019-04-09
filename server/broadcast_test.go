@@ -39,3 +39,7 @@ func TestStopSessionErrors(t *testing.T) {
 	}
 
 }
+
+// Note: Add processSegment tests, including:
+//     assert an error from transcoder removes sess from BroadcastSessionManager
+//     assert a success re-adds sess to BroadcastSessionManager

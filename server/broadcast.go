@@ -22,6 +22,99 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
+type BroadcastSessionsManager struct {
+	sessList []*BroadcastSession
+	sessMap  map[string]*BroadcastSession
+	sessLock *sync.Mutex
+	minOrchs int
+
+	refreshing bool // only allow one refresh in-flight
+	finished   bool // set at stream end
+
+	createSessions func() ([]*BroadcastSession, error)
+}
+
+func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	numSess := len(bsm.sessList)
+
+	if numSess < bsm.minOrchs {
+		go bsm.refreshSessions()
+	}
+
+	if numSess <= 0 {
+		return nil
+	}
+
+	last := numSess - 1
+	sess, sessions := bsm.sessList[last], bsm.sessList[:last]
+	bsm.sessList = sessions
+	return sess
+}
+
+func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	delete(bsm.sessMap, session.OrchestratorInfo.Transcoder)
+}
+
+func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+
+	if _, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+		bsm.sessList = append(bsm.sessList, sess)
+	}
+}
+
+func (bsm *BroadcastSessionsManager) refreshSessions() {
+
+	bsm.sessLock.Lock()
+	if bsm.finished || bsm.refreshing {
+		bsm.sessLock.Unlock()
+		return
+	}
+	bsm.refreshing = true
+	bsm.sessLock.Unlock()
+
+	newBroadcastSessions, err := bsm.createSessions()
+	if err != nil {
+		return
+	}
+
+	// if newBroadcastSessions is empty, exit without refreshing list
+	if len(newBroadcastSessions) <= 0 {
+		return
+	}
+
+	uniqueSessions := make([]*BroadcastSession, 0, len(newBroadcastSessions))
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+
+	bsm.refreshing = false
+	if bsm.finished {
+		return
+	}
+
+	for _, sess := range newBroadcastSessions {
+		if _, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+			continue
+		}
+		uniqueSessions = append(uniqueSessions, sess)
+		bsm.sessMap[sess.OrchestratorInfo.Transcoder] = sess
+	}
+	bsm.sessList = append(uniqueSessions, bsm.sessList...)
+}
+
+func (bsm *BroadcastSessionsManager) cleanup() {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	bsm.finished = true
+	bsm.sessList = nil
+	bsm.sessMap = make(map[string]*BroadcastSession) // prevent segfaults
+}
+
 func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager) ([]*BroadcastSession, error) {
 	if n.OrchestratorPool == nil {
 		glog.Info("No orchestrators specified; not transcoding")

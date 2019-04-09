@@ -374,6 +374,17 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 
 //End RTMP Publish Handlers
 
+func NewSessionManager(node *core.LivepeerNode, pl core.PlaylistManager) *BroadcastSessionsManager {
+	bsm := &BroadcastSessionsManager{
+		sessMap:        make(map[string]*BroadcastSession),
+		createSessions: func() ([]*BroadcastSession, error) { return selectOrchestrator(node, pl) },
+		sessLock:       &sync.Mutex{},
+		minOrchs:       int(HTTPTimeout / SegLen), // maximum inflight sessions
+	}
+	bsm.refreshSessions()
+	return bsm
+}
+
 //HLS Play Handlers
 func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 	return func(url *url.URL) (*m3u8.MasterPlaylist, error) {

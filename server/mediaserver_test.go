@@ -668,11 +668,67 @@ func TestRegisterConnection(t *testing.T) {
 
 }
 
-// XXX check that broadcast session manager is:
-//     stopped when a stream stops
-//     and that it initializes at stream start
-//     and that an error from transcoder makes it remove session
-//     and that a success re-adds to list
+func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
+	assert := assert.New(t)
+
+	s := setupServer()
+	// populate stub discovery
+	sd := &stubDiscovery{}
+	sd.infos = []*net.OrchestratorInfo{
+		&net.OrchestratorInfo{Transcoder: "transcoder1"},
+		&net.OrchestratorInfo{Transcoder: "transcoder2"},
+	}
+	s.LivepeerNode.OrchestratorPool = sd
+
+	// create RTMPStream handler methods
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	createSid := createRTMPStreamIDHandler(s)
+	handler := gotRTMPStreamHandler(s)
+	endHandler := endRTMPStreamHandler(s)
+
+	// create BasicRTMPVideoStream and extract ManifestID
+	u, _ := url.Parse("rtmp://localhost")
+	sid := createSid(u)
+	st := stream.NewBasicRTMPVideoStream(sid)
+	mid := rtmpManifestID(st)
+
+	// assert that ManifestID has not been added to rtmpConnections yet
+	_, exists := s.rtmpConnections[mid]
+	assert.Equal(exists, false)
+
+	// assert stream starts successfully
+	err := handler(u, st)
+	assert.Nil(err)
+
+	// assert sessManager is running and has right number of sessions
+	cxn, exists := s.rtmpConnections[mid]
+	assert.Equal(exists, true)
+	assert.Equal(cxn.sessManager.finished, false)
+	assert.Len(cxn.sessManager.sessList, 2)
+	assert.Len(cxn.sessManager.sessMap, 2)
+
+	// assert stream ends successfully
+	err = endHandler(u, st)
+	assert.Nil(err)
+
+	// assert sessManager is not running and has no sessions
+	_, exists = s.rtmpConnections[mid]
+	assert.Equal(exists, false)
+	assert.Equal(cxn.sessManager.finished, true)
+	assert.Len(cxn.sessManager.sessList, 0)
+	assert.Len(cxn.sessManager.sessMap, 0)
+
+	// assert stream starts successfully again
+	err = handler(u, st)
+	assert.Nil(err)
+
+	// assert sessManager is running and has right number of sessions
+	cxn, exists = s.rtmpConnections[mid]
+	assert.Equal(exists, true)
+	assert.Equal(cxn.sessManager.finished, false)
+	assert.Len(cxn.sessManager.sessList, 2)
+	assert.Len(cxn.sessManager.sessMap, 2)
+}
 
 func TestCleanStreamPrefix(t *testing.T) {
 	u, _ := url.Parse("http://localhost/stream/1220c50f8bc4d2a807aace1e1376496a9d7f7c1408dec2512763c3ca16fe828f6631_01.ts")
