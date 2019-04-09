@@ -559,14 +559,14 @@ func StubBroadcastSessionsManager() *BroadcastSessionsManager {
 	}
 }
 
-func TestSelect(t *testing.T) {
+func TestSelectSession(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
-	expectedSess1 := bsm.sessList[1]
-	expectedSess2 := bsm.sessList[0]
 
 	// assert that initial lengths are as expected
 	assert := assert.New(t)
 	assert.Len(bsm.sessList, 2)
+	expectedSess1 := bsm.sessList[1]
+	expectedSess2 := bsm.sessList[0]
 
 	// assert last session selected and sessList is correct length
 	sess := bsm.selectSession()
@@ -581,6 +581,14 @@ func TestSelect(t *testing.T) {
 	sess = bsm.selectSession()
 	assert.Nil(sess)
 	assert.Len(bsm.sessList, 0)
+
+	// assert session list gets refreshed if under minOrchs. check via waitgroup
+	bsm.minOrchs = 1
+	var wg sync.WaitGroup
+	wg.Add(1)
+	bsm.createSessions = func() ([]*BroadcastSession, error) { wg.Done(); return nil, fmt.Errorf("err") }
+	bsm.selectSession()
+	wg.Wait()
 }
 
 func TestRemoveSession(t *testing.T) {
@@ -612,8 +620,7 @@ func TestRemoveSession(t *testing.T) {
 
 func TestCompleteSessions(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
-	sess1 := bsm.sessList[0]
-	bsm.sessList = []*BroadcastSession{bsm.sessList[0]}
+	sess1 := bsm.selectSession()
 
 	// assert that initial lengths are as expected
 	assert := assert.New(t)
@@ -625,29 +632,32 @@ func TestCompleteSessions(t *testing.T) {
 	// assert that session already in sessMap is added back to sessList
 	assert.Len(bsm.sessList, 2)
 	assert.Len(bsm.sessMap, 2)
-	assert.Equal(sess1, bsm.sessList[0])
 	assert.Equal(sess1, bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
 
-	sess3 := StubBroadcastSession("transcoder3")
+	// assert that we get the same session back next time we call select
+	newSess := bsm.selectSession()
+	assert.Equal(sess1, newSess)
+	bsm.completeSession(newSess)
 
 	// assert that session not in sessMap is not added to sessList
+	sess3 := StubBroadcastSession("transcoder3")
 	bsm.completeSession(sess3)
 	assert.Len(bsm.sessList, 2)
 	assert.Len(bsm.sessMap, 2)
-	assert.Equal(sess1, bsm.sessList[1])
 }
 
 func TestRefreshSessions(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
+
+	assert := assert.New(t)
+	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessMap, 2)
+
 	sess1 := bsm.sessList[0]
 	sess2 := bsm.sessList[1]
 	bsm.createSessions = func() ([]*BroadcastSession, error) {
 		return []*BroadcastSession{sess1, sess2}, nil
 	}
-
-	assert := assert.New(t)
-	assert.Len(bsm.sessList, 2)
-	assert.Len(bsm.sessMap, 2)
 
 	// asserting that pre-existing sessions are not added to sessList or sessMap
 	bsm.refreshSessions()
@@ -661,12 +671,53 @@ func TestRefreshSessions(t *testing.T) {
 		return []*BroadcastSession{sess3, sess4}, nil
 	}
 
-	// asserting that new sessions are added to sessList and sessMap
+	// asserting that new sessions are added to beginning of sessList and sessMap
 	bsm.refreshSessions()
 	assert.Len(bsm.sessList, 4)
 	assert.Len(bsm.sessMap, 4)
-
-	// asserting that new sessions were added to the beginning of the list
 	assert.Equal(bsm.sessList[0], sess3)
 	assert.Equal(bsm.sessList[1], sess4)
+
+	// asserting that refreshes stop while another is in-flight
+	bsm.createSessions = func() ([]*BroadcastSession, error) {
+		return []*BroadcastSession{StubBroadcastSession("5"), StubBroadcastSession("6")}, nil
+	}
+	bsm.refreshing = true
+	bsm.refreshSessions()
+	assert.Len(bsm.sessList, 4)
+	assert.Len(bsm.sessMap, 4)
+	assert.Equal(bsm.sessList[0], sess3)
+	assert.Equal(bsm.sessList[1], sess4)
+	bsm.refreshing = false
+
+	// Check thread safety, run this under -race
+	var wg sync.WaitGroup
+	for i := 0; i < 200; i++ {
+		wg.Add(1)
+		go func() { bsm.refreshSessions(); wg.Done() }()
+	}
+	wg.Wait()
+
+	// asserting that refreshes stop after a cleanup
+	bsm.cleanup()
+	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessMap, 0)
+	bsm.refreshSessions()
+	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessMap, 0)
+	// XXX check the exit post-createSession
+}
+
+func TestCleanupSessions(t *testing.T) {
+	bsm := StubBroadcastSessionsManager()
+
+	// sanity checks
+	assert := assert.New(t)
+	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessMap, 2)
+
+	// check relevant fields are reset
+	bsm.cleanup()
+	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessMap, 0)
 }

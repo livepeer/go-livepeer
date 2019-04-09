@@ -668,6 +668,11 @@ func TestRegisterConnection(t *testing.T) {
 
 }
 
+// XXX check that broadcast session manager is:
+//     stopped when a stream stops
+//     and that it initializes at stream start
+//     and that an error from transcoder makes it remove session
+//     and that a success re-adds to list
 
 func TestCleanStreamPrefix(t *testing.T) {
 	u, _ := url.Parse("http://localhost/stream/1220c50f8bc4d2a807aace1e1376496a9d7f7c1408dec2512763c3ca16fe828f6631_01.ts")
