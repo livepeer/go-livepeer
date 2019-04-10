@@ -63,6 +63,14 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 	return orchInfos, nil
 }
 
+func (dbo *DBOrchestratorPoolCache) Size() int {
+	orchs, err := dbo.node.Database.SelectOrchs()
+	if err != nil {
+		return 0
+	}
+	return len(orchs)
+}
+
 func cacheRegisteredTranscoders(node *core.LivepeerNode) error {
 	orchestrators, err := node.Eth.RegisteredTranscoders()
 	if err != nil {

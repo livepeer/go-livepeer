@@ -71,6 +71,10 @@ func (d *stubDiscovery) GetOrchestrators(num int) ([]*net.OrchestratorInfo, erro
 	return d.infos, err
 }
 
+func (d *stubDiscovery) Size() int {
+	return len(d.infos)
+}
+
 type StubSegmenter struct {
 	skip bool
 }

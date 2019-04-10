@@ -47,6 +47,18 @@ func StubOrchestrators(addresses []string) []*lpTypes.Transcoder {
 	return orchestrators
 }
 
+func TestPoolSize(t *testing.T) {
+	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+
+	assert := assert.New(t)
+	pool := NewOrchestratorPool(nil, addresses)
+	assert.Equal(3, pool.Size())
+
+	pool = NewOrchestratorPool(nil, nil)
+	assert.Equal(0, pool.Size())
+
+}
+
 func TestCacheRegisteredTranscoders_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
 	dbh, dbraw, err := common.TempDB(t)
 	defer dbh.Close()
@@ -73,14 +85,20 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	assert := assert.New(t)
 	require.Nil(err)
 
-	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
-	orchestrators := StubOrchestrators(addresses)
-
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	node.Database = dbh
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
+
+	// check size for empty db
+	node.Eth = &eth.StubClient{}
+	emptyPool := NewDBOrchestratorPoolCache(node)
+	require.NotNil(emptyPool)
+	assert.Equal(0, emptyPool.Size())
 
 	// adding orchestrators to DB
+	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+	orchestrators := StubOrchestrators(addresses)
+	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
+
 	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
 	require.Nil(err)
 	assert.Len(cachedOrchs, 3)
@@ -95,6 +113,9 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	// creating new OrchestratorPoolCache
 	dbOrch := NewDBOrchestratorPoolCache(node)
 	require.NotNil(dbOrch)
+
+	// check size
+	assert.Equal(3, dbOrch.Size())
 }
 
 func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {

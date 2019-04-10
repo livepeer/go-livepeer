@@ -129,3 +129,7 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 		return returnOrchs, nil
 	}
 }
+
+func (o *orchestratorPool) Size() int {
+	return len(o.uris)
+}
