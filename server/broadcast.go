@@ -116,6 +116,23 @@ func (bsm *BroadcastSessionsManager) cleanup() {
 	bsm.sessMap = make(map[string]*BroadcastSession) // prevent segfaults
 }
 
+func NewSessionManager(node *core.LivepeerNode, pl core.PlaylistManager) *BroadcastSessionsManager {
+	var poolSize float64
+	if node.OrchestratorPool != nil {
+		poolSize = float64(node.OrchestratorPool.Size())
+	}
+	maxInflight := HTTPTimeout.Seconds() / SegLen.Seconds()
+	numOrchs := int(math.Min(poolSize, maxInflight*2))
+	bsm := &BroadcastSessionsManager{
+		sessMap:        make(map[string]*BroadcastSession),
+		createSessions: func() ([]*BroadcastSession, error) { return selectOrchestrator(node, pl, numOrchs) },
+		sessLock:       &sync.Mutex{},
+		numOrchs:       numOrchs,
+	}
+	bsm.refreshSessions()
+	return bsm
+}
+
 func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager, count int) ([]*BroadcastSession, error) {
 	if n.OrchestratorPool == nil {
 		glog.Info("No orchestrators specified; not transcoding")
@@ -237,7 +254,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 				if monitor.Enabled {
 					monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err.Error())
 				}
-				cxn.sessManager.completeSession(sess)
+				cxn.sessManager.removeSession(sess)
 				return
 			}
 			seg.Name = uri // hijack seg.Name to convey the uploaded URI
