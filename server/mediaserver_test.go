@@ -113,14 +113,14 @@ func TestSelectOrchestrator(t *testing.T) {
 	mid := core.RandomManifestID()
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	pl := core.NewBasicPlaylistManager(mid, storage)
-	if _, err := selectOrchestrator(s.LivepeerNode, pl); err != ErrDiscovery {
+	if _, err := selectOrchestrator(s.LivepeerNode, pl, 4); err != ErrDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(s.LivepeerNode, pl); sess != nil || err != ErrNoOrchs {
+	if sess, err := selectOrchestrator(s.LivepeerNode, pl, 4); sess != nil || err != ErrNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -129,7 +129,7 @@ func TestSelectOrchestrator(t *testing.T) {
 		&net.OrchestratorInfo{},
 		&net.OrchestratorInfo{},
 	}
-	sess, _ := selectOrchestrator(s.LivepeerNode, pl)
+	sess, _ := selectOrchestrator(s.LivepeerNode, pl, 4)
 
 	if len(sess) != len(sd.infos) {
 		t.Error("Expected session length of 2")
@@ -205,7 +205,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	expSessionID2 := "fool"
 	sender.On("StartSession", params2).Return(expSessionID2)
 
-	sess, err := selectOrchestrator(s.LivepeerNode, pl)
+	sess, err := selectOrchestrator(s.LivepeerNode, pl, 4)
 	require.Nil(t, err)
 
 	assert := assert.New(t)

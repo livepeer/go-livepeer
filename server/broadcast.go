@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"regexp"
 	"strings"
@@ -26,7 +27,7 @@ type BroadcastSessionsManager struct {
 	sessList []*BroadcastSession
 	sessMap  map[string]*BroadcastSession
 	sessLock *sync.Mutex
-	minOrchs int
+	numOrchs int // how many orchs to request at once
 
 	refreshing bool // only allow one refresh in-flight
 	finished   bool // set at stream end
@@ -39,7 +40,7 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 	defer bsm.sessLock.Unlock()
 	numSess := len(bsm.sessList)
 
-	if numSess < bsm.minOrchs {
+	if numSess < int(math.Ceil(float64(bsm.numOrchs)/2.0)) {
 		go bsm.refreshSessions()
 	}
 
@@ -115,7 +116,7 @@ func (bsm *BroadcastSessionsManager) cleanup() {
 	bsm.sessMap = make(map[string]*BroadcastSession) // prevent segfaults
 }
 
-func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager) ([]*BroadcastSession, error) {
+func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager, count int) ([]*BroadcastSession, error) {
 	if n.OrchestratorPool == nil {
 		glog.Info("No orchestrators specified; not transcoding")
 		return nil, ErrDiscovery
@@ -123,8 +124,7 @@ func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager) ([]*Broa
 
 	rpcBcast := core.NewBroadcaster(n)
 
-	defaultNumOrchs := HTTPTimeout / SegLen
-	tinfos, err := n.OrchestratorPool.GetOrchestrators(int(defaultNumOrchs))
+	tinfos, err := n.OrchestratorPool.GetOrchestrators(count)
 	if len(tinfos) <= 0 {
 		glog.Info("No orchestrators found; not transcoding. Error: ", err)
 		return nil, ErrNoOrchs

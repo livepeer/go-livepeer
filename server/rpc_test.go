@@ -582,13 +582,21 @@ func TestSelectSession(t *testing.T) {
 	assert.Nil(sess)
 	assert.Len(bsm.sessList, 0)
 
-	// assert session list gets refreshed if under minOrchs. check via waitgroup
-	bsm.minOrchs = 1
+	// assert session list gets refreshed if under threshold. check via waitgroup
+	bsm.numOrchs = 1
 	var wg sync.WaitGroup
 	wg.Add(1)
 	bsm.createSessions = func() ([]*BroadcastSession, error) { wg.Done(); return nil, fmt.Errorf("err") }
 	bsm.selectSession()
-	wg.Wait()
+	c := make(chan struct{})
+	go func() { defer close(c); wg.Wait() }()
+	select {
+	case <-c:
+	case <-time.After(1 * time.Second):
+		assert.Fail("Session refresh timed out")
+	}
+
+	// XXX check refresh condition more precisely - currently numOrchs / 2
 }
 
 func TestRemoveSession(t *testing.T) {

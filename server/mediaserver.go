@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"math/big"
 	"math/rand"
 	"net/http"
@@ -375,11 +376,17 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 //End RTMP Publish Handlers
 
 func NewSessionManager(node *core.LivepeerNode, pl core.PlaylistManager) *BroadcastSessionsManager {
+	var poolSize float64
+	if node.OrchestratorPool != nil {
+		poolSize = float64(node.OrchestratorPool.Size())
+	}
+	maxInflight := HTTPTimeout.Seconds() / SegLen.Seconds()
+	numOrchs := int(math.Min(poolSize, maxInflight*2))
 	bsm := &BroadcastSessionsManager{
 		sessMap:        make(map[string]*BroadcastSession),
-		createSessions: func() ([]*BroadcastSession, error) { return selectOrchestrator(node, pl) },
+		createSessions: func() ([]*BroadcastSession, error) { return selectOrchestrator(node, pl, numOrchs) },
 		sessLock:       &sync.Mutex{},
-		minOrchs:       int(HTTPTimeout / SegLen), // maximum inflight sessions
+		numOrchs:       numOrchs,
 	}
 	bsm.refreshSessions()
 	return bsm
