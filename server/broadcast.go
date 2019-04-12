@@ -199,7 +199,6 @@ func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager, count in
 func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 
 	nonce := cxn.nonce
-	rtmpStrm := cxn.stream
 	cpl := cxn.pl
 	mid := cxn.mid
 	vProfile := cxn.profile
@@ -233,18 +232,33 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 		}
 	}
 
+	// Process the rest of the segment asynchronously - transcode
+	go func() {
+		for true {
+			// if fails, retry; rudimentary
+			if err := transcodeSegment(cxn, seg, name); err == nil {
+				return
+			}
+		}
+	}()
+}
+
+func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) error {
+
+	nonce := cxn.nonce
+	rtmpStrm := cxn.stream
+	cpl := cxn.pl
 	sess := cxn.sessManager.selectSession()
 	// Return early under a few circumstances:
-	// View-only (non-transcoded) streams or mid-failover
+	// View-only (non-transcoded) streams or no sessions available
 	if sess == nil {
 		if monitor.Enabled {
 			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, errors.New("No Orchestrators Error"))
 		}
-		return
+		return nil
 	}
+	{
 
-	// Process the rest of the segment asynchronously - transcode
-	go func() {
 		// storage the orchestrator prefers
 		if ios := sess.OrchestratorOS; ios != nil {
 			// XXX handle case when orch expects direct upload
@@ -255,7 +269,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 					monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err.Error())
 				}
 				cxn.sessManager.removeSession(sess)
-				return
+				return err
 			}
 			seg.Name = uri // hijack seg.Name to convey the uploaded URI
 		}
@@ -264,16 +278,19 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 		glog.V(common.DEBUG).Infof("Submitting segment %d", seg.SeqNo)
 
 		res, err := SubmitSegment(sess, seg, nonce)
-		if err != nil {
+		if err != nil || res == nil {
+			cxn.sessManager.removeSession(sess)
+			if res == nil && err == nil {
+				return errors.New("Empty response")
+			}
 			if shouldStopStream(err) {
 				glog.Warningf("Stopping current stream due to: %v", err)
 				rtmpStrm.Close()
-				return
+				return err
 			}
 			if shouldStopSession(err) {
-				cxn.sessManager.removeSession(sess)
 			}
-			return
+			return err
 		}
 
 		cxn.sessManager.completeSession(sess)
@@ -286,9 +303,6 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 				monitor.LogSegmentTranscodeFailed(subType, nonce, seg.SeqNo, err)
 				gotErr = true
 			}
-		}
-		if res == nil {
-			return
 		}
 
 		segHashes := make([][]byte, len(res.Segments))
@@ -358,11 +372,12 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 		if ticketParams != nil && // may be nil in offchain mode
 			!pm.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
 			glog.Error("Sig check failed for segment ", seg.SeqNo)
-			return
+			return errors.New("PM Check Failed")
 		}
 
 		glog.V(common.DEBUG).Info("Successfully validated segment ", seg.SeqNo)
-	}()
+		return nil
+	}
 }
 
 var sessionErrStrings = []string{"dial tcp", "unexpected EOF", core.ErrOrchBusy.Error(), core.ErrOrchCap.Error()}
