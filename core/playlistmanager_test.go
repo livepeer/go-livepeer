@@ -112,31 +112,44 @@ func TestPlaylists(t *testing.T) {
 		t.Error("Unexpected playlist/segment properties")
 	}
 
-	// insert a "duplicate" seqno. Should not work but does. Fix.
-	if err := c.InsertHLSSegment(vProfile, seg.SeqId, seg.URI, seg.Duration); err != nil {
-		t.Error("HLS insertion")
+	if err := c.InsertHLSSegment(vProfile, seg.SeqId, seg.URI, seg.Duration); err == nil {
+		t.Error("Unexpected HLS insertion: segment already exists and should not have been inserted")
 	}
-	if len(pl.Segments) != int(LIVE_LIST_LENGTH) || !compareSeg(seg, pl.Segments[0]) || !compareSeg(pl.Segments[0], pl.Segments[1]) {
+
+	// Sanity check to make sure repeated segment was not inserted into playlist
+	if len(pl.Segments) != int(LIVE_LIST_LENGTH) || !compareSeg(seg, pl.Segments[0]) || pl.Segments[1] != nil {
 		t.Error("Unexpected playlist/segment properties")
 	}
 
-	// Insert out of order. Playlist should accommodate this. Fix.
-	seg = &m3u8.MediaSegment{SeqId: 3, URI: "abc", Duration: -11.1}
-	if err := c.InsertHLSSegment(vProfile, seg.SeqId, seg.URI, seg.Duration); err != nil {
+	// Insert out of order. Playlist should accommodate this.
+	seg1 := &m3u8.MediaSegment{SeqId: 3, URI: "def", Duration: -11.1}
+	if err := c.InsertHLSSegment(vProfile, seg1.SeqId, seg1.URI, seg1.Duration); err != nil {
 		t.Error("HLS insertion")
 	}
-	if !compareSeg(seg, pl.Segments[2]) {
+
+	if !compareSeg(seg1, pl.Segments[0]) || !compareSeg(seg, pl.Segments[1]) {
+		t.Error("Unexpected seg properties")
+	}
+
+	// Sanity Check. Insert out of order. Playlist should accommodate this.
+	seg2 := &m3u8.MediaSegment{SeqId: 1, URI: "ghi", Duration: -11.1}
+	if err := c.InsertHLSSegment(vProfile, seg2.SeqId, seg2.URI, seg2.Duration); err != nil {
+		t.Error("HLS insertion")
+	}
+
+	if !compareSeg(seg2, pl.Segments[0]) || !compareSeg(seg, pl.Segments[2]) || !compareSeg(seg1, pl.Segments[1]) {
 		t.Error("Unexpected seg properties")
 	}
 
 	// Ensure we have different segments between two playlists
-	newSeg := &m3u8.MediaSegment{SeqId: 3, URI: "abc", Duration: -11.1}
+	newSeg := &m3u8.MediaSegment{SeqId: 3, URI: "def", Duration: -11.1}
 	newProfile := &ffmpeg.P240p30fps16x9
 	if err := c.InsertHLSSegment(newProfile, newSeg.SeqId, newSeg.URI, newSeg.Duration); err != nil {
 		t.Error("HLS insertion")
 	}
+
 	newPL := c.GetHLSMediaPlaylist(newProfile.Name)
-	if !compareSeg(seg, newPL.Segments[0]) || compareSeg(pl.Segments[0], newPL.Segments[0]) {
+	if !compareSeg(seg1, newPL.Segments[0]) || !compareSeg(pl.Segments[1], newPL.Segments[0]) {
 		t.Error("Unexpected seg properties in new playlist")
 	}
 
