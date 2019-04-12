@@ -78,14 +78,15 @@ func (bsm *BroadcastSessionsManager) refreshSessions() {
 	}
 	bsm.refreshing = true
 	bsm.sessLock.Unlock()
-
 	newBroadcastSessions, err := bsm.createSessions()
 	if err != nil {
+		bsm.refreshing = false
 		return
 	}
 
 	// if newBroadcastSessions is empty, exit without refreshing list
 	if len(newBroadcastSessions) <= 0 {
+		bsm.refreshing = false
 		return
 	}
 

@@ -95,21 +95,15 @@ func (mgr *BasicPlaylistManager) InsertHLSSegment(profile *ffmpeg.VideoProfile, 
 	if err != nil {
 		return err
 	}
-	return mgr.addToMediaPlaylist(uri, seqNo, duration, mpl)
-}
-
-func (mgr *BasicPlaylistManager) addToMediaPlaylist(uri string, seqNo uint64, duration float64,
-	mpl *m3u8.MediaPlaylist) error {
-
-	mseg := newMediaSegment(uri, seqNo, duration)
+	mseg := newMediaSegment(uri, duration)
 	if mpl.Count() >= mpl.WinSize() {
 		mpl.Remove()
 	}
 	if mpl.Count() == 0 {
 		mpl.SeqNo = mseg.SeqId
 	}
-	// XXX This probably should be using mpl.InsertSegment instead
-	return mpl.AppendSegment(mseg)
+
+	return mpl.InsertSegment(seqNo, mseg)
 }
 
 // GetHLSMasterPlaylist ..
@@ -122,10 +116,9 @@ func (mgr *BasicPlaylistManager) GetHLSMediaPlaylist(rendition string) *m3u8.Med
 	return mgr.getPL(rendition)
 }
 
-func newMediaSegment(uri string, seqNo uint64, duration float64) *m3u8.MediaSegment {
+func newMediaSegment(uri string, duration float64) *m3u8.MediaSegment {
 	return &m3u8.MediaSegment{
 		URI:      uri,
-		SeqId:    seqNo,
 		Duration: duration,
 	}
 }
