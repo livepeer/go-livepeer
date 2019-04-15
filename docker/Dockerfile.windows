@@ -1,17 +1,7 @@
 # escape=`
-FROM gcr.io/livepeerjs-231617/buildtools2019
+FROM microsoft/windowsservercore
 # Make sure we're in temp for the downloads
 WORKDIR c:/temp
-
-ENV GIT_VERSION 2.15.1
-ENV GIT_PATCH_VERSION 2
-
-# RUN powershell -Command $ErrorActionPreference = 'Stop' ; `
-#     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 ; `
-#     Invoke-WebRequest $('https://github.com/git-for-windows/git/releases/download/v{0}.windows.{1}/MinGit-{0}.{1}-busybox-64-bit.zip' -f $env:GIT_VERSION, $env:GIT_PATCH_VERSION) -OutFile 'mingit.zip' -UseBasicParsing ; `
-#     Expand-Archive mingit.zip -DestinationPath c:\mingit ; `
-#     Remove-Item mingit.zip -Force ; `
-#     setx /M PATH $('c:\mingit\cmd;{0}' -f $env:PATH)
 
 SHELL ["powershell", "-command"]
 
@@ -36,27 +26,19 @@ RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
     C:\msys64\usr\bin\bash.exe -l -c 'pacman -Syuu --needed --noconfirm --noprogressbar --ask=20'; `
     C:\msys64\usr\bin\bash.exe -l -c 'pacman -Syu  --needed --noconfirm --noprogressbar --ask=20'; `
     C:\msys64\usr\bin\bash.exe -l -c 'pacman -Su   --needed --noconfirm --noprogressbar --ask=20'; `
-    C:\msys64\usr\bin\bash.exe -l -c 'pacman -S perl binutils git make autoconf mingw-w64-x86_64-gcc mingw-w64-x86_64-libtool mingw-w64-x86_64-gnutls mingw-w64-x86_64-go --noconfirm --noprogressbar --ask=20'; `
+    C:\msys64\usr\bin\bash.exe -l -c 'pacman -S perl binutils git make autoconf mingw-w64-x86_64-gcc mingw-w64-x86_64-libtool mingw-w64-x86_64-gnutls mingw-w64-x86_64-go mingw-w64-x86_64-pkg-config --noconfirm --noprogressbar --ask=20'; `
     C:\msys64\usr\bin\bash.exe -l -c 'pacman -Scc --noconfirm'; `
-    C:\msys64\usr\bin\bash.exe -l -c 'echo "Successfully installed MSYS2"'; `
-    Stop-Computer -Force
+    C:\msys64\usr\bin\bash.exe -l -c 'echo "Successfully installed MSYS2"'; 
+    # Stop-Computer -Force
 # ^^ MSYS2 leaves daemons running that block `docker build`, Stop-Computer fixes that
 
-ADD install_deps_windows.sh c:\install_deps_windows.sh
-
-RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
-    Remove-Item @('C:\msys64') -Force -Recurse; `
-    Rename-Item C:\msys64_copy C:\msys64 ; `
-    Start-Process -FilePath "C:\msys64\usr\bin\bash.exe" -ArgumentList /c/install_deps_windows.sh -NoNewWindow -PassThru -Wait;
-
 ADD install_ffmpeg_windows.sh c:\install_ffmpeg_windows.sh
+ADD install_ffmpeg.sh c:\install_ffmpeg.sh
 
 RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
     Remove-Item @('C:\msys64') -Force -Recurse; `
     Rename-Item C:\msys64_copy C:\msys64 ; `
-    C:\msys64\usr\bin\bash.exe -l -c 'pacman -S mingw-w64-x86_64-pkg-config --noconfirm --noprogressbar --ask=20'; `
     Start-Process -FilePath "C:\msys64\usr\bin\bash.exe" -ArgumentList /c/install_ffmpeg_windows.sh -NoNewWindow -PassThru -Wait;
-
 
 RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
     Remove-Item @('C:\msys64') -Force -Recurse; `
