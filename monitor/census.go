@@ -364,6 +364,9 @@ func LogDiscoveryError(code string) {
 func (cen *censusMetricsCounter) successRate() float64 {
 	var i int
 	var f float64
+	if len(cen.success) == 0 {
+		return 1
+	}
 	for _, avg := range cen.success {
 		if r, has := avg.successRate(); has {
 			i++
@@ -376,7 +379,7 @@ func (cen *censusMetricsCounter) successRate() float64 {
 func (sa *segmentsAverager) successRate() (float64, bool) {
 	var emerged, transcoded int
 	if sa.end == -1 {
-		return 0, false
+		return 1, false
 	}
 	i := sa.start
 	now := time.Now()
@@ -394,7 +397,7 @@ func (sa *segmentsAverager) successRate() (float64, bool) {
 	if emerged > 0 {
 		return float64(transcoded) / float64(emerged), true
 	}
-	return 0, false
+	return 1, false
 }
 
 func (sa *segmentsAverager) advance(i int) int {
@@ -645,4 +648,5 @@ func (cen *censusMetricsCounter) streamEnded(nonce uint64) {
 	stats.Record(cen.ctx, cen.mStreamEnded.M(1))
 	delete(cen.emergeTimes, nonce)
 	delete(cen.success, nonce)
+	census.sendSuccess()
 }
