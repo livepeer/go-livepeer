@@ -1,0 +1,71 @@
+# escape=`
+FROM gcr.io/livepeerjs-231617/buildtools2019
+# Make sure we're in temp for the downloads
+WORKDIR c:/temp
+
+ENV GIT_VERSION 2.15.1
+ENV GIT_PATCH_VERSION 2
+
+# RUN powershell -Command $ErrorActionPreference = 'Stop' ; `
+#     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 ; `
+#     Invoke-WebRequest $('https://github.com/git-for-windows/git/releases/download/v{0}.windows.{1}/MinGit-{0}.{1}-busybox-64-bit.zip' -f $env:GIT_VERSION, $env:GIT_PATCH_VERSION) -OutFile 'mingit.zip' -UseBasicParsing ; `
+#     Expand-Archive mingit.zip -DestinationPath c:\mingit ; `
+#     Remove-Item mingit.zip -Force ; `
+#     setx /M PATH $('c:\mingit\cmd;{0}' -f $env:PATH)
+
+SHELL ["powershell", "-command"]
+
+RUN Invoke-WebRequest -UserAgent 'DockerCI' -outfile 7zsetup.exe http://www.7-zip.org/a/7z1604-x64.exe
+
+RUN Start-Process .\7zsetup -ArgumentList '/S /D=c:/7zip' -Wait
+
+RUN (new-object System.Net.WebClient).DownloadFile('http://repo.msys2.org/distrib/msys2-x86_64-latest.tar.xz','C:\temp\msys2-x86_64-latest.tar.xz')
+RUN Get-FileHash -Path msys2-x86_64-latest.tar.xz 
+RUN C:\7zip\7z e msys2-x86_64-latest.tar.xz -Wait
+RUN C:\7zip\7z x msys2-x86_64-latest.tar -o"C:\\"
+
+RUN Write-Host 'Updating MSYSTEM and MSYSCON ...'; `
+    [Environment]::SetEnvironmentVariable('MSYSTEM', 'MSYS2', [EnvironmentVariableTarget]::Machine); `
+    [Environment]::SetEnvironmentVariable('MSYSCON', 'defterm', [EnvironmentVariableTarget]::Machine);
+
+RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
+    Remove-Item @('C:\msys64') -Force -Recurse; `
+    Rename-Item C:\msys64_copy C:\msys64 ; `
+    C:\msys64\usr\bin\bash.exe -l -c 'exit 0'; `
+    C:\msys64\usr\bin\bash.exe -l -c 'echo "Now installing MSYS2..."'; `
+    C:\msys64\usr\bin\bash.exe -l -c 'pacman -Syuu --needed --noconfirm --noprogressbar --ask=20'; `
+    C:\msys64\usr\bin\bash.exe -l -c 'pacman -Syu  --needed --noconfirm --noprogressbar --ask=20'; `
+    C:\msys64\usr\bin\bash.exe -l -c 'pacman -Su   --needed --noconfirm --noprogressbar --ask=20'; `
+    C:\msys64\usr\bin\bash.exe -l -c 'pacman -S perl binutils git make autoconf mingw-w64-x86_64-gcc mingw-w64-x86_64-libtool mingw-w64-x86_64-gnutls mingw-w64-x86_64-go --noconfirm --noprogressbar --ask=20'; `
+    C:\msys64\usr\bin\bash.exe -l -c 'pacman -Scc --noconfirm'; `
+    C:\msys64\usr\bin\bash.exe -l -c 'echo "Successfully installed MSYS2"'; `
+    Stop-Computer -Force
+# ^^ MSYS2 leaves daemons running that block `docker build`, Stop-Computer fixes that
+
+ADD install_deps_windows.sh c:\install_deps_windows.sh
+
+RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
+    Remove-Item @('C:\msys64') -Force -Recurse; `
+    Rename-Item C:\msys64_copy C:\msys64 ; `
+    Start-Process -FilePath "C:\msys64\usr\bin\bash.exe" -ArgumentList /c/install_deps_windows.sh -NoNewWindow -PassThru -Wait;
+
+ADD install_ffmpeg_windows.sh c:\install_ffmpeg_windows.sh
+
+RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
+    Remove-Item @('C:\msys64') -Force -Recurse; `
+    Rename-Item C:\msys64_copy C:\msys64 ; `
+    C:\msys64\usr\bin\bash.exe -l -c 'pacman -S mingw-w64-x86_64-pkg-config --noconfirm --noprogressbar --ask=20'; `
+    Start-Process -FilePath "C:\msys64\usr\bin\bash.exe" -ArgumentList /c/install_ffmpeg_windows.sh -NoNewWindow -PassThru -Wait;
+
+
+RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
+    Remove-Item @('C:\msys64') -Force -Recurse; `
+    Rename-Item C:\msys64_copy C:\msys64 ; `
+    C:\msys64\usr\bin\bash.exe -l -c 'export PATH="$PATH:/usr/bin:/mingw64/bin"; export GOROOT="/mingw64/lib/go"; export GOPATH="/go"; go get github.com/golang/glog && go get github.com/ericxtang/m3u8 && go get github.com/aws/aws-sdk-go/aws && go get -u google.golang.org/grpc && go get github.com/pkg/errors && go get github.com/stretchr/testify/mock'
+
+COPY . C:\msys64\go\src\github.com\livepeer\go-livepeer
+
+RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
+    Remove-Item @('C:\msys64') -Force -Recurse; `
+    Rename-Item C:\msys64_copy C:\msys64 ; `
+    C:\msys64\usr\bin\bash.exe -l -c 'export PATH="$PATH:/usr/bin:/mingw64/bin"; export GOROOT="/mingw64/lib/go"; export GOPATH="/go"; export PKG_CONFIG_PATH=/build/compiled/lib/pkgconfig:/mingw64/lib/pkgconfig; cd /go/src/github.com/livepeer/go-livepeer && go build -v cmd/livepeer/livepeer.go && go build -v ./cmd/livepeer_cli/*'
