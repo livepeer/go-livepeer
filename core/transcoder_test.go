@@ -22,10 +22,10 @@ func TestLocalTranscoder(t *testing.T) {
 	if len(res) != len(profiles) {
 		t.Error("Mismatched results")
 	}
-	if Over1Pct(len(res[0]), 155476) {
+	if Over1Pct(len(res[0]), 164312) {
 		t.Errorf("Wrong data %v", len(res[0]))
 	}
-	if Over1Pct(len(res[1]), 208304) {
+	if Over1Pct(len(res[1]), 227668) {
 		t.Errorf("Wrong data %v", len(res[1]))
 	}
 }

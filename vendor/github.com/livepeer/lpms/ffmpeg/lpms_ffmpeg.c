@@ -33,6 +33,8 @@ struct output_ctx {
   AVCodecContext  *ac; // audo  decoder optional
   int vi, ai; // video and audio stream indices
   struct filter_ctx vf, af;
+
+  int64_t drop_ts;     // preroll audio ts to drop
 };
 
 void lpms_init()
@@ -201,7 +203,7 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     vc->width = av_buffersink_get_w(octx->vf.sink_ctx);
     vc->height = av_buffersink_get_h(octx->vf.sink_ctx);
     if (octx->fps.den) vc->framerate = av_buffersink_get_frame_rate(octx->vf.sink_ctx);
-    if (octx->fps.den) vc->time_base = av_inv_q(octx->fps);
+    if (octx->fps.den) vc->time_base = av_buffersink_get_time_base(octx->vf.sink_ctx);
     if (octx->bitrate) vc->rc_min_rate = vc->rc_max_rate = vc->rc_buffer_size = octx->bitrate;
     vc->pix_fmt = av_buffersink_get_format(octx->vf.sink_ctx); // XXX select based on encoder + input support
     if (fmt->flags & AVFMT_GLOBALHEADER) vc->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
@@ -250,6 +252,9 @@ static int open_output(struct output_ctx *octx, struct input_ctx *ictx)
     st->time_base = ac->time_base;
     if (ret < 0) em_err("Unable to copy audio codec params\n");
     octx->ai = st->index;
+
+    // signal whether to drop preroll audio
+    if (st->codecpar->initial_padding) octx->drop_ts = AV_NOPTS_VALUE;
   }
 
   if (!(fmt->flags & AVFMT_NOFILE)) {
@@ -573,25 +578,27 @@ int process_out(struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
   AVFrame *frame = NULL;
   AVPacket pkt = {0};
   AVRational tb;
-  if (filter && filter->active && inf) {
+  if (filter && filter->active) {
     frame = filter->frame;
     av_frame_unref(frame);
-    av_frame_copy_props(frame, inf);
     ret = av_buffersrc_write_frame(filter->src_ctx, inf);
     if (ret < 0) proc_err("Error feeding the filtergraph\n");
     ret = av_buffersink_get_frame(filter->sink_ctx, frame);
     frame->pict_type = AV_PICTURE_TYPE_NONE;
-    if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) return ret; // XXX do properly
-    if (ret < 0) proc_err("Error consuming the filtergraph");
+    if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) frame = NULL;
+    else if (ret < 0) proc_err("Error consuming the filtergraph");
     tb = av_buffersink_get_time_base(filter->sink_ctx);
   } else frame = inf;
 
   // encode
   av_init_packet(&pkt);
   if (encoder) {
-    ret = avcodec_send_frame(encoder, frame);
-    if (AVERROR_EOF == ret) ;
-    else if (ret < 0) proc_err("Error sending frame to encoder\n");
+    if (frame || !inf) {
+      // only send if we've received a frame from filtergraph or this is a flush
+      ret = avcodec_send_frame(encoder, frame);
+      if (AVERROR_EOF == ret) ;
+      else if (ret < 0) proc_err("Error sending frame to encoder\n");
+    }
     ret = avcodec_receive_packet(encoder, &pkt);
     if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) return ret;
     if (ret < 0) proc_err("Error receiving packet from encoder\n");
@@ -605,6 +612,14 @@ int process_out(struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
     pkt.pts = av_rescale_q_rnd(pkt.pts, tb, ost->time_base, AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
     pkt.dts = av_rescale_q_rnd(pkt.dts, tb, ost->time_base, AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
     pkt.duration = av_rescale_q(pkt.duration, encoder->time_base, ost->time_base);
+  }
+
+  // drop any preroll audio. may need to drop multiple packets for multichannel
+  // XXX this breaks if preroll isn't exactly one AVPacket or drop_ts == 0
+  //     hasn't been a problem in practice (so far)
+  if (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type) {
+      if (octx->drop_ts == AV_NOPTS_VALUE) octx->drop_ts = pkt.pts;
+      if (pkt.pts && pkt.pts == octx->drop_ts) return 0;
   }
 
   ret = av_interleaved_write_frame(octx->oc, &pkt);

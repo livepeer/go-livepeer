@@ -1,0 +1,42 @@
+version: 2
+jobs:
+  build:
+    working_directory: /go/src/github.com/livepeer/lpms
+    docker:
+      - image: "circleci/golang:1.11.5"
+        environment:
+          GOROOT: /usr/local/go
+          PKG_CONFIG_PATH: "/home/circleci/compiled/lib/pkgconfig"
+    steps:
+      - checkout
+
+      - restore_cache:
+          key: ffmpeg-cache-{{ checksum "install_ffmpeg.sh" }}
+
+      - run:
+          name: "Tweak PATH"
+          command: |
+            echo 'export PATH=/home/circleci/compiled/bin:$PATH' >> $BASH_ENV
+            source $BASH_ENV
+
+      - run:
+          name: "Build FFMpeg"
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y autoconf build-essential pkg-config autoconf gnutls-dev
+            bash ./install_ffmpeg.sh
+
+      - save_cache:
+          paths:
+            - "/home/circleci/nasm"
+            - "/home/circleci/x264"
+            - "/home/circleci/ffmpeg"
+            - "/home/circleci/compiled"
+          key: ffmpeg-cache-{{ checksum "install_ffmpeg.sh" }}
+
+      - run:
+          name: "Build LPMS"
+          command: |
+            go get ./cmd/example
+            go build cmd/example/*.go
+            bash test.sh
