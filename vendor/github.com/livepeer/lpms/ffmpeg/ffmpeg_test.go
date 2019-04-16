@@ -23,7 +23,6 @@ func setupTest(t *testing.T) (func(cmd string), string) {
 	// a tempdir and the current working directory.
 	cmdFunc := func(cmd string) {
 		out, err := exec.Command("bash", "-c", cmd, dir, wd).CombinedOutput()
-		t.Log(string(out))
 		if err != nil {
 			t.Error(string(out[:]))
 		}
@@ -327,4 +326,51 @@ func TestTranscoder_SampleRate(t *testing.T) {
 	`
 	run(cmd)
 
+}
+
+func TestTranscoder_Timestamp(t *testing.T) {
+	run, dir := setupTest(t)
+	defer os.RemoveAll(dir)
+
+	cmd := `
+		set -eux
+		cd $0
+
+		# prepare the input and sanity check 60fps
+		cp "$1/../transcoder/test.ts" inp.ts
+		ffprobe -loglevel warning -select_streams v -show_streams -count_frames inp.ts > inp.out
+		grep avg_frame_rate=60 inp.out
+		grep r_frame_rate=60 inp.out
+
+		# reduce 60fps original to 30fps indicated but 15fps real
+		ffmpeg -loglevel warning -i inp.ts -t 1 -c:v libx264 -an -vf select='not(mod(n\,4))' -r 30 test.ts
+		ffprobe -loglevel warning -select_streams v -show_streams -count_frames test.ts > test.out
+
+		# sanity check some properties. hard code numbers for now.
+		grep avg_frame_rate=30 test.out
+		grep r_frame_rate=15 test.out
+		grep nb_read_frames=15 test.out
+		grep duration_ts=90000 test.out
+		grep start_pts=138000 test.out
+	`
+	run(cmd)
+
+	err := Transcode(dir+"/test.ts", dir, []VideoProfile{P240p30fps16x9})
+	if err != nil {
+		t.Error(err)
+	}
+
+	cmd = `
+		set -eux
+		cd $0
+
+		# hardcode some checks for now. TODO make relative to source.
+		ffprobe -loglevel warning -select_streams v -show_streams -count_frames out0test.ts > test.out
+		grep avg_frame_rate=30 test.out
+		grep r_frame_rate=30 test.out
+		grep nb_read_frames=28 test.out
+		grep duration_ts=84000 test.out
+		grep start_pts=138000 test.out
+	`
+	run(cmd)
 }

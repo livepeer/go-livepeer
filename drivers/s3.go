@@ -97,12 +97,13 @@ func (os *s3OS) NewSession(path string) OSSession {
 	policy, signature, credential, xAmzDate := createPolicy(os.awsAccessKeyID,
 		os.bucket, os.region, os.awsSecretAccessKey, path)
 	sess := &s3Session{
-		host:       s3Host(os.bucket),
-		key:        path,
-		policy:     policy,
-		signature:  signature,
-		credential: credential,
-		xAmzDate:   xAmzDate,
+		host:        s3Host(os.bucket),
+		key:         path,
+		policy:      policy,
+		signature:   signature,
+		credential:  credential,
+		xAmzDate:    xAmzDate,
+		storageType: net.OSInfo_S3,
 	}
 	sess.fields = s3GetFields(sess)
 	return sess

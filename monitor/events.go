@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
 )
 
+// Enabled true if metrics was enabled in command line
 var Enabled bool
 
 type metricsVars struct {
@@ -35,11 +37,12 @@ type event struct {
 
 var eventsURL string
 
-func Init(url string, nodeType string, nodeID string) {
+func Init(url, nodeType, nodeID, version string) {
 	eventsURL = url
 	metrics.nodeID = nodeID
 	metrics.nodeType = nodeType
 	go sendLoop(metrics.ch)
+	initCensus(nodeType, nodeID, version)
 }
 
 func sendLoop(inCh chan *event) {
@@ -64,7 +67,8 @@ func sendLoop(inCh chan *event) {
 }
 
 func LogSegmentTranscodeStarting(seqNo uint64, manifestID string) {
-	glog.Infof("Logging SegmentTranscodeStarting...")
+	glog.Infof("Logging SegmentTranscodeStarting... seqNo=%d manifestID=%s",
+		seqNo, manifestID)
 
 	props := map[string]interface{}{
 		"seqNo":      seqNo,
@@ -74,8 +78,11 @@ func LogSegmentTranscodeStarting(seqNo uint64, manifestID string) {
 	sendPost("SegmentTranscodeStarting", 0, props)
 }
 
-func LogSegmentTranscodeEnded(seqNo uint64, manifestID string) {
-	glog.Infof("Logging SegmentTranscodeEnded...")
+func LogSegmentTranscodeEnded(seqNo uint64, manifestID string, d time.Duration,
+	profiles string) {
+	glog.Infof("Logging SegmentTranscodeEnded... seqNo=%d manifestID=%s duration=%s",
+		seqNo, manifestID, d)
+	census.segmentTranscoded(0, seqNo, d, 0, profiles)
 
 	props := map[string]interface{}{
 		"seqNo":      seqNo,
@@ -86,7 +93,8 @@ func LogSegmentTranscodeEnded(seqNo uint64, manifestID string) {
 }
 
 func LogStreamCreatedEvent(hlsStrmID string, nonce uint64) {
-	glog.Infof("Logging StreamCreated...")
+	glog.Infof("Logging StreamCreated... nonce=%d strid=%s", nonce, hlsStrmID)
+	census.streamCreated(nonce)
 
 	props := map[string]interface{}{
 		"hlsStrmID": hlsStrmID,
@@ -96,19 +104,22 @@ func LogStreamCreatedEvent(hlsStrmID string, nonce uint64) {
 }
 
 func LogStreamStartedEvent(nonce uint64) {
-	glog.Infof("Logging StreamStarted...")
+	glog.Infof("Logging StreamStarted... nonce=%d", nonce)
+	census.streamStarted(nonce)
 
 	sendPost("StreamStarted", nonce, nil)
 }
 
 func LogStreamEndedEvent(nonce uint64) {
-	glog.Infof("Logging StreamEnded...")
+	glog.Infof("Logging StreamEnded... nonce=%d", nonce)
+	census.streamEnded(nonce)
 
 	sendPost("StreamEnded", nonce, nil)
 }
 
 func LogStreamCreateFailed(nonce uint64, reason string) {
-	glog.Infof("Logging StreamCreateFailed...")
+	glog.Errorf("Logging StreamCreateFailed... nonce=%d reason='%s'", nonce, reason)
+	census.streamCreateFailed(nonce, reason)
 
 	props := map[string]interface{}{
 		"reason": reason,
@@ -117,8 +128,17 @@ func LogStreamCreateFailed(nonce uint64, reason string) {
 	sendPost("StreamCreateFailed", nonce, props)
 }
 
-func LogSegmentUploadFailed(nonce, seqNo uint64, reason string) {
-	glog.Infof("Logging SegmentUploadFailed...")
+func LogSegmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, reason string) {
+	if code == SegmentUploadErrorUnknown {
+		if strings.Contains(reason, "Client.Timeout") {
+			code = SegmentUploadErrorTimeout
+		} else if reason == "Session ended" {
+			code = SegmentUploadErrorSessionEnded
+		}
+	}
+	glog.Errorf("Logging SegmentUploadFailed... code=%v reason='%s'", code, reason)
+
+	census.segmentUploadFailed(nonce, seqNo, code)
 
 	props := map[string]interface{}{
 		"reason": reason,
@@ -129,7 +149,9 @@ func LogSegmentUploadFailed(nonce, seqNo uint64, reason string) {
 }
 
 func LogTranscodedSegmentAppeared(nonce, seqNo uint64, profile string) {
-	glog.Infof("Logging LogTranscodedSegmentAppeared...")
+	glog.Infof("Logging LogTranscodedSegmentAppeared... nonce=%d SeqNo=%d profile=%s", nonce, seqNo, profile)
+	census.segmentTranscodedAppeared(nonce, seqNo, profile)
+
 	props := map[string]interface{}{
 		"seqNo":   seqNo,
 		"profile": profile,
@@ -139,7 +161,9 @@ func LogTranscodedSegmentAppeared(nonce, seqNo uint64, profile string) {
 }
 
 func LogSourceSegmentAppeared(nonce, seqNo uint64, manifestID, profile string) {
-	glog.Infof("Logging LogSourceSegmentAppeared...")
+	glog.Infof("Logging LogSourceSegmentAppeared... nonce=%d seqNo=%d manifestid=%s profile=%s", nonce,
+		seqNo, manifestID, profile)
+	census.segmentSourceAppeared(nonce, seqNo, profile)
 	props := map[string]interface{}{
 		"seqNo":      seqNo,
 		"profile":    profile,
@@ -149,8 +173,9 @@ func LogSourceSegmentAppeared(nonce, seqNo uint64, manifestID, profile string) {
 	sendPost("SourceSegmentAppeared", nonce, props)
 }
 
-func LogSegmentEmerged(nonce, seqNo uint64) {
-	glog.Infof("Logging SegmentEmerged...")
+func LogSegmentEmerged(nonce, seqNo uint64, profilesNum int) {
+	glog.Infof("Logging SegmentEmerged... nonce=%d seqNo=%d", nonce, seqNo)
+	census.segmentEmerged(nonce, seqNo, profilesNum)
 
 	var sincePrevious time.Duration
 	now := time.Now()
@@ -178,7 +203,8 @@ func SegmentUploadStart(nonce, seqNo uint64) {
 }
 
 func LogSegmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
-	glog.Infof("Logging SegmentUploaded...")
+	glog.Infof("Logging SegmentUploaded... nonce=%d seqNo=%d uploadduration=%s", nonce, seqNo, uploadDur)
+	census.segmentUploaded(nonce, seqNo, uploadDur)
 
 	props := map[string]interface{}{
 		"seqNo":          seqNo,
@@ -198,8 +224,12 @@ func detectSeqDif(props map[string]interface{}, nonce, seqNo uint64) {
 	}
 }
 
-func LogSegmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Duration) {
-	glog.Infof("Logging SegmentTranscoded...")
+func LogSegmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Duration,
+	profiles string) {
+	glog.Infof("Logging SegmentTranscoded... nonce=%d seqNo=%d transcode_duration=%s total_dur=%s",
+		nonce, seqNo, transcodeDur, totalDur)
+
+	census.segmentTranscoded(nonce, seqNo, transcodeDur, totalDur, profiles)
 
 	if metrics.lastSegmentNonce == nonce {
 		metrics.segmentsInFlight--
@@ -217,8 +247,13 @@ func LogSegmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Durat
 	sendPost("SegmentTranscoded", nonce, props)
 }
 
-func LogSegmentTranscodeFailed(subType string, nonce, seqNo uint64, err error) {
-	glog.Info("Logging LogSegmentTranscodeFailed", subType)
+func LogSegmentTranscodeFailed(subType SegmentTranscodeError, nonce, seqNo uint64, err error) {
+	glog.Errorf("Logging LogSegmentTranscodeFailed subtype=%v nonce=%d seqNo=%d error='%s'", subType, nonce, seqNo, err.Error())
+
+	census.segmentTranscodeFailed(nonce, seqNo, subType)
+	if err == nil {
+		return
+	}
 
 	if metrics.lastSegmentNonce == nonce {
 		metrics.segmentsInFlight--
@@ -234,19 +269,6 @@ func LogSegmentTranscodeFailed(subType string, nonce, seqNo uint64, err error) {
 	detectSeqDif(props, nonce, seqNo)
 
 	sendPost("SegmentTranscodeFailed", nonce, props)
-}
-
-func LogStartBroadcastClientFailed(nonce uint64, serviceURI, transcoderAddress string, jobID string, reason string) {
-	glog.Infof("Logging StartBroadcastClientFailed...")
-
-	props := map[string]interface{}{
-		"jobID":             jobID,
-		"serviceURI":        serviceURI,
-		"reason":            reason,
-		"transcoderAddress": transcoderAddress,
-	}
-
-	sendPost("StartBroadcastClientFailed", nonce, props)
 }
 
 func sendPost(name string, nonce uint64, props map[string]interface{}) {

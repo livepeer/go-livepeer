@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"regexp"
@@ -61,13 +62,20 @@ func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager) (*Broadc
 		orchOS = drivers.NewSession(tinfo.Storage[0])
 	}
 
+	bcastOS := cpl.GetOSSession()
+	if bcastOS.IsExternal() {
+		// Give each O its own OS session to prevent front running uploads
+		pfx := fmt.Sprintf("%v/%v", cpl.ManifestID(), core.RandomManifestID())
+		bcastOS = drivers.NodeStorage.NewSession(pfx)
+	}
+
 	return &BroadcastSession{
 		Broadcaster:      rpcBcast,
 		ManifestID:       cpl.ManifestID(),
 		Profiles:         BroadcastJobVideoProfiles,
 		OrchestratorInfo: tinfo,
 		OrchestratorOS:   orchOS,
-		BroadcasterOS:    cpl.GetOSSession(),
+		BroadcasterOS:    bcastOS,
 		Sender:           n.Sender,
 		PMSessionID:      sessionID,
 	}, nil
@@ -86,7 +94,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	cxn.lock.RUnlock()
 
 	if monitor.Enabled {
-		monitor.LogSegmentEmerged(nonce, seg.SeqNo)
+		monitor.LogSegmentEmerged(nonce, seg.SeqNo, len(BroadcastJobVideoProfiles))
 	}
 
 	seg.Name = "" // hijack seg.Name to convey the uploaded URI
@@ -95,7 +103,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	if err != nil {
 		glog.Errorf("Error saving segment %d: %v", seg.SeqNo, err)
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error())
 		}
 		return
 	}
@@ -110,13 +118,16 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	if err != nil {
 		glog.Errorf("Error inserting segment %d: %v", seg.SeqNo, err)
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error())
 		}
 	}
 
 	// Return early under a few circumstances:
 	// View-only (non-transcoded) streams or mid-failover
 	if sess == nil {
+		if monitor.Enabled {
+			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, errors.New("No Orchestrators Error"))
+		}
 		return
 	}
 
@@ -129,7 +140,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 			if err != nil {
 				glog.Error("Error saving segment to OS ", err)
 				if monitor.Enabled {
-					monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, err.Error())
+					monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err.Error())
 				}
 				return
 			}
@@ -154,12 +165,15 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 
 		// download transcoded segments from the transcoder
 		gotErr := false // only send one error msg per segment list
-		errFunc := func(subType, url string, err error) {
+		errFunc := func(subType monitor.SegmentTranscodeError, url string, err error) {
 			glog.Errorf("%v error with segment %v: %v (URL: %v)", subType, seg.SeqNo, err, url)
 			if monitor.Enabled && !gotErr {
 				monitor.LogSegmentTranscodeFailed(subType, nonce, seg.SeqNo, err)
 				gotErr = true
 			}
+		}
+		if res == nil {
+			return
 		}
 
 		segHashes := make([][]byte, len(res.Segments))
@@ -180,13 +194,18 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 			if bos := sess.BroadcasterOS; bos != nil && !drivers.IsOwnExternal(url) {
 				data, err := drivers.GetSegmentData(url)
 				if err != nil {
-					errFunc("Download", url, err)
+					errFunc(monitor.SegmentTranscodeErrorDownload, url, err)
 					return
 				}
 				name := fmt.Sprintf("%s/%d.ts", sess.Profiles[i].Name, seg.SeqNo)
 				newUrl, err := bos.SaveData(name, data)
 				if err != nil {
-					errFunc("SaveData", url, err)
+					switch err.Error() {
+					case "Session ended":
+						errFunc(monitor.SegmentTranscodeErrorSessionEnded, url, err)
+					default:
+						errFunc(monitor.SegmentTranscodeErrorSaveData, url, err)
+					}
 					return
 				}
 				url = newUrl
@@ -202,7 +221,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 			}
 			err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
 			if err != nil {
-				errFunc("Playlist", url, err)
+				errFunc(monitor.SegmentTranscodeErrorPlaylist, url, err)
 				return
 			}
 		}
@@ -216,6 +235,9 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 			cond.Wait()
 		}
 		cond.L.Unlock()
+		if monitor.Enabled {
+			monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), len(segHashes) == len(res.Segments))
+		}
 
 		ticketParams := sess.OrchestratorInfo.GetTicketParams()
 		if ticketParams != nil && // may be nil in offchain mode

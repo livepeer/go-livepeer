@@ -308,11 +308,13 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			return ErrUnknownStream
 		}
 		cxn.pl.Cleanup()
-		if monitor.Enabled {
-			monitor.LogStreamEndedEvent(cxn.nonce)
-		}
+		glog.Infof("Ended stream with id=%s", mid)
 		cxn.eof <- struct{}{}
 		delete(s.rtmpConnections, mid)
+		if monitor.Enabled {
+			monitor.LogStreamEndedEvent(cxn.nonce)
+			monitor.CurrentSessions(len(s.rtmpConnections))
+		}
 
 		return nil
 	}
@@ -375,6 +377,9 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
 	s.lastHLSStreamID = hlsStrmID
+	if monitor.Enabled {
+		monitor.CurrentSessions(len(s.rtmpConnections))
+	}
 
 	return cxn, nil
 }
