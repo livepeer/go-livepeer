@@ -1,9 +1,20 @@
 # escape=`
-FROM microsoft/windowsservercore
-# Make sure we're in temp for the downloads
+
+# This kinda funny-looking Dockerfile successfully builds go-livepeer on Windows
+# using mingw64. It has a dynamic depenency on a variety of mingw64 DLLs, so its
+# artifact is a zip file that contains livepeer.exe, livepeer-cli.exe, and a
+# handful of DLLs. `docker cp` doesn't work on Windows, so instead you can run:
+
+# docker run -w ${PWD} -v ${PWD}:${PWD} --rm livepeer powershell -Command Copy-Item -Path C:\temp\livepeer-windows-amd64.zip -Destination ${PWD}
+
+# This image works. microsoft/windowsservercore does not. I do not know why.
+FROM microsoft/dotnet-framework:4.7.1
+
 WORKDIR c:/temp
 
 SHELL ["powershell", "-command"]
+
+# Download and extract MSYS2 with 7zip.
 
 RUN Invoke-WebRequest -UserAgent 'DockerCI' -outfile 7zsetup.exe http://www.7-zip.org/a/7z1604-x64.exe
 
@@ -13,6 +24,8 @@ RUN (new-object System.Net.WebClient).DownloadFile('http://repo.msys2.org/distri
 RUN Get-FileHash -Path msys2-x86_64-latest.tar.xz 
 RUN C:\7zip\7z e msys2-x86_64-latest.tar.xz -Wait
 RUN C:\7zip\7z x msys2-x86_64-latest.tar -o"C:\\"
+
+# Install MSYS2 and our required packages
 
 RUN Write-Host 'Updating MSYSTEM and MSYSCON ...'; `
     [Environment]::SetEnvironmentVariable('MSYSTEM', 'MSYS2', [EnvironmentVariableTarget]::Machine); `
@@ -26,20 +39,24 @@ RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
     C:\msys64\usr\bin\bash.exe -l -c 'pacman -Syuu --needed --noconfirm --noprogressbar --ask=20'; `
     C:\msys64\usr\bin\bash.exe -l -c 'pacman -Syu  --needed --noconfirm --noprogressbar --ask=20'; `
     C:\msys64\usr\bin\bash.exe -l -c 'pacman -Su   --needed --noconfirm --noprogressbar --ask=20'; `
+    # Install our packages. Use the mingw-w64-x86_64 version of everything run-time; MSYS2 is apparently slower?
     C:\msys64\usr\bin\bash.exe -l -c 'pacman -S perl binutils git make autoconf mingw-w64-x86_64-gcc mingw-w64-x86_64-libtool mingw-w64-x86_64-gnutls mingw-w64-x86_64-go mingw-w64-x86_64-pkg-config --noconfirm --noprogressbar --ask=20'; `
     C:\msys64\usr\bin\bash.exe -l -c 'pacman -Scc --noconfirm'; `
-    C:\msys64\usr\bin\bash.exe -l -c 'echo "Successfully installed MSYS2"'; 
-    # Stop-Computer -Force
-# ^^ MSYS2 leaves daemons running that block `docker build`, Stop-Computer fixes that
+    C:\msys64\usr\bin\bash.exe -l -c 'echo "Successfully installed MSYS2"'; `
+    # MSYS2 leaves processes running or something - this step hangs? Hard shutdown to fix that.
+    Stop-Computer -Force
 
-ADD install_ffmpeg_windows.sh c:\install_ffmpeg_windows.sh
-ADD install_ffmpeg.sh c:\install_ffmpeg.sh
+# Install FFMpeg, nasm, x264
+ADD install_ffmpeg_windows.sh c:\temp\install_ffmpeg_windows.sh
+ADD install_ffmpeg.sh c:\temp\install_ffmpeg.sh
 
+# MSYS2 doesn't run in Docker unless you copy/paste it first. I do not know why.
 RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
     Remove-Item @('C:\msys64') -Force -Recurse; `
     Rename-Item C:\msys64_copy C:\msys64 ; `
-    Start-Process -FilePath "C:\msys64\usr\bin\bash.exe" -ArgumentList /c/install_ffmpeg_windows.sh -NoNewWindow -PassThru -Wait;
+    Start-Process -FilePath "C:\msys64\usr\bin\bash.exe" -ArgumentList /c/temp/install_ffmpeg_windows.sh -NoNewWindow -PassThru -Wait;
 
+# These three steps adapted from Dockerfile.debian.auto. They build the Golang binary.
 RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
     Remove-Item @('C:\msys64') -Force -Recurse; `
     Rename-Item C:\msys64_copy C:\msys64 ; `
@@ -51,3 +68,28 @@ RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
     Remove-Item @('C:\msys64') -Force -Recurse; `
     Rename-Item C:\msys64_copy C:\msys64 ; `
     C:\msys64\usr\bin\bash.exe -l -c 'export PATH="$PATH:/usr/bin:/mingw64/bin"; export GOROOT="/mingw64/lib/go"; export GOPATH="/go"; export PKG_CONFIG_PATH=/build/compiled/lib/pkgconfig:/mingw64/lib/pkgconfig; cd /go/src/github.com/livepeer/go-livepeer && go build -v cmd/livepeer/livepeer.go && go build -v ./cmd/livepeer_cli/*'
+
+RUN New-Item -ItemType "directory" -Path "c:\temp\livepeer-windows-amd64"; `
+    Copy-Item -Destination c:\temp\livepeer-windows-amd64 -Path `
+        C:\msys64\go\src\github.com\livepeer\go-livepeer\*.exe; `
+    cd C:\msys64\mingw64\bin; `
+    Copy-Item `
+        -Destination C:\temp\livepeer-windows-amd64 `
+        -Path `
+            # This list was produced by `ldd livepeer.exe`
+            .\libffi-6.dll,`
+            .\libgcc_s_seh-1.dll,`
+            .\libgmp-10.dll,`
+            .\libgnutls-30.dll,`
+            .\libhogweed-4.dll,`
+            .\libiconv-2.dll,`
+            .\libidn2-0.dll,`
+            .\libintl-8.dll,`
+            .\libnettle-6.dll,`
+            .\libp11-kit-0.dll,`
+            .\libtasn1-6.dll,`
+            .\libunistring-2.dll,`
+            .\libwinpthread-1.dll,`
+            .\zlib1.dll;`
+    cd C:\temp; `
+    C:\7zip\7z a -tzip .\livepeer-windows-amd64.zip .\livepeer-windows-amd64

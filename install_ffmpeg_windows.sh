@@ -11,4 +11,4 @@ export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig:/mingw64/lib/pkgconfig
 export TARGET_OS="--target-os=mingw64"
 export HOST_OS="--host=x86_64-w64-mingw32"
 
-./install_ffmpeg.sh
+bash /c/temp/install_ffmpeg.sh
