@@ -86,8 +86,8 @@ func (orch *orchestrator) TranscodeSeg(md *SegTranscodingMetadata, seg *stream.H
 	return orch.node.sendToTranscodeLoop(md, seg)
 }
 
-func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
-	orch.node.serveTranscoder(stream)
+func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
+	orch.node.serveTranscoder(stream, capacity)
 }
 
 func (orch *orchestrator) TranscoderResults(tcId int64, res *RemoteTranscoderResult) {
@@ -424,8 +424,8 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 	return nil
 }
 
-func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
-	transcoder := NewRemoteTranscoder(n, stream)
+func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
+	transcoder := NewRemoteTranscoder(n, stream, capacity)
 
 	n.tcoderMutex.Lock()
 	n.Transcoder = transcoder
@@ -450,12 +450,17 @@ func (n *LivepeerNode) transcoderResults(tcId int64, res *RemoteTranscoderResult
 }
 
 type RemoteTranscoder struct {
-	node   *LivepeerNode
-	stream net.Transcoder_RegisterTranscoderServer
-	eof    chan struct{}
+	node     *LivepeerNode
+	stream   net.Transcoder_RegisterTranscoderServer
+	eof      chan struct{}
+	capacity int
 }
 
 var RemoteTranscoderTimeout = 8 * time.Second
+
+func (r *RemoteTranscoder) Capacity() int {
+	return r.capacity
+}
 
 func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
 	taskId, taskChan := rt.node.addTaskChan()
@@ -485,11 +490,12 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	return [][]byte{}, fmt.Errorf("Unknown error")
 }
 
-func NewRemoteTranscoder(n *LivepeerNode, stream net.Transcoder_RegisterTranscoderServer) *RemoteTranscoder {
+func NewRemoteTranscoder(n *LivepeerNode, stream net.Transcoder_RegisterTranscoderServer, capacity int) *RemoteTranscoder {
 	return &RemoteTranscoder{
-		node:   n,
-		stream: stream,
-		eof:    make(chan struct{}, 1),
+		node:     n,
+		stream:   stream,
+		eof:      make(chan struct{}, 1),
+		capacity: capacity,
 	}
 }
 

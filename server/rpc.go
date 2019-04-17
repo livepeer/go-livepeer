@@ -39,7 +39,7 @@ type Orchestrator interface {
 	CurrentBlock() *big.Int
 	CheckCapacity(core.ManifestID) error
 	TranscodeSeg(*core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
-	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer)
+	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address) *net.TicketParams

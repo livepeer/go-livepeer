@@ -76,7 +76,7 @@ func main() {
 	broadcaster := flag.Bool("broadcaster", false, "Set to true to be a broadcaster")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
-	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator or maximum number or RTMP streams for Broadcaster")
+	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 
 	// Onchain:
@@ -233,7 +233,7 @@ func main() {
 			glog.Fatal("Missing -orchSecret")
 		}
 		if len(orchAddresses) > 0 {
-			server.RunTranscoder(n, orchAddresses[0])
+			server.RunTranscoder(n, orchAddresses[0], *maxSessions)
 		} else {
 			glog.Fatal("Missing -orchAddr")
 		}

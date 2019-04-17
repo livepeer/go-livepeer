@@ -35,13 +35,13 @@ var SecretErr = errors.New("Invalid secret")
 
 // Transcoder
 
-func RunTranscoder(n *core.LivepeerNode, orchAddr string) {
+func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
 	backoff.Retry(func() error {
 		glog.Info("Registering transcoder to ", orchAddr)
-		err := runTranscoder(n, orchAddr)
+		err := runTranscoder(n, orchAddr, capacity)
 		glog.Info("Unregistering transcoder: ", err)
 		if err != SecretErr {
 			return err
@@ -51,7 +51,7 @@ func RunTranscoder(n *core.LivepeerNode, orchAddr string) {
 	}, expb)
 }
 
-func runTranscoder(n *core.LivepeerNode, orchAddr string) error {
+func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -63,7 +63,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string) error {
 
 	c := net.NewTranscoderClient(conn)
 	ctx := context.Background()
-	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret})
+	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity)})
 	if err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
 		status := status.Convert(err)
@@ -147,7 +147,7 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 	}
 
 	// blocks until stream is finished
-	h.orchestrator.ServeTranscoder(stream)
+	h.orchestrator.ServeTranscoder(stream, int(req.Capacity))
 	return nil
 }
 
