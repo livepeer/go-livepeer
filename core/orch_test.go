@@ -70,7 +70,7 @@ func TestServeTranscoder(t *testing.T) {
 	strm := &StubTranscoderServer{}
 
 	// test that a transcoder was created
-	go n.serveTranscoder(strm)
+	go n.serveTranscoder(strm, 5)
 	time.Sleep(1 * time.Second)
 	if n.Transcoder == nil {
 		t.Error("Transcoder nil")
@@ -92,7 +92,8 @@ func TestRemoteTranscoder(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	initTranscoder := func() (*RemoteTranscoder, *StubTranscoderServer) {
 		strm := &StubTranscoderServer{node: n}
-		tc := NewRemoteTranscoder(n, strm)
+		cap := 5
+		tc := NewRemoteTranscoder(n, strm, cap)
 		return tc, strm
 	}
 
