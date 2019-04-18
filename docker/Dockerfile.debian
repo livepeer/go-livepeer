@@ -15,7 +15,7 @@ ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
 WORKDIR /go/src/github.com/livepeer/go-livepeer
 
 RUN go get github.com/golang/glog
-RUN go get github.com/ericxtang/m3u8
+RUN go get -u -v github.com/ericxtang/m3u8
 RUN go get github.com/aws/aws-sdk-go/aws
 RUN go get -u google.golang.org/grpc
 RUN go get github.com/pkg/errors

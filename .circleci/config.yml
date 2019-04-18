@@ -20,7 +20,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get -y install build-essential pkg-config autoconf gnutls-dev
       - run: ./install_ffmpeg.sh
       - run: go get github.com/golang/glog
-      - run: go get github.com/ericxtang/m3u8
+      - run: go get -u -v github.com/ericxtang/m3u8
       - run: go get github.com/aws/aws-sdk-go/aws
       - run: go get -u google.golang.org/grpc
       - run: go get github.com/jstemmer/go-junit-report

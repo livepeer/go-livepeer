@@ -6,7 +6,7 @@ WORKDIR /go/src/github.com/livepeer/go-livepeer
 RUN curl -sL https://deb.nodesource.com/setup_8.x | bash -
 RUN apt-get update && apt-get -y install build-essential pkg-config autoconf nodejs gnutls-dev
 RUN go get github.com/golang/glog
-RUN go get github.com/ericxtang/m3u8
+RUN go get -u -v github.com/ericxtang/m3u8
 RUN go get github.com/aws/aws-sdk-go/aws
 RUN go get -u google.golang.org/grpc
 RUN go get github.com/pkg/errors

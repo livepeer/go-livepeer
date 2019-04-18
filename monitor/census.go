@@ -39,7 +39,12 @@ const (
 	SegmentTranscodeErrorSaveData           SegmentTranscodeError = "SaveData"
 	SegmentTranscodeErrorSessionEnded       SegmentTranscodeError = "SessionEnded"
 	SegmentTranscodeErrorPlaylist           SegmentTranscodeError = "Playlist"
+
+	numberOfSegmentsToCalcAverage = 30
 )
+
+var timeToWaitForError = 8500 * time.Millisecond
+var timeoutWatcherPause = 15 * time.Second
 
 type (
 	censusMetricsCounter struct {
@@ -87,9 +92,11 @@ type (
 	}
 
 	segmentsAverager struct {
-		segments []segmentCount
-		start    int
-		end      int
+		segments  []segmentCount
+		start     int
+		end       int
+		removed   bool
+		removedAt time.Time
 	}
 )
 
@@ -97,6 +104,9 @@ type (
 var Exporter *prometheus.Exporter
 
 var census censusMetricsCounter
+
+// used in unit tests
+var unitTestMode bool
 
 func initCensus(nodeType, nodeID, version string) {
 	census = censusMetricsCounter{
@@ -341,7 +351,9 @@ func initCensus(nodeType, nodeID, version string) {
 	if err != nil {
 		glog.Fatal("Error creating context", err)
 	}
-	go census.timeoutWatcher(ctx)
+	if !unitTestMode {
+		go census.timeoutWatcher(ctx)
+	}
 	Exporter = pe
 }
 
@@ -373,7 +385,10 @@ func (cen *censusMetricsCounter) successRate() float64 {
 			f += r
 		}
 	}
-	return f / float64(i)
+	if i > 0 {
+		return f / float64(i)
+	}
+	return 1
 }
 
 func (sa *segmentsAverager) successRate() (float64, bool) {
@@ -385,7 +400,7 @@ func (sa *segmentsAverager) successRate() (float64, bool) {
 	now := time.Now()
 	for {
 		item := &sa.segments[i]
-		if item.transcoded > 0 || item.failed || now.Sub(item.emergedTime) > 8500*time.Millisecond {
+		if item.transcoded > 0 || item.failed || now.Sub(item.emergedTime) > timeToWaitForError {
 			emerged += item.emerged
 			transcoded += item.transcoded
 		}
@@ -453,15 +468,33 @@ func (sa *segmentsAverager) getAddItem(seqNo uint64) (*segmentCount, bool) {
 	return &sa.segments[index], false
 }
 
+func (sa *segmentsAverager) canBeRemoved() bool {
+	if sa.end == -1 {
+		return true
+	}
+	i := sa.start
+	now := time.Now()
+	for {
+		item := &sa.segments[i]
+		if item.transcoded == 0 && !item.failed && now.Sub(item.emergedTime) <= timeToWaitForError {
+			return false
+		}
+		if i == sa.end {
+			break
+		}
+		i = sa.advance(i)
+	}
+	return true
+}
+
 func (cen *censusMetricsCounter) timeoutWatcher(ctx context.Context) {
-	timeout := 8500 * time.Millisecond
 	for {
 		cen.lock.Lock()
 		now := time.Now()
 		for nonce, emerged := range cen.emergeTimes {
 			for seqNo, tm := range emerged {
 				ago := now.Sub(tm)
-				if ago > timeout {
+				if ago > timeToWaitForError {
 					stats.Record(cen.ctx, cen.mSegmentEmerged.M(1))
 					delete(emerged, seqNo)
 					// This shouldn't happen, but if it is, we record
@@ -471,8 +504,16 @@ func (cen *censusMetricsCounter) timeoutWatcher(ctx context.Context) {
 				}
 			}
 		}
+		cen.sendSuccess()
+		for nonce, avg := range cen.success {
+			if avg.removed && now.Sub(avg.removedAt) > 2*timeToWaitForError {
+				// need to keep this around for some time to give Prometheus chance to scrape this value
+				// (Prometheus scrapes every 5 seconds)
+				delete(cen.success, nonce)
+			}
+		}
 		cen.lock.Unlock()
-		time.Sleep(30 * time.Second)
+		time.Sleep(timeoutWatcherPause)
 	}
 }
 
@@ -553,12 +594,8 @@ func (cen *censusMetricsCounter) segmentTranscodeFailed(nonce, seqNo uint64, cod
 		return
 	}
 	stats.Record(ctx, cen.mSegmentTranscodeFailed.M(1))
-	if code == SegmentTranscodeErrorSessionEnded {
-		// Do not count segments into success rate if transcoded segment arrived after stream was ended
-		return
-	}
 	cen.countSegmentEmerged(nonce, seqNo)
-	cen.countSegmentTranscoded(nonce, seqNo, true)
+	cen.countSegmentTranscoded(nonce, seqNo, code != SegmentTranscodeErrorSessionEnded)
 	cen.sendSuccess()
 }
 
@@ -579,7 +616,7 @@ func (cen *censusMetricsCounter) sendSuccess() {
 	stats.Record(cen.ctx, cen.mSuccessRate.M(cen.successRate()))
 }
 
-func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, allSuccess bool) {
+func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, errCode SegmentTranscodeError) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 	ctx, err := tag.New(census.ctx, tag.Insert(census.kProfiles, profiles))
@@ -589,16 +626,16 @@ func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, allSuccess boo
 	}
 
 	if st, ok := census.emergeTimes[nonce][seqNo]; ok {
-		if allSuccess {
+		if errCode == "" {
 			latency := time.Since(st)
 			stats.Record(ctx, census.mTranscodeOverallLatency.M(float64(latency/time.Second)))
 		}
 		census.countSegmentEmerged(nonce, seqNo)
 	}
-	if allSuccess {
+	if errCode == "" {
 		stats.Record(ctx, census.mSegmentTranscodedAllAppeared.M(1))
 	}
-	census.countSegmentTranscoded(nonce, seqNo, false)
+	census.countSegmentTranscoded(nonce, seqNo, errCode != "" && errCode != SegmentTranscodeErrorSessionEnded)
 	census.sendSuccess()
 }
 
@@ -626,14 +663,18 @@ func (cen *censusMetricsCounter) streamCreateFailed(nonce uint64, reason string)
 	stats.Record(cen.ctx, cen.mStreamCreateFailed.M(1))
 }
 
+func newAverager() *segmentsAverager {
+	return &segmentsAverager{
+		segments: make([]segmentCount, numberOfSegmentsToCalcAverage),
+		end:      -1,
+	}
+}
+
 func (cen *censusMetricsCounter) streamCreated(nonce uint64) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 	stats.Record(cen.ctx, cen.mStreamCreated.M(1))
-	cen.success[nonce] = &segmentsAverager{
-		segments: make([]segmentCount, 30),
-		end:      -1,
-	}
+	cen.success[nonce] = newAverager()
 }
 
 func (cen *censusMetricsCounter) streamStarted(nonce uint64) {
@@ -647,6 +688,13 @@ func (cen *censusMetricsCounter) streamEnded(nonce uint64) {
 	defer cen.lock.Unlock()
 	stats.Record(cen.ctx, cen.mStreamEnded.M(1))
 	delete(cen.emergeTimes, nonce)
-	delete(cen.success, nonce)
+	if avg, has := cen.success[nonce]; has {
+		if avg.canBeRemoved() {
+			delete(cen.success, nonce)
+		} else {
+			avg.removed = true
+			avg.removedAt = time.Now()
+		}
+	}
 	census.sendSuccess()
 }
