@@ -102,6 +102,17 @@ func TestNewSessionManager(t *testing.T) {
 	assert.True(sd.Size() > max, "pool should be greater than max numOrchs")
 }
 
+func wgWait(wg *sync.WaitGroup) bool {
+	c := make(chan struct{})
+	go func() { defer close(c); wg.Wait() }()
+	select {
+	case <-c:
+		return true
+	case <-time.After(1 * time.Second):
+		return false
+	}
+}
+
 func TestSelectSession(t *testing.T) {
 	bsm := StubBroadcastSessionsManager()
 
@@ -131,13 +142,7 @@ func TestSelectSession(t *testing.T) {
 	wg.Add(1)
 	bsm.createSessions = func() ([]*BroadcastSession, error) { wg.Done(); return nil, fmt.Errorf("err") }
 	bsm.selectSession()
-	c := make(chan struct{})
-	go func() { defer close(c); wg.Wait() }()
-	select {
-	case <-c:
-	case <-time.After(1 * time.Second):
-		assert.Fail("Session refresh timed out")
-	}
+	assert.True(wgWait(&wg), "Session refresh timed out")
 
 	// XXX check refresh condition more precisely - currently numOrchs / 2
 }
@@ -247,7 +252,7 @@ func TestRefreshSessions(t *testing.T) {
 		wg.Add(1)
 		go func() { bsm.refreshSessions(); wg.Done() }()
 	}
-	wg.Wait()
+	assert.True(wgWait(&wg), "Session refresh timed out")
 
 	// asserting that refreshes stop after a cleanup
 	bsm.cleanup()
@@ -256,7 +261,29 @@ func TestRefreshSessions(t *testing.T) {
 	bsm.refreshSessions()
 	assert.Len(bsm.sessList, 0)
 	assert.Len(bsm.sessMap, 0)
-	// XXX check the exit post-createSession
+
+	// check exit errors from createSession. Run this under -race
+	bsm = StubBroadcastSessionsManager() // reset bsm from previous tests
+	bsm.createSessions = func() ([]*BroadcastSession, error) {
+		time.Sleep(time.Millisecond)
+		return nil, fmt.Errorf("err")
+	}
+	for i := 0; i < 200; i++ {
+		wg.Add(1)
+		go func() { bsm.refreshSessions(); wg.Done() }()
+	}
+	assert.True(wgWait(&wg), "Session refresh timed out")
+
+	// check empty returns from createSession. Run this under -race
+	bsm.createSessions = func() ([]*BroadcastSession, error) {
+		time.Sleep(time.Millisecond)
+		return []*BroadcastSession{}, nil
+	}
+	for i := 0; i < 200; i++ {
+		wg.Add(1)
+		go func() { bsm.refreshSessions(); wg.Done() }()
+	}
+	assert.True(wgWait(&wg), "Session refresh timed out")
 }
 
 func TestCleanupSessions(t *testing.T) {

@@ -24,9 +24,11 @@ import (
 )
 
 type BroadcastSessionsManager struct {
+	// Accessing or changing any of the below requires ownership of this mutex
+	sessLock *sync.Mutex
+
 	sessList []*BroadcastSession
 	sessMap  map[string]*BroadcastSession
-	sessLock *sync.Mutex
 	numOrchs int // how many orchs to request at once
 
 	refreshing bool // only allow one refresh in-flight
@@ -80,13 +82,17 @@ func (bsm *BroadcastSessionsManager) refreshSessions() {
 	bsm.sessLock.Unlock()
 	newBroadcastSessions, err := bsm.createSessions()
 	if err != nil {
+		bsm.sessLock.Lock()
 		bsm.refreshing = false
+		bsm.sessLock.Unlock()
 		return
 	}
 
 	// if newBroadcastSessions is empty, exit without refreshing list
 	if len(newBroadcastSessions) <= 0 {
+		bsm.sessLock.Lock()
 		bsm.refreshing = false
+		bsm.sessLock.Unlock()
 		return
 	}
 
