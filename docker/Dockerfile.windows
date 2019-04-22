@@ -60,36 +60,36 @@ RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
 RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
     Remove-Item @('C:\msys64') -Force -Recurse; `
     Rename-Item C:\msys64_copy C:\msys64 ; `
-    C:\msys64\usr\bin\bash.exe -l -c 'export PATH="$PATH:/usr/bin:/mingw64/bin"; export GOROOT="/mingw64/lib/go"; export GOPATH="/go"; go get github.com/golang/glog && go get github.com/ericxtang/m3u8 && go get github.com/aws/aws-sdk-go/aws && go get -u google.golang.org/grpc && go get github.com/pkg/errors && go get github.com/stretchr/testify/mock'
+    C:\msys64\usr\bin\bash.exe -l -c 'export PATH="$PATH:/usr/bin:/mingw64/bin"; export GOROOT="/mingw64/lib/go"; export GOPATH="/go"; go get github.com/golang/glog && go get github.com/ericxtang/m3u8 && go get github.com/aws/aws-sdk-go/aws && go get -u google.golang.org/grpc && go get github.com/pkg/errors && go get github.com/stretchr/testify/mock && go get -u -v go.opencensus.io/stats && go get -u -v go.opencensus.io/tag && go get -u -v go.opencensus.io/exporter/prometheus'
 
 COPY . C:\msys64\go\src\github.com\livepeer\go-livepeer
 
 RUN Copy-Item C:\msys64 -Recurse -Destination C:\msys64_copy ; `
     Remove-Item @('C:\msys64') -Force -Recurse; `
     Rename-Item C:\msys64_copy C:\msys64 ; `
-    C:\msys64\usr\bin\bash.exe -l -c 'export PATH="$PATH:/usr/bin:/mingw64/bin"; export GOROOT="/mingw64/lib/go"; export GOPATH="/go"; export PKG_CONFIG_PATH=/build/compiled/lib/pkgconfig:/mingw64/lib/pkgconfig; cd /go/src/github.com/livepeer/go-livepeer && git describe --always --long --dirty > .git.describe && go build -ldflags=`"-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)`" -v cmd/livepeer/livepeer.go && go build -ldflags=`"-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)`" -v ./cmd/livepeer_cli/*'
+    C:\msys64\usr\bin\bash.exe -l -c 'set -x; export PATH="$PATH:/usr/bin:/mingw64/bin"; export GOROOT="/mingw64/lib/go"; export GOPATH="/go"; export PKG_CONFIG_PATH=/build/compiled/lib/pkgconfig:/mingw64/lib/pkgconfig; cd /go/src/github.com/livepeer/go-livepeer && git describe --always --long --dirty > .git.describe && go build -ldflags=\\\"-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)\\\" -v cmd/livepeer/livepeer.go && go build -ldflags=\\\"-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)\\\" -v ./cmd/livepeer_cli/*'
 
 RUN New-Item -ItemType "directory" -Path "c:\temp\livepeer-windows-amd64"; `
     Copy-Item -Destination c:\temp\livepeer-windows-amd64 -Path `
-    C:\msys64\go\src\github.com\livepeer\go-livepeer\*.exe; `
+        C:\msys64\go\src\github.com\livepeer\go-livepeer\*.exe; `
     cd C:\msys64\mingw64\bin; `
     Copy-Item `
-    -Destination C:\temp\livepeer-windows-amd64 `
-    -Path `
-    # This list was produced by `ldd livepeer.exe`
-    .\libffi-6.dll,`
-    .\libgcc_s_seh-1.dll,`
-    .\libgmp-10.dll,`
-    .\libgnutls-30.dll,`
-    .\libhogweed-4.dll,`
-    .\libiconv-2.dll,`
-    .\libidn2-0.dll,`
-    .\libintl-8.dll,`
-    .\libnettle-6.dll,`
-    .\libp11-kit-0.dll,`
-    .\libtasn1-6.dll,`
-    .\libunistring-2.dll,`
-    .\libwinpthread-1.dll,`
-    .\zlib1.dll;`
+        -Destination C:\temp\livepeer-windows-amd64 `
+        -Path `
+            # This list was produced by `ldd livepeer.exe`
+            .\libffi-6.dll,`
+            .\libgcc_s_seh-1.dll,`
+            .\libgmp-10.dll,`
+            .\libgnutls-30.dll,`
+            .\libhogweed-4.dll,`
+            .\libiconv-2.dll,`
+            .\libidn2-0.dll,`
+            .\libintl-8.dll,`
+            .\libnettle-6.dll,`
+            .\libp11-kit-0.dll,`
+            .\libtasn1-6.dll,`
+            .\libunistring-2.dll,`
+            .\libwinpthread-1.dll,`
+            .\zlib1.dll;`
     cd C:\temp; `
     C:\7zip\7z a -tzip .\livepeer-windows-amd64.zip .\livepeer-windows-amd64
