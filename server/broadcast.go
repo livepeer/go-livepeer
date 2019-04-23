@@ -316,6 +316,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 			}
 		}
 
+		var dlErr, saveErr error
 		segHashes := make([][]byte, len(res.Segments))
 		n := len(res.Segments)
 		segHashLock := &sync.Mutex{}
@@ -335,11 +336,18 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 				data, err := drivers.GetSegmentData(url)
 				if err != nil {
 					errFunc(monitor.SegmentTranscodeErrorDownload, url, err)
+					segHashLock.Lock()
+					dlErr = err
+					segHashLock.Unlock()
+					cxn.sessManager.removeSession(sess)
 					return
 				}
 				name := fmt.Sprintf("%s/%d.ts", sess.Profiles[i].Name, seg.SeqNo)
 				newUrl, err := bos.SaveData(name, data)
 				if err != nil {
+					segHashLock.Lock()
+					saveErr = err
+					segHashLock.Unlock()
 					switch err.Error() {
 					case "Session ended":
 						errFunc(monitor.SegmentTranscodeErrorSessionEnded, url, err)
@@ -375,14 +383,19 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 			cond.Wait()
 		}
 		cond.L.Unlock()
+		if dlErr != nil {
+			return dlErr
+		}
 		if monitor.Enabled {
 			monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), len(segHashes) == len(res.Segments))
 		}
 
 		ticketParams := sess.OrchestratorInfo.GetTicketParams()
 		if ticketParams != nil && // may be nil in offchain mode
+			saveErr == nil && // save error leads to early exit before sighash computation
 			!pm.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
 			glog.Error("Sig check failed for segment ", seg.SeqNo)
+			cxn.sessManager.removeSession(sess)
 			return errors.New("PM Check Failed")
 		}
 
