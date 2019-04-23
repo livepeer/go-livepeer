@@ -40,20 +40,24 @@ type BroadcastSessionsManager struct {
 func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
-	numSess := len(bsm.sessList)
 
-	if numSess < int(math.Ceil(float64(bsm.numOrchs)/2.0)) {
-		go bsm.refreshSessions()
+	checkSessions := func(m *BroadcastSessionsManager) bool {
+		numSess := len(m.sessList)
+		if numSess < int(math.Ceil(float64(m.numOrchs)/2.0)) {
+			go m.refreshSessions()
+		}
+		return numSess > 0
 	}
-
-	if numSess <= 0 {
-		return nil
+	for checkSessions(bsm) {
+		last := len(bsm.sessList) - 1
+		sess, sessions := bsm.sessList[last], bsm.sessList[:last]
+		bsm.sessList = sessions
+		if _, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+			return sess
+		}
+		// try again if session does not exist in table
 	}
-
-	last := numSess - 1
-	sess, sessions := bsm.sessList[last], bsm.sessList[:last]
-	bsm.sessList = sessions
-	return sess
+	return nil
 }
 
 func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {

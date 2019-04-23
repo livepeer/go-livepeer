@@ -119,6 +119,7 @@ func TestSelectSession(t *testing.T) {
 	// assert that initial lengths are as expected
 	assert := assert.New(t)
 	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessMap, 2)
 	expectedSess1 := bsm.sessList[1]
 	expectedSess2 := bsm.sessList[0]
 
@@ -135,6 +136,7 @@ func TestSelectSession(t *testing.T) {
 	sess = bsm.selectSession()
 	assert.Nil(sess)
 	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessMap, 2) // map should still track original sessions
 
 	// assert session list gets refreshed if under threshold. check via waitgroup
 	bsm.numOrchs = 1
@@ -143,6 +145,28 @@ func TestSelectSession(t *testing.T) {
 	bsm.createSessions = func() ([]*BroadcastSession, error) { wg.Done(); return nil, fmt.Errorf("err") }
 	bsm.selectSession()
 	assert.True(wgWait(&wg), "Session refresh timed out")
+
+	// assert the selection retries if session in list doesn't exist in map
+	bsm = StubBroadcastSessionsManager()
+	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessMap, 2)
+	// sanity checks then rebuild in order
+	firstSess := bsm.selectSession()
+	expectedSess := bsm.selectSession()
+	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessMap, 2)
+	bsm.completeSession(expectedSess)
+	bsm.completeSession(firstSess)
+	// remove first sess from map, but keep in list. check results around that
+	bsm.removeSession(firstSess)
+	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessMap, 1)
+	assert.Equal(firstSess, bsm.sessList[1]) // ensure removed sess still in list
+	// now ensure next selectSession call fixes up sessList as expected
+	sess = bsm.selectSession()
+	assert.Equal(sess, expectedSess)
+	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessMap, 1)
 
 	// XXX check refresh condition more precisely - currently numOrchs / 2
 }
