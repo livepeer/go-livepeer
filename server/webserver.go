@@ -98,14 +98,14 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		}
 
 		BroadcastPrice = price
-		BroadcastJobVideoProfiles = profiles
+		DefaultBroadcastJobVideoProfiles = profiles
 
-		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
+		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, DefaultBroadcastJobVideoProfiles)
 	})
 
 	mux.HandleFunc("/getBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
 		pNames := []string{}
-		for _, p := range BroadcastJobVideoProfiles {
+		for _, p := range DefaultBroadcastJobVideoProfiles {
 			pNames = append(pNames, p.Name)
 		}
 		config := struct {

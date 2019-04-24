@@ -356,6 +356,10 @@ func main() {
 	if *s3bucket != "" && *s3creds != "" {
 		br := strings.Split(*s3bucket, "/")
 		cr := strings.Split(*s3creds, "/")
+		if len(cr) != 2 || len(br) != 2 {
+			glog.Errorf("Error parsing S3 information. \nbucket: %v\ncreds: %v\n", br, cr)
+			return
+		}
 		drivers.NodeStorage = drivers.NewS3Driver(br[0], br[1], cr[0], cr[1])
 	}
 

@@ -53,7 +53,9 @@ const SegLen = 2 * time.Second
 const BroadcastRetry = 15 * time.Second
 
 var BroadcastPrice = big.NewInt(1)
-var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
+
+var DefaultBroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
+var ProfilesMap = make(map[core.ManifestID][]ffmpeg.VideoProfile)
 
 var AuthWebhookURL string
 
@@ -83,8 +85,9 @@ type LivepeerServer struct {
 }
 
 type authWebhookResponse struct {
-	ManifestID string `json:"manifestID"`
-	StreamKey  string `json:"streamKey"`
+	ManifestID          string `json:"manifestID"`
+	StreamKey           string `json:"streamKey"`
+	TranscodingProfiles string `json:"transcodingProfiles"`
 }
 
 func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
@@ -105,16 +108,9 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 
 //StartServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string) error {
-	bProfiles := make([]ffmpeg.VideoProfile, 0)
-	for _, opt := range strings.Split(transcodingOptions, ",") {
-		p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]
-		if ok {
-			bProfiles = append(bProfiles, p)
-		}
-	}
-	BroadcastJobVideoProfiles = bProfiles
+	DefaultBroadcastJobVideoProfiles = parseTranscodingProfile(transcodingOptions)
 
-	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
+	glog.V(common.SHORT).Infof("Transcode Job Type: %v", DefaultBroadcastJobVideoProfiles)
 
 	//LPMS handlers for handling RTMP video
 	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
@@ -171,6 +167,10 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		}
 		if mid == "" {
 			mid = core.RandomManifestID()
+		}
+
+		if resp != nil && resp.TranscodingProfiles != "" {
+			ProfilesMap[mid] = parseTranscodingProfile(resp.TranscodingProfiles)
 		}
 
 		// Ensure there's no concurrent StreamID with the same name
@@ -483,6 +483,17 @@ var StreamPrefix = regexp.MustCompile(`^[ /]*(stream/)?`)
 
 func cleanStreamPrefix(reqPath string) string {
 	return StreamPrefix.ReplaceAllString(reqPath, "")
+}
+
+func parseTranscodingProfile(pString string) []ffmpeg.VideoProfile {
+	bProfiles := make([]ffmpeg.VideoProfile, 0)
+	for _, opt := range strings.Split(pString, ",") {
+		p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]
+		if ok {
+			bProfiles = append(bProfiles, p)
+		}
+	}
+	return bProfiles
 }
 
 func parseStreamID(reqPath string) core.StreamID {

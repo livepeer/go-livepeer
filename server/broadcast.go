@@ -191,10 +191,14 @@ func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager, count in
 			bcastOS = drivers.NodeStorage.NewSession(pfx)
 		}
 
+		profiles := DefaultBroadcastJobVideoProfiles
+		if ProfilesMap[cpl.ManifestID()] != nil {
+			profiles = ProfilesMap[cpl.ManifestID()]
+		}
 		session := &BroadcastSession{
 			Broadcaster:      rpcBcast,
 			ManifestID:       cpl.ManifestID(),
-			Profiles:         BroadcastJobVideoProfiles,
+			Profiles:         profiles,
 			OrchestratorInfo: tinfo,
 			OrchestratorOS:   orchOS,
 			BroadcasterOS:    bcastOS,
@@ -214,8 +218,12 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	mid := cxn.mid
 	vProfile := cxn.profile
 
+	profiles := DefaultBroadcastJobVideoProfiles
+	if ProfilesMap[cpl.ManifestID()] != nil {
+		profiles = ProfilesMap[cpl.ManifestID()]
+	}
 	if monitor.Enabled {
-		monitor.LogSegmentEmerged(nonce, seg.SeqNo, len(BroadcastJobVideoProfiles))
+		monitor.LogSegmentEmerged(nonce, seg.SeqNo, len(profiles))
 	}
 
 	seg.Name = "" // hijack seg.Name to convey the uploaded URI

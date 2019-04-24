@@ -40,7 +40,10 @@ func main() {
 			fmt.Printf("Detected \"fizz\" as manifestID. Crazy! Renaming to \"buzz\".\n")
 		}
 		fmt.Printf("Stream started with manifestID: %v\n", mid)
-		w.Write([]byte(fmt.Sprintf("{\"ManifestID\":\"%v\"}", mid)))
+
+		transcodingOptions := "P144p30fps16x9,P240p30fps16x9,P360p30fps16x9,P576p30fps16x9,P720p30fps16x9"
+		//Write response
+		w.Write([]byte(fmt.Sprintf("{\"ManifestID\":\"%v\",\"TranscodingProfiles\":\"%v\"}", mid, transcodingOptions)))
 	})
 
 	fmt.Println("Listening on localhost:8000/auth\nTry something crazy - stream with \"fizz\" as the manifestID.")
