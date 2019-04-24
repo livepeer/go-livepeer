@@ -165,11 +165,13 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 
 		// download transcoded segments from the transcoder
 		gotErr := false // only send one error msg per segment list
+		var errCode monitor.SegmentTranscodeError
 		errFunc := func(subType monitor.SegmentTranscodeError, url string, err error) {
 			glog.Errorf("%v error with segment %v: %v (URL: %v)", subType, seg.SeqNo, err, url)
 			if monitor.Enabled && !gotErr {
 				monitor.LogSegmentTranscodeFailed(subType, nonce, seg.SeqNo, err)
 				gotErr = true
+				errCode = subType
 			}
 		}
 		if res == nil {
@@ -236,7 +238,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 		}
 		cond.L.Unlock()
 		if monitor.Enabled {
-			monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), len(segHashes) == len(res.Segments))
+			monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), errCode)
 		}
 
 		ticketParams := sess.OrchestratorInfo.GetTicketParams()
