@@ -225,10 +225,6 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	mid := cxn.mid
 	vProfile := cxn.profile
 
-	cxn.lock.RLock()
-	sess := cxn.sess
-	cxn.lock.RUnlock()
-
 	if monitor.Enabled {
 		monitor.LogSegmentEmerged(nonce, seg.SeqNo, len(BroadcastJobVideoProfiles))
 	}
@@ -258,6 +254,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 		}
 	}
 
+	sess := cxn.sessManager.selectSession()
 	// Return early under a few circumstances:
 	// View-only (non-transcoded) streams or mid-failover
 	if sess == nil {
@@ -278,6 +275,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 				if monitor.Enabled {
 					monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err.Error())
 				}
+				cxn.sessManager.completeSession(sess)
 				return
 			}
 			seg.Name = uri // hijack seg.Name to convey the uploaded URI
@@ -288,6 +286,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 
 		res, err := SubmitSegment(sess, seg, nonce)
 		if err != nil {
+			cxn.sessManager.removeSession(sess)
 			if shouldStopStream(err) {
 				glog.Warningf("Stopping current stream due to: %v", err)
 				rtmpStrm.Close()
@@ -298,6 +297,8 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 			}
 			return
 		}
+
+		cxn.sessManager.completeSession(sess)
 
 		// download transcoded segments from the transcoder
 		gotErr := false // only send one error msg per segment list
