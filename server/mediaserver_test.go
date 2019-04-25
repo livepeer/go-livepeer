@@ -71,6 +71,10 @@ func (d *stubDiscovery) GetOrchestrators(num int) ([]*net.OrchestratorInfo, erro
 	return d.infos, err
 }
 
+func (d *stubDiscovery) Size() int {
+	return len(d.infos)
+}
+
 type StubSegmenter struct {
 	skip bool
 }
@@ -108,14 +112,14 @@ func TestSelectOrchestrator(t *testing.T) {
 	mid := core.RandomManifestID()
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	pl := core.NewBasicPlaylistManager(mid, storage)
-	if _, err := selectOrchestrator(s.LivepeerNode, pl); err != ErrDiscovery {
+	if _, err := selectOrchestrator(s.LivepeerNode, pl, 4); err != ErrDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(s.LivepeerNode, pl); sess != nil || err != ErrNoOrchs {
+	if sess, err := selectOrchestrator(s.LivepeerNode, pl, 4); sess != nil || err != ErrNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -124,24 +128,30 @@ func TestSelectOrchestrator(t *testing.T) {
 		&net.OrchestratorInfo{},
 		&net.OrchestratorInfo{},
 	}
-	sess, _ := selectOrchestrator(s.LivepeerNode, pl)
-	if sess == nil {
-		t.Error("Expected nil session")
+	sess, _ := selectOrchestrator(s.LivepeerNode, pl, 4)
+
+	if len(sess) != len(sd.infos) {
+		t.Error("Expected session length of 2")
 	}
+
+	if sess == nil {
+		t.Error("Expected non-nil session")
+	}
+
 	// Sanity check a few easy fields
-	if sess.ManifestID != mid {
+	if sess[0].ManifestID != mid {
 		t.Error("Expected manifest id")
 	}
-	if sess.BroadcasterOS != storage {
+	if sess[0].BroadcasterOS != storage {
 		t.Error("Unexpected broadcaster OS")
 	}
-	if sess.OrchestratorInfo != sd.infos[0] || sd.infos[0] == sd.infos[1] {
+	if sess[0].OrchestratorInfo != sd.infos[0] || sd.infos[0] == sd.infos[1] {
 		t.Error("Unexpected orchestrator info")
 	}
-	if sess.Sender != nil {
+	if sess[0].Sender != nil {
 		t.Error("Unexpected sender")
 	}
-	if sess.PMSessionID != "" {
+	if sess[0].PMSessionID != "" {
 		t.Error("Unexpected PM sessionID")
 	}
 
@@ -164,21 +174,46 @@ func TestSelectOrchestrator(t *testing.T) {
 		Seed:              params.Seed.Bytes(),
 	}
 
+	params2 := pm.TicketParams{
+		Recipient:         pm.RandAddress(),
+		FaceValue:         big.NewInt(1234),
+		WinProb:           big.NewInt(5678),
+		RecipientRandHash: pm.RandHash(),
+		Seed:              big.NewInt(7777),
+	}
+	protoParams2 := &net.TicketParams{
+		Recipient:         params2.Recipient.Bytes(),
+		FaceValue:         params2.FaceValue.Bytes(),
+		WinProb:           params2.WinProb.Bytes(),
+		RecipientRandHash: params2.RecipientRandHash.Bytes(),
+		Seed:              params2.Seed.Bytes(),
+	}
+
 	sd.infos = []*net.OrchestratorInfo{
 		&net.OrchestratorInfo{
 			TicketParams: protoParams,
+		},
+		&net.OrchestratorInfo{
+			TicketParams: protoParams2,
 		},
 	}
 
 	expSessionID := "foo"
 	sender.On("StartSession", params).Return(expSessionID)
 
-	sess, err := selectOrchestrator(s.LivepeerNode, pl)
+	expSessionID2 := "fool"
+	sender.On("StartSession", params2).Return(expSessionID2)
+
+	sess, err := selectOrchestrator(s.LivepeerNode, pl, 4)
 	require.Nil(t, err)
 
 	assert := assert.New(t)
-	assert.Equal(sender, sess.Sender)
-	assert.Equal(expSessionID, sess.PMSessionID)
+	assert.Len(sess, 2)
+	assert.Equal(sender, sess[0].Sender)
+	assert.Equal(expSessionID, sess[0].PMSessionID)
+	assert.Equal(expSessionID2, sess[1].PMSessionID)
+	assert.Equal(sess[0].OrchestratorInfo, &net.OrchestratorInfo{TicketParams: protoParams})
+	assert.Equal(sess[1].OrchestratorInfo, &net.OrchestratorInfo{TicketParams: protoParams2})
 }
 
 func TestCreateRTMPStreamHandlerCap(t *testing.T) {
@@ -636,180 +671,66 @@ func TestRegisterConnection(t *testing.T) {
 
 }
 
-func TestStartSession(t *testing.T) {
-	assert := assert.New(t)
-	s := setupServer()
-	mid := core.SplitStreamIDString(t.Name()).ManifestID
-	storage := drivers.NodeStorage.NewSession(string(mid))
-	strm := stream.NewBasicRTMPVideoStream(string(mid))
-	cxn := &rtmpConnection{
-		mid:    mid,
-		lock:   &sync.RWMutex{},
-		pl:     core.NewBasicPlaylistManager(mid, storage),
-		stream: strm,
-	}
-	sd := &stubDiscovery{
-		lock:  &sync.Mutex{},
-		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{}},
-	}
-	s.LivepeerNode.OrchestratorPool = sd
-
-	assert.Equal(0, sd.getOrchCalls) // sanity check
-
-	// return nil given an error if session isn't registered
-	sd.getOrchError = fmt.Errorf("StubError")
-	assert.Nil(s.startSession(cxn))
-	assert.Equal(1, sd.getOrchCalls)
-	sd.getOrchError = nil
-
-	// return nil if no discovery set
-	s.LivepeerNode.OrchestratorPool = nil
-	assert.Nil(s.startSession(cxn))
-	assert.Equal(1, sd.getOrchCalls)
-	s.LivepeerNode.OrchestratorPool = sd
-
-	// ensure a single try works
-	s.connectionLock.Lock()
-	s.rtmpConnections[mid] = cxn
-	s.connectionLock.Unlock()
-	assert.NotNil(s.startSession(cxn))
-	assert.Equal(2, sd.getOrchCalls)
-
-	// ensure errors result in retries
-	sd.lock.Lock()
-	sd.getOrchCalls = 0                       // reset
-	sd.getOrchError = fmt.Errorf("StubError") // inital error
-	sd.lock.Unlock()
-	sd.waitGetOrch = make(chan struct{})
-	sessionWait := make(chan *BroadcastSession)
-	go func() {
-		sessionWait <- s.startSession(cxn)
-	}()
-	for i := 0; i < 3; i++ {
-		sd.waitGetOrch <- struct{}{} // invoke getOrch a few times
-	}
-	sd.lock.Lock()
-	sd.getOrchError = nil // magically remove the error.
-	sd.lock.Unlock()
-	sd.waitGetOrch <- struct{}{} // invoke getOrch again
-	sess := <-sessionWait
-	assert.NotNil(sess)
-	assert.Equal(4, sd.getOrchCalls)
-}
-
-func TestSessionListener(t *testing.T) {
+func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	assert := assert.New(t)
 
 	s := setupServer()
-	sd := &stubDiscovery{
-		lock:  &sync.Mutex{},
-		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{}},
+	// populate stub discovery
+	sd := &stubDiscovery{}
+	sd.infos = []*net.OrchestratorInfo{
+		&net.OrchestratorInfo{Transcoder: "transcoder1"},
+		&net.OrchestratorInfo{Transcoder: "transcoder2"},
 	}
 	s.LivepeerNode.OrchestratorPool = sd
-	mid := core.SplitStreamIDString(t.Name()).ManifestID
-	strm := stream.NewBasicRTMPVideoStream(string(mid))
-	cxn, err := s.registerConnection(strm)
 
-	assert.Nil(err) // sanity check
-	assert.NotNil(cxn)
+	// create RTMPStream handler methods
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	createSid := createRTMPStreamIDHandler(s)
+	handler := gotRTMPStreamHandler(s)
+	endHandler := endRTMPStreamHandler(s)
 
-	listenerStopped := make(chan struct{})
-	go func() {
-		s.startSessionListener(cxn)
-		listenerStopped <- struct{}{}
-	}()
+	// create BasicRTMPVideoStream and extract ManifestID
+	u, _ := url.Parse("rtmp://localhost")
+	sid := createSid(u)
+	st := stream.NewBasicRTMPVideoStream(sid)
+	mid := rtmpManifestID(st)
 
-	// sanity check
-	cxn.lock.RLock()
-	assert.Nil(cxn.sess)
-	cxn.lock.RUnlock()
+	// assert that ManifestID has not been added to rtmpConnections yet
+	_, exists := s.rtmpConnections[mid]
+	assert.Equal(exists, false)
 
-	// test getting a single orch; ensure session populated
-	cxn.needOrch <- struct{}{}
-	time.Sleep(100 * time.Millisecond)
-	cxn.lock.RLock()
-	assert.NotNil(cxn.sess)
-	cxn.lock.RUnlock()
-	assert.Equal(1, sd.getOrchCalls)
+	// assert stream starts successfully
+	err := handler(u, st)
+	assert.Nil(err)
 
-	// multiple calls to inflight needOrch should only invoke startSession once
-	sd.waitGetOrch = make(chan struct{})
-	for i := 0; i < 100; i++ {
-		cxn.needOrch <- struct{}{}
-	}
-	sd.waitGetOrch <- struct{}{}
-	time.Sleep(100 * time.Millisecond)
-	sd.lock.Lock()
-	assert.Equal(sd.getOrchCalls, 2)
-	sd.lock.Unlock()
+	// assert sessManager is running and has right number of sessions
+	cxn, exists := s.rtmpConnections[mid]
+	assert.Equal(exists, true)
+	assert.Equal(cxn.sessManager.finished, false)
+	assert.Len(cxn.sessManager.sessList, 2)
+	assert.Len(cxn.sessManager.sessMap, 2)
 
-	// test termination
-	cxn.eof <- struct{}{}
+	// assert stream ends successfully
+	err = endHandler(u, st)
+	assert.Nil(err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	finished := false
-	select {
-	case <-listenerStopped:
-		finished = true
-		cancel()
-	case <-ctx.Done():
-		assert.True(finished, "Session listener did not complete")
-	}
-}
+	// assert sessManager is not running and has no sessions
+	_, exists = s.rtmpConnections[mid]
+	assert.Equal(exists, false)
+	assert.Equal(cxn.sessManager.finished, true)
+	assert.Len(cxn.sessManager.sessList, 0)
+	assert.Len(cxn.sessManager.sessMap, 0)
 
-func TestSessionAssigment_WithTerminatedConnection(t *testing.T) {
+	// assert stream starts successfully again
+	err = handler(u, st)
+	assert.Nil(err)
 
-	// If an RTMP connection is terminated with orchestrator selection inflight,
-	// ensure that the returned session is *not* assigned to the connection
-
-	// For this test case, simply test session assignment with a cxn that is
-	// not registered with the LivepeerServer, simulating a dangling cxn
-
-	assert := assert.New(t)
-
-	s := setupServer()
-	sd := &stubDiscovery{
-		lock:  &sync.Mutex{},
-		infos: []*net.OrchestratorInfo{&net.OrchestratorInfo{}},
-	}
-	s.LivepeerNode.OrchestratorPool = sd
-	mid := core.SplitStreamIDString(t.Name()).ManifestID
-	storage := drivers.NodeStorage.NewSession(string(mid))
-	strm := stream.NewBasicRTMPVideoStream(string(mid))
-	cxn := &rtmpConnection{
-		mid:      mid,
-		needOrch: make(chan struct{}),
-		lock:     &sync.RWMutex{},
-		eof:      make(chan struct{}),
-		pl:       core.NewBasicPlaylistManager(mid, storage),
-		stream:   strm,
-	}
-
-	// sanity: nil session
-	cxn.lock.Lock()
-	assert.Nil(cxn.sess) // nil session
-	cxn.lock.Unlock()
-
-	// sanity: non-registered cxn
-	s.connectionLock.Lock()
-	_, cxnExists := s.rtmpConnections[mid]
-	assert.False(cxnExists) // nonexistent cxn
-	s.connectionLock.Unlock()
-
-	// sanity: startSession returns a non-nil session with a non-registered cxn
-	assert.NotNil(s.startSession(cxn))
-	assert.Equal(1, sd.getOrchCalls)
-
-	// start session listener with non-registered cxn
-	go s.startSessionListener(cxn)
-
-	cxn.needOrch <- struct{}{} // signal session listener
-
-	time.Sleep(100 * time.Millisecond)
-	cxn.lock.RLock()
-	assert.Nil(cxn.sess) // the important check
-	cxn.lock.RUnlock()
-	assert.Equal(2, sd.getOrchCalls)
+	// assert sessManager is running and has right number of sessions
+	cxn, exists = s.rtmpConnections[mid]
+	assert.Equal(exists, true)
+	assert.Equal(cxn.sessManager.finished, false)
+	assert.Len(cxn.sessManager.sessList, 2)
+	assert.Len(cxn.sessManager.sessMap, 2)
 }
 
 func TestCleanStreamPrefix(t *testing.T) {

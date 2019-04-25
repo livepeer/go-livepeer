@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"math"
 	"math/rand"
 	"net/url"
 	"strings"
@@ -76,6 +77,8 @@ func NewOnchainOrchestratorPool(node *core.LivepeerNode) *orchestratorPool {
 }
 
 func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
+	numAvailableOrchs := len(o.uris)
+	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
 	ctx, cancel := context.WithTimeout(context.Background(), GetOrchestratorsTimeoutLoop)
 	orchInfos := []*net.OrchestratorInfo{}
 	orchChan := make(chan struct{})
@@ -125,4 +128,8 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 		cancel()
 		return returnOrchs, nil
 	}
+}
+
+func (o *orchestratorPool) Size() int {
+	return len(o.uris)
 }

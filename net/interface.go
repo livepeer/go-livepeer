@@ -10,6 +10,7 @@ import (
 
 type OrchestratorPool interface {
 	GetOrchestrators(int) ([]*OrchestratorInfo, error)
+	Size() int
 }
 
 type NodeStatus struct {

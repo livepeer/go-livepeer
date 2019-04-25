@@ -25,7 +25,6 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 
-	"github.com/cenkalti/backoff"
 	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -59,19 +58,12 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 var AuthWebhookURL string
 
 type rtmpConnection struct {
-	mid     core.ManifestID
-	nonce   uint64
-	stream  stream.RTMPVideoStream
-	pl      core.PlaylistManager
-	profile *ffmpeg.VideoProfile
-
-	needOrch chan struct{}
-	eof      chan struct{}
-
-	// Thread sensitive fields. All accesses to the
-	// following fields should be protected by `lock`
-	sess *BroadcastSession
-	lock *sync.RWMutex
+	mid         core.ManifestID
+	nonce       uint64
+	stream      stream.RTMPVideoStream
+	pl          core.PlaylistManager
+	profile     *ffmpeg.VideoProfile
+	sessManager *BroadcastSessionsManager
 }
 
 type LivepeerServer struct {
@@ -289,9 +281,6 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		glog.Infof("\n\nVideo Created With ManifestID: %v\n\n", mid)
 
-		//Create Transcode Job Onchain
-		go s.startSessionListener(cxn)
-		cxn.needOrch <- struct{}{}
 		return nil
 	}
 }
@@ -307,9 +296,9 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			glog.Error("Attempted to end unknown stream with manifest ID ", mid)
 			return ErrUnknownStream
 		}
+		cxn.sessManager.cleanup()
 		cxn.pl.Cleanup()
 		glog.Infof("Ended stream with id=%s", mid)
-		cxn.eof <- struct{}{}
 		delete(s.rtmpConnections, mid)
 		if monitor.Enabled {
 			monitor.LogStreamEndedEvent(cxn.nonce)
@@ -363,16 +352,15 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		// We can only have one concurrent stream per ManifestID
 		return nil, ErrAlreadyExists
 	}
-	cxn := &rtmpConnection{
-		mid:     mid,
-		nonce:   nonce,
-		stream:  rtmpStrm,
-		pl:      core.NewBasicPlaylistManager(mid, storage),
-		profile: &vProfile,
-		lock:    &sync.RWMutex{},
 
-		needOrch: make(chan struct{}),
-		eof:      make(chan struct{}),
+	playlist := core.NewBasicPlaylistManager(mid, storage)
+	cxn := &rtmpConnection{
+		mid:         mid,
+		nonce:       nonce,
+		stream:      rtmpStrm,
+		pl:          playlist,
+		profile:     &vProfile,
+		sessManager: NewSessionManager(s.LivepeerNode, playlist),
 	}
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
@@ -382,86 +370,6 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 
 	return cxn, nil
-}
-
-func (s *LivepeerServer) startSession(cxn *rtmpConnection) *BroadcastSession {
-
-	mid := cxn.mid
-	cpl := cxn.pl
-	var sess *BroadcastSession
-
-	// Connect to the orchestrator. If it fails, retry for as long
-	// as the RTMP stream is alive
-	broadcastFunc := func() error {
-		var err error
-		sess, err = selectOrchestrator(s.LivepeerNode, cpl)
-		if err == ErrDiscovery {
-			return nil // discovery disabled, don't retry
-		} else if err != nil {
-			// Should be logged upstream
-		}
-		s.connectionLock.RLock()
-		defer s.connectionLock.RUnlock()
-		_, active := s.rtmpConnections[mid]
-		if active {
-			return err
-		}
-		return nil // stop if inactive
-	}
-	expb := backoff.NewExponentialBackOff()
-	expb.MaxInterval = BroadcastRetry
-	expb.MaxElapsedTime = 0
-	backoff.Retry(broadcastFunc, expb)
-	return sess
-}
-
-func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
-	mut := cxn.lock
-	sem := make(chan struct{}, 1)
-	runStartSession := func() {
-		// Quickly lock-unlock to avoid blocking longer than necessary
-		mut.Lock()
-		cxn.sess = nil
-		mut.Unlock()
-
-		sess := s.startSession(cxn) // this could take awhile
-
-		// Retain the connectionLock for the rest of the function to ensure
-		// we don't terminate the stream *then* assign the session to the cxn
-		s.connectionLock.RLock()
-		defer s.connectionLock.RUnlock()
-		if _, active := s.rtmpConnections[cxn.mid]; !active {
-			sess = nil // don't assign if stream terminated
-		}
-		mut.Lock()
-		defer mut.Unlock()
-		cxn.sess = sess
-	}
-	glog.V(common.DEBUG).Info("Starting broadcast listener for ", cxn.mid)
-	finished := false
-	for {
-		if finished {
-			break
-		}
-		select {
-
-		case <-cxn.needOrch:
-			go func() {
-				select {
-				case sem <- struct{}{}:
-					runStartSession()
-					<-sem
-				default:
-					break
-				}
-			}()
-
-		case <-cxn.eof:
-			finished = true
-			break
-		}
-	}
-	glog.V(common.DEBUG).Info("Stopping broadcast listener for ", cxn.mid)
 }
 
 //End RTMP Publish Handlers
@@ -606,7 +514,7 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 	s.connectionLock.RLock()
 	defer s.connectionLock.RUnlock()
 	for _, cxn := range s.rtmpConnections {
-		if cxn.sess == nil || cxn.pl == nil {
+		if cxn.pl == nil {
 			continue
 		}
 		cpl := cxn.pl
