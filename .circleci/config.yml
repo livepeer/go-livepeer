@@ -29,7 +29,7 @@ jobs:
       - run: go get github.com/alecthomas/gometalinter && gometalinter --install
       - run: go get -u -v go.opencensus.io/stats
       - run: go get -u -v go.opencensus.io/tag
-      - run: go get -u -v go.opencensus.io/exporter/prometheus
+      - run: go get -u -v contrib.go.opencensus.io/exporter/prometheus
 
       - run:
           name: Lint
