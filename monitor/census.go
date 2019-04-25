@@ -651,6 +651,7 @@ func (cen *censusMetricsCounter) segmentTranscodedAppeared(nonce, seqNo uint64, 
 	// cen.transcodedSegments[nonce] = cen.transcodedSegments[nonce] + 1
 	if st, ok := cen.emergeTimes[nonce][seqNo]; ok {
 		latency := time.Since(st)
+		glog.Infof("Recording latency for segment nonce=%d seqNo=%d profile=%s latency=%s", nonce, seqNo, profile, latency)
 		stats.Record(ctx, cen.mTranscodeLatency.M(float64(latency/time.Second)))
 	}
 
