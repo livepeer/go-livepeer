@@ -22,7 +22,7 @@ RUN go get github.com/pkg/errors
 RUN go get github.com/stretchr/testify/mock
 RUN go get -u -v go.opencensus.io/stats
 RUN go get -u -v go.opencensus.io/tag
-RUN go get -u -v go.opencensus.io/exporter/prometheus
+RUN go get -u -v contrib.go.opencensus.io/exporter/prometheus
 
 COPY vendor vendor
 # .dockerbuild.deps contains list of packages used by go-client
