@@ -21,3 +21,4 @@ eth/protocol
 /livepeer_cli
 
 /.git.describe
+/livepeer-windows-amd64.zip

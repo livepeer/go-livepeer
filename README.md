@@ -28,6 +28,11 @@ Alternative Livepeer installation options are also available:
 * [Docker](doc/install.md/#docker)
 * [Private Testnet](doc/install.md/#testnet)
 
+#### Building on Windows
+
+Building on Windows possible using Docker. Docker should run in 'Windows containers' mode.
+To build on Windows, just run `.\docker\windowsbuild.ps1`. This should create file `livepeer-windows-amd64.zip`, containig `livepeer.exe` and needed dlls.
+
 ## Running Livepeer
 
 ### Quick start
