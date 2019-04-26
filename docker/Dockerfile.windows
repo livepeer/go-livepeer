@@ -1,0 +1,53 @@
+# escape=`
+
+# This kinda funny-looking Dockerfile successfully builds go-livepeer on Windows
+# using mingw64. It has a dynamic depenency on a variety of mingw64 DLLs, so its
+# artifact is a zip file that contains livepeer.exe, livepeer-cli.exe, and a
+# handful of DLLs. `docker cp` does work on Windows, but only for stopped containers.
+
+# To build windows executable, just run `.\docker\windowsbuild.ps1`.
+
+FROM livepeer/ffmpeg-base:windows as builder
+
+WORKDIR c:/temp
+
+# SHELL ["powershell", "-command"]
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+RUN [Environment]::SetEnvironmentVariable('MSYSTEM', 'MSYS2', [EnvironmentVariableTarget]::Machine); `
+    [Environment]::SetEnvironmentVariable('MSYSCON', 'defterm', [EnvironmentVariableTarget]::Machine);
+
+# These three steps adapted from Dockerfile.debian.auto. They build the Golang binary.
+RUN C:\msys64\usr\bin\bash.exe -l -c 'export PATH="$PATH:/usr/bin:/mingw64/bin"; export GOROOT="/mingw64/lib/go"; export GOPATH="/go"; go get github.com/golang/glog && go get github.com/ericxtang/m3u8 && go get github.com/aws/aws-sdk-go/aws && go get -u google.golang.org/grpc && go get github.com/pkg/errors && go get github.com/stretchr/testify/mock && go get -u -v go.opencensus.io/stats && go get -u -v go.opencensus.io/tag && go get -u -v contrib.go.opencensus.io/exporter/prometheus'
+
+COPY . C:\msys64\go\src\github.com\livepeer\go-livepeer
+
+RUN C:\msys64\usr\bin\bash.exe -l -c 'set -x; export PATH="$PATH:/usr/bin:/mingw64/bin"; export GOROOT="/mingw64/lib/go"; export GOPATH="/go"; export PKG_CONFIG_PATH=/build/compiled/lib/pkgconfig:/mingw64/lib/pkgconfig; cd /go/src/github.com/livepeer/go-livepeer && git describe --always --long --dirty > .git.describe && go build -ldflags=\\\"-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)\\\" -v cmd/livepeer/livepeer.go && go build -ldflags=\\\"-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)\\\" -v ./cmd/livepeer_cli/*'
+
+RUN New-Item -ItemType "directory" -Path "c:\temp\livepeer-windows-amd64"; `
+    Copy-Item -Destination c:\temp\livepeer-windows-amd64 -Path `
+        C:\msys64\go\src\github.com\livepeer\go-livepeer\*.exe; `
+    cd C:\msys64\mingw64\bin; `
+    Copy-Item `
+        -Destination C:\temp\livepeer-windows-amd64 `
+        -Path `
+            # This list was produced by `ldd livepeer.exe`
+            .\libffi-6.dll,`
+            .\libgcc_s_seh-1.dll,`
+            .\libgmp-10.dll,`
+            .\libgnutls-30.dll,`
+            .\libhogweed-4.dll,`
+            .\libiconv-2.dll,`
+            .\libidn2-0.dll,`
+            .\libintl-8.dll,`
+            .\libnettle-6.dll,`
+            .\libp11-kit-0.dll,`
+            .\libtasn1-6.dll,`
+            .\libunistring-2.dll,`
+            .\libwinpthread-1.dll,`
+            .\zlib1.dll;`
+    cd C:\temp; `
+    C:\7zip\7z a -tzip .\livepeer-windows-amd64.zip .\livepeer-windows-amd64
+
+FROM mcr.microsoft.com/windows/servercore:ltsc2019
+COPY --from=builder c:\temp\livepeer-windows-amd64.zip c:\temp\livepeer-windows-amd64.zip
