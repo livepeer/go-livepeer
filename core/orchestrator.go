@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sync"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -497,6 +498,79 @@ func NewRemoteTranscoder(n *LivepeerNode, stream net.Transcoder_RegisterTranscod
 		eof:      make(chan struct{}, 1),
 		capacity: capacity,
 	}
+}
+
+func NewRemoteTranscoderManager() *RemoteTranscoderManager {
+	return &RemoteTranscoderManager{
+		remoteTranscoders: []*RemoteTranscoder{},
+		liveTranscoders:   map[net.Transcoder_RegisterTranscoderServer]*RemoteTranscoder{},
+		RTmutex:           &sync.Mutex{},
+	}
+}
+
+type RemoteTranscoderManager struct {
+	remoteTranscoders []*RemoteTranscoder
+	liveTranscoders   map[net.Transcoder_RegisterTranscoderServer]*RemoteTranscoder
+	RTmutex           *sync.Mutex
+}
+
+func (rtm *RemoteTranscoderManager) Register(transcoder *RemoteTranscoder) {
+	rtm.RTmutex.Lock()
+	defer rtm.RTmutex.Unlock()
+	rtm.liveTranscoders[transcoder.stream] = transcoder
+
+	for i := 0; i < transcoder.Capacity(); i++ {
+		rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
+	}
+}
+
+func (rtm *RemoteTranscoderManager) Unregister(t *RemoteTranscoder) {
+	rtm.RTmutex.Lock()
+	delete(rtm.liveTranscoders, t.stream)
+	rtm.RTmutex.Unlock()
+}
+
+func (rtm *RemoteTranscoderManager) selectTranscoder() *RemoteTranscoder {
+	rtm.RTmutex.Lock()
+	defer rtm.RTmutex.Unlock()
+
+	checkTranscoders := func(rtm *RemoteTranscoderManager) bool {
+		return len(rtm.remoteTranscoders) > 0
+	}
+
+	for checkTranscoders(rtm) {
+		last := len(rtm.remoteTranscoders) - 1
+		currentTranscoder, remoteTranscoders := rtm.remoteTranscoders[last], rtm.remoteTranscoders[:last]
+		rtm.remoteTranscoders = remoteTranscoders
+		if _, ok := rtm.liveTranscoders[currentTranscoder.stream]; ok {
+			return currentTranscoder
+		}
+		// try again if transcoder does not exist in table
+	}
+
+	return nil
+}
+
+func (rtm *RemoteTranscoderManager) completeTranscoders(trans *RemoteTranscoder) {
+	rtm.RTmutex.Lock()
+	defer rtm.RTmutex.Unlock()
+
+	if _, ok := rtm.liveTranscoders[trans.stream]; ok {
+		rtm.remoteTranscoders = append(rtm.remoteTranscoders, trans)
+	}
+}
+
+func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
+	currentTranscoder := rtm.selectTranscoder()
+	if currentTranscoder == nil {
+		return nil, errors.New("No transcoders available")
+	}
+	res, err := currentTranscoder.Transcode(fname, profiles)
+	if err == nil {
+		rtm.completeTranscoders(currentTranscoder)
+	}
+
+	return res, err
 }
 
 func cachePMSessionID(n *LivepeerNode, m ManifestID, s string) {
