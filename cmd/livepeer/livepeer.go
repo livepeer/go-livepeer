@@ -201,6 +201,10 @@ func main() {
 
 	if *orchestrator {
 		n.NodeType = core.OrchestratorNode
+		if !*transcoder {
+			n.TranscoderManager = core.NewRemoteTranscoderManager()
+			n.Transcoder = n.TranscoderManager
+		}
 	} else if *transcoder {
 		n.NodeType = core.TranscoderNode
 	} else if *broadcaster {
@@ -403,7 +407,7 @@ func main() {
 		// take the port to listen to from the service URI
 		*httpAddr = defaultAddr(*httpAddr, "", n.GetServiceURI().Port())
 
-		if n.Transcoder == nil && n.OrchSecret == "" {
+		if !*transcoder && n.OrchSecret == "" {
 			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
 		}
 	}

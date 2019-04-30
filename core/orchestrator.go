@@ -284,14 +284,10 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	}
 
 	// Check if there's a transcoder available
-	var transcoder Transcoder
-	n.tcoderMutex.RLock()
 	if n.Transcoder == nil {
-		n.tcoderMutex.RUnlock()
 		return terr(ErrTranscoderAvail)
 	}
-	transcoder = n.Transcoder
-	n.tcoderMutex.RUnlock()
+	transcoder := n.Transcoder
 
 	var url string
 	_, isLocal := transcoder.(*LocalTranscoder)
@@ -427,17 +423,12 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
 	transcoder := NewRemoteTranscoder(n, stream, capacity)
-
-	n.tcoderMutex.Lock()
-	n.Transcoder = transcoder
-	n.tcoderMutex.Unlock()
+	n.TranscoderManager.Register(transcoder)
+	defer n.TranscoderManager.Unregister(transcoder)
 
 	select {
 	case <-transcoder.eof:
 		glog.V(common.DEBUG).Info("Closing transcoder channel") // XXX cxn info
-		n.tcoderMutex.Lock()
-		n.Transcoder = nil
-		n.tcoderMutex.Unlock()
 		return
 	}
 }

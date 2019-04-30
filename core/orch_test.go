@@ -67,15 +67,14 @@ func TestCurrentBlock(t *testing.T) {
 
 func TestServeTranscoder(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
+	n.TranscoderManager = NewRemoteTranscoderManager()
 	strm := &StubTranscoderServer{}
 
 	// test that a transcoder was created
 	go n.serveTranscoder(strm, 5)
 	time.Sleep(1 * time.Second)
-	if n.Transcoder == nil {
-		t.Error("Transcoder nil")
-	}
-	tc, ok := n.Transcoder.(*RemoteTranscoder)
+
+	tc, ok := n.TranscoderManager.liveTranscoders[strm]
 	if !ok {
 		t.Error("Unexpected transcoder type")
 	}
@@ -83,8 +82,11 @@ func TestServeTranscoder(t *testing.T) {
 	// test shutdown
 	tc.eof <- struct{}{}
 	time.Sleep(1 * time.Second)
-	if n.Transcoder != nil {
-		t.Error("Transcoder not nil")
+
+	// stream should be removed
+	_, ok = n.TranscoderManager.liveTranscoders[strm]
+	if ok {
+		t.Error("Unexpected transcoder presence")
 	}
 }
 
