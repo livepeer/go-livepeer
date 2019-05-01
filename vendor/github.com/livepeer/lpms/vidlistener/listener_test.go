@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,16 +41,15 @@ func TestListener(t *testing.T) {
 	//Stream test stream into the rtmp server
 	ffmpegCmd := "ffmpeg"
 	ffmpegArgs := []string{"-re", "-i", "../data/bunny2.mp4", "-c", "copy", "-f", "flv", "rtmp://localhost:1937/movie"}
-	cmd := exec.Command(ffmpegCmd, ffmpegArgs...)
-	go cmd.Run()
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, ffmpegCmd, ffmpegArgs...)
 
 	//Start the server
 	go listener.RtmpServer.ListenAndServe()
 
-	//Wait for the stream to run for a little, then finish.
-	time.Sleep(time.Second * 1)
-	err := cmd.Process.Kill()
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		fmt.Println("Error killing ffmpeg")
 	}
 
@@ -68,6 +68,7 @@ func TestListenerError(t *testing.T) {
 	server := &joy4rtmp.Server{Addr: ":1938"} // XXX is there a way to stop?
 	badListener := &VidListener{RtmpServer: server}
 
+	mu := &sync.Mutex{}
 	failures := 0
 	badListener.HandleRTMPPublish(
 		//makeStreamID
@@ -80,6 +81,8 @@ func TestListenerError(t *testing.T) {
 		},
 		//endStream
 		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
+			mu.Lock()
+			defer mu.Unlock()
 			failures++
 			return nil
 		})
@@ -93,7 +96,10 @@ func TestListenerError(t *testing.T) {
 	if err == nil {
 		t.Error("FFmpeg was not stopped as expected")
 	}
-	if failures == 0 {
+	mu.Lock()
+	failNum := failures
+	mu.Unlock()
+	if failNum == 0 {
 		t.Error("Expected a failure; got none")
 	}
 	if end.Sub(start) > time.Duration(time.Second*1) {

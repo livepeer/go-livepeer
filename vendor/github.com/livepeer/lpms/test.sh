@@ -42,7 +42,11 @@ go test -logtostderr=true
 t7=$?
 cd ..
 
-if (($t1!=0||$t2!=0||$t3!=0||$t4!=0||$t5!=0||$t6!=0||$t7!=0))
+echo 'Testing example program'
+go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30fps16x9 sw
+t8=$?
+
+if (($t1!=0||$t2!=0||$t3!=0||$t4!=0||$t5!=0||$t6!=0||$t7!=0||$t8!=0))
 then
     printf "\n\nSome Tests Failed\n\n"
     exit -1

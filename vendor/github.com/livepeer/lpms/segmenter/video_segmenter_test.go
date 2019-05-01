@@ -108,10 +108,10 @@ func TestSegmenter(t *testing.T) {
 
 	//Create a test stream from stub
 	strm := &TestStream{}
-	strmUrl := fmt.Sprintf("rtmp://localhost:%v/stream/%v", "1935", strm.GetStreamID())
+	strmUrl := fmt.Sprintf("rtmp://localhost:%v/stream/%v", "1939", strm.GetStreamID())
 	opt := SegmenterOptions{SegLength: time.Second * 4}
 	vs := NewFFMpegVideoSegmenter(workDir, strm.GetStreamID(), strmUrl, opt)
-	server := &rtmp.Server{Addr: ":1935"}
+	server := &rtmp.Server{Addr: ":1939"}
 	player := vidplayer.NewVidPlayer(server, "", nil)
 
 	player.HandleRTMPPlay(
