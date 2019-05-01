@@ -128,7 +128,7 @@ func LogStreamCreateFailed(nonce uint64, reason string) {
 	sendPost("StreamCreateFailed", nonce, props)
 }
 
-func LogSegmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, reason string) {
+func LogSegmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, reason string, permanent bool) {
 	if code == SegmentUploadErrorUnknown {
 		if strings.Contains(reason, "Client.Timeout") {
 			code = SegmentUploadErrorTimeout
@@ -138,7 +138,7 @@ func LogSegmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, reason
 	}
 	glog.Errorf("Logging SegmentUploadFailed... code=%v reason='%s'", code, reason)
 
-	census.segmentUploadFailed(nonce, seqNo, code)
+	census.segmentUploadFailed(nonce, seqNo, code, permanent)
 
 	props := map[string]interface{}{
 		"reason": reason,
@@ -247,10 +247,10 @@ func LogSegmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Durat
 	sendPost("SegmentTranscoded", nonce, props)
 }
 
-func LogSegmentTranscodeFailed(subType SegmentTranscodeError, nonce, seqNo uint64, err error) {
+func LogSegmentTranscodeFailed(subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
 	glog.Errorf("Logging LogSegmentTranscodeFailed subtype=%v nonce=%d seqNo=%d error='%s'", subType, nonce, seqNo, err.Error())
 
-	census.segmentTranscodeFailed(nonce, seqNo, subType)
+	census.segmentTranscodeFailed(nonce, seqNo, subType, permanent)
 	if err == nil {
 		return
 	}

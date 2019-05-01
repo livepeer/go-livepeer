@@ -43,6 +43,7 @@ var ErrStorage = errors.New("ErrStorage")
 var ErrDiscovery = errors.New("ErrDiscovery")
 var ErrNoOrchs = errors.New("ErrNoOrchs")
 var ErrUnknownStream = errors.New("ErrUnknownStream")
+var ErrPMCheckFailed = errors.New("PM Check Failed")
 
 const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment

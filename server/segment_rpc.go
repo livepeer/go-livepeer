@@ -90,6 +90,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 			// so there is no point to start transcoding process
 			glog.Errorf(" Getting segment from %s took too long, aborting", uri)
 			http.Error(w, "BadRequest", http.StatusBadRequest)
+			return
 		}
 	}
 
@@ -229,7 +230,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	segCreds, err := genSegCreds(sess, seg)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error())
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error(), false)
 		}
 		return nil, err
 	}
@@ -248,7 +249,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if err != nil {
 		glog.Error("Could not generate trascode request to ", ti.Transcoder)
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error())
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error(), false)
 		}
 		return nil, err
 	}
@@ -268,7 +269,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if err != nil {
 		glog.Error("Unable to submit segment ", seg.SeqNo, err)
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error())
+			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), false)
 		}
 		return nil, err
 	}
@@ -280,7 +281,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		glog.Errorf("Error submitting segment %d: code %d error %v", seg.SeqNo, resp.StatusCode, string(data))
 		if monitor.Enabled {
 			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadError(resp.Status),
-				fmt.Sprintf("Code: %d Error: %s", resp.StatusCode, errorString))
+				fmt.Sprintf("Code: %d Error: %s", resp.StatusCode, errorString), false)
 		}
 		return nil, fmt.Errorf(errorString)
 	}
@@ -293,9 +294,9 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	tookAllDur := time.Since(start)
 
 	if err != nil {
-		glog.Error(fmt.Sprintf("Unable to read response body for segment %v : %v", seg.SeqNo, err))
+		glog.Errorf("Unable to read response body for segment nonce=%d seqNo=%d : %v", nonce, seg.SeqNo, err)
 		if monitor.Enabled {
-			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorReadBody, nonce, seg.SeqNo, err)
+			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorReadBody, nonce, seg.SeqNo, err, false)
 		}
 		return nil, err
 	}
@@ -304,9 +305,9 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	var tr net.TranscodeResult
 	err = proto.Unmarshal(data, &tr)
 	if err != nil {
-		glog.Error(fmt.Sprintf("Unable to parse response for segment %v : %v", seg.SeqNo, err))
+		glog.Errorf("Unable to parse response for segment nonce=%d seqNo=%d : %v", nonce, seg.SeqNo, err)
 		if monitor.Enabled {
-			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorParseResponse, nonce, seg.SeqNo, err)
+			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorParseResponse, nonce, seg.SeqNo, err, false)
 		}
 		return nil, err
 	}
@@ -316,18 +317,18 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	switch res := tr.Result.(type) {
 	case *net.TranscodeResult_Error:
 		err = fmt.Errorf(res.Error)
-		glog.Errorf("Transcode failed for segment %v: %v", seg.SeqNo, err)
+		glog.Errorf("Transcode failed for segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
 		if err.Error() == "MediaStats Failure" {
 			glog.Info("Ensure the keyframe interval is 4 seconds or less")
 		}
 		if monitor.Enabled {
 			switch res.Error {
 			case "OrchestratorBusy":
-				monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorOrchestratorBusy, nonce, seg.SeqNo, err)
+				monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorOrchestratorBusy, nonce, seg.SeqNo, err, false)
 			case "OrchestratorCapped":
-				monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorOrchestratorCapped, nonce, seg.SeqNo, err)
+				monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorOrchestratorCapped, nonce, seg.SeqNo, err, false)
 			default:
-				monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorTranscode, nonce, seg.SeqNo, err)
+				monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorTranscode, nonce, seg.SeqNo, err, false)
 			}
 		}
 		return nil, err
@@ -338,7 +339,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		glog.Error("Unexpected or unset transcode response field for ", seg.SeqNo)
 		err = fmt.Errorf("UnknownResponse")
 		if monitor.Enabled {
-			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorUnknownResponse, nonce, seg.SeqNo, err)
+			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorUnknownResponse, nonce, seg.SeqNo, err, false)
 		}
 		return nil, err
 	}

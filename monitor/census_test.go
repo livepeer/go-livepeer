@@ -61,12 +61,12 @@ func TestLastSegmentTimeout(t *testing.T) {
 		t.Fatalf("Success rate should be 1, not %f", sr)
 	}
 	LogSegmentEmerged(1, 2, 3)
-	LogSegmentTranscodeFailed(SegmentTranscodeErrorOrchestratorBusy, 1, 2, fmt.Errorf("some"))
+	LogSegmentTranscodeFailed(SegmentTranscodeErrorOrchestratorBusy, 1, 2, fmt.Errorf("some"), true)
 	if sr := census.successRate(); sr != 0.5 {
 		t.Fatalf("Success rate should be 0.5, not %f", sr)
 	}
 	LogSegmentEmerged(1, 3, 3)
-	LogSegmentTranscodeFailed(SegmentTranscodeErrorSessionEnded, 1, 3, fmt.Errorf("some"))
+	LogSegmentTranscodeFailed(SegmentTranscodeErrorSessionEnded, 1, 3, fmt.Errorf("some"), true)
 	LogSegmentEmerged(1, 4, 3)
 	SegmentFullyTranscoded(1, 4, "ps", "")
 	if sr := census.successRate(); sr != 0.75 {
@@ -114,7 +114,7 @@ func TestLastSegmentTimeout(t *testing.T) {
 	if sr := census.successRate(); sr != 1 {
 		t.Fatalf("Success rate should be 1, not %f", sr)
 	}
-	LogSegmentTranscodeFailed(SegmentTranscodeErrorOrchestratorBusy, 3, 2, fmt.Errorf("some"))
+	LogSegmentTranscodeFailed(SegmentTranscodeErrorOrchestratorBusy, 3, 2, fmt.Errorf("some"), true)
 	if sr := census.successRate(); sr != 0.5 {
 		t.Fatalf("Success rate should be 0.5, not %f", sr)
 	}
