@@ -2,7 +2,7 @@
 # Shouild be used by running `make localdocker`
 FROM livepeer/ffmpeg-base:latest as builder
 
-FROM golang:1.11-stretch as builder2
+FROM golang:1-stretch as builder2
 ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
 WORKDIR /root
 RUN apt update \

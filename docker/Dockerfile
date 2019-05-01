@@ -1,4 +1,4 @@
-FROM golang:1.11-stretch
+FROM golang:1-stretch
 
 ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
 WORKDIR /go/src/github.com/livepeer/go-livepeer
