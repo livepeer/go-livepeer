@@ -17,6 +17,7 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -113,6 +114,7 @@ func main() {
 
 	if *version {
 		fmt.Println("Livepeer Node Version: " + core.LivepeerVersion)
+		fmt.Printf("Compiler version: %s %s\n", runtime.Compiler, runtime.Version())
 		return
 	}
 

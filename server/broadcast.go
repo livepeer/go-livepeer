@@ -224,7 +224,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	mid := cxn.mid
 	vProfile := cxn.profile
 
-	glog.V(common.DEBUG).Infof("Processing segment %d", seg.SeqNo)
+	glog.V(common.DEBUG).Infof("Processing segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
 	if monitor.Enabled {
 		monitor.SegmentEmerged(nonce, seg.SeqNo, len(BroadcastJobVideoProfiles))
 	}
@@ -301,7 +301,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 		}
 
 		// send segment to the orchestrator
-		glog.V(common.DEBUG).Infof("Submitting segment %d", seg.SeqNo)
+		glog.V(common.DEBUG).Infof("Submitting segment nonce=%d seqNo=%d orch=%s", nonce, seg.SeqNo, sess.OrchestratorInfo.Transcoder)
 
 		res, err := SubmitSegment(sess, seg, nonce)
 		if err != nil || res == nil {
@@ -325,7 +325,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 		gotErr := false // only send one error msg per segment list
 		var errCode monitor.SegmentTranscodeError
 		errFunc := func(subType monitor.SegmentTranscodeError, url string, err error) {
-			glog.Errorf("%v error with segment %v: %v (URL: %v)", subType, seg.SeqNo, err, url)
+			glog.Errorf("%v error with segment nonce=%d seqNo=%d: %v (URL: %v)", subType, nonce, seg.SeqNo, err, url)
 			if monitor.Enabled && !gotErr {
 				monitor.SegmentTranscodeFailed(subType, nonce, seg.SeqNo, err, false)
 				gotErr = true

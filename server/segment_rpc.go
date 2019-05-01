@@ -67,7 +67,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// download the segment and check the hash
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		glog.Error("Could not read request body", err)
+		glog.Error("Could not read request body: ", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -259,12 +259,12 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		req.Header.Set("Content-Type", "video/MP2T")
 	}
 
-	glog.Infof("Submitting segment %v : %v bytes", seg.SeqNo, len(data))
+	glog.Infof("Submitting segment nonce=%d seqNo=%d : %v bytes", nonce, seg.SeqNo, len(data))
 	start := time.Now()
 	resp, err := httpClient.Do(req)
 	uploadDur := time.Since(start)
 	if err != nil {
-		glog.Error("Unable to submit segment ", seg.SeqNo, err)
+		glog.Errorf("Unable to submit segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), false)
 		}
@@ -275,14 +275,14 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)
 		errorString := strings.TrimSpace(string(data))
-		glog.Errorf("Error submitting segment %d: code %d error %v", seg.SeqNo, resp.StatusCode, string(data))
+		glog.Errorf("Error submitting segment nonce=%d seqNo=%d code=%d error=%v", nonce, seg.SeqNo, resp.StatusCode, string(data))
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadError(resp.Status),
 				fmt.Sprintf("Code: %d Error: %s", resp.StatusCode, errorString), false)
 		}
 		return nil, fmt.Errorf(errorString)
 	}
-	glog.Infof("Uploaded segment %v", seg.SeqNo)
+	glog.Infof("Uploaded segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
 	if monitor.Enabled {
 		monitor.SegmentUploaded(nonce, seg.SeqNo, uploadDur)
 	}
@@ -333,7 +333,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		// fall through here for the normal case
 		tdata = res.Data
 	default:
-		glog.Error("Unexpected or unset transcode response field for ", seg.SeqNo)
+		glog.Errorf("Unexpected or unset transcode response field for nonce=%d seqNo=%d", nonce, seg.SeqNo)
 		err = fmt.Errorf("UnknownResponse")
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorUnknownResponse, nonce, seg.SeqNo, err, false)
@@ -346,7 +346,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		monitor.SegmentTranscoded(nonce, seg.SeqNo, transcodeDur, tookAllDur, common.ProfilesNames(sess.Profiles))
 	}
 
-	glog.Infof("Successfully transcoded segment manifestID=%s segName=%s seqNo=%d", string(sess.ManifestID), seg.Name, seg.SeqNo)
+	glog.Infof("Successfully transcoded segment nonce=%d manifestID=%s segName=%s seqNo=%d", nonce, string(sess.ManifestID), seg.Name, seg.SeqNo)
 
 	return tdata, nil
 }
