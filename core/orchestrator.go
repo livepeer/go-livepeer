@@ -234,7 +234,7 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 }
 
 func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
-	glog.V(common.DEBUG).Infof("Starting to transcode segment %v", md.Seq)
+	glog.V(common.DEBUG).Infof("Starting to transcode segment manifest=%s seqNo=%d", string(md.ManifestID), md.Seq)
 	ch, err := n.getSegmentChan(md)
 	if err != nil {
 		glog.Error("Could not find segment chan ", err)
@@ -243,7 +243,7 @@ func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stre
 	segChanData := &SegChanData{seg: seg, md: md, res: make(chan *TranscodeResult, 1)}
 	select {
 	case ch <- segChanData:
-		glog.V(common.DEBUG).Info("Submitted segment to transcode loop ", md.Seq)
+		glog.V(common.DEBUG).Infof("Submitted segment to transcode loop manifes=%s seqNo=%d", string(md.ManifestID), md.Seq)
 	default:
 		// sending segChan should not block; if it does, the channel is busy
 		glog.Error("Transcoder was busy with a previous segment!")
@@ -316,36 +316,40 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	start := time.Now()
 	tData, err := transcoder.Transcode(url, md.Profiles)
 	if err != nil {
-		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
+		glog.Errorf("Error transcoding manifest=%s segNo=%d segName=%s - %v", string(md.ManifestID), seg.SeqNo, seg.Name, err)
 		return terr(err)
 	}
 	// transcodeEnd := time.Now().UTC()
 	if len(tData) != len(md.Profiles) {
-		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v", len(tData), len(md.Profiles))
+		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v manifest=%s seqNo=%d", len(tData),
+			len(md.Profiles), string(md.ManifestID), seg.SeqNo)
 		return terr(fmt.Errorf("MismatchedSegments"))
 	}
+
 	took := time.Since(start)
 	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
-	glog.V(common.DEBUG).Infof("Transcoding of segment %v took %v", seg.SeqNo, took)
-	if isLocal && monitor.Enabled {
-		monitor.LogSegmentTranscodeEnded(seg.SeqNo, string(md.ManifestID), took,
-			common.ProfilesNames(md.Profiles))
-	}
 
 	// Prepare the result object
 	var tr TranscodeResult
 	segHashes := make([][]byte, len(tData))
 
-	for i, _ := range md.Profiles {
-		if tData[i] == nil {
-			glog.Errorf("Cannot find transcoded segment for %v", seg.SeqNo)
-			continue
+	for i := range md.Profiles {
+		if tData[i] == nil || len(tData[i]) < 25 {
+			glog.Errorf("Cannot find transcoded segment for manifest=%s seqNo=%d dataLength=%d",
+				string(md.ManifestID), seg.SeqNo, len(tData[i]))
+			return terr(fmt.Errorf("ZeroSegments"))
 		}
 		tProfileData[md.Profiles[i]] = tData[i]
 		tr.Data = append(tr.Data, tData[i])
-
+		glog.V(common.DEBUG).Infof("Transcoded segment manifest=%s seqNo=%d profile=%s len=%d",
+			string(md.ManifestID), seg.SeqNo, md.Profiles[i].Name, len(tData[i]))
 		hash := crypto.Keccak256(tData[i])
 		segHashes[i] = hash
+	}
+	glog.V(common.DEBUG).Infof("Transcoding of segment manifest=%s seqNo=%d took=%s", string(md.ManifestID), seg.SeqNo, took)
+	if isLocal && monitor.Enabled {
+		monitor.LogSegmentTranscodeEnded(seg.SeqNo, string(md.ManifestID), took,
+			common.ProfilesNames(md.Profiles))
 	}
 	os.Remove(fname)
 	tr.OS = config.OS
@@ -464,7 +468,7 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	}
 	err := rt.stream.Send(msg)
 	if err != nil {
-		glog.Error("Error sending message to remote transcoder ", err)
+		glog.Errorf("Error sending message to remote transcoder=%s taskId=%d fname=%s err=%v", rt.addr, taskId, fname, err)
 		rt.eof <- struct{}{}
 		return [][]byte{}, err
 	}
@@ -474,21 +478,27 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	case <-ctx.Done():
 		// XXX remove transcoder from streams
 		rt.eof <- struct{}{}
-		return [][]byte{}, fmt.Errorf("Remote transcoder took too long")
+		return [][]byte{}, fmt.Errorf("Remote transcoder=%s taskId=%d fname=%s took too long", rt.addr, taskId,
+			fname)
 	case chanData := <-taskChan:
-		glog.Info("Successfully received results from remote transcoder ", len(chanData.Segments))
+		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s",
+			rt.addr, len(chanData.Segments), taskId, fname)
 		return chanData.Segments, chanData.Err
 	}
-	return [][]byte{}, fmt.Errorf("Unknown error")
 }
 
 func NewRemoteTranscoder(n *LivepeerNode, stream net.Transcoder_RegisterTranscoderServer, capacity int) *RemoteTranscoder {
-	return &RemoteTranscoder{
+	t := &RemoteTranscoder{
 		node:     n,
 		stream:   stream,
 		eof:      make(chan struct{}, 1),
 		capacity: capacity,
+		addr:     "unknown",
 	}
+	if p, ok := peer.FromContext(stream.Context()); ok {
+		t.addr = p.Addr.String()
+	}
+	return t
 }
 
 func NewRemoteTranscoderManager() *RemoteTranscoderManager {

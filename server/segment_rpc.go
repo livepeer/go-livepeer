@@ -348,7 +348,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		monitor.LogSegmentTranscoded(nonce, seg.SeqNo, transcodeDur, tookAllDur, common.ProfilesNames(sess.Profiles))
 	}
 
-	glog.Info("Successfully transcoded segment ", seg.SeqNo)
+	glog.Infof("Successfully transcoded segment manifestID=%s segName=%s seqNo=%d", string(sess.ManifestID), seg.Name, seg.SeqNo)
 
 	return tdata, nil
 }
