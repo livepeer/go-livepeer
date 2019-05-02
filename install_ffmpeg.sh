@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 set -ex
 
 export PATH="$HOME/compiled/bin":$PATH
