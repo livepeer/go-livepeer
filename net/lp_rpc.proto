@@ -153,7 +153,7 @@ message RegisterRequest {
     int64 capacity = 2;
 }
 
-// Sent by the transcoder
+// Sent by the orchestrator to the transcoder
 message NotifySegment {
 
     string url      = 1;

@@ -517,6 +517,7 @@ func (rtm *RemoteTranscoderManager) Register(transcoder *RemoteTranscoder) {
 
 func (rtm *RemoteTranscoderManager) Unregister(t *RemoteTranscoder) {
 	rtm.RTmutex.Lock()
+	// Probably should remove from remoteTranscoders too?
 	delete(rtm.liveTranscoders, t.stream)
 	rtm.RTmutex.Unlock()
 }
