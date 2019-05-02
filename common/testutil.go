@@ -1,10 +1,15 @@
 package common
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"math/big"
 	"testing"
+
+	"github.com/livepeer/go-livepeer/net"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 )
 
 func dbPath(t *testing.T) string {
@@ -32,4 +37,42 @@ func MaxUint256OrFatal(t *testing.T) *big.Int {
 		t.Fatalf("unexpected error creating max value of uint256")
 	}
 	return n
+}
+
+type testAddr struct {
+}
+
+func (t *testAddr) String() string {
+	return "TestAddress"
+}
+
+func (t *testAddr) Network() string {
+	return "TestNetwork"
+}
+
+type StubServerStream struct {
+}
+
+func (s *StubServerStream) Context() context.Context {
+	p := &peer.Peer{
+		Addr: &testAddr{},
+	}
+	return peer.NewContext(context.Background(), p)
+}
+func (s *StubServerStream) SetHeader(md metadata.MD) error {
+	return nil
+}
+func (s *StubServerStream) SendHeader(md metadata.MD) error {
+	return nil
+}
+func (s *StubServerStream) SetTrailer(md metadata.MD) {
+}
+func (s *StubServerStream) SendMsg(m interface{}) error {
+	return nil
+}
+func (s *StubServerStream) RecvMsg(m interface{}) error {
+	return nil
+}
+func (s *StubServerStream) Send(n *net.NotifySegment) error {
+	return nil
 }

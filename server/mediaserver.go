@@ -520,7 +520,24 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 		cpl := cxn.pl
 		m[string(cpl.ManifestID())] = cpl.GetHLSMasterPlaylist()
 	}
-	return &net.NodeStatus{Manifests: m}
+	res := &net.NodeStatus{
+		Manifests:             m,
+		Version:               core.LivepeerVersion,
+		OrchestratorPool:      []string{},
+		RegisteredTranscoders: []net.RemoteTranscoderInfo{},
+		LocalTranscoding:      s.LivepeerNode.TranscoderManager == nil,
+	}
+	if s.LivepeerNode.TranscoderManager != nil {
+		res.RegisteredTranscodersNumber = s.LivepeerNode.TranscoderManager.RegisteredTranscodersCount()
+		res.RegisteredTranscoders = s.LivepeerNode.TranscoderManager.RegisteredTranscodersInfo()
+	}
+	if s.LivepeerNode.OrchestratorPool != nil {
+		urls := s.LivepeerNode.OrchestratorPool.GetURLs()
+		for _, url := range urls {
+			res.OrchestratorPool = append(res.OrchestratorPool, url.String())
+		}
+	}
+	return res
 }
 
 // Debug helpers

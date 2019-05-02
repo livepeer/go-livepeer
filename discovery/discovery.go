@@ -76,6 +76,10 @@ func NewOnchainOrchestratorPool(node *core.LivepeerNode) *orchestratorPool {
 	return NewOrchestratorPool(node, addresses)
 }
 
+func (o *orchestratorPool) GetURLs() []*url.URL {
+	return o.uris
+}
+
 func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
 	numAvailableOrchs := len(o.uris)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))

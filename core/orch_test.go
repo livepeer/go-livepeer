@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -23,8 +22,6 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/livepeer/go-livepeer/net"
-
-	"google.golang.org/grpc/metadata"
 )
 
 func TestCurrentBlock(t *testing.T) {
@@ -128,7 +125,7 @@ func TestRemoteTranscoder(t *testing.T) {
 	n.taskCount = 1001
 	RemoteTranscoderTimeout = 1 * time.Millisecond
 	_, err = tc.Transcode("fileName", nil)
-	if err.Error() != "Remote transcoder=unknown taskId=1001 fname=fileName took too long" {
+	if err.Error() != "Remote transcoder=TestAddress taskId=1001 fname=fileName took too long" {
 		t.Error("Unexpected error: ", err)
 	}
 	RemoteTranscoderTimeout = 8 * time.Second
@@ -147,12 +144,18 @@ func TestRegisterUnregisterTranscoder(t *testing.T) {
 	assert.Nil(n.TranscoderManager.liveTranscoders[strm])
 	assert.Nil(n.TranscoderManager.liveTranscoders[strm2])
 	assert.Empty(n.TranscoderManager.remoteTranscoders)
+	assert.Equal(0, n.TranscoderManager.RegisteredTranscodersCount())
 
 	// test that transcoder is added to liveTranscoders and remoteTranscoders
 	n.TranscoderManager.Register(transcoder)
 	assert.NotNil(n.TranscoderManager.liveTranscoders[strm])
 	assert.Len(n.TranscoderManager.liveTranscoders, 1)
 	assert.Len(n.TranscoderManager.remoteTranscoders, 5)
+	assert.Equal(1, n.TranscoderManager.RegisteredTranscodersCount())
+	ti := n.TranscoderManager.RegisteredTranscodersInfo()
+	assert.Len(ti, 1)
+	assert.Equal(5, ti[0].Capacity)
+	assert.Equal("TestAddress", ti[0].Address)
 
 	// test that additional transcoder is added to liveTranscoders and remoteTranscoders
 	transcoder2 := NewRemoteTranscoder(n, strm2, 4)
@@ -162,6 +165,7 @@ func TestRegisterUnregisterTranscoder(t *testing.T) {
 	assert.NotNil(n.TranscoderManager.liveTranscoders[strm2])
 	assert.Len(n.TranscoderManager.liveTranscoders, 2)
 	assert.Len(n.TranscoderManager.remoteTranscoders, 9)
+	assert.Equal(2, n.TranscoderManager.RegisteredTranscodersCount())
 
 	// test that transcoders are removed from liveTranscoders and remoteTranscoders
 	n.TranscoderManager.Unregister(transcoder)
@@ -169,12 +173,14 @@ func TestRegisterUnregisterTranscoder(t *testing.T) {
 	assert.NotNil(n.TranscoderManager.liveTranscoders[strm2])
 	assert.Len(n.TranscoderManager.liveTranscoders, 1)
 	assert.Len(n.TranscoderManager.remoteTranscoders, 9)
+	assert.Equal(1, n.TranscoderManager.RegisteredTranscodersCount())
 
 	n.TranscoderManager.Unregister(transcoder2)
 	assert.Nil(n.TranscoderManager.liveTranscoders[strm])
 	assert.Nil(n.TranscoderManager.liveTranscoders[strm2])
 	assert.Len(n.TranscoderManager.liveTranscoders, 0)
 	assert.Len(n.TranscoderManager.remoteTranscoders, 9)
+	assert.Equal(0, n.TranscoderManager.RegisteredTranscodersCount())
 }
 
 func TestSelectTranscoder(t *testing.T) {
@@ -296,7 +302,7 @@ type StubTranscoderServer struct {
 	TranscodeError  error
 	WithholdResults bool
 
-	StubServerStream
+	common.StubServerStream
 }
 
 func (s *StubTranscoderServer) Send(n *net.NotifySegment) error {
@@ -305,27 +311,6 @@ func (s *StubTranscoderServer) Send(n *net.NotifySegment) error {
 		s.node.transcoderResults(n.TaskId, &res)
 	}
 	return s.SendError
-}
-
-type StubServerStream struct {
-}
-
-func (s *StubServerStream) Context() context.Context {
-	return context.Background()
-}
-func (s *StubServerStream) SetHeader(md metadata.MD) error {
-	return nil
-}
-func (s *StubServerStream) SendHeader(md metadata.MD) error {
-	return nil
-}
-func (s *StubServerStream) SetTrailer(md metadata.MD) {
-}
-func (s *StubServerStream) SendMsg(m interface{}) error {
-	return nil
-}
-func (s *StubServerStream) RecvMsg(m interface{}) error {
-	return nil
 }
 
 func StubSegTranscodingMetadata() *SegTranscodingMetadata {

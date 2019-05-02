@@ -21,6 +21,7 @@ import (
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -141,7 +142,11 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 // Orchestrator gRPC
 
 func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transcoder_RegisterTranscoderServer) error {
-	glog.Info("Got a RegisterTranscoder request for ", req.Secret)
+	from := "unknown"
+	if p, ok := peer.FromContext(stream.Context()); ok {
+		from = p.Addr.String()
+	}
+	glog.Infof("Got a RegisterTranscoder request from transcoder=%s", from)
 
 	if req.Secret != h.orchestrator.TranscoderSecret() {
 		glog.Info(SecretErr.Error())

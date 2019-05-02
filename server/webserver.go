@@ -53,13 +53,19 @@ func (s *LivepeerServer) setServiceURI(serviceURI string) error {
 	return nil
 }
 
-func (s *LivepeerServer) StartWebserver(bindAddr string) {
-
-	mux := http.NewServeMux()
+func (s *LivepeerServer) StartCliWebserver(bindAddr string) {
+	mux := s.cliWebServerHandlers(bindAddr)
 	srv := &http.Server{
 		Addr:    bindAddr,
 		Handler: mux,
 	}
+
+	glog.Info("CLI server listening on ", bindAddr)
+	srv.ListenAndServe()
+}
+
+func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
+	mux := http.NewServeMux()
 
 	//Set the broadcast config for creating onchain jobs.
 	mux.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
@@ -740,23 +746,13 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		status := s.GetNodeStatus()
 		if status != nil {
-			mstrs := make(map[string]string, 0)
-			for mid, m := range status.Manifests {
-				mstrs[string(mid)] = m.String()
-			}
-			d := struct {
-				Manifests map[string]string
-				Version   string
-			}{
-				Manifests: mstrs,
-				Version:   core.LivepeerVersion,
-			}
-			if data, err := json.Marshal(d); err == nil {
+			if data, err := json.Marshal(status); err == nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.Write(data)
 				return
 			}
 		}
+		http.Error(w, "Error getting status", http.StatusInternalServerError)
 	})
 
 	mux.HandleFunc("/contractAddresses", func(w http.ResponseWriter, r *http.Request) {
@@ -1095,8 +1091,5 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		mux.Handle("/metrics", monitor.Exporter)
 
 	}
-
-	glog.Info("CLI server listening on ", bindAddr)
-	srv.ListenAndServe()
-
+	return mux
 }
