@@ -83,6 +83,12 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 			}
 			return err
 		}
+		go runTranscode(n, orchAddr, httpc, notify)
+	}
+}
+
+func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifySegment) {
+	{ // dummy indentation to maintain the original indentation which allows reviewers to clearly see what has changed in the commit
 		profiles, err := common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
 		if err != nil {
 			glog.Info("Unable to deserialize profiles ", err)
@@ -109,7 +115,6 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 				fw, err := w.CreatePart(hdrs)
 				if err != nil {
 					glog.Error("Could not create multipart part ", err)
-					return err // XXX respond w error to orchestrator
 				}
 				io.Copy(fw, bytes.NewBuffer(v))
 			}
@@ -119,7 +124,6 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 		req, err := http.NewRequest("POST", "https://"+orchAddr+"/transcodeResults", &body)
 		if err != nil {
 			glog.Error("Error posting results ", err)
-			return err
 		}
 		req.Header.Set("Authorization", ProtoVer_LPT)
 		req.Header.Set("Credentials", n.OrchSecret)
@@ -128,12 +132,10 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 		resp, err := httpc.Do(req)
 		if err != nil {
 			glog.Error("Error submitting results ", err)
-			return err
 		}
 		ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 	}
-	return nil
 }
 
 // Orchestrator gRPC
