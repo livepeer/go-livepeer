@@ -663,7 +663,7 @@ func (m *RegisterRequest) GetCapacity() int64 {
 	return 0
 }
 
-// Sent by the transcoder
+// Sent by the orchestrator to the transcoder
 type NotifySegment struct {
 	Url                  string   `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
 	TaskId               int64    `protobuf:"varint,16,opt,name=taskId,proto3" json:"taskId,omitempty"`
