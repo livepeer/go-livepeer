@@ -115,6 +115,7 @@ func TestRemoteTranscoder(t *testing.T) {
 
 	// simulate error with sending
 	tc, strm = initTranscoder()
+
 	strm.SendError = fmt.Errorf("SendError")
 	_, err = tc.Transcode("", nil)
 	if err != strm.SendError {
@@ -124,10 +125,11 @@ func TestRemoteTranscoder(t *testing.T) {
 	// simulate timeout
 	tc, strm = initTranscoder()
 	strm.WithholdResults = true
+	n.taskCount = 1001
 	RemoteTranscoderTimeout = 1 * time.Millisecond
-	_, err = tc.Transcode("", nil)
-	if err.Error() != "Remote transcoder took too long" {
-		t.Error("Unexpected error ", err)
+	_, err = tc.Transcode("fileName", nil)
+	if err.Error() != "Remote transcoder=unknown taskId=1001 fname=fileName took too long" {
+		t.Error("Unexpected error: ", err)
 	}
 	RemoteTranscoderTimeout = 8 * time.Second
 }

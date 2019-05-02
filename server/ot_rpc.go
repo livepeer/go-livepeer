@@ -94,7 +94,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 			glog.Info("Unable to deserialize profiles ", err)
 		}
 
-		glog.Info("Transcoding ", notify.TaskId)
+		glog.Infof("Transcoding taskId=%d url=%s", notify.TaskId, notify.Url)
 		var contentType string
 		var body bytes.Buffer
 
