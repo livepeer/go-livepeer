@@ -79,6 +79,7 @@ func main() {
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
 	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
+	nvidia := flag.String("nvidia", "", "Comma-separated list of Nvidia GPU device IDs to use for transcoding")
 
 	// Onchain:
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
@@ -191,7 +192,11 @@ func main() {
 	}
 
 	if *transcoder {
-		n.Transcoder = core.NewLocalTranscoder(*datadir)
+		if *nvidia != "" {
+			n.Transcoder = core.NewNvidiaTranscoder(*nvidia, *datadir)
+		} else {
+			n.Transcoder = core.NewLocalTranscoder(*datadir)
+		}
 	}
 
 	if *orchestrator {
