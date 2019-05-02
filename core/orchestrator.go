@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc/peer"
+
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
@@ -449,6 +451,7 @@ type RemoteTranscoder struct {
 	node     *LivepeerNode
 	stream   net.Transcoder_RegisterTranscoderServer
 	eof      chan struct{}
+	addr     string
 	capacity int
 }
 
@@ -488,17 +491,17 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 }
 
 func NewRemoteTranscoder(n *LivepeerNode, stream net.Transcoder_RegisterTranscoderServer, capacity int) *RemoteTranscoder {
-	t := &RemoteTranscoder{
+	addr := "unknown"
+	if p, ok := peer.FromContext(stream.Context()); ok {
+		addr = p.Addr.String()
+	}
+	return &RemoteTranscoder{
 		node:     n,
 		stream:   stream,
 		eof:      make(chan struct{}, 1),
 		capacity: capacity,
-		addr:     "unknown",
+		addr:     addr,
 	}
-	if p, ok := peer.FromContext(stream.Context()); ok {
-		t.addr = p.Addr.String()
-	}
-	return t
 }
 
 func NewRemoteTranscoderManager() *RemoteTranscoderManager {
@@ -515,6 +518,22 @@ type RemoteTranscoderManager struct {
 	RTmutex           *sync.Mutex
 }
 
+func (rtm *RemoteTranscoderManager) RegisteredTranscodersCount() int {
+	rtm.RTmutex.Lock()
+	defer rtm.RTmutex.Unlock()
+	return len(rtm.liveTranscoders)
+}
+
+func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []net.RemoteTranscoderInfo {
+	rtm.RTmutex.Lock()
+	res := make([]net.RemoteTranscoderInfo, 0, len(rtm.liveTranscoders))
+	for _, transcoder := range rtm.liveTranscoders {
+		res = append(res, net.RemoteTranscoderInfo{Address: transcoder.addr, Capacity: transcoder.capacity})
+	}
+	rtm.RTmutex.Unlock()
+	return res
+}
+
 func (rtm *RemoteTranscoderManager) Register(transcoder *RemoteTranscoder) {
 	rtm.RTmutex.Lock()
 	defer rtm.RTmutex.Unlock()
@@ -527,7 +546,6 @@ func (rtm *RemoteTranscoderManager) Register(transcoder *RemoteTranscoder) {
 
 func (rtm *RemoteTranscoderManager) Unregister(t *RemoteTranscoder) {
 	rtm.RTmutex.Lock()
-	// Probably should remove from remoteTranscoders too?
 	delete(rtm.liveTranscoders, t.stream)
 	rtm.RTmutex.Unlock()
 }

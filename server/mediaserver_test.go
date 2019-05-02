@@ -41,7 +41,7 @@ func setupServer() *LivepeerServer {
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		S = NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
 		go S.StartMediaServer(context.Background(), "")
-		go S.StartWebserver("127.0.0.1:8938")
+		go S.StartCliWebserver("127.0.0.1:8938")
 	}
 	return S
 }
@@ -55,6 +55,10 @@ type stubDiscovery struct {
 	lock         *sync.Mutex
 	getOrchCalls int
 	getOrchError error
+}
+
+func (d *stubDiscovery) GetURLs() []*url.URL {
+	return nil
 }
 
 func (d *stubDiscovery) GetOrchestrators(num int) ([]*net.OrchestratorInfo, error) {

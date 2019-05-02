@@ -452,7 +452,7 @@ func main() {
 	}
 
 	go func() {
-		s.StartWebserver(*cliAddr)
+		s.StartCliWebserver(*cliAddr)
 		close(wc)
 	}()
 	go func() {
