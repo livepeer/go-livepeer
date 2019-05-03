@@ -2,6 +2,8 @@ package core
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -21,7 +23,14 @@ type LocalTranscoder struct {
 }
 
 func (lt *LocalTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
-	tr := transcoder.NewFFMpegSegmentTranscoder(profiles, lt.workDir)
+	dirName := randName()
+	fullDirName := filepath.Join(lt.workDir, dirName)
+	err := os.MkdirAll(fullDirName, 0755)
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(fullDirName)
+	tr := transcoder.NewFFMpegSegmentTranscoder(profiles, fullDirName)
 	mid, seqNo, parseErr := parseURI(fname)
 	start := time.Now()
 	if monitor.Enabled && parseErr == nil {
