@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 os=$([ $(uname | grep 'Darwin') ] && echo 'darwin' || echo 'linux');
 curl -s https://api.github.com/repos/livepeer/go-livepeer/releases/latest \
   | grep browser_download_url \

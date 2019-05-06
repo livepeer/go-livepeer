@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 #Test script to run all the tests for continuous integration
 
 cd core
