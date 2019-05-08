@@ -17,7 +17,9 @@ import (
 	"github.com/golang/glog"
 )
 
-const GetOrchestratorsTimeoutLoop = 1 * time.Hour
+const getOrchestratorsTimeoutLoop = 1 * time.Hour
+
+var serverGetOrchInfo = server.GetOrchestratorInfo
 
 type orchestratorPool struct {
 	uris  []*url.URL
@@ -79,15 +81,15 @@ func NewOnchainOrchestratorPool(node *core.LivepeerNode) *orchestratorPool {
 func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
 	numAvailableOrchs := len(o.uris)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
-	ctx, cancel := context.WithTimeout(context.Background(), GetOrchestratorsTimeoutLoop)
+	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
 	orchInfos := []*net.OrchestratorInfo{}
-	orchChan := make(chan struct{})
+	orchChan := make(chan struct{}, len(o.uris))
 	numResp := 0
 	numSuccessResp := 0
 	respLock := sync.Mutex{}
 
 	getOrchInfo := func(uri *url.URL) {
-		info, err := server.GetOrchestratorInfo(ctx, o.bcast, uri)
+		info, err := serverGetOrchInfo(ctx, o.bcast, uri)
 		respLock.Lock()
 		defer respLock.Unlock()
 		numResp++
