@@ -132,6 +132,23 @@ func TestRemoteTranscoder(t *testing.T) {
 	RemoteTranscoderTimeout = 8 * time.Second
 }
 
+func newWg(delta int) *sync.WaitGroup {
+	var wg sync.WaitGroup
+	wg.Add(delta)
+	return &wg
+}
+
+func wgWait(wg *sync.WaitGroup) bool {
+	c := make(chan struct{})
+	go func() { defer close(c); wg.Wait() }()
+	select {
+	case <-c:
+		return true
+	case <-time.After(1 * time.Second):
+		return false
+	}
+}
+
 func TestRegisterUnregisterTranscoder(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.TranscoderManager = NewRemoteTranscoderManager()
@@ -148,7 +165,10 @@ func TestRegisterUnregisterTranscoder(t *testing.T) {
 	assert.Equal(0, n.TranscoderManager.RegisteredTranscodersCount())
 
 	// test that transcoder is added to liveTranscoders and remoteTranscoders
-	n.TranscoderManager.Register(transcoder)
+	wg1 := newWg(1)
+	go func() { n.TranscoderManager.Manage(transcoder); wg1.Done() }()
+	time.Sleep(1 * time.Millisecond) // allow the manager to activate
+
 	assert.NotNil(n.TranscoderManager.liveTranscoders[strm])
 	assert.Len(n.TranscoderManager.liveTranscoders, 1)
 	assert.Len(n.TranscoderManager.remoteTranscoders, 5)
@@ -160,7 +180,9 @@ func TestRegisterUnregisterTranscoder(t *testing.T) {
 
 	// test that additional transcoder is added to liveTranscoders and remoteTranscoders
 	transcoder2 := NewRemoteTranscoder(n, strm2, 4)
-	n.TranscoderManager.Register(transcoder2)
+	wg2 := newWg(1)
+	go func() { n.TranscoderManager.Manage(transcoder2); wg2.Done() }()
+	time.Sleep(1 * time.Millisecond) // allow the manager to activate
 
 	assert.NotNil(n.TranscoderManager.liveTranscoders[strm])
 	assert.NotNil(n.TranscoderManager.liveTranscoders[strm2])
@@ -169,14 +191,15 @@ func TestRegisterUnregisterTranscoder(t *testing.T) {
 	assert.Equal(2, n.TranscoderManager.RegisteredTranscodersCount())
 
 	// test that transcoders are removed from liveTranscoders and remoteTranscoders
-	n.TranscoderManager.Unregister(transcoder)
+	n.TranscoderManager.liveTranscoders[strm].eof <- struct{}{}
+	assert.True(wgWait(wg1)) // time limit
 	assert.Nil(n.TranscoderManager.liveTranscoders[strm])
 	assert.NotNil(n.TranscoderManager.liveTranscoders[strm2])
 	assert.Len(n.TranscoderManager.liveTranscoders, 1)
 	assert.Len(n.TranscoderManager.remoteTranscoders, 9)
 	assert.Equal(1, n.TranscoderManager.RegisteredTranscodersCount())
-
-	n.TranscoderManager.Unregister(transcoder2)
+	n.TranscoderManager.liveTranscoders[strm2].eof <- struct{}{}
+	assert.True(wgWait(wg2)) // time limit
 	assert.Nil(n.TranscoderManager.liveTranscoders[strm])
 	assert.Nil(n.TranscoderManager.liveTranscoders[strm2])
 	assert.Len(n.TranscoderManager.liveTranscoders, 0)
@@ -199,8 +222,12 @@ func TestSelectTranscoder(t *testing.T) {
 	assert.Empty(n.TranscoderManager.remoteTranscoders)
 
 	// register transcoders, which adds transcoder to liveTranscoders and remoteTranscoders
-	n.TranscoderManager.Register(transcoder)
-	n.TranscoderManager.Register(transcoder2)
+	wg := newWg(1)
+	go func() { n.TranscoderManager.Manage(transcoder); wg.Done() }()
+	time.Sleep(1 * time.Millisecond)
+	go func() { n.TranscoderManager.Manage(transcoder2) }()
+	time.Sleep(1 * time.Millisecond)
+
 	assert.NotNil(n.TranscoderManager.liveTranscoders[strm])
 	assert.NotNil(n.TranscoderManager.liveTranscoders[strm2])
 	assert.Len(n.TranscoderManager.remoteTranscoders, 9)
@@ -212,7 +239,8 @@ func TestSelectTranscoder(t *testing.T) {
 	assert.Len(n.TranscoderManager.remoteTranscoders, 8)
 
 	// unregister transcoder
-	n.TranscoderManager.Unregister(transcoder)
+	transcoder.eof <- struct{}{}
+	assert.True(wgWait(wg), "Wait timed out for transcoder to terminate")
 	assert.NotNil(n.TranscoderManager.liveTranscoders[strm2])
 	assert.Nil(n.TranscoderManager.liveTranscoders[strm])
 
@@ -239,7 +267,10 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	assert.Empty(m.liveTranscoders)
 	assert.Empty(m.remoteTranscoders)
 
-	m.Register(r)
+	wg := newWg(1)
+	go func() { m.Manage(r); wg.Done() }()
+	time.Sleep(1 * time.Millisecond)
+
 	assert.Len(m.remoteTranscoders, 5) // sanity
 	assert.Len(m.liveTranscoders, 1)
 	assert.NotNil(m.liveTranscoders[s])
@@ -262,20 +293,27 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	// fatal error should retry and remove from list
 	s.SendError = fmt.Errorf("SendError")
 	_, err = m.Transcode("", nil)
+	assert.True(wgWait(wg)) // should disconnect manager
 	assert.NotNil(err)
 	assert.Equal(err.Error(), "No transcoders available")
-	assert.Len(m.liveTranscoders, 1)   // XXX ideally zero; cleanup register / unregister / eof semantics?
+	assert.Len(m.liveTranscoders, 0)
 	assert.Len(m.remoteTranscoders, 0) // retries drain the list
 	s.SendError = nil
 
 	// fatal error should not retry
-	m.Register(r)
+	wg.Add(1)
+	go func() { m.Manage(r); wg.Done() }()
+	time.Sleep(1 * time.Millisecond)
+
 	assert.Len(m.remoteTranscoders, 5) // sanity check
+	assert.Len(m.liveTranscoders, 1)
 	s.WithholdResults = true
 	RemoteTranscoderTimeout = 1 * time.Millisecond
 	_, err = m.Transcode("", nil)
 	_, fatal := err.(RemoteTranscoderFatalError)
+	wg.Wait()
 	assert.True(fatal)
+	assert.Len(m.liveTranscoders, 0)
 	assert.Len(m.remoteTranscoders, 4) // no retries, so don't drain
 	s.WithholdResults = false
 	RemoteTranscoderTimeout = 8 * time.Second

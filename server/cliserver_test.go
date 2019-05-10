@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -19,7 +20,8 @@ func TestGetStatus(t *testing.T) {
 	n.TranscoderManager = core.NewRemoteTranscoderManager()
 	strm := &common.StubServerStream{}
 	transcoder := core.NewRemoteTranscoder(n, strm, 5)
-	n.TranscoderManager.Register(transcoder)
+	go func() { n.TranscoderManager.Manage(transcoder) }()
+	time.Sleep(1 * time.Millisecond)
 	n.Transcoder = n.TranscoderManager
 	s := NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
 	mux := s.cliWebServerHandlers("addr")
