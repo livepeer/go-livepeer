@@ -346,8 +346,8 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 	hlsStrmID := core.MakeStreamID(mid, &vProfile)
 	s.connectionLock.Lock()
-	defer s.connectionLock.Unlock()
 	_, exists := s.rtmpConnections[mid]
+	s.connectionLock.Unlock()
 	if exists {
 		// We can only have one concurrent stream per ManifestID
 		return nil, ErrAlreadyExists
@@ -362,11 +362,14 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		profile:     &vProfile,
 		sessManager: NewSessionManager(s.LivepeerNode, playlist),
 	}
+	s.connectionLock.Lock()
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
 	s.lastHLSStreamID = hlsStrmID
+	sessionsNumber := len(s.rtmpConnections)
+	s.connectionLock.Unlock()
 	if monitor.Enabled {
-		monitor.CurrentSessions(len(s.rtmpConnections))
+		monitor.CurrentSessions(sessionsNumber)
 	}
 
 	return cxn, nil
