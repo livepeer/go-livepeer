@@ -19,8 +19,7 @@ func TestGetStatus(t *testing.T) {
 	n.NodeType = core.TranscoderNode
 	n.TranscoderManager = core.NewRemoteTranscoderManager()
 	strm := &common.StubServerStream{}
-	transcoder := core.NewRemoteTranscoder(n, strm, 5)
-	go func() { n.TranscoderManager.Manage(transcoder) }()
+	go func() { n.TranscoderManager.Manage(strm, 5) }()
 	time.Sleep(1 * time.Millisecond)
 	n.Transcoder = n.TranscoderManager
 	s := NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)

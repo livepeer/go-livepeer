@@ -73,9 +73,6 @@ type LivepeerNode struct {
 	pmSessions      map[ManifestID]map[string]bool
 	pmSessionsMutex *sync.Mutex
 	segmentMutex    *sync.RWMutex
-	taskMutex       *sync.RWMutex
-	taskChans       map[int64]TranscoderChan
-	taskCount       int64
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
@@ -90,8 +87,6 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		pmSessions:      make(map[ManifestID]map[string]bool),
 		pmSessionsMutex: &sync.Mutex{},
 		segmentMutex:    &sync.RWMutex{},
-		taskMutex:       &sync.RWMutex{},
-		taskChans:       make(map[int64]TranscoderChan),
 	}, nil
 
 }

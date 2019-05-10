@@ -94,7 +94,7 @@ func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscod
 }
 
 func (orch *orchestrator) TranscoderResults(tcId int64, res *RemoteTranscoderResult) {
-	orch.node.transcoderResults(tcId, res)
+	orch.node.TranscoderManager.transcoderResults(tcId, res)
 }
 
 func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID ManifestID) error {
@@ -182,7 +182,7 @@ type transcodeConfig struct {
 	LocalOS drivers.OSSession
 }
 
-func (n *LivepeerNode) getTaskChan(taskId int64) (TranscoderChan, error) {
+func (n *RemoteTranscoderManager) getTaskChan(taskId int64) (TranscoderChan, error) {
 	n.taskMutex.RLock()
 	defer n.taskMutex.RUnlock()
 	if tc, ok := n.taskChans[taskId]; ok {
@@ -190,7 +190,7 @@ func (n *LivepeerNode) getTaskChan(taskId int64) (TranscoderChan, error) {
 	}
 	return nil, fmt.Errorf("No transcoder channel")
 }
-func (n *LivepeerNode) addTaskChan() (int64, TranscoderChan) {
+func (n *RemoteTranscoderManager) addTaskChan() (int64, TranscoderChan) {
 	n.taskMutex.Lock()
 	defer n.taskMutex.Unlock()
 	taskId := n.taskCount
@@ -203,7 +203,7 @@ func (n *LivepeerNode) addTaskChan() (int64, TranscoderChan) {
 	n.taskChans[taskId] = make(TranscoderChan, 1)
 	return taskId, n.taskChans[taskId]
 }
-func (n *LivepeerNode) removeTaskChan(taskId int64) {
+func (n *RemoteTranscoderManager) removeTaskChan(taskId int64) {
 	n.taskMutex.Lock()
 	defer n.taskMutex.Unlock()
 	if _, ok := n.taskChans[taskId]; !ok {
@@ -428,12 +428,11 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 }
 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
-	transcoder := NewRemoteTranscoder(n, stream, capacity)
-	n.TranscoderManager.Manage(transcoder)
+	n.TranscoderManager.Manage(stream, capacity)
 	glog.V(common.DEBUG).Info("Closing transcoder channel") // XXX cxn info
 }
 
-func (n *LivepeerNode) transcoderResults(tcId int64, res *RemoteTranscoderResult) {
+func (n *RemoteTranscoderManager) transcoderResults(tcId int64, res *RemoteTranscoderResult) {
 	remoteChan, err := n.getTaskChan(tcId)
 	if err != nil {
 		return // do we need to return anything?
@@ -442,7 +441,7 @@ func (n *LivepeerNode) transcoderResults(tcId int64, res *RemoteTranscoderResult
 }
 
 type RemoteTranscoder struct {
-	node     *LivepeerNode
+	manager  *RemoteTranscoderManager
 	stream   net.Transcoder_RegisterTranscoderServer
 	eof      chan struct{}
 	addr     string
@@ -456,13 +455,9 @@ type RemoteTranscoderFatalError struct {
 var RemoteTranscoderTimeout = 8 * time.Second
 var ErrRemoteTranscoderTimeout = errors.New("Remote transcoder took too long")
 
-func (r *RemoteTranscoder) Capacity() int {
-	return r.capacity
-}
-
 func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
-	taskId, taskChan := rt.node.addTaskChan()
-	defer rt.node.removeTaskChan(taskId)
+	taskId, taskChan := rt.manager.addTaskChan()
+	defer rt.manager.removeTaskChan(taskId)
 	signalEof := func(err error) ([][]byte, error) {
 		// select so we don't block indefinitely if there's no listener
 		select {
@@ -492,14 +487,13 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 		return chanData.Segments, chanData.Err
 	}
 }
-
-func NewRemoteTranscoder(n *LivepeerNode, stream net.Transcoder_RegisterTranscoderServer, capacity int) *RemoteTranscoder {
+func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int) *RemoteTranscoder {
 	addr := "unknown"
 	if p, ok := peer.FromContext(stream.Context()); ok {
 		addr = p.Addr.String()
 	}
 	return &RemoteTranscoder{
-		node:     n,
+		manager:  m,
 		stream:   stream,
 		eof:      make(chan struct{}, 1),
 		capacity: capacity,
@@ -512,6 +506,9 @@ func NewRemoteTranscoderManager() *RemoteTranscoderManager {
 		remoteTranscoders: []*RemoteTranscoder{},
 		liveTranscoders:   map[net.Transcoder_RegisterTranscoderServer]*RemoteTranscoder{},
 		RTmutex:           &sync.Mutex{},
+
+		taskMutex: &sync.RWMutex{},
+		taskChans: make(map[int64]TranscoderChan),
 	}
 }
 
@@ -519,6 +516,11 @@ type RemoteTranscoderManager struct {
 	remoteTranscoders []*RemoteTranscoder
 	liveTranscoders   map[net.Transcoder_RegisterTranscoderServer]*RemoteTranscoder
 	RTmutex           *sync.Mutex
+
+	// For tracking tasks assigned to remote transcoders
+	taskMutex *sync.RWMutex
+	taskChans map[int64]TranscoderChan
+	taskCount int64
 }
 
 func (rtm *RemoteTranscoderManager) RegisteredTranscodersCount() int {
@@ -537,10 +539,13 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []net.RemoteTran
 	return res
 }
 
-func (rtm *RemoteTranscoderManager) Manage(transcoder *RemoteTranscoder) {
+func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
+
+	transcoder := NewRemoteTranscoder(rtm, stream, capacity)
+
 	rtm.RTmutex.Lock()
 	rtm.liveTranscoders[transcoder.stream] = transcoder
-	for i := 0; i < transcoder.Capacity(); i++ {
+	for i := 0; i < capacity; i++ {
 		rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
 	}
 	rtm.RTmutex.Unlock()
