@@ -1,15 +1,20 @@
 package discovery
 
 import (
+	"context"
 	"math/rand"
 	"net/url"
+	"runtime"
+	"sync"
 	"testing"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,6 +50,33 @@ func StubOrchestrators(addresses []string) []*lpTypes.Transcoder {
 	}
 
 	return orchestrators
+}
+
+func TestDeadLock(t *testing.T) {
+	gmp := runtime.GOMAXPROCS(50)
+	defer runtime.GOMAXPROCS(gmp)
+	var mu sync.Mutex
+	first := true
+	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		mu.Lock()
+		if first {
+			time.Sleep(100 * time.Millisecond)
+			first = false
+		}
+		mu.Unlock()
+		return &net.OrchestratorInfo{Transcoder: "transcoderfromtestserver"}, nil
+	}
+	addresses := []string{}
+	for i := 0; i < 50; i++ {
+		addresses = append(addresses, "https://127.0.0.1:8936")
+	}
+
+	assert := assert.New(t)
+	pool := NewOrchestratorPool(nil, addresses)
+	infos, err := pool.GetOrchestrators(1)
+	assert.Nil(err, "Should not be error")
+	assert.Len(infos, 1, "Should return one orchestrator")
+	assert.Equal("transcoderfromtestserver", infos[0].Transcoder)
 }
 
 func TestPoolSize(t *testing.T) {
