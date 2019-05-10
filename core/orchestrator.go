@@ -455,6 +455,10 @@ type RemoteTranscoder struct {
 	capacity int
 }
 
+type RemoteTranscoderFatalError struct {
+	error
+}
+
 var RemoteTranscoderTimeout = 8 * time.Second
 
 func (r *RemoteTranscoder) Capacity() int {
@@ -473,7 +477,7 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	if err != nil {
 		glog.Errorf("Error sending message to remote transcoder=%s taskId=%d fname=%s err=%v", rt.addr, taskId, fname, err)
 		rt.eof <- struct{}{}
-		return [][]byte{}, err
+		return [][]byte{}, RemoteTranscoderFatalError{err}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), RemoteTranscoderTimeout)
 	defer cancel()
@@ -481,8 +485,7 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	case <-ctx.Done():
 		// XXX remove transcoder from streams
 		rt.eof <- struct{}{}
-		return [][]byte{}, fmt.Errorf("Remote transcoder=%s taskId=%d fname=%s took too long", rt.addr, taskId,
-			fname)
+		return [][]byte{}, RemoteTranscoderFatalError{fmt.Errorf("Remote transcoder=%s taskId=%d fname=%s took too long", rt.addr, taskId, fname)}
 	case chanData := <-taskChan:
 		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s",
 			rt.addr, len(chanData.Segments), taskId, fname)
@@ -586,10 +589,10 @@ func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.Vi
 		return nil, errors.New("No transcoders available")
 	}
 	res, err := currentTranscoder.Transcode(fname, profiles)
-	if err == nil {
+	_, fatal := err.(RemoteTranscoderFatalError)
+	if !fatal {
 		rtm.completeTranscoders(currentTranscoder)
 	}
-
 	return res, err
 }
 
