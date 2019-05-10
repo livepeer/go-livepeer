@@ -429,14 +429,8 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
 	transcoder := NewRemoteTranscoder(n, stream, capacity)
-	n.TranscoderManager.Register(transcoder)
-	defer n.TranscoderManager.Unregister(transcoder)
-
-	select {
-	case <-transcoder.eof:
-		glog.V(common.DEBUG).Info("Closing transcoder channel") // XXX cxn info
-		return
-	}
+	n.TranscoderManager.Manage(transcoder)
+	glog.V(common.DEBUG).Info("Closing transcoder channel") // XXX cxn info
 }
 
 func (n *LivepeerNode) transcoderResults(tcId int64, res *RemoteTranscoderResult) {
@@ -543,19 +537,18 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []net.RemoteTran
 	return res
 }
 
-func (rtm *RemoteTranscoderManager) Register(transcoder *RemoteTranscoder) {
+func (rtm *RemoteTranscoderManager) Manage(transcoder *RemoteTranscoder) {
 	rtm.RTmutex.Lock()
-	defer rtm.RTmutex.Unlock()
 	rtm.liveTranscoders[transcoder.stream] = transcoder
-
 	for i := 0; i < transcoder.Capacity(); i++ {
 		rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
 	}
-}
+	rtm.RTmutex.Unlock()
 
-func (rtm *RemoteTranscoderManager) Unregister(t *RemoteTranscoder) {
+	<-transcoder.eof
+
 	rtm.RTmutex.Lock()
-	delete(rtm.liveTranscoders, t.stream)
+	delete(rtm.liveTranscoders, transcoder.stream)
 	rtm.RTmutex.Unlock()
 }
 
