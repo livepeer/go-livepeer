@@ -115,8 +115,9 @@ func TestRemoteTranscoder(t *testing.T) {
 
 	strm.SendError = fmt.Errorf("SendError")
 	_, err = tc.Transcode("", nil)
-	if err != strm.SendError {
-		t.Error("Unexpected error ", err)
+	if _, fatal := err.(RemoteTranscoderFatalError); !fatal ||
+		err.Error() != strm.SendError.Error() {
+		t.Error("Unexpected error ", err, fatal)
 	}
 
 	// simulate timeout
@@ -225,6 +226,47 @@ func TestSelectTranscoder(t *testing.T) {
 	_, err := n.TranscoderManager.Transcode("", nil)
 	assert.Nil(err)
 	assert.Len(n.TranscoderManager.remoteTranscoders, 7)
+}
+
+func TestTranscoderManagerTranscoding(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	m := NewRemoteTranscoderManager()
+	s := &StubTranscoderServer{node: n}
+	r := NewRemoteTranscoder(n, s, 5)
+
+	// sanity checks
+	assert := assert.New(t)
+	assert.Empty(m.liveTranscoders)
+	assert.Empty(m.remoteTranscoders)
+
+	m.Register(r)
+	assert.Len(m.remoteTranscoders, 5) // sanity
+	assert.Len(m.liveTranscoders, 1)
+	assert.NotNil(m.liveTranscoders[s])
+
+	// happy path
+	res, err := m.Transcode("", nil)
+	assert.Nil(err)
+	assert.Len(res, 1)
+	assert.Equal(string(res[0]), "asdf")
+
+	// non-fatal error should not remove from list
+	s.TranscodeError = fmt.Errorf("TranscodeError")
+	_, err = m.Transcode("", nil)
+	assert.Equal(s.TranscodeError, err)
+	assert.Len(m.remoteTranscoders, 5) // sanity
+	assert.Len(m.liveTranscoders, 1)
+	assert.NotNil(m.liveTranscoders[s])
+	s.TranscodeError = nil
+
+	// fatal error should remove from list
+	s.SendError = fmt.Errorf("SendError")
+	_, err = m.Transcode("", nil)
+	_, fatal := err.(RemoteTranscoderFatalError)
+	assert.True(fatal)
+	assert.Equal(err.Error(), "SendError")
+	assert.Len(m.liveTranscoders, 1) // XXX ideally zero; cleanup register / unregister / eof semantics?
+	assert.Len(m.remoteTranscoders, 4)
 }
 
 func TestTaskChan(t *testing.T) {
