@@ -93,7 +93,6 @@ func main() {
 
 	// Metrics & logging:
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
-	monUrl := flag.String("monUrl", "", "host name for the metrics data collector")
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
 	logIPFS := flag.Bool("logIPFS", false, "Set to true if log files should not be generated") // unused until we re-enable IPFS
@@ -120,19 +119,16 @@ func main() {
 	type NetworkConfig struct {
 		ethUrl        string
 		ethController string
-		monUrl        string
 	}
 
 	configOptions := map[string]*NetworkConfig{
 		"rinkeby": {
 			ethUrl:        "wss://rinkeby.infura.io/ws/v3/09642b98164d43eb890939eb9a7ec500",
 			ethController: "0x37dc71366ec655093b9930bc816e16e6b587f968",
-			monUrl:        "http://metrics-rinkeby.livepeer.org/api/events",
 		},
 		"mainnet": {
 			ethUrl:        "wss://mainnet.infura.io/ws/v3/be11162798084102a3519541eded12f6",
 			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
-			monUrl:        "http://metrics-mainnet.livepeer.org/api/events",
 		},
 	}
 
@@ -153,9 +149,6 @@ func main() {
 		}
 		if *ethController == "" {
 			*ethController = netw.ethController
-		}
-		if *monitor && *monUrl == "" {
-			*monUrl = netw.monUrl
 		}
 		glog.Infof("***Livepeer is running on the %v*** network: %v***", *network, *ethController)
 	} else {
@@ -214,7 +207,6 @@ func main() {
 	}
 
 	if *monitor {
-		glog.Infof("Monitoring endpoint: %s", *monUrl)
 		lpmon.Enabled = true
 		nodeID := *ethAcctAddr
 		if nodeID == "" {
@@ -228,7 +220,7 @@ func main() {
 		case core.TranscoderNode:
 			nodeType = "trcr"
 		}
-		lpmon.Init(*monUrl, nodeType, nodeID, core.LivepeerVersion)
+		lpmon.InitCensus(nodeType, nodeID, core.LivepeerVersion)
 	}
 
 	if n.NodeType == core.TranscoderNode {

@@ -310,9 +310,6 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 		}
 		seg.Name = url
 	}
-	if isLocal && monitor.Enabled {
-		monitor.LogSegmentTranscodeStarting(seg.SeqNo, string(md.ManifestID))
-	}
 
 	//Do the transcoding
 	start := time.Now()

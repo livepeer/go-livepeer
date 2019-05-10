@@ -44,6 +44,9 @@ const (
 	numberOfSegmentsToCalcAverage = 30
 )
 
+// Enabled true if metrics was enabled in command line
+var Enabled bool
+
 var timeToWaitForError = 8500 * time.Millisecond
 var timeoutWatcherPause = 15 * time.Second
 
@@ -118,7 +121,7 @@ var census censusMetricsCounter
 // used in unit tests
 var unitTestMode bool
 
-func initCensus(nodeType, nodeID, version string) {
+func InitCensus(nodeType, nodeID, version string) {
 	census = censusMetricsCounter{
 		emergeTimes: make(map[uint64]map[uint64]time.Time),
 		nodeID:      nodeID,
@@ -591,6 +594,11 @@ func TranscodeTry(nonce, seqNo uint64) {
 	}
 }
 
+func SegmentEmerged(nonce, seqNo uint64, profilesNum int) {
+	glog.Infof("Logging SegmentEmerged... nonce=%d seqNo=%d", nonce, seqNo)
+	census.segmentEmerged(nonce, seqNo, profilesNum)
+}
+
 func (cen *censusMetricsCounter) segmentEmerged(nonce, seqNo uint64, profilesNum int) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
@@ -604,6 +612,12 @@ func (cen *censusMetricsCounter) segmentEmerged(nonce, seqNo uint64, profilesNum
 	stats.Record(cen.ctx, cen.mSegmentEmergedUnprocessed.M(1))
 }
 
+func SourceSegmentAppeared(nonce, seqNo uint64, manifestID, profile string) {
+	glog.Infof("Logging SourceSegmentAppeared... nonce=%d seqNo=%d manifestid=%s profile=%s", nonce,
+		seqNo, manifestID, profile)
+	census.segmentSourceAppeared(nonce, seqNo, profile)
+}
+
 func (cen *censusMetricsCounter) segmentSourceAppeared(nonce, seqNo uint64, profile string) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
@@ -615,10 +629,28 @@ func (cen *censusMetricsCounter) segmentSourceAppeared(nonce, seqNo uint64, prof
 	stats.Record(ctx, cen.mSegmentSourceAppeared.M(1))
 }
 
+func SegmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
+	glog.Infof("Logging SegmentUploaded... nonce=%d seqNo=%d uploadduration=%s", nonce, seqNo, uploadDur)
+	census.segmentUploaded(nonce, seqNo, uploadDur)
+}
+
 func (cen *censusMetricsCounter) segmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 	stats.Record(cen.ctx, cen.mSegmentUploaded.M(1), cen.mUploadTime.M(float64(uploadDur/time.Second)))
+}
+
+func SegmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, reason string, permanent bool) {
+	if code == SegmentUploadErrorUnknown {
+		if strings.Contains(reason, "Client.Timeout") {
+			code = SegmentUploadErrorTimeout
+		} else if reason == "Session ended" {
+			code = SegmentUploadErrorSessionEnded
+		}
+	}
+	glog.Errorf("Logging SegmentUploadFailed... code=%v reason='%s'", code, reason)
+
+	census.segmentUploadFailed(nonce, seqNo, code, permanent)
 }
 
 func (cen *censusMetricsCounter) segmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, permanent bool) {
@@ -640,6 +672,11 @@ func (cen *censusMetricsCounter) segmentUploadFailed(nonce, seqNo uint64, code S
 	}
 }
 
+func SegmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Duration, profiles string) {
+	glog.Infof("Logging SegmentTranscode seqNo=%d duration=%s", seqNo, totalDur)
+	census.segmentTranscoded(nonce, seqNo, transcodeDur, totalDur, profiles)
+}
+
 func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Duration,
 	profiles string) {
 	cen.lock.Lock()
@@ -650,6 +687,11 @@ func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, transcod
 		return
 	}
 	stats.Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(float64(transcodeDur/time.Second)))
+}
+
+func SegmentTranscodeFailed(subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
+	glog.Errorf("Logging SegmentTranscodeFailed subtype=%v nonce=%d seqNo=%d error='%s'", subType, nonce, seqNo, err.Error())
+	census.segmentTranscodeFailed(nonce, seqNo, subType, permanent)
 }
 
 func (cen *censusMetricsCounter) segmentTranscodeFailed(nonce, seqNo uint64, code SegmentTranscodeError, permanent bool) {
@@ -712,6 +754,11 @@ func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, errCode Segmen
 	census.sendSuccess()
 }
 
+func TranscodedSegmentAppeared(nonce, seqNo uint64, profile string) {
+	glog.Infof("Logging LogTranscodedSegmentAppeared... nonce=%d SeqNo=%d profile=%s", nonce, seqNo, profile)
+	census.segmentTranscodedAppeared(nonce, seqNo, profile)
+}
+
 func (cen *censusMetricsCounter) segmentTranscodedAppeared(nonce, seqNo uint64, profile string) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
@@ -731,6 +778,11 @@ func (cen *censusMetricsCounter) segmentTranscodedAppeared(nonce, seqNo uint64, 
 	stats.Record(ctx, cen.mSegmentTranscodedAppeared.M(1))
 }
 
+func StreamCreateFailed(nonce uint64, reason string) {
+	glog.Errorf("Logging StreamCreateFailed... nonce=%d reason='%s'", nonce, reason)
+	census.streamCreateFailed(nonce, reason)
+}
+
 func (cen *censusMetricsCounter) streamCreateFailed(nonce uint64, reason string) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
@@ -744,6 +796,11 @@ func newAverager() *segmentsAverager {
 	}
 }
 
+func StreamCreated(hlsStrmID string, nonce uint64) {
+	glog.Infof("Logging StreamCreated... nonce=%d strid=%s", nonce, hlsStrmID)
+	census.streamCreated(nonce)
+}
+
 func (cen *censusMetricsCounter) streamCreated(nonce uint64) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
@@ -751,10 +808,20 @@ func (cen *censusMetricsCounter) streamCreated(nonce uint64) {
 	cen.success[nonce] = newAverager()
 }
 
+func StreamStarted(nonce uint64) {
+	glog.Infof("Logging StreamStarted... nonce=%d", nonce)
+	census.streamStarted(nonce)
+}
+
 func (cen *censusMetricsCounter) streamStarted(nonce uint64) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 	stats.Record(cen.ctx, cen.mStreamStarted.M(1))
+}
+
+func StreamEnded(nonce uint64) {
+	glog.Infof("Logging StreamEnded... nonce=%d", nonce)
+	census.streamEnded(nonce)
 }
 
 func (cen *censusMetricsCounter) streamEnded(nonce uint64) {

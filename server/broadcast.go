@@ -226,7 +226,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 
 	glog.V(common.DEBUG).Infof("Processing segment %d", seg.SeqNo)
 	if monitor.Enabled {
-		monitor.LogSegmentEmerged(nonce, seg.SeqNo, len(BroadcastJobVideoProfiles))
+		monitor.SegmentEmerged(nonce, seg.SeqNo, len(BroadcastJobVideoProfiles))
 	}
 
 	seg.Name = "" // hijack seg.Name to convey the uploaded URI
@@ -235,7 +235,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	if err != nil {
 		glog.Errorf("Error saving segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), true)
+			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), true)
 		}
 		return
 	}
@@ -244,12 +244,12 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 	}
 	err = cpl.InsertHLSSegment(vProfile, seg.SeqNo, uri, seg.Duration)
 	if monitor.Enabled {
-		monitor.LogSourceSegmentAppeared(nonce, seg.SeqNo, string(mid), vProfile.Name)
+		monitor.SourceSegmentAppeared(nonce, seg.SeqNo, string(mid), vProfile.Name)
 	}
 	if err != nil {
 		glog.Errorf("Error inserting segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), true)
+			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), true)
 		}
 	}
 
@@ -274,7 +274,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 	// View-only (non-transcoded) streams or no sessions available
 	if sess == nil {
 		if monitor.Enabled {
-			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, ErrNoOrchs, true)
+			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, ErrNoOrchs, true)
 		}
 		glog.Infof("No sessions available for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
 		return nil
@@ -292,7 +292,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 			if err != nil {
 				glog.Errorf("Error saving segment to OS nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
 				if monitor.Enabled {
-					monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err.Error(), false)
+					monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err.Error(), false)
 				}
 				cxn.sessManager.removeSession(sess)
 				return err
@@ -327,7 +327,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 		errFunc := func(subType monitor.SegmentTranscodeError, url string, err error) {
 			glog.Errorf("%v error with segment %v: %v (URL: %v)", subType, seg.SeqNo, err, url)
 			if monitor.Enabled && !gotErr {
-				monitor.LogSegmentTranscodeFailed(subType, nonce, seg.SeqNo, err, false)
+				monitor.SegmentTranscodeFailed(subType, nonce, seg.SeqNo, err, false)
 				gotErr = true
 				errCode = subType
 			}
@@ -382,7 +382,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 			}
 
 			if monitor.Enabled {
-				monitor.LogTranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
+				monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
 			}
 			err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
 			if err != nil {

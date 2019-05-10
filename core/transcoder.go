@@ -31,14 +31,11 @@ func (lt *LocalTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfil
 	}
 	defer os.RemoveAll(fullDirName)
 	tr := transcoder.NewFFMpegSegmentTranscoder(profiles, fullDirName)
-	mid, seqNo, parseErr := parseURI(fname)
+	_, seqNo, parseErr := parseURI(fname)
 	start := time.Now()
-	if monitor.Enabled && parseErr == nil {
-		monitor.LogSegmentTranscodeStarting(seqNo, mid)
-	}
 	data, err := tr.Transcode(fname)
 	if monitor.Enabled && parseErr == nil {
-		monitor.LogSegmentTranscodeEnded(seqNo, mid, time.Since(start), common.ProfilesNames(profiles))
+		monitor.SegmentTranscoded(0, seqNo, time.Since(start), 0, common.ProfilesNames(profiles))
 	}
 	return data, err
 }

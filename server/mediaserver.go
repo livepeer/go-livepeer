@@ -257,7 +257,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				if streamStarted == false {
 					streamStarted = true
 					if monitor.Enabled {
-						monitor.LogStreamStartedEvent(nonce)
+						monitor.StreamStarted(nonce)
 					}
 				}
 				processSegment(cxn, seg)
@@ -277,7 +277,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}(rtmpStrm)
 
 		if monitor.Enabled {
-			monitor.LogStreamCreatedEvent(string(mid), nonce)
+			monitor.StreamCreated(string(mid), nonce)
 		}
 
 		glog.Infof("\n\nVideo Created With ManifestID: %v\n\n", mid)
@@ -302,7 +302,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		glog.Infof("Ended stream with id=%s", mid)
 		delete(s.rtmpConnections, mid)
 		if monitor.Enabled {
-			monitor.LogStreamEndedEvent(cxn.nonce)
+			monitor.StreamEnded(cxn.nonce)
 			monitor.CurrentSessions(len(s.rtmpConnections))
 		}
 
@@ -324,7 +324,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 			glog.Errorf("No deposit - cannot start broadcast session")
 
 			if monitor.Enabled {
-				monitor.LogStreamCreateFailed(nonce, "LowDeposit")
+				monitor.StreamCreateFailed(nonce, "LowDeposit")
 			}
 
 			return nil, ErrLowDeposit

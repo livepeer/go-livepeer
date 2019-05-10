@@ -222,15 +222,12 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 }
 
 func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64) (*net.TranscodeData, error) {
-	if monitor.Enabled {
-		monitor.SegmentUploadStart(nonce, seg.SeqNo)
-	}
 	uploaded := seg.Name != "" // hijack seg.Name to convey the uploaded URI
 
 	segCreds, err := genSegCreds(sess, seg)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error(), false)
+			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error(), false)
 		}
 		return nil, err
 	}
@@ -249,7 +246,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if err != nil {
 		glog.Error("Could not generate trascode request to ", ti.Transcoder)
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error(), false)
+			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error(), false)
 		}
 		return nil, err
 	}
@@ -269,7 +266,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if err != nil {
 		glog.Error("Unable to submit segment ", seg.SeqNo, err)
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), false)
+			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), false)
 		}
 		return nil, err
 	}
@@ -280,14 +277,14 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		errorString := strings.TrimSpace(string(data))
 		glog.Errorf("Error submitting segment %d: code %d error %v", seg.SeqNo, resp.StatusCode, string(data))
 		if monitor.Enabled {
-			monitor.LogSegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadError(resp.Status),
+			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadError(resp.Status),
 				fmt.Sprintf("Code: %d Error: %s", resp.StatusCode, errorString), false)
 		}
 		return nil, fmt.Errorf(errorString)
 	}
 	glog.Infof("Uploaded segment %v", seg.SeqNo)
 	if monitor.Enabled {
-		monitor.LogSegmentUploaded(nonce, seg.SeqNo, uploadDur)
+		monitor.SegmentUploaded(nonce, seg.SeqNo, uploadDur)
 	}
 
 	data, err = ioutil.ReadAll(resp.Body)
@@ -296,7 +293,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if err != nil {
 		glog.Errorf("Unable to read response body for segment nonce=%d seqNo=%d : %v", nonce, seg.SeqNo, err)
 		if monitor.Enabled {
-			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorReadBody, nonce, seg.SeqNo, err, false)
+			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorReadBody, nonce, seg.SeqNo, err, false)
 		}
 		return nil, err
 	}
@@ -307,7 +304,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if err != nil {
 		glog.Errorf("Unable to parse response for segment nonce=%d seqNo=%d : %v", nonce, seg.SeqNo, err)
 		if monitor.Enabled {
-			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorParseResponse, nonce, seg.SeqNo, err, false)
+			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorParseResponse, nonce, seg.SeqNo, err, false)
 		}
 		return nil, err
 	}
@@ -324,11 +321,11 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		if monitor.Enabled {
 			switch res.Error {
 			case "OrchestratorBusy":
-				monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorOrchestratorBusy, nonce, seg.SeqNo, err, false)
+				monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorOrchestratorBusy, nonce, seg.SeqNo, err, false)
 			case "OrchestratorCapped":
-				monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorOrchestratorCapped, nonce, seg.SeqNo, err, false)
+				monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorOrchestratorCapped, nonce, seg.SeqNo, err, false)
 			default:
-				monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorTranscode, nonce, seg.SeqNo, err, false)
+				monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorTranscode, nonce, seg.SeqNo, err, false)
 			}
 		}
 		return nil, err
@@ -339,14 +336,14 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		glog.Error("Unexpected or unset transcode response field for ", seg.SeqNo)
 		err = fmt.Errorf("UnknownResponse")
 		if monitor.Enabled {
-			monitor.LogSegmentTranscodeFailed(monitor.SegmentTranscodeErrorUnknownResponse, nonce, seg.SeqNo, err, false)
+			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorUnknownResponse, nonce, seg.SeqNo, err, false)
 		}
 		return nil, err
 	}
 
 	// transcode succeeded; continue processing response
 	if monitor.Enabled {
-		monitor.LogSegmentTranscoded(nonce, seg.SeqNo, transcodeDur, tookAllDur, common.ProfilesNames(sess.Profiles))
+		monitor.SegmentTranscoded(nonce, seg.SeqNo, transcodeDur, tookAllDur, common.ProfilesNames(sess.Profiles))
 	}
 
 	glog.Infof("Successfully transcoded segment manifestID=%s segName=%s seqNo=%d", string(sess.ManifestID), seg.Name, seg.SeqNo)
