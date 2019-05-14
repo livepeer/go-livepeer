@@ -1,35 +1,64 @@
 version: 2
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - build-builder
+      - build:
+          requires:
+            - build-builder
+
 jobs:
-  build:
+  build-builder:
     docker:
       - image: circleci/golang:1-stretch
     working_directory: /go/src/github.com/livepeer/go-livepeer
 
     environment:
-        PKG_CONFIG_PATH: $HOME/compiled/lib/pkgconfig
-        TEST_RESULTS: /tmp/test-results
+      PKG_CONFIG_PATH: /root/compiled/lib/pkgconfig
+      GOPATH: /go
 
     steps:
       - checkout
+      - setup_remote_docker:
+          # This actually only exists for paid plans. But it's good luck!
+          docker_layer_caching: true
+
+      - run: docker login -u $DOCKER_USER -p $DOCKER_PASS
+
+      # First, build the Linux-specific builder container
+      - run: docker pull iameli/build-platform:latest-linux || echo 'no pre-existing cache found'
+      - run: docker build -t iameli/build-platform:latest-linux --cache-from=iameli/build-platform:latest-linux -f docker/Dockerfile.build-linux .
+      - run: docker push iameli/build-platform:latest-linux
+      - run: docker tag iameli/build-platform:latest-linux iameli/build-platform:latest
+
+      # Then, build the actual app in a container shared between Linux and Windows
+      - run: docker pull iameli/build:latest-linux || echo 'no pre-existing cache found'
+      - run: docker build -t iameli/build:latest-linux --cache-from=iameli/build:latest-linux -f docker/Dockerfile.build .
+      - run: docker push iameli/build:latest-linux
+      - run: docker tag iameli/build:latest-linux iameli/build:latest
+
+  build:
+    docker:
+      # Note race condition - we might get the wrong builder if lots of builds are happening in
+      # parallel because this pulls it down from Docker Hub.
+      - image: iameli/build:latest-linux
+    working_directory: /go/src/github.com/livepeer/go-livepeer
+
+    environment:
+      PKG_CONFIG_PATH: /root/compiled/lib/pkgconfig
+      TEST_RESULTS: /tmp/test-results
+      GOPATH: /go
+
+    steps:
+      - checkout
+
       - run: mkdir -p $TEST_RESULTS
 
-      - restore_cache:
-          keys:
-            - v3-pkg-cache
-
-      - run: sudo apt-get update && sudo apt-get -y install build-essential pkg-config autoconf gnutls-dev
-      - run: ./install_ffmpeg.sh
-      - run: go get github.com/golang/glog
-      - run: go get -u -v github.com/ericxtang/m3u8
-      - run: go get github.com/aws/aws-sdk-go/aws
-      - run: go get -u google.golang.org/grpc
-      - run: go get github.com/jstemmer/go-junit-report
-      - run: go get github.com/pkg/errors
-      - run: go get github.com/stretchr/testify
-      - run: go get github.com/alecthomas/gometalinter && gometalinter --install
-      - run: go get -u -v go.opencensus.io/stats
-      - run: go get -u -v go.opencensus.io/tag
-      - run: go get -u -v contrib.go.opencensus.io/exporter/prometheus
+      # - restore_cache:
+      #     keys:
+      #       - v3-pkg-cache
 
       - run:
           name: Lint
@@ -37,15 +66,14 @@ jobs:
             gometalinter --disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm
 
       - run:
-          name: Compile CLI binary
-          command: |
-            PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig go build -v cmd/livepeer_cli/*
-
-      - run:
           name: Run unit tests
           command: |
             trap "go-junit-report <${TEST_RESULTS}/go-test.out > ${TEST_RESULTS}/go-test-report.xml" EXIT
-            PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig /bin/bash test.sh 2>&1 | tee $TEST_RESULTS/go-test.out
+            /bin/bash test.sh 2>&1 | tee $TEST_RESULTS/go-test.out
+
+      - run:
+          name: Upload build
+          command: ./upload_build.sh
 
       - save_cache:
           key: v3-pkg-cache
