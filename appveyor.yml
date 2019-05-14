@@ -12,7 +12,10 @@ image: Visual Studio 2017
 # Post-install test scripts.
 test_script:
   # Output useful info for debugging.
-  - ps: Install-Package -Name docker -ProviderName DockerMsftProvider
+  - ps: Write-Host "Install-Module DockerProvider"
+  - ps: Install-Module DockerMsftProvider -Force
+  - ps: Write-Host "Install-Package Docker"
+  - ps: Install-Package -Name docker -ProviderName DockerMsftProvider -Force
   - docker build -m 4gb -t livepeer-windows -f .\docker\Dockerfile.windows .
   - docker run --name wlive livepeer-windows
   - docker cp wlive:c:/temp/livepeer-windows-amd64.zip .
