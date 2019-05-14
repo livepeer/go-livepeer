@@ -35,6 +35,11 @@ You can also build the executables from scratch.
 
 5. To run tests in locall run `./test.sh`, to run in docker container run `./test_docker.sh`
 
+#### Building on Windows
+
+Building on Windows possible using Docker. Docker should run in 'Windows containers' mode.
+To build on Windows, just run `.\docker\windowsbuild.ps1`. This should create file `livepeer-windows-amd64.zip`, containig `livepeer.exe` and needed dlls.
+
 ## Running Livepeer
 
 ### Quick start
