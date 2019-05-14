@@ -35,7 +35,11 @@ func (lt *LocalTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfil
 	start := time.Now()
 	data, err := tr.Transcode(fname)
 	if monitor.Enabled && parseErr == nil {
-		monitor.SegmentTranscoded(0, seqNo, time.Since(start), 0, common.ProfilesNames(profiles))
+		// This will run only when fname is actual URL and contains seqNo in it.
+		// When orchestrator works as transcoder, `fname` will be relative path to file in local
+		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
+		// be called in orchestrator.go
+		monitor.SegmentTranscoded(0, seqNo, time.Since(start), common.ProfilesNames(profiles))
 	}
 	return data, err
 }

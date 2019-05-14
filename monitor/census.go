@@ -672,12 +672,12 @@ func (cen *censusMetricsCounter) segmentUploadFailed(nonce, seqNo uint64, code S
 	}
 }
 
-func SegmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Duration, profiles string) {
-	glog.Infof("Logging SegmentTranscode seqNo=%d duration=%s", seqNo, totalDur)
-	census.segmentTranscoded(nonce, seqNo, transcodeDur, totalDur, profiles)
+func SegmentTranscoded(nonce, seqNo uint64, transcodeDur time.Duration, profiles string) {
+	glog.Infof("Logging SegmentTranscode nonce=%d seqNo=%d duration=%s", nonce, seqNo, transcodeDur)
+	census.segmentTranscoded(nonce, seqNo, transcodeDur, profiles)
 }
 
-func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, transcodeDur, totalDur time.Duration,
+func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, transcodeDur time.Duration,
 	profiles string) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
