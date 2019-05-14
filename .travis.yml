@@ -1,6 +1,17 @@
+language: go
 os: osx
 osx_image: xcode10.2
+env:
+- PKG_CONFIG_PATH=/Users/travis/compiled
 script:
 - ./install_ffmpeg.sh
-- go get -v github.com/livepeer/go-livepeer/cmd/livepeer
+- go get github.com/golang/glog
+- go get -u -v github.com/ericxtang/m3u8
+- go get github.com/aws/aws-sdk-go/aws
+- go get -u google.golang.org/grpc
+- go get github.com/pkg/errors
+- go get github.com/stretchr/testify/mock
+- go get -u -v go.opencensus.io/stats
+- go get -u -v go.opencensus.io/tag
+- go get -u -v contrib.go.opencensus.io/exporter/prometheus
 - make
