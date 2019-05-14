@@ -3,9 +3,32 @@ go:
 - 1.11.x
 os: osx
 osx_image: xcode10.2
+cache:
+  directories:
+  # We cache the SDK so we don't have to download it again on subsequent builds.
+  - $HOME/google-cloud-sdk
 env:
 - PKG_CONFIG_PATH=/Users/travis/compiled/lib/pkgconfig
+- CLOUDSDK_CORE_DISABLE_PROMPTS=1
+
+before_install:
+- |
+  if [ ! -d $HOME/google-cloud-sdk/bin ]; then
+    # The install script errors if this directory already exists,
+    # but Travis already creates it when we mark it as cached.
+    rm -rf $HOME/google-cloud-sdk;
+    # The install script is overly verbose, which sometimes causes
+    # problems on Travis, so ignore stdout.
+    curl https://sdk.cloud.google.com | bash > /dev/null;
+  fi
+- source $HOME/google-cloud-sdk/path.bash.inc
+- gcloud version
+
 script:
+- cat GCLOUD_TOKEN | base64 -D > /tmp/token.json
+- gcloud auth activate-service-account --key-file=/tmp/token.json
+# do a basic upload so we know if stuff's working prior to doing everything else
+- gsutil cp README.md gs://build.livepeer.live/README.md
 # These three lines needed so it works even if your name isn't "livepeer"
 - cd $GOPATH/src/github.com
 - mkdir -p ./livepeer
@@ -27,5 +50,5 @@ script:
 - mv ./livepeer livepeer-darwin-amd64
 - mv ./livepeer_cli livepeer-darwin-amd64
 - tar -czvf ./livepeer-darwin-amd64.tar.gz ./livepeer-darwin-amd64
-- 'curl --fail -v --upload-file livepeer-darwin-amd64.tar.gz -H "Authorization: Bearer $GCLOUD_TOKEN" "https://storage.googleapis.com/build.livepeer.live/$(cat version)/livepeer-darwin-amd64.tar.gz"'
+- gsutil cp ./livepeer-darwin-amd64.tar.gz gs://build.livepeer.live/$(cat version)/livepeer-darwin-amd64.tar.gz
 - 'curl --fail -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $TRAVIS_BRANCH\nPlatform: darwin-amd64\nhttps://build.livepeer.live/$(cat version)/livepeer-darwin-amd64.tar.gz\"}" $DISCORD_HOOK'
