@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -12,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"google.golang.org/grpc/peer"
 )
 
 var (
@@ -138,4 +140,12 @@ func ProfilesNames(profiles []ffmpeg.VideoProfile) string {
 	}
 	names.Sort()
 	return strings.Join(names, ",")
+}
+
+func GetConnectionAddr(ctx context.Context) string {
+	from := "unknown"
+	if p, ok := peer.FromContext(ctx); ok {
+		from = p.Addr.String()
+	}
+	return from
 }

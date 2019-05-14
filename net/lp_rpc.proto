@@ -14,7 +14,7 @@ service Transcoder {
 
   // Called by the transcoder to register to an orchestrator. The orchestrator
   // notifies registered transcoders of segments as they come in.
-  rpc RegisterTranscoder(RegisterRequest) returns (stream NotifySegment);
+  rpc RegisterTranscoder(stream RegisterRequest) returns (stream NotifySegment);
 }
 
 message PingPong {

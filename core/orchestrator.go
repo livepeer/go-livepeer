@@ -4,6 +4,7 @@ import (
 	"context"
 	ogErrors "errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/big"
 	"math/rand"
@@ -11,9 +12,8 @@ import (
 	"os"
 	"path"
 	"sync"
+	"sync/atomic"
 	"time"
-
-	"google.golang.org/grpc/peer"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -424,8 +424,9 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 }
 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
+	from := common.GetConnectionAddr(stream.Context())
 	n.TranscoderManager.Manage(stream, capacity)
-	glog.V(common.DEBUG).Info("Closing transcoder channel") // XXX cxn info
+	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
 }
 
 func (n *RemoteTranscoderManager) transcoderResults(tcId int64, res *RemoteTranscoderResult) {
@@ -437,11 +438,12 @@ func (n *RemoteTranscoderManager) transcoderResults(tcId int64, res *RemoteTrans
 }
 
 type RemoteTranscoder struct {
-	manager  *RemoteTranscoderManager
-	stream   net.Transcoder_RegisterTranscoderServer
-	eof      chan struct{}
-	addr     string
-	capacity int
+	manager             *RemoteTranscoderManager
+	stream              net.Transcoder_RegisterTranscoderServer
+	eof                 chan struct{}
+	addr                string
+	capacity            int
+	transcodingSegments int64 // number of segments transcoded right now
 }
 
 type RemoteTranscoderFatalError struct {
@@ -454,6 +456,8 @@ var ErrRemoteTranscoderTimeout = errors.New("Remote transcoder took too long")
 func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
 	taskId, taskChan := rt.manager.addTaskChan()
 	defer rt.manager.removeTaskChan(taskId)
+	atomic.AddInt64(&rt.transcodingSegments, 1)
+	defer atomic.AddInt64(&rt.transcodingSegments, -1)
 	signalEof := func(err error) ([][]byte, error) {
 		// select so we don't block indefinitely if there's no listener
 		select {
@@ -484,16 +488,12 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	}
 }
 func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int) *RemoteTranscoder {
-	addr := "unknown"
-	if p, ok := peer.FromContext(stream.Context()); ok {
-		addr = p.Addr.String()
-	}
 	return &RemoteTranscoder{
 		manager:  m,
 		stream:   stream,
 		eof:      make(chan struct{}, 1),
 		capacity: capacity,
-		addr:     addr,
+		addr:     common.GetConnectionAddr(stream.Context()),
 	}
 }
 
@@ -536,8 +536,38 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []net.RemoteTran
 }
 
 func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
-
+	from := common.GetConnectionAddr(stream.Context())
 	transcoder := NewRemoteTranscoder(rtm, stream, capacity)
+	go func() {
+		for {
+			// Monitor connection state
+			_, err := stream.Recv()
+			if err != nil {
+				cur := atomic.LoadInt64(&transcoder.transcodingSegments)
+				glog.V(common.DEBUG).Infof("Got error from remote transcoder=%s transcoding segments=%d stream err=%v", from, cur, err)
+				if err == io.EOF {
+					glog.Infof("Performing gradual shutdown of transcoder=%s", from)
+					// Transcoder wants to do gradual shutdown
+					// remove it from map so no tasks assigned
+					// and wait till all current transcoding tasks will finish
+					rtm.RTmutex.Lock()
+					delete(rtm.liveTranscoders, transcoder.stream)
+					rtm.RTmutex.Unlock()
+					for {
+						if atomic.LoadInt64(&transcoder.transcodingSegments) == 0 {
+							break
+						}
+						time.Sleep(100 * time.Millisecond)
+					}
+				}
+				select {
+				case transcoder.eof <- struct{}{}:
+				default:
+				}
+				return
+			}
+		}
+	}()
 
 	rtm.RTmutex.Lock()
 	rtm.liveTranscoders[transcoder.stream] = transcoder
@@ -547,6 +577,7 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 	rtm.RTmutex.Unlock()
 
 	<-transcoder.eof
+	glog.Infof("Got transcoder=%s eof, deleting", from)
 
 	rtm.RTmutex.Lock()
 	delete(rtm.liveTranscoders, transcoder.stream)
