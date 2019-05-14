@@ -25,7 +25,7 @@ before_install:
 - gcloud version
 
 script:
-- cat GCLOUD_TOKEN | base64 -D > /tmp/token.json
+- echo $GCLOUD_TOKEN | base64 -D > /tmp/token.json
 - gcloud auth activate-service-account --key-file=/tmp/token.json
 # do a basic upload so we know if stuff's working prior to doing everything else
 - gsutil cp README.md gs://build.livepeer.live/README.md
