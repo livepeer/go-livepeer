@@ -1,5 +1,9 @@
 # This is the one with Docker
-image: Visual Studio 2017
+image: Windows Server 2019
+
+environment:
+  GCLOUD_TOKEN:
+    secure: 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
 
 # # Install scripts. (runs after repo cloning)
 # install:
@@ -11,10 +15,21 @@ image: Visual Studio 2017
 
 # Post-install test scripts.
 test_script:
+  # - ps: Invoke-WebRequest -UserAgent 'AppVeyor CI' -outfile gcloud.zip https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-245.0.0-windows-x86_64-bundled-python.zip
+  # - ps: Expand-Archive -path .\gcloud.zip -DestinationPath .
+  # Borrowed from http://ec2-52-211-181-221.eu-west-1.compute.amazonaws.com/deploying-a-net-appengine-using-appveyor/
+  - choco install gcloudsdk
+  - refreshenv
+  - gcloud.cmd components copy-bundled-python>>python_path.txt && SET /p CLOUDSDK_PYTHON=<python_path.txt && DEL python_path.txt
+  - gcloud.cmd components update --quiet
+  - ps: $env:GCLOUD_TOKEN | Out-File .\token.json
+  - gcloud.cmd auth activate-service-account --key-file=.\token.json
+  - gsutil.cmd cp README.md gs://build.livepeer.live/README.md
   - docker build -m 4gb -t livepeer-windows -f .\docker\Dockerfile.windows .
   - docker run --name wlive livepeer-windows
   - docker cp wlive:c:/temp/livepeer-windows-amd64.zip .
   - docker rm wlive
+  - gsutil.cmd cp livepeer-windows-amd64.zip gs://build.livepeer.live/test/livepeer-windows-amd64.zip
 
 # Don't actually build.
 build: off

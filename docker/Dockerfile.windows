@@ -26,28 +26,28 @@ RUN C:\msys64\usr\bin\bash.exe -l -c 'set -x; export PATH="$PATH:/usr/bin:/mingw
 
 RUN New-Item -ItemType "directory" -Path "c:\temp\livepeer-windows-amd64"; `
     Copy-Item -Destination c:\temp\livepeer-windows-amd64 -Path `
-        C:\msys64\go\src\github.com\livepeer\go-livepeer\*.exe; `
+    C:\msys64\go\src\github.com\livepeer\go-livepeer\*.exe; `
     cd C:\msys64\mingw64\bin; `
     Copy-Item `
-        -Destination C:\temp\livepeer-windows-amd64 `
-        -Path `
-            # This list was produced by `ldd livepeer.exe`
-            .\libffi-6.dll,`
-            .\libgcc_s_seh-1.dll,`
-            .\libgmp-10.dll,`
-            .\libgnutls-30.dll,`
-            .\libhogweed-4.dll,`
-            .\libiconv-2.dll,`
-            .\libidn2-0.dll,`
-            .\libintl-8.dll,`
-            .\libnettle-6.dll,`
-            .\libp11-kit-0.dll,`
-            .\libtasn1-6.dll,`
-            .\libunistring-2.dll,`
-            .\libwinpthread-1.dll,`
-            .\zlib1.dll;`
+    -Destination C:\temp\livepeer-windows-amd64 `
+    -Path `
+    # This list was produced by `ldd livepeer.exe`
+    .\libffi-6.dll,`
+    .\libgcc_s_seh-1.dll,`
+    .\libgmp-10.dll,`
+    .\libgnutls-30.dll,`
+    .\libhogweed-4.dll,`
+    .\libiconv-2.dll,`
+    .\libidn2-0.dll,`
+    .\libintl-8.dll,`
+    .\libnettle-6.dll,`
+    .\libp11-kit-0.dll,`
+    .\libtasn1-6.dll,`
+    .\libunistring-2.dll,`
+    .\libwinpthread-1.dll,`
+    .\zlib1.dll;`
     cd C:\temp; `
     C:\7zip\7z a -tzip .\livepeer-windows-amd64.zip .\livepeer-windows-amd64
 
-FROM mcr.microsoft.com/windows/servercore:ltsc2016
+FROM mcr.microsoft.com/windows/servercore:ltsc2019
 COPY --from=builder c:\temp\livepeer-windows-amd64.zip c:\temp\livepeer-windows-amd64.zip
