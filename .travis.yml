@@ -4,7 +4,7 @@ go:
 os: osx
 osx_image: xcode10.2
 env:
-- PKG_CONFIG_PATH=/Users/travis/compiled
+- PKG_CONFIG_PATH=/Users/travis/compiled/lib/pkgconfig
 script:
 - mkdir -p $GOPATH/src/github.com/livepeer
 - ln -s $(pwd) $GOPATH/src/github.com/livepeer/go-livepeer
