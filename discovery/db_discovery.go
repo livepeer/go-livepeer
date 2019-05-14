@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"net/url"
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -39,6 +40,21 @@ func NewDBOrchestratorPoolCache(node *core.LivepeerNode) *DBOrchestratorPoolCach
 	}(node)
 
 	return &DBOrchestratorPoolCache{node: node}
+}
+
+func (dbo *DBOrchestratorPoolCache) GetURLs() []*url.URL {
+	orchs, err := dbo.node.Database.SelectOrchs()
+	if err != nil || len(orchs) <= 0 {
+		return nil
+	}
+
+	var uris []*url.URL
+	for _, orch := range orchs {
+		if uri, err := url.Parse(orch.ServiceURI); err == nil {
+			uris = append(uris, uri)
+		}
+	}
+	return uris
 }
 
 func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {

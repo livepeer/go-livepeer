@@ -76,7 +76,7 @@ func main() {
 	broadcaster := flag.Bool("broadcaster", false, "Set to true to be a broadcaster")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
-	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator or maximum number or RTMP streams for Broadcaster")
+	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 
 	// Onchain:
@@ -201,6 +201,10 @@ func main() {
 
 	if *orchestrator {
 		n.NodeType = core.OrchestratorNode
+		if !*transcoder {
+			n.TranscoderManager = core.NewRemoteTranscoderManager()
+			n.Transcoder = n.TranscoderManager
+		}
 	} else if *transcoder {
 		n.NodeType = core.TranscoderNode
 	} else if *broadcaster {
@@ -233,7 +237,7 @@ func main() {
 			glog.Fatal("Missing -orchSecret")
 		}
 		if len(orchAddresses) > 0 {
-			server.RunTranscoder(n, orchAddresses[0])
+			server.RunTranscoder(n, orchAddresses[0], *maxSessions)
 		} else {
 			glog.Fatal("Missing -orchAddr")
 		}
@@ -403,7 +407,7 @@ func main() {
 		// take the port to listen to from the service URI
 		*httpAddr = defaultAddr(*httpAddr, "", n.GetServiceURI().Port())
 
-		if n.Transcoder == nil && n.OrchSecret == "" {
+		if !*transcoder && n.OrchSecret == "" {
 			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
 		}
 	}
@@ -448,7 +452,7 @@ func main() {
 	}
 
 	go func() {
-		s.StartWebserver(*cliAddr)
+		s.StartCliWebserver(*cliAddr)
 		close(wc)
 	}()
 	go func() {
@@ -462,7 +466,7 @@ func main() {
 		orch := core.NewOrchestrator(s.LivepeerNode)
 
 		go func() {
-			server.StartTranscodeServer(orch, *httpAddr, s.HttpMux, n.WorkDir)
+			server.StartTranscodeServer(orch, *httpAddr, s.HttpMux, n.WorkDir, n.TranscoderManager != nil)
 			tc <- struct{}{}
 		}()
 
