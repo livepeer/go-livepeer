@@ -28,4 +28,4 @@ script:
 - mv ./livepeer_cli livepeer-darwin-amd64
 - tar -czvf ./livepeer-darwin-amd64.tar.gz ./livepeer-darwin-amd64
 - 'curl --fail -v --upload-file livepeer-darwin-amd64.tar.gz -H "Authorization: Bearer $GCLOUD_TOKEN" "https://storage.googleapis.com/build.livepeer.live/$(cat version)/livepeer-darwin-amd64.tar.gz"'
-- 'curl --fail -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $TRAVIS_BRANCH\nPlatform darwin-amd64\nhttps://build.livepeer.live/$(cat version)/livepeer-darwin-amd64.tar.gz\"}" $DISCORD_HOOK'
+- 'curl --fail -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $TRAVIS_BRANCH\nPlatform: darwin-amd64\nhttps://build.livepeer.live/$(cat version)/livepeer-darwin-amd64.tar.gz\"}" $DISCORD_HOOK'
