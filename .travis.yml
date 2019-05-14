@@ -8,8 +8,9 @@ cache:
   # We cache the SDK so we don't have to download it again on subsequent builds.
   - $HOME/google-cloud-sdk
 env:
-- PKG_CONFIG_PATH=/Users/travis/compiled/lib/pkgconfig
-- CLOUDSDK_CORE_DISABLE_PROMPTS=1
+- |
+  PKG_CONFIG_PATH=/Users/travis/compiled/lib/pkgconfig
+  CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
 before_install:
 - |
