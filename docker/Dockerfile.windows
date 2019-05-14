@@ -7,7 +7,7 @@
 
 # To build windows executable, just run `.\docker\windowsbuild.ps1`.
 
-FROM livepeer/ffmpeg-base:windows as builder
+FROM iameli/livepeer-ffmpeg-base as builder
 
 WORKDIR c:/temp
 
@@ -49,5 +49,5 @@ RUN New-Item -ItemType "directory" -Path "c:\temp\livepeer-windows-amd64"; `
     cd C:\temp; `
     C:\7zip\7z a -tzip .\livepeer-windows-amd64.zip .\livepeer-windows-amd64
 
-FROM mcr.microsoft.com/windows/servercore:ltsc2019
+FROM mcr.microsoft.com/windows/servercore:ltsc2016
 COPY --from=builder c:\temp\livepeer-windows-amd64.zip c:\temp\livepeer-windows-amd64.zip
