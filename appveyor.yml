@@ -1,0 +1,22 @@
+# This is the one with Docker
+image: Windows Server 2019
+
+test_script:
+  - docker login -u %DOCKER_USER% -p %DOCKER_PASS%
+
+  # First, build/cache the platform-specific root container
+  - ps: Start-Process docker -ArgumentList 'pull iameli/build-platform:latest-windows' -Wait -EV Err -EA SilentlyContinue
+  - docker build -m 4gb --cache-from=iameli/build-platform:latest-windows -t iameli/build-platform:latest -f .\docker\Dockerfile.build-windows .
+  - docker tag iameli/build-platform:latest iameli/build-platform:latest-windows
+  - docker push iameli/build-platform:latest-windows
+
+  # Then, build/cache the container shared between Windows and Linux
+  - ps: Start-Process docker -ArgumentList 'pull iameli/build:latest-windows' -Wait -EV Err -EA SilentlyContinue
+  - docker build -m 4gb --cache-from=iameli/build:latest-windows -t iameli/build:latest -f .\docker\Dockerfile.build .
+  - docker tag iameli/build:latest iameli/build:latest-windows
+  - docker push iameli/build:latest-windows
+
+  - docker run --rm -e GCLOUD_KEY=%GCLOUD_KEY% -e GCLOUD_SECRET=%GCLOUD_SECRET%  -e DISCORD_URL=%DISCORD_URL% -e CIRCLE_BRANCH=%APPVEYOR_REPO_BRANCH% iameli/build:latest
+
+# Don't actually build.
+build: off

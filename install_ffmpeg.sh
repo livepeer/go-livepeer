@@ -2,8 +2,35 @@
 
 set -ex
 
+# Windows (MSYS2) needs a few tweaks
+if [[ $(uname) == *"MSYS2_NT"* ]]; then
+  export PATH="$PATH:/usr/bin:/mingw64/bin"
+  export C_INCLUDE_PATH="${C_INCLUDE_PATH:-}:/msys64/mingw64/lib"
+  export HOME="/build"
+  mkdir -p $HOME
+
+  export PATH="$HOME/compiled/bin":$PATH
+  export PKG_CONFIG_PATH=/mingw64/lib/pkgconfig
+
+  export TARGET_OS="--target-os=mingw64"
+  export HOST_OS="--host=x86_64-w64-mingw32"
+
+  # Needed for mbedtls
+  export WINDOWS_BUILD=1
+fi
+
 export PATH="$HOME/compiled/bin":$PATH
-export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig
+export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}:$HOME/compiled/lib/pkgconfig"
+
+# NVENC only works on Windows/Linux
+if [ $(uname) != "Darwin" ]; then
+  if [ ! -e "$HOME/nv-codec-headers" ]; then
+    git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$HOME/nv-codec-headers"
+    cd $HOME/nv-codec-headers
+    make -e PREFIX="$HOME/compiled"
+    make install -e PREFIX="$HOME/compiled"
+  fi
+fi
 
 if [ ! -e "$HOME/nasm/nasm" ]; then
   # sudo apt-get -y install asciidoc xmlto # this fails :(
@@ -15,24 +42,34 @@ if [ ! -e "$HOME/nasm/nasm" ]; then
   make install || echo "Installing docs fails but should be OK otherwise"
 fi
 
-if [ ! -e "$HOME/x264/x264" ]; then
+if [ ! -e "$HOME/x264" ]; then
   git clone http://git.videolan.org/git/x264.git "$HOME/x264"
   cd "$HOME/x264"
   # git master as of this writing
   git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
-  ./configure --prefix="$HOME/compiled" --enable-pic --enable-static
+  ./configure --prefix="$HOME/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli
   make
   make install-lib-static
 fi
 
+EXTRA_FFMPEG_FLAGS=""
+# Only Linux supports CUDA... for now.
+if [ $(uname) == "Linux" ]; then
+  if [ -e /usr/local/cuda/include ]; then
+    echo "CUDA detected, building with GPU support"
+    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuvid --enable-nvenc --enable-filter=scale_cuda --enable-encoder=h264_nvenc --enable-cuda-nvcc"
+  fi
+fi
+
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
-  git clone -b n4.1 https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
+  git clone https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
-  ./configure --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
+  git checkout 8f6e65183354d1d402ae80c71cba2759fe152018
+  ./configure ${TARGET_OS:-} --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
     --disable-postproc --disable-lzma \
-    --enable-gnutls --enable-libx264 --enable-gpl \
+    --enable-gnutls --enable-libx264 --enable-gpl --enable-nonfree \
     --enable-protocol=https,rtmp,file \
     --enable-muxer=mpegts,hls,segment --enable-demuxer=flv,mpegts \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps \
@@ -41,7 +78,10 @@ if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
     --enable-filter=aresample,asetnsamples,fps,scale \
     --enable-encoder=aac,libx264 \
     --enable-decoder=aac,h264 \
-    --prefix="$HOME/compiled"
+    --extra-cflags="-I${HOME}/compiled/include" \
+    --extra-ldflags="-L${HOME}/compiled/lib" \
+    --prefix="$HOME/compiled" \
+    $EXTRA_FFMPEG_FLAGS
   make
   make install
 fi
