@@ -1,5 +1,5 @@
 # This is the one with Docker
-image: Visual Studio 2017
+image: Visual Studio 2019
 
 # # Install scripts. (runs after repo cloning)
 # install:
