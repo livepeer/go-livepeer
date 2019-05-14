@@ -6,8 +6,10 @@ osx_image: xcode10.2
 env:
 - PKG_CONFIG_PATH=/Users/travis/compiled/lib/pkgconfig
 script:
-- mkdir -p $GOPATH/src/github.com/livepeer
-- ln -s $(pwd) $GOPATH/src/github.com/livepeer/go-livepeer
+# These three lines needed so it works even if your name isn't "livepeer"
+- cd $GOPATH/src/github.com
+- mv "$TRAVIS_BUILD_DIR" "./livepeer"
+- cd ./livepeer
 - ./install_ffmpeg.sh
 - go get github.com/golang/glog
 - go get -u -v github.com/ericxtang/m3u8
