@@ -8,8 +8,9 @@ env:
 script:
 # These three lines needed so it works even if your name isn't "livepeer"
 - cd $GOPATH/src/github.com
-- mv "$TRAVIS_BUILD_DIR" "./livepeer"
-- cd ./livepeer
+- mkdir -p ./livepeer
+- mv "$TRAVIS_BUILD_DIR" "./livepeer/go-livepeer"
+- cd ./livepeer/go-livepeer
 - ./install_ffmpeg.sh
 - go get github.com/golang/glog
 - go get -u -v github.com/ericxtang/m3u8
