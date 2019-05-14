@@ -2,4 +2,5 @@ os: osx
 osx_image: xcode10.2
 script:
 - ./install_ffmpeg.sh
+- go get -v github.com/livepeer/go-livepeer/cmd/livepeer
 - make
