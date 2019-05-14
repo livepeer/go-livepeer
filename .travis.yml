@@ -7,7 +7,7 @@ env:
 - PKG_CONFIG_PATH=/Users/travis/compiled
 script:
 - mkdir -p $GOPATH/src/github.com/livepeer
-- ln -s $(pwd) -p $GOPATH/src/github.com/livepeer/go-livepeer
+- ln -s $(pwd) $GOPATH/src/github.com/livepeer/go-livepeer
 - ./install_ffmpeg.sh
 - go get github.com/golang/glog
 - go get -u -v github.com/ericxtang/m3u8
