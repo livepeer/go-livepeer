@@ -20,7 +20,7 @@ test_script:
   - refreshenv
   - gcloud.cmd components copy-bundled-python>>python_path.txt && SET /p CLOUDSDK_PYTHON=<python_path.txt && DEL python_path.txt
   - gcloud.cmd components update --quiet
-  - gcloud.cmd auth activate-service-account --key-file=token.json
+  - ps: gcloud auth activate-service-account --key-file=token.json
   - gsutil.cmd cp README.md gs://build.livepeer.live/README.md
   - docker build -m 4gb -t livepeer-windows -f .\docker\Dockerfile.windows .
   - docker run --name wlive livepeer-windows
