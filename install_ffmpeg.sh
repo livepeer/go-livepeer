@@ -5,6 +5,13 @@ set -ex
 export PATH="$HOME/compiled/bin":$PATH
 export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig
 
+if [ ! -e "$HOME/nv-codec-headers" ]; then
+  git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$HOME/nv-codec-headers"
+  cd $HOME/nv-codec-headers
+  make -e PREFIX="$HOME/compiled"
+  make install -e PREFIX="$HOME/compiled"
+fi
+
 if [ ! -e "$HOME/nasm/nasm" ]; then
   # sudo apt-get -y install asciidoc xmlto # this fails :(
   git clone -b nasm-2.14.02 https://repo.or.cz/nasm.git "$HOME/nasm"
@@ -26,7 +33,7 @@ if [ ! -e "$HOME/x264/x264" ]; then
 fi
 
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
-  git clone -b n4.1 https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
+  git clone --depth 1 -b n4.1 https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
   ./configure --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
@@ -41,6 +48,9 @@ if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
     --enable-filter=aresample,asetnsamples,fps,scale \
     --enable-encoder=aac,libx264 \
     --enable-decoder=aac,h264 \
+    --enable-cuda \
+    --enable-cuvid \
+    --enable-nvenc \
     --prefix="$HOME/compiled"
   make
   make install
