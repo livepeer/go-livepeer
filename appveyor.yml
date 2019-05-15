@@ -18,11 +18,11 @@ test_script:
   # - ps: Invoke-WebRequest -UserAgent 'AppVeyor CI' -outfile gcloud.zip https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-245.0.0-windows-x86_64-bundled-python.zip
   # - ps: Expand-Archive -path .\gcloud.zip -DestinationPath .
   # Borrowed from http://ec2-52-211-181-221.eu-west-1.compute.amazonaws.com/deploying-a-net-appengine-using-appveyor/
+  - ps: '[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($env:GCLOUD_TOKEN)) | Out-File token.json'
   - choco install gcloudsdk
   - refreshenv
   - gcloud.cmd components copy-bundled-python>>python_path.txt && SET /p CLOUDSDK_PYTHON=<python_path.txt && DEL python_path.txt
   - gcloud.cmd components update --quiet
-  - ps: '[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($env:GCLOUD_TOKEN)) | Out-File token.json'
   - gcloud.cmd auth activate-service-account --key-file=token.json
   - gsutil.cmd cp README.md gs://build.livepeer.live/README.md
   - docker build -m 4gb -t livepeer-windows -f .\docker\Dockerfile.windows .
