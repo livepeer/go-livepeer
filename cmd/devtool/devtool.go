@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +25,6 @@ import (
 const (
 	clientIdentifier = "geth" // Client identifier to advertise over the network
 	passphrase       = ""
-	serviceURI       = "https://127.0.0.1:8936"
 )
 
 var (
@@ -34,6 +34,10 @@ var (
 	gethMiningAccountOverride = false
 	ethController             = "0x04B9De88c81cda06165CF65a908e5f1EFBB9493B"
 	ethControllerOverride     = false
+	serviceURI                = "https://127.0.0.1:"
+	cliPort                   = 7935
+	mediaPort                 = 8935
+	rtmpPort                  = 1935
 )
 
 func main() {
@@ -69,11 +73,29 @@ func main() {
 	}
 	if !goodToGo {
 		fmt.Println(`
-    Usage: go run cmd/devtool/devtool.go setup broadcaster|transcoder
+    Usage: go run cmd/devtool/devtool.go setup broadcaster|transcoder [nodeIndex]
         It will create initilize eth account (on private testnet) to be used for broadcaster or transcoder
-        and will create shell script (run_broadcaster_ETHACC.sh or run_transcoder_ETHACC.sh) to run it.`)
+        and will create shell script (run_broadcaster_ETHACC.sh or run_transcoder_ETHACC.sh) to run it.
+        Node index indicates how much to offset node's port. Orchestrator node's index by default is 1.
+        For example:
+        "devtool setup broadcaster" will create broadcaster with cli port 7935 and media port 8935
+        "devtool setup broadcaster 2" will create broadcaster with cli port 7937 and media port 8937
+        "devtool setup transcoder 3" will create transcoder with cli port 7938 and media port 8938`)
 		return
 	}
+	nodeIndex := 0
+	if args[1] == "transcoder" {
+		nodeIndex = 1
+	}
+	if len(args) > 2 {
+		if i, err := strconv.ParseInt(args[2], 10, 64); err == nil {
+			nodeIndex = int(i)
+		}
+	}
+	serviceURI += strconv.Itoa(mediaPort + nodeIndex)
+	mediaPort += nodeIndex
+	cliPort += nodeIndex
+	rtmpPort += nodeIndex
 
 	t := getNodeType(isBroadcaster)
 
@@ -100,13 +122,21 @@ func main() {
 	remoteConsole(acc)
 	ethSetup(acc, keystoreDir, isBroadcaster)
 	createRunScript(acc, dataDir, isBroadcaster)
+	if !isBroadcaster {
+		tDataDir := filepath.Join(*baseDataDir, "transcoder_"+acc)
+		err = os.MkdirAll(tDataDir, 0755)
+		if err != nil {
+			glog.Fatalf("Can't create directory %v", err)
+		}
+		createTranscoderRunScript(acc, tDataDir)
+	}
 	glog.Info("Finished")
 }
 
 func getNodeType(isBroadcaster bool) string {
 	t := "broadcaster"
 	if !isBroadcaster {
-		t = "transcoder"
+		t = "orchestrator"
 	}
 	return t
 }
@@ -214,6 +244,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 
 		err = client.CheckTx(tx)
 		if err != nil {
+			glog.Error("=== Bonding failed")
 			glog.Error(err)
 			return
 		}
@@ -250,6 +281,18 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	}
 }
 
+func createTranscoderRunScript(ethAcctAddr, dataDir string) {
+	script := "#!/bin/bash\n"
+	// script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s \
+	script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s -orchSecret secre -orchAddr 127.0.0.1:%d -transcoder`,
+		dataDir, mediaPort)
+	fName := fmt.Sprintf("run_transcoder_%s.sh", ethAcctAddr)
+	err := ioutil.WriteFile(fName, []byte(script), 0755)
+	if err != nil {
+		glog.Warningf("Error writing run script: %v", err)
+	}
+}
+
 func createRunScript(ethAcctAddr, dataDir string, isBroadcaster bool) {
 	script := "#!/bin/bash\n"
 	script += fmt.Sprintf(`./livepeer -v 99 -ethController %s -datadir ./%s \
@@ -257,18 +300,16 @@ func createRunScript(ethAcctAddr, dataDir string, isBroadcaster bool) {
     -ethUrl %s \
     -ethPassword "" \
     -gasPrice 200 -gasLimit 2000000 -network=devenv \
-    -monitor=false -currentManifest=true `,
-		ethController, dataDir, ethAcctAddr, endpoint)
+    -monitor=false -currentManifest=true -cliAddr 127.0.0.1:%d -httpAddr 127.0.0.1:%d `,
+		ethController, dataDir, ethAcctAddr, endpoint, cliPort, mediaPort)
 
 	if !isBroadcaster {
 		script += fmt.Sprintf(` -initializeRound=true \
-    -serviceAddr 127.0.0.1:8936 -httpAddr 127.0.0.1:8936  -transcoder=true -orchestrator=true \
-    -cliAddr 127.0.0.1:7936 -ipfsPath ./%s/trans
-    `, dataDir)
-	}
-
-	if isBroadcaster {
-		script += fmt.Sprint(` -broadcaster=true`)
+    -serviceAddr 127.0.0.1:%d  -transcoder=true -orchestrator=true \
+     -ipfsPath ./%s/trans -orchSecret secre
+    `, mediaPort, dataDir)
+	} else {
+		script += fmt.Sprintf(` -broadcaster=true -rtmpAddr 127.0.0.1:%d`, rtmpPort)
 	}
 
 	glog.Info(script)

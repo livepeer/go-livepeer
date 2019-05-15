@@ -245,10 +245,10 @@ func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stre
 	segChanData := &SegChanData{seg: seg, md: md, res: make(chan *TranscodeResult, 1)}
 	select {
 	case ch <- segChanData:
-		glog.V(common.DEBUG).Infof("Submitted segment to transcode loop manifes=%s seqNo=%d", string(md.ManifestID), md.Seq)
+		glog.V(common.DEBUG).Infof("Submitted segment to transcode loop manifestID=%s seqNo=%d", md.ManifestID, md.Seq)
 	default:
 		// sending segChan should not block; if it does, the channel is busy
-		glog.Error("Transcoder was busy with a previous segment!")
+		glog.Errorf("Transcoder was busy with a previous segment manifestID=%s seqNo=%d", md.ManifestID, md.Seq)
 		return nil, ErrOrchBusy
 	}
 	res := <-segChanData.res
@@ -310,9 +310,6 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 		}
 		seg.Name = url
 	}
-	if isLocal && monitor.Enabled {
-		monitor.LogSegmentTranscodeStarting(seg.SeqNo, string(md.ManifestID))
-	}
 
 	//Do the transcoding
 	start := time.Now()
@@ -330,6 +327,10 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 
 	took := time.Since(start)
 	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
+	glog.V(common.DEBUG).Infof("Transcoding of segment manifestID=%s seqNo=%d took=%v", string(md.ManifestID), seg.SeqNo, took)
+	if isLocal && monitor.Enabled {
+		monitor.SegmentTranscoded(0, seg.SeqNo, took, common.ProfilesNames(md.Profiles))
+	}
 
 	// Prepare the result object
 	var tr TranscodeResult
@@ -347,11 +348,6 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 			string(md.ManifestID), seg.SeqNo, md.Profiles[i].Name, len(tData[i]))
 		hash := crypto.Keccak256(tData[i])
 		segHashes[i] = hash
-	}
-	glog.V(common.DEBUG).Infof("Transcoding of segment manifest=%s seqNo=%d took=%s", string(md.ManifestID), seg.SeqNo, took)
-	if isLocal && monitor.Enabled {
-		monitor.LogSegmentTranscodeEnded(seg.SeqNo, string(md.ManifestID), took,
-			common.ProfilesNames(md.Profiles))
 	}
 	os.Remove(fname)
 	tr.OS = config.OS

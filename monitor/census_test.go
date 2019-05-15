@@ -44,15 +44,15 @@ func TestAveragerCanBeRemoved(t *testing.T) {
 func TestLastSegmentTimeout(t *testing.T) {
 	unitTestMode = true
 	defer func() { unitTestMode = false }()
-	initCensus("tst", "testid", "testversion")
+	InitCensus("tst", "testid", "testversion")
 	// defer func() {
 	// 	shutDown <- nil
 	// }()
-	LogStreamCreatedEvent("h1", 1)
+	StreamCreated("h1", 1)
 	if len(census.success) != 1 {
 		t.Fatal("Should be one stream")
 	}
-	LogSegmentEmerged(1, 1, 3)
+	SegmentEmerged(1, 1, 3)
 	if sr := census.successRate(); sr != 1 {
 		t.Fatalf("Success rate should be 1, not %f", sr)
 	}
@@ -60,28 +60,28 @@ func TestLastSegmentTimeout(t *testing.T) {
 	if sr := census.successRate(); sr != 1 {
 		t.Fatalf("Success rate should be 1, not %f", sr)
 	}
-	LogSegmentEmerged(1, 2, 3)
-	LogSegmentTranscodeFailed(SegmentTranscodeErrorOrchestratorBusy, 1, 2, fmt.Errorf("some"))
+	SegmentEmerged(1, 2, 3)
+	SegmentTranscodeFailed(SegmentTranscodeErrorOrchestratorBusy, 1, 2, fmt.Errorf("some"), true)
 	if sr := census.successRate(); sr != 0.5 {
 		t.Fatalf("Success rate should be 0.5, not %f", sr)
 	}
-	LogSegmentEmerged(1, 3, 3)
-	LogSegmentTranscodeFailed(SegmentTranscodeErrorSessionEnded, 1, 3, fmt.Errorf("some"))
-	LogSegmentEmerged(1, 4, 3)
+	SegmentEmerged(1, 3, 3)
+	SegmentTranscodeFailed(SegmentTranscodeErrorSessionEnded, 1, 3, fmt.Errorf("some"), true)
+	SegmentEmerged(1, 4, 3)
 	SegmentFullyTranscoded(1, 4, "ps", "")
 	if sr := census.successRate(); sr != 0.75 {
 		t.Fatalf("Success rate should be 0.75, not %f", sr)
 	}
-	LogStreamEndedEvent(1)
+	StreamEnded(1)
 	if len(census.success) != 0 {
 		t.Fatalf("Should be no streams, instead have %d", len(census.success))
 	}
 
-	LogStreamCreatedEvent("h1", 2)
-	LogSegmentEmerged(2, 1, 3)
+	StreamCreated("h1", 2)
+	SegmentEmerged(2, 1, 3)
 	SegmentFullyTranscoded(2, 1, "ps", "")
-	LogSegmentEmerged(2, 2, 3)
-	LogStreamEndedEvent(2)
+	SegmentEmerged(2, 2, 3)
+	StreamEnded(2)
 	if len(census.success) != 1 {
 		t.Fatalf("Should be one stream, instead have %d", len(census.success))
 	}
@@ -103,18 +103,18 @@ func TestLastSegmentTimeout(t *testing.T) {
 	}
 	timeToWaitForError = old1
 
-	LogStreamCreatedEvent("h3", 3)
-	LogSegmentEmerged(3, 1, 3)
+	StreamCreated("h3", 3)
+	SegmentEmerged(3, 1, 3)
 	SegmentFullyTranscoded(3, 1, "ps", "")
-	LogSegmentEmerged(3, 2, 3)
-	LogStreamEndedEvent(3)
+	SegmentEmerged(3, 2, 3)
+	StreamEnded(3)
 	if len(census.success) != 1 {
 		t.Fatalf("Should be one stream, instead have %d", len(census.success))
 	}
 	if sr := census.successRate(); sr != 1 {
 		t.Fatalf("Success rate should be 1, not %f", sr)
 	}
-	LogSegmentTranscodeFailed(SegmentTranscodeErrorOrchestratorBusy, 3, 2, fmt.Errorf("some"))
+	SegmentTranscodeFailed(SegmentTranscodeErrorOrchestratorBusy, 3, 2, fmt.Errorf("some"), true)
 	if sr := census.successRate(); sr != 0.5 {
 		t.Fatalf("Success rate should be 0.5, not %f", sr)
 	}
