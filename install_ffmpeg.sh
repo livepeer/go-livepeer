@@ -5,11 +5,14 @@ set -ex
 export PATH="$HOME/compiled/bin":$PATH
 export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig
 
-if [ ! -e "$HOME/nv-codec-headers" ]; then
-  git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$HOME/nv-codec-headers"
-  cd $HOME/nv-codec-headers
-  make -e PREFIX="$HOME/compiled"
-  make install -e PREFIX="$HOME/compiled"
+# NVENC only works on Windows/Linux
+if [ $(uname) != "Darwin" ]; then
+  if [ ! -e "$HOME/nv-codec-headers" ]; then
+    git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$HOME/nv-codec-headers"
+    cd $HOME/nv-codec-headers
+    make -e PREFIX="$HOME/compiled"
+    make install -e PREFIX="$HOME/compiled"
+  fi
 fi
 
 if [ ! -e "$HOME/nasm/nasm" ]; then
@@ -32,6 +35,11 @@ if [ ! -e "$HOME/x264/x264" ]; then
   make install-lib-static
 fi
 
+EXTRA_FFMPEG_FLAGS=""
+if [ $(uname) != "Darwin" ]; then
+  EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuvid --enable-nvenc"
+fi
+
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone --depth 1 -b n4.1 https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
@@ -48,9 +56,7 @@ if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
     --enable-filter=aresample,asetnsamples,fps,scale \
     --enable-encoder=aac,libx264 \
     --enable-decoder=aac,h264 \
-    --enable-cuda \
-    --enable-cuvid \
-    --enable-nvenc \
+    $EXTRA_FFMPEG_FLAGS \
     --prefix="$HOME/compiled"
   make
   make install
