@@ -749,7 +749,7 @@ func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, errCode Segmen
 	failed := errCode != "" && errCode != SegmentTranscodeErrorSessionEnded
 	census.countSegmentTranscoded(nonce, seqNo, failed)
 	if !failed {
-		stats.Record(census.ctx, census.mSegmentTranscodedUnprocessed.M(1))
+		stats.Record(ctx, census.mSegmentTranscodedUnprocessed.M(1))
 	}
 	census.sendSuccess()
 }
