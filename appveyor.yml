@@ -1,31 +1,22 @@
 # This is the one with Docker
 image: Windows Server 2019
 
-# # Install scripts. (runs after repo cloning)
-# install:
-#   # Get the latest stable version of Node.js or io.js
-#   - ps: Install-Product node $env:nodejs_version
-#   # install modules
-#   - npm install -g yarn
-#   - yarn install
-
-# Post-install test scripts.
 test_script:
-  # - ps: Invoke-WebRequest -UserAgent 'AppVeyor CI' -outfile gcloud.zip https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-245.0.0-windows-x86_64-bundled-python.zip
-  # - ps: Expand-Archive -path .\gcloud.zip -DestinationPath .
-  # Borrowed from http://ec2-52-211-181-221.eu-west-1.compute.amazonaws.com/deploying-a-net-appengine-using-appveyor/
-  - {"ps": "$content = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($env:GCLOUD_TOKEN)) ; $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False ; [System.IO.File]::WriteAllLines('C:\\Users\\appveyor\\token.json', $content, $Utf8NoBomEncoding)"}
-  - choco install gcloudsdk
-  - refreshenv
-  - gcloud.cmd components copy-bundled-python>>python_path.txt && SET /p CLOUDSDK_PYTHON=<python_path.txt && DEL python_path.txt
-  - gcloud.cmd components update --quiet
-  - gcloud.cmd auth activate-service-account --key-file=C:\Users\appveyor\token.json
-  - gsutil.cmd cp README.md gs://build.livepeer.live/README.md
-  - docker build -m 4gb -t livepeer-windows -f .\docker\Dockerfile.windows .
-  - docker create --name wlive livepeer-windows
-  - docker cp wlive:c:/temp/livepeer-windows-amd64.zip .
-  - docker rm wlive
-  - gsutil.cmd cp livepeer-windows-amd64.zip gs://build.livepeer.live/test/livepeer-windows-amd64.zip
+  - ps: $hash = git describe --always --long --dirty ; $ver = Get-Content VERSION ; $fullver "$ver-$hash"
+  - ps: "Building $fullver"
+  # - {"ps": "$content = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($env:GCLOUD_TOKEN)) ; $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False ; [System.IO.File]::WriteAllLines('C:\\Users\\appveyor\\token.json', $content, $Utf8NoBomEncoding)"}
+  # - choco install gcloudsdk
+  # - refreshenv
+  # - gcloud.cmd components copy-bundled-python>>python_path.txt && SET /p CLOUDSDK_PYTHON=<python_path.txt && DEL python_path.txt
+  # - gcloud.cmd components update --quiet
+  # - gcloud.cmd auth activate-service-account --key-file=C:\Users\appveyor\token.json
+  # - gsutil.cmd cp README.md gs://build.livepeer.live/README.md
+  # - docker build -m 4gb -t livepeer-windows -f .\docker\Dockerfile.windows .
+  # - docker create --name wlive livepeer-windows
+  # - docker cp wlive:c:/temp/livepeer-windows-amd64.zip .
+  # - docker rm wlive
+  - ps: gsutil.cmd cp livepeer-windows-amd64.zip gs://build.livepeer.live/$fullver/livepeer-windows-amd64.zip
+  - ps: '$body = @{"content" = "Build succeeded ✅`nBranch: $env:APPVEYOR_REPO_BRANCH `nPlatform: windows-amd64`nhttps://build.livepeer.live/$fullver/livepeer-windows-amd64.tar.gz"} ; Invoke-WebRequest -Uri $env:DISCORD_URL -Method POST -Body $body'
 
 # Don't actually build.
 build: off

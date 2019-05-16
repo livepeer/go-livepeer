@@ -20,7 +20,7 @@ if [ ! -e "$HOME/nasm/nasm" ]; then
   git clone -b nasm-2.14.02 https://repo.or.cz/nasm.git "$HOME/nasm"
   cd "$HOME/nasm"
   ./autogen.sh
-  ./configure --prefix="$HOME/compiled"
+  ./configure --prefix="$HOME/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli
   make
   make install || echo "Installing docs fails but should be OK otherwise"
 fi
@@ -30,7 +30,7 @@ if [ ! -e "$HOME/x264/x264" ]; then
   cd "$HOME/x264"
   # git master as of this writing
   git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
-  ./configure --prefix="$HOME/compiled" --enable-pic --enable-static
+  ./configure --prefix="$HOME/compiled" --enable-pic --enable-static ${HOST_OS:-}
   make
   make install-lib-static
 fi
@@ -43,7 +43,7 @@ fi
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone --depth 1 -b n4.1 https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
-  ./configure --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
+  ./configure ${TARGET_OS:-} --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
     --disable-postproc --disable-lzma \
