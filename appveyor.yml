@@ -15,7 +15,7 @@ test_script:
   - docker create --name wlive livepeer-windows
   - docker cp wlive:c:/temp/livepeer-windows-amd64.zip .
   - docker rm wlive
-  - ps: gsutil cp livepeer-windows-amd64.zip "gs://build.livepeer.live/$fullver/livepeer-windows-amd64.zip" 2> $null
+  - ps: gsutil cp livepeer-windows-amd64.zip "gs://build.livepeer.live/$fullver/livepeer-windows-amd64.zip" | %{ "$_" }
   - ps: '$body = @{"content" = "Build succeeded ✅`nBranch: $env:APPVEYOR_REPO_BRANCH `nPlatform: windows-amd64`nhttps://build.livepeer.live/$fullver/livepeer-windows-amd64.tar.gz"} ; Invoke-WebRequest -Uri $env:DISCORD_URL -Method POST -Body $body'
 
 # Don't actually build.
