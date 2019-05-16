@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 
 set -ex
@@ -7,7 +6,7 @@ export PATH="$HOME/compiled/bin":$PATH
 export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig
 
 # Windows (MSYS2) needs a few tweaks
-if [[ $(uname) == *"MSYS_NT"* ]]; then
+if [[ $(uname) == *"MSYS2_NT"* ]]; then
   export PATH="$PATH:/usr/bin:/mingw64/bin"
   export C_INCLUDE_PATH="${C_INCLUDE_PATH:-}:/msys64/mingw64/lib"
   export HOME="/build"
@@ -35,7 +34,7 @@ if [ ! -e "$HOME/nasm/nasm" ]; then
   git clone -b nasm-2.14.02 https://repo.or.cz/nasm.git "$HOME/nasm"
   cd "$HOME/nasm"
   ./autogen.sh
-  ./configure --prefix="$HOME/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli
+  ./configure --prefix="$HOME/compiled"
   make
   make install || echo "Installing docs fails but should be OK otherwise"
 fi
@@ -45,7 +44,7 @@ if [ ! -e "$HOME/x264/x264" ]; then
   cd "$HOME/x264"
   # git master as of this writing
   git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
-  ./configure --prefix="$HOME/compiled" --enable-pic --enable-static ${HOST_OS:-}
+  ./configure --prefix="$HOME/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli
   make
   make install-lib-static
 fi
