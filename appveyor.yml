@@ -3,7 +3,7 @@ image: Windows Server 2019
 
 test_script:
   - ps: $hash = git describe --always --long --dirty ; $ver = Get-Content VERSION ; $fullver = "$ver-$hash"
-  - ps: "Building $fullver"
+  - ps: '"Building $fullver"'
   # - {"ps": "$content = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($env:GCLOUD_TOKEN)) ; $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False ; [System.IO.File]::WriteAllLines('C:\\Users\\appveyor\\token.json', $content, $Utf8NoBomEncoding)"}
   # - choco install gcloudsdk
   # - refreshenv
