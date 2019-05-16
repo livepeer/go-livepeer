@@ -39,8 +39,7 @@ jobs:
 
       - run:
           name: Upload build
-          command: |
-            - ./upload_build.sh
+          command: ./upload_build.sh
 
       - save_cache:
           key: v3-pkg-cache
