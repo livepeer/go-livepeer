@@ -37,6 +37,11 @@ jobs:
             trap "go-junit-report <${TEST_RESULTS}/go-test.out > ${TEST_RESULTS}/go-test-report.xml" EXIT
             PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig /bin/bash test.sh 2>&1 | tee $TEST_RESULTS/go-test.out
 
+      - run:
+          name: Upload build
+          command: |
+            - ./upload_build.sh
+
       - save_cache:
           key: v3-pkg-cache
           paths:
