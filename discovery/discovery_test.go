@@ -148,6 +148,51 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 
 	// check size
 	assert.Equal(3, dbOrch.Size())
+
+	urls := dbOrch.GetURLs()
+	assert.Len(urls, 3)
+}
+
+func TestNewDBOrchestratorPoolCache_TestURLs(t *testing.T) {
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
+
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node.Database = dbh
+
+	addresses := []string{"badUrl\\://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+	orchestrators := StubOrchestrators(addresses)
+	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
+	dbOrch := NewDBOrchestratorPoolCache(node)
+	require.NotNil(dbOrch)
+	assert.Equal(3, dbOrch.Size())
+	urls := dbOrch.GetURLs()
+	assert.Len(urls, 2)
+}
+
+func TestNewDBOrchestratorPoolCache_TestURLs_Empty(t *testing.T) {
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
+
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node.Database = dbh
+
+	addresses := []string{}
+	orchestrators := StubOrchestrators(addresses)
+	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
+	dbOrch := NewDBOrchestratorPoolCache(node)
+	require.NotNil(dbOrch)
+	assert.Equal(0, dbOrch.Size())
+	urls := dbOrch.GetURLs()
+	assert.Len(urls, 0)
 }
 
 func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {

@@ -86,7 +86,7 @@ func StubOrchestrator() *stubOrchestrator {
 func (r *stubOrchestrator) CheckCapacity(mid core.ManifestID) error {
 	return r.sessCapErr
 }
-func (r *stubOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
+func (r *stubOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
 }
 func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {
 }
@@ -481,7 +481,7 @@ func (o *mockOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *st
 
 	return res, args.Error(1)
 }
-func (o *mockOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
+func (o *mockOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
 	o.Called(stream)
 }
 func (o *mockOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {

@@ -39,7 +39,7 @@ type Orchestrator interface {
 	CurrentBlock() *big.Int
 	CheckCapacity(core.ManifestID) error
 	TranscodeSeg(*core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
-	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer)
+	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address) *net.TicketParams
@@ -87,7 +87,7 @@ func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong
 }
 
 // XXX do something about the implicit start of the http mux? this smells
-func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string) {
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool) {
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
@@ -95,9 +95,11 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		transRpc:     mux,
 	}
 	net.RegisterOrchestratorServer(s, &lp)
-	net.RegisterTranscoderServer(s, &lp)
 	lp.transRpc.HandleFunc("/segment", lp.ServeSegment)
-	lp.transRpc.HandleFunc("/transcodeResults", lp.TranscodeResults)
+	if acceptRemoteTranscoders {
+		net.RegisterTranscoderServer(s, &lp)
+		lp.transRpc.HandleFunc("/transcodeResults", lp.TranscodeResults)
+	}
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {

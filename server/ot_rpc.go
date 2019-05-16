@@ -21,6 +21,7 @@ import (
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -35,13 +36,13 @@ var SecretErr = errors.New("Invalid secret")
 
 // Transcoder
 
-func RunTranscoder(n *core.LivepeerNode, orchAddr string) {
+func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
 	backoff.Retry(func() error {
 		glog.Info("Registering transcoder to ", orchAddr)
-		err := runTranscoder(n, orchAddr)
+		err := runTranscoder(n, orchAddr, capacity)
 		glog.Info("Unregistering transcoder: ", err)
 		if err != SecretErr {
 			return err
@@ -51,7 +52,7 @@ func RunTranscoder(n *core.LivepeerNode, orchAddr string) {
 	}, expb)
 }
 
-func runTranscoder(n *core.LivepeerNode, orchAddr string) error {
+func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -63,7 +64,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string) error {
 
 	c := net.NewTranscoderClient(conn)
 	ctx := context.Background()
-	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret})
+	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity)})
 	if err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
 		status := status.Convert(err)
@@ -83,12 +84,18 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string) error {
 			}
 			return err
 		}
+		go runTranscode(n, orchAddr, httpc, notify)
+	}
+}
+
+func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifySegment) {
+	{ // dummy indentation to maintain the original indentation which allows reviewers to clearly see what has changed in the commit
 		profiles, err := common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
 		if err != nil {
 			glog.Info("Unable to deserialize profiles ", err)
 		}
 
-		glog.Info("Transcoding ", notify.TaskId)
+		glog.Infof("Transcoding taskId=%d url=%s", notify.TaskId, notify.Url)
 		var contentType string
 		var body bytes.Buffer
 
@@ -109,7 +116,6 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string) error {
 				fw, err := w.CreatePart(hdrs)
 				if err != nil {
 					glog.Error("Could not create multipart part ", err)
-					return err // XXX respond w error to orchestrator
 				}
 				io.Copy(fw, bytes.NewBuffer(v))
 			}
@@ -119,7 +125,6 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string) error {
 		req, err := http.NewRequest("POST", "https://"+orchAddr+"/transcodeResults", &body)
 		if err != nil {
 			glog.Error("Error posting results ", err)
-			return err
 		}
 		req.Header.Set("Authorization", ProtoVer_LPT)
 		req.Header.Set("Credentials", n.OrchSecret)
@@ -128,18 +133,20 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string) error {
 		resp, err := httpc.Do(req)
 		if err != nil {
 			glog.Error("Error submitting results ", err)
-			return err
 		}
 		ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 	}
-	return nil
 }
 
 // Orchestrator gRPC
 
 func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transcoder_RegisterTranscoderServer) error {
-	glog.Info("Got a RegisterTranscoder request for ", req.Secret)
+	from := "unknown"
+	if p, ok := peer.FromContext(stream.Context()); ok {
+		from = p.Addr.String()
+	}
+	glog.Infof("Got a RegisterTranscoder request from transcoder=%s", from)
 
 	if req.Secret != h.orchestrator.TranscoderSecret() {
 		glog.Info(SecretErr.Error())
@@ -147,7 +154,7 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 	}
 
 	// blocks until stream is finished
-	h.orchestrator.ServeTranscoder(stream)
+	h.orchestrator.ServeTranscoder(stream, int(req.Capacity))
 	return nil
 }
 

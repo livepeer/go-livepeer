@@ -1,47 +1,28 @@
 package net
 
 import (
-	"fmt"
-	"strings"
+	"net/url"
 
 	"github.com/ericxtang/m3u8"
-	"github.com/golang/glog"
 )
 
 type OrchestratorPool interface {
+	GetURLs() []*url.URL
 	GetOrchestrators(int) ([]*OrchestratorInfo, error)
 	Size() int
 }
 
+type RemoteTranscoderInfo struct {
+	Address  string
+	Capacity int
+}
+
 type NodeStatus struct {
-	Manifests map[string]*m3u8.MasterPlaylist
-}
-
-func (n NodeStatus) String() string {
-	mstrs := make([]string, 0)
-	for mid, m := range n.Manifests {
-		mstrs = append(mstrs, fmt.Sprintf("%v[]%v", mid, m.String()))
-	}
-	return strings.Join(mstrs, "|")
-}
-
-func (n *NodeStatus) FromString(str string) error {
-	arr := strings.Split(str, "|")
-
-	manifests := make(map[string]*m3u8.MasterPlaylist, 0)
-	for _, mstr := range arr {
-		//Decode the playlist from a string
-		mstrArr := strings.Split(mstr, "[]")
-		if len(mstrArr) == 2 {
-			m := m3u8.NewMasterPlaylist()
-			if err := m.DecodeFrom(strings.NewReader(mstrArr[1]), true); err != nil {
-				glog.Errorf("Error decoding playlist: %v", err)
-			} else {
-				manifests[mstrArr[0]] = m
-			}
-		}
-	}
-	n.Manifests = manifests
-
-	return nil
+	Manifests                   map[string]*m3u8.MasterPlaylist
+	OrchestratorPool            []string
+	Version                     string
+	RegisteredTranscodersNumber int
+	RegisteredTranscoders       []RemoteTranscoderInfo
+	LocalTranscoding            bool // Indicates orchestrator that is also transcoder
+	// xxx add transcoder's version here
 }
