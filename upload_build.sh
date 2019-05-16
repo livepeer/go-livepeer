@@ -5,6 +5,7 @@
 set -e
 set -o nounset
 
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 ARCH=$(uname | tr '[:upper:]' '[:lower:]')
 BASE="livepeer-$ARCH-amd64"
 BRANCH="${TRAVIS_BRANCH:-${CIRCLE_BRANCH:-unknown}}"
