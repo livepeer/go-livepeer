@@ -14,14 +14,17 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"os"
+	"os/signal"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -34,8 +37,10 @@ const TranscodingErrorMimeType = "livepeer/transcoding-error"
 
 var SecretErr = errors.New("Invalid secret")
 
-// Transcoder
+// Standalone Transcoder
 
+// RunTranscoder is main routing of standalone transcoder
+// Exiting it will terminate executable
 func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
@@ -44,12 +49,27 @@ func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) {
 		glog.Info("Registering transcoder to ", orchAddr)
 		err := runTranscoder(n, orchAddr, capacity)
 		glog.Info("Unregistering transcoder: ", err)
-		if err != SecretErr {
-			return err
+		if _, fatal := err.(core.RemoteTranscoderFatalError); fatal {
+			glog.Info("Terminating transcoder because of ", err)
+			// Returning nil here will make `backoff` to stop trying to reconnect and exit
+			return nil
 		}
-		glog.Info("Terminating transcoder")
-		return nil
+		// By returning error we tell `backoff` to try to connect again
+		return err
 	}, expb)
+}
+
+func checkTranscoderError(err error) error {
+	if err != nil {
+		s := status.Convert(err)
+		if s.Message() == SecretErr.Error() { // consider this unrecoverable
+			return core.NewRemoteTranscoderFatalError(SecretErr)
+		}
+		if status.Code(err) == codes.Canceled {
+			return core.NewRemoteTranscoderFatalError(fmt.Errorf("Execution interrupted"))
+		}
+	}
+	return err
 }
 
 func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
@@ -64,27 +84,43 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 
 	c := net.NewTranscoderClient(conn)
 	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	// Silence linter
+	defer cancel()
 	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity)})
-	if err != nil {
+	if err := checkTranscoderError(err); err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
-		status := status.Convert(err)
-		if status.Message() == SecretErr.Error() { // consider this unrecoverable
-			return SecretErr
-		}
 		return err
 	}
 
+	// Catch interrupt signal to shut down transcoder
+	exitc := make(chan os.Signal)
+	signal.Notify(exitc, os.Interrupt)
+	defer signal.Stop(exitc)
+	go func() {
+		select {
+		case sig := <-exitc:
+			glog.Infof("Exiting Livepeer Transcoder: %v", sig)
+			// Cancelling context will close connection to orchestrator
+			cancel()
+			return
+		}
+	}()
+
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	var wg sync.WaitGroup
 	for {
 		notify, err := r.Recv()
-		if err != nil {
-			status := status.Convert(err)
-			if status.Message() == SecretErr.Error() { // consider this unrecoverable
-				return SecretErr
-			}
+		if err := checkTranscoderError(err); err != nil {
+			glog.Infof(`End of stream recieve cylcle because of err="%v", waiting for running transcode jobs to complete`, err)
+			wg.Wait()
 			return err
 		}
-		go runTranscode(n, orchAddr, httpc, notify)
+		wg.Add(1)
+		go func() {
+			runTranscode(n, orchAddr, httpc, notify)
+			wg.Done()
+		}()
 	}
 }
 
@@ -100,6 +136,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		var body bytes.Buffer
 
 		tData, err := n.Transcoder.Transcode(notify.Url, profiles)
+		glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
 		if err != nil {
 			glog.Error("Unable to transcode ", err)
 			body.Write([]byte(err.Error()))
@@ -136,16 +173,14 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		}
 		ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
+		glog.V(common.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
 	}
 }
 
 // Orchestrator gRPC
 
 func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transcoder_RegisterTranscoderServer) error {
-	from := "unknown"
-	if p, ok := peer.FromContext(stream.Context()); ok {
-		from = p.Addr.String()
-	}
+	from := common.GetConnectionAddr(stream.Context())
 	glog.Infof("Got a RegisterTranscoder request from transcoder=%s", from)
 
 	if req.Secret != h.orchestrator.TranscoderSecret() {
