@@ -29,7 +29,7 @@ jobs:
       - run:
           name: Compile binaries
           command: |
-            make
+            PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig make
 
       - run:
           name: Run unit tests
