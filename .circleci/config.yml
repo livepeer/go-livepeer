@@ -29,7 +29,7 @@ jobs:
       - run:
           name: Compile binaries
           command: |
-            PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig make
+            PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig make livepeer livepeer_cli
 
       - run:
           name: Run unit tests

@@ -20,5 +20,5 @@ script:
 - cd ./livepeer/go-livepeer
 - ./install_ffmpeg.sh
 - ./install_dependencies.sh
-- make
+- make livepeer livepeer_cli
 - ./upload_build.sh
