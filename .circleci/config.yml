@@ -19,17 +19,7 @@ jobs:
 
       - run: sudo apt-get update && sudo apt-get -y install build-essential pkg-config autoconf gnutls-dev
       - run: ./install_ffmpeg.sh
-      - run: go get github.com/golang/glog
-      - run: go get -u -v github.com/ericxtang/m3u8
-      - run: go get github.com/aws/aws-sdk-go/aws
-      - run: go get -u google.golang.org/grpc
-      - run: go get github.com/jstemmer/go-junit-report
-      - run: go get github.com/pkg/errors
-      - run: go get github.com/stretchr/testify
-      - run: go get github.com/alecthomas/gometalinter && gometalinter --install
-      - run: go get -u -v go.opencensus.io/stats
-      - run: go get -u -v go.opencensus.io/tag
-      - run: go get -u -v contrib.go.opencensus.io/exporter/prometheus
+      - run: ./install_dependencies.sh
 
       - run:
           name: Lint
@@ -37,9 +27,9 @@ jobs:
             gometalinter --disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm
 
       - run:
-          name: Compile CLI binary
+          name: Compile binaries
           command: |
-            PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig go build -v cmd/livepeer_cli/*
+            make
 
       - run:
           name: Run unit tests

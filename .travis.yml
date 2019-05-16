@@ -12,44 +12,13 @@ env:
     - PKG_CONFIG_PATH=/Users/travis/compiled/lib/pkgconfig
     - CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
-before_install:
-- |
-  if [ ! -d $HOME/google-cloud-sdk/bin ]; then
-    # The install script errors if this directory already exists,
-    # but Travis already creates it when we mark it as cached.
-    rm -rf $HOME/google-cloud-sdk;
-    # The install script is overly verbose, which sometimes causes
-    # problems on Travis, so ignore stdout.
-    curl https://sdk.cloud.google.com | bash > /dev/null;
-  fi
-- source $HOME/google-cloud-sdk/path.bash.inc
-- gcloud version
-
 script:
-- echo $GCLOUD_TOKEN | base64 -D > /tmp/token.json
-- gcloud auth activate-service-account --key-file=/tmp/token.json
-# do a basic upload so we know if stuff's working prior to doing everything else
-- gsutil cp README.md gs://build.livepeer.live/README.md
 # These three lines needed so it works even if your name isn't "livepeer"
 - cd $GOPATH/src/github.com
 - mkdir -p ./livepeer
 - mv "$TRAVIS_BUILD_DIR" "./livepeer/go-livepeer"
 - cd ./livepeer/go-livepeer
 - ./install_ffmpeg.sh
-- go get github.com/golang/glog
-- go get -u -v github.com/ericxtang/m3u8
-- go get github.com/aws/aws-sdk-go/aws
-- go get -u google.golang.org/grpc
-- go get github.com/pkg/errors
-- go get github.com/stretchr/testify/mock
-- go get -u -v go.opencensus.io/stats
-- go get -u -v go.opencensus.io/tag
-- go get -u -v contrib.go.opencensus.io/exporter/prometheus
+- ./install_dependencies.sh
 - make
-- './livepeer -version | sed "s/Livepeer Node Version: //" > version'
-- mkdir livepeer-darwin-amd64
-- mv ./livepeer livepeer-darwin-amd64
-- mv ./livepeer_cli livepeer-darwin-amd64
-- tar -czvf ./livepeer-darwin-amd64.tar.gz ./livepeer-darwin-amd64
-- gsutil cp ./livepeer-darwin-amd64.tar.gz gs://build.livepeer.live/$(cat version)/livepeer-darwin-amd64.tar.gz
-- 'curl --fail -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $TRAVIS_BRANCH\nPlatform: darwin-amd64\nhttps://build.livepeer.live/$(cat version)/livepeer-darwin-amd64.tar.gz\"}" $DISCORD_HOOK'
+- ./upload_build.sh
