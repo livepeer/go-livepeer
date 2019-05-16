@@ -31,5 +31,5 @@ mv ./livepeer $BASE
 mv ./livepeer_cli $BASE
 tar -czvf ./$BASE.tar.gz ./$BASE
 gsutil cp ./$BASE.tar.gz gs://build.livepeer.live/$VERSION/$BASE.tar.gz
-curl --fail -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: darwin-amd64\nhttps://build.livepeer.live/$VERSION/$BASE.tar.gz\"}" $DISCORD_URL
+curl --fail -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nhttps://build.livepeer.live/$VERSION/$BASE.tar.gz\"}" $DISCORD_URL
 echo "done"
