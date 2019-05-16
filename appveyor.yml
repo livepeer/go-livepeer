@@ -4,18 +4,18 @@ image: Windows Server 2019
 test_script:
   - ps: $hash = git describe --always --long --dirty ; $ver = Get-Content VERSION ; $fullver = "$ver-$hash"
   - ps: '"Building $fullver"'
-  # - {"ps": "$content = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($env:GCLOUD_TOKEN)) ; $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False ; [System.IO.File]::WriteAllLines('C:\\Users\\appveyor\\token.json', $content, $Utf8NoBomEncoding)"}
-  # - choco install gcloudsdk
-  # - refreshenv
-  # - gcloud.cmd components copy-bundled-python>>python_path.txt && SET /p CLOUDSDK_PYTHON=<python_path.txt && DEL python_path.txt
-  # - gcloud.cmd components update --quiet
-  # - gcloud.cmd auth activate-service-account --key-file=C:\Users\appveyor\token.json
-  # - gsutil.cmd cp README.md gs://build.livepeer.live/README.md
-  # - docker build -m 4gb -t livepeer-windows -f .\docker\Dockerfile.windows .
-  # - docker create --name wlive livepeer-windows
-  # - docker cp wlive:c:/temp/livepeer-windows-amd64.zip .
-  # - docker rm wlive
-  # - ps: gsutil.cmd cp livepeer-windows-amd64.zip gs://build.livepeer.live/$fullver/livepeer-windows-amd64.zip
+  - {"ps": "$content = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($env:GCLOUD_TOKEN)) ; $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False ; [System.IO.File]::WriteAllLines('C:\\Users\\appveyor\\token.json', $content, $Utf8NoBomEncoding)"}
+  - choco install gcloudsdk
+  - refreshenv
+  - gcloud.cmd components copy-bundled-python>>python_path.txt && SET /p CLOUDSDK_PYTHON=<python_path.txt && DEL python_path.txt
+  - gcloud.cmd components update --quiet
+  - gcloud.cmd auth activate-service-account --key-file=C:\Users\appveyor\token.json
+  - gsutil.cmd cp README.md gs://build.livepeer.live/README.md
+  - docker build -m 4gb -t livepeer-windows -f .\docker\Dockerfile.windows .
+  - docker create --name wlive livepeer-windows
+  - docker cp wlive:c:/temp/livepeer-windows-amd64.zip .
+  - docker rm wlive
+  - ps: gsutil.cmd cp livepeer-windows-amd64.zip gs://build.livepeer.live/$fullver/livepeer-windows-amd64.zip
   - ps: '$body = @{"content" = "Build succeeded ✅`nBranch: $env:APPVEYOR_REPO_BRANCH `nPlatform: windows-amd64`nhttps://build.livepeer.live/$fullver/livepeer-windows-amd64.tar.gz"} ; Invoke-WebRequest -Uri $env:DISCORD_URL -Method POST -Body $body'
 
 # Don't actually build.
