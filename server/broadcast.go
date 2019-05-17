@@ -157,7 +157,7 @@ func NewSessionManager(node *core.LivepeerNode, pl core.PlaylistManager) *Broadc
 func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager, count int) ([]*BroadcastSession, error) {
 	if n.OrchestratorPool == nil {
 		glog.Info("No orchestrators specified; not transcoding")
-		return nil, ErrDiscovery
+		return nil, errDiscovery
 	}
 
 	rpcBcast := core.NewBroadcaster(n)
@@ -165,7 +165,7 @@ func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager, count in
 	tinfos, err := n.OrchestratorPool.GetOrchestrators(count)
 	if len(tinfos) <= 0 {
 		glog.Info("No orchestrators found; not transcoding. Error: ", err)
-		return nil, ErrNoOrchs
+		return nil, errNoOrchs
 	}
 	if err != nil {
 		return nil, err
@@ -274,7 +274,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 	// View-only (non-transcoded) streams or no sessions available
 	if sess == nil {
 		if monitor.Enabled {
-			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, ErrNoOrchs, true)
+			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, errNoOrchs, true)
 		}
 		glog.Infof("No sessions available for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
 		return nil
@@ -360,7 +360,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 					return
 				}
 				name := fmt.Sprintf("%s/%d.ts", sess.Profiles[i].Name, seg.SeqNo)
-				newUrl, err := bos.SaveData(name, data)
+				newURL, err := bos.SaveData(name, data)
 				if err != nil {
 					segHashLock.Lock()
 					saveErr = err
@@ -373,7 +373,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 					}
 					return
 				}
-				url = newUrl
+				url = newURL
 
 				hash := crypto.Keccak256(data)
 				segHashLock.Lock()
@@ -409,7 +409,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 			!pm.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
 			glog.Errorf("Sig check failed for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
 			cxn.sessManager.removeSession(sess)
-			return ErrPMCheckFailed
+			return errPMCheckFailed
 		}
 		if monitor.Enabled {
 			monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), errCode)

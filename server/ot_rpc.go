@@ -32,10 +32,10 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 )
 
-const ProtoVer_LPT = "Livepeer-Transcoder-1.0"
-const TranscodingErrorMimeType = "livepeer/transcoding-error"
+const protoVerLPT = "Livepeer-Transcoder-1.0"
+const transcodingErrorMimeType = "livepeer/transcoding-error"
 
-var SecretErr = errors.New("Invalid secret")
+var errSecret = errors.New("Invalid secret")
 
 // Standalone Transcoder
 
@@ -62,8 +62,8 @@ func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) {
 func checkTranscoderError(err error) error {
 	if err != nil {
 		s := status.Convert(err)
-		if s.Message() == SecretErr.Error() { // consider this unrecoverable
-			return core.NewRemoteTranscoderFatalError(SecretErr)
+		if s.Message() == errSecret.Error() { // consider this unrecoverable
+			return core.NewRemoteTranscoderFatalError(errSecret)
 		}
 		if status.Code(err) == codes.Canceled {
 			return core.NewRemoteTranscoderFatalError(fmt.Errorf("Execution interrupted"))
@@ -139,7 +139,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	if err != nil {
 		glog.Error("Unable to transcode ", err)
 		body.Write([]byte(err.Error()))
-		contentType = TranscodingErrorMimeType
+		contentType = transcodingErrorMimeType
 	} else {
 		boundary := randName()
 		w := multipart.NewWriter(&body)
@@ -162,7 +162,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	if err != nil {
 		glog.Error("Error posting results ", err)
 	}
-	req.Header.Set("Authorization", ProtoVer_LPT)
+	req.Header.Set("Authorization", protoVerLPT)
 	req.Header.Set("Credentials", n.OrchSecret)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
@@ -182,8 +182,8 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 	glog.Infof("Got a RegisterTranscoder request from transcoder=%s", from)
 
 	if req.Secret != h.orchestrator.TranscoderSecret() {
-		glog.Info(SecretErr.Error())
-		return SecretErr
+		glog.Info(errSecret.Error())
+		return errSecret
 	}
 
 	// blocks until stream is finished
@@ -198,7 +198,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 
 	authType := r.Header.Get("Authorization")
 	creds := r.Header.Get("Credentials")
-	if ProtoVer_LPT != authType {
+	if protoVerLPT != authType {
 		glog.Error("Invalid auth type ", authType)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -225,7 +225,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var res core.RemoteTranscoderResult
-	if TranscodingErrorMimeType == mediaType {
+	if transcodingErrorMimeType == mediaType {
 		w.Write([]byte("OK"))
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {

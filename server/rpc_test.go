@@ -63,7 +63,7 @@ func (r *stubOrchestrator) Address() ethcommon.Address {
 func (r *stubOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) StreamIDs(jobId string) ([]core.StreamID, error) {
+func (r *stubOrchestrator) StreamIDs(jobID string) ([]core.StreamID, error) {
 	return []core.StreamID{}, nil
 }
 
@@ -75,7 +75,7 @@ func (r *stubOrchestrator) TicketParams(sender ethcommon.Address) *net.TicketPar
 	return nil
 }
 
-func StubOrchestrator() *stubOrchestrator {
+func newStubOrchestrator() *stubOrchestrator {
 	pk, err := ethcrypto.GenerateKey()
 	if err != nil {
 		return &stubOrchestrator{}
@@ -93,14 +93,14 @@ func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscod
 func (r *stubOrchestrator) TranscoderSecret() string {
 	return ""
 }
-func StubBroadcaster2() *stubOrchestrator {
-	return StubOrchestrator() // lazy; leverage subtyping for interface commonalities
+func stubBroadcaster2() *stubOrchestrator {
+	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
 }
 
 func TestRPCTranscoderReq(t *testing.T) {
 
-	o := StubOrchestrator()
-	b := StubBroadcaster2()
+	o := newStubOrchestrator()
+	b := stubBroadcaster2()
 
 	req, err := genOrchestratorReq(b)
 	if err != nil {
@@ -113,7 +113,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 	}
 
 	// wrong broadcaster
-	addr = ethcrypto.PubkeyToAddress(StubBroadcaster2().priv.PublicKey)
+	addr = ethcrypto.PubkeyToAddress(stubBroadcaster2().priv.PublicKey)
 	if verifyOrchestratorReq(o, addr, req.Sig) == nil {
 		t.Error("Did not expect verification to pass; should mismatch broadcaster")
 	}
@@ -142,8 +142,8 @@ func TestRPCTranscoderReq(t *testing.T) {
 
 func TestRPCSeg(t *testing.T) {
 	mid := core.RandomManifestID()
-	b := StubBroadcaster2()
-	o := StubOrchestrator()
+	b := stubBroadcaster2()
+	o := newStubOrchestrator()
 	s := &BroadcastSession{
 		Broadcaster: b,
 		ManifestID:  mid,
@@ -174,7 +174,7 @@ func TestRPCSeg(t *testing.T) {
 	oldAddr := baddr
 	key, _ := ethcrypto.GenerateKey()
 	baddr = ethcrypto.PubkeyToAddress(key.PublicKey)
-	if _, err := verifySegCreds(o, creds, baddr); err != ErrSegSig {
+	if _, err := verifySegCreds(o, creds, baddr); err != errSegSig {
 		t.Error("Unexpectedly verified seg creds: invalid bcast addr", err)
 	}
 	baddr = oldAddr
@@ -187,7 +187,7 @@ func TestRPCSeg(t *testing.T) {
 	// test corrupt creds
 	idx := len(creds) / 2
 	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
-	if _, err := verifySegCreds(o, kreds, baddr); err != ErrSegEncoding {
+	if _, err := verifySegCreds(o, kreds, baddr); err != errSegEncoding {
 		t.Error("Unexpectedly verified bad creds", err)
 	}
 
@@ -204,9 +204,9 @@ func TestRPCSeg(t *testing.T) {
 
 	// corrupt sig
 	sd := &net.SegData{ManifestId: []byte(s.ManifestID)}
-	corruptSegData(sd, ErrSegSig) // missing sig
+	corruptSegData(sd, errSegSig) // missing sig
 	sd.Sig = []byte("abc")
-	corruptSegData(sd, ErrSegSig) // invalid sig
+	corruptSegData(sd, errSegSig) // invalid sig
 
 	// at capacity
 	sd = &net.SegData{ManifestId: []byte(s.ManifestID)}
@@ -218,7 +218,7 @@ func TestRPCSeg(t *testing.T) {
 
 func TestGenPayment(t *testing.T) {
 	mid := core.RandomManifestID()
-	b := StubBroadcaster2()
+	b := stubBroadcaster2()
 	s := &BroadcastSession{
 		Broadcaster: b,
 		ManifestID:  mid,
@@ -282,7 +282,7 @@ func TestGenPayment(t *testing.T) {
 }
 
 func TestPing(t *testing.T) {
-	o := StubOrchestrator()
+	o := newStubOrchestrator()
 
 	tsSignature, _ := o.Sign([]byte(fmt.Sprintf("%v", time.Now())))
 	pingSent := ethcrypto.Keccak256(tsSignature)

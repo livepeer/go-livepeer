@@ -460,7 +460,7 @@ func main() {
 		orch := core.NewOrchestrator(s.LivepeerNode)
 
 		go func() {
-			server.StartTranscodeServer(orch, *httpAddr, s.HttpMux, n.WorkDir, n.TranscoderManager != nil)
+			server.StartTranscodeServer(orch, *httpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil)
 			tc <- struct{}{}
 		}()
 
