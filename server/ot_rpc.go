@@ -125,56 +125,54 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 }
 
 func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifySegment) {
-	{ // dummy indentation to maintain the original indentation which allows reviewers to clearly see what has changed in the commit
-		profiles, err := common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
-		if err != nil {
-			glog.Info("Unable to deserialize profiles ", err)
-		}
-
-		glog.Infof("Transcoding taskId=%d url=%s", notify.TaskId, notify.Url)
-		var contentType string
-		var body bytes.Buffer
-
-		tData, err := n.Transcoder.Transcode(notify.Url, profiles)
-		glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
-		if err != nil {
-			glog.Error("Unable to transcode ", err)
-			body.Write([]byte(err.Error()))
-			contentType = TranscodingErrorMimeType
-		} else {
-			boundary := randName()
-			w := multipart.NewWriter(&body)
-			for _, v := range tData {
-				w.SetBoundary(boundary)
-				hdrs := textproto.MIMEHeader{
-					"Content-Type":   {"video/MP2T"},
-					"Content-Length": {strconv.Itoa(len(v))},
-				}
-				fw, err := w.CreatePart(hdrs)
-				if err != nil {
-					glog.Error("Could not create multipart part ", err)
-				}
-				io.Copy(fw, bytes.NewBuffer(v))
-			}
-			w.Close()
-			contentType = "multipart/mixed; boundary=" + boundary
-		}
-		req, err := http.NewRequest("POST", "https://"+orchAddr+"/transcodeResults", &body)
-		if err != nil {
-			glog.Error("Error posting results ", err)
-		}
-		req.Header.Set("Authorization", ProtoVer_LPT)
-		req.Header.Set("Credentials", n.OrchSecret)
-		req.Header.Set("Content-Type", contentType)
-		req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
-		resp, err := httpc.Do(req)
-		if err != nil {
-			glog.Error("Error submitting results ", err)
-		}
-		ioutil.ReadAll(resp.Body)
-		resp.Body.Close()
-		glog.V(common.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
+	profiles, err := common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
+	if err != nil {
+		glog.Info("Unable to deserialize profiles ", err)
 	}
+
+	glog.Infof("Transcoding taskId=%d url=%s", notify.TaskId, notify.Url)
+	var contentType string
+	var body bytes.Buffer
+
+	tData, err := n.Transcoder.Transcode(notify.Url, profiles)
+	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
+	if err != nil {
+		glog.Error("Unable to transcode ", err)
+		body.Write([]byte(err.Error()))
+		contentType = TranscodingErrorMimeType
+	} else {
+		boundary := randName()
+		w := multipart.NewWriter(&body)
+		for _, v := range tData {
+			w.SetBoundary(boundary)
+			hdrs := textproto.MIMEHeader{
+				"Content-Type":   {"video/MP2T"},
+				"Content-Length": {strconv.Itoa(len(v))},
+			}
+			fw, err := w.CreatePart(hdrs)
+			if err != nil {
+				glog.Error("Could not create multipart part ", err)
+			}
+			io.Copy(fw, bytes.NewBuffer(v))
+		}
+		w.Close()
+		contentType = "multipart/mixed; boundary=" + boundary
+	}
+	req, err := http.NewRequest("POST", "https://"+orchAddr+"/transcodeResults", &body)
+	if err != nil {
+		glog.Error("Error posting results ", err)
+	}
+	req.Header.Set("Authorization", ProtoVer_LPT)
+	req.Header.Set("Credentials", n.OrchSecret)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
+	resp, err := httpc.Do(req)
+	if err != nil {
+		glog.Error("Error submitting results ", err)
+	}
+	ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	glog.V(common.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
 }
 
 // Orchestrator gRPC
