@@ -13,8 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc/peer"
-
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
@@ -424,8 +422,9 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 }
 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
+	from := common.GetConnectionAddr(stream.Context())
 	n.TranscoderManager.Manage(stream, capacity)
-	glog.V(common.DEBUG).Info("Closing transcoder channel") // XXX cxn info
+	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
 }
 
 func (n *RemoteTranscoderManager) transcoderResults(tcId int64, res *RemoteTranscoderResult) {
@@ -444,22 +443,34 @@ type RemoteTranscoder struct {
 	capacity int
 }
 
+// RemoteTranscoderFatalError wraps error to indicate that error is fatal
 type RemoteTranscoderFatalError struct {
 	error
+}
+
+// NewRemoteTranscoderFatalError creates new RemoteTranscoderFatalError
+// Exported here to be used in other packages
+func NewRemoteTranscoderFatalError(err error) error {
+	return RemoteTranscoderFatalError{err}
 }
 
 var RemoteTranscoderTimeout = 8 * time.Second
 var ErrRemoteTranscoderTimeout = errors.New("Remote transcoder took too long")
 
+func (rt *RemoteTranscoder) done() {
+	// select so we don't block indefinitely if there's no listener
+	select {
+	case rt.eof <- struct{}{}:
+	default:
+	}
+}
+
+// Transcode do actual transcoding by sending work to remote transcoder and waiting for the result
 func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
 	taskId, taskChan := rt.manager.addTaskChan()
 	defer rt.manager.removeTaskChan(taskId)
-	signalEof := func(err error) ([][]byte, error) {
-		// select so we don't block indefinitely if there's no listener
-		select {
-		case rt.eof <- struct{}{}:
-		default:
-		}
+	signalEOF := func(err error) ([][]byte, error) {
+		rt.done()
 		glog.Errorf("Fatal error with remote transcoder=%s taskId=%d fname=%s err=%v", rt.addr, taskId, fname, err)
 		return [][]byte{}, RemoteTranscoderFatalError{err}
 	}
@@ -470,13 +481,13 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	}
 	err := rt.stream.Send(msg)
 	if err != nil {
-		return signalEof(err)
+		return signalEOF(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), RemoteTranscoderTimeout)
 	defer cancel()
 	select {
 	case <-ctx.Done():
-		return signalEof(ErrRemoteTranscoderTimeout)
+		return signalEOF(ErrRemoteTranscoderTimeout)
 	case chanData := <-taskChan:
 		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s",
 			rt.addr, len(chanData.Segments), taskId, fname)
@@ -484,16 +495,12 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	}
 }
 func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int) *RemoteTranscoder {
-	addr := "unknown"
-	if p, ok := peer.FromContext(stream.Context()); ok {
-		addr = p.Addr.String()
-	}
 	return &RemoteTranscoder{
 		manager:  m,
 		stream:   stream,
 		eof:      make(chan struct{}, 1),
 		capacity: capacity,
-		addr:     addr,
+		addr:     common.GetConnectionAddr(stream.Context()),
 	}
 }
 
@@ -536,8 +543,15 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []net.RemoteTran
 }
 
 func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
-
+	from := common.GetConnectionAddr(stream.Context())
 	transcoder := NewRemoteTranscoder(rtm, stream, capacity)
+	go func() {
+		ctx := stream.Context()
+		<-ctx.Done()
+		err := ctx.Err()
+		glog.Errorf("Stream closed for transcoder=%s, err=%v", from, err)
+		transcoder.done()
+	}()
 
 	rtm.RTmutex.Lock()
 	rtm.liveTranscoders[transcoder.stream] = transcoder
@@ -547,6 +561,7 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 	rtm.RTmutex.Unlock()
 
 	<-transcoder.eof
+	glog.Infof("Got transcoder=%s eof, removing from live transcoders map", from)
 
 	rtm.RTmutex.Lock()
 	delete(rtm.liveTranscoders, transcoder.stream)

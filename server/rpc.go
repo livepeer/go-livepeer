@@ -50,7 +50,7 @@ type Broadcaster interface {
 	Sign([]byte) ([]byte, error)
 }
 
-// Session-specific state for broadcasters
+// BroadcastSession - session-specific state for broadcasters
 type BroadcastSession struct {
 	Broadcaster      Broadcaster
 	ManifestID       core.ManifestID
@@ -64,17 +64,17 @@ type BroadcastSession struct {
 
 type lphttp struct {
 	orchestrator Orchestrator
-	orchRpc      *grpc.Server
-	transRpc     *http.ServeMux
+	orchRPC      *grpc.Server
+	transRPC     *http.ServeMux
 }
 
 // grpc methods
 func (h *lphttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ct := r.Header.Get("Content-Type")
 	if r.ProtoMajor == 2 && strings.HasPrefix(ct, "application/grpc") {
-		h.orchRpc.ServeHTTP(w, r)
+		h.orchRPC.ServeHTTP(w, r)
 	} else {
-		h.transRpc.ServeHTTP(w, r)
+		h.transRPC.ServeHTTP(w, r)
 	}
 }
 
@@ -91,14 +91,14 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
-		orchRpc:      s,
-		transRpc:     mux,
+		orchRPC:      s,
+		transRPC:     mux,
 	}
 	net.RegisterOrchestratorServer(s, &lp)
-	lp.transRpc.HandleFunc("/segment", lp.ServeSegment)
+	lp.transRPC.HandleFunc("/segment", lp.ServeSegment)
 	if acceptRemoteTranscoders {
 		net.RegisterTranscoderServer(s, &lp)
-		lp.transRpc.HandleFunc("/transcodeResults", lp.TranscodeResults)
+		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
 	}
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
@@ -117,17 +117,17 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	srv.ListenAndServeTLS(cert, key)
 }
 
-// The broadcaster calls CheckOrchestratorAvailability which invokes Ping on the orchestrator
+// CheckOrchestratorAvailability - the broadcaster calls CheckOrchestratorAvailability which invokes Ping on the orchestrator
 func CheckOrchestratorAvailability(orch Orchestrator) bool {
 	ts := time.Now()
-	ts_signature, err := orch.Sign([]byte(fmt.Sprintf("%v", ts)))
+	tsSignature, err := orch.Sign([]byte(fmt.Sprintf("%v", ts)))
 	if err != nil {
 		return false
 	}
 
-	ping := crypto.Keccak256(ts_signature)
+	ping := crypto.Keccak256(tsSignature)
 
-	orch_client, conn, err := startOrchestratorClient(orch.ServiceURI())
+	orchClient, conn, err := startOrchestratorClient(orch.ServiceURI())
 	if err != nil {
 		return false
 	}
@@ -136,7 +136,7 @@ func CheckOrchestratorAvailability(orch Orchestrator) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), GRPCTimeout)
 	defer cancel()
 
-	pong, err := orch_client.Ping(ctx, &net.PingPong{Value: ping})
+	pong, err := orchClient.Ping(ctx, &net.PingPong{Value: ping})
 	if err != nil {
 		glog.Error("Was not able to submit Ping: ", err)
 		return false
@@ -155,7 +155,7 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 	return &net.PingPong{Value: value}, nil
 }
 
-// The broadcaster calls GetOrchestratorInfo which invokes GetOrchestrator on the orchestrator
+// GetOrchestratorInfo - the broadcaster calls GetOrchestratorInfo which invokes GetOrchestrator on the orchestrator
 func GetOrchestratorInfo(ctx context.Context, bcast Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 	c, conn, err := startOrchestratorClient(orchestratorServer)
 	if err != nil {

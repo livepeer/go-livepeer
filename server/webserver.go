@@ -53,6 +53,8 @@ func (s *LivepeerServer) setServiceURI(serviceURI string) error {
 	return nil
 }
 
+// StartCliWebserver starts web server for CLI
+// blocks until exit
 func (s *LivepeerServer) StartCliWebserver(bindAddr string) {
 	mux := s.cliWebServerHandlers(bindAddr)
 	srv := &http.Server{

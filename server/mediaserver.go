@@ -36,14 +36,14 @@ import (
 	"github.com/livepeer/lpms/vidplayer"
 )
 
-var ErrAlreadyExists = errors.New("StreamAlreadyExists")
-var ErrBroadcast = errors.New("ErrBroadcast")
-var ErrLowDeposit = errors.New("ErrLowDeposit")
-var ErrStorage = errors.New("ErrStorage")
-var ErrDiscovery = errors.New("ErrDiscovery")
-var ErrNoOrchs = errors.New("ErrNoOrchs")
-var ErrUnknownStream = errors.New("ErrUnknownStream")
-var ErrPMCheckFailed = errors.New("PM Check Failed")
+var errAlreadyExists = errors.New("StreamAlreadyExists")
+var errBroadcast = errors.New("ErrBroadcast")
+var errLowDeposit = errors.New("ErrLowDeposit")
+var errStorage = errors.New("ErrStorage")
+var errDiscovery = errors.New("ErrDiscovery")
+var errNoOrchs = errors.New("ErrNoOrchs")
+var errUnknownStream = errors.New("ErrUnknownStream")
+var errPMCheckFailed = errors.New("PM Check Failed")
 
 const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
@@ -71,7 +71,7 @@ type LivepeerServer struct {
 	RTMPSegmenter lpmscore.RTMPSegmenter
 	LPMS          *lpmscore.LPMS
 	LivepeerNode  *core.LivepeerNode
-	HttpMux       *http.ServeMux
+	HTTPMux       *http.ServeMux
 
 	ExposeCurrentManifest bool
 
@@ -101,7 +101,7 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 		opts.HttpMux = http.NewServeMux()
 	}
 	server := lpmscore.New(&opts)
-	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HttpMux: opts.HttpMux, connectionLock: &sync.RWMutex{}, rtmpConnections: make(map[core.ManifestID]*rtmpConnection)}
+	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{}, rtmpConnections: make(map[core.ManifestID]*rtmpConnection)}
 }
 
 //StartServer starts the LPMS server
@@ -295,7 +295,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		cxn, ok := s.rtmpConnections[mid]
 		if !ok || cxn.pl == nil {
 			glog.Error("Attempted to end unknown stream with manifest ID ", mid)
-			return ErrUnknownStream
+			return errUnknownStream
 		}
 		cxn.sessManager.cleanup()
 		cxn.pl.Cleanup()
@@ -327,7 +327,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 				monitor.StreamCreateFailed(nonce, "LowDeposit")
 			}
 
-			return nil, ErrLowDeposit
+			return nil, errLowDeposit
 		}
 	}
 
@@ -335,7 +335,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	mid := rtmpManifestID(rtmpStrm)
 	if drivers.NodeStorage == nil {
 		glog.Error("Missing node storage")
-		return nil, ErrStorage
+		return nil, errStorage
 	}
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	// Build the source video profile from the RTMP stream.
@@ -351,7 +351,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	s.connectionLock.Unlock()
 	if exists {
 		// We can only have one concurrent stream per ManifestID
-		return nil, ErrAlreadyExists
+		return nil, errAlreadyExists
 	}
 
 	playlist := core.NewBasicPlaylistManager(mid, storage)

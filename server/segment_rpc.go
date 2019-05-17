@@ -26,11 +26,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-const PaymentHeader = "Livepeer-Payment"
-const SegmentHeader = "Livepeer-Segment"
+const paymentHeader = "Livepeer-Payment"
+const segmentHeader = "Livepeer-Segment"
 
-var ErrSegEncoding = errors.New("ErrorSegEncoding")
-var ErrSegSig = errors.New("ErrSegSig")
+var errSegEncoding = errors.New("ErrorSegEncoding")
+var errSegSig = errors.New("ErrSegSig")
 
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
 var httpClient = &http.Client{
@@ -41,7 +41,7 @@ var httpClient = &http.Client{
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	orch := h.orchestrator
 
-	payment, err := getPayment(r.Header.Get(PaymentHeader))
+	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil {
 		glog.Error("Could not parse payment")
 		http.Error(w, err.Error(), http.StatusPaymentRequired)
@@ -49,7 +49,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check the segment sig from the broadcaster
-	seg := r.Header.Get(SegmentHeader)
+	seg := r.Header.Get(segmentHeader)
 
 	segData, err := verifySegCreds(orch, seg, getPaymentSender(payment))
 	if err != nil {
@@ -180,7 +180,7 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 	buf, err := base64.StdEncoding.DecodeString(segCreds)
 	if err != nil {
 		glog.Error("Unable to base64-decode ", err)
-		return nil, ErrSegEncoding
+		return nil, errSegEncoding
 	}
 	var segData net.SegData
 	err = proto.Unmarshal(buf, &segData)
@@ -210,7 +210,7 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 
 	if !orch.VerifySig(broadcaster, string(md.Flatten()), segData.Sig) {
 		glog.Error("Sig check failed")
-		return nil, ErrSegSig
+		return nil, errSegSig
 	}
 
 	if err := orch.CheckCapacity(mid); err != nil {
@@ -251,8 +251,8 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
-	req.Header.Set(SegmentHeader, segCreds)
-	req.Header.Set(PaymentHeader, payment)
+	req.Header.Set(segmentHeader, segCreds)
+	req.Header.Set(paymentHeader, payment)
 	if uploaded {
 		req.Header.Set("Content-Type", "application/vnd+livepeer.uri")
 	} else {

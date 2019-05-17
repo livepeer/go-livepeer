@@ -16,7 +16,7 @@ import (
 
 func StubBroadcastSession(transcoder string) *BroadcastSession {
 	return &BroadcastSession{
-		Broadcaster:      StubBroadcaster2(),
+		Broadcaster:      stubBroadcaster2(),
 		ManifestID:       core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: transcoder},
 	}
