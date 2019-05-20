@@ -16,24 +16,17 @@ For full documentation and a project overview, go to
 [Livepeer Documentation](http://livepeer.readthedocs.io/en/latest/index.html) or [Livepeer Wiki](https://github.com/livepeer/wiki/wiki)
 
 ## Installing Livepeer
-### Option 1: Download executables
-The easiest way to install Livepeer is by downloading the `livepeer` and `livepeer_cli` executables from the [release page on Github](https://github.com/livepeer/go-livepeer/releases). 
+
+### Easiest Option: Download executables
+The easiest way to install Livepeer is by downloading the `livepeer` and `livepeer_cli` executables from the [release page on Github](https://github.com/livepeer/go-livepeer/releases).
 
 1. Download the packages for your OS - darwin for Macs and linux for linux.
 2. Untar them and optionally move the executables to your PATH.
 
-### Option 2: Build from source
-You can also build the executables from scratch.
-
-1. If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
-
-2. You can fetch the code running `go get github.com/livepeer/go-livepeer/cmd/livepeer` in terminal.
-
-3. You need to install `ffmpeg` as a dependency.  Run `./install_ffmpeg.sh`.  This will install the dependencies in `~/compiled`.  You need to have `pkg-config` installed.
-
-4. You can now run `PKG_CONFIG_PATH=~/compiled/lib/pkgconfig go build ./cmd/livepeer/livepeer.go` from the project root directory. To get latest version, `git pull` from the project root directory.
-
-5. To run tests in locall run `./test.sh`, to run in docker container run `./test_docker.sh`
+Alternative Livepeer installation options are also available:
+* [Build from Source](doc/install.md#source)
+* [Docker](doc/install.md/#docker)
+* [Private Testnet](doc/install.md/#testnet)
 
 ## Running Livepeer
 
