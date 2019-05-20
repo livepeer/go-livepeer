@@ -427,7 +427,7 @@ func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {
 	}
 }
 
-func TestRedeemWinningTickets_SingleTicket_SendersError(t *testing.T) {
+func TestRedeemWinningTickets_SingleTicket_GetSenderInfoError(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, faceValue, winProb)
 	params := r.TicketParams(sender)
@@ -447,14 +447,14 @@ func TestRedeemWinningTickets_SingleTicket_SendersError(t *testing.T) {
 	}
 
 	// Config stub broker to fail getting deposit
-	b.sendersShouldFail = true
+	b.getSenderInfoShouldFail = true
 
 	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
-		t.Error("expected broker senders error")
+		t.Error("expected broker GetSenderInfo error")
 	}
-	if err != nil && !strings.Contains(err.Error(), "broker senders error") {
-		t.Errorf("execpted broker senders error, got %v", err)
+	if err != nil && !strings.Contains(err.Error(), "broker GetSenderInfo error") {
+		t.Errorf("execpted broker GetSenderInfo error, got %v", err)
 	}
 }
 

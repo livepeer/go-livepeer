@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -497,20 +498,36 @@ func TestSenderInfoHandler_MissingClient(t *testing.T) {
 	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
 }
 
-func TestSenderInfoHandler_SendersError(t *testing.T) {
+func TestSenderInfoHandler_GetSenderInfoErrNoResult(t *testing.T) {
 	client := &eth.MockClient{}
 	handler := senderInfoHandler(client)
 	addr := ethcommon.Address{}
 
 	client.On("Account").Return(accounts.Account{Address: addr})
-	client.On("Senders", addr).Return(big.NewInt(0), big.NewInt(0), nil)
+	client.On("GetSenderInfo", addr).Return(nil, errors.New("ErrNoResult"))
 
 	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
 	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("{\"Deposit\":0,\"WithdrawBlock\":0}", strings.TrimSpace(string(body)))
+	assert.Equal("{\"Deposit\":0,\"WithdrawBlock\":0,\"Reserve\":0,\"ReserveState\":0,\"ThawRound\":0}", strings.TrimSpace(string(body)))
+}
+
+func TestSenderInfoHandler_GetSenderInfoOtherError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := senderInfoHandler(client)
+	addr := ethcommon.Address{}
+
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetSenderInfo", addr).Return(nil, errors.New("foo"))
+
+	resp := httpGetResp(handler)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not query sender info: foo", strings.TrimSpace(string(body)))
 }
 
 func TestSenderInfoHandler_Success(t *testing.T) {
@@ -518,26 +535,31 @@ func TestSenderInfoHandler_Success(t *testing.T) {
 	handler := senderInfoHandler(client)
 	addr := ethcommon.Address{}
 
-	deposit := big.NewInt(100)
-	withdrawBlock := big.NewInt(102)
+	mockInfo := &pm.SenderInfo{
+		Deposit:       big.NewInt(0),
+		WithdrawBlock: big.NewInt(102),
+		Reserve:       big.NewInt(104),
+		ReserveState:  pm.ReserveState(1),
+		ThawRound:     big.NewInt(2),
+	}
 
 	client.On("Account").Return(accounts.Account{Address: addr})
-	client.On("Senders", addr).Return(deposit, withdrawBlock, nil)
+	client.On("GetSenderInfo", addr).Return(mockInfo, nil)
 
 	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
-	var sender struct {
-		Deposit       *big.Int
-		WithdrawBlock *big.Int
-	}
-	err := json.Unmarshal(body, &sender)
+	var info pm.SenderInfo
+	err := json.Unmarshal(body, &info)
 	require.Nil(t, err)
 
 	assert := assert.New(t)
 	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal(deposit, sender.Deposit)
-	assert.Equal(withdrawBlock, sender.WithdrawBlock)
+	assert.Equal(mockInfo.Deposit, info.Deposit)
+	assert.Equal(mockInfo.WithdrawBlock, info.WithdrawBlock)
+	assert.Equal(mockInfo.Reserve, info.Reserve)
+	assert.Equal(mockInfo.ReserveState, info.ReserveState)
+	assert.Equal(mockInfo.ThawRound, info.ThawRound)
 }
 
 func TestTicketBrokerParamsHandler_MissingClient(t *testing.T) {

@@ -3,6 +3,7 @@ package eth
 import (
 	"math/big"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 	"github.com/livepeer/go-livepeer/pm"
@@ -45,7 +46,7 @@ func (c *client) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRan
 	copy(recipientRandHash[:], ticket.RecipientRandHash.Bytes()[:32])
 
 	return c.TicketBrokerSession.RedeemWinningTicket(
-		contracts.Struct0{
+		contracts.Struct1{
 			Recipient:         ticket.Recipient,
 			Sender:            ticket.Sender,
 			FaceValue:         ticket.FaceValue,
@@ -57,6 +58,22 @@ func (c *client) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRan
 		sig,
 		recipientRand,
 	)
+}
+
+// GetSenderInfo returns the info for a sender
+func (c *client) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
+	info, err := c.TicketBrokerSession.GetSenderInfo(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pm.SenderInfo{
+		Deposit:       info.Sender.Deposit,
+		WithdrawBlock: info.Sender.WithdrawBlock,
+		Reserve:       info.Reserve.FundsRemaining,
+		ReserveState:  pm.ReserveState(info.Reserve.State),
+		ThawRound:     info.Reserve.ThawRound,
+	}, nil
 }
 
 // IsUsedTicket checks if a ticket has been used

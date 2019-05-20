@@ -340,12 +340,12 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 
 	// If running in on-chain mode, check for a reasonable deposit
 	if s.LivepeerNode.Eth != nil {
-		sender, err := s.LivepeerNode.Eth.Senders(s.LivepeerNode.Eth.Account().Address)
+		info, err := s.LivepeerNode.Eth.GetSenderInfo(s.LivepeerNode.Eth.Account().Address)
 		if err != nil {
 			return nil, err
 		}
 
-		if sender.Deposit.Cmp(big.NewInt(0)) <= 0 {
+		if info.Deposit.Cmp(big.NewInt(0)) <= 0 {
 			glog.Errorf("No deposit - cannot start broadcast session")
 
 			if monitor.Enabled {

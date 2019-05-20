@@ -93,11 +93,7 @@ type LivepeerEthClient interface {
 	Withdraw() (*types.Transaction, error)
 	RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error)
 	IsUsedTicket(ticket *pm.Ticket) (bool, error)
-	Senders(addr ethcommon.Address) (struct {
-		Deposit       *big.Int
-		WithdrawBlock *big.Int
-	}, error)
-	RemainingReserve(addr ethcommon.Address) (*big.Int, error)
+	GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error)
 	UnlockPeriod() (*big.Int, error)
 
 	// Parameters

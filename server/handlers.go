@@ -9,6 +9,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/pm"
 )
 
 func respondWith500(w http.ResponseWriter, errMsg string) {
@@ -212,23 +213,23 @@ func senderInfoHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		sender, err := client.Senders(client.Account().Address)
+		info, err := client.GetSenderInfo(client.Account().Address)
 		if err != nil {
 			if err.Error() == "ErrNoResult" {
-				type Sender struct {
-					Deposit       *big.Int
-					WithdrawBlock *big.Int
-				}
-				sender = Sender{
+				info = &pm.SenderInfo{
 					Deposit:       big.NewInt(0),
 					WithdrawBlock: big.NewInt(0),
+					Reserve:       big.NewInt(0),
+					ReserveState:  pm.ReserveState(0),
+					ThawRound:     big.NewInt(0),
 				}
 			} else {
 				respondWith500(w, fmt.Sprintf("could not query sender info: %v", err))
+				return
 			}
 		}
 
-		data, err := json.Marshal(sender)
+		data, err := json.Marshal(info)
 		if err != nil {
 			respondWith500(w, fmt.Sprintf("could not parse sender info: %v", err))
 			return
