@@ -1080,7 +1080,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	// TicketBroker
 
-	mux.Handle("/fundAndApproveSigners", mustHaveFormParams(fundAndApproveSignersHandler(s.LivepeerNode.Eth), "depositAmount", "penaltyEscrowAmount"))
+	mux.Handle("/fundDepositAndReserve", mustHaveFormParams(fundDepositAndReserveHandler(s.LivepeerNode.Eth), "depositAmount", "reserveAmount"))
 	mux.Handle("/fundDeposit", mustHaveFormParams(fundDepositHandler(s.LivepeerNode.Eth), "amount"))
 	mux.Handle("/unlock", unlockHandler(s.LivepeerNode.Eth))
 	mux.Handle("/cancelUnlock", cancelUnlockHandler(s.LivepeerNode.Eth))

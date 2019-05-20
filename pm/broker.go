@@ -11,21 +11,14 @@ import (
 // smart contract that handles the administrative tasks in a probabilistic micropayment protocol
 // including processing deposits and pay outs
 type Broker interface {
-	// FundAndApproveSigners funds a sender's deposit and penalty escrow in addition
-	// to approving a set of ETH addresses to sign on behalf of the sender
-	FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) (*types.Transaction, error)
+	// FundDepositAndReserve funds a sender's deposit and reserve
+	FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*types.Transaction, error)
 
 	// FundDeposit funds a sender's deposit
 	FundDeposit(amount *big.Int) (*types.Transaction, error)
 
-	// FundPenaltyEscrow funds a sender's penalty escrow
-	FundPenaltyEscrow(amount *big.Int) (*types.Transaction, error)
-
-	// ApproveSigners approves a set of ETH addresses to sign on behalf of the sender
-	ApproveSigners(signers []ethcommon.Address) (*types.Transaction, error)
-
-	// RequestSignersRevocation requests the revocation of a set of approved ETH address signers
-	RequestSignersRevocation(signers []ethcommon.Address) (*types.Transaction, error)
+	// FundReserve funds a sender's reserve
+	FundReserve(amount *big.Int) (*types.Transaction, error)
 
 	// Unlock initiates the unlock period for a sender after which a sender can withdraw its
 	// deposit and penalty escrow
@@ -45,13 +38,12 @@ type Broker interface {
 	// IsUsedTicket checks if a ticket has been used
 	IsUsedTicket(ticket *Ticket) (bool, error)
 
-	// IsApprovedSigner checks if a ETH address signer is approved for a sender
-	IsApprovedSigner(sender ethcommon.Address, signer ethcommon.Address) (bool, error)
-
 	// Senders returns a sender's information
 	Senders(addr ethcommon.Address) (struct {
 		Deposit       *big.Int
-		PenaltyEscrow *big.Int
 		WithdrawBlock *big.Int
 	}, error)
+
+	// RemainingReserve returns a sender's remaining reserve funds
+	RemainingReserve(addr ethcommon.Address) (*big.Int, error)
 }

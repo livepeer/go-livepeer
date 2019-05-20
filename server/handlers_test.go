@@ -145,8 +145,8 @@ func TestCurrentBlockHandler_Success(t *testing.T) {
 	assert.Equal(big.NewInt(50), new(big.Int).SetBytes(body))
 }
 
-func TestFundAndApproveSignersHandler_MissingClient(t *testing.T) {
-	handler := fundAndApproveSignersHandler(nil)
+func TestFundDepositAndReserveHandler_MissingClient(t *testing.T) {
+	handler := fundDepositAndReserveHandler(nil)
 
 	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
@@ -156,9 +156,9 @@ func TestFundAndApproveSignersHandler_MissingClient(t *testing.T) {
 	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
 }
 
-func TestFundAndApproveSignersHandler_InvalidDepositAmount(t *testing.T) {
+func TestFundDepositAndReserveHandler_InvalidDepositAmount(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := fundAndApproveSignersHandler(client)
+	handler := fundDepositAndReserveHandler(client)
 
 	form := url.Values{
 		"depositAmount": {"foo"},
@@ -171,76 +171,76 @@ func TestFundAndApproveSignersHandler_InvalidDepositAmount(t *testing.T) {
 	assert.Contains(strings.TrimSpace(string(body)), "invalid depositAmount")
 }
 
-func TestFundAndApproveSignersHandler_InvalidPenaltyEscrowAmount(t *testing.T) {
+func TestFundDepositAndReserveHandler_InvalidReserveAmount(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := fundAndApproveSignersHandler(client)
+	handler := fundDepositAndReserveHandler(client)
 
 	form := url.Values{
-		"depositAmount":       {"100"},
-		"penaltyEscrowAmount": {"foo"},
+		"depositAmount": {"100"},
+		"reserveAmount": {"foo"},
 	}
 	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
 	assert.Equal(http.StatusBadRequest, resp.StatusCode)
-	assert.Contains(strings.TrimSpace(string(body)), "invalid penaltyEscrowAmount")
+	assert.Contains(strings.TrimSpace(string(body)), "invalid reserveAmount")
 }
 
-func TestFundAndApproveSignersHandler_TransactionSubmissionError(t *testing.T) {
+func TestFundDepositAndReserveHandler_TransactionSubmissionError(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := fundAndApproveSignersHandler(client)
+	handler := fundDepositAndReserveHandler(client)
 
-	client.On("FundAndApproveSigners", big.NewInt(50), big.NewInt(50), []ethcommon.Address{}).Return(nil, errors.New("FundAndApproveSigners error"))
+	client.On("FundDepositAndReserve", big.NewInt(50), big.NewInt(50)).Return(nil, errors.New("FundDepositAndReserve error"))
 
 	form := url.Values{
-		"depositAmount":       {"50"},
-		"penaltyEscrowAmount": {"50"},
+		"depositAmount": {"50"},
+		"reserveAmount": {"50"},
 	}
 	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute fundAndApproveSigners: FundAndApproveSigners error", strings.TrimSpace(string(body)))
+	assert.Equal("could not execute fundDepositAndReserve: FundDepositAndReserve error", strings.TrimSpace(string(body)))
 }
 
-func TestFundAndApproveSignersHandler_TransactionWaitError(t *testing.T) {
+func TestFundDepositAndReserveHandler_TransactionWaitError(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := fundAndApproveSignersHandler(client)
+	handler := fundDepositAndReserveHandler(client)
 
-	client.On("FundAndApproveSigners", big.NewInt(50), big.NewInt(50), []ethcommon.Address{}).Return(nil, nil)
+	client.On("FundDepositAndReserve", big.NewInt(50), big.NewInt(50)).Return(nil, nil)
 	client.On("CheckTx").Return(errors.New("CheckTx error"))
 
 	form := url.Values{
-		"depositAmount":       {"50"},
-		"penaltyEscrowAmount": {"50"},
+		"depositAmount": {"50"},
+		"reserveAmount": {"50"},
 	}
 	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute fundAndApproveSigners: CheckTx error", strings.TrimSpace(string(body)))
+	assert.Equal("could not execute fundDepositAndReserve: CheckTx error", strings.TrimSpace(string(body)))
 }
 
-func TestFundAndApproveSignersHandler_Success(t *testing.T) {
+func TestFundDepositAndReserveHandler_Success(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := fundAndApproveSignersHandler(client)
+	handler := fundDepositAndReserveHandler(client)
 
-	client.On("FundAndApproveSigners", big.NewInt(50), big.NewInt(50), []ethcommon.Address{}).Return(nil, nil)
+	client.On("FundDepositAndReserve", big.NewInt(50), big.NewInt(50)).Return(nil, nil)
 	client.On("CheckTx", mock.Anything).Return(nil)
 
 	form := url.Values{
-		"depositAmount":       {"50"},
-		"penaltyEscrowAmount": {"50"},
+		"depositAmount": {"50"},
+		"reserveAmount": {"50"},
 	}
 	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
 	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("fundAndApproveSigners success", strings.TrimSpace(string(body)))
+	assert.Equal("fundDepositAndReserve success", strings.TrimSpace(string(body)))
 }
 
 func TestFundDepositHandler_MissingClient(t *testing.T) {
@@ -503,14 +503,14 @@ func TestSenderInfoHandler_SendersError(t *testing.T) {
 	addr := ethcommon.Address{}
 
 	client.On("Account").Return(accounts.Account{Address: addr})
-	client.On("Senders", addr).Return(big.NewInt(0), big.NewInt(0), big.NewInt(0), nil)
+	client.On("Senders", addr).Return(big.NewInt(0), big.NewInt(0), nil)
 
 	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	assert := assert.New(t)
 	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("{\"Deposit\":0,\"PenaltyEscrow\":0,\"WithdrawBlock\":0}", strings.TrimSpace(string(body)))
+	assert.Equal("{\"Deposit\":0,\"WithdrawBlock\":0}", strings.TrimSpace(string(body)))
 }
 
 func TestSenderInfoHandler_Success(t *testing.T) {
@@ -519,18 +519,16 @@ func TestSenderInfoHandler_Success(t *testing.T) {
 	addr := ethcommon.Address{}
 
 	deposit := big.NewInt(100)
-	penaltyEscrow := big.NewInt(101)
 	withdrawBlock := big.NewInt(102)
 
 	client.On("Account").Return(accounts.Account{Address: addr})
-	client.On("Senders", addr).Return(deposit, penaltyEscrow, withdrawBlock, nil)
+	client.On("Senders", addr).Return(deposit, withdrawBlock, nil)
 
 	resp := httpGetResp(handler)
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	var sender struct {
 		Deposit       *big.Int
-		PenaltyEscrow *big.Int
 		WithdrawBlock *big.Int
 	}
 	err := json.Unmarshal(body, &sender)
@@ -539,7 +537,6 @@ func TestSenderInfoHandler_Success(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal(http.StatusOK, resp.StatusCode)
 	assert.Equal(deposit, sender.Deposit)
-	assert.Equal(penaltyEscrow, sender.PenaltyEscrow)
 	assert.Equal(withdrawBlock, sender.WithdrawBlock)
 }
 
@@ -552,20 +549,6 @@ func TestTicketBrokerParamsHandler_MissingClient(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
-}
-
-func TestTicketBrokerParamsHandler_MinPenaltyEscrowError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := ticketBrokerParamsHandler(client)
-
-	client.On("MinPenaltyEscrow").Return(nil, errors.New("MinPenaltyEscrow error"))
-
-	resp := httpGetResp(handler)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not query TicketBroker minPenaltyEscrow: MinPenaltyEscrow error", strings.TrimSpace(string(body)))
 }
 
 func TestTicketBrokerParamsHandler_UnlockPeriodError(t *testing.T) {
@@ -604,7 +587,6 @@ func TestTicketBrokerParamsHandler_Success(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal(minPenaltyEscrow, params.MinPenaltyEscrow)
 	assert.Equal(unlockPeriod, params.UnlockPeriod)
 }
 

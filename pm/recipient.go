@@ -156,10 +156,15 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 		return err
 	}
 
+	reserve, err := r.broker.RemainingReserve(ticket.Sender)
+	if err != nil {
+		return err
+	}
+
 	// TODO: Consider a smarter strategy here in the future
 	// Ex. If deposit < transaction cost, do not try to redeem
-	if sender.Deposit.Cmp(big.NewInt(0)) == 0 && sender.PenaltyEscrow.Cmp(big.NewInt(0)) == 0 {
-		return errors.Errorf("sender %v has zero deposit and penalty escrow", ticket.Sender)
+	if sender.Deposit.Cmp(big.NewInt(0)) == 0 && reserve.Cmp(big.NewInt(0)) == 0 {
+		return errors.Errorf("sender %v has zero deposit and reserve", ticket.Sender)
 	}
 
 	// Assume that that this call will return immediately if there

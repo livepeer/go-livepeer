@@ -609,7 +609,7 @@ func TestRegisterConnection(t *testing.T) {
 
 	// Should return an error if in on-chain mode and fail to get sender deposit
 	c.On("Account").Return(accounts.Account{Address: addr})
-	c.On("Senders", addr).Return(nil, nil, nil, errors.New("Senders error")).Once()
+	c.On("Senders", addr).Return(nil, nil, errors.New("Senders error")).Once()
 
 	_, err := s.registerConnection(strm)
 	assert.Equal("Senders error", err.Error())
