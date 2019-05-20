@@ -1,68 +1,60 @@
 package pm
 
-import (
-	"fmt"
-	"testing"
+// func TestVerify(t *testing.T) {
+// 	msg := []byte("foo")
+// 	personalMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, msg)
+// 	personalHash := crypto.Keccak256([]byte(personalMsg))
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-)
+// 	senderPrivKey, err := crypto.GenerateKey()
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-func TestVerify(t *testing.T) {
-	msg := []byte("foo")
-	personalMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, msg)
-	personalHash := crypto.Keccak256([]byte(personalMsg))
+// 	sender := crypto.PubkeyToAddress(senderPrivKey.PublicKey)
 
-	senderPrivKey, err := crypto.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	senderSig, err := crypto.Sign(personalHash, senderPrivKey)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	sender := crypto.PubkeyToAddress(senderPrivKey.PublicKey)
+// 	unapprovedSignerPrivKey, err := crypto.GenerateKey()
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	senderSig, err := crypto.Sign(personalHash, senderPrivKey)
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	unapprovedSignerSig, err := crypto.Sign(personalHash, unapprovedSignerPrivKey)
 
-	unapprovedSignerPrivKey, err := crypto.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	b := newStubBroker()
 
-	unapprovedSignerSig, err := crypto.Sign(personalHash, unapprovedSignerPrivKey)
+// 	sv := NewApprovedSigVerifier(b)
 
-	b := newStubBroker()
+// 	// Test invalid signature for non-approved signer
+// 	if valid := sv.Verify(sender, msg, unapprovedSignerSig); valid {
+// 		t.Error("expected invalid signature for non-approved signer")
+// 	}
 
-	sv := NewApprovedSigVerifier(b)
+// 	// Test valid signature for approved signer
+// 	approvedSignerPrivKey, err := crypto.GenerateKey()
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	// Test invalid signature for non-approved signer
-	if valid := sv.Verify(sender, msg, unapprovedSignerSig); valid {
-		t.Error("expected invalid signature for non-approved signer")
-	}
+// 	approvedSigner := crypto.PubkeyToAddress(approvedSignerPrivKey.PublicKey)
 
-	// Test valid signature for approved signer
-	approvedSignerPrivKey, err := crypto.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	approvedSignerSig, err := crypto.Sign(personalHash, approvedSignerPrivKey)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	approvedSigner := crypto.PubkeyToAddress(approvedSignerPrivKey.PublicKey)
+// 	// Approve signer
+// 	b.ApproveSigners([]ethcommon.Address{approvedSigner})
 
-	approvedSignerSig, err := crypto.Sign(personalHash, approvedSignerPrivKey)
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	if valid := sv.Verify(sender, msg, approvedSignerSig); !valid {
+// 		t.Error("expected valid signature for approved signer")
+// 	}
 
-	// Approve signer
-	b.ApproveSigners([]ethcommon.Address{approvedSigner})
-
-	if valid := sv.Verify(sender, msg, approvedSignerSig); !valid {
-		t.Error("expected valid signature for approved signer")
-	}
-
-	// Test valid signature for sender
-	if valid := sv.Verify(sender, msg, senderSig); !valid {
-		t.Error("expected valid signature for sender")
-	}
-}
+// 	// Test valid signature for sender
+// 	if valid := sv.Verify(sender, msg, senderSig); !valid {
+// 		t.Error("expected valid signature for sender")
+// 	}
+// }
