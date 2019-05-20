@@ -116,14 +116,14 @@ func TestSelectOrchestrator(t *testing.T) {
 	mid := core.RandomManifestID()
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	pl := core.NewBasicPlaylistManager(mid, storage)
-	if _, err := selectOrchestrator(s.LivepeerNode, pl, 4); err != ErrDiscovery {
+	if _, err := selectOrchestrator(s.LivepeerNode, pl, 4); err != errDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(s.LivepeerNode, pl, 4); sess != nil || err != ErrNoOrchs {
+	if sess, err := selectOrchestrator(s.LivepeerNode, pl, 4); sess != nil || err != errNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -248,7 +248,7 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 }
 
 type authWebhookReq struct {
-	url string `json:"url"`
+	URL string `json:"url"`
 }
 
 func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
@@ -407,7 +407,7 @@ func TestEndRTMPStreamHandler(t *testing.T) {
 	st := stream.NewBasicRTMPVideoStream(sid)
 
 	// Nonexistent stream
-	if err := endHandler(u, st); err != ErrUnknownStream {
+	if err := endHandler(u, st); err != errUnknownStream {
 		t.Error("Expected unknown stream ", err)
 	}
 	// Normal case: clean up existing stream
@@ -418,7 +418,7 @@ func TestEndRTMPStreamHandler(t *testing.T) {
 		t.Error("Did  not end stream ", err)
 	}
 	// Check behavior on calling `endHandler` twice
-	if err := endHandler(u, st); err != ErrUnknownStream {
+	if err := endHandler(u, st); err != errUnknownStream {
 		t.Error("Stream was not cleaned up properly ", err)
 	}
 }
@@ -438,7 +438,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	// Check for invalid node storage
 	oldStorage := drivers.NodeStorage
 	drivers.NodeStorage = nil
-	if err := handler(u, strm); err != ErrStorage {
+	if err := handler(u, strm); err != errStorage {
 		t.Error("Expected storage error ", err)
 	}
 	drivers.NodeStorage = oldStorage
@@ -458,7 +458,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	}
 
 	//Stream already exists
-	if err := handler(u, strm); err != ErrAlreadyExists {
+	if err := handler(u, strm); err != errAlreadyExists {
 		t.Errorf("Expecting publish error because stream already exists, but got: %v", err)
 	}
 
@@ -618,7 +618,7 @@ func TestRegisterConnection(t *testing.T) {
 	c.On("Senders", addr).Return(big.NewInt(0), nil, nil, nil).Once()
 
 	_, err = s.registerConnection(strm)
-	assert.Equal(ErrLowDeposit, err)
+	assert.Equal(errLowDeposit, err)
 
 	// Remove node storage
 	drivers.NodeStorage = nil
@@ -627,14 +627,14 @@ func TestRegisterConnection(t *testing.T) {
 	c.On("Senders", addr).Return(big.NewInt(1), nil, nil, nil).Once()
 
 	_, err = s.registerConnection(strm)
-	assert.NotEqual(ErrLowDeposit, err)
+	assert.NotEqual(errLowDeposit, err)
 
 	// Switch to off-chain mode
 	s.LivepeerNode.Eth = nil
 
 	// Should return an error if missing node storage
 	_, err = s.registerConnection(strm)
-	assert.Equal(err, ErrStorage)
+	assert.Equal(err, errStorage)
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 
 	// normal success case
@@ -653,7 +653,7 @@ func TestRegisterConnection(t *testing.T) {
 
 	// Should return an error if creating another cxn with the same mid
 	_, err = s.registerConnection(strm)
-	assert.Equal(err, ErrAlreadyExists)
+	assert.Equal(err, errAlreadyExists)
 
 	// Ensure thread-safety under -race
 	var wg sync.WaitGroup

@@ -37,7 +37,7 @@ func TestServeSegment_GetPaymentError(t *testing.T) {
 	handler := serveSegmentHandler(orch)
 
 	headers := map[string]string{
-		PaymentHeader: "foo",
+		paymentHeader: "foo",
 	}
 	resp := httpPostResp(handler, nil, headers)
 	defer resp.Body.Close()
@@ -55,8 +55,8 @@ func TestServeSegment_VerifySegCredsError(t *testing.T) {
 	handler := serveSegmentHandler(orch)
 
 	headers := map[string]string{
-		PaymentHeader: "",
-		SegmentHeader: "foo",
+		paymentHeader: "",
+		segmentHeader: "foo",
 	}
 	resp := httpPostResp(handler, nil, headers)
 	defer resp.Body.Close()
@@ -66,7 +66,7 @@ func TestServeSegment_VerifySegCredsError(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Equal(http.StatusForbidden, resp.StatusCode)
-	assert.Equal(ErrSegEncoding.Error(), strings.TrimSpace(string(body)))
+	assert.Equal(errSegEncoding.Error(), strings.TrimSpace(string(body)))
 }
 
 func TestServeSegment_ProcessPaymentError(t *testing.T) {
@@ -76,7 +76,7 @@ func TestServeSegment_ProcessPaymentError(t *testing.T) {
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 
 	s := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
+		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 	}
 	creds, err := genSegCreds(s, &stream.HLSSegment{})
@@ -85,8 +85,8 @@ func TestServeSegment_ProcessPaymentError(t *testing.T) {
 	orch.On("ProcessPayment", mock.Anything, mock.Anything).Return(errors.New("ProcessPayment error"))
 
 	headers := map[string]string{
-		PaymentHeader: "",
-		SegmentHeader: creds,
+		paymentHeader: "",
+		segmentHeader: creds,
 	}
 	resp := httpPostResp(handler, nil, headers)
 	defer resp.Body.Close()
@@ -106,7 +106,7 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 
 	s := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
+		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 	}
 	creds, err := genSegCreds(s, &stream.HLSSegment{})
@@ -115,8 +115,8 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 
 	headers := map[string]string{
-		PaymentHeader: "",
-		SegmentHeader: creds,
+		paymentHeader: "",
+		segmentHeader: creds,
 	}
 	resp := httpPostResp(handler, bytes.NewReader([]byte("foo")), headers)
 	defer resp.Body.Close()
@@ -138,7 +138,7 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 
 	s := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
+		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
@@ -152,8 +152,8 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
 
 	headers := map[string]string{
-		PaymentHeader: "",
-		SegmentHeader: creds,
+		paymentHeader: "",
+		segmentHeader: creds,
 	}
 	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
 	defer resp.Body.Close()
@@ -182,7 +182,7 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 
 	s := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
+		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 		Profiles: []ffmpeg.VideoProfile{
 			ffmpeg.P720p60fps16x9,
@@ -211,8 +211,8 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
 
 	headers := map[string]string{
-		PaymentHeader: "",
-		SegmentHeader: creds,
+		paymentHeader: "",
+		segmentHeader: creds,
 	}
 	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
 	defer resp.Body.Close()
@@ -242,7 +242,7 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 
 	s := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
+		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 		Profiles: []ffmpeg.VideoProfile{
 			ffmpeg.P720p60fps16x9,
@@ -267,8 +267,8 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
 
 	headers := map[string]string{
-		PaymentHeader: "",
-		SegmentHeader: creds,
+		paymentHeader: "",
+		segmentHeader: creds,
 	}
 	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
 	defer resp.Body.Close()
@@ -298,7 +298,7 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 
 	s := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
+		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 		Profiles: []ffmpeg.VideoProfile{
 			ffmpeg.P720p60fps16x9,
@@ -325,8 +325,8 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
 
 	headers := map[string]string{
-		PaymentHeader: "",
-		SegmentHeader: creds,
+		paymentHeader: "",
+		segmentHeader: creds,
 	}
 	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
 	defer resp.Body.Close()
@@ -348,7 +348,7 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 }
 
 func TestSubmitSegment_GenSegCredsError(t *testing.T) {
-	b := StubBroadcaster2()
+	b := stubBroadcaster2()
 	b.signErr = errors.New("Sign error")
 
 	s := &BroadcastSession{
@@ -363,7 +363,7 @@ func TestSubmitSegment_GenSegCredsError(t *testing.T) {
 
 func TestSubmitSegment_HttpPostError(t *testing.T) {
 	s := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
+		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: "https://foo.com",
@@ -383,7 +383,7 @@ func TestSubmitSegment_Non200StatusCode(t *testing.T) {
 	})
 
 	s := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
+		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
@@ -404,7 +404,7 @@ func TestSubmitSegment_ProtoUnmarshalError(t *testing.T) {
 	})
 
 	s := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
+		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
@@ -431,7 +431,7 @@ func TestSubmitSegment_TranscodeResultError(t *testing.T) {
 	})
 
 	s := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
+		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
@@ -473,7 +473,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	})
 
 	s := &BroadcastSession{
-		Broadcaster: StubBroadcaster2(),
+		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
