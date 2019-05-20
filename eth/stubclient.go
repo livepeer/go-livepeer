@@ -83,6 +83,18 @@ func (m *MockClient) Senders(addr common.Address) (sender struct {
 	return
 }
 
+func (m *MockClient) GetSenderInfo(addr common.Address) (*pm.SenderInfo, error) {
+	args := m.Called(addr)
+	infoArg := args.Get(0)
+	err := args.Error(1)
+
+	if infoArg == nil {
+		return nil, err
+	}
+
+	return infoArg.(*pm.SenderInfo), err
+}
+
 func (m *MockClient) UnlockPeriod() (*big.Int, error) {
 	args := m.Called()
 	return mockBigInt(args, 0), args.Error(1)
@@ -217,7 +229,7 @@ func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
 }, err error) {
 	return
 }
-func (e *StubClient) RemainingReserve(addr ethcommon.Address) (*big.Int, error) {
+func (e *StubClient) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
 	return nil, nil
 }
 func (e *StubClient) UnlockPeriod() (*big.Int, error) {

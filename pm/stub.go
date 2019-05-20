@@ -92,7 +92,7 @@ type stubBroker struct {
 	usedTickets                map[ethcommon.Hash]bool
 	approvedSigners            map[ethcommon.Address]bool
 	redeemShouldFail           bool
-	sendersShouldFail          bool
+	getSenderInfoShouldFail    bool
 	remainingReserveShouldFail bool
 }
 
@@ -151,27 +151,18 @@ func (b *stubBroker) SetReserve(addr ethcommon.Address, amount *big.Int) {
 	b.reserves[addr] = amount
 }
 
-func (b *stubBroker) Senders(addr ethcommon.Address) (sender struct {
-	Deposit       *big.Int
-	WithdrawBlock *big.Int
-}, err error) {
-	if b.sendersShouldFail {
-		err = fmt.Errorf("stub broker senders error")
-		return
+func (b *stubBroker) GetSenderInfo(addr ethcommon.Address) (info *SenderInfo, err error) {
+	if b.getSenderInfoShouldFail {
+		return nil, fmt.Errorf("stub broker GetSenderInfo error")
 	}
 
-	sender.Deposit = b.deposits[addr]
-	sender.WithdrawBlock = big.NewInt(0)
-
-	return
-}
-
-func (b *stubBroker) RemainingReserve(addr ethcommon.Address) (*big.Int, error) {
-	if b.remainingReserveShouldFail {
-		return nil, fmt.Errorf("stub broker RemainingResere error")
-	}
-
-	return b.reserves[addr], nil
+	return &SenderInfo{
+		Deposit:       b.deposits[addr],
+		WithdrawBlock: big.NewInt(0),
+		Reserve:       b.reserves[addr],
+		ReserveState:  ReserveState(0),
+		ThawRound:     big.NewInt(0),
+	}, nil
 }
 
 type stubValidator struct {
