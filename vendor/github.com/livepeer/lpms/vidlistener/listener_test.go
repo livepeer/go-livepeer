@@ -14,6 +14,16 @@ import (
 	joy4rtmp "github.com/nareix/joy4/format/rtmp"
 )
 
+type testStream string
+
+func (t *testStream) StreamID() string {
+	return string(*t)
+}
+func newTestStream() *testStream {
+	t := testStream("testID")
+	return &t
+}
+
 func TestListener(t *testing.T) {
 	server := &joy4rtmp.Server{Addr: ":1937"}
 	listener := &VidListener{RtmpServer: server}
@@ -21,8 +31,8 @@ func TestListener(t *testing.T) {
 
 	listener.HandleRTMPPublish(
 		//makeStreamID
-		func(url *url.URL) string {
-			return "testID"
+		func(url *url.URL) stream.AppData {
+			return newTestStream()
 		},
 		//gotStream
 		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
@@ -72,8 +82,8 @@ func TestListenerError(t *testing.T) {
 	failures := 0
 	badListener.HandleRTMPPublish(
 		//makeStreamID
-		func(url *url.URL) string {
-			return "testID"
+		func(url *url.URL) stream.AppData {
+			return newTestStream()
 		},
 		//gotStream
 		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
@@ -113,9 +123,9 @@ func TestListenerEmptyStreamID(t *testing.T) {
 
 	badListener.HandleRTMPPublish(
 		//makeStreamID
-		func(url *url.URL) string {
+		func(url *url.URL) stream.AppData {
 			// On returning empty stream id connection should be closed
-			return ""
+			return newTestStream()
 		},
 		//gotStream
 		func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {

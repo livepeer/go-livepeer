@@ -53,6 +53,8 @@ func (s *BasicHLSVideoStream) SetSubscriber(f func(seg *HLSSegment, eof bool)) {
 //GetStreamID returns the streamID
 func (s *BasicHLSVideoStream) GetStreamID() string { return s.strmID }
 
+func (s *BasicHLSVideoStream) AppData() AppData { return nil }
+
 //GetStreamFormat always returns HLS
 func (s *BasicHLSVideoStream) GetStreamFormat() VideoFormat { return HLS }
 

@@ -116,7 +116,7 @@ func (l *LPMS) Start(ctx context.Context) error {
 
 //HandleRTMPPublish offload to the video listener.  To understand how it works, look at videoListener.HandleRTMPPublish.
 func (l *LPMS) HandleRTMPPublish(
-	makeStreamID func(url *url.URL) (strmID string),
+	makeStreamID func(url *url.URL) (strmID stream.AppData),
 	gotStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error),
 	endStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error) {
 

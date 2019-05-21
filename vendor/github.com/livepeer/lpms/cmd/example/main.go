@@ -27,6 +27,12 @@ import (
 
 var HLSWaitTime = time.Second * 10
 
+type exampleStream string
+
+func (t *exampleStream) StreamID() string {
+	return string(*t)
+}
+
 func randString(n int) string {
 	rand.Seed(time.Now().UnixNano())
 	x := make([]byte, n, n)
@@ -75,8 +81,9 @@ func main() {
 
 	lpms.HandleRTMPPublish(
 		//makeStreamID (give the stream an ID)
-		func(url *url.URL) (strmID string) {
-			return randString(10)
+		func(url *url.URL) stream.AppData {
+			s := exampleStream(randString(10))
+			return &s
 		},
 
 		//gotStream

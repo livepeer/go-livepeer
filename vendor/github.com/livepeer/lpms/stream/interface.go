@@ -7,7 +7,12 @@ import (
 	"github.com/nareix/joy4/av"
 )
 
+type AppData interface {
+	StreamID() string
+}
+
 type VideoStream interface {
+	AppData() AppData
 	GetStreamID() string
 	GetStreamFormat() VideoFormat
 	String() string

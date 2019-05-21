@@ -27,7 +27,7 @@ type VidListener struct {
 //gotStream is called when the stream starts.  It gives you access to the stream.
 //endStream is called when the stream ends.  It gives you access to the stream.
 func (self *VidListener) HandleRTMPPublish(
-	makeStreamID func(url *url.URL) (strmID string),
+	makeStreamID func(url *url.URL) (strmID stream.AppData),
 	gotStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error,
 	endStream func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error) {
 
@@ -36,7 +36,7 @@ func (self *VidListener) HandleRTMPPublish(
 			glog.V(2).Infof("RTMP server got upstream: %v", conn.URL)
 
 			strmID := makeStreamID(conn.URL)
-			if strmID == "" {
+			if strmID == nil || strmID.StreamID() == "" {
 				conn.Close()
 				return
 			}
