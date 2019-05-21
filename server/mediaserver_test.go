@@ -220,6 +220,35 @@ func TestSelectOrchestrator(t *testing.T) {
 	assert.Equal(sess[1].OrchestratorInfo, &net.OrchestratorInfo{TicketParams: protoParams2})
 }
 
+func newStreamParams(mid core.ManifestID, rtmpKey string) *streamParameters {
+	return &streamParameters{mid: mid, rtmpKey: rtmpKey}
+}
+
+func TestStreamParameters(t *testing.T) {
+	assert := assert.New(t)
+
+	// empty params
+	s := streamParameters{}
+	assert.Equal("/", s.StreamID())
+
+	// key only
+	s = streamParameters{rtmpKey: "source"}
+	assert.Equal("/source", s.StreamID())
+
+	// mid only
+	mid := core.ManifestID("abc")
+	s = streamParameters{mid: mid}
+	assert.Equal("abc/", s.StreamID())
+
+	// both mid + key
+	s = streamParameters{mid: mid, rtmpKey: "source"}
+	assert.Equal("abc/source", s.StreamID())
+
+	// quick sanity check of newStreamParams test-only helper
+	sp := newStreamParams(mid, "sourcepointer")
+	assert.Equal("abc/sourcepointer", sp.StreamID())
+}
+
 func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 	s := &LivepeerServer{
 		connectionLock:  &sync.RWMutex{},
@@ -230,18 +259,18 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 	oldMaxSessions := core.MaxSessions
 	core.MaxSessions = 1
 	// happy case
-	sid := createSid(u)
-	mid := parseManifestID(sid)
+	sid := createSid(u).(*streamParameters)
+	mid := sid.mid
 	if mid != "id1" {
 		t.Error("Stream should be allowd", sid)
 	}
-	if sid != "id1/secret" {
+	if sid.StreamID() != "id1/secret" {
 		t.Error("Stream id/key did not match ", sid)
 	}
 	s.rtmpConnections[core.ManifestID("id1")] = nil
 	// capped case
-	sid = createSid(u)
-	if sid != "" {
+	params := createSid(u)
+	if params != nil {
 		t.Error("Stream should be denied because of capacity cap")
 	}
 	core.MaxSessions = oldMaxSessions
@@ -259,7 +288,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	AuthWebhookURL = "http://localhost:8938/notexisting"
 	u, _ := url.Parse("http://hot/something/id1")
 	sid := createSid(u)
-	if sid != "" {
+	if sid != nil {
 		t.Error("Webhook auth failed")
 	}
 
@@ -278,7 +307,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	defer ts.Close()
 	AuthWebhookURL = ts.URL
 	sid = createSid(u)
-	if sid == "" {
+	if sid == nil {
 		t.Error("On empty response with 200 code should pass")
 	}
 	ts2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -287,7 +316,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	defer ts.Close()
 	AuthWebhookURL = ts2.URL
 	sid = createSid(u)
-	if sid != "" {
+	if sid != nil {
 		t.Error("Should not pass in returned manifest id is empty")
 	}
 	ts3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -296,7 +325,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	defer ts3.Close()
 	AuthWebhookURL = ts3.URL
 	sid = createSid(u)
-	if sid != "" {
+	if sid != nil {
 		t.Error("Should not pass if returned json is invalid")
 	}
 	ts4 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -304,8 +333,8 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	}))
 	defer ts4.Close()
 	AuthWebhookURL = ts4.URL
-	sid = createSid(u)
-	mid := parseManifestID(sid)
+	params := createSid(u).(*streamParameters)
+	mid := params.mid
 	if mid != "xy" {
 		t.Error("Should set manifest id to one provided by webhook")
 	}
@@ -314,9 +343,9 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	}))
 	defer ts5.Close()
 	AuthWebhookURL = ts5.URL
-	sid = createSid(u)
-	mid = parseManifestID(sid)
-	if mid != "xyz" || sid != "xyz/zyx" {
+	params = createSid(u).(*streamParameters)
+	mid = params.mid
+	if mid != "xyz" || params.StreamID() != "xyz/zyx" {
 		t.Error("Should set manifest / streamkey  to one provided by webhook")
 	}
 	AuthWebhookURL = ""
@@ -340,21 +369,21 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	// Test default path structure
 	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
 	u, _ := url.Parse("rtmp://localhost/" + expectedSid.String()) // with key
-	if sid := createSid(u); sid != expectedSid.String() {
+	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
 		t.Error("Unexpected streamid")
 	}
 	u, _ = url.Parse("rtmp://localhost/stream/" + expectedSid.String()) // with stream
-	if sid := createSid(u); sid != expectedSid.String() {
+	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
 		t.Error("Unexpected streamid")
 	}
 	expectedMid := "mnopq"
 	key := hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
 	u, _ = url.Parse("rtmp://localhost/" + string(expectedMid)) // without key
-	if sid := createSid(u); sid != string(expectedMid)+"/"+key {
+	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
 		t.Error("Unexpected streamid")
 	}
 	u, _ = url.Parse("rtmp://localhost/stream/" + string(expectedMid)) // with stream, without key
-	if sid := createSid(u); sid != string(expectedMid)+"/"+key {
+	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
 		t.Error("Unexpected streamid")
 	}
 	// Test normal case
@@ -368,14 +397,14 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 		t.Error("Handler failed ", err)
 	}
 	// Test collisions via stream reuse
-	if sid := createSid(u); sid != "" {
+	if sid := createSid(u); sid != nil {
 		t.Error("Expected failure due to naming collision")
 	}
 	// Ensure the stream ID is reusable after the stream ends
 	if err := endHandler(u, st); err != nil {
 		t.Error("Could not clean up stream")
 	}
-	if sid := createSid(u); sid != st.GetStreamID() {
+	if sid := createSid(u); sid.StreamID() != st.GetStreamID() {
 		t.Error("Mismatched streamid during stream reuse")
 	}
 
@@ -386,7 +415,7 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 		// This isn't a great test because if the query param ever changes,
 		// this test will still pass
 		u, _ := url.Parse("rtmp://localhost/" + inp)
-		if sid := createSid(u); sid != st.GetStreamID() {
+		if sid := createSid(u); sid.StreamID() != st.GetStreamID() {
 			t.Errorf("Unexpected StreamID for '%v' ; expected '%v' for input '%v'", sid, st.GetStreamID(), inp)
 		}
 	}
@@ -432,7 +461,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	vProfile := ffmpeg.P720p30fps16x9
 	hlsStrmID := core.MakeStreamID(core.ManifestID("ghijkl"), &vProfile)
 	u, _ := url.Parse("rtmp://localhost:1935/movie")
-	strm := stream.NewBasicRTMPVideoStream(hlsStrmID.String())
+	strm := stream.NewBasicRTMPVideoStream(&streamParameters{mid: hlsStrmID.ManifestID})
 	expectedSid := core.MakeStreamIDFromString(string(hlsStrmID.ManifestID), "source")
 
 	// Check for invalid node storage
@@ -449,7 +478,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	}
 
 	// Check assigned IDs
-	mid := rtmpManifestID(strm)
+	mid := streamParams(strm).mid
 	if s.LatestPlaylist().ManifestID() != mid {
 		t.Error("Unexpected Manifest ID")
 	}
@@ -562,7 +591,7 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	vProfile := ffmpeg.P720p30fps16x9
 	hlsStrmID := core.MakeStreamID(core.RandomManifestID(), &vProfile)
 	url, _ := url.Parse("rtmp://localhost:1935/movie")
-	strm := stream.NewBasicRTMPVideoStream(string(hlsStrmID.ManifestID) + "/source")
+	strm := stream.NewBasicRTMPVideoStream(newStreamParams(hlsStrmID.ManifestID, "source"))
 
 	if err := handler(url, strm); err != nil {
 		t.Errorf("Error: %v", err)
@@ -600,7 +629,7 @@ func TestRegisterConnection(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()
 	mid := core.SplitStreamIDString(t.Name()).ManifestID
-	strm := stream.NewBasicRTMPVideoStream(string(mid))
+	strm := stream.NewBasicRTMPVideoStream(&streamParameters{mid: mid})
 
 	// Switch to on-chain mode
 	c := &eth.MockClient{}
@@ -663,7 +692,7 @@ func TestRegisterConnection(t *testing.T) {
 			defer wg.Done()
 			name := fmt.Sprintf("%v_%v", t.Name(), i)
 			mid := core.SplitStreamIDString(name).ManifestID
-			strm := stream.NewBasicRTMPVideoStream(string(mid))
+			strm := stream.NewBasicRTMPVideoStream(&streamParameters{mid: mid})
 			cxn, err := s.registerConnection(strm)
 
 			assert.Nil(err)
@@ -697,7 +726,7 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	u, _ := url.Parse("rtmp://localhost")
 	sid := createSid(u)
 	st := stream.NewBasicRTMPVideoStream(sid)
-	mid := rtmpManifestID(st)
+	mid := streamParams(st).mid
 
 	// assert that ManifestID has not been added to rtmpConnections yet
 	_, exists := s.rtmpConnections[mid]

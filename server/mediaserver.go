@@ -44,6 +44,7 @@ var errDiscovery = errors.New("ErrDiscovery")
 var errNoOrchs = errors.New("ErrNoOrchs")
 var errUnknownStream = errors.New("ErrUnknownStream")
 var errPMCheckFailed = errors.New("PM Check Failed")
+var errMismatchedParams = errors.New("Mismatched type for stream params")
 
 const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
@@ -57,6 +58,15 @@ var BroadcastPrice = big.NewInt(1)
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL string
+
+type streamParameters struct {
+	mid     core.ManifestID
+	rtmpKey string
+}
+
+func (s *streamParameters) StreamID() string {
+	return string(s.mid) + "/" + s.rtmpKey
+}
 
 type rtmpConnection struct {
 	mid         core.ManifestID
@@ -147,8 +157,8 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOption
 }
 
 //RTMP Publish Handlers
-func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID string) {
-	return func(url *url.URL) (strmID string) {
+func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID stream.AppData) {
+	return func(url *url.URL) (strmID stream.AppData) {
 		//Check webhook for ManifestID
 		//If ManifestID is returned from webhook, use it
 		//Else check URL for ManifestID
@@ -160,7 +170,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		var key string
 		if resp, err = authenticateStream(url.String()); err != nil {
 			glog.Error("Authentication denied for ", err)
-			return ""
+			return nil
 		}
 		if resp != nil {
 			mid, key = parseStreamID(resp.ManifestID).ManifestID, resp.StreamKey
@@ -179,18 +189,21 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		defer s.connectionLock.RUnlock()
 		if core.MaxSessions > 0 && len(s.rtmpConnections) >= core.MaxSessions {
 			glog.Error("Too many connections")
-			return ""
+			return nil
 		}
 		if _, exists := s.rtmpConnections[mid]; exists {
 			glog.Error("Manifest already exists ", mid)
-			return ""
+			return nil
 		}
 
 		// Generate RTMP part of StreamID
 		if key == "" {
 			key = hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
 		}
-		return core.MakeStreamIDFromString(string(mid), key).String()
+		return &streamParameters{
+			mid:     mid,
+			rtmpKey: key,
+		}
 	}
 }
 
@@ -228,8 +241,14 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 	return &authResp, nil
 }
 
-func rtmpManifestID(rtmpStrm stream.RTMPVideoStream) core.ManifestID {
-	return parseManifestID(rtmpStrm.GetStreamID())
+func streamParams(rtmpStrm stream.RTMPVideoStream) *streamParameters {
+	d := rtmpStrm.AppData()
+	p, ok := d.(*streamParameters)
+	if !ok {
+		glog.Error("Mismatched type for RTMP app data")
+		return nil
+	}
+	return p
 }
 
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
@@ -288,7 +307,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
-		mid := rtmpManifestID(rtmpStrm)
+		params := streamParams(rtmpStrm)
+		if params == nil {
+			return errMismatchedParams
+		}
+		mid := params.mid
 		//Remove RTMP stream
 		s.connectionLock.Lock()
 		defer s.connectionLock.Unlock()
@@ -332,7 +355,11 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 
 	// Set up the connection tracking
-	mid := rtmpManifestID(rtmpStrm)
+	params := streamParams(rtmpStrm)
+	if params == nil {
+		return nil, errMismatchedParams
+	}
+	mid := params.mid
 	if drivers.NodeStorage == nil {
 		glog.Error("Missing node storage")
 		return nil, errStorage
