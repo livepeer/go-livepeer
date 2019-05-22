@@ -10,11 +10,11 @@ RUN apt update \
     git gcc g++ gnutls-dev 
     # git gcc g++ gnutls-dev linux-headers
 COPY --from=builder /root/compiled /root/compiled/
-COPY --from=builder /usr/local/cuda /usr/local/cuda
+#COPY --from=builder /usr/local/cuda /usr/local/cuda
 
 ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
-ENV CPATH /usr/local/cuda/include 
-ENV LIBRARY_PATH /usr/local/cuda/lib64
+#ENV CPATH /usr/local/cuda/include 
+#ENV LIBRARY_PATH /usr/local/cuda/lib64
 
 WORKDIR /go/src/github.com/livepeer/go-livepeer
 COPY . .
