@@ -27,20 +27,28 @@ import (
 func TestConfig(t *testing.T) {
 
 	var hexprvkey = "65138b2aa745041b372153550584587da326ab440576b2a1191dd95cee30039c"
+	var hexnodekey = "75138b2aa745041b372153550584587da326ab440576b2a1191dd95cee30039c"
 
 	prvkey, err := crypto.HexToECDSA(hexprvkey)
 	if err != nil {
 		t.Fatalf("failed to load private key: %v", err)
 	}
+	nodekey, err := crypto.HexToECDSA(hexnodekey)
+	if err != nil {
+		t.Fatalf("failed to load private key: %v", err)
+	}
 
-	one := NewDefaultConfig()
-	two := NewDefaultConfig()
+	one := NewConfig()
+	two := NewConfig()
 
 	if equal := reflect.DeepEqual(one, two); !equal {
 		t.Fatal("Two default configs are not equal")
 	}
 
-	one.Init(prvkey)
+	err = one.Init(prvkey, nodekey)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	//the init function should set the following fields
 	if one.BzzKey == "" {
@@ -49,21 +57,10 @@ func TestConfig(t *testing.T) {
 	if one.PublicKey == "" {
 		t.Fatal("Expected PublicKey to be set")
 	}
-
-	//the Init function should append subdirs to the given path
-	if one.Swap.PayProfile.Beneficiary == (common.Address{}) {
+	if one.Swap.PayProfile.Beneficiary == (common.Address{}) && one.SwapEnabled {
 		t.Fatal("Failed to correctly initialize SwapParams")
 	}
-
-	if one.SyncParams.RequestDbPath == one.Path {
-		t.Fatal("Failed to correctly initialize SyncParams")
-	}
-
-	if one.HiveParams.KadDbPath == one.Path {
-		t.Fatal("Failed to correctly initialize HiveParams")
-	}
-
-	if one.StoreParams.ChunkDbPath == one.Path {
+	if one.ChunkDbPath == one.Path {
 		t.Fatal("Failed to correctly initialize StoreParams")
 	}
 }
