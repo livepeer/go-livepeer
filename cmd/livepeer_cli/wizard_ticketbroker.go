@@ -10,16 +10,17 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/pm"
 )
 
 // SenderStatus represents a sender's current status
 type SenderStatus int
 
 const (
-	// Empty is a sender's status when it has no deposit or penalty escrow
+	// Empty is a sender's status when it has no deposit or reserve
 	Empty SenderStatus = iota
 
-	// Locked is a sender's status when it has a deposit or penalty escrow and has not initiated
+	// Locked is a sender's status when it has a deposit or reserve and has not initiated
 	// the unlock period
 	Locked
 
@@ -27,15 +28,15 @@ const (
 	Unlocking
 
 	// Unlocked is a sender's status when it is no longer in the unlocking period, but it still
-	// has a deposit or penalty escrow
+	// has a deposit or reserve
 	Unlocked
 )
 
 const (
-	senderEmptyStatusMsg     = "sender's deposit and penalty escrow are zero"
-	senderLockedStatusMsg    = "sender's deposit and penalty escrow are locked"
+	senderEmptyStatusMsg     = "sender's deposit and reserve are zero"
+	senderLockedStatusMsg    = "sender's deposit and reserve are locked"
 	senderUnlockingStatusMsg = "sender is in the unlocking period"
-	senderUnlockedStatusMsg  = "sender's deposit and penalty escrow are unlocked"
+	senderUnlockedStatusMsg  = "sender's deposit and reserve are unlocked"
 )
 
 func (w *wizard) deposit() {
@@ -45,64 +46,34 @@ func (w *wizard) deposit() {
 		return
 	}
 
-	params, err := w.ticketBrokerParams()
-	if err != nil {
-		glog.Errorf("Error getting TicketBroker params: %v", err)
+	fmt.Printf("Current Deposit: %v\n", sender.Deposit)
+	fmt.Printf("Current Reserve: %v\n", sender.Reserve)
+
+	if sender.ReserveState == pm.Frozen {
+		currRound := w.currentRound()
+
+		fmt.Printf("Current Round: %v\n", currRound)
+		fmt.Printf("Thaw Round: %v\n", sender.ThawRound)
+
+		fmt.Printf("Cannot deposit because sender's reserve is frozen and not yet thawed")
 		return
 	}
-
-	reqPenaltyEscrowAmount := big.NewInt(0)
-	if params.MinPenaltyEscrow.Cmp(sender.PenaltyEscrow) > 0 {
-		reqPenaltyEscrowAmount = new(big.Int).Sub(params.MinPenaltyEscrow, sender.PenaltyEscrow)
-	}
-
-	if reqPenaltyEscrowAmount.Cmp(big.NewInt(0)) > 0 {
-		w.fundAndApproveSigners(sender.Deposit, sender.PenaltyEscrow, reqPenaltyEscrowAmount)
-		return
-	}
-
-	w.fundDeposit(sender.Deposit)
-
-	return
-}
-
-func (w *wizard) fundAndApproveSigners(currDeposit *big.Int, currPenaltyEscrow *big.Int, reqPenaltyEscrowAmount *big.Int) {
-	fmt.Printf("Current Deposit: %v\n", currDeposit)
-	fmt.Printf("Current Penalty Escrow: %v\n", currPenaltyEscrow)
-
-	fmt.Printf("Enter deposit amount in ETH (%v will be used cover the minimum penalty escrow) - ", eth.FormatUnits(reqPenaltyEscrowAmount, "ETH"))
-
-	amount := w.readPositiveFloatAndValidate(func(in float64) (float64, error) {
-		amountWei := eth.ToBaseUnit(big.NewFloat(in))
-
-		if amountWei.Cmp(reqPenaltyEscrowAmount) < 0 {
-			return 0, fmt.Errorf("must deposit at least %v to cover the minimum penalty escrow", eth.FormatUnits(reqPenaltyEscrowAmount, "ETH"))
-		}
-
-		return in, nil
-	})
-
-	amountWei := eth.ToBaseUnit(big.NewFloat(amount))
-	depositAmount := new(big.Int).Sub(amountWei, reqPenaltyEscrowAmount)
-
-	form := url.Values{
-		"depositAmount":       {depositAmount.String()},
-		"penaltyEscrowAmount": {reqPenaltyEscrowAmount.String()},
-	}
-	fmt.Println(httpPostWithParams(fmt.Sprintf("http://%v:%v/fundAndApproveSigners", w.host, w.httpPort), form))
-}
-
-func (w *wizard) fundDeposit(currDeposit *big.Int) {
-	fmt.Printf("Current Deposit: %v\n", eth.FormatUnits(currDeposit, "ETH"))
 
 	fmt.Printf("Enter deposit amount in ETH - ")
 
-	amount := w.readPositiveFloat()
+	depositAmount := w.readPositiveFloat()
+
+	fmt.Printf("Enter reserve amount in ETH - ")
+
+	reserveAmount := w.readPositiveFloat()
 
 	form := url.Values{
-		"amount": {eth.ToBaseUnit(big.NewFloat(amount)).String()},
+		"depositAmount": {eth.ToBaseUnit(big.NewFloat(depositAmount)).String()},
+		"reserveAmount": {eth.ToBaseUnit(big.NewFloat(reserveAmount)).String()},
 	}
-	fmt.Println(httpPostWithParams(fmt.Sprintf("http://%v:%v/fundDeposit", w.host, w.httpPort), form))
+	fmt.Println(httpPostWithParams(fmt.Sprintf("http://%v:%v/fundDepositAndReserve", w.host, w.httpPort), form))
+
+	return
 }
 
 func (w *wizard) unlock() {
@@ -119,12 +90,23 @@ func (w *wizard) unlock() {
 	}
 
 	fmt.Printf("Current Deposit: %v\n", eth.FormatUnits(sender.Deposit, "ETH"))
-	fmt.Printf("Current Penalty Escrow: %v\n", eth.FormatUnits(sender.PenaltyEscrow, "ETH"))
+	fmt.Printf("Current Reserve: %v\n", eth.FormatUnits(sender.Reserve, "ETH"))
+
+	if sender.ReserveState == pm.Frozen {
+		currRound := w.currentRound()
+
+		fmt.Printf("Current Round: %v\n", currRound)
+		fmt.Printf("Thaw Round: %v\n", sender.ThawRound)
+
+		fmt.Printf("Cannot deposit because sender's reserve is frozen and not yet thawed")
+		return
+	}
+
 	fmt.Printf("Current Block: %v\n", blk)
 
 	ss := senderStatus(sender, blk)
 	if ss != Locked {
-		printSenderStatus("Cannot unlock because sender's deposit and penalty escrow are not locked", ss)
+		printSenderStatus("Cannot unlock because sender's deposit and reserve are not locked", ss)
 		return
 	}
 
@@ -161,7 +143,7 @@ func (w *wizard) cancelUnlock() {
 	}
 
 	fmt.Printf("Current Deposit: %v\n", eth.FormatUnits(sender.Deposit, "ETH"))
-	fmt.Printf("Current Penalty Escrow: %v\n", eth.FormatUnits(sender.PenaltyEscrow, "ETH"))
+	fmt.Printf("Current Reserve: %v\n", eth.FormatUnits(sender.Reserve, "ETH"))
 	fmt.Printf("Current Block: %v\n", blk)
 	fmt.Printf("Withdraw Block: %v\n", sender.WithdrawBlock)
 
@@ -188,21 +170,34 @@ func (w *wizard) withdraw() {
 		return
 	}
 
-	blk, err := w.currentBlock()
-	if err != nil {
-		glog.Errorf("Error getting current block: %v", err)
-		return
-	}
-
 	fmt.Printf("Current Deposit: %v\n", eth.FormatUnits(sender.Deposit, "ETH"))
-	fmt.Printf("Current Penalty Escrow: %v\n", eth.FormatUnits(sender.PenaltyEscrow, "ETH"))
-	fmt.Printf("Current Block: %v\n", blk)
-	fmt.Printf("Withdraw Block: %v\n", sender.WithdrawBlock)
+	fmt.Printf("Current Reserve: %v\n", eth.FormatUnits(sender.Reserve, "ETH"))
 
-	ss := senderStatus(sender, blk)
-	if ss != Unlocked {
-		printSenderStatus("Cannot withdraw because sender's deposit and penalty escrow are not unlocked", ss)
-		return
+	if sender.ReserveState != pm.NotFrozen {
+		currRound := w.currentRound()
+
+		fmt.Printf("Current Round: %v\n", currRound)
+		fmt.Printf("Thaw Round: %v\n", sender.ThawRound)
+
+		if sender.ReserveState == pm.Frozen {
+			fmt.Printf("Cannot withdraw because sender's reserve is frozen and not yet thawed")
+			return
+		}
+	} else {
+		blk, err := w.currentBlock()
+		if err != nil {
+			glog.Errorf("Error getting current block: %v", err)
+			return
+		}
+
+		fmt.Printf("Current Block: %v\n", blk)
+		fmt.Printf("Withdraw Block: %v\n", sender.WithdrawBlock)
+
+		ss := senderStatus(sender, blk)
+		if ss != Unlocked {
+			printSenderStatus("Cannot withdraw because sender's deposit and reserve are not unlocked", ss)
+			return
+		}
 	}
 
 	fmt.Printf("Would you like to withdraw? (y/n) - ")
@@ -215,11 +210,7 @@ func (w *wizard) withdraw() {
 	fmt.Println(httpPost(fmt.Sprintf("http://%v:%v/withdraw", w.host, w.httpPort)))
 }
 
-func (w *wizard) senderInfo() (sender struct {
-	Deposit       *big.Int
-	PenaltyEscrow *big.Int
-	WithdrawBlock *big.Int
-}, err error) {
+func (w *wizard) senderInfo() (info pm.SenderInfo, err error) {
 	var resp *http.Response
 	resp, err = http.Get(fmt.Sprintf("http://%v:%v/senderInfo", w.host, w.httpPort))
 	if err != nil {
@@ -233,7 +224,7 @@ func (w *wizard) senderInfo() (sender struct {
 		return
 	}
 
-	err = json.Unmarshal(res, &sender)
+	err = json.Unmarshal(res, &info)
 	if err != nil {
 		return
 	}
@@ -242,8 +233,7 @@ func (w *wizard) senderInfo() (sender struct {
 }
 
 func (w *wizard) ticketBrokerParams() (params struct {
-	MinPenaltyEscrow *big.Int
-	UnlockPeriod     *big.Int
+	UnlockPeriod *big.Int
 }, err error) {
 	var resp *http.Response
 	resp, err = http.Get(fmt.Sprintf("http://%v:%v/ticketBrokerParams", w.host, w.httpPort))
@@ -284,14 +274,8 @@ func printSenderStatus(msg string, status SenderStatus) {
 	fmt.Printf("%v: %v\n", msg, statusMsg)
 }
 
-func senderStatus(
-	sender struct {
-		Deposit       *big.Int
-		PenaltyEscrow *big.Int
-		WithdrawBlock *big.Int
-	}, currentBlock *big.Int,
-) SenderStatus {
-	if sender.Deposit.Cmp(big.NewInt(0)) == 0 && sender.PenaltyEscrow.Cmp(big.NewInt(0)) == 0 {
+func senderStatus(sender pm.SenderInfo, currentBlock *big.Int) SenderStatus {
+	if sender.Deposit.Cmp(big.NewInt(0)) == 0 && sender.Reserve.Cmp(big.NewInt(0)) == 0 {
 		return Empty
 	}
 
