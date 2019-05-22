@@ -114,16 +114,17 @@ func TestSelectOrchestrator(t *testing.T) {
 
 	// Empty discovery
 	mid := core.RandomManifestID()
+	sp := &streamParameters{mid: mid, profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}}
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	pl := core.NewBasicPlaylistManager(mid, storage)
-	if _, err := selectOrchestrator(s.LivepeerNode, pl, 4); err != errDiscovery {
+	if _, err := selectOrchestrator(s.LivepeerNode, sp, pl, 4); err != errDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(s.LivepeerNode, pl, 4); sess != nil || err != errNoOrchs {
+	if sess, err := selectOrchestrator(s.LivepeerNode, sp, pl, 4); sess != nil || err != errNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -132,7 +133,7 @@ func TestSelectOrchestrator(t *testing.T) {
 		&net.OrchestratorInfo{},
 		&net.OrchestratorInfo{},
 	}
-	sess, _ := selectOrchestrator(s.LivepeerNode, pl, 4)
+	sess, _ := selectOrchestrator(s.LivepeerNode, sp, pl, 4)
 
 	if len(sess) != len(sd.infos) {
 		t.Error("Expected session length of 2")
@@ -151,6 +152,9 @@ func TestSelectOrchestrator(t *testing.T) {
 	}
 	if sess[0].OrchestratorInfo != sd.infos[0] || sd.infos[0] == sd.infos[1] {
 		t.Error("Unexpected orchestrator info")
+	}
+	if len(sess[0].Profiles) != 1 || sess[0].Profiles[0] != sp.profiles[0] {
+		t.Error("Unexpected profiles")
 	}
 	if sess[0].Sender != nil {
 		t.Error("Unexpected sender")
@@ -208,7 +212,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	expSessionID2 := "fool"
 	sender.On("StartSession", params2).Return(expSessionID2)
 
-	sess, err := selectOrchestrator(s.LivepeerNode, pl, 4)
+	sess, err := selectOrchestrator(s.LivepeerNode, sp, pl, 4)
 	require.Nil(t, err)
 
 	assert := assert.New(t)
@@ -320,6 +324,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		return t
 	}
 	defer func() { AuthWebhookURL = "" }()
+	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}
 
 	// empty manifestID
 	ts2 := makeServer(`{"manifestID":""}`)
@@ -346,6 +351,11 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		t.Error("Should set manifest id to one provided by webhook")
 	}
 
+	// ensure the presets match defaults
+	if len(params.profiles) != 1 || params.profiles[0] != ffmpeg.P360p30fps16x9 {
+		t.Error("Default Presets did not match expected profiles:", params.profiles)
+	}
+
 	// set manifestID + streamKey
 	ts5 := makeServer(`{"manifestID":"xyz", "streamKey":"zyx"}`)
 	defer ts5.Close()
@@ -353,6 +363,23 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	mid = params.mid
 	if mid != "xyz" || params.StreamID() != "xyz/zyx" {
 		t.Error("Should set manifest / streamkey  to one provided by webhook")
+	}
+
+	// set presets (with some invalid)
+	ts6 := makeServer(`{"manifestID":"a", "presets":["P240p30fps16x9", "unknown", "P720p30fps16x9"]}`)
+	defer ts6.Close()
+	params = createSid(u).(*streamParameters)
+	if len(params.profiles) != 2 || params.profiles[0] != ffmpeg.P240p30fps16x9 ||
+		params.profiles[1] != ffmpeg.P720p30fps16x9 {
+		t.Error("Did not have matching presets")
+	}
+
+	// all invalid presets in webhook should lead to empty set
+	ts7 := makeServer(`{"manifestID":"a", "presets":["very", "unknown"]}`)
+	defer ts7.Close()
+	params = createSid(u).(*streamParameters)
+	if len(params.profiles) != 0 {
+		t.Error("Unexpected value in presets: ", params.profiles)
 	}
 }
 
@@ -838,4 +865,21 @@ func TestParseStreamID(t *testing.T) {
 	checkSid("//abc", core.StreamID{ManifestID: "abc"})
 	checkSid("abc/def//ghi", core.StreamID{ManifestID: "abc", Rendition: "def//ghi"})
 	checkSid("abc/def.m3u8/ghi.ts", core.StreamID{ManifestID: "abc", Rendition: "def.m3u8/ghi"})
+}
+
+func TestParsePresets(t *testing.T) {
+	assert := assert.New(t)
+	presets := []string{"P240p30fps16x9", "unknown", "P720p30fps16x9"}
+
+	p := parsePresets([]string{})
+	assert.Equal([]ffmpeg.VideoProfile{}, p)
+
+	p = parsePresets(nil)
+	assert.Equal([]ffmpeg.VideoProfile{}, p)
+
+	p = parsePresets([]string{"bad", "example"})
+	assert.Equal([]ffmpeg.VideoProfile{}, p)
+
+	p = parsePresets(presets)
+	assert.Equal([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P720p30fps16x9}, p)
 }

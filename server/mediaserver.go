@@ -60,8 +60,9 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 var AuthWebhookURL string
 
 type streamParameters struct {
-	mid     core.ManifestID
-	rtmpKey string
+	mid      core.ManifestID
+	rtmpKey  string
+	profiles []ffmpeg.VideoProfile
 }
 
 func (s *streamParameters) StreamID() string {
@@ -74,6 +75,7 @@ type rtmpConnection struct {
 	stream      stream.RTMPVideoStream
 	pl          core.PlaylistManager
 	profile     *ffmpeg.VideoProfile
+	params      *streamParameters
 	sessManager *BroadcastSessionsManager
 }
 
@@ -94,8 +96,9 @@ type LivepeerServer struct {
 }
 
 type authWebhookResponse struct {
-	ManifestID string `json:"manifestID"`
-	StreamKey  string `json:"streamKey"`
+	ManifestID string   `json:"manifestID"`
+	StreamKey  string   `json:"streamKey"`
+	Presets    []string `json:"presets"`
 }
 
 func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
@@ -116,14 +119,7 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 
 //StartServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string) error {
-	bProfiles := make([]ffmpeg.VideoProfile, 0)
-	for _, opt := range strings.Split(transcodingOptions, ",") {
-		p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]
-		if ok {
-			bProfiles = append(bProfiles, p)
-		}
-	}
-	BroadcastJobVideoProfiles = bProfiles
+	BroadcastJobVideoProfiles = parsePresets(strings.Split(transcodingOptions, ","))
 
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
@@ -168,12 +164,17 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		var mid core.ManifestID
 		var err error
 		var key string
+		presets := BroadcastJobVideoProfiles
 		if resp, err = authenticateStream(url.String()); err != nil {
 			glog.Error("Authentication denied for ", err)
 			return nil
 		}
 		if resp != nil {
 			mid, key = parseStreamID(resp.ManifestID).ManifestID, resp.StreamKey
+			// Process transcoding options presets
+			if len(resp.Presets) > 0 {
+				presets = parsePresets(resp.Presets)
+			}
 		}
 
 		if mid == "" {
@@ -201,8 +202,9 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			key = hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
 		}
 		return &streamParameters{
-			mid:     mid,
-			rtmpKey: key,
+			mid:      mid,
+			rtmpKey:  key,
+			profiles: presets,
 		}
 	}
 }
@@ -388,7 +390,8 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		stream:      rtmpStrm,
 		pl:          playlist,
 		profile:     &vProfile,
-		sessManager: NewSessionManager(s.LivepeerNode, playlist),
+		params:      params,
+		sessManager: NewSessionManager(s.LivepeerNode, params, playlist),
 	}
 	s.connectionLock.Lock()
 	s.rtmpConnections[mid] = cxn
@@ -524,6 +527,16 @@ func parseStreamID(reqPath string) core.StreamID {
 
 func parseManifestID(reqPath string) core.ManifestID {
 	return parseStreamID(reqPath).ManifestID
+}
+
+func parsePresets(presets []string) []ffmpeg.VideoProfile {
+	profs := make([]ffmpeg.VideoProfile, 0)
+	for _, v := range presets {
+		if p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(v)]; ok {
+			profs = append(profs, p)
+		}
+	}
+	return profs
 }
 
 func (s *LivepeerServer) LastManifestID() core.ManifestID {
