@@ -285,6 +285,7 @@ type authWebhookReq struct {
 }
 
 func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
+	assert := assert.New(t)
 	s := setupServer()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	createSid := createRTMPStreamIDHandler(s)
@@ -292,9 +293,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	AuthWebhookURL = "http://localhost:8938/notexisting"
 	u, _ := url.Parse("http://hot/something/id1")
 	sid := createSid(u)
-	if sid != nil {
-		t.Error("Webhook auth failed")
-	}
+	assert.Nil(sid, "Webhook auth failed")
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		out, _ := ioutil.ReadAll(r.Body)
@@ -311,9 +310,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	defer ts.Close()
 	AuthWebhookURL = ts.URL
 	sid = createSid(u)
-	if sid == nil {
-		t.Error("On empty response with 200 code should pass")
-	}
+	assert.NotNil(sid, "On empty response with 200 code should pass")
 
 	// local helper to reduce boilerplate
 	makeServer := func(resp string) *httptest.Server {
@@ -330,57 +327,47 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	ts2 := makeServer(`{"manifestID":""}`)
 	defer ts2.Close()
 	sid = createSid(u)
-	if sid != nil {
-		t.Error("Should not pass in returned manifest id is empty")
-	}
+	assert.Nil(sid, "Should not pass if returned manifest id is empty")
 
 	// invalid json
 	ts3 := makeServer(`{manifestID:"XX"}`)
 	defer ts3.Close()
 	sid = createSid(u)
-	if sid != nil {
-		t.Error("Should not pass if returned json is invalid")
-	}
+	assert.Nil(sid, "Should not pass if returned json is invalid")
 
 	// set manifestID
 	ts4 := makeServer(`{"manifestID":"xy"}`)
 	defer ts4.Close()
 	params := createSid(u).(*streamParameters)
 	mid := params.mid
-	if mid != "xy" {
-		t.Error("Should set manifest id to one provided by webhook")
-	}
+	assert.Equal(core.ManifestID("xy"), params.mid, "Should set manifest id to one provided by webhook")
 
 	// ensure the presets match defaults
-	if len(params.profiles) != 1 || params.profiles[0] != ffmpeg.P360p30fps16x9 {
-		t.Error("Default Presets did not match expected profiles:", params.profiles)
-	}
+	assert.Len(params.profiles, 1)
+	assert.Equal(params.profiles, BroadcastJobVideoProfiles, "Default presets did not match")
 
 	// set manifestID + streamKey
 	ts5 := makeServer(`{"manifestID":"xyz", "streamKey":"zyx"}`)
 	defer ts5.Close()
 	params = createSid(u).(*streamParameters)
 	mid = params.mid
-	if mid != "xyz" || params.StreamID() != "xyz/zyx" {
-		t.Error("Should set manifest / streamkey  to one provided by webhook")
-	}
+	assert.Equal(core.ManifestID("xyz"), mid, "Should set manifest to one provided by webhook")
+	assert.Equal("xyz/zyx", params.StreamID(), "Should set streamkey to one provided by webhook")
+	assert.Equal("zyx", params.rtmpKey, "Should set rtmp key to one provided by webhook")
 
 	// set presets (with some invalid)
 	ts6 := makeServer(`{"manifestID":"a", "presets":["P240p30fps16x9", "unknown", "P720p30fps16x9"]}`)
 	defer ts6.Close()
 	params = createSid(u).(*streamParameters)
-	if len(params.profiles) != 2 || params.profiles[0] != ffmpeg.P240p30fps16x9 ||
-		params.profiles[1] != ffmpeg.P720p30fps16x9 {
-		t.Error("Did not have matching presets")
-	}
+	assert.Len(params.profiles, 2)
+	assert.Equal(params.profiles, []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9,
+		ffmpeg.P720p30fps16x9}, "Did not have matching presets")
 
 	// all invalid presets in webhook should lead to empty set
 	ts7 := makeServer(`{"manifestID":"a", "presets":["very", "unknown"]}`)
 	defer ts7.Close()
 	params = createSid(u).(*streamParameters)
-	if len(params.profiles) != 0 {
-		t.Error("Unexpected value in presets: ", params.profiles)
-	}
+	assert.Len(params.profiles, 0, "Unexpected value in presets")
 }
 
 func TestCreateRTMPStreamHandler(t *testing.T) {
