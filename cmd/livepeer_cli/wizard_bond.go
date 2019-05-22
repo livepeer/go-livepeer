@@ -298,7 +298,7 @@ func (w *wizard) unbond() {
 func (w *wizard) withdrawStake() {
 	dInfo, err := w.getDelegatorInfo()
 	if err != nil {
-		glog.Error("Error getting delegator info: %v", err)
+		glog.Errorf("Error getting delegator info: %v", err)
 		return
 	}
 

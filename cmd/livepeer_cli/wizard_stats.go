@@ -14,6 +14,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -131,14 +132,18 @@ func (w *wizard) broadcastStats() {
 		[]string{"Broadcast Price Per Segment in Wei", price.String()},
 		[]string{"Broadcast Transcoding Options", transcodingOptions},
 		[]string{"Deposit", eth.FormatUnits(sender.Deposit, "ETH")},
-		[]string{"Penalty Escrow", eth.FormatUnits(sender.PenaltyEscrow, "ETH")},
+		[]string{"Reserve", eth.FormatUnits(sender.Reserve, "ETH")},
 	}
 
 	for _, v := range data {
 		table.Append(v)
 	}
 
-	if sender.WithdrawBlock.Cmp(big.NewInt(0)) > 0 && (sender.Deposit.Cmp(big.NewInt(0)) > 0 || sender.PenaltyEscrow.Cmp(big.NewInt(0)) > 0) {
+	if sender.ReserveState != pm.NotFrozen {
+		table.Append([]string{"Thaw Round", sender.ThawRound.String()})
+	}
+
+	if sender.WithdrawBlock.Cmp(big.NewInt(0)) > 0 && (sender.Deposit.Cmp(big.NewInt(0)) > 0 || sender.Reserve.Cmp(big.NewInt(0)) > 0) {
 		table.Append([]string{"Withdraw Block", sender.WithdrawBlock.String()})
 	}
 
