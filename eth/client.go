@@ -776,7 +776,7 @@ func (c *client) CheckTx(tx *types.Transaction) error {
 		return err
 	}
 
-	if receipt.Status == uint(0) {
+	if receipt.Status == uint64(0) {
 		return fmt.Errorf("tx %v failed", tx.Hash().Hex())
 	} else {
 		return nil

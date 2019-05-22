@@ -33,18 +33,18 @@ import (
 
 const JS = `
 /**
-This is an example implementation of a Javascript rule file. 
+This is an example implementation of a Javascript rule file.
 
-When the signer receives a request over the external API, the corresponding method is evaluated. 
-Three things can happen: 
+When the signer receives a request over the external API, the corresponding method is evaluated.
+Three things can happen:
 
-1. The method returns "Approve". This means the operation is permitted. 
-2. The method returns "Reject". This means the operation is rejected. 
+1. The method returns "Approve". This means the operation is permitted.
+2. The method returns "Reject". This means the operation is rejected.
 3. Anything else; other return values [*], method not implemented or exception occurred during processing. This means
-that the operation will continue to manual processing, via the regular UI method chosen by the user. 
+that the operation will continue to manual processing, via the regular UI method chosen by the user.
 
-[*] Note: Future version of the ruleset may use more complex json-based returnvalues, making it possible to not 
-only respond Approve/Reject/Manual, but also modify responses. For example, choose to list only one, but not all 
+[*] Note: Future version of the ruleset may use more complex json-based returnvalues, making it possible to not
+only respond Approve/Reject/Manual, but also modify responses. For example, choose to list only one, but not all
 accounts in a list-request. The points above will continue to hold for non-json based responses ("Approve"/"Reject").
 
 **/
@@ -72,49 +72,47 @@ func mixAddr(a string) (*common.MixedcaseAddress, error) {
 	return common.NewMixedcaseAddressFromString(a)
 }
 
-type alwaysDenyUi struct{}
+type alwaysDenyUI struct{}
 
-func (alwaysDenyUi) OnSignerStartup(info core.StartupInfo) {
+func (alwaysDenyUI) OnInputRequired(info core.UserInputRequest) (core.UserInputResponse, error) {
+	return core.UserInputResponse{}, nil
+}
+func (alwaysDenyUI) RegisterUIServer(api *core.UIServerAPI) {
 }
 
-func (alwaysDenyUi) ApproveTx(request *core.SignTxRequest) (core.SignTxResponse, error) {
-	return core.SignTxResponse{Transaction: request.Transaction, Approved: false, Password: ""}, nil
+func (alwaysDenyUI) OnSignerStartup(info core.StartupInfo) {
 }
 
-func (alwaysDenyUi) ApproveSignData(request *core.SignDataRequest) (core.SignDataResponse, error) {
-	return core.SignDataResponse{Approved: false, Password: ""}, nil
+func (alwaysDenyUI) ApproveTx(request *core.SignTxRequest) (core.SignTxResponse, error) {
+	return core.SignTxResponse{Transaction: request.Transaction, Approved: false}, nil
 }
 
-func (alwaysDenyUi) ApproveExport(request *core.ExportRequest) (core.ExportResponse, error) {
-	return core.ExportResponse{Approved: false}, nil
+func (alwaysDenyUI) ApproveSignData(request *core.SignDataRequest) (core.SignDataResponse, error) {
+	return core.SignDataResponse{Approved: false}, nil
 }
 
-func (alwaysDenyUi) ApproveImport(request *core.ImportRequest) (core.ImportResponse, error) {
-	return core.ImportResponse{Approved: false, OldPassword: "", NewPassword: ""}, nil
-}
-
-func (alwaysDenyUi) ApproveListing(request *core.ListRequest) (core.ListResponse, error) {
+func (alwaysDenyUI) ApproveListing(request *core.ListRequest) (core.ListResponse, error) {
 	return core.ListResponse{Accounts: nil}, nil
 }
 
-func (alwaysDenyUi) ApproveNewAccount(request *core.NewAccountRequest) (core.NewAccountResponse, error) {
-	return core.NewAccountResponse{Approved: false, Password: ""}, nil
+func (alwaysDenyUI) ApproveNewAccount(request *core.NewAccountRequest) (core.NewAccountResponse, error) {
+	return core.NewAccountResponse{Approved: false}, nil
 }
 
-func (alwaysDenyUi) ShowError(message string) {
+func (alwaysDenyUI) ShowError(message string) {
 	panic("implement me")
 }
 
-func (alwaysDenyUi) ShowInfo(message string) {
+func (alwaysDenyUI) ShowInfo(message string) {
 	panic("implement me")
 }
 
-func (alwaysDenyUi) OnApprovedTx(tx ethapi.SignTransactionResult) {
+func (alwaysDenyUI) OnApprovedTx(tx ethapi.SignTransactionResult) {
 	panic("implement me")
 }
 
-func initRuleEngine(js string) (*rulesetUi, error) {
-	r, err := NewRuleEvaluator(&alwaysDenyUi{}, storage.NewEphemeralStorage(), storage.NewEphemeralStorage())
+func initRuleEngine(js string) (*rulesetUI, error) {
+	r, err := NewRuleEvaluator(&alwaysDenyUI{}, storage.NewEphemeralStorage())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create js engine: %v", err)
 	}
@@ -125,11 +123,11 @@ func initRuleEngine(js string) (*rulesetUi, error) {
 }
 
 func TestListRequest(t *testing.T) {
-	accs := make([]core.Account, 5)
+	accs := make([]accounts.Account, 5)
 
 	for i := range accs {
 		addr := fmt.Sprintf("000000000000000000000000000000000000000%x", i)
-		acc := core.Account{
+		acc := accounts.Account{
 			Address: common.BytesToAddress(common.Hex2Bytes(addr)),
 			URL:     accounts.URL{Scheme: "test", Path: fmt.Sprintf("acc-%d", i)},
 		}
@@ -143,7 +141,7 @@ func TestListRequest(t *testing.T) {
 		t.Errorf("Couldn't create evaluator %v", err)
 		return
 	}
-	resp, err := r.ApproveListing(&core.ListRequest{
+	resp, _ := r.ApproveListing(&core.ListRequest{
 		Accounts: accs,
 		Meta:     core.Metadata{Remote: "remoteip", Local: "localip", Scheme: "inproc"},
 	})
@@ -196,62 +194,61 @@ func TestSignTxRequest(t *testing.T) {
 	}
 }
 
-type dummyUi struct {
+type dummyUI struct {
 	calls []string
 }
 
-func (d *dummyUi) ApproveTx(request *core.SignTxRequest) (core.SignTxResponse, error) {
+func (d *dummyUI) RegisterUIServer(api *core.UIServerAPI) {
+	panic("implement me")
+}
+
+func (d *dummyUI) OnInputRequired(info core.UserInputRequest) (core.UserInputResponse, error) {
+	d.calls = append(d.calls, "OnInputRequired")
+	return core.UserInputResponse{}, nil
+}
+
+func (d *dummyUI) ApproveTx(request *core.SignTxRequest) (core.SignTxResponse, error) {
 	d.calls = append(d.calls, "ApproveTx")
 	return core.SignTxResponse{}, core.ErrRequestDenied
 }
 
-func (d *dummyUi) ApproveSignData(request *core.SignDataRequest) (core.SignDataResponse, error) {
+func (d *dummyUI) ApproveSignData(request *core.SignDataRequest) (core.SignDataResponse, error) {
 	d.calls = append(d.calls, "ApproveSignData")
 	return core.SignDataResponse{}, core.ErrRequestDenied
 }
 
-func (d *dummyUi) ApproveExport(request *core.ExportRequest) (core.ExportResponse, error) {
-	d.calls = append(d.calls, "ApproveExport")
-	return core.ExportResponse{}, core.ErrRequestDenied
-}
-
-func (d *dummyUi) ApproveImport(request *core.ImportRequest) (core.ImportResponse, error) {
-	d.calls = append(d.calls, "ApproveImport")
-	return core.ImportResponse{}, core.ErrRequestDenied
-}
-
-func (d *dummyUi) ApproveListing(request *core.ListRequest) (core.ListResponse, error) {
+func (d *dummyUI) ApproveListing(request *core.ListRequest) (core.ListResponse, error) {
 	d.calls = append(d.calls, "ApproveListing")
 	return core.ListResponse{}, core.ErrRequestDenied
 }
 
-func (d *dummyUi) ApproveNewAccount(request *core.NewAccountRequest) (core.NewAccountResponse, error) {
+func (d *dummyUI) ApproveNewAccount(request *core.NewAccountRequest) (core.NewAccountResponse, error) {
 	d.calls = append(d.calls, "ApproveNewAccount")
 	return core.NewAccountResponse{}, core.ErrRequestDenied
 }
 
-func (d *dummyUi) ShowError(message string) {
+func (d *dummyUI) ShowError(message string) {
 	d.calls = append(d.calls, "ShowError")
 }
 
-func (d *dummyUi) ShowInfo(message string) {
+func (d *dummyUI) ShowInfo(message string) {
 	d.calls = append(d.calls, "ShowInfo")
 }
 
-func (d *dummyUi) OnApprovedTx(tx ethapi.SignTransactionResult) {
+func (d *dummyUI) OnApprovedTx(tx ethapi.SignTransactionResult) {
 	d.calls = append(d.calls, "OnApprovedTx")
 }
-func (d *dummyUi) OnSignerStartup(info core.StartupInfo) {
+
+func (d *dummyUI) OnSignerStartup(info core.StartupInfo) {
 }
 
 //TestForwarding tests that the rule-engine correctly dispatches requests to the next caller
 func TestForwarding(t *testing.T) {
 
 	js := ""
-	ui := &dummyUi{make([]string, 0)}
+	ui := &dummyUI{make([]string, 0)}
 	jsBackend := storage.NewEphemeralStorage()
-	credBackend := storage.NewEphemeralStorage()
-	r, err := NewRuleEvaluator(ui, jsBackend, credBackend)
+	r, err := NewRuleEvaluator(ui, jsBackend)
 	if err != nil {
 		t.Fatalf("Failed to create js engine: %v", err)
 	}
@@ -260,17 +257,15 @@ func TestForwarding(t *testing.T) {
 	}
 	r.ApproveSignData(nil)
 	r.ApproveTx(nil)
-	r.ApproveImport(nil)
 	r.ApproveNewAccount(nil)
 	r.ApproveListing(nil)
-	r.ApproveExport(nil)
 	r.ShowError("test")
 	r.ShowInfo("test")
 
 	//This one is not forwarded
 	r.OnApprovedTx(ethapi.SignTransactionResult{})
 
-	expCalls := 8
+	expCalls := 6
 	if len(ui.calls) != expCalls {
 
 		t.Errorf("Expected %d forwarded calls, got %d: %s", expCalls, len(ui.calls), strings.Join(ui.calls, ","))
@@ -308,22 +303,22 @@ func TestStorage(t *testing.T) {
 	function testStorage(){
 		storage.Put("mykey", "myvalue")
 		a = storage.Get("mykey")
-		
+
 		storage.Put("mykey", ["a", "list"])  	// Should result in "a,list"
 		a += storage.Get("mykey")
 
-		
+
 		storage.Put("mykey", {"an": "object"}) 	// Should result in "[object Object]"
 		a += storage.Get("mykey")
 
-		
+
 		storage.Put("mykey", JSON.stringify({"an": "object"})) // Should result in '{"an":"object"}'
 		a += storage.Get("mykey")
 
 		a += storage.Get("missingkey")		//Missing keys should result in empty string
 		storage.Put("","missing key==noop") // Can't store with 0-length key
 		a += storage.Get("")				// Should result in ''
-		
+
 		var b = new BigNumber(2)
 		var c = new BigNumber(16)//"0xf0",16)
 		var d = b.plus(c)
@@ -361,7 +356,7 @@ const ExampleTxWindow = `
 		if(str.slice(0,2) == "0x"){ return new BigNumber(str.slice(2),16)}
 		return new BigNumber(str)
 	}
-	
+
 	// Time window: 1 week
 	var window = 1000* 3600*24*7;
 
@@ -370,7 +365,7 @@ const ExampleTxWindow = `
 
 	function isLimitOk(transaction){
 		var value = big(transaction.value)
-		// Start of our window function		
+		// Start of our window function
 		var windowstart = new Date().getTime() - window;
 
 		var txs = [];
@@ -382,17 +377,17 @@ const ExampleTxWindow = `
 		// First, remove all that have passed out of the time-window
 		var newtxs = txs.filter(function(tx){return tx.tstamp > windowstart});
 		console.log(txs, newtxs.length);
-	
+
 		// Secondly, aggregate the current sum
 		sum = new BigNumber(0)
 
 		sum = newtxs.reduce(function(agg, tx){ return big(tx.value).plus(agg)}, sum);
 		console.log("ApproveTx > Sum so far", sum);
 		console.log("ApproveTx > Requested", value.toNumber());
-		
+
 		// Would we exceed weekly limit ?
 		return sum.plus(value).lt(limit)
-		
+
 	}
 	function ApproveTx(r){
 		console.log(r)
@@ -405,14 +400,14 @@ const ExampleTxWindow = `
 
 	/**
 	* OnApprovedTx(str) is called when a transaction has been approved and signed. The parameter
- 	* 'response_str' contains the return value that will be sent to the external caller. 
-	* The return value from this method is ignore - the reason for having this callback is to allow the 
-	* ruleset to keep track of approved transactions. 
+ 	* 'response_str' contains the return value that will be sent to the external caller.
+	* The return value from this method is ignore - the reason for having this callback is to allow the
+	* ruleset to keep track of approved transactions.
 	*
-	* When implementing rate-limited rules, this callback should be used. 
+	* When implementing rate-limited rules, this callback should be used.
 	* If a rule responds with neither 'Approve' nor 'Reject' - the tx goes to manual processing. If the user
 	* then accepts the transaction, this method will be called.
-	* 
+	*
 	* TLDR; Use this method to keep track of signed transactions, instead of using the data in ApproveTx.
 	*/
  	function OnApprovedTx(resp){
@@ -497,7 +492,7 @@ func TestLimitWindow(t *testing.T) {
 		r.OnApprovedTx(response)
 	}
 	// Fourth should fail
-	resp, err := r.ApproveTx(dummyTx(h))
+	resp, _ := r.ApproveTx(dummyTx(h))
 	if resp.Approved {
 		t.Errorf("Expected check to resolve to 'Reject'")
 	}
@@ -507,6 +502,13 @@ func TestLimitWindow(t *testing.T) {
 // dontCallMe is used as a next-handler that does not want to be called - it invokes test failure
 type dontCallMe struct {
 	t *testing.T
+}
+
+func (d *dontCallMe) OnInputRequired(info core.UserInputRequest) (core.UserInputResponse, error) {
+	d.t.Fatalf("Did not expect next-handler to be called")
+	return core.UserInputResponse{}, nil
+}
+func (d *dontCallMe) RegisterUIServer(api *core.UIServerAPI) {
 }
 
 func (d *dontCallMe) OnSignerStartup(info core.StartupInfo) {
@@ -520,16 +522,6 @@ func (d *dontCallMe) ApproveTx(request *core.SignTxRequest) (core.SignTxResponse
 func (d *dontCallMe) ApproveSignData(request *core.SignDataRequest) (core.SignDataResponse, error) {
 	d.t.Fatalf("Did not expect next-handler to be called")
 	return core.SignDataResponse{}, core.ErrRequestDenied
-}
-
-func (d *dontCallMe) ApproveExport(request *core.ExportRequest) (core.ExportResponse, error) {
-	d.t.Fatalf("Did not expect next-handler to be called")
-	return core.ExportResponse{}, core.ErrRequestDenied
-}
-
-func (d *dontCallMe) ApproveImport(request *core.ImportRequest) (core.ImportResponse, error) {
-	d.t.Fatalf("Did not expect next-handler to be called")
-	return core.ImportResponse{}, core.ErrRequestDenied
 }
 
 func (d *dontCallMe) ApproveListing(request *core.ListRequest) (core.ListResponse, error) {
@@ -574,7 +566,7 @@ func TestContextIsCleared(t *testing.T) {
 	}
 	`
 	ui := &dontCallMe{t}
-	r, err := NewRuleEvaluator(ui, storage.NewEphemeralStorage(), storage.NewEphemeralStorage())
+	r, err := NewRuleEvaluator(ui, storage.NewEphemeralStorage())
 	if err != nil {
 		t.Fatalf("Failed to create js engine: %v", err)
 	}
@@ -582,8 +574,8 @@ func TestContextIsCleared(t *testing.T) {
 		t.Fatalf("Failed to load bootstrap js: %v", err)
 	}
 	tx := dummyTxWithV(0)
-	r1, err := r.ApproveTx(tx)
-	r2, err := r.ApproveTx(tx)
+	r1, _ := r.ApproveTx(tx)
+	r2, _ := r.ApproveTx(tx)
 	if r1.Approved != r2.Approved {
 		t.Errorf("Expected execution context to be cleared between executions")
 	}
@@ -597,7 +589,7 @@ func TestSignData(t *testing.T) {
 function ApproveSignData(r){
     if( r.address.toLowerCase() == "0x694267f14675d7e1b9494fd8d72fefe1755710fa")
     {
-        if(r.message.indexOf("bazonk") >= 0){
+        if(r.message[0].value.indexOf("bazonk") >= 0){
             return "Approve"
         }
         return "Reject"
@@ -609,18 +601,25 @@ function ApproveSignData(r){
 		t.Errorf("Couldn't create evaluator %v", err)
 		return
 	}
-	message := []byte("baz bazonk foo")
-	hash, msg := core.SignHash(message)
-	raw := hexutil.Bytes(message)
+	message := "baz bazonk foo"
+	hash, rawdata := accounts.TextAndHash([]byte(message))
 	addr, _ := mixAddr("0x694267f14675d7e1b9494fd8d72fefe1755710fa")
 
 	fmt.Printf("address %v %v\n", addr.String(), addr.Original())
+
+	nvt := []*core.NameValueType{
+		{
+			Name:  "message",
+			Typ:   "text/plain",
+			Value: message,
+		},
+	}
 	resp, err := r.ApproveSignData(&core.SignDataRequest{
 		Address: *addr,
-		Message: msg,
+		Message: nvt,
 		Hash:    hash,
 		Meta:    core.Metadata{Remote: "remoteip", Local: "localip", Scheme: "inproc"},
-		Rawdata: raw,
+		Rawdata: []byte(rawdata),
 	})
 	if err != nil {
 		t.Fatalf("Unexpected error %v", err)
