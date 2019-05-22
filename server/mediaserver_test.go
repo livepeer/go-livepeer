@@ -310,45 +310,50 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	if sid == nil {
 		t.Error("On empty response with 200 code should pass")
 	}
-	ts2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"manifestID":""}`))
-	}))
-	defer ts.Close()
-	AuthWebhookURL = ts2.URL
+
+	// local helper to reduce boilerplate
+	makeServer := func(resp string) *httptest.Server {
+		t := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(resp))
+		}))
+		AuthWebhookURL = t.URL
+		return t
+	}
+	defer func() { AuthWebhookURL = "" }()
+
+	// empty manifestID
+	ts2 := makeServer(`{"manifestID":""}`)
+	defer ts2.Close()
 	sid = createSid(u)
 	if sid != nil {
 		t.Error("Should not pass in returned manifest id is empty")
 	}
-	ts3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{manifestID:"XX"}`))
-	}))
+
+	// invalid json
+	ts3 := makeServer(`{manifestID:"XX"}`)
 	defer ts3.Close()
-	AuthWebhookURL = ts3.URL
 	sid = createSid(u)
 	if sid != nil {
 		t.Error("Should not pass if returned json is invalid")
 	}
-	ts4 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"manifestID":"xy"}`))
-	}))
+
+	// set manifestID
+	ts4 := makeServer(`{"manifestID":"xy"}`)
 	defer ts4.Close()
-	AuthWebhookURL = ts4.URL
 	params := createSid(u).(*streamParameters)
 	mid := params.mid
 	if mid != "xy" {
 		t.Error("Should set manifest id to one provided by webhook")
 	}
-	ts5 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"manifestID":"xyz", "streamKey":"zyx"}`))
-	}))
+
+	// set manifestID + streamKey
+	ts5 := makeServer(`{"manifestID":"xyz", "streamKey":"zyx"}`)
 	defer ts5.Close()
-	AuthWebhookURL = ts5.URL
 	params = createSid(u).(*streamParameters)
 	mid = params.mid
 	if mid != "xyz" || params.StreamID() != "xyz/zyx" {
 		t.Error("Should set manifest / streamkey  to one provided by webhook")
 	}
-	AuthWebhookURL = ""
 }
 
 func TestCreateRTMPStreamHandler(t *testing.T) {
