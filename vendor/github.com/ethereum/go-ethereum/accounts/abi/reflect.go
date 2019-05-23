@@ -19,6 +19,7 @@ package abi
 import (
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 // indirect recursively dereferences the value until it either gets the value
@@ -70,19 +71,33 @@ func mustArrayToByteSlice(value reflect.Value) reflect.Value {
 //
 // set is a bit more lenient when it comes to assignment and doesn't force an as
 // strict ruleset as bare `reflect` does.
-func set(dst, src reflect.Value, output Argument) error {
-	dstType := dst.Type()
-	srcType := src.Type()
+func set(dst, src reflect.Value) error {
+	dstType, srcType := dst.Type(), src.Type()
 	switch {
-	case dstType.AssignableTo(srcType):
+	case dstType.Kind() == reflect.Interface && dst.Elem().IsValid():
+		return set(dst.Elem(), src)
+	case dstType.Kind() == reflect.Ptr && dstType.Elem() != derefbigT:
+		return set(dst.Elem(), src)
+	case srcType.AssignableTo(dstType) && dst.CanSet():
 		dst.Set(src)
-	case dstType.Kind() == reflect.Interface:
-		dst.Set(src)
-	case dstType.Kind() == reflect.Ptr:
-		return set(dst.Elem(), src, output)
+	case dstType.Kind() == reflect.Slice && srcType.Kind() == reflect.Slice:
+		return setSlice(dst, src)
 	default:
 		return fmt.Errorf("abi: cannot unmarshal %v in to %v", src.Type(), dst.Type())
 	}
+	return nil
+}
+
+// setSlice attempts to assign src to dst when slices are not assignable by default
+// e.g. src: [][]byte -> dst: [][15]byte
+func setSlice(dst, src reflect.Value) error {
+	slice := reflect.MakeSlice(dst.Type(), src.Len(), src.Len())
+	for i := 0; i < src.Len(); i++ {
+		v := src.Index(i)
+		reflect.Copy(slice.Index(i), v)
+	}
+
+	dst.Set(slice)
 	return nil
 }
 
@@ -111,18 +126,93 @@ func requireUnpackKind(v reflect.Value, t reflect.Type, k reflect.Kind,
 	return nil
 }
 
-// requireUniqueStructFieldNames makes sure field names don't collide
-func requireUniqueStructFieldNames(args Arguments) error {
-	exists := make(map[string]bool)
-	for _, arg := range args {
-		field := capitalise(arg.Name)
-		if field == "" {
-			return fmt.Errorf("abi: purely underscored output cannot unpack to struct")
+// mapArgNamesToStructFields maps a slice of argument names to struct fields.
+// first round: for each Exportable field that contains a `abi:""` tag
+//   and this field name exists in the given argument name list, pair them together.
+// second round: for each argument name that has not been already linked,
+//   find what variable is expected to be mapped into, if it exists and has not been
+//   used, pair them.
+// Note this function assumes the given value is a struct value.
+func mapArgNamesToStructFields(argNames []string, value reflect.Value) (map[string]string, error) {
+	typ := value.Type()
+
+	abi2struct := make(map[string]string)
+	struct2abi := make(map[string]string)
+
+	// first round ~~~
+	for i := 0; i < typ.NumField(); i++ {
+		structFieldName := typ.Field(i).Name
+
+		// skip private struct fields.
+		if structFieldName[:1] != strings.ToUpper(structFieldName[:1]) {
+			continue
 		}
-		if exists[field] {
-			return fmt.Errorf("abi: multiple outputs mapping to the same struct field '%s'", field)
+		// skip fields that have no abi:"" tag.
+		var ok bool
+		var tagName string
+		if tagName, ok = typ.Field(i).Tag.Lookup("abi"); !ok {
+			continue
 		}
-		exists[field] = true
+		// check if tag is empty.
+		if tagName == "" {
+			return nil, fmt.Errorf("struct: abi tag in '%s' is empty", structFieldName)
+		}
+		// check which argument field matches with the abi tag.
+		found := false
+		for _, arg := range argNames {
+			if arg == tagName {
+				if abi2struct[arg] != "" {
+					return nil, fmt.Errorf("struct: abi tag in '%s' already mapped", structFieldName)
+				}
+				// pair them
+				abi2struct[arg] = structFieldName
+				struct2abi[structFieldName] = arg
+				found = true
+			}
+		}
+		// check if this tag has been mapped.
+		if !found {
+			return nil, fmt.Errorf("struct: abi tag '%s' defined but not found in abi", tagName)
+		}
 	}
-	return nil
+
+	// second round ~~~
+	for _, argName := range argNames {
+
+		structFieldName := ToCamelCase(argName)
+
+		if structFieldName == "" {
+			return nil, fmt.Errorf("abi: purely underscored output cannot unpack to struct")
+		}
+
+		// this abi has already been paired, skip it... unless there exists another, yet unassigned
+		// struct field with the same field name. If so, raise an error:
+		//    abi: [ { "name": "value" } ]
+		//    struct { Value  *big.Int , Value1 *big.Int `abi:"value"`}
+		if abi2struct[argName] != "" {
+			if abi2struct[argName] != structFieldName &&
+				struct2abi[structFieldName] == "" &&
+				value.FieldByName(structFieldName).IsValid() {
+				return nil, fmt.Errorf("abi: multiple variables maps to the same abi field '%s'", argName)
+			}
+			continue
+		}
+
+		// return an error if this struct field has already been paired.
+		if struct2abi[structFieldName] != "" {
+			return nil, fmt.Errorf("abi: multiple outputs mapping to the same struct field '%s'", structFieldName)
+		}
+
+		if value.FieldByName(structFieldName).IsValid() {
+			// pair them
+			abi2struct[argName] = structFieldName
+			struct2abi[structFieldName] = argName
+		} else {
+			// not paired, but annotate as used, to detect cases like
+			//   abi : [ { "name": "value" }, { "name": "_value" } ]
+			//   struct { Value *big.Int }
+			struct2abi[structFieldName] = argName
+		}
+	}
+	return abi2struct, nil
 }

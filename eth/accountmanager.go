@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/console"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/swarm/storage/feed"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 )
@@ -28,6 +29,7 @@ type AccountManager interface {
 	CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error)
 	SignTx(signer types.Signer, tx *types.Transaction) (*types.Transaction, error)
 	Sign(msg []byte) ([]byte, error)
+	Signer() (*feed.GenericSigner, error)
 	Account() accounts.Account
 }
 
@@ -155,6 +157,18 @@ func (am *accountManager) Sign(msg []byte) ([]byte, error) {
 
 func (am *accountManager) Account() accounts.Account {
 	return am.account
+}
+
+func (am *accountManager) Signer() (*feed.GenericSigner, error) {
+	keyjson, err := am.keyStore.Export(am.account, "", "")
+	if err != nil {
+		return nil, err
+	}
+	privKey, err := keystore.DecryptKey(keyjson, "")
+	if err != nil {
+		return nil, err
+	}
+	return feed.NewGenericSigner(privKey.PrivateKey), nil
 }
 
 // Get account from keystore using hex address

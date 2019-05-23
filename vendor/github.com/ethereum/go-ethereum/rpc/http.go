@@ -31,39 +31,77 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/rs/cors"
 )
 
 const (
+	maxRequestContentLength = 1024 * 512
 	contentType             = "application/json"
-	maxRequestContentLength = 1024 * 128
 )
 
-var nullAddr, _ = net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+// https://www.jsonrpc.org/historical/json-rpc-over-http.html#id13
+var acceptedContentTypes = []string{contentType, "application/json-rpc", "application/jsonrequest"}
 
 type httpConn struct {
 	client    *http.Client
 	req       *http.Request
 	closeOnce sync.Once
-	closed    chan struct{}
+	closed    chan interface{}
 }
 
 // httpConn is treated specially by Client.
-func (hc *httpConn) LocalAddr() net.Addr              { return nullAddr }
-func (hc *httpConn) RemoteAddr() net.Addr             { return nullAddr }
-func (hc *httpConn) SetReadDeadline(time.Time) error  { return nil }
-func (hc *httpConn) SetWriteDeadline(time.Time) error { return nil }
-func (hc *httpConn) SetDeadline(time.Time) error      { return nil }
-func (hc *httpConn) Write([]byte) (int, error)        { panic("Write called") }
-
-func (hc *httpConn) Read(b []byte) (int, error) {
-	<-hc.closed
-	return 0, io.EOF
+func (hc *httpConn) Write(context.Context, interface{}) error {
+	panic("Write called on httpConn")
 }
 
-func (hc *httpConn) Close() error {
+func (hc *httpConn) RemoteAddr() string {
+	return hc.req.URL.String()
+}
+
+func (hc *httpConn) Read() ([]*jsonrpcMessage, bool, error) {
+	<-hc.closed
+	return nil, false, io.EOF
+}
+
+func (hc *httpConn) Close() {
 	hc.closeOnce.Do(func() { close(hc.closed) })
-	return nil
+}
+
+func (hc *httpConn) Closed() <-chan interface{} {
+	return hc.closed
+}
+
+// HTTPTimeouts represents the configuration params for the HTTP RPC server.
+type HTTPTimeouts struct {
+	// ReadTimeout is the maximum duration for reading the entire
+	// request, including the body.
+	//
+	// Because ReadTimeout does not let Handlers make per-request
+	// decisions on each request body's acceptable deadline or
+	// upload rate, most users will prefer to use
+	// ReadHeaderTimeout. It is valid to use them both.
+	ReadTimeout time.Duration
+
+	// WriteTimeout is the maximum duration before timing out
+	// writes of the response. It is reset whenever a new
+	// request's header is read. Like ReadTimeout, it does not
+	// let Handlers make decisions on a per-request basis.
+	WriteTimeout time.Duration
+
+	// IdleTimeout is the maximum amount of time to wait for the
+	// next request when keep-alives are enabled. If IdleTimeout
+	// is zero, the value of ReadTimeout is used. If both are
+	// zero, ReadHeaderTimeout is used.
+	IdleTimeout time.Duration
+}
+
+// DefaultHTTPTimeouts represents the default timeout values used if further
+// configuration is not provided.
+var DefaultHTTPTimeouts = HTTPTimeouts{
+	ReadTimeout:  30 * time.Second,
+	WriteTimeout: 30 * time.Second,
+	IdleTimeout:  120 * time.Second,
 }
 
 // DialHTTPWithClient creates a new RPC client that connects to an RPC server over HTTP
@@ -77,8 +115,8 @@ func DialHTTPWithClient(endpoint string, client *http.Client) (*Client, error) {
 	req.Header.Set("Accept", contentType)
 
 	initctx := context.Background()
-	return newClient(initctx, func(context.Context) (net.Conn, error) {
-		return &httpConn{client: client, req: req, closed: make(chan struct{})}, nil
+	return newClient(initctx, func(context.Context) (ServerCodec, error) {
+		return &httpConn{client: client, req: req, closed: make(chan interface{})}, nil
 	})
 }
 
@@ -147,29 +185,62 @@ func (hc *httpConn) doRequest(ctx context.Context, msg interface{}) (io.ReadClos
 	return resp.Body, nil
 }
 
-// httpReadWriteNopCloser wraps a io.Reader and io.Writer with a NOP Close method.
-type httpReadWriteNopCloser struct {
+// httpServerConn turns a HTTP connection into a Conn.
+type httpServerConn struct {
 	io.Reader
 	io.Writer
+	r *http.Request
 }
 
-// Close does nothing and returns always nil
-func (t *httpReadWriteNopCloser) Close() error {
-	return nil
+func newHTTPServerConn(r *http.Request, w http.ResponseWriter) ServerCodec {
+	body := io.LimitReader(r.Body, maxRequestContentLength)
+	conn := &httpServerConn{Reader: body, Writer: w, r: r}
+	return NewJSONCodec(conn)
 }
+
+// Close does nothing and always returns nil.
+func (t *httpServerConn) Close() error { return nil }
+
+// RemoteAddr returns the peer address of the underlying connection.
+func (t *httpServerConn) RemoteAddr() string {
+	return t.r.RemoteAddr
+}
+
+// SetWriteDeadline does nothing and always returns nil.
+func (t *httpServerConn) SetWriteDeadline(time.Time) error { return nil }
 
 // NewHTTPServer creates a new HTTP RPC server around an API provider.
 //
 // Deprecated: Server implements http.Handler
-func NewHTTPServer(cors []string, vhosts []string, srv *Server) *http.Server {
+func NewHTTPServer(cors []string, vhosts []string, timeouts HTTPTimeouts, srv http.Handler) *http.Server {
 	// Wrap the CORS-handler within a host-handler
 	handler := newCorsHandler(srv, cors)
 	handler = newVHostHandler(vhosts, handler)
-	return &http.Server{Handler: handler}
+
+	// Make sure timeout values are meaningful
+	if timeouts.ReadTimeout < time.Second {
+		log.Warn("Sanitizing invalid HTTP read timeout", "provided", timeouts.ReadTimeout, "updated", DefaultHTTPTimeouts.ReadTimeout)
+		timeouts.ReadTimeout = DefaultHTTPTimeouts.ReadTimeout
+	}
+	if timeouts.WriteTimeout < time.Second {
+		log.Warn("Sanitizing invalid HTTP write timeout", "provided", timeouts.WriteTimeout, "updated", DefaultHTTPTimeouts.WriteTimeout)
+		timeouts.WriteTimeout = DefaultHTTPTimeouts.WriteTimeout
+	}
+	if timeouts.IdleTimeout < time.Second {
+		log.Warn("Sanitizing invalid HTTP idle timeout", "provided", timeouts.IdleTimeout, "updated", DefaultHTTPTimeouts.IdleTimeout)
+		timeouts.IdleTimeout = DefaultHTTPTimeouts.IdleTimeout
+	}
+	// Bundle and start the HTTP server
+	return &http.Server{
+		Handler:      handler,
+		ReadTimeout:  timeouts.ReadTimeout,
+		WriteTimeout: timeouts.WriteTimeout,
+		IdleTimeout:  timeouts.IdleTimeout,
+	}
 }
 
 // ServeHTTP serves JSON-RPC requests over HTTP.
-func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Permit dumb empty requests for remote health-checks (AWS)
 	if r.Method == http.MethodGet && r.ContentLength == 0 && r.URL.RawQuery == "" {
 		return
@@ -181,17 +252,21 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// All checks passed, create a codec that reads direct from the request body
 	// untilEOF and writes the response to w and order the server to process a
 	// single request.
-	ctx := context.Background()
+	ctx := r.Context()
 	ctx = context.WithValue(ctx, "remote", r.RemoteAddr)
 	ctx = context.WithValue(ctx, "scheme", r.Proto)
 	ctx = context.WithValue(ctx, "local", r.Host)
-
-	body := io.LimitReader(r.Body, maxRequestContentLength)
-	codec := NewJSONCodec(&httpReadWriteNopCloser{body, w})
-	defer codec.Close()
+	if ua := r.Header.Get("User-Agent"); ua != "" {
+		ctx = context.WithValue(ctx, "User-Agent", ua)
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		ctx = context.WithValue(ctx, "Origin", origin)
+	}
 
 	w.Header().Set("content-type", contentType)
-	srv.ServeSingleRequest(codec, OptionMethodInvocation, ctx)
+	codec := newHTTPServerConn(r, w)
+	defer codec.Close()
+	s.serveSingleRequest(ctx, codec)
 }
 
 // validateRequest returns a non-zero response code and error message if the
@@ -204,15 +279,24 @@ func validateRequest(r *http.Request) (int, error) {
 		err := fmt.Errorf("content length too large (%d>%d)", r.ContentLength, maxRequestContentLength)
 		return http.StatusRequestEntityTooLarge, err
 	}
-	mt, _, err := mime.ParseMediaType(r.Header.Get("content-type"))
-	if r.Method != http.MethodOptions && (err != nil || mt != contentType) {
-		err := fmt.Errorf("invalid content type, only %s is supported", contentType)
-		return http.StatusUnsupportedMediaType, err
+	// Allow OPTIONS (regardless of content-type)
+	if r.Method == http.MethodOptions {
+		return 0, nil
 	}
-	return 0, nil
+	// Check content-type
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("content-type")); err == nil {
+		for _, accepted := range acceptedContentTypes {
+			if accepted == mt {
+				return 0, nil
+			}
+		}
+	}
+	// Invalid content-type
+	err := fmt.Errorf("invalid content type, only %s is supported", contentType)
+	return http.StatusUnsupportedMediaType, err
 }
 
-func newCorsHandler(srv *Server, allowedOrigins []string) http.Handler {
+func newCorsHandler(srv http.Handler, allowedOrigins []string) http.Handler {
 	// disable CORS support if user has not specified a custom CORS configuration
 	if len(allowedOrigins) == 0 {
 		return srv

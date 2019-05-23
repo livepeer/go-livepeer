@@ -32,12 +32,9 @@ func WaitMined(ctx context.Context, b DeployBackend, tx *types.Transaction) (*ty
 	queryTicker := time.NewTicker(time.Second)
 	defer queryTicker.Stop()
 
-	localCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	logger := log.New("hash", tx.Hash())
 	for {
-		receipt, err := b.TransactionReceipt(localCtx, tx.Hash())
+		receipt, err := b.TransactionReceipt(ctx, tx.Hash())
 		if receipt != nil {
 			return receipt, nil
 		}

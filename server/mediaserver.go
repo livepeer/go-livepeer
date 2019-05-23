@@ -21,16 +21,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/swarm/api/client"
+	"github.com/ethereum/go-ethereum/swarm/storage/feed"
+	"github.com/ethereum/go-ethereum/swarm/storage/feed/lookup"
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 
 	"github.com/ericxtang/m3u8"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	lpmscore "github.com/livepeer/lpms/core"
-	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/vidplayer"
@@ -50,13 +55,14 @@ const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
 const HLSBufferWindow = uint(5)
 const StreamKeyBytes = 6
 
-const SegLen = 2 * time.Second
+const SegLen = 4 * time.Second
 const BroadcastRetry = 15 * time.Second
 
 var BroadcastPrice = big.NewInt(1)
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL string
+var SwarmPlaylists = map[string]core.PlaylistManager{}
 
 type rtmpConnection struct {
 	mid         core.ManifestID
@@ -81,11 +87,22 @@ type LivepeerServer struct {
 	lastHLSStreamID core.StreamID
 	lastManifestID  core.ManifestID
 	connectionLock  *sync.RWMutex
+
+	//Swarm Integration
+	bzzApi         string
+	publishTopic   string
+	swarmEthClient eth.LivepeerEthClient
 }
 
 type authWebhookResponse struct {
 	ManifestID string `json:"manifestID"`
 	StreamKey  string `json:"streamKey"`
+}
+
+type swarmFeedEntry struct {
+	PlData string `json:"plData"`
+	SegLoc string `json:"segLoc"`
+	SeqNo  uint64 `json:"seqNo"`
 }
 
 func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
@@ -102,6 +119,12 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 	}
 	server := lpmscore.New(&opts)
 	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{}, rtmpConnections: make(map[core.ManifestID]*rtmpConnection)}
+}
+
+func (s *LivepeerServer) ConfigSwarm(bzzApi string, publishTopic string, client eth.LivepeerEthClient) {
+	s.bzzApi = bzzApi
+	s.publishTopic = publishTopic
+	s.swarmEthClient = client
 }
 
 //StartServer starts the LPMS server
@@ -261,6 +284,12 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					}
 				}
 				processSegment(cxn, seg)
+				if s.bzzApi != "" && s.publishTopic != "" {
+					userAcct := s.swarmEthClient.Account().Address
+					signer, _ := s.swarmEthClient.GetSigner()
+					glog.Infof("Publish %v to Swarm: user: %v, topic: %v", seg.Name, userAcct.String(), s.publishTopic)
+					go publishToSwarmFeed(s.bzzApi, userAcct, s.publishTopic, signer, seg.SeqNo, seg.Name)
+				}
 			})
 
 			segOptions := segmenter.SegmenterOptions{
@@ -315,20 +344,21 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 
 	// If running in on-chain mode, check for a reasonable deposit
 	if s.LivepeerNode.Eth != nil {
-		sender, err := s.LivepeerNode.Eth.Senders(s.LivepeerNode.Eth.Account().Address)
-		if err != nil {
-			return nil, err
-		}
+		//Comment this out for now - ticket broker isn't deployed on a testnet anywhere.
+		// sender, err := s.LivepeerNode.Eth.Senders(s.LivepeerNode.Eth.Account().Address)
+		// if err != nil {
+		// 	return nil, err
+		// }
 
-		if sender.Deposit.Cmp(big.NewInt(0)) <= 0 {
-			glog.Errorf("No deposit - cannot start broadcast session")
+		// if sender.Deposit.Cmp(big.NewInt(0)) <= 0 {
+		// 	glog.Errorf("No deposit - cannot start broadcast session")
 
-			if monitor.Enabled {
-				monitor.StreamCreateFailed(nonce, "LowDeposit")
-			}
+		// 	if monitor.Enabled {
+		// 		monitor.StreamCreateFailed(nonce, "LowDeposit")
+		// 	}
 
-			return nil, errLowDeposit
-		}
+		// 	return nil, errLowDeposit
+		// }
 	}
 
 	// Set up the connection tracking
@@ -384,6 +414,13 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 		var manifestID core.ManifestID
 		if s.ExposeCurrentManifest && "/stream/current.m3u8" == strings.ToLower(url.Path) {
 			manifestID = s.LastManifestID()
+		} else if isSwarmRequest(url.Path) {
+			user, topic, swarmManifestID, manifestID, rendition := parseSwarmParams(url.String())
+			if rendition == "" { //is master playlist if rendition is empty
+				return loadMPLFromSwarm(s.bzzApi, user, topic, swarmManifestID, manifestID)
+			} else {
+				return nil, vidplayer.ErrNotFound
+			}
 		} else {
 			sid := parseStreamID(url.Path)
 			if sid.Rendition != "" {
@@ -411,20 +448,29 @@ func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Ma
 func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.MediaPlaylist, error) {
 	return func(url *url.URL) (*m3u8.MediaPlaylist, error) {
 		strmID := parseStreamID(url.Path)
-		mid := strmID.ManifestID
-		s.connectionLock.RLock()
-		defer s.connectionLock.RUnlock()
-		cxn, ok := s.rtmpConnections[mid]
-		if !ok || cxn.pl == nil {
-			return nil, vidplayer.ErrNotFound
-		}
+		if isSwarmRequest(url.Path) {
+			user, topic, swarmManifestID, _, rendition := parseSwarmParams(url.String())
+			if rendition != "" {
+				return loadPlFromSwarm(s.bzzApi, user, topic, swarmManifestID, rendition)
+			} else {
+				return nil, vidplayer.ErrNotFound
+			}
+		} else {
+			mid := strmID.ManifestID
+			s.connectionLock.RLock()
+			defer s.connectionLock.RUnlock()
+			cxn, ok := s.rtmpConnections[mid]
+			if !ok || cxn.pl == nil {
+				return nil, vidplayer.ErrNotFound
+			}
 
-		//Get the hls playlist
-		pl := cxn.pl.GetHLSMediaPlaylist(strmID.Rendition)
-		if pl == nil {
-			return nil, vidplayer.ErrNotFound
+			//Get the hls playlist
+			pl := cxn.pl.GetHLSMediaPlaylist(strmID.Rendition)
+			if pl == nil {
+				return nil, vidplayer.ErrNotFound
+			}
+			return pl, nil
 		}
-		return pl, nil
 	}
 }
 
@@ -484,9 +530,120 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 // Match all leading spaces, slashes and optionally `stream/`
 var StreamPrefix = regexp.MustCompile(`^[ /]*(stream/)?`)
+var SwarmPrefix = regexp.MustCompile(`^[/]*(stream/swarm.m3u8\?)?`)
 
 func cleanStreamPrefix(reqPath string) string {
 	return StreamPrefix.ReplaceAllString(reqPath, "")
+}
+
+func isSwarmRequest(reqPath string) bool {
+	return SwarmPrefix.MatchString(reqPath)
+}
+
+func parseSwarmParams(reqUrl string) (user string, topic string, swarmManifestID string, manifestID string, rendition string) {
+	truncated := strings.Replace(reqUrl, ".m3u8", "", 1)
+	split := strings.Split(truncated, "/")
+	isKey := func(s string) bool {
+		if s == "user" || s == "topic" || s == "manifestID" {
+			return true
+		}
+		return false
+	}
+
+	result := map[string]string{}
+	key := ""
+	for _, s := range split {
+		if isKey(s) {
+			key = s
+		} else if key != "" {
+			result[key] = s
+			key = ""
+		} else {
+			//do nothing
+		}
+
+		lookupSuccess := ffmpeg.VideoProfileLookup[s] != ffmpeg.VideoProfile{}
+		if lookupSuccess {
+			rendition = s
+		}
+	}
+	user = result["user"]
+	topic = result["topic"]
+	swarmManifestID = result["manifestID"]
+	manifestID = strings.Replace(truncated, "/stream/", "", 1) //used to create playlist
+
+	// p, _ := url.ParseQuery(qStr)
+	// if p != nil {
+	// 	user = p.Get("user")
+	// 	topic = p.Get("topic")
+	// 	manifestID = p.Get("manifestID")
+	// }
+	return
+}
+
+func loadMPLFromSwarm(bzzApi, user, topic, swarmManifestID, manifestID string) (*m3u8.MasterPlaylist, error) {
+	c := client.NewClient(bzzApi)
+	f := new(feed.Feed)
+	f.User = ethcommon.HexToAddress(user)
+	var err error
+	f.Topic, err = feed.NewTopic(topic, nil)
+	if err != nil {
+		glog.Infof("Error creating new swarm topic: %v", err)
+	}
+	query := feed.NewQueryLatest(f, lookup.NoClue)
+	_, err = c.QueryFeed(query, "")
+	if err != nil {
+		fmt.Printf("Cannot query feed: %v", err)
+		return nil, err
+	}
+
+	fetchFromSwarm := func(pl core.PlaylistManager, query *feed.Query) {
+		lastEntry := ""
+		for {
+			reader, err := c.QueryFeed(query, "")
+			if err != nil {
+				fmt.Printf("Cannot query feed: %v", err)
+				return
+			}
+			feed, err := ioutil.ReadAll(reader)
+			if err != nil {
+				fmt.Printf("Cannot read feed: %v", err)
+				return
+			}
+
+			if lastEntry != string(feed) {
+				//Insert into playlist
+				entry := swarmFeedEntry{}
+				json.Unmarshal(feed, &entry)
+				vProfile := ffmpeg.VideoProfileLookup[entry.PlData]
+				pl.InsertHLSSegment(&vProfile, entry.SeqNo, entry.SegLoc, SegLen.Seconds())
+			} else {
+				//Don't do anything
+			}
+			lastEntry = string(feed)
+		}
+	}
+
+	os := drivers.NodeStorage.NewSession("./")
+	lookupKey := fmt.Sprintf("%v,%v,%v", user, topic, swarmManifestID)
+	if pl, ok := SwarmPlaylists[lookupKey]; !ok {
+		pl = core.NewBasicPlaylistManager(core.ManifestID(manifestID), os)
+		SwarmPlaylists[lookupKey] = pl
+		go fetchFromSwarm(pl, query)
+		time.Sleep(2 * time.Second)
+		return pl.GetHLSMasterPlaylist(), nil
+	} else {
+		return pl.GetHLSMasterPlaylist(), nil
+	}
+}
+
+func loadPlFromSwarm(bzzApi, user, topic, swarmManifestID, rendition string) (*m3u8.MediaPlaylist, error) {
+	lookupKey := fmt.Sprintf("%v,%v,%v", user, topic, swarmManifestID)
+	if pl, ok := SwarmPlaylists[lookupKey]; !ok {
+		return nil, fmt.Errorf("Cannot find playlist from swarm for %v, %v, %v", user, topic, swarmManifestID)
+	} else {
+		return pl.GetHLSMediaPlaylist(rendition), nil
+	}
 }
 
 func parseStreamID(reqPath string) core.StreamID {

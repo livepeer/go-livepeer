@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -11,8 +12,12 @@ import (
 
 	"github.com/golang/glog"
 
+	"github.com/ethereum/go-ethereum/cmd/utils"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/swarm/api/client"
+	"github.com/ethereum/go-ethereum/swarm/storage/feed"
+	"github.com/ethereum/go-ethereum/swarm/storage/feed/lookup"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -20,6 +25,7 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
 
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -435,4 +441,34 @@ var sessionErrRegex = generateSessionErrors()
 
 func shouldStopSession(err error) bool {
 	return sessionErrRegex.MatchString(err.Error())
+}
+
+func publishToSwarmFeed(bzzApi string, userAddr ethcommon.Address, publishTopic string, signer *feed.GenericSigner, seqNo uint64, segLoc string) {
+	f := new(feed.Feed)
+	f.User = userAddr
+	f.Topic, _ = feed.NewTopic(publishTopic, nil)
+	query := feed.NewQueryLatest(f, lookup.NoClue)
+	c := client.NewClient(bzzApi)
+
+	feedStatus, err := c.GetFeedRequest(query, "")
+	if err != nil {
+		fmt.Printf("Error retrieving feed status: %s", err.Error())
+		return
+	}
+
+	entry := swarmFeedEntry{PlData: ffmpeg.P720p30fps16x9.Name, SegLoc: segLoc, SeqNo: seqNo}
+	entryB, err := json.Marshal(entry)
+	if err != nil {
+		glog.Infof("Error marshaling swarm feed entry: %v", err)
+	}
+	feedStatus.SetData(entryB)
+	if err := feedStatus.Sign(signer); err != nil {
+		utils.Fatalf("Error signing feed update: %s", err.Error())
+	}
+
+	// post update
+	err = c.UpdateFeed(feedStatus)
+	if err != nil {
+		utils.Fatalf("Error updating feed: %s", err.Error())
+	}
 }

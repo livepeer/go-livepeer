@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -29,43 +28,26 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/event"
-	"github.com/golang/glog"
 )
 
 // SignerFn is a signer function callback when a contract requires a method to
 // sign the transaction before submission.
 type SignerFn func(types.Signer, common.Address, *types.Transaction) (*types.Transaction, error)
 
-// NonceManager is an interface which describes an object capable
-// of managing transaction nonces
-type NonceManager interface {
-	// Lock locks the provided address. The caller should always call Lock before
-	// calling Next or Update
-	Lock(addr common.Address)
-	// Unlock unlocks the provided address. The caller should always call Unlock
-	// after finishing calls to Next or Update
-	Unlock(addr common.Address)
-	// Next returns the next transaction nonce to be used for the provided address
-	Next(addr common.Address) (uint64, error)
-	// Update uses the last nonce for the provided address to update the next transaction nonce
-	Update(addr common.Address, nonce uint64)
-}
-
 // CallOpts is the collection of options to fine tune a contract call request.
 type CallOpts struct {
-	Pending bool           // Whether to operate on the pending state or the last known one
-	From    common.Address // Optional the sender address, otherwise the first account is used
-
-	Context context.Context // Network context to support cancellation and timeouts (nil = no timeout)
+	Pending     bool            // Whether to operate on the pending state or the last known one
+	From        common.Address  // Optional the sender address, otherwise the first account is used
+	BlockNumber *big.Int        // Optional the block number on which the call should be performed
+	Context     context.Context // Network context to support cancellation and timeouts (nil = no timeout)
 }
 
 // TransactOpts is the collection of authorization data required to create a
 // valid Ethereum transaction.
 type TransactOpts struct {
-	From         common.Address // Ethereum account to send the transaction from
-	Nonce        *big.Int       // Nonce to use for the transaction execution (nil = use pending state)
-	Signer       SignerFn       // Method to use for signing the transaction (mandatory)
-	NonceManager NonceManager   // Object used to manage transaction nonces
+	From   common.Address // Ethereum account to send the transaction from
+	Nonce  *big.Int       // Nonce to use for the transaction execution (nil = use pending state)
+	Signer SignerFn       // Method to use for signing the transaction (mandatory)
 
 	Value    *big.Int // Funds to transfer along along the transaction (nil = 0 = no funds)
 	GasPrice *big.Int // Gas price to use for the transaction execution (nil = gas price oracle)
@@ -131,35 +113,11 @@ func DeployContract(opts *TransactOpts, abi abi.ABI, bytecode []byte, backend Co
 	return c.address, tx, c, nil
 }
 
-//Adding retry logic here to deal with Infura's websocket instability.
-func (c *BoundContract) Call(opts *CallOpts, result interface{}, method string, params ...interface{}) error {
-	retryCount := 3
-	var err error
-	var output []byte
-	retry := true
-
-	for i := 0; i < retryCount && retry == true; i++ {
-		output, err = c.call(opts, result, method, params...)
-		if err != nil && (err.Error() == "EOF" || err.Error() == "tls: use of closed connection") {
-			retry = true
-			glog.V(4).Infof("Retrying %v call the blockchain: %v", method, i)
-		} else {
-			retry = false
-		}
-	}
-
-	if output != nil {
-		return c.abi.Unpack(result, method, output)
-	} else {
-		return errors.New("ErrNoResult")
-	}
-}
-
 // Call invokes the (constant) contract method with params as input values and
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (c *BoundContract) call(opts *CallOpts, result interface{}, method string, params ...interface{}) ([]byte, error) {
+func (c *BoundContract) Call(opts *CallOpts, result interface{}, method string, params ...interface{}) error {
 	// Don't crash on a lazy user
 	if opts == nil {
 		opts = new(CallOpts)
@@ -167,7 +125,7 @@ func (c *BoundContract) call(opts *CallOpts, result interface{}, method string, 
 	// Pack the input, call and unpack the results
 	input, err := c.abi.Pack(method, params...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var (
 		msg    = ethereum.CallMsg{From: opts.From, To: &c.address, Data: input}
@@ -178,32 +136,32 @@ func (c *BoundContract) call(opts *CallOpts, result interface{}, method string, 
 	if opts.Pending {
 		pb, ok := c.caller.(PendingContractCaller)
 		if !ok {
-			return nil, ErrNoPendingState
+			return ErrNoPendingState
 		}
 		output, err = pb.PendingCallContract(ctx, msg)
 		if err == nil && len(output) == 0 {
 			// Make sure we have a contract to operate on, and bail out otherwise.
 			if code, err = pb.PendingCodeAt(ctx, c.address); err != nil {
-				return nil, err
+				return err
 			} else if len(code) == 0 {
-				return nil, ErrNoCode
+				return ErrNoCode
 			}
 		}
 	} else {
-		output, err = c.caller.CallContract(ctx, msg, nil)
+		output, err = c.caller.CallContract(ctx, msg, opts.BlockNumber)
 		if err == nil && len(output) == 0 {
 			// Make sure we have a contract to operate on, and bail out otherwise.
-			if code, err = c.caller.CodeAt(ctx, c.address, nil); err != nil {
-				return nil, err
+			if code, err = c.caller.CodeAt(ctx, c.address, opts.BlockNumber); err != nil {
+				return err
 			} else if len(code) == 0 {
-				return nil, ErrNoCode
+				return ErrNoCode
 			}
 		}
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return output, nil
+	return c.abi.Unpack(result, method, output)
 }
 
 // Transact invokes the (paid) contract method with params as input values.
@@ -213,13 +171,7 @@ func (c *BoundContract) Transact(opts *TransactOpts, method string, params ...in
 	if err != nil {
 		return nil, err
 	}
-	tx, err := c.transact(opts, &c.address, input)
-	if err == nil {
-		glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\".  Hash: \"%v\".  Params: %v \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, tx.Hash().String(), params, strings.Repeat("*", 75))
-	} else {
-		glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\".  Params: %v \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, params, err, strings.Repeat("*", 75))
-	}
-	return tx, err
+	return c.transact(opts, &c.address, input)
 }
 
 // Transfer initiates a plain transaction to move funds to the contract, calling
@@ -240,25 +192,9 @@ func (c *BoundContract) transact(opts *TransactOpts, contract *common.Address, i
 	}
 	var nonce uint64
 	if opts.Nonce == nil {
-		if opts.NonceManager != nil {
-			opts.NonceManager.Lock(opts.From)
-			defer func() {
-				if err == nil {
-					opts.NonceManager.Update(opts.From, nonce)
-				}
-
-				opts.NonceManager.Unlock(opts.From)
-			}()
-
-			nonce, err = opts.NonceManager.Next(opts.From)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			nonce, err = c.transactor.PendingNonceAt(ensureContext(opts.Context), opts.From)
-			if err != nil {
-				return nil, fmt.Errorf("failed to retrieve account nonce: %v", err)
-			}
+		nonce, err = c.transactor.PendingNonceAt(ensureContext(opts.Context), opts.From)
+		if err != nil {
+			return nil, fmt.Errorf("failed to retrieve account nonce: %v", err)
 		}
 	} else {
 		nonce = opts.Nonce.Uint64()
@@ -402,6 +338,22 @@ func (c *BoundContract) UnpackLog(out interface{}, event string, log types.Log) 
 		}
 	}
 	return parseTopics(out, indexed, log.Topics[1:])
+}
+
+// UnpackLogIntoMap unpacks a retrieved log into the provided map.
+func (c *BoundContract) UnpackLogIntoMap(out map[string]interface{}, event string, log types.Log) error {
+	if len(log.Data) > 0 {
+		if err := c.abi.UnpackIntoMap(out, event, log.Data); err != nil {
+			return err
+		}
+	}
+	var indexed abi.Arguments
+	for _, arg := range c.abi.Events[event].Inputs {
+		if arg.Indexed {
+			indexed = append(indexed, arg)
+		}
+	}
+	return parseTopicsIntoMap(out, indexed, log.Topics[1:])
 }
 
 // ensureContext is a helper method to ensure a context is not nil, even if the

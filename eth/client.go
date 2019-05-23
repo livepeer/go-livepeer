@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/swarm/storage/feed"
+
 	"github.com/cenkalti/backoff"
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
@@ -130,6 +132,7 @@ type LivepeerEthClient interface {
 	LatestBlockNum() (*big.Int, error)
 	GetGasInfo() (uint64, *big.Int)
 	SetGasInfo(uint64, *big.Int) error
+	GetSigner() (*feed.GenericSigner, error)
 }
 
 type client struct {
@@ -192,7 +195,7 @@ func (c *client) SetGasInfo(gasLimit uint64, gasPrice *big.Int) error {
 		return err
 	}
 
-	opts.NonceManager = NewNonceManager(c.backend)
+	// opts.NonceManager = NewNonceManager(c.backend)
 
 	if err := c.setContracts(opts); err != nil {
 		return err
@@ -205,6 +208,10 @@ func (c *client) SetGasInfo(gasLimit uint64, gasPrice *big.Int) error {
 
 func (c *client) GetGasInfo() (gasLimit uint64, gasPrice *big.Int) {
 	return c.gasLimit, c.gasPrice
+}
+
+func (c *client) GetSigner() (*feed.GenericSigner, error) {
+	return c.accountManager.Signer()
 }
 
 func (c *client) setContracts(opts *bind.TransactOpts) error {
@@ -784,7 +791,7 @@ func (c *client) CheckTx(tx *types.Transaction) error {
 		return err
 	}
 
-	if receipt.Status == uint(0) {
+	if receipt.Status == uint64(0) {
 		return fmt.Errorf("tx %v failed", tx.Hash().Hex())
 	} else {
 		return nil

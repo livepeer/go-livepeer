@@ -18,13 +18,23 @@
 
 import React, {Component} from 'react';
 
-import withStyles from 'material-ui/styles/withStyles';
-import AppBar from 'material-ui/AppBar';
-import Toolbar from 'material-ui/Toolbar';
-import IconButton from 'material-ui/IconButton';
-import Icon from 'material-ui/Icon';
-import MenuIcon from 'material-ui-icons/Menu';
-import Typography from 'material-ui/Typography';
+import withStyles from '@material-ui/core/styles/withStyles';
+import AppBar from '@material-ui/core/AppBar';
+import Toolbar from '@material-ui/core/Toolbar';
+import IconButton from '@material-ui/core/IconButton';
+import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
+import {faBars} from '@fortawesome/free-solid-svg-icons';
+import Typography from '@material-ui/core/Typography';
+
+// styles contains the constant styles of the component.
+const styles = {
+	header: {
+		height: '8%',
+	},
+	toolbar: {
+		height: '100%',
+	},
+};
 
 // themeStyles returns the styles generated from the theme for the component.
 const themeStyles = (theme: Object) => ({
@@ -54,12 +64,10 @@ class Header extends Component<Props> {
 		const {classes} = this.props;
 
 		return (
-			<AppBar position='static' className={classes.header}>
-				<Toolbar className={classes.toolbar}>
+			<AppBar position='static' className={classes.header} style={styles.header}>
+				<Toolbar className={classes.toolbar} style={styles.toolbar}>
 					<IconButton onClick={this.props.switchSideBar}>
-						<Icon>
-							<MenuIcon />
-						</Icon>
+						<FontAwesomeIcon icon={faBars} />
 					</IconButton>
 					<Typography type='title' color='inherit' noWrap className={classes.title}>
 						Go Ethereum Dashboard

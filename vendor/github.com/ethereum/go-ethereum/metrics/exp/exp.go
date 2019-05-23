@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/metrics/prometheus"
 )
 
 type exp struct {
@@ -42,6 +43,7 @@ func Exp(r metrics.Registry) {
 	// http.HandleFunc("/debug/vars", e.expHandler)
 	// haven't found an elegant way, so just use a different endpoint
 	http.Handle("/debug/metrics", h)
+	http.Handle("/debug/metrics/prometheus", prometheus.Handler(r))
 }
 
 // ExpHandler will return an expvar powered metrics handler.
@@ -134,21 +136,34 @@ func (exp *exp) publishTimer(name string, metric metrics.Timer) {
 	exp.getFloat(name + ".mean-rate").Set(t.RateMean())
 }
 
+func (exp *exp) publishResettingTimer(name string, metric metrics.ResettingTimer) {
+	t := metric.Snapshot()
+	ps := t.Percentiles([]float64{50, 75, 95, 99})
+	exp.getInt(name + ".count").Set(int64(len(t.Values())))
+	exp.getFloat(name + ".mean").Set(t.Mean())
+	exp.getInt(name + ".50-percentile").Set(ps[0])
+	exp.getInt(name + ".75-percentile").Set(ps[1])
+	exp.getInt(name + ".95-percentile").Set(ps[2])
+	exp.getInt(name + ".99-percentile").Set(ps[3])
+}
+
 func (exp *exp) syncToExpvar() {
 	exp.registry.Each(func(name string, i interface{}) {
-		switch i.(type) {
+		switch i := i.(type) {
 		case metrics.Counter:
-			exp.publishCounter(name, i.(metrics.Counter))
+			exp.publishCounter(name, i)
 		case metrics.Gauge:
-			exp.publishGauge(name, i.(metrics.Gauge))
+			exp.publishGauge(name, i)
 		case metrics.GaugeFloat64:
-			exp.publishGaugeFloat64(name, i.(metrics.GaugeFloat64))
+			exp.publishGaugeFloat64(name, i)
 		case metrics.Histogram:
-			exp.publishHistogram(name, i.(metrics.Histogram))
+			exp.publishHistogram(name, i)
 		case metrics.Meter:
-			exp.publishMeter(name, i.(metrics.Meter))
+			exp.publishMeter(name, i)
 		case metrics.Timer:
-			exp.publishTimer(name, i.(metrics.Timer))
+			exp.publishTimer(name, i)
+		case metrics.ResettingTimer:
+			exp.publishResettingTimer(name, i)
 		default:
 			panic(fmt.Sprintf("unsupported type for '%s': %T", name, i))
 		}

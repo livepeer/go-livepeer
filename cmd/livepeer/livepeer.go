@@ -109,6 +109,10 @@ func main() {
 	// API
 	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
 
+	// Swarm Integration
+	bzzApi := flag.String("bzzApi", "", "Swarm API gateway")
+	swarmPublishTopic := flag.String("swarmPublishTopic", "lpVideo", "Topic to the Swarm feed")
+
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
 
@@ -238,7 +242,8 @@ func main() {
 		return
 	}
 
-	if *network == "offchain" {
+	var client eth.LivepeerEthClient
+	if *network == "offchain" && *bzzApi == "" {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	} else {
 		var keystoreDir string
@@ -266,7 +271,7 @@ func main() {
 			return
 		}
 
-		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, backend, ethcommon.HexToAddress(*ethController), EthTxTimeout)
+		client, err = eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, backend, ethcommon.HexToAddress(*ethController), EthTxTimeout)
 		if err != nil {
 			glog.Errorf("Failed to create client: %v", err)
 			return
@@ -283,57 +288,61 @@ func main() {
 			return
 		}
 
-		n.Eth = client
+		if *bzzApi != "" {
+			//Do nothing...
+		} else {
+			n.Eth = client
 
-		defer n.StopEthServices()
+			defer n.StopEthServices()
 
-		addrMap := n.Eth.ContractAddresses()
-		em := eth.NewEventMonitor(backend, addrMap)
+			addrMap := n.Eth.ContractAddresses()
+			em := eth.NewEventMonitor(backend, addrMap)
 
-		// Setup block service to receive headers from the head of the chain
-		n.EthServices["BlockService"] = eventservices.NewBlockService(em, dbh)
-		// Setup unbonding service to manage unbonding locks
-		n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
+			// Setup block service to receive headers from the head of the chain
+			n.EthServices["BlockService"] = eventservices.NewBlockService(em, dbh)
+			// Setup unbonding service to manage unbonding locks
+			n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
 
-		if *orchestrator {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			if *orchestrator {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
 
-			if err := setupOrchestrator(ctx, n, em, *ipfsPath, *initializeRound); err != nil {
-				glog.Errorf("Error setting up orchestrator: %v", err)
-				return
+				if err := setupOrchestrator(ctx, n, em, *ipfsPath, *initializeRound); err != nil {
+					glog.Errorf("Error setting up orchestrator: %v", err)
+					return
+				}
+
+				if *faceValue < float64(0) {
+					glog.Errorf("-faceValue must be greater than 0, but %v provided. Restart the node with a different valid value for -faceValue", *faceValue)
+					return
+				}
+
+				if *winProb < float64(0) || *winProb > float64(100) {
+					glog.Errorf("-winProb must be between 0 and 100, but %v provided. Restart the node with a different valid value for -winProb", *winProb)
+					return
+				}
+
+				sigVerifier := &pm.DefaultSigVerifier{}
+				validator := pm.NewValidator(sigVerifier)
+				faceValueInWei := eth.ToBaseUnit(big.NewFloat(*faceValue))
+				winProbBigInt := eth.FromPercOfUint256(*winProb)
+				n.Recipient, err = pm.NewRecipient(n.Eth.Account().Address, n.Eth, validator, n.Database, faceValueInWei, winProbBigInt)
+				if err != nil {
+					glog.Errorf("Error setting up PM recipient: %v", err)
+					return
+				}
 			}
 
-			if *faceValue < float64(0) {
-				glog.Errorf("-faceValue must be greater than 0, but %v provided. Restart the node with a different valid value for -faceValue", *faceValue)
-				return
+			if n.NodeType == core.BroadcasterNode {
+				n.Sender = pm.NewSender(n.Eth)
 			}
 
-			if *winProb < float64(0) || *winProb > float64(100) {
-				glog.Errorf("-winProb must be between 0 and 100, but %v provided. Restart the node with a different valid value for -winProb", *winProb)
-				return
-			}
-
-			sigVerifier := &pm.DefaultSigVerifier{}
-			validator := pm.NewValidator(sigVerifier)
-			faceValueInWei := eth.ToBaseUnit(big.NewFloat(*faceValue))
-			winProbBigInt := eth.FromPercOfUint256(*winProb)
-			n.Recipient, err = pm.NewRecipient(n.Eth.Account().Address, n.Eth, validator, n.Database, faceValueInWei, winProbBigInt)
+			// Start services
+			err = n.StartEthServices()
 			if err != nil {
-				glog.Errorf("Error setting up PM recipient: %v", err)
+				glog.Errorf("Failed to start ETH services: %v", err)
 				return
 			}
-		}
-
-		if n.NodeType == core.BroadcasterNode {
-			n.Sender = pm.NewSender(n.Eth)
-		}
-
-		// Start services
-		err = n.StartEthServices()
-		if err != nil {
-			glog.Errorf("Failed to start ETH services: %v", err)
-			return
 		}
 	}
 
@@ -380,7 +389,7 @@ func main() {
 		// Set up orchestrator discovery
 		if len(orchAddresses) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchAddresses)
-		} else if *network != "offchain" {
+		} else if *network != "offchain" && *bzzApi == "" {
 			n.OrchestratorPool = discovery.NewDBOrchestratorPoolCache(n)
 		}
 		if n.OrchestratorPool == nil {
@@ -429,6 +438,13 @@ func main() {
 
 	//Set up the media server
 	s := server.NewLivepeerServer(*rtmpAddr, *httpAddr, n)
+	if *bzzApi != "" {
+		if client.GetSigner(); err != nil {
+			glog.Infof("Cannot get Eth signer.  Swarm publish will not succeed.")
+			return
+		}
+		s.ConfigSwarm(*bzzApi, *swarmPublishTopic, client)
+	}
 	ec := make(chan error)
 	tc := make(chan struct{})
 	wc := make(chan struct{})
