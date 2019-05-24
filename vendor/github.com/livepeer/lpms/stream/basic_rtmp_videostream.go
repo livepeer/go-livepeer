@@ -13,7 +13,7 @@ import (
 )
 
 type BasicRTMPVideoStream struct {
-	streamID     string
+	appData      AppData // opaque app-supplied data
 	ch           chan *av.Packet
 	listeners    map[string]av.MuxCloser
 	listnersLock *sync.Mutex
@@ -26,14 +26,14 @@ type BasicRTMPVideoStream struct {
 }
 
 //NewBasicRTMPVideoStream creates a new BasicRTMPVideoStream.  The default RTMPTimeout is set to 10 milliseconds because we assume all RTMP streams are local.
-func NewBasicRTMPVideoStream(id string) *BasicRTMPVideoStream {
+func NewBasicRTMPVideoStream(data AppData) *BasicRTMPVideoStream {
 	ch := make(chan *av.Packet)
 	eof := make(chan struct{})
 	listeners := make(map[string]av.MuxCloser)
 	lLock := &sync.Mutex{}
 	cLock := &sync.Mutex{}
 
-	s := &BasicRTMPVideoStream{streamID: id, listeners: listeners, listnersLock: lLock, ch: ch, EOF: eof, closeLock: cLock, closed: false}
+	s := &BasicRTMPVideoStream{appData: data, listeners: listeners, listnersLock: lLock, ch: ch, EOF: eof, closeLock: cLock, closed: false}
 	//Automatically start a worker that reads packets.  There is no buffering of the video packets.
 	go func(strm *BasicRTMPVideoStream) {
 		var cache map[string]av.MuxCloser
@@ -64,7 +64,14 @@ func NewBasicRTMPVideoStream(id string) *BasicRTMPVideoStream {
 }
 
 func (s *BasicRTMPVideoStream) GetStreamID() string {
-	return s.streamID
+	if s.appData == nil {
+		return ""
+	}
+	return s.appData.StreamID()
+}
+
+func (s *BasicRTMPVideoStream) AppData() AppData {
+	return s.appData
 }
 
 func (s *BasicRTMPVideoStream) GetStreamFormat() VideoFormat {
@@ -153,7 +160,7 @@ func (s *BasicRTMPVideoStream) Close() {
 		return
 	}
 	s.closed = true
-	glog.V(2).Infof("Closing RTMP %v", s.streamID)
+	glog.V(2).Infof("Closing RTMP %v", s.appData.StreamID())
 	close(s.EOF)
 }
 

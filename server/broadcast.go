@@ -137,7 +137,7 @@ func (bsm *BroadcastSessionsManager) cleanup() {
 	bsm.sessMap = make(map[string]*BroadcastSession) // prevent segfaults
 }
 
-func NewSessionManager(node *core.LivepeerNode, pl core.PlaylistManager) *BroadcastSessionsManager {
+func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl core.PlaylistManager) *BroadcastSessionsManager {
 	var poolSize float64
 	if node.OrchestratorPool != nil {
 		poolSize = float64(node.OrchestratorPool.Size())
@@ -146,7 +146,7 @@ func NewSessionManager(node *core.LivepeerNode, pl core.PlaylistManager) *Broadc
 	numOrchs := int(math.Min(poolSize, maxInflight*2))
 	bsm := &BroadcastSessionsManager{
 		sessMap:        make(map[string]*BroadcastSession),
-		createSessions: func() ([]*BroadcastSession, error) { return selectOrchestrator(node, pl, numOrchs) },
+		createSessions: func() ([]*BroadcastSession, error) { return selectOrchestrator(node, params, pl, numOrchs) },
 		sessLock:       &sync.Mutex{},
 		numOrchs:       numOrchs,
 	}
@@ -154,7 +154,7 @@ func NewSessionManager(node *core.LivepeerNode, pl core.PlaylistManager) *Broadc
 	return bsm
 }
 
-func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager, count int) ([]*BroadcastSession, error) {
+func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core.PlaylistManager, count int) ([]*BroadcastSession, error) {
 	if n.OrchestratorPool == nil {
 		glog.Info("No orchestrators specified; not transcoding")
 		return nil, errDiscovery
@@ -203,8 +203,8 @@ func selectOrchestrator(n *core.LivepeerNode, cpl core.PlaylistManager, count in
 
 		session := &BroadcastSession{
 			Broadcaster:      rpcBcast,
-			ManifestID:       cpl.ManifestID(),
-			Profiles:         BroadcastJobVideoProfiles,
+			ManifestID:       params.mid,
+			Profiles:         params.profiles,
 			OrchestratorInfo: tinfo,
 			OrchestratorOS:   orchOS,
 			BroadcasterOS:    bcastOS,

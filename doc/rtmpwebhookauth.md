@@ -23,7 +23,8 @@ Webhook can respond with zero body - in that case `ManifestID` for the stream wi
 ```json
 {
     "manifestID": "ManifestIDString",
-    "streamKey":  "SecretKey"
+    "streamKey":  "SecretKey",
+    "presets":    ["Preset", "Names"]
 }
 ```
 and Livepeer node will use returned `ManifestID` for the stream.
@@ -32,5 +33,7 @@ and Livepeer node will use returned `ManifestID` for the stream.
 
 An optional streamKey can be passed in to protect the RTMP from playback. If the
 streamKey is omitted, then a random key is generated.
+
+Presets can be specified to override the default transcoding options. The available presets are listed [here](https://github.com/livepeer/go-livepeer/blob/master/common/videoprofile_ids.go).
 
 There is simple webhook authentication server [example](https://github.com/livepeer/go-livepeer/blob/master/cmd/simple_auth_server/simple_auth_server.go).

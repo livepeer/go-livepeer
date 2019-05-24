@@ -52,8 +52,18 @@ func (d NoEOFDemuxer) ReadPacket() (av.Packet, error) {
 	return av.Packet{Data: []byte{0}}, nil
 }
 
+type testStream string
+
+func (t *testStream) StreamID() string {
+	return string(*t)
+}
+func newTestStream(s string) *testStream {
+	t := testStream(s)
+	return &t
+}
+
 func TestWriteBasicRTMPErrors(t *testing.T) {
-	stream := NewBasicRTMPVideoStream("test")
+	stream := NewBasicRTMPVideoStream(newTestStream(t.Name()))
 	_, err := stream.WriteRTMPToStream(context.Background(), BadStreamsDemuxer{})
 	if err != ErrStreams {
 		t.Error("Expecting Streams Error, but got: ", err)
@@ -92,7 +102,7 @@ func (d *PacketsDemuxer) ReadPacket() (av.Packet, error) {
 
 func TestWriteBasicRTMP(t *testing.T) {
 	glog.Infof("\n\nTestWriteBasicRTMP\n\n")
-	stream := NewBasicRTMPVideoStream("test")
+	stream := NewBasicRTMPVideoStream(newTestStream(t.Name()))
 	//Add a listener
 	l := &PacketsMuxer{}
 	stream.listeners["rand"] = l
@@ -118,7 +128,7 @@ func TestRTMPConcurrency(t *testing.T) {
 	// Run under -race
 
 	glog.Infof("\n\nTest%s\n", t.Name())
-	st := NewBasicRTMPVideoStream(t.Name())
+	st := NewBasicRTMPVideoStream(newTestStream(t.Name()))
 	demux := &PacketsDemuxer{c: &Counter{Count: 0}, wait: true, startReading: make(chan struct{})}
 	eof, err := st.WriteRTMPToStream(context.Background(), demux)
 	if err != nil {
@@ -179,7 +189,7 @@ func (d *BadPacketMuxer) WritePacket(av.Packet) error      { return ErrBadPacket
 
 func TestReadBasicRTMPError(t *testing.T) {
 	glog.Infof("\nTestReadBasicRTMPError\n\n")
-	stream := NewBasicRTMPVideoStream("test")
+	stream := NewBasicRTMPVideoStream(newTestStream(t.Name()))
 	done := make(chan struct{})
 	go func() {
 		if _, err := stream.ReadRTMPFromStream(context.Background(), &BadHeaderMuxer{}); err != ErrBadHeader {
@@ -198,7 +208,7 @@ func TestReadBasicRTMPError(t *testing.T) {
 	case <-done:
 	}
 
-	stream = NewBasicRTMPVideoStream("test")
+	stream = NewBasicRTMPVideoStream(newTestStream(t.Name()))
 	done = make(chan struct{})
 	go func() {
 		eof, err := stream.ReadRTMPFromStream(context.Background(), &BadPacketMuxer{})
@@ -276,7 +286,7 @@ func (d *PacketsMuxer) numPackets() int {
 }
 
 func TestReadBasicRTMP(t *testing.T) {
-	stream := NewBasicRTMPVideoStream("test")
+	stream := NewBasicRTMPVideoStream(newTestStream(t.Name()))
 	_, err := stream.WriteRTMPToStream(context.Background(), &PacketsDemuxer{c: &Counter{Count: 0}})
 	if err != nil {
 		t.Error("Error setting up the test - while inserting packet.")

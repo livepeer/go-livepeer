@@ -77,11 +77,12 @@ func TestNewSessionManager(t *testing.T) {
 	assert := assert.New(t)
 
 	mid := core.RandomManifestID()
+	params := &streamParameters{}
 	storage := drivers.NewMemoryDriver(nil).NewSession(string(mid))
 	pl := core.NewBasicPlaylistManager(mid, storage)
 
 	// Check empty pool produces expected numOrchs
-	sess := NewSessionManager(n, pl)
+	sess := NewSessionManager(n, params, pl)
 	assert.Equal(0, sess.numOrchs)
 
 	// Check numOrchs up to maximum and a bit beyond
@@ -89,7 +90,7 @@ func TestNewSessionManager(t *testing.T) {
 	n.OrchestratorPool = sd
 	max := int(HTTPTimeout.Seconds()/SegLen.Seconds()) * 2
 	for i := 0; i < 10; i++ {
-		sess = NewSessionManager(n, pl)
+		sess = NewSessionManager(n, params, pl)
 		if i < max {
 			assert.Equal(i, sess.numOrchs)
 		} else {

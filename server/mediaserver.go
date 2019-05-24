@@ -44,6 +44,7 @@ var errDiscovery = errors.New("ErrDiscovery")
 var errNoOrchs = errors.New("ErrNoOrchs")
 var errUnknownStream = errors.New("ErrUnknownStream")
 var errPMCheckFailed = errors.New("PM Check Failed")
+var errMismatchedParams = errors.New("Mismatched type for stream params")
 
 const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
@@ -58,12 +59,23 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 
 var AuthWebhookURL string
 
+type streamParameters struct {
+	mid      core.ManifestID
+	rtmpKey  string
+	profiles []ffmpeg.VideoProfile
+}
+
+func (s *streamParameters) StreamID() string {
+	return string(s.mid) + "/" + s.rtmpKey
+}
+
 type rtmpConnection struct {
 	mid         core.ManifestID
 	nonce       uint64
 	stream      stream.RTMPVideoStream
 	pl          core.PlaylistManager
 	profile     *ffmpeg.VideoProfile
+	params      *streamParameters
 	sessManager *BroadcastSessionsManager
 }
 
@@ -84,8 +96,9 @@ type LivepeerServer struct {
 }
 
 type authWebhookResponse struct {
-	ManifestID string `json:"manifestID"`
-	StreamKey  string `json:"streamKey"`
+	ManifestID string   `json:"manifestID"`
+	StreamKey  string   `json:"streamKey"`
+	Presets    []string `json:"presets"`
 }
 
 func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
@@ -106,14 +119,7 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 
 //StartServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string) error {
-	bProfiles := make([]ffmpeg.VideoProfile, 0)
-	for _, opt := range strings.Split(transcodingOptions, ",") {
-		p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(opt)]
-		if ok {
-			bProfiles = append(bProfiles, p)
-		}
-	}
-	BroadcastJobVideoProfiles = bProfiles
+	BroadcastJobVideoProfiles = parsePresets(strings.Split(transcodingOptions, ","))
 
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
@@ -147,8 +153,8 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOption
 }
 
 //RTMP Publish Handlers
-func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID string) {
-	return func(url *url.URL) (strmID string) {
+func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID stream.AppData) {
+	return func(url *url.URL) (strmID stream.AppData) {
 		//Check webhook for ManifestID
 		//If ManifestID is returned from webhook, use it
 		//Else check URL for ManifestID
@@ -158,12 +164,17 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		var mid core.ManifestID
 		var err error
 		var key string
+		presets := BroadcastJobVideoProfiles
 		if resp, err = authenticateStream(url.String()); err != nil {
 			glog.Error("Authentication denied for ", err)
-			return ""
+			return nil
 		}
 		if resp != nil {
 			mid, key = parseStreamID(resp.ManifestID).ManifestID, resp.StreamKey
+			// Process transcoding options presets
+			if len(resp.Presets) > 0 {
+				presets = parsePresets(resp.Presets)
+			}
 		}
 
 		if mid == "" {
@@ -179,18 +190,22 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		defer s.connectionLock.RUnlock()
 		if core.MaxSessions > 0 && len(s.rtmpConnections) >= core.MaxSessions {
 			glog.Error("Too many connections")
-			return ""
+			return nil
 		}
 		if _, exists := s.rtmpConnections[mid]; exists {
 			glog.Error("Manifest already exists ", mid)
-			return ""
+			return nil
 		}
 
 		// Generate RTMP part of StreamID
 		if key == "" {
 			key = hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
 		}
-		return core.MakeStreamIDFromString(string(mid), key).String()
+		return &streamParameters{
+			mid:      mid,
+			rtmpKey:  key,
+			profiles: presets,
+		}
 	}
 }
 
@@ -228,8 +243,14 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 	return &authResp, nil
 }
 
-func rtmpManifestID(rtmpStrm stream.RTMPVideoStream) core.ManifestID {
-	return parseManifestID(rtmpStrm.GetStreamID())
+func streamParams(rtmpStrm stream.RTMPVideoStream) *streamParameters {
+	d := rtmpStrm.AppData()
+	p, ok := d.(*streamParameters)
+	if !ok {
+		glog.Error("Mismatched type for RTMP app data")
+		return nil
+	}
+	return p
 }
 
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
@@ -288,7 +309,11 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
-		mid := rtmpManifestID(rtmpStrm)
+		params := streamParams(rtmpStrm)
+		if params == nil {
+			return errMismatchedParams
+		}
+		mid := params.mid
 		//Remove RTMP stream
 		s.connectionLock.Lock()
 		defer s.connectionLock.Unlock()
@@ -332,7 +357,11 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 
 	// Set up the connection tracking
-	mid := rtmpManifestID(rtmpStrm)
+	params := streamParams(rtmpStrm)
+	if params == nil {
+		return nil, errMismatchedParams
+	}
+	mid := params.mid
 	if drivers.NodeStorage == nil {
 		glog.Error("Missing node storage")
 		return nil, errStorage
@@ -361,7 +390,8 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		stream:      rtmpStrm,
 		pl:          playlist,
 		profile:     &vProfile,
-		sessManager: NewSessionManager(s.LivepeerNode, playlist),
+		params:      params,
+		sessManager: NewSessionManager(s.LivepeerNode, params, playlist),
 	}
 	s.connectionLock.Lock()
 	s.rtmpConnections[mid] = cxn
@@ -497,6 +527,16 @@ func parseStreamID(reqPath string) core.StreamID {
 
 func parseManifestID(reqPath string) core.ManifestID {
 	return parseStreamID(reqPath).ManifestID
+}
+
+func parsePresets(presets []string) []ffmpeg.VideoProfile {
+	profs := make([]ffmpeg.VideoProfile, 0)
+	for _, v := range presets {
+		if p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(v)]; ok {
+			profs = append(profs, p)
+		}
+	}
+	return profs
 }
 
 func (s *LivepeerServer) LastManifestID() core.ManifestID {
