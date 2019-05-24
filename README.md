@@ -119,6 +119,10 @@ A standalone transcoder can be run which connects to a remote orchestrator. The 
 
 - `livepeer -transcoder -orchAddr 127.0.0.1:8935 -orchSecret asdf`
 
+### GPU Transcoding
+
+GPU transcoding on NVIDIA is supported; see the [GPU documentation](doc/gpu.md) for usage details.
+
 ## Contribution
 Thank you for your interest in contributing to the core software of Livepeer.
 

@@ -17,6 +17,7 @@ type BasicRTMPVideoStream struct {
 	ch           chan *av.Packet
 	listeners    map[string]av.MuxCloser
 	listnersLock *sync.Mutex
+	dirty        bool // set after listeners has been updated; reset after read
 	header       []av.CodecData
 	EOF          chan struct{}
 	closed       bool
@@ -35,15 +36,23 @@ func NewBasicRTMPVideoStream(id string) *BasicRTMPVideoStream {
 	s := &BasicRTMPVideoStream{streamID: id, listeners: listeners, listnersLock: lLock, ch: ch, EOF: eof, closeLock: cLock, closed: false}
 	//Automatically start a worker that reads packets.  There is no buffering of the video packets.
 	go func(strm *BasicRTMPVideoStream) {
+		var cache map[string]av.MuxCloser
 		for {
 			select {
 			case pkt := <-strm.ch:
-				for dstid, l := range strm.listeners {
+				strm.listnersLock.Lock()
+				if strm.dirty {
+					cache = make(map[string]av.MuxCloser)
+					for d, l := range strm.listeners {
+						cache[d] = l
+					}
+					strm.dirty = false
+				}
+				strm.listnersLock.Unlock()
+				for dstid, l := range cache {
 					if err := l.WritePacket(*pkt); err != nil {
 						glog.Infof("RTMP stream got error: %v", err)
-						lLock.Lock()
-						delete(strm.listeners, dstid)
-						lLock.Unlock()
+						go strm.deleteListener(dstid)
 					}
 				}
 			case <-strm.EOF:
@@ -64,13 +73,20 @@ func (s *BasicRTMPVideoStream) GetStreamFormat() VideoFormat {
 
 //ReadRTMPFromStream reads the content from the RTMP stream out into the dst.
 func (s *BasicRTMPVideoStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) (eof chan struct{}, err error) {
-	if err := dst.WriteHeader(s.header); err != nil {
+
+	// probably not the best named lock to use but lower risk of deadlock
+	s.closeLock.Lock()
+	hdr := s.header
+	s.closeLock.Unlock()
+
+	if err := dst.WriteHeader(hdr); err != nil {
 		return nil, err
 	}
 
 	dstid := randString()
 	s.listnersLock.Lock()
 	s.listeners[dstid] = dst
+	s.dirty = true
 	s.listnersLock.Unlock()
 
 	eof = make(chan struct{})
@@ -78,12 +94,12 @@ func (s *BasicRTMPVideoStream) ReadRTMPFromStream(ctx context.Context, dst av.Mu
 		select {
 		case <-s.EOF:
 			dst.WriteTrailer()
-			delete(s.listeners, dstid)
+			s.deleteListener(dstid)
 			eof <- struct{}{}
 			return
 		case <-ctx.Done():
 			dst.WriteTrailer()
-			delete(s.listeners, dstid)
+			s.deleteListener(dstid)
 			return
 		}
 	}(ctx, eof, dstid, dst)
@@ -98,7 +114,10 @@ func (s *BasicRTMPVideoStream) WriteRTMPToStream(ctx context.Context, src av.Dem
 	if err != nil {
 		return nil, err
 	}
+	// probably not the best named lock to use but lower risk of deadlock
+	s.closeLock.Lock()
 	s.header = h
+	s.closeLock.Unlock()
 
 	eof = make(chan struct{})
 	go func(ch chan *av.Packet) {
@@ -136,6 +155,13 @@ func (s *BasicRTMPVideoStream) Close() {
 	s.closed = true
 	glog.V(2).Infof("Closing RTMP %v", s.streamID)
 	close(s.EOF)
+}
+
+func (s *BasicRTMPVideoStream) deleteListener(dstid string) {
+	s.listnersLock.Lock()
+	defer s.listnersLock.Unlock()
+	delete(s.listeners, dstid)
+	s.dirty = true
 }
 
 func (s BasicRTMPVideoStream) String() string {

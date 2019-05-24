@@ -2,6 +2,7 @@ package ffmpeg
 
 // #cgo pkg-config: libavformat
 //#include "ffmpeg_errors.h"
+//#include "lpms_ffmpeg.h"
 import "C"
 import (
 	"encoding/binary"
@@ -25,6 +26,18 @@ func error_map() map[int]error {
 		if "UNKNOWN_ERROR" != v {
 			m[i] = errors.New(v)
 		}
+	}
+
+	// Add in LPMS specific errors
+	lpmsErrors := []struct {
+		code C.int
+		desc string
+	}{
+		{code: C.lpms_ERR_INPUT_PIXFMT, desc: "Unsupported input pixel format"},
+		{code: C.lpms_ERR_FILTERS, desc: "Error initializing filtergraph"},
+	}
+	for _, v := range lpmsErrors {
+		m[int(v.code)] = errors.New(v.desc)
 	}
 
 	return m

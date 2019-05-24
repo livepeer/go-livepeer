@@ -131,4 +131,39 @@ To handle HLS playback:
 		})
 ```
 
+### GPU Support
+
+Processing on Nvidia GPUs is supported. To enable this capability, FFmpeg needs
+to be built with GPU support. See the
+[FFmpeg guidelines](https://trac.ffmpeg.org/wiki/HWAccelIntro#NVENCNVDEC) on
+this.
+
+To execute the nvidia tests within the `ffmpeg` directory, run this command:
+
+```
+go test -tag=nvidia -run Nvidia
+
+```
+
+To run the tests on a particular GPU, use the GPU_DEVICE environment variable:
+
+```
+# Runs on GPU number 3
+GPU_DEVICE=3 go test -tag nvidia -run Nvidia
+```
+
+Aside from the tests themselves, there is a
+[sample program](https://github.com/livepeer/lpms/blob/master/cmd/transcoding/transcoding.go)
+that can be used as a reference to the LPMS GPU transcoding API. The sample
+program can select GPU or software processing via CLI flags. Run the sample
+program via:
+
+```
+# software processing
+go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30fps16x9 sw
+
+# nvidia processing, GPU number 2
+go run cmd/transcoding/transcoding.go transcoder/test.ts P144p30fps16x9,P240p30fps16x9 nv 2
+```
+
 You can follow the development of LPMS and Livepeer @ our [forum](http://forum.livepeer.org)

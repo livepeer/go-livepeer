@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 //Testing WriteRTMP errors
 var ErrPacketRead = errors.New("packet read error")
 var ErrStreams = errors.New("streams error")
+var ErrMuxClosed = errors.New("packet muxer closed")
 
 type BadStreamsDemuxer struct{}
 
@@ -61,6 +64,9 @@ func TestWriteBasicRTMPErrors(t *testing.T) {
 type PacketsDemuxer struct {
 	c           *Counter
 	CalledClose bool
+
+	wait         bool          // whether to pause before returning a packet
+	startReading chan struct{} // signal to start returning packets
 }
 
 func (d *PacketsDemuxer) Close() error {
@@ -71,6 +77,10 @@ func (d *PacketsDemuxer) Streams() ([]av.CodecData, error) {
 	return []av.CodecData{h264parser.CodecData{}}, nil
 }
 func (d *PacketsDemuxer) ReadPacket() (av.Packet, error) {
+	if d.wait {
+		<-d.startReading
+		d.wait = false
+	}
 	if d.c.Count == 10 {
 		return av.Packet{}, io.EOF
 	}
@@ -86,6 +96,7 @@ func TestWriteBasicRTMP(t *testing.T) {
 	//Add a listener
 	l := &PacketsMuxer{}
 	stream.listeners["rand"] = l
+	stream.dirty = true
 	eof, err := stream.WriteRTMPToStream(context.Background(), &PacketsDemuxer{c: &Counter{Count: 0}})
 	if err != nil {
 		t.Error("Expecting nil, but got: ", err)
@@ -97,8 +108,55 @@ func TestWriteBasicRTMP(t *testing.T) {
 	}
 
 	time.Sleep(time.Millisecond * 100) //Sleep to make sure the last segment comes through
-	if len(l.packets) != 10 {
-		t.Errorf("Expecting packets length to be 10, but got: %v", l.packets)
+	if l.numPackets() != 10 {
+		t.Errorf("Expecting packets length to be 10, but got: %v", l.numPackets())
+	}
+}
+
+func TestRTMPConcurrency(t *testing.T) {
+	// Tests adding and removing listeners from a source while mid-stream
+	// Run under -race
+
+	glog.Infof("\n\nTest%s\n", t.Name())
+	st := NewBasicRTMPVideoStream(t.Name())
+	demux := &PacketsDemuxer{c: &Counter{Count: 0}, wait: true, startReading: make(chan struct{})}
+	eof, err := st.WriteRTMPToStream(context.Background(), demux)
+	if err != nil {
+		t.Error("Error setting up test")
+	}
+	rng := rand.New(rand.NewSource(1234))
+	muxers := []*PacketsMuxer{}
+	for i := 0; i < 200; i++ {
+		close := rng.Int()%2 == 0
+		muxer := &PacketsMuxer{}
+		if i < 100 && !close {
+			// these muxers should receive all frames from demuxer because
+			// they start listening before packets arrive and aren't closed
+			muxers = append(muxers, muxer)
+		}
+		go func(close bool, p *PacketsMuxer) {
+			st.ReadRTMPFromStream(context.Background(), p)
+			if close {
+				p.Close()
+			}
+		}(close, muxer)
+		if i == 100 {
+			// start feeding in the middle of adding listeners
+			demux.startReading <- struct{}{}
+		}
+		time.Sleep(100 * time.Microsecond) // force thread to yield
+	}
+
+	<-eof // wait for eof
+
+	time.Sleep(time.Millisecond * 100) // ensure last segment comes through
+	if len(muxers) < 0 {
+		t.Error("Expected muxers to be nonzero") // sanity check
+	}
+	for i, m := range muxers {
+		if m.numPackets() != 10 {
+			t.Errorf("%d Expected packets length to be 10, but got %v", i, m.numPackets())
+		}
 	}
 }
 
@@ -177,26 +235,44 @@ type PacketsMuxer struct {
 	header      []av.CodecData
 	trailer     bool
 	CalledClose bool
+	mu          sync.Mutex
 }
 
 func (d *PacketsMuxer) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.CalledClose = true
 	return nil
 }
 func (d *PacketsMuxer) WriteHeader(h []av.CodecData) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.header = h
 	return nil
 }
 func (d *PacketsMuxer) WriteTrailer() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.trailer = true
 	return nil
 }
 func (d *PacketsMuxer) WritePacket(pkt av.Packet) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.CalledClose {
+		return ErrMuxClosed
+	}
 	if d.packets == nil {
 		d.packets = make([]av.Packet, 0)
 	}
 	d.packets = append(d.packets, pkt)
 	return nil
+}
+
+func (d *PacketsMuxer) numPackets() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.packets)
 }
 
 func TestReadBasicRTMP(t *testing.T) {
