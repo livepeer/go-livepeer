@@ -64,7 +64,7 @@ fi
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
-  git checkout 8f6e65183354d1d402ae80c71cba2759fe152018
+  git checkout 4cfc34d9a8bffe4a1dd53187a3e0f25f34023a09
   ./configure ${TARGET_OS:-} --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \

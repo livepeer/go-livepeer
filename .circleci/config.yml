@@ -18,6 +18,7 @@ jobs:
     environment:
       PKG_CONFIG_PATH: /root/compiled/lib/pkgconfig
       GOPATH: /go
+      DOCKER_CLI_EXPERIMENTAL: enabled
 
     steps:
       - checkout
@@ -28,22 +29,34 @@ jobs:
       - run: docker login -u $DOCKER_USER -p $DOCKER_PASS
 
       # First, build the Linux-specific builder container
-      - run: docker pull iameli/build-platform:latest-linux || echo 'no pre-existing cache found'
-      - run: docker build -t iameli/build-platform:latest-linux --cache-from=iameli/build-platform:latest-linux -f docker/Dockerfile.build-linux .
-      - run: docker push iameli/build-platform:latest-linux
-      - run: docker tag iameli/build-platform:latest-linux iameli/build-platform:latest
+      - run: docker pull livepeerci/build-platform:latest-linux || echo 'no pre-existing cache found'
+      - run: docker build -t livepeerci/build-platform:latest-linux --cache-from=livepeerci/build-platform:latest-linux -f docker/Dockerfile.build-linux .
+      - run: docker push livepeerci/build-platform:latest-linux
+      - run: docker manifest create livepeerci/build-platform:latest livepeerci/build-platform:latest-linux livepeerci/build-platform:latest-windows
+      - run: docker manifest push livepeerci/build-platform:latest
 
       # Then, build the actual app in a container shared between Linux and Windows
-      - run: docker pull iameli/build:latest-linux || echo 'no pre-existing cache found'
-      - run: docker build -t iameli/build:latest-linux --cache-from=iameli/build:latest-linux -f docker/Dockerfile.build .
-      - run: docker push iameli/build:latest-linux
-      - run: docker tag iameli/build:latest-linux iameli/build:latest
+      - run: docker pull livepeerci/build:latest-linux || echo 'no pre-existing cache found'
+      - run: docker build -t livepeerci/build:latest-linux --cache-from=livepeerci/build:latest-linux -f docker/Dockerfile.build .
+      - run: docker push livepeerci/build:latest-linux
+      - run: docker manifest create livepeerci/build:latest livepeerci/build:latest-linux livepeerci/build:latest-windows
+      - run: docker manifest push livepeerci/build:latest
+
+      # Finally, build the minimal go-livepeer distributable
+      - run: |-
+          # Our Docker tag name should be our branch name with just alphanums
+          TAG=$(echo $CIRCLE_BRANCH | tr -cd '[:alnum:]_')
+          docker build -t livepeer/go-livepeer:${TAG}-linux -f docker/Dockerfile.release-linux .
+          docker push livepeer/go-livepeer:${TAG}-linux
+          # Manifest step is optional in case the Windows build hasn't finished yet
+          docker manifest create livepeer/go-livepeer:${TAG} livepeer/go-livepeer:${TAG}-linux livepeer/go-livepeer:${TAG}-windows || true
+          docker manifest push livepeer/go-livepeer:${TAG} || true
 
   build:
     docker:
       # Note race condition - we might get the wrong builder if lots of builds are happening in
       # parallel because this pulls it down from Docker Hub.
-      - image: iameli/build:latest-linux
+      - image: livepeerci/build:latest-linux
     working_directory: /go/src/github.com/livepeer/go-livepeer
 
     environment:

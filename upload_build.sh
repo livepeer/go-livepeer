@@ -35,6 +35,11 @@ else
   tar -czvf ./$FILE ./$BASE
 fi
 
+if [[ "${GCLOUD_KEY:-}" == "" ]]; then
+  echo "GCLOUD_KEY not found, not uploading to Google Cloud."
+  exit 0
+fi
+
 # https://stackoverflow.com/a/44751929/990590
 bucket=build.livepeer.live
 resource="/${bucket}/${VERSION}/${FILE}"
@@ -49,5 +54,5 @@ curl -X PUT -T "${FILE}" \
   -H "Authorization: AWS ${GCLOUD_KEY}:${signature}" \
   https://storage.googleapis.com${resource}
 
-curl --fail -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nhttps://build.livepeer.live/$VERSION/${FILE}\"}" $DISCORD_URL
+curl --fail -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION/${FILE}\"}" $DISCORD_URL
 echo "done"
