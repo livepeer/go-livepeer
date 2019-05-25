@@ -83,8 +83,6 @@ RUN C:\msys64\usr\bin\bash.exe -l -c 'exit 0'; `
 
 WORKDIR C:\msys64\go\src\github.com\livepeer\go-livepeer
 
-ADD docker/run.sh C:\msys64\usr\bin\run.sh
-
 # Tell MSYS2 not to do "cd $HOME" all the freakin' time
 ENV CHERE_INVOKING 1
 # Add all mingw64 and CUDA paths to PATH
