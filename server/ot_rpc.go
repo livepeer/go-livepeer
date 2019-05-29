@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -95,7 +96,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 
 	// Catch interrupt signal to shut down transcoder
 	exitc := make(chan os.Signal)
-	signal.Notify(exitc, os.Interrupt)
+	signal.Notify(exitc, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(exitc)
 	go func() {
 		select {
