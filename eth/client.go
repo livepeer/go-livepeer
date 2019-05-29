@@ -7,7 +7,7 @@ package eth
 //go:generate abigen --abi protocol/abi/LivepeerToken.abi --pkg contracts --type LivepeerToken --out contracts/livepeerToken.go
 //go:generate abigen --abi protocol/abi/ServiceRegistry.abi --pkg contracts --type ServiceRegistry --out contracts/serviceRegistry.go
 //go:generate abigen --abi protocol/abi/BondingManager.abi --pkg contracts --type BondingManager --out contracts/bondingManager.go
-//go:generate abigen --abi protocol/abi/LivepeerETHTicketBroker.abi --pkg contracts --type LivepeerETHTicketBroker --out contracts/livepeerETHTicketBroker.go
+//go:generate abigen --abi protocol/abi/TicketBroker.abi --pkg contracts --type TicketBroker --out contracts/ticketBroker.go
 //go:generate abigen --abi protocol/abi/RoundsManager.abi --pkg contracts --type RoundsManager --out contracts/roundsManager.go
 //go:generate abigen --abi protocol/abi/Minter.abi --pkg contracts --type Minter --out contracts/minter.go
 //go:generate abigen --abi protocol/abi/LivepeerVerifier.abi --pkg contracts --type LivepeerVerifier --out contracts/livepeerVerifier.go
@@ -85,23 +85,15 @@ type LivepeerEthClient interface {
 	GetTotalBonded() (*big.Int, error)
 
 	// TicketBroker
-	FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) (*types.Transaction, error)
+	FundDepositAndReserve(depositAmount, penaltyEscrowAmount *big.Int) (*types.Transaction, error)
 	FundDeposit(amount *big.Int) (*types.Transaction, error)
-	FundPenaltyEscrow(amount *big.Int) (*types.Transaction, error)
-	ApproveSigners(signers []ethcommon.Address) (*types.Transaction, error)
-	RequestSignersRevocation(signers []ethcommon.Address) (*types.Transaction, error)
+	FundReserve(amount *big.Int) (*types.Transaction, error)
 	Unlock() (*types.Transaction, error)
 	CancelUnlock() (*types.Transaction, error)
 	Withdraw() (*types.Transaction, error)
 	RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error)
 	IsUsedTicket(ticket *pm.Ticket) (bool, error)
-	IsApprovedSigner(sender ethcommon.Address, signer ethcommon.Address) (bool, error)
-	Senders(addr ethcommon.Address) (struct {
-		Deposit       *big.Int
-		PenaltyEscrow *big.Int
-		WithdrawBlock *big.Int
-	}, error)
-	MinPenaltyEscrow() (*big.Int, error)
+	GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error)
 	UnlockPeriod() (*big.Int, error)
 
 	// Parameters
@@ -151,7 +143,7 @@ type client struct {
 	*contracts.LivepeerTokenSession
 	*contracts.ServiceRegistrySession
 	*contracts.BondingManagerSession
-	*contracts.LivepeerETHTicketBrokerSession
+	*contracts.TicketBrokerSession
 	*contracts.RoundsManagerSession
 	*contracts.MinterSession
 	*contracts.LivepeerVerifierSession
@@ -292,13 +284,13 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 
 	c.ticketBrokerAddr = brokerAddr
 
-	broker, err := contracts.NewLivepeerETHTicketBroker(brokerAddr, c.backend)
+	broker, err := contracts.NewTicketBroker(brokerAddr, c.backend)
 	if err != nil {
 		glog.Errorf("Error creating TicketBroker binding: %v", err)
 		return err
 	}
 
-	c.LivepeerETHTicketBrokerSession = &contracts.LivepeerETHTicketBrokerSession{
+	c.TicketBrokerSession = &contracts.TicketBrokerSession{
 		Contract:     broker,
 		TransactOpts: *opts,
 	}
@@ -784,7 +776,7 @@ func (c *client) CheckTx(tx *types.Transaction) error {
 		return err
 	}
 
-	if receipt.Status == uint(0) {
+	if receipt.Status == uint64(0) {
 		return fmt.Errorf("tx %v failed", tx.Hash().Hex())
 	} else {
 		return nil

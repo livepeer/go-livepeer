@@ -151,15 +151,15 @@ func (r *recipient) TicketParams(sender ethcommon.Address) *TicketParams {
 }
 
 func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
-	sender, err := r.broker.Senders(ticket.Sender)
+	info, err := r.broker.GetSenderInfo(ticket.Sender)
 	if err != nil {
 		return err
 	}
 
 	// TODO: Consider a smarter strategy here in the future
 	// Ex. If deposit < transaction cost, do not try to redeem
-	if sender.Deposit.Cmp(big.NewInt(0)) == 0 && sender.PenaltyEscrow.Cmp(big.NewInt(0)) == 0 {
-		return errors.Errorf("sender %v has zero deposit and penalty escrow", ticket.Sender)
+	if info.Deposit.Cmp(big.NewInt(0)) == 0 && info.Reserve.Cmp(big.NewInt(0)) == 0 {
+		return errors.Errorf("sender %v has zero deposit and reserve", ticket.Sender)
 	}
 
 	// Assume that that this call will return immediately if there

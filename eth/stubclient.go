@@ -46,8 +46,8 @@ type MockClient struct {
 
 // TicketBroker
 
-func (m *MockClient) FundAndApproveSigners(depositAmount, penaltyEscrowAmount *big.Int, signers []common.Address) (*types.Transaction, error) {
-	args := m.Called(depositAmount, penaltyEscrowAmount, signers)
+func (m *MockClient) FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*types.Transaction, error) {
+	args := m.Called(depositAmount, reserveAmount)
 	return mockTransaction(args, 0), args.Error(1)
 }
 
@@ -73,21 +73,26 @@ func (m *MockClient) Withdraw() (*types.Transaction, error) {
 
 func (m *MockClient) Senders(addr common.Address) (sender struct {
 	Deposit       *big.Int
-	PenaltyEscrow *big.Int
 	WithdrawBlock *big.Int
 }, err error) {
 	args := m.Called(addr)
 	sender.Deposit = mockBigInt(args, 0)
-	sender.PenaltyEscrow = mockBigInt(args, 1)
-	sender.WithdrawBlock = mockBigInt(args, 2)
-	err = args.Error(3)
+	sender.WithdrawBlock = mockBigInt(args, 1)
+	err = args.Error(2)
 
 	return
 }
 
-func (m *MockClient) MinPenaltyEscrow() (*big.Int, error) {
-	args := m.Called()
-	return mockBigInt(args, 0), args.Error(1)
+func (m *MockClient) GetSenderInfo(addr common.Address) (*pm.SenderInfo, error) {
+	args := m.Called(addr)
+	infoArg := args.Get(0)
+	err := args.Error(1)
+
+	if infoArg == nil {
+		return nil, err
+	}
+
+	return infoArg.(*pm.SenderInfo), err
 }
 
 func (m *MockClient) UnlockPeriod() (*big.Int, error) {
@@ -193,20 +198,14 @@ func (e *StubClient) IsActiveTranscoder() (bool, error) { return false, nil }
 func (e *StubClient) GetTotalBonded() (*big.Int, error) { return big.NewInt(0), nil }
 
 // TicketBroker
-func (e *StubClient) FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) (*types.Transaction, error) {
+func (e *StubClient) FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 
 }
 func (e *StubClient) FundDeposit(amount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) FundPenaltyEscrow(amount *big.Int) (*types.Transaction, error) {
-	return nil, nil
-}
-func (e *StubClient) ApproveSigners(signers []ethcommon.Address) (*types.Transaction, error) {
-	return nil, nil
-}
-func (e *StubClient) RequestSignersRevocation(signers []ethcommon.Address) (*types.Transaction, error) {
+func (e *StubClient) FundReserve(amount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
 func (e *StubClient) Unlock() (*types.Transaction, error) {
@@ -224,17 +223,13 @@ func (e *StubClient) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipien
 func (e *StubClient) IsUsedTicket(ticket *pm.Ticket) (bool, error) {
 	return true, nil
 }
-func (e *StubClient) IsApprovedSigner(sender ethcommon.Address, signer ethcommon.Address) (bool, error) {
-	return true, nil
-}
 func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
 	Deposit       *big.Int
-	PenaltyEscrow *big.Int
 	WithdrawBlock *big.Int
 }, err error) {
 	return
 }
-func (e *StubClient) MinPenaltyEscrow() (*big.Int, error) {
+func (e *StubClient) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
 	return nil, nil
 }
 func (e *StubClient) UnlockPeriod() (*big.Int, error) {

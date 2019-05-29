@@ -4,16 +4,13 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
 )
 
-func createSender(deposit *big.Int, penaltyEscrow *big.Int, withdrawBlock *big.Int) (sender struct {
-	Deposit       *big.Int
-	PenaltyEscrow *big.Int
-	WithdrawBlock *big.Int
-}) {
+func createSender(deposit *big.Int, reserve *big.Int, withdrawBlock *big.Int) (sender pm.SenderInfo) {
 	sender.Deposit = deposit
-	sender.PenaltyEscrow = penaltyEscrow
+	sender.Reserve = reserve
 	sender.WithdrawBlock = withdrawBlock
 
 	return

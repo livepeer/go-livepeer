@@ -657,13 +657,16 @@ func TestRegisterConnection(t *testing.T) {
 
 	// Should return an error if in on-chain mode and fail to get sender deposit
 	c.On("Account").Return(accounts.Account{Address: addr})
-	c.On("Senders", addr).Return(nil, nil, nil, errors.New("Senders error")).Once()
+	c.On("GetSenderInfo", addr).Return(nil, errors.New("GetSenderInfo error")).Once()
 
 	_, err := s.registerConnection(strm)
-	assert.Equal("Senders error", err.Error())
+	assert.Equal("GetSenderInfo error", err.Error())
 
 	// Should return an error if in on-chain mode and sender deposit is 0
-	c.On("Senders", addr).Return(big.NewInt(0), nil, nil, nil).Once()
+	info := &pm.SenderInfo{
+		Deposit: big.NewInt(0),
+	}
+	c.On("GetSenderInfo", addr).Return(info, nil).Once()
 
 	_, err = s.registerConnection(strm)
 	assert.Equal(errLowDeposit, err)
@@ -672,7 +675,8 @@ func TestRegisterConnection(t *testing.T) {
 	drivers.NodeStorage = nil
 
 	// Should return a different error if in on-chain mode and sender deposit > 0
-	c.On("Senders", addr).Return(big.NewInt(1), nil, nil, nil).Once()
+	info.Deposit = big.NewInt(1)
+	c.On("GetSenderInfo", addr).Return(info, nil).Once()
 
 	_, err = s.registerConnection(strm)
 	assert.NotEqual(errLowDeposit, err)

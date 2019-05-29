@@ -5,39 +5,38 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/livepeer/go-livepeer/eth/contracts"
 	"github.com/livepeer/go-livepeer/pm"
 )
 
-// FundAndApproveSigners funds a sender's deposit and penalty escrow in addition
-// to approving a set of ETH addresses to sign on behalf of the sender
-// value to the sum of the provided deposit and penalty escrow amount
+// FundDepositAndReserve funds a sender's deposit and reserve
 // This method wraps the underlying contract method in order to set the transaction options
 // value to the sum of the provided deposit and penalty escrow amounts
-func (c *client) FundAndApproveSigners(depositAmount, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) (*types.Transaction, error) {
-	opts := c.LivepeerETHTicketBrokerSession.TransactOpts
-	opts.Value = new(big.Int).Add(depositAmount, penaltyEscrowAmount)
+func (c *client) FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*types.Transaction, error) {
+	opts := c.TicketBrokerSession.TransactOpts
+	opts.Value = new(big.Int).Add(depositAmount, reserveAmount)
 
-	return c.LivepeerETHTicketBrokerSession.Contract.FundAndApproveSigners(&opts, depositAmount, penaltyEscrowAmount, signers)
+	return c.TicketBrokerSession.Contract.FundDepositAndReserve(&opts, depositAmount, reserveAmount)
 }
 
 // FundDeposit funds a sender's deposit
 // This method wraps the underlying contract method in order to set the transaction options
 // value to the provided deposit amount
 func (c *client) FundDeposit(amount *big.Int) (*types.Transaction, error) {
-	opts := c.LivepeerETHTicketBrokerSession.TransactOpts
+	opts := c.TicketBrokerSession.TransactOpts
 	opts.Value = amount
 
-	return c.LivepeerETHTicketBrokerSession.Contract.FundDeposit(&opts)
+	return c.TicketBrokerSession.Contract.FundDeposit(&opts)
 }
 
-// FundPenaltyEscrow funds a sender's penalty escrow
+// FundReserve funds a sender's reserve
 // This method wraps the underlying contract method in order to set the transaction options
-// value to the provided penalty escrow amount
-func (c *client) FundPenaltyEscrow(amount *big.Int) (*types.Transaction, error) {
-	opts := c.LivepeerETHTicketBrokerSession.TransactOpts
+// value to the provided reserve amount
+func (c *client) FundReserve(amount *big.Int) (*types.Transaction, error) {
+	opts := c.TicketBrokerSession.TransactOpts
 	opts.Value = amount
 
-	return c.LivepeerETHTicketBrokerSession.Contract.FundPenaltyEscrow(&opts)
+	return c.TicketBrokerSession.Contract.FundReserve(&opts)
 }
 
 // RedeemWinningTicket submits a ticket to be validated by the broker and if a valid winning ticket
@@ -46,18 +45,35 @@ func (c *client) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRan
 	var recipientRandHash [32]byte
 	copy(recipientRandHash[:], ticket.RecipientRandHash.Bytes()[:32])
 
-	// Pass in destructured ticket fields in order to conform to the contract method signature
-	return c.LivepeerETHTicketBrokerSession.RedeemWinningTicket(
-		ticket.Recipient,
-		ticket.Sender,
-		ticket.FaceValue,
-		ticket.WinProb,
-		new(big.Int).SetUint64(uint64(ticket.SenderNonce)),
-		recipientRandHash,
-		[]byte{}, // Ignoring auxData right now since expiration is not implemented
+	return c.TicketBrokerSession.RedeemWinningTicket(
+		contracts.Struct1{
+			Recipient:         ticket.Recipient,
+			Sender:            ticket.Sender,
+			FaceValue:         ticket.FaceValue,
+			WinProb:           ticket.WinProb,
+			SenderNonce:       new(big.Int).SetUint64(uint64(ticket.SenderNonce)),
+			RecipientRandHash: recipientRandHash,
+			AuxData:           []byte{}, // TODO: add ticket aux data
+		},
 		sig,
 		recipientRand,
 	)
+}
+
+// GetSenderInfo returns the info for a sender
+func (c *client) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
+	info, err := c.TicketBrokerSession.GetSenderInfo(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pm.SenderInfo{
+		Deposit:       info.Sender.Deposit,
+		WithdrawBlock: info.Sender.WithdrawBlock,
+		Reserve:       info.Reserve.FundsRemaining,
+		ReserveState:  pm.ReserveState(info.Reserve.State),
+		ThawRound:     info.Reserve.ThawRound,
+	}, nil
 }
 
 // IsUsedTicket checks if a ticket has been used
@@ -67,5 +83,5 @@ func (c *client) IsUsedTicket(ticket *pm.Ticket) (bool, error) {
 	var ticketHash [32]byte
 	copy(ticketHash[:], ticket.Hash().Bytes()[:32])
 
-	return c.LivepeerETHTicketBrokerSession.UsedTickets(ticketHash)
+	return c.TicketBrokerSession.UsedTickets(ticketHash)
 }

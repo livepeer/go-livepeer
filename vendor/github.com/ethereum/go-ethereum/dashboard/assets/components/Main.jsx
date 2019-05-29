@@ -18,10 +18,12 @@
 
 import React, {Component} from 'react';
 
-import withStyles from 'material-ui/styles/withStyles';
+import withStyles from '@material-ui/core/styles/withStyles';
 
+import Network from 'Network';
+import Logs from 'Logs';
+import Footer from 'Footer';
 import {MENU} from '../common';
-import Footer from './Footer';
 import type {Content} from '../types/content';
 
 // styles contains the constant styles of the component.
@@ -46,14 +48,42 @@ const themeStyles = theme => ({
 });
 
 export type Props = {
-	classes: Object,
-	active: string,
-	content: Content,
+	classes:      Object,
+	active:       string,
+	content:      Content,
 	shouldUpdate: Object,
+	send:         string => void,
 };
 
+type State = {};
+
 // Main renders the chosen content.
-class Main extends Component<Props> {
+class Main extends Component<Props, State> {
+	constructor(props) {
+		super(props);
+		this.container = React.createRef();
+		this.content = React.createRef();
+	}
+
+	componentDidUpdate(prevProps, prevState, snapshot) {
+		if (this.content && typeof this.content.didUpdate === 'function') {
+			this.content.didUpdate(prevProps, prevState, snapshot);
+		}
+	}
+
+	onScroll = () => {
+		if (this.content && typeof this.content.onScroll === 'function') {
+			this.content.onScroll();
+		}
+	};
+
+	getSnapshotBeforeUpdate(prevProps: Readonly<P>, prevState: Readonly<S>) {
+		if (this.content && typeof this.content.beforeUpdate === 'function') {
+			return this.content.beforeUpdate();
+		}
+		return null;
+	}
+
 	render() {
 		const {
 			classes, active, content, shouldUpdate,
@@ -62,19 +92,45 @@ class Main extends Component<Props> {
 		let children = null;
 		switch (active) {
 		case MENU.get('home').id:
+			children = <div>Work in progress.</div>;
+			break;
 		case MENU.get('chain').id:
+			children = <div>Work in progress.</div>;
+			break;
 		case MENU.get('txpool').id:
+			children = <div>Work in progress.</div>;
+			break;
 		case MENU.get('network').id:
+			children = <Network
+				content={this.props.content.network}
+				container={this.container}
+			/>;
+			break;
 		case MENU.get('system').id:
 			children = <div>Work in progress.</div>;
 			break;
 		case MENU.get('logs').id:
-			children = <div>{content.logs.log.map((log, index) => <div key={index}>{log}</div>)}</div>;
+			children = (
+				<Logs
+					ref={(ref) => { this.content = ref; }}
+					container={this.container}
+					send={this.props.send}
+					content={this.props.content}
+					shouldUpdate={shouldUpdate}
+				/>
+			);
 		}
 
 		return (
 			<div style={styles.wrapper}>
-				<div className={classes.content} style={styles.content}>{children}</div>
+				<div
+					className={classes.content}
+					style={styles.content}
+					ref={(ref) => { this.container = ref; }}
+					onScroll={this.onScroll}
+				>
+					{children}
+				</div>
 				<Footer
 					general={content.general}
 					system={content.system}

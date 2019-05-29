@@ -73,10 +73,12 @@ type Encoder interface {
 // An unsigned integer value is encoded as an RLP string. Zero always
 // encodes as an empty RLP string. Encode also supports *big.Int.
 //
+// Boolean values are encoded as unsigned integers zero (false) and one (true).
+//
 // An interface value encodes as the value contained in the interface.
 //
-// Boolean values are not supported, nor are signed integers, floating
-// point numbers, maps, channels and functions.
+// Signed integers are not supported, nor are floating point numbers, maps,
+// channels and functions.
 func Encode(w io.Writer, val interface{}) error {
 	if outer, ok := w.(*encbuf); ok {
 		// Encode was called by some type's EncodeRLP.
@@ -92,7 +94,7 @@ func Encode(w io.Writer, val interface{}) error {
 	return eb.toWriter(w)
 }
 
-// EncodeBytes returns the RLP encoding of val.
+// EncodeToBytes returns the RLP encoding of val.
 // Please see the documentation of Encode for the encoding rules.
 func EncodeToBytes(val interface{}) ([]byte, error) {
 	eb := encbufPool.Get().(*encbuf)
@@ -104,7 +106,7 @@ func EncodeToBytes(val interface{}) ([]byte, error) {
 	return eb.toBytes(), nil
 }
 
-// EncodeReader returns a reader from which the RLP encoding of val
+// EncodeToReader returns a reader from which the RLP encoding of val
 // can be read. The returned size is the total size of the encoded
 // data.
 //
@@ -151,11 +153,10 @@ func puthead(buf []byte, smalltag, largetag byte, size uint64) int {
 	if size < 56 {
 		buf[0] = smalltag + byte(size)
 		return 1
-	} else {
-		sizesize := putint(buf[1:], size)
-		buf[0] = largetag + byte(sizesize)
-		return sizesize + 1
 	}
+	sizesize := putint(buf[1:], size)
+	buf[0] = largetag + byte(sizesize)
+	return sizesize + 1
 }
 
 // encbufs are pooled.
@@ -181,11 +182,11 @@ func (w *encbuf) Write(b []byte) (int, error) {
 
 func (w *encbuf) encode(val interface{}) error {
 	rval := reflect.ValueOf(val)
-	ti, err := cachedTypeInfo(rval.Type(), tags{})
+	writer, err := cachedWriter(rval.Type())
 	if err != nil {
 		return err
 	}
-	return ti.writer(rval, w)
+	return writer(rval, w)
 }
 
 func (w *encbuf) encodeStringHeader(size int) {
@@ -218,7 +219,7 @@ func (w *encbuf) list() *listhead {
 func (w *encbuf) listEnd(lh *listhead) {
 	lh.size = w.size() - lh.offset - lh.size
 	if lh.size < 56 {
-		w.lhsize += 1 // length encoded into kind tag
+		w.lhsize++ // length encoded into kind tag
 	} else {
 		w.lhsize += 1 + intsize(uint64(lh.size))
 	}
@@ -322,10 +323,9 @@ func (r *encReader) next() []byte {
 			p := r.buf.str[r.strpos:head.offset]
 			r.strpos += sizebefore
 			return p
-		} else {
-			r.lhpos++
-			return head.encode(r.buf.sizebuf)
 		}
+		r.lhpos++
+		return head.encode(r.buf.sizebuf)
 
 	case r.strpos < len(r.buf.str):
 		// String data at the end, after all list headers.
@@ -499,17 +499,17 @@ func writeInterface(val reflect.Value, w *encbuf) error {
 		return nil
 	}
 	eval := val.Elem()
-	ti, err := cachedTypeInfo(eval.Type(), tags{})
+	writer, err := cachedWriter(eval.Type())
 	if err != nil {
 		return err
 	}
-	return ti.writer(eval, w)
+	return writer(eval, w)
 }
 
 func makeSliceWriter(typ reflect.Type, ts tags) (writer, error) {
-	etypeinfo, err := cachedTypeInfo1(typ.Elem(), tags{})
-	if err != nil {
-		return nil, err
+	etypeinfo := cachedTypeInfo1(typ.Elem(), tags{})
+	if etypeinfo.writerErr != nil {
+		return nil, etypeinfo.writerErr
 	}
 	writer := func(val reflect.Value, w *encbuf) error {
 		if !ts.tail {
@@ -545,9 +545,9 @@ func makeStructWriter(typ reflect.Type) (writer, error) {
 }
 
 func makePtrWriter(typ reflect.Type) (writer, error) {
-	etypeinfo, err := cachedTypeInfo1(typ.Elem(), tags{})
-	if err != nil {
-		return nil, err
+	etypeinfo := cachedTypeInfo1(typ.Elem(), tags{})
+	if etypeinfo.writerErr != nil {
+		return nil, etypeinfo.writerErr
 	}
 
 	// determine nil pointer handler
@@ -576,11 +576,10 @@ func makePtrWriter(typ reflect.Type) (writer, error) {
 	writer := func(val reflect.Value, w *encbuf) error {
 		if val.IsNil() {
 			return nilfunc(w)
-		} else {
-			return etypeinfo.writer(val.Elem(), w)
 		}
+		return etypeinfo.writer(val.Elem(), w)
 	}
-	return writer, err
+	return writer, nil
 }
 
 // putint writes i to the beginning of b in big endian byte

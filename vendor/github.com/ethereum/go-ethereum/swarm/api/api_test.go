@@ -17,38 +17,61 @@
 package api
 
 import (
+	"bytes"
+	"context"
+	crand "crypto/rand"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/big"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/swarm/chunk"
+	"github.com/ethereum/go-ethereum/swarm/sctx"
 	"github.com/ethereum/go-ethereum/swarm/storage"
+	"github.com/ethereum/go-ethereum/swarm/testutil"
 )
 
-func testApi(t *testing.T, f func(*Api)) {
-	datadir, err := ioutil.TempDir("", "bzz-test")
-	if err != nil {
-		t.Fatalf("unable to create temp dir: %v", err)
+func init() {
+	loglevel := flag.Int("loglevel", 2, "loglevel")
+	flag.Parse()
+	log.Root().SetHandler(log.CallerFileHandler(log.LvlFilterHandler(log.Lvl(*loglevel), log.StreamHandler(os.Stderr, log.TerminalFormat(true)))))
+}
+
+func testAPI(t *testing.T, f func(*API, *chunk.Tags, bool)) {
+	for _, v := range []bool{true, false} {
+		datadir, err := ioutil.TempDir("", "bzz-test")
+		if err != nil {
+			t.Fatalf("unable to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(datadir)
+		tags := chunk.NewTags()
+		fileStore, err := storage.NewLocalFileStore(datadir, make([]byte, 32), tags)
+		if err != nil {
+			return
+		}
+		api := NewAPI(fileStore, nil, nil, nil, tags)
+		f(api, tags, v)
 	}
-	os.RemoveAll(datadir)
-	defer os.RemoveAll(datadir)
-	dpa, err := storage.NewLocalDPA(datadir)
-	if err != nil {
-		return
-	}
-	api := NewApi(dpa, nil)
-	dpa.Start()
-	f(api)
-	dpa.Stop()
 }
 
 type testResponse struct {
 	reader storage.LazySectionReader
 	*Response
+}
+
+type Response struct {
+	MimeType string
+	Status   int
+	Size     int64
+	Content  string
 }
 
 func checkResponse(t *testing.T, resp *testResponse, exp *Response) {
@@ -82,15 +105,14 @@ func expResponse(content string, mimeType string, status int) *Response {
 	return &Response{mimeType, status, int64(len(content)), content}
 }
 
-// func testGet(t *testing.T, api *Api, bzzhash string) *testResponse {
-func testGet(t *testing.T, api *Api, bzzhash, path string) *testResponse {
-	key := storage.Key(common.Hex2Bytes(bzzhash))
-	reader, mimeType, status, err := api.Get(key, path)
+func testGet(t *testing.T, api *API, bzzhash, path string) *testResponse {
+	addr := storage.Address(common.Hex2Bytes(bzzhash))
+	reader, mimeType, status, _, err := api.Get(context.TODO(), NOOPDecrypt, addr, path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	quitC := make(chan bool)
-	size, err := reader.Size(quitC)
+	size, err := reader.Size(context.TODO(), quitC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -102,31 +124,68 @@ func testGet(t *testing.T, api *Api, bzzhash, path string) *testResponse {
 	}
 	reader.Seek(0, 0)
 	return &testResponse{reader, &Response{mimeType, status, size, string(s)}}
-	// return &testResponse{reader, &Response{mimeType, status, reader.Size(), nil}}
 }
 
 func TestApiPut(t *testing.T) {
-	testApi(t, func(api *Api) {
+	testAPI(t, func(api *API, tags *chunk.Tags, toEncrypt bool) {
 		content := "hello"
 		exp := expResponse(content, "text/plain", 0)
-		// exp := expResponse([]byte(content), "text/plain", 0)
-		key, err := api.Put(content, exp.MimeType)
+		ctx := context.TODO()
+		addr, wait, err := putString(ctx, api, content, exp.MimeType, toEncrypt)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		resp := testGet(t, api, key.String(), "")
+		err = wait(ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		resp := testGet(t, api, addr.Hex(), "")
 		checkResponse(t, resp, exp)
+		tag := tags.All()[0]
+		testutil.CheckTag(t, tag, 2, 2, 0, 2) //1 chunk data, 1 chunk manifest
+	})
+}
+
+// TestApiTagLarge tests that the the number of chunks counted is larger for a larger input
+func TestApiTagLarge(t *testing.T) {
+	const contentLength = 4096 * 4095
+	testAPI(t, func(api *API, tags *chunk.Tags, toEncrypt bool) {
+		randomContentReader := io.LimitReader(crand.Reader, int64(contentLength))
+		tag, err := api.Tags.New("unnamed-tag", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := sctx.SetTag(context.Background(), tag.Uid)
+		key, waitContent, err := api.Store(ctx, randomContentReader, int64(contentLength), toEncrypt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = waitContent(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tag.DoneSplit(key)
+
+		if toEncrypt {
+			tag := tags.All()[0]
+			expect := int64(4095 + 64 + 1)
+			testutil.CheckTag(t, tag, expect, expect, 0, expect)
+		} else {
+			tag := tags.All()[0]
+			expect := int64(4095 + 32 + 1)
+			testutil.CheckTag(t, tag, expect, expect, 0, expect)
+		}
 	})
 }
 
 // testResolver implements the Resolver interface and either returns the given
 // hash if it is set, or returns a "name not found" error
-type testResolver struct {
+type testResolveValidator struct {
 	hash *common.Hash
 }
 
-func newTestResolver(addr string) *testResolver {
-	r := &testResolver{}
+func newTestResolveValidator(addr string) *testResolveValidator {
+	r := &testResolveValidator{}
 	if addr != "" {
 		hash := common.HexToHash(addr)
 		r.hash = &hash
@@ -134,11 +193,18 @@ func newTestResolver(addr string) *testResolver {
 	return r
 }
 
-func (t *testResolver) Resolve(addr string) (common.Hash, error) {
+func (t *testResolveValidator) Resolve(addr string) (common.Hash, error) {
 	if t.hash == nil {
 		return common.Hash{}, fmt.Errorf("DNS name not found: %q", addr)
 	}
 	return *t.hash, nil
+}
+
+func (t *testResolveValidator) Owner(node [32]byte) (addr common.Address, err error) {
+	return
+}
+func (t *testResolveValidator) HeaderByNumber(context.Context, *big.Int) (header *types.Header, err error) {
+	return
 }
 
 // TestAPIResolve tests resolving URIs which can either contain content hashes
@@ -147,8 +213,8 @@ func TestAPIResolve(t *testing.T) {
 	ensAddr := "swarm.eth"
 	hashAddr := "1111111111111111111111111111111111111111111111111111111111111111"
 	resolvedAddr := "2222222222222222222222222222222222222222222222222222222222222222"
-	doesResolve := newTestResolver(resolvedAddr)
-	doesntResolve := newTestResolver("")
+	doesResolve := newTestResolveValidator(resolvedAddr)
+	doesntResolve := newTestResolveValidator("")
 
 	type test struct {
 		desc      string
@@ -213,12 +279,12 @@ func TestAPIResolve(t *testing.T) {
 	}
 	for _, x := range tests {
 		t.Run(x.desc, func(t *testing.T) {
-			api := &Api{dns: x.dns}
+			api := &API{dns: x.dns}
 			uri := &URI{Addr: x.addr, Scheme: "bzz"}
 			if x.immutable {
 				uri.Scheme = "bzz-immutable"
 			}
-			res, err := api.Resolve(uri)
+			res, err := api.ResolveURI(context.TODO(), uri, "")
 			if err == nil {
 				if x.expectErr != nil {
 					t.Fatalf("expected error %q, got result %q", x.expectErr, res)
@@ -239,15 +305,15 @@ func TestAPIResolve(t *testing.T) {
 }
 
 func TestMultiResolver(t *testing.T) {
-	doesntResolve := newTestResolver("")
+	doesntResolve := newTestResolveValidator("")
 
 	ethAddr := "swarm.eth"
 	ethHash := "0x2222222222222222222222222222222222222222222222222222222222222222"
-	ethResolve := newTestResolver(ethHash)
+	ethResolve := newTestResolveValidator(ethHash)
 
 	testAddr := "swarm.test"
 	testHash := "0x1111111111111111111111111111111111111111111111111111111111111111"
-	testResolve := newTestResolver(testHash)
+	testResolve := newTestResolveValidator(testHash)
 
 	tests := []struct {
 		desc   string
@@ -361,4 +427,150 @@ func TestMultiResolver(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDecryptOriginForbidden(t *testing.T) {
+	ctx := context.TODO()
+	ctx = sctx.SetHost(ctx, "swarm-gateways.net")
+
+	me := &ManifestEntry{
+		Access: &AccessEntry{Type: AccessTypePass},
+	}
+
+	api := NewAPI(nil, nil, nil, nil, chunk.NewTags())
+
+	f := api.Decryptor(ctx, "")
+	err := f(me)
+	if err != ErrDecryptDomainForbidden {
+		t.Fatalf("should fail with ErrDecryptDomainForbidden, got %v", err)
+	}
+}
+
+func TestDecryptOrigin(t *testing.T) {
+	for _, v := range []struct {
+		host        string
+		expectError error
+	}{
+		{
+			host:        "localhost",
+			expectError: ErrDecrypt,
+		},
+		{
+			host:        "127.0.0.1",
+			expectError: ErrDecrypt,
+		},
+		{
+			host:        "swarm-gateways.net",
+			expectError: ErrDecryptDomainForbidden,
+		},
+	} {
+		ctx := context.TODO()
+		ctx = sctx.SetHost(ctx, v.host)
+
+		me := &ManifestEntry{
+			Access: &AccessEntry{Type: AccessTypePass},
+		}
+
+		api := NewAPI(nil, nil, nil, nil, chunk.NewTags())
+
+		f := api.Decryptor(ctx, "")
+		err := f(me)
+		if err != v.expectError {
+			t.Fatalf("should fail with %v, got %v", v.expectError, err)
+		}
+	}
+}
+
+func TestDetectContentType(t *testing.T) {
+	for _, tc := range []struct {
+		file                string
+		content             string
+		expectedContentType string
+	}{
+		{
+			file:                "file-with-correct-css.css",
+			content:             "body {background-color: orange}",
+			expectedContentType: "text/css; charset=utf-8",
+		},
+		{
+			file:                "empty-file.css",
+			content:             "",
+			expectedContentType: "text/css; charset=utf-8",
+		},
+		{
+			file:                "empty-file.pdf",
+			content:             "",
+			expectedContentType: "application/pdf",
+		},
+		{
+			file:                "empty-file.md",
+			content:             "",
+			expectedContentType: "text/markdown; charset=utf-8",
+		},
+		{
+			file:                "empty-file-with-unknown-content.strangeext",
+			content:             "",
+			expectedContentType: "text/plain; charset=utf-8",
+		},
+		{
+			file:                "file-with-unknown-extension-and-content.strangeext",
+			content:             "Lorem Ipsum",
+			expectedContentType: "text/plain; charset=utf-8",
+		},
+		{
+			file:                "file-no-extension",
+			content:             "Lorem Ipsum",
+			expectedContentType: "text/plain; charset=utf-8",
+		},
+		{
+			file:                "file-no-extension-no-content",
+			content:             "",
+			expectedContentType: "text/plain; charset=utf-8",
+		},
+		{
+			file:                "css-file-with-html-inside.css",
+			content:             "<!doctype html><html><head></head><body></body></html>",
+			expectedContentType: "text/css; charset=utf-8",
+		},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			detected, err := DetectContentType(tc.file, bytes.NewReader([]byte(tc.content)))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if detected != tc.expectedContentType {
+				t.Fatalf("File: %s, Expected mime type %s, got %s", tc.file, tc.expectedContentType, detected)
+			}
+
+		})
+	}
+}
+
+// putString provides singleton manifest creation on top of api.API
+func putString(ctx context.Context, a *API, content string, contentType string, toEncrypt bool) (k storage.Address, wait func(context.Context) error, err error) {
+	r := strings.NewReader(content)
+	tag, err := a.Tags.New("unnamed-tag", 0)
+
+	log.Trace("created new tag", "uid", tag.Uid)
+
+	cCtx := sctx.SetTag(ctx, tag.Uid)
+	key, waitContent, err := a.Store(cCtx, r, int64(len(content)), toEncrypt)
+	if err != nil {
+		return nil, nil, err
+	}
+	manifest := fmt.Sprintf(`{"entries":[{"hash":"%v","contentType":"%s"}]}`, key, contentType)
+	r = strings.NewReader(manifest)
+	key, waitManifest, err := a.Store(cCtx, r, int64(len(manifest)), toEncrypt)
+	if err != nil {
+		return nil, nil, err
+	}
+	tag.DoneSplit(key)
+	return key, func(ctx context.Context) error {
+		err := waitContent(ctx)
+		if err != nil {
+			return err
+		}
+		return waitManifest(ctx)
+	}, nil
 }

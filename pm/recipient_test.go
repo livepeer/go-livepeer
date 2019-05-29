@@ -22,7 +22,7 @@ func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *
 
 	b := newStubBroker()
 	b.SetDeposit(sender, big.NewInt(500))
-	b.SetPenaltyEscrow(sender, big.NewInt(500))
+	b.SetReserve(sender, big.NewInt(500))
 
 	v := &stubValidator{}
 	v.SetIsValidTicket(true)
@@ -427,7 +427,7 @@ func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {
 	}
 }
 
-func TestRedeemWinningTickets_SingleTicket_SendersError(t *testing.T) {
+func TestRedeemWinningTickets_SingleTicket_GetSenderInfoError(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, faceValue, winProb)
 	params := r.TicketParams(sender)
@@ -447,18 +447,18 @@ func TestRedeemWinningTickets_SingleTicket_SendersError(t *testing.T) {
 	}
 
 	// Config stub broker to fail getting deposit
-	b.sendersShouldFail = true
+	b.getSenderInfoShouldFail = true
 
 	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
-		t.Error("expected broker senders error")
+		t.Error("expected broker GetSenderInfo error")
 	}
-	if err != nil && !strings.Contains(err.Error(), "broker senders error") {
-		t.Errorf("execpted broker senders error, got %v", err)
+	if err != nil && !strings.Contains(err.Error(), "broker GetSenderInfo error") {
+		t.Errorf("execpted broker GetSenderInfo error, got %v", err)
 	}
 }
 
-func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testing.T) {
+func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndReserve(t *testing.T) {
 	sender, b, v, ts, faceValue, winProb, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, faceValue, winProb)
 	params := r.TicketParams(sender)
@@ -466,7 +466,7 @@ func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testin
 	// Config stub validator with valid winning tickets
 	v.SetIsWinningTicket(true)
 
-	// Test zero deposit and penalty escrow error
+	// Test zero deposit and reserve error
 	ticket := newTicket(sender, params, 0)
 
 	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
@@ -477,16 +477,16 @@ func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndPenaltyEscrow(t *testin
 		t.Fatal("expected valid winning ticket")
 	}
 
-	// Config stub broker with zero deposit and penalty escrow
+	// Config stub broker with zero deposit and reserve
 	b.SetDeposit(sender, big.NewInt(0))
-	b.SetPenaltyEscrow(sender, big.NewInt(0))
+	b.SetReserve(sender, big.NewInt(0))
 
 	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
-		t.Error("expected zero deposit and penalty escrow error")
+		t.Error("expected zero deposit and reserve error")
 	}
-	if err != nil && !strings.Contains(err.Error(), "zero deposit and penalty escrow") {
-		t.Errorf("expected zero deposit and penalty escrow error, got %v", err)
+	if err != nil && !strings.Contains(err.Error(), "zero deposit and reserve") {
+		t.Errorf("expected zero deposit and reserve error, got %v", err)
 	}
 }
 

@@ -6,10 +6,10 @@ import (
 	"math/big"
 	"net/http"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/pm"
 )
 
 func respondWith500(w http.ResponseWriter, errMsg string) {
@@ -68,7 +68,7 @@ func currentBlockHandler(getter BlockGetter) http.Handler {
 	})
 }
 
-func fundAndApproveSignersHandler(client eth.LivepeerEthClient) http.Handler {
+func fundDepositAndReserveHandler(client eth.LivepeerEthClient) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {
 			respondWith500(w, "missing ETH client")
@@ -81,26 +81,26 @@ func fundAndApproveSignersHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		penaltyEscrowAmount, err := common.ParseBigInt(r.FormValue("penaltyEscrowAmount"))
+		reserveAmount, err := common.ParseBigInt(r.FormValue("reserveAmount"))
 		if err != nil {
-			respondWith400(w, fmt.Sprintf("invalid penaltyEscrowAmount: %v", err))
+			respondWith400(w, fmt.Sprintf("invalid reserveAmount: %v", err))
 			return
 		}
 
-		tx, err := client.FundAndApproveSigners(depositAmount, penaltyEscrowAmount, []ethcommon.Address{})
+		tx, err := client.FundDepositAndReserve(depositAmount, reserveAmount)
 		if err != nil {
-			respondWith500(w, fmt.Sprintf("could not execute fundAndApproveSigners: %v", err))
+			respondWith500(w, fmt.Sprintf("could not execute fundDepositAndReserve: %v", err))
 			return
 		}
 
 		err = client.CheckTx(tx)
 		if err != nil {
-			respondWith500(w, fmt.Sprintf("could not execute fundAndApproveSigners: %v", err))
+			respondWith500(w, fmt.Sprintf("could not execute fundDepositAndReserve: %v", err))
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("fundAndApproveSigners success"))
+		w.Write([]byte("fundDepositAndReserve success"))
 	})
 }
 
@@ -213,25 +213,23 @@ func senderInfoHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		sender, err := client.Senders(client.Account().Address)
+		info, err := client.GetSenderInfo(client.Account().Address)
 		if err != nil {
 			if err.Error() == "ErrNoResult" {
-				type Sender struct {
-					Deposit       *big.Int
-					PenaltyEscrow *big.Int
-					WithdrawBlock *big.Int
-				}
-				sender = Sender{
+				info = &pm.SenderInfo{
 					Deposit:       big.NewInt(0),
-					PenaltyEscrow: big.NewInt(0),
 					WithdrawBlock: big.NewInt(0),
+					Reserve:       big.NewInt(0),
+					ReserveState:  pm.ReserveState(0),
+					ThawRound:     big.NewInt(0),
 				}
 			} else {
 				respondWith500(w, fmt.Sprintf("could not query sender info: %v", err))
+				return
 			}
 		}
 
-		data, err := json.Marshal(sender)
+		data, err := json.Marshal(info)
 		if err != nil {
 			respondWith500(w, fmt.Sprintf("could not parse sender info: %v", err))
 			return
@@ -250,12 +248,6 @@ func ticketBrokerParamsHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		minPenaltyEscrow, err := client.MinPenaltyEscrow()
-		if err != nil {
-			respondWith500(w, fmt.Sprintf("could not query TicketBroker minPenaltyEscrow: %v", err))
-			return
-		}
-
 		unlockPeriod, err := client.UnlockPeriod()
 		if err != nil {
 			respondWith500(w, fmt.Sprintf("could not query TicketBroker unlockPeriod: %v", err))
@@ -263,10 +255,8 @@ func ticketBrokerParamsHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 
 		params := struct {
-			MinPenaltyEscrow *big.Int
-			UnlockPeriod     *big.Int
+			UnlockPeriod *big.Int
 		}{
-			minPenaltyEscrow,
 			unlockPeriod,
 		}
 
