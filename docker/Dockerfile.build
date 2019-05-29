@@ -3,7 +3,7 @@
 # Don't mess with WORKDIR if you can avoid it, as it's different on Windows/Linux. Use relative
 # paths instead.
 
-FROM iameli/build-platform:latest
+FROM livepeerci/build-platform:latest
 
 ADD ./install_ffmpeg.sh ./install_ffmpeg.sh
 RUN ./install_ffmpeg.sh
