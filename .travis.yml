@@ -8,11 +8,6 @@ env:
     - PKG_CONFIG_PATH=/Users/travis/compiled/lib/pkgconfig
 
 script:
-# These three lines needed so it works even if your name isn't "livepeer"
-- cd $GOPATH/src/github.com
-- mkdir -p ./livepeer
-- mv "$TRAVIS_BUILD_DIR" "./livepeer/go-livepeer"
-- cd ./livepeer/go-livepeer
 - ./install_ffmpeg.sh
 - ./install_dependencies.sh
 - make livepeer livepeer_cli
