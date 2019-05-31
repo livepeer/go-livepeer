@@ -12,6 +12,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+var errInsufficientSenderReserve = errors.New("insufficient sender reserve")
+
+// maxWinProb = 2^256 - 1
+var maxWinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+
 // Recipient is an interface which describes an object capable
 // of receiving tickets
 type Recipient interface {
@@ -24,7 +29,26 @@ type Recipient interface {
 
 	// TicketParams returns the recipient's currently accepted ticket parameters
 	// for a provided sender ETH adddress
-	TicketParams(sender ethcommon.Address) *TicketParams
+	TicketParams(sender ethcommon.Address) (*TicketParams, error)
+}
+
+// TicketParamsConfig contains config information for a recipient to determine
+// the parameters to use for tickets
+type TicketParamsConfig struct {
+	// EV is the desired expected value of tickets
+	EV *big.Int
+
+	// RedeemGas is the expected gas required to redeem a ticket
+	RedeemGas int
+
+	// TxCostMultiplier is the desired multiplier of the transaction
+	// cost for redemption
+	TxCostMultiplier int
+}
+
+// GasPriceMonitor defines methods for monitoring gas prices
+type GasPriceMonitor interface {
+	GasPrice() *big.Int
 }
 
 // recipient is an implementation of the Recipient interface that
@@ -33,6 +57,8 @@ type recipient struct {
 	val    Validator
 	broker Broker
 	store  TicketStore
+	gpm    GasPriceMonitor
+	fm     FloatMonitor
 
 	addr   ethcommon.Address
 	secret [32]byte
@@ -42,13 +68,12 @@ type recipient struct {
 	senderNonces     map[string]uint32
 	senderNoncesLock sync.Mutex
 
-	faceValue *big.Int
-	winProb   *big.Int
+	cfg TicketParamsConfig
 }
 
 // NewRecipient creates an instance of a recipient with an
 // automatically generated random secret
-func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, faceValue *big.Int, winProb *big.Int) (Recipient, error) {
+func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, fm FloatMonitor, cfg TicketParamsConfig) (Recipient, error) {
 	randBytes := make([]byte, 32)
 	if _, err := rand.Read(randBytes); err != nil {
 		return nil, err
@@ -57,22 +82,23 @@ func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store Ti
 	var secret [32]byte
 	copy(secret[:], randBytes[:32])
 
-	return NewRecipientWithSecret(addr, broker, val, store, secret, faceValue, winProb), nil
+	return NewRecipientWithSecret(addr, broker, val, store, gpm, fm, secret, cfg), nil
 }
 
 // NewRecipientWithSecret creates an instance of a recipient with a user provided
 // secret. In most cases, NewRecipient should be used instead which will
 // automatically generate a random secret
-func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, secret [32]byte, faceValue *big.Int, winProb *big.Int) Recipient {
+func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, fm FloatMonitor, secret [32]byte, cfg TicketParamsConfig) Recipient {
 	return &recipient{
 		broker:       broker,
 		val:          val,
 		store:        store,
+		gpm:          gpm,
+		fm:           fm,
 		addr:         addr,
 		secret:       secret,
-		faceValue:    faceValue,
 		senderNonces: make(map[string]uint32),
-		winProb:      winProb,
+		cfg:          cfg,
 	}
 }
 
@@ -84,11 +110,16 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 		return "", false, errors.Errorf("invalid recipientRand generated from seed %v", seed)
 	}
 
-	if ticket.FaceValue.Cmp(r.faceValue) != 0 {
+	faceValue, err := r.faceValue(ticket.Sender)
+	if err != nil {
+		return "", false, err
+	}
+
+	if ticket.FaceValue.Cmp(faceValue) != 0 {
 		return "", false, errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue)
 	}
 
-	if ticket.WinProb.Cmp(r.winProb) != 0 {
+	if ticket.WinProb.Cmp(r.winProb(faceValue)) != 0 {
 		return "", false, errors.Errorf("invalid ticket winProb %v", ticket.WinProb)
 	}
 
@@ -134,20 +165,80 @@ func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 }
 
 // TicketParams returns the recipient's currently accepted ticket parameters
-func (r *recipient) TicketParams(sender ethcommon.Address) *TicketParams {
+func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
 	randBytes := RandBytes(32)
 
 	seed := new(big.Int).SetBytes(randBytes)
 	recipientRand := r.rand(seed, sender)
 	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size))
 
+	faceValue, err := r.faceValue(sender)
+	if err != nil {
+		return nil, err
+	}
+
 	return &TicketParams{
 		Recipient:         r.addr,
-		FaceValue:         r.faceValue,
-		WinProb:           r.winProb,
+		FaceValue:         faceValue,
+		WinProb:           r.winProb(faceValue),
 		RecipientRandHash: recipientRandHash,
 		Seed:              seed,
+	}, nil
+}
+
+func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
+	gasPrice := r.gpm.GasPrice()
+	// txCost = redeemGas * gasPrice
+	txCost := new(big.Int).Mul(big.NewInt(int64(r.cfg.RedeemGas)), gasPrice)
+
+	// faceValue = txCost * txCostMultiplier
+	faceValue := new(big.Int).Mul(txCost, big.NewInt(int64(r.cfg.TxCostMultiplier)))
+
+	// TODO: Consider setting faceValue to some value higher than
+	// EV in this case where the default faceValue < the desired EV.
+	// At the moment, for simplicity we just adjust faceValue to the
+	// desired EV in this case (which would result in winProb = 100%).
+	// In practice, EV should be smaller than the default faceValue
+	// so this shouldn't be a problem in most cases
+	if faceValue.Cmp(r.cfg.EV) < 0 {
+		faceValue = r.cfg.EV
 	}
+
+	// Fetch current max float for sender
+	maxFloat, err := r.fm.MaxFloat(sender)
+	if err != nil {
+		return nil, err
+	}
+
+	if faceValue.Cmp(maxFloat) > 0 {
+		if maxFloat.Cmp(r.cfg.EV) < 0 {
+			// If maxFloat < EV, then there is no
+			// acceptable faceValue
+			return nil, errInsufficientSenderReserve
+		}
+
+		// If faceValue > maxFloat
+		// Set faceValue = maxFloat
+		faceValue = maxFloat
+	}
+
+	return faceValue, nil
+}
+
+func (r *recipient) winProb(faceValue *big.Int) *big.Int {
+	// Return 0 if faceValue happens to be 0
+	if faceValue.Cmp(big.NewInt(0)) == 0 {
+		return big.NewInt(0)
+	}
+	// Return maxWinProb if faceValue = EV
+	if faceValue.Cmp(r.cfg.EV) == 0 {
+		return maxWinProb
+	}
+
+	x := new(big.Int).Div(maxWinProb, faceValue)
+
+	// Compute winProb as the numerator of a fraction over maxWinProb
+	return new(big.Int).Mul(r.cfg.EV, x)
 }
 
 func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {

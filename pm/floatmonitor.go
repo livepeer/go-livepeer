@@ -35,7 +35,7 @@ type floatMonitor struct {
 	cleanupInterval time.Duration
 	ttl             int
 
-	mu        sync.Mutex
+	mu        sync.RWMutex
 	maxFloats map[ethcommon.Address]*item
 
 	broker Broker
@@ -95,8 +95,8 @@ func (fm *floatMonitor) Sub(addr ethcommon.Address, amount *big.Int) error {
 }
 
 func (fm *floatMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
-	fm.mu.Lock()
-	defer fm.mu.Unlock()
+	fm.mu.RLock()
+	defer fm.mu.RUnlock()
 
 	return fm.maxFloat(addr)
 }

@@ -42,7 +42,7 @@ type Orchestrator interface {
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
-	TicketParams(sender ethcommon.Address) *net.TicketParams
+	TicketParams(sender ethcommon.Address) (*net.TicketParams, error)
 }
 
 type Broadcaster interface {
@@ -202,9 +202,14 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
 	}
 
+	params, err := orch.TicketParams(addr)
+	if err != nil {
+		return nil, err
+	}
+
 	tr := net.OrchestratorInfo{
 		Transcoder:   orch.ServiceURI().String(), // currently,  orchestrator == transcoder
-		TicketParams: orch.TicketParams(addr),
+		TicketParams: params,
 	}
 
 	storagePrefix := core.RandomManifestID()

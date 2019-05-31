@@ -44,6 +44,17 @@ import (
 var (
 	ErrKeygen    = errors.New("ErrKeygen")
 	EthTxTimeout = 600 * time.Second
+
+	// redeemGas is the gas required to redeem a PM ticket
+	redeemGas = 100000
+	// txCostMultiplier is the multipler on the transaction cost to use for PM ticket faceValue
+	txCostMultiplier = 100
+	// gmPollingInterval is the interval at which to poll for gas price updates
+	gpmPollingInterval = 1 * time.Minute
+	// fmCleanupInterval is the interval at which to clean up cached max float values for PM senders
+	fmCleanupInterval = 1 * time.Minute
+	// fmTTL is the time to live for cached max float values for PM senders (else they will be cleaned up)
+	fmTTL = 3600 // 1 minute
 )
 
 const RtmpPort = "1935"
@@ -90,8 +101,7 @@ func main() {
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 0, "Gas price for ETH transactions")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
-	faceValue := flag.Float64("faceValue", 0, "The faceValue to expect in PM tickets, denominated in ETH (e.g. 0.3)")
-	winProb := flag.Float64("winProb", 0, "The win probability to expect in PM tickets, as a percent float between 0 and 100 (e.g. 5.3)")
+	ticketEV := flag.String("ticketEV", "1000000000", "The expected value for PM tickets")
 
 	// Metrics & logging:
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
@@ -309,13 +319,14 @@ func main() {
 				return
 			}
 
-			if *faceValue < float64(0) {
-				glog.Errorf("-faceValue must be greater than 0, but %v provided. Restart the node with a different valid value for -faceValue", *faceValue)
+			ev, _ := new(big.Int).SetString(*ticketEV, 10)
+			if ev == nil {
+				glog.Errorf("-ticketEV must be a valid integer, but %v provided. Restart the node with a different valid value for -ticketEV", *ticketEV)
 				return
 			}
 
-			if *winProb < float64(0) || *winProb > float64(100) {
-				glog.Errorf("-winProb must be between 0 and 100, but %v provided. Restart the node with a different valid value for -winProb", *winProb)
+			if ev.Cmp(big.NewInt(0)) < 0 {
+				glog.Errorf("-ticketEV must be greater than 0, but %v provided. Restart the node with a different valid value for -ticketEV", *ticketEV)
 				return
 			}
 
@@ -323,9 +334,28 @@ func main() {
 			// TODO: Initialize Validator with an implementation
 			// of RoundsManager that reads from a cache
 			validator := pm.NewValidator(sigVerifier, n.Eth)
-			faceValueInWei := eth.ToBaseUnit(big.NewFloat(*faceValue))
-			winProbBigInt := eth.FromPercOfUint256(*winProb)
-			n.Recipient, err = pm.NewRecipient(n.Eth.Account().Address, n.Eth, validator, n.Database, faceValueInWei, winProbBigInt)
+			gpm := eth.NewGasPriceMonitor(backend, gpmPollingInterval)
+			// Start gas price monitor
+			if err := gpm.Start(context.Background()); err != nil {
+				glog.Errorf("error starting gas price monitor: %v", err)
+				return
+			}
+			defer gpm.Stop()
+
+			cfg := pm.TicketParamsConfig{
+				EV:               ev,
+				RedeemGas:        redeemGas,
+				TxCostMultiplier: txCostMultiplier,
+			}
+			n.Recipient, err = pm.NewRecipient(
+				n.Eth.Account().Address,
+				n.Eth,
+				validator,
+				n.Database,
+				gpm,
+				pm.NewFloatMonitor(n.Eth.Account().Address, n.Eth, fmCleanupInterval, fmTTL),
+				cfg,
+			)
 			if err != nil {
 				glog.Errorf("Error setting up PM recipient: %v", err)
 				return

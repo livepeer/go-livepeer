@@ -242,6 +242,43 @@ func (m *stubRoundsManager) BlockHashForRound(round *big.Int) ([32]byte, error) 
 	return m.blkHash, m.blockHashForRoundErr
 }
 
+type stubGasPriceMonitor struct {
+	gasPrice *big.Int
+}
+
+func (s *stubGasPriceMonitor) GasPrice() *big.Int {
+	return s.gasPrice
+}
+
+type stubFloatMonitor struct {
+	maxFloat *big.Int
+	err      error
+}
+
+func (s *stubFloatMonitor) Add(addr ethcommon.Address, amount *big.Int) error {
+	if s.err != nil {
+		return s.err
+	}
+
+	return nil
+}
+
+func (s *stubFloatMonitor) Sub(addr ethcommon.Address, amount *big.Int) error {
+	if s.err != nil {
+		return s.err
+	}
+
+	return nil
+}
+
+func (s *stubFloatMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	return s.maxFloat, nil
+}
+
 // MockRecipient is useful for testing components that depend on pm.Recipient
 type MockRecipient struct {
 	mock.Mock
@@ -262,7 +299,7 @@ func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
 
 // TicketParams returns the recipient's currently accepted ticket parameters
 // for a provided sender ETH adddress
-func (m *MockRecipient) TicketParams(sender ethcommon.Address) *TicketParams {
+func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
 	args := m.Called(sender)
 
 	var params *TicketParams
@@ -270,7 +307,7 @@ func (m *MockRecipient) TicketParams(sender ethcommon.Address) *TicketParams {
 		params = args.Get(0).(*TicketParams)
 	}
 
-	return params
+	return params, args.Error(1)
 }
 
 // MockSender is useful for testing components that depend on pm.Sender

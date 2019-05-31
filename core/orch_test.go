@@ -704,12 +704,14 @@ func TestTicketParams(t *testing.T) {
 		Seed:              big.NewInt(3456),
 		RecipientRandHash: pm.RandHash(),
 	}
-	recipient.On("TicketParams", mock.Anything).Return(expectedParams)
+	recipient.On("TicketParams", mock.Anything).Return(expectedParams, nil)
 	orch := NewOrchestrator(n)
 
-	actualParams := orch.TicketParams(pm.RandAddress())
-
 	assert := assert.New(t)
+
+	actualParams, err := orch.TicketParams(pm.RandAddress())
+	assert.Nil(err)
+
 	assert.Equal(expectedParams.Recipient.Bytes(), actualParams.Recipient)
 	assert.Equal(expectedParams.FaceValue.Bytes(), actualParams.FaceValue)
 	assert.Equal(expectedParams.WinProb.Bytes(), actualParams.WinProb)
@@ -720,8 +722,8 @@ func TestTicketParams(t *testing.T) {
 func TestTicketParams_GivenNilNode_ReturnsNil(t *testing.T) {
 	orch := &orchestrator{}
 
-	params := orch.TicketParams(ethcommon.Address{})
-
+	params, err := orch.TicketParams(ethcommon.Address{})
+	assert.Nil(t, err)
 	assert.Nil(t, params)
 }
 
@@ -730,9 +732,21 @@ func TestTicketParams_GivenNilRecipient_ReturnsNil(t *testing.T) {
 	orch := NewOrchestrator(n)
 	n.Recipient = nil
 
-	params := orch.TicketParams(ethcommon.Address{})
-
+	params, err := orch.TicketParams(ethcommon.Address{})
+	assert.Nil(t, err)
 	assert.Nil(t, params)
+}
+
+func TestTicketParams_Error(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	expErr := errors.New("TicketParams error")
+	recipient.On("TicketParams", mock.Anything).Return(nil, expErr)
+	orch := NewOrchestrator(n)
+
+	_, err := orch.TicketParams(ethcommon.Address{})
+	assert.EqualError(t, err, expErr.Error())
 }
 
 func defaultPayment(t *testing.T) net.Payment {
