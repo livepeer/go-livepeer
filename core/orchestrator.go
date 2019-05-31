@@ -102,24 +102,33 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		return nil
 	}
 
-	ticket := &pm.Ticket{
-		Recipient:         ethcommon.BytesToAddress(payment.Ticket.Recipient),
-		Sender:            ethcommon.BytesToAddress(payment.Ticket.Sender),
-		FaceValue:         new(big.Int).SetBytes(payment.Ticket.FaceValue),
-		WinProb:           new(big.Int).SetBytes(payment.Ticket.WinProb),
-		SenderNonce:       payment.Ticket.SenderNonce,
-		RecipientRandHash: ethcommon.BytesToHash(payment.Ticket.RecipientRandHash),
-	}
-	seed := new(big.Int).SetBytes(payment.Seed)
+	for i, t := range payment.Tickets {
+		ticket := &pm.Ticket{
+			Recipient:         ethcommon.BytesToAddress(t.Recipient),
+			Sender:            ethcommon.BytesToAddress(t.Sender),
+			FaceValue:         new(big.Int).SetBytes(t.FaceValue),
+			WinProb:           new(big.Int).SetBytes(t.WinProb),
+			SenderNonce:       t.SenderNonce,
+			RecipientRandHash: ethcommon.BytesToHash(t.RecipientRandHash),
+		}
 
-	sessionID, won, err := orch.node.Recipient.ReceiveTicket(ticket, payment.Sig, seed)
-	if err != nil {
-		return errors.Wrapf(err, "error receiving ticket for payment %v for manifest %v", payment, manifestID)
-	}
+		seed := new(big.Int).SetBytes(payment.Seeds[i])
 
-	if won {
-		glog.V(common.DEBUG).Info("Received winning ticket")
-		cachePMSessionID(orch.node, manifestID, sessionID)
+		sig := payment.Sigs[i]
+
+		sessionID, won, err := orch.node.Recipient.ReceiveTicket(
+			ticket,
+			sig,
+			seed,
+		)
+		if err != nil {
+			return errors.Wrapf(err, "Error receiving ticket %v for manifest %v", ticket, manifestID)
+		}
+
+		if won {
+			glog.V(common.DEBUG).Info("Received winning ticket")
+			cachePMSessionID(orch.node, manifestID, sessionID)
+		}
 	}
 
 	return nil

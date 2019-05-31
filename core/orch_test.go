@@ -497,6 +497,22 @@ func TestProcessPayment_GivenRecipientError_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "mock error")
 }
 
+func TestProcessPayment_GivenNoTicketsInPayment_DoesNotCacheSessionId(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
+
+	var protoPayment net.Payment
+
+	err := orch.ProcessPayment(protoPayment, ManifestID("some manifest"))
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Empty(n.pmSessions)
+}
+
 func TestProcessPayment_GivenWinningTicketAndRecipientError_DoesNotCacheSessionID(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
@@ -673,10 +689,32 @@ func defaultPayment(t *testing.T) net.Payment {
 		SenderNonce:       456,
 		RecipientRandHash: pm.RandBytes(123),
 	}
-	return net.Payment{
-		Ticket: ticket,
-		Sig:    pm.RandBytes(123),
-		Seed:   pm.RandBytes(123),
+
+	return *defaultPaymentWithTickets(t, []*net.Ticket{ticket})
+}
+
+func defaultPaymentWithTickets(t *testing.T, tickets []*net.Ticket) *net.Payment {
+	payment := &net.Payment{
+		Tickets: []*net.Ticket{},
+		Sigs:    [][]byte{},
+		Seeds:   [][]byte{},
+	}
+	for _, ticket := range tickets {
+		payment.Tickets = append(payment.Tickets, ticket)
+		payment.Sigs = append(payment.Sigs, pm.RandBytes(123))
+		payment.Seeds = append(payment.Seeds, pm.RandBytes(123))
+	}
+	return payment
+}
+
+func defaultTicket(t *testing.T) *net.Ticket {
+	return &net.Ticket{
+		Recipient:         pm.RandBytes(123),
+		Sender:            pm.RandBytes(123),
+		FaceValue:         pm.RandBytes(123),
+		WinProb:           pm.RandBytes(123),
+		SenderNonce:       456,
+		RecipientRandHash: pm.RandBytes(123),
 	}
 }
 

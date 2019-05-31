@@ -51,6 +51,8 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// check the segment sig from the broadcaster
 	seg := r.Header.Get(SegmentHeader)
 
+	// getPaymentSender checks the first ticket in Payment
+	// Could potentially do this check for all tickets, but adds computational overhead
 	segData, err := verifySegCreds(orch, seg, getPaymentSender(payment))
 	if err != nil {
 		glog.Error("Could not verify segment creds")
@@ -58,6 +60,8 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ProcessPayment processes a Payment batch
+	// Consisting of an ordered list of tickets, signatures and seeds
 	if err := orch.ProcessPayment(payment, segData.ManifestID); err != nil {
 		glog.Errorf("Error processing payment: %v", err)
 		http.Error(w, err.Error(), http.StatusPaymentRequired)
@@ -169,11 +173,11 @@ func getPayment(header string) (net.Payment, error) {
 }
 
 func getPaymentSender(payment net.Payment) ethcommon.Address {
-	if payment.Ticket == nil || payment.Ticket.Sender == nil {
+	if len(payment.Tickets) == 0 || payment.Tickets[0] == nil || payment.Tickets[0].Sender == nil {
 		return ethcommon.Address{}
 	}
 
-	return ethcommon.BytesToAddress(payment.Ticket.Sender)
+	return ethcommon.BytesToAddress(payment.Tickets[0].Sender)
 }
 
 func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, error) {
@@ -244,7 +248,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	ti := sess.OrchestratorInfo
 	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(data))
 	if err != nil {
-		glog.Error("Could not generate trascode request to ", ti.Transcoder)
+		glog.Error("Could not generate transcode request to ", ti.Transcoder)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error(), false)
 		}
@@ -393,7 +397,11 @@ func genPayment(sess *BroadcastSession) (string, error) {
 	if sess.Sender == nil {
 		return "", nil
 	}
-
+	/** TODO
+	 * Check necessary credit balance
+	 * See how many tickets to make according to needed credit and ticket EV
+	 * Invoke CreateTicket that many times and add to protoPayment
+	 */
 	ticket, seed, sig, err := sess.Sender.CreateTicket(sess.PMSessionID)
 	if err != nil {
 		return "", err
@@ -408,9 +416,9 @@ func genPayment(sess *BroadcastSession) (string, error) {
 		RecipientRandHash: ticket.RecipientRandHash.Bytes(),
 	}
 	protoPayment := &net.Payment{
-		Ticket: protoTicket,
-		Sig:    sig,
-		Seed:   seed.Bytes(),
+		Tickets: []*net.Ticket{protoTicket},
+		Sigs:    [][]byte{sig},
+		Seeds:   [][]byte{seed.Bytes()},
 	}
 
 	data, err := proto.Marshal(protoPayment)
