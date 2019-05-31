@@ -52,6 +52,36 @@ if [ ! -e "$HOME/x264" ]; then
   make install-lib-static
 fi
 
+if [ ! -e "$HOME/gmp-6.1.2" ]; then
+  cd "$HOME"
+  curl -LO https://gmplib.org/download/gmp/gmp-6.1.2.tar.xz
+  tar xf gmp-6.1.2.tar.xz
+  cd "$HOME/gmp-6.1.2"
+  ./configure --prefix="$HOME/compiled" --disable-shared  --with-pic
+  make
+  make install
+fi
+
+if [ ! -e "$HOME/nettle-3.4.1" ]; then
+  cd $HOME
+  curl -LO https://ftp.gnu.org/gnu/nettle/nettle-3.4.1.tar.gz
+  tar xf nettle-3.4.1.tar.gz
+  cd nettle-3.4.1
+  ./configure --prefix="$HOME/compiled" --disable-shared --enable-pic
+  make
+  make install
+fi
+
+if [ ! -e "$HOME/gnutls-3.5.18" ]; then
+  cd $HOME
+  curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.5/gnutls-3.5.18.tar.xz
+  tar xf gnutls-3.5.18.tar.xz
+  cd gnutls-3.5.18
+  ./configure --prefix="$HOME/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --disable-doc --disable-c
+  make
+  make install
+fi
+
 EXTRA_FFMPEG_FLAGS=""
 # Only Linux supports CUDA... for now.
 if [ $(uname) == "Linux" ]; then

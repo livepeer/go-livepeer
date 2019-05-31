@@ -9,7 +9,7 @@ RUN apt-get update \
   && apt-get install -y software-properties-common \
   && add-apt-repository ppa:gophers/archive -y && \
   apt-get update && \
-  apt-get -y install build-essential pkg-config autoconf gnutls-dev golang-1.11-go sudo git curl python
+  apt-get -y install build-essential pkg-config autoconf golang-1.11-go sudo git curl python
 
 ENV GOPATH /go
 RUN mkdir -p /go
