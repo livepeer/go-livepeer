@@ -93,7 +93,7 @@ type stubBroker struct {
 	approvedSigners            map[ethcommon.Address]bool
 	redeemShouldFail           bool
 	getSenderInfoShouldFail    bool
-	remainingReserveShouldFail bool
+	claimableReserveShouldFail bool
 }
 
 func newStubBroker() *stubBroker {
@@ -163,6 +163,14 @@ func (b *stubBroker) GetSenderInfo(addr ethcommon.Address) (info *SenderInfo, er
 		ReserveState:  ReserveState(0),
 		ThawRound:     big.NewInt(0),
 	}, nil
+}
+
+func (b *stubBroker) ClaimableReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
+	if b.claimableReserveShouldFail {
+		return nil, fmt.Errorf("stub broker ClaimableReserve error")
+	}
+
+	return b.reserves[reserveHolder], nil
 }
 
 type stubValidator struct {

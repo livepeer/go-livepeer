@@ -233,6 +233,9 @@ func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
 func (e *StubClient) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
 	return nil, nil
 }
+func (e *StubClient) ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error) {
+	return nil, nil
+}
 func (e *StubClient) UnlockPeriod() (*big.Int, error) {
 	return nil, nil
 }
