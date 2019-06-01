@@ -5,8 +5,10 @@ import (
 	"crypto/tls"
 	"errors"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -345,6 +347,113 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	assert.True(ok)
 	assert.Equal([]byte("foo"), res.Data.Sig)
 	assert.Equal(2, len(res.Data.Segments))
+}
+
+func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		Profiles: []ffmpeg.VideoProfile{
+			ffmpeg.P720p60fps16x9,
+		},
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	params := &net.TicketParams{
+		Recipient:         []byte("foo"),
+		FaceValue:         big.NewInt(100).Bytes(),
+		WinProb:           big.NewInt(100).Bytes(),
+		RecipientRandHash: []byte("bar"),
+		Seed:              []byte("baz"),
+	}
+
+	// Return an acceptable payment error to trigger an update to orchestrator info
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("invalid ticket faceValue")).Once()
+	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
+
+	uri, err := url.Parse("http://google.com")
+	require.Nil(err)
+	orch.On("ServiceURI").Return(uri)
+
+	tRes := &core.TranscodeResult{
+		Data: [][]byte{
+			[]byte("foo"),
+		},
+		Sig: []byte("foo"),
+		OS:  drivers.NewMemoryDriver(nil).NewSession(""),
+	}
+	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+
+	headers := map[string]string{
+		paymentHeader: "",
+		segmentHeader: creds,
+	}
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	var tr net.TranscodeResult
+	err = proto.Unmarshal(body, &tr)
+	require.Nil(err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	assert.Equal(uri.String(), tr.Info.Transcoder)
+	assert.Equal(params.Recipient, tr.Info.TicketParams.Recipient)
+	assert.Equal(params.FaceValue, tr.Info.TicketParams.FaceValue)
+	assert.Equal(params.WinProb, tr.Info.TicketParams.WinProb)
+	assert.Equal(params.RecipientRandHash, tr.Info.TicketParams.RecipientRandHash)
+	assert.Equal(params.Seed, tr.Info.TicketParams.Seed)
+
+	// Return an acceptable payment error to trigger an update to orchestrator info
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("invalid ticket winProb")).Once()
+	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
+
+	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err = ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	err = proto.Unmarshal(body, &tr)
+	require.Nil(err)
+
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	assert.Equal(uri.String(), tr.Info.Transcoder)
+	assert.Equal(params.Recipient, tr.Info.TicketParams.Recipient)
+	assert.Equal(params.FaceValue, tr.Info.TicketParams.FaceValue)
+	assert.Equal(params.WinProb, tr.Info.TicketParams.WinProb)
+	assert.Equal(params.RecipientRandHash, tr.Info.TicketParams.RecipientRandHash)
+	assert.Equal(params.Seed, tr.Info.TicketParams.Seed)
+
+	// Test orchestratorInfo error
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("invalid ticket winProb")).Once()
+	orch.On("TicketParams", mock.Anything).Return(nil, errors.New("TicketParams error")).Once()
+
+	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err = ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("Internal Server Error", strings.TrimSpace(string(body)))
 }
 
 func TestSubmitSegment_GenSegCredsError(t *testing.T) {
