@@ -203,10 +203,10 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 	}
 
 	// currently, orchestrator == transcoder
-	return orchestratorInfo(orch, addr, orch.ServiceURI().String(), core.RandomManifestID())
+	return orchestratorInfo(orch, addr, orch.ServiceURI().String())
 }
 
-func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI string, manifestID core.ManifestID) (*net.OrchestratorInfo, error) {
+func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI string) (*net.OrchestratorInfo, error) {
 	params, err := orch.TicketParams(addr)
 	if err != nil {
 		return nil, err
@@ -217,7 +217,7 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 		TicketParams: params,
 	}
 
-	os := drivers.NodeStorage.NewSession(string(manifestID))
+	os := drivers.NodeStorage.NewSession(string(core.RandomManifestID()))
 
 	if os != nil && os.IsExternal() {
 		tr.Storage = []*net.OSInfo{os.GetInfo()}

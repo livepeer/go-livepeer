@@ -17,6 +17,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/stretchr/testify/assert"
@@ -618,6 +619,143 @@ func TestSubmitSegment_Success(t *testing.T) {
 	}
 
 	SubmitSegment(s, &stream.HLSSegment{Name: "foo", Data: []byte("dummy")}, 0)
+}
+
+func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
+	require := require.New(t)
+
+	params := pm.TicketParams{
+		Recipient:         ethcommon.Address{},
+		FaceValue:         big.NewInt(100),
+		WinProb:           big.NewInt(100),
+		RecipientRandHash: pm.RandHash(),
+		Seed:              big.NewInt(100),
+	}
+
+	tr := &net.TranscodeResult{
+		Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{
+				Segments: []*net.TranscodedSegmentData{
+					&net.TranscodedSegmentData{Url: "foo"},
+				},
+				Sig: []byte("bar"),
+			},
+		},
+		Info: &net.OrchestratorInfo{
+			Transcoder: "http://google.com",
+			TicketParams: &net.TicketParams{
+				Recipient:         params.Recipient.Bytes(),
+				FaceValue:         params.FaceValue.Bytes(),
+				WinProb:           params.WinProb.Bytes(),
+				RecipientRandHash: params.RecipientRandHash.Bytes(),
+				Seed:              params.Seed.Bytes(),
+			},
+		},
+	}
+	buf, err := proto.Marshal(tr)
+	require.Nil(err)
+
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	// Test with no pm.Sender in BroadcastSession
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		OrchestratorInfo: &net.OrchestratorInfo{
+			Transcoder: ts.URL,
+		},
+	}
+
+	assert := assert.New(t)
+
+	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
+
+	assert.Nil(err)
+	assert.Equal("http://google.com", s.OrchestratorInfo.Transcoder)
+	assert.Equal(tr.Info.TicketParams.Recipient, s.OrchestratorInfo.TicketParams.Recipient)
+	assert.Equal(tr.Info.TicketParams.FaceValue, s.OrchestratorInfo.TicketParams.FaceValue)
+	assert.Equal(tr.Info.TicketParams.WinProb, s.OrchestratorInfo.TicketParams.WinProb)
+	assert.Equal(tr.Info.TicketParams.RecipientRandHash, s.OrchestratorInfo.TicketParams.RecipientRandHash)
+	assert.Equal(tr.Info.TicketParams.Seed, s.OrchestratorInfo.TicketParams.Seed)
+
+	// Test with pm.Sender in BroadcastSession
+
+	sender := &pm.MockSender{}
+	s.OrchestratorInfo = &net.OrchestratorInfo{
+		Transcoder: ts.URL,
+	}
+	s.Sender = sender
+
+	ticket := &pm.Ticket{
+		Recipient:              ethcommon.Address{},
+		Sender:                 ethcommon.Address{},
+		FaceValue:              big.NewInt(100),
+		WinProb:                big.NewInt(100),
+		SenderNonce:            0,
+		RecipientRandHash:      pm.RandHash(),
+		CreationRound:          5,
+		CreationRoundBlockHash: [32]byte{5},
+	}
+
+	sender.On("CreateTicket", mock.Anything).Return(ticket, big.NewInt(7), []byte("bar"), nil)
+	sender.On("StartSession", params).Return("foobar")
+
+	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
+
+	assert.Nil(err)
+	assert.Equal("foobar", s.PMSessionID)
+	sender.AssertCalled(t, "StartSession", params)
+
+	// Test does not crash if OrchestratorInfo.TicketParams is nil
+
+	s.OrchestratorInfo = &net.OrchestratorInfo{
+		Transcoder: ts.URL,
+	}
+	s.Sender = nil
+
+	// Update stub server to return OrchestratorInfo without TicketParams
+	tr.Info = &net.OrchestratorInfo{
+		Transcoder: "http://google.com",
+	}
+	buf, err = proto.Marshal(tr)
+	require.Nil(err)
+
+	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
+
+	assert.Nil(err)
+	assert.Equal("http://google.com", s.OrchestratorInfo.Transcoder)
+
+	// Test update OrchestratorOS
+
+	s.OrchestratorInfo = &net.OrchestratorInfo{
+		Transcoder: ts.URL,
+	}
+
+	tr.Info = &net.OrchestratorInfo{
+		Transcoder: "http://google.com",
+		Storage: []*net.OSInfo{
+			&net.OSInfo{
+				StorageType: 1,
+				S3Info: &net.S3OSInfo{
+					Host: "http://apple.com",
+				},
+			},
+		},
+	}
+	buf, err = proto.Marshal(tr)
+	require.Nil(err)
+
+	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
+
+	assert.Nil(err)
+	assert.Equal(tr.Info.Storage[0].StorageType, s.OrchestratorOS.GetInfo().StorageType)
+	assert.Equal(tr.Info.Storage[0].S3Info.Host, s.OrchestratorOS.GetInfo().S3Info.Host)
 }
 
 func stubTLSServer() (*httptest.Server, *http.ServeMux) {
