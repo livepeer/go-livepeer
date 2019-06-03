@@ -73,7 +73,7 @@ RUN C:\msys64\usr\bin\bash.exe -l -c 'exit 0'; `
   C:\msys64\usr\bin\bash.exe -l -c 'pacman -Syu  --needed --noconfirm --noprogressbar --ask=20'; `
   C:\msys64\usr\bin\bash.exe -l -c 'pacman -Su   --needed --noconfirm --noprogressbar --ask=20'; `
   # Install our packages. Use the mingw-w64-x86_64 version of everything run-time; it's faster
-  C:\msys64\usr\bin\bash.exe -l -c 'pacman -S perl binutils git make autoconf zip mingw-w64-x86_64-gcc mingw-w64-x86_64-libtool mingw-w64-x86_64-gnutls mingw-w64-x86_64-pkg-config --noconfirm --noprogressbar --ask=20'; `
+  C:\msys64\usr\bin\bash.exe -l -c 'pacman -S perl binutils git make autoconf zip mingw-w64-x86_64-gcc mingw-w64-x86_64-libtool mingw-w64-x86_64-pkg-config --noconfirm --noprogressbar --ask=20'; `
   # Need golang 1.11 for now
   C:\msys64\usr\bin\bash.exe -l -c 'pacman -U http://repo.msys2.org/mingw/x86_64/mingw-w64-x86_64-go-1.11.4-1-any.pkg.tar.xz --noconfirm --noprogressbar --ask=20'; `
   C:\msys64\usr\bin\bash.exe -l -c 'pacman -Scc --noconfirm'; `
