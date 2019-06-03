@@ -14,6 +14,7 @@ if [[ $(uname) == *"MSYS2_NT"* ]]; then
 
   export TARGET_OS="--target-os=mingw64"
   export HOST_OS="--host=x86_64-w64-mingw32"
+  export BUILD_OS="--build=x86_64-w64-mingw32"
 
   # Needed for mbedtls
   export WINDOWS_BUILD=1
@@ -52,34 +53,45 @@ if [ ! -e "$HOME/x264" ]; then
   make install-lib-static
 fi
 
+# rm -rf "$HOME/gmp-6.1.2"
 if [ ! -e "$HOME/gmp-6.1.2" ]; then
   cd "$HOME"
-  curl -LO https://gmplib.org/download/gmp/gmp-6.1.2.tar.xz
-  tar xf gmp-6.1.2.tar.xz
+  curl -LO https://ftp.gnu.org/gnu/gmp/gmp-6.1.2.tar.xz
+  xz -d gmp-6.1.2.tar.xz
+  tar xf gmp-6.1.2.tar
+  rm gmp-6.1.2.tar
   cd "$HOME/gmp-6.1.2"
-  ./configure --prefix="$HOME/compiled" --disable-shared  --with-pic
+  ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --disable-shared  --with-pic
   make
   make install
 fi
 
+# rm -rf "$HOME/nettle-3.4.1"
 if [ ! -e "$HOME/nettle-3.4.1" ]; then
   cd $HOME
   curl -LO https://ftp.gnu.org/gnu/nettle/nettle-3.4.1.tar.gz
   tar xf nettle-3.4.1.tar.gz
+  rm nettle-3.4.1.tar.gz
   cd nettle-3.4.1
-  ./configure --prefix="$HOME/compiled" --disable-shared --enable-pic
+  LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --disable-shared --enable-pic
   make
   make install
 fi
 
+# rm -rf "$HOME/gnutls-3.5.18"
 if [ ! -e "$HOME/gnutls-3.5.18" ]; then
   cd $HOME
   curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.5/gnutls-3.5.18.tar.xz
-  tar xf gnutls-3.5.18.tar.xz
+  xz -d gnutls-3.5.18.tar.xz
+  tar xf gnutls-3.5.18.tar
+  rm gnutls-3.5.18.tar
   cd gnutls-3.5.18
-  ./configure --prefix="$HOME/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --disable-doc --disable-c
+  LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" LIBS="-lhogweed -lnettle -lgmp" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --disable-doc --disable-cxx --disable-tools
   make
   make install
+  # gnutls doesn't properly set up its pkg-config or something? without this line ffmpeg and go
+  # don't know that they need gmp, nettle, and hogweed
+  sed -i 's/-lgnutls/-lgnutls -lhogweed -lnettle -lgmp/g' ~/compiled/lib/pkgconfig/gnutls.pc
 fi
 
 EXTRA_FFMPEG_FLAGS=""
