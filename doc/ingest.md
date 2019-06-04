@@ -61,7 +61,7 @@ Alternatively, a list of active streams can be found by querying the CLI API:
 ### Stream Authentication
 
 Streams can be authenticated through a webhook. See the documentation on the
-[RTMP Authentication Webhook](rtmpauthwebhook.md) for more details.
+[RTMP Authentication Webhook](rtmpwebhookauth.md) for more details.
 
 ### RTMP Playback Protection
 
