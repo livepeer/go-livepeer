@@ -7,11 +7,11 @@ version=$(shell cat VERSION)
 
 .PHONY: livepeer
 livepeer:
-	go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty)" cmd/livepeer/*.go
+	go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty --abbrev=8)" cmd/livepeer/*.go
 
 .PHONY: livepeer_cli
 livepeer_cli:
-	go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty)" cmd/livepeer_cli/*.go
+	go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty --abbrev=8)" cmd/livepeer_cli/*.go
 
 .PHONY: localdocker
 localdocker:

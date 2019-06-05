@@ -15,7 +15,7 @@ fi
 
 BASE="livepeer-$ARCH-amd64"
 BRANCH="${TRAVIS_BRANCH:-${CIRCLE_BRANCH:-unknown}}"
-VERSION="$(cat VERSION)-$(git describe --always --long --dirty)"
+VERSION="$(cat VERSION)-$(git describe --always --long --abbrev=8 --dirty)"
 
 mkdir $BASE
 cp ./livepeer${EXT} $BASE
@@ -54,5 +54,5 @@ curl -X PUT -T "${FILE}" \
   -H "Authorization: AWS ${GCLOUD_KEY}:${signature}" \
   https://storage.googleapis.com${resource}
 
-curl --fail -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION/${FILE}\"}" $DISCORD_URL
+curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION/${FILE}\"}" $DISCORD_URL 2>/dev/null
 echo "done"
