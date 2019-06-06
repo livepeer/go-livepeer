@@ -20,8 +20,12 @@ To give preference to O's that respond with transcoded segments quickly, instead
 
 ## Transcoding Errors & Retries
 
-If there is an error uploading segment to an Orchestrator's OS, submitting the segment to an Orchestrator, downloading transcoded segments, or the segment signature check fails, the Orchestrator is removed from the `sessMap`. The segment is retried with a different Orchestrator. When `selectSession` is called in this retry scenario, though the removed session might still exist in `sessList`, only a session that still exists in `sessMap` will be selected.  If there is no error in segment transcoding, `completeSession` adds session back to `sessList`.
+If there is an error uploading segment to an Orchestrator's OS, submitting the segment to an Orchestrator, downloading transcoded segments, or the segment signature check fails, the Orchestrator is removed from the `sessMap`. The segment is retried with a different Orchestrator. When `selectSession` is called in this retry scenario, though the removed session might still exist in `sessList`, only a session that still exists in `sessMap` will be selected.  If there is no error in segment transcoding, `completeSession` adds session back to `sessList`. Retries stop if `sessMap` is empty.
 
 ## Storage
 
-To prevent segment front-running (when an Orchestrator writes to a file that should belong to another Orchestrator), each Orchestrator is given an external storage path prefix used to create its own unique OS session. The prefix is composed of the stream's ManifestID, and a randomly generated manifest Id. 
+To prevent segment front-running (when an Orchestrator writes to a file that should belong to another Orchestrator), each Orchestrator is given an external storage path prefix used to create its own unique OS session. The prefix is composed of the stream's ManifestID, and a randomly generated manifest Id.
+
+## MaxSessions
+
+When an Orchestrator - Transcoder are run on the same node, a `-maxSessions` flag can be used to specify the node's own capacity for transcoding. A `MaxSessions` hard-coded value in `Livepeernode.go` caps the number of segment channels that can be created per Orchestrator, which limits the number of streams it can ingest. `MaxSessions` is the default value that is overridden with `-maxSessions`.
