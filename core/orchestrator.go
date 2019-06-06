@@ -102,35 +102,42 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		return nil
 	}
 
-	for i, t := range payment.Tickets {
-		ticket := &pm.Ticket{
-			Recipient:         ethcommon.BytesToAddress(t.Recipient),
-			Sender:            ethcommon.BytesToAddress(t.Sender),
-			FaceValue:         new(big.Int).SetBytes(t.FaceValue),
-			WinProb:           new(big.Int).SetBytes(t.WinProb),
-			SenderNonce:       t.SenderNonce,
-			RecipientRandHash: ethcommon.BytesToHash(t.RecipientRandHash),
-		}
+	if payment.TicketParams == nil {
+		return fmt.Errorf("Could not find TicketParams for payment %v", payment)
+	}
 
-		seed := new(big.Int).SetBytes(payment.Seeds[i])
+	if payment.Sender == nil || len(payment.Sender) == 0 {
+		return fmt.Errorf("Could not find Sender for payment: %v", payment)
+	}
 
-		sig := payment.Sigs[i]
+	seed := new(big.Int).SetBytes(payment.TicketParams.Seed)
+
+	ticket := &pm.Ticket{
+		Recipient:         ethcommon.BytesToAddress(payment.TicketParams.Recipient),
+		Sender:            ethcommon.BytesToAddress(payment.Sender),
+		FaceValue:         new(big.Int).SetBytes(payment.TicketParams.FaceValue),
+		WinProb:           new(big.Int).SetBytes(payment.TicketParams.WinProb),
+		RecipientRandHash: ethcommon.BytesToHash(payment.TicketParams.RecipientRandHash),
+	}
+
+	for _, tsp := range payment.TicketSenderParams {
+
+		ticket.SenderNonce = tsp.SenderNonce
 
 		sessionID, won, err := orch.node.Recipient.ReceiveTicket(
 			ticket,
-			sig,
+			tsp.Sig,
 			seed,
 		)
 		if err != nil {
-			return errors.Wrapf(err, "Error receiving ticket %v for manifest %v", ticket, manifestID)
+			glog.Errorf("Error receiving ticket %v for manifest %v: %v\n", ticket, manifestID, err)
 		}
 
-		if won {
+		if won && err == nil {
 			glog.V(common.DEBUG).Info("Received winning ticket")
 			cachePMSessionID(orch.node, manifestID, sessionID)
 		}
 	}
-
 	return nil
 }
 
