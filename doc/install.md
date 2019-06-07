@@ -8,15 +8,21 @@ The easiest way to install Livepeer is by downloading the `livepeer` and `livepe
 ### Option 2: Build from source
 You can also build the executables from scratch.
 
-1. If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
+&ensp; 1\. If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
 
-2. You can fetch the code running `go get github.com/livepeer/go-livepeer/cmd/livepeer` in terminal.
+&ensp; 2\. You can fetch the code running `go get github.com/livepeer/go-livepeer/cmd/livepeer` in terminal.
 
-3. You need to install `ffmpeg` as a dependency.  Run `./install_ffmpeg.sh`.  This will install the dependencies in `~/compiled`.  You need to have `pkg-config` installed.
+&ensp; 3\. Make sure you have the necessary libraries installed:
 
-4. You can now run `PKG_CONFIG_PATH=~/compiled/lib/pkgconfig go build ./cmd/livepeer/livepeer.go` from the project root directory. To get latest version, `git pull` from the project root directory.
+* Linux: `apt-get update && apt-get -y install build-essential pkg-config autoconf nodejs gnutls-dev`
 
-5. To run tests in locall run `./test.sh`, to run in docker container run `./test_docker.sh`
+ * OSX: `brew update && brew install pkg-config autoconf node gnutls`
+
+&ensp; 4\. You need to install `ffmpeg` as a dependency.  Run `./install_ffmpeg.sh`.  This will install the dependencies in `~/compiled`.  You need to have `pkg-config` installed.
+
+&ensp; 5\. You can now run `PKG_CONFIG_PATH=~/compiled/lib/pkgconfig go build ./cmd/livepeer/livepeer.go` from the project root directory. To get latest version, `git pull` from the project root directory.
+
+&ensp; 6\. To run tests locally `./test.sh`, to run in docker container run `./test_docker.sh`
 
 
 ### Option 3: Using Docker
