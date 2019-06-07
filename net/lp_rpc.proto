@@ -75,6 +75,15 @@ message S3OSInfo {
   string xAmzDate = 6;
 }
 
+message PriceInfo {
+  // price in wei
+  int64 pricePerUnit = 1;
+
+  // Pixels covered in the price
+  // Set price to 1 wei and pixelsPerUnit > 1 to have a smaller price granularity per pixel than 1 wei
+  int64 pixelsPerUnit = 2;
+}
+
 // The orchestrator sends this in response to `GetOrchestrator`, containing
 // miscellaneous data related to the job.
 message OrchestratorInfo {
@@ -84,6 +93,9 @@ message OrchestratorInfo {
 
   // Parameters for probabilistic micropayment tickets
   TicketParams ticket_params = 2;
+
+  // Price Info containing the price per pixel to transcode
+  PriceInfo price_info = 3;
 
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
