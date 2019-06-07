@@ -53,7 +53,7 @@ func (c *client) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRan
 			WinProb:           ticket.WinProb,
 			SenderNonce:       new(big.Int).SetUint64(uint64(ticket.SenderNonce)),
 			RecipientRandHash: recipientRandHash,
-			AuxData:           []byte{}, // TODO: add ticket aux data
+			AuxData:           ticket.AuxData(),
 		},
 		sig,
 		recipientRand,

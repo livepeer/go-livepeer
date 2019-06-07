@@ -6,7 +6,76 @@ import (
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/assert"
 )
+
+func TestAuxData(t *testing.T) {
+	round := int64(5)
+	blkHash := ethcommon.BytesToHash(ethcommon.FromHex("7624778dedc75f8b322b9fa1632a610d40b85e106c7d9bf0e743a9ce291b9c6f"))
+
+	assert := assert.New(t)
+
+	// Test CreationRound = 0
+
+	ticket := &Ticket{
+		CreationRound:          0,
+		CreationRoundBlockHash: blkHash,
+	}
+
+	assert.Equal(
+		ethcommon.FromHex("00000000000000000000000000000000000000000000000000000000000000007624778dedc75f8b322b9fa1632a610d40b85e106c7d9bf0e743a9ce291b9c6f"),
+		ticket.AuxData(),
+	)
+
+	// Test empty block hash
+
+	emptyBlkHash := ethcommon.BytesToHash(ethcommon.LeftPadBytes([]byte{}, 32))
+
+	ticket = &Ticket{
+		CreationRound:          round,
+		CreationRoundBlockHash: emptyBlkHash,
+	}
+
+	assert.Equal(
+		ethcommon.FromHex("00000000000000000000000000000000000000000000000000000000000000050000000000000000000000000000000000000000000000000000000000000000"),
+		ticket.AuxData(),
+	)
+
+	// Test nil block hash
+
+	ticket = &Ticket{
+		CreationRound: round,
+	}
+
+	assert.Equal(
+		ethcommon.FromHex("00000000000000000000000000000000000000000000000000000000000000050000000000000000000000000000000000000000000000000000000000000000"),
+		ticket.AuxData(),
+	)
+
+	// Test round = 0 and empty block hash
+
+	ticket = &Ticket{
+		CreationRound:          0,
+		CreationRoundBlockHash: emptyBlkHash,
+	}
+
+	assert.Equal(
+		[]byte{},
+		ticket.AuxData(),
+	)
+
+	// Test normal case
+
+	ticket = &Ticket{
+		CreationRound:          round,
+		CreationRoundBlockHash: blkHash,
+	}
+
+	assert.Equal(
+		ethcommon.FromHex("00000000000000000000000000000000000000000000000000000000000000057624778dedc75f8b322b9fa1632a610d40b85e106c7d9bf0e743a9ce291b9c6f"),
+		ticket.AuxData(),
+	)
+}
 
 func TestHash(t *testing.T) {
 	exp := ethcommon.HexToHash("e1393fc7f6de093780674022f96cb8e3872235167d037c04d554e58c0e63d280")
@@ -100,5 +169,22 @@ func TestHash(t *testing.T) {
 
 	if h != exp {
 		t.Errorf("Expected %v got %v", exp, h)
+	}
+
+	exp = ethcommon.HexToHash("0xe502907c16036ab3d11b78c5a2e93c20f3d6415c67f91de4ed01348182b3b2e2")
+	ticket = &Ticket{
+		Recipient:              ethcommon.Address{},
+		Sender:                 ethcommon.Address{},
+		FaceValue:              big.NewInt(0),
+		WinProb:                big.NewInt(0),
+		SenderNonce:            0,
+		RecipientRandHash:      ethcommon.Hash{},
+		CreationRound:          10,
+		CreationRoundBlockHash: ethcommon.HexToHash("0x41b1a0649752af1b28b3dc29a1556eee781e4a4c3a1f7f53f90fa834de098c4d"),
+	}
+	h = ticket.Hash()
+
+	if h != exp {
+		t.Errorf("Expected %x got %x", exp, h)
 	}
 }
