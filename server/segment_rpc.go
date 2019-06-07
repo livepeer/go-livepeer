@@ -169,11 +169,10 @@ func getPayment(header string) (net.Payment, error) {
 }
 
 func getPaymentSender(payment net.Payment) ethcommon.Address {
-	if payment.Ticket == nil || payment.Ticket.Sender == nil {
+	if payment.Sender == nil {
 		return ethcommon.Address{}
 	}
-
-	return ethcommon.BytesToAddress(payment.Ticket.Sender)
+	return ethcommon.BytesToAddress(payment.Sender)
 }
 
 func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, error) {
@@ -244,7 +243,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	ti := sess.OrchestratorInfo
 	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(data))
 	if err != nil {
-		glog.Error("Could not generate trascode request to ", ti.Transcoder)
+		glog.Error("Could not generate transcode request to ", ti.Transcoder)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error(), false)
 		}
@@ -393,24 +392,33 @@ func genPayment(sess *BroadcastSession) (string, error) {
 	if sess.Sender == nil {
 		return "", nil
 	}
-
+	/** TODO
+	 * Check necessary credit balance
+	 * See how many tickets to make according to needed credit and ticket EV
+	 * Invoke CreateTicket that many times and add to protoPayment
+	 */
 	ticket, seed, sig, err := sess.Sender.CreateTicket(sess.PMSessionID)
 	if err != nil {
 		return "", err
 	}
 
-	protoTicket := &net.Ticket{
+	protoTicketParams := &net.TicketParams{
 		Recipient:         ticket.Recipient.Bytes(),
-		Sender:            ticket.Sender.Bytes(),
 		FaceValue:         ticket.FaceValue.Bytes(),
 		WinProb:           ticket.WinProb.Bytes(),
-		SenderNonce:       ticket.SenderNonce,
 		RecipientRandHash: ticket.RecipientRandHash.Bytes(),
+		Seed:              seed.Bytes(),
 	}
+
+	protoTicketSenderParams := &net.TicketSenderParams{
+		SenderNonce: ticket.SenderNonce,
+		Sig:         sig,
+	}
+
 	protoPayment := &net.Payment{
-		Ticket: protoTicket,
-		Sig:    sig,
-		Seed:   seed.Bytes(),
+		TicketParams:       protoTicketParams,
+		Sender:             ticket.Sender.Bytes(),
+		TicketSenderParams: []*net.TicketSenderParams{protoTicketSenderParams},
 	}
 
 	data, err := proto.Marshal(protoPayment)

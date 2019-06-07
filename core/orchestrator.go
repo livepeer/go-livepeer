@@ -100,26 +100,42 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		return nil
 	}
 
+	if payment.TicketParams == nil {
+		return fmt.Errorf("Could not find TicketParams for payment %v", payment)
+	}
+
+	if payment.Sender == nil || len(payment.Sender) == 0 {
+		return fmt.Errorf("Could not find Sender for payment: %v", payment)
+	}
+
+	seed := new(big.Int).SetBytes(payment.TicketParams.Seed)
+
 	ticket := &pm.Ticket{
-		Recipient:         ethcommon.BytesToAddress(payment.Ticket.Recipient),
-		Sender:            ethcommon.BytesToAddress(payment.Ticket.Sender),
-		FaceValue:         new(big.Int).SetBytes(payment.Ticket.FaceValue),
-		WinProb:           new(big.Int).SetBytes(payment.Ticket.WinProb),
-		SenderNonce:       payment.Ticket.SenderNonce,
-		RecipientRandHash: ethcommon.BytesToHash(payment.Ticket.RecipientRandHash),
-	}
-	seed := new(big.Int).SetBytes(payment.Seed)
-
-	sessionID, won, err := orch.node.Recipient.ReceiveTicket(ticket, payment.Sig, seed)
-	if err != nil {
-		return errors.Wrapf(err, "error receiving ticket for payment %v for manifest %v", payment, manifestID)
+		Recipient:         ethcommon.BytesToAddress(payment.TicketParams.Recipient),
+		Sender:            ethcommon.BytesToAddress(payment.Sender),
+		FaceValue:         new(big.Int).SetBytes(payment.TicketParams.FaceValue),
+		WinProb:           new(big.Int).SetBytes(payment.TicketParams.WinProb),
+		RecipientRandHash: ethcommon.BytesToHash(payment.TicketParams.RecipientRandHash),
 	}
 
-	if won {
-		glog.V(common.DEBUG).Info("Received winning ticket")
-		cachePMSessionID(orch.node, manifestID, sessionID)
-	}
+	for _, tsp := range payment.TicketSenderParams {
 
+		ticket.SenderNonce = tsp.SenderNonce
+
+		sessionID, won, err := orch.node.Recipient.ReceiveTicket(
+			ticket,
+			tsp.Sig,
+			seed,
+		)
+		if err != nil {
+			glog.Errorf("Error receiving ticket %v for manifest %v: %v\n", ticket, manifestID, err)
+		}
+
+		if won && err == nil {
+			glog.V(common.DEBUG).Info("Received winning ticket")
+			cachePMSessionID(orch.node, manifestID, sessionID)
+		}
+	}
 	return nil
 }
 

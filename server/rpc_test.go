@@ -270,15 +270,15 @@ func TestGenPayment(t *testing.T) {
 	require.Nil(err)
 
 	protoPayment := decodePayment(payment)
-	protoTicket := protoPayment.Ticket
-	assert.Equal(ticket.Recipient, ethcommon.BytesToAddress(protoTicket.Recipient))
-	assert.Equal(ticket.Sender, ethcommon.BytesToAddress(protoTicket.Sender))
-	assert.Equal(ticket.FaceValue, new(big.Int).SetBytes(protoTicket.FaceValue))
-	assert.Equal(ticket.WinProb, new(big.Int).SetBytes(protoTicket.WinProb))
-	assert.Equal(ticket.SenderNonce, protoTicket.SenderNonce)
-	assert.Equal(ticket.RecipientRandHash, ethcommon.BytesToHash(protoTicket.RecipientRandHash))
-	assert.Equal(sig, protoPayment.Sig)
-	assert.Equal(seed, new(big.Int).SetBytes(protoPayment.Seed))
+
+	assert.Equal(ticket.Recipient, ethcommon.BytesToAddress(protoPayment.TicketParams.Recipient))
+	assert.Equal(ticket.Sender, ethcommon.BytesToAddress(protoPayment.Sender))
+	assert.Equal(ticket.FaceValue, new(big.Int).SetBytes(protoPayment.TicketParams.FaceValue))
+	assert.Equal(ticket.WinProb, new(big.Int).SetBytes(protoPayment.TicketParams.WinProb))
+	assert.Equal(ticket.SenderNonce, protoPayment.TicketSenderParams[0].SenderNonce)
+	assert.Equal(ticket.RecipientRandHash, ethcommon.BytesToHash(protoPayment.TicketParams.RecipientRandHash))
+	assert.Equal(sig, protoPayment.TicketSenderParams[0].Sig)
+	assert.Equal(seed, new(big.Int).SetBytes(protoPayment.TicketParams.Seed))
 }
 
 func TestPing(t *testing.T) {
@@ -313,9 +313,24 @@ func TestGetPayment_GivenEmptyHeader_ReturnsEmptyPayment(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Nil(err)
-	assert.Nil(payment.Ticket)
-	assert.Nil(payment.Sig)
-	assert.Nil(payment.Seed)
+	assert.Nil(payment.TicketParams)
+	assert.Nil(payment.Sender)
+	assert.Nil(payment.TicketSenderParams)
+}
+
+func TestGetPayment_GivenNoTicketSenderParams_ZeroLength(t *testing.T) {
+	var protoPayment net.Payment
+	data, err := proto.Marshal(&protoPayment)
+	require.Nil(t, err)
+	header := base64.StdEncoding.EncodeToString(data)
+
+	payment, err := getPayment(header)
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Zero(len(payment.TicketSenderParams), "TicketSenderParams slice not empty")
+	assert.Nil(payment.TicketParams)
+	assert.Nil(payment.Sender)
 }
 
 func TestGetPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
@@ -328,8 +343,7 @@ func TestGetPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
 }
 
 func TestGetPayment_GivenValidHeader_ReturnsPayment(t *testing.T) {
-	protoTicket := defaultTicket(t)
-	protoPayment := defaultPayment(t, protoTicket)
+	protoPayment := defaultPayment(t)
 	data, err := proto.Marshal(protoPayment)
 	require.Nil(t, err)
 	header := base64.StdEncoding.EncodeToString(data)
@@ -338,37 +352,37 @@ func TestGetPayment_GivenValidHeader_ReturnsPayment(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Nil(err)
-	assert.Equal(protoTicket.Recipient, payment.Ticket.Recipient)
-	assert.Equal(protoTicket.Sender, payment.Ticket.Sender)
-	assert.Equal(protoTicket.FaceValue, payment.Ticket.FaceValue)
-	assert.Equal(protoTicket.WinProb, payment.Ticket.WinProb)
-	assert.Equal(protoTicket.SenderNonce, payment.Ticket.SenderNonce)
-	assert.Equal(protoTicket.RecipientRandHash, payment.Ticket.RecipientRandHash)
-	assert.Equal(protoPayment.Sig, payment.Sig)
-	assert.Equal(protoPayment.Seed, payment.Seed)
-}
 
-func TestGetPaymentSender_GivenPaymentTicketIsNil(t *testing.T) {
-	protoTicket := defaultTicket(t)
-	protoPayment := defaultPayment(t, protoTicket)
-	protoPayment.Ticket = nil
+	assert.Equal(protoPayment.Sender, payment.Sender)
+	assert.Equal(protoPayment.TicketParams.Recipient, payment.TicketParams.Recipient)
+	assert.Equal(protoPayment.TicketParams.FaceValue, payment.TicketParams.FaceValue)
+	assert.Equal(protoPayment.TicketParams.WinProb, payment.TicketParams.WinProb)
+	assert.Equal(protoPayment.TicketParams.RecipientRandHash, payment.TicketParams.RecipientRandHash)
+	assert.Equal(protoPayment.TicketParams.Seed, payment.TicketParams.Seed)
 
-	assert.Equal(t, ethcommon.Address{}, getPaymentSender(*protoPayment))
+	for i, tsp := range payment.TicketSenderParams {
+		assert.Equal(tsp.SenderNonce, protoPayment.TicketSenderParams[i].SenderNonce)
+		assert.Equal(tsp.Sig, protoPayment.TicketSenderParams[i].Sig)
+	}
+
 }
 
 func TestGetPaymentSender_GivenPaymentTicketSenderIsNil(t *testing.T) {
-	protoTicket := defaultTicket(t)
-	protoTicket.Sender = nil
-	protoPayment := defaultPayment(t, protoTicket)
+	protoPayment := defaultPayment(t)
+	protoPayment.Sender = nil
 
 	assert.Equal(t, ethcommon.Address{}, getPaymentSender(*protoPayment))
 }
 
-func TestGetPaymentSender_GivenValidPaymentTicket(t *testing.T) {
-	protoTicket := defaultTicket(t)
-	protoPayment := defaultPayment(t, protoTicket)
+func TestGetPaymentSender_GivenPaymentTicketsIsZero(t *testing.T) {
+	var protoPayment net.Payment
+	assert.Equal(t, ethcommon.Address{}, getPaymentSender(protoPayment))
+}
 
-	assert.Equal(t, ethcommon.BytesToAddress(protoTicket.Sender), getPaymentSender(*protoPayment))
+func TestGetPaymentSender_GivenValidPaymentTicket(t *testing.T) {
+	protoPayment := defaultPayment(t)
+
+	assert.Equal(t, ethcommon.BytesToAddress(protoPayment.Sender), getPaymentSender(*protoPayment))
 }
 
 func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {
@@ -514,12 +528,19 @@ func defaultTicketParams() *net.TicketParams {
 	}
 }
 
-func defaultPayment(t *testing.T, ticket *net.Ticket) *net.Payment {
-	return &net.Payment{
-		Ticket: ticket,
-		Sig:    pm.RandBytes(123),
-		Seed:   pm.RandBytes(123),
+func defaultPayment(t *testing.T) *net.Payment {
+	return defaultPaymentWithTickets(t, []*net.TicketSenderParams{defaultTicketSenderParams(t)})
+}
+
+func defaultPaymentWithTickets(t *testing.T, senderParams []*net.TicketSenderParams) *net.Payment {
+	sender := pm.RandBytes(123)
+
+	payment := &net.Payment{
+		TicketParams:       defaultTicketParams(),
+		Sender:             sender,
+		TicketSenderParams: senderParams,
 	}
+	return payment
 }
 
 func defaultTicket(t *testing.T) *net.Ticket {
@@ -530,5 +551,12 @@ func defaultTicket(t *testing.T) *net.Ticket {
 		WinProb:           pm.RandBytes(123),
 		SenderNonce:       456,
 		RecipientRandHash: pm.RandBytes(123),
+	}
+}
+
+func defaultTicketSenderParams(t *testing.T) *net.TicketSenderParams {
+	return &net.TicketSenderParams{
+		SenderNonce: 456,
+		Sig:         pm.RandBytes(123),
 	}
 }

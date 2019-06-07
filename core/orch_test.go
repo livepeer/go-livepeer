@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
@@ -485,16 +486,51 @@ func TestOrchCheckCapacity(t *testing.T) {
 	assert.Nil(o.CheckCapacity(md.ManifestID))
 }
 
-func TestProcessPayment_GivenRecipientError_ReturnsError(t *testing.T) {
+func TestProcessPayment_GivenRecipientError_ReturnsNil(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, errors.New("mock error"))
+
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil)
 
 	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
 
-	assert.Contains(t, err.Error(), "mock error")
+	assert := assert.New(t)
+	assert.Nil(err)
+}
+
+func TestProcessPayment_GivenNoSender_ReturnsError(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
+
+	protoPayment := defaultPayment(t)
+
+	protoPayment.Sender = nil
+
+	err := orch.ProcessPayment(protoPayment, ManifestID("some manifest"))
+
+	assert := assert.New(t)
+	assert.Error(err)
+}
+
+func TestProcessPayment_GivenNoTicketParamsInPayment_DoesNotCacheSessionId(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
+
+	var protoPayment net.Payment
+
+	err := orch.ProcessPayment(protoPayment, ManifestID("some manifest"))
+
+	assert := assert.New(t)
+	assert.Error(err)
+	assert.Empty(n.pmSessions)
 }
 
 func TestProcessPayment_GivenWinningTicketAndRecipientError_DoesNotCacheSessionID(t *testing.T) {
@@ -502,12 +538,19 @@ func TestProcessPayment_GivenWinningTicketAndRecipientError_DoesNotCacheSessionI
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", true, errors.New("mock error"))
+	manifestID := ManifestID("some manifest")
+	sessionID := "some sessionID"
 
-	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	errorLogsBefore := glog.Stats.Error.Lines()
+
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, errors.New("mock error"))
+	err := orch.ProcessPayment(defaultPayment(t), manifestID)
+
+	errorLogsAfter := glog.Stats.Error.Lines()
 
 	assert := assert.New(t)
-	assert.NotNil(err)
+	assert.Nil(err)
+	assert.NotZero(errorLogsAfter - errorLogsBefore)
 	assert.Empty(n.pmSessions)
 }
 
@@ -536,6 +579,34 @@ func TestProcessPayment_GivenWinningTicket_CachesSessionID(t *testing.T) {
 
 	err := orch.ProcessPayment(defaultPayment(t), manifestID)
 
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Contains(n.pmSessions, manifestID)
+	assert.Contains(n.pmSessions[manifestID], sessionID)
+}
+
+func TestProcessPayment_GivenMultipleTickets_CachesSessionID(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	sessionID := "some sessionID"
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil).Times(5)
+
+	var ticketSenderParams []*net.TicketSenderParams
+	for i := 0; i < 5; i++ {
+
+		ticketSenderParams = append(ticketSenderParams, &net.TicketSenderParams{
+			SenderNonce: 456,
+			Sig:         pm.RandBytes(123),
+		})
+	}
+
+	protoPayment := defaultPaymentWithTickets(t, ticketSenderParams)
+
+	err := orch.ProcessPayment(*protoPayment, manifestID)
+	recipient.AssertNumberOfCalls(t, "ReceiveTicket", 5)
 	assert := assert.New(t)
 	assert.Nil(err)
 	assert.Contains(n.pmSessions, manifestID)
@@ -665,18 +736,41 @@ func TestTicketParams_GivenNilRecipient_ReturnsNil(t *testing.T) {
 }
 
 func defaultPayment(t *testing.T) net.Payment {
-	ticket := &net.Ticket{
+	ticketSenderParams := &net.TicketSenderParams{
+		SenderNonce: 456,
+		Sig:         pm.RandBytes(123),
+	}
+
+	return *defaultPaymentWithTickets(t, []*net.TicketSenderParams{ticketSenderParams})
+}
+
+func defaultPaymentWithTickets(t *testing.T, senderParams []*net.TicketSenderParams) *net.Payment {
+	ticketParams := &net.TicketParams{
+		Recipient:         pm.RandBytes(123),
+		FaceValue:         pm.RandBytes(123),
+		WinProb:           pm.RandBytes(123),
+		RecipientRandHash: pm.RandBytes(123),
+		Seed:              pm.RandBytes(123),
+	}
+
+	sender := pm.RandBytes(123)
+
+	payment := &net.Payment{
+		TicketParams:       ticketParams,
+		Sender:             sender,
+		TicketSenderParams: senderParams,
+	}
+	return payment
+}
+
+func defaultTicket(t *testing.T) *net.Ticket {
+	return &net.Ticket{
 		Recipient:         pm.RandBytes(123),
 		Sender:            pm.RandBytes(123),
 		FaceValue:         pm.RandBytes(123),
 		WinProb:           pm.RandBytes(123),
 		SenderNonce:       456,
 		RecipientRandHash: pm.RandBytes(123),
-	}
-	return net.Payment{
-		Ticket: ticket,
-		Sig:    pm.RandBytes(123),
-		Seed:   pm.RandBytes(123),
 	}
 }
 
