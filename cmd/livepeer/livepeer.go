@@ -333,7 +333,9 @@ func main() {
 		}
 
 		if n.NodeType == core.BroadcasterNode {
-			n.Sender = pm.NewSender(n.Eth)
+			// TODO: Initialize Sender with an implementation
+			// of RoundsManager that reads from a cache
+			n.Sender = pm.NewSender(n.Eth, n.Eth)
 		}
 
 		// Start services

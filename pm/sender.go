@@ -30,15 +30,17 @@ type session struct {
 }
 
 type sender struct {
-	signer Signer
+	signer        Signer
+	roundsManager RoundsManager
 
 	sessions sync.Map
 }
 
 // NewSender creates a new Sender instance.
-func NewSender(signer Signer) Sender {
+func NewSender(signer Signer, roundsManager RoundsManager) Sender {
 	return &sender{
-		signer: signer,
+		signer:        signer,
+		roundsManager: roundsManager,
 	}
 }
 
@@ -64,13 +66,25 @@ func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, erro
 
 	senderNonce := atomic.AddUint32(&session.senderNonce, 1)
 
+	round, err := s.roundsManager.LastInitializedRound()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	blkHash, err := s.roundsManager.BlockHashForRound(round)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
 	ticket := &Ticket{
-		Recipient:         session.ticketParams.Recipient,
-		RecipientRandHash: recipientRandHash,
-		Sender:            s.signer.Account().Address,
-		SenderNonce:       senderNonce,
-		FaceValue:         session.ticketParams.FaceValue,
-		WinProb:           session.ticketParams.WinProb,
+		Recipient:              session.ticketParams.Recipient,
+		RecipientRandHash:      recipientRandHash,
+		Sender:                 s.signer.Account().Address,
+		SenderNonce:            senderNonce,
+		FaceValue:              session.ticketParams.FaceValue,
+		WinProb:                session.ticketParams.WinProb,
+		CreationRound:          round.Int64(),
+		CreationRoundBlockHash: blkHash,
 	}
 
 	sig, err := s.signer.Sign(ticket.Hash().Bytes())
