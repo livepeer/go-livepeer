@@ -96,6 +96,7 @@ func main() {
 	orchestrator := flag.Bool("orchestrator", false, "Set to true to be an orchestrator")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	broadcaster := flag.Bool("broadcaster", false, "Set to true to be a broadcaster")
+	fake := flag.Bool("fake", false, "Use fake transcoder")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
 	maxAttempts := flag.Int("maxAttempts", 3, "Maximum transcode attempts")
@@ -255,6 +256,8 @@ func main() {
 		if !*transcoder {
 			n.TranscoderManager = core.NewRemoteTranscoderManager()
 			n.Transcoder = n.TranscoderManager
+		} else if *fake {
+			n.Transcoder = core.NewFakeTranscoder()
 		}
 	} else if *transcoder {
 		n.NodeType = core.TranscoderNode
