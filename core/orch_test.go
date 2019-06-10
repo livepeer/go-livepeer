@@ -754,10 +754,15 @@ func defaultPaymentWithTickets(t *testing.T, senderParams []*net.TicketSenderPar
 	}
 
 	sender := pm.RandBytes(123)
+	expirationParams := &net.TicketExpirationParams{
+		CreationRound:          5,
+		CreationRoundBlockHash: []byte{5},
+	}
 
 	payment := &net.Payment{
 		TicketParams:       ticketParams,
 		Sender:             sender,
+		ExpirationParams:   expirationParams,
 		TicketSenderParams: senderParams,
 	}
 	return payment

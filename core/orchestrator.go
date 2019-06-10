@@ -111,11 +111,13 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	seed := new(big.Int).SetBytes(payment.TicketParams.Seed)
 
 	ticket := &pm.Ticket{
-		Recipient:         ethcommon.BytesToAddress(payment.TicketParams.Recipient),
-		Sender:            ethcommon.BytesToAddress(payment.Sender),
-		FaceValue:         new(big.Int).SetBytes(payment.TicketParams.FaceValue),
-		WinProb:           new(big.Int).SetBytes(payment.TicketParams.WinProb),
-		RecipientRandHash: ethcommon.BytesToHash(payment.TicketParams.RecipientRandHash),
+		Recipient:              ethcommon.BytesToAddress(payment.TicketParams.Recipient),
+		Sender:                 ethcommon.BytesToAddress(payment.Sender),
+		FaceValue:              new(big.Int).SetBytes(payment.TicketParams.FaceValue),
+		WinProb:                new(big.Int).SetBytes(payment.TicketParams.WinProb),
+		RecipientRandHash:      ethcommon.BytesToHash(payment.TicketParams.RecipientRandHash),
+		CreationRound:          payment.ExpirationParams.CreationRound,
+		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
 	}
 
 	for _, tsp := range payment.TicketSenderParams {

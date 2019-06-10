@@ -415,9 +415,15 @@ func genPayment(sess *BroadcastSession) (string, error) {
 		Sig:         sig,
 	}
 
+	protoExpirationParams := &net.TicketExpirationParams{
+		CreationRound:          ticket.CreationRound,
+		CreationRoundBlockHash: ticket.CreationRoundBlockHash.Bytes(),
+	}
+
 	protoPayment := &net.Payment{
 		TicketParams:       protoTicketParams,
 		Sender:             ticket.Sender.Bytes(),
+		ExpirationParams:   protoExpirationParams,
 		TicketSenderParams: []*net.TicketSenderParams{protoTicketSenderParams},
 	}
 

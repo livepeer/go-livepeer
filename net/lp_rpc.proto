@@ -227,6 +227,15 @@ message TicketSenderParams {
   bytes sig = 2;
 }
 
+// Ticket params for expiration related validation
+message TicketExpirationParams {
+  // Round during which tickets are created
+  int64 creation_round = 1;
+
+  // Block hash associated with creation_round
+  bytes creation_round_block_hash = 2;
+}
+
 // Payment for transcoding video segments
 // A payment can constitute of multiple tickets
 // A broadcaster might need to send multiple tickets to top up his credit with an Orchestrator
@@ -238,5 +247,8 @@ message Payment {
   // ETH address of the sender
   bytes sender = 2;
 
-  repeated TicketSenderParams ticket_sender_params = 3;
+  // Ticket params for expiration related validation
+  TicketExpirationParams expiration_params = 3;
+ 
+  repeated TicketSenderParams ticket_sender_params = 4;
 }
