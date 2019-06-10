@@ -53,6 +53,7 @@ type LivepeerEthClient interface {
 	InitializeRound() (*types.Transaction, error)
 	CurrentRound() (*big.Int, error)
 	LastInitializedRound() (*big.Int, error)
+	BlockHashForRound(round *big.Int) ([32]byte, error)
 	CurrentRoundInitialized() (bool, error)
 	CurrentRoundLocked() (bool, error)
 

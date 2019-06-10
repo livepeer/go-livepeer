@@ -219,6 +219,21 @@ func (s *stubSigner) Account() accounts.Account {
 	return s.account
 }
 
+type stubRoundsManager struct {
+	round                   *big.Int
+	blkHash                 [32]byte
+	lastInitializedRoundErr error
+	blockHashForRoundErr    error
+}
+
+func (m *stubRoundsManager) LastInitializedRound() (*big.Int, error) {
+	return m.round, m.lastInitializedRoundErr
+}
+
+func (m *stubRoundsManager) BlockHashForRound(round *big.Int) ([32]byte, error) {
+	return m.blkHash, m.blockHashForRoundErr
+}
+
 // MockRecipient is useful for testing components that depend on pm.Recipient
 type MockRecipient struct {
 	mock.Mock

@@ -320,7 +320,9 @@ func main() {
 			}
 
 			sigVerifier := &pm.DefaultSigVerifier{}
-			validator := pm.NewValidator(sigVerifier)
+			// TODO: Initialize Validator with an implementation
+			// of RoundsManager that reads from a cache
+			validator := pm.NewValidator(sigVerifier, n.Eth)
 			faceValueInWei := eth.ToBaseUnit(big.NewFloat(*faceValue))
 			winProbBigInt := eth.FromPercOfUint256(*winProb)
 			n.Recipient, err = pm.NewRecipient(n.Eth.Account().Address, n.Eth, validator, n.Database, faceValueInWei, winProbBigInt)
