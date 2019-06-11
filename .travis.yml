@@ -1,0 +1,14 @@
+language: go
+go:
+  - 1.12.x
+os: osx
+osx_image: xcode10.2
+env:
+  global:
+    - PKG_CONFIG_PATH=/Users/travis/compiled/lib/pkgconfig
+
+script:
+  - ./install_ffmpeg.sh
+  - ./install_dependencies.sh
+  - make livepeer livepeer_cli
+  - ./upload_build.sh
