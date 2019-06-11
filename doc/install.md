@@ -5,6 +5,10 @@ The easiest way to install Livepeer is by downloading the `livepeer` and `livepe
 1. Download the packages for your OS - darwin for Macs and linux for linux.
 2. Untar them and optionally move the executables to your PATH.
 
+There are also binaries produced from every GitHub commit made available in the #builds channel of the [Livepeer Discord server](https://discord.gg/q6XrfwN). Those binaries are produced from go-livepeer's CI process, shown in this diagram:
+
+![image](https://user-images.githubusercontent.com/257909/58923612-3709a800-86f5-11e9-838b-6202f296bce8.png)
+
 ### Option 2: Build from source
 You can also build the executables from scratch.
 
