@@ -42,7 +42,7 @@ type Orchestrator interface {
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
-	TicketParams(sender ethcommon.Address) *net.TicketParams
+	TicketParams(sender ethcommon.Address) (*net.TicketParams, error)
 }
 
 type Broadcaster interface {
@@ -202,13 +202,22 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
 	}
 
-	tr := net.OrchestratorInfo{
-		Transcoder:   orch.ServiceURI().String(), // currently,  orchestrator == transcoder
-		TicketParams: orch.TicketParams(addr),
+	// currently, orchestrator == transcoder
+	return orchestratorInfo(orch, addr, orch.ServiceURI().String())
+}
+
+func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI string) (*net.OrchestratorInfo, error) {
+	params, err := orch.TicketParams(addr)
+	if err != nil {
+		return nil, err
 	}
 
-	storagePrefix := core.RandomManifestID()
-	os := drivers.NodeStorage.NewSession(string(storagePrefix))
+	tr := net.OrchestratorInfo{
+		Transcoder:   serviceURI,
+		TicketParams: params,
+	}
+
+	os := drivers.NodeStorage.NewSession(string(core.RandomManifestID()))
 
 	if os != nil && os.IsExternal() {
 		tr.Storage = []*net.OSInfo{os.GetInfo()}

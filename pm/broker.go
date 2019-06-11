@@ -74,6 +74,10 @@ type Broker interface {
 
 	// GetSenderInfo returns a sender's information
 	GetSenderInfo(addr ethcommon.Address) (*SenderInfo, error)
+
+	// ClaimableReserve returns the amount from the reserveHolder's reserve that the claimant
+	// can claim
+	ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error)
 }
 
 // RoundsManager defines the methods for fetching the last

@@ -71,8 +71,8 @@ func (r *stubOrchestrator) ProcessPayment(payment net.Payment, manifestID core.M
 	return nil
 }
 
-func (r *stubOrchestrator) TicketParams(sender ethcommon.Address) *net.TicketParams {
-	return nil
+func (r *stubOrchestrator) TicketParams(sender ethcommon.Address) (*net.TicketParams, error) {
+	return nil, nil
 }
 
 func newStubOrchestrator() *stubOrchestrator {
@@ -391,7 +391,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {
 	uri := "http://someuri.com"
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
-	orch.On("TicketParams", mock.Anything).Return(nil)
+	orch.On("TicketParams", mock.Anything).Return(nil, nil)
 
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
@@ -419,13 +419,28 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 	expectedParams := defaultTicketParams()
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
-	orch.On("TicketParams", mock.Anything).Return(expectedParams)
+	orch.On("TicketParams", mock.Anything).Return(expectedParams, nil)
 
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
 	assert.Nil(err)
 	assert.Equal(expectedParams, oInfo.TicketParams)
+}
+
+func TestGetOrchestrator_TicketParamsError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	uri := "http://someuri.com"
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("ServiceURI").Return(url.Parse(uri))
+	expErr := errors.New("TicketParams error")
+	orch.On("TicketParams", mock.Anything).Return(nil, expErr)
+
+	_, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.EqualError(err, expErr.Error())
 }
 
 type mockOSSession struct {
@@ -506,12 +521,12 @@ func (o *mockOrchestrator) ProcessPayment(payment net.Payment, manifestID core.M
 	return args.Error(0)
 }
 
-func (o *mockOrchestrator) TicketParams(sender ethcommon.Address) *net.TicketParams {
+func (o *mockOrchestrator) TicketParams(sender ethcommon.Address) (*net.TicketParams, error) {
 	args := o.Called(sender)
 	if args.Get(0) != nil {
-		return args.Get(0).(*net.TicketParams)
+		return args.Get(0).(*net.TicketParams), args.Error(1)
 	}
-	return nil
+	return nil, args.Error(1)
 }
 
 func (o *mockOrchestrator) CheckCapacity(mid core.ManifestID) error {

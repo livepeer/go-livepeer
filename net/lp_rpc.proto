@@ -153,6 +153,9 @@ message TranscodeResult {
         string error = 2;
         TranscodeData data = 3;
     }
+
+    // Used to notify a broadcaster of updated orchestrator information 
+    OrchestratorInfo info = 16;
 }
 
 // Sent by the transcoder to register itself to the orchestrator.
