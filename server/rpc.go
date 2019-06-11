@@ -202,18 +202,22 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
 	}
 
+	// currently, orchestrator == transcoder
+	return orchestratorInfo(orch, addr, orch.ServiceURI().String())
+}
+
+func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI string) (*net.OrchestratorInfo, error) {
 	params, err := orch.TicketParams(addr)
 	if err != nil {
 		return nil, err
 	}
 
 	tr := net.OrchestratorInfo{
-		Transcoder:   orch.ServiceURI().String(), // currently,  orchestrator == transcoder
+		Transcoder:   serviceURI,
 		TicketParams: params,
 	}
 
-	storagePrefix := core.RandomManifestID()
-	os := drivers.NodeStorage.NewSession(string(storagePrefix))
+	os := drivers.NodeStorage.NewSession(string(core.RandomManifestID()))
 
 	if os != nil && os.IsExternal() {
 		tr.Storage = []*net.OSInfo{os.GetInfo()}

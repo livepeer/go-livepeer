@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/stream"
 	"golang.org/x/net/http2"
 
@@ -58,10 +60,24 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// oInfo will be non-nil if we need to send an updated net.OrchestratorInfo
+	// to the broadcaster
+	var oInfo *net.OrchestratorInfo
+
 	if err := orch.ProcessPayment(payment, segData.ManifestID); err != nil {
 		glog.Errorf("Error processing payment: %v", err)
-		http.Error(w, err.Error(), http.StatusPaymentRequired)
-		return
+
+		if !acceptablePaymentError(err) {
+			http.Error(w, err.Error(), http.StatusPaymentRequired)
+			return
+		}
+
+		oInfo, err = orchestratorInfo(orch, getPaymentSender(payment), orch.ServiceURI().String())
+		if err != nil {
+			glog.Errorf("Error updating orchestrator info: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// download the segment and check the hash
@@ -146,6 +162,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	tr := &net.TranscodeResult{
 		Seq:    segData.Seq,
 		Result: result.Result,
+		Info:   oInfo, // oInfo will be non-nil if we need to send an update to the broadcaster
 	}
 	buf, err := proto.Marshal(tr)
 	if err != nil {
@@ -173,6 +190,12 @@ func getPaymentSender(payment net.Payment) ethcommon.Address {
 		return ethcommon.Address{}
 	}
 	return ethcommon.BytesToAddress(payment.Sender)
+}
+
+func acceptablePaymentError(err error) bool {
+	// TODO: Implement a grace period. O should only accept a certain number of these
+	// types of errors (more lenient since B might not have received updated info)
+	return strings.Contains(err.Error(), "invalid ticket faceValue") || strings.Contains(err.Error(), "invalid ticket winProb")
 }
 
 func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, error) {
@@ -308,6 +331,11 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
+	// update OrchestratorInfo if necessary
+	if tr.Info != nil {
+		updateOrchestratorInfo(sess, tr.Info)
+	}
+
 	// check for errors and exit early if there's anything unusual
 	var tdata *net.TranscodeData
 	switch res := tr.Result.(type) {
@@ -348,6 +376,31 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	glog.Infof("Successfully transcoded segment nonce=%d manifestID=%s segName=%s seqNo=%d", nonce, string(sess.ManifestID), seg.Name, seg.SeqNo)
 
 	return tdata, nil
+}
+
+func updateOrchestratorInfo(sess *BroadcastSession, oInfo *net.OrchestratorInfo) {
+	sess.OrchestratorInfo = oInfo
+
+	if len(oInfo.Storage) > 0 {
+		sess.OrchestratorOS = drivers.NewSession(oInfo.Storage[0])
+	}
+
+	if oInfo.TicketParams == nil {
+		return
+	}
+
+	if sess.Sender != nil {
+		protoParams := oInfo.TicketParams
+		params := pm.TicketParams{
+			Recipient:         ethcommon.BytesToAddress(protoParams.Recipient),
+			FaceValue:         new(big.Int).SetBytes(protoParams.FaceValue),
+			WinProb:           new(big.Int).SetBytes(protoParams.WinProb),
+			RecipientRandHash: ethcommon.BytesToHash(protoParams.RecipientRandHash),
+			Seed:              new(big.Int).SetBytes(protoParams.Seed),
+		}
+
+		sess.PMSessionID = sess.Sender.StartSession(params)
+	}
 }
 
 func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error) {
