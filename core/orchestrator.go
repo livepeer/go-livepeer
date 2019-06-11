@@ -111,11 +111,13 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	seed := new(big.Int).SetBytes(payment.TicketParams.Seed)
 
 	ticket := &pm.Ticket{
-		Recipient:         ethcommon.BytesToAddress(payment.TicketParams.Recipient),
-		Sender:            ethcommon.BytesToAddress(payment.Sender),
-		FaceValue:         new(big.Int).SetBytes(payment.TicketParams.FaceValue),
-		WinProb:           new(big.Int).SetBytes(payment.TicketParams.WinProb),
-		RecipientRandHash: ethcommon.BytesToHash(payment.TicketParams.RecipientRandHash),
+		Recipient:              ethcommon.BytesToAddress(payment.TicketParams.Recipient),
+		Sender:                 ethcommon.BytesToAddress(payment.Sender),
+		FaceValue:              new(big.Int).SetBytes(payment.TicketParams.FaceValue),
+		WinProb:                new(big.Int).SetBytes(payment.TicketParams.WinProb),
+		RecipientRandHash:      ethcommon.BytesToHash(payment.TicketParams.RecipientRandHash),
+		CreationRound:          payment.ExpirationParams.CreationRound,
+		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
 	}
 
 	for _, tsp := range payment.TicketSenderParams {
@@ -139,19 +141,23 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	return nil
 }
 
-func (orch *orchestrator) TicketParams(sender ethcommon.Address) *net.TicketParams {
+func (orch *orchestrator) TicketParams(sender ethcommon.Address) (*net.TicketParams, error) {
 	if orch.node == nil || orch.node.Recipient == nil {
-		return nil
+		return nil, nil
 	}
 
-	params := orch.node.Recipient.TicketParams(sender)
+	params, err := orch.node.Recipient.TicketParams(sender)
+	if err != nil {
+		return nil, err
+	}
+
 	return &net.TicketParams{
 		Recipient:         params.Recipient.Bytes(),
 		FaceValue:         params.FaceValue.Bytes(),
 		WinProb:           params.WinProb.Bytes(),
 		RecipientRandHash: params.RecipientRandHash.Bytes(),
 		Seed:              params.Seed.Bytes(),
-	}
+	}, nil
 }
 
 func NewOrchestrator(n *LivepeerNode) *orchestrator {

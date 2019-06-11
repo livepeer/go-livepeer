@@ -74,4 +74,17 @@ type Broker interface {
 
 	// GetSenderInfo returns a sender's information
 	GetSenderInfo(addr ethcommon.Address) (*SenderInfo, error)
+
+	// ClaimableReserve returns the amount from the reserveHolder's reserve that the claimant
+	// can claim
+	ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error)
+}
+
+// RoundsManager defines the methods for fetching the last
+// initialized round and associated block hash of the Livepeer protocol
+type RoundsManager interface {
+	// LastInitializedRound returns the last initialized round of the Livepeer protocol
+	LastInitializedRound() (*big.Int, error)
+	// BlockHashForRound returns the block hash for a given round of the Livepeer protocol
+	BlockHashForRound(round *big.Int) ([32]byte, error)
 }

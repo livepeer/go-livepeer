@@ -141,12 +141,13 @@ func (e *StubClient) Backend() (*ethclient.Client, error)                       
 
 // Rounds
 
-func (e *StubClient) InitializeRound() (*types.Transaction, error) { return nil, nil }
-func (e *StubClient) CurrentRound() (*big.Int, error)              { return big.NewInt(0), nil }
-func (e *StubClient) LastInitializedRound() (*big.Int, error)      { return big.NewInt(0), nil }
-func (e *StubClient) CurrentRoundInitialized() (bool, error)       { return false, nil }
-func (e *StubClient) CurrentRoundLocked() (bool, error)            { return false, nil }
-func (e *StubClient) Paused() (bool, error)                        { return false, nil }
+func (e *StubClient) InitializeRound() (*types.Transaction, error)       { return nil, nil }
+func (e *StubClient) CurrentRound() (*big.Int, error)                    { return big.NewInt(0), nil }
+func (e *StubClient) LastInitializedRound() (*big.Int, error)            { return big.NewInt(0), nil }
+func (e *StubClient) BlockHashForRound(round *big.Int) ([32]byte, error) { return [32]byte{}, nil }
+func (e *StubClient) CurrentRoundInitialized() (bool, error)             { return false, nil }
+func (e *StubClient) CurrentRoundLocked() (bool, error)                  { return false, nil }
+func (e *StubClient) Paused() (bool, error)                              { return false, nil }
 
 // Token
 
@@ -230,6 +231,9 @@ func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
 	return
 }
 func (e *StubClient) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
+	return nil, nil
+}
+func (e *StubClient) ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error) {
 	return nil, nil
 }
 func (e *StubClient) UnlockPeriod() (*big.Int, error) {

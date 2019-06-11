@@ -53,6 +53,7 @@ type LivepeerEthClient interface {
 	InitializeRound() (*types.Transaction, error)
 	CurrentRound() (*big.Int, error)
 	LastInitializedRound() (*big.Int, error)
+	BlockHashForRound(round *big.Int) ([32]byte, error)
 	CurrentRoundInitialized() (bool, error)
 	CurrentRoundLocked() (bool, error)
 
@@ -94,6 +95,7 @@ type LivepeerEthClient interface {
 	RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error)
 	IsUsedTicket(ticket *pm.Ticket) (bool, error)
 	GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error)
+	ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error)
 	UnlockPeriod() (*big.Int, error)
 
 	// Parameters

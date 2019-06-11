@@ -9,6 +9,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestStartSession_GivenSomeRecipientRandHash_UsesItAsSessionId(t *testing.T) {
@@ -76,8 +78,33 @@ func TestCreateTicket_GivenNonexistentSession_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestCreateTicket_GivenLastInitializedRoundError_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	rm := sender.roundsManager.(*stubRoundsManager)
+	expErr := errors.New("LastInitializedRound error")
+	rm.lastInitializedRoundErr = expErr
+
+	sessionID := sender.StartSession(defaultTicketParams(t, RandAddress()))
+	_, _, _, err := sender.CreateTicket(sessionID)
+	assert.EqualError(t, err, expErr.Error())
+}
+
+func TestCreateTicket_GivenBlockHashForRoundError_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	rm := sender.roundsManager.(*stubRoundsManager)
+	expErr := errors.New("BlockHashForRound error")
+	rm.blockHashForRoundErr = expErr
+
+	sessionID := sender.StartSession(defaultTicketParams(t, RandAddress()))
+	_, _, _, err := sender.CreateTicket(sessionID)
+	assert.EqualError(t, err, expErr.Error())
+}
+
 func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T) {
 	sender := defaultSender(t)
+	rm := sender.roundsManager.(*stubRoundsManager)
+	creationRound := rm.round
+	creationRoundBlkHash := rm.blkHash
 	am := sender.signer.(*stubSigner)
 	am.signShouldFail = false
 	am.saveSignRequest = true
@@ -116,6 +143,12 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 	}
 	if ticket.SenderNonce != 1 {
 		t.Errorf("expected ticket SenderNonce %d to be 1", ticket.SenderNonce)
+	}
+	if big.NewInt(ticket.CreationRound).Cmp(creationRound) != 0 {
+		t.Errorf("expected creation round %v to be %v", ticket.CreationRound, creationRound)
+	}
+	if !bytes.Equal(ticket.CreationRoundBlockHash.Bytes(), creationRoundBlkHash[:]) {
+		t.Errorf("expected creation round block hash %x to be %x", ticket.CreationRoundBlockHash, creationRoundBlkHash)
 	}
 	if actualSeed != ticketParams.Seed {
 		t.Errorf("expected actual seed %d to be %d", actualSeed, ticketParams.Seed)
@@ -196,7 +229,8 @@ func defaultSender(t *testing.T) *sender {
 	am := &stubSigner{
 		account: account,
 	}
-	s := NewSender(am)
+	rm := &stubRoundsManager{round: big.NewInt(5), blkHash: [32]byte{5}}
+	s := NewSender(am, rm)
 	return s.(*sender)
 }
 
