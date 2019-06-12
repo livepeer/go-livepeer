@@ -310,6 +310,16 @@ func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, e
 	return params, args.Error(1)
 }
 
+// TxCostMultiplier returns the transaction cost multiplier for a sender based on sender's MaxFloat
+func (m *MockRecipient) TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error) {
+	args := m.Called(sender)
+	var multiplier *big.Rat
+	if args.Get(0) != nil {
+		multiplier = args.Get(0).(*big.Rat)
+	}
+	return multiplier, args.Error(1)
+}
+
 // MockSender is useful for testing components that depend on pm.Sender
 type MockSender struct {
 	mock.Mock

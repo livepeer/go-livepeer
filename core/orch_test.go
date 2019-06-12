@@ -749,6 +749,131 @@ func TestTicketParams_Error(t *testing.T) {
 	assert.EqualError(t, err, expErr.Error())
 }
 
+func TestPriceInfo_ReturnsBigRat(t *testing.T) {
+	// basePrice = 1/1, txMultiplier = 100/1 => expPricePerPixel = 101/100
+	basePrice := big.NewRat(1, 1)
+	txMultiplier := big.NewRat(100, 1)
+	expPricePerPixel := big.NewRat(101, 100)
+
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.PriceInfo = basePrice
+
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
+	orch := NewOrchestrator(n)
+
+	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(t, err)
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
+
+	// basePrice = 10/1, txMultiplier = 100/1 => expPricePerPixel = 1010/100
+	basePrice = big.NewRat(10, 1)
+	n.PriceInfo = basePrice
+	orch = NewOrchestrator(n)
+	expPricePerPixel = big.NewRat(1010, 100)
+
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(t, err)
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
+
+	// basePrice = 1/10, txMultiplier = 100 => expPricePerPixel = 101/1000
+	basePrice = big.NewRat(1, 10)
+	n.PriceInfo = basePrice
+	orch = NewOrchestrator(n)
+	expPricePerPixel = big.NewRat(101, 1000)
+
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(t, err)
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
+
+	// basePrice = 25/10 , txMultiplier = 100 => expPricePerPixel = 2525/1000
+	basePrice = big.NewRat(25, 10)
+	n.PriceInfo = basePrice
+	orch = NewOrchestrator(n)
+	expPricePerPixel = big.NewRat(2525, 1000)
+
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(t, err)
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
+
+	// basePrice = 10/1 , txMultiplier = 100/10 => expPricePerPixel = 11
+	basePrice = big.NewRat(10, 1)
+	txMultiplier = big.NewRat(100, 10)
+	n.PriceInfo = basePrice
+	recipient = new(pm.MockRecipient)
+	n.Recipient = recipient
+	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
+	orch = NewOrchestrator(n)
+	expPricePerPixel = big.NewRat(11, 1)
+
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(t, err)
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
+
+	// basePrice = 10/1 , txMultiplier = 1/10 => expPricePerPixel = 110
+	basePrice = big.NewRat(10, 1)
+	txMultiplier = big.NewRat(1, 10)
+	n.PriceInfo = basePrice
+	recipient = new(pm.MockRecipient)
+	n.Recipient = recipient
+	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
+	orch = NewOrchestrator(n)
+	expPricePerPixel = big.NewRat(1100, 10)
+
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(t, err)
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
+
+	// basePrice = 10, txMultiplier = 1 => expPricePerPixel = 20
+	basePrice = big.NewRat(10, 1)
+	txMultiplier = big.NewRat(1, 1)
+	n.PriceInfo = basePrice
+	recipient = new(pm.MockRecipient)
+	n.Recipient = recipient
+	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
+	orch = NewOrchestrator(n)
+	expPricePerPixel = big.NewRat(20, 1)
+
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(t, err)
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
+}
+
+func TestPriceInfo_GivenNilNode_ReturnsNilError(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	orch := NewOrchestrator(n)
+	orch.node = nil
+
+	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(t, err)
+	assert.Nil(t, priceInfo)
+}
+
+func TestPriceInfo_GivenNilRecipient_ReturnsNilError(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	orch := NewOrchestrator(n)
+	n.Recipient = nil
+
+	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(t, err)
+	assert.Nil(t, priceInfo)
+}
+
+func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
+	expError := errors.New("TxMultiplier Error")
+
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	recipient.On("TxCostMultiplier", mock.Anything).Return(nil, expError)
+	orch := NewOrchestrator(n)
+
+	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(t, priceInfo)
+	assert.EqualError(t, err, expError.Error())
+}
+
 func defaultPayment(t *testing.T) net.Payment {
 	ticketSenderParams := &net.TicketSenderParams{
 		SenderNonce: 456,

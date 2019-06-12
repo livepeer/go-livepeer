@@ -103,6 +103,10 @@ func main() {
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	ticketEV := flag.String("ticketEV", "1000000000", "The expected value for PM tickets")
 
+	// Price Info
+	pricePerUnit := flag.Int("pricePerUnit", 0, "The price per 'pixelsPerUnit' amount pixels")
+	pixelsPerUnit := flag.Int("pixelsPerUnit", 1, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
+
 	// Metrics & logging:
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	version := flag.Bool("version", false, "Print out the version")
@@ -311,6 +315,21 @@ func main() {
 		n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
 
 		if *orchestrator {
+
+			// Set price per pixel base info
+			if *pixelsPerUnit <= 0 {
+				// Can't divide by 0
+				glog.Fatalf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *pixelsPerUnit)
+				return
+			}
+			if *pricePerUnit <= 0 {
+				// Prevent orchestrator from unknowingly provide free transcoding
+				glog.Fatalf("Price per unit of pixels must be greater than 0, provided %d instead\n", *pricePerUnit)
+				return
+			}
+			n.PriceInfo = big.NewRat(int64(*pricePerUnit), int64(*pixelsPerUnit))
+			glog.Infof("Price: %d wei for %d pixels\n ", *pricePerUnit, *pixelsPerUnit)
+
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -496,6 +515,7 @@ func main() {
 		if core.OrchestratorNode != n.NodeType {
 			return
 		}
+
 		orch := core.NewOrchestrator(s.LivepeerNode)
 
 		go func() {

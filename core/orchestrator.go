@@ -160,6 +160,20 @@ func (orch *orchestrator) TicketParams(sender ethcommon.Address) (*net.TicketPar
 	}, nil
 }
 
+func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*big.Rat, error) {
+	if orch.node == nil || orch.node.Recipient == nil {
+		return nil, nil
+	}
+
+	txCostMultiplier, err := orch.node.Recipient.TxCostMultiplier(sender)
+	if err != nil {
+		return nil, err
+	}
+	// pricePerPixel = basePrice * (1 + 1/ txCostMultiplier)
+	overhead := new(big.Rat).Add(big.NewRat(1, 1), new(big.Rat).Inv(txCostMultiplier))
+	return new(big.Rat).Mul(orch.node.PriceInfo, overhead), nil
+}
+
 func NewOrchestrator(n *LivepeerNode) *orchestrator {
 	var addr ethcommon.Address
 	if n.Eth != nil {

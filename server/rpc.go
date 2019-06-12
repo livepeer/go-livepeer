@@ -43,6 +43,7 @@ type Orchestrator interface {
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address) (*net.TicketParams, error)
+	PriceInfo(sender ethcommon.Address) (*big.Rat, error)
 }
 
 type Broadcaster interface {

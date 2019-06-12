@@ -75,6 +75,10 @@ func (r *stubOrchestrator) TicketParams(sender ethcommon.Address) (*net.TicketPa
 	return nil, nil
 }
 
+func (r *stubOrchestrator) PriceInfo(sender ethcommon.Address) (*big.Rat, error) {
+	return nil, nil
+}
+
 func newStubOrchestrator() *stubOrchestrator {
 	pk, err := ethcrypto.GenerateKey()
 	if err != nil {
@@ -525,6 +529,14 @@ func (o *mockOrchestrator) TicketParams(sender ethcommon.Address) (*net.TicketPa
 	args := o.Called(sender)
 	if args.Get(0) != nil {
 		return args.Get(0).(*net.TicketParams), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (o *mockOrchestrator) PriceInfo(sender ethcommon.Address) (*big.Rat, error) {
+	args := o.Called(sender)
+	if args.Get(0) != nil {
+		return args.Get(0).(*big.Rat), args.Error(1)
 	}
 	return nil, args.Error(1)
 }

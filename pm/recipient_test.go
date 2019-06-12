@@ -870,3 +870,55 @@ func TestTicketParams(t *testing.T) {
 	_, err = r.TicketParams(sender)
 	assert.EqualError(err, errInsufficientSenderReserve.Error())
 }
+
+func TestTxCostMultiplier_UsingFaceValue_ReturnsDefaultMultiplier(t *testing.T) {
+	sender, b, v, ts, gm, fm, cfg, _ := newRecipientFixtureOrFatal(t)
+	recipient := RandAddress()
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(recipient, b, v, ts, gm, fm, secret, cfg)
+
+	mul, err := r.TxCostMultiplier(sender)
+	assert.Nil(t, err)
+	assert.Equal(t, big.NewRat(int64(cfg.TxCostMultiplier), 1), mul)
+}
+
+func TestTxCostMultiplier_UsingMaxFloat_ReturnsScaledMultiplier(t *testing.T) {
+	sender, b, v, ts, gm, fm, cfg, _ := newRecipientFixtureOrFatal(t)
+	recipient := RandAddress()
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(recipient, b, v, ts, gm, fm, secret, cfg)
+
+	fm.maxFloat = big.NewInt(500000)
+
+	txCost := new(big.Int).Mul(gm.gasPrice, big.NewInt(int64(cfg.RedeemGas)))
+	expMul := new(big.Rat).SetFrac(fm.maxFloat, txCost)
+
+	mul, err := r.TxCostMultiplier(sender)
+	assert.Nil(t, err)
+	assert.Equal(t, expMul, mul)
+}
+
+func TestTxCostMultiplier_MaxFloatError_ReturnsError(t *testing.T) {
+	sender, b, v, ts, gm, fm, cfg, _ := newRecipientFixtureOrFatal(t)
+	recipient := RandAddress()
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(recipient, b, v, ts, gm, fm, secret, cfg)
+
+	fm.err = errors.New("MaxFloat error")
+	mul, err := r.TxCostMultiplier(sender)
+	assert.Nil(t, mul)
+	assert.EqualError(t, err, fm.err.Error())
+}
+
+func TestTxCostMultiplier_InsufficientReserve_ReturnsError(t *testing.T) {
+	sender, b, v, ts, gm, fm, cfg, _ := newRecipientFixtureOrFatal(t)
+	recipient := RandAddress()
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(recipient, b, v, ts, gm, fm, secret, cfg)
+
+	fm.maxFloat = big.NewInt(0) // Set maxFloat to some value less than EV
+
+	mul, err := r.TxCostMultiplier(sender)
+	assert.Nil(t, mul)
+	assert.EqualError(t, err, errInsufficientSenderReserve.Error())
+}
