@@ -1,10 +1,12 @@
 package core
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -24,6 +26,59 @@ type Transcoder interface {
 
 type LocalTranscoder struct {
 	workDir string
+}
+
+type FakeStandaloneTranscoder struct {
+}
+
+func NewFakeStandaloneTranscoder() Transcoder {
+	return &FakeStandaloneTranscoder{}
+}
+
+func (lt *FakeStandaloneTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+	_, seqNo, parseErr := parseURI(fname)
+	glog.Infof("Downloading segment seqNo=%d url=%s", seqNo, fname)
+	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	resp, err := httpc.Get(fname)
+
+	if err != nil {
+		glog.Errorf("Error downloading %s: %v", fname, err)
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		glog.Errorf("Error downloading reading body %s: %v", fname, err)
+		return nil, err
+	}
+
+	// wait randomly
+	start := time.Now()
+	delay := rand.Intn(1000)
+	time.Sleep(time.Duration(1000+delay) * time.Millisecond)
+	res := make([][]byte, len(profiles), len(profiles))
+	for i := range profiles {
+		res[i] = data
+	}
+
+	if monitor.Enabled && parseErr == nil {
+		// This will run only when fname is actual URL and contains seqNo in it.
+		// When orchestrator works as transcoder, `fname` will be relative path to file in local
+		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
+		// be called in orchestrator.go
+		monitor.SegmentTranscoded(0, seqNo, time.Since(start), common.ProfilesNames(profiles))
+	}
+
+	segments := make([]*TranscodedSegmentData, len(profiles), len(profiles))
+	for i := 0; i < len(profiles); i++ {
+		segments[i] = &TranscodedSegmentData{Data: data, Pixels: int64(len(data) * 2)}
+	}
+
+	return &TranscodeData{
+		Segments: segments,
+		Pixels:   int64(len(data)),
+	}, nil
 }
 
 func (lt *LocalTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
@@ -72,19 +127,28 @@ type nvSegData struct {
 type FakeTranscoder struct {
 }
 
-func (ft *FakeTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
-	dat, err := ioutil.ReadFile(fname)
+func (ft *FakeTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+	data, err := ioutil.ReadFile(fname)
 	if err != nil {
 		return nil, err
 	}
 	// wait randomly
 	delay := rand.Intn(1000)
 	time.Sleep(time.Duration(1000+delay) * time.Millisecond)
-	res := make([][]byte, len(profiles), len(profiles))
-	for i := range profiles {
-		res[i] = dat
+	// res := make([][]byte, len(profiles), len(profiles))
+	// for i := range profiles {
+	// 	res[i] = dat
+	// }
+	// return res, nil
+	segments := make([]*TranscodedSegmentData, len(profiles), len(profiles))
+	for i := 0; i < len(profiles); i++ {
+		segments[i] = &TranscodedSegmentData{Data: data, Pixels: int64(len(data) * 2)}
 	}
-	return res, nil
+
+	return &TranscodeData{
+		Segments: segments,
+		Pixels:   int64(len(data)),
+	}, nil
 }
 
 func NewFakeTranscoder() Transcoder {
