@@ -25,7 +25,6 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 
-	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -34,6 +33,7 @@ import (
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/vidplayer"
+	"github.com/livepeer/m3u8"
 )
 
 var errAlreadyExists = errors.New("StreamAlreadyExists")
