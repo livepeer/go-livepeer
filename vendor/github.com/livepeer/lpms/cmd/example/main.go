@@ -17,12 +17,12 @@ import (
 
 	"github.com/livepeer/lpms/transcoder"
 
-	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/core"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
+	"github.com/livepeer/m3u8"
 )
 
 var HLSWaitTime = time.Second * 10

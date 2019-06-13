@@ -3,7 +3,7 @@ package stream
 import (
 	"context"
 
-	"github.com/ericxtang/m3u8"
+	"github.com/livepeer/m3u8"
 	"github.com/nareix/joy4/av"
 )
 

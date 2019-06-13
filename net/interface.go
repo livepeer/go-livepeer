@@ -3,7 +3,7 @@ package net
 import (
 	"net/url"
 
-	"github.com/ericxtang/m3u8"
+	"github.com/livepeer/m3u8"
 )
 
 type OrchestratorPool interface {

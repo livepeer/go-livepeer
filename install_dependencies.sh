@@ -3,7 +3,7 @@
 set -e
 
 go get -u -v contrib.go.opencensus.io/exporter/prometheus
-go get -u -v github.com/ericxtang/m3u8
+go get -u -v github.com/livepeer/m3u8
 go get -u -v go.opencensus.io/stats
 go get -u -v go.opencensus.io/tag
 go get -u google.golang.org/grpc

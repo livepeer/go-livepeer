@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/drivers"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"github.com/livepeer/m3u8"
 )
 
 const LIVE_LIST_LENGTH uint = 6

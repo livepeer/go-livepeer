@@ -5,9 +5,9 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/ericxtang/m3u8"
 	"github.com/livepeer/go-livepeer/drivers"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"github.com/livepeer/m3u8"
 )
 
 func TestGetMasterPlaylist(t *testing.T) {

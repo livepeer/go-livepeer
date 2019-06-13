@@ -84,7 +84,7 @@ github.com/aws/aws-sdk-go/service/s3
 github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/vendor/github.com/jmespath/go-jmespath
 github.com/beorn7/perks/quantile
-github.com/ericxtang/m3u8
+github.com/livepeer/m3u8
 github.com/golang/glog
 github.com/golang/protobuf/proto
 github.com/golang/protobuf/ptypes
