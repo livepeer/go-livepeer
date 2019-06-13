@@ -7,7 +7,7 @@ import (
 
 	"time"
 
-	"github.com/ericxtang/m3u8"
+	"github.com/livepeer/m3u8"
 )
 
 var ErrBufferFull = errors.New("Stream Buffer Full")

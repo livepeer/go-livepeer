@@ -3,7 +3,7 @@ package stream
 import (
 	"testing"
 
-	"github.com/ericxtang/m3u8"
+	"github.com/livepeer/m3u8"
 )
 
 func TestAddAndRemove(t *testing.T) {

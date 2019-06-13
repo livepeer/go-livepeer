@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ericxtang/m3u8"
 	"github.com/golang/glog"
+	"github.com/livepeer/m3u8"
 )
 
 var ErrVideoManifest = errors.New("ErrVideoManifest")

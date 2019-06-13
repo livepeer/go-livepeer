@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/ericxtang/m3u8"
+	"github.com/livepeer/m3u8"
 )
 
 var ErrNotFound = errors.New("Not Found")

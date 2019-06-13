@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ericxtang/m3u8"
+	"github.com/livepeer/m3u8"
 )
 
 const DefaultHLSStreamCap = uint(500)
