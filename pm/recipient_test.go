@@ -585,6 +585,32 @@ func TestRedeemWinningTickets_SingleTicket_RedeemError(t *testing.T) {
 	}
 }
 
+func TestRedeemWinningTickets_SingleTicket_CheckTxError(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	sender, b, v, ts, gm, fm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, fm, secret, cfg)
+	params, err := r.TicketParams(sender)
+	require.Nil(err)
+
+	// Config stub validator with valid winning tickets
+	v.SetIsWinningTicket(true)
+
+	ticket := newTicket(sender, params, 2)
+
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	require.Nil(err)
+	require.True(won)
+
+	// Config stub broker to fail CheckTx
+	b.checkTxErr = errors.New("CheckTx error")
+
+	err = r.RedeemWinningTickets([]string{sessionID})
+	assert.EqualError(err, b.checkTxErr.Error())
+}
+
 func TestRedeemWinningTickets_SingleTicket(t *testing.T) {
 	sender, b, v, ts, gm, fm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
@@ -739,6 +765,37 @@ func TestRedeemWinningTickets_MultipleTicketsFromMultipleSessions(t *testing.T) 
 	_, ok = r.(*recipient).senderNonces[recipientRand0.String()]
 	assert.False(ok)
 	_, ok = r.(*recipient).senderNonces[recipientRand1.String()]
+	assert.False(ok)
+}
+
+func TestRedeemWinningTicket(t *testing.T) {
+	// Note: Most of the test scenarios are covered by
+	// the tests for RedeemWinningTickets already since it uses
+	// the same helper function as RedeemWinningTicket
+	// So, we only test a successful call here
+
+	assert := assert.New(t)
+
+	sender, b, v, ts, gm, fm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, fm, secret, cfg)
+
+	params := ticketParamsOrFatal(t, r, sender)
+	ticket := newTicket(sender, params, 1)
+
+	err := r.RedeemWinningTicket(ticket, sig, params.Seed)
+	assert.Nil(err)
+
+	used, err := b.IsUsedTicket(ticket)
+	require.Nil(t, err)
+	assert.True(used)
+
+	recipientRand := genRecipientRand(sender, secret, params.Seed)
+
+	_, ok := r.(*recipient).invalidRands.Load(recipientRand.String())
+	assert.True(ok)
+
+	_, ok = r.(*recipient).senderNonces[recipientRand.String()]
 	assert.False(ok)
 }
 

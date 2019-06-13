@@ -78,6 +78,10 @@ type Broker interface {
 	// ClaimableReserve returns the amount from the reserveHolder's reserve that the claimant
 	// can claim
 	ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error)
+
+	// CheckTx waits for a transaction to confirm on-chain and returns an error
+	// if the transaction failed
+	CheckTx(tx *types.Transaction) error
 }
 
 // RoundsManager defines the methods for fetching the last

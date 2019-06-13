@@ -94,6 +94,8 @@ type stubBroker struct {
 	redeemShouldFail           bool
 	getSenderInfoShouldFail    bool
 	claimableReserveShouldFail bool
+
+	checkTxErr error
 }
 
 func newStubBroker() *stubBroker {
@@ -171,6 +173,10 @@ func (b *stubBroker) ClaimableReserve(reserveHolder ethcommon.Address, claimant 
 	}
 
 	return b.reserves[reserveHolder], nil
+}
+
+func (b *stubBroker) CheckTx(tx *types.Transaction) error {
+	return b.checkTxErr
 }
 
 type stubValidator struct {
@@ -294,6 +300,12 @@ func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int)
 // for a all sessionIDs
 func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
 	args := m.Called(sessionIDs)
+	return args.Error(0)
+}
+
+// RedeemWinningTicket redeems a single winning ticket
+func (m *MockRecipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error {
+	args := m.Called(ticket, sig, seed)
 	return args.Error(0)
 }
 

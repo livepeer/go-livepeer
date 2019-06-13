@@ -27,6 +27,9 @@ type Recipient interface {
 	// for a all sessionIDs
 	RedeemWinningTickets(sessionIDs []string) error
 
+	// RedeemWinningTicket redeems a single winning ticket
+	RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error
+
 	// TicketParams returns the recipient's currently accepted ticket parameters
 	// for a provided sender ETH adddress
 	TicketParams(sender ethcommon.Address) (*TicketParams, error)
@@ -167,6 +170,12 @@ func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 	return nil
 }
 
+// RedeemWinningTicket redeems a single winning ticket
+func (r *recipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error {
+	recipientRand := r.rand(seed, ticket.Sender)
+	return r.redeemWinningTicket(ticket, sig, recipientRand)
+}
+
 // TicketParams returns the recipient's currently accepted ticket parameters
 func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
 	randBytes := RandBytes(32)
@@ -274,9 +283,9 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 	}
 
 	// Assume that that this call will return immediately if there
-	// is an error in transaction submission. Else, the function will kick off
-	// a goroutine and then return to the caller
-	if _, err := r.broker.RedeemWinningTicket(ticket, sig, recipientRand); err != nil {
+	// is an error in transaction submission
+	tx, err := r.broker.RedeemWinningTicket(ticket, sig, recipientRand)
+	if err != nil {
 		return err
 	}
 
@@ -287,6 +296,11 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 	// After we invalidate recipientRand we can clear the memory used to track
 	// its latest senderNonce
 	r.clearSenderNonce(recipientRand)
+
+	// Wait for transaction to confirm
+	if err := r.broker.CheckTx(tx); err != nil {
+		return err
+	}
 
 	return nil
 }
