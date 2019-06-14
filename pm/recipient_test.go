@@ -439,7 +439,7 @@ func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
 
 			ticket := newTicket(sender, params, senderNonce)
 
-			_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+			_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 			if err != nil {
 				atomic.AddUint64(&errCount, 1)
 			}
