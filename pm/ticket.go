@@ -14,6 +14,21 @@ const (
 	bytes32Size = 32
 )
 
+// SignedTicket is a wrapper around a Ticket with the sender's signature over the ticket and
+// the recipient recipientRand
+type SignedTicket struct {
+	// Ticket contains ticket fields that are directly
+	// accessible on SignedTicket since it is embedded
+	*Ticket
+
+	// Sig is the sender's signature over the ticket
+	Sig []byte
+
+	// RecipientRand is the recipient's random value that should be
+	// the preimage for the ticket's recipientRandHash
+	RecipientRand *big.Int
+}
+
 // TicketParams represents the parameters defined by a receiver that a sender must adhere to when
 // sending tickets to receiver.
 type TicketParams struct {
