@@ -13,6 +13,7 @@ package core
 import (
 	"context"
 	"errors"
+	"math/big"
 	"math/rand"
 	"net/url"
 	"sync"
@@ -64,6 +65,7 @@ type LivepeerNode struct {
 	OrchSecret        string
 	Transcoder        Transcoder
 	TranscoderManager *RemoteTranscoderManager
+	PriceInfo         *big.Rat
 
 	// Broadcaster public fields
 	Sender pm.Sender
@@ -88,7 +90,6 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		pmSessionsMutex: &sync.Mutex{},
 		segmentMutex:    &sync.RWMutex{},
 	}, nil
-
 }
 
 func (n *LivepeerNode) StartEthServices() error {

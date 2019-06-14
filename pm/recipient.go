@@ -30,6 +30,9 @@ type Recipient interface {
 	// TicketParams returns the recipient's currently accepted ticket parameters
 	// for a provided sender ETH adddress
 	TicketParams(sender ethcommon.Address) (*TicketParams, error)
+
+	// TxCostMultiplier returns the multiplier -
+	TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error)
 }
 
 // TicketParamsConfig contains config information for a recipient to determine
@@ -186,13 +189,16 @@ func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error
 	}, nil
 }
 
-func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
+func (r *recipient) txCost() *big.Int {
+	// Fetch current gasprice from cache through gasPrice monitor
 	gasPrice := r.gpm.GasPrice()
-	// txCost = redeemGas * gasPrice
-	txCost := new(big.Int).Mul(big.NewInt(int64(r.cfg.RedeemGas)), gasPrice)
+	// Return txCost = redeemGas * gasPrice
+	return new(big.Int).Mul(big.NewInt(int64(r.cfg.RedeemGas)), gasPrice)
+}
 
+func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	// faceValue = txCost * txCostMultiplier
-	faceValue := new(big.Int).Mul(txCost, big.NewInt(int64(r.cfg.TxCostMultiplier)))
+	faceValue := new(big.Int).Mul(r.txCost(), big.NewInt(int64(r.cfg.TxCostMultiplier)))
 
 	// TODO: Consider setting faceValue to some value higher than
 	// EV in this case where the default faceValue < the desired EV.
@@ -239,6 +245,20 @@ func (r *recipient) winProb(faceValue *big.Int) *big.Int {
 
 	// Compute winProb as the numerator of a fraction over maxWinProb
 	return new(big.Int).Mul(r.cfg.EV, x)
+}
+
+func (r *recipient) TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error) {
+	// 'r.faceValue(sender)' will return min(defaultFaceValue, MaxFloat(sender))
+	faceValue, err := r.faceValue(sender)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// defaultTxCostMultiplier = defaultFaceValue / txCost
+	// Replacing defaultFaceValue with min(defaultFaceValue, MaxFloat(sender))
+	// Will scale the TxCostMultiplier according to the effective faceValue
+	return new(big.Rat).SetFrac(faceValue, r.txCost()), nil
 }
 
 func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
