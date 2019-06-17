@@ -1,6 +1,6 @@
 # RTMP Webhook Authentication
 
-Incoming RTMP streams can be authenticated using Webhooks. To provide these webhooks, node operators must implement their own web service / endpoint to be accessed only by the Livepeer node. As new RTMP streams appear, the Livepeer node will hit this endpoint to determine whether the given stream is allowed.
+Incoming RTMP streams can be authenticated using Webhooks. To use these webhooks, node operators must implement their own web service / endpoint to be accessed only by the Livepeer node. As new RTMP streams appear, the Livepeer node will call this endpoint to determine whether the given stream is allowed.
 
 To enable webhook authentication functionality, the Livepeer node should be started with the flag, `-authWebhookUrl` along with the webhook endpoint URL.
 
