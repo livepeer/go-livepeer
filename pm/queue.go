@@ -6,6 +6,14 @@ import (
 	"sync/atomic"
 )
 
+// RedeemableEmitter is an interface that describes methods for
+// emitting redeemable tickets
+type RedeemableEmitter interface {
+	// Redeemable returns a channel that a consumer can use to receive tickets that
+	// should be redeemed
+	Redeemable() chan *SignedTicket
+}
+
 // ticketQueue is a queue of winning tickets that are in line for redemption on-chain.
 // A recipient will have a ticketQueue per sender that it is actively receiving tickets from.
 // If a sender's max float is insufficient to cover the face value of a ticket it is added to the queue.

@@ -32,12 +32,12 @@ func (qc *queueConsumer) Redeemable() []*SignedTicket {
 
 // Wait receives on the output channel from a ticket queue
 // until it has received a certain number of tickets and then exits
-func (qc *queueConsumer) Wait(num int, q *ticketQueue) {
+func (qc *queueConsumer) Wait(num int, e RedeemableEmitter) {
 	count := 0
 
 	for count < num {
 		select {
-		case ticket := <-q.Redeemable():
+		case ticket := <-e.Redeemable():
 			count++
 
 			qc.mu.Lock()
