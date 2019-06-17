@@ -22,7 +22,7 @@ For example, if the incoming RTMP request was made to `rtmp://livepeer.node:1935
 
 The webhook server should respond with HTTP status code `200` in order to authenticate / authorize the RTMP stream. A response with a HTTP status code other than `200` will cause the Livepeer node to drop the RTMP stream.
 
-The webhook may respond with an empty body.  In this case, the `manifestID` property of the stream will taken from the URL.  If the URL does not specify a manifest id, then it will be generated at random.  Otherwise, the webhook endpoint should respond with a JSON object in the following format:
+The webhook may respond with an empty body.  In this case, the `manifestID` property of the stream will be taken from the RTMP URL.  If the RTMP URL does not specify a manifest id, then it will be generated at random.  Otherwise, the webhook endpoint should respond with a JSON object in the following format:
 
 ```json
 {
