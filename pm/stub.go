@@ -256,12 +256,28 @@ func (s *stubGasPriceMonitor) GasPrice() *big.Int {
 	return s.gasPrice
 }
 
-type stubFloatMonitor struct {
-	maxFloat *big.Int
-	err      error
+type stubSenderMonitor struct {
+	maxFloat   *big.Int
+	redeemable chan *SignedTicket
+	err        error
 }
 
-func (s *stubFloatMonitor) Add(addr ethcommon.Address, amount *big.Int) error {
+func newStubSenderMonitor() *stubSenderMonitor {
+	return &stubSenderMonitor{
+		maxFloat:   big.NewInt(0),
+		redeemable: make(chan *SignedTicket),
+	}
+}
+
+func (s *stubSenderMonitor) Start() {}
+
+func (s *stubSenderMonitor) Stop() {}
+
+func (s *stubSenderMonitor) Redeemable() chan *SignedTicket {
+	return s.redeemable
+}
+
+func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error {
 	if s.err != nil {
 		return s.err
 	}
@@ -269,7 +285,7 @@ func (s *stubFloatMonitor) Add(addr ethcommon.Address, amount *big.Int) error {
 	return nil
 }
 
-func (s *stubFloatMonitor) Sub(addr ethcommon.Address, amount *big.Int) error {
+func (s *stubSenderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error {
 	if s.err != nil {
 		return s.err
 	}
@@ -277,7 +293,15 @@ func (s *stubFloatMonitor) Sub(addr ethcommon.Address, amount *big.Int) error {
 	return nil
 }
 
-func (s *stubFloatMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
+func (s *stubSenderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) error {
+	if s.err != nil {
+		return s.err
+	}
+
+	return nil
+}
+
+func (s *stubSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
 	if s.err != nil {
 		return nil, s.err
 	}

@@ -9,6 +9,12 @@ import (
 	"github.com/pkg/errors"
 )
 
+// unixNow returns the current unix time
+// This is a wrapper function that can be stubbed in tests
+var unixNow = func() int64 {
+	return time.Now().Unix()
+}
+
 // SenderMonitor is an interface that describes methods used to
 // monitor remote senders
 type SenderMonitor interface {

@@ -64,7 +64,7 @@ type recipient struct {
 	broker Broker
 	store  TicketStore
 	gpm    GasPriceMonitor
-	fm     FloatMonitor
+	sm     SenderMonitor
 
 	addr   ethcommon.Address
 	secret [32]byte
@@ -79,7 +79,7 @@ type recipient struct {
 
 // NewRecipient creates an instance of a recipient with an
 // automatically generated random secret
-func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, fm FloatMonitor, cfg TicketParamsConfig) (Recipient, error) {
+func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, cfg TicketParamsConfig) (Recipient, error) {
 	randBytes := make([]byte, 32)
 	if _, err := rand.Read(randBytes); err != nil {
 		return nil, err
@@ -88,19 +88,19 @@ func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store Ti
 	var secret [32]byte
 	copy(secret[:], randBytes[:32])
 
-	return NewRecipientWithSecret(addr, broker, val, store, gpm, fm, secret, cfg), nil
+	return NewRecipientWithSecret(addr, broker, val, store, gpm, sm, secret, cfg), nil
 }
 
 // NewRecipientWithSecret creates an instance of a recipient with a user provided
 // secret. In most cases, NewRecipient should be used instead which will
 // automatically generate a random secret
-func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, fm FloatMonitor, secret [32]byte, cfg TicketParamsConfig) Recipient {
+func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, secret [32]byte, cfg TicketParamsConfig) Recipient {
 	return &recipient{
 		broker:       broker,
 		val:          val,
 		store:        store,
 		gpm:          gpm,
-		fm:           fm,
+		sm:           sm,
 		addr:         addr,
 		secret:       secret,
 		senderNonces: make(map[string]uint32),
@@ -220,7 +220,7 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	}
 
 	// Fetch current max float for sender
-	maxFloat, err := r.fm.MaxFloat(sender)
+	maxFloat, err := r.sm.MaxFloat(sender)
 	if err != nil {
 		return nil, err
 	}

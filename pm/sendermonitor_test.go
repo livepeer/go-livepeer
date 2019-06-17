@@ -9,7 +9,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMaxFloat_(t *testing.T) {
+// setTime is a helper to set the time during tests
+var setTime = func(time int64) {
+	unixNow = func() int64 {
+		return time
+	}
+}
+
+// increaseTime is a helper to increase the time during tests
+var increaseTime = func(sec int64) {
+	time := unixNow()
+	setTime(time + sec)
+}
+
+func TestMaxFloat(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
 	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600)
@@ -226,7 +239,7 @@ func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
 	assert.Equal(uint32(2), tickets[1].SenderNonce)
 }
 
-func TestCleanup_(t *testing.T) {
+func TestCleanup(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
 	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 2)

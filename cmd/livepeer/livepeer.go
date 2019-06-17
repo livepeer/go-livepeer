@@ -45,16 +45,16 @@ var (
 	ErrKeygen    = errors.New("ErrKeygen")
 	EthTxTimeout = 600 * time.Second
 
-	// redeemGas is the gas required to redeem a PM ticket
+	// The gas required to redeem a PM ticket
 	redeemGas = 100000
-	// txCostMultiplier is the multipler on the transaction cost to use for PM ticket faceValue
+	// The multiplier on the transaction cost to use for PM ticket faceValue
 	txCostMultiplier = 100
-	// gmPollingInterval is the interval at which to poll for gas price updates
+	// The interval at which to poll for gas price updates
 	gpmPollingInterval = 1 * time.Minute
-	// fmCleanupInterval is the interval at which to clean up cached max float values for PM senders
-	fmCleanupInterval = 1 * time.Minute
-	// fmTTL is the time to live for cached max float values for PM senders (else they will be cleaned up)
-	fmTTL = 3600 // 1 minute
+	// The interval at which to clean up cached max float values for PM senders
+	smCleanupInterval = 1 * time.Minute
+	// The time to live for cached max float values for PM senders (else they will be cleaned up)
+	smTTL = 3600 // 1 minute
 )
 
 const RtmpPort = "1935"
@@ -364,6 +364,11 @@ func main() {
 			}
 			defer gpm.Stop()
 
+			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, smCleanupInterval, smTTL)
+			// Start sender monitor
+			sm.Start()
+			defer sm.Stop()
+
 			cfg := pm.TicketParamsConfig{
 				EV:               ev,
 				RedeemGas:        redeemGas,
@@ -375,7 +380,7 @@ func main() {
 				validator,
 				n.Database,
 				gpm,
-				pm.NewFloatMonitor(n.Eth.Account().Address, n.Eth, fmCleanupInterval, fmTTL),
+				sm,
 				cfg,
 			)
 			if err != nil {
