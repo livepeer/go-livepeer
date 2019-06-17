@@ -9,6 +9,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -20,6 +21,12 @@ var maxWinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewI
 // Recipient is an interface which describes an object capable
 // of receiving tickets
 type Recipient interface {
+	// Start initiates the helper goroutines for the recipient
+	Start()
+
+	// Stop signals the recipient to exit gracefully
+	Stop()
+
 	// ReceiveTicket validates and processes a received ticket
 	ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error)
 
@@ -75,6 +82,8 @@ type recipient struct {
 	senderNoncesLock sync.Mutex
 
 	cfg TicketParamsConfig
+
+	quit chan struct{}
 }
 
 // NewRecipient creates an instance of a recipient with an
@@ -105,7 +114,18 @@ func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator
 		secret:       secret,
 		senderNonces: make(map[string]uint32),
 		cfg:          cfg,
+		quit:         make(chan struct{}),
 	}
+}
+
+// Start initiates the helper goroutines for the recipient
+func (r *recipient) Start() {
+	go r.redeemManager()
+}
+
+// Stop signals the recipient to exit gracefully
+func (r *recipient) Stop() {
+	close(r.quit)
 }
 
 // ReceiveTicket validates and processes a received ticket
@@ -271,6 +291,21 @@ func (r *recipient) TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error)
 }
 
 func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+	maxFloat, err := r.sm.MaxFloat(ticket.Sender)
+	if err != nil {
+		return err
+	}
+
+	// If max float is insufficient to cover the ticket face value, queue
+	// the ticket to be retried later
+	if maxFloat.Cmp(ticket.FaceValue) < 0 {
+		if err := r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand}); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
 	info, err := r.broker.GetSenderInfo(ticket.Sender)
 	if err != nil {
 		return err
@@ -281,6 +316,28 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 	if info.Deposit.Cmp(big.NewInt(0)) == 0 && info.Reserve.Cmp(big.NewInt(0)) == 0 {
 		return errors.Errorf("sender %v has zero deposit and reserve", ticket.Sender)
 	}
+
+	// Subtract the ticket face value from the sender's current max float
+	// This amount will be considered pending until the ticket redemption
+	// transaction confirms on-chain
+	if err := r.sm.SubFloat(ticket.Sender, ticket.FaceValue); err != nil {
+		return err
+	}
+
+	defer func() {
+		// Add the ticket face value back to the sender's current max float
+		// This amount is no longer considered pending since the ticket
+		// redemption transaction either confirmed on-chain or was not
+		// submitted at all
+		//
+		// TODO(yondonfu): Should ultimately add back only the amount that
+		// was actually successfully redeemed in order to take into account
+		// the case where the ticket was not redeemd for its full face value
+		// because the reserve was insufficient
+		if err := r.sm.AddFloat(ticket.Sender, ticket.FaceValue); err != nil {
+			glog.Errorf("error updating sender %x max float: %v", ticket.Sender, err)
+		}
+	}()
 
 	// Assume that that this call will return immediately if there
 	// is an error in transaction submission
@@ -341,4 +398,18 @@ func (r *recipient) clearSenderNonce(rand *big.Int) {
 	defer r.senderNoncesLock.Unlock()
 
 	delete(r.senderNonces, rand.String())
+}
+
+func (r *recipient) redeemManager() {
+	// Listen for redeemable tickets that should be retried
+	for {
+		select {
+		case ticket := <-r.sm.Redeemable():
+			if err := r.redeemWinningTicket(ticket.Ticket, ticket.Sig, ticket.RecipientRand); err != nil {
+				glog.Errorf("error retrying ticket redemption: %v", err)
+			}
+		case <-r.quit:
+			return
+		}
+	}
 }

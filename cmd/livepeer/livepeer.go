@@ -387,6 +387,9 @@ func main() {
 				glog.Errorf("Error setting up PM recipient: %v", err)
 				return
 			}
+
+			n.Recipient.Start()
+			defer n.Recipient.Stop()
 		}
 
 		if n.NodeType == core.BroadcasterNode {

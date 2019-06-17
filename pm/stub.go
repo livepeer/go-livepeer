@@ -87,10 +87,12 @@ func (sv *stubSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool 
 }
 
 type stubBroker struct {
-	deposits                   map[ethcommon.Address]*big.Int
-	reserves                   map[ethcommon.Address]*big.Int
-	usedTickets                map[ethcommon.Hash]bool
-	approvedSigners            map[ethcommon.Address]bool
+	deposits        map[ethcommon.Address]*big.Int
+	reserves        map[ethcommon.Address]*big.Int
+	usedTickets     map[ethcommon.Hash]bool
+	approvedSigners map[ethcommon.Address]bool
+	mu              sync.Mutex
+
 	redeemShouldFail           bool
 	getSenderInfoShouldFail    bool
 	claimableReserveShouldFail bool
@@ -132,6 +134,9 @@ func (b *stubBroker) Withdraw() (*types.Transaction, error) {
 }
 
 func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if b.redeemShouldFail {
 		return nil, fmt.Errorf("stub broker redeem error")
 	}
@@ -142,6 +147,9 @@ func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRa
 }
 
 func (b *stubBroker) IsUsedTicket(ticket *Ticket) (bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	return b.usedTickets[ticket.Hash()], nil
 }
 
@@ -257,9 +265,13 @@ func (s *stubGasPriceMonitor) GasPrice() *big.Int {
 }
 
 type stubSenderMonitor struct {
-	maxFloat   *big.Int
-	redeemable chan *SignedTicket
-	err        error
+	maxFloat       *big.Int
+	redeemable     chan *SignedTicket
+	queued         []*SignedTicket
+	queueTicketErr error
+	addFloatErr    error
+	subFloatErr    error
+	maxFloatErr    error
 }
 
 func newStubSenderMonitor() *stubSenderMonitor {
@@ -278,32 +290,34 @@ func (s *stubSenderMonitor) Redeemable() chan *SignedTicket {
 }
 
 func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error {
-	if s.err != nil {
-		return s.err
+	if s.queueTicketErr != nil {
+		return s.queueTicketErr
 	}
+
+	s.queued = append(s.queued, ticket)
 
 	return nil
 }
 
 func (s *stubSenderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error {
-	if s.err != nil {
-		return s.err
+	if s.addFloatErr != nil {
+		return s.addFloatErr
 	}
 
 	return nil
 }
 
 func (s *stubSenderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) error {
-	if s.err != nil {
-		return s.err
+	if s.subFloatErr != nil {
+		return s.subFloatErr
 	}
 
 	return nil
 }
 
 func (s *stubSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
-	if s.err != nil {
-		return nil, s.err
+	if s.maxFloatErr != nil {
+		return nil, s.maxFloatErr
 	}
 
 	return s.maxFloat, nil
@@ -313,6 +327,12 @@ func (s *stubSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
 type MockRecipient struct {
 	mock.Mock
 }
+
+// Start initiates the helper goroutines for the recipient
+func (m *MockRecipient) Start() {}
+
+// Stop signals the recipient to exit gracefully
+func (m *MockRecipient) Stop() {}
 
 // ReceiveTicket validates and processes a received ticket
 func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error) {

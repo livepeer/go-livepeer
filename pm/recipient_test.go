@@ -9,9 +9,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -769,12 +771,7 @@ func TestRedeemWinningTickets_MultipleTicketsFromMultipleSessions(t *testing.T) 
 	assert.False(ok)
 }
 
-func TestRedeemWinningTicket(t *testing.T) {
-	// Note: Most of the test scenarios are covered by
-	// the tests for RedeemWinningTickets already since it uses
-	// the same helper function as RedeemWinningTicket
-	// So, we only test a successful call here
-
+func TestRedeemWinningTicket_MaxFloatError(t *testing.T) {
 	assert := assert.New(t)
 
 	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
@@ -784,11 +781,88 @@ func TestRedeemWinningTicket(t *testing.T) {
 	params := ticketParamsOrFatal(t, r, sender)
 	ticket := newTicket(sender, params, 1)
 
+	sm.maxFloatErr = errors.New("MaxFloat error")
+	err := r.RedeemWinningTicket(ticket, sig, params.Seed)
+	assert.EqualError(err, sm.maxFloatErr.Error())
+}
+
+func TestRedeemWinningTicket_InsufficientMaxFloat_QueueTicketError(t *testing.T) {
+	assert := assert.New(t)
+
+	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, secret, cfg)
+
+	params := ticketParamsOrFatal(t, r, sender)
+	ticket := newTicket(sender, params, 1)
+	ticket.FaceValue = big.NewInt(99999999999999)
+
+	sm.queueTicketErr = errors.New("QueueTicket error")
+	err := r.RedeemWinningTicket(ticket, sig, params.Seed)
+	assert.EqualError(err, sm.queueTicketErr.Error())
+}
+
+func TestRedeemWinningTicket_InsufficientMaxFloat_QueueTicket(t *testing.T) {
+	assert := assert.New(t)
+
+	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, secret, cfg)
+
+	params := ticketParamsOrFatal(t, r, sender)
+	ticket := newTicket(sender, params, 1)
+	ticket.FaceValue = big.NewInt(99999999999999)
+
 	err := r.RedeemWinningTicket(ticket, sig, params.Seed)
 	assert.Nil(err)
 
+	recipientRand := genRecipientRand(sender, secret, params.Seed)
+	assert.Equal(1, len(sm.queued))
+	assert.Equal(&SignedTicket{ticket, sig, recipientRand}, sm.queued[0])
+}
+
+func TestRedeemWinningTicket_SubFloatError(t *testing.T) {
+	assert := assert.New(t)
+
+	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, secret, cfg)
+
+	params := ticketParamsOrFatal(t, r, sender)
+	ticket := newTicket(sender, params, 1)
+
+	sm.subFloatErr = errors.New("SubFloat error")
+	err := r.RedeemWinningTicket(ticket, sig, params.Seed)
+	assert.EqualError(err, sm.subFloatErr.Error())
+}
+
+func TestRedeemWinningTicket_AddFloatError(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, secret, cfg)
+
+	params := ticketParamsOrFatal(t, r, sender)
+	ticket := newTicket(sender, params, 1)
+
+	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	require.Nil(err)
+
+	errorLogsBefore := glog.Stats.Error.Lines()
+
+	sm.addFloatErr = errors.New("AddFloat error")
+	err = r.RedeemWinningTicket(ticket, sig, params.Seed)
+	assert.Nil(err)
+
+	errorLogsAfter := glog.Stats.Error.Lines()
+
+	// Check that an error was logged
+	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
+
 	used, err := b.IsUsedTicket(ticket)
-	require.Nil(t, err)
+	require.Nil(err)
 	assert.True(used)
 
 	recipientRand := genRecipientRand(sender, secret, params.Seed)
@@ -797,6 +871,122 @@ func TestRedeemWinningTicket(t *testing.T) {
 	assert.True(ok)
 
 	_, ok = r.(*recipient).senderNonces[recipientRand.String()]
+	assert.False(ok)
+}
+
+func TestRedeemWinningTicket(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, secret, cfg)
+
+	params := ticketParamsOrFatal(t, r, sender)
+	ticket := newTicket(sender, params, 1)
+
+	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	require.Nil(err)
+
+	errorLogsBefore := glog.Stats.Error.Lines()
+
+	err = r.RedeemWinningTicket(ticket, sig, params.Seed)
+	assert.Nil(err)
+
+	errorLogsAfter := glog.Stats.Error.Lines()
+
+	// Check that no errors were logged
+	assert.Zero(errorLogsAfter - errorLogsBefore)
+
+	used, err := b.IsUsedTicket(ticket)
+	require.Nil(err)
+	assert.True(used)
+
+	recipientRand := genRecipientRand(sender, secret, params.Seed)
+
+	_, ok := r.(*recipient).invalidRands.Load(recipientRand.String())
+	assert.True(ok)
+
+	_, ok = r.(*recipient).senderNonces[recipientRand.String()]
+	assert.False(ok)
+}
+
+func TestRedeemManager_Error(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, secret, cfg)
+	r.Start()
+	defer r.Stop()
+
+	params := ticketParamsOrFatal(t, r, sender)
+	ticket := newTicket(sender, params, 1)
+	recipientRand := genRecipientRand(sender, secret, params.Seed)
+
+	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	require.Nil(err)
+
+	errorLogsBefore := glog.Stats.Error.Lines()
+
+	sm.maxFloatErr = errors.New("MaxFloat error")
+	sm.redeemable <- &SignedTicket{ticket, sig, recipientRand}
+
+	time.Sleep(time.Millisecond * 20)
+	errorLogsAfter := glog.Stats.Error.Lines()
+
+	// Check that an error was logged
+	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
+
+	used, err := b.IsUsedTicket(ticket)
+	require.Nil(err)
+	assert.False(used)
+
+	_, ok := r.(*recipient).invalidRands.Load(recipientRand.String())
+	assert.False(ok)
+
+	_, ok = r.(*recipient).senderNonces[recipientRand.String()]
+	assert.True(ok)
+}
+
+func TestRedeemManager(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, secret, cfg)
+	r.Start()
+	defer r.Stop()
+
+	params := ticketParamsOrFatal(t, r, sender)
+	ticket := newTicket(sender, params, 1)
+	recipientRand := genRecipientRand(sender, secret, params.Seed)
+
+	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	require.Nil(err)
+
+	errorLogsBefore := glog.Stats.Error.Lines()
+
+	sm.redeemable <- &SignedTicket{ticket, sig, recipientRand}
+
+	time.Sleep(time.Millisecond * 20)
+	errorLogsAfter := glog.Stats.Error.Lines()
+
+	// Check that no errors were logged
+	assert.Zero(errorLogsAfter - errorLogsBefore)
+
+	used, err := b.IsUsedTicket(ticket)
+	require.Nil(err)
+	assert.True(used)
+
+	_, ok := r.(*recipient).invalidRands.Load(recipientRand.String())
+	assert.True(ok)
+
+	r.(*recipient).senderNoncesLock.Lock()
+	_, ok = r.(*recipient).senderNonces[recipientRand.String()]
+	r.(*recipient).senderNoncesLock.Unlock()
 	assert.False(ok)
 }
 
@@ -810,12 +1000,12 @@ func TestTicketParams(t *testing.T) {
 	assert := assert.New(t)
 
 	// Test SenderMonitor.MaxFloat() error
-	sm.err = errors.New("MaxFloat error")
+	sm.maxFloatErr = errors.New("MaxFloat error")
 	_, err := r.TicketParams(sender)
-	assert.EqualError(err, sm.err.Error())
+	assert.EqualError(err, sm.maxFloatErr.Error())
 
 	// Test correct params returned when default faceValue < maxFloat
-	sm.err = nil
+	sm.maxFloatErr = nil
 	params1, err := r.TicketParams(sender)
 	require.Nil(err)
 
