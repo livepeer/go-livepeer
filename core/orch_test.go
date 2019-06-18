@@ -662,6 +662,36 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", numTickets)
 }
 
+func TestProcessPayment_GivenReceiveTicketError_ReturnsFirstError(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	expErr := errors.New("ReceiveTicket error")
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, expErr).Once()
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, errors.New("not first error")).Once()
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil).Once()
+
+	numTickets := 3
+	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil).Times(numTickets)
+
+	var senderParams []*net.TicketSenderParams
+	for i := 0; i < numTickets; i++ {
+		senderParams = append(
+			senderParams,
+			&net.TicketSenderParams{SenderNonce: 456, Sig: pm.RandBytes(123)},
+		)
+	}
+
+	err := orch.ProcessPayment(*defaultPaymentWithTickets(t, senderParams), manifestID)
+
+	time.Sleep(time.Millisecond * 20)
+	assert := assert.New(t)
+	assert.EqualError(err, expErr.Error())
+	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 1)
+}
+
 func TestTicketParams(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)

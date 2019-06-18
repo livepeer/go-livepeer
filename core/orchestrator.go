@@ -120,6 +120,8 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
 	}
 
+	var firstErr error
+
 	for _, tsp := range payment.TicketSenderParams {
 
 		ticket.SenderNonce = tsp.SenderNonce
@@ -131,6 +133,10 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		)
 		if err != nil {
 			glog.Errorf("Error receiving ticket %v for manifest %v: %v\n", ticket, manifestID, err)
+
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 
 		if won && err == nil {
@@ -143,7 +149,8 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			}(ticket, tsp.Sig, seed)
 		}
 	}
-	return nil
+
+	return firstErr
 }
 
 func (orch *orchestrator) TicketParams(sender ethcommon.Address) (*net.TicketParams, error) {
