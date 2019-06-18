@@ -770,3 +770,29 @@ func stubTLSServer() (*httptest.Server, *http.ServeMux) {
 
 	return ts, mux
 }
+
+func TestAcceptablePaymentErrors(t *testing.T) {
+	assert := assert.New(t)
+
+	// check error cases
+	errs := []string{
+		"invalid ticket faceValue 99",
+		"invalid ticket winProb 999",
+		"invalid already revealed recipientRand 777",
+	}
+
+	// Sanity check that we're checking each failure case
+	assert.Equal(len(acceptablePaymentErrStrings), len(errs))
+	for _, v := range errs {
+		assert.True(acceptablePaymentError(errors.New(v)))
+	}
+
+	// check non-error cases
+	errs = []string{
+		"",
+		"not really an error",
+	}
+	for _, v := range errs {
+		assert.False(acceptablePaymentError(errors.New(v)))
+	}
+}

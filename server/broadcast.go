@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"regexp"
-	"strings"
 	"sync"
 
 	"github.com/golang/glog"
@@ -441,16 +439,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 
 var sessionErrStrings = []string{"dial tcp", "unexpected EOF", core.ErrOrchBusy.Error(), core.ErrOrchCap.Error()}
 
-func generateSessionErrors() *regexp.Regexp {
-	// Given a list [err1, err2, err3] generates a regexp `(err1)|(err2)|(err3)`
-	groups := []string{}
-	for _, v := range sessionErrStrings {
-		groups = append(groups, fmt.Sprintf("(%v)", v))
-	}
-	return regexp.MustCompile(strings.Join(groups, "|"))
-}
-
-var sessionErrRegex = generateSessionErrors()
+var sessionErrRegex = common.GenErrRegex(sessionErrStrings)
 
 func shouldStopSession(err error) bool {
 	return sessionErrRegex.MatchString(err.Error())
