@@ -183,11 +183,12 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	glog.Info("Done requesting tokens.")
 	time.Sleep(4 * time.Second)
 
-	var depositAmount *big.Int = big.NewInt(int64(5000))
+	var depositAmount *big.Int = big.NewInt(int64(2500000000))
+	var reserveAmount *big.Int = big.NewInt(int64(1500000000))
 
-	glog.Infof("Depositing: %v", depositAmount)
+	glog.Infof("Depositing: %v and reservinng: %v", depositAmount, reserveAmount)
 
-	tx, err = client.FundDeposit(depositAmount)
+	tx, err = client.FundDepositAndReserve(depositAmount, reserveAmount)
 	if err != nil {
 		glog.Error(err)
 		return
