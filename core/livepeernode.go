@@ -71,24 +71,20 @@ type LivepeerNode struct {
 	Sender pm.Sender
 
 	// Transcoder private fields
-	serviceURI      url.URL
-	pmSessions      map[ManifestID]map[string]bool
-	pmSessionsMutex *sync.Mutex
-	segmentMutex    *sync.RWMutex
+	serviceURI   url.URL
+	segmentMutex *sync.RWMutex
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
 	return &LivepeerNode{
-		Eth:             e,
-		WorkDir:         wd,
-		Database:        dbh,
-		EthServices:     make(map[string]eth.EventService),
-		SegmentChans:    make(map[ManifestID]SegmentChan),
-		pmSessions:      make(map[ManifestID]map[string]bool),
-		pmSessionsMutex: &sync.Mutex{},
-		segmentMutex:    &sync.RWMutex{},
+		Eth:          e,
+		WorkDir:      wd,
+		Database:     dbh,
+		EthServices:  make(map[string]eth.EventService),
+		SegmentChans: make(map[ManifestID]SegmentChan),
+		segmentMutex: &sync.RWMutex{},
 	}, nil
 }
 

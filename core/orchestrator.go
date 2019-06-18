@@ -124,7 +124,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 
 		ticket.SenderNonce = tsp.SenderNonce
 
-		sessionID, won, err := orch.node.Recipient.ReceiveTicket(
+		_, won, err := orch.node.Recipient.ReceiveTicket(
 			ticket,
 			tsp.Sig,
 			seed,
@@ -135,7 +135,12 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 
 		if won && err == nil {
 			glog.V(common.DEBUG).Info("Received winning ticket")
-			cachePMSessionID(orch.node, manifestID, sessionID)
+
+			go func(ticket *pm.Ticket, sig []byte, seed *big.Int) {
+				if err := orch.node.Recipient.RedeemWinningTicket(ticket, sig, seed); err != nil {
+					glog.Errorf("error redeeming winning ticket: %v", err)
+				}
+			}(ticket, tsp.Sig, seed)
 		}
 	}
 	return nil
@@ -438,15 +443,6 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 					}
 				}
 				n.segmentMutex.Unlock()
-				if n.Recipient != nil {
-					sessionIDs := getAndClearPMSessionIDsByManifestID(n, md.ManifestID)
-					if len(sessionIDs) > 0 {
-						err := n.Recipient.RedeemWinningTickets(sessionIDs)
-						if err != nil {
-							glog.Errorf("Error redeeming winning tickets for manifestID %v and sessions %v. Errors: %+v", md.ManifestID, sessionIDs, err)
-						}
-					}
-				}
 				return
 			case chanData := <-segChan:
 				chanData.res <- n.transcodeSeg(config, chanData.seg, chanData.md)
@@ -651,30 +647,6 @@ func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.Vi
 	}
 	rtm.completeTranscoders(currentTranscoder)
 	return res, err
-}
-
-func cachePMSessionID(n *LivepeerNode, m ManifestID, s string) {
-	n.pmSessionsMutex.Lock()
-	defer n.pmSessionsMutex.Unlock()
-	if _, ok := n.pmSessions[m]; !ok {
-		n.pmSessions[m] = make(map[string]bool)
-	}
-	n.pmSessions[m][s] = true
-}
-
-func getAndClearPMSessionIDsByManifestID(n *LivepeerNode, m ManifestID) []string {
-	n.pmSessionsMutex.Lock()
-	defer n.pmSessionsMutex.Unlock()
-	sessionIDs := make([]string, len(n.pmSessions[m]))
-	i := 0
-	for sessionID := range n.pmSessions[m] {
-		sessionIDs[i] = sessionID
-		i++
-	}
-
-	delete(n.pmSessions, m)
-
-	return sessionIDs
 }
 
 func randName() string {
