@@ -76,6 +76,16 @@ type Ticket struct {
 	CreationRoundBlockHash ethcommon.Hash
 }
 
+// EV returns the expected value of a ticket
+func (t *Ticket) EV() *big.Rat {
+	return new(big.Rat).Mul(new(big.Rat).SetInt(t.FaceValue), new(big.Rat).SetFrac(t.WinProb, maxWinProb))
+}
+
+// WinProbRat returns the ticket WinProb as a percentage represented as a big.Rat
+func (t *Ticket) WinProbRat() *big.Rat {
+	return new(big.Rat).SetFrac(t.WinProb, maxWinProb)
+}
+
 // Hash returns the keccak-256 hash of the ticket's fields as tightly packed
 // arguments as described in the Solidity documentation
 // See: https://solidity.readthedocs.io/en/v0.4.25/units-and-global-variables.html#mathematical-and-cryptographic-functions
