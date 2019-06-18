@@ -126,13 +126,15 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 
 		ticket.SenderNonce = tsp.SenderNonce
 
+		glog.V(common.DEBUG).Infof("Receiving ticket manifestID=%v faceValue=%v winProb=%v ev=%v", manifestID, ticket.FaceValue, ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
+
 		_, won, err := orch.node.Recipient.ReceiveTicket(
 			ticket,
 			tsp.Sig,
 			seed,
 		)
 		if err != nil {
-			glog.Errorf("Error receiving ticket %v for manifest %v: %v\n", ticket, manifestID, err)
+			glog.Errorf("Error receiving ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 
 			if firstErr == nil {
 				firstErr = err
@@ -140,11 +142,11 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		}
 
 		if won && err == nil {
-			glog.V(common.DEBUG).Info("Received winning ticket")
+			glog.V(common.DEBUG).Infof("Received winning ticket manifestID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
 
 			go func(ticket *pm.Ticket, sig []byte, seed *big.Int) {
 				if err := orch.node.Recipient.RedeemWinningTicket(ticket, sig, seed); err != nil {
-					glog.Errorf("error redeeming winning ticket: %v", err)
+					glog.Errorf("error redeeming ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 				}
 			}(ticket, tsp.Sig, seed)
 		}

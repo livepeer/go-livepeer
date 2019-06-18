@@ -303,6 +303,8 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 			return err
 		}
 
+		glog.Infof("Queued ticket sender=%x recipientRandHash=%v senderNonce=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce)
+
 		return nil
 	}
 
@@ -406,7 +408,7 @@ func (r *recipient) redeemManager() {
 		select {
 		case ticket := <-r.sm.Redeemable():
 			if err := r.redeemWinningTicket(ticket.Ticket, ticket.Sig, ticket.RecipientRand); err != nil {
-				glog.Errorf("error retrying ticket redemption: %v", err)
+				glog.Errorf("error retrying ticket sender=%x recipientRandHash=%v senderNonce=%v: %v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce, err)
 			}
 		case <-r.quit:
 			return
