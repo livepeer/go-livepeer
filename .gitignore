@@ -22,3 +22,6 @@ eth/protocol
 
 /.git.describe
 /livepeer-windows-amd64.zip
+
+#cmd/devtool generated directories and files
+/.lpdev2

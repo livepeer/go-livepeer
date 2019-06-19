@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -115,7 +116,7 @@ func main() {
 	}
 
 	keystoreDir := filepath.Join(dataDir, "keystore")
-	err = os.Rename(tempKeystoreDir, keystoreDir)
+	err = moveDir(tempKeystoreDir, keystoreDir)
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -182,11 +183,12 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	glog.Info("Done requesting tokens.")
 	time.Sleep(4 * time.Second)
 
-	var depositAmount *big.Int = big.NewInt(int64(5000))
+	var depositAmount *big.Int = big.NewInt(int64(2500000000))
+	var reserveAmount *big.Int = big.NewInt(int64(1500000000))
 
-	glog.Infof("Depositing: %v", depositAmount)
+	glog.Infof("Depositing: %v and reservinng: %v", depositAmount, reserveAmount)
 
-	tx, err = client.FundDeposit(depositAmount)
+	tx, err = client.FundDepositAndReserve(depositAmount, reserveAmount)
 	if err != nil {
 		glog.Error(err)
 		return
@@ -306,7 +308,7 @@ func createRunScript(ethAcctAddr, dataDir string, isBroadcaster bool) {
 	if !isBroadcaster {
 		script += fmt.Sprintf(` -initializeRound=true \
     -serviceAddr 127.0.0.1:%d  -transcoder=true -orchestrator=true \
-     -ipfsPath ./%s/trans -orchSecret secre
+     -ipfsPath ./%s/trans -orchSecret secre -pricePerUnit 1
     `, mediaPort, dataDir)
 	} else {
 		script += fmt.Sprintf(` -broadcaster=true -rtmpAddr 127.0.0.1:%d`, rtmpPort)
@@ -411,4 +413,70 @@ func remoteConsole(destAccountAddr string) error {
 	time.Sleep(3 * time.Second)
 
 	return err
+}
+
+func moveDir(src, dst string) error {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	originalMode := info.Mode()
+
+	if err := os.MkdirAll(dst, os.FileMode(0755)); err != nil {
+		return err
+	}
+	defer os.Chmod(dst, originalMode)
+
+	contents, err := ioutil.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, content := range contents {
+		cs, cd := filepath.Join(src, content.Name()), filepath.Join(dst, content.Name())
+		if err := moveFile(cs, cd, content); err != nil {
+			return err
+		}
+	}
+
+	err = os.Remove(src)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func moveFile(src, dst string, info os.FileInfo) error {
+	if err := os.MkdirAll(filepath.Dir(dst), os.ModePerm); err != nil {
+		return err
+	}
+
+	f, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if err = os.Chmod(f.Name(), info.Mode()); err != nil {
+		return err
+	}
+
+	s, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	_, err = io.Copy(f, s)
+	if err != nil {
+		return err
+	}
+
+	err = os.Remove(src)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
