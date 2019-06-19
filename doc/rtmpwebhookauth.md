@@ -12,11 +12,11 @@ livepeer -authWebhookUrl http://ownserver/auth
 
 For each incoming RTMP stream, the Livepeer node will make a `POST` request to the `http://ownserver/auth` endpoint, passing the URL of the RTMP request as JSON object.
 
-For example, if the incoming RTMP request was made to `rtmp://livepeer.node:1935/something?manifestID=manifest`, the Liverpeer node will provide the following object as a request to the webhook endpoint:
+For example, if the incoming RTMP request was made to `rtmp://livepeer.node/manifest`, the Liverpeer node will provide the following object as a request to the webhook endpoint:
 
 ```json
 {
-    "url": "rtmp://livepeer.node:1935/manifest"
+    "url": "rtmp://livepeer.node/manifest"
 }
 ```
 
