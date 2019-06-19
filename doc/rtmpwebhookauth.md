@@ -1,24 +1,28 @@
 # RTMP Webhook Authentication
 
-Incoming RTMP streams can be authenticated using Webhooks. To use it you need to implement own web server which will be called by Livepeer node when new RTMP stream received to check if that stream is allowed.
+Incoming RTMP streams can be authenticated using Webhooks. To use these webhooks, node operators must implement their own web service / endpoint to be accessed only by the Livepeer node. As new RTMP streams appear, the Livepeer node will call this endpoint to determine whether the given stream is allowed.
 
-To enable Webhook authentication functionality Livepeer node should be started with flag `-authWebhookUrl`, like this:
+To enable webhook authentication functionality, the Livepeer node should be started with the `-authWebhookUrl` flag, along with the webhook endpoint URL.
 
-`livepeer -authWebhookUrl http://ownserver/auth`
+For example:
 
-For every incoming RTMP stream Livepeer node will make `POST` request to `http://ownserver/auth` endpoint passing url to which RTMP request was made as JSON object.
+```console
+livepeer -authWebhookUrl http://ownserver/auth
+```
 
-For example, if incoming RTMP request was made to `rtmp://livepeer.node:1935/something?manifestID=manifest`, Liverpeer node will pass this object in request to webhook:
+For each incoming RTMP stream, the Livepeer node will make a `POST` request to the `http://ownserver/auth` endpoint, passing the URL of the RTMP request as JSON object.
+
+For example, if the incoming RTMP request was made to `rtmp://livepeer.node/manifest`, the Liverpeer node will provide the following object as a request to the webhook endpoint:
 
 ```json
 {
-    "url": "rtmp://livepeer.node:1935/manifest"
+    "url": "rtmp://livepeer.node/manifest"
 }
 ```
 
-Webhook server should respond with code 200 if it wants to allow RTMP stream. Response with any other code will lead to Livepeer node dropping RTMP stream.
+The webhook server should respond with HTTP status code `200` in order to authenticate / authorize the RTMP stream. A response with a HTTP status code other than `200` will cause the Livepeer node to disconnect the RTMP stream.
 
-Webhook can respond with zero body - in that case `ManifestID` for the stream will be taken from url or generated randomly in case manifest id is not specified in url. Or webhook server can respond with JSON object in this format:
+The webhook may respond with an empty body.  In this case, the `manifestID` property of the stream will be taken from the RTMP URL.  If the RTMP URL does not specify a manifest id, then it will be generated at random.  Otherwise, the webhook endpoint should respond with a JSON object in the following format:
 
 ```json
 {
@@ -27,12 +31,11 @@ Webhook can respond with zero body - in that case `ManifestID` for the stream wi
     "presets":    ["Preset", "Names"]
 }
 ```
-and Livepeer node will use returned `ManifestID` for the stream.
+The Livepeer node will use the returned `manifestID` for the given stream.
 
-`ManifestID`, returned from webhook or provided in url shouldn't have backslahes in it, any other alpha-numeric characters allowed in url will do.
+The `manifestID` should consist of alphanumeric characters, only.  Please avoid using any punctuation characters or slashes within the `manifestID`
 
-An optional streamKey can be passed in to protect the RTMP from playback. If the
-streamKey is omitted, then a random key is generated.
+An optional streamKey may be provided in order to protect the RTMP stream from playback. If the streamKey is omitted, a random key will be generated.
 
 Presets can be specified to override the default transcoding options. The available presets are listed [here](https://github.com/livepeer/go-livepeer/blob/master/common/videoprofile_ids.go).
 
