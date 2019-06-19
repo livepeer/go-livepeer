@@ -1,4 +1,4 @@
-FROM nvidia/cuda:10.1-devel-ubuntu18.04
+FROM nvidia/cuda:10.1-devel-ubuntu16.04
 
 ENV PATH "/usr/lib/go-1.12/bin:/go/bin:${PATH}"
 ENV PKG_CONFIG_PATH "/root/compiled/lib/pkgconfig"
