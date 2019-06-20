@@ -568,7 +568,7 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 	res := &net.NodeStatus{
 		Manifests:             m,
 		Version:               core.LivepeerVersion,
-		CompilerVersion:       runtime.Version(),
+		GORuntimeVersion:      runtime.Version(),
 		OrchestratorPool:      []string{},
 		RegisteredTranscoders: []net.RemoteTranscoderInfo{},
 		LocalTranscoding:      s.LivepeerNode.TranscoderManager == nil,

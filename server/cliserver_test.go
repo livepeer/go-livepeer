@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetStatus(t *testing.T) {
+func newMockServer() *httptest.Server {
 	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 	n.NodeType = core.TranscoderNode
 	n.TranscoderManager = core.NewRemoteTranscoderManager()
@@ -26,6 +26,11 @@ func TestGetStatus(t *testing.T) {
 	s := NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
 	mux := s.cliWebServerHandlers("addr")
 	srv := httptest.NewServer(mux)
+	return srv
+}
+
+func TestGetStatus(t *testing.T) {
+	srv := newMockServer()
 	defer srv.Close()
 	res, err := http.Get(fmt.Sprintf("%s/status", srv.URL))
 	assert := assert.New(t)
@@ -35,6 +40,8 @@ func TestGetStatus(t *testing.T) {
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	req.Nil(err)
-	assert.Equal(`{"Manifests":{},"OrchestratorPool":[],"Version":"undefined","CompilerVersion":"`+runtime.Version()+`","RegisteredTranscodersNumber":1,"RegisteredTranscoders":[{"Address":"TestAddress","Capacity":5}],"LocalTranscoding":false}`,
-		string(body))
+	expected := fmt.Sprintf(`{"Manifests":{},"OrchestratorPool":[],"Version":"undefined","GORuntimeVersion":"%s","RegisteredTranscodersNumber":1,"RegisteredTranscoders":[{"Address":"TestAddress","Capacity":5}],"LocalTranscoding":false}`,
+		runtime.Version())
+	assert.Equal(expected, string(body))
+}
 }
