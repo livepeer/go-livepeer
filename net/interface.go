@@ -22,6 +22,8 @@ type NodeStatus struct {
 	OrchestratorPool            []string
 	Version                     string
 	GORuntimeVersion            string
+	GOArch                      string
+	GOOS                        string
 	RegisteredTranscodersNumber int
 	RegisteredTranscoders       []RemoteTranscoderInfo
 	LocalTranscoding            bool // Indicates orchestrator that is also transcoder

@@ -40,8 +40,8 @@ func TestGetStatus(t *testing.T) {
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	req.Nil(err)
-	expected := fmt.Sprintf(`{"Manifests":{},"OrchestratorPool":[],"Version":"undefined","GORuntimeVersion":"%s","RegisteredTranscodersNumber":1,"RegisteredTranscoders":[{"Address":"TestAddress","Capacity":5}],"LocalTranscoding":false}`,
-		runtime.Version())
+	expected := fmt.Sprintf(`{"Manifests":{},"OrchestratorPool":[],"Version":"undefined","GORuntimeVersion":"%s","GOArch":"%s","GOOS":"%s","RegisteredTranscodersNumber":1,"RegisteredTranscoders":[{"Address":"TestAddress","Capacity":5}],"LocalTranscoding":false}`,
+		runtime.Version(), runtime.GOARCH, runtime.GOOS)
 	assert.Equal(expected, string(body))
 }
 
