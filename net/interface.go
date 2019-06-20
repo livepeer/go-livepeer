@@ -21,7 +21,7 @@ type NodeStatus struct {
 	Manifests                   map[string]*m3u8.MasterPlaylist
 	OrchestratorPool            []string
 	Version                     string
-	GORuntimeVersion            string
+	GolangRuntimeVersion        string
 	GOArch                      string
 	GOOS                        string
 	RegisteredTranscodersNumber int

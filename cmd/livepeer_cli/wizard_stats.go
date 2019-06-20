@@ -46,7 +46,7 @@ func (w *wizard) stats(showOrchestrator bool) {
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
 		[]string{"Node's version", status.Version},
-		[]string{"Node's GO runtime version", status.GORuntimeVersion},
+		[]string{"Node's GO runtime version", status.GolangRuntimeVersion},
 		[]string{"Node's architecture", status.GOArch},
 		[]string{"Node's operating system", status.GOOS},
 		[]string{"HTTP Port", w.httpPort},

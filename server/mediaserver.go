@@ -568,7 +568,7 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 	res := &net.NodeStatus{
 		Manifests:             m,
 		Version:               core.LivepeerVersion,
-		GORuntimeVersion:      runtime.Version(),
+		GolangRuntimeVersion:  runtime.Version(),
 		GOArch:                runtime.GOARCH,
 		GOOS:                  runtime.GOOS,
 		OrchestratorPool:      []string{},
