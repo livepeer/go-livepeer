@@ -16,6 +16,9 @@ var (
 )
 
 func FormatUnits(baseAmount *big.Int, name string) string {
+	if baseAmount == nil {
+		return "0 " + name
+	}
 	amount := FromBaseUnit(baseAmount)
 
 	if amount.Cmp(big.NewFloat(0.01)) == -1 {

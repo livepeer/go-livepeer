@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -567,6 +568,9 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 	res := &net.NodeStatus{
 		Manifests:             m,
 		Version:               core.LivepeerVersion,
+		GolangRuntimeVersion:  runtime.Version(),
+		GOArch:                runtime.GOARCH,
+		GOOS:                  runtime.GOOS,
 		OrchestratorPool:      []string{},
 		RegisteredTranscoders: []net.RemoteTranscoderInfo{},
 		LocalTranscoding:      s.LivepeerNode.TranscoderManager == nil,

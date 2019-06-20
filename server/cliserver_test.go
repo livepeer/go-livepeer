@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetStatus(t *testing.T) {
+func newMockServer() *httptest.Server {
 	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 	n.NodeType = core.TranscoderNode
 	n.TranscoderManager = core.NewRemoteTranscoderManager()
@@ -25,6 +26,11 @@ func TestGetStatus(t *testing.T) {
 	s := NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
 	mux := s.cliWebServerHandlers("addr")
 	srv := httptest.NewServer(mux)
+	return srv
+}
+
+func TestGetStatus(t *testing.T) {
+	srv := newMockServer()
 	defer srv.Close()
 	res, err := http.Get(fmt.Sprintf("%s/status", srv.URL))
 	assert := assert.New(t)
@@ -34,6 +40,49 @@ func TestGetStatus(t *testing.T) {
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	req.Nil(err)
-	assert.Equal(`{"Manifests":{},"OrchestratorPool":[],"Version":"undefined","RegisteredTranscodersNumber":1,"RegisteredTranscoders":[{"Address":"TestAddress","Capacity":5}],"LocalTranscoding":false}`,
-		string(body))
+	expected := fmt.Sprintf(`{"Manifests":{},"OrchestratorPool":[],"Version":"undefined","GolangRuntimeVersion":"%s","GOArch":"%s","GOOS":"%s","RegisteredTranscodersNumber":1,"RegisteredTranscoders":[{"Address":"TestAddress","Capacity":5}],"LocalTranscoding":false}`,
+		runtime.Version(), runtime.GOARCH, runtime.GOOS)
+	assert.Equal(expected, string(body))
+}
+
+func TestGetEthNetworkID(t *testing.T) {
+	srv := newMockServer()
+	defer srv.Close()
+	res, err := http.Get(fmt.Sprintf("%s/EthNetworkID", srv.URL))
+	assert := assert.New(t)
+	req := require.New(t)
+	req.Nil(err)
+	assert.Equal(http.StatusOK, res.StatusCode)
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	req.Nil(err)
+	assert.Equal("offchain", string(body))
+}
+
+func TestGetContractAddresses(t *testing.T) {
+	srv := newMockServer()
+	defer srv.Close()
+	res, err := http.Get(fmt.Sprintf("%s/contractAddresses", srv.URL))
+	assert := assert.New(t)
+	req := require.New(t)
+	req.Nil(err)
+	assert.Equal(http.StatusOK, res.StatusCode)
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	req.Nil(err)
+	assert.Equal("{}", string(body))
+}
+
+func TestGetDelegatorInfo(t *testing.T) {
+	srv := newMockServer()
+	defer srv.Close()
+	res, err := http.Get(fmt.Sprintf("%s/delegatorInfo", srv.URL))
+	assert := assert.New(t)
+	req := require.New(t)
+	req.Nil(err)
+	assert.Equal(http.StatusOK, res.StatusCode)
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	req.Nil(err)
+	assert.Equal("{}", string(body))
 }

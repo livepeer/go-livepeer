@@ -129,7 +129,9 @@ func main() {
 
 	if *version {
 		fmt.Println("Livepeer Node Version: " + core.LivepeerVersion)
-		fmt.Printf("Compiler version: %s %s\n", runtime.Compiler, runtime.Version())
+		fmt.Printf("Golang runtime version: %s %s\n", runtime.Compiler, runtime.Version())
+		fmt.Printf("Architecture: %s\n", runtime.GOARCH)
+		fmt.Printf("Operating system: %s\n", runtime.GOOS)
 		return
 	}
 

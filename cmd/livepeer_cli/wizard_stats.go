@@ -14,9 +14,22 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/olekukonko/tablewriter"
 )
+
+func (w *wizard) status() *net.NodeStatus {
+	status := &net.NodeStatus{}
+	statusJSON := httpGet(w.endpoint)
+	if len(statusJSON) > 0 {
+		err := json.Unmarshal([]byte(statusJSON), status)
+		if err != nil {
+			glog.Error("Error getting status:", err)
+		}
+	}
+	return status
+}
 
 func (w *wizard) stats(showOrchestrator bool) {
 	addrMap, err := w.getContractAddresses()
@@ -24,6 +37,7 @@ func (w *wizard) stats(showOrchestrator bool) {
 		glog.Errorf("Error getting contract addresses: %v", err)
 		return
 	}
+	status := w.status()
 
 	fmt.Println("+-----------+")
 	fmt.Println("|NODE STATS|")
@@ -31,6 +45,10 @@ func (w *wizard) stats(showOrchestrator bool) {
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
+		[]string{"Node's version", status.Version},
+		[]string{"Node's GO runtime version", status.GolangRuntimeVersion},
+		[]string{"Node's architecture", status.GOArch},
+		[]string{"Node's operating system", status.GOOS},
 		[]string{"HTTP Port", w.httpPort},
 		[]string{"Controller Address", addrMap["Controller"].Hex()},
 		[]string{"LivepeerToken Address", addrMap["LivepeerToken"].Hex()},
@@ -155,6 +173,9 @@ func (w *wizard) broadcastStats() {
 }
 
 func (w *wizard) orchestratorStats() {
+	if w.offchain {
+		return
+	}
 	t, err := w.getOrchestratorInfo()
 	if err != nil {
 		glog.Errorf("Error getting orchestrator info: %v", err)
@@ -192,6 +213,9 @@ func (w *wizard) orchestratorStats() {
 }
 
 func (w *wizard) orchestratorEventSubscriptions() {
+	if w.offchain {
+		return
+	}
 	subMap, err := w.getOrchestratorEventSubscriptions()
 	if err != nil {
 		glog.Errorf("Error getting orchestrator event subscriptions: %v", err)
@@ -220,6 +244,9 @@ func (w *wizard) orchestratorEventSubscriptions() {
 }
 
 func (w *wizard) delegatorStats() {
+	if w.offchain {
+		return
+	}
 	d, err := w.getDelegatorInfo()
 	if err != nil {
 		glog.Errorf("Error getting delegator info: %v", err)

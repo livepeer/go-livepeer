@@ -217,6 +217,14 @@ func (w *wizard) senderInfo() (info pm.SenderInfo, err error) {
 		return
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusInternalServerError {
+		// node is in offchain mode
+		info.Deposit = big.NewInt(0)
+		info.Reserve = big.NewInt(0)
+		info.ThawRound = big.NewInt(0)
+		info.WithdrawBlock = big.NewInt(0)
+		return
+	}
 
 	var res []byte
 	res, err = ioutil.ReadAll(resp.Body)

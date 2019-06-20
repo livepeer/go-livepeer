@@ -52,12 +52,13 @@ func main() {
 			in:       bufio.NewReader(os.Stdin),
 		}
 		w.orchestrator = w.isOrchestrator()
-		w.testnet = w.onTestnet()
+		w.checkNet()
 		w.run()
 
 		return nil
 	}
 	app.Version = core.LivepeerVersion
+	// flag.Parse()
 	app.Run(os.Args)
 }
 
@@ -67,6 +68,7 @@ type wizard struct {
 	host         string
 	orchestrator bool
 	testnet      bool
+	offchain     bool
 	in           *bufio.Reader // Wrapper around stdin to allow reading user input
 }
 
@@ -167,7 +169,8 @@ func (w *wizard) doCLIOpt(choice string, options []wizardOpt) {
 var RinkebyNetworkId = "4"
 var DevenvNetworkId = "54321"
 
-func (w *wizard) onTestnet() bool {
+func (w *wizard) checkNet() {
 	nID := httpGet(fmt.Sprintf("http://%v:%v/EthNetworkID", w.host, w.httpPort))
-	return nID == RinkebyNetworkId || nID == DevenvNetworkId
+	w.testnet = nID == RinkebyNetworkId || nID == DevenvNetworkId
+	w.offchain = nID == "offchain"
 }
