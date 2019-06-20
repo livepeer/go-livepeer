@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 	"time"
 
@@ -34,6 +35,6 @@ func TestGetStatus(t *testing.T) {
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	req.Nil(err)
-	assert.Equal(`{"Manifests":{},"OrchestratorPool":[],"Version":"undefined","RegisteredTranscodersNumber":1,"RegisteredTranscoders":[{"Address":"TestAddress","Capacity":5}],"LocalTranscoding":false}`,
+	assert.Equal(`{"Manifests":{},"OrchestratorPool":[],"Version":"undefined","CompilerVersion":"`+runtime.Version()+`","RegisteredTranscodersNumber":1,"RegisteredTranscoders":[{"Address":"TestAddress","Capacity":5}],"LocalTranscoding":false}`,
 		string(body))
 }

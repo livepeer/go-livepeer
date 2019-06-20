@@ -21,6 +21,7 @@ type NodeStatus struct {
 	Manifests                   map[string]*m3u8.MasterPlaylist
 	OrchestratorPool            []string
 	Version                     string
+	CompilerVersion             string
 	RegisteredTranscodersNumber int
 	RegisteredTranscoders       []RemoteTranscoderInfo
 	LocalTranscoding            bool // Indicates orchestrator that is also transcoder
