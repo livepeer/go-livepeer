@@ -132,45 +132,23 @@ func (r *recipient) Stop() {
 func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (string, bool, error) {
 	recipientRand := r.rand(seed, ticket.Sender)
 
-	if crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size)) != ticket.RecipientRandHash {
-		return "", false, errors.Errorf("invalid recipientRand generated from seed %v", seed)
-	}
-
-	faceValue, err := r.faceValue(ticket.Sender)
-	if err != nil {
-		return "", false, err
-	}
-
-	if ticket.FaceValue.Cmp(faceValue) != 0 {
-		return "", false, errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue)
-	}
-
-	if ticket.WinProb.Cmp(r.winProb(faceValue)) != 0 {
-		return "", false, errors.Errorf("invalid ticket winProb %v", ticket.WinProb)
-	}
-
+	// If any of the basic ticket validity checks fail, abort
 	if err := r.val.ValidateTicket(r.addr, ticket, sig, recipientRand); err != nil {
 		return "", false, err
 	}
 
-	if !r.validRand(recipientRand) {
-		return "", false, errors.Errorf("invalid already revealed recipientRand %v", recipientRand)
-	}
-
-	if err := r.updateSenderNonce(recipientRand, ticket.SenderNonce); err != nil {
-		return "", false, err
-	}
+	var sessionID string
+	var won bool
 
 	if r.val.IsWinningTicket(ticket, sig, recipientRand) {
-		sessionID := ticket.RecipientRandHash.Hex()
+		sessionID = ticket.RecipientRandHash.Hex()
+		won = true
 		if err := r.store.StoreWinningTicket(sessionID, ticket, sig, recipientRand); err != nil {
-			return "", true, err
+			glog.Errorf("error storing ticket sender=%x recipientRandHash=%x senderNonce=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce)
 		}
-
-		return sessionID, true, nil
 	}
 
-	return "", false, nil
+	return sessionID, won, r.acceptTicket(ticket, sig, recipientRand)
 }
 
 // RedeemWinningTicket redeems all winning tickets with the broker
@@ -290,6 +268,52 @@ func (r *recipient) TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error)
 	return new(big.Rat).SetFrac(faceValue, r.txCost()), nil
 }
 
+func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+	if !r.validRand(recipientRand) {
+		// This might be an "acceptable" error.
+		// When a winning ticket is redeemed, the ticket's recipientRand is invalidated
+		// and the sender must send tickets with a new seed, but there could be a delay
+		// before the sender is notified of the new seed.
+		//
+		// TODO(yondonfu): Track the number of these types of errors to determine
+		// whether we should accept more of these types of errors
+		return errors.Errorf("invalid already revealed recipientRand %v", recipientRand)
+	}
+
+	if err := r.updateSenderNonce(recipientRand, ticket.SenderNonce); err != nil {
+		return err
+	}
+
+	faceValue, err := r.faceValue(ticket.Sender)
+	if err != nil {
+		return err
+	}
+
+	if ticket.FaceValue.Cmp(faceValue) != 0 {
+		// This might be an "acceptable" error
+		// When the gas price changes or the sender's max float changes, the required faceValue
+		// also changes and the sender must send tickets with the new faceValue, but there could
+		// be a delay before the sender is notified of the new faceValue.
+		//
+		// TODO(yondonfu): Track the number of these types of errors to determine
+		// whether we should accept more of these types of errors
+		return errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue)
+	}
+
+	if ticket.WinProb.Cmp(r.winProb(faceValue)) != 0 {
+		// This might be an "acceptable" error
+		// When the gas price changes or the sender's max float changes, the required winProb
+		// also changes and the sender must send tickets with the new winProb, but there could
+		// be a delay before the sender is notified of the new winProb.
+		//
+		// TODO(yondonfu): Track the number of these types of errors to determine
+		// whether we should accept more of these types of errors
+		return errors.Errorf("invalid ticket winProb %v", ticket.WinProb)
+	}
+
+	return nil
+}
+
 func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
 	maxFloat, err := r.sm.MaxFloat(ticket.Sender)
 	if err != nil {
@@ -303,7 +327,7 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 			return err
 		}
 
-		glog.Infof("Queued ticket sender=%x recipientRandHash=%v senderNonce=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce)
+		glog.Infof("Queued ticket sender=%x recipientRandHash=%x senderNonce=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce)
 
 		return nil
 	}
@@ -408,7 +432,7 @@ func (r *recipient) redeemManager() {
 		select {
 		case ticket := <-r.sm.Redeemable():
 			if err := r.redeemWinningTicket(ticket.Ticket, ticket.Sig, ticket.RecipientRand); err != nil {
-				glog.Errorf("error retrying ticket sender=%x recipientRandHash=%v senderNonce=%v: %v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce, err)
+				glog.Errorf("error retrying ticket sender=%x recipientRandHash=%x senderNonce=%v: %v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce, err)
 			}
 		case <-r.quit:
 			return

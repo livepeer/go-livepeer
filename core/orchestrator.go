@@ -141,7 +141,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			}
 		}
 
-		if won && err == nil {
+		if won {
 			glog.V(common.DEBUG).Infof("Received winning ticket manifestID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
 
 			go func(ticket *pm.Ticket, sig []byte, seed *big.Int) {

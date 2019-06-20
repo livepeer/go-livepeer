@@ -76,62 +76,6 @@ func genRecipientRand(sender ethcommon.Address, secret [32]byte, seed *big.Int) 
 	return new(big.Int).SetBytes(h.Sum(nil))
 }
 
-func TestReceiveTicket_InvalidRecipientRand_InvalidSeed(t *testing.T) {
-	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, cfg)
-	params, err := r.TicketParams(sender)
-	require.Nil(t, err)
-
-	// Test invalid recipientRand from seed (invalid seed)
-	ticket := newTicket(sender, params, 0)
-
-	// Using invalid seed
-	invalidSeed := new(big.Int).Add(params.Seed, big.NewInt(99))
-	_, _, err = r.ReceiveTicket(ticket, sig, invalidSeed)
-	if err == nil {
-		t.Error("expected invalid recipientRand generated from seed error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "invalid recipientRand generated from seed") {
-		t.Errorf("expected invalid recipientRand generated from seed error, got %v", err)
-	}
-}
-
-func TestReceiveTicket_InvalidRecipientRand_InvalidSender(t *testing.T) {
-	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, cfg)
-	params, err := r.TicketParams(sender)
-
-	// Test invalid recipientRand from seed (invalid sender)
-	ticket := newTicket(ethcommon.Address{}, params, 0)
-
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
-	if err == nil {
-		t.Error("expected invalid recipientRand from seed error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "invalid recipientRand generated from seed") {
-		t.Errorf("expected invalid recipientRand from seed error, got %v", err)
-	}
-}
-
-func TestReceiveTicket_InvalidRecipientRand_InvalidRecipientRandHash(t *testing.T) {
-	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, cfg)
-	params, err := r.TicketParams(sender)
-	require.Nil(t, err)
-
-	// Test invalid recipientRand from seed (invalid recipientRandHash)
-	ticket := newTicket(sender, params, 0)
-	ticket.RecipientRandHash = RandHash() // Using invalid recipientRandHash
-
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
-	if err == nil {
-		t.Error("expected invalid recipientRand from seed error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "invalid recipientRand generated from seed") {
-		t.Errorf("expected invalid recipientRand from seed error, got %v", err)
-	}
-}
-
 func TestReceiveTicket_InvalidFaceValue(t *testing.T) {
 	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, cfg)
@@ -142,12 +86,38 @@ func TestReceiveTicket_InvalidFaceValue(t *testing.T) {
 	ticket := newTicket(sender, params, 0)
 	ticket.FaceValue = big.NewInt(0) // Using invalid faceValue
 
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid faceValue error")
 	}
 	if err != nil && !strings.Contains(err.Error(), "invalid ticket faceValue") {
 		t.Errorf("expected invalid faceValue error, got %v", err)
+	}
+	if sessionID != "" {
+		t.Errorf("expected sessionID , got %v", sessionID)
+	}
+	if won {
+		t.Errorf("expected non-winning ticket")
+	}
+
+	// Test invalid faceValue when ticket is winning
+	v.SetIsWinningTicket(true)
+
+	ticket = newTicket(sender, params, 1)
+	ticket.FaceValue = big.NewInt(0) // Using invalid faceValue
+
+	sessionID, won, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	if err == nil {
+		t.Error("expected invalid faceValue error")
+	}
+	if err != nil && !strings.Contains(err.Error(), "invalid ticket faceValue") {
+		t.Errorf("expected invalid faceValue error, got %v", err)
+	}
+	if sessionID != ticket.RecipientRandHash.Hex() {
+		t.Errorf("expected sessionID %v, got %v", ticket.RecipientRandHash.Hex(), sessionID)
+	}
+	if !won {
+		t.Errorf("expected winning ticket")
 	}
 }
 
@@ -181,12 +151,38 @@ func TestReceiveTicket_InvalidWinProb(t *testing.T) {
 	ticket := newTicket(sender, params, 0)
 	ticket.WinProb = big.NewInt(0) // Using invalid winProb
 
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid winProb error")
 	}
 	if err != nil && !strings.Contains(err.Error(), "invalid ticket winProb") {
 		t.Errorf("expected invalid winProb error, got %v", err)
+	}
+	if sessionID != "" {
+		t.Errorf("expected sessionID , got %v", sessionID)
+	}
+	if won {
+		t.Errorf("expected non-winning ticket")
+	}
+
+	// Test invalid winProb when ticket is winning
+	v.SetIsWinningTicket(true)
+
+	ticket = newTicket(sender, params, 1)
+	ticket.WinProb = big.NewInt(0) // Using invalid faceValue
+
+	sessionID, won, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	if err == nil {
+		t.Error("expected invalid winProb error")
+	}
+	if err != nil && !strings.Contains(err.Error(), "invalid ticket winProb") {
+		t.Errorf("expected invalid winProb error, got %v", err)
+	}
+	if sessionID != ticket.RecipientRandHash.Hex() {
+		t.Errorf("expected sessionID %v, got %v", ticket.RecipientRandHash.Hex(), sessionID)
+	}
+	if !won {
+		t.Errorf("expected winning ticket")
 	}
 }
 
@@ -317,14 +313,15 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 	// Config stub ticket store to fail store
 	ts.storeShouldFail = true
 
+	errorLogsBefore := glog.Stats.Error.Lines()
+
 	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
 
-	if err == nil {
-		t.Error("expected ticket store store error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "ticket store store error") {
-		t.Errorf("expected ticket store store error, got %v", err)
-	}
+	errorLogsAfter := glog.Stats.Error.Lines()
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
 
 	recipientRand := genRecipientRand(sender, secret, params.Seed)
 	senderNonce := r.(*recipient).senderNonces[recipientRand.String()]
@@ -374,12 +371,18 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	// New ticket with same invalid recipientRand, but updated senderNonce
 	ticket = newTicket(sender, params, 1)
 
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	if err == nil {
 		t.Error("expected invalid recipientRand revealed error")
 	}
 	if err != nil && !strings.Contains(err.Error(), "invalid already revealed recipientRand") {
 		t.Errorf("expected invalid recipientRand revealed error, got %v", err)
+	}
+	if sessionID != ticket.RecipientRandHash.Hex() {
+		t.Errorf("expected sessionID %v, got %v", ticket.RecipientRandHash.Hex(), sessionID)
+	}
+	if !won {
+		t.Errorf("expected winning ticket")
 	}
 }
 

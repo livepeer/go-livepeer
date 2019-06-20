@@ -670,6 +670,7 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsFirstError(t *testing.T) 
 	manifestID := ManifestID("some manifest")
 	expErr := errors.New("ReceiveTicket error")
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, expErr).Once()
+	// This should trigger a redemption even though it returns an error because it still returns won = true
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, errors.New("not first error")).Once()
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil).Once()
 
@@ -689,7 +690,7 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsFirstError(t *testing.T) 
 	time.Sleep(time.Millisecond * 20)
 	assert := assert.New(t)
 	assert.EqualError(err, expErr.Error())
-	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 1)
+	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 2)
 }
 
 func TestTicketParams(t *testing.T) {
