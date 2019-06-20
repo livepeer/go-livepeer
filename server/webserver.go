@@ -690,6 +690,9 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(data)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("{}"))
 		}
 	})
 
@@ -764,11 +767,15 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			data, err := json.Marshal(addrMap)
 			if err != nil {
 				glog.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(data)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("{}"))
 		}
 	})
 
@@ -1019,9 +1026,14 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	})
 
 	mux.HandleFunc("/EthNetworkID", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth == nil {
+			w.Write([]byte("offchain"))
+			return
+		}
 		be, err := s.LivepeerNode.Eth.Backend()
 		if err != nil {
 			glog.Errorf("Error getting eth backend: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		networkID, err := be.NetworkID(context.Background())

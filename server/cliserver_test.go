@@ -44,4 +44,45 @@ func TestGetStatus(t *testing.T) {
 		runtime.Version())
 	assert.Equal(expected, string(body))
 }
+
+func TestGetEthNetworkID(t *testing.T) {
+	srv := newMockServer()
+	defer srv.Close()
+	res, err := http.Get(fmt.Sprintf("%s/EthNetworkID", srv.URL))
+	assert := assert.New(t)
+	req := require.New(t)
+	req.Nil(err)
+	assert.Equal(http.StatusOK, res.StatusCode)
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	req.Nil(err)
+	assert.Equal("offchain", string(body))
+}
+
+func TestGetContractAddresses(t *testing.T) {
+	srv := newMockServer()
+	defer srv.Close()
+	res, err := http.Get(fmt.Sprintf("%s/contractAddresses", srv.URL))
+	assert := assert.New(t)
+	req := require.New(t)
+	req.Nil(err)
+	assert.Equal(http.StatusOK, res.StatusCode)
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	req.Nil(err)
+	assert.Equal("{}", string(body))
+}
+
+func TestGetDelegatorInfo(t *testing.T) {
+	srv := newMockServer()
+	defer srv.Close()
+	res, err := http.Get(fmt.Sprintf("%s/delegatorInfo", srv.URL))
+	assert := assert.New(t)
+	req := require.New(t)
+	req.Nil(err)
+	assert.Equal(http.StatusOK, res.StatusCode)
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	req.Nil(err)
+	assert.Equal("{}", string(body))
 }
