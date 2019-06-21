@@ -103,8 +103,11 @@ func main() {
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	ticketEV := flag.String("ticketEV", "1000000000", "The expected value for PM tickets")
 
-	// Price Info
+	// Orchestrator base pricing info
 	pricePerUnit := flag.Int("pricePerUnit", 0, "The price per 'pixelsPerUnit' amount pixels")
+	// Broadcaster max acceptable price
+	maxPricePerUnit := flag.Int("maxPricePerUnit", 0, "The maximum transcoding price (in wei) per 'pixelsPerUnit' a broadcaster is willing to accept. If not set explicitly, broadcaster is willing to accept ANY price")
+	// Unit of pixels for both O's basePriceInfo and B's MaxBroadcastPrice
 	pixelsPerUnit := flag.Int("pixelsPerUnit", 1, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
 
 	// Metrics & logging:
@@ -321,13 +324,11 @@ func main() {
 			// Set price per pixel base info
 			if *pixelsPerUnit <= 0 {
 				// Can't divide by 0
-				glog.Fatalf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *pixelsPerUnit)
-				return
+				panic(fmt.Errorf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *pixelsPerUnit))
 			}
 			if *pricePerUnit <= 0 {
 				// Prevent orchestrator from unknowingly provide free transcoding
-				glog.Fatalf("Price per unit of pixels must be greater than 0, provided %d instead\n", *pricePerUnit)
-				return
+				panic(fmt.Errorf("Price per unit of pixels must be greater than 0, provided %d instead\n", *pricePerUnit))
 			}
 			n.PriceInfo = big.NewRat(int64(*pricePerUnit), int64(*pixelsPerUnit))
 			glog.Infof("Price: %d wei for %d pixels\n ", *pricePerUnit, *pixelsPerUnit)
@@ -387,6 +388,17 @@ func main() {
 			// TODO: Initialize Sender with an implementation
 			// of RoundsManager that reads from a cache
 			n.Sender = pm.NewSender(n.Eth, n.Eth)
+
+			if *pixelsPerUnit <= 0 {
+				// Can't divide by 0
+				panic(fmt.Errorf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *pixelsPerUnit))
+			}
+			if *maxPricePerUnit > 0 {
+				server.BroadcastCfg.SetMaxPrice(big.NewRat(int64(*maxPricePerUnit), int64(*pixelsPerUnit)))
+			} else {
+				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *maxPricePerUnit)
+				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
+			}
 		}
 
 		// Start services

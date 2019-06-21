@@ -45,6 +45,11 @@ run_lp -broadcaster -network rinkeby $ETH_ARGS
 [ -d "$DEFAULT_DATADIR"/rinkeby ]
 kill $pid
 
+# Error if flags to set MaxBroadcastPrice aren't provided correctly
+res=0
+./livepeer -broadcaster -network rinkeby $ETH_ARGS -maxPricePerUnit 0 -pixelsPerUnit -5 || res=$?
+[ $res -ne 0 ]
+
 run_lp -broadcaster -network mainnet $ETH_ARGS
 [ -d "$DEFAULT_DATADIR"/mainnet ]
 kill $pid

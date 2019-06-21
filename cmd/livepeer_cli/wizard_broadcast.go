@@ -51,8 +51,14 @@ func (w *wizard) allTranscodingOptions() map[int]string {
 }
 
 func (w *wizard) setBroadcastConfig() {
-	fmt.Printf("Enter broadcast max price per segment in Wei - ")
-	maxPricePerSegment := w.readBigInt()
+	fmt.Printf("Enter a maximum transcoding price per pixel, in wei per pixels (pricePerUnit / pixelsPerUnit).\n")
+	fmt.Printf("eg. 1 wei / 10 pixels = 0,1 wei per pixel \n")
+	fmt.Printf("\n")
+	fmt.Printf("Enter amount of pixels that make up a single unit (default: 1 pixel) - ")
+	pixelsPerUnit := w.readDefaultInt(1)
+	fmt.Printf("\n")
+	fmt.Printf("Enter the maximum price to pay for %d pixels in Wei (required) - ", pixelsPerUnit)
+	maxPricePerUnit := w.readDefaultInt(0)
 
 	opts := w.allTranscodingOptions()
 	if opts == nil {
@@ -69,7 +75,8 @@ func (w *wizard) setBroadcastConfig() {
 	}
 
 	val := url.Values{
-		"maxPricePerSegment": {fmt.Sprintf("%v", maxPricePerSegment.String())},
+		"pixelsPerUnit":      {fmt.Sprintf("%v", strconv.Itoa(pixelsPerUnit))},
+		"maxPricePerUnit":    {fmt.Sprintf("%v", strconv.Itoa(maxPricePerUnit))},
 		"transcodingOptions": {fmt.Sprintf("%v", transOpts)},
 	}
 
