@@ -18,9 +18,9 @@ You can also build the executables from scratch.
 
 &ensp; 3\. Make sure you have the necessary libraries installed:
 
-* Linux: `apt-get update && apt-get -y install build-essential pkg-config autoconf nodejs gnutls-dev`
+* Linux: `apt-get update && apt-get -y install build-essential pkg-config autoconf gnutls-dev`
 
- * OSX: `brew update && brew install pkg-config autoconf node gnutls`
+ * OSX: `brew update && brew install pkg-config autoconf gnutls`
 
 &ensp; 4\. You need to install `ffmpeg` as a dependency.  Run `./install_ffmpeg.sh`.  This will install the dependencies in `~/compiled`.  You need to have `pkg-config` installed.
 
