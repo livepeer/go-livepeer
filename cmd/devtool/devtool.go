@@ -159,48 +159,46 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		return
 	}
 
-	var bigGasPrice *big.Int = big.NewInt(int64(200))
-	// var bigGasPrice *big.Int = big.NewInt(int64(00000))
-
-	err = client.Setup(passphrase, 1000000, bigGasPrice)
+	err = client.Setup(passphrase, uint64(0), nil)
 	if err != nil {
 		glog.Fatalf("Failed to setup client: %v", err)
 		return
 	}
-	glog.Infof("Requesting tokens from faucet")
 
-	tx, err := client.Request()
-	if err != nil {
-		glog.Errorf("Error requesting tokens from faucet: %v", err)
-		return
-	}
+	if isBroadcaster {
+		amount := new(big.Int).Mul(big.NewInt(100), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
 
-	err = client.CheckTx(tx)
-	if err != nil {
-		glog.Errorf("Error requesting tokens from faucet: %v", err)
-		return
-	}
-	glog.Info("Done requesting tokens.")
-	time.Sleep(4 * time.Second)
+		glog.Infof("Funding deposit with %v", amount)
+		glog.Infof("Funding reserve with %v", amount)
 
-	var depositAmount *big.Int = big.NewInt(int64(2500000000))
-	var reserveAmount *big.Int = big.NewInt(int64(1500000000))
+		tx, err := client.FundDepositAndReserve(amount, amount)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+		if err := client.CheckTx(tx); err != nil {
+			glog.Error(err)
+			return
+		}
 
-	glog.Infof("Depositing: %v and reservinng: %v", depositAmount, reserveAmount)
+		glog.Info("Done funding deposit and reserve")
+	} else {
+		glog.Infof("Requesting tokens from faucet")
 
-	tx, err = client.FundDepositAndReserve(depositAmount, reserveAmount)
-	if err != nil {
-		glog.Error(err)
-		return
-	}
-	err = client.CheckTx(tx)
-	if err != nil {
-		glog.Error(err)
-		return
-	}
-	glog.Info("Done depositing")
+		tx, err := client.Request()
+		if err != nil {
+			glog.Errorf("Error requesting tokens from faucet: %v", err)
+			return
+		}
 
-	if !isBroadcaster {
+		err = client.CheckTx(tx)
+		if err != nil {
+			glog.Errorf("Error requesting tokens from faucet: %v", err)
+			return
+		}
+		glog.Info("Done requesting tokens.")
+		time.Sleep(4 * time.Second)
+
 		// XXX TODO curl -X "POST" http://localhost:$transcoderCliPort/initializeRound
 		time.Sleep(3 * time.Second)
 		for {
@@ -216,7 +214,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 			glog.Info("Waiting will first round ended.")
 			time.Sleep(4 * time.Second)
 		}
-		tx, err := client.InitializeRound()
+		tx, err = client.InitializeRound()
 		// ErrRoundInitialized
 		if err != nil {
 			if err.Error() != "ErrRoundInitialized" {
@@ -301,7 +299,7 @@ func createRunScript(ethAcctAddr, dataDir string, isBroadcaster bool) {
     -ethAcctAddr %s \
     -ethUrl %s \
     -ethPassword "" \
-    -gasPrice 200 -gasLimit 2000000 -network=devenv \
+    -network=devenv \
     -monitor=false -currentManifest=true -cliAddr 127.0.0.1:%d -httpAddr 127.0.0.1:%d `,
 		ethController, dataDir, ethAcctAddr, endpoint, cliPort, mediaPort)
 
