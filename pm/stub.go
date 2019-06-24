@@ -268,6 +268,7 @@ type stubSenderMonitor struct {
 	maxFloat       *big.Int
 	redeemable     chan *SignedTicket
 	queued         []*SignedTicket
+	acceptable     bool
 	queueTicketErr error
 	addFloatErr    error
 	subFloatErr    error
@@ -323,7 +324,7 @@ func (s *stubSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
 	return s.maxFloat, nil
 }
 
-func (s *stubSenderMonitor) AcceptErr(addr ethcommon.Address) bool { return true }
+func (s *stubSenderMonitor) AcceptErr(addr ethcommon.Address) bool { return s.acceptable }
 
 // MockRecipient is useful for testing components that depend on pm.Recipient
 type MockRecipient struct {
