@@ -360,13 +360,14 @@ func main() {
 			validator := pm.NewValidator(sigVerifier, n.Eth)
 			gpm := eth.NewGasPriceMonitor(backend, gpmPollingInterval)
 			// Start gas price monitor
-			if _, err := gpm.Start(context.Background()); err != nil {
+			gasPriceUpdate, err := gpm.Start(context.Background())
+			if err != nil {
 				glog.Errorf("error starting gas price monitor: %v", err)
 				return
 			}
 			defer gpm.Stop()
 
-			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, smCleanupInterval, smTTL, smMaxErrCount)
+			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, gasPriceUpdate, smCleanupInterval, smTTL, smMaxErrCount)
 			// Start sender monitor
 			sm.Start()
 			defer sm.Stop()
