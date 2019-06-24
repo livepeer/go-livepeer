@@ -55,6 +55,8 @@ var (
 	smCleanupInterval = 1 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up)
 	smTTL = 3600 // 1 minute
+	// smMaxErrCount is the maximum number of acceptable errors tolerated by a PM recipient for a sender
+	smMaxErrCount = 3
 )
 
 const RtmpPort = "1935"
@@ -364,7 +366,7 @@ func main() {
 			}
 			defer gpm.Stop()
 
-			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, smCleanupInterval, smTTL)
+			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, smCleanupInterval, smTTL, smMaxErrCount)
 			// Start sender monitor
 			sm.Start()
 			defer sm.Stop()

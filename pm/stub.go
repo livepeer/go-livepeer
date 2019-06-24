@@ -323,6 +323,8 @@ func (s *stubSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
 	return s.maxFloat, nil
 }
 
+func (s *stubSenderMonitor) AcceptErr(addr ethcommon.Address) bool { return true }
+
 // MockRecipient is useful for testing components that depend on pm.Recipient
 type MockRecipient struct {
 	mock.Mock

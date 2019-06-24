@@ -25,7 +25,7 @@ var increaseTime = func(sec int64) {
 func TestMaxFloat(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600, 3)
 	sm.Start()
 	defer sm.Stop()
 
@@ -62,7 +62,7 @@ func TestMaxFloat(t *testing.T) {
 func TestSubFloat(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600, 3)
 	sm.Start()
 	defer sm.Stop()
 
@@ -111,7 +111,7 @@ func TestSubFloat(t *testing.T) {
 func TestAddFloat(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600, 3)
 	sm.Start()
 	defer sm.Stop()
 
@@ -169,7 +169,7 @@ func TestAddFloat(t *testing.T) {
 func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600, 3)
 	sm.Start()
 	defer sm.Stop()
 
@@ -242,7 +242,7 @@ func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
 func TestCleanup(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 2)
+	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 2, 3)
 	sm.Start()
 	defer sm.Stop()
 
@@ -369,4 +369,30 @@ func TestCleanup(t *testing.T) {
 
 	assert.Equal(reserve4, mf1)
 	assert.Equal(reserve5, mf2)
+}
+
+func TestAcceptErr(t *testing.T) {
+	claimant := RandAddress()
+	addr := RandAddress()
+	b := newStubBroker()
+	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 2, 1)
+
+	assert := assert.New(t)
+
+	// Cache remote sender
+	reserve := big.NewInt(10)
+	b.SetReserve(addr, reserve)
+	sm.MaxFloat(addr)
+
+	// Test errCount for addr below maxErrCount
+	ok := sm.AcceptErr(addr)
+	assert.True(ok)
+
+	// Test errCount for addr equal to maxErrCount
+	ok = sm.AcceptErr(addr)
+	assert.False(ok)
+
+	// Test errCount did not increase when errCount = maxErrCount
+	ok = sm.AcceptErr(addr)
+	assert.False(ok)
 }

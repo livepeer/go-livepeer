@@ -37,6 +37,10 @@ type SenderMonitor interface {
 
 	// MaxFloat returns a remote sender's max float
 	MaxFloat(addr ethcommon.Address) (*big.Int, error)
+
+	// AcceptErr checks whether additional errors should be accepted and if so increments the acceptable error count
+	// for a sender
+	AcceptErr(addr ethcommon.Address) bool
 }
 
 type remoteSender struct {
@@ -49,6 +53,10 @@ type remoteSender struct {
 
 	queue *ticketQueue
 
+	// errCount is the current number of acceptable errors counted
+	// for the sender
+	errCount int
+
 	done chan struct{}
 
 	lastAccess int64
@@ -58,6 +66,9 @@ type senderMonitor struct {
 	claimant        ethcommon.Address
 	cleanupInterval time.Duration
 	ttl             int
+	// maxErrCount is the maximum number of acceptable errors allowed
+	// for a sender
+	maxErrCount int
 
 	mu      sync.RWMutex
 	senders map[ethcommon.Address]*remoteSender
@@ -73,11 +84,12 @@ type senderMonitor struct {
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, cleanupInterval time.Duration, ttl int) SenderMonitor {
+func NewSenderMonitor(claimant ethcommon.Address, broker Broker, cleanupInterval time.Duration, ttl int, maxErrCount int) SenderMonitor {
 	return &senderMonitor{
 		claimant:        claimant,
 		cleanupInterval: cleanupInterval,
 		ttl:             ttl,
+		maxErrCount:     maxErrCount,
 		broker:          broker,
 		senders:         make(map[ethcommon.Address]*remoteSender),
 		redeemable:      make(chan *SignedTicket),
@@ -166,6 +178,21 @@ func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicke
 	sm.senders[addr].queue.Add(ticket)
 
 	return nil
+}
+
+// AcceptErr checks whether additional errors should be accepted and if so increments the acceptable error count
+// for a sender
+func (sm *senderMonitor) AcceptErr(addr ethcommon.Address) bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if sm.senders[addr].errCount >= sm.maxErrCount {
+		return false
+	}
+
+	sm.senders[addr].errCount++
+
+	return true
 }
 
 // maxFloat is a helper that returns the sender's max float as:
