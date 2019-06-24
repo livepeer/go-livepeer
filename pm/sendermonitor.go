@@ -130,6 +130,11 @@ func (sm *senderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error
 
 	sm.senders[addr].pendingAmount.Sub(pendingAmount, amount)
 
+	// Reset errCount for sender
+	// An updated max float results in updated ticket params
+	// The sender could plausibly send tickets that trigger acceptable errors
+	sm.senders[addr].errCount = 0
+
 	// Whenever a sender's max float increases, signal the updated max float to the
 	// sender's associated ticket queue in case there are queued tickets that
 	// can be redeemed
@@ -150,6 +155,11 @@ func (sm *senderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) error
 	// Adding to pendingAmount = subtracting from max float
 	pendingAmount := sm.senders[addr].pendingAmount
 	sm.senders[addr].pendingAmount.Add(pendingAmount, amount)
+
+	// Reset errCount for sender
+	// An updated max float results in updated ticket params
+	// The sender could plausibly send tickets that trigger acceptable errors
+	sm.senders[addr].errCount = 0
 
 	return nil
 }
