@@ -360,7 +360,7 @@ func main() {
 			validator := pm.NewValidator(sigVerifier, n.Eth)
 			gpm := eth.NewGasPriceMonitor(backend, gpmPollingInterval)
 			// Start gas price monitor
-			if err := gpm.Start(context.Background()); err != nil {
+			if _, err := gpm.Start(context.Background()); err != nil {
 				glog.Errorf("error starting gas price monitor: %v", err)
 				return
 			}

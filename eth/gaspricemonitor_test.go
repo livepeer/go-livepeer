@@ -59,7 +59,8 @@ func TestStart(t *testing.T) {
 
 	expErr := errors.New("SuggestGasPrice error")
 	gpo.SetErr(expErr)
-	err := gpm.Start(context.Background())
+	update, err := gpm.Start(context.Background())
+	assert.Nil(update)
 	assert.EqualError(err, expErr.Error())
 
 	// Switch back to no errors for SuggestGasPrice
@@ -67,7 +68,8 @@ func TestStart(t *testing.T) {
 
 	// Test success
 
-	err = gpm.Start(context.Background())
+	update, err = gpm.Start(context.Background())
+	assert.NotNil(update)
 	assert.Nil(err)
 	defer gpm.Stop()
 
@@ -75,7 +77,8 @@ func TestStart(t *testing.T) {
 
 	// Test error when already polling
 
-	err = gpm.Start(context.Background())
+	update, err = gpm.Start(context.Background())
+	assert.Nil(update)
 	assert.EqualError(err, "already polling")
 }
 
@@ -90,9 +93,21 @@ func TestStart_Polling(t *testing.T) {
 
 	assert := assert.New(t)
 
-	err := gpm.Start(context.Background())
+	update, err := gpm.Start(context.Background())
+	require.NotNil(t, update)
 	require.Nil(t, err)
 	defer gpm.Stop()
+
+	changes := 0
+
+	go func() {
+		for changes < 2 {
+			select {
+			case <-update:
+				changes++
+			}
+		}
+	}()
 
 	// Async update gas price so when the
 	// sync sleep finishes, the monitor
@@ -122,6 +137,8 @@ func TestStart_Polling(t *testing.T) {
 	// There should be more queries now
 	assert.Greater(gpo.queries, queries)
 	assert.Equal(gasPrice3, gpm.GasPrice())
+
+	assert.Equal(2, changes)
 }
 
 func TestStart_Polling_ContextCancel(t *testing.T) {
@@ -132,7 +149,8 @@ func TestStart_Polling_ContextCancel(t *testing.T) {
 	gpm := NewGasPriceMonitor(gpo, pollingInterval)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	err := gpm.Start(ctx)
+	update, err := gpm.Start(ctx)
+	require.NotNil(t, update)
 	require.Nil(t, err)
 
 	queries := gpo.queries
@@ -162,7 +180,8 @@ func TestStop(t *testing.T) {
 
 	// Test success
 
-	err = gpm.Start(context.Background())
+	update, err := gpm.Start(context.Background())
+	require.NotNil(t, update)
 	require.Nil(t, err)
 
 	queries := gpo.queries
