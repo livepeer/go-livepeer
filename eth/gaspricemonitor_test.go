@@ -34,6 +34,13 @@ func (s *stubGasPriceOracle) SetErr(err error) {
 	s.err = err
 }
 
+func (s *stubGasPriceOracle) Queries() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.queries
+}
+
 func (s *stubGasPriceOracle) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -98,13 +105,32 @@ func TestStart_Polling(t *testing.T) {
 	require.Nil(t, err)
 	defer gpm.Stop()
 
-	changes := 0
+	var changes int
+	var changesMu sync.Mutex
+
+	getChanges := func() int {
+		changesMu.Lock()
+		defer changesMu.Unlock()
+
+		return changes
+	}
+
+	addChange := func() {
+		changesMu.Lock()
+		defer changesMu.Unlock()
+
+		changes++
+	}
 
 	go func() {
-		for changes < 2 {
+		count := 0
+
+		for count < 2 {
 			select {
 			case <-update:
-				changes++
+				count++
+
+				addChange()
 			}
 		}
 	}()
@@ -119,10 +145,10 @@ func TestStart_Polling(t *testing.T) {
 
 	time.Sleep(2 * pollingInterval)
 
-	assert.Greater(gpo.queries, 0)
+	assert.Greater(gpo.Queries(), 0)
 	assert.Equal(gasPrice2, gpm.GasPrice())
 
-	queries := gpo.queries
+	queries := gpo.Queries()
 
 	// Async update gas price so when the
 	// sync sleep finishes, the monitor
@@ -135,10 +161,10 @@ func TestStart_Polling(t *testing.T) {
 	time.Sleep(2 * pollingInterval)
 
 	// There should be more queries now
-	assert.Greater(gpo.queries, queries)
+	assert.Greater(gpo.Queries(), queries)
 	assert.Equal(gasPrice3, gpm.GasPrice())
 
-	assert.Equal(2, changes)
+	assert.Equal(2, getChanges())
 }
 
 func TestStart_Polling_ContextCancel(t *testing.T) {
