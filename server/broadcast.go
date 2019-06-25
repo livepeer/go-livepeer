@@ -23,6 +23,25 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
+var BroadcastCfg = &BroadcastConfig{}
+
+type BroadcastConfig struct {
+	maxPrice *big.Rat
+	mu       sync.RWMutex
+}
+
+func (cfg *BroadcastConfig) MaxPrice() *big.Rat {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	return cfg.maxPrice
+}
+
+func (cfg *BroadcastConfig) SetMaxPrice(price *big.Rat) {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	cfg.maxPrice = price
+}
+
 type BroadcastSessionsManager struct {
 	// Accessing or changing any of the below requires ownership of this mutex
 	sessLock *sync.Mutex

@@ -76,15 +76,27 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			return
 		}
 
-		priceStr := r.FormValue("maxPricePerSegment")
-		if priceStr == "" {
-			glog.Errorf("Need to provide max price per segment")
+		pricePerUnit := r.FormValue("maxPricePerUnit")
+		pr, err := strconv.ParseInt(pricePerUnit, 10, 64)
+		if err != nil {
+			glog.Errorf("Error converting string to int64: %v\n", err)
 			return
 		}
-		price, err := lpcommon.ParseBigInt(priceStr)
+
+		pixelsPerUnit := r.FormValue("pixelsPerUnit")
+		px, err := strconv.ParseInt(pixelsPerUnit, 10, 64)
 		if err != nil {
-			glog.Error(err)
+			glog.Errorf("Error converting string to int64: %v\n", err)
 			return
+		}
+		if px <= 0 {
+			glog.Errorf("pixels per unit must be greater than 0, provided %d\n", px)
+			return
+		}
+
+		var price *big.Rat
+		if pr > 0 {
+			price = big.NewRat(pr, px)
 		}
 
 		transcodingOptions := r.FormValue("transcodingOptions")
@@ -104,11 +116,14 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			glog.Errorf("Invalid transcoding options: %v", transcodingOptions)
 			return
 		}
-
-		BroadcastPrice = price
+		BroadcastCfg.SetMaxPrice(price)
 		BroadcastJobVideoProfiles = profiles
-
-		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
+		if price != nil {
+			glog.Infof("Maximum transcoding price: %d per %q pixels\n", pr, px)
+		} else {
+			glog.Info("Maximum transcoding price per pixel not set, broadcaster is currently set to accept ANY price.\n")
+		}
+		glog.Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 	})
 
 	mux.HandleFunc("/getBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
@@ -117,10 +132,10 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			pNames = append(pNames, p.Name)
 		}
 		config := struct {
-			MaxPricePerSegment *big.Int
+			MaxPrice           *big.Rat
 			TranscodingOptions string
 		}{
-			BroadcastPrice,
+			BroadcastCfg.MaxPrice(),
 			strings.Join(pNames, ","),
 		}
 

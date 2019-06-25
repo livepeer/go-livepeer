@@ -24,6 +24,7 @@ var serverGetOrchInfo = server.GetOrchestratorInfo
 type orchestratorPool struct {
 	uris  []*url.URL
 	bcast server.Broadcaster
+	pred  func(info *net.OrchestratorInfo) bool
 }
 
 var perm = func(len int) []int { return rand.Perm(len) }
@@ -55,6 +56,17 @@ func NewOrchestratorPool(node *core.LivepeerNode, addresses []string) *orchestra
 
 	bcast := core.NewBroadcaster(node)
 	return &orchestratorPool{bcast: bcast, uris: randomizedUris}
+}
+
+func NewOrchestratorPoolWithPred(node *core.LivepeerNode, addresses []string, pred func(*net.OrchestratorInfo) bool) *orchestratorPool {
+	// if livepeer running in offchain mode, return nil
+	if node.Eth == nil {
+		glog.Error("Could not refresh DB list of orchestrators: LivepeerNode nil")
+		return nil
+	}
+	pool := NewOrchestratorPool(node, addresses)
+	pool.pred = pred
+	return pool
 }
 
 func NewOnchainOrchestratorPool(node *core.LivepeerNode) *orchestratorPool {
@@ -97,7 +109,7 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 		respLock.Lock()
 		defer respLock.Unlock()
 		numResp++
-		if err == nil {
+		if err == nil && (o.pred == nil || o.pred(info)) {
 			orchInfos = append(orchInfos, info)
 			numSuccessResp++
 		} else if monitor.Enabled {

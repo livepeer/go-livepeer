@@ -360,7 +360,7 @@ func (w *wizard) getEthBalance() string {
 	return e
 }
 
-func (w *wizard) getBroadcastConfig() (*big.Int, string) {
+func (w *wizard) getBroadcastConfig() (*big.Rat, string) {
 	resp, err := http.Get(fmt.Sprintf("http://%v:%v/getBroadcastConfig", w.host, w.httpPort))
 	if err != nil {
 		glog.Errorf("Error getting broadcast config: %v", err)
@@ -375,7 +375,7 @@ func (w *wizard) getBroadcastConfig() (*big.Int, string) {
 	}
 
 	var config struct {
-		MaxPricePerSegment *big.Int
+		MaxPrice           *big.Rat
 		TranscodingOptions string
 	}
 	err = json.Unmarshal(result, &config)
@@ -384,7 +384,7 @@ func (w *wizard) getBroadcastConfig() (*big.Int, string) {
 		return nil, ""
 	}
 
-	return config.MaxPricePerSegment, config.TranscodingOptions
+	return config.MaxPrice, config.TranscodingOptions
 }
 
 func (w *wizard) getOrchestratorInfo() (lpTypes.Transcoder, error) {

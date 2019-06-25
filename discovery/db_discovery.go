@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"math/big"
 	"net/url"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/server"
 
 	"github.com/golang/glog"
 )
@@ -69,7 +71,15 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 		uris = append(uris, uri)
 	}
 
-	orchPool := NewOrchestratorPool(dbo.node, uris)
+	pred := func(info *net.OrchestratorInfo) bool {
+		price := server.BroadcastCfg.MaxPrice()
+		if price != nil {
+			return big.NewRat(info.PriceInfo.PricePerUnit, info.PriceInfo.PixelsPerUnit).Cmp(price) <= 0
+		}
+		return true
+	}
+
+	orchPool := NewOrchestratorPoolWithPred(dbo.node, uris, pred)
 
 	orchInfos, err := orchPool.GetOrchestrators(numOrchestrators)
 	if err != nil || len(orchInfos) <= 0 {
