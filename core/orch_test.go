@@ -662,14 +662,13 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", numTickets)
 }
 
-func TestProcessPayment_GivenReceiveTicketError_ReturnsFirstError(t *testing.T) {
+func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
 	manifestID := ManifestID("some manifest")
-	expErr := errors.New("ReceiveTicket error")
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, expErr).Once()
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, errors.New("ReceiveTicket error")).Once()
 	// This should trigger a redemption even though it returns an error because it still returns won = true
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, errors.New("not first error")).Once()
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil).Once()
@@ -689,7 +688,7 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsFirstError(t *testing.T) 
 
 	time.Sleep(time.Millisecond * 20)
 	assert := assert.New(t)
-	assert.EqualError(err, expErr.Error())
+	assert.EqualError(err, "error receiving tickets with payment")
 	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 2)
 }
 

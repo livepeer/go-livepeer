@@ -120,7 +120,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
 	}
 
-	var firstErr error
+	var didReceiveErr bool
 
 	for _, tsp := range payment.TicketSenderParams {
 
@@ -136,10 +136,17 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		if err != nil {
 			glog.Errorf("Error receiving ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 
-			if firstErr == nil {
-				firstErr = err
-			}
+			didReceiveErr = true
 		}
+
+		// TODO(yondonfu):
+		// Add ticket EV to the credit amount if any of the following conditions hold:
+		// - No error receiving the ticket
+		// - There is an error receiving the ticket, the type assertion on the error succeeds and the error is acceptable
+		// pmErr, ok := err.(pm.Error)
+		// if err == nil || (ok && pmErr.Acceptable()) {
+
+		// }
 
 		if won {
 			glog.V(common.DEBUG).Infof("Received winning ticket manifestID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
@@ -152,7 +159,11 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		}
 	}
 
-	return firstErr
+	if didReceiveErr {
+		return fmt.Errorf("error receiving tickets with payment")
+	}
+
+	return nil
 }
 
 func (orch *orchestrator) TicketParams(sender ethcommon.Address) (*net.TicketParams, error) {
