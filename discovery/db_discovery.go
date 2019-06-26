@@ -1,8 +1,11 @@
 package discovery
 
 import (
+	"context"
+	"fmt"
 	"math/big"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -45,7 +48,7 @@ func NewDBOrchestratorPoolCache(node *core.LivepeerNode) *DBOrchestratorPoolCach
 }
 
 func (dbo *DBOrchestratorPoolCache) GetURLs() []*url.URL {
-	orchs, err := dbo.node.Database.SelectOrchs()
+	orchs, err := dbo.node.Database.SelectOrchs(&common.DBOrchFilter{MaxPrice: server.BroadcastCfg.MaxPrice()})
 	if err != nil || len(orchs) <= 0 {
 		return nil
 	}
@@ -60,7 +63,7 @@ func (dbo *DBOrchestratorPoolCache) GetURLs() []*url.URL {
 }
 
 func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
-	orchs, err := dbo.node.Database.SelectOrchs()
+	orchs, err := dbo.node.Database.SelectOrchs(&common.DBOrchFilter{MaxPrice: server.BroadcastCfg.MaxPrice()})
 	if err != nil || len(orchs) <= 0 {
 		return nil, err
 	}
@@ -90,7 +93,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 }
 
 func (dbo *DBOrchestratorPoolCache) Size() int {
-	orchs, err := dbo.node.Database.SelectOrchs()
+	orchs, err := dbo.node.Database.SelectOrchs(&common.DBOrchFilter{MaxPrice: server.BroadcastCfg.MaxPrice()})
 	if err != nil {
 		return 0
 	}
@@ -119,19 +122,68 @@ func cacheDBOrchs(node *core.LivepeerNode, orchs []*lpTypes.Transcoder) ([]*comm
 		return dbOrchs, nil
 	}
 
+	resc, errc := make(chan *common.DBOrch), make(chan error)
+	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
+	defer cancel()
+
+	getOrchInfo := func(dbOrch *common.DBOrch) {
+		uri, err := parseURI(dbOrch.ServiceURI)
+		if err != nil {
+			errc <- err
+			return
+		}
+		info, err := serverGetOrchInfo(ctx, core.NewBroadcaster(node), uri)
+		if err != nil {
+			errc <- err
+			return
+		}
+		dbOrch.PricePerPixel, err = common.PriceToFixed(big.NewRat(info.PriceInfo.GetPricePerUnit(), info.PriceInfo.GetPixelsPerUnit()))
+		if err != nil {
+			errc <- err
+			return
+		}
+		resc <- dbOrch
+	}
+
+	numOrchs := 0
 	for _, orch := range orchs {
 		if orch == nil {
 			continue
 		}
 		dbOrch := ethOrchToDBOrch(orch)
-		if err := node.Database.UpdateOrch(dbOrch); err != nil {
-			glog.Error("Error updating Orchestrator in DB: ", err)
-			continue
-		}
-		dbOrchs = append(dbOrchs, dbOrch)
-	}
-	return dbOrchs, nil
+		numOrchs++
+		go getOrchInfo(dbOrch)
 
+	}
+
+	var returnDBOrchs []*common.DBOrch
+
+	for i := 0; i < numOrchs; i++ {
+		select {
+		case res := <-resc:
+			if err := node.Database.UpdateOrch(res); err != nil {
+				glog.Error("Error updating Orchestrator in DB: ", err)
+			}
+			returnDBOrchs = append(returnDBOrchs, res)
+		case err := <-errc:
+			glog.Errorln(err)
+		case <-ctx.Done():
+			glog.Info("Done fetching orch info for orchestrators, context timeout")
+			break
+		}
+	}
+	return returnDBOrchs, nil
+}
+
+func parseURI(addr string) (*url.URL, error) {
+	if !strings.HasPrefix(addr, "http") {
+		addr = "https://" + addr
+	}
+	uri, err := url.ParseRequestURI(addr)
+	if err != nil {
+		return nil, fmt.Errorf("Could not parse orchestrator URI: %v", err)
+	}
+	return uri, nil
 }
 
 func ethOrchToDBOrch(orch *lpTypes.Transcoder) *common.DBOrch {
