@@ -99,6 +99,7 @@ type BroadcastSession struct {
 	PMSessionID      string
 	Balance          Balance
 	LatencyScore     float64
+	tempSession      bool
 }
 
 // ReceivedTranscodeResult contains received transcode result data and related metadata
@@ -106,6 +107,21 @@ type ReceivedTranscodeResult struct {
 	*net.TranscodeData
 	Info         *net.OrchestratorInfo
 	LatencyScore float64
+}
+
+func (bs *BroadcastSession) makeTempSession() *BroadcastSession {
+	return &BroadcastSession{
+		Broadcaster:      bs.Broadcaster,
+		ManifestID:       bs.ManifestID,
+		Profiles:         bs.Profiles,
+		OrchestratorInfo: bs.OrchestratorInfo,
+		OrchestratorOS:   bs.OrchestratorOS,
+		BroadcasterOS:    bs.BroadcasterOS,
+		Sender:           bs.Sender,
+		PMSessionID:      bs.PMSessionID,
+		Balance:          bs.Balance,
+		tempSession:      true,
+	}
 }
 
 type lphttp struct {

@@ -44,6 +44,8 @@ func (cfg *BroadcastConfig) SetMaxPrice(price *big.Rat) {
 	cfg.maxPrice = price
 }
 
+var NoOrchestratorSelection bool
+
 type BroadcastSessionsManager struct {
 	// Accessing or changing any of the below requires ownership of this mutex
 	sessLock *sync.Mutex
@@ -89,10 +91,19 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 		   fixup the session list at selection time by retrying the selection.
 		*/
 	}
+	glog.Infof("Before trying make temp session, sess map len=%d", len(bsm.sessMap))
+	if NoOrchestratorSelection {
+		for _, sess := range bsm.sessMap {
+			return sess.makeTempSession()
+		}
+	}
 	return nil
 }
 
 func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {
+	if NoOrchestratorSelection {
+		return
+	}
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 
@@ -100,6 +111,9 @@ func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {
 }
 
 func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
+	if sess.tempSession {
+		return
+	}
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 

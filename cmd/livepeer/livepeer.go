@@ -97,6 +97,7 @@ func main() {
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	broadcaster := flag.Bool("broadcaster", false, "Set to true to be a broadcaster")
 	fake := flag.Bool("fake", false, "Use fake transcoder")
+	noOSelection := flag.Bool("noOSelection", false, "Turn off O selection on B")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
 	maxAttempts := flag.Int("maxAttempts", 3, "Maximum transcode attempts")
@@ -159,6 +160,7 @@ func main() {
 		glog.Fatal("-maxSessions must be greater than zero")
 		return
 	}
+	server.NoOrchestratorSelection = *noOSelection
 
 	type NetworkConfig struct {
 		ethUrl        string
