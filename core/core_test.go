@@ -6,20 +6,15 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"reflect"
-	"sort"
 	"testing"
 	"time"
 
 	ethCrypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
@@ -142,202 +137,6 @@ func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T
 
 	segChan = getSegChan(n, md.ManifestID)
 	assert.Nil(segChan)
-}
-
-func TestTranscodeLoop_GivenOnePMSessionAtVideoSessionTimeout_RedeemsOneSession(t *testing.T) {
-	recipient := new(pm.MockRecipient)
-	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	seth := &eth.StubClient{}
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
-	n, _ := NewLivepeerNode(seth, tmp, nil)
-	n.Recipient = recipient
-	ffmpeg.InitFFmpeg()
-	ss := StubSegment()
-	md := &SegTranscodingMetadata{Profiles: videoProfiles}
-	n.Transcoder = NewLocalTranscoder(tmp)
-
-	transcodeLoopTimeout = 100 * time.Millisecond
-	require := require.New(t)
-
-	sessionID := "some session ID"
-	n.pmSessionsMutex.Lock()
-	n.pmSessions[md.ManifestID] = make(map[string]bool)
-	n.pmSessions[md.ManifestID][sessionID] = true
-	n.pmSessionsMutex.Unlock()
-
-	recipient.On("RedeemWinningTickets", []string{sessionID}[:]).Return(nil)
-
-	_, err := n.sendToTranscodeLoop(md, ss)
-	require.Nil(err)
-	waitForTranscoderLoopTimeout(n, md.ManifestID)
-
-	recipient.AssertExpectations(t)
-}
-
-func TestTranscodeLoop_GivenMultiplePMSessionAtVideoSessionTimeout_RedeemsAllSessions(t *testing.T) {
-	recipient := new(pm.MockRecipient)
-	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	seth := &eth.StubClient{}
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
-	n, _ := NewLivepeerNode(seth, tmp, nil)
-	n.Recipient = recipient
-	ffmpeg.InitFFmpeg()
-	ss := StubSegment()
-	md := &SegTranscodingMetadata{Profiles: videoProfiles}
-	n.Transcoder = NewLocalTranscoder(tmp)
-
-	transcodeLoopTimeout = 100 * time.Millisecond
-	require := require.New(t)
-
-	sessionIDs := []string{"first session ID", "second session ID"}
-	n.pmSessionsMutex.Lock()
-	n.pmSessions[md.ManifestID] = make(map[string]bool)
-	n.pmSessions[md.ManifestID][sessionIDs[0]] = true
-	n.pmSessions[md.ManifestID][sessionIDs[1]] = true
-	n.pmSessionsMutex.Unlock()
-
-	// Need to use this because the order of the string slice used to call this function
-	// later cannot be guaranteed, since they are coming from a map's keys.
-	argsMatcher := mock.MatchedBy(func(IDs []string) bool {
-		sort.Strings(sessionIDs)
-		sort.Strings(IDs)
-
-		return reflect.DeepEqual(sessionIDs, IDs)
-	})
-
-	recipient.On("RedeemWinningTickets", argsMatcher).Return(nil)
-
-	_, err := n.sendToTranscodeLoop(md, ss)
-	require.Nil(err)
-	waitForTranscoderLoopTimeout(n, md.ManifestID)
-
-	recipient.AssertExpectations(t)
-}
-
-func TestTranscodeLoop_GivenMultiplePMSessionsAtVideoSessionTimeout_CleansSessionIDMemoryCache(t *testing.T) {
-	recipient := new(pm.MockRecipient)
-	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	seth := &eth.StubClient{}
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
-	n, _ := NewLivepeerNode(seth, tmp, nil)
-	n.Recipient = recipient
-	ffmpeg.InitFFmpeg()
-	ss := StubSegment()
-	md := &SegTranscodingMetadata{Profiles: videoProfiles}
-	n.Transcoder = NewLocalTranscoder(tmp)
-
-	transcodeLoopTimeout = 100 * time.Millisecond
-	require := require.New(t)
-
-	sessionIDs := []string{"first session ID", "second session ID"}
-	n.pmSessionsMutex.Lock()
-	n.pmSessions[md.ManifestID] = make(map[string]bool)
-	n.pmSessions[md.ManifestID][sessionIDs[0]] = true
-	n.pmSessions[md.ManifestID][sessionIDs[1]] = true
-	n.pmSessionsMutex.Unlock()
-	recipient.On("RedeemWinningTickets", mock.Anything).Return(nil)
-
-	_, err := n.sendToTranscodeLoop(md, ss)
-	require.Nil(err)
-	waitForTranscoderLoopTimeout(n, md.ManifestID)
-
-	n.pmSessionsMutex.Lock()
-	assert.NotContains(t, n.pmSessions, md.ManifestID)
-	n.pmSessionsMutex.Unlock()
-}
-
-func TestTranscodeLoop_GivenNoPMSessionAtVideoSessionTimeout_DoesntTryToRedeem(t *testing.T) {
-	recipient := new(pm.MockRecipient)
-	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	seth := &eth.StubClient{}
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
-	n, _ := NewLivepeerNode(seth, tmp, nil)
-	n.Recipient = recipient
-	ffmpeg.InitFFmpeg()
-	ss := StubSegment()
-	md := &SegTranscodingMetadata{Profiles: videoProfiles}
-	n.Transcoder = NewLocalTranscoder(tmp)
-	transcodeLoopTimeout = 100 * time.Millisecond
-	require := require.New(t)
-	recipient.On("RedeemWinningTickets", mock.Anything).Return(nil)
-
-	_, err := n.sendToTranscodeLoop(md, ss)
-	require.Nil(err)
-	waitForTranscoderLoopTimeout(n, md.ManifestID)
-
-	recipient.AssertNotCalled(t, "RedeemWinningTickets", mock.Anything)
-}
-
-func TestTranscodeLoop_GivenRedeemErrorAtVideoSessionTimeout_ErrorLogIsWritten(t *testing.T) {
-	recipient := new(pm.MockRecipient)
-	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	seth := &eth.StubClient{}
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
-	n, _ := NewLivepeerNode(seth, tmp, nil)
-	n.Recipient = recipient
-	ffmpeg.InitFFmpeg()
-	ss := StubSegment()
-	md := &SegTranscodingMetadata{Profiles: videoProfiles}
-	n.Transcoder = NewLocalTranscoder(tmp)
-	transcodeLoopTimeout = 100 * time.Millisecond
-	require := require.New(t)
-
-	sessionID := "some session ID"
-	n.pmSessionsMutex.Lock()
-	n.pmSessions[md.ManifestID] = make(map[string]bool)
-	n.pmSessions[md.ManifestID][sessionID] = true
-	n.pmSessionsMutex.Unlock()
-	recipient.On("RedeemWinningTickets", mock.Anything).Return(fmt.Errorf("some error"))
-
-	errorLogsBefore := glog.Stats.Error.Lines()
-	_, err := n.sendToTranscodeLoop(md, ss)
-	require.Nil(err)
-	waitForTranscoderLoopTimeout(n, md.ManifestID)
-	errorLogsAfter := glog.Stats.Error.Lines()
-
-	assert.Equal(t, int64(1), errorLogsAfter-errorLogsBefore)
-}
-
-func TestTranscodeLoop_GivenRedeemErrorAtVideoSessionTimeout_StillCleanspmSessionsCache(t *testing.T) {
-	recipient := new(pm.MockRecipient)
-	//Set up the node
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	seth := &eth.StubClient{}
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
-	n, _ := NewLivepeerNode(seth, tmp, nil)
-	n.Recipient = recipient
-	ffmpeg.InitFFmpeg()
-	ss := StubSegment()
-	md := &SegTranscodingMetadata{Profiles: videoProfiles}
-	n.Transcoder = NewLocalTranscoder(tmp)
-	transcodeLoopTimeout = 100 * time.Millisecond
-	require := require.New(t)
-
-	sessionID := "some session ID"
-	n.pmSessionsMutex.Lock()
-	n.pmSessions[md.ManifestID] = make(map[string]bool)
-	n.pmSessions[md.ManifestID][sessionID] = true
-	n.pmSessionsMutex.Unlock()
-	recipient.On("RedeemWinningTickets", mock.Anything).Return(fmt.Errorf("some error"))
-
-	_, err := n.sendToTranscodeLoop(md, ss)
-	require.Nil(err)
-	waitForTranscoderLoopTimeout(n, md.ManifestID)
-
-	n.pmSessionsMutex.Lock()
-	assert.NotContains(t, n.pmSessions, md.ManifestID)
-	n.pmSessionsMutex.Unlock()
 }
 
 func waitForTranscoderLoopTimeout(n *LivepeerNode, m ManifestID) {

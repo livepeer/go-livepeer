@@ -9,6 +9,66 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestEV(t *testing.T) {
+	assert := assert.New(t)
+
+	ticket := &Ticket{
+		FaceValue: big.NewInt(1000),
+		WinProb:   new(big.Int).Div(maxWinProb, big.NewInt(2)),
+	}
+
+	assert.Equal("500", ticket.EV().FloatString(0))
+
+	ticket = &Ticket{
+		FaceValue: big.NewInt(1000),
+		WinProb:   big.NewInt(0),
+	}
+
+	assert.Equal("0", ticket.EV().FloatString(0))
+
+	ticket = &Ticket{
+		FaceValue: big.NewInt(1000),
+		WinProb:   maxWinProb,
+	}
+
+	assert.Equal("1000", ticket.EV().FloatString(0))
+
+	ticket = &Ticket{
+		FaceValue: big.NewInt(0),
+		WinProb:   big.NewInt(999),
+	}
+
+	assert.Equal("0", ticket.EV().FloatString(0))
+}
+
+func TestWinProbRat(t *testing.T) {
+	assert := assert.New(t)
+
+	ticket := &Ticket{
+		WinProb: new(big.Int).Div(maxWinProb, big.NewInt(2)),
+	}
+
+	assert.Equal("0.5", ticket.WinProbRat().FloatString(1))
+
+	ticket = &Ticket{
+		WinProb: new(big.Int).Div(maxWinProb, big.NewInt(4)),
+	}
+
+	assert.Equal("0.25", ticket.WinProbRat().FloatString(2))
+
+	ticket = &Ticket{
+		WinProb: big.NewInt(0),
+	}
+
+	assert.Equal("0", ticket.WinProbRat().FloatString(0))
+
+	ticket = &Ticket{
+		WinProb: maxWinProb,
+	}
+
+	assert.Equal("1", ticket.WinProbRat().FloatString(0))
+}
+
 func TestAuxData(t *testing.T) {
 	round := int64(5)
 	blkHash := ethcommon.BytesToHash(ethcommon.FromHex("7624778dedc75f8b322b9fa1632a610d40b85e106c7d9bf0e743a9ce291b9c6f"))

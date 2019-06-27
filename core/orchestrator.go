@@ -120,25 +120,39 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
 	}
 
+	var firstErr error
+
 	for _, tsp := range payment.TicketSenderParams {
 
 		ticket.SenderNonce = tsp.SenderNonce
 
-		sessionID, won, err := orch.node.Recipient.ReceiveTicket(
+		glog.V(common.DEBUG).Infof("Receiving ticket manifestID=%v faceValue=%v winProb=%v ev=%v", manifestID, ticket.FaceValue, ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
+
+		_, won, err := orch.node.Recipient.ReceiveTicket(
 			ticket,
 			tsp.Sig,
 			seed,
 		)
 		if err != nil {
-			glog.Errorf("Error receiving ticket %v for manifest %v: %v\n", ticket, manifestID, err)
+			glog.Errorf("Error receiving ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
+
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 
-		if won && err == nil {
-			glog.V(common.DEBUG).Info("Received winning ticket")
-			cachePMSessionID(orch.node, manifestID, sessionID)
+		if won {
+			glog.V(common.DEBUG).Infof("Received winning ticket manifestID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
+
+			go func(ticket *pm.Ticket, sig []byte, seed *big.Int) {
+				if err := orch.node.Recipient.RedeemWinningTicket(ticket, sig, seed); err != nil {
+					glog.Errorf("error redeeming ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
+				}
+			}(ticket, tsp.Sig, seed)
 		}
 	}
-	return nil
+
+	return firstErr
 }
 
 func (orch *orchestrator) TicketParams(sender ethcommon.Address) (*net.TicketParams, error) {
@@ -438,15 +452,6 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 					}
 				}
 				n.segmentMutex.Unlock()
-				if n.Recipient != nil {
-					sessionIDs := getAndClearPMSessionIDsByManifestID(n, md.ManifestID)
-					if len(sessionIDs) > 0 {
-						err := n.Recipient.RedeemWinningTickets(sessionIDs)
-						if err != nil {
-							glog.Errorf("Error redeeming winning tickets for manifestID %v and sessions %v. Errors: %+v", md.ManifestID, sessionIDs, err)
-						}
-					}
-				}
 				return
 			case chanData := <-segChan:
 				chanData.res <- n.transcodeSeg(config, chanData.seg, chanData.md)
@@ -651,30 +656,6 @@ func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.Vi
 	}
 	rtm.completeTranscoders(currentTranscoder)
 	return res, err
-}
-
-func cachePMSessionID(n *LivepeerNode, m ManifestID, s string) {
-	n.pmSessionsMutex.Lock()
-	defer n.pmSessionsMutex.Unlock()
-	if _, ok := n.pmSessions[m]; !ok {
-		n.pmSessions[m] = make(map[string]bool)
-	}
-	n.pmSessions[m][s] = true
-}
-
-func getAndClearPMSessionIDsByManifestID(n *LivepeerNode, m ManifestID) []string {
-	n.pmSessionsMutex.Lock()
-	defer n.pmSessionsMutex.Unlock()
-	sessionIDs := make([]string, len(n.pmSessions[m]))
-	i := 0
-	for sessionID := range n.pmSessions[m] {
-		sessionIDs[i] = sessionID
-		i++
-	}
-
-	delete(n.pmSessions, m)
-
-	return sessionIDs
 }
 
 func randName() string {

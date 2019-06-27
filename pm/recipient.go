@@ -9,6 +9,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -20,12 +21,21 @@ var maxWinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewI
 // Recipient is an interface which describes an object capable
 // of receiving tickets
 type Recipient interface {
+	// Start initiates the helper goroutines for the recipient
+	Start()
+
+	// Stop signals the recipient to exit gracefully
+	Stop()
+
 	// ReceiveTicket validates and processes a received ticket
 	ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error)
 
 	// RedeemWinningTickets redeems all winning tickets with the broker
 	// for a all sessionIDs
 	RedeemWinningTickets(sessionIDs []string) error
+
+	// RedeemWinningTicket redeems a single winning ticket
+	RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error
 
 	// TicketParams returns the recipient's currently accepted ticket parameters
 	// for a provided sender ETH adddress
@@ -61,7 +71,7 @@ type recipient struct {
 	broker Broker
 	store  TicketStore
 	gpm    GasPriceMonitor
-	fm     FloatMonitor
+	sm     SenderMonitor
 
 	addr   ethcommon.Address
 	secret [32]byte
@@ -72,11 +82,13 @@ type recipient struct {
 	senderNoncesLock sync.Mutex
 
 	cfg TicketParamsConfig
+
+	quit chan struct{}
 }
 
 // NewRecipient creates an instance of a recipient with an
 // automatically generated random secret
-func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, fm FloatMonitor, cfg TicketParamsConfig) (Recipient, error) {
+func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, cfg TicketParamsConfig) (Recipient, error) {
 	randBytes := make([]byte, 32)
 	if _, err := rand.Read(randBytes); err != nil {
 		return nil, err
@@ -85,69 +97,58 @@ func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store Ti
 	var secret [32]byte
 	copy(secret[:], randBytes[:32])
 
-	return NewRecipientWithSecret(addr, broker, val, store, gpm, fm, secret, cfg), nil
+	return NewRecipientWithSecret(addr, broker, val, store, gpm, sm, secret, cfg), nil
 }
 
 // NewRecipientWithSecret creates an instance of a recipient with a user provided
 // secret. In most cases, NewRecipient should be used instead which will
 // automatically generate a random secret
-func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, fm FloatMonitor, secret [32]byte, cfg TicketParamsConfig) Recipient {
+func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, secret [32]byte, cfg TicketParamsConfig) Recipient {
 	return &recipient{
 		broker:       broker,
 		val:          val,
 		store:        store,
 		gpm:          gpm,
-		fm:           fm,
+		sm:           sm,
 		addr:         addr,
 		secret:       secret,
 		senderNonces: make(map[string]uint32),
 		cfg:          cfg,
+		quit:         make(chan struct{}),
 	}
+}
+
+// Start initiates the helper goroutines for the recipient
+func (r *recipient) Start() {
+	go r.redeemManager()
+}
+
+// Stop signals the recipient to exit gracefully
+func (r *recipient) Stop() {
+	close(r.quit)
 }
 
 // ReceiveTicket validates and processes a received ticket
 func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (string, bool, error) {
 	recipientRand := r.rand(seed, ticket.Sender)
 
-	if crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size)) != ticket.RecipientRandHash {
-		return "", false, errors.Errorf("invalid recipientRand generated from seed %v", seed)
-	}
-
-	faceValue, err := r.faceValue(ticket.Sender)
-	if err != nil {
-		return "", false, err
-	}
-
-	if ticket.FaceValue.Cmp(faceValue) != 0 {
-		return "", false, errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue)
-	}
-
-	if ticket.WinProb.Cmp(r.winProb(faceValue)) != 0 {
-		return "", false, errors.Errorf("invalid ticket winProb %v", ticket.WinProb)
-	}
-
+	// If any of the basic ticket validity checks fail, abort
 	if err := r.val.ValidateTicket(r.addr, ticket, sig, recipientRand); err != nil {
 		return "", false, err
 	}
 
-	if !r.validRand(recipientRand) {
-		return "", false, errors.Errorf("invalid already revealed recipientRand %v", recipientRand)
-	}
-
-	if err := r.updateSenderNonce(recipientRand, ticket.SenderNonce); err != nil {
-		return "", false, err
-	}
+	var sessionID string
+	var won bool
 
 	if r.val.IsWinningTicket(ticket, sig, recipientRand) {
-		sessionID := ticket.RecipientRandHash.Hex()
+		sessionID = ticket.RecipientRandHash.Hex()
+		won = true
 		if err := r.store.StoreWinningTicket(sessionID, ticket, sig, recipientRand); err != nil {
-			return "", true, err
+			glog.Errorf("error storing ticket sender=%x recipientRandHash=%x senderNonce=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce)
 		}
-
-		return sessionID, true, nil
 	}
 
-	return "", false, nil
+	return sessionID, won, r.acceptTicket(ticket, sig, recipientRand)
 }
 
 // RedeemWinningTicket redeems all winning tickets with the broker
@@ -165,6 +166,12 @@ func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 	}
 
 	return nil
+}
+
+// RedeemWinningTicket redeems a single winning ticket
+func (r *recipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error {
+	recipientRand := r.rand(seed, ticket.Sender)
+	return r.redeemWinningTicket(ticket, sig, recipientRand)
 }
 
 // TicketParams returns the recipient's currently accepted ticket parameters
@@ -211,7 +218,7 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	}
 
 	// Fetch current max float for sender
-	maxFloat, err := r.fm.MaxFloat(sender)
+	maxFloat, err := r.sm.MaxFloat(sender)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +268,70 @@ func (r *recipient) TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error)
 	return new(big.Rat).SetFrac(faceValue, r.txCost()), nil
 }
 
+func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+	if !r.validRand(recipientRand) {
+		// This might be an "acceptable" error.
+		// When a winning ticket is redeemed, the ticket's recipientRand is invalidated
+		// and the sender must send tickets with a new seed, but there could be a delay
+		// before the sender is notified of the new seed.
+		//
+		// TODO(yondonfu): Track the number of these types of errors to determine
+		// whether we should accept more of these types of errors
+		return errors.Errorf("invalid already revealed recipientRand %v", recipientRand)
+	}
+
+	if err := r.updateSenderNonce(recipientRand, ticket.SenderNonce); err != nil {
+		return err
+	}
+
+	faceValue, err := r.faceValue(ticket.Sender)
+	if err != nil {
+		return err
+	}
+
+	if ticket.FaceValue.Cmp(faceValue) != 0 {
+		// This might be an "acceptable" error
+		// When the gas price changes or the sender's max float changes, the required faceValue
+		// also changes and the sender must send tickets with the new faceValue, but there could
+		// be a delay before the sender is notified of the new faceValue.
+		//
+		// TODO(yondonfu): Track the number of these types of errors to determine
+		// whether we should accept more of these types of errors
+		return errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue)
+	}
+
+	if ticket.WinProb.Cmp(r.winProb(faceValue)) != 0 {
+		// This might be an "acceptable" error
+		// When the gas price changes or the sender's max float changes, the required winProb
+		// also changes and the sender must send tickets with the new winProb, but there could
+		// be a delay before the sender is notified of the new winProb.
+		//
+		// TODO(yondonfu): Track the number of these types of errors to determine
+		// whether we should accept more of these types of errors
+		return errors.Errorf("invalid ticket winProb %v", ticket.WinProb)
+	}
+
+	return nil
+}
+
 func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+	maxFloat, err := r.sm.MaxFloat(ticket.Sender)
+	if err != nil {
+		return err
+	}
+
+	// If max float is insufficient to cover the ticket face value, queue
+	// the ticket to be retried later
+	if maxFloat.Cmp(ticket.FaceValue) < 0 {
+		if err := r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand}); err != nil {
+			return err
+		}
+
+		glog.Infof("Queued ticket sender=%x recipientRandHash=%x senderNonce=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce)
+
+		return nil
+	}
+
 	info, err := r.broker.GetSenderInfo(ticket.Sender)
 	if err != nil {
 		return err
@@ -273,10 +343,32 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 		return errors.Errorf("sender %v has zero deposit and reserve", ticket.Sender)
 	}
 
+	// Subtract the ticket face value from the sender's current max float
+	// This amount will be considered pending until the ticket redemption
+	// transaction confirms on-chain
+	if err := r.sm.SubFloat(ticket.Sender, ticket.FaceValue); err != nil {
+		return err
+	}
+
+	defer func() {
+		// Add the ticket face value back to the sender's current max float
+		// This amount is no longer considered pending since the ticket
+		// redemption transaction either confirmed on-chain or was not
+		// submitted at all
+		//
+		// TODO(yondonfu): Should ultimately add back only the amount that
+		// was actually successfully redeemed in order to take into account
+		// the case where the ticket was not redeemd for its full face value
+		// because the reserve was insufficient
+		if err := r.sm.AddFloat(ticket.Sender, ticket.FaceValue); err != nil {
+			glog.Errorf("error updating sender %x max float: %v", ticket.Sender, err)
+		}
+	}()
+
 	// Assume that that this call will return immediately if there
-	// is an error in transaction submission. Else, the function will kick off
-	// a goroutine and then return to the caller
-	if _, err := r.broker.RedeemWinningTicket(ticket, sig, recipientRand); err != nil {
+	// is an error in transaction submission
+	tx, err := r.broker.RedeemWinningTicket(ticket, sig, recipientRand)
+	if err != nil {
 		return err
 	}
 
@@ -287,6 +379,11 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 	// After we invalidate recipientRand we can clear the memory used to track
 	// its latest senderNonce
 	r.clearSenderNonce(recipientRand)
+
+	// Wait for transaction to confirm
+	if err := r.broker.CheckTx(tx); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -327,4 +424,18 @@ func (r *recipient) clearSenderNonce(rand *big.Int) {
 	defer r.senderNoncesLock.Unlock()
 
 	delete(r.senderNonces, rand.String())
+}
+
+func (r *recipient) redeemManager() {
+	// Listen for redeemable tickets that should be retried
+	for {
+		select {
+		case ticket := <-r.sm.Redeemable():
+			if err := r.redeemWinningTicket(ticket.Ticket, ticket.Sig, ticket.RecipientRand); err != nil {
+				glog.Errorf("error retrying ticket sender=%x recipientRandHash=%x senderNonce=%v: %v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce, err)
+			}
+		case <-r.quit:
+			return
+		}
+	}
 }

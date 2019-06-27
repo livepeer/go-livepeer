@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -148,4 +149,14 @@ func GetConnectionAddr(ctx context.Context) string {
 		from = p.Addr.String()
 	}
 	return from
+}
+
+// GenErrRegex generates a regexp `(err1)|(err2)|(err3)` given a list of
+// error strings [err1, err2, err3]
+func GenErrRegex(errStrings []string) *regexp.Regexp {
+	groups := []string{}
+	for _, v := range errStrings {
+		groups = append(groups, fmt.Sprintf("(%v)", v))
+	}
+	return regexp.MustCompile(strings.Join(groups, "|"))
 }

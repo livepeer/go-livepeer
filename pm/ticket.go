@@ -14,6 +14,21 @@ const (
 	bytes32Size = 32
 )
 
+// SignedTicket is a wrapper around a Ticket with the sender's signature over the ticket and
+// the recipient recipientRand
+type SignedTicket struct {
+	// Ticket contains ticket fields that are directly
+	// accessible on SignedTicket since it is embedded
+	*Ticket
+
+	// Sig is the sender's signature over the ticket
+	Sig []byte
+
+	// RecipientRand is the recipient's random value that should be
+	// the preimage for the ticket's recipientRandHash
+	RecipientRand *big.Int
+}
+
 // TicketParams represents the parameters defined by a receiver that a sender must adhere to when
 // sending tickets to receiver.
 type TicketParams struct {
@@ -59,6 +74,16 @@ type Ticket struct {
 
 	// CreationRoundBlockHash is the block hash associated with CreationRound
 	CreationRoundBlockHash ethcommon.Hash
+}
+
+// EV returns the expected value of a ticket
+func (t *Ticket) EV() *big.Rat {
+	return new(big.Rat).Mul(new(big.Rat).SetInt(t.FaceValue), new(big.Rat).SetFrac(t.WinProb, maxWinProb))
+}
+
+// WinProbRat returns the ticket WinProb as a percentage represented as a big.Rat
+func (t *Ticket) WinProbRat() *big.Rat {
+	return new(big.Rat).SetFrac(t.WinProb, maxWinProb)
 }
 
 // Hash returns the keccak-256 hash of the ticket's fields as tightly packed

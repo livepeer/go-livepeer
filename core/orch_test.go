@@ -517,164 +517,6 @@ func TestProcessPayment_GivenNoSender_ReturnsError(t *testing.T) {
 	assert.Error(err)
 }
 
-func TestProcessPayment_GivenNoTicketParamsInPayment_DoesNotCacheSessionId(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil)
-	recipient := new(pm.MockRecipient)
-	n.Recipient = recipient
-	orch := NewOrchestrator(n)
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
-
-	var protoPayment net.Payment
-
-	err := orch.ProcessPayment(protoPayment, ManifestID("some manifest"))
-
-	assert := assert.New(t)
-	assert.Error(err)
-	assert.Empty(n.pmSessions)
-}
-
-func TestProcessPayment_GivenWinningTicketAndRecipientError_DoesNotCacheSessionID(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil)
-	recipient := new(pm.MockRecipient)
-	n.Recipient = recipient
-	orch := NewOrchestrator(n)
-	manifestID := ManifestID("some manifest")
-	sessionID := "some sessionID"
-
-	errorLogsBefore := glog.Stats.Error.Lines()
-
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, errors.New("mock error"))
-	err := orch.ProcessPayment(defaultPayment(t), manifestID)
-
-	errorLogsAfter := glog.Stats.Error.Lines()
-
-	assert := assert.New(t)
-	assert.Nil(err)
-	assert.NotZero(errorLogsAfter - errorLogsBefore)
-	assert.Empty(n.pmSessions)
-}
-
-func TestProcessPayment_GivenLosingTicket_DoesNotCacheSessionID(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil)
-	recipient := new(pm.MockRecipient)
-	n.Recipient = recipient
-	orch := NewOrchestrator(n)
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
-
-	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
-
-	assert := assert.New(t)
-	assert.Nil(err)
-	assert.Empty(n.pmSessions)
-}
-
-func TestProcessPayment_GivenWinningTicket_CachesSessionID(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil)
-	recipient := new(pm.MockRecipient)
-	n.Recipient = recipient
-	orch := NewOrchestrator(n)
-	manifestID := ManifestID("some manifest")
-	sessionID := "some sessionID"
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
-
-	err := orch.ProcessPayment(defaultPayment(t), manifestID)
-
-	assert := assert.New(t)
-	assert.Nil(err)
-	assert.Contains(n.pmSessions, manifestID)
-	assert.Contains(n.pmSessions[manifestID], sessionID)
-}
-
-func TestProcessPayment_GivenMultipleTickets_CachesSessionID(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil)
-	recipient := new(pm.MockRecipient)
-	n.Recipient = recipient
-	orch := NewOrchestrator(n)
-	manifestID := ManifestID("some manifest")
-	sessionID := "some sessionID"
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil).Times(5)
-
-	var ticketSenderParams []*net.TicketSenderParams
-	for i := 0; i < 5; i++ {
-
-		ticketSenderParams = append(ticketSenderParams, &net.TicketSenderParams{
-			SenderNonce: 456,
-			Sig:         pm.RandBytes(123),
-		})
-	}
-
-	protoPayment := defaultPaymentWithTickets(t, ticketSenderParams)
-
-	err := orch.ProcessPayment(*protoPayment, manifestID)
-	recipient.AssertNumberOfCalls(t, "ReceiveTicket", 5)
-	assert := assert.New(t)
-	assert.Nil(err)
-	assert.Contains(n.pmSessions, manifestID)
-	assert.Contains(n.pmSessions[manifestID], sessionID)
-}
-
-func TestProcessPayment_GivenWinningTicketsInMultipleSessions_CachesAllSessionIDs(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil)
-	recipient := new(pm.MockRecipient)
-	n.Recipient = recipient
-	orch := NewOrchestrator(n)
-	manifestID := ManifestID("some manifest")
-	sessionID0 := "first sessionID"
-	sessionID1 := "second sessionID"
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID0, true, nil).Once()
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID1, true, nil).Once()
-	assert := assert.New(t)
-
-	err := orch.ProcessPayment(defaultPayment(t), manifestID)
-	assert.Nil(err)
-	err = orch.ProcessPayment(defaultPayment(t), manifestID)
-	assert.Nil(err)
-
-	assert.Contains(n.pmSessions, manifestID)
-	assert.Contains(n.pmSessions[manifestID], sessionID0)
-	assert.Contains(n.pmSessions[manifestID], sessionID1)
-}
-
-func TestProcessPayment_GivenConcurrentWinningTickets_CachesAllSessionIDs(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil)
-	recipient := new(pm.MockRecipient)
-	n.Recipient = recipient
-	orch := NewOrchestrator(n)
-	manifestIDs := make([]string, 5)
-	for i := 0; i < 5; i++ {
-		manifestIDs = append(manifestIDs, randString())
-	}
-	sessionIDs := make([]string, 100)
-	for i := 0; i < 100; i++ {
-		sessionIDs[i] = randString()
-	}
-	for i := 0; i < len(sessionIDs); i++ {
-		recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionIDs[i], true, nil).Once()
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(len(sessionIDs))
-	for i := 0; i < len(sessionIDs); i++ {
-		manifestID := manifestIDs[rand.Intn(len(manifestIDs))]
-		go func() {
-			orch.ProcessPayment(defaultPayment(t), ManifestID(manifestID))
-			wg.Done()
-		}()
-	}
-	wg.Wait()
-
-	actualSessionIDs := make([]string, len(sessionIDs))
-	i := 0
-	for _, sessionsMap := range n.pmSessions {
-		for sessionID := range sessionsMap {
-			actualSessionIDs[i] = sessionID
-			i++
-		}
-	}
-	assert := assert.New(t)
-	assert.ElementsMatch(sessionIDs, actualSessionIDs)
-}
-
 func TestProcessPayment_GivenNilNode_ReturnsNilError(t *testing.T) {
 	orch := &orchestrator{}
 
@@ -691,6 +533,164 @@ func TestProcessPayment_GivenNilRecipient_ReturnsNilError(t *testing.T) {
 	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
 
 	assert.Nil(t, err)
+}
+
+func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
+
+	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+
+	time.Sleep(time.Millisecond * 20)
+	assert := assert.New(t)
+	assert.Nil(err)
+	recipient.AssertNotCalled(t, "RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	sessionID := "some sessionID"
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
+	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("RedeemWinningTicket error"))
+
+	errorLogsBefore := glog.Stats.Error.Lines()
+
+	err := orch.ProcessPayment(defaultPayment(t), manifestID)
+
+	time.Sleep(time.Millisecond * 20)
+	errorLogsAfter := glog.Stats.Error.Lines()
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
+	recipient.AssertCalled(t, "RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	sessionID := "some sessionID"
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
+	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	errorLogsBefore := glog.Stats.Error.Lines()
+
+	err := orch.ProcessPayment(defaultPayment(t), manifestID)
+
+	time.Sleep(time.Millisecond * 20)
+	errorLogsAfter := glog.Stats.Error.Lines()
+	assert := assert.New(t)
+	assert.Zero(errorLogsAfter - errorLogsBefore)
+	assert.Nil(err)
+	recipient.AssertCalled(t, "RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	sessionID := "some sessionID"
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
+
+	numTickets := 5
+	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil).Times(numTickets)
+
+	var senderParams []*net.TicketSenderParams
+	for i := 0; i < numTickets; i++ {
+		senderParams = append(
+			senderParams,
+			&net.TicketSenderParams{SenderNonce: 456, Sig: pm.RandBytes(123)},
+		)
+	}
+
+	err := orch.ProcessPayment(*defaultPaymentWithTickets(t, senderParams), manifestID)
+
+	time.Sleep(time.Millisecond * 20)
+	assert := assert.New(t)
+	assert.Nil(err)
+	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", numTickets)
+}
+
+func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestIDs := make([]string, 5)
+	for i := 0; i < 5; i++ {
+		manifestIDs = append(manifestIDs, randString())
+	}
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil)
+
+	numTickets := 100
+	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil).Times(numTickets)
+
+	assert := assert.New(t)
+
+	var wg sync.WaitGroup
+	wg.Add(len(manifestIDs))
+	for i := 0; i < len(manifestIDs); i++ {
+		go func(manifestID string) {
+			var senderParams []*net.TicketSenderParams
+			for i := 0; i < numTickets/len(manifestIDs); i++ {
+				senderParams = append(
+					senderParams,
+					&net.TicketSenderParams{SenderNonce: 456, Sig: pm.RandBytes(123)},
+				)
+			}
+
+			err := orch.ProcessPayment(*defaultPaymentWithTickets(t, senderParams), ManifestID(manifestID))
+			assert.Nil(err)
+
+			wg.Done()
+		}(manifestIDs[i])
+	}
+	wg.Wait()
+
+	time.Sleep(time.Millisecond * 20)
+	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", numTickets)
+}
+
+func TestProcessPayment_GivenReceiveTicketError_ReturnsFirstError(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	expErr := errors.New("ReceiveTicket error")
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, expErr).Once()
+	// This should trigger a redemption even though it returns an error because it still returns won = true
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, errors.New("not first error")).Once()
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil).Once()
+
+	numTickets := 3
+	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil).Times(numTickets)
+
+	var senderParams []*net.TicketSenderParams
+	for i := 0; i < numTickets; i++ {
+		senderParams = append(
+			senderParams,
+			&net.TicketSenderParams{SenderNonce: 456, Sig: pm.RandBytes(123)},
+		)
+	}
+
+	err := orch.ProcessPayment(*defaultPaymentWithTickets(t, senderParams), manifestID)
+
+	time.Sleep(time.Millisecond * 20)
+	assert := assert.New(t)
+	assert.EqualError(err, expErr.Error())
+	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 2)
 }
 
 func TestTicketParams(t *testing.T) {

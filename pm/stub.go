@@ -87,13 +87,17 @@ func (sv *stubSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool 
 }
 
 type stubBroker struct {
-	deposits                   map[ethcommon.Address]*big.Int
-	reserves                   map[ethcommon.Address]*big.Int
-	usedTickets                map[ethcommon.Hash]bool
-	approvedSigners            map[ethcommon.Address]bool
+	deposits        map[ethcommon.Address]*big.Int
+	reserves        map[ethcommon.Address]*big.Int
+	usedTickets     map[ethcommon.Hash]bool
+	approvedSigners map[ethcommon.Address]bool
+	mu              sync.Mutex
+
 	redeemShouldFail           bool
 	getSenderInfoShouldFail    bool
 	claimableReserveShouldFail bool
+
+	checkTxErr error
 }
 
 func newStubBroker() *stubBroker {
@@ -130,6 +134,9 @@ func (b *stubBroker) Withdraw() (*types.Transaction, error) {
 }
 
 func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if b.redeemShouldFail {
 		return nil, fmt.Errorf("stub broker redeem error")
 	}
@@ -140,6 +147,9 @@ func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRa
 }
 
 func (b *stubBroker) IsUsedTicket(ticket *Ticket) (bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	return b.usedTickets[ticket.Hash()], nil
 }
 
@@ -171,6 +181,10 @@ func (b *stubBroker) ClaimableReserve(reserveHolder ethcommon.Address, claimant 
 	}
 
 	return b.reserves[reserveHolder], nil
+}
+
+func (b *stubBroker) CheckTx(tx *types.Transaction) error {
+	return b.checkTxErr
 }
 
 type stubValidator struct {
@@ -250,30 +264,60 @@ func (s *stubGasPriceMonitor) GasPrice() *big.Int {
 	return s.gasPrice
 }
 
-type stubFloatMonitor struct {
-	maxFloat *big.Int
-	err      error
+type stubSenderMonitor struct {
+	maxFloat       *big.Int
+	redeemable     chan *SignedTicket
+	queued         []*SignedTicket
+	queueTicketErr error
+	addFloatErr    error
+	subFloatErr    error
+	maxFloatErr    error
 }
 
-func (s *stubFloatMonitor) Add(addr ethcommon.Address, amount *big.Int) error {
-	if s.err != nil {
-		return s.err
+func newStubSenderMonitor() *stubSenderMonitor {
+	return &stubSenderMonitor{
+		maxFloat:   big.NewInt(0),
+		redeemable: make(chan *SignedTicket),
+	}
+}
+
+func (s *stubSenderMonitor) Start() {}
+
+func (s *stubSenderMonitor) Stop() {}
+
+func (s *stubSenderMonitor) Redeemable() chan *SignedTicket {
+	return s.redeemable
+}
+
+func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error {
+	if s.queueTicketErr != nil {
+		return s.queueTicketErr
+	}
+
+	s.queued = append(s.queued, ticket)
+
+	return nil
+}
+
+func (s *stubSenderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error {
+	if s.addFloatErr != nil {
+		return s.addFloatErr
 	}
 
 	return nil
 }
 
-func (s *stubFloatMonitor) Sub(addr ethcommon.Address, amount *big.Int) error {
-	if s.err != nil {
-		return s.err
+func (s *stubSenderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) error {
+	if s.subFloatErr != nil {
+		return s.subFloatErr
 	}
 
 	return nil
 }
 
-func (s *stubFloatMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
-	if s.err != nil {
-		return nil, s.err
+func (s *stubSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
+	if s.maxFloatErr != nil {
+		return nil, s.maxFloatErr
 	}
 
 	return s.maxFloat, nil
@@ -283,6 +327,12 @@ func (s *stubFloatMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
 type MockRecipient struct {
 	mock.Mock
 }
+
+// Start initiates the helper goroutines for the recipient
+func (m *MockRecipient) Start() {}
+
+// Stop signals the recipient to exit gracefully
+func (m *MockRecipient) Stop() {}
 
 // ReceiveTicket validates and processes a received ticket
 func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error) {
@@ -294,6 +344,12 @@ func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int)
 // for a all sessionIDs
 func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
 	args := m.Called(sessionIDs)
+	return args.Error(0)
+}
+
+// RedeemWinningTicket redeems a single winning ticket
+func (m *MockRecipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error {
+	args := m.Called(ticket, sig, seed)
 	return args.Error(0)
 }
 
