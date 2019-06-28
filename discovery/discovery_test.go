@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"math/rand"
 	"net/url"
@@ -18,8 +19,10 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -682,4 +685,74 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 	for _, info := range infos {
 		assert.Equal(info.Transcoder, "goodPriceTranscoder")
 	}
+}
+
+func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
+	// Test setup
+	perm = func(len int) []int { return rand.Perm(50) }
+
+	gmp := runtime.GOMAXPROCS(50)
+	defer runtime.GOMAXPROCS(gmp)
+
+	server.BroadcastCfg.SetMaxPrice(nil)
+
+	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		return &net.OrchestratorInfo{
+			Transcoder:   "transcoder",
+			TicketParams: &net.TicketParams{},
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  999,
+				PixelsPerUnit: 1,
+			},
+		}, nil
+	}
+
+	addresses := []string{}
+	for i := 0; i < 50; i++ {
+		addresses = append(addresses, "https://127.0.0.1:"+strconv.Itoa(8936+i))
+	}
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Create Database
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require.Nil(err)
+
+	orchestrators := StubOrchestrators(addresses)
+
+	// Create node
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	node.Database = dbh
+	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
+	sender := &pm.MockSender{}
+	node.Sender = sender
+
+	// Add orchs to DB
+	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
+	require.Nil(err)
+	assert.Len(cachedOrchs, 50)
+
+	dbOrch := NewDBOrchestratorPoolCache(node)
+
+	// Test 25 out of 50 orchs pass ticket params validation
+	sender.On("ValidateTicketParams", mock.Anything).Return(errors.New("ValidateTicketParams error")).Times(25)
+	sender.On("ValidateTicketParams", mock.Anything).Return(nil).Times(25)
+
+	infos, err := dbOrch.GetOrchestrators(len(addresses))
+	assert.Nil(err)
+	assert.Len(infos, 25)
+	sender.AssertNumberOfCalls(t, "ValidateTicketParams", 50)
+
+	// Test 0 out of 50 orchs pass ticket params validation
+	sender = &pm.MockSender{}
+	node.Sender = sender
+	sender.On("ValidateTicketParams", mock.Anything).Return(errors.New("ValidateTicketParams error")).Times(50)
+
+	infos, err = dbOrch.GetOrchestrators(len(addresses))
+	assert.Nil(err)
+	assert.Len(infos, 0)
+	sender.AssertNumberOfCalls(t, "ValidateTicketParams", 50)
 }

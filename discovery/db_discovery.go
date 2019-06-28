@@ -8,10 +8,12 @@ import (
 	"strings"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
 
 	"github.com/golang/glog"
@@ -75,6 +77,12 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 	}
 
 	pred := func(info *net.OrchestratorInfo) bool {
+		if dbo.node.Sender != nil {
+			if err := dbo.node.Sender.ValidateTicketParams(pmTicketParams(info.TicketParams)); err != nil {
+				return false
+			}
+		}
+
 		price := server.BroadcastCfg.MaxPrice()
 		if price != nil {
 			return big.NewRat(info.PriceInfo.PricePerUnit, info.PriceInfo.PixelsPerUnit).Cmp(price) <= 0
@@ -191,4 +199,18 @@ func ethOrchToDBOrch(orch *lpTypes.Transcoder) *common.DBOrch {
 		return nil
 	}
 	return common.NewDBOrch(orch.ServiceURI, orch.Address.String())
+}
+
+func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
+	if params == nil {
+		return nil
+	}
+
+	return &pm.TicketParams{
+		Recipient:         ethcommon.BytesToAddress(params.Recipient),
+		FaceValue:         new(big.Int).SetBytes(params.FaceValue),
+		WinProb:           new(big.Int).SetBytes(params.WinProb),
+		RecipientRandHash: ethcommon.BytesToHash(params.RecipientRandHash),
+		Seed:              new(big.Int).SetBytes(params.Seed),
+	}
 }
