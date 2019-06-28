@@ -234,3 +234,17 @@ func verifyOrchestratorReq(orch Orchestrator, addr ethcommon.Address, sig []byte
 	}
 	return orch.CheckCapacity("")
 }
+
+func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
+	if params == nil {
+		return nil
+	}
+
+	return &pm.TicketParams{
+		Recipient:         ethcommon.BytesToAddress(params.Recipient),
+		FaceValue:         new(big.Int).SetBytes(params.FaceValue),
+		WinProb:           new(big.Int).SetBytes(params.WinProb),
+		RecipientRandHash: ethcommon.BytesToHash(params.RecipientRandHash),
+		Seed:              new(big.Int).SetBytes(params.Seed),
+	}
+}
