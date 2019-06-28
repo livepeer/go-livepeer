@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -127,7 +128,7 @@ func TestSelectUpdateOrchs_EmptyOrNilInputs_NoError(t *testing.T) {
 	require.Nil(err)
 
 	// selecting empty set of orchs
-	orchs, err := dbh.SelectOrchs()
+	orchs, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Empty(orchs)
 
@@ -151,7 +152,7 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	err = dbh.UpdateOrch(orch)
 	require.Nil(err)
 
-	orchs, err := dbh.SelectOrchs()
+	orchs, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 1)
 	assert.Equal(orchs[0].ServiceURI, orch.ServiceURI)
@@ -161,7 +162,7 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	err = dbh.UpdateOrch(orchUpdate)
 	require.Nil(err)
 
-	updatedOrch, err := dbh.SelectOrchs()
+	updatedOrch, err := dbh.SelectOrchs(nil)
 	assert.Len(updatedOrch, 1)
 	assert.Equal(updatedOrch[0].ServiceURI, orchUpdate.ServiceURI)
 }
@@ -180,7 +181,7 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 	err = dbh.UpdateOrch(orch)
 	require.Nil(err)
 
-	orchs, err := dbh.SelectOrchs()
+	orchs, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 1)
 	assert.Equal(orchs[0].ServiceURI, orch.ServiceURI)
@@ -191,10 +192,56 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 	err = dbh.UpdateOrch(orchAdd)
 	require.Nil(err)
 
-	orchsUpdated, err := dbh.SelectOrchs()
+	orchsUpdated, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchsUpdated, 2)
 	assert.Equal(orchsUpdated[1].ServiceURI, orchAdd.ServiceURI)
+}
+
+func TestDBFilterOrchs(t *testing.T) {
+	var nilDb *DB
+	nilOrchs, nilErr := nilDb.SelectOrchs(&DBOrchFilter{big.NewRat(1, 1)})
+	assert.Nil(t, nilOrchs)
+	assert.Nil(t, nilErr)
+
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
+
+	for i := 0; i < 10; i++ {
+		orch := NewDBOrch("https://127.0.0.1:"+strconv.Itoa(8936+i), string(pm.RandBytes(32)))
+		orch.PricePerPixel, err = PriceToFixed(big.NewRat(1, int64(5+i)))
+		require.Nil(err)
+		err = dbh.UpdateOrch(orch)
+		require.Nil(err)
+	}
+
+	orchsUpdated, err := dbh.SelectOrchs(nil)
+	require.Nil(err)
+	assert.Len(orchsUpdated, 10)
+
+	// Passing in nil max price to filterOrchs returns a query for selectOrchs
+	orchsFiltered, err := dbh.SelectOrchs(nil)
+	require.Nil(err)
+	assert.Len(orchsFiltered, 10)
+
+	// Passing in a higher maxPrice than all orchs to filterOrchs returns all orchs
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{big.NewRat(10, 1)})
+	require.Nil(err)
+	assert.Len(orchsFiltered, 10)
+
+	// Passing in a lower price than all orchs returns no orchs
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{big.NewRat(1, 15)})
+	require.Nil(err)
+	assert.Len(orchsFiltered, 0)
+
+	// Passing in 1/10 returns 5 orchs
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{big.NewRat(1, 10)})
+	require.Nil(err)
+	assert.Len(orchsFiltered, 5)
 }
 
 func TestDBUnbondingLocks(t *testing.T) {

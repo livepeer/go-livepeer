@@ -20,6 +20,7 @@ type DB struct {
 
 	// prepared statements
 	selectOrchs                *sql.Stmt
+	filterOrchs                *sql.Stmt
 	updateOrch                 *sql.Stmt
 	updateKV                   *sql.Stmt
 	insertUnbondingLock        *sql.Stmt
@@ -30,8 +31,9 @@ type DB struct {
 }
 
 type DBOrch struct {
-	ServiceURI   string
-	EthereumAddr string
+	ServiceURI    string
+	EthereumAddr  string
+	PricePerPixel int64
 }
 
 type DBUnbondingLock struct {
@@ -39,6 +41,10 @@ type DBUnbondingLock struct {
 	Delegator     ethcommon.Address
 	Amount        *big.Int
 	WithdrawRound int64
+}
+
+type DBOrchFilter struct {
+	MaxPrice *big.Rat
 }
 
 var LivepeerDBVersion = 1
@@ -58,7 +64,8 @@ var schema = `
 		ethereumAddr STRING PRIMARY KEY,
 		createdAt STRING DEFAULT CURRENT_TIMESTAMP NOT NULL,
 		updatedAt STRING DEFAULT CURRENT_TIMESTAMP NOT NULL,
-		serviceURI STRING
+		serviceURI STRING,
+		pricePerPixel int64
 	);
 
 	CREATE TABLE IF NOT EXISTS unbondingLocks (
@@ -137,17 +144,8 @@ func InitDB(dbPath string) (*DB, error) {
 		// all good; nothing to do
 	}
 
-	// select all orchestrators updated in the last 24 hours
-	stmt, err := db.Prepare("SELECT serviceURI, ethereumAddr FROM orchestrators WHERE updatedAt >= datetime('now','-1 day')")
-	if err != nil {
-		glog.Error("Unable to select orchestrators updated in the past 24 hours", err)
-		d.Close()
-		return nil, err
-	}
-	d.selectOrchs = stmt
-
 	// updateOrchestrators statement
-	stmt, err = db.Prepare("INSERT OR REPLACE INTO orchestrators(updatedAt, serviceURI, ethereumAddr, createdAt) VALUES(datetime(), ?1, ?2, (SELECT createdAt FROM orchestrators WHERE ethereumAddr = ?2))")
+	stmt, err := db.Prepare("INSERT OR REPLACE INTO orchestrators(updatedAt, serviceURI, ethereumAddr, pricePerPixel, createdAt) VALUES(datetime(), ?1, ?2, ?3, (SELECT createdAt FROM orchestrators WHERE ethereumAddr = ?2))")
 	if err != nil {
 		glog.Error("Unable to prepare updateOrchestrators stmt ", err)
 		d.Close()
@@ -215,6 +213,9 @@ func (db *DB) Close() {
 	if db.selectOrchs != nil {
 		db.selectOrchs.Close()
 	}
+	if db.filterOrchs != nil {
+		db.filterOrchs.Close()
+	}
 	if db.updateKV != nil {
 		db.updateKV.Close()
 	}
@@ -272,7 +273,7 @@ func (db *DB) UpdateOrch(orch *DBOrch) error {
 		return nil
 	}
 
-	_, err := db.updateOrch.Exec(orch.ServiceURI, orch.EthereumAddr)
+	_, err := db.updateOrch.Exec(orch.ServiceURI, orch.EthereumAddr, orch.PricePerPixel)
 	if err != nil {
 		glog.Error("db: Unable to update orchestrator ", err)
 	}
@@ -280,15 +281,15 @@ func (db *DB) UpdateOrch(orch *DBOrch) error {
 	return err
 }
 
-func (db *DB) SelectOrchs() ([]*DBOrch, error) {
+func (db *DB) SelectOrchs(filter *DBOrchFilter) ([]*DBOrch, error) {
 	if db == nil {
 		return nil, nil
 	}
 
-	rows, err := db.selectOrchs.Query()
+	rows, err := db.dbh.Query(buildSelectOrchsQuery(filter))
 	defer rows.Close()
 	if err != nil {
-		glog.Error("db: Unable to get orchestrators updated in the last 24 hours", err)
+		glog.Error("db: Unable to get orchestrators updated in the last 24 hours: ", err)
 		return nil, err
 	}
 	orchs := []*DBOrch{}
@@ -461,4 +462,16 @@ func buildWinningTicketsQuery(sessionIDs []string) string {
 		sessionIDs[i] = strconv.Quote(sessionIDs[i])
 	}
 	return "SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets WHERE sessionID IN (" + strings.Join(sessionIDs, ", ") + ")"
+}
+
+func buildSelectOrchsQuery(filter *DBOrchFilter) (string, error) {
+	query := "SELECT serviceURI, ethereumAddr FROM orchestrators WHERE updatedAt >= datetime('now','-1 day')"
+	if filter != nil && filter.MaxPrice != nil {
+		fixedPrice, err := PriceToFixed(filter.MaxPrice)
+		if err != nil {
+			return "", err
+		}
+		query = query + " AND pricePerPixel <= " + strconv.FormatInt(fixedPrice, 10)
+	}
+	return query, nil
 }

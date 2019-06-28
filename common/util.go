@@ -160,3 +160,15 @@ func GenErrRegex(errStrings []string) *regexp.Regexp {
 	}
 	return regexp.MustCompile(strings.Join(groups, "|"))
 }
+
+// PriceToFixed converts a big.Rat into a fixed point number represented as int64
+// using a scaleFactor of 1000 resulting in max decimal places of 3
+func PriceToFixed(price *big.Rat) (int64, error) {
+	scalingFactor := int64(1000)
+	if price == nil {
+		return 0, fmt.Errorf("reference to rat is nil")
+	}
+	scaled := new(big.Rat).Mul(price, big.NewRat(scalingFactor, 1))
+	fp, _ := new(big.Float).SetRat(scaled).Int64()
+	return fp, nil
+}

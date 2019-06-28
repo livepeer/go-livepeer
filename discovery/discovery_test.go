@@ -216,6 +216,24 @@ func TestCacheRegisteredTranscoders_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 }
 
 func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
+	var mu sync.Mutex
+	first := true
+	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		mu.Lock()
+		if first {
+			time.Sleep(100 * time.Millisecond)
+			first = false
+		}
+		mu.Unlock()
+		return &net.OrchestratorInfo{
+			Transcoder: "transcoderfromtestserver",
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  999,
+				PixelsPerUnit: 1,
+			},
+		}, nil
+	}
+
 	dbh, dbraw, err := common.TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
@@ -234,13 +252,22 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
 	require.Nil(err)
 	assert.Len(cachedOrchs, 3)
-	assert.Equal(cachedOrchs[1].ServiceURI, addresses[1])
+	for _, o := range orchestrators {
+		dbO := ethOrchToDBOrch(o)
+		dbO.PricePerPixel, _ = common.PriceToFixed(big.NewRat(999, 1))
+
+		assert.Contains(cachedOrchs, dbO)
+	}
 
 	// ensuring orchs exist in DB
-	orchs, err := node.Database.SelectOrchs()
+	orchs, err := node.Database.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 3)
-	assert.Equal(orchs[0].ServiceURI, addresses[0])
+	for _, o := range orchestrators {
+		dbO := ethOrchToDBOrch(o)
+
+		assert.Contains(orchs, dbO)
+	}
 
 	// creating new OrchestratorPoolCache
 	dbOrch := NewDBOrchestratorPoolCache(node)
@@ -254,6 +281,24 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 }
 
 func TestNewDBOrchestratorPoolCache_TestURLs(t *testing.T) {
+	var mu sync.Mutex
+	first := true
+	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		mu.Lock()
+		if first {
+			time.Sleep(100 * time.Millisecond)
+			first = false
+		}
+		mu.Unlock()
+		return &net.OrchestratorInfo{
+			Transcoder: "transcoderfromtestserver",
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  999,
+				PixelsPerUnit: 1,
+			},
+		}, nil
+	}
+
 	dbh, dbraw, err := common.TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
@@ -269,7 +314,9 @@ func TestNewDBOrchestratorPoolCache_TestURLs(t *testing.T) {
 	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
 	dbOrch := NewDBOrchestratorPoolCache(node)
 	require.NotNil(dbOrch)
-	assert.Equal(3, dbOrch.Size())
+	// Not inserting bad URLs in database anymore, as there is no returnable query for getting their priceInfo
+	// And if URL is updated it won't be picked up until next cache update
+	assert.Equal(2, dbOrch.Size())
 	urls := dbOrch.GetURLs()
 	assert.Len(urls, 2)
 }
@@ -369,6 +416,7 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 
 func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) {
 	// Test setup
+	rand.Seed(321)
 	perm = func(len int) []int { return rand.Perm(50) }
 
 	server.BroadcastCfg.SetMaxPrice(big.NewRat(10, 1))
@@ -416,23 +464,32 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) 
 	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
 	require.Nil(err)
 	assert.Len(cachedOrchs, 50)
-	assert.Equal(cachedOrchs[1].ServiceURI, addresses[1])
+	for _, o := range orchestrators {
+		dbO := ethOrchToDBOrch(o)
+		dbO.PricePerPixel, _ = common.PriceToFixed(big.NewRat(999, 1))
+
+		assert.Contains(cachedOrchs, dbO)
+	}
 
 	// ensuring orchs exist in DB
-	orchs, err := node.Database.SelectOrchs()
+	orchs, err := node.Database.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 50)
-	assert.Equal(orchs[0].ServiceURI, addresses[0])
+	for _, o := range orchestrators {
+		dbO := ethOrchToDBOrch(o)
+
+		assert.Contains(orchs, dbO)
+	}
 
 	// creating new OrchestratorPoolCache
 	dbOrch := NewDBOrchestratorPoolCache(node)
 	require.NotNil(dbOrch)
 
 	// check size
-	assert.Equal(50, dbOrch.Size())
+	assert.Equal(0, dbOrch.Size())
 
 	urls := dbOrch.GetURLs()
-	assert.Len(urls, 50)
+	assert.Len(urls, 0)
 	infos, err := dbOrch.GetOrchestrators(len(addresses))
 
 	assert.Nil(err, "Should not be error")
@@ -488,13 +545,22 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
 	require.Nil(err)
 	assert.Len(cachedOrchs, 50)
-	assert.Equal(cachedOrchs[1].ServiceURI, addresses[1])
+	for _, o := range orchestrators {
+		dbO := ethOrchToDBOrch(o)
+		dbO.PricePerPixel, _ = common.PriceToFixed(big.NewRat(999, 1))
+
+		assert.Contains(cachedOrchs, dbO)
+	}
 
 	// ensuring orchs exist in DB
-	orchs, err := node.Database.SelectOrchs()
+	orchs, err := node.Database.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 50)
-	assert.Equal(orchs[0].ServiceURI, addresses[0])
+	for _, o := range orchestrators {
+		dbO := ethOrchToDBOrch(o)
+
+		assert.Contains(orchs, dbO)
+	}
 
 	// creating new OrchestratorPoolCache
 	dbOrch := NewDBOrchestratorPoolCache(node)
@@ -513,7 +579,7 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 
 func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.T) {
 	// Test setup
-	perm = func(len int) []int { return rand.Perm(50) }
+	perm = func(len int) []int { return rand.Perm(25) }
 
 	server.BroadcastCfg.SetMaxPrice(big.NewRat(10, 1))
 	gmp := runtime.GOMAXPROCS(50)
@@ -571,24 +637,45 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
 	require.Nil(err)
 	assert.Len(cachedOrchs, 50)
-	assert.Equal(cachedOrchs[1].ServiceURI, addresses[1])
-
+	for _, o := range orchestrators[:25] {
+		dbO := ethOrchToDBOrch(o)
+		dbO.PricePerPixel, _ = common.PriceToFixed(big.NewRat(999, 1))
+		assert.Contains(cachedOrchs, dbO)
+	}
+	for _, o := range orchestrators[25:] {
+		dbO := ethOrchToDBOrch(o)
+		dbO.PricePerPixel, _ = common.PriceToFixed(big.NewRat(1, 1))
+		assert.Contains(cachedOrchs, dbO)
+	}
 	// ensuring orchs exist in DB
-	orchs, err := node.Database.SelectOrchs()
+	orchs, err := node.Database.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 50)
-	assert.Equal(orchs[0].ServiceURI, addresses[0])
+
+	for _, o := range orchestrators {
+		dbO := ethOrchToDBOrch(o)
+
+		assert.Contains(orchs, dbO)
+	}
+	orchs, err = node.Database.SelectOrchs(&common.DBOrchFilter{server.BroadcastCfg.MaxPrice()})
+	require.Nil(err)
+	assert.Len(orchs, 25)
+	for _, o := range orchestrators[25:] {
+		dbO := ethOrchToDBOrch(o)
+
+		assert.Contains(orchs, dbO)
+	}
 
 	// creating new OrchestratorPoolCache
 	dbOrch := NewDBOrchestratorPoolCache(node)
 	require.NotNil(dbOrch)
 
 	// check size
-	assert.Equal(50, dbOrch.Size())
+	assert.Equal(25, dbOrch.Size())
 
 	urls := dbOrch.GetURLs()
-	assert.Len(urls, 50)
-	infos, err := dbOrch.GetOrchestrators(len(addresses))
+	assert.Len(urls, 25)
+	infos, err := dbOrch.GetOrchestrators(len(orchestrators))
 
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 25)
