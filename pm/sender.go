@@ -20,7 +20,8 @@ type Sender interface {
 	// and signature over the new ticket for a given session ID
 	CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error)
 
-	// Later: support receiving new recipientRandHash values mid-stream
+	// ValidateTicketParams checks if ticket params are acceptable
+	ValidateTicketParams(ticketParams *TicketParams) error
 }
 
 type session struct {
@@ -32,15 +33,22 @@ type session struct {
 type sender struct {
 	signer        Signer
 	roundsManager RoundsManager
+	senderManager SenderManager
+
+	maxEV             *big.Rat
+	depositMultiplier int
 
 	sessions sync.Map
 }
 
 // NewSender creates a new Sender instance.
-func NewSender(signer Signer, roundsManager RoundsManager) Sender {
+func NewSender(signer Signer, roundsManager RoundsManager, senderManager SenderManager, maxEV *big.Rat, depositMultiplier int) Sender {
 	return &sender{
-		signer:        signer,
-		roundsManager: roundsManager,
+		signer:            signer,
+		roundsManager:     roundsManager,
+		senderManager:     senderManager,
+		maxEV:             maxEV,
+		depositMultiplier: depositMultiplier,
 	}
 }
 
@@ -63,6 +71,10 @@ func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, erro
 		return nil, nil, nil, errors.Errorf("cannot create a ticket for an unknown session: %v", sessionID)
 	}
 	session := tempSession.(*session)
+
+	if err := s.ValidateTicketParams(&session.ticketParams); err != nil {
+		return nil, nil, nil, err
+	}
 
 	senderNonce := atomic.AddUint32(&session.senderNonce, 1)
 
@@ -93,4 +105,24 @@ func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, erro
 	}
 
 	return ticket, session.ticketParams.Seed, sig, nil
+}
+
+// ValidateTicketParams checks if ticket params are acceptable
+func (s *sender) ValidateTicketParams(ticketParams *TicketParams) error {
+	ev := new(big.Rat).Mul(new(big.Rat).SetInt(ticketParams.FaceValue), new(big.Rat).SetFrac(ticketParams.WinProb, maxWinProb))
+	if ev.Cmp(s.maxEV) > 0 {
+		return errors.Errorf("ticket EV higher than max EV")
+	}
+
+	info, err := s.senderManager.GetSenderInfo(s.signer.Account().Address)
+	if err != nil {
+		return err
+	}
+
+	maxFaceValue := new(big.Int).Div(info.Deposit, big.NewInt(int64(s.depositMultiplier)))
+	if ticketParams.FaceValue.Cmp(maxFaceValue) > 0 {
+		return errors.Errorf("ticket faceValue higher than max faceValue")
+	}
+
+	return nil
 }

@@ -78,6 +78,51 @@ func TestCreateTicket_GivenNonexistentSession_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestCreateTicket_GetSenderInfoError_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	sm := sender.senderManager.(*stubSenderManager)
+	sm.err = errors.New("GetSenderInfo error")
+
+	sessionID := sender.StartSession(defaultTicketParams(t, RandAddress()))
+	_, _, _, err := sender.CreateTicket(sessionID)
+	assert.EqualError(t, err, sm.err.Error())
+}
+
+func TestCreateTicket_EVTooHigh_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	sender.maxEV = big.NewRat(100, 1)
+
+	ticketParams := TicketParams{
+		Recipient:         RandAddress(),
+		FaceValue:         big.NewInt(202),
+		WinProb:           new(big.Int).Div(maxWinProb, big.NewInt(2)),
+		Seed:              big.NewInt(3333),
+		RecipientRandHash: RandHash(),
+	}
+	sessionID := sender.StartSession(ticketParams)
+	_, _, _, err := sender.CreateTicket(sessionID)
+	assert.Contains(t, "ticket EV higher than max EV", err.Error())
+}
+
+func TestCreateTicket_FaceValueTooHigh_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	sm := sender.senderManager.(*stubSenderManager)
+	sm.info = &SenderInfo{
+		Deposit: big.NewInt(0),
+	}
+
+	ticketParams := TicketParams{
+		Recipient:         RandAddress(),
+		FaceValue:         big.NewInt(1111),
+		WinProb:           big.NewInt(2222),
+		Seed:              big.NewInt(3333),
+		RecipientRandHash: RandHash(),
+	}
+	sessionID := sender.StartSession(ticketParams)
+	_, _, _, err := sender.CreateTicket(sessionID)
+	assert.Contains(t, "ticket faceValue higher than max faceValue", err.Error())
+}
+
 func TestCreateTicket_GivenLastInitializedRoundError_ReturnsError(t *testing.T) {
 	sender := defaultSender(t)
 	rm := sender.roundsManager.(*stubRoundsManager)
@@ -222,6 +267,105 @@ func TestCreateTicket_GivenConcurrentCallsForSameSession_SenderNonceIncrementsCo
 	}
 }
 
+func TestValidateTicketParams_EVTooHigh_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	sender.maxEV = big.NewRat(100, 1)
+
+	ticketParams := &TicketParams{
+		FaceValue: big.NewInt(202),
+		WinProb:   new(big.Int).Div(maxWinProb, big.NewInt(2)),
+	}
+	err := sender.ValidateTicketParams(ticketParams)
+	assert.Contains(t, "ticket EV higher than max EV", err.Error())
+}
+
+func TestValidateTicketParams_FaceValueTooHigh_ReturnsError(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test when deposit = 0 and faceValue != 0
+	sender := defaultSender(t)
+	sm := sender.senderManager.(*stubSenderManager)
+	sm.info = &SenderInfo{
+		Deposit: big.NewInt(0),
+	}
+
+	ticketParams := &TicketParams{
+		FaceValue: big.NewInt(1111),
+		WinProb:   big.NewInt(2222),
+	}
+	err := sender.ValidateTicketParams(ticketParams)
+	assert.Contains("ticket faceValue higher than max faceValue", err.Error())
+
+	// Test when deposit / depositMultiplier < faceValue
+	sm.info.Deposit = big.NewInt(300)
+	sender.maxEV = big.NewRat(100, 1)
+	sender.depositMultiplier = 5
+	maxFaceValue := new(big.Int).Div(sm.info.Deposit, big.NewInt(int64(sender.depositMultiplier)))
+
+	ticketParams.FaceValue = new(big.Int).Add(maxFaceValue, big.NewInt(1))
+	err = sender.ValidateTicketParams(ticketParams)
+	assert.Contains("ticket faceValue higher than max faceValue", err.Error())
+}
+
+func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
+	// Test when ev < maxEV and faceValue < maxFaceValue
+	// maxEV = 100
+	// maxFaceValue = 300 / 2 = 150
+	// faceValue = 150 - 1 = 149
+	// ev = 149 * .5 = 74.5
+	sender := defaultSender(t)
+	sm := sender.senderManager.(*stubSenderManager)
+	sm.info = &SenderInfo{
+		Deposit: big.NewInt(300),
+	}
+	sender.maxEV = big.NewRat(100, 1)
+	sender.depositMultiplier = 2
+	maxFaceValue := new(big.Int).Div(sm.info.Deposit, big.NewInt(int64(sender.depositMultiplier)))
+
+	ticketParams := &TicketParams{
+		FaceValue: new(big.Int).Sub(maxFaceValue, big.NewInt(1)),
+		WinProb:   new(big.Int).Div(maxWinProb, big.NewInt(2)),
+	}
+	err := sender.ValidateTicketParams(ticketParams)
+	assert.Nil(t, err)
+
+	// Test when ev = maxEV and faceValue < maxFaceValue
+	// maxEV = 100
+	// maxFaceValue = 402 / 2 = 201
+	// faceValue = 201 - 1 = 200
+	// ev = 200 * .5 = 100
+	sm.info.Deposit = big.NewInt(402)
+	maxFaceValue = new(big.Int).Div(sm.info.Deposit, big.NewInt(int64(sender.depositMultiplier)))
+
+	ticketParams.FaceValue = new(big.Int).Sub(maxFaceValue, big.NewInt(1))
+	err = sender.ValidateTicketParams(ticketParams)
+	assert.Nil(t, err)
+
+	// Test when ev < maxEV and faceValue = maxFaceValue
+	// maxEV = 100
+	// maxFaceValue = 399 / 2 = 199
+	// faceValue = 199
+	// ev = 199 * .5 = 99.5
+	sm.info.Deposit = big.NewInt(399)
+	maxFaceValue = new(big.Int).Div(sm.info.Deposit, big.NewInt(int64(sender.depositMultiplier)))
+
+	ticketParams.FaceValue = maxFaceValue
+	err = sender.ValidateTicketParams(ticketParams)
+	assert.Nil(t, err)
+
+	// Test when ev = maxEV and faceValue = maxFaceValue
+	// maxEV = 100
+	// maxFaceValue = 400 / 2 = 200
+	// faceValue = 200
+	// ev = 200 * .5 = 100
+	sm.info.Deposit = big.NewInt(400)
+	maxFaceValue = new(big.Int).Div(sm.info.Deposit, big.NewInt(int64(sender.depositMultiplier)))
+
+	ticketParams.FaceValue = maxFaceValue
+	err = sender.ValidateTicketParams(ticketParams)
+	assert.Nil(t, err)
+}
+
 func defaultSender(t *testing.T) *sender {
 	account := accounts.Account{
 		Address: RandAddress(),
@@ -230,7 +374,11 @@ func defaultSender(t *testing.T) *sender {
 		account: account,
 	}
 	rm := &stubRoundsManager{round: big.NewInt(5), blkHash: [32]byte{5}}
-	s := NewSender(am, rm)
+	sm := &stubSenderManager{}
+	sm.info = &SenderInfo{
+		Deposit: big.NewInt(100000),
+	}
+	s := NewSender(am, rm, sm, big.NewRat(100, 1), 2)
 	return s.(*sender)
 }
 

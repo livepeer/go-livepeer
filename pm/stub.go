@@ -256,6 +256,19 @@ func (m *stubRoundsManager) BlockHashForRound(round *big.Int) ([32]byte, error) 
 	return m.blkHash, m.blockHashForRoundErr
 }
 
+type stubSenderManager struct {
+	info *SenderInfo
+	err  error
+}
+
+func (s *stubSenderManager) GetSenderInfo(addr ethcommon.Address) (*SenderInfo, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	return s.info, nil
+}
+
 type stubGasPriceMonitor struct {
 	gasPrice *big.Int
 }
@@ -413,4 +426,10 @@ func (m *MockSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, 
 	}
 
 	return ticket, seed, sig, args.Error(3)
+}
+
+// ValidateTicketParams checks if ticket params are acceptable
+func (m *MockSender) ValidateTicketParams(ticketParams *TicketParams) error {
+	args := m.Called(ticketParams)
+	return args.Error(0)
 }

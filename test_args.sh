@@ -113,6 +113,19 @@ res=0
 ./livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit -5 -pricePerUnit 5 -network rinkeby $ETH_ARGS || res=$?
 [ $res -ne 0 ]
 
+# Broadcaster needs a valid rational number for -maxTicketEV
+res=0
+./livepeer -broadcaster -maxTicketEV abcd -network rinkeby $ETH_ARGS || res=$?
+[ $res -ne 0 ]
+# Broadcaster needs a non-negative number for -maxTicketEV
+res=0
+./livepeer -broadcaster -maxTicketEV -1 -network rinkeby $ETH_ARGS || res=$?
+[ $res -ne 0 ]
+# Broadcaster needs a postive number for -depositMultiplier
+res=0
+./livepeer -broadcaster -depositMultiplier 0 -network rinkeby $ETH_ARGS || res=$?
+[ $res -ne 0 ]
+
 # transcoder needs -orchSecret
 res=0
 ./livepeer -transcoder || res=$?
