@@ -35,6 +35,7 @@ var (
 	gethMiningAccountOverride = false
 	ethController             = "0x04B9De88c81cda06165CF65a908e5f1EFBB9493B"
 	ethControllerOverride     = false
+	serviceHost               = "127.0.0.1"
 	serviceURI                = "https://127.0.0.1:"
 	cliPort                   = 7935
 	mediaPort                 = 8935
@@ -47,6 +48,7 @@ func main() {
 	endpointAddr := flag.String("endpoint", "", "Geth endpoint to connect to")
 	miningAccountFlag := flag.String("miningaccount", "", "Override geth mining account (usually not needed)")
 	ethControllerFlag := flag.String("controller", "", "Override controller address (usually not needed)")
+	svcHost := flag.String("svchost", "127.0.0.1", "default service host")
 
 	flag.Parse()
 	if *endpointAddr != "" {
@@ -60,6 +62,10 @@ func main() {
 		ethController = *ethControllerFlag
 		ethControllerOverride = true
 	}
+	if *svcHost != "" {
+		serviceHost = *svcHost
+	}
+	serviceURI = fmt.Sprintf("https://%s:", serviceHost)
 	args := flag.Args()
 	goodToGo := false
 	isBroadcaster := true
@@ -109,6 +115,7 @@ func main() {
 	tempKeystoreDir := filepath.Join(tmp, "keystore")
 	acc := createKey(tempKeystoreDir)
 	glog.Infof("Using account %s", acc)
+	glog.Infof("Using svchost %s", serviceHost)
 	dataDir := filepath.Join(*baseDataDir, t+"_"+acc)
 	err = os.MkdirAll(dataDir, 0755)
 	if err != nil {
@@ -122,14 +129,14 @@ func main() {
 	}
 	remoteConsole(acc)
 	ethSetup(acc, keystoreDir, isBroadcaster)
-	createRunScript(acc, dataDir, isBroadcaster)
+	createRunScript(acc, dataDir, serviceHost, isBroadcaster)
 	if !isBroadcaster {
 		tDataDir := filepath.Join(*baseDataDir, "transcoder_"+acc)
 		err = os.MkdirAll(tDataDir, 0755)
 		if err != nil {
 			glog.Fatalf("Can't create directory %v", err)
 		}
-		createTranscoderRunScript(acc, tDataDir)
+		createTranscoderRunScript(acc, tDataDir, serviceHost)
 	}
 	glog.Info("Finished")
 }
@@ -281,11 +288,11 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	}
 }
 
-func createTranscoderRunScript(ethAcctAddr, dataDir string) {
+func createTranscoderRunScript(ethAcctAddr, dataDir, serviceHost string) {
 	script := "#!/bin/bash\n"
 	// script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s \
-	script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s -orchSecret secre -orchAddr 127.0.0.1:%d -transcoder`,
-		dataDir, mediaPort)
+	script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s -orchSecret secre -orchAddr %s:%d -transcoder`,
+		dataDir, serviceHost, mediaPort)
 	fName := fmt.Sprintf("run_transcoder_%s.sh", ethAcctAddr)
 	err := ioutil.WriteFile(fName, []byte(script), 0755)
 	if err != nil {
@@ -293,23 +300,23 @@ func createTranscoderRunScript(ethAcctAddr, dataDir string) {
 	}
 }
 
-func createRunScript(ethAcctAddr, dataDir string, isBroadcaster bool) {
+func createRunScript(ethAcctAddr, dataDir, serviceHost string, isBroadcaster bool) {
 	script := "#!/bin/bash\n"
 	script += fmt.Sprintf(`./livepeer -v 99 -ethController %s -datadir ./%s \
     -ethAcctAddr %s \
     -ethUrl %s \
     -ethPassword "" \
     -network=devenv \
-    -monitor=false -currentManifest=true -cliAddr 127.0.0.1:%d -httpAddr 127.0.0.1:%d `,
-		ethController, dataDir, ethAcctAddr, endpoint, cliPort, mediaPort)
+    -monitor=false -currentManifest=true -cliAddr %s:%d -httpAddr %s:%d `,
+		ethController, dataDir, ethAcctAddr, endpoint, serviceHost, cliPort, serviceHost, mediaPort)
 
 	if !isBroadcaster {
 		script += fmt.Sprintf(` -initializeRound=true \
-    -serviceAddr 127.0.0.1:%d  -transcoder=true -orchestrator=true \
+    -serviceAddr %s:%d  -transcoder=true -orchestrator=true \
      -ipfsPath ./%s/trans -orchSecret secre -pricePerUnit 1
-    `, mediaPort, dataDir)
+    `, serviceHost, mediaPort, dataDir)
 	} else {
-		script += fmt.Sprintf(` -broadcaster=true -rtmpAddr 127.0.0.1:%d`, rtmpPort)
+		script += fmt.Sprintf(` -broadcaster=true -rtmpAddr %s:%d`, serviceHost, rtmpPort)
 	}
 
 	glog.Info(script)
