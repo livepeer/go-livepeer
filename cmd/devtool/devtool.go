@@ -64,8 +64,8 @@ func main() {
 	}
 	if *svcHost != "" {
 		serviceHost = *svcHost
+		serviceURI = fmt.Sprintf("https://%s:", serviceHost)
 	}
-	serviceURI = fmt.Sprintf("https://%s:", serviceHost)
 	args := flag.Args()
 	goodToGo := false
 	isBroadcaster := true
