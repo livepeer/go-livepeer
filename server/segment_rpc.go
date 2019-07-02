@@ -73,6 +73,12 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if !orch.SufficientBalance(segData.ManifestID) {
+		glog.Errorf("Insufficient credit balance for stream with manifestID %v\n", segData.ManifestID)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	// download the segment and check the hash
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {

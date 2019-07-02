@@ -488,12 +488,12 @@ func TestOrchCheckCapacity(t *testing.T) {
 
 func TestProcessPayment_GivenRecipientError_ReturnsNil(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
 
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil)
-
 	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
 
 	assert := assert.New(t)
@@ -537,6 +537,7 @@ func TestProcessPayment_GivenNilRecipient_ReturnsNilError(t *testing.T) {
 
 func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -552,12 +553,14 @@ func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 
 func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
+
 	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("RedeemWinningTicket error"))
 
 	errorLogsBefore := glog.Stats.Error.Lines()
@@ -574,12 +577,14 @@ func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
 
 func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
+
 	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	errorLogsBefore := glog.Stats.Error.Lines()
@@ -596,6 +601,7 @@ func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
 
 func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -624,6 +630,7 @@ func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 
 func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -664,6 +671,7 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 
 func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -690,6 +698,108 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 	assert := assert.New(t)
 	assert.EqualError(err, "error receiving tickets with payment")
 	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 2)
+}
+
+// Check that an Acceptable error increases the credit
+func TestProcessPayment_AcceptablePaymentError_IncreasesCreditBalance(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	acceptableError := pm.NewMockReceiveError(errors.New("Acceptable ReceiveTicket error"), true)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, acceptableError).Once()
+	assert := assert.New(t)
+
+	// Create a ticket where faceVal = EV
+	// making faceVal the expected balance increase
+	faceVal := big.NewInt(100)
+	payment := defaultPayment(t)
+	payment.TicketParams.FaceValue = faceVal.Bytes()
+	payment.TicketParams.WinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1)).Bytes()
+
+	err := orch.ProcessPayment(payment, manifestID)
+	assert.Error(err)
+	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(new(big.Rat).SetInt(faceVal)))
+}
+
+// Check that an unacceptable error does NOT increase the credit
+func TestProcessPayment_UnacceptablePaymentError_DoesNotIncreaseCreditBalance(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	unacceptableError := pm.NewMockReceiveError(errors.New("Unacceptable ReceiveTicket error"), false)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, unacceptableError).Once()
+	assert := assert.New(t)
+
+	err := orch.ProcessPayment(defaultPayment(t), manifestID)
+	assert.Error(err)
+	assert.Nil(orch.node.Balances.Balance(manifestID))
+}
+
+func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil).Once()
+	assert := assert.New(t)
+
+	// Create a ticket where faceVal = EV
+	// making faceVal the expected balance increase
+	payment := defaultPayment(t)
+	payment.TicketParams.FaceValue = big.NewInt(100).Bytes()
+	payment.TicketParams.WinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1)).Bytes()
+
+	err := orch.ProcessPayment(payment, manifestID)
+	assert.Nil(err)
+	recipient.On("EV").Return(big.NewRat(100, 1))
+	assert.True(orch.SufficientBalance(manifestID))
+}
+
+func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil).Once()
+	assert := assert.New(t)
+
+	// Create a ticket where faceVal = EV
+	// making faceVal the expected balance increase
+	payment := defaultPayment(t)
+	payment.TicketParams.FaceValue = big.NewInt(100).Bytes()
+	payment.TicketParams.WinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1)).Bytes()
+
+	err := orch.ProcessPayment(payment, manifestID)
+	assert.Nil(err)
+	recipient.On("EV").Return(big.NewRat(10000, 1))
+	assert.False(orch.SufficientBalance(manifestID))
+}
+
+func TestSufficientBalance_OffChainMode_ReturnsTrue(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	manifestID := ManifestID("some manifest")
+	orch := NewOrchestrator(n)
+	assert.True(t, orch.SufficientBalance(manifestID))
+
+	orch.node.Recipient = new(pm.MockRecipient)
+	assert.True(t, orch.SufficientBalance(manifestID))
+
+	orch.node.Recipient = nil
+	orch.node.Balances = NewBalances(5 * time.Second)
+	assert.True(t, orch.SufficientBalance(manifestID))
+
+	orch.node = nil
+	assert.True(t, orch.SufficientBalance(manifestID))
 }
 
 func TestTicketParams(t *testing.T) {

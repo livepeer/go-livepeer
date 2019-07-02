@@ -86,7 +86,7 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 	require.Nil(t, err)
 
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-
+	orch.On("SufficientBalance", s.ManifestID).Return(true)
 	headers := map[string]string{
 		paymentHeader: "",
 		segmentHeader: creds,
@@ -122,6 +122,7 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	require.Nil(err)
 
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+	orch.On("SufficientBalance", s.ManifestID).Return(true)
 	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
 
 	headers := map[string]string{
@@ -169,6 +170,7 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 	require.Nil(err)
 
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
 	mos := &mockOSSession{}
 
@@ -229,6 +231,7 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 	require.Nil(err)
 
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
 	tRes := &core.TranscodeResult{
 		Data: [][]byte{
@@ -286,6 +289,7 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	require.Nil(err)
 
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
 	tRes := &core.TranscodeResult{
 		Data: [][]byte{
@@ -352,6 +356,8 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 
 	// Return an acceptable payment error to trigger an update to orchestrator info
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some error")).Once()
+	orch.On("SufficientBalance", s.ManifestID).Return(true)
+
 	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
 
 	uri, err := url.Parse("http://google.com")
@@ -421,6 +427,42 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	defer resp.Body.Close()
 
 	body, err = ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("Internal Server Error", strings.TrimSpace(string(body)))
+}
+
+func TestServeSegment_InsufficientBalanceError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	_, err = verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+	orch.On("SufficientBalance", s.ManifestID).Return(false)
+
+	headers := map[string]string{
+		paymentHeader: "",
+		segmentHeader: creds,
+	}
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
 	require.Nil(err)
 
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)

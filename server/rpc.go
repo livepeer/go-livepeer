@@ -44,6 +44,7 @@ type Orchestrator interface {
 	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address) (*net.TicketParams, error)
 	PriceInfo(sender ethcommon.Address) (*big.Rat, error)
+	SufficientBalance(manifestID core.ManifestID) bool
 }
 
 type Broadcaster interface {
