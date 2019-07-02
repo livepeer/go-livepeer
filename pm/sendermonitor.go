@@ -37,6 +37,10 @@ type SenderMonitor interface {
 
 	// MaxFloat returns a remote sender's max float
 	MaxFloat(addr ethcommon.Address) (*big.Int, error)
+
+	// AcceptErr checks whether additional errors should be accepted and if so increments the acceptable error count
+	// for a sender
+	AcceptErr(addr ethcommon.Address) bool
 }
 
 type remoteSender struct {
@@ -49,6 +53,10 @@ type remoteSender struct {
 
 	queue *ticketQueue
 
+	// errCount is the current number of acceptable errors counted
+	// for the sender
+	errCount int
+
 	done chan struct{}
 
 	lastAccess int64
@@ -58,6 +66,9 @@ type senderMonitor struct {
 	claimant        ethcommon.Address
 	cleanupInterval time.Duration
 	ttl             int
+	// maxErrCount is the maximum number of acceptable errors allowed
+	// for a sender
+	maxErrCount int
 
 	mu      sync.RWMutex
 	senders map[ethcommon.Address]*remoteSender
@@ -69,18 +80,23 @@ type senderMonitor struct {
 	// each of currently active remote senders
 	redeemable chan *SignedTicket
 
+	// gasPriceUpdate receives notifications of gas price changes
+	gasPriceUpdate chan struct{}
+
 	quit chan struct{}
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, cleanupInterval time.Duration, ttl int) SenderMonitor {
+func NewSenderMonitor(claimant ethcommon.Address, broker Broker, gasPriceUpdate chan struct{}, cleanupInterval time.Duration, ttl int, maxErrCount int) SenderMonitor {
 	return &senderMonitor{
 		claimant:        claimant,
 		cleanupInterval: cleanupInterval,
 		ttl:             ttl,
+		maxErrCount:     maxErrCount,
 		broker:          broker,
 		senders:         make(map[ethcommon.Address]*remoteSender),
 		redeemable:      make(chan *SignedTicket),
+		gasPriceUpdate:  gasPriceUpdate,
 		quit:            make(chan struct{}),
 	}
 }
@@ -88,6 +104,7 @@ func NewSenderMonitor(claimant ethcommon.Address, broker Broker, cleanupInterval
 // Start initiates the helper goroutines for the monitor
 func (sm *senderMonitor) Start() {
 	go sm.startCleanupLoop()
+	go sm.startGasPriceUpdateLoop()
 }
 
 // Stop signals the monitor to exit gracefully
@@ -118,6 +135,11 @@ func (sm *senderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error
 
 	sm.senders[addr].pendingAmount.Sub(pendingAmount, amount)
 
+	// Reset errCount for sender
+	// An updated max float results in updated ticket params
+	// The sender could plausibly send tickets that trigger acceptable errors
+	sm.senders[addr].errCount = 0
+
 	// Whenever a sender's max float increases, signal the updated max float to the
 	// sender's associated ticket queue in case there are queued tickets that
 	// can be redeemed
@@ -138,6 +160,11 @@ func (sm *senderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) error
 	// Adding to pendingAmount = subtracting from max float
 	pendingAmount := sm.senders[addr].pendingAmount
 	sm.senders[addr].pendingAmount.Add(pendingAmount, amount)
+
+	// Reset errCount for sender
+	// An updated max float results in updated ticket params
+	// The sender could plausibly send tickets that trigger acceptable errors
+	sm.senders[addr].errCount = 0
 
 	return nil
 }
@@ -166,6 +193,21 @@ func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicke
 	sm.senders[addr].queue.Add(ticket)
 
 	return nil
+}
+
+// AcceptErr checks whether additional errors should be accepted and if so increments the acceptable error count
+// for a sender
+func (sm *senderMonitor) AcceptErr(addr ethcommon.Address) bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if sm.senders[addr].errCount >= sm.maxErrCount {
+		return false
+	}
+
+	sm.senders[addr].errCount++
+
+	return true
 }
 
 // maxFloat is a helper that returns the sender's max float as:
@@ -255,6 +297,20 @@ func (sm *senderMonitor) startCleanupLoop() {
 	}
 }
 
+// startGasPriceUpdateLoop initiates a loop that runs a worker
+// to reset the errCount for senders every time a gas price change
+// notification is received
+func (sm *senderMonitor) startGasPriceUpdateLoop() {
+	for {
+		select {
+		case <-sm.gasPriceUpdate:
+			sm.resetErrCounts()
+		case <-sm.quit:
+			return
+		}
+	}
+}
+
 // cleanup removes tracked remote senders that have exceeded
 // their ttl
 func (sm *senderMonitor) cleanup() {
@@ -268,5 +324,16 @@ func (sm *senderMonitor) cleanup() {
 
 			delete(sm.senders, k)
 		}
+	}
+}
+
+// resetErrCounts resets the error count for all tracked
+// remote senders
+func (sm *senderMonitor) resetErrCounts() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	for _, v := range sm.senders {
+		v.errCount = 0
 	}
 }

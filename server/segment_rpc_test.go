@@ -72,36 +72,6 @@ func TestServeSegment_VerifySegCredsError(t *testing.T) {
 	assert.Equal(errSegEncoding.Error(), strings.TrimSpace(string(body)))
 }
 
-func TestServeSegment_ProcessPaymentError(t *testing.T) {
-	orch := &mockOrchestrator{}
-	handler := serveSegmentHandler(orch)
-
-	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
-
-	s := &BroadcastSession{
-		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-	}
-	creds, err := genSegCreds(s, &stream.HLSSegment{})
-	require.Nil(t, err)
-
-	orch.On("ProcessPayment", mock.Anything, mock.Anything).Return(errors.New("ProcessPayment error"))
-
-	headers := map[string]string{
-		paymentHeader: "",
-		segmentHeader: creds,
-	}
-	resp := httpPostResp(handler, nil, headers)
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	require.Nil(t, err)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusPaymentRequired, resp.StatusCode)
-	assert.Equal("ProcessPayment error", strings.TrimSpace(string(body)))
-}
-
 func TestServeSegment_MismatchHashError(t *testing.T) {
 	orch := &mockOrchestrator{}
 	handler := serveSegmentHandler(orch)
@@ -381,7 +351,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	}
 
 	// Return an acceptable payment error to trigger an update to orchestrator info
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("invalid ticket faceValue")).Once()
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some error")).Once()
 	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
 
 	uri, err := url.Parse("http://google.com")
@@ -422,7 +392,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal(params.Seed, tr.Info.TicketParams.Seed)
 
 	// Return an acceptable payment error to trigger an update to orchestrator info
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("invalid ticket winProb")).Once()
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some other error")).Once()
 	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
 
 	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
@@ -444,7 +414,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal(params.Seed, tr.Info.TicketParams.Seed)
 
 	// Test orchestratorInfo error
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("invalid ticket winProb")).Once()
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some error")).Once()
 	orch.On("TicketParams", mock.Anything).Return(nil, errors.New("TicketParams error")).Once()
 
 	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
@@ -769,30 +739,4 @@ func stubTLSServer() (*httptest.Server, *http.ServeMux) {
 	ts.StartTLS()
 
 	return ts, mux
-}
-
-func TestAcceptablePaymentErrors(t *testing.T) {
-	assert := assert.New(t)
-
-	// check error cases
-	errs := []string{
-		"invalid ticket faceValue 99",
-		"invalid ticket winProb 999",
-		"invalid already revealed recipientRand 777",
-	}
-
-	// Sanity check that we're checking each failure case
-	assert.Equal(len(acceptablePaymentErrStrings), len(errs))
-	for _, v := range errs {
-		assert.True(acceptablePaymentError(errors.New(v)))
-	}
-
-	// check non-error cases
-	errs = []string{
-		"",
-		"not really an error",
-	}
-	for _, v := range errs {
-		assert.False(acceptablePaymentError(errors.New(v)))
-	}
 }

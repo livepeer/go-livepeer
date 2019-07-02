@@ -34,6 +34,13 @@ func (s *stubGasPriceOracle) SetErr(err error) {
 	s.err = err
 }
 
+func (s *stubGasPriceOracle) Queries() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.queries
+}
+
 func (s *stubGasPriceOracle) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -59,7 +66,8 @@ func TestStart(t *testing.T) {
 
 	expErr := errors.New("SuggestGasPrice error")
 	gpo.SetErr(expErr)
-	err := gpm.Start(context.Background())
+	update, err := gpm.Start(context.Background())
+	assert.Nil(update)
 	assert.EqualError(err, expErr.Error())
 
 	// Switch back to no errors for SuggestGasPrice
@@ -67,7 +75,8 @@ func TestStart(t *testing.T) {
 
 	// Test success
 
-	err = gpm.Start(context.Background())
+	update, err = gpm.Start(context.Background())
+	assert.NotNil(update)
 	assert.Nil(err)
 	defer gpm.Stop()
 
@@ -75,7 +84,8 @@ func TestStart(t *testing.T) {
 
 	// Test error when already polling
 
-	err = gpm.Start(context.Background())
+	update, err = gpm.Start(context.Background())
+	assert.Nil(update)
 	assert.EqualError(err, "already polling")
 }
 
@@ -90,9 +100,40 @@ func TestStart_Polling(t *testing.T) {
 
 	assert := assert.New(t)
 
-	err := gpm.Start(context.Background())
+	update, err := gpm.Start(context.Background())
+	require.NotNil(t, update)
 	require.Nil(t, err)
 	defer gpm.Stop()
+
+	var changes int
+	var changesMu sync.Mutex
+
+	getChanges := func() int {
+		changesMu.Lock()
+		defer changesMu.Unlock()
+
+		return changes
+	}
+
+	addChange := func() {
+		changesMu.Lock()
+		defer changesMu.Unlock()
+
+		changes++
+	}
+
+	go func() {
+		count := 0
+
+		for count < 2 {
+			select {
+			case <-update:
+				count++
+
+				addChange()
+			}
+		}
+	}()
 
 	// Async update gas price so when the
 	// sync sleep finishes, the monitor
@@ -104,10 +145,10 @@ func TestStart_Polling(t *testing.T) {
 
 	time.Sleep(2 * pollingInterval)
 
-	assert.Greater(gpo.queries, 0)
+	assert.Greater(gpo.Queries(), 0)
 	assert.Equal(gasPrice2, gpm.GasPrice())
 
-	queries := gpo.queries
+	queries := gpo.Queries()
 
 	// Async update gas price so when the
 	// sync sleep finishes, the monitor
@@ -120,8 +161,10 @@ func TestStart_Polling(t *testing.T) {
 	time.Sleep(2 * pollingInterval)
 
 	// There should be more queries now
-	assert.Greater(gpo.queries, queries)
+	assert.Greater(gpo.Queries(), queries)
 	assert.Equal(gasPrice3, gpm.GasPrice())
+
+	assert.Equal(2, getChanges())
 }
 
 func TestStart_Polling_ContextCancel(t *testing.T) {
@@ -132,7 +175,8 @@ func TestStart_Polling_ContextCancel(t *testing.T) {
 	gpm := NewGasPriceMonitor(gpo, pollingInterval)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	err := gpm.Start(ctx)
+	update, err := gpm.Start(ctx)
+	require.NotNil(t, update)
 	require.Nil(t, err)
 
 	queries := gpo.queries
@@ -162,7 +206,8 @@ func TestStop(t *testing.T) {
 
 	// Test success
 
-	err = gpm.Start(context.Background())
+	update, err := gpm.Start(context.Background())
+	require.NotNil(t, update)
 	require.Nil(t, err)
 
 	queries := gpo.queries

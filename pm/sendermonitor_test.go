@@ -25,7 +25,7 @@ var increaseTime = func(sec int64) {
 func TestMaxFloat(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, nil, 5*time.Minute, 3600, 3)
 	sm.Start()
 	defer sm.Stop()
 
@@ -62,7 +62,7 @@ func TestMaxFloat(t *testing.T) {
 func TestSubFloat(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, nil, 5*time.Minute, 3600, 1)
 	sm.Start()
 	defer sm.Stop()
 
@@ -93,6 +93,12 @@ func TestSubFloat(t *testing.T) {
 
 	// Test value cached
 
+	// Set errCount to be non-zero
+	ok := sm.AcceptErr(addr)
+	assert.True(ok)
+	ok = sm.AcceptErr(addr)
+	assert.False(ok)
+
 	// Change stub broker value
 	// SenderMonitor should still use cached value which
 	// is different
@@ -107,11 +113,15 @@ func TestSubFloat(t *testing.T) {
 		new(big.Int).Sub(reserve, new(big.Int).Mul(amount, big.NewInt(2))),
 		mf,
 	)
+
+	// Test resetting errCount
+	ok = sm.AcceptErr(addr)
+	assert.True(ok)
 }
 func TestAddFloat(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, nil, 5*time.Minute, 3600, 1)
 	sm.Start()
 	defer sm.Stop()
 
@@ -158,18 +168,28 @@ func TestAddFloat(t *testing.T) {
 	err = sm.SubFloat(addr, amount)
 	require.Nil(err)
 
+	// Set errCount to be non-zero
+	ok := sm.AcceptErr(addr)
+	assert.True(ok)
+	ok = sm.AcceptErr(addr)
+	assert.False(ok)
+
 	err = sm.AddFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err = sm.MaxFloat(addr)
 	require.Nil(err)
 	assert.Equal(reserve, mf)
+
+	// Test resetting errCount
+	ok = sm.AcceptErr(addr)
+	assert.True(ok)
 }
 
 func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, nil, 5*time.Minute, 3600, 3)
 	sm.Start()
 	defer sm.Stop()
 
@@ -242,7 +262,7 @@ func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
 func TestCleanup(t *testing.T) {
 	claimant := RandAddress()
 	b := newStubBroker()
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 2)
+	sm := NewSenderMonitor(claimant, b, nil, 5*time.Minute, 2, 3)
 	sm.Start()
 	defer sm.Stop()
 
@@ -369,4 +389,75 @@ func TestCleanup(t *testing.T) {
 
 	assert.Equal(reserve4, mf1)
 	assert.Equal(reserve5, mf2)
+}
+
+func TestAcceptErr(t *testing.T) {
+	claimant := RandAddress()
+	addr := RandAddress()
+	b := newStubBroker()
+	sm := NewSenderMonitor(claimant, b, nil, 5*time.Minute, 2, 1)
+
+	assert := assert.New(t)
+
+	// Cache remote sender
+	reserve := big.NewInt(10)
+	b.SetReserve(addr, reserve)
+	sm.MaxFloat(addr)
+
+	// Test errCount for addr below maxErrCount
+	ok := sm.AcceptErr(addr)
+	assert.True(ok)
+
+	// Test errCount for addr equal to maxErrCount
+	ok = sm.AcceptErr(addr)
+	assert.False(ok)
+
+	// Test errCount did not increase when errCount = maxErrCount
+	ok = sm.AcceptErr(addr)
+	assert.False(ok)
+}
+
+func TestGasPriceUpdateLoop(t *testing.T) {
+	claimant := RandAddress()
+	b := newStubBroker()
+	gasPriceUpdate := make(chan struct{})
+	sm := NewSenderMonitor(claimant, b, gasPriceUpdate, 5*time.Minute, 2, 1)
+	sm.Start()
+	defer sm.Stop()
+
+	assert := assert.New(t)
+
+	addr1 := RandAddress()
+	addr2 := RandAddress()
+
+	// Cache remote senders
+	reserve := big.NewInt(10)
+	b.SetReserve(addr1, reserve)
+	b.SetReserve(addr2, reserve)
+	sm.MaxFloat(addr1)
+	sm.MaxFloat(addr2)
+
+	// Set errCount for addr1 so that it is at the max
+	ok := sm.AcceptErr(addr1)
+	assert.True(ok)
+	ok = sm.AcceptErr(addr1)
+	assert.False(ok)
+
+	// Set errCount for addr2 so that it is at the max
+	ok = sm.AcceptErr(addr2)
+	assert.True(ok)
+	ok = sm.AcceptErr(addr2)
+	assert.False(ok)
+
+	// Send a gas price change notification
+	gasPriceUpdate <- struct{}{}
+
+	time.Sleep(time.Millisecond * 20)
+
+	// Should accept errors from addr1 and addr2 again
+	// because their errCount values were reset
+	ok = sm.AcceptErr(addr1)
+	assert.True(ok)
+	ok = sm.AcceptErr(addr2)
+	assert.True(ok)
 }

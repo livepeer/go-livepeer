@@ -67,11 +67,6 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	if err := orch.ProcessPayment(payment, segData.ManifestID); err != nil {
 		glog.Errorf("Error processing payment: %v", err)
 
-		if !acceptablePaymentError(err) {
-			http.Error(w, err.Error(), http.StatusPaymentRequired)
-			return
-		}
-
 		oInfo, err = orchestratorInfo(orch, getPaymentSender(payment), orch.ServiceURI().String())
 		if err != nil {
 			glog.Errorf("Error updating orchestrator info: %v", err)
@@ -190,20 +185,6 @@ func getPaymentSender(payment net.Payment) ethcommon.Address {
 		return ethcommon.Address{}
 	}
 	return ethcommon.BytesToAddress(payment.Sender)
-}
-
-var acceptablePaymentErrStrings = []string{
-	"invalid ticket faceValue",
-	"invalid ticket winProb",
-	"invalid already revealed recipientRand",
-}
-
-var acceptablePaymentErrRegex = common.GenErrRegex(acceptablePaymentErrStrings)
-
-func acceptablePaymentError(err error) bool {
-	// TODO: Implement a grace period. O should only accept a certain number of these
-	// types of errors (more lenient since B might not have received updated info)
-	return acceptablePaymentErrRegex.MatchString(err.Error())
 }
 
 func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, error) {

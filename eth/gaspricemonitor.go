@@ -20,16 +20,22 @@ type GasPriceOracle interface {
 // GasPriceMonitor polls for gas price updates and updates its
 // own view of the current gas price that can be used by others
 type GasPriceMonitor struct {
-	gpo             GasPriceOracle
+	gpo GasPriceOracle
+	// The following fields should be protected by `pollingMu`
 	polling         bool
 	pollingInterval time.Duration
 	cancel          context.CancelFunc
+	// pollingMu protects access to polling related fields
+	pollingMu sync.Mutex
 
-	// mu is a mutex that protects access to gasPrice
-	mu sync.Mutex
-	// gasPrice is the current gas price to be returned
-	// to users
+	// gasPriceMu protects access to gasPrice
+	gasPriceMu sync.RWMutex
+	// gasPrice is the current gas price to be returned to users
 	gasPrice *big.Int
+
+	// update is a channel used to send notifications to a listener
+	// when the gas price is updated
+	update chan struct{}
 }
 
 // NewGasPriceMonitor returns a GasPriceMonitor
@@ -43,22 +49,28 @@ func NewGasPriceMonitor(gpo GasPriceOracle, pollingInterval time.Duration) *GasP
 
 // GasPrice returns the current gas price
 func (gpm *GasPriceMonitor) GasPrice() *big.Int {
-	gpm.mu.Lock()
-	defer gpm.mu.Unlock()
+	gpm.gasPriceMu.RLock()
+	defer gpm.gasPriceMu.RUnlock()
 
 	return gpm.gasPrice
 }
 
-// Start starts polling for gas price updates
-func (gpm *GasPriceMonitor) Start(ctx context.Context) error {
+// Start starts polling for gas price updates and returns a channel to receive
+// notifications of gas price changes
+func (gpm *GasPriceMonitor) Start(ctx context.Context) (chan struct{}, error) {
+	gpm.pollingMu.Lock()
+	defer gpm.pollingMu.Unlock()
+
 	if gpm.polling {
-		return errors.New("already polling")
+		return nil, errors.New("already polling")
 	}
 
 	// Initialize gasPrice before starting to poll
 	if err := gpm.fetchAndUpdateGasPrice(ctx); err != nil {
-		return err
+		return nil, err
 	}
+
+	gpm.update = make(chan struct{})
 
 	cctx, cancel := context.WithCancel(ctx)
 	gpm.cancel = cancel
@@ -73,8 +85,10 @@ func (gpm *GasPriceMonitor) Start(ctx context.Context) error {
 					glog.Errorf("error getting gas price: %v", err)
 				}
 			case <-ctx.Done():
+				gpm.pollingMu.Lock()
 				gpm.cancel = nil
 				gpm.polling = false
+				gpm.pollingMu.Unlock()
 				return
 			}
 		}
@@ -82,11 +96,14 @@ func (gpm *GasPriceMonitor) Start(ctx context.Context) error {
 
 	gpm.polling = true
 
-	return nil
+	return gpm.update, nil
 }
 
 // Stop stops polling for gas price updates
 func (gpm *GasPriceMonitor) Stop() error {
+	gpm.pollingMu.Lock()
+	defer gpm.pollingMu.Unlock()
+
 	if !gpm.polling {
 		return errors.New("not polling")
 	}
@@ -104,16 +121,27 @@ func (gpm *GasPriceMonitor) fetchAndUpdateGasPrice(ctx context.Context) error {
 		return err
 	}
 
-	gpm.updateGasPrice(gasPrice)
+	gpm.updateGasPrice(ctx, gasPrice)
 
 	glog.V(common.DEBUG).Infof("Cached gas price: %v", gasPrice)
 
 	return nil
 }
 
-func (gpm *GasPriceMonitor) updateGasPrice(gasPrice *big.Int) {
-	gpm.mu.Lock()
-	defer gpm.mu.Unlock()
+func (gpm *GasPriceMonitor) updateGasPrice(ctx context.Context, gasPrice *big.Int) {
+	gpm.gasPriceMu.Lock()
+	defer gpm.gasPriceMu.Unlock()
+
+	if gasPrice.Cmp(gpm.gasPrice) != 0 && gpm.update != nil {
+		// Notify listener that the new gas price
+		// is different from the current cached gas price
+		// Note: If there is no listener, this call will block
+		select {
+		case gpm.update <- struct{}{}:
+		case <-ctx.Done():
+			return
+		}
+	}
 
 	gpm.gasPrice = gasPrice
 }

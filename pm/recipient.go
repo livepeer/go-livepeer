@@ -274,10 +274,10 @@ func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.
 		// When a winning ticket is redeemed, the ticket's recipientRand is invalidated
 		// and the sender must send tickets with a new seed, but there could be a delay
 		// before the sender is notified of the new seed.
-		//
-		// TODO(yondonfu): Track the number of these types of errors to determine
-		// whether we should accept more of these types of errors
-		return errors.Errorf("invalid already revealed recipientRand %v", recipientRand)
+		return newReceiveError(
+			errors.Errorf("invalid already revealed recipientRand %v", recipientRand),
+			r.sm.AcceptErr(ticket.Sender),
+		)
 	}
 
 	if err := r.updateSenderNonce(recipientRand, ticket.SenderNonce); err != nil {
@@ -294,10 +294,10 @@ func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.
 		// When the gas price changes or the sender's max float changes, the required faceValue
 		// also changes and the sender must send tickets with the new faceValue, but there could
 		// be a delay before the sender is notified of the new faceValue.
-		//
-		// TODO(yondonfu): Track the number of these types of errors to determine
-		// whether we should accept more of these types of errors
-		return errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue)
+		return newReceiveError(
+			errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue),
+			r.sm.AcceptErr(ticket.Sender),
+		)
 	}
 
 	if ticket.WinProb.Cmp(r.winProb(faceValue)) != 0 {
@@ -305,10 +305,10 @@ func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.
 		// When the gas price changes or the sender's max float changes, the required winProb
 		// also changes and the sender must send tickets with the new winProb, but there could
 		// be a delay before the sender is notified of the new winProb.
-		//
-		// TODO(yondonfu): Track the number of these types of errors to determine
-		// whether we should accept more of these types of errors
-		return errors.Errorf("invalid ticket winProb %v", ticket.WinProb)
+		return newReceiveError(
+			errors.Errorf("invalid ticket winProb %v", ticket.WinProb),
+			r.sm.AcceptErr(ticket.Sender),
+		)
 	}
 
 	return nil

@@ -121,6 +121,42 @@ func TestReceiveTicket_InvalidFaceValue(t *testing.T) {
 	}
 }
 
+func TestReceiveTicket_InvalidFaceValue_AcceptableError(t *testing.T) {
+	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, cfg)
+	params, err := r.TicketParams(sender)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+
+	// Test unacceptable error
+
+	ticket := newTicket(sender, params, 0)
+	ticket.FaceValue = big.NewInt(0) // Using invalid faceValue
+
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "invalid ticket faceValue")
+
+	rerr, ok := err.(Error)
+	assert.True(ok)
+	assert.False(rerr.Acceptable())
+
+	// Test acceptable error
+
+	sm.acceptable = true
+	ticket = newTicket(sender, params, 1)
+	ticket.FaceValue = big.NewInt(0) // Using invalid faceValue
+
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "invalid ticket faceValue")
+
+	rerr, ok = err.(Error)
+	assert.True(ok)
+	assert.True(rerr.Acceptable())
+}
+
 func TestReceiveTicket_InvalidFaceValue_GasPriceChange(t *testing.T) {
 	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, cfg)
@@ -184,6 +220,42 @@ func TestReceiveTicket_InvalidWinProb(t *testing.T) {
 	if !won {
 		t.Errorf("expected winning ticket")
 	}
+}
+
+func TestReceiveTicket_InvalidWinProb_AcceptableError(t *testing.T) {
+	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, cfg)
+	params, err := r.TicketParams(sender)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+
+	// Test unacceptable error
+
+	ticket := newTicket(sender, params, 0)
+	ticket.WinProb = big.NewInt(0) // Using invalid winProb
+
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "invalid ticket winProb")
+
+	rerr, ok := err.(Error)
+	assert.True(ok)
+	assert.False(rerr.Acceptable())
+
+	// Test acceptable error
+
+	sm.acceptable = true
+	ticket = newTicket(sender, params, 1)
+	ticket.WinProb = big.NewInt(0) // Using invalid winProb
+
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "invalid ticket winProb")
+
+	rerr, ok = err.(Error)
+	assert.True(ok)
+	assert.True(rerr.Acceptable())
 }
 
 func TestReceiveTicket_InvalidTicket(t *testing.T) {
@@ -384,6 +456,52 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	if !won {
 		t.Errorf("expected winning ticket")
 	}
+}
+
+func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed_AcceptableError(t *testing.T) {
+	sender, b, v, ts, gm, sm, cfg, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, cfg)
+	params, err := r.TicketParams(sender)
+	require.Nil(t, err)
+
+	ticket := newTicket(sender, params, 0)
+
+	// Config stub validator with valid winning tickets
+	v.SetIsWinningTicket(true)
+
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	require.Nil(t, err)
+
+	// Redeem ticket to invalidate recipientRand
+	err = r.RedeemWinningTickets([]string{ticket.RecipientRandHash.Hex()})
+	require.Nil(t, err)
+
+	// New ticket with same invalid recipientRand, but updated senderNonce
+	ticket = newTicket(sender, params, 1)
+
+	assert := assert.New(t)
+
+	// Test unacceptable error
+
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "invalid already revealed recipientRand")
+
+	rerr, ok := err.(Error)
+	assert.True(ok)
+	assert.False(rerr.Acceptable())
+
+	// Test acceptable error
+
+	sm.acceptable = true
+
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "invalid already revealed recipientRand")
+
+	rerr, ok = err.(Error)
+	assert.True(ok)
+	assert.True(rerr.Acceptable())
 }
 
 func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
