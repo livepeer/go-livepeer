@@ -196,7 +196,7 @@ func main() {
 	//Set up DB
 	dbh, err := common.InitDB(*datadir + "/lp.sqlite3")
 	if err != nil {
-		glog.Errorf("Error opening DB", err)
+		glog.Errorf("Error opening DB: %v", err)
 		return
 	}
 	defer dbh.Close()
