@@ -585,17 +585,6 @@ func defaultPaymentWithTickets(t *testing.T, senderParams []*net.TicketSenderPar
 	return payment
 }
 
-func defaultTicket(t *testing.T) *net.Ticket {
-	return &net.Ticket{
-		Recipient:         pm.RandBytes(123),
-		Sender:            pm.RandBytes(123),
-		FaceValue:         pm.RandBytes(123),
-		WinProb:           pm.RandBytes(123),
-		SenderNonce:       456,
-		RecipientRandHash: pm.RandBytes(123),
-	}
-}
-
 func defaultTicketSenderParams(t *testing.T) *net.TicketSenderParams {
 	return &net.TicketSenderParams{
 		SenderNonce: 456,

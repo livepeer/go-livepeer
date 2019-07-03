@@ -178,29 +178,6 @@ message NotifySegment {
     bytes profiles = 17;
 }
 
-// Probabilistic micropayment ticket
-message Ticket {
-  // ETH address of the recipient
-  bytes recipient = 1;
-
-  // ETH address of the sender
-  bytes sender = 2;
-
-  // Pay out (in Wei) to the recipient if the ticket wins
-  bytes face_value = 3;
-
-  // Probability that the ticket wins
-  bytes win_prob = 4;
-
-  // Monotonically increasing counter that makes the ticket
-  // unique relative to a particular hash commitment to a recipient's random number
-  uint32 sender_nonce = 5; 
-
-  // 32 byte keccak-256 hash commitment to a random number provided
-  // by the recipient
-  bytes recipient_rand_hash = 6;
-}
-
 // Required parameters for probabilistic micropayment tickets
 message TicketParams {
   // ETH address of the recipient
