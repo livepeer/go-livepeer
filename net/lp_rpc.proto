@@ -254,4 +254,6 @@ message Payment {
   TicketExpirationParams expiration_params = 3;
  
   repeated TicketSenderParams ticket_sender_params = 4;
+
+  PriceInfo expected_price = 5;
 }
