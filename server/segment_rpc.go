@@ -467,6 +467,7 @@ func genPayment(sess *BroadcastSession) (string, error) {
 		Sender:             ticket.Sender.Bytes(),
 		ExpirationParams:   protoExpirationParams,
 		TicketSenderParams: []*net.TicketSenderParams{protoTicketSenderParams},
+		ExpectedPrice:      sess.OrchestratorInfo.PriceInfo,
 	}
 
 	data, err := proto.Marshal(protoPayment)

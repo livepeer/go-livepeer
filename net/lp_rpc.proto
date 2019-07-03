@@ -75,6 +75,7 @@ message S3OSInfo {
   string xAmzDate = 6;
 }
 
+// PriceInfo conveys pricing info for transcoding services
 message PriceInfo {
   // price in wei
   int64 pricePerUnit = 1;
@@ -254,4 +255,7 @@ message Payment {
   TicketExpirationParams expiration_params = 3;
  
   repeated TicketSenderParams ticket_sender_params = 4;
+
+  // O's last known price
+  PriceInfo expected_price = 5;
 }

@@ -223,9 +223,17 @@ func TestRPCSeg(t *testing.T) {
 func TestGenPayment(t *testing.T) {
 	mid := core.RandomManifestID()
 	b := stubBroadcaster2()
+	oinfo := &net.OrchestratorInfo{
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 3,
+		},
+	}
+
 	s := &BroadcastSession{
-		Broadcaster: b,
-		ManifestID:  mid,
+		Broadcaster:      b,
+		ManifestID:       mid,
+		OrchestratorInfo: oinfo,
 	}
 
 	assert := assert.New(t)
@@ -283,6 +291,7 @@ func TestGenPayment(t *testing.T) {
 	assert.Equal(ticket.RecipientRandHash, ethcommon.BytesToHash(protoPayment.TicketParams.RecipientRandHash))
 	assert.Equal(sig, protoPayment.TicketSenderParams[0].Sig)
 	assert.Equal(seed, new(big.Int).SetBytes(protoPayment.TicketParams.Seed))
+	assert.Zero(big.NewRat(oinfo.PriceInfo.PricePerUnit, oinfo.PriceInfo.PixelsPerUnit).Cmp(big.NewRat(protoPayment.ExpectedPrice.PricePerUnit, protoPayment.ExpectedPrice.PixelsPerUnit)))
 }
 
 func TestPing(t *testing.T) {
@@ -320,6 +329,7 @@ func TestGetPayment_GivenEmptyHeader_ReturnsEmptyPayment(t *testing.T) {
 	assert.Nil(payment.TicketParams)
 	assert.Nil(payment.Sender)
 	assert.Nil(payment.TicketSenderParams)
+	assert.Nil(payment.ExpectedPrice)
 }
 
 func TestGetPayment_GivenNoTicketSenderParams_ZeroLength(t *testing.T) {
@@ -363,6 +373,7 @@ func TestGetPayment_GivenValidHeader_ReturnsPayment(t *testing.T) {
 	assert.Equal(protoPayment.TicketParams.WinProb, payment.TicketParams.WinProb)
 	assert.Equal(protoPayment.TicketParams.RecipientRandHash, payment.TicketParams.RecipientRandHash)
 	assert.Equal(protoPayment.TicketParams.Seed, payment.TicketParams.Seed)
+	assert.Zero(big.NewRat(1, 3).Cmp(big.NewRat(protoPayment.ExpectedPrice.PricePerUnit, protoPayment.ExpectedPrice.PixelsPerUnit)))
 
 	for i, tsp := range payment.TicketSenderParams {
 		assert.Equal(tsp.SenderNonce, protoPayment.TicketSenderParams[i].SenderNonce)
@@ -566,6 +577,10 @@ func defaultPaymentWithTickets(t *testing.T, senderParams []*net.TicketSenderPar
 		TicketParams:       defaultTicketParams(),
 		Sender:             sender,
 		TicketSenderParams: senderParams,
+		ExpectedPrice: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 3,
+		},
 	}
 	return payment
 }
