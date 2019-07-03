@@ -572,17 +572,15 @@ func defaultPayment(t *testing.T) *net.Payment {
 
 func defaultPaymentWithTickets(t *testing.T, senderParams []*net.TicketSenderParams) *net.Payment {
 	sender := pm.RandBytes(123)
-	oinfo := &net.OrchestratorInfo{
-		PriceInfo: &net.PriceInfo{
-			PricePerUnit:  1,
-			PixelsPerUnit: 3,
-		},
-	}
+
 	payment := &net.Payment{
 		TicketParams:       defaultTicketParams(),
 		Sender:             sender,
 		TicketSenderParams: senderParams,
-		ExpectedPrice:      oinfo.PriceInfo,
+		ExpectedPrice: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 3,
+		},
 	}
 	return payment
 }
