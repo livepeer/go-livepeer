@@ -282,6 +282,7 @@ func (m *S3OSInfo) GetXAmzDate() string {
 	return ""
 }
 
+// PriceInfo conveys pricing info for transcoding services
 type PriceInfo struct {
 	// price in wei
 	PricePerUnit int64 `protobuf:"varint,1,opt,name=pricePerUnit,proto3" json:"pricePerUnit,omitempty"`
@@ -1065,12 +1066,13 @@ type Payment struct {
 	// ETH address of the sender
 	Sender []byte `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`
 	// Ticket params for expiration related validation
-	ExpirationParams     *TicketExpirationParams `protobuf:"bytes,3,opt,name=expiration_params,json=expirationParams,proto3" json:"expiration_params,omitempty"`
-	TicketSenderParams   []*TicketSenderParams   `protobuf:"bytes,4,rep,name=ticket_sender_params,json=ticketSenderParams,proto3" json:"ticket_sender_params,omitempty"`
-	ExpectedPrice        *PriceInfo              `protobuf:"bytes,5,opt,name=expected_price,json=expectedPrice,proto3" json:"expected_price,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}                `json:"-"`
-	XXX_unrecognized     []byte                  `json:"-"`
-	XXX_sizecache        int32                   `json:"-"`
+	ExpirationParams   *TicketExpirationParams `protobuf:"bytes,3,opt,name=expiration_params,json=expirationParams,proto3" json:"expiration_params,omitempty"`
+	TicketSenderParams []*TicketSenderParams   `protobuf:"bytes,4,rep,name=ticket_sender_params,json=ticketSenderParams,proto3" json:"ticket_sender_params,omitempty"`
+	// O's last known price
+	ExpectedPrice        *PriceInfo `protobuf:"bytes,5,opt,name=expected_price,json=expectedPrice,proto3" json:"expected_price,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}   `json:"-"`
+	XXX_unrecognized     []byte     `json:"-"`
+	XXX_sizecache        int32      `json:"-"`
 }
 
 func (m *Payment) Reset()         { *m = Payment{} }
