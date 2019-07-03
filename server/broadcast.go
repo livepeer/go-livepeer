@@ -194,16 +194,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 		var sessionID string
 
 		if n.Sender != nil {
-			protoParams := tinfo.TicketParams
-			params := pm.TicketParams{
-				Recipient:         ethcommon.BytesToAddress(protoParams.Recipient),
-				FaceValue:         new(big.Int).SetBytes(protoParams.FaceValue),
-				WinProb:           new(big.Int).SetBytes(protoParams.WinProb),
-				RecipientRandHash: ethcommon.BytesToHash(protoParams.RecipientRandHash),
-				Seed:              new(big.Int).SetBytes(protoParams.Seed),
-			}
-
-			sessionID = n.Sender.StartSession(params)
+			sessionID = n.Sender.StartSession(*pmTicketParams(tinfo.TicketParams))
 		}
 
 		var orchOS drivers.OSSession
