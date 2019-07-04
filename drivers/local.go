@@ -132,7 +132,8 @@ func (ostore *MemorySession) getAbsoluteURI(name string) string {
 
 type dataCache struct {
 	cacheLen int
-	cache    []*dataCacheItem
+	nextFree int
+	cache    []dataCacheItem
 }
 
 type dataCacheItem struct {
@@ -141,7 +142,7 @@ type dataCacheItem struct {
 }
 
 func newDataCache(len int) *dataCache {
-	return &dataCache{cacheLen: len, cache: make([]*dataCacheItem, 0)}
+	return &dataCache{cacheLen: len, cache: make([]dataCacheItem, len)}
 }
 
 func (dc *dataCache) Insert(name string, data []byte) {
@@ -152,11 +153,12 @@ func (dc *dataCache) Insert(name string, data []byte) {
 			return
 		}
 	}
-	if len(dc.cache) >= dc.cacheLen {
-		dc.cache = dc.cache[1:]
+	dc.cache[dc.nextFree].name = name
+	dc.cache[dc.nextFree].data = data
+	dc.nextFree++
+	if dc.nextFree >= dc.cacheLen {
+		dc.nextFree = 0
 	}
-	item := &dataCacheItem{name: name, data: data}
-	dc.cache = append(dc.cache, item)
 }
 
 func (dc *dataCache) GetData(name string) []byte {
