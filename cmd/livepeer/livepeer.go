@@ -104,6 +104,10 @@ func main() {
 	gasPrice := flag.Int("gasPrice", 0, "Gas price for ETH transactions")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	ticketEV := flag.String("ticketEV", "1000000000", "The expected value for PM tickets")
+	// Broadcaster max acceptable ticket EV
+	maxTicketEV := flag.String("maxTicketEV", "10000000000", "The maximum acceptable expected value for PM tickets")
+	// Broadcaster deposit multiplier to determine max acceptable ticket faceValue
+	depositMultiplier := flag.Int("depositMultiplier", 1000, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
 
 	// Orchestrator base pricing info
 	pricePerUnit := flag.Int("pricePerUnit", 0, "The price per 'pixelsPerUnit' amount pixels")
@@ -396,9 +400,24 @@ func main() {
 		}
 
 		if n.NodeType == core.BroadcasterNode {
+			ev, _ := new(big.Rat).SetString(*maxTicketEV)
+			if ev == nil {
+				panic(fmt.Errorf("-maxTicketEV must be a valid rational number, but %v provided. Restart the node with a valid value for -maxTicketEV", *maxTicketEV))
+			}
+
+			if ev.Cmp(big.NewRat(0, 1)) < 0 {
+				panic(fmt.Errorf("-maxTicketEV must not be negative, but %v provided. Restart the node with a valid value for -maxTicketEV", *maxTicketEV))
+			}
+
+			if *depositMultiplier <= 0 {
+				panic(fmt.Errorf("-depositMultiplier must be greater than 0, but %v provided. Restart the node with a valid value for -depositMultiplier", *depositMultiplier))
+			}
+
 			// TODO: Initialize Sender with an implementation
 			// of RoundsManager that reads from a cache
-			n.Sender = pm.NewSender(n.Eth, n.Eth)
+			// TODO: Initialize Sender with an implementation
+			// of SenderManager that reads from a cache
+			n.Sender = pm.NewSender(n.Eth, n.Eth, n.Eth, ev, *depositMultiplier)
 
 			if *pixelsPerUnit <= 0 {
 				// Can't divide by 0

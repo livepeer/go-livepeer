@@ -45,6 +45,8 @@ type SenderInfo struct {
 // smart contract that handles the administrative tasks in a probabilistic micropayment protocol
 // including processing deposits and pay outs
 type Broker interface {
+	SenderManager
+
 	// FundDepositAndReserve funds a sender's deposit and reserve
 	FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*types.Transaction, error)
 
@@ -72,9 +74,6 @@ type Broker interface {
 	// IsUsedTicket checks if a ticket has been used
 	IsUsedTicket(ticket *Ticket) (bool, error)
 
-	// GetSenderInfo returns a sender's information
-	GetSenderInfo(addr ethcommon.Address) (*SenderInfo, error)
-
 	// ClaimableReserve returns the amount from the reserveHolder's reserve that the claimant
 	// can claim
 	ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error)
@@ -91,4 +90,10 @@ type RoundsManager interface {
 	LastInitializedRound() (*big.Int, error)
 	// BlockHashForRound returns the block hash for a given round of the Livepeer protocol
 	BlockHashForRound(round *big.Int) ([32]byte, error)
+}
+
+// SenderManager defines the methods for fetching sender information
+type SenderManager interface {
+	// GetSenderInfo returns a sender's information
+	GetSenderInfo(addr ethcommon.Address) (*SenderInfo, error)
 }

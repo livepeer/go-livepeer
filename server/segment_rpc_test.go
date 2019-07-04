@@ -441,6 +441,23 @@ func TestSubmitSegment_GenSegCredsError(t *testing.T) {
 	assert.Equal(t, "Sign error", err.Error())
 }
 
+func TestSubmitSegment_GenPaymentError(t *testing.T) {
+	b := stubBroadcaster2()
+	sender := &pm.MockSender{}
+	expErr := errors.New("CreateTicket error")
+	sender.On("CreateTicket", mock.Anything).Return(nil, nil, nil, expErr)
+
+	s := &BroadcastSession{
+		Broadcaster: b,
+		ManifestID:  core.RandomManifestID(),
+		Sender:      sender,
+	}
+
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+
+	assert.EqualError(t, err, expErr.Error())
+}
+
 func TestSubmitSegment_HttpPostError(t *testing.T) {
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
@@ -684,10 +701,11 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 
 	// Test does not crash if OrchestratorInfo.TicketParams is nil
 
+	sender = &pm.MockSender{}
 	s.OrchestratorInfo = &net.OrchestratorInfo{
 		Transcoder: ts.URL,
 	}
-	s.Sender = nil
+	s.Sender = sender
 
 	// Update stub server to return OrchestratorInfo without TicketParams
 	tr.Info = &net.OrchestratorInfo{
@@ -696,10 +714,14 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 	buf, err = proto.Marshal(tr)
 	require.Nil(err)
 
+	sender.On("CreateTicket", mock.Anything).Return(ticket, big.NewInt(7), []byte("bar"), nil)
+	sender.On("StartSession", mock.Anything).Return("foobar")
+
 	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
 
 	assert.Nil(err)
 	assert.Equal("http://google.com", s.OrchestratorInfo.Transcoder)
+	sender.AssertNotCalled(t, "StartSession", mock.Anything)
 
 	// Test update OrchestratorOS
 

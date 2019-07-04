@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
-	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -16,7 +15,6 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/stream"
 	"golang.org/x/net/http2"
 
@@ -250,6 +248,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	payment, err := genPayment(sess)
 	if err != nil {
 		glog.Errorf("Could not create payment: %v", err)
+		return nil, err
 	}
 
 	ti := sess.OrchestratorInfo
@@ -374,21 +373,13 @@ func updateOrchestratorInfo(sess *BroadcastSession, oInfo *net.OrchestratorInfo)
 		sess.OrchestratorOS = drivers.NewSession(oInfo.Storage[0])
 	}
 
-	if oInfo.TicketParams == nil {
-		return
-	}
-
-	if sess.Sender != nil {
-		protoParams := oInfo.TicketParams
-		params := pm.TicketParams{
-			Recipient:         ethcommon.BytesToAddress(protoParams.Recipient),
-			FaceValue:         new(big.Int).SetBytes(protoParams.FaceValue),
-			WinProb:           new(big.Int).SetBytes(protoParams.WinProb),
-			RecipientRandHash: ethcommon.BytesToHash(protoParams.RecipientRandHash),
-			Seed:              new(big.Int).SetBytes(protoParams.Seed),
-		}
-
-		sess.PMSessionID = sess.Sender.StartSession(params)
+	if sess.Sender != nil && oInfo.TicketParams != nil {
+		// Note: We do not validate the ticket params included in the OrchestratorInfo
+		// message here. Instead, we store the ticket params with the current BroadcastSession
+		// and the next time this BroadcastSession is used, the ticket params will be validated
+		// during ticket creation in genPayment(). If ticket params validation during ticket
+		// creation fails, then this BroadcastSession will be removed
+		sess.PMSessionID = sess.Sender.StartSession(*pmTicketParams(oInfo.TicketParams))
 	}
 }
 
