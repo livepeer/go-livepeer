@@ -12,6 +12,11 @@ go test -logtostderr=true
 t2=$?
 cd ..
 
+cd drivers
+go test -logtostderr=true
+t2=$?
+cd ..
+
 cd monitor
 go test -logtostderr=true
 t3=$?
