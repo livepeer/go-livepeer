@@ -1,0 +1,6 @@
+github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b h1:VKtxabqXZkF25pY9ekfRL6a582T4P37/31XEstQ5p58=
+github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b/go.mod h1:SBH7ygxi8pfUlaOkMMuAQtPIUF8ecWP5IEl/CR7VP2Q=
+github.com/livepeer/joy4 v0.1.1 h1:Tz7gVcmvpG/nfUKHU+XJn6Qke/k32mTWMiH9qB0bhnM=
+github.com/livepeer/joy4 v0.1.1/go.mod h1:xkDdm+akniYxVT9KW1Y2Y7Hso6aW+rZObz3nrA9yTHw=
+github.com/livepeer/m3u8 v0.6.1 h1:vPOFZDnQIaNrNkYi0CVblg5HADuv7p/jTeI9SwWcw1s=
+github.com/livepeer/m3u8 v0.6.1/go.mod h1:l5UHxkeM4sE9xJhBdYs/WuUEdkoclOowGShhK7h3lBs=

@@ -18,7 +18,7 @@ import (
 	"github.com/livepeer/lpms/vidplayer"
 	"github.com/livepeer/m3u8"
 
-	joy4rtmp "github.com/nareix/joy4/format/rtmp"
+	joy4rtmp "github.com/livepeer/joy4/format/rtmp"
 )
 
 var RetryCount = 3
@@ -80,6 +80,7 @@ func New(opts *LPMSOpts) *LPMS {
 	}
 	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath, opts.HttpMux)
 	listener := &vidlistener.VidListener{RtmpServer: rtmpServer}
+	glog.Infof("Modded vendor LPMS running at rtmp://%v", listener.RtmpServer.Addr)
 	return &LPMS{vidPlayer: player, vidListener: listener, workDir: opts.WorkDir, rtmpAddr: opts.RtmpAddr, httpAddr: httpAddr}
 }
 
@@ -181,7 +182,7 @@ func (l *LPMS) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, 
 				}
 
 				ss := stream.HLSSegment{SeqNo: seg.SeqNo, Data: seg.Data, Name: seg.Name, Duration: seg.Length.Seconds()}
-				// glog.Infof("Writing stream: %v, duration:%v, len:%v", ss.Name, ss.Duration, len(seg.Data))
+				//glog.Infof("Writing stream: %v, duration:%v, len:%v", ss.Name, ss.Duration, len(seg.Data))
 				if err = hs.AddHLSSegment(&ss); err != nil {
 					glog.Errorf("Error adding segment: %v", err)
 				}

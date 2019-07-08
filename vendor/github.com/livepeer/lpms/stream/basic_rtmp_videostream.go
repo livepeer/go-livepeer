@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/nareix/joy4/av"
+	"github.com/livepeer/joy4/av"
 )
 
 type BasicRTMPVideoStream struct {
