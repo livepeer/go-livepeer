@@ -12,11 +12,6 @@ go test -logtostderr=true
 t2=$?
 cd ..
 
-cd drivers
-go test -logtostderr=true
-t2=$?
-cd ..
-
 cd monitor
 go test -logtostderr=true
 t3=$?
@@ -47,10 +42,15 @@ go test -logtostderr=true
 t8=$?
 cd ..
 
+cd drivers
+go test -logtostderr=true
+t9=$?
+cd ..
+
 ./test_args.sh
 t_args=$?
 
-if (($t1!=0||$t2!=0||$t3!=0||$t4!=0||$t5!=0||$t6!=0||$t7!=0||$t8!=0||$t_args!=0))
+if (($t1!=0||$t2!=0||$t3!=0||$t4!=0||$t5!=0||$t6!=0||$t7!=0||$t8!=0||$t9!=0||$t_args!=0))
 then
     printf "\n\nSome Tests Failed\n\n"
     exit -1
