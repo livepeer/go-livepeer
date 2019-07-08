@@ -392,6 +392,12 @@ func (m *MockRecipient) TxCostMultiplier(sender ethcommon.Address) (*big.Rat, er
 	return multiplier, args.Error(1)
 }
 
+// EV Returns the recipient's request ticket EV
+func (m *MockRecipient) EV() *big.Rat {
+	args := m.Called()
+	return args.Get(0).(*big.Rat)
+}
+
 // MockSender is useful for testing components that depend on pm.Sender
 type MockSender struct {
 	mock.Mock
@@ -432,4 +438,28 @@ func (m *MockSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, 
 func (m *MockSender) ValidateTicketParams(ticketParams *TicketParams) error {
 	args := m.Called(ticketParams)
 	return args.Error(0)
+}
+
+// MockReceiveError is for testing acceptable/unacceptable PM ticket errors
+type MockReceiveError struct {
+	err        error
+	acceptable bool
+}
+
+// Error returns the underlying error as a string
+func (re *MockReceiveError) Error() string {
+	return re.err.Error()
+}
+
+// Acceptable returns whether the error is acceptable
+func (re *MockReceiveError) Acceptable() bool {
+	return re.acceptable
+}
+
+// NewMockReceiveError creates a new acceptable/unacceptable MocKReceiveError
+func NewMockReceiveError(err error, acceptable bool) *MockReceiveError {
+	return &MockReceiveError{
+		err,
+		acceptable,
+	}
 }

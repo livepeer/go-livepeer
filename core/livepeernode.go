@@ -66,6 +66,7 @@ type LivepeerNode struct {
 	Transcoder        Transcoder
 	TranscoderManager *RemoteTranscoderManager
 	PriceInfo         *big.Rat
+	Balances          *Balances
 
 	// Broadcaster public fields
 	Sender pm.Sender

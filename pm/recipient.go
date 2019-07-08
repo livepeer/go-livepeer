@@ -43,6 +43,9 @@ type Recipient interface {
 
 	// TxCostMultiplier returns the multiplier -
 	TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error)
+
+	// EV returns the recipients EV requirement for a ticket as configured on startup
+	EV() *big.Rat
 }
 
 // TicketParamsConfig contains config information for a recipient to determine
@@ -438,4 +441,9 @@ func (r *recipient) redeemManager() {
 			return
 		}
 	}
+}
+
+// EV Returns the required ticket EV for a recipient
+func (r *recipient) EV() *big.Rat {
+	return new(big.Rat).SetFrac(r.cfg.EV, big.NewInt(1))
 }

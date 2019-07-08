@@ -139,14 +139,11 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			didReceiveErr = true
 		}
 
-		// TODO(yondonfu):
-		// Add ticket EV to the credit amount if any of the following conditions hold:
-		// - No error receiving the ticket
-		// - There is an error receiving the ticket, the type assertion on the error succeeds and the error is acceptable
-		// pmErr, ok := err.(pm.Error)
-		// if err == nil || (ok && pmErr.Acceptable()) {
-
-		// }
+		pmErr, ok := err.(pm.Error)
+		if err == nil || (ok && pmErr.Acceptable()) {
+			// Add ticket EV to credit
+			orch.node.Balances.Credit(manifestID, new(big.Rat).Mul(ticket.EV(), ticket.WinProbRat()))
+		}
 
 		if won {
 			glog.V(common.DEBUG).Infof("Received winning ticket manifestID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
@@ -197,6 +194,18 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*big.Rat, error) 
 	// pricePerPixel = basePrice * (1 + 1/ txCostMultiplier)
 	overhead := new(big.Rat).Add(big.NewRat(1, 1), new(big.Rat).Inv(txCostMultiplier))
 	return new(big.Rat).Mul(orch.node.PriceInfo, overhead), nil
+}
+
+// SufficientBalance checks whether the credit balance for a stream is sufficient
+// to proceed with downloading and transcoding
+func (orch *orchestrator) SufficientBalance(manifestID ManifestID) bool {
+	if orch.node == nil || orch.node.Recipient == nil || orch.node.Balances == nil {
+		return true
+	}
+	if orch.node.Balances.Balance(manifestID).Cmp(orch.node.Recipient.EV()) < 0 {
+		return false
+	}
+	return true
 }
 
 func NewOrchestrator(n *LivepeerNode) *orchestrator {

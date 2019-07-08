@@ -51,8 +51,8 @@ var (
 	txCostMultiplier = 100
 	// The interval at which to poll for gas price updates
 	gpmPollingInterval = 1 * time.Minute
-	// The interval at which to clean up cached max float values for PM senders
-	smCleanupInterval = 1 * time.Minute
+	// The interval at which to clean up cached max float values for PM senders and balances per stream
+	cleanupInterval = 1 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up)
 	smTTL = 3600 // 1 minute
 	// smMaxErrCount is the maximum number of acceptable errors tolerated by a PM recipient for a sender
@@ -371,7 +371,7 @@ func main() {
 			}
 			defer gpm.Stop()
 
-			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, gasPriceUpdate, smCleanupInterval, smTTL, smMaxErrCount)
+			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, gasPriceUpdate, cleanupInterval, smTTL, smMaxErrCount)
 			// Start sender monitor
 			sm.Start()
 			defer sm.Stop()
@@ -397,6 +397,12 @@ func main() {
 
 			n.Recipient.Start()
 			defer n.Recipient.Stop()
+
+			n.Balances = core.NewBalances(cleanupInterval)
+			// Run n.Accounts.Cleanup() Routine
+			go n.Balances.StartCleanup()
+			// Stop the cleanup routine on program exit
+			defer n.Balances.StopCleanup()
 		}
 
 		if n.NodeType == core.BroadcasterNode {
