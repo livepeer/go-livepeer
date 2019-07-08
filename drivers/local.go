@@ -147,9 +147,9 @@ func newDataCache(len int) *dataCache {
 
 func (dc *dataCache) Insert(name string, data []byte) {
 	// replace existing item
-	for _, item := range dc.cache {
+	for i, item := range dc.cache {
 		if item.name == name {
-			item.data = data
+			dc.cache[i] = dataCacheItem{name: name, data: data}
 			return
 		}
 	}
