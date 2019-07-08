@@ -80,7 +80,6 @@ func New(opts *LPMSOpts) *LPMS {
 	}
 	player := vidplayer.NewVidPlayer(rtmpServer, opts.VodPath, opts.HttpMux)
 	listener := &vidlistener.VidListener{RtmpServer: rtmpServer}
-	glog.Infof("Modded vendor LPMS running at rtmp://%v", listener.RtmpServer.Addr)
 	return &LPMS{vidPlayer: player, vidListener: listener, workDir: opts.WorkDir, rtmpAddr: opts.RtmpAddr, httpAddr: httpAddr}
 }
 
