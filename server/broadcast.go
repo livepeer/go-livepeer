@@ -225,7 +225,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 	return sessions, nil
 }
 
-func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
+func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) error {
 
 	nonce := cxn.nonce
 	cpl := cxn.pl
@@ -245,7 +245,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), true)
 		}
-		return
+		return err
 	}
 	if cpl.GetOSSession().IsExternal() {
 		seg.Name = uri // hijack seg.Name to convey the uploaded URI
@@ -261,15 +261,13 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 		}
 	}
 
-	// Process the rest of the segment asynchronously - transcode
-	go func() {
-		for true {
-			// if fails, retry; rudimentary
-			if err := transcodeSegment(cxn, seg, name); err == nil {
-				return
-			}
+	for true {
+		// if fails, retry; rudimentary
+		if err := transcodeSegment(cxn, seg, name); err == nil {
+			return nil
 		}
-	}()
+	}
+	return nil
 }
 
 func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) error {
@@ -285,6 +283,9 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, errNoOrchs, true)
 		}
 		glog.Infof("No sessions available for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
+		// We may want to introduce a "non-retryable" error type here
+		// would help error propagation for live ingest.
+		// similar to the orchestrator's RemoteTranscoderFatalError
 		return nil
 	}
 	{

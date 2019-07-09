@@ -281,7 +281,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						monitor.StreamStarted(nonce)
 					}
 				}
-				processSegment(cxn, seg)
+				go processSegment(cxn, seg)
 			})
 
 			segOptions := segmenter.SegmenterOptions{
