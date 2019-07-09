@@ -84,3 +84,36 @@ Here, the stream name is `movie` and the stream key is `Secret/Stream/Key`.
 The RTMP stream can then be played back with this complete RTMP URL. The key is
 optional; if one is not supplied, then a random key will be generated. The key
 may also be specified via webhook.
+
+### HTTP Push
+
+Livepeer starts an HTTP server on the default port of 8935, as another ingest point
+into the Livepeer network. Upon ingest, HTTP stream is pushed to the segmenter
+prior to transcoding. The stream can be pushed via a PUT or POST HTTP request to the
+`/live/` endpoint. HTTP request timeout is 8 seconds.
+
+The following are expected in the request:
+
+* MPEG TS segments with segment numbers
+
+* `Content-Resolution` and `Content-Duration` headers
+
+* Stream name must be provided. In the examples below, the stream name is `movie`
+
+
+Sample URLs and requests:
+
+```
+# Push URL
+http://localhost:8935/live/movie/
+
+# HLS Playback URL
+http://localhost:8935/stream/movie.m3u8
+
+# Curl request
+curl -X PUT -H "Content-Duration: 2000" -H "Content-Resolution: 1920x1080"  --data-binary
+"@bbb0.ts" http://localhost:8935/live/movie/bbb0.ts
+
+# FFMPEG request
+ffmpeg -re -i movie.mp4 -c:a copy -c:v copy -f hls http://localhost:8935/live/movie/
+```

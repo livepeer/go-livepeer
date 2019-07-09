@@ -23,7 +23,7 @@ func newMockServer() *httptest.Server {
 	go func() { n.TranscoderManager.Manage(strm, 5) }()
 	time.Sleep(1 * time.Millisecond)
 	n.Transcoder = n.TranscoderManager
-	s := NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
+	s := NewLivepeerServer("127.0.0.1:1938", n)
 	mux := s.cliWebServerHandlers("addr")
 	srv := httptest.NewServer(mux)
 	return srv
