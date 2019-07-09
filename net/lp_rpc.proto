@@ -131,6 +131,9 @@ message TranscodedSegmentData {
 
     // URL where the transcoded data can be downloaded from.
     string url = 1;
+
+    // Amount of pixels processed (output pixels)
+    int64 pixels = 2;
 }
 
 // A set of transcoded segments following the profiles specified in the job.
