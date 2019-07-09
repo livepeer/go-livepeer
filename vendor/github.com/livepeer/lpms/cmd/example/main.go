@@ -179,7 +179,7 @@ func main() {
 	lpms.HandleRTMPPlay(
 		//getStream
 		func(url *url.URL) (stream.RTMPVideoStream, error) {
-			glog.Infof("Got req: ", url.Path)
+			glog.Infof("Got req: %v", url.Path)
 			if rtmpStrm != nil {
 				strmID := parseStreamID(url.Path)
 				if strmID == rtmpStrm.GetStreamID() {

@@ -17,7 +17,7 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/m3u8"
-	"github.com/nareix/joy4/av"
+	"github.com/livepeer/joy4/av"
 )
 
 var ErrSegmenterTimeout = errors.New("SegmenterTimeout")

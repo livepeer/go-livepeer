@@ -366,7 +366,12 @@ static int open_input(input_params *params, struct input_ctx *ctx)
       frames->sw_format = vc->pix_fmt;
       frames->width = vc->width;
       frames->height = vc->height;
-      vc->extra_hw_frames = 16 + 1; // H.264 max refs but increases mem usage
+
+      // May want to allocate extra HW frames if we encounter samples where
+      // the defaults are insufficient. Raising this increases GPU memory usage
+      // For now, the defaults seems OK.
+      //vc->extra_hw_frames = 16 + 1; // H.264 max refs
+
       ret = av_hwframe_ctx_init(vc->hw_frames_ctx);
       if (AVERROR(ENOSYS) == ret) ret = lpms_ERR_INPUT_PIXFMT; // most likely
       if (ret < 0) dd_err("Unable to initialize a hardware frame pool\n")
@@ -639,6 +644,56 @@ dec_flush:
 #undef dec_err
 }
 
+int mux(AVPacket *pkt, AVRational tb, struct output_ctx *octx, AVStream *ost)
+{
+  pkt->stream_index = ost->index;
+  if (av_cmp_q(tb, ost->time_base)) {
+    av_packet_rescale_ts(pkt, tb, ost->time_base);
+  }
+
+  // drop any preroll audio. may need to drop multiple packets for multichannel
+  // XXX this breaks if preroll isn't exactly one AVPacket or drop_ts == 0
+  //     hasn't been a problem in practice (so far)
+  if (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type) {
+      if (octx->drop_ts == AV_NOPTS_VALUE) octx->drop_ts = pkt->pts;
+      if (pkt->pts && pkt->pts == octx->drop_ts) return 0;
+  }
+
+  return av_interleaved_write_frame(octx->oc, pkt);
+}
+
+int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVStream* ost) {
+#define encode_err(msg) { \
+  char errstr[AV_ERROR_MAX_STRING_SIZE] = {0}; \
+  if (!ret) { fprintf(stderr, "should not happen\n"); ret = AVERROR(ENOMEM); } \
+  if (ret < -1) av_strerror(ret, errstr, sizeof errstr); \
+  fprintf(stderr, "%s: %s", msg, errstr); \
+  goto encode_cleanup; \
+}
+
+  AVPacket pkt = {0};
+
+  int ret = avcodec_send_frame(encoder, frame);
+  if (AVERROR_EOF == ret) ; // continue ; drain encoder
+  else if (ret < 0) encode_err("Error sending frame to encoder");
+
+  while (1) {
+    av_init_packet(&pkt);
+    ret = avcodec_receive_packet(encoder, &pkt);
+    if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) goto encode_cleanup;
+    if (ret < 0) encode_err("Error receiving packet from encoder\n");
+    ret = mux(&pkt, encoder->time_base, octx, ost);
+    if (ret < 0) goto encode_cleanup;
+    av_packet_unref(&pkt);
+  }
+
+encode_cleanup:
+  av_packet_unref(&pkt);
+  return ret;
+
+#undef encode_err
+}
+
 int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext *encoder, AVStream *ost,
   struct filter_ctx *filter, AVFrame *inf)
 {
@@ -650,68 +705,46 @@ int process_out(struct input_ctx *ictx, struct output_ctx *octx, AVCodecContext 
   goto proc_cleanup; \
 }
   int ret = 0;
-  AVFrame *frame = NULL;
-  AVPacket pkt = {0};
-  AVRational tb;
-  if (filter && filter->active) {
-      // Because we initially set the filter before the decoder is fully ready
-      // sometimes we have to reset the filter if the HW context is updated
-      if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
-        inf && inf->hw_frames_ctx && filter->hwframes &&
-        inf->hw_frames_ctx->data != filter->hwframes) {
-      free_filter(&octx->vf); // XXX really should flush filter first
-      ret = init_video_filters(ictx, octx);
-      if (ret < 0) return lpms_ERR_FILTERS;
-    }
-    frame = filter->frame;
+
+  if (!encoder) proc_err("Trying to transmux; not supported")
+
+  if (!filter || !filter->active) {
+    // No filter in between decoder and encoder, so use input frame directly
+    ret = encode(encoder, inf, octx, ost);
+    if (ret < 0) return ret;
+  }
+
+  // Sometimes we have to reset the filter if the HW context is updated
+  // because we initially set the filter before the decoder is fully ready
+  // and the decoder may change HW params
+  if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type &&
+      inf && inf->hw_frames_ctx && filter->hwframes &&
+      inf->hw_frames_ctx->data != filter->hwframes) {
+    free_filter(&octx->vf); // XXX really should flush filter first
+    ret = init_video_filters(ictx, octx);
+    if (ret < 0) return lpms_ERR_FILTERS;
+  }
+  ret = av_buffersrc_write_frame(filter->src_ctx, inf);
+  if (ret < 0) proc_err("Error feeding the filtergraph\n");
+
+  while (1) {
+    // Drain the filter. Each input frame may have multiple output frames
+    AVFrame *frame = filter->frame;
     av_frame_unref(frame);
-    ret = av_buffersrc_write_frame(filter->src_ctx, inf);
-    if (ret < 0) proc_err("Error feeding the filtergraph\n");
     ret = av_buffersink_get_frame(filter->sink_ctx, frame);
     frame->pict_type = AV_PICTURE_TYPE_NONE;
-    if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) frame = NULL;
-    else if (ret < 0) proc_err("Error consuming the filtergraph");
-    tb = av_buffersink_get_time_base(filter->sink_ctx);
-  } else frame = inf;
-
-  // encode
-  av_init_packet(&pkt);
-  if (encoder) {
-    if (frame || !inf) {
-      // only send if we've received a frame from filtergraph or this is a flush
-      ret = avcodec_send_frame(encoder, frame);
-      if (AVERROR_EOF == ret) ;
-      else if (ret < 0) proc_err("Error sending frame to encoder\n");
-    }
-    ret = avcodec_receive_packet(encoder, &pkt);
-    if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) return ret;
-    if (ret < 0) proc_err("Error receiving packet from encoder\n");
-    tb = encoder->time_base;
-  } else proc_err("Trying to transmux") // XXX pass in the inpacket, set  pkt = ipkt
-
-
-  // packet bookkeeping.  XXX use av_rescale_delta for audio
-  pkt.stream_index = ost->index;
-  if (av_cmp_q(tb, ost->time_base)) {
-    pkt.pts = av_rescale_q_rnd(pkt.pts, tb, ost->time_base, AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
-    pkt.dts = av_rescale_q_rnd(pkt.dts, tb, ost->time_base, AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
-    pkt.duration = av_rescale_q(pkt.duration, encoder->time_base, ost->time_base);
+    if (AVERROR(EAGAIN) == ret || AVERROR_EOF == ret) {
+      // no frame returned from filtergraph
+      // proceed only if the input frame is a flush (inf == null)
+      if (inf) return ret;
+      frame = NULL;
+    } else if (ret < 0) proc_err("Error consuming the filtergraph\n");
+    ret = encode(encoder, frame, octx, ost);
+    av_frame_unref(frame);
+    if (frame == NULL) return ret;
   }
-
-  // drop any preroll audio. may need to drop multiple packets for multichannel
-  // XXX this breaks if preroll isn't exactly one AVPacket or drop_ts == 0
-  //     hasn't been a problem in practice (so far)
-  if (AVMEDIA_TYPE_AUDIO == ost->codecpar->codec_type) {
-      if (octx->drop_ts == AV_NOPTS_VALUE) octx->drop_ts = pkt.pts;
-      if (pkt.pts && pkt.pts == octx->drop_ts) goto proc_cleanup;
-  }
-
-  ret = av_interleaved_write_frame(octx->oc, &pkt);
-  if (ret < 0) proc_err("Error writing frame\n"); // XXX handle better?
 
 proc_cleanup:
-  av_frame_unref(frame);
-  av_packet_unref(&pkt);
   return ret;
 #undef proc_err
 }
