@@ -8,7 +8,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
-	joy4rtmp "github.com/nareix/joy4/format/rtmp"
+	joy4rtmp "github.com/livepeer/joy4/format/rtmp"
 )
 
 var segOptions = segmenter.SegmenterOptions{SegLength: time.Second * 2}

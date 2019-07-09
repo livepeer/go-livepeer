@@ -12,7 +12,7 @@ import (
 
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/m3u8"
-	joy4rtmp "github.com/nareix/joy4/format/rtmp"
+	joy4rtmp "github.com/livepeer/joy4/format/rtmp"
 )
 
 func TestRTMP(t *testing.T) {

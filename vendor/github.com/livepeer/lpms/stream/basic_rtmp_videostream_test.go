@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/nareix/joy4/av"
-	"github.com/nareix/joy4/codec/h264parser"
+	"github.com/livepeer/joy4/av"
+	"github.com/livepeer/joy4/codec/h264parser"
 )
 
 //Testing WriteRTMP errors
