@@ -18,6 +18,7 @@ import (
 	"path"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -170,7 +171,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			return nil
 		}
 		if resp != nil {
-			mid, key = parseStreamID(resp.ManifestID).ManifestID, resp.StreamKey
+			mid, key = parseManifestID(resp.ManifestID), resp.StreamKey
 			// Process transcoding options presets
 			if len(resp.Presets) > 0 {
 				presets = parsePresets(resp.Presets)
@@ -510,10 +511,88 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 //End RTMP Handlers
 
+func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
+
+	// we read this unconditionally, mostly for ffmpeg
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		glog.Info(err)
+		return
+	}
+	r.Body.Close()
+
+	if ".ts" != path.Ext(r.URL.Path) {
+		// ffmpeg sends us a m3u8 as well, so ignore
+		// Alternatively, reject m3u8s explicitly and take any other type
+		// TODO also look at use content-type
+		return
+	}
+
+	mid := parseManifestID(r.URL.Path)
+	s.connectionLock.RLock()
+	cxn, exists := s.rtmpConnections[mid]
+	s.connectionLock.RUnlock()
+
+	// Check for presence and register if a fresh cxn
+	if !exists {
+		appData := (createRTMPStreamIDHandler(s))(r.URL)
+		if appData == nil {
+			return
+		}
+		st := stream.NewBasicRTMPVideoStream(appData)
+		cxn, err = s.registerConnection(st)
+		// TODO monitor for activity and clean up
+	}
+	fname := path.Base(r.URL.Path)
+	seq, err := strconv.ParseUint(strings.TrimSuffix(fname, path.Ext(fname)), 10, 64)
+	if err != nil {
+		seq = 0
+	}
+	seg := &stream.HLSSegment{
+		Data:  body,
+		Name:  fname,
+		SeqNo: seq,
+		// TODO duration
+	}
+
+	// Do the transcoding!
+	err = processSegment(cxn, seg)
+	if err != nil {
+		// TODO return error
+		return
+	}
+
+	// Return the results (blobs) using local OS lookup.
+	// May be empty if an external broadcaster OS is used
+	// Return URL in that case? Need to return results from ProcessSegment
+	os, ok := drivers.NodeStorage.(*drivers.MemoryOS)
+	if !ok {
+		return
+	}
+	sess := os.GetSession(string(mid))
+	if sess == nil {
+		return
+	}
+	params := streamParams(cxn.stream)
+	if params == nil {
+		return
+	}
+	// fetch each rendition from local storage
+	for _, p := range params.profiles {
+		name := fmt.Sprintf("%s/%s/%s", mid, p.Name, fname)
+		data := sess.GetData(name)
+		if len(data) <= 0 {
+			// nonexistent!
+		}
+		// do multipart stuff; see  runTranscoder in server/ot_rpc.go
+		glog.Infof("%s - %d bytes", name, len(data))
+	}
+}
+
 //Helper Methods Begin
 
 // Match all leading spaces, slashes and optionally `stream/`
-var StreamPrefix = regexp.MustCompile(`^[ /]*(stream/)?`)
+var StreamPrefix = regexp.MustCompile(`^[ /]*(stream/)?|(live/)?`) // test carefully!
 
 func cleanStreamPrefix(reqPath string) string {
 	return StreamPrefix.ReplaceAllString(reqPath, "")
