@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -873,4 +875,143 @@ func TestParsePresets(t *testing.T) {
 
 	p = parsePresets(presets)
 	assert.Equal([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P720p30fps16x9}, p)
+}
+
+func handlePushRequestSetup(s *LivepeerServer) (http.Handler, *strings.Reader, *httptest.ResponseRecorder) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.HandlePush(w, r)
+	})
+	reader := strings.NewReader("")
+	writer := httptest.NewRecorder()
+	return handler, reader, writer
+}
+
+func TestHandlePush200(t *testing.T) {
+	assert := assert.New(t)
+	handler, reader, w := handlePushRequestSetup(setupServer())
+	req := httptest.NewRequest("GET", "/live/seg.ts", reader)
+
+	handler.ServeHTTP(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(200, resp.StatusCode)
+	assert.Equal(strings.TrimSpace(string(body)), "")
+}
+
+func TestHandlePushMemorySessionError(t *testing.T) {
+	// assert Memory Session is nil error
+	assert := assert.New(t)
+	handler, reader, w := handlePushRequestSetup(setupServer())
+	req := httptest.NewRequest("GET", "/live/seg.ts", reader)
+
+	handler.ServeHTTP(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Contains(strings.TrimSpace(string(body)), "MemorySession is nil")
+}
+
+func TestHandlePushMemoryRequestError(t *testing.T) {
+	// assert http request body error returned
+	assert := assert.New(t)
+	handler, _, w := handlePushRequestSetup(setupServer())
+	f, err := os.Open(`doesn't exist`)
+	req := httptest.NewRequest("GET", "/live/seg.ts", f)
+
+	handler.ServeHTTP(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Contains(strings.TrimSpace(string(body)), "Error reading http request body")
+}
+
+func TestHandlePushFileExtensionError(t *testing.T) {
+	// assert file extension error returned
+	assert := assert.New(t)
+	handler, reader, w := handlePushRequestSetup(setupServer())
+	req := httptest.NewRequest("GET", "/live/seg.m3u8", reader)
+
+	handler.ServeHTTP(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+	assert.Contains(strings.TrimSpace(string(body)), "ignoring file extension")
+}
+
+func TestHandlePushMemoryOSError(t *testing.T) {
+	// assert no MemoryOS driver error
+	assert := assert.New(t)
+	handler, reader, w := handlePushRequestSetup(setupServer())
+	tempStorage := drivers.NodeStorage
+	drivers.NodeStorage = nil
+	req := httptest.NewRequest("GET", "/live/seg.ts", reader)
+
+	handler.ServeHTTP(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Contains(strings.TrimSpace(string(body)), "No MemoryOS driver")
+	drivers.NodeStorage = tempStorage
+}
+
+func TestHandlePushStorageError(t *testing.T) {
+	// assert storage error
+	assert := assert.New(t)
+	s := setupServer()
+	handler, reader, w := handlePushRequestSetup(s)
+
+	tempStorage := drivers.NodeStorage
+	drivers.NodeStorage = nil
+	req := httptest.NewRequest("GET", "/live/seg.ts", reader)
+	mid := parseManifestID(req.URL.Path)
+	err := removeRTMPStream(s, mid)
+
+	handler.ServeHTTP(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Contains(strings.TrimSpace(string(body)), "ErrStorage")
+
+	// reset drivers.NodeStorage to original value
+	drivers.NodeStorage = tempStorage
+}
+
+func TestHandlePushForAuthWebhookFailure(t *testing.T) {
+	// assert app data error
+	assert := assert.New(t)
+	s := setupServer()
+	handler, reader, w := handlePushRequestSetup(s)
+
+	AuthWebhookURL = "notaurl"
+	req := httptest.NewRequest("GET", "/live/seg.ts", reader)
+
+	handler.ServeHTTP(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Contains(strings.TrimSpace(string(body)), "Could not create stream ID")
+
+	// reset AuthWebhookURL to original value
+	AuthWebhookURL = ""
 }

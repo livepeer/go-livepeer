@@ -17,6 +17,7 @@ import (
 	"path"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +54,7 @@ const StreamKeyBytes = 6
 
 const SegLen = 2 * time.Second
 const BroadcastRetry = 15 * time.Second
+const RefreshIntervalHttpPush = 1 * time.Minute
 
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
@@ -76,6 +78,7 @@ type rtmpConnection struct {
 	profile     *ffmpeg.VideoProfile
 	params      *streamParameters
 	sessManager *BroadcastSessionsManager
+	lastUsed    time.Time
 }
 
 type LivepeerServer struct {
@@ -169,7 +172,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			return nil
 		}
 		if resp != nil {
-			mid, key = parseStreamID(resp.ManifestID).ManifestID, resp.StreamKey
+			mid, key = parseManifestID(resp.ManifestID), resp.StreamKey
 			// Process transcoding options presets
 			if len(resp.Presets) > 0 {
 				presets = parsePresets(resp.Presets)
@@ -312,24 +315,12 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		if params == nil {
 			return errMismatchedParams
 		}
-		mid := params.mid
-		//Remove RTMP stream
-		s.connectionLock.Lock()
-		defer s.connectionLock.Unlock()
-		cxn, ok := s.rtmpConnections[mid]
-		if !ok || cxn.pl == nil {
-			glog.Error("Attempted to end unknown stream with manifest ID ", mid)
-			return errUnknownStream
-		}
-		cxn.sessManager.cleanup()
-		cxn.pl.Cleanup()
-		glog.Infof("Ended stream with id=%s", mid)
-		delete(s.rtmpConnections, mid)
-		if monitor.Enabled {
-			monitor.StreamEnded(cxn.nonce)
-			monitor.CurrentSessions(len(s.rtmpConnections))
-		}
 
+		//Remove RTMP stream
+		err := removeRTMPStream(s, params.mid)
+		if err != nil {
+			return err
+		}
 		return nil
 	}
 }
@@ -391,18 +382,42 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		profile:     &vProfile,
 		params:      params,
 		sessManager: NewSessionManager(s.LivepeerNode, params, playlist),
+		lastUsed:    time.Now(),
 	}
+
 	s.connectionLock.Lock()
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
 	s.lastHLSStreamID = hlsStrmID
 	sessionsNumber := len(s.rtmpConnections)
 	s.connectionLock.Unlock()
+
 	if monitor.Enabled {
 		monitor.CurrentSessions(sessionsNumber)
 	}
 
 	return cxn, nil
+}
+
+func removeRTMPStream(s *LivepeerServer, mid core.ManifestID) error {
+	s.connectionLock.Lock()
+	defer s.connectionLock.Unlock()
+	cxn, ok := s.rtmpConnections[mid]
+	if !ok || cxn.pl == nil {
+		glog.Error("Attempted to end unknown stream with manifest ID ", mid)
+		return errUnknownStream
+	}
+	cxn.sessManager.cleanup()
+	cxn.pl.Cleanup()
+	glog.Infof("Ended stream with id=%s", mid)
+	delete(s.rtmpConnections, mid)
+
+	if monitor.Enabled {
+		monitor.StreamEnded(cxn.nonce)
+		monitor.CurrentSessions(len(s.rtmpConnections))
+	}
+
+	return nil
 }
 
 //End RTMP Publish Handlers
@@ -509,10 +524,120 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 //End RTMP Handlers
 
+func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
+	// we read this unconditionally, mostly for ffmpeg
+	body, err := ioutil.ReadAll(r.Body)
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`Error reading http request body: %s`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	r.Body.Close()
+
+	if ".ts" != path.Ext(r.URL.Path) {
+		// ffmpeg sends us a m3u8 as well, so ignore
+		// Alternatively, reject m3u8s explicitly and take any other type
+		// TODO also look at use content-type
+		http.Error(w, fmt.Sprintf(`ignoring file extension: %s`, path.Ext(r.URL.Path)), http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now()
+	mid := parseManifestID(r.URL.Path)
+	s.connectionLock.Lock()
+	cxn, exists := s.rtmpConnections[mid]
+	if exists && cxn != nil {
+		cxn.lastUsed = now
+	}
+	s.connectionLock.Unlock()
+
+	// Check for presence and register if a fresh cxn
+	if !exists {
+		appData := (createRTMPStreamIDHandler(s))(r.URL)
+		if appData == nil {
+			http.Error(w, "Could not create stream ID: ", http.StatusInternalServerError)
+			return
+		}
+		st := stream.NewBasicRTMPVideoStream(appData)
+		cxn, err = s.registerConnection(st)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		ticker := time.NewTicker(RefreshIntervalHttpPush)
+
+		go func(s *LivepeerServer, mid core.ManifestID) {
+			for _ = range ticker.C {
+				s.connectionLock.RLock()
+				lastUsed := s.rtmpConnections[mid].lastUsed
+				s.connectionLock.RUnlock()
+
+				if time.Since(lastUsed) > RefreshIntervalHttpPush {
+					_ = removeRTMPStream(s, mid)
+					ticker.Stop()
+					return
+				}
+			}
+		}(s, mid)
+	}
+
+	fname := path.Base(r.URL.Path)
+	seq, err := strconv.ParseUint(strings.TrimSuffix(fname, path.Ext(fname)), 10, 64)
+	if err != nil {
+		seq = 0
+	}
+	seg := &stream.HLSSegment{
+		Data:  body,
+		Name:  fname,
+		SeqNo: seq,
+		// TODO duration
+	}
+
+	// Do the transcoding!
+	err = processSegment(cxn, seg)
+	if err != nil {
+		// TODO return error
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the results (blobs) using local OS lookup.
+	// May be empty if an external broadcaster OS is used
+	// Return URL in that case? Need to return results from ProcessSegment
+	os, ok := drivers.NodeStorage.(*drivers.MemoryOS)
+	if !ok {
+		http.Error(w, "No MemoryOS driver", http.StatusInternalServerError)
+		return
+	}
+	sess := os.GetSession(string(mid))
+	if sess == nil {
+		http.Error(w, "MemorySession is nil", http.StatusInternalServerError)
+		return
+	}
+	params := streamParams(cxn.stream)
+	if params == nil {
+		http.Error(w, "RTMPVideoStream stream parameters nil", http.StatusInternalServerError)
+		return
+	}
+	// fetch each rendition from local storage
+	for _, p := range params.profiles {
+		name := fmt.Sprintf("%s/%s/%s", mid, p.Name, fname)
+		data := sess.GetData(name)
+		if len(data) <= 0 {
+			// nonexistent!
+		}
+		// do multipart stuff; see  runTranscoder in server/ot_rpc.go
+		glog.Infof("%s - %d bytes", name, len(data))
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 //Helper Methods Begin
 
 // Match all leading spaces, slashes and optionally `stream/`
-var StreamPrefix = regexp.MustCompile(`^[ /]*(stream/)?`)
+var StreamPrefix = regexp.MustCompile(`^[ /]*(stream/)?|(live/)?`) // test carefully!
 
 func cleanStreamPrefix(reqPath string) string {
 	return StreamPrefix.ReplaceAllString(reqPath, "")
