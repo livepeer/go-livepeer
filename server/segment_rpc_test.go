@@ -541,6 +541,7 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	assert.True(ok)
 	assert.Equal([]byte("foo"), res.Data.Sig)
 	assert.Equal(1, len(res.Data.Segments))
+	assert.Equal(res.Data.Segments[0].Pixels, tData.Pixels)
 	orch.AssertCalled(t, "DebitFees", md.ManifestID, mock.Anything, tData.Pixels)
 }
 
@@ -607,6 +608,9 @@ func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
 	assert.True(ok)
 	assert.Equal([]byte("foo"), res.Data.Sig)
 	assert.Equal(2, len(res.Data.Segments))
+	for i, seg := range res.Data.Segments {
+		assert.Equal(seg.Pixels, tRes.TranscodeData[i].Pixels)
+	}
 	orch.AssertCalled(t, "DebitFees", md.ManifestID, mock.Anything, tData720.Pixels+tData240.Pixels)
 }
 
@@ -680,6 +684,7 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 	assert.True(ok)
 	assert.Equal([]byte("foo"), res.Data.Sig)
 	assert.Equal(1, len(res.Data.Segments))
+	assert.Equal(res.Data.Segments[0].Pixels, tData720.Pixels)
 	orch.AssertCalled(t, "DebitFees", md.ManifestID, mock.Anything, tData720.Pixels)
 }
 
