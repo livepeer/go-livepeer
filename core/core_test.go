@@ -59,16 +59,16 @@ func TestTranscode(t *testing.T) {
 		t.Error("Error transcoding ", err)
 	}
 
-	if len(tr.Data) != len(videoProfiles) && len(videoProfiles) != 2 {
+	if len(tr.TranscodeData) != len(videoProfiles) && len(videoProfiles) != 2 {
 		t.Error("Job profile count did not match broadcasters")
 	}
 
 	// 	Check transcode result
-	if Over1Pct(len(tr.Data[0]), 73132) { // 144p
-		t.Error("Unexpected transcode result ", len(tr.Data[0]))
+	if Over1Pct(len(tr.TranscodeData[0].Data), 73132) { // 144p
+		t.Error("Unexpected transcode result ", len(tr.TranscodeData[0].Data))
 	}
-	if Over1Pct(len(tr.Data[1]), 99640) { // 240p
-		t.Error("Unexpected transcode result ", len(tr.Data[1]))
+	if Over1Pct(len(tr.TranscodeData[1].Data), 99640) { // 240p
+		t.Error("Unexpected transcode result ", len(tr.TranscodeData[1].Data))
 	}
 
 	// TODO check transcode loop expiry, storage, sig construction, etc
@@ -96,7 +96,9 @@ func TestTranscodeSeg(t *testing.T) {
 	assert.Nil(res.Sig)
 	// sanity check results
 	resBytes, _ := n.Transcoder.Transcode("", profiles)
-	assert.Equal(resBytes, res.Data)
+	for i, trData := range res.TranscodeData {
+		assert.Equal(resBytes[i], trData.Data)
+	}
 
 	// Test onchain mode
 	n.Eth = &eth.StubClient{}

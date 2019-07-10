@@ -56,8 +56,8 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 		t.Errorf("Error: %v", res.Err)
 	}
 
-	if len(res.Data) != len(p) {
-		t.Errorf("Expecting %v profiles, got %v", len(p), len(res.Data))
+	if len(res.TranscodeData) != len(p) {
+		t.Errorf("Expecting %v profiles, got %v", len(p), len(res.TranscodeData))
 	}
 
 	//Should have 1 transcoded segment into 2 different profiles
