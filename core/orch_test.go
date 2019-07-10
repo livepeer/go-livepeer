@@ -712,16 +712,20 @@ func TestProcessPayment_AcceptablePaymentError_IncreasesCreditBalance(t *testing
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, acceptableError).Once()
 	assert := assert.New(t)
 
-	// Create a ticket where faceVal = EV
-	// making faceVal the expected balance increase
-	faceVal := big.NewInt(100)
+	// faceValue = 100
+	// winProb = 50%
+	maxWinProb := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	ticket := &pm.Ticket{
+		FaceValue: big.NewInt(100),
+		WinProb:   maxWinProb.Div(maxWinProb, big.NewInt(2)),
+	}
 	payment := defaultPayment(t)
-	payment.TicketParams.FaceValue = faceVal.Bytes()
-	payment.TicketParams.WinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1)).Bytes()
+	payment.TicketParams.FaceValue = ticket.FaceValue.Bytes()
+	payment.TicketParams.WinProb = ticket.WinProb.Bytes()
 
 	err := orch.ProcessPayment(payment, manifestID)
 	assert.Error(err)
-	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(new(big.Rat).SetInt(faceVal)))
+	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(ticket.EV()))
 }
 
 // Check that an unacceptable error does NOT increase the credit
