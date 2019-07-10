@@ -45,6 +45,7 @@ type Orchestrator interface {
 	TicketParams(sender ethcommon.Address) (*net.TicketParams, error)
 	PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error)
 	SufficientBalance(manifestID core.ManifestID) bool
+	DebitFees(manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
 }
 
 type Broadcaster interface {

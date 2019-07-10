@@ -987,6 +987,68 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 	assert.EqualError(t, err, expError.Error())
 }
 
+func TestDebitFees(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	manifestID := ManifestID("some manifest")
+	assert := assert.New(t)
+
+	price := &net.PriceInfo{
+		PricePerUnit:  1,
+		PixelsPerUnit: 5,
+	}
+	// 1080p 60fps 2sec + 720p 60fps 2sec + 480p 60fps 2sec
+	pixels := int64(248832000 + 110592000 + 36864000)
+	amount := new(big.Rat).Mul(big.NewRat(price.PricePerUnit, price.PixelsPerUnit), big.NewRat(pixels, 1))
+	expectedBal := new(big.Rat).Sub(big.NewRat(0, 1), amount)
+
+	orch.DebitFees(manifestID, price, pixels)
+
+	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(expectedBal))
+
+	// debit for 0 pixels transcoded , balance is still the same
+	orch.DebitFees(manifestID, price, int64(0))
+	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(expectedBal))
+
+	// Credit balance 2*amount , should have 0 remaining after debiting 'amount' again
+	orch.node.Balances.Credit(manifestID, new(big.Rat).Mul(amount, big.NewRat(2, 1)))
+	orch.DebitFees(manifestID, price, pixels)
+	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(big.NewRat(0, 1)))
+}
+
+func TestDebitFees_OffChain_Returns(t *testing.T) {
+	price := &net.PriceInfo{
+		PricePerUnit:  1,
+		PixelsPerUnit: 5,
+	}
+	// 1080p 60fps 2sec + 720p 60fps 2sec + 480p 60fps 2sec
+	pixels := int64(248832000 + 110592000 + 36864000)
+	manifestID := ManifestID("some manifest")
+
+	n, _ := NewLivepeerNode(nil, "", nil)
+
+	// Node != nil , Recipient == nil, Balances == nil
+	orch := NewOrchestrator(n)
+	assert.NotPanics(t, func() { orch.DebitFees(manifestID, price, pixels) })
+
+	// Node != nil , Recipient != nil, Balances == nil
+	orch.node.Recipient = new(pm.MockRecipient)
+	assert.NotPanics(t, func() { orch.DebitFees(manifestID, price, pixels) })
+
+	// Node != nil, Recipient == nil, Balances != nil
+	orch.node.Recipient = nil
+	orch.node.Balances = NewBalances(5 * time.Second)
+	assert.NotPanics(t, func() { orch.DebitFees(manifestID, price, pixels) })
+	assert.Nil(t, orch.node.Balances.Balance(manifestID))
+
+	// Node == nil
+	orch.node = nil
+	assert.NotPanics(t, func() { orch.DebitFees(manifestID, price, pixels) })
+}
+
 func defaultPayment(t *testing.T) net.Payment {
 	ticketSenderParams := &net.TicketSenderParams{
 		SenderNonce: 456,

@@ -131,18 +131,24 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 	// Upload to OS and construct segment result set
 	var segments []*net.TranscodedSegmentData
-	for i := 0; err == nil && i < len(res.Data); i++ {
+	var pixels int64
+	for i := 0; err == nil && i < len(res.TranscodeData); i++ {
 		name := fmt.Sprintf("%s/%d.ts", segData.Profiles[i].Name, segData.Seq) // ANGIE - NEED TO EDIT OUT JOB PROFILES
-		uri, err := res.OS.SaveData(name, res.Data[i])
+		uri, err := res.OS.SaveData(name, res.TranscodeData[i].Data)
 		if err != nil {
 			glog.Error("Could not upload segment ", segData.Seq)
 			break
 		}
+		pixels += res.TranscodeData[i].Pixels
 		d := &net.TranscodedSegmentData{
-			Url: uri,
+			Url:    uri,
+			Pixels: res.TranscodeData[i].Pixels,
 		}
 		segments = append(segments, d)
 	}
+
+	// Debit the fee for the total pixel count
+	orch.DebitFees(segData.ManifestID, payment.GetExpectedPrice(), pixels)
 
 	// construct the response
 	var result net.TranscodeResult

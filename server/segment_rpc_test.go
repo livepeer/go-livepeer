@@ -124,6 +124,7 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", s.ManifestID).Return(true)
 	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
+	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything)
 
 	headers := map[string]string{
 		paymentHeader: "",
@@ -176,14 +177,16 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 
 	mos.On("SaveData", mock.Anything, mock.Anything).Return("", errors.New("SaveData error"))
 
+	tData := &core.TranscodeData{
+		Data: []byte("foo"),
+	}
 	tRes := &core.TranscodeResult{
-		Data: [][]byte{
-			[]byte("foo"),
-		},
-		Sig: []byte("foo"),
-		OS:  mos,
+		TranscodeData: []*core.TranscodeData{tData},
+		Sig:           []byte("foo"),
+		OS:            mos,
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything)
 
 	headers := map[string]string{
 		paymentHeader: "",
@@ -233,14 +236,16 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
+	tData := &core.TranscodeData{
+		Data: []byte("foo"),
+	}
 	tRes := &core.TranscodeResult{
-		Data: [][]byte{
-			[]byte("foo"),
-		},
-		Sig: []byte("foo"),
-		OS:  drivers.NewMemoryDriver(nil).NewSession(""),
+		TranscodeData: []*core.TranscodeData{tData},
+		Sig:           []byte("foo"),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything)
 
 	headers := map[string]string{
 		paymentHeader: "",
@@ -291,15 +296,16 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
+	tData := &core.TranscodeData{
+		Data: []byte("foo"),
+	}
 	tRes := &core.TranscodeResult{
-		Data: [][]byte{
-			[]byte("foo"),
-			[]byte("foo"),
-		},
-		Sig: []byte("foo"),
-		OS:  drivers.NewMemoryDriver(nil).NewSession(""),
+		TranscodeData: []*core.TranscodeData{tData, tData},
+		Sig:           []byte("foo"),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything)
 
 	headers := map[string]string{
 		paymentHeader: "",
@@ -369,14 +375,16 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	require.Nil(err)
 	orch.On("ServiceURI").Return(uri)
 
+	tData := &core.TranscodeData{
+		Data: []byte("foo"),
+	}
 	tRes := &core.TranscodeResult{
-		Data: [][]byte{
-			[]byte("foo"),
-		},
-		Sig: []byte("foo"),
-		OS:  drivers.NewMemoryDriver(nil).NewSession(""),
+		TranscodeData: []*core.TranscodeData{tData},
+		Sig:           []byte("foo"),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything)
 
 	headers := map[string]string{
 		paymentHeader: "",
@@ -473,6 +481,256 @@ func TestServeSegment_InsufficientBalanceError(t *testing.T) {
 
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	assert.Equal("Internal Server Error", strings.TrimSpace(string(body)))
+}
+
+func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		Profiles: []ffmpeg.VideoProfile{
+			ffmpeg.P720p60fps16x9,
+		},
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+	orch.On("SufficientBalance", s.ManifestID).Return(true)
+
+	tData := &core.TranscodeData{
+		Data:   []byte("foo"),
+		Pixels: int64(110592000),
+	}
+	tRes := &core.TranscodeResult{
+		TranscodeData: []*core.TranscodeData{tData},
+		Sig:           []byte("foo"),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
+	}
+	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+	orch.On("DebitFees", md.ManifestID, mock.Anything, mock.Anything)
+
+	headers := map[string]string{
+		paymentHeader: "",
+		segmentHeader: creds,
+	}
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	var tr net.TranscodeResult
+	err = proto.Unmarshal(body, &tr)
+	require.Nil(err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	res, ok := tr.Result.(*net.TranscodeResult_Data)
+	assert.True(ok)
+	assert.Equal([]byte("foo"), res.Data.Sig)
+	assert.Equal(1, len(res.Data.Segments))
+	orch.AssertCalled(t, "DebitFees", md.ManifestID, mock.Anything, tData.Pixels)
+}
+
+func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		Profiles: []ffmpeg.VideoProfile{
+			ffmpeg.P720p60fps16x9,
+			ffmpeg.P240p30fps16x9,
+		},
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+	orch.On("SufficientBalance", s.ManifestID).Return(true)
+
+	tData720 := &core.TranscodeData{
+		Data:   []byte("foo"),
+		Pixels: int64(110592000),
+	}
+	tData240 := &core.TranscodeData{
+		Data:   []byte("foo"),
+		Pixels: int64(6134400),
+	}
+	tRes := &core.TranscodeResult{
+		TranscodeData: []*core.TranscodeData{tData720, tData240},
+		Sig:           []byte("foo"),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
+	}
+	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+	orch.On("DebitFees", md.ManifestID, mock.Anything, mock.Anything)
+
+	headers := map[string]string{
+		paymentHeader: "",
+		segmentHeader: creds,
+	}
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	var tr net.TranscodeResult
+	err = proto.Unmarshal(body, &tr)
+	require.Nil(err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	res, ok := tr.Result.(*net.TranscodeResult_Data)
+	assert.True(ok)
+	assert.Equal([]byte("foo"), res.Data.Sig)
+	assert.Equal(2, len(res.Data.Segments))
+	orch.AssertCalled(t, "DebitFees", md.ManifestID, mock.Anything, tData720.Pixels+tData240.Pixels)
+}
+
+// break loop for adding pixelcounts when OS upload fails
+func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		Profiles: []ffmpeg.VideoProfile{
+			ffmpeg.P720p60fps16x9,
+			ffmpeg.P240p30fps16x9,
+		},
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+	orch.On("SufficientBalance", s.ManifestID).Return(true)
+
+	mos := &mockOSSession{}
+
+	tData720 := &core.TranscodeData{
+		Data:   []byte("foo"),
+		Pixels: int64(110592000),
+	}
+	tData240 := &core.TranscodeData{
+		Data:   []byte("foo"),
+		Pixels: int64(6134400),
+	}
+	tRes := &core.TranscodeResult{
+		TranscodeData: []*core.TranscodeData{tData720, tData240},
+		Sig:           []byte("foo"),
+		OS:            mos,
+	}
+	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+
+	mos.On("SaveData", mock.Anything, mock.Anything).Return("720pdotcom", nil).Once()
+	mos.On("SaveData", mock.Anything, mock.Anything).Return("", errors.New("SaveData error")).Once()
+
+	orch.On("DebitFees", md.ManifestID, mock.Anything, mock.Anything)
+
+	headers := map[string]string{
+		paymentHeader: "",
+		segmentHeader: creds,
+	}
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	var tr net.TranscodeResult
+	err = proto.Unmarshal(body, &tr)
+	require.Nil(err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	res, ok := tr.Result.(*net.TranscodeResult_Data)
+	assert.True(ok)
+	assert.Equal([]byte("foo"), res.Data.Sig)
+	assert.Equal(1, len(res.Data.Segments))
+	orch.AssertCalled(t, "DebitFees", md.ManifestID, mock.Anything, tData720.Pixels)
+}
+
+func TestServeSegment_DebitFees_TranscodeSegError_ZeroPixelsBilled(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		Profiles: []ffmpeg.VideoProfile{
+			ffmpeg.P720p60fps16x9,
+		},
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
+	orch.On("SufficientBalance", s.ManifestID).Return(true)
+	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
+	orch.On("DebitFees", md.ManifestID, mock.Anything, mock.Anything)
+
+	headers := map[string]string{
+		paymentHeader: "",
+		segmentHeader: creds,
+	}
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	var tr net.TranscodeResult
+	err = proto.Unmarshal(body, &tr)
+	require.Nil(err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	res, ok := tr.Result.(*net.TranscodeResult_Error)
+	assert.True(ok)
+	assert.Equal("TranscodeSeg error", res.Error)
+	orch.AssertCalled(t, "DebitFees", md.ManifestID, mock.Anything, int64(0))
 }
 
 func TestSubmitSegment_GenSegCredsError(t *testing.T) {

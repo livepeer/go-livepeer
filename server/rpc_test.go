@@ -83,6 +83,8 @@ func (r *stubOrchestrator) SufficientBalance(manifestID core.ManifestID) bool {
 	return false
 }
 
+func (r *stubOrchestrator) DebitFees(manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {}
+
 func newStubOrchestrator() *stubOrchestrator {
 	pk, err := ethcrypto.GenerateKey()
 	if err != nil {
@@ -598,6 +600,10 @@ func (o *mockOrchestrator) CheckCapacity(mid core.ManifestID) error {
 func (o *mockOrchestrator) SufficientBalance(manifestID core.ManifestID) bool {
 	args := o.Called(manifestID)
 	return args.Bool(0)
+}
+
+func (o *mockOrchestrator) DebitFees(manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
+	o.Called(manifestID, price, pixels)
 }
 
 func defaultTicketParams() *net.TicketParams {
