@@ -43,6 +43,51 @@ type TicketParams struct {
 	Seed *big.Int
 }
 
+// TicketExpirationParams indicates when/how a ticket expires
+type TicketExpirationParams struct {
+	CreationRound int64
+
+	CreationRoundBlockHash ethcommon.Hash
+}
+
+// TicketSenderParams identifies a unique ticket based on a sender's nonce and signature over a ticket hash
+type TicketSenderParams struct {
+	SenderNonce uint32
+
+	Sig []byte
+}
+
+// TicketBatch is a group of tickets that share the same TicketParams, TicketExpirationParams and Sender
+// Each ticket in a batch is identified by a unique TicketSenderParams
+type TicketBatch struct {
+	*TicketParams
+	*TicketExpirationParams
+
+	Sender ethcommon.Address
+
+	SenderParams []*TicketSenderParams
+}
+
+// Tickets returns the tickets in the batch
+func (b *TicketBatch) Tickets() []*Ticket {
+	var tickets []*Ticket
+	for i := 0; i < len(b.SenderParams); i++ {
+		ticket := &Ticket{
+			Recipient:              b.Recipient,
+			Sender:                 b.Sender,
+			FaceValue:              b.FaceValue,
+			WinProb:                b.WinProb,
+			SenderNonce:            b.SenderParams[i].SenderNonce,
+			RecipientRandHash:      b.RecipientRandHash,
+			CreationRound:          b.CreationRound,
+			CreationRoundBlockHash: b.CreationRoundBlockHash,
+		}
+		tickets = append(tickets, ticket)
+	}
+
+	return tickets
+}
+
 // Ticket is lottery ticket payment in a probabilistic micropayment protocol
 // The expected value of the ticket constitutes the payment and can be
 // calculated using the ticket's face value and winning probability
@@ -74,6 +119,20 @@ type Ticket struct {
 
 	// CreationRoundBlockHash is the block hash associated with CreationRound
 	CreationRoundBlockHash ethcommon.Hash
+}
+
+// NewTicket creates a Ticket instance
+func NewTicket(params *TicketParams, expirationParams *TicketExpirationParams, sender ethcommon.Address, senderNonce uint32) *Ticket {
+	return &Ticket{
+		Recipient:              params.Recipient,
+		Sender:                 sender,
+		FaceValue:              params.FaceValue,
+		WinProb:                params.WinProb,
+		SenderNonce:            senderNonce,
+		RecipientRandHash:      params.RecipientRandHash,
+		CreationRound:          expirationParams.CreationRound,
+		CreationRoundBlockHash: expirationParams.CreationRoundBlockHash,
+	}
 }
 
 // EV returns the expected value of a ticket

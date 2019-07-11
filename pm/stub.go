@@ -215,7 +215,7 @@ func (v *stubValidator) IsWinningTicket(ticket *Ticket, sig []byte, recipientRan
 type stubSigner struct {
 	account         accounts.Account
 	saveSignRequest bool
-	lastSignRequest []byte
+	signRequests    [][]byte
 	signResponse    []byte
 	signShouldFail  bool
 }
@@ -229,7 +229,7 @@ func (s *stubSigner) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bi
 
 func (s *stubSigner) Sign(msg []byte) ([]byte, error) {
 	if s.saveSignRequest {
-		s.lastSignRequest = msg
+		s.signRequests = append(s.signRequests, msg)
 	}
 	if s.signShouldFail {
 		return nil, fmt.Errorf("stub returning error as requested")
@@ -408,6 +408,18 @@ type MockSender struct {
 func (m *MockSender) StartSession(ticketParams TicketParams) string {
 	args := m.Called(ticketParams)
 	return args.String(0)
+}
+
+// CreateTicketBatch returns a ticket batch of the specified size
+func (m *MockSender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, error) {
+	args := m.Called(sessionID, size)
+
+	var batch *TicketBatch
+	if args.Get(0) != nil {
+		batch = args.Get(0).(*TicketBatch)
+	}
+
+	return batch, args.Error(1)
 }
 
 // CreateTicket returns a new ticket, seed (which the recipient can use to derive its random number),

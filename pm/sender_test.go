@@ -11,6 +11,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStartSession_GivenSomeRecipientRandHash_UsesItAsSessionId(t *testing.T) {
@@ -63,6 +64,222 @@ func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
 			t.Errorf("expected to find sessionID in sender. sessionID: %v", sessionID)
 		}
 	}
+}
+
+func TestCreateTicketBatch_NonExistantSession_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+
+	_, err := sender.CreateTicketBatch("foo", 1)
+	assert.Contains(t, err.Error(), "unknown session")
+}
+
+func TestCreateTicketBatch_GetSenderInfoError_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	sm := sender.senderManager.(*stubSenderManager)
+	sm.err = errors.New("GetSenderInfo error")
+
+	sessionID := sender.StartSession(defaultTicketParams(t, RandAddress()))
+	_, err := sender.CreateTicketBatch(sessionID, 1)
+	assert.EqualError(t, err, sm.err.Error())
+}
+
+func TestCreateTicketBatch_EVTooHigh_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	sender.maxEV = big.NewRat(100, 1)
+
+	ticketParams := TicketParams{
+		Recipient:         RandAddress(),
+		FaceValue:         big.NewInt(202),
+		WinProb:           new(big.Int).Div(maxWinProb, big.NewInt(2)),
+		Seed:              big.NewInt(3333),
+		RecipientRandHash: RandHash(),
+	}
+	sessionID := sender.StartSession(ticketParams)
+	_, err := sender.CreateTicketBatch(sessionID, 1)
+	assert.EqualError(t, err, "ticket EV higher than max EV")
+}
+
+func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	sm := sender.senderManager.(*stubSenderManager)
+	sm.info = &SenderInfo{
+		Deposit: big.NewInt(0),
+	}
+
+	ticketParams := TicketParams{
+		Recipient:         RandAddress(),
+		FaceValue:         big.NewInt(1111),
+		WinProb:           big.NewInt(2222),
+		Seed:              big.NewInt(3333),
+		RecipientRandHash: RandHash(),
+	}
+	sessionID := sender.StartSession(ticketParams)
+	_, err := sender.CreateTicketBatch(sessionID, 1)
+	assert.EqualError(t, err, "ticket faceValue higher than max faceValue")
+}
+
+func TestCreateTicketBatch_LastInitializedRoundError_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	rm := sender.roundsManager.(*stubRoundsManager)
+	expErr := errors.New("LastInitializedRound error")
+	rm.lastInitializedRoundErr = expErr
+
+	sessionID := sender.StartSession(defaultTicketParams(t, RandAddress()))
+	_, err := sender.CreateTicketBatch(sessionID, 1)
+	assert.EqualError(t, err, expErr.Error())
+}
+
+func TestCreateTicketBatch_BlockHashForRoundError_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	rm := sender.roundsManager.(*stubRoundsManager)
+	expErr := errors.New("BlockHashForRound error")
+	rm.blockHashForRoundErr = expErr
+
+	sessionID := sender.StartSession(defaultTicketParams(t, RandAddress()))
+	_, err := sender.CreateTicketBatch(sessionID, 1)
+	assert.EqualError(t, err, expErr.Error())
+}
+
+func TestCreateTicketBatch_UsesSessionParamsInBatch(t *testing.T) {
+	sender := defaultSender(t)
+	rm := sender.roundsManager.(*stubRoundsManager)
+	creationRound := rm.round.Int64()
+	creationRoundBlkHash := rm.blkHash
+	am := sender.signer.(*stubSigner)
+	am.signShouldFail = false
+	am.saveSignRequest = true
+	am.signResponse = RandBytes(42)
+	senderAddress := sender.signer.Account().Address
+	recipient := RandAddress()
+	recipientRandHash := RandHash()
+	ticketParams := TicketParams{
+		Recipient:         recipient,
+		FaceValue:         big.NewInt(1111),
+		WinProb:           big.NewInt(2222),
+		Seed:              big.NewInt(3333),
+		RecipientRandHash: recipientRandHash,
+	}
+	sessionID := sender.StartSession(ticketParams)
+
+	batch, err := sender.CreateTicketBatch(sessionID, 1)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+	assert.Equal(senderAddress, batch.Sender)
+	assert.Equal(recipient, batch.Recipient)
+	assert.Equal(recipientRandHash, batch.RecipientRandHash)
+	assert.Equal(ticketParams.FaceValue, batch.FaceValue)
+	assert.Equal(ticketParams.WinProb, batch.WinProb)
+	assert.Equal(creationRound, batch.CreationRound)
+	assert.Equal(creationRoundBlkHash[:], batch.CreationRoundBlockHash.Bytes())
+	assert.Equal(ticketParams.Seed, batch.Seed)
+}
+
+func TestCreateTicketBatch_SingleTicket(t *testing.T) {
+	sender := defaultSender(t)
+	am := sender.signer.(*stubSigner)
+	am.signShouldFail = false
+	am.saveSignRequest = true
+	am.signResponse = RandBytes(42)
+	ticketParams := TicketParams{
+		Recipient:         RandAddress(),
+		FaceValue:         big.NewInt(1111),
+		WinProb:           big.NewInt(2222),
+		Seed:              big.NewInt(3333),
+		RecipientRandHash: RandHash(),
+	}
+	sessionID := sender.StartSession(ticketParams)
+
+	batch, err := sender.CreateTicketBatch(sessionID, 1)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+	assert.Equal(1, len(batch.SenderParams))
+	assert.Equal(uint32(1), batch.SenderParams[0].SenderNonce)
+	assert.Equal(am.signResponse, batch.SenderParams[0].Sig)
+	assert.Equal(batch.Tickets()[0].Hash().Bytes(), am.signRequests[0])
+}
+func TestCreateTicketBatch_MultipleTickets(t *testing.T) {
+	sender := defaultSender(t)
+	am := sender.signer.(*stubSigner)
+	am.signShouldFail = false
+	am.saveSignRequest = true
+	am.signResponse = RandBytes(42)
+	ticketParams := TicketParams{
+		Recipient:         RandAddress(),
+		FaceValue:         big.NewInt(1111),
+		WinProb:           big.NewInt(2222),
+		Seed:              big.NewInt(3333),
+		RecipientRandHash: RandHash(),
+	}
+	sessionID := sender.StartSession(ticketParams)
+
+	batch, err := sender.CreateTicketBatch(sessionID, 4)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+	assert.Equal(4, len(batch.SenderParams))
+
+	tickets := batch.Tickets()
+
+	for i := 0; i < 4; i++ {
+		assert.Equal(uint32(i+1), batch.SenderParams[i].SenderNonce)
+		assert.Equal(am.signResponse, batch.SenderParams[i].Sig)
+		assert.Equal(tickets[i].Hash().Bytes(), am.signRequests[i])
+	}
+}
+
+func TestCreateTicketBatch_SigningError_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	recipient := RandAddress()
+	ticketParams := defaultTicketParams(t, recipient)
+	sessionID := sender.StartSession(ticketParams)
+	am := sender.signer.(*stubSigner)
+	am.signShouldFail = true
+
+	_, err := sender.CreateTicketBatch(sessionID, 1)
+	assert.Contains(t, err.Error(), "error signing")
+}
+
+func TestCreateTicketBatch_ConcurrentCallsForSameSession_SenderNonceIncrementsCorrectly(t *testing.T) {
+	totalBatches := 100
+	lock := sync.RWMutex{}
+	sender := defaultSender(t)
+	ticketParams := defaultTicketParams(t, RandAddress())
+	sessionID := sender.StartSession(ticketParams)
+
+	var wg sync.WaitGroup
+	wg.Add(totalBatches)
+	var tickets []*Ticket
+	for i := 0; i < totalBatches; i++ {
+		go func() {
+			batch, _ := sender.CreateTicketBatch(sessionID, 2)
+
+			lock.Lock()
+			tickets = append(tickets, batch.Tickets()...)
+			lock.Unlock()
+
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	totalTickets := totalBatches * 2
+
+	assert := assert.New(t)
+
+	sessionUntyped, ok := sender.sessions.Load(sessionID)
+	require.True(t, ok)
+
+	session := sessionUntyped.(*session)
+	assert.Equal(uint32(totalTickets), session.senderNonce)
+
+	uniqueNonces := make(map[uint32]bool)
+	for _, ticket := range tickets {
+		uniqueNonces[ticket.SenderNonce] = true
+	}
+
+	assert.Equal(totalTickets, len(uniqueNonces))
 }
 
 func TestCreateTicket_GivenNonexistentSession_ReturnsError(t *testing.T) {
@@ -201,8 +418,8 @@ func TestCreateTicket_GivenValidSessionId_UsesSessionParamsInTicket(t *testing.T
 	if !bytes.Equal(actualSig, am.signResponse) {
 		t.Errorf("expected actual sig %v to be %v", actualSig, am.signResponse)
 	}
-	if !bytes.Equal(am.lastSignRequest, ticket.Hash().Bytes()) {
-		t.Errorf("expected sig message bytes %v to be %v", am.lastSignRequest, ticket.Hash().Bytes())
+	if !bytes.Equal(am.signRequests[0], ticket.Hash().Bytes()) {
+		t.Errorf("expected sig message bytes %v to be %v", am.signRequests[0], ticket.Hash().Bytes())
 	}
 }
 

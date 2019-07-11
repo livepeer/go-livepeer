@@ -5,7 +5,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 )
 
@@ -15,6 +14,9 @@ type Sender interface {
 	// StartSession creates a session for a given set of ticket params which tracks information
 	// for creating new tickets
 	StartSession(ticketParams TicketParams) string
+
+	// CreateTicketBatch returns a ticket batch of the specified size
+	CreateTicketBatch(sessionID string, size int) (*TicketBatch, error)
 
 	// CreateTicket returns a new ticket, seed (which the recipient can use to derive its random number),
 	// and signature over the new ticket for a given session ID
@@ -63,9 +65,44 @@ func (s *sender) StartSession(ticketParams TicketParams) string {
 	return sessionID
 }
 
-func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
-	recipientRandHash := ethcommon.HexToHash(sessionID)
+// CreateTicketBatch returns a ticket batch of the specified size
+func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, error) {
+	tempSession, ok := s.sessions.Load(sessionID)
+	if !ok {
+		return nil, errors.Errorf("cannot create a ticket batch for an unknown session: %x", sessionID)
+	}
+	session := tempSession.(*session)
 
+	if err := s.ValidateTicketParams(&session.ticketParams); err != nil {
+		return nil, err
+	}
+
+	expirationParams, err := s.expirationParams()
+	if err != nil {
+		return nil, err
+	}
+
+	batch := &TicketBatch{
+		TicketParams:           &session.ticketParams,
+		TicketExpirationParams: expirationParams,
+		Sender:                 s.signer.Account().Address,
+	}
+
+	for i := 0; i < size; i++ {
+		senderNonce := atomic.AddUint32(&session.senderNonce, 1)
+		ticket := NewTicket(&session.ticketParams, expirationParams, s.signer.Account().Address, senderNonce)
+		sig, err := s.signer.Sign(ticket.Hash().Bytes())
+		if err != nil {
+			return nil, errors.Wrapf(err, "error signing ticket for session: %v", sessionID)
+		}
+
+		batch.SenderParams = append(batch.SenderParams, &TicketSenderParams{SenderNonce: senderNonce, Sig: sig})
+	}
+
+	return batch, nil
+}
+
+func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
 	tempSession, ok := s.sessions.Load(sessionID)
 	if !ok {
 		return nil, nil, nil, errors.Errorf("cannot create a ticket for an unknown session: %v", sessionID)
@@ -78,27 +115,12 @@ func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, erro
 
 	senderNonce := atomic.AddUint32(&session.senderNonce, 1)
 
-	round, err := s.roundsManager.LastInitializedRound()
+	expirationParams, err := s.expirationParams()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	blkHash, err := s.roundsManager.BlockHashForRound(round)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	ticket := &Ticket{
-		Recipient:              session.ticketParams.Recipient,
-		RecipientRandHash:      recipientRandHash,
-		Sender:                 s.signer.Account().Address,
-		SenderNonce:            senderNonce,
-		FaceValue:              session.ticketParams.FaceValue,
-		WinProb:                session.ticketParams.WinProb,
-		CreationRound:          round.Int64(),
-		CreationRoundBlockHash: blkHash,
-	}
-
+	ticket := NewTicket(&session.ticketParams, expirationParams, s.signer.Account().Address, senderNonce)
 	sig, err := s.signer.Sign(ticket.Hash().Bytes())
 	if err != nil {
 		return nil, nil, nil, errors.Wrapf(err, "error signing ticket for session: %v", sessionID)
@@ -125,4 +147,21 @@ func (s *sender) ValidateTicketParams(ticketParams *TicketParams) error {
 	}
 
 	return nil
+}
+
+func (s *sender) expirationParams() (*TicketExpirationParams, error) {
+	round, err := s.roundsManager.LastInitializedRound()
+	if err != nil {
+		return nil, err
+	}
+
+	blkHash, err := s.roundsManager.BlockHashForRound(round)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TicketExpirationParams{
+		CreationRound:          round.Int64(),
+		CreationRoundBlockHash: blkHash,
+	}, nil
 }
