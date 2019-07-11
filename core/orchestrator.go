@@ -192,7 +192,8 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, e
 		return nil, err
 	}
 	// pricePerPixel = basePrice * (1 + 1/ txCostMultiplier)
-	price := new(big.Rat).Mul(orch.node.PriceInfo, new(big.Rat).Add(big.NewRat(1, 1), new(big.Rat).Inv(txCostMultiplier)))
+	overhead := new(big.Rat).Add(big.NewRat(1, 1), new(big.Rat).Inv(txCostMultiplier))
+	price := new(big.Rat).Mul(orch.node.PriceInfo, overhead)
 	return &net.PriceInfo{
 		PricePerUnit:  price.Num().Int64(),
 		PixelsPerUnit: price.Denom().Int64(),
