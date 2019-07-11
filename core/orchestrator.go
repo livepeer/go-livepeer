@@ -142,7 +142,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		pmErr, ok := err.(pm.Error)
 		if err == nil || (ok && pmErr.Acceptable()) {
 			// Add ticket EV to credit
-			orch.node.Balances.Credit(manifestID, new(big.Rat).Mul(ticket.EV(), ticket.WinProbRat()))
+			orch.node.Balances.Credit(manifestID, ticket.EV())
 		}
 
 		if won {
