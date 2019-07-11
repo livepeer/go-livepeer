@@ -508,6 +508,11 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
+	price := &net.PriceInfo{
+		PricePerUnit:  2,
+		PixelsPerUnit: 3,
+	}
+
 	tData := &core.TranscodeData{
 		Data:   []byte("foo"),
 		Pixels: int64(110592000),
@@ -518,7 +523,7 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
-	orch.On("DebitFees", md.ManifestID, mock.Anything, mock.Anything)
+	orch.On("DebitFees", md.ManifestID, price, tData.Pixels)
 
 	headers := map[string]string{
 		paymentHeader: "",

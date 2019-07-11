@@ -214,11 +214,11 @@ func (orch *orchestrator) SufficientBalance(manifestID ManifestID) bool {
 
 func (orch *orchestrator) DebitFees(manifestID ManifestID, price *net.PriceInfo, pixels int64) {
 	// Don't debit in offchain mode
-	if orch.node == nil || orch.node.Recipient == nil || orch.node.Balances == nil {
+	if orch.node == nil || orch.node.Balances == nil {
 		return
 	}
-	amount := new(big.Rat).Mul(big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit()), big.NewRat(pixels, 1))
-	orch.node.Balances.Debit(manifestID, amount)
+	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
+	orch.node.Balances.Debit(manifestID, priceRat.Mul(priceRat, big.NewRat(pixels, 1)))
 }
 
 func NewOrchestrator(n *LivepeerNode) *orchestrator {

@@ -990,8 +990,6 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 func TestDebitFees(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewBalances(5 * time.Second)
-	recipient := new(pm.MockRecipient)
-	n.Recipient = recipient
 	orch := NewOrchestrator(n)
 	manifestID := ManifestID("some manifest")
 	assert := assert.New(t)
@@ -1030,16 +1028,11 @@ func TestDebitFees_OffChain_Returns(t *testing.T) {
 
 	n, _ := NewLivepeerNode(nil, "", nil)
 
-	// Node != nil , Recipient == nil, Balances == nil
+	// Node != nil Balances == nil
 	orch := NewOrchestrator(n)
 	assert.NotPanics(t, func() { orch.DebitFees(manifestID, price, pixels) })
 
-	// Node != nil , Recipient != nil, Balances == nil
-	orch.node.Recipient = new(pm.MockRecipient)
-	assert.NotPanics(t, func() { orch.DebitFees(manifestID, price, pixels) })
-
-	// Node != nil, Recipient == nil, Balances != nil
-	orch.node.Recipient = nil
+	// Node != nil, Balances != nil
 	orch.node.Balances = NewBalances(5 * time.Second)
 	assert.NotPanics(t, func() { orch.DebitFees(manifestID, price, pixels) })
 	assert.Nil(t, orch.node.Balances.Balance(manifestID))
