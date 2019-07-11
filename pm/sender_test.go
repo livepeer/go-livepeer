@@ -64,11 +64,37 @@ func TestStartSession_GivenConcurrentUsage_RecordsAllSessions(t *testing.T) {
 	}
 }
 
+func TestSenderEV_NonExistantSession_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+
+	_, err := sender.EV("foo")
+	assert.Contains(t, err.Error(), "error loading session")
+}
+
+func TestSenderEV(t *testing.T) {
+	sender := defaultSender(t)
+
+	assert := assert.New(t)
+
+	ticketParams := defaultTicketParams(t, RandAddress())
+	sessionID0 := sender.StartSession(ticketParams)
+	ev, err := sender.EV(sessionID0)
+	assert.Nil(err)
+	assert.Zero(ticketEV(ticketParams.FaceValue, ticketParams.WinProb).Cmp(ev))
+
+	ticketParams.FaceValue = big.NewInt(99)
+	ticketParams.WinProb = big.NewInt(100)
+	sessionID1 := sender.StartSession(ticketParams)
+	ev, err = sender.EV(sessionID1)
+	assert.Nil(err)
+	assert.Zero(ticketEV(ticketParams.FaceValue, ticketParams.WinProb).Cmp(ev))
+}
+
 func TestCreateTicketBatch_NonExistantSession_ReturnsError(t *testing.T) {
 	sender := defaultSender(t)
 
 	_, err := sender.CreateTicketBatch("foo", 1)
-	assert.Contains(t, err.Error(), "unknown session")
+	assert.Contains(t, err.Error(), "error loading session")
 }
 
 func TestCreateTicketBatch_GetSenderInfoError_ReturnsError(t *testing.T) {

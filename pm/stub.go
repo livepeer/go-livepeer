@@ -410,6 +410,18 @@ func (m *MockSender) StartSession(ticketParams TicketParams) string {
 	return args.String(0)
 }
 
+// EV returns the ticket EV for a session
+func (m *MockSender) EV(sessionID string) (*big.Rat, error) {
+	args := m.Called(sessionID)
+
+	var ev *big.Rat
+	if args.Get(0) != nil {
+		ev = args.Get(0).(*big.Rat)
+	}
+
+	return ev, args.Error(1)
+}
+
 // CreateTicketBatch returns a ticket batch of the specified size
 func (m *MockSender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, error) {
 	args := m.Called(sessionID, size)

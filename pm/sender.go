@@ -20,6 +20,9 @@ type Sender interface {
 
 	// ValidateTicketParams checks if ticket params are acceptable
 	ValidateTicketParams(ticketParams *TicketParams) error
+
+	// EV returns the ticket EV for a session
+	EV(sessionID string) (*big.Rat, error)
 }
 
 type session struct {
@@ -61,13 +64,22 @@ func (s *sender) StartSession(ticketParams TicketParams) string {
 	return sessionID
 }
 
+// EV returns the ticket EV for a session
+func (s *sender) EV(sessionID string) (*big.Rat, error) {
+	session, err := s.loadSession(sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return ticketEV(session.ticketParams.FaceValue, session.ticketParams.WinProb), nil
+}
+
 // CreateTicketBatch returns a ticket batch of the specified size
 func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, error) {
-	tempSession, ok := s.sessions.Load(sessionID)
-	if !ok {
-		return nil, errors.Errorf("cannot create a ticket batch for an unknown session: %x", sessionID)
+	session, err := s.loadSession(sessionID)
+	if err != nil {
+		return nil, err
 	}
-	session := tempSession.(*session)
 
 	if err := s.ValidateTicketParams(&session.ticketParams); err != nil {
 		return nil, err
@@ -100,7 +112,7 @@ func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, er
 
 // ValidateTicketParams checks if ticket params are acceptable
 func (s *sender) ValidateTicketParams(ticketParams *TicketParams) error {
-	ev := new(big.Rat).Mul(new(big.Rat).SetInt(ticketParams.FaceValue), new(big.Rat).SetFrac(ticketParams.WinProb, maxWinProb))
+	ev := ticketEV(ticketParams.FaceValue, ticketParams.WinProb)
 	if ev.Cmp(s.maxEV) > 0 {
 		return errors.Errorf("ticket EV higher than max EV")
 	}
@@ -133,4 +145,13 @@ func (s *sender) expirationParams() (*TicketExpirationParams, error) {
 		CreationRound:          round.Int64(),
 		CreationRoundBlockHash: blkHash,
 	}, nil
+}
+
+func (s *sender) loadSession(sessionID string) (*session, error) {
+	tempSession, ok := s.sessions.Load(sessionID)
+	if !ok {
+		return nil, errors.Errorf("error loading session: %x", sessionID)
+	}
+
+	return tempSession.(*session), nil
 }

@@ -137,7 +137,7 @@ func NewTicket(params *TicketParams, expirationParams *TicketExpirationParams, s
 
 // EV returns the expected value of a ticket
 func (t *Ticket) EV() *big.Rat {
-	return new(big.Rat).Mul(new(big.Rat).SetInt(t.FaceValue), new(big.Rat).SetFrac(t.WinProb, maxWinProb))
+	return ticketEV(t.FaceValue, t.WinProb)
 }
 
 // WinProbRat returns the ticket WinProb as a percentage represented as a big.Rat
@@ -184,4 +184,8 @@ func (t *Ticket) flatten() []byte {
 	}
 
 	return buf
+}
+
+func ticketEV(faceValue *big.Int, winProb *big.Int) *big.Rat {
+	return new(big.Rat).Mul(new(big.Rat).SetInt(faceValue), new(big.Rat).SetFrac(winProb, maxWinProb))
 }
