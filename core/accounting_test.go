@@ -8,6 +8,95 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestBalance_Credit(t *testing.T) {
+	mid := ManifestID("some manifestID")
+	balances := NewBalances(5 * time.Second)
+	b := NewBalance(mid, balances)
+
+	assert := assert.New(t)
+
+	b.Credit(big.NewRat(5, 1))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(mid)))
+
+	b.Credit(big.NewRat(-5, 1))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+
+	b.Credit(big.NewRat(0, 1))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+}
+
+func TestBalance_StageUpdate(t *testing.T) {
+	mid := ManifestID("some manifestID")
+	balances := NewBalances(5 * time.Second)
+	b := NewBalance(mid, balances)
+
+	assert := assert.New(t)
+
+	// Test existing credit > minimum credit
+	b.Credit(big.NewRat(2, 1))
+	numTickets, newCredit, existingCredit := b.StageUpdate(big.NewRat(1, 1), nil)
+	assert.Equal(0, numTickets)
+	assert.Zero(big.NewRat(0, 1).Cmp(newCredit))
+	assert.Zero(big.NewRat(2, 1).Cmp(existingCredit))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+
+	// Test existing credit = minimum credit
+	b.Credit(big.NewRat(2, 1))
+	numTickets, newCredit, existingCredit = b.StageUpdate(big.NewRat(2, 1), nil)
+	assert.Equal(0, numTickets)
+	assert.Zero(big.NewRat(0, 1).Cmp(newCredit))
+	assert.Zero(big.NewRat(2, 1).Cmp(existingCredit))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+
+	// Test exact number of tickets covers new credit
+	b.Credit(big.NewRat(1, 1))
+	numTickets, newCredit, existingCredit = b.StageUpdate(big.NewRat(5, 1), big.NewRat(1, 1))
+	assert.Equal(4, numTickets)
+	assert.Zero(big.NewRat(4, 1).Cmp(newCredit))
+	assert.Zero(big.NewRat(1, 1).Cmp(existingCredit))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+
+	// Test non-exact number of tickets covers new credit
+	b.Credit(big.NewRat(1, 4))
+	numTickets, newCredit, existingCredit = b.StageUpdate(big.NewRat(2, 1), big.NewRat(1, 1))
+	assert.Equal(2, numTickets)
+	assert.Zero(big.NewRat(2, 1).Cmp(newCredit))
+	assert.Zero(big.NewRat(1, 4).Cmp(existingCredit))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+
+	// Test negative existing credit
+	b.Credit(big.NewRat(-5, 1))
+	numTickets, newCredit, existingCredit = b.StageUpdate(big.NewRat(2, 1), big.NewRat(1, 1))
+	assert.Equal(7, numTickets)
+	assert.Zero(big.NewRat(7, 1).Cmp(newCredit))
+	assert.Zero(big.NewRat(-5, 1).Cmp(existingCredit))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+
+	// Test no existing credit
+	numTickets, newCredit, existingCredit = b.StageUpdate(big.NewRat(2, 1), big.NewRat(1, 1))
+	assert.Equal(2, numTickets)
+	assert.Zero(big.NewRat(2, 1).Cmp(newCredit))
+	assert.Zero(big.NewRat(0, 1).Cmp(existingCredit))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+}
+
+func TestBalance_Clear(t *testing.T) {
+	mid := ManifestID("some manifestID")
+	balances := NewBalances(5 * time.Second)
+	b := NewBalance(mid, balances)
+
+	assert := assert.New(t)
+
+	// Test non-nil key
+	b.Credit(big.NewRat(5, 1))
+	b.Clear()
+	assert.Nil(balances.balances[mid])
+
+	// Test nil key
+	b.Clear()
+	assert.Nil(balances.balances[mid])
+}
+
 func TestEmptyBalances_ReturnsZeroedValues(t *testing.T) {
 	mid := ManifestID("some manifest id")
 	b := NewBalances(5 * time.Second)
@@ -51,6 +140,27 @@ func TestDebitHalfOfCredit_ReturnsHalfOfCredit(t *testing.T) {
 
 	b.Debit(mid, debit)
 	assert.Zero(b.Balance(mid).Cmp(debit))
+}
+
+func TestReserve(t *testing.T) {
+	assert := assert.New(t)
+
+	mid := ManifestID("some manifest id")
+	b := NewBalances(5 * time.Second)
+
+	// Test when entry is nil
+	assert.Zero(big.NewRat(0, 1).Cmp(b.Reserve(mid)))
+	assert.Zero(big.NewRat(0, 1).Cmp(b.Balance(mid)))
+
+	// Test when entry is non-nil
+	b.Credit(mid, big.NewRat(5, 1))
+	assert.Zero(big.NewRat(5, 1).Cmp(b.Reserve(mid)))
+	assert.Zero(big.NewRat(0, 1).Cmp(b.Balance(mid)))
+
+	// Test when amount is negative
+	b.Debit(mid, big.NewRat(5, 1))
+	assert.Zero(big.NewRat(-5, 1).Cmp(b.Reserve(mid)))
+	assert.Zero(big.NewRat(0, 1).Cmp(b.Balance(mid)))
 }
 
 func TestBalancesCleanup(t *testing.T) {
