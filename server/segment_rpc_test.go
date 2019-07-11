@@ -354,11 +354,16 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 		Seed:              []byte("baz"),
 	}
 
+	price := &net.PriceInfo{
+		PricePerUnit:  2,
+		PixelsPerUnit: 3,
+	}
 	// Return an acceptable payment error to trigger an update to orchestrator info
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some error")).Once()
 	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
 	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
+	orch.On("PriceInfo", mock.Anything).Return(price, nil)
 
 	uri, err := url.Parse("http://google.com")
 	require.Nil(err)
@@ -396,7 +401,8 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal(params.WinProb, tr.Info.TicketParams.WinProb)
 	assert.Equal(params.RecipientRandHash, tr.Info.TicketParams.RecipientRandHash)
 	assert.Equal(params.Seed, tr.Info.TicketParams.Seed)
-
+	assert.Equal(price.PricePerUnit, tr.Info.PriceInfo.PricePerUnit)
+	assert.Equal(price.PixelsPerUnit, tr.Info.PriceInfo.PixelsPerUnit)
 	// Return an acceptable payment error to trigger an update to orchestrator info
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some other error")).Once()
 	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
