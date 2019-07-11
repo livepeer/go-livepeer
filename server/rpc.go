@@ -43,7 +43,7 @@ type Orchestrator interface {
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address) (*net.TicketParams, error)
-	PriceInfo(sender ethcommon.Address) (*big.Rat, error)
+	PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error)
 	SufficientBalance(manifestID core.ManifestID) bool
 }
 
@@ -214,9 +214,15 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 		return nil, err
 	}
 
+	priceInfo, err := orch.PriceInfo(addr)
+	if err != nil {
+		return nil, err
+	}
+
 	tr := net.OrchestratorInfo{
 		Transcoder:   serviceURI,
 		TicketParams: params,
+		PriceInfo:    priceInfo,
 	}
 
 	os := drivers.NodeStorage.NewSession(string(core.RandomManifestID()))

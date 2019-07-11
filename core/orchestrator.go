@@ -182,7 +182,7 @@ func (orch *orchestrator) TicketParams(sender ethcommon.Address) (*net.TicketPar
 	}, nil
 }
 
-func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*big.Rat, error) {
+func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error) {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil, nil
 	}
@@ -193,7 +193,11 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*big.Rat, error) 
 	}
 	// pricePerPixel = basePrice * (1 + 1/ txCostMultiplier)
 	overhead := new(big.Rat).Add(big.NewRat(1, 1), new(big.Rat).Inv(txCostMultiplier))
-	return new(big.Rat).Mul(orch.node.PriceInfo, overhead), nil
+	price := new(big.Rat).Mul(orch.node.PriceInfo, overhead)
+	return &net.PriceInfo{
+		PricePerUnit:  price.Num().Int64(),
+		PixelsPerUnit: price.Denom().Int64(),
+	}, nil
 }
 
 // SufficientBalance checks whether the credit balance for a stream is sufficient
