@@ -755,8 +755,8 @@ func TestSubmitSegment_GenSegCredsError(t *testing.T) {
 func TestSubmitSegment_GenPaymentError(t *testing.T) {
 	b := stubBroadcaster2()
 	sender := &pm.MockSender{}
-	expErr := errors.New("CreateTicket error")
-	sender.On("CreateTicket", mock.Anything).Return(nil, nil, nil, expErr)
+	expErr := errors.New("CreateTicketBatch error")
+	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, expErr)
 
 	s := &BroadcastSession{
 		Broadcaster: b,
@@ -990,18 +990,21 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 	}
 	s.Sender = sender
 
-	ticket := &pm.Ticket{
-		Recipient:              ethcommon.Address{},
-		Sender:                 ethcommon.Address{},
-		FaceValue:              big.NewInt(100),
-		WinProb:                big.NewInt(100),
-		SenderNonce:            0,
-		RecipientRandHash:      pm.RandHash(),
-		CreationRound:          5,
-		CreationRoundBlockHash: [32]byte{5},
+	batch := &pm.TicketBatch{
+		TicketParams: &pm.TicketParams{
+			Recipient: pm.RandAddress(),
+			FaceValue: big.NewInt(1234),
+			WinProb:   big.NewInt(5678),
+			Seed:      big.NewInt(7777),
+		},
+		TicketExpirationParams: &pm.TicketExpirationParams{},
+		Sender:                 pm.RandAddress(),
+		SenderParams: []*pm.TicketSenderParams{
+			&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
+		},
 	}
 
-	sender.On("CreateTicket", mock.Anything).Return(ticket, big.NewInt(7), []byte("bar"), nil)
+	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(batch, nil)
 	sender.On("StartSession", params).Return("foobar")
 
 	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
@@ -1025,7 +1028,7 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 	buf, err = proto.Marshal(tr)
 	require.Nil(err)
 
-	sender.On("CreateTicket", mock.Anything).Return(ticket, big.NewInt(7), []byte("bar"), nil)
+	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(batch, nil)
 	sender.On("StartSession", mock.Anything).Return("foobar")
 
 	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)

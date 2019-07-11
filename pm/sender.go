@@ -18,10 +18,6 @@ type Sender interface {
 	// CreateTicketBatch returns a ticket batch of the specified size
 	CreateTicketBatch(sessionID string, size int) (*TicketBatch, error)
 
-	// CreateTicket returns a new ticket, seed (which the recipient can use to derive its random number),
-	// and signature over the new ticket for a given session ID
-	CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error)
-
 	// ValidateTicketParams checks if ticket params are acceptable
 	ValidateTicketParams(ticketParams *TicketParams) error
 }
@@ -100,33 +96,6 @@ func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, er
 	}
 
 	return batch, nil
-}
-
-func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
-	tempSession, ok := s.sessions.Load(sessionID)
-	if !ok {
-		return nil, nil, nil, errors.Errorf("cannot create a ticket for an unknown session: %v", sessionID)
-	}
-	session := tempSession.(*session)
-
-	if err := s.ValidateTicketParams(&session.ticketParams); err != nil {
-		return nil, nil, nil, err
-	}
-
-	senderNonce := atomic.AddUint32(&session.senderNonce, 1)
-
-	expirationParams, err := s.expirationParams()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	ticket := NewTicket(&session.ticketParams, expirationParams, s.signer.Account().Address, senderNonce)
-	sig, err := s.signer.Sign(ticket.Hash().Bytes())
-	if err != nil {
-		return nil, nil, nil, errors.Wrapf(err, "error signing ticket for session: %v", sessionID)
-	}
-
-	return ticket, session.ticketParams.Seed, sig, nil
 }
 
 // ValidateTicketParams checks if ticket params are acceptable

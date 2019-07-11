@@ -253,11 +253,11 @@ func TestGenPayment(t *testing.T) {
 	sender := &pm.MockSender{}
 	s.Sender = sender
 
-	// Test CreateTicket error
-	sender.On("CreateTicket", mock.Anything).Return(nil, nil, nil, errors.New("CreateTicket error")).Once()
+	// Test CreateTicketBatch error
+	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, errors.New("CreateTicketBatch error")).Once()
 
 	_, err = genPayment(s)
-	assert.Equal("CreateTicket error", err.Error())
+	assert.Equal("CreateTicketBatch error", err.Error())
 
 	decodePayment := func(payment string) net.Payment {
 		buf, err := base64.StdEncoding.DecodeString(payment)
@@ -271,32 +271,35 @@ func TestGenPayment(t *testing.T) {
 	}
 
 	// Test payment creation
-	ticket := &pm.Ticket{
-		Recipient:         pm.RandAddress(),
-		Sender:            pm.RandAddress(),
-		FaceValue:         big.NewInt(1234),
-		WinProb:           big.NewInt(5678),
-		SenderNonce:       777,
-		RecipientRandHash: pm.RandHash(),
+	batch := &pm.TicketBatch{
+		TicketParams: &pm.TicketParams{
+			Recipient: pm.RandAddress(),
+			FaceValue: big.NewInt(1234),
+			WinProb:   big.NewInt(5678),
+			Seed:      big.NewInt(7777),
+		},
+		TicketExpirationParams: &pm.TicketExpirationParams{},
+		Sender:                 pm.RandAddress(),
+		SenderParams: []*pm.TicketSenderParams{
+			&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
+		},
 	}
-	seed := big.NewInt(7777)
-	sig := pm.RandBytes(42)
 
-	sender.On("CreateTicket", mock.Anything).Return(ticket, seed, sig, nil).Once()
+	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(batch, nil).Once()
 
 	payment, err = genPayment(s)
 	require.Nil(err)
 
 	protoPayment := decodePayment(payment)
 
-	assert.Equal(ticket.Recipient, ethcommon.BytesToAddress(protoPayment.TicketParams.Recipient))
-	assert.Equal(ticket.Sender, ethcommon.BytesToAddress(protoPayment.Sender))
-	assert.Equal(ticket.FaceValue, new(big.Int).SetBytes(protoPayment.TicketParams.FaceValue))
-	assert.Equal(ticket.WinProb, new(big.Int).SetBytes(protoPayment.TicketParams.WinProb))
-	assert.Equal(ticket.SenderNonce, protoPayment.TicketSenderParams[0].SenderNonce)
-	assert.Equal(ticket.RecipientRandHash, ethcommon.BytesToHash(protoPayment.TicketParams.RecipientRandHash))
-	assert.Equal(sig, protoPayment.TicketSenderParams[0].Sig)
-	assert.Equal(seed, new(big.Int).SetBytes(protoPayment.TicketParams.Seed))
+	assert.Equal(batch.Recipient, ethcommon.BytesToAddress(protoPayment.TicketParams.Recipient))
+	assert.Equal(batch.Sender, ethcommon.BytesToAddress(protoPayment.Sender))
+	assert.Equal(batch.FaceValue, new(big.Int).SetBytes(protoPayment.TicketParams.FaceValue))
+	assert.Equal(batch.WinProb, new(big.Int).SetBytes(protoPayment.TicketParams.WinProb))
+	assert.Equal(batch.SenderParams[0].SenderNonce, protoPayment.TicketSenderParams[0].SenderNonce)
+	assert.Equal(batch.RecipientRandHash, ethcommon.BytesToHash(protoPayment.TicketParams.RecipientRandHash))
+	assert.Equal(batch.SenderParams[0].Sig, protoPayment.TicketSenderParams[0].Sig)
+	assert.Equal(batch.Seed, new(big.Int).SetBytes(protoPayment.TicketParams.Seed))
 	assert.Zero(big.NewRat(oinfo.PriceInfo.PricePerUnit, oinfo.PriceInfo.PixelsPerUnit).Cmp(big.NewRat(protoPayment.ExpectedPrice.PricePerUnit, protoPayment.ExpectedPrice.PixelsPerUnit)))
 }
 

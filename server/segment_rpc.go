@@ -442,32 +442,32 @@ func genPayment(sess *BroadcastSession) (string, error) {
 	 * See how many tickets to make according to needed credit and ticket EV
 	 * Invoke CreateTicket that many times and add to protoPayment
 	 */
-	ticket, seed, sig, err := sess.Sender.CreateTicket(sess.PMSessionID)
+	batch, err := sess.Sender.CreateTicketBatch(sess.PMSessionID, 1)
 	if err != nil {
 		return "", err
 	}
 
 	protoTicketParams := &net.TicketParams{
-		Recipient:         ticket.Recipient.Bytes(),
-		FaceValue:         ticket.FaceValue.Bytes(),
-		WinProb:           ticket.WinProb.Bytes(),
-		RecipientRandHash: ticket.RecipientRandHash.Bytes(),
-		Seed:              seed.Bytes(),
+		Recipient:         batch.Recipient.Bytes(),
+		FaceValue:         batch.FaceValue.Bytes(),
+		WinProb:           batch.WinProb.Bytes(),
+		RecipientRandHash: batch.RecipientRandHash.Bytes(),
+		Seed:              batch.Seed.Bytes(),
 	}
 
 	protoTicketSenderParams := &net.TicketSenderParams{
-		SenderNonce: ticket.SenderNonce,
-		Sig:         sig,
+		SenderNonce: batch.SenderParams[0].SenderNonce,
+		Sig:         batch.SenderParams[0].Sig,
 	}
 
 	protoExpirationParams := &net.TicketExpirationParams{
-		CreationRound:          ticket.CreationRound,
-		CreationRoundBlockHash: ticket.CreationRoundBlockHash.Bytes(),
+		CreationRound:          batch.CreationRound,
+		CreationRoundBlockHash: batch.CreationRoundBlockHash.Bytes(),
 	}
 
 	protoPayment := &net.Payment{
 		TicketParams:       protoTicketParams,
-		Sender:             ticket.Sender.Bytes(),
+		Sender:             batch.Sender.Bytes(),
 		ExpirationParams:   protoExpirationParams,
 		TicketSenderParams: []*net.TicketSenderParams{protoTicketSenderParams},
 		ExpectedPrice:      sess.OrchestratorInfo.PriceInfo,
