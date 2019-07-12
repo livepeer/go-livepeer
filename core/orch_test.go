@@ -878,7 +878,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
 	assert.Nil(t, err)
-	assert.Zero(t, expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
 
 	// basePrice = 10/1, txMultiplier = 100/1 => expPricePerPixel = 1010/100
 	basePrice = big.NewRat(10, 1)
@@ -888,7 +888,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
 	assert.Nil(t, err)
-	assert.Zero(t, expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
 
 	// basePrice = 1/10, txMultiplier = 100 => expPricePerPixel = 101/1000
 	basePrice = big.NewRat(1, 10)
@@ -898,7 +898,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
 	assert.Nil(t, err)
-	assert.Zero(t, expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
 
 	// basePrice = 25/10 , txMultiplier = 100 => expPricePerPixel = 2525/1000
 	basePrice = big.NewRat(25, 10)
@@ -908,7 +908,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
 	assert.Nil(t, err)
-	assert.Zero(t, expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
 
 	// basePrice = 10/1 , txMultiplier = 100/10 => expPricePerPixel = 11
 	basePrice = big.NewRat(10, 1)
@@ -922,7 +922,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
 	assert.Nil(t, err)
-	assert.Zero(t, expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
 
 	// basePrice = 10/1 , txMultiplier = 1/10 => expPricePerPixel = 110
 	basePrice = big.NewRat(10, 1)
@@ -936,7 +936,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
 	assert.Nil(t, err)
-	assert.Zero(t, expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
 
 	// basePrice = 10, txMultiplier = 1 => expPricePerPixel = 20
 	basePrice = big.NewRat(10, 1)
@@ -950,7 +950,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
 	assert.Nil(t, err)
-	assert.Zero(t, expPricePerPixel.Cmp(big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)))
+	assert.Zero(t, expPricePerPixel.Cmp(priceInfo))
 }
 
 func TestPriceInfo_GivenNilNode_ReturnsNilError(t *testing.T) {

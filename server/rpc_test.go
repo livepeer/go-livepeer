@@ -75,7 +75,7 @@ func (r *stubOrchestrator) TicketParams(sender ethcommon.Address) (*net.TicketPa
 	return nil, nil
 }
 
-func (r *stubOrchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error) {
+func (r *stubOrchestrator) PriceInfo(sender ethcommon.Address) (*big.Rat, error) {
 	return nil, nil
 }
 
@@ -411,7 +411,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
 	orch.On("TicketParams", mock.Anything).Return(nil, nil)
-	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
+
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
@@ -439,7 +439,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
 	orch.On("TicketParams", mock.Anything).Return(expectedParams, nil)
-	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
+
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
@@ -460,41 +460,6 @@ func TestGetOrchestrator_TicketParamsError(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.EqualError(err, expErr.Error())
-}
-
-func TestGetOrchestrator_GivenValidSig_ReturnsOrchPriceInfo(t *testing.T) {
-	orch := &mockOrchestrator{}
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	uri := "http://someuri.com"
-	expectedPrice := &net.PriceInfo{
-		PricePerUnit:  2,
-		PixelsPerUnit: 3,
-	}
-	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
-	orch.On("ServiceURI").Return(url.Parse(uri))
-	orch.On("TicketParams", mock.Anything).Return(nil, nil)
-	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
-	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
-
-	assert := assert.New(t)
-	assert.Nil(err)
-	assert.Equal(expectedPrice, oInfo.PriceInfo)
-}
-
-func TestGetOrchestrator_PriceInfoError(t *testing.T) {
-	orch := &mockOrchestrator{}
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	uri := "http://someuri.com"
-	expErr := errors.New("PriceInfo error")
-
-	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
-	orch.On("ServiceURI").Return(url.Parse(uri))
-	orch.On("TicketParams", mock.Anything).Return(&net.TicketParams{}, nil)
-	orch.On("PriceInfo", mock.Anything).Return(nil, expErr)
-
-	_, err := getOrchestrator(orch, &net.OrchestratorRequest{})
-
-	assert.EqualError(t, err, expErr.Error())
 }
 
 type mockOSSession struct {
@@ -583,10 +548,10 @@ func (o *mockOrchestrator) TicketParams(sender ethcommon.Address) (*net.TicketPa
 	return nil, args.Error(1)
 }
 
-func (o *mockOrchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error) {
+func (o *mockOrchestrator) PriceInfo(sender ethcommon.Address) (*big.Rat, error) {
 	args := o.Called(sender)
 	if args.Get(0) != nil {
-		return args.Get(0).(*net.PriceInfo), args.Error(1)
+		return args.Get(0).(*big.Rat), args.Error(1)
 	}
 	return nil, args.Error(1)
 }
