@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"io/ioutil"
 	"math/big"
@@ -504,14 +505,19 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
-
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-	orch.On("SufficientBalance", s.ManifestID).Return(true)
-
 	price := &net.PriceInfo{
 		PricePerUnit:  2,
 		PixelsPerUnit: 3,
 	}
+
+	payment := &net.Payment{
+		ExpectedPrice: price,
+	}
+
+	orch.On("ProcessPayment", mock.Anything, s.ManifestID).Return(nil)
+	orch.On("SufficientBalance", s.ManifestID).Return(true)
+
+	paymentData, _ := proto.Marshal(payment)
 
 	tData := &core.TranscodeData{
 		Data:   []byte("foo"),
@@ -523,10 +529,10 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
-	orch.On("DebitFees", md.ManifestID, price, tData.Pixels)
+	orch.On("DebitFees", md.ManifestID, payment.GetExpectedPrice(), tData.Pixels)
 
 	headers := map[string]string{
-		paymentHeader: "",
+		paymentHeader: base64.StdEncoding.EncodeToString(paymentData),
 		segmentHeader: creds,
 	}
 	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
@@ -547,7 +553,7 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	assert.Equal([]byte("foo"), res.Data.Sig)
 	assert.Equal(1, len(res.Data.Segments))
 	assert.Equal(res.Data.Segments[0].Pixels, tData.Pixels)
-	orch.AssertCalled(t, "DebitFees", md.ManifestID, mock.Anything, tData.Pixels)
+	orch.AssertCalled(t, "DebitFees", md.ManifestID, payment.GetExpectedPrice(), tData.Pixels)
 }
 
 func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
