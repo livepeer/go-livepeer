@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"sync"
 	"time"
 
@@ -574,6 +575,7 @@ type RemoteTranscoder struct {
 	eof      chan struct{}
 	addr     string
 	capacity int
+	load     int
 }
 
 // RemoteTranscoderFatalError wraps error to indicate that error is fatal
@@ -648,6 +650,18 @@ func NewRemoteTranscoderManager() *RemoteTranscoderManager {
 	}
 }
 
+type byLoadFactor []*RemoteTranscoder
+
+func loadFactor(r *RemoteTranscoder) float64 {
+	return float64(r.load) / float64(r.capacity)
+}
+
+func (r byLoadFactor) Len() int      { return len(r) }
+func (r byLoadFactor) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
+func (r byLoadFactor) Less(i, j int) bool {
+	return loadFactor(r[j]) < loadFactor(r[i]) // sort descending
+}
+
 type RemoteTranscoderManager struct {
 	remoteTranscoders []*RemoteTranscoder
 	liveTranscoders   map[net.Transcoder_RegisterTranscoderServer]*RemoteTranscoder
@@ -688,9 +702,8 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 
 	rtm.RTmutex.Lock()
 	rtm.liveTranscoders[transcoder.stream] = transcoder
-	for i := 0; i < capacity; i++ {
-		rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
-	}
+	rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
+	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
 	rtm.RTmutex.Unlock()
 
 	<-transcoder.eof
@@ -711,12 +724,18 @@ func (rtm *RemoteTranscoderManager) selectTranscoder() *RemoteTranscoder {
 
 	for checkTranscoders(rtm) {
 		last := len(rtm.remoteTranscoders) - 1
-		currentTranscoder, remoteTranscoders := rtm.remoteTranscoders[last], rtm.remoteTranscoders[:last]
-		rtm.remoteTranscoders = remoteTranscoders
+		currentTranscoder := rtm.remoteTranscoders[last]
+		if currentTranscoder.load == currentTranscoder.capacity {
+			// Head of queue is at capacity, so the rest must be too. Exit early
+			return nil
+		}
 		if _, ok := rtm.liveTranscoders[currentTranscoder.stream]; ok {
+			currentTranscoder.load++
+			sort.Sort(byLoadFactor(rtm.remoteTranscoders))
 			return currentTranscoder
 		}
-		// try again if transcoder does not exist in table
+		// transcoder does not exist in table; remove and retry
+		rtm.remoteTranscoders = rtm.remoteTranscoders[:last]
 	}
 
 	return nil
@@ -726,9 +745,12 @@ func (rtm *RemoteTranscoderManager) completeTranscoders(trans *RemoteTranscoder)
 	rtm.RTmutex.Lock()
 	defer rtm.RTmutex.Unlock()
 
-	if _, ok := rtm.liveTranscoders[trans.stream]; ok {
-		rtm.remoteTranscoders = append(rtm.remoteTranscoders, trans)
+	t, ok := rtm.liveTranscoders[trans.stream]
+	if !ok {
+		return
 	}
+	t.load--
+	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
 }
 
 func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
