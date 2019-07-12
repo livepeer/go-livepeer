@@ -192,9 +192,14 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 
 	for _, tinfo := range tinfos {
 		var sessionID string
+		var balance *core.Balance
 
 		if n.Sender != nil {
 			sessionID = n.Sender.StartSession(*pmTicketParams(tinfo.TicketParams))
+		}
+
+		if n.Balances != nil {
+			balance = core.NewBalance(params.mid, n.Balances)
 		}
 
 		var orchOS drivers.OSSession
@@ -218,6 +223,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 			BroadcasterOS:    bcastOS,
 			Sender:           n.Sender,
 			PMSessionID:      sessionID,
+			Balance:          balance,
 		}
 
 		sessions = append(sessions, session)

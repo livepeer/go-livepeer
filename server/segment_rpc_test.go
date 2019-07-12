@@ -752,9 +752,30 @@ func TestSubmitSegment_GenSegCredsError(t *testing.T) {
 	assert.Equal(t, "Sign error", err.Error())
 }
 
-func TestSubmitSegment_GenPaymentError(t *testing.T) {
+func TestSubmitSegment_NewBalanceUpdateError(t *testing.T) {
 	b := stubBroadcaster2()
 	sender := &pm.MockSender{}
+	expErr := errors.New("EV error")
+	sender.On("EV", mock.Anything).Return(nil, expErr)
+
+	s := &BroadcastSession{
+		Broadcaster: b,
+		ManifestID:  core.RandomManifestID(),
+		Sender:      sender,
+		Balance:     &mockBalance{},
+	}
+
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+
+	assert.EqualError(t, err, expErr.Error())
+}
+
+func TestSubmitSegment_GenPaymentError(t *testing.T) {
+	b := stubBroadcaster2()
+	balance := &mockBalance{}
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(1, nil, nil)
+	sender := &pm.MockSender{}
+	sender.On("EV", mock.Anything).Return(big.NewRat(1, 1), nil)
 	expErr := errors.New("CreateTicketBatch error")
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, expErr)
 
@@ -762,6 +783,7 @@ func TestSubmitSegment_GenPaymentError(t *testing.T) {
 		Broadcaster: b,
 		ManifestID:  core.RandomManifestID(),
 		Sender:      sender,
+		Balance:     balance,
 	}
 
 	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)

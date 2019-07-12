@@ -53,6 +53,45 @@ type Broadcaster interface {
 	Sign([]byte) ([]byte, error)
 }
 
+// Balance describes methods for a session's balance maintenance
+type Balance interface {
+	Credit(amount *big.Rat)
+	StageUpdate(minCredit *big.Rat, ev *big.Rat) (int, *big.Rat, *big.Rat)
+}
+
+// BalanceUpdateStatus indicates the current status of a balance update
+type BalanceUpdateStatus int
+
+const (
+	// Staged indicates that the update has been created but the credit
+	// has not been spent yet
+	Staged = iota
+	// CreditSpent indicates that the update's credit has been spent
+	// but the debit has not been processed yet
+	CreditSpent
+	// ReceivedChange indicates that the update's credit has been spent
+	// and a debit was processed such that there was "change" (net of credit/debit)
+	ReceivedChange
+)
+
+// BalanceUpdate describes an update to be performed on the balance of a session
+type BalanceUpdate struct {
+	// ExistingCredit is the existing credit reserved for the update
+	ExistingCredit *big.Rat
+
+	// NewCredit is the new credit for the update provided by a payment
+	NewCredit *big.Rat
+
+	// NumTickets is the number of tickets in the payment for the update
+	NumTickets int
+
+	// Debit is the amount to debit for the update
+	Debit *big.Rat
+
+	// Status is the current status of the update
+	Status BalanceUpdateStatus
+}
+
 // BroadcastSession - session-specific state for broadcasters
 type BroadcastSession struct {
 	Broadcaster      Broadcaster
@@ -63,6 +102,7 @@ type BroadcastSession struct {
 	BroadcasterOS    drivers.OSSession
 	Sender           pm.Sender
 	PMSessionID      string
+	Balance          Balance
 }
 
 type lphttp struct {
