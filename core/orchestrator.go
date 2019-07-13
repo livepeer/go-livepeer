@@ -212,6 +212,16 @@ func (orch *orchestrator) SufficientBalance(manifestID ManifestID) bool {
 	return true
 }
 
+// DebitFees debits the balance for a ManifestID based on the amount of output pixels * price
+func (orch *orchestrator) DebitFees(manifestID ManifestID, price *net.PriceInfo, pixels int64) {
+	// Don't debit in offchain mode
+	if orch.node == nil || orch.node.Balances == nil {
+		return
+	}
+	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
+	orch.node.Balances.Debit(manifestID, priceRat.Mul(priceRat, big.NewRat(pixels, 1)))
+}
+
 func NewOrchestrator(n *LivepeerNode) *orchestrator {
 	var addr ethcommon.Address
 	if n.Eth != nil {
@@ -229,10 +239,15 @@ var ErrOrchBusy = ogErrors.New("OrchestratorBusy")
 var ErrOrchCap = ogErrors.New("OrchestratorCapped")
 
 type TranscodeResult struct {
-	Err  error
-	Sig  []byte
-	Data [][]byte
-	OS   drivers.OSSession
+	Err           error
+	Sig           []byte
+	TranscodeData []*TranscodeData
+	OS            drivers.OSSession
+}
+
+type TranscodeData struct {
+	Data   []byte
+	Pixels int64
 }
 
 type SegChanData struct {
@@ -415,7 +430,10 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 			return terr(fmt.Errorf("ZeroSegments"))
 		}
 		tProfileData[md.Profiles[i]] = tData[i]
-		tr.Data = append(tr.Data, tData[i])
+		tr.TranscodeData = append(tr.TranscodeData, &TranscodeData{
+			Data: tData[i],
+			// TODO: ADD NUMBER OF OUTPUT PIXELS
+		})
 		glog.V(common.DEBUG).Infof("Transcoded segment manifest=%s seqNo=%d profile=%s len=%d",
 			string(md.ManifestID), seg.SeqNo, md.Profiles[i].Name, len(tData[i]))
 		hash := crypto.Keccak256(tData[i])
