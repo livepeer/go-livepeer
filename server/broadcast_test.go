@@ -197,6 +197,15 @@ func TestRemoveSession(t *testing.T) {
 	bsm.removeSession(sess2)
 	assert.Nil(bsm.sessMap[sess2.OrchestratorInfo.Transcoder])
 	assert.Len(bsm.sessMap, 0)
+
+	// sesssion.Balance != nil
+	b := &mockBalance{}
+	b.On("Clear")
+	sess1.Balance = b
+
+	bsm.removeSession(sess1)
+
+	b.AssertCalled(t, "Clear")
 }
 
 func TestCompleteSessions(t *testing.T) {

@@ -52,6 +52,10 @@ func (m *mockBalance) StageUpdate(minCredit *big.Rat, ev *big.Rat) (int, *big.Ra
 	return args.Int(0), newCredit, existingCredit
 }
 
+func (m *mockBalance) Clear() {
+	m.Called()
+}
+
 type stubOrchestrator struct {
 	priv       *ecdsa.PrivateKey
 	block      *big.Int

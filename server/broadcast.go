@@ -87,6 +87,11 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
+
+	if session.Balance != nil {
+		session.Balance.Clear()
+	}
+
 	delete(bsm.sessMap, session.OrchestratorInfo.Transcoder)
 }
 
@@ -192,7 +197,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 
 	for _, tinfo := range tinfos {
 		var sessionID string
-		var balance *core.Balance
+		var balance Balance
 
 		if n.Sender != nil {
 			sessionID = n.Sender.StartSession(*pmTicketParams(tinfo.TicketParams))
