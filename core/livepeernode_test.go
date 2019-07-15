@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/url"
 	"os"
 	"testing"
@@ -128,4 +129,18 @@ func TestServiceURIChange(t *testing.T) {
 	surl, err := sesh.SaveData("testdata3", []byte{0, 0, 0})
 	require.Nil(err)
 	assert.Equal("test://secondurl.com/stream/testpath/testdata3", surl)
+}
+
+func TestSetAndGetBasePrice(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	n, err := NewLivepeerNode(nil, "", nil)
+	require.Nil(err)
+
+	price := big.NewRat(1, 1)
+
+	n.SetBasePrice(price)
+	assert.Zero(n.priceInfo.Cmp(price))
+	assert.Zero(n.GetBasePrice().Cmp(price))
 }

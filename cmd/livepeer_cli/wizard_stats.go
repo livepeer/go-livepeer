@@ -176,7 +176,7 @@ func (w *wizard) orchestratorStats() {
 	if w.offchain {
 		return
 	}
-	t, err := w.getOrchestratorInfo()
+	t, priceInfo, err := w.getOrchestratorInfo()
 	if err != nil {
 		glog.Errorf("Error getting orchestrator info: %v", err)
 		return
@@ -194,11 +194,10 @@ func (w *wizard) orchestratorStats() {
 		[]string{"Delegated Stake", eth.FormatUnits(t.DelegatedStake, "LPT")},
 		[]string{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
 		[]string{"Fee Share (%)", eth.FormatPerc(t.FeeShare)},
-		[]string{"Price Per Segment", eth.FormatUnits(t.PricePerSegment, "ETH")},
 		[]string{"Pending Reward Cut (%)", eth.FormatPerc(t.PendingRewardCut)},
 		[]string{"Pending Fee Share (%)", eth.FormatPerc(t.PendingFeeShare)},
-		[]string{"Pending Price Per Segment", eth.FormatUnits(t.PendingPricePerSegment, "ETH")},
 		[]string{"Last Reward Round", t.LastRewardRound.String()},
+		[]string{"Base price per pixel", fmt.Sprintf("%v wei / %v pixels", priceInfo.Num(), priceInfo.Denom())},
 	}
 
 	for _, v := range data {
@@ -387,26 +386,29 @@ func (w *wizard) getBroadcastConfig() (*big.Rat, string) {
 	return config.MaxPrice, config.TranscodingOptions
 }
 
-func (w *wizard) getOrchestratorInfo() (lpTypes.Transcoder, error) {
+func (w *wizard) getOrchestratorInfo() (*lpTypes.Transcoder, *big.Rat, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%v:%v/orchestratorInfo", w.host, w.httpPort))
 	if err != nil {
-		return lpTypes.Transcoder{}, err
+		return nil, nil, err
 	}
 
 	defer resp.Body.Close()
 
 	result, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return lpTypes.Transcoder{}, err
+		return nil, nil, err
 	}
 
-	var tInfo lpTypes.Transcoder
-	err = json.Unmarshal(result, &tInfo)
+	var config struct {
+		Transcoder *lpTypes.Transcoder
+		PriceInfo  *big.Rat
+	}
+	err = json.Unmarshal(result, &config)
 	if err != nil {
-		return lpTypes.Transcoder{}, err
+		return nil, nil, err
 	}
 
-	return tInfo, nil
+	return config.Transcoder, config.PriceInfo, nil
 }
 
 func (w *wizard) getOrchestratorEventSubscriptions() (map[string]bool, error) {

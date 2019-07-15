@@ -869,7 +869,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	expPricePerPixel := big.NewRat(101, 100)
 
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.PriceInfo = basePrice
+	n.SetBasePrice(basePrice)
 
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
@@ -882,7 +882,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 	// basePrice = 10/1, txMultiplier = 100/1 => expPricePerPixel = 1010/100
 	basePrice = big.NewRat(10, 1)
-	n.PriceInfo = basePrice
+	n.SetBasePrice(basePrice)
 	orch = NewOrchestrator(n)
 	expPricePerPixel = big.NewRat(1010, 100)
 
@@ -892,7 +892,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 	// basePrice = 1/10, txMultiplier = 100 => expPricePerPixel = 101/1000
 	basePrice = big.NewRat(1, 10)
-	n.PriceInfo = basePrice
+	n.SetBasePrice(basePrice)
 	orch = NewOrchestrator(n)
 	expPricePerPixel = big.NewRat(101, 1000)
 
@@ -902,7 +902,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 	// basePrice = 25/10 , txMultiplier = 100 => expPricePerPixel = 2525/1000
 	basePrice = big.NewRat(25, 10)
-	n.PriceInfo = basePrice
+	n.SetBasePrice(basePrice)
 	orch = NewOrchestrator(n)
 	expPricePerPixel = big.NewRat(2525, 1000)
 
@@ -913,7 +913,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	// basePrice = 10/1 , txMultiplier = 100/10 => expPricePerPixel = 11
 	basePrice = big.NewRat(10, 1)
 	txMultiplier = big.NewRat(100, 10)
-	n.PriceInfo = basePrice
+	n.SetBasePrice(basePrice)
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
@@ -927,7 +927,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	// basePrice = 10/1 , txMultiplier = 1/10 => expPricePerPixel = 110
 	basePrice = big.NewRat(10, 1)
 	txMultiplier = big.NewRat(1, 10)
-	n.PriceInfo = basePrice
+	n.SetBasePrice(basePrice)
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
@@ -941,7 +941,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	// basePrice = 10, txMultiplier = 1 => expPricePerPixel = 20
 	basePrice = big.NewRat(10, 1)
 	txMultiplier = big.NewRat(1, 1)
-	n.PriceInfo = basePrice
+	n.SetBasePrice(basePrice)
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)

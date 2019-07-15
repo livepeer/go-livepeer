@@ -65,13 +65,15 @@ type LivepeerNode struct {
 	OrchSecret        string
 	Transcoder        Transcoder
 	TranscoderManager *RemoteTranscoderManager
-	PriceInfo         *big.Rat
 	Balances          *Balances
 
 	// Broadcaster public fields
 	Sender pm.Sender
 
+	// Thread safety for config fields
+	mu sync.RWMutex
 	// Transcoder private fields
+	priceInfo    *big.Rat
 	serviceURI   url.URL
 	segmentMutex *sync.RWMutex
 }
@@ -126,9 +128,27 @@ func (n *LivepeerNode) StopEthServices() error {
 }
 
 func (n *LivepeerNode) GetServiceURI() *url.URL {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 	return &n.serviceURI
 }
 
 func (n *LivepeerNode) SetServiceURI(newUrl *url.URL) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	n.serviceURI = *newUrl
+}
+
+// SetBasePrice sets the base price for an orchestrator on the node
+func (n *LivepeerNode) SetBasePrice(price *big.Rat) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.priceInfo = price
+}
+
+// GetBasePrice gets the base price for an orchestrator
+func (n *LivepeerNode) GetBasePrice() *big.Rat {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.priceInfo
 }
