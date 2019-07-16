@@ -248,3 +248,59 @@ func TestHash(t *testing.T) {
 		t.Errorf("Expected %x got %x", exp, h)
 	}
 }
+
+func TestTickets(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test batch size = 0
+	batch := &TicketBatch{}
+	assert.Equal(0, len(batch.Tickets()))
+
+	checkTicket := func(batch *TicketBatch, batchIdx int, ticket *Ticket) {
+		assert.Equal(batch.Recipient, ticket.Recipient)
+		assert.Equal(batch.Sender, ticket.Sender)
+		assert.Equal(batch.FaceValue, ticket.FaceValue)
+		assert.Equal(batch.WinProb, ticket.WinProb)
+		assert.Equal(batch.SenderParams[batchIdx].SenderNonce, ticket.SenderNonce)
+		assert.Equal(batch.RecipientRandHash, ticket.RecipientRandHash)
+		assert.Equal(batch.CreationRound, ticket.CreationRound)
+		assert.Equal(batch.CreationRoundBlockHash, ticket.CreationRoundBlockHash)
+	}
+
+	// Test batch size = 1
+	randInt := new(big.Int).SetBytes(RandBytes(32))
+	ticketParams := &TicketParams{
+		Recipient:         RandAddress(),
+		FaceValue:         randInt,
+		WinProb:           randInt,
+		RecipientRandHash: RandHash(),
+		Seed:              randInt,
+	}
+	expirationParams := &TicketExpirationParams{
+		CreationRound:          10,
+		CreationRoundBlockHash: RandHash(),
+	}
+	batch = &TicketBatch{
+		TicketParams:           ticketParams,
+		TicketExpirationParams: expirationParams,
+		Sender:                 RandAddress(),
+	}
+	senderParams0 := &TicketSenderParams{SenderNonce: uint32(0), Sig: RandBytes(42)}
+	batch.SenderParams = append(batch.SenderParams, senderParams0)
+
+	tickets := batch.Tickets()
+	assert.Equal(1, len(tickets))
+	checkTicket(batch, 0, tickets[0])
+
+	// Test batch size > 1
+
+	senderParams1 := &TicketSenderParams{SenderNonce: uint32(1), Sig: RandBytes(42)}
+	batch.SenderParams = append(batch.SenderParams, senderParams1)
+
+	tickets = batch.Tickets()
+	assert.Equal(2, len(tickets))
+
+	for i := 0; i < 2; i++ {
+		checkTicket(batch, i, tickets[i])
+	}
+}

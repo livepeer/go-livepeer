@@ -5,7 +5,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 )
 
@@ -16,12 +15,14 @@ type Sender interface {
 	// for creating new tickets
 	StartSession(ticketParams TicketParams) string
 
-	// CreateTicket returns a new ticket, seed (which the recipient can use to derive its random number),
-	// and signature over the new ticket for a given session ID
-	CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error)
+	// CreateTicketBatch returns a ticket batch of the specified size
+	CreateTicketBatch(sessionID string, size int) (*TicketBatch, error)
 
 	// ValidateTicketParams checks if ticket params are acceptable
 	ValidateTicketParams(ticketParams *TicketParams) error
+
+	// EV returns the ticket EV for a session
+	EV(sessionID string) (*big.Rat, error)
 }
 
 type session struct {
@@ -63,53 +64,55 @@ func (s *sender) StartSession(ticketParams TicketParams) string {
 	return sessionID
 }
 
-func (s *sender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
-	recipientRandHash := ethcommon.HexToHash(sessionID)
-
-	tempSession, ok := s.sessions.Load(sessionID)
-	if !ok {
-		return nil, nil, nil, errors.Errorf("cannot create a ticket for an unknown session: %v", sessionID)
+// EV returns the ticket EV for a session
+func (s *sender) EV(sessionID string) (*big.Rat, error) {
+	session, err := s.loadSession(sessionID)
+	if err != nil {
+		return nil, err
 	}
-	session := tempSession.(*session)
+
+	return ticketEV(session.ticketParams.FaceValue, session.ticketParams.WinProb), nil
+}
+
+// CreateTicketBatch returns a ticket batch of the specified size
+func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, error) {
+	session, err := s.loadSession(sessionID)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := s.ValidateTicketParams(&session.ticketParams); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
-	senderNonce := atomic.AddUint32(&session.senderNonce, 1)
-
-	round, err := s.roundsManager.LastInitializedRound()
+	expirationParams, err := s.expirationParams()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
-	blkHash, err := s.roundsManager.BlockHashForRound(round)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	ticket := &Ticket{
-		Recipient:              session.ticketParams.Recipient,
-		RecipientRandHash:      recipientRandHash,
+	batch := &TicketBatch{
+		TicketParams:           &session.ticketParams,
+		TicketExpirationParams: expirationParams,
 		Sender:                 s.signer.Account().Address,
-		SenderNonce:            senderNonce,
-		FaceValue:              session.ticketParams.FaceValue,
-		WinProb:                session.ticketParams.WinProb,
-		CreationRound:          round.Int64(),
-		CreationRoundBlockHash: blkHash,
 	}
 
-	sig, err := s.signer.Sign(ticket.Hash().Bytes())
-	if err != nil {
-		return nil, nil, nil, errors.Wrapf(err, "error signing ticket for session: %v", sessionID)
+	for i := 0; i < size; i++ {
+		senderNonce := atomic.AddUint32(&session.senderNonce, 1)
+		ticket := NewTicket(&session.ticketParams, expirationParams, s.signer.Account().Address, senderNonce)
+		sig, err := s.signer.Sign(ticket.Hash().Bytes())
+		if err != nil {
+			return nil, errors.Wrapf(err, "error signing ticket for session: %v", sessionID)
+		}
+
+		batch.SenderParams = append(batch.SenderParams, &TicketSenderParams{SenderNonce: senderNonce, Sig: sig})
 	}
 
-	return ticket, session.ticketParams.Seed, sig, nil
+	return batch, nil
 }
 
 // ValidateTicketParams checks if ticket params are acceptable
 func (s *sender) ValidateTicketParams(ticketParams *TicketParams) error {
-	ev := new(big.Rat).Mul(new(big.Rat).SetInt(ticketParams.FaceValue), new(big.Rat).SetFrac(ticketParams.WinProb, maxWinProb))
+	ev := ticketEV(ticketParams.FaceValue, ticketParams.WinProb)
 	if ev.Cmp(s.maxEV) > 0 {
 		return errors.Errorf("ticket EV higher than max EV")
 	}
@@ -125,4 +128,30 @@ func (s *sender) ValidateTicketParams(ticketParams *TicketParams) error {
 	}
 
 	return nil
+}
+
+func (s *sender) expirationParams() (*TicketExpirationParams, error) {
+	round, err := s.roundsManager.LastInitializedRound()
+	if err != nil {
+		return nil, err
+	}
+
+	blkHash, err := s.roundsManager.BlockHashForRound(round)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TicketExpirationParams{
+		CreationRound:          round.Int64(),
+		CreationRoundBlockHash: blkHash,
+	}, nil
+}
+
+func (s *sender) loadSession(sessionID string) (*session, error) {
+	tempSession, ok := s.sessions.Load(sessionID)
+	if !ok {
+		return nil, errors.Errorf("error loading session: %x", sessionID)
+	}
+
+	return tempSession.(*session), nil
 }

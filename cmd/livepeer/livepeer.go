@@ -325,6 +325,8 @@ func main() {
 		// Setup unbonding service to manage unbonding locks
 		n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
 
+		n.Balances = core.NewBalances(cleanupInterval)
+
 		if *orchestrator {
 
 			// Set price per pixel base info
@@ -398,8 +400,7 @@ func main() {
 			n.Recipient.Start()
 			defer n.Recipient.Stop()
 
-			n.Balances = core.NewBalances(cleanupInterval)
-			// Run n.Accounts.Cleanup() Routine
+			// Run cleanup routine for stale balances
 			go n.Balances.StartCleanup()
 			// Stop the cleanup routine on program exit
 			defer n.Balances.StopCleanup()

@@ -215,7 +215,7 @@ func (v *stubValidator) IsWinningTicket(ticket *Ticket, sig []byte, recipientRan
 type stubSigner struct {
 	account         accounts.Account
 	saveSignRequest bool
-	lastSignRequest []byte
+	signRequests    [][]byte
 	signResponse    []byte
 	signShouldFail  bool
 }
@@ -229,7 +229,7 @@ func (s *stubSigner) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bi
 
 func (s *stubSigner) Sign(msg []byte) ([]byte, error) {
 	if s.saveSignRequest {
-		s.lastSignRequest = msg
+		s.signRequests = append(s.signRequests, msg)
 	}
 	if s.signShouldFail {
 		return nil, fmt.Errorf("stub returning error as requested")
@@ -410,28 +410,28 @@ func (m *MockSender) StartSession(ticketParams TicketParams) string {
 	return args.String(0)
 }
 
-// CreateTicket returns a new ticket, seed (which the recipient can use to derive its random number),
-// and signature over the new ticket for a given session ID
-func (m *MockSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
+// EV returns the ticket EV for a session
+func (m *MockSender) EV(sessionID string) (*big.Rat, error) {
 	args := m.Called(sessionID)
 
-	var ticket *Ticket
-	var seed *big.Int
-	var sig []byte
-
+	var ev *big.Rat
 	if args.Get(0) != nil {
-		ticket = args.Get(0).(*Ticket)
+		ev = args.Get(0).(*big.Rat)
 	}
 
-	if args.Get(1) != nil {
-		seed = args.Get(1).(*big.Int)
+	return ev, args.Error(1)
+}
+
+// CreateTicketBatch returns a ticket batch of the specified size
+func (m *MockSender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, error) {
+	args := m.Called(sessionID, size)
+
+	var batch *TicketBatch
+	if args.Get(0) != nil {
+		batch = args.Get(0).(*TicketBatch)
 	}
 
-	if args.Get(2) != nil {
-		sig = args.Get(2).([]byte)
-	}
-
-	return ticket, seed, sig, args.Error(3)
+	return batch, args.Error(1)
 }
 
 // ValidateTicketParams checks if ticket params are acceptable

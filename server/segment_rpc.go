@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -257,7 +258,19 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		data = []byte(seg.Name)
 	}
 
-	payment, err := genPayment(sess)
+	// Create a BalanceUpdate to be completed when this function returns
+	balUpdate, err := newBalanceUpdate(sess)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(yondonfu):
+	// // The balance update should be completed when this function returns
+	// // The logic of balance update completion depends on the status of the update
+	// // at the time of completion
+	// defer completeBalanceUpdate(sess, balUpdate)
+
+	payment, err := genPayment(sess, balUpdate.NumTickets)
 	if err != nil {
 		glog.Errorf("Could not create payment: %v", err)
 		return nil, err
@@ -293,6 +306,11 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	// TODO(yondonfu):
+	// If the segment was submitted then we assume that any payment included was
+	// submitted as well so we consider the update's credit as spent
+	// balUpdate.Status = CreditSpent
 
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)
@@ -368,6 +386,10 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
+	// TODO(yondonfu):
+	// Set balUpdate.Debit = fee computed based on returned results
+	// Set balUpdate.Status = ReceivedChange
+
 	// transcode succeeded; continue processing response
 	if monitor.Enabled {
 		monitor.SegmentTranscoded(nonce, seg.SeqNo, transcodeDur, common.ProfilesNames(sess.Profiles))
@@ -433,43 +455,90 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func genPayment(sess *BroadcastSession) (string, error) {
-	if sess.Sender == nil {
+func newBalanceUpdate(sess *BroadcastSession) (*BalanceUpdate, error) {
+	update := &BalanceUpdate{
+		ExistingCredit: big.NewRat(0, 1),
+		NewCredit:      big.NewRat(0, 1),
+		Debit:          big.NewRat(0, 1),
+		Status:         Staged,
+	}
+
+	if sess.Sender == nil || sess.Balance == nil {
+		return update, nil
+	}
+
+	ev, err := sess.Sender.EV(sess.PMSessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	update.NumTickets, update.NewCredit, update.ExistingCredit = sess.Balance.StageUpdate(ev, ev)
+
+	return update, nil
+}
+
+// func completeBalanceUpdate(sess *BroadcastSession, update *BalanceUpdate) {
+// 	if sess.Balance == nil {
+// 		return
+// 	}
+
+// 	// If the update's credit has not been spent then add the existing credit
+// 	// back to the balance
+// 	if update.Status == Staged {
+// 		sess.Balance.Credit(update.ExistingCredit)
+// 		return
+// 	}
+
+// 	// If the update did not include a processed debit then no change was received
+// 	// so we exit without updating the balance because the credit was spent already
+// 	if update.Status != ReceivedChange {
+// 		return
+// 	}
+
+// 	credit := new(big.Rat).Add(update.ExistingCredit, update.NewCredit)
+// 	// The change could be negative if the debit > credit
+// 	change := credit.Sub(credit, update.Debit)
+
+// 	// If the change is negative then this is equivalent to debiting abs(change)
+// 	sess.Balance.Credit(change)
+// }
+
+func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
+	if sess.Sender == nil || numTickets == 0 {
 		return "", nil
 	}
-	/** TODO
-	 * Check necessary credit balance
-	 * See how many tickets to make according to needed credit and ticket EV
-	 * Invoke CreateTicket that many times and add to protoPayment
-	 */
-	ticket, seed, sig, err := sess.Sender.CreateTicket(sess.PMSessionID)
+
+	batch, err := sess.Sender.CreateTicketBatch(sess.PMSessionID, numTickets)
 	if err != nil {
 		return "", err
 	}
 
 	protoTicketParams := &net.TicketParams{
-		Recipient:         ticket.Recipient.Bytes(),
-		FaceValue:         ticket.FaceValue.Bytes(),
-		WinProb:           ticket.WinProb.Bytes(),
-		RecipientRandHash: ticket.RecipientRandHash.Bytes(),
-		Seed:              seed.Bytes(),
-	}
-
-	protoTicketSenderParams := &net.TicketSenderParams{
-		SenderNonce: ticket.SenderNonce,
-		Sig:         sig,
+		Recipient:         batch.Recipient.Bytes(),
+		FaceValue:         batch.FaceValue.Bytes(),
+		WinProb:           batch.WinProb.Bytes(),
+		RecipientRandHash: batch.RecipientRandHash.Bytes(),
+		Seed:              batch.Seed.Bytes(),
 	}
 
 	protoExpirationParams := &net.TicketExpirationParams{
-		CreationRound:          ticket.CreationRound,
-		CreationRoundBlockHash: ticket.CreationRoundBlockHash.Bytes(),
+		CreationRound:          batch.CreationRound,
+		CreationRoundBlockHash: batch.CreationRoundBlockHash.Bytes(),
+	}
+
+	senderParams := make([]*net.TicketSenderParams, len(batch.SenderParams))
+	for i := 0; i < len(senderParams); i++ {
+		senderParams[i] = &net.TicketSenderParams{
+			SenderNonce: batch.SenderParams[i].SenderNonce,
+			Sig:         batch.SenderParams[i].Sig,
+		}
 	}
 
 	protoPayment := &net.Payment{
 		TicketParams:       protoTicketParams,
-		Sender:             ticket.Sender.Bytes(),
+		Sender:             batch.Sender.Bytes(),
 		ExpirationParams:   protoExpirationParams,
-		TicketSenderParams: []*net.TicketSenderParams{protoTicketSenderParams},
+		TicketSenderParams: senderParams,
 		ExpectedPrice:      sess.OrchestratorInfo.PriceInfo,
 	}
 

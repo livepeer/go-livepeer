@@ -28,6 +28,34 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
+type mockBalance struct {
+	mock.Mock
+}
+
+func (m *mockBalance) Credit(amount *big.Rat) {
+	m.Called(amount)
+}
+
+func (m *mockBalance) StageUpdate(minCredit *big.Rat, ev *big.Rat) (int, *big.Rat, *big.Rat) {
+	args := m.Called(minCredit, ev)
+	var newCredit *big.Rat
+	var existingCredit *big.Rat
+
+	if args.Get(1) != nil {
+		newCredit = args.Get(1).(*big.Rat)
+	}
+
+	if args.Get(2) != nil {
+		existingCredit = args.Get(2).(*big.Rat)
+	}
+
+	return args.Int(0), newCredit, existingCredit
+}
+
+func (m *mockBalance) Clear() {
+	m.Called()
+}
+
 type stubOrchestrator struct {
 	priv       *ecdsa.PrivateKey
 	block      *big.Int
@@ -226,6 +254,62 @@ func TestRPCSeg(t *testing.T) {
 	o.sessCapErr = nil
 }
 
+func TestNewBalanceUpdate(t *testing.T) {
+	mid := core.RandomManifestID()
+	s := &BroadcastSession{
+		ManifestID:  mid,
+		PMSessionID: "foo",
+	}
+
+	assert := assert.New(t)
+
+	// Test nil Sender
+	update, err := newBalanceUpdate(s)
+	assert.Nil(err)
+	assert.Zero(big.NewRat(0, 1).Cmp(update.ExistingCredit))
+	assert.Zero(big.NewRat(0, 1).Cmp(update.NewCredit))
+	assert.Equal(0, update.NumTickets)
+	assert.Zero(big.NewRat(0, 1).Cmp(update.Debit))
+	assert.Equal(Staged, int(update.Status))
+
+	// Test nil Balance
+	sender := &pm.MockSender{}
+	s.Sender = sender
+
+	update, err = newBalanceUpdate(s)
+	assert.Nil(err)
+	assert.Zero(big.NewRat(0, 1).Cmp(update.ExistingCredit))
+	assert.Zero(big.NewRat(0, 1).Cmp(update.NewCredit))
+	assert.Equal(0, update.NumTickets)
+	assert.Zero(big.NewRat(0, 1).Cmp(update.Debit))
+	assert.Equal(Staged, int(update.Status))
+
+	// Test pm.Sender.EV() error
+	balance := &mockBalance{}
+	s.Balance = balance
+	expErr := errors.New("EV error")
+	sender.On("EV", s.PMSessionID).Return(nil, expErr).Once()
+
+	_, err = newBalanceUpdate(s)
+	assert.EqualError(err, expErr.Error())
+
+	// Test BalanceUpdate creation
+	ev := big.NewRat(5, 1)
+	sender.On("EV", s.PMSessionID).Return(ev, nil)
+	numTickets := 2
+	newCredit := big.NewRat(5, 1)
+	existingCredit := big.NewRat(6, 1)
+	balance.On("StageUpdate", ev, ev).Return(numTickets, newCredit, existingCredit)
+
+	update, err = newBalanceUpdate(s)
+	assert.Nil(err)
+	assert.Zero(existingCredit.Cmp(update.ExistingCredit))
+	assert.Zero(newCredit.Cmp(update.NewCredit))
+	assert.Equal(numTickets, update.NumTickets)
+	assert.Zero(big.NewRat(0, 1).Cmp(update.Debit))
+	assert.Equal(Staged, int(update.Status))
+}
+
 func TestGenPayment(t *testing.T) {
 	mid := core.RandomManifestID()
 	b := stubBroadcaster2()
@@ -240,24 +324,25 @@ func TestGenPayment(t *testing.T) {
 		Broadcaster:      b,
 		ManifestID:       mid,
 		OrchestratorInfo: oinfo,
+		PMSessionID:      "foo",
 	}
 
 	assert := assert.New(t)
 	require := require.New(t)
 
 	// Test missing sender
-	payment, err := genPayment(s)
+	payment, err := genPayment(s, 1)
 	assert.Equal("", payment)
 	assert.Nil(err)
 
 	sender := &pm.MockSender{}
 	s.Sender = sender
 
-	// Test CreateTicket error
-	sender.On("CreateTicket", mock.Anything).Return(nil, nil, nil, errors.New("CreateTicket error")).Once()
+	// Test CreateTicketBatch error
+	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, errors.New("CreateTicketBatch error")).Once()
 
-	_, err = genPayment(s)
-	assert.Equal("CreateTicket error", err.Error())
+	_, err = genPayment(s, 1)
+	assert.Equal("CreateTicketBatch error", err.Error())
 
 	decodePayment := func(payment string) net.Payment {
 		buf, err := base64.StdEncoding.DecodeString(payment)
@@ -270,34 +355,69 @@ func TestGenPayment(t *testing.T) {
 		return protoPayment
 	}
 
-	// Test payment creation
-	ticket := &pm.Ticket{
-		Recipient:         pm.RandAddress(),
-		Sender:            pm.RandAddress(),
-		FaceValue:         big.NewInt(1234),
-		WinProb:           big.NewInt(5678),
-		SenderNonce:       777,
-		RecipientRandHash: pm.RandHash(),
+	// Test payment creation with 1 ticket
+	batch := &pm.TicketBatch{
+		TicketParams: &pm.TicketParams{
+			Recipient: pm.RandAddress(),
+			FaceValue: big.NewInt(1234),
+			WinProb:   big.NewInt(5678),
+			Seed:      big.NewInt(7777),
+		},
+		TicketExpirationParams: &pm.TicketExpirationParams{},
+		Sender:                 pm.RandAddress(),
+		SenderParams: []*pm.TicketSenderParams{
+			&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
+		},
 	}
-	seed := big.NewInt(7777)
-	sig := pm.RandBytes(42)
 
-	sender.On("CreateTicket", mock.Anything).Return(ticket, seed, sig, nil).Once()
+	sender.On("CreateTicketBatch", s.PMSessionID, 1).Return(batch, nil).Once()
 
-	payment, err = genPayment(s)
+	payment, err = genPayment(s, 1)
 	require.Nil(err)
 
 	protoPayment := decodePayment(payment)
 
-	assert.Equal(ticket.Recipient, ethcommon.BytesToAddress(protoPayment.TicketParams.Recipient))
-	assert.Equal(ticket.Sender, ethcommon.BytesToAddress(protoPayment.Sender))
-	assert.Equal(ticket.FaceValue, new(big.Int).SetBytes(protoPayment.TicketParams.FaceValue))
-	assert.Equal(ticket.WinProb, new(big.Int).SetBytes(protoPayment.TicketParams.WinProb))
-	assert.Equal(ticket.SenderNonce, protoPayment.TicketSenderParams[0].SenderNonce)
-	assert.Equal(ticket.RecipientRandHash, ethcommon.BytesToHash(protoPayment.TicketParams.RecipientRandHash))
-	assert.Equal(sig, protoPayment.TicketSenderParams[0].Sig)
-	assert.Equal(seed, new(big.Int).SetBytes(protoPayment.TicketParams.Seed))
+	assert.Equal(batch.Recipient, ethcommon.BytesToAddress(protoPayment.TicketParams.Recipient))
+	assert.Equal(batch.Sender, ethcommon.BytesToAddress(protoPayment.Sender))
+	assert.Equal(batch.FaceValue, new(big.Int).SetBytes(protoPayment.TicketParams.FaceValue))
+	assert.Equal(batch.WinProb, new(big.Int).SetBytes(protoPayment.TicketParams.WinProb))
+	assert.Equal(batch.SenderParams[0].SenderNonce, protoPayment.TicketSenderParams[0].SenderNonce)
+	assert.Equal(batch.RecipientRandHash, ethcommon.BytesToHash(protoPayment.TicketParams.RecipientRandHash))
+	assert.Equal(batch.SenderParams[0].Sig, protoPayment.TicketSenderParams[0].Sig)
+	assert.Equal(batch.Seed, new(big.Int).SetBytes(protoPayment.TicketParams.Seed))
 	assert.Zero(big.NewRat(oinfo.PriceInfo.PricePerUnit, oinfo.PriceInfo.PixelsPerUnit).Cmp(big.NewRat(protoPayment.ExpectedPrice.PricePerUnit, protoPayment.ExpectedPrice.PixelsPerUnit)))
+
+	sender.AssertCalled(t, "CreateTicketBatch", s.PMSessionID, 1)
+
+	// Test payment creation with > 1 ticket
+
+	senderParams := []*pm.TicketSenderParams{
+		&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
+		&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
+	}
+	batch.SenderParams = append(batch.SenderParams, senderParams...)
+
+	sender.On("CreateTicketBatch", s.PMSessionID, 3).Return(batch, nil).Once()
+
+	payment, err = genPayment(s, 3)
+	require.Nil(err)
+
+	protoPayment = decodePayment(payment)
+
+	for i := 0; i < 3; i++ {
+		assert.Equal(batch.SenderParams[i].SenderNonce, protoPayment.TicketSenderParams[i].SenderNonce)
+		assert.Equal(batch.SenderParams[i].Sig, protoPayment.TicketSenderParams[i].Sig)
+	}
+
+	sender.AssertCalled(t, "CreateTicketBatch", s.PMSessionID, 3)
+
+	// Test payment creation with 0 tickets
+
+	payment, err = genPayment(s, 0)
+	assert.Nil(err)
+	assert.Equal("", payment)
+
+	sender.AssertNotCalled(t, "CreateTicketBatch", s.PMSessionID, 0)
 }
 
 func TestPing(t *testing.T) {
