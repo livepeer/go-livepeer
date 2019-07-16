@@ -25,3 +25,4 @@ eth/protocol
 
 #cmd/devtool generated directories and files
 /.lpdev2
+/.git.describe
