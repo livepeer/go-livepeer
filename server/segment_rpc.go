@@ -349,7 +349,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 
 	// update OrchestratorInfo if necessary
 	if tr.Info != nil {
-		updateOrchestratorInfo(sess, tr.Info)
+		defer updateOrchestratorInfo(sess, tr.Info)
 	}
 
 	// check for errors and exit early if there's anything unusual

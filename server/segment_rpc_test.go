@@ -1109,13 +1109,17 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 		Result: &net.TranscodeResult_Data{
 			Data: &net.TranscodeData{
 				Segments: []*net.TranscodedSegmentData{
-					&net.TranscodedSegmentData{Url: "foo"},
+					&net.TranscodedSegmentData{Url: "foo", Pixels: 10},
 				},
 				Sig: []byte("bar"),
 			},
 		},
 		Info: &net.OrchestratorInfo{
 			Transcoder: "http://google.com",
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  1,
+				PixelsPerUnit: 1,
+			},
 			TicketParams: &net.TicketParams{
 				Recipient:         params.Recipient.Bytes(),
 				FaceValue:         params.FaceValue.Bytes(),
@@ -1188,6 +1192,38 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal("foobar", s.PMSessionID)
 	sender.AssertCalled(t, "StartSession", params)
 
+	// Test balance update completion with last known price and NOT the price
+	// included in an updated OrchestratorInfo message
+
+	ratMatcher := func(rat *big.Rat) interface{} {
+		return mock.MatchedBy(func(x *big.Rat) bool { return x.Cmp(rat) == 0 })
+	}
+
+	existingCredit := big.NewRat(100, 1)
+	// change = existingCredit - (pixelCount * price) = 100 - (10 * 2) = 80
+	// Note that price = 2 which is the last known price and not the price = 1 included in the
+	// updated OrchestratorInfo message
+	change := big.NewRat(80, 1)
+	balance := &mockBalance{}
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, big.NewRat(0, 1), existingCredit)
+	balance.On("Credit", ratMatcher(change))
+	sender = &pm.MockSender{}
+	sender.On("EV", mock.Anything).Return(nil, nil)
+	sender.On("StartSession", params).Return("foobar")
+	s.Balance = balance
+	s.Sender = sender
+	s.OrchestratorInfo = &net.OrchestratorInfo{
+		Transcoder: ts.URL,
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  2,
+			PixelsPerUnit: 1,
+		},
+	}
+
+	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
+
+	balance.AssertCalled(t, "Credit", ratMatcher(change))
+
 	// Test does not crash if OrchestratorInfo.TicketParams is nil
 
 	sender = &pm.MockSender{}
@@ -1195,6 +1231,7 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 		Transcoder: ts.URL,
 	}
 	s.Sender = sender
+	s.Balance = nil
 
 	// Update stub server to return OrchestratorInfo without TicketParams
 	tr.Info = &net.OrchestratorInfo{
