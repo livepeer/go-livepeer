@@ -75,6 +75,7 @@ type recipient struct {
 	store  TicketStore
 	gpm    GasPriceMonitor
 	sm     SenderMonitor
+	em     ErrorMonitor
 
 	addr   ethcommon.Address
 	secret [32]byte
@@ -91,7 +92,7 @@ type recipient struct {
 
 // NewRecipient creates an instance of a recipient with an
 // automatically generated random secret
-func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, cfg TicketParamsConfig) (Recipient, error) {
+func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, em ErrorMonitor, cfg TicketParamsConfig) (Recipient, error) {
 	randBytes := make([]byte, 32)
 	if _, err := rand.Read(randBytes); err != nil {
 		return nil, err
@@ -279,7 +280,7 @@ func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.
 		// before the sender is notified of the new seed.
 		return newReceiveError(
 			errors.Errorf("invalid already revealed recipientRand %v", recipientRand),
-			r.sm.AcceptErr(ticket.Sender),
+			r.em.AcceptErr(ticket.Sender),
 		)
 	}
 
@@ -299,7 +300,7 @@ func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.
 		// be a delay before the sender is notified of the new faceValue.
 		return newReceiveError(
 			errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue),
-			r.sm.AcceptErr(ticket.Sender),
+			r.em.AcceptErr(ticket.Sender),
 		)
 	}
 
@@ -310,7 +311,7 @@ func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.
 		// be a delay before the sender is notified of the new winProb.
 		return newReceiveError(
 			errors.Errorf("invalid ticket winProb %v", ticket.WinProb),
-			r.sm.AcceptErr(ticket.Sender),
+			r.em.AcceptErr(ticket.Sender),
 		)
 	}
 

@@ -37,10 +37,12 @@ type SenderMonitor interface {
 
 	// MaxFloat returns a remote sender's max float
 	MaxFloat(addr ethcommon.Address) (*big.Int, error)
+}
 
-	// AcceptErr checks whether additional errors should be accepted and if so increments the acceptable error count
-	// for a sender
-	AcceptErr(addr ethcommon.Address) bool
+type ErrorMonitor interface {
+	AcceptErr(sender ethcommon.Address) bool
+	ClearErrCount(sender ethcommon.Address)
+	ResetErrCounts()
 }
 
 type remoteSender struct {
@@ -53,10 +55,6 @@ type remoteSender struct {
 
 	queue *ticketQueue
 
-	// errCount is the current number of acceptable errors counted
-	// for the sender
-	errCount int
-
 	done chan struct{}
 
 	lastAccess int64
@@ -66,9 +64,6 @@ type senderMonitor struct {
 	claimant        ethcommon.Address
 	cleanupInterval time.Duration
 	ttl             int
-	// maxErrCount is the maximum number of acceptable errors allowed
-	// for a sender
-	maxErrCount int
 
 	mu      sync.RWMutex
 	senders map[ethcommon.Address]*remoteSender
@@ -84,20 +79,22 @@ type senderMonitor struct {
 	gasPriceUpdate chan struct{}
 
 	quit chan struct{}
+
+	em ErrorMonitor
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, gasPriceUpdate chan struct{}, cleanupInterval time.Duration, ttl int, maxErrCount int) SenderMonitor {
+func NewSenderMonitor(claimant ethcommon.Address, broker Broker, gasPriceUpdate chan struct{}, cleanupInterval time.Duration, ttl int, em ErrorMonitor) SenderMonitor {
 	return &senderMonitor{
 		claimant:        claimant,
 		cleanupInterval: cleanupInterval,
 		ttl:             ttl,
-		maxErrCount:     maxErrCount,
 		broker:          broker,
 		senders:         make(map[ethcommon.Address]*remoteSender),
 		redeemable:      make(chan *SignedTicket),
 		gasPriceUpdate:  gasPriceUpdate,
 		quit:            make(chan struct{}),
+		em:              em,
 	}
 }
 
@@ -138,7 +135,7 @@ func (sm *senderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error
 	// Reset errCount for sender
 	// An updated max float results in updated ticket params
 	// The sender could plausibly send tickets that trigger acceptable errors
-	sm.senders[addr].errCount = 0
+	sm.em.ClearErrCount(addr)
 
 	// Whenever a sender's max float increases, signal the updated max float to the
 	// sender's associated ticket queue in case there are queued tickets that
@@ -164,7 +161,7 @@ func (sm *senderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) error
 	// Reset errCount for sender
 	// An updated max float results in updated ticket params
 	// The sender could plausibly send tickets that trigger acceptable errors
-	sm.senders[addr].errCount = 0
+	sm.em.ClearErrCount(addr)
 
 	return nil
 }
@@ -193,21 +190,6 @@ func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicke
 	sm.senders[addr].queue.Add(ticket)
 
 	return nil
-}
-
-// AcceptErr checks whether additional errors should be accepted and if so increments the acceptable error count
-// for a sender
-func (sm *senderMonitor) AcceptErr(addr ethcommon.Address) bool {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	if sm.senders[addr].errCount >= sm.maxErrCount {
-		return false
-	}
-
-	sm.senders[addr].errCount++
-
-	return true
 }
 
 // maxFloat is a helper that returns the sender's max float as:
@@ -304,7 +286,7 @@ func (sm *senderMonitor) startGasPriceUpdateLoop() {
 	for {
 		select {
 		case <-sm.gasPriceUpdate:
-			sm.resetErrCounts()
+			sm.em.ResetErrCounts()
 		case <-sm.quit:
 			return
 		}
@@ -324,16 +306,5 @@ func (sm *senderMonitor) cleanup() {
 
 			delete(sm.senders, k)
 		}
-	}
-}
-
-// resetErrCounts resets the error count for all tracked
-// remote senders
-func (sm *senderMonitor) resetErrCounts() {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	for _, v := range sm.senders {
-		v.errCount = 0
 	}
 }
