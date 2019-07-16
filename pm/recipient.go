@@ -101,19 +101,20 @@ func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store Ti
 	var secret [32]byte
 	copy(secret[:], randBytes[:32])
 
-	return NewRecipientWithSecret(addr, broker, val, store, gpm, sm, secret, cfg), nil
+	return NewRecipientWithSecret(addr, broker, val, store, gpm, sm, em, secret, cfg), nil
 }
 
 // NewRecipientWithSecret creates an instance of a recipient with a user provided
 // secret. In most cases, NewRecipient should be used instead which will
 // automatically generate a random secret
-func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, secret [32]byte, cfg TicketParamsConfig) Recipient {
+func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, em ErrorMonitor, secret [32]byte, cfg TicketParamsConfig) Recipient {
 	return &recipient{
 		broker:       broker,
 		val:          val,
 		store:        store,
 		gpm:          gpm,
 		sm:           sm,
+		em:           em,
 		addr:         addr,
 		secret:       secret,
 		senderNonces: make(map[string]uint32),
