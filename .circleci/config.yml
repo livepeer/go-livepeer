@@ -67,6 +67,10 @@ jobs:
     steps:
       - checkout
 
+      - setup_remote_docker:
+          # This actually only exists for paid plans. But it's good luck!
+          docker_layer_caching: true
+
       - run: mkdir -p $TEST_RESULTS
 
       # - restore_cache:
@@ -83,6 +87,10 @@ jobs:
           command: |
             trap "go-junit-report <${TEST_RESULTS}/go-test.out > ${TEST_RESULTS}/go-test-report.xml" EXIT
             /bin/bash test.sh 2>&1 | tee $TEST_RESULTS/go-test.out
+
+      - run:
+          name: Localdocker build check
+          command: make localdocker
 
       - run:
           name: Upload build
