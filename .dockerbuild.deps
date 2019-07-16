@@ -56,8 +56,6 @@ github.com/aws/aws-sdk-go/aws/corehandlers
 github.com/aws/aws-sdk-go/aws/credentials
 github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds
 github.com/aws/aws-sdk-go/aws/credentials/endpointcreds
-github.com/aws/aws-sdk-go/aws/credentials/processcreds
-github.com/aws/aws-sdk-go/aws/credentials/stscreds
 github.com/aws/aws-sdk-go/aws/csm
 github.com/aws/aws-sdk-go/aws/defaults
 github.com/aws/aws-sdk-go/aws/ec2metadata
@@ -218,17 +216,6 @@ github.com/livepeer/go-livepeer/vendor/github.com/livepeer/lpms/transcoder
 github.com/livepeer/go-livepeer/vendor/github.com/livepeer/lpms/vidlistener
 github.com/livepeer/go-livepeer/vendor/github.com/livepeer/lpms/vidplayer
 github.com/livepeer/go-livepeer/vendor/github.com/mattn/go-sqlite3
-github.com/livepeer/go-livepeer/vendor/github.com/nareix/joy4/av
-github.com/livepeer/go-livepeer/vendor/github.com/nareix/joy4/av/avutil
-github.com/livepeer/go-livepeer/vendor/github.com/nareix/joy4/codec
-github.com/livepeer/go-livepeer/vendor/github.com/nareix/joy4/codec/aacparser
-github.com/livepeer/go-livepeer/vendor/github.com/nareix/joy4/codec/fake
-github.com/livepeer/go-livepeer/vendor/github.com/nareix/joy4/codec/h264parser
-github.com/livepeer/go-livepeer/vendor/github.com/nareix/joy4/format/flv
-github.com/livepeer/go-livepeer/vendor/github.com/nareix/joy4/format/flv/flvio
-github.com/livepeer/go-livepeer/vendor/github.com/nareix/joy4/format/rtmp
-github.com/livepeer/go-livepeer/vendor/github.com/nareix/joy4/utils/bits
-github.com/livepeer/go-livepeer/vendor/github.com/nareix/joy4/utils/bits/pio
 github.com/livepeer/go-livepeer/vendor/golang.org/x/net/context
 github.com/livepeer/go-livepeer/vendor/gopkg.in/natefinch/lumberjack.v2
 github.com/livepeer/go-livepeer/vendor/gx/ipfs/QmNRz7BDWfdFNVLt7AVvmRefkrURD25EeoipcXqo6yoXU1/go-ipld-cbor
@@ -459,7 +446,6 @@ github.com/prometheus/common/expfmt
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
 github.com/prometheus/common/model
 github.com/prometheus/procfs
-github.com/prometheus/procfs/internal/fs
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/vendor/github.com/davecgh/go-spew/spew
