@@ -586,6 +586,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		// do multipart stuff; see  runTranscoder in server/ot_rpc.go
 		glog.Infof("%s - %d bytes", name, len(data))
 	}
+	w.WriteHeader(200)
 }
 
 //Helper Methods Begin
