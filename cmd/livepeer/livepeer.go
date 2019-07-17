@@ -373,9 +373,12 @@ func main() {
 			}
 			defer gpm.Stop()
 
-			em := core.NewErrorMonitor(3)
+			em := core.NewErrorMonitor(3, gasPriceUpdate)
 			n.ErrorMonitor = em
-			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, gasPriceUpdate, cleanupInterval, smTTL, n.ErrorMonitor)
+			em.Start()
+			defer em.Stop()
+
+			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, cleanupInterval, smTTL, n.ErrorMonitor)
 			// Start sender monitor
 			sm.Start()
 			defer sm.Stop()
