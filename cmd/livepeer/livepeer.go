@@ -56,7 +56,7 @@ var (
 	// The time to live for cached max float values for PM senders (else they will be cleaned up)
 	smTTL = 3600 // 1 minute
 	// smMaxErrCount is the maximum number of acceptable errors tolerated by a PM recipient for a sender
-	smMaxErrCount = 3
+	maxErrCount = 3
 )
 
 const RtmpPort = "1935"
@@ -373,7 +373,7 @@ func main() {
 			}
 			defer gpm.Stop()
 
-			em := core.NewErrorMonitor(3, gasPriceUpdate)
+			em := core.NewErrorMonitor(maxErrCount, gasPriceUpdate)
 			n.ErrorMonitor = em
 			em.Start()
 			defer em.Stop()

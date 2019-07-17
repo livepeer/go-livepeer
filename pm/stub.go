@@ -462,7 +462,6 @@ func NewMockReceiveError(err error, acceptable bool) *MockReceiveError {
 	}
 }
 
-// Use stub instead of mock?
 type stubErrorMonitor struct {
 	acceptable bool
 }
