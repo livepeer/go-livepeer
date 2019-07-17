@@ -492,6 +492,9 @@ func TestProcessPayment_GivenRecipientError_ReturnsNil(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil)
 	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
@@ -541,6 +544,9 @@ func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
 
 	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
@@ -557,10 +563,14 @@ func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
+
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
 
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
 	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("RedeemWinningTicket error"))
 
 	errorLogsBefore := glog.Stats.Error.Lines()
@@ -581,10 +591,13 @@ func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
 
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
 	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	errorLogsBefore := glog.Stats.Error.Lines()
@@ -605,8 +618,12 @@ func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
+
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
 
 	numTickets := 5
@@ -634,10 +651,15 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
 	manifestIDs := make([]string, 5)
+
 	for i := 0; i < 5; i++ {
 		manifestIDs = append(manifestIDs, randString())
 	}
+
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil)
 
 	numTickets := 100
@@ -675,7 +697,11 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
 	manifestID := ManifestID("some manifest")
+
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, errors.New("ReceiveTicket error")).Once()
 	// This should trigger a redemption even though it returns an error because it still returns won = true
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, errors.New("not first error")).Once()
@@ -707,8 +733,13 @@ func TestProcessPayment_AcceptablePaymentError_IncreasesCreditBalance(t *testing
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
+
 	manifestID := ManifestID("some manifest")
 	acceptableError := pm.NewMockReceiveError(errors.New("Acceptable ReceiveTicket error"), true)
+
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, acceptableError).Once()
 	assert := assert.New(t)
 
@@ -735,8 +766,12 @@ func TestProcessPayment_UnacceptablePaymentError_DoesNotIncreaseCreditBalance(t 
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
 	manifestID := ManifestID("some manifest")
 	unacceptableError := pm.NewMockReceiveError(errors.New("Unacceptable ReceiveTicket error"), false)
+
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, unacceptableError).Once()
 	assert := assert.New(t)
 
@@ -745,13 +780,202 @@ func TestProcessPayment_UnacceptablePaymentError_DoesNotIncreaseCreditBalance(t 
 	assert.Nil(orch.node.Balances.Balance(manifestID))
 }
 
+func TestProcesspayment_NoPriceError_IncreasesCredit(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(5, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
+	manifestID := ManifestID("some manifest")
+	sender := pm.RandAddress()
+
+	// This will multiply O's baseprice by 2
+	recipient.On("TxCostMultiplier", sender).Return(big.NewRat(1, 1), nil)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil)
+	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	assert := assert.New(t)
+
+	// faceValue = 100
+	// winProb = 50%
+	maxWinProb := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	ticket := &pm.Ticket{
+		FaceValue: big.NewInt(100),
+		WinProb:   maxWinProb.Div(maxWinProb, big.NewInt(2)),
+	}
+	payment := defaultPayment(t)
+	payment.TicketParams.FaceValue = ticket.FaceValue.Bytes()
+	payment.TicketParams.WinProb = ticket.WinProb.Bytes()
+	payment.Sender = sender.Bytes()
+	payment.ExpectedPrice = &net.PriceInfo{
+		PricePerUnit:  10,
+		PixelsPerUnit: 1,
+	}
+
+	err := orch.ProcessPayment(payment, manifestID)
+	assert.Nil(err)
+	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(ticket.EV()))
+}
+
+func TestProcessPayment_AcceptablePriceError_IncreasesCredit_ReturnsError(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(5, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(1)
+	manifestID := ManifestID("some manifest")
+	sender := pm.RandAddress()
+
+	// This will multiply O's baseprice by 2
+	recipient.On("TxCostMultiplier", sender).Return(big.NewRat(1, 1), nil)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil)
+	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	assert := assert.New(t)
+
+	// faceValue = 100
+	// winProb = 50%
+	maxWinProb := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	ticket := &pm.Ticket{
+		FaceValue: big.NewInt(100),
+		WinProb:   maxWinProb.Div(maxWinProb, big.NewInt(2)),
+	}
+	payment := defaultPayment(t)
+	payment.TicketParams.FaceValue = ticket.FaceValue.Bytes()
+	payment.TicketParams.WinProb = ticket.WinProb.Bytes()
+	payment.Sender = sender.Bytes()
+	payment.ExpectedPrice = &net.PriceInfo{
+		PricePerUnit:  1,
+		PixelsPerUnit: 1,
+	}
+
+	err := orch.ProcessPayment(payment, manifestID)
+	assert.Error(err)
+	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(ticket.EV()))
+	assert.Equal(1, orch.node.ErrorMonitor.errCount[sender])
+}
+
+func TestProcessPayment_UnacceptablePriceError_ReturnsError_DoesNotIncreaseCredit(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Balances = NewBalances(5 * time.Second)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(5, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
+	manifestID := ManifestID("some manifest")
+	sender := pm.RandAddress()
+
+	// This will multiply O's baseprice by 2
+	recipient.On("TxCostMultiplier", sender).Return(big.NewRat(1, 1), nil)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil)
+	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	assert := assert.New(t)
+
+	// faceValue = 100
+	// winProb = 50%
+	maxWinProb := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	ticket := &pm.Ticket{
+		FaceValue: big.NewInt(100),
+		WinProb:   maxWinProb.Div(maxWinProb, big.NewInt(2)),
+	}
+	payment := defaultPayment(t)
+	payment.TicketParams.FaceValue = ticket.FaceValue.Bytes()
+	payment.TicketParams.WinProb = ticket.WinProb.Bytes()
+	payment.Sender = sender.Bytes()
+	payment.ExpectedPrice = &net.PriceInfo{
+		PricePerUnit:  1,
+		PixelsPerUnit: 1,
+	}
+
+	err := orch.ProcessPayment(payment, manifestID)
+	assert.Error(err)
+	assert.Nil(orch.node.Balances.Balance(manifestID))
+}
+
+func TestAcceptablePrice(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(5, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
+	assert := assert.New(t)
+
+	sender := pm.RandAddress()
+
+	// This will multiply O's baseprice by 2
+	recipient.On("TxCostMultiplier", sender).Return(big.NewRat(1, 1), nil)
+
+	expectedPrice := &net.PriceInfo{
+		PricePerUnit:  3,
+		PixelsPerUnit: 1,
+	}
+
+	p, err := orch.PriceInfo(sender)
+	assert.Equal(p.PricePerUnit, int64(10))
+	assert.Nil(err)
+
+	// No grace period and price too low: returns false, error
+	ok, err := orch.acceptablePrice(sender, expectedPrice)
+	assert.Error(err)
+	assert.False(ok)
+
+	// Within Grace period and price too low: returns true, error
+	orch.node.ErrorMonitor = NewErrorMonitor(1)
+	ok, err = orch.acceptablePrice(sender, expectedPrice)
+	assert.Error(err)
+	assert.True(ok)
+	assert.Equal(1, orch.node.ErrorMonitor.errCount[sender])
+
+	// Expected price equals PriceInfo for sender: returns true, nil
+	expectedPrice.PricePerUnit = 10
+	ok, err = orch.acceptablePrice(sender, expectedPrice)
+	assert.Nil(err)
+	assert.True(ok)
+
+	// Expected price greater than PriceInfo: returns true, nil
+	expectedPrice.PricePerUnit = 20
+	ok, err = orch.acceptablePrice(sender, expectedPrice)
+	assert.Nil(err)
+	assert.True(ok)
+}
+
+func TestAcceptablePrice_PriceInfoError_ReturnsErr(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(5, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
+	assert := assert.New(t)
+
+	sender := pm.RandAddress()
+
+	// This will multiply O's baseprice by 2
+	recipient.On("TxCostMultiplier", sender).Return(nil, errors.New("TxCostMultiplier Error"))
+
+	ok, err := orch.acceptablePrice(sender, &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1})
+	assert.Error(err)
+	assert.False(ok)
+}
+
 func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
 	manifestID := ManifestID("some manifest")
+
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil).Once()
 	assert := assert.New(t)
 
@@ -773,7 +997,11 @@ func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
+	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.ErrorMonitor = NewErrorMonitor(0)
 	manifestID := ManifestID("some manifest")
+
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil).Once()
 	assert := assert.New(t)
 
@@ -1066,6 +1294,7 @@ func defaultPaymentWithTickets(t *testing.T, senderParams []*net.TicketSenderPar
 		Sender:             sender,
 		ExpirationParams:   expirationParams,
 		TicketSenderParams: senderParams,
+		ExpectedPrice:      &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
 	}
 	return payment
 }

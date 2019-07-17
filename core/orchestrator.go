@@ -108,6 +108,16 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		return fmt.Errorf("Could not find Sender for payment: %v", payment)
 	}
 
+	var (
+		acceptablePriceErr error
+		okPrice            bool
+		didReceiveErr      bool
+	)
+
+	if okPrice, acceptablePriceErr = orch.acceptablePrice(ethcommon.BytesToAddress(payment.Sender), payment.GetExpectedPrice()); !okPrice {
+		return acceptablePriceErr
+	}
+
 	seed := new(big.Int).SetBytes(payment.TicketParams.Seed)
 
 	ticket := &pm.Ticket{
@@ -119,8 +129,6 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		CreationRound:          payment.ExpirationParams.CreationRound,
 		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
 	}
-
-	var didReceiveErr bool
 
 	for _, tsp := range payment.TicketSenderParams {
 
@@ -154,6 +162,10 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 				}
 			}(ticket, tsp.Sig, seed)
 		}
+	}
+
+	if acceptablePriceErr != nil {
+		return acceptablePriceErr
 	}
 
 	if didReceiveErr {
@@ -220,6 +232,23 @@ func (orch *orchestrator) DebitFees(manifestID ManifestID, price *net.PriceInfo,
 	}
 	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
 	orch.node.Balances.Debit(manifestID, priceRat.Mul(priceRat, big.NewRat(pixels, 1)))
+}
+
+// Acceptable price checks whether the payment sender's expected price sent with a payment is acceptable
+func (orch *orchestrator) acceptablePrice(sender ethcommon.Address, ep *net.PriceInfo) (bool, error) {
+	epRat := big.NewRat(ep.GetPricePerUnit(), ep.GetPixelsPerUnit())
+
+	oPrice, err := orch.PriceInfo(sender)
+	if err != nil {
+		return false, err
+	}
+	oPriceRat := big.NewRat(oPrice.GetPricePerUnit(), oPrice.GetPixelsPerUnit())
+
+	// expected price is too small, check if sender is still within grace period
+	if epRat.Cmp(oPriceRat) < 0 {
+		return orch.node.ErrorMonitor.AcceptErr(sender), fmt.Errorf("Expected price of %v wei per %v pixels is too small, expecting at least %v wei per %v pixels", ep.GetPricePerUnit(), ep.GetPixelsPerUnit(), oPrice.GetPricePerUnit(), oPrice.GetPixelsPerUnit())
+	}
+	return true, nil
 }
 
 func NewOrchestrator(n *LivepeerNode) *orchestrator {
