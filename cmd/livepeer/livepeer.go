@@ -375,7 +375,7 @@ func main() {
 
 			em := core.NewErrorMonitor(3)
 			n.ErrorMonitor = em
-			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, gasPriceUpdate, cleanupInterval, smTTL, smMaxErrCount, n.ErrorMonitor)
+			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, gasPriceUpdate, cleanupInterval, smTTL, n.ErrorMonitor)
 			// Start sender monitor
 			sm.Start()
 			defer sm.Stop()
