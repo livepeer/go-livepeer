@@ -264,11 +264,10 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
-	// TODO(yondonfu):
-	// // The balance update should be completed when this function returns
-	// // The logic of balance update completion depends on the status of the update
-	// // at the time of completion
-	// defer completeBalanceUpdate(sess, balUpdate)
+	// The balance update should be completed when this function returns
+	// The logic of balance update completion depends on the status of the update
+	// at the time of completion
+	defer completeBalanceUpdate(sess, balUpdate)
 
 	payment, err := genPayment(sess, balUpdate.NumTickets)
 	if err != nil {
@@ -307,10 +306,9 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	}
 	defer resp.Body.Close()
 
-	// TODO(yondonfu):
 	// If the segment was submitted then we assume that any payment included was
 	// submitted as well so we consider the update's credit as spent
-	// balUpdate.Status = CreditSpent
+	balUpdate.Status = CreditSpent
 
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)
@@ -351,7 +349,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 
 	// update OrchestratorInfo if necessary
 	if tr.Info != nil {
-		updateOrchestratorInfo(sess, tr.Info)
+		defer updateOrchestratorInfo(sess, tr.Info)
 	}
 
 	// check for errors and exit early if there's anything unusual
@@ -386,9 +384,19 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
-	// TODO(yondonfu):
-	// Set balUpdate.Debit = fee computed based on returned results
-	// Set balUpdate.Status = ReceivedChange
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	balUpdate.Status = ReceivedChange
+	priceInfo := sess.OrchestratorInfo.PriceInfo
+	if priceInfo != nil {
+		// The update's debit is the transcoding fee which is computed as the total number of pixels processed
+		// for all results returned multiplied by the orchestrator's price
+		var pixelCount int64
+		for _, res := range tdata.Segments {
+			pixelCount += res.Pixels
+		}
+
+		balUpdate.Debit.Mul(new(big.Rat).SetInt64(pixelCount), big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit))
+	}
 
 	// transcode succeeded; continue processing response
 	if monitor.Enabled {
@@ -477,31 +485,31 @@ func newBalanceUpdate(sess *BroadcastSession) (*BalanceUpdate, error) {
 	return update, nil
 }
 
-// func completeBalanceUpdate(sess *BroadcastSession, update *BalanceUpdate) {
-// 	if sess.Balance == nil {
-// 		return
-// 	}
+func completeBalanceUpdate(sess *BroadcastSession, update *BalanceUpdate) {
+	if sess.Balance == nil {
+		return
+	}
 
-// 	// If the update's credit has not been spent then add the existing credit
-// 	// back to the balance
-// 	if update.Status == Staged {
-// 		sess.Balance.Credit(update.ExistingCredit)
-// 		return
-// 	}
+	// If the update's credit has not been spent then add the existing credit
+	// back to the balance
+	if update.Status == Staged {
+		sess.Balance.Credit(update.ExistingCredit)
+		return
+	}
 
-// 	// If the update did not include a processed debit then no change was received
-// 	// so we exit without updating the balance because the credit was spent already
-// 	if update.Status != ReceivedChange {
-// 		return
-// 	}
+	// If the update did not include a processed debit then no change was received
+	// so we exit without updating the balance because the credit was spent already
+	if update.Status != ReceivedChange {
+		return
+	}
 
-// 	credit := new(big.Rat).Add(update.ExistingCredit, update.NewCredit)
-// 	// The change could be negative if the debit > credit
-// 	change := credit.Sub(credit, update.Debit)
+	credit := new(big.Rat).Add(update.ExistingCredit, update.NewCredit)
+	// The change could be negative if the debit > credit
+	change := credit.Sub(credit, update.Debit)
 
-// 	// If the change is negative then this is equivalent to debiting abs(change)
-// 	sess.Balance.Credit(change)
-// }
+	// If the change is negative then this is equivalent to debiting abs(change)
+	sess.Balance.Credit(change)
+}
 
 func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 	if sess.Sender == nil || numTickets == 0 {

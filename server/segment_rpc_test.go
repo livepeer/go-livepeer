@@ -772,10 +772,12 @@ func TestSubmitSegment_NewBalanceUpdateError(t *testing.T) {
 
 func TestSubmitSegment_GenPaymentError(t *testing.T) {
 	b := stubBroadcaster2()
+	existingCredit := big.NewRat(5, 1)
 	balance := &mockBalance{}
-	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(1, nil, nil)
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(1, nil, existingCredit)
+	balance.On("Credit", existingCredit)
 	sender := &pm.MockSender{}
-	sender.On("EV", mock.Anything).Return(big.NewRat(1, 1), nil)
+	sender.On("EV", mock.Anything).Return(nil, nil)
 	expErr := errors.New("CreateTicketBatch error")
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, expErr)
 
@@ -789,6 +791,8 @@ func TestSubmitSegment_GenPaymentError(t *testing.T) {
 	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
 
 	assert.EqualError(t, err, expErr.Error())
+	// Check that completeBalanceUpdate() adds back the existing credit when the update status is Staged
+	balance.AssertCalled(t, "Credit", existingCredit)
 }
 
 func TestSubmitSegment_HttpPostError(t *testing.T) {
@@ -803,6 +807,21 @@ func TestSubmitSegment_HttpPostError(t *testing.T) {
 	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
 
 	assert.Contains(t, err.Error(), "connection refused")
+
+	// Test completeBalanceUpdate() adds back the existing credit when the update status is Staged
+	existingCredit := big.NewRat(5, 1)
+	balance := &mockBalance{}
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, nil, existingCredit)
+	balance.On("Credit", existingCredit)
+	sender := &pm.MockSender{}
+	sender.On("EV", mock.Anything).Return(nil, nil)
+	s.Balance = balance
+	s.Sender = sender
+
+	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0)
+
+	assert.Contains(t, err.Error(), "connection refused")
+	balance.AssertCalled(t, "Credit", existingCredit)
 }
 
 func TestSubmitSegment_Non200StatusCode(t *testing.T) {
@@ -823,6 +842,21 @@ func TestSubmitSegment_Non200StatusCode(t *testing.T) {
 	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
 
 	assert.Equal(t, "Server error", err.Error())
+
+	// Test completeBalanceUpdate() does not add anything back when the update status is CreditSpent
+	newCredit := big.NewRat(7, 1)
+	existingCredit := big.NewRat(5, 1)
+	balance := &mockBalance{}
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit)
+	sender := &pm.MockSender{}
+	sender.On("EV", mock.Anything).Return(nil, nil)
+	s.Balance = balance
+	s.Sender = sender
+
+	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0)
+
+	assert.Equal(t, "Server error", err.Error())
+	balance.AssertNotCalled(t, "Credit", mock.Anything)
 }
 
 func TestSubmitSegment_ProtoUnmarshalError(t *testing.T) {
@@ -844,6 +878,21 @@ func TestSubmitSegment_ProtoUnmarshalError(t *testing.T) {
 	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
 
 	assert.Contains(t, err.Error(), "proto")
+
+	// Test completeBalanceUpdate() does not add anything back when the update status is CreditSpent
+	newCredit := big.NewRat(7, 1)
+	existingCredit := big.NewRat(5, 1)
+	balance := &mockBalance{}
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit)
+	sender := &pm.MockSender{}
+	sender.On("EV", mock.Anything).Return(nil, nil)
+	s.Balance = balance
+	s.Sender = sender
+
+	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0)
+
+	assert.Contains(t, err.Error(), "proto")
+	balance.AssertNotCalled(t, "Credit", mock.Anything)
 }
 
 func TestSubmitSegment_TranscodeResultError(t *testing.T) {
@@ -871,21 +920,41 @@ func TestSubmitSegment_TranscodeResultError(t *testing.T) {
 	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0)
 
 	assert.Equal(t, "TranscodeResult error", err.Error())
+
+	// Test completeBalanceUpdate() does not add anything back when the update status is CreditSpent
+	newCredit := big.NewRat(7, 1)
+	existingCredit := big.NewRat(5, 1)
+	balance := &mockBalance{}
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit)
+	sender := &pm.MockSender{}
+	sender.On("EV", mock.Anything).Return(nil, nil)
+	s.Balance = balance
+	s.Sender = sender
+
+	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0)
+
+	assert.Equal(t, "TranscodeResult error", err.Error())
+	balance.AssertNotCalled(t, "Credit", mock.Anything)
 }
 
 func TestSubmitSegment_Success(t *testing.T) {
 	require := require.New(t)
 
-	tr := &net.TranscodeResult{
-		Result: &net.TranscodeResult_Data{
-			Data: &net.TranscodeData{
-				Segments: []*net.TranscodedSegmentData{
-					&net.TranscodedSegmentData{Url: "foo"},
+	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
+		return &net.TranscodeResult{
+			Result: &net.TranscodeResult_Data{
+				Data: &net.TranscodeData{
+					Segments: tSegData,
+					Sig:      []byte("bar"),
 				},
-				Sig: []byte("bar"),
 			},
-		},
+		}
 	}
+
+	tSegData := []*net.TranscodedSegmentData{
+		&net.TranscodedSegmentData{Url: "foo"},
+	}
+	tr := dummyRes(tSegData)
 	buf, err := proto.Marshal(tr)
 	require.Nil(err)
 
@@ -938,7 +1007,91 @@ func TestSubmitSegment_Success(t *testing.T) {
 		assert.Equal([]byte("foo"), data)
 	}
 
-	SubmitSegment(s, &stream.HLSSegment{Name: "foo", Data: []byte("dummy")}, 0)
+	seg := &stream.HLSSegment{Name: "foo", Data: []byte("dummy")}
+	SubmitSegment(s, seg, 0)
+
+	// Test completeBalanceUpdate() adds back change when the update status is ReceivedChange
+
+	// Use a custom matcher func to compare mocked big.Rat values
+	ratMatcher := func(rat *big.Rat) interface{} {
+		return mock.MatchedBy(func(x *big.Rat) bool { return x.Cmp(rat) == 0 })
+	}
+
+	// Debit should be 0 when len(tdata.Segments) = 0
+	// Total credit should be update.NewCredit when update.ExistingCredit = 0
+	newCredit := big.NewRat(7, 1)
+	balance := &mockBalance{}
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, big.NewRat(0, 1)).Once()
+	balance.On("Credit", ratMatcher(newCredit)).Once()
+	sender := &pm.MockSender{}
+	sender.On("EV", mock.Anything).Return(nil, nil)
+	s.Balance = balance
+	s.Sender = sender
+
+	SubmitSegment(s, seg, 0)
+
+	balance.AssertCalled(t, "Credit", ratMatcher(newCredit))
+
+	// Total credit should be update.ExistingCredit when update.NewCredit = 0
+	existingCredit := big.NewRat(5, 1)
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, big.NewRat(0, 1), existingCredit).Once()
+	balance.On("Credit", ratMatcher(existingCredit)).Once()
+
+	SubmitSegment(s, seg, 0)
+
+	balance.AssertCalled(t, "Credit", ratMatcher(existingCredit))
+
+	// Total credit should be update.ExistingCredit + update.NewCredit when update.ExistingCredit > 0 && update.NewCredit > 0
+	totalCredit := big.NewRat(12, 1)
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit).Once()
+	balance.On("Credit", ratMatcher(totalCredit)).Once()
+
+	SubmitSegment(s, seg, 0)
+
+	balance.AssertCalled(t, "Credit", ratMatcher(totalCredit))
+
+	// Debit should be calculated based on the pixel count of a single result when len(tdata.Segments) = 1
+	tSegData[0].Pixels = 3
+	tr = dummyRes(tSegData)
+	buf, err = proto.Marshal(tr)
+	require.Nil(err)
+
+	s.OrchestratorInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}
+	change := big.NewRat(9, 1)
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit).Once()
+	balance.On("Credit", ratMatcher(change)).Once()
+
+	SubmitSegment(s, seg, 0)
+
+	balance.AssertCalled(t, "Credit", ratMatcher(change))
+
+	// Debit should be calculated based on the sum of the pixel counts of results when len(tdata.Segments) > 1
+	tSegData = append(tSegData, &net.TranscodedSegmentData{Url: "duh", Pixels: 5})
+	tr = dummyRes(tSegData)
+	buf, err = proto.Marshal(tr)
+	require.Nil(err)
+
+	change = big.NewRat(4, 1)
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit).Once()
+	balance.On("Credit", ratMatcher(change)).Once()
+
+	SubmitSegment(s, seg, 0)
+
+	balance.AssertCalled(t, "Credit", ratMatcher(change))
+
+	// Change should be negative if debit > total credit
+	tSegData = append(tSegData, &net.TranscodedSegmentData{Url: "goo", Pixels: 100})
+	tr = dummyRes(tSegData)
+	buf, err = proto.Marshal(tr)
+	require.Nil(err)
+
+	change = big.NewRat(-96, 1)
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit).Once()
+	balance.On("Credit", ratMatcher(change))
+
+	SubmitSegment(s, seg, 0)
+
+	balance.AssertCalled(t, "Credit", ratMatcher(change))
 }
 
 func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
@@ -956,13 +1109,17 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 		Result: &net.TranscodeResult_Data{
 			Data: &net.TranscodeData{
 				Segments: []*net.TranscodedSegmentData{
-					&net.TranscodedSegmentData{Url: "foo"},
+					&net.TranscodedSegmentData{Url: "foo", Pixels: 10},
 				},
 				Sig: []byte("bar"),
 			},
 		},
 		Info: &net.OrchestratorInfo{
 			Transcoder: "http://google.com",
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  1,
+				PixelsPerUnit: 1,
+			},
 			TicketParams: &net.TicketParams{
 				Recipient:         params.Recipient.Bytes(),
 				FaceValue:         params.FaceValue.Bytes(),
@@ -1035,6 +1192,38 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal("foobar", s.PMSessionID)
 	sender.AssertCalled(t, "StartSession", params)
 
+	// Test balance update completion with last known price and NOT the price
+	// included in an updated OrchestratorInfo message
+
+	ratMatcher := func(rat *big.Rat) interface{} {
+		return mock.MatchedBy(func(x *big.Rat) bool { return x.Cmp(rat) == 0 })
+	}
+
+	existingCredit := big.NewRat(100, 1)
+	// change = existingCredit - (pixelCount * price) = 100 - (10 * 2) = 80
+	// Note that price = 2 which is the last known price and not the price = 1 included in the
+	// updated OrchestratorInfo message
+	change := big.NewRat(80, 1)
+	balance := &mockBalance{}
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, big.NewRat(0, 1), existingCredit)
+	balance.On("Credit", ratMatcher(change))
+	sender = &pm.MockSender{}
+	sender.On("EV", mock.Anything).Return(nil, nil)
+	sender.On("StartSession", params).Return("foobar")
+	s.Balance = balance
+	s.Sender = sender
+	s.OrchestratorInfo = &net.OrchestratorInfo{
+		Transcoder: ts.URL,
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  2,
+			PixelsPerUnit: 1,
+		},
+	}
+
+	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
+
+	balance.AssertCalled(t, "Credit", ratMatcher(change))
+
 	// Test does not crash if OrchestratorInfo.TicketParams is nil
 
 	sender = &pm.MockSender{}
@@ -1042,6 +1231,7 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 		Transcoder: ts.URL,
 	}
 	s.Sender = sender
+	s.Balance = nil
 
 	// Update stub server to return OrchestratorInfo without TicketParams
 	tr.Info = &net.OrchestratorInfo{
