@@ -39,10 +39,10 @@ type SenderMonitor interface {
 	MaxFloat(addr ethcommon.Address) (*big.Int, error)
 }
 
+// ErrorMonitor is an interface that describes methods used to monitor acceptable pm ticket errors as well as acceptable price errors
 type ErrorMonitor interface {
 	AcceptErr(sender ethcommon.Address) bool
 	ClearErrCount(sender ethcommon.Address)
-	ResetErrCounts()
 }
 
 type remoteSender struct {
@@ -75,16 +75,13 @@ type senderMonitor struct {
 	// each of currently active remote senders
 	redeemable chan *SignedTicket
 
-	// gasPriceUpdate receives notifications of gas price changes
-	gasPriceUpdate chan struct{}
-
 	quit chan struct{}
 
 	em ErrorMonitor
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, gasPriceUpdate chan struct{}, cleanupInterval time.Duration, ttl int, em ErrorMonitor) SenderMonitor {
+func NewSenderMonitor(claimant ethcommon.Address, broker Broker, cleanupInterval time.Duration, ttl int, em ErrorMonitor) SenderMonitor {
 	return &senderMonitor{
 		claimant:        claimant,
 		cleanupInterval: cleanupInterval,
@@ -92,7 +89,6 @@ func NewSenderMonitor(claimant ethcommon.Address, broker Broker, gasPriceUpdate 
 		broker:          broker,
 		senders:         make(map[ethcommon.Address]*remoteSender),
 		redeemable:      make(chan *SignedTicket),
-		gasPriceUpdate:  gasPriceUpdate,
 		quit:            make(chan struct{}),
 		em:              em,
 	}
@@ -101,7 +97,6 @@ func NewSenderMonitor(claimant ethcommon.Address, broker Broker, gasPriceUpdate 
 // Start initiates the helper goroutines for the monitor
 func (sm *senderMonitor) Start() {
 	go sm.startCleanupLoop()
-	go sm.startGasPriceUpdateLoop()
 }
 
 // Stop signals the monitor to exit gracefully
@@ -273,20 +268,6 @@ func (sm *senderMonitor) startCleanupLoop() {
 		select {
 		case <-ticker.C:
 			sm.cleanup()
-		case <-sm.quit:
-			return
-		}
-	}
-}
-
-// startGasPriceUpdateLoop initiates a loop that runs a worker
-// to reset the errCount for senders every time a gas price change
-// notification is received
-func (sm *senderMonitor) startGasPriceUpdateLoop() {
-	for {
-		select {
-		case <-sm.gasPriceUpdate:
-			sm.em.ResetErrCounts()
 		case <-sm.quit:
 			return
 		}
