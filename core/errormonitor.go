@@ -13,6 +13,7 @@ type errorMonitor struct {
 	gasPriceUpdate chan struct{}
 }
 
+// NewErrorMonitor returns a enw errorMonitor instance
 func NewErrorMonitor(maxErrCount int, gasPriceUpdate chan struct{}) *errorMonitor {
 	return &errorMonitor{
 		maxErrCount:    maxErrCount,
@@ -21,6 +22,9 @@ func NewErrorMonitor(maxErrCount int, gasPriceUpdate chan struct{}) *errorMonito
 	}
 }
 
+// AcceptErr checks if a sender has reached the max error count
+// returns false if no more errors can be accepted
+// returns true and increments the error count when smaller than the max error count
 func (em *errorMonitor) AcceptErr(sender ethcommon.Address) bool {
 	em.mu.Lock()
 	defer em.mu.Unlock()
@@ -32,12 +36,14 @@ func (em *errorMonitor) AcceptErr(sender ethcommon.Address) bool {
 	return true
 }
 
+// ClearErrCount zeroes the error count for a sender
 func (em *errorMonitor) ClearErrCount(sender ethcommon.Address) {
 	em.mu.Lock()
 	defer em.mu.Unlock()
 	em.errCount[sender] = 0
 }
 
+// ResetErrCounts clears error counts for all senders
 func (em *errorMonitor) ResetErrCounts() {
 	em.mu.Lock()
 	defer em.mu.Unlock()
@@ -55,10 +61,12 @@ func (em *errorMonitor) startGasPriceUpdateLoop() {
 	}
 }
 
+// Start creates a new worker to watch for gasPrice updates
 func (em *errorMonitor) Start() {
 	go em.startGasPriceUpdateLoop()
 }
 
+// Stop clears all errors and stops the gasPrice update watcher
 func (em *errorMonitor) Stop() {
 	close(em.gasPriceUpdate)
 }

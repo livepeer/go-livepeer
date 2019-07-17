@@ -55,7 +55,7 @@ var (
 	cleanupInterval = 1 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up)
 	smTTL = 3600 // 1 minute
-	// smMaxErrCount is the maximum number of acceptable errors tolerated by a PM recipient for a sender
+	// maxErrCount is the maximum number of acceptable errors tolerated by a payment recipient for a payment sender
 	maxErrCount = 3
 )
 
