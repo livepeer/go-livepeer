@@ -516,6 +516,11 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 		return "", nil
 	}
 
+	// Compare Orchestrator Price against BroadcastConfig.MaxPrice
+	if err := validatePrice(sess); err != nil {
+		return "", err
+	}
+
 	batch, err := sess.Sender.CreateTicketBatch(sess.PMSessionID, numTickets)
 	if err != nil {
 		return "", err
@@ -556,4 +561,16 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 	}
 
 	return base64.StdEncoding.EncodeToString(data), nil
+}
+
+func validatePrice(sess *BroadcastSession) error {
+	if sess.OrchestratorInfo.PriceInfo.GetPixelsPerUnit() == 0 {
+		return fmt.Errorf("Invalid orchestrator price")
+	}
+	oPrice := big.NewRat(sess.OrchestratorInfo.PriceInfo.GetPricePerUnit(), sess.OrchestratorInfo.PriceInfo.GetPixelsPerUnit())
+	maxPrice := BroadcastCfg.MaxPrice()
+	if maxPrice != nil && oPrice.Cmp(maxPrice) == 1 {
+		return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
+	}
+	return nil
 }

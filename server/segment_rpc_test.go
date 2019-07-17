@@ -770,7 +770,7 @@ func TestSubmitSegment_NewBalanceUpdateError(t *testing.T) {
 	assert.EqualError(t, err, expErr.Error())
 }
 
-func TestSubmitSegment_GenPaymentError(t *testing.T) {
+func TestSubmitSegment_GenPaymentError_CreateTicketBatchError(t *testing.T) {
 	b := stubBroadcaster2()
 	existingCredit := big.NewRat(5, 1)
 	balance := &mockBalance{}
@@ -781,17 +781,57 @@ func TestSubmitSegment_GenPaymentError(t *testing.T) {
 	expErr := errors.New("CreateTicketBatch error")
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, expErr)
 
+	oInfo := &net.OrchestratorInfo{
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  0,
+			PixelsPerUnit: 1,
+		},
+	}
+
 	s := &BroadcastSession{
-		Broadcaster: b,
-		ManifestID:  core.RandomManifestID(),
-		Sender:      sender,
-		Balance:     balance,
+		Broadcaster:      b,
+		ManifestID:       core.RandomManifestID(),
+		Sender:           sender,
+		Balance:          balance,
+		OrchestratorInfo: oInfo,
 	}
 
 	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
 
 	assert.EqualError(t, err, expErr.Error())
 	// Check that completeBalanceUpdate() adds back the existing credit when the update status is Staged
+	balance.AssertCalled(t, "Credit", existingCredit)
+}
+
+func TestSubmitSegment_GenPaymentError_ValidatePriceError(t *testing.T) {
+	b := stubBroadcaster2()
+	balance := &mockBalance{}
+	existingCredit := big.NewRat(5, 1)
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(1, nil, existingCredit)
+	sender := &pm.MockSender{}
+	sender.On("EV", mock.Anything).Return(big.NewRat(1, 1), nil)
+	balance.On("Credit", mock.Anything)
+
+	oinfo := &net.OrchestratorInfo{
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 3,
+		},
+	}
+
+	s := &BroadcastSession{
+		Broadcaster:      b,
+		ManifestID:       core.RandomManifestID(),
+		Sender:           sender,
+		Balance:          balance,
+		OrchestratorInfo: oinfo,
+	}
+
+	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
+
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+
+	assert.EqualErrorf(t, err, err.Error(), "Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5))
 	balance.AssertCalled(t, "Credit", existingCredit)
 }
 

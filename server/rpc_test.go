@@ -338,6 +338,14 @@ func TestGenPayment(t *testing.T) {
 	sender := &pm.MockSender{}
 	s.Sender = sender
 
+	// Test invalid price
+	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
+	payment, err = genPayment(s, 1)
+	assert.Equal("", payment)
+	assert.Errorf(err, err.Error(), "Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5))
+
+	BroadcastCfg.SetMaxPrice(nil)
+
 	// Test CreateTicketBatch error
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, errors.New("CreateTicketBatch error")).Once()
 
@@ -437,6 +445,55 @@ func TestPing(t *testing.T) {
 	if !verified {
 		t.Error("Unable to verify response from ping request")
 	}
+}
+
+func TestValidatePrice(t *testing.T) {
+	assert := assert.New(t)
+	mid := core.RandomManifestID()
+	b := stubBroadcaster2()
+	oinfo := &net.OrchestratorInfo{
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 3,
+		},
+	}
+
+	s := &BroadcastSession{
+		Broadcaster:      b,
+		ManifestID:       mid,
+		OrchestratorInfo: oinfo,
+		PMSessionID:      "foo",
+	}
+
+	// B's MaxPrice is nil
+	err := validatePrice(s)
+	assert.Nil(err)
+
+	// B MaxPrice > O Price
+	BroadcastCfg.SetMaxPrice(big.NewRat(5, 1))
+	err = validatePrice(s)
+	assert.Nil(err)
+
+	// B MaxPrice == O Price
+	BroadcastCfg.SetMaxPrice(big.NewRat(1, 3))
+	err = validatePrice(s)
+	assert.Nil(err)
+
+	// B MaxPrice < O Price
+	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
+	err = validatePrice(s)
+	assert.Errorf(err, err.Error(), "Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5))
+
+	// O.PriceInfo is nil
+	s.OrchestratorInfo.PriceInfo = nil
+	err = validatePrice(s)
+	assert.EqualError(err, err.Error(), "Invalid orchestrator price")
+
+	// O.PriceInfo.PixelsPerUnit is 0
+	s.OrchestratorInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 0}
+	err = validatePrice(s)
+	assert.EqualError(err, err.Error(), "Invalid orchestrator price")
+
 }
 
 func TestGetPayment_GivenInvalidBase64_ReturnsError(t *testing.T) {
