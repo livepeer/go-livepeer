@@ -112,7 +112,8 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 		if err == nil && (o.pred == nil || o.pred(info)) {
 			orchInfos = append(orchInfos, info)
 			numSuccessResp++
-		} else if monitor.Enabled {
+		}
+		if err != nil && monitor.Enabled {
 			monitor.LogDiscoveryError(err.Error())
 		}
 		if numSuccessResp >= numOrchestrators || numResp >= len(o.uris) {
