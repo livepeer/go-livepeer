@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
@@ -373,11 +373,11 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 func TestCreateRTMPStreamHandler(t *testing.T) {
 
 	// Monkey patch rng to avoid unpredictability even when seeding
-	oldRandFunc := core.RandomIdGenerator
-	core.RandomIdGenerator = func(length uint) []byte {
-		return []byte("abcdef")
+	oldRandFunc := common.RandomIDGenerator
+	common.RandomIDGenerator = func(length uint) string {
+		return "abcdef"
 	}
-	defer func() { core.RandomIdGenerator = oldRandFunc }()
+	defer func() { common.RandomIDGenerator = oldRandFunc }()
 
 	s := setupServer()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
@@ -389,21 +389,21 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
 	u, _ := url.Parse("rtmp://localhost/" + expectedSid.String()) // with key
 	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
-		t.Error("Unexpected streamid")
+		t.Error("Unexpected streamid", sid.StreamID())
 	}
 	u, _ = url.Parse("rtmp://localhost/stream/" + expectedSid.String()) // with stream
 	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
 		t.Error("Unexpected streamid")
 	}
 	expectedMid := "mnopq"
-	key := hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
+	key := common.RandomIDGenerator(StreamKeyBytes)
 	u, _ = url.Parse("rtmp://localhost/" + string(expectedMid)) // without key
 	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
-		t.Error("Unexpected streamid")
+		t.Error("Unexpected streamid", sid.StreamID())
 	}
 	u, _ = url.Parse("rtmp://localhost/stream/" + string(expectedMid)) // with stream, without key
 	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
-		t.Error("Unexpected streamid")
+		t.Error("Unexpected streamid", sid.StreamID())
 	}
 	// Test normal case
 	u, _ = url.Parse("rtmp://localhost")
@@ -424,7 +424,7 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 		t.Error("Could not clean up stream")
 	}
 	if sid := createSid(u); sid.StreamID() != st.GetStreamID() {
-		t.Error("Mismatched streamid during stream reuse")
+		t.Error("Mismatched streamid during stream reuse", sid.StreamID(), st.GetStreamID())
 	}
 
 	// Test a couple of odd cases; subset of parseManifestID checks
