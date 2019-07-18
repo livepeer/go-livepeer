@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"regexp"
 	"sort"
 	"strings"
@@ -21,6 +22,10 @@ var (
 	ErrParseBigInt = fmt.Errorf("failed to parse big integer")
 	ErrProfile     = fmt.Errorf("failed to parse profile")
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 func ParseBigInt(num string) (*big.Int, error) {
 	bigNum := new(big.Int)
@@ -171,4 +176,19 @@ func PriceToFixed(price *big.Rat) (int64, error) {
 	scaled := new(big.Rat).Mul(price, big.NewRat(scalingFactor, 1))
 	fp, _ := new(big.Float).SetRat(scaled).Int64()
 	return fp, nil
+}
+
+// RandomIDGenerator generates random hexadecimal string of specified length
+// defined as variable for unit tests
+var RandomIDGenerator = func(length uint) string {
+	x := make([]byte, length, length)
+	for i := 0; i < len(x); i++ {
+		x[i] = byte(rand.Uint32())
+	}
+	return hex.EncodeToString(x)
+}
+
+// RandName generates random hexadecimal string
+func RandName() string {
+	return RandomIDGenerator(10)
 }

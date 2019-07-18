@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
-	"math/rand"
 	"net/url"
 	"os"
 	"path"
@@ -356,7 +355,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	// we may still end up doing work multiple times. But this is OK for now.
 
 	//Assume d is in the right format, write it to disk
-	inName := randName()
+	inName := common.RandName() + ".ts"
 	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
 		err := os.Mkdir(n.WorkDir, 0700)
 		if err != nil {
@@ -698,13 +697,4 @@ func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.Vi
 	}
 	rtm.completeTranscoders(currentTranscoder)
 	return res, err
-}
-
-func randName() string {
-	rand.Seed(time.Now().UnixNano())
-	x := make([]byte, 10, 10)
-	for i := 0; i < len(x); i++ {
-		x[i] = byte(rand.Uint32())
-	}
-	return fmt.Sprintf("%x.ts", x)
 }

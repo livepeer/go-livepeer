@@ -8,6 +8,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
@@ -26,21 +27,19 @@ func TestSegmentFlatten(t *testing.T) {
 
 func TestRandomIdGenerator(t *testing.T) {
 	rand.Seed(123)
-	res := RandomIdGenerator(DefaultManifestIDLength)
-	if !bytes.Equal(res, []byte{0x17, 0xb3, 0x36, 0xb6}) {
+	res := common.RandomIDGenerator(DefaultManifestIDLength)
+	if res != "17b336b6" {
 		t.Error("Unexpected RNG result")
 	}
 }
 
 func TestStreamID(t *testing.T) {
-	RandomIdGenerator = func(length uint) []byte {
-		return []byte{0xFE, 0xED, 0xF0, 0x0D}
-	}
+	rand.Seed(123)
 	mid := RandomManifestID()
 	profile := ffmpeg.P144p30fps16x9
 
 	// Test random manifest ID generation
-	if string(mid) != "feedf00d" {
+	if string(mid) != "17b336b6" {
 		t.Error("Unexpected ManifestID ", mid)
 	}
 

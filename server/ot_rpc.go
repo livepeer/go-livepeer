@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -142,7 +141,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		body.Write([]byte(err.Error()))
 		contentType = transcodingErrorMimeType
 	} else {
-		boundary := randName()
+		boundary := common.RandName()
 		w := multipart.NewWriter(&body)
 		for _, v := range tData {
 			w.SetBoundary(boundary)
@@ -269,15 +268,4 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write([]byte("OK"))
-}
-
-// utils
-
-func randName() string {
-	rand.Seed(time.Now().UnixNano())
-	x := make([]byte, 10, 10)
-	for i := 0; i < len(x); i++ {
-		x[i] = byte(rand.Uint32())
-	}
-	return hex.EncodeToString(x)
 }

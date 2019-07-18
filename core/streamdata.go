@@ -1,11 +1,9 @@
 package core
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
-	"math/rand"
 	"strings"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -40,14 +38,6 @@ func (md *SegTranscodingMetadata) Flatten() []byte {
 	i += copy(buf[i:], []byte(profiles))
 	// i += copy(buf[i:], []byte(s.OS))
 	return buf
-}
-
-var RandomIdGenerator = func(length uint) []byte {
-	x := make([]byte, length, length)
-	for i := 0; i < len(x); i++ {
-		x[i] = byte(rand.Uint32())
-	}
-	return x
 }
 
 type ManifestID string
@@ -89,5 +79,5 @@ func (id StreamID) String() string {
 }
 
 func RandomManifestID() ManifestID {
-	return ManifestID(hex.EncodeToString(RandomIdGenerator(DefaultManifestIDLength)))
+	return ManifestID(common.RandomIDGenerator(DefaultManifestIDLength))
 }

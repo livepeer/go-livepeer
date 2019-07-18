@@ -6,7 +6,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -199,7 +198,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 		// Generate RTMP part of StreamID
 		if key == "" {
-			key = hex.EncodeToString(core.RandomIdGenerator(StreamKeyBytes))
+			key = common.RandomIDGenerator(StreamKeyBytes)
 		}
 		return &streamParameters{
 			mid:      mid,

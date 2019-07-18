@@ -27,7 +27,7 @@ type LocalTranscoder struct {
 }
 
 func (lt *LocalTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
-	dirName := randName()
+	dirName := common.RandName()
 	fullDirName := filepath.Join(lt.workDir, dirName)
 	err := os.MkdirAll(fullDirName, 0755)
 	if err != nil {
@@ -78,7 +78,7 @@ func (nv *NvidiaTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	opts := make([]ffmpeg.TranscodeOptions, len(profiles), len(profiles))
 	for i := range profiles {
 		o := ffmpeg.TranscodeOptions{
-			Oname:   fmt.Sprintf("%s/out_%s", nv.workDir, randName()),
+			Oname:   fmt.Sprintf("%s/out_%s.ts", nv.workDir, common.RandName()),
 			Profile: profiles[i],
 			Accel:   ffmpeg.Nvidia,
 		}
