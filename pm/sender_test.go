@@ -108,6 +108,7 @@ func TestCreateTicketBatch_GetSenderInfoError_ReturnsError(t *testing.T) {
 }
 
 func TestCreateTicketBatch_EVTooHigh_ReturnsError(t *testing.T) {
+	// Test single ticket EV too high
 	sender := defaultSender(t)
 	sender.maxEV = big.NewRat(100, 1)
 
@@ -121,9 +122,20 @@ func TestCreateTicketBatch_EVTooHigh_ReturnsError(t *testing.T) {
 	sessionID := sender.StartSession(ticketParams)
 	_, err := sender.CreateTicketBatch(sessionID, 1)
 	assert.EqualError(t, err, "ticket EV higher than max EV")
+
+	// Test multiple tickets EV too high
+	sender.maxEV = big.NewRat(102, 1)
+
+	_, err = sender.CreateTicketBatch(sessionID, 2)
+	assert.EqualError(t, err, "ticket EV higher than max EV")
+
+	// Check that EV is acceptable for a single ticket
+	_, err = sender.CreateTicketBatch(sessionID, 1)
+	assert.Nil(t, err)
 }
 
 func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
+	// Test single ticket faceValue too high
 	sender := defaultSender(t)
 	sm := sender.senderManager.(*stubSenderManager)
 	sm.info = &SenderInfo{
@@ -140,6 +152,17 @@ func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
 	sessionID := sender.StartSession(ticketParams)
 	_, err := sender.CreateTicketBatch(sessionID, 1)
 	assert.EqualError(t, err, "ticket faceValue higher than max faceValue")
+
+	// Test multiple tickets faceValue too high
+	sender.depositMultiplier = 2
+	sm.info.Deposit = big.NewInt(2224)
+
+	_, err = sender.CreateTicketBatch(sessionID, 2)
+	assert.EqualError(t, err, "ticket faceValue higher than max faceValue")
+
+	// Check that faceValue is acceptable for a single ticket
+	_, err = sender.CreateTicketBatch(sessionID, 1)
+	assert.Nil(t, err)
 }
 
 func TestCreateTicketBatch_LastInitializedRoundError_ReturnsError(t *testing.T) {

@@ -81,7 +81,7 @@ func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, er
 		return nil, err
 	}
 
-	if err := s.ValidateTicketParams(&session.ticketParams); err != nil {
+	if err := s.validateTicketParams(&session.ticketParams, size); err != nil {
 		return nil, err
 	}
 
@@ -112,8 +112,15 @@ func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, er
 
 // ValidateTicketParams checks if ticket params are acceptable
 func (s *sender) ValidateTicketParams(ticketParams *TicketParams) error {
+	// Check for sending a single ticket
+	return s.validateTicketParams(ticketParams, 1)
+}
+
+// validateTicketParams checks if ticket params are acceptable for a specific number of tickets
+func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int) error {
 	ev := ticketEV(ticketParams.FaceValue, ticketParams.WinProb)
-	if ev.Cmp(s.maxEV) > 0 {
+	totalEV := ev.Mul(ev, new(big.Rat).SetInt64(int64(numTickets)))
+	if totalEV.Cmp(s.maxEV) > 0 {
 		return errors.Errorf("ticket EV higher than max EV")
 	}
 
@@ -122,8 +129,9 @@ func (s *sender) ValidateTicketParams(ticketParams *TicketParams) error {
 		return err
 	}
 
+	totalFaceValue := new(big.Int).Mul(ticketParams.FaceValue, big.NewInt(int64(numTickets)))
 	maxFaceValue := new(big.Int).Div(info.Deposit, big.NewInt(int64(s.depositMultiplier)))
-	if ticketParams.FaceValue.Cmp(maxFaceValue) > 0 {
+	if totalFaceValue.Cmp(maxFaceValue) > 0 {
 		return errors.Errorf("ticket faceValue higher than max faceValue")
 	}
 
