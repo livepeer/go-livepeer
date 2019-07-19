@@ -112,6 +112,9 @@ func (gpm *GasPriceMonitor) Stop() error {
 	gpm.cancel = nil
 	gpm.polling = false
 
+	// Close the update channel when gpm is stopped
+	close(gpm.update)
+
 	return nil
 }
 

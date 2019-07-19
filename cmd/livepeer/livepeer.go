@@ -375,8 +375,7 @@ func main() {
 
 			em := core.NewErrorMonitor(maxErrCount, gasPriceUpdate)
 			n.ErrorMonitor = em
-			em.Start()
-			defer em.Stop()
+			em.StartGasPriceUpdateLoop()
 
 			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, cleanupInterval, smTTL, n.ErrorMonitor)
 			// Start sender monitor

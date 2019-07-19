@@ -7,13 +7,13 @@ import (
 )
 
 type errorMonitor struct {
-	mu             sync.RWMutex
+	mu             sync.Mutex
 	maxErrCount    int
 	errCount       map[ethcommon.Address]int
 	gasPriceUpdate chan struct{}
 }
 
-// NewErrorMonitor returns a enw errorMonitor instance
+// NewErrorMonitor returns a new errorMonitor instance
 func NewErrorMonitor(maxErrCount int, gasPriceUpdate chan struct{}) *errorMonitor {
 	return &errorMonitor{
 		maxErrCount:    maxErrCount,
@@ -44,29 +44,18 @@ func (em *errorMonitor) ClearErrCount(sender ethcommon.Address) {
 }
 
 // ResetErrCounts clears error counts for all senders
-func (em *errorMonitor) ResetErrCounts() {
+func (em *errorMonitor) resetErrCounts() {
 	em.mu.Lock()
 	defer em.mu.Unlock()
 	// Init a fresh map
 	em.errCount = make(map[ethcommon.Address]int)
 }
 
-// startGasPriceUpdateLoop initiates a loop that runs a worker
+// StartGasPriceUpdateLoop initiates a loop that runs a worker
 // to reset the errCount for senders every time a gas price change
 // notification is received
-func (em *errorMonitor) startGasPriceUpdateLoop() {
-	defer em.ResetErrCounts()
+func (em *errorMonitor) StartGasPriceUpdateLoop() {
 	for range em.gasPriceUpdate {
-		em.ResetErrCounts()
+		em.resetErrCounts()
 	}
-}
-
-// Start creates a new worker to watch for gasPrice updates
-func (em *errorMonitor) Start() {
-	go em.startGasPriceUpdateLoop()
-}
-
-// Stop clears all errors and stops the gasPrice update watcher
-func (em *errorMonitor) Stop() {
-	close(em.gasPriceUpdate)
 }
