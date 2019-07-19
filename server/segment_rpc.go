@@ -24,6 +24,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	lpErrors "github.com/livepeer/go-livepeer/errors"
 	"github.com/pkg/errors"
 )
 
@@ -72,6 +73,10 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+	}
+	acceptableErr, ok := err.(lpErrors.AcceptableError)
+	if err != nil || !ok || !acceptableErr.Acceptable() {
+		return
 	}
 
 	if !orch.SufficientBalance(segData.ManifestID) {

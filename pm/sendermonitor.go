@@ -6,6 +6,7 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	lpErrors "github.com/livepeer/go-livepeer/errors"
 	"github.com/pkg/errors"
 )
 
@@ -37,12 +38,6 @@ type SenderMonitor interface {
 
 	// MaxFloat returns a remote sender's max float
 	MaxFloat(addr ethcommon.Address) (*big.Int, error)
-}
-
-// ErrorMonitor is an interface that describes methods used to monitor acceptable pm ticket errors as well as acceptable price errors
-type ErrorMonitor interface {
-	AcceptErr(sender ethcommon.Address) bool
-	ClearErrCount(sender ethcommon.Address)
 }
 
 type remoteSender struct {
@@ -77,11 +72,11 @@ type senderMonitor struct {
 
 	quit chan struct{}
 
-	em ErrorMonitor
+	em lpErrors.ErrorMonitor
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, cleanupInterval time.Duration, ttl int, em ErrorMonitor) SenderMonitor {
+func NewSenderMonitor(claimant ethcommon.Address, broker Broker, cleanupInterval time.Duration, ttl int, em lpErrors.ErrorMonitor) SenderMonitor {
 	return &senderMonitor{
 		claimant:        claimant,
 		cleanupInterval: cleanupInterval,

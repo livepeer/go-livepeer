@@ -22,6 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/livepeer/go-livepeer/common"
+	lpErrors "github.com/livepeer/go-livepeer/errors"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/ipfs"
 	"github.com/livepeer/go-livepeer/net"
@@ -67,7 +68,7 @@ type LivepeerNode struct {
 	TranscoderManager *RemoteTranscoderManager
 	PriceInfo         *big.Rat
 	Balances          *Balances
-	ErrorMonitor      *errorMonitor
+	ErrorMonitor      lpErrors.ErrorMonitor
 
 	// Broadcaster public fields
 	Sender pm.Sender

@@ -10,6 +10,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	lpErrors "github.com/livepeer/go-livepeer/errors"
 	"github.com/pkg/errors"
 )
 
@@ -75,7 +76,7 @@ type recipient struct {
 	store  TicketStore
 	gpm    GasPriceMonitor
 	sm     SenderMonitor
-	em     ErrorMonitor
+	em     lpErrors.ErrorMonitor
 
 	addr   ethcommon.Address
 	secret [32]byte
@@ -92,7 +93,7 @@ type recipient struct {
 
 // NewRecipient creates an instance of a recipient with an
 // automatically generated random secret
-func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, em ErrorMonitor, cfg TicketParamsConfig) (Recipient, error) {
+func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, em lpErrors.ErrorMonitor, cfg TicketParamsConfig) (Recipient, error) {
 	randBytes := make([]byte, 32)
 	if _, err := rand.Read(randBytes); err != nil {
 		return nil, err
@@ -107,7 +108,7 @@ func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store Ti
 // NewRecipientWithSecret creates an instance of a recipient with a user provided
 // secret. In most cases, NewRecipient should be used instead which will
 // automatically generate a random secret
-func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, em ErrorMonitor, secret [32]byte, cfg TicketParamsConfig) Recipient {
+func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, em lpErrors.ErrorMonitor, secret [32]byte, cfg TicketParamsConfig) Recipient {
 	return &recipient{
 		broker:       broker,
 		val:          val,
@@ -279,7 +280,7 @@ func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.
 		// When a winning ticket is redeemed, the ticket's recipientRand is invalidated
 		// and the sender must send tickets with a new seed, but there could be a delay
 		// before the sender is notified of the new seed.
-		return newReceiveError(
+		return lpErrors.NewAcceptableError(
 			errors.Errorf("invalid already revealed recipientRand %v", recipientRand),
 			r.em.AcceptErr(ticket.Sender),
 		)
@@ -299,7 +300,7 @@ func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.
 		// When the gas price changes or the sender's max float changes, the required faceValue
 		// also changes and the sender must send tickets with the new faceValue, but there could
 		// be a delay before the sender is notified of the new faceValue.
-		return newReceiveError(
+		return lpErrors.NewAcceptableError(
 			errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue),
 			r.em.AcceptErr(ticket.Sender),
 		)
@@ -310,7 +311,7 @@ func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.
 		// When the gas price changes or the sender's max float changes, the required winProb
 		// also changes and the sender must send tickets with the new winProb, but there could
 		// be a delay before the sender is notified of the new winProb.
-		return newReceiveError(
+		return lpErrors.NewAcceptableError(
 			errors.Errorf("invalid ticket winProb %v", ticket.WinProb),
 			r.em.AcceptErr(ticket.Sender),
 		)
