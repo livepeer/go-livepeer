@@ -236,7 +236,7 @@ func (orch *orchestrator) DebitFees(manifestID ManifestID, price *net.PriceInfo,
 
 // Acceptable price checks whether the payment sender's expected price sent with a payment is acceptable
 func (orch *orchestrator) acceptablePrice(sender ethcommon.Address, ep *net.PriceInfo) (bool, error) {
-	if ep == nil || ep.GetPixelsPerUnit() < 0 {
+	if ep == nil || ep.GetPixelsPerUnit() <= 0 {
 		return false, fmt.Errorf("Expected price is not valid")
 	}
 	epRat := big.NewRat(ep.GetPricePerUnit(), ep.GetPixelsPerUnit())

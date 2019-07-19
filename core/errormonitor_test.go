@@ -57,7 +57,7 @@ func TestResetErrCounts(t *testing.T) {
 
 func TestGasPriceUpdateLoop(t *testing.T) {
 	em := NewErrorMonitor(3, make(chan struct{}))
-	em.StartGasPriceUpdateLoop()
+	go em.StartGasPriceUpdateLoop()
 	assert := assert.New(t)
 
 	// add some counts for senders
@@ -82,4 +82,5 @@ func TestGasPriceUpdateLoop(t *testing.T) {
 	count, ok = em.errCount[senderB]
 	assert.False(ok)
 	assert.Equal(count, 0)
+	close(em.gasPriceUpdate)
 }
