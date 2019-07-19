@@ -944,6 +944,21 @@ func TestAcceptablePrice(t *testing.T) {
 	ok, err = orch.acceptablePrice(sender, expectedPrice)
 	assert.Nil(err)
 	assert.True(ok)
+
+	// expected price is nil
+	expectedPrice = nil
+	ok, err = orch.acceptablePrice(sender, expectedPrice)
+	assert.Error(err)
+	assert.False(ok)
+
+	// expectedPrice.PixelsPerUnit is 0
+	expectedPrice = &net.PriceInfo{
+		PricePerUnit:  3,
+		PixelsPerUnit: 0,
+	}
+	ok, err = orch.acceptablePrice(sender, expectedPrice)
+	assert.Error(err)
+	assert.False(ok)
 }
 
 func TestAcceptablePrice_PriceInfoError_ReturnsErr(t *testing.T) {
