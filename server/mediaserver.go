@@ -535,7 +535,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 	// Check for presence and register if a fresh cxn
 	if !exists {
-		appData := (createRTMPStreamIDHandler(s))(r.URL)
+		appData := (createRTMPStreamIDHandler(s))(r.URL.RequestURI())
 		if appData == nil {
 			return
 		}
