@@ -492,7 +492,7 @@ func TestProcessPayment_GivenRecipientError_ReturnsNil(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 
@@ -518,6 +518,27 @@ func TestProcessPayment_GivenNoSender_ReturnsError(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Error(err)
+	_, ok := err.(AcceptableError)
+	assert.False(ok)
+}
+
+func TestProcessPayment_GivenNoTicketParams_ReturnsError(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	orch := NewOrchestrator(n)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
+
+	protoPayment := defaultPayment(t)
+
+	protoPayment.TicketParams = nil
+
+	err := orch.ProcessPayment(protoPayment, ManifestID("some manifest"))
+
+	assert := assert.New(t)
+	assert.Error(err)
+	_, ok := err.(AcceptableError)
+	assert.False(ok)
 }
 
 func TestProcessPayment_GivenNilNode_ReturnsNilError(t *testing.T) {
@@ -544,7 +565,7 @@ func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
@@ -563,7 +584,7 @@ func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 
 	manifestID := ManifestID("some manifest")
@@ -591,7 +612,7 @@ func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
@@ -618,7 +639,7 @@ func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
@@ -651,7 +672,7 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestIDs := make([]string, 5)
 
@@ -697,7 +718,7 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 
@@ -723,6 +744,9 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 	time.Sleep(time.Millisecond * 20)
 	assert := assert.New(t)
 	assert.EqualError(err, "error receiving tickets with payment")
+	acceptableErr, ok := err.(AcceptableError)
+	assert.True(ok)
+	assert.False(acceptableErr.Acceptable())
 	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 2)
 }
 
@@ -733,7 +757,7 @@ func TestProcessPayment_AcceptablePaymentError_IncreasesCreditBalance(t *testing
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 
 	manifestID := ManifestID("some manifest")
@@ -756,6 +780,9 @@ func TestProcessPayment_AcceptablePaymentError_IncreasesCreditBalance(t *testing
 
 	err := orch.ProcessPayment(payment, manifestID)
 	assert.Error(err)
+	acceptableErr, ok := err.(AcceptableError)
+	assert.True(ok)
+	assert.True(acceptableErr.Acceptable())
 	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(ticket.EV()))
 }
 
@@ -766,7 +793,7 @@ func TestProcessPayment_UnacceptablePaymentError_DoesNotIncreaseCreditBalance(t 
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	unacceptableError := pm.NewMockReceiveError(errors.New("Unacceptable ReceiveTicket error"), false)
@@ -777,6 +804,9 @@ func TestProcessPayment_UnacceptablePaymentError_DoesNotIncreaseCreditBalance(t 
 
 	err := orch.ProcessPayment(defaultPayment(t), manifestID)
 	assert.Error(err)
+	acceptableErr, ok := err.(AcceptableError)
+	assert.True(ok)
+	assert.False(acceptableErr.Acceptable())
 	assert.Nil(orch.node.Balances.Balance(manifestID))
 }
 
@@ -786,7 +816,7 @@ func TestProcesspayment_NoPriceError_IncreasesCredit(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(5, 1)
+	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	sender := pm.RandAddress()
@@ -825,8 +855,8 @@ func TestProcessPayment_AcceptablePriceError_IncreasesCredit_ReturnsError(t *tes
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(5, 1)
-	orch.node.ErrorMonitor = NewErrorMonitor(1, make(chan struct{}))
+	orch.node.SetBasePrice(big.NewRat(5, 1))
+	orch.node.ErrorMonitor = NewErrorMonitor(10, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	sender := pm.RandAddress()
 
@@ -855,6 +885,9 @@ func TestProcessPayment_AcceptablePriceError_IncreasesCredit_ReturnsError(t *tes
 
 	err := orch.ProcessPayment(payment, manifestID)
 	assert.Error(err)
+	acceptableErr, ok := err.(AcceptableError)
+	assert.True(ok)
+	assert.True(acceptableErr.Acceptable())
 	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(ticket.EV()))
 	assert.Equal(1, orch.node.ErrorMonitor.errCount[sender])
 }
@@ -865,7 +898,7 @@ func TestProcessPayment_UnacceptablePriceError_ReturnsError_DoesNotIncreaseCredi
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(5, 1)
+	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	sender := pm.RandAddress()
@@ -895,6 +928,9 @@ func TestProcessPayment_UnacceptablePriceError_ReturnsError_DoesNotIncreaseCredi
 
 	err := orch.ProcessPayment(payment, manifestID)
 	assert.Error(err)
+	acceptableErr, ok := err.(AcceptableError)
+	assert.True(ok)
+	assert.False(acceptableErr.Acceptable())
 	assert.Nil(orch.node.Balances.Balance(manifestID))
 }
 
@@ -903,7 +939,7 @@ func TestAcceptablePrice(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(5, 1)
+	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	assert := assert.New(t)
 
@@ -921,50 +957,59 @@ func TestAcceptablePrice(t *testing.T) {
 	assert.Equal(p.PricePerUnit, int64(10))
 	assert.Nil(err)
 
-	// No grace period and price too low: returns false, error
-	ok, err := orch.acceptablePrice(sender, expectedPrice)
-	assert.Error(err)
-	assert.False(ok)
-
-	// Within Grace period and price too low: returns true, error
-	orch.node.ErrorMonitor = NewErrorMonitor(1, make(chan struct{}))
-	ok, err = orch.acceptablePrice(sender, expectedPrice)
-	assert.Error(err)
+	// No grace period and price too low, returns unacceptable error
+	err = orch.acceptablePrice(sender, expectedPrice)
+	acceptableErr, ok := err.(AcceptableError)
 	assert.True(ok)
+	assert.Error(err)
+	assert.False(acceptableErr.Acceptable())
+
+	// Within Grace period and price too low, returns acceptable error
+	orch.node.ErrorMonitor.maxErrCount = 1
+	orch.node.ErrorMonitor = NewErrorMonitor(1, make(chan struct{}))
+	err = orch.acceptablePrice(sender, expectedPrice)
+	assert.Error(err)
+	acceptableErr, ok = err.(AcceptableError)
+	assert.True(ok)
+	assert.True(acceptableErr.Acceptable())
 	assert.Equal(1, orch.node.ErrorMonitor.errCount[sender])
 
-	// Expected price equals PriceInfo for sender: returns true, nil
+	// Expected price equals PriceInfo for sender: returns nil
 	expectedPrice.PricePerUnit = 10
-	ok, err = orch.acceptablePrice(sender, expectedPrice)
+	err = orch.acceptablePrice(sender, expectedPrice)
 	assert.Nil(err)
-	assert.True(ok)
 
-	// Expected price greater than PriceInfo: returns true, nil
+	// Expected price greater than PriceInfo: returns nil
 	expectedPrice.PricePerUnit = 20
-	ok, err = orch.acceptablePrice(sender, expectedPrice)
+	err = orch.acceptablePrice(sender, expectedPrice)
 	assert.Nil(err)
-	assert.True(ok)
 
-	// expected price is nil
+	// expected price is nil, returns normal error
 	expectedPrice = nil
-	ok, err = orch.acceptablePrice(sender, expectedPrice)
+	err = orch.acceptablePrice(sender, expectedPrice)
 	assert.Error(err)
+	acceptableErr, ok = err.(AcceptableError)
 	assert.False(ok)
+	assert.EqualError(err, err.Error(), "Expected price is not valid")
 
-	// expectedPrice.PixelsPerUnit is 0
+	// expectedPrice.PixelsPerUnit is 0, returns normal error
 	expectedPrice = &net.PriceInfo{
 		PricePerUnit:  3,
 		PixelsPerUnit: 0,
 	}
-	ok, err = orch.acceptablePrice(sender, expectedPrice)
+	err = orch.acceptablePrice(sender, expectedPrice)
 	assert.Error(err)
+	acceptableErr, ok = err.(AcceptableError)
 	assert.False(ok)
+	assert.EqualError(err, err.Error(), "Expected price is not valid")
 
-	// expectedPrice.PixelsPerUnit is negative
+	// expectedPrice.PixelsPerUnit is negative, returns normal error
 	expectedPrice.PixelsPerUnit = -5
-	ok, err = orch.acceptablePrice(sender, expectedPrice)
+	err = orch.acceptablePrice(sender, expectedPrice)
 	assert.Error(err)
+	acceptableErr, ok = err.(AcceptableError)
 	assert.False(ok)
+	assert.EqualError(err, err.Error(), "Expected price is not valid")
 }
 
 func TestAcceptablePrice_PriceInfoError_ReturnsErr(t *testing.T) {
@@ -972,17 +1017,18 @@ func TestAcceptablePrice_PriceInfoError_ReturnsErr(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(5, 1)
+	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	assert := assert.New(t)
 
 	sender := pm.RandAddress()
 
-	// This will multiply O's baseprice by 2
-	recipient.On("TxCostMultiplier", sender).Return(nil, errors.New("TxCostMultiplier Error"))
-
-	ok, err := orch.acceptablePrice(sender, &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1})
+	// Error calling orch.PriceInfo returns normal error
+	recipient.On("TxCostMultiplier", sender).Return(nil, errors.New("txcost error"))
+	err := orch.acceptablePrice(sender, &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1})
 	assert.Error(err)
+	assert.EqualError(err, err.Error(), "txcost error")
+	_, ok := err.(AcceptableError)
 	assert.False(ok)
 }
 
@@ -992,7 +1038,7 @@ func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 
@@ -1018,7 +1064,7 @@ func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
-	orch.node.PriceInfo = big.NewRat(0, 1)
+	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 

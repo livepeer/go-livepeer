@@ -444,6 +444,13 @@ type MockReceiveError struct {
 	acceptable bool
 }
 
+type acceptableError interface {
+	error
+
+	// Acceptable returns whether the error is acceptable
+	Acceptable() bool
+}
+
 // Error returns the underlying error as a string
 func (re *MockReceiveError) Error() string {
 	return re.err.Error()

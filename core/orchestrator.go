@@ -108,13 +108,21 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	}
 
 	var (
-		acceptablePriceErr error
-		okPrice            bool
-		didReceiveErr      bool
+		didPriceErr            bool
+		acceptablePrice        bool
+		unacceptableReceiveErr bool
+		didReceiveErr          bool
 	)
 
-	if okPrice, acceptablePriceErr = orch.acceptablePrice(ethcommon.BytesToAddress(payment.Sender), payment.GetExpectedPrice()); !okPrice {
-		return acceptablePriceErr
+	err := orch.acceptablePrice(ethcommon.BytesToAddress(payment.Sender), payment.GetExpectedPrice())
+	if err != nil {
+		glog.Error(err)
+		didPriceErr = true
+	}
+
+	acceptablePriceErr, ok := err.(AcceptableError)
+	if err == nil || (ok && acceptablePriceErr.Acceptable()) {
+		acceptablePrice = true
 	}
 
 	seed := new(big.Int).SetBytes(payment.TicketParams.Seed)
@@ -146,10 +154,12 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			didReceiveErr = true
 		}
 
-		pmErr, ok := err.(pm.Error)
-		if err == nil || (ok && pmErr.Acceptable()) {
+		pmErr, ok := err.(AcceptableError)
+		if acceptablePrice && err == nil || (ok && pmErr.Acceptable()) {
 			// Add ticket EV to credit
 			orch.node.Balances.Credit(manifestID, ticket.EV())
+		} else {
+			unacceptableReceiveErr = true
 		}
 
 		if won {
@@ -163,12 +173,18 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		}
 	}
 
-	if acceptablePriceErr != nil {
-		return acceptablePriceErr
+	if didPriceErr {
+		return newAcceptableError(
+			fmt.Errorf("expected price did not match orchestrator price"),
+			acceptablePrice,
+		)
 	}
 
 	if didReceiveErr {
-		return fmt.Errorf("error receiving tickets with payment")
+		return newAcceptableError(
+			fmt.Errorf("error receiving tickets with payment"),
+			!unacceptableReceiveErr,
+		)
 	}
 
 	return nil
@@ -234,23 +250,26 @@ func (orch *orchestrator) DebitFees(manifestID ManifestID, price *net.PriceInfo,
 }
 
 // Acceptable price checks whether the payment sender's expected price sent with a payment is acceptable
-func (orch *orchestrator) acceptablePrice(sender ethcommon.Address, ep *net.PriceInfo) (bool, error) {
+func (orch *orchestrator) acceptablePrice(sender ethcommon.Address, ep *net.PriceInfo) error {
 	if ep == nil || ep.GetPixelsPerUnit() <= 0 {
-		return false, fmt.Errorf("Expected price is not valid")
+		return fmt.Errorf("Expected price is not valid")
 	}
 	epRat := big.NewRat(ep.GetPricePerUnit(), ep.GetPixelsPerUnit())
 
 	oPrice, err := orch.PriceInfo(sender)
 	if err != nil {
-		return false, err
+		return err
 	}
 	oPriceRat := big.NewRat(oPrice.GetPricePerUnit(), oPrice.GetPixelsPerUnit())
 
 	// expected price is too small, check if sender is still within grace period
 	if epRat.Cmp(oPriceRat) < 0 {
-		return orch.node.ErrorMonitor.AcceptErr(sender), fmt.Errorf("Expected price of %v wei per %v pixels is too small, expecting at least %v wei per %v pixels", ep.GetPricePerUnit(), ep.GetPixelsPerUnit(), oPrice.GetPricePerUnit(), oPrice.GetPixelsPerUnit())
+		return newAcceptableError(
+			fmt.Errorf("Expected price of %v wei per %v pixels is too small, expecting at least %v wei per %v pixels", ep.GetPricePerUnit(), ep.GetPixelsPerUnit(), oPrice.GetPricePerUnit(), oPrice.GetPixelsPerUnit()),
+			orch.node.ErrorMonitor.AcceptErr(sender),
+		)
 	}
-	return true, nil
+	return nil
 }
 
 func NewOrchestrator(n *LivepeerNode) *orchestrator {

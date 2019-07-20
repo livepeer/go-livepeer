@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -83,4 +84,18 @@ func TestGasPriceUpdateLoop(t *testing.T) {
 	assert.False(ok)
 	assert.Equal(count, 0)
 	close(em.gasPriceUpdate)
+}
+
+func TestAcceptableError(t *testing.T) {
+	expectedErr := &acceptableError{
+		err:        errors.New("hello error"),
+		acceptable: true,
+	}
+	assert := assert.New(t)
+	// test constructor
+	acceptableErr := newAcceptableError(errors.New("hello error"), true)
+	assert.Equal(expectedErr, acceptableErr)
+
+	assert.Equal(expectedErr.acceptable, acceptableErr.Acceptable())
+	assert.Equal("hello error", acceptableErr.Error())
 }

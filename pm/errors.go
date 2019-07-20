@@ -1,14 +1,5 @@
 package pm
 
-// Error is an interface that describes methods for a PM related error that
-// may be acceptable depending on the type of underlying error
-type Error interface {
-	error
-
-	// Acceptable returns whether the error is acceptable
-	Acceptable() bool
-}
-
 type receiveError struct {
 	err        error
 	acceptable bool

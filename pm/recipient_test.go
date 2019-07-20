@@ -140,7 +140,7 @@ func TestReceiveTicket_InvalidFaceValue_AcceptableError(t *testing.T) {
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "invalid ticket faceValue")
 
-	rerr, ok := err.(Error)
+	rerr, ok := err.(acceptableError)
 	assert.True(ok)
 	assert.False(rerr.Acceptable())
 
@@ -154,9 +154,10 @@ func TestReceiveTicket_InvalidFaceValue_AcceptableError(t *testing.T) {
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "invalid ticket faceValue")
 
-	rerr, ok = err.(Error)
+	rerr, ok = err.(acceptableError)
 	assert.True(ok)
 	assert.True(rerr.Acceptable())
+
 }
 
 func TestReceiveTicket_InvalidFaceValue_GasPriceChange(t *testing.T) {
@@ -241,7 +242,7 @@ func TestReceiveTicket_InvalidWinProb_AcceptableError(t *testing.T) {
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "invalid ticket winProb")
 
-	rerr, ok := err.(Error)
+	rerr, ok := err.(acceptableError)
 	assert.True(ok)
 	assert.False(rerr.Acceptable())
 
@@ -255,9 +256,10 @@ func TestReceiveTicket_InvalidWinProb_AcceptableError(t *testing.T) {
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "invalid ticket winProb")
 
-	rerr, ok = err.(Error)
+	rerr, ok = err.(acceptableError)
 	assert.True(ok)
 	assert.True(rerr.Acceptable())
+
 }
 
 func TestReceiveTicket_InvalidTicket(t *testing.T) {
@@ -489,7 +491,7 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed_AcceptableError(t *t
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "invalid already revealed recipientRand")
 
-	rerr, ok := err.(Error)
+	rerr, ok := err.(acceptableError)
 	assert.True(ok)
 	assert.False(rerr.Acceptable())
 
@@ -500,8 +502,7 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed_AcceptableError(t *t
 	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "invalid already revealed recipientRand")
-
-	rerr, ok = err.(Error)
+	rerr, ok = err.(acceptableError)
 	assert.True(ok)
 	assert.True(rerr.Acceptable())
 }

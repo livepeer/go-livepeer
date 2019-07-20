@@ -59,24 +59,30 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// oInfo will be non-nil if we need to send an updated net.OrchestratorInfo
-	// to the broadcaster
+	// oInfo will be non-nil if we need to send an updated net.OrchestratorInfo to the broadcaster
 	var oInfo *net.OrchestratorInfo
 
-	if err := orch.ProcessPayment(payment, segData.ManifestID); err != nil {
-		glog.Errorf("Error processing payment: %v", err)
+	if paymentError := orch.ProcessPayment(payment, segData.ManifestID); paymentError != nil {
 
+		acceptableErr, ok := paymentError.(core.AcceptableError)
+		if ok && !acceptableErr.Acceptable() {
+			glog.Errorf("Unacceptable error occured processing payment: %v", paymentError)
+			http.Error(w, paymentError.Error(), http.StatusBadRequest)
+			return
+		}
 		oInfo, err = orchestratorInfo(orch, getPaymentSender(payment), orch.ServiceURI().String())
 		if err != nil {
 			glog.Errorf("Error updating orchestrator info: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+
+		glog.Errorf("Acceptable error occured when processing payment: %v", paymentError)
 	}
 
 	if !orch.SufficientBalance(segData.ManifestID) {
 		glog.Errorf("Insufficient credit balance for stream with manifestID %v\n", segData.ManifestID)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, "Insufficient balance", http.StatusBadRequest)
 		return
 	}
 
