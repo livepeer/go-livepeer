@@ -77,6 +77,7 @@ type rtmpConnection struct {
 	profile     *ffmpeg.VideoProfile
 	params      *streamParameters
 	sessManager *BroadcastSessionsManager
+	lastUsed    time.Time
 }
 
 type LivepeerServer struct {
@@ -313,26 +314,19 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		if params == nil {
 			return errMismatchedParams
 		}
-		mid := params.mid
-		//Remove RTMP stream
-		s.connectionLock.Lock()
-		defer s.connectionLock.Unlock()
-		cxn, ok := s.rtmpConnections[mid]
-		if !ok || cxn.pl == nil {
-			glog.Error("Attempted to end unknown stream with manifest ID ", mid)
-			return errUnknownStream
-		}
-		cxn.sessManager.cleanup()
-		cxn.pl.Cleanup()
-		glog.Infof("Ended stream with id=%s", mid)
-		delete(s.rtmpConnections, mid)
-		if monitor.Enabled {
-			monitor.StreamEnded(cxn.nonce)
-			monitor.CurrentSessions(len(s.rtmpConnections))
-		}
 
+		//Remove RTMP stream
+		err := removeRTMPStream(s, params.mid)
+		if err != nil {
+			return err
+		}
 		return nil
 	}
+}
+
+var connectionRefreshInterval = 1 * time.Minute
+var getConnectionTicker = func() *time.Ticker {
+	return time.NewTicker(connectionRefreshInterval)
 }
 
 func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*rtmpConnection, error) {
@@ -392,18 +386,59 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		profile:     &vProfile,
 		params:      params,
 		sessManager: NewSessionManager(s.LivepeerNode, params, playlist),
+		lastUsed:    time.Now(),
 	}
+
 	s.connectionLock.Lock()
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
 	s.lastHLSStreamID = hlsStrmID
 	sessionsNumber := len(s.rtmpConnections)
 	s.connectionLock.Unlock()
+
+	ticker := getConnectionTicker()
+	go func(s *LivepeerServer, mid core.ManifestID) {
+		for _ = range ticker.C {
+			lastUsed := s.rtmpConnections[mid].lastUsed
+			now := time.Now()
+			diff := now.Sub(lastUsed)
+			if diff.Hours() >= 1 || diff.Minutes() >= 1 {
+				err := removeRTMPStream(s, mid)
+				if err != nil {
+					continue
+				}
+				ticker.Stop()
+				return
+			}
+		}
+	}(s, mid)
+
 	if monitor.Enabled {
 		monitor.CurrentSessions(sessionsNumber)
 	}
 
 	return cxn, nil
+}
+
+func removeRTMPStream(s *LivepeerServer, mid core.ManifestID) error {
+	s.connectionLock.Lock()
+	defer s.connectionLock.Unlock()
+	cxn, ok := s.rtmpConnections[mid]
+	if !ok || cxn.pl == nil {
+		glog.Error("Attempted to end unknown stream with manifest ID ", mid)
+		return errUnknownStream
+	}
+	cxn.sessManager.cleanup()
+	cxn.pl.Cleanup()
+	glog.Infof("Ended stream with id=%s", mid)
+	delete(s.rtmpConnections, mid)
+
+	if monitor.Enabled {
+		monitor.StreamEnded(cxn.nonce)
+		monitor.CurrentSessions(len(s.rtmpConnections))
+	}
+
+	return nil
 }
 
 //End RTMP Publish Handlers
