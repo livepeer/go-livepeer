@@ -338,7 +338,7 @@ func main() {
 				// Prevent orchestrator from unknowingly provide free transcoding
 				panic(fmt.Errorf("Price per unit of pixels must be greater than 0, provided %d instead\n", *pricePerUnit))
 			}
-			n.PriceInfo = big.NewRat(int64(*pricePerUnit), int64(*pixelsPerUnit))
+			n.SetBasePrice(big.NewRat(int64(*pricePerUnit), int64(*pixelsPerUnit)))
 			glog.Infof("Price: %d wei for %d pixels\n ", *pricePerUnit, *pixelsPerUnit)
 
 			ctx, cancel := context.WithCancel(context.Background())

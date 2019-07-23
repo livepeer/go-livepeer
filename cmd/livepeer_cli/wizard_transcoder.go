@@ -28,11 +28,10 @@ func myHostPort() string {
 	return ip + ":" + defaultRPCPort
 }
 
-func (w *wizard) promptOrchestratorConfig() (float64, float64, *big.Int, string) {
+func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string) {
 	var (
-		blockRewardCut  float64
-		feeShare        float64
-		pricePerSegment *big.Int
+		blockRewardCut float64
+		feeShare       float64
 	)
 
 	fmt.Printf("Enter block reward cut percentage (default: 10) - ")
@@ -41,8 +40,13 @@ func (w *wizard) promptOrchestratorConfig() (float64, float64, *big.Int, string)
 	fmt.Printf("Enter fee share percentage (default: 5) - ")
 	feeShare = w.readDefaultFloat(5.0)
 
-	fmt.Printf("Enter price per segment in Wei (default: 1) - ")
-	pricePerSegment = w.readDefaultBigInt(big.NewInt(1))
+	fmt.Println("Enter a transcoding base price in wei per pixels")
+	fmt.Println("eg. 1 wei / 10 pixels = 0,1 wei per pixel")
+	fmt.Println()
+	fmt.Printf("Enter amount of pixels that make up a single unit (default: 1 pixel) ")
+	pixelsPerUnit := w.readDefaultInt(1)
+	fmt.Printf("Enter the price for %d pixels in Wei (required) ", pixelsPerUnit)
+	pricePerUnit := w.readDefaultInt(0)
 
 	addr := myHostPort()
 	fmt.Printf("Enter the public host:port of node (default: %v)", addr)
@@ -61,7 +65,7 @@ func (w *wizard) promptOrchestratorConfig() (float64, float64, *big.Int, string)
 		return in, nil
 	})
 
-	return blockRewardCut, feeShare, pricePerSegment, serviceURI
+	return blockRewardCut, feeShare, pricePerUnit, pixelsPerUnit, serviceURI
 }
 
 func (w *wizard) activateOrchestrator() {
@@ -74,14 +78,7 @@ func (w *wizard) activateOrchestrator() {
 	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
 	fmt.Printf("Current bonded amount: %v\n", d.BondedAmount.String())
 
-	blockRewardCut, feeShare, pricePerSegment, serviceURI := w.promptOrchestratorConfig()
-
-	val := url.Values{
-		"blockRewardCut":  {fmt.Sprintf("%v", blockRewardCut)},
-		"feeShare":        {fmt.Sprintf("%v", feeShare)},
-		"pricePerSegment": {fmt.Sprintf("%v", pricePerSegment.String())},
-		"serviceURI":      {fmt.Sprintf("%v", serviceURI)},
-	}
+	val := w.getOrchestratorConfigFormValues()
 
 	if d.BondedAmount.Cmp(big.NewInt(0)) <= 0 || d.DelegateAddress != d.Address {
 		fmt.Printf("You must bond to yourself in order to become a orchestrator\n")
@@ -150,22 +147,27 @@ func (w *wizard) activateOrchestrator() {
 func (w *wizard) setOrchestratorConfig() {
 	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
 
-	blockRewardCut, feeShare, pricePerSegment, serviceURI := w.promptOrchestratorConfig()
-
-	val := url.Values{
-		"blockRewardCut":  {fmt.Sprintf("%v", blockRewardCut)},
-		"feeShare":        {fmt.Sprintf("%v", feeShare)},
-		"pricePerSegment": {fmt.Sprintf("%v", pricePerSegment.String())},
-		"serviceURI":      {fmt.Sprintf("%v", serviceURI)},
-	}
+	val := w.getOrchestratorConfigFormValues()
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/setOrchestratorConfig", w.host, w.httpPort), val)
 	// TODO we should confirm if the transaction was actually sent
 	fmt.Println("\nTransaction sent. Once confirmed, please restart your node if the ServiceURI has been reset")
 }
 
+func (w *wizard) getOrchestratorConfigFormValues() url.Values {
+	blockRewardCut, feeShare, pricePerUnit, pixelsPerUnit, serviceURI := w.promptOrchestratorConfig()
+
+	return url.Values{
+		"blockRewardCut": {fmt.Sprintf("%v", blockRewardCut)},
+		"feeShare":       {fmt.Sprintf("%v", feeShare)},
+		"pricePerUnit":   {fmt.Sprintf("%v", strconv.Itoa(pricePerUnit))},
+		"pixelsPerUnit":  {fmt.Sprintf("%v", strconv.Itoa(pixelsPerUnit))},
+		"serviceURI":     {fmt.Sprintf("%v", serviceURI)},
+	}
+}
+
 func (w *wizard) callReward() {
-	t, err := w.getOrchestratorInfo()
+	t, _, err := w.getOrchestratorInfo()
 	if err != nil {
 		fmt.Printf("Error getting orchestrator info: %v\n", err)
 		return
