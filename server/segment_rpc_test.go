@@ -828,6 +828,7 @@ func TestSubmitSegment_GenPaymentError_ValidatePriceError(t *testing.T) {
 	}
 
 	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
+	defer BroadcastCfg.SetMaxPrice(nil)
 
 	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
 
@@ -841,6 +842,10 @@ func TestSubmitSegment_HttpPostError(t *testing.T) {
 		ManifestID:  core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: "https://foo.com",
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  1,
+				PixelsPerUnit: 1,
+			},
 		},
 	}
 
@@ -876,6 +881,10 @@ func TestSubmitSegment_Non200StatusCode(t *testing.T) {
 		ManifestID:  core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  1,
+				PixelsPerUnit: 1,
+			},
 		},
 	}
 
@@ -912,6 +921,10 @@ func TestSubmitSegment_ProtoUnmarshalError(t *testing.T) {
 		ManifestID:  core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  1,
+				PixelsPerUnit: 1,
+			},
 		},
 	}
 
@@ -954,6 +967,10 @@ func TestSubmitSegment_TranscodeResultError(t *testing.T) {
 		ManifestID:  core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  1,
+				PixelsPerUnit: 1,
+			},
 		},
 	}
 
@@ -1016,6 +1033,10 @@ func TestSubmitSegment_Success(t *testing.T) {
 		ManifestID:  core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  1,
+				PixelsPerUnit: 1,
+			},
 		},
 	}
 
@@ -1181,13 +1202,21 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 
 	// Test with no pm.Sender in BroadcastSession
 
-	s := &BroadcastSession{
-		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		OrchestratorInfo: &net.OrchestratorInfo{
-			Transcoder: ts.URL,
-		},
+	newSess := func() *BroadcastSession {
+		return &BroadcastSession{
+			Broadcaster: stubBroadcaster2(),
+			ManifestID:  core.RandomManifestID(),
+			OrchestratorInfo: &net.OrchestratorInfo{
+				Transcoder: ts.URL,
+				PriceInfo: &net.PriceInfo{
+					PricePerUnit:  2,
+					PixelsPerUnit: 1,
+				},
+			},
+		}
 	}
+
+	s := newSess()
 
 	assert := assert.New(t)
 
@@ -1204,9 +1233,7 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 	// Test with pm.Sender in BroadcastSession
 
 	sender := &pm.MockSender{}
-	s.OrchestratorInfo = &net.OrchestratorInfo{
-		Transcoder: ts.URL,
-	}
+	s = newSess()
 	s.Sender = sender
 
 	batch := &pm.TicketBatch{
@@ -1250,15 +1277,9 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 	sender = &pm.MockSender{}
 	sender.On("EV", mock.Anything).Return(nil, nil)
 	sender.On("StartSession", params).Return("foobar")
+	s = newSess()
 	s.Balance = balance
 	s.Sender = sender
-	s.OrchestratorInfo = &net.OrchestratorInfo{
-		Transcoder: ts.URL,
-		PriceInfo: &net.PriceInfo{
-			PricePerUnit:  2,
-			PixelsPerUnit: 1,
-		},
-	}
 
 	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
 
@@ -1267,11 +1288,8 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 	// Test does not crash if OrchestratorInfo.TicketParams is nil
 
 	sender = &pm.MockSender{}
-	s.OrchestratorInfo = &net.OrchestratorInfo{
-		Transcoder: ts.URL,
-	}
+	s = newSess()
 	s.Sender = sender
-	s.Balance = nil
 
 	// Update stub server to return OrchestratorInfo without TicketParams
 	tr.Info = &net.OrchestratorInfo{
@@ -1291,9 +1309,7 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 
 	// Test update OrchestratorOS
 
-	s.OrchestratorInfo = &net.OrchestratorInfo{
-		Transcoder: ts.URL,
-	}
+	s = newSess()
 
 	tr.Info = &net.OrchestratorInfo{
 		Transcoder: "http://google.com",

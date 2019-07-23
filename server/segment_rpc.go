@@ -512,7 +512,7 @@ func completeBalanceUpdate(sess *BroadcastSession, update *BalanceUpdate) {
 }
 
 func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
-	if sess.Sender == nil || numTickets == 0 {
+	if sess.Sender == nil {
 		return "", nil
 	}
 
@@ -521,38 +521,39 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 		return "", err
 	}
 
-	batch, err := sess.Sender.CreateTicketBatch(sess.PMSessionID, numTickets)
-	if err != nil {
-		return "", err
-	}
-
-	protoTicketParams := &net.TicketParams{
-		Recipient:         batch.Recipient.Bytes(),
-		FaceValue:         batch.FaceValue.Bytes(),
-		WinProb:           batch.WinProb.Bytes(),
-		RecipientRandHash: batch.RecipientRandHash.Bytes(),
-		Seed:              batch.Seed.Bytes(),
-	}
-
-	protoExpirationParams := &net.TicketExpirationParams{
-		CreationRound:          batch.CreationRound,
-		CreationRoundBlockHash: batch.CreationRoundBlockHash.Bytes(),
-	}
-
-	senderParams := make([]*net.TicketSenderParams, len(batch.SenderParams))
-	for i := 0; i < len(senderParams); i++ {
-		senderParams[i] = &net.TicketSenderParams{
-			SenderNonce: batch.SenderParams[i].SenderNonce,
-			Sig:         batch.SenderParams[i].Sig,
-		}
-	}
-
 	protoPayment := &net.Payment{
-		TicketParams:       protoTicketParams,
-		Sender:             batch.Sender.Bytes(),
-		ExpirationParams:   protoExpirationParams,
-		TicketSenderParams: senderParams,
-		ExpectedPrice:      sess.OrchestratorInfo.PriceInfo,
+		Sender:        sess.Broadcaster.Address().Bytes(),
+		ExpectedPrice: sess.OrchestratorInfo.PriceInfo,
+	}
+
+	if numTickets > 0 {
+		batch, err := sess.Sender.CreateTicketBatch(sess.PMSessionID, numTickets)
+		if err != nil {
+			return "", err
+		}
+
+		protoPayment.TicketParams = &net.TicketParams{
+			Recipient:         batch.Recipient.Bytes(),
+			FaceValue:         batch.FaceValue.Bytes(),
+			WinProb:           batch.WinProb.Bytes(),
+			RecipientRandHash: batch.RecipientRandHash.Bytes(),
+			Seed:              batch.Seed.Bytes(),
+		}
+
+		protoPayment.ExpirationParams = &net.TicketExpirationParams{
+			CreationRound:          batch.CreationRound,
+			CreationRoundBlockHash: batch.CreationRoundBlockHash.Bytes(),
+		}
+
+		senderParams := make([]*net.TicketSenderParams, len(batch.SenderParams))
+		for i := 0; i < len(senderParams); i++ {
+			senderParams[i] = &net.TicketSenderParams{
+				SenderNonce: batch.SenderParams[i].SenderNonce,
+				Sig:         batch.SenderParams[i].Sig,
+			}
+		}
+
+		protoPayment.TicketSenderParams = senderParams
 	}
 
 	data, err := proto.Marshal(protoPayment)

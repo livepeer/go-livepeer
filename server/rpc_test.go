@@ -386,7 +386,7 @@ func TestGenPayment(t *testing.T) {
 	protoPayment := decodePayment(payment)
 
 	assert.Equal(batch.Recipient, ethcommon.BytesToAddress(protoPayment.TicketParams.Recipient))
-	assert.Equal(batch.Sender, ethcommon.BytesToAddress(protoPayment.Sender))
+	assert.Equal(b.Address(), ethcommon.BytesToAddress(protoPayment.Sender))
 	assert.Equal(batch.FaceValue, new(big.Int).SetBytes(protoPayment.TicketParams.FaceValue))
 	assert.Equal(batch.WinProb, new(big.Int).SetBytes(protoPayment.TicketParams.WinProb))
 	assert.Equal(batch.SenderParams[0].SenderNonce, protoPayment.TicketSenderParams[0].SenderNonce)
@@ -423,7 +423,10 @@ func TestGenPayment(t *testing.T) {
 
 	payment, err = genPayment(s, 0)
 	assert.Nil(err)
-	assert.Equal("", payment)
+
+	protoPayment = decodePayment(payment)
+	assert.Equal(b.Address(), ethcommon.BytesToAddress(protoPayment.Sender))
+	assert.Zero(big.NewRat(oinfo.PriceInfo.PricePerUnit, oinfo.PriceInfo.PixelsPerUnit).Cmp(big.NewRat(protoPayment.ExpectedPrice.PricePerUnit, protoPayment.ExpectedPrice.PixelsPerUnit)))
 
 	sender.AssertNotCalled(t, "CreateTicketBatch", s.PMSessionID, 0)
 }
