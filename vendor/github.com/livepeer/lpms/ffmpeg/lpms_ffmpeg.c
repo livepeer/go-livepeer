@@ -366,7 +366,7 @@ static int open_input(input_params *params, struct input_ctx *ctx)
       frames->sw_format = vc->pix_fmt;
       frames->width = vc->width;
       frames->height = vc->height;
-      vc->extra_hw_frames = 64 + 1; // H.264 max refs but increases mem usage
+      vc->extra_hw_frames = 32; // H.264 max refs but increases mem usage
       ret = av_hwframe_ctx_init(vc->hw_frames_ctx);
       if (AVERROR(ENOSYS) == ret) ret = lpms_ERR_INPUT_PIXFMT; // most likely
       if (ret < 0) dd_err("Unable to initialize a hardware frame pool\n")
