@@ -330,6 +330,46 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	assert.Equal(2, len(res.Data.Segments))
 }
 
+func TestServeSegment_UnacceptableProcessPaymentError(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		Profiles: []ffmpeg.VideoProfile{
+			ffmpeg.P720p60fps16x9,
+		},
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	_, err = verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	// Return an an unacceptable error to trigger bad request
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(pm.NewMockReceiveError(errors.New("some error"), false)).Once()
+
+	headers := map[string]string{
+		paymentHeader: "",
+		segmentHeader: creds,
+	}
+
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+	assert.Equal("some error", strings.TrimSpace(string(body)))
+}
+
 func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	orch := &mockOrchestrator{}
 	handler := serveSegmentHandler(orch)
@@ -365,7 +405,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 		PixelsPerUnit: 3,
 	}
 	// Return an acceptable payment error to trigger an update to orchestrator info
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some error")).Once()
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(pm.NewMockReceiveError(errors.New("some error"), true)).Once()
 	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
 	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
@@ -411,8 +451,9 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal(params.Seed, tr.Info.TicketParams.Seed)
 	assert.Equal(price.PricePerUnit, tr.Info.PriceInfo.PricePerUnit)
 	assert.Equal(price.PixelsPerUnit, tr.Info.PriceInfo.PixelsPerUnit)
+
 	// Return an acceptable payment error to trigger an update to orchestrator info
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some other error")).Once()
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(pm.NewMockReceiveError(errors.New("some other error"), true)).Once()
 	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
 
 	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
@@ -434,7 +475,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal(params.Seed, tr.Info.TicketParams.Seed)
 
 	// Test orchestratorInfo error
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some error")).Once()
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(pm.NewMockReceiveError(errors.New("some error"), true)).Once()
 	orch.On("TicketParams", mock.Anything).Return(nil, errors.New("TicketParams error")).Once()
 
 	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
@@ -479,8 +520,8 @@ func TestServeSegment_InsufficientBalanceError(t *testing.T) {
 	body, err := ioutil.ReadAll(resp.Body)
 	require.Nil(err)
 
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("Internal Server Error", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+	assert.Equal("Insufficient balance", strings.TrimSpace(string(body)))
 }
 
 func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {

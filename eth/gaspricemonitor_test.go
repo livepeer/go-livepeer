@@ -219,4 +219,8 @@ func TestStop(t *testing.T) {
 
 	// Ensure there are no more queries
 	assert.Equal(queries, gpo.queries)
+
+	// check gasPriceUpdate channel is closed
+	_, ok := (<-gpm.update)
+	assert.False(ok)
 }
