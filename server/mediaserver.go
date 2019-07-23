@@ -324,11 +324,6 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 	}
 }
 
-var connectionRefreshInterval = 1 * time.Minute
-var getConnectionTicker = func() *time.Ticker {
-	return time.NewTicker(connectionRefreshInterval)
-}
-
 func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*rtmpConnection, error) {
 	nonce := rand.Uint64()
 
@@ -395,23 +390,6 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	s.lastHLSStreamID = hlsStrmID
 	sessionsNumber := len(s.rtmpConnections)
 	s.connectionLock.Unlock()
-
-	ticker := getConnectionTicker()
-	go func(s *LivepeerServer, mid core.ManifestID) {
-		for _ = range ticker.C {
-			lastUsed := s.rtmpConnections[mid].lastUsed
-			now := time.Now()
-			diff := now.Sub(lastUsed)
-			if diff.Hours() >= 1 || diff.Minutes() >= 1 {
-				err := removeRTMPStream(s, mid)
-				if err != nil {
-					continue
-				}
-				ticker.Stop()
-				return
-			}
-		}
-	}(s, mid)
 
 	if monitor.Enabled {
 		monitor.CurrentSessions(sessionsNumber)
@@ -545,8 +523,12 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 //End RTMP Handlers
 
-func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
+var connectionRefreshInterval = 1 * time.Minute
+var getConnectionTicker = func() *time.Ticker {
+	return time.NewTicker(connectionRefreshInterval)
+}
 
+func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	// we read this unconditionally, mostly for ffmpeg
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -562,10 +544,14 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	now := time.Now()
 	mid := parseManifestID(r.URL.Path)
-	s.connectionLock.RLock()
+	s.connectionLock.Lock()
 	cxn, exists := s.rtmpConnections[mid]
-	s.connectionLock.RUnlock()
+	if exists && cxn != nil {
+		cxn.lastUsed = now
+	}
+	s.connectionLock.Unlock()
 
 	// Check for presence and register if a fresh cxn
 	if !exists {
@@ -576,7 +562,24 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		st := stream.NewBasicRTMPVideoStream(appData)
 		cxn, err = s.registerConnection(st)
 		// TODO monitor for activity and clean up
+
+		ticker := getConnectionTicker()
+
+		go func(s *LivepeerServer, mid core.ManifestID) {
+			for _ = range ticker.C {
+				s.connectionLock.Lock()
+				lastUsed := s.rtmpConnections[mid].lastUsed
+				s.connectionLock.Unlock()
+
+				if time.Since(lastUsed) > connectionRefreshInterval {
+					_ = removeRTMPStream(s, mid)
+					ticker.Stop()
+					return
+				}
+			}
+		}(s, mid)
 	}
+
 	fname := path.Base(r.URL.Path)
 	seq, err := strconv.ParseUint(strings.TrimSuffix(fname, path.Ext(fname)), 10, 64)
 	if err != nil {

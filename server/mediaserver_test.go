@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -873,4 +874,25 @@ func TestParsePresets(t *testing.T) {
 
 	p = parsePresets(presets)
 	assert.Equal([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P720p30fps16x9}, p)
+}
+
+func TestHandlePush(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s := setupServer()
+		s.HandlePush(w, r)
+	})
+
+	reader := strings.NewReader("Hello, Reader!")
+	req := httptest.NewRequest("GET", "/live/angie.ts", reader)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	glog.Error(resp.StatusCode)
+	assert.Equal(200, resp.StatusCode)
+
 }
