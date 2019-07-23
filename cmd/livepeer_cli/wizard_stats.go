@@ -144,10 +144,14 @@ func (w *wizard) broadcastStats() {
 	}
 
 	price, transcodingOptions := w.getBroadcastConfig()
+	priceString := "n/a"
+	if price != nil {
+		priceString = fmt.Sprintf("%v pixels / %v wei", price.Num().Int64(), price.Denom().Int64())
+	}
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
-		[]string{"Broadcast Price Per Segment in Wei", price.String()},
+		[]string{"Max Price Per Pixel", priceString},
 		[]string{"Broadcast Transcoding Options", transcodingOptions},
 		[]string{"Deposit", eth.FormatUnits(sender.Deposit, "ETH")},
 		[]string{"Reserve", eth.FormatUnits(sender.Reserve, "ETH")},
