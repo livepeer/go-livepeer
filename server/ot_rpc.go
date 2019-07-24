@@ -36,6 +36,7 @@ const protoVerLPT = "Livepeer-Transcoder-1.0"
 const transcodingErrorMimeType = "livepeer/transcoding-error"
 
 var errSecret = errors.New("Invalid secret")
+var errZeroCapacity = errors.New("Zero capacity")
 
 // Standalone Transcoder
 
@@ -64,6 +65,9 @@ func checkTranscoderError(err error) error {
 		s := status.Convert(err)
 		if s.Message() == errSecret.Error() { // consider this unrecoverable
 			return core.NewRemoteTranscoderFatalError(errSecret)
+		}
+		if s.Message() == errZeroCapacity.Error() { // consider this unrecoverable
+			return core.NewRemoteTranscoderFatalError(errZeroCapacity)
 		}
 		if status.Code(err) == codes.Canceled {
 			return core.NewRemoteTranscoderFatalError(fmt.Errorf("Execution interrupted"))
@@ -179,11 +183,15 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 
 func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transcoder_RegisterTranscoderServer) error {
 	from := common.GetConnectionAddr(stream.Context())
-	glog.Infof("Got a RegisterTranscoder request from transcoder=%s", from)
+	glog.Infof("Got a RegisterTranscoder request from transcoder=%s capacity=%d", from, req.Capacity)
 
 	if req.Secret != h.orchestrator.TranscoderSecret() {
 		glog.Info(errSecret.Error())
 		return errSecret
+	}
+	if req.Capacity == 0 {
+		glog.Info(errZeroCapacity.Error())
+		return errZeroCapacity
 	}
 
 	// blocks until stream is finished
