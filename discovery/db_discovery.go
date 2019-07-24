@@ -101,11 +101,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 }
 
 func (dbo *DBOrchestratorPoolCache) Size() int {
-	orchs, err := dbo.node.Database.SelectOrchs(&common.DBOrchFilter{MaxPrice: server.BroadcastCfg.MaxPrice()})
-	if err != nil {
-		return 0
-	}
-	return len(orchs)
+	return len(dbo.GetURLs())
 }
 
 func cacheRegisteredTranscoders(node *core.LivepeerNode) error {
