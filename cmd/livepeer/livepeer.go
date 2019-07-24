@@ -132,6 +132,7 @@ func main() {
 
 	// API
 	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
+	orchWebhookURL := flag.String("orchWebhookUrl", "", "Orchestrator discovery callback URL")
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
@@ -500,7 +501,13 @@ func main() {
 		*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
 
 		// Set up orchestrator discovery
-		if len(orchURLs) > 0 {
+		if *orchWebhookURL != "" {
+			whurl, err := getOrchWebhook(*orchWebhookURL)
+			if err != nil {
+				glog.Fatal("Error setting orch webhook URL ", err)
+			}
+			n.OrchestratorPool = discovery.NewWebhookPool(n, whurl)
+		} else if len(orchURLs) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchURLs)
 		} else if *network != "offchain" {
 			n.OrchestratorPool = discovery.NewDBOrchestratorPoolCache(n)
@@ -629,6 +636,21 @@ func main() {
 	}
 }
 
+func getOrchWebhook(u string) (*url.URL, error) {
+	if u == "" {
+		return nil, nil
+	}
+	p, err := url.ParseRequestURI(u)
+	if err != nil {
+		return nil, err
+	}
+	if p.Scheme != "http" && p.Scheme != "https" {
+		return nil, errors.New("Webhook URL should be HTTP or HTTP")
+	}
+	glog.Infof("Using orchestrator webhook url %s", u)
+	return p, nil
+}
+
 func getAuthWebhookURL(u string) (string, error) {
 	if u == "" {
 		return "", nil
@@ -640,7 +662,7 @@ func getAuthWebhookURL(u string) (string, error) {
 	if p.Scheme != "http" && p.Scheme != "https" {
 		return "", errors.New("Webhook URL should be HTTP or HTTP")
 	}
-	glog.Infof("Using webhook url %s", u)
+	glog.Infof("Using auth webhook url %s", u)
 	return u, nil
 }
 
