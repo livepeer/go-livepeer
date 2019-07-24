@@ -141,4 +141,13 @@ res=0
 ./livepeer -broadcaster -authWebhookUrl http\\://host/ || res=$?
 [ $res -ne 0 ]
 
+# exit early if maxSessions less or equal to zero
+res=0
+./livepeer -broadcaster -maxSessions -1 || res=$?
+[ $res -ne 0 ]
+
+res=0
+./livepeer -broadcaster -maxSessions 0 || res=$?
+[ $res -ne 0 ]
+
 rm -rf "$TMPDIR"

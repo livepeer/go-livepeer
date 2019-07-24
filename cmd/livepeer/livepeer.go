@@ -145,7 +145,7 @@ func main() {
 	}
 
 	if *maxSessions <= 0 {
-		glog.Error("-maxSessions must be greater than zero")
+		glog.Fatal("-maxSessions must be greater than zero")
 		return
 	}
 
