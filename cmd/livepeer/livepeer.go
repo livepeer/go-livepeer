@@ -173,13 +173,21 @@ func main() {
 		},
 	}
 
-	// If multiple orchAddresses specified, ensure other necessary flags present and clean up list
-	var orchAddresses []string
+	// If multiple orchAddr specified, ensure other necessary flags present and clean up list
+	var orchURLs []*url.URL
 	if len(*orchAddr) > 0 {
-		orchAddresses = strings.Split(*orchAddr, ",")
-		for i := range orchAddresses {
-			orchAddresses[i] = strings.TrimSpace(orchAddresses[i])
-			orchAddresses[i] = defaultAddr(orchAddresses[i], "127.0.0.1", RpcPort)
+		for _, addr := range strings.Split(*orchAddr, ",") {
+			addr = strings.TrimSpace(addr)
+			addr = defaultAddr(addr, "127.0.0.1", RpcPort)
+			if !strings.HasPrefix(addr, "http") {
+				addr = "https://" + addr
+			}
+			uri, err := url.ParseRequestURI(addr)
+			if err != nil {
+				glog.Error("Could not parse orchestrator URI: ", err)
+				continue
+			}
+			orchURLs = append(orchURLs, uri)
 		}
 	}
 
@@ -273,8 +281,8 @@ func main() {
 		if n.OrchSecret == "" {
 			glog.Fatal("Missing -orchSecret")
 		}
-		if len(orchAddresses) > 0 {
-			server.RunTranscoder(n, orchAddresses[0], *maxSessions)
+		if len(orchURLs) > 0 {
+			server.RunTranscoder(n, orchURLs[0].Host, *maxSessions)
 		} else {
 			glog.Fatal("Missing -orchAddr")
 		}
@@ -577,8 +585,8 @@ func main() {
 		*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
 
 		// Set up orchestrator discovery
-		if len(orchAddresses) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchAddresses)
+		if len(orchURLs) > 0 {
+			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchURLs)
 		} else if *network != "offchain" {
 			n.OrchestratorPool = discovery.NewDBOrchestratorPoolCache(n)
 		}

@@ -31,7 +31,7 @@ type stubOrchestratorPool struct {
 	bcast server.Broadcaster
 }
 
-func StubOrchestratorPool(addresses []string) *stubOrchestratorPool {
+func stringsToURIs(addresses []string) []*url.URL {
 	var uris []*url.URL
 
 	for _, addr := range addresses {
@@ -40,6 +40,11 @@ func StubOrchestratorPool(addresses []string) *stubOrchestratorPool {
 			uris = append(uris, uri)
 		}
 	}
+	return uris
+}
+
+func StubOrchestratorPool(addresses []string) *stubOrchestratorPool {
+	uris := stringsToURIs(addresses)
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	bcast := core.NewBroadcaster(node)
 
@@ -94,8 +99,9 @@ func TestDeadLock(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		addresses = append(addresses, "https://127.0.0.1:8936")
 	}
+	uris := stringsToURIs(addresses)
 	assert := assert.New(t)
-	pool := NewOrchestratorPool(nil, addresses)
+	pool := NewOrchestratorPool(nil, uris)
 	infos, err := pool.GetOrchestrators(1)
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 1, "Should return one orchestrator")
@@ -126,6 +132,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		addresses = append(addresses, "https://127.0.0.1:8936")
 	}
+	uris := stringsToURIs(addresses)
 
 	assert := assert.New(t)
 	pred := func(info *net.OrchestratorInfo) bool {
@@ -141,7 +148,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
 
-	pool := NewOrchestratorPoolWithPred(node, addresses, pred)
+	pool := NewOrchestratorPoolWithPred(node, uris, pred)
 	infos, err := pool.GetOrchestrators(1)
 
 	assert.Nil(err, "Should not be error")
@@ -150,7 +157,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 }
 
 func TestPoolSize(t *testing.T) {
-	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
 
 	assert := assert.New(t)
 	pool := NewOrchestratorPool(nil, addresses)
@@ -343,8 +350,8 @@ func TestNewDBOrchestratorPoolCache_TestURLs_Empty(t *testing.T) {
 
 func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
 	node, _ := core.NewLivepeerNode(nil, "", nil)
-	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
-	expected := []string{"https://127.0.0.1:8938", "https://127.0.0.1:8937", "https://127.0.0.1:8936"}
+	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
+	expected := stringsToURIs([]string{"https://127.0.0.1:8938", "https://127.0.0.1:8937", "https://127.0.0.1:8936"})
 	assert := assert.New(t)
 
 	// creating NewOrchestratorPool with orch addresses
@@ -354,7 +361,7 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 	offchainOrch := NewOrchestratorPool(node, addresses)
 
 	for i, uri := range offchainOrch.uris {
-		assert.Equal(uri.String(), expected[i])
+		assert.Equal(uri, expected[i])
 	}
 }
 
@@ -372,11 +379,12 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 		addresses = append(addresses, "https://127.0.0.1:8936")
 	}
 	orchestrators := StubOrchestrators(addresses)
+	uris := stringsToURIs(addresses)
 
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
 
-	pool := NewOrchestratorPoolWithPred(node, addresses, pred)
+	pool := NewOrchestratorPoolWithPred(node, uris, pred)
 
 	oInfo := &net.OrchestratorInfo{
 		PriceInfo: &net.PriceInfo{

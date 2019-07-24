@@ -49,10 +49,10 @@ func NewDBOrchestratorPoolCache(node *core.LivepeerNode) *DBOrchestratorPoolCach
 	return &DBOrchestratorPoolCache{node: node}
 }
 
-func (dbo *DBOrchestratorPoolCache) GetURLs() []*url.URL {
+func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
 	orchs, err := dbo.node.Database.SelectOrchs(&common.DBOrchFilter{MaxPrice: server.BroadcastCfg.MaxPrice()})
 	if err != nil || len(orchs) <= 0 {
-		return nil
+		return nil, err
 	}
 
 	var uris []*url.URL
@@ -61,19 +61,18 @@ func (dbo *DBOrchestratorPoolCache) GetURLs() []*url.URL {
 			uris = append(uris, uri)
 		}
 	}
+	return uris, nil
+}
+
+func (dbo *DBOrchestratorPoolCache) GetURLs() []*url.URL {
+	uris, _ := dbo.getURLs()
 	return uris
 }
 
 func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
-	orchs, err := dbo.node.Database.SelectOrchs(&common.DBOrchFilter{MaxPrice: server.BroadcastCfg.MaxPrice()})
-	if err != nil || len(orchs) <= 0 {
+	uris, err := dbo.getURLs()
+	if err != nil || len(uris) <= 0 {
 		return nil, err
-	}
-
-	var uris []string
-	for _, orch := range orchs {
-		uri := orch.ServiceURI
-		uris = append(uris, uri)
 	}
 
 	pred := func(info *net.OrchestratorInfo) bool {
