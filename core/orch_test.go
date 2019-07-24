@@ -169,7 +169,7 @@ func TestManageTranscoders(t *testing.T) {
 
 	assert.NotNil(m.liveTranscoders[strm])
 	assert.Len(m.liveTranscoders, 1)
-	assert.Len(m.remoteTranscoders, 5)
+	assert.Len(m.remoteTranscoders, 1)
 	assert.Equal(1, m.RegisteredTranscodersCount())
 	ti := m.RegisteredTranscodersInfo()
 	assert.Len(ti, 1)
@@ -184,7 +184,7 @@ func TestManageTranscoders(t *testing.T) {
 	assert.NotNil(m.liveTranscoders[strm])
 	assert.NotNil(m.liveTranscoders[strm2])
 	assert.Len(m.liveTranscoders, 2)
-	assert.Len(m.remoteTranscoders, 9)
+	assert.Len(m.remoteTranscoders, 2)
 	assert.Equal(2, m.RegisteredTranscodersCount())
 
 	// test that transcoders are removed from liveTranscoders and remoteTranscoders
@@ -193,7 +193,7 @@ func TestManageTranscoders(t *testing.T) {
 	assert.Nil(m.liveTranscoders[strm])
 	assert.NotNil(m.liveTranscoders[strm2])
 	assert.Len(m.liveTranscoders, 1)
-	assert.Len(m.remoteTranscoders, 9)
+	assert.Len(m.remoteTranscoders, 2)
 	assert.Equal(1, m.RegisteredTranscodersCount())
 
 	m.liveTranscoders[strm2].eof <- struct{}{}
@@ -201,7 +201,7 @@ func TestManageTranscoders(t *testing.T) {
 	assert.Nil(m.liveTranscoders[strm])
 	assert.Nil(m.liveTranscoders[strm2])
 	assert.Len(m.liveTranscoders, 0)
-	assert.Len(m.remoteTranscoders, 9)
+	assert.Len(m.remoteTranscoders, 2)
 	assert.Equal(0, m.RegisteredTranscodersCount())
 }
 
@@ -217,22 +217,40 @@ func TestSelectTranscoder(t *testing.T) {
 
 	// register transcoders, which adds transcoder to liveTranscoders and remoteTranscoders
 	wg := newWg(1)
-	go func() { m.Manage(strm, 5) }()
+	go func() { m.Manage(strm, 2) }()
 	time.Sleep(1 * time.Millisecond) // allow time for first stream to register
-	go func() { m.Manage(strm2, 4); wg.Done() }()
+	go func() { m.Manage(strm2, 1); wg.Done() }()
 	time.Sleep(1 * time.Millisecond) // allow time for second stream to register
 
 	assert.NotNil(m.liveTranscoders[strm])
 	assert.NotNil(m.liveTranscoders[strm2])
-	assert.Len(m.remoteTranscoders, 9)
+	assert.Len(m.remoteTranscoders, 2)
 
-	// assert transcoder is returned from selectTranscoder and removed from list
+	// assert transcoder is returned from selectTranscoder
 	t1 := m.liveTranscoders[strm]
 	t2 := m.liveTranscoders[strm2]
 	currentTranscoder := m.selectTranscoder()
-	assert.Equal(currentTranscoder, t2)
+	assert.Equal(t2, currentTranscoder)
+	assert.Equal(1, t2.load)
 	assert.NotNil(m.liveTranscoders[strm])
-	assert.Len(m.remoteTranscoders, 8)
+	assert.Len(m.remoteTranscoders, 2)
+
+	// assert transcoder with less load selected
+	currentTranscoder2 := m.selectTranscoder()
+	assert.Equal(t1, currentTranscoder2)
+	assert.Equal(1, t1.load)
+
+	currentTranscoder3 := m.selectTranscoder()
+	assert.Equal(t1, currentTranscoder3)
+	assert.Equal(2, t1.load)
+
+	// assert no transcoder returned if all at they capacity
+	noTrans := m.selectTranscoder()
+	assert.Nil(noTrans)
+
+	m.completeTranscoders(t1)
+	m.completeTranscoders(t1)
+	assert.Equal(0, t1.load)
 
 	// unregister transcoder
 	t2.eof <- struct{}{}
@@ -242,14 +260,18 @@ func TestSelectTranscoder(t *testing.T) {
 
 	// assert t1 is selected and t2 drained
 	currentTranscoder = m.selectTranscoder()
-	assert.Equal(currentTranscoder, t1)
+	assert.Equal(t1, currentTranscoder)
+	assert.Equal(1, t1.load)
 	assert.NotNil(m.liveTranscoders[strm])
-	assert.Len(m.remoteTranscoders, 4)
+	assert.Len(m.remoteTranscoders, 2)
 
 	// assert transcoder gets added back to remoteTranscoders if no transcoding error
 	_, err := m.Transcode("", nil)
 	assert.Nil(err)
-	assert.Len(m.remoteTranscoders, 4)
+	assert.Len(m.remoteTranscoders, 2)
+	assert.Equal(1, t1.load)
+	m.completeTranscoders(t1)
+	assert.Equal(0, t1.load)
 }
 
 func TestTranscoderManagerTranscoding(t *testing.T) {
@@ -261,11 +283,16 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	assert.Empty(m.liveTranscoders)
 	assert.Empty(m.remoteTranscoders)
 
+	// Attempt to transcode when no transcoders in the set
+	_, err := m.Transcode("", nil)
+	assert.NotNil(err)
+	assert.Equal(err.Error(), "No transcoders available")
+
 	wg := newWg(1)
 	go func() { m.Manage(s, 5); wg.Done() }()
 	time.Sleep(1 * time.Millisecond)
 
-	assert.Len(m.remoteTranscoders, 5) // sanity
+	assert.Len(m.remoteTranscoders, 1) // sanity
 	assert.Len(m.liveTranscoders, 1)
 	assert.NotNil(m.liveTranscoders[s])
 
@@ -279,7 +306,8 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	s.TranscodeError = fmt.Errorf("TranscodeError")
 	_, err = m.Transcode("", nil)
 	assert.Equal(s.TranscodeError, err)
-	assert.Len(m.remoteTranscoders, 5) // sanity
+	assert.Len(m.remoteTranscoders, 1)           // sanity
+	assert.Equal(0, m.remoteTranscoders[0].load) // sanity
 	assert.Len(m.liveTranscoders, 1)
 	assert.NotNil(m.liveTranscoders[s])
 	s.TranscodeError = nil
@@ -288,6 +316,9 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	s.SendError = fmt.Errorf("SendError")
 	_, err = m.Transcode("", nil)
 	assert.True(wgWait(wg)) // should disconnect manager
+	assert.NotNil(err)
+	assert.Equal(err.Error(), "No transcoders available")
+	_, err = m.Transcode("", nil) // need second try to remove from remoteTranscoders
 	assert.NotNil(err)
 	assert.Equal(err.Error(), "No transcoders available")
 	assert.Len(m.liveTranscoders, 0)
@@ -299,7 +330,7 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	go func() { m.Manage(s, 5); wg.Done() }()
 	time.Sleep(1 * time.Millisecond)
 
-	assert.Len(m.remoteTranscoders, 5) // sanity check
+	assert.Len(m.remoteTranscoders, 1) // sanity check
 	assert.Len(m.liveTranscoders, 1)
 	s.WithholdResults = true
 	RemoteTranscoderTimeout = 1 * time.Millisecond
@@ -308,7 +339,7 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	wg.Wait()
 	assert.True(fatal)
 	assert.Len(m.liveTranscoders, 0)
-	assert.Len(m.remoteTranscoders, 4) // no retries, so don't drain
+	assert.Len(m.remoteTranscoders, 1) // no retries, so don't drain
 	s.WithholdResults = false
 	RemoteTranscoderTimeout = 8 * time.Second
 }

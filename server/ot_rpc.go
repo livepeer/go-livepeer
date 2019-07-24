@@ -189,7 +189,7 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 		glog.Info(errSecret.Error())
 		return errSecret
 	}
-	if req.Capacity == 0 {
+	if req.Capacity <= 0 {
 		glog.Info(errZeroCapacity.Error())
 		return errZeroCapacity
 	}
