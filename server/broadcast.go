@@ -272,13 +272,12 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) error {
 		}
 	}
 
-	for true {
+	for {
 		// if fails, retry; rudimentary
 		if err := transcodeSegment(cxn, seg, name); err == nil {
 			return nil
 		}
 	}
-	return nil
 }
 
 func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) error {
