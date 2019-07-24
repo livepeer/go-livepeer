@@ -69,27 +69,6 @@ func NewOrchestratorPoolWithPred(node *core.LivepeerNode, addresses []string, pr
 	return pool
 }
 
-func NewOnchainOrchestratorPool(node *core.LivepeerNode) *orchestratorPool {
-	// if livepeer running in offchain mode, return nil
-	if node.Eth == nil {
-		glog.Error("Could not refresh DB list of orchestrators: LivepeerNode nil")
-		return nil
-	}
-
-	orchestrators, err := node.Eth.RegisteredTranscoders()
-	if err != nil {
-		glog.Error("Could not refresh DB list of orchestrators: ", err)
-		return nil
-	}
-
-	var addresses []string
-	for _, orch := range orchestrators {
-		addresses = append(addresses, orch.ServiceURI)
-	}
-
-	return NewOrchestratorPool(node, addresses)
-}
-
 func (o *orchestratorPool) GetURLs() []*url.URL {
 	return o.uris
 }

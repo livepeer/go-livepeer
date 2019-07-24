@@ -67,15 +67,6 @@ func TestNewOrchestratorPoolWithPred_NilEthClient_ReturnsNil_LogsError(t *testin
 	assert.Nil(t, pool)
 }
 
-func TestNewOnchainOrchestratorPool_NilEthClient_ReturnsNil_LogsError(t *testing.T) {
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	errorLogsBefore := glog.Stats.Error.Lines()
-	pool := NewOnchainOrchestratorPool(node)
-	errorLogsAfter := glog.Stats.Error.Lines()
-	assert.NotZero(t, errorLogsAfter-errorLogsBefore)
-	assert.Nil(t, pool)
-}
-
 func TestNewDBOrchestratorPoolCache_NilEthClient_ReturnsNil_LogsError(t *testing.T) {
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	errorLogsBefore := glog.Stats.Error.Lines()
@@ -363,17 +354,6 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 	offchainOrch := NewOrchestratorPool(node, addresses)
 
 	for i, uri := range offchainOrch.uris {
-		assert.Equal(uri.String(), expected[i])
-	}
-
-	orchestrators := StubOrchestrators(addresses)
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
-
-	// testing NewOnchainOrchestratorPool
-	rand.Seed(321)
-	perm = func(len int) []int { return rand.Perm(3) }
-	offchainOrchFromOnchainList := NewOnchainOrchestratorPool(node)
-	for i, uri := range offchainOrchFromOnchainList.uris {
 		assert.Equal(uri.String(), expected[i])
 	}
 }
