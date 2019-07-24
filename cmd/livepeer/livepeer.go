@@ -144,6 +144,11 @@ func main() {
 		return
 	}
 
+	if *maxSessions <= 0 {
+		glog.Error("-maxSessions must be greater than zero")
+		return
+	}
+
 	type NetworkConfig struct {
 		ethUrl        string
 		ethController string
