@@ -5,7 +5,6 @@ import (
 	"math"
 	"math/rand"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -29,23 +28,11 @@ type orchestratorPool struct {
 
 var perm = func(len int) []int { return rand.Perm(len) }
 
-func NewOrchestratorPool(node *core.LivepeerNode, addresses []string) *orchestratorPool {
-	var uris []*url.URL
-
-	for _, addr := range addresses {
-		if !strings.HasPrefix(addr, "http") {
-			addr = "https://" + addr
-		}
-		uri, err := url.ParseRequestURI(addr)
-		if err != nil {
-			glog.Error("Could not parse orchestrator URI: ", err)
-			continue
-		}
-		uris = append(uris, uri)
-	}
+func NewOrchestratorPool(node *core.LivepeerNode, uris []*url.URL) *orchestratorPool {
 
 	if len(uris) <= 0 {
-		glog.Error("Could not parse orchAddresses given - no URIs returned ")
+		// Should we return here?
+		glog.Error("Orchestrator pool does not have any URIs")
 	}
 
 	var randomizedUris []*url.URL
@@ -58,7 +45,7 @@ func NewOrchestratorPool(node *core.LivepeerNode, addresses []string) *orchestra
 	return &orchestratorPool{bcast: bcast, uris: randomizedUris}
 }
 
-func NewOrchestratorPoolWithPred(node *core.LivepeerNode, addresses []string, pred func(*net.OrchestratorInfo) bool) *orchestratorPool {
+func NewOrchestratorPoolWithPred(node *core.LivepeerNode, addresses []*url.URL, pred func(*net.OrchestratorInfo) bool) *orchestratorPool {
 	// if livepeer running in offchain mode, return nil
 	if node.Eth == nil {
 		glog.Error("Could not refresh DB list of orchestrators: LivepeerNode nil")
