@@ -91,8 +91,8 @@ func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscod
 	orch.node.serveTranscoder(stream, capacity)
 }
 
-func (orch *orchestrator) TranscoderResults(tcId int64, res *RemoteTranscoderResult) {
-	orch.node.TranscoderManager.transcoderResults(tcId, res)
+func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderResult) {
+	orch.node.TranscoderManager.transcoderResults(tcID, res)
 }
 
 func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID ManifestID) error {
@@ -320,35 +320,37 @@ type transcodeConfig struct {
 	LocalOS drivers.OSSession
 }
 
-func (n *RemoteTranscoderManager) getTaskChan(taskId int64) (TranscoderChan, error) {
-	n.taskMutex.RLock()
-	defer n.taskMutex.RUnlock()
-	if tc, ok := n.taskChans[taskId]; ok {
+func (rtm *RemoteTranscoderManager) getTaskChan(taskID int64) (TranscoderChan, error) {
+	rtm.taskMutex.RLock()
+	defer rtm.taskMutex.RUnlock()
+	if tc, ok := rtm.taskChans[taskID]; ok {
 		return tc, nil
 	}
 	return nil, fmt.Errorf("No transcoder channel")
 }
-func (n *RemoteTranscoderManager) addTaskChan() (int64, TranscoderChan) {
-	n.taskMutex.Lock()
-	defer n.taskMutex.Unlock()
-	taskId := n.taskCount
-	n.taskCount++
-	if tc, ok := n.taskChans[taskId]; ok {
+
+func (rtm *RemoteTranscoderManager) addTaskChan() (int64, TranscoderChan) {
+	rtm.taskMutex.Lock()
+	defer rtm.taskMutex.Unlock()
+	taskID := rtm.taskCount
+	rtm.taskCount++
+	if tc, ok := rtm.taskChans[taskID]; ok {
 		// should really never happen
-		glog.V(common.DEBUG).Info("Transcoder channel already exists for ", taskId)
-		return taskId, tc
+		glog.V(common.DEBUG).Info("Transcoder channel already exists for ", taskID)
+		return taskID, tc
 	}
-	n.taskChans[taskId] = make(TranscoderChan, 1)
-	return taskId, n.taskChans[taskId]
+	rtm.taskChans[taskID] = make(TranscoderChan, 1)
+	return taskID, rtm.taskChans[taskID]
 }
-func (n *RemoteTranscoderManager) removeTaskChan(taskId int64) {
-	n.taskMutex.Lock()
-	defer n.taskMutex.Unlock()
-	if _, ok := n.taskChans[taskId]; !ok {
-		glog.V(common.DEBUG).Info("Transcoder channel nonexistent for job ", taskId)
+
+func (rtm *RemoteTranscoderManager) removeTaskChan(taskID int64) {
+	rtm.taskMutex.Lock()
+	defer rtm.taskMutex.Unlock()
+	if _, ok := rtm.taskChans[taskID]; !ok {
+		glog.V(common.DEBUG).Info("Transcoder channel nonexistent for job ", taskID)
 		return
 	}
-	delete(n.taskChans, taskId)
+	delete(rtm.taskChans, taskID)
 }
 
 func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, error) {
@@ -561,8 +563,8 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
 }
 
-func (n *RemoteTranscoderManager) transcoderResults(tcId int64, res *RemoteTranscoderResult) {
-	remoteChan, err := n.getTaskChan(tcId)
+func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {
+	remoteChan, err := rtm.getTaskChan(tcID)
 	if err != nil {
 		return // do we need to return anything?
 	}
@@ -602,16 +604,16 @@ func (rt *RemoteTranscoder) done() {
 
 // Transcode do actual transcoding by sending work to remote transcoder and waiting for the result
 func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
-	taskId, taskChan := rt.manager.addTaskChan()
-	defer rt.manager.removeTaskChan(taskId)
+	taskID, taskChan := rt.manager.addTaskChan()
+	defer rt.manager.removeTaskChan(taskID)
 	signalEOF := func(err error) ([][]byte, error) {
 		rt.done()
-		glog.Errorf("Fatal error with remote transcoder=%s taskId=%d fname=%s err=%v", rt.addr, taskId, fname, err)
+		glog.Errorf("Fatal error with remote transcoder=%s taskId=%d fname=%s err=%v", rt.addr, taskID, fname, err)
 		return [][]byte{}, RemoteTranscoderFatalError{err}
 	}
 	msg := &net.NotifySegment{
 		Url:      fname,
-		TaskId:   taskId,
+		TaskId:   taskID,
 		Profiles: common.ProfilesToTranscodeOpts(profiles),
 	}
 	err := rt.stream.Send(msg)
@@ -625,7 +627,7 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 		return signalEOF(ErrRemoteTranscoderTimeout)
 	case chanData := <-taskChan:
 		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s",
-			rt.addr, len(chanData.Segments), taskId, fname)
+			rt.addr, len(chanData.Segments), taskID, fname)
 		return chanData.Segments, chanData.Err
 	}
 }
@@ -673,12 +675,14 @@ type RemoteTranscoderManager struct {
 	taskCount int64
 }
 
+// RegisteredTranscodersCount returns number of registered transcoders
 func (rtm *RemoteTranscoderManager) RegisteredTranscodersCount() int {
 	rtm.RTmutex.Lock()
 	defer rtm.RTmutex.Unlock()
 	return len(rtm.liveTranscoders)
 }
 
+// RegisteredTranscodersInfo returns list of restered transcoder's information
 func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []net.RemoteTranscoderInfo {
 	rtm.RTmutex.Lock()
 	res := make([]net.RemoteTranscoderInfo, 0, len(rtm.liveTranscoders))
@@ -689,6 +693,7 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []net.RemoteTran
 	return res
 }
 
+// Manage adds transcoder to list of live transcoders. Doesn't return untill transcoder disconnects
 func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
 	from := common.GetConnectionAddr(stream.Context())
 	transcoder := NewRemoteTranscoder(rtm, stream, capacity)
@@ -754,6 +759,7 @@ func (rtm *RemoteTranscoderManager) completeTranscoders(trans *RemoteTranscoder)
 	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
 }
 
+// Transcode does actual transcoding using remote transcoder from the pool
 func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
 	currentTranscoder := rtm.selectTranscoder()
 	if currentTranscoder == nil {
