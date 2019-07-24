@@ -725,17 +725,18 @@ func (rtm *RemoteTranscoderManager) selectTranscoder() *RemoteTranscoder {
 	for checkTranscoders(rtm) {
 		last := len(rtm.remoteTranscoders) - 1
 		currentTranscoder := rtm.remoteTranscoders[last]
+		if _, ok := rtm.liveTranscoders[currentTranscoder.stream]; !ok {
+			// transcoder does not exist in table; remove and retry
+			rtm.remoteTranscoders = rtm.remoteTranscoders[:last]
+			continue
+		}
 		if currentTranscoder.load == currentTranscoder.capacity {
 			// Head of queue is at capacity, so the rest must be too. Exit early
 			return nil
 		}
-		if _, ok := rtm.liveTranscoders[currentTranscoder.stream]; ok {
-			currentTranscoder.load++
-			sort.Sort(byLoadFactor(rtm.remoteTranscoders))
-			return currentTranscoder
-		}
-		// transcoder does not exist in table; remove and retry
-		rtm.remoteTranscoders = rtm.remoteTranscoders[:last]
+		currentTranscoder.load++
+		sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+		return currentTranscoder
 	}
 
 	return nil
