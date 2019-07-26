@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -876,7 +877,7 @@ func TestParsePresets(t *testing.T) {
 	assert.Equal([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P720p30fps16x9}, p)
 }
 
-func TestHandlePush(t *testing.T) {
+func TestHandlePush200(t *testing.T) {
 	assert := assert.New(t)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -894,5 +895,40 @@ func TestHandlePush(t *testing.T) {
 
 	glog.Error(resp.StatusCode)
 	assert.Equal(200, resp.StatusCode)
+}
 
+func TestHandlePushErrors(t *testing.T) {
+	assert := assert.New(t)
+	s := setupServer()
+
+	// assert Memory Session is nil error
+	reader := strings.NewReader("HandlePush body")
+	request := httptest.NewRequest("GET", "/live/angie.ts", reader)
+	writer := httptest.NewRecorder()
+	err := s.HandlePush(writer, request)
+	assert.Equal("MemorySession is nil", err.Error())
+
+	// assert http request body error returned
+	f, err := os.Open(`doesn't exist`)
+	request = httptest.NewRequest("GET", "/live/angie.ts", f)
+	err = s.HandlePush(writer, request)
+	assert.Equal("Error reading http request body: invalid argument", err.Error())
+
+	// assert file extension error returned
+	request = httptest.NewRequest("GET", "/live/angie.m3u8", reader)
+	err = s.HandlePush(writer, request)
+	assert.Equal("ignoring file extension: .m3u8", err.Error())
+
+	// assert No MemoryOS driver error
+	drivers.NodeStorage = nil
+	request = httptest.NewRequest("GET", "/live/angie.ts", reader)
+	err = s.HandlePush(writer, request)
+	assert.Equal("No MemoryOS driver", err.Error())
+
+	// assert storage error
+	mid := parseManifestID(request.URL.Path)
+	err = removeRTMPStream(s, mid)
+	assert.Nil(err)
+	err = s.HandlePush(writer, request)
+	assert.Equal("ErrStorage", err.Error())
 }

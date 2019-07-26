@@ -54,6 +54,7 @@ const StreamKeyBytes = 6
 
 const SegLen = 2 * time.Second
 const BroadcastRetry = 15 * time.Second
+const RefreshIntervalHttpPush = 1 * time.Minute
 
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
@@ -523,17 +524,13 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 //End RTMP Handlers
 
-var connectionRefreshInterval = 1 * time.Minute
-var getConnectionTicker = func() *time.Ticker {
-	return time.NewTicker(connectionRefreshInterval)
-}
-
-func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
+func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) error {
 	// we read this unconditionally, mostly for ffmpeg
 	body, err := ioutil.ReadAll(r.Body)
+
 	if err != nil {
-		glog.Info(err)
-		return
+		err := fmt.Sprintf(`Error reading http request body: %s`, err.Error())
+		return errors.New(err)
 	}
 	r.Body.Close()
 
@@ -541,7 +538,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		// ffmpeg sends us a m3u8 as well, so ignore
 		// Alternatively, reject m3u8s explicitly and take any other type
 		// TODO also look at use content-type
-		return
+		err := fmt.Sprintf(`ignoring file extension: %s`, path.Ext(r.URL.Path))
+		return errors.New(err)
 	}
 
 	now := time.Now()
@@ -557,21 +555,24 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	if !exists {
 		appData := (createRTMPStreamIDHandler(s))(r.URL)
 		if appData == nil {
-			return
+			return errors.New("stream.AppData is empty")
 		}
 		st := stream.NewBasicRTMPVideoStream(appData)
 		cxn, err = s.registerConnection(st)
+		if err != nil {
+			return err
+		}
 		// TODO monitor for activity and clean up
 
-		ticker := getConnectionTicker()
+		ticker := time.NewTicker(RefreshIntervalHttpPush)
 
 		go func(s *LivepeerServer, mid core.ManifestID) {
 			for _ = range ticker.C {
-				s.connectionLock.Lock()
+				s.connectionLock.RLock()
 				lastUsed := s.rtmpConnections[mid].lastUsed
-				s.connectionLock.Unlock()
+				s.connectionLock.RUnlock()
 
-				if time.Since(lastUsed) > connectionRefreshInterval {
+				if time.Since(lastUsed) > RefreshIntervalHttpPush {
 					_ = removeRTMPStream(s, mid)
 					ticker.Stop()
 					return
@@ -596,7 +597,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	err = processSegment(cxn, seg)
 	if err != nil {
 		// TODO return error
-		return
+		return err
 	}
 
 	// Return the results (blobs) using local OS lookup.
@@ -604,15 +605,15 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	// Return URL in that case? Need to return results from ProcessSegment
 	os, ok := drivers.NodeStorage.(*drivers.MemoryOS)
 	if !ok {
-		return
+		return errors.New("No MemoryOS driver")
 	}
 	sess := os.GetSession(string(mid))
 	if sess == nil {
-		return
+		return errors.New("MemorySession is nil")
 	}
 	params := streamParams(cxn.stream)
 	if params == nil {
-		return
+		return errors.New("RTMPVideoStream stream parameters nil")
 	}
 	// fetch each rendition from local storage
 	for _, p := range params.profiles {
@@ -625,6 +626,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		glog.Infof("%s - %d bytes", name, len(data))
 	}
 	w.WriteHeader(200)
+	return nil
 }
 
 //Helper Methods Begin

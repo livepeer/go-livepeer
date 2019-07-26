@@ -70,7 +70,8 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/live/", func(w http.ResponseWriter, r *http.Request) {
-		s.HandlePush(w, r)
+		err := s.HandlePush(w, r)
+		glog.Error("HandlePush error: ", err)
 	})
 
 	//Set the broadcast config for creating onchain jobs.
