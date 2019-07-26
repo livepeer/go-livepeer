@@ -3,8 +3,11 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAveragerCanBeRemoved(t *testing.T) {
@@ -118,4 +121,54 @@ func TestLastSegmentTimeout(t *testing.T) {
 	if sr := census.successRate(); sr != 0.5 {
 		t.Fatalf("Success rate should be 0.5, not %f", sr)
 	}
+}
+
+func TestWei2Gwei(t *testing.T) {
+	assert := assert.New(t)
+
+	wei := big.NewInt(gweiConversionFactor)
+	assert.Equal(1.0, wei2gwei(wei))
+
+	wei = big.NewInt(gweiConversionFactor / 2)
+	assert.Equal(0.5, wei2gwei(wei))
+
+	wei = big.NewInt(0)
+	assert.Equal(0.0, wei2gwei(wei))
+
+	wei = big.NewInt(gweiConversionFactor * 1.5)
+	assert.Equal(1.5, wei2gwei(wei))
+
+	wei = big.NewInt(gweiConversionFactor * 2)
+	assert.Equal(2.0, wei2gwei(wei))
+}
+
+func TestFracWei2Gwei(t *testing.T) {
+	assert := assert.New(t)
+
+	wei := big.NewRat(gweiConversionFactor, 1)
+	assert.Equal(1.0, fracwei2gwei(wei))
+
+	wei = big.NewRat(gweiConversionFactor/2, 1)
+	assert.Equal(0.5, fracwei2gwei(wei))
+
+	wei = big.NewRat(0, 1)
+	assert.Equal(0.0, fracwei2gwei(wei))
+
+	wei = big.NewRat(gweiConversionFactor*1.5, 1)
+	assert.Equal(1.5, fracwei2gwei(wei))
+
+	wei = big.NewRat(gweiConversionFactor*2, 1)
+	assert.Equal(2.0, fracwei2gwei(wei))
+
+	delta := .000000001
+
+	// Test wei amounts with a fractional part
+	wei = big.NewRat(gweiConversionFactor/2, 6)
+	assert.InDelta(.083333333, fracwei2gwei(wei), delta)
+
+	wei = big.NewRat(gweiConversionFactor*1.5, 7)
+	assert.InDelta(.214285714, fracwei2gwei(wei), delta)
+
+	wei = big.NewRat(gweiConversionFactor*2, 7)
+	assert.InDelta(.285714286, fracwei2gwei(wei), delta)
 }
