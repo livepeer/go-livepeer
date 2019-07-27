@@ -173,9 +173,10 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	resp, err := httpc.Do(req)
 	if err != nil {
 		glog.Error("Error submitting results ", err)
+	} else {
+		ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
 	}
-	ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
 	glog.V(common.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
 }
 
