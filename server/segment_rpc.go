@@ -36,7 +36,7 @@ var errSegSig = errors.New("ErrSegSig")
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
 var httpClient = &http.Client{
 	Transport: &http2.Transport{TLSClientConfig: tlsConfig},
-	Timeout:   HTTPTimeout,
+	Timeout:   common.HTTPTimeout,
 }
 
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +107,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "BadRequest", http.StatusBadRequest)
 			return
 		}
-		if took > HTTPTimeout {
+		if took > common.HTTPTimeout {
 			// download from object storage took more time when broadcaster will be waiting for result
 			// so there is no point to start transcoding process
 			glog.Errorf(" Getting segment from %s took too long, aborting", uri)
@@ -160,7 +160,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// construct the response
 	var result net.TranscodeResult
 	if err != nil {
-		glog.Error("Could not transcode ", err)
+		glog.Errorf("Could not transcode seqNo=%d mid=%s err=%v", segData.Seq, segData.ManifestID, err)
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Error{Error: err.Error()}}
 	} else {
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Data{

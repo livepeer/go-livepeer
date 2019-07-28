@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
@@ -88,7 +89,7 @@ func TestNewSessionManager(t *testing.T) {
 	// Check numOrchs up to maximum and a bit beyond
 	sd := &stubDiscovery{}
 	n.OrchestratorPool = sd
-	max := int(HTTPTimeout.Seconds()/SegLen.Seconds()) * 2
+	max := int(common.HTTPTimeout.Seconds()/SegLen.Seconds()) * 2
 	for i := 0; i < 10; i++ {
 		sess = NewSessionManager(n, params, pl)
 		if i < max {

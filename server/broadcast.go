@@ -164,7 +164,7 @@ func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl cor
 	if node.OrchestratorPool != nil {
 		poolSize = float64(node.OrchestratorPool.Size())
 	}
-	maxInflight := HTTPTimeout.Seconds() / SegLen.Seconds()
+	maxInflight := common.HTTPTimeout.Seconds() / SegLen.Seconds()
 	numOrchs := int(math.Min(poolSize, maxInflight*2))
 	bsm := &BroadcastSessionsManager{
 		sessMap:        make(map[string]*BroadcastSession),

@@ -18,6 +18,9 @@ import (
 	"google.golang.org/grpc/peer"
 )
 
+// HTTPTimeout timeout used in HTTP connections between nodes
+const HTTPTimeout = 8 * time.Second
+
 var (
 	ErrParseBigInt = fmt.Errorf("failed to parse big integer")
 	ErrProfile     = fmt.Errorf("failed to parse profile")

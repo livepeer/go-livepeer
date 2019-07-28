@@ -28,7 +28,6 @@ import (
 
 const GRPCConnectTimeout = 3 * time.Second
 const GRPCTimeout = 8 * time.Second
-const HTTPTimeout = 8 * time.Second
 
 type Orchestrator interface {
 	ServiceURI() *url.URL
