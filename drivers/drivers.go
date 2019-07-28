@@ -63,25 +63,28 @@ func GetSegmentData(uri string) ([]byte, error) {
 	return getSegmentDataHTTP(uri)
 }
 
-var httpc = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+var httpc = &http.Client{
+	Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+	Timeout:   common.HTTPTimeout / 2,
+}
 
 func getSegmentDataHTTP(uri string) ([]byte, error) {
-	glog.V(common.VERBOSE).Info("Downloading ", uri)
+	glog.V(common.VERBOSE).Infof("Downloading uri=%s", uri)
 	resp, err := httpc.Get(uri)
 	if err != nil {
-		glog.Error("Error getting HTTP ", err)
+		glog.Errorf("Error getting HTTP uri=%s err=%v", uri, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		glog.Error("Non-200 response ", resp.Status)
+		glog.Errorf("Non-200 response for status=%v uri=%s", resp.Status, uri)
 		return nil, fmt.Errorf(resp.Status)
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		glog.Error("Error reading body: ", err)
+		glog.Errorf("Error reading body uri=%s err=%v", uri, err)
 		return nil, err
 	}
-	glog.V(common.VERBOSE).Info("Downloaded ", uri)
+	glog.V(common.VERBOSE).Infof("Downloaded uri=%s", uri)
 	return body, nil
 }

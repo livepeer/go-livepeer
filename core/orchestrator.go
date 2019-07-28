@@ -626,8 +626,8 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	case <-ctx.Done():
 		return signalEOF(ErrRemoteTranscoderTimeout)
 	case chanData := <-taskChan:
-		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s",
-			rt.addr, len(chanData.Segments), taskID, fname)
+		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s err=%v",
+			rt.addr, len(chanData.Segments), taskID, fname, chanData.Err)
 		return chanData.Segments, chanData.Err
 	}
 }
