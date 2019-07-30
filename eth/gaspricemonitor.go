@@ -9,6 +9,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/monitor"
 )
 
 // GasPriceOracle defines methods for fetching a suggested gas price
@@ -125,6 +126,10 @@ func (gpm *GasPriceMonitor) fetchAndUpdateGasPrice(ctx context.Context) error {
 	}
 
 	gpm.updateGasPrice(ctx, gasPrice)
+
+	if monitor.Enabled {
+		monitor.SuggestedGasPrice(gasPrice)
+	}
 
 	glog.V(common.DEBUG).Infof("Cached gas price: %v", gasPrice)
 

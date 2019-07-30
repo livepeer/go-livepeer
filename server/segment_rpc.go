@@ -315,6 +315,13 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	// If the segment was submitted then we assume that any payment included was
 	// submitted as well so we consider the update's credit as spent
 	balUpdate.Status = CreditSpent
+	if monitor.Enabled && sess.OrchestratorInfo.TicketParams != nil {
+		recipient := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient).String()
+		mid := string(sess.ManifestID)
+
+		monitor.TicketValueSent(recipient, mid, balUpdate.NewCredit)
+		monitor.TicketsSent(recipient, mid, balUpdate.NumTickets)
+	}
 
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)

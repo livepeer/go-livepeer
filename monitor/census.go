@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"math/big"
 	"runtime"
 	"strconv"
 	"strings"
@@ -42,6 +43,7 @@ const (
 	SegmentTranscodeErrorPlaylist           SegmentTranscodeError = "Playlist"
 
 	numberOfSegmentsToCalcAverage = 30
+	gweiConversionFactor          = 1000000000
 )
 
 // Enabled true if metrics was enabled in command line
@@ -61,6 +63,9 @@ type (
 		kProfiles                     tag.Key
 		kErrorCode                    tag.Key
 		kTry                          tag.Key
+		kSender                       tag.Key
+		kRecipient                    tag.Key
+		kManifestID                   tag.Key
 		mSegmentSourceAppeared        *stats.Int64Measure
 		mSegmentEmerged               *stats.Int64Measure
 		mSegmentEmergedUnprocessed    *stats.Int64Measure
@@ -85,9 +90,21 @@ type (
 		mTranscodeLatency             *stats.Float64Measure
 		mTranscodeOverallLatency      *stats.Float64Measure
 		mUploadTime                   *stats.Float64Measure
-		lock                          sync.Mutex
-		emergeTimes                   map[uint64]map[uint64]time.Time // nonce:seqNo
-		success                       map[uint64]*segmentsAverager
+
+		// Metrics for sending payments
+		mTicketValueSent *stats.Float64Measure
+		mTicketsSent     *stats.Int64Measure
+
+		// Metrics for receiving payments
+		mTicketValueRecv    *stats.Float64Measure
+		mTicketsRecv        *stats.Int64Measure
+		mWinningTicketsRecv *stats.Int64Measure
+		mValueRedeemed      *stats.Float64Measure
+		mSuggestedGasPrice  *stats.Float64Measure
+
+		lock        sync.Mutex
+		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
+		success     map[uint64]*segmentsAverager
 	}
 
 	segmentCount struct {
@@ -129,12 +146,15 @@ func InitCensus(nodeType, nodeID, version string) {
 		success:     make(map[uint64]*segmentsAverager),
 	}
 	var err error
-	census.kNodeType, _ = tag.NewKey("node_type")
-	census.kNodeID, _ = tag.NewKey("node_id")
-	census.kProfile, _ = tag.NewKey("profile")
-	census.kProfiles, _ = tag.NewKey("profiles")
-	census.kErrorCode, _ = tag.NewKey("error_code")
-	census.kTry, _ = tag.NewKey("try")
+	census.kNodeType = tag.MustNewKey("node_type")
+	census.kNodeID = tag.MustNewKey("node_id")
+	census.kProfile = tag.MustNewKey("profile")
+	census.kProfiles = tag.MustNewKey("profiles")
+	census.kErrorCode = tag.MustNewKey("error_code")
+	census.kTry = tag.MustNewKey("try")
+	census.kSender = tag.MustNewKey("sender")
+	census.kRecipient = tag.MustNewKey("recipient")
+	census.kManifestID = tag.MustNewKey("manifestID")
 	census.ctx, err = tag.New(context.Background(), tag.Insert(census.kNodeType, nodeType), tag.Insert(census.kNodeID, nodeID))
 	if err != nil {
 		glog.Fatal("Error creating context", err)
@@ -166,15 +186,26 @@ func InitCensus(nodeType, nodeID, version string) {
 		"Transcoding latency, from source segment emered from segmenter till all transcoded segment apeeared in manifest", "sec")
 	census.mUploadTime = stats.Float64("upload_time_seconds", "Upload (to Orchestrator) time", "sec")
 
+	// Metrics for sending payments
+	census.mTicketValueSent = stats.Float64("ticket_value_sent", "TicketValueSent", "gwei")
+	census.mTicketsSent = stats.Int64("tickets_sent", "TicketsSent", "tot")
+
+	// Metrics for receiving payments
+	census.mTicketValueRecv = stats.Float64("ticket_value_recv", "TicketValueRecv", "gwei")
+	census.mTicketsRecv = stats.Int64("tickets_recv", "TicketsRecv", "tot")
+	census.mWinningTicketsRecv = stats.Int64("winning_tickets_recv", "WinningTicketsRecv", "tot")
+	census.mValueRedeemed = stats.Float64("value_redeemed", "ValueRedeemed", "gwei")
+	census.mSuggestedGasPrice = stats.Float64("suggested_gas_price", "SuggestedGasPrice", "gwei")
+
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
 	glog.Infof("Node type %s node ID %s", nodeType, nodeID)
 	mVersions := stats.Int64("versions", "Version information.", "Num")
-	compiler, _ := tag.NewKey("compiler")
-	goarch, _ := tag.NewKey("goarch")
-	goos, _ := tag.NewKey("goos")
-	goversion, _ := tag.NewKey("goversion")
-	livepeerversion, _ := tag.NewKey("livepeerversion")
+	compiler := tag.MustNewKey("compiler")
+	goarch := tag.MustNewKey("goarch")
+	goos := tag.MustNewKey("goos")
+	goversion := tag.MustNewKey("goversion")
+	livepeerversion := tag.MustNewKey("livepeerversion")
 	ctx, err := tag.New(context.Background(), tag.Insert(census.kNodeType, nodeType), tag.Insert(census.kNodeID, nodeID),
 		tag.Insert(compiler, runtime.Compiler), tag.Insert(goarch, runtime.GOARCH), tag.Insert(goos, runtime.GOOS),
 		tag.Insert(goversion, runtime.Version()), tag.Insert(livepeerversion, version))
@@ -358,7 +389,61 @@ func InitCensus(nodeType, nodeID, version string) {
 			TagKeys:     append([]tag.Key{census.kTry}, baseTags...),
 			Aggregation: view.Count(),
 		},
+
+		// Metrics for sending payments
+		&view.View{
+			Name:        "ticket_value_sent",
+			Measure:     census.mTicketValueSent,
+			Description: "Ticket value sent",
+			TagKeys:     append([]tag.Key{census.kRecipient, census.kManifestID}, baseTags...),
+			Aggregation: view.Sum(),
+		},
+		&view.View{
+			Name:        "tickets_sent",
+			Measure:     census.mTicketsSent,
+			Description: "Tickets sent",
+			TagKeys:     append([]tag.Key{census.kRecipient, census.kManifestID}, baseTags...),
+			Aggregation: view.Sum(),
+		},
+
+		// Metrics for receiving payments
+		&view.View{
+			Name:        "ticket_value_recv",
+			Measure:     census.mTicketValueRecv,
+			Description: "Ticket value received",
+			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID}, baseTags...),
+			Aggregation: view.Sum(),
+		},
+		&view.View{
+			Name:        "tickets_recv",
+			Measure:     census.mTicketsRecv,
+			Description: "Tickets received",
+			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID}, baseTags...),
+			Aggregation: view.Sum(),
+		},
+		&view.View{
+			Name:        "winning_tickets_recv",
+			Measure:     census.mWinningTicketsRecv,
+			Description: "Winning tickets received",
+			TagKeys:     baseTags,
+			Aggregation: view.Sum(),
+		},
+		&view.View{
+			Name:        "value_redeemed",
+			Measure:     census.mValueRedeemed,
+			Description: "Winning ticket value redeemed",
+			TagKeys:     baseTags,
+			Aggregation: view.Sum(),
+		},
+		&view.View{
+			Name:        "suggested_gas_price",
+			Measure:     census.mSuggestedGasPrice,
+			Description: "Suggested gas price for winning ticket redemption",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
 	}
+
 	// Register the views
 	if err := view.Register(views...); err != nil {
 		glog.Fatalf("Failed to register views: %v", err)
@@ -838,4 +923,126 @@ func (cen *censusMetricsCounter) streamEnded(nonce uint64) {
 		}
 	}
 	census.sendSuccess()
+}
+
+// TicketValueSent records the ticket value sent to a recipient for a manifestID
+func TicketValueSent(recipient string, manifestID string, value *big.Rat) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	if value.Cmp(big.NewRat(0, 1)) <= 0 {
+		return
+	}
+
+	ctx, err := tag.New(census.ctx, tag.Insert(census.kRecipient, recipient), tag.Insert(census.kManifestID, manifestID))
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	stats.Record(ctx, census.mTicketValueSent.M(fracwei2gwei(value)))
+}
+
+// TicketsSent records the number of tickets sent to a recipient for a manifestID
+func TicketsSent(recipient string, manifestID string, numTickets int) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	if numTickets <= 0 {
+		return
+	}
+
+	ctx, err := tag.New(census.ctx, tag.Insert(census.kRecipient, recipient), tag.Insert(census.kManifestID, manifestID))
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	stats.Record(ctx, census.mTicketsSent.M(int64(numTickets)))
+}
+
+// TicketValueRecv records the ticket value received from a sender for a manifestID
+func TicketValueRecv(sender string, manifestID string, value *big.Rat) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	if value.Cmp(big.NewRat(0, 1)) <= 0 {
+		return
+	}
+
+	ctx, err := tag.New(census.ctx, tag.Insert(census.kSender, sender), tag.Insert(census.kManifestID, manifestID))
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	stats.Record(ctx, census.mTicketValueRecv.M(fracwei2gwei(value)))
+}
+
+// TicketsRecv records the number of tickets received from a sender for a manifestID
+func TicketsRecv(sender string, manifestID string, numTickets int) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	if numTickets <= 0 {
+		return
+	}
+
+	ctx, err := tag.New(census.ctx, tag.Insert(census.kSender, sender), tag.Insert(census.kManifestID, manifestID))
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	stats.Record(ctx, census.mTicketsRecv.M(int64(numTickets)))
+}
+
+// WinningTicketsRecv records the number of winning tickets received from a sender
+func WinningTicketsRecv(sender string, numTickets int) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	if numTickets <= 0 {
+		return
+	}
+
+	ctx, err := tag.New(census.ctx, tag.Insert(census.kSender, sender))
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	stats.Record(ctx, census.mWinningTicketsRecv.M(int64(numTickets)))
+}
+
+// ValueRedeemed records the value from redeeming winning tickets from a sender
+func ValueRedeemed(sender string, value *big.Int) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	if value.Cmp(big.NewInt(0)) <= 0 {
+		return
+	}
+
+	ctx, err := tag.New(census.ctx, tag.Insert(census.kSender, sender))
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	stats.Record(ctx, census.mValueRedeemed.M(wei2gwei(value)))
+}
+
+// SuggestedGasPrice records the last suggested gas price
+func SuggestedGasPrice(gasPrice *big.Int) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	stats.Record(census.ctx, census.mSuggestedGasPrice.M(wei2gwei(gasPrice)))
+}
+
+// Convert wei to gwei
+func wei2gwei(wei *big.Int) float64 {
+	gwei, _ := new(big.Float).Quo(new(big.Float).SetInt(wei), big.NewFloat(float64(gweiConversionFactor))).Float64()
+	return gwei
+}
+
+// Convert fractional wei to gwei
+func fracwei2gwei(wei *big.Rat) float64 {
+	floatWei, _ := wei.Float64()
+	return floatWei / gweiConversionFactor
 }

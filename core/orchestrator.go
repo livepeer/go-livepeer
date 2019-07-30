@@ -138,6 +138,10 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
 	}
 
+	totalEV := big.NewRat(0, 1)
+	totalTickets := 0
+	totalWinningTickets := 0
+
 	for _, tsp := range payment.TicketSenderParams {
 
 		ticket.SenderNonce = tsp.SenderNonce
@@ -158,7 +162,10 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		pmErr, ok := err.(AcceptableError)
 		if acceptablePrice && err == nil || (ok && pmErr.Acceptable()) {
 			// Add ticket EV to credit
-			orch.node.Balances.Credit(manifestID, ticket.EV())
+			ev := ticket.EV()
+			orch.node.Balances.Credit(manifestID, ev)
+			totalEV.Add(totalEV, ev)
+			totalTickets++
 		} else {
 			unacceptableReceiveErr = true
 		}
@@ -166,12 +173,23 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		if won {
 			glog.V(common.DEBUG).Infof("Received winning ticket manifestID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
 
+			totalWinningTickets++
+
 			go func(ticket *pm.Ticket, sig []byte, seed *big.Int) {
 				if err := orch.node.Recipient.RedeemWinningTicket(ticket, sig, seed); err != nil {
 					glog.Errorf("error redeeming ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 				}
 			}(ticket, tsp.Sig, seed)
 		}
+	}
+
+	if monitor.Enabled {
+		sender := ethcommon.BytesToAddress(payment.Sender).String()
+		mid := string(manifestID)
+
+		monitor.TicketValueRecv(sender, mid, totalEV)
+		monitor.TicketsRecv(sender, mid, totalTickets)
+		monitor.WinningTicketsRecv(sender, totalWinningTickets)
 	}
 
 	if didPriceErr {

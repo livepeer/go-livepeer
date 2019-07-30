@@ -10,6 +10,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/pkg/errors"
 )
 
@@ -388,6 +389,12 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 	// Wait for transaction to confirm
 	if err := r.broker.CheckTx(tx); err != nil {
 		return err
+	}
+
+	if monitor.Enabled {
+		// TODO(yondonfu): Handle case where < ticket.FaceValue is actually
+		// redeemed i.e. if sender reserve cannot cover the full ticket.FaceValue
+		monitor.ValueRedeemed(ticket.Sender.String(), ticket.FaceValue)
 	}
 
 	return nil
