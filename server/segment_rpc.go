@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -317,7 +316,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	// submitted as well so we consider the update's credit as spent
 	balUpdate.Status = CreditSpent
 	if monitor.Enabled && sess.OrchestratorInfo.TicketParams != nil {
-		recipient := "0x" + hex.EncodeToString(sess.OrchestratorInfo.TicketParams.Recipient)
+		recipient := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient).String()
 		mid := string(sess.ManifestID)
 
 		monitor.TicketValueSent(recipient, mid, balUpdate.NewCredit)
