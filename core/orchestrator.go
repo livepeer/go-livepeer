@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/hex"
 	ogErrors "errors"
 	"fmt"
 	"io/ioutil"
@@ -185,7 +184,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	}
 
 	if monitor.Enabled {
-		sender := "0x" + hex.EncodeToString(payment.Sender)
+		sender := ethcommon.BytesToAddress(payment.Sender).String()
 		mid := string(manifestID)
 
 		monitor.TicketValueRecv(sender, mid, totalEV)
