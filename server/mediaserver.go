@@ -524,13 +524,13 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 //End RTMP Handlers
 
-func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) error {
+func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	// we read this unconditionally, mostly for ffmpeg
 	body, err := ioutil.ReadAll(r.Body)
 
 	if err != nil {
-		err := fmt.Sprintf(`Error reading http request body: %s`, err.Error())
-		return errors.New(err)
+		http.Error(w, fmt.Sprintf(`Error reading http request body: %s`, err.Error()), http.StatusInternalServerError)
+		return
 	}
 	r.Body.Close()
 
@@ -538,8 +538,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) erro
 		// ffmpeg sends us a m3u8 as well, so ignore
 		// Alternatively, reject m3u8s explicitly and take any other type
 		// TODO also look at use content-type
-		err := fmt.Sprintf(`ignoring file extension: %s`, path.Ext(r.URL.Path))
-		return errors.New(err)
+		http.Error(w, fmt.Sprintf(`ignoring file extension: %s`, path.Ext(r.URL.Path)), http.StatusInternalServerError)
+		return
 	}
 
 	now := time.Now()
@@ -555,12 +555,14 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) erro
 	if !exists {
 		appData := (createRTMPStreamIDHandler(s))(r.URL)
 		if appData == nil {
-			return errors.New("stream.AppData is empty")
+			http.Error(w, "stream.AppData is empty", http.StatusInternalServerError)
+			return
 		}
 		st := stream.NewBasicRTMPVideoStream(appData)
 		cxn, err = s.registerConnection(st)
 		if err != nil {
-			return err
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		// TODO monitor for activity and clean up
 
@@ -597,7 +599,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) erro
 	err = processSegment(cxn, seg)
 	if err != nil {
 		// TODO return error
-		return err
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	// Return the results (blobs) using local OS lookup.
@@ -605,15 +608,18 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) erro
 	// Return URL in that case? Need to return results from ProcessSegment
 	os, ok := drivers.NodeStorage.(*drivers.MemoryOS)
 	if !ok {
-		return errors.New("No MemoryOS driver")
+		http.Error(w, "No MemoryOS driver", http.StatusInternalServerError)
+		return
 	}
 	sess := os.GetSession(string(mid))
 	if sess == nil {
-		return errors.New("MemorySession is nil")
+		http.Error(w, "MemorySession is nil", http.StatusInternalServerError)
+		return
 	}
 	params := streamParams(cxn.stream)
 	if params == nil {
-		return errors.New("RTMPVideoStream stream parameters nil")
+		http.Error(w, "RTMPVideoStream stream parameters nil", http.StatusInternalServerError)
+		return
 	}
 	// fetch each rendition from local storage
 	for _, p := range params.profiles {
@@ -626,7 +632,6 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) erro
 		glog.Infof("%s - %d bytes", name, len(data))
 	}
 	w.WriteHeader(200)
-	return nil
 }
 
 //Helper Methods Begin
