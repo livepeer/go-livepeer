@@ -28,6 +28,7 @@ const (
 	SegmentUploadErrorGenCreds              SegmentUploadError    = "GenCreds"
 	SegmentUploadErrorOS                    SegmentUploadError    = "ObjectStorage"
 	SegmentUploadErrorSessionEnded          SegmentUploadError    = "SessionEnded"
+	SegmentUploadErrorInsufficientBalance   SegmentUploadError    = "InsufficientBalance"
 	SegmentUploadErrorTimeout               SegmentUploadError    = "Timeout"
 	SegmentTranscodeErrorUnknown            SegmentTranscodeError = "Unknown"
 	SegmentTranscodeErrorUnknownResponse    SegmentTranscodeError = "UnknownResponse"
@@ -92,15 +93,19 @@ type (
 		mUploadTime                   *stats.Float64Measure
 
 		// Metrics for sending payments
-		mTicketValueSent *stats.Float64Measure
-		mTicketsSent     *stats.Int64Measure
+		mTicketValueSent    *stats.Float64Measure
+		mTicketsSent        *stats.Int64Measure
+		mPaymentCreateError *stats.Int64Measure
 
 		// Metrics for receiving payments
-		mTicketValueRecv    *stats.Float64Measure
-		mTicketsRecv        *stats.Int64Measure
-		mWinningTicketsRecv *stats.Int64Measure
-		mValueRedeemed      *stats.Float64Measure
-		mSuggestedGasPrice  *stats.Float64Measure
+		mTicketValueRecv              *stats.Float64Measure
+		mTicketsRecv                  *stats.Int64Measure
+		mPaymentRecvAcceptableError   *stats.Int64Measure
+		mPaymentRecvUnacceptableError *stats.Int64Measure
+		mWinningTicketsRecv           *stats.Int64Measure
+		mValueRedeemed                *stats.Float64Measure
+		mTicketRedemptionError        *stats.Int64Measure
+		mSuggestedGasPrice            *stats.Float64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -189,12 +194,16 @@ func InitCensus(nodeType, nodeID, version string) {
 	// Metrics for sending payments
 	census.mTicketValueSent = stats.Float64("ticket_value_sent", "TicketValueSent", "gwei")
 	census.mTicketsSent = stats.Int64("tickets_sent", "TicketsSent", "tot")
+	census.mPaymentCreateError = stats.Int64("payment_create_errors", "PaymentCreateError", "tot")
 
 	// Metrics for receiving payments
 	census.mTicketValueRecv = stats.Float64("ticket_value_recv", "TicketValueRecv", "gwei")
 	census.mTicketsRecv = stats.Int64("tickets_recv", "TicketsRecv", "tot")
+	census.mPaymentRecvAcceptableError = stats.Int64("payment_recv_acceptable_errors", "PaymentRecvAcceptableError", "tot")
+	census.mPaymentRecvUnacceptableError = stats.Int64("payment_recv_unacceptable_errors", "PaymentRecvUnacceptableError", "tot")
 	census.mWinningTicketsRecv = stats.Int64("winning_tickets_recv", "WinningTicketsRecv", "tot")
 	census.mValueRedeemed = stats.Float64("value_redeemed", "ValueRedeemed", "gwei")
+	census.mTicketRedemptionError = stats.Int64("ticket_redemption_errors", "TicketRedemptionError", "tot")
 	census.mSuggestedGasPrice = stats.Float64("suggested_gas_price", "SuggestedGasPrice", "gwei")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
@@ -405,6 +414,13 @@ func InitCensus(nodeType, nodeID, version string) {
 			TagKeys:     append([]tag.Key{census.kRecipient, census.kManifestID}, baseTags...),
 			Aggregation: view.Sum(),
 		},
+		&view.View{
+			Name:        "payment_create_errors",
+			Measure:     census.mPaymentCreateError,
+			Description: "Errors when creating payments",
+			TagKeys:     append([]tag.Key{census.kRecipient, census.kManifestID}, baseTags...),
+			Aggregation: view.Sum(),
+		},
 
 		// Metrics for receiving payments
 		&view.View{
@@ -422,6 +438,20 @@ func InitCensus(nodeType, nodeID, version string) {
 			Aggregation: view.Sum(),
 		},
 		&view.View{
+			Name:        "payment_recv_acceptable_errors",
+			Measure:     census.mPaymentRecvAcceptableError,
+			Description: "Acceptable errors when receiving payments",
+			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID, census.kErrorCode}, baseTags...),
+			Aggregation: view.Sum(),
+		},
+		&view.View{
+			Name:        "payment_recv_unacceptable_errors",
+			Measure:     census.mPaymentRecvUnacceptableError,
+			Description: "Unacceptable errors when receiving payments",
+			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID, census.kErrorCode}, baseTags...),
+			Aggregation: view.Sum(),
+		},
+		&view.View{
 			Name:        "winning_tickets_recv",
 			Measure:     census.mWinningTicketsRecv,
 			Description: "Winning tickets received",
@@ -433,6 +463,13 @@ func InitCensus(nodeType, nodeID, version string) {
 			Measure:     census.mValueRedeemed,
 			Description: "Winning ticket value redeemed",
 			TagKeys:     baseTags,
+			Aggregation: view.Sum(),
+		},
+		&view.View{
+			Name:        "ticket_redemption_errors",
+			Measure:     census.mTicketRedemptionError,
+			Description: "Errors when redeeming tickets",
+			TagKeys:     append([]tag.Key{census.kSender}, baseTags...),
 			Aggregation: view.Sum(),
 		},
 		&view.View{
@@ -959,6 +996,19 @@ func TicketsSent(recipient string, manifestID string, numTickets int) {
 	stats.Record(ctx, census.mTicketsSent.M(int64(numTickets)))
 }
 
+// PaymentCreateError records a error from payment creation
+func PaymentCreateError(recipient string, manifestID string) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	ctx, err := tag.New(census.ctx, tag.Insert(census.kRecipient, recipient), tag.Insert(census.kManifestID, manifestID))
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	stats.Record(ctx, census.mPaymentCreateError.M(1))
+}
+
 // TicketValueRecv records the ticket value received from a sender for a manifestID
 func TicketValueRecv(sender string, manifestID string, value *big.Rat) {
 	census.lock.Lock()
@@ -993,6 +1043,41 @@ func TicketsRecv(sender string, manifestID string, numTickets int) {
 	stats.Record(ctx, census.mTicketsRecv.M(int64(numTickets)))
 }
 
+// PaymentRecvError records an error from receiving a payment
+func PaymentRecvError(sender string, manifestID string, errStr string, acceptable bool) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	var errCode string
+	if strings.Contains(errStr, "Expected price") {
+		errCode = "InvalidPrice"
+	} else if strings.Contains(errStr, "invalid already revealed recipientRand") {
+		errCode = "InvalidRecipientRand"
+	} else if strings.Contains(errStr, "invalid ticket faceValue") {
+		errCode = "InvalidTicketFaceValue"
+	} else if strings.Contains(errStr, "invalid ticket winProb") {
+		errCode = "InvalidTicketWinProb"
+	} else {
+		errCode = "PaymentError"
+	}
+
+	ctx, err := tag.New(
+		census.ctx,
+		tag.Insert(census.kSender, sender),
+		tag.Insert(census.kManifestID, manifestID),
+		tag.Insert(census.kErrorCode, errCode),
+	)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	if acceptable {
+		stats.Record(ctx, census.mPaymentRecvAcceptableError.M(1))
+	} else {
+		stats.Record(ctx, census.mPaymentRecvUnacceptableError.M(1))
+	}
+}
+
 // WinningTicketsRecv records the number of winning tickets received from a sender
 func WinningTicketsRecv(sender string, numTickets int) {
 	census.lock.Lock()
@@ -1025,6 +1110,19 @@ func ValueRedeemed(sender string, value *big.Int) {
 	}
 
 	stats.Record(ctx, census.mValueRedeemed.M(wei2gwei(value)))
+}
+
+// TicketRedemptionError records an error from redeeming a ticket
+func TicketRedemptionError(sender string) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	ctx, err := tag.New(census.ctx, tag.Insert(census.kSender, sender))
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	stats.Record(ctx, census.mTicketRedemptionError.M(1))
 }
 
 // SuggestedGasPrice records the last suggested gas price
