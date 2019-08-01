@@ -375,6 +375,10 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 	// is an error in transaction submission
 	tx, err := r.broker.RedeemWinningTicket(ticket, sig, recipientRand)
 	if err != nil {
+		if monitor.Enabled {
+			monitor.TicketRedemptionError(ticket.Sender.String())
+		}
+
 		return err
 	}
 
@@ -388,6 +392,10 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 
 	// Wait for transaction to confirm
 	if err := r.broker.CheckTx(tx); err != nil {
+		if monitor.Enabled {
+			monitor.TicketRedemptionError(ticket.Sender.String())
+		}
+
 		return err
 	}
 

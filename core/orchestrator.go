@@ -108,6 +108,8 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		return fmt.Errorf("Could not find Sender for payment: %v", payment)
 	}
 
+	sender := ethcommon.BytesToAddress(payment.Sender)
+
 	var (
 		didPriceErr            bool
 		acceptablePrice        bool
@@ -116,12 +118,16 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	)
 
 	err := orch.acceptablePrice(ethcommon.BytesToAddress(payment.Sender), payment.GetExpectedPrice())
+	acceptablePriceErr, ok := err.(AcceptableError)
 	if err != nil {
 		glog.Error(err)
 		didPriceErr = true
+
+		if monitor.Enabled {
+			monitor.PaymentRecvError(sender.String(), string(manifestID), err.Error(), ok && acceptablePriceErr.Acceptable())
+		}
 	}
 
-	acceptablePriceErr, ok := err.(AcceptableError)
 	if err == nil || (ok && acceptablePriceErr.Acceptable()) {
 		acceptablePrice = true
 	}
@@ -153,13 +159,17 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			tsp.Sig,
 			seed,
 		)
+		pmErr, ok := err.(AcceptableError)
 		if err != nil {
 			glog.Errorf("Error receiving ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
+
+			if monitor.Enabled {
+				monitor.PaymentRecvError(sender.String(), string(manifestID), err.Error(), ok && pmErr.Acceptable())
+			}
 
 			didReceiveErr = true
 		}
 
-		pmErr, ok := err.(AcceptableError)
 		if acceptablePrice && err == nil || (ok && pmErr.Acceptable()) {
 			// Add ticket EV to credit
 			ev := ticket.EV()
@@ -184,12 +194,12 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	}
 
 	if monitor.Enabled {
-		sender := ethcommon.BytesToAddress(payment.Sender).String()
+		senderStr := sender.String()
 		mid := string(manifestID)
 
-		monitor.TicketValueRecv(sender, mid, totalEV)
-		monitor.TicketsRecv(sender, mid, totalTickets)
-		monitor.WinningTicketsRecv(sender, totalWinningTickets)
+		monitor.TicketValueRecv(senderStr, mid, totalEV)
+		monitor.TicketsRecv(senderStr, mid, totalTickets)
+		monitor.WinningTicketsRecv(senderStr, totalWinningTickets)
 	}
 
 	if didPriceErr {

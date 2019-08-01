@@ -278,6 +278,12 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	payment, err := genPayment(sess, balUpdate.NumTickets)
 	if err != nil {
 		glog.Errorf("Could not create payment: %v", err)
+
+		if monitor.Enabled && sess.OrchestratorInfo.TicketParams != nil {
+			recipient := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient).String()
+			monitor.PaymentCreateError(recipient, string(sess.ManifestID))
+		}
+
 		return nil, err
 	}
 
