@@ -361,13 +361,24 @@ func TestServeSegment_UnacceptableProcessPaymentError(t *testing.T) {
 	}
 
 	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
-	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	require.Nil(err)
 
 	assert.Equal(http.StatusBadRequest, resp.StatusCode)
 	assert.Equal("some error", strings.TrimSpace(string(body)))
+	resp.Body.Close()
+
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some error")).Once()
+	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err = ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+	assert.Equal("some error", strings.TrimSpace(string(body)))
+
 }
 
 func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
