@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"math/big"
 	"math/rand"
 	"net/http"
@@ -258,7 +259,7 @@ func streamParams(rtmpStrm stream.RTMPVideoStream) *streamParameters {
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 
-		cxn, err := s.registerConnection(rtmpStrm)
+		cxn, err := s.registerConnection(rtmpStrm, "")
 		if err != nil {
 			return err
 		}
@@ -325,7 +326,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 	}
 }
 
-func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*rtmpConnection, error) {
+func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream, resolution string) (*rtmpConnection, error) {
 	nonce := rand.Uint64()
 
 	// If running in on-chain mode, check for a reasonable deposit
@@ -358,7 +359,10 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	// Build the source video profile from the RTMP stream.
-	resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
+	// Build the source video profile from the RTMP stream.
+	if resolution == "" {
+		resolution = fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
+	}
 	vProfile := ffmpeg.VideoProfile{
 		Name:       "source",
 		Resolution: resolution,
@@ -559,7 +563,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		st := stream.NewBasicRTMPVideoStream(appData)
-		cxn, err = s.registerConnection(st)
+		resolution := r.Header.Get("Content-Resolution")
+		cxn, err = s.registerConnection(st, resolution)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -587,11 +592,18 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		seq = 0
 	}
+
+	duration, err := strconv.ParseFloat(r.Header.Get("Content-Duration"), 64)
+	duration = math.Floor(duration * 1000)
+	if err != nil {
+		duration = 0
+	}
+
 	seg := &stream.HLSSegment{
-		Data:  body,
-		Name:  fname,
-		SeqNo: seq,
-		// TODO duration
+		Data:     body,
+		Name:     fname,
+		SeqNo:    seq,
+		Duration: duration,
 	}
 
 	// Do the transcoding!
