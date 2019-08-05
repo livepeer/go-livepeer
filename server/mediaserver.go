@@ -538,7 +538,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		// ffmpeg sends us a m3u8 as well, so ignore
 		// Alternatively, reject m3u8s explicitly and take any other type
 		// TODO also look at use content-type
-		http.Error(w, fmt.Sprintf(`ignoring file extension: %s`, path.Ext(r.URL.Path)), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf(`ignoring file extension: %s`, path.Ext(r.URL.Path)), http.StatusBadRequest)
 		return
 	}
 
@@ -555,7 +555,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	if !exists {
 		appData := (createRTMPStreamIDHandler(s))(r.URL)
 		if appData == nil {
-			http.Error(w, "stream.AppData is empty", http.StatusInternalServerError)
+			http.Error(w, "Could not create stream ID: ", http.StatusInternalServerError)
 			return
 		}
 		st := stream.NewBasicRTMPVideoStream(appData)
@@ -564,7 +564,6 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// TODO monitor for activity and clean up
 
 		ticker := time.NewTicker(RefreshIntervalHttpPush)
 
@@ -631,7 +630,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		// do multipart stuff; see  runTranscoder in server/ot_rpc.go
 		glog.Infof("%s - %d bytes", name, len(data))
 	}
-	w.WriteHeader(200)
+
+	w.WriteHeader(http.StatusOK)
 }
 
 //Helper Methods Begin

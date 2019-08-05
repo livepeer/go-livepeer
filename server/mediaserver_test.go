@@ -897,7 +897,6 @@ func TestHandlePush200(t *testing.T) {
 
 	body, err := ioutil.ReadAll(resp.Body)
 	require.Nil(t, err)
-	glog.Error(resp.StatusCode)
 	assert.Equal(200, resp.StatusCode)
 	assert.Equal(strings.TrimSpace(string(body)), "")
 }
@@ -947,7 +946,7 @@ func TestHandlePushFileExtensionError(t *testing.T) {
 
 	body, err := ioutil.ReadAll(resp.Body)
 	require.Nil(t, err)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
 	assert.Contains(strings.TrimSpace(string(body)), "ignoring file extension")
 }
 
@@ -955,6 +954,7 @@ func TestHandlePushMemoryOSError(t *testing.T) {
 	// assert no MemoryOS driver error
 	assert := assert.New(t)
 	handler, reader, w := handlePushRequestSetup(setupServer())
+	tempStorage := drivers.NodeStorage
 	drivers.NodeStorage = nil
 	req := httptest.NewRequest("GET", "/live/seg.ts", reader)
 
@@ -966,6 +966,7 @@ func TestHandlePushMemoryOSError(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	assert.Contains(strings.TrimSpace(string(body)), "No MemoryOS driver")
+	drivers.NodeStorage = tempStorage
 }
 
 func TestHandlePushStorageError(t *testing.T) {
@@ -973,6 +974,8 @@ func TestHandlePushStorageError(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()
 	handler, reader, w := handlePushRequestSetup(s)
+
+	tempStorage := drivers.NodeStorage
 	drivers.NodeStorage = nil
 	req := httptest.NewRequest("GET", "/live/seg.ts", reader)
 	mid := parseManifestID(req.URL.Path)
@@ -986,13 +989,17 @@ func TestHandlePushStorageError(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	assert.Contains(strings.TrimSpace(string(body)), "ErrStorage")
+
+	// reset drivers.NodeStorage to original value
+	drivers.NodeStorage = tempStorage
 }
 
-func TestHandlePushAppDataEmptyError(t *testing.T) {
+func TestHandlePushForAuthWebhookFailure(t *testing.T) {
 	// assert app data error
 	assert := assert.New(t)
 	s := setupServer()
 	handler, reader, w := handlePushRequestSetup(s)
+
 	AuthWebhookURL = "notaurl"
 	req := httptest.NewRequest("GET", "/live/seg.ts", reader)
 
@@ -1003,5 +1010,8 @@ func TestHandlePushAppDataEmptyError(t *testing.T) {
 	body, err := ioutil.ReadAll(resp.Body)
 	require.Nil(t, err)
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Contains(strings.TrimSpace(string(body)), "stream.AppData is empty")
+	assert.Contains(strings.TrimSpace(string(body)), "Could not create stream ID")
+
+	// reset AuthWebhookURL to original value
+	AuthWebhookURL = ""
 }
