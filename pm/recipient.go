@@ -254,8 +254,11 @@ func (r *recipient) winProb(faceValue *big.Int) *big.Int {
 		return maxWinProb
 	}
 
-	x := new(big.Int).Div(maxWinProb, faceValue)
-
+	m := new(big.Int)
+	x, m := new(big.Int).DivMod(maxWinProb, faceValue, m)
+	if m.Int64() != 0 {
+		return new(big.Int).Mul(r.cfg.EV, x.Add(x, big.NewInt(1)))
+	}
 	// Compute winProb as the numerator of a fraction over maxWinProb
 	return new(big.Int).Mul(r.cfg.EV, x)
 }

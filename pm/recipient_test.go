@@ -1142,7 +1142,7 @@ func TestTicketParams(t *testing.T) {
 		t.Errorf("expected faceValue %d got %d", faceValue, params1.FaceValue)
 	}
 
-	winProb, _ := new(big.Int).SetString("5789604461865809771178549250434395392663499233282028201972879200395655", 10)
+	winProb, _ := new(big.Int).SetString("5789604461865809771178549250434395392663499233282028201972879200395660", 10)
 	if params1.WinProb.Cmp(winProb) != 0 {
 		t.Errorf("expected winProb %d got %d", winProb, params1.WinProb)
 	}
@@ -1196,7 +1196,7 @@ func TestTicketParams(t *testing.T) {
 	faceValue = big.NewInt(777000000)
 	assert.Equal(faceValue, params3.FaceValue)
 
-	winProb, _ = new(big.Int).SetString("745122839364969082519761808292714979750772102095499125093034646125565", 10)
+	winProb, _ = new(big.Int).SetString("745122839364969082519761808292714979750772102095499125093034646125570", 10)
 	assert.Equal(winProb, params3.WinProb)
 
 	// Might be slightly off due to truncation
@@ -1212,7 +1212,7 @@ func TestTicketParams(t *testing.T) {
 	faceValue = sm.maxFloat
 	assert.Equal(faceValue, params4.FaceValue)
 
-	winProb, _ = new(big.Int).SetString("57896044618658097711785492504343953926634992332820282019728792003956564815", 10)
+	winProb, _ = new(big.Int).SetString("57896044618658097711785492504343953926634992332820282019728792003956564820", 10)
 	assert.Equal(winProb, params4.WinProb)
 
 	// Might be slightly off due to truncation
