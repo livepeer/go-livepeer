@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"math"
 	"math/big"
 	"math/rand"
 	"net/http"
