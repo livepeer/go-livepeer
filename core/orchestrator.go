@@ -134,12 +134,15 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 
 	seed := new(big.Int).SetBytes(payment.TicketParams.Seed)
 
-	ticket := &pm.Ticket{
-		Recipient:              ethcommon.BytesToAddress(payment.TicketParams.Recipient),
-		Sender:                 ethcommon.BytesToAddress(payment.Sender),
-		FaceValue:              new(big.Int).SetBytes(payment.TicketParams.FaceValue),
-		WinProb:                new(big.Int).SetBytes(payment.TicketParams.WinProb),
-		RecipientRandHash:      ethcommon.BytesToHash(payment.TicketParams.RecipientRandHash),
+	ticketParams := &pm.TicketParams{
+		Recipient:         ethcommon.BytesToAddress(payment.TicketParams.Recipient),
+		FaceValue:         new(big.Int).SetBytes(payment.TicketParams.FaceValue),
+		WinProb:           new(big.Int).SetBytes(payment.TicketParams.WinProb),
+		RecipientRandHash: ethcommon.BytesToHash(payment.TicketParams.RecipientRandHash),
+		Seed:              seed,
+	}
+
+	ticketExpirationParams := &pm.TicketExpirationParams{
 		CreationRound:          payment.ExpirationParams.CreationRound,
 		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
 	}
@@ -150,7 +153,12 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 
 	for _, tsp := range payment.TicketSenderParams {
 
-		ticket.SenderNonce = tsp.SenderNonce
+		ticket := pm.NewTicket(
+			ticketParams,
+			ticketExpirationParams,
+			sender,
+			tsp.SenderNonce,
+		)
 
 		glog.V(common.DEBUG).Infof("Receiving ticket manifestID=%v faceValue=%v winProb=%v ev=%v", manifestID, ticket.FaceValue, ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
 
