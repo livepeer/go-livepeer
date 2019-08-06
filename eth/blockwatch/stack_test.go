@@ -2,6 +2,7 @@ package blockwatch
 
 import (
 	"errors"
+	"sync"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -108,6 +109,58 @@ func TestPop(t *testing.T) {
 	assert.Equal(1, len(store.headers))
 }
 
+func TestPopConcurrent(t *testing.T) {
+	store := &stubMiniHeaderStore{}
+	stack := NewStack(store, 10)
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Insert headers into store
+	headerMap := make(map[ethcommon.Hash]bool)
+	for i := 0; i < 10; i++ {
+		hash := ethcommon.BytesToHash([]byte(string(i)))
+		headerMap[hash] = true
+
+		require.Nil(store.InsertMiniHeader(&MiniHeader{Hash: hash}))
+	}
+
+	// Ensure that headerMap starts off with the correct # of entries
+	assert.Equal(10, len(headerMap))
+
+	popCh := make(chan *MiniHeader)
+
+	var wg sync.WaitGroup
+	wg.Add(10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			header, err := stack.Pop()
+			require.Nil(err)
+
+			popCh <- header
+
+			wg.Done()
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(popCh)
+	}()
+
+	// Mark each header as popped in headerMap
+	for h := range popCh {
+		_, ok := headerMap[h.Hash]
+		assert.True(ok)
+
+		delete(headerMap, h.Hash)
+	}
+
+	// headerMap should have 0 entries
+	assert.Equal(0, len(headerMap))
+	assert.Equal(0, len(store.headers))
+}
+
 func TestPush(t *testing.T) {
 	store := &stubMiniHeaderStore{}
 	stack := NewStack(store, 2)
@@ -165,6 +218,56 @@ func TestPush(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(h4, store.headers[len(store.headers)-1])
 	assert.Equal(2, len(store.headers))
+}
+
+func TestPushConcurrent(t *testing.T) {
+	store := &stubMiniHeaderStore{}
+	stack := NewStack(store, 10)
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	headerHash := func(i int) ethcommon.Hash {
+		return ethcommon.BytesToHash([]byte(string(i)))
+	}
+
+	// Insert headers into store
+	for i := 0; i < 10; i++ {
+		require.Nil(store.InsertMiniHeader(&MiniHeader{Hash: headerHash(i)}))
+	}
+
+	// Create headerMap with expected entries after all stack pushes are complete
+	headerMap := make(map[ethcommon.Hash]bool)
+	for i := 10; i < 20; i++ {
+		headerMap[headerHash(i)] = true
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(10)
+	for i := 10; i < 20; i++ {
+		go func(i int) {
+			err := stack.Push(&MiniHeader{Hash: headerHash(i)})
+			require.Nil(err)
+
+			wg.Done()
+		}(i)
+	}
+
+	wg.Wait()
+
+	headers, err := stack.Inspect()
+	require.Nil(err)
+
+	for _, h := range headers {
+		_, ok := headerMap[h.Hash]
+		assert.True(ok)
+
+		delete(headerMap, h.Hash)
+	}
+
+	// headerMap should have 0 entries
+	assert.Equal(0, len(headerMap))
+	assert.Equal(10, len(store.headers))
 }
 
 func TestPeek(t *testing.T) {
