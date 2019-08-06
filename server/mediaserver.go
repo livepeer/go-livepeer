@@ -594,7 +594,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	duration, err := strconv.ParseFloat(r.Header.Get("Content-Duration"), 64)
-	duration = math.Floor(duration * 1000)
+	duration = duration / 1000
 	if err != nil {
 		duration = 0
 	}
