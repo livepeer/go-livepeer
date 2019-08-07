@@ -106,6 +106,7 @@ type (
 		mValueRedeemed                *stats.Float64Measure
 		mTicketRedemptionError        *stats.Int64Measure
 		mSuggestedGasPrice            *stats.Float64Measure
+		mTranscodingPrice             *stats.Float64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -205,6 +206,7 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.mValueRedeemed = stats.Float64("value_redeemed", "ValueRedeemed", "gwei")
 	census.mTicketRedemptionError = stats.Int64("ticket_redemption_errors", "TicketRedemptionError", "tot")
 	census.mSuggestedGasPrice = stats.Float64("suggested_gas_price", "SuggestedGasPrice", "gwei")
+	census.mTranscodingPrice = stats.Float64("transcoding_price", "TranscodingPrice", "wei")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -477,6 +479,13 @@ func InitCensus(nodeType, nodeID, version string) {
 			Measure:     census.mSuggestedGasPrice,
 			Description: "Suggested gas price for winning ticket redemption",
 			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
+		&view.View{
+			Name:        "transcoding_price",
+			Measure:     census.mTranscodingPrice,
+			Description: "Transcoding price per pixel",
+			TagKeys:     append([]tag.Key{census.kSender}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
 	}
@@ -1131,6 +1140,15 @@ func SuggestedGasPrice(gasPrice *big.Int) {
 	defer census.lock.Unlock()
 
 	stats.Record(census.ctx, census.mSuggestedGasPrice.M(wei2gwei(gasPrice)))
+}
+
+// TranscodingPrice records the last transcoding price
+func TranscodingPrice(sender string, price *big.Rat) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	floatWei, _ := price.Float64()
+	stats.Record(census.ctx, census.mTranscodingPrice.M(floatWei))
 }
 
 // Convert wei to gwei
