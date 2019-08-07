@@ -103,9 +103,9 @@ func main() {
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 0, "Gas price for ETH transactions")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
-	ticketEV := flag.String("ticketEV", "1000000000", "The expected value for PM tickets")
+	ticketEV := flag.String("ticketEV", "500000000", "The expected value for PM tickets")
 	// Broadcaster max acceptable ticket EV
-	maxTicketEV := flag.String("maxTicketEV", "10000000000", "The maximum acceptable expected value for PM tickets")
+	maxTicketEV := flag.String("maxTicketEV", "1000000000", "The maximum acceptable expected value for PM tickets")
 	// Broadcaster deposit multiplier to determine max acceptable ticket faceValue
 	depositMultiplier := flag.Int("depositMultiplier", 1000, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
 

@@ -270,6 +270,7 @@ func (orch *orchestrator) SufficientBalance(manifestID ManifestID) bool {
 	if orch.node == nil || orch.node.Recipient == nil || orch.node.Balances == nil {
 		return true
 	}
+	glog.Infof("++++++ BROADCASTER BALANCE %v = %v", manifestID, new(big.Int).Div(orch.node.Balances.Balance(manifestID).Num(), orch.node.Balances.Balance(manifestID).Denom()).Int64())
 	if orch.node.Balances.Balance(manifestID).Cmp(orch.node.Recipient.EV()) < 0 {
 		return false
 	}
@@ -520,7 +521,8 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 		}
 		tProfileData[md.Profiles[i]] = tData[i]
 		tr.TranscodeData = append(tr.TranscodeData, &TranscodeData{
-			Data: tData[i],
+			Data:   tData[i],
+			Pixels: 1000000000,
 			// TODO: ADD NUMBER OF OUTPUT PIXELS
 		})
 		glog.V(common.DEBUG).Infof("Transcoded segment manifest=%s seqNo=%d profile=%s len=%d",

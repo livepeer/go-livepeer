@@ -287,6 +287,8 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
+	glog.Infof("\n%v\n\n Creating new payment with %v tickets \n Current Balance: %v\n\n%v\n", strings.Repeat("*", 75), balUpdate.NumTickets, new(big.Int).Div(balUpdate.ExistingCredit.Num(), balUpdate.ExistingCredit.Denom()).Int64(), strings.Repeat("*", 75))
+
 	ti := sess.OrchestratorInfo
 	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(data))
 	if err != nil {

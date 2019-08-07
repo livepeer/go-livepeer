@@ -4,6 +4,8 @@ import (
 	"math/big"
 	"sync"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 // Balance holds the credit balance for a broadcast session
@@ -29,7 +31,7 @@ func (b *Balance) Credit(amount *big.Rat) {
 // to send with a payment, the new credit represented by the payment and the existing credit (i.e reserved balance)
 func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) {
 	existingCredit := b.balances.Reserve(b.manifestID)
-
+	glog.Infof("============= RESERVING BALANCE DURING STAGEUPDATE %v =============", existingCredit)
 	// If the existing credit exceeds the minimum credit then no tickets are required
 	// and the total payment value is 0
 	if existingCredit.Cmp(minCredit) >= 0 {
