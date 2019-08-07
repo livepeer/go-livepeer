@@ -553,7 +553,7 @@ func TestProcessPayment_GivenNoSender_ReturnsError(t *testing.T) {
 	assert.False(ok)
 }
 
-func TestProcessPayment_GivenNoTicketParams_ReturnsError(t *testing.T) {
+func TestProcessPayment_GivenNoTicketParams_ReturnsNoError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
@@ -567,9 +567,7 @@ func TestProcessPayment_GivenNoTicketParams_ReturnsError(t *testing.T) {
 	err := orch.ProcessPayment(protoPayment, ManifestID("some manifest"))
 
 	assert := assert.New(t)
-	assert.Error(err)
-	_, ok := err.(AcceptableError)
-	assert.False(ok)
+	assert.Nil(err)
 }
 
 func TestProcessPayment_GivenNilNode_ReturnsNilError(t *testing.T) {

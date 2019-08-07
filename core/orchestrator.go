@@ -101,7 +101,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	}
 
 	if payment.TicketParams == nil {
-		return fmt.Errorf("Could not find TicketParams for payment %v", payment)
+		return nil
 	}
 
 	if payment.Sender == nil || len(payment.Sender) == 0 {
