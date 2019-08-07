@@ -685,16 +685,39 @@ func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 	for i := 0; i < numTickets; i++ {
 		senderParams = append(
 			senderParams,
-			&net.TicketSenderParams{SenderNonce: 456, Sig: pm.RandBytes(123)},
+			&net.TicketSenderParams{SenderNonce: 456 + uint32(i), Sig: pm.RandBytes(123)},
 		)
 	}
+	payment := *defaultPaymentWithTickets(t, senderParams)
 
-	err := orch.ProcessPayment(*defaultPaymentWithTickets(t, senderParams), manifestID)
+	ticketParams := &pm.TicketParams{
+		Recipient:         ethcommon.BytesToAddress(payment.TicketParams.Recipient),
+		FaceValue:         new(big.Int).SetBytes(payment.TicketParams.FaceValue),
+		WinProb:           new(big.Int).SetBytes(payment.TicketParams.WinProb),
+		RecipientRandHash: ethcommon.BytesToHash(payment.TicketParams.RecipientRandHash),
+		Seed:              new(big.Int).SetBytes(payment.TicketParams.Seed),
+	}
+
+	ticketExpirationParams := &pm.TicketExpirationParams{
+		CreationRound:          payment.ExpirationParams.CreationRound,
+		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
+	}
+
+	err := orch.ProcessPayment(payment, manifestID)
 
 	time.Sleep(time.Millisecond * 20)
 	assert := assert.New(t)
 	assert.Nil(err)
 	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", numTickets)
+	for i := 0; i < numTickets; i++ {
+		ticket := pm.NewTicket(
+			ticketParams,
+			ticketExpirationParams,
+			ethcommon.BytesToAddress(payment.Sender),
+			456+uint32(i),
+		)
+		recipient.AssertCalled(t, "RedeemWinningTicket", ticket, mock.Anything, mock.Anything)
+	}
 }
 
 func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
