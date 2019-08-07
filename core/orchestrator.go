@@ -520,8 +520,8 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 		}
 		tProfileData[md.Profiles[i]] = tData[i]
 		tr.TranscodeData = append(tr.TranscodeData, &TranscodeData{
-			Data: tData[i],
-			// TODO: ADD NUMBER OF OUTPUT PIXELS
+			Data:   tData[i],
+			Pixels: 900000000,
 		})
 		glog.V(common.DEBUG).Infof("Transcoded segment manifest=%s seqNo=%d profile=%s len=%d",
 			string(md.ManifestID), seg.SeqNo, md.Profiles[i].Name, len(tData[i]))
