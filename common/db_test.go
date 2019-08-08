@@ -8,7 +8,10 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
@@ -656,6 +659,130 @@ func TestLoadWinningTickets_GivenTwoSessionsWithTickets_ReturnsAllTickets(t *tes
 	assert.Equal(recipientRand1, recipientRands[1])
 }
 
+func TestInsertMiniHeader_ReturnsFindLatestMiniHeader(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	assert := assert.New(t)
+	require := require.New(t)
+	require.Nil(err)
+
+	h0 := defaultMiniHeader()
+	err = dbh.InsertMiniHeader(h0)
+	require.Nil(err)
+
+	h0db, err := dbh.FindLatestMiniHeader()
+	require.Nil(err)
+	assert.Equal(h0, h0db)
+
+	// Test FindLatestMiniHeader with 2 blocks
+	h1 := defaultMiniHeader()
+	h1.Number = big.NewInt(451)
+	h1.Logs = append(h1.Logs, types.Log{
+		Topics:    []common.Hash{pm.RandHash(), pm.RandHash()},
+		Data:      pm.RandBytes(32),
+		BlockHash: h1.Hash,
+	})
+	err = dbh.InsertMiniHeader(h1)
+	require.Nil(err)
+	latest, err := dbh.FindLatestMiniHeader()
+	require.Nil(err)
+	assert.Equal(h1, latest)
+	assert.Equal(len(h1.Logs), 2)
+
+	// test MiniHeader = nil error
+	err = dbh.InsertMiniHeader(nil)
+	assert.EqualError(err, "must provide a MiniHeader")
+
+	// test blocknumber = nil error
+	h1.Number = nil
+	err = dbh.InsertMiniHeader(h1)
+	assert.EqualError(err, "no block number found")
+}
+
+func TestFindAllMiniHeadersSortedByNumber(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	assert := assert.New(t)
+	require := require.New(t)
+	require.Nil(err)
+
+	added := make([]*blockwatch.MiniHeader, 10)
+	for i := 0; i < 10; i++ {
+		h := defaultMiniHeader()
+		h.Number = big.NewInt(int64(i))
+		if i%2 == 0 {
+			h.Logs = append(h.Logs, types.Log{
+				Topics:    []common.Hash{pm.RandHash(), pm.RandHash()},
+				Data:      pm.RandBytes(32),
+				BlockHash: h.Hash,
+			})
+		}
+		err = dbh.InsertMiniHeader(h)
+		require.Nil(err)
+		added[9-i] = h
+	}
+
+	headers, err := dbh.FindAllMiniHeadersSortedByNumber()
+	for i, h := range headers {
+		assert.Equal(h.Number.Int64(), int64(len(headers)-1-i))
+		assert.Equal(h, added[i])
+		// even = 1 log , uneven = 2 logs
+		if i%2 == 0 {
+			assert.Len(h.Logs, 1)
+		} else {
+			assert.Len(h.Logs, 2)
+		}
+	}
+}
+
+func TestDeleteMiniHeader(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	assert := assert.New(t)
+	require := require.New(t)
+	require.Nil(err)
+
+	h0 := defaultMiniHeader()
+	err = dbh.InsertMiniHeader(h0)
+	require.Nil(err)
+
+	h0db, err := dbh.FindLatestMiniHeader()
+	require.Nil(err)
+	assert.Equal(h0, h0db)
+
+	err = dbh.DeleteMiniHeader(h0.Hash)
+	require.Nil(err)
+	headers, err := dbh.FindAllMiniHeadersSortedByNumber()
+	require.Nil(err)
+	assert.Equal(len(headers), 0)
+
+	// test FindLatestMiniHeader error path
+	h0db, err = dbh.FindLatestMiniHeader()
+	assert.Nil(err)
+
+	// Test header to be deleted doesn't exist
+	err = dbh.DeleteMiniHeader(h0.Hash)
+	assert.Nil(err)
+	headers, _ = dbh.FindAllMiniHeadersSortedByNumber()
+	assert.Equal(len(headers), 0)
+
+	// test correct amount of remaining headers when more than 1
+	err = dbh.InsertMiniHeader(h0)
+	require.Nil(err)
+	h1 := defaultMiniHeader()
+	err = dbh.InsertMiniHeader(h1)
+	require.Nil(err)
+	err = dbh.DeleteMiniHeader(h0.Hash)
+	require.Nil(err)
+	headers, err = dbh.FindAllMiniHeadersSortedByNumber()
+	assert.Equal(len(headers), 1)
+	assert.Nil(err)
+	assert.Equal(headers[0].Hash, h1.Hash)
+}
+
 func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) {
 	sessionID = "foo bar"
 	ticket = &pm.Ticket{
@@ -678,4 +805,19 @@ func getRowCountOrFatal(query string, dbraw *sql.DB, t *testing.T) int {
 	require.Nil(t, err)
 
 	return count
+}
+
+func defaultMiniHeader() *blockwatch.MiniHeader {
+	block := &blockwatch.MiniHeader{
+		Number: big.NewInt(450),
+		Parent: pm.RandHash(),
+		Hash:   pm.RandHash(),
+	}
+	log := types.Log{
+		Topics:    []common.Hash{pm.RandHash(), pm.RandHash()},
+		Data:      pm.RandBytes(32),
+		BlockHash: block.Hash,
+	}
+	block.Logs = []types.Log{log}
+	return block
 }
