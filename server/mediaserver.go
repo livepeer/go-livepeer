@@ -130,10 +130,11 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOption
 	s.LPMS.HandleRTMPPlay(getRTMPStreamHandler(s))
 
 	//LPMS hanlder for handling HLS video play
-	s.LPMS.HandleHLSPlay(getHLSMasterPlaylistHandler(s), getHLSMediaPlaylistHandler(s), getHLSSegmentHandler(s))
+	s.LPMS.HandleHLSPlay(getHLSMasterPlaylistHandler(s), getHLSMediaPlaylistHandler(s), getHLSSegmentHandler(s), getSegmentPushHandler(s))
 
 	//Start the LPMS server
 	lpmsCtx, cancel := context.WithCancel(context.Background())
+
 	ec := make(chan error, 1)
 	go func() {
 		if err := s.LPMS.Start(lpmsCtx); err != nil {
@@ -151,6 +152,12 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOption
 	case <-ctx.Done():
 		cancel()
 		return ctx.Err()
+	}
+}
+
+func getSegmentPushHandler(s *LivepeerServer) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s.HandlePush(w, r)
 	}
 }
 

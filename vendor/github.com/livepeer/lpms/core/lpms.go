@@ -91,6 +91,7 @@ func (l *LPMS) Start(ctx context.Context) error {
 		go func() {
 			glog.V(4).Infof("LPMS Server listening on rtmp://%v", l.vidListener.RtmpServer.Addr)
 			ec <- l.vidListener.RtmpServer.ListenAndServe()
+
 		}()
 	}
 	startHTTP := l.httpAddr != ""
@@ -132,9 +133,10 @@ func (l *LPMS) HandleRTMPPlay(getStream func(url *url.URL) (stream.RTMPVideoStre
 func (l *LPMS) HandleHLSPlay(
 	getMasterPlaylist func(url *url.URL) (*m3u8.MasterPlaylist, error),
 	getMediaPlaylist func(url *url.URL) (*m3u8.MediaPlaylist, error),
-	getSegment func(url *url.URL) ([]byte, error)) {
+	getSegment func(url *url.URL) ([]byte, error),
+	getSegmentPushHandler func(w http.ResponseWriter, r *http.Request)) {
 
-	l.vidPlayer.HandleHLSPlay(getMasterPlaylist, getMediaPlaylist, getSegment)
+	l.vidPlayer.HandleHLSPlay(getMasterPlaylist, getMediaPlaylist, getSegment, getSegmentPushHandler)
 }
 
 //SegmentRTMPToHLS takes a rtmp stream and re-packages it into a HLS stream with the specified segmenter options

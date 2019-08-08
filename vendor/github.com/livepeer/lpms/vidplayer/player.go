@@ -86,7 +86,8 @@ func (s *VidPlayer) rtmpServerHandlePlay() func(conn *joy4rtmp.Conn) {
 func (s *VidPlayer) HandleHLSPlay(
 	getMasterPlaylist func(url *url.URL) (*m3u8.MasterPlaylist, error),
 	getMediaPlaylist func(url *url.URL) (*m3u8.MediaPlaylist, error),
-	getSegment func(url *url.URL) ([]byte, error)) {
+	getSegment func(url *url.URL) ([]byte, error),
+	getSegmentPushHandler func(w http.ResponseWriter, r *http.Request)) {
 
 	s.mux.HandleFunc("/stream/", func(w http.ResponseWriter, r *http.Request) {
 		handleLive(w, r, getMasterPlaylist, getMediaPlaylist, getSegment)
@@ -94,6 +95,10 @@ func (s *VidPlayer) HandleHLSPlay(
 
 	s.mux.HandleFunc("/vod/", func(w http.ResponseWriter, r *http.Request) {
 		handleVOD(r.URL, s.VodPath, w)
+	})
+
+	s.mux.HandleFunc("/live/", func(w http.ResponseWriter, r *http.Request) {
+		getSegmentPushHandler(w, r)
 	})
 }
 
