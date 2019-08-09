@@ -540,6 +540,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body.Close()
+	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
 
 	if ".ts" != path.Ext(r.URL.Path) {
 		// ffmpeg sends us a m3u8 as well, so ignore
