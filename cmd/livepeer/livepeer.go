@@ -644,11 +644,13 @@ func getOrchWebhook(u string) (*url.URL, error) {
 	if err != nil {
 		return nil, err
 	}
-	if p.Scheme != "http" && p.Scheme != "https" {
-		return nil, errors.New("Webhook URL should be HTTP or HTTP")
+
+	if p.Scheme == "http" || p.Scheme == "https" {
+		glog.Infof("Using orchestrator webhook url %s", u)
+		return p, nil
 	}
-	glog.Infof("Using orchestrator webhook url %s", u)
-	return p, nil
+
+	return nil, errors.New("Webhook URL should be HTTP or HTTP")
 }
 
 func getAuthWebhookURL(u string) (string, error) {
