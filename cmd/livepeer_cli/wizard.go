@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -39,6 +41,18 @@ func (w *wizard) readString() string {
 			return text
 		}
 	}
+}
+
+func (w *wizard) readMultilineString() string {
+	fmt.Printf("(press enter followed by CTRL+D when done) > ")
+
+	var buf strings.Builder
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		buf.WriteString(fmt.Sprintln(scanner.Text()))
+	}
+
+	return strings.TrimSuffix(buf.String(), "\n")
 }
 
 // readStringAndValidate reads a single line from stdin, trims spaces and

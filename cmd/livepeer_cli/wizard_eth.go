@@ -16,3 +16,13 @@ func (w *wizard) setGasPrice() {
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/setGasPrice", w.host, w.httpPort), val)
 }
+
+func (w *wizard) signMessage() {
+	fmt.Printf("Enter or paste the message to sign: \n")
+	msg := w.readMultilineString()
+	val := url.Values{
+		"message": {msg},
+	}
+	sig := httpPostWithParams(fmt.Sprintf("http://%v:%v/signMessage", w.host, w.httpPort), val)
+	fmt.Println(fmt.Sprintf("\n\nSignature:\n0x%x", sig))
+}
