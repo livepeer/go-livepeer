@@ -82,12 +82,12 @@ type rtmpConnection struct {
 }
 
 type LivepeerServer struct {
-	RTMPSegmenter lpmscore.RTMPSegmenter
-	LPMS          *lpmscore.LPMS
-	LivepeerNode  *core.LivepeerNode
-	HTTPMux       *http.ServeMux
-
+	RTMPSegmenter         lpmscore.RTMPSegmenter
+	LPMS                  *lpmscore.LPMS
+	LivepeerNode          *core.LivepeerNode
+	HTTPMux               *http.ServeMux
 	ExposeCurrentManifest bool
+	httpAddr              string
 
 	// Thread sensitive fields. All accesses to the
 	// following fields should be protected by `connectionLock`
@@ -105,21 +105,27 @@ type authWebhookResponse struct {
 
 func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
 	opts := lpmscore.LPMSOpts{
-		RtmpAddr: rtmpAddr, RtmpDisabled: true,
-		HttpAddr: httpAddr,
-		WorkDir:  lpNode.WorkDir,
+		RtmpAddr:     rtmpAddr,
+		RtmpDisabled: true,
+		HttpAddr:     httpAddr,
+		WorkDir:      lpNode.WorkDir,
+		HttpMux:      http.NewServeMux(),
 	}
 	switch lpNode.NodeType {
 	case core.BroadcasterNode:
 		opts.RtmpDisabled = false
-	case core.OrchestratorNode:
-		opts.HttpMux = http.NewServeMux()
 	}
 	server := lpmscore.New(&opts)
-	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{}, rtmpConnections: make(map[core.ManifestID]*rtmpConnection)}
+	ls := &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{},
+		rtmpConnections: make(map[core.ManifestID]*rtmpConnection), httpAddr: httpAddr,
+	}
+	if lpNode.NodeType == core.BroadcasterNode {
+		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
+	}
+	return ls
 }
 
-//StartServer starts the LPMS server
+//StartMediaServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string) error {
 	BroadcastJobVideoProfiles = parsePresets(strings.Split(transcodingOptions, ","))
 
@@ -130,12 +136,12 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOption
 	s.LPMS.HandleRTMPPlay(getRTMPStreamHandler(s))
 
 	//LPMS hanlder for handling HLS video play
-	s.LPMS.HandleHLSPlay(getHLSMasterPlaylistHandler(s), getHLSMediaPlaylistHandler(s), getHLSSegmentHandler(s), getSegmentPushHandler(s))
+	s.LPMS.HandleHLSPlay(getHLSMasterPlaylistHandler(s), getHLSMediaPlaylistHandler(s), getHLSSegmentHandler(s))
 
 	//Start the LPMS server
 	lpmsCtx, cancel := context.WithCancel(context.Background())
 
-	ec := make(chan error, 1)
+	ec := make(chan error, 2)
 	go func() {
 		if err := s.LPMS.Start(lpmsCtx); err != nil {
 			// typically triggered if there's an error with broadcaster LPMS
@@ -143,6 +149,12 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOption
 			ec <- s.LPMS.Start(lpmsCtx)
 		}
 	}()
+	if s.LivepeerNode.NodeType == core.BroadcasterNode {
+		go func() {
+			glog.V(4).Infof("HTTP Server listening on http://%v", s.httpAddr)
+			ec <- http.ListenAndServe(s.httpAddr, s.HTTPMux)
+		}()
+	}
 
 	select {
 	case err := <-ec:
@@ -152,12 +164,6 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOption
 	case <-ctx.Done():
 		cancel()
 		return ctx.Err()
-	}
-}
-
-func getSegmentPushHandler(s *LivepeerServer) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		s.HandlePush(w, r)
 	}
 }
 

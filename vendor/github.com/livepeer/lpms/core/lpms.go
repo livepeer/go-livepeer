@@ -133,10 +133,9 @@ func (l *LPMS) HandleRTMPPlay(getStream func(url *url.URL) (stream.RTMPVideoStre
 func (l *LPMS) HandleHLSPlay(
 	getMasterPlaylist func(url *url.URL) (*m3u8.MasterPlaylist, error),
 	getMediaPlaylist func(url *url.URL) (*m3u8.MediaPlaylist, error),
-	getSegment func(url *url.URL) ([]byte, error),
-	getSegmentPushHandler func(w http.ResponseWriter, r *http.Request)) {
+	getSegment func(url *url.URL) ([]byte, error)) {
 
-	l.vidPlayer.HandleHLSPlay(getMasterPlaylist, getMediaPlaylist, getSegment, getSegmentPushHandler)
+	l.vidPlayer.HandleHLSPlay(getMasterPlaylist, getMediaPlaylist, getSegment)
 }
 
 //SegmentRTMPToHLS takes a rtmp stream and re-packages it into a HLS stream with the specified segmenter options
