@@ -61,9 +61,10 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 var AuthWebhookURL string
 
 type streamParameters struct {
-	mid      core.ManifestID
-	rtmpKey  string
-	profiles []ffmpeg.VideoProfile
+	mid        core.ManifestID
+	rtmpKey    string
+	profiles   []ffmpeg.VideoProfile
+	resolution string
 }
 
 func (s *streamParameters) StreamID() string {
@@ -204,9 +205,10 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			key = common.RandomIDGenerator(StreamKeyBytes)
 		}
 		return &streamParameters{
-			mid:      mid,
-			rtmpKey:  key,
-			profiles: presets,
+			mid:        mid,
+			rtmpKey:    key,
+			profiles:   presets,
+			resolution: "0x0", // re-assigned to an actual value for RTMP Push only
 		}
 	}
 }
@@ -258,7 +260,7 @@ func streamParams(rtmpStrm stream.RTMPVideoStream) *streamParameters {
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 
-		cxn, err := s.registerConnection(rtmpStrm, "")
+		cxn, err := s.registerConnection(rtmpStrm)
 		if err != nil {
 			return err
 		}
@@ -325,7 +327,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 	}
 }
 
-func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream, resolution string) (*rtmpConnection, error) {
+func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*rtmpConnection, error) {
 	nonce := rand.Uint64()
 
 	// If running in on-chain mode, check for a reasonable deposit
@@ -359,12 +361,9 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream, res
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	// Build the source video profile from the RTMP stream.
 	// Build the source video profile from the RTMP stream.
-	if resolution == "" {
-		resolution = fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
-	}
 	vProfile := ffmpeg.VideoProfile{
 		Name:       "source",
-		Resolution: resolution,
+		Resolution: params.resolution,
 		Bitrate:    "4000k", // Fix this
 	}
 	hlsStrmID := core.MakeStreamID(mid, &vProfile)
@@ -562,8 +561,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		st := stream.NewBasicRTMPVideoStream(appData)
-		resolution := r.Header.Get("Content-Resolution")
-		cxn, err = s.registerConnection(st, resolution)
+		params := streamParams(st)
+		params.resolution = r.Header.Get("Content-Resolution")
+
+		cxn, err = s.registerConnection(st)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -592,17 +593,17 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		seq = 0
 	}
 
-	duration, err := strconv.ParseFloat(r.Header.Get("Content-Duration"), 64)
-	duration = duration / 1000
+	duration, err := strconv.Atoi(r.Header.Get("Content-Duration"))
 	if err != nil {
-		duration = 0
+		duration = 2000 // maybe do some reasonable default rather than zero?
+		glog.Info("MIssing duration; filling in a default of 2000ms")
 	}
 
 	seg := &stream.HLSSegment{
 		Data:     body,
 		Name:     fname,
 		SeqNo:    seq,
-		Duration: duration,
+		Duration: float64(duration) / 1000.0,
 	}
 
 	// Do the transcoding!

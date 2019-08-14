@@ -661,7 +661,7 @@ func TestRegisterConnection(t *testing.T) {
 	c.On("Account").Return(accounts.Account{Address: addr})
 	c.On("GetSenderInfo", addr).Return(nil, errors.New("GetSenderInfo error")).Once()
 
-	_, err := s.registerConnection(strm, "")
+	_, err := s.registerConnection(strm)
 	assert.Equal("GetSenderInfo error", err.Error())
 
 	// Should return an error if in on-chain mode and sender deposit is 0
@@ -670,7 +670,7 @@ func TestRegisterConnection(t *testing.T) {
 	}
 	c.On("GetSenderInfo", addr).Return(info, nil).Once()
 
-	_, err = s.registerConnection(strm, "")
+	_, err = s.registerConnection(strm)
 	assert.Equal(errLowDeposit, err)
 
 	// Remove node storage
@@ -680,20 +680,20 @@ func TestRegisterConnection(t *testing.T) {
 	info.Deposit = big.NewInt(1)
 	c.On("GetSenderInfo", addr).Return(info, nil).Once()
 
-	_, err = s.registerConnection(strm, "")
+	_, err = s.registerConnection(strm)
 	assert.NotEqual(errLowDeposit, err)
 
 	// Switch to off-chain mode
 	s.LivepeerNode.Eth = nil
 
 	// Should return an error if missing node storage
-	_, err = s.registerConnection(strm, "")
+	_, err = s.registerConnection(strm)
 	assert.Equal(err, errStorage)
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 
 	// normal success case
 	rand.Seed(123)
-	cxn, err := s.registerConnection(strm, "")
+	cxn, err := s.registerConnection(strm)
 	assert.NotNil(cxn)
 	assert.Nil(err)
 
@@ -706,7 +706,7 @@ func TestRegisterConnection(t *testing.T) {
 	assert.Equal(string(mid)+"/source", s.LastHLSStreamID().String())
 
 	// Should return an error if creating another cxn with the same mid
-	_, err = s.registerConnection(strm, "")
+	_, err = s.registerConnection(strm)
 	assert.Equal(err, errAlreadyExists)
 
 	// Ensure thread-safety under -race
@@ -718,7 +718,7 @@ func TestRegisterConnection(t *testing.T) {
 			name := fmt.Sprintf("%v_%v", t.Name(), i)
 			mid := core.SplitStreamIDString(name).ManifestID
 			strm := stream.NewBasicRTMPVideoStream(&streamParameters{mid: mid})
-			cxn, err := s.registerConnection(strm, "")
+			cxn, err := s.registerConnection(strm)
 
 			assert.Nil(err)
 			assert.NotNil(cxn)
