@@ -336,9 +336,6 @@ func main() {
 		addrMap := n.Eth.ContractAddresses()
 		em := eth.NewEventMonitor(backend, addrMap)
 
-		// Setup block service to receive headers from the head of the chain
-		n.EthServices["BlockService"] = eventservices.NewBlockService(em, dbh)
-
 		// Initialize block watcher that will emit logs used by event watchers
 		blockWatcherClient, err := blockwatch.NewRPCClient(*ethUrl, ethRPCTimeout)
 		if err != nil {
