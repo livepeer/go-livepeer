@@ -83,6 +83,7 @@ func main() {
 	httpAddr := flag.String("httpAddr", "", "Address to bind for HTTP commands")
 	serviceAddr := flag.String("serviceAddr", "", "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
 	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
+	orchWebhook := flag.String("orchWebbook", "", "Webhook to obtain updated available Orchestrator info in offchain mode")
 
 	// Transcoding:
 	orchestrator := flag.Bool("orchestrator", false, "Set to true to be an orchestrator")
@@ -499,6 +500,8 @@ func main() {
 		// Set up orchestrator discovery
 		if len(orchAddresses) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchAddresses)
+		} else if *orchWebhook != "" {
+			n.OrchestratorPool = discovery.NewWebhookOrchestratorPoolCache(n, *orchWebhook)
 		} else if *network != "offchain" {
 			n.OrchestratorPool = discovery.NewDBOrchestratorPoolCache(n)
 		}
