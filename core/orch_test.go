@@ -47,20 +47,22 @@ func TestCurrentBlock(t *testing.T) {
 	defer dbraw.Close()
 	n.Database = db
 
-	db.SetLastSeenBlock(big.NewInt(1234))
-	if orch.CurrentBlock().Int64() != big.NewInt(1234).Int64() {
+	blkNum := big.NewInt(1234)
+	blkHash := ethcommon.BytesToHash([]byte("foo"))
+	if _, err := dbraw.Exec(fmt.Sprintf("INSERT INTO blockheaders(number, parent, hash, logs) VALUES(%v, \"\", %v, \"[]\")", blkNum.Int64(), blkHash.Hex())); err != nil {
+		t.Error("Unexpected error inserting mini header ", err)
+	}
+	if orch.CurrentBlock().Int64() != blkNum.Int64() {
 		t.Error("Unexpected block ", orch.CurrentBlock())
 	}
 
-	// throw a db error; should still return nil
-	if _, err := dbraw.Exec("DELETE FROM kv WHERE key = 'lastBlock'"); err != nil {
-		t.Error("Unexpected error deleting lastBlock ", err)
+	if _, err := dbraw.Exec(fmt.Sprintf("DELETE FROM blockheaders WHERE hash = %v", blkHash.Hex())); err != nil {
+		t.Error("Unexpected error deleting mini header ", err)
 	}
 
 	if orch.CurrentBlock() != nil {
 		t.Error("Expected nil getting nonexistent row")
 	}
-
 }
 
 func TestServeTranscoder(t *testing.T) {

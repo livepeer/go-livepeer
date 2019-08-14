@@ -66,7 +66,6 @@ var schema = `
 		updatedAt STRING DEFAULT CURRENT_TIMESTAMP
 	);
 	INSERT OR IGNORE INTO kv(key, value) VALUES('dbVersion', '{{ . }}');
-	INSERT OR IGNORE INTO kv(key, value) VALUES('lastBlock', '0');
 
 	CREATE TABLE IF NOT EXISTS orchestrators (
 		ethereumAddr STRING PRIMARY KEY,
@@ -311,33 +310,17 @@ func (db *DB) Close() {
 	}
 }
 
-func (db *DB) SetLastSeenBlock(block *big.Int) error {
-	if db == nil {
-		return nil
-	}
-	glog.V(VERBOSE).Info("db: Setting LastSeenBlock to ", block)
-	_, err := db.updateKV.Exec(block.String(), "lastBlock")
-	if err != nil {
-		glog.Error("db: Got err in updating block ", err)
-		return err
-	}
-	return err
-}
-
+// LastSeenBlock returns the last block number stored by the DB
 func (db *DB) LastSeenBlock() (*big.Int, error) {
-	if db == nil {
+	header, err := db.FindLatestMiniHeader()
+	if err != nil {
+		return nil, err
+	}
+	if header == nil {
 		return nil, nil
 	}
 
-	var lastSeenBlock int64
-	row := db.dbh.QueryRow("SELECT value FROM kv WHERE key = 'lastBlock'")
-	err := row.Scan(&lastSeenBlock)
-	if err != nil {
-		glog.Error("db: Got err in retrieving block ", err)
-		return nil, err
-	}
-
-	return big.NewInt(lastSeenBlock), nil
+	return header.Number, nil
 }
 
 func (db *DB) UpdateOrch(orch *DBOrch) error {
