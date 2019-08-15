@@ -3,13 +3,17 @@ package common
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
 	"text/template"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/pm"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pkg/errors"
@@ -19,15 +23,18 @@ type DB struct {
 	dbh *sql.DB
 
 	// prepared statements
-	selectOrchs                *sql.Stmt
-	filterOrchs                *sql.Stmt
-	updateOrch                 *sql.Stmt
-	updateKV                   *sql.Stmt
-	insertUnbondingLock        *sql.Stmt
-	useUnbondingLock           *sql.Stmt
-	unbondingLocks             *sql.Stmt
-	withdrawableUnbondingLocks *sql.Stmt
-	insertWinningTicket        *sql.Stmt
+	selectOrchs                      *sql.Stmt
+	updateOrch                       *sql.Stmt
+	updateKV                         *sql.Stmt
+	insertUnbondingLock              *sql.Stmt
+	useUnbondingLock                 *sql.Stmt
+	unbondingLocks                   *sql.Stmt
+	withdrawableUnbondingLocks       *sql.Stmt
+	insertWinningTicket              *sql.Stmt
+	insertMiniHeader                 *sql.Stmt
+	findLatestMiniHeader             *sql.Stmt
+	findAllMiniHeadersSortedByNumber *sql.Stmt
+	deleteMiniHeader                 *sql.Stmt
 }
 
 type DBOrch struct {
@@ -94,6 +101,15 @@ var schema = `
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_winningtickets_sessionid ON winningTickets(sessionID);
+
+	CREATE TABLE IF NOT EXISTS blockheaders (
+		number int64,
+		parent STRING,
+		hash STRING PRIMARY KEY,
+		logs BLOB
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_blockheaders_number ON blockheaders(number);
 `
 
 func NewDBOrch(serviceURI string, orchAddr string) *DBOrch {
@@ -201,6 +217,42 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.insertWinningTicket = stmt
 
+	// Insert block header
+	stmt, err = db.Prepare("INSERT INTO blockheaders(number, parent, hash, logs) VALUES(?, ?, ?, ?)")
+	if err != nil {
+		glog.Error("Unable to prepare insertMiniHeader", err)
+		d.Close()
+		return nil, err
+	}
+	d.insertMiniHeader = stmt
+
+	// Find the latest block header
+	stmt, err = db.Prepare("SELECT * FROM blockheaders ORDER BY number DESC LIMIT 1")
+	if err != nil {
+		glog.Error("Unable to prepare findLatestMiniHeader", err)
+		d.Close()
+		return nil, err
+	}
+	d.findLatestMiniHeader = stmt
+
+	// Find all block headers sorted by number
+	stmt, err = db.Prepare("SELECT * FROM blockheaders ORDER BY number DESC")
+	if err != nil {
+		glog.Error("Unable to prepare findAllMiniHeadersSortedByNumber", err)
+		d.Close()
+		return nil, err
+	}
+	d.findAllMiniHeadersSortedByNumber = stmt
+
+	// Delete block header
+	stmt, err = db.Prepare("DELETE FROM blockheaders WHERE hash=?")
+	if err != nil {
+		glog.Error("Unable to prepare deleteMiniHeader", err)
+		d.Close()
+		return nil, err
+	}
+	d.deleteMiniHeader = stmt
+
 	glog.V(DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
@@ -212,9 +264,6 @@ func (db *DB) Close() {
 	}
 	if db.selectOrchs != nil {
 		db.selectOrchs.Close()
-	}
-	if db.filterOrchs != nil {
-		db.filterOrchs.Close()
 	}
 	if db.updateKV != nil {
 		db.updateKV.Close()
@@ -233,6 +282,18 @@ func (db *DB) Close() {
 	}
 	if db.insertWinningTicket != nil {
 		db.insertWinningTicket.Close()
+	}
+	if db.insertMiniHeader != nil {
+		db.insertMiniHeader.Close()
+	}
+	if db.findLatestMiniHeader != nil {
+		db.findLatestMiniHeader.Close()
+	}
+	if db.findAllMiniHeadersSortedByNumber != nil {
+		db.findAllMiniHeadersSortedByNumber.Close()
+	}
+	if db.deleteMiniHeader != nil {
+		db.deleteMiniHeader.Close()
 	}
 	if db.dbh != nil {
 		db.dbh.Close()
@@ -474,4 +535,110 @@ func buildSelectOrchsQuery(filter *DBOrchFilter) (string, error) {
 		query = query + " AND pricePerPixel <= " + strconv.FormatInt(fixedPrice, 10)
 	}
 	return query, nil
+}
+
+// FindLatestMiniHeader returns the MiniHeader with the highest blocknumber in the DB
+func (db *DB) FindLatestMiniHeader() (*blockwatch.MiniHeader, error) {
+	row := db.findLatestMiniHeader.QueryRow()
+	var (
+		number  int64
+		parent  string
+		hash    string
+		logsEnc []byte
+	)
+	if err := row.Scan(&number, &parent, &hash, &logsEnc); err != nil {
+		if err.Error() != "sql: no rows in result set" {
+			return nil, fmt.Errorf("could not retrieve latest header: %v", err)
+		}
+		// If there is no result return no error, just nil value
+		return nil, nil
+	}
+
+	logs, err := decodeLogsJSON(logsEnc)
+	if err != nil {
+		return nil, err
+	}
+	return &blockwatch.MiniHeader{
+		Number: big.NewInt(number),
+		Parent: ethcommon.HexToHash(parent),
+		Hash:   ethcommon.HexToHash(hash),
+		Logs:   logs,
+	}, nil
+}
+
+// FindAllMiniHeadersSortedByNumber returns all MiniHeaders in the DB sorting in descending order by block number
+func (db *DB) FindAllMiniHeadersSortedByNumber() ([]*blockwatch.MiniHeader, error) {
+	var headers []*blockwatch.MiniHeader
+	rows, err := db.findAllMiniHeadersSortedByNumber.Query()
+	defer rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var (
+			number  int64
+			parent  string
+			hash    string
+			logsEnc []byte
+		)
+		if err := rows.Scan(&number, &parent, &hash, &logsEnc); err != nil {
+			return nil, err
+		}
+		logs, err := decodeLogsJSON(logsEnc)
+		if err != nil {
+			return nil, err
+		}
+		headers = append(headers, &blockwatch.MiniHeader{
+			Number: big.NewInt(number),
+			Parent: ethcommon.HexToHash(parent),
+			Hash:   ethcommon.HexToHash(hash),
+			Logs:   logs,
+		})
+	}
+	return headers, nil
+}
+
+// InsertMiniHeader inserts a MiniHeader into the database
+func (db *DB) InsertMiniHeader(header *blockwatch.MiniHeader) error {
+	if header == nil {
+		return errors.New("must provide a MiniHeader")
+	}
+	if header.Number == nil {
+		return errors.New("no block number found")
+	}
+	logsEnc, err := encodeLogsJSON(header.Logs)
+	if err != nil {
+		return err
+	}
+	_, err = db.insertMiniHeader.Exec(header.Number.Int64(), header.Parent.Hex(), header.Hash.Hex(), logsEnc)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// DeleteMiniHeader deletes a MiniHeader from the DB and takes in the blockhash of the block to be deleted as an argument
+func (db *DB) DeleteMiniHeader(hash ethcommon.Hash) error {
+	_, err := db.deleteMiniHeader.Exec(hash.Hex())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func encodeLogsJSON(logs []types.Log) ([]byte, error) {
+	logsEnc, err := json.Marshal(logs)
+	if err != nil {
+		return []byte{}, err
+	}
+	return logsEnc, nil
+}
+
+func decodeLogsJSON(logsEnc []byte) ([]types.Log, error) {
+	var logs []types.Log
+	err := json.Unmarshal(logsEnc, &logs)
+	if err != nil {
+		return []types.Log{}, err
+	}
+	return logs, nil
 }
