@@ -19,15 +19,14 @@ type DB struct {
 	dbh *sql.DB
 
 	// prepared statements
-	selectOrchs                *sql.Stmt
-	filterOrchs                *sql.Stmt
-	updateOrch                 *sql.Stmt
-	updateKV                   *sql.Stmt
-	insertUnbondingLock        *sql.Stmt
-	useUnbondingLock           *sql.Stmt
-	unbondingLocks             *sql.Stmt
-	withdrawableUnbondingLocks *sql.Stmt
-	insertWinningTicket        *sql.Stmt
+	selectOrchs                      *sql.Stmt
+	updateOrch                       *sql.Stmt
+	updateKV                         *sql.Stmt
+	insertUnbondingLock              *sql.Stmt
+	useUnbondingLock                 *sql.Stmt
+	unbondingLocks                   *sql.Stmt
+	withdrawableUnbondingLocks       *sql.Stmt
+	insertWinningTicket              *sql.Stmt
 }
 
 type DBOrch struct {
@@ -212,9 +211,6 @@ func (db *DB) Close() {
 	}
 	if db.selectOrchs != nil {
 		db.selectOrchs.Close()
-	}
-	if db.filterOrchs != nil {
-		db.filterOrchs.Close()
 	}
 	if db.updateKV != nil {
 		db.updateKV.Close()
