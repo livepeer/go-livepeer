@@ -27,6 +27,7 @@ type DB struct {
 	updateOrch                       *sql.Stmt
 	updateKV                         *sql.Stmt
 	insertUnbondingLock              *sql.Stmt
+	deleteUnbondingLock              *sql.Stmt
 	useUnbondingLock                 *sql.Stmt
 	unbondingLocks                   *sql.Stmt
 	withdrawableUnbondingLocks       *sql.Stmt
@@ -186,6 +187,13 @@ func InitDB(dbPath string) (*DB, error) {
 		return nil, err
 	}
 	d.insertUnbondingLock = stmt
+	stmt, err = db.Prepare("DELETE FROM unbondingLocks WHERE id=? AND delegator=?")
+	if err != nil {
+		glog.Error("Unable to prepare deleteUnbondingLock ", err)
+		d.Close()
+		return nil, err
+	}
+	d.deleteUnbondingLock = stmt
 	stmt, err = db.Prepare("UPDATE unbondingLocks SET usedBlock=? WHERE id=? AND delegator=?")
 	if err != nil {
 		glog.Error("Unable to prepare useUnbondingLock ", err)
@@ -270,6 +278,9 @@ func (db *DB) Close() {
 	}
 	if db.insertUnbondingLock != nil {
 		db.insertUnbondingLock.Close()
+	}
+	if db.deleteUnbondingLock != nil {
+		db.deleteMiniHeader.Close()
 	}
 	if db.useUnbondingLock != nil {
 		db.useUnbondingLock.Close()
@@ -374,6 +385,18 @@ func (db *DB) InsertUnbondingLock(id *big.Int, delegator ethcommon.Address, amou
 	_, err := db.insertUnbondingLock.Exec(id.Int64(), delegator.Hex(), amount.String(), withdrawRound.Int64())
 	if err != nil {
 		glog.Errorf("db: Error inserting unbonding lock %v for delegator %v: %v", id, delegator.Hex(), err)
+		return err
+	}
+	return nil
+}
+
+// DeleteUnbondingLock deletes an unbonding lock from the DB with the given ID and delegator address.
+// This method will return nil for non-existent unbonding locks
+func (db *DB) DeleteUnbondingLock(id *big.Int, delegator ethcommon.Address) error {
+	glog.V(DEBUG).Infof("db: Deleting unbonding lock %v for delegator %v", id, delegator.Hex())
+	_, err := db.deleteUnbondingLock.Exec(id.Int64(), delegator.Hex())
+	if err != nil {
+		glog.Errorf("db: Error deleting unbonding lock %v for delegator %v: %v", id, delegator.Hex(), err)
 		return err
 	}
 	return nil
