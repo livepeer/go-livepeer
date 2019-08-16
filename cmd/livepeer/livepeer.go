@@ -338,8 +338,6 @@ func main() {
 
 		// Setup block service to receive headers from the head of the chain
 		n.EthServices["BlockService"] = eventservices.NewBlockService(em, dbh)
-		// Setup unbonding service to manage unbonding locks
-		n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
 
 		// Initialize block watcher that will emit logs used by event watchers
 		blockWatcherClient, err := blockwatch.NewRPCClient(*ethUrl, ethRPCTimeout)
