@@ -402,9 +402,17 @@ func (db *DB) DeleteUnbondingLock(id *big.Int, delegator ethcommon.Address) erro
 	return nil
 }
 
+// UseUnbondingLock sets an unbonding lock in the DB as used by setting the lock's used block.
+// If usedBlock is nil this method will set the lock's used block to NULL
 func (db *DB) UseUnbondingLock(id *big.Int, delegator ethcommon.Address, usedBlock *big.Int) error {
 	glog.V(DEBUG).Infof("db: Using unbonding lock %v for delegator %v", id, delegator.Hex())
-	_, err := db.useUnbondingLock.Exec(usedBlock.Int64(), id.Int64(), delegator.Hex())
+
+	var err error
+	if usedBlock == nil {
+		_, err = db.useUnbondingLock.Exec(nil, id.Int64(), delegator.Hex())
+	} else {
+		_, err = db.useUnbondingLock.Exec(usedBlock.Int64(), id.Int64(), delegator.Hex())
+	}
 	if err != nil {
 		glog.Errorf("db: Error using unbonding lock %v for delegator %v: %v", id, delegator.Hex(), err)
 		return err
