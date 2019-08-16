@@ -602,35 +602,6 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return the results (blobs) using local OS lookup.
-	// May be empty if an external broadcaster OS is used
-	// Return URL in that case? Need to return results from ProcessSegment
-	os, ok := drivers.NodeStorage.(*drivers.MemoryOS)
-	if !ok {
-		http.Error(w, "No MemoryOS driver", http.StatusInternalServerError)
-		return
-	}
-	sess := os.GetSession(string(mid))
-	if sess == nil {
-		http.Error(w, "MemorySession is nil", http.StatusInternalServerError)
-		return
-	}
-	params := streamParams(cxn.stream)
-	if params == nil {
-		http.Error(w, "RTMPVideoStream stream parameters nil", http.StatusInternalServerError)
-		return
-	}
-	// fetch each rendition from local storage
-	for _, p := range params.profiles {
-		name := fmt.Sprintf("%s/%s/%s", mid, p.Name, fname)
-		data := sess.GetData(name)
-		if len(data) <= 0 {
-			// nonexistent!
-		}
-		// do multipart stuff; see  runTranscoder in server/ot_rpc.go
-		glog.Infof("%s - %d bytes", name, len(data))
-	}
-
 	w.WriteHeader(http.StatusOK)
 }
 

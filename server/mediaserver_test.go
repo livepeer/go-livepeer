@@ -901,22 +901,6 @@ func TestHandlePush200(t *testing.T) {
 	assert.Equal(strings.TrimSpace(string(body)), "")
 }
 
-func TestHandlePushMemorySessionError(t *testing.T) {
-	// assert Memory Session is nil error
-	assert := assert.New(t)
-	handler, reader, w := handlePushRequestSetup(setupServer())
-	req := httptest.NewRequest("GET", "/live/seg.ts", reader)
-
-	handler.ServeHTTP(w, req)
-	resp := w.Result()
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	require.Nil(t, err)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Contains(strings.TrimSpace(string(body)), "MemorySession is nil")
-}
-
 func TestHandlePushMemoryRequestError(t *testing.T) {
 	// assert http request body error returned
 	assert := assert.New(t)
@@ -948,25 +932,6 @@ func TestHandlePushFileExtensionError(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(http.StatusBadRequest, resp.StatusCode)
 	assert.Contains(strings.TrimSpace(string(body)), "ignoring file extension")
-}
-
-func TestHandlePushMemoryOSError(t *testing.T) {
-	// assert no MemoryOS driver error
-	assert := assert.New(t)
-	handler, reader, w := handlePushRequestSetup(setupServer())
-	tempStorage := drivers.NodeStorage
-	drivers.NodeStorage = nil
-	req := httptest.NewRequest("GET", "/live/seg.ts", reader)
-
-	handler.ServeHTTP(w, req)
-	resp := w.Result()
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	require.Nil(t, err)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Contains(strings.TrimSpace(string(body)), "No MemoryOS driver")
-	drivers.NodeStorage = tempStorage
 }
 
 func TestHandlePushStorageError(t *testing.T) {
