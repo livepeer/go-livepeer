@@ -366,6 +366,16 @@ func main() {
 		go roundsWatcher.Watch()
 		defer roundsWatcher.Stop()
 
+		// Initialize unbonding watcher to update the DB with latest state of the node's unbonding locks
+		unbondingWatcher, err := watchers.NewUnbondingWatcher(n.Eth.Account().Address, addrMap["BondingManager"], blockWatcher, n.Database)
+		if err != nil {
+			glog.Errorf("Failed to setup unbonding watcher: %v", err)
+			return
+		}
+		// Start unbonding watcher (logs will not be received until the block watcher is started)
+		go unbondingWatcher.Watch()
+		defer unbondingWatcher.Stop()
+
 		blockWatchCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
