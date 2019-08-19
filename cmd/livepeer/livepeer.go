@@ -623,7 +623,7 @@ func main() {
 		close(wc)
 	}()
 	go func() {
-		ec <- s.StartMediaServer(msCtx, *transcodingOptions)
+		ec <- s.StartMediaServer(msCtx, *transcodingOptions, *httpAddr)
 	}()
 
 	go func() {

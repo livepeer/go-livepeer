@@ -87,7 +87,6 @@ type LivepeerServer struct {
 	LivepeerNode          *core.LivepeerNode
 	HTTPMux               *http.ServeMux
 	ExposeCurrentManifest bool
-	httpAddr              string
 
 	// Thread sensitive fields. All accesses to the
 	// following fields should be protected by `connectionLock`
@@ -117,7 +116,7 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 	}
 	server := lpmscore.New(&opts)
 	ls := &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{},
-		rtmpConnections: make(map[core.ManifestID]*rtmpConnection), httpAddr: httpAddr,
+		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
 	}
 	if lpNode.NodeType == core.BroadcasterNode {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
@@ -126,7 +125,7 @@ func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNo
 }
 
 //StartMediaServer starts the LPMS server
-func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string) error {
+func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string, httpAddr string) error {
 	BroadcastJobVideoProfiles = parsePresets(strings.Split(transcodingOptions, ","))
 
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
@@ -151,8 +150,8 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOption
 	}()
 	if s.LivepeerNode.NodeType == core.BroadcasterNode {
 		go func() {
-			glog.V(4).Infof("HTTP Server listening on http://%v", s.httpAddr)
-			ec <- http.ListenAndServe(s.httpAddr, s.HTTPMux)
+			glog.V(4).Infof("HTTP Server listening on http://%v", httpAddr)
+			ec <- http.ListenAndServe(httpAddr, s.HTTPMux)
 		}()
 	}
 
@@ -542,7 +541,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`Error reading http request body: %s`, err.Error()), http.StatusInternalServerError)
+		httpErr := fmt.Sprintf(`Error reading http request body: %s`, err.Error())
+		glog.Error(httpErr)
+		http.Error(w, httpErr, http.StatusInternalServerError)
 		return
 	}
 	r.Body.Close()
@@ -582,7 +583,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		ticker := time.NewTicker(RefreshIntervalHttpPush)
 
 		go func(s *LivepeerServer, mid core.ManifestID) {
-			for _ = range ticker.C {
+			for range ticker.C {
 				s.connectionLock.RLock()
 				lastUsed := s.rtmpConnections[mid].lastUsed
 				s.connectionLock.RUnlock()
