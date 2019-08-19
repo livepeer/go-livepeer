@@ -205,10 +205,9 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			key = common.RandomIDGenerator(StreamKeyBytes)
 		}
 		return &streamParameters{
-			mid:        mid,
-			rtmpKey:    key,
-			profiles:   presets,
-			resolution: "0x0", // re-assigned to an actual value for RTMP Push only
+			mid:      mid,
+			rtmpKey:  key,
+			profiles: presets,
 		}
 	}
 }
@@ -360,7 +359,9 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	// Build the source video profile from the RTMP stream.
-	// Build the source video profile from the RTMP stream.
+	if params.resolution == "" {
+		params.resolution = fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
+	}
 	vProfile := ffmpeg.VideoProfile{
 		Name:       "source",
 		Resolution: params.resolution,
@@ -596,7 +597,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	duration, err := strconv.Atoi(r.Header.Get("Content-Duration"))
 	if err != nil {
 		duration = 2000 // maybe do some reasonable default rather than zero?
-		glog.Info("MIssing duration; filling in a default of 2000ms")
+		glog.Info("Missing duration; filling in a default of 2000ms")
 	}
 
 	seg := &stream.HLSSegment{
