@@ -2,7 +2,6 @@ package watchers
 
 import (
 	"fmt"
-	"log"
 	"math/big"
 	"sync"
 
@@ -32,24 +31,14 @@ type RoundsWatcher struct {
 func NewRoundsWatcher(roundsManagerAddr ethcommon.Address, watcher BlockWatcher, lpEth eth.LivepeerEthClient) (*RoundsWatcher, error) {
 	dec, err := NewEventDecoder(roundsManagerAddr, contracts.RoundsManagerABI)
 	if err != nil {
-		return nil, err
-	}
-	lr, err := lpEth.LastInitializedRound()
-	if err != nil {
-		return nil, err
-	}
-	bh, err := lpEth.BlockHashForRound(lr)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating decoder: %v", err)
 	}
 
 	return &RoundsWatcher{
-		quit:                     make(chan struct{}),
-		watcher:                  watcher,
-		lpEth:                    lpEth,
-		lastInitializedRound:     lr,
-		lastInitializedBlockHash: bh,
-		dec: dec,
+		quit:    make(chan struct{}),
+		watcher: watcher,
+		lpEth:   lpEth,
+		dec:     dec,
 	}, nil
 }
 
@@ -80,7 +69,6 @@ func (rw *RoundsWatcher) Watch() {
 	if err != nil {
 		glog.Errorf("error fetching initial lastInitializedRound value: %v", err)
 	}
-
 	bh, err := rw.lpEth.BlockHashForRound(lr)
 	if err != nil {
 		glog.Errorf("error fetching initial lastInitializedBlockHash value: %v", err)
@@ -95,7 +83,7 @@ func (rw *RoundsWatcher) Watch() {
 		case <-rw.quit:
 			return
 		case err := <-sub.Err():
-			log.Fatal(err)
+			glog.Error(err)
 		case events := <-events:
 			rw.handleBlockEvents(events)
 		}
