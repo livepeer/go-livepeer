@@ -91,7 +91,6 @@ func (l *LPMS) Start(ctx context.Context) error {
 		go func() {
 			glog.V(4).Infof("LPMS Server listening on rtmp://%v", l.vidListener.RtmpServer.Addr)
 			ec <- l.vidListener.RtmpServer.ListenAndServe()
-
 		}()
 	}
 	startHTTP := l.httpAddr != ""

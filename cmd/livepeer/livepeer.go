@@ -601,7 +601,7 @@ func main() {
 	}
 
 	//Set up the media server
-	s := server.NewLivepeerServer(*rtmpAddr, *httpAddr, n)
+	s := server.NewLivepeerServer(*rtmpAddr, n)
 	ec := make(chan error)
 	tc := make(chan struct{})
 	wc := make(chan struct{})

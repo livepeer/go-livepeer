@@ -102,11 +102,10 @@ type authWebhookResponse struct {
 	Presets    []string `json:"presets"`
 }
 
-func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
+func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
 	opts := lpmscore.LPMSOpts{
 		RtmpAddr:     rtmpAddr,
 		RtmpDisabled: true,
-		HttpAddr:     httpAddr,
 		WorkDir:      lpNode.WorkDir,
 		HttpMux:      http.NewServeMux(),
 	}

@@ -41,7 +41,7 @@ func setupServer() *LivepeerServer {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	if S == nil {
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
-		S = NewLivepeerServer("127.0.0.1:1938", "127.0.0.1:8080", n)
+		S = NewLivepeerServer("127.0.0.1:1938", n)
 		go S.StartMediaServer(context.Background(), "", "127.0.0.1:8080")
 		go S.StartCliWebserver("127.0.0.1:8938")
 	}
