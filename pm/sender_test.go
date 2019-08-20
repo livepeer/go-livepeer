@@ -165,28 +165,6 @@ func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func TestCreateTicketBatch_LastInitializedRoundError_ReturnsError(t *testing.T) {
-	sender := defaultSender(t)
-	rm := sender.roundsManager.(*stubRoundsManager)
-	expErr := errors.New("LastInitializedRound error")
-	rm.lastInitializedRoundErr = expErr
-
-	sessionID := sender.StartSession(defaultTicketParams(t, RandAddress()))
-	_, err := sender.CreateTicketBatch(sessionID, 1)
-	assert.EqualError(t, err, expErr.Error())
-}
-
-func TestCreateTicketBatch_BlockHashForRoundError_ReturnsError(t *testing.T) {
-	sender := defaultSender(t)
-	rm := sender.roundsManager.(*stubRoundsManager)
-	expErr := errors.New("BlockHashForRound error")
-	rm.blockHashForRoundErr = expErr
-
-	sessionID := sender.StartSession(defaultTicketParams(t, RandAddress()))
-	_, err := sender.CreateTicketBatch(sessionID, 1)
-	assert.EqualError(t, err, expErr.Error())
-}
-
 func TestCreateTicketBatch_UsesSessionParamsInBatch(t *testing.T) {
 	sender := defaultSender(t)
 	rm := sender.roundsManager.(*stubRoundsManager)
