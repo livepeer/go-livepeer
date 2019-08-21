@@ -507,7 +507,6 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	}
 
 	took := time.Since(start)
-	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
 	glog.V(common.DEBUG).Infof("Transcoding of segment manifestID=%s seqNo=%d took=%v", string(md.ManifestID), seg.SeqNo, took)
 	if isLocal && monitor.Enabled {
 		monitor.SegmentTranscoded(0, seg.SeqNo, took, common.ProfilesNames(md.Profiles))
@@ -523,7 +522,6 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 				string(md.ManifestID), seg.SeqNo, len(tData[i]))
 			return terr(fmt.Errorf("ZeroSegments"))
 		}
-		tProfileData[md.Profiles[i]] = tData[i]
 		tr.TranscodeData = append(tr.TranscodeData, &TranscodeData{
 			Data: tData[i],
 			// TODO: ADD NUMBER OF OUTPUT PIXELS
