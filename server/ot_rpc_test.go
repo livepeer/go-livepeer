@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -27,9 +28,10 @@ type stubTranscoder struct {
 
 var testRemoteTranscoderResults = &core.TranscodeData{
 	Segments: []*core.TranscodedSegmentData{
-		&core.TranscodedSegmentData{Data: []byte("body1")},
-		&core.TranscodedSegmentData{Data: []byte("body2")},
+		&core.TranscodedSegmentData{Data: []byte("body1"), Pixels: 777},
+		&core.TranscodedSegmentData{Data: []byte("body2"), Pixels: 888},
 	},
+	Pixels: 999,
 }
 
 func (st *stubTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*core.TranscodeData, error) {
@@ -76,6 +78,7 @@ func TestRemoteTranscoder(t *testing.T) {
 	assert.Equal(2, tr.called)
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
+	assert.Equal("999", headers.Get("Pixels"))
 	assert.Equal("multipart/mixed; boundary=17b336b6e6ae071e928f", headers.Get("Content-Type"))
 	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
 	assert.Equal(protoVerLPT, headers.Get("Authorization"))
@@ -93,6 +96,11 @@ func TestRemoteTranscoder(t *testing.T) {
 		bodyPart, err := ioutil.ReadAll(p)
 		assert.NoError(err)
 		assert.Equal(testRemoteTranscoderResults.Segments[i].Data, bodyPart)
+
+		pixels, err := strconv.ParseInt(p.Header.Get("Pixels"), 10, 64)
+		assert.NoError(err)
+		assert.Equal(testRemoteTranscoderResults.Segments[i].Pixels, pixels)
+
 		i++
 	}
 }
