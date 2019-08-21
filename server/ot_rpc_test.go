@@ -25,9 +25,14 @@ type stubTranscoder struct {
 	fname  string
 }
 
-var testRemoteTranscoderResults = [][]byte{[]byte("body1"), []byte("body2")}
+var testRemoteTranscoderResults = &core.TranscodeData{
+	Segments: []*core.TranscodedSegmentData{
+		&core.TranscodedSegmentData{Data: []byte("body1")},
+		&core.TranscodedSegmentData{Data: []byte("body2")},
+	},
+}
 
-func (st *stubTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
+func (st *stubTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*core.TranscodeData, error) {
 	st.called++
 	st.fname = fname
 	return testRemoteTranscoderResults, nil
@@ -87,7 +92,7 @@ func TestRemoteTranscoder(t *testing.T) {
 		assert.NoError(err)
 		bodyPart, err := ioutil.ReadAll(p)
 		assert.NoError(err)
-		assert.Equal(testRemoteTranscoderResults[i], bodyPart)
+		assert.Equal(testRemoteTranscoderResults.Segments[i].Data, bodyPart)
 		i++
 	}
 }

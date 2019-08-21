@@ -21,18 +21,19 @@ type StubTranscoder struct {
 	FailTranscode bool
 }
 
-func (t *StubTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
+func (t *StubTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	if t.FailTranscode {
 		return nil, ErrTranscode
 	}
 
 	t.SegCount++
 
-	result := make([][]byte, 0)
+	segments := make([]*TranscodedSegmentData, 0)
 	for _, p := range t.Profiles {
-		result = append(result, []byte(fmt.Sprintf("Transcoded_%v", p.Name)))
+		segments = append(segments, &TranscodedSegmentData{Data: []byte(fmt.Sprintf("Transcoded_%v", p.Name))})
 	}
-	return result, nil
+
+	return &TranscodeData{Segments: segments}, nil
 }
 
 func TestTranscodeAndBroadcast(t *testing.T) {
@@ -57,8 +58,8 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 		t.Errorf("Error: %v", res.Err)
 	}
 
-	if len(res.TranscodeData) != len(p) {
-		t.Errorf("Expecting %v profiles, got %v", len(p), len(res.TranscodeData))
+	if len(res.TranscodeData.Segments) != len(p) {
+		t.Errorf("Expecting %v profiles, got %v", len(p), len(res.TranscodeData.Segments))
 	}
 
 	//Should have 1 transcoded segment into 2 different profiles

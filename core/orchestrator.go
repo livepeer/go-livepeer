@@ -333,13 +333,20 @@ var ErrOrchCap = ogErrors.New("OrchestratorCapped")
 type TranscodeResult struct {
 	Err           error
 	Sig           []byte
-	TranscodeData []*TranscodeData
+	TranscodeData *TranscodeData
 	OS            drivers.OSSession
 }
 
+// TranscodeData contains the transcoding output for an input segment
 type TranscodeData struct {
+	Segments []*TranscodedSegmentData
+	Pixels   int64 // Decoded pixels
+}
+
+// TranscodedSegmentData contains encoded data for a profile
+type TranscodedSegmentData struct {
 	Data   []byte
-	Pixels int64
+	Pixels int64 // Encoded pixels
 }
 
 type SegChanData struct {
@@ -349,8 +356,8 @@ type SegChanData struct {
 }
 
 type RemoteTranscoderResult struct {
-	Segments [][]byte
-	Err      error
+	TranscodeData *TranscodeData
+	Err           error
 }
 
 type SegmentChan chan *SegChanData
@@ -499,9 +506,10 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 		glog.Errorf("Error transcoding manifest=%s segNo=%d segName=%s - %v", string(md.ManifestID), seg.SeqNo, seg.Name, err)
 		return terr(err)
 	}
-	// transcodeEnd := time.Now().UTC()
-	if len(tData) != len(md.Profiles) {
-		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v manifest=%s seqNo=%d", len(tData),
+
+	tSegments := tData.Segments
+	if len(tSegments) != len(md.Profiles) {
+		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v manifest=%s seqNo=%d", len(tSegments),
 			len(md.Profiles), string(md.ManifestID), seg.SeqNo)
 		return terr(fmt.Errorf("MismatchedSegments"))
 	}
@@ -514,25 +522,22 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 
 	// Prepare the result object
 	var tr TranscodeResult
-	segHashes := make([][]byte, len(tData))
+	segHashes := make([][]byte, len(tSegments))
 
 	for i := range md.Profiles {
-		if tData[i] == nil || len(tData[i]) < 25 {
+		if tSegments[i].Data == nil || len(tSegments[i].Data) < 25 {
 			glog.Errorf("Cannot find transcoded segment for manifest=%s seqNo=%d dataLength=%d",
-				string(md.ManifestID), seg.SeqNo, len(tData[i]))
+				string(md.ManifestID), seg.SeqNo, len(tSegments[i].Data))
 			return terr(fmt.Errorf("ZeroSegments"))
 		}
-		tr.TranscodeData = append(tr.TranscodeData, &TranscodeData{
-			Data: tData[i],
-			// TODO: ADD NUMBER OF OUTPUT PIXELS
-		})
 		glog.V(common.DEBUG).Infof("Transcoded segment manifest=%s seqNo=%d profile=%s len=%d",
-			string(md.ManifestID), seg.SeqNo, md.Profiles[i].Name, len(tData[i]))
-		hash := crypto.Keccak256(tData[i])
+			string(md.ManifestID), seg.SeqNo, md.Profiles[i].Name, len(tSegments[i].Data))
+		hash := crypto.Keccak256(tSegments[i].Data)
 		segHashes[i] = hash
 	}
 	os.Remove(fname)
 	tr.OS = config.OS
+	tr.TranscodeData = tData
 
 	if n == nil || n.Eth == nil {
 		return &tr
@@ -642,13 +647,13 @@ func (rt *RemoteTranscoder) done() {
 }
 
 // Transcode do actual transcoding by sending work to remote transcoder and waiting for the result
-func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
+func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	taskID, taskChan := rt.manager.addTaskChan()
 	defer rt.manager.removeTaskChan(taskID)
-	signalEOF := func(err error) ([][]byte, error) {
+	signalEOF := func(err error) (*TranscodeData, error) {
 		rt.done()
 		glog.Errorf("Fatal error with remote transcoder=%s taskId=%d fname=%s err=%v", rt.addr, taskID, fname, err)
-		return [][]byte{}, RemoteTranscoderFatalError{err}
+		return nil, RemoteTranscoderFatalError{err}
 	}
 	msg := &net.NotifySegment{
 		Url:      fname,
@@ -666,8 +671,8 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 		return signalEOF(ErrRemoteTranscoderTimeout)
 	case chanData := <-taskChan:
 		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s err=%v",
-			rt.addr, len(chanData.Segments), taskID, fname, chanData.Err)
-		return chanData.Segments, chanData.Err
+			rt.addr, len(chanData.TranscodeData.Segments), taskID, fname, chanData.Err)
+		return chanData.TranscodeData, chanData.Err
 	}
 }
 func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int) *RemoteTranscoder {
@@ -799,7 +804,7 @@ func (rtm *RemoteTranscoderManager) completeTranscoders(trans *RemoteTranscoder)
 }
 
 // Transcode does actual transcoding using remote transcoder from the pool
-func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
+func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	currentTranscoder := rtm.selectTranscoder()
 	if currentTranscoder == nil {
 		return nil, errors.New("No transcoders available")

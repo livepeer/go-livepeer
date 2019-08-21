@@ -177,11 +177,9 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 
 	mos.On("SaveData", mock.Anything, mock.Anything).Return("", errors.New("SaveData error"))
 
-	tData := &core.TranscodeData{
-		Data: []byte("foo"),
-	}
+	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo")}}}
 	tRes := &core.TranscodeResult{
-		TranscodeData: []*core.TranscodeData{tData},
+		TranscodeData: tData,
 		Sig:           []byte("foo"),
 		OS:            mos,
 	}
@@ -236,11 +234,9 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
-	tData := &core.TranscodeData{
-		Data: []byte("foo"),
-	}
+	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo")}}}
 	tRes := &core.TranscodeResult{
-		TranscodeData: []*core.TranscodeData{tData},
+		TranscodeData: tData,
 		Sig:           []byte("foo"),
 		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
@@ -296,11 +292,9 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
-	tData := &core.TranscodeData{
-		Data: []byte("foo"),
-	}
+	tData := &core.TranscodedSegmentData{Data: []byte("foo")}
 	tRes := &core.TranscodeResult{
-		TranscodeData: []*core.TranscodeData{tData, tData},
+		TranscodeData: &core.TranscodeData{Segments: []*core.TranscodedSegmentData{tData, tData}},
 		Sig:           []byte("foo"),
 		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
@@ -426,11 +420,9 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	require.Nil(err)
 	orch.On("ServiceURI").Return(uri)
 
-	tData := &core.TranscodeData{
-		Data: []byte("foo"),
-	}
+	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo")}}}
 	tRes := &core.TranscodeResult{
-		TranscodeData: []*core.TranscodeData{tData},
+		TranscodeData: tData,
 		Sig:           []byte("foo"),
 		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
@@ -560,17 +552,14 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
-	tData := &core.TranscodeData{
-		Data:   []byte("foo"),
-		Pixels: int64(110592000),
-	}
+	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo"), Pixels: int64(110592000)}}}
 	tRes := &core.TranscodeResult{
-		TranscodeData: []*core.TranscodeData{tData},
+		TranscodeData: tData,
 		Sig:           []byte("foo"),
 		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
-	orch.On("DebitFees", md.ManifestID, mock.Anything, tData.Pixels)
+	orch.On("DebitFees", md.ManifestID, mock.Anything, tData.Segments[0].Pixels)
 
 	headers := map[string]string{
 		paymentHeader: "",
@@ -593,8 +582,8 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	assert.True(ok)
 	assert.Equal([]byte("foo"), res.Data.Sig)
 	assert.Equal(1, len(res.Data.Segments))
-	assert.Equal(res.Data.Segments[0].Pixels, tData.Pixels)
-	orch.AssertCalled(t, "DebitFees", md.ManifestID, mock.Anything, tData.Pixels)
+	assert.Equal(res.Data.Segments[0].Pixels, tData.Segments[0].Pixels)
+	orch.AssertCalled(t, "DebitFees", md.ManifestID, mock.Anything, tData.Segments[0].Pixels)
 }
 
 func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
@@ -623,16 +612,16 @@ func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", s.ManifestID).Return(true)
 
-	tData720 := &core.TranscodeData{
+	tData720 := &core.TranscodedSegmentData{
 		Data:   []byte("foo"),
 		Pixels: int64(110592000),
 	}
-	tData240 := &core.TranscodeData{
+	tData240 := &core.TranscodedSegmentData{
 		Data:   []byte("foo"),
 		Pixels: int64(6134400),
 	}
 	tRes := &core.TranscodeResult{
-		TranscodeData: []*core.TranscodeData{tData720, tData240},
+		TranscodeData: &core.TranscodeData{Segments: []*core.TranscodedSegmentData{tData720, tData240}},
 		Sig:           []byte("foo"),
 		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
@@ -661,7 +650,7 @@ func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
 	assert.Equal([]byte("foo"), res.Data.Sig)
 	assert.Equal(2, len(res.Data.Segments))
 	for i, seg := range res.Data.Segments {
-		assert.Equal(seg.Pixels, tRes.TranscodeData[i].Pixels)
+		assert.Equal(seg.Pixels, tRes.TranscodeData.Segments[i].Pixels)
 	}
 	orch.AssertCalled(t, "DebitFees", md.ManifestID, mock.Anything, tData720.Pixels+tData240.Pixels)
 }
@@ -695,16 +684,16 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 
 	mos := &mockOSSession{}
 
-	tData720 := &core.TranscodeData{
+	tData720 := &core.TranscodedSegmentData{
 		Data:   []byte("foo"),
 		Pixels: int64(110592000),
 	}
-	tData240 := &core.TranscodeData{
+	tData240 := &core.TranscodedSegmentData{
 		Data:   []byte("foo"),
 		Pixels: int64(6134400),
 	}
 	tRes := &core.TranscodeResult{
-		TranscodeData: []*core.TranscodeData{tData720, tData240},
+		TranscodeData: &core.TranscodeData{Segments: []*core.TranscodedSegmentData{tData720, tData240}},
 		Sig:           []byte("foo"),
 		OS:            mos,
 	}

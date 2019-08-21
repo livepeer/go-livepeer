@@ -147,17 +147,17 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	} else {
 		boundary := common.RandName()
 		w := multipart.NewWriter(&body)
-		for _, v := range tData {
+		for _, v := range tData.Segments {
 			w.SetBoundary(boundary)
 			hdrs := textproto.MIMEHeader{
 				"Content-Type":   {"video/MP2T"},
-				"Content-Length": {strconv.Itoa(len(v))},
+				"Content-Length": {strconv.Itoa(len(v.Data))},
 			}
 			fw, err := w.CreatePart(hdrs)
 			if err != nil {
 				glog.Error("Could not create multipart part ", err)
 			}
-			io.Copy(fw, bytes.NewBuffer(v))
+			io.Copy(fw, bytes.NewBuffer(v.Data))
 		}
 		w.Close()
 		contentType = "multipart/mixed; boundary=" + boundary
@@ -248,7 +248,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var segments [][]byte
+	var segments []*core.TranscodedSegmentData
 	if "multipart/mixed" == mediaType {
 		mr := multipart.NewReader(r.Body, params["boundary"])
 		for {
@@ -267,9 +267,12 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 				res.Err = err
 				break
 			}
-			segments = append(segments, body)
+
+			segments = append(segments, &core.TranscodedSegmentData{Data: body})
 		}
-		res.Segments = segments
+		res.TranscodeData = &core.TranscodeData{
+			Segments: segments,
+		}
 		orch.TranscoderResults(tid, &res)
 	}
 	if res.Err != nil {

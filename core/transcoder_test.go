@@ -22,14 +22,14 @@ func TestLocalTranscoder(t *testing.T) {
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
-	if len(res) != len(profiles) {
+	if len(res.Segments) != len(profiles) {
 		t.Error("Mismatched results")
 	}
-	if Over1Pct(len(res[0]), 164312) {
-		t.Errorf("Wrong data %v", len(res[0]))
+	if Over1Pct(len(res.Segments[0].Data), 164312) {
+		t.Errorf("Wrong data %v", len(res.Segments[0].Data))
 	}
-	if Over1Pct(len(res[1]), 227668) {
-		t.Errorf("Wrong data %v", len(res[1]))
+	if Over1Pct(len(res.Segments[1].Data), 227668) {
+		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
 	}
 }
 
@@ -68,11 +68,11 @@ func TestNvidiaTranscoder(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if Over1Pct(len(res[0]), 650292) {
-		t.Errorf("Wrong data %v", len(res[0]))
+	if Over1Pct(len(res.Segments[0].Data), 650292) {
+		t.Errorf("Wrong data %v", len(res.Segments[0].Data))
 	}
-	if Over1Pct(len(res[1]), 884164) {
-		t.Errorf("Wrong data %v", len(res[1]))
+	if Over1Pct(len(res.Segments[1].Data), 884164) {
+		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
 	}
 }
 
@@ -87,9 +87,8 @@ func TestResToTranscodeData(t *testing.T) {
 
 	// Test immediate error
 	opts := []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{Oname: "badfile"}}
-	tData, err := resToTranscodeData(opts)
+	_, err := resToTranscodeData(opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
-	assert.Equal(0, len(tData))
 
 	// Test error after a successful read
 	tempDir, err := ioutil.TempDir("", "TestResToTranscodeData")
@@ -106,17 +105,16 @@ func TestResToTranscodeData(t *testing.T) {
 	opts[1].Oname = "badfile"
 	opts[2].Oname = file2.Name()
 
-	tData, err = resToTranscodeData(opts)
+	_, err = resToTranscodeData(opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
-	assert.Equal(0, len(tData))
 	assert.True(fileDNE(file1.Name()))
 	assert.False(fileDNE(file2.Name()))
 
 	// Test success for 1 output file
 	opts = []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{Oname: file2.Name()}}
-	tData, err = resToTranscodeData(opts)
+	tData, err := resToTranscodeData(opts)
 	assert.Nil(err)
-	assert.Equal(1, len(tData))
+	assert.Equal(1, len(tData.Segments))
 	assert.True(fileDNE(file2.Name()))
 
 	// Test succes for 2 output files
@@ -131,7 +129,7 @@ func TestResToTranscodeData(t *testing.T) {
 
 	tData, err = resToTranscodeData(opts)
 	assert.Nil(err)
-	assert.Equal(2, len(tData))
+	assert.Equal(2, len(tData.Segments))
 	assert.True(fileDNE(file1.Name()))
 	assert.True(fileDNE(file2.Name()))
 }

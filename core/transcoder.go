@@ -17,14 +17,14 @@ import (
 )
 
 type Transcoder interface {
-	Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error)
+	Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error)
 }
 
 type LocalTranscoder struct {
 	workDir string
 }
 
-func (lt *LocalTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
+func (lt *LocalTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname: fname,
@@ -37,7 +37,7 @@ func (lt *LocalTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfil
 
 	_, err := ffmpeg.Transcode3(in, opts)
 	if err != nil {
-		return [][]byte{}, err
+		return nil, err
 	}
 
 	if monitor.Enabled && parseErr == nil {
@@ -71,7 +71,7 @@ func (nv *NvidiaTranscoder) getDevice() string {
 	return nv.devices[nv.devIdx]
 }
 
-func (nv *NvidiaTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
+func (nv *NvidiaTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname:  fname,
@@ -83,7 +83,7 @@ func (nv *NvidiaTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	// Do the Transcoding
 	_, err := ffmpeg.Transcode3(in, opts)
 	if err != nil {
-		return [][]byte{}, err
+		return nil, err
 	}
 
 	return resToTranscodeData(opts)
@@ -107,20 +107,23 @@ func parseURI(uri string) (string, uint64, error) {
 	return mid, seqNo, err
 }
 
-func resToTranscodeData(opts []ffmpeg.TranscodeOptions) ([][]byte, error) {
+func resToTranscodeData(opts []ffmpeg.TranscodeOptions) (*TranscodeData, error) {
 	// Convert results into in-memory bytes following the expected API
-	out := make([][]byte, len(opts), len(opts))
+	segments := make([]*TranscodedSegmentData, len(opts), len(opts))
 	for i := range opts {
 		oname := opts[i].Oname
 		o, err := ioutil.ReadFile(oname)
 		if err != nil {
 			glog.Error("Cannot read transcoded output for ", oname)
-			return [][]byte{}, err
+			return nil, err
 		}
-		out[i] = o
+		segments[i] = &TranscodedSegmentData{Data: o}
 		os.Remove(oname)
 	}
-	return out, nil
+
+	return &TranscodeData{
+		Segments: segments,
+	}, nil
 }
 
 func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile) []ffmpeg.TranscodeOptions {
