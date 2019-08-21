@@ -64,14 +64,14 @@ func (rw *RoundsWatcher) setLastInitializedRound(round *big.Int, hash [32]byte) 
 }
 
 // Watch the blockwatch subscription for NewRound events
-func (rw *RoundsWatcher) Watch() {
+func (rw *RoundsWatcher) Watch() error {
 	lr, err := rw.lpEth.LastInitializedRound()
 	if err != nil {
-		glog.Errorf("error fetching initial lastInitializedRound value: %v", err)
+		return fmt.Errorf("error fetching initial lastInitializedRound value: %v", err)
 	}
 	bh, err := rw.lpEth.BlockHashForRound(lr)
 	if err != nil {
-		glog.Errorf("error fetching initial lastInitializedBlockHash value: %v", err)
+		return fmt.Errorf("error fetching initial lastInitializedBlockHash value: %v", err)
 	}
 	rw.setLastInitializedRound(lr, bh)
 
@@ -81,7 +81,7 @@ func (rw *RoundsWatcher) Watch() {
 	for {
 		select {
 		case <-rw.quit:
-			return
+			return nil
 		case err := <-sub.Err():
 			glog.Error(err)
 		case events := <-events:
