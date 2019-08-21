@@ -47,6 +47,8 @@ struct output_ctx {
   struct filter_ctx vf, af;
 
   int64_t drop_ts;     // preroll audio ts to drop
+
+  output_results  *res; // data to return for this output
 };
 
 void lpms_init()
@@ -673,6 +675,11 @@ int encode(AVCodecContext* encoder, AVFrame *frame, struct output_ctx* octx, AVS
 
   AVPacket pkt = {0};
 
+  if (AVMEDIA_TYPE_VIDEO == ost->codecpar->codec_type && frame) {
+    octx->res->frames++;
+    octx->res->pixels += encoder->width * encoder->height;
+  }
+
   int ret = avcodec_send_frame(encoder, frame);
   if (AVERROR_EOF == ret) ; // continue ; drain encoder
   else if (ret < 0) encode_err("Error sending frame to encoder");
@@ -751,7 +758,8 @@ proc_cleanup:
 
 #define MAX_OUTPUT_SIZE 10
 
-int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
+int lpms_transcode(input_params *inp, output_params *params,
+    output_results *results, int nb_outputs, output_results *decoded_results)
 {
 #define main_err(msg) { \
   if (!ret) ret = AVERROR(EINVAL); \
@@ -784,6 +792,7 @@ int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
     octx->vfilters = params[i].vfilters;
     if (params[i].bitrate) octx->bitrate = params[i].bitrate;
     if (params[i].fps.den) octx->fps = params[i].fps;
+    octx->res = &results[i];
     if (ictx.vc) {
       ret = init_video_filters(&ictx, octx);
       if (ret < 0) main_err("Unable to open video filter");
@@ -811,6 +820,11 @@ int lpms_transcode(input_params *inp, output_params *params, int nb_outputs)
                             // Bail out on streams that appear to be broken
     else if (ret < 0) main_err("transcoder: Could not decode; stopping\n");
     ist = ictx.ic->streams[ipkt.stream_index];
+
+    if (AVMEDIA_TYPE_VIDEO == ist->codecpar->codec_type) {
+      decoded_results->frames++;
+      decoded_results->pixels += dframe->width * dframe->height;
+    }
 
     for (i = 0; i < nb_outputs; i++) {
       struct output_ctx *octx = &outputs[i];

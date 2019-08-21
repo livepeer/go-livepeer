@@ -13,6 +13,12 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
+type exampleStream string
+
+func (t exampleStream) StreamID() string {
+	return string(t)
+}
+
 func randString(n int) string {
 	rand.Seed(time.Now().UnixNano())
 	x := make([]byte, n, n)
@@ -34,9 +40,9 @@ func main() {
 	lpms := core.New(&core.LPMSOpts{WorkDir: fmt.Sprintf("%v/.tmp", dir)})
 
 	lpms.HandleRTMPPublish(
-		func(url *url.URL) (strmID string) {
+		func(url *url.URL) stream.AppData {
 			glog.Infof("Stream has been started!: %v", url)
-			return randString(10)
+			return exampleStream(randString(10))
 		},
 
 		func(url *url.URL, rs stream.RTMPVideoStream) (err error) {

@@ -67,12 +67,16 @@ func main() {
 	ffmpeg.InitFFmpeg()
 
 	fmt.Printf("Setting fname %s encoding %d renditions with %v\n", fname, len(options), lbl)
-	err := ffmpeg.Transcode2(&ffmpeg.TranscodeOptionsIn{
+	res, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 		Fname:  fname,
 		Accel:  accel,
 		Device: dev,
 	}, options)
 	if err != nil {
 		panic(err)
+	}
+	fmt.Printf("profile=input frames=%v pixels=%v\n", res.Decoded.Frames, res.Decoded.Pixels)
+	for i, r := range res.Encoded {
+		fmt.Printf("profile=%v frames=%v pixels=%v\n", profiles[i].Name, r.Frames, r.Pixels)
 	}
 }
