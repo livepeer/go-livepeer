@@ -7,10 +7,8 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
-	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -111,19 +109,4 @@ func TestRoundsWatcher_HandleLog(t *testing.T) {
 	assert.Nil(err)
 	assert.Nil(rw.LastInitializedRound())
 	assert.Equal([32]byte{}, rw.LastInitializedBlockHash())
-}
-
-func defaultMiniHeader() *blockwatch.MiniHeader {
-	block := &blockwatch.MiniHeader{
-		Number: big.NewInt(450),
-		Parent: pm.RandHash(),
-		Hash:   pm.RandHash(),
-	}
-	log := types.Log{
-		Topics:    []ethcommon.Hash{pm.RandHash(), pm.RandHash()},
-		Data:      pm.RandBytes(32),
-		BlockHash: block.Hash,
-	}
-	block.Logs = []types.Log{log}
-	return block
 }

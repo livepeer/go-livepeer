@@ -298,6 +298,8 @@ func (s *stubUnbondingLockStore) UseUnbondingLock(id *big.Int, delegator common.
 
 func (s *stubUnbondingLockStore) Get(id int64) *stubUnbondingLock {
 	return s.unbondingLocks[id]
+}
+
 func defaultMiniHeader() *blockwatch.MiniHeader {
 	block := &blockwatch.MiniHeader{
 		Number: big.NewInt(450),
