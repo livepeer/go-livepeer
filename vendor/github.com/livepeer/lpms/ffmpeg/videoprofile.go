@@ -50,6 +50,22 @@ var VideoProfileLookup = map[string]VideoProfile{
 	"P144p30fps16x9": P144p30fps16x9,
 }
 
+func VideoProfileResolution(p VideoProfile) (int, int, error) {
+	res := strings.Split(p.Resolution, "x")
+	if len(res) < 2 {
+		return 0, 0, ErrTranscoderRes
+	}
+	w, err := strconv.Atoi(res[0])
+	if err != nil {
+		return 0, 0, err
+	}
+	h, err := strconv.Atoi(res[1])
+	if err != nil {
+		return 0, 0, err
+	}
+	return w, h, nil
+}
+
 func VideoProfileToVariantParams(p VideoProfile) m3u8.VariantParams {
 	r := p.Resolution
 	r = strings.Replace(r, ":", "x", 1)

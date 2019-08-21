@@ -41,6 +41,16 @@ type TranscodeOptions struct {
 	Device  string
 }
 
+type MediaInfo struct {
+	Frames int
+	Pixels int64
+}
+
+type TranscodeResults struct {
+	Decoded MediaInfo
+	Encoded []MediaInfo
+}
+
 func RTMPToHLS(localRTMPUrl string, outM3U8 string, tmpl string, seglen_secs string, seg_start int) error {
 	inp := C.CString(localRTMPUrl)
 	outp := C.CString(outM3U8)
@@ -119,16 +129,17 @@ func accelDeviceType(accel Acceleration) (C.enum_AVHWDeviceType, error) {
 }
 
 func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
+	_, err := Transcode3(input, ps)
+	return err
+}
 
+func Transcode3(input *TranscodeOptionsIn, ps []TranscodeOptions) (*TranscodeResults, error) {
 	if input == nil {
-		return ErrTranscoderInp
-	}
-	if len(ps) <= 0 {
-		return nil
+		return nil, ErrTranscoderInp
 	}
 	hw_type, err := accelDeviceType(input.Accel)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fname := C.CString(input.Fname)
 	defer C.free(unsafe.Pointer(fname))
@@ -138,26 +149,18 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 		defer C.free(unsafe.Pointer(oname))
 
 		param := p.Profile
-		res := strings.Split(param.Resolution, "x")
-		if len(res) < 2 {
-			return ErrTranscoderRes
-		}
-		w, err := strconv.Atoi(res[0])
+		w, h, err := VideoProfileResolution(param)
 		if err != nil {
-			return err
-		}
-		h, err := strconv.Atoi(res[1])
-		if err != nil {
-			return err
+			return nil, err
 		}
 		br := strings.Replace(param.Bitrate, "k", "000", 1)
 		bitrate, err := strconv.Atoi(br)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		encoder, scale_filter, err := configAccel(input.Accel, p.Accel, input.Device, p.Device)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		// preserve aspect ratio along the larger dimension when rescaling
 		filters := fmt.Sprintf("fps=%d/%d,%s='w=if(gte(iw,ih),%d,-2):h=if(lt(iw,ih),%d,-2)'", param.Framerate, 1, scale_filter, w, h)
@@ -180,12 +183,33 @@ func Transcode2(input *TranscodeOptionsIn, ps []TranscodeOptions) error {
 		defer C.free(unsafe.Pointer(device))
 	}
 	inp := &C.input_params{fname: fname, hw_type: hw_type, device: device}
-	ret := int(C.lpms_transcode(inp, (*C.output_params)(&params[0]), C.int(len(params))))
+	results := make([]C.output_results, len(ps))
+	decoded := &C.output_results{}
+	var (
+		paramsPointer  *C.output_params
+		resultsPointer *C.output_results
+	)
+	if len(params) > 0 {
+		paramsPointer = (*C.output_params)(&params[0])
+		resultsPointer = (*C.output_results)(&results[0])
+	}
+	ret := int(C.lpms_transcode(inp, paramsPointer, resultsPointer, C.int(len(params)), decoded))
 	if 0 != ret {
 		glog.Infof("Transcoder Return : %v\n", Strerror(ret))
-		return ErrorMap[ret]
+		return nil, ErrorMap[ret]
 	}
-	return nil
+	tr := make([]MediaInfo, len(ps))
+	for i, r := range results {
+		tr[i] = MediaInfo{
+			Frames: int(r.frames),
+			Pixels: int64(r.pixels),
+		}
+	}
+	dec := MediaInfo{
+		Frames: int(decoded.frames),
+		Pixels: int64(decoded.pixels),
+	}
+	return &TranscodeResults{Encoded: tr, Decoded: dec}, nil
 }
 
 func InitFFmpeg() {

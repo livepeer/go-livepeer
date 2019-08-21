@@ -425,18 +425,11 @@ type ServerDisconnectStream struct {
 }
 
 func (s *ServerDisconnectStream) ReadRTMPFromStream(ctx context.Context, dst av.MuxCloser) (chan struct{}, error) {
-	file, err := avutil.Open("test.flv")
-	if err != nil {
-		glog.Errorf("Error reading headers: %v", err)
-		return nil, err
-	}
-	header, err := file.Streams()
-	dst.WriteHeader(header)
 	dst.Close()
 	return make(chan struct{}), nil
 }
 
-func TestServerDisconnectMidStream(t *testing.T) {
+func TestServerDisconnect(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 	port := "1938" // because we can't yet close the listener on 1935?
 	strm := &ServerDisconnectStream{}

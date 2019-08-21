@@ -24,8 +24,13 @@ typedef struct {
   char *device;
 } input_params;
 
+typedef struct {
+    int frames;
+    int64_t pixels;
+} output_results;
+
 void lpms_init();
 int  lpms_rtmp2hls(char *listen, char *outf, char *ts_tmpl, char *seg_time, char *seg_start);
-int  lpms_transcode(input_params *inp, output_params *params, int nb_outputs);
+int  lpms_transcode(input_params *inp, output_params *params, output_results *results, int nb_outputs, output_results *decoded_results);
 
 #endif // _LPMS_FFMPEG_H_
