@@ -85,12 +85,18 @@ func TestResToTranscodeData(t *testing.T) {
 		return os.IsNotExist(err)
 	}
 
-	// Test immediate error
+	// Test lengths of results and options different error
+	res := &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 1)}
+	_, err := resToTranscodeData(res, []ffmpeg.TranscodeOptions{})
+	assert.EqualError(err, "lengths of results and options different")
+
+	// Test immediate read error
 	opts := []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{Oname: "badfile"}}
-	_, err := resToTranscodeData(opts)
+	_, err = resToTranscodeData(res, opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
 
 	// Test error after a successful read
+	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 3)}
 	tempDir, err := ioutil.TempDir("", "TestResToTranscodeData")
 	require.Nil(err)
 	defer os.Remove(tempDir)
@@ -105,19 +111,27 @@ func TestResToTranscodeData(t *testing.T) {
 	opts[1].Oname = "badfile"
 	opts[2].Oname = file2.Name()
 
-	_, err = resToTranscodeData(opts)
+	_, err = resToTranscodeData(res, opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
 	assert.True(fileDNE(file1.Name()))
 	assert.False(fileDNE(file2.Name()))
 
 	// Test success for 1 output file
+	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 1)}
+	res.Encoded[0].Pixels = 100
+
 	opts = []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{Oname: file2.Name()}}
-	tData, err := resToTranscodeData(opts)
+	tData, err := resToTranscodeData(res, opts)
 	assert.Nil(err)
 	assert.Equal(1, len(tData.Segments))
+	assert.Equal(int64(100), tData.Segments[0].Pixels)
 	assert.True(fileDNE(file2.Name()))
 
 	// Test succes for 2 output files
+	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 2)}
+	res.Encoded[0].Pixels = 200
+	res.Encoded[1].Pixels = 300
+
 	file1, err = ioutil.TempFile(tempDir, "foo")
 	require.Nil(err)
 	file2, err = ioutil.TempFile(tempDir, "bar")
@@ -127,9 +141,11 @@ func TestResToTranscodeData(t *testing.T) {
 	opts[0].Oname = file1.Name()
 	opts[1].Oname = file2.Name()
 
-	tData, err = resToTranscodeData(opts)
+	tData, err = resToTranscodeData(res, opts)
 	assert.Nil(err)
 	assert.Equal(2, len(tData.Segments))
+	assert.Equal(int64(200), tData.Segments[0].Pixels)
+	assert.Equal(int64(300), tData.Segments[1].Pixels)
 	assert.True(fileDNE(file1.Name()))
 	assert.True(fileDNE(file2.Name()))
 }

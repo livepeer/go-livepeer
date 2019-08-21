@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -35,7 +36,7 @@ func (lt *LocalTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfil
 	_, seqNo, parseErr := parseURI(fname)
 	start := time.Now()
 
-	_, err := ffmpeg.Transcode3(in, opts)
+	res, err := ffmpeg.Transcode3(in, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +49,7 @@ func (lt *LocalTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfil
 		monitor.SegmentTranscoded(0, seqNo, time.Since(start), common.ProfilesNames(profiles))
 	}
 
-	return resToTranscodeData(opts)
+	return resToTranscodeData(res, opts)
 }
 
 func NewLocalTranscoder(workDir string) Transcoder {
@@ -81,12 +82,12 @@ func (nv *NvidiaTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 	opts := profilesToTranscodeOptions(nv.workDir, ffmpeg.Nvidia, profiles)
 
 	// Do the Transcoding
-	_, err := ffmpeg.Transcode3(in, opts)
+	res, err := ffmpeg.Transcode3(in, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	return resToTranscodeData(opts)
+	return resToTranscodeData(res, opts)
 }
 
 func NewNvidiaTranscoder(devices string, workDir string) Transcoder {
@@ -107,7 +108,11 @@ func parseURI(uri string) (string, uint64, error) {
 	return mid, seqNo, err
 }
 
-func resToTranscodeData(opts []ffmpeg.TranscodeOptions) (*TranscodeData, error) {
+func resToTranscodeData(res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOptions) (*TranscodeData, error) {
+	if len(res.Encoded) != len(opts) {
+		return nil, errors.New("lengths of results and options different")
+	}
+
 	// Convert results into in-memory bytes following the expected API
 	segments := make([]*TranscodedSegmentData, len(opts), len(opts))
 	for i := range opts {
@@ -117,12 +122,13 @@ func resToTranscodeData(opts []ffmpeg.TranscodeOptions) (*TranscodeData, error) 
 			glog.Error("Cannot read transcoded output for ", oname)
 			return nil, err
 		}
-		segments[i] = &TranscodedSegmentData{Data: o}
+		segments[i] = &TranscodedSegmentData{Data: o, Pixels: res.Encoded[i].Pixels}
 		os.Remove(oname)
 	}
 
 	return &TranscodeData{
 		Segments: segments,
+		Pixels:   res.Decoded.Pixels,
 	}, nil
 }
 
