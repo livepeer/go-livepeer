@@ -6,7 +6,6 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -122,14 +121,7 @@ func TestValidateTicket(t *testing.T) {
 	// Test LastInitializedRound error
 	// Set signature verification to return true
 	sv.SetVerifyResult(true)
-	expErr := errors.New("LastInitializedRound error")
-	rm.lastInitializedRoundErr = expErr
 
-	err = v.ValidateTicket(recipient, ticket, sig, recipientRand)
-	assert.EqualError(err, expErr.Error())
-
-	// Test invalid creation round
-	rm.lastInitializedRoundErr = nil
 	rm.round = big.NewInt(7)
 
 	creationRound := big.NewInt(5)
@@ -148,14 +140,8 @@ func TestValidateTicket(t *testing.T) {
 
 	// Test BlockHashForRound error
 	rm.round = creationRound
-	expErr = errors.New("BlockHashForRound error")
-	rm.blockHashForRoundErr = expErr
-
-	err = v.ValidateTicket(recipient, ticket, sig, recipientRand)
-	assert.EqualError(err, expErr.Error())
 
 	// Test invalid creation round block hash
-	rm.blockHashForRoundErr = nil
 	rm.blkHash = [32]byte{5}
 
 	creationRoundBlockHash := [32]byte{9}

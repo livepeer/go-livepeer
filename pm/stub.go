@@ -242,18 +242,16 @@ func (s *stubSigner) Account() accounts.Account {
 }
 
 type stubRoundsManager struct {
-	round                   *big.Int
-	blkHash                 [32]byte
-	lastInitializedRoundErr error
-	blockHashForRoundErr    error
+	round   *big.Int
+	blkHash [32]byte
 }
 
-func (m *stubRoundsManager) LastInitializedRound() (*big.Int, error) {
-	return m.round, m.lastInitializedRoundErr
+func (m *stubRoundsManager) LastInitializedRound() *big.Int {
+	return m.round
 }
 
-func (m *stubRoundsManager) BlockHashForRound(round *big.Int) ([32]byte, error) {
-	return m.blkHash, m.blockHashForRoundErr
+func (m *stubRoundsManager) LastInitializedBlockHash() [32]byte {
+	return m.blkHash
 }
 
 type stubSenderManager struct {

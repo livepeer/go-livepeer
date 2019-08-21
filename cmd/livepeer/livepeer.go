@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/livepeer/go-livepeer/pm"
 
 	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
@@ -33,7 +34,9 @@ import (
 	"github.com/livepeer/go-livepeer/discovery"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/eventservices"
+	"github.com/livepeer/go-livepeer/eth/watchers"
 
 	//"github.com/livepeer/go-livepeer/ipfs" until we re-enable IPFS
 	lpmon "github.com/livepeer/go-livepeer/monitor"
@@ -44,6 +47,14 @@ import (
 var (
 	ErrKeygen    = errors.New("ErrKeygen")
 	EthTxTimeout = 600 * time.Second
+
+	// The timeout for ETH RPC calls
+	ethRPCTimeout = 20 * time.Second
+
+	// The interval at which the block watcher polls for new blocks
+	blockWatcherPollingInterval = 1 * time.Second
+	// The maximum block sfor the block watcher to retain
+	blockWatcherRetentionLimit = 20
 
 	// The gas required to redeem a PM ticket
 	redeemGas = 100000
@@ -330,6 +341,49 @@ func main() {
 		// Setup unbonding service to manage unbonding locks
 		n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
 
+		// Initialize block watcher that will emit logs used by event watchers
+		blockWatcherClient, err := blockwatch.NewRPCClient(*ethUrl, ethRPCTimeout)
+		if err != nil {
+			glog.Errorf("Failed to setup blockwatch client: %v", err)
+			return
+		}
+		topics := watchers.FilterTopics()
+		blockWatcherCfg := blockwatch.Config{
+			Store:               n.Database,
+			PollingInterval:     blockWatcherPollingInterval,
+			StartBlockDepth:     rpc.LatestBlockNumber,
+			BlockRetentionLimit: blockWatcherRetentionLimit,
+			WithLogs:            true,
+			Topics:              topics,
+			Client:              blockWatcherClient,
+		}
+		// Wait until all event watchers have been initialized before starting the block watcher
+		blockWatcher := blockwatch.New(blockWatcherCfg)
+
+		roundsWatcher, err := watchers.NewRoundsWatcher(addrMap["RoundsManager"], blockWatcher, n.Eth)
+		if err != nil {
+			glog.Errorf("Failed to setup roundswatcher: %v", err)
+			return
+		}
+		go roundsWatcher.Watch()
+		defer roundsWatcher.Stop()
+
+		blockWatchCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Backfill events that the node has missed since its last seen block. This method will block
+		// and the node will not continue setup until it finishes
+		if err := blockWatcher.BackfillEventsIfNeeded(blockWatchCtx); err != nil {
+			glog.Errorf("Failed to backfill events: %v", err)
+			return
+		}
+
+		go func() {
+			if err := blockWatcher.Watch(blockWatchCtx); err != nil {
+				glog.Errorf("block watcher error: %v", err)
+			}
+		}()
+
 		n.Balances = core.NewBalances(cleanupInterval)
 
 		if *orchestrator {
@@ -368,7 +422,7 @@ func main() {
 			sigVerifier := &pm.DefaultSigVerifier{}
 			// TODO: Initialize Validator with an implementation
 			// of RoundsManager that reads from a cache
-			validator := pm.NewValidator(sigVerifier, n.Eth)
+			validator := pm.NewValidator(sigVerifier, roundsWatcher)
 			gpm := eth.NewGasPriceMonitor(backend, gpmPollingInterval)
 			// Start gas price monitor
 			gasPriceUpdate, err := gpm.Start(context.Background())
@@ -434,7 +488,7 @@ func main() {
 			// of RoundsManager that reads from a cache
 			// TODO: Initialize Sender with an implementation
 			// of SenderManager that reads from a cache
-			n.Sender = pm.NewSender(n.Eth, n.Eth, n.Eth, ev, *depositMultiplier)
+			n.Sender = pm.NewSender(n.Eth, roundsWatcher, n.Eth, ev, *depositMultiplier)
 
 			if *pixelsPerUnit <= 0 {
 				// Can't divide by 0

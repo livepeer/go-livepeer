@@ -1,0 +1,139 @@
+package watchers
+
+import (
+	"fmt"
+	"math/big"
+	"sync"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/livepeer/go-livepeer/eth/contracts"
+
+	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/eth/blockwatch"
+)
+
+// RoundsWatcher is a type for a thread safe in-memory cache that watches on-chain events for new initialized rounds
+type RoundsWatcher struct {
+	mu                       sync.RWMutex
+	lastInitializedRound     *big.Int
+	lastInitializedBlockHash [32]byte
+
+	quit chan struct{}
+
+	watcher BlockWatcher
+	lpEth   eth.LivepeerEthClient
+	dec     *EventDecoder
+}
+
+// NewRoundsWatcher creates a new instance of RoundsWatcher and sets the initial cache through an RPC call to an ethereum node
+func NewRoundsWatcher(roundsManagerAddr ethcommon.Address, watcher BlockWatcher, lpEth eth.LivepeerEthClient) (*RoundsWatcher, error) {
+	dec, err := NewEventDecoder(roundsManagerAddr, contracts.RoundsManagerABI)
+	if err != nil {
+		return nil, fmt.Errorf("error creating decoder: %v", err)
+	}
+
+	return &RoundsWatcher{
+		quit:    make(chan struct{}),
+		watcher: watcher,
+		lpEth:   lpEth,
+		dec:     dec,
+	}, nil
+}
+
+// LastInitializedRound gets the last initialized round from cache
+func (rw *RoundsWatcher) LastInitializedRound() *big.Int {
+	rw.mu.RLock()
+	defer rw.mu.RUnlock()
+	return rw.lastInitializedRound
+}
+
+// LastInitializedBlockHash returns the blockhash of the block the last round was initiated in
+func (rw *RoundsWatcher) LastInitializedBlockHash() [32]byte {
+	rw.mu.RLock()
+	defer rw.mu.RUnlock()
+	return rw.lastInitializedBlockHash
+}
+
+func (rw *RoundsWatcher) setLastInitializedRound(round *big.Int, hash [32]byte) {
+	rw.mu.Lock()
+	defer rw.mu.Unlock()
+	rw.lastInitializedRound = round
+	rw.lastInitializedBlockHash = hash
+}
+
+// Watch the blockwatch subscription for NewRound events
+func (rw *RoundsWatcher) Watch() {
+	lr, err := rw.lpEth.LastInitializedRound()
+	if err != nil {
+		glog.Errorf("error fetching initial lastInitializedRound value: %v", err)
+	}
+	bh, err := rw.lpEth.BlockHashForRound(lr)
+	if err != nil {
+		glog.Errorf("error fetching initial lastInitializedBlockHash value: %v", err)
+	}
+	rw.setLastInitializedRound(lr, bh)
+
+	events := make(chan []*blockwatch.Event, 10)
+	sub := rw.watcher.Subscribe(events)
+	defer sub.Unsubscribe()
+	for {
+		select {
+		case <-rw.quit:
+			return
+		case err := <-sub.Err():
+			glog.Error(err)
+		case events := <-events:
+			rw.handleBlockEvents(events)
+		}
+	}
+}
+
+// Stop watching for NewRound events
+func (rw *RoundsWatcher) Stop() {
+	close(rw.quit)
+}
+
+func (rw *RoundsWatcher) handleBlockEvents(events []*blockwatch.Event) {
+	for _, event := range events {
+		for _, log := range event.BlockHeader.Logs {
+			if event.Type == blockwatch.Removed {
+				log.Removed = true
+			}
+			if err := rw.handleLog(log); err != nil {
+				glog.Error(err)
+			}
+		}
+	}
+}
+
+func (rw *RoundsWatcher) handleLog(log types.Log) error {
+	eventName, err := rw.dec.FindEventName(log)
+	if err != nil {
+		return fmt.Errorf("could not find event name: %v", err)
+	}
+
+	if eventName != "NewRound" {
+		return fmt.Errorf("eventName is not NewRound")
+	}
+
+	var nr contracts.RoundsManagerNewRound
+	if err := rw.dec.Decode("NewRound", log, &nr); err != nil {
+		return fmt.Errorf("unable to decode event: %v", err)
+	}
+	if log.Removed {
+		lr, err := rw.lpEth.LastInitializedRound()
+		if err != nil {
+			return err
+		}
+		bh, err := rw.lpEth.BlockHashForRound(lr)
+		if err != nil {
+			return err
+		}
+		rw.setLastInitializedRound(lr, bh)
+	} else {
+		rw.setLastInitializedRound(nr.Round, nr.BlockHash)
+	}
+	return nil
+}

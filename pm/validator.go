@@ -80,19 +80,11 @@ func (v *validator) IsWinningTicket(ticket *Ticket, sig []byte, recipientRand *b
 }
 
 func (v *validator) validateCreationRound(creationRound int64, creationRoundBlockHash ethcommon.Hash) error {
-	round, err := v.roundsManager.LastInitializedRound()
-	if err != nil {
-		return err
-	}
-
+	round := v.roundsManager.LastInitializedRound()
+	blkHash := v.roundsManager.LastInitializedBlockHash()
 	// Check that creationRound matches last initialized round
 	if big.NewInt(creationRound).Cmp(round) != 0 {
 		return errInvalidCreationRound
-	}
-
-	blkHash, err := v.roundsManager.BlockHashForRound(round)
-	if err != nil {
-		return err
 	}
 
 	// Check that creationRoundBlockHash is valid for creationRound

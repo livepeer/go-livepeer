@@ -85,10 +85,7 @@ func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, er
 		return nil, err
 	}
 
-	expirationParams, err := s.expirationParams()
-	if err != nil {
-		return nil, err
-	}
+	expirationParams := s.expirationParams()
 
 	batch := &TicketBatch{
 		TicketParams:           &session.ticketParams,
@@ -138,21 +135,14 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 	return nil
 }
 
-func (s *sender) expirationParams() (*TicketExpirationParams, error) {
-	round, err := s.roundsManager.LastInitializedRound()
-	if err != nil {
-		return nil, err
-	}
-
-	blkHash, err := s.roundsManager.BlockHashForRound(round)
-	if err != nil {
-		return nil, err
-	}
+func (s *sender) expirationParams() *TicketExpirationParams {
+	round := s.roundsManager.LastInitializedRound()
+	blkHash := s.roundsManager.LastInitializedBlockHash()
 
 	return &TicketExpirationParams{
 		CreationRound:          round.Int64(),
 		CreationRoundBlockHash: blkHash,
-	}, nil
+	}
 }
 
 func (s *sender) loadSession(sessionID string) (*session, error) {

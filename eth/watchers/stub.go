@@ -1,11 +1,18 @@
 package watchers
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/event"
+	"github.com/livepeer/go-livepeer/eth/blockwatch"
 )
 
 var stubBondingManagerAddr = common.HexToAddress("0x511bc4556d823ae99630ae8de28b9b80df90ea2e")
+var stubRoundsManagerAddr = common.HexToAddress("0xc1F9BB72216E5ecDc97e248F65E14df1fE46600a")
 
 func newStubBaseLog() types.Log {
 	return types.Log{
@@ -34,4 +41,39 @@ func newStubUnbondLog() types.Log {
 	log.Data = common.Hex2Bytes("0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000009a3233a1a35d800000000000000000000000000000000000000000000000000000000000000005b1")
 
 	return log
+}
+
+func newStubNewRoundLog() types.Log {
+	log := newStubBaseLog()
+	log.Address = stubRoundsManagerAddr
+	topic := crypto.Keccak256Hash([]byte("NewRound(uint256,bytes32)"))
+	round := big.NewInt(8)
+	roundBytes := common.BytesToHash(common.LeftPadBytes(round.Bytes(), 32))
+	log.Topics = []common.Hash{topic, roundBytes}
+	log.Data, _ = hexutil.Decode("0x15063b24c3dfd390370cd13eaf27fd0b079c60f31bf1414c574f865e906a8964")
+	return log
+}
+
+type stubSubscription struct {
+	errCh        <-chan error
+	unsubscribed bool
+}
+
+func (s *stubSubscription) Unsubscribe() {
+	s.unsubscribed = true
+}
+
+func (s *stubSubscription) Err() <-chan error {
+	return s.errCh
+}
+
+type stubBlockWatcher struct {
+	sink chan<- []*blockwatch.Event
+	sub  *stubSubscription
+}
+
+func (bw *stubBlockWatcher) Subscribe(sink chan<- []*blockwatch.Event) event.Subscription {
+	bw.sink = sink
+	bw.sub = &stubSubscription{errCh: make(<-chan error)}
+	return bw.sub
 }
