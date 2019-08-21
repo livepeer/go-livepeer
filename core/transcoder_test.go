@@ -5,7 +5,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/ffmpeg"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLocalTranscoder(t *testing.T) {
@@ -70,5 +73,111 @@ func TestNvidiaTranscoder(t *testing.T) {
 	}
 	if Over1Pct(len(res[1]), 884164) {
 		t.Errorf("Wrong data %v", len(res[1]))
+	}
+}
+
+func TestResToTranscodeData(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	fileDNE := func(fname string) bool {
+		_, err := os.Stat(fname)
+		return os.IsNotExist(err)
+	}
+
+	// Test immediate error
+	opts := []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{Oname: "badfile"}}
+	tData, err := resToTranscodeData(opts)
+	assert.EqualError(err, "open badfile: no such file or directory")
+	assert.Equal(0, len(tData))
+
+	// Test error after a successful read
+	tempDir, err := ioutil.TempDir("", "TestResToTranscodeData")
+	require.Nil(err)
+	defer os.Remove(tempDir)
+
+	file1, err := ioutil.TempFile(tempDir, "foo")
+	require.Nil(err)
+	file2, err := ioutil.TempFile(tempDir, "bar")
+	require.Nil(err)
+
+	opts = make([]ffmpeg.TranscodeOptions, 3)
+	opts[0].Oname = file1.Name()
+	opts[1].Oname = "badfile"
+	opts[2].Oname = file2.Name()
+
+	tData, err = resToTranscodeData(opts)
+	assert.EqualError(err, "open badfile: no such file or directory")
+	assert.Equal(0, len(tData))
+	assert.True(fileDNE(file1.Name()))
+	assert.False(fileDNE(file2.Name()))
+
+	// Test success for 1 output file
+	opts = []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{Oname: file2.Name()}}
+	tData, err = resToTranscodeData(opts)
+	assert.Nil(err)
+	assert.Equal(1, len(tData))
+	assert.True(fileDNE(file2.Name()))
+
+	// Test succes for 2 output files
+	file1, err = ioutil.TempFile(tempDir, "foo")
+	require.Nil(err)
+	file2, err = ioutil.TempFile(tempDir, "bar")
+	require.Nil(err)
+
+	opts = make([]ffmpeg.TranscodeOptions, 2)
+	opts[0].Oname = file1.Name()
+	opts[1].Oname = file2.Name()
+
+	tData, err = resToTranscodeData(opts)
+	assert.Nil(err)
+	assert.Equal(2, len(tData))
+	assert.True(fileDNE(file1.Name()))
+	assert.True(fileDNE(file2.Name()))
+}
+
+func TestProfilesToTranscodeOptions(t *testing.T) {
+	workDir := "foo"
+
+	assert := assert.New(t)
+
+	oldRandIDFunc := common.RandomIDGenerator
+	common.RandomIDGenerator = func(uint) string {
+		return "bar"
+	}
+	defer func() { common.RandomIDGenerator = oldRandIDFunc }()
+
+	// Test 0 profiles
+	profiles := []ffmpeg.VideoProfile{}
+	opts := profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles)
+	assert.Equal(0, len(opts))
+
+	// Test 1 profile
+	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles)
+	assert.Equal(1, len(opts))
+	assert.Equal("foo/out_bar.ts", opts[0].Oname)
+	assert.Equal(ffmpeg.Software, opts[0].Accel)
+	assert.Equal(ffmpeg.P144p30fps16x9, opts[0].Profile)
+
+	// Test > 1 profile
+	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles)
+	assert.Equal(2, len(opts))
+
+	for i, p := range profiles {
+		assert.Equal("foo/out_bar.ts", opts[i].Oname)
+		assert.Equal(ffmpeg.Software, opts[i].Accel)
+		assert.Equal(p, opts[i].Profile)
+	}
+
+	// Test different acceleration value
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, profiles)
+	assert.Equal(2, len(opts))
+
+	for i, p := range profiles {
+		assert.Equal("foo/out_bar.ts", opts[i].Oname)
+		assert.Equal(ffmpeg.Nvidia, opts[i].Accel)
+		assert.Equal(p, opts[i].Profile)
 	}
 }
