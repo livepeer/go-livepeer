@@ -381,6 +381,7 @@ func main() {
 		go func() {
 			if err := blockWatcher.Watch(blockWatchCtx); err != nil {
 				glog.Errorf("block watcher error: %v", err)
+				return
 			}
 		}()
 
