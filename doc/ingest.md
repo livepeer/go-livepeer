@@ -84,3 +84,22 @@ Here, the stream name is `movie` and the stream key is `Secret/Stream/Key`.
 The RTMP stream can then be played back with this complete RTMP URL. The key is
 optional; if one is not supplied, then a random key will be generated. The key
 may also be specified via webhook.
+
+### HTTP Push
+
+Livepeer starts an HTTP server on the default port of 7935, as another ingest point
+into the Livepeer network. Upon ingest, HTTP stream is pushed to the segmenter
+prior to transcoding. The stream can be pushed via HTTP to the `/live/` endpoint.
+
+Stream name must be provided. For example, here, the stream name is `movie`:
+
+```
+# Push URL
+http://localhost:7935/live/movie/
+
+# RTMP Playback URL
+rtmp://localhost/movie/<randomStreamKey>
+
+# HLS Playback URL
+http://localhost:8935/stream/movie.m3u8
+```
