@@ -139,17 +139,17 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// Upload to OS and construct segment result set
 	var segments []*net.TranscodedSegmentData
 	var pixels int64
-	for i := 0; err == nil && i < len(res.TranscodeData); i++ {
+	for i := 0; err == nil && i < len(res.TranscodeData.Segments); i++ {
 		name := fmt.Sprintf("%s/%d.ts", segData.Profiles[i].Name, segData.Seq) // ANGIE - NEED TO EDIT OUT JOB PROFILES
-		uri, err := res.OS.SaveData(name, res.TranscodeData[i].Data)
+		uri, err := res.OS.SaveData(name, res.TranscodeData.Segments[i].Data)
 		if err != nil {
 			glog.Error("Could not upload segment ", segData.Seq)
 			break
 		}
-		pixels += res.TranscodeData[i].Pixels
+		pixels += res.TranscodeData.Segments[i].Pixels
 		d := &net.TranscodedSegmentData{
 			Url:    uri,
-			Pixels: res.TranscodeData[i].Pixels,
+			Pixels: res.TranscodeData.Segments[i].Pixels,
 		}
 		segments = append(segments, d)
 	}

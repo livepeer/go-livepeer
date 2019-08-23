@@ -147,17 +147,18 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	} else {
 		boundary := common.RandName()
 		w := multipart.NewWriter(&body)
-		for _, v := range tData {
+		for _, v := range tData.Segments {
 			w.SetBoundary(boundary)
 			hdrs := textproto.MIMEHeader{
 				"Content-Type":   {"video/MP2T"},
-				"Content-Length": {strconv.Itoa(len(v))},
+				"Content-Length": {strconv.Itoa(len(v.Data))},
+				"Pixels":         {strconv.FormatInt(v.Pixels, 10)},
 			}
 			fw, err := w.CreatePart(hdrs)
 			if err != nil {
 				glog.Error("Could not create multipart part ", err)
 			}
-			io.Copy(fw, bytes.NewBuffer(v))
+			io.Copy(fw, bytes.NewBuffer(v.Data))
 		}
 		w.Close()
 		contentType = "multipart/mixed; boundary=" + boundary
@@ -170,6 +171,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	req.Header.Set("Credentials", n.OrchSecret)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
+	req.Header.Set("Pixels", strconv.FormatInt(tData.Pixels, 10))
 	resp, err := httpc.Do(req)
 	if err != nil {
 		glog.Error("Error submitting results ", err)
@@ -233,6 +235,13 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	decodedPixels, err := strconv.ParseInt(r.Header.Get("Pixels"), 10, 64)
+	if err != nil {
+		glog.Error("Could not parse decoded pixels", err)
+		http.Error(w, "Invalid Pixels", http.StatusBadRequest)
+		return
+	}
+
 	var res core.RemoteTranscoderResult
 	if transcodingErrorMimeType == mediaType {
 		w.Write([]byte("OK"))
@@ -248,7 +257,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var segments [][]byte
+	var segments []*core.TranscodedSegmentData
 	if "multipart/mixed" == mediaType {
 		mr := multipart.NewReader(r.Body, params["boundary"])
 		for {
@@ -267,9 +276,20 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 				res.Err = err
 				break
 			}
-			segments = append(segments, body)
+
+			encodedPixels, err := strconv.ParseInt(p.Header.Get("Pixels"), 10, 64)
+			if err != nil {
+				glog.Error("Error getting pixels in header:", err)
+				res.Err = err
+				break
+			}
+
+			segments = append(segments, &core.TranscodedSegmentData{Data: body, Pixels: encodedPixels})
 		}
-		res.Segments = segments
+		res.TranscodeData = &core.TranscodeData{
+			Segments: segments,
+			Pixels:   decodedPixels,
+		}
 		orch.TranscoderResults(tid, &res)
 	}
 	if res.Err != nil {

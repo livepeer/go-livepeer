@@ -59,16 +59,16 @@ func TestTranscode(t *testing.T) {
 		t.Error("Error transcoding ", err)
 	}
 
-	if len(tr.TranscodeData) != len(videoProfiles) && len(videoProfiles) != 2 {
+	if len(tr.TranscodeData.Segments) != len(videoProfiles) && len(videoProfiles) != 2 {
 		t.Error("Job profile count did not match broadcasters")
 	}
 
 	// 	Check transcode result
-	if Over1Pct(len(tr.TranscodeData[0].Data), 73132) { // 144p
-		t.Error("Unexpected transcode result ", len(tr.TranscodeData[0].Data))
+	if Over1Pct(len(tr.TranscodeData.Segments[0].Data), 73132) { // 144p
+		t.Error("Unexpected transcode result ", len(tr.TranscodeData.Segments[0].Data))
 	}
-	if Over1Pct(len(tr.TranscodeData[1].Data), 99640) { // 240p
-		t.Error("Unexpected transcode result ", len(tr.TranscodeData[1].Data))
+	if Over1Pct(len(tr.TranscodeData.Segments[1].Data), 99640) { // 240p
+		t.Error("Unexpected transcode result ", len(tr.TranscodeData.Segments[1].Data))
 	}
 
 	// TODO check transcode loop expiry, storage, sig construction, etc
@@ -96,8 +96,8 @@ func TestTranscodeSeg(t *testing.T) {
 	assert.Nil(res.Sig)
 	// sanity check results
 	resBytes, _ := n.Transcoder.Transcode("", profiles)
-	for i, trData := range res.TranscodeData {
-		assert.Equal(resBytes[i], trData.Data)
+	for i, trData := range res.TranscodeData.Segments {
+		assert.Equal(resBytes.Segments[i].Data, trData.Data)
 	}
 
 	// Test onchain mode
@@ -107,8 +107,8 @@ func TestTranscodeSeg(t *testing.T) {
 	assert.NotNil(res.Sig)
 	// check sig
 	resHashes := make([][]byte, len(profiles))
-	for i, v := range resBytes {
-		resHashes[i] = ethCrypto.Keccak256(v)
+	for i, v := range resBytes.Segments {
+		resHashes[i] = ethCrypto.Keccak256(v.Data)
 	}
 	resHash := ethCrypto.Keccak256(resHashes...)
 	assert.Equal(resHash, res.Sig)

@@ -99,7 +99,7 @@ func TestRemoteTranscoder(t *testing.T) {
 	// happy path
 	tc, strm := initTranscoder()
 	res, err := tc.Transcode("", nil)
-	if err != nil || string(res[0]) != "asdf" {
+	if err != nil || string(res.Segments[0].Data) != "asdf" {
 		t.Error("Error transcoding ", err)
 	}
 
@@ -299,8 +299,8 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	// happy path
 	res, err := m.Transcode("", nil)
 	assert.Nil(err)
-	assert.Len(res, 1)
-	assert.Equal(string(res[0]), "asdf")
+	assert.Len(res.Segments, 1)
+	assert.Equal(string(res.Segments[0].Data), "asdf")
 
 	// non-fatal error should not remove from list
 	s.TranscodeError = fmt.Errorf("TranscodeError")
@@ -423,7 +423,14 @@ type StubTranscoderServer struct {
 }
 
 func (s *StubTranscoderServer) Send(n *net.NotifySegment) error {
-	res := RemoteTranscoderResult{Segments: [][]byte{[]byte("asdf")}, Err: s.TranscodeError}
+	res := RemoteTranscoderResult{
+		TranscodeData: &TranscodeData{
+			Segments: []*TranscodedSegmentData{
+				&TranscodedSegmentData{Data: []byte("asdf")},
+			},
+		},
+		Err: s.TranscodeError,
+	}
 	if !s.WithholdResults {
 		s.manager.transcoderResults(n.TaskId, &res)
 	}
