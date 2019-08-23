@@ -581,8 +581,16 @@ func main() {
 	*cliAddr = defaultAddr(*cliAddr, "127.0.0.1", CliPort)
 
 	if drivers.NodeStorage == nil {
-		// base URI will be empty for broadcasters; that's OK
-		drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
+		if n.NodeType == core.OrchestratorNode {
+			drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
+		} else {
+			uri, err := url.ParseRequestURI("http://" + *httpAddr)
+			if err != nil {
+				glog.Errorf("error parsing broadcaster default storage base URI: %v", err)
+				return
+			}
+			drivers.NodeStorage = drivers.NewMemoryDriver(uri)
+		}
 	}
 
 	//Create Livepeer Node
