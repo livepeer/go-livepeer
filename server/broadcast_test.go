@@ -3,16 +3,22 @@ package server
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/lpms/ffmpeg"
+	"github.com/livepeer/lpms/stream"
+	"github.com/livepeer/m3u8"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func StubBroadcastSession(transcoder string) *BroadcastSession {
@@ -27,18 +33,50 @@ func StubBroadcastSessionsManager() *BroadcastSessionsManager {
 	sess1 := StubBroadcastSession("transcoder1")
 	sess2 := StubBroadcastSession("transcoder2")
 
+	return bsmWithSessList([]*BroadcastSession{sess1, sess2})
+}
+
+func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
+	sessMap := make(map[string]*BroadcastSession)
+	for _, sess := range sessList {
+		sessMap[sess.OrchestratorInfo.Transcoder] = sess
+	}
+
 	return &BroadcastSessionsManager{
-		sessList: []*BroadcastSession{sess1, sess2},
-		sessMap: map[string]*BroadcastSession{
-			sess1.OrchestratorInfo.Transcoder: sess1,
-			sess2.OrchestratorInfo.Transcoder: sess2,
-		},
+		sessList: sessList,
+		sessMap:  sessMap,
 		sessLock: &sync.Mutex{},
 		createSessions: func() ([]*BroadcastSession, error) {
-			return []*BroadcastSession{sess1, sess2}, nil
+			return sessList, nil
 		},
 	}
 }
+
+type stubPlaylistManager struct {
+	manifestID core.ManifestID
+}
+
+func (pm *stubPlaylistManager) ManifestID() core.ManifestID {
+	return pm.manifestID
+}
+
+func (pm *stubPlaylistManager) InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo uint64, uri string, duration float64) error {
+	return nil
+}
+
+func (pm *stubPlaylistManager) GetHLSMasterPlaylist() *m3u8.MasterPlaylist {
+	return nil
+}
+
+func (pm *stubPlaylistManager) GetHLSMediaPlaylist(rendition string) *m3u8.MediaPlaylist {
+	return nil
+}
+
+func (pm *stubPlaylistManager) GetOSSession() drivers.OSSession {
+	return nil
+}
+
+func (pm *stubPlaylistManager) Cleanup() {}
 
 func TestStopSessionErrors(t *testing.T) {
 
@@ -338,3 +376,112 @@ func TestCleanupSessions(t *testing.T) {
 // Note: Add processSegment tests, including:
 //     assert an error from transcoder removes sess from BroadcastSessionManager
 //     assert a success re-adds sess to BroadcastSessionManager
+
+func TestTranscodeSegment_VerifyPixels(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
+		return &net.TranscodeResult{
+			Result: &net.TranscodeResult_Data{
+				Data: &net.TranscodeData{
+					Segments: tSegData,
+					Sig:      []byte("bar"),
+				},
+			},
+		}
+	}
+
+	// Create stub response with incorrect reported pixels
+	tSegData := []*net.TranscodedSegmentData{
+		&net.TranscodedSegmentData{Url: "test.flv", Pixels: 100},
+	}
+	tr := dummyRes(tSegData)
+	buf, err := proto.Marshal(tr)
+	require.Nil(err)
+
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+	cxn := &rtmpConnection{
+		mid:         core.ManifestID("foo"),
+		nonce:       7,
+		pl:          &stubPlaylistManager{core.ManifestID("foo")},
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsm,
+	}
+
+	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy")
+	assert.Nil(err)
+
+	// Wait for async pixels verification to finish
+	time.Sleep(500 * time.Millisecond)
+
+	// Check that the session was removed
+	_, ok := bsm.sessMap[ts.URL]
+	assert.False(ok)
+
+	// Create stub response with correct reported pixels
+	p, err := pixels("test.flv")
+	require.Nil(err)
+	tSegData = []*net.TranscodedSegmentData{
+		&net.TranscodedSegmentData{Url: "test.flv", Pixels: p},
+	}
+	tr = dummyRes(tSegData)
+	buf, err = proto.Marshal(tr)
+	require.Nil(err)
+
+	bsm = bsmWithSessList([]*BroadcastSession{sess})
+
+	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy")
+	assert.Nil(err)
+
+	// Wait for async pixels verification to finish
+	time.Sleep(500 * time.Millisecond)
+
+	// Check that the session was not removed
+	_, ok = bsm.sessMap[ts.URL]
+	assert.True(ok)
+}
+
+func TestPixels(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+
+	assert := assert.New(t)
+
+	p, err := pixels("foo")
+	assert.EqualError(err, "No such file or directory")
+	assert.Equal(int64(0), p)
+
+	// Assume that ffmpeg.Transcode3() returns the correct pixel count so we just
+	// check that no error is returned
+	p, err = pixels("test.flv")
+	assert.Nil(err)
+	assert.NotZero(p)
+}
+
+func TestVerifyPixels(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+
+	assert := assert.New(t)
+
+	err := verifyPixels("foo", 50)
+	assert.EqualError(err, "No such file or directory")
+
+	err = verifyPixels("test.flv", 100)
+	assert.EqualError(err, "mismatch between calculated and reported pixels")
+
+	// Make sure that verifyPixels() checks against the output of pixels()
+	p, err := pixels("test.flv")
+	require.Nil(t, err)
+	err = verifyPixels("test.flv", p)
+	assert.Nil(err)
+}

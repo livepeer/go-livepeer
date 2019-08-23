@@ -18,6 +18,7 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
 
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -358,7 +359,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 		segHashLock := &sync.Mutex{}
 		cond := sync.NewCond(segHashLock)
 
-		dlFunc := func(url string, i int) {
+		dlFunc := func(url string, pixels int64, i int) {
 			defer func() {
 				cond.L.Lock()
 				n--
@@ -400,6 +401,13 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 				segHashLock.Unlock()
 			}
 
+			go func() {
+				if err := verifyPixels(url, pixels); err != nil {
+					glog.Error(err)
+					cxn.sessManager.removeSession(sess)
+				}
+			}()
+
 			if monitor.Enabled {
 				monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
 			}
@@ -411,7 +419,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 		}
 
 		for i, v := range res.Segments {
-			go dlFunc(v.Url, i)
+			go dlFunc(v.Url, v.Pixels, i)
 		}
 
 		cond.L.Lock()
@@ -445,4 +453,27 @@ var sessionErrRegex = common.GenErrRegex(sessionErrStrings)
 
 func shouldStopSession(err error) bool {
 	return sessionErrRegex.MatchString(err.Error())
+}
+
+func verifyPixels(fname string, reportedPixels int64) error {
+	p, err := pixels(fname)
+	if err != nil {
+		return err
+	}
+
+	if p != reportedPixels {
+		return errors.New("mismatch between calculated and reported pixels")
+	}
+
+	return nil
+}
+
+func pixels(fname string) (int64, error) {
+	in := &ffmpeg.TranscodeOptionsIn{Fname: fname}
+	res, err := ffmpeg.Transcode3(in, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.Decoded.Pixels, nil
 }
