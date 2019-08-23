@@ -980,3 +980,23 @@ func TestHandlePushForAuthWebhookFailure(t *testing.T) {
 	// reset AuthWebhookURL to original value
 	AuthWebhookURL = ""
 }
+
+func TestResolutionInRegisterConnection(t *testing.T) {
+	assert := assert.New(t)
+	s := setupServer()
+	mid := core.SplitStreamIDString(t.Name()).ManifestID
+	strm := stream.NewBasicRTMPVideoStream(&streamParameters{mid: mid, resolution: "1920px1080p"})
+
+	cxn, err := s.registerConnection(strm)
+	assert.Nil(err)
+	assert.Equal("1920px1080p", cxn.profile.Resolution)
+
+	mid = core.SplitStreamIDString("new").ManifestID
+	strm = stream.NewBasicRTMPVideoStream(&streamParameters{mid: mid, resolution: ""})
+
+	cxn, err = s.registerConnection(strm)
+	assert.Nil(err)
+	assert.Equal(fmt.Sprintf("%vx%v", strm.Width(), strm.Height()), cxn.profile.Resolution)
+}
+
+// @j0sh do you have suggestions on how to test duration / resolution? duration goes into `err = processSegment(cxn, seg)`, but does not get returned in a response.

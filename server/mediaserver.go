@@ -596,7 +596,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 	duration, err := strconv.Atoi(r.Header.Get("Content-Duration"))
 	if err != nil {
-		duration = 2000 // maybe do some reasonable default rather than zero?
+		duration = 2000
 		glog.Info("Missing duration; filling in a default of 2000ms")
 	}
 
