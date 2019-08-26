@@ -1,0 +1,70 @@
+# This file used on Docker Hub to automatically create offical images
+FROM nvidia/cuda:10.1-devel-ubuntu16.04 AS builder
+
+ENV PATH "/usr/lib/go-1.12/bin:/go/bin:${PATH}"
+ENV PKG_CONFIG_PATH "/root/compiled/lib/pkgconfig"
+ENV CPATH /usr/local/cuda/include
+ENV LIBRARY_PATH /usr/local/cuda/lib64
+
+RUN apt-get update \
+  && apt-get install -y software-properties-common  curl \
+  && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
+  && add-apt-repository ppa:longsleep/golang-backports -y \
+  && apt-get update \
+  && apt-get -y install build-essential pkg-config autoconf gnutls-dev golang-1.12-go sudo git python \
+  && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs)  stable" \
+  && apt-get update \
+  && apt-get install docker-ce-cli
+
+ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
+ENV CPATH /usr/local/cuda/include
+ENV LIBRARY_PATH /usr/local/cuda/lib64
+ENV GOPATH=/go
+
+WORKDIR /go/src/github.com/livepeer/go-livepeer
+
+RUN go get github.com/golang/glog
+RUN go get -u -v github.com/livepeer/m3u8
+RUN go get github.com/aws/aws-sdk-go/aws
+RUN go get -u google.golang.org/grpc
+RUN go get github.com/pkg/errors
+RUN go get github.com/stretchr/testify/mock
+RUN go get -u -v go.opencensus.io/stats
+RUN go get -u -v go.opencensus.io/tag
+RUN go get -u -v contrib.go.opencensus.io/exporter/prometheus
+
+ADD ./install_ffmpeg.sh ./install_ffmpeg.sh
+RUN ./install_ffmpeg.sh
+
+ADD ./install_dependencies.sh ./install_dependencies.sh
+RUN ./install_dependencies.sh
+
+COPY . .
+RUN git describe --always --long --dirty > .git.describe
+
+RUN go get -v ./cmd/livepeer/...
+RUN go get -v ./cmd/livepeer_cli/...
+
+RUN go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)" -v cmd/livepeer/livepeer.go
+RUN go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)" -v cmd/livepeer_cli/*
+
+FROM debian:stretch-slim
+
+WORKDIR /root
+RUN apt update && apt install -y  ca-certificates jq libgnutls30 && apt clean
+RUN mkdir -p /root/.lpData/mainnet/keystore && \
+  mkdir -p /root/.lpData/rinkeby/keystore && \
+  mkdir -p /root/.lpData/devenv/keystore && mkdir -p /root/.lpData/offchain/keystore
+COPY --from=builder /go/src/github.com/livepeer/go-livepeer/livepeer /usr/bin/livepeer
+COPY --from=builder /go/src/github.com/livepeer/go-livepeer/livepeer_cli /usr/bin/livepeer_cli
+
+COPY docker/start.sh .
+RUN chmod +x start.sh
+
+EXPOSE 7935/tcp
+EXPOSE 8935/tcp
+EXPOSE 1935/tcp
+
+ENTRYPOINT ["/root/start.sh"]
+CMD ["--help"]
+

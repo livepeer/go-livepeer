@@ -7,7 +7,7 @@ go get -u -v github.com/livepeer/m3u8
 go get -u -v go.opencensus.io/stats
 go get -u -v go.opencensus.io/tag
 go get -u google.golang.org/grpc
-go get github.com/alecthomas/gometalinter && gometalinter --install
+go get github.com/alecthomas/gometalinter #&& gometalinter --install
 go get github.com/aws/aws-sdk-go/aws
 go get github.com/golang/glog
 go get github.com/jstemmer/go-junit-report
