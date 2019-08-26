@@ -57,25 +57,6 @@ func main() {
 
 		return nil
 	}
-	app.Commands = []cli.Command{
-		{
-			Name: "link-profile",
-			Usage: "link a livepeer / 3Box profile to your transcoder address",
-			Action: func(c *cli.Context) error {
-				w := &wizard{
-					endpoint: fmt.Sprintf("http://%v:%v/status", c.String("host"), c.String("http")),
-					httpPort: "7395",
-					host:     "localhost",
-					in:       bufio.NewReader(os.Stdin),
-				}
-				w.orchestrator = w.isOrchestrator()
-				w.checkNet()
-				w.run()
-				w.signDid()
-				return nil
-			},
-		},
-	}
 	app.Version = core.LivepeerVersion
 	// flag.Parse()
 	app.Run(os.Args)
@@ -126,7 +107,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 			fmt.Print("For Rinkeby Eth, go to the Rinkeby faucet (https://faucet.rinkeby.io/).")
 			w.read()
 		}, testnet: true},
-		{desc: "Link Transcoder Account to Profile", invoke: w.signDid},
+		{desc: "Sign a message", invoke: w.signMessage},
 	}
 	return options
 }
