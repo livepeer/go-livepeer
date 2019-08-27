@@ -439,6 +439,9 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 		ticketParams := sess.OrchestratorInfo.GetTicketParams()
 		if ticketParams != nil && // may be nil in offchain mode
 			saveErr == nil && // save error leads to early exit before sighash computation
+			// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
+			// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
+			len(segHashes) != len(res.Segments) &&
 			!pm.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
 			glog.Errorf("Sig check failed for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
 			cxn.sessManager.removeSession(sess)
