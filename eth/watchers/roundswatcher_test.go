@@ -11,6 +11,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSetAndGet_LastInitializedRound_LastInitializedBlockHash(t *testing.T) {
@@ -81,6 +82,24 @@ func TestWatchAndStop(t *testing.T) {
 	rw.Stop()
 	time.Sleep(2 * time.Millisecond)
 	assert.True(watcher.sub.unsubscribed)
+}
+
+func TestRoundsWatcher_HandleLog(t *testing.T) {
+	lpEth := &eth.StubClient{}
+	watcher := &stubBlockWatcher{}
+	rw, err := NewRoundsWatcher(stubRoundsManagerAddr, watcher, lpEth)
+	require.Nil(t, err)
+
+	assert := assert.New(t)
+
+	// Test unknown event
+	log := newStubBaseLog()
+	log.Topics = []ethcommon.Hash{ethcommon.BytesToHash([]byte("foo"))}
+
+	err = rw.handleLog(log)
+	assert.Nil(err)
+	assert.Nil(rw.LastInitializedRound())
+	assert.Equal([32]byte{}, rw.LastInitializedBlockHash())
 }
 
 func defaultMiniHeader() *blockwatch.MiniHeader {

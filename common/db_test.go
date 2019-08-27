@@ -411,6 +411,40 @@ func TestDBUnbondingLocks(t *testing.T) {
 		t.Error("Unexpected number of unbonding locks; expected 2, got ", len(unbondingLocks))
 		return
 	}
+
+	// Check deleting existing lock
+	err = dbh.DeleteUnbondingLock(big.NewInt(3), delegator)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	unbondingLocks, err = dbh.UnbondingLocks(nil)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if len(unbondingLocks) != 2 {
+		t.Error("Unxpected number of unbonding locks after deletion; expected 2, got", len(unbondingLocks))
+		return
+	}
+
+	// Check setting usedBlock to NULL for existing lock
+	err = dbh.UseUnbondingLock(big.NewInt(1), delegator, nil)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	unbondingLocks, err = dbh.UnbondingLocks(nil)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if len(unbondingLocks) != 3 {
+		t.Error("Unexpected number of unbonding locks after reverting used lock; expected 3, got", len(unbondingLocks))
+		return
+	}
 }
 
 func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.T) {

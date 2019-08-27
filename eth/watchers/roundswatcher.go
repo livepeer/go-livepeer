@@ -111,7 +111,8 @@ func (rw *RoundsWatcher) handleBlockEvents(events []*blockwatch.Event) {
 func (rw *RoundsWatcher) handleLog(log types.Log) error {
 	eventName, err := rw.dec.FindEventName(log)
 	if err != nil {
-		return fmt.Errorf("could not find event name: %v", err)
+		// Noop if we cannot find the event name
+		return nil
 	}
 
 	if eventName != "NewRound" {

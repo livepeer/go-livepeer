@@ -3,13 +3,11 @@ package eth
 import (
 	"math/big"
 
-	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/mock"
@@ -263,21 +261,3 @@ func (c *StubClient) Sign(msg []byte) ([]byte, error)   { return msg, nil }
 func (c *StubClient) LatestBlockNum() (*big.Int, error) { return big.NewInt(0), c.LatestBlockError }
 func (c *StubClient) GetGasInfo() (uint64, *big.Int)    { return 0, nil }
 func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
-func (c *StubClient) ProcessHistoricalUnbond(*big.Int, func(*contracts.BondingManagerUnbond) error) error {
-	return c.ProcessHistoricalUnbondError
-}
-func (c *StubClient) WatchForUnbond(chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error) {
-	return nil, nil
-}
-func (c *StubClient) ProcessHistoricalRebond(*big.Int, func(*contracts.BondingManagerRebond) error) error {
-	return nil
-}
-func (c *StubClient) WatchForRebond(chan *contracts.BondingManagerRebond) (ethereum.Subscription, error) {
-	return nil, nil
-}
-func (c *StubClient) ProcessHistoricalWithdrawStake(*big.Int, func(*contracts.BondingManagerWithdrawStake) error) error {
-	return nil
-}
-func (c *StubClient) WatchForWithdrawStake(chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error) {
-	return nil, nil
-}
