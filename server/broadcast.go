@@ -3,8 +3,11 @@ package server
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"math/big"
+	"net/url"
+	"os"
 	"sync"
 
 	"github.com/golang/glog"
@@ -401,12 +404,15 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 				segHashLock.Unlock()
 			}
 
-			go func() {
-				if err := verifyPixels(url, pixels); err != nil {
-					glog.Error(err)
-					cxn.sessManager.removeSession(sess)
-				}
-			}()
+			// If running in on-chain mode, run pixels verification asynchronously
+			if sess.Sender != nil {
+				go func() {
+					if err := verifyPixels(url, sess.BroadcasterOS, pixels); err != nil {
+						glog.Error(err)
+						cxn.sessManager.removeSession(sess)
+					}
+				}()
+			}
 
 			if monitor.Enabled {
 				monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
@@ -455,7 +461,30 @@ func shouldStopSession(err error) bool {
 	return sessionErrRegex.MatchString(err.Error())
 }
 
-func verifyPixels(fname string, reportedPixels int64) error {
+func verifyPixels(fname string, bos drivers.OSSession, reportedPixels int64) error {
+	uri, err := url.ParseRequestURI(fname)
+	memOS, ok := bos.(*drivers.MemorySession)
+	// If the filename is a relative URI and the broadcaster is using local memory storage
+	// fetch the data and write it to a temp file
+	if err == nil && !uri.IsAbs() && ok {
+		tempfile, err := ioutil.TempFile("", common.RandName())
+		if err != nil {
+			return fmt.Errorf("error creating temp file for pixels verification: %v", err)
+		}
+		defer os.Remove(tempfile.Name())
+
+		data := memOS.GetData(fname)
+		if data == nil {
+			return errors.New("error fetching data from local memory storage")
+		}
+
+		if _, err := tempfile.Write(memOS.GetData(fname)); err != nil {
+			return fmt.Errorf("error writing temp file for pixels verification: %v", err)
+		}
+
+		fname = tempfile.Name()
+	}
+
 	p, err := pixels(fname)
 	if err != nil {
 		return err
