@@ -43,9 +43,22 @@ func TestLocalOS(t *testing.T) {
 	path, err = sess.SaveData("name1/2.ts", copyBytes(tempData3))
 	data = sess.GetData("sesspath/name1/2.ts")
 	assert.Equal(tempData3, string(data))
+	// Test trim prefix when baseURI != nil
+	data = sess.GetData(path)
+	assert.Equal(tempData3, string(data))
 	data = sess.GetData("sesspath/name1/1.ts")
 	assert.Nil(data)
 	sess.EndSession()
 	data = sess.GetData("sesspath/name1/2.ts")
 	assert.Nil(data)
+
+	// Test trim prefix when baseURI = nil
+	os = NewMemoryDriver(nil)
+	sess = os.NewSession("sesspath").(*MemorySession)
+	path, err = sess.SaveData("name1/1.ts", copyBytes(tempData1))
+	assert.Nil(err)
+	assert.Equal("/stream/sesspath/name1/1.ts", path)
+
+	data = sess.GetData(path)
+	assert.Equal(tempData1, string(data))
 }
