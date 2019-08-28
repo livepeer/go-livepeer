@@ -27,53 +27,42 @@ func TestDBLastSeenBlock(t *testing.T) {
 	defer dbh.Close()
 	defer dbraw.Close()
 
-	// sanity check default value
-	var val int64
-	var created_at string
-	var updated_at string
-	stmt := "SELECT value, updatedAt FROM kv WHERE key = 'lastBlock'"
-	row := dbraw.QueryRow(stmt)
-	err = row.Scan(&val, &created_at)
-	if err != nil || val != int64(0) {
-		t.Errorf("Unexpected result from sanity check; got %v - %v", err, val)
-		return
-	}
-	// set last updated at timestamp to sometime in the past
-	update_stmt := "UPDATE kv SET updatedAt = datetime('now', '-2 months') WHERE key = 'lastBlock'"
-	_, err = dbraw.Exec(update_stmt) // really should sanity check this result
-	if err != nil {
-		t.Error("Could not update db ", err)
-	}
+	assert := assert.New(t)
+	require := require.New(t)
 
-	// now test set
-	blkval := int64(54321)
-	err = dbh.SetLastSeenBlock(big.NewInt(blkval))
-	if err != nil {
-		t.Error("Unable to set last seen block ", err)
-		return
-	}
-	row = dbraw.QueryRow(stmt)
-	err = row.Scan(&val, &updated_at)
-	if err != nil || val != blkval {
-		t.Errorf("Unexpected result from value check; got %v - %v", err, val)
-		return
-	}
-	// small possibility of a test failure if we executed over a 1s boundary
-	if updated_at != created_at {
-		t.Errorf("Unexpected result from update check; got %v:%v", updated_at, created_at)
-		return
-	}
-
-	// test getter function
+	// When there are no headers, return nil
 	blk, err := dbh.LastSeenBlock()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if blk.Int64() != blkval {
-		t.Errorf("Unexpected result from getter; expected %v, got %v", blkval, blk.Int64())
-		return
-	}
+	assert.Nil(err)
+	assert.Nil(blk)
+
+	// When there is a single header, return its number
+	h0 := defaultMiniHeader()
+	h0.Number = big.NewInt(100)
+	err = dbh.InsertMiniHeader(h0)
+	require.Nil(err)
+
+	blk, err = dbh.LastSeenBlock()
+	assert.Nil(err)
+	assert.Equal(h0.Number, blk)
+
+	// When there are multiple headers, return the latest header number
+	h1 := defaultMiniHeader()
+	h1.Number = big.NewInt(101)
+	err = dbh.InsertMiniHeader(h1)
+	require.Nil(err)
+
+	blk, err = dbh.LastSeenBlock()
+	assert.Nil(err)
+	assert.Equal(h1.Number, blk)
+
+	h2 := defaultMiniHeader()
+	h2.Number = big.NewInt(99)
+	err = dbh.InsertMiniHeader(h2)
+	require.Nil(err)
+
+	blk, err = dbh.LastSeenBlock()
+	assert.Nil(err)
+	assert.Equal(h1.Number, blk)
 }
 
 func TestDBVersion(t *testing.T) {

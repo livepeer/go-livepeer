@@ -94,21 +94,9 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 
 func (n *LivepeerNode) StartEthServices() error {
 	var err error
-	for k, s := range n.EthServices {
-		// Skip BlockService until the end
-		if k == "BlockService" {
-			continue
-		}
+	for _, s := range n.EthServices {
 		err = s.Start(context.Background())
 		if err != nil {
-			return err
-		}
-	}
-
-	// Make sure to initialize BlockService last so other services can
-	// create filters starting from the last seen block
-	if s, ok := n.EthServices["BlockService"]; ok {
-		if err := s.Start(context.Background()); err != nil {
 			return err
 		}
 	}
