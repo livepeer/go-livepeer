@@ -19,7 +19,8 @@ RUN apt-get update \
 ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
 ENV CPATH /usr/local/cuda/include
 ENV LIBRARY_PATH /usr/local/cuda/lib64
-ENV GOPATH=/go
+ENV LD_LIBRARY_PAT /usr/local/cuda/lib64
+ENV GOPATH /go
 
 WORKDIR /go/src/github.com/livepeer/go-livepeer
 
@@ -48,15 +49,18 @@ RUN go get -v ./cmd/livepeer_cli/...
 RUN go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)" -v cmd/livepeer/livepeer.go
 RUN go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)" -v cmd/livepeer_cli/*
 
-FROM debian:stretch-slim
+#FROM debian:stretch-slim
 
 WORKDIR /root
 RUN apt update && apt install -y  ca-certificates jq libgnutls30 && apt clean
 RUN mkdir -p /root/.lpData/mainnet/keystore && \
   mkdir -p /root/.lpData/rinkeby/keystore && \
   mkdir -p /root/.lpData/devenv/keystore && mkdir -p /root/.lpData/offchain/keystore
-COPY --from=builder /go/src/github.com/livepeer/go-livepeer/livepeer /usr/bin/livepeer
-COPY --from=builder /go/src/github.com/livepeer/go-livepeer/livepeer_cli /usr/bin/livepeer_cli
+RUN cp /go/src/github.com/livepeer/go-livepeer/livepeer /usr/bin/livepeer
+RUN cp /go/src/github.com/livepeer/go-livepeer/livepeer_cli /usr/bin/livepeer_cli
+
+#COPY --from=builder /go/src/github.com/livepeer/go-livepeer/livepeer /usr/bin/livepeer
+#COPY --from=builder /go/src/github.com/livepeer/go-livepeer/livepeer_cli /usr/bin/livepeer_cli
 
 COPY docker/start.sh .
 RUN chmod +x start.sh
