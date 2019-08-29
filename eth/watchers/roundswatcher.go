@@ -19,6 +19,7 @@ type RoundsWatcher struct {
 	mu                       sync.RWMutex
 	lastInitializedRound     *big.Int
 	lastInitializedBlockHash [32]byte
+	transcoderPoolSize       *big.Int
 
 	quit chan struct{}
 
@@ -63,6 +64,18 @@ func (rw *RoundsWatcher) setLastInitializedRound(round *big.Int, hash [32]byte) 
 	rw.lastInitializedBlockHash = hash
 }
 
+func (rw *RoundsWatcher) GetTranscoderPoolSize() *big.Int {
+	rw.mu.RLock()
+	defer rw.mu.RUnlock()
+	return rw.transcoderPoolSize
+}
+
+func (rw *RoundsWatcher) setTranscoderPoolSize(size *big.Int) {
+	rw.mu.Lock()
+	defer rw.mu.Unlock()
+	rw.transcoderPoolSize = size
+}
+
 // Watch the blockwatch subscription for NewRound events
 func (rw *RoundsWatcher) Watch() error {
 	lr, err := rw.lpEth.LastInitializedRound()
@@ -74,6 +87,10 @@ func (rw *RoundsWatcher) Watch() error {
 		return fmt.Errorf("error fetching initial lastInitializedBlockHash value: %v", err)
 	}
 	rw.setLastInitializedRound(lr, bh)
+
+	if err := rw.fetchAndSetTranscoderPoolSize(); err != nil {
+		glog.Errorf("error fetching initial transcoderPoolSize: %v", err)
+	}
 
 	events := make(chan []*blockwatch.Event, 10)
 	sub := rw.watcher.Subscribe(events)
@@ -136,5 +153,20 @@ func (rw *RoundsWatcher) handleLog(log types.Log) error {
 	} else {
 		rw.setLastInitializedRound(nr.Round, nr.BlockHash)
 	}
+
+	// Get the active transcoder pool size when we receive a NewRound event
+	if err := rw.fetchAndSetTranscoderPoolSize(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (rw *RoundsWatcher) fetchAndSetTranscoderPoolSize() error {
+	size, err := rw.lpEth.GetTranscoderPoolSize()
+	if err != nil {
+		return fmt.Errorf("error fetching initial transcoderPoolSize: %v", err)
+	}
+	rw.setTranscoderPoolSize(size)
 	return nil
 }
