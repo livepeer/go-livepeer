@@ -98,4 +98,6 @@ type RoundsManager interface {
 type SenderManager interface {
 	// GetSenderInfo returns a sender's information
 	GetSenderInfo(addr ethcommon.Address) (*SenderInfo, error)
+	// ClaimedReserve returns the amount claimed from a sender's reserve
+	ClaimedReserve(sender ethcommon.Address) *big.Int
 }

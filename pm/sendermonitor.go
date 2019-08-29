@@ -46,9 +46,6 @@ type ErrorMonitor interface {
 }
 
 type remoteSender struct {
-	// reserveAlloc is the amount of the sender's reserve guaranteed to
-	// the recipient
-	reserveAlloc *big.Int
 	// pendingAmount is the sum of the face values of tickets that are
 	// currently pending redemption on-chain
 	pendingAmount *big.Int
@@ -69,6 +66,8 @@ type senderMonitor struct {
 	senders map[ethcommon.Address]*remoteSender
 
 	broker Broker
+	sMgr   SenderManager
+	rm     RoundsManager
 
 	// redeemable is a channel that an external caller can use to
 	// receive tickets that are fed from the ticket queues for
@@ -81,12 +80,14 @@ type senderMonitor struct {
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, cleanupInterval time.Duration, ttl int, em ErrorMonitor) SenderMonitor {
+func NewSenderMonitor(claimant ethcommon.Address, broker Broker, sMgr SenderManager, rm RoundsManager, cleanupInterval time.Duration, ttl int, em ErrorMonitor) SenderMonitor {
 	return &senderMonitor{
 		claimant:        claimant,
 		cleanupInterval: cleanupInterval,
 		ttl:             ttl,
 		broker:          broker,
+		sMgr:            sMgr,
+		rm:              rm,
 		senders:         make(map[ethcommon.Address]*remoteSender),
 		redeemable:      make(chan *SignedTicket),
 		quit:            make(chan struct{}),
@@ -135,7 +136,11 @@ func (sm *senderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error
 	// Whenever a sender's max float increases, signal the updated max float to the
 	// sender's associated ticket queue in case there are queued tickets that
 	// can be redeemed
-	sm.senders[addr].queue.SignalMaxFloat(sm.maxFloat(addr))
+	mf, err := sm.maxFloat(addr)
+	if err != nil {
+		return err
+	}
+	sm.senders[addr].queue.SignalMaxFloat(mf)
 
 	return nil
 }
@@ -170,7 +175,7 @@ func (sm *senderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
 		return nil, err
 	}
 
-	return sm.maxFloat(addr), nil
+	return sm.maxFloat(addr)
 }
 
 // QueueTicket adds a ticket to the queue for a remote sender
@@ -190,8 +195,20 @@ func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicke
 // maxFloat is a helper that returns the sender's max float as:
 // reserveAlloc - pendingAmount
 // Caller should hold the lock for senderMonitor
-func (sm *senderMonitor) maxFloat(addr ethcommon.Address) *big.Int {
-	return new(big.Int).Sub(sm.senders[addr].reserveAlloc, sm.senders[addr].pendingAmount)
+func (sm *senderMonitor) maxFloat(addr ethcommon.Address) (*big.Int, error) {
+	reserveAlloc, err := sm.reserveAlloc(addr)
+	if err != nil {
+		return nil, err
+	}
+	return reserveAlloc.Sub(reserveAlloc, sm.senders[addr].pendingAmount), nil
+}
+
+func (sm *senderMonitor) reserveAlloc(addr ethcommon.Address) (*big.Int, error) {
+	info, err := sm.sMgr.GetSenderInfo(addr)
+	if err != nil {
+		return nil, err
+	}
+	return new(big.Int).Sub(new(big.Int).Div(info.Reserve, sm.rm.GetTranscoderPoolSize()), sm.sMgr.ClaimedReserve(addr)), nil
 }
 
 // ensureCache is a helper that checks if a remote sender is initialized
@@ -199,9 +216,7 @@ func (sm *senderMonitor) maxFloat(addr ethcommon.Address) *big.Int {
 // Caller should hold the lock for senderMonitor
 func (sm *senderMonitor) ensureCache(addr ethcommon.Address) error {
 	if sm.senders[addr] == nil {
-		if err := sm.cache(addr); err != nil {
-			return err
-		}
+		sm.cache(addr)
 	}
 
 	sm.senders[addr].lastAccess = unixNow()
@@ -213,26 +228,18 @@ func (sm *senderMonitor) ensureCache(addr ethcommon.Address) error {
 // starts a ticket queue for the remote sender
 // Caller should hold the lock for senderMonitor unless the caller is
 // ensureCache() in which case the caller of ensureCache() should hold the lock
-func (sm *senderMonitor) cache(addr ethcommon.Address) error {
-	reserveAlloc, err := sm.broker.ClaimableReserve(addr, sm.claimant)
-	if err != nil {
-		return err
-	}
-
+func (sm *senderMonitor) cache(addr ethcommon.Address) {
 	queue := newTicketQueue()
 	queue.Start()
 	done := make(chan struct{})
 	go sm.startTicketQueueConsumerLoop(queue, done)
 
 	sm.senders[addr] = &remoteSender{
-		reserveAlloc:  reserveAlloc,
 		pendingAmount: big.NewInt(0),
 		queue:         queue,
 		done:          done,
 		lastAccess:    unixNow(),
 	}
-
-	return nil
 }
 
 // startTicketQueueConsumerLoop initiates a loop that runs a consumer

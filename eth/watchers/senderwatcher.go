@@ -16,12 +16,13 @@ import (
 
 // SenderWatcher maintains a concurrency-safe map with SenderInfo
 type SenderWatcher struct {
-	senders map[ethcommon.Address]*pm.SenderInfo
-	mu      sync.RWMutex
-	quit    chan struct{}
-	watcher BlockWatcher
-	lpEth   eth.LivepeerEthClient
-	dec     *EventDecoder
+	senders        map[ethcommon.Address]*pm.SenderInfo
+	claimedReserve map[ethcommon.Address]*big.Int // map representing how much a recipient has drawn from a sender's reserve
+	mu             sync.RWMutex
+	quit           chan struct{}
+	watcher        BlockWatcher
+	lpEth          eth.LivepeerEthClient
+	dec            *EventDecoder
 }
 
 // NewSenderWatcher initiates a new SenderWatcher
@@ -60,6 +61,13 @@ func (sw *SenderWatcher) setSenderInfo(addr ethcommon.Address, info *pm.SenderIn
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
 	sw.senders[addr] = info
+}
+
+// ClaimedReserve returns the amount claimed from a sender's reserve
+func (sw *SenderWatcher) ClaimedReserve(sender ethcommon.Address) *big.Int {
+	sw.mu.RLock()
+	defer sw.mu.RUnlock()
+	return sw.claimedReserve[sender]
 }
 
 // Watch starts the event watching loop
@@ -135,6 +143,19 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 		sender = reserveFunded.ReserveHolder
 		if info, ok := sw.senders[sender]; ok && !log.Removed {
 			info.Reserve.Add(info.Reserve, reserveFunded.Amount)
+			// if a thawed reserve is funded we flush claimedReserve for a sender and set it to NotFrozen
+			// making an RPC call here is suboptimal but doesn't happen frequently
+			var currentRound *big.Int
+			if info.ThawRound.Int64() != 0 {
+				currentRound, err = sw.lpEth.CurrentRound()
+				if err != nil {
+					return err
+				}
+				if info.ThawRound.Cmp(currentRound) < 0 {
+					info.ReserveState = pm.NotFrozen
+					sw.claimedReserve[sender] = big.NewInt(0)
+				}
+			}
 		}
 	case "Withdrawal":
 		var withdrawal contracts.TicketBrokerWithdrawal
@@ -161,7 +182,12 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 				// ReserveFrozen will be handled in it's own event log handler
 				diff := new(big.Int).Sub(amount, info.Deposit)
 				info.Deposit = big.NewInt(0)
-				info.Reserve.Sub(info.Reserve, diff)
+				// sw.senders[sender].Reserve.Sub(sw.senders[sender].Reserve, amount)
+				if claimed, ok := sw.claimedReserve[sender]; ok {
+					claimed.Add(claimed, diff)
+				} else {
+					claimed = diff
+				}
 			} else {
 				// Draw from deposit
 				info.Deposit.Sub(info.Deposit, amount)
