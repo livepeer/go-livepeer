@@ -53,6 +53,7 @@ type LivepeerEthClient interface {
 	BlockHashForRound(round *big.Int) ([32]byte, error)
 	CurrentRoundInitialized() (bool, error)
 	CurrentRoundLocked() (bool, error)
+	CurrentRoundStartBlock() (*big.Int, error)
 
 	// Token
 	Transfer(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error)
