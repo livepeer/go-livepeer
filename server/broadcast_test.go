@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/m3u8"
@@ -422,11 +424,26 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy")
 	assert.Nil(err)
 
-	// Wait for async pixels verification to finish
-	time.Sleep(500 * time.Millisecond)
+	// Wait for async pixels verification to finish (or in this case we are just making sure that it did NOT run)
+	time.Sleep(1 * time.Second)
 
-	// Check that the session was removed
+	// Check that the session was NOT removed because we are in off-chain mode
 	_, ok := bsm.sessMap[ts.URL]
+	assert.True(ok)
+
+	sess.OrchestratorInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}
+	sess.Sender = &pm.MockSender{}
+	bsm = bsmWithSessList([]*BroadcastSession{sess})
+	cxn.sessManager = bsm
+
+	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy")
+	assert.Nil(err)
+
+	// Wait for async pixels verification to finish
+	time.Sleep(1 * time.Second)
+
+	// Check that the session was removed because we are in on-chain mode
+	_, ok = bsm.sessMap[ts.URL]
 	assert.False(ok)
 
 	// Create stub response with correct reported pixels
@@ -440,12 +457,13 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	require.Nil(err)
 
 	bsm = bsmWithSessList([]*BroadcastSession{sess})
+	cxn.sessManager = bsm
 
 	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy")
 	assert.Nil(err)
 
 	// Wait for async pixels verification to finish
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 
 	// Check that the session was not removed
 	_, ok = bsm.sessMap[ts.URL]
@@ -471,17 +489,42 @@ func TestPixels(t *testing.T) {
 func TestVerifyPixels(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 
+	require := require.New(t)
 	assert := assert.New(t)
 
-	err := verifyPixels("foo", 50)
+	// Create memory session and save a test file
+	bos := drivers.NewMemoryDriver(nil).NewSession("foo")
+	data, err := ioutil.ReadFile("test.flv")
+	require.Nil(err)
+	fname, err := bos.SaveData("test.ts", data)
+	require.Nil(err)
+
+	// Test error for relative URI and no memory storage if the file does not exist on disk
+	// Will try to use the relative URI to read the file from disk and fail
+	err = verifyPixels(fname, nil, 50)
 	assert.EqualError(err, "No such file or directory")
 
-	err = verifyPixels("test.flv", 100)
+	// Test error for relative URI and local memory storage if the file does not exist in storage
+	// Will try to use the relative URI to read the file from storage and fail
+	err = verifyPixels("/stream/bar/dne.ts", bos, 50)
+	assert.EqualError(err, "error fetching data from local memory storage")
+
+	// Test writing temp file for relative URI and local memory storage with incorrect pixels
+	err = verifyPixels(fname, bos, 50)
 	assert.EqualError(err, "mismatch between calculated and reported pixels")
 
+	// Test writing temp file for relative URI and local memory storage with correct pixels
 	// Make sure that verifyPixels() checks against the output of pixels()
 	p, err := pixels("test.flv")
-	require.Nil(t, err)
-	err = verifyPixels("test.flv", p)
+	require.Nil(err)
+	err = verifyPixels(fname, bos, p)
+	assert.Nil(err)
+
+	// Test no writing temp file with incorrect pixels
+	err = verifyPixels("test.flv", nil, 50)
+	assert.EqualError(err, "mismatch between calculated and reported pixels")
+
+	// Test no writing temp file with correct pixels
+	err = verifyPixels("test.flv", nil, p)
 	assert.Nil(err)
 }
