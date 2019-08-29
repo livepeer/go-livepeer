@@ -90,6 +90,8 @@ type RoundsManager interface {
 	LastInitializedRound() *big.Int
 	// LastInitializedBlockHash returns the blockhash of the block the last round was initiated in
 	LastInitializedBlockHash() [32]byte
+	// GetTranscoderPoolSize returns the size active transcoder set for a round
+	GetTranscoderPoolSize() *big.Int
 }
 
 // SenderManager defines the methods for fetching sender information

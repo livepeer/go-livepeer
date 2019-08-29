@@ -82,6 +82,7 @@ type LivepeerEthClient interface {
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
 	GetTotalBonded() (*big.Int, error)
+	GetTranscoderPoolSize() (*big.Int, error)
 
 	// TicketBroker
 	FundDepositAndReserve(depositAmount, penaltyEscrowAmount *big.Int) (*types.Transaction, error)

@@ -168,6 +168,7 @@ type StubClient struct {
 	Orchestrators                []*lpTypes.Transcoder
 	RoundsErr                    error
 	SenderInfo                   *pm.SenderInfo
+	PoolSize                     *big.Int
 }
 
 type stubTranscoder struct {
@@ -235,8 +236,9 @@ func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, roun
 func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
 	return e.Orchestrators, nil
 }
-func (e *StubClient) IsActiveTranscoder() (bool, error) { return false, nil }
-func (e *StubClient) GetTotalBonded() (*big.Int, error) { return big.NewInt(0), nil }
+func (e *StubClient) IsActiveTranscoder() (bool, error)        { return false, nil }
+func (e *StubClient) GetTotalBonded() (*big.Int, error)        { return big.NewInt(0), nil }
+func (e *StubClient) GetTranscoderPoolSize() (*big.Int, error) { return e.PoolSize, nil }
 
 // TicketBroker
 func (e *StubClient) FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*types.Transaction, error) {
