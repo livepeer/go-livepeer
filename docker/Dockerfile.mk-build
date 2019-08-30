@@ -8,7 +8,6 @@ RUN apt-get update && apt-get dist-upgrade -y && \
     apt-get update && apt-get dist-upgrade -y && \
     apt-get install -y build-essential pkg-config autoconf gnutls-dev \
             git curl golang-go && \
-    ##apt-get install -y libnvidia-encode-430 && \
    ## curl -O http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-repo-ubuntu1804_10.0.130-1_amd64.deb && \
    # curl -O http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-repo-ubuntu1804_10.1.243-1_amd64.deb && \
    # dpkg --force-confdef --force-confnew -i ./cuda-repo-ubuntu1804_10.1.243-1_amd64.deb && \
@@ -18,6 +17,8 @@ RUN apt-get update && apt-get dist-upgrade -y && \
    # apt-get install cuda-10-1 -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+#RUN apt-get install -y libnvidia-encode-418   
 
 RUN git clone -b nasm-2.14.02 https://repo.or.cz/nasm.git "$HOME/nasm" && \
     cd "$HOME/nasm" && \
@@ -81,13 +82,25 @@ RUN apt-get update && apt-get dist-upgrade -y && \
     ##dpkg --force-confdef --force-confnew -i ./cuda-repo-ubuntu1804_10.0.130-1_amd64.deb && \
     ##apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/7fa2af80.pub && \
     
-    #curl -O http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-repo-ubuntu1804_10.1.243-1_amd64.deb && \
-    #dpkg --force-confdef --force-confnew -i ./cuda-repo-ubuntu1804_10.1.243-1_amd64.deb && \
-    #apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub && \
     apt-get update && \
     #apt-get install cuda-10-1 -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+RUN add-apt-repository universe && apt-get update &&  apt-get install -y jq
+
+RUN curl -O http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/cuda-repo-ubuntu1604_10.1.168-1_amd64.deb && \
+    dpkg --force-confdef --force-confnew -i ./cuda-repo-ubuntu1604_10.1.168-1_amd64.deb && \
+    apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/7fa2af80.pub && \
+   
+    curl -O http://ftp.ubuntu.com/ubuntu/ubuntu/pool/restricted/n/nvidia-graphics-drivers-418/libnvidia-compute-418_418.56-0ubuntu1_amd64.deb && \
+    dpkg --force-confdef --force-confnew -i ./libnvidia-compute-418_418.56-0ubuntu1_amd64.deb && \
+
+    curl -O http://ftp.ubuntu.com/ubuntu/ubuntu/pool/restricted/n/nvidia-graphics-drivers-418/libnvidia-decode-418_418.56-0ubuntu1_amd64.deb && \
+    dpkg --force-confdef --force-confnew -i ./libnvidia-decode-418_418.56-0ubuntu1_amd64.deb && \
+
+    curl -O http://ftp.ubuntu.com/ubuntu/ubuntu/pool/restricted/n/nvidia-graphics-drivers-418/libnvidia-encode-418_418.56-0ubuntu1_amd64.deb && \
+    dpkg --force-confdef --force-confnew -i ./libnvidia-encode-418_418.56-0ubuntu1_amd64.deb
 
 # everything above this line has already been cached in the build stage -
 # we save time and disk space by keeping the common parts of each stage
@@ -104,7 +117,8 @@ ENV LD_LIBRARY_PATH /usr/local/lib/
 #ENTRYPOINT [ "/root/go/bin/livepeer" ]
 WORKDIR /root
 
-RUN add-apt-repository universe && apt-get update &&  apt-get install -y jq
+#RUN apt-get install -y libnvidia-encode-418   
+
 RUN mkdir -p /root/.lpData/mainnet/keystore && \
   mkdir -p /root/.lpData/rinkeby/keystore && \
   mkdir -p /root/.lpData/devenv/keystore && mkdir -p /root/.lpData/offchain/keystore
