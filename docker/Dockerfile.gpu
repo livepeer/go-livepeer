@@ -1,5 +1,7 @@
 # This file used on Docker Hub to automatically create offical images
-FROM nvidia/cuda:10.1-devel-ubuntu16.04 AS builder
+#FROM nvidia/cuda:10.1-devel-ubuntu16.04 AS builder
+FROM nvidia/cuda:10.1-runtime-ubuntu16.04 AS builder
+
 
 ENV PATH "/usr/lib/go-1.12/bin:/go/bin:${PATH}"
 ENV PKG_CONFIG_PATH "/root/compiled/lib/pkgconfig"
@@ -15,6 +17,7 @@ RUN apt-get update \
   && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs)  stable" \
   && apt-get update \
   && apt-get install docker-ce-cli
+
 
 ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
 ENV CPATH /usr/local/cuda/include
@@ -33,6 +36,9 @@ RUN go get github.com/stretchr/testify/mock
 RUN go get -u -v go.opencensus.io/stats
 RUN go get -u -v go.opencensus.io/tag
 RUN go get -u -v contrib.go.opencensus.io/exporter/prometheus
+
+#ENV DEBIAN_FRONTEND noninteractive 
+#RUN apt-get -y install nvidia-418
 
 ADD ./install_ffmpeg.sh ./install_ffmpeg.sh
 RUN ./install_ffmpeg.sh
