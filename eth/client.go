@@ -96,6 +96,7 @@ type LivepeerEthClient interface {
 	GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error)
 	ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error)
 	UnlockPeriod() (*big.Int, error)
+	ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error)
 
 	// Parameters
 	NumActiveTranscoders() (*big.Int, error)
