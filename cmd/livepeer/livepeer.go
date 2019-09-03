@@ -284,6 +284,7 @@ func main() {
 		return
 	}
 
+	watcherErr := make(chan error)
 	if *network == "offchain" {
 		glog.Infof("***Livepeer is in off-chain mode***")
 	} else {
@@ -360,7 +361,13 @@ func main() {
 			glog.Errorf("Failed to setup roundswatcher: %v", err)
 			return
 		}
-		go roundsWatcher.Watch()
+
+		roundsWatcherErr := make(chan error, 1)
+		go func() {
+			if err := roundsWatcher.Watch(); err != nil {
+				roundsWatcherErr <- fmt.Errorf("roundswatcher failed to start watching for events: %v", err)
+			}
+		}()
 		defer roundsWatcher.Stop()
 
 		// Initialize unbonding watcher to update the DB with latest state of the node's unbonding locks
@@ -383,10 +390,21 @@ func main() {
 			return
 		}
 
+		blockWatcherErr := make(chan error, 1)
 		go func() {
 			if err := blockWatcher.Watch(blockWatchCtx); err != nil {
-				glog.Errorf("block watcher error: %v", err)
+				blockWatcherErr <- fmt.Errorf("block watcher error: %v", err)
 			}
+		}()
+
+		go func() {
+			var err error
+			select {
+			case err = <-roundsWatcherErr:
+			case err = <-blockWatcherErr:
+			}
+
+			watcherErr <- err
 		}()
 
 		n.Balances = core.NewBalances(cleanupInterval)
@@ -667,6 +685,9 @@ func main() {
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt)
 	select {
+	case err := <-watcherErr:
+		glog.Error(err)
+		return
 	case err := <-ec:
 		glog.Infof("Error from media server: %v", err)
 		return

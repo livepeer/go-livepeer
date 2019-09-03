@@ -1,6 +1,7 @@
 package watchers
 
 import (
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -82,6 +83,16 @@ func TestWatchAndStop(t *testing.T) {
 	rw.Stop()
 	time.Sleep(2 * time.Millisecond)
 	assert.True(watcher.sub.unsubscribed)
+
+	// Test watch error when RPC calls fail
+	rw = &RoundsWatcher{
+		lpEth: &eth.StubClient{
+			RoundsErr: errors.New("roundswatcher error"),
+		},
+	}
+	err = rw.Watch()
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "roundswatcher error")
 }
 
 func TestRoundsWatcher_HandleLog(t *testing.T) {
