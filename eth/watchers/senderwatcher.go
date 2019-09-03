@@ -32,11 +32,12 @@ func NewSenderWatcher(ticketBrokerAddr ethcommon.Address, watcher BlockWatcher, 
 		return nil, err
 	}
 	return &SenderWatcher{
-		quit:    make(chan struct{}),
-		watcher: watcher,
-		lpEth:   lpEth,
-		senders: make(map[ethcommon.Address]*pm.SenderInfo),
-		dec:     dec,
+		quit:           make(chan struct{}),
+		watcher:        watcher,
+		lpEth:          lpEth,
+		senders:        make(map[ethcommon.Address]*pm.SenderInfo),
+		claimedReserve: make(map[ethcommon.Address]*big.Int),
+		dec:            dec,
 	}, nil
 }
 
@@ -64,10 +65,21 @@ func (sw *SenderWatcher) setSenderInfo(addr ethcommon.Address, info *pm.SenderIn
 }
 
 // ClaimedReserve returns the amount claimed from a sender's reserve
-func (sw *SenderWatcher) ClaimedReserve(sender ethcommon.Address) *big.Int {
+func (sw *SenderWatcher) ClaimedReserve(sender ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
 	sw.mu.RLock()
-	defer sw.mu.RUnlock()
-	return sw.claimedReserve[sender]
+	claimed := sw.claimedReserve[sender]
+	sw.mu.RUnlock()
+	if claimed != nil {
+		return claimed, nil
+	}
+	claimed, err := sw.lpEth.ClaimedReserve(claimant, sender)
+	if err != nil {
+		return nil, fmt.Errorf("ClaimedReserve RPC call to remote node failed: %v", err)
+	}
+	sw.mu.Lock()
+	sw.claimedReserve[sender] = claimed
+	sw.mu.Unlock()
+	return claimed, nil
 }
 
 // Watch starts the event watching loop
@@ -98,6 +110,9 @@ func (sw *SenderWatcher) Clear(addr ethcommon.Address) {
 	defer sw.mu.Unlock()
 	if _, ok := sw.senders[addr]; ok {
 		delete(sw.senders, addr)
+	}
+	if _, ok := sw.claimedReserve[addr]; ok {
+		delete(sw.claimedReserve, addr)
 	}
 }
 
@@ -166,6 +181,7 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 		if info, ok := sw.senders[sender]; ok && !log.Removed {
 			info.Deposit = big.NewInt(0)
 			info.Reserve = big.NewInt(0)
+			sw.claimedReserve[sender] = big.NewInt(0)
 		}
 	case "WinningTicketTransfer":
 		var winningTicketTransfer contracts.TicketBrokerWinningTicketTransfer

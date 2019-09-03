@@ -1,6 +1,7 @@
 package watchers
 
 import (
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -57,7 +58,8 @@ func TestSenderWatcher_Clear(t *testing.T) {
 		Reserve: big.NewInt(5),
 	}
 	sw := &SenderWatcher{
-		senders: make(map[ethcommon.Address]*pm.SenderInfo),
+		senders:        make(map[ethcommon.Address]*pm.SenderInfo),
+		claimedReserve: make(map[ethcommon.Address]*big.Int),
 		lpEth: &eth.StubClient{
 			SenderInfo: stubClientSenderInfo,
 		},
@@ -70,10 +72,15 @@ func TestSenderWatcher_Clear(t *testing.T) {
 	sender := pm.RandAddress()
 
 	sw.setSenderInfo(sender, info)
+	claimed := big.NewInt(100)
+	sw.claimedReserve[sender] = claimed
 
 	getInfo, err := sw.GetSenderInfo(sender)
 	assert.Nil(err)
 	assert.Equal(info, getInfo)
+	getClaimed, err := sw.ClaimedReserve(sender, ethcommon.Address{})
+	assert.Nil(err)
+	assert.Zero(claimed.Cmp(getClaimed))
 
 	sw.Clear(sender)
 
@@ -83,6 +90,42 @@ func TestSenderWatcher_Clear(t *testing.T) {
 	getInfo, err = sw.GetSenderInfo(sender)
 	assert.Nil(err)
 	assert.Equal(getInfo, stubClientSenderInfo)
+	getClaimed, err = sw.ClaimedReserve(sender, ethcommon.Address{})
+	assert.Nil(err)
+	assert.Nil(getClaimed)
+
+}
+
+func TestSenderWatcher_ClaimedReserve(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	lpEth := &eth.StubClient{}
+	watcher := &stubBlockWatcher{}
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
+	require.Nil(err)
+
+	// if not existant on map; make RPC call and init the map
+	_, ok := sw.claimedReserve[stubSender]
+	require.False(ok)
+	lpEth.ClaimedAmount = big.NewInt(5000)
+	claimed, err := sw.ClaimedReserve(stubSender, stubClaimant)
+	assert.Nil(err)
+	assert.Zero(lpEth.ClaimedAmount.Cmp(claimed))
+
+	// if existant on map return the map value
+	sw.claimedReserve[stubSender] = big.NewInt(10000)
+	claimed, err = sw.ClaimedReserve(stubSender, stubClaimant)
+	assert.Nil(err)
+	assert.Equal(big.NewInt(10000), claimed)
+
+	// if RPC error return error
+	lpEth.ClaimedAmount = nil
+	sw.claimedReserve[stubSender] = nil
+	expectedErr := errors.New("ClaimedReserve RPC error")
+	lpEth.ClaimedReserveError = expectedErr
+	claimed, err = sw.ClaimedReserve(stubSender, stubClaimant)
+	assert.Nil(claimed)
+	assert.Contains(err.Error(), expectedErr.Error())
 }
 
 func TestSenderWatcher_WatchAndStop(t *testing.T) {
@@ -374,11 +417,11 @@ func TestWinningTicketTransferEvent(t *testing.T) {
 	watcher.sink <- []*blockwatch.Event{blockEvent}
 	time.Sleep(2 * time.Millisecond)
 	info, err = sw.GetSenderInfo(stubSender)
+	claimed, err := sw.ClaimedReserve(stubSender, stubClaimant)
 	assert.Nil(err)
 	assert.Zero(info.Deposit.Int64())
 	diff := new(big.Int).Sub(faceValue, big.NewInt(100000000000))
-	expectedReserve := new(big.Int).Sub(startReserve, diff)
-	assert.Zero(expectedReserve.Cmp(info.Reserve))
+	assert.Equal(claimed, diff)
 
 	// If we don't care about the address, don't handle the event
 	s := pm.RandAddress()
