@@ -65,19 +65,19 @@ func (sw *SenderWatcher) setSenderInfo(addr ethcommon.Address, info *pm.SenderIn
 }
 
 // ClaimedReserve returns the amount claimed from a sender's reserve
-func (sw *SenderWatcher) ClaimedReserve(sender ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
+func (sw *SenderWatcher) ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
 	sw.mu.RLock()
-	claimed := sw.claimedReserve[sender]
+	claimed := sw.claimedReserve[reserveHolder]
 	sw.mu.RUnlock()
 	if claimed != nil {
 		return claimed, nil
 	}
-	claimed, err := sw.lpEth.ClaimedReserve(claimant, sender)
+	claimed, err := sw.lpEth.ClaimedReserve(reserveHolder, claimant)
 	if err != nil {
 		return nil, fmt.Errorf("ClaimedReserve RPC call to remote node failed: %v", err)
 	}
 	sw.mu.Lock()
-	sw.claimedReserve[sender] = claimed
+	sw.claimedReserve[reserveHolder] = claimed
 	sw.mu.Unlock()
 	return claimed, nil
 }
@@ -198,11 +198,10 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 				// ReserveFrozen will be handled in it's own event log handler
 				diff := new(big.Int).Sub(amount, info.Deposit)
 				info.Deposit = big.NewInt(0)
-				// sw.senders[sender].Reserve.Sub(sw.senders[sender].Reserve, amount)
 				if claimed, ok := sw.claimedReserve[sender]; ok {
 					claimed.Add(claimed, diff)
 				} else {
-					claimed = diff
+					sw.claimedReserve[sender] = diff
 				}
 			} else {
 				// Draw from deposit

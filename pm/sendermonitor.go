@@ -27,13 +27,13 @@ type SenderMonitor interface {
 	Stop()
 
 	// QueueTicket adds a ticket to the queue for a remote sender
-	QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error
+	QueueTicket(addr ethcommon.Address, ticket *SignedTicket)
 
 	// AddFloat adds to a remote sender's max float
 	AddFloat(addr ethcommon.Address, amount *big.Int) error
 
 	// SubFloat subtracts from a remote sender's max float
-	SubFloat(addr ethcommon.Address, amount *big.Int) error
+	SubFloat(addr ethcommon.Address, amount *big.Int)
 
 	// MaxFloat returns a remote sender's max float
 	MaxFloat(addr ethcommon.Address) (*big.Int, error)
@@ -66,7 +66,7 @@ type senderMonitor struct {
 	senders map[ethcommon.Address]*remoteSender
 
 	broker Broker
-	sMgr   SenderManager
+	smgr   SenderManager
 	rm     RoundsManager
 
 	// redeemable is a channel that an external caller can use to
@@ -80,13 +80,13 @@ type senderMonitor struct {
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, sMgr SenderManager, rm RoundsManager, cleanupInterval time.Duration, ttl int, em ErrorMonitor) SenderMonitor {
+func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderManager, rm RoundsManager, cleanupInterval time.Duration, ttl int, em ErrorMonitor) SenderMonitor {
 	return &senderMonitor{
 		claimant:        claimant,
 		cleanupInterval: cleanupInterval,
 		ttl:             ttl,
 		broker:          broker,
-		sMgr:            sMgr,
+		smgr:            smgr,
 		rm:              rm,
 		senders:         make(map[ethcommon.Address]*remoteSender),
 		redeemable:      make(chan *SignedTicket),
@@ -116,9 +116,7 @@ func (sm *senderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	if err := sm.ensureCache(addr); err != nil {
-		return err
-	}
+	sm.ensureCache(addr)
 
 	// Subtracting from pendingAmount = adding to max float
 	pendingAmount := sm.senders[addr].pendingAmount
@@ -146,13 +144,11 @@ func (sm *senderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error
 }
 
 // SubFloat subtracts from a remote sender's max float
-func (sm *senderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) error {
+func (sm *senderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	if err := sm.ensureCache(addr); err != nil {
-		return err
-	}
+	sm.ensureCache(addr)
 
 	// Adding to pendingAmount = subtracting from max float
 	pendingAmount := sm.senders[addr].pendingAmount
@@ -162,8 +158,6 @@ func (sm *senderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) error
 	// An updated max float results in updated ticket params
 	// The sender could plausibly send tickets that trigger acceptable errors
 	sm.em.ClearErrCount(addr)
-
-	return nil
 }
 
 // MaxFloat returns a remote sender's max float
@@ -171,25 +165,19 @@ func (sm *senderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
-	if err := sm.ensureCache(addr); err != nil {
-		return nil, err
-	}
+	sm.ensureCache(addr)
 
 	return sm.maxFloat(addr)
 }
 
 // QueueTicket adds a ticket to the queue for a remote sender
-func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error {
+func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	if err := sm.ensureCache(addr); err != nil {
-		return err
-	}
+	sm.ensureCache(addr)
 
 	sm.senders[addr].queue.Add(ticket)
-
-	return nil
 }
 
 // maxFloat is a helper that returns the sender's max float as:
@@ -200,28 +188,31 @@ func (sm *senderMonitor) maxFloat(addr ethcommon.Address) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	return reserveAlloc.Sub(reserveAlloc, sm.senders[addr].pendingAmount), nil
+	return new(big.Int).Sub(reserveAlloc, sm.senders[addr].pendingAmount), nil
 }
 
 func (sm *senderMonitor) reserveAlloc(addr ethcommon.Address) (*big.Int, error) {
-	info, err := sm.sMgr.GetSenderInfo(addr)
+	info, err := sm.smgr.GetSenderInfo(addr)
 	if err != nil {
 		return nil, err
 	}
-	return new(big.Int).Sub(new(big.Int).Div(info.Reserve, sm.rm.GetTranscoderPoolSize()), sm.sMgr.ClaimedReserve(addr)), nil
+	claimed, err := sm.smgr.ClaimedReserve(addr, sm.claimant)
+	poolSize := sm.rm.GetTranscoderPoolSize()
+	if poolSize.Cmp(big.NewInt(0)) == 0 {
+		return big.NewInt(0), nil
+	}
+	return new(big.Int).Sub(new(big.Int).Div(info.Reserve, poolSize), claimed), nil
 }
 
 // ensureCache is a helper that checks if a remote sender is initialized
 // and if not will fetch and cache the remote sender's reserve alloc
 // Caller should hold the lock for senderMonitor
-func (sm *senderMonitor) ensureCache(addr ethcommon.Address) error {
+func (sm *senderMonitor) ensureCache(addr ethcommon.Address) {
 	if sm.senders[addr] == nil {
 		sm.cache(addr)
 	}
 
 	sm.senders[addr].lastAccess = unixNow()
-
-	return nil
 }
 
 // cache is a helper that caches a remote sender's reserve alloc and
@@ -293,6 +284,7 @@ func (sm *senderMonitor) cleanup() {
 			v.done <- struct{}{}
 
 			delete(sm.senders, k)
+			sm.smgr.Clear(k)
 		}
 	}
 }

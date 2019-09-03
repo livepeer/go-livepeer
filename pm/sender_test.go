@@ -137,8 +137,9 @@ func TestCreateTicketBatch_EVTooHigh_ReturnsError(t *testing.T) {
 func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
 	// Test single ticket faceValue too high
 	sender := defaultSender(t)
+	senderAddr := sender.signer.Account().Address
 	sm := sender.senderManager.(*stubSenderManager)
-	sm.info = &SenderInfo{
+	sm.info[senderAddr] = &SenderInfo{
 		Deposit: big.NewInt(0),
 	}
 
@@ -155,7 +156,7 @@ func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
 
 	// Test multiple tickets faceValue too high
 	sender.depositMultiplier = 2
-	sm.info.Deposit = big.NewInt(2224)
+	sm.info[senderAddr].Deposit = big.NewInt(2224)
 
 	_, err = sender.CreateTicketBatch(sessionID, 2)
 	assert.EqualError(t, err, "ticket faceValue higher than max faceValue")
@@ -324,8 +325,9 @@ func TestValidateTicketParams_FaceValueTooHigh_ReturnsError(t *testing.T) {
 
 	// Test when deposit = 0 and faceValue != 0
 	sender := defaultSender(t)
+	senderAddr := sender.signer.Account().Address
 	sm := sender.senderManager.(*stubSenderManager)
-	sm.info = &SenderInfo{
+	sm.info[senderAddr] = &SenderInfo{
 		Deposit: big.NewInt(0),
 	}
 
@@ -337,10 +339,10 @@ func TestValidateTicketParams_FaceValueTooHigh_ReturnsError(t *testing.T) {
 	assert.Contains("ticket faceValue higher than max faceValue", err.Error())
 
 	// Test when deposit / depositMultiplier < faceValue
-	sm.info.Deposit = big.NewInt(300)
+	sm.info[senderAddr].Deposit = big.NewInt(300)
 	sender.maxEV = big.NewRat(100, 1)
 	sender.depositMultiplier = 5
-	maxFaceValue := new(big.Int).Div(sm.info.Deposit, big.NewInt(int64(sender.depositMultiplier)))
+	maxFaceValue := new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
 
 	ticketParams.FaceValue = new(big.Int).Add(maxFaceValue, big.NewInt(1))
 	err = sender.ValidateTicketParams(ticketParams)
@@ -354,13 +356,14 @@ func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
 	// faceValue = 150 - 1 = 149
 	// ev = 149 * .5 = 74.5
 	sender := defaultSender(t)
+	senderAddr := sender.signer.Account().Address
 	sm := sender.senderManager.(*stubSenderManager)
-	sm.info = &SenderInfo{
+	sm.info[senderAddr] = &SenderInfo{
 		Deposit: big.NewInt(300),
 	}
 	sender.maxEV = big.NewRat(100, 1)
 	sender.depositMultiplier = 2
-	maxFaceValue := new(big.Int).Div(sm.info.Deposit, big.NewInt(int64(sender.depositMultiplier)))
+	maxFaceValue := new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
 
 	ticketParams := &TicketParams{
 		FaceValue: new(big.Int).Sub(maxFaceValue, big.NewInt(1)),
@@ -374,8 +377,8 @@ func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
 	// maxFaceValue = 402 / 2 = 201
 	// faceValue = 201 - 1 = 200
 	// ev = 200 * .5 = 100
-	sm.info.Deposit = big.NewInt(402)
-	maxFaceValue = new(big.Int).Div(sm.info.Deposit, big.NewInt(int64(sender.depositMultiplier)))
+	sm.info[senderAddr].Deposit = big.NewInt(402)
+	maxFaceValue = new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
 
 	ticketParams.FaceValue = new(big.Int).Sub(maxFaceValue, big.NewInt(1))
 	err = sender.ValidateTicketParams(ticketParams)
@@ -386,8 +389,8 @@ func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
 	// maxFaceValue = 399 / 2 = 199
 	// faceValue = 199
 	// ev = 199 * .5 = 99.5
-	sm.info.Deposit = big.NewInt(399)
-	maxFaceValue = new(big.Int).Div(sm.info.Deposit, big.NewInt(int64(sender.depositMultiplier)))
+	sm.info[senderAddr].Deposit = big.NewInt(399)
+	maxFaceValue = new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
 
 	ticketParams.FaceValue = maxFaceValue
 	err = sender.ValidateTicketParams(ticketParams)
@@ -398,8 +401,8 @@ func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
 	// maxFaceValue = 400 / 2 = 200
 	// faceValue = 200
 	// ev = 200 * .5 = 100
-	sm.info.Deposit = big.NewInt(400)
-	maxFaceValue = new(big.Int).Div(sm.info.Deposit, big.NewInt(int64(sender.depositMultiplier)))
+	sm.info[senderAddr].Deposit = big.NewInt(400)
+	maxFaceValue = new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
 
 	ticketParams.FaceValue = maxFaceValue
 	err = sender.ValidateTicketParams(ticketParams)
@@ -414,8 +417,8 @@ func defaultSender(t *testing.T) *sender {
 		account: account,
 	}
 	rm := &stubRoundsManager{round: big.NewInt(5), blkHash: [32]byte{5}}
-	sm := &stubSenderManager{}
-	sm.info = &SenderInfo{
+	sm := newStubSenderManager()
+	sm.info[account.Address] = &SenderInfo{
 		Deposit: big.NewInt(100000),
 	}
 	s := NewSender(am, rm, sm, big.NewRat(100, 1), 2)

@@ -89,7 +89,7 @@ func (rw *RoundsWatcher) Watch() error {
 	rw.setLastInitializedRound(lr, bh)
 
 	if err := rw.fetchAndSetTranscoderPoolSize(); err != nil {
-		glog.Errorf("error fetching initial transcoderPoolSize: %v", err)
+		return fmt.Errorf("error fetching initial transcoderPoolSize: %v", err)
 	}
 
 	events := make(chan []*blockwatch.Event, 10)

@@ -45,8 +45,6 @@ type SenderInfo struct {
 // smart contract that handles the administrative tasks in a probabilistic micropayment protocol
 // including processing deposits and pay outs
 type Broker interface {
-	SenderManager
-
 	// FundDepositAndReserve funds a sender's deposit and reserve
 	FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*types.Transaction, error)
 
@@ -74,10 +72,6 @@ type Broker interface {
 	// IsUsedTicket checks if a ticket has been used
 	IsUsedTicket(ticket *Ticket) (bool, error)
 
-	// ClaimableReserve returns the amount from the reserveHolder's reserve that the claimant
-	// can claim
-	ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error)
-
 	// CheckTx waits for a transaction to confirm on-chain and returns an error
 	// if the transaction failed
 	CheckTx(tx *types.Transaction) error
@@ -90,7 +84,7 @@ type RoundsManager interface {
 	LastInitializedRound() *big.Int
 	// LastInitializedBlockHash returns the blockhash of the block the last round was initiated in
 	LastInitializedBlockHash() [32]byte
-	// GetTranscoderPoolSize returns the size active transcoder set for a round
+	// GetTranscoderPoolSize returns the size of the active transcoder set for a round
 	GetTranscoderPoolSize() *big.Int
 }
 
@@ -99,5 +93,7 @@ type SenderManager interface {
 	// GetSenderInfo returns a sender's information
 	GetSenderInfo(addr ethcommon.Address) (*SenderInfo, error)
 	// ClaimedReserve returns the amount claimed from a sender's reserve
-	ClaimedReserve(sender ethcommon.Address) *big.Int
+	ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error)
+	// Clear clears the cached values for a sender
+	Clear(addr ethcommon.Address)
 }

@@ -478,7 +478,6 @@ func main() {
 				n.Database,
 				gpm,
 				sm,
-				senderWatcher,
 				n.ErrorMonitor,
 				cfg,
 			)

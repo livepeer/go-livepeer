@@ -94,7 +94,6 @@ type LivepeerEthClient interface {
 	RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error)
 	IsUsedTicket(ticket *pm.Ticket) (bool, error)
 	GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error)
-	ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error)
 	UnlockPeriod() (*big.Int, error)
 	ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error)
 
