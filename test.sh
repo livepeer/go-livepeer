@@ -22,7 +22,7 @@ go test -logtostderr=true
 t4=$?
 cd ..
 
-cd eth/eventservices
+cd eth/watchers
 go test -logtostderr=true
 t5=$?
 cd ../..

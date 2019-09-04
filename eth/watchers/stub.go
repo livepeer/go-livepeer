@@ -9,10 +9,15 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
+	"github.com/livepeer/go-livepeer/pm"
 )
+
+var stubSender = pm.RandAddress()
 
 var stubBondingManagerAddr = common.HexToAddress("0x511bc4556d823ae99630ae8de28b9b80df90ea2e")
 var stubRoundsManagerAddr = common.HexToAddress("0xc1F9BB72216E5ecDc97e248F65E14df1fE46600a")
+
+var stubTicketBrokerAddr = common.HexToAddress("0x9d6d492bD500DA5B33cf95A5d610a73360FcaAa0")
 
 func newStubBaseLog() types.Log {
 	return types.Log{
@@ -84,6 +89,132 @@ func newStubNewRoundLog() types.Log {
 	roundBytes := common.BytesToHash(common.LeftPadBytes(round.Bytes(), 32))
 	log.Topics = []common.Hash{topic, roundBytes}
 	log.Data, _ = hexutil.Decode("0x15063b24c3dfd390370cd13eaf27fd0b079c60f31bf1414c574f865e906a8964")
+	return log
+}
+
+func newStubDepositFundedLog() types.Log {
+	log := newStubBaseLog()
+	log.Address = stubTicketBrokerAddr
+	amount, _ := new(big.Int).SetString("5000000000000000000", 10)
+	amountData := common.LeftPadBytes(amount.Bytes(), 32)
+	sender := common.LeftPadBytes(stubSender.Bytes(), 32)
+	var senderTopic common.Hash
+	copy(senderTopic[:], sender[:])
+	log.Topics = []common.Hash{
+		crypto.Keccak256Hash([]byte("DepositFunded(address,uint256)")),
+		senderTopic,
+	}
+	log.Data = amountData
+	return log
+}
+
+func newStubReserveFundedLog() types.Log {
+	log := newStubBaseLog()
+	log.Address = stubTicketBrokerAddr
+	amount, _ := new(big.Int).SetString("5000000000000000000", 10)
+	amountData := common.LeftPadBytes(amount.Bytes(), 32)
+	sender := common.LeftPadBytes(stubSender.Bytes(), 32)
+	var senderTopic common.Hash
+	copy(senderTopic[:], sender[:])
+	log.Topics = []common.Hash{
+		crypto.Keccak256Hash([]byte("ReserveFunded(address,uint256)")),
+		senderTopic,
+	}
+	log.Data = amountData
+	return log
+}
+
+func newStubWithdrawalLog() types.Log {
+	log := newStubBaseLog()
+	log.Address = stubTicketBrokerAddr
+	sender := common.LeftPadBytes(stubSender.Bytes(), 32)
+	var senderTopic common.Hash
+	copy(senderTopic[:], sender[:])
+	log.Topics = []common.Hash{
+		crypto.Keccak256Hash([]byte("Withdrawal(address,uint256,uint256)")),
+		senderTopic,
+	}
+
+	deposit, _ := new(big.Int).SetString("5000000000000000000", 10)
+	reserve, _ := new(big.Int).SetString("1000000000000000000", 10)
+	depositData := common.LeftPadBytes(deposit.Bytes(), 32)
+	reserveData := common.LeftPadBytes(reserve.Bytes(), 32)
+	var data []byte
+	data = append(data, depositData...)
+	data = append(data, reserveData...)
+	log.Data = data
+	return log
+}
+
+func newStubWinningTicketLog() types.Log {
+	log := newStubBaseLog()
+	log.Address = stubTicketBrokerAddr
+	sender := common.LeftPadBytes(stubSender.Bytes(), 32)
+	var senderTopic [32]byte
+	copy(senderTopic[:], sender[:])
+	recipient := common.LeftPadBytes(pm.RandAddress().Bytes(), 32)
+	var recipientTopic [32]byte
+	copy(recipientTopic[:], recipient[:])
+	log.Topics = []common.Hash{
+		crypto.Keccak256Hash([]byte("WinningTicketTransfer(address,address,uint256)")),
+		senderTopic,
+		recipientTopic,
+	}
+	amount, _ := new(big.Int).SetString("200000000000", 10)
+	amountData := common.LeftPadBytes(amount.Bytes(), 32)
+	log.Data = amountData
+	return log
+}
+
+func newStubReserveFrozenLog() types.Log {
+	log := newStubBaseLog()
+	log.Address = stubTicketBrokerAddr
+	holder := common.LeftPadBytes(stubSender.Bytes(), 32)
+	claimant := common.LeftPadBytes(pm.RandAddress().Bytes(), 32)
+	var holderTopic [32]byte
+	copy(holderTopic[:], holder[:])
+	var claimantTopic [32]byte
+	copy(claimantTopic[:], claimant[:])
+	log.Topics = []common.Hash{
+		crypto.Keccak256Hash([]byte("ReserveFrozen(address,address,uint256,uint256)")),
+		holderTopic,
+		claimantTopic,
+	}
+	var data []byte
+	data = append(data, common.LeftPadBytes(big.NewInt(5).Bytes(), 32)...)
+	data = append(data, common.LeftPadBytes(big.NewInt(25).Bytes(), 32)...)
+	log.Data = data
+	return log
+}
+
+func newStubUnlockLog() types.Log {
+	log := newStubBaseLog()
+	log.Address = stubTicketBrokerAddr
+	sender := common.LeftPadBytes(stubSender.Bytes(), 32)
+	var senderTopic common.Hash
+	copy(senderTopic[:], sender[:])
+	log.Topics = []common.Hash{
+		crypto.Keccak256Hash([]byte("Unlock(address,uint256,uint256)")),
+		senderTopic,
+	}
+	var data []byte
+	data = append(data, common.LeftPadBytes(big.NewInt(100).Bytes(), 32)...)
+	data = append(data, common.LeftPadBytes(big.NewInt(150).Bytes(), 32)...)
+	log.Data = data
+	return log
+}
+
+func newStubUnlockCancelledLog() types.Log {
+	log := newStubBaseLog()
+	log.Address = stubTicketBrokerAddr
+	sender := common.LeftPadBytes(stubSender.Bytes(), 32)
+	var senderTopic common.Hash
+	copy(senderTopic[:], sender[:])
+	log.Topics = []common.Hash{
+		crypto.Keccak256Hash([]byte("UnlockCancelled(address)")),
+		senderTopic,
+	}
+	log.Data = []byte{}
 	return log
 }
 
@@ -167,4 +298,19 @@ func (s *stubUnbondingLockStore) UseUnbondingLock(id *big.Int, delegator common.
 
 func (s *stubUnbondingLockStore) Get(id int64) *stubUnbondingLock {
 	return s.unbondingLocks[id]
+}
+
+func defaultMiniHeader() *blockwatch.MiniHeader {
+	block := &blockwatch.MiniHeader{
+		Number: big.NewInt(450),
+		Parent: pm.RandHash(),
+		Hash:   pm.RandHash(),
+	}
+	log := types.Log{
+		Topics:    []common.Hash{pm.RandHash(), pm.RandHash()},
+		Data:      pm.RandBytes(32),
+		BlockHash: block.Hash,
+	}
+	block.Logs = []types.Log{log}
+	return block
 }

@@ -380,6 +380,14 @@ func main() {
 		go unbondingWatcher.Watch()
 		defer unbondingWatcher.Stop()
 
+		senderWatcher, err := watchers.NewSenderWatcher(addrMap["TicketBroker"], blockWatcher, n.Eth)
+		if err != nil {
+			glog.Errorf("Failed to setup senderwatcher: %v", err)
+			return
+		}
+		go senderWatcher.Watch()
+		defer senderWatcher.Stop()
+
 		blockWatchCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -519,11 +527,7 @@ func main() {
 				panic(fmt.Errorf("-depositMultiplier must be greater than 0, but %v provided. Restart the node with a valid value for -depositMultiplier", *depositMultiplier))
 			}
 
-			// TODO: Initialize Sender with an implementation
-			// of RoundsManager that reads from a cache
-			// TODO: Initialize Sender with an implementation
-			// of SenderManager that reads from a cache
-			n.Sender = pm.NewSender(n.Eth, roundsWatcher, n.Eth, ev, *depositMultiplier)
+			n.Sender = pm.NewSender(n.Eth, roundsWatcher, senderWatcher, ev, *depositMultiplier)
 
 			if *pixelsPerUnit <= 0 {
 				// Can't divide by 0

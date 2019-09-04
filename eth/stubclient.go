@@ -167,6 +167,7 @@ type StubClient struct {
 	ProcessHistoricalUnbondError error
 	Orchestrators                []*lpTypes.Transcoder
 	RoundsErr                    error
+	SenderInfo                   *pm.SenderInfo
 }
 
 type stubTranscoder struct {
@@ -270,7 +271,7 @@ func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
 	return
 }
 func (e *StubClient) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
-	return nil, nil
+	return e.SenderInfo, nil
 }
 func (e *StubClient) ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error) {
 	return nil, nil

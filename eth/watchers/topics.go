@@ -10,6 +10,13 @@ var eventSignatures = []string{
 	"Rebond(address,address,uint256,uint256)",
 	"WithdrawStake(address,uint256,uint256,uint256)",
 	"NewRound(uint256,bytes32)",
+	"DepositFunded(address,uint256)",
+	"ReserveFunded(address,uint256)",
+	"Withdrawal(address,uint256,uint256)",
+	"WinningTicketTransfer(address,address,uint256,uint256)",
+	"ReserveFrozen(address,address,uint256,uint256)",
+	"Unlock(address,uint256,uint256)",
+	"UnlockCancelled(address)",
 }
 
 // FilterTopics returns a list of topics to be used when filtering logs
