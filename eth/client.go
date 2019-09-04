@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -54,6 +53,7 @@ type LivepeerEthClient interface {
 	BlockHashForRound(round *big.Int) ([32]byte, error)
 	CurrentRoundInitialized() (bool, error)
 	CurrentRoundLocked() (bool, error)
+	CurrentRoundStartBlock() (*big.Int, error)
 
 	// Token
 	Transfer(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error)
@@ -111,7 +111,6 @@ type LivepeerEthClient interface {
 	CheckTx(*types.Transaction) error
 	ReplaceTransaction(*types.Transaction, string, *big.Int) (*types.Transaction, error)
 	Sign([]byte) ([]byte, error)
-	LatestBlockNum() (*big.Int, error)
 	GetGasInfo() (uint64, *big.Int)
 	SetGasInfo(uint64, *big.Int) error
 }
@@ -840,21 +839,4 @@ func (c *client) ReplaceTransaction(tx *types.Transaction, method string, gasPri
 	}
 
 	return newSignedTx, err
-}
-
-func (c *client) LatestBlockNum() (*big.Int, error) {
-	var blk *types.Header
-	var err error
-	getBlock := func() error {
-		blk, err = c.backend.HeaderByNumber(context.Background(), nil)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	if err := backoff.Retry(getBlock, backoff.NewConstantBackOff(time.Second*2)); err != nil {
-		glog.Errorf("Cannot get current block number: %v", err)
-		return nil, err
-	}
-	return blk.Number, nil
 }

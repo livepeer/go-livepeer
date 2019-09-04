@@ -56,6 +56,9 @@ var (
 	// The maximum block sfor the block watcher to retain
 	blockWatcherRetentionLimit = 20
 
+	// The interval at which the round initializer runs
+	roundInitPollingInterval = 10 * time.Second
+
 	// The gas required to redeem a PM ticket
 	redeemGas = 100000
 	// The multiplier on the transaction cost to use for PM ticket faceValue
@@ -332,10 +335,7 @@ func main() {
 
 		n.Eth = client
 
-		defer n.StopEthServices()
-
 		addrMap := n.Eth.ContractAddresses()
-		em := eth.NewEventMonitor(backend, addrMap)
 
 		// Initialize block watcher that will emit logs used by event watchers
 		blockWatcherClient, err := blockwatch.NewRPCClient(*ethUrl, ethRPCTimeout)
@@ -426,7 +426,7 @@ func main() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			if err := setupOrchestrator(ctx, n, em, *ipfsPath, *initializeRound); err != nil {
+			if err := setupOrchestrator(ctx, n, *ipfsPath, *initializeRound); err != nil {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
@@ -491,6 +491,18 @@ func main() {
 			go n.Balances.StartCleanup()
 			// Stop the cleanup routine on program exit
 			defer n.Balances.StopCleanup()
+
+			// Create round iniitializer to automatically initialize new rounds
+			if *initializeRound {
+				initializer := eth.NewRoundInitializer(n.Eth, n.Database, roundsWatcher, roundInitPollingInterval)
+				go initializer.Start()
+				defer initializer.Stop()
+			}
+
+			// Create reward service to claim/distribute inflationary rewards every round
+			rs := eventservices.NewRewardService(n.Eth)
+			rs.Start(context.Background())
+			defer rs.Stop()
 		}
 
 		if n.NodeType == core.BroadcasterNode {
@@ -523,13 +535,6 @@ func main() {
 				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *maxPricePerUnit)
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
 			}
-		}
-
-		// Start services
-		err = n.StartEthServices()
-		if err != nil {
-			glog.Errorf("Failed to start ETH services: %v", err)
-			return
 		}
 	}
 
@@ -771,7 +776,7 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	return ethUri, nil
 }
 
-func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool) error {
+func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, ipfsPath string, initializeRound bool) error {
 	//Check if orchestrator is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
@@ -792,19 +797,6 @@ func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, em eth.EventMo
 	drivers.SetIpfsAPI(ipfsApi)
 
 	n.Ipfs = ipfsApi*/
-	n.EthEventMonitor = em
-
-	if initializeRound {
-		glog.Infof("Orchestrator %v will automatically initialize new rounds", n.Eth.Account().Address.Hex())
-
-		// Create rounds service to initialize round if it has not already been initialized
-		rds := eventservices.NewRoundsService(em, n.Eth)
-		n.EthServices["RoundsService"] = rds
-	}
-
-	// Create reward service to claim/distribute inflationary rewards every round
-	rs := eventservices.NewRewardService(n.Eth)
-	n.EthServices["RewardService"] = rs
 
 	return nil
 }

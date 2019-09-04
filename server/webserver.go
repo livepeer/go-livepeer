@@ -782,33 +782,6 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		}
 	})
 
-	mux.HandleFunc("/orchestratorEventSubscriptions", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil && s.LivepeerNode.EthEventMonitor != nil {
-			rewardWorking := false
-			if s.LivepeerNode.EthServices["RewardService"] != nil && s.LivepeerNode.EthServices["RewardService"].IsWorking() {
-				rewardWorking = true
-			}
-			roundWorking := false
-			if s.LivepeerNode.EthServices["RoundService"] != nil && s.LivepeerNode.EthServices["RoundService"].IsWorking() {
-				roundWorking = true
-			}
-			jobWorking := false
-			if s.LivepeerNode.EthServices["JobService"] != nil && s.LivepeerNode.EthServices["JobService"].IsWorking() {
-				jobWorking = true
-			}
-
-			m := map[string]bool{"JobService": jobWorking, "RewardService": rewardWorking, "RoundsService": roundWorking}
-			data, err := json.Marshal(m)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
-		}
-	})
-
 	mux.HandleFunc("/protocolParameters", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			lp := s.LivepeerNode.Eth

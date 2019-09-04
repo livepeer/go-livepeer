@@ -42,6 +42,51 @@ type MockClient struct {
 	*StubClient
 }
 
+// BondingManager
+
+// RegisteredTranscoders returns a list of registered transcoders
+func (m *MockClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
+	args := m.Called()
+
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]*lpTypes.Transcoder), args.Error(1)
+}
+
+// NumActiveTranscoders returns the max size of the active set
+func (m *MockClient) NumActiveTranscoders() (*big.Int, error) {
+	args := m.Called()
+	return mockBigInt(args, 0), args.Error(1)
+}
+
+// RoundsManager
+
+// InitializeRound submits a round initialization transaction
+func (m *MockClient) InitializeRound() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+// CurrentRound returns the current round number
+func (m *MockClient) CurrentRound() (*big.Int, error) {
+	args := m.Called()
+	return mockBigInt(args, 0), args.Error(1)
+}
+
+// CurrentRoundInitialized returns whether the current round is initialized
+func (m *MockClient) CurrentRoundInitialized() (bool, error) {
+	args := m.Called()
+	return args.Bool(0), args.Error(1)
+}
+
+// CurrentRoundStartBlock returns the block number that the current round started in
+func (m *MockClient) CurrentRoundStartBlock() (*big.Int, error) {
+	args := m.Called()
+	return mockBigInt(args, 0), args.Error(1)
+}
+
 // TicketBroker
 
 func (m *MockClient) FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*types.Transaction, error) {
@@ -114,17 +159,11 @@ func (m *MockClient) CheckTx(tx *types.Transaction) error {
 	return args.Error(0)
 }
 
-func (m *MockClient) LatestBlockNum() (*big.Int, error) {
-	args := m.Called()
-	return mockBigInt(args, 0), args.Error(1)
-}
-
 type StubClient struct {
 	SubLogsCh                    chan types.Log
 	TranscoderAddress            common.Address
 	BlockNum                     *big.Int
 	BlockHashToReturn            common.Hash
-	LatestBlockError             error
 	ProcessHistoricalUnbondError error
 	Orchestrators                []*lpTypes.Transcoder
 	RoundsErr                    error
@@ -146,6 +185,7 @@ func (e *StubClient) LastInitializedRound() (*big.Int, error)            { retur
 func (e *StubClient) BlockHashForRound(round *big.Int) ([32]byte, error) { return [32]byte{}, nil }
 func (e *StubClient) CurrentRoundInitialized() (bool, error)             { return false, nil }
 func (e *StubClient) CurrentRoundLocked() (bool, error)                  { return false, nil }
+func (e *StubClient) CurrentRoundStartBlock() (*big.Int, error)          { return nil, nil }
 func (e *StubClient) Paused() (bool, error)                              { return false, nil }
 
 // Token
@@ -259,6 +299,5 @@ func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, ga
 	return nil, nil
 }
 func (c *StubClient) Sign(msg []byte) ([]byte, error)   { return msg, nil }
-func (c *StubClient) LatestBlockNum() (*big.Int, error) { return big.NewInt(0), c.LatestBlockError }
 func (c *StubClient) GetGasInfo() (uint64, *big.Int)    { return 0, nil }
 func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }

@@ -70,7 +70,6 @@ func (w *wizard) stats(showOrchestrator bool) {
 
 	if showOrchestrator {
 		w.orchestratorStats()
-		w.orchestratorEventSubscriptions()
 		w.delegatorStats()
 	} else {
 		w.broadcastStats()
@@ -202,37 +201,6 @@ func (w *wizard) orchestratorStats() {
 		[]string{"Pending Fee Share (%)", eth.FormatPerc(t.PendingFeeShare)},
 		[]string{"Last Reward Round", t.LastRewardRound.String()},
 		[]string{"Base price per pixel", fmt.Sprintf("%v wei / %v pixels", priceInfo.Num(), priceInfo.Denom())},
-	}
-
-	for _, v := range data {
-		table.Append(v)
-	}
-
-	table.SetAlignment(tablewriter.ALIGN_RIGHT)
-	table.SetCenterSeparator("*")
-	table.SetRowLine(true)
-	table.SetColumnSeparator("|")
-	table.Render()
-}
-
-func (w *wizard) orchestratorEventSubscriptions() {
-	if w.offchain {
-		return
-	}
-	subMap, err := w.getOrchestratorEventSubscriptions()
-	if err != nil {
-		glog.Errorf("Error getting orchestrator event subscriptions: %v", err)
-		return
-	}
-
-	fmt.Println("+--------------------------------+")
-	fmt.Println("|ORCHESTRATOR EVENT SUBSCRIPTIONS|")
-	fmt.Println("+--------------------------------+")
-
-	table := tablewriter.NewWriter(os.Stdout)
-	data := [][]string{
-		[]string{"Watching for new rounds to initialize", strconv.FormatBool(subMap["RoundService"])},
-		[]string{"Watching for initialized rounds to call reward", strconv.FormatBool(subMap["RewardService"])},
 	}
 
 	for _, v := range data {
@@ -413,28 +381,6 @@ func (w *wizard) getOrchestratorInfo() (*lpTypes.Transcoder, *big.Rat, error) {
 	}
 
 	return config.Transcoder, config.PriceInfo, nil
-}
-
-func (w *wizard) getOrchestratorEventSubscriptions() (map[string]bool, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%v:%v/orchestratorEventSubscriptions", w.host, w.httpPort))
-	if err != nil {
-		return nil, err
-	}
-
-	defer resp.Body.Close()
-
-	result, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var subMap map[string]bool
-	err = json.Unmarshal(result, &subMap)
-	if err != nil {
-		return nil, err
-	}
-
-	return subMap, nil
 }
 
 func (w *wizard) getDelegatorInfo() (lpTypes.Delegator, error) {

@@ -11,7 +11,6 @@ orchestrator.go: Code that is called only when the node is in orchestrator mode.
 package core
 
 import (
-	"context"
 	"errors"
 	"math/big"
 	"math/rand"
@@ -50,12 +49,10 @@ const (
 type LivepeerNode struct {
 
 	// Common fields
-	Eth             eth.LivepeerEthClient
-	EthEventMonitor eth.EventMonitor
-	EthServices     map[string]eth.EventService
-	WorkDir         string
-	NodeType        NodeType
-	Database        *common.DB
+	Eth      eth.LivepeerEthClient
+	WorkDir  string
+	NodeType NodeType
+	Database *common.DB
 
 	// Transcoder public fields
 	SegmentChans      map[ManifestID]SegmentChan
@@ -86,34 +83,9 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		Eth:          e,
 		WorkDir:      wd,
 		Database:     dbh,
-		EthServices:  make(map[string]eth.EventService),
 		SegmentChans: make(map[ManifestID]SegmentChan),
 		segmentMutex: &sync.RWMutex{},
 	}, nil
-}
-
-func (n *LivepeerNode) StartEthServices() error {
-	var err error
-	for _, s := range n.EthServices {
-		err = s.Start(context.Background())
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (n *LivepeerNode) StopEthServices() error {
-	var err error
-	for _, s := range n.EthServices {
-		err = s.Stop()
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (n *LivepeerNode) GetServiceURI() *url.URL {
