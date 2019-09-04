@@ -25,10 +25,10 @@ func TestLocalTranscoder(t *testing.T) {
 	if len(res.Segments) != len(profiles) {
 		t.Error("Mismatched results")
 	}
-	if Over1Pct(len(res.Segments[0].Data), 164312) {
+	if Over1Pct(len(res.Segments[0].Data), 135924) {
 		t.Errorf("Wrong data %v", len(res.Segments[0].Data))
 	}
-	if Over1Pct(len(res.Segments[1].Data), 227668) {
+	if Over1Pct(len(res.Segments[1].Data), 199468) {
 		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
 	}
 }
@@ -173,6 +173,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	assert.Equal("foo/out_bar.ts", opts[0].Oname)
 	assert.Equal(ffmpeg.Software, opts[0].Accel)
 	assert.Equal(ffmpeg.P144p30fps16x9, opts[0].Profile)
+	assert.Equal("copy", opts[0].AudioEncoder.Name)
 
 	// Test > 1 profile
 	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
@@ -183,6 +184,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 		assert.Equal("foo/out_bar.ts", opts[i].Oname)
 		assert.Equal(ffmpeg.Software, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
+		assert.Equal("copy", opts[i].AudioEncoder.Name)
 	}
 
 	// Test different acceleration value
@@ -193,5 +195,35 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 		assert.Equal("foo/out_bar.ts", opts[i].Oname)
 		assert.Equal(ffmpeg.Nvidia, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
+		assert.Equal("copy", opts[i].AudioEncoder.Name)
 	}
+}
+
+func TestAudioCopy(t *testing.T) {
+	assert := assert.New(t)
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	tc := NewLocalTranscoder(dir)
+	ffmpeg.InitFFmpeg()
+
+	// Ensure that audio is actually copied.
+	// Do this by generating an audio-only stream, running it through the
+	// LocalTranscoder API and checking that the result is identical.
+	audioSample := dir + "/audio-copy.ts"
+	in := &ffmpeg.TranscodeOptionsIn{Fname: "test.ts"}
+	out := []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{
+		Oname:        audioSample,
+		VideoEncoder: ffmpeg.ComponentOptions{Name: "drop"},
+		AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+	}}
+	_, err := ffmpeg.Transcode3(in, out)
+	assert.Nil(err)
+
+	profs := []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9} // dummy
+	res, err := tc.Transcode(audioSample, profs)
+	assert.Nil(err)
+
+	o, err := ioutil.ReadFile(audioSample)
+	assert.Nil(err)
+	assert.Equal(o, res.Segments[0].Data)
 }
