@@ -89,7 +89,6 @@ github.com/golang/protobuf/ptypes
 github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes/duration
 github.com/golang/protobuf/ptypes/timestamp
-github.com/hashicorp/golang-lru/simplelru
 github.com/livepeer/go-livepeer/vendor/github.com/cenkalti/backoff
 github.com/livepeer/go-livepeer/vendor/github.com/ethereum/go-ethereum
 github.com/livepeer/go-livepeer/vendor/github.com/ethereum/go-ethereum/accounts
