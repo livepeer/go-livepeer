@@ -61,7 +61,7 @@ func (lt *FakeStandaloneTranscoder) Transcode(job string, fname string, profiles
 	for i := range profiles {
 		res := make([]byte, len(data)/((i+1)*2))
 		copy(res, data)
-		segments[i] = &TranscodedSegmentData{Data: res, Pixels: 100}
+		segments[i] = &TranscodedSegmentData{Data: res, Pixels: int64(len(data) * (i + 1))}
 	}
 
 	if monitor.Enabled && parseErr == nil {

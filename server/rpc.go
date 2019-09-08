@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -228,7 +230,11 @@ func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestr
 	req, err := genOrchestratorReq(bcast)
 	r, err := c.GetOrchestrator(ctx, req)
 	if err != nil {
-		glog.Errorf("Could not get orchestrator %v: %v", orchestratorServer, err)
+		// Cancellation of context is normal flow, so
+		// do not pollute logs with this error messages
+		if status.Code(err) != codes.Canceled {
+			glog.Errorf("Could not get orchestrator %v: %v", orchestratorServer, err)
+		}
 		return nil, errors.New("Could not get orchestrator: " + err.Error())
 	}
 
