@@ -15,7 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
-	"path"
+
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -23,8 +23,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/livepeer/go-livepeer/pm"
-
-	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -38,11 +36,14 @@ import (
 	"github.com/livepeer/go-livepeer/eth/eventservices"
 	"github.com/livepeer/go-livepeer/eth/watchers"
 
-	//"github.com/livepeer/go-livepeer/ipfs" until we re-enable IPFS
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/server"
-	lumberjack "gopkg.in/natefinch/lumberjack.v2"
-)
+	/*
+		until we re-enable IPFS
+		ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
+		"github.com/livepeer/go-livepeer/ipfs"
+		lumberjack "gopkg.in/natefinch/lumberjack.v2"
+	*/)
 
 var (
 	ErrKeygen    = errors.New("ErrKeygen")
@@ -134,7 +135,7 @@ func main() {
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
-	logIPFS := flag.Bool("logIPFS", false, "Set to true if log files should not be generated") // unused until we re-enable IPFS
+	// logIPFS := flag.Bool("logIPFS", false, "Set to true if log files should not be generated") // unused until we re-enable IPFS
 
 	// Storage:
 	datadir := flag.String("datadir", "", "data directory")
@@ -620,17 +621,20 @@ func main() {
 	//Create Livepeer Node
 
 	// Set up logging
-	if *logIPFS {
-		ipfslogging.LdJSONFormatter()
-		logger := &lumberjack.Logger{
-			Filename:   path.Join(*ipfsPath, "logs", "ipfs.log"),
-			MaxSize:    10, // Megabytes
-			MaxBackups: 3,
-			MaxAge:     30, // Days
+	// until we re-enable IPFS
+	/*
+		if *logIPFS {
+			ipfslogging.LdJSONFormatter()
+			logger := &lumberjack.Logger{
+				Filename:   path.Join(*ipfsPath, "logs", "ipfs.log"),
+				MaxSize:    10, // Megabytes
+				MaxBackups: 3,
+				MaxAge:     30, // Days
+			}
+			ipfslogging.LevelError()
+			ipfslogging.Output(logger)()
 		}
-		ipfslogging.LevelError()
-		ipfslogging.Output(logger)()
-	}
+	*/
 
 	//Set up the media server
 	s := server.NewLivepeerServer(*rtmpAddr, n)
@@ -794,13 +798,16 @@ func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, ipfsPath strin
 	}
 
 	// Set up IPFS
-	/*ipfsApi, err := ipfs.StartIpfs(ctx, ipfsPath)
-	if err != nil {
-		return err
-	}
-	drivers.SetIpfsAPI(ipfsApi)
+	// until we re-enable IPFS
+	/*
+		ipfsApi, err := ipfs.StartIpfs(ctx, ipfsPath)
+		if err != nil {
+			return err
+		}
+		drivers.SetIpfsAPI(ipfsApi)
 
-	n.Ipfs = ipfsApi*/
+		n.Ipfs = ipfsApi
+	*/
 
 	return nil
 }

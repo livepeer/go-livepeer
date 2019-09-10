@@ -1,5 +1,6 @@
 package drivers
 
+/*
 import (
 	"bytes"
 	"fmt"
@@ -49,3 +50,4 @@ func (os *ipfsOS) SaveData(name string, data []byte) (string, error) {
 	url, err := ipfsAPI.Add(reader)
 	return url, err
 }
+*/
