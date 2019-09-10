@@ -17,6 +17,7 @@ import (
 	"path"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -53,15 +54,17 @@ const StreamKeyBytes = 6
 
 const SegLen = 2 * time.Second
 const BroadcastRetry = 15 * time.Second
+const RefreshIntervalHttpPush = 1 * time.Minute
 
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL string
 
 type streamParameters struct {
-	mid      core.ManifestID
-	rtmpKey  string
-	profiles []ffmpeg.VideoProfile
+	mid        core.ManifestID
+	rtmpKey    string
+	profiles   []ffmpeg.VideoProfile
+	resolution string
 }
 
 func (s *streamParameters) StreamID() string {
@@ -76,14 +79,14 @@ type rtmpConnection struct {
 	profile     *ffmpeg.VideoProfile
 	params      *streamParameters
 	sessManager *BroadcastSessionsManager
+	lastUsed    time.Time
 }
 
 type LivepeerServer struct {
-	RTMPSegmenter lpmscore.RTMPSegmenter
-	LPMS          *lpmscore.LPMS
-	LivepeerNode  *core.LivepeerNode
-	HTTPMux       *http.ServeMux
-
+	RTMPSegmenter         lpmscore.RTMPSegmenter
+	LPMS                  *lpmscore.LPMS
+	LivepeerNode          *core.LivepeerNode
+	HTTPMux               *http.ServeMux
 	ExposeCurrentManifest bool
 
 	// Thread sensitive fields. All accesses to the
@@ -100,24 +103,29 @@ type authWebhookResponse struct {
 	Presets    []string `json:"presets"`
 }
 
-func NewLivepeerServer(rtmpAddr string, httpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
+func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
 	opts := lpmscore.LPMSOpts{
-		RtmpAddr: rtmpAddr, RtmpDisabled: true,
-		HttpAddr: httpAddr,
-		WorkDir:  lpNode.WorkDir,
+		RtmpAddr:     rtmpAddr,
+		RtmpDisabled: true,
+		WorkDir:      lpNode.WorkDir,
+		HttpMux:      http.NewServeMux(),
 	}
 	switch lpNode.NodeType {
 	case core.BroadcasterNode:
 		opts.RtmpDisabled = false
-	case core.OrchestratorNode:
-		opts.HttpMux = http.NewServeMux()
 	}
 	server := lpmscore.New(&opts)
-	return &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{}, rtmpConnections: make(map[core.ManifestID]*rtmpConnection)}
+	ls := &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{},
+		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
+	}
+	if lpNode.NodeType == core.BroadcasterNode {
+		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
+	}
+	return ls
 }
 
-//StartServer starts the LPMS server
-func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string) error {
+//StartMediaServer starts the LPMS server
+func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string, httpAddr string) error {
 	BroadcastJobVideoProfiles = parsePresets(strings.Split(transcodingOptions, ","))
 
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
@@ -131,7 +139,8 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOption
 
 	//Start the LPMS server
 	lpmsCtx, cancel := context.WithCancel(context.Background())
-	ec := make(chan error, 1)
+
+	ec := make(chan error, 2)
 	go func() {
 		if err := s.LPMS.Start(lpmsCtx); err != nil {
 			// typically triggered if there's an error with broadcaster LPMS
@@ -139,6 +148,12 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOption
 			ec <- s.LPMS.Start(lpmsCtx)
 		}
 	}()
+	if s.LivepeerNode.NodeType == core.BroadcasterNode {
+		go func() {
+			glog.V(4).Infof("HTTP Server listening on http://%v", httpAddr)
+			ec <- http.ListenAndServe(httpAddr, s.HTTPMux)
+		}()
+	}
 
 	select {
 	case err := <-ec:
@@ -169,7 +184,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			return nil
 		}
 		if resp != nil {
-			mid, key = parseStreamID(resp.ManifestID).ManifestID, resp.StreamKey
+			mid, key = parseManifestID(resp.ManifestID), resp.StreamKey
 			// Process transcoding options presets
 			if len(resp.Presets) > 0 {
 				presets = parsePresets(resp.Presets)
@@ -312,24 +327,12 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		if params == nil {
 			return errMismatchedParams
 		}
-		mid := params.mid
-		//Remove RTMP stream
-		s.connectionLock.Lock()
-		defer s.connectionLock.Unlock()
-		cxn, ok := s.rtmpConnections[mid]
-		if !ok || cxn.pl == nil {
-			glog.Error("Attempted to end unknown stream with manifest ID ", mid)
-			return errUnknownStream
-		}
-		cxn.sessManager.cleanup()
-		cxn.pl.Cleanup()
-		glog.Infof("Ended stream with id=%s", mid)
-		delete(s.rtmpConnections, mid)
-		if monitor.Enabled {
-			monitor.StreamEnded(cxn.nonce)
-			monitor.CurrentSessions(len(s.rtmpConnections))
-		}
 
+		//Remove RTMP stream
+		err := removeRTMPStream(s, params.mid)
+		if err != nil {
+			return err
+		}
 		return nil
 	}
 }
@@ -367,10 +370,12 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	// Build the source video profile from the RTMP stream.
-	resolution := fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
+	if params.resolution == "" {
+		params.resolution = fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
+	}
 	vProfile := ffmpeg.VideoProfile{
 		Name:       "source",
-		Resolution: resolution,
+		Resolution: params.resolution,
 		Bitrate:    "4000k", // Fix this
 	}
 	hlsStrmID := core.MakeStreamID(mid, &vProfile)
@@ -391,18 +396,42 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		profile:     &vProfile,
 		params:      params,
 		sessManager: NewSessionManager(s.LivepeerNode, params, playlist),
+		lastUsed:    time.Now(),
 	}
+
 	s.connectionLock.Lock()
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
 	s.lastHLSStreamID = hlsStrmID
 	sessionsNumber := len(s.rtmpConnections)
 	s.connectionLock.Unlock()
+
 	if monitor.Enabled {
 		monitor.CurrentSessions(sessionsNumber)
 	}
 
 	return cxn, nil
+}
+
+func removeRTMPStream(s *LivepeerServer, mid core.ManifestID) error {
+	s.connectionLock.Lock()
+	defer s.connectionLock.Unlock()
+	cxn, ok := s.rtmpConnections[mid]
+	if !ok || cxn.pl == nil {
+		glog.Error("Attempted to end unknown stream with manifest ID ", mid)
+		return errUnknownStream
+	}
+	cxn.sessManager.cleanup()
+	cxn.pl.Cleanup()
+	glog.Infof("Ended stream with id=%s", mid)
+	delete(s.rtmpConnections, mid)
+
+	if monitor.Enabled {
+		monitor.StreamEnded(cxn.nonce)
+		monitor.CurrentSessions(len(s.rtmpConnections))
+	}
+
+	return nil
 }
 
 //End RTMP Publish Handlers
@@ -509,10 +538,104 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 //End RTMP Handlers
 
+func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
+	// we read this unconditionally, mostly for ffmpeg
+	body, err := ioutil.ReadAll(r.Body)
+
+	if err != nil {
+		httpErr := fmt.Sprintf(`Error reading http request body: %s`, err.Error())
+		glog.Error(httpErr)
+		http.Error(w, httpErr, http.StatusInternalServerError)
+		return
+	}
+	r.Body.Close()
+	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
+
+	if ".ts" != path.Ext(r.URL.Path) {
+		// ffmpeg sends us a m3u8 as well, so ignore
+		// Alternatively, reject m3u8s explicitly and take any other type
+		// TODO also look at use content-type
+		http.Error(w, fmt.Sprintf(`ignoring file extension: %s`, path.Ext(r.URL.Path)), http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now()
+	mid := parseManifestID(r.URL.Path)
+	s.connectionLock.Lock()
+	cxn, exists := s.rtmpConnections[mid]
+	if exists && cxn != nil {
+		cxn.lastUsed = now
+	}
+	s.connectionLock.Unlock()
+
+	// Check for presence and register if a fresh cxn
+	if !exists {
+		appData := (createRTMPStreamIDHandler(s))(r.URL)
+		if appData == nil {
+			http.Error(w, "Could not create stream ID: ", http.StatusInternalServerError)
+			return
+		}
+		st := stream.NewBasicRTMPVideoStream(appData)
+		params := streamParams(st)
+		params.resolution = r.Header.Get("Content-Resolution")
+
+		cxn, err = s.registerConnection(st)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		ticker := time.NewTicker(RefreshIntervalHttpPush)
+
+		go func(s *LivepeerServer, mid core.ManifestID) {
+			for range ticker.C {
+				s.connectionLock.RLock()
+				lastUsed := s.rtmpConnections[mid].lastUsed
+				s.connectionLock.RUnlock()
+
+				if time.Since(lastUsed) > RefreshIntervalHttpPush {
+					_ = removeRTMPStream(s, mid)
+					ticker.Stop()
+					return
+				}
+			}
+		}(s, mid)
+	}
+
+	fname := path.Base(r.URL.Path)
+	seq, err := strconv.ParseUint(strings.TrimSuffix(fname, path.Ext(fname)), 10, 64)
+	if err != nil {
+		seq = 0
+	}
+
+	duration, err := strconv.Atoi(r.Header.Get("Content-Duration"))
+	if err != nil {
+		duration = 2000
+		glog.Info("Missing duration; filling in a default of 2000ms")
+	}
+
+	seg := &stream.HLSSegment{
+		Data:     body,
+		Name:     fname,
+		SeqNo:    seq,
+		Duration: float64(duration) / 1000.0,
+	}
+
+	// Do the transcoding!
+	err = processSegment(cxn, seg)
+	if err != nil {
+		// TODO return error
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 //Helper Methods Begin
 
 // Match all leading spaces, slashes and optionally `stream/`
-var StreamPrefix = regexp.MustCompile(`^[ /]*(stream/)?`)
+var StreamPrefix = regexp.MustCompile(`^[ /]*(stream/)?|(live/)?`) // test carefully!
 
 func cleanStreamPrefix(reqPath string) string {
 	return StreamPrefix.ReplaceAllString(reqPath, "")
