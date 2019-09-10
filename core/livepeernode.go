@@ -22,7 +22,6 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/ipfs"
 	"github.com/livepeer/go-livepeer/net"
 )
 
@@ -55,10 +54,10 @@ type LivepeerNode struct {
 	Database *common.DB
 
 	// Transcoder public fields
-	SegmentChans      map[ManifestID]SegmentChan
-	Recipient         pm.Recipient
-	OrchestratorPool  net.OrchestratorPool
-	Ipfs              ipfs.IpfsApi
+	SegmentChans     map[ManifestID]SegmentChan
+	Recipient        pm.Recipient
+	OrchestratorPool net.OrchestratorPool
+	// Ipfs              ipfs.IpfsApi // until we re-enable IPFS
 	OrchSecret        string
 	Transcoder        Transcoder
 	TranscoderManager *RemoteTranscoderManager

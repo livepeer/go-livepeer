@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -39,7 +38,7 @@ func NewSession(info *net.OSInfo) OSSession {
 	}
 	switch info.StorageType {
 	case net.OSInfo_IPFS:
-		return newIPFSSession()
+		// return newIPFSSession()
 	case net.OSInfo_S3:
 		return newS3Session(info.S3Info)
 	case net.OSInfo_GOOGLE:
@@ -53,13 +52,15 @@ func IsOwnExternal(uri string) bool {
 }
 
 func GetSegmentData(uri string) ([]byte, error) {
-	parsed, err := url.Parse(uri)
-	if err != nil {
-		return nil, fmt.Errorf("Invalid URI")
-	}
-	if parsed.Scheme == "ipfs" {
-		return GetSegmentDataIpfs(uri)
-	}
+	/*
+		parsed, err := url.Parse(uri)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid URI")
+		}
+			if parsed.Scheme == "ipfs" {
+				return GetSegmentDataIpfs(uri)
+			}
+	*/
 	return getSegmentDataHTTP(uri)
 }
 
