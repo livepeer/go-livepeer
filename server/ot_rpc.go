@@ -171,7 +171,9 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	req.Header.Set("Credentials", n.OrchSecret)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
-	req.Header.Set("Pixels", strconv.FormatInt(tData.Pixels, 10))
+	if tData != nil {
+		req.Header.Set("Pixels", strconv.FormatInt(tData.Pixels, 10))
+	}
 	resp, err := httpc.Do(req)
 	if err != nil {
 		glog.Error("Error submitting results ", err)
