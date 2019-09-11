@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"math/rand"
@@ -743,4 +744,138 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 	assert.Nil(err)
 	assert.Len(infos, 0)
 	sender.AssertNumberOfCalls(t, "ValidateTicketParams", 50)
+}
+
+func TestNewWHOrchestratorPoolCache(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// mock webhook and orchestrator info request
+	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+
+	getURLsfromWebhook = func(cbUrl *url.URL) ([]byte, error) {
+		var wh []webhookResponse
+		for _, addr := range addresses {
+			wh = append(wh, webhookResponse{Address: addr})
+		}
+		return json.Marshal(&wh)
+	}
+
+	serverGetOrchInfo = func(c context.Context, b server.Broadcaster, s *url.URL) (*net.OrchestratorInfo, error) {
+		return &net.OrchestratorInfo{Transcoder: "transcoder"}, nil
+	}
+
+	// mock livepeer node
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	perm = func(len int) []int { return rand.Perm(3) }
+
+	// assert created webhook pool is correct length
+	whURL, _ := url.ParseRequestURI("https://livepeer.live/api/orchestrator")
+	whpool := NewWebhookPool(node, whURL)
+	assert.Equal(3, whpool.Size())
+
+	// assert that list is not refreshed if lastRequest is less than 1 min ago and hash is the same
+	lastReq := whpool.lastRequest
+	orchInfo, err := whpool.GetOrchestrators(2)
+	require.Nil(err)
+	assert.Len(orchInfo, 2)
+	assert.Equal(3, whpool.Size())
+
+	urls := whpool.pool.GetURLs()
+	assert.Len(urls, 3)
+
+	for _, addr := range addresses {
+		uri, _ := url.ParseRequestURI(addr)
+		assert.Contains(urls, uri)
+	}
+
+	//  assert that list is not refreshed if lastRequest is more than 1 min ago and hash is the same
+	lastReq = time.Now().Add(-2 * time.Minute)
+	whpool.lastRequest = lastReq
+	orchInfo, err = whpool.GetOrchestrators(2)
+	require.Nil(err)
+	assert.Len(orchInfo, 2)
+	assert.Equal(3, whpool.Size())
+	assert.NotEqual(lastReq, whpool.lastRequest)
+
+	urls = whpool.pool.GetURLs()
+	assert.Len(urls, 3)
+
+	for _, addr := range addresses {
+		uri, _ := url.ParseRequestURI(addr)
+		assert.Contains(urls, uri)
+	}
+
+	// mock a change in webhook addresses
+	addresses = []string{"https://127.0.0.1:8932", "https://127.0.0.1:8933", "https://127.0.0.1:8934"}
+
+	//  assert that list is not refreshed if lastRequest is less than 1 min ago and hash is not the same
+	lastReq = time.Now()
+	whpool.lastRequest = lastReq
+	orchInfo, err = whpool.GetOrchestrators(2)
+	require.Nil(err)
+	assert.Len(orchInfo, 2)
+	assert.Equal(3, whpool.Size())
+	assert.Equal(lastReq, whpool.lastRequest)
+
+	urls = whpool.pool.GetURLs()
+	assert.Len(urls, 3)
+
+	for _, addr := range addresses {
+		uri, _ := url.ParseRequestURI(addr)
+		assert.NotContains(urls, uri)
+	}
+
+	//  assert that list is refreshed if lastRequest is longer than 1 min ago and hash is not the same
+	lastReq = time.Now().Add(-2 * time.Minute)
+	whpool.lastRequest = lastReq
+	orchInfo, err = whpool.GetOrchestrators(2)
+	require.Nil(err)
+	assert.Len(orchInfo, 2)
+	assert.Equal(3, whpool.Size())
+	assert.NotEqual(lastReq, whpool.lastRequest)
+
+	urls = whpool.pool.GetURLs()
+	assert.Len(urls, 3)
+
+	for _, addr := range addresses {
+		uri, _ := url.ParseRequestURI(addr)
+		assert.Contains(urls, uri)
+	}
+}
+
+func TestDeserializeWebhookJSON(t *testing.T) {
+	assert := assert.New(t)
+
+	// assert input of webhookResponse address object returns correct address
+	resp, _ := json.Marshal(&[]webhookResponse{webhookResponse{Address: "https://127.0.0.1:8936"}})
+	urls, err := deserializeWebhookJSON(resp)
+	assert.Nil(err)
+	assert.Equal("https://127.0.0.1:8936", urls[0].String())
+
+	// assert input of empty byte array returns JSON error
+	urls, err = deserializeWebhookJSON([]byte{})
+	assert.Contains(err.Error(), "unexpected end of JSON input")
+	assert.Nil(urls)
+
+	// assert input of empty byte array returns empty object
+	resp, _ = json.Marshal(&[]webhookResponse{webhookResponse{}})
+	urls, err = deserializeWebhookJSON(resp)
+	assert.Nil(err)
+	assert.Empty(urls)
+
+	// assert input of invalid addresses returns invalid JSON error
+	urls, err = deserializeWebhookJSON(make([]byte, 64))
+	assert.Contains(err.Error(), "invalid character")
+	assert.Empty(urls)
+
+	// assert input of invalid JSON returns JSON unmarshal object error
+	urls, err = deserializeWebhookJSON([]byte(`{"name":false}`))
+	assert.Contains(err.Error(), "cannot unmarshal object")
+	assert.Empty(urls)
+
+	// assert input of invalid JSON returns JSON unmarshal number error
+	urls, err = deserializeWebhookJSON([]byte(`1112`))
+	assert.Contains(err.Error(), "cannot unmarshal number")
+	assert.Empty(urls)
 }

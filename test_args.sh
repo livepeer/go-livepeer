@@ -141,6 +141,16 @@ res=0
 ./livepeer -broadcaster -authWebhookUrl http\\://host/ || res=$?
 [ $res -ne 0 ]
 
+# exit early if orchestrator webhook URL is not http
+res=0
+./livepeer -broadcaster -orchWebhookUrl tcp://host/ || res=$?
+[ $res -ne 0 ]
+
+# exit early if orchestrator webhook URL is not properly formatted
+res=0
+./livepeer -broadcaster -orchWebhookUrl http\\://host/ || res=$?
+[ $res -ne 0 ]
+
 # exit early if maxSessions less or equal to zero
 res=0
 ./livepeer -broadcaster -maxSessions -1 || res=$?

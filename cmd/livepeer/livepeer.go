@@ -720,7 +720,7 @@ func getOrchWebhook(u string) (*url.URL, error) {
 		return nil, err
 	}
 	if p.Scheme != "http" && p.Scheme != "https" {
-		return nil, errors.New("Webhook URL should be HTTP or HTTP")
+		return nil, errors.New("Webhook URL should be HTTP or HTTPS")
 	}
 	glog.Infof("Using orchestrator webhook url %s", u)
 	return p, nil
@@ -735,7 +735,7 @@ func getAuthWebhookURL(u string) (string, error) {
 		return "", err
 	}
 	if p.Scheme != "http" && p.Scheme != "https" {
-		return "", errors.New("Webhook URL should be HTTP or HTTP")
+		return "", errors.New("Webhook URL should be HTTP or HTTPS")
 	}
 	glog.Infof("Using auth webhook url %s", u)
 	return u, nil
