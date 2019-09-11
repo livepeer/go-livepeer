@@ -5,14 +5,14 @@
 
 FROM livepeerci/build-platform:latest
 
-ADD ./install_ffmpeg.sh ./install_ffmpeg.sh
+COPY ./install_ffmpeg.sh ./install_ffmpeg.sh
 RUN ./install_ffmpeg.sh
 
 COPY go.mod go.mod
 COPY go.sum go.sum
 RUN go mod download
 
-ADD . .
+COPY . .
 RUN make livepeer livepeer_cli
 
 CMD  ./upload_build.sh
