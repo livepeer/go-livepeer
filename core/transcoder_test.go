@@ -46,8 +46,8 @@ func TestNvidiaTranscoder(t *testing.T) {
 		t.Error("Error when getting devices")
 	}
 
-	// local sample isn't in a supported pixel format, so use this instead
-	fname := "../vendor/github.com/livepeer/lpms/transcoder/test.ts"
+	// test.ts sample isn't in a supported pixel format, so use this instead
+	fname := "test2.ts"
 
 	// transcoding should fail due to invalid devices
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
