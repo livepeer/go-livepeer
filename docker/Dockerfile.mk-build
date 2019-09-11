@@ -114,6 +114,15 @@ RUN ln -s /usr/local/bin/livepeer /
 RUN ln -s /usr/local/bin/livepeer /usr/bin/
 ENV LD_LIBRARY_PATH /usr/local/lib/
 
+# Keylase patch
+ENV NVIDIA_VISIBLE_DEVICES all
+ENV NVIDIA_DRIVER_CAPABILITIES compute,video,utility
+
+RUN mkdir -p /usr/local/bin /patched-lib
+COPY docker/patch.sh docker/gpu-start.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/patch.sh /usr/local/bin/gpu-start.sh
+
+
 #ENTRYPOINT [ "/root/go/bin/livepeer" ]
 WORKDIR /root
 
@@ -128,13 +137,13 @@ RUN mkdir -p /root/.lpData/mainnet/keystore && \
 #COPY --from=builder /go/src/github.com/livepeer/go-livepeer/livepeer /usr/bin/livepeer
 #COPY --from=builder /go/src/github.com/livepeer/go-livepeer/livepeer_cli /usr/bin/livepeer_cli
 
-COPY docker/start.sh .
-RUN chmod +x start.sh
+#COPY docker/start.sh .
+#RUN chmod +x start.sh
 
 EXPOSE 7935/tcp
 EXPOSE 8935/tcp
 EXPOSE 1935/tcp
 
-ENTRYPOINT ["/root/start.sh"]
+ENTRYPOINT ["/usr/local/bin/gpu-start.sh"]
 CMD ["--help"]
 
