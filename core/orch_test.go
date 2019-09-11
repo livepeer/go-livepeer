@@ -445,7 +445,7 @@ func StubSegTranscodingMetadata() *SegTranscodingMetadata {
 		Seq:        1234,
 		Hash:       ethcommon.BytesToHash(ethcommon.RightPadBytes([]byte("browns"), 32)),
 		Profiles:   []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9},
-		OS:         &net.OSInfo{StorageType: net.OSInfo_IPFS},
+		OS:         &net.OSInfo{StorageType: net.OSInfo_DIRECT},
 	}
 }
 
