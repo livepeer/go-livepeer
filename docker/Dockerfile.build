@@ -8,8 +8,9 @@ FROM livepeerci/build-platform:latest
 ADD ./install_ffmpeg.sh ./install_ffmpeg.sh
 RUN ./install_ffmpeg.sh
 
-ADD ./install_dependencies.sh ./install_dependencies.sh
-RUN ./install_dependencies.sh
+COPY go.mod go.mod
+COPY go.sum go.sum
+RUN go mod download
 
 ADD . .
 RUN make livepeer livepeer_cli

@@ -1,6 +1,6 @@
 FROM nvidia/cuda:10.1-devel-ubuntu16.04
 
-ENV PATH "/usr/lib/go-1.12/bin:/go/bin:${PATH}"
+ENV PATH "/usr/lib/go-1.13/bin:/go/bin:${PATH}"
 ENV PKG_CONFIG_PATH "/root/compiled/lib/pkgconfig"
 ENV CPATH /usr/local/cuda/include
 ENV LIBRARY_PATH /usr/local/cuda/lib64
@@ -10,7 +10,7 @@ RUN apt-get update \
   && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
   && add-apt-repository ppa:longsleep/golang-backports -y \
   && apt-get update \
-  && apt-get -y install build-essential pkg-config autoconf gnutls-dev golang-1.12-go sudo git python \
+  && apt-get -y install build-essential pkg-config autoconf gnutls-dev golang-1.13-go sudo git python \
   && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs)  stable" \
   && apt-get update \
   && apt-get install docker-ce-cli
