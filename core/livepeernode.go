@@ -54,10 +54,9 @@ type LivepeerNode struct {
 	Database *common.DB
 
 	// Transcoder public fields
-	SegmentChans     map[ManifestID]SegmentChan
-	Recipient        pm.Recipient
-	OrchestratorPool net.OrchestratorPool
-	// Ipfs              ipfs.IpfsApi // until we re-enable IPFS
+	SegmentChans      map[ManifestID]SegmentChan
+	Recipient         pm.Recipient
+	OrchestratorPool  net.OrchestratorPool
 	OrchSecret        string
 	Transcoder        Transcoder
 	TranscoderManager *RemoteTranscoderManager
