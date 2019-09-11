@@ -12,15 +12,9 @@ COPY --from=builder /root/compiled /root/compiled/
 ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
 WORKDIR /go/src/github.com/livepeer/go-livepeer
 
-RUN go get github.com/golang/glog
-RUN go get -u -v github.com/livepeer/m3u8
-RUN go get github.com/aws/aws-sdk-go/aws
-RUN go get -u google.golang.org/grpc
-RUN go get github.com/pkg/errors
-RUN go get github.com/stretchr/testify/mock
-RUN go get -u -v go.opencensus.io/stats
-RUN go get -u -v go.opencensus.io/tag
-RUN go get -u -v contrib.go.opencensus.io/exporter/prometheus
+COPY go.mod go.mod
+COPY go.sum go.sum
+RUN go mod download
 
 COPY . .
 RUN git describe --always --long --dirty > .git.describe

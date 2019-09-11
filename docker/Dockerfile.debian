@@ -14,49 +14,11 @@ COPY --from=builder /root/compiled /root/compiled/
 ENV PKG_CONFIG_PATH /root/compiled/lib/pkgconfig
 WORKDIR /go/src/github.com/livepeer/go-livepeer
 
-RUN go get github.com/golang/glog
-RUN go get -u -v github.com/livepeer/m3u8
-RUN go get github.com/aws/aws-sdk-go/aws
-RUN go get -u google.golang.org/grpc
-RUN go get github.com/pkg/errors
-RUN go get github.com/stretchr/testify/mock
-RUN go get -u -v go.opencensus.io/stats
-RUN go get -u -v go.opencensus.io/tag
-RUN go get -u -v contrib.go.opencensus.io/exporter/prometheus
+COPY go.mod go.mod
+COPY go.sum go.sum
+RUN go mod download
 
-COPY vendor vendor
-# .dockerbuild.deps contains list of packages used by go-client
-# needed to build them before building our code so it will be cached
-# by docker and reused on next builds.
-# it was generated manually by running `go build -v` and capturing output
-# should be updated only if we remove some dependency from vendor dir
-COPY .dockerbuild.deps .dockerbuild.deps
-
-# this will pre-build and cache files in /vendor dir
-RUN go list -v -export $(cat .dockerbuild.deps)
-
-# ipfs, monitor and pm dirs special cased as presumanbly being
-# less frequent changed
-# adding 'export` to other dirs probably won't add any improvements
-# to re-build speed
-COPY ipfs ipfs
-RUN go list -v -export github.com/livepeer/go-livepeer/ipfs
-COPY monitor monitor
-RUN go list -v -export github.com/livepeer/go-livepeer/monitor
-COPY pm pm
-RUN go list -v -export github.com/livepeer/go-livepeer/pm
-COPY VERSION VERSION
-
-
-COPY cmd cmd
-COPY common common
-COPY core core
-COPY server server
-COPY discovery discovery
-COPY drivers drivers
-COPY net net
-COPY eth eth
-COPY .git.describe .git.describe
+COPY . .
 
 RUN echo "Please build using 'make localdocker'"
 RUN test -n "$(cat .git.describe)"

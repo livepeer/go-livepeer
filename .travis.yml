@@ -1,6 +1,6 @@
 language: go
 go:
-  - 1.12.x
+  - 1.13.x
 os: osx
 osx_image: xcode10.2
 env:
@@ -9,6 +9,6 @@ env:
 
 script:
   - ./install_ffmpeg.sh
-  - ./install_dependencies.sh
+  - go mod download
   - make livepeer livepeer_cli
   - ./upload_build.sh
