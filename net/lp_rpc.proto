@@ -44,7 +44,7 @@ message OSInfo {
   enum StorageType {
     DIRECT     = 0;
     S3         = 1;
-    IPFS       = 2;
+    // IPFS       = 2;
     GOOGLE     = 3;
   }
 

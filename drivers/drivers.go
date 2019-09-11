@@ -1,4 +1,4 @@
-// Package drivers abstracts different object storages, such as local, s3, ipfs
+// Package drivers abstracts different object storages, such as local, s3
 package drivers
 
 import (
@@ -12,7 +12,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 )
 
-// Current node's primary driver
+// NodeStorage is current node's primary driver
 var NodeStorage OSDriver
 
 // OSDriver common interface for Object Storage
@@ -31,14 +31,12 @@ type OSSession interface {
 	IsExternal() bool
 }
 
-// NewDriver returns new session based on OSInfo received from the network
+// NewSession returns new session based on OSInfo received from the network
 func NewSession(info *net.OSInfo) OSSession {
 	if info == nil {
 		return nil
 	}
 	switch info.StorageType {
-	case net.OSInfo_IPFS:
-		// return newIPFSSession()
 	case net.OSInfo_S3:
 		return newS3Session(info.S3Info)
 	case net.OSInfo_GOOGLE:
@@ -52,15 +50,6 @@ func IsOwnExternal(uri string) bool {
 }
 
 func GetSegmentData(uri string) ([]byte, error) {
-	/*
-		parsed, err := url.Parse(uri)
-		if err != nil {
-			return nil, fmt.Errorf("Invalid URI")
-		}
-			if parsed.Scheme == "ipfs" {
-				return GetSegmentDataIpfs(uri)
-			}
-	*/
 	return getSegmentDataHTTP(uri)
 }
 

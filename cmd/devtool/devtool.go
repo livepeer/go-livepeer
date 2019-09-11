@@ -313,7 +313,7 @@ func createRunScript(ethAcctAddr, dataDir, serviceHost string, isBroadcaster boo
 	if !isBroadcaster {
 		script += fmt.Sprintf(` -initializeRound=true \
     -serviceAddr %s:%d  -transcoder=true -orchestrator=true \
-     -ipfsPath ./%s/trans -orchSecret secre -pricePerUnit 1
+    -orchSecret secre -pricePerUnit 1
     `, serviceHost, mediaPort, dataDir)
 	} else {
 		script += fmt.Sprintf(` -broadcaster=true -rtmpAddr %s:%d`, serviceHost, rtmpPort)

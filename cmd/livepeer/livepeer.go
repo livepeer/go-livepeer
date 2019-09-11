@@ -23,6 +23,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-livepeer/server"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -37,13 +38,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth/watchers"
 
 	lpmon "github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/go-livepeer/server"
-	/*
-		until we re-enable IPFS
-		ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
-		"github.com/livepeer/go-livepeer/ipfs"
-		lumberjack "gopkg.in/natefinch/lumberjack.v2"
-	*/)
+)
 
 var (
 	ErrKeygen    = errors.New("ErrKeygen")
@@ -135,11 +130,9 @@ func main() {
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
-	// logIPFS := flag.Bool("logIPFS", false, "Set to true if log files should not be generated") // unused until we re-enable IPFS
 
 	// Storage:
 	datadir := flag.String("datadir", "", "data directory")
-	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path") // unused until we re-enable IPFS
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
 	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
@@ -435,7 +428,7 @@ func main() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			if err := setupOrchestrator(ctx, n, *ipfsPath, *initializeRound); err != nil {
+			if err := setupOrchestrator(ctx, n, *initializeRound); err != nil {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
@@ -620,22 +613,6 @@ func main() {
 
 	//Create Livepeer Node
 
-	// Set up logging
-	// until we re-enable IPFS
-	/*
-		if *logIPFS {
-			ipfslogging.LdJSONFormatter()
-			logger := &lumberjack.Logger{
-				Filename:   path.Join(*ipfsPath, "logs", "ipfs.log"),
-				MaxSize:    10, // Megabytes
-				MaxBackups: 3,
-				MaxAge:     30, // Days
-			}
-			ipfslogging.LevelError()
-			ipfslogging.Output(logger)()
-		}
-	*/
-
 	//Set up the media server
 	s := server.NewLivepeerServer(*rtmpAddr, n)
 	ec := make(chan error)
@@ -784,7 +761,7 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	return ethUri, nil
 }
 
-func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, ipfsPath string, initializeRound bool) error {
+func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, initializeRound bool) error {
 	//Check if orchestrator is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
@@ -796,18 +773,6 @@ func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, ipfsPath strin
 	} else {
 		glog.Infof("Orchestrator %v is active", n.Eth.Account().Address.Hex())
 	}
-
-	// Set up IPFS
-	// until we re-enable IPFS
-	/*
-		ipfsApi, err := ipfs.StartIpfs(ctx, ipfsPath)
-		if err != nil {
-			return err
-		}
-		drivers.SetIpfsAPI(ipfsApi)
-
-		n.Ipfs = ipfsApi
-	*/
 
 	return nil
 }
