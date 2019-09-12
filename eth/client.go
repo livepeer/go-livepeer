@@ -82,6 +82,7 @@ type LivepeerEthClient interface {
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
 	GetTotalBonded() (*big.Int, error)
+	GetTranscoderPoolSize() (*big.Int, error)
 
 	// TicketBroker
 	FundDepositAndReserve(depositAmount, penaltyEscrowAmount *big.Int) (*types.Transaction, error)
@@ -93,8 +94,8 @@ type LivepeerEthClient interface {
 	RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error)
 	IsUsedTicket(ticket *pm.Ticket) (bool, error)
 	GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error)
-	ClaimableReserve(reserveHolder, claimant ethcommon.Address) (*big.Int, error)
 	UnlockPeriod() (*big.Int, error)
+	ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error)
 
 	// Parameters
 	NumActiveTranscoders() (*big.Int, error)

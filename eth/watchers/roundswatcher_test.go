@@ -29,9 +29,21 @@ func TestSetAndGet_LastInitializedRound_LastInitializedBlockHash(t *testing.T) {
 	assert.Equal(h, hash)
 }
 
-func TestWatchAndStop(t *testing.T) {
+func TestSetAndGet_TranscoderPoolSize(t *testing.T) {
 	assert := assert.New(t)
-	lpEth := &eth.StubClient{}
+	rw := &RoundsWatcher{}
+	size := big.NewInt(50)
+	rw.setTranscoderPoolSize(size)
+	assert.Equal(size, rw.transcoderPoolSize)
+	assert.Equal(size, rw.GetTranscoderPoolSize())
+}
+
+func TestRoundsWatcher_WatchAndStop(t *testing.T) {
+	assert := assert.New(t)
+	size := big.NewInt(50)
+	lpEth := &eth.StubClient{
+		PoolSize: size,
+	}
 	watcher := &stubBlockWatcher{}
 	rw, err := NewRoundsWatcher(stubRoundsManagerAddr, watcher, lpEth)
 	assert.Nil(err)
@@ -48,6 +60,7 @@ func TestWatchAndStop(t *testing.T) {
 	go rw.Watch()
 	time.Sleep(2 * time.Millisecond)
 
+	// New Round event
 	watcher.sink <- []*blockwatch.Event{blockEvent}
 	time.Sleep(2 * time.Millisecond)
 	lastRound := rw.LastInitializedRound()
@@ -56,8 +69,10 @@ func TestWatchAndStop(t *testing.T) {
 	var expectedHashForRound [32]byte
 	copy(expectedHashForRound[:], newRoundEvent.Data[:])
 	assert.Equal(bhForRound, expectedHashForRound)
+	assert.Equal(size, rw.GetTranscoderPoolSize())
 
 	// Test no NewRound events, values on rw remain the same
+	rw.setTranscoderPoolSize(big.NewInt(10))
 	blockEvent.BlockHeader.Logs = header.Logs[:1]
 	watcher.sink <- []*blockwatch.Event{blockEvent}
 	time.Sleep(2 * time.Millisecond)
@@ -66,6 +81,7 @@ func TestWatchAndStop(t *testing.T) {
 	bhForRound = rw.LastInitializedBlockHash()
 	copy(expectedHashForRound[:], newRoundEvent.Data[:])
 	assert.Equal(bhForRound, expectedHashForRound)
+	assert.Equal(big.NewInt(10), rw.GetTranscoderPoolSize())
 
 	// Test RPC paths (event removed)
 	blockEvent.BlockHeader.Logs = append(blockEvent.BlockHeader.Logs, newRoundEvent)
@@ -76,6 +92,7 @@ func TestWatchAndStop(t *testing.T) {
 	bhForRound = rw.LastInitializedBlockHash()
 	assert.Equal(lastRound.Int64(), int64(0))
 	assert.Equal(bhForRound, [32]byte{})
+	assert.Equal(size, rw.GetTranscoderPoolSize())
 
 	// Test Stop
 	rw.Stop()

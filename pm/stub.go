@@ -102,8 +102,6 @@ type stubBroker struct {
 
 func newStubBroker() *stubBroker {
 	return &stubBroker{
-		deposits:        make(map[ethcommon.Address]*big.Int),
-		reserves:        make(map[ethcommon.Address]*big.Int),
 		usedTickets:     make(map[ethcommon.Hash]bool),
 		approvedSigners: make(map[ethcommon.Address]bool),
 	}
@@ -151,28 +149,6 @@ func (b *stubBroker) IsUsedTicket(ticket *Ticket) (bool, error) {
 	defer b.mu.Unlock()
 
 	return b.usedTickets[ticket.Hash()], nil
-}
-
-func (b *stubBroker) SetDeposit(addr ethcommon.Address, amount *big.Int) {
-	b.deposits[addr] = amount
-}
-
-func (b *stubBroker) SetReserve(addr ethcommon.Address, amount *big.Int) {
-	b.reserves[addr] = amount
-}
-
-func (b *stubBroker) GetSenderInfo(addr ethcommon.Address) (info *SenderInfo, err error) {
-	if b.getSenderInfoShouldFail {
-		return nil, fmt.Errorf("stub broker GetSenderInfo error")
-	}
-
-	return &SenderInfo{
-		Deposit:       b.deposits[addr],
-		WithdrawBlock: big.NewInt(0),
-		Reserve:       b.reserves[addr],
-		ReserveState:  ReserveState(0),
-		ThawRound:     big.NewInt(0),
-	}, nil
 }
 
 func (b *stubBroker) ClaimableReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
@@ -242,8 +218,9 @@ func (s *stubSigner) Account() accounts.Account {
 }
 
 type stubRoundsManager struct {
-	round   *big.Int
-	blkHash [32]byte
+	round              *big.Int
+	blkHash            [32]byte
+	transcoderPoolSize *big.Int
 }
 
 func (m *stubRoundsManager) LastInitializedRound() *big.Int {
@@ -254,9 +231,21 @@ func (m *stubRoundsManager) LastInitializedBlockHash() [32]byte {
 	return m.blkHash
 }
 
+func (m *stubRoundsManager) GetTranscoderPoolSize() *big.Int {
+	return m.transcoderPoolSize
+}
+
 type stubSenderManager struct {
-	info *SenderInfo
-	err  error
+	info           map[ethcommon.Address]*SenderInfo
+	claimedReserve map[ethcommon.Address]*big.Int
+	err            error
+}
+
+func newStubSenderManager() *stubSenderManager {
+	return &stubSenderManager{
+		info:           make(map[ethcommon.Address]*SenderInfo),
+		claimedReserve: make(map[ethcommon.Address]*big.Int),
+	}
 }
 
 func (s *stubSenderManager) GetSenderInfo(addr ethcommon.Address) (*SenderInfo, error) {
@@ -264,7 +253,19 @@ func (s *stubSenderManager) GetSenderInfo(addr ethcommon.Address) (*SenderInfo, 
 		return nil, s.err
 	}
 
-	return s.info, nil
+	return s.info[addr], nil
+}
+
+func (s *stubSenderManager) ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.claimedReserve[reserveHolder], nil
+}
+
+func (s *stubSenderManager) Clear(addr ethcommon.Address) {
+	delete(s.info, addr)
+	delete(s.claimedReserve, addr)
 }
 
 type stubGasPriceMonitor struct {
@@ -276,14 +277,12 @@ func (s *stubGasPriceMonitor) GasPrice() *big.Int {
 }
 
 type stubSenderMonitor struct {
-	maxFloat       *big.Int
-	redeemable     chan *SignedTicket
-	queued         []*SignedTicket
-	acceptable     bool
-	queueTicketErr error
-	addFloatErr    error
-	subFloatErr    error
-	maxFloatErr    error
+	maxFloat    *big.Int
+	redeemable  chan *SignedTicket
+	queued      []*SignedTicket
+	acceptable  bool
+	addFloatErr error
+	maxFloatErr error
 }
 
 func newStubSenderMonitor() *stubSenderMonitor {
@@ -301,14 +300,8 @@ func (s *stubSenderMonitor) Redeemable() chan *SignedTicket {
 	return s.redeemable
 }
 
-func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error {
-	if s.queueTicketErr != nil {
-		return s.queueTicketErr
-	}
-
+func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) {
 	s.queued = append(s.queued, ticket)
-
-	return nil
 }
 
 func (s *stubSenderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error {
@@ -319,12 +312,8 @@ func (s *stubSenderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) er
 	return nil
 }
 
-func (s *stubSenderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) error {
-	if s.subFloatErr != nil {
-		return s.subFloatErr
-	}
-
-	return nil
+func (s *stubSenderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) {
+	s.maxFloat.Sub(s.maxFloat, amount)
 }
 
 func (s *stubSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {

@@ -23,8 +23,6 @@ func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *
 	sender := RandAddress()
 
 	b := newStubBroker()
-	b.SetDeposit(sender, big.NewInt(500))
-	b.SetReserve(sender, big.NewInt(500))
 
 	v := &stubValidator{}
 	v.SetIsValidTicket(true)
@@ -596,7 +594,7 @@ func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {
 	}
 }
 
-func TestRedeemWinningTickets_SingleTicket_GetSenderInfoError(t *testing.T) {
+func TestRedeemWinningTickets_SingleTicket_ZeroMaxFloat(t *testing.T) {
 	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
 	params, err := r.TicketParams(sender)
@@ -605,7 +603,7 @@ func TestRedeemWinningTickets_SingleTicket_GetSenderInfoError(t *testing.T) {
 	// Config stub validator with valid winning tickets
 	v.SetIsWinningTicket(true)
 
-	// Test get deposit error
+	// Test zero maxfloat error
 	ticket := newTicket(sender, params, 0)
 
 	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
@@ -616,48 +614,13 @@ func TestRedeemWinningTickets_SingleTicket_GetSenderInfoError(t *testing.T) {
 		t.Fatal("expected valid winning ticket")
 	}
 
-	// Config stub broker to fail getting deposit
-	b.getSenderInfoShouldFail = true
-
+	sm.maxFloat = big.NewInt(0)
 	err = r.RedeemWinningTickets([]string{sessionID})
 	if err == nil {
-		t.Error("expected broker GetSenderInfo error")
+		t.Error("expected zero max float error")
 	}
-	if err != nil && !strings.Contains(err.Error(), "broker GetSenderInfo error") {
-		t.Errorf("execpted broker GetSenderInfo error, got %v", err)
-	}
-}
-
-func TestRedeemWinningTickets_SingleTicket_ZeroDepositAndReserve(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
-	params, err := r.TicketParams(sender)
-	require.Nil(t, err)
-
-	// Config stub validator with valid winning tickets
-	v.SetIsWinningTicket(true)
-
-	// Test zero deposit and reserve error
-	ticket := newTicket(sender, params, 0)
-
-	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !won {
-		t.Fatal("expected valid winning ticket")
-	}
-
-	// Config stub broker with zero deposit and reserve
-	b.SetDeposit(sender, big.NewInt(0))
-	b.SetReserve(sender, big.NewInt(0))
-
-	err = r.RedeemWinningTickets([]string{sessionID})
-	if err == nil {
-		t.Error("expected zero deposit and reserve error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "zero deposit and reserve") {
-		t.Errorf("expected zero deposit and reserve error, got %v", err)
+	if err != nil && !strings.Contains(err.Error(), "max float is zero") {
+		t.Errorf("expected zero max float error, got %v", err)
 	}
 }
 
@@ -910,22 +873,6 @@ func TestRedeemWinningTicket_MaxFloatError(t *testing.T) {
 	assert.EqualError(err, sm.maxFloatErr.Error())
 }
 
-func TestRedeemWinningTicket_InsufficientMaxFloat_QueueTicketError(t *testing.T) {
-	assert := assert.New(t)
-
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
-
-	params := ticketParamsOrFatal(t, r, sender)
-	ticket := newTicket(sender, params, 1)
-	ticket.FaceValue = big.NewInt(99999999999999)
-
-	sm.queueTicketErr = errors.New("QueueTicket error")
-	err := r.RedeemWinningTicket(ticket, sig, params.Seed)
-	assert.EqualError(err, sm.queueTicketErr.Error())
-}
-
 func TestRedeemWinningTicket_InsufficientMaxFloat_QueueTicket(t *testing.T) {
 	assert := assert.New(t)
 
@@ -943,21 +890,6 @@ func TestRedeemWinningTicket_InsufficientMaxFloat_QueueTicket(t *testing.T) {
 	recipientRand := genRecipientRand(sender, secret, params.Seed)
 	assert.Equal(1, len(sm.queued))
 	assert.Equal(&SignedTicket{ticket, sig, recipientRand}, sm.queued[0])
-}
-
-func TestRedeemWinningTicket_SubFloatError(t *testing.T) {
-	assert := assert.New(t)
-
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
-
-	params := ticketParamsOrFatal(t, r, sender)
-	ticket := newTicket(sender, params, 1)
-
-	sm.subFloatErr = errors.New("SubFloat error")
-	err := r.RedeemWinningTicket(ticket, sig, params.Seed)
-	assert.EqualError(err, sm.subFloatErr.Error())
 }
 
 func TestRedeemWinningTicket_AddFloatError(t *testing.T) {

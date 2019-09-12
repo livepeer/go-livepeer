@@ -13,6 +13,7 @@ import (
 )
 
 var stubSender = pm.RandAddress()
+var stubClaimant = pm.RandAddress()
 
 var stubBondingManagerAddr = common.HexToAddress("0x511bc4556d823ae99630ae8de28b9b80df90ea2e")
 var stubRoundsManagerAddr = common.HexToAddress("0xc1F9BB72216E5ecDc97e248F65E14df1fE46600a")

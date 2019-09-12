@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,83 +25,70 @@ var increaseTime = func(sec int64) {
 }
 
 func TestMaxFloat(t *testing.T) {
-	claimant := RandAddress()
-	b := newStubBroker()
-	em := &stubErrorMonitor{}
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600, em)
+	claimant, b, smgr, rm, em := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		Reserve:       big.NewInt(500),
+		WithdrawBlock: big.NewInt(0),
+		ReserveState:  NotFrozen,
+		ThawRound:     big.NewInt(0),
+	}
+	smgr.claimedReserve[addr] = big.NewInt(100)
+	rm.transcoderPoolSize = big.NewInt(50)
+	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
 	sm.Start()
 	defer sm.Stop()
 
 	assert := assert.New(t)
 
-	// Test ClaimableReserve() error
-
-	b.claimableReserveShouldFail = true
+	// Test ClaimedReserve() error
+	smgr.err = errors.New("ClaimedReserve error")
 
 	_, err := sm.MaxFloat(RandAddress())
-	assert.EqualError(err, "stub broker ClaimableReserve error")
-
-	// Test value not cached
-
-	b.claimableReserveShouldFail = false
-	addr := RandAddress()
-	reserve := big.NewInt(10)
-	b.SetReserve(addr, reserve)
-
-	mf, err := sm.MaxFloat(addr)
-	assert.Equal(reserve, mf)
+	assert.EqualError(err, "ClaimedReserve error")
 
 	// Test value cached
 
-	// Change stub broker value
-	// SenderMonitor should still use cached value which
-	// is different
-	b.SetReserve(addr, big.NewInt(99))
+	smgr.err = nil
+	reserve := new(big.Int).Sub(new(big.Int).Div(smgr.info[addr].Reserve, rm.transcoderPoolSize), smgr.claimedReserve[addr])
 
-	mf, err = sm.MaxFloat(addr)
+	mf, err := sm.MaxFloat(addr)
 	assert.Equal(reserve, mf)
 }
 
 func TestSubFloat(t *testing.T) {
-	claimant := RandAddress()
-	b := newStubBroker()
-	em := &stubErrorMonitor{}
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600, em)
+	claimant, b, smgr, rm, em := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		Reserve:       big.NewInt(500),
+		WithdrawBlock: big.NewInt(0),
+		ReserveState:  NotFrozen,
+		ThawRound:     big.NewInt(0),
+	}
+	smgr.claimedReserve[addr] = big.NewInt(100)
+	rm.transcoderPoolSize = big.NewInt(50)
+	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
 	sm.Start()
 	defer sm.Stop()
 
 	assert := assert.New(t)
 	require := require.New(t)
 
-	// Test ClaimableReserve() error
-
-	b.claimableReserveShouldFail = true
-
-	err := sm.SubFloat(RandAddress(), big.NewInt(10))
-	assert.EqualError(err, "stub broker ClaimableReserve error")
-
-	// Test value not cached
-
-	b.claimableReserveShouldFail = false
-	addr := RandAddress()
-	reserve := big.NewInt(20)
-	b.SetReserve(addr, reserve)
+	reserve := new(big.Int).Sub(new(big.Int).Div(smgr.info[addr].Reserve, rm.transcoderPoolSize), smgr.claimedReserve[addr])
 
 	amount := big.NewInt(5)
-	err = sm.SubFloat(addr, amount)
-	assert.Nil(err)
-
+	sm.SubFloat(addr, amount)
 	mf, err := sm.MaxFloat(addr)
 	require.Nil(err)
 	assert.Equal(new(big.Int).Sub(reserve, amount), mf)
 
 	assert.True(em.AcceptErr(claimant))
 
-	b.SetReserve(addr, big.NewInt(99))
-
 	em.acceptable = false
 
-	err = sm.SubFloat(addr, amount)
+	sm.SubFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err = sm.MaxFloat(addr)
@@ -113,31 +102,36 @@ func TestSubFloat(t *testing.T) {
 	assert.True(em.AcceptErr(claimant))
 }
 func TestAddFloat(t *testing.T) {
-	claimant := RandAddress()
-	b := newStubBroker()
-	em := &stubErrorMonitor{}
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600, em)
+	claimant, b, smgr, rm, em := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		Reserve:       big.NewInt(500),
+		WithdrawBlock: big.NewInt(0),
+		ReserveState:  NotFrozen,
+		ThawRound:     big.NewInt(0),
+	}
+	smgr.claimedReserve[addr] = big.NewInt(100)
+	rm.transcoderPoolSize = big.NewInt(1)
+	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
 	sm.Start()
 	defer sm.Stop()
 
 	assert := assert.New(t)
 	require := require.New(t)
 
-	// Test ClaimableReserve() error
-
-	b.claimableReserveShouldFail = true
+	// Test ClaimedReserve() error
+	smgr.err = errors.New("ClaimedReserve error")
 
 	em.acceptable = false
 
-	err := sm.AddFloat(RandAddress(), big.NewInt(10))
-	assert.EqualError(err, "stub broker ClaimableReserve error")
+	sm.SubFloat(addr, big.NewInt(10))
+	err := sm.AddFloat(addr, big.NewInt(10))
+	assert.EqualError(err, "ClaimedReserve error")
 
 	// Test value not cached and insufficient pendingAmount error
-
-	b.claimableReserveShouldFail = false
-	addr := RandAddress()
-	reserve := big.NewInt(100)
-	b.SetReserve(addr, reserve)
+	smgr.err = nil
+	reserve := new(big.Int).Sub(new(big.Int).Div(smgr.info[addr].Reserve, rm.transcoderPoolSize), smgr.claimedReserve[addr])
 
 	amount := big.NewInt(20)
 	err = sm.AddFloat(addr, amount)
@@ -145,8 +139,7 @@ func TestAddFloat(t *testing.T) {
 
 	// Test value cached and no pendingAmount error
 
-	err = sm.SubFloat(addr, amount)
-	require.Nil(err)
+	sm.SubFloat(addr, amount)
 
 	err = sm.AddFloat(addr, amount)
 	assert.Nil(err)
@@ -156,14 +149,10 @@ func TestAddFloat(t *testing.T) {
 	assert.Equal(mf, reserve)
 
 	// Test cached value update
-	// Change stub broker value
-	// SenderMonitor should still use cached value which
-	// is different
-	newReserve := big.NewInt(99)
-	b.SetReserve(addr, newReserve)
+	smgr.info[addr].Reserve = big.NewInt(1000)
+	reserve = new(big.Int).Sub(new(big.Int).Div(smgr.info[addr].Reserve, rm.transcoderPoolSize), smgr.claimedReserve[addr])
 
-	err = sm.SubFloat(addr, amount)
-	require.Nil(err)
+	sm.SubFloat(addr, amount)
 
 	assert.True(em.AcceptErr(claimant))
 
@@ -178,40 +167,33 @@ func TestAddFloat(t *testing.T) {
 }
 
 func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
-	claimant := RandAddress()
-	b := newStubBroker()
-	em := &stubErrorMonitor{}
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 3600, em)
+	claimant, b, smgr, rm, em := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		Reserve:       big.NewInt(5000),
+		WithdrawBlock: big.NewInt(0),
+		ReserveState:  NotFrozen,
+		ThawRound:     big.NewInt(0),
+	}
+	smgr.claimedReserve[addr] = big.NewInt(100)
+	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
 	sm.Start()
 	defer sm.Stop()
 
 	assert := assert.New(t)
 	require := require.New(t)
 
-	// Test ClaimableReserve() error
-
-	b.claimableReserveShouldFail = true
-	addr := RandAddress()
-
-	err := sm.QueueTicket(addr, defaultSignedTicket(uint32(0)))
-	assert.EqualError(err, "stub broker ClaimableReserve error")
-
 	// Test queue ticket
 
-	b.claimableReserveShouldFail = false
-	reserve := big.NewInt(100)
-	b.SetReserve(addr, reserve)
+	sm.QueueTicket(addr, defaultSignedTicket(uint32(0)))
 
-	err = sm.QueueTicket(addr, defaultSignedTicket(uint32(0)))
-	assert.Nil(err)
-
-	err = sm.SubFloat(addr, big.NewInt(5))
-	require.Nil(err)
+	sm.SubFloat(addr, big.NewInt(5))
 
 	qc := &queueConsumer{}
 	go qc.Wait(1, sm)
 
-	err = sm.AddFloat(addr, big.NewInt(5))
+	err := sm.AddFloat(addr, big.NewInt(5))
 	require.Nil(err)
 
 	time.Sleep(time.Millisecond * 20)
@@ -222,17 +204,20 @@ func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
 	// Test queue tickets from multiple senders
 
 	addr2 := RandAddress()
-	b.SetReserve(addr2, reserve)
+	smgr.info[addr2] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		Reserve:       big.NewInt(5000),
+		WithdrawBlock: big.NewInt(0),
+		ReserveState:  NotFrozen,
+		ThawRound:     big.NewInt(0),
+	}
+	smgr.claimedReserve[addr2] = big.NewInt(100)
 
-	err = sm.QueueTicket(addr, defaultSignedTicket(uint32(2)))
-	assert.Nil(err)
-	err = sm.QueueTicket(addr2, defaultSignedTicket(uint32(3)))
-	assert.Nil(err)
+	sm.QueueTicket(addr, defaultSignedTicket(uint32(2)))
+	sm.QueueTicket(addr2, defaultSignedTicket(uint32(3)))
 
-	err = sm.SubFloat(addr, big.NewInt(5))
-	require.Nil(err)
-	err = sm.SubFloat(addr2, big.NewInt(5))
-	require.Nil(err)
+	sm.SubFloat(addr, big.NewInt(5))
+	sm.SubFloat(addr2, big.NewInt(5))
 
 	qc = &queueConsumer{}
 	go qc.Wait(2, sm)
@@ -252,10 +237,8 @@ func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
 }
 
 func TestCleanup(t *testing.T) {
-	claimant := RandAddress()
-	b := newStubBroker()
-	em := &stubErrorMonitor{}
-	sm := NewSenderMonitor(claimant, b, 5*time.Minute, 2, em)
+	claimant, b, smgr, rm, em := senderMonitorFixture()
+	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
 	sm.Start()
 	defer sm.Stop()
 
@@ -267,37 +250,71 @@ func TestCleanup(t *testing.T) {
 	// TODO: Test ticker?
 
 	// Test clean up
-
 	addr1 := RandAddress()
 	addr2 := RandAddress()
-	reserve := big.NewInt(20)
-	b.SetReserve(addr1, reserve)
-	b.SetReserve(addr2, reserve)
+	smgr.info[addr1] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		Reserve:       big.NewInt(500),
+		WithdrawBlock: big.NewInt(0),
+		ReserveState:  NotFrozen,
+		ThawRound:     big.NewInt(0),
+	}
+	smgr.claimedReserve[addr1] = big.NewInt(100)
+	smgr.info[addr2] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		Reserve:       big.NewInt(500),
+		WithdrawBlock: big.NewInt(0),
+		ReserveState:  NotFrozen,
+		ThawRound:     big.NewInt(0),
+	}
+	smgr.claimedReserve[addr2] = big.NewInt(100)
 
-	// Cache values
+	// Set lastAccess
 	_, err := sm.MaxFloat(addr1)
 	require.Nil(err)
 	_, err = sm.MaxFloat(addr2)
 	require.Nil(err)
 
-	increaseTime(5)
+	increaseTime(10)
 
-	// Change stub broker value
+	// Change stub SenderManager values
 	// SenderMonitor should no longer use cached values
 	// since they have been cleaned up
-	reserve2 := big.NewInt(99)
-	b.SetReserve(addr1, reserve2)
-	b.SetReserve(addr2, reserve2)
-
 	sm.(*senderMonitor).cleanup()
+	smgr.Clear(addr1)
+	smgr.Clear(addr2)
+	assert.Nil(smgr.info[addr1])
+	assert.Nil(smgr.claimedReserve[addr1])
+	assert.Nil(smgr.info[addr2])
+	assert.Nil(smgr.claimedReserve[addr2])
+
+	reserve2 := big.NewInt(1000)
+	smgr.info[addr1] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		Reserve:       reserve2,
+		WithdrawBlock: big.NewInt(0),
+		ReserveState:  NotFrozen,
+		ThawRound:     big.NewInt(0),
+	}
+	smgr.claimedReserve[addr1] = big.NewInt(100)
+	smgr.info[addr2] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		Reserve:       reserve2,
+		WithdrawBlock: big.NewInt(0),
+		ReserveState:  NotFrozen,
+		ThawRound:     big.NewInt(0),
+	}
+	smgr.claimedReserve[addr2] = big.NewInt(100)
 
 	mf1, err := sm.MaxFloat(addr1)
 	require.Nil(err)
 	mf2, err := sm.MaxFloat(addr2)
 	require.Nil(err)
 
-	assert.Equal(reserve2, mf1)
-	assert.Equal(reserve2, mf2)
+	expectedAlloc := new(big.Int).Sub(new(big.Int).Div(smgr.info[addr1].Reserve, rm.transcoderPoolSize), smgr.claimedReserve[addr1])
+
+	assert.Equal(expectedAlloc, mf1)
+	assert.Equal(expectedAlloc, mf2)
 
 	// Test clean up after excluding items
 	// with updated lastAccess due to MaxFloat()
@@ -314,8 +331,7 @@ func TestCleanup(t *testing.T) {
 	// - Use cached value for addr1 because it was accessed recently via MaxFloat()
 	// - Use new value for addr2 because it was cleaned up
 	reserve3 := big.NewInt(100)
-	b.SetReserve(addr1, reserve3)
-	b.SetReserve(addr2, reserve3)
+	smgr.info[addr2].Reserve = reserve3
 
 	sm.(*senderMonitor).cleanup()
 
@@ -324,8 +340,9 @@ func TestCleanup(t *testing.T) {
 	mf2, err = sm.MaxFloat(addr2)
 	require.Nil(err)
 
-	assert.Equal(reserve2, mf1)
-	assert.Equal(reserve3, mf2)
+	expectedAlloc2 := new(big.Int).Sub(new(big.Int).Div(smgr.info[addr2].Reserve, rm.transcoderPoolSize), smgr.claimedReserve[addr2])
+	assert.Equal(expectedAlloc, mf1)
+	assert.Equal(expectedAlloc2, mf2)
 
 	// Test clean up excluding items
 	// with updated lastAccess due to AddFloat()
@@ -342,8 +359,7 @@ func TestCleanup(t *testing.T) {
 	// - Use new value for addr1 because it was cleaned up
 	// - Use cached value for addr2 because it was accessed recently via AddFloat()
 	reserve4 := big.NewInt(101)
-	b.SetReserve(addr1, reserve4)
-	b.SetReserve(addr2, reserve4)
+	smgr.info[addr1].Reserve = reserve4
 
 	sm.(*senderMonitor).cleanup()
 
@@ -352,16 +368,17 @@ func TestCleanup(t *testing.T) {
 	mf2, err = sm.MaxFloat(addr2)
 	require.Nil(err)
 
-	assert.Equal(reserve4, mf1)
-	assert.Equal(reserve3, mf2)
+	expectedAlloc3 := new(big.Int).Sub(new(big.Int).Div(smgr.info[addr1].Reserve, rm.transcoderPoolSize), smgr.claimedReserve[addr1])
+
+	assert.Equal(expectedAlloc3, mf1)
+	assert.Equal(expectedAlloc2, mf2)
 
 	// Test clean up excluding items
 	// with updated lastAccess due to SubFloat()
 
 	// Update lastAccess for addr1
 	increaseTime(4)
-	err = sm.SubFloat(addr1, big.NewInt(0))
-	require.Nil(err)
+	sm.SubFloat(addr1, big.NewInt(0))
 
 	increaseTime(1)
 
@@ -370,8 +387,7 @@ func TestCleanup(t *testing.T) {
 	// - Use cached value for addr1 because it was accessed recently via SubFloat()
 	// - Use new value for addr2 because it was cleaned up
 	reserve5 := big.NewInt(999)
-	b.SetReserve(addr1, reserve5)
-	b.SetReserve(addr2, reserve5)
+	smgr.info[addr2].Reserve = reserve5
 
 	sm.(*senderMonitor).cleanup()
 
@@ -380,6 +396,44 @@ func TestCleanup(t *testing.T) {
 	mf2, err = sm.MaxFloat(addr2)
 	require.Nil(err)
 
-	assert.Equal(reserve4, mf1)
-	assert.Equal(reserve5, mf2)
+	expectedAlloc4 := new(big.Int).Sub(new(big.Int).Div(smgr.info[addr2].Reserve, rm.transcoderPoolSize), smgr.claimedReserve[addr2])
+	assert.Equal(expectedAlloc3, mf1)
+	assert.Equal(expectedAlloc4, mf2)
+}
+
+func TestReserveAlloc(t *testing.T) {
+	assert := assert.New(t)
+	claimant, b, smgr, rm, em := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		Reserve:       big.NewInt(5000),
+		WithdrawBlock: big.NewInt(0),
+		ReserveState:  NotFrozen,
+		ThawRound:     big.NewInt(0),
+	}
+	smgr.claimedReserve[addr] = big.NewInt(100)
+	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em).(*senderMonitor)
+
+	// test GetSenderInfo error
+	smgr.err = errors.New("GetSenderInfo error")
+	_, err := sm.reserveAlloc(addr)
+	assert.EqualError(err, smgr.err.Error())
+	// test reserveAlloc correctly calculated
+	smgr.err = nil
+	expectedAlloc := new(big.Int).Sub(new(big.Int).Div(smgr.info[addr].Reserve, rm.transcoderPoolSize), smgr.claimedReserve[addr])
+	alloc, err := sm.reserveAlloc(addr)
+	assert.Nil(err)
+	assert.Zero(expectedAlloc.Cmp(alloc))
+}
+
+func senderMonitorFixture() (ethcommon.Address, *stubBroker, *stubSenderManager, *stubRoundsManager, *stubErrorMonitor) {
+	claimant := RandAddress()
+	b := newStubBroker()
+	smgr := newStubSenderManager()
+	rm := &stubRoundsManager{
+		transcoderPoolSize: big.NewInt(5),
+	}
+	em := &stubErrorMonitor{}
+	return claimant, b, smgr, rm, em
 }

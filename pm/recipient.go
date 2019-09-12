@@ -329,35 +329,23 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 		return err
 	}
 
+	// if max float is zero, there is no claimable reserve left or reserve is 0
+	if maxFloat.Cmp(big.NewInt(0)) == 0 {
+		return errors.Errorf("max float is zero")
+	}
+
 	// If max float is insufficient to cover the ticket face value, queue
 	// the ticket to be retried later
 	if maxFloat.Cmp(ticket.FaceValue) < 0 {
-		if err := r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand}); err != nil {
-			return err
-		}
-
+		r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand})
 		glog.Infof("Queued ticket sender=%x recipientRandHash=%x senderNonce=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce)
-
 		return nil
-	}
-
-	info, err := r.broker.GetSenderInfo(ticket.Sender)
-	if err != nil {
-		return err
-	}
-
-	// TODO: Consider a smarter strategy here in the future
-	// Ex. If deposit < transaction cost, do not try to redeem
-	if info.Deposit.Cmp(big.NewInt(0)) == 0 && info.Reserve.Cmp(big.NewInt(0)) == 0 {
-		return errors.Errorf("sender %v has zero deposit and reserve", ticket.Sender)
 	}
 
 	// Subtract the ticket face value from the sender's current max float
 	// This amount will be considered pending until the ticket redemption
 	// transaction confirms on-chain
-	if err := r.sm.SubFloat(ticket.Sender, ticket.FaceValue); err != nil {
-		return err
-	}
+	r.sm.SubFloat(ticket.Sender, ticket.FaceValue)
 
 	defer func() {
 		// Add the ticket face value back to the sender's current max float
