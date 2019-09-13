@@ -22,10 +22,12 @@ require (
 	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/karalabe/hid v1.0.0 // indirect
 	github.com/karalabe/usb v0.0.0-20190819132248-550797b1cad8 // indirect
-	github.com/livepeer/lpms v0.0.0-20190820150402-f1b88b60503b
+	github.com/livepeer/lpms v0.0.0-20190918204115-7f095b315d48
 	github.com/livepeer/m3u8 v0.11.0
 	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/mattn/go-sqlite3 v1.11.0
+	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
+	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/olekukonko/tablewriter v0.0.1
 	github.com/pborman/uuid v1.2.0 // indirect
 	github.com/peterh/liner v1.1.0 // indirect
@@ -38,6 +40,7 @@ require (
 	github.com/status-im/keycard-go v0.0.0-20190424133014-d95853db0f48 // indirect
 	github.com/steakknife/bloomfilter v0.0.0-20180922174646-6819c0d2a570 // indirect
 	github.com/steakknife/hamming v0.0.0-20180906055917-c99c65617cd3 // indirect
+	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.4.0
 	github.com/tyler-smith/go-bip39 v1.0.2 // indirect
 	github.com/urfave/cli v1.20.0
@@ -45,6 +48,7 @@ require (
 	go.opencensus.io v0.22.1
 	golang.org/x/net v0.0.0-20190909003024-a7b16738d86b
 	google.golang.org/grpc v1.23.0
+	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/fatih/set.v0 v0.2.1 // indirect
 	gopkg.in/karalabe/cookiejar.v2 v2.0.0-20150724131613-8dcd6a7f4951 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
