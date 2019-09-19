@@ -74,7 +74,7 @@ jobs:
       - run:
           name: Lint
           command: |
-            golangci-lint --disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m run pm
+            golangci-lint --disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m run pm verification
 
       - run:
           name: Run unit tests

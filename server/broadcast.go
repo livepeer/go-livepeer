@@ -20,6 +20,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-livepeer/verification"
 
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
@@ -438,6 +439,18 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 		if dlErr != nil {
 			return dlErr
 		}
+
+		// Ignore errors for now
+		params := &verification.Params{
+			ManifestID:   sess.ManifestID,
+			Source:       seg,
+			Profiles:     sess.Profiles,
+			Orchestrator: sess.OrchestratorInfo,
+			Results:      res.TranscodeData,
+		}
+		verifier := &verification.EpicClassifier{Addr: "http://localhost:5000/verify"}
+		verifier.Verify(params)
+
 		ticketParams := sess.OrchestratorInfo.GetTicketParams()
 		if ticketParams != nil && // may be nil in offchain mode
 			saveErr == nil && // save error leads to early exit before sighash computation
