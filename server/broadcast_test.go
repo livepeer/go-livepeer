@@ -17,6 +17,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-livepeer/verification"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/m3u8"
@@ -72,8 +73,32 @@ func (bsm *sessionsManagerLIFO) sessList() []*BroadcastSession {
 	return *sessList
 }
 
+type stubVerifier struct {
+	retries int
+	calls   int
+	params  *verification.Params
+	err     error
+	results []verification.Results
+}
+
+func (v *stubVerifier) Verify(params *verification.Params) (*verification.Results, error) {
+	var res *verification.Results
+	if v.calls < len(v.results) {
+		res = &v.results[v.calls]
+	}
+	v.calls++
+	v.params = params
+	return res, v.err
+}
+func newStubSegmentVerifier(v *stubVerifier) *verification.SegmentVerifier {
+	return verification.NewSegmentVerifier(&verification.Policy{Retries: v.retries, Verifier: v})
+}
+
 type stubPlaylistManager struct {
 	manifestID core.ManifestID
+	seq        uint64
+	profile    ffmpeg.VideoProfile
+	uri        string
 }
 
 func (pm *stubPlaylistManager) ManifestID() core.ManifestID {
@@ -81,6 +106,9 @@ func (pm *stubPlaylistManager) ManifestID() core.ManifestID {
 }
 
 func (pm *stubPlaylistManager) InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo uint64, uri string, duration float64) error {
+	pm.profile = *profile
+	pm.seq = seqNo
+	pm.uri = uri
 	return nil
 }
 
@@ -434,7 +462,7 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	cxn := &rtmpConnection{
 		mid:         core.ManifestID("foo"),
 		nonce:       7,
-		pl:          &stubPlaylistManager{core.ManifestID("foo")},
+		pl:          &stubPlaylistManager{manifestID: core.ManifestID("foo")},
 		profile:     &ffmpeg.P144p30fps16x9,
 		sessManager: bsm,
 	}
@@ -501,7 +529,7 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	cxn := &rtmpConnection{
 		mid:         core.ManifestID("foo"),
 		nonce:       7,
-		pl:          &stubPlaylistManager{core.ManifestID("foo")},
+		pl:          &stubPlaylistManager{manifestID: core.ManifestID("foo")},
 		profile:     &ffmpeg.P144p30fps16x9,
 		sessManager: bsm,
 	}
@@ -677,4 +705,302 @@ func TestUpdateSession(t *testing.T) {
 	assert.Equal("bar", newSess.PMSessionID)
 	// Check that PMSessionID of old session is not mutated
 	assert.Equal("foo", sess.PMSessionID)
+}
+
+func TestHLSInsertion(t *testing.T) {
+	assert := assert.New(t)
+
+	segData := []*net.TranscodedSegmentData{
+		&net.TranscodedSegmentData{Url: "/path/to/video", Pixels: 100},
+	}
+
+	buf, err := proto.Marshal(&net.TranscodeResult{
+		Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{Segments: segData},
+		},
+	})
+	assert.Nil(err)
+
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.ManifestID = core.ManifestID("foo")
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+	pl := &stubPlaylistManager{manifestID: core.ManifestID("foo")}
+	cxn := &rtmpConnection{
+		mid:         sess.ManifestID,
+		nonce:       7,
+		pl:          pl,
+		profile:     &ffmpeg.P240p30fps16x9,
+		sessManager: bsm,
+	}
+
+	seg := &stream.HLSSegment{SeqNo: 93}
+	err = transcodeSegment(cxn, seg, "dummy", nil)
+	assert.Nil(err)
+
+	// some sanity checks
+	assert.Greater(len(sess.Profiles), 0)
+	assert.NotEqual(pl.profile, *cxn.profile, "HLS profile matched")
+
+	// Check HLS insertion
+	assert.Equal(seg.SeqNo, pl.seq, "HLS insertion failed")
+	assert.Equal(pl.profile, sess.Profiles[0], "HLS profile mismatch")
+}
+
+func TestVerifier_Invocation(t *testing.T) {
+	// Various tests around ensuring that the verifier itself is invoked within
+	// transcodeSegment, as well as various unusual verifier configurations
+
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Stub verifier
+	verifier := &stubVerifier{}
+	policy := &verification.Policy{Verifier: verifier}
+	segmentVerifier := verification.NewSegmentVerifier(policy)
+
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+	buf, err := proto.Marshal(&net.TranscodeResult{
+		Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{},
+		},
+	})
+	require.Nil(err)
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.ManifestID = core.ManifestID("foo")
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+	pl := &stubPlaylistManager{manifestID: core.ManifestID("foo")}
+	cxn := &rtmpConnection{
+		mid:         sess.ManifestID,
+		nonce:       7,
+		pl:          pl,
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsm,
+	}
+
+	seg := &stream.HLSSegment{}
+	err = transcodeSegment(cxn, seg, "dummy", segmentVerifier)
+	assert.Nil(err)
+	assert.Equal(1, verifier.calls)
+	require.NotNil(verifier.params)
+	assert.Equal(cxn.mid, verifier.params.ManifestID)
+	assert.Equal(seg, verifier.params.Source)
+	// Do it again for good measure
+	err = transcodeSegment(cxn, seg, "dummy", segmentVerifier)
+	assert.Nil(err)
+	assert.Equal(2, verifier.calls)
+
+	// now "disable" the verifier and ensure no calls
+	err = transcodeSegment(cxn, seg, "dummy", nil)
+	assert.Nil(err)
+	assert.Equal(2, verifier.calls)
+
+	// Pass in a nil policy
+	err = transcodeSegment(cxn, seg, "dummy", verification.NewSegmentVerifier(nil))
+	assert.Nil(err)
+
+	// Pass in a policy but no verifier specified
+	policy = &verification.Policy{}
+	err = transcodeSegment(cxn, seg, "dummy", verification.NewSegmentVerifier(policy))
+	assert.Nil(err)
+}
+
+func TestVerifier_Verify(t *testing.T) {
+	assert := assert.New(t)
+
+	cxn := &rtmpConnection{}
+	sess := &BroadcastSession{}
+	source := &stream.HLSSegment{}
+	res := &net.TranscodeData{}
+	verifier := verification.NewSegmentVerifier(&verification.Policy{})
+	URIs := []string{}
+	err := verify(verifier, cxn, sess, source, res, URIs)
+	assert.Nil(err)
+
+	// Test local OS: Should fail with an invalid path
+	sess.ManifestID = core.ManifestID("streamName")
+	sess.BroadcasterOS = drivers.NewMemoryDriver(nil).NewSession("streamName")
+	URIs = append(URIs, "filename")
+	err = verify(verifier, cxn, sess, source, res, URIs)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "invalid URI for request")
+
+	// Test local OS : Should fail if data does not exist in OS
+	URIs[0] = "/filename"
+	err = verify(verifier, cxn, sess, source, res, URIs)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "Missing Local Data")
+
+	// Test for segment not in broadcaster's own OS - "livepeer" S3 bucket
+	drivers.S3BUCKET = "livepeer"
+	sess.BroadcasterOS = drivers.NewS3Driver("", drivers.S3BUCKET, "", "").NewSession("")
+	err = verify(verifier, cxn, sess, source, res, URIs)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "Expected local storage but did not have it")
+
+	// Set broadcaster's OS to "livepeer" S3 bucket and fix the URL
+	URIs[0] = "https://livepeer.s3.amazonaws.com"
+	err = verify(verifier, cxn, sess, source, res, URIs)
+	assert.Nil(err)
+
+	// Check non-retryable errors
+	sess.OrchestratorInfo = &net.OrchestratorInfo{Transcoder: "asdf"}
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+	cxn.sessManager = bsm
+	sv := &stubVerifier{err: errors.New("NonRetryable")}
+	verifier = newStubSegmentVerifier(sv)
+	assert.Equal(0, sv.calls)  // sanity check initial call count
+	assert.Len(bsm.sessMap, 1) // sanity check initial bsm map
+	err = verify(verifier, cxn, sess, source, res, URIs)
+	assert.NotNil(err)
+	assert.Equal(1, sv.calls)
+	assert.Equal(sv.err, err)
+	assert.Len(bsm.sessMap, 1) // No effect on map for now
+
+	// Check retryable errors, esp broadcast session removal from manager
+	sv.err = verification.ErrTampered
+	sv.retries = 10 // Do this to ensure we get a nil result
+	_, retryable := sv.err.(verification.Retryable)
+	assert.True(retryable)
+	verifier = newStubSegmentVerifier(sv)
+	err = verify(verifier, cxn, sess, source, res, URIs)
+	assert.NotNil(err)
+	assert.Equal(2, sv.calls)
+	assert.Equal(sv.err, err)
+	assert.Len(bsm.sessMap, 0)
+
+	// When retries are set to 0, results are returned anyway in case of error
+	// (and more generally, when attempts > retries)
+
+	// Check data gets re-saved into OS if retry succeeds with earlier params
+	sv = &stubVerifier{
+		retries: 1,
+		err:     verification.ErrTampered,
+		results: []verification.Results{
+			verification.Results{Score: 9},
+			verification.Results{Score: 1},
+		},
+	}
+	mem, ok := drivers.NewMemoryDriver(nil).NewSession("streamName").(*drivers.MemorySession)
+	assert.True(ok)
+	name, err := mem.SaveData("/rendition/seg/1", []byte("attempt1"))
+	assert.Nil(err)
+	assert.Equal([]byte("attempt1"), mem.GetData(name))
+	sess.BroadcasterOS = mem
+	verifier = newStubSegmentVerifier(sv)
+	URIs[0] = name
+	err = verify(verifier, cxn, sess, source, res, URIs)
+	assert.Equal(sv.err, err)
+
+	// Now "insert" 2nd attempt into OS
+	// and ensure 1st attempt is what remains after verification
+	_, err = mem.SaveData("/rendition/seg/1", []byte("attempt2"))
+	assert.Nil(err)
+	assert.Equal([]byte("attempt2"), mem.GetData(name))
+	err = verify(verifier, cxn, sess, source, res, URIs)
+	assert.Nil(err)
+	assert.Equal([]byte("attempt1"), mem.GetData(name))
+}
+
+func TestVerifier_HLSInsertion(t *testing.T) {
+	assert := assert.New(t)
+
+	// Ensure that the playlist has the correct URL after verification
+	// Following this sequence:
+	//   1. Verify seg1. Verification fails.
+	//   2. Verify seg2. Verification fails.
+	//   3. Verify seg3. Verification fails
+	//   4. Max retries hit, assume false positives
+	//   5. Return seg2 as highest scoring result
+	//   6. Insert seg2 into playlist
+	mid := core.ManifestID("foo")
+	pl := &stubPlaylistManager{manifestID: mid}
+	drivers.S3BUCKET = "livepeer"
+	mem := drivers.NewS3Driver("", drivers.S3BUCKET, "", "").NewSession(string(mid))
+	assert.NotNil(mem)
+	genBcastSess := func(url string) *BroadcastSession {
+		segData := []*net.TranscodedSegmentData{
+			&net.TranscodedSegmentData{Url: url, Pixels: 100},
+		}
+
+		buf, err := proto.Marshal(&net.TranscodeResult{
+			Result: &net.TranscodeResult_Data{
+				Data: &net.TranscodeData{Segments: segData},
+			},
+		})
+		assert.Nil(err, fmt.Sprintf("Could not marshal results for %s", url))
+		ts, mux := stubTLSServer()
+		mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write(buf)
+		})
+		defer func() {
+			// Work around a weird timing issue. Tests fail if the server closes
+			// in-scope (prob leads to something like the client being unable
+			// to read the response?), so we delay the close for a little bit
+			go func() {
+				// We assume this test doesn't take more than 1s
+				// But if it does (eg, we get a POST error), then bump this up
+				time.Sleep(1 * time.Second)
+				ts.Close()
+			}()
+		}()
+		return &BroadcastSession{
+			Broadcaster:      stubBroadcaster2(),
+			ManifestID:       mid,
+			Profiles:         []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9},
+			BroadcasterOS:    mem,
+			OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL},
+		}
+	}
+
+	baseURL := "https://livepeer.s3.amazonaws.com"
+	bsm := bsmWithSessList([]*BroadcastSession{
+		genBcastSess(baseURL + "/resp1"),
+		genBcastSess(baseURL + "/resp2"),
+		genBcastSess(baseURL + "/resp3"),
+	})
+	cxn := &rtmpConnection{
+		mid:         mid,
+		pl:          pl,
+		profile:     &ffmpeg.P240p30fps16x9,
+		sessManager: bsm,
+	}
+	seg := &stream.HLSSegment{}
+	verifier := newStubSegmentVerifier(&stubVerifier{
+		retries: 2,
+		err:     verification.ErrTampered,
+		results: []verification.Results{
+			{Score: 5, Pixels: []int64{100}},
+			{Score: 9, Pixels: []int64{100}},
+			{Score: 1, Pixels: []int64{100}},
+		},
+	})
+
+	err := transcodeSegment(cxn, seg, "dummy", verifier)
+	assert.Equal(verification.ErrTampered, err)
+	assert.Empty(pl.uri) // sanity check that no insertion happened
+
+	err = transcodeSegment(cxn, seg, "dummy", verifier)
+	assert.Equal(verification.ErrTampered, err)
+	assert.Empty(pl.uri)
+
+	err = transcodeSegment(cxn, seg, "dummy", verifier)
+	assert.Nil(err)
+	assert.Equal(baseURL+"/resp2", pl.uri)
 }
