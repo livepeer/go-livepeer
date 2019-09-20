@@ -26,6 +26,7 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
+var Verifier verification.Verifier
 var BroadcastCfg = &BroadcastConfig{}
 
 type BroadcastConfig struct {
@@ -440,16 +441,17 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 			return dlErr
 		}
 
-		// Ignore errors for now
-		params := &verification.Params{
-			ManifestID:   sess.ManifestID,
-			Source:       seg,
-			Profiles:     sess.Profiles,
-			Orchestrator: sess.OrchestratorInfo,
-			Results:      res.TranscodeData,
+		if Verifier != nil {
+			// Ignore errors for now
+			params := &verification.Params{
+				ManifestID:   sess.ManifestID,
+				Source:       seg,
+				Profiles:     sess.Profiles,
+				Orchestrator: sess.OrchestratorInfo,
+				Results:      res.TranscodeData,
+			}
+			Verifier.Verify(params)
 		}
-		verifier := &verification.EpicClassifier{Addr: "http://localhost:5000/verify"}
-		verifier.Verify(params)
 
 		ticketParams := sess.OrchestratorInfo.GetTicketParams()
 		if ticketParams != nil && // may be nil in offchain mode

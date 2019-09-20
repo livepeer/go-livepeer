@@ -37,6 +37,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/eventservices"
 	"github.com/livepeer/go-livepeer/eth/watchers"
+	"github.com/livepeer/go-livepeer/verification"
 
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 )
@@ -87,6 +88,7 @@ func main() {
 	httpAddr := flag.String("httpAddr", "", "Address to bind for HTTP commands")
 	serviceAddr := flag.String("serviceAddr", "", "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
 	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
+	verifierURL := flag.String("verifierUrl", "", "URL of the verifier to use")
 
 	// Transcoding:
 	orchestrator := flag.Bool("orchestrator", false, "Set to true to be an orchestrator")
@@ -667,6 +669,16 @@ func main() {
 			}
 			glog.Info("Using auth webhook URL ", *authWebhookURL)
 			server.AuthWebhookURL = *authWebhookURL
+		}
+
+		// Set up verifier
+		if *verifierURL != "" {
+			_, err := validateURL(*verifierURL)
+			if err != nil {
+				glog.Fatal("Error setting verifier URL ", err)
+			}
+			glog.Info("Using the Epic Labs classifier for verification at ", *verifierURL)
+			server.Verifier = &verification.EpicClassifier{Addr: *verifierURL}
 		}
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)
