@@ -18,6 +18,8 @@ BRANCH="${TRAVIS_BRANCH:-${CIRCLE_BRANCH:-unknown}}"
 VERSION="$(cat VERSION)-$(git describe --always --long --abbrev=8 --dirty)"
 if echo $VERSION | grep dirty; then
   echo "Error: git state dirty, refusing to upload build"
+  git diff
+  git status
   exit 1
 fi
 
