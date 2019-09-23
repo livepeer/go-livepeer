@@ -49,11 +49,20 @@ RUN export PATH=$HOME/compiled/bin:$PATH && \
     cd "$HOME/ffmpeg" && \
     make && make install
 
+#RUN export PATH=$HOME/compiled/bin:$PATH && \
+#    export PATH=/usr/local/cuda/bin:$PATH && \
+#    export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig && \
+#    go get github.com/livepeer/go-livepeer/cmd/livepeer # && \
+#    cd "$HOME/go/src/github.com/livepeer/go-livepeer" && \
+#    go build ./cmd/livepeer/livepeer.go && \
+#    go build ./cmd/devtool/devtool.go
+
 RUN export PATH=$HOME/compiled/bin:$PATH && \
     export PATH=/usr/local/cuda/bin:$PATH && \
     export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig && \
-    go get github.com/livepeer/go-livepeer/cmd/livepeer && \
-    cd "$HOME/go/src/github.com/livepeer/go-livepeer" && \
+    git clone https://github.com/livepeer/go-livepeer "/root/go-livepeer" && \
+    cd "/root/go-livepeer" && \
+    go mod download && \
     go build ./cmd/livepeer/livepeer.go && \
     go build ./cmd/devtool/devtool.go
 
@@ -77,14 +86,11 @@ RUN add-apt-repository universe && apt-get update &&  apt-get install -y jq
 
 RUN curl -O http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/cuda-repo-ubuntu1604_10.1.168-1_amd64.deb && \
     dpkg --force-confdef --force-confnew -i ./cuda-repo-ubuntu1604_10.1.168-1_amd64.deb && \
-    apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/7fa2af80.pub && \
-   
+    apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/7fa2af80.pub && \ 
     curl -O http://ftp.ubuntu.com/ubuntu/ubuntu/pool/restricted/n/nvidia-graphics-drivers-418/libnvidia-compute-418_418.56-0ubuntu1_amd64.deb && \
     dpkg --force-confdef --force-confnew -i ./libnvidia-compute-418_418.56-0ubuntu1_amd64.deb && \
-
     curl -O http://ftp.ubuntu.com/ubuntu/ubuntu/pool/restricted/n/nvidia-graphics-drivers-418/libnvidia-decode-418_418.56-0ubuntu1_amd64.deb && \
     dpkg --force-confdef --force-confnew -i ./libnvidia-decode-418_418.56-0ubuntu1_amd64.deb && \
-
     curl -O http://ftp.ubuntu.com/ubuntu/ubuntu/pool/restricted/n/nvidia-graphics-drivers-418/libnvidia-encode-418_418.56-0ubuntu1_amd64.deb && \
     dpkg --force-confdef --force-confnew -i ./libnvidia-encode-418_418.56-0ubuntu1_amd64.deb
 
@@ -93,8 +99,8 @@ RUN curl -O http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x
 # identical at the start of each image build
 
 COPY --from=builder /usr/local/lib/* /usr/local/lib/
-COPY --from=builder /root/go/src/github.com/livepeer/go-livepeer/devtool /usr/local/bin/
-COPY --from=builder /root/go/src/github.com/livepeer/go-livepeer/livepeer /usr/local/bin/
+COPY --from=builder /root/go-livepeer/devtool /usr/local/bin/
+COPY --from=builder /root/go-livepeer/livepeer /usr/local/bin/
 
 RUN ln -s /usr/local/bin/livepeer /
 RUN ln -s /usr/local/bin/livepeer /usr/bin/
