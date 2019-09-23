@@ -7,18 +7,10 @@ RUN apt-get update && apt-get dist-upgrade -y && \
     add-apt-repository ppa:longsleep/golang-backports && \
     apt-get update && apt-get dist-upgrade -y && \
     apt-get install -y build-essential pkg-config autoconf gnutls-dev \
-            git curl golang-go && \
-   ## curl -O http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-repo-ubuntu1804_10.0.130-1_amd64.deb && \
-   # curl -O http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-repo-ubuntu1804_10.1.243-1_amd64.deb && \
-   # dpkg --force-confdef --force-confnew -i ./cuda-repo-ubuntu1804_10.1.243-1_amd64.deb && \
-    ## apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/7fa2af80.pub && \
-   # apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub && \
+    git curl golang-go && \
     apt-get update && \
-   # apt-get install cuda-10-1 -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-#RUN apt-get install -y libnvidia-encode-418   
 
 RUN git clone -b nasm-2.14.02 https://repo.or.cz/nasm.git "$HOME/nasm" && \
     cd "$HOME/nasm" && \
@@ -76,14 +68,8 @@ RUN apt-get update && apt-get dist-upgrade -y && \
     add-apt-repository ppa:longsleep/golang-backports && \
     apt-get update && apt-get dist-upgrade -y && \
     apt-get install -y build-essential pkg-config autoconf gnutls-dev \
-            git curl golang-go && \
-    ##apt-get install -y libnvidia-encode-430 && \
-    ##curl -O http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-repo-ubuntu1804_10.0.130-1_amd64.deb && \
-    ##dpkg --force-confdef --force-confnew -i ./cuda-repo-ubuntu1804_10.0.130-1_amd64.deb && \
-    ##apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/7fa2af80.pub && \
-    
+    git curl golang-go && \
     apt-get update && \
-    #apt-get install cuda-10-1 -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -122,23 +108,10 @@ RUN mkdir -p /usr/local/bin /patched-lib
 COPY docker/patch.sh docker/gpu-start.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/patch.sh /usr/local/bin/gpu-start.sh
 
-
-#ENTRYPOINT [ "/root/go/bin/livepeer" ]
 WORKDIR /root
-
-#RUN apt-get install -y libnvidia-encode-418   
-
 RUN mkdir -p /root/.lpData/mainnet/keystore && \
   mkdir -p /root/.lpData/rinkeby/keystore && \
   mkdir -p /root/.lpData/devenv/keystore && mkdir -p /root/.lpData/offchain/keystore
-#RUN cp /root/go/src/github.com/livepeer/go-livepeer/livepeer /usr/bin/livepeer
-#RUN cp /root/go/src/github.com/livepeer/go-livepeer/livepeer_cli /usr/bin/livepeer_cli
-
-#COPY --from=builder /go/src/github.com/livepeer/go-livepeer/livepeer /usr/bin/livepeer
-#COPY --from=builder /go/src/github.com/livepeer/go-livepeer/livepeer_cli /usr/bin/livepeer_cli
-
-#COPY docker/start.sh .
-#RUN chmod +x start.sh
 
 EXPOSE 7935/tcp
 EXPOSE 8935/tcp
