@@ -49,14 +49,6 @@ RUN export PATH=$HOME/compiled/bin:$PATH && \
     cd "$HOME/ffmpeg" && \
     make && make install
 
-#RUN export PATH=$HOME/compiled/bin:$PATH && \
-#    export PATH=/usr/local/cuda/bin:$PATH && \
-#    export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig && \
-#    go get github.com/livepeer/go-livepeer/cmd/livepeer # && \
-#    cd "$HOME/go/src/github.com/livepeer/go-livepeer" && \
-#    go build ./cmd/livepeer/livepeer.go && \
-#    go build ./cmd/devtool/devtool.go
-
 RUN export PATH=$HOME/compiled/bin:$PATH && \
     export PATH=/usr/local/cuda/bin:$PATH && \
     export PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig && \
@@ -93,10 +85,6 @@ RUN curl -O http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x
     dpkg --force-confdef --force-confnew -i ./libnvidia-decode-418_418.56-0ubuntu1_amd64.deb && \
     curl -O http://ftp.ubuntu.com/ubuntu/ubuntu/pool/restricted/n/nvidia-graphics-drivers-418/libnvidia-encode-418_418.56-0ubuntu1_amd64.deb && \
     dpkg --force-confdef --force-confnew -i ./libnvidia-encode-418_418.56-0ubuntu1_amd64.deb
-
-# everything above this line has already been cached in the build stage -
-# we save time and disk space by keeping the common parts of each stage
-# identical at the start of each image build
 
 COPY --from=builder /usr/local/lib/* /usr/local/lib/
 COPY --from=builder /root/go-livepeer/devtool /usr/local/bin/
