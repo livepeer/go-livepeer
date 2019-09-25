@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"math/rand"
@@ -31,7 +32,7 @@ type stubOrchestratorPool struct {
 	bcast server.Broadcaster
 }
 
-func StubOrchestratorPool(addresses []string) *stubOrchestratorPool {
+func stringsToURIs(addresses []string) []*url.URL {
 	var uris []*url.URL
 
 	for _, addr := range addresses {
@@ -40,6 +41,11 @@ func StubOrchestratorPool(addresses []string) *stubOrchestratorPool {
 			uris = append(uris, uri)
 		}
 	}
+	return uris
+}
+
+func StubOrchestratorPool(addresses []string) *stubOrchestratorPool {
+	uris := stringsToURIs(addresses)
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	bcast := core.NewBroadcaster(node)
 
@@ -62,15 +68,6 @@ func TestNewOrchestratorPoolWithPred_NilEthClient_ReturnsNil_LogsError(t *testin
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	errorLogsBefore := glog.Stats.Error.Lines()
 	pool := NewOrchestratorPoolWithPred(node, nil, nil)
-	errorLogsAfter := glog.Stats.Error.Lines()
-	assert.NotZero(t, errorLogsAfter-errorLogsBefore)
-	assert.Nil(t, pool)
-}
-
-func TestNewOnchainOrchestratorPool_NilEthClient_ReturnsNil_LogsError(t *testing.T) {
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	errorLogsBefore := glog.Stats.Error.Lines()
-	pool := NewOnchainOrchestratorPool(node)
 	errorLogsAfter := glog.Stats.Error.Lines()
 	assert.NotZero(t, errorLogsAfter-errorLogsBefore)
 	assert.Nil(t, pool)
@@ -103,8 +100,9 @@ func TestDeadLock(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		addresses = append(addresses, "https://127.0.0.1:8936")
 	}
+	uris := stringsToURIs(addresses)
 	assert := assert.New(t)
-	pool := NewOrchestratorPool(nil, addresses)
+	pool := NewOrchestratorPool(nil, uris)
 	infos, err := pool.GetOrchestrators(1)
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 1, "Should return one orchestrator")
@@ -135,6 +133,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		addresses = append(addresses, "https://127.0.0.1:8936")
 	}
+	uris := stringsToURIs(addresses)
 
 	assert := assert.New(t)
 	pred := func(info *net.OrchestratorInfo) bool {
@@ -150,7 +149,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
 
-	pool := NewOrchestratorPoolWithPred(node, addresses, pred)
+	pool := NewOrchestratorPoolWithPred(node, uris, pred)
 	infos, err := pool.GetOrchestrators(1)
 
 	assert.Nil(err, "Should not be error")
@@ -159,7 +158,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 }
 
 func TestPoolSize(t *testing.T) {
-	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
 
 	assert := assert.New(t)
 	pool := NewOrchestratorPool(nil, addresses)
@@ -352,8 +351,8 @@ func TestNewDBOrchestratorPoolCache_TestURLs_Empty(t *testing.T) {
 
 func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
 	node, _ := core.NewLivepeerNode(nil, "", nil)
-	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
-	expected := []string{"https://127.0.0.1:8938", "https://127.0.0.1:8937", "https://127.0.0.1:8936"}
+	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
+	expected := stringsToURIs([]string{"https://127.0.0.1:8938", "https://127.0.0.1:8937", "https://127.0.0.1:8936"})
 	assert := assert.New(t)
 
 	// creating NewOrchestratorPool with orch addresses
@@ -363,18 +362,7 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 	offchainOrch := NewOrchestratorPool(node, addresses)
 
 	for i, uri := range offchainOrch.uris {
-		assert.Equal(uri.String(), expected[i])
-	}
-
-	orchestrators := StubOrchestrators(addresses)
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
-
-	// testing NewOnchainOrchestratorPool
-	rand.Seed(321)
-	perm = func(len int) []int { return rand.Perm(3) }
-	offchainOrchFromOnchainList := NewOnchainOrchestratorPool(node)
-	for i, uri := range offchainOrchFromOnchainList.uris {
-		assert.Equal(uri.String(), expected[i])
+		assert.Equal(uri, expected[i])
 	}
 }
 
@@ -392,11 +380,12 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 		addresses = append(addresses, "https://127.0.0.1:8936")
 	}
 	orchestrators := StubOrchestrators(addresses)
+	uris := stringsToURIs(addresses)
 
 	node, _ := core.NewLivepeerNode(nil, "", nil)
 	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
 
-	pool := NewOrchestratorPoolWithPred(node, addresses, pred)
+	pool := NewOrchestratorPoolWithPred(node, uris, pred)
 
 	oInfo := &net.OrchestratorInfo{
 		PriceInfo: &net.PriceInfo{
@@ -755,4 +744,138 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 	assert.Nil(err)
 	assert.Len(infos, 0)
 	sender.AssertNumberOfCalls(t, "ValidateTicketParams", 50)
+}
+
+func TestNewWHOrchestratorPoolCache(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// mock webhook and orchestrator info request
+	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+
+	getURLsfromWebhook = func(cbUrl *url.URL) ([]byte, error) {
+		var wh []webhookResponse
+		for _, addr := range addresses {
+			wh = append(wh, webhookResponse{Address: addr})
+		}
+		return json.Marshal(&wh)
+	}
+
+	serverGetOrchInfo = func(c context.Context, b server.Broadcaster, s *url.URL) (*net.OrchestratorInfo, error) {
+		return &net.OrchestratorInfo{Transcoder: "transcoder"}, nil
+	}
+
+	// mock livepeer node
+	node, _ := core.NewLivepeerNode(nil, "", nil)
+	perm = func(len int) []int { return rand.Perm(3) }
+
+	// assert created webhook pool is correct length
+	whURL, _ := url.ParseRequestURI("https://livepeer.live/api/orchestrator")
+	whpool := NewWebhookPool(node, whURL)
+	assert.Equal(3, whpool.Size())
+
+	// assert that list is not refreshed if lastRequest is less than 1 min ago and hash is the same
+	lastReq := whpool.lastRequest
+	orchInfo, err := whpool.GetOrchestrators(2)
+	require.Nil(err)
+	assert.Len(orchInfo, 2)
+	assert.Equal(3, whpool.Size())
+
+	urls := whpool.pool.GetURLs()
+	assert.Len(urls, 3)
+
+	for _, addr := range addresses {
+		uri, _ := url.ParseRequestURI(addr)
+		assert.Contains(urls, uri)
+	}
+
+	//  assert that list is not refreshed if lastRequest is more than 1 min ago and hash is the same
+	lastReq = time.Now().Add(-2 * time.Minute)
+	whpool.lastRequest = lastReq
+	orchInfo, err = whpool.GetOrchestrators(2)
+	require.Nil(err)
+	assert.Len(orchInfo, 2)
+	assert.Equal(3, whpool.Size())
+	assert.NotEqual(lastReq, whpool.lastRequest)
+
+	urls = whpool.pool.GetURLs()
+	assert.Len(urls, 3)
+
+	for _, addr := range addresses {
+		uri, _ := url.ParseRequestURI(addr)
+		assert.Contains(urls, uri)
+	}
+
+	// mock a change in webhook addresses
+	addresses = []string{"https://127.0.0.1:8932", "https://127.0.0.1:8933", "https://127.0.0.1:8934"}
+
+	//  assert that list is not refreshed if lastRequest is less than 1 min ago and hash is not the same
+	lastReq = time.Now()
+	whpool.lastRequest = lastReq
+	orchInfo, err = whpool.GetOrchestrators(2)
+	require.Nil(err)
+	assert.Len(orchInfo, 2)
+	assert.Equal(3, whpool.Size())
+	assert.Equal(lastReq, whpool.lastRequest)
+
+	urls = whpool.pool.GetURLs()
+	assert.Len(urls, 3)
+
+	for _, addr := range addresses {
+		uri, _ := url.ParseRequestURI(addr)
+		assert.NotContains(urls, uri)
+	}
+
+	//  assert that list is refreshed if lastRequest is longer than 1 min ago and hash is not the same
+	lastReq = time.Now().Add(-2 * time.Minute)
+	whpool.lastRequest = lastReq
+	orchInfo, err = whpool.GetOrchestrators(2)
+	require.Nil(err)
+	assert.Len(orchInfo, 2)
+	assert.Equal(3, whpool.Size())
+	assert.NotEqual(lastReq, whpool.lastRequest)
+
+	urls = whpool.pool.GetURLs()
+	assert.Len(urls, 3)
+
+	for _, addr := range addresses {
+		uri, _ := url.ParseRequestURI(addr)
+		assert.Contains(urls, uri)
+	}
+}
+
+func TestDeserializeWebhookJSON(t *testing.T) {
+	assert := assert.New(t)
+
+	// assert input of webhookResponse address object returns correct address
+	resp, _ := json.Marshal(&[]webhookResponse{webhookResponse{Address: "https://127.0.0.1:8936"}})
+	urls, err := deserializeWebhookJSON(resp)
+	assert.Nil(err)
+	assert.Equal("https://127.0.0.1:8936", urls[0].String())
+
+	// assert input of empty byte array returns JSON error
+	urls, err = deserializeWebhookJSON([]byte{})
+	assert.Contains(err.Error(), "unexpected end of JSON input")
+	assert.Nil(urls)
+
+	// assert input of empty byte array returns empty object
+	resp, _ = json.Marshal(&[]webhookResponse{webhookResponse{}})
+	urls, err = deserializeWebhookJSON(resp)
+	assert.Nil(err)
+	assert.Empty(urls)
+
+	// assert input of invalid addresses returns invalid JSON error
+	urls, err = deserializeWebhookJSON(make([]byte, 64))
+	assert.Contains(err.Error(), "invalid character")
+	assert.Empty(urls)
+
+	// assert input of invalid JSON returns JSON unmarshal object error
+	urls, err = deserializeWebhookJSON([]byte(`{"name":false}`))
+	assert.Contains(err.Error(), "cannot unmarshal object")
+	assert.Empty(urls)
+
+	// assert input of invalid JSON returns JSON unmarshal number error
+	urls, err = deserializeWebhookJSON([]byte(`1112`))
+	assert.Contains(err.Error(), "cannot unmarshal number")
+	assert.Empty(urls)
 }
