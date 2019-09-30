@@ -8,6 +8,7 @@ env:
     - PKG_CONFIG_PATH=/Users/travis/compiled/lib/pkgconfig
 
 script:
+  - export GOFLAGS=-mod=readonly
   - ./install_ffmpeg.sh
   - go mod download
   - make livepeer livepeer_cli
