@@ -34,7 +34,7 @@ fi
 
 if [ ! -e "$HOME/nasm/nasm" ]; then
   # sudo apt-get -y install asciidoc xmlto # this fails :(
-  git clone -b nasm-2.14.02 https://repo.or.cz/nasm.git "$HOME/nasm"
+  git clone -b nasm-2.14.02 https://github.com/iameli/nasm.git "$HOME/nasm"
   cd "$HOME/nasm"
   ./autogen.sh
   ./configure --prefix="$HOME/compiled"
