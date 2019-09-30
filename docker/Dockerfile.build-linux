@@ -18,4 +18,4 @@ RUN apt-get update \
 
 ENV GOPATH /go
 RUN mkdir -p /go
-WORKDIR /go/src/github.com/livepeer/go-livepeer
+WORKDIR /build

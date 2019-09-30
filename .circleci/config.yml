@@ -57,7 +57,7 @@ jobs:
       # Note race condition - we might get the wrong builder if lots of builds are happening in
       # parallel because this pulls it down from Docker Hub.
       - image: livepeerci/build:latest-linux
-    working_directory: /go/src/github.com/livepeer/go-livepeer
+    working_directory: /build
 
     environment:
       PKG_CONFIG_PATH: /root/compiled/lib/pkgconfig
