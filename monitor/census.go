@@ -86,6 +86,9 @@ type (
 		mCurrentSessions              *stats.Int64Measure
 		mDiscoveryError               *stats.Int64Measure
 		mTranscodeRetried             *stats.Int64Measure
+		mTranscodersNumber            *stats.Int64Measure
+		mTranscodersCapacity          *stats.Int64Measure
+		mTranscodersLoad              *stats.Int64Measure
 		mSuccessRate                  *stats.Float64Measure
 		mTranscodeTime                *stats.Float64Measure
 		mTranscodeLatency             *stats.Float64Measure
@@ -184,6 +187,9 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.mCurrentSessions = stats.Int64("current_sessions_total", "Number of currently transcded streams", "tot")
 	census.mDiscoveryError = stats.Int64("discovery_errors_total", "Number of discover errors", "tot")
 	census.mTranscodeRetried = stats.Int64("transcode_retried", "Number of times segment transcode was retried", "tot")
+	census.mTranscodersNumber = stats.Int64("transcoders_number", "Number of transcoders currently connected to orchestrator", "tot")
+	census.mTranscodersCapacity = stats.Int64("transcoders_capacity", "Total advertised capacity of transcoders currently connected to orchestrator", "tot")
+	census.mTranscodersLoad = stats.Int64("transcoders_load", "Total load of transcoders currently connected to orchestrator", "tot")
 	census.mSuccessRate = stats.Float64("success_rate", "Success rate", "per")
 	census.mTranscodeTime = stats.Float64("transcode_time_seconds", "Transcoding time", "sec")
 	census.mTranscodeLatency = stats.Float64("transcode_latency_seconds",
@@ -400,6 +406,27 @@ func InitCensus(nodeType, nodeID, version string) {
 			TagKeys:     append([]tag.Key{census.kTry}, baseTags...),
 			Aggregation: view.Count(),
 		},
+		&view.View{
+			Name:        "transcoders_number",
+			Measure:     census.mTranscodersNumber,
+			Description: "Number of transcoders currently connected to orchestrator",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
+		&view.View{
+			Name:        "transcoders_capacity",
+			Measure:     census.mTranscodersCapacity,
+			Description: "Total advertised capacity of transcoders currently connected to orchestrator",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
+		&view.View{
+			Name:        "transcoders_load",
+			Measure:     census.mTranscodersLoad,
+			Description: "Total load of transcoders currently connected to orchestrator",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
 
 		// Metrics for sending payments
 		&view.View{
@@ -516,6 +543,9 @@ func InitCensus(nodeType, nodeID, version string) {
 		go census.timeoutWatcher(ctx)
 	}
 	Exporter = pe
+
+	// init metrics values
+	SetTranscodersNumberAndLoad(0, 0, 0)
 }
 
 // LogDiscoveryError records discovery error
@@ -723,6 +753,14 @@ func TranscodeTry(nonce, seqNo uint64) {
 		}
 		glog.Infof("Trying to transcode segment nonce=%d seqNo=%d try=%d", nonce, seqNo, try)
 	}
+}
+
+func SetTranscodersNumberAndLoad(load, capacity, number int) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+	stats.Record(census.ctx, census.mTranscodersLoad.M(int64(load)))
+	stats.Record(census.ctx, census.mTranscodersCapacity.M(int64(capacity)))
+	stats.Record(census.ctx, census.mTranscodersNumber.M(int64(number)))
 }
 
 func SegmentEmerged(nonce, seqNo uint64, profilesNum int) {
