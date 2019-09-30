@@ -12,7 +12,7 @@ workflows:
 jobs:
   build-builder:
     docker:
-      - image: circleci/golang:1-stretch
+      - image: circleci/golang:1.13-stretch
     working_directory: /go/src/github.com/livepeer/go-livepeer
 
     environment:

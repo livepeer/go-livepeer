@@ -21,7 +21,6 @@ require (
 	github.com/fjl/memsize v0.0.0-20190710130421-bcb5799ab5e5 // indirect
 	// github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
 	github.com/gballet/go-libpcsclite v0.0.0-20190403181518-312b5175032f // indirect
-	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/protobuf v1.3.2
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
