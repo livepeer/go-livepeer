@@ -13,6 +13,7 @@ jobs:
       - script: git config --global core.autocrlf false
       - checkout: self
       - bash: |-
+          set -e
           # First, build/cache the platform-specific root container
           docker login -u '$(DOCKER_USER)' -p '$(DOCKER_PASS)'
           docker pull livepeerci/build-platform:latest-windows || echo "build cache not found"
