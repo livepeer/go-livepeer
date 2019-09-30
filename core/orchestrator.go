@@ -753,14 +753,27 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 	rtm.liveTranscoders[transcoder.stream] = transcoder
 	rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
 	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+	var totalLoad, totalCapacity, liveTranscodersNum int
+	if monitor.Enabled {
+		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
+	}
 	rtm.RTmutex.Unlock()
+	if monitor.Enabled {
+		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+	}
 
 	<-transcoder.eof
 	glog.Infof("Got transcoder=%s eof, removing from live transcoders map", from)
 
 	rtm.RTmutex.Lock()
 	delete(rtm.liveTranscoders, transcoder.stream)
+	if monitor.Enabled {
+		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
+	}
 	rtm.RTmutex.Unlock()
+	if monitor.Enabled {
+		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+	}
 }
 
 func (rtm *RemoteTranscoderManager) selectTranscoder() *RemoteTranscoder {
@@ -801,6 +814,16 @@ func (rtm *RemoteTranscoderManager) completeTranscoders(trans *RemoteTranscoder)
 	}
 	t.load--
 	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+}
+
+// Caller of this function should hold RTmutex lock
+func (rtm *RemoteTranscoderManager) totalLoadAndCapacity() (int, int, int) {
+	var load, capacity int
+	for _, t := range rtm.liveTranscoders {
+		load += t.load
+		capacity += t.capacity
+	}
+	return load, capacity, len(rtm.liveTranscoders)
 }
 
 // Transcode does actual transcoding using remote transcoder from the pool
