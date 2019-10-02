@@ -770,7 +770,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		if s.LivepeerNode.Eth != nil {
 			lp := s.LivepeerNode.Eth
 
-			numActiveOrchestrators, err := lp.NumActiveTranscoders()
+			numActiveOrchestrators, err := lp.GetTranscoderPoolMaxSize()
 			if err != nil {
 				glog.Error(err)
 				return

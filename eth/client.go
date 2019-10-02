@@ -97,7 +97,7 @@ type LivepeerEthClient interface {
 	ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error)
 
 	// Parameters
-	NumActiveTranscoders() (*big.Int, error)
+	GetTranscoderPoolMaxSize() (*big.Int, error)
 	RoundLength() (*big.Int, error)
 	RoundLockAmount() (*big.Int, error)
 	UnbondingPeriod() (uint64, error)
