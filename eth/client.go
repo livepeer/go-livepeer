@@ -573,7 +573,7 @@ func (c *client) IsActiveTranscoder() (bool, error) {
 		return false, err
 	}
 
-	return c.BondingManagerSession.IsActiveTranscoder(c.Account().Address, r)
+	return c.BondingManagerSession.IsActiveTranscoder(c.Account().Address)
 }
 
 func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, error) {
@@ -602,7 +602,7 @@ func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, err
 		return nil, err
 	}
 
-	active, err := c.BondingManagerSession.IsActiveTranscoder(addr, currentRound)
+	active, err := c.BondingManagerSession.IsActiveTranscoder(addr)
 	if err != nil {
 		return nil, err
 	}

@@ -34,7 +34,7 @@ func (w *wizard) registeredOrchestratorStats() map[int]common.Address {
 	fmt.Println("+------------------------+")
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "Address", "Active", "Delegated Stake", "Reward Cut (%)", "Fee Share (%)", "Price", "Pending Reward Cut (%)", "Pending Fee Share (%)", "Pending Price", "Service URI"})
+	table.SetHeader([]string{"ID", "Address", "Active", "Delegated Stake", "Reward Cut (%)", "Fee Share (%)", "Service URI"})
 
 	for _, t := range orchestrators {
 		table.Append([]string{
