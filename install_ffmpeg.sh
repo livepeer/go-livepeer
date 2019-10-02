@@ -27,6 +27,7 @@ if [ $(uname) != "Darwin" ]; then
   if [ ! -e "$HOME/nv-codec-headers" ]; then
     git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$HOME/nv-codec-headers"
     cd $HOME/nv-codec-headers
+    git checkout 9fdaf11b8f79d4e41cde9af89656238f25fec6fd
     make -e PREFIX="$HOME/compiled"
     make install -e PREFIX="$HOME/compiled"
   fi
