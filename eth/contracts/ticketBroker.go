@@ -1,7 +1,5 @@
 // Code generated - DO NOT EDIT.
 // This file is a generated binding and any manual changes will be lost.
-// Generated with a `go-ethereum` fork supporting ABIV2
-// https://github.com/ethereum/go-ethereum/pull/18491.
 
 package contracts
 
@@ -30,7 +28,7 @@ var (
 )
 
 // TicketBrokerABI is the input ABI used to generate the binding from.
-const TicketBrokerABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"freezePeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_sender\",\"type\":\"address\"}],\"name\":\"isUnlockInProgress\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"unlockPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"withdraw\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_reserveHolder\",\"type\":\"address\"},{\"name\":\"_claimant\",\"type\":\"address\"}],\"name\":\"claimedReserve\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_depositAmount\",\"type\":\"uint256\"},{\"name\":\"_reserveAmount\",\"type\":\"uint256\"}],\"name\":\"fundDepositAndReserve\",\"outputs\":[],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"name\":\"usedTickets\",\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_reserveHolder\",\"type\":\"address\"}],\"name\":\"getReserveInfo\",\"outputs\":[{\"components\":[{\"name\":\"fundsRemaining\",\"type\":\"uint256\"},{\"name\":\"state\",\"type\":\"uint8\"},{\"name\":\"thawRound\",\"type\":\"uint256\"}],\"name\":\"info\",\"type\":\"tuple\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"fundDeposit\",\"outputs\":[],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"fundReserve\",\"outputs\":[],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_reserveHolder\",\"type\":\"address\"},{\"name\":\"_claimant\",\"type\":\"address\"}],\"name\":\"claimableReserve\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"ticketValidityPeriod\",\"outputs\":[{\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"unlock\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"cancelUnlock\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"components\":[{\"name\":\"recipient\",\"type\":\"address\"},{\"name\":\"sender\",\"type\":\"address\"},{\"name\":\"faceValue\",\"type\":\"uint256\"},{\"name\":\"winProb\",\"type\":\"uint256\"},{\"name\":\"senderNonce\",\"type\":\"uint256\"},{\"name\":\"recipientRandHash\",\"type\":\"bytes32\"},{\"name\":\"auxData\",\"type\":\"bytes\"}],\"name\":\"_tickets\",\"type\":\"tuple[]\"},{\"name\":\"_sigs\",\"type\":\"bytes[]\"},{\"name\":\"_recipientRands\",\"type\":\"uint256[]\"}],\"name\":\"batchRedeemWinningTickets\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_sender\",\"type\":\"address\"}],\"name\":\"getSenderInfo\",\"outputs\":[{\"components\":[{\"name\":\"deposit\",\"type\":\"uint256\"},{\"name\":\"withdrawBlock\",\"type\":\"uint256\"}],\"name\":\"sender\",\"type\":\"tuple\"},{\"components\":[{\"name\":\"fundsRemaining\",\"type\":\"uint256\"},{\"name\":\"state\",\"type\":\"uint8\"},{\"name\":\"thawRound\",\"type\":\"uint256\"}],\"name\":\"reserve\",\"type\":\"tuple\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"components\":[{\"name\":\"recipient\",\"type\":\"address\"},{\"name\":\"sender\",\"type\":\"address\"},{\"name\":\"faceValue\",\"type\":\"uint256\"},{\"name\":\"winProb\",\"type\":\"uint256\"},{\"name\":\"senderNonce\",\"type\":\"uint256\"},{\"name\":\"recipientRandHash\",\"type\":\"bytes32\"},{\"name\":\"auxData\",\"type\":\"bytes\"}],\"name\":\"_ticket\",\"type\":\"tuple\"},{\"name\":\"_sig\",\"type\":\"bytes\"},{\"name\":\"_recipientRand\",\"type\":\"uint256\"}],\"name\":\"redeemWinningTicket\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"},{\"name\":\"_freezePeriod\",\"type\":\"uint256\"},{\"name\":\"_unlockPeriod\",\"type\":\"uint256\"},{\"name\":\"_ticketValidityPeriod\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"DepositFunded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"recipient\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"faceValue\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"winProb\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"senderNonce\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"recipientRand\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"auxData\",\"type\":\"bytes\"}],\"name\":\"WinningTicketRedeemed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"recipient\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"WinningTicketTransfer\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"startBlock\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"endBlock\",\"type\":\"uint256\"}],\"name\":\"Unlock\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"sender\",\"type\":\"address\"}],\"name\":\"UnlockCancelled\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"deposit\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"reserve\",\"type\":\"uint256\"}],\"name\":\"Withdrawal\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"reserveHolder\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"ReserveFunded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"reserveHolder\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"claimant\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"ReserveClaimed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"reserveHolder\",\"type\":\"address\"},{\"indexed\":true,\"name\":\"claimant\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"freezeRound\",\"type\":\"uint256\"},{\"indexed\":false,\"name\":\"recipientsInFreezeRound\",\"type\":\"uint256\"}],\"name\":\"ReserveFrozen\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"name\":\"_freezePeriod\",\"type\":\"uint256\"}],\"name\":\"setFreezePeriod\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_unlockPeriod\",\"type\":\"uint256\"}],\"name\":\"setUnlockPeriod\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_ticketValidityPeriod\",\"type\":\"uint256\"}],\"name\":\"setTicketValidityPeriod\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]"
+const TicketBrokerABI = "[{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_sender\",\"type\":\"address\"}],\"name\":\"isUnlockInProgress\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"unlockPeriod\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"withdraw\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_reserveHolder\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_claimant\",\"type\":\"address\"}],\"name\":\"claimedReserve\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_depositAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_reserveAmount\",\"type\":\"uint256\"}],\"name\":\"fundDepositAndReserve\",\"outputs\":[],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"name\":\"usedTickets\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_reserveHolder\",\"type\":\"address\"}],\"name\":\"getReserveInfo\",\"outputs\":[{\"components\":[{\"internalType\":\"uint256\",\"name\":\"fundsRemaining\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"claimedInCurrentRound\",\"type\":\"uint256\"}],\"internalType\":\"structMReserve.ReserveInfo\",\"name\":\"info\",\"type\":\"tuple\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"fundDeposit\",\"outputs\":[],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"fundReserve\",\"outputs\":[],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_reserveHolder\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_claimant\",\"type\":\"address\"}],\"name\":\"claimableReserve\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"ticketValidityPeriod\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"unlock\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"cancelUnlock\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"recipient\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"faceValue\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"winProb\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"senderNonce\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"recipientRandHash\",\"type\":\"bytes32\"},{\"internalType\":\"bytes\",\"name\":\"auxData\",\"type\":\"bytes\"}],\"internalType\":\"structMTicketBrokerCore.Ticket[]\",\"name\":\"_tickets\",\"type\":\"tuple[]\"},{\"internalType\":\"bytes[]\",\"name\":\"_sigs\",\"type\":\"bytes[]\"},{\"internalType\":\"uint256[]\",\"name\":\"_recipientRands\",\"type\":\"uint256[]\"}],\"name\":\"batchRedeemWinningTickets\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_sender\",\"type\":\"address\"}],\"name\":\"getSenderInfo\",\"outputs\":[{\"components\":[{\"internalType\":\"uint256\",\"name\":\"deposit\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"withdrawRound\",\"type\":\"uint256\"}],\"internalType\":\"structMixinTicketBrokerCore.Sender\",\"name\":\"sender\",\"type\":\"tuple\"},{\"components\":[{\"internalType\":\"uint256\",\"name\":\"fundsRemaining\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"claimedInCurrentRound\",\"type\":\"uint256\"}],\"internalType\":\"structMReserve.ReserveInfo\",\"name\":\"reserve\",\"type\":\"tuple\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"recipient\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"faceValue\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"winProb\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"senderNonce\",\"type\":\"uint256\"},{\"internalType\":\"bytes32\",\"name\":\"recipientRandHash\",\"type\":\"bytes32\"},{\"internalType\":\"bytes\",\"name\":\"auxData\",\"type\":\"bytes\"}],\"internalType\":\"structMTicketBrokerCore.Ticket\",\"name\":\"_ticket\",\"type\":\"tuple\"},{\"internalType\":\"bytes\",\"name\":\"_sig\",\"type\":\"bytes\"},{\"internalType\":\"uint256\",\"name\":\"_recipientRand\",\"type\":\"uint256\"}],\"name\":\"redeemWinningTicket\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"DepositFunded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"recipient\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"faceValue\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"winProb\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"senderNonce\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"recipientRand\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"auxData\",\"type\":\"bytes\"}],\"name\":\"WinningTicketRedeemed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"recipient\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"WinningTicketTransfer\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"startRound\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"endRound\",\"type\":\"uint256\"}],\"name\":\"Unlock\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"}],\"name\":\"UnlockCancelled\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"deposit\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"reserve\",\"type\":\"uint256\"}],\"name\":\"Withdrawal\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"reserveHolder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"ReserveFunded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"reserveHolder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"claimant\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"ReserveClaimed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_unlockPeriod\",\"type\":\"uint256\"}],\"name\":\"setUnlockPeriod\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_ticketValidityPeriod\",\"type\":\"uint256\"}],\"name\":\"setTicketValidityPeriod\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]"
 
 // TicketBroker is an auto generated Go binding around an Ethereum contract.
 type TicketBroker struct {
@@ -174,13 +172,6 @@ func (_TicketBroker *TicketBrokerTransactorRaw) Transact(opts *bind.TransactOpts
 	return _TicketBroker.Contract.contract.Transact(opts, method, params...)
 }
 
-// Struct0 is an auto generated low-level Go binding around an user-defined struct.
-type Struct0 struct {
-	FundsRemaining *big.Int
-	State          uint8
-	ThawRound      *big.Int
-}
-
 // Struct1 is an auto generated low-level Go binding around an user-defined struct.
 type Struct1 struct {
 	Recipient         common.Address
@@ -192,10 +183,10 @@ type Struct1 struct {
 	AuxData           []byte
 }
 
-// Struct2 is an auto generated low-level Go binding around an user-defined struct.
-type Struct2 struct {
+// Struct0 is an auto generated low-level Go binding around an user-defined struct.
+type Struct0 struct {
 	Deposit       *big.Int
-	WithdrawBlock *big.Int
+	WithdrawRound *big.Int
 }
 
 // ClaimableReserve is a free data retrieval call binding the contract method 0x81779f38.
@@ -276,32 +267,6 @@ func (_TicketBroker *TicketBrokerCallerSession) Controller() (common.Address, er
 	return _TicketBroker.Contract.Controller(&_TicketBroker.CallOpts)
 }
 
-// FreezePeriod is a free data retrieval call binding the contract method 0x0a3cb663.
-//
-// Solidity: function freezePeriod() constant returns(uint256)
-func (_TicketBroker *TicketBrokerCaller) FreezePeriod(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _TicketBroker.contract.Call(opts, out, "freezePeriod")
-	return *ret0, err
-}
-
-// FreezePeriod is a free data retrieval call binding the contract method 0x0a3cb663.
-//
-// Solidity: function freezePeriod() constant returns(uint256)
-func (_TicketBroker *TicketBrokerSession) FreezePeriod() (*big.Int, error) {
-	return _TicketBroker.Contract.FreezePeriod(&_TicketBroker.CallOpts)
-}
-
-// FreezePeriod is a free data retrieval call binding the contract method 0x0a3cb663.
-//
-// Solidity: function freezePeriod() constant returns(uint256)
-func (_TicketBroker *TicketBrokerCallerSession) FreezePeriod() (*big.Int, error) {
-	return _TicketBroker.Contract.FreezePeriod(&_TicketBroker.CallOpts)
-}
-
 // GetReserveInfo is a free data retrieval call binding the contract method 0x5b6333eb.
 //
 // Solidity: function getReserveInfo(address _reserveHolder) constant returns(Struct0 info)
@@ -330,13 +295,13 @@ func (_TicketBroker *TicketBrokerCallerSession) GetReserveInfo(_reserveHolder co
 
 // GetSenderInfo is a free data retrieval call binding the contract method 0xe1a589da.
 //
-// Solidity: function getSenderInfo(address _sender) constant returns(Struct2 sender, Struct0 reserve)
+// Solidity: function getSenderInfo(address _sender) constant returns(Struct0 sender, Struct0 reserve)
 func (_TicketBroker *TicketBrokerCaller) GetSenderInfo(opts *bind.CallOpts, _sender common.Address) (struct {
-	Sender  Struct2
+	Sender  Struct0
 	Reserve Struct0
 }, error) {
 	ret := new(struct {
-		Sender  Struct2
+		Sender  Struct0
 		Reserve Struct0
 	})
 	out := ret
@@ -346,9 +311,9 @@ func (_TicketBroker *TicketBrokerCaller) GetSenderInfo(opts *bind.CallOpts, _sen
 
 // GetSenderInfo is a free data retrieval call binding the contract method 0xe1a589da.
 //
-// Solidity: function getSenderInfo(address _sender) constant returns(Struct2 sender, Struct0 reserve)
+// Solidity: function getSenderInfo(address _sender) constant returns(Struct0 sender, Struct0 reserve)
 func (_TicketBroker *TicketBrokerSession) GetSenderInfo(_sender common.Address) (struct {
-	Sender  Struct2
+	Sender  Struct0
 	Reserve Struct0
 }, error) {
 	return _TicketBroker.Contract.GetSenderInfo(&_TicketBroker.CallOpts, _sender)
@@ -356,9 +321,9 @@ func (_TicketBroker *TicketBrokerSession) GetSenderInfo(_sender common.Address) 
 
 // GetSenderInfo is a free data retrieval call binding the contract method 0xe1a589da.
 //
-// Solidity: function getSenderInfo(address _sender) constant returns(Struct2 sender, Struct0 reserve)
+// Solidity: function getSenderInfo(address _sender) constant returns(Struct0 sender, Struct0 reserve)
 func (_TicketBroker *TicketBrokerCallerSession) GetSenderInfo(_sender common.Address) (struct {
-	Sender  Struct2
+	Sender  Struct0
 	Reserve Struct0
 }, error) {
 	return _TicketBroker.Contract.GetSenderInfo(&_TicketBroker.CallOpts, _sender)
@@ -496,21 +461,21 @@ func (_TicketBroker *TicketBrokerCallerSession) UsedTickets(arg0 [32]byte) (bool
 
 // BatchRedeemWinningTickets is a paid mutator transaction binding the contract method 0xd01b808e.
 //
-// Solidity: function batchRedeemWinningTickets((address,address,uint256,uint256,uint256,bytes32,bytes)[] _tickets, bytes[] _sigs, uint256[] _recipientRands) returns()
+// Solidity: function batchRedeemWinningTickets([]Struct1 _tickets, bytes[] _sigs, uint256[] _recipientRands) returns()
 func (_TicketBroker *TicketBrokerTransactor) BatchRedeemWinningTickets(opts *bind.TransactOpts, _tickets []Struct1, _sigs [][]byte, _recipientRands []*big.Int) (*types.Transaction, error) {
 	return _TicketBroker.contract.Transact(opts, "batchRedeemWinningTickets", _tickets, _sigs, _recipientRands)
 }
 
 // BatchRedeemWinningTickets is a paid mutator transaction binding the contract method 0xd01b808e.
 //
-// Solidity: function batchRedeemWinningTickets((address,address,uint256,uint256,uint256,bytes32,bytes)[] _tickets, bytes[] _sigs, uint256[] _recipientRands) returns()
+// Solidity: function batchRedeemWinningTickets([]Struct1 _tickets, bytes[] _sigs, uint256[] _recipientRands) returns()
 func (_TicketBroker *TicketBrokerSession) BatchRedeemWinningTickets(_tickets []Struct1, _sigs [][]byte, _recipientRands []*big.Int) (*types.Transaction, error) {
 	return _TicketBroker.Contract.BatchRedeemWinningTickets(&_TicketBroker.TransactOpts, _tickets, _sigs, _recipientRands)
 }
 
 // BatchRedeemWinningTickets is a paid mutator transaction binding the contract method 0xd01b808e.
 //
-// Solidity: function batchRedeemWinningTickets((address,address,uint256,uint256,uint256,bytes32,bytes)[] _tickets, bytes[] _sigs, uint256[] _recipientRands) returns()
+// Solidity: function batchRedeemWinningTickets([]Struct1 _tickets, bytes[] _sigs, uint256[] _recipientRands) returns()
 func (_TicketBroker *TicketBrokerTransactorSession) BatchRedeemWinningTickets(_tickets []Struct1, _sigs [][]byte, _recipientRands []*big.Int) (*types.Transaction, error) {
 	return _TicketBroker.Contract.BatchRedeemWinningTickets(&_TicketBroker.TransactOpts, _tickets, _sigs, _recipientRands)
 }
@@ -639,27 +604,6 @@ func (_TicketBroker *TicketBrokerSession) SetController(_controller common.Addre
 // Solidity: function setController(address _controller) returns()
 func (_TicketBroker *TicketBrokerTransactorSession) SetController(_controller common.Address) (*types.Transaction, error) {
 	return _TicketBroker.Contract.SetController(&_TicketBroker.TransactOpts, _controller)
-}
-
-// SetFreezePeriod is a paid mutator transaction binding the contract method 0x57120165.
-//
-// Solidity: function setFreezePeriod(uint256 _freezePeriod) returns()
-func (_TicketBroker *TicketBrokerTransactor) SetFreezePeriod(opts *bind.TransactOpts, _freezePeriod *big.Int) (*types.Transaction, error) {
-	return _TicketBroker.contract.Transact(opts, "setFreezePeriod", _freezePeriod)
-}
-
-// SetFreezePeriod is a paid mutator transaction binding the contract method 0x57120165.
-//
-// Solidity: function setFreezePeriod(uint256 _freezePeriod) returns()
-func (_TicketBroker *TicketBrokerSession) SetFreezePeriod(_freezePeriod *big.Int) (*types.Transaction, error) {
-	return _TicketBroker.Contract.SetFreezePeriod(&_TicketBroker.TransactOpts, _freezePeriod)
-}
-
-// SetFreezePeriod is a paid mutator transaction binding the contract method 0x57120165.
-//
-// Solidity: function setFreezePeriod(uint256 _freezePeriod) returns()
-func (_TicketBroker *TicketBrokerTransactorSession) SetFreezePeriod(_freezePeriod *big.Int) (*types.Transaction, error) {
-	return _TicketBroker.Contract.SetFreezePeriod(&_TicketBroker.TransactOpts, _freezePeriod)
 }
 
 // SetTicketValidityPeriod is a paid mutator transaction binding the contract method 0xc9297808.
@@ -879,6 +823,17 @@ func (_TicketBroker *TicketBrokerFilterer) WatchDepositFunded(opts *bind.WatchOp
 	}), nil
 }
 
+// ParseDepositFunded is a log parse operation binding the contract event 0x5159e237d952190e68d5215430f305831be7c9c8776d1377c76679ae4773413f.
+//
+// Solidity: event DepositFunded(address indexed sender, uint256 amount)
+func (_TicketBroker *TicketBrokerFilterer) ParseDepositFunded(log types.Log) (*TicketBrokerDepositFunded, error) {
+	event := new(TicketBrokerDepositFunded)
+	if err := _TicketBroker.contract.UnpackLog(event, "DepositFunded", log); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
 // TicketBrokerParameterUpdateIterator is returned from FilterParameterUpdate and is used to iterate over the raw logs and unpacked data for ParameterUpdate events raised by the TicketBroker contract.
 type TicketBrokerParameterUpdateIterator struct {
 	Event *TicketBrokerParameterUpdate // Event containing the contract specifics and raw log
@@ -999,6 +954,17 @@ func (_TicketBroker *TicketBrokerFilterer) WatchParameterUpdate(opts *bind.Watch
 			}
 		}
 	}), nil
+}
+
+// ParseParameterUpdate is a log parse operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
+//
+// Solidity: event ParameterUpdate(string param)
+func (_TicketBroker *TicketBrokerFilterer) ParseParameterUpdate(log types.Log) (*TicketBrokerParameterUpdate, error) {
+	event := new(TicketBrokerParameterUpdate)
+	if err := _TicketBroker.contract.UnpackLog(event, "ParameterUpdate", log); err != nil {
+		return nil, err
+	}
+	return event, nil
 }
 
 // TicketBrokerReserveClaimedIterator is returned from FilterReserveClaimed and is used to iterate over the raw logs and unpacked data for ReserveClaimed events raised by the TicketBroker contract.
@@ -1135,147 +1101,15 @@ func (_TicketBroker *TicketBrokerFilterer) WatchReserveClaimed(opts *bind.WatchO
 	}), nil
 }
 
-// TicketBrokerReserveFrozenIterator is returned from FilterReserveFrozen and is used to iterate over the raw logs and unpacked data for ReserveFrozen events raised by the TicketBroker contract.
-type TicketBrokerReserveFrozenIterator struct {
-	Event *TicketBrokerReserveFrozen // Event containing the contract specifics and raw log
-
-	contract *bind.BoundContract // Generic contract to use for unpacking event data
-	event    string              // Event name to use for unpacking event data
-
-	logs chan types.Log        // Log channel receiving the found contract events
-	sub  ethereum.Subscription // Subscription for errors, completion and termination
-	done bool                  // Whether the subscription completed delivering logs
-	fail error                 // Occurred error to stop iteration
-}
-
-// Next advances the iterator to the subsequent event, returning whether there
-// are any more events found. In case of a retrieval or parsing error, false is
-// returned and Error() can be queried for the exact failure.
-func (it *TicketBrokerReserveFrozenIterator) Next() bool {
-	// If the iterator failed, stop iterating
-	if it.fail != nil {
-		return false
-	}
-	// If the iterator completed, deliver directly whatever's available
-	if it.done {
-		select {
-		case log := <-it.logs:
-			it.Event = new(TicketBrokerReserveFrozen)
-			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
-				it.fail = err
-				return false
-			}
-			it.Event.Raw = log
-			return true
-
-		default:
-			return false
-		}
-	}
-	// Iterator still in progress, wait for either a data or an error event
-	select {
-	case log := <-it.logs:
-		it.Event = new(TicketBrokerReserveFrozen)
-		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
-			it.fail = err
-			return false
-		}
-		it.Event.Raw = log
-		return true
-
-	case err := <-it.sub.Err():
-		it.done = true
-		it.fail = err
-		return it.Next()
-	}
-}
-
-// Error returns any retrieval or parsing error occurred during filtering.
-func (it *TicketBrokerReserveFrozenIterator) Error() error {
-	return it.fail
-}
-
-// Close terminates the iteration process, releasing any pending underlying
-// resources.
-func (it *TicketBrokerReserveFrozenIterator) Close() error {
-	it.sub.Unsubscribe()
-	return nil
-}
-
-// TicketBrokerReserveFrozen represents a ReserveFrozen event raised by the TicketBroker contract.
-type TicketBrokerReserveFrozen struct {
-	ReserveHolder           common.Address
-	Claimant                common.Address
-	FreezeRound             *big.Int
-	RecipientsInFreezeRound *big.Int
-	Raw                     types.Log // Blockchain specific contextual infos
-}
-
-// FilterReserveFrozen is a free log retrieval operation binding the contract event 0xe5c52595a06d488d02e042cf2ad7b203d4020e8ea0dfa5cc841f80e413fdd042.
+// ParseReserveClaimed is a log parse operation binding the contract event 0x5c2b394723f408a40a60335e24b71829642e35f350cebe2036a96a66e895ea98.
 //
-// Solidity: event ReserveFrozen(address indexed reserveHolder, address indexed claimant, uint256 freezeRound, uint256 recipientsInFreezeRound)
-func (_TicketBroker *TicketBrokerFilterer) FilterReserveFrozen(opts *bind.FilterOpts, reserveHolder []common.Address, claimant []common.Address) (*TicketBrokerReserveFrozenIterator, error) {
-
-	var reserveHolderRule []interface{}
-	for _, reserveHolderItem := range reserveHolder {
-		reserveHolderRule = append(reserveHolderRule, reserveHolderItem)
-	}
-	var claimantRule []interface{}
-	for _, claimantItem := range claimant {
-		claimantRule = append(claimantRule, claimantItem)
-	}
-
-	logs, sub, err := _TicketBroker.contract.FilterLogs(opts, "ReserveFrozen", reserveHolderRule, claimantRule)
-	if err != nil {
+// Solidity: event ReserveClaimed(address indexed reserveHolder, address claimant, uint256 amount)
+func (_TicketBroker *TicketBrokerFilterer) ParseReserveClaimed(log types.Log) (*TicketBrokerReserveClaimed, error) {
+	event := new(TicketBrokerReserveClaimed)
+	if err := _TicketBroker.contract.UnpackLog(event, "ReserveClaimed", log); err != nil {
 		return nil, err
 	}
-	return &TicketBrokerReserveFrozenIterator{contract: _TicketBroker.contract, event: "ReserveFrozen", logs: logs, sub: sub}, nil
-}
-
-// WatchReserveFrozen is a free log subscription operation binding the contract event 0xe5c52595a06d488d02e042cf2ad7b203d4020e8ea0dfa5cc841f80e413fdd042.
-//
-// Solidity: event ReserveFrozen(address indexed reserveHolder, address indexed claimant, uint256 freezeRound, uint256 recipientsInFreezeRound)
-func (_TicketBroker *TicketBrokerFilterer) WatchReserveFrozen(opts *bind.WatchOpts, sink chan<- *TicketBrokerReserveFrozen, reserveHolder []common.Address, claimant []common.Address) (event.Subscription, error) {
-
-	var reserveHolderRule []interface{}
-	for _, reserveHolderItem := range reserveHolder {
-		reserveHolderRule = append(reserveHolderRule, reserveHolderItem)
-	}
-	var claimantRule []interface{}
-	for _, claimantItem := range claimant {
-		claimantRule = append(claimantRule, claimantItem)
-	}
-
-	logs, sub, err := _TicketBroker.contract.WatchLogs(opts, "ReserveFrozen", reserveHolderRule, claimantRule)
-	if err != nil {
-		return nil, err
-	}
-	return event.NewSubscription(func(quit <-chan struct{}) error {
-		defer sub.Unsubscribe()
-		for {
-			select {
-			case log := <-logs:
-				// New log arrived, parse the event and forward to the user
-				event := new(TicketBrokerReserveFrozen)
-				if err := _TicketBroker.contract.UnpackLog(event, "ReserveFrozen", log); err != nil {
-					return err
-				}
-				event.Raw = log
-
-				select {
-				case sink <- event:
-				case err := <-sub.Err():
-					return err
-				case <-quit:
-					return nil
-				}
-			case err := <-sub.Err():
-				return err
-			case <-quit:
-				return nil
-			}
-		}
-	}), nil
+	return event, nil
 }
 
 // TicketBrokerReserveFundedIterator is returned from FilterReserveFunded and is used to iterate over the raw logs and unpacked data for ReserveFunded events raised by the TicketBroker contract.
@@ -1411,6 +1245,17 @@ func (_TicketBroker *TicketBrokerFilterer) WatchReserveFunded(opts *bind.WatchOp
 	}), nil
 }
 
+// ParseReserveFunded is a log parse operation binding the contract event 0xb52b99b9e83551fcbd069b559cc3e823e2a1a3bad8ece46561ea77524394c850.
+//
+// Solidity: event ReserveFunded(address indexed reserveHolder, uint256 amount)
+func (_TicketBroker *TicketBrokerFilterer) ParseReserveFunded(log types.Log) (*TicketBrokerReserveFunded, error) {
+	event := new(TicketBrokerReserveFunded)
+	if err := _TicketBroker.contract.UnpackLog(event, "ReserveFunded", log); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
 // TicketBrokerSetControllerIterator is returned from FilterSetController and is used to iterate over the raw logs and unpacked data for SetController events raised by the TicketBroker contract.
 type TicketBrokerSetControllerIterator struct {
 	Event *TicketBrokerSetController // Event containing the contract specifics and raw log
@@ -1533,6 +1378,17 @@ func (_TicketBroker *TicketBrokerFilterer) WatchSetController(opts *bind.WatchOp
 	}), nil
 }
 
+// ParseSetController is a log parse operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
+//
+// Solidity: event SetController(address controller)
+func (_TicketBroker *TicketBrokerFilterer) ParseSetController(log types.Log) (*TicketBrokerSetController, error) {
+	event := new(TicketBrokerSetController)
+	if err := _TicketBroker.contract.UnpackLog(event, "SetController", log); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
 // TicketBrokerUnlockIterator is returned from FilterUnlock and is used to iterate over the raw logs and unpacked data for Unlock events raised by the TicketBroker contract.
 type TicketBrokerUnlockIterator struct {
 	Event *TicketBrokerUnlock // Event containing the contract specifics and raw log
@@ -1603,14 +1459,14 @@ func (it *TicketBrokerUnlockIterator) Close() error {
 // TicketBrokerUnlock represents a Unlock event raised by the TicketBroker contract.
 type TicketBrokerUnlock struct {
 	Sender     common.Address
-	StartBlock *big.Int
-	EndBlock   *big.Int
+	StartRound *big.Int
+	EndRound   *big.Int
 	Raw        types.Log // Blockchain specific contextual infos
 }
 
 // FilterUnlock is a free log retrieval operation binding the contract event 0xf7870c5b224cbc19873599e46ccfc7103934650509b1af0c3ce90138377c2004.
 //
-// Solidity: event Unlock(address indexed sender, uint256 startBlock, uint256 endBlock)
+// Solidity: event Unlock(address indexed sender, uint256 startRound, uint256 endRound)
 func (_TicketBroker *TicketBrokerFilterer) FilterUnlock(opts *bind.FilterOpts, sender []common.Address) (*TicketBrokerUnlockIterator, error) {
 
 	var senderRule []interface{}
@@ -1627,7 +1483,7 @@ func (_TicketBroker *TicketBrokerFilterer) FilterUnlock(opts *bind.FilterOpts, s
 
 // WatchUnlock is a free log subscription operation binding the contract event 0xf7870c5b224cbc19873599e46ccfc7103934650509b1af0c3ce90138377c2004.
 //
-// Solidity: event Unlock(address indexed sender, uint256 startBlock, uint256 endBlock)
+// Solidity: event Unlock(address indexed sender, uint256 startRound, uint256 endRound)
 func (_TicketBroker *TicketBrokerFilterer) WatchUnlock(opts *bind.WatchOpts, sink chan<- *TicketBrokerUnlock, sender []common.Address) (event.Subscription, error) {
 
 	var senderRule []interface{}
@@ -1665,6 +1521,17 @@ func (_TicketBroker *TicketBrokerFilterer) WatchUnlock(opts *bind.WatchOpts, sin
 			}
 		}
 	}), nil
+}
+
+// ParseUnlock is a log parse operation binding the contract event 0xf7870c5b224cbc19873599e46ccfc7103934650509b1af0c3ce90138377c2004.
+//
+// Solidity: event Unlock(address indexed sender, uint256 startRound, uint256 endRound)
+func (_TicketBroker *TicketBrokerFilterer) ParseUnlock(log types.Log) (*TicketBrokerUnlock, error) {
+	event := new(TicketBrokerUnlock)
+	if err := _TicketBroker.contract.UnpackLog(event, "Unlock", log); err != nil {
+		return nil, err
+	}
+	return event, nil
 }
 
 // TicketBrokerUnlockCancelledIterator is returned from FilterUnlockCancelled and is used to iterate over the raw logs and unpacked data for UnlockCancelled events raised by the TicketBroker contract.
@@ -1797,6 +1664,17 @@ func (_TicketBroker *TicketBrokerFilterer) WatchUnlockCancelled(opts *bind.Watch
 			}
 		}
 	}), nil
+}
+
+// ParseUnlockCancelled is a log parse operation binding the contract event 0xfa044b7b93a40365dc68049797c2eb06918523d694e5d56e406cac3eb35578e5.
+//
+// Solidity: event UnlockCancelled(address indexed sender)
+func (_TicketBroker *TicketBrokerFilterer) ParseUnlockCancelled(log types.Log) (*TicketBrokerUnlockCancelled, error) {
+	event := new(TicketBrokerUnlockCancelled)
+	if err := _TicketBroker.contract.UnpackLog(event, "UnlockCancelled", log); err != nil {
+		return nil, err
+	}
+	return event, nil
 }
 
 // TicketBrokerWinningTicketRedeemedIterator is returned from FilterWinningTicketRedeemed and is used to iterate over the raw logs and unpacked data for WinningTicketRedeemed events raised by the TicketBroker contract.
@@ -1945,6 +1823,17 @@ func (_TicketBroker *TicketBrokerFilterer) WatchWinningTicketRedeemed(opts *bind
 	}), nil
 }
 
+// ParseWinningTicketRedeemed is a log parse operation binding the contract event 0xc389eb51ed006dbf2528507f010efdf5225ea596e1e1741d74f550dab1925ee7.
+//
+// Solidity: event WinningTicketRedeemed(address indexed sender, address indexed recipient, uint256 faceValue, uint256 winProb, uint256 senderNonce, uint256 recipientRand, bytes auxData)
+func (_TicketBroker *TicketBrokerFilterer) ParseWinningTicketRedeemed(log types.Log) (*TicketBrokerWinningTicketRedeemed, error) {
+	event := new(TicketBrokerWinningTicketRedeemed)
+	if err := _TicketBroker.contract.UnpackLog(event, "WinningTicketRedeemed", log); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
 // TicketBrokerWinningTicketTransferIterator is returned from FilterWinningTicketTransfer and is used to iterate over the raw logs and unpacked data for WinningTicketTransfer events raised by the TicketBroker contract.
 type TicketBrokerWinningTicketTransferIterator struct {
 	Event *TicketBrokerWinningTicketTransfer // Event containing the contract specifics and raw log
@@ -2087,6 +1976,17 @@ func (_TicketBroker *TicketBrokerFilterer) WatchWinningTicketTransfer(opts *bind
 	}), nil
 }
 
+// ParseWinningTicketTransfer is a log parse operation binding the contract event 0x8b87351a208c06e3ceee59d80725fd77a23b4129e1b51ca231fc89b40712649c.
+//
+// Solidity: event WinningTicketTransfer(address indexed sender, address indexed recipient, uint256 amount)
+func (_TicketBroker *TicketBrokerFilterer) ParseWinningTicketTransfer(log types.Log) (*TicketBrokerWinningTicketTransfer, error) {
+	event := new(TicketBrokerWinningTicketTransfer)
+	if err := _TicketBroker.contract.UnpackLog(event, "WinningTicketTransfer", log); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
 // TicketBrokerWithdrawalIterator is returned from FilterWithdrawal and is used to iterate over the raw logs and unpacked data for Withdrawal events raised by the TicketBroker contract.
 type TicketBrokerWithdrawalIterator struct {
 	Event *TicketBrokerWithdrawal // Event containing the contract specifics and raw log
@@ -2219,4 +2119,15 @@ func (_TicketBroker *TicketBrokerFilterer) WatchWithdrawal(opts *bind.WatchOpts,
 			}
 		}
 	}), nil
+}
+
+// ParseWithdrawal is a log parse operation binding the contract event 0xdf273cb619d95419a9cd0ec88123a0538c85064229baa6363788f743fff90deb.
+//
+// Solidity: event Withdrawal(address indexed sender, uint256 deposit, uint256 reserve)
+func (_TicketBroker *TicketBrokerFilterer) ParseWithdrawal(log types.Log) (*TicketBrokerWithdrawal, error) {
+	event := new(TicketBrokerWithdrawal)
+	if err := _TicketBroker.contract.UnpackLog(event, "Withdrawal", log); err != nil {
+		return nil, err
+	}
+	return event, nil
 }

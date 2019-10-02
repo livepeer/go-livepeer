@@ -28,7 +28,7 @@ var (
 )
 
 // ServiceRegistryABI is the input ABI used to generate the binding from.
-const ServiceRegistryABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"name\":\"addr\",\"type\":\"address\"},{\"indexed\":false,\"name\":\"serviceURI\",\"type\":\"string\"}],\"name\":\"ServiceURIUpdate\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"name\":\"_serviceURI\",\"type\":\"string\"}],\"name\":\"setServiceURI\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"getServiceURI\",\"outputs\":[{\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
+const ServiceRegistryABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"serviceURI\",\"type\":\"string\"}],\"name\":\"ServiceURIUpdate\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"string\",\"name\":\"_serviceURI\",\"type\":\"string\"}],\"name\":\"setServiceURI\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"getServiceURI\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
 
 // ServiceRegistry is an auto generated Go binding around an Ethereum contract.
 type ServiceRegistry struct {
@@ -414,6 +414,17 @@ func (_ServiceRegistry *ServiceRegistryFilterer) WatchParameterUpdate(opts *bind
 	}), nil
 }
 
+// ParseParameterUpdate is a log parse operation binding the contract event 0x9f5033568d78ae30f29f01e944f97b2216493bd19d1b46d429673acff3dcd674.
+//
+// Solidity: event ParameterUpdate(string param)
+func (_ServiceRegistry *ServiceRegistryFilterer) ParseParameterUpdate(log types.Log) (*ServiceRegistryParameterUpdate, error) {
+	event := new(ServiceRegistryParameterUpdate)
+	if err := _ServiceRegistry.contract.UnpackLog(event, "ParameterUpdate", log); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
 // ServiceRegistryServiceURIUpdateIterator is returned from FilterServiceURIUpdate and is used to iterate over the raw logs and unpacked data for ServiceURIUpdate events raised by the ServiceRegistry contract.
 type ServiceRegistryServiceURIUpdateIterator struct {
 	Event *ServiceRegistryServiceURIUpdate // Event containing the contract specifics and raw log
@@ -547,6 +558,17 @@ func (_ServiceRegistry *ServiceRegistryFilterer) WatchServiceURIUpdate(opts *bin
 	}), nil
 }
 
+// ParseServiceURIUpdate is a log parse operation binding the contract event 0xfbb63068732c85741c9f8e61caffaabe038d577bfafd2d2dcc0e352a4f653a4c.
+//
+// Solidity: event ServiceURIUpdate(address indexed addr, string serviceURI)
+func (_ServiceRegistry *ServiceRegistryFilterer) ParseServiceURIUpdate(log types.Log) (*ServiceRegistryServiceURIUpdate, error) {
+	event := new(ServiceRegistryServiceURIUpdate)
+	if err := _ServiceRegistry.contract.UnpackLog(event, "ServiceURIUpdate", log); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
 // ServiceRegistrySetControllerIterator is returned from FilterSetController and is used to iterate over the raw logs and unpacked data for SetController events raised by the ServiceRegistry contract.
 type ServiceRegistrySetControllerIterator struct {
 	Event *ServiceRegistrySetController // Event containing the contract specifics and raw log
@@ -667,4 +689,15 @@ func (_ServiceRegistry *ServiceRegistryFilterer) WatchSetController(opts *bind.W
 			}
 		}
 	}), nil
+}
+
+// ParseSetController is a log parse operation binding the contract event 0x4ff638452bbf33c012645d18ae6f05515ff5f2d1dfb0cece8cbf018c60903f70.
+//
+// Solidity: event SetController(address controller)
+func (_ServiceRegistry *ServiceRegistryFilterer) ParseSetController(log types.Log) (*ServiceRegistrySetController, error) {
+	event := new(ServiceRegistrySetController)
+	if err := _ServiceRegistry.contract.UnpackLog(event, "SetController", log); err != nil {
+		return nil, err
+	}
+	return event, nil
 }
