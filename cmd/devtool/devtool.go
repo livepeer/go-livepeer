@@ -237,7 +237,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		}
 		glog.Info("Done initializing round.")
 		glog.Info("Activating transcoder")
-		// curl -d "blockRewardCut=10&feeShare=5&pricePerSegment=1&amount=500" --data-urlencode "serviceURI=https://$transcoderServiceAddr" \
+		// curl -d "blockRewardCut=10&feeShare=5&amount=500" --data-urlencode "serviceURI=https://$transcoderServiceAddr" \
 		//   -H "Content-Type: application/x-www-form-urlencoded" \
 		//   -X "POST" http://localhost:$transcoderCliPort/activateTranscoder\
 		var amount *big.Int = big.NewInt(int64(500))

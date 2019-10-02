@@ -197,8 +197,6 @@ func (w *wizard) orchestratorStats() {
 		[]string{"Delegated Stake", eth.FormatUnits(t.DelegatedStake, "LPT")},
 		[]string{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
 		[]string{"Fee Share (%)", eth.FormatPerc(t.FeeShare)},
-		[]string{"Pending Reward Cut (%)", eth.FormatPerc(t.PendingRewardCut)},
-		[]string{"Pending Fee Share (%)", eth.FormatPerc(t.PendingFeeShare)},
 		[]string{"Last Reward Round", t.LastRewardRound.String()},
 		[]string{"Base price per pixel", fmt.Sprintf("%v wei / %v pixels", priceInfo.Num(), priceInfo.Denom())},
 	}

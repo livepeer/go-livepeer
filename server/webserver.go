@@ -378,22 +378,6 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			return
 		}
 
-		if t.PendingRewardCut.Cmp(eth.FromPerc(blockRewardCut)) != 0 || t.PendingFeeShare.Cmp(eth.FromPerc(feeShare)) != 0 {
-			glog.Infof("Setting orchestrator config - Reward Cut: %v Fee Share: %v Price: %v", eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), big.NewInt(0))
-
-			tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), big.NewInt(0))
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			err = s.LivepeerNode.Eth.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-		}
-
 		if t.ServiceURI != serviceURI {
 			if err := s.setServiceURI(serviceURI); err != nil {
 				return

@@ -13,18 +13,14 @@ var (
 )
 
 type Transcoder struct {
-	Address                common.Address
-	ServiceURI             string
-	LastRewardRound        *big.Int
-	RewardCut              *big.Int
-	FeeShare               *big.Int
-	PricePerSegment        *big.Int
-	PendingRewardCut       *big.Int
-	PendingFeeShare        *big.Int
-	PendingPricePerSegment *big.Int
-	DelegatedStake         *big.Int
-	Active                 bool
-	Status                 string
+	Address         common.Address
+	ServiceURI      string
+	LastRewardRound *big.Int
+	RewardCut       *big.Int
+	FeeShare        *big.Int
+	DelegatedStake  *big.Int
+	Active          bool
+	Status          string
 }
 
 func ParseTranscoderStatus(s uint8) (string, error) {

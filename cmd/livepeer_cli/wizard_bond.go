@@ -44,10 +44,6 @@ func (w *wizard) registeredOrchestratorStats() map[int]common.Address {
 			eth.FormatUnits(t.DelegatedStake, "LPT"),
 			eth.FormatPerc(t.RewardCut),
 			eth.FormatPerc(t.FeeShare),
-			eth.FormatUnits(t.PricePerSegment, "ETH"),
-			eth.FormatPerc(t.PendingRewardCut),
-			eth.FormatPerc(t.PendingFeeShare),
-			eth.FormatUnits(t.PendingPricePerSegment, "ETH"),
 			t.ServiceURI,
 		})
 

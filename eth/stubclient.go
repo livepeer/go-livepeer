@@ -208,7 +208,7 @@ func (e *StubClient) GetServiceURI(addr common.Address) (string, error)         
 
 // Staking
 
-func (e *StubClient) Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error) {
+func (e *StubClient) Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
 func (e *StubClient) Reward() (*types.Transaction, error) { return nil, nil }
