@@ -568,11 +568,6 @@ func (c *client) autoClaimEarnings(endRound *big.Int, allRounds bool) error {
 }
 
 func (c *client) IsActiveTranscoder() (bool, error) {
-	r, err := c.CurrentRound()
-	if err != nil {
-		return false, err
-	}
-
 	return c.BondingManagerSession.IsActiveTranscoder(c.Account().Address)
 }
 
@@ -593,11 +588,6 @@ func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, err
 	}
 
 	delegatedStake, err := c.TranscoderTotalStake(addr)
-	if err != nil {
-		return nil, err
-	}
-
-	currentRound, err := c.CurrentRound()
 	if err != nil {
 		return nil, err
 	}

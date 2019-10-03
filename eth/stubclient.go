@@ -116,11 +116,11 @@ func (m *MockClient) Withdraw() (*types.Transaction, error) {
 
 func (m *MockClient) Senders(addr common.Address) (sender struct {
 	Deposit       *big.Int
-	WithdrawBlock *big.Int
+	WithdrawRound *big.Int
 }, err error) {
 	args := m.Called(addr)
 	sender.Deposit = mockBigInt(args, 0)
-	sender.WithdrawBlock = mockBigInt(args, 1)
+	sender.WithdrawRound = mockBigInt(args, 1)
 	err = args.Error(2)
 
 	return
@@ -178,7 +178,7 @@ type stubTranscoder struct {
 }
 
 func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) error { return nil }
-func (e *StubClient) Account() accounts.Account                                       { return accounts.Account{} }
+func (e *StubClient) Account() accounts.Account                                       { return accounts.Account{Address: e.TranscoderAddress} }
 func (e *StubClient) Backend() (*ethclient.Client, error)                             { return nil, ErrMissingBackend }
 
 // Rounds
@@ -273,7 +273,7 @@ func (e *StubClient) IsUsedTicket(ticket *pm.Ticket) (bool, error) {
 }
 func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
 	Deposit       *big.Int
-	WithdrawBlock *big.Int
+	WithdrawRound *big.Int
 }, err error) {
 	return
 }

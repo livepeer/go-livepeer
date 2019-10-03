@@ -201,7 +201,8 @@ func (sm *senderMonitor) reserveAlloc(addr ethcommon.Address) (*big.Int, error) 
 	if poolSize.Cmp(big.NewInt(0)) == 0 {
 		return big.NewInt(0), nil
 	}
-	return new(big.Int).Sub(new(big.Int).Div(info.Reserve, poolSize), claimed), nil
+	reserve := new(big.Int).Add(info.Reserve.FundsRemaining, info.Reserve.ClaimedInCurrentRound)
+	return new(big.Int).Sub(new(big.Int).Div(reserve, poolSize), claimed), nil
 }
 
 // ensureCache is a helper that checks if a remote sender is initialized

@@ -218,10 +218,11 @@ func senderInfoHandler(client eth.LivepeerEthClient) http.Handler {
 			if err.Error() == "ErrNoResult" {
 				info = &pm.SenderInfo{
 					Deposit:       big.NewInt(0),
-					WithdrawBlock: big.NewInt(0),
-					Reserve:       big.NewInt(0),
-					ReserveState:  pm.ReserveState(0),
-					ThawRound:     big.NewInt(0),
+					WithdrawRound: big.NewInt(0),
+					Reserve: &pm.ReserveInfo{
+						FundsRemaining:        big.NewInt(0),
+						ClaimedInCurrentRound: big.NewInt(0),
+					},
 				}
 			} else {
 				respondWith500(w, fmt.Sprintf("could not query sender info: %v", err))

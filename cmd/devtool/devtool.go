@@ -256,9 +256,8 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 			return
 		}
 		glog.Infof("Registering transcoder %v", ethAcctAddr)
-		price := big.NewInt(1)
 
-		tx, err = client.Transcoder(eth.FromPerc(10), eth.FromPerc(5), price)
+		tx, err = client.Transcoder(eth.FromPerc(10), eth.FromPerc(5))
 		if err == eth.ErrCurrentRoundLocked {
 			// wait for next round and retry
 		}
@@ -314,7 +313,7 @@ func createRunScript(ethAcctAddr, dataDir, serviceHost string, isBroadcaster boo
 		script += fmt.Sprintf(` -initializeRound=true \
     -serviceAddr %s:%d  -transcoder=true -orchestrator=true \
     -orchSecret secre -pricePerUnit 1
-    `, serviceHost, mediaPort, dataDir)
+    `, serviceHost, mediaPort)
 	} else {
 		script += fmt.Sprintf(` -broadcaster=true -rtmpAddr %s:%d`, serviceHost, rtmpPort)
 	}

@@ -305,9 +305,9 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			}
 		}
 
-		glog.Infof("Registering orchestrator %v", s.LivepeerNode.Eth.Account().Address.Hex())
+		glog.Infof("Setting orchestrator commission rates %v", s.LivepeerNode.Eth.Account().Address.Hex())
 
-		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), big.NewInt(0))
+		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare))
 		if err != nil {
 			glog.Error(err)
 			return
@@ -362,6 +362,20 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		}
 
 		if err := s.setOrchestratorPriceInfo(r.FormValue("pricePerUnit"), r.FormValue("pixelsPerUnit")); err != nil {
+			glog.Error(err)
+			return
+		}
+
+		glog.Infof("Setting orchestrator commission rates %v", s.LivepeerNode.Eth.Account().Address.Hex())
+
+		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare))
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		err = s.LivepeerNode.Eth.CheckTx(tx)
+		if err != nil {
 			glog.Error(err)
 			return
 		}

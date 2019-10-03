@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
@@ -22,15 +23,20 @@ func TestGetAndSetSenderInfo(t *testing.T) {
 		lpEth: &eth.StubClient{
 			SenderInfo: &pm.SenderInfo{
 				Deposit: big.NewInt(10),
-				Reserve: big.NewInt(5),
+				Reserve: &pm.ReserveInfo{
+					FundsRemaining:        big.NewInt(5),
+					ClaimedInCurrentRound: big.NewInt(0),
+				},
 			},
 		},
 	}
 
 	info := &pm.SenderInfo{
-		Deposit:      big.NewInt(1000000000000000000),
-		Reserve:      big.NewInt(1000000000000000000),
-		ReserveState: pm.NotFrozen,
+		Deposit: big.NewInt(1000000000000000000),
+		Reserve: &pm.ReserveInfo{
+			FundsRemaining:        big.NewInt(1000000000000000000),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
 	}
 	sender := pm.RandAddress()
 
@@ -45,17 +51,20 @@ func TestGetAndSetSenderInfo(t *testing.T) {
 	info, err = sw.GetSenderInfo(sender)
 	assert.Nil(err)
 	assert.Zero(info.Deposit.Cmp(big.NewInt(10)))
-	assert.Zero(info.Reserve.Cmp(big.NewInt(5)))
+	assert.Zero(info.Reserve.FundsRemaining.Cmp(big.NewInt(5)))
 	info = sw.senders[sender]
 	assert.Zero(info.Deposit.Cmp(big.NewInt(10)))
-	assert.Zero(info.Reserve.Cmp(big.NewInt(5)))
+	assert.Zero(info.Reserve.FundsRemaining.Cmp(big.NewInt(5)))
 }
 
 func TestSenderWatcher_Clear(t *testing.T) {
 	assert := assert.New(t)
 	stubClientSenderInfo := &pm.SenderInfo{
 		Deposit: big.NewInt(10),
-		Reserve: big.NewInt(5),
+		Reserve: &pm.ReserveInfo{
+			FundsRemaining:        big.NewInt(5),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
 	}
 	sw := &SenderWatcher{
 		senders:        make(map[ethcommon.Address]*pm.SenderInfo),
@@ -65,9 +74,11 @@ func TestSenderWatcher_Clear(t *testing.T) {
 		},
 	}
 	info := &pm.SenderInfo{
-		Deposit:      big.NewInt(1000000000000000000),
-		Reserve:      big.NewInt(1000000000000000000),
-		ReserveState: pm.NotFrozen,
+		Deposit: big.NewInt(1000000000000000000),
+		Reserve: &pm.ReserveInfo{
+			FundsRemaining:        big.NewInt(1000000000000000000),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
 	}
 	sender := pm.RandAddress()
 
@@ -164,7 +175,10 @@ func TestFundDepositEvent(t *testing.T) {
 	lpEth := &eth.StubClient{
 		SenderInfo: &pm.SenderInfo{
 			Deposit: big.NewInt(10),
-			Reserve: big.NewInt(5),
+			Reserve: &pm.ReserveInfo{
+				FundsRemaining:        big.NewInt(5),
+				ClaimedInCurrentRound: big.NewInt(0),
+			},
 		},
 	}
 	watcher := &stubBlockWatcher{}
@@ -224,12 +238,13 @@ func TestFundReserveEvent(t *testing.T) {
 	assert := assert.New(t)
 	startDeposit := big.NewInt(10)
 	startReserve := big.NewInt(5)
-	startThawR := big.NewInt(1)
 	lpEth := &eth.StubClient{
 		SenderInfo: &pm.SenderInfo{
-			Deposit:   big.NewInt(10),
-			Reserve:   big.NewInt(5),
-			ThawRound: big.NewInt(1),
+			Deposit: big.NewInt(10),
+			Reserve: &pm.ReserveInfo{
+				FundsRemaining:        big.NewInt(5),
+				ClaimedInCurrentRound: big.NewInt(0),
+			},
 		},
 	}
 	watcher := &stubBlockWatcher{}
@@ -263,8 +278,7 @@ func TestFundReserveEvent(t *testing.T) {
 	info, ok := sw.senders[stubSender]
 	assert.True(ok)
 	assert.Equal(info.Deposit, startDeposit)
-	assert.Equal(info.Reserve, startReserve)
-	assert.Equal(info.ThawRound, startThawR)
+	assert.Equal(info.Reserve.FundsRemaining, startReserve)
 
 	// If map entry exists parse event log
 	blockEvent.Type = blockwatch.Added
@@ -273,7 +287,7 @@ func TestFundReserveEvent(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	info, err = sw.GetSenderInfo(stubSender)
 	assert.Nil(err)
-	assert.Zero(info.Reserve.Cmp(expectedReserve))
+	assert.Zero(info.Reserve.FundsRemaining.Cmp(expectedReserve))
 
 	// If we don't care about the address, don't handle the event
 	s := pm.RandAddress()
@@ -294,7 +308,10 @@ func TestWithdrawalEvent(t *testing.T) {
 	lpEth := &eth.StubClient{
 		SenderInfo: &pm.SenderInfo{
 			Deposit: big.NewInt(10),
-			Reserve: big.NewInt(5),
+			Reserve: &pm.ReserveInfo{
+				FundsRemaining:        big.NewInt(5),
+				ClaimedInCurrentRound: big.NewInt(0),
+			},
 		},
 	}
 	watcher := &stubBlockWatcher{}
@@ -328,7 +345,7 @@ func TestWithdrawalEvent(t *testing.T) {
 	info, ok := sw.senders[stubSender]
 	assert.True(ok)
 	assert.Zero(info.Deposit.Cmp(startDeposit))
-	assert.Zero(info.Reserve.Cmp(startReserve))
+	assert.Zero(info.Reserve.FundsRemaining.Cmp(startReserve))
 
 	// If map entry exists parse event log
 	blockEvent.Type = blockwatch.Added
@@ -338,7 +355,7 @@ func TestWithdrawalEvent(t *testing.T) {
 	info, err = sw.GetSenderInfo(stubSender)
 	assert.Nil(err)
 	assert.Zero(info.Deposit.Cmp(big.NewInt(0)))
-	assert.Zero(info.Reserve.Cmp(big.NewInt(0)))
+	assert.Zero(info.Reserve.FundsRemaining.Cmp(big.NewInt(0)))
 
 	// If we don't care about the address, don't handle the event
 	s := pm.RandAddress()
@@ -359,12 +376,18 @@ func TestWinningTicketTransferEvent(t *testing.T) {
 	reserve, _ := new(big.Int).SetString("5000000000000000000", 10)
 	startDeposit, _ := new(big.Int).SetString("10000000000000000000", 10)
 	startReserve, _ := new(big.Int).SetString("5000000000000000000", 10)
+	faceValue := big.NewInt(200000000000)
+
 	senderInfo := &pm.SenderInfo{
 		Deposit: deposit,
-		Reserve: reserve,
+		Reserve: &pm.ReserveInfo{
+			FundsRemaining:        reserve,
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
 	}
 	lpEth := &eth.StubClient{
-		SenderInfo: senderInfo,
+		SenderInfo:        senderInfo,
+		TranscoderAddress: stubClaimant,
 	}
 	watcher := &stubBlockWatcher{}
 	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
@@ -397,19 +420,18 @@ func TestWinningTicketTransferEvent(t *testing.T) {
 	info, ok = sw.senders[stubSender]
 	assert.True(ok)
 	assert.Equal(info.Deposit, startDeposit)
-	assert.Equal(info.Reserve, startReserve)
+	assert.Equal(new(big.Int).Add(info.Reserve.FundsRemaining, info.Reserve.ClaimedInCurrentRound), startReserve)
 
 	// If map entry exists parse event log
 	// ticket amount is 200 gwei
 	// init the map entry
 	blockEvent.Type = blockwatch.Added
-	faceValue := big.NewInt(200000000000)
 	watcher.sink <- []*blockwatch.Event{blockEvent}
 	time.Sleep(2 * time.Millisecond)
 	info, err = sw.GetSenderInfo(stubSender)
 	assert.Nil(err)
 	assert.Zero(startDeposit.Sub(startDeposit, faceValue).Cmp(info.Deposit))
-	assert.Zero(startReserve.Cmp(info.Reserve))
+	assert.Zero(startReserve.Cmp(info.Reserve.FundsRemaining))
 
 	// Test facevalue > deposit
 	senderInfo.Deposit = big.NewInt(100000000000)
@@ -422,6 +444,7 @@ func TestWinningTicketTransferEvent(t *testing.T) {
 	assert.Zero(info.Deposit.Int64())
 	diff := new(big.Int).Sub(faceValue, big.NewInt(100000000000))
 	assert.Equal(claimed, diff)
+	assert.Equal(diff, info.Reserve.ClaimedInCurrentRound)
 
 	// If we don't care about the address, don't handle the event
 	s := pm.RandAddress()
@@ -433,78 +456,27 @@ func TestWinningTicketTransferEvent(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	_, ok = sw.senders[s]
 	assert.False(ok)
-}
 
-func TestReserveFrozenEvent(t *testing.T) {
-	assert := assert.New(t)
-	startThawR := big.NewInt(10)
-	lpEth := &eth.StubClient{
-		SenderInfo: &pm.SenderInfo{
-			ThawRound:    big.NewInt(10),
-			ReserveState: pm.Frozen,
-		},
-	}
-	watcher := &stubBlockWatcher{}
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
+	// If ticket recipient is not stubClaimant, don't alter ClaimedReserve for stubClaimant
+	beforeClaimed, err := sw.ClaimedReserve(stubSender, stubClaimant)
+	randRecipient := pm.RandAddress()
+	var randRecipientTopic [32]byte
+	copy(randRecipientTopic[:], common.LeftPadBytes(randRecipient.Bytes(), 32)[:])
+	blockEvent.BlockHeader.Logs[1].Topics[2] = randRecipientTopic
+	watcher.sink <- []*blockwatch.Event{blockEvent}
+	time.Sleep(2 * time.Millisecond)
+	afterClaimed, err := sw.ClaimedReserve(stubSender, stubClaimant)
 	assert.Nil(err)
+	assert.Equal(beforeClaimed, afterClaimed)
 
-	header := defaultMiniHeader()
-	newReserveFrozenEvent := newStubReserveFrozenLog()
-	header.Logs = append(header.Logs, newReserveFrozenEvent)
-
-	blockEvent := &blockwatch.Event{
-		Type:        blockwatch.Added,
-		BlockHeader: header,
-	}
-
-	go sw.Watch()
-	defer sw.Stop()
-	time.Sleep(2 * time.Millisecond)
-
-	// If map entry is nil don't handle event
-	watcher.sink <- []*blockwatch.Event{blockEvent}
-	time.Sleep(2 * time.Millisecond)
-	_, ok := sw.senders[stubSender]
-	assert.False(ok)
-
-	// if block removed, make RPC call
-	blockEvent.Type = blockwatch.Removed
-	sw.senders[stubSender] = &pm.SenderInfo{}
-	watcher.sink <- []*blockwatch.Event{blockEvent}
-	time.Sleep(2 * time.Millisecond)
-	info, ok := sw.senders[stubSender]
-	assert.True(ok)
-	assert.Equal(info.ReserveState, pm.Frozen)
-	assert.Zero(startThawR.Cmp(info.ThawRound))
-
-	// If map entry exists parse event log
-	blockEvent.Type = blockwatch.Added
-	watcher.sink <- []*blockwatch.Event{blockEvent}
-	time.Sleep(2 * time.Millisecond)
-	info, err = sw.GetSenderInfo(stubSender)
-	assert.Nil(err)
-	assert.Equal(info.ReserveState, pm.Frozen)
-	expectedThawRound := new(big.Int).Add(new(big.Int).SetBytes(newReserveFrozenEvent.Data[:32]), big.NewInt(2))
-	assert.Zero(expectedThawRound.Cmp(info.ThawRound))
-
-	// If we don't care about the address, don't handle the event
-	s := pm.RandAddress()
-	sender := ethcommon.LeftPadBytes(s.Bytes(), 32)
-	var senderTopic ethcommon.Hash
-	copy(senderTopic[:], sender[:])
-	newReserveFrozenEvent.Topics[1] = senderTopic
-	watcher.sink <- []*blockwatch.Event{blockEvent}
-	time.Sleep(2 * time.Millisecond)
-	_, ok = sw.senders[s]
-	assert.False(ok)
 }
 
 func TestUnlockEvent(t *testing.T) {
 	assert := assert.New(t)
-	startWithdrawBlock := big.NewInt(5)
+	startWithdrawRound := big.NewInt(5)
 	lpEth := &eth.StubClient{
 		SenderInfo: &pm.SenderInfo{
-			WithdrawBlock: big.NewInt(5),
+			WithdrawRound: big.NewInt(5),
 		},
 	}
 	watcher := &stubBlockWatcher{}
@@ -537,7 +509,7 @@ func TestUnlockEvent(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	info, ok := sw.senders[stubSender]
 	assert.True(ok)
-	assert.Zero(info.WithdrawBlock.Cmp(startWithdrawBlock))
+	assert.Zero(info.WithdrawRound.Cmp(startWithdrawRound))
 
 	// If map entry exists parse event log
 	blockEvent.Type = blockwatch.Added
@@ -545,7 +517,7 @@ func TestUnlockEvent(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	info, err = sw.GetSenderInfo(stubSender)
 	assert.Nil(err)
-	assert.Zero(info.WithdrawBlock.Cmp(big.NewInt(150)))
+	assert.Zero(info.WithdrawRound.Cmp(big.NewInt(150)))
 
 	// If we don't care about the address, don't handle the event
 	s := pm.RandAddress()
@@ -563,7 +535,7 @@ func TestUnlockCancelledEvent(t *testing.T) {
 	assert := assert.New(t)
 	lpEth := &eth.StubClient{
 		SenderInfo: &pm.SenderInfo{
-			WithdrawBlock: big.NewInt(10),
+			WithdrawRound: big.NewInt(10),
 		},
 	}
 	watcher := &stubBlockWatcher{}
@@ -596,7 +568,7 @@ func TestUnlockCancelledEvent(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	info, ok := sw.senders[stubSender]
 	assert.True(ok)
-	assert.Zero(info.WithdrawBlock.Cmp(big.NewInt(10)))
+	assert.Zero(info.WithdrawRound.Cmp(big.NewInt(10)))
 
 	// If map entry exists parse event log
 	blockEvent.Type = blockwatch.Added
@@ -604,7 +576,7 @@ func TestUnlockCancelledEvent(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	info, err = sw.GetSenderInfo(stubSender)
 	assert.Nil(err)
-	assert.Zero(info.WithdrawBlock.Int64())
+	assert.Zero(info.WithdrawRound.Int64())
 
 	// If we don't care about the address, don't handle the event
 	s := pm.RandAddress()

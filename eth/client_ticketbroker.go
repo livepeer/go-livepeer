@@ -2,7 +2,10 @@ package eth
 
 import (
 	"math/big"
+	"strings"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/livepeer/go-livepeer/eth/contracts"
@@ -62,17 +65,31 @@ func (c *client) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRan
 
 // GetSenderInfo returns the info for a sender
 func (c *client) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
-	info, err := c.TicketBrokerSession.GetSenderInfo(addr)
+	info := new(struct {
+		Sender struct {
+			Deposit       *big.Int
+			WithdrawRound *big.Int
+		}
+		Reserve pm.ReserveInfo
+	})
+
+	abi, err := abi.JSON(strings.NewReader(contracts.TicketBrokerABI))
 	if err != nil {
+		return nil, err
+	}
+
+	contract := bind.NewBoundContract(c.ticketBrokerAddr, abi, c.backend, c.backend, c.backend)
+	if err := contract.Call(&c.TicketBrokerSession.CallOpts, info, "getSenderInfo", addr); err != nil {
 		return nil, err
 	}
 
 	return &pm.SenderInfo{
 		Deposit:       info.Sender.Deposit,
-		WithdrawBlock: info.Sender.WithdrawBlock,
-		Reserve:       info.Reserve.FundsRemaining,
-		ReserveState:  pm.ReserveState(info.Reserve.State),
-		ThawRound:     info.Reserve.ThawRound,
+		WithdrawRound: info.Sender.WithdrawRound,
+		Reserve: &pm.ReserveInfo{
+			FundsRemaining:        info.Reserve.FundsRemaining,
+			ClaimedInCurrentRound: info.Reserve.ClaimedInCurrentRound,
+		},
 	}, nil
 }
 

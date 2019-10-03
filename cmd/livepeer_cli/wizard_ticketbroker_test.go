@@ -8,10 +8,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func createSender(deposit *big.Int, reserve *big.Int, withdrawBlock *big.Int) (sender pm.SenderInfo) {
+func createSender(deposit *big.Int, reserve *big.Int, withdrawRound *big.Int) (sender pm.SenderInfo) {
 	sender.Deposit = deposit
-	sender.Reserve = reserve
-	sender.WithdrawBlock = withdrawBlock
+	sender.WithdrawRound = withdrawRound
+	sender.Reserve = &pm.ReserveInfo{
+		FundsRemaining:        reserve,
+		ClaimedInCurrentRound: big.NewInt(0),
+	}
 
 	return
 }
@@ -24,17 +27,17 @@ func TestSenderStatus(t *testing.T) {
 	ss := senderStatus(s, big.NewInt(0))
 	assert.Equal(Empty, ss)
 
-	// Test Empty, but withdrawBlock > 0
+	// Test Empty, but WithdrawRound > 0
 	s = createSender(big.NewInt(0), big.NewInt(0), big.NewInt(5))
 	ss = senderStatus(s, big.NewInt(0))
 	assert.Equal(Empty, ss)
 
-	// Test Unlocked when withdrawBlock = currentBlock
+	// Test Unlocked when WithdrawRound = currentRound
 	s = createSender(big.NewInt(7), big.NewInt(0), big.NewInt(5))
 	ss = senderStatus(s, big.NewInt(5))
 	assert.Equal(Unlocked, ss)
 
-	// Test Unlocked when withdrawBlock < currentBlock
+	// Test Unlocked when WithdrawRound < currentRound
 	s = createSender(big.NewInt(7), big.NewInt(0), big.NewInt(5))
 	ss = senderStatus(s, big.NewInt(6))
 	assert.Equal(Unlocked, ss)

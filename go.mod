@@ -31,9 +31,7 @@ require (
 	// replace example.com/some/dependency => example.com/some/dependency-fork v1.2.3
 	github.com/fjl/memsize v0.0.0-20190710130421-bcb5799ab5e5
 	// github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
-	github.com/gballet/go-libpcsclite v0.0.0-20190403181518-312b5175032f
-	github.com/go-logfmt/logfmt v0.4.0
-	github.com/go-stack/stack v1.8.0
+	github.com/gballet/go-libpcsclite v0.0.0-20190403181518-312b5175032f // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/groupcache v0.0.0-20190702054246-869f871628b6
 	github.com/golang/protobuf v1.3.2
@@ -57,18 +55,13 @@ require (
 	github.com/karalabe/hid v1.0.0 // indirect
 	github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 	github.com/kr/pretty v0.1.0 // indirect
-	github.com/livepeer/joy4 v0.1.1
 	github.com/livepeer/lpms v0.0.0-20191004153601-83352b59757e
 	github.com/livepeer/m3u8 v0.11.0
 	github.com/mattn/go-colorable v0.1.2
 	github.com/mattn/go-isatty v0.0.8
 	github.com/mattn/go-runewidth v0.0.3
 	github.com/mattn/go-sqlite3 v1.11.0
-	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
-	github.com/modern-go/reflect2 v1.0.1
-	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
-	github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223
-	github.com/oklog/ulid v1.3.1
+	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/olekukonko/tablewriter v0.0.1
 	github.com/oschwald/maxminddb-golang v1.5.0
 	github.com/pborman/uuid v1.2.0

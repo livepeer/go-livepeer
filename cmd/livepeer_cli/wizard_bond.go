@@ -333,7 +333,12 @@ func (w *wizard) withdrawFees() {
 }
 
 func (w *wizard) claimRewardsAndFees() {
-	fmt.Printf("Current round: %v\n", w.currentRound())
+	currentRound, err := w.currentRound()
+	if err != nil {
+		glog.Errorf("error getting current round: %v\n", err)
+		return
+	}
+	fmt.Printf("Current round: %v\n", currentRound.Int64())
 
 	d, err := w.getDelegatorInfo()
 	if err != nil {
