@@ -112,7 +112,10 @@ func TestSenderWatcher_ClaimedReserve(t *testing.T) {
 	require := require.New(t)
 	lpEth := &eth.StubClient{}
 	watcher := &stubBlockWatcher{}
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
+
+	rw := &stubRoundsWatcher{}
+
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	require.Nil(err)
 
 	// if not existant on map; make RPC call and init the map
@@ -143,7 +146,10 @@ func TestSenderWatcher_WatchAndStop(t *testing.T) {
 	assert := assert.New(t)
 	lpEth := &eth.StubClient{}
 	watcher := &stubBlockWatcher{}
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
+
+	rw := &stubRoundsWatcher{}
+
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	assert.Nil(err)
 
 	go sw.Watch()
@@ -154,9 +160,13 @@ func TestSenderWatcher_WatchAndStop(t *testing.T) {
 }
 
 func TestSenderWatcher_HandleLog(t *testing.T) {
+	assert := assert.New(t)
 	lpEth := &eth.StubClient{}
 	watcher := &stubBlockWatcher{}
-	rw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
+
+	rw := &stubRoundsWatcher{}
+
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	require.Nil(t, err)
 
 	assert := assert.New(t)
@@ -165,7 +175,7 @@ func TestSenderWatcher_HandleLog(t *testing.T) {
 	log := newStubBaseLog()
 	log.Topics = []ethcommon.Hash{ethcommon.BytesToHash([]byte("foo"))}
 
-	err = rw.handleLog(log)
+	err = sw.handleLog(log)
 	assert.Nil(err)
 }
 
@@ -182,7 +192,10 @@ func TestFundDepositEvent(t *testing.T) {
 		},
 	}
 	watcher := &stubBlockWatcher{}
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
+
+	rw := &stubRoundsWatcher{}
+
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -248,7 +261,10 @@ func TestFundReserveEvent(t *testing.T) {
 		},
 	}
 	watcher := &stubBlockWatcher{}
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
+
+	rw := &stubRoundsWatcher{}
+
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -315,7 +331,10 @@ func TestWithdrawalEvent(t *testing.T) {
 		},
 	}
 	watcher := &stubBlockWatcher{}
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
+
+	rw := &stubRoundsWatcher{}
+
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -371,7 +390,6 @@ func TestWithdrawalEvent(t *testing.T) {
 
 func TestWinningTicketTransferEvent(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
 	deposit, _ := new(big.Int).SetString("10000000000000000000", 10)
 	reserve, _ := new(big.Int).SetString("5000000000000000000", 10)
 	startDeposit, _ := new(big.Int).SetString("10000000000000000000", 10)
@@ -390,7 +408,10 @@ func TestWinningTicketTransferEvent(t *testing.T) {
 		TranscoderAddress: stubClaimant,
 	}
 	watcher := &stubBlockWatcher{}
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
+
+	rw := &stubRoundsWatcher{}
+
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	require.Nil(err)
 
 	header := defaultMiniHeader()
@@ -420,7 +441,7 @@ func TestWinningTicketTransferEvent(t *testing.T) {
 	info, ok = sw.senders[stubSender]
 	assert.True(ok)
 	assert.Equal(info.Deposit, startDeposit)
-	assert.Equal(new(big.Int).Add(info.Reserve.FundsRemaining, info.Reserve.ClaimedInCurrentRound), startReserve)
+	assert.Equal(info.Reserve.FundsRemaining, startReserve)
 
 	// If map entry exists parse event log
 	// ticket amount is 200 gwei
@@ -480,7 +501,10 @@ func TestUnlockEvent(t *testing.T) {
 		},
 	}
 	watcher := &stubBlockWatcher{}
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
+
+	rw := &stubRoundsWatcher{}
+
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -539,7 +563,10 @@ func TestUnlockCancelledEvent(t *testing.T) {
 		},
 	}
 	watcher := &stubBlockWatcher{}
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth)
+
+	rw := &stubRoundsWatcher{}
+
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -588,4 +615,98 @@ func TestUnlockCancelledEvent(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	_, ok = sw.senders[s]
 	assert.False(ok)
+}
+
+// Test RoundsWatcher Subscription log added and log removed
+func TestNewRoundEvent_LogAdded(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	lpEth := &eth.StubClient{
+		SenderInfo: &pm.SenderInfo{
+			Reserve: &pm.ReserveInfo{
+				ClaimedInCurrentRound: big.NewInt(1000),
+			},
+		},
+		ClaimedAmount: big.NewInt(1000),
+	}
+
+	watcher := &stubBlockWatcher{}
+
+	rw := &stubRoundsWatcher{}
+
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	require.Nil(err)
+
+	// set initial values
+	info, err := sw.GetSenderInfo(stubSender)
+	require.Nil(err)
+	claimed, err := sw.ClaimedReserve(stubSender, stubClaimant)
+	require.Nil(err)
+
+	newRoundEvent := newStubNewRoundLog()
+
+	go sw.Watch()
+	defer sw.Stop()
+	time.Sleep(2 * time.Millisecond)
+
+	rw.sink <- newRoundEvent
+
+	time.Sleep(2 * time.Millisecond)
+
+	info, err = sw.GetSenderInfo(stubSender)
+	assert.Nil(err)
+	assert.Zero(info.Reserve.ClaimedInCurrentRound.Int64())
+	claimed, err = sw.ClaimedReserve(stubSender, stubClaimant)
+	assert.Nil(err)
+	assert.Zero(claimed.Int64())
+}
+
+func TestNewRoundEvent_LogRemoved(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	lpEth := &eth.StubClient{
+		SenderInfo: &pm.SenderInfo{
+			Reserve: &pm.ReserveInfo{
+				ClaimedInCurrentRound: big.NewInt(1000),
+			},
+		},
+		ClaimedAmount: big.NewInt(1000),
+	}
+
+	watcher := &stubBlockWatcher{}
+
+	rw := &stubRoundsWatcher{}
+
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	assert.Nil(err)
+
+	newRoundEvent := newStubNewRoundLog()
+
+	// set initial values
+	info, err := sw.GetSenderInfo(stubSender)
+	require.Nil(err)
+	claimed, err := sw.ClaimedReserve(stubSender, stubClaimant)
+	require.Nil(err)
+
+	// change stub RPC call values
+	expectedClaimedInCurrentRound := big.NewInt(500)
+	expectedClaimedAmount := big.NewInt(2000)
+	lpEth.SenderInfo.Reserve.ClaimedInCurrentRound = expectedClaimedInCurrentRound
+	lpEth.ClaimedAmount = expectedClaimedAmount
+
+	newRoundEvent.Removed = true
+
+	go sw.Watch()
+	defer sw.Stop()
+	time.Sleep(2 * time.Millisecond)
+
+	rw.sink <- newRoundEvent
+	time.Sleep(2 * time.Millisecond)
+
+	info, err = sw.GetSenderInfo(stubSender)
+	assert.Nil(err)
+	assert.Equal(info.Reserve.ClaimedInCurrentRound, expectedClaimedInCurrentRound)
+	claimed, err = sw.ClaimedReserve(stubSender, stubClaimant)
+	assert.Nil(err)
+	assert.Equal(claimed, expectedClaimedAmount)
 }

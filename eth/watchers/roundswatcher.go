@@ -7,6 +7,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 
 	"github.com/golang/glog"
@@ -22,6 +23,8 @@ type RoundsWatcher struct {
 	transcoderPoolSize       *big.Int
 
 	quit chan struct{}
+
+	subscription chan<- types.Log
 
 	watcher BlockWatcher
 	lpEth   eth.LivepeerEthClient
@@ -107,8 +110,19 @@ func (rw *RoundsWatcher) Watch() error {
 	}
 }
 
+// Subscribe allows one to subscribe to the round events emitted by the Watcher.
+// To unsubscribe, simply call `Unsubscribe` on the returned subscription.
+// The sink channel should have ample buffer space to avoid blocking other subscribers.
+// Slow subscribers are not dropped.
+func (rw *RoundsWatcher) Subscribe(sink chan<- types.Log) event.Subscription {
+	return rw.subScope.Track(rw.subFeed.Subscribe(sink))
+}
+
 // Stop watching for NewRound events
 func (rw *RoundsWatcher) Stop() {
+	if rw.subscription != nil {
+		close(rw.subscription)
+	}
 	close(rw.quit)
 }
 
@@ -140,6 +154,9 @@ func (rw *RoundsWatcher) handleLog(log types.Log) error {
 	if err := rw.dec.Decode("NewRound", log, &nr); err != nil {
 		return fmt.Errorf("unable to decode event: %v", err)
 	}
+
+	rw.subFeed.Send(log)
+
 	if log.Removed {
 		lr, err := rw.lpEth.LastInitializedRound()
 		if err != nil {

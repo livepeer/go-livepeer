@@ -21,19 +21,22 @@ type SenderWatcher struct {
 	mu             sync.RWMutex
 	quit           chan struct{}
 	watcher        BlockWatcher
+	rw             EventWatcher
 	lpEth          eth.LivepeerEthClient
 	dec            *EventDecoder
 }
 
 // NewSenderWatcher initiates a new SenderWatcher
-func NewSenderWatcher(ticketBrokerAddr ethcommon.Address, watcher BlockWatcher, lpEth eth.LivepeerEthClient) (*SenderWatcher, error) {
+func NewSenderWatcher(ticketBrokerAddr ethcommon.Address, watcher BlockWatcher, lpEth eth.LivepeerEthClient, rw EventWatcher) (*SenderWatcher, error) {
 	dec, err := NewEventDecoder(ticketBrokerAddr, contracts.TicketBrokerABI)
 	if err != nil {
 		return nil, err
 	}
+
 	return &SenderWatcher{
 		quit:           make(chan struct{}),
 		watcher:        watcher,
+		rw:             rw,
 		lpEth:          lpEth,
 		senders:        make(map[ethcommon.Address]*pm.SenderInfo),
 		claimedReserve: make(map[ethcommon.Address]*big.Int),
@@ -84,9 +87,13 @@ func (sw *SenderWatcher) ClaimedReserve(reserveHolder ethcommon.Address, claiman
 
 // Watch starts the event watching loop
 func (sw *SenderWatcher) Watch() {
+	roundEvents := make(chan types.Log, 10)
+	sw.rw.Subscribe(roundEvents)
+
 	events := make(chan []*blockwatch.Event, 10)
 	sub := sw.watcher.Subscribe(events)
 	defer sub.Unsubscribe()
+
 	for {
 		select {
 		case <-sw.quit:
@@ -95,6 +102,8 @@ func (sw *SenderWatcher) Watch() {
 			glog.Error(err)
 		case events := <-events:
 			sw.handleBlockEvents(events)
+		case roundEvent := <-roundEvents:
+			sw.handleRoundEvent(roundEvent)
 		}
 	}
 }
@@ -232,6 +241,37 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 			return fmt.Errorf("GetSenderInfo RPC call to remote node failed: %v", err)
 		}
 		sw.senders[sender] = info
+	}
+
+	return nil
+}
+
+func (sw *SenderWatcher) handleRoundEvent(log types.Log) error {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+
+	for sender, info := range sw.senders {
+		if log.Removed {
+			i, err := sw.lpEth.GetSenderInfo(sender)
+			if err != nil {
+				return fmt.Errorf("GetSenderInfo RPC call to remote node failed: %v", err)
+			}
+			info = i
+		} else {
+			info.Reserve.ClaimedInCurrentRound = big.NewInt(0)
+		}
+	}
+
+	for sender := range sw.claimedReserve {
+		if log.Removed {
+			c, err := sw.lpEth.ClaimedReserve(sender, sw.lpEth.Account().Address)
+			if err != nil {
+				return fmt.Errorf("ClaimedReserve RPC call to remote node failed: %v", err)
+			}
+			sw.claimedReserve[sender] = c
+		} else {
+			sw.claimedReserve[sender] = big.NewInt(0)
+		}
 	}
 
 	return nil
