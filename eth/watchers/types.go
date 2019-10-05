@@ -11,5 +11,5 @@ type BlockWatcher interface {
 }
 
 type EventWatcher interface {
-	Subscribe(sink chan<- types.Log)
+	Subscribe(sink chan<- types.Log) event.Subscription
 }

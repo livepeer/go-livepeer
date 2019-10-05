@@ -88,7 +88,8 @@ func (sw *SenderWatcher) ClaimedReserve(reserveHolder ethcommon.Address, claiman
 // Watch starts the event watching loop
 func (sw *SenderWatcher) Watch() {
 	roundEvents := make(chan types.Log, 10)
-	sw.rw.Subscribe(roundEvents)
+	roundSub := sw.rw.Subscribe(roundEvents)
+	defer roundSub.Unsubscribe()
 
 	events := make(chan []*blockwatch.Event, 10)
 	sub := sw.watcher.Subscribe(events)

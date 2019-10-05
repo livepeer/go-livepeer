@@ -24,7 +24,8 @@ type RoundsWatcher struct {
 
 	quit chan struct{}
 
-	subscription chan<- types.Log
+	subFeed  event.Feed
+	subScope event.SubscriptionScope // Subscription scope tracking current live listeners
 
 	watcher BlockWatcher
 	lpEth   eth.LivepeerEthClient
@@ -110,7 +111,7 @@ func (rw *RoundsWatcher) Watch() error {
 	}
 }
 
-// Subscribe allows one to subscribe to the round events emitted by the Watcher.
+// Subscribe allows one to subscribe to the block events emitted by the Watcher.
 // To unsubscribe, simply call `Unsubscribe` on the returned subscription.
 // The sink channel should have ample buffer space to avoid blocking other subscribers.
 // Slow subscribers are not dropped.
@@ -120,10 +121,8 @@ func (rw *RoundsWatcher) Subscribe(sink chan<- types.Log) event.Subscription {
 
 // Stop watching for NewRound events
 func (rw *RoundsWatcher) Stop() {
-	if rw.subscription != nil {
-		close(rw.subscription)
-	}
 	close(rw.quit)
+	rw.subScope.Close()
 }
 
 func (rw *RoundsWatcher) handleBlockEvents(events []*blockwatch.Event) {
