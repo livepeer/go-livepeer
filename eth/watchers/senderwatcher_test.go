@@ -118,9 +118,6 @@ func TestSenderWatcher_ClaimedReserve(t *testing.T) {
 	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	require.Nil(err)
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
-	assert.Nil(err)
-
 	// if not existant on map; make RPC call and init the map
 	_, ok := sw.claimedReserve[stubSender]
 	require.False(ok)
@@ -146,7 +143,6 @@ func TestSenderWatcher_ClaimedReserve(t *testing.T) {
 }
 
 func TestSenderWatcher_WatchAndStop(t *testing.T) {
-	require := require.New(t)
 	assert := assert.New(t)
 	lpEth := &eth.StubClient{}
 	watcher := &stubBlockWatcher{}
@@ -171,12 +167,6 @@ func TestSenderWatcher_HandleLog(t *testing.T) {
 	rw := &stubRoundsWatcher{}
 
 	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
-	require.Nil(t, err)
-
-	rw, err := NewRoundsWatcher(stubRoundsManagerAddr, watcher, lpEth)
-	require.Nil(err)
-
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	assert.Nil(err)
 
 	// Test unknown event
@@ -189,7 +179,6 @@ func TestSenderWatcher_HandleLog(t *testing.T) {
 
 func TestFundDepositEvent(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
 	startDeposit := big.NewInt(10)
 	lpEth := &eth.StubClient{
 		SenderInfo: &pm.SenderInfo{
@@ -258,7 +247,6 @@ func TestFundDepositEvent(t *testing.T) {
 
 func TestFundReserveEvent(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
 	startDeposit := big.NewInt(10)
 	startReserve := big.NewInt(5)
 	lpEth := &eth.StubClient{
@@ -329,7 +317,6 @@ func TestFundReserveEvent(t *testing.T) {
 
 func TestWithdrawalEvent(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
 	startDeposit := big.NewInt(10)
 	startReserve := big.NewInt(5)
 	lpEth := &eth.StubClient{
@@ -423,9 +410,6 @@ func TestWinningTicketTransferEvent(t *testing.T) {
 	rw := &stubRoundsWatcher{}
 
 	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
-	require.Nil(err)
-
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -508,7 +492,6 @@ func TestWinningTicketTransferEvent(t *testing.T) {
 
 func TestUnlockEvent(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
 	startWithdrawRound := big.NewInt(5)
 	lpEth := &eth.StubClient{
 		SenderInfo: &pm.SenderInfo{
@@ -572,7 +555,6 @@ func TestUnlockEvent(t *testing.T) {
 
 func TestUnlockCancelledEvent(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
 	lpEth := &eth.StubClient{
 		SenderInfo: &pm.SenderInfo{
 			WithdrawRound: big.NewInt(10),
@@ -649,12 +631,6 @@ func TestNewRoundEvent_LogAdded(t *testing.T) {
 	watcher := &stubBlockWatcher{}
 
 	rw := &stubRoundsWatcher{}
-
-	rw, err := NewRoundsWatcher(stubRoundsManagerAddr, watcherForRounds, lpEth)
-	require.Nil(err)
-	go rw.Watch()
-	defer rw.Stop()
-	time.Sleep(2 * time.Millisecond)
 
 	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
 	assert.Nil(err)
