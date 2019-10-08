@@ -116,7 +116,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 	for {
 		notify, err := r.Recv()
 		if err := checkTranscoderError(err); err != nil {
-			glog.Infof(`End of stream recieve cylcle because of err="%v", waiting for running transcode jobs to complete`, err)
+			glog.Infof(`End of stream recieve cycle because of err="%v", waiting for running transcode jobs to complete`, err)
 			wg.Wait()
 			return err
 		}
