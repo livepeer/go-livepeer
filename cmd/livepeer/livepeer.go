@@ -23,6 +23,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/livepeer/go-livepeer/build"
+	"github.com/livepeer/go-livepeer/benchmark"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
 
@@ -141,6 +142,9 @@ func main() {
 	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
 	orchWebhookURL := flag.String("orchWebhookUrl", "", "Orchestrator discovery callback URL")
 
+	// Benchmark
+	benchmarkSuite := flag.String("benchmark", "", "Benchmark suite (only 'throughput' for now)")
+
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
 
@@ -151,6 +155,15 @@ func main() {
 		fmt.Printf("Golang runtime version: %s %s\n", runtime.Compiler, runtime.Version())
 		fmt.Printf("Architecture: %s\n", runtime.GOARCH)
 		fmt.Printf("Operating system: %s\n", runtime.GOOS)
+		return
+	}
+
+	if *benchmarkSuite != "" {
+		if *benchmarkSuite != "throughput" {
+			glog.Fatalf("Unknown benchmark suite.")
+			return
+		}
+		benchmark.StartThroughput(*nvidia)
 		return
 	}
 
