@@ -17,29 +17,67 @@ import (
 const (
 	bunnyVideo     = "official_test_source_2s_keys_24pfs.mp4"
 	generatedVideo = "official_generated_test_source_24fps.mp4"
-	// hdVideo        = "/Volumes/darkbookext/Downloads/Sintel.2010.1080p.mkv"
-	hdVideo       = "/Volumes/darkbookext/Downloads/Sintel.2010.1080p.stereo.mp4"
-	hdVideoLowBps = "/Volumes/darkbookext/Downloads/Sintel.2010.1080p.3700k.mp4"
+	hdVideo        = "Sintel.2010.1080p.stereo.mp4"
+	hdVideoLowBps  = "Sintel.2010.1080p.3700k.mp4"
 
-	cvsHeaders = "Date,Video card,Acceleration, GPU device index, Source file, Simultaneous transcodes, Transcode duration (sec), MPixels/sec, Frames/sec, MB/sec, Profiles num, Profiles, In pixels, Out pixels, In frames, Out frames, In bytes, Out bytes"
+	csvHeaders = "Date,Video card,Acceleration, GPU device index,Simultaneous GPUs, Source file, Simultaneous transcodes, Transcode duration (sec), Video duration (sec), Speed, xRealtime, MPixels/sec, Frames/sec, MB/sec, Profiles num, Profiles, In pixels, Out pixels, In frames, Out frames, In bytes, Out bytes"
 )
 
 var (
+	// videosDurations = make(map[string]time.Duration)
+	videosDurations = map[string]time.Duration{bunnyVideo: 596480 * time.Millisecond,
+		generatedVideo: 596500 * time.Millisecond, hdVideo: 888050 * time.Millisecond, hdVideoLowBps: 888050 * time.Millisecond}
+
 	p720p30fps16x9B8   = ffmpeg.VideoProfile{Name: "P720p30fps16x9", Bitrate: "8000k", Framerate: 30, AspectRatio: "16:9", Resolution: "1280x720"}
 	p720p30fps16x9B4   = ffmpeg.VideoProfile{Name: "P720p30fps16x9", Bitrate: "4000k", Framerate: 30, AspectRatio: "16:9", Resolution: "1280x720"}
 	p1080p24fps16x9B5  = ffmpeg.VideoProfile{Name: "P1080p24fps16x9", Bitrate: "5000k", Framerate: 24, AspectRatio: "16:9", Resolution: "1920x1080"}
 	p1080p24fps16x9B10 = ffmpeg.VideoProfile{Name: "P1080p24fps16x9", Bitrate: "10000k", Framerate: 24, AspectRatio: "16:9", Resolution: "1920x1080"}
 
 	// profilesSuite = [][]ffmpeg.VideoProfile{{ffmpeg.P144p30fps16x9}, {ffmpeg.P720p30fps16x9},
+	// 	{ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9},
 	// 	{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9, ffmpeg.P720p30fps16x9}}
-	// sourcesSuite = []string{generatedVideo, bunnyVideo}
-	profilesSuite   = [][]ffmpeg.VideoProfile{{ffmpeg.P144p30fps16x9}}
-	sourcesSuite    = []string{generatedVideo}
-	repeatsNumber   = 2
-	maxSimultaneous = 3
+	// profilesSuite = [][]ffmpeg.VideoProfile{{ffmpeg.P144p30fps16x9}, {ffmpeg.P720p30fps16x9},
+	// 	{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9, ffmpeg.P720p30fps16x9}}
+	// profilesSuite = [][]ffmpeg.VideoProfile{{ffmpeg.P144p30fps16x9}, {ffmpeg.P720p30fps16x9}}
+	// profilesSuite = [][]ffmpeg.VideoProfile{{ffmpeg.P144p30fps16x9, ffmpeg.P720p30fps16x9}}
+	profilesSuite = [][]ffmpeg.VideoProfile{
+		{ffmpeg.P144p30fps16x9},
+		{ffmpeg.P720p30fps16x9},
+		{ffmpeg.P144p30fps16x9, ffmpeg.P720p30fps16x9},
+		{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9},
+		{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9},
+		{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9, ffmpeg.P720p30fps16x9},
+	}
+	sourcesSuite = []string{generatedVideo, bunnyVideo}
+	// sourcesSuite = []string{generatedVideo, bunnyVideo, hdVideo, hdVideoLowBps}
+	// profilesSuite = [][]ffmpeg.VideoProfile{{ffmpeg.P144p30fps16x9}}
+	// sourcesSuite    = []string{generatedVideo}
+	repeatsNumber = 1
+	// maxSimultaneous = 6
+	// minSimultaneous = 1
+	// simInc          = 2
+	// for P100
+	maxSimultaneous = 25
+	minSimultaneous = 20
+	simInc          = 5
+	// for K80
+	// maxSimultaneous = 30
+	// minSimultaneous = 2
+	// simInc          = 3
 )
 
 type (
+	benchmarker struct {
+		acceleration     ffmpeg.Acceleration
+		profiles         []ffmpeg.VideoProfile
+		sourceFileName   string
+		workDir          string
+		device           string
+		simultaneousGPUs int
+		results          benchmarkResultsArray
+		mux              sync.Mutex
+	}
+
 	benchmarkResults struct {
 		Acceleration           ffmpeg.Acceleration
 		SimultaneousTranscodes int
@@ -50,6 +88,7 @@ type (
 		OutFrames              int64
 		InSize                 int64
 		OutSize                int64
+		SimultaneousGPUs       int
 		VideoDuration          time.Duration
 		TranscodeDuration      time.Duration
 		Profiles               []ffmpeg.VideoProfile
@@ -65,91 +104,94 @@ type (
 // StartThroughput starts the benchmark
 func StartThroughput(rawDevices string) {
 	glog.Infof("Starting throughput benchmark")
-	checkIfTestVideoFilesExists()
-	devices := strings.Split(rawDevices, ",")
-	devicesNum := len(devices)
-	if devicesNum == 0 {
-		devicesNum = 1
+	checkIfTestVideoFilesExists(sourcesSuite)
+	accel := ffmpeg.Software
+	devicesNum := 1
+	var devices []string
+	if rawDevices != "" {
+		devices = strings.Split(rawDevices, ",")
+		devicesNum = len(devices)
+		accel = ffmpeg.Nvidia
 	}
+	glog.Infof("devices num: %d rawDevices: %s", devicesNum, rawDevices)
 
-	// sourceFileName := hdVideo
-	// sourceFileName := generatedVideo
-	workDir := "/Volumes/darkbookext/tmp"
+	workDir := "/tmp"
+	if _, err := os.Stat(workDir); os.IsNotExist(err) {
+		workDir = "/tmp"
+	}
 
 	// profiles := []ffmpeg.VideoProfile{p720p30fps16x9B8, p720p30fps16x9B4}
 	// profiles := []ffmpeg.VideoProfile{p720p30fps16x9B8}
 	// profiles := []ffmpeg.VideoProfile{p1080p24fps16x9B10}
 	// profiles := []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3}
 	videoCardName := getVideoCardName()
+	glog.Infof("Using acceleration: %s video card: %s devices: %+v", accel2str(accel), videoCardName, devices)
 	now := time.Now()
 	csvResults := make([]string, 0)
-	var mux sync.Mutex
-	for i, sourceFileName := range sourcesSuite {
-		for j, profiles := range profilesSuite {
+	for _, sourceFileName := range sourcesSuite {
+		for _, profiles := range profilesSuite {
 			for currentSimGPUS := 1; currentSimGPUS <= devicesNum; currentSimGPUS++ {
-				for simNum := 1; simNum < maxSimultaneous; simNum++ {
-					// now run on each GPU, simultaneously
-					var gpuwg sync.WaitGroup
-					for currentGPUIndex := 0; currentGPUIndex < currentSimGPUS; currentGPUIndex++ {
-						gpuwg.Add(1)
-						go func(gpuIndex int) {
-							device := ""
-							if gpuIndex < len(devices) {
-								device = devices[gpuIndex]
-							}
-							bra := make(benchmarkResultsArray, 0)
-							for k := 0; k < repeatsNumber; k++ {
-								glog.Infof("Running benchmark %d:%d:%d on %d GPUs at once, current GPU %s %s - %s", i, j, k, currentSimGPUS, device,
-									sourceFileName, profiles2str(profiles))
-								var waitgroup sync.WaitGroup
-								for stream := 0; stream <= simNum; stream++ {
-									waitgroup.Add(1)
-									go func(iStream int) {
-										benchRes := doOneTranscode(sourceFileName, device, workDir, profiles, simNum)
-										glog.Infof("Benchmark results (stream %d):", iStream)
-										glog.Info(benchRes.String())
-										mux.Lock()
-										bra = append(bra, benchRes)
-										mux.Unlock()
-										waitgroup.Done()
-									}(stream)
-								}
-								waitgroup.Wait()
-							}
-							benchRes := bra.avg()
-							csvResults = append(csvResults, fmt.Sprintf("%s,%s,", now, videoCardName)+benchRes.CSV())
-							gpuwg.Done()
-						}(currentGPUIndex)
-						gpuwg.Wait()
+				benchmarkers := make([]*benchmarker, 0)
+				for u := 0; u < currentSimGPUS; u++ {
+					device := ""
+					if u < len(devices) {
+						device = devices[u]
+					}
+					benchmarkers = append(benchmarkers, newBenchmarker(accel, profiles, sourceFileName, device, workDir, currentSimGPUS))
+				}
+				glog.Infof("Number of benchmarkers: %d", len(benchmarkers))
+				for simNum := minSimultaneous; simNum <= maxSimultaneous; simNum += simInc {
+					for k := 0; k < repeatsNumber; k++ {
+						// glog.Infof("Running benchmark %d:%d:%d on %d GPUs at once, current GPU %s %s - %s", i, j, k, currentSimGPUS, device,
+						// 	sourceFileName, profiles2str(profiles))
+						glog.Infof("Running benchmarks repeat %d simultaneous streams: %d", k, simNum)
+						var waitgroup sync.WaitGroup
+						for _, b := range benchmarkers {
+							waitgroup.Add(simNum)
+							go b.Start(simNum, &waitgroup)
+						}
+						waitgroup.Wait()
+					}
+					lastSpeed := 0.0
+					for _, b := range benchmarkers {
+						br := b.Results()
+						csvResults = append(csvResults, fmt.Sprintf("%s,%s,", now, videoCardName)+br.CSV())
+						lastSpeed = br.Speed
+						b.CleanResults()
+					}
+					fmt.Printf("====== INTERMEDIATE RESULTS (up to now tests took %s):\n", time.Since(now))
+					fmt.Println(csvHeaders)
+					fmt.Println(strings.Join(csvResults, "\n"))
+					if 1/lastSpeed < float64(simNum) {
+						glog.Infof("1/lastSpeed: %v simNum: %v", 1/lastSpeed, simNum)
+						// stop increasing simultaneous streams if already slower than realtime
+						break
 					}
 				}
 			}
 		}
 	}
-	fmt.Println("====== RESULTS:")
-	fmt.Println(cvsHeaders)
+	fmt.Printf("====== RESULTS (whole tests took %s):\n", time.Since(now))
+	fmt.Println(csvHeaders)
 	fmt.Println(strings.Join(csvResults, "\n"))
 }
 
-func doOneTranscode(sourceFileName, device, workDir string, profiles []ffmpeg.VideoProfile, simultaneousTranscodes int) benchmarkResults {
+func doOneTranscode(accel ffmpeg.Acceleration, sourceFileName, device, workDir string, profiles []ffmpeg.VideoProfile, simultaneousTranscodes int) benchmarkResults {
 	stats, err := os.Stat(sourceFileName)
 	if err != nil {
 		glog.Fatal(err)
 	}
 	sourceSize := stats.Size()
 	res := benchmarkResults{
-		InSize: sourceSize,
+		InSize:        sourceSize,
+		VideoDuration: videosDurations[sourceFileName],
 	}
-	accel := ffmpeg.Software
-	// accel := ffmpeg.Nvidia
 
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname:  sourceFileName,
 		Accel:  accel,
 		Device: device,
-		// Accel:  ffmpeg.Nvidia,
-		// Device: nv.getDevice(),
 	}
 	opts := profilesToTranscodeOptions(workDir, accel, profiles)
 
@@ -172,6 +214,7 @@ func doOneTranscode(sourceFileName, device, workDir string, profiles []ffmpeg.Vi
 			glog.Fatal(err)
 		}
 		res.OutSize += outStats.Size()
+		os.Remove(opts[i].Oname)
 	}
 	res.TranscodeDuration = took
 	res.Profiles = make([]ffmpeg.VideoProfile, len(profiles))
@@ -194,14 +237,14 @@ MBytesSec: %v In bytes: %v Out bytes: %v
 }
 
 func (br *benchmarkResults) CSV() string {
-	// Acceleration, Gpu device, Source file, Simultaneous transcodes, Transcode duration (sec), MPixels/sec, Frames/sec, MB/sec, Profiles num, Profiles, In pixels, Out pixels, In frames, Out frames, In bytes, Out bytes
+	// Acceleration, Gpu device, Simultaneous GPUs, Source file, Simultaneous transcodes, Transcode duration (sec), Video duration (sec), Speed, X Realtime, MPixels/sec, Frames/sec, MB/sec, Profiles num, Profiles, In pixels, Out pixels, In frames, Out frames, In bytes, Out bytes
 	device := br.Device
 	if device == "" {
 		device = "Unknown"
 	}
-	return fmt.Sprintf("%s,%s,%s,%d,%v,%v,%v,%v,%v,%v,%v,%v,%v,%v,%v,%v", accel2str(br.Acceleration), device, br.SourceFileName, br.SimultaneousTranscodes, br.TranscodeDuration.Seconds(),
-		br.PixelsSec/1000000.0, br.FramesSec, br.BytesSec/1000000.0, len(br.Profiles), profiles2str(br.Profiles), br.InPixels, br.OutPixels,
-		br.InFrames, br.OutFrames, br.InSize, br.OutSize)
+	return fmt.Sprintf("%s,%s,%d,%s,%d,%v,%v,%v,%v,%v,%v,%v,%v,%v,%v,%v,%v,%v,%v,%v", accel2str(br.Acceleration), device, br.SimultaneousGPUs, br.SourceFileName,
+		br.SimultaneousTranscodes, br.TranscodeDuration.Seconds(), br.VideoDuration.Seconds(), br.Speed, 1/br.Speed, br.PixelsSec/1000000.0, br.FramesSec,
+		br.BytesSec/1000000.0, len(br.Profiles), profiles2str(br.Profiles), br.InPixels, br.OutPixels, br.InFrames, br.OutFrames, br.InSize, br.OutSize)
 }
 
 func (bra benchmarkResultsArray) avg() benchmarkResults {
@@ -221,16 +264,27 @@ func (bra benchmarkResultsArray) avg() benchmarkResults {
 		res.Acceleration = br.Acceleration
 		res.SimultaneousTranscodes = br.SimultaneousTranscodes
 		res.Device = br.Device
+		res.SimultaneousGPUs = br.SimultaneousGPUs
 	}
-	res.InFrames /= l
-	res.OutFrames /= l
-	res.InPixels /= l
-	res.OutPixels /= l
-	res.InSize /= l
-	res.OutSize /= l
+	// res.InFrames /= l
+	// res.OutFrames /= l
+	// res.InPixels /= l
+	// res.OutPixels /= l
+	// res.InSize /= l
+	// res.OutSize /= l
+	// res.calc()
+	allPixels := res.InPixels + res.OutPixels
+	allFrames := res.InFrames + res.OutFrames
+	allSize := res.InSize + res.OutSize
 	res.TranscodeDuration /= time.Duration(l)
 	res.VideoDuration /= time.Duration(l)
-	res.calc()
+	transcodeTime := res.TranscodeDuration.Seconds()
+	res.PixelsSec = float64(allPixels) / transcodeTime
+	res.FramesSec = float64(allFrames) / transcodeTime
+	res.BytesSec = float64(allSize) / transcodeTime
+	if res.VideoDuration > 0 {
+		res.Speed = (float64(res.TranscodeDuration) / float64(res.VideoDuration)) / float64(res.SimultaneousTranscodes)
+	}
 	return res
 }
 
@@ -251,8 +305,48 @@ func (br *benchmarkResults) calc() {
 	br.FramesSec = float64(allFrames) / transcodeTime
 	br.BytesSec = float64(allSize) / transcodeTime
 	if br.VideoDuration > 0 {
-		br.Speed = float64(br.TranscodeDuration) / float64(br.VideoDuration)
+		br.Speed = (float64(br.TranscodeDuration) / float64(br.VideoDuration)) / float64(br.SimultaneousTranscodes)
 	}
+}
+
+func newBenchmarker(acceleration ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, sourceFileName, device, workDir string, simGPUs int) *benchmarker {
+	p := make([]ffmpeg.VideoProfile, len(profiles))
+	copy(p, profiles)
+	return &benchmarker{
+		acceleration:     acceleration,
+		sourceFileName:   sourceFileName,
+		device:           device,
+		profiles:         p,
+		workDir:          workDir,
+		simultaneousGPUs: simGPUs,
+	}
+}
+
+func (bm *benchmarker) Start(simultaneously int, wg *sync.WaitGroup) {
+	// glog.Infof("Running benchmark %d:%d:%d on %d GPUs at once, current GPU %s %s - %s", i, j, k, currentSimGPUS, device,
+	// 	sourceFileName, profiles2str(profiles))
+	glog.Infof("Running benchmark simultaneous streams %d current GPU %s sim GPUs %d %s - %s", simultaneously, bm.device, bm.simultaneousGPUs,
+		bm.sourceFileName, profiles2str(bm.profiles))
+	for stream := 0; stream < simultaneously; stream++ {
+		go func(iStream int) {
+			benchRes := doOneTranscode(bm.acceleration, bm.sourceFileName, bm.device, bm.workDir, bm.profiles, simultaneously)
+			benchRes.SimultaneousGPUs = bm.simultaneousGPUs
+			glog.Infof("Benchmark results (stream %d device %s):", iStream, bm.device)
+			glog.Info(benchRes.String())
+			bm.mux.Lock()
+			bm.results = append(bm.results, benchRes)
+			bm.mux.Unlock()
+			wg.Done()
+		}(stream)
+	}
+}
+
+func (bm *benchmarker) Results() benchmarkResults {
+	return bm.results.avg()
+}
+
+func (bm *benchmarker) CleanResults() {
+	bm.results = nil
 }
 
 func accel2str(accel ffmpeg.Acceleration) string {
@@ -267,22 +361,26 @@ func accel2str(accel ffmpeg.Acceleration) string {
 	return "Unknown"
 }
 
-func checkIfTestVideoFilesExists() {
-	if _, err := os.Stat(bunnyVideo); os.IsNotExist(err) {
-		glog.Fatalf("Video file '%s' not found", bunnyVideo)
-	}
-	if _, err := os.Stat(generatedVideo); os.IsNotExist(err) {
-		glog.Fatalf("Video file '%s' not found", generatedVideo)
+func checkIfTestVideoFilesExists(names []string) {
+	for _, n := range names {
+		if _, err := os.Stat(n); os.IsNotExist(err) {
+			glog.Fatalf("Video file '%s' not found", n)
+		}
 	}
 }
 
 func getVideoCardName() string {
-	output, err := exec.Command("nvidia-smi", "some args").CombinedOutput()
+	output, err := exec.Command("nvidia-smi", "-q").CombinedOutput()
 	if err != nil {
-		// os.Stderr.WriteString(err.Error())
 		return "Unknown"
 	}
 	fmt.Println(string(output))
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.Contains(line, "Product Name") {
+			split := strings.Split(line, ":")
+			return strings.TrimSpace(split[1])
+		}
+	}
 	return string(output)
 }
 
@@ -290,11 +388,11 @@ func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profi
 	opts := make([]ffmpeg.TranscodeOptions, len(profiles), len(profiles))
 	for i := range profiles {
 		o := ffmpeg.TranscodeOptions{
-			Oname:   fmt.Sprintf("%s/out_%s.ts", workDir, common.RandName()),
-			Profile: profiles[i],
-			Accel:   accel,
-			// AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-			AudioEncoder: ffmpeg.ComponentOptions{Name: "aac"},
+			Oname:        fmt.Sprintf("%s/out_%s.ts", workDir, common.RandName()),
+			Profile:      profiles[i],
+			Accel:        accel,
+			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			// AudioEncoder: ffmpeg.ComponentOptions{Name: "aac"},
 		}
 		opts[i] = o
 	}
