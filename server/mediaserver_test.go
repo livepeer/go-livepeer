@@ -526,7 +526,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	}
 
 	if pl.Count() != 4 {
-		t.Errorf("Should have recieved 4 data chunks, got: %v", pl.Count())
+		t.Errorf("Should have received 4 data chunks, got: %v", pl.Count())
 	}
 
 	for i := 0; i < 4; i++ {
