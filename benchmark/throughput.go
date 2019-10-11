@@ -177,7 +177,7 @@ func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSi
 	csvResults := make([]string, 0)
 	for _, sourceFileName := range sourcesSuite {
 		for _, profiles := range profilesSuite {
-			for currentSimGPUS := 1; currentSimGPUS <= devicesNum; currentSimGPUS++ {
+			for currentSimGPUS := devicesNum; currentSimGPUS <= devicesNum; currentSimGPUS++ {
 				benchmarkers := make([]*benchmarker, 0)
 				for u := 0; u < currentSimGPUS; u++ {
 					device := ""
