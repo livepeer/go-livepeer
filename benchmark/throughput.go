@@ -40,29 +40,42 @@ var (
 	// 	{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9, ffmpeg.P720p30fps16x9}}
 	// profilesSuite = [][]ffmpeg.VideoProfile{{ffmpeg.P144p30fps16x9}, {ffmpeg.P720p30fps16x9}}
 	// profilesSuite = [][]ffmpeg.VideoProfile{{ffmpeg.P144p30fps16x9, ffmpeg.P720p30fps16x9}}
+	/*
+		profilesSuite = [][]ffmpeg.VideoProfile{
+			{ffmpeg.P144p30fps16x9},
+			{ffmpeg.P720p30fps16x9},
+			{ffmpeg.P144p30fps16x9, ffmpeg.P720p30fps16x9},
+			{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9},
+			{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9},
+			{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9, ffmpeg.P720p30fps16x9},
+		}
+	*/
 	profilesSuite = [][]ffmpeg.VideoProfile{
 		{ffmpeg.P144p30fps16x9},
-		{ffmpeg.P720p30fps16x9},
 		{ffmpeg.P144p30fps16x9, ffmpeg.P720p30fps16x9},
-		{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9},
-		{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9},
-		{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9, ffmpeg.P720p30fps16x9},
 	}
+	// profilesSuite = [][]ffmpeg.VideoProfile{
+	// 	{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9, ffmpeg.P720p30fps16x9},
+	// }
+	// profilesSuite = [][]ffmpeg.VideoProfile{
+	// 	{ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9},
+	// }
 	sourcesSuite = []string{generatedVideo, bunnyVideo}
 	// sourcesSuite = []string{generatedVideo, bunnyVideo, hdVideo, hdVideoLowBps}
 	// profilesSuite = [][]ffmpeg.VideoProfile{{ffmpeg.P144p30fps16x9}}
 	// sourcesSuite    = []string{generatedVideo}
+	// sourcesSuite    = []string{bunnyVideo}
 	repeatsNumber = 1
-	// maxSimultaneous = 6
+	// maxSimultaneous = 1
 	// minSimultaneous = 1
-	// simInc          = 2
+	// simInc          = 1
 	// for P100
-	maxSimultaneous = 25
-	minSimultaneous = 20
+	maxSimultaneous = 45
+	minSimultaneous = 30
 	simInc          = 5
 	// for K80
 	// maxSimultaneous = 30
-	// minSimultaneous = 2
+	// minSimultaneous = 1
 	// simInc          = 3
 )
 
@@ -102,8 +115,9 @@ type (
 )
 
 // StartThroughput starts the benchmark
-func StartThroughput(rawDevices string) {
-	glog.Infof("Starting throughput benchmark")
+func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSimultaneous, _simInc int, sources, profiles string) {
+	glog.Infof("Starting throughput benchmark repeatsNumber: %d min simultaneous: %d max simultaneous: %d simInc: %d", _repeatsNumber, _minSimultaneous,
+		_maxSimultaneous, _simInc)
 	checkIfTestVideoFilesExists(sourcesSuite)
 	accel := ffmpeg.Software
 	devicesNum := 1
@@ -114,8 +128,40 @@ func StartThroughput(rawDevices string) {
 		accel = ffmpeg.Nvidia
 	}
 	glog.Infof("devices num: %d rawDevices: %s", devicesNum, rawDevices)
+	repeatsNumber = _repeatsNumber
+	minSimultaneous = _minSimultaneous
+	maxSimultaneous = _maxSimultaneous
+	simInc = _simInc
+	if sources != "" {
+		sourcesSuite = strings.Split(sources, ",")
+		for _, name := range sourcesSuite {
+			if _, has := videosDurations[name]; !has {
+				glog.Fatalf("Unknown source: %s", name)
+			}
+		}
+	}
+	if profiles != "" {
+		profilesSuite = make([][]ffmpeg.VideoProfile, 0)
+		prof1 := strings.Split(profiles, ";")
+		for _, prof := range prof1 {
+			profs := make([]ffmpeg.VideoProfile, 0)
+			ps := strings.Split(prof, ",")
+			for _, v := range ps {
+				if p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(v)]; ok {
+					profs = append(profs, p)
+				} else {
+					glog.Fatalf("Unknown profile: %s", v)
+				}
+			}
+			if len(profs) > 0 {
+				profilesSuite = append(profilesSuite, profs)
+			}
+		}
+	}
+	glog.Infof("sources: %+v", sources)
+	glog.Infof("profiles: %+v", profiles)
 
-	workDir := "/tmp"
+	workDir := "/disk-1-temp"
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
 		workDir = "/tmp"
 	}
@@ -214,7 +260,10 @@ func doOneTranscode(accel ffmpeg.Acceleration, sourceFileName, device, workDir s
 			glog.Fatal(err)
 		}
 		res.OutSize += outStats.Size()
-		os.Remove(opts[i].Oname)
+		err = os.Remove(opts[i].Oname)
+		if err != nil {
+			glog.Fatal(err)
+		}
 	}
 	res.TranscodeDuration = took
 	res.Profiles = make([]ffmpeg.VideoProfile, len(profiles))
