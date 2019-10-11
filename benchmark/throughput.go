@@ -158,7 +158,8 @@ func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSi
 			}
 		}
 	}
-	glog.Infof("sources: %+v", sources)
+
+	glog.Infof("sources: %+v sources suite: %+v", sources, sourcesSuite)
 	glog.Infof("profiles: %+v", profiles)
 
 	workDir := "/disk-1-temp"
