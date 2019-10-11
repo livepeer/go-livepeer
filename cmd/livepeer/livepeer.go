@@ -26,6 +26,7 @@ import (
 	"github.com/livepeer/go-livepeer/benchmark"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
+	"github.com/peterbourgon/ff"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -144,8 +145,19 @@ func main() {
 
 	// Benchmark
 	benchmarkSuite := flag.String("benchmark", "", "Benchmark suite (only 'throughput' for now)")
+	benchRepeats := flag.Int("bench-repeats", 1, "How much times to repeat each benchmark")
+	benchMinSim := flag.Int("bench-min-sim", 1, "Minimum simultaneous transcodes to run")
+	benchMaxSim := flag.Int("bench-max-sim", 50, "Maximum simultaneous transcodes to run")
+	benchSimInc := flag.Int("bench-sim-inc", 1, "How much to increase number of simultaneous transcodes in each next test")
+	benchSources := flag.String("bench-sources", "", "Video sources to use, comma separated")
+	benchProfiles := flag.String("bench-profiles", "", "Profiles to use, comma separated")
+	_ = flag.String("config", "", "config file (optional)")
 
-	flag.Parse()
+	ff.Parse(flag.CommandLine, os.Args[1:],
+		ff.WithConfigFileFlag("config"),
+		ff.WithConfigFileParser(ff.PlainParser),
+		ff.WithEnvVarPrefix("LIVEPEER"),
+	)
 	vFlag.Value.Set(*verbosity)
 
 	blockPollingTime := time.Duration(*blockPollingInterval) * time.Second
@@ -163,7 +175,7 @@ func main() {
 			glog.Fatalf("Unknown benchmark suite.")
 			return
 		}
-		benchmark.StartThroughput(*nvidia)
+		benchmark.StartThroughput(*nvidia, *benchRepeats, *benchMinSim, *benchMaxSim, *benchSimInc, *benchSources, *benchProfiles)
 		return
 	}
 
