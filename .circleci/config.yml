@@ -69,19 +69,6 @@ jobs:
 
       - run: mkdir -p $TEST_RESULTS
 
-      # - restore_cache:
-      #     keys:
-      #       - v3-pkg-cache
-      - run:
-          name: Install linter
-          command: |
-            go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.18.0
-
-      - run:
-          name: Install junit
-          command: |
-            go get github.com/jstemmer/go-junit-report
-
       - run:
           name: Lint
           command: |

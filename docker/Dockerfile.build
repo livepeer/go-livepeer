@@ -8,6 +8,8 @@ FROM livepeerci/build-platform:latest
 COPY ./install_ffmpeg.sh ./install_ffmpeg.sh
 RUN ./install_ffmpeg.sh
 
+RUN go get github.com/golangci/golangci-lint/cmd/golangci-lint && go get github.com/jstemmer/go-junit-report
+
 ENV GOFLAGS "-mod=readonly"
 
 COPY go.mod go.mod
