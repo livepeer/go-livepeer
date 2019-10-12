@@ -75,12 +75,12 @@ jobs:
       - run:
           name: Install linter
           command: |
-            GO111MODULE=on go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.18.0
+            go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.18.0
 
       - run:
           name: Install junit
           command: |
-            GO111MODULE=on go get github.com/jstemmer/go-junit-report
+            go get github.com/jstemmer/go-junit-report
 
       - run:
           name: Lint
