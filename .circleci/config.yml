@@ -52,7 +52,7 @@ jobs:
     docker:
       # Note race condition - we might get the wrong builder if lots of builds are happening in
       # parallel because this pulls it down from Docker Hub.
-      - image: livepeerci/build:latest-linux
+      - image: livepeerci/build:latest
     working_directory: /build
 
     environment:
