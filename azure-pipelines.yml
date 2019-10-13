@@ -16,7 +16,7 @@ jobs:
           set -e
           # First, build/cache the platform-specific root container
           docker login -u '$(DOCKER_USER)' -p '$(DOCKER_PASS)'
-          docker pull livepeerci/build-platform:latest-windows || echo "build cache not found"
+          docker pull livepeerci/build-platform:latest-windows || echo "build cache not found."
           docker build -m 4gb --cache-from=livepeerci/build-platform:latest-windows -t livepeerci/build-platform:latest-windows -f ./docker/Dockerfile.build-windows .
           docker push livepeerci/build-platform:latest-windows
           docker tag livepeerci/build-platform:latest-windows livepeerci/build-platform:latest
