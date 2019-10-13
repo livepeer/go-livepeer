@@ -88,6 +88,8 @@ ENV GOPATH "/go"
 ENV GOROOT "/mingw64/lib/go"
 ENV PKG_CONFIG_PATH "/mingw64/lib/pkgconfig:/build/compiled/lib/pkgconfig"
 
-SHELL ["C:\\msys64\\usr\\bin\\bash.exe", "-c"]
+# Shim to properly pass arguments to bash from "RUN" blocks
+ADD ./docker/run.ps1 C:\\msys64\\usr\\bin\\run.ps1
+SHELL ["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "C:\\msys64\\usr\\bin\\run.ps1"]
 
 CMD ["C:\\msys64\\usr\\bin\\bash.exe"]
