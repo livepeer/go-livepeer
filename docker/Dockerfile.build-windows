@@ -77,7 +77,7 @@ RUN C:\msys64\usr\bin\bash.exe -l -c 'exit 0'; `
   C:\msys64\usr\bin\bash.exe -l -c 'pacman -Scc --noconfirm'; `
   C:\msys64\usr\bin\bash.exe -l -c 'echo "Successfully installed MSYS2"';
 
-WORKDIR C:\msys64\go\src\github.com\livepeer\go-livepeer
+WORKDIR C:\msys64\gobuild
 
 # Tell MSYS2 not to do "cd $HOME" all the freakin' time
 ENV CHERE_INVOKING 1
