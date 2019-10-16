@@ -20,7 +20,7 @@ const (
 	hdVideo        = "Sintel.2010.1080p.stereo.mp4"
 	hdVideoLowBps  = "Sintel.2010.1080p.3700k.mp4"
 
-	csvHeaders = "Date,Video card,Acceleration, GPU device index,Simultaneous GPUs, Source file, Simultaneous transcodes, Transcode duration (sec), Video duration (sec), Speed, xRealtime, MPixels/sec, Frames/sec, MB/sec, Profiles num, Profiles, In pixels, Out pixels, In frames, Out frames, In bytes, Out bytes"
+	csvHeaders = "Versions,Date,Video card,Acceleration, GPU device index,Simultaneous GPUs, Source file, Simultaneous transcodes, Transcode duration (sec), Video duration (sec), Speed, xRealtime, MPixels/sec, Frames/sec, MB/sec, Profiles num, Profiles, In pixels, Out pixels, In frames, Out frames, In bytes, Out bytes"
 )
 
 var (
@@ -33,6 +33,18 @@ var (
 	p1080p24fps16x9B5  = ffmpeg.VideoProfile{Name: "P1080p24fps16x9", Bitrate: "5000k", Framerate: 24, AspectRatio: "16:9", Resolution: "1920x1080"}
 	p1080p24fps16x9B10 = ffmpeg.VideoProfile{Name: "P1080p24fps16x9", Bitrate: "10000k", Framerate: 24, AspectRatio: "16:9", Resolution: "1920x1080"}
 
+	/* hanging config
+
+	profilesSuite = [][]ffmpeg.VideoProfile{
+		{ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9, ffmpeg.P720p30fps16x9},
+	}
+	sourcesSuite = []string{generatedVideo, bunnyVideo}
+	repeatsNumber = 1
+	maxSimultaneous = 45
+	minSimultaneous = 10
+	simInc          = 4
+
+	*/
 	// profilesSuite = [][]ffmpeg.VideoProfile{{ffmpeg.P144p30fps16x9}, {ffmpeg.P720p30fps16x9},
 	// 	{ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9},
 	// 	{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9, ffmpeg.P576p30fps16x9, ffmpeg.P720p30fps16x9}}
@@ -171,8 +183,8 @@ func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSi
 	// profiles := []ffmpeg.VideoProfile{p720p30fps16x9B8}
 	// profiles := []ffmpeg.VideoProfile{p1080p24fps16x9B10}
 	// profiles := []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3}
-	videoCardName := getVideoCardName()
-	glog.Infof("Using acceleration: %s video card: %s devices: %+v", accel2str(accel), videoCardName, devices)
+	videoCardName, version := getVideoCardName()
+	glog.Infof("Using acceleration: %s video card: %s ver %s devices: %+v", accel2str(accel), videoCardName, version, devices)
 	now := time.Now()
 	csvResults := make([]string, 0)
 	for _, sourceFileName := range sourcesSuite {
@@ -202,7 +214,7 @@ func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSi
 					lastSpeed := 0.0
 					for _, b := range benchmarkers {
 						br := b.Results()
-						csvResults = append(csvResults, fmt.Sprintf("%s,%s,", now, videoCardName)+br.CSV())
+						csvResults = append(csvResults, fmt.Sprintf("%s,%s,%s,", version, now, videoCardName)+br.CSV())
 						lastSpeed = br.Speed
 						b.CleanResults()
 					}
@@ -419,19 +431,39 @@ func checkIfTestVideoFilesExists(names []string) {
 	}
 }
 
-func getVideoCardName() string {
+func getVideoCardName() (string, string) {
+	name := "Unknown"
+	driverVer := "Unknown"
+	cudaVer := "Unknown"
+	mem := ""
+	sawMemLine := false
 	output, err := exec.Command("nvidia-smi", "-q").CombinedOutput()
 	if err != nil {
-		return "Unknown"
+		return name, driverVer
 	}
 	fmt.Println(string(output))
 	for _, line := range strings.Split(string(output), "\n") {
 		if strings.Contains(line, "Product Name") {
 			split := strings.Split(line, ":")
-			return strings.TrimSpace(split[1])
+			name = strings.TrimSpace(split[1])
+		}
+		if strings.Contains(line, "Driver Version") {
+			split := strings.Split(line, ":")
+			driverVer = strings.TrimSpace(split[1])
+		}
+		if strings.Contains(line, "CUDA Version") {
+			split := strings.Split(line, ":")
+			cudaVer = strings.TrimSpace(split[1])
+		}
+		if strings.Contains(line, "FB Memory Usage") {
+			sawMemLine = true
+		}
+		if sawMemLine && mem != "" && strings.Contains(line, "Total") {
+			split := strings.Split(line, ":")
+			mem = strings.TrimSpace(split[1])
 		}
 	}
-	return string(output)
+	return name, driverVer + "/" + cudaVer + "/" + mem
 }
 
 func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile) []ffmpeg.TranscodeOptions {
