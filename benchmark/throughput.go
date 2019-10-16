@@ -458,7 +458,7 @@ func getVideoCardName() (string, string) {
 		if strings.Contains(line, "FB Memory Usage") {
 			sawMemLine = true
 		}
-		if sawMemLine && mem != "" && strings.Contains(line, "Total") {
+		if sawMemLine && mem == "" && strings.Contains(line, "Total") {
 			split := strings.Split(line, ":")
 			mem = strings.TrimSpace(split[1])
 		}
