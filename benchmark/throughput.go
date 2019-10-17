@@ -19,6 +19,8 @@ const (
 	generatedVideo = "official_generated_test_source_24fps.mp4"
 	hdVideo        = "Sintel.2010.1080p.stereo.mp4"
 	hdVideoLowBps  = "Sintel.2010.1080p.3700k.mp4"
+	bunnyHD30Video = "bbb_sunflower_1080p_30fps_normal.mp4"
+	bunnyHD60Video = "bbb_sunflower_1080p_60fps_normal.mp4"
 
 	csvHeaders = "Versions,Date,Video card,Acceleration, GPU device index,Simultaneous GPUs, Source file, Simultaneous transcodes, Transcode duration (sec), Video duration (sec), Speed, xRealtime, MPixels/sec, Frames/sec, MB/sec, Profiles num, Profiles, In pixels, Out pixels, In frames, Out frames, In bytes, Out bytes"
 )
@@ -26,7 +28,8 @@ const (
 var (
 	// videosDurations = make(map[string]time.Duration)
 	videosDurations = map[string]time.Duration{bunnyVideo: 596480 * time.Millisecond,
-		generatedVideo: 596500 * time.Millisecond, hdVideo: 888050 * time.Millisecond, hdVideoLowBps: 888050 * time.Millisecond}
+		generatedVideo: 596500 * time.Millisecond, hdVideo: 888050 * time.Millisecond, hdVideoLowBps: 888050 * time.Millisecond,
+		bunnyHD30Video: 634530 * time.Millisecond, bunnyHD60Video: 634530 * time.Millisecond}
 
 	p720p30fps16x9B8   = ffmpeg.VideoProfile{Name: "P720p30fps16x9", Bitrate: "8000k", Framerate: 30, AspectRatio: "16:9", Resolution: "1280x720"}
 	p720p30fps16x9B4   = ffmpeg.VideoProfile{Name: "P720p30fps16x9", Bitrate: "4000k", Framerate: 30, AspectRatio: "16:9", Resolution: "1280x720"}
