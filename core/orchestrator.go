@@ -503,7 +503,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 
 	//Do the transcoding
 	start := time.Now()
-	tData, err := transcoder.Transcode(url, md.Profiles)
+	tData, err := transcoder.Transcode(string(md.ManifestID), url, md.Profiles)
 	if err != nil {
 		glog.Errorf("Error transcoding manifest=%s segNo=%d segName=%s - %v", string(md.ManifestID), seg.SeqNo, seg.Name, err)
 		return terr(err)
@@ -649,7 +649,7 @@ func (rt *RemoteTranscoder) done() {
 }
 
 // Transcode do actual transcoding by sending work to remote transcoder and waiting for the result
-func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+func (rt *RemoteTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	taskID, taskChan := rt.manager.addTaskChan()
 	defer rt.manager.removeTaskChan(taskID)
 	signalEOF := func(err error) (*TranscodeData, error) {
@@ -658,6 +658,7 @@ func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfi
 		return nil, RemoteTranscoderFatalError{err}
 	}
 	msg := &net.NotifySegment{
+		Job:      job,
 		Url:      fname,
 		TaskId:   taskID,
 		Profiles: common.ProfilesToTranscodeOpts(profiles),
@@ -829,12 +830,12 @@ func (rtm *RemoteTranscoderManager) totalLoadAndCapacity() (int, int, int) {
 }
 
 // Transcode does actual transcoding using remote transcoder from the pool
-func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+func (rtm *RemoteTranscoderManager) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	currentTranscoder := rtm.selectTranscoder()
 	if currentTranscoder == nil {
 		return nil, errors.New("No transcoders available")
 	}
-	res, err := currentTranscoder.Transcode(fname, profiles)
+	res, err := currentTranscoder.Transcode(job, fname, profiles)
 	_, fatal := err.(RemoteTranscoderFatalError)
 	if fatal {
 		// Don't retry if we've timed out; broadcaster likely to have moved on
@@ -842,7 +843,7 @@ func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.Vi
 		if err.(RemoteTranscoderFatalError).error == ErrRemoteTranscoderTimeout {
 			return res, err
 		}
-		return rtm.Transcode(fname, profiles)
+		return rtm.Transcode(job, fname, profiles)
 	}
 	rtm.completeTranscoders(currentTranscoder)
 	return res, err
