@@ -18,7 +18,7 @@ func TestLocalTranscoder(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-	res, err := tc.Transcode("test.ts", profiles)
+	res, err := tc.Transcode("", "test.ts", profiles)
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
@@ -51,7 +51,7 @@ func TestNvidiaTranscoder(t *testing.T) {
 
 	// transcoding should fail due to invalid devices
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-	_, err := tc.Transcode(fname, profiles)
+	_, err := tc.Transcode("", fname, profiles)
 	if err == nil ||
 		(err.Error() != "Unknown error occurred" &&
 			err.Error() != "Cannot allocate memory") {
@@ -64,7 +64,7 @@ func TestNvidiaTranscoder(t *testing.T) {
 		return
 	}
 	tc = NewNvidiaTranscoder(dev, tmp)
-	res, err := tc.Transcode(fname, profiles)
+	res, err := tc.Transcode("", fname, profiles)
 	if err != nil {
 		t.Error(err)
 	}
@@ -220,7 +220,7 @@ func TestAudioCopy(t *testing.T) {
 	assert.Nil(err)
 
 	profs := []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9} // dummy
-	res, err := tc.Transcode(audioSample, profs)
+	res, err := tc.Transcode("", audioSample, profs)
 	assert.Nil(err)
 
 	o, err := ioutil.ReadFile(audioSample)

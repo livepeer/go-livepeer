@@ -138,7 +138,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	var contentType string
 	var body bytes.Buffer
 
-	tData, err := n.Transcoder.Transcode(notify.Url, profiles)
+	tData, err := n.Transcoder.Transcode(notify.Job, notify.Url, profiles)
 	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
 	if err != nil {
 		glog.Error("Unable to transcode ", err)

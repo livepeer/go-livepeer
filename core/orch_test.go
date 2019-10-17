@@ -100,7 +100,7 @@ func TestRemoteTranscoder(t *testing.T) {
 
 	// happy path
 	tc, strm := initTranscoder()
-	res, err := tc.Transcode("", nil)
+	res, err := tc.Transcode("", "", nil)
 	if err != nil || string(res.Segments[0].Data) != "asdf" {
 		t.Error("Error transcoding ", err)
 	}
@@ -108,7 +108,7 @@ func TestRemoteTranscoder(t *testing.T) {
 	// error on remote while transcoding
 	tc, strm = initTranscoder()
 	strm.TranscodeError = fmt.Errorf("TranscodeError")
-	res, err = tc.Transcode("", nil)
+	res, err = tc.Transcode("", "", nil)
 	if err != strm.TranscodeError {
 		t.Error("Unexpected error ", err, res)
 	}
@@ -117,7 +117,7 @@ func TestRemoteTranscoder(t *testing.T) {
 	tc, strm = initTranscoder()
 
 	strm.SendError = fmt.Errorf("SendError")
-	_, err = tc.Transcode("", nil)
+	_, err = tc.Transcode("", "", nil)
 	if _, fatal := err.(RemoteTranscoderFatalError); !fatal ||
 		err.Error() != strm.SendError.Error() {
 		t.Error("Unexpected error ", err, fatal)
@@ -128,7 +128,7 @@ func TestRemoteTranscoder(t *testing.T) {
 	strm.WithholdResults = true
 	m.taskCount = 1001
 	RemoteTranscoderTimeout = 1 * time.Millisecond
-	_, err = tc.Transcode("fileName", nil)
+	_, err = tc.Transcode("", "fileName", nil)
 	if err.Error() != "Remote transcoder took too long" {
 		t.Error("Unexpected error: ", err)
 	}
@@ -268,7 +268,7 @@ func TestSelectTranscoder(t *testing.T) {
 	assert.Len(m.remoteTranscoders, 2)
 
 	// assert transcoder gets added back to remoteTranscoders if no transcoding error
-	_, err := m.Transcode("", nil)
+	_, err := m.Transcode("", "", nil)
 	assert.Nil(err)
 	assert.Len(m.remoteTranscoders, 2)
 	assert.Equal(1, t1.load)
@@ -286,7 +286,7 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	assert.Empty(m.remoteTranscoders)
 
 	// Attempt to transcode when no transcoders in the set
-	_, err := m.Transcode("", nil)
+	_, err := m.Transcode("", "", nil)
 	assert.NotNil(err)
 	assert.Equal(err.Error(), "No transcoders available")
 
@@ -299,14 +299,14 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	assert.NotNil(m.liveTranscoders[s])
 
 	// happy path
-	res, err := m.Transcode("", nil)
+	res, err := m.Transcode("", "", nil)
 	assert.Nil(err)
 	assert.Len(res.Segments, 1)
 	assert.Equal(string(res.Segments[0].Data), "asdf")
 
 	// non-fatal error should not remove from list
 	s.TranscodeError = fmt.Errorf("TranscodeError")
-	_, err = m.Transcode("", nil)
+	_, err = m.Transcode("", "", nil)
 	assert.Equal(s.TranscodeError, err)
 	assert.Len(m.remoteTranscoders, 1)           // sanity
 	assert.Equal(0, m.remoteTranscoders[0].load) // sanity
@@ -316,11 +316,11 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 
 	// fatal error should retry and remove from list
 	s.SendError = fmt.Errorf("SendError")
-	_, err = m.Transcode("", nil)
+	_, err = m.Transcode("", "", nil)
 	assert.True(wgWait(wg)) // should disconnect manager
 	assert.NotNil(err)
 	assert.Equal(err.Error(), "No transcoders available")
-	_, err = m.Transcode("", nil) // need second try to remove from remoteTranscoders
+	_, err = m.Transcode("", "", nil) // need second try to remove from remoteTranscoders
 	assert.NotNil(err)
 	assert.Equal(err.Error(), "No transcoders available")
 	assert.Len(m.liveTranscoders, 0)
@@ -336,7 +336,7 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	assert.Len(m.liveTranscoders, 1)
 	s.WithholdResults = true
 	RemoteTranscoderTimeout = 1 * time.Millisecond
-	_, err = m.Transcode("", nil)
+	_, err = m.Transcode("", "", nil)
 	_, fatal := err.(RemoteTranscoderFatalError)
 	wg.Wait()
 	assert.True(fatal)

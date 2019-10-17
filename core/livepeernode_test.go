@@ -21,7 +21,7 @@ type StubTranscoder struct {
 	FailTranscode bool
 }
 
-func (t *StubTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+func (t *StubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	if t.FailTranscode {
 		return nil, ErrTranscode
 	}
