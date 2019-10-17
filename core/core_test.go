@@ -95,7 +95,7 @@ func TestTranscodeSeg(t *testing.T) {
 	assert.Nil(res.Err)
 	assert.Nil(res.Sig)
 	// sanity check results
-	resBytes, _ := n.Transcoder.Transcode("", profiles)
+	resBytes, _ := n.Transcoder.Transcode("", "", profiles)
 	for i, trData := range res.TranscodeData.Segments {
 		assert.Equal(resBytes.Segments[i].Data, trData.Data)
 	}

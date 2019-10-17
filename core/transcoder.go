@@ -18,14 +18,14 @@ import (
 )
 
 type Transcoder interface {
-	Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error)
+	Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error)
 }
 
 type LocalTranscoder struct {
 	workDir string
 }
 
-func (lt *LocalTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+func (lt *LocalTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname: fname,
@@ -72,7 +72,7 @@ func (nv *NvidiaTranscoder) getDevice() string {
 	return nv.devices[nv.devIdx]
 }
 
-func (nv *NvidiaTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+func (nv *NvidiaTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname:  fname,

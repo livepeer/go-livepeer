@@ -174,9 +174,16 @@ message RegisterRequest {
 // Sent by the orchestrator to the transcoder
 message NotifySegment {
 
+    // URL of the segment to transcode.
     string url      = 1;
 
+    // Job the segment belongs to.
+    string job      = 2;
+
+    // ID for this particular transcoding task.
     int64 taskId   = 16;
+
+    // Set of profiles to transcode this segment into.
     bytes profiles = 17;
 }
 
