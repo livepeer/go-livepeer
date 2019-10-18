@@ -27,7 +27,7 @@ if [ $(uname) != "Darwin" ]; then
   if [ ! -e "$HOME/nv-codec-headers" ]; then
     git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$HOME/nv-codec-headers"
     cd $HOME/nv-codec-headers
-    git checkout 9fdaf11b8f79d4e41cde9af89656238f25fec6fd
+    git checkout 250292dd20af60edc6e0d07f1d6e489a2f8e1c44
     make -e PREFIX="$HOME/compiled"
     make install -e PREFIX="$HOME/compiled"
   fi
@@ -112,8 +112,9 @@ if [ $(uname) == "Darwin" ]; then
 fi
 
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
-  git clone -b livepeer-2019_11_19 https://github.com/livepeer/FFmpeg "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
+  git clone https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
+  git checkout 3ea705767720033754e8d85566460390191ae27d
   ./configure ${TARGET_OS:-} --fatal-warnings \
     --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
