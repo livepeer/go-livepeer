@@ -18,7 +18,12 @@ import (
 type StubTranscoder struct {
 	Profiles      []ffmpeg.VideoProfile
 	SegCount      int
+	StoppedCount  int
 	FailTranscode bool
+}
+
+func newStubTranscoder(d string, workDir string) LoadBalancedTranscoder {
+	return &StubTranscoder{}
 }
 
 func (t *StubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
@@ -34,6 +39,10 @@ func (t *StubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.V
 	}
 
 	return &TranscodeData{Segments: segments}, nil
+}
+
+func (t *StubTranscoder) Stop() {
+	t.StoppedCount++
 }
 
 func TestTranscodeAndBroadcast(t *testing.T) {
