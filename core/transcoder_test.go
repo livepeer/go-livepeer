@@ -40,11 +40,7 @@ func TestNvidiaTranscoder(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 
 	// test device selection
-	nv, ok := tc.(*NvidiaTranscoder)
-	if !ok || "456" != nv.getDevice() || "123" != nv.getDevice() ||
-		"456" != nv.getDevice() || "123" != nv.getDevice() {
-		t.Error("Error when getting devices")
-	}
+	// TODO
 
 	// test.ts sample isn't in a supported pixel format, so use this instead
 	fname := "test2.ts"

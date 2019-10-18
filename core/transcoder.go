@@ -7,7 +7,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -58,18 +57,8 @@ func NewLocalTranscoder(workDir string) Transcoder {
 
 type NvidiaTranscoder struct {
 	workDir string
-	devices []string
-
-	// The following fields need to be protected by the mutex `mu`
-	mu     *sync.Mutex
-	devIdx int // current index within the devices list
-}
-
-func (nv *NvidiaTranscoder) getDevice() string {
-	nv.mu.Lock()
-	defer nv.mu.Unlock()
-	nv.devIdx = (nv.devIdx + 1) % len(nv.devices)
-	return nv.devices[nv.devIdx]
+	device  string
+	session *ffmpeg.Transcoder
 }
 
 func (nv *NvidiaTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
@@ -77,12 +66,12 @@ func (nv *NvidiaTranscoder) Transcode(job string, fname string, profiles []ffmpe
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname:  fname,
 		Accel:  ffmpeg.Nvidia,
-		Device: nv.getDevice(),
+		Device: nv.device,
 	}
 	opts := profilesToTranscodeOptions(nv.workDir, ffmpeg.Nvidia, profiles)
 
 	// Do the Transcoding
-	res, err := ffmpeg.Transcode3(in, opts)
+	res, err := nv.session.Transcode(in, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -90,9 +79,16 @@ func (nv *NvidiaTranscoder) Transcode(job string, fname string, profiles []ffmpe
 	return resToTranscodeData(res, opts)
 }
 
-func NewNvidiaTranscoder(devices string, workDir string) Transcoder {
-	d := strings.Split(devices, ",")
-	return &NvidiaTranscoder{devices: d, workDir: workDir, mu: &sync.Mutex{}}
+func NewNvidiaTranscoder(gpu string, workDir string) LoadBalancedTranscoder {
+	return &NvidiaTranscoder{
+		workDir: workDir,
+		device:  gpu,
+		session: ffmpeg.NewTranscoder(),
+	}
+}
+
+func (nv *NvidiaTranscoder) Stop() {
+	nv.session.StopTranscoder()
 }
 
 func parseURI(uri string) (string, uint64, error) {
