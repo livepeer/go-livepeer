@@ -240,7 +240,7 @@ func main() {
 
 	if *transcoder {
 		if *nvidia != "" {
-			n.Transcoder = core.NewNvidiaTranscoder(*nvidia, *datadir)
+			n.Transcoder = core.NewLoadBalancingTranscoder(*nvidia, *datadir, core.NewNvidiaTranscoder)
 		} else {
 			n.Transcoder = core.NewLocalTranscoder(*datadir)
 		}
