@@ -18,12 +18,27 @@ import (
 type StubTranscoder struct {
 	Profiles      []ffmpeg.VideoProfile
 	SegCount      int
+	StoppedCount  int
 	FailTranscode bool
+	TranscodeFn   func() error
+}
+
+func newStubTranscoder(d string, workDir string) TranscoderSession {
+	return &StubTranscoder{}
+}
+
+func stubTranscoderWithProfiles(profiles []ffmpeg.VideoProfile) *StubTranscoder {
+	return &StubTranscoder{Profiles: profiles}
 }
 
 func (t *StubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	if t.FailTranscode {
 		return nil, ErrTranscode
+	}
+
+	var err error
+	if t.TranscodeFn != nil {
+		err = t.TranscodeFn()
 	}
 
 	t.SegCount++
@@ -33,13 +48,17 @@ func (t *StubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.V
 		segments = append(segments, &TranscodedSegmentData{Data: []byte(fmt.Sprintf("Transcoded_%v", p.Name))})
 	}
 
-	return &TranscodeData{Segments: segments}, nil
+	return &TranscodeData{Segments: segments}, err
+}
+
+func (t *StubTranscoder) Stop() {
+	t.StoppedCount++
 }
 
 func TestTranscodeAndBroadcast(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
-	tr := &StubTranscoder{Profiles: p}
+	tr := stubTranscoderWithProfiles(p)
 	storage := drivers.NewMemoryDriver(nil).NewSession("")
 	config := transcodeConfig{LocalOS: storage, OS: storage}
 
