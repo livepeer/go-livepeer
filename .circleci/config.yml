@@ -105,6 +105,10 @@ jobs:
           name: Upload build
           command: ./upload_build.sh
 
+      - run:
+          name: Notify that new build has been uploaded
+          command: curl -X POST https://holy-bread-207a.livepeer.workers.dev
+
       - save_cache:
           key: v3-pkg-cache
           paths:
