@@ -56,7 +56,6 @@ type Broadcaster interface {
 type Balance interface {
 	Credit(amount *big.Rat)
 	StageUpdate(minCredit *big.Rat, ev *big.Rat) (int, *big.Rat, *big.Rat)
-	Clear()
 }
 
 // BalanceUpdateStatus indicates the current status of a balance update
