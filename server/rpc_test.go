@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 
@@ -76,9 +77,21 @@ func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
 	if r.signErr != nil {
 		return nil, r.signErr
 	}
-	hash := ethcrypto.Keccak256(msg)
-	ethMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, hash)
-	return ethcrypto.Sign(ethcrypto.Keccak256([]byte(ethMsg)), r.priv)
+
+	ethMsg := accounts.TextHash(ethcrypto.Keccak256(msg))
+	sig, err := ethcrypto.Sign(ethMsg, r.priv)
+	if err != nil {
+		return nil, err
+	}
+
+	// sig is in the [R || S || V] format where V is 0 or 1
+	// Convert the V param to 27 or 28
+	v := sig[64]
+	if v == byte(0) || v == byte(1) {
+		v += 27
+	}
+
+	return append(sig[:64], v), nil
 }
 
 func (r *stubOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {

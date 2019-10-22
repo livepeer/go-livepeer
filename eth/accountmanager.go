@@ -11,7 +11,6 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/console"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 )
@@ -147,10 +146,20 @@ func (am *accountManager) SignTx(signer types.Signer, tx *types.Transaction) (*t
 
 // Sign byte array message. Account must be unlocked
 func (am *accountManager) Sign(msg []byte) ([]byte, error) {
-	personalMsg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", 32, msg)
-	personalHash := crypto.Keccak256([]byte(personalMsg))
+	ethHash := accounts.TextHash(msg)
+	sig, err := am.keyStore.SignHash(am.account, ethHash)
+	if err != nil {
+		return nil, err
+	}
 
-	return am.keyStore.SignHash(am.account, personalHash)
+	// sig is in the [R || S || V] format where V is 0 or 1
+	// Convert the V param to 27 or 28
+	v := sig[64]
+	if v == byte(0) || v == byte(1) {
+		v += 27
+	}
+
+	return append(sig[:64], v), nil
 }
 
 func (am *accountManager) Account() accounts.Account {
