@@ -80,23 +80,6 @@ func TestBalance_StageUpdate(t *testing.T) {
 	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
 }
 
-func TestBalance_Clear(t *testing.T) {
-	mid := ManifestID("some manifestID")
-	balances := NewBalances(5 * time.Second)
-	b := NewBalance(mid, balances)
-
-	assert := assert.New(t)
-
-	// Test non-nil key
-	b.Credit(big.NewRat(5, 1))
-	b.Clear()
-	assert.Nil(balances.balances[mid])
-
-	// Test nil key
-	b.Clear()
-	assert.Nil(balances.balances[mid])
-}
-
 func TestEmptyBalances_ReturnsZeroedValues(t *testing.T) {
 	mid := ManifestID("some manifest id")
 	b := NewBalances(5 * time.Second)

@@ -50,11 +50,6 @@ func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) 
 	return int(size), new(big.Rat).Mul(new(big.Rat).SetInt64(size), ev), existingCredit
 }
 
-// Clear zeros the balance
-func (b *Balance) Clear() {
-	delete(b.balances.balances, b.manifestID)
-}
-
 // Balances holds credit balances on a per-stream basis
 type Balances struct {
 	balances map[ManifestID]*balance
