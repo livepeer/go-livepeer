@@ -21,19 +21,22 @@ type SenderWatcher struct {
 	mu             sync.RWMutex
 	quit           chan struct{}
 	watcher        BlockWatcher
+	rw             EventWatcher
 	lpEth          eth.LivepeerEthClient
 	dec            *EventDecoder
 }
 
 // NewSenderWatcher initiates a new SenderWatcher
-func NewSenderWatcher(ticketBrokerAddr ethcommon.Address, watcher BlockWatcher, lpEth eth.LivepeerEthClient) (*SenderWatcher, error) {
+func NewSenderWatcher(ticketBrokerAddr ethcommon.Address, watcher BlockWatcher, lpEth eth.LivepeerEthClient, rw EventWatcher) (*SenderWatcher, error) {
 	dec, err := NewEventDecoder(ticketBrokerAddr, contracts.TicketBrokerABI)
 	if err != nil {
 		return nil, err
 	}
+
 	return &SenderWatcher{
 		quit:           make(chan struct{}),
 		watcher:        watcher,
+		rw:             rw,
 		lpEth:          lpEth,
 		senders:        make(map[ethcommon.Address]*pm.SenderInfo),
 		claimedReserve: make(map[ethcommon.Address]*big.Int),
@@ -41,7 +44,7 @@ func NewSenderWatcher(ticketBrokerAddr ethcommon.Address, watcher BlockWatcher, 
 	}, nil
 }
 
-// GetSenderInfo returns the senderInfo for a sender
+// GetSenderInfo returns information about a sender's deposit and reserve
 // if values for a sender are not cached an RPC call to a remote ethereum node will be made to initialize the cache
 func (sw *SenderWatcher) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
 	sw.mu.RLock()
@@ -64,7 +67,7 @@ func (sw *SenderWatcher) setSenderInfo(addr ethcommon.Address, info *pm.SenderIn
 	sw.senders[addr] = info
 }
 
-// ClaimedReserve returns the amount claimed from a sender's reserve
+// ClaimedReserve returns the amount claimed from a sender's reserve by the node operator
 func (sw *SenderWatcher) ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
 	sw.mu.RLock()
 	claimed := sw.claimedReserve[reserveHolder]
@@ -84,9 +87,14 @@ func (sw *SenderWatcher) ClaimedReserve(reserveHolder ethcommon.Address, claiman
 
 // Watch starts the event watching loop
 func (sw *SenderWatcher) Watch() {
+	roundEvents := make(chan types.Log, 10)
+	roundSub := sw.rw.Subscribe(roundEvents)
+	defer roundSub.Unsubscribe()
+
 	events := make(chan []*blockwatch.Event, 10)
 	sub := sw.watcher.Subscribe(events)
 	defer sub.Unsubscribe()
+
 	for {
 		select {
 		case <-sw.quit:
@@ -95,6 +103,8 @@ func (sw *SenderWatcher) Watch() {
 			glog.Error(err)
 		case events := <-events:
 			sw.handleBlockEvents(events)
+		case roundEvent := <-roundEvents:
+			sw.handleRoundEvent(roundEvent)
 		}
 	}
 }
@@ -157,20 +167,7 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 		}
 		sender = reserveFunded.ReserveHolder
 		if info, ok := sw.senders[sender]; ok && !log.Removed {
-			info.Reserve.Add(info.Reserve, reserveFunded.Amount)
-			// if a thawed reserve is funded we flush claimedReserve for a sender and set it to NotFrozen
-			// making an RPC call here is suboptimal but doesn't happen frequently
-			var currentRound *big.Int
-			if info.ThawRound.Int64() != 0 {
-				currentRound, err = sw.lpEth.CurrentRound()
-				if err != nil {
-					return err
-				}
-				if info.ThawRound.Cmp(currentRound) < 0 {
-					info.ReserveState = pm.NotFrozen
-					sw.claimedReserve[sender] = big.NewInt(0)
-				}
-			}
+			info.Reserve.FundsRemaining.Add(info.Reserve.FundsRemaining, reserveFunded.Amount)
 		}
 	case "Withdrawal":
 		var withdrawal contracts.TicketBrokerWithdrawal
@@ -180,7 +177,8 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 		sender = withdrawal.Sender
 		if info, ok := sw.senders[sender]; ok && !log.Removed {
 			info.Deposit = big.NewInt(0)
-			info.Reserve = big.NewInt(0)
+			info.Reserve.FundsRemaining = big.NewInt(0)
+			info.Reserve.ClaimedInCurrentRound = big.NewInt(0)
 			sw.claimedReserve[sender] = big.NewInt(0)
 		}
 	case "WinningTicketTransfer":
@@ -195,33 +193,24 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 			// See if amount > deposit
 			if info.Deposit.Cmp(amount) < 0 {
 				// Draw from reserve
-				// ReserveFrozen will be handled in it's own event log handler
 				diff := new(big.Int).Sub(amount, info.Deposit)
 				info.Deposit = big.NewInt(0)
-				if claimed, ok := sw.claimedReserve[sender]; ok {
-					claimed.Add(claimed, diff)
-				} else {
-					sw.claimedReserve[sender] = diff
+				// Substract the difference from the remaining reserve
+				info.Reserve.FundsRemaining.Sub(info.Reserve.FundsRemaining, diff)
+				// Add the difference to the amount claimed from the reserve in the current round
+				info.Reserve.ClaimedInCurrentRound.Add(info.Reserve.ClaimedInCurrentRound, diff)
+				// if ticket recipient is the node operator, add to amount the recipient has claimed from a reserve
+				if sw.lpEth.Account().Address == winningTicketTransfer.Recipient {
+					if claimed, ok := sw.claimedReserve[sender]; ok {
+						claimed.Add(claimed, diff)
+					} else {
+						sw.claimedReserve[sender] = diff
+					}
 				}
 			} else {
 				// Draw from deposit
 				info.Deposit.Sub(info.Deposit, amount)
 			}
-		}
-	case "ReserveFrozen":
-		// Set reserveStatus and thawround
-		var reserveFrozen contracts.TicketBrokerReserveFrozen
-		if err := sw.dec.Decode("ReserveFrozen", log, &reserveFrozen); err != nil {
-			return fmt.Errorf("failed to decode ReserveFrozen event: %v", err)
-		}
-		sender = reserveFrozen.ReserveHolder
-		if info, ok := sw.senders[sender]; ok && !log.Removed {
-			info.ReserveState = pm.Frozen
-			// TODO: fetch freezePeriod instead of hardcoding or use a const
-			// TODO: how to handle unthaw
-			// frozen checks will have to be against ReserveFrozen and ThawRound < CurrentRound
-			// But how do we handle state updates when the reserve thaws?
-			info.ThawRound.Add(reserveFrozen.FreezeRound, big.NewInt(2))
 		}
 	case "Unlock":
 		// Set withdraw block
@@ -231,17 +220,17 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 		}
 		sender = unlock.Sender
 		if info, ok := sw.senders[sender]; ok && !log.Removed {
-			info.WithdrawBlock = unlock.EndBlock
+			info.WithdrawRound = unlock.EndRound
 		}
 	case "UnlockCancelled":
-		// Unset withdrawblock
+		// Unset withdrawRound
 		var unlockCancelled contracts.TicketBrokerUnlockCancelled
 		if err := sw.dec.Decode("UnlockCancelled", log, &unlockCancelled); err != nil {
 			return fmt.Errorf("failed to decode UnlockCancelled event: %v", err)
 		}
 		sender = unlockCancelled.Sender
 		if info, ok := sw.senders[sender]; ok && !log.Removed {
-			info.WithdrawBlock = big.NewInt(0)
+			info.WithdrawRound = big.NewInt(0)
 		}
 	default:
 		return nil
@@ -253,6 +242,37 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 			return fmt.Errorf("GetSenderInfo RPC call to remote node failed: %v", err)
 		}
 		sw.senders[sender] = info
+	}
+
+	return nil
+}
+
+func (sw *SenderWatcher) handleRoundEvent(log types.Log) error {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+
+	for sender, info := range sw.senders {
+		if log.Removed {
+			i, err := sw.lpEth.GetSenderInfo(sender)
+			if err != nil {
+				return fmt.Errorf("GetSenderInfo RPC call to remote node failed: %v", err)
+			}
+			info = i
+		} else {
+			info.Reserve.ClaimedInCurrentRound = big.NewInt(0)
+		}
+	}
+
+	for sender := range sw.claimedReserve {
+		if log.Removed {
+			c, err := sw.lpEth.ClaimedReserve(sender, sw.lpEth.Account().Address)
+			if err != nil {
+				return fmt.Errorf("ClaimedReserve RPC call to remote node failed: %v", err)
+			}
+			sw.claimedReserve[sender] = c
+		} else {
+			sw.claimedReserve[sender] = big.NewInt(0)
+		}
 	}
 
 	return nil

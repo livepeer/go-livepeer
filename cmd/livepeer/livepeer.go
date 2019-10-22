@@ -383,7 +383,7 @@ func main() {
 		go unbondingWatcher.Watch()
 		defer unbondingWatcher.Stop()
 
-		senderWatcher, err := watchers.NewSenderWatcher(addrMap["TicketBroker"], blockWatcher, n.Eth)
+		senderWatcher, err := watchers.NewSenderWatcher(addrMap["TicketBroker"], blockWatcher, n.Eth, roundsWatcher)
 		if err != nil {
 			glog.Errorf("Failed to setup senderwatcher: %v", err)
 			return

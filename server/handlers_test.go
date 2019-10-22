@@ -511,7 +511,7 @@ func TestSenderInfoHandler_GetSenderInfoErrNoResult(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("{\"Deposit\":0,\"WithdrawBlock\":0,\"Reserve\":0,\"ReserveState\":0,\"ThawRound\":0}", strings.TrimSpace(string(body)))
+	assert.Equal("{\"Deposit\":0,\"WithdrawRound\":0,\"Reserve\":{\"FundsRemaining\":0,\"ClaimedInCurrentRound\":0}}", strings.TrimSpace(string(body)))
 }
 
 func TestSenderInfoHandler_GetSenderInfoOtherError(t *testing.T) {
@@ -537,11 +537,11 @@ func TestSenderInfoHandler_Success(t *testing.T) {
 
 	mockInfo := &pm.SenderInfo{
 		Deposit:       big.NewInt(0),
-		WithdrawBlock: big.NewInt(102),
-		Reserve:       big.NewInt(104),
-		ReserveState:  pm.ReserveState(1),
-		ThawRound:     big.NewInt(2),
-	}
+		WithdrawRound: big.NewInt(102),
+		Reserve: &pm.ReserveInfo{
+			FundsRemaining:        big.NewInt(104),
+			ClaimedInCurrentRound: big.NewInt(0),
+		}}
 
 	client.On("Account").Return(accounts.Account{Address: addr})
 	client.On("GetSenderInfo", addr).Return(mockInfo, nil)
@@ -556,10 +556,8 @@ func TestSenderInfoHandler_Success(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal(http.StatusOK, resp.StatusCode)
 	assert.Equal(mockInfo.Deposit, info.Deposit)
-	assert.Equal(mockInfo.WithdrawBlock, info.WithdrawBlock)
+	assert.Equal(mockInfo.WithdrawRound, info.WithdrawRound)
 	assert.Equal(mockInfo.Reserve, info.Reserve)
-	assert.Equal(mockInfo.ReserveState, info.ReserveState)
-	assert.Equal(mockInfo.ThawRound, info.ThawRound)
 }
 
 func TestTicketBrokerParamsHandler_MissingClient(t *testing.T) {

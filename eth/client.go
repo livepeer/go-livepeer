@@ -10,7 +10,6 @@ package eth
 //go:generate abigen --abi protocol/abi/TicketBroker.abi --pkg contracts --type TicketBroker --out contracts/ticketBroker.go
 //go:generate abigen --abi protocol/abi/RoundsManager.abi --pkg contracts --type RoundsManager --out contracts/roundsManager.go
 //go:generate abigen --abi protocol/abi/Minter.abi --pkg contracts --type Minter --out contracts/minter.go
-//go:generate abigen --abi protocol/abi/LivepeerVerifier.abi --pkg contracts --type LivepeerVerifier --out contracts/livepeerVerifier.go
 //go:generate abigen --abi protocol/abi/LivepeerTokenFaucet.abi --pkg contracts --type LivepeerTokenFaucet --out contracts/livepeerTokenFaucet.go
 
 import (
@@ -66,7 +65,7 @@ type LivepeerEthClient interface {
 	GetServiceURI(addr ethcommon.Address) (string, error)
 
 	// Staking
-	Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error)
+	Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transaction, error)
 	Reward() (*types.Transaction, error)
 	Bond(amount *big.Int, toAddr ethcommon.Address) (*types.Transaction, error)
 	Rebond(unbondingLockID *big.Int) (*types.Transaction, error)
@@ -98,7 +97,7 @@ type LivepeerEthClient interface {
 	ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error)
 
 	// Parameters
-	NumActiveTranscoders() (*big.Int, error)
+	GetTranscoderPoolMaxSize() (*big.Int, error)
 	RoundLength() (*big.Int, error)
 	RoundLockAmount() (*big.Int, error)
 	UnbondingPeriod() (uint64, error)
@@ -138,7 +137,6 @@ type client struct {
 	*contracts.TicketBrokerSession
 	*contracts.RoundsManagerSession
 	*contracts.MinterSession
-	*contracts.LivepeerVerifierSession
 	*contracts.LivepeerTokenFaucetSession
 
 	gasLimit uint64
@@ -331,27 +329,6 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 
 	glog.V(common.SHORT).Infof("Minter: %v", c.minterAddr.Hex())
 
-	verifierAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("Verifier")))
-	if err != nil {
-		glog.Errorf("Error getting Verifier address: %v", err)
-		return err
-	}
-
-	c.verifierAddr = verifierAddr
-
-	verifier, err := contracts.NewLivepeerVerifier(verifierAddr, c.backend)
-	if err != nil {
-		glog.Errorf("Error creating LivepeerVerifier binding: %v", err)
-		return err
-	}
-
-	// Client should never transact with the Verifier directly so we don't include transact opts
-	c.LivepeerVerifierSession = &contracts.LivepeerVerifierSession{
-		Contract: verifier,
-	}
-
-	glog.V(common.SHORT).Infof("Verifier: %v", c.verifierAddr.Hex())
-
 	faucetAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("LivepeerTokenFaucet")))
 	if err != nil {
 		glog.Errorf("Error getting LivepeerTokenFaucet address: %v", err)
@@ -404,7 +381,7 @@ func (c *client) InitializeRound() (*types.Transaction, error) {
 
 // Staking
 
-func (c *client) Transcoder(blockRewardCut, feeShare, pricePerSegment *big.Int) (*types.Transaction, error) {
+func (c *client) Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transaction, error) {
 	locked, err := c.CurrentRoundLocked()
 	if err != nil {
 		return nil, err
@@ -413,7 +390,7 @@ func (c *client) Transcoder(blockRewardCut, feeShare, pricePerSegment *big.Int) 
 	if locked {
 		return nil, ErrCurrentRoundLocked
 	} else {
-		return c.BondingManagerSession.Transcoder(blockRewardCut, feeShare, pricePerSegment)
+		return c.BondingManagerSession.Transcoder(blockRewardCut, feeShare)
 	}
 }
 
@@ -569,12 +546,7 @@ func (c *client) autoClaimEarnings(endRound *big.Int, allRounds bool) error {
 }
 
 func (c *client) IsActiveTranscoder() (bool, error) {
-	r, err := c.CurrentRound()
-	if err != nil {
-		return false, err
-	}
-
-	return c.BondingManagerSession.IsActiveTranscoder(c.Account().Address, r)
+	return c.BondingManagerSession.IsActiveTranscoder(c.Account().Address)
 }
 
 func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, error) {
@@ -598,12 +570,7 @@ func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, err
 		return nil, err
 	}
 
-	currentRound, err := c.CurrentRound()
-	if err != nil {
-		return nil, err
-	}
-
-	active, err := c.BondingManagerSession.IsActiveTranscoder(addr, currentRound)
+	active, err := c.BondingManagerSession.IsActiveTranscoder(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -614,18 +581,14 @@ func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, err
 	}
 
 	return &lpTypes.Transcoder{
-		Address:                addr,
-		ServiceURI:             serviceURI,
-		LastRewardRound:        tInfo.LastRewardRound,
-		RewardCut:              tInfo.RewardCut,
-		FeeShare:               tInfo.FeeShare,
-		PricePerSegment:        tInfo.PricePerSegment,
-		PendingRewardCut:       tInfo.PendingRewardCut,
-		PendingFeeShare:        tInfo.PendingFeeShare,
-		PendingPricePerSegment: tInfo.PendingPricePerSegment,
-		DelegatedStake:         delegatedStake,
-		Active:                 active,
-		Status:                 status,
+		Address:         addr,
+		ServiceURI:      serviceURI,
+		LastRewardRound: tInfo.LastRewardRound,
+		RewardCut:       tInfo.RewardCut,
+		FeeShare:        tInfo.FeeShare,
+		DelegatedStake:  delegatedStake,
+		Active:          active,
+		Status:          status,
 	}, nil
 }
 

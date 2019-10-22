@@ -55,8 +55,8 @@ func (m *MockClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
 	return args.Get(0).([]*lpTypes.Transcoder), args.Error(1)
 }
 
-// NumActiveTranscoders returns the max size of the active set
-func (m *MockClient) NumActiveTranscoders() (*big.Int, error) {
+// GetTranscoderPoolMaxSize returns the max size of the active set
+func (m *MockClient) GetTranscoderPoolMaxSize() (*big.Int, error) {
 	args := m.Called()
 	return mockBigInt(args, 0), args.Error(1)
 }
@@ -116,11 +116,11 @@ func (m *MockClient) Withdraw() (*types.Transaction, error) {
 
 func (m *MockClient) Senders(addr common.Address) (sender struct {
 	Deposit       *big.Int
-	WithdrawBlock *big.Int
+	WithdrawRound *big.Int
 }, err error) {
 	args := m.Called(addr)
 	sender.Deposit = mockBigInt(args, 0)
-	sender.WithdrawBlock = mockBigInt(args, 1)
+	sender.WithdrawRound = mockBigInt(args, 1)
 	err = args.Error(2)
 
 	return
@@ -178,7 +178,7 @@ type stubTranscoder struct {
 }
 
 func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) error { return nil }
-func (e *StubClient) Account() accounts.Account                                       { return accounts.Account{} }
+func (e *StubClient) Account() accounts.Account                                       { return accounts.Account{Address: e.TranscoderAddress} }
 func (e *StubClient) Backend() (*ethclient.Client, error)                             { return nil, ErrMissingBackend }
 
 // Rounds
@@ -208,7 +208,7 @@ func (e *StubClient) GetServiceURI(addr common.Address) (string, error)         
 
 // Staking
 
-func (e *StubClient) Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error) {
+func (e *StubClient) Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
 func (e *StubClient) Reward() (*types.Transaction, error) { return nil, nil }
@@ -273,7 +273,7 @@ func (e *StubClient) IsUsedTicket(ticket *pm.Ticket) (bool, error) {
 }
 func (e *StubClient) Senders(addr ethcommon.Address) (sender struct {
 	Deposit       *big.Int
-	WithdrawBlock *big.Int
+	WithdrawRound *big.Int
 }, err error) {
 	return
 }
@@ -288,14 +288,13 @@ func (e *StubClient) UnlockPeriod() (*big.Int, error) {
 }
 
 // Parameters
-
-func (c *StubClient) NumActiveTranscoders() (*big.Int, error) { return big.NewInt(0), nil }
-func (c *StubClient) RoundLength() (*big.Int, error)          { return big.NewInt(0), nil }
-func (c *StubClient) RoundLockAmount() (*big.Int, error)      { return big.NewInt(0), nil }
-func (c *StubClient) UnbondingPeriod() (uint64, error)        { return 0, nil }
-func (c *StubClient) Inflation() (*big.Int, error)            { return big.NewInt(0), nil }
-func (c *StubClient) InflationChange() (*big.Int, error)      { return big.NewInt(0), nil }
-func (c *StubClient) TargetBondingRate() (*big.Int, error)    { return big.NewInt(0), nil }
+func (c *StubClient) GetTranscoderPoolMaxSize() (*big.Int, error) { return big.NewInt(0), nil }
+func (c *StubClient) RoundLength() (*big.Int, error)              { return big.NewInt(0), nil }
+func (c *StubClient) RoundLockAmount() (*big.Int, error)          { return big.NewInt(0), nil }
+func (c *StubClient) UnbondingPeriod() (uint64, error)            { return 0, nil }
+func (c *StubClient) Inflation() (*big.Int, error)                { return big.NewInt(0), nil }
+func (c *StubClient) InflationChange() (*big.Int, error)          { return big.NewInt(0), nil }
+func (c *StubClient) TargetBondingRate() (*big.Int, error)        { return big.NewInt(0), nil }
 
 // Helpers
 

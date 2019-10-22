@@ -127,7 +127,7 @@ func (r *RoundInitializer) shouldInitialize(epochSeed *big.Int) (bool, error) {
 		return false, err
 	}
 
-	numActive, err := r.client.NumActiveTranscoders()
+	numActive, err := r.client.GetTranscoderPoolMaxSize()
 	if err != nil {
 		return false, err
 	}

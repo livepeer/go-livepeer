@@ -95,9 +95,9 @@ func TestRoundInitializer_ShouldInitialize(t *testing.T) {
 	assert.False(ok)
 
 	// Test error getting max active set size
-	expErr = errors.New("NumActiveTranscoders error")
+	expErr = errors.New("GetTranscoderPoolMaxSize error")
 	client.On("RegisteredTranscoders").Return(nil, nil).Once()
-	client.On("NumActiveTranscoders").Return(nil, expErr).Once()
+	client.On("GetTranscoderPoolMaxSize").Return(nil, expErr).Once()
 
 	ok, err = initializer.shouldInitialize(nil)
 	assert.EqualError(err, expErr.Error())
@@ -105,7 +105,7 @@ func TestRoundInitializer_ShouldInitialize(t *testing.T) {
 
 	// Test active set is empty because no registered transcoders
 	client.On("RegisteredTranscoders").Return([]*lpTypes.Transcoder{}, nil).Once()
-	client.On("NumActiveTranscoders").Return(big.NewInt(2), nil).Once()
+	client.On("GetTranscoderPoolMaxSize").Return(big.NewInt(2), nil).Once()
 
 	ok, err = initializer.shouldInitialize(nil)
 	assert.Nil(err)
@@ -116,7 +116,7 @@ func TestRoundInitializer_ShouldInitialize(t *testing.T) {
 		&lpTypes.Transcoder{},
 	}
 	client.On("RegisteredTranscoders").Return(registered, nil).Once()
-	client.On("NumActiveTranscoders").Return(big.NewInt(0), nil).Once()
+	client.On("GetTranscoderPoolMaxSize").Return(big.NewInt(0), nil).Once()
 
 	ok, err = initializer.shouldInitialize(nil)
 	assert.Nil(err)
@@ -131,7 +131,7 @@ func TestRoundInitializer_ShouldInitialize(t *testing.T) {
 		&lpTypes.Transcoder{Address: ethcommon.BytesToAddress([]byte("bar"))},
 	}
 	client.On("RegisteredTranscoders").Return(registered, nil).Once()
-	client.On("NumActiveTranscoders").Return(big.NewInt(2), nil).Once()
+	client.On("GetTranscoderPoolMaxSize").Return(big.NewInt(2), nil).Once()
 
 	ok, err = initializer.shouldInitialize(nil)
 	assert.Nil(err)
@@ -140,14 +140,14 @@ func TestRoundInitializer_ShouldInitialize(t *testing.T) {
 	// Test that caller is not in active set but it is registered
 	registered = append(registered, &lpTypes.Transcoder{Address: caller})
 	client.On("RegisteredTranscoders").Return(registered, nil)
-	client.On("NumActiveTranscoders").Return(big.NewInt(2), nil).Once()
+	client.On("GetTranscoderPoolMaxSize").Return(big.NewInt(2), nil).Once()
 
 	ok, err = initializer.shouldInitialize(nil)
 	assert.Nil(err)
 	assert.False(ok)
 
 	// Test caller not selected
-	client.On("NumActiveTranscoders").Return(big.NewInt(3), nil)
+	client.On("GetTranscoderPoolMaxSize").Return(big.NewInt(3), nil)
 
 	seed := big.NewInt(3)
 	ok, err = initializer.shouldInitialize(seed)
@@ -216,7 +216,7 @@ func TestRoundInitializer_TryInitialize(t *testing.T) {
 		&lpTypes.Transcoder{Address: ethcommon.BytesToAddress([]byte("jar"))},
 	}
 	client.On("RegisteredTranscoders").Return(registered, nil).Once()
-	client.On("NumActiveTranscoders").Return(big.NewInt(2), nil)
+	client.On("GetTranscoderPoolMaxSize").Return(big.NewInt(2), nil)
 
 	err = initializer.tryInitialize()
 	assert.Nil(err)

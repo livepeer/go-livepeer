@@ -305,9 +305,9 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			}
 		}
 
-		glog.Infof("Registering orchestrator %v", s.LivepeerNode.Eth.Account().Address.Hex())
+		glog.Infof("Setting orchestrator commission rates %v", s.LivepeerNode.Eth.Account().Address.Hex())
 
-		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), big.NewInt(0))
+		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare))
 		if err != nil {
 			glog.Error(err)
 			return
@@ -366,6 +366,20 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			return
 		}
 
+		glog.Infof("Setting orchestrator commission rates %v", s.LivepeerNode.Eth.Account().Address.Hex())
+
+		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare))
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		err = s.LivepeerNode.Eth.CheckTx(tx)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
 		serviceURI := r.FormValue("serviceURI")
 		if _, err := url.ParseRequestURI(serviceURI); err != nil {
 			glog.Error(err)
@@ -376,22 +390,6 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		if err != nil {
 			glog.Error(err)
 			return
-		}
-
-		if t.PendingRewardCut.Cmp(eth.FromPerc(blockRewardCut)) != 0 || t.PendingFeeShare.Cmp(eth.FromPerc(feeShare)) != 0 {
-			glog.Infof("Setting orchestrator config - Reward Cut: %v Fee Share: %v Price: %v", eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), big.NewInt(0))
-
-			tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), big.NewInt(0))
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			err = s.LivepeerNode.Eth.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
 		}
 
 		if t.ServiceURI != serviceURI {
@@ -786,7 +784,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		if s.LivepeerNode.Eth != nil {
 			lp := s.LivepeerNode.Eth
 
-			numActiveOrchestrators, err := lp.NumActiveTranscoders()
+			numActiveOrchestrators, err := lp.GetTranscoderPoolMaxSize()
 			if err != nil {
 				glog.Error(err)
 				return

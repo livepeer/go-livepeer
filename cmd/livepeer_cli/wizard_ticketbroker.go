@@ -47,17 +47,7 @@ func (w *wizard) deposit() {
 	}
 
 	fmt.Printf("Current Deposit: %v\n", sender.Deposit)
-	fmt.Printf("Current Reserve: %v\n", sender.Reserve)
-
-	if sender.ReserveState == pm.Frozen {
-		currRound := w.currentRound()
-
-		fmt.Printf("Current Round: %v\n", currRound)
-		fmt.Printf("Thaw Round: %v\n", sender.ThawRound)
-
-		fmt.Printf("Cannot deposit because sender's reserve is frozen and not yet thawed")
-		return
-	}
+	fmt.Printf("Current Reserve: %v\n", sender.Reserve.FundsRemaining)
 
 	fmt.Printf("Enter deposit amount in ETH - ")
 
@@ -83,28 +73,18 @@ func (w *wizard) unlock() {
 		return
 	}
 
-	blk, err := w.currentBlock()
+	round, err := w.currentRound()
 	if err != nil {
-		glog.Errorf("Error getting current block: %v", err)
+		glog.Errorf("Error getting current round: %v", err)
 		return
 	}
 
 	fmt.Printf("Current Deposit: %v\n", eth.FormatUnits(sender.Deposit, "ETH"))
-	fmt.Printf("Current Reserve: %v\n", eth.FormatUnits(sender.Reserve, "ETH"))
+	fmt.Printf("Current Reserve: %v\n", eth.FormatUnits(sender.Reserve.FundsRemaining, "ETH"))
 
-	if sender.ReserveState == pm.Frozen {
-		currRound := w.currentRound()
+	fmt.Printf("Current Round: %v\n", round)
 
-		fmt.Printf("Current Round: %v\n", currRound)
-		fmt.Printf("Thaw Round: %v\n", sender.ThawRound)
-
-		fmt.Printf("Cannot deposit because sender's reserve is frozen and not yet thawed")
-		return
-	}
-
-	fmt.Printf("Current Block: %v\n", blk)
-
-	ss := senderStatus(sender, blk)
+	ss := senderStatus(sender, round)
 	if ss != Locked {
 		printSenderStatus("Cannot unlock because sender's deposit and reserve are not locked", ss)
 		return
@@ -116,9 +96,9 @@ func (w *wizard) unlock() {
 		return
 	}
 
-	projWithdrawBlock := new(big.Int).Add(blk, params.UnlockPeriod)
+	projWithdrawRound := new(big.Int).Add(round, params.UnlockPeriod)
 
-	fmt.Printf("If you initiate the unlock period now, you will be able to withdraw at block %v\n", projWithdrawBlock)
+	fmt.Printf("If you initiate the unlock period now, you will be able to withdraw at round %v\n", projWithdrawRound)
 	fmt.Printf("Would you like initiate the unlock period? (y/n) - ")
 
 	input := w.readStringYesOrNo()
@@ -136,18 +116,18 @@ func (w *wizard) cancelUnlock() {
 		return
 	}
 
-	blk, err := w.currentBlock()
+	round, err := w.currentRound()
 	if err != nil {
-		glog.Errorf("Error getting current block: %v", err)
+		glog.Errorf("Error getting current round: %v", err)
 		return
 	}
 
 	fmt.Printf("Current Deposit: %v\n", eth.FormatUnits(sender.Deposit, "ETH"))
-	fmt.Printf("Current Reserve: %v\n", eth.FormatUnits(sender.Reserve, "ETH"))
-	fmt.Printf("Current Block: %v\n", blk)
-	fmt.Printf("Withdraw Block: %v\n", sender.WithdrawBlock)
+	fmt.Printf("Current Reserve: %v\n", eth.FormatUnits(sender.Reserve.FundsRemaining, "ETH"))
+	fmt.Printf("Current Round: %v\n", round)
+	fmt.Printf("Withdraw Round: %v\n", sender.WithdrawRound)
 
-	ss := senderStatus(sender, blk)
+	ss := senderStatus(sender, round)
 	if ss != Unlocking {
 		printSenderStatus("Cannot cancel unlock because sender is not in the unlock period", ss)
 		return
@@ -171,33 +151,21 @@ func (w *wizard) withdraw() {
 	}
 
 	fmt.Printf("Current Deposit: %v\n", eth.FormatUnits(sender.Deposit, "ETH"))
-	fmt.Printf("Current Reserve: %v\n", eth.FormatUnits(sender.Reserve, "ETH"))
+	fmt.Printf("Current Reserve: %v\n", eth.FormatUnits(sender.Reserve.FundsRemaining, "ETH"))
 
-	if sender.ReserveState != pm.NotFrozen {
-		currRound := w.currentRound()
+	round, err := w.currentRound()
+	if err != nil {
+		glog.Errorf("Error getting current round: %v", err)
+		return
+	}
 
-		fmt.Printf("Current Round: %v\n", currRound)
-		fmt.Printf("Thaw Round: %v\n", sender.ThawRound)
+	fmt.Printf("Current Round: %v\n", round)
+	fmt.Printf("Withdraw Round: %v\n", sender.WithdrawRound)
 
-		if sender.ReserveState == pm.Frozen {
-			fmt.Printf("Cannot withdraw because sender's reserve is frozen and not yet thawed")
-			return
-		}
-	} else {
-		blk, err := w.currentBlock()
-		if err != nil {
-			glog.Errorf("Error getting current block: %v", err)
-			return
-		}
-
-		fmt.Printf("Current Block: %v\n", blk)
-		fmt.Printf("Withdraw Block: %v\n", sender.WithdrawBlock)
-
-		ss := senderStatus(sender, blk)
-		if ss != Unlocked {
-			printSenderStatus("Cannot withdraw because sender's deposit and reserve are not unlocked", ss)
-			return
-		}
+	ss := senderStatus(sender, round)
+	if ss != Unlocked {
+		printSenderStatus("Cannot withdraw because sender's deposit and reserve are not unlocked", ss)
+		return
 	}
 
 	fmt.Printf("Would you like to withdraw? (y/n) - ")
@@ -220,9 +188,11 @@ func (w *wizard) senderInfo() (info pm.SenderInfo, err error) {
 	if resp.StatusCode == http.StatusInternalServerError {
 		// node is in offchain mode
 		info.Deposit = big.NewInt(0)
-		info.Reserve = big.NewInt(0)
-		info.ThawRound = big.NewInt(0)
-		info.WithdrawBlock = big.NewInt(0)
+		info.WithdrawRound = big.NewInt(0)
+		info.Reserve = &pm.ReserveInfo{
+			FundsRemaining:        big.NewInt(0),
+			ClaimedInCurrentRound: big.NewInt(0),
+		}
 		return
 	}
 
@@ -282,13 +252,13 @@ func printSenderStatus(msg string, status SenderStatus) {
 	fmt.Printf("%v: %v\n", msg, statusMsg)
 }
 
-func senderStatus(sender pm.SenderInfo, currentBlock *big.Int) SenderStatus {
-	if sender.Deposit.Cmp(big.NewInt(0)) == 0 && sender.Reserve.Cmp(big.NewInt(0)) == 0 {
+func senderStatus(sender pm.SenderInfo, currentRound *big.Int) SenderStatus {
+	if sender.Deposit.Cmp(big.NewInt(0)) == 0 && sender.Reserve.FundsRemaining.Cmp(big.NewInt(0)) == 0 {
 		return Empty
 	}
 
-	if sender.WithdrawBlock.Cmp(big.NewInt(0)) > 0 {
-		if sender.WithdrawBlock.Cmp(currentBlock) <= 0 {
+	if sender.WithdrawRound.Cmp(big.NewInt(0)) > 0 {
+		if sender.WithdrawRound.Cmp(currentRound) <= 0 {
 			return Unlocked
 		}
 

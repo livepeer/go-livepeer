@@ -153,7 +153,7 @@ func newStubWinningTicketLog() types.Log {
 	sender := common.LeftPadBytes(stubSender.Bytes(), 32)
 	var senderTopic [32]byte
 	copy(senderTopic[:], sender[:])
-	recipient := common.LeftPadBytes(pm.RandAddress().Bytes(), 32)
+	recipient := common.LeftPadBytes(stubClaimant.Bytes(), 32)
 	var recipientTopic [32]byte
 	copy(recipientTopic[:], recipient[:])
 	log.Topics = []common.Hash{
@@ -164,27 +164,6 @@ func newStubWinningTicketLog() types.Log {
 	amount, _ := new(big.Int).SetString("200000000000", 10)
 	amountData := common.LeftPadBytes(amount.Bytes(), 32)
 	log.Data = amountData
-	return log
-}
-
-func newStubReserveFrozenLog() types.Log {
-	log := newStubBaseLog()
-	log.Address = stubTicketBrokerAddr
-	holder := common.LeftPadBytes(stubSender.Bytes(), 32)
-	claimant := common.LeftPadBytes(pm.RandAddress().Bytes(), 32)
-	var holderTopic [32]byte
-	copy(holderTopic[:], holder[:])
-	var claimantTopic [32]byte
-	copy(claimantTopic[:], claimant[:])
-	log.Topics = []common.Hash{
-		crypto.Keccak256Hash([]byte("ReserveFrozen(address,address,uint256,uint256)")),
-		holderTopic,
-		claimantTopic,
-	}
-	var data []byte
-	data = append(data, common.LeftPadBytes(big.NewInt(5).Bytes(), 32)...)
-	data = append(data, common.LeftPadBytes(big.NewInt(25).Bytes(), 32)...)
-	log.Data = data
 	return log
 }
 
@@ -314,4 +293,15 @@ func defaultMiniHeader() *blockwatch.MiniHeader {
 	}
 	block.Logs = []types.Log{log}
 	return block
+}
+
+type stubRoundsWatcher struct {
+	sink chan<- types.Log
+	sub  *stubSubscription
+}
+
+func (rw *stubRoundsWatcher) Subscribe(sink chan<- types.Log) event.Subscription {
+	rw.sink = sink
+	rw.sub = &stubSubscription{errCh: make(<-chan error)}
+	return rw.sub
 }

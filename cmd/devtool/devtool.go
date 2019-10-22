@@ -237,7 +237,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		}
 		glog.Info("Done initializing round.")
 		glog.Info("Activating transcoder")
-		// curl -d "blockRewardCut=10&feeShare=5&pricePerSegment=1&amount=500" --data-urlencode "serviceURI=https://$transcoderServiceAddr" \
+		// curl -d "blockRewardCut=10&feeShare=5&amount=500" --data-urlencode "serviceURI=https://$transcoderServiceAddr" \
 		//   -H "Content-Type: application/x-www-form-urlencoded" \
 		//   -X "POST" http://localhost:$transcoderCliPort/activateTranscoder\
 		var amount *big.Int = big.NewInt(int64(500))
@@ -256,9 +256,8 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 			return
 		}
 		glog.Infof("Registering transcoder %v", ethAcctAddr)
-		price := big.NewInt(1)
 
-		tx, err = client.Transcoder(eth.FromPerc(10), eth.FromPerc(5), price)
+		tx, err = client.Transcoder(eth.FromPerc(10), eth.FromPerc(5))
 		if err == eth.ErrCurrentRoundLocked {
 			// wait for next round and retry
 		}
@@ -314,7 +313,7 @@ func createRunScript(ethAcctAddr, dataDir, serviceHost string, isBroadcaster boo
 		script += fmt.Sprintf(` -initializeRound=true \
     -serviceAddr %s:%d  -transcoder=true -orchestrator=true \
     -orchSecret secre -pricePerUnit 1
-    `, serviceHost, mediaPort, dataDir)
+    `, serviceHost, mediaPort)
 	} else {
 		script += fmt.Sprintf(` -broadcaster=true -rtmpAddr %s:%d`, serviceHost, rtmpPort)
 	}

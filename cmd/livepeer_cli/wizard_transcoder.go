@@ -172,12 +172,12 @@ func (w *wizard) callReward() {
 		fmt.Printf("Error getting orchestrator info: %v\n", err)
 		return
 	}
-	c, err := strconv.ParseInt(w.currentRound(), 10, 64)
+	c, err := w.currentRound()
 	if err != nil {
 		fmt.Printf("Error converting current round: %v\n", c)
 	}
 
-	if c == t.LastRewardRound.Int64() {
+	if c.Cmp(t.LastRewardRound) == 0 {
 		fmt.Printf("Reward for current round %v already called\n", c)
 		return
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/pm"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -76,7 +75,11 @@ func (w *wizard) stats(showOrchestrator bool) {
 		w.delegatorStats()
 	}
 
-	currentRound := w.currentRound()
+	currentRound, err := w.currentRound()
+	if err != nil {
+		glog.Errorf("Error getting current round: %v", err)
+		return
+	}
 
 	fmt.Printf("CURRENT ROUND: %v\n", currentRound)
 }
@@ -153,19 +156,15 @@ func (w *wizard) broadcastStats() {
 		[]string{"Max Price Per Pixel", priceString},
 		[]string{"Broadcast Transcoding Options", transcodingOptions},
 		[]string{"Deposit", eth.FormatUnits(sender.Deposit, "ETH")},
-		[]string{"Reserve", eth.FormatUnits(sender.Reserve, "ETH")},
+		[]string{"Reserve", eth.FormatUnits(sender.Reserve.FundsRemaining, "ETH")},
 	}
 
 	for _, v := range data {
 		table.Append(v)
 	}
 
-	if sender.ReserveState != pm.NotFrozen {
-		table.Append([]string{"Thaw Round", sender.ThawRound.String()})
-	}
-
-	if sender.WithdrawBlock.Cmp(big.NewInt(0)) > 0 && (sender.Deposit.Cmp(big.NewInt(0)) > 0 || sender.Reserve.Cmp(big.NewInt(0)) > 0) {
-		table.Append([]string{"Withdraw Block", sender.WithdrawBlock.String()})
+	if sender.WithdrawRound.Cmp(big.NewInt(0)) > 0 && (sender.Deposit.Cmp(big.NewInt(0)) > 0 || sender.Reserve.FundsRemaining.Cmp(big.NewInt(0)) > 0) {
+		table.Append([]string{"Withdraw Round", sender.WithdrawRound.String()})
 	}
 
 	table.SetAlignment(tablewriter.ALIGN_RIGHT)
@@ -197,8 +196,6 @@ func (w *wizard) orchestratorStats() {
 		[]string{"Delegated Stake", eth.FormatUnits(t.DelegatedStake, "LPT")},
 		[]string{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
 		[]string{"Fee Share (%)", eth.FormatPerc(t.FeeShare)},
-		[]string{"Pending Reward Cut (%)", eth.FormatPerc(t.PendingRewardCut)},
-		[]string{"Pending Fee Share (%)", eth.FormatPerc(t.PendingFeeShare)},
 		[]string{"Last Reward Round", t.LastRewardRound.String()},
 		[]string{"Base price per pixel", fmt.Sprintf("%v wei / %v pixels", priceInfo.Num(), priceInfo.Denom())},
 	}
