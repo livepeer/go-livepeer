@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -77,7 +78,48 @@ func TestBalance_StageUpdate(t *testing.T) {
 	assert.Equal(2, numTickets)
 	assert.Zero(big.NewRat(2, 1).Cmp(newCredit))
 	assert.Zero(big.NewRat(0, 1).Cmp(existingCredit))
-	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+}
+
+func TestAddressBalances(t *testing.T) {
+	addr1 := ethcommon.BytesToAddress([]byte("foo"))
+	addr2 := ethcommon.BytesToAddress([]byte("bar"))
+	mid := ManifestID("some manifestID")
+
+	balances := NewAddressBalances(500 * time.Millisecond)
+
+	assert := assert.New(t)
+
+	assert.Nil(balances.Balance(addr1, mid))
+
+	balances.Credit(addr1, mid, big.NewRat(5, 1))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(addr1, mid)))
+
+	balances.Debit(addr1, mid, big.NewRat(2, 1))
+	assert.Zero(big.NewRat(3, 1).Cmp(balances.Balance(addr1, mid)))
+
+	balances.Credit(addr2, mid, big.NewRat(5, 1))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(addr2, mid)))
+
+	reserved := balances.Reserve(addr2, mid)
+	assert.Zero(big.NewRat(5, 1).Cmp(reserved))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(addr2, mid)))
+
+	// Check that we are cleaning up balances after the TTL
+	time.Sleep(700 * time.Millisecond)
+
+	assert.Nil(balances.Balance(addr1, mid))
+	assert.Nil(balances.Balance(addr2, mid))
+
+	balances.Credit(addr1, mid, big.NewRat(5, 1))
+	balances.Credit(addr2, mid, big.NewRat(5, 1))
+
+	// Check that we are not cleaning up balances after StopCleanup() is called
+	balances.StopCleanup()
+
+	time.Sleep(700 * time.Millisecond)
+
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(addr1, mid)))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(addr2, mid)))
 }
 
 func TestEmptyBalances_ReturnsZeroedValues(t *testing.T) {

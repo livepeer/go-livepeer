@@ -4,6 +4,8 @@ import (
 	"math/big"
 	"sync"
 	"time"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
 // Balance holds the credit balance for a broadcast session
@@ -48,6 +50,65 @@ func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) 
 	size := res.Int64()
 
 	return int(size), new(big.Rat).Mul(new(big.Rat).SetInt64(size), ev), existingCredit
+}
+
+// AddressBalances holds credit balances for ETH addresses
+type AddressBalances struct {
+	balances map[ethcommon.Address]*Balances
+	mtx      sync.Mutex
+	ttl      time.Duration
+}
+
+// NewAddressBalances creates a new AddressBalances instance
+func NewAddressBalances(ttl time.Duration) *AddressBalances {
+	return &AddressBalances{
+		balances: make(map[ethcommon.Address]*Balances),
+		ttl:      ttl,
+	}
+}
+
+// Credit adds an an amount to the balance for an address' ManifestID
+func (a *AddressBalances) Credit(addr ethcommon.Address, id ManifestID, amount *big.Rat) {
+	a.balancesForAddr(addr).Credit(id, amount)
+}
+
+// Debit substracts an amount from the balance for an address' ManifestID
+func (a *AddressBalances) Debit(addr ethcommon.Address, id ManifestID, amount *big.Rat) {
+	a.balancesForAddr(addr).Debit(id, amount)
+}
+
+// Reserve zeros the balance for an address' ManifestID and returns the current balance
+func (a *AddressBalances) Reserve(addr ethcommon.Address, id ManifestID) *big.Rat {
+	return a.balancesForAddr(addr).Reserve(id)
+}
+
+// Balance retrieves the current balance for an address' ManifestID
+func (a *AddressBalances) Balance(addr ethcommon.Address, id ManifestID) *big.Rat {
+	return a.balancesForAddr(addr).Balance(id)
+}
+
+// StopCleanup stops the cleanup loop for all balances
+func (a *AddressBalances) StopCleanup() {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
+	for _, b := range a.balances {
+		b.StopCleanup()
+	}
+}
+
+func (a *AddressBalances) balancesForAddr(addr ethcommon.Address) *Balances {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+
+	if _, ok := a.balances[addr]; !ok {
+		b := NewBalances(a.ttl)
+		go b.StartCleanup()
+
+		a.balances[addr] = b
+	}
+
+	return a.balances[addr]
 }
 
 // Balances holds credit balances on a per-stream basis
