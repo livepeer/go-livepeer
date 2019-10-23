@@ -199,12 +199,14 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 		var sessionID string
 		var balance Balance
 
+		ticketParams := pmTicketParams(tinfo.TicketParams)
+
 		if n.Sender != nil {
-			sessionID = n.Sender.StartSession(*pmTicketParams(tinfo.TicketParams))
+			sessionID = n.Sender.StartSession(*ticketParams)
 		}
 
 		if n.Balances != nil {
-			balance = core.NewBalance(params.mid, n.Balances)
+			balance = core.NewBalance(ticketParams.Recipient, params.mid, n.Balances)
 		}
 
 		var orchOS drivers.OSSession

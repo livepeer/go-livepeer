@@ -181,7 +181,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		if acceptablePrice && err == nil || (ok && pmErr.Acceptable()) {
 			// Add ticket EV to credit
 			ev := ticket.EV()
-			orch.node.Balances.Credit(manifestID, ev)
+			orch.node.Balances.Credit(sender, manifestID, ev)
 			totalEV.Add(totalEV, ev)
 			totalTickets++
 		} else {
@@ -271,24 +271,24 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, e
 
 // SufficientBalance checks whether the credit balance for a stream is sufficient
 // to proceed with downloading and transcoding
-func (orch *orchestrator) SufficientBalance(manifestID ManifestID) bool {
+func (orch *orchestrator) SufficientBalance(addr ethcommon.Address, manifestID ManifestID) bool {
 	if orch.node == nil || orch.node.Recipient == nil || orch.node.Balances == nil {
 		return true
 	}
-	if orch.node.Balances.Balance(manifestID).Cmp(orch.node.Recipient.EV()) < 0 {
+	if orch.node.Balances.Balance(addr, manifestID).Cmp(orch.node.Recipient.EV()) < 0 {
 		return false
 	}
 	return true
 }
 
 // DebitFees debits the balance for a ManifestID based on the amount of output pixels * price
-func (orch *orchestrator) DebitFees(manifestID ManifestID, price *net.PriceInfo, pixels int64) {
+func (orch *orchestrator) DebitFees(addr ethcommon.Address, manifestID ManifestID, price *net.PriceInfo, pixels int64) {
 	// Don't debit in offchain mode
 	if orch.node == nil || orch.node.Balances == nil {
 		return
 	}
 	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
-	orch.node.Balances.Debit(manifestID, priceRat.Mul(priceRat, big.NewRat(pixels, 1)))
+	orch.node.Balances.Debit(addr, manifestID, priceRat.Mul(priceRat, big.NewRat(pixels, 1)))
 }
 
 // Acceptable price checks whether the payment sender's expected price sent with a payment is acceptable

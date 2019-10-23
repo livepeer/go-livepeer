@@ -10,13 +10,15 @@ import (
 
 // Balance holds the credit balance for a broadcast session
 type Balance struct {
+	addr       ethcommon.Address
 	manifestID ManifestID
-	balances   *Balances
+	balances   *AddressBalances
 }
 
 // NewBalance returns a Balance instance
-func NewBalance(manifestID ManifestID, balances *Balances) *Balance {
+func NewBalance(addr ethcommon.Address, manifestID ManifestID, balances *AddressBalances) *Balance {
 	return &Balance{
+		addr:       addr,
 		manifestID: manifestID,
 		balances:   balances,
 	}
@@ -24,13 +26,13 @@ func NewBalance(manifestID ManifestID, balances *Balances) *Balance {
 
 // Credit adds an amount to the balance
 func (b *Balance) Credit(amount *big.Rat) {
-	b.balances.Credit(b.manifestID, amount)
+	b.balances.Credit(b.addr, b.manifestID, amount)
 }
 
 // StageUpdate prepares a balance update by reserving the current balance and returning the number of tickets
 // to send with a payment, the new credit represented by the payment and the existing credit (i.e reserved balance)
 func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) {
-	existingCredit := b.balances.Reserve(b.manifestID)
+	existingCredit := b.balances.Reserve(b.addr, b.manifestID)
 
 	// If the existing credit exceeds the minimum credit then no tickets are required
 	// and the total payment value is 0

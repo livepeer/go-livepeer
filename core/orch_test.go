@@ -528,7 +528,7 @@ func TestOrchCheckCapacity(t *testing.T) {
 
 func TestProcessPayment_GivenRecipientError_ReturnsNil(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -599,7 +599,7 @@ func TestProcessPayment_GivenNilRecipient_ReturnsNilError(t *testing.T) {
 
 func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -618,7 +618,7 @@ func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 
 func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -646,7 +646,7 @@ func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
 
 func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -673,7 +673,7 @@ func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
 
 func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -729,7 +729,7 @@ func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 
 func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -775,7 +775,7 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 
 func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -814,7 +814,7 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 // Check that an Acceptable error increases the credit
 func TestProcessPayment_AcceptablePaymentError_IncreasesCreditBalance(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -844,13 +844,13 @@ func TestProcessPayment_AcceptablePaymentError_IncreasesCreditBalance(t *testing
 	acceptableErr, ok := err.(AcceptableError)
 	assert.True(ok)
 	assert.True(acceptableErr.Acceptable())
-	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(ticket.EV()))
+	assert.Zero(orch.node.Balances.Balance(ethcommon.BytesToAddress(payment.Sender), manifestID).Cmp(ticket.EV()))
 }
 
 // Check that an unacceptable error does NOT increase the credit
 func TestProcessPayment_UnacceptablePaymentError_DoesNotIncreaseCreditBalance(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -863,17 +863,18 @@ func TestProcessPayment_UnacceptablePaymentError_DoesNotIncreaseCreditBalance(t 
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, unacceptableError).Once()
 	assert := assert.New(t)
 
-	err := orch.ProcessPayment(defaultPayment(t), manifestID)
+	payment := defaultPayment(t)
+	err := orch.ProcessPayment(payment, manifestID)
 	assert.Error(err)
 	acceptableErr, ok := err.(AcceptableError)
 	assert.True(ok)
 	assert.False(acceptableErr.Acceptable())
-	assert.Nil(orch.node.Balances.Balance(manifestID))
+	assert.Nil(orch.node.Balances.Balance(ethcommon.BytesToAddress(payment.Sender), manifestID))
 }
 
 func TestProcesspayment_NoPriceError_IncreasesCredit(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -907,12 +908,12 @@ func TestProcesspayment_NoPriceError_IncreasesCredit(t *testing.T) {
 
 	err := orch.ProcessPayment(payment, manifestID)
 	assert.Nil(err)
-	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(ticket.EV()))
+	assert.Zero(orch.node.Balances.Balance(sender, manifestID).Cmp(ticket.EV()))
 }
 
 func TestProcessPayment_AcceptablePriceError_IncreasesCredit_ReturnsError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -949,13 +950,13 @@ func TestProcessPayment_AcceptablePriceError_IncreasesCredit_ReturnsError(t *tes
 	acceptableErr, ok := err.(AcceptableError)
 	assert.True(ok)
 	assert.True(acceptableErr.Acceptable())
-	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(ticket.EV()))
+	assert.Zero(orch.node.Balances.Balance(sender, manifestID).Cmp(ticket.EV()))
 	assert.Equal(1, orch.node.ErrorMonitor.errCount[sender])
 }
 
 func TestProcessPayment_UnacceptablePriceError_ReturnsError_DoesNotIncreaseCredit(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -992,7 +993,7 @@ func TestProcessPayment_UnacceptablePriceError_ReturnsError_DoesNotIncreaseCredi
 	acceptableErr, ok := err.(AcceptableError)
 	assert.True(ok)
 	assert.False(acceptableErr.Acceptable())
-	assert.Nil(orch.node.Balances.Balance(manifestID))
+	assert.Nil(orch.node.Balances.Balance(sender, manifestID))
 }
 
 func TestAcceptablePrice(t *testing.T) {
@@ -1095,7 +1096,7 @@ func TestAcceptablePrice_PriceInfoError_ReturnsErr(t *testing.T) {
 
 func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -1116,12 +1117,12 @@ func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 	err := orch.ProcessPayment(payment, manifestID)
 	assert.Nil(err)
 	recipient.On("EV").Return(big.NewRat(100, 1))
-	assert.True(orch.SufficientBalance(manifestID))
+	assert.True(orch.SufficientBalance(ethcommon.BytesToAddress(payment.Sender), manifestID))
 }
 
 func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	orch := NewOrchestrator(n)
@@ -1142,24 +1143,25 @@ func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
 	err := orch.ProcessPayment(payment, manifestID)
 	assert.Nil(err)
 	recipient.On("EV").Return(big.NewRat(10000, 1))
-	assert.False(orch.SufficientBalance(manifestID))
+	assert.False(orch.SufficientBalance(ethcommon.BytesToAddress(payment.Sender), manifestID))
 }
 
 func TestSufficientBalance_OffChainMode_ReturnsTrue(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
+	addr := ethcommon.Address{}
 	manifestID := ManifestID("some manifest")
 	orch := NewOrchestrator(n)
-	assert.True(t, orch.SufficientBalance(manifestID))
+	assert.True(t, orch.SufficientBalance(addr, manifestID))
 
 	orch.node.Recipient = new(pm.MockRecipient)
-	assert.True(t, orch.SufficientBalance(manifestID))
+	assert.True(t, orch.SufficientBalance(addr, manifestID))
 
 	orch.node.Recipient = nil
-	orch.node.Balances = NewBalances(5 * time.Second)
-	assert.True(t, orch.SufficientBalance(manifestID))
+	orch.node.Balances = NewAddressBalances(5 * time.Second)
+	assert.True(t, orch.SufficientBalance(addr, manifestID))
 
 	orch.node = nil
-	assert.True(t, orch.SufficientBalance(manifestID))
+	assert.True(t, orch.SufficientBalance(addr, manifestID))
 }
 
 func TestTicketParams(t *testing.T) {
@@ -1345,8 +1347,9 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 
 func TestDebitFees(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Balances = NewBalances(5 * time.Second)
+	n.Balances = NewAddressBalances(5 * time.Second)
 	orch := NewOrchestrator(n)
+	addr := ethcommon.Address{}
 	manifestID := ManifestID("some manifest")
 	assert := assert.New(t)
 
@@ -1359,18 +1362,18 @@ func TestDebitFees(t *testing.T) {
 	amount := new(big.Rat).Mul(big.NewRat(price.PricePerUnit, price.PixelsPerUnit), big.NewRat(pixels, 1))
 	expectedBal := new(big.Rat).Sub(big.NewRat(0, 1), amount)
 
-	orch.DebitFees(manifestID, price, pixels)
+	orch.DebitFees(addr, manifestID, price, pixels)
 
-	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(expectedBal))
+	assert.Zero(orch.node.Balances.Balance(addr, manifestID).Cmp(expectedBal))
 
 	// debit for 0 pixels transcoded , balance is still the same
-	orch.DebitFees(manifestID, price, int64(0))
-	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(expectedBal))
+	orch.DebitFees(addr, manifestID, price, int64(0))
+	assert.Zero(orch.node.Balances.Balance(addr, manifestID).Cmp(expectedBal))
 
 	// Credit balance 2*amount , should have 0 remaining after debiting 'amount' again
-	orch.node.Balances.Credit(manifestID, new(big.Rat).Mul(amount, big.NewRat(2, 1)))
-	orch.DebitFees(manifestID, price, pixels)
-	assert.Zero(orch.node.Balances.Balance(manifestID).Cmp(big.NewRat(0, 1)))
+	orch.node.Balances.Credit(addr, manifestID, new(big.Rat).Mul(amount, big.NewRat(2, 1)))
+	orch.DebitFees(addr, manifestID, price, pixels)
+	assert.Zero(orch.node.Balances.Balance(addr, manifestID).Cmp(big.NewRat(0, 1)))
 }
 
 func TestDebitFees_OffChain_Returns(t *testing.T) {
@@ -1380,17 +1383,18 @@ func TestDebitFees_OffChain_Returns(t *testing.T) {
 	}
 	// 1080p 60fps 2sec + 720p 60fps 2sec + 480p 60fps 2sec
 	pixels := int64(248832000 + 110592000 + 36864000)
+	addr := ethcommon.Address{}
 	manifestID := ManifestID("some manifest")
 
 	n, _ := NewLivepeerNode(nil, "", nil)
 
 	// Node != nil Balances == nil
 	orch := NewOrchestrator(n)
-	assert.NotPanics(t, func() { orch.DebitFees(manifestID, price, pixels) })
+	assert.NotPanics(t, func() { orch.DebitFees(addr, manifestID, price, pixels) })
 
 	// Node == nil
 	orch.node = nil
-	assert.NotPanics(t, func() { orch.DebitFees(manifestID, price, pixels) })
+	assert.NotPanics(t, func() { orch.DebitFees(addr, manifestID, price, pixels) })
 }
 
 func defaultPayment(t *testing.T) net.Payment {

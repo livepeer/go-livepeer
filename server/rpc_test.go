@@ -120,11 +120,12 @@ func (r *stubOrchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, 
 	return nil, nil
 }
 
-func (r *stubOrchestrator) SufficientBalance(manifestID core.ManifestID) bool {
+func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
 	return false
 }
 
-func (r *stubOrchestrator) DebitFees(manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {}
+func (r *stubOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
+}
 
 func newStubOrchestrator() *stubOrchestrator {
 	pk, err := ethcrypto.GenerateKey()
@@ -790,13 +791,13 @@ func (o *mockOrchestrator) CheckCapacity(mid core.ManifestID) error {
 	return nil
 }
 
-func (o *mockOrchestrator) SufficientBalance(manifestID core.ManifestID) bool {
-	args := o.Called(manifestID)
+func (o *mockOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
+	args := o.Called(addr, manifestID)
 	return args.Bool(0)
 }
 
-func (o *mockOrchestrator) DebitFees(manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
-	o.Called(manifestID, price, pixels)
+func (o *mockOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
+	o.Called(addr, manifestID, price, pixels)
 }
 
 func defaultTicketParams() *net.TicketParams {
