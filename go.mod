@@ -24,12 +24,12 @@ require (
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/protobuf v1.3.2
 	github.com/gorilla/websocket v1.4.1 // indirect
+	github.com/graph-gophers/graphql-go v0.0.0-20190917030536-38a077bc812d // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/howeyc/fsnotify v0.9.0 // indirect
 	github.com/huin/goupnp v1.0.0 // indirect
 	github.com/influxdata/influxdb v1.7.8 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.1 // indirect
-	github.com/karalabe/hid v1.0.0 // indirect
 	github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/livepeer/lpms v0.0.0-20191004153601-83352b59757e
