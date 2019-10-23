@@ -27,7 +27,7 @@ func NewEventDecoder(addr ethcommon.Address, abiJSON string) (*EventDecoder, err
 
 	topicToEventName := make(map[ethcommon.Hash]string)
 	for _, event := range abi.Events {
-		topicToEventName[event.Id()] = event.Name
+		topicToEventName[event.ID()] = event.Name
 	}
 
 	return &EventDecoder{

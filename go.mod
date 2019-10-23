@@ -19,16 +19,18 @@ require (
 	github.com/fatih/color v1.7.0 // indirect
 	// replace example.com/some/dependency => example.com/some/dependency-fork v1.2.3
 	github.com/fjl/memsize v0.0.0-20190710130421-bcb5799ab5e5 // indirect
-	// github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
-	github.com/gballet/go-libpcsclite v0.0.0-20190403181518-312b5175032f // indirect
+	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
+	// github.com/gballet/go-libpcsclite v0.0.0-20190403181518-312b5175032f // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/protobuf v1.3.2
+	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/howeyc/fsnotify v0.9.0 // indirect
 	github.com/huin/goupnp v1.0.0 // indirect
 	github.com/influxdata/influxdb v1.7.8 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.1 // indirect
 	github.com/karalabe/hid v1.0.0 // indirect
+	github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/livepeer/lpms v0.0.0-20191004153601-83352b59757e
 	github.com/livepeer/m3u8 v0.11.0
@@ -64,7 +66,5 @@ require (
 	gopkg.in/sourcemap.v1 v1.0.5 // indirect
 	gopkg.in/urfave/cli.v1 v1.0.0-00010101000000-000000000000 // indirect
 )
-
-replace github.com/ethereum/go-ethereum => github.com/livepeer/go-ethereum v1.8.4-0.20190523183241-7e95cbcfcd82
 
 replace gopkg.in/urfave/cli.v1 => github.com/urfave/cli v1.22.2-0.20191002033821-63cd2e3d6bb5

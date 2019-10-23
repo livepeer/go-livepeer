@@ -43,7 +43,7 @@ var (
 type LivepeerEthClient interface {
 	Setup(password string, gasLimit uint64, gasPrice *big.Int) error
 	Account() accounts.Account
-	Backend() (*ethclient.Client, error)
+	Backend() (Backend, error)
 
 	// Rounds
 	InitializeRound() (*types.Transaction, error)
@@ -117,7 +117,7 @@ type LivepeerEthClient interface {
 
 type client struct {
 	accountManager AccountManager
-	backend        *ethclient.Client
+	backend        Backend
 
 	controllerAddr      ethcommon.Address
 	tokenAddr           ethcommon.Address
@@ -145,8 +145,13 @@ type client struct {
 	txTimeout time.Duration
 }
 
-func NewClient(accountAddr ethcommon.Address, keystoreDir string, backend *ethclient.Client, controllerAddr ethcommon.Address, txTimeout time.Duration) (LivepeerEthClient, error) {
+func NewClient(accountAddr ethcommon.Address, keystoreDir string, eth *ethclient.Client, controllerAddr ethcommon.Address, txTimeout time.Duration) (LivepeerEthClient, error) {
 	am, err := NewAccountManager(accountAddr, keystoreDir)
+	if err != nil {
+		return nil, err
+	}
+
+	backend, err := NewBackend(eth)
 	if err != nil {
 		return nil, err
 	}
@@ -173,8 +178,6 @@ func (c *client) SetGasInfo(gasLimit uint64, gasPrice *big.Int) error {
 	if err != nil {
 		return err
 	}
-
-	opts.NonceManager = NewNonceManager(c.backend)
 
 	if err := c.setContracts(opts); err != nil {
 		return err
@@ -357,7 +360,7 @@ func (c *client) Account() accounts.Account {
 	return c.accountManager.Account()
 }
 
-func (c *client) Backend() (*ethclient.Client, error) {
+func (c *client) Backend() (Backend, error) {
 	if c.backend == nil {
 		return nil, ErrMissingBackend
 	} else {
