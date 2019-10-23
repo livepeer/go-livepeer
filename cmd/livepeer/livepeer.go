@@ -46,21 +46,14 @@ var (
 
 	// The timeout for ETH RPC calls
 	ethRPCTimeout = 20 * time.Second
-
-	// The interval at which the block watcher polls for new blocks
-	blockWatcherPollingInterval = 1 * time.Second
 	// The maximum block sfor the block watcher to retain
 	blockWatcherRetentionLimit = 20
-
-	// The interval at which the round initializer runs
-	roundInitPollingInterval = 10 * time.Second
 
 	// The gas required to redeem a PM ticket
 	redeemGas = 100000
 	// The multiplier on the transaction cost to use for PM ticket faceValue
 	txCostMultiplier = 100
-	// The interval at which to poll for gas price updates
-	gpmPollingInterval = 1 * time.Minute
+
 	// The interval at which to clean up cached max float values for PM senders and balances per stream
 	cleanupInterval = 1 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
@@ -118,14 +111,14 @@ func main() {
 	maxTicketEV := flag.String("maxTicketEV", "10000000000", "The maximum acceptable expected value for PM tickets")
 	// Broadcaster deposit multiplier to determine max acceptable ticket faceValue
 	depositMultiplier := flag.Int("depositMultiplier", 1000, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
-
 	// Orchestrator base pricing info
 	pricePerUnit := flag.Int("pricePerUnit", 0, "The price per 'pixelsPerUnit' amount pixels")
 	// Broadcaster max acceptable price
 	maxPricePerUnit := flag.Int("maxPricePerUnit", 0, "The maximum transcoding price (in wei) per 'pixelsPerUnit' a broadcaster is willing to accept. If not set explicitly, broadcaster is willing to accept ANY price")
 	// Unit of pixels for both O's basePriceInfo and B's MaxBroadcastPrice
 	pixelsPerUnit := flag.Int("pixelsPerUnit", 1, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
-
+	// Interval to poll for blocks
+	blockPollingInterval := flag.Int("blockPollingInterval", 5, "Interval in seconds at which different blockchain event services poll for blocks")
 	// Metrics & logging:
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	version := flag.Bool("version", false, "Print out the version")
@@ -144,6 +137,8 @@ func main() {
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
+
+	blockPollingTime := time.Duration(*blockPollingInterval) * time.Second
 
 	if *version {
 		fmt.Println("Livepeer Node Version: " + core.LivepeerVersion)
@@ -349,7 +344,7 @@ func main() {
 		topics := watchers.FilterTopics()
 		blockWatcherCfg := blockwatch.Config{
 			Store:               n.Database,
-			PollingInterval:     blockWatcherPollingInterval,
+			PollingInterval:     blockPollingTime,
 			StartBlockDepth:     rpc.LatestBlockNumber,
 			BlockRetentionLimit: blockWatcherRetentionLimit,
 			WithLogs:            true,
@@ -457,7 +452,7 @@ func main() {
 			// TODO: Initialize Validator with an implementation
 			// of RoundsManager that reads from a cache
 			validator := pm.NewValidator(sigVerifier, roundsWatcher)
-			gpm := eth.NewGasPriceMonitor(backend, gpmPollingInterval)
+			gpm := eth.NewGasPriceMonitor(backend, blockPollingTime)
 			// Start gas price monitor
 			gasPriceUpdate, err := gpm.Start(context.Background())
 			if err != nil {
@@ -505,13 +500,13 @@ func main() {
 
 			// Create round iniitializer to automatically initialize new rounds
 			if *initializeRound {
-				initializer := eth.NewRoundInitializer(n.Eth, n.Database, roundsWatcher, roundInitPollingInterval)
+				initializer := eth.NewRoundInitializer(n.Eth, n.Database, roundsWatcher, blockPollingTime)
 				go initializer.Start()
 				defer initializer.Stop()
 			}
 
 			// Create reward service to claim/distribute inflationary rewards every round
-			rs := eventservices.NewRewardService(n.Eth)
+			rs := eventservices.NewRewardService(n.Eth, blockPollingTime)
 			rs.Start(context.Background())
 			defer rs.Stop()
 		}
