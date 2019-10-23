@@ -92,10 +92,6 @@ func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 
-	if session.Balance != nil {
-		session.Balance.Clear()
-	}
-
 	delete(bsm.sessMap, session.OrchestratorInfo.Transcoder)
 }
 
