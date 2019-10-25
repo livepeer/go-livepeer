@@ -145,6 +145,43 @@ func TestCurrentBlockHandler_Success(t *testing.T) {
 	assert.Equal(http.StatusOK, resp.StatusCode)
 	assert.Equal(big.NewInt(50), new(big.Int).SetBytes(body))
 }
+func TestCurrentRoundHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test missing client
+	handler := currentRoundHandler(nil)
+
+	resp := httpGetResp(handler)
+	defer resp.Body.Close()
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
+
+	// Test CurrentRound() error
+	client := &eth.MockClient{}
+	handler = currentRoundHandler(client)
+
+	client.On("CurrentRound").Return(nil, errors.New("CurrentRound error")).Once()
+
+	resp = httpGetResp(handler)
+	defer resp.Body.Close()
+	body, _ = ioutil.ReadAll(resp.Body)
+
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not query current round: CurrentRound error", strings.TrimSpace(string(body)))
+
+	// Test success
+	currentRound := big.NewInt(7)
+	client.On("CurrentRound").Return(currentRound, nil)
+
+	resp = httpGetResp(handler)
+	defer resp.Body.Close()
+	body, _ = ioutil.ReadAll(resp.Body)
+
+	assert.Equal(http.StatusOK, resp.StatusCode)
+	assert.Equal(currentRound, new(big.Int).SetBytes(body))
+}
 
 func TestFundDepositAndReserveHandler_MissingClient(t *testing.T) {
 	handler := fundDepositAndReserveHandler(nil)

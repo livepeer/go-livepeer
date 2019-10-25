@@ -163,17 +163,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		w.Write(data)
 	})
 
-	mux.HandleFunc("/currentRound", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			currentRound, err := s.LivepeerNode.Eth.CurrentRound()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			w.Write([]byte(currentRound.String()))
-		}
-	})
+	mux.Handle("/currentRound", currentRoundHandler(s.LivepeerNode.Eth))
 
 	mux.HandleFunc("/initializeRound", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {

@@ -68,6 +68,24 @@ func currentBlockHandler(getter BlockGetter) http.Handler {
 	})
 }
 
+func currentRoundHandler(client eth.LivepeerEthClient) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			respondWith500(w, "missing ETH client")
+			return
+		}
+
+		currentRound, err := client.CurrentRound()
+		if err != nil {
+			respondWith500(w, fmt.Sprintf("could not query current round: %v", err))
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write(currentRound.Bytes())
+	})
+}
+
 func fundDepositAndReserveHandler(client eth.LivepeerEthClient) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {
