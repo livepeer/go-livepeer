@@ -3,7 +3,7 @@
 set -eux
 
 # build the binary
-go build cmd/livepeer/livepeer.go
+HIGHEST_CHAIN_TAG=mainnet make livepeer
 
 # set a clean slate "home dir" for testing
 TMPDIR=/tmp/livepeer-test-"$RANDOM"

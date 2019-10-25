@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
 
@@ -325,6 +326,12 @@ func main() {
 			glog.Errorf("failed to get chain ID from remote ethereum node: %v", err)
 			return
 		}
+
+		if !build.ChainSupported(chainID.Int64()) {
+			glog.Errorf("node does not support chainID = %v right now", chainID)
+			return
+		}
+
 		if err := checkOrStoreChainID(dbh, chainID); err != nil {
 			glog.Error(err)
 			return
