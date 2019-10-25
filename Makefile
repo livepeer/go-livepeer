@@ -9,11 +9,11 @@ version=$(shell cat VERSION)
 
 .PHONY: livepeer
 livepeer:
-	GO111MODULE=on go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty --abbrev=8)" cmd/livepeer/*.go
+	GO111MODULE=on go build -tags "$(HIGHEST_CHAIN_TAG)" -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty --abbrev=8)" cmd/livepeer/*.go
 
 .PHONY: livepeer_cli
 livepeer_cli:
-	GO111MODULE=on go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty --abbrev=8)" cmd/livepeer_cli/*.go
+	GO111MODULE=on go build -tags "$(HIGHEST_CHAIN_TAG)" -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty --abbrev=8)" cmd/livepeer_cli/*.go
 
 .PHONY: localdocker
 localdocker:
