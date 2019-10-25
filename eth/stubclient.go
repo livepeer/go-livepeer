@@ -7,7 +7,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/mock"
@@ -179,7 +178,7 @@ type stubTranscoder struct {
 
 func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) error { return nil }
 func (e *StubClient) Account() accounts.Account                                       { return accounts.Account{Address: e.TranscoderAddress} }
-func (e *StubClient) Backend() (*ethclient.Client, error)                             { return nil, ErrMissingBackend }
+func (e *StubClient) Backend() (Backend, error)                                       { return nil, ErrMissingBackend }
 
 // Rounds
 

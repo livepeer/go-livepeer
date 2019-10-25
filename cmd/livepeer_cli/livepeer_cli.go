@@ -166,11 +166,11 @@ func (w *wizard) doCLIOpt(choice string, options []wizardOpt) {
 	log.Error("That's not something I can do")
 }
 
-var RinkebyNetworkId = "4"
-var DevenvNetworkId = "54321"
+var RinkebyChainID = "4"
+var DevenvChainID = "54321"
 
 func (w *wizard) checkNet() {
-	nID := httpGet(fmt.Sprintf("http://%v:%v/EthNetworkID", w.host, w.httpPort))
-	w.testnet = nID == RinkebyNetworkId || nID == DevenvNetworkId
+	nID := httpGet(fmt.Sprintf("http://%v:%v/EthChainID", w.host, w.httpPort))
+	w.testnet = nID == RinkebyChainID || nID == DevenvChainID
 	w.offchain = nID == "offchain"
 }

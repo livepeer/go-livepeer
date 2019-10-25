@@ -997,9 +997,9 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.OrchestratorNode)))
 	})
 
-	mux.HandleFunc("/EthNetworkID", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/EthChainID", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth == nil {
-			w.Write([]byte("offchain"))
+			w.Write([]byte("0"))
 			return
 		}
 		be, err := s.LivepeerNode.Eth.Backend()
@@ -1008,11 +1008,11 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		networkID, err := be.NetworkID(context.Background())
+		chainID, err := be.ChainID(context.Background())
 		if err != nil {
 			glog.Errorf("Error getting eth network ID: %v", err)
 		}
-		w.Write([]byte(networkID.String()))
+		w.Write([]byte(chainID.String()))
 	})
 
 	mux.HandleFunc("/reward", func(w http.ResponseWriter, r *http.Request) {

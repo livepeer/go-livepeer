@@ -45,10 +45,10 @@ func TestGetStatus(t *testing.T) {
 	assert.Equal(expected, string(body))
 }
 
-func TestGetEthNetworkID(t *testing.T) {
+func TestGetEthChainID(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
-	res, err := http.Get(fmt.Sprintf("%s/EthNetworkID", srv.URL))
+	res, err := http.Get(fmt.Sprintf("%s/EthChainID", srv.URL))
 	assert := assert.New(t)
 	req := require.New(t)
 	req.Nil(err)
@@ -56,7 +56,7 @@ func TestGetEthNetworkID(t *testing.T) {
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
 	req.Nil(err)
-	assert.Equal("offchain", string(body))
+	assert.Equal("0", string(body))
 }
 
 func TestGetContractAddresses(t *testing.T) {
