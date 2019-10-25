@@ -67,6 +67,11 @@ run_lp -broadcaster -datadir "$CUSTOM_DATADIR"
 [ ! -d  "$CUSTOM_DATADIR"/offchain ] # sanity check that network isn't included
 kill $pid
 
+CUSTOM_DATADIR="$TMPDIR"/customDatadir2
+
+# sanity check that custom datadir does not exist
+[ ! -d "$CUSTOM_DATADIR" ]
+
 # check custom datadir with a network
 run_lp -broadcaster -datadir "$CUSTOM_DATADIR" -network rinkeby $ETH_ARGS
 [ ! -d  "$CUSTOM_DATADIR"/rinkeby ] # sanity check that network isn't included

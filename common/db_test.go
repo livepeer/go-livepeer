@@ -19,6 +19,89 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestUpdateKVStore(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	expectedChainID := "1337"
+
+	dbh, dbraw, err := TempDB(t)
+	require.Nil(err)
+
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	var chainID string
+	row := dbraw.QueryRow("SELECT value FROM kv WHERE key = 'chainID'")
+	err = row.Scan(&chainID)
+	assert.EqualError(err, "sql: no rows in result set")
+	assert.Equal("", chainID)
+
+	dbh.updateKVStore("chainID", expectedChainID)
+	row = dbraw.QueryRow("SELECT value FROM kv WHERE key = 'chainID'")
+	err = row.Scan(&chainID)
+	assert.Nil(err)
+	assert.Equal(expectedChainID, chainID)
+}
+
+func TestSelectKVStore(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	key := "foo"
+	value := "bar"
+
+	dbh, dbraw, err := TempDB(t)
+	require.Nil(err)
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	err = dbh.updateKVStore(key, value)
+	require.Nil(err)
+
+	val, err := dbh.selectKVStore(key)
+	assert.Nil(err)
+	assert.Equal(val, value)
+}
+
+func TestChainID(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	expectedChainID := "1337"
+
+	dbh, dbraw, err := TempDB(t)
+	require.Nil(err)
+
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	expectedChainIDInt, ok := new(big.Int).SetString(expectedChainID, 10)
+	require.True(ok)
+	dbh.SetChainID(expectedChainIDInt)
+
+	chainID, err := dbh.ChainID()
+	assert.Nil(err)
+	assert.Equal(chainID.String(), expectedChainID)
+}
+
+func TestSetChainID(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	expectedChainID := "1337"
+
+	dbh, dbraw, err := TempDB(t)
+	require.Nil(err)
+
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	expectedChainIDInt, ok := new(big.Int).SetString(expectedChainID, 10)
+	require.True(ok)
+	dbh.SetChainID(expectedChainIDInt)
+
+	chainID, err := dbh.ChainID()
+	assert.Nil(err)
+	assert.Equal(chainID, expectedChainIDInt)
+}
+
 func TestDBLastSeenBlock(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	if err != nil {

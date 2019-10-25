@@ -25,6 +25,7 @@ type DB struct {
 	// prepared statements
 	selectOrchs                      *sql.Stmt
 	updateOrch                       *sql.Stmt
+	selectKV                         *sql.Stmt
 	updateKV                         *sql.Stmt
 	insertUnbondingLock              *sql.Stmt
 	deleteUnbondingLock              *sql.Stmt
@@ -169,8 +170,17 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.updateOrch = stmt
 
+	// selectKV prepared statement
+	stmt, err = db.Prepare("SELECT value FROM kv WHERE key=?")
+	if err != nil {
+		glog.Error("Unable to prepare selectKV stmt", err)
+		d.Close()
+		return nil, err
+	}
+	d.selectKV = stmt
+
 	// updateKV prepared statement
-	stmt, err = db.Prepare("UPDATE kv SET value=?, updatedAt = datetime() WHERE key=?")
+	stmt, err = db.Prepare("INSERT OR REPLACE INTO kv(key, value, updatedAt) VALUES(?1, ?2, datetime())")
 	if err != nil {
 		glog.Error("Unable to prepare updatekv stmt ", err)
 		d.Close()
@@ -272,6 +282,9 @@ func (db *DB) Close() {
 	if db.selectOrchs != nil {
 		db.selectOrchs.Close()
 	}
+	if db.selectKV != nil {
+		db.selectKV.Close()
+	}
 	if db.updateKV != nil {
 		db.updateKV.Close()
 	}
@@ -321,6 +334,52 @@ func (db *DB) LastSeenBlock() (*big.Int, error) {
 	}
 
 	return header.Number, nil
+}
+
+func (db *DB) ChainID() (*big.Int, error) {
+	idString, err := db.selectKVStore("chainID")
+	if err != nil {
+		return nil, err
+	}
+
+	if idString == "" {
+		return nil, nil
+	}
+
+	id, ok := new(big.Int).SetString(idString, 10)
+	if !ok {
+		return nil, fmt.Errorf("unable to convert chainID string to big.Int")
+	}
+
+	return id, nil
+}
+
+func (db *DB) SetChainID(id *big.Int) error {
+	if err := db.updateKVStore("chainID", id.String()); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (db *DB) selectKVStore(key string) (string, error) {
+	row := db.selectKV.QueryRow(key)
+	var valueString string
+	if err := row.Scan(&valueString); err != nil {
+		if err.Error() != "sql: no rows in result set" {
+			return "", fmt.Errorf("could not retrieve key from database: %v", err)
+		}
+		// If there is no result return no error, just zero value
+		return "", nil
+	}
+	return valueString, nil
+}
+
+func (db *DB) updateKVStore(key, value string) error {
+	_, err := db.updateKV.Exec(key, value)
+	if err != nil {
+		glog.Errorf("db: Unable to update %v in database: %v", key, err)
+	}
+	return err
 }
 
 func (db *DB) UpdateOrch(orch *DBOrch) error {

@@ -195,9 +195,9 @@ func main() {
 		if *ethController == "" {
 			*ethController = netw.ethController
 		}
-		glog.Infof("***Livepeer is running on the %v*** network: %v***", *network, *ethController)
+		glog.Infof("***Livepeer is running on the %v network: %v***", *network, *ethController)
 	} else {
-		glog.Infof("***Livepeer is running on the %v*** network", *network)
+		glog.Infof("***Livepeer is running on the %v network***", *network)
 	}
 
 	if *datadir == "" {
@@ -288,6 +288,12 @@ func main() {
 	watcherErr := make(chan error)
 	if *network == "offchain" {
 		glog.Infof("***Livepeer is in off-chain mode***")
+
+		if err := checkOrStoreChainID(dbh, big.NewInt(0)); err != nil {
+			glog.Error(err)
+			return
+		}
+
 	} else {
 		var keystoreDir string
 		if _, err := os.Stat(*ethKeystorePath); !os.IsNotExist(err) {
@@ -311,6 +317,16 @@ func main() {
 		backend, err := ethclient.Dial(*ethUrl)
 		if err != nil {
 			glog.Errorf("Failed to connect to Ethereum client: %v", err)
+			return
+		}
+
+		chainID, err := backend.ChainID(context.Background())
+		if err != nil {
+			glog.Errorf("failed to get chain ID from remote ethereum node: %v", err)
+			return
+		}
+		if err := checkOrStoreChainID(dbh, chainID); err != nil {
+			glog.Error(err)
 			return
 		}
 
@@ -814,4 +830,27 @@ func defaultAddr(addr, defaultHost, defaultPort string) string {
 		return addr + ":" + defaultPort
 	}
 	return addr
+}
+
+func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
+	expectedChainID, err := dbh.ChainID()
+	if err != nil {
+		return err
+	}
+
+	if expectedChainID == nil {
+		// No chainID stored yet
+		// Store the provided chainID and skip the check
+		if err := dbh.SetChainID(chainID); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	if expectedChainID.Cmp(chainID) != 0 {
+		return fmt.Errorf("expecting chainID of %v, but got %v. Did you change networks without changing network name or datadir?", expectedChainID, chainID)
+	}
+
+	return nil
 }
