@@ -6,9 +6,11 @@ osx_image: xcode10.2
 env:
   global:
     - PKG_CONFIG_PATH=/Users/travis/compiled/lib/pkgconfig
+    - HIGHEST_CHAIN_TAG=rinkeby
 
 script:
   - set -e
+  - git fetch --unshallow --tags
   - ./install_ffmpeg.sh
   - go mod download
   - make livepeer livepeer_cli

@@ -17,7 +17,7 @@ COPY go.sum go.sum
 RUN go mod download
 
 COPY . .
-RUN git describe --always --long --dirty > .git.describe
+RUN ./print_version.sh > .git.describe
 
 RUN go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)" -v cmd/livepeer/livepeer.go
 RUN go build -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(cat VERSION)-$(cat .git.describe)" -v cmd/livepeer_cli/*

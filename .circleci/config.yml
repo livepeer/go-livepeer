@@ -19,6 +19,7 @@ jobs:
       PKG_CONFIG_PATH: /root/compiled/lib/pkgconfig
       GOPATH: /go
       DOCKER_CLI_EXPERIMENTAL: enabled
+      HIGHEST_CHAIN_TAG: rinkeby
 
     steps:
       - checkout
@@ -59,6 +60,7 @@ jobs:
       PKG_CONFIG_PATH: /root/compiled/lib/pkgconfig
       TEST_RESULTS: /tmp/test-results
       GOPATH: /go
+      HIGHEST_CHAIN_TAG: rinkeby
 
     steps:
       - checkout
