@@ -7,7 +7,7 @@ net/lp_rpc.pb.go: net/lp_rpc.proto
 
 version=$(shell cat VERSION)
 
-ldflags := -X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty --abbrev=8)
+ldflags := -X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(./print_version.sh)
 cgo_ldflags :=
 
 uname_s := $(shell uname -s)
@@ -25,7 +25,7 @@ livepeer_cli:
 
 .PHONY: localdocker
 localdocker:
-	git describe --always --long --dirty > .git.describe
+	./print_version.sh > .git.describe
 	# docker build -t livepeerbinary:debian -f Dockerfile.debian .
 	# Manually build our context... this is hacky but docker refuses to support symlinks
 	# or selectable .dockerignore files
