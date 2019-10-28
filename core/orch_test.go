@@ -1108,8 +1108,7 @@ func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil).Once()
 	assert := assert.New(t)
 
-	// Create a ticket where faceVal = EV
-	// making faceVal the expected balance increase
+	// Create a ticket where faceVal = EV so that the balance = EV
 	payment := defaultPayment(t)
 	payment.TicketParams.FaceValue = big.NewInt(100).Bytes()
 	payment.TicketParams.WinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1)).Bytes()
@@ -1134,8 +1133,10 @@ func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil).Once()
 	assert := assert.New(t)
 
-	// Create a ticket where faceVal = EV
-	// making faceVal the expected balance increase
+	// Check when the balance is nil because no payment was received yet and there is no cached balance
+	assert.False(orch.SufficientBalance(ethcommon.BytesToAddress([]byte("foo")), manifestID))
+
+	// Create a ticket where faceVal < EV so that the balance < EV
 	payment := defaultPayment(t)
 	payment.TicketParams.FaceValue = big.NewInt(100).Bytes()
 	payment.TicketParams.WinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1)).Bytes()
