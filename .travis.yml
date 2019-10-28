@@ -10,6 +10,7 @@ env:
 
 script:
   - set -e
+  - git fetch --unshallow --tags
   - ./install_ffmpeg.sh
   - go mod download
   - make livepeer livepeer_cli
