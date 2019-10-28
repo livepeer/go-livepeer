@@ -275,7 +275,9 @@ func (orch *orchestrator) SufficientBalance(addr ethcommon.Address, manifestID M
 	if orch.node == nil || orch.node.Recipient == nil || orch.node.Balances == nil {
 		return true
 	}
-	if orch.node.Balances.Balance(addr, manifestID).Cmp(orch.node.Recipient.EV()) < 0 {
+
+	balance := orch.node.Balances.Balance(addr, manifestID)
+	if balance == nil || balance.Cmp(orch.node.Recipient.EV()) < 0 {
 		return false
 	}
 	return true
