@@ -13,9 +13,10 @@ jobs:
       - script: git config --global core.autocrlf false
       - checkout: self
       - bash: |-
+          set -e
           # First, build/cache the platform-specific root container
           docker login -u '$(DOCKER_USER)' -p '$(DOCKER_PASS)'
-          docker pull livepeerci/build-platform:latest-windows || echo "build cache not found"
+          docker pull livepeerci/build-platform:latest-windows || echo "build cache not found."
           docker build -m 4gb --cache-from=livepeerci/build-platform:latest-windows -t livepeerci/build-platform:latest-windows -f ./docker/Dockerfile.build-windows .
           docker push livepeerci/build-platform:latest-windows
           docker tag livepeerci/build-platform:latest-windows livepeerci/build-platform:latest
@@ -29,9 +30,4 @@ jobs:
           # Push the release image at the tag name with non-alphanums removed
           docker run --rm -e GCLOUD_KEY=$(GCLOUD_KEY) -e GCLOUD_SECRET=$(GCLOUD_SECRET)  -e DISCORD_URL=$(DISCORD_URL) -e CIRCLE_BRANCH=$(Build.SourceBranchName) livepeerci/build:latest-windows
           TAG=`echo $CIRCLE_BRANCH | tr -cd '[:alnum:]_'`
-          docker build -t livepeer/go-livepeer:$TAG-windows -f docker/Dockerfile.release-windows . ;
-          docker push livepeer/go-livepeer:$TAG-windows
-          # Manifest step is optional in case the Linux build hasn't completed yet
-          docker manifest create livepeer/go-livepeer:$TAG livepeer/go-livepeer:$TAG-linux livepeer/go-livepeer:$TAG-windows || echo "linux image not found, not creating manifest"
-          docker manifest push livepeer/go-livepeer:$TAG || echo "linux image not found, not pushing manifest"
         failOnStderr: false

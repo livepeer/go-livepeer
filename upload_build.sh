@@ -16,6 +16,12 @@ fi
 BASE="livepeer-$ARCH-amd64"
 BRANCH="${TRAVIS_BRANCH:-${CIRCLE_BRANCH:-unknown}}"
 VERSION="$(cat VERSION)-$(git describe --always --long --abbrev=8 --dirty)"
+if echo $VERSION | grep dirty; then
+  echo "Error: git state dirty, refusing to upload build"
+  git diff | cat
+  git status
+  exit 1
+fi
 
 mkdir $BASE
 cp ./livepeer${EXT} $BASE
@@ -25,7 +31,7 @@ cp ./livepeer_cli${EXT} $BASE
 if [[ $ARCH == "windows" ]]; then
   FILE=$BASE.zip
   # This list was produced by `ldd livepeer.exe`
-  LIBS="libffi-6.dll libgcc_s_seh-1.dll libgmp-10.dll libgnutls-30.dll libhogweed-4.dll libiconv-2.dll libidn2-0.dll libintl-8.dll libnettle-6.dll libp11-kit-0.dll libtasn1-6.dll libunistring-2.dll libwinpthread-1.dll zlib1.dll"
+  LIBS="libffi-6.dll libgcc_s_seh-1.dll libgmp-10.dll libgnutls-30.dll libhogweed-5.dll libiconv-2.dll libidn2-0.dll libintl-8.dll libnettle-7.dll libp11-kit-0.dll libtasn1-6.dll libunistring-2.dll libwinpthread-1.dll zlib1.dll"
   for LIB in $LIBS; do
     cp -r /mingw64/bin/$LIB ./$BASE
   done

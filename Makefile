@@ -7,13 +7,21 @@ net/lp_rpc.pb.go: net/lp_rpc.proto
 
 version=$(shell cat VERSION)
 
+ldflags := -X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty --abbrev=8)
+cgo_ldflags :=
+
+uname_s := $(shell uname -s)
+ifeq ($(uname_s),Darwin)
+		cgo_ldflags += -framework CoreFoundation -framework Security
+endif
+
 .PHONY: livepeer
 livepeer:
-	GO111MODULE=on go build -tags "$(HIGHEST_CHAIN_TAG)" -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty --abbrev=8)" cmd/livepeer/*.go
+	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -tags "$(HIGHEST_CHAIN_TAG)" -ldflags="$(ldflags)" cmd/livepeer/*.go
 
 .PHONY: livepeer_cli
 livepeer_cli:
-	GO111MODULE=on go build -tags "$(HIGHEST_CHAIN_TAG)" -ldflags="-X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(version)-$(shell git describe --always --long --dirty --abbrev=8)" cmd/livepeer_cli/*.go
+	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -tags "$(HIGHEST_CHAIN_TAG)" -ldflags="$(ldflags)" cmd/livepeer_cli/*.go
 
 .PHONY: localdocker
 localdocker:
