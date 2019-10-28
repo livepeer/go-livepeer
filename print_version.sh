@@ -14,8 +14,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 currentTag="$(git describe --tags)"
 currentVersion="$(cat "$DIR/VERSION")"
 currentSha="$(git describe --always --long --dirty --abbrev=8)"
-if [[ "$currentTag" == "$currentVersion" ]]; then
-  echo -en "$currentTag"
+if [[ "$currentTag" == "v$currentVersion" ]]; then
+  echo -en "$currentVersion"
 else
   echo -en "$currentVersion-$currentSha"
 fi
