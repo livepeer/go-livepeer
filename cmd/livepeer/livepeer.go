@@ -161,8 +161,8 @@ func main() {
 
 	configOptions := map[string]*NetworkConfig{
 		"rinkeby": {
-			ethUrl:        "wss://rinkeby.infura.io/ws/v3/09642b98164d43eb890939eb9a7ec500",
-			ethController: "0x37dc71366ec655093b9930bc816e16e6b587f968",
+			ethUrl:        "https://rinkeby.infura.io/v3/09642b98164d43eb890939eb9a7ec500",
+			ethController: "0xA268AEa9D048F8d3A592dD7f1821297972D4C8Ea",
 		},
 		"mainnet": {
 			ethUrl:        "wss://mainnet.infura.io/ws/v3/be11162798084102a3519541eded12f6",
