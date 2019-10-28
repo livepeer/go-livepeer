@@ -6,6 +6,7 @@ osx_image: xcode10.2
 env:
   global:
     - PKG_CONFIG_PATH=/Users/travis/compiled/lib/pkgconfig
+    - HIGHEST_CHAIN_TAG=rinkeby
 
 script:
   - set -e
