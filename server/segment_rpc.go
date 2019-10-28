@@ -49,10 +49,12 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sender := getPaymentSender(payment)
+
 	// check the segment sig from the broadcaster
 	seg := r.Header.Get(segmentHeader)
 
-	segData, err := verifySegCreds(orch, seg, getPaymentSender(payment))
+	segData, err := verifySegCreds(orch, seg, sender)
 	if err != nil {
 		glog.Error("Could not verify segment creds")
 		http.Error(w, err.Error(), http.StatusForbidden)
@@ -70,7 +72,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, paymentError.Error(), http.StatusBadRequest)
 			return
 		}
-		oInfo, err = orchestratorInfo(orch, getPaymentSender(payment), orch.ServiceURI().String())
+		oInfo, err = orchestratorInfo(orch, sender, orch.ServiceURI().String())
 		if err != nil {
 			glog.Errorf("Error updating orchestrator info: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -80,7 +82,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		glog.Errorf("Acceptable error occured when processing payment: %v", paymentError)
 	}
 
-	if !orch.SufficientBalance(segData.ManifestID) {
+	if !orch.SufficientBalance(sender, segData.ManifestID) {
 		glog.Errorf("Insufficient credit balance for stream with manifestID %v\n", segData.ManifestID)
 		http.Error(w, "Insufficient balance", http.StatusBadRequest)
 		return
@@ -155,7 +157,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Debit the fee for the total pixel count
-	orch.DebitFees(segData.ManifestID, payment.GetExpectedPrice(), pixels)
+	orch.DebitFees(sender, segData.ManifestID, payment.GetExpectedPrice(), pixels)
 
 	// construct the response
 	var result net.TranscodeResult

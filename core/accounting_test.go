@@ -5,32 +5,49 @@ import (
 	"testing"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBalance_Credit(t *testing.T) {
+	addr := ethcommon.BytesToAddress([]byte("foo"))
 	mid := ManifestID("some manifestID")
-	balances := NewBalances(5 * time.Second)
-	b := NewBalance(mid, balances)
+	balances := NewAddressBalances(5 * time.Second)
+	defer balances.StopCleanup()
+
+	b := NewBalance(addr, mid, balances)
 
 	assert := assert.New(t)
 
+	otherAddr := ethcommon.BytesToAddress([]byte("bar"))
+
 	b.Credit(big.NewRat(5, 1))
-	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(mid)))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(addr, mid)))
+	assert.Nil(balances.Balance(otherAddr, mid))
 
 	b.Credit(big.NewRat(-5, 1))
-	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(addr, mid)))
+	assert.Nil(balances.Balance(otherAddr, mid))
 
 	b.Credit(big.NewRat(0, 1))
-	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(addr, mid)))
+	assert.Nil(balances.Balance(otherAddr, mid))
 }
 
 func TestBalance_StageUpdate(t *testing.T) {
+	addr := ethcommon.BytesToAddress([]byte("foo"))
 	mid := ManifestID("some manifestID")
-	balances := NewBalances(5 * time.Second)
-	b := NewBalance(mid, balances)
+	balances := NewAddressBalances(5 * time.Second)
+	defer balances.StopCleanup()
+
+	b := NewBalance(addr, mid, balances)
 
 	assert := assert.New(t)
+
+	// Credit otherAddr and the same manifestID
+	// The balance for otherAddr should not change during these tests
+	otherAddr := ethcommon.BytesToAddress([]byte("bar"))
+	balances.Credit(otherAddr, mid, big.NewRat(5, 1))
 
 	// Test existing credit > minimum credit
 	b.Credit(big.NewRat(2, 1))
@@ -38,7 +55,8 @@ func TestBalance_StageUpdate(t *testing.T) {
 	assert.Equal(0, numTickets)
 	assert.Zero(big.NewRat(0, 1).Cmp(newCredit))
 	assert.Zero(big.NewRat(2, 1).Cmp(existingCredit))
-	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(addr, mid)))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(otherAddr, mid)))
 
 	// Test existing credit = minimum credit
 	b.Credit(big.NewRat(2, 1))
@@ -46,7 +64,8 @@ func TestBalance_StageUpdate(t *testing.T) {
 	assert.Equal(0, numTickets)
 	assert.Zero(big.NewRat(0, 1).Cmp(newCredit))
 	assert.Zero(big.NewRat(2, 1).Cmp(existingCredit))
-	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(addr, mid)))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(otherAddr, mid)))
 
 	// Test exact number of tickets covers new credit
 	b.Credit(big.NewRat(1, 1))
@@ -54,7 +73,8 @@ func TestBalance_StageUpdate(t *testing.T) {
 	assert.Equal(4, numTickets)
 	assert.Zero(big.NewRat(4, 1).Cmp(newCredit))
 	assert.Zero(big.NewRat(1, 1).Cmp(existingCredit))
-	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(addr, mid)))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(otherAddr, mid)))
 
 	// Test non-exact number of tickets covers new credit
 	b.Credit(big.NewRat(1, 4))
@@ -62,7 +82,8 @@ func TestBalance_StageUpdate(t *testing.T) {
 	assert.Equal(2, numTickets)
 	assert.Zero(big.NewRat(2, 1).Cmp(newCredit))
 	assert.Zero(big.NewRat(1, 4).Cmp(existingCredit))
-	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(addr, mid)))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(otherAddr, mid)))
 
 	// Test negative existing credit
 	b.Credit(big.NewRat(-5, 1))
@@ -70,14 +91,58 @@ func TestBalance_StageUpdate(t *testing.T) {
 	assert.Equal(7, numTickets)
 	assert.Zero(big.NewRat(7, 1).Cmp(newCredit))
 	assert.Zero(big.NewRat(-5, 1).Cmp(existingCredit))
-	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(addr, mid)))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(otherAddr, mid)))
 
 	// Test no existing credit
 	numTickets, newCredit, existingCredit = b.StageUpdate(big.NewRat(2, 1), big.NewRat(1, 1))
 	assert.Equal(2, numTickets)
 	assert.Zero(big.NewRat(2, 1).Cmp(newCredit))
 	assert.Zero(big.NewRat(0, 1).Cmp(existingCredit))
-	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(mid)))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(addr, mid)))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(otherAddr, mid)))
+}
+
+func TestAddressBalances(t *testing.T) {
+	addr1 := ethcommon.BytesToAddress([]byte("foo"))
+	addr2 := ethcommon.BytesToAddress([]byte("bar"))
+	mid := ManifestID("some manifestID")
+
+	balances := NewAddressBalances(500 * time.Millisecond)
+
+	assert := assert.New(t)
+
+	assert.Nil(balances.Balance(addr1, mid))
+
+	balances.Credit(addr1, mid, big.NewRat(5, 1))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(addr1, mid)))
+
+	balances.Debit(addr1, mid, big.NewRat(2, 1))
+	assert.Zero(big.NewRat(3, 1).Cmp(balances.Balance(addr1, mid)))
+
+	balances.Credit(addr2, mid, big.NewRat(5, 1))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(addr2, mid)))
+
+	reserved := balances.Reserve(addr2, mid)
+	assert.Zero(big.NewRat(5, 1).Cmp(reserved))
+	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(addr2, mid)))
+
+	// Check that we are cleaning up balances after the TTL
+	time.Sleep(700 * time.Millisecond)
+
+	assert.Nil(balances.Balance(addr1, mid))
+	assert.Nil(balances.Balance(addr2, mid))
+
+	balances.Credit(addr1, mid, big.NewRat(5, 1))
+	balances.Credit(addr2, mid, big.NewRat(5, 1))
+
+	// Check that we are not cleaning up balances after StopCleanup() is called
+	balances.StopCleanup()
+
+	time.Sleep(700 * time.Millisecond)
+
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(addr1, mid)))
+	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(addr2, mid)))
 }
 
 func TestEmptyBalances_ReturnsZeroedValues(t *testing.T) {

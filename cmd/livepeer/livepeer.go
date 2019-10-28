@@ -436,7 +436,8 @@ func main() {
 			watcherErr <- err
 		}()
 
-		n.Balances = core.NewBalances(cleanupInterval)
+		n.Balances = core.NewAddressBalances(cleanupInterval)
+		defer n.Balances.StopCleanup()
 
 		if *orchestrator {
 
@@ -515,11 +516,6 @@ func main() {
 
 			n.Recipient.Start()
 			defer n.Recipient.Stop()
-
-			// Run cleanup routine for stale balances
-			go n.Balances.StartCleanup()
-			// Stop the cleanup routine on program exit
-			defer n.Balances.StopCleanup()
 
 			// Create round iniitializer to automatically initialize new rounds
 			if *initializeRound {
