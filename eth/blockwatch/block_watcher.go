@@ -164,7 +164,6 @@ func (w *Watcher) pollNextBlock() error {
 	nextHeader, err := w.client.HeaderByNumber(nextBlockNumber)
 	if err != nil {
 		if err == ethereum.NotFound {
-			glog.Infof("block header not found blockNumber=%v", nextBlockNumber)
 			return nil // Noop and wait next polling interval
 		}
 		return err
