@@ -39,6 +39,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.1
 	github.com/oschwald/maxminddb-golang v1.5.0 // indirect
 	github.com/pborman/uuid v1.2.0 // indirect
+	github.com/peterbourgon/ff v1.6.0 // indirect
 	github.com/peterh/liner v1.1.0 // indirect
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/client_golang v1.1.0
