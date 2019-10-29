@@ -7,7 +7,7 @@ net/lp_rpc.pb.go: net/lp_rpc.proto
 
 version=$(shell cat VERSION)
 
-ldflags := -X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(./print_version.sh)
+ldflags := -X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(shell ./print_version.sh)
 cgo_ldflags :=
 
 uname_s := $(shell uname -s)
