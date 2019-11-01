@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	// pprof adds handlers to default mux via `init()`
+	_ "net/http/pprof"
+
 	"github.com/cenkalti/backoff"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -67,7 +70,11 @@ func (s *LivepeerServer) StartCliWebserver(bindAddr string) {
 }
 
 func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
-	mux := http.NewServeMux()
+	// Override default mux because pprof only uses the default mux
+	// We really don't want to accidentally pull pprof into other listeners.
+	// Pprof, like the CLI, is a strictly private API!
+	mux := http.DefaultServeMux
+	http.DefaultServeMux = http.NewServeMux()
 
 	//Set the broadcast config for creating onchain jobs.
 	mux.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
