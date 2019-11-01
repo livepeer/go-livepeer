@@ -165,4 +165,9 @@ res=0
 ./livepeer -broadcaster -maxSessions 0 || res=$?
 [ $res -ne 0 ]
 
+# Check that pprof is running on CLI port
+run_lp -broadcaster
+curl -sI http://127.0.0.1:7935/debug/pprof/allocs | grep "200 OK"
+kill $pid
+
 rm -rf "$TMPDIR"
