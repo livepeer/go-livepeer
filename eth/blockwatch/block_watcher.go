@@ -45,6 +45,7 @@ type Config struct {
 	Store               MiniHeaderStore
 	PollingInterval     time.Duration
 	StartBlockDepth     rpc.BlockNumber
+	BackfillStartBlock  *big.Int
 	BlockRetentionLimit int
 	WithLogs            bool
 	Topics              []common.Hash
@@ -57,6 +58,7 @@ type Config struct {
 type Watcher struct {
 	blockRetentionLimit int
 	startBlockDepth     rpc.BlockNumber
+	backfillStartBlock  *big.Int
 	stack               *Stack
 	client              Client
 	blockFeed           event.Feed
@@ -77,6 +79,7 @@ func New(config Config) *Watcher {
 		pollingInterval:     config.PollingInterval,
 		blockRetentionLimit: config.BlockRetentionLimit,
 		startBlockDepth:     config.StartBlockDepth,
+		backfillStartBlock:  config.BackfillStartBlock,
 		stack:               stack,
 		client:              config.Client,
 		withLogs:            config.WithLogs,
@@ -281,28 +284,43 @@ func (w *Watcher) addLogs(header *MiniHeader) (*MiniHeader, error) {
 func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, error) {
 	events := []*Event{}
 
+	var (
+		startBlockNum          int
+		latestRetainedBlockNum int
+		blocksElapsed          int
+	)
+
 	latestRetainedBlock, err := w.stack.Peek()
 	if err != nil {
 		return events, err
 	}
-	// No blocks stored, nowhere to backfill to
-	if latestRetainedBlock == nil {
-		return events, nil
-	}
+
 	latestBlock, err := w.client.HeaderByNumber(nil)
 	if err != nil {
 		return events, err
 	}
-	blocksElapsed := big.NewInt(0).Sub(latestBlock.Number, latestRetainedBlock.Number)
-	if blocksElapsed.Int64() == 0 {
+	latestBlockNum := int(latestBlock.Number.Int64())
+
+	if latestRetainedBlock != nil {
+		latestRetainedBlockNum = int(latestRetainedBlock.Number.Int64())
+		// Events for latestRetainedBlock already processed, start at latestRetainedBlock + 1
+		startBlockNum = latestRetainedBlockNum + 1
+	} else if w.backfillStartBlock != nil {
+		startBlockNum = int(w.backfillStartBlock.Int64())
+	} else {
 		return events, nil
 	}
 
-	glog.Infof("Some blocks have elapsed since last boot. Backfilling block events (this can take a while)... blocksElapsed=%v", blocksElapsed.Int64())
-	startBlockNum := int(latestRetainedBlock.Number.Int64() + 1)
-	endBlockNum := int(latestRetainedBlock.Number.Int64() + blocksElapsed.Int64())
+	if blocksElapsed = latestBlockNum - startBlockNum; blocksElapsed == 0 {
+		return events, nil
+	}
+
+	glog.Infof("Backfilling block events (this can take a while)...\n")
+	glog.Infof("Start block: %v		 End block: %v		Blocks elapsed: %v\n", startBlockNum, startBlockNum+blocksElapsed, blocksElapsed)
+
+	endBlockNum := startBlockNum + blocksElapsed
 	logs, furthestBlockProcessed := w.getLogsInBlockRange(ctx, startBlockNum, endBlockNum)
-	if int64(furthestBlockProcessed) > latestRetainedBlock.Number.Int64() {
+	if furthestBlockProcessed > latestRetainedBlockNum {
 		// If we have processed blocks further then the latestRetainedBlock in the DB, we
 		// want to remove all blocks from the DB and insert the furthestBlockProcessed
 		// Doing so will cause the BlockWatcher to start from that furthestBlockProcessed.
@@ -337,9 +355,9 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 		for _, log := range logs {
 			blockHeader, ok := hashToBlockHeader[log.BlockHash]
 			if !ok {
-				// TODO(fabio): Find a way to include the parent hash for the block as well.
+				// TODO: Find a way to include the parent hash for the block as well.
 				// It's currently not an issue to omit it since we don't use the parent hash
-				// when processing block events in OrderWatcher.
+				// when processing block events in event watcher services
 				blockHeader = &MiniHeader{
 					Hash:   log.BlockHash,
 					Number: big.NewInt(0).SetUint64(log.BlockNumber),
