@@ -148,7 +148,7 @@ func (w *wizard) broadcastStats() {
 	price, transcodingOptions := w.getBroadcastConfig()
 	priceString := "n/a"
 	if price != nil {
-		priceString = fmt.Sprintf("%v pixels / %v wei", price.Num().Int64(), price.Denom().Int64())
+		priceString = fmt.Sprintf("%v wei / %v pixels", price.Num().Int64(), price.Denom().Int64())
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
