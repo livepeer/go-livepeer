@@ -301,12 +301,12 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 	}
 	latestBlockNum := int(latestBlock.Number.Int64())
 
-	if latestRetainedBlock != nil {
+	if w.backfillStartBlock != nil {
+		startBlockNum = int(w.backfillStartBlock.Int64())
+	} else if latestRetainedBlock != nil {
 		latestRetainedBlockNum = int(latestRetainedBlock.Number.Int64())
 		// Events for latestRetainedBlock already processed, start at latestRetainedBlock + 1
 		startBlockNum = latestRetainedBlockNum + 1
-	} else if w.backfillStartBlock != nil {
-		startBlockNum = int(w.backfillStartBlock.Int64())
 	} else {
 		return events, nil
 	}
@@ -318,8 +318,7 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 	glog.Infof("Backfilling block events (this can take a while)...\n")
 	glog.Infof("Start block: %v		 End block: %v		Blocks elapsed: %v\n", startBlockNum, startBlockNum+blocksElapsed, blocksElapsed)
 
-	endBlockNum := startBlockNum + blocksElapsed
-	logs, furthestBlockProcessed := w.getLogsInBlockRange(ctx, startBlockNum, endBlockNum)
+	logs, furthestBlockProcessed := w.getLogsInBlockRange(ctx, startBlockNum, latestBlockNum)
 	if furthestBlockProcessed > latestRetainedBlockNum {
 		// If we have processed blocks further then the latestRetainedBlock in the DB, we
 		// want to remove all blocks from the DB and insert the furthestBlockProcessed
