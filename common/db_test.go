@@ -221,8 +221,8 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	require.Nil(err)
 
 	// adding row
-	orchAddress := string(pm.RandBytes(32))
-	orch := NewDBOrch("127.0.0.1:8936", orchAddress)
+	orchAddress := pm.RandAddress().String()
+	orch := NewDBOrch(orchAddress, "127.0.0.1:8936", 1, 0, 0)
 
 	err = dbh.UpdateOrch(orch)
 	require.Nil(err)
@@ -233,13 +233,76 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	assert.Equal(orchs[0].ServiceURI, orch.ServiceURI)
 
 	// updating row with same orchAddress
-	orchUpdate := NewDBOrch("127.0.0.1:8937", orchAddress)
+	orchUpdate := NewDBOrch(orchAddress, "127.0.0.1:8937", 1000, 5, 10)
 	err = dbh.UpdateOrch(orchUpdate)
 	require.Nil(err)
 
 	updatedOrch, err := dbh.SelectOrchs(nil)
 	assert.Len(updatedOrch, 1)
 	assert.Equal(updatedOrch[0].ServiceURI, orchUpdate.ServiceURI)
+	assert.Equal(updatedOrch[0].ActivationRound, orchUpdate.ActivationRound)
+	assert.Equal(updatedOrch[0].DeactivationRound, orchUpdate.DeactivationRound)
+	assert.Equal(updatedOrch[0].PricePerPixel, orchUpdate.PricePerPixel)
+
+	// updating only serviceURI
+	serviceURIUpdate := &DBOrch{
+		EthereumAddr: orchAddress,
+		ServiceURI:   "127.0.0.1:8938",
+	}
+	err = dbh.UpdateOrch(serviceURIUpdate)
+	require.Nil(err)
+
+	updatedOrch, err = dbh.SelectOrchs(nil)
+	assert.Len(updatedOrch, 1)
+	assert.Equal(updatedOrch[0].ServiceURI, serviceURIUpdate.ServiceURI)
+	assert.Equal(updatedOrch[0].ActivationRound, orchUpdate.ActivationRound)
+	assert.Equal(updatedOrch[0].DeactivationRound, orchUpdate.DeactivationRound)
+	assert.Equal(updatedOrch[0].PricePerPixel, orchUpdate.PricePerPixel)
+
+	// udpating only pricePerPixel
+	priceUpdate := &DBOrch{
+		EthereumAddr:  orchAddress,
+		PricePerPixel: 99,
+	}
+	err = dbh.UpdateOrch(priceUpdate)
+	require.Nil(err)
+
+	updatedOrch, err = dbh.SelectOrchs(nil)
+	assert.Len(updatedOrch, 1)
+	assert.Equal(updatedOrch[0].ServiceURI, serviceURIUpdate.ServiceURI)
+	assert.Equal(updatedOrch[0].ActivationRound, orchUpdate.ActivationRound)
+	assert.Equal(updatedOrch[0].DeactivationRound, orchUpdate.DeactivationRound)
+	assert.Equal(updatedOrch[0].PricePerPixel, priceUpdate.PricePerPixel)
+
+	// updating only activationRound
+	activationRoundUpdate := &DBOrch{
+		EthereumAddr:    orchAddress,
+		ActivationRound: 304,
+	}
+	err = dbh.UpdateOrch(activationRoundUpdate)
+	require.Nil(err)
+
+	updatedOrch, err = dbh.SelectOrchs(nil)
+	assert.Len(updatedOrch, 1)
+	assert.Equal(updatedOrch[0].ServiceURI, serviceURIUpdate.ServiceURI)
+	assert.Equal(updatedOrch[0].ActivationRound, activationRoundUpdate.ActivationRound)
+	assert.Equal(updatedOrch[0].DeactivationRound, orchUpdate.DeactivationRound)
+	assert.Equal(updatedOrch[0].PricePerPixel, priceUpdate.PricePerPixel)
+
+	// updating only deactivationRound
+	deactivationRoundUpdate := &DBOrch{
+		EthereumAddr:      orchAddress,
+		DeactivationRound: 597,
+	}
+	err = dbh.UpdateOrch(deactivationRoundUpdate)
+	require.Nil(err)
+
+	updatedOrch, err = dbh.SelectOrchs(nil)
+	assert.Len(updatedOrch, 1)
+	assert.Equal(updatedOrch[0].ServiceURI, serviceURIUpdate.ServiceURI)
+	assert.Equal(updatedOrch[0].ActivationRound, activationRoundUpdate.ActivationRound)
+	assert.Equal(updatedOrch[0].DeactivationRound, deactivationRoundUpdate.DeactivationRound)
+	assert.Equal(updatedOrch[0].PricePerPixel, priceUpdate.PricePerPixel)
 }
 
 func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
@@ -251,8 +314,9 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 	require.Nil(err)
 
 	// adding one row
-	orchAddress := string(pm.RandBytes(32))
-	orch := NewDBOrch("127.0.0.1:8936", orchAddress)
+	orchAddress := pm.RandAddress().String()
+
+	orch := NewDBOrch(orchAddress, "127.0.0.1:8936", 1, 0, 0)
 	err = dbh.UpdateOrch(orch)
 	require.Nil(err)
 
@@ -262,8 +326,9 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 	assert.Equal(orchs[0].ServiceURI, orch.ServiceURI)
 
 	// adding second row
-	orchAddress = string(pm.RandBytes(32))
-	orchAdd := NewDBOrch("127.0.0.1:8938", orchAddress)
+	orchAddress = pm.RandAddress().String()
+
+	orchAdd := NewDBOrch(orchAddress, "127.0.0.1:8938", 1, 0, 0)
 	err = dbh.UpdateOrch(orchAdd)
 	require.Nil(err)
 
@@ -274,8 +339,9 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 }
 
 func TestDBFilterOrchs(t *testing.T) {
+	var orchList []string
 	var nilDb *DB
-	nilOrchs, nilErr := nilDb.SelectOrchs(&DBOrchFilter{big.NewRat(1, 1)})
+	nilOrchs, nilErr := nilDb.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(1, 1)})
 	assert.Nil(t, nilOrchs)
 	assert.Nil(t, nilErr)
 
@@ -287,12 +353,25 @@ func TestDBFilterOrchs(t *testing.T) {
 	require.Nil(err)
 
 	for i := 0; i < 10; i++ {
-		orch := NewDBOrch("https://127.0.0.1:"+strconv.Itoa(8936+i), string(pm.RandBytes(32)))
+		orch := NewDBOrch(pm.RandAddress().String(), "https://127.0.0.1:"+strconv.Itoa(8936+i), 1, int64(i), int64(5+i))
 		orch.PricePerPixel, err = PriceToFixed(big.NewRat(1, int64(5+i)))
 		require.Nil(err)
 		err = dbh.UpdateOrch(orch)
 		require.Nil(err)
+		orchList = append(orchList, orch.ServiceURI)
 	}
+
+	//URI - MaxPrice - ActivationRound - DeactivationRound
+	//127.0.0.1:8936 1/5 0 5
+	//127.0.0.1:8937 1/6 1 6
+	//127.0.0.1:8938 1/7 2 7
+	//127.0.0.1:8939 1/8 3 8
+	//127.0.0.1:8940 1/9 4 9
+	//127.0.0.1:8941 1/10 5 10
+	//127.0.0.1:8942 1/11 6 11
+	//127.0.0.1:8943 1/12 7 12
+	//127.0.0.1:8944 1/13 8 13
+	//127.0.0.1:8945 1/14 9 14
 
 	orchsUpdated, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
@@ -304,19 +383,37 @@ func TestDBFilterOrchs(t *testing.T) {
 	assert.Len(orchsFiltered, 10)
 
 	// Passing in a higher maxPrice than all orchs to filterOrchs returns all orchs
-	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{big.NewRat(10, 1)})
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(10, 1)})
 	require.Nil(err)
 	assert.Len(orchsFiltered, 10)
 
 	// Passing in a lower price than all orchs returns no orchs
-	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{big.NewRat(1, 15)})
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(1, 15)})
 	require.Nil(err)
 	assert.Len(orchsFiltered, 0)
 
 	// Passing in 1/10 returns 5 orchs
-	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{big.NewRat(1, 10)})
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(1, 10)})
 	require.Nil(err)
 	assert.Len(orchsFiltered, 5)
+
+	// Select only active orchs: activationRound <= currentRound && currentRound < deactivationRound
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{CurrentRound: big.NewInt(5)})
+	assert.Nil(err)
+	// Should return 5 results, index 1 to 5
+	assert.Len(orchsFiltered, 5)
+	for _, o := range orchsFiltered {
+		assert.Contains(orchList[1:6], o.ServiceURI)
+	}
+
+	// select only active orchs and orchs that pass price filter
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(1, 8), CurrentRound: big.NewInt(5)})
+	assert.Nil(err)
+	// Should return 3 results, index 3 to 5
+	assert.Len(orchsFiltered, 3)
+	for _, o := range orchsFiltered {
+		assert.Contains(orchList[3:6], o.ServiceURI)
+	}
 }
 
 func TestDBUnbondingLocks(t *testing.T) {
