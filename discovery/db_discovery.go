@@ -193,7 +193,10 @@ func ethOrchToDBOrch(orch *lpTypes.Transcoder) *common.DBOrch {
 	if orch == nil {
 		return nil
 	}
-	return common.NewDBOrch(orch.ServiceURI, orch.Address.String())
+	return &common.DBOrch{
+		ServiceURI:   orch.ServiceURI,
+		EthereumAddr: orch.Address.String(),
+	}
 }
 
 func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
