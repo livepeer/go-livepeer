@@ -103,7 +103,7 @@ EXTRA_LDFLAGS=""
 if [ $(uname) == "Linux" ]; then
   if [ -e /usr/local/cuda/include ]; then
     echo "CUDA detected, building with GPU support"
-    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuvid --enable-nvenc --enable-filter=scale_cuda --enable-encoder=h264_nvenc --enable-cuda-nvcc"
+    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc"
   fi
 fi
 
@@ -112,14 +112,13 @@ if [ $(uname) == "Darwin" ]; then
 fi
 
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
-  git clone https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
+  git clone -b livepeer-2019_11_19 https://github.com/livepeer/FFmpeg "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
-  git checkout 4cfc34d9a8bffe4a1dd53187a3e0f25f34023a09
   ./configure ${TARGET_OS:-} --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
     --disable-postproc --disable-lzma \
-    --enable-gnutls --enable-libx264 --enable-gpl --enable-nonfree \
+    --enable-gnutls --enable-libx264 --enable-gpl \
     --enable-protocol=https,rtmp,file \
     --enable-muxer=mpegts,hls,segment --enable-demuxer=flv,mpegts \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps \
