@@ -584,14 +584,16 @@ func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, err
 	}
 
 	return &lpTypes.Transcoder{
-		Address:         addr,
-		ServiceURI:      serviceURI,
-		LastRewardRound: tInfo.LastRewardRound,
-		RewardCut:       tInfo.RewardCut,
-		FeeShare:        tInfo.FeeShare,
-		DelegatedStake:  delegatedStake,
-		Active:          active,
-		Status:          status,
+		Address:           addr,
+		ServiceURI:        serviceURI,
+		LastRewardRound:   tInfo.LastRewardRound,
+		RewardCut:         tInfo.RewardCut,
+		FeeShare:          tInfo.FeeShare,
+		DelegatedStake:    delegatedStake,
+		ActivationRound:   tInfo.ActivationRound,
+		DeactivationRound: tInfo.DeactivationRound,
+		Active:            active,
+		Status:            status,
 	}, nil
 }
 
