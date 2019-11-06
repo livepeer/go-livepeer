@@ -135,3 +135,5 @@ if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
   make
   make install
 fi
+
+# This file is different now.
