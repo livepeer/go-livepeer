@@ -162,7 +162,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// construct the response
 	var result net.TranscodeResult
 	if err != nil {
-		glog.Errorf("Could not transcode seqNo=%d mid=%s err=%v", segData.Seq, segData.ManifestID, err)
+		glog.Errorf("Could not transcode manifestID=%s seqNo=%d err=%v", segData.ManifestID, segData.Seq, err)
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Error{Error: err.Error()}}
 	} else {
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Data{
@@ -378,7 +378,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	switch res := tr.Result.(type) {
 	case *net.TranscodeResult_Error:
 		err = fmt.Errorf(res.Error)
-		glog.Errorf("Transcode failed for segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
+		glog.Errorf("Transcode failed for segment nonce=%d manifestID=%s seqNo=%d:%v", nonce, sess.ManifestID, seg.SeqNo, err)
 		if err.Error() == "MediaStats Failure" {
 			glog.Info("Ensure the keyframe interval is 4 seconds or less")
 		}
