@@ -338,18 +338,73 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 	assert.Equal(orchsUpdated[1].ServiceURI, orchAdd.ServiceURI)
 }
 
+func TestOrchCount(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var orchList []string
+	var nilDB *DB
+	zeroOrchs, nilErr := nilDB.OrchCount(&DBOrchFilter{})
+	assert.Zero(zeroOrchs)
+	assert.Nil(nilErr)
+
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require.Nil(err)
+
+	for i := 0; i < 10; i++ {
+		orch := NewDBOrch("https://127.0.0.1:"+strconv.Itoa(8936+i), pm.RandAddress().String(), 1, int64(i), int64(5+i))
+		orch.PricePerPixel, err = PriceToFixed(big.NewRat(1, int64(5+i)))
+		require.Nil(err)
+		err = dbh.UpdateOrch(orch)
+		require.Nil(err)
+		orchList = append(orchList, orch.ServiceURI)
+	}
+
+	//URI - MaxPrice - ActivationRound - DeactivationRound
+	//127.0.0.1:8936 1/5 0 5
+	//127.0.0.1:8937 1/6 1 6
+	//127.0.0.1:8938 1/7 2 7
+	//127.0.0.1:8939 1/8 3 8
+	//127.0.0.1:8940 1/9 4 9
+	//127.0.0.1:8941 1/10 5 10
+	//127.0.0.1:8942 1/11 6 11
+	//127.0.0.1:8943 1/12 7 12
+	//127.0.0.1:8944 1/13 8 13
+	//127.0.0.1:8945 1/14 9 14
+
+	orchCount, err := dbh.OrchCount(&DBOrchFilter{})
+	assert.Nil(err)
+	assert.Equal(orchCount, len(orchList))
+
+	// use active filter, should return 5 results
+	orchCount, err = dbh.OrchCount(&DBOrchFilter{CurrentRound: big.NewInt(5)})
+	assert.Nil(err)
+	assert.Equal(5, orchCount)
+
+	// use maxPrice filter, should return 5 results
+	orchCount, err = dbh.OrchCount(&DBOrchFilter{MaxPrice: big.NewRat(1, 10)})
+	assert.Nil(err)
+	assert.Equal(5, orchCount)
+
+	// use maxPrice and active O filter, should return 3 results
+	orchCount, err = dbh.OrchCount(&DBOrchFilter{MaxPrice: big.NewRat(1, 8), CurrentRound: big.NewInt(5)})
+	assert.Nil(err)
+	assert.Equal(3, orchCount)
+}
+
 func TestDBFilterOrchs(t *testing.T) {
+	assert := assert.New(t)
 	var orchList []string
 	var nilDb *DB
 	nilOrchs, nilErr := nilDb.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(1, 1)})
-	assert.Nil(t, nilOrchs)
-	assert.Nil(t, nilErr)
+	assert.Nil(nilOrchs)
+	assert.Nil(nilErr)
 
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
 	require := require.New(t)
-	assert := assert.New(t)
 	require.Nil(err)
 
 	for i := 0; i < 10; i++ {
