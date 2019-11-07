@@ -19,11 +19,12 @@ var stubTranscoder = pm.RandAddress()
 
 var stubActivationRound = big.NewInt(99)
 var stubDeactivationRound = big.NewInt(77)
+var stubUpdatedServiceURI = "http://127.0.0.1:9999"
 
 var stubBondingManagerAddr = ethcommon.HexToAddress("0x511bc4556d823ae99630ae8de28b9b80df90ea2e")
 var stubRoundsManagerAddr = ethcommon.HexToAddress("0xc1F9BB72216E5ecDc97e248F65E14df1fE46600a")
-
 var stubTicketBrokerAddr = ethcommon.HexToAddress("0x9d6d492bD500DA5B33cf95A5d610a73360FcaAa0")
+var stubServiceRegistryAddr = ethcommon.HexToAddress("0xF55C0B3c82be82EEBa1557d3Db1bdb55FDF46a4b")
 
 func newStubBaseLog() types.Log {
 	return types.Log{
@@ -231,6 +232,26 @@ func newStubTranscoderDeactivatedLog() types.Log {
 	return log
 }
 
+func newStubServiceURIUpdateLog() types.Log {
+	log := newStubBaseLog()
+	log.Address = stubServiceRegistryAddr
+	transcoder := ethcommon.LeftPadBytes(stubTranscoder.Bytes(), 32)
+	var transcoderTopic ethcommon.Hash
+	copy(transcoderTopic[:], transcoder[:])
+	log.Topics = []ethcommon.Hash{
+		crypto.Keccak256Hash([]byte("ServiceURIUpdate(address,string)")),
+		transcoderTopic,
+	}
+
+	var data []byte
+	serviceURI := []byte(stubUpdatedServiceURI)
+	data = append(data, ethcommon.LeftPadBytes(big.NewInt(32).Bytes(), 32)...)
+	data = append(data, ethcommon.LeftPadBytes(big.NewInt(int64(len(serviceURI))).Bytes(), 32)...)
+	data = append(data, serviceURI...)
+	log.Data = data
+	return log
+}
+
 type stubSubscription struct {
 	errCh        <-chan error
 	unsubscribed bool
@@ -342,6 +363,7 @@ func (rw *stubRoundsWatcher) Subscribe(sink chan<- types.Log) event.Subscription
 type stubOrchestratorStore struct {
 	activationRound   int64
 	deactivationRound int64
+	serviceURI        string
 	ethereumAddr      string
 }
 
@@ -349,5 +371,6 @@ func (s *stubOrchestratorStore) UpdateOrch(orch *common.DBOrch) error {
 	s.activationRound = orch.ActivationRound
 	s.deactivationRound = orch.DeactivationRound
 	s.ethereumAddr = orch.EthereumAddr
+	s.serviceURI = orch.ServiceURI
 	return nil
 }

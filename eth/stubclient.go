@@ -204,7 +204,7 @@ func (e *StubClient) TotalSupply() (*big.Int, error)                  { return b
 // Service Registry
 
 func (e *StubClient) SetServiceURI(serviceURI string) (*types.Transaction, error) { return nil, nil }
-func (e *StubClient) GetServiceURI(addr common.Address) (string, error)           { return "", nil }
+func (e *StubClient) GetServiceURI(addr common.Address) (string, error)           { return e.Orch.ServiceURI, nil }
 
 // Staking
 
