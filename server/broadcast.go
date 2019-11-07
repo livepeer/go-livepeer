@@ -245,7 +245,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) error {
 	mid := cxn.mid
 	vProfile := cxn.profile
 
-	glog.V(common.DEBUG).Infof("Processing segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
+	glog.V(common.DEBUG).Infof("Processing segment nonce=%d manifestID=%s seqNo=%d dur=%v", nonce, mid, seg.SeqNo, seg.Duration)
 	if monitor.Enabled {
 		monitor.SegmentEmerged(nonce, seg.SeqNo, len(BroadcastJobVideoProfiles))
 	}
@@ -294,7 +294,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, errNoOrchs, true)
 		}
-		glog.Infof("No sessions available for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
+		glog.Infof("No sessions available for segment nonce=%d manifestID=%s seqNo=%d", nonce, cxn.mid, seg.SeqNo)
 		// We may want to introduce a "non-retryable" error type here
 		// would help error propagation for live ingest.
 		// similar to the orchestrator's RemoteTranscoderFatalError
@@ -322,7 +322,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 		}
 
 		// send segment to the orchestrator
-		glog.V(common.DEBUG).Infof("Submitting segment nonce=%d seqNo=%d orch=%s", nonce, seg.SeqNo, sess.OrchestratorInfo.Transcoder)
+		glog.V(common.DEBUG).Infof("Submitting segment nonce=%d manifestID=%s seqNo=%d orch=%s", nonce, cxn.mid, seg.SeqNo, sess.OrchestratorInfo.Transcoder)
 
 		res, err := SubmitSegment(sess, seg, nonce)
 		if err != nil || res == nil {
