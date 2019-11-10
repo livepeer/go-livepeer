@@ -184,7 +184,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 
 	rpcBcast := core.NewBroadcaster(n)
 
-	tinfos, err := n.OrchestratorPool.GetOrchestrators(count)
+	tinfos, err := n.OrchestratorPool.GetOrchestrators(count, rpcBcast)
 	if len(tinfos) <= 0 {
 		glog.Info("No orchestrators found; not transcoding. Error: ", err)
 		return nil, errNoOrchs

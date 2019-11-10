@@ -10,6 +10,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 
@@ -70,7 +71,7 @@ func (w *webhookPool) getURLs() ([]*url.URL, error) {
 		return nil, err
 	}
 
-	pool := NewOrchestratorPool(w.node, addrs)
+	pool := NewOrchestratorPool(addrs)
 
 	w.mu.Lock()
 	w.responseHash = hash
@@ -90,7 +91,7 @@ func (w *webhookPool) Size() int {
 	return len(w.GetURLs())
 }
 
-func (w *webhookPool) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
+func (w *webhookPool) GetOrchestrators(numOrchestrators int, bcast common.Broadcaster) ([]*net.OrchestratorInfo, error) {
 	_, err := w.getURLs()
 	if err != nil {
 		return nil, err
@@ -99,7 +100,7 @@ func (w *webhookPool) GetOrchestrators(numOrchestrators int) ([]*net.Orchestrato
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
-	return w.pool.GetOrchestrators(numOrchestrators)
+	return w.pool.GetOrchestrators(numOrchestrators, bcast)
 }
 
 var getURLsfromWebhook = func(cbUrl *url.URL) ([]byte, error) {
