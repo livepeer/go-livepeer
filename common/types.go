@@ -14,6 +14,6 @@ type Broadcaster interface {
 
 type OrchestratorPool interface {
 	GetURLs() []*url.URL
-	GetOrchestrators(int, Broadcaster) ([]*net.OrchestratorInfo, error)
+	GetOrchestrators(int) ([]*net.OrchestratorInfo, error)
 	Size() int
 }

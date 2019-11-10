@@ -21,14 +21,14 @@ const getOrchestratorsTimeoutLoop = 1 * time.Hour
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
 type orchestratorPool struct {
-	uris []*url.URL
-	pred func(info *net.OrchestratorInfo) bool
+	uris  []*url.URL
+	pred  func(info *net.OrchestratorInfo) bool
+	bcast common.Broadcaster
 }
 
 var perm = func(len int) []int { return rand.Perm(len) }
 
-func NewOrchestratorPool(uris []*url.URL) *orchestratorPool {
-
+func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL) *orchestratorPool {
 	if len(uris) <= 0 {
 		// Should we return here?
 		glog.Error("Orchestrator pool does not have any URIs")
@@ -40,11 +40,11 @@ func NewOrchestratorPool(uris []*url.URL) *orchestratorPool {
 		randomizedUris = append(randomizedUris, uri)
 	}
 
-	return &orchestratorPool{uris: randomizedUris}
+	return &orchestratorPool{uris: randomizedUris, bcast: bcast}
 }
 
-func NewOrchestratorPoolWithPred(addresses []*url.URL, pred func(*net.OrchestratorInfo) bool) *orchestratorPool {
-	pool := NewOrchestratorPool(addresses)
+func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL, pred func(*net.OrchestratorInfo) bool) *orchestratorPool {
+	pool := NewOrchestratorPool(bcast, addresses)
 	pool.pred = pred
 	return pool
 }
@@ -53,7 +53,7 @@ func (o *orchestratorPool) GetURLs() []*url.URL {
 	return o.uris
 }
 
-func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, bcast common.Broadcaster) ([]*net.OrchestratorInfo, error) {
+func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
 	numAvailableOrchs := len(o.uris)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
 	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
@@ -64,7 +64,7 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, bcast common.B
 	respLock := sync.Mutex{}
 
 	getOrchInfo := func(uri *url.URL) {
-		info, err := serverGetOrchInfo(ctx, bcast, uri)
+		info, err := serverGetOrchInfo(ctx, o.bcast, uri)
 		respLock.Lock()
 		defer respLock.Unlock()
 		numResp++

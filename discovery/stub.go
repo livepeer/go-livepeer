@@ -41,7 +41,12 @@ func StubOrchestrators(addresses []string) []*lpTypes.Transcoder {
 
 	for _, addr := range addresses {
 		address := ethcommon.BytesToAddress([]byte(addr))
-		transc := &lpTypes.Transcoder{ServiceURI: addr, Address: address}
+		transc := &lpTypes.Transcoder{
+			ServiceURI:        addr,
+			Address:           address,
+			ActivationRound:   big.NewInt(0),
+			DeactivationRound: big.NewInt(0),
+		}
 		orchestrators = append(orchestrators, transc)
 	}
 

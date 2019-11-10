@@ -11,7 +11,6 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/common"
-	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 
 	"github.com/golang/glog"
@@ -24,19 +23,20 @@ type webhookResponse struct {
 }
 
 type webhookPool struct {
-	node         *core.LivepeerNode
 	pool         *orchestratorPool
 	callback     *url.URL
 	responseHash ethcommon.Hash
 	lastRequest  time.Time
 	mu           *sync.RWMutex
+	bcast        common.Broadcaster
 }
 
-func NewWebhookPool(node *core.LivepeerNode, callback *url.URL) *webhookPool {
+func NewWebhookPool(bcast common.Broadcaster, callback *url.URL) *webhookPool {
 	p := &webhookPool{
 		node:     node,
 		callback: callback,
 		mu:       &sync.RWMutex{},
+		bcast:    bcast,
 	}
 	go p.getURLs()
 	return p
@@ -71,7 +71,7 @@ func (w *webhookPool) getURLs() ([]*url.URL, error) {
 		return nil, err
 	}
 
-	pool := NewOrchestratorPool(addrs)
+	pool := NewOrchestratorPool(w.bcast, addrs)
 
 	w.mu.Lock()
 	w.responseHash = hash
@@ -91,7 +91,7 @@ func (w *webhookPool) Size() int {
 	return len(w.GetURLs())
 }
 
-func (w *webhookPool) GetOrchestrators(numOrchestrators int, bcast common.Broadcaster) ([]*net.OrchestratorInfo, error) {
+func (w *webhookPool) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
 	_, err := w.getURLs()
 	if err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func (w *webhookPool) GetOrchestrators(numOrchestrators int, bcast common.Broadc
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
-	return w.pool.GetOrchestrators(numOrchestrators, bcast)
+	return w.pool.GetOrchestrators(numOrchestrators)
 }
 
 var getURLsfromWebhook = func(cbUrl *url.URL) ([]byte, error) {
