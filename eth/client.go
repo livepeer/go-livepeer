@@ -78,7 +78,7 @@ type LivepeerEthClient interface {
 	GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error)
 	GetDelegatorUnbondingLock(addr ethcommon.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error)
 	GetTranscoderEarningsPoolForRound(addr ethcommon.Address, round *big.Int) (*lpTypes.TokenPools, error)
-	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
+	TranscoderPool() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
 	GetTotalBonded() (*big.Int, error)
 	GetTranscoderPoolSize() (*big.Int, error)
@@ -687,7 +687,7 @@ func (c *client) Paused() (bool, error) {
 	return c.ControllerSession.Paused()
 }
 
-func (c *client) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
+func (c *client) TranscoderPool() ([]*lpTypes.Transcoder, error) {
 	var transcoders []*lpTypes.Transcoder
 
 	tAddr, err := c.GetFirstTranscoderInPool()
