@@ -22,7 +22,6 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/net"
 )
 
 var ErrTranscoderAvail = errors.New("ErrTranscoderUnavailable")
@@ -56,7 +55,7 @@ type LivepeerNode struct {
 	// Transcoder public fields
 	SegmentChans      map[ManifestID]SegmentChan
 	Recipient         pm.Recipient
-	OrchestratorPool  net.OrchestratorPool
+	OrchestratorPool  common.OrchestratorPool
 	OrchSecret        string
 	Transcoder        Transcoder
 	TranscoderManager *RemoteTranscoderManager

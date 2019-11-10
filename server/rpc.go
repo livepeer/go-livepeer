@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
@@ -45,11 +46,6 @@ type Orchestrator interface {
 	PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error)
 	SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool
 	DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
-}
-
-type Broadcaster interface {
-	Address() ethcommon.Address
-	Sign([]byte) ([]byte, error)
 }
 
 // Balance describes methods for a session's balance maintenance
@@ -93,7 +89,7 @@ type BalanceUpdate struct {
 
 // BroadcastSession - session-specific state for broadcasters
 type BroadcastSession struct {
-	Broadcaster      Broadcaster
+	Broadcaster      common.Broadcaster
 	ManifestID       core.ManifestID
 	Profiles         []ffmpeg.VideoProfile
 	OrchestratorInfo *net.OrchestratorInfo
@@ -198,7 +194,7 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 }
 
 // GetOrchestratorInfo - the broadcaster calls GetOrchestratorInfo which invokes GetOrchestrator on the orchestrator
-func GetOrchestratorInfo(ctx context.Context, bcast Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 	c, conn, err := startOrchestratorClient(orchestratorServer)
 	if err != nil {
 		return nil, err
@@ -230,7 +226,7 @@ func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.Client
 	return c, conn, nil
 }
 
-func genOrchestratorReq(b Broadcaster) (*net.OrchestratorRequest, error) {
+func genOrchestratorReq(b common.Broadcaster) (*net.OrchestratorRequest, error) {
 	sig, err := b.Sign([]byte(fmt.Sprintf("%v", b.Address().Hex())))
 	if err != nil {
 		return nil, err
