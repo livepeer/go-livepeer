@@ -288,6 +288,8 @@ func main() {
 
 	watcherErr := make(chan error)
 	var roundsWatcher *watchers.RoundsWatcher
+	var originalLastSeenBlock *big.Int
+	var currentRoundStartBlock *big.Int
 	if *network == "offchain" {
 		glog.Infof("***Livepeer is in off-chain mode***")
 
@@ -368,12 +370,12 @@ func main() {
 		topics := watchers.FilterTopics()
 
 		// Determine backfilling start block
-		originalLastSeenBlock, err := dbh.LastSeenBlock()
+		originalLastSeenBlock, err = dbh.LastSeenBlock()
 		if err != nil {
 			glog.Errorf("db: failed to retrieve latest retained block: %v", err)
 			return
 		}
-		currentRoundStartBlock, err := client.CurrentRoundStartBlock()
+		currentRoundStartBlock, err = client.CurrentRoundStartBlock()
 		if err != nil {
 			glog.Errorf("eth: failed to retrieve current round start block: %v", err)
 			return
@@ -397,7 +399,7 @@ func main() {
 		// Wait until all event watchers have been initialized before starting the block watcher
 		blockWatcher := blockwatch.New(blockWatcherCfg)
 
-		roundsWatcher, err := watchers.NewRoundsWatcher(addrMap["RoundsManager"], blockWatcher, n.Eth)
+		roundsWatcher, err = watchers.NewRoundsWatcher(addrMap["RoundsManager"], blockWatcher, n.Eth)
 		if err != nil {
 			glog.Errorf("Failed to setup roundswatcher: %v", err)
 			return
@@ -509,8 +511,6 @@ func main() {
 			}
 
 			sigVerifier := &pm.DefaultSigVerifier{}
-			// TODO: Initialize Validator with an implementation
-			// of RoundsManager that reads from a cache
 			validator := pm.NewValidator(sigVerifier, roundsWatcher)
 			gpm := eth.NewGasPriceMonitor(backend, blockPollingTime)
 			// Start gas price monitor

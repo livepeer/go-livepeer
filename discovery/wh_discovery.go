@@ -33,7 +33,6 @@ type webhookPool struct {
 
 func NewWebhookPool(bcast common.Broadcaster, callback *url.URL) *webhookPool {
 	p := &webhookPool{
-		node:     node,
 		callback: callback,
 		mu:       &sync.RWMutex{},
 		bcast:    bcast,
