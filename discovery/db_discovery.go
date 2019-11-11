@@ -27,14 +27,8 @@ type roundsManager interface {
 	LastInitializedRound() *big.Int
 }
 
-type orchestratorStore interface {
-	OrchCount(filter *common.DBOrchFilter) (int, error)
-	SelectOrchs(filter *common.DBOrchFilter) ([]*common.DBOrch, error)
-	UpdateOrch(orch *common.DBOrch) error
-}
-
 type DBOrchestratorPoolCache struct {
-	store                 orchestratorStore
+	store                 common.OrchestratorStore
 	lpEth                 eth.LivepeerEthClient
 	ticketParamsValidator ticketParamsValidator
 	rm                    roundsManager
@@ -123,7 +117,8 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 func (dbo *DBOrchestratorPoolCache) Size() int {
 	count, _ := dbo.store.OrchCount(
 		&common.DBOrchFilter{
-			MaxPrice: server.BroadcastCfg.MaxPrice(),
+			MaxPrice:     server.BroadcastCfg.MaxPrice(),
+			CurrentRound: dbo.rm.LastInitializedRound(),
 		},
 	)
 	return count
@@ -252,6 +247,13 @@ func ethOrchToDBOrch(orch *lpTypes.Transcoder) *common.DBOrch {
 		ActivationRound:   orch.ActivationRound.Int64(),
 		DeactivationRound: orch.DeactivationRound.Int64(),
 	}
+	if orch.ActivationRound != nil {
+		dbO.ActivationRound = orch.ActivationRound.Int64()
+	}
+	if orch.DeactivationRound != nil {
+		dbO.DeactivationRound = orch.DeactivationRound.Int64()
+	}
+	return dbO
 }
 
 func pmTicketParams(params *net.TicketParams) *pm.TicketParams {

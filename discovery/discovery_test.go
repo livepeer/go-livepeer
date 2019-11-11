@@ -595,6 +595,7 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 			PriceInfo:  expPriceInfo,
 		}, nil
 	}
+
 	addresses := []string{}
 	for i := 0; i < 50; i++ {
 		addresses = append(addresses, "https://127.0.0.1:"+strconv.Itoa(8936+i))
@@ -965,8 +966,6 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 		return &net.OrchestratorInfo{Transcoder: "transcoder"}, nil
 	}
 
-	// mock livepeer node
-	node, _ := core.NewLivepeerNode(nil, "", nil)
 	perm = func(len int) []int { return rand.Perm(3) }
 
 	// assert created webhook pool is correct length

@@ -17,3 +17,9 @@ type OrchestratorPool interface {
 	GetOrchestrators(int) ([]*net.OrchestratorInfo, error)
 	Size() int
 }
+
+type OrchestratorStore interface {
+	OrchCount(filter *DBOrchFilter) (int, error)
+	SelectOrchs(filter *DBOrchFilter) ([]*DBOrch, error)
+	UpdateOrch(orch *DBOrch) error
+}
