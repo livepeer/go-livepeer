@@ -95,7 +95,7 @@ func TestStart_Polling(t *testing.T) {
 	gasPrice3 := big.NewInt(888)
 	gpo := newStubGasPriceOracle(gasPrice1)
 
-	pollingInterval := 1 * time.Second
+	pollingInterval := 1 * time.Millisecond
 	gpm := NewGasPriceMonitor(gpo, pollingInterval)
 
 	assert := assert.New(t)
@@ -139,11 +139,10 @@ func TestStart_Polling(t *testing.T) {
 	// sync sleep finishes, the monitor
 	// should have decreased its own gas price
 	go func() {
-		time.Sleep(1 * pollingInterval)
 		gpo.SetGasPrice(gasPrice2)
 	}()
 
-	time.Sleep(2 * pollingInterval)
+	time.Sleep(100 * time.Millisecond)
 
 	assert.Greater(gpo.Queries(), 0)
 	assert.Equal(gasPrice2, gpm.GasPrice())
@@ -154,11 +153,10 @@ func TestStart_Polling(t *testing.T) {
 	// sync sleep finishes, the monitor
 	// should have increased its own gas price
 	go func() {
-		time.Sleep(1 * pollingInterval)
 		gpo.SetGasPrice(gasPrice3)
 	}()
 
-	time.Sleep(2 * pollingInterval)
+	time.Sleep(100 * time.Millisecond)
 
 	// There should be more queries now
 	assert.Greater(gpo.Queries(), queries)
@@ -184,7 +182,7 @@ func TestStart_Polling_ContextCancel(t *testing.T) {
 	// Cancel polling loop
 	cancel()
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(100 * time.Millisecond)
 
 	// Ensure there are no more queries
 	assert.Equal(t, gpo.queries, queries)
@@ -215,7 +213,7 @@ func TestStop(t *testing.T) {
 	err = gpm.Stop()
 	assert.Nil(err)
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(100 * time.Millisecond)
 
 	// Ensure there are no more queries
 	assert.Equal(queries, gpo.queries)
