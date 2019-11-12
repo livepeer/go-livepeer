@@ -588,18 +588,17 @@ func TestValidatePrice(t *testing.T) {
 	// B MaxPrice < O Price
 	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
 	err = validatePrice(s)
-	assert.Errorf(err, err.Error(), "Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5))
+	assert.EqualError(err, fmt.Sprintf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5)))
 
 	// O.PriceInfo is nil
 	s.OrchestratorInfo.PriceInfo = nil
 	err = validatePrice(s)
-	assert.EqualError(err, err.Error(), "Invalid orchestrator price")
+	assert.EqualError(err, "missing orchestrator price")
 
 	// O.PriceInfo.PixelsPerUnit is 0
 	s.OrchestratorInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 0}
 	err = validatePrice(s)
-	assert.EqualError(err, err.Error(), "Invalid orchestrator price")
-
+	assert.EqualError(err, "invalid priceInfo.pixelsPerUnit")
 }
 
 func TestGetPayment_GivenInvalidBase64_ReturnsError(t *testing.T) {

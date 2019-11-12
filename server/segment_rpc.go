@@ -626,10 +626,14 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 }
 
 func validatePrice(sess *BroadcastSession) error {
-	if sess.OrchestratorInfo.PriceInfo.GetPixelsPerUnit() == 0 {
-		return fmt.Errorf("Invalid orchestrator price")
+	oPrice, err := ratPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
+	if err != nil {
+		return err
 	}
-	oPrice := big.NewRat(sess.OrchestratorInfo.PriceInfo.GetPricePerUnit(), sess.OrchestratorInfo.PriceInfo.GetPixelsPerUnit())
+	if oPrice == nil {
+		return errors.New("missing orchestrator price")
+	}
+
 	maxPrice := BroadcastCfg.MaxPrice()
 	if maxPrice != nil && oPrice.Cmp(maxPrice) == 1 {
 		return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
