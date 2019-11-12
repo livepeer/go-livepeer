@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"math/big"
 	"net/http"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"golang.org/x/net/http2"
 
@@ -29,6 +31,8 @@ import (
 
 const paymentHeader = "Livepeer-Payment"
 const segmentHeader = "Livepeer-Segment"
+
+const pixelEstimateMultiplier = 1.02
 
 var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
@@ -266,8 +270,18 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		data = []byte(seg.Name)
 	}
 
+	priceInfo, err := ratPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
+	if err != nil {
+		return nil, err
+	}
+
+	fee, err := estimateFee(seg, sess.Profiles, priceInfo)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create a BalanceUpdate to be completed when this function returns
-	balUpdate, err := newBalanceUpdate(sess)
+	balUpdate, err := newBalanceUpdate(sess, fee)
 	if err != nil {
 		return nil, err
 	}
@@ -407,7 +421,6 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 
 	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
 	balUpdate.Status = ReceivedChange
-	priceInfo := sess.OrchestratorInfo.PriceInfo
 	if priceInfo != nil {
 		// The update's debit is the transcoding fee which is computed as the total number of pixels processed
 		// for all results returned multiplied by the orchestrator's price
@@ -416,7 +429,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 			pixelCount += res.Pixels
 		}
 
-		balUpdate.Debit.Mul(new(big.Rat).SetInt64(pixelCount), big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit))
+		balUpdate.Debit.Mul(new(big.Rat).SetInt64(pixelCount), priceInfo)
 	}
 
 	// transcode succeeded; continue processing response
@@ -484,7 +497,34 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func newBalanceUpdate(sess *BroadcastSession) (*BalanceUpdate, error) {
+func estimateFee(seg *stream.HLSSegment, profiles []ffmpeg.VideoProfile, priceInfo *big.Rat) (*big.Rat, error) {
+	if priceInfo == nil {
+		return nil, nil
+	}
+
+	// TODO: Estimate the number of input pixels
+	// Estimate the number of output pixels
+	var outPixels int64
+	for _, p := range profiles {
+		w, h, err := ffmpeg.VideoProfileResolution(p)
+		if err != nil {
+			return nil, err
+		}
+
+		// Take the ceiling of the duration to always overestimate
+		outPixels += int64(w*h) * int64(p.Framerate) * int64(math.Ceil(seg.Duration))
+	}
+
+	// feeEstimate = pixels * pixelEstimateMultiplier * priceInfo
+	fee := new(big.Rat).SetInt64(outPixels)
+	// Multiply pixels by pixelEstimateMultiplier to ensure that we never underpay
+	fee.Mul(fee, new(big.Rat).SetFloat64(pixelEstimateMultiplier))
+	fee.Mul(fee, priceInfo)
+
+	return fee, nil
+}
+
+func newBalanceUpdate(sess *BroadcastSession, minCredit *big.Rat) (*BalanceUpdate, error) {
 	update := &BalanceUpdate{
 		ExistingCredit: big.NewRat(0, 1),
 		NewCredit:      big.NewRat(0, 1),
@@ -492,7 +532,7 @@ func newBalanceUpdate(sess *BroadcastSession) (*BalanceUpdate, error) {
 		Status:         Staged,
 	}
 
-	if sess.Sender == nil || sess.Balance == nil {
+	if sess.Sender == nil || sess.Balance == nil || minCredit == nil {
 		return update, nil
 	}
 
@@ -501,7 +541,7 @@ func newBalanceUpdate(sess *BroadcastSession) (*BalanceUpdate, error) {
 		return nil, err
 	}
 
-	update.NumTickets, update.NewCredit, update.ExistingCredit = sess.Balance.StageUpdate(ev, ev)
+	update.NumTickets, update.NewCredit, update.ExistingCredit = sess.Balance.StageUpdate(minCredit, ev)
 
 	return update, nil
 }
@@ -595,4 +635,17 @@ func validatePrice(sess *BroadcastSession) error {
 		return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
 	}
 	return nil
+}
+
+func ratPriceInfo(priceInfo *net.PriceInfo) (*big.Rat, error) {
+	if priceInfo == nil {
+		return nil, nil
+	}
+
+	pixelsPerUnit := priceInfo.PixelsPerUnit
+	if pixelsPerUnit == 0 {
+		return nil, errors.New("invalid priceInfo.pixelsPerUnit")
+	}
+
+	return big.NewRat(priceInfo.PricePerUnit, pixelsPerUnit), nil
 }

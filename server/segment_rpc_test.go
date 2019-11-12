@@ -793,6 +793,40 @@ func TestSubmitSegment_GenSegCredsError(t *testing.T) {
 	assert.Equal(t, "Sign error", err.Error())
 }
 
+func TestSubmitSegment_RatPriceInfoError(t *testing.T) {
+	b := stubBroadcaster2()
+
+	s := &BroadcastSession{
+		Broadcaster: b,
+		ManifestID:  core.RandomManifestID(),
+		OrchestratorInfo: &net.OrchestratorInfo{
+			PriceInfo: &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 0},
+		},
+	}
+
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+
+	assert.EqualError(t, err, "invalid priceInfo.pixelsPerUnit")
+}
+
+func TestSubmitSegment_EstimateFeeError(t *testing.T) {
+	b := stubBroadcaster2()
+
+	s := &BroadcastSession{
+		Broadcaster: b,
+		ManifestID:  core.RandomManifestID(),
+		// Contains invalid profile
+		Profiles: []ffmpeg.VideoProfile{ffmpeg.VideoProfile{Resolution: "foo"}},
+		OrchestratorInfo: &net.OrchestratorInfo{
+			PriceInfo: &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 1},
+		},
+	}
+
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+
+	assert.Error(t, err)
+}
+
 func TestSubmitSegment_NewBalanceUpdateError(t *testing.T) {
 	b := stubBroadcaster2()
 	sender := &pm.MockSender{}
@@ -804,6 +838,9 @@ func TestSubmitSegment_NewBalanceUpdateError(t *testing.T) {
 		ManifestID:  core.RandomManifestID(),
 		Sender:      sender,
 		Balance:     &mockBalance{},
+		OrchestratorInfo: &net.OrchestratorInfo{
+			PriceInfo: &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 1},
+		},
 	}
 
 	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)

@@ -26,6 +26,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -268,6 +269,82 @@ func TestRPCSeg(t *testing.T) {
 	o.sessCapErr = nil
 }
 
+func TestEstimateFee(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test nil priceInfo
+	fee, err := estimateFee(&stream.HLSSegment{}, []ffmpeg.VideoProfile{}, nil)
+	assert.Nil(err)
+	assert.Nil(fee)
+
+	// Test first profile is invalid
+	profiles := []ffmpeg.VideoProfile{ffmpeg.VideoProfile{Resolution: "foo"}}
+	_, err = estimateFee(&stream.HLSSegment{}, profiles, big.NewRat(1, 1))
+	assert.Error(err)
+
+	// Test non-first profile is invalid
+	profiles = []ffmpeg.VideoProfile{
+		ffmpeg.P144p30fps16x9,
+		ffmpeg.VideoProfile{Resolution: "foo"},
+	}
+	_, err = estimateFee(&stream.HLSSegment{}, profiles, big.NewRat(1, 1))
+	assert.Error(err)
+
+	// Test no profiles
+	fee, err = estimateFee(&stream.HLSSegment{Duration: 2.0}, []ffmpeg.VideoProfile{}, big.NewRat(1, 1))
+	assert.Nil(err)
+	assert.Zero(fee.Cmp(big.NewRat(0, 1)))
+
+	// Test estimation with 1 profile
+	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	priceInfo := big.NewRat(3, 1)
+	// pixels = 256 * 144 * 30 * 2
+	expFee := new(big.Rat).SetInt64(2211840)
+	expFee.Mul(expFee, new(big.Rat).SetFloat64(pixelEstimateMultiplier))
+	expFee.Mul(expFee, priceInfo)
+	fee, err = estimateFee(&stream.HLSSegment{Duration: 2.0}, profiles, priceInfo)
+	assert.Nil(err)
+	assert.Zero(fee.Cmp(expFee))
+
+	// Test estimation with 2 profiles
+	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
+	// pixels = (256 * 144 * 30 * 2) + (426 * 240 * 30 * 2)
+	expFee = new(big.Rat).SetInt64(8346240)
+	expFee.Mul(expFee, new(big.Rat).SetFloat64(pixelEstimateMultiplier))
+	expFee.Mul(expFee, priceInfo)
+	fee, err = estimateFee(&stream.HLSSegment{Duration: 2.0}, profiles, priceInfo)
+	assert.Nil(err)
+	assert.Zero(fee.Cmp(expFee))
+
+	// Test estimation with non-integer duration
+	// pixels = (256 * 144 * 30 * 3) * (426 * 240 * 30 * 3)
+	expFee = new(big.Rat).SetInt64(12519360)
+	expFee.Mul(expFee, new(big.Rat).SetFloat64(pixelEstimateMultiplier))
+	expFee.Mul(expFee, priceInfo)
+	// Calculations should take ceiling of duration i.e. 2.2 -> 3
+	fee, err = estimateFee(&stream.HLSSegment{Duration: 2.2}, profiles, priceInfo)
+	assert.Nil(err)
+	assert.Zero(fee.Cmp(expFee))
+}
+
+func TestRatPriceInfo(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test nil priceInfo
+	priceInfo, err := ratPriceInfo(nil)
+	assert.Nil(err)
+	assert.Nil(priceInfo)
+
+	// Test priceInfo.pixelsPerUnit = 0
+	_, err = ratPriceInfo(&net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 0})
+	assert.EqualError(err, "invalid priceInfo.pixelsPerUnit")
+
+	// Test valid priceInfo
+	priceInfo, err = ratPriceInfo(&net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 2})
+	assert.Nil(err)
+	assert.Zero(priceInfo.Cmp(big.NewRat(7, 2)))
+}
+
 func TestNewBalanceUpdate(t *testing.T) {
 	mid := core.RandomManifestID()
 	s := &BroadcastSession{
@@ -278,7 +355,7 @@ func TestNewBalanceUpdate(t *testing.T) {
 	assert := assert.New(t)
 
 	// Test nil Sender
-	update, err := newBalanceUpdate(s)
+	update, err := newBalanceUpdate(s, big.NewRat(0, 1))
 	assert.Nil(err)
 	assert.Zero(big.NewRat(0, 1).Cmp(update.ExistingCredit))
 	assert.Zero(big.NewRat(0, 1).Cmp(update.NewCredit))
@@ -290,7 +367,19 @@ func TestNewBalanceUpdate(t *testing.T) {
 	sender := &pm.MockSender{}
 	s.Sender = sender
 
-	update, err = newBalanceUpdate(s)
+	update, err = newBalanceUpdate(s, big.NewRat(0, 1))
+	assert.Nil(err)
+	assert.Zero(big.NewRat(0, 1).Cmp(update.ExistingCredit))
+	assert.Zero(big.NewRat(0, 1).Cmp(update.NewCredit))
+	assert.Equal(0, update.NumTickets)
+	assert.Zero(big.NewRat(0, 1).Cmp(update.Debit))
+	assert.Equal(Staged, int(update.Status))
+
+	// Test nil minCredit
+	balance := &mockBalance{}
+	s.Balance = balance
+
+	update, err = newBalanceUpdate(s, nil)
 	assert.Nil(err)
 	assert.Zero(big.NewRat(0, 1).Cmp(update.ExistingCredit))
 	assert.Zero(big.NewRat(0, 1).Cmp(update.NewCredit))
@@ -299,29 +388,29 @@ func TestNewBalanceUpdate(t *testing.T) {
 	assert.Equal(Staged, int(update.Status))
 
 	// Test pm.Sender.EV() error
-	balance := &mockBalance{}
-	s.Balance = balance
 	expErr := errors.New("EV error")
 	sender.On("EV", s.PMSessionID).Return(nil, expErr).Once()
 
-	_, err = newBalanceUpdate(s)
+	_, err = newBalanceUpdate(s, big.NewRat(0, 1))
 	assert.EqualError(err, expErr.Error())
 
 	// Test BalanceUpdate creation
+	minCredit := big.NewRat(10, 1)
 	ev := big.NewRat(5, 1)
 	sender.On("EV", s.PMSessionID).Return(ev, nil)
 	numTickets := 2
 	newCredit := big.NewRat(5, 1)
 	existingCredit := big.NewRat(6, 1)
-	balance.On("StageUpdate", ev, ev).Return(numTickets, newCredit, existingCredit)
+	balance.On("StageUpdate", minCredit, ev).Return(numTickets, newCredit, existingCredit)
 
-	update, err = newBalanceUpdate(s)
+	update, err = newBalanceUpdate(s, minCredit)
 	assert.Nil(err)
 	assert.Zero(existingCredit.Cmp(update.ExistingCredit))
 	assert.Zero(newCredit.Cmp(update.NewCredit))
 	assert.Equal(numTickets, update.NumTickets)
 	assert.Zero(big.NewRat(0, 1).Cmp(update.Debit))
 	assert.Equal(Staged, int(update.Status))
+	balance.AssertCalled(t, "StageUpdate", minCredit, ev)
 }
 
 func TestGenPayment(t *testing.T) {
