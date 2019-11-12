@@ -231,12 +231,15 @@ func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
 	qc = &queueConsumer{}
 	go qc.Wait(2, sm)
 
+	time.Sleep(10 * time.Millisecond)
+
 	err = sm.AddFloat(addr2, big.NewInt(5))
 	require.Nil(err)
 	err = sm.AddFloat(addr, big.NewInt(5))
 	require.Nil(err)
 
-	time.Sleep(time.Millisecond * 20)
+	time.Sleep(10 * time.Millisecond)
+
 	// Order of tickets should reflect order that AddFloat()
 	// was called
 	tickets = qc.Redeemable()
