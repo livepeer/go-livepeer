@@ -458,6 +458,26 @@ func (db *DB) SelectOrchs(filter *DBOrchFilter) ([]*DBOrch, error) {
 	return orchs, nil
 }
 
+func (db *DB) OrchCount(filter *DBOrchFilter) (int, error) {
+	if db == nil {
+		return 0, nil
+	}
+
+	qry, err := buildOrchCountQuery(filter)
+	if err != nil {
+		return 0, err
+	}
+
+	row := db.dbh.QueryRow(qry)
+
+	var count64 int64
+	if err := row.Scan(&count64); err != nil {
+		return 0, err
+	}
+
+	return int(count64), nil
+}
+
 func (db *DB) InsertUnbondingLock(id *big.Int, delegator ethcommon.Address, amount, withdrawRound *big.Int) error {
 	glog.V(DEBUG).Infof("db: Inserting unbonding lock %v for delegator %v", id, delegator.Hex())
 	_, err := db.insertUnbondingLock.Exec(id.Int64(), delegator.Hex(), amount.String(), withdrawRound.Int64())
@@ -636,6 +656,15 @@ func buildWinningTicketsQuery(sessionIDs []string) string {
 
 func buildSelectOrchsQuery(filter *DBOrchFilter) (string, error) {
 	query := "SELECT ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound FROM orchestrators "
+	fil, err := buildFilterOrchsQuery(filter)
+	if err != nil {
+		return "", err
+	}
+	return query + fil, nil
+}
+
+func buildOrchCountQuery(filter *DBOrchFilter) (string, error) {
+	query := "SELECT count(ethereumAddr) FROM orchestrators "
 	fil, err := buildFilterOrchsQuery(filter)
 	if err != nil {
 		return "", err
