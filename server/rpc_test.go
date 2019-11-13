@@ -394,14 +394,14 @@ func TestNewBalanceUpdate(t *testing.T) {
 	_, err = newBalanceUpdate(s, big.NewRat(0, 1))
 	assert.EqualError(err, expErr.Error())
 
-	// Test BalanceUpdate creation
+	// Test BalanceUpdate creation when minCredit > ev
 	minCredit := big.NewRat(10, 1)
 	ev := big.NewRat(5, 1)
 	sender.On("EV", s.PMSessionID).Return(ev, nil)
 	numTickets := 2
 	newCredit := big.NewRat(5, 1)
 	existingCredit := big.NewRat(6, 1)
-	balance.On("StageUpdate", minCredit, ev).Return(numTickets, newCredit, existingCredit)
+	balance.On("StageUpdate", minCredit, ev).Return(numTickets, newCredit, existingCredit).Once()
 
 	update, err = newBalanceUpdate(s, minCredit)
 	assert.Nil(err)
@@ -411,6 +411,19 @@ func TestNewBalanceUpdate(t *testing.T) {
 	assert.Zero(big.NewRat(0, 1).Cmp(update.Debit))
 	assert.Equal(Staged, int(update.Status))
 	balance.AssertCalled(t, "StageUpdate", minCredit, ev)
+
+	// Test BalanceUpdate creation when minCredit < ev
+	minCredit = big.NewRat(4, 1)
+	balance.On("StageUpdate", ev, ev).Return(numTickets, newCredit, existingCredit).Once()
+
+	update, err = newBalanceUpdate(s, minCredit)
+	assert.Nil(err)
+	assert.Zero(existingCredit.Cmp(update.ExistingCredit))
+	assert.Zero(newCredit.Cmp(update.NewCredit))
+	assert.Equal(numTickets, update.NumTickets)
+	assert.Zero(big.NewRat(0, 1).Cmp(update.Debit))
+	assert.Equal(Staged, int(update.Status))
+	balance.AssertCalled(t, "StageUpdate", ev, ev)
 }
 
 func TestGenPayment(t *testing.T) {

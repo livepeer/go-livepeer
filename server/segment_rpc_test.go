@@ -831,7 +831,7 @@ func TestSubmitSegment_NewBalanceUpdateError(t *testing.T) {
 	b := stubBroadcaster2()
 	sender := &pm.MockSender{}
 	expErr := errors.New("EV error")
-	sender.On("EV", mock.Anything).Return(nil, expErr)
+	sender.On("EV", mock.Anything).Return(big.NewRat(0, 1), expErr)
 
 	s := &BroadcastSession{
 		Broadcaster: b,
@@ -855,7 +855,7 @@ func TestSubmitSegment_GenPaymentError_CreateTicketBatchError(t *testing.T) {
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(1, nil, existingCredit)
 	balance.On("Credit", existingCredit)
 	sender := &pm.MockSender{}
-	sender.On("EV", mock.Anything).Return(nil, nil)
+	sender.On("EV", mock.Anything).Return(big.NewRat(0, 1), nil)
 	expErr := errors.New("CreateTicketBatch error")
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, expErr)
 
@@ -937,7 +937,7 @@ func TestSubmitSegment_HttpPostError(t *testing.T) {
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, nil, existingCredit)
 	balance.On("Credit", existingCredit)
 	sender := &pm.MockSender{}
-	sender.On("EV", mock.Anything).Return(nil, nil)
+	sender.On("EV", mock.Anything).Return(big.NewRat(0, 1), nil)
 	s.Balance = balance
 	s.Sender = sender
 
@@ -976,7 +976,7 @@ func TestSubmitSegment_Non200StatusCode(t *testing.T) {
 	balance := &mockBalance{}
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit)
 	sender := &pm.MockSender{}
-	sender.On("EV", mock.Anything).Return(nil, nil)
+	sender.On("EV", mock.Anything).Return(big.NewRat(0, 1), nil)
 	s.Balance = balance
 	s.Sender = sender
 
@@ -1016,7 +1016,7 @@ func TestSubmitSegment_ProtoUnmarshalError(t *testing.T) {
 	balance := &mockBalance{}
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit)
 	sender := &pm.MockSender{}
-	sender.On("EV", mock.Anything).Return(nil, nil)
+	sender.On("EV", mock.Anything).Return(big.NewRat(0, 1), nil)
 	s.Balance = balance
 	s.Sender = sender
 
@@ -1062,7 +1062,7 @@ func TestSubmitSegment_TranscodeResultError(t *testing.T) {
 	balance := &mockBalance{}
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit)
 	sender := &pm.MockSender{}
-	sender.On("EV", mock.Anything).Return(nil, nil)
+	sender.On("EV", mock.Anything).Return(big.NewRat(0, 1), nil)
 	s.Balance = balance
 	s.Sender = sender
 
@@ -1163,7 +1163,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, big.NewRat(0, 1)).Once()
 	balance.On("Credit", ratMatcher(newCredit)).Once()
 	sender := &pm.MockSender{}
-	sender.On("EV", mock.Anything).Return(nil, nil)
+	sender.On("EV", mock.Anything).Return(big.NewRat(0, 1), nil)
 	s.Balance = balance
 	s.Sender = sender
 
@@ -1353,7 +1353,7 @@ func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, big.NewRat(0, 1), existingCredit)
 	balance.On("Credit", ratMatcher(change))
 	sender = &pm.MockSender{}
-	sender.On("EV", mock.Anything).Return(nil, nil)
+	sender.On("EV", mock.Anything).Return(big.NewRat(0, 1), nil)
 	sender.On("StartSession", params).Return("foobar")
 	s = newSess()
 	s.Balance = balance

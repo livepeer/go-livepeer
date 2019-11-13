@@ -541,7 +541,14 @@ func newBalanceUpdate(sess *BroadcastSession, minCredit *big.Rat) (*BalanceUpdat
 		return nil, err
 	}
 
-	update.NumTickets, update.NewCredit, update.ExistingCredit = sess.Balance.StageUpdate(minCredit, ev)
+	// The orchestrator requires the broadcaster's balance to be at least the EV of a single ticket
+	// Use the ticket EV when creating the balance update if the passed in minCredit is less than the ticket EV
+	safeMinCredit := minCredit
+	if ev.Cmp(safeMinCredit) > 0 {
+		safeMinCredit = ev
+	}
+
+	update.NumTickets, update.NewCredit, update.ExistingCredit = sess.Balance.StageUpdate(safeMinCredit, ev)
 
 	return update, nil
 }
