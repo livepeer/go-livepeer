@@ -409,6 +409,14 @@ func main() {
 		go senderWatcher.Watch()
 		defer senderWatcher.Stop()
 
+		orchWatcher, err := watchers.NewOrchestratorWatcher(addrMap["BondingManager"], blockWatcher, dbh, n.Eth)
+		if err != nil {
+			glog.Errorf("Failed to setup orchestrator watcher: %v", err)
+			return
+		}
+		go orchWatcher.Watch()
+		defer orchWatcher.Stop()
+
 		blockWatchCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
