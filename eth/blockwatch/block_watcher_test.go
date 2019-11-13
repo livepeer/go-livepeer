@@ -214,6 +214,48 @@ func TestGetMissedEventsToBackfillSomeMissed(t *testing.T) {
 	assert.Equal(t, big.NewInt(30), headers[0].Number)
 }
 
+func TestGetMissedEventsToBackfill_BackfillStartBlock(t *testing.T) {
+	// Fixture will return block 30 as the tip of the chain
+	fakeClient, err := newFakeClient("testdata/fake_client_fast_sync_fixture.json")
+	require.NoError(t, err)
+
+	store := &stubMiniHeaderStore{}
+
+	config.Store = store
+	config.Client = fakeClient
+	config.BackfillStartBlock = big.NewInt(0)
+	watcher := New(config)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	events, err := watcher.getMissedEventsToBackfill(ctx)
+	require.NoError(t, err)
+	assert.Len(t, events, 1)
+
+	// Check that block 30 is now in the DB as it is the last processed block
+	headers, err := store.FindAllMiniHeadersSortedByNumber()
+	require.NoError(t, err)
+	require.Len(t, headers, 1)
+	assert.Equal(t, big.NewInt(30), headers[0].Number)
+
+	store = &stubMiniHeaderStore{}
+	config.Store = store
+	config.BackfillStartBlock = big.NewInt(5)
+	watcher = New(config)
+	events, err = watcher.getMissedEventsToBackfill(ctx)
+	require.NoError(t, err)
+	assert.Len(t, events, 1)
+
+	// Check that block 30 is now in the DB as it is the last processed block
+	headers, err = store.FindAllMiniHeadersSortedByNumber()
+	require.NoError(t, err)
+	require.Len(t, headers, 1)
+	assert.Equal(t, big.NewInt(30), headers[0].Number)
+
+	config.BackfillStartBlock = nil
+}
+
 func TestGetMissedEventsToBackfillNoneMissed(t *testing.T) {
 	// Fixture will return block 5 as the tip of the chain
 	fakeClient, err := newFakeClient("testdata/fake_client_basic_fixture.json")
@@ -244,6 +286,30 @@ func TestGetMissedEventsToBackfillNoneMissed(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, headers, 1)
 	assert.Equal(t, big.NewInt(5), headers[0].Number)
+}
+
+func TestGetMissedEventsToBackfill_NOOP(t *testing.T) {
+	// No last retained block
+	// No config.BackfillStartBlock
+
+	fakeClient, err := newFakeClient("testdata/fake_client_basic_fixture.json")
+	require.NoError(t, err)
+
+	store := &stubMiniHeaderStore{}
+
+	config.Store = store
+	config.Client = fakeClient
+	watcher := New(config)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events, err := watcher.getMissedEventsToBackfill(ctx)
+	require.NoError(t, err)
+	assert.Len(t, events, 0)
+
+	headers, err := store.FindAllMiniHeadersSortedByNumber()
+	require.NoError(t, err)
+	require.Len(t, headers, 0)
 }
 
 var logStub = types.Log{
@@ -399,7 +465,7 @@ func TestGetLogsInBlockRange(t *testing.T) {
 					},
 				},
 			},
-			Logs: []types.Log{logStub},
+			Logs:                   []types.Log{logStub},
 			FurthestBlockProcessed: to,
 		},
 		logsInBlockRangeTestCase{
@@ -418,7 +484,7 @@ func TestGetLogsInBlockRange(t *testing.T) {
 					},
 				},
 			},
-			Logs: []types.Log{logStub, logStub},
+			Logs:                   []types.Log{logStub, logStub},
 			FurthestBlockProcessed: from + maxBlocksInGetLogsQuery + 10,
 		},
 		logsInBlockRangeTestCase{
@@ -442,7 +508,7 @@ func TestGetLogsInBlockRange(t *testing.T) {
 					},
 				},
 			},
-			Logs: []types.Log{},
+			Logs:                   []types.Log{},
 			FurthestBlockProcessed: from - 1,
 		},
 		logsInBlockRangeTestCase{
@@ -458,7 +524,7 @@ func TestGetLogsInBlockRange(t *testing.T) {
 				aRange(from+maxBlocksInGetLogsQuery, from+maxBlocksInGetLogsQuery+10): filterLogsResponse{
 					Err: errUnexpected,
 				}},
-			Logs: []types.Log{logStub},
+			Logs:                   []types.Log{logStub},
 			FurthestBlockProcessed: from + maxBlocksInGetLogsQuery - 1,
 		},
 	}
