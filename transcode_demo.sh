@@ -1,8 +1,10 @@
+#!/usr/bin/env bash
+
 url='localhost:8935'
 manifestID='current'
 
 print_usage() {
-  printf "Usage: use -u to specify the url (default localhost:8935), use -m to specify manifestID (default current.m3u8)" 
+  printf "Usage: use -u to specify the url (default localhost:8935), use -m to specify manifestID (default current.m3u8)"
 }
 
 while getopts ":u:m:h" opt; do

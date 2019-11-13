@@ -16,31 +16,29 @@ For full documentation and a project overview, go to
 [Livepeer Documentation](http://livepeer.readthedocs.io/en/latest/index.html) or [Livepeer Wiki](https://github.com/livepeer/wiki/wiki)
 
 ## Installing Livepeer
-### Option 1: Download executables
-The easiest way to install Livepeer is by downloading the `livepeer` and `livepeer_cli` executables from the [release page on Github](https://github.com/livepeer/go-livepeer/releases). 
+
+### Easiest Option: Download executables
+The easiest way to install Livepeer is by downloading the `livepeer` and `livepeer_cli` executables from the [release page on Github](https://github.com/livepeer/go-livepeer/releases).
 
 1. Download the packages for your OS - darwin for Macs and linux for linux.
 2. Untar them and optionally move the executables to your PATH.
 
-### Option 2: Build from source
-You can also build the executables from scratch.
+Alternative Livepeer installation options are also available:
+* [Build from Source](doc/install.md#source)
+* [Docker](doc/install.md/#docker)
+* [Private Testnet](doc/install.md/#testnet)
 
-1. If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
+#### Building on Windows
 
-2. You can fetch the code running `go get github.com/livepeer/go-livepeer/cmd/livepeer` in terminal.
-
-3. You need to install `ffmpeg` as a dependency.  Run `./install_ffmpeg.sh`.  This will install the dependencies in `~/compiled`.  You need to have `pkg-config` installed.
-
-4. You can now run `PKG_CONFIG_PATH=~/compiled/lib/pkgconfig go build ./cmd/livepeer/livepeer.go` from the project root directory. To get latest version, `git pull` from the project root directory.
-
-5. To run tests in locall run `./test.sh`, to run in docker container run `./test_docker.sh`
+Building on Windows possible using Docker. Docker should run in 'Windows containers' mode.
+To build on Windows, just run `.\docker\windowsbuild.ps1`. This should create file `livepeer-windows-amd64.zip`, containig `livepeer.exe` and needed dlls.
 
 ## Running Livepeer
 
 ### Quick start
 - Make sure you have successfully gone through the steps in 'Installing Livepeer' and 'Additional Dependencies'.
 
-- Run `./livepeer -rinkeby -currentManifest`.
+- Run `./livepeer -broadcaster -network rinkeby`.
 
 - Run `./livepeer_cli`.
   * You should see a wizard launch in the command line.
@@ -67,17 +65,26 @@ By default, the RTMP port is 1935.  For example, if you are using OSX with ffmpe
 
 Similarly, you can use OBS, and change the Settings->Stream->URL to `rtmp://localhost:1935/movie` , along with the keyframe interval to 4 seconds, via `Settings -> Output -> Output Mode (Advanced) -> Streaming tab -> Keyframe Interval 4`.
 
-If the broadcast is successful, you should be able to get a streamID by querying the local node's CLI API:
+If the broadcast is successful, you should be able to access the stream at:
 
-`curl http://localhost:7935/manifestID`
+`http://localhost:8935/stream/movie.m3u8`
+
+where the "movie" stream name is taken from the path in the RTMP URL.
+
+See the documentation on [RTMP ingest](doc/ingest.md) for more details.
+
+#### Authentication of incoming RTMP streams
+
+Incoming RTMP streams can be authenicating using RTMP Authentication Webhook functionality, details is [here](doc/rtmpwebhookauth.md).
+
 
 ### Streaming
 
 You can use tools like `ffplay` or `VLC` to view the stream.
 
-For example, after you get the streamID, you can view the stream by running:
+For example, after you start streaming to `rtmp://localhost/movie`, you can view the stream by running:
 
-`ffplay http://localhost:8935/stream/current.m3u8`
+`ffplay http://localhost:8935/stream/movie.m3u8`
 
 Note that the default HTTP port or playback (8935) is different from the CLI API port (7935) that is used for node management and diagnostics!
 
@@ -91,7 +98,7 @@ Livepeer node doesn't do any storage management, it only saves data and never de
 
 We'll walk through the steps of becoming a transcoder on the test network.  To learn more about the transcoder, refer to the [Livepeer whitepaper](https://github.com/livepeer/wiki/blob/master/WHITEPAPER.md) and the [Transcoding guide](http://livepeer.readthedocs.io/en/latest/transcoding.html).
 
-- `livepeer --rinkeby --transcoder` to start the node as an orchestrator with an attached local transcoder .
+- `livepeer -orchestrator -transcoder -network rinkeby` to start the node as an orchestrator with an attached local transcoder .
 
 - `livepeer_cli` - make sure you have test ether and test Livepeer token.  Refer to the Quick Start section for getting test ether and test tokens.
 
@@ -107,7 +114,7 @@ We'll walk through the steps of becoming a transcoder on the test network.  To l
 
 Orchestrators can be run in standalone mode without an attached transcoder. Standalone transcoders will need to connect to this orchestrator in order for the orchestrator to process jobs.
 
-- `livepeer --rinkeby --orchestrator -orchSecret asdf`
+- `livepeer -network rinkeby -orchestrator -orchSecret asdf`
 
 The orchSecret is a shared secret used to authenticate remote transcoders. It can be any arbitrary string.
 
@@ -115,7 +122,11 @@ The orchSecret is a shared secret used to authenticate remote transcoders. It ca
 
 A standalone transcoder can be run which connects to a remote orchestrator. The orchestrator will send transcoding tasks to this transcoder as segments come in.
 
-- `livepeer -standaloneTranscoder -orchAddr 127.0.0.1:8935 -orchSecret asdf`
+- `livepeer -transcoder -orchAddr 127.0.0.1:8935 -orchSecret asdf`
+
+### GPU Transcoding
+
+GPU transcoding on NVIDIA is supported; see the [GPU documentation](doc/gpu.md) for usage details.
 
 ## Contribution
 Thank you for your interest in contributing to the core software of Livepeer.

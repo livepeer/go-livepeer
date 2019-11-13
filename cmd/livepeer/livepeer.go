@@ -15,14 +15,16 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
-	"path"
+
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/pm"
-
-	ipfslogging "gx/ipfs/QmSpJByNKFX1sCsHBEp3R73FL4NF6FnQTEGyNAXHm2GS52/go-log"
+	"github.com/livepeer/go-livepeer/server"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -32,21 +34,35 @@ import (
 	"github.com/livepeer/go-livepeer/discovery"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/eventservices"
+	"github.com/livepeer/go-livepeer/eth/watchers"
 
-	//"github.com/livepeer/go-livepeer/ipfs" until we re-enable IPFS
 	lpmon "github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/go-livepeer/server"
-	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
 	ErrKeygen    = errors.New("ErrKeygen")
 	EthTxTimeout = 600 * time.Second
+
+	// The timeout for ETH RPC calls
+	ethRPCTimeout = 20 * time.Second
+	// The maximum block sfor the block watcher to retain
+	blockWatcherRetentionLimit = 20
+
+	// The gas required to redeem a PM ticket
+	redeemGas = 100000
+	// The multiplier on the transaction cost to use for PM ticket faceValue
+	txCostMultiplier = 100
+
+	// The interval at which to clean up cached max float values for PM senders and balances per stream
+	cleanupInterval = 1 * time.Minute
+	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
+	smTTL = 60 // 1 minute
+	// maxErrCount is the maximum number of acceptable errors tolerated by a payment recipient for a payment sender
+	maxErrCount = 3
 )
 
-const RinkebyControllerAddr = "0x37dc71366ec655093b9930bc816e16e6b587f968"
-const MainnetControllerAddr = "0xf96d54e490317c557a967abfa5d6e33006be69b3"
 const RtmpPort = "1935"
 const RpcPort = "8935"
 const CliPort = "7935"
@@ -60,121 +76,143 @@ func main() {
 	if err != nil {
 		glog.Fatalf("Cannot find current user: %v", err)
 	}
-	vFlag := flag.Lookup("v") //We preserve this flag before resetting all the flags.  Not a scalable approach, but it'll do for now.  More discussions here - https://github.com/livepeer/go-livepeer/pull/617
-
+	vFlag := flag.Lookup("v")
+	//We preserve this flag before resetting all the flags.  Not a scalable approach, but it'll do for now.  More discussions here - https://github.com/livepeer/go-livepeer/pull/617
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
-	datadir := flag.String("datadir", fmt.Sprintf("%v/.lpData", usr.HomeDir), "data directory")
+	// Network & Addresses:
+	network := flag.String("network", "offchain", "Network to connect to")
 	rtmpAddr := flag.String("rtmpAddr", "127.0.0.1:"+RtmpPort, "Address to bind for RTMP commands")
 	cliAddr := flag.String("cliAddr", "127.0.0.1:"+CliPort, "Address to bind for  CLI commands")
 	httpAddr := flag.String("httpAddr", "", "Address to bind for HTTP commands")
-	orchAndTrans := flag.Bool("transcoder", false, "Set to true to be a orchestrator+transcoder")
-	orchestrator := flag.Bool("orchestrator", false, "Set to true to be a standalone orchestrator")
-	maxPricePerSegment := flag.String("maxPricePerSegment", "1", "Max price per segment for a broadcast job")
+	serviceAddr := flag.String("serviceAddr", "", "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
+	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
+
+	// Transcoding:
+	orchestrator := flag.Bool("orchestrator", false, "Set to true to be an orchestrator")
+	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
+	broadcaster := flag.Bool("broadcaster", false, "Set to true to be a broadcaster")
+	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
+	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
+	nvidia := flag.String("nvidia", "", "Comma-separated list of Nvidia GPU device IDs to use for transcoding")
+
+	// Onchain:
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
 	ethPassword := flag.String("ethPassword", "", "Password for existing Eth account address")
 	ethKeystorePath := flag.String("ethKeystorePath", "", "Path for the Eth Key")
-	ethIpcPath := flag.String("ethIpcPath", "", "Path for eth IPC file")
 	ethUrl := flag.String("ethUrl", "", "geth/parity rpc or websocket url")
-	rinkeby := flag.Bool("rinkeby", false, "Set to true to connect to rinkeby")
-	devenv := flag.Bool("devenv", false, "Set to true to enable devenv")
-	controllerAddr := flag.String("controllerAddr", "", "Protocol smart contract address")
+	ethController := flag.String("ethController", "", "Protocol smart contract address")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 0, "Gas price for ETH transactions")
-	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
-	monhost := flag.String("monitorhost", "", "host name for the metrics data collector")
-	ipfsPath := flag.String("ipfsPath", fmt.Sprintf("%v/.ipfs", usr.HomeDir), "IPFS path")
-	noIPFSLogFiles := flag.Bool("noIPFSLogFiles", false, "Set to true if log files should not be generated")
-	offchain := flag.Bool("offchain", false, "Set to true to start the node in offchain mode")
-	serviceAddr := flag.String("serviceAddr", "", "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
+	ticketEV := flag.String("ticketEV", "1000000000", "The expected value for PM tickets")
+	// Broadcaster max acceptable ticket EV
+	maxTicketEV := flag.String("maxTicketEV", "10000000000", "The maximum acceptable expected value for PM tickets")
+	// Broadcaster deposit multiplier to determine max acceptable ticket faceValue
+	depositMultiplier := flag.Int("depositMultiplier", 1000, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
+	// Orchestrator base pricing info
+	pricePerUnit := flag.Int("pricePerUnit", 0, "The price per 'pixelsPerUnit' amount pixels")
+	// Broadcaster max acceptable price
+	maxPricePerUnit := flag.Int("maxPricePerUnit", 0, "The maximum transcoding price (in wei) per 'pixelsPerUnit' a broadcaster is willing to accept. If not set explicitly, broadcaster is willing to accept ANY price")
+	// Unit of pixels for both O's basePriceInfo and B's MaxBroadcastPrice
+	pixelsPerUnit := flag.Int("pixelsPerUnit", 1, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
+	// Interval to poll for blocks
+	blockPollingInterval := flag.Int("blockPollingInterval", 5, "Interval in seconds at which different blockchain event services poll for blocks")
+	// Metrics & logging:
+	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
+	version := flag.Bool("version", false, "Print out the version")
+	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
+
+	// Storage:
+	datadir := flag.String("datadir", "", "data directory")
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
 	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
 	gsKey := flag.String("gskey", "", "Google Storage private key file name (in json format)")
-	version := flag.Bool("version", false, "Print out the version")
-	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
-	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
-	standaloneTranscoder := flag.Bool("standaloneTranscoder", false, "Set to true to be a standalone transcoder")
-	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
-	faceValue := flag.Float64("faceValue", 0, "The faceValue to expect in PM tickets, denominated in ETH (e.g. 0.3)")
-	winProb := flag.Float64("winProb", 0, "The win probability to expect in PM tickets, as a percent float between 0 and 100 (e.g. 5.3)")
+
+	// API
+	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
+	orchWebhookURL := flag.String("orchWebhookUrl", "", "Orchestrator discovery callback URL")
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
 
-	var transcoder bool
+	blockPollingTime := time.Duration(*blockPollingInterval) * time.Second
 
 	if *version {
 		fmt.Println("Livepeer Node Version: " + core.LivepeerVersion)
+		fmt.Printf("Golang runtime version: %s %s\n", runtime.Compiler, runtime.Version())
+		fmt.Printf("Architecture: %s\n", runtime.GOARCH)
+		fmt.Printf("Operating system: %s\n", runtime.GOOS)
 		return
 	}
 
-	var orchAddresses []string
+	if *maxSessions <= 0 {
+		glog.Fatal("-maxSessions must be greater than zero")
+		return
+	}
 
+	type NetworkConfig struct {
+		ethUrl        string
+		ethController string
+	}
+
+	configOptions := map[string]*NetworkConfig{
+		"rinkeby": {
+			ethUrl:        "https://rinkeby.infura.io/v3/09642b98164d43eb890939eb9a7ec500",
+			ethController: "0xA268AEa9D048F8d3A592dD7f1821297972D4C8Ea",
+		},
+		"mainnet": {
+			ethUrl:        "wss://mainnet.infura.io/ws/v3/be11162798084102a3519541eded12f6",
+			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
+		},
+	}
+
+	// If multiple orchAddr specified, ensure other necessary flags present and clean up list
+	var orchURLs []*url.URL
 	if len(*orchAddr) > 0 {
-		if *standaloneTranscoder && *orchSecret == "" {
-			glog.Error("Running a standalone transcoder requires both -orchAddr and -orchSecret")
-			return
-		} else if *standaloneTranscoder {
-			transcoder = true
-		}
-
-		orchAddresses = strings.Split(*orchAddr, ",")
-		for i := range orchAddresses {
-			orchAddresses[i] = strings.TrimSpace(orchAddresses[i])
-			orchAddresses[i] = defaultAddr(orchAddresses[i], "127.0.0.1", RpcPort)
+		for _, addr := range strings.Split(*orchAddr, ",") {
+			addr = strings.TrimSpace(addr)
+			addr = defaultAddr(addr, "127.0.0.1", RpcPort)
+			if !strings.HasPrefix(addr, "http") {
+				addr = "https://" + addr
+			}
+			uri, err := url.ParseRequestURI(addr)
+			if err != nil {
+				glog.Error("Could not parse orchestrator URI: ", err)
+				continue
+			}
+			orchURLs = append(orchURLs, uri)
 		}
 	}
 
-	if *rinkeby {
-		if !*offchain && !transcoder {
-			if *ethUrl == "" {
-				*ethUrl = "wss://rinkeby.infura.io/ws"
-			}
-			if *controllerAddr == "" {
-				*controllerAddr = RinkebyControllerAddr
-			}
-			glog.Infof("***Livepeer is running on the Rinkeby test network: %v***", RinkebyControllerAddr)
-			*datadir = *datadir + "/rinkeby"
-		} else {
-			*datadir = *datadir + "/offchain"
+	// Setting config options based on specified network
+	if netw, ok := configOptions[*network]; ok {
+		if *ethUrl == "" {
+			*ethUrl = netw.ethUrl
 		}
-
-		if *monitor && *monhost == "" {
-			*monhost = "http://metrics-rinkeby.livepeer.org/api/events"
+		if *ethController == "" {
+			*ethController = netw.ethController
 		}
-	} else if *devenv {
-		*datadir = *datadir + "/devenv"
+		glog.Infof("***Livepeer is running on the %v network: %v***", *network, *ethController)
 	} else {
-		if !*offchain && !transcoder {
-			if *ethUrl == "" {
-				*ethUrl = "wss://mainnet.infura.io/ws"
-			}
-			if *controllerAddr == "" {
-				*controllerAddr = MainnetControllerAddr
-			}
-			glog.Infof("***Livepeer is running on the Ethereum main network: %v***", MainnetControllerAddr)
-			*datadir = *datadir + "/mainnet"
-		} else {
-			*datadir = *datadir + "/offchain"
-		}
-		if *monitor && *monhost == "" {
-			*monhost = "http://metrics-mainnet.livepeer.org/api/events"
-		}
+		glog.Infof("***Livepeer is running on the %v network***", *network)
 	}
 
-	if *orchAndTrans {
-		transcoder = true
-		*orchestrator = true
+	if *datadir == "" {
+		homedir := os.Getenv("HOME")
+		if homedir == "" {
+			homedir = usr.HomeDir
+		}
+		*datadir = filepath.Join(homedir, ".lpData", *network)
 	}
 
 	//Make sure datadir is present
 	if _, err := os.Stat(*datadir); os.IsNotExist(err) {
 		glog.Infof("Creating data dir: %v", *datadir)
-		if err = os.Mkdir(*datadir, 0755); err != nil {
+		if err = os.MkdirAll(*datadir, 0755); err != nil {
 			glog.Errorf("Error creating datadir: %v", err)
 		}
 	}
@@ -182,7 +220,7 @@ func main() {
 	//Set up DB
 	dbh, err := common.InitDB(*datadir + "/lp.sqlite3")
 	if err != nil {
-		glog.Errorf("Error opening DB", err)
+		glog.Errorf("Error opening DB: %v", err)
 		return
 	}
 	defer dbh.Close()
@@ -196,20 +234,29 @@ func main() {
 		n.OrchSecret = *orchSecret
 	}
 
-	if transcoder {
-		n.Transcoder = core.NewLocalTranscoder(*datadir)
+	if *transcoder {
+		if *nvidia != "" {
+			n.Transcoder = core.NewNvidiaTranscoder(*nvidia, *datadir)
+		} else {
+			n.Transcoder = core.NewLocalTranscoder(*datadir)
+		}
 	}
 
 	if *orchestrator {
 		n.NodeType = core.OrchestratorNode
-	} else if transcoder {
+		if !*transcoder {
+			n.TranscoderManager = core.NewRemoteTranscoderManager()
+			n.Transcoder = n.TranscoderManager
+		}
+	} else if *transcoder {
 		n.NodeType = core.TranscoderNode
-	} else {
+	} else if *broadcaster {
 		n.NodeType = core.BroadcasterNode
+	} else {
+		glog.Fatalf("Node type not set; must be one of -broadcaster, -transcoder or -orchestrator")
 	}
 
 	if *monitor {
-		glog.Infof("Monitoring endpoint: %s", *monhost)
 		lpmon.Enabled = true
 		nodeID := *ethAcctAddr
 		if nodeID == "" {
@@ -223,21 +270,31 @@ func main() {
 		case core.TranscoderNode:
 			nodeType = "trcr"
 		}
-		lpmon.Init(*monhost, nodeType, nodeID)
+		lpmon.InitCensus(nodeType, nodeID, core.LivepeerVersion)
 	}
 
 	if n.NodeType == core.TranscoderNode {
 		glog.Info("***Livepeer is in transcoder mode ***")
-		if len(orchAddresses) > 0 {
-			server.RunTranscoder(n, orchAddresses[0])
+		if n.OrchSecret == "" {
+			glog.Fatal("Missing -orchSecret")
+		}
+		if len(orchURLs) > 0 {
+			server.RunTranscoder(n, orchURLs[0].Host, *maxSessions)
 		} else {
-			glog.Errorf("No orchestrator specified; transcoding will not happen")
+			glog.Fatal("Missing -orchAddr")
 		}
 		return
 	}
 
-	if *offchain {
+	watcherErr := make(chan error)
+	if *network == "offchain" {
 		glog.Infof("***Livepeer is in off-chain mode***")
+
+		if err := checkOrStoreChainID(dbh, big.NewInt(0)); err != nil {
+			glog.Error(err)
+			return
+		}
+
 	} else {
 		var keystoreDir string
 		if _, err := os.Stat(*ethKeystorePath); !os.IsNotExist(err) {
@@ -252,26 +309,35 @@ func main() {
 		}
 
 		//Get the Eth client connection information
-		gethUrl := ""
-		if *ethIpcPath != "" {
-			//Connect to specified IPC file
-			gethUrl = *ethIpcPath
-		} else if *ethUrl != "" {
-			//Connect to specified websocket
-			gethUrl = *ethUrl
-		} else {
-			glog.Errorf("Need to specify ethIpcPath or ethWsUrl")
+		if *ethUrl == "" {
+			glog.Error("Need to specify ethUrl")
 			return
 		}
 
 		//Set up eth client
-		backend, err := ethclient.Dial(gethUrl)
+		backend, err := ethclient.Dial(*ethUrl)
 		if err != nil {
 			glog.Errorf("Failed to connect to Ethereum client: %v", err)
 			return
 		}
 
-		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, backend, ethcommon.HexToAddress(*controllerAddr), EthTxTimeout)
+		chainID, err := backend.ChainID(context.Background())
+		if err != nil {
+			glog.Errorf("failed to get chain ID from remote ethereum node: %v", err)
+			return
+		}
+
+		if !build.ChainSupported(chainID.Int64()) {
+			glog.Errorf("node does not support chainID = %v right now", chainID)
+			return
+		}
+
+		if err := checkOrStoreChainID(dbh, chainID); err != nil {
+			glog.Error(err)
+			return
+		}
+
+		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, backend, ethcommon.HexToAddress(*ethController), EthTxTimeout)
 		if err != nil {
 			glog.Errorf("Failed to create client: %v", err)
 			return
@@ -290,55 +356,206 @@ func main() {
 
 		n.Eth = client
 
-		defer n.StopEthServices()
-
 		addrMap := n.Eth.ContractAddresses()
-		em := eth.NewEventMonitor(backend, addrMap)
 
-		// Setup block service to receive headers from the head of the chain
-		n.EthServices["BlockService"] = eventservices.NewBlockService(em, dbh)
-		// Setup unbonding service to manage unbonding locks
-		n.EthServices["UnbondingService"] = eventservices.NewUnbondingService(n.Eth, dbh)
+		// Initialize block watcher that will emit logs used by event watchers
+		blockWatcherClient, err := blockwatch.NewRPCClient(*ethUrl, ethRPCTimeout)
+		if err != nil {
+			glog.Errorf("Failed to setup blockwatch client: %v", err)
+			return
+		}
+		topics := watchers.FilterTopics()
+		blockWatcherCfg := blockwatch.Config{
+			Store:               n.Database,
+			PollingInterval:     blockPollingTime,
+			StartBlockDepth:     rpc.LatestBlockNumber,
+			BlockRetentionLimit: blockWatcherRetentionLimit,
+			WithLogs:            true,
+			Topics:              topics,
+			Client:              blockWatcherClient,
+		}
+		// Wait until all event watchers have been initialized before starting the block watcher
+		blockWatcher := blockwatch.New(blockWatcherCfg)
+
+		roundsWatcher, err := watchers.NewRoundsWatcher(addrMap["RoundsManager"], blockWatcher, n.Eth)
+		if err != nil {
+			glog.Errorf("Failed to setup roundswatcher: %v", err)
+			return
+		}
+
+		roundsWatcherErr := make(chan error, 1)
+		go func() {
+			if err := roundsWatcher.Watch(); err != nil {
+				roundsWatcherErr <- fmt.Errorf("roundswatcher failed to start watching for events: %v", err)
+			}
+		}()
+		defer roundsWatcher.Stop()
+
+		// Initialize unbonding watcher to update the DB with latest state of the node's unbonding locks
+		unbondingWatcher, err := watchers.NewUnbondingWatcher(n.Eth.Account().Address, addrMap["BondingManager"], blockWatcher, n.Database)
+		if err != nil {
+			glog.Errorf("Failed to setup unbonding watcher: %v", err)
+			return
+		}
+		// Start unbonding watcher (logs will not be received until the block watcher is started)
+		go unbondingWatcher.Watch()
+		defer unbondingWatcher.Stop()
+
+		senderWatcher, err := watchers.NewSenderWatcher(addrMap["TicketBroker"], blockWatcher, n.Eth, roundsWatcher)
+		if err != nil {
+			glog.Errorf("Failed to setup senderwatcher: %v", err)
+			return
+		}
+		go senderWatcher.Watch()
+		defer senderWatcher.Stop()
+
+		blockWatchCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Backfill events that the node has missed since its last seen block. This method will block
+		// and the node will not continue setup until it finishes
+		if err := blockWatcher.BackfillEventsIfNeeded(blockWatchCtx); err != nil {
+			glog.Errorf("Failed to backfill events: %v", err)
+			return
+		}
+
+		blockWatcherErr := make(chan error, 1)
+		go func() {
+			if err := blockWatcher.Watch(blockWatchCtx); err != nil {
+				blockWatcherErr <- fmt.Errorf("block watcher error: %v", err)
+			}
+		}()
+
+		go func() {
+			var err error
+			select {
+			case err = <-roundsWatcherErr:
+			case err = <-blockWatcherErr:
+			}
+
+			watcherErr <- err
+		}()
+
+		n.Balances = core.NewAddressBalances(cleanupInterval)
+		defer n.Balances.StopCleanup()
 
 		if *orchestrator {
+
+			// Set price per pixel base info
+			if *pixelsPerUnit <= 0 {
+				// Can't divide by 0
+				panic(fmt.Errorf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *pixelsPerUnit))
+			}
+			if *pricePerUnit <= 0 {
+				// Prevent orchestrator from unknowingly provide free transcoding
+				panic(fmt.Errorf("Price per unit of pixels must be greater than 0, provided %d instead\n", *pricePerUnit))
+			}
+			n.SetBasePrice(big.NewRat(int64(*pricePerUnit), int64(*pixelsPerUnit)))
+			glog.Infof("Price: %d wei for %d pixels\n ", *pricePerUnit, *pixelsPerUnit)
+
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			if err := setupOrchestrator(ctx, n, em, *ipfsPath, *initializeRound); err != nil {
+			if err := setupOrchestrator(ctx, n, *initializeRound); err != nil {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
 
-			if *faceValue < float64(0) {
-				glog.Errorf("-faceValue must be greater than 0, but %v provided. Restart the node with a different valid value for -faceValue", *faceValue)
+			ev, _ := new(big.Int).SetString(*ticketEV, 10)
+			if ev == nil {
+				glog.Errorf("-ticketEV must be a valid integer, but %v provided. Restart the node with a different valid value for -ticketEV", *ticketEV)
 				return
 			}
 
-			if *winProb < float64(0) || *winProb > float64(100) {
-				glog.Errorf("-winProb must be between 0 and 100, but %v provided. Restart the node with a different valid value for -winProb", *winProb)
+			if ev.Cmp(big.NewInt(0)) < 0 {
+				glog.Errorf("-ticketEV must be greater than 0, but %v provided. Restart the node with a different valid value for -ticketEV", *ticketEV)
 				return
 			}
 
 			sigVerifier := &pm.DefaultSigVerifier{}
-			validator := pm.NewValidator(sigVerifier)
-			faceValueInWei := eth.ToBaseUnit(big.NewFloat(*faceValue))
-			winProbBigInt := eth.FromPercOfUint256(*winProb)
-			n.Recipient, err = pm.NewRecipient(n.Eth.Account().Address, n.Eth, validator, n.Database, faceValueInWei, winProbBigInt)
+			// TODO: Initialize Validator with an implementation
+			// of RoundsManager that reads from a cache
+			validator := pm.NewValidator(sigVerifier, roundsWatcher)
+			gpm := eth.NewGasPriceMonitor(backend, blockPollingTime)
+			// Start gas price monitor
+			gasPriceUpdate, err := gpm.Start(context.Background())
+			if err != nil {
+				glog.Errorf("error starting gas price monitor: %v", err)
+				return
+			}
+			defer gpm.Stop()
+
+			em := core.NewErrorMonitor(maxErrCount, gasPriceUpdate)
+			n.ErrorMonitor = em
+			go em.StartGasPriceUpdateLoop()
+
+			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, senderWatcher, roundsWatcher, cleanupInterval, smTTL, n.ErrorMonitor)
+			// Start sender monitor
+			sm.Start()
+			defer sm.Stop()
+
+			cfg := pm.TicketParamsConfig{
+				EV:               ev,
+				RedeemGas:        redeemGas,
+				TxCostMultiplier: txCostMultiplier,
+			}
+			n.Recipient, err = pm.NewRecipient(
+				n.Eth.Account().Address,
+				n.Eth,
+				validator,
+				n.Database,
+				gpm,
+				sm,
+				n.ErrorMonitor,
+				cfg,
+			)
 			if err != nil {
 				glog.Errorf("Error setting up PM recipient: %v", err)
 				return
 			}
+
+			n.Recipient.Start()
+			defer n.Recipient.Stop()
+
+			// Create round iniitializer to automatically initialize new rounds
+			if *initializeRound {
+				initializer := eth.NewRoundInitializer(n.Eth, n.Database, roundsWatcher, blockPollingTime)
+				go initializer.Start()
+				defer initializer.Stop()
+			}
+
+			// Create reward service to claim/distribute inflationary rewards every round
+			rs := eventservices.NewRewardService(n.Eth, blockPollingTime)
+			rs.Start(context.Background())
+			defer rs.Stop()
 		}
 
 		if n.NodeType == core.BroadcasterNode {
-			n.Sender = pm.NewSender(n.Eth)
-		}
+			ev, _ := new(big.Rat).SetString(*maxTicketEV)
+			if ev == nil {
+				panic(fmt.Errorf("-maxTicketEV must be a valid rational number, but %v provided. Restart the node with a valid value for -maxTicketEV", *maxTicketEV))
+			}
 
-		// Start services
-		err = n.StartEthServices()
-		if err != nil {
-			glog.Errorf("Failed to start ETH services: %v", err)
-			return
+			if ev.Cmp(big.NewRat(0, 1)) < 0 {
+				panic(fmt.Errorf("-maxTicketEV must not be negative, but %v provided. Restart the node with a valid value for -maxTicketEV", *maxTicketEV))
+			}
+
+			if *depositMultiplier <= 0 {
+				panic(fmt.Errorf("-depositMultiplier must be greater than 0, but %v provided. Restart the node with a valid value for -depositMultiplier", *depositMultiplier))
+			}
+
+			n.Sender = pm.NewSender(n.Eth, roundsWatcher, senderWatcher, ev, *depositMultiplier)
+
+			if *pixelsPerUnit <= 0 {
+				// Can't divide by 0
+				panic(fmt.Errorf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *pixelsPerUnit))
+			}
+			if *maxPricePerUnit > 0 {
+				server.BroadcastCfg.SetMaxPrice(big.NewRat(int64(*maxPricePerUnit), int64(*pixelsPerUnit)))
+			} else {
+				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *maxPricePerUnit)
+				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
+			}
 		}
 	}
 
@@ -371,67 +588,68 @@ func main() {
 		}
 	}
 
+	core.MaxSessions = *maxSessions
+	if lpmon.Enabled {
+		lpmon.MaxSessions(core.MaxSessions)
+	}
+
 	if n.NodeType == core.BroadcasterNode {
 		// default lpms listener for broadcaster; same as default rpc port
 		// TODO provide an option to disable this?
 		*rtmpAddr = defaultAddr(*rtmpAddr, "127.0.0.1", RtmpPort)
 		*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
-	} else if n.NodeType == core.OrchestratorNode {
-		n.ServiceURI, err = getServiceURI(n, *serviceAddr)
-		if err != nil {
-			glog.Error("Error getting service URI: ", err)
-			return
+
+		// Set up orchestrator discovery
+		if *orchWebhookURL != "" {
+			whurl, err := getOrchWebhook(*orchWebhookURL)
+			if err != nil {
+				glog.Fatal("Error setting orch webhook URL ", err)
+			}
+			n.OrchestratorPool = discovery.NewWebhookPool(n, whurl)
+		} else if len(orchURLs) > 0 {
+			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchURLs)
+		} else if *network != "offchain" {
+			n.OrchestratorPool = discovery.NewDBOrchestratorPoolCache(n)
 		}
+		if n.OrchestratorPool == nil {
+			// Not a fatal error; may continue operating in segment-only mode
+			glog.Error("No orchestrator specified; transcoding will not happen")
+		}
+		var err error
+		if server.AuthWebhookURL, err = getAuthWebhookURL(*authWebhookURL); err != nil {
+			glog.Fatal("Error setting auth webhook URL ", err)
+		}
+	} else if n.NodeType == core.OrchestratorNode {
+		suri, err := getServiceURI(n, *serviceAddr)
+		if err != nil {
+			glog.Fatal("Error getting service URI: ", err)
+		}
+		n.SetServiceURI(suri)
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
-		*httpAddr = defaultAddr(*httpAddr, "", n.ServiceURI.Port())
+		*httpAddr = defaultAddr(*httpAddr, "", n.GetServiceURI().Port())
+
+		if !*transcoder && n.OrchSecret == "" {
+			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
+		}
 	}
 	*cliAddr = defaultAddr(*cliAddr, "127.0.0.1", CliPort)
 
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK
-		base := ""
-		if n.ServiceURI != nil {
-			base = n.ServiceURI.String()
-		}
-		drivers.NodeStorage = drivers.NewMemoryDriver(base)
-	}
-
-	if n.NodeType == core.BroadcasterNode {
-		if len(orchAddresses) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchAddresses)
-		} else if !*offchain {
-			n.OrchestratorPool = discovery.NewDBOrchestratorPoolCache(n)
-		}
-		if n.OrchestratorPool == nil {
-			glog.Errorf("No orchestrator specified; transcoding will not happen")
-		}
+		drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
 	}
 
 	//Create Livepeer Node
 
-	// Set up logging
-	if !*noIPFSLogFiles {
-		ipfslogging.LdJSONFormatter()
-		logger := &lumberjack.Logger{
-			Filename:   path.Join(*ipfsPath, "logs", "ipfs.log"),
-			MaxSize:    10, // Megabytes
-			MaxBackups: 3,
-			MaxAge:     30, // Days
-		}
-		ipfslogging.LevelError()
-		ipfslogging.Output(logger)()
-	}
-
 	//Set up the media server
-	s := server.NewLivepeerServer(*rtmpAddr, *httpAddr, n)
+	s := server.NewLivepeerServer(*rtmpAddr, n)
 	ec := make(chan error)
 	tc := make(chan struct{})
 	wc := make(chan struct{})
 	msCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	bigMaxPricePerSegment, err := common.ParseBigInt(*maxPricePerSegment)
 	if err != nil {
 		glog.Errorf("Error setting max price per segment: %v", err)
 		return
@@ -443,21 +661,22 @@ func main() {
 	}
 
 	go func() {
-		s.StartWebserver(*cliAddr)
+		s.StartCliWebserver(*cliAddr)
 		close(wc)
 	}()
 	go func() {
-		ec <- s.StartMediaServer(msCtx, bigMaxPricePerSegment, *transcodingOptions)
+		ec <- s.StartMediaServer(msCtx, *transcodingOptions, *httpAddr)
 	}()
 
 	go func() {
 		if core.OrchestratorNode != n.NodeType {
 			return
 		}
+
 		orch := core.NewOrchestrator(s.LivepeerNode)
 
 		go func() {
-			server.StartTranscodeServer(orch, *httpAddr, s.HttpMux, n.WorkDir)
+			server.StartTranscodeServer(orch, *httpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil)
 			tc <- struct{}{}
 		}()
 
@@ -485,6 +704,9 @@ func main() {
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt)
 	select {
+	case err := <-watcherErr:
+		glog.Error(err)
+		return
 	case err := <-ec:
 		glog.Infof("Error from media server: %v", err)
 		return
@@ -501,6 +723,36 @@ func main() {
 		time.Sleep(time.Millisecond * 500) //Give time for other processes to shut down completely
 		return
 	}
+}
+
+func getOrchWebhook(u string) (*url.URL, error) {
+	if u == "" {
+		return nil, nil
+	}
+	p, err := url.ParseRequestURI(u)
+	if err != nil {
+		return nil, err
+	}
+	if p.Scheme != "http" && p.Scheme != "https" {
+		return nil, errors.New("Webhook URL should be HTTP or HTTPS")
+	}
+	glog.Infof("Using orchestrator webhook url %s", u)
+	return p, nil
+}
+
+func getAuthWebhookURL(u string) (string, error) {
+	if u == "" {
+		return "", nil
+	}
+	p, err := url.ParseRequestURI(u)
+	if err != nil {
+		return "", err
+	}
+	if p.Scheme != "http" && p.Scheme != "https" {
+		return "", errors.New("Webhook URL should be HTTP or HTTPS")
+	}
+	glog.Infof("Using auth webhook url %s", u)
+	return u, nil
 }
 
 // ServiceURI checking steps:
@@ -553,7 +805,7 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	return ethUri, nil
 }
 
-func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, em eth.EventMonitor, ipfsPath string, initializeRound bool) error {
+func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, initializeRound bool) error {
 	//Check if orchestrator is active
 	active, err := n.Eth.IsActiveTranscoder()
 	if err != nil {
@@ -565,28 +817,6 @@ func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, em eth.EventMo
 	} else {
 		glog.Infof("Orchestrator %v is active", n.Eth.Account().Address.Hex())
 	}
-
-	// Set up IPFS
-	/*ipfsApi, err := ipfs.StartIpfs(ctx, ipfsPath)
-	if err != nil {
-		return err
-	}
-	drivers.SetIpfsAPI(ipfsApi)
-
-	n.Ipfs = ipfsApi*/
-	n.EthEventMonitor = em
-
-	if initializeRound {
-		glog.Infof("Orchestrator %v will automatically initialize new rounds", n.Eth.Account().Address.Hex())
-
-		// Create rounds service to initialize round if it has not already been initialized
-		rds := eventservices.NewRoundsService(em, n.Eth)
-		n.EthServices["RoundsService"] = rds
-	}
-
-	// Create reward service to claim/distribute inflationary rewards every round
-	rs := eventservices.NewRewardService(n.Eth)
-	n.EthServices["RewardService"] = rs
 
 	return nil
 }
@@ -603,4 +833,27 @@ func defaultAddr(addr, defaultHost, defaultPort string) string {
 		return addr + ":" + defaultPort
 	}
 	return addr
+}
+
+func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
+	expectedChainID, err := dbh.ChainID()
+	if err != nil {
+		return err
+	}
+
+	if expectedChainID == nil {
+		// No chainID stored yet
+		// Store the provided chainID and skip the check
+		if err := dbh.SetChainID(chainID); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	if expectedChainID.Cmp(chainID) != 0 {
+		return fmt.Errorf("expecting chainID of %v, but got %v. Did you change networks without changing network name or datadir?", expectedChainID, chainID)
+	}
+
+	return nil
 }

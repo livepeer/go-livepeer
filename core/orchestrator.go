@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
-	"math/rand"
 	"net/url"
 	"os"
 	"path"
+	"sort"
+	"sync"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -23,11 +24,12 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
-var transcodeLoopTimeout = 10 * time.Minute
+var transcodeLoopTimeout = 1 * time.Minute
 
 // Transcoder / orchestrator RPC interface implementation
 type orchestrator struct {
@@ -36,7 +38,7 @@ type orchestrator struct {
 }
 
 func (orch *orchestrator) ServiceURI() *url.URL {
-	return orch.node.ServiceURI
+	return orch.node.GetServiceURI()
 }
 
 func (orch *orchestrator) CurrentBlock() *big.Int {
@@ -69,16 +71,28 @@ func (orch *orchestrator) TranscoderSecret() string {
 	return orch.node.OrchSecret
 }
 
+func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
+	orch.node.segmentMutex.RLock()
+	defer orch.node.segmentMutex.RUnlock()
+	if _, ok := orch.node.SegmentChans[mid]; ok {
+		return nil
+	}
+	if len(orch.node.SegmentChans) >= MaxSessions {
+		return ErrOrchCap
+	}
+	return nil
+}
+
 func (orch *orchestrator) TranscodeSeg(md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
 	return orch.node.sendToTranscodeLoop(md, seg)
 }
 
-func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
-	orch.node.serveTranscoder(stream)
+func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
+	orch.node.serveTranscoder(stream, capacity)
 }
 
-func (orch *orchestrator) TranscoderResults(tcId int64, res *RemoteTranscoderResult) {
-	orch.node.transcoderResults(tcId, res)
+func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderResult) {
+	orch.node.TranscoderManager.transcoderResults(tcID, res)
 }
 
 func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID ManifestID) error {
@@ -86,42 +100,220 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		return nil
 	}
 
-	ticket := &pm.Ticket{
-		Recipient:         ethcommon.BytesToAddress(payment.Ticket.Recipient),
-		Sender:            ethcommon.BytesToAddress(payment.Ticket.Sender),
-		FaceValue:         new(big.Int).SetBytes(payment.Ticket.FaceValue),
-		WinProb:           new(big.Int).SetBytes(payment.Ticket.WinProb),
-		SenderNonce:       payment.Ticket.SenderNonce,
-		RecipientRandHash: ethcommon.BytesToHash(payment.Ticket.RecipientRandHash),
+	if payment.TicketParams == nil {
+		return nil
 	}
-	seed := new(big.Int).SetBytes(payment.Seed)
 
-	sessionID, won, err := orch.node.Recipient.ReceiveTicket(ticket, payment.Sig, seed)
+	if payment.Sender == nil || len(payment.Sender) == 0 {
+		return fmt.Errorf("Could not find Sender for payment: %v", payment)
+	}
+
+	sender := ethcommon.BytesToAddress(payment.Sender)
+
+	var (
+		didPriceErr            bool
+		acceptablePrice        bool
+		unacceptableReceiveErr bool
+		didReceiveErr          bool
+	)
+
+	err := orch.acceptablePrice(ethcommon.BytesToAddress(payment.Sender), payment.GetExpectedPrice())
+	acceptablePriceErr, ok := err.(AcceptableError)
 	if err != nil {
-		return errors.Wrapf(err, "error receiving ticket for payment %v for manifest %v", payment, manifestID)
+		glog.Error(err)
+		didPriceErr = true
+
+		if monitor.Enabled {
+			monitor.PaymentRecvError(sender.String(), string(manifestID), err.Error(), ok && acceptablePriceErr.Acceptable())
+		}
 	}
 
-	if won {
-		glog.V(common.DEBUG).Info("Received winning ticket")
-		cachePMSessionID(orch.node, manifestID, sessionID)
+	if err == nil || (ok && acceptablePriceErr.Acceptable()) {
+		acceptablePrice = true
+	}
+
+	seed := new(big.Int).SetBytes(payment.TicketParams.Seed)
+
+	ticketParams := &pm.TicketParams{
+		Recipient:         ethcommon.BytesToAddress(payment.TicketParams.Recipient),
+		FaceValue:         new(big.Int).SetBytes(payment.TicketParams.FaceValue),
+		WinProb:           new(big.Int).SetBytes(payment.TicketParams.WinProb),
+		RecipientRandHash: ethcommon.BytesToHash(payment.TicketParams.RecipientRandHash),
+		Seed:              seed,
+	}
+
+	ticketExpirationParams := &pm.TicketExpirationParams{
+		CreationRound:          payment.ExpirationParams.CreationRound,
+		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
+	}
+
+	totalEV := big.NewRat(0, 1)
+	totalTickets := 0
+	totalWinningTickets := 0
+
+	for _, tsp := range payment.TicketSenderParams {
+
+		ticket := pm.NewTicket(
+			ticketParams,
+			ticketExpirationParams,
+			sender,
+			tsp.SenderNonce,
+		)
+
+		glog.V(common.DEBUG).Infof("Receiving ticket manifestID=%v faceValue=%v winProb=%v ev=%v", manifestID, ticket.FaceValue, ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
+
+		_, won, err := orch.node.Recipient.ReceiveTicket(
+			ticket,
+			tsp.Sig,
+			seed,
+		)
+		pmErr, ok := err.(AcceptableError)
+		if err != nil {
+			glog.Errorf("Error receiving ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
+
+			if monitor.Enabled {
+				monitor.PaymentRecvError(sender.String(), string(manifestID), err.Error(), ok && pmErr.Acceptable())
+			}
+
+			didReceiveErr = true
+		}
+
+		if acceptablePrice && err == nil || (ok && pmErr.Acceptable()) {
+			// Add ticket EV to credit
+			ev := ticket.EV()
+			orch.node.Balances.Credit(sender, manifestID, ev)
+			totalEV.Add(totalEV, ev)
+			totalTickets++
+		} else {
+			unacceptableReceiveErr = true
+		}
+
+		if won {
+			glog.V(common.DEBUG).Infof("Received winning ticket manifestID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
+
+			totalWinningTickets++
+
+			go func(ticket *pm.Ticket, sig []byte, seed *big.Int) {
+				if err := orch.node.Recipient.RedeemWinningTicket(ticket, sig, seed); err != nil {
+					glog.Errorf("error redeeming ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
+				}
+			}(ticket, tsp.Sig, seed)
+		}
+	}
+
+	if monitor.Enabled {
+		senderStr := sender.String()
+		mid := string(manifestID)
+
+		monitor.TicketValueRecv(senderStr, mid, totalEV)
+		monitor.TicketsRecv(senderStr, mid, totalTickets)
+		monitor.WinningTicketsRecv(senderStr, totalWinningTickets)
+	}
+
+	if didPriceErr {
+		return newAcceptableError(
+			fmt.Errorf("expected price did not match orchestrator price"),
+			acceptablePrice,
+		)
+	}
+
+	if didReceiveErr {
+		return newAcceptableError(
+			fmt.Errorf("error receiving tickets with payment"),
+			!unacceptableReceiveErr,
+		)
 	}
 
 	return nil
 }
 
-func (orch *orchestrator) TicketParams(sender ethcommon.Address) *net.TicketParams {
+func (orch *orchestrator) TicketParams(sender ethcommon.Address) (*net.TicketParams, error) {
 	if orch.node == nil || orch.node.Recipient == nil {
-		return nil
+		return nil, nil
 	}
 
-	params := orch.node.Recipient.TicketParams(sender)
+	params, err := orch.node.Recipient.TicketParams(sender)
+	if err != nil {
+		return nil, err
+	}
+
 	return &net.TicketParams{
 		Recipient:         params.Recipient.Bytes(),
 		FaceValue:         params.FaceValue.Bytes(),
 		WinProb:           params.WinProb.Bytes(),
 		RecipientRandHash: params.RecipientRandHash.Bytes(),
 		Seed:              params.Seed.Bytes(),
+	}, nil
+}
+
+func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error) {
+	if orch.node == nil || orch.node.Recipient == nil {
+		return nil, nil
 	}
+
+	txCostMultiplier, err := orch.node.Recipient.TxCostMultiplier(sender)
+	if err != nil {
+		return nil, err
+	}
+	// pricePerPixel = basePrice * (1 + 1/ txCostMultiplier)
+	overhead := new(big.Rat).Add(big.NewRat(1, 1), new(big.Rat).Inv(txCostMultiplier))
+	price := new(big.Rat).Mul(orch.node.GetBasePrice(), overhead)
+
+	if monitor.Enabled {
+		monitor.TranscodingPrice(sender.String(), price)
+	}
+
+	return &net.PriceInfo{
+		PricePerUnit:  price.Num().Int64(),
+		PixelsPerUnit: price.Denom().Int64(),
+	}, nil
+}
+
+// SufficientBalance checks whether the credit balance for a stream is sufficient
+// to proceed with downloading and transcoding
+func (orch *orchestrator) SufficientBalance(addr ethcommon.Address, manifestID ManifestID) bool {
+	if orch.node == nil || orch.node.Recipient == nil || orch.node.Balances == nil {
+		return true
+	}
+
+	balance := orch.node.Balances.Balance(addr, manifestID)
+	if balance == nil || balance.Cmp(orch.node.Recipient.EV()) < 0 {
+		return false
+	}
+	return true
+}
+
+// DebitFees debits the balance for a ManifestID based on the amount of output pixels * price
+func (orch *orchestrator) DebitFees(addr ethcommon.Address, manifestID ManifestID, price *net.PriceInfo, pixels int64) {
+	// Don't debit in offchain mode
+	if orch.node == nil || orch.node.Balances == nil {
+		return
+	}
+	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
+	orch.node.Balances.Debit(addr, manifestID, priceRat.Mul(priceRat, big.NewRat(pixels, 1)))
+}
+
+// Acceptable price checks whether the payment sender's expected price sent with a payment is acceptable
+func (orch *orchestrator) acceptablePrice(sender ethcommon.Address, ep *net.PriceInfo) error {
+	if ep == nil || ep.GetPixelsPerUnit() <= 0 {
+		return fmt.Errorf("Expected price is not valid")
+	}
+	epRat := big.NewRat(ep.GetPricePerUnit(), ep.GetPixelsPerUnit())
+
+	oPrice, err := orch.PriceInfo(sender)
+	if err != nil {
+		return err
+	}
+	oPriceRat := big.NewRat(oPrice.GetPricePerUnit(), oPrice.GetPixelsPerUnit())
+
+	// expected price is too small, check if sender is still within grace period
+	if epRat.Cmp(oPriceRat) < 0 {
+		return newAcceptableError(
+			fmt.Errorf("Expected price of %v wei per %v pixels is too small, expecting at least %v wei per %v pixels", ep.GetPricePerUnit(), ep.GetPixelsPerUnit(), oPrice.GetPricePerUnit(), oPrice.GetPixelsPerUnit()),
+			orch.node.ErrorMonitor.AcceptErr(sender),
+		)
+	}
+	return nil
 }
 
 func NewOrchestrator(n *LivepeerNode) *orchestrator {
@@ -138,12 +330,25 @@ func NewOrchestrator(n *LivepeerNode) *orchestrator {
 // LivepeerNode transcode methods
 
 var ErrOrchBusy = ogErrors.New("OrchestratorBusy")
+var ErrOrchCap = ogErrors.New("OrchestratorCapped")
 
 type TranscodeResult struct {
-	Err  error
-	Sig  []byte
-	Data [][]byte
-	OS   drivers.OSSession
+	Err           error
+	Sig           []byte
+	TranscodeData *TranscodeData
+	OS            drivers.OSSession
+}
+
+// TranscodeData contains the transcoding output for an input segment
+type TranscodeData struct {
+	Segments []*TranscodedSegmentData
+	Pixels   int64 // Decoded pixels
+}
+
+// TranscodedSegmentData contains encoded data for a profile
+type TranscodedSegmentData struct {
+	Data   []byte
+	Pixels int64 // Encoded pixels
 }
 
 type SegChanData struct {
@@ -153,8 +358,8 @@ type SegChanData struct {
 }
 
 type RemoteTranscoderResult struct {
-	Segments [][]byte
-	Err      error
+	TranscodeData *TranscodeData
+	Err           error
 }
 
 type SegmentChan chan *SegChanData
@@ -165,35 +370,37 @@ type transcodeConfig struct {
 	LocalOS drivers.OSSession
 }
 
-func (n *LivepeerNode) getTaskChan(taskId int64) (TranscoderChan, error) {
-	n.taskMutex.RLock()
-	defer n.taskMutex.RUnlock()
-	if tc, ok := n.taskChans[taskId]; ok {
+func (rtm *RemoteTranscoderManager) getTaskChan(taskID int64) (TranscoderChan, error) {
+	rtm.taskMutex.RLock()
+	defer rtm.taskMutex.RUnlock()
+	if tc, ok := rtm.taskChans[taskID]; ok {
 		return tc, nil
 	}
 	return nil, fmt.Errorf("No transcoder channel")
 }
-func (n *LivepeerNode) addTaskChan() (int64, TranscoderChan) {
-	n.taskMutex.Lock()
-	defer n.taskMutex.Unlock()
-	taskId := n.taskCount
-	n.taskCount++
-	if tc, ok := n.taskChans[taskId]; ok {
+
+func (rtm *RemoteTranscoderManager) addTaskChan() (int64, TranscoderChan) {
+	rtm.taskMutex.Lock()
+	defer rtm.taskMutex.Unlock()
+	taskID := rtm.taskCount
+	rtm.taskCount++
+	if tc, ok := rtm.taskChans[taskID]; ok {
 		// should really never happen
-		glog.V(common.DEBUG).Info("Transcoder channel already exists for ", taskId)
-		return taskId, tc
+		glog.V(common.DEBUG).Info("Transcoder channel already exists for ", taskID)
+		return taskID, tc
 	}
-	n.taskChans[taskId] = make(TranscoderChan, 1)
-	return taskId, n.taskChans[taskId]
+	rtm.taskChans[taskID] = make(TranscoderChan, 1)
+	return taskID, rtm.taskChans[taskID]
 }
-func (n *LivepeerNode) removeTaskChan(taskId int64) {
-	n.taskMutex.Lock()
-	defer n.taskMutex.Unlock()
-	if _, ok := n.taskChans[taskId]; !ok {
-		glog.V(common.DEBUG).Info("Transcoder channel nonexistent for job ", taskId)
+
+func (rtm *RemoteTranscoderManager) removeTaskChan(taskID int64) {
+	rtm.taskMutex.Lock()
+	defer rtm.taskMutex.Unlock()
+	if _, ok := rtm.taskChans[taskID]; !ok {
+		glog.V(common.DEBUG).Info("Transcoder channel nonexistent for job ", taskID)
 		return
 	}
-	delete(n.taskChans, taskId)
+	delete(rtm.taskChans, taskID)
 }
 
 func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, error) {
@@ -203,17 +410,23 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 	if sc, ok := n.SegmentChans[md.ManifestID]; ok {
 		return sc, nil
 	}
+	if len(n.SegmentChans) >= MaxSessions {
+		return nil, ErrOrchCap
+	}
 	sc := make(SegmentChan, 1)
 	glog.V(common.DEBUG).Info("Creating new segment chan for manifest ", md.ManifestID)
 	if err := n.transcodeSegmentLoop(md, sc); err != nil {
 		return nil, err
 	}
 	n.SegmentChans[md.ManifestID] = sc
+	if lpmon.Enabled {
+		lpmon.CurrentSessions(len(n.SegmentChans))
+	}
 	return sc, nil
 }
 
 func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
-	glog.V(common.DEBUG).Infof("Starting to transcode segment %v", md.Seq)
+	glog.V(common.DEBUG).Infof("Starting to transcode segment manifest=%s seqNo=%d", string(md.ManifestID), md.Seq)
 	ch, err := n.getSegmentChan(md)
 	if err != nil {
 		glog.Error("Could not find segment chan ", err)
@@ -222,10 +435,10 @@ func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stre
 	segChanData := &SegChanData{seg: seg, md: md, res: make(chan *TranscodeResult, 1)}
 	select {
 	case ch <- segChanData:
-		glog.V(common.DEBUG).Info("Submitted segment to transcode loop ", md.Seq)
+		glog.V(common.DEBUG).Infof("Submitted segment to transcode loop manifestID=%s seqNo=%d", md.ManifestID, md.Seq)
 	default:
 		// sending segChan should not block; if it does, the channel is busy
-		glog.Error("Transcoder was busy with a previous segment!")
+		glog.Errorf("Transcoder was busy with a previous segment manifestID=%s seqNo=%d", md.ManifestID, md.Seq)
 		return nil, ErrOrchBusy
 	}
 	res := <-segChanData.res
@@ -246,7 +459,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	// we may still end up doing work multiple times. But this is OK for now.
 
 	//Assume d is in the right format, write it to disk
-	inName := randName()
+	inName := common.RandName() + ".ts"
 	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
 		err := os.Mkdir(n.WorkDir, 0700)
 		if err != nil {
@@ -263,14 +476,10 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	}
 
 	// Check if there's a transcoder available
-	var transcoder Transcoder
-	n.tcoderMutex.RLock()
 	if n.Transcoder == nil {
-		n.tcoderMutex.RUnlock()
 		return terr(ErrTranscoderAvail)
 	}
-	transcoder = n.Transcoder
-	n.tcoderMutex.RUnlock()
+	transcoder := n.Transcoder
 
 	var url string
 	_, isLocal := transcoder.(*LocalTranscoder)
@@ -291,40 +500,56 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 		}
 		seg.Name = url
 	}
-	if isLocal && monitor.Enabled {
-		monitor.LogSegmentTranscodeStarting(seg.SeqNo, string(md.ManifestID))
-	}
 
 	//Do the transcoding
 	start := time.Now()
 	tData, err := transcoder.Transcode(url, md.Profiles)
 	if err != nil {
-		glog.Errorf("Error transcoding seg: %v - %v", seg.Name, err)
+		glog.Errorf("Error transcoding manifest=%s segNo=%d segName=%s - %v", string(md.ManifestID), seg.SeqNo, seg.Name, err)
 		return terr(err)
 	}
-	// transcodeEnd := time.Now().UTC()
-	if len(tData) != len(md.Profiles) {
-		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v", len(tData), len(md.Profiles))
+
+	tSegments := tData.Segments
+	if len(tSegments) != len(md.Profiles) {
+		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v manifest=%s seqNo=%d", len(tSegments),
+			len(md.Profiles), string(md.ManifestID), seg.SeqNo)
 		return terr(fmt.Errorf("MismatchedSegments"))
 	}
-	tProfileData := make(map[ffmpeg.VideoProfile][]byte, 0)
-	glog.V(common.DEBUG).Infof("Transcoding of segment %v took %v", seg.SeqNo, time.Since(start))
+
+	took := time.Since(start)
+	glog.V(common.DEBUG).Infof("Transcoding of segment manifestID=%s seqNo=%d took=%v", string(md.ManifestID), seg.SeqNo, took)
 	if isLocal && monitor.Enabled {
-		monitor.LogSegmentTranscodeEnded(seg.SeqNo, string(md.ManifestID))
+		monitor.SegmentTranscoded(0, seg.SeqNo, took, common.ProfilesNames(md.Profiles))
 	}
 
 	// Prepare the result object
 	var tr TranscodeResult
-	for i, _ := range md.Profiles {
-		if tData[i] == nil {
-			glog.Errorf("Cannot find transcoded segment for %v", seg.SeqNo)
-			continue
+	segHashes := make([][]byte, len(tSegments))
+
+	for i := range md.Profiles {
+		if tSegments[i].Data == nil || len(tSegments[i].Data) < 25 {
+			glog.Errorf("Cannot find transcoded segment for manifest=%s seqNo=%d dataLength=%d",
+				string(md.ManifestID), seg.SeqNo, len(tSegments[i].Data))
+			return terr(fmt.Errorf("ZeroSegments"))
 		}
-		tProfileData[md.Profiles[i]] = tData[i]
-		tr.Data = append(tr.Data, tData[i])
+		glog.V(common.DEBUG).Infof("Transcoded segment manifest=%s seqNo=%d profile=%s len=%d",
+			string(md.ManifestID), seg.SeqNo, md.Profiles[i].Name, len(tSegments[i].Data))
+		hash := crypto.Keccak256(tSegments[i].Data)
+		segHashes[i] = hash
 	}
 	os.Remove(fname)
 	tr.OS = config.OS
+	tr.TranscodeData = tData
+
+	if n == nil || n.Eth == nil {
+		return &tr
+	}
+
+	segHash := crypto.Keccak256(segHashes...)
+	tr.Sig, tr.Err = n.Eth.Sign(segHash)
+	if tr.Err != nil {
+		glog.Error("Unable to sign hash of transcoded segment hashes: ", tr.Err)
+	}
 	return &tr
 }
 
@@ -363,17 +588,11 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 				if _, ok := n.SegmentChans[md.ManifestID]; ok {
 					close(n.SegmentChans[md.ManifestID])
 					delete(n.SegmentChans, md.ManifestID)
-				}
-				n.segmentMutex.Unlock()
-				if n.Recipient != nil {
-					sessionIDs := getAndClearPMSessionIDsByManifestID(n, md.ManifestID)
-					if len(sessionIDs) > 0 {
-						err := n.Recipient.RedeemWinningTickets(sessionIDs)
-						if err != nil {
-							glog.Errorf("Error redeeming winning tickets for manifestID %v and sessions %v. Errors: %+v", md.ManifestID, sessionIDs, err)
-						}
+					if lpmon.Enabled {
+						lpmon.CurrentSessions(len(n.SegmentChans))
 					}
 				}
+				n.segmentMutex.Unlock()
 				return
 			case chanData := <-segChan:
 				chanData.res <- n.transcodeSeg(config, chanData.seg, chanData.md)
@@ -384,25 +603,14 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 	return nil
 }
 
-func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer) {
-	transcoder := NewRemoteTranscoder(n, stream)
-
-	n.tcoderMutex.Lock()
-	n.Transcoder = transcoder
-	n.tcoderMutex.Unlock()
-
-	select {
-	case <-transcoder.eof:
-		glog.V(common.DEBUG).Info("Closing transcoder channel") // XXX cxn info
-		n.tcoderMutex.Lock()
-		n.Transcoder = nil
-		n.tcoderMutex.Unlock()
-		return
-	}
+func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
+	from := common.GetConnectionAddr(stream.Context())
+	n.TranscoderManager.Manage(stream, capacity)
+	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
 }
 
-func (n *LivepeerNode) transcoderResults(tcId int64, res *RemoteTranscoderResult) {
-	remoteChan, err := n.getTaskChan(tcId)
+func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {
+	remoteChan, err := rtm.getTaskChan(tcID)
 	if err != nil {
 		return // do we need to return anything?
 	}
@@ -410,78 +618,232 @@ func (n *LivepeerNode) transcoderResults(tcId int64, res *RemoteTranscoderResult
 }
 
 type RemoteTranscoder struct {
-	node   *LivepeerNode
-	stream net.Transcoder_RegisterTranscoderServer
-	eof    chan struct{}
+	manager  *RemoteTranscoderManager
+	stream   net.Transcoder_RegisterTranscoderServer
+	eof      chan struct{}
+	addr     string
+	capacity int
+	load     int
+}
+
+// RemoteTranscoderFatalError wraps error to indicate that error is fatal
+type RemoteTranscoderFatalError struct {
+	error
+}
+
+// NewRemoteTranscoderFatalError creates new RemoteTranscoderFatalError
+// Exported here to be used in other packages
+func NewRemoteTranscoderFatalError(err error) error {
+	return RemoteTranscoderFatalError{err}
 }
 
 var RemoteTranscoderTimeout = 8 * time.Second
+var ErrRemoteTranscoderTimeout = errors.New("Remote transcoder took too long")
 
-func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) ([][]byte, error) {
-	taskId, taskChan := rt.node.addTaskChan()
-	defer rt.node.removeTaskChan(taskId)
+func (rt *RemoteTranscoder) done() {
+	// select so we don't block indefinitely if there's no listener
+	select {
+	case rt.eof <- struct{}{}:
+	default:
+	}
+}
+
+// Transcode do actual transcoding by sending work to remote transcoder and waiting for the result
+func (rt *RemoteTranscoder) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+	taskID, taskChan := rt.manager.addTaskChan()
+	defer rt.manager.removeTaskChan(taskID)
+	signalEOF := func(err error) (*TranscodeData, error) {
+		rt.done()
+		glog.Errorf("Fatal error with remote transcoder=%s taskId=%d fname=%s err=%v", rt.addr, taskID, fname, err)
+		return nil, RemoteTranscoderFatalError{err}
+	}
 	msg := &net.NotifySegment{
 		Url:      fname,
-		TaskId:   taskId,
+		TaskId:   taskID,
 		Profiles: common.ProfilesToTranscodeOpts(profiles),
 	}
 	err := rt.stream.Send(msg)
 	if err != nil {
-		glog.Error("Error sending message to remote transcoder ", err)
-		rt.eof <- struct{}{}
-		return [][]byte{}, err
+		return signalEOF(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), RemoteTranscoderTimeout)
 	defer cancel()
 	select {
 	case <-ctx.Done():
-		// XXX remove transcoder from streams
-		rt.eof <- struct{}{}
-		return [][]byte{}, fmt.Errorf("Remote transcoder took too long")
+		return signalEOF(ErrRemoteTranscoderTimeout)
 	case chanData := <-taskChan:
-		glog.Info("Successfully received results from remote transcoder ", len(chanData.Segments))
-		return chanData.Segments, chanData.Err
+		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s err=%v",
+			rt.addr, len(chanData.TranscodeData.Segments), taskID, fname, chanData.Err)
+		return chanData.TranscodeData, chanData.Err
 	}
-	return [][]byte{}, fmt.Errorf("Unknown error")
 }
-
-func NewRemoteTranscoder(n *LivepeerNode, stream net.Transcoder_RegisterTranscoderServer) *RemoteTranscoder {
+func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int) *RemoteTranscoder {
 	return &RemoteTranscoder{
-		node:   n,
-		stream: stream,
-		eof:    make(chan struct{}, 1),
+		manager:  m,
+		stream:   stream,
+		eof:      make(chan struct{}, 1),
+		capacity: capacity,
+		addr:     common.GetConnectionAddr(stream.Context()),
 	}
 }
 
-func cachePMSessionID(n *LivepeerNode, m ManifestID, s string) {
-	n.pmSessionsMutex.Lock()
-	defer n.pmSessionsMutex.Unlock()
-	if _, ok := n.pmSessions[m]; !ok {
-		n.pmSessions[m] = make(map[string]bool)
+func NewRemoteTranscoderManager() *RemoteTranscoderManager {
+	return &RemoteTranscoderManager{
+		remoteTranscoders: []*RemoteTranscoder{},
+		liveTranscoders:   map[net.Transcoder_RegisterTranscoderServer]*RemoteTranscoder{},
+		RTmutex:           &sync.Mutex{},
+
+		taskMutex: &sync.RWMutex{},
+		taskChans: make(map[int64]TranscoderChan),
 	}
-	n.pmSessions[m][s] = true
 }
 
-func getAndClearPMSessionIDsByManifestID(n *LivepeerNode, m ManifestID) []string {
-	n.pmSessionsMutex.Lock()
-	defer n.pmSessionsMutex.Unlock()
-	sessionIDs := make([]string, len(n.pmSessions[m]))
-	i := 0
-	for sessionID := range n.pmSessions[m] {
-		sessionIDs[i] = sessionID
-		i++
-	}
+type byLoadFactor []*RemoteTranscoder
 
-	delete(n.pmSessions, m)
-
-	return sessionIDs
+func loadFactor(r *RemoteTranscoder) float64 {
+	return float64(r.load) / float64(r.capacity)
 }
 
-func randName() string {
-	rand.Seed(time.Now().UnixNano())
-	x := make([]byte, 10, 10)
-	for i := 0; i < len(x); i++ {
-		x[i] = byte(rand.Uint32())
+func (r byLoadFactor) Len() int      { return len(r) }
+func (r byLoadFactor) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
+func (r byLoadFactor) Less(i, j int) bool {
+	return loadFactor(r[j]) < loadFactor(r[i]) // sort descending
+}
+
+type RemoteTranscoderManager struct {
+	remoteTranscoders []*RemoteTranscoder
+	liveTranscoders   map[net.Transcoder_RegisterTranscoderServer]*RemoteTranscoder
+	RTmutex           *sync.Mutex
+
+	// For tracking tasks assigned to remote transcoders
+	taskMutex *sync.RWMutex
+	taskChans map[int64]TranscoderChan
+	taskCount int64
+}
+
+// RegisteredTranscodersCount returns number of registered transcoders
+func (rtm *RemoteTranscoderManager) RegisteredTranscodersCount() int {
+	rtm.RTmutex.Lock()
+	defer rtm.RTmutex.Unlock()
+	return len(rtm.liveTranscoders)
+}
+
+// RegisteredTranscodersInfo returns list of restered transcoder's information
+func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []net.RemoteTranscoderInfo {
+	rtm.RTmutex.Lock()
+	res := make([]net.RemoteTranscoderInfo, 0, len(rtm.liveTranscoders))
+	for _, transcoder := range rtm.liveTranscoders {
+		res = append(res, net.RemoteTranscoderInfo{Address: transcoder.addr, Capacity: transcoder.capacity})
 	}
-	return fmt.Sprintf("%x.ts", x)
+	rtm.RTmutex.Unlock()
+	return res
+}
+
+// Manage adds transcoder to list of live transcoders. Doesn't return untill transcoder disconnects
+func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
+	from := common.GetConnectionAddr(stream.Context())
+	transcoder := NewRemoteTranscoder(rtm, stream, capacity)
+	go func() {
+		ctx := stream.Context()
+		<-ctx.Done()
+		err := ctx.Err()
+		glog.Errorf("Stream closed for transcoder=%s, err=%v", from, err)
+		transcoder.done()
+	}()
+
+	rtm.RTmutex.Lock()
+	rtm.liveTranscoders[transcoder.stream] = transcoder
+	rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
+	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+	var totalLoad, totalCapacity, liveTranscodersNum int
+	if monitor.Enabled {
+		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
+	}
+	rtm.RTmutex.Unlock()
+	if monitor.Enabled {
+		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+	}
+
+	<-transcoder.eof
+	glog.Infof("Got transcoder=%s eof, removing from live transcoders map", from)
+
+	rtm.RTmutex.Lock()
+	delete(rtm.liveTranscoders, transcoder.stream)
+	if monitor.Enabled {
+		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
+	}
+	rtm.RTmutex.Unlock()
+	if monitor.Enabled {
+		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+	}
+}
+
+func (rtm *RemoteTranscoderManager) selectTranscoder() *RemoteTranscoder {
+	rtm.RTmutex.Lock()
+	defer rtm.RTmutex.Unlock()
+
+	checkTranscoders := func(rtm *RemoteTranscoderManager) bool {
+		return len(rtm.remoteTranscoders) > 0
+	}
+
+	for checkTranscoders(rtm) {
+		last := len(rtm.remoteTranscoders) - 1
+		currentTranscoder := rtm.remoteTranscoders[last]
+		if _, ok := rtm.liveTranscoders[currentTranscoder.stream]; !ok {
+			// transcoder does not exist in table; remove and retry
+			rtm.remoteTranscoders = rtm.remoteTranscoders[:last]
+			continue
+		}
+		if currentTranscoder.load == currentTranscoder.capacity {
+			// Head of queue is at capacity, so the rest must be too. Exit early
+			return nil
+		}
+		currentTranscoder.load++
+		sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+		return currentTranscoder
+	}
+
+	return nil
+}
+
+func (rtm *RemoteTranscoderManager) completeTranscoders(trans *RemoteTranscoder) {
+	rtm.RTmutex.Lock()
+	defer rtm.RTmutex.Unlock()
+
+	t, ok := rtm.liveTranscoders[trans.stream]
+	if !ok {
+		return
+	}
+	t.load--
+	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+}
+
+// Caller of this function should hold RTmutex lock
+func (rtm *RemoteTranscoderManager) totalLoadAndCapacity() (int, int, int) {
+	var load, capacity int
+	for _, t := range rtm.liveTranscoders {
+		load += t.load
+		capacity += t.capacity
+	}
+	return load, capacity, len(rtm.liveTranscoders)
+}
+
+// Transcode does actual transcoding using remote transcoder from the pool
+func (rtm *RemoteTranscoderManager) Transcode(fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+	currentTranscoder := rtm.selectTranscoder()
+	if currentTranscoder == nil {
+		return nil, errors.New("No transcoders available")
+	}
+	res, err := currentTranscoder.Transcode(fname, profiles)
+	_, fatal := err.(RemoteTranscoderFatalError)
+	if fatal {
+		// Don't retry if we've timed out; broadcaster likely to have moved on
+		// XXX problematic for VOD when we *should* retry
+		if err.(RemoteTranscoderFatalError).error == ErrRemoteTranscoderTimeout {
+			return res, err
+		}
+		return rtm.Transcode(fname, profiles)
+	}
+	rtm.completeTranscoders(currentTranscoder)
+	return res, err
 }

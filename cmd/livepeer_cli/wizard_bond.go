@@ -34,7 +34,7 @@ func (w *wizard) registeredOrchestratorStats() map[int]common.Address {
 	fmt.Println("+------------------------+")
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "Address", "Active", "Delegated Stake", "Reward Cut (%)", "Fee Share (%)", "Price", "Pending Reward Cut (%)", "Pending Fee Share (%)", "Pending Price", "Service URI"})
+	table.SetHeader([]string{"ID", "Address", "Active", "Delegated Stake", "Reward Cut (%)", "Fee Share (%)", "Service URI"})
 
 	for _, t := range orchestrators {
 		table.Append([]string{
@@ -44,10 +44,6 @@ func (w *wizard) registeredOrchestratorStats() map[int]common.Address {
 			eth.FormatUnits(t.DelegatedStake, "LPT"),
 			eth.FormatPerc(t.RewardCut),
 			eth.FormatPerc(t.FeeShare),
-			eth.FormatUnits(t.PricePerSegment, "ETH"),
-			eth.FormatPerc(t.PendingRewardCut),
-			eth.FormatPerc(t.PendingFeeShare),
-			eth.FormatUnits(t.PendingPricePerSegment, "ETH"),
 			t.ServiceURI,
 		})
 
@@ -306,7 +302,7 @@ func (w *wizard) unbond() {
 func (w *wizard)  withdrawStake() {
 	dInfo, err := w.getDelegatorInfo()
 	if err != nil {
-		glog.Error("Error getting delegator info: %v", err)
+		glog.Errorf("Error getting delegator info: %v", err)
 		return
 	}
 
@@ -345,7 +341,12 @@ func (w *wizard) withdrawFees() {
 }
 
 func (w *wizard) claimRewardsAndFees() {
-	fmt.Printf("Current round: %v\n", w.currentRound())
+	currentRound, err := w.currentRound()
+	if err != nil {
+		glog.Errorf("error getting current round: %v\n", err)
+		return
+	}
+	fmt.Printf("Current round: %v\n", currentRound.Int64())
 
 	d, err := w.getDelegatorInfo()
 	if err != nil {

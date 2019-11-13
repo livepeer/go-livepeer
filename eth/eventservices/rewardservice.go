@@ -13,20 +13,20 @@ import (
 var (
 	ErrRewardServiceStarted = fmt.Errorf("reward service already started")
 	ErrRewardServiceStopped = fmt.Errorf("reward service already stopped")
-
-	TryRewardPollingInterval = time.Minute * 30 // Poll to try to call reward once 30 minutes
 )
 
 type RewardService struct {
-	client       eth.LivepeerEthClient
-	pendingTx    *types.Transaction
-	working      bool
-	cancelWorker context.CancelFunc
+	client          eth.LivepeerEthClient
+	pendingTx       *types.Transaction
+	working         bool
+	cancelWorker    context.CancelFunc
+	pollingInterval time.Duration
 }
 
-func NewRewardService(client eth.LivepeerEthClient) *RewardService {
+func NewRewardService(client eth.LivepeerEthClient, pollingInterval time.Duration) *RewardService {
 	return &RewardService{
-		client: client,
+		client:          client,
+		pollingInterval: pollingInterval,
 	}
 }
 
@@ -38,7 +38,7 @@ func (s *RewardService) Start(ctx context.Context) error {
 	cancelCtx, cancel := context.WithCancel(context.Background())
 	s.cancelWorker = cancel
 
-	tickCh := time.NewTicker(TryRewardPollingInterval).C
+	tickCh := time.NewTicker(s.pollingInterval).C
 
 	go func(ctx context.Context) {
 		for {

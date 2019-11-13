@@ -20,6 +20,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/monitor"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
 
@@ -47,18 +48,26 @@ func (s *LivepeerServer) setServiceURI(serviceURI string) error {
 
 	// Avoids a restart if only the host has been changed.
 	// If the port has been changed, a restart is still needed.
-	s.LivepeerNode.ServiceURI = parsedURI
+	s.LivepeerNode.SetServiceURI(parsedURI)
 
 	return nil
 }
 
-func (s *LivepeerServer) StartWebserver(bindAddr string) {
-
-	mux := http.NewServeMux()
+// StartCliWebserver starts web server for CLI
+// blocks until exit
+func (s *LivepeerServer) StartCliWebserver(bindAddr string) {
+	mux := s.cliWebServerHandlers(bindAddr)
 	srv := &http.Server{
 		Addr:    bindAddr,
 		Handler: mux,
 	}
+
+	glog.Info("CLI server listening on ", bindAddr)
+	srv.ListenAndServe()
+}
+
+func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
+	mux := http.NewServeMux()
 
 	//Set the broadcast config for creating onchain jobs.
 	mux.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
@@ -67,15 +76,27 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			return
 		}
 
-		priceStr := r.FormValue("maxPricePerSegment")
-		if priceStr == "" {
-			glog.Errorf("Need to provide max price per segment")
+		pricePerUnit := r.FormValue("maxPricePerUnit")
+		pr, err := strconv.ParseInt(pricePerUnit, 10, 64)
+		if err != nil {
+			glog.Errorf("Error converting string to int64: %v\n", err)
 			return
 		}
-		price, err := lpcommon.ParseBigInt(priceStr)
+
+		pixelsPerUnit := r.FormValue("pixelsPerUnit")
+		px, err := strconv.ParseInt(pixelsPerUnit, 10, 64)
 		if err != nil {
-			glog.Error(err)
+			glog.Errorf("Error converting string to int64: %v\n", err)
 			return
+		}
+		if px <= 0 {
+			glog.Errorf("pixels per unit must be greater than 0, provided %d\n", px)
+			return
+		}
+
+		var price *big.Rat
+		if pr > 0 {
+			price = big.NewRat(pr, px)
 		}
 
 		transcodingOptions := r.FormValue("transcodingOptions")
@@ -95,11 +116,14 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			glog.Errorf("Invalid transcoding options: %v", transcodingOptions)
 			return
 		}
-
-		BroadcastPrice = price
+		BroadcastCfg.SetMaxPrice(price)
 		BroadcastJobVideoProfiles = profiles
-
-		glog.Infof("Transcode Job Price: %v, Transcode Job Type: %v", BroadcastPrice, BroadcastJobVideoProfiles)
+		if price != nil {
+			glog.Infof("Maximum transcoding price: %d per %q pixels\n", pr, px)
+		} else {
+			glog.Info("Maximum transcoding price per pixel not set, broadcaster is currently set to accept ANY price.\n")
+		}
+		glog.Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 	})
 
 	mux.HandleFunc("/getBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
@@ -108,10 +132,10 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			pNames = append(pNames, p.Name)
 		}
 		config := struct {
-			MaxPricePerSegment *big.Int
+			MaxPrice           *big.Rat
 			TranscodingOptions string
 		}{
-			BroadcastPrice,
+			BroadcastCfg.MaxPrice(),
 			strings.Join(pNames, ","),
 		}
 
@@ -139,17 +163,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		w.Write(data)
 	})
 
-	mux.HandleFunc("/currentRound", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			currentRound, err := s.LivepeerNode.Eth.CurrentRound()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			w.Write([]byte(currentRound.String()))
-		}
-	})
+	mux.Handle("/currentRound", currentRoundHandler(s.LivepeerNode.Eth))
 
 	mux.HandleFunc("/initializeRound", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
@@ -218,13 +232,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			return
 		}
 
-		priceStr := r.FormValue("pricePerSegment")
-		if priceStr == "" {
-			glog.Errorf("Need to provide price per segment")
-			return
-		}
-		price, err := lpcommon.ParseBigInt(priceStr)
-		if err != nil {
+		if err := s.setOrchestratorPriceInfo(r.FormValue("pricePerUnit"), r.FormValue("pixelsPerUnit")); err != nil {
 			glog.Error(err)
 			return
 		}
@@ -287,9 +295,9 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			}
 		}
 
-		glog.Infof("Registering orchestrator %v", s.LivepeerNode.Eth.Account().Address.Hex())
+		glog.Infof("Setting orchestrator commission rates %v", s.LivepeerNode.Eth.Account().Address.Hex())
 
-		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
+		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare))
 		if err != nil {
 			glog.Error(err)
 			return
@@ -343,12 +351,20 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			return
 		}
 
-		priceStr := r.FormValue("pricePerSegment")
-		if priceStr == "" {
-			glog.Errorf("Need to provide price per segment")
+		if err := s.setOrchestratorPriceInfo(r.FormValue("pricePerUnit"), r.FormValue("pixelsPerUnit")); err != nil {
+			glog.Error(err)
 			return
 		}
-		price, err := lpcommon.ParseBigInt(priceStr)
+
+		glog.Infof("Setting orchestrator commission rates %v", s.LivepeerNode.Eth.Account().Address.Hex())
+
+		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare))
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		err = s.LivepeerNode.Eth.CheckTx(tx)
 		if err != nil {
 			glog.Error(err)
 			return
@@ -364,22 +380,6 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		if err != nil {
 			glog.Error(err)
 			return
-		}
-
-		if t.PendingRewardCut.Cmp(eth.FromPerc(blockRewardCut)) != 0 || t.PendingFeeShare.Cmp(eth.FromPerc(feeShare)) != 0 || t.PendingPricePerSegment.Cmp(price) != 0 {
-			glog.Infof("Setting orchestrator config - Reward Cut: %v Fee Share: %v Price: %v", eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
-
-			tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare), price)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			err = s.LivepeerNode.Eth.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
 		}
 
 		if t.ServiceURI != serviceURI {
@@ -681,6 +681,9 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(data)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("{}"))
 		}
 	})
 
@@ -739,21 +742,13 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		status := s.GetNodeStatus()
 		if status != nil {
-			mstrs := make(map[string]string, 0)
-			for mid, m := range status.Manifests {
-				mstrs[string(mid)] = m.String()
-			}
-			d := struct {
-				Manifests map[string]string
-			}{
-				Manifests: mstrs,
-			}
-			if data, err := json.Marshal(d); err == nil {
+			if data, err := json.Marshal(status); err == nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.Write(data)
 				return
 			}
 		}
+		http.Error(w, "Error getting status", http.StatusInternalServerError)
 	})
 
 	mux.HandleFunc("/contractAddresses", func(w http.ResponseWriter, r *http.Request) {
@@ -763,38 +758,15 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 			data, err := json.Marshal(addrMap)
 			if err != nil {
 				glog.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(data)
-		}
-	})
-
-	mux.HandleFunc("/orchestratorEventSubscriptions", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil && s.LivepeerNode.EthEventMonitor != nil {
-			rewardWorking := false
-			if s.LivepeerNode.EthServices["RewardService"] != nil && s.LivepeerNode.EthServices["RewardService"].IsWorking() {
-				rewardWorking = true
-			}
-			roundWorking := false
-			if s.LivepeerNode.EthServices["RoundService"] != nil && s.LivepeerNode.EthServices["RoundService"].IsWorking() {
-				roundWorking = true
-			}
-			jobWorking := false
-			if s.LivepeerNode.EthServices["JobService"] != nil && s.LivepeerNode.EthServices["JobService"].IsWorking() {
-				jobWorking = true
-			}
-
-			m := map[string]bool{"JobService": jobWorking, "RewardService": rewardWorking, "RoundsService": roundWorking}
-			data, err := json.Marshal(m)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
+		} else {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
+			w.Write([]byte("{}"))
 		}
 	})
 
@@ -802,7 +774,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		if s.LivepeerNode.Eth != nil {
 			lp := s.LivepeerNode.Eth
 
-			numActiveOrchestrators, err := lp.NumActiveTranscoders()
+			numActiveOrchestrators, err := lp.GetTranscoderPoolMaxSize()
 			if err != nil {
 				glog.Error(err)
 				return
@@ -949,7 +921,15 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 				return
 			}
 
-			data, err := json.Marshal(t)
+			config := struct {
+				Transcoder *lpTypes.Transcoder
+				PriceInfo  *big.Rat
+			}{
+				Transcoder: t,
+				PriceInfo:  s.LivepeerNode.GetBasePrice(),
+			}
+
+			data, err := json.Marshal(config)
 			if err != nil {
 				glog.Error(err)
 				return
@@ -1017,17 +997,22 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 		w.Write([]byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.OrchestratorNode)))
 	})
 
-	mux.HandleFunc("/EthNetworkID", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/EthChainID", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth == nil {
+			w.Write([]byte("0"))
+			return
+		}
 		be, err := s.LivepeerNode.Eth.Backend()
 		if err != nil {
 			glog.Errorf("Error getting eth backend: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		networkID, err := be.NetworkID(context.Background())
+		chainID, err := be.ChainID(context.Background())
 		if err != nil {
 			glog.Errorf("Error getting eth network ID: %v", err)
 		}
-		w.Write([]byte(networkID.String()))
+		w.Write([]byte(chainID.String()))
 	})
 
 	mux.HandleFunc("/reward", func(w http.ResponseWriter, r *http.Request) {
@@ -1079,7 +1064,7 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 
 	// TicketBroker
 
-	mux.Handle("/fundAndApproveSigners", mustHaveFormParams(fundAndApproveSignersHandler(s.LivepeerNode.Eth), "depositAmount", "penaltyEscrowAmount"))
+	mux.Handle("/fundDepositAndReserve", mustHaveFormParams(fundDepositAndReserveHandler(s.LivepeerNode.Eth), "depositAmount", "reserveAmount"))
 	mux.Handle("/fundDeposit", mustHaveFormParams(fundDepositHandler(s.LivepeerNode.Eth), "amount"))
 	mux.Handle("/unlock", unlockHandler(s.LivepeerNode.Eth))
 	mux.Handle("/cancelUnlock", cancelUnlockHandler(s.LivepeerNode.Eth))
@@ -1087,7 +1072,32 @@ func (s *LivepeerServer) StartWebserver(bindAddr string) {
 	mux.Handle("/senderInfo", senderInfoHandler(s.LivepeerNode.Eth))
 	mux.Handle("/ticketBrokerParams", ticketBrokerParamsHandler(s.LivepeerNode.Eth))
 
-	glog.Info("CLI server listening on ", bindAddr)
-	srv.ListenAndServe()
+	// Metrics
+	if monitor.Enabled {
+		mux.Handle("/metrics", monitor.Exporter)
 
+	}
+	return mux
+}
+
+func (s *LivepeerServer) setOrchestratorPriceInfo(pricePerUnitStr, pixelsPerUnitStr string) error {
+
+	pricePerUnit, err := strconv.ParseInt(pricePerUnitStr, 10, 64)
+	if err != nil {
+		return fmt.Errorf("Error converting pricePerUnit string to int64: %v\n", err)
+	}
+	if pricePerUnit <= 0 {
+		return fmt.Errorf("price unit must be greater than 0, provided %d\n", pricePerUnit)
+	}
+
+	pixelsPerUnit, err := strconv.ParseInt(pixelsPerUnitStr, 10, 64)
+	if err != nil {
+		return fmt.Errorf("Error converting pixelsPerUnit string to int64: %v\n", err)
+	}
+	if pixelsPerUnit <= 0 {
+		return fmt.Errorf("pixels per unit must be greater than 0, provided %d\n", pixelsPerUnit)
+	}
+	s.LivepeerNode.SetBasePrice(big.NewRat(pricePerUnit, pixelsPerUnit))
+	glog.Infof("Price per pixel set to %d wei for %d pixels\n", pricePerUnit, pixelsPerUnit)
+	return nil
 }

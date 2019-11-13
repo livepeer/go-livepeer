@@ -1,4 +1,4 @@
-// Package drivers abstracts different object storages, such as local, s3, ipfs
+// Package drivers abstracts different object storages, such as local, s3
 package drivers
 
 import (
@@ -6,14 +6,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 )
 
-// Current node's primary driver
+// NodeStorage is current node's primary driver
 var NodeStorage OSDriver
 
 // OSDriver common interface for Object Storage
@@ -32,14 +31,12 @@ type OSSession interface {
 	IsExternal() bool
 }
 
-// NewDriver returns new session based on OSInfo received from the network
+// NewSession returns new session based on OSInfo received from the network
 func NewSession(info *net.OSInfo) OSSession {
 	if info == nil {
 		return nil
 	}
 	switch info.StorageType {
-	case net.OSInfo_IPFS:
-		return newIPFSSession()
 	case net.OSInfo_S3:
 		return newS3Session(info.S3Info)
 	case net.OSInfo_GOOGLE:
@@ -53,35 +50,31 @@ func IsOwnExternal(uri string) bool {
 }
 
 func GetSegmentData(uri string) ([]byte, error) {
-	parsed, err := url.Parse(uri)
-	if err != nil {
-		return nil, fmt.Errorf("Invalid URI")
-	}
-	if parsed.Scheme == "ipfs" {
-		return GetSegmentDataIpfs(uri)
-	}
 	return getSegmentDataHTTP(uri)
 }
 
-var httpc = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+var httpc = &http.Client{
+	Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+	Timeout:   common.HTTPTimeout / 2,
+}
 
 func getSegmentDataHTTP(uri string) ([]byte, error) {
-	glog.V(common.VERBOSE).Info("Downloading ", uri)
+	glog.V(common.VERBOSE).Infof("Downloading uri=%s", uri)
 	resp, err := httpc.Get(uri)
 	if err != nil {
-		glog.Error("Error getting HTTP ", err)
+		glog.Errorf("Error getting HTTP uri=%s err=%v", uri, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		glog.Error("Non-200 response ", resp.Status)
+		glog.Errorf("Non-200 response for status=%v uri=%s", resp.Status, uri)
 		return nil, fmt.Errorf(resp.Status)
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		glog.Error("Error reading body: ", err)
+		glog.Errorf("Error reading body uri=%s err=%v", uri, err)
 		return nil, err
 	}
-	glog.V(common.VERBOSE).Info("Downloaded ", uri)
+	glog.V(common.VERBOSE).Infof("Downloaded uri=%s", uri)
 	return body, nil
 }

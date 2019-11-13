@@ -1,37 +1,98 @@
 version: 2
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - build-builder
+      - build:
+          requires:
+            - build-builder
+
 jobs:
-  build:
+  build-builder:
     docker:
-      - image: circleci/golang:1.10.3-stretch
+      - image: circleci/golang:1-stretch
     working_directory: /go/src/github.com/livepeer/go-livepeer
 
     environment:
-        PKG_CONFIG_PATH: $HOME/compiled/lib/pkgconfig
-        TEST_RESULTS: /tmp/test-results
+      PKG_CONFIG_PATH: /root/compiled/lib/pkgconfig
+      GOPATH: /go
+      DOCKER_CLI_EXPERIMENTAL: enabled
+      HIGHEST_CHAIN_TAG: rinkeby
 
     steps:
       - checkout
+      - setup_remote_docker:
+          # This actually only exists for paid plans. But it's good luck!
+          docker_layer_caching: true
+
+      - run: docker login -u $DOCKER_USER -p $DOCKER_PASS
+
+      # First, build the Linux-specific builder container
+      - run: docker pull livepeerci/build-platform:latest || echo 'no pre-existing cache found'
+      - run: docker build -t livepeerci/build-platform:latest --cache-from=livepeerci/build-platform:latest -f docker/Dockerfile.build-linux .
+      - run: docker push livepeerci/build-platform:latest
+
+      # Then, build the actual app in a container shared between Linux and Windows
+      - run: docker pull livepeerci/build:latest || echo 'no pre-existing cache found'
+      - run: docker build -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
+      - run: docker push livepeerci/build:latest
+
+      # Finally, build the minimal go-livepeer distributable
+      - run: |-
+          # Our Docker tag name should be our branch name with just alphanums
+          TAG=$(echo $CIRCLE_BRANCH | tr -cd '[:alnum:]_')
+          docker build -t livepeer/go-livepeer:${TAG}-linux -f docker/Dockerfile.release-linux .
+          docker push livepeer/go-livepeer:${TAG}-linux
+          # Manifest step is optional in case the Windows build hasn't finished yet
+          docker manifest create livepeer/go-livepeer:${TAG} livepeer/go-livepeer:${TAG}-linux livepeer/go-livepeer:${TAG}-windows || true
+          docker manifest push livepeer/go-livepeer:${TAG} || true
+
+  build:
+    docker:
+      # Note race condition - we might get the wrong builder if lots of builds are happening in
+      # parallel because this pulls it down from Docker Hub.
+      - image: livepeerci/build:latest
+    working_directory: /build
+
+    environment:
+      PKG_CONFIG_PATH: /root/compiled/lib/pkgconfig
+      TEST_RESULTS: /tmp/test-results
+      GOPATH: /go
+      HIGHEST_CHAIN_TAG: rinkeby
+
+    steps:
+      - checkout
+
+      - setup_remote_docker:
+          # This actually only exists for paid plans. But it's good luck!
+          docker_layer_caching: true
+
       - run: mkdir -p $TEST_RESULTS
 
-      - restore_cache:
-          keys:
-            - v3-pkg-cache
-
-      - run: sudo apt-get update && sudo apt-get -y install build-essential pkg-config autoconf gnutls-dev
-      - run: ./install_ffmpeg.sh
-      - run: go get github.com/golang/glog
-      - run: go get github.com/ericxtang/m3u8
-      - run: go get github.com/aws/aws-sdk-go/aws
-      - run: go get -u google.golang.org/grpc
-      - run: go get github.com/jstemmer/go-junit-report
-      - run: go get github.com/pkg/errors
-      - run: go get github.com/stretchr/testify
+      - run:
+          name: Lint
+          command: |
+            golangci-lint --disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m run pm
 
       - run:
           name: Run unit tests
           command: |
             trap "go-junit-report <${TEST_RESULTS}/go-test.out > ${TEST_RESULTS}/go-test-report.xml" EXIT
-            PKG_CONFIG_PATH=$HOME/compiled/lib/pkgconfig /bin/bash test.sh 2>&1 | tee $TEST_RESULTS/go-test.out
+            /bin/bash test.sh 2>&1 | tee $TEST_RESULTS/go-test.out
+
+      - run:
+          name: Localdocker build check
+          command: make localdocker
+
+      - run:
+          name: Upload build
+          command: ./upload_build.sh
+
+      - run:
+          name: Notify that new build has been uploaded
+          command: curl -X POST https://holy-bread-207a.livepeer.workers.dev
 
       - save_cache:
           key: v3-pkg-cache

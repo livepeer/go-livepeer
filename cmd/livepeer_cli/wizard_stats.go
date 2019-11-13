@@ -14,8 +14,21 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/olekukonko/tablewriter"
 )
+
+func (w *wizard) status() *net.NodeStatus {
+	status := &net.NodeStatus{}
+	statusJSON := httpGet(w.endpoint)
+	if len(statusJSON) > 0 {
+		err := json.Unmarshal([]byte(statusJSON), status)
+		if err != nil {
+			glog.Error("Error getting status:", err)
+		}
+	}
+	return status
+}
 
 func (w *wizard) stats(showOrchestrator bool) {
 	addrMap, err := w.getContractAddresses()
@@ -23,6 +36,7 @@ func (w *wizard) stats(showOrchestrator bool) {
 		glog.Errorf("Error getting contract addresses: %v", err)
 		return
 	}
+	status := w.status()
 
 	fmt.Println("+-----------+")
 	fmt.Println("|NODE STATS|")
@@ -30,6 +44,10 @@ func (w *wizard) stats(showOrchestrator bool) {
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
+		[]string{"Node's version", status.Version},
+		[]string{"Node's GO runtime version", status.GolangRuntimeVersion},
+		[]string{"Node's architecture", status.GOArch},
+		[]string{"Node's operating system", status.GOOS},
 		[]string{"HTTP Port", w.httpPort},
 		[]string{"Controller Address", addrMap["Controller"].Hex()},
 		[]string{"LivepeerToken Address", addrMap["LivepeerToken"].Hex()},
@@ -59,7 +77,11 @@ func (w *wizard) stats(showOrchestrator bool) {
 	w.delegatorStats()
 	w.unbondingLockStats(false)
 
-	currentRound := w.currentRound()
+	currentRound, err := w.currentRound()
+	if err != nil {
+		glog.Errorf("Error getting current round: %v", err)
+		return
+	}
 
 	fmt.Printf("CURRENT ROUND: %v\n", currentRound)
 }
@@ -126,21 +148,25 @@ func (w *wizard) broadcastStats() {
 	}
 
 	price, transcodingOptions := w.getBroadcastConfig()
+	priceString := "n/a"
+	if price != nil {
+		priceString = fmt.Sprintf("%v wei / %v pixels", price.Num().Int64(), price.Denom().Int64())
+	}
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
-		[]string{"Broadcast Price Per Segment in Wei", price.String()},
+		[]string{"Max Price Per Pixel", priceString},
 		[]string{"Broadcast Transcoding Options", transcodingOptions},
 		[]string{"Deposit", eth.FormatUnits(sender.Deposit, "ETH")},
-		[]string{"Penalty Escrow", eth.FormatUnits(sender.PenaltyEscrow, "ETH")},
+		[]string{"Reserve", eth.FormatUnits(sender.Reserve.FundsRemaining, "ETH")},
 	}
 
 	for _, v := range data {
 		table.Append(v)
 	}
 
-	if sender.WithdrawBlock.Cmp(big.NewInt(0)) > 0 && (sender.Deposit.Cmp(big.NewInt(0)) > 0 || sender.PenaltyEscrow.Cmp(big.NewInt(0)) > 0) {
-		table.Append([]string{"Withdraw Block", sender.WithdrawBlock.String()})
+	if sender.WithdrawRound.Cmp(big.NewInt(0)) > 0 && (sender.Deposit.Cmp(big.NewInt(0)) > 0 || sender.Reserve.FundsRemaining.Cmp(big.NewInt(0)) > 0) {
+		table.Append([]string{"Withdraw Round", sender.WithdrawRound.String()})
 	}
 
 	table.SetAlignment(tablewriter.ALIGN_RIGHT)
@@ -151,7 +177,10 @@ func (w *wizard) broadcastStats() {
 }
 
 func (w *wizard) orchestratorStats() {
-	t, err := w.getOrchestratorInfo()
+	if w.offchain {
+		return
+	}
+	t, priceInfo, err := w.getOrchestratorInfo()
 	if err != nil {
 		glog.Errorf("Error getting orchestrator info: %v", err)
 		return
@@ -169,39 +198,8 @@ func (w *wizard) orchestratorStats() {
 		[]string{"Delegated Stake", eth.FormatUnits(t.DelegatedStake, "LPT")},
 		[]string{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
 		[]string{"Fee Share (%)", eth.FormatPerc(t.FeeShare)},
-		[]string{"Price Per Segment", eth.FormatUnits(t.PricePerSegment, "ETH")},
-		[]string{"Pending Reward Cut (%)", eth.FormatPerc(t.PendingRewardCut)},
-		[]string{"Pending Fee Share (%)", eth.FormatPerc(t.PendingFeeShare)},
-		[]string{"Pending Price Per Segment", eth.FormatUnits(t.PendingPricePerSegment, "ETH")},
 		[]string{"Last Reward Round", t.LastRewardRound.String()},
-	}
-
-	for _, v := range data {
-		table.Append(v)
-	}
-
-	table.SetAlignment(tablewriter.ALIGN_RIGHT)
-	table.SetCenterSeparator("*")
-	table.SetRowLine(true)
-	table.SetColumnSeparator("|")
-	table.Render()
-}
-
-func (w *wizard) orchestratorEventSubscriptions() {
-	subMap, err := w.getOrchestratorEventSubscriptions()
-	if err != nil {
-		glog.Errorf("Error getting orchestrator event subscriptions: %v", err)
-		return
-	}
-
-	fmt.Println("+--------------------------------+")
-	fmt.Println("|ORCHESTRATOR EVENT SUBSCRIPTIONS|")
-	fmt.Println("+--------------------------------+")
-
-	table := tablewriter.NewWriter(os.Stdout)
-	data := [][]string{
-		[]string{"Watching for new rounds to initialize", strconv.FormatBool(subMap["RoundService"])},
-		[]string{"Watching for initialized rounds to call reward", strconv.FormatBool(subMap["RewardService"])},
+		[]string{"Base price per pixel", fmt.Sprintf("%v wei / %v pixels", priceInfo.Num(), priceInfo.Denom())},
 	}
 
 	for _, v := range data {
@@ -216,6 +214,9 @@ func (w *wizard) orchestratorEventSubscriptions() {
 }
 
 func (w *wizard) delegatorStats() {
+	if w.offchain {
+		return
+	}
 	d, err := w.getDelegatorInfo()
 	if err != nil {
 		glog.Errorf("Error getting delegator info: %v", err)
@@ -329,7 +330,7 @@ func (w *wizard) getEthBalance() string {
 	return e
 }
 
-func (w *wizard) getBroadcastConfig() (*big.Int, string) {
+func (w *wizard) getBroadcastConfig() (*big.Rat, string) {
 	resp, err := http.Get(fmt.Sprintf("http://%v:%v/getBroadcastConfig", w.host, w.httpPort))
 	if err != nil {
 		glog.Errorf("Error getting broadcast config: %v", err)
@@ -344,7 +345,7 @@ func (w *wizard) getBroadcastConfig() (*big.Int, string) {
 	}
 
 	var config struct {
-		MaxPricePerSegment *big.Int
+		MaxPrice           *big.Rat
 		TranscodingOptions string
 	}
 	err = json.Unmarshal(result, &config)
@@ -353,51 +354,32 @@ func (w *wizard) getBroadcastConfig() (*big.Int, string) {
 		return nil, ""
 	}
 
-	return config.MaxPricePerSegment, config.TranscodingOptions
+	return config.MaxPrice, config.TranscodingOptions
 }
 
-func (w *wizard) getOrchestratorInfo() (lpTypes.Transcoder, error) {
+func (w *wizard) getOrchestratorInfo() (*lpTypes.Transcoder, *big.Rat, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%v:%v/orchestratorInfo", w.host, w.httpPort))
 	if err != nil {
-		return lpTypes.Transcoder{}, err
+		return nil, nil, err
 	}
 
 	defer resp.Body.Close()
 
 	result, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return lpTypes.Transcoder{}, err
+		return nil, nil, err
 	}
 
-	var tInfo lpTypes.Transcoder
-	err = json.Unmarshal(result, &tInfo)
+	var config struct {
+		Transcoder *lpTypes.Transcoder
+		PriceInfo  *big.Rat
+	}
+	err = json.Unmarshal(result, &config)
 	if err != nil {
-		return lpTypes.Transcoder{}, err
+		return nil, nil, err
 	}
 
-	return tInfo, nil
-}
-
-func (w *wizard) getOrchestratorEventSubscriptions() (map[string]bool, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%v:%v/orchestratorEventSubscriptions", w.host, w.httpPort))
-	if err != nil {
-		return nil, err
-	}
-
-	defer resp.Body.Close()
-
-	result, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var subMap map[string]bool
-	err = json.Unmarshal(result, &subMap)
-	if err != nil {
-		return nil, err
-	}
-
-	return subMap, nil
+	return config.Transcoder, config.PriceInfo, nil
 }
 
 func (w *wizard) getDelegatorInfo() (lpTypes.Delegator, error) {

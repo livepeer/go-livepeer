@@ -5,15 +5,102 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUpdateKVStore(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	expectedChainID := "1337"
+
+	dbh, dbraw, err := TempDB(t)
+	require.Nil(err)
+
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	var chainID string
+	row := dbraw.QueryRow("SELECT value FROM kv WHERE key = 'chainID'")
+	err = row.Scan(&chainID)
+	assert.EqualError(err, "sql: no rows in result set")
+	assert.Equal("", chainID)
+
+	dbh.updateKVStore("chainID", expectedChainID)
+	row = dbraw.QueryRow("SELECT value FROM kv WHERE key = 'chainID'")
+	err = row.Scan(&chainID)
+	assert.Nil(err)
+	assert.Equal(expectedChainID, chainID)
+}
+
+func TestSelectKVStore(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	key := "foo"
+	value := "bar"
+
+	dbh, dbraw, err := TempDB(t)
+	require.Nil(err)
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	err = dbh.updateKVStore(key, value)
+	require.Nil(err)
+
+	val, err := dbh.selectKVStore(key)
+	assert.Nil(err)
+	assert.Equal(val, value)
+}
+
+func TestChainID(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	expectedChainID := "1337"
+
+	dbh, dbraw, err := TempDB(t)
+	require.Nil(err)
+
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	expectedChainIDInt, ok := new(big.Int).SetString(expectedChainID, 10)
+	require.True(ok)
+	dbh.SetChainID(expectedChainIDInt)
+
+	chainID, err := dbh.ChainID()
+	assert.Nil(err)
+	assert.Equal(chainID.String(), expectedChainID)
+}
+
+func TestSetChainID(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	expectedChainID := "1337"
+
+	dbh, dbraw, err := TempDB(t)
+	require.Nil(err)
+
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	expectedChainIDInt, ok := new(big.Int).SetString(expectedChainID, 10)
+	require.True(ok)
+	dbh.SetChainID(expectedChainIDInt)
+
+	chainID, err := dbh.ChainID()
+	assert.Nil(err)
+	assert.Equal(chainID, expectedChainIDInt)
+}
 
 func TestDBLastSeenBlock(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
@@ -23,53 +110,42 @@ func TestDBLastSeenBlock(t *testing.T) {
 	defer dbh.Close()
 	defer dbraw.Close()
 
-	// sanity check default value
-	var val int64
-	var created_at string
-	var updated_at string
-	stmt := "SELECT value, updatedAt FROM kv WHERE key = 'lastBlock'"
-	row := dbraw.QueryRow(stmt)
-	err = row.Scan(&val, &created_at)
-	if err != nil || val != int64(0) {
-		t.Errorf("Unexpected result from sanity check; got %v - %v", err, val)
-		return
-	}
-	// set last updated at timestamp to sometime in the past
-	update_stmt := "UPDATE kv SET updatedAt = datetime('now', '-2 months') WHERE key = 'lastBlock'"
-	_, err = dbraw.Exec(update_stmt) // really should sanity check this result
-	if err != nil {
-		t.Error("Could not update db ", err)
-	}
+	assert := assert.New(t)
+	require := require.New(t)
 
-	// now test set
-	blkval := int64(54321)
-	err = dbh.SetLastSeenBlock(big.NewInt(blkval))
-	if err != nil {
-		t.Error("Unable to set last seen block ", err)
-		return
-	}
-	row = dbraw.QueryRow(stmt)
-	err = row.Scan(&val, &updated_at)
-	if err != nil || val != blkval {
-		t.Errorf("Unexpected result from value check; got %v - %v", err, val)
-		return
-	}
-	// small possibility of a test failure if we executed over a 1s boundary
-	if updated_at != created_at {
-		t.Errorf("Unexpected result from update check; got %v:%v", updated_at, created_at)
-		return
-	}
-
-	// test getter function
+	// When there are no headers, return nil
 	blk, err := dbh.LastSeenBlock()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if blk.Int64() != blkval {
-		t.Errorf("Unexpected result from getter; expected %v, got %v", blkval, blk.Int64())
-		return
-	}
+	assert.Nil(err)
+	assert.Nil(blk)
+
+	// When there is a single header, return its number
+	h0 := defaultMiniHeader()
+	h0.Number = big.NewInt(100)
+	err = dbh.InsertMiniHeader(h0)
+	require.Nil(err)
+
+	blk, err = dbh.LastSeenBlock()
+	assert.Nil(err)
+	assert.Equal(h0.Number, blk)
+
+	// When there are multiple headers, return the latest header number
+	h1 := defaultMiniHeader()
+	h1.Number = big.NewInt(101)
+	err = dbh.InsertMiniHeader(h1)
+	require.Nil(err)
+
+	blk, err = dbh.LastSeenBlock()
+	assert.Nil(err)
+	assert.Equal(h1.Number, blk)
+
+	h2 := defaultMiniHeader()
+	h2.Number = big.NewInt(99)
+	err = dbh.InsertMiniHeader(h2)
+	require.Nil(err)
+
+	blk, err = dbh.LastSeenBlock()
+	assert.Nil(err)
+	assert.Equal(h1.Number, blk)
 }
 
 func TestDBVersion(t *testing.T) {
@@ -127,7 +203,7 @@ func TestSelectUpdateOrchs_EmptyOrNilInputs_NoError(t *testing.T) {
 	require.Nil(err)
 
 	// selecting empty set of orchs
-	orchs, err := dbh.SelectOrchs()
+	orchs, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Empty(orchs)
 
@@ -151,7 +227,7 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	err = dbh.UpdateOrch(orch)
 	require.Nil(err)
 
-	orchs, err := dbh.SelectOrchs()
+	orchs, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 1)
 	assert.Equal(orchs[0].ServiceURI, orch.ServiceURI)
@@ -161,7 +237,7 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	err = dbh.UpdateOrch(orchUpdate)
 	require.Nil(err)
 
-	updatedOrch, err := dbh.SelectOrchs()
+	updatedOrch, err := dbh.SelectOrchs(nil)
 	assert.Len(updatedOrch, 1)
 	assert.Equal(updatedOrch[0].ServiceURI, orchUpdate.ServiceURI)
 }
@@ -180,7 +256,7 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 	err = dbh.UpdateOrch(orch)
 	require.Nil(err)
 
-	orchs, err := dbh.SelectOrchs()
+	orchs, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 1)
 	assert.Equal(orchs[0].ServiceURI, orch.ServiceURI)
@@ -191,10 +267,56 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 	err = dbh.UpdateOrch(orchAdd)
 	require.Nil(err)
 
-	orchsUpdated, err := dbh.SelectOrchs()
+	orchsUpdated, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchsUpdated, 2)
 	assert.Equal(orchsUpdated[1].ServiceURI, orchAdd.ServiceURI)
+}
+
+func TestDBFilterOrchs(t *testing.T) {
+	var nilDb *DB
+	nilOrchs, nilErr := nilDb.SelectOrchs(&DBOrchFilter{big.NewRat(1, 1)})
+	assert.Nil(t, nilOrchs)
+	assert.Nil(t, nilErr)
+
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
+
+	for i := 0; i < 10; i++ {
+		orch := NewDBOrch("https://127.0.0.1:"+strconv.Itoa(8936+i), string(pm.RandBytes(32)))
+		orch.PricePerPixel, err = PriceToFixed(big.NewRat(1, int64(5+i)))
+		require.Nil(err)
+		err = dbh.UpdateOrch(orch)
+		require.Nil(err)
+	}
+
+	orchsUpdated, err := dbh.SelectOrchs(nil)
+	require.Nil(err)
+	assert.Len(orchsUpdated, 10)
+
+	// Passing in nil max price to filterOrchs returns a query for selectOrchs
+	orchsFiltered, err := dbh.SelectOrchs(nil)
+	require.Nil(err)
+	assert.Len(orchsFiltered, 10)
+
+	// Passing in a higher maxPrice than all orchs to filterOrchs returns all orchs
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{big.NewRat(10, 1)})
+	require.Nil(err)
+	assert.Len(orchsFiltered, 10)
+
+	// Passing in a lower price than all orchs returns no orchs
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{big.NewRat(1, 15)})
+	require.Nil(err)
+	assert.Len(orchsFiltered, 0)
+
+	// Passing in 1/10 returns 5 orchs
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{big.NewRat(1, 10)})
+	require.Nil(err)
+	assert.Len(orchsFiltered, 5)
 }
 
 func TestDBUnbondingLocks(t *testing.T) {
@@ -359,6 +481,40 @@ func TestDBUnbondingLocks(t *testing.T) {
 	}
 	if len(unbondingLocks) != 2 {
 		t.Error("Unexpected number of unbonding locks; expected 2, got ", len(unbondingLocks))
+		return
+	}
+
+	// Check deleting existing lock
+	err = dbh.DeleteUnbondingLock(big.NewInt(3), delegator)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	unbondingLocks, err = dbh.UnbondingLocks(nil)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if len(unbondingLocks) != 2 {
+		t.Error("Unxpected number of unbonding locks after deletion; expected 2, got", len(unbondingLocks))
+		return
+	}
+
+	// Check setting usedBlock to NULL for existing lock
+	err = dbh.UseUnbondingLock(big.NewInt(1), delegator, nil)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	unbondingLocks, err = dbh.UnbondingLocks(nil)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if len(unbondingLocks) != 3 {
+		t.Error("Unexpected number of unbonding locks after reverting used lock; expected 3, got", len(unbondingLocks))
 		return
 	}
 }
@@ -609,6 +765,130 @@ func TestLoadWinningTickets_GivenTwoSessionsWithTickets_ReturnsAllTickets(t *tes
 	assert.Equal(recipientRand1, recipientRands[1])
 }
 
+func TestInsertMiniHeader_ReturnsFindLatestMiniHeader(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	assert := assert.New(t)
+	require := require.New(t)
+	require.Nil(err)
+
+	h0 := defaultMiniHeader()
+	err = dbh.InsertMiniHeader(h0)
+	require.Nil(err)
+
+	h0db, err := dbh.FindLatestMiniHeader()
+	require.Nil(err)
+	assert.Equal(h0, h0db)
+
+	// Test FindLatestMiniHeader with 2 blocks
+	h1 := defaultMiniHeader()
+	h1.Number = big.NewInt(451)
+	h1.Logs = append(h1.Logs, types.Log{
+		Topics:    []common.Hash{pm.RandHash(), pm.RandHash()},
+		Data:      pm.RandBytes(32),
+		BlockHash: h1.Hash,
+	})
+	err = dbh.InsertMiniHeader(h1)
+	require.Nil(err)
+	latest, err := dbh.FindLatestMiniHeader()
+	require.Nil(err)
+	assert.Equal(h1, latest)
+	assert.Equal(len(h1.Logs), 2)
+
+	// test MiniHeader = nil error
+	err = dbh.InsertMiniHeader(nil)
+	assert.EqualError(err, "must provide a MiniHeader")
+
+	// test blocknumber = nil error
+	h1.Number = nil
+	err = dbh.InsertMiniHeader(h1)
+	assert.EqualError(err, "no block number found")
+}
+
+func TestFindAllMiniHeadersSortedByNumber(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	assert := assert.New(t)
+	require := require.New(t)
+	require.Nil(err)
+
+	added := make([]*blockwatch.MiniHeader, 10)
+	for i := 0; i < 10; i++ {
+		h := defaultMiniHeader()
+		h.Number = big.NewInt(int64(i))
+		if i%2 == 0 {
+			h.Logs = append(h.Logs, types.Log{
+				Topics:    []common.Hash{pm.RandHash(), pm.RandHash()},
+				Data:      pm.RandBytes(32),
+				BlockHash: h.Hash,
+			})
+		}
+		err = dbh.InsertMiniHeader(h)
+		require.Nil(err)
+		added[9-i] = h
+	}
+
+	headers, err := dbh.FindAllMiniHeadersSortedByNumber()
+	for i, h := range headers {
+		assert.Equal(h.Number.Int64(), int64(len(headers)-1-i))
+		assert.Equal(h, added[i])
+		// even = 1 log , uneven = 2 logs
+		if i%2 == 0 {
+			assert.Len(h.Logs, 1)
+		} else {
+			assert.Len(h.Logs, 2)
+		}
+	}
+}
+
+func TestDeleteMiniHeader(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	assert := assert.New(t)
+	require := require.New(t)
+	require.Nil(err)
+
+	h0 := defaultMiniHeader()
+	err = dbh.InsertMiniHeader(h0)
+	require.Nil(err)
+
+	h0db, err := dbh.FindLatestMiniHeader()
+	require.Nil(err)
+	assert.Equal(h0, h0db)
+
+	err = dbh.DeleteMiniHeader(h0.Hash)
+	require.Nil(err)
+	headers, err := dbh.FindAllMiniHeadersSortedByNumber()
+	require.Nil(err)
+	assert.Equal(len(headers), 0)
+
+	// test FindLatestMiniHeader error path
+	h0db, err = dbh.FindLatestMiniHeader()
+	assert.Nil(err)
+
+	// Test header to be deleted doesn't exist
+	err = dbh.DeleteMiniHeader(h0.Hash)
+	assert.Nil(err)
+	headers, _ = dbh.FindAllMiniHeadersSortedByNumber()
+	assert.Equal(len(headers), 0)
+
+	// test correct amount of remaining headers when more than 1
+	err = dbh.InsertMiniHeader(h0)
+	require.Nil(err)
+	h1 := defaultMiniHeader()
+	err = dbh.InsertMiniHeader(h1)
+	require.Nil(err)
+	err = dbh.DeleteMiniHeader(h0.Hash)
+	require.Nil(err)
+	headers, err = dbh.FindAllMiniHeadersSortedByNumber()
+	assert.Equal(len(headers), 1)
+	assert.Nil(err)
+	assert.Equal(headers[0].Hash, h1.Hash)
+}
+
 func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) {
 	sessionID = "foo bar"
 	ticket = &pm.Ticket{
@@ -631,4 +911,19 @@ func getRowCountOrFatal(query string, dbraw *sql.DB, t *testing.T) int {
 	require.Nil(t, err)
 
 	return count
+}
+
+func defaultMiniHeader() *blockwatch.MiniHeader {
+	block := &blockwatch.MiniHeader{
+		Number: big.NewInt(450),
+		Parent: pm.RandHash(),
+		Hash:   pm.RandHash(),
+	}
+	log := types.Log{
+		Topics:    []common.Hash{pm.RandHash(), pm.RandHash()},
+		Data:      pm.RandBytes(32),
+		BlockHash: block.Hash,
+	}
+	block.Logs = []types.Log{log}
+	return block
 }

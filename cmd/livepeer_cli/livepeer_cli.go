@@ -11,7 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/livepeer/go-livepeer/core"
-	"gopkg.in/urfave/cli.v1"
+	"github.com/urfave/cli"
 )
 
 func main() {
@@ -52,12 +52,13 @@ func main() {
 			in:       bufio.NewReader(os.Stdin),
 		}
 		w.orchestrator = w.isOrchestrator()
-		w.testnet = w.onTestnet()
+		w.checkNet()
 		w.run()
 
 		return nil
 	}
 	app.Version = core.LivepeerVersion
+	// flag.Parse()
 	app.Run(os.Args)
 }
 
@@ -67,6 +68,7 @@ type wizard struct {
 	host         string
 	orchestrator bool
 	testnet      bool
+	offchain     bool
 	in           *bufio.Reader // Wrapper around stdin to allow reading user input
 }
 
@@ -164,10 +166,11 @@ func (w *wizard) doCLIOpt(choice string, options []wizardOpt) {
 	log.Error("That's not something I can do")
 }
 
-var RinkebyNetworkId = "4"
-var DevenvNetworkId = "54321"
+var RinkebyChainID = "4"
+var DevenvChainID = "54321"
 
-func (w *wizard) onTestnet() bool {
-	nID := httpGet(fmt.Sprintf("http://%v:%v/EthNetworkID", w.host, w.httpPort))
-	return nID == RinkebyNetworkId || nID == DevenvNetworkId
+func (w *wizard) checkNet() {
+	nID := httpGet(fmt.Sprintf("http://%v:%v/EthChainID", w.host, w.httpPort))
+	w.testnet = nID == RinkebyChainID || nID == DevenvChainID
+	w.offchain = nID == "offchain"
 }

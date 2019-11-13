@@ -229,7 +229,7 @@ func (w *wizard) readDefaultFloat(def float64) float64 {
 func httpGet(url string) string {
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Error("Error sending HTTP GET: %v")
+		log.Error("Error sending HTTP GET", "url", url, "err", err)
 		return ""
 	}
 
@@ -247,7 +247,7 @@ func httpPostWithParams(url string, val url.Values) string {
 
 	resp, err := http.Post(url, "application/x-www-form-urlencoded", body)
 	if err != nil {
-		log.Error("Error sending HTTP POST: %v", err)
+		log.Error("Error sending HTTP POST", "url", url, "err", err)
 		return ""
 	}
 
@@ -263,7 +263,7 @@ func httpPostWithParams(url string, val url.Values) string {
 func httpPost(url string) string {
 	resp, err := http.Post(url, "application/x-www-form-urlencoded", nil)
 	if err != nil {
-		log.Error("Error sending HTTP POST: %v", err)
+		log.Error("Error sending HTTP POST: ", "url", url, "err", err)
 		return ""
 	}
 

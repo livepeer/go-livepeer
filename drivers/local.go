@@ -2,7 +2,9 @@ package drivers
 
 import (
 	"fmt"
+	"net/url"
 	"path"
+	"strings"
 	"sync"
 
 	"github.com/livepeer/go-livepeer/net"
@@ -11,7 +13,7 @@ import (
 var dataCacheLen = 12
 
 type MemoryOS struct {
-	baseURI  string
+	baseURI  *url.URL
 	sessions map[string]*MemorySession
 	lock     sync.RWMutex
 }
@@ -24,7 +26,7 @@ type MemorySession struct {
 	dLock  sync.RWMutex
 }
 
-func NewMemoryDriver(baseURI string) *MemoryOS {
+func NewMemoryDriver(baseURI *url.URL) *MemoryOS {
 	return &MemoryOS{
 		baseURI:  baseURI,
 		sessions: make(map[string]*MemorySession),
@@ -71,9 +73,24 @@ func (ostore *MemorySession) EndSession() {
 	ostore.os.lock.Unlock()
 }
 
+// GetData returns the cached data for a name.
+//
+// A name can be an absolute or relative URI.
+// An absolute URI has the following format:
+// - ostore.os.baseURI + /stream/ + ostore.path + path + file
+// The following are valid relative URIs:
+// - /stream/ + ostore.path + path + file (if ostore.os.baseURI is empty)
+// - ostore.path + path + file
 func (ostore *MemorySession) GetData(name string) []byte {
+	// Since the memory cache uses the path as the key for fetching data we make sure that
+	// ostore.os.baseURI and /stream/ are stripped before splitting into a path and a filename
+	prefix := ""
+	if ostore.os.baseURI != nil {
+		prefix += ostore.os.baseURI.String()
+	}
+	prefix += "/stream/"
 
-	path, file := path.Split(name)
+	path, file := path.Split(strings.TrimPrefix(name, prefix))
 
 	ostore.dLock.RLock()
 	defer ostore.dLock.RUnlock()
@@ -93,7 +110,6 @@ func (ostore *MemorySession) GetInfo() *net.OSInfo {
 }
 
 func (ostore *MemorySession) SaveData(name string, data []byte) (string, error) {
-
 	path, file := path.Split(ostore.getAbsolutePath(name))
 
 	ostore.dLock.Lock()
@@ -124,15 +140,16 @@ func (ostore *MemorySession) getAbsolutePath(name string) string {
 
 func (ostore *MemorySession) getAbsoluteURI(name string) string {
 	name = "/stream/" + ostore.getAbsolutePath(name)
-	if ostore.os.baseURI != "" {
-		return ostore.os.baseURI + name
+	if ostore.os.baseURI != nil {
+		return ostore.os.baseURI.String() + name
 	}
 	return name
 }
 
 type dataCache struct {
 	cacheLen int
-	cache    []*dataCacheItem
+	nextFree int
+	cache    []dataCacheItem
 }
 
 type dataCacheItem struct {
@@ -141,22 +158,23 @@ type dataCacheItem struct {
 }
 
 func newDataCache(len int) *dataCache {
-	return &dataCache{cacheLen: len, cache: make([]*dataCacheItem, 0)}
+	return &dataCache{cacheLen: len, cache: make([]dataCacheItem, len)}
 }
 
 func (dc *dataCache) Insert(name string, data []byte) {
 	// replace existing item
-	for _, item := range dc.cache {
+	for i, item := range dc.cache {
 		if item.name == name {
-			item.data = data
+			dc.cache[i] = dataCacheItem{name: name, data: data}
 			return
 		}
 	}
-	if len(dc.cache) >= dc.cacheLen {
-		dc.cache = dc.cache[1:]
+	dc.cache[dc.nextFree].name = name
+	dc.cache[dc.nextFree].data = data
+	dc.nextFree++
+	if dc.nextFree >= dc.cacheLen {
+		dc.nextFree = 0
 	}
-	item := &dataCacheItem{name: name, data: data}
-	dc.cache = append(dc.cache, item)
 }
 
 func (dc *dataCache) GetData(name string) []byte {

@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -20,26 +24,47 @@ import (
 )
 
 const (
-	gethMiningAccount = "87da6a8c6e9eff15d703fc2773e32f6af8dbe301"
-	controllerAddr    = "93ad00a63b14492386df9f1cc123d785705bdf99"
-	clientIdentifier  = "geth" // Client identifier to advertise over the network
-	passphrase        = ""
-	serviceURI        = "https://127.0.0.1:8936"
+	clientIdentifier = "geth" // Client identifier to advertise over the network
+	passphrase       = ""
 )
 
 var (
-	ethTxTimeout = 600 * time.Second
-	endpoint     = "ws://localhost:8546/"
+	ethTxTimeout              = 600 * time.Second
+	endpoint                  = "ws://localhost:8546/"
+	gethMiningAccount         = "87da6a8c6e9eff15d703fc2773e32f6af8dbe301"
+	gethMiningAccountOverride = false
+	ethController             = "0x04B9De88c81cda06165CF65a908e5f1EFBB9493B"
+	ethControllerOverride     = false
+	serviceHost               = "127.0.0.1"
+	serviceURI                = "https://127.0.0.1:"
+	cliPort                   = 7935
+	mediaPort                 = 8935
+	rtmpPort                  = 1935
 )
 
 func main() {
 	flag.Set("logtostderr", "true")
 	baseDataDir := flag.String("datadir", ".lpdev2", "default data directory")
 	endpointAddr := flag.String("endpoint", "", "Geth endpoint to connect to")
+	miningAccountFlag := flag.String("miningaccount", "", "Override geth mining account (usually not needed)")
+	ethControllerFlag := flag.String("controller", "", "Override controller address (usually not needed)")
+	svcHost := flag.String("svchost", "127.0.0.1", "default service host")
 
 	flag.Parse()
 	if *endpointAddr != "" {
 		endpoint = *endpointAddr
+	}
+	if *miningAccountFlag != "" {
+		gethMiningAccount = *miningAccountFlag
+		gethMiningAccountOverride = true
+	}
+	if *ethControllerFlag != "" {
+		ethController = *ethControllerFlag
+		ethControllerOverride = true
+	}
+	if *svcHost != "" {
+		serviceHost = *svcHost
+		serviceURI = fmt.Sprintf("https://%s:", serviceHost)
 	}
 	args := flag.Args()
 	goodToGo := false
@@ -55,11 +80,29 @@ func main() {
 	}
 	if !goodToGo {
 		fmt.Println(`
-    Usage: go run cmd/devtool/devtool.go setup broadcaster|transcoder
+    Usage: go run cmd/devtool/devtool.go setup broadcaster|transcoder [nodeIndex]
         It will create initilize eth account (on private testnet) to be used for broadcaster or transcoder
-        and will create shell script (run_broadcaster_ETHACC.sh or run_transcoder_ETHACC.sh) to run it.`)
+        and will create shell script (run_broadcaster_ETHACC.sh or run_transcoder_ETHACC.sh) to run it.
+        Node index indicates how much to offset node's port. Orchestrator node's index by default is 1.
+        For example:
+        "devtool setup broadcaster" will create broadcaster with cli port 7935 and media port 8935
+        "devtool setup broadcaster 2" will create broadcaster with cli port 7937 and media port 8937
+        "devtool setup transcoder 3" will create transcoder with cli port 7938 and media port 8938`)
 		return
 	}
+	nodeIndex := 0
+	if args[1] == "transcoder" {
+		nodeIndex = 1
+	}
+	if len(args) > 2 {
+		if i, err := strconv.ParseInt(args[2], 10, 64); err == nil {
+			nodeIndex = int(i)
+		}
+	}
+	serviceURI += strconv.Itoa(mediaPort + nodeIndex)
+	mediaPort += nodeIndex
+	cliPort += nodeIndex
+	rtmpPort += nodeIndex
 
 	t := getNodeType(isBroadcaster)
 
@@ -72,28 +115,36 @@ func main() {
 	tempKeystoreDir := filepath.Join(tmp, "keystore")
 	acc := createKey(tempKeystoreDir)
 	glog.Infof("Using account %s", acc)
+	glog.Infof("Using svchost %s", serviceHost)
 	dataDir := filepath.Join(*baseDataDir, t+"_"+acc)
-	dataDirToCreate := filepath.Join(dataDir, "mainnet")
-	err = os.MkdirAll(dataDirToCreate, 0755)
+	err = os.MkdirAll(dataDir, 0755)
 	if err != nil {
 		glog.Fatalf("Can't create directory %v", err)
 	}
 
-	keystoreDir := filepath.Join(dataDirToCreate, "keystore")
-	err = os.Rename(tempKeystoreDir, keystoreDir)
+	keystoreDir := filepath.Join(dataDir, "keystore")
+	err = moveDir(tempKeystoreDir, keystoreDir)
 	if err != nil {
 		glog.Fatal(err)
 	}
 	remoteConsole(acc)
 	ethSetup(acc, keystoreDir, isBroadcaster)
-	createRunScript(acc, dataDir, isBroadcaster)
+	createRunScript(acc, dataDir, serviceHost, isBroadcaster)
+	if !isBroadcaster {
+		tDataDir := filepath.Join(*baseDataDir, "transcoder_"+acc)
+		err = os.MkdirAll(tDataDir, 0755)
+		if err != nil {
+			glog.Fatalf("Can't create directory %v", err)
+		}
+		createTranscoderRunScript(acc, tDataDir, serviceHost)
+	}
 	glog.Info("Finished")
 }
 
 func getNodeType(isBroadcaster bool) string {
 	t := "broadcaster"
 	if !isBroadcaster {
-		t = "transcoder"
+		t = "orchestrator"
 	}
 	return t
 }
@@ -106,54 +157,55 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		glog.Errorf("Failed to connect to Ethereum client: %v", err)
 		return
 	}
+	glog.Infof("Using controller address %s", ethController)
 
 	client, err := eth.NewClient(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, backend,
-		ethcommon.HexToAddress(controllerAddr), ethTxTimeout)
+		ethcommon.HexToAddress(ethController), ethTxTimeout)
 	if err != nil {
 		glog.Errorf("Failed to create client: %v", err)
 		return
 	}
 
-	var bigGasPrice *big.Int = big.NewInt(int64(200))
-	// var bigGasPrice *big.Int = big.NewInt(int64(00000))
-
-	err = client.Setup(passphrase, 1000000, bigGasPrice)
+	err = client.Setup(passphrase, uint64(0), nil)
 	if err != nil {
-		glog.Errorf("Failed to setup client: %v", err)
-		return
-	}
-	glog.Infof("Requesting tokens from faucet")
-
-	tx, err := client.Request()
-	if err != nil {
-		glog.Errorf("Error requesting tokens from faucet: %v", err)
+		glog.Fatalf("Failed to setup client: %v", err)
 		return
 	}
 
-	err = client.CheckTx(tx)
-	if err != nil {
-		glog.Errorf("Error requesting tokens from faucet: %v", err)
-		return
-	}
-	glog.Info("Done requesting tokens.")
-	time.Sleep(4 * time.Second)
+	if isBroadcaster {
+		amount := new(big.Int).Mul(big.NewInt(100), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
 
-	var depositAmount *big.Int = big.NewInt(int64(5000))
+		glog.Infof("Funding deposit with %v", amount)
+		glog.Infof("Funding reserve with %v", amount)
 
-	glog.Infof("Depositing: %v", depositAmount)
+		tx, err := client.FundDepositAndReserve(amount, amount)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+		if err := client.CheckTx(tx); err != nil {
+			glog.Error(err)
+			return
+		}
 
-	tx, err = client.Deposit(depositAmount)
-	if err != nil {
-		glog.Error(err)
-		return
-	}
-	err = client.CheckTx(tx)
-	if err != nil {
-		glog.Error(err)
-		return
-	}
-	glog.Info("Done depositing")
-	if !isBroadcaster {
+		glog.Info("Done funding deposit and reserve")
+	} else {
+		glog.Infof("Requesting tokens from faucet")
+
+		tx, err := client.Request()
+		if err != nil {
+			glog.Errorf("Error requesting tokens from faucet: %v", err)
+			return
+		}
+
+		err = client.CheckTx(tx)
+		if err != nil {
+			glog.Errorf("Error requesting tokens from faucet: %v", err)
+			return
+		}
+		glog.Info("Done requesting tokens.")
+		time.Sleep(4 * time.Second)
+
 		// XXX TODO curl -X "POST" http://localhost:$transcoderCliPort/initializeRound
 		time.Sleep(3 * time.Second)
 		for {
@@ -169,7 +221,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 			glog.Info("Waiting will first round ended.")
 			time.Sleep(4 * time.Second)
 		}
-		tx, err := client.InitializeRound()
+		tx, err = client.InitializeRound()
 		// ErrRoundInitialized
 		if err != nil {
 			if err.Error() != "ErrRoundInitialized" {
@@ -185,7 +237,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		}
 		glog.Info("Done initializing round.")
 		glog.Info("Activating transcoder")
-		// curl -d "blockRewardCut=10&feeShare=5&pricePerSegment=1&amount=500" --data-urlencode "serviceURI=https://$transcoderServiceAddr" \
+		// curl -d "blockRewardCut=10&feeShare=5&amount=500" --data-urlencode "serviceURI=https://$transcoderServiceAddr" \
 		//   -H "Content-Type: application/x-www-form-urlencoded" \
 		//   -X "POST" http://localhost:$transcoderCliPort/activateTranscoder\
 		var amount *big.Int = big.NewInt(int64(500))
@@ -199,13 +251,13 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 
 		err = client.CheckTx(tx)
 		if err != nil {
+			glog.Error("=== Bonding failed")
 			glog.Error(err)
 			return
 		}
 		glog.Infof("Registering transcoder %v", ethAcctAddr)
-		price := big.NewInt(1)
 
-		tx, err = client.Transcoder(eth.FromPerc(10), eth.FromPerc(5), price)
+		tx, err = client.Transcoder(eth.FromPerc(10), eth.FromPerc(5))
 		if err == eth.ErrCurrentRoundLocked {
 			// wait for next round and retry
 		}
@@ -235,21 +287,35 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	}
 }
 
-func createRunScript(ethAcctAddr, dataDir string, isBroadcaster bool) {
+func createTranscoderRunScript(ethAcctAddr, dataDir, serviceHost string) {
 	script := "#!/bin/bash\n"
-	script += fmt.Sprintf(`./livepeer -v 99 -controllerAddr %s -datadir ./%s \
+	// script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s \
+	script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s -orchSecret secre -orchAddr %s:%d -transcoder`,
+		dataDir, serviceHost, mediaPort)
+	fName := fmt.Sprintf("run_transcoder_%s.sh", ethAcctAddr)
+	err := ioutil.WriteFile(fName, []byte(script), 0755)
+	if err != nil {
+		glog.Warningf("Error writing run script: %v", err)
+	}
+}
+
+func createRunScript(ethAcctAddr, dataDir, serviceHost string, isBroadcaster bool) {
+	script := "#!/bin/bash\n"
+	script += fmt.Sprintf(`./livepeer -v 99 -ethController %s -datadir ./%s \
     -ethAcctAddr %s \
     -ethUrl %s \
     -ethPassword "" \
-    -gasPrice 200 -gasLimit 2000000 \
-    -monitor=false -currentManifest=true `,
-		controllerAddr, dataDir, ethAcctAddr, endpoint)
+    -network=devenv \
+    -monitor=false -currentManifest=true -cliAddr %s:%d -httpAddr %s:%d `,
+		ethController, dataDir, ethAcctAddr, endpoint, serviceHost, cliPort, serviceHost, mediaPort)
 
 	if !isBroadcaster {
 		script += fmt.Sprintf(` -initializeRound=true \
-    -serviceAddr 127.0.0.1:8936 -httpAddr 127.0.0.1:8936  -transcoder \
-    -cliAddr 127.0.0.1:7936 -ipfsPath ./%s/trans
-    `, dataDir)
+    -serviceAddr %s:%d  -transcoder=true -orchestrator=true \
+    -orchSecret secre -pricePerUnit 1
+    `, serviceHost, mediaPort)
+	} else {
+		script += fmt.Sprintf(` -broadcaster=true -rtmpAddr %s:%d`, serviceHost, rtmpPort)
 	}
 
 	glog.Info(script)
@@ -276,21 +342,37 @@ func remoteConsole(destAccountAddr string) error {
 	if destAccountAddr != "" {
 		broadcasterGeth = destAccountAddr
 	}
-	script := fmt.Sprintf("eth.sendTransaction({from: \"%s\", to: \"%s\", value: web3.toWei(834, \"ether\")})",
-		gethMiningAccount, broadcasterGeth)
 
 	client, err := rpc.Dial(endpoint)
 	if err != nil {
 		glog.Fatalf("Unable to attach to remote geth: %v", err)
 	}
+	// get mining account
+	if !gethMiningAccountOverride {
+		var accounts []string
+		err = client.Call(&accounts, "eth_accounts")
+		if err != nil {
+			glog.Fatalf("Error finding mining account: %v", err)
+		}
+		if len(accounts) == 0 {
+			glog.Fatal("Can't find mining account")
+		}
+		gethMiningAccount = accounts[0]
+		glog.Infof("Found mining account: %s", gethMiningAccount)
+	}
+
 	tmp, err := ioutil.TempDir("", "console")
 	if err != nil {
 		glog.Fatalf("Can't create temporary directory: %v", err)
 	}
 	defer os.RemoveAll(tmp)
+
+	printer := new(bytes.Buffer)
+
 	config := console.Config{
 		DataDir: tmp,
 		Client:  client,
+		Printer: printer,
 	}
 
 	console, err := console.New(config)
@@ -298,6 +380,34 @@ func remoteConsole(destAccountAddr string) error {
 		glog.Fatalf("Failed to start the JavaScript console: %v", err)
 	}
 	defer console.Stop(false)
+
+	if !ethControllerOverride {
+		// f9a6cf519167d81bc5cb3d26c60c0c9a19704aa908c148e82a861b570f4cd2d7 - SetContractInfo event
+		getEthControllerScript := `
+		var logs = [];
+		var filter = web3.eth.filter({ fromBlock: 0, toBlock: "latest",
+			topics: ["0xf9a6cf519167d81bc5cb3d26c60c0c9a19704aa908c148e82a861b570f4cd2d7"]});
+		filter.get(function(error, result){
+			logs.push(result);
+		});
+		console.log(logs[0][0].address);''
+	`
+		glog.Infof("Running eth script: %s", getEthControllerScript)
+		err = console.Evaluate(getEthControllerScript)
+		if err != nil {
+			glog.Error(err)
+		}
+		if printer.Len() == 0 {
+			glog.Fatal("Can't find deployed controller")
+		}
+		ethController = strings.Split(printer.String(), "\n")[0]
+
+		glog.Infof("Found controller address: %s", ethController)
+	}
+
+	script := fmt.Sprintf("eth.sendTransaction({from: \"%s\", to: \"%s\", value: web3.toWei(834, \"ether\")})",
+		gethMiningAccount, broadcasterGeth)
+	glog.Infof("Running eth script: %s", script)
 
 	err = console.Evaluate(script)
 	if err != nil {
@@ -307,4 +417,70 @@ func remoteConsole(destAccountAddr string) error {
 	time.Sleep(3 * time.Second)
 
 	return err
+}
+
+func moveDir(src, dst string) error {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	originalMode := info.Mode()
+
+	if err := os.MkdirAll(dst, os.FileMode(0755)); err != nil {
+		return err
+	}
+	defer os.Chmod(dst, originalMode)
+
+	contents, err := ioutil.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, content := range contents {
+		cs, cd := filepath.Join(src, content.Name()), filepath.Join(dst, content.Name())
+		if err := moveFile(cs, cd, content); err != nil {
+			return err
+		}
+	}
+
+	err = os.Remove(src)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func moveFile(src, dst string, info os.FileInfo) error {
+	if err := os.MkdirAll(filepath.Dir(dst), os.ModePerm); err != nil {
+		return err
+	}
+
+	f, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if err = os.Chmod(f.Name(), info.Mode()); err != nil {
+		return err
+	}
+
+	s, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	_, err = io.Copy(f, s)
+	if err != nil {
+		return err
+	}
+
+	err = os.Remove(src)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

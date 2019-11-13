@@ -1,22 +1,34 @@
 package common
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"math/rand"
+	"regexp"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"google.golang.org/grpc/peer"
 )
+
+// HTTPTimeout timeout used in HTTP connections between nodes
+const HTTPTimeout = 8 * time.Second
 
 var (
 	ErrParseBigInt = fmt.Errorf("failed to parse big integer")
 	ErrProfile     = fmt.Errorf("failed to parse profile")
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 func ParseBigInt(num string) (*big.Int, error) {
 	bigNum := new(big.Int)
@@ -128,4 +140,58 @@ func ProfilesToTranscodeOpts(profiles []ffmpeg.VideoProfile) []byte {
 
 func ProfilesToHex(profiles []ffmpeg.VideoProfile) string {
 	return hex.EncodeToString(ProfilesToTranscodeOpts(profiles))
+}
+
+func ProfilesNames(profiles []ffmpeg.VideoProfile) string {
+	names := make(sort.StringSlice, 0, len(profiles))
+	for _, p := range profiles {
+		names = append(names, p.Name)
+	}
+	names.Sort()
+	return strings.Join(names, ",")
+}
+
+func GetConnectionAddr(ctx context.Context) string {
+	from := "unknown"
+	if p, ok := peer.FromContext(ctx); ok {
+		from = p.Addr.String()
+	}
+	return from
+}
+
+// GenErrRegex generates a regexp `(err1)|(err2)|(err3)` given a list of
+// error strings [err1, err2, err3]
+func GenErrRegex(errStrings []string) *regexp.Regexp {
+	groups := []string{}
+	for _, v := range errStrings {
+		groups = append(groups, fmt.Sprintf("(%v)", v))
+	}
+	return regexp.MustCompile(strings.Join(groups, "|"))
+}
+
+// PriceToFixed converts a big.Rat into a fixed point number represented as int64
+// using a scaleFactor of 1000 resulting in max decimal places of 3
+func PriceToFixed(price *big.Rat) (int64, error) {
+	scalingFactor := int64(1000)
+	if price == nil {
+		return 0, fmt.Errorf("reference to rat is nil")
+	}
+	scaled := new(big.Rat).Mul(price, big.NewRat(scalingFactor, 1))
+	fp, _ := new(big.Float).SetRat(scaled).Int64()
+	return fp, nil
+}
+
+// RandomIDGenerator generates random hexadecimal string of specified length
+// defined as variable for unit tests
+var RandomIDGenerator = func(length uint) string {
+	x := make([]byte, length, length)
+	for i := 0; i < len(x); i++ {
+		x[i] = byte(rand.Uint32())
+	}
+	return hex.EncodeToString(x)
+}
+
+// RandName generates random hexadecimal string
+func RandName() string {
+	return RandomIDGenerator(10)
 }

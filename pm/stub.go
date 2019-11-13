@@ -87,24 +87,27 @@ func (sv *stubSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool 
 }
 
 type stubBroker struct {
-	deposits          map[ethcommon.Address]*big.Int
-	penaltyEscrows    map[ethcommon.Address]*big.Int
-	usedTickets       map[ethcommon.Hash]bool
-	approvedSigners   map[ethcommon.Address]bool
-	redeemShouldFail  bool
-	sendersShouldFail bool
+	deposits        map[ethcommon.Address]*big.Int
+	reserves        map[ethcommon.Address]*big.Int
+	usedTickets     map[ethcommon.Hash]bool
+	approvedSigners map[ethcommon.Address]bool
+	mu              sync.Mutex
+
+	redeemShouldFail           bool
+	getSenderInfoShouldFail    bool
+	claimableReserveShouldFail bool
+
+	checkTxErr error
 }
 
 func newStubBroker() *stubBroker {
 	return &stubBroker{
-		deposits:        make(map[ethcommon.Address]*big.Int),
-		penaltyEscrows:  make(map[ethcommon.Address]*big.Int),
 		usedTickets:     make(map[ethcommon.Hash]bool),
 		approvedSigners: make(map[ethcommon.Address]bool),
 	}
 }
 
-func (b *stubBroker) FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) (*types.Transaction, error) {
+func (b *stubBroker) FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
 
@@ -112,19 +115,7 @@ func (b *stubBroker) FundDeposit(amount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
 
-func (b *stubBroker) FundPenaltyEscrow(amount *big.Int) (*types.Transaction, error) {
-	return nil, nil
-}
-
-func (b *stubBroker) ApproveSigners(signers []ethcommon.Address) (*types.Transaction, error) {
-	for i := 0; i < len(signers); i++ {
-		b.approvedSigners[signers[i]] = true
-	}
-
-	return nil, nil
-}
-
-func (b *stubBroker) RequestSignersRevocation(signers []ethcommon.Address) (*types.Transaction, error) {
+func (b *stubBroker) FundReserve(amount *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
 
@@ -141,6 +132,9 @@ func (b *stubBroker) Withdraw() (*types.Transaction, error) {
 }
 
 func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if b.redeemShouldFail {
 		return nil, fmt.Errorf("stub broker redeem error")
 	}
@@ -151,36 +145,22 @@ func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRa
 }
 
 func (b *stubBroker) IsUsedTicket(ticket *Ticket) (bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	return b.usedTickets[ticket.Hash()], nil
 }
 
-func (b *stubBroker) IsApprovedSigner(sender ethcommon.Address, signer ethcommon.Address) (bool, error) {
-	return b.approvedSigners[signer], nil
-}
-
-func (b *stubBroker) SetDeposit(addr ethcommon.Address, amount *big.Int) {
-	b.deposits[addr] = amount
-}
-
-func (b *stubBroker) SetPenaltyEscrow(addr ethcommon.Address, amount *big.Int) {
-	b.penaltyEscrows[addr] = amount
-}
-
-func (b *stubBroker) Senders(addr ethcommon.Address) (sender struct {
-	Deposit       *big.Int
-	PenaltyEscrow *big.Int
-	WithdrawBlock *big.Int
-}, err error) {
-	if b.sendersShouldFail {
-		err = fmt.Errorf("stub broker senders error")
-		return
+func (b *stubBroker) ClaimableReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
+	if b.claimableReserveShouldFail {
+		return nil, fmt.Errorf("stub broker ClaimableReserve error")
 	}
 
-	sender.Deposit = b.deposits[addr]
-	sender.PenaltyEscrow = b.penaltyEscrows[addr]
-	sender.WithdrawBlock = big.NewInt(0)
+	return b.reserves[reserveHolder], nil
+}
 
-	return
+func (b *stubBroker) CheckTx(tx *types.Transaction) error {
+	return b.checkTxErr
 }
 
 type stubValidator struct {
@@ -211,7 +191,7 @@ func (v *stubValidator) IsWinningTicket(ticket *Ticket, sig []byte, recipientRan
 type stubSigner struct {
 	account         accounts.Account
 	saveSignRequest bool
-	lastSignRequest []byte
+	signRequests    [][]byte
 	signResponse    []byte
 	signShouldFail  bool
 }
@@ -225,7 +205,7 @@ func (s *stubSigner) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bi
 
 func (s *stubSigner) Sign(msg []byte) ([]byte, error) {
 	if s.saveSignRequest {
-		s.lastSignRequest = msg
+		s.signRequests = append(s.signRequests, msg)
 	}
 	if s.signShouldFail {
 		return nil, fmt.Errorf("stub returning error as requested")
@@ -237,23 +217,146 @@ func (s *stubSigner) Account() accounts.Account {
 	return s.account
 }
 
-// MockRecipient is useful for testing components that depend on pm.Recipient, such as
-// LivepeerNode
+type stubRoundsManager struct {
+	round              *big.Int
+	blkHash            [32]byte
+	transcoderPoolSize *big.Int
+}
+
+func (m *stubRoundsManager) LastInitializedRound() *big.Int {
+	return m.round
+}
+
+func (m *stubRoundsManager) LastInitializedBlockHash() [32]byte {
+	return m.blkHash
+}
+
+func (m *stubRoundsManager) GetTranscoderPoolSize() *big.Int {
+	return m.transcoderPoolSize
+}
+
+type stubSenderManager struct {
+	info           map[ethcommon.Address]*SenderInfo
+	claimedReserve map[ethcommon.Address]*big.Int
+	err            error
+}
+
+func newStubSenderManager() *stubSenderManager {
+	return &stubSenderManager{
+		info:           make(map[ethcommon.Address]*SenderInfo),
+		claimedReserve: make(map[ethcommon.Address]*big.Int),
+	}
+}
+
+func (s *stubSenderManager) GetSenderInfo(addr ethcommon.Address) (*SenderInfo, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	return s.info[addr], nil
+}
+
+func (s *stubSenderManager) ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.claimedReserve[reserveHolder], nil
+}
+
+func (s *stubSenderManager) Clear(addr ethcommon.Address) {
+	delete(s.info, addr)
+	delete(s.claimedReserve, addr)
+}
+
+type stubGasPriceMonitor struct {
+	gasPrice *big.Int
+}
+
+func (s *stubGasPriceMonitor) GasPrice() *big.Int {
+	return s.gasPrice
+}
+
+type stubSenderMonitor struct {
+	maxFloat    *big.Int
+	redeemable  chan *SignedTicket
+	queued      []*SignedTicket
+	acceptable  bool
+	addFloatErr error
+	maxFloatErr error
+}
+
+func newStubSenderMonitor() *stubSenderMonitor {
+	return &stubSenderMonitor{
+		maxFloat:   big.NewInt(0),
+		redeemable: make(chan *SignedTicket),
+	}
+}
+
+func (s *stubSenderMonitor) Start() {}
+
+func (s *stubSenderMonitor) Stop() {}
+
+func (s *stubSenderMonitor) Redeemable() chan *SignedTicket {
+	return s.redeemable
+}
+
+func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) {
+	s.queued = append(s.queued, ticket)
+}
+
+func (s *stubSenderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error {
+	if s.addFloatErr != nil {
+		return s.addFloatErr
+	}
+
+	return nil
+}
+
+func (s *stubSenderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) {
+	s.maxFloat.Sub(s.maxFloat, amount)
+}
+
+func (s *stubSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
+	if s.maxFloatErr != nil {
+		return nil, s.maxFloatErr
+	}
+
+	return s.maxFloat, nil
+}
+
+// MockRecipient is useful for testing components that depend on pm.Recipient
 type MockRecipient struct {
 	mock.Mock
 }
 
+// Start initiates the helper goroutines for the recipient
+func (m *MockRecipient) Start() {}
+
+// Stop signals the recipient to exit gracefully
+func (m *MockRecipient) Stop() {}
+
+// ReceiveTicket validates and processes a received ticket
 func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error) {
 	args := m.Called(ticket, sig, seed)
 	return args.String(0), args.Bool(1), args.Error(2)
 }
 
+// RedeemWinningTickets redeems all winning tickets with the broker
+// for a all sessionIDs
 func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
 	args := m.Called(sessionIDs)
 	return args.Error(0)
 }
 
-func (m *MockRecipient) TicketParams(sender ethcommon.Address) *TicketParams {
+// RedeemWinningTicket redeems a single winning ticket
+func (m *MockRecipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error {
+	args := m.Called(ticket, sig, seed)
+	return args.Error(0)
+}
+
+// TicketParams returns the recipient's currently accepted ticket parameters
+// for a provided sender ETH adddress
+func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
 	args := m.Called(sender)
 
 	var params *TicketParams
@@ -261,7 +364,23 @@ func (m *MockRecipient) TicketParams(sender ethcommon.Address) *TicketParams {
 		params = args.Get(0).(*TicketParams)
 	}
 
-	return params
+	return params, args.Error(1)
+}
+
+// TxCostMultiplier returns the transaction cost multiplier for a sender based on sender's MaxFloat
+func (m *MockRecipient) TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error) {
+	args := m.Called(sender)
+	var multiplier *big.Rat
+	if args.Get(0) != nil {
+		multiplier = args.Get(0).(*big.Rat)
+	}
+	return multiplier, args.Error(1)
+}
+
+// EV Returns the recipient's request ticket EV
+func (m *MockRecipient) EV() *big.Rat {
+	args := m.Called()
+	return args.Get(0).(*big.Rat)
 }
 
 // MockSender is useful for testing components that depend on pm.Sender
@@ -269,29 +388,82 @@ type MockSender struct {
 	mock.Mock
 }
 
+// StartSession creates a session for a given set of ticket params which tracks information
+// for creating new tickets
 func (m *MockSender) StartSession(ticketParams TicketParams) string {
 	args := m.Called(ticketParams)
 	return args.String(0)
 }
 
-func (m *MockSender) CreateTicket(sessionID string) (*Ticket, *big.Int, []byte, error) {
+// EV returns the ticket EV for a session
+func (m *MockSender) EV(sessionID string) (*big.Rat, error) {
 	args := m.Called(sessionID)
 
-	var ticket *Ticket
-	var seed *big.Int
-	var sig []byte
-
+	var ev *big.Rat
 	if args.Get(0) != nil {
-		ticket = args.Get(0).(*Ticket)
+		ev = args.Get(0).(*big.Rat)
 	}
 
-	if args.Get(1) != nil {
-		seed = args.Get(1).(*big.Int)
+	return ev, args.Error(1)
+}
+
+// CreateTicketBatch returns a ticket batch of the specified size
+func (m *MockSender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, error) {
+	args := m.Called(sessionID, size)
+
+	var batch *TicketBatch
+	if args.Get(0) != nil {
+		batch = args.Get(0).(*TicketBatch)
 	}
 
-	if args.Get(2) != nil {
-		sig = args.Get(2).([]byte)
-	}
+	return batch, args.Error(1)
+}
 
-	return ticket, seed, sig, args.Error(3)
+// ValidateTicketParams checks if ticket params are acceptable
+func (m *MockSender) ValidateTicketParams(ticketParams *TicketParams) error {
+	args := m.Called(ticketParams)
+	return args.Error(0)
+}
+
+// MockReceiveError is for testing acceptable/unacceptable PM ticket errors
+type MockReceiveError struct {
+	err        error
+	acceptable bool
+}
+
+type acceptableError interface {
+	error
+
+	// Acceptable returns whether the error is acceptable
+	Acceptable() bool
+}
+
+// Error returns the underlying error as a string
+func (re *MockReceiveError) Error() string {
+	return re.err.Error()
+}
+
+// Acceptable returns whether the error is acceptable
+func (re *MockReceiveError) Acceptable() bool {
+	return re.acceptable
+}
+
+// NewMockReceiveError creates a new acceptable/unacceptable MocKReceiveError
+func NewMockReceiveError(err error, acceptable bool) *MockReceiveError {
+	return &MockReceiveError{
+		err,
+		acceptable,
+	}
+}
+
+type stubErrorMonitor struct {
+	acceptable bool
+}
+
+func (em *stubErrorMonitor) AcceptErr(sender ethcommon.Address) bool {
+	return em.acceptable
+}
+
+func (em *stubErrorMonitor) ClearErrCount(sender ethcommon.Address) {
+	em.acceptable = true
 }

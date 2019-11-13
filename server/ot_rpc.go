@@ -9,17 +9,21 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"os"
+	"os/signal"
 	"strconv"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
@@ -28,30 +32,51 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 )
 
-const ProtoVer_LPT = "Livepeer-Transcoder-1.0"
-const TranscodingErrorMimeType = "livepeer/transcoding-error"
+const protoVerLPT = "Livepeer-Transcoder-1.0"
+const transcodingErrorMimeType = "livepeer/transcoding-error"
 
-var SecretErr = errors.New("Invalid secret")
+var errSecret = errors.New("Invalid secret")
+var errZeroCapacity = errors.New("Zero capacity")
 
-// Transcoder
+// Standalone Transcoder
 
-func RunTranscoder(n *core.LivepeerNode, orchAddr string) {
+// RunTranscoder is main routing of standalone transcoder
+// Exiting it will terminate executable
+func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
 	backoff.Retry(func() error {
 		glog.Info("Registering transcoder to ", orchAddr)
-		err := runTranscoder(n, orchAddr)
+		err := runTranscoder(n, orchAddr, capacity)
 		glog.Info("Unregistering transcoder: ", err)
-		if err != SecretErr {
-			return err
+		if _, fatal := err.(core.RemoteTranscoderFatalError); fatal {
+			glog.Info("Terminating transcoder because of ", err)
+			// Returning nil here will make `backoff` to stop trying to reconnect and exit
+			return nil
 		}
-		glog.Info("Terminating transcoder")
-		return nil
+		// By returning error we tell `backoff` to try to connect again
+		return err
 	}, expb)
 }
 
-func runTranscoder(n *core.LivepeerNode, orchAddr string) error {
+func checkTranscoderError(err error) error {
+	if err != nil {
+		s := status.Convert(err)
+		if s.Message() == errSecret.Error() { // consider this unrecoverable
+			return core.NewRemoteTranscoderFatalError(errSecret)
+		}
+		if s.Message() == errZeroCapacity.Error() { // consider this unrecoverable
+			return core.NewRemoteTranscoderFatalError(errZeroCapacity)
+		}
+		if status.Code(err) == codes.Canceled {
+			return core.NewRemoteTranscoderFatalError(fmt.Errorf("Execution interrupted"))
+		}
+	}
+	return err
+}
+
+func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -63,91 +88,119 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string) error {
 
 	c := net.NewTranscoderClient(conn)
 	ctx := context.Background()
-	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret})
-	if err != nil {
+	ctx, cancel := context.WithCancel(ctx)
+	// Silence linter
+	defer cancel()
+	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity)})
+	if err := checkTranscoderError(err); err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
-		status := status.Convert(err)
-		if status.Message() == SecretErr.Error() { // consider this unrecoverable
-			return SecretErr
-		}
 		return err
 	}
 
+	// Catch interrupt signal to shut down transcoder
+	exitc := make(chan os.Signal)
+	signal.Notify(exitc, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(exitc)
+	go func() {
+		select {
+		case sig := <-exitc:
+			glog.Infof("Exiting Livepeer Transcoder: %v", sig)
+			// Cancelling context will close connection to orchestrator
+			cancel()
+			return
+		}
+	}()
+
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	var wg sync.WaitGroup
 	for {
 		notify, err := r.Recv()
-		if err != nil {
-			status := status.Convert(err)
-			if status.Message() == SecretErr.Error() { // consider this unrecoverable
-				return SecretErr
-			}
+		if err := checkTranscoderError(err); err != nil {
+			glog.Infof(`End of stream receive cycle because of err="%v", waiting for running transcode jobs to complete`, err)
+			wg.Wait()
 			return err
 		}
-		profiles, err := common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
-		if err != nil {
-			glog.Info("Unable to deserialize profiles ", err)
-		}
+		wg.Add(1)
+		go func() {
+			runTranscode(n, orchAddr, httpc, notify)
+			wg.Done()
+		}()
+	}
+}
 
-		glog.Info("Transcoding ", notify.TaskId)
-		var contentType string
-		var body bytes.Buffer
+func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifySegment) {
+	profiles, err := common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
+	if err != nil {
+		glog.Info("Unable to deserialize profiles ", err)
+	}
 
-		tData, err := n.Transcoder.Transcode(notify.Url, profiles)
-		if err != nil {
-			glog.Error("Unable to transcode ", err)
-			body.Write([]byte(err.Error()))
-			contentType = TranscodingErrorMimeType
-		} else {
-			boundary := randName()
-			w := multipart.NewWriter(&body)
-			for _, v := range tData {
-				w.SetBoundary(boundary)
-				hdrs := textproto.MIMEHeader{
-					"Content-Type":   {"video/MP2T"},
-					"Content-Length": {strconv.Itoa(len(v))},
-				}
-				fw, err := w.CreatePart(hdrs)
-				if err != nil {
-					glog.Error("Could not create multipart part ", err)
-					return err // XXX respond w error to orchestrator
-				}
-				io.Copy(fw, bytes.NewBuffer(v))
+	glog.Infof("Transcoding taskId=%d url=%s", notify.TaskId, notify.Url)
+	var contentType string
+	var body bytes.Buffer
+
+	tData, err := n.Transcoder.Transcode(notify.Url, profiles)
+	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
+	if err != nil {
+		glog.Error("Unable to transcode ", err)
+		body.Write([]byte(err.Error()))
+		contentType = transcodingErrorMimeType
+	} else {
+		boundary := common.RandName()
+		w := multipart.NewWriter(&body)
+		for _, v := range tData.Segments {
+			w.SetBoundary(boundary)
+			hdrs := textproto.MIMEHeader{
+				"Content-Type":   {"video/MP2T"},
+				"Content-Length": {strconv.Itoa(len(v.Data))},
+				"Pixels":         {strconv.FormatInt(v.Pixels, 10)},
 			}
-			w.Close()
-			contentType = "multipart/mixed; boundary=" + boundary
+			fw, err := w.CreatePart(hdrs)
+			if err != nil {
+				glog.Error("Could not create multipart part ", err)
+			}
+			io.Copy(fw, bytes.NewBuffer(v.Data))
 		}
-		req, err := http.NewRequest("POST", "https://"+orchAddr+"/transcodeResults", &body)
-		if err != nil {
-			glog.Error("Error posting results ", err)
-			return err
-		}
-		req.Header.Set("Authorization", ProtoVer_LPT)
-		req.Header.Set("Credentials", n.OrchSecret)
-		req.Header.Set("Content-Type", contentType)
-		req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
-		resp, err := httpc.Do(req)
-		if err != nil {
-			glog.Error("Error submitting results ", err)
-			return err
-		}
+		w.Close()
+		contentType = "multipart/mixed; boundary=" + boundary
+	}
+	req, err := http.NewRequest("POST", "https://"+orchAddr+"/transcodeResults", &body)
+	if err != nil {
+		glog.Error("Error posting results ", err)
+	}
+	req.Header.Set("Authorization", protoVerLPT)
+	req.Header.Set("Credentials", n.OrchSecret)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
+	if tData != nil {
+		req.Header.Set("Pixels", strconv.FormatInt(tData.Pixels, 10))
+	}
+	resp, err := httpc.Do(req)
+	if err != nil {
+		glog.Error("Error submitting results ", err)
+	} else {
 		ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 	}
-	return nil
+	glog.V(common.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
 }
 
 // Orchestrator gRPC
 
 func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transcoder_RegisterTranscoderServer) error {
-	glog.Info("Got a RegisterTranscoder request for ", req.Secret)
+	from := common.GetConnectionAddr(stream.Context())
+	glog.Infof("Got a RegisterTranscoder request from transcoder=%s capacity=%d", from, req.Capacity)
 
 	if req.Secret != h.orchestrator.TranscoderSecret() {
-		glog.Info(SecretErr.Error())
-		return SecretErr
+		glog.Info(errSecret.Error())
+		return errSecret
+	}
+	if req.Capacity <= 0 {
+		glog.Info(errZeroCapacity.Error())
+		return errZeroCapacity
 	}
 
 	// blocks until stream is finished
-	h.orchestrator.ServeTranscoder(stream)
+	h.orchestrator.ServeTranscoder(stream, int(req.Capacity))
 	return nil
 }
 
@@ -158,7 +211,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 
 	authType := r.Header.Get("Authorization")
 	creds := r.Header.Get("Credentials")
-	if ProtoVer_LPT != authType {
+	if protoVerLPT != authType {
 		glog.Error("Invalid auth type ", authType)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -184,22 +237,29 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	decodedPixels, err := strconv.ParseInt(r.Header.Get("Pixels"), 10, 64)
+	if err != nil {
+		glog.Error("Could not parse decoded pixels", err)
+		http.Error(w, "Invalid Pixels", http.StatusBadRequest)
+		return
+	}
+
 	var res core.RemoteTranscoderResult
-	if TranscodingErrorMimeType == mediaType {
+	if transcodingErrorMimeType == mediaType {
 		w.Write([]byte("OK"))
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			glog.Error("Unable to read transcoding error body ", err)
+			glog.Errorf("Unable to read transcoding error body taskID=%v err=%v", tid, err)
 			res.Err = err
 		} else {
 			res.Err = fmt.Errorf(string(body))
 		}
-		glog.Error("Trascoding error ", res.Err)
+		glog.Errorf("Trascoding error for taskID=%v err=%v", tid, res.Err)
 		orch.TranscoderResults(tid, &res)
 		return
 	}
 
-	var segments [][]byte
+	var segments []*core.TranscodedSegmentData
 	if "multipart/mixed" == mediaType {
 		mr := multipart.NewReader(r.Body, params["boundary"])
 		for {
@@ -218,9 +278,20 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 				res.Err = err
 				break
 			}
-			segments = append(segments, body)
+
+			encodedPixels, err := strconv.ParseInt(p.Header.Get("Pixels"), 10, 64)
+			if err != nil {
+				glog.Error("Error getting pixels in header:", err)
+				res.Err = err
+				break
+			}
+
+			segments = append(segments, &core.TranscodedSegmentData{Data: body, Pixels: encodedPixels})
 		}
-		res.Segments = segments
+		res.TranscodeData = &core.TranscodeData{
+			Segments: segments,
+			Pixels:   decodedPixels,
+		}
 		orch.TranscoderResults(tid, &res)
 	}
 	if res.Err != nil {
@@ -228,15 +299,4 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write([]byte("OK"))
-}
-
-// utils
-
-func randName() string {
-	rand.Seed(time.Now().UnixNano())
-	x := make([]byte, 10, 10)
-	for i := 0; i < len(x); i++ {
-		x[i] = byte(rand.Uint32())
-	}
-	return hex.EncodeToString(x)
 }

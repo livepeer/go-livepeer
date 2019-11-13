@@ -5,6 +5,8 @@
 ![broadcaster-transcoder network v2 1](https://user-images.githubusercontent.com/292510/41455677-c8437268-7032-11e8-9ce8-bfdd9b6e3fc0.png)
 [Sequence diagram source](https://sequencediagram.org/index.html#initialData=C4S2BsFMAIBkQG6QA6UgJ2gOUsA7gPboDWIAdgObQIBMAUHcgIbqgDGIzZw0ASpBRABnYOgCedAELoCTACZsmIjAFoAfP0EjxALmgB5dGwAWkbU2BE+kAI51Nw0WJXrpshUuAY9hk2dEWVvxCyAxu8orK6Oq+puaW6DoAOmQAKuhMZEJsBHIY1nbhHlEAPC6x-hkJOumZ2bn5AJJkAGYEDAzgBAShRZFe0Wq1WTl5idAAygIAtpDcBVIyEZ4YZSrD9WN6UxSz88Ghc3J0QA)
 
+For a reference each message used by Livepeer, refer to the [Protocol Buffers definitions](https://github.com/livepeer/go-livepeer/blob/master/net/lp_rpc.proto).
+
 
 ## Broadcaster to Registry
 
@@ -44,6 +46,9 @@ message OrchestratorInfo {
 
   // URI of the orchestrator to use for submitting segments
   string orchestrator = 1;
+
+  // Parameters for probabilistic micropayment tickets
+  TicketParams ticket_params = 2;
 
   // Orchestrator's preferred object storage, if any
   repeated OSInfo storage = 32;
@@ -142,6 +147,27 @@ Currently, any errors are dumped directly into the response in stringified form.
 Broadcasters can use the difference in time between the request submissing and the 200ok to approximate the upload time. The time between the 200ok and receiving the response body approximates the transcode time.
 
 There is an end-to-end request timeout of 8 seconds, However, issues are likely to appear earlier, and any issues will likely to lead to gaps in playback and stuttering. For example, live streams that consistently take 4+ seconds (the segment length) to upload and transcode will be outrun by players.
+
+## Ping
+
+### gRPC `Ping : PingPong -> PingPong`
+
+Upon startup, an orchestrator will verify its availability on the network. This is done by sending itself a `Ping` request with a random value, and verifying its own signature in the response.
+
+```proto
+message PingPong {
+
+  // Implementation defined
+  bytes value = 1;
+}
+```
+
+### Notes
+
+The address the orchestrator uses to check availability is as follows:
+* If a `-serviceAddr` is set, use that address
+* If a Service URI is set in the Ethereum service registry, use that address
+* Otherwise, discover the node's public IP and use that address
 
 ## TLS Certificates
 

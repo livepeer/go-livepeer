@@ -7,10 +7,9 @@ package eth
 //go:generate abigen --abi protocol/abi/LivepeerToken.abi --pkg contracts --type LivepeerToken --out contracts/livepeerToken.go
 //go:generate abigen --abi protocol/abi/ServiceRegistry.abi --pkg contracts --type ServiceRegistry --out contracts/serviceRegistry.go
 //go:generate abigen --abi protocol/abi/BondingManager.abi --pkg contracts --type BondingManager --out contracts/bondingManager.go
-//go:generate abigen --abi protocol/abi/LivepeerETHTicketBroker.abi --pkg contracts --type LivepeerETHTicketBroker --out contracts/livepeerETHTicketBroker.go
+//go:generate abigen --abi protocol/abi/TicketBroker.abi --pkg contracts --type TicketBroker --out contracts/ticketBroker.go
 //go:generate abigen --abi protocol/abi/RoundsManager.abi --pkg contracts --type RoundsManager --out contracts/roundsManager.go
 //go:generate abigen --abi protocol/abi/Minter.abi --pkg contracts --type Minter --out contracts/minter.go
-//go:generate abigen --abi protocol/abi/LivepeerVerifier.abi --pkg contracts --type LivepeerVerifier --out contracts/livepeerVerifier.go
 //go:generate abigen --abi protocol/abi/LivepeerTokenFaucet.abi --pkg contracts --type LivepeerTokenFaucet --out contracts/livepeerTokenFaucet.go
 
 import (
@@ -21,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -45,14 +43,16 @@ var (
 type LivepeerEthClient interface {
 	Setup(password string, gasLimit uint64, gasPrice *big.Int) error
 	Account() accounts.Account
-	Backend() (*ethclient.Client, error)
+	Backend() (Backend, error)
 
 	// Rounds
 	InitializeRound() (*types.Transaction, error)
 	CurrentRound() (*big.Int, error)
 	LastInitializedRound() (*big.Int, error)
+	BlockHashForRound(round *big.Int) ([32]byte, error)
 	CurrentRoundInitialized() (bool, error)
 	CurrentRoundLocked() (bool, error)
+	CurrentRoundStartBlock() (*big.Int, error)
 
 	// Token
 	Transfer(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error)
@@ -65,7 +65,7 @@ type LivepeerEthClient interface {
 	GetServiceURI(addr ethcommon.Address) (string, error)
 
 	// Staking
-	Transcoder(blockRewardCut *big.Int, feeShare *big.Int, pricePerSegment *big.Int) (*types.Transaction, error)
+	Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transaction, error)
 	Reward() (*types.Transaction, error)
 	Bond(amount *big.Int, toAddr ethcommon.Address) (*types.Transaction, error)
 	Rebond(unbondingLockID *big.Int) (*types.Transaction, error)
@@ -81,29 +81,23 @@ type LivepeerEthClient interface {
 	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
 	GetTotalBonded() (*big.Int, error)
+	GetTranscoderPoolSize() (*big.Int, error)
 
 	// TicketBroker
-	FundAndApproveSigners(depositAmount *big.Int, penaltyEscrowAmount *big.Int, signers []ethcommon.Address) (*types.Transaction, error)
+	FundDepositAndReserve(depositAmount, penaltyEscrowAmount *big.Int) (*types.Transaction, error)
 	FundDeposit(amount *big.Int) (*types.Transaction, error)
-	FundPenaltyEscrow(amount *big.Int) (*types.Transaction, error)
-	ApproveSigners(signers []ethcommon.Address) (*types.Transaction, error)
-	RequestSignersRevocation(signers []ethcommon.Address) (*types.Transaction, error)
+	FundReserve(amount *big.Int) (*types.Transaction, error)
 	Unlock() (*types.Transaction, error)
 	CancelUnlock() (*types.Transaction, error)
 	Withdraw() (*types.Transaction, error)
 	RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error)
 	IsUsedTicket(ticket *pm.Ticket) (bool, error)
-	IsApprovedSigner(sender ethcommon.Address, signer ethcommon.Address) (bool, error)
-	Senders(addr ethcommon.Address) (struct {
-		Deposit       *big.Int
-		PenaltyEscrow *big.Int
-		WithdrawBlock *big.Int
-	}, error)
-	MinPenaltyEscrow() (*big.Int, error)
+	GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error)
 	UnlockPeriod() (*big.Int, error)
+	ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error)
 
 	// Parameters
-	NumActiveTranscoders() (*big.Int, error)
+	GetTranscoderPoolMaxSize() (*big.Int, error)
 	RoundLength() (*big.Int, error)
 	RoundLockAmount() (*big.Int, error)
 	UnbondingPeriod() (uint64, error)
@@ -112,27 +106,18 @@ type LivepeerEthClient interface {
 	TargetBondingRate() (*big.Int, error)
 	Paused() (bool, error)
 
-	// Events
-	ProcessHistoricalUnbond(*big.Int, func(*contracts.BondingManagerUnbond) error) error
-	WatchForUnbond(chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error)
-	ProcessHistoricalRebond(*big.Int, func(*contracts.BondingManagerRebond) error) error
-	WatchForRebond(chan *contracts.BondingManagerRebond) (ethereum.Subscription, error)
-	ProcessHistoricalWithdrawStake(*big.Int, func(*contracts.BondingManagerWithdrawStake) error) error
-	WatchForWithdrawStake(chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error)
-
 	// Helpers
 	ContractAddresses() map[string]ethcommon.Address
 	CheckTx(*types.Transaction) error
 	ReplaceTransaction(*types.Transaction, string, *big.Int) (*types.Transaction, error)
 	Sign([]byte) ([]byte, error)
-	LatestBlockNum() (*big.Int, error)
 	GetGasInfo() (uint64, *big.Int)
 	SetGasInfo(uint64, *big.Int) error
 }
 
 type client struct {
 	accountManager AccountManager
-	backend        *ethclient.Client
+	backend        Backend
 
 	controllerAddr      ethcommon.Address
 	tokenAddr           ethcommon.Address
@@ -149,10 +134,9 @@ type client struct {
 	*contracts.LivepeerTokenSession
 	*contracts.ServiceRegistrySession
 	*contracts.BondingManagerSession
-	*contracts.LivepeerETHTicketBrokerSession
+	*contracts.TicketBrokerSession
 	*contracts.RoundsManagerSession
 	*contracts.MinterSession
-	*contracts.LivepeerVerifierSession
 	*contracts.LivepeerTokenFaucetSession
 
 	gasLimit uint64
@@ -161,8 +145,13 @@ type client struct {
 	txTimeout time.Duration
 }
 
-func NewClient(accountAddr ethcommon.Address, keystoreDir string, backend *ethclient.Client, controllerAddr ethcommon.Address, txTimeout time.Duration) (LivepeerEthClient, error) {
+func NewClient(accountAddr ethcommon.Address, keystoreDir string, eth *ethclient.Client, controllerAddr ethcommon.Address, txTimeout time.Duration) (LivepeerEthClient, error) {
 	am, err := NewAccountManager(accountAddr, keystoreDir)
+	if err != nil {
+		return nil, err
+	}
+
+	backend, err := NewBackend(eth)
 	if err != nil {
 		return nil, err
 	}
@@ -189,8 +178,6 @@ func (c *client) SetGasInfo(gasLimit uint64, gasPrice *big.Int) error {
 	if err != nil {
 		return err
 	}
-
-	opts.NonceManager = NewNonceManager(c.backend)
 
 	if err := c.setContracts(opts); err != nil {
 		return err
@@ -290,13 +277,13 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 
 	c.ticketBrokerAddr = brokerAddr
 
-	broker, err := contracts.NewLivepeerETHTicketBroker(brokerAddr, c.backend)
+	broker, err := contracts.NewTicketBroker(brokerAddr, c.backend)
 	if err != nil {
 		glog.Errorf("Error creating TicketBroker binding: %v", err)
 		return err
 	}
 
-	c.LivepeerETHTicketBrokerSession = &contracts.LivepeerETHTicketBrokerSession{
+	c.TicketBrokerSession = &contracts.TicketBrokerSession{
 		Contract:     broker,
 		TransactOpts: *opts,
 	}
@@ -345,27 +332,6 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 
 	glog.V(common.SHORT).Infof("Minter: %v", c.minterAddr.Hex())
 
-	verifierAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("Verifier")))
-	if err != nil {
-		glog.Errorf("Error getting Verifier address: %v", err)
-		return err
-	}
-
-	c.verifierAddr = verifierAddr
-
-	verifier, err := contracts.NewLivepeerVerifier(verifierAddr, c.backend)
-	if err != nil {
-		glog.Errorf("Error creating LivepeerVerifier binding: %v", err)
-		return err
-	}
-
-	// Client should never transact with the Verifier directly so we don't include transact opts
-	c.LivepeerVerifierSession = &contracts.LivepeerVerifierSession{
-		Contract: verifier,
-	}
-
-	glog.V(common.SHORT).Infof("Verifier: %v", c.verifierAddr.Hex())
-
 	faucetAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("LivepeerTokenFaucet")))
 	if err != nil {
 		glog.Errorf("Error getting LivepeerTokenFaucet address: %v", err)
@@ -394,7 +360,7 @@ func (c *client) Account() accounts.Account {
 	return c.accountManager.Account()
 }
 
-func (c *client) Backend() (*ethclient.Client, error) {
+func (c *client) Backend() (Backend, error) {
 	if c.backend == nil {
 		return nil, ErrMissingBackend
 	} else {
@@ -418,7 +384,7 @@ func (c *client) InitializeRound() (*types.Transaction, error) {
 
 // Staking
 
-func (c *client) Transcoder(blockRewardCut, feeShare, pricePerSegment *big.Int) (*types.Transaction, error) {
+func (c *client) Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transaction, error) {
 	locked, err := c.CurrentRoundLocked()
 	if err != nil {
 		return nil, err
@@ -427,7 +393,7 @@ func (c *client) Transcoder(blockRewardCut, feeShare, pricePerSegment *big.Int) 
 	if locked {
 		return nil, ErrCurrentRoundLocked
 	} else {
-		return c.BondingManagerSession.Transcoder(blockRewardCut, feeShare, pricePerSegment)
+		return c.BondingManagerSession.Transcoder(blockRewardCut, feeShare)
 	}
 }
 
@@ -583,12 +549,7 @@ func (c *client) autoClaimEarnings(endRound *big.Int, allRounds bool) error {
 }
 
 func (c *client) IsActiveTranscoder() (bool, error) {
-	r, err := c.CurrentRound()
-	if err != nil {
-		return false, err
-	}
-
-	return c.BondingManagerSession.IsActiveTranscoder(c.Account().Address, r)
+	return c.BondingManagerSession.IsActiveTranscoder(c.Account().Address)
 }
 
 func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, error) {
@@ -612,12 +573,7 @@ func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, err
 		return nil, err
 	}
 
-	currentRound, err := c.CurrentRound()
-	if err != nil {
-		return nil, err
-	}
-
-	active, err := c.BondingManagerSession.IsActiveTranscoder(addr, currentRound)
+	active, err := c.BondingManagerSession.IsActiveTranscoder(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -628,18 +584,14 @@ func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, err
 	}
 
 	return &lpTypes.Transcoder{
-		Address:                addr,
-		ServiceURI:             serviceURI,
-		LastRewardRound:        tInfo.LastRewardRound,
-		RewardCut:              tInfo.RewardCut,
-		FeeShare:               tInfo.FeeShare,
-		PricePerSegment:        tInfo.PricePerSegment,
-		PendingRewardCut:       tInfo.PendingRewardCut,
-		PendingFeeShare:        tInfo.PendingFeeShare,
-		PendingPricePerSegment: tInfo.PendingPricePerSegment,
-		DelegatedStake:         delegatedStake,
-		Active:                 active,
-		Status:                 status,
+		Address:         addr,
+		ServiceURI:      serviceURI,
+		LastRewardRound: tInfo.LastRewardRound,
+		RewardCut:       tInfo.RewardCut,
+		FeeShare:        tInfo.FeeShare,
+		DelegatedStake:  delegatedStake,
+		Active:          active,
+		Status:          status,
 	}, nil
 }
 
@@ -782,7 +734,7 @@ func (c *client) CheckTx(tx *types.Transaction) error {
 		return err
 	}
 
-	if receipt.Status == uint(0) {
+	if receipt.Status == uint64(0) {
 		return fmt.Errorf("tx %v failed", tx.Hash().Hex())
 	} else {
 		return nil
@@ -854,139 +806,4 @@ func (c *client) ReplaceTransaction(tx *types.Transaction, method string, gasPri
 	}
 
 	return newSignedTx, err
-}
-
-func (c *client) LatestBlockNum() (*big.Int, error) {
-	var blk *types.Header
-	var err error
-	getBlock := func() error {
-		blk, err = c.backend.HeaderByNumber(context.Background(), nil)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	if err := backoff.Retry(getBlock, backoff.NewConstantBackOff(time.Second*2)); err != nil {
-		glog.Errorf("Cannot get current block number: %v", err)
-		return nil, err
-	}
-	return blk.Number, nil
-}
-
-func (c *client) ProcessHistoricalUnbond(startBlock *big.Int, cb func(*contracts.BondingManagerUnbond) error) error {
-	// Retrieve historical logs starting from startBlock
-	// WatchForUnbond() will not emit past logs
-	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
-	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterUnbond(filterOpts, nil, []ethcommon.Address{c.Account().Address})
-	if err != nil {
-		return err
-	}
-
-	for it.Next() {
-		if err := cb(it.Event); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (c *client) WatchForUnbond(sink chan *contracts.BondingManagerUnbond) (ethereum.Subscription, error) {
-	var (
-		sub ethereum.Subscription
-		err error
-	)
-
-	unbondWatcher := func() error {
-		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchUnbond(nil, sink, nil, []ethcommon.Address{c.Account().Address})
-		if err != nil {
-			glog.Error("Unable to start Unbond watcher ", err)
-			return err
-		}
-
-		return nil
-	}
-
-	err = backoff.Retry(unbondWatcher, backoff.NewConstantBackOff(time.Second*2))
-
-	return sub, err
-}
-
-func (c *client) ProcessHistoricalRebond(startBlock *big.Int, cb func(*contracts.BondingManagerRebond) error) error {
-	// Retrieve historical logs starting from startBlock
-	// WatchRebond() will not emit past logs
-	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
-	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterRebond(filterOpts, nil, []ethcommon.Address{c.Account().Address})
-	if err != nil {
-		return err
-	}
-
-	for it.Next() {
-		if err := cb(it.Event); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (c *client) WatchForRebond(sink chan *contracts.BondingManagerRebond) (ethereum.Subscription, error) {
-	var (
-		sub ethereum.Subscription
-		err error
-	)
-
-	rebondWatcher := func() error {
-		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchRebond(nil, sink, nil, []ethcommon.Address{c.Account().Address})
-		if err != nil {
-			glog.Error("Unable to start Rebond watcher ", err)
-			return err
-		}
-
-		return nil
-	}
-
-	err = backoff.Retry(rebondWatcher, backoff.NewConstantBackOff(time.Second*2))
-
-	return sub, err
-}
-
-func (c *client) ProcessHistoricalWithdrawStake(startBlock *big.Int, cb func(*contracts.BondingManagerWithdrawStake) error) error {
-	// Retrieve historical logs starting from startBlock
-	// WatchWithdrawStake() will not emit past logs
-	filterOpts := &bind.FilterOpts{Start: startBlock.Uint64()}
-	it, err := c.BondingManagerSession.Contract.BondingManagerFilterer.FilterWithdrawStake(filterOpts, []ethcommon.Address{c.Account().Address})
-	if err != nil {
-		return err
-	}
-
-	// Pass any relevant events into sink
-	for it.Next() {
-		if err := cb(it.Event); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (c *client) WatchForWithdrawStake(sink chan *contracts.BondingManagerWithdrawStake) (ethereum.Subscription, error) {
-	var (
-		sub ethereum.Subscription
-		err error
-	)
-
-	withdrawStakeWatcher := func() error {
-		sub, err = c.BondingManagerSession.Contract.BondingManagerFilterer.WatchWithdrawStake(nil, sink, []ethcommon.Address{c.Account().Address})
-		if err != nil {
-			glog.Error("Unable start WithdrawStake watcher ", err)
-			return err
-		}
-
-		return nil
-	}
-
-	err = backoff.Retry(withdrawStakeWatcher, backoff.NewConstantBackOff(time.Second*2))
-
-	return sub, err
 }

@@ -14,6 +14,21 @@ const (
 	bytes32Size = 32
 )
 
+// SignedTicket is a wrapper around a Ticket with the sender's signature over the ticket and
+// the recipient recipientRand
+type SignedTicket struct {
+	// Ticket contains ticket fields that are directly
+	// accessible on SignedTicket since it is embedded
+	*Ticket
+
+	// Sig is the sender's signature over the ticket
+	Sig []byte
+
+	// RecipientRand is the recipient's random value that should be
+	// the preimage for the ticket's recipientRandHash
+	RecipientRand *big.Int
+}
+
 // TicketParams represents the parameters defined by a receiver that a sender must adhere to when
 // sending tickets to receiver.
 type TicketParams struct {
@@ -26,6 +41,51 @@ type TicketParams struct {
 	RecipientRandHash ethcommon.Hash
 
 	Seed *big.Int
+}
+
+// TicketExpirationParams indicates when/how a ticket expires
+type TicketExpirationParams struct {
+	CreationRound int64
+
+	CreationRoundBlockHash ethcommon.Hash
+}
+
+// TicketSenderParams identifies a unique ticket based on a sender's nonce and signature over a ticket hash
+type TicketSenderParams struct {
+	SenderNonce uint32
+
+	Sig []byte
+}
+
+// TicketBatch is a group of tickets that share the same TicketParams, TicketExpirationParams and Sender
+// Each ticket in a batch is identified by a unique TicketSenderParams
+type TicketBatch struct {
+	*TicketParams
+	*TicketExpirationParams
+
+	Sender ethcommon.Address
+
+	SenderParams []*TicketSenderParams
+}
+
+// Tickets returns the tickets in the batch
+func (b *TicketBatch) Tickets() []*Ticket {
+	var tickets []*Ticket
+	for i := 0; i < len(b.SenderParams); i++ {
+		ticket := &Ticket{
+			Recipient:              b.Recipient,
+			Sender:                 b.Sender,
+			FaceValue:              b.FaceValue,
+			WinProb:                b.WinProb,
+			SenderNonce:            b.SenderParams[i].SenderNonce,
+			RecipientRandHash:      b.RecipientRandHash,
+			CreationRound:          b.CreationRound,
+			CreationRoundBlockHash: b.CreationRoundBlockHash,
+		}
+		tickets = append(tickets, ticket)
+	}
+
+	return tickets
 }
 
 // Ticket is lottery ticket payment in a probabilistic micropayment protocol
@@ -53,6 +113,36 @@ type Ticket struct {
 	// provided by the recipient. In order for the recipient to redeem
 	// a winning ticket, it must reveal the preimage to this hash
 	RecipientRandHash ethcommon.Hash
+
+	// CreationRound is the round during which the ticket is created
+	CreationRound int64
+
+	// CreationRoundBlockHash is the block hash associated with CreationRound
+	CreationRoundBlockHash ethcommon.Hash
+}
+
+// NewTicket creates a Ticket instance
+func NewTicket(params *TicketParams, expirationParams *TicketExpirationParams, sender ethcommon.Address, senderNonce uint32) *Ticket {
+	return &Ticket{
+		Recipient:              params.Recipient,
+		Sender:                 sender,
+		FaceValue:              params.FaceValue,
+		WinProb:                params.WinProb,
+		SenderNonce:            senderNonce,
+		RecipientRandHash:      params.RecipientRandHash,
+		CreationRound:          expirationParams.CreationRound,
+		CreationRoundBlockHash: expirationParams.CreationRoundBlockHash,
+	}
+}
+
+// EV returns the expected value of a ticket
+func (t *Ticket) EV() *big.Rat {
+	return ticketEV(t.FaceValue, t.WinProb)
+}
+
+// WinProbRat returns the ticket WinProb as a percentage represented as a big.Rat
+func (t *Ticket) WinProbRat() *big.Rat {
+	return new(big.Rat).SetFrac(t.WinProb, maxWinProb)
 }
 
 // Hash returns the keccak-256 hash of the ticket's fields as tightly packed
@@ -62,8 +152,26 @@ func (t *Ticket) Hash() ethcommon.Hash {
 	return crypto.Keccak256Hash(t.flatten())
 }
 
+// AuxData returns the ticket's CreationRound and CreationRoundBlockHash encoded into a byte array:
+// [0:31] = CreationRound (left padded with zero bytes)
+// [32..63] = CreationRoundBlockHash
+// See: https://github.com/livepeer/protocol/blob/pm/contracts/pm/mixins/MixinTicketProcessor.sol#L94
+func (t *Ticket) AuxData() []byte {
+	if t.CreationRound == 0 && (t.CreationRoundBlockHash == ethcommon.Hash{}) {
+		// Return empty byte array if both values are 0
+		return []byte{}
+	}
+
+	return append(
+		ethcommon.LeftPadBytes(big.NewInt(t.CreationRound).Bytes(), uint256Size),
+		t.CreationRoundBlockHash.Bytes()...,
+	)
+}
+
 func (t *Ticket) flatten() []byte {
-	buf := make([]byte, addressSize+addressSize+uint256Size+uint256Size+uint256Size+bytes32Size)
+	auxData := t.AuxData()
+
+	buf := make([]byte, addressSize+addressSize+uint256Size+uint256Size+uint256Size+bytes32Size+len(auxData))
 	i := copy(buf[0:], t.Recipient.Bytes())
 	i += copy(buf[i:], t.Sender.Bytes())
 	i += copy(buf[i:], ethcommon.LeftPadBytes(t.FaceValue.Bytes(), uint256Size))
@@ -71,5 +179,13 @@ func (t *Ticket) flatten() []byte {
 	i += copy(buf[i:], ethcommon.LeftPadBytes(new(big.Int).SetUint64(uint64(t.SenderNonce)).Bytes(), uint256Size))
 	i += copy(buf[i:], t.RecipientRandHash.Bytes())
 
+	if len(auxData) > 0 {
+		copy(buf[i:], auxData)
+	}
+
 	return buf
+}
+
+func ticketEV(faceValue *big.Int, winProb *big.Int) *big.Rat {
+	return new(big.Rat).Mul(new(big.Rat).SetInt(faceValue), new(big.Rat).SetFrac(winProb, maxWinProb))
 }
