@@ -417,6 +417,14 @@ func main() {
 		go orchWatcher.Watch()
 		defer orchWatcher.Stop()
 
+		serviceRegistryWatcher, err := watchers.NewServiceRegistryWatcher(addrMap["ServiceRegistry"], blockWatcher, dbh, n.Eth)
+		if err != nil {
+			glog.Errorf("Failed to set up service registry watcher: %v", err)
+			return
+		}
+		go serviceRegistryWatcher.Watch()
+		defer serviceRegistryWatcher.Stop()
+
 		blockWatchCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
