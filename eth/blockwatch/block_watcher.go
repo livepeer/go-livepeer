@@ -121,7 +121,7 @@ func (w *Watcher) Watch(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			if err := w.pollNextBlock(); err != nil {
-				glog.Error("blockwatch.Watcher error encountered")
+				glog.Errorf("blockwatch.Watcher error encountered: %v", err)
 			}
 		}
 	}
