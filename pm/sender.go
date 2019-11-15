@@ -126,9 +126,8 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 		return err
 	}
 
-	totalFaceValue := new(big.Int).Mul(ticketParams.FaceValue, big.NewInt(int64(numTickets)))
 	maxFaceValue := new(big.Int).Div(info.Deposit, big.NewInt(int64(s.depositMultiplier)))
-	if totalFaceValue.Cmp(maxFaceValue) > 0 {
+	if ticketParams.FaceValue.Cmp(maxFaceValue) > 0 {
 		return errors.Errorf("ticket faceValue higher than max faceValue")
 	}
 

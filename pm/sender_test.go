@@ -154,15 +154,14 @@ func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
 	_, err := sender.CreateTicketBatch(sessionID, 1)
 	assert.EqualError(t, err, "ticket faceValue higher than max faceValue")
 
-	// Test multiple tickets faceValue too high
-	sender.depositMultiplier = 2
 	sm.info[senderAddr].Deposit = big.NewInt(2224)
-
-	_, err = sender.CreateTicketBatch(sessionID, 2)
-	assert.EqualError(t, err, "ticket faceValue higher than max faceValue")
 
 	// Check that faceValue is acceptable for a single ticket
 	_, err = sender.CreateTicketBatch(sessionID, 1)
+	assert.Nil(t, err)
+
+	// Check that faceValue is acceptable for multiple tickets
+	_, err = sender.CreateTicketBatch(sessionID, 2)
 	assert.Nil(t, err)
 }
 
