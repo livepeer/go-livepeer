@@ -146,7 +146,7 @@ func (w *UnbondingWatcher) handleLog(log types.Log) error {
 			return processEventError("WithdrawStake", log.Removed, err)
 		}
 	default:
-		return fmt.Errorf("could not process %v event", eventName)
+		return nil
 	}
 
 	return nil
