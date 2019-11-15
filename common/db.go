@@ -19,11 +19,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+// DB is an initialized DB driver with prepared statements
 type DB struct {
 	dbh *sql.DB
 
 	// prepared statements
-	selectOrchs                      *sql.Stmt
 	updateOrch                       *sql.Stmt
 	selectKV                         *sql.Stmt
 	updateKV                         *sql.Stmt
@@ -39,12 +39,16 @@ type DB struct {
 	deleteMiniHeader                 *sql.Stmt
 }
 
+// DBOrch is the type binding for a row result from the orchestrators table
 type DBOrch struct {
-	ServiceURI    string
-	EthereumAddr  string
-	PricePerPixel int64
+	ServiceURI        string
+	EthereumAddr      string
+	PricePerPixel     int64
+	ActivationRound   int64
+	DeactivationRound int64
 }
 
+// DBOrch is the type binding for a row result from the unbondingLocks table
 type DBUnbondingLock struct {
 	ID            int64
 	Delegator     ethcommon.Address
@@ -52,8 +56,10 @@ type DBUnbondingLock struct {
 	WithdrawRound int64
 }
 
+// DBOrchFilter is an object used to attach a filter to a selectOrch query
 type DBOrchFilter struct {
-	MaxPrice *big.Rat
+	MaxPrice     *big.Rat
+	CurrentRound *big.Int
 }
 
 var LivepeerDBVersion = 1
@@ -73,7 +79,9 @@ var schema = `
 		createdAt STRING DEFAULT CURRENT_TIMESTAMP NOT NULL,
 		updatedAt STRING DEFAULT CURRENT_TIMESTAMP NOT NULL,
 		serviceURI STRING,
-		pricePerPixel int64
+		pricePerPixel int64,
+		activationRound int64,
+		deactivationRound int64
 	);
 
 	CREATE TABLE IF NOT EXISTS unbondingLocks (
@@ -113,8 +121,14 @@ var schema = `
 	CREATE INDEX IF NOT EXISTS idx_blockheaders_number ON blockheaders(number);
 `
 
-func NewDBOrch(serviceURI string, orchAddr string) *DBOrch {
-	return &DBOrch{ServiceURI: serviceURI, EthereumAddr: orchAddr}
+func NewDBOrch(ethereumAddr string, serviceURI string, pricePerPixel int64, activationRound int64, deactivationRound int64) *DBOrch {
+	return &DBOrch{
+		ServiceURI:        serviceURI,
+		EthereumAddr:      ethereumAddr,
+		PricePerPixel:     pricePerPixel,
+		ActivationRound:   activationRound,
+		DeactivationRound: deactivationRound,
+	}
 }
 
 func InitDB(dbPath string) (*DB, error) {
@@ -161,17 +175,8 @@ func InitDB(dbPath string) (*DB, error) {
 		// all good; nothing to do
 	}
 
-	// updateOrchestrators statement
-	stmt, err := db.Prepare("INSERT OR REPLACE INTO orchestrators(updatedAt, serviceURI, ethereumAddr, pricePerPixel, createdAt) VALUES(datetime(), ?1, ?2, ?3, (SELECT createdAt FROM orchestrators WHERE ethereumAddr = ?2))")
-	if err != nil {
-		glog.Error("Unable to prepare updateOrchestrators stmt ", err)
-		d.Close()
-		return nil, err
-	}
-	d.updateOrch = stmt
-
 	// selectKV prepared statement
-	stmt, err = db.Prepare("SELECT value FROM kv WHERE key=?")
+	stmt, err := db.Prepare("SELECT value FROM kv WHERE key=?")
 	if err != nil {
 		glog.Error("Unable to prepare selectKV stmt", err)
 		d.Close()
@@ -187,6 +192,31 @@ func InitDB(dbPath string) (*DB, error) {
 		return nil, err
 	}
 	d.updateKV = stmt
+
+	// updateOrch prepared statement
+	stmt, err = db.Prepare(`
+	INSERT INTO orchestrators(updatedAt, ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound, createdAt) 
+	VALUES(datetime(), :ethereumAddr, :serviceURI, :pricePerPixel, :activationRound, :deactivationRound, datetime()) 
+	ON CONFLICT(ethereumAddr) DO UPDATE SET 
+	updatedAt = excluded.updatedAt,
+	serviceURI =
+  		CASE WHEN trim(excluded.serviceURI) == ""
+  		THEN orchestrators.serviceURI
+		ELSE trim(excluded.serviceURI) END, 
+	pricePerPixel = 
+		CASE WHEN excluded.pricePerPixel == 0
+		THEN orchestrators.pricePerPixel
+		ELSE excluded.pricePerPixel END, 
+	activationRound = 
+		CASE WHEN excluded.activationRound == 0
+		THEN orchestrators.activationRound
+		ELSE excluded.activationRound END, 
+	deactivationRound = 
+		CASE WHEN excluded.deactivationRound == 0
+		THEN orchestrators.deactivationRound
+		ELSE excluded.deactivationRound END 
+	`)
+	d.updateOrch = stmt
 
 	// Unbonding locks prepared statements
 	stmt, err = db.Prepare("INSERT INTO unbondingLocks(id, delegator, amount, withdrawRound) VALUES(?, ?, ?, ?)")
@@ -276,17 +306,14 @@ func InitDB(dbPath string) (*DB, error) {
 
 func (db *DB) Close() {
 	glog.V(DEBUG).Info("Closing DB")
-	if db.updateOrch != nil {
-		db.updateOrch.Close()
-	}
-	if db.selectOrchs != nil {
-		db.selectOrchs.Close()
-	}
 	if db.selectKV != nil {
 		db.selectKV.Close()
 	}
 	if db.updateKV != nil {
 		db.updateKV.Close()
+	}
+	if db.updateOrch != nil {
+		db.updateOrch.Close()
 	}
 	if db.insertUnbondingLock != nil {
 		db.insertUnbondingLock.Close()
@@ -383,11 +410,18 @@ func (db *DB) updateKVStore(key, value string) error {
 }
 
 func (db *DB) UpdateOrch(orch *DBOrch) error {
-	if db == nil || orch == nil || orch.ServiceURI == "" || orch.EthereumAddr == "" {
+	if db == nil || orch == nil || orch.EthereumAddr == "" {
 		return nil
 	}
 
-	_, err := db.updateOrch.Exec(orch.ServiceURI, orch.EthereumAddr, orch.PricePerPixel)
+	_, err := db.updateOrch.Exec(
+		sql.Named("ethereumAddr", orch.EthereumAddr),
+		sql.Named("serviceURI", orch.ServiceURI),
+		sql.Named("pricePerPixel", orch.PricePerPixel),
+		sql.Named("activationRound", orch.ActivationRound),
+		sql.Named("deactivationRound", orch.DeactivationRound),
+	)
+
 	if err != nil {
 		glog.Error("db: Unable to update orchestrator ", err)
 	}
@@ -408,18 +442,40 @@ func (db *DB) SelectOrchs(filter *DBOrchFilter) ([]*DBOrch, error) {
 	}
 	orchs := []*DBOrch{}
 	for rows.Next() {
-		var orch DBOrch
-		var serviceURI string
-		var ethereumAddr string
-		if err := rows.Scan(&serviceURI, &ethereumAddr); err != nil {
+		var (
+			serviceURI        string
+			ethereumAddr      string
+			pricePerPixel     int64
+			activationRound   int64
+			deactivationRound int64
+		)
+		if err := rows.Scan(&serviceURI, &ethereumAddr, &pricePerPixel, &activationRound, &deactivationRound); err != nil {
 			glog.Error("db: Unable to fetch orchestrator ", err)
 			continue
 		}
-		orch.ServiceURI = serviceURI
-		orch.EthereumAddr = ethereumAddr
-		orchs = append(orchs, &orch)
+		orchs = append(orchs, NewDBOrch(serviceURI, ethereumAddr, pricePerPixel, activationRound, deactivationRound))
 	}
 	return orchs, nil
+}
+
+func (db *DB) OrchCount(filter *DBOrchFilter) (int, error) {
+	if db == nil {
+		return 0, nil
+	}
+
+	qry, err := buildOrchCountQuery(filter)
+	if err != nil {
+		return 0, err
+	}
+
+	row := db.dbh.QueryRow(qry)
+
+	var count64 int64
+	if err := row.Scan(&count64); err != nil {
+		return 0, err
+	}
+
+	return int(count64), nil
 }
 
 func (db *DB) InsertUnbondingLock(id *big.Int, delegator ethcommon.Address, amount, withdrawRound *big.Int) error {
@@ -599,15 +655,40 @@ func buildWinningTicketsQuery(sessionIDs []string) string {
 }
 
 func buildSelectOrchsQuery(filter *DBOrchFilter) (string, error) {
-	query := "SELECT serviceURI, ethereumAddr FROM orchestrators WHERE updatedAt >= datetime('now','-1 day')"
-	if filter != nil && filter.MaxPrice != nil {
-		fixedPrice, err := PriceToFixed(filter.MaxPrice)
-		if err != nil {
-			return "", err
-		}
-		query = query + " AND pricePerPixel <= " + strconv.FormatInt(fixedPrice, 10)
+	query := "SELECT ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound FROM orchestrators "
+	fil, err := buildFilterOrchsQuery(filter)
+	if err != nil {
+		return "", err
 	}
-	return query, nil
+	return query + fil, nil
+}
+
+func buildOrchCountQuery(filter *DBOrchFilter) (string, error) {
+	query := "SELECT count(ethereumAddr) FROM orchestrators "
+	fil, err := buildFilterOrchsQuery(filter)
+	if err != nil {
+		return "", err
+	}
+	return query + fil, nil
+}
+
+func buildFilterOrchsQuery(filter *DBOrchFilter) (string, error) {
+	qry := "WHERE updatedAt >= datetime('now','-1 day')"
+	if filter != nil {
+		if filter.MaxPrice != nil {
+			fixedPrice, err := PriceToFixed(filter.MaxPrice)
+			if err != nil {
+				return "", err
+			}
+			qry += " AND pricePerPixel <= " + strconv.FormatInt(fixedPrice, 10)
+		}
+
+		if filter.CurrentRound != nil {
+			currentRound := filter.CurrentRound.Int64()
+			qry += fmt.Sprintf(" AND activationRound <= %v AND %v < deactivationRound", currentRound, currentRound)
+		}
+	}
+	return qry, nil
 }
 
 // FindLatestMiniHeader returns the MiniHeader with the highest blocknumber in the DB

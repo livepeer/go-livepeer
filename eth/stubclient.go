@@ -170,6 +170,7 @@ type StubClient struct {
 	PoolSize                     *big.Int
 	ClaimedAmount                *big.Int
 	ClaimedReserveError          error
+	Orch                         *lpTypes.Transcoder
 }
 
 type stubTranscoder struct {
@@ -203,7 +204,7 @@ func (e *StubClient) TotalSupply() (*big.Int, error)                  { return b
 // Service Registry
 
 func (e *StubClient) SetServiceURI(serviceURI string) (*types.Transaction, error) { return nil, nil }
-func (e *StubClient) GetServiceURI(addr common.Address) (string, error)           { return "", nil }
+func (e *StubClient) GetServiceURI(addr common.Address) (string, error)           { return e.Orch.ServiceURI, nil }
 
 // Staking
 
@@ -226,8 +227,10 @@ func (e *StubClient) WithdrawFees() (*types.Transaction, error) { return nil, ni
 func (e *StubClient) ClaimEarnings(endRound *big.Int) error {
 	return nil
 }
-func (e *StubClient) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) { return nil, nil }
-func (e *StubClient) GetDelegator(addr common.Address) (*lpTypes.Delegator, error)   { return nil, nil }
+func (e *StubClient) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) {
+	return e.Orch, nil
+}
+func (e *StubClient) GetDelegator(addr common.Address) (*lpTypes.Delegator, error) { return nil, nil }
 func (e *StubClient) GetDelegatorUnbondingLock(addr common.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error) {
 	return nil, nil
 }

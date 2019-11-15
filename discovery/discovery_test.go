@@ -265,10 +265,14 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	orchs, err := node.Database.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 3)
+	orchsTest := make([]orchTest, 1)
+	for _, o := range orchs {
+		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
+	}
 	for _, o := range orchestrators {
-		dbO := ethOrchToDBOrch(o)
+		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
 
-		assert.Contains(orchs, dbO)
+		assert.Contains(orchsTest, dbO)
 	}
 
 	// creating new OrchestratorPoolCache
@@ -456,21 +460,28 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) 
 	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
 	require.Nil(err)
 	assert.Len(cachedOrchs, 50)
+	orchsTest := make([]orchTest, 1)
+	for _, o := range cachedOrchs {
+		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
+	}
 	for _, o := range orchestrators {
-		dbO := ethOrchToDBOrch(o)
-		dbO.PricePerPixel, _ = common.PriceToFixed(big.NewRat(999, 1))
+		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
 
-		assert.Contains(cachedOrchs, dbO)
+		assert.Contains(orchsTest, dbO)
 	}
 
 	// ensuring orchs exist in DB
 	orchs, err := node.Database.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 50)
+	orchsTest = make([]orchTest, 1)
+	for _, o := range orchs {
+		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
+	}
 	for _, o := range orchestrators {
-		dbO := ethOrchToDBOrch(o)
+		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
 
-		assert.Contains(orchs, dbO)
+		assert.Contains(orchsTest, dbO)
 	}
 
 	// creating new OrchestratorPoolCache
@@ -537,21 +548,28 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
 	require.Nil(err)
 	assert.Len(cachedOrchs, 50)
+	orchsTest := make([]orchTest, 1)
+	for _, o := range cachedOrchs {
+		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
+	}
 	for _, o := range orchestrators {
-		dbO := ethOrchToDBOrch(o)
-		dbO.PricePerPixel, _ = common.PriceToFixed(big.NewRat(999, 1))
+		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
 
-		assert.Contains(cachedOrchs, dbO)
+		assert.Contains(orchsTest, dbO)
 	}
 
 	// ensuring orchs exist in DB
 	orchs, err := node.Database.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 50)
+	orchsTest = make([]orchTest, 1)
+	for _, o := range orchs {
+		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
+	}
 	for _, o := range orchestrators {
-		dbO := ethOrchToDBOrch(o)
+		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
 
-		assert.Contains(orchs, dbO)
+		assert.Contains(orchsTest, dbO)
 	}
 
 	// creating new OrchestratorPoolCache
@@ -644,18 +662,26 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 	require.Nil(err)
 	assert.Len(orchs, 50)
 
-	for _, o := range orchestrators {
-		dbO := ethOrchToDBOrch(o)
-
-		assert.Contains(orchs, dbO)
+	orchsTest := make([]orchTest, 1)
+	for _, o := range orchs {
+		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
 	}
-	orchs, err = node.Database.SelectOrchs(&common.DBOrchFilter{server.BroadcastCfg.MaxPrice()})
+	for _, o := range orchestrators {
+		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
+
+		assert.Contains(orchsTest, dbO)
+	}
+	orchs, err = node.Database.SelectOrchs(&common.DBOrchFilter{MaxPrice: server.BroadcastCfg.MaxPrice()})
 	require.Nil(err)
 	assert.Len(orchs, 25)
+	orchsTest = make([]orchTest, 1)
+	for _, o := range orchs {
+		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
+	}
 	for _, o := range orchestrators[25:] {
-		dbO := ethOrchToDBOrch(o)
+		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
 
-		assert.Contains(orchs, dbO)
+		assert.Contains(orchsTest, dbO)
 	}
 
 	// creating new OrchestratorPoolCache
@@ -878,4 +904,13 @@ func TestDeserializeWebhookJSON(t *testing.T) {
 	urls, err = deserializeWebhookJSON([]byte(`1112`))
 	assert.Contains(err.Error(), "cannot unmarshal number")
 	assert.Empty(urls)
+}
+
+type orchTest struct {
+	EthereumAddr string
+	ServiceURI   string
+}
+
+func toOrchTest(addr, serviceURI string) orchTest {
+	return orchTest{EthereumAddr: addr, ServiceURI: serviceURI}
 }

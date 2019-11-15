@@ -17,6 +17,9 @@ var eventSignatures = []string{
 	"ReserveFrozen(address,address,uint256,uint256)",
 	"Unlock(address,uint256,uint256)",
 	"UnlockCancelled(address)",
+	"TranscoderActivated(address,uint256)",
+	"TranscoderDeactivated(address,uint256)",
+	"ServiceURIUpdate(address,string)",
 }
 
 // FilterTopics returns a list of topics to be used when filtering logs
