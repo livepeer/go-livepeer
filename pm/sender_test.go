@@ -1,6 +1,7 @@
 package pm
 
 import (
+	"fmt"
 	"math/big"
 	"sync"
 	"testing"
@@ -119,15 +120,18 @@ func TestCreateTicketBatch_EVTooHigh_ReturnsError(t *testing.T) {
 		Seed:              big.NewInt(3333),
 		RecipientRandHash: RandHash(),
 	}
+	ev := ticketEV(ticketParams.FaceValue, ticketParams.WinProb)
 	sessionID := sender.StartSession(ticketParams)
+	expErrStr := maxEVErrStr(ev, 1, sender.maxEV)
 	_, err := sender.CreateTicketBatch(sessionID, 1)
-	assert.EqualError(t, err, "ticket EV higher than max EV")
+	assert.EqualError(t, err, expErrStr)
 
 	// Test multiple tickets EV too high
 	sender.maxEV = big.NewRat(102, 1)
 
+	expErrStr = maxEVErrStr(ev.Mul(ev, new(big.Rat).SetInt64(2)), 2, sender.maxEV)
 	_, err = sender.CreateTicketBatch(sessionID, 2)
-	assert.EqualError(t, err, "ticket EV higher than max EV")
+	assert.EqualError(t, err, expErrStr)
 
 	// Check that EV is acceptable for a single ticket
 	_, err = sender.CreateTicketBatch(sessionID, 1)
@@ -151,8 +155,9 @@ func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
 		RecipientRandHash: RandHash(),
 	}
 	sessionID := sender.StartSession(ticketParams)
+	expErrStr := maxFaceValueErrStr(ticketParams.FaceValue, big.NewInt(0))
 	_, err := sender.CreateTicketBatch(sessionID, 1)
-	assert.EqualError(t, err, "ticket faceValue higher than max faceValue")
+	assert.EqualError(t, err, expErrStr)
 
 	sm.info[senderAddr].Deposit = big.NewInt(2224)
 
@@ -315,8 +320,9 @@ func TestValidateTicketParams_EVTooHigh_ReturnsError(t *testing.T) {
 		FaceValue: big.NewInt(202),
 		WinProb:   new(big.Int).Div(maxWinProb, big.NewInt(2)),
 	}
+	expErrStr := maxEVErrStr(ticketEV(ticketParams.FaceValue, ticketParams.WinProb), 1, sender.maxEV)
 	err := sender.ValidateTicketParams(ticketParams)
-	assert.Contains(t, "ticket EV higher than max EV", err.Error())
+	assert.EqualError(t, err, expErrStr)
 }
 
 func TestValidateTicketParams_FaceValueTooHigh_ReturnsError(t *testing.T) {
@@ -334,8 +340,9 @@ func TestValidateTicketParams_FaceValueTooHigh_ReturnsError(t *testing.T) {
 		FaceValue: big.NewInt(1111),
 		WinProb:   big.NewInt(2222),
 	}
+	expErrStr := maxFaceValueErrStr(ticketParams.FaceValue, big.NewInt(0))
 	err := sender.ValidateTicketParams(ticketParams)
-	assert.Contains("ticket faceValue higher than max faceValue", err.Error())
+	assert.EqualError(err, expErrStr)
 
 	// Test when deposit / depositMultiplier < faceValue
 	sm.info[senderAddr].Deposit = big.NewInt(300)
@@ -344,8 +351,9 @@ func TestValidateTicketParams_FaceValueTooHigh_ReturnsError(t *testing.T) {
 	maxFaceValue := new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
 
 	ticketParams.FaceValue = new(big.Int).Add(maxFaceValue, big.NewInt(1))
+	expErrStr = maxFaceValueErrStr(ticketParams.FaceValue, maxFaceValue)
 	err = sender.ValidateTicketParams(ticketParams)
-	assert.Contains("ticket faceValue higher than max faceValue", err.Error())
+	assert.EqualError(err, expErrStr)
 }
 
 func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
@@ -433,4 +441,12 @@ func defaultTicketParams(t *testing.T, recipient ethcommon.Address) TicketParams
 		Seed:              big.NewInt(0),
 		RecipientRandHash: recipientRandHash,
 	}
+}
+
+func maxFaceValueErrStr(faceValue, maxFaceValue *big.Int) string {
+	return fmt.Sprintf("ticket faceValue %v > max faceValue %v", faceValue, maxFaceValue)
+}
+
+func maxEVErrStr(ev *big.Rat, numTickets int, maxEV *big.Rat) string {
+	return fmt.Sprintf("total ticket EV %v for %v tickets > max total ticket EV %v", ev.FloatString(5), numTickets, maxEV.FloatString(5))
 }
