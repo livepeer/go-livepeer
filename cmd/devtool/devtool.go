@@ -30,7 +30,7 @@ const (
 
 var (
 	ethTxTimeout              = 600 * time.Second
-	endpoint                  = "ws://localhost:8546/"
+	endpoint                  = "http://localhost:8545/"
 	gethMiningAccount         = "87da6a8c6e9eff15d703fc2773e32f6af8dbe301"
 	gethMiningAccountOverride = false
 	ethController             = "0x04B9De88c81cda06165CF65a908e5f1EFBB9493B"
@@ -306,6 +306,7 @@ func createRunScript(ethAcctAddr, dataDir, serviceHost string, isBroadcaster boo
     -ethUrl %s \
     -ethPassword "" \
     -network=devenv \
+    -blockPollingInterval 1 \
     -monitor=false -currentManifest=true -cliAddr %s:%d -httpAddr %s:%d `,
 		ethController, dataDir, ethAcctAddr, endpoint, serviceHost, cliPort, serviceHost, mediaPort)
 
