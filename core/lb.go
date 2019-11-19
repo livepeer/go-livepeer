@@ -14,15 +14,15 @@ import (
 
 var ErrTranscoderBusy = errors.New("TranscoderBusy")
 
-type LoadBalancedTranscoder interface {
+type TranscoderSession interface {
 	Transcoder
 	Stop()
 }
 
-type newTranscoderFn func(device string, workDir string) LoadBalancedTranscoder
+type newTranscoderFn func(device string, workDir string) TranscoderSession
 
 type LoadBalancingTranscoder struct {
-	transcoders []string
+	transcoders []string // Slice of device IDs
 	workDir     string
 	newT        newTranscoderFn
 
@@ -134,7 +134,7 @@ type transcoderParams struct {
 }
 
 type transcoderSession struct {
-	transcoder LoadBalancedTranscoder
+	transcoder TranscoderSession
 	key        string
 	nonce      string
 
