@@ -79,7 +79,7 @@ func (nv *NvidiaTranscoder) Transcode(job string, fname string, profiles []ffmpe
 	return resToTranscodeData(res, opts)
 }
 
-func NewNvidiaTranscoder(gpu string, workDir string) LoadBalancedTranscoder {
+func NewNvidiaTranscoder(gpu string, workDir string) TranscoderSession {
 	return &NvidiaTranscoder{
 		workDir: workDir,
 		device:  gpu,
