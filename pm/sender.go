@@ -1,6 +1,7 @@
 package pm
 
 import (
+	"fmt"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -118,7 +119,7 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 	ev := ticketEV(ticketParams.FaceValue, ticketParams.WinProb)
 	totalEV := ev.Mul(ev, new(big.Rat).SetInt64(int64(numTickets)))
 	if totalEV.Cmp(s.maxEV) > 0 {
-		return errors.Errorf("ticket EV higher than max EV")
+		return fmt.Errorf("total ticket EV %v for %v tickets > max total ticket EV %v", totalEV.FloatString(5), numTickets, s.maxEV.FloatString(5))
 	}
 
 	info, err := s.senderManager.GetSenderInfo(s.signer.Account().Address)
@@ -126,10 +127,9 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 		return err
 	}
 
-	totalFaceValue := new(big.Int).Mul(ticketParams.FaceValue, big.NewInt(int64(numTickets)))
 	maxFaceValue := new(big.Int).Div(info.Deposit, big.NewInt(int64(s.depositMultiplier)))
-	if totalFaceValue.Cmp(maxFaceValue) > 0 {
-		return errors.Errorf("ticket faceValue higher than max faceValue")
+	if ticketParams.FaceValue.Cmp(maxFaceValue) > 0 {
+		return fmt.Errorf("ticket faceValue %v > max faceValue %v", ticketParams.FaceValue, maxFaceValue)
 	}
 
 	return nil

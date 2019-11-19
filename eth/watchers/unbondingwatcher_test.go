@@ -252,5 +252,5 @@ func TestUnbondingWatcher_HandleLog(t *testing.T) {
 	log.Topics = []common.Hash{common.HexToHash("0x619caafabdd75649b302ba8419e48cccf64f37f1983ac4727cfb38b57703ffc9")}
 
 	err = watcher.handleLog(log)
-	assert.EqualError(err, "could not process Reward event")
+	assert.Nil(err)
 }
