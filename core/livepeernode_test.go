@@ -22,7 +22,7 @@ type StubTranscoder struct {
 	FailTranscode bool
 }
 
-func newStubTranscoder(d string, workDir string) LoadBalancedTranscoder {
+func newStubTranscoder(d string, workDir string) TranscoderSession {
 	return &StubTranscoder{}
 }
 
