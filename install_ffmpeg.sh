@@ -101,8 +101,8 @@ EXTRA_FFMPEG_FLAGS=""
 EXTRA_LDFLAGS=""
 # Only Linux supports CUDA... for now.
 if [ $(uname) == "Linux" ]; then
-  if [ -e /usr/local/cuda/include ]; then
-    echo "CUDA detected, building with GPU support"
+  if which clang > /dev/null; then
+    echo "clang detected, building with GPU support"
     EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc"
   fi
 fi
@@ -114,7 +114,8 @@ fi
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone -b livepeer-2019_11_19 https://github.com/livepeer/FFmpeg "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
-  ./configure ${TARGET_OS:-} --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
+  ./configure ${TARGET_OS:-} --fatal-warnings \
+    --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
     --disable-postproc --disable-lzma \
