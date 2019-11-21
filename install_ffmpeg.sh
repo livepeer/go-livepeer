@@ -103,7 +103,7 @@ EXTRA_LDFLAGS=""
 if [ $(uname) == "Linux" ]; then
   if [ -e /usr/local/cuda/include ]; then
     echo "CUDA detected, building with GPU support"
-    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc"
+    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc"
   fi
 fi
 
