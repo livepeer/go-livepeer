@@ -3,9 +3,9 @@
 set -ex
 
 # Windows (MSYS2) needs a few tweaks
-if [[ $(uname) == *"MSYS2_NT"* ]]; then
+if [[ $(uname) == *"MSYS"* ]]; then
   export PATH="$PATH:/usr/bin:/mingw64/bin"
-  export C_INCLUDE_PATH="${C_INCLUDE_PATH:-}:/msys64/mingw64/lib"
+  export C_INCLUDE_PATH="${C_INCLUDE_PATH:-}:/mingw64/lib"
   export HOME="/build"
   mkdir -p $HOME
 
@@ -54,7 +54,7 @@ if [ ! -e "$HOME/x264" ]; then
 fi
 
 # Static linking of gnutls on Linux/Mac
-if [[ $(uname) != *"MSYS2_NT"* ]]; then
+if [[ $(uname) != *"MSYS"* ]]; then
   # rm -rf "$HOME/gmp-6.1.2"
   if [ ! -e "$HOME/gmp-6.1.2" ]; then
     cd "$HOME"
@@ -99,16 +99,15 @@ fi
 
 EXTRA_FFMPEG_FLAGS=""
 EXTRA_LDFLAGS=""
-# Only Linux supports CUDA... for now.
-if [ $(uname) == "Linux" ]; then
+
+if [ $(uname) == "Darwin" ]; then
+  EXTRA_LDFLAGS="-framework CoreFoundation -framework Security"
+else
+  # If we have clang, we can compile with CUDA support!
   if which clang > /dev/null; then
     echo "clang detected, building with GPU support"
     EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc"
   fi
-fi
-
-if [ $(uname) == "Darwin" ]; then
-  EXTRA_LDFLAGS="-framework CoreFoundation -framework Security"
 fi
 
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
