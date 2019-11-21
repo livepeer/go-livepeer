@@ -15,6 +15,9 @@ RUN apt-get update \
   && apt-get update \
   && apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf gnutls-dev golang-1.13-go sudo git python docker-ce-cli
 
+RUN update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
+  && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
+
 ENV GOPATH /go
 RUN mkdir -p /go
 WORKDIR /build

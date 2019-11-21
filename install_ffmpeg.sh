@@ -101,7 +101,7 @@ EXTRA_FFMPEG_FLAGS=""
 EXTRA_LDFLAGS=""
 # Only Linux supports CUDA... for now.
 if [ $(uname) == "Linux" ]; then
-  if [ -e /usr/local/cuda/include ]; then
+  if [ -e /usr/local/cuda ]; then
     echo "CUDA detected, building with GPU support"
     EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc"
   fi
