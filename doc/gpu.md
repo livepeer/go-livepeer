@@ -20,7 +20,15 @@ Currently the following limitations are observed:
 * **YUV 4:2:0 input format** The pixel format of the source video must be in YUV 4:2:0 format (planar or
 interleaved). Anything else will return an error.
 
-* **CUDA Availability** If running the Livepeer binary, the CUDA shared libraries are expected to be installed in `/usr/local/cuda`. If the CUDA location differs on your machine, run the node with `LD_LIBRARY_PATH=</path/to/cuda>` environment variable. So far, Livepeer has only been tested with CUDA version 10.0.130.
+* **CUDA Availability** If running the Livepeer binary, the CUDA shared libraries are expected to be installed in `/usr/local/cuda`. If the CUDA location differs on your machine, run the node with `LD_LIBRARY_PATH=</path/to/cuda>` environment variable.
+
+So far, Livepeer has been tested  to work with the following driver versions:
+
+CUDA | Nvidia
+--|--
+10.0.130 |
+10.1 | 418.39 , 430.50
+10.2.89 | 440.33.01
 
 * **Driver Limits** "Retail GPU cards may impose a software limit on the number of concurrent transcode sessions allowed on the system in official drivers.
 
