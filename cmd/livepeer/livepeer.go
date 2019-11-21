@@ -288,8 +288,6 @@ func main() {
 
 	watcherErr := make(chan error)
 	var roundsWatcher *watchers.RoundsWatcher
-	var originalLastSeenBlock *big.Int
-	var currentRoundStartBlock *big.Int
 	if *network == "offchain" {
 		glog.Infof("***Livepeer is in off-chain mode***")
 
@@ -370,12 +368,12 @@ func main() {
 		topics := watchers.FilterTopics()
 
 		// Determine backfilling start block
-		originalLastSeenBlock, err = dbh.LastSeenBlock()
+		originalLastSeenBlock, err := dbh.LastSeenBlock()
 		if err != nil {
 			glog.Errorf("db: failed to retrieve latest retained block: %v", err)
 			return
 		}
-		currentRoundStartBlock, err = client.CurrentRoundStartBlock()
+		currentRoundStartBlock, err := client.CurrentRoundStartBlock()
 		if err != nil {
 			glog.Errorf("eth: failed to retrieve current round start block: %v", err)
 			return

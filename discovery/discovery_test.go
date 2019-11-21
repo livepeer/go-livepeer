@@ -1078,13 +1078,3 @@ func TestDeserializeWebhookJSON(t *testing.T) {
 	assert.Contains(err.Error(), "cannot unmarshal number")
 	assert.Empty(urls)
 }
-
-type orchTest struct {
-	EthereumAddr  string
-	ServiceURI    string
-	PricePerPixel int64
-}
-
-func toOrchTest(addr, serviceURI string, pricePerPixel int64) orchTest {
-	return orchTest{EthereumAddr: addr, ServiceURI: serviceURI, PricePerPixel: pricePerPixel}
-}

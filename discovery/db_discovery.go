@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"net/url"
 	"strings"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/common"
@@ -18,6 +19,11 @@ import (
 
 	"github.com/golang/glog"
 )
+
+var cacheRefreshInterval = 1 * time.Hour
+var getTicker = func() *time.Ticker {
+	return time.NewTicker(cacheRefreshInterval)
+}
 
 type ticketParamsValidator interface {
 	ValidateTicketParams(ticketParams *pm.TicketParams) error
@@ -199,13 +205,10 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 		if orch == nil {
 			continue
 		}
-		dbOrch := ethOrchToDBOrch(orch)
 		numOrchs++
-		go getOrchInfo(dbOrch)
+		go getOrchInfo(orch)
 
 	}
-
-	var returnDBOrchs []*common.DBOrch
 
 	for i := 0; i < numOrchs; i++ {
 		select {
@@ -213,7 +216,6 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			if err := dbo.store.UpdateOrch(res); err != nil {
 				glog.Error("Error updating Orchestrator in DB: ", err)
 			}
-			returnDBOrchs = append(returnDBOrchs, res)
 		case err := <-errc:
 			glog.Errorln(err)
 		case <-ctx.Done():
@@ -247,13 +249,6 @@ func ethOrchToDBOrch(orch *lpTypes.Transcoder) *common.DBOrch {
 		ActivationRound:   orch.ActivationRound.Int64(),
 		DeactivationRound: orch.DeactivationRound.Int64(),
 	}
-	if orch.ActivationRound != nil {
-		dbO.ActivationRound = orch.ActivationRound.Int64()
-	}
-	if orch.DeactivationRound != nil {
-		dbO.DeactivationRound = orch.DeactivationRound.Int64()
-	}
-	return dbO
 }
 
 func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
