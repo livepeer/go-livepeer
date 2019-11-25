@@ -91,6 +91,54 @@ func TestSenderEV(t *testing.T) {
 	assert.Zero(ticketEV(ticketParams.FaceValue, ticketParams.WinProb).Cmp(ev))
 }
 
+func TestSender_ValidateSender(t *testing.T) {
+	assert := assert.New(t)
+	account := accounts.Account{
+		Address: RandAddress(),
+	}
+	am := &stubSigner{
+		account: account,
+	}
+	rm := &stubRoundsManager{round: big.NewInt(5), blkHash: [32]byte{5}}
+	sm := newStubSenderManager()
+	sm.info[account.Address] = &SenderInfo{
+		Deposit:       big.NewInt(100000),
+		WithdrawRound: big.NewInt(0),
+	}
+	s := &sender{
+		signer:            am,
+		roundsManager:     rm,
+		senderManager:     sm,
+		maxEV:             big.NewRat(100, 1),
+		depositMultiplier: 2,
+	}
+	// GetSenderInfo error
+	sm.err = errors.New("GetSenderInfo error")
+	err := s.validateSender()
+	assert.EqualError(err, "unable to validate sender: could not get sender info: GetSenderInfo error")
+	sm.err = nil
+
+	// Sender's (withdraw round + 1 = current round)
+	sm.info[account.Address].WithdrawRound = big.NewInt(4)
+	err = s.validateSender()
+	assert.EqualError(err, "unable to validate sender: deposit and reserve is set to unlock soon")
+
+	// withdrawround + 1 < current round
+	sm.info[account.Address].WithdrawRound = big.NewInt(2)
+	err = s.validateSender()
+	assert.EqualError(err, "unable to validate sender: deposit and reserve is set to unlock soon")
+
+	// Not unlocked
+	sm.info[account.Address].WithdrawRound = big.NewInt(0)
+	err = s.validateSender()
+	assert.NoError(err)
+
+	// Unlocked but (withdrawRound + 1 > current round)
+	sm.info[account.Address].WithdrawRound = big.NewInt(100)
+	err = s.validateSender()
+	assert.NoError(err)
+}
+
 func TestCreateTicketBatch_NonExistantSession_ReturnsError(t *testing.T) {
 	sender := defaultSender(t)
 
@@ -105,7 +153,7 @@ func TestCreateTicketBatch_GetSenderInfoError_ReturnsError(t *testing.T) {
 
 	sessionID := sender.StartSession(defaultTicketParams(t, RandAddress()))
 	_, err := sender.CreateTicketBatch(sessionID, 1)
-	assert.EqualError(t, err, sm.err.Error())
+	assert.EqualError(t, err, "unable to validate sender: could not get sender info: GetSenderInfo error")
 }
 
 func TestCreateTicketBatch_EVTooHigh_ReturnsError(t *testing.T) {
@@ -144,7 +192,8 @@ func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
 	senderAddr := sender.signer.Account().Address
 	sm := sender.senderManager.(*stubSenderManager)
 	sm.info[senderAddr] = &SenderInfo{
-		Deposit: big.NewInt(0),
+		Deposit:       big.NewInt(0),
+		WithdrawRound: big.NewInt(0),
 	}
 
 	ticketParams := TicketParams{
@@ -426,7 +475,8 @@ func defaultSender(t *testing.T) *sender {
 	rm := &stubRoundsManager{round: big.NewInt(5), blkHash: [32]byte{5}}
 	sm := newStubSenderManager()
 	sm.info[account.Address] = &SenderInfo{
-		Deposit: big.NewInt(100000),
+		Deposit:       big.NewInt(100000),
+		WithdrawRound: big.NewInt(0),
 	}
 	s := NewSender(am, rm, sm, big.NewRat(100, 1), 2)
 	return s.(*sender)

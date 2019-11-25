@@ -75,10 +75,28 @@ func (s *sender) EV(sessionID string) (*big.Rat, error) {
 	return ticketEV(session.ticketParams.FaceValue, session.ticketParams.WinProb), nil
 }
 
+func (s *sender) validateSender() error {
+	info, err := s.senderManager.GetSenderInfo(s.signer.Account().Address)
+	if err != nil {
+		return fmt.Errorf("unable to validate sender: could not get sender info: %v", err)
+	}
+
+	maxWithdrawRound := new(big.Int).Add(s.roundsManager.LastInitializedRound(), big.NewInt(1))
+	if info.WithdrawRound.Int64() != 0 && info.WithdrawRound.Cmp(maxWithdrawRound) != 1 {
+		return fmt.Errorf("unable to validate sender: deposit and reserve is set to unlock soon")
+	}
+
+	return nil
+}
+
 // CreateTicketBatch returns a ticket batch of the specified size
 func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, error) {
 	session, err := s.loadSession(sessionID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := s.validateSender(); err != nil {
 		return nil, err
 	}
 

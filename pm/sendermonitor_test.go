@@ -470,7 +470,7 @@ func TestReserveAlloc(t *testing.T) {
 	assert.Zero(expectedAlloc.Cmp(alloc))
 }
 
-func TestValidateSender(t *testing.T) {
+func TestSenderMonitor_ValidateSender(t *testing.T) {
 	claimant, b, smgr, rm, em := senderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
