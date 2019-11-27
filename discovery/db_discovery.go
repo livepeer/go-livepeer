@@ -58,6 +58,10 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 		return nil, err
 	}
 
+	if err := dbo.cacheOrchestratorStake(); err != nil {
+		return nil, err
+	}
+
 	if err := dbo.pollOrchestratorInfo(ctx); err != nil {
 		return nil, err
 	}
@@ -139,6 +143,53 @@ func (dbo *DBOrchestratorPoolCache) cacheTranscoderPool() error {
 	for _, o := range orchestrators {
 		if err := dbo.store.UpdateOrch(ethOrchToDBOrch(o)); err != nil {
 			glog.Errorf("Unable to update orchestrator %v in DB: %v", o.Address.Hex(), err)
+		}
+	}
+
+	return nil
+}
+
+func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
+	orchs, err := dbo.store.SelectOrchs(
+		&common.DBOrchFilter{
+			CurrentRound: dbo.rm.LastInitializedRound(),
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("could not retrieve orchestrators from DB: %v", err)
+	}
+
+	resc, errc := make(chan *common.DBOrch), make(chan error)
+	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
+	defer cancel()
+
+	currentRound := dbo.rm.LastInitializedRound()
+
+	getStake := func(o *common.DBOrch) {
+		ep, err := dbo.lpEth.GetTranscoderEarningsPoolForRound(ethcommon.HexToAddress(o.EthereumAddr), currentRound)
+		if err != nil {
+			errc <- err
+			return
+		}
+		o.Stake = ep.TotalStake.String()
+		resc <- o
+	}
+
+	for _, o := range orchs {
+		go getStake(o)
+	}
+
+	for i := 0; i < len(orchs); i++ {
+		select {
+		case res := <-resc:
+			if err := dbo.store.UpdateOrch(res); err != nil {
+				glog.Error("Error updating Orchestrator in DB: ", err)
+			}
+		case err := <-errc:
+			glog.Errorln(err)
+		case <-ctx.Done():
+			glog.Info("Done fetching stake for orchestrators, context timeout")
+			break
 		}
 	}
 
