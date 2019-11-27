@@ -97,9 +97,15 @@ func (ow *OrchestratorWatcher) handleTranscoderActivated(log types.Log) error {
 	}
 
 	if !log.Removed {
+		uri, err := ow.lpEth.GetServiceURI(transcoderActivated.Transcoder)
+		if err != nil {
+			return err
+		}
+
 		return ow.store.UpdateOrch(
 			&common.DBOrch{
 				EthereumAddr:      transcoderActivated.Transcoder.String(),
+				ServiceURI:        uri,
 				ActivationRound:   transcoderActivated.ActivationRound.Int64(),
 				DeactivationRound: maxFutureRound,
 			},
@@ -112,6 +118,7 @@ func (ow *OrchestratorWatcher) handleTranscoderActivated(log types.Log) error {
 	return ow.store.UpdateOrch(
 		&common.DBOrch{
 			EthereumAddr:      t.Address.String(),
+			ServiceURI:        t.ServiceURI,
 			ActivationRound:   t.ActivationRound.Int64(),
 			DeactivationRound: t.DeactivationRound.Int64(),
 		},

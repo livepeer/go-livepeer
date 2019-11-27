@@ -171,6 +171,7 @@ type StubClient struct {
 	ClaimedAmount                *big.Int
 	ClaimedReserveError          error
 	Orch                         *lpTypes.Transcoder
+	Err                          error
 }
 
 type stubTranscoder struct {
@@ -204,7 +205,12 @@ func (e *StubClient) TotalSupply() (*big.Int, error)                  { return b
 // Service Registry
 
 func (e *StubClient) SetServiceURI(serviceURI string) (*types.Transaction, error) { return nil, nil }
-func (e *StubClient) GetServiceURI(addr common.Address) (string, error)           { return e.Orch.ServiceURI, nil }
+func (e *StubClient) GetServiceURI(addr common.Address) (string, error) {
+	if e.Err != nil {
+		return "", e.Err
+	}
+	return e.Orch.ServiceURI, nil
+}
 
 // Staking
 
@@ -228,6 +234,9 @@ func (e *StubClient) ClaimEarnings(endRound *big.Int) error {
 	return nil
 }
 func (e *StubClient) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) {
+	if e.Err != nil {
+		return nil, e.Err
+	}
 	return e.Orch, nil
 }
 func (e *StubClient) GetDelegator(addr common.Address) (*lpTypes.Delegator, error) { return nil, nil }
