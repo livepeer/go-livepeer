@@ -445,33 +445,6 @@ func main() {
 		go serviceRegistryWatcher.Watch()
 		defer serviceRegistryWatcher.Stop()
 
-		blockWatchCtx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		// Backfill events that the node has missed since its last seen block. This method will block
-		// and the node will not continue setup until it finishes
-		if err := blockWatcher.BackfillEventsIfNeeded(blockWatchCtx); err != nil {
-			glog.Errorf("Failed to backfill events: %v", err)
-			return
-		}
-
-		blockWatcherErr := make(chan error, 1)
-		go func() {
-			if err := blockWatcher.Watch(blockWatchCtx); err != nil {
-				blockWatcherErr <- fmt.Errorf("block watcher error: %v", err)
-			}
-		}()
-
-		go func() {
-			var err error
-			select {
-			case err = <-roundsWatcherErr:
-			case err = <-blockWatcherErr:
-			}
-
-			watcherErr <- err
-		}()
-
 		n.Balances = core.NewAddressBalances(cleanupInterval)
 		defer n.Balances.StopCleanup()
 
@@ -591,6 +564,33 @@ func main() {
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
 			}
 		}
+
+		blockWatchCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Backfill events that the node has missed since its last seen block. This method will block
+		// and the node will not continue setup until it finishes
+		if err := blockWatcher.BackfillEventsIfNeeded(blockWatchCtx); err != nil {
+			glog.Errorf("Failed to backfill events: %v", err)
+			return
+		}
+
+		blockWatcherErr := make(chan error, 1)
+		go func() {
+			if err := blockWatcher.Watch(blockWatchCtx); err != nil {
+				blockWatcherErr <- fmt.Errorf("block watcher error: %v", err)
+			}
+		}()
+
+		go func() {
+			var err error
+			select {
+			case err = <-roundsWatcherErr:
+			case err = <-blockWatcherErr:
+			}
+
+			watcherErr <- err
+		}()
 	}
 
 	if *s3bucket != "" && *s3creds == "" || *s3bucket == "" && *s3creds != "" {
