@@ -63,9 +63,22 @@ var (
 	maxErrCount = 3
 )
 
-const RtmpPort = "1935"
-const RpcPort = "8935"
-const CliPort = "7935"
+const (
+	RtmpPort = "1935"
+	RpcPort  = "8935"
+	CliPort  = "7935"
+)
+
+type stringSliceFlag []string
+
+func (s *stringSliceFlag) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
+
+func (s *stringSliceFlag) String() string {
+	return strings.Join(*s, ",")
+}
 
 func main() {
 	// Override the default flag set since there are dependencies that
@@ -124,6 +137,9 @@ func main() {
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
+	// Broadcaster whitelist (for testing purposes only)
+	var bcastWhitelist stringSliceFlag
+	flag.Var(&bcastWhitelist, "bcastWhitelist", "Broadcaster whitelist for testing on-chain orchestrator setups when orchestrator is not yet active")
 
 	// Storage:
 	datadir := flag.String("datadir", "", "data directory")
@@ -717,7 +733,13 @@ func main() {
 			return
 		}
 
-		orch := core.NewOrchestrator(s.LivepeerNode)
+		var bcastTestList []ethcommon.Address
+		if *network == "rinkeby" {
+			for _, b := range bcastWhitelist {
+				bcastTestList = append(bcastTestList, ethcommon.HexToAddress(b))
+			}
+		}
+		orch := core.NewOrchestrator(s.LivepeerNode, bcastTestList)
 
 		go func() {
 			server.StartTranscodeServer(orch, *httpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil)
