@@ -277,12 +277,13 @@ func (s *stubGasPriceMonitor) GasPrice() *big.Int {
 }
 
 type stubSenderMonitor struct {
-	maxFloat    *big.Int
-	redeemable  chan *SignedTicket
-	queued      []*SignedTicket
-	acceptable  bool
-	addFloatErr error
-	maxFloatErr error
+	maxFloat          *big.Int
+	redeemable        chan *SignedTicket
+	queued            []*SignedTicket
+	acceptable        bool
+	addFloatErr       error
+	maxFloatErr       error
+	validateSenderErr error
 }
 
 func newStubSenderMonitor() *stubSenderMonitor {
@@ -323,6 +324,8 @@ func (s *stubSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
 
 	return s.maxFloat, nil
 }
+
+func (s *stubSenderMonitor) ValidateSender(addr ethcommon.Address) error { return s.validateSenderErr }
 
 // MockRecipient is useful for testing components that depend on pm.Recipient
 type MockRecipient struct {

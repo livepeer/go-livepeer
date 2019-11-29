@@ -138,6 +138,11 @@ func (r *recipient) Stop() {
 func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (string, bool, error) {
 	recipientRand := r.rand(seed, ticket.Sender)
 
+	// If sender validation check fails, abort
+	if err := r.sm.ValidateSender(ticket.Sender); err != nil {
+		return "", false, err
+	}
+
 	// If any of the basic ticket validity checks fail, abort
 	if err := r.val.ValidateTicket(r.addr, ticket, sig, recipientRand); err != nil {
 		return "", false, err
