@@ -612,6 +612,16 @@ func main() {
 
 			watcherErr <- err
 		}()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, roundsWatcher)
+
+		if err != nil {
+			glog.Errorf("Could not create orchestrator pool with DB cache: %v", err)
+		}
+
+		n.OrchestratorPool = dbOrchPoolCache
 	}
 
 	if *s3bucket != "" && *s3creds == "" || *s3bucket == "" && *s3creds != "" {
@@ -665,16 +675,6 @@ func main() {
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
 		} else if len(orchURLs) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs)
-		} else if *network != "offchain" {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, roundsWatcher)
-
-			if err != nil {
-				glog.Errorf("Could not create orchestrator pool with DB cache: %v", err)
-			}
-
-			n.OrchestratorPool = dbOrchPoolCache
 		}
 		if n.OrchestratorPool == nil {
 			// Not a fatal error; may continue operating in segment-only mode
