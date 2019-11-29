@@ -15,25 +15,27 @@ import (
 const maxFutureRound = int64(math.MaxInt64)
 
 type OrchestratorWatcher struct {
-	store   common.OrchestratorStore
-	dec     *EventDecoder
-	watcher BlockWatcher
-	lpEth   eth.LivepeerEthClient
-	quit    chan struct{}
+	store         orchestratorStore
+	dec           *EventDecoder
+	watcher       BlockWatcher
+	lpEth         eth.LivepeerEthClient
+	quit          chan struct{}
+	addressFilter []ethcommon.Address
 }
 
-func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockWatcher, store common.OrchestratorStore, lpEth eth.LivepeerEthClient) (*OrchestratorWatcher, error) {
+func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockWatcher, store orchestratorStore, lpEth eth.LivepeerEthClient, addressFilter []ethcommon.Address) (*OrchestratorWatcher, error) {
 	dec, err := NewEventDecoder(bondingManagerAddr, contracts.BondingManagerABI)
 	if err != nil {
 		return nil, err
 	}
 
 	return &OrchestratorWatcher{
-		store:   store,
-		dec:     dec,
-		watcher: watcher,
-		lpEth:   lpEth,
-		quit:    make(chan struct{}),
+		store:         store,
+		dec:           dec,
+		watcher:       watcher,
+		lpEth:         lpEth,
+		quit:          make(chan struct{}),
+		addressFilter: addressFilter,
 	}, nil
 }
 
@@ -96,6 +98,12 @@ func (ow *OrchestratorWatcher) handleTranscoderActivated(log types.Log) error {
 		return err
 	}
 
+	if len(ow.addressFilter) > 0 {
+		if !common.ContainsAddress(ow.addressFilter, transcoderActivated.Transcoder) {
+			return nil
+		}
+	}
+
 	if !log.Removed {
 		uri, err := ow.lpEth.GetServiceURI(transcoderActivated.Transcoder)
 		if err != nil {
@@ -129,6 +137,12 @@ func (ow *OrchestratorWatcher) handleTranscoderDeactivated(log types.Log) error 
 	var transcoderDeactivated contracts.BondingManagerTranscoderDeactivated
 	if err := ow.dec.Decode("TranscoderDeactivated", log, &transcoderDeactivated); err != nil {
 		return err
+	}
+
+	if len(ow.addressFilter) > 0 {
+		if !common.ContainsAddress(ow.addressFilter, transcoderDeactivated.Transcoder) {
+			return nil
+		}
 	}
 
 	if !log.Removed {

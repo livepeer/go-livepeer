@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
@@ -194,4 +195,13 @@ var RandomIDGenerator = func(length uint) string {
 // RandName generates random hexadecimal string
 func RandName() string {
 	return RandomIDGenerator(10)
+}
+
+func ContainsAddress(list []ethcommon.Address, item ethcommon.Address) bool {
+	for _, v := range list {
+		if v == item {
+			return true
+		}
+	}
+	return false
 }

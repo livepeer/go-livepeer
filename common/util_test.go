@@ -93,3 +93,15 @@ func TestPriceToFixed(t *testing.T) {
 	assert.Nil(err)
 	assert.Zero(fp)
 }
+
+func TestContainsAddress(t *testing.T) {
+	assert := assert.New(t)
+	addr1 := ethcommon.HexToAddress("0x79f709b01033dfDBf065cfF7a1Abe7C72011D3EB")
+	addr2 := ethcommon.HexToAddress("0xaa5c4244f05c92781c4f259913319d8ba1acf05e")
+	addr3 := ethcommon.HexToAddress("0xf4e1507486dfe411785b00d7d00a1f1a484f00e6")
+	list := []ethcommon.Address{addr1, addr2}
+
+	assert.True(ContainsAddress(list, addr1))
+	assert.True(ContainsAddress(list, addr2))
+	assert.False(ContainsAddress(list, addr3))
+}

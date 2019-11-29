@@ -445,7 +445,12 @@ func main() {
 		go senderWatcher.Watch()
 		defer senderWatcher.Stop()
 
-		orchWatcher, err := watchers.NewOrchestratorWatcher(addrMap["BondingManager"], blockWatcher, dbh, n.Eth)
+		// When in orchestrator mode only process TranscoderActivated/TranscoderDeactivated events for O
+		var addressFilter []ethcommon.Address
+		if *orchestrator {
+			addressFilter = append(addressFilter, n.Eth.Account().Address)
+		}
+		orchWatcher, err := watchers.NewOrchestratorWatcher(addrMap["BondingManager"], blockWatcher, dbh, n.Eth, addressFilter)
 		if err != nil {
 			glog.Errorf("Failed to setup orchestrator watcher: %v", err)
 			return
