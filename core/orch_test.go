@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"math/rand"
+	"net/url"
 	"os"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	"github.com/livepeer/go-livepeer/pm"
 
@@ -32,7 +34,7 @@ func TestCurrentBlock(t *testing.T) {
 		t.Error(err)
 	}
 	defer os.RemoveAll(tmpdir)
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 
 	// test empty db
 	if orch.CurrentBlock() != nil {
@@ -506,7 +508,7 @@ func TestOrchCheckCapacity(t *testing.T) {
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	n, _ := NewLivepeerNode(nil, "", nil)
-	o := NewOrchestrator(n)
+	o := NewOrchestrator(n, []ethcommon.Address{})
 	md := StubSegTranscodingMetadata()
 	cap := MaxSessions
 	assert := assert.New(t)
@@ -531,12 +533,16 @@ func TestProcessPayment_GivenRecipientError_ReturnsNil(t *testing.T) {
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 
+	pool.On("Size").Return(1)
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil)
+
 	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
 
 	assert := assert.New(t)
@@ -547,7 +553,7 @@ func TestProcessPayment_GivenNoSender_ReturnsError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
 
 	protoPayment := defaultPayment(t)
@@ -566,7 +572,7 @@ func TestProcessPayment_GivenNoTicketParams_ReturnsNoError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
 
 	protoPayment := defaultPayment(t)
@@ -589,7 +595,7 @@ func TestProcessPayment_GivenNilNode_ReturnsNilError(t *testing.T) {
 
 func TestProcessPayment_GivenNilRecipient_ReturnsNilError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	n.Recipient = nil
 
 	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
@@ -597,14 +603,58 @@ func TestProcessPayment_GivenNilRecipient_ReturnsNilError(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestProcessPayment_IsActive_IsBcastTestList(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	n, _ := NewLivepeerNode(nil, "", nil)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+	n.Balances = NewAddressBalances(5 * time.Second)
+
+	orch := NewOrchestrator(n, make([]ethcommon.Address, 0))
+
+	// orchestrator inactive and payment sender is not on broadcaster testing list -> error
+	pool.On("Size").Return(0).Once()
+	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	expErr := fmt.Sprintf("orchestrator is inactive and broadcaster %v is not whitelisted for testing purposes, cannot process payments", stubPaymentSender.Hex())
+	assert.EqualError(err, expErr)
+
+	// orchestrator inactive and sender is on broadcaster testing list -> no error
+	pool.On("Size").Return(0).Once()
+	orch.bcastTestList = append(orch.bcastTestList, stubPaymentSender)
+	require.True(common.ContainsAddress(orch.bcastTestList, stubPaymentSender))
+	orch.node.SetBasePrice(big.NewRat(0, 1))
+	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
+	err = orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	time.Sleep(time.Millisecond * 20)
+	assert.NoError(err)
+
+	// orchestrator is active -> no error
+	pool.On("Size").Return(1)
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
+	orch.bcastTestList = []ethcommon.Address{}
+	err = orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	time.Sleep(time.Millisecond * 20)
+	assert.NoError(err)
+}
+
 func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
+
+	pool.On("Size").Return(1)
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
 
@@ -621,13 +671,16 @@ func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
 
+	pool.On("Size").Return(1)
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
 	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("RedeemWinningTicket error"))
@@ -649,12 +702,15 @@ func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
 
+	pool.On("Size").Return(1)
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
 	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -676,12 +732,15 @@ func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
 
+	pool.On("Size").Return(1)
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return(sessionID, true, nil)
 
@@ -732,7 +791,9 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestIDs := make([]string, 5)
@@ -741,6 +802,7 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 		manifestIDs = append(manifestIDs, randString())
 	}
 
+	pool.On("Size").Return(1)
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil)
 
@@ -778,11 +840,14 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 
+	pool.On("Size").Return(1)
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, errors.New("ReceiveTicket error")).Once()
 	// This should trigger a redemption even though it returns an error because it still returns won = true
@@ -817,13 +882,16 @@ func TestProcessPayment_AcceptablePaymentError_IncreasesCreditBalance(t *testing
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 
 	manifestID := ManifestID("some manifest")
 	acceptableError := pm.NewMockReceiveError(errors.New("Acceptable ReceiveTicket error"), true)
 
+	pool.On("Size").Return(1)
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, acceptableError).Once()
 	assert := assert.New(t)
@@ -853,12 +921,15 @@ func TestProcessPayment_UnacceptablePaymentError_DoesNotIncreaseCreditBalance(t 
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	unacceptableError := pm.NewMockReceiveError(errors.New("Unacceptable ReceiveTicket error"), false)
 
+	pool.On("Size").Return(1)
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, unacceptableError).Once()
 	assert := assert.New(t)
@@ -877,12 +948,15 @@ func TestProcesspayment_NoPriceError_IncreasesCredit(t *testing.T) {
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	sender := pm.RandAddress()
 
+	pool.On("Size").Return(1)
 	// This will multiply O's baseprice by 2
 	recipient.On("TxCostMultiplier", sender).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil)
@@ -916,12 +990,15 @@ func TestProcessPayment_AcceptablePriceError_IncreasesCredit_ReturnsError(t *tes
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(10, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	sender := pm.RandAddress()
 
+	pool.On("Size").Return(1)
 	// This will multiply O's baseprice by 2
 	recipient.On("TxCostMultiplier", sender).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil)
@@ -959,12 +1036,15 @@ func TestProcessPayment_UnacceptablePriceError_ReturnsError_DoesNotIncreaseCredi
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 	sender := pm.RandAddress()
 
+	pool.On("Size").Return(1)
 	// This will multiply O's baseprice by 2
 	recipient.On("TxCostMultiplier", sender).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil)
@@ -1000,7 +1080,7 @@ func TestAcceptablePrice(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	assert := assert.New(t)
@@ -1078,7 +1158,7 @@ func TestAcceptablePrice_PriceInfoError_ReturnsErr(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	assert := assert.New(t)
@@ -1099,11 +1179,14 @@ func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 
+	pool.On("Size").Return(1)
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil).Once()
 	assert := assert.New(t)
@@ -1124,11 +1207,14 @@ func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n)
+	pool := new(mockOrchestratorPool)
+	n.OrchestratorPool = pool
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	manifestID := ManifestID("some manifest")
 
+	pool.On("Size").Return(1)
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil).Once()
 	assert := assert.New(t)
@@ -1151,7 +1237,7 @@ func TestSufficientBalance_OffChainMode_ReturnsTrue(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	addr := ethcommon.Address{}
 	manifestID := ManifestID("some manifest")
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	assert.True(t, orch.SufficientBalance(addr, manifestID))
 
 	orch.node.Recipient = new(pm.MockRecipient)
@@ -1177,7 +1263,7 @@ func TestTicketParams(t *testing.T) {
 		RecipientRandHash: pm.RandHash(),
 	}
 	recipient.On("TicketParams", mock.Anything).Return(expectedParams, nil)
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 
 	assert := assert.New(t)
 
@@ -1201,7 +1287,7 @@ func TestTicketParams_GivenNilNode_ReturnsNil(t *testing.T) {
 
 func TestTicketParams_GivenNilRecipient_ReturnsNil(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	n.Recipient = nil
 
 	params, err := orch.TicketParams(ethcommon.Address{})
@@ -1215,7 +1301,7 @@ func TestTicketParams_Error(t *testing.T) {
 	n.Recipient = recipient
 	expErr := errors.New("TicketParams error")
 	recipient.On("TicketParams", mock.Anything).Return(nil, expErr)
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 
 	_, err := orch.TicketParams(ethcommon.Address{})
 	assert.EqualError(t, err, expErr.Error())
@@ -1233,7 +1319,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 
 	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
 	assert.Nil(t, err)
@@ -1242,7 +1328,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	// basePrice = 10/1, txMultiplier = 100/1 => expPricePerPixel = 1010/100
 	basePrice = big.NewRat(10, 1)
 	n.SetBasePrice(basePrice)
-	orch = NewOrchestrator(n)
+	orch = NewOrchestrator(n, []ethcommon.Address{})
 	expPricePerPixel = big.NewRat(1010, 100)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1252,7 +1338,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	// basePrice = 1/10, txMultiplier = 100 => expPricePerPixel = 101/1000
 	basePrice = big.NewRat(1, 10)
 	n.SetBasePrice(basePrice)
-	orch = NewOrchestrator(n)
+	orch = NewOrchestrator(n, []ethcommon.Address{})
 	expPricePerPixel = big.NewRat(101, 1000)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1262,7 +1348,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	// basePrice = 25/10 , txMultiplier = 100 => expPricePerPixel = 2525/1000
 	basePrice = big.NewRat(25, 10)
 	n.SetBasePrice(basePrice)
-	orch = NewOrchestrator(n)
+	orch = NewOrchestrator(n, []ethcommon.Address{})
 	expPricePerPixel = big.NewRat(2525, 1000)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1276,7 +1362,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
-	orch = NewOrchestrator(n)
+	orch = NewOrchestrator(n, []ethcommon.Address{})
 	expPricePerPixel = big.NewRat(11, 1)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1290,7 +1376,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
-	orch = NewOrchestrator(n)
+	orch = NewOrchestrator(n, []ethcommon.Address{})
 	expPricePerPixel = big.NewRat(1100, 10)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1304,7 +1390,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
-	orch = NewOrchestrator(n)
+	orch = NewOrchestrator(n, []ethcommon.Address{})
 	expPricePerPixel = big.NewRat(20, 1)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1314,7 +1400,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 func TestPriceInfo_GivenNilNode_ReturnsNilError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	orch.node = nil
 
 	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
@@ -1324,7 +1410,7 @@ func TestPriceInfo_GivenNilNode_ReturnsNilError(t *testing.T) {
 
 func TestPriceInfo_GivenNilRecipient_ReturnsNilError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	n.Recipient = nil
 
 	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
@@ -1339,7 +1425,7 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(nil, expError)
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 
 	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
 	assert.Nil(t, priceInfo)
@@ -1349,7 +1435,7 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 func TestDebitFees(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	addr := ethcommon.Address{}
 	manifestID := ManifestID("some manifest")
 	assert := assert.New(t)
@@ -1390,7 +1476,7 @@ func TestDebitFees_OffChain_Returns(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 
 	// Node != nil Balances == nil
-	orch := NewOrchestrator(n)
+	orch := NewOrchestrator(n, []ethcommon.Address{})
 	assert.NotPanics(t, func() { orch.DebitFees(addr, manifestID, price, pixels) })
 
 	// Node == nil
@@ -1416,7 +1502,7 @@ func defaultPaymentWithTickets(t *testing.T, senderParams []*net.TicketSenderPar
 		Seed:              pm.RandBytes(123),
 	}
 
-	sender := pm.RandBytes(123)
+	sender := stubPaymentSender.Bytes()
 	expirationParams := &net.TicketExpirationParams{
 		CreationRound:          5,
 		CreationRoundBlockHash: []byte{5},
@@ -1438,4 +1524,25 @@ func randString() string {
 		x[i] = byte(rand.Uint32())
 	}
 	return fmt.Sprintf("%x", x)
+}
+
+var stubPaymentSender = pm.RandAddress()
+
+type mockOrchestratorPool struct {
+	mock.Mock
+}
+
+func (m *mockOrchestratorPool) Size() int {
+	args := m.Called()
+	return args.Int(0)
+}
+
+func (m *mockOrchestratorPool) GetURLs() []*url.URL {
+	args := m.Called()
+	return args.Get(0).([]*url.URL)
+}
+
+func (m *mockOrchestratorPool) GetOrchestrators(n int) ([]*net.OrchestratorInfo, error) {
+	args := m.Called(n)
+	return args.Get(0).([]*net.OrchestratorInfo), args.Error(1)
 }

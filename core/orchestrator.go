@@ -33,8 +33,9 @@ var transcodeLoopTimeout = 1 * time.Minute
 
 // Transcoder / orchestrator RPC interface implementation
 type orchestrator struct {
-	address ethcommon.Address
-	node    *LivepeerNode
+	address       ethcommon.Address
+	node          *LivepeerNode
+	bcastTestList []ethcommon.Address
 }
 
 func (orch *orchestrator) ServiceURI() *url.URL {
@@ -109,6 +110,12 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	}
 
 	sender := ethcommon.BytesToAddress(payment.Sender)
+
+	if !orch.isActive() {
+		if !orch.isTestBroadcaster(sender) {
+			return fmt.Errorf("orchestrator is inactive and broadcaster %v is not whitelisted for testing purposes, cannot process payments", sender.Hex())
+		}
+	}
 
 	var (
 		didPriceErr            bool
@@ -316,14 +323,23 @@ func (orch *orchestrator) acceptablePrice(sender ethcommon.Address, ep *net.Pric
 	return nil
 }
 
-func NewOrchestrator(n *LivepeerNode) *orchestrator {
+func (orch *orchestrator) isActive() bool {
+	return orch.node.OrchestratorPool.Size() > 0
+}
+
+func (orch *orchestrator) isTestBroadcaster(addr ethcommon.Address) bool {
+	return common.ContainsAddress(orch.bcastTestList, addr)
+}
+
+func NewOrchestrator(n *LivepeerNode, bcastTestList []ethcommon.Address) *orchestrator {
 	var addr ethcommon.Address
 	if n.Eth != nil {
 		addr = n.Eth.Account().Address
 	}
 	return &orchestrator{
-		node:    n,
-		address: addr,
+		node:          n,
+		address:       addr,
+		bcastTestList: bcastTestList,
 	}
 }
 
