@@ -130,7 +130,6 @@ func BytesToVideoProfile(txData []byte) ([]ffmpeg.VideoProfile, error) {
 
 func ProfilesToTranscodeOpts(profiles []ffmpeg.VideoProfile) []byte {
 	//Sort profiles first
-	sort.Sort(ffmpeg.ByName(profiles))
 	transOpts := []byte{}
 	for _, prof := range profiles {
 		transOpts = append(transOpts, crypto.Keccak256([]byte(prof.Name))[0:4]...)

@@ -5,7 +5,6 @@ import (
 	"math/big"
 	"testing"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
 )
@@ -50,19 +49,23 @@ func TestVideoProfileBytes(t *testing.T) {
 }
 
 func TestProfilesToHex(t *testing.T) {
+	assert := assert.New(t)
 	// Sanity checking against an existing eth impl that we know works
 	compare := func(profiles []ffmpeg.VideoProfile) {
-		b1 := ethcommon.ToHex(ProfilesToTranscodeOpts(profiles))[2:]
-		b2 := ProfilesToHex(profiles)
-		if b1 != b2 {
-			t.Error("Unequal profile hex ")
-		}
+		pCopy := make([]ffmpeg.VideoProfile, len(profiles))
+		copy(pCopy, profiles)
+		b1, err := hex.DecodeString(ProfilesToHex(profiles))
+		assert.Nil(err, "Error hex encoding/decoding")
+		b2, err := BytesToVideoProfile(b1)
+		assert.Nil(err, "Error converting back to profile")
+		assert.Equal(pCopy, b2)
 	}
 	// XXX double check which one is wrong! ethcommon method produces "0" zero string
 	// compare(nil)
 	// compare([]ffmpeg.VideoProfile{})
 	compare([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9})
 	compare([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P360p30fps16x9})
+	compare([]ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9, ffmpeg.P240p30fps16x9})
 }
 
 func TestPriceToFixed(t *testing.T) {

@@ -19,7 +19,7 @@ func TestSegmentFlatten(t *testing.T) {
 		Hash:       ethcommon.BytesToHash(ethcommon.RightPadBytes([]byte("browns"), 32)),
 		Profiles:   []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9},
 	}
-	sHash := ethcommon.FromHex("e97461de03dcb5bf7f2e95c4ca9c99db2d049fb18a6df67dd9d557b2c05f6473")
+	sHash := ethcommon.FromHex("08a398e7e7a5a545b0b07d9e7e1eab52b4131e0df1621bd53ee6e7550a15465b")
 	if !bytes.Equal(ethcrypto.Keccak256(md.Flatten()), sHash) {
 		t.Error("Flattened segment + hash did not match expected hash")
 	}
