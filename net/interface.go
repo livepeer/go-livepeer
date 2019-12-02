@@ -1,16 +1,8 @@
 package net
 
 import (
-	"net/url"
-
 	"github.com/livepeer/m3u8"
 )
-
-type OrchestratorPool interface {
-	GetURLs() []*url.URL
-	GetOrchestrators(int) ([]*OrchestratorInfo, error)
-	Size() int
-}
 
 type RemoteTranscoderInfo struct {
 	Address  string

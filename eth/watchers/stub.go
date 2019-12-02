@@ -374,3 +374,8 @@ func (s *stubOrchestratorStore) UpdateOrch(orch *common.DBOrch) error {
 	s.serviceURI = orch.ServiceURI
 	return nil
 }
+
+func (s *stubOrchestratorStore) OrchCount(filter *common.DBOrchFilter) (int, error) { return 0, nil }
+func (s *stubOrchestratorStore) SelectOrchs(filter *common.DBOrchFilter) ([]*common.DBOrch, error) {
+	return nil, nil
+}

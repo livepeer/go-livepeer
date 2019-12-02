@@ -15,14 +15,14 @@ import (
 const maxFutureRound = int64(math.MaxInt64)
 
 type OrchestratorWatcher struct {
-	store   orchestratorStore
+	store   common.OrchestratorStore
 	dec     *EventDecoder
 	watcher BlockWatcher
 	lpEth   eth.LivepeerEthClient
 	quit    chan struct{}
 }
 
-func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockWatcher, store orchestratorStore, lpEth eth.LivepeerEthClient) (*OrchestratorWatcher, error) {
+func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockWatcher, store common.OrchestratorStore, lpEth eth.LivepeerEthClient) (*OrchestratorWatcher, error) {
 	dec, err := NewEventDecoder(bondingManagerAddr, contracts.BondingManagerABI)
 	if err != nil {
 		return nil, err

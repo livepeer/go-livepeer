@@ -182,8 +182,6 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 		return nil, errDiscovery
 	}
 
-	rpcBcast := core.NewBroadcaster(n)
-
 	tinfos, err := n.OrchestratorPool.GetOrchestrators(count)
 	if len(tinfos) <= 0 {
 		glog.Info("No orchestrators found; not transcoding. Error: ", err)
@@ -222,7 +220,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 		}
 
 		session := &BroadcastSession{
-			Broadcaster:      rpcBcast,
+			Broadcaster:      core.NewBroadcaster(n),
 			ManifestID:       params.mid,
 			Profiles:         params.profiles,
 			OrchestratorInfo: tinfo,
