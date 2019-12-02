@@ -127,7 +127,7 @@ func main() {
 
 	// Storage:
 	datadir := flag.String("datadir", "", "data directory")
-	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
+	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket) or url of an S3-compatible server (e.g. https://example.com:9000/testbucket)")
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
 	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
 	gsKey := flag.String("gskey", "", "Google Storage private key file name (in json format)")
@@ -599,8 +599,7 @@ func main() {
 		return
 	}
 	if *s3bucket != "" {
-		s3bp := strings.Split(*s3bucket, "/")
-		drivers.S3BUCKET = s3bp[1]
+		drivers.S3CONFIG = *s3bucket
 	}
 	if *gsBucket != "" && *gsKey == "" || *gsBucket == "" && *gsKey != "" {
 		glog.Error("Should specify both gsbucket and gskey")
@@ -609,9 +608,9 @@ func main() {
 
 	// XXX get s3 credentials from local env vars?
 	if *s3bucket != "" && *s3creds != "" {
-		br := strings.Split(*s3bucket, "/")
+		// br := strings.Split(*s3bucket, "/")
 		cr := strings.Split(*s3creds, "/")
-		drivers.NodeStorage = drivers.NewS3Driver(br[0], br[1], cr[0], cr[1])
+		drivers.NodeStorage = drivers.NewS3Driver(*s3bucket, cr[0], cr[1])
 	}
 
 	if *gsBucket != "" && *gsKey != "" {
