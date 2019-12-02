@@ -216,6 +216,11 @@ func InitDB(dbPath string) (*DB, error) {
 		THEN orchestrators.deactivationRound
 		ELSE excluded.deactivationRound END 
 	`)
+	if err != nil {
+		glog.Error("Unable to prepare updateOrch ", err)
+		d.Close()
+		return nil, err
+	}
 	d.updateOrch = stmt
 
 	// Unbonding locks prepared statements
