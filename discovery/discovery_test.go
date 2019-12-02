@@ -13,10 +13,12 @@ import (
 	"testing"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
@@ -1077,4 +1079,29 @@ func TestDeserializeWebhookJSON(t *testing.T) {
 	urls, err = deserializeWebhookJSON([]byte(`1112`))
 	assert.Contains(err.Error(), "cannot unmarshal number")
 	assert.Empty(urls)
+}
+
+func TestEthOrchToDBOrch(t *testing.T) {
+	assert := assert.New(t)
+	o := &lpTypes.Transcoder{
+		ServiceURI:        "hello livepeer",
+		ActivationRound:   big.NewInt(5),
+		DeactivationRound: big.NewInt(100),
+		Address:           ethcommon.HexToAddress("0x79f709b01033dfDBf065cfF7a1Abe7C72011D3EB"),
+	}
+
+	dbo := ethOrchToDBOrch(o)
+
+	assert.Equal(dbo.ServiceURI, o.ServiceURI)
+	assert.Equal(dbo.EthereumAddr, o.Address.Hex())
+	assert.Equal(dbo.ActivationRound, o.ActivationRound.Int64())
+	assert.Equal(dbo.DeactivationRound, o.DeactivationRound.Int64())
+
+	// If DeactivationRound > maxInt64 => DeactivationRound = maxInt64
+	o.DeactivationRound, _ = new(big.Int).SetString("115792089237316195423570985008687907853269984665640564039457584007913129639935", 10)
+	dbo = ethOrchToDBOrch(o)
+	assert.Equal(dbo.ServiceURI, o.ServiceURI)
+	assert.Equal(dbo.EthereumAddr, o.Address.Hex())
+	assert.Equal(dbo.ActivationRound, o.ActivationRound.Int64())
+	assert.Equal(dbo.DeactivationRound, maxInt64)
 }
