@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -51,16 +52,31 @@ type s3Session struct {
 	fields      map[string]string
 }
 
-// S3BUCKET s3 bucket owned by this node
-var S3BUCKET string
+// S3CONFIG s3 bucket or url owned by this node
+var S3CONFIG string
 
-func s3Host(bucket string) string {
-	return fmt.Sprintf("https://%s.s3.amazonaws.com", bucket)
+// Returns host, region, bucket
+func s3Host(s3config string) (string, string, string) {
+	u, err := url.Parse(s3config)
+	// This means it's e.g. "us-west-2/my-bucket"
+	if err != nil || u.Scheme == "" {
+		br := strings.Split(s3config, "/")
+		return fmt.Sprintf("https://%s.s3.amazonaws.com", br[0]), br[0], br[1]
+	}
+	// This means it's e.g. "http://minio-server.com:1234/my-bucket"
+	bucket := u.Path[1:]
+	return fmt.Sprintf("%v", u), "", bucket
 }
 
 // IsOwnStorageS3 returns true if uri points to S3 bucket owned by this node
 func IsOwnStorageS3(uri string) bool {
-	return strings.HasPrefix(uri, s3Host(S3BUCKET))
+	if S3CONFIG == "" {
+		return false
+	}
+	// We don't care about region here, as it's implicit in host.
+	myHost, _, myBucket := s3Host(S3CONFIG)
+	theirHost, _, theirBucket := s3Host(uri)
+	return (myHost == theirHost) && (myBucket == theirBucket)
 }
 
 func newS3Session(info *net.S3OSInfo) OSSession {
@@ -77,9 +93,10 @@ func newS3Session(info *net.S3OSInfo) OSSession {
 	return sess
 }
 
-func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
+func NewS3Driver(s3Config, accessKey, accessKeySecret string) OSDriver {
+	host, region, bucket := s3Host(s3Config)
 	os := &s3OS{
-		host:               s3Host(bucket),
+		host:               host,
 		region:             region,
 		bucket:             bucket,
 		awsAccessKeyID:     accessKey,
@@ -97,7 +114,7 @@ func (os *s3OS) NewSession(path string) OSSession {
 	policy, signature, credential, xAmzDate := createPolicy(os.awsAccessKeyID,
 		os.bucket, os.region, os.awsSecretAccessKey, path)
 	sess := &s3Session{
-		host:        s3Host(os.bucket),
+		host:        os.host,
 		key:         path,
 		policy:      policy,
 		signature:   signature,
