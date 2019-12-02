@@ -101,6 +101,13 @@ type authWebhookResponse struct {
 	ManifestID string   `json:"manifestID"`
 	StreamKey  string   `json:"streamKey"`
 	Presets    []string `json:"presets"`
+	Profiles   []struct {
+		Name    string `json:"name"`
+		Width   int    `json:"width"`
+		Height  int    `json:"height"`
+		Bitrate int    `json:"bitrate"`
+		FPS     int    `json:"fps"`
+	} `json:"profiles"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
@@ -178,7 +185,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		var mid core.ManifestID
 		var err error
 		var key string
-		presets := BroadcastJobVideoProfiles
+		profiles := []ffmpeg.VideoProfile{}
 		if resp, err = authenticateStream(url.String()); err != nil {
 			glog.Error("Authentication denied for ", err)
 			return nil
@@ -187,7 +194,23 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			mid, key = parseManifestID(resp.ManifestID), resp.StreamKey
 			// Process transcoding options presets
 			if len(resp.Presets) > 0 {
-				presets = parsePresets(resp.Presets)
+				profiles = parsePresets(resp.Presets)
+			}
+
+			if len(resp.Profiles) > 0 {
+				for _, profile := range resp.Profiles {
+					prof := ffmpeg.VideoProfile{
+						Name:       profile.Name,
+						Bitrate:    fmt.Sprintf("%dk", profile.Bitrate),
+						Framerate:  uint(profile.FPS),
+						Resolution: fmt.Sprintf("%dx%d", profile.Width, profile.Height),
+					}
+					profiles = append(profiles, prof)
+				}
+			}
+
+			if len(resp.Profiles) <= 0 && len(resp.Presets) <= 0 {
+				profiles = BroadcastJobVideoProfiles
 			}
 		}
 
@@ -218,7 +241,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		return &streamParameters{
 			mid:      mid,
 			rtmpKey:  key,
-			profiles: presets,
+			profiles: profiles,
 		}
 	}
 }
