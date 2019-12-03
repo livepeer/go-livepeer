@@ -44,14 +44,30 @@ func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
 		sessMap[sess.OrchestratorInfo.Transcoder] = sess
 	}
 
+	sel := &LIFOSelector{}
+	sel.Add(sessList)
+
 	return &BroadcastSessionsManager{
-		sessList: sessList,
+		sel:      sel,
 		sessMap:  sessMap,
 		sessLock: &sync.Mutex{},
 		createSessions: func() ([]*BroadcastSession, error) {
 			return sessList, nil
 		},
 	}
+}
+
+type sessionsManagerLIFO struct {
+	*BroadcastSessionsManager
+}
+
+func newSessionsManagerLIFO(bsm *BroadcastSessionsManager) *sessionsManagerLIFO {
+	return &sessionsManagerLIFO{bsm}
+}
+
+func (bsm *sessionsManagerLIFO) sessList() []*BroadcastSession {
+	sessList, _ := bsm.sel.(*LIFOSelector)
+	return *sessList
 }
 
 type stubPlaylistManager struct {
@@ -123,7 +139,7 @@ func TestNewSessionManager(t *testing.T) {
 	pl := core.NewBasicPlaylistManager(mid, storage)
 
 	// Check empty pool produces expected numOrchs
-	sess := NewSessionManager(n, params, pl)
+	sess := NewSessionManager(n, params, pl, &LIFOSelector{})
 	assert.Equal(0, sess.numOrchs)
 
 	// Check numOrchs up to maximum and a bit beyond
@@ -131,7 +147,7 @@ func TestNewSessionManager(t *testing.T) {
 	n.OrchestratorPool = sd
 	max := int(common.HTTPTimeout.Seconds()/SegLen.Seconds()) * 2
 	for i := 0; i < 10; i++ {
-		sess = NewSessionManager(n, params, pl)
+		sess = NewSessionManager(n, params, pl, &LIFOSelector{})
 		if i < max {
 			assert.Equal(i, sess.numOrchs)
 		} else {
@@ -156,28 +172,28 @@ func wgWait(wg *sync.WaitGroup) bool {
 }
 
 func TestSelectSession(t *testing.T) {
-	bsm := StubBroadcastSessionsManager()
+	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
 
 	// assert that initial lengths are as expected
 	assert := assert.New(t)
-	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessList(), 2)
 	assert.Len(bsm.sessMap, 2)
-	expectedSess1 := bsm.sessList[1]
-	expectedSess2 := bsm.sessList[0]
+	expectedSess1 := bsm.sessList()[1]
+	expectedSess2 := bsm.sessList()[0]
 
 	// assert last session selected and sessList is correct length
 	sess := bsm.selectSession()
 	assert.Equal(expectedSess1, sess)
-	assert.Len(bsm.sessList, 1)
+	assert.Len(bsm.sessList(), 1)
 
 	sess = bsm.selectSession()
 	assert.Equal(expectedSess2, sess)
-	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessList(), 0)
 
 	// assert no session is selected from empty list
 	sess = bsm.selectSession()
 	assert.Nil(sess)
-	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessList(), 0)
 	assert.Len(bsm.sessMap, 2) // map should still track original sessions
 
 	// assert session list gets refreshed if under threshold. check via waitgroup
@@ -189,34 +205,36 @@ func TestSelectSession(t *testing.T) {
 	assert.True(wgWait(&wg), "Session refresh timed out")
 
 	// assert the selection retries if session in list doesn't exist in map
-	bsm = StubBroadcastSessionsManager()
-	assert.Len(bsm.sessList, 2)
+	bsm = newSessionsManagerLIFO(StubBroadcastSessionsManager())
+
+	assert.Len(bsm.sessList(), 2)
 	assert.Len(bsm.sessMap, 2)
 	// sanity checks then rebuild in order
 	firstSess := bsm.selectSession()
 	expectedSess := bsm.selectSession()
-	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessList(), 0)
 	assert.Len(bsm.sessMap, 2)
 	bsm.completeSession(expectedSess)
 	bsm.completeSession(firstSess)
 	// remove first sess from map, but keep in list. check results around that
 	bsm.removeSession(firstSess)
-	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessList(), 2)
 	assert.Len(bsm.sessMap, 1)
-	assert.Equal(firstSess, bsm.sessList[1]) // ensure removed sess still in list
+	assert.Equal(firstSess, bsm.sessList()[1]) // ensure removed sess still in list
 	// now ensure next selectSession call fixes up sessList as expected
 	sess = bsm.selectSession()
 	assert.Equal(sess, expectedSess)
-	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessList(), 0)
 	assert.Len(bsm.sessMap, 1)
 
 	// XXX check refresh condition more precisely - currently numOrchs / 2
 }
 
 func TestRemoveSession(t *testing.T) {
-	bsm := StubBroadcastSessionsManager()
-	sess1 := bsm.sessList[0]
-	sess2 := bsm.sessList[1]
+	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
+
+	sess1 := bsm.sessList()[0]
+	sess2 := bsm.sessList()[1]
 
 	assert := assert.New(t)
 	assert.Len(bsm.sessMap, 2)
@@ -241,18 +259,19 @@ func TestRemoveSession(t *testing.T) {
 }
 
 func TestCompleteSessions(t *testing.T) {
-	bsm := StubBroadcastSessionsManager()
+	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
+
 	sess1 := bsm.selectSession()
 
 	// assert that initial lengths are as expected
 	assert := assert.New(t)
-	assert.Len(bsm.sessList, 1)
+	assert.Len(bsm.sessList(), 1)
 	assert.Len(bsm.sessMap, 2)
 
 	bsm.completeSession(sess1)
 
 	// assert that session already in sessMap is added back to sessList
-	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessList(), 2)
 	assert.Len(bsm.sessMap, 2)
 	assert.Equal(sess1, bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
 
@@ -264,26 +283,26 @@ func TestCompleteSessions(t *testing.T) {
 	// assert that session not in sessMap is not added to sessList
 	sess3 := StubBroadcastSession("transcoder3")
 	bsm.completeSession(sess3)
-	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessList(), 2)
 	assert.Len(bsm.sessMap, 2)
 }
 
 func TestRefreshSessions(t *testing.T) {
-	bsm := StubBroadcastSessionsManager()
+	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
 
 	assert := assert.New(t)
-	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessList(), 2)
 	assert.Len(bsm.sessMap, 2)
 
-	sess1 := bsm.sessList[0]
-	sess2 := bsm.sessList[1]
+	sess1 := bsm.sessList()[0]
+	sess2 := bsm.sessList()[1]
 	bsm.createSessions = func() ([]*BroadcastSession, error) {
 		return []*BroadcastSession{sess1, sess2}, nil
 	}
 
 	// asserting that pre-existing sessions are not added to sessList or sessMap
 	bsm.refreshSessions()
-	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessList(), 2)
 	assert.Len(bsm.sessMap, 2)
 
 	sess3 := StubBroadcastSession("transcoder3")
@@ -295,10 +314,10 @@ func TestRefreshSessions(t *testing.T) {
 
 	// asserting that new sessions are added to beginning of sessList and sessMap
 	bsm.refreshSessions()
-	assert.Len(bsm.sessList, 4)
+	assert.Len(bsm.sessList(), 4)
 	assert.Len(bsm.sessMap, 4)
-	assert.Equal(bsm.sessList[0], sess3)
-	assert.Equal(bsm.sessList[1], sess4)
+	assert.Equal(bsm.sessList()[0], sess3)
+	assert.Equal(bsm.sessList()[1], sess4)
 
 	// asserting that refreshes stop while another is in-flight
 	bsm.createSessions = func() ([]*BroadcastSession, error) {
@@ -306,10 +325,10 @@ func TestRefreshSessions(t *testing.T) {
 	}
 	bsm.refreshing = true
 	bsm.refreshSessions()
-	assert.Len(bsm.sessList, 4)
+	assert.Len(bsm.sessList(), 4)
 	assert.Len(bsm.sessMap, 4)
-	assert.Equal(bsm.sessList[0], sess3)
-	assert.Equal(bsm.sessList[1], sess4)
+	assert.Equal(bsm.sessList()[0], sess3)
+	assert.Equal(bsm.sessList()[1], sess4)
 	bsm.refreshing = false
 
 	// Check thread safety, run this under -race
@@ -322,14 +341,15 @@ func TestRefreshSessions(t *testing.T) {
 
 	// asserting that refreshes stop after a cleanup
 	bsm.cleanup()
-	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessList(), 0)
 	assert.Len(bsm.sessMap, 0)
 	bsm.refreshSessions()
-	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessList(), 0)
 	assert.Len(bsm.sessMap, 0)
 
 	// check exit errors from createSession. Run this under -race
-	bsm = StubBroadcastSessionsManager() // reset bsm from previous tests
+	bsm = newSessionsManagerLIFO(StubBroadcastSessionsManager()) // reset bsm from previous tests
+
 	bsm.createSessions = func() ([]*BroadcastSession, error) {
 		time.Sleep(time.Millisecond)
 		return nil, fmt.Errorf("err")
@@ -353,16 +373,16 @@ func TestRefreshSessions(t *testing.T) {
 }
 
 func TestCleanupSessions(t *testing.T) {
-	bsm := StubBroadcastSessionsManager()
+	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
 
 	// sanity checks
 	assert := assert.New(t)
-	assert.Len(bsm.sessList, 2)
+	assert.Len(bsm.sessList(), 2)
 	assert.Len(bsm.sessMap, 2)
 
 	// check relevant fields are reset
 	bsm.cleanup()
-	assert.Len(bsm.sessList, 0)
+	assert.Len(bsm.sessList(), 0)
 	assert.Len(bsm.sessMap, 0)
 }
 

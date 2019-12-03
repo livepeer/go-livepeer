@@ -395,7 +395,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		pl:          playlist,
 		profile:     &vProfile,
 		params:      params,
-		sessManager: NewSessionManager(s.LivepeerNode, params, playlist),
+		sessManager: NewSessionManager(s.LivepeerNode, params, playlist, &LIFOSelector{}),
 		lastUsed:    time.Now(),
 	}
 
