@@ -260,6 +260,23 @@ func TestReceiveTicket_InvalidWinProb_AcceptableError(t *testing.T) {
 
 }
 
+func TestReceiveTicket_InvalidSender(t *testing.T) {
+	assert := assert.New(t)
+	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sm.validateSenderErr = errors.New("Invalid Sender")
+	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
+
+	params, err := r.TicketParams(sender)
+	require.Nil(t, err)
+
+	// Test valid non-winning ticket
+	newSenderNonce := uint32(3)
+	ticket := newTicket(sender, params, newSenderNonce)
+
+	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.EqualError(err, "Invalid Sender")
+}
+
 func TestReceiveTicket_InvalidTicket(t *testing.T) {
 	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
 	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
