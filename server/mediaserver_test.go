@@ -810,7 +810,7 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	cxn, exists := s.rtmpConnections[mid]
 	assert.Equal(exists, true)
 	assert.Equal(cxn.sessManager.finished, false)
-	assert.Len(cxn.sessManager.sessList, 2)
+	assert.Equal(cxn.sessManager.sel.Size(), 2)
 	assert.Len(cxn.sessManager.sessMap, 2)
 
 	// assert stream ends successfully
@@ -821,7 +821,7 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	_, exists = s.rtmpConnections[mid]
 	assert.Equal(exists, false)
 	assert.Equal(cxn.sessManager.finished, true)
-	assert.Len(cxn.sessManager.sessList, 0)
+	assert.Equal(cxn.sessManager.sel.Size(), 0)
 	assert.Len(cxn.sessManager.sessMap, 0)
 
 	// assert stream starts successfully again
@@ -832,7 +832,7 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	cxn, exists = s.rtmpConnections[mid]
 	assert.Equal(exists, true)
 	assert.Equal(cxn.sessManager.finished, false)
-	assert.Len(cxn.sessManager.sessList, 2)
+	assert.Equal(cxn.sessManager.sel.Size(), 2)
 	assert.Len(cxn.sessManager.sessMap, 2)
 }
 
