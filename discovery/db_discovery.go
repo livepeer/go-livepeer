@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/big"
 	"net/url"
 	"strings"
@@ -19,6 +20,8 @@ import (
 
 	"github.com/golang/glog"
 )
+
+const maxInt64 = int64(math.MaxInt64)
 
 var cacheRefreshInterval = 1 * time.Hour
 var getTicker = func() *time.Ticker {
@@ -243,12 +246,18 @@ func ethOrchToDBOrch(orch *lpTypes.Transcoder) *common.DBOrch {
 		return nil
 	}
 
-	return &common.DBOrch{
+	dbo := &common.DBOrch{
 		ServiceURI:        orch.ServiceURI,
 		EthereumAddr:      orch.Address.String(),
 		ActivationRound:   orch.ActivationRound.Int64(),
 		DeactivationRound: orch.DeactivationRound.Int64(),
 	}
+
+	if orch.DeactivationRound.Cmp(big.NewInt(maxInt64)) == 1 {
+		dbo.DeactivationRound = maxInt64
+	}
+
+	return dbo
 }
 
 func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
