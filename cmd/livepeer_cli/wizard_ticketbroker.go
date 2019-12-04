@@ -58,8 +58,8 @@ func (w *wizard) deposit() {
 	reserveAmount := w.readPositiveFloat()
 
 	form := url.Values{
-		"depositAmount": {eth.ToBaseUnit(big.NewFloat(depositAmount)).String()},
-		"reserveAmount": {eth.ToBaseUnit(big.NewFloat(reserveAmount)).String()},
+		"depositAmount": {eth.ToBaseAmount(depositAmount).String()},
+		"reserveAmount": {eth.ToBaseAmount(reserveAmount).String()},
 	}
 	fmt.Println(httpPostWithParams(fmt.Sprintf("http://%v:%v/fundDepositAndReserve", w.host, w.httpPort), form))
 
