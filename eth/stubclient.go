@@ -172,6 +172,8 @@ type StubClient struct {
 	ClaimedReserveError          error
 	Orch                         *lpTypes.Transcoder
 	Err                          error
+	TotalStake                   *big.Int
+	TranscoderPoolError          error
 }
 
 type stubTranscoder struct {
@@ -244,7 +246,10 @@ func (e *StubClient) GetDelegatorUnbondingLock(addr common.Address, unbondingLoc
 	return nil, nil
 }
 func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
-	return nil, nil
+	if e.TranscoderPoolError != nil {
+		return &lpTypes.TokenPools{}, e.TranscoderPoolError
+	}
+	return &lpTypes.TokenPools{TotalStake: e.TotalStake}, nil
 }
 func (e *StubClient) TranscoderPool() ([]*lpTypes.Transcoder, error) {
 	return e.Orchestrators, nil
