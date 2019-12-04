@@ -142,6 +142,9 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 		if err != nil {
 			return nil, err
 		}
+		if profile.Name == "" {
+			profile.Name = fmt.Sprintf("%dx%d_%d", width, height, bitrate)
+		}
 		fullProfile := net.VideoProfile{
 			Name:    profile.Name,
 			Width:   int32(width),

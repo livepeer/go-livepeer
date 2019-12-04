@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"math/big"
 	"net/http"
@@ -271,15 +272,53 @@ func TestVerifySegCreds_FullProfiles(t *testing.T) {
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	assert.Nil(err)
 	assert.Equal(profiles, md.Profiles)
+}
 
-	profiles[0].Bitrate = ""
-	fullProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
-	assert.Contains(err.Error(), "strconv.Atoi: parsing")
+func TestMakeFfmpegVideoProfiles(t *testing.T) {
+	assert := assert.New(t)
+	videoProfiles := []*net.VideoProfile{
+		{
+			Name:    "prof1",
+			Width:   int32(123),
+			Height:  int32(456),
+			Bitrate: int32(789),
+			Fps:     int32(912),
+		},
+		{
+			Name:    "prof2",
+			Width:   int32(987),
+			Height:  int32(654),
+			Bitrate: int32(321),
+			Fps:     int32(198),
+		},
+	}
 
-	profiles[0].Bitrate = "432k"
-	profiles[0].Resolution = ""
-	fullProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
-	assert.Equal(ffmpeg.ErrTranscoderRes, err)
+	// testing happy case scenario
+	expectedProfiles := []ffmpeg.VideoProfile{
+		{
+			Name:       videoProfiles[0].Name,
+			Bitrate:    fmt.Sprintf("%dk", videoProfiles[0].Bitrate),
+			Framerate:  uint(videoProfiles[0].Fps),
+			Resolution: fmt.Sprintf("%dx%d", videoProfiles[0].Width, videoProfiles[0].Height),
+		},
+		{
+			Name:       videoProfiles[1].Name,
+			Bitrate:    fmt.Sprintf("%dk", videoProfiles[1].Bitrate),
+			Framerate:  uint(videoProfiles[1].Fps),
+			Resolution: fmt.Sprintf("%dx%d", videoProfiles[1].Width, videoProfiles[1].Height),
+		},
+	}
+
+	ffmpegProfiles := makeFfmpegVideoProfiles(videoProfiles)
+	expectedResolution := fmt.Sprintf("%dx%d", videoProfiles[0].Width, videoProfiles[0].Height)
+	assert.Equal(expectedProfiles, ffmpegProfiles)
+	assert.Equal(ffmpegProfiles[0].Resolution, expectedResolution)
+
+	// empty name should return automatically generated name
+	videoProfiles[0].Name = ""
+	expectedName := fmt.Sprintf("%dx%d_%d", videoProfiles[0].Width, videoProfiles[0].Height, videoProfiles[0].Bitrate)
+	ffmpegProfiles = makeFfmpegVideoProfiles(videoProfiles)
+	assert.Equal(ffmpegProfiles[0].Name, expectedName)
 }
 
 func TestServeSegment_OSSaveDataError(t *testing.T) {

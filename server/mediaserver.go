@@ -199,6 +199,9 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 			if len(resp.Profiles) > 0 {
 				for _, profile := range resp.Profiles {
+					if profile.Name == "" {
+						profile.Name = fmt.Sprintf("%dx%d_%d", profile.Width, profile.Height, profile.Bitrate)
+					}
 					prof := ffmpeg.VideoProfile{
 						Name:       profile.Name,
 						Bitrate:    fmt.Sprintf("%dk", profile.Bitrate),
