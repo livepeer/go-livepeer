@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"io/ioutil"
 	"math/big"
@@ -14,6 +15,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
@@ -146,6 +148,138 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	res, ok := tr.Result.(*net.TranscodeResult_Error)
 	assert.True(ok)
 	assert.Equal("TranscodeSeg error", res.Error)
+}
+
+func TestVerifySegCreds_Profiles(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	// testing with the following profiles doesn't work: ffmpeg.P720p60fps16x9, ffmpeg.P144p25fps16x9
+	profiles := []ffmpeg.VideoProfile{ffmpeg.P576p30fps16x9, ffmpeg.P240p30fps4x3}
+	segData := &net.SegData{
+		ManifestId: []byte("manifestID"),
+		Profiles:   common.ProfilesToTranscodeOpts(profiles),
+	}
+	data, err := proto.Marshal(segData)
+	assert.Nil(err)
+
+	creds := base64.StdEncoding.EncodeToString(data)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	assert.Nil(err)
+	assert.Equal(profiles, md.Profiles)
+}
+
+func TestGenSegCreds_FullProfiles(t *testing.T) {
+	assert := assert.New(t)
+	profiles := []ffmpeg.VideoProfile{
+		ffmpeg.VideoProfile{
+			Name:       "prof1",
+			Bitrate:    "432k",
+			Framerate:  uint(560),
+			Resolution: "123x456",
+		},
+		ffmpeg.VideoProfile{
+			Name:       "prof2",
+			Bitrate:    "765k",
+			Framerate:  uint(876),
+			Resolution: "456x987",
+		},
+	}
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		Profiles:    profiles,
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+
+	data, err := genSegCreds(s, seg)
+	assert.Nil(err)
+
+	buf, err := base64.StdEncoding.DecodeString(data)
+	assert.Nil(err)
+
+	segData := net.SegData{}
+	err = proto.Unmarshal(buf, &segData)
+	assert.Nil(err)
+
+	expectedProfiles, err := common.FFmpegProfiletoNetProfile(profiles)
+	assert.Nil(err)
+	assert.Equal(expectedProfiles, segData.FullProfiles)
+}
+
+func TestGenSegCreds_Profiles(t *testing.T) {
+	assert := assert.New(t)
+	profiles := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P360p30fps16x9}
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		Profiles:    profiles,
+	}
+
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+
+	data, err := genSegCreds(s, seg)
+	assert.Nil(err)
+
+	buf, err := base64.StdEncoding.DecodeString(data)
+	assert.Nil(err)
+
+	segData := net.SegData{}
+	err = proto.Unmarshal(buf, &segData)
+	assert.Nil(err)
+
+	expectedProfiles, err := common.FFmpegProfiletoNetProfile(profiles)
+	assert.Nil(err)
+	assert.Equal(expectedProfiles, segData.FullProfiles)
+}
+
+func TestVerifySegCreds_FullProfiles(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	profiles := []ffmpeg.VideoProfile{
+		ffmpeg.VideoProfile{
+			Name:       "prof1",
+			Bitrate:    "432k",
+			Framerate:  uint(560),
+			Resolution: "123x456",
+		},
+		ffmpeg.VideoProfile{
+			Name:       "prof2",
+			Bitrate:    "765k",
+			Framerate:  uint(876),
+			Resolution: "456x987",
+		},
+	}
+
+	fullProfiles, err := common.FFmpegProfiletoNetProfile(profiles)
+	assert.Nil(err)
+
+	segData := &net.SegData{
+		ManifestId:   []byte("manifestID"),
+		FullProfiles: fullProfiles,
+	}
+
+	data, err := proto.Marshal(segData)
+	assert.Nil(err)
+
+	creds := base64.StdEncoding.EncodeToString(data)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	assert.Nil(err)
+	assert.Equal(profiles, md.Profiles)
+
+	profiles[0].Bitrate = ""
+	fullProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
+	assert.Contains(err.Error(), "strconv.Atoi: parsing")
+
+	profiles[0].Bitrate = "432k"
+	profiles[0].Resolution = ""
+	fullProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
+	assert.Equal(ffmpeg.ErrTranscoderRes, err)
 }
 
 func TestServeSegment_OSSaveDataError(t *testing.T) {
