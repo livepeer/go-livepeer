@@ -8,6 +8,13 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
+// Special error type indicating a retryable error
+// Such errors typically mean re-trying the transcode might help
+// (Non-retryable errors usually indicate unrecoverable system errors)
+type Retryable struct {
+	error
+}
+
 type Params struct {
 	// ManifestID should go away once we do direct push of video
 	ManifestID core.ManifestID
@@ -25,6 +32,14 @@ type Params struct {
 	Results *net.TranscodeData
 }
 
+type Results struct {
+	// Verifier specific score
+	Score float64
+
+	// Number of pixels decoded in this result
+	Pixels []int64
+}
+
 type Verifier interface {
-	Verify(params *Params) error
+	Verify(params *Params) (*Results, error)
 }

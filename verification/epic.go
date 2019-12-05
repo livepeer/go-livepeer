@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -15,6 +16,11 @@ import (
 
 	"github.com/livepeer/lpms/ffmpeg"
 )
+
+var ErrVerifierStatus = errors.New("VerifierStatus")
+var ErrVideoUnavailable = errors.New("VideoUnavailable")
+var ErrAudioMismatch = Retryable{errors.New("AudioMismatch")}
+var ErrTampered = Retryable{errors.New("Tampered")}
 
 type epicResolution struct {
 	Width  int `json:"width"`
@@ -33,11 +39,51 @@ type epicRequest struct {
 	Model          string          `json:"model"`
 }
 
+type epicResultFields struct {
+	VideoAvailable bool    `json:"video_available"`
+	AudioAvailable bool    `json:"audio_available"`
+	AudioDistance  float64 `json:"audio_dist"`
+	Pixels         int64   `json:"pixels"`
+	Tamper         float64 `json:"tamper"`
+}
+
+type epicResults struct {
+	Source  string             `json:"source"`
+	Results []epicResultFields `json:"results"`
+}
+
 type EpicClassifier struct {
 	Addr string
 }
 
-func (e *EpicClassifier) Verify(params *Params) error {
+func epicResultsToVerificationResults(er *epicResults) (*Results, error) {
+	// find average of scores and build list of pixels
+	var (
+		score  float64
+		pixels []int64
+	)
+	var err error
+	// If an error is gathered, continue to gather overall pixel counts
+	// In case this is a false positive. Only return the first error.
+	for _, v := range er.Results {
+		// The order of error checking is somewhat arbitrary for now
+		// But generally it should check for fatal errors first, then retryable
+		if v.AudioAvailable && v.AudioDistance != 0.0 && err == nil {
+			err = ErrAudioMismatch
+		}
+		if v.VideoAvailable && v.Tamper <= 0 && err == nil {
+			err = ErrTampered
+		}
+		if !v.VideoAvailable && err == nil {
+			err = ErrVideoUnavailable
+		}
+		score += v.Tamper / float64(len(er.Results))
+		pixels = append(pixels, v.Pixels)
+	}
+	return &Results{Score: score, Pixels: pixels}, err
+}
+
+func (e *EpicClassifier) Verify(params *Params) (*Results, error) {
 	mid, source, profiles := params.ManifestID, params.Source, params.Profiles
 	orch, res := params.Orchestrator, params.Results
 	glog.V(common.DEBUG).Infof("Verifying segment manifestID=%s seqNo=%d\n",
@@ -71,14 +117,14 @@ func (e *EpicClassifier) Verify(params *Params) error {
 	reqData, err := json.Marshal(req)
 	if err != nil {
 		glog.Error("Could not marshal JSON for verifier! ", err)
-		return err
+		return nil, err
 	}
 	glog.V(common.DEBUG).Info("Request Body: ", string(reqData))
 	startTime := time.Now()
 	resp, err := http.Post(e.Addr, "application/json", bytes.NewBuffer(reqData))
 	if err != nil {
 		glog.Error("Could not submit request ", err)
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	var deferErr error // short variable re-declaration of `err` bites us with defer
@@ -90,8 +136,19 @@ func (e *EpicClassifier) Verify(params *Params) error {
 			mid, source.SeqNo, deferErr, endTime.Sub(startTime))
 	}()
 	if deferErr = err; err != nil {
-		return err
+		return nil, err
 	}
 	glog.V(common.DEBUG).Info("Response Body: ", string(body))
-	return nil
+	if resp.StatusCode >= 400 {
+		deferErr = err
+		return nil, ErrVerifierStatus
+	}
+	var er epicResults
+	err = json.Unmarshal(body, &er)
+	if deferErr = err; err != nil {
+		return nil, err
+	}
+	vr, err := epicResultsToVerificationResults(&er)
+	deferErr = err
+	return vr, err
 }
