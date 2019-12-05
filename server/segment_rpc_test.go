@@ -316,7 +316,7 @@ func TestMakeFfmpegVideoProfiles(t *testing.T) {
 
 	// empty name should return automatically generated name
 	videoProfiles[0].Name = ""
-	expectedName := fmt.Sprintf("%dx%d_%d", videoProfiles[0].Width, videoProfiles[0].Height, videoProfiles[0].Bitrate)
+	expectedName := "net_" + fmt.Sprintf("%dx%d_%d", videoProfiles[0].Width, videoProfiles[0].Height, videoProfiles[0].Bitrate)
 	ffmpegProfiles = makeFfmpegVideoProfiles(videoProfiles)
 	assert.Equal(ffmpegProfiles[0].Name, expectedName)
 }

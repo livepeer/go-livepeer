@@ -130,6 +130,10 @@ func BytesToVideoProfile(txData []byte) ([]ffmpeg.VideoProfile, error) {
 	return profiles, nil
 }
 
+func DefaultProfileName(width int, height int, bitrate int) string {
+	return fmt.Sprintf("%dx%d_%d", width, height, bitrate)
+}
+
 func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.VideoProfile, error) {
 	profiles := []*net.VideoProfile{}
 	for _, profile := range ffmpegProfiles {
@@ -142,8 +146,9 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 		if err != nil {
 			return nil, err
 		}
-		if profile.Name == "" {
-			profile.Name = fmt.Sprintf("%dx%d_%d", width, height, bitrate)
+		name := profile.Name
+		if name == "" {
+			profile.Name = "ffmpeg_" + DefaultProfileName(width, height, bitrate)
 		}
 		fullProfile := net.VideoProfile{
 			Name:    profile.Name,

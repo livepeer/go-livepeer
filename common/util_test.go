@@ -80,7 +80,7 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 	bitrate, err := strconv.Atoi(br)
 	assert.Nil(err)
 
-	expectedName := fmt.Sprintf("%dx%d_%d", width, height, bitrate)
+	expectedName := "ffmpeg_" + fmt.Sprintf("%dx%d_%d", width, height, bitrate)
 	assert.Equal(expectedName, fullProfiles[0].Name)
 
 	fullProfiles, err = FFmpegProfiletoNetProfile(profiles)
