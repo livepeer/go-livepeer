@@ -98,6 +98,7 @@ type BroadcastSession struct {
 	Sender           pm.Sender
 	PMSessionID      string
 	Balance          Balance
+	LatencyScore     float64
 }
 
 type lphttp struct {
