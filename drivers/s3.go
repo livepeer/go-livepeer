@@ -26,7 +26,7 @@ import (
 )
 
 // S3_POLICY_EXPIRE_IN_HOURS how long access rights given to other node will be valid
-const S3_POLICY_EXPIRE_IN_HOURS = 24
+const S3_POLICY_EXPIRE_IN_HOURS = 24 * 365
 
 /* S3OS S# backed object storage driver. For own storage access key and access key secret
    should be specified. To give to other nodes access to own S3 storage so called 'POST' policy
