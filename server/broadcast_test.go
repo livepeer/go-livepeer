@@ -439,7 +439,7 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 		sessManager: bsm,
 	}
 
-	assert.Nil(transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy"))
+	assert.Nil(transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil))
 
 	completedSess := bsm.sessMap[ts.URL]
 	assert.NotEqual(completedSess, sess)
@@ -455,7 +455,7 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	buf, err = proto.Marshal(tr)
 	require.Nil(err)
 
-	assert.Nil(transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy"))
+	assert.Nil(transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil))
 
 	// Check that BroadcastSession.OrchestratorInfo was updated
 	completedSessInfo := bsm.sessMap[ts.URL].OrchestratorInfo
@@ -506,7 +506,7 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 		sessManager: bsm,
 	}
 
-	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy")
+	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
 	assert.Nil(err)
 
 	// Wait for async pixels verification to finish (or in this case we are just making sure that it did NOT run)
@@ -521,7 +521,7 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	bsm = bsmWithSessList([]*BroadcastSession{sess})
 	cxn.sessManager = bsm
 
-	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy")
+	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
 	assert.Nil(err)
 
 	// Wait for async pixels verification to finish
@@ -544,7 +544,7 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	bsm = bsmWithSessList([]*BroadcastSession{sess})
 	cxn.sessManager = bsm
 
-	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy")
+	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
 	assert.Nil(err)
 
 	// Wait for async pixels verification to finish

@@ -678,7 +678,9 @@ func main() {
 				glog.Fatal("Error setting verifier URL ", err)
 			}
 			glog.Info("Using the Epic Labs classifier for verification at ", *verifierURL)
-			server.Verifier = &verification.EpicClassifier{Addr: *verifierURL}
+			server.Policy = &verification.Policy{Retries: 2, Verifier: &verification.EpicClassifier{Addr: *verifierURL}}
+			// TODO Set up a default "empty" verifier-less policy for onchain
+			//      that only checks sigs and pixels?
 		}
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)
