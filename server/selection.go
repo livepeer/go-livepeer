@@ -2,10 +2,12 @@ package server
 
 import (
 	"container/heap"
+	"errors"
 	"math/rand"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 )
 
 // BroadcastSessionsSelector selects the next BroadcastSession to use
@@ -62,6 +64,28 @@ func (h *sessHeap) Peek() interface{} {
 
 type stakeReader interface {
 	Stakes(addrs []ethcommon.Address) (map[ethcommon.Address]int64, error)
+}
+
+type storeStakeReader struct {
+	store common.OrchestratorStore
+}
+
+func (r *storeStakeReader) Stakes(addrs []ethcommon.Address) (map[ethcommon.Address]int64, error) {
+	orchs, err := r.store.SelectOrchs(&common.DBOrchFilter{Addresses: addrs})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(orchs) != len(addrs) {
+		return nil, errors.New("could not fetch all stake weights")
+	}
+
+	stakes := make(map[ethcommon.Address]int64)
+	for _, orch := range orchs {
+		stakes[ethcommon.HexToAddress(orch.EthereumAddr)] = orch.Stake
+	}
+
+	return stakes, nil
 }
 
 // MinLSSelector selects the next BroadcastSession with the lowest latency score if it is good enough.
