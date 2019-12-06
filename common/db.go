@@ -46,7 +46,7 @@ type DBOrch struct {
 	PricePerPixel     int64
 	ActivationRound   int64
 	DeactivationRound int64
-	Stake             string
+	Stake             []byte
 }
 
 // DBOrch is the type binding for a row result from the unbondingLocks table
@@ -83,7 +83,7 @@ var schema = `
 		pricePerPixel int64,
 		activationRound int64,
 		deactivationRound int64,
-		stake STRING
+		stake BLOB
 	);
 
 	CREATE TABLE IF NOT EXISTS unbondingLocks (
@@ -123,7 +123,7 @@ var schema = `
 	CREATE INDEX IF NOT EXISTS idx_blockheaders_number ON blockheaders(number);
 `
 
-func NewDBOrch(ethereumAddr string, serviceURI string, pricePerPixel int64, activationRound int64, deactivationRound int64, stake string) *DBOrch {
+func NewDBOrch(ethereumAddr string, serviceURI string, pricePerPixel int64, activationRound int64, deactivationRound int64, stake []byte) *DBOrch {
 	return &DBOrch{
 		ServiceURI:        serviceURI,
 		EthereumAddr:      ethereumAddr,
@@ -219,7 +219,7 @@ func InitDB(dbPath string) (*DB, error) {
 		THEN orchestrators.deactivationRound
 		ELSE excluded.deactivationRound END,
 	stake = 
-		CASE WHEN excluded.stake == ""
+		CASE WHEN excluded.stake IS NULL
 		THEN orchestrators.stake
 		ELSE excluded.stake END 
 	`)
@@ -461,18 +461,14 @@ func (db *DB) SelectOrchs(filter *DBOrchFilter) ([]*DBOrch, error) {
 			pricePerPixel     int64
 			activationRound   int64
 			deactivationRound int64
-			stake             sql.NullString
+			stake             []byte
 		)
 		if err := rows.Scan(&serviceURI, &ethereumAddr, &pricePerPixel, &activationRound, &deactivationRound, &stake); err != nil {
 			glog.Error("db: Unable to fetch orchestrator ", err)
 			continue
 		}
 
-		totalStake := "0"
-		if stake.Valid {
-			totalStake = stake.String
-		}
-		orchs = append(orchs, NewDBOrch(serviceURI, ethereumAddr, pricePerPixel, activationRound, deactivationRound, totalStake))
+		orchs = append(orchs, NewDBOrch(serviceURI, ethereumAddr, pricePerPixel, activationRound, deactivationRound, stake))
 	}
 	return orchs, nil
 }

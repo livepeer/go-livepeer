@@ -365,7 +365,7 @@ type stubOrchestratorStore struct {
 	deactivationRound int64
 	serviceURI        string
 	ethereumAddr      string
-	stake             string
+	stake             []byte
 	selectErr         error
 	updateErr         error
 }

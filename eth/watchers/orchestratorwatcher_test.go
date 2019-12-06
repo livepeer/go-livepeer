@@ -167,7 +167,7 @@ func TestOrchWatcher_HandleRoundEvent_CacheOrchestratorStake(t *testing.T) {
 	rw.sink <- newRoundEvent
 	time.Sleep(2 * time.Millisecond)
 
-	assert.Equal(stubStore.stake, expStake.String())
+	assert.Equal(stubStore.stake, expStake.Bytes())
 
 	// LivepeerEthClient.CurrentRound() error
 	lpEth.RoundsErr = errors.New("CurrentRound error")

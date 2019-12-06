@@ -174,7 +174,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 			errc <- err
 			return
 		}
-		o.Stake = ep.TotalStake.String()
+		o.Stake = ep.TotalStake.Bytes()
 		resc <- o
 	}
 
