@@ -10,9 +10,53 @@ import (
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/stretchr/testify/assert"
 )
+
+type stubOrchestratorStore struct {
+	orchs []*common.DBOrch
+	err   error
+}
+
+func (s *stubOrchestratorStore) OrchCount(filter *common.DBOrchFilter) (int, error) { return 0, nil }
+func (s *stubOrchestratorStore) UpdateOrch(orch *common.DBOrch) error               { return nil }
+func (s *stubOrchestratorStore) SelectOrchs(filter *common.DBOrchFilter) ([]*common.DBOrch, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.orchs, nil
+}
+
+func TestStoreStakeReader(t *testing.T) {
+	assert := assert.New(t)
+
+	store := &stubOrchestratorStore{}
+	rdr := &storeStakeReader{store: store}
+
+	store.err = errors.New("SelectOrchs error")
+	_, err := rdr.Stakes(nil)
+	assert.EqualError(err, store.err.Error())
+
+	store.err = nil
+	store.orchs = []*common.DBOrch{&common.DBOrch{}}
+	_, err = rdr.Stakes(nil)
+	assert.EqualError(err, "could not fetch all stake weights")
+
+	store.orchs = []*common.DBOrch{
+		&common.DBOrch{EthereumAddr: "foo", Stake: []byte("0xa")},
+		&common.DBOrch{EthereumAddr: "bar", Stake: []byte("0xb")},
+	}
+	stakes, err := rdr.Stakes([]ethcommon.Address{ethcommon.Address{}, ethcommon.Address{}})
+	assert.Nil(err)
+
+	for _, orch := range store.orchs {
+		addr := ethcommon.HexToAddress(orch.EthereumAddr)
+		assert.Contains(stakes, addr)
+		assert.Zero(new(big.Int).SetBytes(orch.Stake).Cmp(stakes[addr]))
+	}
+}
 
 type stubStakeReader struct {
 	stakes map[ethcommon.Address]*big.Int
