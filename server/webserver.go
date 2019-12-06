@@ -984,6 +984,30 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.HandleFunc("/requestTokens", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
+
+			nextValidRequest, err := s.LivepeerNode.Eth.NextValidRequest(s.LivepeerNode.Eth.Account().Address)
+			if err != nil {
+				glog.Errorf("Unable to get the time for the next valid request from faucet: %v", err)
+				return
+			}
+			backend, err := s.LivepeerNode.Eth.Backend()
+			if err != nil {
+				glog.Errorf("Unable to get LivepeerEthClient backend: %v", err)
+				return
+			}
+
+			blk, err := backend.BlockByNumber(context.Background(), nil)
+			if err != nil {
+				glog.Errorf("Unable to get latest block")
+				return
+			}
+
+			now := int64(blk.Time())
+			if nextValidRequest.Int64() != 0 && nextValidRequest.Int64() > now {
+				glog.Errorf("Error requesting tokens from faucet: can only request tokens once every hour, please wait %v more minutes", (nextValidRequest.Int64()-now)/60)
+				return
+			}
+
 			glog.Infof("Requesting tokens from faucet")
 
 			tx, err := s.LivepeerNode.Eth.Request()
