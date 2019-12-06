@@ -101,6 +101,13 @@ type BroadcastSession struct {
 	LatencyScore     float64
 }
 
+// ReceivedTranscodeResult contains received transcode result data and related metadata
+type ReceivedTranscodeResult struct {
+	*net.TranscodeData
+	Info         *net.OrchestratorInfo
+	LatencyScore float64
+}
+
 type lphttp struct {
 	orchestrator Orchestrator
 	orchRPC      *grpc.Server
