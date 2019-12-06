@@ -97,7 +97,13 @@ func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 
-	if _, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+	if existingSess, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+		// If the new session and the existing session share the same key in sessMap replace
+		// the existing session with the new session
+		if existingSess != sess {
+			bsm.sessMap[sess.OrchestratorInfo.Transcoder] = sess
+		}
+
 		bsm.sel.Complete(sess)
 	}
 }
@@ -338,7 +344,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 			return err
 		}
 
-		cxn.sessManager.completeSession(sess)
+		cxn.sessManager.completeSession(updateSession(sess, res))
 
 		// download transcoded segments from the transcoder
 		gotErr := false // only send one error msg per segment list
@@ -504,4 +510,35 @@ func pixels(fname string) (int64, error) {
 	}
 
 	return res.Decoded.Pixels, nil
+}
+
+// Return an updated copy of the given session using the received transcode result
+func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) *BroadcastSession {
+	// Instead of mutating the existing session we copy it and return an updated copy
+	newSess := &BroadcastSession{}
+	*newSess = *sess
+	newSess.LatencyScore = res.LatencyScore
+
+	if res.Info == nil {
+		// Return newSess early if we do not need to update OrchestratorInfo
+		return newSess
+	}
+
+	oInfo := res.Info
+	newSess.OrchestratorInfo = oInfo
+
+	if len(oInfo.Storage) > 0 {
+		newSess.OrchestratorOS = drivers.NewSession(oInfo.Storage[0])
+	}
+
+	if newSess.Sender != nil && oInfo.TicketParams != nil {
+		// Note: We do not validate the ticket params included in the OrchestratorInfo
+		// message here. Instead, we store the ticket params with the current BroadcastSession
+		// and the next time this BroadcastSession is used, the ticket params will be validated
+		// during ticket creation in genPayment(). If ticket params validation during ticket
+		// creation fails, then this BroadcastSession will be removed
+		newSess.PMSessionID = newSess.Sender.StartSession(*pmTicketParams(oInfo.TicketParams))
+	}
+
+	return newSess
 }
