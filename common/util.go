@@ -135,7 +135,7 @@ func DefaultProfileName(width int, height int, bitrate int) string {
 }
 
 func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.VideoProfile, error) {
-	profiles := []*net.VideoProfile{}
+	profiles := make([]*net.VideoProfile, 0, len(ffmpegProfiles))
 	for _, profile := range ffmpegProfiles {
 		width, height, err := ffmpeg.VideoProfileResolution(profile)
 		if err != nil {
@@ -148,10 +148,10 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 		}
 		name := profile.Name
 		if name == "" {
-			profile.Name = "ffmpeg_" + DefaultProfileName(width, height, bitrate)
+			name = "ffmpeg_" + DefaultProfileName(width, height, bitrate)
 		}
 		fullProfile := net.VideoProfile{
-			Name:    profile.Name,
+			Name:    name,
 			Width:   int32(width),
 			Height:  int32(height),
 			Bitrate: int32(bitrate),

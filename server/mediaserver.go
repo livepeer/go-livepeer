@@ -106,7 +106,7 @@ type authWebhookResponse struct {
 		Width   int    `json:"width"`
 		Height  int    `json:"height"`
 		Bitrate int    `json:"bitrate"`
-		FPS     int    `json:"fps"`
+		FPS     uint   `json:"fps"`
 	} `json:"profiles"`
 }
 
@@ -197,25 +197,24 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 				profiles = parsePresets(resp.Presets)
 			}
 
-			if len(resp.Profiles) > 0 {
-				for _, profile := range resp.Profiles {
-					name := profile.Name
-					if name == "" {
-						profile.Name = "webhook_" + common.DefaultProfileName(
-							int(profile.Width),
-							int(profile.Height),
-							int(profile.Bitrate))
-					}
-					prof := ffmpeg.VideoProfile{
-						Name:       profile.Name,
-						Bitrate:    fmt.Sprintf("%dk", profile.Bitrate),
-						Framerate:  uint(profile.FPS),
-						Resolution: fmt.Sprintf("%dx%d", profile.Width, profile.Height),
-					}
-					profiles = append(profiles, prof)
+			for _, profile := range resp.Profiles {
+				name := profile.Name
+				if name == "" {
+					name = "webhook_" + common.DefaultProfileName(
+						profile.Width,
+						profile.Height,
+						profile.Bitrate)
 				}
+				prof := ffmpeg.VideoProfile{
+					Name:       name,
+					Bitrate:    fmt.Sprintf("%dk", profile.Bitrate),
+					Framerate:  profile.FPS,
+					Resolution: fmt.Sprintf("%dx%d", profile.Width, profile.Height),
+				}
+				profiles = append(profiles, prof)
 			}
 
+			// Only set defaults if user did not specify a preset/profile
 			if len(resp.Profiles) <= 0 && len(resp.Presets) <= 0 {
 				profiles = BroadcastJobVideoProfiles
 			}

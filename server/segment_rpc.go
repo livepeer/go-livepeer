@@ -211,14 +211,14 @@ func getPaymentSender(payment net.Payment) ethcommon.Address {
 }
 
 func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) []ffmpeg.VideoProfile {
-	profiles := []ffmpeg.VideoProfile{}
+	profiles := make([]ffmpeg.VideoProfile, 0, len(protoProfiles))
 	for _, profile := range protoProfiles {
 		name := profile.Name
 		if name == "" {
-			profile.Name = "net_" + common.DefaultProfileName(int(profile.Width), int(profile.Height), int(profile.Bitrate))
+			name = "net_" + common.DefaultProfileName(int(profile.Width), int(profile.Height), int(profile.Bitrate))
 		}
 		prof := ffmpeg.VideoProfile{
-			Name:       profile.Name,
+			Name:       name,
 			Bitrate:    fmt.Sprintf("%dk", profile.Bitrate),
 			Framerate:  uint(profile.Fps),
 			Resolution: fmt.Sprintf("%dx%d", profile.Width, profile.Height),
