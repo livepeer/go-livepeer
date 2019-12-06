@@ -285,6 +285,19 @@ func TestCompleteSessions(t *testing.T) {
 	bsm.completeSession(sess3)
 	assert.Len(bsm.sessList(), 2)
 	assert.Len(bsm.sessMap, 2)
+
+	sess1 = bsm.selectSession()
+
+	copiedSess := &BroadcastSession{}
+	*copiedSess = *sess1
+	copiedSess.LatencyScore = 2.7
+	bsm.completeSession(copiedSess)
+
+	// assert that existing session with same key in sessMap is replaced
+	assert.Len(bsm.sessList(), 2)
+	assert.Len(bsm.sessMap, 2)
+	assert.NotEqual(sess1, bsm.sessMap[copiedSess.OrchestratorInfo.Transcoder])
+	assert.Equal(copiedSess, bsm.sessMap[copiedSess.OrchestratorInfo.Transcoder])
 }
 
 func TestRefreshSessions(t *testing.T) {
@@ -389,6 +402,65 @@ func TestCleanupSessions(t *testing.T) {
 // Note: Add processSegment tests, including:
 //     assert an error from transcoder removes sess from BroadcastSessionManager
 //     assert a success re-adds sess to BroadcastSessionManager
+
+func TestTranscodeSegment_CompleteSession(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	tr := &net.TranscodeResult{
+		Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{
+				Segments: []*net.TranscodedSegmentData{&net.TranscodedSegmentData{Url: "test.flv"}},
+				Sig:      []byte("bar"),
+			},
+		},
+	}
+	buf, err := proto.Marshal(tr)
+	require.Nil(err)
+
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+	cxn := &rtmpConnection{
+		mid:         core.ManifestID("foo"),
+		nonce:       7,
+		pl:          &stubPlaylistManager{core.ManifestID("foo")},
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsm,
+	}
+
+	assert.Nil(transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy"))
+
+	completedSess := bsm.sessMap[ts.URL]
+	assert.NotEqual(completedSess, sess)
+	assert.NotZero(completedSess.LatencyScore)
+
+	// Check that the completed session is just the original session with a different LatencyScore
+	copiedSess := &BroadcastSession{}
+	*copiedSess = *completedSess
+	copiedSess.LatencyScore = 0.0
+	assert.Equal(copiedSess, sess)
+
+	tr.Info = &net.OrchestratorInfo{Transcoder: ts.URL, PriceInfo: &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7}}
+	buf, err = proto.Marshal(tr)
+	require.Nil(err)
+
+	assert.Nil(transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy"))
+
+	// Check that BroadcastSession.OrchestratorInfo was updated
+	completedSessInfo := bsm.sessMap[ts.URL].OrchestratorInfo
+	assert.Equal(tr.Info.Transcoder, completedSessInfo.Transcoder)
+	assert.Equal(tr.Info.PriceInfo.PricePerUnit, completedSessInfo.PriceInfo.PricePerUnit)
+	assert.Equal(tr.Info.PriceInfo.PixelsPerUnit, completedSessInfo.PriceInfo.PixelsPerUnit)
+}
 
 func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	require := require.New(t)

@@ -280,7 +280,7 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 	return md, nil
 }
 
-func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64) (*net.TranscodeData, error) {
+func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64) (*ReceivedTranscodeResult, error) {
 	uploaded := seg.Name != "" // hijack seg.Name to convey the uploaded URI
 
 	segCreds, err := genSegCreds(sess, seg)
@@ -407,11 +407,6 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
-	// update OrchestratorInfo if necessary
-	if tr.Info != nil {
-		defer updateOrchestratorInfo(sess, tr.Info)
-	}
-
 	// check for errors and exit early if there's anything unusual
 	var tdata *net.TranscodeData
 	switch res := tr.Result.(type) {
@@ -464,7 +459,11 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 
 	glog.Infof("Successfully transcoded segment nonce=%d manifestID=%s segName=%s seqNo=%d", nonce, string(sess.ManifestID), seg.Name, seg.SeqNo)
 
-	return tdata, nil
+	return &ReceivedTranscodeResult{
+		TranscodeData: tdata,
+		Info:          tr.Info,
+		LatencyScore:  transcodeDur.Seconds() / seg.Duration,
+	}, nil
 }
 
 func updateOrchestratorInfo(sess *BroadcastSession, oInfo *net.OrchestratorInfo) {

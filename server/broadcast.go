@@ -97,7 +97,13 @@ func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 
-	if _, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+	if existingSess, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+		// If the new session and the existing session share the same key in sessMap replace
+		// the existing session with the new session
+		if existingSess != sess {
+			bsm.sessMap[sess.OrchestratorInfo.Transcoder] = sess
+		}
+
 		bsm.sel.Complete(sess)
 	}
 }
@@ -338,7 +344,15 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 			return err
 		}
 
-		cxn.sessManager.completeSession(sess)
+		// Instead of mutating the existing session we copy it and use the copy in BroadcastSessionsManager
+		newSess := &BroadcastSession{}
+		*newSess = *sess
+		newSess.LatencyScore = res.LatencyScore
+		if res.Info != nil {
+			updateOrchestratorInfo(newSess, res.Info)
+		}
+
+		cxn.sessManager.completeSession(newSess)
 
 		// download transcoded segments from the transcoder
 		gotErr := false // only send one error msg per segment list
