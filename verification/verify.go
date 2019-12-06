@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"errors"
 	"sort"
 
 	"github.com/livepeer/go-livepeer/core"
@@ -16,6 +17,9 @@ import (
 type Retryable struct {
 	error
 }
+
+var ErrPixelMismatch = Retryable{errors.New("PixelMismatch")}
+var ErrPixelsAbsent = errors.New("PixelsAbsent")
 
 type Params struct {
 	// ManifestID should go away once we do direct push of video
@@ -102,7 +106,24 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	// TODO Use policy sampling rate to determine whether to invoke verifier.
 	//      If not, exit early. Seed sample using source data for repeatability!
 	res, err := sv.policy.Verifier.Verify(params)
-	if err != nil {
+
+	// Check pixel counts
+	if (err == nil || IsRetryable(err)) && res != nil && params.Results != nil {
+		if len(res.Pixels) != len(params.Results.Segments) {
+			// TODO make allowances for the verification algos not doing
+			//      pixel counts themselves; adapt broadcast.go verifyPixels
+			err = ErrPixelsAbsent
+		}
+		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(res.Pixels); i++ {
+			reportedPixels := params.Results.Segments[i].Pixels
+			verifiedPixels := res.Pixels[i]
+			if reportedPixels != verifiedPixels {
+				err = ErrPixelMismatch
+			}
+		}
+	}
+
+	if err == nil {
 		// Verification passed successfully, so use this set of params
 		return params, nil
 	}

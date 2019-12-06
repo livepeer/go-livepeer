@@ -418,7 +418,8 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			}
 
 			// If running in on-chain mode, run pixels verification asynchronously
-			if sess.Sender != nil {
+			// Only run if a verifier is not being used
+			if sess.Sender != nil && verifier == nil {
 				go func() {
 					if err := verifyPixels(url, sess.BroadcasterOS, pixels); err != nil {
 						glog.Error(err)
