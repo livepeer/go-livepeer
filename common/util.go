@@ -204,11 +204,30 @@ func GenErrRegex(errStrings []string) *regexp.Regexp {
 // PriceToFixed converts a big.Rat into a fixed point number represented as int64
 // using a scaleFactor of 1000 resulting in max decimal places of 3
 func PriceToFixed(price *big.Rat) (int64, error) {
-	scalingFactor := int64(1000)
-	if price == nil {
+	return ratToFixed(price, 1000)
+}
+
+// BaseTokenAmountToFixed converts the base amount of a token (i.e. ETH/LPT) represented as a big.Int into a fixed point number represented
+// as a int64 using a scalingFactor of 100000 resulting in max decimal places of 5
+func BaseTokenAmountToFixed(baseAmount *big.Int) (int64, error) {
+	// The base token amount is denominated in base units of a token
+	// Assume that there are 10 ** 18 base units for each token
+	// Convert the base token amount to a whole token amount by representing the base token amount
+	// as a fraction with the denominator set to 10 ** 18
+	var rat *big.Rat
+	if baseAmount != nil {
+		maxDecimals := new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
+		rat = new(big.Rat).SetFrac(baseAmount, maxDecimals)
+	}
+
+	return ratToFixed(rat, 100000)
+}
+
+func ratToFixed(rat *big.Rat, scalingFactor int64) (int64, error) {
+	if rat == nil {
 		return 0, fmt.Errorf("reference to rat is nil")
 	}
-	scaled := new(big.Rat).Mul(price, big.NewRat(scalingFactor, 1))
+	scaled := new(big.Rat).Mul(rat, big.NewRat(scalingFactor, 1))
 	fp, _ := new(big.Float).SetRat(scaled).Int64()
 	return fp, nil
 }
