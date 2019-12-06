@@ -440,6 +440,7 @@ func TestOrchCount(t *testing.T) {
 func TestDBFilterOrchs(t *testing.T) {
 	assert := assert.New(t)
 	var orchList []string
+	var orchAddrList []string
 	var nilDb *DB
 	nilOrchs, nilErr := nilDb.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(1, 1)})
 	assert.Nil(nilOrchs)
@@ -458,6 +459,7 @@ func TestDBFilterOrchs(t *testing.T) {
 		err = dbh.UpdateOrch(orch)
 		require.Nil(err)
 		orchList = append(orchList, orch.ServiceURI)
+		orchAddrList = append(orchAddrList, orch.EthereumAddr)
 	}
 
 	//URI - MaxPrice - ActivationRound - DeactivationRound
@@ -505,7 +507,7 @@ func TestDBFilterOrchs(t *testing.T) {
 		assert.Contains(orchList[1:6], o.ServiceURI)
 	}
 
-	// select only active orchs and orchs that pass price filter
+	// Select only active orchs and orchs that pass price filter
 	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(1, 8), CurrentRound: big.NewInt(5)})
 	assert.Nil(err)
 	// Should return 3 results, index 3 to 5
@@ -513,6 +515,40 @@ func TestDBFilterOrchs(t *testing.T) {
 	for _, o := range orchsFiltered {
 		assert.Contains(orchList[3:6], o.ServiceURI)
 	}
+
+	// Select only active orchs that pass price filter and that are included in Addresses list
+	filterAddrs := []ethcommon.Address{ethcommon.HexToAddress(orchAddrList[3]), ethcommon.HexToAddress(orchAddrList[4])}
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(1, 8), CurrentRound: big.NewInt(5), Addresses: filterAddrs})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 2)
+	for _, o := range orchsFiltered {
+		assert.Contains(orchList[3:5], o.ServiceURI)
+		assert.Contains(orchAddrList[3:5], o.EthereumAddr)
+	}
+
+	// Select orchs that are included in Addresses list when list length > 1
+	filterAddrs = []ethcommon.Address{ethcommon.HexToAddress(orchAddrList[0]), ethcommon.HexToAddress(orchAddrList[1])}
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{Addresses: filterAddrs})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 2)
+	for _, o := range orchsFiltered {
+		assert.Contains(orchList[0:2], o.ServiceURI)
+		assert.Contains(orchAddrList[0:2], o.EthereumAddr)
+	}
+
+	// Select orchs that are included in Addresses list when list length = 0
+	filterAddrs = []ethcommon.Address{ethcommon.HexToAddress(orchAddrList[1])}
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{Addresses: filterAddrs})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 1)
+	assert.Equal(orchList[1], orchsFiltered[0].ServiceURI)
+	assert.Equal(orchAddrList[1], orchsFiltered[0].EthereumAddr)
+
+	// Empty result when no orchs match Addresses list
+	filterAddrs = []ethcommon.Address{ethcommon.BytesToAddress([]byte("foobarbaz"))}
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{Addresses: filterAddrs})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 0)
 }
 
 func TestDBUnbondingLocks(t *testing.T) {

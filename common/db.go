@@ -61,6 +61,7 @@ type DBUnbondingLock struct {
 type DBOrchFilter struct {
 	MaxPrice     *big.Rat
 	CurrentRound *big.Int
+	Addresses    []ethcommon.Address
 }
 
 var LivepeerDBVersion = 1
@@ -701,6 +702,14 @@ func buildFilterOrchsQuery(filter *DBOrchFilter) (string, error) {
 		if filter.CurrentRound != nil {
 			currentRound := filter.CurrentRound.Int64()
 			qry += fmt.Sprintf(" AND activationRound <= %v AND %v < deactivationRound", currentRound, currentRound)
+		}
+
+		if len(filter.Addresses) > 0 {
+			hexAddrs := make([]string, len(filter.Addresses))
+			for i, addr := range filter.Addresses {
+				hexAddrs[i] = fmt.Sprintf("'%v'", addr.Hex())
+			}
+			qry += fmt.Sprintf(" AND ethereumAddr IN (%v)", strings.Join(hexAddrs, ", "))
 		}
 	}
 	return qry, nil
