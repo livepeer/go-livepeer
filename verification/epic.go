@@ -5,18 +5,26 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/golang/glog"
 
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/drivers"
 
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
+// VerifierPath is the local path to the verifier shared volume.
+// Remove as soon as [1] is implemented.
+// [1] https://github.com/livepeer/verification-classifier/issues/64
+var VerifierPath string
+
+var ErrMissingSource = errors.New("MissingSource")
 var ErrVerifierStatus = errors.New("VerifierStatus")
 var ErrVideoUnavailable = errors.New("VideoUnavailable")
 var ErrAudioMismatch = Retryable{errors.New("AudioMismatch")}
@@ -88,15 +96,30 @@ func (e *EpicClassifier) Verify(params *Params) (*Results, error) {
 	orch, res := params.Orchestrator, params.Results
 	glog.V(common.DEBUG).Infof("Verifying segment manifestID=%s seqNo=%d\n",
 		mid, source.SeqNo)
-	src := fmt.Sprintf("http://127.0.0.1:8935/stream/%s/source/%d.ts", mid, source.SeqNo)
+
+	// Write segments to Docker shared volume
+	dir, err := ioutil.TempDir(VerifierPath, "")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	sourcePath, renditionPaths, err := writeSegments(params, dir)
+
+	if err != nil {
+		glog.Error("Bad! Error! Writing segments! ", err)
+		return nil, err
+	}
+
+	// Build the request object
 	renditions := []epicRendition{}
 	for i, v := range res.Segments {
 		p := profiles[i]
-		w, h, _ := ffmpeg.VideoProfileResolution(p) // XXX check err
-		uri := fmt.Sprintf("http://127.0.0.1:8935/stream/%s/%s/%d.ts",
-			mid, p.Name, source.SeqNo)
+		w, h, err := ffmpeg.VideoProfileResolution(p)
+		if err != nil {
+			return nil, err
+		}
 		r := epicRendition{
-			URI:        uri,
+			URI:        renditionPaths[i],
 			Resolution: epicResolution{Width: w, Height: h},
 			Framerate:  p.Framerate,
 			Pixels:     v.Pixels,
@@ -109,7 +132,7 @@ func (e *EpicClassifier) Verify(params *Params) (*Results, error) {
 		oid = hex.EncodeToString(orch.TicketParams.Recipient)
 	}
 	req := epicRequest{
-		Source:         src,
+		Source:         sourcePath,
 		Renditions:     renditions,
 		OrchestratorID: oid,
 		Model:          "https://storage.googleapis.com/verification-models/verification.tar.xz",
@@ -120,6 +143,8 @@ func (e *EpicClassifier) Verify(params *Params) (*Results, error) {
 		return nil, err
 	}
 	glog.V(common.DEBUG).Info("Request Body: ", string(reqData))
+
+	// Submit request and process results
 	startTime := time.Now()
 	resp, err := http.Post(e.Addr, "application/json", bytes.NewBuffer(reqData))
 	if err != nil {
@@ -151,4 +176,51 @@ func (e *EpicClassifier) Verify(params *Params) (*Results, error) {
 	vr, err := epicResultsToVerificationResults(&er)
 	deferErr = err
 	return vr, err
+}
+
+func writeSegments(params *Params, dir string) (string, []string, error) {
+	baseDir := filepath.Base(dir)
+
+	if params.Source == nil {
+		return "", nil, ErrMissingSource
+	}
+
+	// Write out source
+	var srcPath string
+	if drivers.IsOwnExternal(params.Source.Name) {
+		// We're using a non-local store, so use the URL of that
+		srcPath = params.Source.Name
+	} else {
+		// Using a local store, so write the source to disk.
+		// Remove this part after implementing [1]
+		// [1] https://github.com/livepeer/verification-classifier/issues/64
+		sharedPath := filepath.Join(dir, "source")
+		err := ioutil.WriteFile(sharedPath, params.Source.Data, 0644)
+		srcPath = "/stream/" + baseDir + "/source"
+		if err != nil {
+			return "", nil, err
+		}
+	}
+
+	// Write out renditions
+	renditionPaths := make([]string, len(params.URIs))
+	for i, fname := range params.URIs {
+		// If the broadcaster is using its own external storage, use that
+		if drivers.IsOwnExternal(fname) {
+			renditionPaths[i] = fname
+			continue
+		}
+
+		// Write renditions to local disk.
+		// Remove this part after implementing [1]
+		// [1] https://github.com/livepeer/verification-classifier/issues/64
+		profileName := params.Profiles[i].Name
+		sharedPath := filepath.Join(dir, profileName)
+		data := params.Renditions[i]
+		if err := ioutil.WriteFile(sharedPath, data, 0644); err != nil {
+			return "", nil, err
+		}
+		renditionPaths[i] = "/stream/" + baseDir + "/" + profileName
+	}
+	return srcPath, renditionPaths, nil
 }

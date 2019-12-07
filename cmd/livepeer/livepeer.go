@@ -90,6 +90,8 @@ func main() {
 	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
 	verifierURL := flag.String("verifierUrl", "", "URL of the verifier to use")
 
+	verifierPath := flag.String("verifierPath", "", "Path to verifier shared volume")
+
 	// Transcoding:
 	orchestrator := flag.Bool("orchestrator", false, "Set to true to be an orchestrator")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
@@ -681,6 +683,13 @@ func main() {
 			server.Policy = &verification.Policy{Retries: 2, Verifier: &verification.EpicClassifier{Addr: *verifierURL}}
 			// TODO Set up a default "empty" verifier-less policy for onchain
 			//      that only checks sigs and pixels?
+
+			// Set the verifier path. Remove once [1] is implemented!
+			// [1] https://github.com/livepeer/verification-classifier/issues/64
+			if drivers.NodeStorage == nil && *verifierPath == "" {
+				glog.Fatal("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath, S3 or GCS")
+			}
+			verification.VerifierPath = *verifierPath
 		}
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)
