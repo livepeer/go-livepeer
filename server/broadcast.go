@@ -440,11 +440,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			if monitor.Enabled {
 				monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
 			}
-			err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
-			if err != nil {
-				errFunc(monitor.SegmentTranscodeErrorPlaylist, url, err)
-				return
-			}
 		}
 
 		for i, v := range res.Segments {
@@ -465,6 +460,18 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			if err != nil {
 				glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
 				return err
+			}
+		}
+
+		for i, url := range segURLs {
+			err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
+			if err != nil {
+				// We assume playlist insertion is *not* recoverable for now
+				glog.Errorf("Playlist insertion error nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
+				if monitor.Enabled {
+					monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorPlaylist, nonce, seg.SeqNo, err, false)
+				}
+				return nil
 			}
 		}
 
