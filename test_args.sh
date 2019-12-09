@@ -2,6 +2,11 @@
 
 set -eux
 
+if [ -f livepeer ]; then
+    # rename 
+    mv livepeer .existing_livepeer
+fi
+
 # build the binary
 HIGHEST_CHAIN_TAG=mainnet make livepeer
 
@@ -171,3 +176,8 @@ curl -sI http://127.0.0.1:7935/debug/pprof/allocs | grep "200 OK"
 kill $pid
 
 rm -rf "$TMPDIR"
+
+if [ -f .existing_livepeer ]; then
+    # rename 
+    mv .existing_livepeer livepeer
+fi
