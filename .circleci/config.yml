@@ -36,7 +36,7 @@ jobs:
 
       # Then, build the actual app in a container shared between Linux and Windows
       - run: docker pull livepeerci/build:latest || echo 'no pre-existing cache found'
-      - run: docker build -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
+      - run: docker build --build-arg HIGHEST_CHAIN_TAG -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
       - run: docker push livepeerci/build:latest
 
       # Finally, build the minimal go-livepeer distributable

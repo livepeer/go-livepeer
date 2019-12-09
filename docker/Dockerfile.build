@@ -5,6 +5,9 @@
 
 FROM livepeerci/build-platform:latest
 
+ARG HIGHEST_CHAIN_TAG
+ENV HIGHEST_CHAIN_TAG ${HIGHEST_CHAIN_TAG}
+
 COPY ./install_ffmpeg.sh ./install_ffmpeg.sh
 RUN ./install_ffmpeg.sh
 
