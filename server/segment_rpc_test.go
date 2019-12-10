@@ -282,14 +282,14 @@ func TestMakeFfmpegVideoProfiles(t *testing.T) {
 			Width:   int32(123),
 			Height:  int32(456),
 			Bitrate: int32(789),
-			Fps:     int32(912),
+			Fps:     uint32(912),
 		},
 		{
 			Name:    "prof2",
 			Width:   int32(987),
 			Height:  int32(654),
 			Bitrate: int32(321),
-			Fps:     int32(198),
+			Fps:     uint32(198),
 		},
 	}
 

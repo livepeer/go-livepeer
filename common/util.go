@@ -155,7 +155,7 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 			Width:   int32(width),
 			Height:  int32(height),
 			Bitrate: int32(bitrate),
-			Fps:     int32(profile.Framerate),
+			Fps:     uint32(profile.Framerate),
 		}
 		profiles = append(profiles, &fullProfile)
 	}
