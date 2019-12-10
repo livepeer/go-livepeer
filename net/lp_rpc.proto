@@ -142,7 +142,7 @@ message VideoProfile {
   int32 bitrate =19;
 
   // FPS of VideoProfile
-  int32 fps = 20;
+  uint32 fps = 20;
 }
 
 // Individual transcoded segment data.
