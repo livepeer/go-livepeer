@@ -374,13 +374,13 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	expectedProfiles := []ffmpeg.VideoProfile{
 		ffmpeg.VideoProfile{
 			Name:       "prof1",
-			Bitrate:    "432k",
+			Bitrate:    "432",
 			Framerate:  uint(560),
 			Resolution: "123x456",
 		},
 		ffmpeg.VideoProfile{
 			Name:       "prof2",
-			Bitrate:    "765k",
+			Bitrate:    "765",
 			Framerate:  uint(876),
 			Resolution: "456x987",
 		},

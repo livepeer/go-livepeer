@@ -271,6 +271,8 @@ func TestVerifySegCreds_FullProfiles(t *testing.T) {
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	assert.Nil(err)
+	profiles[0].Bitrate = "432000"
+	profiles[1].Bitrate = "765000"
 	assert.Equal(profiles, md.Profiles)
 }
 
@@ -297,13 +299,13 @@ func TestMakeFfmpegVideoProfiles(t *testing.T) {
 	expectedProfiles := []ffmpeg.VideoProfile{
 		{
 			Name:       videoProfiles[0].Name,
-			Bitrate:    fmt.Sprintf("%dk", videoProfiles[0].Bitrate),
+			Bitrate:    fmt.Sprint(videoProfiles[0].Bitrate),
 			Framerate:  uint(videoProfiles[0].Fps),
 			Resolution: fmt.Sprintf("%dx%d", videoProfiles[0].Width, videoProfiles[0].Height),
 		},
 		{
 			Name:       videoProfiles[1].Name,
-			Bitrate:    fmt.Sprintf("%dk", videoProfiles[1].Bitrate),
+			Bitrate:    fmt.Sprint(videoProfiles[1].Bitrate),
 			Framerate:  uint(videoProfiles[1].Fps),
 			Resolution: fmt.Sprintf("%dx%d", videoProfiles[1].Width, videoProfiles[1].Height),
 		},

@@ -141,7 +141,7 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 		if err != nil {
 			return nil, err
 		}
-		br := strings.Replace(profile.Bitrate, "k", "", 1)
+		br := strings.Replace(profile.Bitrate, "k", "000", 1)
 		bitrate, err := strconv.Atoi(br)
 		if err != nil {
 			return nil, err

@@ -76,7 +76,7 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 	width, height, err := ffmpeg.VideoProfileResolution(profiles[0])
 	assert.Nil(err)
 
-	br := strings.Replace(profiles[0].Bitrate, "k", "", 1)
+	br := strings.Replace(profiles[0].Bitrate, "k", "000", 1)
 	bitrate, err := strconv.Atoi(br)
 	assert.Nil(err)
 
