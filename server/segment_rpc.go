@@ -219,7 +219,7 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) []ffmpeg.VideoPr
 		}
 		prof := ffmpeg.VideoProfile{
 			Name:       name,
-			Bitrate:    fmt.Sprintf("%dk", profile.Bitrate),
+			Bitrate:    fmt.Sprint(profile.Bitrate),
 			Framerate:  uint(profile.Fps),
 			Resolution: fmt.Sprintf("%dx%d", profile.Width, profile.Height),
 		}

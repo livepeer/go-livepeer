@@ -150,6 +150,8 @@ func TestRemoteTranscoder_FullProfiles(t *testing.T) {
 	assert.Empty(tr.fname)
 	runTranscode(node, "badaddress", httpc, notify)
 	assert.Equal(1, tr.called)
+	profiles[0].Bitrate = "432000"
+	profiles[1].Bitrate = "765000"
 	assert.Equal(profiles, tr.profiles)
 	assert.Equal("linktomanifest", tr.fname)
 }
