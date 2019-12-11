@@ -218,6 +218,8 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			if len(resp.Profiles) <= 0 && len(resp.Presets) <= 0 {
 				profiles = BroadcastJobVideoProfiles
 			}
+		} else {
+			profiles = BroadcastJobVideoProfiles
 		}
 
 		if mid == "" {
