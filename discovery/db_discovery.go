@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/big"
 	"net/url"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
@@ -19,38 +21,64 @@ import (
 	"github.com/golang/glog"
 )
 
+const maxInt64 = int64(math.MaxInt64)
+
 var cacheRefreshInterval = 1 * time.Hour
 var getTicker = func() *time.Ticker {
 	return time.NewTicker(cacheRefreshInterval)
 }
 
-type DBOrchestratorPoolCache struct {
-	node *core.LivepeerNode
+type ticketParamsValidator interface {
+	ValidateTicketParams(ticketParams *pm.TicketParams) error
 }
 
-func NewDBOrchestratorPoolCache(node *core.LivepeerNode) *DBOrchestratorPoolCache {
+type roundsManager interface {
+	LastInitializedRound() *big.Int
+}
+
+type DBOrchestratorPoolCache struct {
+	store                 common.OrchestratorStore
+	lpEth                 eth.LivepeerEthClient
+	ticketParamsValidator ticketParamsValidator
+	rm                    roundsManager
+	bcast                 common.Broadcaster
+}
+
+func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm roundsManager) (*DBOrchestratorPoolCache, error) {
 	if node.Eth == nil {
-		glog.Error("Could not refresh DB list of orchestrators: LivepeerNode nil")
-		return nil
+		return nil, fmt.Errorf("could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 	}
 
-	_ = cacheRegisteredTranscoders(node)
+	dbo := &DBOrchestratorPoolCache{
+		store:                 node.Database,
+		lpEth:                 node.Eth,
+		ticketParamsValidator: node.Sender,
+		rm:                    rm,
+		bcast:                 core.NewBroadcaster(node),
+	}
 
-	ticker := getTicker()
-	go func(node *core.LivepeerNode) {
-		for _ = range ticker.C {
-			err := cacheRegisteredTranscoders(node)
-			if err != nil {
-				continue
-			}
-		}
-	}(node)
+	if err := dbo.cacheTranscoderPool(); err != nil {
+		return nil, err
+	}
 
-	return &DBOrchestratorPoolCache{node: node}
+	if err := dbo.cacheOrchestratorStake(); err != nil {
+		return nil, err
+	}
+
+	if err := dbo.pollOrchestratorInfo(ctx); err != nil {
+		return nil, err
+	}
+
+	return dbo, nil
 }
 
 func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
-	orchs, err := dbo.node.Database.SelectOrchs(&common.DBOrchFilter{MaxPrice: server.BroadcastCfg.MaxPrice()})
+	orchs, err := dbo.store.SelectOrchs(
+		&common.DBOrchFilter{
+			MaxPrice:     server.BroadcastCfg.MaxPrice(),
+			CurrentRound: dbo.rm.LastInitializedRound(),
+		},
+	)
 	if err != nil || len(orchs) <= 0 {
 		return nil, err
 	}
@@ -76,12 +104,12 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 	}
 
 	pred := func(info *net.OrchestratorInfo) bool {
-		if dbo.node.Sender != nil {
-			if err := dbo.node.Sender.ValidateTicketParams(pmTicketParams(info.TicketParams)); err != nil {
-				return false
-			}
+
+		if err := dbo.ticketParamsValidator.ValidateTicketParams(pmTicketParams(info.TicketParams)); err != nil {
+			return false
 		}
 
+		// check if O's price is below B's max price
 		price := server.BroadcastCfg.MaxPrice()
 		if price != nil {
 			return big.NewRat(info.PriceInfo.PricePerUnit, info.PriceInfo.PixelsPerUnit).Cmp(price) <= 0
@@ -89,7 +117,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 		return true
 	}
 
-	orchPool := NewOrchestratorPoolWithPred(dbo.node, uris, pred)
+	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred)
 
 	orchInfos, err := orchPool.GetOrchestrators(numOrchestrators)
 	if err != nil || len(orchInfos) <= 0 {
@@ -100,29 +128,107 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 }
 
 func (dbo *DBOrchestratorPoolCache) Size() int {
-	return len(dbo.GetURLs())
+	count, _ := dbo.store.OrchCount(
+		&common.DBOrchFilter{
+			MaxPrice:     server.BroadcastCfg.MaxPrice(),
+			CurrentRound: dbo.rm.LastInitializedRound(),
+		},
+	)
+	return count
 }
 
-func cacheRegisteredTranscoders(node *core.LivepeerNode) error {
-	orchestrators, err := node.Eth.RegisteredTranscoders()
+func (dbo *DBOrchestratorPoolCache) cacheTranscoderPool() error {
+	orchestrators, err := dbo.lpEth.TranscoderPool()
 	if err != nil {
-		glog.Error("Could not refresh DB list of orchestrators: ", err)
-		return err
+		return fmt.Errorf("Could not refresh DB list of orchestrators: %v", err)
 	}
-	_, dbOrchErr := cacheDBOrchs(node, orchestrators)
-	if dbOrchErr != nil {
-		glog.Error("Could not refresh DB list of orchestrators: cacheDBOrchs err")
-		return err
+
+	for _, o := range orchestrators {
+		if err := dbo.store.UpdateOrch(ethOrchToDBOrch(o)); err != nil {
+			glog.Errorf("Unable to update orchestrator %v in DB: %v", o.Address.Hex(), err)
+		}
 	}
 
 	return nil
 }
 
-func cacheDBOrchs(node *core.LivepeerNode, orchs []*lpTypes.Transcoder) ([]*common.DBOrch, error) {
-	var dbOrchs []*common.DBOrch
-	if orchs == nil {
-		glog.Error("No new DB orchestrators created: no orchestrators found onchain")
-		return dbOrchs, nil
+func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
+	orchs, err := dbo.store.SelectOrchs(
+		&common.DBOrchFilter{
+			CurrentRound: dbo.rm.LastInitializedRound(),
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("could not retrieve orchestrators from DB: %v", err)
+	}
+
+	resc, errc := make(chan *common.DBOrch), make(chan error)
+	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
+	defer cancel()
+
+	currentRound := dbo.rm.LastInitializedRound()
+
+	getStake := func(o *common.DBOrch) {
+		ep, err := dbo.lpEth.GetTranscoderEarningsPoolForRound(ethcommon.HexToAddress(o.EthereumAddr), currentRound)
+		if err != nil {
+			errc <- err
+			return
+		}
+		o.Stake = ep.TotalStake.String()
+		resc <- o
+	}
+
+	for _, o := range orchs {
+		go getStake(o)
+	}
+
+	for i := 0; i < len(orchs); i++ {
+		select {
+		case res := <-resc:
+			if err := dbo.store.UpdateOrch(res); err != nil {
+				glog.Error("Error updating Orchestrator in DB: ", err)
+			}
+		case err := <-errc:
+			glog.Errorln(err)
+		case <-ctx.Done():
+			glog.Info("Done fetching stake for orchestrators, context timeout")
+			break
+		}
+	}
+
+	return nil
+}
+
+func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) error {
+	if err := dbo.cacheDBOrchs(); err != nil {
+		return err
+	}
+
+	ticker := getTicker()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := dbo.cacheDBOrchs(); err != nil {
+					glog.Errorf("unable to poll orchestrator info: %v", err)
+				}
+			}
+		}
+	}()
+
+	return nil
+}
+
+func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
+	orchs, err := dbo.store.SelectOrchs(
+		&common.DBOrchFilter{
+			CurrentRound: dbo.rm.LastInitializedRound(),
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("could not retrieve orchestrators from DB: %v", err)
 	}
 
 	resc, errc := make(chan *common.DBOrch), make(chan error)
@@ -135,7 +241,7 @@ func cacheDBOrchs(node *core.LivepeerNode, orchs []*lpTypes.Transcoder) ([]*comm
 			errc <- err
 			return
 		}
-		info, err := serverGetOrchInfo(ctx, core.NewBroadcaster(node), uri)
+		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri)
 		if err != nil {
 			errc <- err
 			return
@@ -153,21 +259,17 @@ func cacheDBOrchs(node *core.LivepeerNode, orchs []*lpTypes.Transcoder) ([]*comm
 		if orch == nil {
 			continue
 		}
-		dbOrch := ethOrchToDBOrch(orch)
 		numOrchs++
-		go getOrchInfo(dbOrch)
+		go getOrchInfo(orch)
 
 	}
-
-	var returnDBOrchs []*common.DBOrch
 
 	for i := 0; i < numOrchs; i++ {
 		select {
 		case res := <-resc:
-			if err := node.Database.UpdateOrch(res); err != nil {
+			if err := dbo.store.UpdateOrch(res); err != nil {
 				glog.Error("Error updating Orchestrator in DB: ", err)
 			}
-			returnDBOrchs = append(returnDBOrchs, res)
 		case err := <-errc:
 			glog.Errorln(err)
 		case <-ctx.Done():
@@ -175,7 +277,8 @@ func cacheDBOrchs(node *core.LivepeerNode, orchs []*lpTypes.Transcoder) ([]*comm
 			break
 		}
 	}
-	return returnDBOrchs, nil
+
+	return nil
 }
 
 func parseURI(addr string) (*url.URL, error) {
@@ -193,10 +296,19 @@ func ethOrchToDBOrch(orch *lpTypes.Transcoder) *common.DBOrch {
 	if orch == nil {
 		return nil
 	}
-	return &common.DBOrch{
-		ServiceURI:   orch.ServiceURI,
-		EthereumAddr: orch.Address.String(),
+
+	dbo := &common.DBOrch{
+		ServiceURI:        orch.ServiceURI,
+		EthereumAddr:      orch.Address.String(),
+		ActivationRound:   orch.ActivationRound.Int64(),
+		DeactivationRound: orch.DeactivationRound.Int64(),
 	}
+
+	if orch.DeactivationRound.Cmp(big.NewInt(maxInt64)) == 1 {
+		dbo.DeactivationRound = maxInt64
+	}
+
+	return dbo
 }
 
 func pmTicketParams(params *net.TicketParams) *pm.TicketParams {

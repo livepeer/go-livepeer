@@ -27,59 +27,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type stubOrchestratorPool struct {
-	uris  []*url.URL
-	bcast server.Broadcaster
-}
-
-func stringsToURIs(addresses []string) []*url.URL {
-	var uris []*url.URL
-
-	for _, addr := range addresses {
-		uri, err := url.ParseRequestURI(addr)
-		if err == nil {
-			uris = append(uris, uri)
-		}
+func TestNewDBOrchestratorPoolCache_NilEthClient_ReturnsError(t *testing.T) {
+	assert := assert.New(t)
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth:      nil,
+		Sender:   &pm.MockSender{},
 	}
-	return uris
-}
-
-func StubOrchestratorPool(addresses []string) *stubOrchestratorPool {
-	uris := stringsToURIs(addresses)
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	bcast := core.NewBroadcaster(node)
-
-	return &stubOrchestratorPool{bcast: bcast, uris: uris}
-}
-
-func StubOrchestrators(addresses []string) []*lpTypes.Transcoder {
-	var orchestrators []*lpTypes.Transcoder
-
-	for _, addr := range addresses {
-		address := ethcommon.BytesToAddress([]byte(addr))
-		transc := &lpTypes.Transcoder{ServiceURI: addr, Address: address}
-		orchestrators = append(orchestrators, transc)
-	}
-
-	return orchestrators
-}
-
-func TestNewOrchestratorPoolWithPred_NilEthClient_ReturnsNil_LogsError(t *testing.T) {
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	errorLogsBefore := glog.Stats.Error.Lines()
-	pool := NewOrchestratorPoolWithPred(node, nil, nil)
-	errorLogsAfter := glog.Stats.Error.Lines()
-	assert.NotZero(t, errorLogsAfter-errorLogsBefore)
-	assert.Nil(t, pool)
-}
-
-func TestNewDBOrchestratorPoolCache_NilEthClient_ReturnsNil_LogsError(t *testing.T) {
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	errorLogsBefore := glog.Stats.Error.Lines()
-	poolCache := NewDBOrchestratorPoolCache(node)
-	errorLogsAfter := glog.Stats.Error.Lines()
-	assert.NotZero(t, errorLogsAfter-errorLogsBefore)
-	assert.Nil(t, poolCache)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
+	assert.Nil(pool)
+	assert.EqualError(err, "could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 }
 
 func TestDeadLock(t *testing.T) {
@@ -87,7 +51,7 @@ func TestDeadLock(t *testing.T) {
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -114,7 +78,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -144,12 +108,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 		return true
 	}
 
-	orchestrators := StubOrchestrators(addresses)
-
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
-
-	pool := NewOrchestratorPoolWithPred(node, uris, pred)
+	pool := NewOrchestratorPoolWithPred(nil, uris, pred)
 	infos, err := pool.GetOrchestrators(1)
 
 	assert.Nil(err, "Should not be error")
@@ -172,55 +131,50 @@ func TestPoolSize(t *testing.T) {
 	assert.NotZero(t, errorLogsAfter-errorLogsBefore)
 }
 
-func TestDbOrchestratorPoolCacheSize(t *testing.T) {
+func TestDBOrchestratorPoolCacheSize(t *testing.T) {
+	assert := assert.New(t)
 	dbh, dbraw, err := common.TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
 	require := require.New(t)
 	require.Nil(err)
 
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.Database = dbh
-	node.Eth = &eth.StubClient{}
+	sender := &pm.MockSender{}
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth:      &eth.StubClient{},
+		Sender:   sender,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	errorLogsBefore := glog.Stats.Error.Lines()
-	// No orchestrators on eth.Stubclient will result in no registered orchs found on chain
-	emptyPool := NewDBOrchestratorPoolCache(node)
-	errorLogsAfter := glog.Stats.Error.Lines()
+	emptyPool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
+	require.NoError(err)
 	require.NotNil(emptyPool)
-	assert.Equal(t, 0, emptyPool.Size())
-	assert.NotZero(t, errorLogsAfter-errorLogsBefore)
+	assert.Equal(0, emptyPool.Size())
 
 	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
 	orchestrators := StubOrchestrators(addresses)
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
-	nonEmptyPool := NewDBOrchestratorPoolCache(node)
+	for _, o := range orchestrators {
+		dbh.UpdateOrch(ethOrchToDBOrch(o))
+	}
+
+	nonEmptyPool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
+	require.NoError(err)
 	require.NotNil(nonEmptyPool)
-	assert.Equal(t, len(addresses), emptyPool.Size())
-}
-
-func TestCacheRegisteredTranscoders_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
-	dbh, dbraw, err := common.TempDB(t)
-	defer dbh.Close()
-	defer dbraw.Close()
-	require := require.New(t)
-	require.Nil(err)
-
-	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
-	orchestrators := StubOrchestrators(addresses)
-
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.Database = dbh
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
-
-	err = cacheRegisteredTranscoders(node)
-	require.Nil(err)
+	assert.Equal(len(addresses), nonEmptyPool.Size())
 }
 
 func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
+	expPriceInfo := &net.PriceInfo{
+		PricePerUnit:  999,
+		PixelsPerUnit: 1,
+	}
+	expTranscoder := "transcoderFromTest"
+	expPricePerPixel, _ := common.PriceToFixed(big.NewRat(999, 1))
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -228,11 +182,8 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
-			Transcoder: "transcoderfromtestserver",
-			PriceInfo: &net.PriceInfo{
-				PricePerUnit:  999,
-				PixelsPerUnit: 1,
-			},
+			Transcoder: expTranscoder,
+			PriceInfo:  expPriceInfo,
 		}, nil
 	}
 
@@ -242,54 +193,79 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	require := require.New(t)
 	assert := assert.New(t)
 	require.Nil(err)
-
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.Database = dbh
 
 	// adding orchestrators to DB
 	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
 	orchestrators := StubOrchestrators(addresses)
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
 
-	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
-	require.Nil(err)
-	assert.Len(cachedOrchs, 3)
+	testOrchs := make([]orchTest, 0)
 	for _, o := range orchestrators {
-		dbO := ethOrchToDBOrch(o)
-		dbO.PricePerPixel, _ = common.PriceToFixed(big.NewRat(999, 1))
+		to := orchTest{
+			EthereumAddr:  o.Address.String(),
+			ServiceURI:    o.ServiceURI,
+			PricePerPixel: expPricePerPixel,
+		}
+		testOrchs = append(testOrchs, to)
+	}
 
-		assert.Contains(cachedOrchs, dbO)
+	sender := &pm.MockSender{}
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth: &eth.StubClient{
+			Orchestrators: orchestrators,
+			TotalStake:    big.NewInt(5000),
+		},
+		Sender: sender,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender.On("ValidateTicketParams", mock.Anything).Return(nil).Times(3)
+
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
+	require.NoError(err)
+	assert.Equal(pool.Size(), 3)
+	orchs, err := pool.GetOrchestrators(pool.Size())
+	for _, o := range orchs {
+		assert.Equal(o.PriceInfo, expPriceInfo)
+		assert.Equal(o.Transcoder, expTranscoder)
 	}
 
 	// ensuring orchs exist in DB
-	orchs, err := node.Database.SelectOrchs(nil)
+	dbOrchs, err := pool.store.SelectOrchs(nil)
 	require.Nil(err)
-	assert.Len(orchs, 3)
-	orchsTest := make([]orchTest, 1)
-	for _, o := range orchs {
-		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
-	}
-	for _, o := range orchestrators {
-		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
-
-		assert.Contains(orchsTest, dbO)
+	assert.Len(dbOrchs, 3)
+	for _, o := range dbOrchs {
+		test := toOrchTest(o.EthereumAddr, o.ServiceURI, o.PricePerPixel)
+		assert.Contains(testOrchs, test)
+		assert.Equal(o.Stake, big.NewInt(5000).String())
 	}
 
-	// creating new OrchestratorPoolCache
-	dbOrch := NewDBOrchestratorPoolCache(node)
-	require.NotNil(dbOrch)
-
-	// check size
-	assert.Equal(3, dbOrch.Size())
-
-	urls := dbOrch.GetURLs()
+	urls := pool.GetURLs()
 	assert.Len(urls, 3)
+	for _, url := range urls {
+		assert.Contains(addresses, url.String())
+	}
 }
 
 func TestNewDBOrchestratorPoolCache_TestURLs(t *testing.T) {
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
+
+	addresses := []string{"badUrl\\://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+	orchestrators := StubOrchestrators(addresses)
+	orchs := make([]*common.DBOrch, 0)
+	for _, o := range orchestrators {
+		orchs = append(orchs, ethOrchToDBOrch(o))
+	}
+
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -299,31 +275,29 @@ func TestNewDBOrchestratorPoolCache_TestURLs(t *testing.T) {
 		return &net.OrchestratorInfo{
 			Transcoder: "transcoderfromtestserver",
 			PriceInfo: &net.PriceInfo{
-				PricePerUnit:  999,
+				PricePerUnit:  1,
 				PixelsPerUnit: 1,
 			},
 		}, nil
 	}
 
-	dbh, dbraw, err := common.TempDB(t)
-	defer dbh.Close()
-	defer dbraw.Close()
-	require := require.New(t)
-	assert := assert.New(t)
-	require.Nil(err)
+	sender := &pm.MockSender{}
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth: &eth.StubClient{
+			Orchestrators: orchestrators,
+		},
+		Sender: sender,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.Database = dbh
-
-	addresses := []string{"badUrl\\://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
-	orchestrators := StubOrchestrators(addresses)
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
-	dbOrch := NewDBOrchestratorPoolCache(node)
-	require.NotNil(dbOrch)
-	// Not inserting bad URLs in database anymore, as there is no returnable query for getting their priceInfo
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
+	require.NoError(err)
+	// bad URLs are inserted in the database but are not included in the working set, as there is no returnable query for getting their priceInfo
 	// And if URL is updated it won't be picked up until next cache update
-	assert.Equal(2, dbOrch.Size())
-	urls := dbOrch.GetURLs()
+	assert.Equal(3, pool.Size())
+	urls := pool.GetURLs()
 	assert.Len(urls, 2)
 }
 
@@ -335,26 +309,126 @@ func TestNewDBOrchestratorPoolCache_TestURLs_Empty(t *testing.T) {
 	assert := assert.New(t)
 	require.Nil(err)
 
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.Database = dbh
-
 	addresses := []string{}
 	// Addresses is empty slice -> No orchestrators
 	orchestrators := StubOrchestrators(addresses)
-	// Contains empty orchestrator slice -> No registered orchs found on chain error
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
-	errorLogsBefore := glog.Stats.Error.Lines()
-	dbOrch := NewDBOrchestratorPoolCache(node)
-	errorLogsAfter := glog.Stats.Error.Lines()
-	require.NotNil(dbOrch)
-	assert.Equal(0, dbOrch.Size())
-	assert.NotZero(t, errorLogsAfter-errorLogsBefore)
-	urls := dbOrch.GetURLs()
+	for _, o := range orchestrators {
+		dbh.UpdateOrch(ethOrchToDBOrch(o))
+	}
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth: &eth.StubClient{
+			Orchestrators: orchestrators,
+		},
+		Sender: &pm.MockSender{},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
+	require.NoError(err)
+	assert.Equal(0, pool.Size())
+	urls := pool.GetURLs()
 	assert.Len(urls, 0)
 }
 
+func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
+	cachedOrchInfo := &net.OrchestratorInfo{
+		Transcoder: "transcoderFromTest",
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  999,
+			PixelsPerUnit: 1,
+		},
+	}
+	polledOrchInfo := &net.OrchestratorInfo{
+		Transcoder: "transcoderFromTest",
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 1,
+		},
+	}
+	returnInfo := cachedOrchInfo
+
+	var mu sync.Mutex
+	callCount := 0
+	first := true
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		mu.Lock()
+		if first {
+			time.Sleep(100 * time.Millisecond)
+			first = false
+		}
+		mu.Unlock()
+		callCount++
+		return returnInfo, nil
+	}
+
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	assert := assert.New(t)
+	require.Nil(err)
+
+	// adding orchestrators to DB
+	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+	orchestrators := StubOrchestrators(addresses)
+
+	testOrchs := make([]orchTest, 0)
+	expPrice, _ := common.PriceToFixed(big.NewRat(999, 1))
+	for _, o := range orchestrators {
+		to := orchTest{
+			EthereumAddr:  o.Address.String(),
+			ServiceURI:    o.ServiceURI,
+			PricePerPixel: expPrice,
+		}
+		testOrchs = append(testOrchs, to)
+	}
+
+	sender := &pm.MockSender{}
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth: &eth.StubClient{
+			Orchestrators: orchestrators,
+		},
+		Sender: sender,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	origCacheRefreshInterval := cacheRefreshInterval
+	cacheRefreshInterval = 200 * time.Millisecond
+	defer func() { cacheRefreshInterval = origCacheRefreshInterval }()
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
+	require.NoError(err)
+
+	// Ensure orchestrators exist in DB
+	require.Equal(pool.Size(), 3)
+	dbOrchs, err := pool.store.SelectOrchs(nil)
+	require.Nil(err)
+	require.Len(dbOrchs, 3)
+	for _, o := range dbOrchs {
+		test := toOrchTest(o.EthereumAddr, o.ServiceURI, o.PricePerPixel)
+		require.Contains(testOrchs, test)
+	}
+
+	// reset callCount to 0 which is now 3 after calling CacheTranscoderPool()
+	callCount = 0
+	returnInfo = polledOrchInfo
+	time.Sleep(1100 * time.Millisecond)
+	dbOrchs, err = pool.store.SelectOrchs(nil)
+	require.Nil(err)
+	require.Len(dbOrchs, 3)
+	expPrice, _ = common.PriceToFixed(big.NewRat(1, 1))
+	for _, o := range dbOrchs {
+		assert.Equal(o.PricePerPixel, expPrice)
+	}
+	// called serverGetOrchInfo 1100 / 200 * 3 = 15 times
+	assert.GreaterOrEqual(callCount, 14)
+	assert.LessOrEqual(callCount, 16)
+}
+
 func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
-	node, _ := core.NewLivepeerNode(nil, "", nil)
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
 	expected := stringsToURIs([]string{"https://127.0.0.1:8938", "https://127.0.0.1:8937", "https://127.0.0.1:8936"})
 	assert := assert.New(t)
@@ -363,7 +437,7 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 	rand.Seed(321)
 	perm = func(len int) []int { return rand.Perm(3) }
 
-	offchainOrch := NewOrchestratorPool(node, addresses)
+	offchainOrch := NewOrchestratorPool(nil, addresses)
 
 	for i, uri := range offchainOrch.uris {
 		assert.Equal(uri, expected[i])
@@ -383,13 +457,9 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		addresses = append(addresses, "https://127.0.0.1:8936")
 	}
-	orchestrators := StubOrchestrators(addresses)
 	uris := stringsToURIs(addresses)
 
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
-
-	pool := NewOrchestratorPoolWithPred(node, uris, pred)
+	pool := NewOrchestratorPoolWithPred(nil, uris, pred)
 
 	oInfo := &net.OrchestratorInfo{
 		PriceInfo: &net.PriceInfo{
@@ -412,15 +482,22 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 
 func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) {
 	// Test setup
+	expPriceInfo := &net.PriceInfo{
+		PricePerUnit:  999,
+		PixelsPerUnit: 1,
+	}
+	expTranscoder := "transcoderFromTest"
+	expPricePerPixel, _ := common.PriceToFixed(big.NewRat(999, 1))
+
 	rand.Seed(321)
 	perm = func(len int) []int { return rand.Perm(50) }
 
-	server.BroadcastCfg.SetMaxPrice(big.NewRat(10, 1))
+	server.BroadcastCfg.SetMaxPrice(big.NewRat(1, 1))
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -428,11 +505,8 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) 
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
-			Transcoder: "transcoderfromtestserver",
-			PriceInfo: &net.PriceInfo{
-				PricePerUnit:  999,
-				PixelsPerUnit: 1,
-			},
+			Transcoder: expTranscoder,
+			PriceInfo:  expPriceInfo,
 		}, nil
 	}
 	addresses := []string{}
@@ -450,50 +524,47 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) 
 	require.Nil(err)
 
 	orchestrators := StubOrchestrators(addresses)
-
-	// Create node
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.Database = dbh
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
-
-	// Add orchs to DB
-	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
-	require.Nil(err)
-	assert.Len(cachedOrchs, 50)
-	orchsTest := make([]orchTest, 1)
-	for _, o := range cachedOrchs {
-		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
-	}
+	testOrchs := make([]orchTest, 0)
 	for _, o := range orchestrators {
-		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
-
-		assert.Contains(orchsTest, dbO)
+		to := orchTest{
+			EthereumAddr:  o.Address.String(),
+			ServiceURI:    o.ServiceURI,
+			PricePerPixel: expPricePerPixel,
+		}
+		testOrchs = append(testOrchs, to)
 	}
+
+	sender := &pm.MockSender{}
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth: &eth.StubClient{
+			Orchestrators: orchestrators,
+		},
+		Sender: sender,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
+
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
+	require.NoError(err)
 
 	// ensuring orchs exist in DB
-	orchs, err := node.Database.SelectOrchs(nil)
+	orchs, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 50)
-	orchsTest = make([]orchTest, 1)
 	for _, o := range orchs {
-		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
+		test := toOrchTest(o.EthereumAddr, o.ServiceURI, o.PricePerPixel)
+		assert.Contains(testOrchs, test)
 	}
-	for _, o := range orchestrators {
-		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
-
-		assert.Contains(orchsTest, dbO)
-	}
-
-	// creating new OrchestratorPoolCache
-	dbOrch := NewDBOrchestratorPoolCache(node)
-	require.NotNil(dbOrch)
 
 	// check size
-	assert.Equal(0, dbOrch.Size())
+	assert.Equal(0, pool.Size())
 
-	urls := dbOrch.GetURLs()
+	urls := pool.GetURLs()
 	assert.Len(urls, 0)
-	infos, err := dbOrch.GetOrchestrators(len(addresses))
+	infos, err := pool.GetOrchestrators(len(addresses))
 
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 0)
@@ -501,14 +572,22 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) 
 
 func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 	// Test setup
-	server.BroadcastCfg.SetMaxPrice(nil)
+	expPriceInfo := &net.PriceInfo{
+		PricePerUnit:  999,
+		PixelsPerUnit: 1,
+	}
+	expTranscoder := "transcoderFromTest"
+	expPricePerPixel, _ := common.PriceToFixed(big.NewRat(999, 1))
+
+	rand.Seed(321)
 	perm = func(len int) []int { return rand.Perm(50) }
 
+	server.BroadcastCfg.SetMaxPrice(nil)
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -516,13 +595,11 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
-			Transcoder: "transcoderfromtestserver",
-			PriceInfo: &net.PriceInfo{
-				PricePerUnit:  999,
-				PixelsPerUnit: 1,
-			},
+			Transcoder: expTranscoder,
+			PriceInfo:  expPriceInfo,
 		}, nil
 	}
+
 	addresses := []string{}
 	for i := 0; i < 50; i++ {
 		addresses = append(addresses, "https://127.0.0.1:"+strconv.Itoa(8936+i))
@@ -538,50 +615,54 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 	require.Nil(err)
 
 	orchestrators := StubOrchestrators(addresses)
-
-	// Create node
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.Database = dbh
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
-
-	// Add orchs to DB
-	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
-	require.Nil(err)
-	assert.Len(cachedOrchs, 50)
-	orchsTest := make([]orchTest, 1)
-	for _, o := range cachedOrchs {
-		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
-	}
+	testOrchs := make([]orchTest, 0)
 	for _, o := range orchestrators {
-		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
-
-		assert.Contains(orchsTest, dbO)
+		to := orchTest{
+			EthereumAddr:  o.Address.String(),
+			ServiceURI:    o.ServiceURI,
+			PricePerPixel: expPricePerPixel,
+		}
+		testOrchs = append(testOrchs, to)
 	}
+
+	sender := &pm.MockSender{}
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth: &eth.StubClient{
+			Orchestrators: orchestrators,
+		},
+		Sender: sender,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
+
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
+	require.NoError(err)
 
 	// ensuring orchs exist in DB
-	orchs, err := node.Database.SelectOrchs(nil)
+	orchs, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 50)
-	orchsTest = make([]orchTest, 1)
 	for _, o := range orchs {
-		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
+		test := toOrchTest(o.EthereumAddr, o.ServiceURI, o.PricePerPixel)
+		assert.Contains(testOrchs, test)
 	}
-	for _, o := range orchestrators {
-		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
-
-		assert.Contains(orchsTest, dbO)
-	}
-
-	// creating new OrchestratorPoolCache
-	dbOrch := NewDBOrchestratorPoolCache(node)
-	require.NotNil(dbOrch)
 
 	// check size
-	assert.Equal(50, dbOrch.Size())
+	assert.Equal(50, pool.Size())
 
-	urls := dbOrch.GetURLs()
+	urls := pool.GetURLs()
 	assert.Len(urls, 50)
-	infos, err := dbOrch.GetOrchestrators(50)
+	for _, url := range urls {
+		assert.Contains(addresses, url.String())
+	}
+	infos, err := pool.GetOrchestrators(50)
+	for _, info := range infos {
+		assert.Equal(info.PriceInfo, expPriceInfo)
+		assert.Equal(info.Transcoder, expTranscoder)
+	}
 
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 50)
@@ -589,6 +670,20 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 
 func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.T) {
 	// Test setup
+	goodTranscoder := &net.OrchestratorInfo{
+		Transcoder: "goodPriceTranscoder",
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 1,
+		},
+	}
+	badTranscoder := &net.OrchestratorInfo{
+		Transcoder: "badPriceTranscoder",
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  999,
+			PixelsPerUnit: 1,
+		},
+	}
 	perm = func(len int) []int { return rand.Perm(25) }
 
 	server.BroadcastCfg.SetMaxPrice(big.NewRat(10, 1))
@@ -596,7 +691,7 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -605,22 +700,10 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 		mu.Unlock()
 		if i, _ := strconv.Atoi(orchestratorServer.Port()); i > 8960 {
 			// Return valid pricing
-			return &net.OrchestratorInfo{
-				Transcoder: "goodPriceTranscoder",
-				PriceInfo: &net.PriceInfo{
-					PricePerUnit:  1,
-					PixelsPerUnit: 1,
-				},
-			}, nil
+			return goodTranscoder, nil
 		}
 		// Return invalid pricing
-		return &net.OrchestratorInfo{
-			Transcoder: "badPriceTranscoder",
-			PriceInfo: &net.PriceInfo{
-				PricePerUnit:  999,
-				PixelsPerUnit: 1,
-			},
-		}, nil
+		return badTranscoder, nil
 	}
 	addresses := []string{}
 	for i := 0; i < 50; i++ {
@@ -637,63 +720,58 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 	require.Nil(err)
 
 	orchestrators := StubOrchestrators(addresses)
-
-	// Create node
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.Database = dbh
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
-
-	// Add orchs to DB
-	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
-	require.Nil(err)
-	assert.Len(cachedOrchs, 50)
+	testOrchs := make([]orchTest, 0)
 	for _, o := range orchestrators[:25] {
-		dbO := ethOrchToDBOrch(o)
-		dbO.PricePerPixel, _ = common.PriceToFixed(big.NewRat(999, 1))
-		assert.Contains(cachedOrchs, dbO)
+		price, _ := common.PriceToFixed(big.NewRat(999, 1))
+		testOrchs = append(testOrchs, toOrchTest(o.Address.String(), o.ServiceURI, price))
 	}
 	for _, o := range orchestrators[25:] {
-		dbO := ethOrchToDBOrch(o)
-		dbO.PricePerPixel, _ = common.PriceToFixed(big.NewRat(1, 1))
-		assert.Contains(cachedOrchs, dbO)
+		price, _ := common.PriceToFixed(big.NewRat(1, 1))
+		testOrchs = append(testOrchs, toOrchTest(o.Address.String(), o.ServiceURI, price))
 	}
+
+	sender := &pm.MockSender{}
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth: &eth.StubClient{
+			Orchestrators: orchestrators,
+		},
+		Sender: sender,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
+
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
+	require.NoError(err)
+
 	// ensuring orchs exist in DB
-	orchs, err := node.Database.SelectOrchs(nil)
+	orchs, err := dbh.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(orchs, 50)
 
-	orchsTest := make([]orchTest, 1)
 	for _, o := range orchs {
-		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
+		assert.Contains(testOrchs, toOrchTest(o.EthereumAddr, o.ServiceURI, o.PricePerPixel))
 	}
-	for _, o := range orchestrators {
-		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
 
-		assert.Contains(orchsTest, dbO)
-	}
-	orchs, err = node.Database.SelectOrchs(&common.DBOrchFilter{MaxPrice: server.BroadcastCfg.MaxPrice()})
+	orchs, err = dbh.SelectOrchs(&common.DBOrchFilter{MaxPrice: server.BroadcastCfg.MaxPrice()})
 	require.Nil(err)
 	assert.Len(orchs, 25)
-	orchsTest = make([]orchTest, 1)
 	for _, o := range orchs {
-		orchsTest = append(orchsTest, orchTest{EthereumAddr: o.EthereumAddr, ServiceURI: o.ServiceURI})
+		assert.Contains(testOrchs[25:], toOrchTest(o.EthereumAddr, o.ServiceURI, o.PricePerPixel))
 	}
-	for _, o := range orchestrators[25:] {
-		dbO := toOrchTest(o.Address.String(), o.ServiceURI)
-
-		assert.Contains(orchsTest, dbO)
-	}
-
-	// creating new OrchestratorPoolCache
-	dbOrch := NewDBOrchestratorPoolCache(node)
-	require.NotNil(dbOrch)
 
 	// check size
-	assert.Equal(25, dbOrch.Size())
+	assert.Equal(25, pool.Size())
 
-	urls := dbOrch.GetURLs()
+	urls := pool.GetURLs()
 	assert.Len(urls, 25)
-	infos, err := dbOrch.GetOrchestrators(len(orchestrators))
+	for _, url := range urls {
+		assert.Contains(addresses[25:], url.String())
+	}
+
+	infos, err := pool.GetOrchestrators(len(orchestrators))
 
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 25)
@@ -711,7 +789,7 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 
 	server.BroadcastCfg.SetMaxPrice(nil)
 
-	serverGetOrchInfo = func(ctx context.Context, bcast server.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		return &net.OrchestratorInfo{
 			Transcoder:   "transcoder",
 			TicketParams: &net.TicketParams{},
@@ -738,38 +816,139 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 
 	orchestrators := StubOrchestrators(addresses)
 
-	// Create node
-	node, _ := core.NewLivepeerNode(nil, "", nil)
-	node.Database = dbh
-	node.Eth = &eth.StubClient{Orchestrators: orchestrators}
 	sender := &pm.MockSender{}
-	node.Sender = sender
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth: &eth.StubClient{
+			Orchestrators: orchestrators,
+		},
+		Sender: sender,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Add orchs to DB
-	cachedOrchs, err := cacheDBOrchs(node, orchestrators)
-	require.Nil(err)
-	assert.Len(cachedOrchs, 50)
-
-	dbOrch := NewDBOrchestratorPoolCache(node)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
+	require.NoError(err)
 
 	// Test 25 out of 50 orchs pass ticket params validation
 	sender.On("ValidateTicketParams", mock.Anything).Return(errors.New("ValidateTicketParams error")).Times(25)
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil).Times(25)
 
-	infos, err := dbOrch.GetOrchestrators(len(addresses))
+	infos, err := pool.GetOrchestrators(len(addresses))
 	assert.Nil(err)
 	assert.Len(infos, 25)
 	sender.AssertNumberOfCalls(t, "ValidateTicketParams", 50)
 
 	// Test 0 out of 50 orchs pass ticket params validation
-	sender = &pm.MockSender{}
-	node.Sender = sender
 	sender.On("ValidateTicketParams", mock.Anything).Return(errors.New("ValidateTicketParams error")).Times(50)
 
-	infos, err = dbOrch.GetOrchestrators(len(addresses))
+	infos, err = pool.GetOrchestrators(len(addresses))
 	assert.Nil(err)
 	assert.Len(infos, 0)
-	sender.AssertNumberOfCalls(t, "ValidateTicketParams", 50)
+	sender.AssertNumberOfCalls(t, "ValidateTicketParams", 100)
+}
+
+func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
+	// Test setup
+	perm = func(len int) []int { return rand.Perm(25) }
+	expPriceInfo := &net.PriceInfo{
+		PricePerUnit:  1,
+		PixelsPerUnit: 1,
+	}
+	expTranscoder := "transcoderFromTest"
+	expPricePricePixel, _ := common.PriceToFixed(big.NewRat(1, 1))
+
+	server.BroadcastCfg.SetMaxPrice(nil)
+	gmp := runtime.GOMAXPROCS(50)
+	defer runtime.GOMAXPROCS(gmp)
+	var mu sync.Mutex
+	first := true
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		mu.Lock()
+		if first {
+			time.Sleep(100 * time.Millisecond)
+			first = false
+		}
+		mu.Unlock()
+		return &net.OrchestratorInfo{
+			Transcoder: expTranscoder,
+			PriceInfo:  expPriceInfo,
+		}, nil
+	}
+
+	addresses := []string{}
+	for i := 0; i < 50; i++ {
+		addresses = append(addresses, "https://127.0.0.1:"+strconv.Itoa(8936+i))
+	}
+
+	assert := assert.New(t)
+
+	// Create Database
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	orchestrators := StubOrchestrators(addresses)
+	testOrchs := make([]orchTest, 0)
+	for i, o := range orchestrators {
+		to := orchTest{
+			EthereumAddr:  o.Address.String(),
+			ServiceURI:    o.ServiceURI,
+			PricePerPixel: expPricePricePixel,
+		}
+		// Active O's will be addresses[:25]
+		o.ActivationRound = big.NewInt(int64(i))
+		o.DeactivationRound = big.NewInt(int64(i + 26))
+		testOrchs = append(testOrchs, to)
+
+		dbO := ethOrchToDBOrch(o)
+		dbO.PricePerPixel = expPricePricePixel
+		dbh.UpdateOrch(dbO)
+	}
+
+	sender := &pm.MockSender{}
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth: &eth.StubClient{
+			Orchestrators: orchestrators,
+		},
+		Sender: sender,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
+
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{round: big.NewInt(24)})
+	require.NoError(err)
+
+	// ensuring orchs exist in DB
+	orchs, err := dbh.SelectOrchs(nil)
+	require.Nil(err)
+	assert.Len(orchs, 50)
+	for _, o := range orchs {
+		test := toOrchTest(o.EthereumAddr, o.ServiceURI, o.PricePerPixel)
+		assert.Contains(testOrchs, test)
+	}
+
+	// check size
+	assert.Equal(25, pool.Size())
+
+	urls := pool.GetURLs()
+	assert.Len(urls, 25)
+	for _, url := range urls {
+		assert.Contains(addresses[:25], url.String())
+	}
+	infos, err := pool.GetOrchestrators(50)
+	for _, info := range infos {
+		assert.Equal(info.PriceInfo, expPriceInfo)
+		assert.Equal(info.Transcoder, expTranscoder)
+	}
+
+	assert.Nil(err, "Should not be error")
+	assert.Len(infos, 25)
 }
 
 func TestNewWHOrchestratorPoolCache(t *testing.T) {
@@ -787,17 +966,15 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 		return json.Marshal(&wh)
 	}
 
-	serverGetOrchInfo = func(c context.Context, b server.Broadcaster, s *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(c context.Context, b common.Broadcaster, s *url.URL) (*net.OrchestratorInfo, error) {
 		return &net.OrchestratorInfo{Transcoder: "transcoder"}, nil
 	}
 
-	// mock livepeer node
-	node, _ := core.NewLivepeerNode(nil, "", nil)
 	perm = func(len int) []int { return rand.Perm(3) }
 
 	// assert created webhook pool is correct length
 	whURL, _ := url.ParseRequestURI("https://livepeer.live/api/orchestrator")
-	whpool := NewWebhookPool(node, whURL)
+	whpool := NewWebhookPool(nil, whURL)
 	assert.Equal(3, whpool.Size())
 
 	// assert that list is not refreshed if lastRequest is less than 1 min ago and hash is the same
@@ -906,11 +1083,27 @@ func TestDeserializeWebhookJSON(t *testing.T) {
 	assert.Empty(urls)
 }
 
-type orchTest struct {
-	EthereumAddr string
-	ServiceURI   string
-}
+func TestEthOrchToDBOrch(t *testing.T) {
+	assert := assert.New(t)
+	o := &lpTypes.Transcoder{
+		ServiceURI:        "hello livepeer",
+		ActivationRound:   big.NewInt(5),
+		DeactivationRound: big.NewInt(100),
+		Address:           ethcommon.HexToAddress("0x79f709b01033dfDBf065cfF7a1Abe7C72011D3EB"),
+	}
 
-func toOrchTest(addr, serviceURI string) orchTest {
-	return orchTest{EthereumAddr: addr, ServiceURI: serviceURI}
+	dbo := ethOrchToDBOrch(o)
+
+	assert.Equal(dbo.ServiceURI, o.ServiceURI)
+	assert.Equal(dbo.EthereumAddr, o.Address.Hex())
+	assert.Equal(dbo.ActivationRound, o.ActivationRound.Int64())
+	assert.Equal(dbo.DeactivationRound, o.DeactivationRound.Int64())
+
+	// If DeactivationRound > maxInt64 => DeactivationRound = maxInt64
+	o.DeactivationRound, _ = new(big.Int).SetString("115792089237316195423570985008687907853269984665640564039457584007913129639935", 10)
+	dbo = ethOrchToDBOrch(o)
+	assert.Equal(dbo.ServiceURI, o.ServiceURI)
+	assert.Equal(dbo.EthereumAddr, o.Address.Hex())
+	assert.Equal(dbo.ActivationRound, o.ActivationRound.Int64())
+	assert.Equal(dbo.DeactivationRound, maxInt64)
 }

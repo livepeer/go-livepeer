@@ -287,6 +287,7 @@ func main() {
 	}
 
 	watcherErr := make(chan error)
+	var roundsWatcher *watchers.RoundsWatcher
 	if *network == "offchain" {
 		glog.Infof("***Livepeer is in off-chain mode***")
 
@@ -396,7 +397,7 @@ func main() {
 		// Wait until all event watchers have been initialized before starting the block watcher
 		blockWatcher := blockwatch.New(blockWatcherCfg)
 
-		roundsWatcher, err := watchers.NewRoundsWatcher(addrMap["RoundsManager"], blockWatcher, n.Eth)
+		roundsWatcher, err = watchers.NewRoundsWatcher(addrMap["RoundsManager"], blockWatcher, n.Eth)
 		if err != nil {
 			glog.Errorf("Failed to setup roundswatcher: %v", err)
 			return
@@ -428,7 +429,7 @@ func main() {
 		go senderWatcher.Watch()
 		defer senderWatcher.Stop()
 
-		orchWatcher, err := watchers.NewOrchestratorWatcher(addrMap["BondingManager"], blockWatcher, dbh, n.Eth)
+		orchWatcher, err := watchers.NewOrchestratorWatcher(addrMap["BondingManager"], blockWatcher, dbh, n.Eth, roundsWatcher)
 		if err != nil {
 			glog.Errorf("Failed to setup orchestrator watcher: %v", err)
 			return
@@ -443,33 +444,6 @@ func main() {
 		}
 		go serviceRegistryWatcher.Watch()
 		defer serviceRegistryWatcher.Stop()
-
-		blockWatchCtx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		// Backfill events that the node has missed since its last seen block. This method will block
-		// and the node will not continue setup until it finishes
-		if err := blockWatcher.BackfillEventsIfNeeded(blockWatchCtx); err != nil {
-			glog.Errorf("Failed to backfill events: %v", err)
-			return
-		}
-
-		blockWatcherErr := make(chan error, 1)
-		go func() {
-			if err := blockWatcher.Watch(blockWatchCtx); err != nil {
-				blockWatcherErr <- fmt.Errorf("block watcher error: %v", err)
-			}
-		}()
-
-		go func() {
-			var err error
-			select {
-			case err = <-roundsWatcherErr:
-			case err = <-blockWatcherErr:
-			}
-
-			watcherErr <- err
-		}()
 
 		n.Balances = core.NewAddressBalances(cleanupInterval)
 		defer n.Balances.StopCleanup()
@@ -508,8 +482,6 @@ func main() {
 			}
 
 			sigVerifier := &pm.DefaultSigVerifier{}
-			// TODO: Initialize Validator with an implementation
-			// of RoundsManager that reads from a cache
 			validator := pm.NewValidator(sigVerifier, roundsWatcher)
 			gpm := eth.NewGasPriceMonitor(backend, blockPollingTime)
 			// Start gas price monitor
@@ -592,6 +564,33 @@ func main() {
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
 			}
 		}
+
+		blockWatchCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Backfill events that the node has missed since its last seen block. This method will block
+		// and the node will not continue setup until it finishes
+		if err := blockWatcher.BackfillEventsIfNeeded(blockWatchCtx); err != nil {
+			glog.Errorf("Failed to backfill events: %v", err)
+			return
+		}
+
+		blockWatcherErr := make(chan error, 1)
+		go func() {
+			if err := blockWatcher.Watch(blockWatchCtx); err != nil {
+				blockWatcherErr <- fmt.Errorf("block watcher error: %v", err)
+			}
+		}()
+
+		go func() {
+			var err error
+			select {
+			case err = <-roundsWatcherErr:
+			case err = <-blockWatcherErr:
+			}
+
+			watcherErr <- err
+		}()
 	}
 
 	if *s3bucket != "" && *s3creds == "" || *s3bucket == "" && *s3creds != "" {
@@ -633,17 +632,27 @@ func main() {
 		*rtmpAddr = defaultAddr(*rtmpAddr, "127.0.0.1", RtmpPort)
 		*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
 
+		bcast := core.NewBroadcaster(n)
+
 		// Set up orchestrator discovery
 		if *orchWebhookURL != "" {
 			whurl, err := getOrchWebhook(*orchWebhookURL)
 			if err != nil {
 				glog.Fatal("Error setting orch webhook URL ", err)
 			}
-			n.OrchestratorPool = discovery.NewWebhookPool(n, whurl)
+			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
 		} else if len(orchURLs) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(n, orchURLs)
+			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs)
 		} else if *network != "offchain" {
-			n.OrchestratorPool = discovery.NewDBOrchestratorPoolCache(n)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, roundsWatcher)
+
+			if err != nil {
+				glog.Errorf("Could not create orchestrator pool with DB cache: %v", err)
+			}
+
+			n.OrchestratorPool = dbOrchPoolCache
 		}
 		if n.OrchestratorPool == nil {
 			// Not a fatal error; may continue operating in segment-only mode

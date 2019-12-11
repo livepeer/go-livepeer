@@ -365,12 +365,29 @@ type stubOrchestratorStore struct {
 	deactivationRound int64
 	serviceURI        string
 	ethereumAddr      string
+	stake             string
+	selectErr         error
+	updateErr         error
 }
 
 func (s *stubOrchestratorStore) UpdateOrch(orch *common.DBOrch) error {
+	if s.updateErr != nil {
+		return s.updateErr
+	}
 	s.activationRound = orch.ActivationRound
 	s.deactivationRound = orch.DeactivationRound
 	s.ethereumAddr = orch.EthereumAddr
 	s.serviceURI = orch.ServiceURI
+	s.stake = orch.Stake
 	return nil
+}
+
+func (s *stubOrchestratorStore) OrchCount(filter *common.DBOrchFilter) (int, error) { return 0, nil }
+func (s *stubOrchestratorStore) SelectOrchs(filter *common.DBOrchFilter) ([]*common.DBOrch, error) {
+	if s.selectErr != nil {
+		return []*common.DBOrch{}, s.selectErr
+	}
+	return []*common.DBOrch{
+		common.NewDBOrch(s.ethereumAddr, s.serviceURI, 0, s.activationRound, s.deactivationRound, s.stake),
+	}, nil
 }

@@ -903,7 +903,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.HandleFunc("/registeredOrchestrators", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			orchestrators, err := s.LivepeerNode.Eth.RegisteredTranscoders()
+			orchestrators, err := s.LivepeerNode.Eth.TranscoderPool()
 			if err != nil {
 				glog.Error(err)
 				return

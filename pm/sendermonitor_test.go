@@ -1,6 +1,7 @@
 package pm
 
 import (
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -447,6 +448,49 @@ func TestReserveAlloc(t *testing.T) {
 	alloc, err := sm.reserveAlloc(addr)
 	assert.Nil(err)
 	assert.Zero(expectedAlloc.Cmp(alloc))
+}
+
+func TestValidateSender(t *testing.T) {
+	claimant, b, smgr, rm, em := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		WithdrawRound: big.NewInt(10),
+	}
+	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
+	sm.Start()
+	defer sm.Stop()
+
+	assert := assert.New(t)
+
+	// SenderManager.GetSenderInfo error
+	smgr.err = errors.New("GetSenderInfo error")
+	expErr := fmt.Sprintf("could not get sender info for %v: %v", addr.Hex(), smgr.err.Error())
+	err := sm.ValidateSender(addr)
+	assert.EqualError(err, expErr)
+	smgr.err = nil
+
+	// WithdrawRound = 0 (not unlocked) -> No error
+	rm.round = big.NewInt(2)
+	smgr.info[addr].WithdrawRound = big.NewInt(0)
+	err = sm.ValidateSender(addr)
+	assert.NoError(err)
+	smgr.info[addr].WithdrawRound = big.NewInt(10)
+
+	// currentRound + 1 < WithdrawRound -> No error
+	rm.round = big.NewInt(1)
+	err = sm.ValidateSender(addr)
+	assert.Nil(err)
+
+	// currentRound + 1 == WithdrawRound -> Error
+	expErr = fmt.Sprintf("deposit and reserve for sender %v is set to unlock soon", addr.Hex())
+	rm.round = big.NewInt(9)
+	err = sm.ValidateSender(addr)
+	assert.EqualError(err, expErr)
+
+	// currentRound +1 > WithdrawRound -> Error
+	rm.round = big.NewInt(10)
+	err = sm.ValidateSender(addr)
+	assert.EqualError(err, expErr)
 }
 
 func senderMonitorFixture() (ethcommon.Address, *stubBroker, *stubSenderManager, *stubRoundsManager, *stubErrorMonitor) {

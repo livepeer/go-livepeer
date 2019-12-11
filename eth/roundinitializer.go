@@ -122,7 +122,7 @@ func (r *RoundInitializer) tryInitialize() error {
 }
 
 func (r *RoundInitializer) shouldInitialize(epochSeed *big.Int) (bool, error) {
-	transcoders, err := r.client.RegisteredTranscoders()
+	transcoders, err := r.client.TranscoderPool()
 	if err != nil {
 		return false, err
 	}

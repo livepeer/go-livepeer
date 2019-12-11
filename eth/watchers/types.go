@@ -3,7 +3,6 @@ package watchers
 import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 )
 
@@ -13,8 +12,4 @@ type BlockWatcher interface {
 
 type EventWatcher interface {
 	Subscribe(sink chan<- types.Log) event.Subscription
-}
-
-type orchestratorStore interface {
-	UpdateOrch(*common.DBOrch) error
 }
