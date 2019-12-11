@@ -2,9 +2,6 @@
 
 set -eux
 
-# build the binary
-HIGHEST_CHAIN_TAG=mainnet make livepeer
-
 # set a clean slate "home dir" for testing
 TMPDIR=/tmp/livepeer-test-"$RANDOM"
 DEFAULT_DATADIR="$TMPDIR"/.lpData
@@ -12,6 +9,10 @@ CUSTOM_DATADIR="$TMPDIR"/customDatadir
 export HOME=$TMPDIR
 rm -rf "$DEFAULT_DATADIR"
 mkdir -p $TMPDIR  # goclient should make the lpData datadir
+
+# build the binary
+HIGHEST_CHAIN_TAG=mainnet
+go build -tags "$HIGHEST_CHAIN_TAG" -o $TMPDIR/livepeer cmd/livepeer/*.go
 
 # Set up ethereum key
 cat > $TMPDIR/key <<ETH_KEY
@@ -23,7 +24,7 @@ SLEEP=0.25
 
 
 run_lp () {
-    ./livepeer "$@" &
+    $TMPDIR/livepeer "$@" &
     pid=$!
     sleep $SLEEP
 }
@@ -33,7 +34,7 @@ run_lp () {
 
 # check that we exit early if node type is not set
 res=0
-./livepeer || res=$?
+$TMPDIR/livepeer || res=$?
 [ $res -ne 0 ]
 
 
@@ -47,7 +48,7 @@ kill $pid
 
 # Error if flags to set MaxBroadcastPrice aren't provided correctly
 res=0
-./livepeer -broadcaster -network rinkeby $ETH_ARGS -maxPricePerUnit 0 -pixelsPerUnit -5 || res=$?
+$TMPDIR/livepeer -broadcaster -network rinkeby $ETH_ARGS -maxPricePerUnit 0 -pixelsPerUnit -5 || res=$?
 [ $res -ne 0 ]
 
 run_lp -broadcaster -network mainnet $ETH_ARGS
@@ -78,14 +79,14 @@ run_lp -broadcaster -datadir "$CUSTOM_DATADIR" -network rinkeby $ETH_ARGS
 kill $pid
 
 # check invalid service address via inserting control character
-./livepeer -orchestrator -orchSecret asdf -serviceAddr "hibye" 2>&1 | grep "Error getting service URI"
+$TMPDIR/livepeer -orchestrator -orchSecret asdf -serviceAddr "hibye" 2>&1 | grep "Error getting service URI"
 [ ${PIPESTATUS[0]} -ne 0 ]
 
 # check missing service address via failed availability check
 # Testing these isn't quite reliable enough (slow)
 # XXX currently returns zero; should be nonzero
-#./livepeer -orchestrator -orchSecret asdf 2>&1 | grep "Orchestrator not available"
-#./livepeer -orchestrator -orchSecret asdf -serviceAddr livepeer.org 2>&1 | grep "Orchestrator not available"
+#$TMPDIR/livepeer -orchestrator -orchSecret asdf 2>&1 | grep "Orchestrator not available"
+#$TMPDIR/livepeer -orchestrator -orchSecret asdf -serviceAddr livepeer.org 2>&1 | grep "Orchestrator not available"
 
 # check that orchestrators require -orchSecret or -transcoder
 # sanity check with -transcoder
@@ -96,73 +97,73 @@ run_lp -orchestrator -serviceAddr 127.0.0.1:8935 -orchSecret asdf
 kill $pid
 # XXX need a better way of confirming the error type. specialized exit code?
 res=0
-./livepeer -orchestrator -serviceAddr 127.0.0.1:8935 || res=$?
+$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 || res=$?
 [ $res -ne 0 ]
 
 # Orchestrator needs to explicitly set PricePerUnit otherwise it will default to 0 resulting in a fatal error
 res=0
-./livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -network rinkeby $ETH_ARGS || res=$?
+$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -network rinkeby $ETH_ARGS || res=$?
 [ $res -ne 0 ]
 # Orchestrator needs PricePerUnit > 0 
 res=0
-./livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit 0 -network rinkeby $ETH_ARGS || res=$?
+$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit 0 -network rinkeby $ETH_ARGS || res=$?
 [ $res -ne 0 ]
 res=0
-./livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit -5 -network rinkeby $ETH_ARGS || res=$?
+$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit -5 -network rinkeby $ETH_ARGS || res=$?
 [ $res -ne 0 ]
 # Orchestrator needs PixelsPerUnit > 0
 res=0
-./livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit 0 -pricePerUnit 5 -network rinkeby $ETH_ARGS || res=$?
+$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit 0 -pricePerUnit 5 -network rinkeby $ETH_ARGS || res=$?
 [ $res -ne 0 ]
 res=0
-./livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit -5 -pricePerUnit 5 -network rinkeby $ETH_ARGS || res=$?
+$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit -5 -pricePerUnit 5 -network rinkeby $ETH_ARGS || res=$?
 [ $res -ne 0 ]
 
 # Broadcaster needs a valid rational number for -maxTicketEV
 res=0
-./livepeer -broadcaster -maxTicketEV abcd -network rinkeby $ETH_ARGS || res=$?
+$TMPDIR/livepeer -broadcaster -maxTicketEV abcd -network rinkeby $ETH_ARGS || res=$?
 [ $res -ne 0 ]
 # Broadcaster needs a non-negative number for -maxTicketEV
 res=0
-./livepeer -broadcaster -maxTicketEV -1 -network rinkeby $ETH_ARGS || res=$?
+$TMPDIR/livepeer -broadcaster -maxTicketEV -1 -network rinkeby $ETH_ARGS || res=$?
 [ $res -ne 0 ]
 # Broadcaster needs a postive number for -depositMultiplier
 res=0
-./livepeer -broadcaster -depositMultiplier 0 -network rinkeby $ETH_ARGS || res=$?
+$TMPDIR/livepeer -broadcaster -depositMultiplier 0 -network rinkeby $ETH_ARGS || res=$?
 [ $res -ne 0 ]
 
 # transcoder needs -orchSecret
 res=0
-./livepeer -transcoder || res=$?
+$TMPDIR/livepeer -transcoder || res=$?
 [ $res -ne 0 ]
 
 # exit early if webhook url is not http
 res=0
-./livepeer -broadcaster -authWebhookUrl tcp://host/ || res=$?
+$TMPDIR/livepeer -broadcaster -authWebhookUrl tcp://host/ || res=$?
 [ $res -ne 0 ]
 
 # exit early if webhook url is not properly formatted
 res=0
-./livepeer -broadcaster -authWebhookUrl http\\://host/ || res=$?
+$TMPDIR/livepeer -broadcaster -authWebhookUrl http\\://host/ || res=$?
 [ $res -ne 0 ]
 
 # exit early if orchestrator webhook URL is not http
 res=0
-./livepeer -broadcaster -orchWebhookUrl tcp://host/ || res=$?
+$TMPDIR/livepeer -broadcaster -orchWebhookUrl tcp://host/ || res=$?
 [ $res -ne 0 ]
 
 # exit early if orchestrator webhook URL is not properly formatted
 res=0
-./livepeer -broadcaster -orchWebhookUrl http\\://host/ || res=$?
+$TMPDIR/livepeer -broadcaster -orchWebhookUrl http\\://host/ || res=$?
 [ $res -ne 0 ]
 
 # exit early if maxSessions less or equal to zero
 res=0
-./livepeer -broadcaster -maxSessions -1 || res=$?
+$TMPDIR/livepeer -broadcaster -maxSessions -1 || res=$?
 [ $res -ne 0 ]
 
 res=0
-./livepeer -broadcaster -maxSessions 0 || res=$?
+$TMPDIR/livepeer -broadcaster -maxSessions 0 || res=$?
 [ $res -ne 0 ]
 
 # Check that pprof is running on CLI port
@@ -170,4 +171,4 @@ run_lp -broadcaster
 curl -sI http://127.0.0.1:7935/debug/pprof/allocs | grep "200 OK"
 kill $pid
 
-rm -rf "$TMPDIR"
+rm -rf $TMPDIR
