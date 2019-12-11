@@ -10,7 +10,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 )
 
-var dataCacheLen = 12
+var dataCacheLen = 3
 
 type MemoryOS struct {
 	baseURI  *url.URL
