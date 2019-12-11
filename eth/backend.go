@@ -43,9 +43,10 @@ type backend struct {
 	*ethclient.Client
 	methods      map[string]string
 	nonceManager *NonceManager
+	signer       types.Signer
 }
 
-func NewBackend(client *ethclient.Client) (Backend, error) {
+func NewBackend(client *ethclient.Client, signer types.Signer) (Backend, error) {
 	methods, err := makeMethodsMap()
 	if err != nil {
 		return nil, err
@@ -55,6 +56,7 @@ func NewBackend(client *ethclient.Client) (Backend, error) {
 		client,
 		methods,
 		NewNonceManager(client),
+		signer,
 	}, nil
 }
 
@@ -72,7 +74,7 @@ func (b *backend) SendTransaction(ctx context.Context, tx *types.Transaction) er
 	}
 
 	// update local nonce
-	msg, err := tx.AsMessage(types.HomesteadSigner{})
+	msg, err := tx.AsMessage(b.signer)
 	if err != nil {
 		return err
 	}
