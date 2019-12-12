@@ -35,7 +35,7 @@ type Backend interface {
 	ethereum.GasEstimator
 	ethereum.GasPricer
 	ethereum.LogFilterer
-
+	ethereum.ChainReader
 	ChainID(ctx context.Context) (*big.Int, error)
 }
 

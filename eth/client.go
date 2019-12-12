@@ -57,6 +57,7 @@ type LivepeerEthClient interface {
 	// Token
 	Transfer(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error)
 	Request() (*types.Transaction, error)
+	NextValidRequest(addr ethcommon.Address) (*big.Int, error)
 	BalanceOf(ethcommon.Address) (*big.Int, error)
 	TotalSupply() (*big.Int, error)
 
