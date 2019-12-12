@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -35,6 +36,7 @@ func (w *wizard) allTranscodingOptions() map[int]string {
 		glog.Errorf("Error unmarshalling all transcoding options: %v", err)
 		return nil
 	}
+	sort.Strings(opts)
 
 	optIds := make(map[int]string)
 
