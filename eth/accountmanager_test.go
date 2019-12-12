@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,7 @@ func TestAccountManager(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	am, err := NewAccountManager(a.Address, dir)
+	am, err := NewAccountManager(a.Address, dir, types.EIP155Signer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +52,7 @@ func TestEmptyPassphrase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	am, err := NewAccountManager(a.Address, dir)
+	am, err := NewAccountManager(a.Address, dir, types.EIP155Signer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +81,7 @@ func TestSign(t *testing.T) {
 	a, err := ks.NewAccount("")
 	require.Nil(err)
 
-	am, err := NewAccountManager(a.Address, dir)
+	am, err := NewAccountManager(a.Address, dir, types.EIP155Signer{})
 	require.Nil(err)
 
 	_, err = am.Sign([]byte("foo"))
