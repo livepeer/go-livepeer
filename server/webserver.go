@@ -363,28 +363,30 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			return
 		}
 
-		glog.Infof("Setting orchestrator commission rates %v", s.LivepeerNode.Eth.Account().Address.Hex())
-
-		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare))
+		t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
 		if err != nil {
 			glog.Error(err)
 			return
 		}
 
-		err = s.LivepeerNode.Eth.CheckTx(tx)
-		if err != nil {
-			glog.Error(err)
-			return
+		if t.RewardCut.Cmp(eth.FromPerc(blockRewardCut)) != 0 || t.FeeShare.Cmp(eth.FromPerc(feeShare)) != 0 {
+			tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare))
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			glog.Infof("Setting orchestrator commission rates for %v: reward cut=%v feeshare=%v", s.LivepeerNode.Eth.Account().Address.Hex(), blockRewardCut, feeShare)
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
 		}
 
 		serviceURI := r.FormValue("serviceURI")
 		if _, err := url.ParseRequestURI(serviceURI); err != nil {
-			glog.Error(err)
-			return
-		}
-
-		t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
-		if err != nil {
 			glog.Error(err)
 			return
 		}
