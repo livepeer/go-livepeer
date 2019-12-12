@@ -46,20 +46,18 @@ func (w *wizard) deposit() {
 		return
 	}
 
-	fmt.Printf("Current Deposit: %v\n", sender.Deposit)
-	fmt.Printf("Current Reserve: %v\n", sender.Reserve.FundsRemaining)
+	fmt.Printf("Current Deposit: %v\n", eth.FormatUnits(sender.Deposit, "ETH"))
+	fmt.Printf("Current Reserve: %v\n", eth.FormatUnits(sender.Reserve.FundsRemaining, "ETH"))
 
 	fmt.Printf("Enter deposit amount in ETH - ")
-
-	depositAmount := w.readPositiveFloat()
+	depositAmount := w.readPositiveBaseAmount()
 
 	fmt.Printf("Enter reserve amount in ETH - ")
-
-	reserveAmount := w.readPositiveFloat()
+	reserveAmount := w.readPositiveBaseAmount()
 
 	form := url.Values{
-		"depositAmount": {eth.ToBaseAmount(depositAmount).String()},
-		"reserveAmount": {eth.ToBaseAmount(reserveAmount).String()},
+		"depositAmount": {depositAmount.String()},
+		"reserveAmount": {reserveAmount.String()},
 	}
 	fmt.Println(httpPostWithParams(fmt.Sprintf("http://%v:%v/fundDepositAndReserve", w.host, w.httpPort), form))
 
