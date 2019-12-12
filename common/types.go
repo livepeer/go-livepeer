@@ -1,6 +1,7 @@
 package common
 
 import (
+	"math/big"
 	"net/url"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -22,4 +23,8 @@ type OrchestratorStore interface {
 	OrchCount(filter *DBOrchFilter) (int, error)
 	SelectOrchs(filter *DBOrchFilter) ([]*DBOrch, error)
 	UpdateOrch(orch *DBOrch) error
+}
+
+type RoundsManager interface {
+	LastInitializedRound() *big.Int
 }

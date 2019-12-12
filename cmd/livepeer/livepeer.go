@@ -745,7 +745,7 @@ func main() {
 			return
 		}
 
-		orch := core.NewOrchestrator(s.LivepeerNode)
+		orch := core.NewOrchestrator(s.LivepeerNode, roundsWatcher)
 
 		go func() {
 			server.StartTranscodeServer(orch, *httpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil)
