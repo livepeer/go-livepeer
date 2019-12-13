@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+// GetPass attempts to read a file for a password at the supplied location.
+// If it fails, then the original supplied string will be returned to the caller.
 func GetPass(s string, idx int) (string, error) {
 	info, err := os.Stat(s)
 	if os.IsNotExist(err) || info.IsDir() {
