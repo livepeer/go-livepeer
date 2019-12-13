@@ -61,7 +61,34 @@ func TestGetPassEmptyFileExists(t *testing.T) {
 	assert.Equal(expectedOutput, output)
 }
 
-func TestGetPassFileExists(t *testing.T) {
+func TestGetPassFileExistsOneLine(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	input := `something`
+	expectedOutput := "something"
+
+	tmpFile := "TestGetPassFileExistsOneLine.txt"
+
+	file, err := os.Create(tmpFile)
+	require.Nil(err)
+	_, err = file.WriteString(fmt.Sprintf("%s\n", input))
+	file.Close()
+	require.Nil(err)
+
+	defer func() {
+		err := os.Remove(tmpFile)
+		require.Nil(err)
+	}()
+
+	output, err := GetPass(tmpFile)
+
+	assert.Nil(err)
+	// GetPass should the first line of the text file
+	assert.Equal(expectedOutput, output)
+}
+
+func TestGetPassFileExistsMultiline(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -70,7 +97,7 @@ func TestGetPassFileExists(t *testing.T) {
 somethingelse`
 	expectedOutput := "something"
 
-	tmpFile := "TestGetPassFileExistsIndex0.txt"
+	tmpFile := "TestGetPassFileExistsMultiline.txt"
 
 	file, err := os.Create(tmpFile)
 	require.Nil(err)
