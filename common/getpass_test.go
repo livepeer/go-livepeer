@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetPassNoFileExtsts(t *testing.T) {
+func TestGetPassNoFileExists(t *testing.T) {
 	assert := assert.New(t)
 
 	input := "/tmp/../../../nothing"
@@ -23,7 +23,7 @@ func TestGetPassNoFileExtsts(t *testing.T) {
 	assert.Equal(expectedOutput, output)
 }
 
-func TestGetPassDirectoryExtsts(t *testing.T) {
+func TestGetPassDirectoryExists(t *testing.T) {
 	assert := assert.New(t)
 
 	input := "/tmp"
