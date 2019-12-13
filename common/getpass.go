@@ -16,7 +16,7 @@ func GetPass(s string) (string, error) {
 		// assume it is the pass and return it
 		return s, nil
 	}
-	if os.IsNotExist(err) || info.IsDir() {
+	if info.IsDir() {
 		// If the supplied string is a directory,
 		// assume it is the pass and return it
 		// along with an approptiate error.
