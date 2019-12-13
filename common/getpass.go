@@ -9,7 +9,7 @@ import (
 // GetPass attempts to read a file for a password at the supplied location.
 // If it fails, then the original supplied string will be returned to the caller.
 // A valid string will always be returned, regardless of whether an error occurred.
-func GetPass(s string, idx int) (string, error) {
+func GetPass(s string) (string, error) {
 	info, err := os.Stat(s)
 	if os.IsNotExist(err) {
 		// If the supplied string is not a path to a file,
@@ -28,19 +28,14 @@ func GetPass(s string, idx int) (string, error) {
 	}
 	scanner := bufio.NewScanner(file)
 	scanner.Split(bufio.ScanLines)
-	var txtlines []string
 
-	for scanner.Scan() {
-		txtlines = append(txtlines, scanner.Text())
-		if len(txtlines)-idx == 1 {
-			break
-		}
-	}
+	scanner.Scan()
+	txtline := scanner.Text()
 	file.Close()
 
-	if len(txtlines) <= idx {
-		return s, fmt.Errorf("requested pass index not present in file: %s", s)
+	if len(txtline) == 0 {
+		return s, fmt.Errorf("supplied file is empty")
 	}
 
-	return txtlines[idx], nil
+	return txtline, nil
 }

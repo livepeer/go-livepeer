@@ -349,7 +349,7 @@ func main() {
 			bigGasPrice = big.NewInt(int64(*gasPrice))
 		}
 
-		ethPw, err := common.GetPass(*ethPassword, 0)
+		ethPw, err := common.GetPass(*ethPassword)
 		if err != nil {
 			glog.Errorf("Failed to read ethPassword: %v", err)
 			return
