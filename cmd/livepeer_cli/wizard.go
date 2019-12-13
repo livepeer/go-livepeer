@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	lpcommon "github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/eth"
 )
 
 // // read reads a single line from stdin, trimming if from spaces.
@@ -83,6 +84,32 @@ func (w *wizard) readDefaultString(def string) string {
 		return text
 	}
 	return def
+}
+
+func (w *wizard) readBaseAmountAndValidate(validate func(in *big.Int) error) *big.Int {
+	for {
+		text := w.readString()
+		val, err := eth.ToBaseAmount(text)
+		if err != nil {
+			log.Error("Error parsing user input", "err", err)
+			continue
+		}
+		if err := validate(val); err != nil {
+			log.Error("Invalid user input", "err", err)
+			continue
+		}
+		return val
+	}
+}
+
+func (w *wizard) readPositiveBaseAmount() *big.Int {
+	return w.readBaseAmountAndValidate(func(in *big.Int) error {
+		if in.Cmp(big.NewInt(0)) < 0 {
+			return errors.New("base amount must be positive")
+		}
+
+		return nil
+	})
 }
 
 // readInt reads a single line from stdin, trimming if from spaces, enforcing it

@@ -3,12 +3,16 @@ package eth
 import (
 	"fmt"
 	"math/big"
+	"regexp"
+	"strings"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 )
+
+const maxDecimals = 18
 
 var (
 	BlocksUntilFirstClaimDeadline = big.NewInt(200)
@@ -19,9 +23,8 @@ func FormatUnits(baseAmount *big.Int, name string) string {
 	if baseAmount == nil {
 		return "0 " + name
 	}
-	amount := FromBaseUnit(baseAmount)
 
-	if amount.Cmp(big.NewFloat(0.01)) == -1 {
+	if baseAmount.Cmp(big.NewInt(10000000000000000)) == -1 {
 		switch name {
 		case "ETH":
 			return fmt.Sprintf("%v WEI", baseAmount)
@@ -31,30 +34,11 @@ func FormatUnits(baseAmount *big.Int, name string) string {
 	} else {
 		switch name {
 		case "ETH":
-			return fmt.Sprintf("%v ETH", amount)
+			return fmt.Sprintf("%v ETH", FromBaseAmount(baseAmount))
 		default:
-			return fmt.Sprintf("%v LPT", amount)
+			return fmt.Sprintf("%v LPT", FromBaseAmount(baseAmount))
 		}
 	}
-}
-
-func ToBaseUnit(lptAmount *big.Float) *big.Int {
-	decimals := new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
-	floatDecimals := new(big.Float).SetInt(decimals)
-	floatBaseAmount := new(big.Float).Mul(lptAmount, floatDecimals)
-
-	baseAmount := new(big.Int)
-	floatBaseAmount.Int(baseAmount)
-
-	return baseAmount
-}
-
-func FromBaseUnit(baseAmount *big.Int) *big.Float {
-	decimals := new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
-	floatDecimals := new(big.Float).SetInt(decimals)
-	floatBaseAmount := new(big.Float).SetInt(baseAmount)
-
-	return new(big.Float).Quo(floatBaseAmount, floatDecimals)
 }
 
 func FormatPerc(value *big.Int) string {
@@ -120,4 +104,65 @@ func fromPerc(perc float64, multiplier *big.Float) *big.Int {
 	floatRes := new(big.Float).Mul(big.NewFloat(perc), multiplier)
 	intRes, _ := floatRes.Int(nil)
 	return intRes
+}
+
+func ToBaseAmount(v string) (*big.Int, error) {
+	// check that string is a float represented as a string with "." as seperator
+	ok, err := regexp.MatchString("^[-+]?[0-9]*.?[0-9]+$", v)
+	if !ok || err != nil {
+		return nil, fmt.Errorf("submitted value %v is not a valid float", v)
+	}
+	splitNum := strings.Split(v, ".")
+	// If '.' is absent from string, add an empty string to become the decimal part
+	if len(splitNum) == 1 {
+		splitNum = append(splitNum, "")
+	}
+	intPart := splitNum[0]
+	decPart := splitNum[1]
+
+	// If decimal part is longer than 18 decimals return an error
+	if len(decPart) > maxDecimals {
+		return nil, fmt.Errorf("submitted value has more than 18 decimals")
+	}
+
+	// If decimal part is shorter than 18 digits, pad with "0"
+	for len(decPart) < maxDecimals {
+		decPart += "0"
+	}
+
+	// Combine intPart and decPart into a big.Int
+	baseAmount, ok := new(big.Int).SetString(intPart+decPart, 10)
+	if !ok {
+		return nil, fmt.Errorf("unable to convert floatString %v into big.Int", intPart+decPart)
+	}
+
+	return baseAmount, nil
+}
+
+func FromBaseAmount(v *big.Int) string {
+	baseAmount := v.String()
+
+	// if length < 18 leftPad with zeros
+	for len(baseAmount) < maxDecimals {
+		baseAmount = "0" + baseAmount
+	}
+
+	// split decPart and intPart
+	intPart := baseAmount[:len(baseAmount)-maxDecimals]
+	decPart := baseAmount[len(baseAmount)-maxDecimals:]
+
+	// if no int part, add "0"
+	if len(intPart) == 0 {
+		intPart = "0"
+	}
+
+	// remove right padded 0's from decPart
+	decPart = strings.TrimRight(decPart, "0")
+
+	// if there are no decimals just return the integer part
+	if len(decPart) == 0 {
+		return intPart
+	}
+
+	return intPart + "." + decPart
 }
