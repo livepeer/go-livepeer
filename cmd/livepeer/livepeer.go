@@ -349,7 +349,13 @@ func main() {
 			bigGasPrice = big.NewInt(int64(*gasPrice))
 		}
 
-		err = client.Setup(*ethPassword, uint64(*gasLimit), bigGasPrice)
+		ethPw, err := common.GetPass(*ethPassword, 0)
+		if err != nil {
+			glog.Errorf("Failed to read ethPassword: %v", err)
+			return
+		}
+
+		err = client.Setup(ethPw, uint64(*gasLimit), bigGasPrice)
 		if err != nil {
 			glog.Errorf("Failed to setup client: %v", err)
 			return
