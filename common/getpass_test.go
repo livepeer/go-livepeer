@@ -12,13 +12,14 @@ import (
 func TestGetPassNoFileExtsts(t *testing.T) {
 	assert := assert.New(t)
 
-	input := "/tmp/../../.."
-	expectedOutput := "/tmp/../../.."
+	input := "/tmp/../../../nothing"
+	expectedOutput := "/tmp/../../../nothing"
 
 	// GetPass should return the string it was supplied
 	output, err := GetPass(input, 0)
 
 	assert.Nil(err)
+	// GetPass should return the originaly supplied string
 	assert.Equal(expectedOutput, output)
 }
 
@@ -31,7 +32,8 @@ func TestGetPassDirectoryExtsts(t *testing.T) {
 	// GetPass should return the string it was supplied
 	output, err := GetPass(input, 0)
 
-	assert.Nil(err)
+	assert.NotNil(err)
+	// GetPass should return the originaly supplied string
 	assert.Equal(expectedOutput, output)
 }
 
@@ -40,6 +42,7 @@ func TestGetPassEmptyFileExists(t *testing.T) {
 	require := require.New(t)
 
 	tmpFile := "TestGetPassEmptyFileExists.txt"
+	expectedOutput := "TestGetPassEmptyFileExists.txt"
 
 	emptyFile, err := os.Create(tmpFile)
 	emptyFile.Close()
@@ -51,9 +54,11 @@ func TestGetPassEmptyFileExists(t *testing.T) {
 	}()
 
 	// GetPass should return an error
-	_, err = GetPass(tmpFile, 0)
+	output, err := GetPass(tmpFile, 0)
 
 	assert.NotNil(err)
+	// GetPass should return the originaly supplied string
+	assert.Equal(expectedOutput, output)
 }
 
 func TestGetPassFileExistsIndex0(t *testing.T) {
