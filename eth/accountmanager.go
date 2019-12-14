@@ -78,8 +78,12 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string, signer
 }
 
 // Unlock account indefinitely using underlying keystore
-func (am *accountManager) Unlock(passphrase string) error {
+func (am *accountManager) Unlock(pass string) error {
 	var err error
+
+	// We don't care if GetPass() returns an error.
+	// The string it returns will always be valid.
+	passphrase, _ := common.GetPass(pass)
 
 	err = am.keyStore.Unlock(am.account, passphrase)
 	if err != nil {
