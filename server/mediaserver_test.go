@@ -363,9 +363,56 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	assert.Equal(params.profiles, []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9,
 		ffmpeg.P720p30fps16x9}, "Did not have matching presets")
 
-	// all invalid presets in webhook should lead to empty set
-	ts7 := makeServer(`{"manifestID":"a", "presets":["very", "unknown"]}`)
+	// set profiles with valid values, presets empty
+	ts7 := makeServer(`{"manifestID":"a", "profiles": [
+		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456},
+		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": 987}]}`)
 	defer ts7.Close()
+	params = createSid(u).(*streamParameters)
+	assert.Len(params.profiles, 2)
+
+	expectedProfiles := []ffmpeg.VideoProfile{
+		ffmpeg.VideoProfile{
+			Name:       "prof1",
+			Bitrate:    "432",
+			Framerate:  uint(560),
+			Resolution: "123x456",
+		},
+		ffmpeg.VideoProfile{
+			Name:       "prof2",
+			Bitrate:    "765",
+			Framerate:  uint(876),
+			Resolution: "456x987",
+		},
+	}
+
+	assert.Len(params.profiles, 2)
+	assert.Equal(expectedProfiles, params.profiles, "Did not have matching profiles")
+
+	// set profiles with invalid values, presets empty
+	ts8 := makeServer(`{"manifestID":"a", "profiles": [
+		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456},
+		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": "hello"}]}`)
+	defer ts8.Close()
+	params, ok := createSid(u).(*streamParameters)
+	assert.False(ok)
+	assert.Nil(params)
+
+	// set profiles and presets
+	ts9 := makeServer(`{"manifestID":"a", "presets":["P240p30fps16x9", "P720p30fps16x9"], "profiles": [
+		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456},
+		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": 987}]}`)
+
+	defer ts9.Close()
+	params = createSid(u).(*streamParameters)
+	jointProfiles := append([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P720p30fps16x9}, expectedProfiles...)
+
+	assert.Len(params.profiles, 4)
+	assert.Equal(jointProfiles, params.profiles, "Did not have matching profiles")
+
+	// all invalid presets in webhook should lead to empty set
+	ts10 := makeServer(`{"manifestID":"a", "presets":["very", "unknown"]}`)
+	defer ts10.Close()
 	params = createSid(u).(*streamParameters)
 	assert.Len(params.profiles, 0, "Unexpected value in presets")
 }

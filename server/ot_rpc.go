@@ -22,6 +22,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
+	"github.com/livepeer/lpms/ffmpeg"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -129,9 +130,15 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 }
 
 func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifySegment) {
-	profiles, err := common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
-	if err != nil {
-		glog.Info("Unable to deserialize profiles ", err)
+	profiles := []ffmpeg.VideoProfile{}
+	if len(notify.FullProfiles) > 0 {
+		profiles = makeFfmpegVideoProfiles(notify.FullProfiles)
+	} else if len(notify.Profiles) > 0 {
+		prof, err := common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
+		profiles = prof
+		if err != nil {
+			glog.Error("Unable to deserialize profiles ", err)
+		}
 	}
 
 	glog.Infof("Transcoding taskId=%d url=%s", notify.TaskId, notify.Url)

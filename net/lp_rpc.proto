@@ -123,6 +123,26 @@ message SegData {
   // Broadcaster's preferred storage medium(s)
   // XXX should we include this in a sig somewhere until certs are authenticated?
   repeated OSInfo storage = 32;
+
+  // Transcoding profiles to use. Supersedes `profiles` field 
+  repeated VideoProfile fullProfiles = 33;
+}
+
+message VideoProfile {
+  // Name of VideoProfile
+  string name = 16;
+
+  // Width of VideoProfile
+  int32 width = 17;
+
+  // Height of VideoProfile
+  int32 height = 18;
+
+  // Bitrate of VideoProfile
+  int32 bitrate =19;
+
+  // FPS of VideoProfile
+  uint32 fps = 20;
 }
 
 // Individual transcoded segment data.
@@ -185,6 +205,9 @@ message NotifySegment {
 
     // Set of profiles to transcode this segment into.
     bytes profiles = 17;
+
+    // Transcoding profiles to use. Supersedes `profiles` field 
+    repeated VideoProfile fullProfiles = 33;
 }
 
 // Required parameters for probabilistic micropayment tickets

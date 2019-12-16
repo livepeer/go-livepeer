@@ -23,9 +23,10 @@ import (
 )
 
 type stubTranscoder struct {
-	called int
-	fname  string
-	err    error
+	called   int
+	profiles []ffmpeg.VideoProfile
+	fname    string
+	err      error
 }
 
 var testRemoteTranscoderResults = &core.TranscodeData{
@@ -39,6 +40,7 @@ var testRemoteTranscoderResults = &core.TranscodeData{
 func (st *stubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*core.TranscodeData, error) {
 	st.called++
 	st.fname = fname
+	st.profiles = profiles
 	if st.err != nil {
 		return nil, st.err
 	}
@@ -47,7 +49,7 @@ func (st *stubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.
 
 // Tests that `runTranscode` actually calls transcoders `Transcoder` function,
 // sends results back by HTTP, and doesn't panic if it can't contact orchestrator
-func TestRemoteTranscoder(t *testing.T) {
+func TestRemoteTranscoder_Profiles(t *testing.T) {
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
 
@@ -65,6 +67,7 @@ func TestRemoteTranscoder(t *testing.T) {
 
 	runTranscode(node, "badaddress", httpc, notify)
 	assert.Equal(1, tr.called)
+	assert.Equal(profiles, tr.profiles)
 	assert.Equal("linktomanifest", tr.fname)
 
 	var headers http.Header
@@ -108,6 +111,49 @@ func TestRemoteTranscoder(t *testing.T) {
 
 		i++
 	}
+}
+
+func TestRemoteTranscoder_FullProfiles(t *testing.T) {
+	assert := assert.New(t)
+	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+
+	profiles := []ffmpeg.VideoProfile{
+		ffmpeg.VideoProfile{
+			Name:       "prof1",
+			Bitrate:    "432k",
+			Framerate:  uint(560),
+			Resolution: "123x456",
+		},
+		ffmpeg.VideoProfile{
+			Name:       "prof2",
+			Bitrate:    "765k",
+			Framerate:  uint(876),
+			Resolution: "456x987",
+		},
+	}
+
+	fullProfiles, err := common.FFmpegProfiletoNetProfile(profiles)
+	assert.Nil(err)
+
+	notify := &net.NotifySegment{
+		TaskId:       742,
+		FullProfiles: fullProfiles,
+		Url:          "linktomanifest",
+	}
+	tr := &stubTranscoder{}
+	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
+	node.OrchSecret = "verbigsecret"
+	node.Transcoder = tr
+
+	assert.Equal(0, tr.called)
+	assert.Empty(tr.profiles)
+	assert.Empty(tr.fname)
+	runTranscode(node, "badaddress", httpc, notify)
+	assert.Equal(1, tr.called)
+	profiles[0].Bitrate = "432000"
+	profiles[1].Bitrate = "765000"
+	assert.Equal(profiles, tr.profiles)
+	assert.Equal("linktomanifest", tr.fname)
 }
 
 func TestRemoteTranscoderError(t *testing.T) {

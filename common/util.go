@@ -8,12 +8,14 @@ import (
 	"math/rand"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"google.golang.org/grpc/peer"
 )
@@ -128,9 +130,39 @@ func BytesToVideoProfile(txData []byte) ([]ffmpeg.VideoProfile, error) {
 	return profiles, nil
 }
 
+func DefaultProfileName(width int, height int, bitrate int) string {
+	return fmt.Sprintf("%dx%d_%d", width, height, bitrate)
+}
+
+func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.VideoProfile, error) {
+	profiles := make([]*net.VideoProfile, 0, len(ffmpegProfiles))
+	for _, profile := range ffmpegProfiles {
+		width, height, err := ffmpeg.VideoProfileResolution(profile)
+		if err != nil {
+			return nil, err
+		}
+		br := strings.Replace(profile.Bitrate, "k", "000", 1)
+		bitrate, err := strconv.Atoi(br)
+		if err != nil {
+			return nil, err
+		}
+		name := profile.Name
+		if name == "" {
+			name = "ffmpeg_" + DefaultProfileName(width, height, bitrate)
+		}
+		fullProfile := net.VideoProfile{
+			Name:    name,
+			Width:   int32(width),
+			Height:  int32(height),
+			Bitrate: int32(bitrate),
+			Fps:     uint32(profile.Framerate),
+		}
+		profiles = append(profiles, &fullProfile)
+	}
+	return profiles, nil
+}
+
 func ProfilesToTranscodeOpts(profiles []ffmpeg.VideoProfile) []byte {
-	//Sort profiles first
-	sort.Sort(ffmpeg.ByName(profiles))
 	transOpts := []byte{}
 	for _, prof := range profiles {
 		transOpts = append(transOpts, crypto.Keccak256([]byte(prof.Name))[0:4]...)

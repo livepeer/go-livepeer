@@ -662,13 +662,20 @@ func (rt *RemoteTranscoder) Transcode(job string, fname string, profiles []ffmpe
 		glog.Errorf("Fatal error with remote transcoder=%s taskId=%d fname=%s err=%v", rt.addr, taskID, fname, err)
 		return nil, RemoteTranscoderFatalError{err}
 	}
-	msg := &net.NotifySegment{
-		Job:      job,
-		Url:      fname,
-		TaskId:   taskID,
-		Profiles: common.ProfilesToTranscodeOpts(profiles),
+
+	fullProfiles, err := common.FFmpegProfiletoNetProfile(profiles)
+	if err != nil {
+		return nil, err
 	}
-	err := rt.stream.Send(msg)
+
+	msg := &net.NotifySegment{
+		Job:          job,
+		Url:          fname,
+		TaskId:       taskID,
+		FullProfiles: fullProfiles,
+	}
+	err = rt.stream.Send(msg)
+
 	if err != nil {
 		return signalEOF(err)
 	}
