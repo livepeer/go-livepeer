@@ -57,6 +57,7 @@ type LivepeerEthClient interface {
 	// Token
 	Transfer(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error)
 	Request() (*types.Transaction, error)
+	NextValidRequest(addr ethcommon.Address) (*big.Int, error)
 	BalanceOf(ethcommon.Address) (*big.Int, error)
 	TotalSupply() (*big.Int, error)
 
@@ -78,7 +79,7 @@ type LivepeerEthClient interface {
 	GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error)
 	GetDelegatorUnbondingLock(addr ethcommon.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error)
 	GetTranscoderEarningsPoolForRound(addr ethcommon.Address, round *big.Int) (*lpTypes.TokenPools, error)
-	RegisteredTranscoders() ([]*lpTypes.Transcoder, error)
+	TranscoderPool() ([]*lpTypes.Transcoder, error)
 	IsActiveTranscoder() (bool, error)
 	GetTotalBonded() (*big.Int, error)
 	GetTranscoderPoolSize() (*big.Int, error)
@@ -146,12 +147,19 @@ type client struct {
 }
 
 func NewClient(accountAddr ethcommon.Address, keystoreDir string, eth *ethclient.Client, controllerAddr ethcommon.Address, txTimeout time.Duration) (LivepeerEthClient, error) {
-	am, err := NewAccountManager(accountAddr, keystoreDir)
+	chainID, err := eth.ChainID(context.Background())
 	if err != nil {
 		return nil, err
 	}
 
-	backend, err := NewBackend(eth)
+	signer := types.NewEIP155Signer(chainID)
+
+	backend, err := NewBackend(eth, signer)
+	if err != nil {
+		return nil, err
+	}
+
+	am, err := NewAccountManager(accountAddr, keystoreDir, signer)
 	if err != nil {
 		return nil, err
 	}
@@ -687,7 +695,7 @@ func (c *client) Paused() (bool, error) {
 	return c.ControllerSession.Paused()
 }
 
-func (c *client) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
+func (c *client) TranscoderPool() ([]*lpTypes.Transcoder, error) {
 	var transcoders []*lpTypes.Transcoder
 
 	tAddr, err := c.GetFirstTranscoderInPool()
@@ -795,7 +803,7 @@ func (c *client) ReplaceTransaction(tx *types.Transaction, method string, gasPri
 	// Replacement raw tx uses same fields as old tx (reusing the same nonce is crucial) except the gas price is updated
 	newRawTx := types.NewTransaction(tx.Nonce(), *tx.To(), tx.Value(), tx.Gas(), gasPrice, tx.Data())
 
-	newSignedTx, err := c.accountManager.SignTx(types.HomesteadSigner{}, newRawTx)
+	newSignedTx, err := c.accountManager.SignTx(newRawTx)
 	if err != nil {
 		return nil, err
 	}

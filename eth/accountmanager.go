@@ -25,19 +25,19 @@ type AccountManager interface {
 	Unlock(passphrase string) error
 	Lock() error
 	CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error)
-	SignTx(signer types.Signer, tx *types.Transaction) (*types.Transaction, error)
+	SignTx(tx *types.Transaction) (*types.Transaction, error)
 	Sign(msg []byte) ([]byte, error)
 	Account() accounts.Account
 }
 
 type accountManager struct {
-	account accounts.Account
-
+	account  accounts.Account
+	signer   types.Signer
 	unlocked bool
 	keyStore *keystore.KeyStore
 }
 
-func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (AccountManager, error) {
+func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string, signer types.Signer) (AccountManager, error) {
 	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
 
 	acctExists := keyStore.HasAddress(accountAddr)
@@ -71,14 +71,19 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string) (Accou
 
 	return &accountManager{
 		account:  acct,
+		signer:   signer,
 		unlocked: false,
 		keyStore: keyStore,
 	}, nil
 }
 
 // Unlock account indefinitely using underlying keystore
-func (am *accountManager) Unlock(passphrase string) error {
+func (am *accountManager) Unlock(pass string) error {
 	var err error
+
+	// We don't care if GetPass() returns an error.
+	// The string it returns will always be valid.
+	passphrase, _ := common.GetPass(pass)
 
 	err = am.keyStore.Unlock(am.account, passphrase)
 	if err != nil {
@@ -129,19 +134,19 @@ func (am *accountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int)
 				return nil, errors.New("not authorized to sign this account")
 			}
 
-			return am.SignTx(signer, tx)
+			return am.SignTx(tx)
 		},
 	}, nil
 }
 
 // Sign a transaction. Account must be unlocked
-func (am *accountManager) SignTx(signer types.Signer, tx *types.Transaction) (*types.Transaction, error) {
-	signature, err := am.keyStore.SignHash(am.account, signer.Hash(tx).Bytes())
+func (am *accountManager) SignTx(tx *types.Transaction) (*types.Transaction, error) {
+	signature, err := am.keyStore.SignHash(am.account, am.signer.Hash(tx).Bytes())
 	if err != nil {
 		return nil, err
 	}
 
-	return tx.WithSignature(signer, signature)
+	return tx.WithSignature(am.signer, signature)
 }
 
 // Sign byte array message. Account must be unlocked

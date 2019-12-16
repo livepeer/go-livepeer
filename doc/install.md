@@ -24,7 +24,11 @@ You can also build the executables from scratch.
 
 &ensp; 4\. You need to install `ffmpeg` as a dependency.  Run `./install_ffmpeg.sh`.  This will install the dependencies in `~/compiled`.  You need to have `pkg-config` installed.
 
-&ensp; 5\. You can now run `PKG_CONFIG_PATH=~/compiled/lib/pkgconfig go build ./cmd/livepeer/livepeer.go` from the project root directory. To get latest version, `git pull` from the project root directory.
+&ensp; 5\. You can now run `HIGHEST_CHAIN_TAG=<CHAIN_NAME> PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make` from the project root directory. To get latest version, `git pull` from the project root directory.
+
+&ensp; &ensp; a\. `HIGHEST_CHAIN_TAG` (available values: `dev`, `rinkeby` & `mainnet`) represents the highest compatible chain to build for with an ordering of `dev < rinkeby < mainnet`, e.g. using `HIGHEST_CHAIN_TAG=rinkeby` will allow the node to run on the public Rinkeby test network but throw an error when trying to connect to the main Ethereum network.
+
+&ensp; &ensp; b\. `PKG_CONFIG_PATH` is the path where `pkg-config` files for `ffmpeg` dependencies have been installed _(see step 3 & 4)_.
 
 &ensp; 6\. To run tests locally `./test.sh`, to run in docker container run `./test_docker.sh`
 

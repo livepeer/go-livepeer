@@ -46,6 +46,7 @@ type DBOrch struct {
 	PricePerPixel     int64
 	ActivationRound   int64
 	DeactivationRound int64
+	Stake             string
 }
 
 // DBOrch is the type binding for a row result from the unbondingLocks table
@@ -81,7 +82,8 @@ var schema = `
 		serviceURI STRING,
 		pricePerPixel int64,
 		activationRound int64,
-		deactivationRound int64
+		deactivationRound int64,
+		stake STRING
 	);
 
 	CREATE TABLE IF NOT EXISTS unbondingLocks (
@@ -121,13 +123,14 @@ var schema = `
 	CREATE INDEX IF NOT EXISTS idx_blockheaders_number ON blockheaders(number);
 `
 
-func NewDBOrch(ethereumAddr string, serviceURI string, pricePerPixel int64, activationRound int64, deactivationRound int64) *DBOrch {
+func NewDBOrch(ethereumAddr string, serviceURI string, pricePerPixel int64, activationRound int64, deactivationRound int64, stake string) *DBOrch {
 	return &DBOrch{
 		ServiceURI:        serviceURI,
 		EthereumAddr:      ethereumAddr,
 		PricePerPixel:     pricePerPixel,
 		ActivationRound:   activationRound,
 		DeactivationRound: deactivationRound,
+		Stake:             stake,
 	}
 }
 
@@ -195,8 +198,8 @@ func InitDB(dbPath string) (*DB, error) {
 
 	// updateOrch prepared statement
 	stmt, err = db.Prepare(`
-	INSERT INTO orchestrators(updatedAt, ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound, createdAt) 
-	VALUES(datetime(), :ethereumAddr, :serviceURI, :pricePerPixel, :activationRound, :deactivationRound, datetime()) 
+	INSERT INTO orchestrators(updatedAt, ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound, stake, createdAt) 
+	VALUES(datetime(), :ethereumAddr, :serviceURI, :pricePerPixel, :activationRound, :deactivationRound, :stake, datetime()) 
 	ON CONFLICT(ethereumAddr) DO UPDATE SET 
 	updatedAt = excluded.updatedAt,
 	serviceURI =
@@ -214,8 +217,17 @@ func InitDB(dbPath string) (*DB, error) {
 	deactivationRound = 
 		CASE WHEN excluded.deactivationRound == 0
 		THEN orchestrators.deactivationRound
-		ELSE excluded.deactivationRound END 
+		ELSE excluded.deactivationRound END,
+	stake = 
+		CASE WHEN excluded.stake == ""
+		THEN orchestrators.stake
+		ELSE excluded.stake END 
 	`)
+	if err != nil {
+		glog.Error("Unable to prepare updateOrch ", err)
+		d.Close()
+		return nil, err
+	}
 	d.updateOrch = stmt
 
 	// Unbonding locks prepared statements
@@ -420,6 +432,7 @@ func (db *DB) UpdateOrch(orch *DBOrch) error {
 		sql.Named("pricePerPixel", orch.PricePerPixel),
 		sql.Named("activationRound", orch.ActivationRound),
 		sql.Named("deactivationRound", orch.DeactivationRound),
+		sql.Named("stake", orch.Stake),
 	)
 
 	if err != nil {
@@ -448,12 +461,18 @@ func (db *DB) SelectOrchs(filter *DBOrchFilter) ([]*DBOrch, error) {
 			pricePerPixel     int64
 			activationRound   int64
 			deactivationRound int64
+			stake             sql.NullString
 		)
-		if err := rows.Scan(&serviceURI, &ethereumAddr, &pricePerPixel, &activationRound, &deactivationRound); err != nil {
+		if err := rows.Scan(&serviceURI, &ethereumAddr, &pricePerPixel, &activationRound, &deactivationRound, &stake); err != nil {
 			glog.Error("db: Unable to fetch orchestrator ", err)
 			continue
 		}
-		orchs = append(orchs, NewDBOrch(serviceURI, ethereumAddr, pricePerPixel, activationRound, deactivationRound))
+
+		totalStake := "0"
+		if stake.Valid {
+			totalStake = stake.String
+		}
+		orchs = append(orchs, NewDBOrch(serviceURI, ethereumAddr, pricePerPixel, activationRound, deactivationRound, totalStake))
 	}
 	return orchs, nil
 }
@@ -655,7 +674,7 @@ func buildWinningTicketsQuery(sessionIDs []string) string {
 }
 
 func buildSelectOrchsQuery(filter *DBOrchFilter) (string, error) {
-	query := "SELECT ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound FROM orchestrators "
+	query := "SELECT ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound, stake FROM orchestrators "
 	fil, err := buildFilterOrchsQuery(filter)
 	if err != nil {
 		return "", err

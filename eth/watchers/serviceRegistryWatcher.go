@@ -11,14 +11,14 @@ import (
 )
 
 type ServiceRegistryWatcher struct {
-	store   orchestratorStore
+	store   common.OrchestratorStore
 	dec     *EventDecoder
 	watcher BlockWatcher
 	lpEth   eth.LivepeerEthClient
 	quit    chan struct{}
 }
 
-func NewServiceRegistryWatcher(serviceRegistryAddr ethcommon.Address, watcher BlockWatcher, store orchestratorStore, lpEth eth.LivepeerEthClient) (*ServiceRegistryWatcher, error) {
+func NewServiceRegistryWatcher(serviceRegistryAddr ethcommon.Address, watcher BlockWatcher, store common.OrchestratorStore, lpEth eth.LivepeerEthClient) (*ServiceRegistryWatcher, error) {
 	dec, err := NewEventDecoder(serviceRegistryAddr, contracts.ServiceRegistryABI)
 	if err != nil {
 		return nil, err

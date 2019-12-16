@@ -363,28 +363,30 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			return
 		}
 
-		glog.Infof("Setting orchestrator commission rates %v", s.LivepeerNode.Eth.Account().Address.Hex())
-
-		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare))
+		t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
 		if err != nil {
 			glog.Error(err)
 			return
 		}
 
-		err = s.LivepeerNode.Eth.CheckTx(tx)
-		if err != nil {
-			glog.Error(err)
-			return
+		if t.RewardCut.Cmp(eth.FromPerc(blockRewardCut)) != 0 || t.FeeShare.Cmp(eth.FromPerc(feeShare)) != 0 {
+			tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare))
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+
+			glog.Infof("Setting orchestrator commission rates for %v: reward cut=%v feeshare=%v", s.LivepeerNode.Eth.Account().Address.Hex(), blockRewardCut, feeShare)
+
+			err = s.LivepeerNode.Eth.CheckTx(tx)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
 		}
 
 		serviceURI := r.FormValue("serviceURI")
 		if _, err := url.ParseRequestURI(serviceURI); err != nil {
-			glog.Error(err)
-			return
-		}
-
-		t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
-		if err != nil {
 			glog.Error(err)
 			return
 		}
@@ -903,7 +905,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.HandleFunc("/registeredOrchestrators", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			orchestrators, err := s.LivepeerNode.Eth.RegisteredTranscoders()
+			orchestrators, err := s.LivepeerNode.Eth.TranscoderPool()
 			if err != nil {
 				glog.Error(err)
 				return
@@ -984,6 +986,30 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.HandleFunc("/requestTokens", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
+
+			nextValidRequest, err := s.LivepeerNode.Eth.NextValidRequest(s.LivepeerNode.Eth.Account().Address)
+			if err != nil {
+				glog.Errorf("Unable to get the time for the next valid request from faucet: %v", err)
+				return
+			}
+			backend, err := s.LivepeerNode.Eth.Backend()
+			if err != nil {
+				glog.Errorf("Unable to get LivepeerEthClient backend: %v", err)
+				return
+			}
+
+			blk, err := backend.BlockByNumber(context.Background(), nil)
+			if err != nil {
+				glog.Errorf("Unable to get latest block")
+				return
+			}
+
+			now := int64(blk.Time())
+			if nextValidRequest.Int64() != 0 && nextValidRequest.Int64() > now {
+				glog.Errorf("Error requesting tokens from faucet: can only request tokens once every hour, please wait %v more minutes", (nextValidRequest.Int64()-now)/60)
+				return
+			}
+
 			glog.Infof("Requesting tokens from faucet")
 
 			tx, err := s.LivepeerNode.Eth.Request()

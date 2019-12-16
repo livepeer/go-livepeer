@@ -1,6 +1,7 @@
 package pm
 
 import (
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -37,6 +38,9 @@ type SenderMonitor interface {
 
 	// MaxFloat returns a remote sender's max float
 	MaxFloat(addr ethcommon.Address) (*big.Int, error)
+
+	// ValidateSender checks whether a sender's unlock period ends the round after the next round
+	ValidateSender(addr ethcommon.Address) error
 }
 
 // ErrorMonitor is an interface that describes methods used to monitor acceptable pm ticket errors as well as acceptable price errors
@@ -178,6 +182,19 @@ func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicke
 	sm.ensureCache(addr)
 
 	sm.senders[addr].queue.Add(ticket)
+}
+
+// ValidateSender checks whether a sender's unlock period ends the round after the next round
+func (sm *senderMonitor) ValidateSender(addr ethcommon.Address) error {
+	info, err := sm.smgr.GetSenderInfo(addr)
+	if err != nil {
+		return fmt.Errorf("could not get sender info for %v: %v", addr.Hex(), err)
+	}
+	maxWithdrawRound := new(big.Int).Add(sm.rm.LastInitializedRound(), big.NewInt(1))
+	if info.WithdrawRound.Int64() != 0 && info.WithdrawRound.Cmp(maxWithdrawRound) != 1 {
+		return fmt.Errorf("deposit and reserve for sender %v is set to unlock soon", addr.Hex())
+	}
+	return nil
 }
 
 // maxFloat is a helper that returns the sender's max float as:

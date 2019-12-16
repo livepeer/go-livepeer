@@ -43,8 +43,8 @@ type MockClient struct {
 
 // BondingManager
 
-// RegisteredTranscoders returns a list of registered transcoders
-func (m *MockClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
+// TranscoderPool returns a list of registered transcoders
+func (m *MockClient) TranscoderPool() ([]*lpTypes.Transcoder, error) {
 	args := m.Called()
 
 	if args.Get(0) == nil {
@@ -172,6 +172,8 @@ type StubClient struct {
 	ClaimedReserveError          error
 	Orch                         *lpTypes.Transcoder
 	Err                          error
+	TotalStake                   *big.Int
+	TranscoderPoolError          error
 }
 
 type stubTranscoder struct {
@@ -244,9 +246,12 @@ func (e *StubClient) GetDelegatorUnbondingLock(addr common.Address, unbondingLoc
 	return nil, nil
 }
 func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
-	return nil, nil
+	if e.TranscoderPoolError != nil {
+		return &lpTypes.TokenPools{}, e.TranscoderPoolError
+	}
+	return &lpTypes.TokenPools{TotalStake: e.TotalStake}, nil
 }
-func (e *StubClient) RegisteredTranscoders() ([]*lpTypes.Transcoder, error) {
+func (e *StubClient) TranscoderPool() ([]*lpTypes.Transcoder, error) {
 	return e.Orchestrators, nil
 }
 func (e *StubClient) IsActiveTranscoder() (bool, error)        { return false, nil }
@@ -319,3 +324,6 @@ func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, ga
 func (c *StubClient) Sign(msg []byte) ([]byte, error)   { return msg, nil }
 func (c *StubClient) GetGasInfo() (uint64, *big.Int)    { return 0, nil }
 func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
+
+// Faucet
+func (c *StubClient) NextValidRequest(common.Address) (*big.Int, error) { return nil, nil }

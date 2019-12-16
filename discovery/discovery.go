@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
@@ -22,14 +22,13 @@ var serverGetOrchInfo = server.GetOrchestratorInfo
 
 type orchestratorPool struct {
 	uris  []*url.URL
-	bcast server.Broadcaster
 	pred  func(info *net.OrchestratorInfo) bool
+	bcast common.Broadcaster
 }
 
 var perm = func(len int) []int { return rand.Perm(len) }
 
-func NewOrchestratorPool(node *core.LivepeerNode, uris []*url.URL) *orchestratorPool {
-
+func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL) *orchestratorPool {
 	if len(uris) <= 0 {
 		// Should we return here?
 		glog.Error("Orchestrator pool does not have any URIs")
@@ -41,17 +40,11 @@ func NewOrchestratorPool(node *core.LivepeerNode, uris []*url.URL) *orchestrator
 		randomizedUris = append(randomizedUris, uri)
 	}
 
-	bcast := core.NewBroadcaster(node)
-	return &orchestratorPool{bcast: bcast, uris: randomizedUris}
+	return &orchestratorPool{uris: randomizedUris, bcast: bcast}
 }
 
-func NewOrchestratorPoolWithPred(node *core.LivepeerNode, addresses []*url.URL, pred func(*net.OrchestratorInfo) bool) *orchestratorPool {
-	// if livepeer running in offchain mode, return nil
-	if node.Eth == nil {
-		glog.Error("Could not refresh DB list of orchestrators: LivepeerNode nil")
-		return nil
-	}
-	pool := NewOrchestratorPool(node, addresses)
+func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL, pred func(*net.OrchestratorInfo) bool) *orchestratorPool {
+	pool := NewOrchestratorPool(bcast, addresses)
 	pool.pred = pred
 	return pool
 }

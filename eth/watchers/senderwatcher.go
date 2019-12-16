@@ -104,7 +104,9 @@ func (sw *SenderWatcher) Watch() {
 		case events := <-events:
 			sw.handleBlockEvents(events)
 		case roundEvent := <-roundEvents:
-			sw.handleRoundEvent(roundEvent)
+			if err := sw.handleRoundEvent(roundEvent); err != nil {
+				glog.Errorf("error handling new round event: %v", err)
+			}
 		}
 	}
 }

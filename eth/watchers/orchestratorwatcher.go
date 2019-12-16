@@ -2,6 +2,7 @@ package watchers
 
 import (
 	"math"
+	"math/big"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -15,14 +16,15 @@ import (
 const maxFutureRound = int64(math.MaxInt64)
 
 type OrchestratorWatcher struct {
-	store   orchestratorStore
+	store   common.OrchestratorStore
 	dec     *EventDecoder
 	watcher BlockWatcher
 	lpEth   eth.LivepeerEthClient
+	rw      EventWatcher
 	quit    chan struct{}
 }
 
-func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockWatcher, store orchestratorStore, lpEth eth.LivepeerEthClient) (*OrchestratorWatcher, error) {
+func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockWatcher, store common.OrchestratorStore, lpEth eth.LivepeerEthClient, rw EventWatcher) (*OrchestratorWatcher, error) {
 	dec, err := NewEventDecoder(bondingManagerAddr, contracts.BondingManagerABI)
 	if err != nil {
 		return nil, err
@@ -33,12 +35,17 @@ func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockW
 		dec:     dec,
 		watcher: watcher,
 		lpEth:   lpEth,
+		rw:      rw,
 		quit:    make(chan struct{}),
 	}, nil
 }
 
 // Watch starts the event watching loop
 func (ow *OrchestratorWatcher) Watch() {
+	roundEvents := make(chan types.Log, 10)
+	roundSub := ow.rw.Subscribe(roundEvents)
+	defer roundSub.Unsubscribe()
+
 	events := make(chan []*blockwatch.Event, 10)
 	sub := ow.watcher.Subscribe(events)
 	defer sub.Unsubscribe()
@@ -51,6 +58,10 @@ func (ow *OrchestratorWatcher) Watch() {
 			glog.Error(err)
 		case events := <-events:
 			ow.handleBlockEvents(events)
+		case roundEvent := <-roundEvents:
+			if err := ow.handleRoundEvent(roundEvent); err != nil {
+				glog.Errorf("error handling new round event: %v", err)
+			}
 		}
 	}
 }
@@ -150,4 +161,42 @@ func (ow *OrchestratorWatcher) handleTranscoderDeactivated(log types.Log) error 
 			DeactivationRound: t.DeactivationRound.Int64(),
 		},
 	)
+}
+
+func (ow *OrchestratorWatcher) handleRoundEvent(log types.Log) error {
+	round, err := ow.lpEth.CurrentRound()
+	if err != nil {
+		return err
+	}
+
+	orchs, err := ow.store.SelectOrchs(&common.DBOrchFilter{CurrentRound: round})
+	if err != nil {
+		return err
+	}
+
+	for _, o := range orchs {
+		if err := ow.cacheOrchestratorStake(ethcommon.HexToAddress(o.EthereumAddr), round); err != nil {
+			glog.Errorf("could not cache stake update for orchestrator %v and round %v", o.EthereumAddr, round)
+		}
+	}
+
+	return nil
+}
+
+func (ow *OrchestratorWatcher) cacheOrchestratorStake(addr ethcommon.Address, round *big.Int) error {
+	ep, err := ow.lpEth.GetTranscoderEarningsPoolForRound(addr, round)
+	if err != nil {
+		return err
+	}
+
+	if err := ow.store.UpdateOrch(
+		&common.DBOrch{
+			EthereumAddr: addr.Hex(),
+			Stake:        ep.TotalStake.String(),
+		},
+	); err != nil {
+		return err
+	}
+
+	return nil
 }
