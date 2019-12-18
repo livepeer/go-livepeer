@@ -231,7 +231,7 @@ func main() {
 	}
 
 	if *orchSecret != "" {
-		n.OrchSecret = *orchSecret
+		n.OrchSecret, _ = common.GetPass(*orchSecret)
 	}
 
 	if *transcoder {
