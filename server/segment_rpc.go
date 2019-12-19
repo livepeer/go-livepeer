@@ -210,6 +210,24 @@ func getPaymentSender(payment net.Payment) ethcommon.Address {
 	return ethcommon.BytesToAddress(payment.Sender)
 }
 
+func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) []ffmpeg.VideoProfile {
+	profiles := make([]ffmpeg.VideoProfile, 0, len(protoProfiles))
+	for _, profile := range protoProfiles {
+		name := profile.Name
+		if name == "" {
+			name = "net_" + common.DefaultProfileName(int(profile.Width), int(profile.Height), int(profile.Bitrate))
+		}
+		prof := ffmpeg.VideoProfile{
+			Name:       name,
+			Bitrate:    fmt.Sprint(profile.Bitrate),
+			Framerate:  uint(profile.Fps),
+			Resolution: fmt.Sprintf("%dx%d", profile.Width, profile.Height),
+		}
+		profiles = append(profiles, prof)
+	}
+	return profiles
+}
+
 func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, error) {
 	buf, err := base64.StdEncoding.DecodeString(segCreds)
 	if err != nil {
@@ -222,11 +240,18 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 		glog.Error("Unable to unmarshal ", err)
 		return nil, err
 	}
-	profiles, err := common.BytesToVideoProfile(segData.Profiles)
-	if err != nil {
-		glog.Error("Unable to deserialize profiles ", err)
-		return nil, err
+
+	profiles := []ffmpeg.VideoProfile{}
+	if len(segData.FullProfiles) > 0 {
+		profiles = makeFfmpegVideoProfiles(segData.FullProfiles)
+	} else if len(segData.Profiles) > 0 {
+		profiles, err = common.BytesToVideoProfile(segData.Profiles)
+		if err != nil {
+			glog.Error("Unable to deserialize profiles ", err)
+			return nil, err
+		}
 	}
+
 	mid := core.ManifestID(segData.ManifestId)
 
 	var os *net.OSInfo
@@ -480,14 +505,19 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		storage = []*net.OSInfo{bos.GetInfo()}
 	}
 
+	fullProfiles, err := common.FFmpegProfiletoNetProfile(sess.Profiles)
+	if err != nil {
+		return "", err
+	}
+
 	// Generate serialized segment info
 	segData := &net.SegData{
-		ManifestId: []byte(md.ManifestID),
-		Seq:        md.Seq,
-		Hash:       hash,
-		Profiles:   common.ProfilesToTranscodeOpts(sess.Profiles),
-		Sig:        sig,
-		Storage:    storage,
+		ManifestId:   []byte(md.ManifestID),
+		Seq:          md.Seq,
+		Hash:         hash,
+		FullProfiles: fullProfiles,
+		Sig:          sig,
+		Storage:      storage,
 	}
 	data, err := proto.Marshal(segData)
 	if err != nil {
