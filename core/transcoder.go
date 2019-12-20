@@ -95,6 +95,45 @@ func NewNvidiaTranscoder(devices string, workDir string) Transcoder {
 	return &NvidiaTranscoder{devices: d, workDir: workDir, mu: &sync.Mutex{}}
 }
 
+type IntelTranscoder struct {
+	workDir string
+	devices []string
+
+	// The following fields need to be protected by the mutex `mu`
+	mu     *sync.Mutex
+	devIdx int // current index within the devices list
+}
+
+func (in *IntelTranscoder) getDevice() string {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	in.devIdx = (in.devIdx + 1) % len(in.devices)
+	return in.devices[in.devIdx]
+}
+
+func (in *IntelTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+	// Set up in / out config
+	inOpts := &ffmpeg.TranscodeOptionsIn{
+		Fname:  fname,
+		Accel:  ffmpeg.Intel,
+		Device: in.getDevice(),
+	}
+	opts := profilesToTranscodeOptions(in.workDir, ffmpeg.Intel, profiles)
+
+	// Do the Transcoding
+	res, err := ffmpeg.Transcode3(inOpts, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return resToTranscodeData(res, opts)
+}
+
+func NewIntelTranscoder(devices string, workDir string) Transcoder {
+	d := strings.Split(devices, ",")
+	return &IntelTranscoder{devices: d, workDir: workDir, mu: &sync.Mutex{}}
+}
+
 func parseURI(uri string) (string, uint64, error) {
 	var mid string
 	var seqNo uint64
