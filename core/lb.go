@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"math"
 	"strings"
@@ -66,18 +67,24 @@ func (lb *LoadBalancingTranscoder) createSession(job string, fname string, profi
 
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
+
+	if session, exists := lb.sessions[job]; exists {
+		glog.V(common.DEBUG).Info("Attempted to create session but already exists ", session.key)
+		return session, nil
+	}
+
 	glog.V(common.DEBUG).Info("LB: Creating transcode session for ", job)
 	transcoder := lb.leastLoaded()
 
 	// Acquire transcode session. Map to job id + assigned transcoder
 	key := job + "_" + transcoder
-	nonce := common.RandName() // because key alone is prone to reuse
 	costEstimate := calculateCost(profiles)
 	session := &transcoderSession{
-		transcoder: lb.newT(transcoder, lb.workDir),
-		key:        key,
-		nonce:      nonce,
-		sender:     make(chan *transcoderParams, 1),
+		transcoder:  lb.newT(transcoder, lb.workDir),
+		key:         key,
+		mu:          &sync.Mutex{},
+		sender:      make(chan *transcoderParams, 1),
+		makeContext: transcodeLoopContext,
 	}
 	lb.sessions[job] = session
 	lb.load[transcoder] += costEstimate
@@ -87,12 +94,8 @@ func (lb *LoadBalancingTranscoder) createSession(job string, fname string, profi
 	cleanupSession := func() {
 		lb.mu.Lock()
 		defer lb.mu.Unlock()
-		sess, exists := lb.sessions[job]
+		_, exists := lb.sessions[job]
 		if !exists {
-			return
-		}
-		if sess.nonce != session.nonce {
-			// Session cached at `job` has since been recreated
 			return
 		}
 		delete(lb.sessions, job)
@@ -136,20 +139,23 @@ type transcoderParams struct {
 type transcoderSession struct {
 	transcoder TranscoderSession
 	key        string
-	nonce      string
+	mu         *sync.Mutex
 
-	sender chan *transcoderParams
+	sender      chan *transcoderParams
+	makeContext func() (context.Context, context.CancelFunc)
 }
 
 func (sess *transcoderSession) loop() {
 	defer func() {
 		sess.transcoder.Stop()
+		sess.mu.Lock()
+		defer sess.mu.Unlock()
 		sess.sender = nil // unblocks any sender + select{ ... }
 	}()
 	// Run everything on a single loop to mitigate threading issues,
 	//   especially around transcoder cleanup
 	for {
-		ctx, cancel := transcodeLoopContext()
+		ctx, cancel := sess.makeContext()
 		select {
 		case <-ctx.Done():
 			// Terminate the session after a period of inactivity
@@ -177,7 +183,8 @@ func (sess *transcoderSession) Transcode(job string, fname string, profiles []ff
 			*TranscodeData
 			error
 		})}
-	// XXX check transcoding on a looped out channel . May be threading issues...
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
 	select {
 	case sess.sender <- params:
 		glog.V(common.DEBUG).Info("LB: Transcode submitted for ", sess.key)

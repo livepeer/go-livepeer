@@ -80,7 +80,7 @@ func TestTranscodeSeg(t *testing.T) {
 
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
 	n, _ := NewLivepeerNode(nil, tmp, nil)
-	n.Transcoder = &StubTranscoder{Profiles: profiles}
+	n.Transcoder = stubTranscoderWithProfiles(profiles)
 
 	conf := transcodeConfig{LocalOS: (drivers.NewMemoryDriver(nil)).NewSession("")}
 	md := &SegTranscodingMetadata{Profiles: profiles}

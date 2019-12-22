@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"net/url"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/golang/glog"
@@ -20,13 +21,22 @@ type StubTranscoder struct {
 	SegCount      int
 	StoppedCount  int
 	FailTranscode bool
+
+	// Makes the race detector happy...
+	mu *sync.RWMutex
 }
 
 func newStubTranscoder(d string, workDir string) TranscoderSession {
-	return &StubTranscoder{}
+	return &StubTranscoder{mu: &sync.RWMutex{}}
+}
+
+func stubTranscoderWithProfiles(profiles []ffmpeg.VideoProfile) *StubTranscoder {
+	return &StubTranscoder{Profiles: profiles, mu: &sync.RWMutex{}}
 }
 
 func (t *StubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.FailTranscode {
 		return nil, ErrTranscode
 	}
@@ -42,13 +52,21 @@ func (t *StubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.V
 }
 
 func (t *StubTranscoder) Stop() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.StoppedCount++
+}
+
+func (t *StubTranscoder) ProtectedStoppedCount() int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.StoppedCount
 }
 
 func TestTranscodeAndBroadcast(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
-	tr := &StubTranscoder{Profiles: p}
+	tr := stubTranscoderWithProfiles(p)
 	storage := drivers.NewMemoryDriver(nil).NewSession("")
 	config := transcodeConfig{LocalOS: storage, OS: storage}
 
