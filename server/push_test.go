@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,6 +57,86 @@ func TestMemoryRequestError(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	assert.Contains(strings.TrimSpace(string(body)), "Error reading http request body")
+}
+
+func TestEmptyURLError(t *testing.T) {
+	// assert http request body error returned
+	assert := assert.New(t)
+	s := setupServer()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/.ts", nil)
+	s.HandlePush(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+	assert.Equal("Bad URL\n", string(body))
+}
+
+func TestShouldUpdateLastUsed(t *testing.T) {
+	assert := assert.New(t)
+	s := setupServer()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/mani1/1.ts", nil)
+	s.HandlePush(w, req)
+	resp := w.Result()
+	resp.Body.Close()
+	lu := s.rtmpConnections["mani1"].lastUsed
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/live/mani1/1.ts", nil)
+	s.HandlePush(w, req)
+	resp = w.Result()
+	resp.Body.Close()
+	assert.True(lu.Before(s.rtmpConnections["mani1"].lastUsed))
+}
+
+func TestShouldRemoveSessionAfterTimeout(t *testing.T) {
+	oldRI := refreshIntervalHttpPush
+	refreshIntervalHttpPush = 2 * time.Millisecond
+	assert := assert.New(t)
+	s := setupServer()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/mani3/1.ts", nil)
+	s.HandlePush(w, req)
+	resp := w.Result()
+	resp.Body.Close()
+	s.connectionLock.Lock()
+	_, exists := s.rtmpConnections["mani3"]
+	s.connectionLock.Unlock()
+	assert.True(exists)
+	time.Sleep(50 * time.Millisecond)
+	s.connectionLock.Lock()
+	_, exists = s.rtmpConnections["mani3"]
+	s.connectionLock.Unlock()
+	assert.False(exists)
+	refreshIntervalHttpPush = oldRI
+}
+
+func TestShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
+	oldRI := refreshIntervalHttpPush
+	refreshIntervalHttpPush = 5 * time.Millisecond
+	assert := assert.New(t)
+	s := setupServer()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/mani2/1.ts", nil)
+	s.HandlePush(w, req)
+	resp := w.Result()
+	resp.Body.Close()
+	s.connectionLock.Lock()
+	_, exists := s.rtmpConnections["mani2"]
+	s.connectionLock.Unlock()
+	assert.True(exists)
+	s.connectionLock.Lock()
+	delete(s.rtmpConnections, "mani2")
+	s.connectionLock.Unlock()
+	time.Sleep(10 * time.Millisecond)
+	s.connectionLock.Lock()
+	_, exists = s.rtmpConnections["mani2"]
+	s.connectionLock.Unlock()
+	assert.False(exists)
+	refreshIntervalHttpPush = oldRI
 }
 
 func TestFileExtensionError(t *testing.T) {

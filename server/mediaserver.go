@@ -54,11 +54,12 @@ const StreamKeyBytes = 6
 
 const SegLen = 2 * time.Second
 const BroadcastRetry = 15 * time.Second
-const RefreshIntervalHttpPush = 1 * time.Minute
 
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL string
+
+var refreshIntervalHttpPush = 1 * time.Minute
 
 type streamParameters struct {
 	mid        core.ManifestID
@@ -410,9 +411,10 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		Bitrate:    "4000k", // Fix this
 	}
 	hlsStrmID := core.MakeStreamID(mid, &vProfile)
-	s.connectionLock.Lock()
+	s.connectionLock.RLock()
+	// Fast path - check early if session exists - creating new session can take time
 	_, exists := s.rtmpConnections[mid]
-	s.connectionLock.Unlock()
+	s.connectionLock.RUnlock()
 	if exists {
 		// We can only have one concurrent stream per ManifestID
 		return nil, errAlreadyExists
@@ -431,6 +433,14 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 
 	s.connectionLock.Lock()
+	_, exists = s.rtmpConnections[mid]
+	// Check if session exist again - potentially two sessions can be created simultaneously,
+	// so we don't want to overwrite one that was already created
+	if exists {
+		// We can only have one concurrent stream per ManifestID
+		s.connectionLock.Unlock()
+		return nil, errAlreadyExists
+	}
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
 	s.lastHLSStreamID = hlsStrmID
@@ -592,6 +602,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 	mid := parseManifestID(r.URL.Path)
+	if mid == "" {
+		http.Error(w, `Bad URL`, http.StatusBadRequest)
+		return
+	}
 	s.connectionLock.Lock()
 	cxn, exists := s.rtmpConnections[mid]
 	if exists && cxn != nil {
@@ -616,17 +630,19 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		ticker := time.NewTicker(RefreshIntervalHttpPush)
+		ticker := time.NewTicker(refreshIntervalHttpPush)
 
 		go func(s *LivepeerServer, mid core.ManifestID) {
+			defer ticker.Stop()
 			for range ticker.C {
+				var lastUsed time.Time
 				s.connectionLock.RLock()
-				lastUsed := s.rtmpConnections[mid].lastUsed
+				if cxn, exists := s.rtmpConnections[mid]; exists {
+					lastUsed = cxn.lastUsed
+				}
 				s.connectionLock.RUnlock()
-
-				if time.Since(lastUsed) > RefreshIntervalHttpPush {
+				if time.Since(lastUsed) > refreshIntervalHttpPush {
 					_ = removeRTMPStream(s, mid)
-					ticker.Stop()
 					return
 				}
 			}
