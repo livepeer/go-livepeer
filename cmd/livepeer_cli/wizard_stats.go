@@ -42,6 +42,9 @@ func (w *wizard) stats(showOrchestrator bool) {
 	fmt.Println("|NODE STATS|")
 	fmt.Println("+-----------+")
 
+	lptBal, _ := new(big.Int).SetString(w.getTokenBalance(), 10)
+	ethBal, _ := new(big.Int).SetString(w.getEthBalance(), 10)
+
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
 		[]string{"Node's version", status.Version},
@@ -53,8 +56,8 @@ func (w *wizard) stats(showOrchestrator bool) {
 		[]string{"LivepeerToken Address", addrMap["LivepeerToken"].Hex()},
 		[]string{"LivepeerTokenFaucet Address", addrMap["LivepeerTokenFaucet"].Hex()},
 		[]string{"ETH Account", w.getEthAddr()},
-		[]string{"LPT Balance", w.getTokenBalance()},
-		[]string{"ETH Balance", w.getEthBalance()},
+		[]string{"LPT Balance", eth.FormatUnits(lptBal, "LPT")},
+		[]string{"ETH Balance", eth.FormatUnits(ethBal, "ETH")},
 	}
 
 	for _, v := range data {
