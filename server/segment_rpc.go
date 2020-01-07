@@ -346,12 +346,12 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		req.Header.Set("Content-Type", "video/MP2T")
 	}
 
-	glog.Infof("Submitting segment nonce=%d seqNo=%d : %v bytes", nonce, seg.SeqNo, len(data))
+	glog.Infof("Submitting segment nonce=%d seqNo=%d bytes=%v orch=%s", nonce, seg.SeqNo, len(data), ti.Transcoder)
 	start := time.Now()
 	resp, err := httpClient.Do(req)
 	uploadDur := time.Since(start)
 	if err != nil {
-		glog.Errorf("Unable to submit segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
+		glog.Errorf("Unable to submit segment nonce=%d seqNo=%d orch=%s err=%v", nonce, seg.SeqNo, ti.Transcoder, err)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), false)
 		}
@@ -373,14 +373,14 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)
 		errorString := strings.TrimSpace(string(data))
-		glog.Errorf("Error submitting segment nonce=%d seqNo=%d code=%d error=%v", nonce, seg.SeqNo, resp.StatusCode, string(data))
+		glog.Errorf("Error submitting segment nonce=%d seqNo=%d code=%d orch=%s err=%v", nonce, seg.SeqNo, resp.StatusCode, ti.Transcoder, string(data))
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadError(resp.Status),
 				fmt.Sprintf("Code: %d Error: %s", resp.StatusCode, errorString), false)
 		}
 		return nil, fmt.Errorf(errorString)
 	}
-	glog.Infof("Uploaded segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
+	glog.Infof("Uploaded segment nonce=%d seqNo=%d orch=%s", nonce, seg.SeqNo, ti.Transcoder)
 	if monitor.Enabled {
 		monitor.SegmentUploaded(nonce, seg.SeqNo, uploadDur)
 	}
@@ -389,7 +389,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	tookAllDur := time.Since(start)
 
 	if err != nil {
-		glog.Errorf("Unable to read response body for segment nonce=%d seqNo=%d : %v", nonce, seg.SeqNo, err)
+		glog.Errorf("Unable to read response body for segment nonce=%d seqNo=%d orch=%s err=%v", nonce, seg.SeqNo, ti.Transcoder, err)
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorReadBody, nonce, seg.SeqNo, err, false)
 		}
@@ -400,7 +400,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	var tr net.TranscodeResult
 	err = proto.Unmarshal(data, &tr)
 	if err != nil {
-		glog.Errorf("Unable to parse response for segment nonce=%d seqNo=%d : %v", nonce, seg.SeqNo, err)
+		glog.Errorf("Unable to parse response for segment nonce=%d seqNo=%d orch=%s err=%v", nonce, seg.SeqNo, ti.Transcoder, err)
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorParseResponse, nonce, seg.SeqNo, err, false)
 		}
@@ -412,7 +412,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	switch res := tr.Result.(type) {
 	case *net.TranscodeResult_Error:
 		err = fmt.Errorf(res.Error)
-		glog.Errorf("Transcode failed for segment nonce=%d manifestID=%s seqNo=%d:%v", nonce, sess.ManifestID, seg.SeqNo, err)
+		glog.Errorf("Transcode failed for segment nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", nonce, sess.ManifestID, seg.SeqNo, ti.Transcoder, err)
 		if err.Error() == "MediaStats Failure" {
 			glog.Info("Ensure the keyframe interval is 4 seconds or less")
 		}
@@ -431,7 +431,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		// fall through here for the normal case
 		tdata = res.Data
 	default:
-		glog.Errorf("Unexpected or unset transcode response field for nonce=%d seqNo=%d", nonce, seg.SeqNo)
+		glog.Errorf("Unexpected or unset transcode response field for nonce=%d seqNo=%d orch=%s", nonce, seg.SeqNo, ti.Transcoder)
 		err = fmt.Errorf("UnknownResponse")
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorUnknownResponse, nonce, seg.SeqNo, err, false)
@@ -457,7 +457,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		monitor.SegmentTranscoded(nonce, seg.SeqNo, transcodeDur, common.ProfilesNames(sess.Profiles))
 	}
 
-	glog.Infof("Successfully transcoded segment nonce=%d manifestID=%s segName=%s seqNo=%d", nonce, string(sess.ManifestID), seg.Name, seg.SeqNo)
+	glog.Infof("Successfully transcoded segment nonce=%d manifestID=%s segName=%s seqNo=%d orch=%s", nonce, string(sess.ManifestID), seg.Name, seg.SeqNo, ti.Transcoder)
 
 	return &ReceivedTranscodeResult{
 		TranscodeData: tdata,
