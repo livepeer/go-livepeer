@@ -174,7 +174,14 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 			errc <- err
 			return
 		}
-		o.Stake = ep.TotalStake.String()
+
+		stakeFp, err := common.BaseTokenAmountToFixed(ep.TotalStake)
+		if err != nil {
+			errc <- err
+			return
+		}
+		o.Stake = stakeFp
+
 		resc <- o
 	}
 

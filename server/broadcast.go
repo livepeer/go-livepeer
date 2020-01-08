@@ -48,7 +48,7 @@ type BroadcastSessionsManager struct {
 	// Accessing or changing any of the below requires ownership of this mutex
 	sessLock *sync.Mutex
 
-	sessList []*BroadcastSession
+	sel      BroadcastSessionsSelector
 	sessMap  map[string]*BroadcastSession
 	numOrchs int // how many orchs to request at once
 
@@ -63,16 +63,14 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 	defer bsm.sessLock.Unlock()
 
 	checkSessions := func(m *BroadcastSessionsManager) bool {
-		numSess := len(m.sessList)
+		numSess := m.sel.Size()
 		if numSess < int(math.Ceil(float64(m.numOrchs)/2.0)) {
 			go m.refreshSessions()
 		}
 		return numSess > 0
 	}
 	for checkSessions(bsm) {
-		last := len(bsm.sessList) - 1
-		sess, sessions := bsm.sessList[last], bsm.sessList[:last]
-		bsm.sessList = sessions
+		sess := bsm.sel.Select()
 		if _, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
 			return sess
 		}
@@ -99,8 +97,14 @@ func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 
-	if _, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
-		bsm.sessList = append(bsm.sessList, sess)
+	if existingSess, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+		// If the new session and the existing session share the same key in sessMap replace
+		// the existing session with the new session
+		if existingSess != sess {
+			bsm.sessMap[sess.OrchestratorInfo.Transcoder] = sess
+		}
+
+		bsm.sel.Complete(sess)
 	}
 }
 
@@ -148,18 +152,19 @@ func (bsm *BroadcastSessionsManager) refreshSessions() {
 		uniqueSessions = append(uniqueSessions, sess)
 		bsm.sessMap[sess.OrchestratorInfo.Transcoder] = sess
 	}
-	bsm.sessList = append(uniqueSessions, bsm.sessList...)
+
+	bsm.sel.Add(uniqueSessions)
 }
 
 func (bsm *BroadcastSessionsManager) cleanup() {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 	bsm.finished = true
-	bsm.sessList = nil
+	bsm.sel.Clear()
 	bsm.sessMap = make(map[string]*BroadcastSession) // prevent segfaults
 }
 
-func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl core.PlaylistManager) *BroadcastSessionsManager {
+func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl core.PlaylistManager, sel BroadcastSessionsSelector) *BroadcastSessionsManager {
 	var poolSize float64
 	if node.OrchestratorPool != nil {
 		poolSize = float64(node.OrchestratorPool.Size())
@@ -167,6 +172,7 @@ func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl cor
 	maxInflight := common.HTTPTimeout.Seconds() / SegLen.Seconds()
 	numOrchs := int(math.Min(poolSize, maxInflight*2))
 	bsm := &BroadcastSessionsManager{
+		sel:            sel,
 		sessMap:        make(map[string]*BroadcastSession),
 		createSessions: func() ([]*BroadcastSession, error) { return selectOrchestrator(node, params, pl, numOrchs) },
 		sessLock:       &sync.Mutex{},
@@ -338,7 +344,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 			return err
 		}
 
-		cxn.sessManager.completeSession(sess)
+		cxn.sessManager.completeSession(updateSession(sess, res))
 
 		// download transcoded segments from the transcoder
 		gotErr := false // only send one error msg per segment list
@@ -504,4 +510,35 @@ func pixels(fname string) (int64, error) {
 	}
 
 	return res.Decoded.Pixels, nil
+}
+
+// Return an updated copy of the given session using the received transcode result
+func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) *BroadcastSession {
+	// Instead of mutating the existing session we copy it and return an updated copy
+	newSess := &BroadcastSession{}
+	*newSess = *sess
+	newSess.LatencyScore = res.LatencyScore
+
+	if res.Info == nil {
+		// Return newSess early if we do not need to update OrchestratorInfo
+		return newSess
+	}
+
+	oInfo := res.Info
+	newSess.OrchestratorInfo = oInfo
+
+	if len(oInfo.Storage) > 0 {
+		newSess.OrchestratorOS = drivers.NewSession(oInfo.Storage[0])
+	}
+
+	if newSess.Sender != nil && oInfo.TicketParams != nil {
+		// Note: We do not validate the ticket params included in the OrchestratorInfo
+		// message here. Instead, we store the ticket params with the current BroadcastSession
+		// and the next time this BroadcastSession is used, the ticket params will be validated
+		// during ticket creation in genPayment(). If ticket params validation during ticket
+		// creation fails, then this BroadcastSession will be removed
+		newSess.PMSessionID = newSess.Sender.StartSession(*pmTicketParams(oInfo.TicketParams))
+	}
+
+	return newSess
 }

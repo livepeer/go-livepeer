@@ -189,10 +189,15 @@ func (ow *OrchestratorWatcher) cacheOrchestratorStake(addr ethcommon.Address, ro
 		return err
 	}
 
+	stakeFp, err := common.BaseTokenAmountToFixed(ep.TotalStake)
+	if err != nil {
+		return err
+	}
+
 	if err := ow.store.UpdateOrch(
 		&common.DBOrch{
 			EthereumAddr: addr.Hex(),
-			Stake:        ep.TotalStake.String(),
+			Stake:        stakeFp,
 		},
 	); err != nil {
 		return err
