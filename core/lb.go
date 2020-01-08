@@ -14,6 +14,7 @@ import (
 )
 
 var ErrTranscoderBusy = errors.New("TranscoderBusy")
+var ErrTranscoderStopped = errors.New("TranscoderStopped")
 
 type TranscoderSession interface {
 	Transcoder
@@ -149,8 +150,22 @@ func (sess *transcoderSession) loop() {
 	defer func() {
 		sess.transcoder.Stop()
 		sess.mu.Lock()
-		defer sess.mu.Unlock()
+		sender := sess.sender
 		sess.sender = nil // unblocks any sender + select{ ... }
+		sess.mu.Unlock()
+		// Drain any messages that may have come into the channel
+		// before this cleanup function was called
+		for {
+			select {
+			case params := <-sender:
+				params.res <- struct {
+					*TranscodeData
+					error
+				}{nil, ErrTranscoderStopped}
+			default:
+				return
+			}
+		}
 	}()
 	// Run everything on a single loop to mitigate threading issues,
 	//   especially around transcoder cleanup
