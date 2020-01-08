@@ -112,7 +112,7 @@ if [ $(uname) == "Darwin" ]; then
 fi
 
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
-  git clone -b livepeer-2019_11_19 https://github.com/livepeer/FFmpeg "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
+  git clone -b livepeer-2020_01_08 https://github.com/livepeer/FFmpeg "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
   ./configure ${TARGET_OS:-} --fatal-warnings \
     --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
