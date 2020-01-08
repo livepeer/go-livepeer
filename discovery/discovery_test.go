@@ -213,7 +213,7 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 		Database: dbh,
 		Eth: &eth.StubClient{
 			Orchestrators: orchestrators,
-			TotalStake:    big.NewInt(5000),
+			TotalStake:    new(big.Int).Mul(big.NewInt(5000), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)),
 		},
 		Sender: sender,
 	}
@@ -238,7 +238,7 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	for _, o := range dbOrchs {
 		test := toOrchTest(o.EthereumAddr, o.ServiceURI, o.PricePerPixel)
 		assert.Contains(testOrchs, test)
-		assert.Equal(o.Stake, big.NewInt(5000).String())
+		assert.Equal(o.Stake, int64(500000000))
 	}
 
 	urls := pool.GetURLs()

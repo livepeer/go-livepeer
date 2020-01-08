@@ -1129,12 +1129,44 @@ func TestSubmitSegment_Success(t *testing.T) {
 		assert.Equal([]byte("dummy"), data)
 	}
 
-	tdata, err := SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
+	noNameSeg := &stream.HLSSegment{Data: []byte("dummy")}
+	tdata, err := SubmitSegment(s, noNameSeg, 0)
 
 	assert.Nil(err)
 	assert.Equal(1, len(tdata.Segments))
 	assert.Equal("foo", tdata.Segments[0].Url)
 	assert.Equal([]byte("bar"), tdata.Sig)
+	assert.Nil(tdata.Info)
+
+	// Check that latency score calculation is different for different segment durations
+	// The transcode duration calculated in SubmitSegment should be about the same across all calls
+	noNameSeg.Duration = 5.0
+	tdata, err = SubmitSegment(s, noNameSeg, 0)
+	assert.Nil(err)
+	latencyScore1 := tdata.LatencyScore
+
+	noNameSeg.Duration = 10.0
+	tdata, err = SubmitSegment(s, noNameSeg, 0)
+	assert.Nil(err)
+	latencyScore2 := tdata.LatencyScore
+
+	noNameSeg.Duration = .5
+	tdata, err = SubmitSegment(s, noNameSeg, 0)
+	assert.Nil(err)
+	latencyScore3 := tdata.LatencyScore
+
+	assert.Less(latencyScore1, latencyScore3)
+	assert.Less(latencyScore2, latencyScore1)
+
+	// Check that a new OrchestratorInfo is returned from SubmitSegment()
+	tr.Info = &net.OrchestratorInfo{}
+	buf, err = proto.Marshal(tr)
+	require.Nil(err)
+
+	tdata, err = SubmitSegment(s, noNameSeg, 0)
+	assert.Nil(err)
+	assert.NotEqual(tdata.Info, s.OrchestratorInfo)
+	assert.Equal(tdata.Info, tr.Info)
 
 	// Test when input data is uploaded
 	runChecks = func(r *http.Request) {
@@ -1231,183 +1263,6 @@ func TestSubmitSegment_Success(t *testing.T) {
 	SubmitSegment(s, seg, 0)
 
 	balance.AssertCalled(t, "Credit", ratMatcher(change))
-}
-
-func TestSubmitSegment_UpdateOrchestratorInfo(t *testing.T) {
-	require := require.New(t)
-
-	params := pm.TicketParams{
-		Recipient:         ethcommon.Address{},
-		FaceValue:         big.NewInt(100),
-		WinProb:           big.NewInt(100),
-		RecipientRandHash: pm.RandHash(),
-		Seed:              big.NewInt(100),
-	}
-
-	tr := &net.TranscodeResult{
-		Result: &net.TranscodeResult_Data{
-			Data: &net.TranscodeData{
-				Segments: []*net.TranscodedSegmentData{
-					&net.TranscodedSegmentData{Url: "foo", Pixels: 10},
-				},
-				Sig: []byte("bar"),
-			},
-		},
-		Info: &net.OrchestratorInfo{
-			Transcoder: "http://google.com",
-			PriceInfo: &net.PriceInfo{
-				PricePerUnit:  1,
-				PixelsPerUnit: 1,
-			},
-			TicketParams: &net.TicketParams{
-				Recipient:         params.Recipient.Bytes(),
-				FaceValue:         params.FaceValue.Bytes(),
-				WinProb:           params.WinProb.Bytes(),
-				RecipientRandHash: params.RecipientRandHash.Bytes(),
-				Seed:              params.Seed.Bytes(),
-			},
-		},
-	}
-	buf, err := proto.Marshal(tr)
-	require.Nil(err)
-
-	ts, mux := stubTLSServer()
-	defer ts.Close()
-	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write(buf)
-	})
-
-	// Test with no pm.Sender in BroadcastSession
-
-	newSess := func() *BroadcastSession {
-		return &BroadcastSession{
-			Broadcaster: stubBroadcaster2(),
-			ManifestID:  core.RandomManifestID(),
-			OrchestratorInfo: &net.OrchestratorInfo{
-				Transcoder: ts.URL,
-				PriceInfo: &net.PriceInfo{
-					PricePerUnit:  2,
-					PixelsPerUnit: 1,
-				},
-			},
-		}
-	}
-
-	s := newSess()
-
-	assert := assert.New(t)
-
-	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
-
-	assert.Nil(err)
-	assert.Equal("http://google.com", s.OrchestratorInfo.Transcoder)
-	assert.Equal(tr.Info.TicketParams.Recipient, s.OrchestratorInfo.TicketParams.Recipient)
-	assert.Equal(tr.Info.TicketParams.FaceValue, s.OrchestratorInfo.TicketParams.FaceValue)
-	assert.Equal(tr.Info.TicketParams.WinProb, s.OrchestratorInfo.TicketParams.WinProb)
-	assert.Equal(tr.Info.TicketParams.RecipientRandHash, s.OrchestratorInfo.TicketParams.RecipientRandHash)
-	assert.Equal(tr.Info.TicketParams.Seed, s.OrchestratorInfo.TicketParams.Seed)
-
-	// Test with pm.Sender in BroadcastSession
-
-	sender := &pm.MockSender{}
-	s = newSess()
-	s.Sender = sender
-
-	batch := &pm.TicketBatch{
-		TicketParams: &pm.TicketParams{
-			Recipient: pm.RandAddress(),
-			FaceValue: big.NewInt(1234),
-			WinProb:   big.NewInt(5678),
-			Seed:      big.NewInt(7777),
-		},
-		TicketExpirationParams: &pm.TicketExpirationParams{},
-		Sender:                 pm.RandAddress(),
-		SenderParams: []*pm.TicketSenderParams{
-			&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
-		},
-	}
-
-	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(batch, nil)
-	sender.On("StartSession", params).Return("foobar")
-
-	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
-
-	assert.Nil(err)
-	assert.Equal("foobar", s.PMSessionID)
-	sender.AssertCalled(t, "StartSession", params)
-
-	// Test balance update completion with last known price and NOT the price
-	// included in an updated OrchestratorInfo message
-
-	ratMatcher := func(rat *big.Rat) interface{} {
-		return mock.MatchedBy(func(x *big.Rat) bool { return x.Cmp(rat) == 0 })
-	}
-
-	existingCredit := big.NewRat(100, 1)
-	// change = existingCredit - (pixelCount * price) = 100 - (10 * 2) = 80
-	// Note that price = 2 which is the last known price and not the price = 1 included in the
-	// updated OrchestratorInfo message
-	change := big.NewRat(80, 1)
-	balance := &mockBalance{}
-	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, big.NewRat(0, 1), existingCredit)
-	balance.On("Credit", ratMatcher(change))
-	sender = &pm.MockSender{}
-	sender.On("EV", mock.Anything).Return(big.NewRat(0, 1), nil)
-	sender.On("StartSession", params).Return("foobar")
-	s = newSess()
-	s.Balance = balance
-	s.Sender = sender
-
-	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
-
-	balance.AssertCalled(t, "Credit", ratMatcher(change))
-
-	// Test does not crash if OrchestratorInfo.TicketParams is nil
-
-	sender = &pm.MockSender{}
-	s = newSess()
-	s.Sender = sender
-
-	// Update stub server to return OrchestratorInfo without TicketParams
-	tr.Info = &net.OrchestratorInfo{
-		Transcoder: "http://google.com",
-	}
-	buf, err = proto.Marshal(tr)
-	require.Nil(err)
-
-	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(batch, nil)
-	sender.On("StartSession", mock.Anything).Return("foobar")
-
-	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
-
-	assert.Nil(err)
-	assert.Equal("http://google.com", s.OrchestratorInfo.Transcoder)
-	sender.AssertNotCalled(t, "StartSession", mock.Anything)
-
-	// Test update OrchestratorOS
-
-	s = newSess()
-
-	tr.Info = &net.OrchestratorInfo{
-		Transcoder: "http://google.com",
-		Storage: []*net.OSInfo{
-			&net.OSInfo{
-				StorageType: 1,
-				S3Info: &net.S3OSInfo{
-					Host: "http://apple.com",
-				},
-			},
-		},
-	}
-	buf, err = proto.Marshal(tr)
-	require.Nil(err)
-
-	_, err = SubmitSegment(s, &stream.HLSSegment{Data: []byte("dummy")}, 0)
-
-	assert.Nil(err)
-	assert.Equal(tr.Info.Storage[0].StorageType, s.OrchestratorOS.GetInfo().StorageType)
-	assert.Equal(tr.Info.Storage[0].S3Info.Host, s.OrchestratorOS.GetInfo().S3Info.Host)
 }
 
 func stubTLSServer() (*httptest.Server, *http.ServeMux) {

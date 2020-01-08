@@ -222,7 +222,13 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 
 	// adding row
 	orchAddress := pm.RandAddress().String()
-	orch := NewDBOrch(orchAddress, "127.0.0.1:8936", 1, 0, 0, "")
+	orch := &DBOrch{
+		EthereumAddr:      orchAddress,
+		ServiceURI:        "127.0.0.1:8936",
+		PricePerPixel:     1,
+		ActivationRound:   0,
+		DeactivationRound: 0,
+	}
 
 	err = dbh.UpdateOrch(orch)
 	require.Nil(err)
@@ -231,9 +237,11 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	require.Nil(err)
 	assert.Len(orchs, 1)
 	assert.Equal(orchs[0].ServiceURI, orch.ServiceURI)
+	// Default value for stake should be 0
+	assert.Equal(orchs[0].Stake, int64(0))
 
 	// updating row with same orchAddress
-	orchUpdate := NewDBOrch(orchAddress, "127.0.0.1:8937", 1000, 5, 10, "50")
+	orchUpdate := NewDBOrch(orchAddress, "127.0.0.1:8937", 1000, 5, 10, 50)
 	err = dbh.UpdateOrch(orchUpdate)
 	require.Nil(err)
 
@@ -312,7 +320,7 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	// Updating only stake
 	stakeUpdate := &DBOrch{
 		EthereumAddr: orchAddress,
-		Stake:        "1000",
+		Stake:        1000,
 	}
 	err = dbh.UpdateOrch(stakeUpdate)
 	require.Nil(err)
@@ -338,7 +346,7 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 	// adding one row
 	orchAddress := pm.RandAddress().String()
 
-	orch := NewDBOrch(orchAddress, "127.0.0.1:8936", 1, 0, 0, "0")
+	orch := NewDBOrch(orchAddress, "127.0.0.1:8936", 1, 0, 0, 0)
 	err = dbh.UpdateOrch(orch)
 	require.Nil(err)
 
@@ -350,7 +358,7 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 	// adding second row
 	orchAddress = pm.RandAddress().String()
 
-	orchAdd := NewDBOrch(orchAddress, "127.0.0.1:8938", 1, 0, 0, "0")
+	orchAdd := NewDBOrch(orchAddress, "127.0.0.1:8938", 1, 0, 0, 0)
 	err = dbh.UpdateOrch(orchAdd)
 	require.Nil(err)
 
@@ -375,7 +383,7 @@ func TestOrchCount(t *testing.T) {
 	require.Nil(err)
 
 	for i := 0; i < 10; i++ {
-		orch := NewDBOrch("https://127.0.0.1:"+strconv.Itoa(8936+i), pm.RandAddress().String(), 1, int64(i), int64(5+i), "0")
+		orch := NewDBOrch("https://127.0.0.1:"+strconv.Itoa(8936+i), pm.RandAddress().String(), 1, int64(i), int64(5+i), 0)
 		orch.PricePerPixel, err = PriceToFixed(big.NewRat(1, int64(5+i)))
 		require.Nil(err)
 		err = dbh.UpdateOrch(orch)
@@ -418,6 +426,7 @@ func TestOrchCount(t *testing.T) {
 func TestDBFilterOrchs(t *testing.T) {
 	assert := assert.New(t)
 	var orchList []string
+	var orchAddrList []string
 	var nilDb *DB
 	nilOrchs, nilErr := nilDb.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(1, 1)})
 	assert.Nil(nilOrchs)
@@ -430,12 +439,13 @@ func TestDBFilterOrchs(t *testing.T) {
 	require.Nil(err)
 
 	for i := 0; i < 10; i++ {
-		orch := NewDBOrch(pm.RandAddress().String(), "https://127.0.0.1:"+strconv.Itoa(8936+i), 1, int64(i), int64(5+i), "0")
+		orch := NewDBOrch(pm.RandAddress().String(), "https://127.0.0.1:"+strconv.Itoa(8936+i), 1, int64(i), int64(5+i), 0)
 		orch.PricePerPixel, err = PriceToFixed(big.NewRat(1, int64(5+i)))
 		require.Nil(err)
 		err = dbh.UpdateOrch(orch)
 		require.Nil(err)
 		orchList = append(orchList, orch.ServiceURI)
+		orchAddrList = append(orchAddrList, orch.EthereumAddr)
 	}
 
 	//URI - MaxPrice - ActivationRound - DeactivationRound
@@ -483,7 +493,7 @@ func TestDBFilterOrchs(t *testing.T) {
 		assert.Contains(orchList[1:6], o.ServiceURI)
 	}
 
-	// select only active orchs and orchs that pass price filter
+	// Select only active orchs and orchs that pass price filter
 	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(1, 8), CurrentRound: big.NewInt(5)})
 	assert.Nil(err)
 	// Should return 3 results, index 3 to 5
@@ -491,6 +501,40 @@ func TestDBFilterOrchs(t *testing.T) {
 	for _, o := range orchsFiltered {
 		assert.Contains(orchList[3:6], o.ServiceURI)
 	}
+
+	// Select only active orchs that pass price filter and that are included in Addresses list
+	filterAddrs := []ethcommon.Address{ethcommon.HexToAddress(orchAddrList[3]), ethcommon.HexToAddress(orchAddrList[4])}
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{MaxPrice: big.NewRat(1, 8), CurrentRound: big.NewInt(5), Addresses: filterAddrs})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 2)
+	for _, o := range orchsFiltered {
+		assert.Contains(orchList[3:5], o.ServiceURI)
+		assert.Contains(orchAddrList[3:5], o.EthereumAddr)
+	}
+
+	// Select orchs that are included in Addresses list when list length > 1
+	filterAddrs = []ethcommon.Address{ethcommon.HexToAddress(orchAddrList[0]), ethcommon.HexToAddress(orchAddrList[1])}
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{Addresses: filterAddrs})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 2)
+	for _, o := range orchsFiltered {
+		assert.Contains(orchList[0:2], o.ServiceURI)
+		assert.Contains(orchAddrList[0:2], o.EthereumAddr)
+	}
+
+	// Select orchs that are included in Addresses list when list length = 0
+	filterAddrs = []ethcommon.Address{ethcommon.HexToAddress(orchAddrList[1])}
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{Addresses: filterAddrs})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 1)
+	assert.Equal(orchList[1], orchsFiltered[0].ServiceURI)
+	assert.Equal(orchAddrList[1], orchsFiltered[0].EthereumAddr)
+
+	// Empty result when no orchs match Addresses list
+	filterAddrs = []ethcommon.Address{ethcommon.BytesToAddress([]byte("foobarbaz"))}
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{Addresses: filterAddrs})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 0)
 }
 
 func TestDBUnbondingLocks(t *testing.T) {

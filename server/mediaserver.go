@@ -388,6 +388,10 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 
 	playlist := core.NewBasicPlaylistManager(mid, storage)
+	var stakeRdr stakeReader
+	if s.LivepeerNode.Eth != nil {
+		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}
+	}
 	cxn := &rtmpConnection{
 		mid:         mid,
 		nonce:       nonce,
@@ -395,7 +399,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		pl:          playlist,
 		profile:     &vProfile,
 		params:      params,
-		sessManager: NewSessionManager(s.LivepeerNode, params, playlist, &LIFOSelector{}),
+		sessManager: NewSessionManager(s.LivepeerNode, params, playlist, NewMinLSSelector(stakeRdr, 1.0)),
 		lastUsed:    time.Now(),
 	}
 
