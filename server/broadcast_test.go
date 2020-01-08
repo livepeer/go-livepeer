@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"sync"
 	"testing"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -285,6 +287,19 @@ func TestCompleteSessions(t *testing.T) {
 	bsm.completeSession(sess3)
 	assert.Len(bsm.sessList(), 2)
 	assert.Len(bsm.sessMap, 2)
+
+	sess1 = bsm.selectSession()
+
+	copiedSess := &BroadcastSession{}
+	*copiedSess = *sess1
+	copiedSess.LatencyScore = 2.7
+	bsm.completeSession(copiedSess)
+
+	// assert that existing session with same key in sessMap is replaced
+	assert.Len(bsm.sessList(), 2)
+	assert.Len(bsm.sessMap, 2)
+	assert.NotEqual(sess1, bsm.sessMap[copiedSess.OrchestratorInfo.Transcoder])
+	assert.Equal(copiedSess, bsm.sessMap[copiedSess.OrchestratorInfo.Transcoder])
 }
 
 func TestRefreshSessions(t *testing.T) {
@@ -389,6 +404,65 @@ func TestCleanupSessions(t *testing.T) {
 // Note: Add processSegment tests, including:
 //     assert an error from transcoder removes sess from BroadcastSessionManager
 //     assert a success re-adds sess to BroadcastSessionManager
+
+func TestTranscodeSegment_CompleteSession(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	tr := &net.TranscodeResult{
+		Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{
+				Segments: []*net.TranscodedSegmentData{&net.TranscodedSegmentData{Url: "test.flv"}},
+				Sig:      []byte("bar"),
+			},
+		},
+	}
+	buf, err := proto.Marshal(tr)
+	require.Nil(err)
+
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+	cxn := &rtmpConnection{
+		mid:         core.ManifestID("foo"),
+		nonce:       7,
+		pl:          &stubPlaylistManager{core.ManifestID("foo")},
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsm,
+	}
+
+	assert.Nil(transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy"))
+
+	completedSess := bsm.sessMap[ts.URL]
+	assert.NotEqual(completedSess, sess)
+	assert.NotZero(completedSess.LatencyScore)
+
+	// Check that the completed session is just the original session with a different LatencyScore
+	copiedSess := &BroadcastSession{}
+	*copiedSess = *completedSess
+	copiedSess.LatencyScore = 0.0
+	assert.Equal(copiedSess, sess)
+
+	tr.Info = &net.OrchestratorInfo{Transcoder: ts.URL, PriceInfo: &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7}}
+	buf, err = proto.Marshal(tr)
+	require.Nil(err)
+
+	assert.Nil(transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy"))
+
+	// Check that BroadcastSession.OrchestratorInfo was updated
+	completedSessInfo := bsm.sessMap[ts.URL].OrchestratorInfo
+	assert.Equal(tr.Info.Transcoder, completedSessInfo.Transcoder)
+	assert.Equal(tr.Info.PriceInfo.PricePerUnit, completedSessInfo.PriceInfo.PricePerUnit)
+	assert.Equal(tr.Info.PriceInfo.PixelsPerUnit, completedSessInfo.PriceInfo.PixelsPerUnit)
+}
 
 func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	require := require.New(t)
@@ -538,4 +612,69 @@ func TestVerifyPixels(t *testing.T) {
 	// Test no writing temp file with correct pixels
 	err = verifyPixels("test.flv", nil, p)
 	assert.Nil(err)
+}
+
+func TestUpdateSession(t *testing.T) {
+	assert := assert.New(t)
+
+	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1}
+	res := &ReceivedTranscodeResult{
+		LatencyScore: 2.1,
+	}
+	newSess := updateSession(sess, res)
+	assert.Equal(res.LatencyScore, newSess.LatencyScore)
+	// Check that LatencyScore of old session is not mutated
+	assert.Equal(1.1, sess.LatencyScore)
+
+	info := &net.OrchestratorInfo{
+		Storage: []*net.OSInfo{
+			&net.OSInfo{
+				StorageType: 1,
+				S3Info:      &net.S3OSInfo{Host: "http://apple.com"},
+			},
+		},
+	}
+	res.Info = info
+
+	newSess = updateSession(sess, res)
+	assert.Equal(info, newSess.OrchestratorInfo)
+	// Check that BroadcastSession.OrchestratorOS is updated when len(info.Storage) > 0
+	assert.Equal(info.Storage[0], newSess.OrchestratorOS.GetInfo())
+	// Check that a new PM session is not created because BroadcastSession.Sender = nil
+	assert.Equal("foo", newSess.PMSessionID)
+	// Check that OrchestratorInfo of old session is not mutated
+	assert.Nil(sess.OrchestratorInfo)
+
+	sender := &pm.MockSender{}
+	sess.Sender = sender
+	res.Info = &net.OrchestratorInfo{}
+
+	newSess = updateSession(sess, res)
+	// Check that a new PM session is not created because OrchestratorInfo.TicketParams = nil
+	assert.Equal("foo", newSess.PMSessionID)
+
+	params := pm.TicketParams{
+		Recipient:         ethcommon.Address{},
+		FaceValue:         big.NewInt(100),
+		WinProb:           big.NewInt(100),
+		RecipientRandHash: ethcommon.BytesToHash([]byte{}),
+		Seed:              big.NewInt(100),
+	}
+	res.Info = &net.OrchestratorInfo{
+		TicketParams: &net.TicketParams{
+			Recipient:         params.Recipient.Bytes(),
+			FaceValue:         params.FaceValue.Bytes(),
+			WinProb:           params.WinProb.Bytes(),
+			RecipientRandHash: params.RecipientRandHash.Bytes(),
+			Seed:              params.Seed.Bytes(),
+		},
+	}
+
+	sender.On("StartSession", params).Return("bar")
+
+	newSess = updateSession(sess, res)
+	// Check that a new PM session is created
+	assert.Equal("bar", newSess.PMSessionID)
+	// Check that PMSessionID of old session is not mutated
+	assert.Equal("foo", sess.PMSessionID)
 }

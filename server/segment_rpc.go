@@ -255,7 +255,7 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 	return md, nil
 }
 
-func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64) (*net.TranscodeData, error) {
+func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64) (*ReceivedTranscodeResult, error) {
 	uploaded := seg.Name != "" // hijack seg.Name to convey the uploaded URI
 
 	segCreds, err := genSegCreds(sess, seg)
@@ -382,11 +382,6 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
-	// update OrchestratorInfo if necessary
-	if tr.Info != nil {
-		defer updateOrchestratorInfo(sess, tr.Info)
-	}
-
 	// check for errors and exit early if there's anything unusual
 	var tdata *net.TranscodeData
 	switch res := tr.Result.(type) {
@@ -439,24 +434,11 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 
 	glog.Infof("Successfully transcoded segment nonce=%d manifestID=%s segName=%s seqNo=%d", nonce, string(sess.ManifestID), seg.Name, seg.SeqNo)
 
-	return tdata, nil
-}
-
-func updateOrchestratorInfo(sess *BroadcastSession, oInfo *net.OrchestratorInfo) {
-	sess.OrchestratorInfo = oInfo
-
-	if len(oInfo.Storage) > 0 {
-		sess.OrchestratorOS = drivers.NewSession(oInfo.Storage[0])
-	}
-
-	if sess.Sender != nil && oInfo.TicketParams != nil {
-		// Note: We do not validate the ticket params included in the OrchestratorInfo
-		// message here. Instead, we store the ticket params with the current BroadcastSession
-		// and the next time this BroadcastSession is used, the ticket params will be validated
-		// during ticket creation in genPayment(). If ticket params validation during ticket
-		// creation fails, then this BroadcastSession will be removed
-		sess.PMSessionID = sess.Sender.StartSession(*pmTicketParams(oInfo.TicketParams))
-	}
+	return &ReceivedTranscodeResult{
+		TranscodeData: tdata,
+		Info:          tr.Info,
+		LatencyScore:  transcodeDur.Seconds() / seg.Duration,
+	}, nil
 }
 
 func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error) {
