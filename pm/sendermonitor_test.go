@@ -58,6 +58,26 @@ func TestMaxFloat(t *testing.T) {
 
 	mf, err := sm.MaxFloat(addr)
 	assert.Equal(reserveAlloc, mf)
+
+	// test race conditions
+	addrs := make([]ethcommon.Address, 5)
+	for i := range addrs {
+		addr := RandAddress()
+		addrs[i] = addr
+		smgr.info[addr] = &SenderInfo{
+			Deposit:       big.NewInt(500),
+			WithdrawRound: big.NewInt(0),
+			Reserve: &ReserveInfo{
+				FundsRemaining:        big.NewInt(500),
+				ClaimedInCurrentRound: big.NewInt(0),
+			},
+		}
+		smgr.claimedReserve[addr] = big.NewInt(100)
+	}
+
+	for _, addr := range addrs {
+		go sm.MaxFloat(addr)
+	}
 }
 
 func TestSubFloat(t *testing.T) {
