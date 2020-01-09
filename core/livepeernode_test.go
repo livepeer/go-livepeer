@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/drivers"
@@ -20,6 +21,9 @@ type StubTranscoder struct {
 	SegCount      int
 	StoppedCount  int
 	FailTranscode bool
+	FailWait      time.Duration
+	TranscodeWait time.Duration
+	Started       chan interface{}
 }
 
 func newStubTranscoder(d string, workDir string) TranscoderSession {
@@ -33,6 +37,20 @@ func stubTranscoderWithProfiles(profiles []ffmpeg.VideoProfile) *StubTranscoder 
 func (t *StubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
 	if t.FailTranscode {
 		return nil, ErrTranscode
+	}
+
+	if t.Started != nil {
+		t.Started <- nil
+	}
+
+	if t.FailWait > 0 {
+		time.Sleep(t.FailWait)
+		t.SegCount++
+		return nil, ErrTranscode
+	}
+
+	if t.TranscodeWait > 0 {
+		time.Sleep(t.TranscodeWait)
 	}
 
 	t.SegCount++

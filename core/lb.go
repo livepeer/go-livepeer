@@ -198,13 +198,11 @@ func (sess *transcoderSession) Transcode(job string, fname string, profiles []ff
 			*TranscodeData
 			error
 		})}
-	sess.mu.Lock()
-	defer sess.mu.Unlock()
 	select {
 	case sess.sender <- params:
-		glog.V(common.DEBUG).Info("LB: Transcode submitted for ", sess.key)
+		glog.V(common.DEBUG).Info("LB: Transcode submitted for ", sess.key, fname)
 	default:
-		glog.V(common.DEBUG).Info("LB: Transcoder was busy; exiting ", sess.key)
+		glog.V(common.DEBUG).Info("LB: Transcoder was busy; exiting ", sess.key, fname)
 		return nil, ErrTranscoderBusy
 	}
 	res := <-params.res

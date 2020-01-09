@@ -285,3 +285,72 @@ func (m *lbMachine) Check(t *rapid.T) {
 func TestLB_Machine(t *testing.T) {
 	rapid.Check(t, rapid.StateMachine(&lbMachine{}))
 }
+
+func TestLB_Busy(t *testing.T) {
+	assert := assert.New(t)
+	lb := NewLoadBalancingTranscoder("0,1,2,3,4", "", newStubTranscoder).(*LoadBalancingTranscoder)
+	sess, err := lb.createSession("jo1", "f1", nil)
+	assert.Nil(err)
+	assert.NotNil(sess)
+	stubTrans, ok := sess.transcoder.(*StubTranscoder)
+	require.True(t, ok, "Transcoder was not a StubTranscoder")
+	stubTrans.TranscodeWait = 500 * time.Millisecond
+	stubTrans.Started = make(chan interface{}, 10)
+	var wg sync.WaitGroup
+	wg.Add(3)
+	seq := make(chan interface{})
+	var f3e, f4e error
+	go func() {
+		_, err = sess.Transcode("jo1", "f2", nil)
+		assert.Nil(err)
+		wg.Done()
+	}()
+	go func() {
+		<-stubTrans.Started // need to make sure that transcoding loop took first job from the channel
+		seq <- nil
+		_, f3e = sess.Transcode("jo1", "f3", nil)
+		wg.Done()
+	}()
+	go func() {
+		<-seq
+		_, f4e = sess.Transcode("jo1", "f4", nil)
+		wg.Done()
+	}()
+	wg.Wait()
+	assert.Equal(2, stubTrans.SegCount)
+	busyErrors := 0
+	if f3e == ErrTranscoderBusy {
+		busyErrors++
+	}
+	if f4e == ErrTranscoderBusy {
+		busyErrors++
+	}
+	assert.Equal(1, busyErrors, "Should be exactly one TranscoderBusy error, instead got %d", busyErrors)
+}
+
+func TestLB_Race(t *testing.T) {
+	assert := assert.New(t)
+	lb := NewLoadBalancingTranscoder("0,1,2,3,4", "", newStubTranscoder).(*LoadBalancingTranscoder)
+	sess, err := lb.createSession("jo1", "f1", nil)
+	stubTrans, ok := sess.transcoder.(*StubTranscoder)
+	require.True(t, ok, "Transcoder was not a StubTranscoder")
+	stubTrans.FailWait = 200 * time.Millisecond
+	stubTrans.Started = make(chan interface{}, 10)
+	assert.NoError(err)
+	assert.NotNil(sess)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		<-stubTrans.Started // need to make sure that transcoding loop took first job from the channel
+		_, err := sess.Transcode("jo1", "f2", nil)
+		assert.Equal(ErrTranscoderStopped, err)
+		wg.Done()
+	}()
+	go func() {
+		_, err := sess.Transcode("jo1", "f3", nil)
+		assert.Equal(ErrTranscode, err)
+		wg.Done()
+	}()
+	wg.Wait()
+	assert.Equal(1, stubTrans.SegCount)
+}
