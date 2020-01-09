@@ -66,7 +66,7 @@ type senderMonitor struct {
 	cleanupInterval time.Duration
 	ttl             int
 
-	mu      sync.RWMutex
+	mu      sync.Mutex
 	senders map[ethcommon.Address]*remoteSender
 
 	broker Broker
@@ -166,8 +166,8 @@ func (sm *senderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) {
 
 // MaxFloat returns a remote sender's max float
 func (sm *senderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 
 	sm.ensureCache(addr)
 
