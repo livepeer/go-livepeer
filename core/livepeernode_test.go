@@ -24,6 +24,7 @@ type StubTranscoder struct {
 	FailWait      time.Duration
 	TranscodeWait time.Duration
 	Started       chan interface{}
+	TranscodeFn   func()
 }
 
 func newStubTranscoder(d string, workDir string) TranscoderSession {
@@ -51,6 +52,10 @@ func (t *StubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.V
 
 	if t.TranscodeWait > 0 {
 		time.Sleep(t.TranscodeWait)
+	}
+
+	if t.TranscodeFn != nil {
+		t.TranscodeFn()
 	}
 
 	t.SegCount++

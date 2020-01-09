@@ -354,3 +354,58 @@ func TestLB_Race(t *testing.T) {
 	wg.Wait()
 	assert.Equal(1, stubTrans.SegCount)
 }
+
+func TestLB_SessionErrors(t *testing.T) {
+	for j := 0; j < 100; j++ {
+		stubCtx, stubCancel := context.WithCancel(context.Background())
+		ctxFunc := func() (context.Context, context.CancelFunc) { return stubCtx, stubCancel }
+
+		tcCtx, tcCancel := context.WithCancel(context.Background())
+		transcoder := stubTranscoderWithProfiles(nil)
+		transcoder.TranscodeFn = func() { <-tcCtx.Done() }
+		sess := &transcoderSession{
+			transcoder:  transcoder,
+			mu:          &sync.Mutex{},
+			sender:      make(chan *transcoderParams, 1),
+			makeContext: ctxFunc,
+		}
+
+		go sess.loop()
+
+		iters := 100
+		errCh := make(chan int)
+		for i := 0; i < iters; i++ {
+			if i == iters/2 {
+				stubCancel()
+			}
+			if i == 2*iters/3 {
+				tcCancel()
+			}
+			go func(ch chan int) {
+				_, err := sess.Transcode("", "", []ffmpeg.VideoProfile{})
+				if err == nil {
+					ch <- 0
+				} else {
+					ch <- 1
+					if err != ErrTranscoderBusy && err != ErrTranscoderStopped {
+						t.Error("Unexpected error from transcoder ", err)
+					}
+				}
+			}(errCh)
+		}
+
+		errCount := 0
+		timeout := time.After(100 * time.Second)
+		for i := 0; i < iters; i++ {
+			select {
+			case k := <-errCh:
+				errCount += k
+			case <-timeout:
+				t.Error("Stopped because of timeout")
+				break
+			}
+		}
+		assert.Equal(t, iters, errCount+transcoder.SegCount)
+		assert.Greater(t, errCount, int(float64(iters)*0.9))
+	}
+}
