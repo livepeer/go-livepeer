@@ -637,10 +637,11 @@ func main() {
 
 		// Set up orchestrator discovery
 		if *orchWebhookURL != "" {
-			whurl, err := getOrchWebhook(*orchWebhookURL)
+			whurl, err := validateURL(*orchWebhookURL)
 			if err != nil {
 				glog.Fatal("Error setting orch webhook URL ", err)
 			}
+			glog.Info("Using orchestrator webhook URL ", whurl)
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
 		} else if len(orchURLs) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs)
@@ -659,9 +660,13 @@ func main() {
 			// Not a fatal error; may continue operating in segment-only mode
 			glog.Error("No orchestrator specified; transcoding will not happen")
 		}
-		var err error
-		if server.AuthWebhookURL, err = getAuthWebhookURL(*authWebhookURL); err != nil {
-			glog.Fatal("Error setting auth webhook URL ", err)
+		if *authWebhookURL != "" {
+			_, err := validateURL(*authWebhookURL)
+			if err != nil {
+				glog.Fatal("Error setting auth webhook URL ", err)
+			}
+			glog.Info("Using auth webhook URL ", *authWebhookURL)
+			server.AuthWebhookURL = *authWebhookURL
 		}
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)
@@ -769,7 +774,7 @@ func main() {
 	}
 }
 
-func getOrchWebhook(u string) (*url.URL, error) {
+func validateURL(u string) (*url.URL, error) {
 	if u == "" {
 		return nil, nil
 	}
@@ -778,25 +783,9 @@ func getOrchWebhook(u string) (*url.URL, error) {
 		return nil, err
 	}
 	if p.Scheme != "http" && p.Scheme != "https" {
-		return nil, errors.New("Webhook URL should be HTTP or HTTPS")
+		return nil, errors.New("URL should be HTTP or HTTPS")
 	}
-	glog.Infof("Using orchestrator webhook url %s", u)
 	return p, nil
-}
-
-func getAuthWebhookURL(u string) (string, error) {
-	if u == "" {
-		return "", nil
-	}
-	p, err := url.ParseRequestURI(u)
-	if err != nil {
-		return "", err
-	}
-	if p.Scheme != "http" && p.Scheme != "https" {
-		return "", errors.New("Webhook URL should be HTTP or HTTPS")
-	}
-	glog.Infof("Using auth webhook url %s", u)
-	return u, nil
 }
 
 // ServiceURI checking steps:
