@@ -31,6 +31,11 @@ import (
 
 var transcodeLoopTimeout = 1 * time.Minute
 
+// Gives us more control of "timeout" / cancellation behavior during testing
+var transcodeLoopContext = func() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), transcodeLoopTimeout)
+}
+
 // Transcoder / orchestrator RPC interface implementation
 type orchestrator struct {
 	address ethcommon.Address

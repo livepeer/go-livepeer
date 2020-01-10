@@ -152,6 +152,17 @@ func wgWait(wg *sync.WaitGroup) bool {
 	}
 }
 
+func wgWait2(wg *sync.WaitGroup, dur time.Duration) bool {
+	c := make(chan struct{})
+	go func() { defer close(c); wg.Wait() }()
+	select {
+	case <-c:
+		return true
+	case <-time.After(dur):
+		return false
+	}
+}
+
 func TestManageTranscoders(t *testing.T) {
 	m := NewRemoteTranscoderManager()
 	strm := &StubTranscoderServer{}
@@ -428,7 +439,7 @@ func (s *StubTranscoderServer) Send(n *net.NotifySegment) error {
 	res := RemoteTranscoderResult{
 		TranscodeData: &TranscodeData{
 			Segments: []*TranscodedSegmentData{
-				&TranscodedSegmentData{Data: []byte("asdf")},
+				{Data: []byte("asdf")},
 			},
 		},
 		Err: s.TranscodeError,
