@@ -2,7 +2,6 @@ package server
 
 import (
 	"container/heap"
-	"errors"
 	"math/rand"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -76,10 +75,7 @@ func (r *storeStakeReader) Stakes(addrs []ethcommon.Address) (map[ethcommon.Addr
 		return nil, err
 	}
 
-	if len(orchs) != len(addrs) {
-		return nil, errors.New("could not fetch all stake weights")
-	}
-
+	// The returned map may not have the stake weights for all addresses and the caller should handle this case
 	stakes := make(map[ethcommon.Address]int64)
 	for _, orch := range orchs {
 		stakes[ethcommon.HexToAddress(orch.EthereumAddr)] = orch.Stake
@@ -168,6 +164,8 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 		addrs[i] = ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient)
 	}
 
+	// Fetch stake weights for all addresses
+	// We handle the possibility of missing stake weights for addresses when we run weighted random selection on unknownSessions
 	stakes, err := s.stakeRdr.Stakes(addrs)
 	// If we fail to read stake weights of unknownSessions we should not continue with selection
 	if err != nil {
@@ -192,18 +190,27 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 	// The greater the stake weight of a session, the more likely that it will be selected because subtracting its stake weight from r
 	// will result in a value <= 0
 	for i, sess := range s.unknownSessions {
+		// If we could not fetch the stake weight for addrs[i] then skip and remove its session
+		if _, ok := stakes[addrs[i]]; !ok {
+			s.removeUnknownSession(i)
+			continue
+		}
+
 		r -= stakes[addrs[i]]
 
 		if r <= 0 {
-			n := len(s.unknownSessions)
-			s.unknownSessions[n-1], s.unknownSessions[i] = s.unknownSessions[i], s.unknownSessions[n-1]
-			s.unknownSessions = s.unknownSessions[:n-1]
-
+			s.removeUnknownSession(i)
 			return sess
 		}
 	}
 
 	return nil
+}
+
+func (s *MinLSSelector) removeUnknownSession(i int) {
+	n := len(s.unknownSessions)
+	s.unknownSessions[n-1], s.unknownSessions[i] = s.unknownSessions[i], s.unknownSessions[n-1]
+	s.unknownSessions = s.unknownSessions[:n-1]
 }
 
 // LIFOSelector selects the next BroadcastSession in LIFO order
