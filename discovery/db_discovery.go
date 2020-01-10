@@ -32,19 +32,15 @@ type ticketParamsValidator interface {
 	ValidateTicketParams(ticketParams *pm.TicketParams) error
 }
 
-type roundsManager interface {
-	LastInitializedRound() *big.Int
-}
-
 type DBOrchestratorPoolCache struct {
 	store                 common.OrchestratorStore
 	lpEth                 eth.LivepeerEthClient
 	ticketParamsValidator ticketParamsValidator
-	rm                    roundsManager
+	rm                    common.RoundsManager
 	bcast                 common.Broadcaster
 }
 
-func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm roundsManager) (*DBOrchestratorPoolCache, error) {
+func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager) (*DBOrchestratorPoolCache, error) {
 	if node.Eth == nil {
 		return nil, fmt.Errorf("could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 	}
