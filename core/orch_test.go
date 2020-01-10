@@ -1,7 +1,6 @@
 package core
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -15,7 +14,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 
 	"github.com/livepeer/go-livepeer/pm"
 
@@ -34,8 +32,7 @@ func TestCurrentBlock(t *testing.T) {
 		t.Error(err)
 	}
 	defer os.RemoveAll(tmpdir)
-	rm := &stubRoundsManager{}
-	orch := NewOrchestrator(n, rm)
+	orch := NewOrchestrator(n)
 
 	// test empty db
 	if orch.CurrentBlock() != nil {
@@ -517,9 +514,10 @@ func TestGetSegmentChan(t *testing.T) {
 }
 
 func TestOrchCheckCapacity(t *testing.T) {
+
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	n, _ := NewLivepeerNode(nil, "", nil)
-	o := NewOrchestrator(n, nil)
+	o := NewOrchestrator(n)
 	md := StubSegTranscodingMetadata()
 	cap := MaxSessions
 	assert := assert.New(t)
@@ -540,27 +538,13 @@ func TestOrchCheckCapacity(t *testing.T) {
 }
 
 func TestProcessPayment_GivenRecipientError_ReturnsNil(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil)
@@ -574,7 +558,8 @@ func TestProcessPayment_GivenNoSender_ReturnsError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
 
 	protoPayment := defaultPayment(t)
 
@@ -592,7 +577,7 @@ func TestProcessPayment_GivenNoTicketParams_ReturnsNoError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
 
 	protoPayment := defaultPayment(t)
@@ -615,7 +600,7 @@ func TestProcessPayment_GivenNilNode_ReturnsNilError(t *testing.T) {
 
 func TestProcessPayment_GivenNilRecipient_ReturnsNilError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 	n.Recipient = nil
 
 	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
@@ -623,69 +608,14 @@ func TestProcessPayment_GivenNilRecipient_ReturnsNilError(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func TestProcessPayment_ActiveOrchestrator(t *testing.T) {
-	assert := assert.New(t)
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 1,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
-	n.Balances = NewAddressBalances(5 * time.Second)
-	recipient := new(pm.MockRecipient)
-	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
-	orch.node.SetBasePrice(big.NewRat(0, 1))
-	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
-	// orchestrator inactive -> error
-	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
-	expErr := fmt.Sprintf("orchestrator is inactive, cannot process payments")
-	assert.EqualError(err, expErr)
-
-	// orchestrator is active -> no error
-	dbh.UpdateOrch(&common.DBOrch{
-		EthereumAddr:      orch.Address().Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-
-	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
-	err = orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
-	assert.NoError(err)
-}
-
 func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
 
@@ -698,24 +628,11 @@ func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 }
 
 func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 
@@ -739,27 +656,13 @@ func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
 }
 
 func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
 
@@ -780,27 +683,13 @@ func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
 }
 
 func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
 	manifestID := ManifestID("some manifest")
 	sessionID := "some sessionID"
 
@@ -850,27 +739,13 @@ func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 }
 
 func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
 	manifestIDs := make([]string, 5)
 
 	for i := 0; i < 5; i++ {
@@ -910,27 +785,13 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 }
 
 func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
 	manifestID := ManifestID("some manifest")
 
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
@@ -963,24 +824,11 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 
 // Check that an Acceptable error increases the credit
 func TestProcessPayment_AcceptablePaymentError_IncreasesCreditBalance(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 
@@ -1012,27 +860,13 @@ func TestProcessPayment_AcceptablePaymentError_IncreasesCreditBalance(t *testing
 
 // Check that an unacceptable error does NOT increase the credit
 func TestProcessPayment_UnacceptablePaymentError_DoesNotIncreaseCreditBalance(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
 	manifestID := ManifestID("some manifest")
 	unacceptableError := pm.NewMockReceiveError(errors.New("Unacceptable ReceiveTicket error"), false)
 
@@ -1050,27 +884,13 @@ func TestProcessPayment_UnacceptablePaymentError_DoesNotIncreaseCreditBalance(t 
 }
 
 func TestProcesspayment_NoPriceError_IncreasesCredit(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
-	orch.node.SetBasePrice(big.NewRat(0, 1))
+	orch := NewOrchestrator(n)
+	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
 	manifestID := ManifestID("some manifest")
 	sender := pm.RandAddress()
 
@@ -1103,27 +923,13 @@ func TestProcesspayment_NoPriceError_IncreasesCredit(t *testing.T) {
 }
 
 func TestProcessPayment_AcceptablePriceError_IncreasesCredit_ReturnsError(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(10, make(chan struct{}))
-
 	manifestID := ManifestID("some manifest")
 	sender := pm.RandAddress()
 
@@ -1160,27 +966,13 @@ func TestProcessPayment_AcceptablePriceError_IncreasesCredit_ReturnsError(t *tes
 }
 
 func TestProcessPayment_UnacceptablePriceError_ReturnsError_DoesNotIncreaseCredit(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
 	manifestID := ManifestID("some manifest")
 	sender := pm.RandAddress()
 
@@ -1219,7 +1011,7 @@ func TestAcceptablePrice(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	assert := assert.New(t)
@@ -1297,7 +1089,7 @@ func TestAcceptablePrice_PriceInfoError_ReturnsErr(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(5, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
 	assert := assert.New(t)
@@ -1313,57 +1105,14 @@ func TestAcceptablePrice_PriceInfoError_ReturnsErr(t *testing.T) {
 	assert.False(ok)
 }
 
-func TestIsActive(t *testing.T) {
-	assert := assert.New(t)
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
-
-	ok, err := orch.isActive()
-	assert.True(ok)
-	assert.NoError(err)
-
-	// inactive
-	rm.round = big.NewInt(1000)
-	ok, err = orch.isActive()
-	assert.False(ok)
-	assert.NoError(err)
-}
-
 func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
 	manifestID := ManifestID("some manifest")
 
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
@@ -1382,27 +1131,13 @@ func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 }
 
 func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
-	addr := pm.RandAddress()
-	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
-		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
-		DeactivationRound: 999,
-	})
-	defer dbh.Close()
-	defer dbraw.Close()
-
-	n, _ := NewLivepeerNode(nil, "", dbh)
+	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
-	rm := &stubRoundsManager{
-		round: big.NewInt(10),
-	}
-	orch := NewOrchestrator(n, rm)
-	orch.address = addr
+	orch := NewOrchestrator(n)
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 	orch.node.ErrorMonitor = NewErrorMonitor(0, make(chan struct{}))
-
 	manifestID := ManifestID("some manifest")
 
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
@@ -1427,7 +1162,7 @@ func TestSufficientBalance_OffChainMode_ReturnsTrue(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	addr := ethcommon.Address{}
 	manifestID := ManifestID("some manifest")
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 	assert.True(t, orch.SufficientBalance(addr, manifestID))
 
 	orch.node.Recipient = new(pm.MockRecipient)
@@ -1453,7 +1188,7 @@ func TestTicketParams(t *testing.T) {
 		RecipientRandHash: pm.RandHash(),
 	}
 	recipient.On("TicketParams", mock.Anything).Return(expectedParams, nil)
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 
 	assert := assert.New(t)
 
@@ -1477,7 +1212,7 @@ func TestTicketParams_GivenNilNode_ReturnsNil(t *testing.T) {
 
 func TestTicketParams_GivenNilRecipient_ReturnsNil(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 	n.Recipient = nil
 
 	params, err := orch.TicketParams(ethcommon.Address{})
@@ -1491,7 +1226,7 @@ func TestTicketParams_Error(t *testing.T) {
 	n.Recipient = recipient
 	expErr := errors.New("TicketParams error")
 	recipient.On("TicketParams", mock.Anything).Return(nil, expErr)
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 
 	_, err := orch.TicketParams(ethcommon.Address{})
 	assert.EqualError(t, err, expErr.Error())
@@ -1509,7 +1244,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 
 	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
 	assert.Nil(t, err)
@@ -1518,7 +1253,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	// basePrice = 10/1, txMultiplier = 100/1 => expPricePerPixel = 1010/100
 	basePrice = big.NewRat(10, 1)
 	n.SetBasePrice(basePrice)
-	orch = NewOrchestrator(n, nil)
+	orch = NewOrchestrator(n)
 	expPricePerPixel = big.NewRat(1010, 100)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1528,7 +1263,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	// basePrice = 1/10, txMultiplier = 100 => expPricePerPixel = 101/1000
 	basePrice = big.NewRat(1, 10)
 	n.SetBasePrice(basePrice)
-	orch = NewOrchestrator(n, nil)
+	orch = NewOrchestrator(n)
 	expPricePerPixel = big.NewRat(101, 1000)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1538,7 +1273,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	// basePrice = 25/10 , txMultiplier = 100 => expPricePerPixel = 2525/1000
 	basePrice = big.NewRat(25, 10)
 	n.SetBasePrice(basePrice)
-	orch = NewOrchestrator(n, nil)
+	orch = NewOrchestrator(n)
 	expPricePerPixel = big.NewRat(2525, 1000)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1552,7 +1287,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
-	orch = NewOrchestrator(n, nil)
+	orch = NewOrchestrator(n)
 	expPricePerPixel = big.NewRat(11, 1)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1566,7 +1301,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
-	orch = NewOrchestrator(n, nil)
+	orch = NewOrchestrator(n)
 	expPricePerPixel = big.NewRat(1100, 10)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1580,7 +1315,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 	recipient = new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(txMultiplier, nil)
-	orch = NewOrchestrator(n, nil)
+	orch = NewOrchestrator(n)
 	expPricePerPixel = big.NewRat(20, 1)
 
 	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
@@ -1590,7 +1325,7 @@ func TestPriceInfo_ReturnsBigRat(t *testing.T) {
 
 func TestPriceInfo_GivenNilNode_ReturnsNilError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 	orch.node = nil
 
 	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
@@ -1600,7 +1335,7 @@ func TestPriceInfo_GivenNilNode_ReturnsNilError(t *testing.T) {
 
 func TestPriceInfo_GivenNilRecipient_ReturnsNilError(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 	n.Recipient = nil
 
 	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
@@ -1615,7 +1350,7 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(nil, expError)
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 
 	priceInfo, err := orch.PriceInfo(ethcommon.Address{})
 	assert.Nil(t, priceInfo)
@@ -1625,7 +1360,7 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 func TestDebitFees(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 	addr := ethcommon.Address{}
 	manifestID := ManifestID("some manifest")
 	assert := assert.New(t)
@@ -1666,7 +1401,7 @@ func TestDebitFees_OffChain_Returns(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 
 	// Node != nil Balances == nil
-	orch := NewOrchestrator(n, nil)
+	orch := NewOrchestrator(n)
 	assert.NotPanics(t, func() { orch.DebitFees(addr, manifestID, price, pixels) })
 
 	// Node == nil
@@ -1714,25 +1449,4 @@ func randString() string {
 		x[i] = byte(rand.Uint32())
 	}
 	return fmt.Sprintf("%x", x)
-}
-
-type stubRoundsManager struct {
-	round *big.Int
-}
-
-func (s *stubRoundsManager) LastInitializedRound() *big.Int { return s.round }
-
-func tempDBWithOrch(t *testing.T, orch *common.DBOrch) (*common.DB, *sql.DB) {
-	return tempDBWithOrchs(t, []*common.DBOrch{orch})
-}
-
-func tempDBWithOrchs(t *testing.T, orchs []*common.DBOrch) (*common.DB, *sql.DB) {
-	dbh, dbraw, err := common.TempDB(t)
-	require.Nil(t, err)
-
-	for _, orch := range orchs {
-		require.Nil(t, dbh.UpdateOrch(orch))
-	}
-
-	return dbh, dbraw
 }

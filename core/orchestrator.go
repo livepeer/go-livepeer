@@ -40,7 +40,6 @@ var transcodeLoopContext = func() (context.Context, context.CancelFunc) {
 type orchestrator struct {
 	address ethcommon.Address
 	node    *LivepeerNode
-	rm      common.RoundsManager
 }
 
 func (orch *orchestrator) ServiceURI() *url.URL {
@@ -116,15 +115,6 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 
 	sender := ethcommon.BytesToAddress(payment.Sender)
 
-	ok, err := orch.isActive()
-	if err != nil {
-		return err
-	}
-
-	if !ok {
-		return fmt.Errorf("orchestrator is inactive, cannot process payments")
-	}
-
 	var (
 		didPriceErr            bool
 		acceptablePrice        bool
@@ -132,7 +122,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		didReceiveErr          bool
 	)
 
-	err = orch.acceptablePrice(ethcommon.BytesToAddress(payment.Sender), payment.GetExpectedPrice())
+	err := orch.acceptablePrice(ethcommon.BytesToAddress(payment.Sender), payment.GetExpectedPrice())
 	acceptablePriceErr, ok := err.(AcceptableError)
 	if err != nil {
 		glog.Error(err)
@@ -331,20 +321,7 @@ func (orch *orchestrator) acceptablePrice(sender ethcommon.Address, ep *net.Pric
 	return nil
 }
 
-func (orch *orchestrator) isActive() (bool, error) {
-	filter := &common.DBOrchFilter{
-		CurrentRound: orch.rm.LastInitializedRound(),
-		Addresses:    []ethcommon.Address{orch.Address()},
-	}
-	orchs, err := orch.node.Database.SelectOrchs(filter)
-	if err != nil {
-		return false, err
-	}
-
-	return len(orchs) > 0, nil
-}
-
-func NewOrchestrator(n *LivepeerNode, rm common.RoundsManager) *orchestrator {
+func NewOrchestrator(n *LivepeerNode) *orchestrator {
 	var addr ethcommon.Address
 	if n.Eth != nil {
 		addr = n.Eth.Account().Address
@@ -352,7 +329,6 @@ func NewOrchestrator(n *LivepeerNode, rm common.RoundsManager) *orchestrator {
 	return &orchestrator{
 		node:    n,
 		address: addr,
-		rm:      rm,
 	}
 }
 
