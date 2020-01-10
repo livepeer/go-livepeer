@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/golang/glog"
@@ -19,12 +20,15 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-livepeer/verification"
 
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
+var Policy *verification.Policy
 var BroadcastCfg = &BroadcastConfig{}
 
 type BroadcastConfig struct {
@@ -278,15 +282,21 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) error {
 		}
 	}
 
+	var sv *verification.SegmentVerifier
+	if Policy != nil {
+		sv = verification.NewSegmentVerifier(Policy)
+	}
+
 	for {
 		// if fails, retry; rudimentary
-		if err := transcodeSegment(cxn, seg, name); err == nil {
+		if err := transcodeSegment(cxn, seg, name, sv); err == nil {
 			return nil
 		}
 	}
 }
 
-func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) error {
+func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
+	verifier *verification.SegmentVerifier) error {
 
 	nonce := cxn.nonce
 	rtmpStrm := cxn.stream
@@ -360,6 +370,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 
 		var dlErr, saveErr error
 		segHashes := make([][]byte, len(res.Segments))
+		segURLs := make([]string, len(res.Segments))
 		n := len(res.Segments)
 		segHashLock := &sync.Mutex{}
 		cond := sync.NewCond(segHashLock)
@@ -407,7 +418,8 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 			}
 
 			// If running in on-chain mode, run pixels verification asynchronously
-			if sess.Sender != nil {
+			// Only run if a verifier is not being used
+			if sess.Sender != nil && verifier == nil {
 				go func() {
 					if err := verifyPixels(url, sess.BroadcasterOS, pixels); err != nil {
 						glog.Error(err)
@@ -416,13 +428,17 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 				}()
 			}
 
+			// Store URLs for the verifier. Be aware that the segment is
+			// already within object storage  at this point, whether local or
+			// external. If a client were to ignore the playlist and
+			// preemptively fetch segments, they could be reading tampered
+			// data. Not an issue if the delivery protocol is being obeyed.
+			segHashLock.Lock()
+			segURLs[i] = url
+			segHashLock.Unlock()
+
 			if monitor.Enabled {
 				monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
-			}
-			err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
-			if err != nil {
-				errFunc(monitor.SegmentTranscodeErrorPlaylist, url, err)
-				return
 			}
 		}
 
@@ -438,6 +454,27 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string) 
 		if dlErr != nil {
 			return dlErr
 		}
+
+		if verifier != nil {
+			err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs)
+			if err != nil {
+				glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
+				return err
+			}
+		}
+
+		for i, url := range segURLs {
+			err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
+			if err != nil {
+				// We assume playlist insertion is *not* recoverable for now
+				glog.Errorf("Playlist insertion error nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
+				if monitor.Enabled {
+					monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorPlaylist, nonce, seg.SeqNo, err, false)
+				}
+				return nil
+			}
+		}
+
 		ticketParams := sess.OrchestratorInfo.GetTicketParams()
 		if ticketParams != nil && // may be nil in offchain mode
 			saveErr == nil && // save error leads to early exit before sighash computation
@@ -464,6 +501,96 @@ var sessionErrRegex = common.GenErrRegex(sessionErrStrings)
 
 func shouldStopSession(err error) bool {
 	return sessionErrRegex.MatchString(err.Error())
+}
+
+func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
+	sess *BroadcastSession, source *stream.HLSSegment,
+	res *net.TranscodeData, URIs []string) error {
+
+	// Cache segment contents if necessary.
+	// If we need to retry transcoding because verification fails,
+	// the the segments' OS location will be overwritten.
+	// Cache the segments so we can restore them in OS if necessary.
+	renditionData := make([][]byte, len(URIs))
+	for i, fname := range URIs {
+		if sess.BroadcasterOS.IsExternal() && drivers.IsOwnExternal(fname) {
+			// If broadcaster is using external storage and segments are there
+			// Then have the verifier use that external storage.
+			continue
+		}
+
+		// Sanity check for absolute URIs to ensure we're actually local.
+		uri, err := url.ParseRequestURI(fname)
+		if err != nil {
+			return err // Implies this is retryable?
+		}
+		memOS, ok := sess.BroadcasterOS.(*drivers.MemorySession)
+		if !uri.IsAbs() && ok {
+			data := memOS.GetData(fname)
+			if data == nil {
+				return errors.New("Missing Local Data")
+			}
+			renditionData[i] = data
+		} else {
+			return errors.New("Expected local storage but did not have it")
+		}
+	}
+
+	params := &verification.Params{
+		ManifestID:   sess.ManifestID,
+		Source:       source,
+		Profiles:     sess.Profiles,
+		Orchestrator: sess.OrchestratorInfo,
+		Results:      res,
+		URIs:         URIs,
+		Renditions:   renditionData,
+	}
+
+	// The return value from the verifier, if any, are the *accepted* params.
+	// The accepted params are not necessarily the same as `params` sent here.
+	// The accepted params may be from an earlier iteration if max retries hit.
+	accepted, err := verifier.Verify(params)
+	if verification.IsRetryable(err) {
+		// If retryable, means tampering was detected from this O
+		// Remove the O from the working set for now
+		// Error falls through towards end if necessary
+		cxn.sessManager.removeSession(sess)
+	}
+	if accepted != nil {
+		// The returned set of results has been accepted by the verifier
+
+		// Check if an earlier verification attempt was the one accepted.
+		// If so, reset the local OS if we're using that since it's been
+		// overwritten with this rendition.
+		for i, data := range accepted.Renditions {
+			if accepted != params && !sess.BroadcasterOS.IsExternal() {
+				// Sanity check that we actually have the rendition data?
+				if len(data) <= 0 {
+					return errors.New("MissingLocalData")
+				}
+				// SaveData only takes the /<rendition>/<seqNo> part of the URI
+				// However, it returns /stream/<manifestID>/<rendition>/<seqNo>
+				// The incoming URI is likely to be in the longer format.
+				// Hence, trim the /stream/<manifestID> prefix if it exists.
+				pfx := fmt.Sprintf("/stream/%s/", sess.ManifestID)
+				uri := strings.TrimPrefix(accepted.URIs[i], pfx)
+				_, err := sess.BroadcasterOS.SaveData(uri, data)
+				if err != nil {
+					return err
+				}
+			} else {
+				// Normally we don't need to reset the URI here, but we do
+				// if an external OS is used and an earlier attempt is accepted
+				// (Recall that each O uploads segments to a different location
+				// if a B-supplied external OS is used)
+				URIs[i] = accepted.URIs[i]
+			}
+		}
+
+		// Ignore any errors from the Verify call; don't need to retry anymore
+		return nil
+	}
+	return err // possibly nil
 }
 
 func verifyPixels(fname string, bos drivers.OSSession, reportedPixels int64) error {

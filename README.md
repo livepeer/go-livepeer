@@ -128,6 +128,14 @@ A standalone transcoder can be run which connects to a remote orchestrator. The 
 
 GPU transcoding on NVIDIA is supported; see the [GPU documentation](doc/gpu.md) for usage details.
 
+### Verification
+
+Experimental verification of video using the Epic Labs classifier can be enabled with the `-verifierUrl` flag. Pass in the address of the verifier API:
+
+- `livepeer -broadcaster -verifierUrl http://localhost:5000/verify -verifierPath /path/to/verifier`
+
+Refer to the [classifier documentation](https://github.com/livepeer/verification-classifier) for more details on getting the classifier API installed and running.
+
 ## Contribution
 Thank you for your interest in contributing to the core software of Livepeer.
 

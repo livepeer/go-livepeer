@@ -37,6 +37,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/eventservices"
 	"github.com/livepeer/go-livepeer/eth/watchers"
+	"github.com/livepeer/go-livepeer/verification"
 
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 )
@@ -87,6 +88,9 @@ func main() {
 	httpAddr := flag.String("httpAddr", "", "Address to bind for HTTP commands")
 	serviceAddr := flag.String("serviceAddr", "", "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
 	orchAddr := flag.String("orchAddr", "", "Orchestrator to connect to as a standalone transcoder")
+	verifierURL := flag.String("verifierUrl", "", "URL of the verifier to use")
+
+	verifierPath := flag.String("verifierPath", "", "Path to verifier shared volume")
 
 	// Transcoding:
 	orchestrator := flag.Bool("orchestrator", false, "Set to true to be an orchestrator")
@@ -637,10 +641,11 @@ func main() {
 
 		// Set up orchestrator discovery
 		if *orchWebhookURL != "" {
-			whurl, err := getOrchWebhook(*orchWebhookURL)
+			whurl, err := validateURL(*orchWebhookURL)
 			if err != nil {
 				glog.Fatal("Error setting orch webhook URL ", err)
 			}
+			glog.Info("Using orchestrator webhook URL ", whurl)
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
 		} else if len(orchURLs) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs)
@@ -659,9 +664,32 @@ func main() {
 			// Not a fatal error; may continue operating in segment-only mode
 			glog.Error("No orchestrator specified; transcoding will not happen")
 		}
-		var err error
-		if server.AuthWebhookURL, err = getAuthWebhookURL(*authWebhookURL); err != nil {
-			glog.Fatal("Error setting auth webhook URL ", err)
+		if *authWebhookURL != "" {
+			_, err := validateURL(*authWebhookURL)
+			if err != nil {
+				glog.Fatal("Error setting auth webhook URL ", err)
+			}
+			glog.Info("Using auth webhook URL ", *authWebhookURL)
+			server.AuthWebhookURL = *authWebhookURL
+		}
+
+		// Set up verifier
+		if *verifierURL != "" {
+			_, err := validateURL(*verifierURL)
+			if err != nil {
+				glog.Fatal("Error setting verifier URL ", err)
+			}
+			glog.Info("Using the Epic Labs classifier for verification at ", *verifierURL)
+			server.Policy = &verification.Policy{Retries: 2, Verifier: &verification.EpicClassifier{Addr: *verifierURL}}
+			// TODO Set up a default "empty" verifier-less policy for onchain
+			//      that only checks sigs and pixels?
+
+			// Set the verifier path. Remove once [1] is implemented!
+			// [1] https://github.com/livepeer/verification-classifier/issues/64
+			if drivers.NodeStorage == nil && *verifierPath == "" {
+				glog.Fatal("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath, S3 or GCS")
+			}
+			verification.VerifierPath = *verifierPath
 		}
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)
@@ -769,7 +797,7 @@ func main() {
 	}
 }
 
-func getOrchWebhook(u string) (*url.URL, error) {
+func validateURL(u string) (*url.URL, error) {
 	if u == "" {
 		return nil, nil
 	}
@@ -778,25 +806,9 @@ func getOrchWebhook(u string) (*url.URL, error) {
 		return nil, err
 	}
 	if p.Scheme != "http" && p.Scheme != "https" {
-		return nil, errors.New("Webhook URL should be HTTP or HTTPS")
+		return nil, errors.New("URL should be HTTP or HTTPS")
 	}
-	glog.Infof("Using orchestrator webhook url %s", u)
 	return p, nil
-}
-
-func getAuthWebhookURL(u string) (string, error) {
-	if u == "" {
-		return "", nil
-	}
-	p, err := url.ParseRequestURI(u)
-	if err != nil {
-		return "", err
-	}
-	if p.Scheme != "http" && p.Scheme != "https" {
-		return "", errors.New("Webhook URL should be HTTP or HTTPS")
-	}
-	glog.Infof("Using auth webhook url %s", u)
-	return u, nil
 }
 
 // ServiceURI checking steps:
