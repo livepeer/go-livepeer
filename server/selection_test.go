@@ -40,16 +40,20 @@ func TestStoreStakeReader(t *testing.T) {
 	_, err := rdr.Stakes(nil)
 	assert.EqualError(err, store.err.Error())
 
+	// Test when we receive results for only some addresses
 	store.err = nil
-	store.orchs = []*common.DBOrch{&common.DBOrch{}}
-	_, err = rdr.Stakes(nil)
-	assert.EqualError(err, "could not fetch all stake weights")
+	store.orchs = []*common.DBOrch{&common.DBOrch{EthereumAddr: "foo", Stake: 77}}
+	stakes, err := rdr.Stakes([]ethcommon.Address{ethcommon.Address{}, ethcommon.Address{}})
+	assert.Nil(err)
+	assert.Len(stakes, 1)
+	assert.Equal(stakes[ethcommon.HexToAddress("foo")], int64(77))
 
+	// Test when we receive results for all addresses
 	store.orchs = []*common.DBOrch{
 		&common.DBOrch{EthereumAddr: "foo", Stake: 77},
 		&common.DBOrch{EthereumAddr: "bar", Stake: 88},
 	}
-	stakes, err := rdr.Stakes([]ethcommon.Address{ethcommon.Address{}, ethcommon.Address{}})
+	stakes, err = rdr.Stakes([]ethcommon.Address{ethcommon.Address{}, ethcommon.Address{}})
 	assert.Nil(err)
 
 	for _, orch := range store.orchs {
@@ -311,6 +315,27 @@ func TestMinLSSelector_SelectUnknownSession_UniformWeights(t *testing.T) {
 	}
 }
 
+func TestMinLSSelector_SelectUnknownSession_MissingStake(t *testing.T) {
+	assert := assert.New(t)
+
+	stakeRdr := newStubStakeReader()
+	sel := NewMinLSSelector(stakeRdr, 1.0)
+
+	// Initialize stake reader with empty stake map
+	stakeRdr.SetStakes(make(map[ethcommon.Address]int64))
+
+	sess := &BroadcastSession{
+		OrchestratorInfo: &net.OrchestratorInfo{
+			TicketParams: &net.TicketParams{Recipient: []byte("foo")},
+		},
+	}
+	sel.Add([]*BroadcastSession{sess})
+
+	assert.Nil(sel.Select())
+	// Check that the session was removed because its stake was missing
+	assert.Empty(sel.unknownSessions)
+}
+
 func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
 	sel := NewMinLSSelector(nil, 1.0)
 
@@ -329,4 +354,49 @@ func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
 		assert.Same(t, sess, sessions[i])
 		i++
 	}
+}
+
+func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
+	assert := assert.New(t)
+
+	sel := NewMinLSSelector(nil, 1.0)
+
+	// Use ManifestID to identify each session
+	sessions := []*BroadcastSession{
+		&BroadcastSession{ManifestID: "foo"},
+		&BroadcastSession{ManifestID: "bar"},
+		&BroadcastSession{ManifestID: "baz"},
+	}
+
+	resetUnknownSessions := func() {
+		// Make a copy of the original slice so we can reset unknownSessions to the original slice
+		sel.unknownSessions = make([]*BroadcastSession, len(sessions))
+		copy(sel.unknownSessions, sessions)
+	}
+
+	// Test remove from front of list
+	resetUnknownSessions()
+	sel.removeUnknownSession(0)
+	assert.Len(sel.unknownSessions, 2)
+	assert.Equal("baz", string(sel.unknownSessions[0].ManifestID))
+	assert.Equal("bar", string(sel.unknownSessions[1].ManifestID))
+
+	// Test remove from middle of list
+	resetUnknownSessions()
+	sel.removeUnknownSession(1)
+	assert.Len(sel.unknownSessions, 2)
+	assert.Equal("foo", string(sel.unknownSessions[0].ManifestID))
+	assert.Equal("baz", string(sel.unknownSessions[1].ManifestID))
+
+	// Test remove from back of list
+	resetUnknownSessions()
+	sel.removeUnknownSession(2)
+	assert.Len(sel.unknownSessions, 2)
+	assert.Equal("foo", string(sel.unknownSessions[0].ManifestID))
+	assert.Equal("bar", string(sel.unknownSessions[1].ManifestID))
+
+	// Test remove when list length = 1
+	sel.unknownSessions = []*BroadcastSession{&BroadcastSession{}}
+	sel.removeUnknownSession(0)
+	assert.Empty(sel.unknownSessions)
 }
