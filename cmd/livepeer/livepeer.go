@@ -466,14 +466,6 @@ func main() {
 			n.SetBasePrice(big.NewRat(int64(*pricePerUnit), int64(*pixelsPerUnit)))
 			glog.Infof("Price: %d wei for %d pixels\n ", *pricePerUnit, *pixelsPerUnit)
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			if err := setupOrchestrator(ctx, n, *initializeRound); err != nil {
-				glog.Errorf("Error setting up orchestrator: %v", err)
-				return
-			}
-
 			ev, _ := new(big.Int).SetString(*ticketEV, 10)
 			if ev == nil {
 				glog.Errorf("-ticketEV must be a valid integer, but %v provided. Restart the node with a different valid value for -ticketEV", *ticketEV)
@@ -482,6 +474,14 @@ func main() {
 
 			if ev.Cmp(big.NewInt(0)) < 0 {
 				glog.Errorf("-ticketEV must be greater than 0, but %v provided. Restart the node with a different valid value for -ticketEV", *ticketEV)
+				return
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if err := setupOrchestrator(ctx, n, *initializeRound); err != nil {
+				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
 
@@ -864,6 +864,21 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, initializeRound bool) error {
 	//Check if orchestrator is active
 	active, err := n.Eth.IsActiveTranscoder()
+	if err != nil {
+		return err
+	}
+
+	// add orchestrator to DB
+	orch, err := n.Eth.GetTranscoder(n.Eth.Account().Address)
+	if err != nil {
+		return err
+	}
+
+	err = n.Database.UpdateOrch(&common.DBOrch{
+		EthereumAddr:      n.Eth.Account().Address.Hex(),
+		ActivationRound:   orch.ActivationRound.Int64(),
+		DeactivationRound: orch.DeactivationRound.Int64(),
+	})
 	if err != nil {
 		return err
 	}
