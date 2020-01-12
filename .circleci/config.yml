@@ -22,7 +22,6 @@ jobs:
       # If we want to build with branch --> network support for any other networks, add them here!
       NETWORK_BRANCHES: rinkeby mainnet
 
-
     steps:
       - checkout
       - setup_remote_docker:
@@ -38,7 +37,15 @@ jobs:
 
       # Then, build the actual app in a container shared between Linux and Windows
       - run: docker pull livepeerci/build:latest || echo 'no pre-existing cache found'
-      - run: docker build --build-arg HIGHEST_CHAIN_TAG -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
+      - run: |-
+          export HIGHEST_CHAIN_TAG=dev
+          for branch in $NETWORK_BRANCHES; do
+            if [[ $CIRCLE_BRANCH == "$branch" ]]; then
+              export HIGHEST_CHAIN_TAG=$branch
+            fi
+          done
+          echo "building with support for network: $HIGHEST_CHAIN_TAG"
+          docker build --build-arg HIGHEST_CHAIN_TAG -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
       - run: docker push livepeerci/build:latest
 
       # Finally, build the minimal go-livepeer distributable. We publish two tags for each build:
