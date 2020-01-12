@@ -44,6 +44,17 @@ jobs:
               export HIGHEST_CHAIN_TAG=$branch
             fi
           done
+
+          # Disallow non-tagged mainnet releases
+          generatedVersion=$(./print_version.sh)
+          definedVersion=$(cat VERSION)
+          if [[ $HIGHEST_CHAIN_TAG == "mainnet" ]]; then
+            if [[ $generatedVersion != $definedVesion ]]; then
+              echo "disallowing mainnet release without semver tag; $generatedVersion != $definedVersion"
+              exit 1
+            fi
+          fi
+
           echo "building with support for network: $HIGHEST_CHAIN_TAG"
           docker build --build-arg HIGHEST_CHAIN_TAG -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
       - run: docker push livepeerci/build:latest
