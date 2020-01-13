@@ -147,8 +147,8 @@ func TestLB_ConcurrentSessionErrors(t *testing.T) {
 	// Race detector is sometimes slow enough to trigger timeouts
 	// These numbers may need tweaking
 	// (Or a separate non-race test with higher numbers)
-	mainIter := 500
-	innerIters := 50
+	mainIter := 200
+	innerIters := 40
 	innerTimeout := 10 * time.Second
 	mainTimeout := 20 * time.Second
 
