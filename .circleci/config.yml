@@ -19,8 +19,6 @@ jobs:
       PKG_CONFIG_PATH: /root/compiled/lib/pkgconfig
       GOPATH: /go
       DOCKER_CLI_EXPERIMENTAL: enabled
-      # If we want to build with branch --> network support for any other networks, add them here!
-      NETWORK_BRANCHES: rinkeby mainnet
 
     steps:
       - checkout
@@ -38,24 +36,7 @@ jobs:
       # Then, build the actual app in a container shared between Linux and Windows
       - run: docker pull livepeerci/build:latest || echo 'no pre-existing cache found'
       - run: |-
-          export HIGHEST_CHAIN_TAG=dev
-          for branch in $NETWORK_BRANCHES; do
-            if [[ $CIRCLE_BRANCH == "$branch" ]]; then
-              export HIGHEST_CHAIN_TAG=$branch
-            fi
-          done
-
-          # Disallow non-tagged mainnet releases
-          generatedVersion=$(./print_version.sh)
-          definedVersion=$(cat VERSION)
-          if [[ $HIGHEST_CHAIN_TAG == "mainnet" ]]; then
-            if [[ $generatedVersion != $definedVesion ]]; then
-              echo "disallowing mainnet release without semver tag; $generatedVersion != $definedVersion"
-              exit 1
-            fi
-          fi
-
-          echo "building with support for network: $HIGHEST_CHAIN_TAG"
+          source ./ci_env.sh
           docker build --build-arg HIGHEST_CHAIN_TAG -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
       - run: docker push livepeerci/build:latest
 
