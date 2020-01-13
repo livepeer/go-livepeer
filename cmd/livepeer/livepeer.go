@@ -222,7 +222,7 @@ func main() {
 	}
 
 	//Set up DB
-	dbh, err := common.InitDB(*datadir + "/lp.sqlite3")
+	dbh, err := common.InitDB(*datadir + "/lpdb.sqlite3")
 	if err != nil {
 		glog.Errorf("Error opening DB: %v", err)
 		return
