@@ -604,6 +604,7 @@ func verifyPixels(fname string, bos drivers.OSSession, reportedPixels int64) err
 			return fmt.Errorf("error creating temp file for pixels verification: %v", err)
 		}
 		defer os.Remove(tempfile.Name())
+		defer tempfile.Close()
 
 		data := memOS.GetData(fname)
 		if data == nil {
