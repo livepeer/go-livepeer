@@ -876,8 +876,8 @@ func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, initializeRoun
 
 	err = n.Database.UpdateOrch(&common.DBOrch{
 		EthereumAddr:      n.Eth.Account().Address.Hex(),
-		ActivationRound:   orch.ActivationRound.Int64(),
-		DeactivationRound: orch.DeactivationRound.Int64(),
+		ActivationRound:   common.ToInt64(orch.ActivationRound),
+		DeactivationRound: common.ToInt64(orch.DeactivationRound),
 	})
 	if err != nil {
 		return err

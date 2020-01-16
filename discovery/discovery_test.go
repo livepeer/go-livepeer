@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"math/big"
 	"math/rand"
 	"net/url"
@@ -1105,5 +1106,5 @@ func TestEthOrchToDBOrch(t *testing.T) {
 	assert.Equal(dbo.ServiceURI, o.ServiceURI)
 	assert.Equal(dbo.EthereumAddr, o.Address.Hex())
 	assert.Equal(dbo.ActivationRound, o.ActivationRound.Int64())
-	assert.Equal(dbo.DeactivationRound, maxInt64)
+	assert.Equal(dbo.DeactivationRound,  int64(math.MaxInt64))
 }

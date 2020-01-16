@@ -117,7 +117,7 @@ func (ow *OrchestratorWatcher) handleTranscoderActivated(log types.Log) error {
 			&common.DBOrch{
 				EthereumAddr:      transcoderActivated.Transcoder.String(),
 				ServiceURI:        uri,
-				ActivationRound:   transcoderActivated.ActivationRound.Int64(),
+				ActivationRound:   common.ToInt64(transcoderActivated.ActivationRound),
 				DeactivationRound: maxFutureRound,
 			},
 		)
@@ -130,8 +130,8 @@ func (ow *OrchestratorWatcher) handleTranscoderActivated(log types.Log) error {
 		&common.DBOrch{
 			EthereumAddr:      t.Address.String(),
 			ServiceURI:        t.ServiceURI,
-			ActivationRound:   t.ActivationRound.Int64(),
-			DeactivationRound: t.DeactivationRound.Int64(),
+			ActivationRound:   common.ToInt64(t.ActivationRound),
+			DeactivationRound: common.ToInt64(t.DeactivationRound),
 		},
 	)
 }
@@ -146,7 +146,7 @@ func (ow *OrchestratorWatcher) handleTranscoderDeactivated(log types.Log) error 
 		return ow.store.UpdateOrch(
 			&common.DBOrch{
 				EthereumAddr:      transcoderDeactivated.Transcoder.String(),
-				DeactivationRound: transcoderDeactivated.DeactivationRound.Int64(),
+				DeactivationRound: common.ToInt64(transcoderDeactivated.DeactivationRound),
 			},
 		)
 	}
@@ -157,8 +157,8 @@ func (ow *OrchestratorWatcher) handleTranscoderDeactivated(log types.Log) error 
 	return ow.store.UpdateOrch(
 		&common.DBOrch{
 			EthereumAddr:      t.Address.String(),
-			ActivationRound:   t.ActivationRound.Int64(),
-			DeactivationRound: t.DeactivationRound.Int64(),
+			ActivationRound:   common.ToInt64(t.ActivationRound),
+			DeactivationRound: common.ToInt64(t.DeactivationRound),
 		},
 	)
 }
