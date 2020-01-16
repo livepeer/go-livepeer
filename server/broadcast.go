@@ -459,12 +459,14 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		for i, url := range segURLs {
 			err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
 			if err != nil {
-				// We assume playlist insertion is *not* recoverable for now
+				// InsertHLSSegment only returns ErrSegmentAlreadyExists error
+				// Right now InsertHLSSegment call is atomic regarding transcoded segments - we either inserting
+				// all the transcoded segments or none, so we shouldn't hit this error
+				// But report in case that InsertHLSSegment changed or something wrong is going on in other parts of workflow
 				glog.Errorf("Playlist insertion error nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
 				if monitor.Enabled {
 					monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorPlaylist, nonce, seg.SeqNo, err, false)
 				}
-				return nil, err
 			}
 		}
 
