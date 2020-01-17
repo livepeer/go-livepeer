@@ -246,7 +246,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 	return sessions, nil
 }
 
-func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) error {
+func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, error) {
 
 	nonce := cxn.nonce
 	cpl := cxn.pl
@@ -266,7 +266,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) error {
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), true)
 		}
-		return err
+		return nil, err
 	}
 	if cpl.GetOSSession().IsExternal() {
 		seg.Name = uri // hijack seg.Name to convey the uploaded URI
@@ -289,14 +289,14 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) error {
 
 	for {
 		// if fails, retry; rudimentary
-		if err := transcodeSegment(cxn, seg, name, sv); err == nil {
-			return nil
+		if urls, err := transcodeSegment(cxn, seg, name, sv); err == nil {
+			return urls, nil
 		}
 	}
 }
 
 func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
-	verifier *verification.SegmentVerifier) error {
+	verifier *verification.SegmentVerifier) ([]string, error) {
 
 	nonce := cxn.nonce
 	cpl := cxn.pl
@@ -311,7 +311,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// We may want to introduce a "non-retryable" error type here
 		// would help error propagation for live ingest.
 		// similar to the orchestrator's RemoteTranscoderFatalError
-		return nil
+		return nil, nil
 	}
 	{
 		glog.Infof("Trying to transcode segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
@@ -329,7 +329,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 					monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err.Error(), false)
 				}
 				cxn.sessManager.removeSession(sess)
-				return err
+				return nil, err
 			}
 			seg.Name = uri // hijack seg.Name to convey the uploaded URI
 		}
@@ -341,9 +341,9 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		if err != nil || res == nil {
 			cxn.sessManager.removeSession(sess)
 			if res == nil && err == nil {
-				return errors.New("Empty response")
+				return nil, errors.New("Empty response")
 			}
-			return err
+			return nil, err
 		}
 
 		cxn.sessManager.completeSession(updateSession(sess, res))
@@ -362,8 +362,8 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 
 		var dlErr, saveErr error
 		segHashes := make([][]byte, len(res.Segments))
-		segURLs := make([]string, len(res.Segments))
 		n := len(res.Segments)
+		segURLs := make([]string, len(res.Segments))
 		segHashLock := &sync.Mutex{}
 		cond := sync.NewCond(segHashLock)
 
@@ -444,14 +444,15 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}
 		cond.L.Unlock()
 		if dlErr != nil {
-			return dlErr
+			return nil, dlErr
 		}
 
 		if verifier != nil {
+			// verify potentially can change content of segURLs
 			err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs)
 			if err != nil {
 				glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
-				return err
+				return nil, err
 			}
 		}
 
@@ -463,7 +464,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				if monitor.Enabled {
 					monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorPlaylist, nonce, seg.SeqNo, err, false)
 				}
-				return nil
+				return nil, err
 			}
 		}
 
@@ -476,14 +477,14 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			!pm.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
 			glog.Errorf("Sig check failed for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
 			cxn.sessManager.removeSession(sess)
-			return errPMCheckFailed
+			return nil, errPMCheckFailed
 		}
 		if monitor.Enabled {
 			monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), errCode)
 		}
 
 		glog.V(common.DEBUG).Infof("Successfully validated segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
-		return nil
+		return segURLs, nil
 	}
 }
 

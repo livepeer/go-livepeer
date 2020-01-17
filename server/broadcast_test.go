@@ -467,7 +467,8 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 		sessManager: bsm,
 	}
 
-	assert.Nil(transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil))
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	assert.Nil(err)
 
 	completedSess := bsm.sessMap[ts.URL]
 	assert.NotEqual(completedSess, sess)
@@ -483,7 +484,8 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	buf, err = proto.Marshal(tr)
 	require.Nil(err)
 
-	assert.Nil(transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil))
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	assert.Nil(err)
 
 	// Check that BroadcastSession.OrchestratorInfo was updated
 	completedSessInfo := bsm.sessMap[ts.URL].OrchestratorInfo
@@ -534,8 +536,11 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 		sessManager: bsm,
 	}
 
-	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
+	urls, err := transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
 	assert.Nil(err)
+	assert.NotNil(urls)
+	assert.Len(urls, 1)
+	assert.Equal("test.flv", urls[0])
 
 	// Wait for async pixels verification to finish (or in this case we are just making sure that it did NOT run)
 	time.Sleep(1 * time.Second)
@@ -549,8 +554,9 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	bsm = bsmWithSessList([]*BroadcastSession{sess})
 	cxn.sessManager = bsm
 
-	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
+	urls, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
 	assert.Nil(err)
+	assert.Equal("test.flv", urls[0])
 
 	// Wait for async pixels verification to finish
 	time.Sleep(1 * time.Second)
@@ -572,7 +578,7 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	bsm = bsmWithSessList([]*BroadcastSession{sess})
 	cxn.sessManager = bsm
 
-	err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
 	assert.Nil(err)
 
 	// Wait for async pixels verification to finish
@@ -742,7 +748,7 @@ func TestHLSInsertion(t *testing.T) {
 	}
 
 	seg := &stream.HLSSegment{SeqNo: 93}
-	err = transcodeSegment(cxn, seg, "dummy", nil)
+	_, err = transcodeSegment(cxn, seg, "dummy", nil)
 	assert.Nil(err)
 
 	// some sanity checks
@@ -794,29 +800,29 @@ func TestVerifier_Invocation(t *testing.T) {
 	}
 
 	seg := &stream.HLSSegment{}
-	err = transcodeSegment(cxn, seg, "dummy", segmentVerifier)
+	_, err = transcodeSegment(cxn, seg, "dummy", segmentVerifier)
 	assert.Nil(err)
 	assert.Equal(1, verifier.calls)
 	require.NotNil(verifier.params)
 	assert.Equal(cxn.mid, verifier.params.ManifestID)
 	assert.Equal(seg, verifier.params.Source)
 	// Do it again for good measure
-	err = transcodeSegment(cxn, seg, "dummy", segmentVerifier)
+	_, err = transcodeSegment(cxn, seg, "dummy", segmentVerifier)
 	assert.Nil(err)
 	assert.Equal(2, verifier.calls)
 
 	// now "disable" the verifier and ensure no calls
-	err = transcodeSegment(cxn, seg, "dummy", nil)
+	_, err = transcodeSegment(cxn, seg, "dummy", nil)
 	assert.Nil(err)
 	assert.Equal(2, verifier.calls)
 
 	// Pass in a nil policy
-	err = transcodeSegment(cxn, seg, "dummy", verification.NewSegmentVerifier(nil))
+	_, err = transcodeSegment(cxn, seg, "dummy", verification.NewSegmentVerifier(nil))
 	assert.Nil(err)
 
 	// Pass in a policy but no verifier specified
 	policy = &verification.Policy{}
-	err = transcodeSegment(cxn, seg, "dummy", verification.NewSegmentVerifier(policy))
+	_, err = transcodeSegment(cxn, seg, "dummy", verification.NewSegmentVerifier(policy))
 	assert.Nil(err)
 }
 
@@ -992,15 +998,15 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 		},
 	})
 
-	err := transcodeSegment(cxn, seg, "dummy", verifier)
+	_, err := transcodeSegment(cxn, seg, "dummy", verifier)
 	assert.Equal(verification.ErrTampered, err)
 	assert.Empty(pl.uri) // sanity check that no insertion happened
 
-	err = transcodeSegment(cxn, seg, "dummy", verifier)
+	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
 	assert.Equal(verification.ErrTampered, err)
 	assert.Empty(pl.uri)
 
-	err = transcodeSegment(cxn, seg, "dummy", verifier)
+	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
 	assert.Nil(err)
 	assert.Equal(baseURL+"/resp2", pl.uri)
 }
