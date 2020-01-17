@@ -299,7 +299,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	verifier *verification.SegmentVerifier) error {
 
 	nonce := cxn.nonce
-	rtmpStrm := cxn.stream
 	cpl := cxn.pl
 	sess := cxn.sessManager.selectSession()
 	// Return early under a few circumstances:
@@ -343,13 +342,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			cxn.sessManager.removeSession(sess)
 			if res == nil && err == nil {
 				return errors.New("Empty response")
-			}
-			if shouldStopStream(err) {
-				glog.Warningf("Stopping current stream due to: %v", err)
-				rtmpStrm.Close()
-				return err
-			}
-			if shouldStopSession(err) {
 			}
 			return err
 		}

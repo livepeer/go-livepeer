@@ -770,7 +770,3 @@ func (s *LivepeerServer) LatestPlaylist() core.PlaylistManager {
 	}
 	return cxn.pl
 }
-
-func shouldStopStream(err error) bool {
-	return false
-}

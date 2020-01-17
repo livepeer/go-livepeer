@@ -858,12 +858,6 @@ func TestCleanStreamPrefix(t *testing.T) {
 	}
 }
 
-func TestShouldStopStream(t *testing.T) {
-	if shouldStopStream(fmt.Errorf("some random error string")) {
-		t.Error("Expected shouldStopStream=false for a random error")
-	}
-}
-
 func TestParseManifestID(t *testing.T) {
 	checkMid := func(inp string, exp string) {
 		mid := parseManifestID(inp)
