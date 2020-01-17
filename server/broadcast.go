@@ -313,181 +313,179 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// similar to the orchestrator's RemoteTranscoderFatalError
 		return nil, nil
 	}
-	{
-		glog.Infof("Trying to transcode segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
-		if monitor.Enabled {
-			monitor.TranscodeTry(nonce, seg.SeqNo)
-		}
+	glog.Infof("Trying to transcode segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
+	if monitor.Enabled {
+		monitor.TranscodeTry(nonce, seg.SeqNo)
+	}
 
-		// storage the orchestrator prefers
-		if ios := sess.OrchestratorOS; ios != nil {
-			// XXX handle case when orch expects direct upload
-			uri, err := ios.SaveData(name, seg.Data)
-			if err != nil {
-				glog.Errorf("Error saving segment to OS nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
-				if monitor.Enabled {
-					monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err.Error(), false)
-				}
-				cxn.sessManager.removeSession(sess)
-				return nil, err
+	// storage the orchestrator prefers
+	if ios := sess.OrchestratorOS; ios != nil {
+		// XXX handle case when orch expects direct upload
+		uri, err := ios.SaveData(name, seg.Data)
+		if err != nil {
+			glog.Errorf("Error saving segment to OS nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
+			if monitor.Enabled {
+				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err.Error(), false)
 			}
-			seg.Name = uri // hijack seg.Name to convey the uploaded URI
-		}
-
-		// send segment to the orchestrator
-		glog.V(common.DEBUG).Infof("Submitting segment nonce=%d manifestID=%s seqNo=%d orch=%s", nonce, cxn.mid, seg.SeqNo, sess.OrchestratorInfo.Transcoder)
-
-		res, err := SubmitSegment(sess, seg, nonce)
-		if err != nil || res == nil {
 			cxn.sessManager.removeSession(sess)
-			if res == nil && err == nil {
-				return nil, errors.New("Empty response")
-			}
 			return nil, err
 		}
-
-		cxn.sessManager.completeSession(updateSession(sess, res))
-
-		// download transcoded segments from the transcoder
-		gotErr := false // only send one error msg per segment list
-		var errCode monitor.SegmentTranscodeError
-		errFunc := func(subType monitor.SegmentTranscodeError, url string, err error) {
-			glog.Errorf("%v error with segment nonce=%d seqNo=%d: %v (URL: %v)", subType, nonce, seg.SeqNo, err, url)
-			if monitor.Enabled && !gotErr {
-				monitor.SegmentTranscodeFailed(subType, nonce, seg.SeqNo, err, false)
-				gotErr = true
-				errCode = subType
-			}
-		}
-
-		var dlErr, saveErr error
-		segHashes := make([][]byte, len(res.Segments))
-		n := len(res.Segments)
-		segURLs := make([]string, len(res.Segments))
-		segHashLock := &sync.Mutex{}
-		cond := sync.NewCond(segHashLock)
-
-		dlFunc := func(url string, pixels int64, i int) {
-			defer func() {
-				cond.L.Lock()
-				n--
-				if n == 0 {
-					cond.Signal()
-				}
-				cond.L.Unlock()
-			}()
-
-			if bos := sess.BroadcasterOS; bos != nil && !drivers.IsOwnExternal(url) {
-				data, err := drivers.GetSegmentData(url)
-				if err != nil {
-					errFunc(monitor.SegmentTranscodeErrorDownload, url, err)
-					segHashLock.Lock()
-					dlErr = err
-					segHashLock.Unlock()
-					cxn.sessManager.removeSession(sess)
-					return
-				}
-				name := fmt.Sprintf("%s/%d.ts", sess.Profiles[i].Name, seg.SeqNo)
-				newURL, err := bos.SaveData(name, data)
-				if err != nil {
-					segHashLock.Lock()
-					saveErr = err
-					segHashLock.Unlock()
-					switch err.Error() {
-					case "Session ended":
-						errFunc(monitor.SegmentTranscodeErrorSessionEnded, url, err)
-					default:
-						errFunc(monitor.SegmentTranscodeErrorSaveData, url, err)
-					}
-					return
-				}
-				url = newURL
-
-				hash := crypto.Keccak256(data)
-				segHashLock.Lock()
-				segHashes[i] = hash
-				segHashLock.Unlock()
-			}
-
-			// If running in on-chain mode, run pixels verification asynchronously
-			// Only run if a verifier is not being used
-			if sess.Sender != nil && verifier == nil {
-				go func() {
-					if err := verifyPixels(url, sess.BroadcasterOS, pixels); err != nil {
-						glog.Error(err)
-						cxn.sessManager.removeSession(sess)
-					}
-				}()
-			}
-
-			// Store URLs for the verifier. Be aware that the segment is
-			// already within object storage  at this point, whether local or
-			// external. If a client were to ignore the playlist and
-			// preemptively fetch segments, they could be reading tampered
-			// data. Not an issue if the delivery protocol is being obeyed.
-			segHashLock.Lock()
-			segURLs[i] = url
-			segHashLock.Unlock()
-
-			if monitor.Enabled {
-				monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
-			}
-		}
-
-		for i, v := range res.Segments {
-			go dlFunc(v.Url, v.Pixels, i)
-		}
-
-		cond.L.Lock()
-		for n != 0 {
-			cond.Wait()
-		}
-		cond.L.Unlock()
-		if dlErr != nil {
-			return nil, dlErr
-		}
-
-		if verifier != nil {
-			// verify potentially can change content of segURLs
-			err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs)
-			if err != nil {
-				glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
-				return nil, err
-			}
-		}
-
-		for i, url := range segURLs {
-			err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
-			if err != nil {
-				// InsertHLSSegment only returns ErrSegmentAlreadyExists error
-				// Right now InsertHLSSegment call is atomic regarding transcoded segments - we either inserting
-				// all the transcoded segments or none, so we shouldn't hit this error
-				// But report in case that InsertHLSSegment changed or something wrong is going on in other parts of workflow
-				glog.Errorf("Playlist insertion error nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
-				if monitor.Enabled {
-					monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorPlaylist, nonce, seg.SeqNo, err, false)
-				}
-			}
-		}
-
-		ticketParams := sess.OrchestratorInfo.GetTicketParams()
-		if ticketParams != nil && // may be nil in offchain mode
-			saveErr == nil && // save error leads to early exit before sighash computation
-			// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
-			// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
-			len(segHashes) != len(res.Segments) &&
-			!pm.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
-			glog.Errorf("Sig check failed for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
-			cxn.sessManager.removeSession(sess)
-			return nil, errPMCheckFailed
-		}
-		if monitor.Enabled {
-			monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), errCode)
-		}
-
-		glog.V(common.DEBUG).Infof("Successfully validated segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
-		return segURLs, nil
+		seg.Name = uri // hijack seg.Name to convey the uploaded URI
 	}
+
+	// send segment to the orchestrator
+	glog.V(common.DEBUG).Infof("Submitting segment nonce=%d manifestID=%s seqNo=%d orch=%s", nonce, cxn.mid, seg.SeqNo, sess.OrchestratorInfo.Transcoder)
+
+	res, err := SubmitSegment(sess, seg, nonce)
+	if err != nil || res == nil {
+		cxn.sessManager.removeSession(sess)
+		if res == nil && err == nil {
+			return nil, errors.New("Empty response")
+		}
+		return nil, err
+	}
+
+	cxn.sessManager.completeSession(updateSession(sess, res))
+
+	// download transcoded segments from the transcoder
+	gotErr := false // only send one error msg per segment list
+	var errCode monitor.SegmentTranscodeError
+	errFunc := func(subType monitor.SegmentTranscodeError, url string, err error) {
+		glog.Errorf("%v error with segment nonce=%d seqNo=%d: %v (URL: %v)", subType, nonce, seg.SeqNo, err, url)
+		if monitor.Enabled && !gotErr {
+			monitor.SegmentTranscodeFailed(subType, nonce, seg.SeqNo, err, false)
+			gotErr = true
+			errCode = subType
+		}
+	}
+
+	var dlErr, saveErr error
+	segHashes := make([][]byte, len(res.Segments))
+	n := len(res.Segments)
+	segURLs := make([]string, len(res.Segments))
+	segHashLock := &sync.Mutex{}
+	cond := sync.NewCond(segHashLock)
+
+	dlFunc := func(url string, pixels int64, i int) {
+		defer func() {
+			cond.L.Lock()
+			n--
+			if n == 0 {
+				cond.Signal()
+			}
+			cond.L.Unlock()
+		}()
+
+		if bos := sess.BroadcasterOS; bos != nil && !drivers.IsOwnExternal(url) {
+			data, err := drivers.GetSegmentData(url)
+			if err != nil {
+				errFunc(monitor.SegmentTranscodeErrorDownload, url, err)
+				segHashLock.Lock()
+				dlErr = err
+				segHashLock.Unlock()
+				cxn.sessManager.removeSession(sess)
+				return
+			}
+			name := fmt.Sprintf("%s/%d.ts", sess.Profiles[i].Name, seg.SeqNo)
+			newURL, err := bos.SaveData(name, data)
+			if err != nil {
+				segHashLock.Lock()
+				saveErr = err
+				segHashLock.Unlock()
+				switch err.Error() {
+				case "Session ended":
+					errFunc(monitor.SegmentTranscodeErrorSessionEnded, url, err)
+				default:
+					errFunc(monitor.SegmentTranscodeErrorSaveData, url, err)
+				}
+				return
+			}
+			url = newURL
+
+			hash := crypto.Keccak256(data)
+			segHashLock.Lock()
+			segHashes[i] = hash
+			segHashLock.Unlock()
+		}
+
+		// If running in on-chain mode, run pixels verification asynchronously
+		// Only run if a verifier is not being used
+		if sess.Sender != nil && verifier == nil {
+			go func() {
+				if err := verifyPixels(url, sess.BroadcasterOS, pixels); err != nil {
+					glog.Error(err)
+					cxn.sessManager.removeSession(sess)
+				}
+			}()
+		}
+
+		// Store URLs for the verifier. Be aware that the segment is
+		// already within object storage  at this point, whether local or
+		// external. If a client were to ignore the playlist and
+		// preemptively fetch segments, they could be reading tampered
+		// data. Not an issue if the delivery protocol is being obeyed.
+		segHashLock.Lock()
+		segURLs[i] = url
+		segHashLock.Unlock()
+
+		if monitor.Enabled {
+			monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
+		}
+	}
+
+	for i, v := range res.Segments {
+		go dlFunc(v.Url, v.Pixels, i)
+	}
+
+	cond.L.Lock()
+	for n != 0 {
+		cond.Wait()
+	}
+	cond.L.Unlock()
+	if dlErr != nil {
+		return nil, dlErr
+	}
+
+	if verifier != nil {
+		// verify potentially can change content of segURLs
+		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs)
+		if err != nil {
+			glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
+			return nil, err
+		}
+	}
+
+	for i, url := range segURLs {
+		err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
+		if err != nil {
+			// InsertHLSSegment only returns ErrSegmentAlreadyExists error
+			// Right now InsertHLSSegment call is atomic regarding transcoded segments - we either inserting
+			// all the transcoded segments or none, so we shouldn't hit this error
+			// But report in case that InsertHLSSegment changed or something wrong is going on in other parts of workflow
+			glog.Errorf("Playlist insertion error nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
+			if monitor.Enabled {
+				monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorPlaylist, nonce, seg.SeqNo, err, false)
+			}
+		}
+	}
+
+	ticketParams := sess.OrchestratorInfo.GetTicketParams()
+	if ticketParams != nil && // may be nil in offchain mode
+		saveErr == nil && // save error leads to early exit before sighash computation
+		// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
+		// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
+		len(segHashes) != len(res.Segments) &&
+		!pm.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
+		glog.Errorf("Sig check failed for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
+		cxn.sessManager.removeSession(sess)
+		return nil, errPMCheckFailed
+	}
+	if monitor.Enabled {
+		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), errCode)
+	}
+
+	glog.V(common.DEBUG).Infof("Successfully validated segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
+	return segURLs, nil
 }
 
 var sessionErrStrings = []string{"dial tcp", "unexpected EOF", core.ErrOrchBusy.Error(), core.ErrOrchCap.Error()}
