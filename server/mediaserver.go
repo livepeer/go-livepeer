@@ -9,10 +9,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/big"
 	"math/rand"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"path"
 	"regexp"
@@ -583,6 +586,7 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 //End RTMP Handlers
 
+// HandlePush processes request for HTTP ingest
 func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	// we read this unconditionally, mostly for ffmpeg
 	body, err := ioutil.ReadAll(r.Body)
@@ -673,19 +677,66 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Do the transcoding!
-	err = processSegment(cxn, seg)
+	urls, err := processSegment(cxn, seg)
 	if err != nil {
-		// TODO return error
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if len(urls) == 0 {
+		http.Error(w, "No sessions available", http.StatusServiceUnavailable)
+		return
+	}
+	renditionData := make([][]byte, len(urls))
+	// find data in local storage
+	memOS, ok := cxn.pl.GetOSSession().(*drivers.MemorySession)
+	if ok {
+		for i, fname := range urls {
+			data := memOS.GetData(fname)
+			if data != nil {
+				renditionData[i] = data
+			}
+		}
+	}
 
+	boundary := common.RandName()
+	accept := r.Header.Get("Accept")
+	if accept == "multipart/mixed" {
+		contentType := "multipart/mixed; boundary=" + boundary
+		w.Header().Set("Content-Type", contentType)
+	}
 	w.WriteHeader(http.StatusOK)
+	w.(http.Flusher).Flush()
+	if accept != "multipart/mixed" {
+		return
+	}
+	mw := multipart.NewWriter(w)
+	for i, url := range urls {
+		mw.SetBoundary(boundary)
+		typ, length := "video/MP2T", len(renditionData[i])
+		if length == 0 {
+			typ, length = "application/vnd+livepeer.uri", len(url)
+		}
+		hdrs := textproto.MIMEHeader{
+			"Content-Type":   {typ},
+			"Content-Length": {strconv.Itoa(length)},
+		}
+		fw, err := mw.CreatePart(hdrs)
+		if err != nil {
+			glog.Error("Could not create multipart part ", err)
+			break
+		}
+		if len(renditionData[i]) > 0 {
+			io.Copy(fw, bytes.NewBuffer(renditionData[i]))
+		} else {
+			fw.Write([]byte(url))
+		}
+	}
+	mw.Close()
 }
 
 //Helper Methods Begin
 
-// Match all leading spaces, slashes and optionally `stream/`
+// StreamPrefix match all leading spaces, slashes and optionally `stream/`
 var StreamPrefix = regexp.MustCompile(`^[ /]*(stream/)?|(live/)?`) // test carefully!
 
 func cleanStreamPrefix(reqPath string) string {

@@ -2,9 +2,13 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"io/ioutil"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -14,8 +18,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/golang/glog"
+	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/lpms/ffmpeg"
 )
 
 func requestSetup(s *LivepeerServer) (http.Handler, *strings.Reader, *httptest.ResponseRecorder) {
@@ -27,19 +34,156 @@ func requestSetup(s *LivepeerServer) (http.Handler, *strings.Reader, *httptest.R
 	return handler, reader, writer
 }
 
-func TestNoErrors(t *testing.T) {
+func TestMultipartReturn(t *testing.T) {
 	assert := assert.New(t)
-	handler, reader, w := requestSetup(setupServer())
-	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
+	s := setupServer()
+	reader := strings.NewReader("InsteadOf.TS")
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/mani/17.ts", reader)
 
-	handler.ServeHTTP(w, req)
+	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
+		return &net.TranscodeResult{
+			Result: &net.TranscodeResult_Data{
+				Data: &net.TranscodeData{
+					Segments: tSegData,
+					Sig:      []byte("bar"),
+				},
+			},
+		}
+	}
+
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+
+	segPath := "/transcoded/segment.ts"
+	tSegData := []*net.TranscodedSegmentData{
+		&net.TranscodedSegmentData{Url: ts.URL + segPath, Pixels: 100},
+	}
+	tr := dummyRes(tSegData)
+	buf, err := proto.Marshal(tr)
+	require.Nil(t, err)
+
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+	mux.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("transcoded binary data"))
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.ManifestID = "mani"
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+
+	url, _ := url.ParseRequestURI("test://some.host")
+	osd := drivers.NewMemoryDriver(url)
+	osSession := osd.NewSession("testPath")
+
+	pl := core.NewBasicPlaylistManager("xx", osSession)
+
+	cxn := &rtmpConnection{
+		mid:         core.ManifestID("mani"),
+		nonce:       7,
+		pl:          pl,
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsm,
+		params:      &streamParameters{profiles: []ffmpeg.VideoProfile{ffmpeg.P144p25fps16x9}},
+	}
+
+	s.rtmpConnections["mani"] = cxn
+
+	req.Header.Set("Accept", "multipart/mixed")
+	s.HandlePush(w, req)
 	resp := w.Result()
 	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
 
+	mediaType, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	assert.Equal("multipart/mixed", mediaType)
+	assert.Nil(err)
+	mr := multipart.NewReader(resp.Body, params["boundary"])
+	var i int
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		assert.NoError(err)
+		mediaType, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
+		assert.Nil(err)
+		bodyPart, err := ioutil.ReadAll(p)
+		assert.NoError(err)
+		assert.Equal("application/vnd+livepeer.uri", mediaType)
+		up, err := url.Parse(string(bodyPart))
+		assert.Nil(err)
+		assert.Equal(segPath, up.Path)
+
+		i++
+	}
+	assert.Equal(1, i)
+
+	bsm.sel.Clear()
+	bsm.sel.Add([]*BroadcastSession{sess})
+	sess.BroadcasterOS = osSession
+	// Body should be empty if no Accept header specified
+	reader.Seek(0, 0)
+	req = httptest.NewRequest("POST", "/live/mani/15.ts", reader)
+	w = httptest.NewRecorder()
+	s.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
 	body, err := ioutil.ReadAll(resp.Body)
 	require.Nil(t, err)
+	assert.Equal("", strings.TrimSpace(string(body)))
+
+	// Binary data should be returned
+	reader.Seek(0, 0)
+	req = httptest.NewRequest("POST", "/live/mani/12.ts", reader)
+	w = httptest.NewRecorder()
+	req.Header.Set("Accept", "multipart/mixed")
+	s.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
 	assert.Equal(200, resp.StatusCode)
-	assert.Equal(strings.TrimSpace(string(body)), "")
+
+	mediaType, params, err = mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	assert.Equal("multipart/mixed", mediaType)
+	assert.Nil(err)
+	mr = multipart.NewReader(resp.Body, params["boundary"])
+	i = 0
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		assert.NoError(err)
+		mediaType, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
+		assert.Nil(err)
+		bodyPart, err := ioutil.ReadAll(p)
+		assert.Nil(err)
+		assert.Equal("video/mp2t", mediaType)
+		assert.Equal("transcoded binary data", string(bodyPart))
+
+		i++
+	}
+	assert.Equal(1, i)
+
+	// No sessions error
+	cxn.sessManager.sel.Clear()
+	reader.Seek(0, 0)
+	req = httptest.NewRequest("POST", "/live/mani/13.ts", reader)
+	w = httptest.NewRecorder()
+	req.Header.Set("Accept", "multipart/mixed")
+	s.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	body, _ = ioutil.ReadAll(resp.Body)
+	assert.Equal("No sessions available\n", string(body))
+	assert.Equal(503, resp.StatusCode)
 }
 
 func TestMemoryRequestError(t *testing.T) {
@@ -54,7 +198,7 @@ func TestMemoryRequestError(t *testing.T) {
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
-	require.Nil(t, err)
+	assert.Nil(err)
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	assert.Contains(strings.TrimSpace(string(body)), "Error reading http request body")
 }
@@ -267,5 +411,6 @@ func TestWebhookRequestURL(t *testing.T) {
 	resp := w.Result()
 	defer resp.Body.Close()
 
-	assert.Equal(200, resp.StatusCode)
+	// Server has empty sessions list, so it will return 503
+	assert.Equal(503, resp.StatusCode)
 }
