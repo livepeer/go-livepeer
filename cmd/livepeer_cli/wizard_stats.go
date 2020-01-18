@@ -224,30 +224,32 @@ func (w *wizard) delegatorStats() {
 		return
 	}
 
-	fmt.Println("+---------------+")
-	fmt.Println("|DELEGATOR STATS|")
-	fmt.Println("+---------------+")
-
 	pendingStake := ""
 	if d.PendingStake.Int64() == -1 {
 		pendingStake = "Please fetch pending stake separately"
 	} else {
-		pendingStake = d.PendingStake.String()
+		pendingStake = eth.FormatUnits(d.PendingStake, "LPT")
 	}
+
 	pendingFees := ""
 	if d.PendingFees.Int64() == -1 {
 		pendingFees = "Please fetch pending fees separately"
 	} else {
-		pendingFees = d.PendingFees.String()
+		pendingFees = eth.FormatUnits(d.PendingFees, "ETH")
 	}
+
+	fmt.Println("+---------------+")
+	fmt.Println("|DELEGATOR STATS|")
+	fmt.Println("+---------------+")
+
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
 		[]string{"Status", d.Status},
-		[]string{"Stake", d.BondedAmount.String()},
-		[]string{"Collected Fees", d.Fees.String()},
+		[]string{"Stake", eth.FormatUnits(d.BondedAmount, "LPT")},
+		[]string{"Collected Fees", eth.FormatUnits(d.Fees, "ETH")},
 		[]string{"Pending Stake", pendingStake},
 		[]string{"Pending Fees", pendingFees},
-		[]string{"Delegated Stake", d.DelegatedAmount.String()},
+		[]string{"Delegated Stake", eth.FormatUnits(d.DelegatedAmount, "LPT")},
 		[]string{"Delegate Address", d.DelegateAddress.Hex()},
 		[]string{"Last Claim Round", d.LastClaimRound.String()},
 		[]string{"Start Round", d.StartRound.String()},
