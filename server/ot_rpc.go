@@ -30,6 +30,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/logging"
 	"github.com/livepeer/go-livepeer/net"
 )
 
@@ -146,7 +147,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	var body bytes.Buffer
 
 	tData, err := n.Transcoder.Transcode(notify.Job, notify.Url, profiles)
-	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
+	glog.V(logging.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
 	if err != nil {
 		glog.Error("Unable to transcode ", err)
 		body.Write([]byte(err.Error()))
@@ -188,7 +189,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 	}
-	glog.V(common.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
+	glog.V(logging.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
 }
 
 // Orchestrator gRPC

@@ -15,6 +15,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/logging"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -103,11 +104,11 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	uri := ""
 	if r.Header.Get("Content-Type") == "application/vnd+livepeer.uri" {
 		uri = string(data)
-		glog.V(common.DEBUG).Infof("Start getting segment from %s", uri)
+		glog.V(logging.DEBUG).Infof("Start getting segment from %s", uri)
 		start := time.Now()
 		data, err = drivers.GetSegmentData(uri)
 		took := time.Since(start)
-		glog.V(common.DEBUG).Infof("Getting segment from %s took %s", uri, took)
+		glog.V(logging.DEBUG).Infof("Getting segment from %s took %s", uri, took)
 		if err != nil {
 			glog.Errorf("Error getting input segment %v from input OS: %v", uri, err)
 			http.Error(w, "BadRequest", http.StatusBadRequest)

@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/logging"
 	"github.com/livepeer/go-livepeer/net"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -128,7 +128,7 @@ func (os *s3Session) EndSession() {
 func (os *s3Session) SaveData(name string, data []byte) (string, error) {
 	// tentativeUrl just used for logging
 	tentativeURL := path.Join(os.host, os.key, name)
-	glog.V(common.VERBOSE).Infof("Saving to S3 %s", tentativeURL)
+	glog.V(logging.VERBOSE).Infof("Saving to S3 %s", tentativeURL)
 	path, err := os.postData(name, data)
 	if err != nil {
 		// handle error
@@ -137,7 +137,7 @@ func (os *s3Session) SaveData(name string, data []byte) (string, error) {
 	}
 	url := os.getAbsURL(path)
 
-	glog.V(common.VERBOSE).Infof("Saved to S3 %s", tentativeURL)
+	glog.V(logging.VERBOSE).Infof("Saved to S3 %s", tentativeURL)
 
 	return url, err
 }

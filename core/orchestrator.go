@@ -20,6 +20,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/logging"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
@@ -165,7 +166,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			tsp.SenderNonce,
 		)
 
-		glog.V(common.DEBUG).Infof("Receiving ticket manifestID=%v faceValue=%v winProb=%v ev=%v", manifestID, ticket.FaceValue, ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
+		glog.V(logging.DEBUG).Infof("Receiving ticket manifestID=%v faceValue=%v winProb=%v ev=%v", manifestID, ticket.FaceValue, ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
 
 		_, won, err := orch.node.Recipient.ReceiveTicket(
 			ticket,
@@ -194,7 +195,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		}
 
 		if won {
-			glog.V(common.DEBUG).Infof("Received winning ticket manifestID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
+			glog.V(logging.DEBUG).Infof("Received winning ticket manifestID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
 
 			totalWinningTickets++
 
@@ -391,7 +392,7 @@ func (rtm *RemoteTranscoderManager) addTaskChan() (int64, TranscoderChan) {
 	rtm.taskCount++
 	if tc, ok := rtm.taskChans[taskID]; ok {
 		// should really never happen
-		glog.V(common.DEBUG).Info("Transcoder channel already exists for ", taskID)
+		glog.V(logging.DEBUG).Info("Transcoder channel already exists for ", taskID)
 		return taskID, tc
 	}
 	rtm.taskChans[taskID] = make(TranscoderChan, 1)
@@ -402,7 +403,7 @@ func (rtm *RemoteTranscoderManager) removeTaskChan(taskID int64) {
 	rtm.taskMutex.Lock()
 	defer rtm.taskMutex.Unlock()
 	if _, ok := rtm.taskChans[taskID]; !ok {
-		glog.V(common.DEBUG).Info("Transcoder channel nonexistent for job ", taskID)
+		glog.V(logging.DEBUG).Info("Transcoder channel nonexistent for job ", taskID)
 		return
 	}
 	delete(rtm.taskChans, taskID)
@@ -419,7 +420,7 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 		return nil, ErrOrchCap
 	}
 	sc := make(SegmentChan, 1)
-	glog.V(common.DEBUG).Info("Creating new segment chan for manifest ", md.ManifestID)
+	glog.V(logging.DEBUG).Info("Creating new segment chan for manifest ", md.ManifestID)
 	if err := n.transcodeSegmentLoop(md, sc); err != nil {
 		return nil, err
 	}
@@ -431,7 +432,7 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 }
 
 func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
-	glog.V(common.DEBUG).Infof("Starting to transcode segment manifest=%s seqNo=%d", string(md.ManifestID), md.Seq)
+	glog.V(logging.DEBUG).Infof("Starting to transcode segment manifest=%s seqNo=%d", string(md.ManifestID), md.Seq)
 	ch, err := n.getSegmentChan(md)
 	if err != nil {
 		glog.Error("Could not find segment chan ", err)
@@ -440,7 +441,7 @@ func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stre
 	segChanData := &SegChanData{seg: seg, md: md, res: make(chan *TranscodeResult, 1)}
 	select {
 	case ch <- segChanData:
-		glog.V(common.DEBUG).Infof("Submitted segment to transcode loop manifestID=%s seqNo=%d", md.ManifestID, md.Seq)
+		glog.V(logging.DEBUG).Infof("Submitted segment to transcode loop manifestID=%s seqNo=%d", md.ManifestID, md.Seq)
 	default:
 		// sending segChan should not block; if it does, the channel is busy
 		glog.Errorf("Transcoder was busy with a previous segment manifestID=%s seqNo=%d", md.ManifestID, md.Seq)
@@ -522,7 +523,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	}
 
 	took := time.Since(start)
-	glog.V(common.DEBUG).Infof("Transcoding of segment manifestID=%s seqNo=%d took=%v", string(md.ManifestID), seg.SeqNo, took)
+	glog.V(logging.DEBUG).Infof("Transcoding of segment manifestID=%s seqNo=%d took=%v", string(md.ManifestID), seg.SeqNo, took)
 	if isLocal && monitor.Enabled {
 		monitor.SegmentTranscoded(0, seg.SeqNo, took, common.ProfilesNames(md.Profiles))
 	}
@@ -537,7 +538,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 				string(md.ManifestID), seg.SeqNo, len(tSegments[i].Data))
 			return terr(fmt.Errorf("ZeroSegments"))
 		}
-		glog.V(common.DEBUG).Infof("Transcoded segment manifest=%s seqNo=%d profile=%s len=%d",
+		glog.V(logging.DEBUG).Infof("Transcoded segment manifest=%s seqNo=%d profile=%s len=%d",
 			string(md.ManifestID), seg.SeqNo, md.Profiles[i].Name, len(tSegments[i].Data))
 		hash := crypto.Keccak256(tSegments[i].Data)
 		segHashes[i] = hash
@@ -559,7 +560,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 }
 
 func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan SegmentChan) error {
-	glog.V(common.DEBUG).Info("Starting transcode segment loop for ", md.ManifestID)
+	glog.V(logging.DEBUG).Info("Starting transcode segment loop for ", md.ManifestID)
 
 	// Set up local OS for any remote transcoders to use if necessary
 	if drivers.NodeStorage == nil {
@@ -588,7 +589,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 				// timeout; clean up goroutine here
 				os.EndSession()
 				los.EndSession()
-				glog.V(common.DEBUG).Info("Segment loop timed out; closing ", md.ManifestID)
+				glog.V(logging.DEBUG).Info("Segment loop timed out; closing ", md.ManifestID)
 				n.segmentMutex.Lock()
 				if _, ok := n.SegmentChans[md.ManifestID]; ok {
 					close(n.SegmentChans[md.ManifestID])
@@ -611,7 +612,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
 	from := common.GetConnectionAddr(stream.Context())
 	n.TranscoderManager.Manage(stream, capacity)
-	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
+	glog.V(logging.DEBUG).Infof("Closing transcoder=%s channel", from)
 }
 
 func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/logging"
 	"github.com/livepeer/go-livepeer/net"
 )
 
@@ -59,7 +60,7 @@ var httpc = &http.Client{
 }
 
 func getSegmentDataHTTP(uri string) ([]byte, error) {
-	glog.V(common.VERBOSE).Infof("Downloading uri=%s", uri)
+	glog.V(logging.VERBOSE).Infof("Downloading uri=%s", uri)
 	resp, err := httpc.Get(uri)
 	if err != nil {
 		glog.Errorf("Error getting HTTP uri=%s err=%v", uri, err)
@@ -75,6 +76,6 @@ func getSegmentDataHTTP(uri string) ([]byte, error) {
 		glog.Errorf("Error reading body uri=%s err=%v", uri, err)
 		return nil, err
 	}
-	glog.V(common.VERBOSE).Infof("Downloaded uri=%s", uri)
+	glog.V(logging.VERBOSE).Infof("Downloaded uri=%s", uri)
 	return body, nil
 }

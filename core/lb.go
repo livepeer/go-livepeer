@@ -9,7 +9,7 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/logging"
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
@@ -53,7 +53,7 @@ func (lb *LoadBalancingTranscoder) Transcode(job string, fname string, profiles 
 	session, exists := lb.sessions[job]
 	lb.mu.RUnlock()
 	if exists {
-		glog.V(common.DEBUG).Info("LB: Using existing transcode session for ", session.key)
+		glog.V(logging.DEBUG).Info("LB: Using existing transcode session for ", session.key)
 	} else {
 		var err error
 		session, err = lb.createSession(job, fname, profiles)
@@ -70,11 +70,11 @@ func (lb *LoadBalancingTranscoder) createSession(job string, fname string, profi
 	defer lb.mu.Unlock()
 
 	if session, exists := lb.sessions[job]; exists {
-		glog.V(common.DEBUG).Info("Attempted to create session but already exists ", session.key)
+		glog.V(logging.DEBUG).Info("Attempted to create session but already exists ", session.key)
 		return session, nil
 	}
 
-	glog.V(common.DEBUG).Info("LB: Creating transcode session for ", job)
+	glog.V(logging.DEBUG).Info("LB: Creating transcode session for ", job)
 	transcoder := lb.leastLoaded()
 
 	// Acquire transcode session. Map to job id + assigned transcoder
@@ -100,7 +100,7 @@ func (lb *LoadBalancingTranscoder) createSession(job string, fname string, profi
 		}
 		delete(lb.sessions, job)
 		lb.load[transcoder] -= costEstimate
-		glog.V(common.DEBUG).Info("LB: Deleted transcode session for ", session.key)
+		glog.V(logging.DEBUG).Info("LB: Deleted transcode session for ", session.key)
 	}
 
 	go func() {
@@ -108,7 +108,7 @@ func (lb *LoadBalancingTranscoder) createSession(job string, fname string, profi
 		cleanupSession()
 	}()
 
-	glog.V(common.DEBUG).Info("LB: Created transcode session for ", session.key)
+	glog.V(logging.DEBUG).Info("LB: Created transcode session for ", session.key)
 	return session, nil
 }
 
@@ -175,7 +175,7 @@ func (sess *transcoderSession) loop() {
 		select {
 		case <-ctx.Done():
 			// Terminate the session after a period of inactivity
-			glog.V(common.DEBUG).Info("LB: Transcode loop timed out for ", sess.key)
+			glog.V(logging.DEBUG).Info("LB: Transcode loop timed out for ", sess.key)
 			return
 		case params := <-sess.sender:
 			cancel()
@@ -186,7 +186,7 @@ func (sess *transcoderSession) loop() {
 				error
 			}{res, err}
 			if err != nil {
-				glog.V(common.DEBUG).Info("LB: Stopping transcoder due to error for ", sess.key)
+				glog.V(logging.DEBUG).Info("LB: Stopping transcoder due to error for ", sess.key)
 				return
 			}
 		}
@@ -201,9 +201,9 @@ func (sess *transcoderSession) Transcode(job string, fname string, profiles []ff
 		})}
 	select {
 	case sess.sender <- params:
-		glog.V(common.DEBUG).Info("LB: Transcode submitted for ", sess.key)
+		glog.V(logging.DEBUG).Info("LB: Transcode submitted for ", sess.key)
 	default:
-		glog.V(common.DEBUG).Info("LB: Transcoder was busy; exiting ", sess.key)
+		glog.V(logging.DEBUG).Info("LB: Transcoder was busy; exiting ", sess.key)
 		return nil, ErrTranscoderBusy
 	}
 	res := <-params.res

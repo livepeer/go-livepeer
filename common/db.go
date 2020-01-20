@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
+	"github.com/livepeer/go-livepeer/logging"
 	"github.com/livepeer/go-livepeer/pm"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pkg/errors"
@@ -313,12 +314,12 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.deleteMiniHeader = stmt
 
-	glog.V(DEBUG).Info("Initialized DB node")
+	glog.V(logging.DEBUG).Info("Initialized DB node")
 	return &d, nil
 }
 
 func (db *DB) Close() {
-	glog.V(DEBUG).Info("Closing DB")
+	glog.V(logging.DEBUG).Info("Closing DB")
 	if db.selectKV != nil {
 		db.selectKV.Close()
 	}
@@ -495,7 +496,7 @@ func (db *DB) OrchCount(filter *DBOrchFilter) (int, error) {
 }
 
 func (db *DB) InsertUnbondingLock(id *big.Int, delegator ethcommon.Address, amount, withdrawRound *big.Int) error {
-	glog.V(DEBUG).Infof("db: Inserting unbonding lock %v for delegator %v", id, delegator.Hex())
+	glog.V(logging.DEBUG).Infof("db: Inserting unbonding lock %v for delegator %v", id, delegator.Hex())
 	_, err := db.insertUnbondingLock.Exec(id.Int64(), delegator.Hex(), amount.String(), withdrawRound.Int64())
 	if err != nil {
 		glog.Errorf("db: Error inserting unbonding lock %v for delegator %v: %v", id, delegator.Hex(), err)
@@ -507,7 +508,7 @@ func (db *DB) InsertUnbondingLock(id *big.Int, delegator ethcommon.Address, amou
 // DeleteUnbondingLock deletes an unbonding lock from the DB with the given ID and delegator address.
 // This method will return nil for non-existent unbonding locks
 func (db *DB) DeleteUnbondingLock(id *big.Int, delegator ethcommon.Address) error {
-	glog.V(DEBUG).Infof("db: Deleting unbonding lock %v for delegator %v", id, delegator.Hex())
+	glog.V(logging.DEBUG).Infof("db: Deleting unbonding lock %v for delegator %v", id, delegator.Hex())
 	_, err := db.deleteUnbondingLock.Exec(id.Int64(), delegator.Hex())
 	if err != nil {
 		glog.Errorf("db: Error deleting unbonding lock %v for delegator %v: %v", id, delegator.Hex(), err)
@@ -519,7 +520,7 @@ func (db *DB) DeleteUnbondingLock(id *big.Int, delegator ethcommon.Address) erro
 // UseUnbondingLock sets an unbonding lock in the DB as used by setting the lock's used block.
 // If usedBlock is nil this method will set the lock's used block to NULL
 func (db *DB) UseUnbondingLock(id *big.Int, delegator ethcommon.Address, usedBlock *big.Int) error {
-	glog.V(DEBUG).Infof("db: Using unbonding lock %v for delegator %v", id, delegator.Hex())
+	glog.V(logging.DEBUG).Infof("db: Using unbonding lock %v for delegator %v", id, delegator.Hex())
 
 	var err error
 	if usedBlock == nil {
@@ -535,7 +536,7 @@ func (db *DB) UseUnbondingLock(id *big.Int, delegator ethcommon.Address, usedBlo
 }
 
 func (db *DB) UnbondingLockIDs() ([]*big.Int, error) {
-	glog.V(DEBUG).Infof("db: Querying unbonding lock IDs")
+	glog.V(logging.DEBUG).Infof("db: Querying unbonding lock IDs")
 
 	rows, err := db.dbh.Query("SELECT id FROM unbondingLocks")
 	if err != nil {
@@ -559,7 +560,7 @@ func (db *DB) UnbondingLocks(currentRound *big.Int) ([]*DBUnbondingLock, error) 
 	if db == nil {
 		return []*DBUnbondingLock{}, nil
 	}
-	glog.V(DEBUG).Infof("db: Querying unbonding locks")
+	glog.V(logging.DEBUG).Infof("db: Querying unbonding locks")
 
 	var (
 		rows *sql.Rows
@@ -610,7 +611,7 @@ func (db *DB) StoreWinningTicket(sessionID string, ticket *pm.Ticket, sig []byte
 	if recipientRand == nil {
 		return errors.New("cannot store nil recipientRand")
 	}
-	glog.V(DEBUG).Infof("db: Inserting winning ticket from %v, recipientRand %d, senderNonce %d", ticket.Sender.Hex(), recipientRand, ticket.SenderNonce)
+	glog.V(logging.DEBUG).Infof("db: Inserting winning ticket from %v, recipientRand %d, senderNonce %d", ticket.Sender.Hex(), recipientRand, ticket.SenderNonce)
 
 	_, err := db.insertWinningTicket.Exec(ticket.Sender.Hex(), ticket.Recipient.Hex(), ticket.FaceValue.Bytes(), ticket.WinProb.Bytes(), ticket.SenderNonce, recipientRand.Bytes(), ticket.RecipientRandHash.Hex(), sig, sessionID)
 

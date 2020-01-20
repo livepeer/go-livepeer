@@ -19,6 +19,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/logging"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
@@ -114,8 +115,8 @@ func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
 
 func (bsm *BroadcastSessionsManager) refreshSessions() {
 
-	glog.V(common.DEBUG).Info("Starting session refresh")
-	defer glog.V(common.DEBUG).Info("Ending session refresh")
+	glog.V(logging.DEBUG).Info("Starting session refresh")
+	defer glog.V(logging.DEBUG).Info("Ending session refresh")
 	bsm.sessLock.Lock()
 	if bsm.finished || bsm.refreshing {
 		bsm.sessLock.Unlock()
@@ -253,7 +254,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	mid := cxn.mid
 	vProfile := cxn.profile
 
-	glog.V(common.DEBUG).Infof("Processing segment nonce=%d manifestID=%s seqNo=%d dur=%v", nonce, mid, seg.SeqNo, seg.Duration)
+	glog.V(logging.DEBUG).Infof("Processing segment nonce=%d manifestID=%s seqNo=%d dur=%v", nonce, mid, seg.SeqNo, seg.Duration)
 	if monitor.Enabled {
 		monitor.SegmentEmerged(nonce, seg.SeqNo, len(BroadcastJobVideoProfiles))
 	}
@@ -334,7 +335,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	// send segment to the orchestrator
-	glog.V(common.DEBUG).Infof("Submitting segment nonce=%d manifestID=%s seqNo=%d orch=%s", nonce, cxn.mid, seg.SeqNo, sess.OrchestratorInfo.Transcoder)
+	glog.V(logging.DEBUG).Infof("Submitting segment nonce=%d manifestID=%s seqNo=%d orch=%s", nonce, cxn.mid, seg.SeqNo, sess.OrchestratorInfo.Transcoder)
 
 	res, err := SubmitSegment(sess, seg, nonce)
 	if err != nil || res == nil {
@@ -484,7 +485,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), errCode)
 	}
 
-	glog.V(common.DEBUG).Infof("Successfully validated segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
+	glog.V(logging.DEBUG).Infof("Successfully validated segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
 	return segURLs, nil
 }
 

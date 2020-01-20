@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/logging"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 
@@ -139,7 +140,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode) *LivepeerServ
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string, httpAddr string) error {
 	BroadcastJobVideoProfiles = parsePresets(strings.Split(transcodingOptions, ","))
 
-	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
+	glog.V(logging.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
 	//LPMS handlers for handling RTMP video
 	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))

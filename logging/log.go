@@ -1,4 +1,4 @@
-package common
+package logging
 
 const SHORT = 4
 const DEBUG = 5

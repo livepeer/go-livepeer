@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/logging"
 )
 
 var (
@@ -58,7 +59,7 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string, signer
 			return nil, err
 		}
 	} else {
-		glog.V(common.SHORT).Infof("Found existing ETH account")
+		glog.V(logging.SHORT).Infof("Found existing ETH account")
 
 		// Account already exists or defaulting to first, load it from keystore
 		acct, err = getAccount(accountAddr, keyStore)
@@ -185,7 +186,7 @@ func getAccount(accountAddr ethcommon.Address, keyStore *keystore.KeyStore) (acc
 
 		return accounts.Account{}, ErrAccountNotFound
 	} else {
-		glog.V(common.SHORT).Infof("Defaulting to first ETH account in keystore %v", accts[0].Address.Hex())
+		glog.V(logging.SHORT).Infof("Defaulting to first ETH account in keystore %v", accts[0].Address.Hex())
 
 		// Default to first account
 		return accts[0], nil

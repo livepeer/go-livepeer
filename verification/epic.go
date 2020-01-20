@@ -13,8 +13,8 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/logging"
 
 	"github.com/livepeer/lpms/ffmpeg"
 )
@@ -94,7 +94,7 @@ func epicResultsToVerificationResults(er *epicResults) (*Results, error) {
 func (e *EpicClassifier) Verify(params *Params) (*Results, error) {
 	mid, source, profiles := params.ManifestID, params.Source, params.Profiles
 	orch, res := params.Orchestrator, params.Results
-	glog.V(common.DEBUG).Infof("Verifying segment manifestID=%s seqNo=%d\n",
+	glog.V(logging.DEBUG).Infof("Verifying segment manifestID=%s seqNo=%d\n",
 		mid, source.SeqNo)
 
 	// Write segments to Docker shared volume
@@ -142,7 +142,7 @@ func (e *EpicClassifier) Verify(params *Params) (*Results, error) {
 		glog.Error("Could not marshal JSON for verifier! ", err)
 		return nil, err
 	}
-	glog.V(common.DEBUG).Info("Request Body: ", string(reqData))
+	glog.V(logging.DEBUG).Info("Request Body: ", string(reqData))
 
 	// Submit request and process results
 	startTime := time.Now()
@@ -163,7 +163,7 @@ func (e *EpicClassifier) Verify(params *Params) (*Results, error) {
 	if deferErr = err; err != nil {
 		return nil, err
 	}
-	glog.V(common.DEBUG).Info("Response Body: ", string(body))
+	glog.V(logging.DEBUG).Info("Response Body: ", string(body))
 	if resp.StatusCode >= 400 {
 		deferErr = err
 		return nil, ErrVerifierStatus

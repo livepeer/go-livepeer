@@ -28,9 +28,9 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/logging"
 	"github.com/livepeer/go-livepeer/pm"
 )
 
@@ -212,7 +212,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.V(common.SHORT).Infof("Controller: %v", c.controllerAddr.Hex())
+	glog.V(logging.SHORT).Infof("Controller: %v", c.controllerAddr.Hex())
 
 	tokenAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("LivepeerToken")))
 	if err != nil {
@@ -233,7 +233,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.V(common.SHORT).Infof("LivepeerToken: %v", c.tokenAddr.Hex())
+	glog.V(logging.SHORT).Infof("LivepeerToken: %v", c.tokenAddr.Hex())
 
 	serviceRegistryAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("ServiceRegistry")))
 	if err != nil {
@@ -254,7 +254,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.V(common.SHORT).Infof("ServiceRegistry: %v", c.serviceRegistryAddr.Hex())
+	glog.V(logging.SHORT).Infof("ServiceRegistry: %v", c.serviceRegistryAddr.Hex())
 
 	bondingManagerAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("BondingManager")))
 	if err != nil {
@@ -275,7 +275,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.V(common.SHORT).Infof("BondingManager: %v", c.bondingManagerAddr.Hex())
+	glog.V(logging.SHORT).Infof("BondingManager: %v", c.bondingManagerAddr.Hex())
 
 	brokerAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("TicketBroker")))
 	if err != nil {
@@ -296,7 +296,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.V(common.SHORT).Infof("TicketBroker: %v", c.ticketBrokerAddr.Hex())
+	glog.V(logging.SHORT).Infof("TicketBroker: %v", c.ticketBrokerAddr.Hex())
 
 	roundsManagerAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("RoundsManager")))
 	if err != nil {
@@ -317,7 +317,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.V(common.SHORT).Infof("RoundsManager: %v", c.roundsManagerAddr.Hex())
+	glog.V(logging.SHORT).Infof("RoundsManager: %v", c.roundsManagerAddr.Hex())
 
 	minterAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("Minter")))
 	if err != nil {
@@ -338,7 +338,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		Contract: minter,
 	}
 
-	glog.V(common.SHORT).Infof("Minter: %v", c.minterAddr.Hex())
+	glog.V(logging.SHORT).Infof("Minter: %v", c.minterAddr.Hex())
 
 	faucetAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("LivepeerTokenFaucet")))
 	if err != nil {
@@ -359,7 +359,7 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 		TransactOpts: *opts,
 	}
 
-	glog.V(common.SHORT).Infof("LivepeerTokenFaucet: %v", c.faucetAddr.Hex())
+	glog.V(logging.SHORT).Infof("LivepeerTokenFaucet: %v", c.faucetAddr.Hex())
 
 	return nil
 }
@@ -383,7 +383,7 @@ func (c *client) InitializeRound() (*types.Transaction, error) {
 		return nil, err
 	}
 	if i {
-		glog.V(common.SHORT).Infof("Round already initialized")
+		glog.V(logging.SHORT).Infof("Round already initialized")
 		return nil, errors.New("ErrRoundInitialized")
 	} else {
 		return c.RoundsManagerSession.InitializeRound()
@@ -530,7 +530,7 @@ func (c *client) autoClaimEarnings(endRound *big.Int, allRounds bool) error {
 				return err
 			}
 
-			glog.V(common.SHORT).Infof("Claimed earnings from round %v through %v", lastClaimRound, currentEndRound)
+			glog.V(logging.SHORT).Infof("Claimed earnings from round %v through %v", lastClaimRound, currentEndRound)
 
 			lastClaimRound = currentEndRound
 		}
@@ -547,9 +547,9 @@ func (c *client) autoClaimEarnings(endRound *big.Int, allRounds bool) error {
 				return err
 			}
 
-			glog.V(common.SHORT).Infof("Finished claiming earnings through the end round %v", endRound)
+			glog.V(logging.SHORT).Infof("Finished claiming earnings through the end round %v", endRound)
 		} else {
-			glog.V(common.SHORT).Infof("Finished claiming earnings through round %v. Remaining rounds can be automatically claimed through a bonding action", lastClaimRound)
+			glog.V(logging.SHORT).Infof("Finished claiming earnings through round %v. Remaining rounds can be automatically claimed through a bonding action", lastClaimRound)
 		}
 	}
 
