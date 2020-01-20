@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/logging"
 )
 
 // maxBlocksInGetLogsQuery is the max number of blocks to fetch logs for in a single query. There is
@@ -121,7 +122,7 @@ func (w *Watcher) Watch(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			if err := w.pollNextBlock(); err != nil {
-				glog.Errorf("blockwatch.Watcher error encountered: %v", err)
+				glog.V(logging.DEBUG).Infof("blockwatch.Watcher error encountered: %v", err)
 			}
 		}
 	}
@@ -453,7 +454,7 @@ func (w *Watcher) getLogsInBlockRange(ctx context.Context, from, to int) ([]type
 
 				logs, err := w.filterLogsRecursively(b.FromBlock, b.ToBlock, []types.Log{})
 				if err != nil {
-					glog.Errorf("failed to fetch logs for range error=%v fromBlock=%v toBlock=%v", err, b.FromBlock, b.ToBlock)
+					glog.V(logging.DEBUG).Infof("failed to fetch logs for range error=%v fromBlock=%v toBlock=%v", err, b.FromBlock, b.ToBlock)
 				}
 				mu.Lock()
 				indexToLogResult[index] = logRequestResult{
