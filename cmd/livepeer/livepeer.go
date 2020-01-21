@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/benchmark"
+	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
 	"github.com/peterbourgon/ff"
@@ -151,6 +151,7 @@ func main() {
 	benchSimInc := flag.Int("bench-sim-inc", 1, "How much to increase number of simultaneous transcodes in each next test")
 	benchSources := flag.String("bench-sources", "", "Video sources to use, comma separated")
 	benchProfiles := flag.String("bench-profiles", "", "Profiles to use, comma separated")
+	benchSegmenting := flag.Bool("bench-segmenting", false, "Segmenit input file and transcode each segment separately")
 	_ = flag.String("config", "", "config file (optional)")
 
 	ff.Parse(flag.CommandLine, os.Args[1:],
@@ -175,7 +176,7 @@ func main() {
 			glog.Fatalf("Unknown benchmark suite.")
 			return
 		}
-		benchmark.StartThroughput(*nvidia, *benchRepeats, *benchMinSim, *benchMaxSim, *benchSimInc, *benchSources, *benchProfiles)
+		benchmark.StartThroughput(*nvidia, *benchRepeats, *benchMinSim, *benchMaxSim, *benchSimInc, *benchSources, *benchProfiles, *benchSegmenting)
 		return
 	}
 

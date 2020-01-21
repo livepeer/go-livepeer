@@ -1,7 +1,10 @@
 package benchmark
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,26 +18,30 @@ import (
 )
 
 const (
-	bunnyVideo     = "official_test_source_2s_keys_24pfs.mp4"
-	generatedVideo = "official_generated_test_source_24fps.mp4"
-	hdVideo        = "Sintel.2010.1080p.stereo.mp4"
-	hdVideoLowBps  = "Sintel.2010.1080p.3700k.mp4"
-	bunnyHD30Video = "bbb_sunflower_1080p_30fps_normal.mp4"
-	bunnyHD60Video = "bbb_sunflower_1080p_60fps_normal.mp4"
+	bunnyVideo      = "official_test_source_2s_keys_24pfs.mp4"
+	generatedVideo  = "official_generated_test_source_24fps.mp4"
+	hdVideo         = "Sintel.2010.1080p.stereo.mp4"
+	hdVideoLowBps   = "Sintel.2010.1080p.3700k.mp4"
+	bunnyHD30Video  = "bbb_sunflower_1080p_30fps_normal.mp4"
+	bunnyHD30Video2 = "bbb_sunflower_1080p_30fps_normal_t02.mp4"
+	bunnyHD60Video  = "bbb_sunflower_1080p_60fps_normal.mp4"
 
 	csvHeaders = "Versions,Date,Video card,Acceleration, GPU device index,Simultaneous GPUs, Source file, Simultaneous transcodes, Transcode duration (sec), Video duration (sec), Speed, xRealtime, MPixels/sec, Frames/sec, MB/sec, Profiles num, Profiles, In pixels, Out pixels, In frames, Out frames, In bytes, Out bytes"
 )
 
 var (
 	// videosDurations = make(map[string]time.Duration)
-	videosDurations = map[string]time.Duration{bunnyVideo: 596480 * time.Millisecond,
-		generatedVideo: 596500 * time.Millisecond, hdVideo: 888050 * time.Millisecond, hdVideoLowBps: 888050 * time.Millisecond,
-		bunnyHD30Video: 634530 * time.Millisecond, bunnyHD60Video: 634530 * time.Millisecond}
+	/*
+		videosDurations = map[string]time.Duration{bunnyVideo: 596480 * time.Millisecond,
+			generatedVideo: 596500 * time.Millisecond, hdVideo: 888050 * time.Millisecond, hdVideoLowBps: 888050 * time.Millisecond,
+			bunnyHD30Video: 634530 * time.Millisecond, bunnyHD60Video: 634530 * time.Millisecond}
+	*/
 
 	p720p30fps16x9B8   = ffmpeg.VideoProfile{Name: "P720p30fps16x9", Bitrate: "8000k", Framerate: 30, AspectRatio: "16:9", Resolution: "1280x720"}
 	p720p30fps16x9B4   = ffmpeg.VideoProfile{Name: "P720p30fps16x9", Bitrate: "4000k", Framerate: 30, AspectRatio: "16:9", Resolution: "1280x720"}
 	p1080p24fps16x9B5  = ffmpeg.VideoProfile{Name: "P1080p24fps16x9", Bitrate: "5000k", Framerate: 24, AspectRatio: "16:9", Resolution: "1920x1080"}
 	p1080p24fps16x9B10 = ffmpeg.VideoProfile{Name: "P1080p24fps16x9", Bitrate: "10000k", Framerate: 24, AspectRatio: "16:9", Resolution: "1920x1080"}
+	// P480               = ffmpeg.VideoProfile{Name: "P480p30fps16x9", Bitrate: "2000k", Framerate: 30, AspectRatio: "16:9", Resolution: "848x480"}
 
 	/* hanging config
 
@@ -104,6 +111,7 @@ type (
 		simultaneousGPUs int
 		results          benchmarkResultsArray
 		mux              sync.Mutex
+		doSegmenting     bool
 	}
 
 	benchmarkResults struct {
@@ -130,10 +138,11 @@ type (
 )
 
 // StartThroughput starts the benchmark
-func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSimultaneous, _simInc int, sources, profiles string) {
-	glog.Infof("Starting throughput benchmark repeatsNumber: %d min simultaneous: %d max simultaneous: %d simInc: %d", _repeatsNumber, _minSimultaneous,
-		_maxSimultaneous, _simInc)
-	checkIfTestVideoFilesExists(sourcesSuite)
+func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSimultaneous, _simInc int, sources, profiles string, doSegmenting bool) {
+	glog.Infof("Starting throughput benchmark repeatsNumber: %d min simultaneous: %d max simultaneous: %d simInc: %d sources %s", _repeatsNumber, _minSimultaneous,
+		_maxSimultaneous, _simInc, sources)
+
+	// checkIfTestVideoFilesExists(sourcesSuite)
 	accel := ffmpeg.Software
 	devicesNum := 1
 	var devices []string
@@ -149,11 +158,13 @@ func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSi
 	simInc = _simInc
 	if sources != "" {
 		sourcesSuite = strings.Split(sources, ",")
-		for _, name := range sourcesSuite {
-			if _, has := videosDurations[name]; !has {
-				glog.Fatalf("Unknown source: %s", name)
+		/*
+			for _, name := range sourcesSuite {
+				if _, has := videosDurations[name]; !has {
+					glog.Fatalf("Unknown source: %s", name)
+				}
 			}
-		}
+		*/
 	}
 	if profiles != "" {
 		profilesSuite = make([][]ffmpeg.VideoProfile, 0)
@@ -199,7 +210,7 @@ func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSi
 					if u < len(devices) {
 						device = devices[u]
 					}
-					benchmarkers = append(benchmarkers, newBenchmarker(accel, profiles, sourceFileName, device, workDir, currentSimGPUS))
+					benchmarkers = append(benchmarkers, newBenchmarker(accel, profiles, sourceFileName, device, workDir, currentSimGPUS, doSegmenting))
 				}
 				glog.Infof("Number of benchmarkers: %d", len(benchmarkers))
 				for simNum := minSimultaneous; simNum <= maxSimultaneous; simNum += simInc {
@@ -238,15 +249,27 @@ func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSi
 	fmt.Println(strings.Join(csvResults, "\n"))
 }
 
-func doOneTranscode(accel ffmpeg.Acceleration, sourceFileName, device, workDir string, profiles []ffmpeg.VideoProfile, simultaneousTranscodes int) benchmarkResults {
+func doOneTranscode(accel ffmpeg.Acceleration, sourceFileName, device, workDir string, profiles []ffmpeg.VideoProfile, simultaneousTranscodes int, doSegmenting bool) benchmarkResults {
 	stats, err := os.Stat(sourceFileName)
 	if err != nil {
 		glog.Fatal(err)
 	}
 	sourceSize := stats.Size()
+	// sourceBytes, err := ioutil.ReadFile(sourceFileName)
+	// if err != nil {
+	// 	glog.Fatal(err)
+	// }
+	// glog.Infof("File %s is %d bytes long", sourceFileName, len(sourceBytes))
+	_, dur, err := getVideoStartTimeAndDurForFile(sourceFileName)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	glog.Infof("Duration of %s is %s", sourceFileName, dur)
+
 	res := benchmarkResults{
 		InSize:        sourceSize,
-		VideoDuration: videosDurations[sourceFileName],
+		VideoDuration: dur,
+		// VideoDuration: videosDurations[sourceFileName],
 	}
 
 	// Set up in / out config
@@ -257,11 +280,75 @@ func doOneTranscode(accel ffmpeg.Acceleration, sourceFileName, device, workDir s
 	}
 	opts := profilesToTranscodeOptions(workDir, accel, profiles)
 
+	transRes := &ffmpeg.TranscodeResults{}
 	// Do the Transcoding
-	start := time.Now()
-	transRes, err := ffmpeg.Transcode3(in, opts)
-	took := time.Since(start)
-	glog.Infof("Transcoding took %s", took)
+	var start time.Time
+	var took, segmentedTranscodeDuration time.Duration
+	stdLock := &sync.Mutex{}
+	var outSize int64
+	if doSegmenting {
+		transcoder := ffmpeg.NewTranscoder()
+		segCh := make(chan *hlsSegment)
+		doneChan := make(chan error)
+		go func() {
+			for seg := range segCh {
+				if seg.err != nil {
+					doneChan <- seg.err
+					return
+				}
+				in.Fname = fmt.Sprintf("%s/out_%s.ts", workDir, common.RandName())
+				e := ioutil.WriteFile(in.Fname, seg.data, 0644)
+				if e != nil {
+					doneChan <- e
+					return
+				}
+				s := time.Now()
+				tres, e := transcoder.Transcode(in, opts)
+				took := time.Since(s)
+				os.Remove(in.Fname)
+				if e != nil {
+					doneChan <- e
+					return
+				}
+				stdLock.Lock()
+				segmentedTranscodeDuration += took
+				stdLock.Unlock()
+				transRes.Decoded.Pixels += tres.Decoded.Pixels
+				transRes.Decoded.Frames += tres.Decoded.Frames
+				if len(transRes.Encoded) == 0 {
+					transRes.Encoded = make([]ffmpeg.MediaInfo, len(tres.Encoded))
+				}
+				for i, tr := range tres.Encoded {
+					transRes.Encoded[i].Frames += tr.Frames
+					transRes.Encoded[i].Pixels += tr.Pixels
+					outStats, err := os.Stat(opts[i].Oname)
+					if err != nil {
+						glog.Fatal(err)
+					}
+					outSize += outStats.Size()
+					os.Remove(opts[i].Oname)
+				}
+			}
+		}()
+		go startSegmenting(context.Background(), sourceFileName, true, 0, segCh)
+		start = time.Now()
+		err = <-doneChan
+		if err == io.EOF {
+			err = nil
+		}
+		if err != nil && err != io.EOF {
+			glog.Fatal(err)
+		}
+		took = time.Since(start)
+
+		transcoder.StopTranscoder()
+	} else {
+		start = time.Now()
+		transRes, err = ffmpeg.Transcode3(in, opts)
+		took = time.Since(start)
+	}
+	glog.Infof("Transcoding took %s, segmented transcoding %s is %v%%", took, segmentedTranscodeDuration,
+		float64(segmentedTranscodeDuration)/float64(took)*100.0)
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -271,16 +358,19 @@ func doOneTranscode(accel ffmpeg.Acceleration, sourceFileName, device, workDir s
 	for i, tr := range transRes.Encoded {
 		res.OutFrames += int64(tr.Frames)
 		res.OutPixels += tr.Pixels
-		outStats, err := os.Stat(opts[i].Oname)
-		if err != nil {
-			glog.Fatal(err)
-		}
-		res.OutSize += outStats.Size()
-		err = os.Remove(opts[i].Oname)
-		if err != nil {
-			glog.Fatal(err)
+		if !doSegmenting {
+			outStats, err := os.Stat(opts[i].Oname)
+			if err != nil {
+				glog.Fatal(err)
+			}
+			res.OutSize += outStats.Size()
+			err = os.Remove(opts[i].Oname)
+			if err != nil {
+				glog.Fatal(err)
+			}
 		}
 	}
+	res.OutSize += outSize
 	res.TranscodeDuration = took
 	res.Profiles = make([]ffmpeg.VideoProfile, len(profiles))
 	res.SourceFileName = filepath.Base(sourceFileName)
@@ -374,7 +464,7 @@ func (br *benchmarkResults) calc() {
 	}
 }
 
-func newBenchmarker(acceleration ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, sourceFileName, device, workDir string, simGPUs int) *benchmarker {
+func newBenchmarker(acceleration ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, sourceFileName, device, workDir string, simGPUs int, doSegmenting bool) *benchmarker {
 	p := make([]ffmpeg.VideoProfile, len(profiles))
 	copy(p, profiles)
 	return &benchmarker{
@@ -384,6 +474,7 @@ func newBenchmarker(acceleration ffmpeg.Acceleration, profiles []ffmpeg.VideoPro
 		profiles:         p,
 		workDir:          workDir,
 		simultaneousGPUs: simGPUs,
+		doSegmenting:     doSegmenting,
 	}
 }
 
@@ -394,7 +485,7 @@ func (bm *benchmarker) Start(simultaneously int, wg *sync.WaitGroup) {
 		bm.sourceFileName, profiles2str(bm.profiles))
 	for stream := 0; stream < simultaneously; stream++ {
 		go func(iStream int) {
-			benchRes := doOneTranscode(bm.acceleration, bm.sourceFileName, bm.device, bm.workDir, bm.profiles, simultaneously)
+			benchRes := doOneTranscode(bm.acceleration, bm.sourceFileName, bm.device, bm.workDir, bm.profiles, simultaneously, bm.doSegmenting)
 			benchRes.SimultaneousGPUs = bm.simultaneousGPUs
 			glog.Infof("Benchmark results (stream %d device %s):", iStream, bm.device)
 			glog.Info(benchRes.String())
