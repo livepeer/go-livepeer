@@ -2,58 +2,63 @@
 
 #Test script to run all the tests for continuous integration
 
-cd core
+cd cmd/livepeer
 go test -logtostderr=true -v
 t1=$?
+cd ../..
+
+cd core
+go test -logtostderr=true -v
+t2=$?
 # Be more strict with load balancer tests: run with race detector enabled
 go test -logtostderr=true -run LB_ -race
-t1_lb=$?
+t2_lb=$?
 cd ..
 
 cd server
 go test -logtostderr=true -v
-t2=$?
+t3=$?
 cd ..
 
 cd monitor
 go test -logtostderr=true -v
-t3=$?
+t4=$?
 cd ..
 
 cd eth
 go test -logtostderr=true -v
-t4=$?
+t5=$?
 cd ..
 
 cd eth/watchers
 go test -logtostderr=true -v
-t5=$?
+t6=$?
 cd ../..
 
 cd common
 go test -logtostderr=true -v
-t6=$?
+t7=$?
 cd ..
 
 cd discovery
 go test -logtostderr=true -v
-t7=$?
+t8=$?
 cd ..
 
 cd pm
 go test -logtostderr=true -v
-t8=$?
+t9=$?
 cd ..
 
 cd drivers
 go test -logtostderr=true -v
-t9=$?
+t10=$?
 cd ..
 
 ./test_args.sh
 t_args=$?
 
-if (($t1!=0||$t1_lb!=0||$t2!=0||$t3!=0||$t4!=0||$t5!=0||$t6!=0||$t7!=0||$t8!=0||$t9!=0||$t_args!=0))
+if (($t1!=0||$t2!=0||$t2_lb!=0||$t3!=0||$t4!=0||$t5!=0||$t6!=0||$t7!=0||$t8!=0||$t9!=0||$t10!=0||$t_args!=0))
 then
     printf "\n\nSome Tests Failed\n\n"
     exit -1

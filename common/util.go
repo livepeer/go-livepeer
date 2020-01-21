@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"math/big"
 	"math/rand"
 	"regexp"
@@ -22,6 +23,8 @@ import (
 
 // HTTPTimeout timeout used in HTTP connections between nodes
 const HTTPTimeout = 8 * time.Second
+
+const maxInt64 = int64(math.MaxInt64)
 
 var (
 	ErrParseBigInt = fmt.Errorf("failed to parse big integer")
@@ -245,4 +248,12 @@ var RandomIDGenerator = func(length uint) string {
 // RandName generates random hexadecimal string
 func RandName() string {
 	return RandomIDGenerator(10)
+}
+
+func ToInt64(val *big.Int) int64 {
+	if val.Cmp(big.NewInt(maxInt64)) > 0 {
+		return maxInt64
+	}
+
+	return val.Int64()
 }

@@ -3,7 +3,6 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"math"
 	"math/big"
 	"net/url"
 	"strings"
@@ -21,8 +20,6 @@ import (
 	"github.com/golang/glog"
 )
 
-const maxInt64 = int64(math.MaxInt64)
-
 var cacheRefreshInterval = 1 * time.Hour
 var getTicker = func() *time.Ticker {
 	return time.NewTicker(cacheRefreshInterval)
@@ -32,19 +29,15 @@ type ticketParamsValidator interface {
 	ValidateTicketParams(ticketParams *pm.TicketParams) error
 }
 
-type roundsManager interface {
-	LastInitializedRound() *big.Int
-}
-
 type DBOrchestratorPoolCache struct {
 	store                 common.OrchestratorStore
 	lpEth                 eth.LivepeerEthClient
 	ticketParamsValidator ticketParamsValidator
-	rm                    roundsManager
+	rm                    common.RoundsManager
 	bcast                 common.Broadcaster
 }
 
-func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm roundsManager) (*DBOrchestratorPoolCache, error) {
+func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager) (*DBOrchestratorPoolCache, error) {
 	if node.Eth == nil {
 		return nil, fmt.Errorf("could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 	}
@@ -307,12 +300,8 @@ func ethOrchToDBOrch(orch *lpTypes.Transcoder) *common.DBOrch {
 	dbo := &common.DBOrch{
 		ServiceURI:        orch.ServiceURI,
 		EthereumAddr:      orch.Address.String(),
-		ActivationRound:   orch.ActivationRound.Int64(),
-		DeactivationRound: orch.DeactivationRound.Int64(),
-	}
-
-	if orch.DeactivationRound.Cmp(big.NewInt(maxInt64)) == 1 {
-		dbo.DeactivationRound = maxInt64
+		ActivationRound:   common.ToInt64(orch.ActivationRound),
+		DeactivationRound: common.ToInt64(orch.DeactivationRound),
 	}
 
 	return dbo

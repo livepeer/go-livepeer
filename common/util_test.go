@@ -207,3 +207,11 @@ func TestBaseTokenAmountToFixed(t *testing.T) {
 	assert.Nil(err)
 	assert.Zero(fp)
 }
+
+func TestToInt64(t *testing.T) {
+	// test val > math.MaxInt64 => val = math.MaxInt64
+	val, _ := new(big.Int).SetString("9223372036854775808", 10) // 2^63
+	assert.Equal(t, int64(math.MaxInt64), ToInt64(val))
+	// test val < math.MaxInt64
+	assert.Equal(t, int64(5), ToInt64(big.NewInt(5)))
+}
