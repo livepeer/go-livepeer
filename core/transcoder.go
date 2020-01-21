@@ -161,7 +161,11 @@ func runTranscodeLoop(stack *segStack, workDir string) {
 		}
 		opts := profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, seg.profiles)
 		// Do the Transcoding
+		start := time.Now()
 		res, err := seg.session.Transcode(in, opts)
+		took := time.Since(start)
+		glog.V(common.DEBUG).Infof("Transcoding of fname=%s on nvidia device=%v took=%v", seg.fname, stack.gpu, took)
+
 		if err != nil {
 			seg.res <- &nvSegResult{nil, err}
 			continue
