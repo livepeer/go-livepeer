@@ -131,6 +131,8 @@ func TestSender_ValidateSender(t *testing.T) {
 	sm.info[account.Address].WithdrawRound = big.NewInt(2)
 	err = s.validateSender()
 	assert.EqualError(err, "unable to validate sender: deposit and reserve is set to unlock soon")
+	_, ok = err.(ErrSenderValidation)
+	assert.True(ok)
 
 	// Not unlocked
 	sm.info[account.Address].WithdrawRound = big.NewInt(0)

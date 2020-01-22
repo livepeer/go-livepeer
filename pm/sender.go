@@ -9,7 +9,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// ErrSenderValidation is emitted when sender.validateSender() encounters an error
+// ErrSenderValidation is returned when the sender cannot send tickets
 type ErrSenderValidation struct {
 	error
 }
