@@ -30,8 +30,15 @@ Alternative Livepeer installation options are also available:
 
 #### Building on Windows
 
-Building on Windows possible using Docker. Docker should run in 'Windows containers' mode.
-To build on Windows, just run `.\docker\windowsbuild.ps1`. This should create file `livepeer-windows-amd64.zip`, containig `livepeer.exe` and needed dlls.
+Building on Windows is possible using MSYS2 and mingw64. For convenience, there is an `.\windows-build.ps1` script
+that initializes an appropriate MSYS2 environment in the `.\msys2` directory. Steps to use:
+
+1. Install [Chocolatey](https://chocolatey.org/)
+2. Run `.\windows-build.ps1`
+3. Wait around 20 minutes
+
+If you run into problems, it's recommended to delete your local `.\msys2` directory and re-run the script to rebuild
+everything from scratch.
 
 ## Running Livepeer
 

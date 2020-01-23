@@ -6,28 +6,13 @@ jobs:
     pool:
       vmImage: "windows-2019"
 
-    variables:
-      DOCKER_CLI_EXPERIMENTAL: enabled
-
     steps:
       - script: git config --global core.autocrlf false
       - checkout: self
-      - bash: |-
-          set -e
-          # # First, build/cache the platform-specific root container
-          # docker login -u '$(DOCKER_USER)' -p '$(DOCKER_PASS)'
-          # docker pull livepeerci/build-platform:latest-windows || echo "build cache not found."
-          # docker build -m 4gb --cache-from=livepeerci/build-platform:latest-windows -t livepeerci/build-platform:latest-windows -f ./docker/Dockerfile.build-windows .
-          # docker push livepeerci/build-platform:latest-windows
-          # docker tag livepeerci/build-platform:latest-windows livepeerci/build-platform:latest
-
-          # # Then, build/cache the container shared between Windows and Linux
-          # docker pull livepeerci/build:latest-windows || echo "build cache not found"
-          # docker build -m 4gb --cache-from=livepeerci/build:latest-windows -t livepeerci/build:latest-windows -f ./docker/Dockerfile.build .
-          # docker push livepeerci/build:latest-windows
-          # docker tag livepeerci/build:latest-windows livepeerci/build:latest
-
-          # # Push the release image at the tag name with non-alphanums removed
-          # docker run --rm -e GCLOUD_KEY=$(GCLOUD_KEY) -e GCLOUD_SECRET=$(GCLOUD_SECRET)  -e DISCORD_URL=$(DISCORD_URL) -e CIRCLE_BRANCH=$(Build.SourceBranchName) livepeerci/build:latest-windows
-          # TAG=`echo $CIRCLE_BRANCH | tr -cd '[:alnum:]_'`
+      - powershell: |-
+          $Env:CIRCLE_BRANCH = "$(Build.SourceBranchName)"
+          $Env:GCLOUD_KEY = "$(GCLOUD_KEY)"
+          $Env:GCLOUD_SECRET = "$(GCLOUD_SECRET)"
+          $Env:DISCORD_URL = "$(DISCORD_URL)"
+          ./windows-build.ps1
         failOnStderr: false

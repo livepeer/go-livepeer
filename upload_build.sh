@@ -5,7 +5,7 @@
 set -e
 set -o nounset
 
-if [[ $(uname) == *"MSYS2_NT"* ]]; then
+if [[ $(uname) == *"MSYS"* ]]; then
   ARCH="windows"
   EXT=".exe"
 else
@@ -30,10 +30,11 @@ cp ./livepeer_cli${EXT} $BASE
 # do a basic upload so we know if stuff's working prior to doing everything else
 if [[ $ARCH == "windows" ]]; then
   FILE=$BASE.zip
+  ls /mingw64/bin/
   # This list was produced by `ldd livepeer.exe`
   LIBS="libffi-6.dll libgcc_s_seh-1.dll libgmp-10.dll libgnutls-30.dll libhogweed-5.dll libiconv-2.dll libidn2-0.dll libintl-8.dll libnettle-7.dll libp11-kit-0.dll libtasn1-6.dll libunistring-2.dll libwinpthread-1.dll zlib1.dll"
   for LIB in $LIBS; do
-    cp -r /mingw64/bin/$LIB ./$BASE
+    cp -r /mingw64/bin/$LIB ./$BASE || echo "$LIB not found"
   done
   zip -r ./$FILE ./$BASE
 else
