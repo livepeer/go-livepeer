@@ -52,6 +52,7 @@ type BroadcastSessionsManager struct {
 	// Accessing or changing any of the below requires ownership of this mutex
 	sessLock *sync.Mutex
 
+	mid      core.ManifestID
 	sel      BroadcastSessionsSelector
 	sessMap  map[string]*BroadcastSession
 	numOrchs int // how many orchs to request at once
@@ -114,8 +115,8 @@ func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
 
 func (bsm *BroadcastSessionsManager) refreshSessions() {
 
-	glog.V(common.DEBUG).Info("Starting session refresh")
-	defer glog.V(common.DEBUG).Info("Ending session refresh")
+	glog.V(common.DEBUG).Info("Starting session refresh manifestID=", bsm.mid)
+	defer glog.V(common.DEBUG).Info("Ending session refresh manifestID=", bsm.mid)
 	bsm.sessLock.Lock()
 	if bsm.finished || bsm.refreshing {
 		bsm.sessLock.Unlock()
@@ -176,6 +177,7 @@ func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl cor
 	maxInflight := common.HTTPTimeout.Seconds() / SegLen.Seconds()
 	numOrchs := int(math.Min(poolSize, maxInflight*2))
 	bsm := &BroadcastSessionsManager{
+		mid:            params.mid,
 		sel:            sel,
 		sessMap:        make(map[string]*BroadcastSession),
 		createSessions: func() ([]*BroadcastSession, error) { return selectOrchestrator(node, params, pl, numOrchs) },
