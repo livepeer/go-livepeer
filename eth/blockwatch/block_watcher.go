@@ -121,7 +121,7 @@ func (w *Watcher) Watch(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			if err := w.pollNextBlock(); err != nil {
-				glog.Errorf("blockwatch.Watcher error encountered: %v", err)
+				glog.Errorf("blockwatch.Watcher error encountered - trying again on next polling interval err=%v", err)
 			}
 		}
 	}
@@ -199,7 +199,7 @@ func (w *Watcher) buildCanonicalChain(nextHeader *MiniHeader, events []*Event) (
 			// returned. This is expected to happen sometimes, and we simply return the events gathered so
 			// far and pick back up where we left off on the next polling interval.
 			if isUnknownBlockErr(err) {
-				glog.Infof("failed to get logs for block nextHeader=%v", nextHeader)
+				glog.V(5).Infof("missing logs for blockNumber=%v - fetching on next polling interval", nextHeader.Number)
 				return events, nil
 			}
 			return events, err
@@ -227,7 +227,7 @@ func (w *Watcher) buildCanonicalChain(nextHeader *MiniHeader, events []*Event) (
 	nextParentHeader, err := w.client.HeaderByHash(nextHeader.Parent)
 	if err != nil {
 		if err == ethereum.NotFound {
-			glog.Infof("block header not found blockHash=%v", nextHeader.Parent.Hex())
+			glog.V(5).Infof("block header not found blockHash=%v - fetching on next polling interval", nextHeader.Parent.Hex())
 			// Noop and wait next polling interval. We remove the popped blocks
 			// and refetch them on the next polling interval.
 			return events, nil
@@ -245,7 +245,7 @@ func (w *Watcher) buildCanonicalChain(nextHeader *MiniHeader, events []*Event) (
 		// returned. This is expected to happen sometimes, and we simply return the events gathered so
 		// far and pick back up where we left off on the next polling interval.
 		if isUnknownBlockErr(err) {
-			glog.Infof("failed to get logs for block nextHeader=%v", nextHeader)
+			glog.V(5).Infof("missing logs for blockNumber=%v - fetching on next polling interval", nextHeader.Number)
 			return events, nil
 		}
 		return events, err
