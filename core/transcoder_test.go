@@ -72,6 +72,44 @@ func TestNvidiaTranscoder(t *testing.T) {
 	}
 }
 
+func TestVaapiTranscoder(t *testing.T) {
+	tmp, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(tmp)
+	tc := NewVaapiTranscoder("123,456", tmp)
+	ffmpeg.InitFFmpeg()
+
+	// test device selection
+	// TODO
+
+	// test.ts sample isn't in a supported pixel format, so use this instead
+	fname := "test2.ts"
+
+	// transcoding should fail due to invalid devices
+	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
+	_, err := tc.Transcode("", fname, profiles)
+	if err == nil ||
+		(err.Error() != "Invalid argument") {
+		t.Error(err)
+	}
+
+	dev := os.Getenv("VA_DEVICE")
+	if dev == "" {
+		t.Skip("No device specified; skipping remainder of Vaapi tests")
+		return
+	}
+	tc = NewVaapiTranscoder(dev, tmp)
+	res, err := tc.Transcode("", fname, profiles)
+	if err != nil {
+		t.Error(err)
+	}
+	if Over1Pct(len(res.Segments[0].Data), 365984) {
+		t.Errorf("Wrong data %v", len(res.Segments[0].Data))
+	}
+	if Over1Pct(len(res.Segments[1].Data), 554548) {
+		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
+	}
+}
+
 func TestResToTranscodeData(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

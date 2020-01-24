@@ -91,6 +91,42 @@ func (nv *NvidiaTranscoder) Stop() {
 	nv.session.StopTranscoder()
 }
 
+type VaapiTranscoder struct {
+	workDir string
+	device  string
+	session *ffmpeg.Transcoder
+}
+
+func (va *VaapiTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+	// Set up in / out config
+	in := &ffmpeg.TranscodeOptionsIn{
+		Fname:  fname,
+		Accel:  ffmpeg.VAAPI,
+		Device: va.device,
+	}
+	opts := profilesToTranscodeOptions(va.workDir, ffmpeg.VAAPI, profiles)
+
+	// Do the Transcoding
+	res, err := va.session.Transcode(in, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return resToTranscodeData(res, opts)
+}
+
+func NewVaapiTranscoder(gpu string, workDir string) TranscoderSession {
+	return &VaapiTranscoder{
+		workDir: workDir,
+		device:  gpu,
+		session: ffmpeg.NewTranscoder(),
+	}
+}
+
+func (va *VaapiTranscoder) Stop() {
+	va.session.StopTranscoder()
+}
+
 func parseURI(uri string) (string, uint64, error) {
 	var mid string
 	var seqNo uint64
