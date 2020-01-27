@@ -250,6 +250,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 
 func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, error) {
 
+	rtmpStrm := cxn.stream
 	nonce := cxn.nonce
 	cpl := cxn.pl
 	mid := cxn.mid
@@ -294,6 +295,14 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		if urls, err := transcodeSegment(cxn, seg, name, sv); err == nil {
 			return urls, nil
 		}
+
+		if shouldStopStream(err) {
+			glog.Warningf("Stopping current stream due to: %v", err)
+			rtmpStrm.Close()
+			return nil, err
+		}
+
+		// recoverable error, retry
 	}
 }
 

@@ -821,6 +821,14 @@ func TestCleanStreamPrefix(t *testing.T) {
 	}
 }
 
+func TestShouldStopStream(t *testing.T) {
+	assert := assert.New(t)
+	ok := shouldStopStream(fmt.Errorf("some random error string"))
+	assert.False(ok)
+	ok = shouldStopStream(pm.ErrSenderValidation{})
+	assert.True(ok)
+}
+
 func TestParseManifestID(t *testing.T) {
 	checkMid := func(inp string, exp string) {
 		mid := parseManifestID(inp)

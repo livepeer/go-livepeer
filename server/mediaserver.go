@@ -27,6 +27,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -801,4 +802,9 @@ func (s *LivepeerServer) LatestPlaylist() core.PlaylistManager {
 		return nil
 	}
 	return cxn.pl
+}
+
+func shouldStopStream(err error) bool {
+	_, ok := err.(pm.ErrSenderValidation)
+	return ok
 }
