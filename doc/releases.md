@@ -18,25 +18,24 @@ This is the only branch that receives proper semver updates; all releases should
 
 ### Cutting a mainnet release of go-livepeer
 
-This process will vary somewhat based on the particular states of the branches, whether we're doing a hotfix, etc. But the overall steps are the same. First, merge changes into the mainnet branch and make the release commit:
+This process will vary somewhat based on the particular states of the branches, whether we're doing a hotfix, etc. But the overall steps are the same. First, make the release commit on a branch:
 
 ```bash
-git checkout mainnet
-git merge --ff-only rinkeby
+git checkout -b v0.5.2 
 echo -n '0.5.2' > VERSION
 git commit -am 'release v0.5.2'
-git push --atomic origin mainnet v0.5.2
+git push --atomic origin v0.5.2 v0.5.2
 ```
 
-Then, merge that version bump back to rinkeby and master:
+Merge the release commit into master via PR. Then, merge the version bump into rinkeby and mainnet:
 
 ```bash
 git checkout rinkeby
-git merge --ff-only mainnet
+git merge --ff-only master 
 git push origin rinkeby
-git checkout master
-git merge --ff-only mainnet
-git push origin master
+git checkout mainnet
+git merge --ff-only rinkeby 
+git push origin mainnet 
 ```
 
 If there's different commits on those branches then we'd omit the --ff-only flag, but the cleanest possible scenario after a mainnet release is that all three branches are pointed at the same ref.
