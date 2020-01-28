@@ -76,7 +76,13 @@ func (r *stubStakeReader) Stakes(addrs []ethcommon.Address) (map[ethcommon.Addre
 	if r.err != nil {
 		return nil, r.err
 	}
-	return r.stakes, nil
+
+	stakes := make(map[ethcommon.Address]int64)
+	for _, addr := range addrs {
+		stakes[addr] = r.stakes[addr]
+	}
+
+	return stakes, nil
 }
 
 func (r *stubStakeReader) SetStakes(stakes map[ethcommon.Address]int64) {
@@ -315,25 +321,48 @@ func TestMinLSSelector_SelectUnknownSession_UniformWeights(t *testing.T) {
 	}
 }
 
-func TestMinLSSelector_SelectUnknownSession_MissingStake(t *testing.T) {
+func TestMinLSSelector_SelectUnknownSession_AllMissingStake(t *testing.T) {
 	assert := assert.New(t)
 
 	stakeRdr := newStubStakeReader()
 	sel := NewMinLSSelector(stakeRdr, 1.0)
 
-	// Initialize stake reader with empty stake map
+	// Initialize stake reader with empty stake map so all sessions are missing stake
 	stakeRdr.SetStakes(make(map[ethcommon.Address]int64))
 
-	sess := &BroadcastSession{
-		OrchestratorInfo: &net.OrchestratorInfo{
-			TicketParams: &net.TicketParams{Recipient: []byte("foo")},
-		},
-	}
-	sel.Add([]*BroadcastSession{sess})
+	sess1 := StubBroadcastSession("")
+	sess1.OrchestratorInfo.TicketParams = &net.TicketParams{Recipient: []byte("foo")}
+	sess2 := StubBroadcastSession("")
+	sess2.OrchestratorInfo.TicketParams = &net.TicketParams{Recipient: []byte("bar")}
 
-	assert.Nil(sel.Select())
-	// Check that the session was removed because its stake was missing
-	assert.Empty(sel.unknownSessions)
+	sel.Add([]*BroadcastSession{sess1, sess2})
+
+	// The stake weight of both sessions defaults to 0 so they should be selected in the order that they were added
+	assert.Same(sess1, sel.Select())
+	assert.Same(sess2, sel.Select())
+}
+
+func TestMinLSSelector_SelectUnknownSession_SomeMissingStake(t *testing.T) {
+	assert := assert.New(t)
+
+	stakeRdr := newStubStakeReader()
+	sel := NewMinLSSelector(stakeRdr, 1.0)
+
+	sess1 := StubBroadcastSession("")
+	sess1.OrchestratorInfo.TicketParams = &net.TicketParams{Recipient: []byte("foo")}
+	addr2 := ethcommon.BytesToAddress([]byte("bar"))
+	sess2 := StubBroadcastSession("")
+	sess2.OrchestratorInfo.TicketParams = &net.TicketParams{Recipient: addr2.Bytes()}
+
+	sel.Add([]*BroadcastSession{sess1, sess2})
+
+	// Initialize stake reader so that some sessions are missing stake
+	stakeMap := map[ethcommon.Address]int64{addr2: 100}
+	stakeRdr.SetStakes(stakeMap)
+
+	// The stake weight of sess1 defaults to 0 so sess2 should always be selected first
+	assert.Same(sess2, sel.Select())
+	assert.Same(sess1, sel.Select())
 }
 
 func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
