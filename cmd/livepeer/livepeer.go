@@ -151,7 +151,8 @@ func main() {
 	benchSimInc := flag.Int("bench-sim-inc", 1, "How much to increase number of simultaneous transcodes in each next test")
 	benchSources := flag.String("bench-sources", "", "Video sources to use, comma separated")
 	benchProfiles := flag.String("bench-profiles", "", "Profiles to use, comma separated")
-	benchSegmenting := flag.Bool("bench-segmenting", false, "Segmenit input file and transcode each segment separately")
+	benchSegmenting := flag.Bool("bench-segmenting", false, "Segment input file and transcode each segment separately")
+	benchIgnoreErrors := flag.Bool("bench-ignore-errors", false, "Ignore transcoding errors")
 	_ = flag.String("config", "", "config file (optional)")
 
 	ff.Parse(flag.CommandLine, os.Args[1:],
@@ -176,7 +177,7 @@ func main() {
 			glog.Fatalf("Unknown benchmark suite.")
 			return
 		}
-		benchmark.StartThroughput(*nvidia, *benchRepeats, *benchMinSim, *benchMaxSim, *benchSimInc, *benchSources, *benchProfiles, *benchSegmenting)
+		benchmark.StartThroughput(*nvidia, *benchRepeats, *benchMinSim, *benchMaxSim, *benchSimInc, *benchSources, *benchProfiles, *benchSegmenting, *benchIgnoreErrors)
 		return
 	}
 

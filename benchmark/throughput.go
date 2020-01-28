@@ -112,6 +112,7 @@ type (
 		results          benchmarkResultsArray
 		mux              sync.Mutex
 		doSegmenting     bool
+		ignoreErrors     bool
 	}
 
 	benchmarkResults struct {
@@ -138,7 +139,7 @@ type (
 )
 
 // StartThroughput starts the benchmark
-func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSimultaneous, _simInc int, sources, profiles string, doSegmenting bool) {
+func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSimultaneous, _simInc int, sources, profiles string, doSegmenting, ignoreErrors bool) {
 	glog.Infof("Starting throughput benchmark repeatsNumber: %d min simultaneous: %d max simultaneous: %d simInc: %d sources %s", _repeatsNumber, _minSimultaneous,
 		_maxSimultaneous, _simInc, sources)
 
@@ -210,7 +211,7 @@ func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSi
 					if u < len(devices) {
 						device = devices[u]
 					}
-					benchmarkers = append(benchmarkers, newBenchmarker(accel, profiles, sourceFileName, device, workDir, currentSimGPUS, doSegmenting))
+					benchmarkers = append(benchmarkers, newBenchmarker(accel, profiles, sourceFileName, device, workDir, currentSimGPUS, doSegmenting, ignoreErrors))
 				}
 				glog.Infof("Number of benchmarkers: %d", len(benchmarkers))
 				for simNum := minSimultaneous; simNum <= maxSimultaneous; simNum += simInc {
@@ -249,7 +250,9 @@ func StartThroughput(rawDevices string, _repeatsNumber, _minSimultaneous, _maxSi
 	fmt.Println(strings.Join(csvResults, "\n"))
 }
 
-func doOneTranscode(accel ffmpeg.Acceleration, sourceFileName, device, workDir string, profiles []ffmpeg.VideoProfile, simultaneousTranscodes int, doSegmenting bool) benchmarkResults {
+func doOneTranscode(accel ffmpeg.Acceleration, sourceFileName, device, workDir string, profiles []ffmpeg.VideoProfile, simultaneousTranscodes int,
+	doSegmenting, ignoreErorrs bool) benchmarkResults {
+
 	stats, err := os.Stat(sourceFileName)
 	if err != nil {
 		glog.Fatal(err)
@@ -307,6 +310,11 @@ func doOneTranscode(accel ffmpeg.Acceleration, sourceFileName, device, workDir s
 				took := time.Since(s)
 				os.Remove(in.Fname)
 				if e != nil {
+					if ignoreErorrs {
+						transcoder.StopTranscoder()
+						transcoder = ffmpeg.NewTranscoder()
+						continue
+					}
 					doneChan <- e
 					return
 				}
@@ -464,7 +472,7 @@ func (br *benchmarkResults) calc() {
 	}
 }
 
-func newBenchmarker(acceleration ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, sourceFileName, device, workDir string, simGPUs int, doSegmenting bool) *benchmarker {
+func newBenchmarker(acceleration ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, sourceFileName, device, workDir string, simGPUs int, doSegmenting, ignoreErrors bool) *benchmarker {
 	p := make([]ffmpeg.VideoProfile, len(profiles))
 	copy(p, profiles)
 	return &benchmarker{
@@ -475,6 +483,7 @@ func newBenchmarker(acceleration ffmpeg.Acceleration, profiles []ffmpeg.VideoPro
 		workDir:          workDir,
 		simultaneousGPUs: simGPUs,
 		doSegmenting:     doSegmenting,
+		ignoreErrors:     ignoreErrors,
 	}
 }
 
@@ -485,7 +494,7 @@ func (bm *benchmarker) Start(simultaneously int, wg *sync.WaitGroup) {
 		bm.sourceFileName, profiles2str(bm.profiles))
 	for stream := 0; stream < simultaneously; stream++ {
 		go func(iStream int) {
-			benchRes := doOneTranscode(bm.acceleration, bm.sourceFileName, bm.device, bm.workDir, bm.profiles, simultaneously, bm.doSegmenting)
+			benchRes := doOneTranscode(bm.acceleration, bm.sourceFileName, bm.device, bm.workDir, bm.profiles, simultaneously, bm.doSegmenting, bm.ignoreErrors)
 			benchRes.SimultaneousGPUs = bm.simultaneousGPUs
 			glog.Infof("Benchmark results (stream %d device %s):", iStream, bm.device)
 			glog.Info(benchRes.String())
