@@ -30,4 +30,9 @@ if [[ $HIGHEST_CHAIN_TAG == "mainnet" ]]; then
     echo "disallowing mainnet release without semver tag; $generatedVersion != $definedVersion"
     exit 1
   fi
+else
+  if [[ $generatedVersion == $definedVersion ]]; then
+    echo "disallowing semver tag release $generatedVersion on branch '$branch', should be 'mainnet'"
+    exit 1
+  fi
 fi

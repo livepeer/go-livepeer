@@ -54,12 +54,20 @@ contentType="application/x-compressed-tar"
 dateValue=`date -R`
 stringToSign="PUT\n\n${contentType}\n${dateValue}\n${resource}"
 signature=`echo -en ${stringToSign} | openssl sha1 -hmac ${GCLOUD_SECRET} -binary | base64`
+fullUrl="https://storage.googleapis.com${resource}"
+
+# Failsafe - don't overwrite existing uploads!
+if curl --head --fail $fullUrl 2>/dev/null; then
+  echo "$fullUrl already exists, not overwriting!"
+  exit 1
+fi
+
 curl -X PUT -T "${FILE}" \
   -H "Host: storage.googleapis.com" \
   -H "Date: ${dateValue}" \
   -H "Content-Type: ${contentType}" \
   -H "Authorization: AWS ${GCLOUD_KEY}:${signature}" \
-  https://storage.googleapis.com${resource}
+  $fullUrl
 
 curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION/${FILE}\"}" $DISCORD_URL 2>/dev/null
 echo "done"
