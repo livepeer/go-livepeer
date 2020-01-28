@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/big"
 	"math/rand"
 	"mime/multipart"
 	"net/http"
@@ -28,6 +27,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -374,24 +374,6 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*rtmpConnection, error) {
 	nonce := rand.Uint64()
-
-	// If running in on-chain mode, check for a reasonable deposit
-	if s.LivepeerNode.Eth != nil {
-		info, err := s.LivepeerNode.Eth.GetSenderInfo(s.LivepeerNode.Eth.Account().Address)
-		if err != nil {
-			return nil, err
-		}
-
-		if info.Deposit.Cmp(big.NewInt(0)) <= 0 {
-			glog.Errorf("No deposit - cannot start broadcast session")
-
-			if monitor.Enabled {
-				monitor.StreamCreateFailed(nonce, "LowDeposit")
-			}
-
-			return nil, errLowDeposit
-		}
-	}
 
 	// Set up the connection tracking
 	params := streamParams(rtmpStrm)
@@ -820,4 +802,9 @@ func (s *LivepeerServer) LatestPlaylist() core.PlaylistManager {
 		return nil
 	}
 	return cxn.pl
+}
+
+func shouldStopStream(err error) bool {
+	_, ok := err.(pm.ErrSenderValidation)
+	return ok
 }

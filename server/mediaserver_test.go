@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -16,10 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts"
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/common"
-	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -697,42 +693,9 @@ func TestRegisterConnection(t *testing.T) {
 	mid := core.SplitStreamIDString(t.Name()).ManifestID
 	strm := stream.NewBasicRTMPVideoStream(&streamParameters{mid: mid})
 
-	// Switch to on-chain mode
-	c := &eth.MockClient{}
-	addr := ethcommon.Address{}
-	s.LivepeerNode.Eth = c
-
-	// Should return an error if in on-chain mode and fail to get sender deposit
-	c.On("Account").Return(accounts.Account{Address: addr})
-	c.On("GetSenderInfo", addr).Return(nil, errors.New("GetSenderInfo error")).Once()
-
-	_, err := s.registerConnection(strm)
-	assert.Equal("GetSenderInfo error", err.Error())
-
-	// Should return an error if in on-chain mode and sender deposit is 0
-	info := &pm.SenderInfo{
-		Deposit: big.NewInt(0),
-	}
-	c.On("GetSenderInfo", addr).Return(info, nil).Once()
-
-	_, err = s.registerConnection(strm)
-	assert.Equal(errLowDeposit, err)
-
-	// Remove node storage
-	drivers.NodeStorage = nil
-
-	// Should return a different error if in on-chain mode and sender deposit > 0
-	info.Deposit = big.NewInt(1)
-	c.On("GetSenderInfo", addr).Return(info, nil).Once()
-
-	_, err = s.registerConnection(strm)
-	assert.NotEqual(errLowDeposit, err)
-
-	// Switch to off-chain mode
-	s.LivepeerNode.Eth = nil
-
 	// Should return an error if missing node storage
-	_, err = s.registerConnection(strm)
+	drivers.NodeStorage = nil
+	_, err := s.registerConnection(strm)
 	assert.Equal(err, errStorage)
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 
@@ -856,6 +819,14 @@ func TestCleanStreamPrefix(t *testing.T) {
 	if str != "abc def" {
 		t.Error("Unexpected value after prefix cleaning; got ", str)
 	}
+}
+
+func TestShouldStopStream(t *testing.T) {
+	assert := assert.New(t)
+	ok := shouldStopStream(fmt.Errorf("some random error string"))
+	assert.False(ok)
+	ok = shouldStopStream(pm.ErrSenderValidation{})
+	assert.True(ok)
 }
 
 func TestParseManifestID(t *testing.T) {
