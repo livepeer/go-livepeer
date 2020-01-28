@@ -126,6 +126,17 @@ func (pm *stubPlaylistManager) GetOSSession() drivers.OSSession {
 
 func (pm *stubPlaylistManager) Cleanup() {}
 
+type stubSelector struct {
+	sess *BroadcastSession
+	size int
+}
+
+func (s *stubSelector) Add(sessions []*BroadcastSession) {}
+func (s *stubSelector) Complete(sess *BroadcastSession)  {}
+func (s *stubSelector) Select() *BroadcastSession        { return s.sess }
+func (s *stubSelector) Size() int                        { return s.size }
+func (s *stubSelector) Clear()                           {}
+
 func TestStopSessionErrors(t *testing.T) {
 
 	// check error cases
@@ -258,6 +269,14 @@ func TestSelectSession(t *testing.T) {
 	assert.Len(bsm.sessMap, 1)
 
 	// XXX check refresh condition more precisely - currently numOrchs / 2
+}
+
+func TestSelectSession_NilSession(t *testing.T) {
+	bsm := StubBroadcastSessionsManager()
+	// Replace selector with stubSelector that will return nil for Select(), but 1 for Size()
+	bsm.sel = &stubSelector{size: 1}
+
+	assert.Nil(t, bsm.selectSession())
 }
 
 func TestRemoveSession(t *testing.T) {

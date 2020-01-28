@@ -190,12 +190,7 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 	// The greater the stake weight of a session, the more likely that it will be selected because subtracting its stake weight from r
 	// will result in a value <= 0
 	for i, sess := range s.unknownSessions {
-		// If we could not fetch the stake weight for addrs[i] then skip and remove its session
-		if _, ok := stakes[addrs[i]]; !ok {
-			s.removeUnknownSession(i)
-			continue
-		}
-
+		// If we could not fetch the stake weight for addrs[i] then its stake weight defaults to 0
 		r -= stakes[addrs[i]]
 
 		if r <= 0 {

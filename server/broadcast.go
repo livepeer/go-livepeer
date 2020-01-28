@@ -76,6 +76,11 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 	}
 	for checkSessions(bsm) {
 		sess := bsm.sel.Select()
+		// Handle the case where there is an error during selection and Select() returns nil when session list length > 0
+		if sess == nil {
+			return nil
+		}
+
 		if _, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
 			return sess
 		}
