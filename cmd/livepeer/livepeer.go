@@ -639,6 +639,20 @@ func main() {
 
 		bcast := core.NewBroadcaster(n)
 
+		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
+		// Right now we rely on the DBOrchestratorPoolCache constructor to do this. Consider separating the logic
+		// caching/polling from the logic for fetching orchestrators during discovery
+		if *network != "offchain" {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, roundsWatcher)
+			if err != nil {
+				glog.Errorf("Could not create orchestrator pool with DB cache: %v", err)
+			}
+
+			n.OrchestratorPool = dbOrchPoolCache
+		}
+
 		// Set up orchestrator discovery
 		if *orchWebhookURL != "" {
 			whurl, err := validateURL(*orchWebhookURL)
@@ -649,17 +663,8 @@ func main() {
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
 		} else if len(orchURLs) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs)
-		} else if *network != "offchain" {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, roundsWatcher)
-
-			if err != nil {
-				glog.Errorf("Could not create orchestrator pool with DB cache: %v", err)
-			}
-
-			n.OrchestratorPool = dbOrchPoolCache
 		}
+
 		if n.OrchestratorPool == nil {
 			// Not a fatal error; may continue operating in segment-only mode
 			glog.Error("No orchestrator specified; transcoding will not happen")
