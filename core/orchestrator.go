@@ -20,6 +20,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
@@ -175,7 +176,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			tsp.SenderNonce,
 		)
 
-		glog.V(common.DEBUG).Infof("Receiving ticket manifestID=%v faceValue=%v winProb=%v ev=%v", manifestID, ticket.FaceValue, ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
+		glog.V(common.DEBUG).Infof("Receiving ticket manifestID=%v faceValue=%v winProb=%v ev=%v", manifestID, eth.FormatUnits(ticket.FaceValue, "ETH"), ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
 
 		_, won, err := orch.node.Recipient.ReceiveTicket(
 			ticket,

@@ -15,6 +15,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -634,6 +635,16 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 		}
 
 		protoPayment.TicketSenderParams = senderParams
+
+		ratPrice, _ := ratPriceInfo(protoPayment.ExpectedPrice)
+		glog.V(common.VERBOSE).Infof("Created new payment - manifestID=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v",
+			sess.ManifestID,
+			batch.Recipient.Hex(),
+			eth.FormatUnits(batch.FaceValue, "ETH"),
+			batch.WinProbRat().FloatString(10),
+			ratPrice.FloatString(3)+" wei/pixel",
+			numTickets,
+		)
 	}
 
 	data, err := proto.Marshal(protoPayment)
