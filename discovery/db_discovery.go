@@ -99,13 +99,23 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 	pred := func(info *net.OrchestratorInfo) bool {
 
 		if err := dbo.ticketParamsValidator.ValidateTicketParams(pmTicketParams(info.TicketParams)); err != nil {
+			glog.V(common.DEBUG).Infof("invalid ticket params - orch=%v err=%v",
+				info.GetTranscoder(),
+				err,
+			)
 			return false
 		}
 
 		// check if O's price is below B's max price
-		price := server.BroadcastCfg.MaxPrice()
-		if price != nil {
-			return big.NewRat(info.PriceInfo.PricePerUnit, info.PriceInfo.PixelsPerUnit).Cmp(price) <= 0
+		maxPrice := server.BroadcastCfg.MaxPrice()
+		price := big.NewRat(info.PriceInfo.PricePerUnit, info.PriceInfo.PixelsPerUnit)
+		if maxPrice != nil && price.Cmp(maxPrice) > 0 {
+			glog.V(common.DEBUG).Infof("orchestrator's price is too high - orch=%v price=%v wei/pixel maxPrice=%v wei/pixel",
+				info.GetTranscoder(),
+				price.FloatString(3),
+				maxPrice.FloatString(3),
+			)
+			return false
 		}
 		return true
 	}
