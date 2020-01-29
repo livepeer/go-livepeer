@@ -43,6 +43,11 @@ type TicketParams struct {
 	Seed *big.Int
 }
 
+// WinProbRat returns the ticket WinProb as a percentage represented as a big.Rat
+func (p *TicketParams) WinProbRat() *big.Rat {
+	return winProbRat(p.WinProb)
+}
+
 // TicketExpirationParams indicates when/how a ticket expires
 type TicketExpirationParams struct {
 	CreationRound int64
@@ -142,7 +147,7 @@ func (t *Ticket) EV() *big.Rat {
 
 // WinProbRat returns the ticket WinProb as a percentage represented as a big.Rat
 func (t *Ticket) WinProbRat() *big.Rat {
-	return new(big.Rat).SetFrac(t.WinProb, maxWinProb)
+	return winProbRat(t.WinProb)
 }
 
 // Hash returns the keccak-256 hash of the ticket's fields as tightly packed
@@ -188,4 +193,8 @@ func (t *Ticket) flatten() []byte {
 
 func ticketEV(faceValue *big.Int, winProb *big.Int) *big.Rat {
 	return new(big.Rat).Mul(new(big.Rat).SetInt(faceValue), new(big.Rat).SetFrac(winProb, maxWinProb))
+}
+
+func winProbRat(winProb *big.Int) *big.Rat {
+	return new(big.Rat).SetFrac(winProb, maxWinProb)
 }
