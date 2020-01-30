@@ -694,13 +694,17 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	mw := multipart.NewWriter(w)
 	for i, url := range urls {
 		mw.SetBoundary(boundary)
-		typ, length := "video/MP2T", len(renditionData[i])
+		typ, ext, length := "video/MP2T", "ts", len(renditionData[i])
 		if length == 0 {
-			typ, length = "application/vnd+livepeer.uri", len(url)
+			typ, ext, length = "application/vnd+livepeer.uri", "txt", len(url)
 		}
+		profile := cxn.params.profiles[i].Name
+		fname := fmt.Sprintf(`"%s_%d.%s"`, profile, seq, ext)
 		hdrs := textproto.MIMEHeader{
-			"Content-Type":   {typ},
-			"Content-Length": {strconv.Itoa(length)},
+			"Content-Type":        {typ},
+			"Content-Length":      {strconv.Itoa(length)},
+			"Content-Disposition": {"attachment; filename=" + fname},
+			"Rendition-Name":      {profile},
 		}
 		fw, err := mw.CreatePart(hdrs)
 		if err != nil {
