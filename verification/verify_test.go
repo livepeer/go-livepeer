@@ -2,11 +2,15 @@ package verification
 
 import (
 	"errors"
+	"io/ioutil"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/lpms/ffmpeg"
 )
 
 type stubVerifier struct {
@@ -134,4 +138,63 @@ func TestVerify(t *testing.T) {
 	res, err = sv.Verify(&Params{ManifestID: "ghi", Results: data})
 	assert.Equal(err, verifier.err)
 	assert.Nil(res)
+}
+
+func TestPixels(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+
+	assert := assert.New(t)
+
+	p, err := Pixels("foo")
+	assert.EqualError(err, "No such file or directory")
+	assert.Equal(int64(0), p)
+
+	// Assume that ffmpeg.Transcode3() returns the correct pixel count so we just
+	// check that no error is returned
+	p, err = Pixels("test.flv")
+	assert.Nil(err)
+	assert.NotZero(p)
+}
+
+func TestVerifyPixels(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Create memory session and save a test file
+	bos := drivers.NewMemoryDriver(nil).NewSession("foo")
+	data, err := ioutil.ReadFile("test.flv")
+	require.Nil(err)
+	fname, err := bos.SaveData("test.ts", data)
+	require.Nil(err)
+
+	// Test error for relative URI and no memory storage if the file does not exist on disk
+	// Will try to use the relative URI to read the file from disk and fail
+	err = VerifyPixels(fname, nil, 50)
+	assert.EqualError(err, "No such file or directory")
+
+	// Test error for relative URI and local memory storage if the file does not exist in storage
+	// Will try to use the relative URI to read the file from storage and fail
+	err = VerifyPixels("/stream/bar/dne.ts", bos, 50)
+	assert.EqualError(err, "error fetching data from local memory storage")
+
+	// Test writing temp file for relative URI and local memory storage with incorrect pixels
+	err = VerifyPixels(fname, bos, 50)
+	assert.EqualError(err, "mismatch between calculated and reported pixels")
+
+	// Test writing temp file for relative URI and local memory storage with correct pixels
+	// Make sure that verifyPixels() checks against the output of pixels()
+	p, err := Pixels("test.flv")
+	require.Nil(err)
+	err = VerifyPixels(fname, bos, p)
+	assert.Nil(err)
+
+	// Test no writing temp file with incorrect pixels
+	err = VerifyPixels("test.flv", nil, 50)
+	assert.EqualError(err, "mismatch between calculated and reported pixels")
+
+	// Test no writing temp file with correct pixels
+	err = VerifyPixels("test.flv", nil, p)
+	assert.Nil(err)
 }
