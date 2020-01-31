@@ -92,28 +92,84 @@ into the Livepeer network. Upon ingest, HTTP stream is pushed to the segmenter
 prior to transcoding. The stream can be pushed via a PUT or POST HTTP request to the
 `/live/` endpoint. HTTP request timeout is 8 seconds.
 
-The following are expected in the request:
+The body of the request should be the binary data of the MPEG TS segment.
 
-* MPEG TS segments with segment numbers
+Two HTTP headers should be provided:
+  * `Content-Resolution` - in the format `widthxheight`, for example: `1920x1080`.
+  * `Content-Duration` - duration of the segment, in milliseconds. Should be an integer.
 
-* `Content-Resolution` and `Content-Duration` headers
+The upload URL should have this structure:
+http://broadcasters:8935/live/movie/12.ts
 
-* Stream name must be provided. In the examples below, the stream name is `movie`
+Where `movie` is name of the stream and `12` is the sequence number of the segment.
+
+The HLS manifest will be available at 
+http://broadcasters:8935/stream/movie.m3u8
+
+Possble statuses returned by HTTP request:
+- 500 Internal Server Error - in case there was error during segment's transcode
+- 503 Service Unavailable - if the broadcaster wasn't able to find an orchestrator to transcode the segment
+- 200 OK - if transcoded successfully. Returned only after transcode completed 
+
+Optionally, actual transcoded segments or URLs pointing to them can be returned in the response.
+If `multipart/mixed` specified in the `Accept` header, then `Content-Type` of the response will be set to `multipart/mixed`, and the body will consist of 'parts', according to [RFC1341](https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html). If external object storage is used by broadcaster, then each part will have `application/vnd+livepeer.uri` content type, and will contain URL for the transcoded segment. If no external object storage is used, then `Content-Type` of each part will be `video/MP2T`, and the body of the part will contain the actual transcoded segment.
+
+Each part will also contain these headers:
+- `Content-Length` - length of the part in bytes
+- `Rendition-Name` - profile name of the rendition, either as specified in broadcaster's configuration or as returned from webhook. For example - `P144p25fps16x9`
+- `Content-Disposition` will contain `attachment; filename="FILENAME"`. For example - `attachment; filename="P144p25fps16x9_12.ts"` or `attachment; filename="P144p25fps16x9_17.txt"`
+
+
 
 
 Sample URLs and requests:
 
 ```
 # Push URL
-http://localhost:8935/live/movie/
+http://localhost:8935/live/movie/12.ts
 
 # HLS Playback URL
 http://localhost:8935/stream/movie.m3u8
 
 # Curl request
-curl -X PUT -H "Content-Duration: 2000" -H "Content-Resolution: 1920x1080"  --data-binary
-"@bbb0.ts" http://localhost:8935/live/movie/bbb0.ts
+curl -X PUT -H "Accept: multipart/mixed" -H "Content-Duration: 2000" -H "Content-Resolution: 1920x1080"  --data-binary "@bbb0.ts" http://localhost:8935/live/movie/0.ts
 
 # FFMPEG request
 ffmpeg -re -i movie.mp4 -c:a copy -c:v copy -f hls http://localhost:8935/live/movie/
+```
+
+Exapmle responses:
+
+```
+HTTP/1.1 200 OK
+Content-Type: multipart/mixed; boundary=2f8514cee02991b34c00
+Date: Fri, 31 Jan 2020 00:02:22 GMT
+Transfer-Encoding: chunked
+
+--2f8514cee02991b34c00
+Content-Disposition: attachment; filename="P240p30fps16x9_10.txt"
+Content-Length: 34
+Content-Type: application/vnd+livepeer.uri
+Rendition-Name: P240p30fps16x9
+
+https://external.storage/stream/movie/P240p30fps16x9/10.ts
+--2f8514cee02991b34c00--
+```
+
+```
+HTTP/1.1 200 OK
+Content-Type: multipart/mixed; boundary=94eaf473f7957940e066
+Date: Fri, 31 Jan 2020 00:04:40 GMT
+Transfer-Encoding: chunked
+
+--94eaf473f7957940e066
+Content-Disposition: attachment; filename="P240p30fps16x9_10.ts"
+Content-Length: 105656
+Content-Type: video/MP2T
+Rendition-Name: P240p30fps16x9^M
+
+Binary data here
+
+--94eaf473f7957940e066--
+
 ```
