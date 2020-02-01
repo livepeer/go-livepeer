@@ -8,9 +8,9 @@ import (
 	"os"
 	"sort"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 
 	"github.com/livepeer/lpms/ffmpeg"
@@ -107,8 +107,8 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	// TODO sig checking; extract from broadcast.go
 
 	if sv.policy.Verifier == nil {
-		// check if the node is on-chain mode
-		if params != nil && params.Orchestrator != nil && params.Orchestrator.TicketParams != nil {
+		if err := verifyPixelParams(params); err != ErrPixelsAbsent {
+			return nil, err
 		}
 		return nil, nil
 	}
@@ -122,10 +122,7 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 			// TODO make allowances for the verification algos not doing
 			//      pixel counts themselves; adapt broadcast.go verifyPixels
 
-			// check if the node is on-chain mode
-			if params != nil && params.Orchestrator != nil && params.Orchestrator.TicketParams != nil {
-			}
-			err = ErrPixelsAbsent
+			err = verifyPixelParams(params)
 		}
 		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(res.Pixels); i++ {
 			reportedPixels := params.Results.Segments[i].Pixels
@@ -167,12 +164,43 @@ func IsRetryable(err error) bool {
 	return retryable
 }
 
-func VerifyPixels(fname string, bos drivers.OSSession, reportedPixels int64) error {
+func verifyPixelParams(params *Params) error {
+	// check if the node is on-chain mode
+	if params != nil &&
+		params.Orchestrator != nil &&
+		params.Orchestrator.TicketParams != nil {
+
+		var err error
+		for i := 0; err == nil && i < len(params.Results.Segments); i++ {
+			if err := verifyPixels(
+				params.Results.Segments[i].Url,
+				flatten(params.Renditions),
+				params.Results.Segments[i].Pixels); err != nil {
+
+				glog.Error(err)
+				return ErrPixelMismatch
+			}
+		}
+		return nil
+
+	}
+	return ErrPixelsAbsent
+}
+
+func flatten(s [][]byte) (r []byte) {
+	for _, e := range s {
+		for _, f := range e {
+			r = append(r, f)
+		}
+	}
+	return
+}
+
+func verifyPixels(fname string, data []byte, reportedPixels int64) error {
 	uri, err := url.ParseRequestURI(fname)
-	memOS, ok := bos.(*drivers.MemorySession)
 	// If the filename is a relative URI and the broadcaster is using local memory storage
-	// fetch the data and write it to a temp file
-	if err == nil && !uri.IsAbs() && ok {
+	// write the data to a temp file
+	if err == nil && !uri.IsAbs() && data != nil {
 		tempfile, err := ioutil.TempFile("", common.RandName())
 		if err != nil {
 			return fmt.Errorf("error creating temp file for pixels verification: %v", err)
@@ -180,12 +208,7 @@ func VerifyPixels(fname string, bos drivers.OSSession, reportedPixels int64) err
 		defer os.Remove(tempfile.Name())
 		defer tempfile.Close()
 
-		data := memOS.GetData(fname)
-		if data == nil {
-			return errors.New("error fetching data from local memory storage")
-		}
-
-		if _, err := tempfile.Write(memOS.GetData(fname)); err != nil {
+		if _, err := tempfile.Write(data); err != nil {
 			return fmt.Errorf("error writing temp file for pixels verification: %v", err)
 		}
 
@@ -198,7 +221,7 @@ func VerifyPixels(fname string, bos drivers.OSSession, reportedPixels int64) err
 	}
 
 	if p != reportedPixels {
-		return errors.New("mismatch between calculated and reported pixels")
+		return ErrPixelMismatch
 	}
 
 	return nil

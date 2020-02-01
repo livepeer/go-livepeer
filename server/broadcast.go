@@ -421,17 +421,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			segHashLock.Unlock()
 		}
 
-		// If running in on-chain mode, run pixels verification asynchronously
-		// Only run if a verifier is not being used
-		if sess.Sender != nil && verifier == nil {
-			go func() {
-				if err := verification.VerifyPixels(url, sess.BroadcasterOS, pixels); err != nil {
-					glog.Error(err)
-					cxn.sessManager.removeSession(sess)
-				}
-			}()
-		}
-
 		// Store URLs for the verifier. Be aware that the segment is
 		// already within object storage  at this point, whether local or
 		// external. If a client were to ignore the playlist and
