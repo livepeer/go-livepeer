@@ -19,6 +19,8 @@ var errInsufficientSenderReserve = errors.New("insufficient sender reserve")
 // maxWinProb = 2^256 - 1
 var maxWinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
 
+var paramsExpirationBlock = big.NewInt(5)
+
 // Recipient is an interface which describes an object capable
 // of receiving tickets
 type Recipient interface {
@@ -76,7 +78,7 @@ type recipient struct {
 	store  TicketStore
 	gpm    GasPriceMonitor
 	sm     SenderMonitor
-	em     ErrorMonitor
+	tm     TimeManager
 
 	addr   ethcommon.Address
 	secret [32]byte
@@ -93,7 +95,7 @@ type recipient struct {
 
 // NewRecipient creates an instance of a recipient with an
 // automatically generated random secret
-func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, em ErrorMonitor, cfg TicketParamsConfig) (Recipient, error) {
+func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, tm TimeManager, cfg TicketParamsConfig) (Recipient, error) {
 	randBytes := make([]byte, 32)
 	if _, err := rand.Read(randBytes); err != nil {
 		return nil, err
@@ -102,20 +104,20 @@ func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, store Ti
 	var secret [32]byte
 	copy(secret[:], randBytes[:32])
 
-	return NewRecipientWithSecret(addr, broker, val, store, gpm, sm, em, secret, cfg), nil
+	return NewRecipientWithSecret(addr, broker, val, store, gpm, sm, tm, secret, cfg), nil
 }
 
 // NewRecipientWithSecret creates an instance of a recipient with a user provided
 // secret. In most cases, NewRecipient should be used instead which will
 // automatically generate a random secret
-func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, em ErrorMonitor, secret [32]byte, cfg TicketParamsConfig) Recipient {
+func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, store TicketStore, gpm GasPriceMonitor, sm SenderMonitor, tm TimeManager, secret [32]byte, cfg TicketParamsConfig) Recipient {
 	return &recipient{
 		broker:       broker,
 		val:          val,
 		store:        store,
 		gpm:          gpm,
 		sm:           sm,
-		em:           em,
+		tm:           tm,
 		addr:         addr,
 		secret:       secret,
 		senderNonces: make(map[string]uint32),
@@ -136,7 +138,7 @@ func (r *recipient) Stop() {
 
 // ReceiveTicket validates and processes a received ticket
 func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (string, bool, error) {
-	recipientRand := r.rand(seed, ticket.Sender)
+	recipientRand := r.rand(seed, ticket.Sender, ticket.FaceValue, ticket.WinProb, ticket.ParamsExpirationBlock, ticket.PricePerPixel)
 
 	// If sender validation check fails, abort
 	if err := r.sm.ValidateSender(ticket.Sender); err != nil {
@@ -159,7 +161,13 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 		}
 	}
 
-	return sessionID, won, r.acceptTicket(ticket, sig, recipientRand)
+	// check advertised params aren't expired
+	latestBlock := r.tm.LastSeenBlock()
+	if ticket.ParamsExpirationBlock.Cmp(latestBlock) > 0 {
+		return sessionID, won, errTicketParamsExpired
+	}
+
+	return sessionID, won, nil
 }
 
 // RedeemWinningTicket redeems all winning tickets with the broker
@@ -171,9 +179,8 @@ func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 	}
 
 	for i := 0; i < len(tickets); i++ {
-		if err := r.redeemWinningTicket(tickets[i], sigs[i], recipientRands[i]); err != nil {
-			return err
-		}
+		r.sm.QueueTicket(tickets[i].Sender, &SignedTicket{tickets[i], sigs[i], recipientRands[i]})
+		glog.Infof("Queued ticket sender=%x recipientRandHash=%x senderNonce=%v", tickets[i].Sender.Hex(), tickets[i].RecipientRandHash.Hex(), tickets[i].SenderNonce)
 	}
 
 	return nil
@@ -198,12 +205,21 @@ func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error
 		return nil, err
 	}
 
+	lastBlock := r.tm.LastSeenBlock()
+	expirationBlock := lastBlock.Add(lastBlock, paramsExpirationTime)
+
+	winProb := r.winProb(faceValue)
+
+	recipientRand := r.rand(seed, sender, faceValue, winProb, expirationBlock, price)
+	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size))
+
 	return &TicketParams{
 		Recipient:         r.addr,
 		FaceValue:         faceValue,
 		WinProb:           r.winProb(faceValue),
 		RecipientRandHash: recipientRandHash,
 		Seed:              seed,
+		ExpirationBlock:   lastBlock.Add(lastBlock, paramsExpirationTime),
 	}, nil
 }
 

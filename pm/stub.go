@@ -19,6 +19,8 @@ type stubTicketStore struct {
 	storeShouldFail bool
 	loadShouldFail  bool
 	lock            sync.RWMutex
+	lastBlock       *big.Int
+	err             error
 }
 
 func newStubTicketStore() *stubTicketStore {
@@ -72,6 +74,10 @@ func (ts *stubTicketStore) LoadWinningTickets(sessionIDs []string) ([]*Ticket, [
 	}
 
 	return allTix, allSigs, allRecipientRands, nil
+}
+
+func (ts *stubTicketStore) LastSeenBlock() (*big.Int, error) {
+	return ts.lastBlock, ts.err
 }
 
 type stubSigVerifier struct {

@@ -14,4 +14,10 @@ type TicketStore interface {
 	// Load fetches all persisted tickets in the store with their signatures and recipientRands
 	// for a session ID
 	LoadWinningTickets(sessionIDs []string) (tickets []*Ticket, sigs [][]byte, recipientRands []*big.Int, err error)
+
+	blockStore
+}
+
+type blockStore interface {
+	LastSeenBlock() (*big.Int, error)
 }
