@@ -41,6 +41,8 @@ type TicketParams struct {
 	RecipientRandHash ethcommon.Hash
 
 	Seed *big.Int
+
+	ExpirationBlock *big.Int
 }
 
 // WinProbRat returns the ticket WinProb as a percentage represented as a big.Rat
@@ -124,6 +126,10 @@ type Ticket struct {
 
 	// CreationRoundBlockHash is the block hash associated with CreationRound
 	CreationRoundBlockHash ethcommon.Hash
+
+	// ParamsExpirationBlock is the block number at which the ticket parameters used
+	// to create the ticket will no longer be valid
+	ParamsExpirationBlock *big.Int
 }
 
 // NewTicket creates a Ticket instance
@@ -137,6 +143,7 @@ func NewTicket(params *TicketParams, expirationParams *TicketExpirationParams, s
 		RecipientRandHash:      params.RecipientRandHash,
 		CreationRound:          expirationParams.CreationRound,
 		CreationRoundBlockHash: expirationParams.CreationRoundBlockHash,
+		ParamsExpirationBlock:  params.ExpirationBlock,
 	}
 }
 
