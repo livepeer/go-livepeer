@@ -76,6 +76,8 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux := http.DefaultServeMux
 	http.DefaultServeMux = http.NewServeMux()
 
+	mux.Handle("/signMessage", mustHaveFormParams(signMessageHandler(s.LivepeerNode.Eth), "message"))
+
 	//Set the broadcast config for creating onchain jobs.
 	mux.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {

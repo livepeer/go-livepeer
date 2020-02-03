@@ -4,7 +4,6 @@ import (
 	"math/big"
 	"strings"
 	"testing"
-
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/stretchr/testify/assert"
 )

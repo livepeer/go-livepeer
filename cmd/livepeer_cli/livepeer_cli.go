@@ -107,6 +107,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 			fmt.Print("For Rinkeby Eth, go to the Rinkeby faucet (https://faucet.rinkeby.io/).")
 			w.read()
 		}, testnet: true},
+		{desc: "Sign a message", invoke: w.signMessage},
 	}
 	return options
 }
