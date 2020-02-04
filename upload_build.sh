@@ -23,6 +23,17 @@ if echo $VERSION | grep dirty; then
   exit 1
 fi
 
+# If we want to build with branch --> network support for any other networks, add them here!
+NETWORK_BRANCHES="rinkeby mainnet"
+# If the binaries are built off a network branch then the resource path should include the network branch name i.e. X.Y.Z/rinkeby or X.Y.Z/mainnet
+# If the binaries are not built off a network then the resource path should only include the version i.e. X.Y.Z
+VERSION_AND_NETWORK=$VERSION
+for networkBranch in $NETWORK_BRANCHES; do
+  if [[ $BRANCH == "$networkBranch" ]]; then
+    VERSION_AND_NETWORK="$VERSION/$BRANCH"
+  fi
+done
+
 mkdir $BASE
 cp ./livepeer${EXT} $BASE
 cp ./livepeer_cli${EXT} $BASE
@@ -49,7 +60,7 @@ fi
 
 # https://stackoverflow.com/a/44751929/990590
 bucket=build.livepeer.live
-resource="/${bucket}/${VERSION}/${FILE}"
+resource="/${bucket}/${VERSION_AND_NETWORK}/${FILE}"
 contentType="application/x-compressed-tar"
 dateValue=`date -R`
 stringToSign="PUT\n\n${contentType}\n${dateValue}\n${resource}"
@@ -59,7 +70,7 @@ fullUrl="https://storage.googleapis.com${resource}"
 # Failsafe - don't overwrite existing uploads!
 if curl --head --fail $fullUrl 2>/dev/null; then
   echo "$fullUrl already exists, not overwriting!"
-  exit 1
+  exit 0
 fi
 
 curl -X PUT -T "${FILE}" \
@@ -69,5 +80,5 @@ curl -X PUT -T "${FILE}" \
   -H "Authorization: AWS ${GCLOUD_KEY}:${signature}" \
   $fullUrl
 
-curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION/${FILE}\"}" $DISCORD_URL 2>/dev/null
+curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\"}" $DISCORD_URL 2>/dev/null
 echo "done"
