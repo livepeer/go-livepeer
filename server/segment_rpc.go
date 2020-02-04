@@ -296,7 +296,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		data = []byte(seg.Name)
 	}
 
-	priceInfo, err := ratPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
+	priceInfo, err := common.RatPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +352,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	resp, err := httpClient.Do(req)
 	uploadDur := time.Since(start)
 	if err != nil {
-		glog.Errorf("Unable to submit segment nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", nonce, sess.ManifestID, seg.SeqNo, ti.Transcoder, err)
+		glog.Errorf("Unable to submit segment orch=%v nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", ti.Transcoder, nonce, sess.ManifestID, seg.SeqNo, ti.Transcoder, err)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), false)
 		}
@@ -637,7 +637,7 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 
 		protoPayment.TicketSenderParams = senderParams
 
-		ratPrice, _ := ratPriceInfo(protoPayment.ExpectedPrice)
+		ratPrice, _ := common.RatPriceInfo(protoPayment.ExpectedPrice)
 		glog.V(common.VERBOSE).Infof("Created new payment - manifestID=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v",
 			sess.ManifestID,
 			batch.Recipient.Hex(),
@@ -657,7 +657,7 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 }
 
 func validatePrice(sess *BroadcastSession) error {
-	oPrice, err := ratPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
+	oPrice, err := common.RatPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
 	if err != nil {
 		return err
 	}
@@ -670,17 +670,4 @@ func validatePrice(sess *BroadcastSession) error {
 		return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
 	}
 	return nil
-}
-
-func ratPriceInfo(priceInfo *net.PriceInfo) (*big.Rat, error) {
-	if priceInfo == nil {
-		return nil, nil
-	}
-
-	pixelsPerUnit := priceInfo.PixelsPerUnit
-	if pixelsPerUnit == 0 {
-		return nil, errors.New("invalid priceInfo.pixelsPerUnit")
-	}
-
-	return big.NewRat(priceInfo.PricePerUnit, pixelsPerUnit), nil
 }

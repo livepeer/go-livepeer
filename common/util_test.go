@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
 )
@@ -214,4 +215,22 @@ func TestToInt64(t *testing.T) {
 	assert.Equal(t, int64(math.MaxInt64), ToInt64(val))
 	// test val < math.MaxInt64
 	assert.Equal(t, int64(5), ToInt64(big.NewInt(5)))
+}
+
+func TestRatPriceInfo(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test nil priceInfo
+	priceInfo, err := RatPriceInfo(nil)
+	assert.EqualError(err, "priceInfo is nil")
+	assert.Nil(priceInfo)
+
+	// Test priceInfo.pixelsPerUnit = 0
+	_, err = RatPriceInfo(&net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 0})
+	assert.EqualError(err, "pixels per unit is 0")
+
+	// Test valid priceInfo
+	priceInfo, err = RatPriceInfo(&net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 2})
+	assert.Nil(err)
+	assert.Zero(priceInfo.Cmp(big.NewRat(7, 2)))
 }

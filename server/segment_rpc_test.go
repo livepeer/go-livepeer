@@ -982,7 +982,7 @@ func TestSubmitSegment_RatPriceInfoError(t *testing.T) {
 
 	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
 
-	assert.EqualError(t, err, "invalid priceInfo.pixelsPerUnit")
+	assert.EqualError(t, err, "pixels per unit is 0")
 }
 
 func TestSubmitSegment_EstimateFeeError(t *testing.T) {
@@ -1314,7 +1314,10 @@ func TestSubmitSegment_Success(t *testing.T) {
 	assert.Equal(1, len(tdata.Segments))
 	assert.Equal("foo", tdata.Segments[0].Url)
 	assert.Equal([]byte("bar"), tdata.Sig)
-	assert.Nil(tdata.Info)
+	assert.Equal(tdata.Info.Transcoder, info.Transcoder)
+	assert.Equal(tdata.Info.GetPriceInfo().GetPricePerUnit(), info.GetPriceInfo().GetPricePerUnit())
+	assert.Equal(tdata.Info.GetPriceInfo().GetPixelsPerUnit(), info.GetPriceInfo().GetPixelsPerUnit())
+	assert.Equal(tdata.Info.GetTicketParams().GetExpirationBlock(), info.GetTicketParams().GetExpirationBlock())
 
 	// Check that latency score calculation is different for different segment durations
 	// The round trip duration calculated in SubmitSegment should be about the same across all calls
@@ -1337,14 +1340,17 @@ func TestSubmitSegment_Success(t *testing.T) {
 	assert.Less(latencyScore2, latencyScore1)
 
 	// Check that a new OrchestratorInfo is returned from SubmitSegment()
-	tr.Info = &net.OrchestratorInfo{}
+	tr.Info = info
 	buf, err = proto.Marshal(tr)
 	require.Nil(err)
 
 	tdata, err = SubmitSegment(s, noNameSeg, 0)
 	assert.Nil(err)
 	assert.NotEqual(tdata.Info, s.OrchestratorInfo)
-	assert.Equal(tdata.Info, tr.Info)
+	assert.Equal(tdata.Info.Transcoder, info.Transcoder)
+	assert.Equal(tdata.Info.GetPriceInfo().GetPricePerUnit(), info.GetPriceInfo().GetPricePerUnit())
+	assert.Equal(tdata.Info.GetPriceInfo().GetPixelsPerUnit(), info.GetPriceInfo().GetPixelsPerUnit())
+	assert.Equal(tdata.Info.GetTicketParams().GetExpirationBlock(), info.GetTicketParams().GetExpirationBlock())
 
 	// Test when input data is uploaded
 	runChecks = func(r *http.Request) {
