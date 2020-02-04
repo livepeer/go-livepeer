@@ -24,7 +24,7 @@ if echo $VERSION | grep dirty; then
 fi
 
 # If we want to build with branch --> network support for any other networks, add them here!
-NETWORK_BRANCHES="rinkeby mainnet"
+NETWORK_BRANCHES="rinkeby mainnet test-ci-upload"
 # If the binaries are built off a network branch then the resource path should include the network branch name i.e. X.Y.Z/rinkeby or X.Y.Z/mainnet
 # If the binaries are not built off a network then the resource path should only include the version i.e. X.Y.Z
 VERSION_AND_NETWORK=$VERSION
@@ -80,5 +80,5 @@ curl -X PUT -T "${FILE}" \
   -H "Authorization: AWS ${GCLOUD_KEY}:${signature}" \
   $fullUrl
 
-curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION/${FILE}\"}" $DISCORD_URL 2>/dev/null
+curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\"}" $DISCORD_URL 2>/dev/null
 echo "done"
