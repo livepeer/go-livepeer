@@ -31,7 +31,6 @@ require (
 	github.com/influxdata/influxdb v1.7.8 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.1 // indirect
 	github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356 // indirect
-	github.com/kr/pretty v0.1.0 // indirect
 	github.com/livepeer/lpms v0.0.0-20200110164555-e34a4737b857
 	github.com/livepeer/m3u8 v0.11.0
 	github.com/mattn/go-colorable v0.1.2 // indirect
@@ -57,7 +56,10 @@ require (
 	github.com/urfave/cli v1.20.0
 	github.com/wsddn/go-ecdh v0.0.0-20161211032359-48726bab9208 // indirect
 	go.opencensus.io v0.22.1
+	go.uber.org/goleak v1.0.0
+	golang.org/x/lint v0.0.0-20200130185559-910be7a94367 // indirect
 	golang.org/x/net v0.0.0-20190909003024-a7b16738d86b
+	golang.org/x/tools v0.0.0-20200204192400-7124308813f3 // indirect
 	google.golang.org/genproto v0.0.0-20190502173448-54afdca5d873 // indirect
 	google.golang.org/grpc v1.23.0
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
