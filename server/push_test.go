@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
@@ -37,6 +38,7 @@ func requestSetup(s *LivepeerServer) (http.Handler, *strings.Reader, *httptest.R
 func TestMultipartReturn(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()
+	defer serverCleanup(s)
 	reader := strings.NewReader("InsteadOf.TS")
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani/17.ts", reader)
@@ -193,7 +195,9 @@ func TestMultipartReturn(t *testing.T) {
 func TestMemoryRequestError(t *testing.T) {
 	// assert http request body error returned
 	assert := assert.New(t)
-	handler, _, w := requestSetup(setupServer())
+	s := setupServer()
+	defer serverCleanup(s)
+	handler, _, w := requestSetup(s)
 	f, err := os.Open(`doesn't exist`)
 	req := httptest.NewRequest("POST", "/live/seg.ts", f)
 
@@ -211,6 +215,7 @@ func TestEmptyURLError(t *testing.T) {
 	// assert http request body error returned
 	assert := assert.New(t)
 	s := setupServer()
+	defer serverCleanup(s)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/.ts", nil)
 	s.HandlePush(w, req)
@@ -226,6 +231,7 @@ func TestEmptyURLError(t *testing.T) {
 func TestShouldUpdateLastUsed(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()
+	defer serverCleanup(s)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani1/1.ts", nil)
 	s.HandlePush(w, req)
@@ -240,11 +246,31 @@ func TestShouldUpdateLastUsed(t *testing.T) {
 	assert.True(lu.Before(s.rtmpConnections["mani1"].lastUsed))
 }
 
+func ignoreRoutines() []goleak.Option {
+	// goleak works by making list of all running goroutines and reporting error if it finds any
+	// this list tells goleak to ignore these goroutines - we're not interested in these particular goroutines
+	funcs2ignore := []string{"github.com/golang/glog.(*loggingT).flushDaemon", "go.opencensus.io/stats/view.(*worker).start",
+		"github.com/rjeczalik/notify.(*recursiveTree).dispatch", "github.com/rjeczalik/notify._Cfunc_CFRunLoopRun", "github.com/ethereum/go-ethereum/metrics.(*meterArbiter).tick",
+		"github.com/ethereum/go-ethereum/consensus/ethash.(*Ethash).remote", "github.com/ethereum/go-ethereum/core.(*txSenderCacher).cache",
+		"internal/poll.runtime_pollWait", "github.com/livepeer/go-livepeer/core.(*RemoteTranscoderManager).Manage", "github.com/livepeer/lpms/core.(*LPMS).Start",
+		"github.com/livepeer/go-livepeer/server.(*LivepeerServer).StartMediaServer", "github.com/livepeer/go-livepeer/core.(*RemoteTranscoderManager).Manage.func1",
+		"github.com/livepeer/go-livepeer/server.(*LivepeerServer).HandlePush.func1", "github.com/rjeczalik/notify.(*nonrecursiveTree).dispatch",
+		"github.com/rjeczalik/notify.(*nonrecursiveTree).internal"}
+
+	res := make([]goleak.Option, 0, len(funcs2ignore))
+	for _, f := range funcs2ignore {
+		res = append(res, goleak.IgnoreTopFunction(f))
+	}
+	return res
+}
+
 func TestShouldRemoveSessionAfterTimeout(t *testing.T) {
+	defer goleak.VerifyNone(t, ignoreRoutines()...)
+
 	oldRI := refreshIntervalHttpPush
 	refreshIntervalHttpPush = 2 * time.Millisecond
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani3/1.ts", nil)
 	s.HandlePush(w, req)
@@ -258,6 +284,7 @@ func TestShouldRemoveSessionAfterTimeout(t *testing.T) {
 	s.connectionLock.Lock()
 	_, exists = s.rtmpConnections["mani3"]
 	s.connectionLock.Unlock()
+	cancel()
 	assert.False(exists)
 	refreshIntervalHttpPush = oldRI
 }
@@ -267,6 +294,7 @@ func TestShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
 	refreshIntervalHttpPush = 5 * time.Millisecond
 	assert := assert.New(t)
 	s := setupServer()
+	defer serverCleanup(s)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani2/1.ts", nil)
 	s.HandlePush(w, req)
@@ -290,7 +318,9 @@ func TestShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
 func TestFileExtensionError(t *testing.T) {
 	// assert file extension error returned
 	assert := assert.New(t)
-	handler, reader, w := requestSetup(setupServer())
+	s := setupServer()
+	handler, reader, w := requestSetup(s)
+	defer serverCleanup(s)
 	req := httptest.NewRequest("POST", "/live/seg.m3u8", reader)
 
 	handler.ServeHTTP(w, req)
@@ -307,6 +337,7 @@ func TestStorageError(t *testing.T) {
 	// assert storage error
 	assert := assert.New(t)
 	s := setupServer()
+	defer serverCleanup(s)
 	handler, reader, w := requestSetup(s)
 
 	tempStorage := drivers.NodeStorage
@@ -332,6 +363,7 @@ func TestForAuthWebhookFailure(t *testing.T) {
 	// assert app data error
 	assert := assert.New(t)
 	s := setupServer()
+	defer serverCleanup(s)
 	handler, reader, w := requestSetup(s)
 
 	AuthWebhookURL = "notaurl"
@@ -353,6 +385,7 @@ func TestForAuthWebhookFailure(t *testing.T) {
 func TestResolutionWithoutContentResolutionHeader(t *testing.T) {
 	assert := assert.New(t)
 	server := setupServer()
+	defer serverCleanup(server)
 	server.rtmpConnections = map[core.ManifestID]*rtmpConnection{}
 	handler, reader, w := requestSetup(server)
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
@@ -372,6 +405,7 @@ func TestResolutionWithoutContentResolutionHeader(t *testing.T) {
 func TestResolutionWithContentResolutionHeader(t *testing.T) {
 	assert := assert.New(t)
 	server := setupServer()
+	defer serverCleanup(server)
 	server.rtmpConnections = map[core.ManifestID]*rtmpConnection{}
 	handler, reader, w := requestSetup(server)
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
@@ -392,6 +426,7 @@ func TestResolutionWithContentResolutionHeader(t *testing.T) {
 func TestWebhookRequestURL(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()
+	defer serverCleanup(s)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		out, _ := ioutil.ReadAll(r.Body)
