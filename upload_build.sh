@@ -70,7 +70,7 @@ fullUrl="https://storage.googleapis.com${resource}"
 # Failsafe - don't overwrite existing uploads!
 if curl --head --fail $fullUrl 2>/dev/null; then
   echo "$fullUrl already exists, not overwriting!"
-  exit 1
+  exit 0
 fi
 
 curl -X PUT -T "${FILE}" \
