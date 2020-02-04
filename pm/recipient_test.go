@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"fmt"
 	"math/big"
 	"strings"
 	"sync"
@@ -19,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *stubValidator, *stubTicketStore, *stubGasPriceMonitor, *stubSenderMonitor, *stubErrorMonitor, TicketParamsConfig, []byte) {
+func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *stubValidator, *stubTicketStore, *stubGasPriceMonitor, *stubSenderMonitor, *stubTimeManager, TicketParamsConfig, []byte) {
 	sender := RandAddress()
 
 	b := newStubBroker()
@@ -30,18 +31,18 @@ func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *
 	gm := &stubGasPriceMonitor{gasPrice: big.NewInt(100)}
 	sm := newStubSenderMonitor()
 	sm.maxFloat = big.NewInt(10000000000)
-	em := &stubErrorMonitor{}
+	tm := &stubTimeManager{lastSeenBlock: big.NewInt(1)}
 	cfg := TicketParamsConfig{
 		EV:               big.NewInt(5),
 		RedeemGas:        10000,
 		TxCostMultiplier: 100,
 	}
 
-	return sender, b, v, newStubTicketStore(), gm, sm, em, cfg, []byte("foo")
+	return sender, b, v, newStubTicketStore(), gm, sm, tm, cfg, []byte("foo")
 }
 
-func newRecipientOrFatal(t *testing.T, addr ethcommon.Address, b Broker, v Validator, ts TicketStore, gpm GasPriceMonitor, sm SenderMonitor, em ErrorMonitor, cfg TicketParamsConfig) Recipient {
-	r, err := NewRecipient(addr, b, v, ts, gpm, sm, em, cfg)
+func newRecipientOrFatal(t *testing.T, addr ethcommon.Address, b Broker, v Validator, ts TicketStore, gpm GasPriceMonitor, sm SenderMonitor, tm TimeManager, cfg TicketParamsConfig) Recipient {
+	r, err := NewRecipient(addr, b, v, ts, gpm, sm, tm, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,167 +61,71 @@ func ticketParamsOrFatal(t *testing.T, r Recipient, sender ethcommon.Address) *T
 
 func newTicket(sender ethcommon.Address, params *TicketParams, senderNonce uint32) *Ticket {
 	return &Ticket{
-		Recipient:         ethcommon.Address{},
-		Sender:            sender,
-		FaceValue:         params.FaceValue,
-		WinProb:           params.WinProb,
-		SenderNonce:       senderNonce,
-		RecipientRandHash: params.RecipientRandHash,
+		Recipient:             params.Recipient,
+		Sender:                sender,
+		FaceValue:             params.FaceValue,
+		WinProb:               params.WinProb,
+		SenderNonce:           senderNonce,
+		RecipientRandHash:     params.RecipientRandHash,
+		ParamsExpirationBlock: params.ExpirationBlock,
+		PricePerPixel:         params.PricePerPixel,
 	}
 }
 
-func genRecipientRand(sender ethcommon.Address, secret [32]byte, seed *big.Int) *big.Int {
+func genRecipientRand(sender ethcommon.Address, secret [32]byte, params *TicketParams) *big.Int {
 	h := hmac.New(sha256.New, secret[:])
-	h.Write(append(seed.Bytes(), sender.Bytes()...))
+	msg := append(params.Seed.Bytes(), sender.Bytes()...)
+	msg = append(msg, params.FaceValue.Bytes()...)
+	msg = append(msg, params.WinProb.Bytes()...)
+	msg = append(msg, params.ExpirationBlock.Bytes()...)
+	msg = append(msg, params.PricePerPixel.Num().Bytes()...)
+	msg = append(msg, params.PricePerPixel.Denom().Bytes()...)
+	h.Write(msg)
 	return new(big.Int).SetBytes(h.Sum(nil))
 }
 
-func TestReceiveTicket_InvalidFaceValue(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
-	params, err := r.TicketParams(sender)
-	require.Nil(t, err)
-
-	// Test invalid faceValue
-	ticket := newTicket(sender, params, 0)
-	ticket.FaceValue = big.NewInt(0) // Using invalid faceValue
-
-	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
-	if err == nil {
-		t.Error("expected invalid faceValue error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "invalid ticket faceValue") {
-		t.Errorf("expected invalid faceValue error, got %v", err)
-	}
-	if sessionID != "" {
-		t.Errorf("expected sessionID , got %v", sessionID)
-	}
-	if won {
-		t.Errorf("expected non-winning ticket")
-	}
-
-	// Test invalid faceValue when ticket is winning
-	v.SetIsWinningTicket(true)
-
-	ticket = newTicket(sender, params, 1)
-	ticket.FaceValue = big.NewInt(0) // Using invalid faceValue
-
-	sessionID, won, err = r.ReceiveTicket(ticket, sig, params.Seed)
-	if err == nil {
-		t.Error("expected invalid faceValue error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "invalid ticket faceValue") {
-		t.Errorf("expected invalid faceValue error, got %v", err)
-	}
-	if sessionID != ticket.RecipientRandHash.Hex() {
-		t.Errorf("expected sessionID %v, got %v", ticket.RecipientRandHash.Hex(), sessionID)
-	}
-	if !won {
-		t.Errorf("expected winning ticket")
-	}
-}
-
-func TestReceiveTicket_InvalidFaceValue_AcceptableError(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
-	params, err := r.TicketParams(sender)
-	require.Nil(t, err)
-
+func TestReceiveTicket_InvalidRecipientRand(t *testing.T) {
 	assert := assert.New(t)
+	sender, b, _, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 
-	// Test unacceptable error
-	em.acceptable = false
-
-	ticket := newTicket(sender, params, 0)
-	ticket.FaceValue = big.NewInt(0) // Using invalid faceValue
-
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
-	assert.NotNil(err)
-	assert.Contains(err.Error(), "invalid ticket faceValue")
-
-	rerr, ok := err.(acceptableError)
-	assert.True(ok)
-	assert.False(rerr.Acceptable())
-
-	// Test acceptable error
-
-	em.acceptable = true
-	ticket = newTicket(sender, params, 1)
-	ticket.FaceValue = big.NewInt(0) // Using invalid faceValue
-
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
-	assert.NotNil(err)
-	assert.Contains(err.Error(), "invalid ticket faceValue")
-
-	rerr, ok = err.(acceptableError)
-	assert.True(ok)
-	assert.True(rerr.Acceptable())
-
-}
-
-func TestReceiveTicket_InvalidFaceValue_GasPriceChange(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
-	params, err := r.TicketParams(sender)
+	sv := &stubSigVerifier{}
+	sv.SetVerifyResult(true)
+	v := NewValidator(sv, tm)
+	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, tm, cfg)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
 	// Test invalid faceValue
 	ticket := newTicket(sender, params, 0)
-	// Change the gas price so that the expected face value is different
-	gm.gasPrice = big.NewInt(99999999)
-
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
-	if err == nil {
-		t.Error("expected invalid faceValue error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "invalid ticket faceValue") {
-		t.Errorf("expected invalid faceValue error, got %v", err)
-	}
-}
-
-func TestReceiveTicket_InvalidWinProb(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
-	params, err := r.TicketParams(sender)
-	require.Nil(t, err)
+	ticket.FaceValue = big.NewInt(0) // Using invalid FaceValue for generating recipientRand
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	require.NotEqual(t, params.FaceValue, ticket.FaceValue)
+	assert.Equal(sessionID, "")
+	assert.Equal(won, false)
+	assert.Equal(err, errInvalidTicketRecipientRand)
 
 	// Test invalid winProb
-	ticket := newTicket(sender, params, 0)
-	ticket.WinProb = big.NewInt(0) // Using invalid winProb
+	ticket = newTicket(sender, params, 0)
+	ticket.WinProb = big.NewInt(0) // Using invalid WinProb for generating recipientRand
+	require.NotEqual(t, params.WinProb, ticket.WinProb)
+	assert.Equal(sessionID, "")
+	assert.Equal(won, false)
+	assert.Equal(err, errInvalidTicketRecipientRand)
 
-	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
-	if err == nil {
-		t.Error("expected invalid winProb error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "invalid ticket winProb") {
-		t.Errorf("expected invalid winProb error, got %v", err)
-	}
-	if sessionID != "" {
-		t.Errorf("expected sessionID , got %v", sessionID)
-	}
-	if won {
-		t.Errorf("expected non-winning ticket")
-	}
+	// Test invalid ParamsExpirationBlock
+	ticket = newTicket(sender, params, 0)
+	ticket.ParamsExpirationBlock = big.NewInt(0) // Using invalid ParamsExpirationBlock for generating recipientRand
+	require.NotEqual(t, params.ExpirationBlock, ticket.ParamsExpirationBlock)
+	assert.Equal(sessionID, "")
+	assert.Equal(won, false)
+	assert.Equal(err, errInvalidTicketRecipientRand)
 
-	// Test invalid winProb when ticket is winning
-	v.SetIsWinningTicket(true)
-
-	ticket = newTicket(sender, params, 1)
-	ticket.WinProb = big.NewInt(0) // Using invalid faceValue
-
-	sessionID, won, err = r.ReceiveTicket(ticket, sig, params.Seed)
-	if err == nil {
-		t.Error("expected invalid winProb error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "invalid ticket winProb") {
-		t.Errorf("expected invalid winProb error, got %v", err)
-	}
-	if sessionID != ticket.RecipientRandHash.Hex() {
-		t.Errorf("expected sessionID %v, got %v", ticket.RecipientRandHash.Hex(), sessionID)
-	}
-	if !won {
-		t.Errorf("expected winning ticket")
-	}
+	// Test invalid PricePerPixel
+	ticket = newTicket(sender, params, 0)
+	ticket.PricePerPixel = big.NewRat(0, 1) // Using invalid PricePerPixel for generating recipientRand
+	assert.Equal(sessionID, "")
+	assert.Equal(won, false)
+	assert.Equal(err, errInvalidTicketRecipientRand)
 }
 
 func TestReceiveTicket_InvalidWinProb_AcceptableError(t *testing.T) {
@@ -262,9 +167,9 @@ func TestReceiveTicket_InvalidWinProb_AcceptableError(t *testing.T) {
 
 func TestReceiveTicket_InvalidSender(t *testing.T) {
 	assert := assert.New(t)
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	sm.validateSenderErr = errors.New("Invalid Sender")
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
+	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, tm, cfg)
 
 	params, err := r.TicketParams(sender)
 	require.Nil(t, err)
@@ -277,32 +182,11 @@ func TestReceiveTicket_InvalidSender(t *testing.T) {
 	assert.EqualError(err, "Invalid Sender")
 }
 
-func TestReceiveTicket_InvalidTicket(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
-	params, err := r.TicketParams(sender)
-	require.Nil(t, err)
-
-	// Test invalid ticket
-	ticket := newTicket(sender, params, 0)
-
-	// Config stub validator with invalid non-winning tickets
-	v.SetIsValidTicket(false)
-
-	_, _, err = r.ReceiveTicket(ticket, sig, params.Seed)
-	if err == nil {
-		t.Error("expected validator invalid ticket error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "validator invalid ticket error") {
-		t.Errorf("expected validator invalid ticket error, got %v", err)
-	}
-}
-
 func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
-	params, err := r.TicketParams(sender)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
 	// Test valid non-winning ticket
@@ -320,7 +204,7 @@ func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
 		t.Errorf("expected empty sessionID for valid non-winning ticket")
 	}
 
-	recipientRand := genRecipientRand(sender, secret, params.Seed)
+	recipientRand := genRecipientRand(sender, secret, params)
 	senderNonce := r.(*recipient).senderNonces[recipientRand.String()]
 
 	if senderNonce != newSenderNonce {
@@ -329,10 +213,10 @@ func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
 }
 
 func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
-	params, err := r.TicketParams(sender)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
 	// Test valid winning ticket
@@ -353,7 +237,7 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 		t.Errorf("expected sessionID %s, got %s", ticket.RecipientRandHash.Hex(), sessionID)
 	}
 
-	recipientRand := genRecipientRand(sender, secret, params.Seed)
+	recipientRand := genRecipientRand(sender, secret, params)
 	senderNonce := r.(*recipient).senderNonces[recipientRand.String()]
 
 	if senderNonce != newSenderNonce {
@@ -389,10 +273,10 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 }
 
 func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
-	params, err := r.TicketParams(sender)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
 	// Test valid winning ticket
@@ -414,7 +298,7 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
 
-	recipientRand := genRecipientRand(sender, secret, params.Seed)
+	recipientRand := genRecipientRand(sender, secret, params)
 	senderNonce := r.(*recipient).senderNonces[recipientRand.String()]
 
 	if senderNonce != newSenderNonce {
@@ -438,9 +322,14 @@ func TestReceiveTicket_ValidWinningTicket_StoreError(t *testing.T) {
 }
 
 func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
-	params, err := r.TicketParams(sender)
+	assert := assert.New(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg)
+	r.Start()
+	defer r.Stop()
+	time.Sleep(20 * time.Millisecond)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
 	// Test invalid recipientRand revealed
@@ -454,27 +343,23 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	r.RedeemWinningTicket(ticket, sig, params.Seed)
+	recipientRand := genRecipientRand(sender, secret, params)
 	// Redeem ticket to invalidate recipientRand
-	if err := r.RedeemWinningTickets([]string{ticket.RecipientRandHash.Hex()}); err != nil {
-		t.Fatal(err)
+	sm.Redeemable() <- &SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
 	}
+	time.Sleep(20 * time.Millisecond)
 
 	// New ticket with same invalid recipientRand, but updated senderNonce
 	ticket = newTicket(sender, params, 1)
 
 	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
-	if err == nil {
-		t.Error("expected invalid recipientRand revealed error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "invalid already revealed recipientRand") {
-		t.Errorf("expected invalid recipientRand revealed error, got %v", err)
-	}
-	if sessionID != ticket.RecipientRandHash.Hex() {
-		t.Errorf("expected sessionID %v, got %v", ticket.RecipientRandHash.Hex(), sessionID)
-	}
-	if !won {
-		t.Errorf("expected winning ticket")
-	}
+	assert.EqualError(err, fmt.Sprintf("recipientRand already revealed recipientRand=%v", recipientRand))
+	assert.Equal(sessionID, ticket.RecipientRandHash.Hex())
+	assert.True(won)
 }
 
 func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed_AcceptableError(t *testing.T) {
@@ -523,9 +408,9 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed_AcceptableError(t *t
 }
 
 func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
-	params, err := r.TicketParams(sender)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, tm, cfg)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
 	// Test invalid senderNonce
@@ -565,9 +450,9 @@ func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
 }
 
 func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
-	params, err := r.TicketParams(sender)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, tm, cfg)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
 	var wg sync.WaitGroup
@@ -595,10 +480,31 @@ func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
 	}
 }
 
-func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {
-	_, b, v, ts, gm, sm, em, cfg, _ := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
+func TestReceiveTicket_ValidTicket_Expired(t *testing.T) {
+	assert := assert.New(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
+	tm.lastSeenBlock = big.NewInt(100)
+	require.Nil(t, err)
 
+	// Test valid winning ticket
+	newSenderNonce := uint32(3)
+	ticket := newTicket(sender, params, newSenderNonce)
+
+	// Config stub validator with valid winning tickets
+	v.SetIsWinningTicket(true)
+
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.Equal(sessionID, params.RecipientRandHash.Hex())
+	assert.True(won)
+	assert.EqualError(err, ErrTicketParamsExpired.Error())
+}
+
+func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {
+	_, b, v, ts, gm, sm, tm, cfg, _ := newRecipientFixtureOrFatal(t)
+	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, tm, cfg)
 	// Config stub ticket store to fail load
 	ts.loadShouldFail = true
 
@@ -611,10 +517,13 @@ func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {
 	}
 }
 
-func TestRedeemWinningTickets_SingleTicket_ZeroMaxFloat(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, em, cfg)
-	params, err := r.TicketParams(sender)
+func TestRedeemWinningTicket_SingleTicket_ZeroMaxFloat(t *testing.T) {
+	assert := assert.New(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg).(*recipient)
+
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
 	// Config stub validator with valid winning tickets
@@ -623,83 +532,74 @@ func TestRedeemWinningTickets_SingleTicket_ZeroMaxFloat(t *testing.T) {
 	// Test zero maxfloat error
 	ticket := newTicket(sender, params, 0)
 
-	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !won {
-		t.Fatal("expected valid winning ticket")
-	}
+	_, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.NoError(err)
+	assert.True(won)
+
+	recipientRand := genRecipientRand(sender, secret, params)
+	err = r.RedeemWinningTicket(ticket, sig, params.Seed)
+	assert.Nil(err)
+	assert.Equal(1, len(sm.queued))
+	assert.Equal(&SignedTicket{ticket, sig, recipientRand}, sm.queued[0])
 
 	sm.maxFloat = big.NewInt(0)
-	err = r.RedeemWinningTickets([]string{sessionID})
-	if err == nil {
-		t.Error("expected zero max float error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "max float is zero") {
-		t.Errorf("expected zero max float error, got %v", err)
-	}
+	err = r.redeemWinningTicket(ticket, sig, recipientRand)
+	assert.EqualError(err, "max float is zero")
 }
 
-func TestRedeemWinningTickets_SingleTicket_RedeemError(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+func TestRedeemWinningTicket_SingleTicket_RedeemError(t *testing.T) {
+	assert := assert.New(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
-	params, err := r.TicketParams(sender)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg).(*recipient)
+	r.Start()
+	defer r.Stop()
+	time.Sleep(20 * time.Millisecond)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
 	// Config stub validator with valid winning tickets
 	v.SetIsWinningTicket(true)
 
+	// Sanity check that queue is empty
+	assert.Equal(0, len(sm.queued))
+
 	// Test redeem error
 	ticket := newTicket(sender, params, 2)
 
-	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !won {
-		t.Fatal("expected valid winning ticket")
-	}
+	_, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.NoError(err)
+	assert.True(won)
+
+	recipientRand := genRecipientRand(sender, secret, params)
+
+	err = r.RedeemWinningTicket(ticket, sig, params.Seed)
+	assert.Nil(err)
+	assert.Equal(1, len(sm.queued))
+	assert.Equal(&SignedTicket{ticket, sig, recipientRand}, sm.queued[0])
 
 	// Config stub broker to fail redeem
 	b.redeemShouldFail = true
-
-	err = r.RedeemWinningTickets([]string{sessionID})
-	if err == nil {
-		t.Error("expected broker redeem error")
-	}
-	if err != nil && !strings.Contains(err.Error(), "broker redeem error") {
-		t.Errorf("expected broker redeem error, got %v", err)
-	}
+	err = r.redeemWinningTicket(ticket, sig, recipientRand)
+	assert.EqualError(err, "stub broker redeem error")
 
 	used, err := b.IsUsedTicket(ticket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if used {
-		t.Error("expected non-used ticket")
-	}
+	assert.NoError(err)
+	assert.False(used)
 
-	recipientRand := genRecipientRand(sender, secret, params.Seed)
-
-	if _, ok := r.(*recipient).invalidRands.Load(recipientRand.String()); ok {
-		t.Error("expected not to invalidate recipientRand")
-	}
-
-	if _, ok := r.(*recipient).senderNonces[recipientRand.String()]; !ok {
-		t.Error("expected not to clear senderNonce memory")
-	}
+	_, ok := r.invalidRands.Load(recipientRand.String())
+	assert.False(ok)
+	assert.Contains(r.senderNonces, recipientRand.String())
 }
 
-func TestRedeemWinningTickets_SingleTicket_CheckTxError(t *testing.T) {
+func TestRedeemWinningTicket_SingleTicket_CheckTxError(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
-	params, err := r.TicketParams(sender)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg).(*recipient)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(err)
 
 	// Config stub validator with valid winning tickets
@@ -707,22 +607,29 @@ func TestRedeemWinningTickets_SingleTicket_CheckTxError(t *testing.T) {
 
 	ticket := newTicket(sender, params, 2)
 
-	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	_, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	require.Nil(err)
 	require.True(won)
 
 	// Config stub broker to fail CheckTx
 	b.checkTxErr = errors.New("CheckTx error")
 
-	err = r.RedeemWinningTickets([]string{sessionID})
+	recipientRand := genRecipientRand(sender, secret, params)
+	err = r.RedeemWinningTicket(ticket, sig, params.Seed)
+	assert.Nil(err)
+	assert.Equal(1, len(sm.queued))
+	assert.Equal(&SignedTicket{ticket, sig, recipientRand}, sm.queued[0])
+
+	err = r.redeemWinningTicket(ticket, sig, recipientRand)
 	assert.EqualError(err, b.checkTxErr.Error())
 }
 
-func TestRedeemWinningTickets_SingleTicket(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+func TestRedeemWinningTicket_SingleTicket(t *testing.T) {
+	assert := assert.New(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
-	params, err := r.TicketParams(sender)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg).(*recipient)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
 	// Config stub validator with valid winning tickets
@@ -731,43 +638,37 @@ func TestRedeemWinningTickets_SingleTicket(t *testing.T) {
 	// Test single ticket
 	ticket := newTicket(sender, params, 2)
 
-	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !won {
-		t.Fatal("expected valid winning ticket")
-	}
+	_, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.NoError(err)
+	assert.True(won)
 
-	err = r.RedeemWinningTickets([]string{sessionID})
-	if err != nil {
-		t.Error(err)
-	}
+	recipientRand := genRecipientRand(sender, secret, params)
+	err = r.RedeemWinningTicket(ticket, sig, params.Seed)
+	assert.Nil(err)
+	assert.Equal(1, len(sm.queued))
+	assert.Equal(&SignedTicket{ticket, sig, recipientRand}, sm.queued[0])
+
+	err = r.redeemWinningTicket(ticket, sig, recipientRand)
+	assert.NoError(err)
 
 	used, err := b.IsUsedTicket(ticket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !used {
-		t.Error("expected used ticket")
-	}
+	assert.NoError(err)
+	assert.True(used)
 
-	recipientRand := genRecipientRand(sender, secret, params.Seed)
+	_, ok := r.invalidRands.Load(recipientRand.String())
+	assert.True(ok)
 
-	if _, ok := r.(*recipient).invalidRands.Load(recipientRand.String()); !ok {
-		t.Error("expected to invalidate recipientRand")
-	}
-
-	if _, ok := r.(*recipient).senderNonces[recipientRand.String()]; ok {
-		t.Error("expected to clear senderNonce memory")
-	}
+	_, ok = r.senderNonces[recipientRand.String()]
+	assert.False(ok)
 }
 
 func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	assert := assert.New(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
-	params, err := r.TicketParams(sender)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg).(*recipient)
+
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
 	// Config stub validator with valid winning tickets
@@ -778,82 +679,87 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 	ticket0 := newTicket(sender, params, 2)
 
 	sessionID, won, err := r.ReceiveTicket(ticket0, sig, params.Seed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !won {
-		t.Fatal("expected valid winning ticket")
-	}
+	assert.NoError(err)
+	assert.True(won)
 
 	// Receive ticket 1
 	ticket1 := newTicket(sender, params, 3)
 
-	_, won, err = r.ReceiveTicket(ticket1, sig, params.Seed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !won {
-		t.Fatal("expected valid winning ticket")
-	}
+	sessionID, won, err = r.ReceiveTicket(ticket1, sig, params.Seed)
+	assert.NoError(err)
+	assert.True(won)
 
+	recipientRand := genRecipientRand(sender, secret, params)
+
+	// Check that tickets are loaded from ticketStore and added to the queue
 	err = r.RedeemWinningTickets([]string{sessionID})
-	if err != nil {
-		t.Error(err)
-	}
+	assert.NoError(err)
+	assert.Equal(2, len(sm.queued))
+	assert.Equal(&SignedTicket{ticket0, sig, recipientRand}, sm.queued[0])
+	assert.Equal(&SignedTicket{ticket1, sig, recipientRand}, sm.queued[1])
+
+	// Actually redeem the tickets
+	err = r.redeemWinningTicket(ticket0, sig, recipientRand)
+	assert.NoError(err)
+	err = r.redeemWinningTicket(ticket1, sig, recipientRand)
+	assert.NoError(err)
 
 	used, err := b.IsUsedTicket(ticket0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !used {
-		t.Error("expected used ticket")
-	}
+	assert.NoError(err)
+	assert.True(used)
 
 	used, err = b.IsUsedTicket(ticket1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !used {
-		t.Error("expected used ticket")
-	}
+	assert.NoError(err)
+	assert.True(used)
 
-	recipientRand := genRecipientRand(sender, secret, params.Seed)
+	_, ok := r.invalidRands.Load(recipientRand.String())
+	assert.True(ok)
 
-	if _, ok := r.(*recipient).invalidRands.Load(recipientRand.String()); !ok {
-		t.Error("expected to invalidate recipientRand")
-	}
-
-	if _, ok := r.(*recipient).senderNonces[recipientRand.String()]; ok {
-		t.Error("expected to clear senderNonce memory")
-	}
+	_, ok = r.senderNonces[recipientRand.String()]
+	assert.False(ok)
 }
 
 func TestRedeemWinningTickets_MultipleTicketsFromMultipleSessions(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	assert := assert.New(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg).(*recipient)
 	// Config stub validator with valid winning tickets
 	v.SetIsWinningTicket(true)
 	require := require.New(t)
 
+	tm.lastSeenBlock = big.NewInt(3)
 	params0 := ticketParamsOrFatal(t, r, sender)
 	ticket0 := newTicket(sender, params0, 1)
+	tm.lastSeenBlock = big.NewInt(0)
 	sessionID0, won, err := r.ReceiveTicket(ticket0, sig, params0.Seed)
 	require.Nil(err)
 	require.True(won)
 
+	tm.lastSeenBlock = big.NewInt(4)
 	params1 := ticketParamsOrFatal(t, r, sender)
 	ticket1 := newTicket(sender, params1, 1)
+	tm.lastSeenBlock = big.NewInt(0)
 	sessionID1, won, err := r.ReceiveTicket(ticket1, sig, params1.Seed)
 	require.Nil(err)
 	require.True(won)
 
 	require.NotEqual(sessionID0, sessionID1)
 
-	err = r.RedeemWinningTickets([]string{sessionID0, sessionID1})
+	recipientRand0 := genRecipientRand(sender, secret, params0)
+	recipientRand1 := genRecipientRand(sender, secret, params1)
 
-	assert := assert.New(t)
-	assert.Nil(err)
+	err = r.RedeemWinningTickets([]string{sessionID0, sessionID1})
+	assert.NoError(err)
+	assert.Equal(2, len(sm.queued))
+	assert.Equal(&SignedTicket{ticket0, sig, recipientRand0}, sm.queued[0])
+	assert.Equal(&SignedTicket{ticket1, sig, recipientRand1}, sm.queued[1])
+
+	err = r.redeemWinningTicket(ticket0, sig, recipientRand0)
+	assert.NoError(err)
+	err = r.redeemWinningTicket(ticket1, sig, recipientRand1)
+	assert.NoError(err)
+
 	used, err := b.IsUsedTicket(ticket0)
 	require.Nil(err)
 	assert.True(used)
@@ -861,50 +767,51 @@ func TestRedeemWinningTickets_MultipleTicketsFromMultipleSessions(t *testing.T) 
 	require.Nil(err)
 	assert.True(used)
 
-	recipientRand0 := genRecipientRand(sender, secret, params0.Seed)
-	recipientRand1 := genRecipientRand(sender, secret, params1.Seed)
-
-	_, ok := r.(*recipient).invalidRands.Load(recipientRand0.String())
+	_, ok := r.invalidRands.Load(recipientRand0.String())
 	assert.True(ok)
-	_, ok = r.(*recipient).invalidRands.Load(recipientRand1.String())
+	_, ok = r.invalidRands.Load(recipientRand1.String())
 	assert.True(ok)
 
-	_, ok = r.(*recipient).senderNonces[recipientRand0.String()]
+	_, ok = r.senderNonces[recipientRand0.String()]
 	assert.False(ok)
-	_, ok = r.(*recipient).senderNonces[recipientRand1.String()]
+	_, ok = r.senderNonces[recipientRand1.String()]
 	assert.False(ok)
 }
 
 func TestRedeemWinningTicket_MaxFloatError(t *testing.T) {
 	assert := assert.New(t)
-
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg).(*recipient)
 
 	params := ticketParamsOrFatal(t, r, sender)
 	ticket := newTicket(sender, params, 1)
 
 	sm.maxFloatErr = errors.New("MaxFloat error")
+	recipientRand := genRecipientRand(sender, secret, params)
 	err := r.RedeemWinningTicket(ticket, sig, params.Seed)
+	assert.Nil(err)
+	assert.Equal(1, len(sm.queued))
+	assert.Equal(&SignedTicket{ticket, sig, recipientRand}, sm.queued[0])
+	err = r.redeemWinningTicket(ticket, sig, recipientRand)
 	assert.EqualError(err, sm.maxFloatErr.Error())
 }
 
 func TestRedeemWinningTicket_InsufficientMaxFloat_QueueTicket(t *testing.T) {
 	assert := assert.New(t)
 
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg).(*recipient)
 
 	params := ticketParamsOrFatal(t, r, sender)
 	ticket := newTicket(sender, params, 1)
 	ticket.FaceValue = big.NewInt(99999999999999)
 
-	err := r.RedeemWinningTicket(ticket, sig, params.Seed)
-	assert.Nil(err)
+	recipientRand := genRecipientRand(sender, secret, params)
+	err := r.redeemWinningTicket(ticket, sig, recipientRand)
+	assert.EqualError(err, "insufficient max float - faceValue=99999999999999 maxFloat=10000000000")
 
-	recipientRand := genRecipientRand(sender, secret, params.Seed)
 	assert.Equal(1, len(sm.queued))
 	assert.Equal(&SignedTicket{ticket, sig, recipientRand}, sm.queued[0])
 }
@@ -913,9 +820,9 @@ func TestRedeemWinningTicket_AddFloatError(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg).(*recipient)
 
 	params := ticketParamsOrFatal(t, r, sender)
 	ticket := newTicket(sender, params, 1)
@@ -923,27 +830,21 @@ func TestRedeemWinningTicket_AddFloatError(t *testing.T) {
 	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	require.Nil(err)
 
-	errorLogsBefore := glog.Stats.Error.Lines()
-
 	sm.addFloatErr = errors.New("AddFloat error")
-	err = r.RedeemWinningTicket(ticket, sig, params.Seed)
-	assert.Nil(err)
 
+	errorLogsBefore := glog.Stats.Error.Lines()
+	recipientRand := genRecipientRand(sender, secret, params)
+	r.redeemWinningTicket(ticket, sig, recipientRand)
 	errorLogsAfter := glog.Stats.Error.Lines()
-
-	// Check that an error was logged
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
-
 	used, err := b.IsUsedTicket(ticket)
 	require.Nil(err)
 	assert.True(used)
 
-	recipientRand := genRecipientRand(sender, secret, params.Seed)
-
-	_, ok := r.(*recipient).invalidRands.Load(recipientRand.String())
+	_, ok := r.invalidRands.Load(recipientRand.String())
 	assert.True(ok)
 
-	_, ok = r.(*recipient).senderNonces[recipientRand.String()]
+	_, ok = r.senderNonces[recipientRand.String()]
 	assert.False(ok)
 }
 
@@ -951,9 +852,9 @@ func TestRedeemWinningTicket(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg).(*recipient)
 
 	params := ticketParamsOrFatal(t, r, sender)
 	ticket := newTicket(sender, params, 1)
@@ -963,7 +864,8 @@ func TestRedeemWinningTicket(t *testing.T) {
 
 	errorLogsBefore := glog.Stats.Error.Lines()
 
-	err = r.RedeemWinningTicket(ticket, sig, params.Seed)
+	recipientRand := genRecipientRand(sender, secret, params)
+	err = r.redeemWinningTicket(ticket, sig, recipientRand)
 	assert.Nil(err)
 
 	errorLogsAfter := glog.Stats.Error.Lines()
@@ -975,12 +877,10 @@ func TestRedeemWinningTicket(t *testing.T) {
 	require.Nil(err)
 	assert.True(used)
 
-	recipientRand := genRecipientRand(sender, secret, params.Seed)
-
-	_, ok := r.(*recipient).invalidRands.Load(recipientRand.String())
+	_, ok := r.invalidRands.Load(recipientRand.String())
 	assert.True(ok)
 
-	_, ok = r.(*recipient).senderNonces[recipientRand.String()]
+	_, ok = r.senderNonces[recipientRand.String()]
 	assert.False(ok)
 }
 
@@ -988,15 +888,15 @@ func TestRedeemManager_Error(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg)
 	r.Start()
 	defer r.Stop()
 
 	params := ticketParamsOrFatal(t, r, sender)
 	ticket := newTicket(sender, params, 1)
-	recipientRand := genRecipientRand(sender, secret, params.Seed)
+	recipientRand := genRecipientRand(sender, secret, params)
 
 	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	require.Nil(err)
@@ -1027,15 +927,15 @@ func TestRedeemManager(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	sender, b, v, ts, gm, sm, em, cfg, sig := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg)
 	r.Start()
 	defer r.Stop()
 
 	params := ticketParamsOrFatal(t, r, sender)
 	ticket := newTicket(sender, params, 1)
-	recipientRand := genRecipientRand(sender, secret, params.Seed)
+	recipientRand := genRecipientRand(sender, secret, params)
 
 	_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
 	require.Nil(err)
@@ -1064,17 +964,17 @@ func TestRedeemManager(t *testing.T) {
 }
 
 func TestTicketParams(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, _ := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, _ := newRecipientFixtureOrFatal(t)
 	recipient := RandAddress()
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(recipient, b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(recipient, b, v, ts, gm, sm, tm, secret, cfg)
 
 	require := require.New(t)
 	assert := assert.New(t)
 
 	// Test SenderMonitor.MaxFloat() error
 	sm.maxFloatErr = errors.New("MaxFloat error")
-	_, err := r.TicketParams(sender)
+	_, err := r.TicketParams(sender, big.NewRat(1, 1))
 	assert.EqualError(err, sm.maxFloatErr.Error())
 
 	// Test correct params returned when default faceValue < maxFloat
@@ -1100,7 +1000,7 @@ func TestTicketParams(t *testing.T) {
 	expEV := new(big.Int).Div(new(big.Int).Mul(faceValue, winProb), maxWinProb)
 	assert.LessOrEqual(new(big.Int).Abs(new(big.Int).Sub(cfg.EV, expEV)).Int64(), int64(1))
 
-	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(genRecipientRand(sender, secret, params1.Seed).Bytes(), uint256Size))
+	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(genRecipientRand(sender, secret, params1).Bytes(), uint256Size))
 
 	if params1.RecipientRandHash != recipientRandHash {
 		t.Errorf("expected recipientRandHash %x got %x", recipientRandHash, params1.RecipientRandHash)
@@ -1130,7 +1030,7 @@ func TestTicketParams(t *testing.T) {
 		t.Errorf("expected different seed value for different params")
 	}
 
-	recipientRandHash = crypto.Keccak256Hash(ethcommon.LeftPadBytes(genRecipientRand(sender, secret, params2.Seed).Bytes(), uint256Size))
+	recipientRandHash = crypto.Keccak256Hash(ethcommon.LeftPadBytes(genRecipientRand(sender, secret, params2).Bytes(), uint256Size))
 
 	if params2.RecipientRandHash != recipientRandHash {
 		t.Errorf("expected recipientRandHash %x got %x", recipientRandHash, params2.RecipientRandHash)
@@ -1193,10 +1093,10 @@ func TestTicketParams(t *testing.T) {
 }
 
 func TestTxCostMultiplier_UsingFaceValue_ReturnsDefaultMultiplier(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, _ := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, _ := newRecipientFixtureOrFatal(t)
 	recipient := RandAddress()
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(recipient, b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(recipient, b, v, ts, gm, sm, tm, secret, cfg)
 
 	mul, err := r.TxCostMultiplier(sender)
 	assert.Nil(t, err)
@@ -1204,10 +1104,10 @@ func TestTxCostMultiplier_UsingFaceValue_ReturnsDefaultMultiplier(t *testing.T) 
 }
 
 func TestTxCostMultiplier_UsingMaxFloat_ReturnsScaledMultiplier(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, _ := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, _ := newRecipientFixtureOrFatal(t)
 	recipient := RandAddress()
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(recipient, b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(recipient, b, v, ts, gm, sm, tm, secret, cfg)
 
 	sm.maxFloat = big.NewInt(500000)
 
@@ -1220,10 +1120,10 @@ func TestTxCostMultiplier_UsingMaxFloat_ReturnsScaledMultiplier(t *testing.T) {
 }
 
 func TestTxCostMultiplier_MaxFloatError_ReturnsError(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, _ := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, _ := newRecipientFixtureOrFatal(t)
 	recipient := RandAddress()
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(recipient, b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(recipient, b, v, ts, gm, sm, tm, secret, cfg)
 
 	sm.maxFloatErr = errors.New("MaxFloat error")
 	mul, err := r.TxCostMultiplier(sender)
@@ -1232,10 +1132,10 @@ func TestTxCostMultiplier_MaxFloatError_ReturnsError(t *testing.T) {
 }
 
 func TestTxCostMultiplier_InsufficientReserve_ReturnsError(t *testing.T) {
-	sender, b, v, ts, gm, sm, em, cfg, _ := newRecipientFixtureOrFatal(t)
+	sender, b, v, ts, gm, sm, tm, cfg, _ := newRecipientFixtureOrFatal(t)
 	recipient := RandAddress()
 	secret := [32]byte{3}
-	r := NewRecipientWithSecret(recipient, b, v, ts, gm, sm, em, secret, cfg)
+	r := NewRecipientWithSecret(recipient, b, v, ts, gm, sm, tm, secret, cfg)
 
 	sm.maxFloat = big.NewInt(0) // Set maxFloat to some value less than EV
 

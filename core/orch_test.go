@@ -664,6 +664,38 @@ func TestProcessPayment_ActiveOrchestrator(t *testing.T) {
 	assert.NoError(err)
 }
 
+func TestProcessPayment_InvalidExpectedPrice(t *testing.T) {
+	assert := assert.New(t)
+	addr := pm.RandAddress()
+	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
+		EthereumAddr:      addr.Hex(),
+		ActivationRound:   1,
+		DeactivationRound: 999,
+	})
+	defer dbh.Close()
+	defer dbraw.Close()
+	n, _ := NewLivepeerNode(nil, "", dbh)
+	n.Recipient = new(pm.MockRecipient)
+	rm := &stubRoundsManager{
+		round: big.NewInt(10),
+	}
+	orch := NewOrchestrator(n, rm)
+	orch.address = addr
+	pay := defaultPayment(t)
+
+	// test ExpectedPrice.PixelsPerUnit = 0
+	pay.ExpectedPrice = &net.PriceInfo{PricePerUnit: 500, PixelsPerUnit: 0}
+	err := orch.ProcessPayment(pay, ManifestID("some manifest"))
+	assert.Error(err)
+	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%v", "pixels per unit is 0"))
+
+	// test ExpectedPrice = nil
+	pay.ExpectedPrice = nil
+	err = orch.ProcessPayment(pay, ManifestID("some manifest"))
+	assert.Error(err)
+	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%v", "expected price is nil"))
+}
+
 func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 	addr := pm.RandAddress()
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
@@ -1443,6 +1475,7 @@ func TestSufficientBalance_OffChainMode_ReturnsTrue(t *testing.T) {
 
 func TestTicketParams(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
+	n.priceInfo = big.NewRat(1, 1)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	expectedParams := &pm.TicketParams{
@@ -1451,13 +1484,19 @@ func TestTicketParams(t *testing.T) {
 		WinProb:           big.NewInt(2345),
 		Seed:              big.NewInt(3456),
 		RecipientRandHash: pm.RandHash(),
+		ExpirationBlock:   big.NewInt(5000),
 	}
-	recipient.On("TicketParams", mock.Anything).Return(expectedParams, nil)
+
+	multiplier := big.NewRat(1, 1)
+
+	sender := pm.RandAddress()
+	recipient.On("TxCostMultiplier", mock.Anything).Return(multiplier, nil).Once()
+	recipient.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil).Once()
 	orch := NewOrchestrator(n, nil)
 
 	assert := assert.New(t)
 
-	actualParams, err := orch.TicketParams(pm.RandAddress())
+	actualParams, err := orch.TicketParams(sender)
 	assert.Nil(err)
 
 	assert.Equal(expectedParams.Recipient.Bytes(), actualParams.Recipient)
@@ -1465,6 +1504,20 @@ func TestTicketParams(t *testing.T) {
 	assert.Equal(expectedParams.WinProb.Bytes(), actualParams.WinProb)
 	assert.Equal(expectedParams.RecipientRandHash.Bytes(), actualParams.RecipientRandHash)
 	assert.Equal(expectedParams.Seed.Bytes(), actualParams.Seed)
+
+	expErr := errors.New("Recipient TicketParams Error")
+	recipient.On("TxCostMultiplier", mock.Anything).Return(multiplier, nil).Once()
+	recipient.On("TicketParams", mock.Anything, mock.Anything).Return(nil, expErr).Once()
+	actualParams, err = orch.TicketParams(sender)
+	assert.Nil(actualParams)
+	assert.EqualError(err, expErr.Error())
+
+	expErr = errors.New("TxCostMultiplier Error")
+	recipient.On("TxCostMultiplier", mock.Anything).Return(nil, expErr).Once()
+	recipient.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil).Once()
+	actualParams, err = orch.TicketParams(sender)
+	assert.Nil(actualParams)
+	assert.EqualError(err, expErr.Error())
 }
 
 func TestTicketParams_GivenNilNode_ReturnsNil(t *testing.T) {
@@ -1483,18 +1536,6 @@ func TestTicketParams_GivenNilRecipient_ReturnsNil(t *testing.T) {
 	params, err := orch.TicketParams(ethcommon.Address{})
 	assert.Nil(t, err)
 	assert.Nil(t, params)
-}
-
-func TestTicketParams_Error(t *testing.T) {
-	n, _ := NewLivepeerNode(nil, "", nil)
-	recipient := new(pm.MockRecipient)
-	n.Recipient = recipient
-	expErr := errors.New("TicketParams error")
-	recipient.On("TicketParams", mock.Anything).Return(nil, expErr)
-	orch := NewOrchestrator(n, nil)
-
-	_, err := orch.TicketParams(ethcommon.Address{})
-	assert.EqualError(t, err, expErr.Error())
 }
 
 func TestPriceInfo_ReturnsBigRat(t *testing.T) {

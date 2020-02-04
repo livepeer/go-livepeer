@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"fmt"
 	"math/big"
 	"sync"
 
@@ -13,6 +14,9 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/pkg/errors"
 )
+
+// ErrTicketParamsExpired is returned when ticket params have expired
+var ErrTicketParamsExpired = errors.New("TicketParams expired")
 
 var errInsufficientSenderReserve = errors.New("insufficient sender reserve")
 
@@ -42,7 +46,7 @@ type Recipient interface {
 
 	// TicketParams returns the recipient's currently accepted ticket parameters
 	// for a provided sender ETH adddress
-	TicketParams(sender ethcommon.Address) (*TicketParams, error)
+	TicketParams(sender ethcommon.Address, price *big.Rat) (*TicketParams, error)
 
 	// TxCostMultiplier returns the multiplier -
 	TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error)
@@ -161,17 +165,24 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 		}
 	}
 
+	if !r.validRand(recipientRand) {
+		return sessionID, won, fmt.Errorf("recipientRand already revealed recipientRand=%v", recipientRand)
+	}
+
+	if err := r.updateSenderNonce(recipientRand, ticket.SenderNonce); err != nil {
+		return sessionID, won, err
+	}
+
 	// check advertised params aren't expired
 	latestBlock := r.tm.LastSeenBlock()
-	if ticket.ParamsExpirationBlock.Cmp(latestBlock) > 0 {
-		return sessionID, won, errTicketParamsExpired
+	if ticket.ParamsExpirationBlock.Cmp(latestBlock) <= 0 {
+		return sessionID, won, ErrTicketParamsExpired
 	}
 
 	return sessionID, won, nil
 }
 
-// RedeemWinningTicket redeems all winning tickets with the broker
-// for a all sessionIDs
+// RedeemWinningTicket redeems all winning tickets with the broker for the provided session IDs
 func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 	tickets, sigs, recipientRands, err := r.store.LoadWinningTickets(sessionIDs)
 	if err != nil {
@@ -188,17 +199,15 @@ func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 
 // RedeemWinningTicket redeems a single winning ticket
 func (r *recipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error {
-	recipientRand := r.rand(seed, ticket.Sender)
+	recipientRand := r.rand(seed, ticket.Sender, ticket.FaceValue, ticket.WinProb, ticket.ParamsExpirationBlock, ticket.PricePerPixel)
 	return r.redeemWinningTicket(ticket, sig, recipientRand)
 }
 
 // TicketParams returns the recipient's currently accepted ticket parameters
-func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
+func (r *recipient) TicketParams(sender ethcommon.Address, price *big.Rat) (*TicketParams, error) {
 	randBytes := RandBytes(32)
 
 	seed := new(big.Int).SetBytes(randBytes)
-	recipientRand := r.rand(seed, sender)
-	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size))
 
 	faceValue, err := r.faceValue(sender)
 	if err != nil {
@@ -206,7 +215,7 @@ func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error
 	}
 
 	lastBlock := r.tm.LastSeenBlock()
-	expirationBlock := lastBlock.Add(lastBlock, paramsExpirationTime)
+	expirationBlock := new(big.Int).Add(lastBlock, paramsExpirationBlock)
 
 	winProb := r.winProb(faceValue)
 
@@ -216,10 +225,10 @@ func (r *recipient) TicketParams(sender ethcommon.Address) (*TicketParams, error
 	return &TicketParams{
 		Recipient:         r.addr,
 		FaceValue:         faceValue,
-		WinProb:           r.winProb(faceValue),
+		WinProb:           winProb,
 		RecipientRandHash: recipientRandHash,
 		Seed:              seed,
-		ExpirationBlock:   lastBlock.Add(lastBlock, paramsExpirationTime),
+		ExpirationBlock:   expirationBlock,
 	}, nil
 }
 
@@ -420,10 +429,15 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 	return nil
 }
 
-func (r *recipient) rand(seed *big.Int, sender ethcommon.Address) *big.Int {
+func (r *recipient) rand(seed *big.Int, sender ethcommon.Address, faceValue *big.Int, winProb *big.Int, expirationBlock *big.Int, price *big.Rat) *big.Int {
 	h := hmac.New(sha256.New, r.secret[:])
-	h.Write(append(seed.Bytes(), sender.Bytes()...))
-
+	msg := append(seed.Bytes(), sender.Bytes()...)
+	msg = append(msg, faceValue.Bytes()...)
+	msg = append(msg, winProb.Bytes()...)
+	msg = append(msg, expirationBlock.Bytes()...)
+	msg = append(msg, price.Num().Bytes()...)
+	msg = append(msg, price.Denom().Bytes()...)
+	h.Write(msg)
 	return new(big.Int).SetBytes(h.Sum(nil))
 }
 
