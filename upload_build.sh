@@ -23,6 +23,17 @@ if echo $VERSION | grep dirty; then
   exit 1
 fi
 
+# If we want to build with branch --> network support for any other networks, add them here!
+NETWORK_BRANCHES="rinkeby mainnet"
+# If the binaries are built off a network branch then the resource path should include the network branch name i.e. X.Y.Z/rinkeby or X.Y.Z/mainnet
+# If the binaries are not built off a network then the resource path should only include the version i.e. X.Y.Z
+VERSION_AND_NETWORK=$VERSION
+for networkBranch in $NETWORK_BRANCHES; do
+  if [[ $BRANCH == "$networkBranch" ]]; then
+    VERSION_AND_NETWORK="$VERSION/$BRANCH"
+  fi
+done
+
 mkdir $BASE
 cp ./livepeer${EXT} $BASE
 cp ./livepeer_cli${EXT} $BASE
@@ -49,7 +60,7 @@ fi
 
 # https://stackoverflow.com/a/44751929/990590
 bucket=build.livepeer.live
-resource="/${bucket}/${VERSION}/${FILE}"
+resource="/${bucket}/${VERSION_AND_NETWORK}/${FILE}"
 contentType="application/x-compressed-tar"
 dateValue=`date -R`
 stringToSign="PUT\n\n${contentType}\n${dateValue}\n${resource}"
