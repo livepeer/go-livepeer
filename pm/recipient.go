@@ -191,7 +191,6 @@ func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 
 	for i := 0; i < len(tickets); i++ {
 		r.sm.QueueTicket(tickets[i].Sender, &SignedTicket{tickets[i], sigs[i], recipientRands[i]})
-		glog.Infof("Queued ticket sender=%x recipientRandHash=%x senderNonce=%v", tickets[i].Sender.Hex(), tickets[i].RecipientRandHash.Hex(), tickets[i].SenderNonce)
 	}
 
 	return nil
@@ -200,7 +199,8 @@ func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 // RedeemWinningTicket redeems a single winning ticket
 func (r *recipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error {
 	recipientRand := r.rand(seed, ticket.Sender, ticket.FaceValue, ticket.WinProb, ticket.ParamsExpirationBlock, ticket.PricePerPixel)
-	return r.redeemWinningTicket(ticket, sig, recipientRand)
+	r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand})
+	return nil
 }
 
 // TicketParams returns the recipient's currently accepted ticket parameters

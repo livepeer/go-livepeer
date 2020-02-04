@@ -38,7 +38,8 @@ func TestMaxFloat(t *testing.T) {
 	}
 	smgr.claimedReserve[addr] = big.NewInt(100)
 	rm.transcoderPoolSize = big.NewInt(50)
-	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
+	bs := &stubBlockStore{}
+	sm := NewSenderMonitor(claimant, b, smgr, rm, bs, 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 
@@ -93,7 +94,8 @@ func TestSubFloat(t *testing.T) {
 	}
 	smgr.claimedReserve[addr] = big.NewInt(100)
 	rm.transcoderPoolSize = big.NewInt(50)
-	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
+	bs := &stubBlockStore{}
+	sm := NewSenderMonitor(claimant, b, smgr, rm, bs, 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 
@@ -126,6 +128,7 @@ func TestSubFloat(t *testing.T) {
 	// Test resetting errCount
 	assert.True(em.AcceptErr(claimant))
 }
+
 func TestAddFloat(t *testing.T) {
 	claimant, b, smgr, rm, em := senderMonitorFixture()
 	addr := RandAddress()
@@ -139,21 +142,13 @@ func TestAddFloat(t *testing.T) {
 	}
 	smgr.claimedReserve[addr] = big.NewInt(100)
 	rm.transcoderPoolSize = big.NewInt(1)
-	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
+	bs := &stubBlockStore{}
+	sm := NewSenderMonitor(claimant, b, smgr, rm, bs, 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 
 	assert := assert.New(t)
 	require := require.New(t)
-
-	// Test ClaimedReserve() error
-	smgr.err = errors.New("ClaimedReserve error")
-
-	em.acceptable = false
-
-	sm.SubFloat(addr, big.NewInt(10))
-	err := sm.AddFloat(addr, big.NewInt(10))
-	assert.EqualError(err, "ClaimedReserve error")
 
 	// Test value not cached and insufficient pendingAmount error
 	smgr.err = nil
@@ -161,7 +156,7 @@ func TestAddFloat(t *testing.T) {
 	reserveAlloc := new(big.Int).Sub(new(big.Int).Div(reserve, rm.transcoderPoolSize), smgr.claimedReserve[addr])
 
 	amount := big.NewInt(20)
-	err = sm.AddFloat(addr, amount)
+	err := sm.AddFloat(addr, amount)
 	assert.EqualError(err, "cannot subtract from insufficient pendingAmount")
 
 	// Test value cached and no pendingAmount error
@@ -194,8 +189,8 @@ func TestAddFloat(t *testing.T) {
 	assert.True(em.acceptable)
 }
 
-func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
-	claimant, b, smgr, rm, em := senderMonitorFixture()
+func TestQueueTicketAndSignalNewBlock(t *testing.T) {
+	claimant, b, smgr, tm := senderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -206,26 +201,29 @@ func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
 		},
 	}
 	smgr.claimedReserve[addr] = big.NewInt(100)
-	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
+	bs := &stubBlockStore{}
+	sm := NewSenderMonitor(claimant, b, smgr, rm, bs, 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 
 	assert := assert.New(t)
-	require := require.New(t)
 
 	// Test queue ticket
 
 	sm.QueueTicket(addr, defaultSignedTicket(uint32(0)))
+	time.Sleep(20 * time.Millisecond)
 
-	sm.SubFloat(addr, big.NewInt(5))
+	assert.Equal(sm.(*senderMonitor).senders[addr].queue.Length(), int32(1))
 
 	qc := &queueConsumer{}
 	go qc.Wait(1, sm)
 
-	err := sm.AddFloat(addr, big.NewInt(5))
-	require.Nil(err)
+	tm.blockNumSink <- big.NewInt(5)
+	time.Sleep(20 * time.Millisecond)
 
-	time.Sleep(time.Millisecond * 20)
+	// check that ticket is now removed from queue
+	assert.Equal(sm.(*senderMonitor).senders[addr].queue.Length(), int32(0))
+
 	tickets := qc.Redeemable()
 	assert.Equal(1, len(tickets))
 	assert.Equal(uint32(0), tickets[0].SenderNonce)
@@ -243,35 +241,31 @@ func TestQueueTicketAndSignalMaxFloat(t *testing.T) {
 	}
 	smgr.claimedReserve[addr2] = big.NewInt(100)
 
-	sm.QueueTicket(addr, defaultSignedTicket(uint32(2)))
-	sm.QueueTicket(addr2, defaultSignedTicket(uint32(3)))
-
-	sm.SubFloat(addr, big.NewInt(5))
-	sm.SubFloat(addr2, big.NewInt(5))
-
 	qc = &queueConsumer{}
 	go qc.Wait(2, sm)
 
-	time.Sleep(10 * time.Millisecond)
+	sm.QueueTicket(addr, defaultSignedTicket(uint32(2)))
+	time.Sleep(20 * time.Millisecond)
+	assert.Equal(sm.(*senderMonitor).senders[addr].queue.Length(), int32(1))
+	tm.blockNumSink <- big.NewInt(5)
+	time.Sleep(20 * time.Millisecond)
 
-	err = sm.AddFloat(addr2, big.NewInt(5))
-	require.Nil(err)
-	err = sm.AddFloat(addr, big.NewInt(5))
-	require.Nil(err)
+	sm.QueueTicket(addr2, defaultSignedTicket(uint32(3)))
+	time.Sleep(20 * time.Millisecond)
+	assert.Equal(sm.(*senderMonitor).senders[addr2].queue.Length(), int32(1))
+	tm.blockNumSink <- big.NewInt(5)
+	time.Sleep(20 * time.Millisecond)
 
-	time.Sleep(10 * time.Millisecond)
-
-	// Order of tickets should reflect order that AddFloat()
-	// was called
 	tickets = qc.Redeemable()
 	assert.Equal(2, len(tickets))
-	assert.Equal(uint32(3), tickets[0].SenderNonce)
-	assert.Equal(uint32(2), tickets[1].SenderNonce)
+	assert.Equal(uint32(2), tickets[0].Ticket.SenderNonce)
+	assert.Equal(uint32(3), tickets[1].Ticket.SenderNonce)
 }
 
 func TestCleanup(t *testing.T) {
-	claimant, b, smgr, rm, em := senderMonitorFixture()
-	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
+	claimant, b, smgr, rm := senderMonitorFixture()
+	bs := &stubBlockStore{}
+	sm := NewSenderMonitor(claimant, b, smgr, rm, bs, 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 
@@ -455,7 +449,8 @@ func TestReserveAlloc(t *testing.T) {
 		},
 	}
 	smgr.claimedReserve[addr] = big.NewInt(100)
-	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em).(*senderMonitor)
+	bs := &stubBlockStore{}
+	sm := NewSenderMonitor(claimant, b, smgr, rm, bs, 5*time.Minute, 3600).(*senderMonitor)
 
 	// test GetSenderInfo error
 	smgr.err = errors.New("GetSenderInfo error")
@@ -476,7 +471,8 @@ func TestSenderMonitor_ValidateSender(t *testing.T) {
 	smgr.info[addr] = &SenderInfo{
 		WithdrawRound: big.NewInt(10),
 	}
-	sm := NewSenderMonitor(claimant, b, smgr, rm, 5*time.Minute, 3600, em)
+	bs := &stubBlockStore{}
+	sm := NewSenderMonitor(claimant, b, smgr, rm, bs, 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 

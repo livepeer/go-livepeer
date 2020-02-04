@@ -4,6 +4,9 @@ import (
 	"math/big"
 	"sync"
 	"sync/atomic"
+
+	"github.com/ethereum/go-ethereum/event"
+	"github.com/golang/glog"
 )
 
 // RedeemableEmitter is an interface that describes methods for
@@ -34,9 +37,8 @@ type ticketQueue struct {
 	// queue loop goroutine to wait for new tickets added to the queue
 	cond *sync.Cond
 
-	// maxFloatUpdate is a channel that the queue uses
-	// to receive the latest available max float value
-	maxFloatUpdate chan *big.Int
+	// blockSub returns a subscription to receive the last seen block number
+	blockSub func(chan<- *big.Int) event.Subscription
 
 	// redeemable is a channel that a recipient will receive
 	// redeemable tickets on as a sender's max float becomes
@@ -46,12 +48,12 @@ type ticketQueue struct {
 	quit chan struct{}
 }
 
-func newTicketQueue() *ticketQueue {
+func newTicketQueue(blockSub func(chan<- *big.Int) event.Subscription) *ticketQueue {
 	return &ticketQueue{
-		cond:           sync.NewCond(&sync.Mutex{}),
-		maxFloatUpdate: make(chan *big.Int),
-		redeemable:     make(chan *SignedTicket),
-		quit:           make(chan struct{}),
+		cond:       sync.NewCond(&sync.Mutex{}),
+		blockSub:   blockSub,
+		redeemable: make(chan *SignedTicket),
+		quit:       make(chan struct{}),
 	}
 }
 
@@ -84,23 +86,6 @@ func (q *ticketQueue) Add(ticket *SignedTicket) {
 	q.cond.Signal()
 }
 
-// SignalMaxFloat signals to the queue the latest max float for the sender
-// An external caller should call this method whenever a ticket redemption confirms
-// with the most up-to-date max float for the sender
-func (q *ticketQueue) SignalMaxFloat(amount *big.Int) {
-	// If the queue is empty do not signal a new max float
-	// value because there are no tickets to process
-	if q.Length() == 0 {
-		return
-	}
-
-	select {
-	case q.maxFloatUpdate <- amount:
-	case <-q.quit:
-		return
-	}
-}
-
 // Redeemable returns a channel that a consumer can use to receive tickets that
 // should be redeemed
 // pm.SenderMonitor is the primary consumer of this channel
@@ -121,6 +106,10 @@ func (q *ticketQueue) Length() int32 {
 // is sufficient to cover the face value of the ticket at the head of the queue. If the max float is sufficient, we pop
 // the ticket at the head of the queue and send it into q.redeemable which an external listener can use to receive redeemable tickets
 func (q *ticketQueue) startQueueLoop() {
+	blockNums := make(chan *big.Int, 10)
+	sub := q.blockSub(blockNums)
+	defer sub.Unsubscribe()
+
 	for {
 		// Lock and wait until the queue is non-empty
 		q.cond.L.Lock()
@@ -136,19 +125,27 @@ func (q *ticketQueue) startQueueLoop() {
 			}
 		}
 
-		nextTicket := q.queue[0]
-
 		// Unlock since the queue is non-empty now
 		q.cond.L.Unlock()
 
 		select {
-		case maxFloat := <-q.maxFloatUpdate:
-			if q.sufficientMaxFloat(maxFloat, nextTicket) {
-				select {
-				case q.redeemable <- nextTicket:
-					q.removeHead()
-				case <-q.quit:
-					return
+		case err := <-sub.Err():
+			glog.Error(err)
+		case latestBlock := <-blockNums:
+			numTickets := q.Length()
+			for i := 0; i < int(numTickets); i++ {
+				q.cond.L.Lock()
+				nextTicket := q.queue[0]
+				q.cond.L.Unlock()
+				q.removeHead()
+				if nextTicket.ParamsExpirationBlock.Cmp(latestBlock) <= 0 {
+					select {
+					case q.redeemable <- nextTicket:
+					case <-q.quit:
+						return
+					}
+				} else {
+					q.Add(nextTicket)
 				}
 			}
 		case <-q.quit:
@@ -166,10 +163,4 @@ func (q *ticketQueue) removeHead() {
 	q.queue = q.queue[1:]
 	atomic.AddInt32(&q.queueLen, -1)
 	q.cond.L.Unlock()
-}
-
-// sufficientMaxFloat returns a boolean indicating whether the sender's
-// current max float is sufficient to cover the given ticket
-func (q *ticketQueue) sufficientMaxFloat(maxFloat *big.Int, ticket *SignedTicket) bool {
-	return maxFloat.Cmp(ticket.FaceValue) >= 0
 }
