@@ -60,7 +60,6 @@ type LivepeerNode struct {
 	Transcoder        Transcoder
 	TranscoderManager *RemoteTranscoderManager
 	Balances          *AddressBalances
-	ErrorMonitor      *errorMonitor
 
 	// Broadcaster public fields
 	Sender pm.Sender

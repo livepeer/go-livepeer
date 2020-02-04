@@ -60,8 +60,6 @@ var (
 	cleanupInterval = 1 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
 	smTTL = 60 // 1 minute
-	// maxErrCount is the maximum number of acceptable errors tolerated by a payment recipient for a payment sender
-	maxErrCount = 3
 )
 
 const RtmpPort = "1935"
@@ -493,18 +491,14 @@ func main() {
 			validator := pm.NewValidator(sigVerifier, roundsWatcher)
 			gpm := eth.NewGasPriceMonitor(backend, blockPollingTime)
 			// Start gas price monitor
-			gasPriceUpdate, err := gpm.Start(ctx)
+			_, err := gpm.Start(ctx)
 			if err != nil {
 				glog.Errorf("error starting gas price monitor: %v", err)
 				return
 			}
 			defer gpm.Stop()
 
-			em := core.NewErrorMonitor(maxErrCount, gasPriceUpdate)
-			n.ErrorMonitor = em
-			go em.StartGasPriceUpdateLoop()
-
-			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, senderWatcher, roundsWatcher, cleanupInterval, smTTL, n.ErrorMonitor)
+			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, senderWatcher, roundsWatcher, n.Database, cleanupInterval, smTTL)
 			// Start sender monitor
 			sm.Start()
 			defer sm.Stop()
@@ -521,7 +515,6 @@ func main() {
 				n.Database,
 				gpm,
 				sm,
-				n.ErrorMonitor,
 				cfg,
 			)
 			if err != nil {

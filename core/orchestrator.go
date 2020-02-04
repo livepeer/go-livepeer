@@ -127,11 +127,6 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		return fmt.Errorf("orchestrator is inactive, cannot process payments")
 	}
 
-	var (
-		unacceptableReceiveErr bool
-		didReceiveErr          bool
-	)
-
 	priceInfo := payment.GetExpectedPrice()
 
 	seed := new(big.Int).SetBytes(payment.TicketParams.Seed)
@@ -181,12 +176,11 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			tsp.Sig,
 			seed,
 		)
-		pmErr, ok := err.(AcceptableError)
 		if err != nil {
 			glog.Errorf("Error receiving ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 
 			if monitor.Enabled {
-				monitor.PaymentRecvError(sender.String(), string(manifestID), err.Error(), ok && pmErr.Acceptable())
+				monitor.PaymentRecvError(sender.String(), string(manifestID), err.Error())
 			}
 
 			receiveErr = err

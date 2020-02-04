@@ -503,7 +503,8 @@ func defaultSender(t *testing.T) *sender {
 		Deposit:       big.NewInt(100000),
 		WithdrawRound: big.NewInt(0),
 	}
-	s := NewSender(am, rm, sm, big.NewRat(100, 1), 2)
+	bs := &stubBlockStore{}
+	s := NewSender(am, rm, sm, bs, big.NewRat(100, 1), 2)
 	return s.(*sender)
 }
 

@@ -525,7 +525,7 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	assert.Equal(2, len(res.Data.Segments))
 }
 
-func TestServeSegment_UnacceptableProcessPaymentError(t *testing.T) {
+func TestServeSegment_ProcessPaymentError(t *testing.T) {
 	orch := &mockOrchestrator{}
 	handler := serveSegmentHandler(orch)
 
@@ -654,28 +654,6 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal(params.Seed, tr.Info.TicketParams.Seed)
 	assert.Equal(price.PricePerUnit, tr.Info.PriceInfo.PricePerUnit)
 	assert.Equal(price.PixelsPerUnit, tr.Info.PriceInfo.PixelsPerUnit)
-
-	// Return an acceptable payment error to trigger an update to orchestrator info
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(pm.NewMockReceiveError(errors.New("some other error"), true)).Once()
-	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
-
-	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
-	defer resp.Body.Close()
-
-	body, err = ioutil.ReadAll(resp.Body)
-	require.Nil(err)
-
-	err = proto.Unmarshal(body, &tr)
-	require.Nil(err)
-
-	assert.Equal(http.StatusOK, resp.StatusCode)
-
-	assert.Equal(uri.String(), tr.Info.Transcoder)
-	assert.Equal(params.Recipient, tr.Info.TicketParams.Recipient)
-	assert.Equal(params.FaceValue, tr.Info.TicketParams.FaceValue)
-	assert.Equal(params.WinProb, tr.Info.TicketParams.WinProb)
-	assert.Equal(params.RecipientRandHash, tr.Info.TicketParams.RecipientRandHash)
-	assert.Equal(params.Seed, tr.Info.TicketParams.Seed)
 
 	// Test orchestratorInfo error
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil).Once()

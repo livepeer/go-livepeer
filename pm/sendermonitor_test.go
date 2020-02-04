@@ -26,7 +26,7 @@ var increaseTime = func(sec int64) {
 }
 
 func TestMaxFloat(t *testing.T) {
-	claimant, b, smgr, rm, em := senderMonitorFixture()
+	claimant, b, smgr, rm := senderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -82,7 +82,7 @@ func TestMaxFloat(t *testing.T) {
 }
 
 func TestSubFloat(t *testing.T) {
-	claimant, b, smgr, rm, em := senderMonitorFixture()
+	claimant, b, smgr, rm := senderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -111,10 +111,6 @@ func TestSubFloat(t *testing.T) {
 	require.Nil(err)
 	assert.Equal(new(big.Int).Sub(reserveAlloc, amount), mf)
 
-	assert.True(em.AcceptErr(claimant))
-
-	em.acceptable = false
-
 	sm.SubFloat(addr, amount)
 	assert.Nil(err)
 
@@ -124,13 +120,10 @@ func TestSubFloat(t *testing.T) {
 		new(big.Int).Sub(reserveAlloc, new(big.Int).Mul(amount, big.NewInt(2))),
 		mf,
 	)
-
-	// Test resetting errCount
-	assert.True(em.AcceptErr(claimant))
 }
 
 func TestAddFloat(t *testing.T) {
-	claimant, b, smgr, rm, em := senderMonitorFixture()
+	claimant, b, smgr, rm := senderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -160,7 +153,6 @@ func TestAddFloat(t *testing.T) {
 	assert.EqualError(err, "cannot subtract from insufficient pendingAmount")
 
 	// Test value cached and no pendingAmount error
-
 	sm.SubFloat(addr, amount)
 
 	err = sm.AddFloat(addr, amount)
@@ -177,16 +169,12 @@ func TestAddFloat(t *testing.T) {
 
 	sm.SubFloat(addr, amount)
 
-	assert.True(em.AcceptErr(claimant))
-
-	em.acceptable = false
 	err = sm.AddFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err = sm.MaxFloat(addr)
 	require.Nil(err)
 	assert.Equal(reserveAlloc, mf)
-	assert.True(em.acceptable)
 }
 
 func TestQueueTicketAndSignalNewBlock(t *testing.T) {
@@ -438,7 +426,7 @@ func TestCleanup(t *testing.T) {
 
 func TestReserveAlloc(t *testing.T) {
 	assert := assert.New(t)
-	claimant, b, smgr, rm, em := senderMonitorFixture()
+	claimant, b, smgr, rm := senderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -466,7 +454,7 @@ func TestReserveAlloc(t *testing.T) {
 }
 
 func TestSenderMonitor_ValidateSender(t *testing.T) {
-	claimant, b, smgr, rm, em := senderMonitorFixture()
+	claimant, b, smgr, rm := senderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		WithdrawRound: big.NewInt(10),
@@ -509,13 +497,12 @@ func TestSenderMonitor_ValidateSender(t *testing.T) {
 	assert.EqualError(err, expErr)
 }
 
-func senderMonitorFixture() (ethcommon.Address, *stubBroker, *stubSenderManager, *stubRoundsManager, *stubErrorMonitor) {
+func senderMonitorFixture() (ethcommon.Address, *stubBroker, *stubSenderManager, *stubRoundsManager) {
 	claimant := RandAddress()
 	b := newStubBroker()
 	smgr := newStubSenderManager()
 	rm := &stubRoundsManager{
 		transcoderPoolSize: big.NewInt(5),
 	}
-	em := &stubErrorMonitor{}
-	return claimant, b, smgr, rm, em
+	return claimant, b, smgr, rm
 }

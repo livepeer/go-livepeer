@@ -308,52 +308,6 @@ func (r *recipient) TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error)
 	return new(big.Rat).SetFrac(faceValue, r.txCost()), nil
 }
 
-func (r *recipient) acceptTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
-	if !r.validRand(recipientRand) {
-		// This might be an "acceptable" error.
-		// When a winning ticket is redeemed, the ticket's recipientRand is invalidated
-		// and the sender must send tickets with a new seed, but there could be a delay
-		// before the sender is notified of the new seed.
-		return newReceiveError(
-			errors.Errorf("invalid already revealed recipientRand %v", recipientRand),
-			r.em.AcceptErr(ticket.Sender),
-		)
-	}
-
-	if err := r.updateSenderNonce(recipientRand, ticket.SenderNonce); err != nil {
-		return err
-	}
-
-	faceValue, err := r.faceValue(ticket.Sender)
-	if err != nil {
-		return err
-	}
-
-	if ticket.FaceValue.Cmp(faceValue) != 0 {
-		// This might be an "acceptable" error
-		// When the gas price changes or the sender's max float changes, the required faceValue
-		// also changes and the sender must send tickets with the new faceValue, but there could
-		// be a delay before the sender is notified of the new faceValue.
-		return newReceiveError(
-			errors.Errorf("invalid ticket faceValue %v", ticket.FaceValue),
-			r.em.AcceptErr(ticket.Sender),
-		)
-	}
-
-	if ticket.WinProb.Cmp(r.winProb(faceValue)) != 0 {
-		// This might be an "acceptable" error
-		// When the gas price changes or the sender's max float changes, the required winProb
-		// also changes and the sender must send tickets with the new winProb, but there could
-		// be a delay before the sender is notified of the new winProb.
-		return newReceiveError(
-			errors.Errorf("invalid ticket winProb %v", ticket.WinProb),
-			r.em.AcceptErr(ticket.Sender),
-		)
-	}
-
-	return nil
-}
-
 func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
 	maxFloat, err := r.sm.MaxFloat(ticket.Sender)
 	if err != nil {

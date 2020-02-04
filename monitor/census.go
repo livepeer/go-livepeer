@@ -109,15 +109,14 @@ type (
 		mPaymentCreateError *stats.Int64Measure
 
 		// Metrics for receiving payments
-		mTicketValueRecv              *stats.Float64Measure
-		mTicketsRecv                  *stats.Int64Measure
-		mPaymentRecvAcceptableError   *stats.Int64Measure
-		mPaymentRecvUnacceptableError *stats.Int64Measure
-		mWinningTicketsRecv           *stats.Int64Measure
-		mValueRedeemed                *stats.Float64Measure
-		mTicketRedemptionError        *stats.Int64Measure
-		mSuggestedGasPrice            *stats.Float64Measure
-		mTranscodingPrice             *stats.Float64Measure
+		mTicketValueRecv       *stats.Float64Measure
+		mTicketsRecv           *stats.Int64Measure
+		mPaymentRecvErr        *stats.Int64Measure
+		mWinningTicketsRecv    *stats.Int64Measure
+		mValueRedeemed         *stats.Float64Measure
+		mTicketRedemptionError *stats.Int64Measure
+		mSuggestedGasPrice     *stats.Float64Measure
+		mTranscodingPrice      *stats.Float64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -220,8 +219,7 @@ func InitCensus(nodeType, nodeID, version string) {
 	// Metrics for receiving payments
 	census.mTicketValueRecv = stats.Float64("ticket_value_recv", "TicketValueRecv", "gwei")
 	census.mTicketsRecv = stats.Int64("tickets_recv", "TicketsRecv", "tot")
-	census.mPaymentRecvAcceptableError = stats.Int64("payment_recv_acceptable_errors", "PaymentRecvAcceptableError", "tot")
-	census.mPaymentRecvUnacceptableError = stats.Int64("payment_recv_unacceptable_errors", "PaymentRecvUnacceptableError", "tot")
+	census.mPaymentRecvErr = stats.Int64("payment_recv_errors", "PaymentRecvErr", "tot")
 	census.mWinningTicketsRecv = stats.Int64("winning_tickets_recv", "WinningTicketsRecv", "tot")
 	census.mValueRedeemed = stats.Float64("value_redeemed", "ValueRedeemed", "gwei")
 	census.mTicketRedemptionError = stats.Int64("ticket_redemption_errors", "TicketRedemptionError", "tot")
@@ -497,16 +495,9 @@ func InitCensus(nodeType, nodeID, version string) {
 			Aggregation: view.Sum(),
 		},
 		{
-			Name:        "payment_recv_acceptable_errors",
-			Measure:     census.mPaymentRecvAcceptableError,
-			Description: "Acceptable errors when receiving payments",
-			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID, census.kErrorCode}, baseTags...),
-			Aggregation: view.Sum(),
-		},
-		{
-			Name:        "payment_recv_unacceptable_errors",
-			Measure:     census.mPaymentRecvUnacceptableError,
-			Description: "Unacceptable errors when receiving payments",
+			Name:        "payment_recv_errors",
+			Measure:     census.mPaymentRecvErr,
+			Description: "Errors when receiving payments",
 			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID, census.kErrorCode}, baseTags...),
 			Aggregation: view.Sum(),
 		},
@@ -1135,7 +1126,7 @@ func TicketsRecv(sender string, manifestID string, numTickets int) {
 }
 
 // PaymentRecvError records an error from receiving a payment
-func PaymentRecvError(sender string, manifestID string, errStr string, acceptable bool) {
+func PaymentRecvError(sender string, manifestID string, errStr string) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
@@ -1162,11 +1153,7 @@ func PaymentRecvError(sender string, manifestID string, errStr string, acceptabl
 		glog.Fatal(err)
 	}
 
-	if acceptable {
-		stats.Record(ctx, census.mPaymentRecvAcceptableError.M(1))
-	} else {
-		stats.Record(ctx, census.mPaymentRecvUnacceptableError.M(1))
-	}
+	stats.Record(ctx, census.mPaymentRecvErr.M(1))
 }
 
 // WinningTicketsRecv records the number of winning tickets received from a sender

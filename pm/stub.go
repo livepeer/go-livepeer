@@ -12,15 +12,19 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+type stubBlockStore struct {
+	lastBlock *big.Int
+	err       error
+}
+
 type stubTicketStore struct {
+	stubBlockStore
 	tickets         map[string][]*Ticket
 	sigs            map[string][][]byte
 	recipientRands  map[string][]*big.Int
 	storeShouldFail bool
 	loadShouldFail  bool
 	lock            sync.RWMutex
-	lastBlock       *big.Int
-	err             error
 }
 
 func newStubTicketStore() *stubTicketStore {
@@ -76,7 +80,7 @@ func (ts *stubTicketStore) LoadWinningTickets(sessionIDs []string) ([]*Ticket, [
 	return allTix, allSigs, allRecipientRands, nil
 }
 
-func (ts *stubTicketStore) LastSeenBlock() (*big.Int, error) {
+func (ts *stubBlockStore) LastSeenBlock() (*big.Int, error) {
 	return ts.lastBlock, ts.err
 }
 
@@ -432,47 +436,4 @@ func (m *MockSender) CreateTicketBatch(sessionID string, size int) (*TicketBatch
 func (m *MockSender) ValidateTicketParams(ticketParams *TicketParams) error {
 	args := m.Called(ticketParams)
 	return args.Error(0)
-}
-
-// MockReceiveError is for testing acceptable/unacceptable PM ticket errors
-type MockReceiveError struct {
-	err        error
-	acceptable bool
-}
-
-type acceptableError interface {
-	error
-
-	// Acceptable returns whether the error is acceptable
-	Acceptable() bool
-}
-
-// Error returns the underlying error as a string
-func (re *MockReceiveError) Error() string {
-	return re.err.Error()
-}
-
-// Acceptable returns whether the error is acceptable
-func (re *MockReceiveError) Acceptable() bool {
-	return re.acceptable
-}
-
-// NewMockReceiveError creates a new acceptable/unacceptable MocKReceiveError
-func NewMockReceiveError(err error, acceptable bool) *MockReceiveError {
-	return &MockReceiveError{
-		err,
-		acceptable,
-	}
-}
-
-type stubErrorMonitor struct {
-	acceptable bool
-}
-
-func (em *stubErrorMonitor) AcceptErr(sender ethcommon.Address) bool {
-	return em.acceptable
-}
-
-func (em *stubErrorMonitor) ClearErrCount(sender ethcommon.Address) {
-	em.acceptable = true
 }
