@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -19,6 +20,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
 
 	"github.com/livepeer/lpms/stream"
@@ -209,12 +211,14 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 	var sessions []*BroadcastSession
 
 	for _, tinfo := range tinfos {
-		var sessionID string
-		var balance Balance
-
-		ticketParams := pmTicketParams(tinfo.TicketParams)
+		var (
+			sessionID    string
+			balance      Balance
+			ticketParams *pm.TicketParams
+		)
 
 		if n.Sender != nil {
+			ticketParams = pmTicketParams(tinfo.TicketParams)
 			sessionID = n.Sender.StartSession(*ticketParams)
 		}
 
@@ -349,8 +353,27 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	// send segment to the orchestrator
-	res, err := SubmitSegment(sess, seg, nonce)
-	if err != nil || res == nil {
+	glog.V(common.DEBUG).Infof("Submitting segment nonce=%d manifestID=%s seqNo=%d orch=%s", nonce, cxn.mid, seg.SeqNo, sess.OrchestratorInfo.Transcoder)
+
+	res, tErr := SubmitSegment(sess, seg, nonce)
+	// If TicketParams have expired, refresh them
+	if tErr != nil && tErr == pm.ErrTicketParamsExpired {
+		glog.V(common.VERBOSE).Infof("ticketparams expired, refreshing for orchestrator=%v", sess.OrchestratorInfo.Transcoder)
+		oURL, err := url.Parse(sess.OrchestratorInfo.Transcoder)
+		if err != nil {
+			cxn.sessManager.removeSession(sess)
+			return nil, fmt.Errorf("invalid orchestrator URL url=%v", sess.OrchestratorInfo.Transcoder)
+		}
+		oInfo, err := getOrchestratorInfoRPC(context.Background(), sess.Broadcaster, oURL)
+		if err != nil {
+			cxn.sessManager.removeSession(sess)
+			return nil, fmt.Errorf("unable to refresh ticketparams for orchestrator=%v, err=%v", sess.OrchestratorInfo.Transcoder, err)
+		}
+		sess.OrchestratorInfo = oInfo
+		res, tErr = SubmitSegment(sess, seg, nonce)
+	}
+	if tErr != nil || res == nil {
+		glog.Infof("unable to submit segment, removing session for orchestrator=%v err=%v", sess.OrchestratorInfo.Transcoder, tErr)
 		cxn.sessManager.removeSession(sess)
 		if res == nil && err == nil {
 			return nil, errors.New("Empty response")

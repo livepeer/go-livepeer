@@ -3,13 +3,11 @@ package server
 import (
 	"errors"
 	"fmt"
-	"math/big"
 	"net/http"
 	"sync"
 	"testing"
 	"time"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -22,6 +20,7 @@ import (
 	"github.com/livepeer/m3u8"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -214,7 +213,7 @@ func TestNewSessionManager(t *testing.T) {
 		} else {
 			assert.Equal(max, sess.numOrchs)
 		}
-		sd.infos = append(sd.infos, &net.OrchestratorInfo{})
+		sd.infos = append(sd.infos, &net.OrchestratorInfo{PriceInfo: &net.PriceInfo{}})
 	}
 	// sanity check some expected postconditions
 	assert.Equal(sess.numOrchs, max)
@@ -710,31 +709,16 @@ func TestUpdateSession(t *testing.T) {
 
 	sender := &pm.MockSender{}
 	sess.Sender = sender
-	res.Info = &net.OrchestratorInfo{}
-
+	res.Info = &net.OrchestratorInfo{
+		TicketParams: &net.TicketParams{},
+		PriceInfo:    &net.PriceInfo{},
+	}
+	sender.On("StartSession", mock.Anything).Return("foo").Once()
 	newSess = updateSession(sess, res)
 	// Check that a new PM session is not created because OrchestratorInfo.TicketParams = nil
 	assert.Equal("foo", newSess.PMSessionID)
 
-	params := pm.TicketParams{
-		Recipient:         ethcommon.Address{},
-		FaceValue:         big.NewInt(100),
-		WinProb:           big.NewInt(100),
-		RecipientRandHash: ethcommon.BytesToHash([]byte{}),
-		Seed:              big.NewInt(100),
-	}
-	res.Info = &net.OrchestratorInfo{
-		TicketParams: &net.TicketParams{
-			Recipient:         params.Recipient.Bytes(),
-			FaceValue:         params.FaceValue.Bytes(),
-			WinProb:           params.WinProb.Bytes(),
-			RecipientRandHash: params.RecipientRandHash.Bytes(),
-			Seed:              params.Seed.Bytes(),
-		},
-	}
-
-	sender.On("StartSession", params).Return("bar")
-
+	sender.On("StartSession", mock.Anything).Return("bar").Once()
 	newSess = updateSession(sess, res)
 	// Check that a new PM session is created
 	assert.Equal("bar", newSess.PMSessionID)

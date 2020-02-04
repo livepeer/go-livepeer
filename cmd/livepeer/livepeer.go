@@ -559,7 +559,7 @@ func main() {
 				panic(fmt.Errorf("-depositMultiplier must be greater than 0, but %v provided. Restart the node with a valid value for -depositMultiplier", *depositMultiplier))
 			}
 
-			n.Sender = pm.NewSender(n.Eth, roundsWatcher, senderWatcher, ev, *depositMultiplier)
+			n.Sender = pm.NewSender(n.Eth, roundsWatcher, senderWatcher, n.Database, ev, *depositMultiplier)
 
 			if *pixelsPerUnit <= 0 {
 				// Can't divide by 0

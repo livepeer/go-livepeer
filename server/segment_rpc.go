@@ -620,6 +620,7 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 			WinProb:           batch.WinProb.Bytes(),
 			RecipientRandHash: batch.RecipientRandHash.Bytes(),
 			Seed:              batch.Seed.Bytes(),
+			ExpirationBlock:   batch.ExpirationBlock.Bytes(),
 		}
 
 		protoPayment.ExpirationParams = &net.TicketExpirationParams{
