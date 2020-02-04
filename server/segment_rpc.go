@@ -66,9 +66,6 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// oInfo will be non-nil if we need to send an updated net.OrchestratorInfo to the broadcaster
-	var oInfo *net.OrchestratorInfo
-
 	if paymentError := orch.ProcessPayment(payment, segData.ManifestID); paymentError != nil {
 
 		acceptableErr, ok := paymentError.(core.AcceptableError)
@@ -77,26 +74,27 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, paymentError.Error(), http.StatusBadRequest)
 			return
 		}
-		oInfo, err = orchestratorInfo(orch, sender, orch.ServiceURI().String())
-		if err != nil {
-			glog.Errorf("Error updating orchestrator info: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
 
 		glog.Errorf("Acceptable error occured when processing payment: %v", paymentError)
 	}
 
 	if !orch.SufficientBalance(sender, segData.ManifestID) {
-		glog.Errorf("Insufficient credit balance for stream with manifestID %v\n", segData.ManifestID)
+		glog.Errorf("Insufficient credit balance for stream - manifestID=%v\n", segData.ManifestID)
 		http.Error(w, "Insufficient balance", http.StatusBadRequest)
+		return
+	}
+
+	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String())
+	if err != nil {
+		glog.Errorf("Error updating orchestrator info - err=%v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	// download the segment and check the hash
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		glog.Error("Could not read request body: ", err)
+		glog.Errorf("Could not read request body - err=%v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -110,7 +108,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		took := time.Since(start)
 		glog.V(common.DEBUG).Infof("Getting segment from %s took %s", uri, took)
 		if err != nil {
-			glog.Errorf("Error getting input segment %v from input OS: %v", uri, err)
+			glog.Errorf("Error getting input segment from input OS - segment=%v err=%v", uri, err)
 			http.Error(w, "BadRequest", http.StatusBadRequest)
 			return
 		}
@@ -181,7 +179,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	tr := &net.TranscodeResult{
 		Seq:    segData.Seq,
 		Result: result.Result,
-		Info:   oInfo, // oInfo will be non-nil if we need to send an update to the broadcaster
+		Info:   oInfo,
 	}
 	buf, err := proto.Marshal(tr)
 	if err != nil {

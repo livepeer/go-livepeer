@@ -471,10 +471,11 @@ func TestGenPayment(t *testing.T) {
 	// Test payment creation with 1 ticket
 	batch := &pm.TicketBatch{
 		TicketParams: &pm.TicketParams{
-			Recipient: pm.RandAddress(),
-			FaceValue: big.NewInt(1234),
-			WinProb:   big.NewInt(5678),
-			Seed:      big.NewInt(7777),
+			Recipient:       pm.RandAddress(),
+			FaceValue:       big.NewInt(1234),
+			WinProb:         big.NewInt(5678),
+			Seed:            big.NewInt(7777),
+			ExpirationBlock: big.NewInt(1000),
 		},
 		TicketExpirationParams: &pm.TicketExpirationParams{},
 		Sender:                 pm.RandAddress(),
