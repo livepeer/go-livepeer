@@ -229,6 +229,7 @@ func (r *recipient) TicketParams(sender ethcommon.Address, price *big.Rat) (*Tic
 		RecipientRandHash: recipientRandHash,
 		Seed:              seed,
 		ExpirationBlock:   expirationBlock,
+		PricePerPixel:     price,
 	}, nil
 }
 
@@ -478,7 +479,7 @@ func (r *recipient) redeemManager() {
 		select {
 		case ticket := <-r.sm.Redeemable():
 			if err := r.redeemWinningTicket(ticket.Ticket, ticket.Sig, ticket.RecipientRand); err != nil {
-				glog.Errorf("error retrying ticket sender=%x recipientRandHash=%x senderNonce=%v: %v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce, err)
+				glog.Errorf("error redeeming ticket - sender=%x recipientRandHash=%x senderNonce=%v err=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce, err)
 			}
 		case <-r.quit:
 			return
