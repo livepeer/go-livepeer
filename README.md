@@ -143,6 +143,10 @@ Experimental verification of video using the Epic Labs classifier can be enabled
 
 Refer to the [classifier documentation](https://github.com/livepeer/verification-classifier) for more details on getting the classifier API installed and running.
 
+### CLI endpoint spec
+
+The Livepeer node exposes a HTTP interface for monitoring and managing the node. Details on the available endpoints are [here](doc/httpcli.md).
+
 ## Contribution
 Thank you for your interest in contributing to the core software of Livepeer.
 
