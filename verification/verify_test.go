@@ -61,7 +61,7 @@ func TestVerify(t *testing.T) {
 	assert.Nil(res)
 	assert.Equal(ErrPixelsAbsent, err)
 
-	// check pixel count fails
+	// check pixel count fails w/ external verifier
 	data.Segments = append(data.Segments, &net.TranscodedSegmentData{Url: "def", Pixels: verifier.results.Pixels[1]})
 	assert.Len(data.Segments, len(verifier.results.Pixels)) // sanity check
 	res, err = sv.Verify(&Params{Results: data})
@@ -73,6 +73,17 @@ func TestVerify(t *testing.T) {
 	res, err = sv.Verify(&Params{Results: data})
 	assert.Nil(err)
 	assert.NotNil(res)
+
+	// check pixel count fails w/o external verifier
+	sv = NewSegmentVerifier(&Policy{Verifier: nil, Retries: 2}) // reset
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "abc", Pixels: verifier.results.Pixels[0] + 1},
+	}}
+	data.Segments = append(data.Segments, &net.TranscodedSegmentData{Url: "def", Pixels: verifier.results.Pixels[1]})
+	assert.Len(data.Segments, len(verifier.results.Pixels)) // sanity check
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}})
+	assert.Nil(res)
+	assert.Equal(ErrPixelMismatch, err)
 
 	// Check retryable: 3 attempts
 	sv = NewSegmentVerifier(&Policy{Verifier: verifier, Retries: 2}) // reset
