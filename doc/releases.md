@@ -47,21 +47,27 @@ Once we complete this stage, we prepare a mainnet release.
 This process will vary somewhat based on the particular states of the branches, whether we're doing a hotfix, etc. But the overall steps are the same. First, make the release commit on a branch:
 
 ```bash
-git checkout -b v0.5.2 
+git checkout -b release-0.5.2 
 echo -n '0.5.2' > VERSION
 git commit -am 'release v0.5.2'
-git push --atomic origin v0.5.2 v0.5.2
+git push -u origin release-0.5.2
 ```
 
-Merge the release commit into master via PR. Then, merge the version bump into rinkeby and mainnet:
+Merge the release commit into master via PR. Then, merge the version bump into rinkeby:
 
 ```bash
 git checkout rinkeby
 git merge --ff-only master 
 git push origin rinkeby
+```
+
+Wait just a moment for the Rinkeby build to start so that it doesn't build with the mainnet release tag. Then, merge the version bump into mainnet and create the release tag:
+
+```bash
 git checkout mainnet
-git merge --ff-only rinkeby 
-git push origin mainnet 
+git merge --ff-only rinkeby
+git tag v0.5.2
+git push --atomic origin mainnet v0.5.2
 ```
 
 If there's different commits on those branches then we'd omit the --ff-only flag, but the cleanest possible scenario after a mainnet release is that all three branches are pointed at the same ref.
