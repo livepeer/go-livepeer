@@ -45,6 +45,9 @@ const (
 
 	numberOfSegmentsToCalcAverage = 30
 	gweiConversionFactor          = 1000000000
+
+	logLevel = 6 // TODO move log levels definitions to separate package
+	// importing `common` package here introduces import cycles
 )
 
 // Enabled true if metrics was enabled in command line
@@ -751,7 +754,7 @@ func TranscodeTry(nonce, seqNo uint64) {
 		} else {
 			av.tries[seqNo] = tryData{tries: 1, first: time.Now()}
 		}
-		glog.Infof("Trying to transcode segment nonce=%d seqNo=%d try=%d", nonce, seqNo, try)
+		glog.V(logLevel).Infof("Trying to transcode segment nonce=%d seqNo=%d try=%d", nonce, seqNo, try)
 	}
 }
 
@@ -764,7 +767,7 @@ func SetTranscodersNumberAndLoad(load, capacity, number int) {
 }
 
 func SegmentEmerged(nonce, seqNo uint64, profilesNum int) {
-	glog.Infof("Logging SegmentEmerged... nonce=%d seqNo=%d", nonce, seqNo)
+	glog.V(logLevel).Infof("Logging SegmentEmerged... nonce=%d seqNo=%d", nonce, seqNo)
 	census.segmentEmerged(nonce, seqNo, profilesNum)
 }
 
@@ -782,8 +785,8 @@ func (cen *censusMetricsCounter) segmentEmerged(nonce, seqNo uint64, profilesNum
 }
 
 func SourceSegmentAppeared(nonce, seqNo uint64, manifestID, profile string) {
-	glog.Infof("Logging SourceSegmentAppeared... nonce=%d seqNo=%d manifestid=%s profile=%s", nonce,
-		seqNo, manifestID, profile)
+	glog.V(logLevel).Infof("Logging SourceSegmentAppeared... nonce=%d manifestID=%s seqNo=%d profile=%s", nonce,
+		manifestID, seqNo, profile)
 	census.segmentSourceAppeared(nonce, seqNo, profile)
 }
 
@@ -799,7 +802,7 @@ func (cen *censusMetricsCounter) segmentSourceAppeared(nonce, seqNo uint64, prof
 }
 
 func SegmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
-	glog.Infof("Logging SegmentUploaded... nonce=%d seqNo=%d uploadduration=%s", nonce, seqNo, uploadDur)
+	glog.V(logLevel).Infof("Logging SegmentUploaded... nonce=%d seqNo=%d dur=%s", nonce, seqNo, uploadDur)
 	census.segmentUploaded(nonce, seqNo, uploadDur)
 }
 
@@ -842,7 +845,7 @@ func (cen *censusMetricsCounter) segmentUploadFailed(nonce, seqNo uint64, code S
 }
 
 func SegmentTranscoded(nonce, seqNo uint64, transcodeDur time.Duration, profiles string) {
-	glog.Infof("Logging SegmentTranscode nonce=%d seqNo=%d duration=%s", nonce, seqNo, transcodeDur)
+	glog.V(logLevel).Infof("Logging SegmentTranscode nonce=%d seqNo=%d dur=%s", nonce, seqNo, transcodeDur)
 	census.segmentTranscoded(nonce, seqNo, transcodeDur, profiles)
 }
 
@@ -924,7 +927,7 @@ func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, errCode Segmen
 }
 
 func TranscodedSegmentAppeared(nonce, seqNo uint64, profile string) {
-	glog.Infof("Logging LogTranscodedSegmentAppeared... nonce=%d SeqNo=%d profile=%s", nonce, seqNo, profile)
+	glog.V(logLevel).Infof("Logging LogTranscodedSegmentAppeared... nonce=%d SeqNo=%d profile=%s", nonce, seqNo, profile)
 	census.segmentTranscodedAppeared(nonce, seqNo, profile)
 }
 
@@ -940,7 +943,7 @@ func (cen *censusMetricsCounter) segmentTranscodedAppeared(nonce, seqNo uint64, 
 	// cen.transcodedSegments[nonce] = cen.transcodedSegments[nonce] + 1
 	if st, ok := cen.emergeTimes[nonce][seqNo]; ok {
 		latency := time.Since(st)
-		glog.Infof("Recording latency for segment nonce=%d seqNo=%d profile=%s latency=%s", nonce, seqNo, profile, latency)
+		glog.V(logLevel).Infof("Recording latency for segment nonce=%d seqNo=%d profile=%s latency=%s", nonce, seqNo, profile, latency)
 		stats.Record(ctx, cen.mTranscodeLatency.M(float64(latency/time.Second)))
 	}
 
@@ -966,7 +969,7 @@ func newAverager() *segmentsAverager {
 }
 
 func StreamCreated(hlsStrmID string, nonce uint64) {
-	glog.Infof("Logging StreamCreated... nonce=%d strid=%s", nonce, hlsStrmID)
+	glog.V(logLevel).Infof("Logging StreamCreated... nonce=%d strid=%s", nonce, hlsStrmID)
 	census.streamCreated(nonce)
 }
 
@@ -978,7 +981,7 @@ func (cen *censusMetricsCounter) streamCreated(nonce uint64) {
 }
 
 func StreamStarted(nonce uint64) {
-	glog.Infof("Logging StreamStarted... nonce=%d", nonce)
+	glog.V(logLevel).Infof("Logging StreamStarted... nonce=%d", nonce)
 	census.streamStarted(nonce)
 }
 
@@ -989,7 +992,7 @@ func (cen *censusMetricsCounter) streamStarted(nonce uint64) {
 }
 
 func StreamEnded(nonce uint64) {
-	glog.Infof("Logging StreamEnded... nonce=%d", nonce)
+	glog.V(logLevel).Infof("Logging StreamEnded... nonce=%d", nonce)
 	census.streamEnded(nonce)
 }
 
