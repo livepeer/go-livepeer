@@ -206,10 +206,14 @@ func verifyPixels(fname string, data []byte, reportedPixels int64) error {
 			return fmt.Errorf("error creating temp file for pixels verification: %v", err)
 		}
 		defer os.Remove(tempfile.Name())
-		defer tempfile.Close()
 
 		if _, err := tempfile.Write(data); err != nil {
+			tempfile.Close()
 			return fmt.Errorf("error writing temp file for pixels verification: %v", err)
+		}
+
+		if err = tempfile.Close(); err != nil {
+			return fmt.Errorf("error closing temp file for pixels verification: %v", err)
 		}
 
 		fname = tempfile.Name()
