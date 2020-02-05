@@ -24,7 +24,7 @@ Once all planned code updates are merged into `master`, we create release candid
 
 ```bash
 git checkout rinkeby
-git merge --ff-only rinkeby
+git merge --ff-only master 
 ```
 
 We use the release candidate binaries for internal testing on Rinkeby. During this stage, we
