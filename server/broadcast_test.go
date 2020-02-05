@@ -579,10 +579,6 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	// Wait for async pixels verification to finish
 	time.Sleep(1 * time.Second)
 
-	// Check that the session was removed because we are in on-chain mode
-	_, ok = bsm.sessMap[ts.URL]
-	assert.False(ok)
-
 	// Create stub response with correct reported pixels
 	p, err := verification.Pixels("test.flv")
 	require.Nil(err)
