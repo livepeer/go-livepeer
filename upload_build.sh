@@ -34,9 +34,17 @@ for networkBranch in $NETWORK_BRANCHES; do
   fi
 done
 
+NODE="./livepeer${EXT}"
+CLI="./livepeer_cli${EXT}"
+
 mkdir $BASE
-cp ./livepeer${EXT} $BASE
-cp ./livepeer_cli${EXT} $BASE
+cp $NODE $BASE
+cp $CLI $BASE
+
+NODE_MD5=`md5sum ${NODE}`
+CLI_MD5=`md5sum ${CLI}`
+NODE_SHA256=`shasum -a 256 ${NODE}`
+CLI_SHA256=`shasum -a 256 ${CLI}`
 
 # do a basic upload so we know if stuff's working prior to doing everything else
 if [[ $ARCH == "windows" ]]; then
@@ -80,5 +88,5 @@ curl -X PUT -T "${FILE}" \
   -H "Authorization: AWS ${GCLOUD_KEY}:${signature}" \
   $fullUrl
 
-curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\"}" $DISCORD_URL 2>/dev/null
+curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nMD5:\n${NODE_MD5}\n${CLI_MD5}\nSHA256:\n${NODE_SHA256}\n${CLI_SHA256}\"}" $DISCORD_URL 2>/dev/null
 echo "done"
