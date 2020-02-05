@@ -176,11 +176,6 @@ func TestVerifyPixels(t *testing.T) {
 	err = verifyPixels(fname, nil, 50)
 	assert.EqualError(err, "No such file or directory")
 
-	// Test error for relative URI and local memory storage if the file does not exist in storage
-	// Will try to use the relative URI to read the file from storage and fail
-	err = verifyPixels("/stream/bar/dne.ts", memOS.GetData("/stream/bar/dne.ts"), 50)
-	assert.EqualError(err, "error fetching data from local memory storage")
-
 	// Test writing temp file for relative URI and local memory storage with incorrect pixels
 	err = verifyPixels(fname, memOS.GetData(fname), 50)
 	assert.Equal(ErrPixelMismatch, err)
