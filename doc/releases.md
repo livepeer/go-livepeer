@@ -47,10 +47,11 @@ Once we complete this stage, we prepare a mainnet release.
 This process will vary somewhat based on the particular states of the branches, whether we're doing a hotfix, etc. But the overall steps are the same. First, make the release commit on a branch:
 
 ```bash
-git checkout -b v0.5.2 
+git checkout -b release-v0.5.2 
 echo -n '0.5.2' > VERSION
 git commit -am 'release v0.5.2'
-git push --atomic origin v0.5.2 v0.5.2
+git tag v0.5.2
+git push --atomic origin release-v0.5.2 v0.5.2
 ```
 
 Merge the release commit into master via PR. Then, merge the version bump into rinkeby and mainnet:
