@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -25,6 +26,8 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 )
+
+var vFlag *glog.Level = flag.Lookup("v").Value.(*glog.Level)
 
 func (s *LivepeerServer) setServiceURI(serviceURI string) error {
 
@@ -747,6 +750,28 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(fmt.Sprintf("\n\nLatestPlaylist: %v", s.LatestPlaylist())))
+	})
+
+	mux.HandleFunc("/getLogLevel", func(w http.ResponseWriter, r *http.Request) {
+		if vFlag == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(vFlag.String()))
+	})
+
+	mux.HandleFunc("/setLogLevel", func(w http.ResponseWriter, r *http.Request) {
+		if vFlag == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		err := vFlag.Set(r.FormValue("loglevel"))
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 	})
 
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
