@@ -47,7 +47,6 @@ var errStorage = errors.New("ErrStorage")
 var errDiscovery = errors.New("ErrDiscovery")
 var errNoOrchs = errors.New("ErrNoOrchs")
 var errUnknownStream = errors.New("ErrUnknownStream")
-var errPMCheckFailed = errors.New("PM Check Failed")
 var errMismatchedParams = errors.New("Mismatched type for stream params")
 
 const HLSWaitInterval = time.Second

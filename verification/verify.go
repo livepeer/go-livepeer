@@ -8,9 +8,17 @@ import (
 	"os"
 	"sort"
 
+	"github.com/golang/glog"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
@@ -25,6 +33,7 @@ type Retryable struct {
 
 var ErrPixelMismatch = Retryable{errors.New("PixelMismatch")}
 var ErrPixelsAbsent = errors.New("PixelsAbsent")
+var errPMCheckFailed = errors.New("PM Check Failed")
 
 type Params struct {
 	// ManifestID should go away once we do direct push of video
@@ -103,8 +112,32 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 		return nil, nil
 	}
 
-	// TODO sig checking; extract from broadcast.go
+	if params != nil && // may be nil in offchain mode
+		params.Results != nil &&
+		params.Orchestrator != nil &&
+		params.Orchestrator.TicketParams != nil {
+		segHashes := make([][]byte, len(params.Results.Segments))
+		for i, segment := range params.Results.Segments {
 
+			data, err := drivers.GetSegmentData(segment.Url)
+			if err != nil {
+				glog.Errorf("%v error with segment: %v (URL: %v)", monitor.SegmentTranscodeErrorDownload, err, segment.Url)
+				break
+			}
+			segHashes[i] = crypto.Keccak256(data)
+		}
+
+		// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
+		// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
+		if len(segHashes) != len(params.Results.Segments) &&
+			!pm.VerifySig(
+				ethcommon.BytesToAddress(params.Orchestrator.TicketParams.Recipient),
+				crypto.Keccak256(segHashes...),
+				params.Results.Sig) {
+			glog.Error("Sig check failed")
+			return nil, errPMCheckFailed
+		}
+	}
 	if sv.policy.Verifier == nil {
 		err := sv.verifyPixelParams(params)
 		var res *Params

@@ -11,7 +11,6 @@ import (
 
 	"github.com/golang/glog"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -19,7 +18,6 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
 
 	"github.com/livepeer/lpms/stream"
@@ -372,7 +370,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}
 	}
 
-	var dlErr, saveErr error
+	var dlErr error
 	segHashes := make([][]byte, len(res.Segments))
 	n := len(res.Segments)
 	segURLs := make([]string, len(res.Segments))
@@ -403,7 +401,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			newURL, err := bos.SaveData(name, data)
 			if err != nil {
 				segHashLock.Lock()
-				saveErr = err
 				segHashLock.Unlock()
 				switch err.Error() {
 				case "Session ended":
@@ -471,17 +468,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}
 	}
 
-	ticketParams := sess.OrchestratorInfo.GetTicketParams()
-	if ticketParams != nil && // may be nil in offchain mode
-		saveErr == nil && // save error leads to early exit before sighash computation
-		// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
-		// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
-		len(segHashes) != len(res.Segments) &&
-		!pm.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
-		glog.Errorf("Sig check failed for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
-		cxn.sessManager.removeSession(sess)
-		return nil, errPMCheckFailed
-	}
 	if monitor.Enabled {
 		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), errCode)
 	}
