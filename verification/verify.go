@@ -169,9 +169,13 @@ func verifyPixelParams(params *Params) error {
 
 		var err error
 		for i := 0; err == nil && i < len(params.Results.Segments); i++ {
+			rendition := []byte{}
+			if i < len(params.Renditions) {
+				rendition = params.Renditions[i]
+			}
 			if err := verifyPixels(
 				params.Results.Segments[i].Url,
-				flatten(params.Renditions),
+				rendition,
 				params.Results.Segments[i].Pixels); err != nil {
 
 				glog.Error(err)
@@ -182,15 +186,6 @@ func verifyPixelParams(params *Params) error {
 
 	}
 	return ErrPixelsAbsent
-}
-
-func flatten(s [][]byte) (r []byte) {
-	for _, e := range s {
-		for _, f := range e {
-			r = append(r, f)
-		}
-	}
-	return
 }
 
 func verifyPixels(fname string, data []byte, reportedPixels int64) error {
