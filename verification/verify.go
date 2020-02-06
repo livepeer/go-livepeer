@@ -195,17 +195,17 @@ func verifyPixels(fname string, data []byte, reportedPixels int64) error {
 	if err == nil && !uri.IsAbs() && data != nil {
 		tempfile, err := ioutil.TempFile("", common.RandName())
 		if err != nil {
-			return fmt.Errorf("error creating temp file for pixels verification: %v", err)
+			return fmt.Errorf("error creating temp file for pixels verification: %w", err)
 		}
 		defer os.Remove(tempfile.Name())
 
 		if _, err := tempfile.Write(data); err != nil {
 			tempfile.Close()
-			return fmt.Errorf("error writing temp file for pixels verification: %v", err)
+			return fmt.Errorf("error writing temp file for pixels verification: %w", err)
 		}
 
 		if err = tempfile.Close(); err != nil {
-			return fmt.Errorf("error closing temp file for pixels verification: %v", err)
+			return fmt.Errorf("error closing temp file for pixels verification: %w", err)
 		}
 
 		fname = tempfile.Name()
