@@ -200,6 +200,7 @@ func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 func (r *recipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error {
 	recipientRand := r.rand(seed, ticket.Sender, ticket.FaceValue, ticket.WinProb, ticket.ParamsExpirationBlock, ticket.PricePerPixel)
 	r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand})
+	glog.Infof("Queued ticket sender=%x recipientRandHash=%x senderNonce=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce)
 	return nil
 }
 
@@ -316,6 +317,7 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 
 	// if max float is zero, there is no claimable reserve left or reserve is 0
 	if maxFloat.Cmp(big.NewInt(0)) == 0 {
+		r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand})
 		return errors.Errorf("max float is zero")
 	}
 
@@ -323,8 +325,7 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 	// the ticket to be retried later
 	if maxFloat.Cmp(ticket.FaceValue) < 0 {
 		r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand})
-		glog.Infof("Queued ticket sender=%x recipientRandHash=%x senderNonce=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce)
-		return nil
+		return fmt.Errorf("insufficient max float - faceValue=%v maxFloat=%v", ticket.FaceValue, maxFloat)
 	}
 
 	// Subtract the ticket face value from the sender's current max float

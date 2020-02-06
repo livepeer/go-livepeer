@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -227,22 +228,53 @@ func (s *stubSigner) Account() accounts.Account {
 	return s.account
 }
 
-type stubRoundsManager struct {
+type stubTimeManager struct {
 	round              *big.Int
 	blkHash            [32]byte
 	transcoderPoolSize *big.Int
+	lastSeenBlock      *big.Int
+
+	blockNumSink chan<- *big.Int
+	blockNumSub  event.Subscription
 }
 
-func (m *stubRoundsManager) LastInitializedRound() *big.Int {
+func (m *stubTimeManager) LastInitializedRound() *big.Int {
 	return m.round
 }
 
-func (m *stubRoundsManager) LastInitializedBlockHash() [32]byte {
+func (m *stubTimeManager) LastInitializedBlockHash() [32]byte {
 	return m.blkHash
 }
 
-func (m *stubRoundsManager) GetTranscoderPoolSize() *big.Int {
+func (m *stubTimeManager) GetTranscoderPoolSize() *big.Int {
 	return m.transcoderPoolSize
+}
+
+func (m *stubTimeManager) LastSeenBlock() *big.Int {
+	return m.lastSeenBlock
+}
+
+func (m *stubTimeManager) SubscribeRounds(sink chan<- types.Log) event.Subscription {
+	return &stubSubscription{}
+}
+
+func (m *stubTimeManager) SubscribeBlocks(sink chan<- *big.Int) event.Subscription {
+	m.blockNumSink = sink
+	m.blockNumSub = &stubSubscription{errCh: make(<-chan error)}
+	return m.blockNumSub
+}
+
+type stubSubscription struct {
+	errCh        <-chan error
+	unsubscribed bool
+}
+
+func (s *stubSubscription) Unsubscribe() {
+	s.unsubscribed = true
+}
+
+func (s *stubSubscription) Err() <-chan error {
+	return s.errCh
 }
 
 type stubSenderManager struct {

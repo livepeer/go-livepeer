@@ -847,6 +847,8 @@ func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 		WinProb:           new(big.Int).SetBytes(payment.TicketParams.WinProb),
 		RecipientRandHash: ethcommon.BytesToHash(payment.TicketParams.RecipientRandHash),
 		Seed:              new(big.Int).SetBytes(payment.TicketParams.Seed),
+		ExpirationBlock:   new(big.Int).SetBytes(payment.TicketParams.ExpirationBlock),
+		PricePerPixel:     big.NewRat(payment.ExpectedPrice.PricePerUnit, payment.ExpectedPrice.PixelsPerUnit),
 	}
 
 	ticketExpirationParams := &pm.TicketExpirationParams{
@@ -955,18 +957,16 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, errors.New("ReceiveTicket error")).Once()
-	// This should trigger a redemption even though it returns an error because it still returns won = true
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, errors.New("not first error")).Once()
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil).Once()
 
-	numTickets := 3
+	numTickets := 2
 	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil).Times(numTickets)
 
 	var senderParams []*net.TicketSenderParams
 	for i := 0; i < numTickets; i++ {
 		senderParams = append(
 			senderParams,
-			&net.TicketSenderParams{SenderNonce: 456, Sig: pm.RandBytes(123)},
+			&net.TicketSenderParams{SenderNonce: 456 + uint32(i), Sig: pm.RandBytes(123)},
 		)
 	}
 
@@ -974,8 +974,8 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 20)
 	assert := assert.New(t)
-	assert.EqualError(err, "error receiving tickets with payment")
-	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 2)
+	assert.EqualError(err, "ReceiveTicket error")
+	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 1)
 }
 
 // Check that a payment error does NOT increase the credit
@@ -1397,6 +1397,7 @@ func defaultPaymentWithTickets(t *testing.T, senderParams []*net.TicketSenderPar
 		WinProb:           pm.RandBytes(123),
 		RecipientRandHash: pm.RandBytes(123),
 		Seed:              pm.RandBytes(123),
+		ExpirationBlock:   pm.RandBytes(123),
 	}
 
 	sender := pm.RandBytes(123)

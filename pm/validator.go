@@ -31,15 +31,15 @@ type Validator interface {
 
 // validator is an implementation of the Validator interface
 type validator struct {
-	sigVerifier   SigVerifier
-	roundsManager RoundsManager
+	sigVerifier SigVerifier
+	tm          TimeManager
 }
 
 // NewValidator returns an instance of a validator
-func NewValidator(sigVerifier SigVerifier, roundsManager RoundsManager) Validator {
+func NewValidator(sigVerifier SigVerifier, tm TimeManager) Validator {
 	return &validator{
-		sigVerifier:   sigVerifier,
-		roundsManager: roundsManager,
+		sigVerifier: sigVerifier,
+		tm:          tm,
 	}
 }
 
@@ -80,8 +80,8 @@ func (v *validator) IsWinningTicket(ticket *Ticket, sig []byte, recipientRand *b
 }
 
 func (v *validator) validateCreationRound(creationRound int64, creationRoundBlockHash ethcommon.Hash) error {
-	round := v.roundsManager.LastInitializedRound()
-	blkHash := v.roundsManager.LastInitializedBlockHash()
+	round := v.tm.LastInitializedRound()
+	blkHash := v.tm.LastInitializedBlockHash()
 	// Check that creationRound matches last initialized round
 	if big.NewInt(creationRound).Cmp(round) != 0 {
 		return errInvalidCreationRound

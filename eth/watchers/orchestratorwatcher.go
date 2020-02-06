@@ -20,11 +20,11 @@ type OrchestratorWatcher struct {
 	dec     *EventDecoder
 	watcher BlockWatcher
 	lpEth   eth.LivepeerEthClient
-	rw      EventWatcher
+	tw      timeWatcher
 	quit    chan struct{}
 }
 
-func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockWatcher, store common.OrchestratorStore, lpEth eth.LivepeerEthClient, rw EventWatcher) (*OrchestratorWatcher, error) {
+func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockWatcher, store common.OrchestratorStore, lpEth eth.LivepeerEthClient, tw timeWatcher) (*OrchestratorWatcher, error) {
 	dec, err := NewEventDecoder(bondingManagerAddr, contracts.BondingManagerABI)
 	if err != nil {
 		return nil, err
@@ -35,7 +35,7 @@ func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockW
 		dec:     dec,
 		watcher: watcher,
 		lpEth:   lpEth,
-		rw:      rw,
+		tw:      tw,
 		quit:    make(chan struct{}),
 	}, nil
 }
@@ -43,7 +43,7 @@ func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockW
 // Watch starts the event watching loop
 func (ow *OrchestratorWatcher) Watch() {
 	roundEvents := make(chan types.Log, 10)
-	roundSub := ow.rw.Subscribe(roundEvents)
+	roundSub := ow.tw.SubscribeRounds(roundEvents)
 	defer roundSub.Unsubscribe()
 
 	events := make(chan []*blockwatch.Event, 10)

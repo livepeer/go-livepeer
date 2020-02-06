@@ -113,9 +113,9 @@ func TestSenderWatcher_ClaimedReserve(t *testing.T) {
 	lpEth := &eth.StubClient{}
 	watcher := &stubBlockWatcher{}
 
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	require.Nil(err)
 
 	// if not existant on map; make RPC call and init the map
@@ -147,9 +147,9 @@ func TestSenderWatcher_WatchAndStop(t *testing.T) {
 	lpEth := &eth.StubClient{}
 	watcher := &stubBlockWatcher{}
 
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	assert.Nil(err)
 
 	go sw.Watch()
@@ -164,9 +164,9 @@ func TestSenderWatcher_HandleLog(t *testing.T) {
 	lpEth := &eth.StubClient{}
 	watcher := &stubBlockWatcher{}
 
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	assert.Nil(err)
 
 	// Test unknown event
@@ -191,9 +191,9 @@ func TestFundDepositEvent(t *testing.T) {
 	}
 	watcher := &stubBlockWatcher{}
 
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -260,9 +260,9 @@ func TestFundReserveEvent(t *testing.T) {
 	}
 	watcher := &stubBlockWatcher{}
 
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -330,9 +330,9 @@ func TestWithdrawalEvent(t *testing.T) {
 	}
 	watcher := &stubBlockWatcher{}
 
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -407,9 +407,9 @@ func TestWinningTicketTransferEvent(t *testing.T) {
 	}
 	watcher := &stubBlockWatcher{}
 
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -500,9 +500,9 @@ func TestUnlockEvent(t *testing.T) {
 	}
 	watcher := &stubBlockWatcher{}
 
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -562,9 +562,9 @@ func TestUnlockCancelledEvent(t *testing.T) {
 	}
 	watcher := &stubBlockWatcher{}
 
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -630,9 +630,9 @@ func TestNewRoundEvent_LogAdded(t *testing.T) {
 
 	watcher := &stubBlockWatcher{}
 
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	assert.Nil(err)
 
 	// set initial values
@@ -647,7 +647,7 @@ func TestNewRoundEvent_LogAdded(t *testing.T) {
 	defer sw.Stop()
 	time.Sleep(2 * time.Millisecond)
 
-	rw.sink <- newRoundEvent
+	tw.sink <- newRoundEvent
 
 	time.Sleep(2 * time.Millisecond)
 
@@ -673,9 +673,9 @@ func TestNewRoundEvent_LogRemoved(t *testing.T) {
 
 	watcher := &stubBlockWatcher{}
 
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, rw)
+	sw, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, tw)
 	assert.Nil(err)
 
 	newRoundEvent := newStubNewRoundLog()
@@ -698,7 +698,7 @@ func TestNewRoundEvent_LogRemoved(t *testing.T) {
 	defer sw.Stop()
 	time.Sleep(2 * time.Millisecond)
 
-	rw.sink <- newRoundEvent
+	tw.sink <- newRoundEvent
 	time.Sleep(2 * time.Millisecond)
 
 	info, err = sw.GetSenderInfo(stubSender)

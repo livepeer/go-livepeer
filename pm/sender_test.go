@@ -99,7 +99,7 @@ func TestSender_ValidateSender(t *testing.T) {
 	am := &stubSigner{
 		account: account,
 	}
-	rm := &stubRoundsManager{round: big.NewInt(5), blkHash: [32]byte{5}}
+	tm := &stubTimeManager{round: big.NewInt(5), blkHash: [32]byte{5}}
 	sm := newStubSenderManager()
 	sm.info[account.Address] = &SenderInfo{
 		Deposit:       big.NewInt(100000),
@@ -107,7 +107,7 @@ func TestSender_ValidateSender(t *testing.T) {
 	}
 	s := &sender{
 		signer:            am,
-		roundsManager:     rm,
+		timeManager:       tm,
 		senderManager:     sm,
 		maxEV:             big.NewRat(100, 1),
 		depositMultiplier: 2,
@@ -218,9 +218,9 @@ func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
 
 func TestCreateTicketBatch_UsesSessionParamsInBatch(t *testing.T) {
 	sender := defaultSender(t)
-	rm := sender.roundsManager.(*stubRoundsManager)
-	creationRound := rm.round.Int64()
-	creationRoundBlkHash := rm.blkHash
+	tm := sender.timeManager.(*stubTimeManager)
+	creationRound := tm.round.Int64()
+	creationRoundBlkHash := tm.blkHash
 	am := sender.signer.(*stubSigner)
 	am.signShouldFail = false
 	am.saveSignRequest = true
@@ -503,8 +503,7 @@ func defaultSender(t *testing.T) *sender {
 		Deposit:       big.NewInt(100000),
 		WithdrawRound: big.NewInt(0),
 	}
-	bs := &stubBlockStore{}
-	s := NewSender(am, rm, sm, bs, big.NewRat(100, 1), 2)
+	s := NewSender(am, tm, sm, big.NewRat(100, 1), 2)
 	return s.(*sender)
 }
 
