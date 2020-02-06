@@ -119,9 +119,6 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	// Check pixel counts
 	if (err == nil || IsRetryable(err)) && res != nil && params.Results != nil {
 		if len(res.Pixels) != len(params.Results.Segments) {
-			// TODO make allowances for the verification algos not doing
-			//      pixel counts themselves; adapt broadcast.go verifyPixels
-
 			err = verifyPixelParams(params)
 		}
 		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(res.Pixels); i++ {
