@@ -162,7 +162,7 @@ func TestPixels(t *testing.T) {
 
 	// Assume that ffmpeg.Transcode3() returns the correct pixel count so we just
 	// check that no error is returned
-	p, err = Pixels("test.flv")
+	p, err = Pixels("../server/test.flv")
 	assert.Nil(err)
 	assert.NotZero(p)
 }
@@ -175,7 +175,7 @@ func TestVerifyPixels(t *testing.T) {
 
 	// Create memory session and save a test file
 	bos := drivers.NewMemoryDriver(nil).NewSession("foo")
-	data, err := ioutil.ReadFile("test.flv")
+	data, err := ioutil.ReadFile("../server/test.flv")
 	require.Nil(err)
 	fname, err := bos.SaveData("test.ts", data)
 	require.Nil(err)
@@ -193,16 +193,16 @@ func TestVerifyPixels(t *testing.T) {
 
 	// Test writing temp file for relative URI and local memory storage with correct pixels
 	// Make sure that verifyPixels() checks against the output of pixels()
-	p, err := Pixels("test.flv")
+	p, err := Pixels("../server/test.flv")
 	require.Nil(err)
 	err = verifyPixels(fname, memOS.GetData(fname), p)
 	assert.Nil(err)
 
 	// Test no writing temp file with incorrect pixels
-	err = verifyPixels("test.flv", nil, 50)
+	err = verifyPixels("../server/test.flv", nil, 50)
 	assert.Equal(ErrPixelMismatch, err)
 
 	// Test no writing temp file with correct pixels
-	err = verifyPixels("test.flv", nil, p)
+	err = verifyPixels("../server/test.flv", nil, p)
 	assert.Nil(err)
 }
