@@ -106,10 +106,7 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	// TODO sig checking; extract from broadcast.go
 
 	if sv.policy.Verifier == nil {
-		if err := verifyPixelParams(params); err != ErrPixelsAbsent {
-			return nil, err
-		}
-		return nil, nil
+		return nil, sv.verifyPixelParams(params)
 	}
 	// TODO Use policy sampling rate to determine whether to invoke verifier.
 	//      If not, exit early. Seed sample using source data for repeatability!
@@ -118,7 +115,7 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	// Check pixel counts
 	if (err == nil || IsRetryable(err)) && res != nil && params.Results != nil {
 		if len(res.Pixels) != len(params.Results.Segments) {
-			err = verifyPixelParams(params)
+			err = sv.verifyPixelParams(params)
 		}
 		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(res.Pixels); i++ {
 			reportedPixels := params.Results.Segments[i].Pixels
@@ -160,11 +157,16 @@ func IsRetryable(err error) bool {
 	return retryable
 }
 
-func verifyPixelParams(params *Params) error {
+func (sv *SegmentVerifier) verifyPixelParams(params *Params) error {
 	// check if the node is on-chain mode
 	if params == nil ||
 		params.Orchestrator == nil ||
 		params.Orchestrator.TicketParams == nil {
+
+		if sv.policy.Verifier == nil {
+			return nil
+		}
+
 		return ErrPixelsAbsent
 	}
 
