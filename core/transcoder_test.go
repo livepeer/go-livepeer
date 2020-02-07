@@ -87,7 +87,7 @@ func TestResToTranscodeData(t *testing.T) {
 	assert.EqualError(err, "lengths of results and options different")
 
 	// Test immediate read error
-	opts := []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{Oname: "badfile"}}
+	opts := []ffmpeg.TranscodeOptions{{Oname: "badfile"}}
 	_, err = resToTranscodeData(res, opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
 
@@ -116,7 +116,7 @@ func TestResToTranscodeData(t *testing.T) {
 	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 1)}
 	res.Encoded[0].Pixels = 100
 
-	opts = []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{Oname: file2.Name()}}
+	opts = []ffmpeg.TranscodeOptions{{Oname: file2.Name()}}
 	tData, err := resToTranscodeData(res, opts)
 	assert.Nil(err)
 	assert.Equal(1, len(tData.Segments))
@@ -207,7 +207,7 @@ func TestAudioCopy(t *testing.T) {
 	// LocalTranscoder API and checking that the result is identical.
 	audioSample := dir + "/audio-copy.ts"
 	in := &ffmpeg.TranscodeOptionsIn{Fname: "test.ts"}
-	out := []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{
+	out := []ffmpeg.TranscodeOptions{{
 		Oname:        audioSample,
 		VideoEncoder: ffmpeg.ComponentOptions{Name: "drop"},
 		AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
