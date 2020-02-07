@@ -162,27 +162,26 @@ func IsRetryable(err error) bool {
 
 func verifyPixelParams(params *Params) error {
 	// check if the node is on-chain mode
-	if params != nil &&
-		params.Orchestrator != nil &&
-		params.Orchestrator.TicketParams != nil {
-
-		var err error
-		for i := 0; err == nil && i < len(params.Results.Segments); i++ {
-			rendition := []byte{}
-			if i < len(params.Renditions) {
-				rendition = params.Renditions[i]
-			}
-			if err := verifyPixels(
-				params.Results.Segments[i].Url,
-				rendition,
-				params.Results.Segments[i].Pixels); err != nil {
-				return err
-			}
-		}
-		return nil
-
+	if params == nil ||
+		params.Orchestrator == nil ||
+		params.Orchestrator.TicketParams == nil {
+		return ErrPixelsAbsent
 	}
-	return ErrPixelsAbsent
+
+	var err error
+	for i := 0; err == nil && i < len(params.Results.Segments); i++ {
+		rendition := []byte{}
+		if i < len(params.Renditions) {
+			rendition = params.Renditions[i]
+		}
+		if err := verifyPixels(
+			params.Results.Segments[i].Url,
+			rendition,
+			params.Results.Segments[i].Pixels); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func verifyPixels(fname string, data []byte, reportedPixels int64) error {
