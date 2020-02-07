@@ -168,8 +168,7 @@ func verifyPixelParams(params *Params) error {
 		return ErrPixelsAbsent
 	}
 
-	var err error
-	for i := 0; err == nil && i < len(params.Results.Segments); i++ {
+	for i := 0; i < len(params.Results.Segments); i++ {
 		rendition := []byte{}
 		if i < len(params.Renditions) {
 			rendition = params.Renditions[i]
