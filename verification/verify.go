@@ -8,7 +8,6 @@ import (
 	"os"
 	"sort"
 
-	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
@@ -177,8 +176,6 @@ func verifyPixelParams(params *Params) error {
 				params.Results.Segments[i].Url,
 				rendition,
 				params.Results.Segments[i].Pixels); err != nil {
-
-				glog.Error(err)
 				return err
 			}
 		}
