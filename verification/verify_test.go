@@ -83,7 +83,7 @@ func TestVerify(t *testing.T) {
 	assert.Len(data.Segments, len(verifier.results.Pixels)) // sanity check
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}})
 	assert.Nil(res)
-	assert.Equal(ErrPixelMismatch, err)
+	assert.EqualError(err, "No such file or directory")
 
 	// Check retryable: 3 attempts
 	sv = NewSegmentVerifier(&Policy{Verifier: verifier, Retries: 2}) // reset

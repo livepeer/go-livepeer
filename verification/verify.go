@@ -179,7 +179,7 @@ func verifyPixelParams(params *Params) error {
 				params.Results.Segments[i].Pixels); err != nil {
 
 				glog.Error(err)
-				return ErrPixelMismatch
+				return err
 			}
 		}
 		return nil
