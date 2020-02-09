@@ -170,14 +170,14 @@ func (sv *SegmentVerifier) verifyPixelParams(params *Params) error {
 		return ErrPixelsAbsent
 	}
 
+	if len(params.Results.Segments) != len(params.Renditions) {
+		return ErrPixelMismatch
+	}
+
 	for i := 0; i < len(params.Results.Segments); i++ {
-		rendition := []byte{}
-		if i < len(params.Renditions) {
-			rendition = params.Renditions[i]
-		}
 		if err := verifyPixels(
 			params.Results.Segments[i].Url,
-			rendition,
+			params.Renditions[i],
 			params.Results.Segments[i].Pixels); err != nil {
 			return err
 		}
