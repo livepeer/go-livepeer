@@ -208,7 +208,7 @@ func verifyPixels(fname string, data []byte, reportedPixels int64) error {
 		fname = tempfile.Name()
 	}
 
-	p, err := Pixels(fname)
+	p, err := pixels(fname)
 	if err != nil {
 		return err
 	}
@@ -220,7 +220,7 @@ func verifyPixels(fname string, data []byte, reportedPixels int64) error {
 	return nil
 }
 
-func Pixels(fname string) (int64, error) {
+func pixels(fname string) (int64, error) {
 	in := &ffmpeg.TranscodeOptionsIn{Fname: fname}
 	res, err := ffmpeg.Transcode3(in, nil)
 	if err != nil {

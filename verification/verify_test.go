@@ -156,13 +156,13 @@ func TestPixels(t *testing.T) {
 
 	assert := assert.New(t)
 
-	p, err := Pixels("foo")
+	p, err := pixels("foo")
 	assert.EqualError(err, "No such file or directory")
 	assert.Equal(int64(0), p)
 
 	// Assume that ffmpeg.Transcode3() returns the correct pixel count so we just
 	// check that no error is returned
-	p, err = Pixels("../server/test.flv")
+	p, err = pixels("../server/test.flv")
 	assert.Nil(err)
 	assert.NotZero(p)
 }
@@ -193,7 +193,7 @@ func TestVerifyPixels(t *testing.T) {
 
 	// Test writing temp file for relative URI and local memory storage with correct pixels
 	// Make sure that verifyPixels() checks against the output of pixels()
-	p, err := Pixels("../server/test.flv")
+	p, err := pixels("../server/test.flv")
 	require.Nil(err)
 	err = verifyPixels(fname, memOS.GetData(fname), p)
 	assert.Nil(err)

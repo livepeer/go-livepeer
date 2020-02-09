@@ -579,16 +579,6 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	// Wait for async pixels verification to finish
 	time.Sleep(1 * time.Second)
 
-	// Create stub response with correct reported pixels
-	p, err := verification.Pixels("test.flv")
-	require.Nil(err)
-	tSegData = []*net.TranscodedSegmentData{
-		&net.TranscodedSegmentData{Url: "test.flv", Pixels: p},
-	}
-	tr = dummyRes(tSegData)
-	buf, err = proto.Marshal(tr)
-	require.Nil(err)
-
 	bsm = bsmWithSessList([]*BroadcastSession{sess})
 	cxn.sessManager = bsm
 
