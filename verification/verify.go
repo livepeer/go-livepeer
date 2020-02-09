@@ -106,7 +106,14 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	// TODO sig checking; extract from broadcast.go
 
 	if sv.policy.Verifier == nil {
-		return nil, sv.verifyPixelParams(params)
+		err := sv.verifyPixelParams(params)
+		var res *Params
+		if params != nil &&
+			params.Orchestrator != nil &&
+			!IsRetryable(err) {
+			res = params
+		}
+		return res, err
 	}
 	// TODO Use policy sampling rate to determine whether to invoke verifier.
 	//      If not, exit early. Seed sample using source data for repeatability!
