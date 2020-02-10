@@ -25,6 +25,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 
+	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
@@ -67,7 +68,7 @@ func (orch *orchestrator) VerifySig(addr ethcommon.Address, msg string, sig []by
 	if orch.node == nil || orch.node.Eth == nil {
 		return true
 	}
-	return pm.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
+	return lpcrypto.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
 }
 
 func (orch *orchestrator) Address() ethcommon.Address {

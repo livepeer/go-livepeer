@@ -18,10 +18,10 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
 
 	"github.com/livepeer/lpms/ffmpeg"
@@ -491,7 +491,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
 		// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
 		len(segHashes) != len(res.Segments) &&
-		!pm.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
+		!lpcrypto.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
 		glog.Errorf("Sig check failed for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
 		cxn.sessManager.removeSession(sess)
 		return nil, errPMCheckFailed

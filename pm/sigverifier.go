@@ -2,6 +2,7 @@ package pm
 
 import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/crypto"
 )
 
 // SigVerifier is an interface which describes an object capable
@@ -20,7 +21,7 @@ type DefaultSigVerifier struct {
 // Verify checks if a provided signature over a message
 // is valid for a given ETH address
 func (sv *DefaultSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool {
-	return VerifySig(addr, msg, sig)
+	return crypto.VerifySig(addr, msg, sig)
 }
 
 // ApprovedSigVerifier is an implementation of the SigVerifier interface
