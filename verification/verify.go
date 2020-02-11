@@ -15,8 +15,6 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
-	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 
@@ -114,13 +112,7 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 
 	if params.Results != nil {
 		segHashes := make([][]byte, len(params.Results.Segments))
-		for i, segment := range params.Results.Segments {
-
-			data, err := drivers.GetSegmentData(segment.Url)
-			if err != nil {
-				glog.Errorf("%v error with segment: %v (URL: %v)", monitor.SegmentTranscodeErrorDownload, err, segment.Url)
-				break
-			}
+		for i, data := range params.Renditions {
 			segHashes[i] = crypto.Keccak256(data)
 		}
 
