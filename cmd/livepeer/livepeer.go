@@ -695,6 +695,8 @@ func main() {
 				glog.Fatal("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath, S3 or GCS")
 			}
 			verification.VerifierPath = *verifierPath
+		} else if *network != "offchain" {
+			server.Policy = &verification.Policy{Retries: 2}
 		}
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)

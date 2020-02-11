@@ -179,6 +179,20 @@ func TestPixels(t *testing.T) {
 	assert.NotZero(p)
 }
 
+// helper function for TestVerifyPixels to test countPixels()
+func verifyPixels(fname string, data []byte, reportedPixels int64) error {
+	c, err := countPixels(fname, data)
+	if err != nil {
+		return err
+	}
+
+	if c != reportedPixels {
+		return ErrPixelMismatch
+	}
+
+	return nil
+}
+
 func TestVerifyPixels(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 
