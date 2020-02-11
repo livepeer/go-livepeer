@@ -164,15 +164,8 @@ func IsRetryable(err error) bool {
 }
 
 func (sv *SegmentVerifier) countPixelParams(params *Params) (*Results, error) {
-	// check if the node is on-chain mode
-	if params == nil ||
-		params.Orchestrator == nil ||
-		params.Orchestrator.TicketParams == nil {
 
-		if sv.policy.Verifier == nil {
-			return nil, nil
-		}
-
+	if params == nil || params.Orchestrator == nil {
 		return nil, ErrPixelsAbsent
 	}
 
