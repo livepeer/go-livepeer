@@ -23,7 +23,7 @@ type StubTranscoder struct {
 	TranscodeFn   func() error
 }
 
-func newStubTranscoder(d string, workDir string) TranscoderSession {
+func newStubTranscoder(d string) TranscoderSession {
 	return &StubTranscoder{}
 }
 

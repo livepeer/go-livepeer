@@ -16,7 +16,7 @@ import (
 
 func TestLB_LeastLoaded(t *testing.T) {
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder("0,1,2,3,4", "", newStubTranscoder).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder("0,1,2,3,4", newStubTranscoder).(*LoadBalancingTranscoder)
 	rapid.Check(t, func(t *rapid.T) {
 		cost := rapid.IntsRange(1, 10).Draw(t, "cost").(int)
 		transcoder := lb.leastLoaded()
@@ -40,7 +40,7 @@ func TestLB_Ratchet(t *testing.T) {
 	// Test:     Two transcoders, several sessions with the same set of profiles
 	//           Run multiple transcodes.
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder("0,1", "", newStubTranscoder).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder("0,1", newStubTranscoder).(*LoadBalancingTranscoder)
 	sessions := []string{"a", "b", "c", "d", "e"}
 
 	rapid.Check(t, func(t *rapid.T) {
@@ -65,7 +65,7 @@ func TestLB_LoadAssignment(t *testing.T) {
 	//           Subsequent segments should ignore subsequent load costs.
 
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder("0,1,2,3,4", "", newStubTranscoder).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder("0,1,2,3,4", newStubTranscoder).(*LoadBalancingTranscoder)
 	sessions := []string{"a", "b", "c", "d", "e"}
 	profiles := []ffmpeg.VideoProfile{}
 	for _, v := range ffmpeg.VideoProfileLookup {
@@ -94,7 +94,7 @@ func TestLB_SessionCancel(t *testing.T) {
 	ctxFunc := func() (context.Context, context.CancelFunc) { return stubCtx, stubCancel }
 
 	sess := &transcoderSession{
-		transcoder:  newStubTranscoder("", ""),
+		transcoder:  newStubTranscoder(""),
 		sender:      make(chan *transcoderParams, 1),
 		makeContext: ctxFunc,
 	}
@@ -116,7 +116,7 @@ func TestLB_SessionConcurrency(t *testing.T) {
 	ctxFunc := func() (context.Context, context.CancelFunc) { return stubCtx, stubCancel }
 
 	sess := &transcoderSession{
-		transcoder:  newStubTranscoder("", ""),
+		transcoder:  newStubTranscoder(""),
 		sender:      make(chan *transcoderParams, 1),
 		makeContext: ctxFunc,
 	}
@@ -274,7 +274,7 @@ func (m *lbMachine) Init(t *rapid.T) {
 		devices = append(devices, strconv.Itoa(i))
 	}
 
-	m.lb = NewLoadBalancingTranscoder(strings.Join(devices, ","), "", newStubTranscoder).(*LoadBalancingTranscoder)
+	m.lb = NewLoadBalancingTranscoder(strings.Join(devices, ","), newStubTranscoder).(*LoadBalancingTranscoder)
 	m.states = make(map[string]*machineState)
 
 	assert.Equal(t, devices, m.lb.transcoders) // sanity check

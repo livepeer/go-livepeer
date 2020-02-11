@@ -39,7 +39,7 @@ func TestNvidia_Transcoder(t *testing.T) {
 	tmp, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(tmp)
 	StartNvidiaTranscoders("123,456", tmp)
-	tc := NewNvidiaTranscoder("123", tmp)
+	tc := NewNvidiaTranscoder("123")
 	ffmpeg.InitFFmpeg()
 
 	// test.ts sample isn't in a supported pixel format, so use this instead
@@ -60,7 +60,7 @@ func TestNvidia_Transcoder(t *testing.T) {
 		return
 	}
 	StartNvidiaTranscoders(dev, tmp)
-	tc = NewNvidiaTranscoder(dev, tmp)
+	tc = NewNvidiaTranscoder(dev)
 	res, err := tc.Transcode("", fname, profiles)
 	if err != nil {
 		t.Error(err)
@@ -123,7 +123,7 @@ func TestNvidia_ConcurrentTranscodes(t *testing.T) {
 	tmp, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(tmp)
 	StartNvidiaTranscoders(dev, tmp)
-	tc := NewNvidiaTranscoder(dev, tmp)
+	tc := NewNvidiaTranscoder(dev)
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
 	wg := newWg(5)
 	for i := 0; i < 5; i++ {
