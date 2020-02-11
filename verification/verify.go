@@ -112,10 +112,7 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 		return nil, nil
 	}
 
-	if params != nil && // may be nil in offchain mode
-		params.Results != nil &&
-		params.Orchestrator != nil &&
-		params.Orchestrator.TicketParams != nil {
+	if params.Results != nil {
 		segHashes := make([][]byte, len(params.Results.Segments))
 		for i, segment := range params.Results.Segments {
 
