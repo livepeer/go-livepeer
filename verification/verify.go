@@ -116,7 +116,10 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 		return nil, nil
 	}
 
-	pxls := res.Pixels
+	var pxls []int64
+	if res != nil {
+		pxls = res.Pixels
+	}
 
 	// Check pixel counts
 	if (err == nil || IsRetryable(err)) && res != nil && params.Results != nil {
