@@ -131,8 +131,6 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	var err error
 	res := &Results{}
 
-	// TODO Use policy sampling rate to determine whether to invoke verifier.
-	//      If not, exit early. Seed sample using source data for repeatability!
 	if sv.policy.Verifier != nil {
 		res, err = sv.policy.Verifier.Verify(params)
 	} else if params.Orchestrator == nil {
