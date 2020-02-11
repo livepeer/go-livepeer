@@ -105,24 +105,23 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 
 	// TODO sig checking; extract from broadcast.go
 
-	if sv.policy.Verifier == nil {
-		err := sv.verifyPixelParams(params)
-		var res *Params
-		if params != nil &&
-			params.Orchestrator != nil &&
-			!IsRetryable(err) {
-			res = params
-		}
-		return res, err
-	}
+	var err error
+	res := &Results{}
+
 	// TODO Use policy sampling rate to determine whether to invoke verifier.
 	//      If not, exit early. Seed sample using source data for repeatability!
-	res, err := sv.policy.Verifier.Verify(params)
+	if sv.policy.Verifier != nil {
+		res, err = sv.policy.Verifier.Verify(params)
+	} else {
+		if params == nil || params.Orchestrator == nil {
+			return nil, nil
+		}
+	}
 
 	// Check pixel counts
 	if (err == nil || IsRetryable(err)) && res != nil && params.Results != nil {
 		if len(res.Pixels) != len(params.Results.Segments) {
-			err = sv.verifyPixelParams(params)
+			res, err = sv.countPixelParams(params)
 		}
 		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(res.Pixels); i++ {
 			reportedPixels := params.Results.Segments[i].Pixels
@@ -164,52 +163,55 @@ func IsRetryable(err error) bool {
 	return retryable
 }
 
-func (sv *SegmentVerifier) verifyPixelParams(params *Params) error {
+func (sv *SegmentVerifier) countPixelParams(params *Params) (*Results, error) {
 	// check if the node is on-chain mode
 	if params == nil ||
 		params.Orchestrator == nil ||
 		params.Orchestrator.TicketParams == nil {
 
 		if sv.policy.Verifier == nil {
-			return nil
+			return nil, nil
 		}
 
-		return ErrPixelsAbsent
+		return nil, ErrPixelsAbsent
 	}
 
 	if len(params.Results.Segments) != len(params.Renditions) {
-		return ErrPixelMismatch
+		return nil, ErrPixelMismatch
 	}
+
+	res := &Results{Pixels: make([]int64, len(params.Results.Segments))}
 
 	for i := 0; i < len(params.Results.Segments); i++ {
-		if err := verifyPixels(
+		count, err := countPixels(
 			params.Results.Segments[i].Url,
-			params.Renditions[i],
-			params.Results.Segments[i].Pixels); err != nil {
-			return err
+			params.Renditions[i])
+		if err != nil {
+			return nil, err
 		}
+		res.Pixels[i] = count
 	}
-	return nil
+	return res, nil
 }
 
-func verifyPixels(fname string, data []byte, reportedPixels int64) error {
+func countPixels(fname string, data []byte) (int64, error) {
 	uri, err := url.ParseRequestURI(fname)
 	// If the filename is a relative URI and the broadcaster is using local memory storage
 	// write the data to a temp file
 	if err == nil && !uri.IsAbs() && data != nil {
 		tempfile, err := ioutil.TempFile("", common.RandName())
 		if err != nil {
-			return fmt.Errorf("error creating temp file for pixels verification: %w", err)
+			return 0, fmt.Errorf("error creating temp file for pixels verification: %w", err)
 		}
 		defer os.Remove(tempfile.Name())
 
 		if _, err := tempfile.Write(data); err != nil {
 			tempfile.Close()
-			return fmt.Errorf("error writing temp file for pixels verification: %w", err)
+			return 0, fmt.Errorf("error writing temp file for pixels verification: %w", err)
 		}
 
 		if err = tempfile.Close(); err != nil {
-			return fmt.Errorf("error closing temp file for pixels verification: %w", err)
+			return 0, fmt.Errorf("error closing temp file for pixels verification: %w", err)
 		}
 
 		fname = tempfile.Name()
@@ -217,14 +219,10 @@ func verifyPixels(fname string, data []byte, reportedPixels int64) error {
 
 	p, err := pixels(fname)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	if p != reportedPixels {
-		return ErrPixelMismatch
-	}
-
-	return nil
+	return p, nil
 }
 
 func pixels(fname string) (int64, error) {
