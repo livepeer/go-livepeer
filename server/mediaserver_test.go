@@ -32,14 +32,33 @@ import (
 var S *LivepeerServer
 
 func setupServer() *LivepeerServer {
+	s, _ := setupServerWithCancel()
+	return s
+}
+
+func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	ctx, cancel := context.WithCancel(context.Background())
 	if S == nil {
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		S = NewLivepeerServer("127.0.0.1:1938", n)
-		go S.StartMediaServer(context.Background(), "", "127.0.0.1:8080")
+		go S.StartMediaServer(ctx, "", "127.0.0.1:8080")
 		go S.StartCliWebserver("127.0.0.1:8938")
 	}
-	return S
+	return S, cancel
+}
+
+// since we have test that checks that there is no goroutine
+// left running after using RTMP connection - we have to properly
+// close connections in all the tests that are using them
+func serverCleanup(s *LivepeerServer) {
+	s.connectionLock.Lock()
+	for _, cxn := range s.rtmpConnections {
+		if cxn != nil && cxn.stream != nil {
+			cxn.stream.Close()
+		}
+	}
+	s.connectionLock.Unlock()
 }
 
 type stubDiscovery struct {
@@ -103,6 +122,7 @@ func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVide
 
 func TestSelectOrchestrator(t *testing.T) {
 	s := setupServer()
+	defer serverCleanup(s)
 
 	defer func() {
 		s.LivepeerNode.Sender = nil
@@ -283,6 +303,7 @@ type authWebhookReq struct {
 func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()
+	defer serverCleanup(s)
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	createSid := createRTMPStreamIDHandler(s)
 
@@ -423,6 +444,7 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	defer func() { common.RandomIDGenerator = oldRandFunc }()
 
 	s := setupServer()
+	defer serverCleanup(s)
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	handler := gotRTMPStreamHandler(s)
 	createSid := createRTMPStreamIDHandler(s)
@@ -489,6 +511,7 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 
 func TestEndRTMPStreamHandler(t *testing.T) {
 	s := setupServer()
+	defer serverCleanup(s)
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	createSid := createRTMPStreamIDHandler(s)
 	handler := gotRTMPStreamHandler(s)
@@ -517,6 +540,7 @@ func TestEndRTMPStreamHandler(t *testing.T) {
 // Should publish RTMP stream, turn the RTMP stream into HLS, and broadcast the HLS stream.
 func TestGotRTMPStreamHandler(t *testing.T) {
 	s := setupServer()
+	defer serverCleanup(s)
 	s.RTMPSegmenter = &StubSegmenter{}
 	handler := gotRTMPStreamHandler(s)
 
@@ -593,6 +617,7 @@ func TestMultiStream(t *testing.T) {
 		flag.Set("logtostderr", "true")
 	}()
 	s := setupServer()
+	defer serverCleanup(s)
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	handler := gotRTMPStreamHandler(s)
 	createSid := createRTMPStreamIDHandler(s)
@@ -648,6 +673,7 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 	glog.Infof("\n\nTestGetHLSMasterPlaylistHandler...\n")
 
 	s := setupServer()
+	defer serverCleanup(s)
 	handler := gotRTMPStreamHandler(s)
 
 	vProfile := ffmpeg.P720p30fps16x9
@@ -690,6 +716,7 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 func TestRegisterConnection(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()
+	defer serverCleanup(s)
 	mid := core.SplitStreamIDString(t.Name()).ManifestID
 	strm := stream.NewBasicRTMPVideoStream(&streamParameters{mid: mid})
 
@@ -741,6 +768,7 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	assert := assert.New(t)
 
 	s := setupServer()
+	defer serverCleanup(s)
 	// populate stub discovery
 	sd := &stubDiscovery{}
 	sd.infos = []*net.OrchestratorInfo{

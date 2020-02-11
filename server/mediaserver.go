@@ -450,6 +450,7 @@ func removeRTMPStream(s *LivepeerServer, mid core.ManifestID) error {
 		glog.Error("Attempted to end unknown stream with manifest ID ", mid)
 		return errUnknownStream
 	}
+	cxn.stream.Close()
 	cxn.sessManager.cleanup()
 	cxn.pl.Cleanup()
 	glog.Infof("Ended stream with id=%s", mid)

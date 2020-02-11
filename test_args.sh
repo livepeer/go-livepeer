@@ -55,7 +55,7 @@ run_lp -broadcaster -network mainnet $ETH_ARGS
 [ -d "$DEFAULT_DATADIR"/mainnet ]
 kill $pid
 
-run_lp -broadcaster -network anyNetwork $ETH_ARGS -ethUrl "wss://rinkeby.infura.io/ws" -v 99
+run_lp -broadcaster -network anyNetwork $ETH_ARGS -ethUrl "https://rinkeby.infura.io/v3/09642b98164d43eb890939eb9a7ec500" -v 99
 [ -d "$DEFAULT_DATADIR"/anyNetwork ]
 kill $pid
 

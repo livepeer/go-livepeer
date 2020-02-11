@@ -137,14 +137,19 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 		return nil, nil
 	}
 
+	var pxls []int64
+	if res != nil {
+		pxls = res.Pixels
+	}
+
 	// Check pixel counts
 	if (err == nil || IsRetryable(err)) && res != nil && params.Results != nil {
-		if len(res.Pixels) != len(params.Results.Segments) {
-			res, err = sv.countPixelParams(params)
+		if len(pxls) != len(params.Results.Segments) {
+			pxls, err = sv.countPixelParams(params)
 		}
-		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(res.Pixels); i++ {
+		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(pxls); i++ {
 			reportedPixels := params.Results.Segments[i].Pixels
-			verifiedPixels := res.Pixels[i]
+			verifiedPixels := pxls[i]
 			if reportedPixels != verifiedPixels {
 				err = ErrPixelMismatch
 			}
@@ -182,7 +187,7 @@ func IsRetryable(err error) bool {
 	return retryable
 }
 
-func (sv *SegmentVerifier) countPixelParams(params *Params) (*Results, error) {
+func (sv *SegmentVerifier) countPixelParams(params *Params) ([]int64, error) {
 
 	if params.Orchestrator == nil {
 		return nil, ErrPixelsAbsent
@@ -192,7 +197,7 @@ func (sv *SegmentVerifier) countPixelParams(params *Params) (*Results, error) {
 		return nil, ErrPixelMismatch
 	}
 
-	res := &Results{Pixels: make([]int64, len(params.Results.Segments))}
+	pxls := make([]int64, len(params.Results.Segments))
 
 	for i := 0; i < len(params.Results.Segments); i++ {
 		count, err := countPixels(
@@ -201,9 +206,9 @@ func (sv *SegmentVerifier) countPixelParams(params *Params) (*Results, error) {
 		if err != nil {
 			return nil, err
 		}
-		res.Pixels[i] = count
+		pxls[i] = count
 	}
-	return res, nil
+	return pxls, nil
 }
 
 func countPixels(fname string, data []byte) (int64, error) {
