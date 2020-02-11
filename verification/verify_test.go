@@ -86,16 +86,28 @@ func TestVerify(t *testing.T) {
 	assert.Equal(ErrPixelMismatch, err)
 
 	// Check pixel count succeeds w/o external verifier
-	pixels, err := pixels("../server/test.flv")
+	pxls, err := pixels("../server/test.flv")
 	assert.Nil(err)
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
-		{Url: "../server/test.flv", Pixels: pixels},
-		{Url: "../server/test.flv", Pixels: pixels},
+		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: pxls},
 	}}
 	renditions := [][]byte{{123}, {234}}
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
 	assert.Nil(err)
 	assert.NotNil(res)
+
+	// Check pixel count fails when len(params.Results.Segments) != len(params.Renditions)
+	pxls, err = pixels("../server/test.flv")
+	assert.Nil(err)
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: pxls},
+	}}
+	renditions = [][]byte{}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	assert.NotNil(err)
+	assert.Nil(res)
 
 	// Check retryable: 3 attempts
 	sv = NewSegmentVerifier(&Policy{Verifier: verifier, Retries: 2}) // reset
