@@ -143,10 +143,8 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	//      If not, exit early. Seed sample using source data for repeatability!
 	if sv.policy.Verifier != nil {
 		res, err = sv.policy.Verifier.Verify(params)
-	} else {
-		if params == nil || params.Orchestrator == nil {
-			return nil, nil
-		}
+	} else if params.Orchestrator == nil {
+		return nil, nil
 	}
 
 	// Check pixel counts
@@ -196,7 +194,7 @@ func IsRetryable(err error) bool {
 
 func (sv *SegmentVerifier) countPixelParams(params *Params) (*Results, error) {
 
-	if params == nil || params.Orchestrator == nil {
+	if params.Orchestrator == nil {
 		return nil, ErrPixelsAbsent
 	}
 
