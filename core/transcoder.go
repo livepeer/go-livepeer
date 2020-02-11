@@ -131,7 +131,7 @@ func StartNvidiaTranscoders(devices string, workDir string) {
 	}
 }
 
-func NewNvidiaTranscoder(gpu string, workDir string) TranscoderSession {
+func NewNvidiaTranscoder(gpu string) TranscoderSession {
 	return &NvidiaTranscoder{
 		device:  nvidiaDevices[gpu],
 		session: ffmpeg.NewTranscoder(),
