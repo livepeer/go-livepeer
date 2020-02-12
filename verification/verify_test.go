@@ -37,7 +37,7 @@ func TestVerify(t *testing.T) {
 	assert.Nil(err)
 	sv = NewSegmentVerifier(&Policy{Retries: 3})
 	res, err = sv.Verify(&Params{})
-	assert.Nil(res)
+	assert.NotNil(res)
 	assert.Nil(err)
 
 	// Check verifier error is propagated

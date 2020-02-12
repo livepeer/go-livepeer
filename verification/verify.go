@@ -112,8 +112,6 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	//      If not, exit early. Seed sample using source data for repeatability!
 	if sv.policy.Verifier != nil {
 		res, err = sv.policy.Verifier.Verify(params)
-	} else if params.Orchestrator == nil {
-		return nil, nil
 	}
 
 	var pxls []int64
