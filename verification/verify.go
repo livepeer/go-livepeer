@@ -118,7 +118,7 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	if (err == nil || IsRetryable(err)) && res != nil && params.Results != nil {
 		pxls := res.Pixels
 		if len(pxls) != len(params.Results.Segments) {
-			pxls, err = sv.countPixelParams(params)
+			pxls, err = countPixelParams(params)
 		}
 		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(pxls); i++ {
 			reportedPixels := params.Results.Segments[i].Pixels
@@ -160,7 +160,7 @@ func IsRetryable(err error) bool {
 	return retryable
 }
 
-func (sv *SegmentVerifier) countPixelParams(params *Params) ([]int64, error) {
+func countPixelParams(params *Params) ([]int64, error) {
 
 	if params.Orchestrator == nil {
 		return nil, ErrPixelsAbsent
