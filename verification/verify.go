@@ -119,7 +119,6 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 		}
 
 		// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
-		// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
 		if len(segHashes) != len(params.Results.Segments) &&
 			!pm.VerifySig(
 				ethcommon.BytesToAddress(params.Orchestrator.TicketParams.Recipient),
