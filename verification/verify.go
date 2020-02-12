@@ -111,12 +111,11 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	}
 
 	if params.Results != nil {
-		if len(params.Results.Segments) == 0 {
-			return nil, ErrPixelsAbsent
-		}
 		segHashes := make([][]byte, len(params.Results.Segments))
-		for i, data := range params.Renditions {
-			segHashes[i] = crypto.Keccak256(data)
+		if len(segHashes) == len(params.Renditions) {
+			for i := range params.Results.Segments {
+				segHashes[i] = crypto.Keccak256(params.Renditions[i])
+			}
 		}
 
 		// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
