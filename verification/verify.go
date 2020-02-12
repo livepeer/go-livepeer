@@ -111,6 +111,9 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 	}
 
 	if params.Results != nil {
+		if len(params.Results.Segments) == 0 {
+			return nil, ErrPixelsAbsent
+		}
 		segHashes := make([][]byte, len(params.Results.Segments))
 		for i, data := range params.Renditions {
 			segHashes[i] = crypto.Keccak256(data)
