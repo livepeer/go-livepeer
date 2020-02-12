@@ -23,6 +23,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
 	"github.com/livepeer/lpms/ffmpeg"
+	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -112,7 +113,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 		}
 	}()
 
-	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	httpc := &http.Client{Transport: &http2.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	var wg sync.WaitGroup
 	for {
 		notify, err := r.Recv()
