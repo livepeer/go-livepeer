@@ -136,8 +136,6 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 
 	if sv.policy.Verifier != nil {
 		res, err = sv.policy.Verifier.Verify(params)
-	} else if params.Orchestrator == nil {
-		return nil, nil
 	}
 
 	var pxls []int64
