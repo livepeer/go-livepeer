@@ -114,13 +114,9 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 		res, err = sv.policy.Verifier.Verify(params)
 	}
 
-	var pxls []int64
-	if res != nil {
-		pxls = res.Pixels
-	}
-
 	// Check pixel counts
 	if (err == nil || IsRetryable(err)) && res != nil && params.Results != nil {
+		pxls := res.Pixels
 		if len(pxls) != len(params.Results.Segments) {
 			pxls, err = sv.countPixelParams(params)
 		}
