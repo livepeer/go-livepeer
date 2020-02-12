@@ -93,7 +93,7 @@ func TestVerify(t *testing.T) {
 		{Url: "../server/test.flv", Pixels: pixels},
 	}}
 	renditions := [][]byte{{123}, {234}}
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}, Renditions: renditions})
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
 	assert.Nil(err)
 	assert.NotNil(res)
 
