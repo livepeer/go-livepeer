@@ -106,7 +106,7 @@ func TestVerify(t *testing.T) {
 	}}
 	renditions = [][]byte{}
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
-	assert.NotNil(err)
+	assert.Equal(ErrPixelMismatch, err)
 	assert.Nil(res)
 
 	// Check retryable: 3 attempts
