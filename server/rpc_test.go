@@ -596,7 +596,7 @@ func TestValidatePrice(t *testing.T) {
 	// O.PriceInfo is nil
 	s.OrchestratorInfo.PriceInfo = nil
 	err = validatePrice(s)
-	assert.EqualError(err, "priceInfo is nil")
+	assert.EqualError(err, "missing orchestrator price")
 
 	// O.PriceInfo.PixelsPerUnit is 0
 	s.OrchestratorInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 0}

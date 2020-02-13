@@ -148,3 +148,19 @@ func TestTicketQueueLoopConcurrent(t *testing.T) {
 	time.Sleep(time.Millisecond * 20)
 	assert.Equal(int32(0), q.Length())
 }
+
+func TestTicketQueueConsumeBlockNums(t *testing.T) {
+	assert := assert.New(t)
+
+	tm := &stubTimeManager{}
+
+	q := newTicketQueue(tm.SubscribeBlocks)
+	q.Start()
+	defer q.Stop()
+	time.Sleep(5 * time.Millisecond)
+
+	tm.blockNumSink <- big.NewInt(10)
+	time.Sleep(5 * time.Millisecond)
+	// Check that the value is consumed
+	assert.Len(tm.blockNumSink, 0)
+}

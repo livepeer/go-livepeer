@@ -212,8 +212,8 @@ func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestr
 	req, err := genOrchestratorReq(bcast)
 	r, err := c.GetOrchestrator(ctx, req)
 	if err != nil {
-		glog.Errorf("Could not get orchestrator %v: %v", orchestratorServer, err)
-		return nil, errors.New("Could not get orchestrator: " + err.Error())
+		glog.Errorf("Could not get orchestrator orch=%v err=%v", orchestratorServer, err)
+		return nil, errors.New("Could not get orchestrator err=" + err.Error())
 	}
 
 	return r, nil

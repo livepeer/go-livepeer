@@ -275,7 +275,7 @@ func RatPriceInfo(priceInfo *net.PriceInfo) (*big.Rat, error) {
 
 	pixelsPerUnit := priceInfo.PixelsPerUnit
 	if pixelsPerUnit == 0 {
-		return nil, errors.New("invalid priceInfo.pixelsPerUnit")
+		return nil, errors.New("pixels per unit is 0")
 	}
 
 	return big.NewRat(priceInfo.PricePerUnit, pixelsPerUnit), nil

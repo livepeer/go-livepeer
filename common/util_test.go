@@ -222,8 +222,8 @@ func TestRatPriceInfo(t *testing.T) {
 
 	// Test nil priceInfo
 	priceInfo, err := RatPriceInfo(nil)
-	assert.EqualError(err, "priceInfo is nil")
 	assert.Nil(priceInfo)
+	assert.Nil(err)
 
 	// Test priceInfo.pixelsPerUnit = 0
 	_, err = RatPriceInfo(&net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 0})

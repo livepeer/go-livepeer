@@ -111,23 +111,6 @@ func (q *ticketQueue) startQueueLoop() {
 	defer sub.Unsubscribe()
 
 	for {
-		// Lock and wait until the queue is non-empty
-		q.cond.L.Lock()
-		for len(q.queue) == 0 {
-			q.cond.Wait()
-
-			select {
-			case <-q.quit:
-				// Unlock if we are exiting
-				q.cond.L.Unlock()
-				return
-			default:
-			}
-		}
-
-		// Unlock since the queue is non-empty now
-		q.cond.L.Unlock()
-
 		select {
 		case err := <-sub.Err():
 			glog.Error(err)

@@ -584,7 +584,7 @@ func TestProcessPayment_GivenNoSender_ReturnsError(t *testing.T) {
 	assert.Error(err)
 }
 
-func TestProcessPayment_GivenNoTicketParams_ReturnsNoError(t *testing.T) {
+func TestProcessPayment_GivenNoTicketParams_ReturnsNil(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
@@ -601,7 +601,7 @@ func TestProcessPayment_GivenNoTicketParams_ReturnsNoError(t *testing.T) {
 	assert.Nil(err)
 }
 
-func TestProcessPayment_GivenNilNode_ReturnsNilError(t *testing.T) {
+func TestProcessPayment_GivenNilNode_ReturnsNil(t *testing.T) {
 	orch := &orchestrator{}
 
 	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
@@ -609,7 +609,7 @@ func TestProcessPayment_GivenNilNode_ReturnsNilError(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func TestProcessPayment_GivenNilRecipient_ReturnsNilError(t *testing.T) {
+func TestProcessPayment_GivenNilRecipient_ReturnsNil(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	orch := NewOrchestrator(n, nil)
 	n.Recipient = nil
