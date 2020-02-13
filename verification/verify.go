@@ -15,8 +15,8 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
@@ -121,7 +121,7 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 		// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
 		// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
 		if len(segHashes) != len(params.Results.Segments) &&
-			!pm.VerifySig(
+			!lpcrypto.VerifySig(
 				ethcommon.BytesToAddress(params.Orchestrator.TicketParams.Recipient),
 				crypto.Keccak256(segHashes...),
 				params.Results.Sig) {
@@ -139,15 +139,11 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 		res, err = sv.policy.Verifier.Verify(params)
 	}
 
-	var pxls []int64
-	if res != nil {
-		pxls = res.Pixels
-	}
-
 	// Check pixel counts
 	if (err == nil || IsRetryable(err)) && res != nil && params.Results != nil {
+		pxls := res.Pixels
 		if len(pxls) != len(params.Results.Segments) {
-			pxls, err = sv.countPixelParams(params)
+			pxls, err = countPixelParams(params)
 		}
 		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(pxls); i++ {
 			reportedPixels := params.Results.Segments[i].Pixels
@@ -189,7 +185,7 @@ func IsRetryable(err error) bool {
 	return retryable
 }
 
-func (sv *SegmentVerifier) countPixelParams(params *Params) ([]int64, error) {
+func countPixelParams(params *Params) ([]int64, error) {
 
 	if params.Orchestrator == nil {
 		return nil, ErrPixelsAbsent

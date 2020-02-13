@@ -7,7 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-livepeer/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -93,7 +93,7 @@ func TestSign(t *testing.T) {
 
 	sig, err := am.Sign([]byte("foo"))
 	assert.Nil(err)
-	assert.True(pm.VerifySig(a.Address, []byte("foo"), sig))
+	assert.True(crypto.VerifySig(a.Address, []byte("foo"), sig))
 }
 
 func tmpKeyStore(t *testing.T, encrypted bool) (string, *keystore.KeyStore) {

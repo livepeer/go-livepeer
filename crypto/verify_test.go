@@ -1,4 +1,4 @@
-package pm
+package crypto
 
 import (
 	"testing"
