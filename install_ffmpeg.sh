@@ -58,7 +58,7 @@ if [[ $(uname) != *"MSYS"* ]]; then
   # rm -rf "$HOME/gmp-6.1.2"
   if [ ! -e "$HOME/gmp-6.1.2" ]; then
     cd "$HOME"
-    curl -LO https://ftp.gnu.org/gnu/gmp/gmp-6.1.2.tar.xz
+    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/34900f2b1be4e366c5270e3ee5b0d001f12bd8a4/gmp-6.1.2.tar.xz
     xz -d gmp-6.1.2.tar.xz
     tar xf gmp-6.1.2.tar
     rm gmp-6.1.2.tar
@@ -71,7 +71,7 @@ if [[ $(uname) != *"MSYS"* ]]; then
   # rm -rf "$HOME/nettle-3.4.1"
   if [ ! -e "$HOME/nettle-3.4.1" ]; then
     cd $HOME
-    curl -LO https://ftp.gnu.org/gnu/nettle/nettle-3.4.1.tar.gz
+    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/34900f2b1be4e366c5270e3ee5b0d001f12bd8a4/nettle-3.4.1.tar.gz
     tar xf nettle-3.4.1.tar.gz
     rm nettle-3.4.1.tar.gz
     cd nettle-3.4.1
