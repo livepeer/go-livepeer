@@ -25,6 +25,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 
+	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
@@ -67,7 +68,7 @@ func (orch *orchestrator) VerifySig(addr ethcommon.Address, msg string, sig []by
 	if orch.node == nil || orch.node.Eth == nil {
 		return true
 	}
-	return pm.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
+	return lpcrypto.VerifySig(addr, crypto.Keccak256([]byte(msg)), sig)
 }
 
 func (orch *orchestrator) Address() ethcommon.Address {
@@ -456,7 +457,7 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 }
 
 func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
-	glog.V(common.DEBUG).Infof("Starting to transcode segment manifest=%s seqNo=%d", string(md.ManifestID), md.Seq)
+	glog.V(common.DEBUG).Infof("Starting to transcode segment manifestID=%s seqNo=%d", string(md.ManifestID), md.Seq)
 	ch, err := n.getSegmentChan(md)
 	if err != nil {
 		glog.Error("Could not find segment chan ", err)
@@ -535,13 +536,13 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	start := time.Now()
 	tData, err := transcoder.Transcode(string(md.ManifestID), url, md.Profiles)
 	if err != nil {
-		glog.Errorf("Error transcoding manifest=%s segNo=%d segName=%s - %v", string(md.ManifestID), seg.SeqNo, seg.Name, err)
+		glog.Errorf("Error transcoding manifestID=%s segNo=%d segName=%s - %v", string(md.ManifestID), seg.SeqNo, seg.Name, err)
 		return terr(err)
 	}
 
 	tSegments := tData.Segments
 	if len(tSegments) != len(md.Profiles) {
-		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v manifest=%s seqNo=%d", len(tSegments),
+		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v manifestID=%s seqNo=%d", len(tSegments),
 			len(md.Profiles), string(md.ManifestID), seg.SeqNo)
 		return terr(fmt.Errorf("MismatchedSegments"))
 	}
@@ -558,11 +559,11 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 
 	for i := range md.Profiles {
 		if tSegments[i].Data == nil || len(tSegments[i].Data) < 25 {
-			glog.Errorf("Cannot find transcoded segment for manifest=%s seqNo=%d dataLength=%d",
+			glog.Errorf("Cannot find transcoded segment for manifestID=%s seqNo=%d len=%d",
 				string(md.ManifestID), seg.SeqNo, len(tSegments[i].Data))
 			return terr(fmt.Errorf("ZeroSegments"))
 		}
-		glog.V(common.DEBUG).Infof("Transcoded segment manifest=%s seqNo=%d profile=%s len=%d",
+		glog.V(common.DEBUG).Infof("Transcoded segment manifestID=%s seqNo=%d profile=%s len=%d",
 			string(md.ManifestID), seg.SeqNo, md.Profiles[i].Name, len(tSegments[i].Data))
 		hash := crypto.Keccak256(tSegments[i].Data)
 		segHashes[i] = hash
