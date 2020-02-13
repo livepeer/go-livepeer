@@ -83,7 +83,7 @@ func TestVerify(t *testing.T) {
 	assert.Len(data.Segments, len(verifier.results.Pixels)) // sanity check
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}})
 	assert.Nil(res)
-	assert.Equal(ErrPixelMismatch, err)
+	assert.Equal(ErrPixelsAbsent, err)
 
 	// Check pixel count succeeds w/o external verifier
 	pixels, err := pixels("../server/test.flv")
@@ -131,6 +131,10 @@ func TestVerify(t *testing.T) {
 	assert.Equal("mno", string(res.ManifestID))
 
 	// Pixel count handling
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "abc", Pixels: verifier.results.Pixels[0]},
+		{Url: "def", Pixels: verifier.results.Pixels[1]},
+	}}
 	verifier.err = nil
 	// Good score but incorrect pixel list should still fail
 	verifier.results = &Results{Score: 10.0, Pixels: []int64{789}}
