@@ -186,12 +186,8 @@ func IsRetryable(err error) bool {
 
 func countPixelParams(params *Params) ([]int64, error) {
 
-	if params.Orchestrator == nil {
-		return nil, ErrPixelsAbsent
-	}
-
 	if len(params.Results.Segments) != len(params.Renditions) {
-		return nil, ErrPixelMismatch
+		return nil, ErrPixelsAbsent
 	}
 
 	pxls := make([]int64, len(params.Results.Segments))
