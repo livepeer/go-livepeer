@@ -110,12 +110,11 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 		return nil, nil
 	}
 
-	if params.Results != nil {
-		segHashes := make([][]byte, len(params.Results.Segments))
-		if len(segHashes) == len(params.Renditions) {
-			for i := range params.Results.Segments {
-				segHashes[i] = crypto.Keccak256(params.Renditions[i])
-			}
+	if params.Orchestrator != nil &&
+		params.Orchestrator.TicketParams != nil {
+		segHashes := make([][]byte, len(params.Renditions))
+		for i := range params.Renditions {
+			segHashes[i] = crypto.Keccak256(params.Renditions[i])
 		}
 
 		// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
