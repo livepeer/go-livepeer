@@ -105,6 +105,27 @@ func TestVerify(t *testing.T) {
 	assert.Nil(err)
 	assert.NotNil(res)
 
+	// check pixel count fails w/o external verifier w populated renditions but incorrect pixel counts
+	pxls, err = pixels("../server/test.flv")
+	assert.Nil(err)
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "../server/test.flv", Pixels: 123},
+		{Url: "../server/test.flv", Pixels: 456},
+	}}
+	renditions = [][]byte{{byte(pxls)}, {byte(pxls)}}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}, Renditions: renditions})
+	assert.Nil(res)
+	assert.Equal(ErrPixelMismatch, err)
+
+	// Check pixel count succeeds w/o external verifier
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: pxls},
+	}}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}, Renditions: renditions})
+	assert.Nil(err)
+	assert.NotNil(res)
+
 	// Check sig verifier fails when len(params.Results.Segments) != len(params.Renditions)
 	pxls, err = pixels("../server/test.flv")
 	assert.Nil(err)
