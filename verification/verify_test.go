@@ -8,9 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
@@ -146,32 +144,13 @@ func TestVerify(t *testing.T) {
 		verifySig: func(ethcommon.Address, []byte, []byte) bool { return true },
 	}
 
-	testData0 := []byte{1, 2, 3, 4, 5, 6, 7, 8}
-	testData1 := []byte{9, 10, 11, 12, 13, 14, 15, 16}
-	pxls = 8
-
-	hashes := crypto.Keccak256(crypto.Keccak256(testData0), crypto.Keccak256(testData1))
-
-	signerPrivKey, err := crypto.GenerateKey()
-	assert.Nil(err)
-
-	signer := crypto.PubkeyToAddress(signerPrivKey.PublicKey)
-
-	ethMsg := accounts.TextHash(hashes)
-	signerSig, err := crypto.Sign(ethMsg, signerPrivKey)
-	assert.Nil(err)
-
-	ethSig := make([]byte, 65)
-	copy(ethSig[:], signerSig[:])
-	ethSig[64] += 27
-
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
 		{Url: "xyz", Pixels: pxls},
 		{Url: "xyz", Pixels: pxls},
 	}, Sig: []byte{}}
 
-	renditions = [][]byte{testData0, testData1}
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{Recipient: signer.Bytes()}}, Renditions: renditions})
+	renditions = [][]byte{{0}, {0}}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
 	assert.Nil(err)
 	assert.NotNil(res)
 
@@ -184,7 +163,7 @@ func TestVerify(t *testing.T) {
 		{Url: "uvw", Pixels: pxls},
 		{Url: "xyz", Pixels: pxls},
 	}}
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{Recipient: signer.Bytes()}}, Renditions: renditions})
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
 	assert.Equal(errPMCheckFailed, err)
 	assert.Nil(res)
 
