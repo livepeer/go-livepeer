@@ -148,7 +148,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOption
 	s.LPMS.HandleHLSPlay(getHLSMasterPlaylistHandler(s), getHLSMediaPlaylistHandler(s), getHLSSegmentHandler(s))
 
 	//Start the LPMS server
-	lpmsCtx, cancel := context.WithCancel(context.Background())
+	lpmsCtx, cancel := context.WithCancel(ctx)
 
 	ec := make(chan error, 2)
 	go func() {
