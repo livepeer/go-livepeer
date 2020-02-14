@@ -85,14 +85,23 @@ func TestVerify(t *testing.T) {
 	assert.Nil(res)
 	assert.Equal(ErrPixelsAbsent, err)
 
-	// Check pixel count succeeds w/o external verifier
+	// check pixel count fails w/o external verifier w populated renditions but incorrect pixel counts
 	pixels, err := pixels("../server/test.flv")
 	assert.Nil(err)
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "../server/test.flv", Pixels: 123},
+		{Url: "../server/test.flv", Pixels: 456},
+	}}
+	renditions := [][]byte{{byte(pixels)}, {byte(pixels)}}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}, Renditions: renditions})
+	assert.Nil(res)
+	assert.Equal(ErrPixelMismatch, err)
+
+	// Check pixel count succeeds w/o external verifier
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
 		{Url: "../server/test.flv", Pixels: pixels},
 		{Url: "../server/test.flv", Pixels: pixels},
 	}}
-	renditions := [][]byte{{123}, {234}}
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}, Renditions: renditions})
 	assert.Nil(err)
 	assert.NotNil(res)
