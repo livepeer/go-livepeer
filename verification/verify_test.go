@@ -8,6 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -20,6 +23,10 @@ type stubVerifier struct {
 
 func (sv *stubVerifier) Verify(params *Params) (*Results, error) {
 	return sv.results, sv.err
+}
+
+func (sv *SegmentVerifier) VerifyNoSig(params *Params) (*Params, error) {
+	return sv.verify(func(*Params) error { return nil }, params)
 }
 
 func TestVerify(t *testing.T) {
@@ -87,17 +94,18 @@ func TestVerify(t *testing.T) {
 
 	// Check pixel count succeeds w/o external verifier
 	pxls, err := pixels("../server/test.flv")
+	a := make([]byte, pxls)
 	assert.Nil(err)
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
 		{Url: "../server/test.flv", Pixels: pxls},
 		{Url: "../server/test.flv", Pixels: pxls},
 	}}
-	renditions := [][]byte{{123}, {234}}
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	renditions := [][]byte{a, a}
+	res, err = sv.VerifyNoSig(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
 	assert.Nil(err)
 	assert.NotNil(res)
 
-	// Check pixel count fails when len(params.Results.Segments) != len(params.Renditions)
+	// Check sig verifier fails when len(params.Results.Segments) != len(params.Renditions)
 	pxls, err = pixels("../server/test.flv")
 	assert.Nil(err)
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
@@ -106,6 +114,50 @@ func TestVerify(t *testing.T) {
 	}}
 	renditions = [][]byte{}
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	assert.Equal(errPMCheckFailed, err)
+	assert.Nil(res)
+
+	// Check sig verifier passes when len(params.Results.Segments) == len(params.Renditions) and sig is valid
+	// We use this stubVerifier to make sure that ffmpeg doesnt try to read from a file
+	sv = NewSegmentVerifier(&Policy{Verifier: &stubVerifier{
+		results: nil,
+		err:     nil,
+	}, Retries: 2})
+	testData0 := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+	testData1 := []byte{9, 10, 11, 12, 13, 14, 15, 16}
+	pxls = 8
+
+	hashes := crypto.Keccak256(crypto.Keccak256(testData0), crypto.Keccak256(testData1))
+
+	signerPrivKey, err := crypto.GenerateKey()
+	assert.Nil(err)
+
+	signer := crypto.PubkeyToAddress(signerPrivKey.PublicKey)
+
+	ethMsg := accounts.TextHash(hashes)
+	signerSig, err := crypto.Sign(ethMsg, signerPrivKey)
+	assert.Nil(err)
+
+	ethSig := make([]byte, 65)
+	copy(ethSig[:], signerSig[:])
+	ethSig[64] += 27
+
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "xyz", Pixels: pxls},
+		{Url: "xyz", Pixels: pxls},
+	}, Sig: ethSig}
+
+	renditions = [][]byte{testData0, testData1}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{Recipient: signer.Bytes()}}, Renditions: renditions})
+	assert.Nil(err)
+	assert.NotNil(res)
+
+	// Check sig verifier fails when sig is missing / invalid
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "uvw", Pixels: pxls},
+		{Url: "xyz", Pixels: pxls},
+	}}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{Recipient: signer.Bytes()}}, Renditions: renditions})
 	assert.Equal(errPMCheckFailed, err)
 	assert.Nil(res)
 

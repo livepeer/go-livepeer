@@ -105,28 +105,18 @@ func NewSegmentVerifier(p *Policy) *SegmentVerifier {
 }
 
 func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
+	return sv.verify(verifySignature, params)
+}
 
+type sigVerifyFunc func(params *Params) error
+
+func (sv *SegmentVerifier) verify(verifySig sigVerifyFunc, params *Params) (*Params, error) {
 	if sv.policy == nil {
 		return nil, nil
 	}
 
-	if params.Orchestrator != nil &&
-		params.Orchestrator.TicketParams != nil {
-		segHashes := make([][]byte, len(params.Renditions))
-		for i := range params.Renditions {
-			segHashes[i] = crypto.Keccak256(params.Renditions[i])
-		}
-
-		// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
-		// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
-		if len(segHashes) != len(params.Results.Segments) &&
-			!lpcrypto.VerifySig(
-				ethcommon.BytesToAddress(params.Orchestrator.TicketParams.Recipient),
-				crypto.Keccak256(segHashes...),
-				params.Results.Sig) {
-			glog.Error("Sig check failed")
-			return nil, errPMCheckFailed
-		}
+	if err := verifySig(params); err != nil {
+		return nil, err
 	}
 
 	var err error
@@ -182,6 +172,32 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 func IsRetryable(err error) bool {
 	_, retryable := err.(Retryable)
 	return retryable
+}
+
+func verifySignature(params *Params) error {
+	if params.Orchestrator == nil || params.Orchestrator.TicketParams == nil {
+		return nil
+	}
+
+	if len(params.Results.Segments) != len(params.Renditions) {
+		return errPMCheckFailed
+	}
+
+	segHashes := make([][]byte, len(params.Renditions))
+	for i := range params.Renditions {
+		segHashes[i] = crypto.Keccak256(params.Renditions[i])
+	}
+
+	// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
+	// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
+	if !lpcrypto.VerifySig(
+		ethcommon.BytesToAddress(params.Orchestrator.TicketParams.Recipient),
+		crypto.Keccak256(segHashes...),
+		params.Results.Sig) {
+		glog.Error("Sig check failed")
+		return errPMCheckFailed
+	}
+	return nil
 }
 
 func countPixelParams(params *Params) ([]int64, error) {
