@@ -2,9 +2,20 @@ package verification
 
 import (
 	"errors"
+	"fmt"
+	"io/ioutil"
+	"net/url"
+	"os"
 	"sort"
 
+	"github.com/golang/glog"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	"github.com/livepeer/go-livepeer/net"
 
 	"github.com/livepeer/lpms/ffmpeg"
@@ -20,6 +31,7 @@ type Retryable struct {
 
 var ErrPixelMismatch = Retryable{errors.New("PixelMismatch")}
 var ErrPixelsAbsent = errors.New("PixelsAbsent")
+var errPMCheckFailed = errors.New("PM Check Failed")
 
 type Params struct {
 	// ManifestID should go away once we do direct push of video
@@ -76,6 +88,8 @@ type SegmentVerifierResults struct {
 	res    *Results
 }
 
+type sigVerifyFn func(addr ethcommon.Address, msg, sig []byte) bool
+
 type byResScore []SegmentVerifierResults
 
 func (a byResScore) Len() int           { return len(a) }
@@ -83,40 +97,43 @@ func (a byResScore) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byResScore) Less(i, j int) bool { return a[i].res.Score < a[j].res.Score }
 
 type SegmentVerifier struct {
-	policy  *Policy
-	results []SegmentVerifierResults
-	count   int
+	policy    *Policy
+	results   []SegmentVerifierResults
+	count     int
+	verifySig sigVerifyFn
 }
 
 func NewSegmentVerifier(p *Policy) *SegmentVerifier {
-	return &SegmentVerifier{policy: p}
+	return &SegmentVerifier{policy: p, verifySig: lpcrypto.VerifySig}
 }
 
 func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
-
 	if sv.policy == nil {
 		return nil, nil
 	}
 
-	// TODO sig checking; extract from broadcast.go
-
-	if sv.policy.Verifier == nil {
-		return nil, nil
+	if err := sv.sigVerification(params); err != nil {
+		return nil, err
 	}
+
+	var err error
+	res := &Results{}
+
 	// TODO Use policy sampling rate to determine whether to invoke verifier.
 	//      If not, exit early. Seed sample using source data for repeatability!
-	res, err := sv.policy.Verifier.Verify(params)
+	if sv.policy.Verifier != nil {
+		res, err = sv.policy.Verifier.Verify(params)
+	}
 
 	// Check pixel counts
 	if (err == nil || IsRetryable(err)) && res != nil && params.Results != nil {
-		if len(res.Pixels) != len(params.Results.Segments) {
-			// TODO make allowances for the verification algos not doing
-			//      pixel counts themselves; adapt broadcast.go verifyPixels
-			err = ErrPixelsAbsent
+		pxls := res.Pixels
+		if len(pxls) != len(params.Results.Segments) {
+			pxls, err = countPixelParams(params)
 		}
-		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(res.Pixels); i++ {
+		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(pxls); i++ {
 			reportedPixels := params.Results.Segments[i].Pixels
-			verifiedPixels := res.Pixels[i]
+			verifiedPixels := pxls[i]
 			if reportedPixels != verifiedPixels {
 				err = ErrPixelMismatch
 			}
@@ -152,4 +169,91 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 func IsRetryable(err error) bool {
 	_, retryable := err.(Retryable)
 	return retryable
+}
+
+func (sv *SegmentVerifier) sigVerification(params *Params) error {
+	if params.Orchestrator == nil || params.Orchestrator.TicketParams == nil {
+		return nil
+	}
+
+	if len(params.Results.Segments) != len(params.Renditions) {
+		return errPMCheckFailed
+	}
+
+	segHashes := make([][]byte, len(params.Renditions))
+	for i := range params.Renditions {
+		segHashes[i] = crypto.Keccak256(params.Renditions[i])
+	}
+
+	// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
+	// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
+	if !sv.verifySig(
+		ethcommon.BytesToAddress(params.Orchestrator.TicketParams.Recipient),
+		crypto.Keccak256(segHashes...),
+		params.Results.Sig) {
+		glog.Error("Sig check failed")
+		return errPMCheckFailed
+	}
+	return nil
+}
+
+func countPixelParams(params *Params) ([]int64, error) {
+
+	if len(params.Results.Segments) != len(params.Renditions) {
+		return nil, ErrPixelsAbsent
+	}
+
+	pxls := make([]int64, len(params.Results.Segments))
+
+	for i := 0; i < len(params.Results.Segments); i++ {
+		count, err := countPixels(
+			params.Results.Segments[i].Url,
+			params.Renditions[i])
+		if err != nil {
+			return nil, err
+		}
+		pxls[i] = count
+	}
+	return pxls, nil
+}
+
+func countPixels(fname string, data []byte) (int64, error) {
+	uri, err := url.ParseRequestURI(fname)
+	// If the filename is a relative URI and the broadcaster is using local memory storage
+	// write the data to a temp file
+	if err == nil && !uri.IsAbs() && data != nil {
+		tempfile, err := ioutil.TempFile("", common.RandName())
+		if err != nil {
+			return 0, fmt.Errorf("error creating temp file for pixels verification: %w", err)
+		}
+		defer os.Remove(tempfile.Name())
+
+		if _, err := tempfile.Write(data); err != nil {
+			tempfile.Close()
+			return 0, fmt.Errorf("error writing temp file for pixels verification: %w", err)
+		}
+
+		if err = tempfile.Close(); err != nil {
+			return 0, fmt.Errorf("error closing temp file for pixels verification: %w", err)
+		}
+
+		fname = tempfile.Name()
+	}
+
+	p, err := pixels(fname)
+	if err != nil {
+		return 0, err
+	}
+
+	return p, nil
+}
+
+func pixels(fname string) (int64, error) {
+	in := &ffmpeg.TranscodeOptionsIn{Fname: fname}
+	res, err := ffmpeg.Transcode3(in, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.Decoded.Pixels, nil
 }

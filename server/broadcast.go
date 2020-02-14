@@ -3,28 +3,23 @@ package server
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/big"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 
 	"github.com/golang/glog"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/verification"
 
-	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -375,7 +370,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}
 	}
 
-	var dlErr, saveErr error
+	var dlErr error
 	segHashes := make([][]byte, len(res.Segments))
 	n := len(res.Segments)
 	segURLs := make([]string, len(res.Segments))
@@ -406,7 +401,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			newURL, err := bos.SaveData(name, data)
 			if err != nil {
 				segHashLock.Lock()
-				saveErr = err
 				segHashLock.Unlock()
 				switch err.Error() {
 				case "Session ended":
@@ -422,17 +416,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			segHashLock.Lock()
 			segHashes[i] = hash
 			segHashLock.Unlock()
-		}
-
-		// If running in on-chain mode, run pixels verification asynchronously
-		// Only run if a verifier is not being used
-		if sess.Sender != nil && verifier == nil {
-			go func() {
-				if err := verifyPixels(url, sess.BroadcasterOS, pixels); err != nil {
-					glog.Error(err)
-					cxn.sessManager.removeSession(sess)
-				}
-			}()
 		}
 
 		// Store URLs for the verifier. Be aware that the segment is
@@ -485,17 +468,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}
 	}
 
-	ticketParams := sess.OrchestratorInfo.GetTicketParams()
-	if ticketParams != nil && // may be nil in offchain mode
-		saveErr == nil && // save error leads to early exit before sighash computation
-		// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
-		// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
-		len(segHashes) != len(res.Segments) &&
-		!lpcrypto.VerifySig(ethcommon.BytesToAddress(ticketParams.Recipient), crypto.Keccak256(segHashes...), res.Sig) {
-		glog.Errorf("Sig check failed for segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
-		cxn.sessManager.removeSession(sess)
-		return nil, errPMCheckFailed
-	}
 	if monitor.Enabled {
 		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), errCode)
 	}
@@ -600,53 +572,6 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 		return nil
 	}
 	return err // possibly nil
-}
-
-func verifyPixels(fname string, bos drivers.OSSession, reportedPixels int64) error {
-	uri, err := url.ParseRequestURI(fname)
-	memOS, ok := bos.(*drivers.MemorySession)
-	// If the filename is a relative URI and the broadcaster is using local memory storage
-	// fetch the data and write it to a temp file
-	if err == nil && !uri.IsAbs() && ok {
-		tempfile, err := ioutil.TempFile("", common.RandName())
-		if err != nil {
-			return fmt.Errorf("error creating temp file for pixels verification: %v", err)
-		}
-		defer os.Remove(tempfile.Name())
-		defer tempfile.Close()
-
-		data := memOS.GetData(fname)
-		if data == nil {
-			return errors.New("error fetching data from local memory storage")
-		}
-
-		if _, err := tempfile.Write(memOS.GetData(fname)); err != nil {
-			return fmt.Errorf("error writing temp file for pixels verification: %v", err)
-		}
-
-		fname = tempfile.Name()
-	}
-
-	p, err := pixels(fname)
-	if err != nil {
-		return err
-	}
-
-	if p != reportedPixels {
-		return errors.New("mismatch between calculated and reported pixels")
-	}
-
-	return nil
-}
-
-func pixels(fname string) (int64, error) {
-	in := &ffmpeg.TranscodeOptionsIn{Fname: fname}
-	res, err := ffmpeg.Transcode3(in, nil)
-	if err != nil {
-		return 0, err
-	}
-
-	return res.Decoded.Pixels, nil
 }
 
 // Return an updated copy of the given session using the received transcode result

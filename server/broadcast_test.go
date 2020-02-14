@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"net/http"
 	"sync"
@@ -580,20 +579,6 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	// Wait for async pixels verification to finish
 	time.Sleep(1 * time.Second)
 
-	// Check that the session was removed because we are in on-chain mode
-	_, ok = bsm.sessMap[ts.URL]
-	assert.False(ok)
-
-	// Create stub response with correct reported pixels
-	p, err := pixels("test.flv")
-	require.Nil(err)
-	tSegData = []*net.TranscodedSegmentData{
-		&net.TranscodedSegmentData{Url: "test.flv", Pixels: p},
-	}
-	tr = dummyRes(tSegData)
-	buf, err = proto.Marshal(tr)
-	require.Nil(err)
-
 	bsm = bsmWithSessList([]*BroadcastSession{sess})
 	cxn.sessManager = bsm
 
@@ -606,65 +591,6 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	// Check that the session was not removed
 	_, ok = bsm.sessMap[ts.URL]
 	assert.True(ok)
-}
-
-func TestPixels(t *testing.T) {
-	ffmpeg.InitFFmpeg()
-
-	assert := assert.New(t)
-
-	p, err := pixels("foo")
-	assert.EqualError(err, "No such file or directory")
-	assert.Equal(int64(0), p)
-
-	// Assume that ffmpeg.Transcode3() returns the correct pixel count so we just
-	// check that no error is returned
-	p, err = pixels("test.flv")
-	assert.Nil(err)
-	assert.NotZero(p)
-}
-
-func TestVerifyPixels(t *testing.T) {
-	ffmpeg.InitFFmpeg()
-
-	require := require.New(t)
-	assert := assert.New(t)
-
-	// Create memory session and save a test file
-	bos := drivers.NewMemoryDriver(nil).NewSession("foo")
-	data, err := ioutil.ReadFile("test.flv")
-	require.Nil(err)
-	fname, err := bos.SaveData("test.ts", data)
-	require.Nil(err)
-
-	// Test error for relative URI and no memory storage if the file does not exist on disk
-	// Will try to use the relative URI to read the file from disk and fail
-	err = verifyPixels(fname, nil, 50)
-	assert.EqualError(err, "No such file or directory")
-
-	// Test error for relative URI and local memory storage if the file does not exist in storage
-	// Will try to use the relative URI to read the file from storage and fail
-	err = verifyPixels("/stream/bar/dne.ts", bos, 50)
-	assert.EqualError(err, "error fetching data from local memory storage")
-
-	// Test writing temp file for relative URI and local memory storage with incorrect pixels
-	err = verifyPixels(fname, bos, 50)
-	assert.EqualError(err, "mismatch between calculated and reported pixels")
-
-	// Test writing temp file for relative URI and local memory storage with correct pixels
-	// Make sure that verifyPixels() checks against the output of pixels()
-	p, err := pixels("test.flv")
-	require.Nil(err)
-	err = verifyPixels(fname, bos, p)
-	assert.Nil(err)
-
-	// Test no writing temp file with incorrect pixels
-	err = verifyPixels("test.flv", nil, 50)
-	assert.EqualError(err, "mismatch between calculated and reported pixels")
-
-	// Test no writing temp file with correct pixels
-	err = verifyPixels("test.flv", nil, p)
-	assert.Nil(err)
 }
 
 func TestUpdateSession(t *testing.T) {

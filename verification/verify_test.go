@@ -2,11 +2,17 @@ package verification
 
 import (
 	"errors"
+	"io/ioutil"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
+
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/lpms/ffmpeg"
 )
 
 type stubVerifier struct {
@@ -33,7 +39,7 @@ func TestVerify(t *testing.T) {
 	assert.Nil(err)
 	sv = NewSegmentVerifier(&Policy{Retries: 3})
 	res, err = sv.Verify(&Params{})
-	assert.Nil(res)
+	assert.NotNil(res)
 	assert.Nil(err)
 
 	// Check verifier error is propagated
@@ -57,18 +63,109 @@ func TestVerify(t *testing.T) {
 	assert.Nil(res)
 	assert.Equal(ErrPixelsAbsent, err)
 
-	// check pixel count fails
+	// check pixel count fails w/ external verifier
 	data.Segments = append(data.Segments, &net.TranscodedSegmentData{Url: "def", Pixels: verifier.results.Pixels[1]})
 	assert.Len(data.Segments, len(verifier.results.Pixels)) // sanity check
 	res, err = sv.Verify(&Params{Results: data})
 	assert.Nil(res)
 	assert.Equal(ErrPixelMismatch, err)
 
-	// Check pixel count succeeds
+	// Check pixel count succeeds w/ external verifier
 	data.Segments[0].Pixels = verifier.results.Pixels[0]
 	res, err = sv.Verify(&Params{Results: data})
 	assert.Nil(err)
 	assert.NotNil(res)
+
+	// check pixel count fails w/o external verifier
+	sv = NewSegmentVerifier(&Policy{Verifier: nil, Retries: 2}) // reset
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "abc", Pixels: verifier.results.Pixels[0] + 1},
+	}}
+	data.Segments = append(data.Segments, &net.TranscodedSegmentData{Url: "def", Pixels: verifier.results.Pixels[1]})
+	assert.Len(data.Segments, len(verifier.results.Pixels)) // sanity check
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}})
+	assert.Nil(res)
+	assert.Equal(ErrPixelsAbsent, err)
+
+	// Check pixel count succeeds w/o external verifier
+	sv = &SegmentVerifier{policy: &Policy{Verifier: nil, Retries: 2}, verifySig: func(ethcommon.Address, []byte, []byte) bool { return true }}
+	pxls, err := pixels("../server/test.flv")
+	a := make([]byte, pxls)
+	assert.Nil(err)
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: pxls},
+	}}
+	renditions := [][]byte{a, a}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	assert.Nil(err)
+	assert.NotNil(res)
+
+	// check pixel count fails w/o external verifier w populated renditions but incorrect pixel counts
+	sv = NewSegmentVerifier(&Policy{Verifier: nil, Retries: 2}) // reset
+	pxls, err = pixels("../server/test.flv")
+	assert.Nil(err)
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "../server/test.flv", Pixels: 123},
+		{Url: "../server/test.flv", Pixels: 456},
+	}}
+	renditions = [][]byte{{byte(pxls)}, {byte(pxls)}}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}, Renditions: renditions})
+	assert.Nil(res)
+	assert.Equal(ErrPixelMismatch, err)
+
+	// Check pixel count succeeds w/o external verifier
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: pxls},
+	}}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}, Renditions: renditions})
+	assert.Nil(err)
+	assert.NotNil(res)
+
+	// Check sig verifier fails when len(params.Results.Segments) != len(params.Renditions)
+	pxls, err = pixels("../server/test.flv")
+	assert.Nil(err)
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: pxls},
+	}}
+	renditions = [][]byte{}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	assert.Equal(errPMCheckFailed, err)
+	assert.Nil(res)
+
+	// Check sig verifier passes when len(params.Results.Segments) == len(params.Renditions) and sig is valid
+	// We use this stubVerifier to make sure that ffmpeg doesnt try to read from a file
+	sv = &SegmentVerifier{policy: &Policy{Verifier: &stubVerifier{
+		results: nil,
+		err:     nil,
+	}, Retries: 2},
+		verifySig: func(ethcommon.Address, []byte, []byte) bool { return true },
+	}
+
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "xyz", Pixels: pxls},
+		{Url: "xyz", Pixels: pxls},
+	}, Sig: []byte{}}
+
+	renditions = [][]byte{{0}, {0}}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	assert.Nil(err)
+	assert.NotNil(res)
+
+	// Check sig verifier fails when sig is missing / invalid
+	sv = NewSegmentVerifier(&Policy{Verifier: &stubVerifier{
+		results: nil,
+		err:     nil,
+	}, Retries: 2})
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "uvw", Pixels: pxls},
+		{Url: "xyz", Pixels: pxls},
+	}}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	assert.Equal(errPMCheckFailed, err)
+	assert.Nil(res)
 
 	// Check retryable: 3 attempts
 	sv = NewSegmentVerifier(&Policy{Verifier: verifier, Retries: 2}) // reset
@@ -104,6 +201,10 @@ func TestVerify(t *testing.T) {
 	assert.Equal("mno", string(res.ManifestID))
 
 	// Pixel count handling
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "abc", Pixels: verifier.results.Pixels[0]},
+		{Url: "def", Pixels: verifier.results.Pixels[1]},
+	}}
 	verifier.err = nil
 	// Good score but incorrect pixel list should still fail
 	verifier.results = &Results{Score: 10.0, Pixels: []int64{789}}
@@ -134,4 +235,74 @@ func TestVerify(t *testing.T) {
 	res, err = sv.Verify(&Params{ManifestID: "ghi", Results: data})
 	assert.Equal(err, verifier.err)
 	assert.Nil(res)
+}
+
+func TestPixels(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+
+	assert := assert.New(t)
+
+	p, err := pixels("foo")
+	assert.EqualError(err, "No such file or directory")
+	assert.Equal(int64(0), p)
+
+	// Assume that ffmpeg.Transcode3() returns the correct pixel count so we just
+	// check that no error is returned
+	p, err = pixels("../server/test.flv")
+	assert.Nil(err)
+	assert.NotZero(p)
+}
+
+// helper function for TestVerifyPixels to test countPixels()
+func verifyPixels(fname string, data []byte, reportedPixels int64) error {
+	c, err := countPixels(fname, data)
+	if err != nil {
+		return err
+	}
+
+	if c != reportedPixels {
+		return ErrPixelMismatch
+	}
+
+	return nil
+}
+
+func TestVerifyPixels(t *testing.T) {
+	ffmpeg.InitFFmpeg()
+
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Create memory session and save a test file
+	bos := drivers.NewMemoryDriver(nil).NewSession("foo")
+	data, err := ioutil.ReadFile("../server/test.flv")
+	require.Nil(err)
+	fname, err := bos.SaveData("test.ts", data)
+	require.Nil(err)
+	memOS, ok := bos.(*drivers.MemorySession)
+	require.True(ok)
+
+	// Test error for relative URI and no memory storage if the file does not exist on disk
+	// Will try to use the relative URI to read the file from disk and fail
+	err = verifyPixels(fname, nil, 50)
+	assert.EqualError(err, "No such file or directory")
+
+	// Test writing temp file for relative URI and local memory storage with incorrect pixels
+	err = verifyPixels(fname, memOS.GetData(fname), 50)
+	assert.Equal(ErrPixelMismatch, err)
+
+	// Test writing temp file for relative URI and local memory storage with correct pixels
+	// Make sure that verifyPixels() checks against the output of pixels()
+	p, err := pixels("../server/test.flv")
+	require.Nil(err)
+	err = verifyPixels(fname, memOS.GetData(fname), p)
+	assert.Nil(err)
+
+	// Test no writing temp file with incorrect pixels
+	err = verifyPixels("../server/test.flv", nil, 50)
+	assert.Equal(ErrPixelMismatch, err)
+
+	// Test no writing temp file with correct pixels
+	err = verifyPixels("../server/test.flv", nil, p)
+	assert.Nil(err)
 }
