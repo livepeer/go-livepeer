@@ -651,27 +651,6 @@ func main() {
 			}
 
 			n.OrchestratorPool = dbOrchPoolCache
-
-			// Set up verifier
-			if *verifierURL != "" {
-				_, err := validateURL(*verifierURL)
-				if err != nil {
-					glog.Fatal("Error setting verifier URL ", err)
-				}
-				glog.Info("Using the Epic Labs classifier for verification at ", *verifierURL)
-				server.Policy = &verification.Policy{Retries: 2, Verifier: &verification.EpicClassifier{Addr: *verifierURL}}
-				// TODO Set up a default "empty" verifier-less policy for onchain
-				//      that only checks sigs and pixels?
-
-				// Set the verifier path. Remove once [1] is implemented!
-				// [1] https://github.com/livepeer/verification-classifier/issues/64
-				if drivers.NodeStorage == nil && *verifierPath == "" {
-					glog.Fatal("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath, S3 or GCS")
-				}
-				verification.VerifierPath = *verifierPath
-			} else {
-				server.Policy = &verification.Policy{Retries: 2}
-			}
 		}
 
 		// Set up orchestrator discovery
@@ -699,6 +678,26 @@ func main() {
 			server.AuthWebhookURL = *authWebhookURL
 		}
 
+		// Set up verifier
+		if *verifierURL != "" {
+			_, err := validateURL(*verifierURL)
+			if err != nil {
+				glog.Fatal("Error setting verifier URL ", err)
+			}
+			glog.Info("Using the Epic Labs classifier for verification at ", *verifierURL)
+			server.Policy = &verification.Policy{Retries: 2, Verifier: &verification.EpicClassifier{Addr: *verifierURL}}
+			// TODO Set up a default "empty" verifier-less policy for onchain
+			//      that only checks sigs and pixels?
+
+			// Set the verifier path. Remove once [1] is implemented!
+			// [1] https://github.com/livepeer/verification-classifier/issues/64
+			if drivers.NodeStorage == nil && *verifierPath == "" {
+				glog.Fatal("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath, S3 or GCS")
+			}
+			verification.VerifierPath = *verifierPath
+		} else if *network != "offchain" {
+			server.Policy = &verification.Policy{Retries: 2}
+		}
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)
 		if err != nil {
