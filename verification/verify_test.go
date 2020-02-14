@@ -139,10 +139,13 @@ func TestVerify(t *testing.T) {
 
 	// Check sig verifier passes when len(params.Results.Segments) == len(params.Renditions) and sig is valid
 	// We use this stubVerifier to make sure that ffmpeg doesnt try to read from a file
-	sv = NewSegmentVerifier(&Policy{Verifier: &stubVerifier{
+	sv = &SegmentVerifier{policy: &Policy{Verifier: &stubVerifier{
 		results: nil,
 		err:     nil,
-	}, Retries: 2})
+	}, Retries: 2},
+		verifySig: func(ethcommon.Address, []byte, []byte) bool { return true },
+	}
+
 	testData0 := []byte{1, 2, 3, 4, 5, 6, 7, 8}
 	testData1 := []byte{9, 10, 11, 12, 13, 14, 15, 16}
 	pxls = 8
@@ -165,7 +168,7 @@ func TestVerify(t *testing.T) {
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
 		{Url: "xyz", Pixels: pxls},
 		{Url: "xyz", Pixels: pxls},
-	}, Sig: ethSig}
+	}, Sig: []byte{}}
 
 	renditions = [][]byte{testData0, testData1}
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{Recipient: signer.Bytes()}}, Renditions: renditions})
@@ -173,6 +176,10 @@ func TestVerify(t *testing.T) {
 	assert.NotNil(res)
 
 	// Check sig verifier fails when sig is missing / invalid
+	sv = NewSegmentVerifier(&Policy{Verifier: &stubVerifier{
+		results: nil,
+		err:     nil,
+	}, Retries: 2})
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
 		{Url: "uvw", Pixels: pxls},
 		{Url: "xyz", Pixels: pxls},
