@@ -88,6 +88,8 @@ type SegmentVerifierResults struct {
 	res    *Results
 }
 
+type sigVerifyFn func(addr ethcommon.Address, msg, sig []byte) bool
+
 type byResScore []SegmentVerifierResults
 
 func (a byResScore) Len() int           { return len(a) }
@@ -95,27 +97,22 @@ func (a byResScore) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byResScore) Less(i, j int) bool { return a[i].res.Score < a[j].res.Score }
 
 type SegmentVerifier struct {
-	policy  *Policy
-	results []SegmentVerifierResults
-	count   int
+	policy    *Policy
+	results   []SegmentVerifierResults
+	count     int
+	verifySig sigVerifyFn
 }
 
 func NewSegmentVerifier(p *Policy) *SegmentVerifier {
-	return &SegmentVerifier{policy: p}
+	return &SegmentVerifier{policy: p, verifySig: lpcrypto.VerifySig}
 }
 
 func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
-	return sv.verify(verifySignature, params)
-}
-
-type sigVerifyFunc func(params *Params) error
-
-func (sv *SegmentVerifier) verify(verifySig sigVerifyFunc, params *Params) (*Params, error) {
 	if sv.policy == nil {
 		return nil, nil
 	}
 
-	if err := verifySig(params); err != nil {
+	if err := sv.sigVerification(params); err != nil {
 		return nil, err
 	}
 
@@ -174,7 +171,7 @@ func IsRetryable(err error) bool {
 	return retryable
 }
 
-func verifySignature(params *Params) error {
+func (sv *SegmentVerifier) sigVerification(params *Params) error {
 	if params.Orchestrator == nil || params.Orchestrator.TicketParams == nil {
 		return nil
 	}
@@ -190,7 +187,7 @@ func verifySignature(params *Params) error {
 
 	// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
 	// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
-	if !lpcrypto.VerifySig(
+	if !sv.verifySig(
 		ethcommon.BytesToAddress(params.Orchestrator.TicketParams.Recipient),
 		crypto.Keccak256(segHashes...),
 		params.Results.Sig) {

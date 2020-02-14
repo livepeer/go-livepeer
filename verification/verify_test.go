@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum/go-ethereum/accounts"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/livepeer/go-livepeer/drivers"
@@ -23,10 +24,6 @@ type stubVerifier struct {
 
 func (sv *stubVerifier) Verify(params *Params) (*Results, error) {
 	return sv.results, sv.err
-}
-
-func (sv *SegmentVerifier) VerifyNoSig(params *Params) (*Params, error) {
-	return sv.verify(func(*Params) error { return nil }, params)
 }
 
 func TestVerify(t *testing.T) {
@@ -93,6 +90,7 @@ func TestVerify(t *testing.T) {
 	assert.Equal(ErrPixelsAbsent, err)
 
 	// Check pixel count succeeds w/o external verifier
+	sv = &SegmentVerifier{policy: &Policy{Verifier: nil, Retries: 2}, verifySig: func(ethcommon.Address, []byte, []byte) bool { return true }}
 	pxls, err := pixels("../server/test.flv")
 	a := make([]byte, pxls)
 	assert.Nil(err)
@@ -101,11 +99,12 @@ func TestVerify(t *testing.T) {
 		{Url: "../server/test.flv", Pixels: pxls},
 	}}
 	renditions := [][]byte{a, a}
-	res, err = sv.VerifyNoSig(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
 	assert.Nil(err)
 	assert.NotNil(res)
 
 	// check pixel count fails w/o external verifier w populated renditions but incorrect pixel counts
+	sv = NewSegmentVerifier(&Policy{Verifier: nil, Retries: 2}) // reset
 	pxls, err = pixels("../server/test.flv")
 	assert.Nil(err)
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
