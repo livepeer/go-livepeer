@@ -8,8 +8,14 @@ import (
 	"os"
 	"sort"
 
+	"github.com/golang/glog"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	"github.com/livepeer/go-livepeer/net"
 
 	"github.com/livepeer/lpms/ffmpeg"
@@ -25,6 +31,7 @@ type Retryable struct {
 
 var ErrPixelMismatch = Retryable{errors.New("PixelMismatch")}
 var ErrPixelsAbsent = errors.New("PixelsAbsent")
+var errPMCheckFailed = errors.New("PM Check Failed")
 
 type Params struct {
 	// ManifestID should go away once we do direct push of video
@@ -81,6 +88,8 @@ type SegmentVerifierResults struct {
 	res    *Results
 }
 
+type sigVerifyFn func(addr ethcommon.Address, msg, sig []byte) bool
+
 type byResScore []SegmentVerifierResults
 
 func (a byResScore) Len() int           { return len(a) }
@@ -88,22 +97,24 @@ func (a byResScore) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byResScore) Less(i, j int) bool { return a[i].res.Score < a[j].res.Score }
 
 type SegmentVerifier struct {
-	policy  *Policy
-	results []SegmentVerifierResults
-	count   int
+	policy    *Policy
+	results   []SegmentVerifierResults
+	count     int
+	verifySig sigVerifyFn
 }
 
 func NewSegmentVerifier(p *Policy) *SegmentVerifier {
-	return &SegmentVerifier{policy: p}
+	return &SegmentVerifier{policy: p, verifySig: lpcrypto.VerifySig}
 }
 
 func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
-
 	if sv.policy == nil {
 		return nil, nil
 	}
 
-	// TODO sig checking; extract from broadcast.go
+	if err := sv.sigVerification(params); err != nil {
+		return nil, err
+	}
 
 	var err error
 	res := &Results{}
@@ -158,6 +169,32 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 func IsRetryable(err error) bool {
 	_, retryable := err.(Retryable)
 	return retryable
+}
+
+func (sv *SegmentVerifier) sigVerification(params *Params) error {
+	if params.Orchestrator == nil || params.Orchestrator.TicketParams == nil {
+		return nil
+	}
+
+	if len(params.Results.Segments) != len(params.Renditions) {
+		return errPMCheckFailed
+	}
+
+	segHashes := make([][]byte, len(params.Renditions))
+	for i := range params.Renditions {
+		segHashes[i] = crypto.Keccak256(params.Renditions[i])
+	}
+
+	// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
+	// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
+	if !sv.verifySig(
+		ethcommon.BytesToAddress(params.Orchestrator.TicketParams.Recipient),
+		crypto.Keccak256(segHashes...),
+		params.Results.Sig) {
+		glog.Error("Sig check failed")
+		return errPMCheckFailed
+	}
+	return nil
 }
 
 func countPixelParams(params *Params) ([]int64, error) {

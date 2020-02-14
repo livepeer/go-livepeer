@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
+
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -85,26 +87,85 @@ func TestVerify(t *testing.T) {
 	assert.Nil(res)
 	assert.Equal(ErrPixelsAbsent, err)
 
+	// Check pixel count succeeds w/o external verifier
+	sv = &SegmentVerifier{policy: &Policy{Verifier: nil, Retries: 2}, verifySig: func(ethcommon.Address, []byte, []byte) bool { return true }}
+	pxls, err := pixels("../server/test.flv")
+	a := make([]byte, pxls)
+	assert.Nil(err)
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: pxls},
+	}}
+	renditions := [][]byte{a, a}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	assert.Nil(err)
+	assert.NotNil(res)
+
 	// check pixel count fails w/o external verifier w populated renditions but incorrect pixel counts
-	pixels, err := pixels("../server/test.flv")
+	sv = NewSegmentVerifier(&Policy{Verifier: nil, Retries: 2}) // reset
+	pxls, err = pixels("../server/test.flv")
 	assert.Nil(err)
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
 		{Url: "../server/test.flv", Pixels: 123},
 		{Url: "../server/test.flv", Pixels: 456},
 	}}
-	renditions := [][]byte{{byte(pixels)}, {byte(pixels)}}
+	renditions = [][]byte{{byte(pxls)}, {byte(pxls)}}
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}, Renditions: renditions})
 	assert.Nil(res)
 	assert.Equal(ErrPixelMismatch, err)
 
 	// Check pixel count succeeds w/o external verifier
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
-		{Url: "../server/test.flv", Pixels: pixels},
-		{Url: "../server/test.flv", Pixels: pixels},
+		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: pxls},
 	}}
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}, Renditions: renditions})
 	assert.Nil(err)
 	assert.NotNil(res)
+
+	// Check sig verifier fails when len(params.Results.Segments) != len(params.Renditions)
+	pxls, err = pixels("../server/test.flv")
+	assert.Nil(err)
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: pxls},
+	}}
+	renditions = [][]byte{}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	assert.Equal(errPMCheckFailed, err)
+	assert.Nil(res)
+
+	// Check sig verifier passes when len(params.Results.Segments) == len(params.Renditions) and sig is valid
+	// We use this stubVerifier to make sure that ffmpeg doesnt try to read from a file
+	sv = &SegmentVerifier{policy: &Policy{Verifier: &stubVerifier{
+		results: nil,
+		err:     nil,
+	}, Retries: 2},
+		verifySig: func(ethcommon.Address, []byte, []byte) bool { return true },
+	}
+
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "xyz", Pixels: pxls},
+		{Url: "xyz", Pixels: pxls},
+	}, Sig: []byte{}}
+
+	renditions = [][]byte{{0}, {0}}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	assert.Nil(err)
+	assert.NotNil(res)
+
+	// Check sig verifier fails when sig is missing / invalid
+	sv = NewSegmentVerifier(&Policy{Verifier: &stubVerifier{
+		results: nil,
+		err:     nil,
+	}, Retries: 2})
+	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
+		{Url: "uvw", Pixels: pxls},
+		{Url: "xyz", Pixels: pxls},
+	}}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	assert.Equal(errPMCheckFailed, err)
+	assert.Nil(res)
 
 	// Check retryable: 3 attempts
 	sv = NewSegmentVerifier(&Policy{Verifier: verifier, Retries: 2}) // reset
