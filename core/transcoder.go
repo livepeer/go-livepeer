@@ -95,6 +95,9 @@ func (ss *segStack) push(seg *nvSegData) {
 	defer ss.mu.Unlock()
 	ss.segs = append(ss.segs, seg)
 	ss.cv.Broadcast()
+	if monitor.Enabled {
+		monitor.GPUBacklog(ss.gpu, len(ss.segs))
+	}
 }
 
 func (ss *segStack) pop() *nvSegData {
@@ -105,6 +108,9 @@ func (ss *segStack) pop() *nvSegData {
 	}
 	seg := ss.segs[len(ss.segs)-1]
 	ss.segs = ss.segs[:len(ss.segs)-1]
+	if monitor.Enabled {
+		monitor.GPUBacklog(ss.gpu, len(ss.segs))
+	}
 	return seg
 }
 
