@@ -234,196 +234,196 @@ func InitCensus(nodeType, nodeID, version string) {
 	}
 	baseTags := []tag.Key{census.kNodeID, census.kNodeType}
 	views := []*view.View{
-		&view.View{
+		{
 			Name:        "versions",
 			Measure:     mVersions,
 			Description: "Versions used by LivePeer node.",
 			TagKeys:     []tag.Key{census.kNodeType, compiler, goos, goversion, livepeerversion},
 			Aggregation: view.LastValue(),
 		},
-		&view.View{
+		{
 			Name:        "broadcast_client_start_failed_total",
 			Measure:     census.mStartBroadcastClientFailed,
 			Description: "StartBroadcastClientFailed",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "stream_created_total",
 			Measure:     census.mStreamCreated,
 			Description: "StreamCreated",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "stream_started_total",
 			Measure:     census.mStreamStarted,
 			Description: "StreamStarted",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "stream_ended_total",
 			Measure:     census.mStreamEnded,
 			Description: "StreamEnded",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "stream_create_failed_total",
 			Measure:     census.mStreamCreateFailed,
 			Description: "StreamCreateFailed",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "segment_source_appeared_total",
 			Measure:     census.mSegmentSourceAppeared,
 			Description: "SegmentSourceAppeared",
 			TagKeys:     append([]tag.Key{census.kProfile}, baseTags...),
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "segment_source_emerged_total",
 			Measure:     census.mSegmentEmerged,
 			Description: "SegmentEmerged",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "segment_source_emerged_unprocessed_total",
 			Measure:     census.mSegmentEmergedUnprocessed,
 			Description: "Raw number of segments emerged from segmenter.",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "segment_source_uploaded_total",
 			Measure:     census.mSegmentUploaded,
 			Description: "SegmentUploaded",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "segment_source_upload_failed_total",
 			Measure:     census.mSegmentUploadFailed,
 			Description: "SegmentUploadedFailed",
 			TagKeys:     append([]tag.Key{census.kErrorCode}, baseTags...),
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "segment_transcoded_total",
 			Measure:     census.mSegmentTranscoded,
 			Description: "SegmentTranscoded",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "segment_transcoded_unprocessed_total",
 			Measure:     census.mSegmentTranscodedUnprocessed,
 			Description: "Raw number of segments successfully transcoded.",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "segment_transcode_failed_total",
 			Measure:     census.mSegmentTranscodeFailed,
 			Description: "SegmentTranscodeFailed",
 			TagKeys:     append([]tag.Key{census.kErrorCode}, baseTags...),
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "segment_transcoded_appeared_total",
 			Measure:     census.mSegmentTranscodedAppeared,
 			Description: "SegmentTranscodedAppeared",
 			TagKeys:     append([]tag.Key{census.kProfile}, baseTags...),
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "segment_transcoded_all_appeared_total",
 			Measure:     census.mSegmentTranscodedAllAppeared,
 			Description: "SegmentTranscodedAllAppeared",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "success_rate",
 			Measure:     census.mSuccessRate,
 			Description: "Number of transcoded segments divided on number of source segments",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
-		&view.View{
+		{
 			Name:        "transcode_time_seconds",
 			Measure:     census.mTranscodeTime,
 			Description: "TranscodeTime, seconds",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
 			Aggregation: view.Distribution(0, .250, .500, .750, 1.000, 1.250, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
 		},
-		&view.View{
+		{
 			Name:        "transcode_latency_seconds",
 			Measure:     census.mTranscodeLatency,
 			Description: "Transcoding latency, from source segment emered from segmenter till transcoded segment apeeared in manifest",
 			TagKeys:     append([]tag.Key{census.kProfile}, baseTags...),
 			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
 		},
-		&view.View{
+		{
 			Name:        "transcode_overall_latency_seconds",
 			Measure:     census.mTranscodeOverallLatency,
 			Description: "Transcoding latency, from source segment emered from segmenter till all transcoded segment apeeared in manifest",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
 			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
 		},
-		&view.View{
+		{
 			Name:        "upload_time_seconds",
 			Measure:     census.mUploadTime,
 			Description: "UploadTime, seconds",
 			TagKeys:     baseTags,
 			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
 		},
-		&view.View{
+		{
 			Name:        "max_sessions_total",
 			Measure:     census.mMaxSessions,
 			Description: "Max Sessions",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
-		&view.View{
+		{
 			Name:        "current_sessions_total",
 			Measure:     census.mCurrentSessions,
 			Description: "Number of streams currently transcoding",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
-		&view.View{
+		{
 			Name:        "discovery_errors_total",
 			Measure:     census.mDiscoveryError,
 			Description: "Number of discover errors",
 			TagKeys:     append([]tag.Key{census.kErrorCode}, baseTags...),
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "transcode_retried",
 			Measure:     census.mTranscodeRetried,
 			Description: "Number of times segment transcode was retried",
 			TagKeys:     append([]tag.Key{census.kTry}, baseTags...),
 			Aggregation: view.Count(),
 		},
-		&view.View{
+		{
 			Name:        "transcoders_number",
 			Measure:     census.mTranscodersNumber,
 			Description: "Number of transcoders currently connected to orchestrator",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
-		&view.View{
+		{
 			Name:        "transcoders_capacity",
 			Measure:     census.mTranscodersCapacity,
 			Description: "Total advertised capacity of transcoders currently connected to orchestrator",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
-		&view.View{
+		{
 			Name:        "transcoders_load",
 			Measure:     census.mTranscodersLoad,
 			Description: "Total load of transcoders currently connected to orchestrator",
@@ -432,21 +432,21 @@ func InitCensus(nodeType, nodeID, version string) {
 		},
 
 		// Metrics for sending payments
-		&view.View{
+		{
 			Name:        "ticket_value_sent",
 			Measure:     census.mTicketValueSent,
 			Description: "Ticket value sent",
 			TagKeys:     append([]tag.Key{census.kRecipient, census.kManifestID}, baseTags...),
 			Aggregation: view.Sum(),
 		},
-		&view.View{
+		{
 			Name:        "tickets_sent",
 			Measure:     census.mTicketsSent,
 			Description: "Tickets sent",
 			TagKeys:     append([]tag.Key{census.kRecipient, census.kManifestID}, baseTags...),
 			Aggregation: view.Sum(),
 		},
-		&view.View{
+		{
 			Name:        "payment_create_errors",
 			Measure:     census.mPaymentCreateError,
 			Description: "Errors when creating payments",
@@ -455,63 +455,63 @@ func InitCensus(nodeType, nodeID, version string) {
 		},
 
 		// Metrics for receiving payments
-		&view.View{
+		{
 			Name:        "ticket_value_recv",
 			Measure:     census.mTicketValueRecv,
 			Description: "Ticket value received",
 			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID}, baseTags...),
 			Aggregation: view.Sum(),
 		},
-		&view.View{
+		{
 			Name:        "tickets_recv",
 			Measure:     census.mTicketsRecv,
 			Description: "Tickets received",
 			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID}, baseTags...),
 			Aggregation: view.Sum(),
 		},
-		&view.View{
+		{
 			Name:        "payment_recv_acceptable_errors",
 			Measure:     census.mPaymentRecvAcceptableError,
 			Description: "Acceptable errors when receiving payments",
 			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID, census.kErrorCode}, baseTags...),
 			Aggregation: view.Sum(),
 		},
-		&view.View{
+		{
 			Name:        "payment_recv_unacceptable_errors",
 			Measure:     census.mPaymentRecvUnacceptableError,
 			Description: "Unacceptable errors when receiving payments",
 			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID, census.kErrorCode}, baseTags...),
 			Aggregation: view.Sum(),
 		},
-		&view.View{
+		{
 			Name:        "winning_tickets_recv",
 			Measure:     census.mWinningTicketsRecv,
 			Description: "Winning tickets received",
 			TagKeys:     baseTags,
 			Aggregation: view.Sum(),
 		},
-		&view.View{
+		{
 			Name:        "value_redeemed",
 			Measure:     census.mValueRedeemed,
 			Description: "Winning ticket value redeemed",
 			TagKeys:     baseTags,
 			Aggregation: view.Sum(),
 		},
-		&view.View{
+		{
 			Name:        "ticket_redemption_errors",
 			Measure:     census.mTicketRedemptionError,
 			Description: "Errors when redeeming tickets",
 			TagKeys:     append([]tag.Key{census.kSender}, baseTags...),
 			Aggregation: view.Sum(),
 		},
-		&view.View{
+		{
 			Name:        "suggested_gas_price",
 			Measure:     census.mSuggestedGasPrice,
 			Description: "Suggested gas price for winning ticket redemption",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
-		&view.View{
+		{
 			Name:        "transcoding_price",
 			Measure:     census.mTranscodingPrice,
 			Description: "Transcoding price per pixel",
