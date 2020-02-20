@@ -63,7 +63,7 @@ if [[ $(uname) != *"MSYS"* ]]; then
     tar xf gmp-6.1.2.tar
     rm gmp-6.1.2.tar
     cd "$HOME/gmp-6.1.2"
-    ./configure --prefix="$HOME/compiled" --disable-shared  --with-pic
+    ./configure --prefix="$HOME/compiled" --disable-shared  --with-pic --enable-fat
     make
     make install
   fi
