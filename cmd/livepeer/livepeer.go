@@ -98,6 +98,7 @@ func main() {
 	broadcaster := flag.Bool("broadcaster", false, "Set to true to be a broadcaster")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
+	maxAttempts := flag.Int("maxAttempts", 3, "Maximum transcode attempts")
 	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	nvidia := flag.String("nvidia", "", "Comma-separated list of Nvidia GPU device IDs to use for transcoding")
@@ -700,6 +701,10 @@ func main() {
 		} else if *network != "offchain" {
 			server.Policy = &verification.Policy{Retries: 2}
 		}
+
+		// Set max transcode attempts. <=0 is OK; it just means "don't transcode"
+		server.MaxAttempts = *maxAttempts
+
 	} else if n.NodeType == core.OrchestratorNode {
 		suri, err := getServiceURI(n, *serviceAddr)
 		if err != nil {

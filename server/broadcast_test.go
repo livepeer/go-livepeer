@@ -93,11 +93,26 @@ func newStubSegmentVerifier(v *stubVerifier) *verification.SegmentVerifier {
 	return verification.NewSegmentVerifier(&verification.Policy{Retries: v.retries, Verifier: v})
 }
 
+type stubOSSession struct{}
+
+func (s *stubOSSession) SaveData(name string, data []byte) (string, error) {
+	return "", nil
+}
+func (s *stubOSSession) EndSession() {
+}
+func (s *stubOSSession) GetInfo() *net.OSInfo {
+	return nil
+}
+func (s *stubOSSession) IsExternal() bool {
+	return false
+}
+
 type stubPlaylistManager struct {
 	manifestID core.ManifestID
 	seq        uint64
 	profile    ffmpeg.VideoProfile
 	uri        string
+	os         drivers.OSSession
 }
 
 func (pm *stubPlaylistManager) ManifestID() core.ManifestID {
@@ -120,7 +135,7 @@ func (pm *stubPlaylistManager) GetHLSMediaPlaylist(rendition string) *m3u8.Media
 }
 
 func (pm *stubPlaylistManager) GetOSSession() drivers.OSSession {
-	return nil
+	return pm.os
 }
 
 func (pm *stubPlaylistManager) Cleanup() {}
@@ -510,6 +525,69 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	assert.Equal(tr.Info.Transcoder, completedSessInfo.Transcoder)
 	assert.Equal(tr.Info.PriceInfo.PricePerUnit, completedSessInfo.PriceInfo.PricePerUnit)
 	assert.Equal(tr.Info.PriceInfo.PixelsPerUnit, completedSessInfo.PriceInfo.PixelsPerUnit)
+}
+
+func TestProcessSegment_MaxAttempts(t *testing.T) {
+	assert := assert.New(t)
+
+	// Preliminaries and test setup
+	oldAttempts := MaxAttempts
+	defer func() {
+		MaxAttempts = oldAttempts
+	}()
+	transcodeCalls := 0
+	resp := func(w http.ResponseWriter, r *http.Request) {
+		transcodeCalls++
+		if transcodeCalls == 2 {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}
+	ts1, mux1 := stubTLSServer()
+	defer ts1.Close()
+	ts2, mux2 := stubTLSServer()
+	defer ts2.Close()
+	mux1.HandleFunc("/segment", resp)
+	mux2.HandleFunc("/segment", resp)
+	sess1 := StubBroadcastSession(ts1.URL)
+	sess2 := StubBroadcastSession(ts2.URL)
+	bsm := bsmWithSessList([]*BroadcastSession{sess1, sess2})
+	pl := &stubPlaylistManager{os: &stubOSSession{}}
+	cxn := &rtmpConnection{
+		profile:     &ffmpeg.VideoProfile{Name: "unused"},
+		sessManager: bsm,
+		pl:          pl,
+	}
+	seg := &stream.HLSSegment{}
+
+	// Sanity check: zero attempts should not transcode
+	MaxAttempts = 0
+	_, err := processSegment(cxn, seg)
+	assert.NotNil(err)
+	assert.Equal("Hit max transcode attempts", err.Error())
+	assert.Equal(0, transcodeCalls, "Unexpectedly submitted segment")
+	assert.Len(bsm.sessMap, 2)
+
+	// One failed transcode attempt. Should leave another in the map
+	MaxAttempts = 1
+	_, err = processSegment(cxn, seg)
+	assert.NotNil(err)
+	assert.Equal("Hit max transcode attempts", err.Error())
+	assert.Equal(1, transcodeCalls, "Segment submission calls did not match")
+	assert.Len(bsm.sessMap, 1)
+
+	// Drain the swamp! Empty out the session list
+	_, err = processSegment(cxn, seg)
+	assert.NotNil(err)
+	assert.Equal("Hit max transcode attempts", err.Error())
+	assert.Equal(2, transcodeCalls, "Segment submission calls did not match")
+	assert.Len(bsm.sessMap, 0) // Now empty
+
+	// The session list is empty. TODO Should return an error indicating such
+	// (This test should fail and be corrected once this is actually implemented)
+	_, err = processSegment(cxn, seg)
+	assert.Nil(err)
+	assert.Equal(2, transcodeCalls, "Segment submission calls did not match")
+	assert.Len(bsm.sessMap, 0)
 }
 
 func TestTranscodeSegment_VerifyPixels(t *testing.T) {

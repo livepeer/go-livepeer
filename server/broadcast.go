@@ -25,6 +25,7 @@ import (
 
 var Policy *verification.Policy
 var BroadcastCfg = &BroadcastConfig{}
+var MaxAttempts = 3
 
 type BroadcastConfig struct {
 	maxPrice *big.Rat
@@ -290,7 +291,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		sv = verification.NewSegmentVerifier(Policy)
 	}
 
-	for {
+	for i := 0; i < MaxAttempts; i++ {
 		// if fails, retry; rudimentary
 		if urls, err := transcodeSegment(cxn, seg, name, sv); err == nil {
 			return urls, nil
@@ -304,6 +305,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 
 		// recoverable error, retry
 	}
+	return nil, errors.New("Hit max transcode attempts")
 }
 
 func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
