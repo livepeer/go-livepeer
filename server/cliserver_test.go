@@ -1,8 +1,11 @@
 package server
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -11,6 +14,9 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/eth"
+	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -85,4 +91,80 @@ func TestGetDelegatorInfo(t *testing.T) {
 	body, err := ioutil.ReadAll(res.Body)
 	req.Nil(err)
 	assert.Equal("{}", string(body))
+}
+
+func TestRegisteredOrchestrators(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dbh, dbraw, err := common.TempDB(t)
+	require.Nil(err)
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	addr := pm.RandAddress()
+
+	addr2 := pm.RandAddress()
+
+	orch := &common.DBOrch{
+		ServiceURI:        "foo",
+		EthereumAddr:      addr.Hex(),
+		PricePerPixel:     5000,
+		ActivationRound:   100,
+		DeactivationRound: 1000,
+		Stake:             100000,
+	}
+
+	err = dbh.UpdateOrch(orch)
+	require.Nil(err)
+
+	eth := &eth.StubClient{
+		Orchestrators: []*lpTypes.Transcoder{
+			{
+				Address:        addr,
+				Active:         true,
+				DelegatedStake: big.NewInt(100000),
+				RewardCut:      big.NewInt(5),
+				FeeShare:       big.NewInt(10),
+				ServiceURI:     orch.ServiceURI,
+			},
+			{
+				Address:        addr2,
+				Active:         true,
+				DelegatedStake: big.NewInt(100000),
+				RewardCut:      big.NewInt(5),
+				FeeShare:       big.NewInt(10),
+				ServiceURI:     "foo.bar.baz:quux",
+			},
+		},
+	}
+
+	n, _ := core.NewLivepeerNode(eth, "./tmp", dbh)
+
+	s := NewLivepeerServer("127.0.0.1:1938", n)
+	mux := s.cliWebServerHandlers("addr")
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	res, err := http.Get(fmt.Sprintf("%s/registeredOrchestrators", srv.URL))
+	assert.Nil(err)
+	assert.Equal(http.StatusOK, res.StatusCode)
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	require.Nil(err)
+	var orchestrators []lpTypes.Transcoder
+	err = json.Unmarshal(body, &orchestrators)
+	require.Nil(err)
+	expPrice, err := common.PriceToFixed(orchestrators[0].PricePerPixel)
+	require.Nil(err)
+	assert.Equal(expPrice, orch.PricePerPixel)
+	assert.Equal(orchestrators[0].Address.Hex(), orch.EthereumAddr)
+	expPrice, err = common.PriceToFixed(orchestrators[1].PricePerPixel)
+	require.Nil(err)
+	assert.Equal(expPrice, int64(0))
+	assert.Equal(orchestrators[1].Address, addr2)
+
+	eth.TranscoderPoolError = errors.New("error")
+	res, err = http.Get(fmt.Sprintf("%s/registeredOrchestrators", srv.URL))
+	assert.Nil(err)
+	assert.Equal(http.StatusInternalServerError, res.StatusCode)
 }

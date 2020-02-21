@@ -34,7 +34,7 @@ func (w *wizard) registeredOrchestratorStats() map[int]common.Address {
 	fmt.Println("+------------------------+")
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "Address", "Active", "Delegated Stake", "Reward Cut (%)", "Fee Share (%)", "Service URI"})
+	table.SetHeader([]string{"ID", "Address", "Active", "Delegated Stake", "Reward Cut (%)", "Fee Share (%)", "Service URI", "Price Per Pixel"})
 
 	for _, t := range orchestrators {
 		table.Append([]string{
@@ -45,6 +45,7 @@ func (w *wizard) registeredOrchestratorStats() map[int]common.Address {
 			eth.FormatPerc(t.RewardCut),
 			eth.FormatPerc(t.FeeShare),
 			t.ServiceURI,
+			t.PricePerPixel.FloatString(3),
 		})
 
 		orchestratorIDs[nextId] = t.Address
