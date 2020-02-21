@@ -35,7 +35,7 @@ func (s *RewardService) Start(ctx context.Context) error {
 		return ErrRewardServiceStarted
 	}
 
-	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancelCtx, cancel := context.WithCancel(ctx)
 	s.cancelWorker = cancel
 
 	tickCh := time.NewTicker(s.pollingInterval).C

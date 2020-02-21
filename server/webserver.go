@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -895,7 +894,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 				return
 			}
 
-			balance, err := b.BalanceAt(context.Background(), s.LivepeerNode.Eth.Account().Address, nil)
+			balance, err := b.BalanceAt(r.Context(), s.LivepeerNode.Eth.Account().Address, nil)
 			if err != nil {
 				glog.Error(err)
 				w.Write([]byte(""))
@@ -1000,7 +999,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 				return
 			}
 
-			blk, err := backend.BlockByNumber(context.Background(), nil)
+			blk, err := backend.BlockByNumber(r.Context(), nil)
 			if err != nil {
 				glog.Errorf("Unable to get latest block")
 				return
@@ -1043,7 +1042,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		chainID, err := be.ChainID(context.Background())
+		chainID, err := be.ChainID(r.Context())
 		if err != nil {
 			glog.Errorf("Error getting eth network ID: %v", err)
 		}

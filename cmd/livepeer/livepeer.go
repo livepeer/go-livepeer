@@ -163,6 +163,8 @@ func main() {
 		ethController string
 	}
 
+	ctx := context.Background()
+
 	configOptions := map[string]*NetworkConfig{
 		"rinkeby": {
 			ethUrl:        "https://rinkeby.infura.io/v3/09642b98164d43eb890939eb9a7ec500",
@@ -326,7 +328,7 @@ func main() {
 			return
 		}
 
-		chainID, err := backend.ChainID(context.Background())
+		chainID, err := backend.ChainID(ctx)
 		if err != nil {
 			glog.Errorf("failed to get chain ID from remote ethereum node: %v", err)
 			return
@@ -477,10 +479,10 @@ func main() {
 				return
 			}
 
-			ctx, cancel := context.WithCancel(context.Background())
+			orchSetupCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
-			if err := setupOrchestrator(ctx, n, *initializeRound); err != nil {
+			if err := setupOrchestrator(orchSetupCtx, n, *initializeRound); err != nil {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
@@ -489,7 +491,7 @@ func main() {
 			validator := pm.NewValidator(sigVerifier, roundsWatcher)
 			gpm := eth.NewGasPriceMonitor(backend, blockPollingTime)
 			// Start gas price monitor
-			gasPriceUpdate, err := gpm.Start(context.Background())
+			gasPriceUpdate, err := gpm.Start(ctx)
 			if err != nil {
 				glog.Errorf("error starting gas price monitor: %v", err)
 				return
@@ -537,7 +539,7 @@ func main() {
 
 			// Create reward service to claim/distribute inflationary rewards every round
 			rs := eventservices.NewRewardService(n.Eth, blockPollingTime)
-			rs.Start(context.Background())
+			rs.Start(ctx)
 			defer rs.Stop()
 		}
 
@@ -569,7 +571,7 @@ func main() {
 			}
 		}
 
-		blockWatchCtx, cancel := context.WithCancel(context.Background())
+		blockWatchCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
 		// Backfill events that the node has missed since its last seen block. This method will block
@@ -643,7 +645,7 @@ func main() {
 		// Right now we rely on the DBOrchestratorPoolCache constructor to do this. Consider separating the logic
 		// caching/polling from the logic for fetching orchestrators during discovery
 		if *network != "offchain" {
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, roundsWatcher)
 			if err != nil {
@@ -726,7 +728,7 @@ func main() {
 	ec := make(chan error)
 	tc := make(chan struct{})
 	wc := make(chan struct{})
-	msCtx, cancel := context.WithCancel(context.Background())
+	msCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	if err != nil {
