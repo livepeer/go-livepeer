@@ -458,7 +458,7 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	tr := &net.TranscodeResult{
 		Result: &net.TranscodeResult_Data{
 			Data: &net.TranscodeData{
-				Segments: []*net.TranscodedSegmentData{&net.TranscodedSegmentData{Url: "test.flv"}},
+				Segments: []*net.TranscodedSegmentData{{Url: "test.flv"}},
 				Sig:      []byte("bar"),
 			},
 		},
@@ -529,7 +529,7 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 
 	// Create stub response with incorrect reported pixels
 	tSegData := []*net.TranscodedSegmentData{
-		&net.TranscodedSegmentData{Url: "test.flv", Pixels: 100},
+		{Url: "test.flv", Pixels: 100},
 	}
 	tr := dummyRes(tSegData)
 	buf, err := proto.Marshal(tr)
@@ -607,7 +607,7 @@ func TestUpdateSession(t *testing.T) {
 
 	info := &net.OrchestratorInfo{
 		Storage: []*net.OSInfo{
-			&net.OSInfo{
+			{
 				StorageType: 1,
 				S3Info:      &net.S3OSInfo{Host: "http://apple.com"},
 			},
@@ -662,7 +662,7 @@ func TestHLSInsertion(t *testing.T) {
 	assert := assert.New(t)
 
 	segData := []*net.TranscodedSegmentData{
-		&net.TranscodedSegmentData{Url: "/path/to/video", Pixels: 100},
+		{Url: "/path/to/video", Pixels: 100},
 	}
 
 	buf, err := proto.Marshal(&net.TranscodeResult{
@@ -843,8 +843,8 @@ func TestVerifier_Verify(t *testing.T) {
 		retries: 1,
 		err:     verification.ErrTampered,
 		results: []verification.Results{
-			verification.Results{Score: 9},
-			verification.Results{Score: 1},
+			{Score: 9},
+			{Score: 1},
 		},
 	}
 	mem, ok := drivers.NewMemoryDriver(nil).NewSession("streamName").(*drivers.MemorySession)
@@ -886,7 +886,7 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	assert.NotNil(mem)
 	genBcastSess := func(url string) *BroadcastSession {
 		segData := []*net.TranscodedSegmentData{
-			&net.TranscodedSegmentData{Url: url, Pixels: 100},
+			{Url: url, Pixels: 100},
 		}
 
 		buf, err := proto.Marshal(&net.TranscodeResult{
