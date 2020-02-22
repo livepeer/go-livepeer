@@ -61,6 +61,7 @@ type (
 		nodeType                      string
 		nodeID                        string
 		ctx                           context.Context
+		kGPU                          tag.Key
 		kNodeType                     tag.Key
 		kNodeID                       tag.Key
 		kProfile                      tag.Key
@@ -97,6 +98,9 @@ type (
 		mTranscodeLatency             *stats.Float64Measure
 		mTranscodeOverallLatency      *stats.Float64Measure
 		mUploadTime                   *stats.Float64Measure
+
+		// Metrics for GPUs
+		mGPUBacklog *stats.Int64Measure
 
 		// Metrics for sending payments
 		mTicketValueSent    *stats.Float64Measure
@@ -159,6 +163,7 @@ func InitCensus(nodeType, nodeID, version string) {
 	}
 	var err error
 	ctx := context.Background()
+	census.kGPU = tag.MustNewKey("gpu")
 	census.kNodeType = tag.MustNewKey("node_type")
 	census.kNodeID = tag.MustNewKey("node_id")
 	census.kProfile = tag.MustNewKey("profile")
@@ -201,6 +206,9 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.mTranscodeOverallLatency = stats.Float64("transcode_overall_latency_seconds",
 		"Transcoding latency, from source segment emered from segmenter till all transcoded segment apeeared in manifest", "sec")
 	census.mUploadTime = stats.Float64("upload_time_seconds", "Upload (to Orchestrator) time", "sec")
+
+	// Metrics for GPUs
+	census.mGPUBacklog = stats.Int64("gpu_backlog", "Backlog for GPUs", "segments")
 
 	// Metrics for sending payments
 	census.mTicketValueSent = stats.Float64("ticket_value_sent", "TicketValueSent", "gwei")
@@ -429,6 +437,15 @@ func InitCensus(nodeType, nodeID, version string) {
 			Measure:     census.mTranscodersLoad,
 			Description: "Total load of transcoders currently connected to orchestrator",
 			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
+
+		// Metrics for GPUs
+		{
+			Name:        "gpu_backlog",
+			Measure:     census.mGPUBacklog,
+			Description: "GPU backlog",
+			TagKeys:     append(baseTags, census.kGPU),
 			Aggregation: view.LastValue(),
 		},
 
@@ -1011,6 +1028,14 @@ func (cen *censusMetricsCounter) streamEnded(nonce uint64) {
 		}
 	}
 	census.sendSuccess()
+}
+
+func GPUBacklog(gpu string, v int) {
+	ctx, err := tag.New(census.ctx, tag.Insert(census.kGPU, gpu))
+	if err != nil {
+		glog.Fatal(err)
+	}
+	stats.Record(ctx, census.mGPUBacklog.M(int64(v)))
 }
 
 // TicketValueSent records the ticket value sent to a recipient for a manifestID

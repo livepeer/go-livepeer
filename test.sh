@@ -13,6 +13,9 @@ t2=$?
 # Be more strict with load balancer tests: run with race detector enabled
 go test -logtostderr=true -run LB_ -race
 t2_lb=$?
+# Be more strict with nvidia tests: run with race detector enabled
+go test -logtostderr=true -run Nvidia_ -race
+t2_nv=$?
 cd ..
 
 cd server
@@ -58,7 +61,7 @@ cd ..
 ./test_args.sh
 t_args=$?
 
-if (($t1!=0||$t2!=0||$t2_lb!=0||$t3!=0||$t4!=0||$t5!=0||$t6!=0||$t7!=0||$t8!=0||$t9!=0||$t10!=0||$t_args!=0))
+if (($t1!=0||$t2!=0||$t2_lb!=0||$t2_nv!=0||$t3!=0||$t4!=0||$t5!=0||$t6!=0||$t7!=0||$t8!=0||$t9!=0||$t10!=0||$t_args!=0))
 then
     printf "\n\nSome Tests Failed\n\n"
     exit -1

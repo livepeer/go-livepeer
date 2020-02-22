@@ -21,11 +21,10 @@ type TranscoderSession interface {
 	Stop()
 }
 
-type newTranscoderFn func(device string, workDir string) TranscoderSession
+type newTranscoderFn func(device string) TranscoderSession
 
 type LoadBalancingTranscoder struct {
 	transcoders []string // Slice of device IDs
-	workDir     string
 	newT        newTranscoderFn
 
 	// The following fields need to be protected by the mutex `mu`
@@ -35,11 +34,10 @@ type LoadBalancingTranscoder struct {
 	idx      int // Ensures a non-tapered work distribution
 }
 
-func NewLoadBalancingTranscoder(devices string, workDir string, newTranscoderFn newTranscoderFn) Transcoder {
+func NewLoadBalancingTranscoder(devices string, newTranscoderFn newTranscoderFn) Transcoder {
 	d := strings.Split(devices, ",")
 	return &LoadBalancingTranscoder{
 		transcoders: d,
-		workDir:     workDir,
 		newT:        newTranscoderFn,
 		mu:          &sync.RWMutex{},
 		load:        make(map[string]int),
@@ -81,7 +79,7 @@ func (lb *LoadBalancingTranscoder) createSession(job string, fname string, profi
 	key := job + "_" + transcoder
 	costEstimate := calculateCost(profiles)
 	session := &transcoderSession{
-		transcoder:  lb.newT(transcoder, lb.workDir),
+		transcoder:  lb.newT(transcoder),
 		key:         key,
 		sender:      make(chan *transcoderParams, 1),
 		makeContext: transcodeLoopContext,

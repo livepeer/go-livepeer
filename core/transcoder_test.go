@@ -1,9 +1,11 @@
 package core
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -33,14 +35,12 @@ func TestLocalTranscoder(t *testing.T) {
 	}
 }
 
-func TestNvidiaTranscoder(t *testing.T) {
+func TestNvidia_Transcoder(t *testing.T) {
 	tmp, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(tmp)
-	tc := NewNvidiaTranscoder("123,456", tmp)
+	StartNvidiaTranscoders("123,456", tmp)
+	tc := NewNvidiaTranscoder("123")
 	ffmpeg.InitFFmpeg()
-
-	// test device selection
-	// TODO
 
 	// test.ts sample isn't in a supported pixel format, so use this instead
 	fname := "test2.ts"
@@ -59,17 +59,83 @@ func TestNvidiaTranscoder(t *testing.T) {
 		t.Skip("No device specified; skipping remainder of Nvidia tests")
 		return
 	}
-	tc = NewNvidiaTranscoder(dev, tmp)
+	StartNvidiaTranscoders(dev, tmp)
+	tc = NewNvidiaTranscoder(dev)
 	res, err := tc.Transcode("", fname, profiles)
 	if err != nil {
 		t.Error(err)
 	}
-	if Over1Pct(len(res.Segments[0].Data), 650292) {
+	if Over1Pct(len(res.Segments[0].Data), 485416) {
 		t.Errorf("Wrong data %v", len(res.Segments[0].Data))
 	}
-	if Over1Pct(len(res.Segments[1].Data), 884164) {
+	if Over1Pct(len(res.Segments[1].Data), 771740) {
 		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
 	}
+}
+
+func TestNvidia_Stack(t *testing.T) {
+	assert := assert.New(t)
+	ss := newSegStack("")
+	assert.Empty(ss.segs, "Sanity check for empty stack")
+	for i := 0; i < 1000; i++ {
+		fname := fmt.Sprintf("%d", i)
+		ss.push(&nvSegData{fname: fname})
+	}
+	for i := 999; i >= 0; i-- {
+		fname := fmt.Sprintf("%d", i)
+		seg := ss.pop()
+		assert.Equal(fname, seg.fname)
+	}
+	assert.Empty(ss.segs, "Stack nonempty") // sanity check
+
+	// "Check" popping an empty stack blocks. Approximate this with a timeout
+	wg := newWg(1)
+	go func() {
+		ss.pop()
+		wg.Done()
+	}()
+	assert.False(wgWait2(wg, 100*time.Millisecond), "Did not time out on empty stack")
+}
+
+func TestNvidia_ConcurrentStack(t *testing.T) {
+	// Run this under `-race`
+	ss := newSegStack("")
+	wg := newWg(1000)
+	for i := 0; i < 1000; i++ {
+		go ss.push(&nvSegData{})
+		go func() {
+			// can't sanity check returned values here because
+			// order of insertion is unpredictable. Just run this under `-race`
+			ss.pop()
+			wg.Done()
+		}()
+	}
+	wgWait(wg)
+}
+
+func TestNvidia_ConcurrentTranscodes(t *testing.T) {
+	assert := assert.New(t)
+	dev := os.Getenv("NV_DEVICE")
+	if dev == "" {
+		t.Skip("No device specified; skipping remainder of ", t.Name())
+		return
+	}
+	tmp, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(tmp)
+	StartNvidiaTranscoders(dev, tmp)
+	tc := NewNvidiaTranscoder(dev)
+	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
+	wg := newWg(5)
+	for i := 0; i < 5; i++ {
+		go func() {
+			res, err := tc.Transcode("", "test2.ts", profiles)
+			assert.Nil(err, "Error transcoding")
+			assert.InEpsilon(487484, len(res.Segments[0].Data), 0.01, fmt.Sprintf("Expected within 1%% of %d", len(res.Segments[0].Data)))
+			assert.InEpsilon(766288, len(res.Segments[1].Data), 0.01, fmt.Sprintf("Expected within 1%% of %d", len(res.Segments[1].Data)))
+			wg.Done()
+		}()
+	}
+	assert.True(wgWait2(wg, 20*time.Second), "Transcodes timed out") // can be slow
 }
 
 func TestResToTranscodeData(t *testing.T) {
@@ -87,7 +153,7 @@ func TestResToTranscodeData(t *testing.T) {
 	assert.EqualError(err, "lengths of results and options different")
 
 	// Test immediate read error
-	opts := []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{Oname: "badfile"}}
+	opts := []ffmpeg.TranscodeOptions{{Oname: "badfile"}}
 	_, err = resToTranscodeData(res, opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
 
@@ -116,7 +182,7 @@ func TestResToTranscodeData(t *testing.T) {
 	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 1)}
 	res.Encoded[0].Pixels = 100
 
-	opts = []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{Oname: file2.Name()}}
+	opts = []ffmpeg.TranscodeOptions{{Oname: file2.Name()}}
 	tData, err := resToTranscodeData(res, opts)
 	assert.Nil(err)
 	assert.Equal(1, len(tData.Segments))
@@ -207,7 +273,7 @@ func TestAudioCopy(t *testing.T) {
 	// LocalTranscoder API and checking that the result is identical.
 	audioSample := dir + "/audio-copy.ts"
 	in := &ffmpeg.TranscodeOptionsIn{Fname: "test.ts"}
-	out := []ffmpeg.TranscodeOptions{ffmpeg.TranscodeOptions{
+	out := []ffmpeg.TranscodeOptions{{
 		Oname:        audioSample,
 		VideoEncoder: ffmpeg.ComponentOptions{Name: "drop"},
 		AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
