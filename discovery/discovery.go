@@ -34,13 +34,7 @@ func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL) *orchestrato
 		glog.Error("Orchestrator pool does not have any URIs")
 	}
 
-	var randomizedUris []*url.URL
-	for _, i := range perm(len(uris)) {
-		uri := uris[i]
-		randomizedUris = append(randomizedUris, uri)
-	}
-
-	return &orchestratorPool{uris: randomizedUris, bcast: bcast}
+	return &orchestratorPool{uris: uris, bcast: bcast}
 }
 
 func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL, pred func(*net.OrchestratorInfo) bool) *orchestratorPool {
@@ -80,7 +74,13 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 		}
 	}
 
-	for _, uri := range o.uris {
+	// Shuffle into new slice to avoid mutating underlying data
+	uris := make([]*url.URL, len(o.uris))
+	for i, j := range rand.Perm(len(o.uris)) {
+		uris[i] = o.uris[j]
+	}
+
+	for _, uri := range uris {
 		go getOrchInfo(uri)
 	}
 

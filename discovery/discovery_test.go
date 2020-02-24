@@ -431,7 +431,6 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 
 func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
-	expected := stringsToURIs([]string{"https://127.0.0.1:8938", "https://127.0.0.1:8937", "https://127.0.0.1:8936"})
 	assert := assert.New(t)
 
 	// creating NewOrchestratorPool with orch addresses
@@ -441,7 +440,7 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 	offchainOrch := NewOrchestratorPool(nil, addresses)
 
 	for i, uri := range offchainOrch.uris {
-		assert.Equal(uri, expected[i])
+		assert.Equal(uri, addresses[i])
 	}
 }
 
@@ -1107,4 +1106,65 @@ func TestEthOrchToDBOrch(t *testing.T) {
 	assert.Equal(dbo.EthereumAddr, o.Address.Hex())
 	assert.Equal(dbo.ActivationRound, o.ActivationRound.Int64())
 	assert.Equal(dbo.DeactivationRound, int64(math.MaxInt64))
+}
+
+func TestOrchestratorPool_ShuffleGetOrchestrators(t *testing.T) {
+	assert := assert.New(t)
+
+	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
+
+	ch := make(chan *url.URL)
+
+	oldOrchInfo := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = oldOrchInfo }()
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+		ch <- server
+		return nil, nil
+	}
+
+	pool := NewOrchestratorPool(nil, addresses)
+
+	// Check that randomization happens: check for elements in a different order
+	// Could fail sometimes due to scheduling; the order of execution is undefined
+	// Try a couple times to mitigate this effect
+	iters := 0
+	for j := 0; j < 10; j++ {
+		iters++
+		_, err := pool.GetOrchestrators(len(addresses))
+		responses := []*url.URL{}
+		for i := 0; i < len(addresses); i++ {
+			select {
+			case url := <-ch:
+				responses = append(responses, url)
+			case <-time.After(1 * time.Second):
+				t.Error("Timed out on receiving responses")
+			}
+		}
+		assert.Nil(err)
+		assert.Len(responses, len(addresses), "Timed out")
+
+		// We actually want some variation here to ensure randomization.
+		// So check that things are *not* equal. If they are equal, then retry
+		// (Can't use assert.NotEqual immediately because the test would fail)
+		isAllEqual := true
+		for i := 0; i < len(addresses); i++ {
+			if addresses[i] != responses[i] {
+				isAllEqual = false
+				break
+			}
+		}
+		if isAllEqual {
+			// Proabably a spurious match, so try again.
+			continue
+		}
+		assert.NotEqual(addresses, responses) // sanity check the above logic
+
+		// This is the bit that ignores ordering, but checks elements are present
+		assert.ElementsMatch(addresses, responses)
+
+		// Sanity check that the ordering of orchestrators within the pool is intact
+		assert.Equal(addresses, pool.uris)
+		break
+	}
+	assert.NotEqual(10, iters, "Shuffling probably did not happen")
 }
