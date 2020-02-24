@@ -1052,7 +1052,7 @@ func TestDeserializeWebhookJSON(t *testing.T) {
 	assert := assert.New(t)
 
 	// assert input of webhookResponse address object returns correct address
-	resp, _ := json.Marshal(&[]webhookResponse{webhookResponse{Address: "https://127.0.0.1:8936"}})
+	resp, _ := json.Marshal(&[]webhookResponse{{Address: "https://127.0.0.1:8936"}})
 	urls, err := deserializeWebhookJSON(resp)
 	assert.Nil(err)
 	assert.Equal("https://127.0.0.1:8936", urls[0].String())
@@ -1063,7 +1063,7 @@ func TestDeserializeWebhookJSON(t *testing.T) {
 	assert.Nil(urls)
 
 	// assert input of empty byte array returns empty object
-	resp, _ = json.Marshal(&[]webhookResponse{webhookResponse{}})
+	resp, _ = json.Marshal(&[]webhookResponse{{}})
 	urls, err = deserializeWebhookJSON(resp)
 	assert.Nil(err)
 	assert.Empty(urls)
@@ -1106,5 +1106,5 @@ func TestEthOrchToDBOrch(t *testing.T) {
 	assert.Equal(dbo.ServiceURI, o.ServiceURI)
 	assert.Equal(dbo.EthereumAddr, o.Address.Hex())
 	assert.Equal(dbo.ActivationRound, o.ActivationRound.Int64())
-	assert.Equal(dbo.DeactivationRound,  int64(math.MaxInt64))
+	assert.Equal(dbo.DeactivationRound, int64(math.MaxInt64))
 }
