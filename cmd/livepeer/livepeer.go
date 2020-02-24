@@ -134,6 +134,8 @@ func main() {
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
 	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
 	gsKey := flag.String("gskey", "", "Google Storage private key file name (in json format)")
+	failGsBucket := flag.String("failGsbucket", "", "Google storage bucket for storing segments that wasn't transcoded")
+	failGsKey := flag.String("failGskey", "", "Google Storage private key file name or key itself (in json format)")
 
 	// API
 	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
@@ -622,6 +624,10 @@ func main() {
 			glog.Error("Error creating Google Storage driver:", err)
 			return
 		}
+	}
+
+	if *failGsBucket != "" && *failGsKey != "" {
+		drivers.SetCreds(*failGsBucket, *failGsKey)
 	}
 
 	core.MaxSessions = *maxSessions

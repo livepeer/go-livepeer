@@ -3,6 +3,7 @@ module github.com/livepeer/go-livepeer
 go 1.13
 
 require (
+	cloud.google.com/go v0.38.0
 	contrib.go.opencensus.io/exporter/prometheus v0.1.0
 	github.com/allegro/bigcache v1.2.1 // indirect
 	github.com/apilayer/freegeoip v3.5.0+incompatible // indirect
@@ -23,6 +24,7 @@ require (
 	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/protobuf v1.3.2
+	github.com/googleapis/gax-go v2.0.2+incompatible // indirect
 	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/graph-gophers/graphql-go v0.0.0-20190917030536-38a077bc812d // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
@@ -60,8 +62,8 @@ require (
 	golang.org/x/lint v0.0.0-20200130185559-910be7a94367 // indirect
 	golang.org/x/net v0.0.0-20190909003024-a7b16738d86b
 	golang.org/x/tools v0.0.0-20200204192400-7124308813f3 // indirect
-	google.golang.org/genproto v0.0.0-20190502173448-54afdca5d873 // indirect
-	google.golang.org/grpc v1.23.0
+	google.golang.org/api v0.17.0
+	google.golang.org/grpc v1.27.0
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/olebedev/go-duktape.v3 v3.0.0-20190709231704-1e4459ed25ff // indirect

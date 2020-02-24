@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/lpms/ffmpeg"
 
@@ -38,6 +39,15 @@ func (lt *LocalTranscoder) Transcode(job string, fname string, profiles []ffmpeg
 
 	res, err := ffmpeg.Transcode3(in, opts)
 	if err != nil {
+		if drivers.FailSaveEnabled() {
+			glog.Infof("Error transcoding file=%s err=%v saving to GS", fname, err)
+			fu, err := drivers.SaveFile2GS(fname, fname)
+			if err != nil {
+				glog.Infof("Error saving to GS bucket=%s, err=%v", drivers.GSBUCKET, err)
+			} else {
+				glog.Infof("Segment name=%s saved to url=%s", fname, fu)
+			}
+		}
 		return nil, err
 	}
 
@@ -163,6 +173,15 @@ func runTranscodeLoop(stack *segStack, workDir string) {
 		// Do the Transcoding
 		res, err := seg.session.Transcode(in, opts)
 		if err != nil {
+			if drivers.FailSaveEnabled() {
+				glog.Infof("Error transcoding file=%s err=%v saving to GS", seg.fname, err)
+				fu, err := drivers.SaveFile2GS(seg.fname, seg.fname)
+				if err != nil {
+					glog.Infof("Error saving to GS bucket=%s, err=%v", drivers.GSBUCKET, err)
+				} else {
+					glog.Infof("Segment name=%s saved to url=%s", seg.fname, fu)
+				}
+			}
 			seg.res <- &nvSegResult{nil, err}
 			continue
 		}
