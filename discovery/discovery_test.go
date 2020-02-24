@@ -6,7 +6,6 @@ import (
 	"errors"
 	"math"
 	"math/big"
-	"math/rand"
 	"net/url"
 	"runtime"
 	"strconv"
@@ -434,9 +433,6 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 	assert := assert.New(t)
 
 	// creating NewOrchestratorPool with orch addresses
-	rand.Seed(321)
-	perm = func(len int) []int { return rand.Perm(3) }
-
 	offchainOrch := NewOrchestratorPool(nil, addresses)
 
 	for i, uri := range offchainOrch.uris {
@@ -488,9 +484,6 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) 
 	}
 	expTranscoder := "transcoderFromTest"
 	expPricePerPixel, _ := common.PriceToFixed(big.NewRat(999, 1))
-
-	rand.Seed(321)
-	perm = func(len int) []int { return rand.Perm(50) }
 
 	server.BroadcastCfg.SetMaxPrice(big.NewRat(1, 1))
 	gmp := runtime.GOMAXPROCS(50)
@@ -578,9 +571,6 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 	}
 	expTranscoder := "transcoderFromTest"
 	expPricePerPixel, _ := common.PriceToFixed(big.NewRat(999, 1))
-
-	rand.Seed(321)
-	perm = func(len int) []int { return rand.Perm(50) }
 
 	server.BroadcastCfg.SetMaxPrice(nil)
 	gmp := runtime.GOMAXPROCS(50)
@@ -684,7 +674,6 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 			PixelsPerUnit: 1,
 		},
 	}
-	perm = func(len int) []int { return rand.Perm(25) }
 
 	server.BroadcastCfg.SetMaxPrice(big.NewRat(10, 1))
 	gmp := runtime.GOMAXPROCS(50)
@@ -782,7 +771,6 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 
 func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 	// Test setup
-	perm = func(len int) []int { return rand.Perm(50) }
 
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
@@ -850,7 +838,6 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 
 func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
 	// Test setup
-	perm = func(len int) []int { return rand.Perm(25) }
 	expPriceInfo := &net.PriceInfo{
 		PricePerUnit:  1,
 		PixelsPerUnit: 1,
@@ -969,8 +956,6 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	serverGetOrchInfo = func(c context.Context, b common.Broadcaster, s *url.URL) (*net.OrchestratorInfo, error) {
 		return &net.OrchestratorInfo{Transcoder: "transcoder"}, nil
 	}
-
-	perm = func(len int) []int { return rand.Perm(3) }
 
 	// assert created webhook pool is correct length
 	whURL, _ := url.ParseRequestURI("https://livepeer.live/api/orchestrator")

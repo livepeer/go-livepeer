@@ -26,8 +26,6 @@ type orchestratorPool struct {
 	bcast common.Broadcaster
 }
 
-var perm = func(len int) []int { return rand.Perm(len) }
-
 func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL) *orchestratorPool {
 	if len(uris) <= 0 {
 		// Should we return here?
