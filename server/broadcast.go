@@ -347,8 +347,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	// send segment to the orchestrator
-	glog.V(common.DEBUG).Infof("Submitting segment nonce=%d manifestID=%s seqNo=%d orch=%s", nonce, cxn.mid, seg.SeqNo, sess.OrchestratorInfo.Transcoder)
-
 	res, err := SubmitSegment(sess, seg, nonce)
 	if err != nil || res == nil {
 		cxn.sessManager.removeSession(sess)
