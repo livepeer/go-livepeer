@@ -200,7 +200,6 @@ func (r *recipient) RedeemWinningTickets(sessionIDs []string) error {
 func (r *recipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error {
 	recipientRand := r.rand(seed, ticket.Sender, ticket.FaceValue, ticket.WinProb, ticket.ParamsExpirationBlock, ticket.PricePerPixel)
 	r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand})
-	glog.Infof("Queued ticket sender=%x recipientRandHash=%x senderNonce=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce)
 	return nil
 }
 
