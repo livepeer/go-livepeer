@@ -110,16 +110,16 @@ func (tw *TimeWatcher) setLastSeenBlock(blockNum *big.Int) {
 func (tw *TimeWatcher) Watch() error {
 	lr, err := tw.lpEth.LastInitializedRound()
 	if err != nil {
-		return fmt.Errorf("error fetching initial lastInitializedRound value: %v", err)
+		return fmt.Errorf("error fetching initial lastInitializedRound value err=%v", err)
 	}
 	bh, err := tw.lpEth.BlockHashForRound(lr)
 	if err != nil {
-		return fmt.Errorf("error fetching initial lastInitializedBlockHash value: %v", err)
+		return fmt.Errorf("error fetching initial lastInitializedBlockHash value err=%v", err)
 	}
 	tw.setLastInitializedRound(lr, bh)
 
 	if err := tw.fetchAndSetTranscoderPoolSize(); err != nil {
-		return fmt.Errorf("error fetching initial transcoderPoolSize: %v", err)
+		return fmt.Errorf("error fetching initial transcoderPoolSize err=%v", err)
 	}
 
 	events := make(chan []*blockwatch.Event, 10)
