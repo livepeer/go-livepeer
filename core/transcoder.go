@@ -177,7 +177,7 @@ func runTranscodeLoop(stack *segStack, workDir string) {
 				glog.Infof("Error transcoding file=%s err=%v saving to GS", seg.fname, err)
 				fu, err := drivers.SaveFile2GS(seg.fname, seg.fname)
 				if err != nil {
-					glog.Infof("Error saving to GS bucket=%s, err=%v", drivers.GSBUCKET, err)
+					glog.Infof("Error saving to GS bucket=%s, err=%v", drivers.FailSaveBucketName, err)
 				} else {
 					glog.Infof("Segment name=%s saved to url=%s", seg.fname, fu)
 				}
