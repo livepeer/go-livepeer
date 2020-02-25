@@ -5,7 +5,6 @@ import (
 	"math"
 	"math/rand"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -49,27 +48,19 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 	numAvailableOrchs := len(o.uris)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
 	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
-	orchInfos := []*net.OrchestratorInfo{}
-	orchChan := make(chan struct{}, len(o.uris))
-	numResp := 0
-	numSuccessResp := 0
-	respLock := sync.Mutex{}
 
+	infoCh := make(chan *net.OrchestratorInfo, len(o.uris))
+	errCh := make(chan error, len(o.uris))
 	getOrchInfo := func(uri *url.URL) {
 		info, err := serverGetOrchInfo(ctx, o.bcast, uri)
-		respLock.Lock()
-		defer respLock.Unlock()
-		numResp++
 		if err == nil && (o.pred == nil || o.pred(info)) {
-			orchInfos = append(orchInfos, info)
-			numSuccessResp++
+			infoCh <- info
+			return
 		}
 		if err != nil && monitor.Enabled {
 			monitor.LogDiscoveryError(err.Error())
 		}
-		if numSuccessResp >= numOrchestrators || numResp >= len(o.uris) {
-			orchChan <- struct{}{}
-		}
+		errCh <- err
 	}
 
 	// Shuffle into new slice to avoid mutating underlying data
@@ -82,28 +73,24 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 		go getOrchInfo(uri)
 	}
 
-	select {
-	case <-ctx.Done():
-		respLock.Lock()
-		if len(orchInfos) < numOrchestrators {
-			numOrchestrators = len(orchInfos)
+	timeout := false
+	infos := []*net.OrchestratorInfo{}
+	nbResp := 0
+	for i := 0; i < len(uris) && len(infos) < numOrchestrators && !timeout; i++ {
+		select {
+		case info := <-infoCh:
+			infos = append(infos, info)
+			nbResp++
+		case <-errCh:
+			nbResp++
+		case <-ctx.Done():
+			timeout = true
 		}
-		returnOrchs := orchInfos[:numOrchestrators]
-		respLock.Unlock()
-		glog.Info("Done fetching orch info for orchestrators, context timeout: ", len(returnOrchs))
-		cancel()
-		return returnOrchs, nil
-	case <-orchChan:
-		respLock.Lock()
-		if len(orchInfos) < numOrchestrators {
-			numOrchestrators = len(orchInfos)
-		}
-		returnOrchs := orchInfos[:numOrchestrators]
-		respLock.Unlock()
-		glog.Info("Done fetching orch info for orchestrators, numResponses fetched: ", len(returnOrchs))
-		cancel()
-		return returnOrchs, nil
 	}
+	cancel()
+	glog.Infof("Done fetching orch info numOrch=%d responses=%d/%d timeout=%t",
+		len(infos), nbResp, len(uris), timeout)
+	return infos, nil
 }
 
 func (o *orchestratorPool) Size() int {

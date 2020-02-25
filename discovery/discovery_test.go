@@ -1093,6 +1093,61 @@ func TestEthOrchToDBOrch(t *testing.T) {
 	assert.Equal(dbo.DeactivationRound, int64(math.MaxInt64))
 }
 
+func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
+	assert := assert.New(t)
+
+	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
+
+	orchCb := func() error { return nil }
+	oldOrchInfo := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = oldOrchInfo }()
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+		err := orchCb()
+		return &net.OrchestratorInfo{}, err
+	}
+
+	pool := NewOrchestratorPool(nil, addresses)
+
+	// Check that we receive everything
+	res, err := pool.GetOrchestrators(len(addresses))
+	assert.Nil(err)
+	assert.Len(res, len(addresses))
+
+	// Check that partial results are received if requested
+	assert.Greater(len(addresses), 1) // sanity
+	res, err = pool.GetOrchestrators(1)
+	assert.Nil(err)
+	assert.Len(res, 1)
+
+	// Check error handling: all errors
+	orchCb = func() error { return errors.New("Error") }
+	res, err = pool.GetOrchestrators(len(addresses))
+	assert.Nil(err)
+	assert.Len(res, 0)
+
+	// Check error handling: mixed errors
+	mu := &sync.Mutex{}
+	ctr := 0
+	orchCb = func() error {
+		mu.Lock()
+		defer mu.Unlock()
+		ctr++
+		if ctr == 1 {
+			return errors.New("Error")
+		}
+		return nil
+	}
+	start := time.Now()
+	res, err = pool.GetOrchestrators(len(addresses))
+	end := time.Now()
+	assert.Nil(err)
+	assert.Len(res, len(addresses)-1)
+	// Ensure that the timeout did not fire
+	assert.Less(end.Sub(start).Milliseconds(),
+		getOrchestratorsTimeoutLoop.Milliseconds())
+
+}
+
 func TestOrchestratorPool_ShuffleGetOrchestrators(t *testing.T) {
 	assert := assert.New(t)
 
