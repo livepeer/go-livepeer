@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
@@ -1276,7 +1277,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 		if runChecks != nil {
 			runChecks(r)
 		}
-
+		time.Sleep(20 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 		w.Write(buf)
 	})
@@ -1295,16 +1296,18 @@ func TestSubmitSegment_Success(t *testing.T) {
 
 	assert := assert.New(t)
 
+	segData := pm.RandBytes(1024)
+
 	runChecks = func(r *http.Request) {
 		assert.Equal("video/MP2T", r.Header.Get("Content-Type"))
 
 		data, err := ioutil.ReadAll(r.Body)
 		require.Nil(err)
 
-		assert.Equal([]byte("dummy"), data)
+		assert.Equal(segData, data)
 	}
 
-	noNameSeg := &stream.HLSSegment{Data: []byte("dummy")}
+	noNameSeg := &stream.HLSSegment{Data: segData}
 	tdata, err := SubmitSegment(s, noNameSeg, 0)
 
 	assert.Nil(err)
@@ -1314,7 +1317,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	assert.Nil(tdata.Info)
 
 	// Check that latency score calculation is different for different segment durations
-	// The transcode duration calculated in SubmitSegment should be about the same across all calls
+	// The round trip duration calculated in SubmitSegment should be about the same across all calls
 	noNameSeg.Duration = 5.0
 	tdata, err = SubmitSegment(s, noNameSeg, 0)
 	assert.Nil(err)
