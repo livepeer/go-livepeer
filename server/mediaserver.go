@@ -261,7 +261,7 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 	if AuthWebhookURL == "" {
 		return nil, nil
 	}
-
+	started := time.Now()
 	values := map[string]string{"url": url}
 	jsonValue, err := json.Marshal(values)
 	if err != nil {
@@ -287,6 +287,11 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 	}
 	if authResp.ManifestID == "" {
 		return nil, errors.New("Empty manifest id not allowed")
+	}
+	took := time.Since(started)
+	glog.Infof("Stream authentication for url=%s dur=%s", url, took)
+	if monitor.Enabled {
+		monitor.AuthWebhookFinished(took)
 	}
 	return &authResp, nil
 }
