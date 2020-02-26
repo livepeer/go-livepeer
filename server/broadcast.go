@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/golang/glog"
 
@@ -116,8 +117,9 @@ func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
 
 func (bsm *BroadcastSessionsManager) refreshSessions() {
 
+	started := time.Now()
 	glog.V(common.DEBUG).Info("Starting session refresh manifestID=", bsm.mid)
-	defer glog.V(common.DEBUG).Info("Ending session refresh manifestID=", bsm.mid)
+	defer glog.V(common.DEBUG).Infof("Ending session refresh manifestID=%s dur=%s", bsm.mid, time.Since(started))
 	bsm.sessLock.Lock()
 	if bsm.finished || bsm.refreshing {
 		bsm.sessLock.Unlock()
