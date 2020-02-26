@@ -98,6 +98,7 @@ type (
 		mTranscodeLatency             *stats.Float64Measure
 		mTranscodeOverallLatency      *stats.Float64Measure
 		mUploadTime                   *stats.Float64Measure
+		mAuthWebhookTime              *stats.Float64Measure
 
 		// Metrics for GPUs
 		mGPUBacklog *stats.Int64Measure
@@ -206,6 +207,7 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.mTranscodeOverallLatency = stats.Float64("transcode_overall_latency_seconds",
 		"Transcoding latency, from source segment emered from segmenter till all transcoded segment apeeared in manifest", "sec")
 	census.mUploadTime = stats.Float64("upload_time_seconds", "Upload (to Orchestrator) time", "sec")
+	census.mAuthWebhookTime = stats.Float64("auth_webhook_time_milliseconds", "Authentication webhook execution time", "ms")
 
 	// Metrics for GPUs
 	census.mGPUBacklog = stats.Int64("gpu_backlog", "Backlog for GPUs", "segments")
@@ -389,6 +391,13 @@ func InitCensus(nodeType, nodeID, version string) {
 			Description: "UploadTime, seconds",
 			TagKeys:     baseTags,
 			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
+		},
+		{
+			Name:        "auth_webhook_time_milliseconds",
+			Measure:     census.mAuthWebhookTime,
+			Description: "Authentication webhook execution time, milliseconds",
+			TagKeys:     baseTags,
+			Aggregation: view.Distribution(0, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 5000, 10000),
 		},
 		{
 			Name:        "max_sessions_total",
@@ -825,9 +834,15 @@ func SegmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
 }
 
 func (cen *censusMetricsCounter) segmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
-	cen.lock.Lock()
-	defer cen.lock.Unlock()
 	stats.Record(cen.ctx, cen.mSegmentUploaded.M(1), cen.mUploadTime.M(float64(uploadDur/time.Second)))
+}
+
+func AuthWebhookFinished(dur time.Duration) {
+	census.authWebhookFinished(dur)
+}
+
+func (cen *censusMetricsCounter) authWebhookFinished(dur time.Duration) {
+	stats.Record(cen.ctx, cen.mAuthWebhookTime.M(float64(dur)/float64(time.Millisecond)))
 }
 
 func SegmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, reason string, permanent bool) {
