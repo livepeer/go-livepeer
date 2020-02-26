@@ -1208,3 +1208,98 @@ func TestOrchestratorPool_ShuffleGetOrchestrators(t *testing.T) {
 	}
 	assert.NotEqual(10, iters, "Shuffling probably did not happen")
 }
+
+func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
+	assert := assert.New(t)
+
+	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
+
+	ch := make(chan struct{})
+	oldOrchInfo := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = oldOrchInfo }()
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+		ch <- struct{}{} // this will block if necessary to simulate a timeout
+		return &net.OrchestratorInfo{}, nil
+	}
+
+	oldTimeout := getOrchestratorsTimeoutLoop
+	getOrchestratorsTimeoutLoop = 1 * time.Millisecond
+	defer func() { getOrchestratorsTimeoutLoop = oldTimeout }()
+
+	pool := NewOrchestratorPool(nil, addresses)
+
+	timedOut := func(start, end time.Time) bool {
+		return end.Sub(start).Milliseconds() >= getOrchestratorsTimeoutLoop.Milliseconds()
+	}
+
+	// We may only return a subset of responses for a given test
+	// Use a waitgroup to ensure we drain all pending responses
+	// Keeps things pristine for follow-on tests
+	wg := sync.WaitGroup{}
+	getOrchestrators := func(nb int) ([]*net.OrchestratorInfo, error) {
+		// requests go out to all Os in the pool, regardless of number requested
+		wg.Add(pool.Size())
+		return pool.GetOrchestrators(nb)
+	}
+	drainOrchResponses := func(nb int) {
+		for i := 0; i < nb; i++ {
+			select {
+			case <-ch:
+				wg.Done()
+			}
+		}
+	}
+	responsesDrained := func() bool {
+		c := make(chan struct{})
+		go func() { defer close(c); wg.Wait() }()
+		select {
+		case <-c:
+			return true
+		case <-time.After(100 * time.Millisecond):
+			return false
+		}
+	}
+
+	// Force a timeout, check that results are empty
+	start := time.Now()
+	res, err := getOrchestrators(len(addresses))
+	end := time.Now()
+	assert.Nil(err)
+	assert.Empty(res)
+	assert.True(timedOut(start, end), "Did not time out")
+	drainOrchResponses(len(addresses))
+	assert.True(responsesDrained(), "Did not drain responses in time")
+
+	// Sanity check we get addresses with a reasonable timeout and no forced delay
+	getOrchestratorsTimeoutLoop = 25 * time.Millisecond
+	go drainOrchResponses(len(addresses))
+	start = time.Now()
+	res, err = getOrchestrators(len(addresses))
+	end = time.Now()
+	assert.Nil(err)
+	assert.Len(res, len(addresses))
+	assert.False(timedOut(start, end), "Timed out")
+	assert.True(responsesDrained(), "Did not drain responses in time")
+
+	// Check timeout when we've received partial results
+	assert.Greater(len(addresses), 1) // sanity check
+	go drainOrchResponses(1)
+	start = time.Now()
+	res, err = getOrchestrators(len(addresses))
+	end = time.Now()
+	assert.Nil(err)
+	assert.Len(res, 1)
+	assert.True(timedOut(start, end), "Did not time out")
+	go drainOrchResponses(len(addresses) - 1) // clean up remaining bits
+	assert.True(responsesDrained(), "Did not drain responses in time")
+
+	// We shouldn't time out here, but still receive 1 result
+	go drainOrchResponses(len(addresses))
+	start = time.Now()
+	res, err = getOrchestrators(1)
+	end = time.Now()
+	assert.Nil(err)
+	assert.Len(res, 1)
+	assert.False(timedOut(start, end), "Timed out")
+	assert.True(responsesDrained(), "Did not drain responses in time")
+}
