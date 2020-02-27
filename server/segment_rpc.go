@@ -464,7 +464,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	return &ReceivedTranscodeResult{
 		TranscodeData: tdata,
 		Info:          tr.Info,
-		LatencyScore:  transcodeDur.Seconds() / seg.Duration,
+		LatencyScore:  tookAllDur.Seconds() / seg.Duration,
 	}, nil
 }
 
