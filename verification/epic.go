@@ -27,7 +27,7 @@ var VerifierPath string
 var ErrMissingSource = errors.New("MissingSource")
 var ErrVerifierStatus = errors.New("VerifierStatus")
 var ErrVideoUnavailable = errors.New("VideoUnavailable")
-var ErrAudioMismatch = Retryable{errors.New("AudioMismatch")}
+var ErrAudioMismatch = Fatal{Retryable{errors.New("AudioMismatch")}}
 var ErrTampered = Retryable{errors.New("Tampered")}
 
 type epicResolution struct {

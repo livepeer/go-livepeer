@@ -15,6 +15,39 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
+func TestFatalRetryable(t *testing.T) {
+	errNonRetryable := errors.New("NonRetryable")
+	assert.False(t, IsRetryable(errNonRetryable))
+	assert.False(t, IsFatal(errNonRetryable))
+
+	errRetryable := Retryable{errors.New("Retryable")}
+	assert.True(t, IsRetryable(errRetryable))
+	assert.False(t, IsFatal(errRetryable))
+
+	errFatalRetryable := Fatal{Retryable{errors.New("FatalRetryable")}}
+	assert.True(t, IsRetryable(errFatalRetryable))
+	assert.True(t, IsFatal(errFatalRetryable))
+
+	errNonFatalRetryable := Retryable{errors.New("NonFatalRetryable")}
+	assert.True(t, IsRetryable(errNonFatalRetryable))
+	assert.False(t, IsFatal(errNonFatalRetryable))
+
+	// check that these Retryable errors are classified
+	// correctly as Fatal / Non-fatal:
+
+	// check ErrAudioMismatch
+	assert.True(t, IsRetryable(ErrAudioMismatch))
+	assert.True(t, IsFatal(ErrAudioMismatch))
+
+	// check ErrPixelMismatch
+	assert.True(t, IsRetryable(ErrPixelMismatch))
+	assert.False(t, IsFatal(ErrPixelMismatch))
+
+	// check ErrTampered
+	assert.True(t, IsRetryable(ErrTampered))
+	assert.False(t, IsFatal(ErrTampered))
+}
+
 type stubVerifier struct {
 	results *Results
 	err     error
@@ -216,6 +249,15 @@ func TestVerify(t *testing.T) {
 	res, err = sv.Verify(&Params{ManifestID: "stu", Results: data})
 	assert.Equal(ErrPixelsAbsent, err)
 	assert.Equal("mno", string(res.ManifestID)) // Still return best result
+
+	// A high score should still fail if audio checking fails
+	sv.policy = &Policy{Verifier: &stubVerifier{
+		results: &Results{Score: 21.0, Pixels: []int64{-1, -2}},
+		err:     ErrAudioMismatch,
+	}, Retries: 2}
+	res, err = sv.Verify(&Params{ManifestID: "vws", Results: data})
+	assert.Equal(ErrAudioMismatch, err)
+	assert.Equal("mno", string(res.ManifestID))
 
 	// Check *not* retryable; should never get a result
 	sv = NewSegmentVerifier(&Policy{Verifier: verifier, Retries: 1}) // reset
