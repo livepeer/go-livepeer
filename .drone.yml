@@ -1,0 +1,40 @@
+kind: pipeline
+type: kubernetes
+name: linux
+
+platform:
+  arch: amd64
+  os: linux
+
+services:
+- name: broadcaster
+  group: test
+  detach: true
+  image: livepeer/go-livepeer:master
+  commands:
+  - /usr/bin/livepeer -broadcaster -network offchain -maxSessions=200 -rtmpAddr=localhost:1935 -cliAddr=localhost:7935 -httpAddr=localhost:8935 -orchAddr=localhost:8936 -monitor=true -transcodingOptions=P240p30fps16x9,P360p30fps16x9,P576p30fps16x9,P720p30fps16x9 -v=9
+- name: orchestrator
+  group: test
+  detach: true
+  image: livepeer/go-livepeer:master
+  environment:
+    nvidia : 0,1,2,3,4,5,6,7
+  commands: 
+  - /usr/bin/livepeer -v=9 -orchestrator -network offchain -transcoder -monitor=true -cliAddr=localhost:7936 -httpAddr=localhost:8936 -serviceAddr=localhost:8936 -maxSessions=80
+steps:
+- name: build
+  image: golang:1.13
+  environment:
+      PKG_CONFIG_PATH: /root/compiled/lib/pkgconfig
+      GOPATH: /go
+      DOCKER_CLI_EXPERIMENTAL: enabled
+  commands:
+  - echo 'hi'
+  - pwd
+- name: stream-tester
+  group: test
+  image: livepeer/streamtester:latest
+  environment:
+    GODEBUG: http2client=0
+  commands:
+    - /root/streamtester -no-bar -latency  -host 'localhost' -rtmp 1935 -media 8935 -picarto -profiles '1' -gaming -picarto-streams '10' -v '15'
