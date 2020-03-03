@@ -13,8 +13,6 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
@@ -33,6 +31,7 @@ var BroadcastCfg = &BroadcastConfig{}
 var MaxAttempts = 3
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
+var downloadSeg = drivers.GetSegmentData
 
 type BroadcastConfig struct {
 	maxPrice *big.Rat
@@ -399,11 +398,11 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	var dlErr error
-	segHashes := make([][]byte, len(res.Segments))
+	segData := make([][]byte, len(res.Segments))
 	n := len(res.Segments)
 	segURLs := make([]string, len(res.Segments))
-	segHashLock := &sync.Mutex{}
-	cond := sync.NewCond(segHashLock)
+	segLock := &sync.Mutex{}
+	cond := sync.NewCond(segLock)
 
 	dlFunc := func(url string, pixels int64, i int) {
 		defer func() {
@@ -415,16 +414,27 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			cond.L.Unlock()
 		}()
 
-		if bos := sess.BroadcasterOS; bos != nil && !drivers.IsOwnExternal(url) {
-			data, err := drivers.GetSegmentData(url)
+		bos := sess.BroadcasterOS
+
+		var data []byte
+		// Download segment data in the following cases:
+		// - A verification policy is set. The segment data is needed for signature verification and/or pixel count verification
+		// - The segment data needs to be uploaded to the broadcaster's own OS
+		if verifier != nil || (bos != nil && !drivers.IsOwnExternal(url)) {
+			d, err := downloadSeg(url)
 			if err != nil {
 				errFunc(monitor.SegmentTranscodeErrorDownload, url, err)
-				segHashLock.Lock()
+				segLock.Lock()
 				dlErr = err
-				segHashLock.Unlock()
+				segLock.Unlock()
 				cxn.sessManager.removeSession(sess)
 				return
 			}
+
+			data = d
+		}
+
+		if bos != nil && !drivers.IsOwnExternal(url) {
 			name := fmt.Sprintf("%s/%d.ts", sess.Profiles[i].Name, seg.SeqNo)
 			newURL, err := bos.SaveData(name, data)
 			if err != nil {
@@ -437,11 +447,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				return
 			}
 			url = newURL
-
-			hash := crypto.Keccak256(data)
-			segHashLock.Lock()
-			segHashes[i] = hash
-			segHashLock.Unlock()
 		}
 
 		// Store URLs for the verifier. Be aware that the segment is
@@ -449,9 +454,10 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// external. If a client were to ignore the playlist and
 		// preemptively fetch segments, they could be reading tampered
 		// data. Not an issue if the delivery protocol is being obeyed.
-		segHashLock.Lock()
+		segLock.Lock()
 		segURLs[i] = url
-		segHashLock.Unlock()
+		segData[i] = data
+		segLock.Unlock()
 
 		if monitor.Enabled {
 			monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
