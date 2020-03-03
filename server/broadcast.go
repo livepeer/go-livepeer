@@ -428,8 +428,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			name := fmt.Sprintf("%s/%d.ts", sess.Profiles[i].Name, seg.SeqNo)
 			newURL, err := bos.SaveData(name, data)
 			if err != nil {
-				segHashLock.Lock()
-				segHashLock.Unlock()
 				switch err.Error() {
 				case "Session ended":
 					errFunc(monitor.SegmentTranscodeErrorSessionEnded, url, err)
