@@ -479,7 +479,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 
 	if verifier != nil {
 		// verify potentially can change content of segURLs
-		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs)
+		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs, segData)
 		if err != nil {
 			glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
 			return nil, err
@@ -518,37 +518,12 @@ func shouldStopSession(err error) bool {
 
 func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 	sess *BroadcastSession, source *stream.HLSSegment,
-	res *net.TranscodeData, URIs []string) error {
+	res *net.TranscodeData, URIs []string, segData [][]byte) error {
 
-	// Cache segment contents if necessary.
+	// Cache segment contents in params.Renditions
 	// If we need to retry transcoding because verification fails,
 	// the the segments' OS location will be overwritten.
 	// Cache the segments so we can restore them in OS if necessary.
-	renditionData := make([][]byte, len(URIs))
-	for i, fname := range URIs {
-		if sess.BroadcasterOS.IsExternal() && drivers.IsOwnExternal(fname) {
-			// If broadcaster is using external storage and segments are there
-			// Then have the verifier use that external storage.
-			continue
-		}
-
-		// Sanity check for absolute URIs to ensure we're actually local.
-		uri, err := url.ParseRequestURI(fname)
-		if err != nil {
-			return err // Implies this is retryable?
-		}
-		memOS, ok := sess.BroadcasterOS.(*drivers.MemorySession)
-		if !uri.IsAbs() && ok {
-			data := memOS.GetData(fname)
-			if data == nil {
-				return errors.New("Missing Local Data")
-			}
-			renditionData[i] = data
-		} else {
-			return errors.New("Expected local storage but did not have it")
-		}
-	}
-
 	params := &verification.Params{
 		ManifestID:   sess.ManifestID,
 		Source:       source,
@@ -556,7 +531,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 		Orchestrator: sess.OrchestratorInfo,
 		Results:      res,
 		URIs:         URIs,
-		Renditions:   renditionData,
+		Renditions:   segData,
 	}
 
 	// The return value from the verifier, if any, are the *accepted* params.

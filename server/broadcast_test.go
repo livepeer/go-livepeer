@@ -980,34 +980,13 @@ func TestVerifier_Verify(t *testing.T) {
 	res := &net.TranscodeData{}
 	verifier := verification.NewSegmentVerifier(&verification.Policy{})
 	URIs := []string{}
-	err := verify(verifier, cxn, sess, source, res, URIs)
+	renditionData := [][]byte{}
+	err := verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Nil(err)
 
-	// Test local OS: Should fail with an invalid path
 	sess.ManifestID = core.ManifestID("streamName")
-	sess.BroadcasterOS = drivers.NewMemoryDriver(nil).NewSession("streamName")
 	URIs = append(URIs, "filename")
-	err = verify(verifier, cxn, sess, source, res, URIs)
-	assert.NotNil(err)
-	assert.Contains(err.Error(), "invalid URI for request")
-
-	// Test local OS : Should fail if data does not exist in OS
-	URIs[0] = "/filename"
-	err = verify(verifier, cxn, sess, source, res, URIs)
-	assert.NotNil(err)
-	assert.Contains(err.Error(), "Missing Local Data")
-
-	// Test for segment not in broadcaster's own OS - "livepeer" S3 bucket
-	drivers.S3BUCKET = "livepeer"
-	sess.BroadcasterOS = drivers.NewS3Driver("", drivers.S3BUCKET, "", "").NewSession("")
-	err = verify(verifier, cxn, sess, source, res, URIs)
-	assert.NotNil(err)
-	assert.Contains(err.Error(), "Expected local storage but did not have it")
-
-	// Set broadcaster's OS to "livepeer" S3 bucket and fix the URL
-	URIs[0] = "https://livepeer.s3.amazonaws.com"
-	err = verify(verifier, cxn, sess, source, res, URIs)
-	assert.Nil(err)
+	renditionData = [][]byte{[]byte("foo")}
 
 	// Check non-retryable errors
 	sess.OrchestratorInfo = &net.OrchestratorInfo{Transcoder: "asdf"}
@@ -1017,7 +996,7 @@ func TestVerifier_Verify(t *testing.T) {
 	verifier = newStubSegmentVerifier(sv)
 	assert.Equal(0, sv.calls)  // sanity check initial call count
 	assert.Len(bsm.sessMap, 1) // sanity check initial bsm map
-	err = verify(verifier, cxn, sess, source, res, URIs)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.NotNil(err)
 	assert.Equal(1, sv.calls)
 	assert.Equal(sv.err, err)
@@ -1029,7 +1008,7 @@ func TestVerifier_Verify(t *testing.T) {
 	_, retryable := sv.err.(verification.Retryable)
 	assert.True(retryable)
 	verifier = newStubSegmentVerifier(sv)
-	err = verify(verifier, cxn, sess, source, res, URIs)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.NotNil(err)
 	assert.Equal(2, sv.calls)
 	assert.Equal(sv.err, err)
@@ -1055,7 +1034,8 @@ func TestVerifier_Verify(t *testing.T) {
 	sess.BroadcasterOS = mem
 	verifier = newStubSegmentVerifier(sv)
 	URIs[0] = name
-	err = verify(verifier, cxn, sess, source, res, URIs)
+	renditionData = [][]byte{[]byte("attempt1")}
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Equal(sv.err, err)
 
 	// Now "insert" 2nd attempt into OS
@@ -1063,7 +1043,8 @@ func TestVerifier_Verify(t *testing.T) {
 	_, err = mem.SaveData("/rendition/seg/1", []byte("attempt2"))
 	assert.Nil(err)
 	assert.Equal([]byte("attempt2"), mem.GetData(name))
-	err = verify(verifier, cxn, sess, source, res, URIs)
+	renditionData = [][]byte{[]byte("attempt2")}
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt1"), mem.GetData(name))
 }
