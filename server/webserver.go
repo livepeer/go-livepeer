@@ -934,7 +934,23 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			orchestrators, err := s.LivepeerNode.Eth.TranscoderPool()
 			if err != nil {
 				glog.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
 				return
+			}
+
+			for _, o := range orchestrators {
+				dbO, err := s.LivepeerNode.Database.SelectOrchs(&lpcommon.DBOrchFilter{
+					Addresses: []common.Address{o.Address},
+				})
+				if err != nil {
+					glog.Errorf("unable to get orchestrators from DB err=%v", err)
+					continue
+				}
+				if len(dbO) == 0 {
+					o.PricePerPixel = big.NewRat(0, 1)
+					continue
+				}
+				o.PricePerPixel = lpcommon.FixedToPrice(dbO[0].PricePerPixel)
 			}
 
 			data, err := json.Marshal(orchestrators)

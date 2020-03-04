@@ -23,6 +23,7 @@ type Transcoder struct {
 	DeactivationRound *big.Int
 	Active            bool
 	Status            string
+	PricePerPixel     *big.Rat
 }
 
 func ParseTranscoderStatus(s uint8) (string, error) {

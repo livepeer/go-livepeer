@@ -26,6 +26,10 @@ const HTTPTimeout = 8 * time.Second
 
 const maxInt64 = int64(math.MaxInt64)
 
+// using a scaleFactor of 1000 for orchestrator prices
+// resulting in max decimal places of 3
+const priceScalingFactor = int64(1000)
+
 var (
 	ErrParseBigInt = fmt.Errorf("failed to parse big integer")
 	ErrProfile     = fmt.Errorf("failed to parse profile")
@@ -207,7 +211,12 @@ func GenErrRegex(errStrings []string) *regexp.Regexp {
 // PriceToFixed converts a big.Rat into a fixed point number represented as int64
 // using a scaleFactor of 1000 resulting in max decimal places of 3
 func PriceToFixed(price *big.Rat) (int64, error) {
-	return ratToFixed(price, 1000)
+	return ratToFixed(price, priceScalingFactor)
+}
+
+// FixedToPrice converts an fixed point number with 3 decimal places represented as in int64 into a big.Rat
+func FixedToPrice(price int64) *big.Rat {
+	return big.NewRat(price, priceScalingFactor)
 }
 
 // BaseTokenAmountToFixed converts the base amount of a token (i.e. ETH/LPT) represented as a big.Int into a fixed point number represented
