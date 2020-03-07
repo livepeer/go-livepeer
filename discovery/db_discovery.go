@@ -328,5 +328,6 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 		WinProb:           new(big.Int).SetBytes(params.WinProb),
 		RecipientRandHash: ethcommon.BytesToHash(params.RecipientRandHash),
 		Seed:              new(big.Int).SetBytes(params.Seed),
+		ExpirationBlock:   new(big.Int).SetBytes(params.ExpirationBlock),
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/golang/glog"
@@ -121,6 +122,7 @@ func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVide
 }
 
 func TestSelectOrchestrator(t *testing.T) {
+	require := require.New(t)
 	s := setupServer()
 	defer serverCleanup(s)
 
@@ -146,8 +148,8 @@ func TestSelectOrchestrator(t *testing.T) {
 
 	// populate stub discovery
 	sd.infos = []*net.OrchestratorInfo{
-		&net.OrchestratorInfo{},
-		&net.OrchestratorInfo{},
+		&net.OrchestratorInfo{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}},
+		&net.OrchestratorInfo{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}},
 	}
 	sess, _ := selectOrchestrator(s.LivepeerNode, sp, pl, 4)
 
@@ -183,12 +185,20 @@ func TestSelectOrchestrator(t *testing.T) {
 	sender := &pm.MockSender{}
 	s.LivepeerNode.Sender = sender
 
+	price := &net.PriceInfo{
+		PixelsPerUnit: 1,
+		PricePerUnit:  1,
+	}
+	ratPrice, err := common.RatPriceInfo(price)
+	require.Nil(err)
 	params := pm.TicketParams{
 		Recipient:         pm.RandAddress(),
 		FaceValue:         big.NewInt(1234),
 		WinProb:           big.NewInt(5678),
 		RecipientRandHash: pm.RandHash(),
 		Seed:              big.NewInt(7777),
+		ExpirationBlock:   big.NewInt(100),
+		PricePerPixel:     ratPrice,
 	}
 	protoParams := &net.TicketParams{
 		Recipient:         params.Recipient.Bytes(),
@@ -198,12 +208,20 @@ func TestSelectOrchestrator(t *testing.T) {
 		Seed:              params.Seed.Bytes(),
 	}
 
+	price2 := &net.PriceInfo{
+		PixelsPerUnit: 2,
+		PricePerUnit:  1,
+	}
+	ratPrice2, err := common.RatPriceInfo(price2)
+	require.Nil(err)
 	params2 := pm.TicketParams{
 		Recipient:         pm.RandAddress(),
 		FaceValue:         big.NewInt(1234),
 		WinProb:           big.NewInt(5678),
 		RecipientRandHash: pm.RandHash(),
 		Seed:              big.NewInt(7777),
+		ExpirationBlock:   big.NewInt(200),
+		PricePerPixel:     ratPrice2,
 	}
 	protoParams2 := &net.TicketParams{
 		Recipient:         params2.Recipient.Bytes(),
@@ -211,33 +229,54 @@ func TestSelectOrchestrator(t *testing.T) {
 		WinProb:           params2.WinProb.Bytes(),
 		RecipientRandHash: params2.RecipientRandHash.Bytes(),
 		Seed:              params2.Seed.Bytes(),
+		ExpirationBlock:   params.ExpirationBlock.Bytes(),
 	}
 
 	sd.infos = []*net.OrchestratorInfo{
 		&net.OrchestratorInfo{
 			TicketParams: protoParams,
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  params.PricePerPixel.Num().Int64(),
+				PixelsPerUnit: params.PricePerPixel.Denom().Int64(),
+			},
 		},
 		&net.OrchestratorInfo{
 			TicketParams: protoParams2,
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  params2.PricePerPixel.Num().Int64(),
+				PixelsPerUnit: params2.PricePerPixel.Denom().Int64(),
+			},
 		},
 	}
 
 	expSessionID := "foo"
-	sender.On("StartSession", params).Return(expSessionID)
+	sender.On("StartSession", mock.Anything).Return(expSessionID).Once()
 
-	expSessionID2 := "fool"
-	sender.On("StartSession", params2).Return(expSessionID2)
+	expSessionID2 := "bar"
+	sender.On("StartSession", mock.Anything).Return(expSessionID2).Once()
 
-	sess, err := selectOrchestrator(s.LivepeerNode, sp, pl, 4)
-	require.Nil(t, err)
+	sess, err = selectOrchestrator(s.LivepeerNode, sp, pl, 4)
+	require.Nil(err)
 
 	assert := assert.New(t)
 	assert.Len(sess, 2)
 	assert.Equal(sender, sess[0].Sender)
 	assert.Equal(expSessionID, sess[0].PMSessionID)
 	assert.Equal(expSessionID2, sess[1].PMSessionID)
-	assert.Equal(sess[0].OrchestratorInfo, &net.OrchestratorInfo{TicketParams: protoParams})
-	assert.Equal(sess[1].OrchestratorInfo, &net.OrchestratorInfo{TicketParams: protoParams2})
+	assert.Equal(sess[0].OrchestratorInfo, &net.OrchestratorInfo{
+		TicketParams: protoParams,
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  params.PricePerPixel.Num().Int64(),
+			PixelsPerUnit: params.PricePerPixel.Denom().Int64(),
+		},
+	})
+	assert.Equal(sess[1].OrchestratorInfo, &net.OrchestratorInfo{
+		TicketParams: protoParams2,
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  params2.PricePerPixel.Num().Int64(),
+			PixelsPerUnit: params2.PricePerPixel.Denom().Int64(),
+		},
+	})
 }
 
 func newStreamParams(mid core.ManifestID, rtmpKey string) *streamParameters {
@@ -772,8 +811,8 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	// populate stub discovery
 	sd := &stubDiscovery{}
 	sd.infos = []*net.OrchestratorInfo{
-		&net.OrchestratorInfo{Transcoder: "transcoder1"},
-		&net.OrchestratorInfo{Transcoder: "transcoder2"},
+		&net.OrchestratorInfo{Transcoder: "transcoder1", TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
+		&net.OrchestratorInfo{Transcoder: "transcoder2", TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
 	}
 	s.LivepeerNode.OrchestratorPool = sd
 

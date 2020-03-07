@@ -60,14 +60,20 @@ func (m *mockBalance) Clear() {
 }
 
 type stubOrchestrator struct {
-	priv       *ecdsa.PrivateKey
-	block      *big.Int
-	signErr    error
-	sessCapErr error
+	priv         *ecdsa.PrivateKey
+	block        *big.Int
+	signErr      error
+	sessCapErr   error
+	ticketParams *net.TicketParams
+	priceInfo    *net.PriceInfo
+	serviceURI   string
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
-	url, _ := url.Parse("http://localhost:1234")
+	if r.serviceURI == "" {
+		r.serviceURI = "http://localhost:1234"
+	}
+	url, _ := url.Parse(r.serviceURI)
 	return url
 }
 
@@ -115,11 +121,11 @@ func (r *stubOrchestrator) ProcessPayment(payment net.Payment, manifestID core.M
 }
 
 func (r *stubOrchestrator) TicketParams(sender ethcommon.Address) (*net.TicketParams, error) {
-	return nil, nil
+	return r.ticketParams, nil
 }
 
 func (r *stubOrchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error) {
-	return nil, nil
+	return r.priceInfo, nil
 }
 
 func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
@@ -328,24 +334,6 @@ func TestEstimateFee(t *testing.T) {
 	assert.Zero(fee.Cmp(expFee))
 }
 
-func TestRatPriceInfo(t *testing.T) {
-	assert := assert.New(t)
-
-	// Test nil priceInfo
-	priceInfo, err := ratPriceInfo(nil)
-	assert.Nil(err)
-	assert.Nil(priceInfo)
-
-	// Test priceInfo.pixelsPerUnit = 0
-	_, err = ratPriceInfo(&net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 0})
-	assert.EqualError(err, "invalid priceInfo.pixelsPerUnit")
-
-	// Test valid priceInfo
-	priceInfo, err = ratPriceInfo(&net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 2})
-	assert.Nil(err)
-	assert.Zero(priceInfo.Cmp(big.NewRat(7, 2)))
-}
-
 func TestNewBalanceUpdate(t *testing.T) {
 	mid := core.RandomManifestID()
 	s := &BroadcastSession{
@@ -483,10 +471,11 @@ func TestGenPayment(t *testing.T) {
 	// Test payment creation with 1 ticket
 	batch := &pm.TicketBatch{
 		TicketParams: &pm.TicketParams{
-			Recipient: pm.RandAddress(),
-			FaceValue: big.NewInt(1234),
-			WinProb:   big.NewInt(5678),
-			Seed:      big.NewInt(7777),
+			Recipient:       pm.RandAddress(),
+			FaceValue:       big.NewInt(1234),
+			WinProb:         big.NewInt(5678),
+			Seed:            big.NewInt(7777),
+			ExpirationBlock: big.NewInt(1000),
 		},
 		TicketExpirationParams: &pm.TicketExpirationParams{},
 		Sender:                 pm.RandAddress(),
@@ -612,7 +601,7 @@ func TestValidatePrice(t *testing.T) {
 	// O.PriceInfo.PixelsPerUnit is 0
 	s.OrchestratorInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 0}
 	err = validatePrice(s)
-	assert.EqualError(err, "invalid priceInfo.pixelsPerUnit")
+	assert.EqualError(err, "pixels per unit is 0")
 }
 
 func TestGetPayment_GivenInvalidBase64_ReturnsError(t *testing.T) {

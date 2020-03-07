@@ -1,15 +1,17 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -22,14 +24,21 @@ import (
 	"github.com/livepeer/m3u8"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func StubBroadcastSession(transcoder string) *BroadcastSession {
 	return &BroadcastSession{
-		Broadcaster:      stubBroadcaster2(),
-		ManifestID:       core.RandomManifestID(),
-		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: transcoder},
+		Broadcaster: stubBroadcaster2(),
+		ManifestID:  core.RandomManifestID(),
+		OrchestratorInfo: &net.OrchestratorInfo{
+			Transcoder: transcoder,
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  1,
+				PixelsPerUnit: 1,
+			},
+		},
 	}
 }
 
@@ -208,7 +217,7 @@ func TestNewSessionManager(t *testing.T) {
 		} else {
 			assert.Equal(max, sess.numOrchs)
 		}
-		sd.infos = append(sd.infos, &net.OrchestratorInfo{})
+		sd.infos = append(sd.infos, &net.OrchestratorInfo{PriceInfo: &net.PriceInfo{}})
 	}
 	// sanity check some expected postconditions
 	assert.Equal(sess.numOrchs, max)
@@ -466,6 +475,131 @@ func TestCleanupSessions(t *testing.T) {
 //     assert an error from transcoder removes sess from BroadcastSessionManager
 //     assert a success re-adds sess to BroadcastSessionManager
 
+func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+
+	tr := &net.TranscodeResult{
+		Info: &net.OrchestratorInfo{
+			Transcoder:   ts.URL,
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
+			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
+		},
+		Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{
+				Segments: []*net.TranscodedSegmentData{&net.TranscodedSegmentData{Url: "test.flv"}},
+				Sig:      []byte("bar"),
+			},
+		},
+	}
+	buf, err := proto.Marshal(tr)
+	require.Nil(err)
+
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	sender := &pm.MockSender{}
+	sess.Sender = sender
+	balance := &mockBalance{}
+	sess.Balance = balance
+	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.OrchestratorInfo = &net.OrchestratorInfo{
+		Transcoder: ts.URL,
+	}
+
+	cxn := &rtmpConnection{
+		mid:         core.ManifestID("foo"),
+		nonce:       7,
+		pl:          &stubPlaylistManager{manifestID: core.ManifestID("foo")},
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsmWithSessList([]*BroadcastSession{sess}),
+	}
+
+	// Validate TicketParams error (not ErrTicketParamsExpired) -> Don't refresh, remove session
+	sender.On("ValidateTicketParams", mock.Anything).Return(errors.New("some error")).Once()
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	assert.True(strings.Contains(err.Error(), "some error"))
+	_, ok := cxn.sessManager.sessMap[ts.URL]
+	assert.False(ok)
+
+	cxn = &rtmpConnection{
+		mid:         core.ManifestID("foo"),
+		nonce:       7,
+		pl:          &stubPlaylistManager{manifestID: core.ManifestID("foo")},
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsmWithSessList([]*BroadcastSession{sess}),
+	}
+	// Expired Orchestrator Info -> GetOrchestratorInfo error -> Error
+	sender.On("ValidateTicketParams", mock.Anything).Return(pm.ErrTicketParamsExpired)
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	assert.True(strings.Contains(err.Error(), "unable to refresh ticket params"))
+
+	// Expired Orchestrator Info -> GetOrchestratorInfo -> Still Expired -> Error
+	cxn = &rtmpConnection{
+		mid:         core.ManifestID("bar"),
+		nonce:       8,
+		pl:          &stubPlaylistManager{manifestID: core.ManifestID("bar")},
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsmWithSessList([]*BroadcastSession{sess}),
+	}
+
+	successOrchInfoUpdate := &net.OrchestratorInfo{
+		Transcoder: ts.URL,
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 1,
+		},
+		TicketParams: &net.TicketParams{},
+	}
+
+	oldGetOrchestratorInfoRPC := getOrchestratorInfoRPC
+	defer func() { getOrchestratorInfoRPC = oldGetOrchestratorInfoRPC }()
+
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		return successOrchInfoUpdate, nil
+	}
+
+	sender.On("StartSession", mock.Anything).Return(mock.Anything)
+	sender.On("EV", mock.Anything).Return(big.NewRat(1000000, 1), nil)
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(1, big.NewRat(100, 1), big.NewRat(100, 1))
+	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, pm.ErrTicketParamsExpired).Once()
+	balance.On("Credit", mock.Anything)
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	assert.EqualError(err, pm.ErrTicketParamsExpired.Error())
+
+	// Expired Orchestrator Info -> GetOrchestratorInfo -> No Longer Expired -> Complete Session
+	cxn = &rtmpConnection{
+		mid:         core.ManifestID("baz"),
+		nonce:       9,
+		pl:          &stubPlaylistManager{manifestID: core.ManifestID("baz")},
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsmWithSessList([]*BroadcastSession{sess}),
+	}
+
+	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
+	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil).Once()
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	assert.Nil(err)
+
+	completedSess := cxn.sessManager.sessMap[ts.URL]
+	assert.NotEqual(completedSess, sess)
+	assert.NotZero(completedSess.LatencyScore)
+
+	// Check that BroadcastSession.OrchestratorInfo was updated
+	completedSessInfo := cxn.sessManager.sessMap[tr.Info.Transcoder].OrchestratorInfo
+	assert.Equal(tr.Info.Transcoder, completedSessInfo.Transcoder)
+	assert.Equal(tr.Info.PriceInfo.PixelsPerUnit, completedSessInfo.PriceInfo.PixelsPerUnit)
+	assert.Equal(tr.Info.PriceInfo.PricePerUnit, completedSessInfo.PriceInfo.PricePerUnit)
+	assert.Equal(tr.Info.TicketParams.ExpirationBlock, completedSessInfo.TicketParams.ExpirationBlock)
+}
+
 func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -646,9 +780,12 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	assert.True(ok)
 
 	sess.OrchestratorInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}
-	sess.Sender = &pm.MockSender{}
+	sender := &pm.MockSender{}
+	sess.Sender = sender
 	bsm = bsmWithSessList([]*BroadcastSession{sess})
 	cxn.sessManager = bsm
+
+	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
 
 	urls, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
 	assert.Nil(err)
@@ -704,31 +841,16 @@ func TestUpdateSession(t *testing.T) {
 
 	sender := &pm.MockSender{}
 	sess.Sender = sender
-	res.Info = &net.OrchestratorInfo{}
-
+	res.Info = &net.OrchestratorInfo{
+		TicketParams: &net.TicketParams{},
+		PriceInfo:    &net.PriceInfo{},
+	}
+	sender.On("StartSession", mock.Anything).Return("foo").Once()
 	newSess = updateSession(sess, res)
 	// Check that a new PM session is not created because OrchestratorInfo.TicketParams = nil
 	assert.Equal("foo", newSess.PMSessionID)
 
-	params := pm.TicketParams{
-		Recipient:         ethcommon.Address{},
-		FaceValue:         big.NewInt(100),
-		WinProb:           big.NewInt(100),
-		RecipientRandHash: ethcommon.BytesToHash([]byte{}),
-		Seed:              big.NewInt(100),
-	}
-	res.Info = &net.OrchestratorInfo{
-		TicketParams: &net.TicketParams{
-			Recipient:         params.Recipient.Bytes(),
-			FaceValue:         params.FaceValue.Bytes(),
-			WinProb:           params.WinProb.Bytes(),
-			RecipientRandHash: params.RecipientRandHash.Bytes(),
-			Seed:              params.Seed.Bytes(),
-		},
-	}
-
-	sender.On("StartSession", params).Return("bar")
-
+	sender.On("StartSession", mock.Anything).Return("bar").Once()
 	newSess = updateSession(sess, res)
 	// Check that a new PM session is created
 	assert.Equal("bar", newSess.PMSessionID)
@@ -990,11 +1112,17 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 			}()
 		}()
 		return &BroadcastSession{
-			Broadcaster:      stubBroadcaster2(),
-			ManifestID:       mid,
-			Profiles:         []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9},
-			BroadcasterOS:    mem,
-			OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL},
+			Broadcaster:   stubBroadcaster2(),
+			ManifestID:    mid,
+			Profiles:      []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9},
+			BroadcasterOS: mem,
+			OrchestratorInfo: &net.OrchestratorInfo{
+				Transcoder: ts.URL,
+				PriceInfo: &net.PriceInfo{
+					PricePerUnit:  1,
+					PixelsPerUnit: 1,
+				},
+			},
 		}
 	}
 
@@ -1032,4 +1160,78 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
 	assert.Nil(err)
 	assert.Equal(baseURL+"/resp2", pl.uri)
+}
+
+func TestRefreshSession(t *testing.T) {
+	assert := assert.New(t)
+	successOrchInfoUpdate := &net.OrchestratorInfo{
+		Transcoder: "foo",
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 1,
+		},
+		TicketParams: &net.TicketParams{},
+	}
+
+	oldGetOrchestratorInfoRPC := getOrchestratorInfoRPC
+	defer func() { getOrchestratorInfoRPC = oldGetOrchestratorInfoRPC }()
+
+	// trigger parse URL error
+	sess := StubBroadcastSession(string(0x7f))
+	newSess, err := refreshSession(sess)
+	assert.Nil(newSess)
+	assert.Error(err)
+	assert.EqualError(err, "parse \u007f: net/url: invalid control character in URL")
+
+	// trigger getOrchestratorInfo error
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		return nil, errors.New("some error")
+	}
+	sess = StubBroadcastSession("foo")
+	newSess, err = refreshSession(sess)
+	assert.Nil(newSess)
+	assert.EqualError(err, "some error")
+
+	// trigger update
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		return successOrchInfoUpdate, nil
+	}
+	newSess, err = refreshSession(sess)
+	assert.Equal(newSess.OrchestratorInfo, successOrchInfoUpdate)
+	assert.Nil(err)
+
+	// trigger timeout
+	oldRefreshTimeout := refreshTimeout
+	defer func() { refreshTimeout = oldRefreshTimeout }()
+	refreshTimeout = 10 * time.Millisecond
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, serv *url.URL) (*net.OrchestratorInfo, error) {
+		// Wait until the refreshTimeout has elapsed
+		select {
+		case <-ctx.Done():
+		case <-time.After(20 * time.Millisecond):
+			return nil, errors.New("wrong error")
+		}
+
+		return nil, errors.New("context timeout")
+	}
+	newSess, err = refreshSession(sess)
+	assert.Nil(newSess)
+	assert.EqualError(err, "context timeout")
+}
+
+func defaultTicketBatch() *pm.TicketBatch {
+	return &pm.TicketBatch{
+		TicketParams: &pm.TicketParams{
+			Recipient:       pm.RandAddress(),
+			FaceValue:       big.NewInt(1234),
+			WinProb:         big.NewInt(5678),
+			Seed:            big.NewInt(7777),
+			ExpirationBlock: big.NewInt(1000),
+		},
+		TicketExpirationParams: &pm.TicketExpirationParams{},
+		Sender:                 pm.RandAddress(),
+		SenderParams: []*pm.TicketSenderParams{
+			&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
+		},
+	}
 }

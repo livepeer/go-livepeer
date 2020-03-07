@@ -125,7 +125,7 @@ func (gpm *GasPriceMonitor) fetchAndUpdateGasPrice(ctx context.Context) error {
 		return err
 	}
 
-	gpm.updateGasPrice(ctx, gasPrice)
+	gpm.updateGasPrice(gasPrice)
 
 	if monitor.Enabled {
 		monitor.SuggestedGasPrice(gasPrice)
@@ -136,20 +136,9 @@ func (gpm *GasPriceMonitor) fetchAndUpdateGasPrice(ctx context.Context) error {
 	return nil
 }
 
-func (gpm *GasPriceMonitor) updateGasPrice(ctx context.Context, gasPrice *big.Int) {
+func (gpm *GasPriceMonitor) updateGasPrice(gasPrice *big.Int) {
 	gpm.gasPriceMu.Lock()
 	defer gpm.gasPriceMu.Unlock()
-
-	if gasPrice.Cmp(gpm.gasPrice) != 0 && gpm.update != nil {
-		// Notify listener that the new gas price
-		// is different from the current cached gas price
-		// Note: If there is no listener, this call will block
-		select {
-		case gpm.update <- struct{}{}:
-		case <-ctx.Done():
-			return
-		}
-	}
 
 	gpm.gasPrice = gasPrice
 }

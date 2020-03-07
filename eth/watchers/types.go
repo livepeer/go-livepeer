@@ -10,6 +10,6 @@ type BlockWatcher interface {
 	Subscribe(sink chan<- []*blockwatch.Event) event.Subscription
 }
 
-type EventWatcher interface {
-	Subscribe(sink chan<- types.Log) event.Subscription
+type timeWatcher interface {
+	SubscribeRounds(sink chan<- types.Log) event.Subscription
 }

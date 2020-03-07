@@ -60,8 +60,6 @@ var (
 	cleanupInterval = 1 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
 	smTTL = 60 // 1 minute
-	// maxErrCount is the maximum number of acceptable errors tolerated by a payment recipient for a payment sender
-	maxErrCount = 3
 )
 
 const RtmpPort = "1935"
@@ -295,7 +293,7 @@ func main() {
 	}
 
 	watcherErr := make(chan error)
-	var roundsWatcher *watchers.RoundsWatcher
+	var timeWatcher *watchers.TimeWatcher
 	if *network == "offchain" {
 		glog.Infof("***Livepeer is in off-chain mode***")
 
@@ -405,19 +403,19 @@ func main() {
 		// Wait until all event watchers have been initialized before starting the block watcher
 		blockWatcher := blockwatch.New(blockWatcherCfg)
 
-		roundsWatcher, err = watchers.NewRoundsWatcher(addrMap["RoundsManager"], blockWatcher, n.Eth)
+		timeWatcher, err = watchers.NewTimeWatcher(addrMap["RoundsManager"], blockWatcher, n.Eth)
 		if err != nil {
 			glog.Errorf("Failed to setup roundswatcher: %v", err)
 			return
 		}
 
-		roundsWatcherErr := make(chan error, 1)
+		timeWatcherErr := make(chan error, 1)
 		go func() {
-			if err := roundsWatcher.Watch(); err != nil {
-				roundsWatcherErr <- fmt.Errorf("roundswatcher failed to start watching for events: %v", err)
+			if err := timeWatcher.Watch(); err != nil {
+				timeWatcherErr <- fmt.Errorf("roundswatcher failed to start watching for events: %v", err)
 			}
 		}()
-		defer roundsWatcher.Stop()
+		defer timeWatcher.Stop()
 
 		// Initialize unbonding watcher to update the DB with latest state of the node's unbonding locks
 		unbondingWatcher, err := watchers.NewUnbondingWatcher(n.Eth.Account().Address, addrMap["BondingManager"], blockWatcher, n.Database)
@@ -429,7 +427,7 @@ func main() {
 		go unbondingWatcher.Watch()
 		defer unbondingWatcher.Stop()
 
-		senderWatcher, err := watchers.NewSenderWatcher(addrMap["TicketBroker"], blockWatcher, n.Eth, roundsWatcher)
+		senderWatcher, err := watchers.NewSenderWatcher(addrMap["TicketBroker"], blockWatcher, n.Eth, timeWatcher)
 		if err != nil {
 			glog.Errorf("Failed to setup senderwatcher: %v", err)
 			return
@@ -437,7 +435,7 @@ func main() {
 		go senderWatcher.Watch()
 		defer senderWatcher.Stop()
 
-		orchWatcher, err := watchers.NewOrchestratorWatcher(addrMap["BondingManager"], blockWatcher, dbh, n.Eth, roundsWatcher)
+		orchWatcher, err := watchers.NewOrchestratorWatcher(addrMap["BondingManager"], blockWatcher, dbh, n.Eth, timeWatcher)
 		if err != nil {
 			glog.Errorf("Failed to setup orchestrator watcher: %v", err)
 			return
@@ -490,21 +488,17 @@ func main() {
 			}
 
 			sigVerifier := &pm.DefaultSigVerifier{}
-			validator := pm.NewValidator(sigVerifier, roundsWatcher)
+			validator := pm.NewValidator(sigVerifier, timeWatcher)
 			gpm := eth.NewGasPriceMonitor(backend, blockPollingTime)
 			// Start gas price monitor
-			gasPriceUpdate, err := gpm.Start(ctx)
+			_, err := gpm.Start(ctx)
 			if err != nil {
 				glog.Errorf("error starting gas price monitor: %v", err)
 				return
 			}
 			defer gpm.Stop()
 
-			em := core.NewErrorMonitor(maxErrCount, gasPriceUpdate)
-			n.ErrorMonitor = em
-			go em.StartGasPriceUpdateLoop()
-
-			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, senderWatcher, roundsWatcher, cleanupInterval, smTTL, n.ErrorMonitor)
+			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, senderWatcher, timeWatcher, cleanupInterval, smTTL)
 			// Start sender monitor
 			sm.Start()
 			defer sm.Stop()
@@ -521,7 +515,7 @@ func main() {
 				n.Database,
 				gpm,
 				sm,
-				n.ErrorMonitor,
+				timeWatcher,
 				cfg,
 			)
 			if err != nil {
@@ -534,7 +528,7 @@ func main() {
 
 			// Create round iniitializer to automatically initialize new rounds
 			if *initializeRound {
-				initializer := eth.NewRoundInitializer(n.Eth, n.Database, roundsWatcher, blockPollingTime)
+				initializer := eth.NewRoundInitializer(n.Eth, n.Database, timeWatcher, blockPollingTime)
 				go initializer.Start()
 				defer initializer.Stop()
 			}
@@ -559,7 +553,7 @@ func main() {
 				panic(fmt.Errorf("-depositMultiplier must be greater than 0, but %v provided. Restart the node with a valid value for -depositMultiplier", *depositMultiplier))
 			}
 
-			n.Sender = pm.NewSender(n.Eth, roundsWatcher, senderWatcher, ev, *depositMultiplier)
+			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, ev, *depositMultiplier)
 
 			if *pixelsPerUnit <= 0 {
 				// Can't divide by 0
@@ -593,7 +587,7 @@ func main() {
 		go func() {
 			var err error
 			select {
-			case err = <-roundsWatcherErr:
+			case err = <-timeWatcherErr:
 			case err = <-blockWatcherErr:
 			}
 
@@ -649,7 +643,7 @@ func main() {
 		if *network != "offchain" {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, roundsWatcher)
+			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher)
 			if err != nil {
 				glog.Errorf("Could not create orchestrator pool with DB cache: %v", err)
 			}
@@ -760,7 +754,7 @@ func main() {
 			return
 		}
 
-		orch := core.NewOrchestrator(s.LivepeerNode, roundsWatcher)
+		orch := core.NewOrchestrator(s.LivepeerNode, timeWatcher)
 
 		go func() {
 			server.StartTranscodeServer(orch, *httpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil)

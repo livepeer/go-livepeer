@@ -349,15 +349,15 @@ func defaultMiniHeader() *blockwatch.MiniHeader {
 	return block
 }
 
-type stubRoundsWatcher struct {
+type stubTimeWatcher struct {
 	sink chan<- types.Log
 	sub  *stubSubscription
 }
 
-func (rw *stubRoundsWatcher) Subscribe(sink chan<- types.Log) event.Subscription {
-	rw.sink = sink
-	rw.sub = &stubSubscription{errCh: make(<-chan error)}
-	return rw.sub
+func (tw *stubTimeWatcher) SubscribeRounds(sink chan<- types.Log) event.Subscription {
+	tw.sink = sink
+	tw.sub = &stubSubscription{errCh: make(<-chan error)}
+	return tw.sub
 }
 
 type stubOrchestratorStore struct {

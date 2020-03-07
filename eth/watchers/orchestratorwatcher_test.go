@@ -20,9 +20,9 @@ func TestOrchWatcher_WatchAndStop(t *testing.T) {
 	watcher := &stubBlockWatcher{}
 	stubStore := &stubOrchestratorStore{}
 	lpEth := &eth.StubClient{}
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	ow, err := NewOrchestratorWatcher(stubBondingManagerAddr, watcher, stubStore, lpEth, rw)
+	ow, err := NewOrchestratorWatcher(stubBondingManagerAddr, watcher, stubStore, lpEth, tw)
 	assert.Nil(err)
 
 	go ow.Watch()
@@ -46,9 +46,9 @@ func TestOrchWatcher_HandleLog_TranscoderActivated(t *testing.T) {
 			ServiceURI:        "http://mytranscoder.lpt:1337",
 		},
 	}
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	ow, err := NewOrchestratorWatcher(stubBondingManagerAddr, watcher, stubStore, lpEth, rw)
+	ow, err := NewOrchestratorWatcher(stubBondingManagerAddr, watcher, stubStore, lpEth, tw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -109,9 +109,9 @@ func TestOrchWatcher_HandleLog_TranscoderDeactivated(t *testing.T) {
 			DeactivationRound: big.NewInt(10),
 		},
 	}
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	ow, err := NewOrchestratorWatcher(stubBondingManagerAddr, watcher, stubStore, lpEth, rw)
+	ow, err := NewOrchestratorWatcher(stubBondingManagerAddr, watcher, stubStore, lpEth, tw)
 	assert.Nil(err)
 
 	header := defaultMiniHeader()
@@ -151,9 +151,9 @@ func TestOrchWatcher_HandleRoundEvent_CacheOrchestratorStake(t *testing.T) {
 	lpEth := &eth.StubClient{
 		TotalStake: expStake,
 	}
-	rw := &stubRoundsWatcher{}
+	tw := &stubTimeWatcher{}
 
-	ow, err := NewOrchestratorWatcher(stubBondingManagerAddr, watcher, stubStore, lpEth, rw)
+	ow, err := NewOrchestratorWatcher(stubBondingManagerAddr, watcher, stubStore, lpEth, tw)
 	require.Nil(err)
 	require.NotNil(ow)
 
@@ -164,7 +164,7 @@ func TestOrchWatcher_HandleRoundEvent_CacheOrchestratorStake(t *testing.T) {
 	defer ow.Stop()
 
 	time.Sleep(2 * time.Millisecond)
-	rw.sink <- newRoundEvent
+	tw.sink <- newRoundEvent
 	time.Sleep(2 * time.Millisecond)
 
 	assert.Equal(stubStore.stake, int64(500000000))
@@ -172,7 +172,7 @@ func TestOrchWatcher_HandleRoundEvent_CacheOrchestratorStake(t *testing.T) {
 	// LivepeerEthClient.CurrentRound() error
 	lpEth.RoundsErr = errors.New("CurrentRound error")
 	errorLogsBefore := glog.Stats.Error.Lines()
-	rw.sink <- newRoundEvent
+	tw.sink <- newRoundEvent
 	time.Sleep(2 * time.Millisecond)
 	errorLogsAfter := glog.Stats.Error.Lines()
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
@@ -181,7 +181,7 @@ func TestOrchWatcher_HandleRoundEvent_CacheOrchestratorStake(t *testing.T) {
 	// OrchestratorStore.SelectOrchs error
 	stubStore.selectErr = errors.New("SelectOrchs error")
 	errorLogsBefore = glog.Stats.Error.Lines()
-	rw.sink <- newRoundEvent
+	tw.sink <- newRoundEvent
 	time.Sleep(2 * time.Millisecond)
 	errorLogsAfter = glog.Stats.Error.Lines()
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
@@ -190,7 +190,7 @@ func TestOrchWatcher_HandleRoundEvent_CacheOrchestratorStake(t *testing.T) {
 	// LivepeerEthClient.GetTranscoderEarningsPoolForRound() error
 	lpEth.TranscoderPoolError = errors.New("TranscoderEarningsPoolForRound error")
 	errorLogsBefore = glog.Stats.Error.Lines()
-	rw.sink <- newRoundEvent
+	tw.sink <- newRoundEvent
 	time.Sleep(2 * time.Millisecond)
 	errorLogsAfter = glog.Stats.Error.Lines()
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
@@ -199,7 +199,7 @@ func TestOrchWatcher_HandleRoundEvent_CacheOrchestratorStake(t *testing.T) {
 	// OrchestratorStore.UpdateOrch error
 	stubStore.updateErr = errors.New("UpdateOrch error")
 	errorLogsBefore = glog.Stats.Error.Lines()
-	rw.sink <- newRoundEvent
+	tw.sink <- newRoundEvent
 	time.Sleep(2 * time.Millisecond)
 	errorLogsAfter = glog.Stats.Error.Lines()
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)

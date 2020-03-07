@@ -89,6 +89,11 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 	creds, err := genSegCreds(s, &stream.HLSSegment{})
 	require.Nil(t, err)
 
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	url, _ := url.Parse("foo")
+	orch.On("ServiceURI").Return(url)
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 	headers := map[string]string{
@@ -125,6 +130,11 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
 
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	url, _ := url.Parse("foo")
+	orch.On("ServiceURI").Return(url)
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
@@ -346,6 +356,11 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
 
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	url, _ := url.Parse("foo")
+	orch.On("ServiceURI").Return(url)
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 
@@ -407,6 +422,11 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
 
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	url, _ := url.Parse("foo")
+	orch.On("ServiceURI").Return(url)
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 
@@ -465,6 +485,11 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
 
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	url, _ := url.Parse("foo")
+	orch.On("ServiceURI").Return(url)
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 
@@ -500,7 +525,7 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	assert.Equal(2, len(res.Data.Segments))
 }
 
-func TestServeSegment_UnacceptableProcessPaymentError(t *testing.T) {
+func TestServeSegment_ProcessPaymentError(t *testing.T) {
 	orch := &mockOrchestrator{}
 	handler := serveSegmentHandler(orch)
 
@@ -522,8 +547,8 @@ func TestServeSegment_UnacceptableProcessPaymentError(t *testing.T) {
 	_, err = verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
 
-	// Return an an unacceptable error to trigger bad request
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(pm.NewMockReceiveError(errors.New("some error"), false)).Once()
+	// Return an error to trigger bad request
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some error"), false).Once()
 
 	headers := map[string]string{
 		paymentHeader: "",
@@ -548,7 +573,6 @@ func TestServeSegment_UnacceptableProcessPaymentError(t *testing.T) {
 
 	assert.Equal(http.StatusBadRequest, resp.StatusCode)
 	assert.Equal("some error", strings.TrimSpace(string(body)))
-
 }
 
 func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
@@ -579,22 +603,22 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 		WinProb:           big.NewInt(100).Bytes(),
 		RecipientRandHash: []byte("bar"),
 		Seed:              []byte("baz"),
+		ExpirationBlock:   big.NewInt(100).Bytes(),
 	}
 
 	price := &net.PriceInfo{
 		PricePerUnit:  2,
 		PixelsPerUnit: 3,
 	}
-	// Return an acceptable payment error to trigger an update to orchestrator info
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(pm.NewMockReceiveError(errors.New("some error"), true)).Once()
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
-
-	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
-	orch.On("PriceInfo", mock.Anything).Return(price, nil)
-
+	// trigger an update to orchestrator info
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	uri, err := url.Parse("http://google.com")
 	require.Nil(err)
 	orch.On("ServiceURI").Return(uri)
+	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
+	orch.On("PriceInfo", mock.Anything).Return(price, nil)
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil).Once()
+	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 
 	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo")}}}
 	tRes := &core.TranscodeResult{
@@ -631,30 +655,8 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal(price.PricePerUnit, tr.Info.PriceInfo.PricePerUnit)
 	assert.Equal(price.PixelsPerUnit, tr.Info.PriceInfo.PixelsPerUnit)
 
-	// Return an acceptable payment error to trigger an update to orchestrator info
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(pm.NewMockReceiveError(errors.New("some other error"), true)).Once()
-	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
-
-	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
-	defer resp.Body.Close()
-
-	body, err = ioutil.ReadAll(resp.Body)
-	require.Nil(err)
-
-	err = proto.Unmarshal(body, &tr)
-	require.Nil(err)
-
-	assert.Equal(http.StatusOK, resp.StatusCode)
-
-	assert.Equal(uri.String(), tr.Info.Transcoder)
-	assert.Equal(params.Recipient, tr.Info.TicketParams.Recipient)
-	assert.Equal(params.FaceValue, tr.Info.TicketParams.FaceValue)
-	assert.Equal(params.WinProb, tr.Info.TicketParams.WinProb)
-	assert.Equal(params.RecipientRandHash, tr.Info.TicketParams.RecipientRandHash)
-	assert.Equal(params.Seed, tr.Info.TicketParams.Seed)
-
 	// Test orchestratorInfo error
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(pm.NewMockReceiveError(errors.New("some error"), true)).Once()
+	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil).Once()
 	orch.On("TicketParams", mock.Anything).Return(nil, errors.New("TicketParams error")).Once()
 
 	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
@@ -725,6 +727,11 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
 
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	url, _ := url.Parse("foo")
+	orch.On("ServiceURI").Return(url)
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 
@@ -784,7 +791,11 @@ func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
-
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	url, _ := url.Parse("foo")
+	orch.On("ServiceURI").Return(url)
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 
@@ -854,7 +865,11 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
-
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	url, _ := url.Parse("foo")
+	orch.On("ServiceURI").Return(url)
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 
@@ -926,7 +941,11 @@ func TestServeSegment_DebitFees_TranscodeSegError_ZeroPixelsBilled(t *testing.T)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
-
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	url, _ := url.Parse("foo")
+	orch.On("ServiceURI").Return(url)
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
@@ -982,7 +1001,7 @@ func TestSubmitSegment_RatPriceInfoError(t *testing.T) {
 
 	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
 
-	assert.EqualError(t, err, "invalid priceInfo.pixelsPerUnit")
+	assert.EqualError(t, err, "pixels per unit is 0")
 }
 
 func TestSubmitSegment_EstimateFeeError(t *testing.T) {
@@ -1249,10 +1268,21 @@ func TestSubmitSegment_TranscodeResultError(t *testing.T) {
 }
 
 func TestSubmitSegment_Success(t *testing.T) {
+	info := &net.OrchestratorInfo{
+		Transcoder: "foo",
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 1,
+		},
+		TicketParams: &net.TicketParams{
+			ExpirationBlock: big.NewInt(100).Bytes(),
+		},
+	}
 	require := require.New(t)
 
 	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
 		return &net.TranscodeResult{
+			Info: info,
 			Result: &net.TranscodeResult_Data{
 				Data: &net.TranscodeData{
 					Segments: tSegData,
@@ -1314,7 +1344,10 @@ func TestSubmitSegment_Success(t *testing.T) {
 	assert.Equal(1, len(tdata.Segments))
 	assert.Equal("foo", tdata.Segments[0].Url)
 	assert.Equal([]byte("bar"), tdata.Sig)
-	assert.Nil(tdata.Info)
+	assert.Equal(tdata.Info.Transcoder, info.Transcoder)
+	assert.Equal(tdata.Info.GetPriceInfo().GetPricePerUnit(), info.GetPriceInfo().GetPricePerUnit())
+	assert.Equal(tdata.Info.GetPriceInfo().GetPixelsPerUnit(), info.GetPriceInfo().GetPixelsPerUnit())
+	assert.Equal(tdata.Info.GetTicketParams().GetExpirationBlock(), info.GetTicketParams().GetExpirationBlock())
 
 	// Check that latency score calculation is different for different segment durations
 	// The round trip duration calculated in SubmitSegment should be about the same across all calls
@@ -1337,14 +1370,18 @@ func TestSubmitSegment_Success(t *testing.T) {
 	assert.Less(latencyScore2, latencyScore1)
 
 	// Check that a new OrchestratorInfo is returned from SubmitSegment()
-	tr.Info = &net.OrchestratorInfo{}
+	tr.Info = info
 	buf, err = proto.Marshal(tr)
 	require.Nil(err)
+	assert.Equal(tr.Info, info)
 
 	tdata, err = SubmitSegment(s, noNameSeg, 0)
 	assert.Nil(err)
 	assert.NotEqual(tdata.Info, s.OrchestratorInfo)
-	assert.Equal(tdata.Info, tr.Info)
+	assert.Equal(tdata.Info.Transcoder, info.Transcoder)
+	assert.Equal(tdata.Info.GetPriceInfo().GetPricePerUnit(), info.GetPriceInfo().GetPricePerUnit())
+	assert.Equal(tdata.Info.GetPriceInfo().GetPixelsPerUnit(), info.GetPriceInfo().GetPixelsPerUnit())
+	assert.Equal(tdata.Info.GetTicketParams().GetExpirationBlock(), info.GetTicketParams().GetExpirationBlock())
 
 	// Test when input data is uploaded
 	runChecks = func(r *http.Request) {

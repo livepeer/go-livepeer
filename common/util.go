@@ -18,6 +18,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"github.com/pkg/errors"
 	"google.golang.org/grpc/peer"
 )
 
@@ -265,4 +266,17 @@ func ToInt64(val *big.Int) int64 {
 	}
 
 	return val.Int64()
+}
+
+func RatPriceInfo(priceInfo *net.PriceInfo) (*big.Rat, error) {
+	if priceInfo == nil {
+		return nil, nil
+	}
+
+	pixelsPerUnit := priceInfo.PixelsPerUnit
+	if pixelsPerUnit == 0 {
+		return nil, errors.New("pixels per unit is 0")
+	}
+
+	return big.NewRat(priceInfo.PricePerUnit, pixelsPerUnit), nil
 }

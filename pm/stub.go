@@ -9,10 +9,17 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/stretchr/testify/mock"
 )
 
+type stubBlockStore struct {
+	lastBlock *big.Int
+	err       error
+}
+
 type stubTicketStore struct {
+	stubBlockStore
 	tickets         map[string][]*Ticket
 	sigs            map[string][][]byte
 	recipientRands  map[string][]*big.Int
@@ -72,6 +79,10 @@ func (ts *stubTicketStore) LoadWinningTickets(sessionIDs []string) ([]*Ticket, [
 	}
 
 	return allTix, allSigs, allRecipientRands, nil
+}
+
+func (ts *stubBlockStore) LastSeenBlock() (*big.Int, error) {
+	return ts.lastBlock, ts.err
 }
 
 type stubSigVerifier struct {
@@ -217,22 +228,53 @@ func (s *stubSigner) Account() accounts.Account {
 	return s.account
 }
 
-type stubRoundsManager struct {
+type stubTimeManager struct {
 	round              *big.Int
 	blkHash            [32]byte
 	transcoderPoolSize *big.Int
+	lastSeenBlock      *big.Int
+
+	blockNumSink chan<- *big.Int
+	blockNumSub  event.Subscription
 }
 
-func (m *stubRoundsManager) LastInitializedRound() *big.Int {
+func (m *stubTimeManager) LastInitializedRound() *big.Int {
 	return m.round
 }
 
-func (m *stubRoundsManager) LastInitializedBlockHash() [32]byte {
+func (m *stubTimeManager) LastInitializedBlockHash() [32]byte {
 	return m.blkHash
 }
 
-func (m *stubRoundsManager) GetTranscoderPoolSize() *big.Int {
+func (m *stubTimeManager) GetTranscoderPoolSize() *big.Int {
 	return m.transcoderPoolSize
+}
+
+func (m *stubTimeManager) LastSeenBlock() *big.Int {
+	return m.lastSeenBlock
+}
+
+func (m *stubTimeManager) SubscribeRounds(sink chan<- types.Log) event.Subscription {
+	return &stubSubscription{}
+}
+
+func (m *stubTimeManager) SubscribeBlocks(sink chan<- *big.Int) event.Subscription {
+	m.blockNumSink = sink
+	m.blockNumSub = &stubSubscription{errCh: make(<-chan error)}
+	return m.blockNumSub
+}
+
+type stubSubscription struct {
+	errCh        <-chan error
+	unsubscribed bool
+}
+
+func (s *stubSubscription) Unsubscribe() {
+	s.unsubscribed = true
+}
+
+func (s *stubSubscription) Err() <-chan error {
+	return s.errCh
 }
 
 type stubSenderManager struct {
@@ -359,8 +401,8 @@ func (m *MockRecipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *bi
 
 // TicketParams returns the recipient's currently accepted ticket parameters
 // for a provided sender ETH adddress
-func (m *MockRecipient) TicketParams(sender ethcommon.Address) (*TicketParams, error) {
-	args := m.Called(sender)
+func (m *MockRecipient) TicketParams(sender ethcommon.Address, price *big.Rat) (*TicketParams, error) {
+	args := m.Called(sender, price)
 
 	var params *TicketParams
 	if args.Get(0) != nil {
@@ -426,47 +468,4 @@ func (m *MockSender) CreateTicketBatch(sessionID string, size int) (*TicketBatch
 func (m *MockSender) ValidateTicketParams(ticketParams *TicketParams) error {
 	args := m.Called(ticketParams)
 	return args.Error(0)
-}
-
-// MockReceiveError is for testing acceptable/unacceptable PM ticket errors
-type MockReceiveError struct {
-	err        error
-	acceptable bool
-}
-
-type acceptableError interface {
-	error
-
-	// Acceptable returns whether the error is acceptable
-	Acceptable() bool
-}
-
-// Error returns the underlying error as a string
-func (re *MockReceiveError) Error() string {
-	return re.err.Error()
-}
-
-// Acceptable returns whether the error is acceptable
-func (re *MockReceiveError) Acceptable() bool {
-	return re.acceptable
-}
-
-// NewMockReceiveError creates a new acceptable/unacceptable MocKReceiveError
-func NewMockReceiveError(err error, acceptable bool) *MockReceiveError {
-	return &MockReceiveError{
-		err,
-		acceptable,
-	}
-}
-
-type stubErrorMonitor struct {
-	acceptable bool
-}
-
-func (em *stubErrorMonitor) AcceptErr(sender ethcommon.Address) bool {
-	return em.acceptable
-}
-
-func (em *stubErrorMonitor) ClearErrCount(sender ethcommon.Address) {
-	em.acceptable = true
 }

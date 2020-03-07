@@ -7,6 +7,7 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -71,7 +72,7 @@ type senderMonitor struct {
 
 	broker Broker
 	smgr   SenderManager
-	rm     RoundsManager
+	tm     TimeManager
 
 	// redeemable is a channel that an external caller can use to
 	// receive tickets that are fed from the ticket queues for
@@ -79,23 +80,20 @@ type senderMonitor struct {
 	redeemable chan *SignedTicket
 
 	quit chan struct{}
-
-	em ErrorMonitor
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderManager, rm RoundsManager, cleanupInterval time.Duration, ttl int, em ErrorMonitor) SenderMonitor {
+func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderManager, tm TimeManager, cleanupInterval time.Duration, ttl int) SenderMonitor {
 	return &senderMonitor{
 		claimant:        claimant,
 		cleanupInterval: cleanupInterval,
 		ttl:             ttl,
 		broker:          broker,
 		smgr:            smgr,
-		rm:              rm,
+		tm:              tm,
 		senders:         make(map[ethcommon.Address]*remoteSender),
 		redeemable:      make(chan *SignedTicket),
 		quit:            make(chan struct{}),
-		em:              em,
 	}
 }
 
@@ -129,21 +127,6 @@ func (sm *senderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error
 	}
 
 	sm.senders[addr].pendingAmount.Sub(pendingAmount, amount)
-
-	// Reset errCount for sender
-	// An updated max float results in updated ticket params
-	// The sender could plausibly send tickets that trigger acceptable errors
-	sm.em.ClearErrCount(addr)
-
-	// Whenever a sender's max float increases, signal the updated max float to the
-	// sender's associated ticket queue in case there are queued tickets that
-	// can be redeemed
-	mf, err := sm.maxFloat(addr)
-	if err != nil {
-		return err
-	}
-	sm.senders[addr].queue.SignalMaxFloat(mf)
-
 	return nil
 }
 
@@ -157,11 +140,6 @@ func (sm *senderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) {
 	// Adding to pendingAmount = subtracting from max float
 	pendingAmount := sm.senders[addr].pendingAmount
 	sm.senders[addr].pendingAmount.Add(pendingAmount, amount)
-
-	// Reset errCount for sender
-	// An updated max float results in updated ticket params
-	// The sender could plausibly send tickets that trigger acceptable errors
-	sm.em.ClearErrCount(addr)
 }
 
 // MaxFloat returns a remote sender's max float
@@ -182,6 +160,8 @@ func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicke
 	sm.ensureCache(addr)
 
 	sm.senders[addr].queue.Add(ticket)
+	glog.Infof("Queued ticket sender=%x recipientRandHash=%x senderNonce=%v", ticket.Sender.Hex(), ticket.RecipientRandHash.Hex(), ticket.SenderNonce)
+
 }
 
 // ValidateSender checks whether a sender's unlock period ends the round after the next round
@@ -190,7 +170,7 @@ func (sm *senderMonitor) ValidateSender(addr ethcommon.Address) error {
 	if err != nil {
 		return fmt.Errorf("could not get sender info for %v: %v", addr.Hex(), err)
 	}
-	maxWithdrawRound := new(big.Int).Add(sm.rm.LastInitializedRound(), big.NewInt(1))
+	maxWithdrawRound := new(big.Int).Add(sm.tm.LastInitializedRound(), big.NewInt(1))
 	if info.WithdrawRound.Int64() != 0 && info.WithdrawRound.Cmp(maxWithdrawRound) != 1 {
 		return fmt.Errorf("deposit and reserve for sender %v is set to unlock soon", addr.Hex())
 	}
@@ -214,7 +194,7 @@ func (sm *senderMonitor) reserveAlloc(addr ethcommon.Address) (*big.Int, error) 
 		return nil, err
 	}
 	claimed, err := sm.smgr.ClaimedReserve(addr, sm.claimant)
-	poolSize := sm.rm.GetTranscoderPoolSize()
+	poolSize := sm.tm.GetTranscoderPoolSize()
 	if poolSize.Cmp(big.NewInt(0)) == 0 {
 		return big.NewInt(0), nil
 	}
@@ -238,7 +218,7 @@ func (sm *senderMonitor) ensureCache(addr ethcommon.Address) {
 // Caller should hold the lock for senderMonitor unless the caller is
 // ensureCache() in which case the caller of ensureCache() should hold the lock
 func (sm *senderMonitor) cache(addr ethcommon.Address) {
-	queue := newTicketQueue()
+	queue := newTicketQueue(sm.tm.SubscribeBlocks)
 	queue.Start()
 	done := make(chan struct{})
 	go sm.startTicketQueueConsumerLoop(queue, done)

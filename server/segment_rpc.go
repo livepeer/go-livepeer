@@ -66,37 +66,29 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// oInfo will be non-nil if we need to send an updated net.OrchestratorInfo to the broadcaster
-	var oInfo *net.OrchestratorInfo
-
-	if paymentError := orch.ProcessPayment(payment, segData.ManifestID); paymentError != nil {
-
-		acceptableErr, ok := paymentError.(core.AcceptableError)
-		if !ok || !acceptableErr.Acceptable() {
-			glog.Errorf("Unacceptable error occured processing payment: %v", paymentError)
-			http.Error(w, paymentError.Error(), http.StatusBadRequest)
-			return
-		}
-		oInfo, err = orchestratorInfo(orch, sender, orch.ServiceURI().String())
-		if err != nil {
-			glog.Errorf("Error updating orchestrator info: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		glog.Errorf("Acceptable error occured when processing payment: %v", paymentError)
+	if err := orch.ProcessPayment(payment, segData.ManifestID); err != nil {
+		glog.Errorf("error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	if !orch.SufficientBalance(sender, segData.ManifestID) {
-		glog.Errorf("Insufficient credit balance for stream with manifestID %v\n", segData.ManifestID)
+		glog.Errorf("Insufficient credit balance for stream - manifestID=%v\n", segData.ManifestID)
 		http.Error(w, "Insufficient balance", http.StatusBadRequest)
+		return
+	}
+
+	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String())
+	if err != nil {
+		glog.Errorf("Error updating orchestrator info - err=%v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	// download the segment and check the hash
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		glog.Error("Could not read request body: ", err)
+		glog.Errorf("Could not read request body - err=%v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -110,7 +102,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		took := time.Since(start)
 		glog.V(common.DEBUG).Infof("Getting segment from %s took %s", uri, took)
 		if err != nil {
-			glog.Errorf("Error getting input segment %v from input OS: %v", uri, err)
+			glog.Errorf("Error getting input segment from input OS - segment=%v err=%v", uri, err)
 			http.Error(w, "BadRequest", http.StatusBadRequest)
 			return
 		}
@@ -181,7 +173,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	tr := &net.TranscodeResult{
 		Seq:    segData.Seq,
 		Result: result.Result,
-		Info:   oInfo, // oInfo will be non-nil if we need to send an update to the broadcaster
+		Info:   oInfo,
 	}
 	buf, err := proto.Marshal(tr)
 	if err != nil {
@@ -296,7 +288,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		data = []byte(seg.Name)
 	}
 
-	priceInfo, err := ratPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
+	priceInfo, err := common.RatPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +344,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	resp, err := httpClient.Do(req)
 	uploadDur := time.Since(start)
 	if err != nil {
-		glog.Errorf("Unable to submit segment nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", nonce, sess.ManifestID, seg.SeqNo, ti.Transcoder, err)
+		glog.Errorf("Unable to submit segment orch=%v nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", ti.Transcoder, nonce, sess.ManifestID, seg.SeqNo, ti.Transcoder, err)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), false)
 		}
@@ -620,6 +612,7 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 			WinProb:           batch.WinProb.Bytes(),
 			RecipientRandHash: batch.RecipientRandHash.Bytes(),
 			Seed:              batch.Seed.Bytes(),
+			ExpirationBlock:   batch.ExpirationBlock.Bytes(),
 		}
 
 		protoPayment.ExpirationParams = &net.TicketExpirationParams{
@@ -637,7 +630,7 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 
 		protoPayment.TicketSenderParams = senderParams
 
-		ratPrice, _ := ratPriceInfo(protoPayment.ExpectedPrice)
+		ratPrice, _ := common.RatPriceInfo(protoPayment.ExpectedPrice)
 		glog.V(common.VERBOSE).Infof("Created new payment - manifestID=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v",
 			sess.ManifestID,
 			batch.Recipient.Hex(),
@@ -657,7 +650,7 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 }
 
 func validatePrice(sess *BroadcastSession) error {
-	oPrice, err := ratPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
+	oPrice, err := common.RatPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
 	if err != nil {
 		return err
 	}
@@ -670,17 +663,4 @@ func validatePrice(sess *BroadcastSession) error {
 		return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
 	}
 	return nil
-}
-
-func ratPriceInfo(priceInfo *net.PriceInfo) (*big.Rat, error) {
-	if priceInfo == nil {
-		return nil, nil
-	}
-
-	pixelsPerUnit := priceInfo.PixelsPerUnit
-	if pixelsPerUnit == 0 {
-		return nil, errors.New("invalid priceInfo.pixelsPerUnit")
-	}
-
-	return big.NewRat(priceInfo.PricePerUnit, pixelsPerUnit), nil
 }

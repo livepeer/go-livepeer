@@ -105,36 +105,6 @@ func TestStart_Polling(t *testing.T) {
 	require.Nil(t, err)
 	defer gpm.Stop()
 
-	var changes int
-	var changesMu sync.Mutex
-
-	getChanges := func() int {
-		changesMu.Lock()
-		defer changesMu.Unlock()
-
-		return changes
-	}
-
-	addChange := func() {
-		changesMu.Lock()
-		defer changesMu.Unlock()
-
-		changes++
-	}
-
-	go func() {
-		count := 0
-
-		for count < 2 {
-			select {
-			case <-update:
-				count++
-
-				addChange()
-			}
-		}
-	}()
-
 	// Async update gas price so when the
 	// sync sleep finishes, the monitor
 	// should have decreased its own gas price
@@ -161,8 +131,6 @@ func TestStart_Polling(t *testing.T) {
 	// There should be more queries now
 	assert.Greater(gpo.Queries(), queries)
 	assert.Equal(gasPrice3, gpm.GasPrice())
-
-	assert.Equal(2, getChanges())
 }
 
 func TestStart_Polling_ContextCancel(t *testing.T) {

@@ -38,10 +38,9 @@ type session struct {
 }
 
 type sender struct {
-	signer        Signer
-	roundsManager RoundsManager
-	senderManager SenderManager
-
+	signer            Signer
+	timeManager       TimeManager
+	senderManager     SenderManager
 	maxEV             *big.Rat
 	depositMultiplier int
 
@@ -49,10 +48,10 @@ type sender struct {
 }
 
 // NewSender creates a new Sender instance.
-func NewSender(signer Signer, roundsManager RoundsManager, senderManager SenderManager, maxEV *big.Rat, depositMultiplier int) Sender {
+func NewSender(signer Signer, timeManager TimeManager, senderManager SenderManager, maxEV *big.Rat, depositMultiplier int) Sender {
 	return &sender{
 		signer:            signer,
-		roundsManager:     roundsManager,
+		timeManager:       timeManager,
 		senderManager:     senderManager,
 		maxEV:             maxEV,
 		depositMultiplier: depositMultiplier,
@@ -86,7 +85,7 @@ func (s *sender) validateSender() error {
 		return ErrSenderValidation{fmt.Errorf("unable to validate sender: could not get sender info: %v", err)}
 	}
 
-	maxWithdrawRound := new(big.Int).Add(s.roundsManager.LastInitializedRound(), big.NewInt(1))
+	maxWithdrawRound := new(big.Int).Add(s.timeManager.LastInitializedRound(), big.NewInt(1))
 	if info.WithdrawRound.Int64() != 0 && info.WithdrawRound.Cmp(maxWithdrawRound) != 1 {
 		return ErrSenderValidation{fmt.Errorf("unable to validate sender: deposit and reserve is set to unlock soon")}
 	}
@@ -155,12 +154,21 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 		return fmt.Errorf("ticket faceValue %v > max faceValue %v", ticketParams.FaceValue, maxFaceValue)
 	}
 
+	if ticketParams.ExpirationBlock.Int64() == 0 {
+		return nil
+	}
+
+	latestBlock := s.timeManager.LastSeenBlock()
+	if ticketParams.ExpirationBlock.Cmp(latestBlock) <= 0 {
+		return ErrTicketParamsExpired
+	}
+
 	return nil
 }
 
 func (s *sender) expirationParams() *TicketExpirationParams {
-	round := s.roundsManager.LastInitializedRound()
-	blkHash := s.roundsManager.LastInitializedBlockHash()
+	round := s.timeManager.LastInitializedRound()
+	blkHash := s.timeManager.LastInitializedBlockHash()
 
 	return &TicketExpirationParams{
 		CreationRound:          round.Int64(),

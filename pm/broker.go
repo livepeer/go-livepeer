@@ -5,6 +5,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 )
 
 // SenderInfo contains information about a sender tracked by a Broker
@@ -64,15 +65,21 @@ type Broker interface {
 	CheckTx(tx *types.Transaction) error
 }
 
-// RoundsManager defines the methods for fetching the last
+// TimeManager defines the methods for fetching the last
 // initialized round and associated block hash of the Livepeer protocol
-type RoundsManager interface {
+type TimeManager interface {
 	// LastInitializedRound returns the last initialized round of the Livepeer protocol
 	LastInitializedRound() *big.Int
 	// LastInitializedBlockHash returns the blockhash of the block the last round was initiated in
 	LastInitializedBlockHash() [32]byte
 	// GetTranscoderPoolSize returns the size of the active transcoder set for a round
 	GetTranscoderPoolSize() *big.Int
+	// LastSeenBlock returns the last seen block number
+	LastSeenBlock() *big.Int
+	// SubscribeRounds allows one to subscribe to new round events
+	SubscribeRounds(sink chan<- types.Log) event.Subscription
+	// SubscribeBlocks allows one to subscribe to newly seen block numbers
+	SubscribeBlocks(sink chan<- *big.Int) event.Subscription
 }
 
 // SenderManager defines the methods for fetching sender information

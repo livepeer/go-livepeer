@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -19,14 +20,19 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
 
 	"github.com/livepeer/lpms/stream"
 )
 
+var refreshTimeout = 2500 * time.Millisecond
+
 var Policy *verification.Policy
 var BroadcastCfg = &BroadcastConfig{}
 var MaxAttempts = 3
+
+var getOrchestratorInfoRPC = GetOrchestratorInfo
 
 type BroadcastConfig struct {
 	maxPrice *big.Rat
@@ -209,12 +215,14 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 	var sessions []*BroadcastSession
 
 	for _, tinfo := range tinfos {
-		var sessionID string
-		var balance Balance
-
-		ticketParams := pmTicketParams(tinfo.TicketParams)
+		var (
+			sessionID    string
+			balance      Balance
+			ticketParams *pm.TicketParams
+		)
 
 		if n.Sender != nil {
+			ticketParams = pmTicketParams(tinfo.TicketParams)
 			sessionID = n.Sender.StartSession(*ticketParams)
 		}
 
@@ -328,6 +336,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// similar to the orchestrator's RemoteTranscoderFatalError
 		return nil, nil
 	}
+
 	glog.Infof("Trying to transcode segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
 	if monitor.Enabled {
 		monitor.TranscodeTry(nonce, seg.SeqNo)
@@ -349,11 +358,28 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	// send segment to the orchestrator
+	glog.V(common.DEBUG).Infof("Submitting segment nonce=%d manifestID=%s seqNo=%d orch=%s", nonce, cxn.mid, seg.SeqNo, sess.OrchestratorInfo.Transcoder)
+	if sess.Sender != nil {
+		if err := sess.Sender.ValidateTicketParams(pmTicketParams(sess.OrchestratorInfo.TicketParams)); err != nil {
+			if err != pm.ErrTicketParamsExpired {
+				cxn.sessManager.removeSession(sess)
+				return nil, err
+			}
+
+			glog.V(common.VERBOSE).Infof("Ticket params expired, refreshing for orch=%v", sess.OrchestratorInfo.Transcoder)
+			newSess, err := refreshSession(sess)
+			if err != nil {
+				cxn.sessManager.removeSession(sess)
+				return nil, fmt.Errorf("unable to refresh ticket params for orch=%v err=%v", sess.OrchestratorInfo.Transcoder, err)
+			}
+			sess = newSess
+		}
+	}
 	res, err := SubmitSegment(sess, seg, nonce)
 	if err != nil || res == nil {
 		cxn.sessManager.removeSession(sess)
 		if res == nil && err == nil {
-			return nil, errors.New("Empty response")
+			return nil, err
 		}
 		return nil, err
 	}
@@ -457,7 +483,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	for i, url := range segURLs {
-		err = cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
+		err := cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
 		if err != nil {
 			// InsertHLSSegment only returns ErrSegmentAlreadyExists error
 			// Right now InsertHLSSegment call is atomic regarding transcoded segments - we either inserting
@@ -605,4 +631,26 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) *Broadc
 	}
 
 	return newSess
+}
+
+func refreshSession(sess *BroadcastSession) (*BroadcastSession, error) {
+	uri, err := url.Parse(sess.OrchestratorInfo.Transcoder)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	defer cancel()
+
+	oInfo, err := getOrchestratorInfoRPC(ctx, sess.Broadcaster, uri)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create dummy result
+	res := &ReceivedTranscodeResult{
+		LatencyScore: sess.LatencyScore,
+		Info:         oInfo,
+	}
+
+	return updateSession(sess, res), nil
 }

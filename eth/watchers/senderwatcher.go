@@ -21,13 +21,13 @@ type SenderWatcher struct {
 	mu             sync.RWMutex
 	quit           chan struct{}
 	watcher        BlockWatcher
-	rw             EventWatcher
+	tw             timeWatcher
 	lpEth          eth.LivepeerEthClient
 	dec            *EventDecoder
 }
 
 // NewSenderWatcher initiates a new SenderWatcher
-func NewSenderWatcher(ticketBrokerAddr ethcommon.Address, watcher BlockWatcher, lpEth eth.LivepeerEthClient, rw EventWatcher) (*SenderWatcher, error) {
+func NewSenderWatcher(ticketBrokerAddr ethcommon.Address, watcher BlockWatcher, lpEth eth.LivepeerEthClient, tw timeWatcher) (*SenderWatcher, error) {
 	dec, err := NewEventDecoder(ticketBrokerAddr, contracts.TicketBrokerABI)
 	if err != nil {
 		return nil, err
@@ -36,7 +36,7 @@ func NewSenderWatcher(ticketBrokerAddr ethcommon.Address, watcher BlockWatcher, 
 	return &SenderWatcher{
 		quit:           make(chan struct{}),
 		watcher:        watcher,
-		rw:             rw,
+		tw:             tw,
 		lpEth:          lpEth,
 		senders:        make(map[ethcommon.Address]*pm.SenderInfo),
 		claimedReserve: make(map[ethcommon.Address]*big.Int),
@@ -88,7 +88,7 @@ func (sw *SenderWatcher) ClaimedReserve(reserveHolder ethcommon.Address, claiman
 // Watch starts the event watching loop
 func (sw *SenderWatcher) Watch() {
 	roundEvents := make(chan types.Log, 10)
-	roundSub := sw.rw.Subscribe(roundEvents)
+	roundSub := sw.tw.SubscribeRounds(roundEvents)
 	defer roundSub.Unsubscribe()
 
 	events := make(chan []*blockwatch.Event, 10)
