@@ -980,34 +980,13 @@ func TestVerifier_Verify(t *testing.T) {
 	res := &net.TranscodeData{}
 	verifier := verification.NewSegmentVerifier(&verification.Policy{})
 	URIs := []string{}
-	err := verify(verifier, cxn, sess, source, res, URIs)
+	renditionData := [][]byte{}
+	err := verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Nil(err)
 
-	// Test local OS: Should fail with an invalid path
 	sess.ManifestID = core.ManifestID("streamName")
-	sess.BroadcasterOS = drivers.NewMemoryDriver(nil).NewSession("streamName")
 	URIs = append(URIs, "filename")
-	err = verify(verifier, cxn, sess, source, res, URIs)
-	assert.NotNil(err)
-	assert.Contains(err.Error(), "invalid URI for request")
-
-	// Test local OS : Should fail if data does not exist in OS
-	URIs[0] = "/filename"
-	err = verify(verifier, cxn, sess, source, res, URIs)
-	assert.NotNil(err)
-	assert.Contains(err.Error(), "Missing Local Data")
-
-	// Test for segment not in broadcaster's own OS - "livepeer" S3 bucket
-	drivers.S3BUCKET = "livepeer"
-	sess.BroadcasterOS = drivers.NewS3Driver("", drivers.S3BUCKET, "", "").NewSession("")
-	err = verify(verifier, cxn, sess, source, res, URIs)
-	assert.NotNil(err)
-	assert.Contains(err.Error(), "Expected local storage but did not have it")
-
-	// Set broadcaster's OS to "livepeer" S3 bucket and fix the URL
-	URIs[0] = "https://livepeer.s3.amazonaws.com"
-	err = verify(verifier, cxn, sess, source, res, URIs)
-	assert.Nil(err)
+	renditionData = [][]byte{[]byte("foo")}
 
 	// Check non-retryable errors
 	sess.OrchestratorInfo = &net.OrchestratorInfo{Transcoder: "asdf"}
@@ -1017,7 +996,7 @@ func TestVerifier_Verify(t *testing.T) {
 	verifier = newStubSegmentVerifier(sv)
 	assert.Equal(0, sv.calls)  // sanity check initial call count
 	assert.Len(bsm.sessMap, 1) // sanity check initial bsm map
-	err = verify(verifier, cxn, sess, source, res, URIs)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.NotNil(err)
 	assert.Equal(1, sv.calls)
 	assert.Equal(sv.err, err)
@@ -1029,7 +1008,7 @@ func TestVerifier_Verify(t *testing.T) {
 	_, retryable := sv.err.(verification.Retryable)
 	assert.True(retryable)
 	verifier = newStubSegmentVerifier(sv)
-	err = verify(verifier, cxn, sess, source, res, URIs)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.NotNil(err)
 	assert.Equal(2, sv.calls)
 	assert.Equal(sv.err, err)
@@ -1055,7 +1034,8 @@ func TestVerifier_Verify(t *testing.T) {
 	sess.BroadcasterOS = mem
 	verifier = newStubSegmentVerifier(sv)
 	URIs[0] = name
-	err = verify(verifier, cxn, sess, source, res, URIs)
+	renditionData = [][]byte{[]byte("attempt1")}
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Equal(sv.err, err)
 
 	// Now "insert" 2nd attempt into OS
@@ -1063,7 +1043,8 @@ func TestVerifier_Verify(t *testing.T) {
 	_, err = mem.SaveData("/rendition/seg/1", []byte("attempt2"))
 	assert.Nil(err)
 	assert.Equal([]byte("attempt2"), mem.GetData(name))
-	err = verify(verifier, cxn, sess, source, res, URIs)
+	renditionData = [][]byte{[]byte("attempt2")}
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt1"), mem.GetData(name))
 }
@@ -1084,53 +1065,12 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	drivers.S3BUCKET = "livepeer"
 	mem := drivers.NewS3Driver("", drivers.S3BUCKET, "", "").NewSession(string(mid))
 	assert.NotNil(mem)
-	genBcastSess := func(url string) *BroadcastSession {
-		segData := []*net.TranscodedSegmentData{
-			{Url: url, Pixels: 100},
-		}
-
-		buf, err := proto.Marshal(&net.TranscodeResult{
-			Result: &net.TranscodeResult_Data{
-				Data: &net.TranscodeData{Segments: segData},
-			},
-		})
-		assert.Nil(err, fmt.Sprintf("Could not marshal results for %s", url))
-		ts, mux := stubTLSServer()
-		mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			w.Write(buf)
-		})
-		defer func() {
-			// Work around a weird timing issue. Tests fail if the server closes
-			// in-scope (prob leads to something like the client being unable
-			// to read the response?), so we delay the close for a little bit
-			go func() {
-				// We assume this test doesn't take more than 1s
-				// But if it does (eg, we get a POST error), then bump this up
-				time.Sleep(1 * time.Second)
-				ts.Close()
-			}()
-		}()
-		return &BroadcastSession{
-			Broadcaster:   stubBroadcaster2(),
-			ManifestID:    mid,
-			Profiles:      []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9},
-			BroadcasterOS: mem,
-			OrchestratorInfo: &net.OrchestratorInfo{
-				Transcoder: ts.URL,
-				PriceInfo: &net.PriceInfo{
-					PricePerUnit:  1,
-					PixelsPerUnit: 1,
-				},
-			},
-		}
-	}
 
 	baseURL := "https://livepeer.s3.amazonaws.com"
 	bsm := bsmWithSessList([]*BroadcastSession{
-		genBcastSess(baseURL + "/resp1"),
-		genBcastSess(baseURL + "/resp2"),
-		genBcastSess(baseURL + "/resp3"),
+		genBcastSess(t, baseURL+"/resp1", mem, mid),
+		genBcastSess(t, baseURL+"/resp2", mem, mid),
+		genBcastSess(t, baseURL+"/resp3", mem, mid),
 	})
 	cxn := &rtmpConnection{
 		mid:         mid,
@@ -1148,6 +1088,10 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 			{Score: 1, Pixels: []int64{100}},
 		},
 	})
+
+	oldDownloadSeg := downloadSeg
+	defer func() { downloadSeg = oldDownloadSeg }()
+	downloadSeg = func(url string) ([]byte, error) { return []byte("foo"), nil }
 
 	_, err := transcodeSegment(cxn, seg, "dummy", verifier)
 	assert.Equal(verification.ErrTampered, err)
@@ -1233,5 +1177,120 @@ func defaultTicketBatch() *pm.TicketBatch {
 		SenderParams: []*pm.TicketSenderParams{
 			&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
 		},
+	}
+}
+
+func TestVerifier_SegDownload(t *testing.T) {
+	assert := assert.New(t)
+
+	mid := core.ManifestID("foo")
+
+	drivers.S3BUCKET = "livepeer"
+	externalOS := &stubOSSession{}
+	bsm := bsmWithSessList([]*BroadcastSession{})
+	cxn := &rtmpConnection{
+		mid:         mid,
+		pl:          &stubPlaylistManager{manifestID: mid},
+		profile:     &ffmpeg.P240p30fps16x9,
+		sessManager: bsm,
+	}
+	seg := &stream.HLSSegment{}
+
+	oldDownloadSeg := downloadSeg
+	defer func() { downloadSeg = oldDownloadSeg }()
+
+	downloaded := make(map[string]bool)
+	downloadSeg = func(url string) ([]byte, error) {
+		downloaded[url] = true
+
+		return []byte("foo"), nil
+	}
+
+	//
+	// Tests when there is no verification policy
+	//
+
+	// When there is no broadcaster OS, segments should not be downloaded
+	url := "somewhere1"
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, nil, mid)})
+	_, err := transcodeSegment(cxn, seg, "dummy", nil)
+	assert.Nil(err)
+	assert.False(downloaded[url])
+
+	// When segments are in the broadcaster's external OS, segments should not be downloaded
+	url = "https://livepeer.s3.amazonaws.com/resp1"
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
+	_, err = transcodeSegment(cxn, seg, "dummy", nil)
+	assert.Nil(err)
+	assert.False(downloaded[url])
+
+	// When segments are not in the broadcaster's external OS, segments should be downloaded
+	url = "somewhere2"
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
+	_, err = transcodeSegment(cxn, seg, "dummy", nil)
+	assert.Nil(err)
+	assert.True(downloaded[url])
+
+	//
+	// Tests when there is a verification policy
+	//
+
+	verifier := newStubSegmentVerifier(&stubVerifier{retries: 100})
+
+	// When there is no broadcaster OS, segments should be downloaded
+	url = "somewhere3"
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, nil, mid)})
+	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
+	assert.Nil(err)
+	assert.True(downloaded[url])
+
+	// When segments are in the broadcaster's external OS, segments should be downloaded
+	url = "https://livepeer.s3.amazonaws.com/resp2"
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
+	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
+	assert.Nil(err)
+	assert.True(downloaded[url])
+
+	// When segments are not in the broadcaster's exernal OS, segments should be downloaded
+	url = "somewhere4"
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
+	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
+	assert.Nil(err)
+	assert.True(downloaded[url])
+}
+
+func genBcastSess(t *testing.T, url string, os drivers.OSSession, mid core.ManifestID) *BroadcastSession {
+	segData := []*net.TranscodedSegmentData{
+		{Url: url, Pixels: 100},
+	}
+
+	buf, err := proto.Marshal(&net.TranscodeResult{
+		Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{Segments: segData},
+		},
+	})
+	require.Nil(t, err, fmt.Sprintf("Could not marshal results for %s", url))
+	ts, mux := stubTLSServer()
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+	defer func() {
+		// Work around a weird timing issue. Tests fail if the server closes
+		// in-scope (prob leads to something like the client being unable
+		// to read the response?), so we delay the close for a little bit
+		go func() {
+			// We assume this test doesn't take more than 1s
+			// But if it does (eg, we get a POST error), then bump this up
+			time.Sleep(1 * time.Second)
+			ts.Close()
+		}()
+	}()
+	return &BroadcastSession{
+		Broadcaster:      stubBroadcaster2(),
+		ManifestID:       mid,
+		Profiles:         []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9},
+		BroadcasterOS:    os,
+		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL},
 	}
 }

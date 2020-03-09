@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net/url"
 	"os"
 	"sort"
 
@@ -215,9 +214,7 @@ func countPixelParams(params *Params) ([]int64, error) {
 	pxls := make([]int64, len(params.Results.Segments))
 
 	for i := 0; i < len(params.Results.Segments); i++ {
-		count, err := countPixels(
-			params.Results.Segments[i].Url,
-			params.Renditions[i])
+		count, err := countPixels(params.Renditions[i])
 		if err != nil {
 			return nil, err
 		}
@@ -226,30 +223,24 @@ func countPixelParams(params *Params) ([]int64, error) {
 	return pxls, nil
 }
 
-func countPixels(fname string, data []byte) (int64, error) {
-	uri, err := url.ParseRequestURI(fname)
-	// If the filename is a relative URI and the broadcaster is using local memory storage
+func countPixels(data []byte) (int64, error) {
 	// write the data to a temp file
-	if err == nil && !uri.IsAbs() && data != nil {
-		tempfile, err := ioutil.TempFile("", common.RandName())
-		if err != nil {
-			return 0, fmt.Errorf("error creating temp file for pixels verification: %w", err)
-		}
-		defer os.Remove(tempfile.Name())
+	tempfile, err := ioutil.TempFile("", common.RandName())
+	if err != nil {
+		return 0, fmt.Errorf("error creating temp file for pixels verification: %w", err)
+	}
+	defer os.Remove(tempfile.Name())
 
-		if _, err := tempfile.Write(data); err != nil {
-			tempfile.Close()
-			return 0, fmt.Errorf("error writing temp file for pixels verification: %w", err)
-		}
-
-		if err = tempfile.Close(); err != nil {
-			return 0, fmt.Errorf("error closing temp file for pixels verification: %w", err)
-		}
-
-		fname = tempfile.Name()
+	if _, err := tempfile.Write(data); err != nil {
+		tempfile.Close()
+		return 0, fmt.Errorf("error writing temp file for pixels verification: %w", err)
 	}
 
-	p, err := pixels(fname)
+	if err = tempfile.Close(); err != nil {
+		return 0, fmt.Errorf("error closing temp file for pixels verification: %w", err)
+	}
+
+	p, err := pixels(tempfile.Name())
 	if err != nil {
 		return 0, err
 	}
