@@ -160,7 +160,7 @@ func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicke
 	sm.ensureCache(addr)
 
 	sm.senders[addr].queue.Add(ticket)
-	glog.Infof("Queued ticket sender=%x recipientRandHash=%x senderNonce=%v", ticket.Sender.Hex(), ticket.RecipientRandHash.Hex(), ticket.SenderNonce)
+	glog.Infof("Queued ticket sender=%v recipientRandHash=%v senderNonce=%v", ticket.Sender.Hex(), ticket.RecipientRandHash.Hex(), ticket.SenderNonce)
 
 }
 

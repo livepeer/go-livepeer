@@ -113,7 +113,9 @@ func (q *ticketQueue) startQueueLoop() {
 	for {
 		select {
 		case err := <-sub.Err():
-			glog.Error(err)
+			if err != nil {
+				glog.Errorf("Block subscription error err=%v", err)
+			}
 		case latestBlock := <-blockNums:
 			numTickets := q.Length()
 			for i := 0; i < int(numTickets); i++ {
