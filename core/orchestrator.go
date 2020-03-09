@@ -182,7 +182,9 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			if monitor.Enabled {
 				monitor.PaymentRecvError(sender.String(), string(manifestID), err.Error())
 			}
-
+			if _, ok := err.(*pm.FatalReceiveErr); ok {
+				return err
+			}
 			receiveErr = err
 		}
 
