@@ -312,7 +312,7 @@ func TestMinLSSelector_SelectUnknownSession_UniformWeights(t *testing.T) {
 	}
 
 	// Check that the difference between the selection count of each session is less than some small delta
-	maxDelta := .015
+	maxDelta := .02
 	for i, sess := range sessions[:len(sessions)-1] {
 		nextSess := sessions[i+1]
 		diff := math.Abs(float64(sessCount[sess] - sessCount[nextSess]))
