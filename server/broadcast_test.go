@@ -1125,7 +1125,7 @@ func TestRefreshSession(t *testing.T) {
 	newSess, err := refreshSession(sess)
 	assert.Nil(newSess)
 	assert.Error(err)
-	assert.EqualError(err, "parse \u007f: net/url: invalid control character in URL")
+	assert.EqualError(err, `parse "\u007f": net/url: invalid control character in URL`)
 
 	// trigger getOrchestratorInfo error
 	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
