@@ -58,6 +58,7 @@ type LivepeerNode struct {
 	OrchestratorPool  common.OrchestratorPool
 	OrchSecret        string
 	Transcoder        Transcoder
+	BackupTranscoder  Transcoder
 	TranscoderManager *RemoteTranscoderManager
 	Balances          *AddressBalances
 
