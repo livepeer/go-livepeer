@@ -31,7 +31,7 @@ func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *
 	gm := &stubGasPriceMonitor{gasPrice: big.NewInt(100)}
 	sm := newStubSenderMonitor()
 	sm.maxFloat = big.NewInt(10000000000)
-	tm := &stubTimeManager{lastSeenBlock: big.NewInt(1)}
+	tm := &stubTimeManager{lastSeenBlock: big.NewInt(1), round: big.NewInt(1)}
 	cfg := TicketParamsConfig{
 		EV:               big.NewInt(5),
 		RedeemGas:        10000,
@@ -69,6 +69,7 @@ func newTicket(sender ethcommon.Address, params *TicketParams, senderNonce uint3
 		RecipientRandHash:     params.RecipientRandHash,
 		ParamsExpirationBlock: params.ExpirationBlock,
 		PricePerPixel:         params.PricePerPixel,
+		CreationRound:         1,
 	}
 }
 
@@ -91,7 +92,8 @@ func TestReceiveTicket_InvalidRecipientRand(t *testing.T) {
 	sv := &stubSigVerifier{}
 	sv.SetVerifyResult(true)
 	v := NewValidator(sv, tm)
-	r := newRecipientOrFatal(t, RandAddress(), b, v, ts, gm, sm, tm, cfg)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg)
 	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 
@@ -102,30 +104,63 @@ func TestReceiveTicket_InvalidRecipientRand(t *testing.T) {
 	require.NotEqual(t, params.FaceValue, ticket.FaceValue)
 	assert.Equal(sessionID, "")
 	assert.Equal(won, false)
-	assert.Equal(err, errInvalidTicketRecipientRand)
+	assert.Equal(err.Error(), errInvalidTicketRecipientRand.Error())
+	_, ok := err.(*FatalReceiveErr)
+	assert.True(ok)
 
 	// Test invalid winProb
 	ticket = newTicket(sender, params, 0)
 	ticket.WinProb = big.NewInt(0) // Using invalid WinProb for generating recipientRand
+	sessionID, won, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	require.NotEqual(t, params.WinProb, ticket.WinProb)
 	assert.Equal(sessionID, "")
 	assert.Equal(won, false)
-	assert.Equal(err, errInvalidTicketRecipientRand)
+	assert.Equal(err.Error(), errInvalidTicketRecipientRand.Error())
+	_, ok = err.(*FatalReceiveErr)
+	assert.True(ok)
 
 	// Test invalid ParamsExpirationBlock
 	ticket = newTicket(sender, params, 0)
 	ticket.ParamsExpirationBlock = big.NewInt(0) // Using invalid ParamsExpirationBlock for generating recipientRand
+	sessionID, won, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	require.NotEqual(t, params.ExpirationBlock, ticket.ParamsExpirationBlock)
 	assert.Equal(sessionID, "")
 	assert.Equal(won, false)
-	assert.Equal(err, errInvalidTicketRecipientRand)
+	assert.Equal(err.Error(), errInvalidTicketRecipientRand.Error())
+	_, ok = err.(*FatalReceiveErr)
+	assert.True(ok)
 
 	// Test invalid PricePerPixel
 	ticket = newTicket(sender, params, 0)
 	ticket.PricePerPixel = big.NewRat(0, 1) // Using invalid PricePerPixel for generating recipientRand
+	sessionID, won, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	assert.Equal(sessionID, "")
 	assert.Equal(won, false)
-	assert.Equal(err, errInvalidTicketRecipientRand)
+	assert.Equal(err.Error(), errInvalidTicketRecipientRand.Error())
+	_, ok = err.(*FatalReceiveErr)
+	assert.True(ok)
+}
+
+func TestReceiveTicket_InvalidSignature(t *testing.T) {
+	assert := assert.New(t)
+	sender, b, _, ts, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
+
+	sv := &stubSigVerifier{}
+	v := NewValidator(sv, tm)
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, ts, gm, sm, tm, secret, cfg)
+	params, err := r.TicketParams(sender, big.NewRat(1, 1))
+	require.Nil(t, err)
+
+	// Test invalid signature
+	ticket := newTicket(sender, params, 0)
+	sv.SetVerifyResult(false)
+	sessionID, won, err := r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.Equal(sessionID, "")
+	assert.Equal(won, false)
+	assert.Equal(err.Error(), errInvalidTicketSignature.Error())
+	_, ok := err.(*FatalReceiveErr)
+	assert.False(ok)
 }
 
 func TestReceiveTicket_InvalidSender(t *testing.T) {
@@ -323,6 +358,8 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	assert.EqualError(err, fmt.Sprintf("recipientRand already revealed recipientRand=%v", recipientRand))
 	assert.Equal(sessionID, ticket.RecipientRandHash.Hex())
 	assert.True(won)
+	_, ok := err.(*FatalReceiveErr)
+	assert.False(ok)
 }
 
 func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
@@ -356,7 +393,8 @@ func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
 	if err != nil && !strings.Contains(err.Error(), "invalid ticket senderNonce") {
 		t.Errorf("expected invalid senderNonce (new nonce = highest seen nonce) error, got %v", err)
 	}
-
+	_, ok := err.(*FatalReceiveErr)
+	assert.False(t, ok)
 	// Replay senderNonce = 0 (new nonce < highest seen nonce)
 	_, _, err = r.ReceiveTicket(ticket0, sig, params.Seed)
 	if err == nil {
@@ -365,6 +403,8 @@ func TestReceiveTicket_InvalidSenderNonce(t *testing.T) {
 	if err != nil && !strings.Contains(err.Error(), "invalid ticket senderNonce") {
 		t.Errorf("expected invalid senderNonce (new nonce < highest seen nonce) error, got %v", err)
 	}
+	_, ok = err.(*FatalReceiveErr)
+	assert.False(t, ok)
 }
 
 func TestReceiveTicket_ValidNonWinningTicket_Concurrent(t *testing.T) {
@@ -418,6 +458,8 @@ func TestReceiveTicket_ValidTicket_Expired(t *testing.T) {
 	assert.Equal(sessionID, params.RecipientRandHash.Hex())
 	assert.True(won)
 	assert.EqualError(err, ErrTicketParamsExpired.Error())
+	_, ok := err.(*FatalReceiveErr)
+	assert.False(ok)
 }
 
 func TestRedeemWinningTickets_InvalidSessionID(t *testing.T) {

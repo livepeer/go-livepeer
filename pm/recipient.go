@@ -146,12 +146,15 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 
 	// If sender validation check fails, abort
 	if err := r.sm.ValidateSender(ticket.Sender); err != nil {
-		return "", false, err
+		return "", false, &FatalReceiveErr{err}
 	}
 
 	// If any of the basic ticket validity checks fail, abort
 	if err := r.val.ValidateTicket(r.addr, ticket, sig, recipientRand); err != nil {
-		return "", false, err
+		if err.Error() == errInvalidTicketSignature.Error() {
+			return "", false, err
+		}
+		return "", false, &FatalReceiveErr{err}
 	}
 
 	var sessionID string
@@ -444,4 +447,14 @@ func (r *recipient) redeemManager() {
 // EV Returns the required ticket EV for a recipient
 func (r *recipient) EV() *big.Rat {
 	return new(big.Rat).SetFrac(r.cfg.EV, big.NewInt(1))
+}
+
+type FatalReceiveErr struct {
+	error
+}
+
+func NewFatalReceiveErr(err error) *FatalReceiveErr {
+	return &FatalReceiveErr{
+		err,
+	}
 }

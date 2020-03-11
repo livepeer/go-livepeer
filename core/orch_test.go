@@ -955,12 +955,15 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 
 	manifestID := ManifestID("some manifest")
 
+	// Signature error, still loop through all tickets
+	// Should redeem second ticket
+	errInvalidTicketSignature := errors.New("invalid ticket signature")
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
-	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, errors.New("ReceiveTicket error")).Once()
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, errInvalidTicketSignature).Once()
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil).Once()
 
 	numTickets := 2
-	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil).Times(numTickets)
+	recipient.On("RedeemWinningTicket", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	var senderParams []*net.TicketSenderParams
 	for i := 0; i < numTickets; i++ {
@@ -974,8 +977,26 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 20)
 	assert := assert.New(t)
-	assert.EqualError(err, "ReceiveTicket error")
+	assert.EqualError(err, errInvalidTicketSignature.Error())
 	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 1)
+
+	// Does not loop through tickets if won==false and error is a fatal receive error
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, pm.NewFatalReceiveErr(errors.New("ReceiveTicket error"))).Once()
+	err = orch.ProcessPayment(*defaultPaymentWithTickets(t, senderParams), manifestID)
+	time.Sleep(time.Millisecond * 20)
+	_, ok := err.(*pm.FatalReceiveErr)
+	assert.True(ok)
+	// Still 1 call to RedeemWinningTicket
+	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 1)
+
+	// Redeem winning tickets if won==true and not a signature error (but err != nil)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, errors.New("ReceiveTicket error")).Once()
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil).Once()
+	err = orch.ProcessPayment(*defaultPaymentWithTickets(t, senderParams), manifestID)
+	time.Sleep(time.Millisecond * 20)
+	assert.EqualError(err, "ReceiveTicket error")
+	// 3 RedeemWinningTicket calls (1 + 2)
+	recipient.AssertNumberOfCalls(t, "RedeemWinningTicket", 3)
 }
 
 // Check that a payment error does NOT increase the credit
