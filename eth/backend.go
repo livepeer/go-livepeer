@@ -2,6 +2,8 @@ package eth
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 
@@ -41,20 +43,20 @@ type Backend interface {
 
 type backend struct {
 	*ethclient.Client
-	methods      map[string]string
+	abiMap       map[string]*abi.ABI
 	nonceManager *NonceManager
 	signer       types.Signer
 }
 
 func NewBackend(client *ethclient.Client, signer types.Signer) (Backend, error) {
-	methods, err := makeMethodsMap()
+	abiMap, err := makeABIMap()
 	if err != nil {
 		return nil, err
 	}
 
 	return &backend{
 		client,
-		methods,
+		abiMap,
 		NewNonceManager(client),
 		signer,
 	}, nil
@@ -68,10 +70,7 @@ func (b *backend) PendingNonceAt(ctx context.Context, account common.Address) (u
 }
 
 func (b *backend) SendTransaction(ctx context.Context, tx *types.Transaction) error {
-	err := b.Client.SendTransaction(ctx, tx)
-	if err != nil {
-		return err
-	}
+	sendErr := b.Client.SendTransaction(ctx, tx)
 
 	// update local nonce
 	msg, err := tx.AsMessage(b.signer)
@@ -83,20 +82,53 @@ func (b *backend) SendTransaction(ctx context.Context, tx *types.Transaction) er
 	b.nonceManager.Update(sender, tx.Nonce())
 	b.nonceManager.Unlock(sender)
 
-	data := tx.Data()
-	method, ok := b.methods[string(data[:4])]
-	if !ok {
-		method = "unknown"
-	}
-
+	txLog, err := b.newTxLog(tx)
 	if err != nil {
-		glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\".  \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, err, strings.Repeat("*", 75))
-		return err
+		txLog.method = "unknown"
 	}
 
-	glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\".  Hash: \"%v\". \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), method, tx.Hash().String(), strings.Repeat("*", 75))
+	if sendErr != nil {
+		glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\". Inputs: \"%v\"   \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, txLog.inputs, sendErr, strings.Repeat("*", 75))
+		return sendErr
+	}
+
+	glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\". Inputs: \"%v\"  Hash: \"%v\". \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, txLog.inputs, tx.Hash().String(), strings.Repeat("*", 75))
 
 	return nil
+}
+
+type txLog struct {
+	method string
+	inputs string
+}
+
+func (b *backend) newTxLog(tx *types.Transaction) (txLog, error) {
+	var txParamsString string
+	data := tx.Data()
+	if len(data) < 4 {
+		return txLog{}, errors.New("no method signature")
+	}
+	methodSig := data[:4]
+	abi, ok := b.abiMap[string(methodSig)]
+	if !ok {
+		return txLog{}, errors.New("unknown ABI")
+	}
+	method, err := abi.MethodById(methodSig)
+	if err != nil {
+		return txLog{}, err
+	}
+	txParams := make(map[string]interface{})
+	if err := decodeTxParams(b.abiMap[string(methodSig)], txParams, data); err != nil {
+		return txLog{}, err
+	}
+
+	for _, arg := range method.Inputs {
+		txParamsString += fmt.Sprintf("%v: %v  ", arg.Name, txParams[arg.Name])
+	}
+	return txLog{
+		method: method.Name,
+		inputs: strings.TrimSpace(txParamsString),
+	}, nil
 }
 
 func (b *backend) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
@@ -127,17 +159,18 @@ func (b *backend) retryRemoteCall(remoteCall func() ([]byte, error)) (out []byte
 	return out, err
 }
 
-func makeMethodsMap() (map[string]string, error) {
-	methods := make(map[string]string)
+func makeABIMap() (map[string]*abi.ABI, error) {
+	abiMap := make(map[string]*abi.ABI)
+
 	for _, ABI := range abis {
 		parsedAbi, err := abi.JSON(strings.NewReader(ABI))
 		if err != nil {
-			return map[string]string{}, err
+			return map[string]*abi.ABI{}, err
 		}
 		for _, m := range parsedAbi.Methods {
-			methods[string(m.ID())] = m.Name
+			abiMap[string(m.ID())] = &parsedAbi
 		}
 	}
 
-	return methods, nil
+	return abiMap, nil
 }
