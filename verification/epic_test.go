@@ -189,7 +189,7 @@ func TestEpic_Verify(t *testing.T) {
 	ec.Addr = ""
 	_, err = ec.Verify(params)
 	assert.NotNil(err)
-	assert.Equal(`Post : unsupported protocol scheme ""`, err.Error())
+	assert.Equal(`Post "": unsupported protocol scheme ""`, err.Error())
 
 	ec.Addr = ts.URL + "/nonexistent" // 404s
 	_, err = ec.Verify(params)
