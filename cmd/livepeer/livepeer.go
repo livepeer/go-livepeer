@@ -249,6 +249,7 @@ func main() {
 				}
 			}
 			n.Transcoder = core.NewLoadBalancingTranscoder(*nvidia, core.NewNvidiaTranscoder)
+			n.BackupTranscoder = core.NewLocalTranscoder(*datadir)
 		} else {
 			n.Transcoder = core.NewLocalTranscoder(*datadir)
 		}

@@ -508,17 +508,48 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 
 	//Do the transcoding
 	start := time.Now()
-	tData, err := transcoder.Transcode(string(md.ManifestID), url, md.Profiles)
-	if err != nil {
-		glog.Errorf("Error transcoding manifestID=%s segNo=%d segName=%s - %v", string(md.ManifestID), seg.SeqNo, seg.Name, err)
-		return terr(err)
+	runTranscode := func(t Transcoder) (*TranscodeData, error) {
+		tData, err := t.Transcode(string(md.ManifestID), url, md.Profiles)
+		if err != nil {
+			glog.Errorf("Error transcoding manifestID=%s segNo=%d segName=%s - %v", string(md.ManifestID), seg.SeqNo, seg.Name, err)
+			return nil, err
+		}
+
+		tSegments := tData.Segments
+		if len(tSegments) != len(md.Profiles) {
+			glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v manifestID=%s seqNo=%d", len(tSegments),
+				len(md.Profiles), string(md.ManifestID), seg.SeqNo)
+			return nil, fmt.Errorf("MismatchedSegments")
+		}
+
+		for i := range md.Profiles {
+			if tSegments[i].Data == nil || len(tSegments[i].Data) < 25 {
+				glog.Errorf("Cannot find transcoded segment for manifestID=%s seqNo=%d len=%d",
+					string(md.ManifestID), seg.SeqNo, len(tSegments[i].Data))
+				return nil, fmt.Errorf("ZeroSegments")
+			}
+		}
+
+		return tData, nil
 	}
 
-	tSegments := tData.Segments
-	if len(tSegments) != len(md.Profiles) {
-		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v manifestID=%s seqNo=%d", len(tSegments),
-			len(md.Profiles), string(md.ManifestID), seg.SeqNo)
-		return terr(fmt.Errorf("MismatchedSegments"))
+	tData, err := runTranscode(transcoder)
+	if err != nil {
+		// if err.Error() == "ZeroSegments" && n.BackupTranscoder != nil {
+		if true {
+			glog.Errorf("Attempting backup CPU transcode for manifestID=%s seqNo=%d",
+				string(md.ManifestID), seg.SeqNo)
+			tData, err = runTranscode(n.BackupTranscoder)
+			if err != nil {
+				glog.Errorf("Backup CPU transcode failed for manifestID=%s seqNo=%d",
+					string(md.ManifestID), seg.SeqNo)
+				return terr(err)
+			}
+			glog.Errorf("Backup CPU transcode succeeded for manifestID=%s seqNo=%d",
+				string(md.ManifestID), seg.SeqNo)
+		} else {
+			return terr(err)
+		}
 	}
 
 	took := time.Since(start)
@@ -529,14 +560,10 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 
 	// Prepare the result object
 	var tr TranscodeResult
+	tSegments := tData.Segments
 	segHashes := make([][]byte, len(tSegments))
 
 	for i := range md.Profiles {
-		if tSegments[i].Data == nil || len(tSegments[i].Data) < 25 {
-			glog.Errorf("Cannot find transcoded segment for manifestID=%s seqNo=%d len=%d",
-				string(md.ManifestID), seg.SeqNo, len(tSegments[i].Data))
-			return terr(fmt.Errorf("ZeroSegments"))
-		}
 		glog.V(common.DEBUG).Infof("Transcoded segment manifestID=%s seqNo=%d profile=%s len=%d",
 			string(md.ManifestID), seg.SeqNo, md.Profiles[i].Name, len(tSegments[i].Data))
 		hash := crypto.Keccak256(tSegments[i].Data)
