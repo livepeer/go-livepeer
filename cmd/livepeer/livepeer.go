@@ -254,6 +254,8 @@ func main() {
 			n.BackupTranscoder = n.TranscoderManager
 		} else {
 			n.Transcoder = core.NewLocalTranscoder(*datadir)
+			n.TranscoderManager = core.NewRemoteTranscoderManager()
+			n.BackupTranscoder = n.TranscoderManager
 		}
 	}
 
