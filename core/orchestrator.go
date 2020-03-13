@@ -487,7 +487,9 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	transcoder := n.Transcoder
 
 	var url string
-	_, isLocal := transcoder.(*LocalTranscoder)
+	// _, isLocalCPU := transcoder.(*LocalTranscoder)
+	// _, isNvidia := transcoder.(*NvidiaTranscoder)
+	isLocal := true
 	// Small optimization: serve from disk for local transcoding
 	if isLocal {
 		url = fname
