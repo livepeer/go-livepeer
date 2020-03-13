@@ -535,8 +535,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 
 	tData, err := runTranscode(transcoder)
 	if err != nil {
-		// if err.Error() == "ZeroSegments" && n.BackupTranscoder != nil {
-		if true {
+		if err.Error() == "ZeroSegments" && n.BackupTranscoder != nil {
 			glog.Errorf("Attempting backup CPU transcode for manifestID=%s seqNo=%d",
 				string(md.ManifestID), seg.SeqNo)
 			tData, err = runTranscode(n.BackupTranscoder)
