@@ -51,14 +51,17 @@ func StubBroadcastSessionsManager() *BroadcastSessionsManager {
 
 func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
 	sessMap := make(map[string]*BroadcastSession)
+	sd := &stubDiscovery{}
 	for _, sess := range sessList {
 		sessMap[sess.OrchestratorInfo.Transcoder] = sess
+		sd.infos = append(sd.infos, sess.OrchestratorInfo)
 	}
 
 	sel := &LIFOSelector{}
 	sel.Add(sessList)
 
 	return &BroadcastSessionsManager{
+		pool:     sd,
 		sel:      sel,
 		sessMap:  sessMap,
 		sessLock: &sync.Mutex{},
@@ -164,6 +167,7 @@ func TestStopSessionErrors(t *testing.T) {
 
 	// check error cases
 	errs := []string{
+		"Client.Timeout exceeded",
 		"Unable to read response body for segment 4 : unexpected EOF",
 		"Unable to submit segment 5 Post https://127.0.0.1:8936/segment: dial tcp 127.0.0.1:8936: getsockopt: connection refused",
 		core.ErrOrchBusy.Error(),
@@ -598,6 +602,50 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 	assert.Equal(tr.Info.PriceInfo.PixelsPerUnit, completedSessInfo.PriceInfo.PixelsPerUnit)
 	assert.Equal(tr.Info.PriceInfo.PricePerUnit, completedSessInfo.PriceInfo.PricePerUnit)
 	assert.Equal(tr.Info.TicketParams.ExpirationBlock, completedSessInfo.TicketParams.ExpirationBlock)
+}
+
+func TestTranscodeSegment_SuspendOrchestrator(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+
+	tr := &net.TranscodeResult{
+		Info: &net.OrchestratorInfo{
+			Transcoder:   ts.URL,
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
+			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
+		},
+		Result: &net.TranscodeResult_Error{
+			Error: "OrchestratorBusy",
+		},
+	}
+
+	buf, err := proto.Marshal(tr)
+	require.Nil(err)
+
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+	cxn := &rtmpConnection{
+		mid:         core.ManifestID("foo"),
+		nonce:       7,
+		pl:          &stubPlaylistManager{manifestID: core.ManifestID("foo")},
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsm,
+	}
+
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+
+	assert.EqualError(err, "OrchestratorBusy")
+	assert.Len(bsm.pool.(*stubDiscovery).infos, 0)
 }
 
 func TestTranscodeSegment_CompleteSession(t *testing.T) {

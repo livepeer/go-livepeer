@@ -1148,18 +1148,55 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 
 }
 
+func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
+
+	orchCb := func() error { return nil }
+	oldOrchInfo := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = oldOrchInfo }()
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+		err := orchCb()
+		return &net.OrchestratorInfo{
+			Transcoder: server.String(),
+		}, err
+	}
+
+	pool := NewOrchestratorPool(nil, addresses)
+
+	// suspend https://127.0.0.1:8938
+	pool.SuspendOrchestrator("https://127.0.0.1:8938")
+	require.True(pool.suspensions.isSuspended("https://127.0.0.1:8938"))
+
+	// don't include suspended orchestrators if enough orchestrators are available
+	res, err := pool.GetOrchestrators(2)
+	assert.Nil(err)
+	assert.Len(res, 2)
+	assert.NotEqual(res[0].GetTranscoder(), "https://127.0.0.1:8938")
+	assert.NotEqual(res[1].GetTranscoder(), "https://127.0.0.1:8938")
+
+	// if not enough orchestrators are available include a suspended orchestrator
+	require.True(pool.suspensions.isSuspended("https://127.0.0.1:8938"))
+	res, err = pool.GetOrchestrators(3)
+	assert.Nil(err)
+	assert.Len(res, 3)
+	// adding from the priorityqueue to the working set removes an orchestrator from the suspension list
+	assert.False(pool.suspensions.isSuspended("https://127.0.0.1:8938"))
+}
+
 func TestOrchestratorPool_ShuffleGetOrchestrators(t *testing.T) {
 	assert := assert.New(t)
 
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
 
-	ch := make(chan *url.URL)
+	ch := make(chan *url.URL, len(addresses))
 
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = oldOrchInfo }()
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
 		ch <- server
-		return nil, nil
+		return &net.OrchestratorInfo{Transcoder: server.String()}, nil
 	}
 
 	pool := NewOrchestratorPool(nil, addresses)

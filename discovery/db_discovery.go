@@ -35,6 +35,7 @@ type DBOrchestratorPoolCache struct {
 	ticketParamsValidator ticketParamsValidator
 	rm                    common.RoundsManager
 	bcast                 common.Broadcaster
+	suspensions           *suspensionList
 }
 
 func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager) (*DBOrchestratorPoolCache, error) {
@@ -48,6 +49,7 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 		ticketParamsValidator: node.Sender,
 		rm:                    rm,
 		bcast:                 core.NewBroadcaster(node),
+		suspensions:           newSuspensionList(),
 	}
 
 	if err := dbo.cacheTranscoderPool(); err != nil {
@@ -121,7 +123,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 	}
 
 	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred)
-
+	orchPool.suspensions = dbo.suspensions
 	orchInfos, err := orchPool.GetOrchestrators(numOrchestrators)
 	if err != nil || len(orchInfos) <= 0 {
 		return nil, err
@@ -330,4 +332,8 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 		Seed:              new(big.Int).SetBytes(params.Seed),
 		ExpirationBlock:   new(big.Int).SetBytes(params.ExpirationBlock),
 	}
+}
+
+func (dbo *DBOrchestratorPoolCache) SuspendOrchestrator(orch string) {
+	dbo.suspensions.suspend(orch)
 }

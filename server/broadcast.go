@@ -63,6 +63,7 @@ type BroadcastSessionsManager struct {
 	finished   bool // set at stream end
 
 	createSessions func() ([]*BroadcastSession, error)
+	pool           common.OrchestratorPool
 }
 
 func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
@@ -191,6 +192,7 @@ func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl cor
 		createSessions: func() ([]*BroadcastSession, error) { return selectOrchestrator(node, params, pl, numOrchs) },
 		sessLock:       &sync.Mutex{},
 		numOrchs:       numOrchs,
+		pool:           node.OrchestratorPool,
 	}
 	bsm.refreshSessions()
 	return bsm
@@ -376,6 +378,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 	res, err := SubmitSegment(sess, seg, nonce)
 	if err != nil || res == nil {
+		cxn.sessManager.suspendOrchestrator(sess.OrchestratorInfo, err)
 		cxn.sessManager.removeSession(sess)
 		if res == nil && err == nil {
 			return nil, err
@@ -508,7 +511,13 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	return segURLs, nil
 }
 
-var sessionErrStrings = []string{"dial tcp", "unexpected EOF", core.ErrOrchBusy.Error(), core.ErrOrchCap.Error()}
+func (bsm *BroadcastSessionsManager) suspendOrchestrator(orch *net.OrchestratorInfo, err error) {
+	if shouldStopSession(err) {
+		bsm.pool.SuspendOrchestrator(orch.GetTranscoder())
+	}
+}
+
+var sessionErrStrings = []string{"Client.Timeout", "dial tcp", "unexpected EOF", core.ErrOrchBusy.Error(), core.ErrOrchCap.Error()}
 
 var sessionErrRegex = common.GenErrRegex(sessionErrStrings)
 

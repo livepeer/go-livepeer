@@ -91,6 +91,19 @@ func (d *stubDiscovery) GetOrchestrators(num int) ([]*net.OrchestratorInfo, erro
 	return d.infos, err
 }
 
+func (d *stubDiscovery) SuspendOrchestrator(orch string) {
+	for i, info := range d.infos {
+		if info.GetTranscoder() != orch {
+			continue
+		}
+		old := d.infos
+		d.infos = old[:i]
+		if i < len(old)-1 {
+			d.infos = append(d.infos[i+1:])
+		}
+	}
+}
+
 func (d *stubDiscovery) Size() int {
 	return len(d.infos)
 }

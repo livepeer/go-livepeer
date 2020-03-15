@@ -17,6 +17,7 @@ type OrchestratorPool interface {
 	GetURLs() []*url.URL
 	GetOrchestrators(int) ([]*net.OrchestratorInfo, error)
 	Size() int
+	SuspendOrchestrator(orch string)
 }
 
 type OrchestratorStore interface {

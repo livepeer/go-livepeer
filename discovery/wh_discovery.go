@@ -29,13 +29,15 @@ type webhookPool struct {
 	lastRequest  time.Time
 	mu           *sync.RWMutex
 	bcast        common.Broadcaster
+	suspensions  *suspensionList
 }
 
 func NewWebhookPool(bcast common.Broadcaster, callback *url.URL) *webhookPool {
 	p := &webhookPool{
-		callback: callback,
-		mu:       &sync.RWMutex{},
-		bcast:    bcast,
+		callback:    callback,
+		mu:          &sync.RWMutex{},
+		bcast:       bcast,
+		suspensions: newSuspensionList(),
 	}
 	go p.getURLs()
 	return p
@@ -71,7 +73,7 @@ func (w *webhookPool) getURLs() ([]*url.URL, error) {
 	}
 
 	pool := NewOrchestratorPool(w.bcast, addrs)
-
+	pool.suspensions = w.suspensions
 	w.mu.Lock()
 	w.responseHash = hash
 	w.pool = pool
@@ -138,4 +140,8 @@ func deserializeWebhookJSON(body []byte) ([]*url.URL, error) {
 	}
 
 	return urls, nil
+}
+
+func (w *webhookPool) SuspendOrchestrator(orch string) {
+	w.suspensions.suspend(orch)
 }
