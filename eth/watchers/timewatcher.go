@@ -122,6 +122,16 @@ func (tw *TimeWatcher) Watch() error {
 		return fmt.Errorf("error fetching initial transcoderPoolSize err=%v", err)
 	}
 
+	lastSeenBlock, err := tw.watcher.GetLatestBlock()
+	if err != nil {
+		return fmt.Errorf("error fetching last seen block err=%v", err)
+	}
+	blockNum := big.NewInt(0)
+	if lastSeenBlock != nil {
+		blockNum = lastSeenBlock.Number
+	}
+	tw.setLastSeenBlock(blockNum)
+
 	events := make(chan []*blockwatch.Event, 10)
 	sub := tw.watcher.Subscribe(events)
 	defer sub.Unsubscribe()
