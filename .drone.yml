@@ -6,22 +6,34 @@ platform:
   arch: amd64
   os: linux
 
-services:
+steps:
+- name: wait-for-images
+  image: ya7ya/wait-for-docker:latest
+  commands:
+  - -h livepeer/go-livepeer -p $DRONE_TARGET_BRANCH -t 5 -r 5
 - name: broadcaster
   group: test
   detach: true
   image: livepeer/go-livepeer:master
+  depends_on:
+  - wait-for-images
   commands:
   - /usr/bin/livepeer -broadcaster -network offchain -maxSessions=200 -rtmpAddr=localhost:1935 -cliAddr=localhost:7935 -httpAddr=localhost:8935 -orchAddr=localhost:8936 -monitor=true -transcodingOptions=P240p30fps16x9,P360p30fps16x9,P576p30fps16x9,P720p30fps16x9 -v=9
 - name: orchestrator
   group: test
   detach: true
   image: livepeer/go-livepeer:master
+  depends_on:
+  - wait-for-images
   environment:
-    nvidia : 0,1,2,3,4,5,6,7
+    NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
+    NVIDIA : 0,1,2,3,4,5,6,7
+    DRONE_RESOURCE_LIMIT_GPU: "8"
   commands: 
-  - /usr/bin/livepeer -v=9 -orchestrator -network offchain -transcoder -monitor=true -cliAddr=localhost:7936 -httpAddr=localhost:8936 -serviceAddr=localhost:8936 -maxSessions=80
-steps:
+  - /usr/bin/livepeer -v=9 -orchestrator -network offchain -transcoder -monitor=true -cliAddr=localhost:7936 -httpAddr=localhost:8936 -serviceAddr=localhost:8936 -maxSessions=80 -nvidia=0,1,2,3,4,5,6
+  resources:
+    limits:
+      nvidia.com/gpu: 8
 - name: build
   image: golang:1.13
   environment:
@@ -36,7 +48,11 @@ steps:
 - name: stream-tester
   group: test
   image: livepeer/streamtester:latest
+  depends_on:
+  - wait-for-images
+  - orchestrator
+  - broadcaster
   environment:
     GODEBUG: http2client=0
   commands:
-    - /root/streamtester -no-bar -latency  -host 'localhost' -rtmp 1935 -media 8935 -profiles '1' -v '15' -file=/drone/src/official_test_source_2s_keys_24pfs_3min.mp4
+    - /root/streamtester -no-bar -latency  -host 'localhost' -rtmp 1935 -media 8935 -profiles '4' -v '15' -file=/drone/src/official_test_source_2s_keys_24pfs_3min.mp4
