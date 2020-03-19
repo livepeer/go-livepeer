@@ -32,11 +32,11 @@ steps:
   - echo 'hi'
   - pwd
   - cd /drone/src
-  - wget https://storage.googleapis.com/lp_testharness_assets/bbb_sunflower_1080p_30fps_normal_t02.mp4
+  - wget https://storage.googleapis.com/lp_testharness_assets/official_test_source_2s_keys_24pfs_3min.mp4
 - name: stream-tester
   group: test
   image: livepeer/streamtester:latest
   environment:
     GODEBUG: http2client=0
   commands:
-    - /root/streamtester -no-bar -latency  -host 'localhost' -rtmp 1935 -media 8935 -profiles '1' -gaming -v '15' -file=/drone/src/bbb_sunflower_1080p_30fps_normal_t02.mp4
+    - /root/streamtester -no-bar -latency  -host 'localhost' -rtmp 1935 -media 8935 -profiles '1' -v '15' -file=/drone/src/official_test_source_2s_keys_24pfs_3min.mp4
