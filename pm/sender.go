@@ -108,10 +108,18 @@ func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, er
 		return nil, err
 	}
 
-	expirationParams := s.expirationParams()
+	ticketParams := &session.ticketParams
+
+	expirationParams := ticketParams.ExpirationParams
+	// Ensure backwards compatbility
+	// If no expirationParams are included by O
+	// B sets the values based upon its last seen round
+	if expirationParams == nil {
+		expirationParams = s.expirationParams()
+	}
 
 	batch := &TicketBatch{
-		TicketParams:           &session.ticketParams,
+		TicketParams:           ticketParams,
 		TicketExpirationParams: expirationParams,
 		Sender:                 s.signer.Account().Address,
 	}

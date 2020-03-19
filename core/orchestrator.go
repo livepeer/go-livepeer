@@ -247,6 +247,10 @@ func (orch *orchestrator) TicketParams(sender ethcommon.Address) (*net.TicketPar
 		RecipientRandHash: params.RecipientRandHash.Bytes(),
 		Seed:              params.Seed.Bytes(),
 		ExpirationBlock:   params.ExpirationBlock.Bytes(),
+		ExpirationParams: &net.TicketExpirationParams{
+			CreationRound:          params.ExpirationParams.CreationRound,
+			CreationRoundBlockHash: params.ExpirationParams.CreationRoundBlockHash.Bytes(),
+		},
 	}, nil
 }
 

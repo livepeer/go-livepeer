@@ -1165,6 +1165,8 @@ func TestTicketParams(t *testing.T) {
 	n.priceInfo = big.NewRat(1, 1)
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
+	round := int64(5)
+	blkHash := pm.RandHash()
 	expectedParams := &pm.TicketParams{
 		Recipient:         pm.RandAddress(),
 		FaceValue:         big.NewInt(1234),
@@ -1172,6 +1174,10 @@ func TestTicketParams(t *testing.T) {
 		Seed:              big.NewInt(3456),
 		RecipientRandHash: pm.RandHash(),
 		ExpirationBlock:   big.NewInt(5000),
+		ExpirationParams: &pm.TicketExpirationParams{
+			CreationRound:          round,
+			CreationRoundBlockHash: blkHash,
+		},
 	}
 
 	multiplier := big.NewRat(1, 1)
@@ -1191,6 +1197,8 @@ func TestTicketParams(t *testing.T) {
 	assert.Equal(expectedParams.WinProb.Bytes(), actualParams.WinProb)
 	assert.Equal(expectedParams.RecipientRandHash.Bytes(), actualParams.RecipientRandHash)
 	assert.Equal(expectedParams.Seed.Bytes(), actualParams.Seed)
+	assert.Equal(round, actualParams.GetExpirationParams().GetCreationRound())
+	assert.Equal(blkHash.Bytes(), actualParams.GetExpirationParams().GetCreationRoundBlockHash())
 
 	expErr := errors.New("Recipient TicketParams Error")
 	recipient.On("TxCostMultiplier", mock.Anything).Return(multiplier, nil).Once()

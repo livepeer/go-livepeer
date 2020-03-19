@@ -231,6 +231,9 @@ message TicketParams {
 
   // Block number at which the current set of advertised TicketParams is no longer valid
   bytes expiration_block = 6;
+
+  // Expected ticket expiration params
+  TicketExpirationParams expiration_params = 7;
 }
 
 // Sender Params (nonces and signatures) 

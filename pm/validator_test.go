@@ -6,7 +6,6 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestValidateTicket(t *testing.T) {
@@ -116,51 +115,9 @@ func TestValidateTicket(t *testing.T) {
 		t.Errorf("expected invalid signature error, got %v", err)
 	}
 
-	assert := assert.New(t)
-
-	// Test LastInitializedRound error
-	// Set signature verification to return true
-	sv.SetVerifyResult(true)
-
-	tm.round = big.NewInt(7)
-
-	creationRound := big.NewInt(5)
-	ticket = &Ticket{
-		Recipient:         recipient,
-		Sender:            sender,
-		FaceValue:         big.NewInt(0),
-		WinProb:           big.NewInt(0),
-		SenderNonce:       0,
-		RecipientRandHash: recipientRandHash,
-		CreationRound:     creationRound.Int64(),
-	}
-
-	err = v.ValidateTicket(recipient, ticket, sig, recipientRand)
-	assert.EqualError(err, errInvalidCreationRound.Error())
-
-	// Test BlockHashForRound error
-	tm.round = creationRound
-
-	// Test invalid creation round block hash
-	tm.blkHash = [32]byte{5}
-
-	creationRoundBlockHash := [32]byte{9}
-	ticket = &Ticket{
-		Recipient:              recipient,
-		Sender:                 sender,
-		FaceValue:              big.NewInt(0),
-		WinProb:                big.NewInt(0),
-		SenderNonce:            0,
-		RecipientRandHash:      recipientRandHash,
-		CreationRound:          5,
-		CreationRoundBlockHash: ethcommon.BytesToHash(creationRoundBlockHash[:]),
-	}
-
-	err = v.ValidateTicket(recipient, ticket, sig, recipientRand)
-	assert.EqualError(err, errInvalidCreationRoundBlockHash.Error())
-
 	// Test valid ticket
-	tm.blkHash = creationRoundBlockHash
+	sv.SetVerifyResult(true)
+	tm.blkHash = [32]byte{9}
 
 	if err := v.ValidateTicket(recipient, ticket, sig, recipientRand); err != nil {
 		t.Errorf("expected valid ticket, got error %v", err)

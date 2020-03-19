@@ -298,5 +298,9 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 		RecipientRandHash: ethcommon.BytesToHash(params.RecipientRandHash),
 		Seed:              new(big.Int).SetBytes(params.Seed),
 		ExpirationBlock:   new(big.Int).SetBytes(params.ExpirationBlock),
+		ExpirationParams: &pm.TicketExpirationParams{
+			CreationRound:          params.ExpirationParams.GetCreationRound(),
+			CreationRoundBlockHash: ethcommon.BytesToHash(params.ExpirationParams.GetCreationRoundBlockHash()),
+		},
 	}
 }
