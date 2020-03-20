@@ -289,3 +289,36 @@ func TestAudioCopy(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(o, res.Segments[0].Data)
 }
+
+func TestTranscoder_Formats(t *testing.T) {
+	// Helps ensure the necessary ffmpeg configure options are enabled
+	assert := assert.New(t)
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+
+	in := &ffmpeg.TranscodeOptionsIn{Fname: "test.ts"}
+	for k, v := range ffmpeg.ExtensionFormats {
+		assert.NotEqual(ffmpeg.FormatNone, v) // sanity check
+
+		p := ffmpeg.P144p30fps16x9 // make a copy bc we mutate the profile
+		p.Format = v
+
+		// use LPMS api directly so we can transcode ; faster
+		out := []ffmpeg.TranscodeOptions{{
+			Oname:        dir + "/tmp" + k,
+			Profile:      p,
+			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+		}}
+		_, err := ffmpeg.Transcode3(in, out)
+		assert.Nil(err)
+
+		// check output is reasonable
+		ofile, err := ioutil.ReadFile(out[0].Oname)
+		assert.Nil(err)
+		assert.Greater(len(ofile), 500000) // large enough for "valid output"
+		// Assume that since the file exists, the actual format is correct
+	}
+	// sanity check the base format wasn't overwritten (has happened before!)
+	assert.Equal(ffmpeg.FormatNone, ffmpeg.P144p30fps16x9.Format)
+}
