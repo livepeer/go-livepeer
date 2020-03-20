@@ -32,7 +32,12 @@ func StubJobId() int64 {
 	return int64(1234)
 }
 
-var videoProfiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
+var videoProfiles = func() []ffmpeg.VideoProfile {
+	p := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
+	p[0].Format = ffmpeg.FormatMPEGTS
+	p[1].Format = ffmpeg.FormatMPEGTS
+	return p
+}()
 
 func TestTranscode(t *testing.T) {
 	//Set up the node
