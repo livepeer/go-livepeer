@@ -67,6 +67,8 @@ type stubOrchestrator struct {
 	ticketParams *net.TicketParams
 	priceInfo    *net.PriceInfo
 	serviceURI   string
+	res          *core.TranscodeResult
+	offchain     bool
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
@@ -82,6 +84,9 @@ func (r *stubOrchestrator) CurrentBlock() *big.Int {
 }
 
 func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
+	if r.offchain {
+		return nil, nil
+	}
 	if r.signErr != nil {
 		return nil, r.signErr
 	}
@@ -103,6 +108,9 @@ func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
 }
 
 func (r *stubOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
+	if r.offchain {
+		return true
+	}
 	return crypto.VerifySig(addr, ethcrypto.Keccak256([]byte(msg)), sig)
 }
 
@@ -110,7 +118,7 @@ func (r *stubOrchestrator) Address() ethcommon.Address {
 	return ethcrypto.PubkeyToAddress(r.priv.PublicKey)
 }
 func (r *stubOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
-	return nil, nil
+	return r.res, nil
 }
 func (r *stubOrchestrator) StreamIDs(jobID string) ([]core.StreamID, error) {
 	return []core.StreamID{}, nil
@@ -129,7 +137,7 @@ func (r *stubOrchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, 
 }
 
 func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
-	return false
+	return true
 }
 
 func (r *stubOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {

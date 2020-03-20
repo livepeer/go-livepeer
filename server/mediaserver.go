@@ -68,6 +68,7 @@ type streamParameters struct {
 	rtmpKey    string
 	profiles   []ffmpeg.VideoProfile
 	resolution string
+	format     ffmpeg.Format
 }
 
 func (s *streamParameters) StreamID() string {
@@ -250,9 +251,10 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			key = common.RandomIDGenerator(StreamKeyBytes)
 		}
 		return &streamParameters{
-			mid:      mid,
-			rtmpKey:  key,
-			profiles: profiles,
+			mid:     mid,
+			rtmpKey: key,
+			// HTTP push mutates `profiles` so make a copy of it
+			profiles: append([]ffmpeg.VideoProfile(nil), profiles...),
 		}
 	}
 }
@@ -398,6 +400,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		Name:       "source",
 		Resolution: params.resolution,
 		Bitrate:    "4000k", // Fix this
+		Format:     params.format,
 	}
 	hlsStrmID := core.MakeStreamID(mid, &vProfile)
 	s.connectionLock.RLock()
@@ -587,11 +590,14 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	r.Body.Close()
 	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
 
-	if ".ts" != path.Ext(r.URL.Path) {
+	// Determine the input format the request is claiming to have
+	ext := path.Ext(r.URL.Path)
+	format := common.ProfileExtensionFormat(ext)
+	if ffmpeg.FormatNone == format {
 		// ffmpeg sends us a m3u8 as well, so ignore
 		// Alternatively, reject m3u8s explicitly and take any other type
 		// TODO also look at use content-type
-		http.Error(w, fmt.Sprintf(`ignoring file extension: %s`, path.Ext(r.URL.Path)), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf(`ignoring file extension: %s`, ext), http.StatusBadRequest)
 		return
 	}
 	glog.Infof("Got push request at url=%s ua=%s addr=%s len=%d", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body))
@@ -619,6 +625,13 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		st := stream.NewBasicRTMPVideoStream(appData)
 		params := streamParams(st)
 		params.resolution = r.Header.Get("Content-Resolution")
+		params.format = format
+		// Set output formats if not explicitly specified
+		for i, v := range params.profiles {
+			if ffmpeg.FormatNone == v.Format {
+				params.profiles[i].Format = format
+			}
+		}
 
 		cxn, err = s.registerConnection(st)
 		if err != nil {
@@ -646,7 +659,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fname := path.Base(r.URL.Path)
-	seq, err := strconv.ParseUint(strings.TrimSuffix(fname, path.Ext(fname)), 10, 64)
+	seq, err := strconv.ParseUint(strings.TrimSuffix(fname, ext), 10, 64)
 	if err != nil {
 		seq = 0
 	}
@@ -700,12 +713,24 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	mw := multipart.NewWriter(w)
 	for i, url := range urls {
 		mw.SetBoundary(boundary)
-		typ, ext, length := "video/MP2T", "ts", len(renditionData[i])
+		var typ, ext string
+		length := len(renditionData[i])
 		if length == 0 {
-			typ, ext, length = "application/vnd+livepeer.uri", "txt", len(url)
+			typ, ext, length = "application/vnd+livepeer.uri", ".txt", len(url)
+		} else {
+			format := cxn.params.profiles[i].Format
+			ext, err = common.ProfileFormatExtension(format)
+			if err != nil {
+				glog.Error("Unknown extension for format: ", err)
+				break
+			}
+			typ, err = common.ProfileFormatMimeType(format)
+			if err != nil {
+				glog.Error("Unknown mime type for format: ", err)
+			}
 		}
 		profile := cxn.params.profiles[i].Name
-		fname := fmt.Sprintf(`"%s_%d.%s"`, profile, seq, ext)
+		fname := fmt.Sprintf(`"%s_%d%s"`, profile, seq, ext)
 		hdrs := textproto.MIMEHeader{
 			"Content-Type":        {typ},
 			"Content-Length":      {strconv.Itoa(length)},

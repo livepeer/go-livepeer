@@ -99,6 +99,26 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 	profiles[0].Resolution = ""
 	fullProfiles, err = FFmpegProfiletoNetProfile(profiles)
 	assert.Equal(ffmpeg.ErrTranscoderRes, err)
+	profiles[0].Resolution = "123x456"
+
+	// Unset format should be mpegts by default
+	assert.Equal(profiles[0].Format, ffmpeg.FormatNone)
+	fullProfiles, err = FFmpegProfiletoNetProfile(profiles)
+	assert.Nil(err)
+	assert.Equal(fullProfiles[0].Format, net.VideoProfile_MPEGTS)
+
+	profiles[0].Format = ffmpeg.FormatMP4
+	profiles[1].Format = ffmpeg.FormatMPEGTS
+	fullProfiles, err = FFmpegProfiletoNetProfile(profiles)
+	assert.Nil(err)
+	assert.Equal(fullProfiles[0].Format, net.VideoProfile_MP4)
+	assert.Equal(fullProfiles[1].Format, net.VideoProfile_MPEGTS)
+
+	// Invalid format should return error
+	profiles[1].Format = -1
+	fullProfiles, err = FFmpegProfiletoNetProfile(profiles)
+	assert.Equal(ErrFormatProto, err)
+	assert.Nil(fullProfiles)
 }
 
 func TestProfilesToHex(t *testing.T) {
@@ -121,6 +141,50 @@ func TestProfilesToHex(t *testing.T) {
 	compare([]ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9, ffmpeg.P240p30fps16x9})
 }
 
+func TestVideoProfile_FormatMimeType(t *testing.T) {
+	inp := []ffmpeg.Format{ffmpeg.FormatNone, ffmpeg.FormatMPEGTS, ffmpeg.FormatMP4}
+	exp := []string{"video/mp2t", "video/mp2t", "video/mp4"}
+	for i, v := range inp {
+		m, err := ProfileFormatMimeType(v)
+		m = strings.ToLower(m)
+		if m != exp[i] || err != nil {
+			t.Error("Mismatched format; expected ", exp[i], " got ", m)
+		}
+	}
+	if _, err := ProfileFormatMimeType(-1); err != ErrFormatExt {
+		t.Error("Did not get expected error")
+	}
+
+	// test error with unknown mime type (eg, could be missing from system)
+	ffmpeg.FormatExtensions[-1] = "invalid"
+	if _, ok := ffmpeg.FormatExtensions[-1]; !ok {
+		t.Error("Sanity check failed; did not add extension")
+	}
+	if _, err := ProfileFormatMimeType(-1); err != ErrFormatMime {
+		t.Error("Did not get expected error")
+	}
+	delete(ffmpeg.FormatExtensions, -1)
+	if _, ok := ffmpeg.FormatExtensions[-1]; ok {
+		t.Error("Sanity check failed; did not clean up extension")
+	}
+}
+
+func TestVideoProfile_FormatExtension(t *testing.T) {
+	inp := []ffmpeg.Format{ffmpeg.FormatNone, ffmpeg.FormatMPEGTS, ffmpeg.FormatMP4}
+	exp := []string{".ts", ".ts", ".mp4"}
+	if len(inp) != len(ffmpeg.FormatExtensions) {
+		t.Error("Format lengths did not match; missing a new format?")
+	}
+	for i, v := range inp {
+		m, err := ProfileFormatExtension(v)
+		if m != exp[i] || err != nil {
+			t.Error("Mismatched format; expected ", exp[i], " got ", m)
+		}
+	}
+	if _, err := ProfileFormatExtension(-1); err != ErrFormatExt {
+		t.Error("Did not get expected error")
+	}
+}
 func TestPriceToFixed(t *testing.T) {
 	assert := assert.New(t)
 

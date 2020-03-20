@@ -131,15 +131,15 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 }
 
 func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifySegment) {
-	profiles := []ffmpeg.VideoProfile{}
+	var err error
+	var profiles []ffmpeg.VideoProfile
 	if len(notify.FullProfiles) > 0 {
-		profiles = makeFfmpegVideoProfiles(notify.FullProfiles)
+		profiles, err = makeFfmpegVideoProfiles(notify.FullProfiles)
 	} else if len(notify.Profiles) > 0 {
-		prof, err := common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
-		profiles = prof
-		if err != nil {
-			glog.Error("Unable to deserialize profiles ", err)
-		}
+		profiles, err = common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
+	}
+	if err != nil {
+		glog.Error("Unable to deserialize profiles ", err)
 	}
 
 	glog.Infof("Transcoding taskId=%d url=%s", notify.TaskId, notify.Url)
