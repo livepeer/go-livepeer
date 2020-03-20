@@ -19,12 +19,11 @@ func TestLocalTranscoder(t *testing.T) {
 	tc := NewLocalTranscoder(tmp)
 	ffmpeg.InitFFmpeg()
 
-	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-	res, err := tc.Transcode("", "test.ts", profiles)
+	res, err := tc.Transcode("", "test.ts", videoProfiles)
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
-	if len(res.Segments) != len(profiles) {
+	if len(res.Segments) != len(videoProfiles) {
 		t.Error("Mismatched results")
 	}
 	if Over1Pct(len(res.Segments[0].Data), 164876) {
@@ -232,7 +231,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles)
 	assert.Equal(1, len(opts))
-	assert.Equal("foo/out_bar.ts", opts[0].Oname)
+	assert.Equal("foo/out_bar.tempfile", opts[0].Oname)
 	assert.Equal(ffmpeg.Software, opts[0].Accel)
 	assert.Equal(ffmpeg.P144p30fps16x9, opts[0].Profile)
 	assert.Equal("copy", opts[0].AudioEncoder.Name)
@@ -243,7 +242,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	assert.Equal(2, len(opts))
 
 	for i, p := range profiles {
-		assert.Equal("foo/out_bar.ts", opts[i].Oname)
+		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
 		assert.Equal(ffmpeg.Software, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
 		assert.Equal("copy", opts[i].AudioEncoder.Name)
@@ -254,7 +253,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	assert.Equal(2, len(opts))
 
 	for i, p := range profiles {
-		assert.Equal("foo/out_bar.ts", opts[i].Oname)
+		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
 		assert.Equal(ffmpeg.Nvidia, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
 		assert.Equal("copy", opts[i].AudioEncoder.Name)
@@ -281,8 +280,7 @@ func TestAudioCopy(t *testing.T) {
 	_, err := ffmpeg.Transcode3(in, out)
 	assert.Nil(err)
 
-	profs := []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9} // dummy
-	res, err := tc.Transcode("", audioSample, profs)
+	res, err := tc.Transcode("", audioSample, videoProfiles)
 	assert.Nil(err)
 
 	o, err := ioutil.ReadFile(audioSample)
