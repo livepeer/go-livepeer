@@ -143,6 +143,13 @@ message VideoProfile {
 
   // FPS of VideoProfile
   uint32 fps = 20;
+
+  // Desired output format
+  enum Format {
+    MPEGTS     = 0;
+    MP4        = 1;
+  }
+  Format format = 21;
 }
 
 // Individual transcoded segment data.

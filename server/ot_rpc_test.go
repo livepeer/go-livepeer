@@ -129,6 +129,7 @@ func TestRemoteTranscoder_FullProfiles(t *testing.T) {
 			Bitrate:    "765k",
 			Framerate:  uint(876),
 			Resolution: "456x987",
+			Format:     ffmpeg.FormatMP4,
 		},
 	}
 
@@ -152,8 +153,15 @@ func TestRemoteTranscoder_FullProfiles(t *testing.T) {
 	assert.Equal(1, tr.called)
 	profiles[0].Bitrate = "432000"
 	profiles[1].Bitrate = "765000"
+	profiles[0].Format = ffmpeg.FormatMPEGTS
 	assert.Equal(profiles, tr.profiles)
 	assert.Equal("linktomanifest", tr.fname)
+
+	// Test deserialization failure from invalid full profile format
+	notify.FullProfiles[1].Format = -1
+	runTranscode(node, "", httpc, notify)
+	assert.Equal(2, tr.called)
+	assert.Nil(nil, tr.profiles)
 }
 
 func TestRemoteTranscoderError(t *testing.T) {

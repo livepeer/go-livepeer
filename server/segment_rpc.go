@@ -37,6 +37,7 @@ const pixelEstimateMultiplier = 1.02
 
 var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
+var errFormat = errors.New("unrecognized profile output format")
 
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
 var httpClient = &http.Client{
@@ -133,13 +134,20 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		Name:  uri,
 	}
 
-	res, err := orch.TranscodeSeg(segData, &hlsStream) // ANGIE - NEED TO CHANGE ALL JOBIDS IN TRANSCODING LOOP INTO STRINGS
+	res, err := orch.TranscodeSeg(segData, &hlsStream)
 
 	// Upload to OS and construct segment result set
 	var segments []*net.TranscodedSegmentData
 	var pixels int64
 	for i := 0; err == nil && i < len(res.TranscodeData.Segments); i++ {
-		name := fmt.Sprintf("%s/%d.ts", segData.Profiles[i].Name, segData.Seq) // ANGIE - NEED TO EDIT OUT JOB PROFILES
+		var ext string
+		ext, err = common.ProfileFormatExtension(segData.Profiles[i].Format)
+		if err != nil {
+			glog.Errorf("Unknown format extension manifestID=%s seqNo=%d err=%s", segData.ManifestID, segData.Seq, err)
+			break
+		}
+		name := fmt.Sprintf("%s/%d%s", segData.Profiles[i].Name, segData.Seq, ext)
+		// The use of := here is probably a bug?!?
 		uri, err := res.OS.SaveData(name, res.TranscodeData.Segments[i].Data)
 		if err != nil {
 			glog.Error("Could not upload segment ", segData.Seq)
@@ -203,22 +211,31 @@ func getPaymentSender(payment net.Payment) ethcommon.Address {
 	return ethcommon.BytesToAddress(payment.Sender)
 }
 
-func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) []ffmpeg.VideoProfile {
+func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoProfile, error) {
 	profiles := make([]ffmpeg.VideoProfile, 0, len(protoProfiles))
 	for _, profile := range protoProfiles {
 		name := profile.Name
 		if name == "" {
 			name = "net_" + common.DefaultProfileName(int(profile.Width), int(profile.Height), int(profile.Bitrate))
 		}
+		format := ffmpeg.FormatMPEGTS
+		switch profile.Format {
+		case net.VideoProfile_MPEGTS:
+		case net.VideoProfile_MP4:
+			format = ffmpeg.FormatMP4
+		default:
+			return nil, errFormat
+		}
 		prof := ffmpeg.VideoProfile{
 			Name:       name,
 			Bitrate:    fmt.Sprint(profile.Bitrate),
 			Framerate:  uint(profile.Fps),
 			Resolution: fmt.Sprintf("%dx%d", profile.Width, profile.Height),
+			Format:     format,
 		}
 		profiles = append(profiles, prof)
 	}
-	return profiles
+	return profiles, nil
 }
 
 func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, error) {
@@ -236,13 +253,13 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 
 	profiles := []ffmpeg.VideoProfile{}
 	if len(segData.FullProfiles) > 0 {
-		profiles = makeFfmpegVideoProfiles(segData.FullProfiles)
+		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles)
 	} else if len(segData.Profiles) > 0 {
 		profiles, err = common.BytesToVideoProfile(segData.Profiles)
-		if err != nil {
-			glog.Error("Unable to deserialize profiles ", err)
-			return nil, err
-		}
+	}
+	if err != nil {
+		glog.Error("Unable to deserialize profiles ", err)
+		return nil, err
 	}
 
 	mid := core.ManifestID(segData.ManifestId)
@@ -336,6 +353,8 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if uploaded {
 		req.Header.Set("Content-Type", "application/vnd+livepeer.uri")
 	} else {
+		// Technically incorrect for MP4 uploads but doesn't really matter
+		// TODO should we set this to some generic "Livepeer video" type?
 		req.Header.Set("Content-Type", "video/MP2T")
 	}
 

@@ -102,10 +102,14 @@ func newStubSegmentVerifier(v *stubVerifier) *verification.SegmentVerifier {
 	return verification.NewSegmentVerifier(&verification.Policy{Retries: v.retries, Verifier: v})
 }
 
-type stubOSSession struct{}
+type stubOSSession struct {
+	external bool
+	saved    []string
+}
 
 func (s *stubOSSession) SaveData(name string, data []byte) (string, error) {
-	return "", nil
+	s.saved = append(s.saved, name)
+	return "saved_" + name, nil
 }
 func (s *stubOSSession) EndSession() {
 }
@@ -113,7 +117,7 @@ func (s *stubOSSession) GetInfo() *net.OSInfo {
 	return nil
 }
 func (s *stubOSSession) IsExternal() bool {
-	return false
+	return s.external
 }
 
 type stubPlaylistManager struct {
@@ -1257,6 +1261,86 @@ func TestVerifier_SegDownload(t *testing.T) {
 	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
 	assert.Nil(err)
 	assert.True(downloaded[url])
+}
+
+func TestProcessSegment_VideoFormat(t *testing.T) {
+	// Test format from saving "transcoder" data into broadcaster/transcoder OS.
+	// For each rendition, check extension based on format (none, mp4, mpegts).
+	assert := assert.New(t)
+	bcastOS := &stubOSSession{}
+	orchOS := &stubOSSession{}
+	sess := genBcastSess(t, "", bcastOS, "")
+	sess.OrchestratorOS = orchOS
+	sess.Profiles = append([]ffmpeg.VideoProfile{}, sess.Profiles...)
+	sourceProfile := ffmpeg.P240p30fps16x9 // make copy bc we mutate the preset
+	cxn := &rtmpConnection{
+		pl:          &stubPlaylistManager{os: bcastOS},
+		profile:     &sourceProfile,
+		sessManager: bsmWithSessList([]*BroadcastSession{sess}),
+	}
+	seg := &stream.HLSSegment{}
+
+	oldDownloadSeg := downloadSeg
+	defer func() { downloadSeg = oldDownloadSeg }()
+	downloadSeg = func(url string) ([]byte, error) { return []byte(url), nil }
+
+	// processSegment will also call transcodeSegment; also check that behavior
+	_, err := processSegment(cxn, seg)
+
+	assert.Nil(err)
+	assert.Equal(ffmpeg.FormatNone, cxn.profile.Format)
+	for _, p := range sess.Profiles {
+		assert.Equal(ffmpeg.FormatNone, p.Format)
+	}
+	assert.Equal([]string{"P240p30fps16x9/0.ts"}, orchOS.saved)
+	assert.Equal([]string{"P240p30fps16x9/0.ts", "P144p30fps16x9/0.ts"}, bcastOS.saved)
+	assert.Equal("saved_P240p30fps16x9/0.ts", seg.Name)
+
+	// Check MP4. Reset OS for simplicity
+	bcastOS = &stubOSSession{}
+	orchOS = &stubOSSession{}
+	sess.BroadcasterOS = bcastOS
+	sess.OrchestratorOS = orchOS
+	cxn.pl = &stubPlaylistManager{os: bcastOS}
+	cxn.profile.Format = ffmpeg.FormatMP4
+	for i, _ := range sess.Profiles {
+		sess.Profiles[i].Format = ffmpeg.FormatMP4
+	}
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
+
+	_, err = processSegment(cxn, seg)
+
+	assert.Nil(err)
+	for _, p := range sess.Profiles {
+		assert.Equal(ffmpeg.FormatMP4, p.Format)
+	}
+	assert.Equal(ffmpeg.FormatMP4, cxn.profile.Format)
+	assert.Equal([]string{"P240p30fps16x9/0.mp4"}, orchOS.saved)
+	assert.Equal([]string{"P240p30fps16x9/0.mp4", "P144p30fps16x9/0.mp4"}, bcastOS.saved)
+	assert.Equal("saved_P240p30fps16x9/0.mp4", seg.Name)
+
+	// Check mpegts. Reset OS for simplicity
+	bcastOS = &stubOSSession{}
+	orchOS = &stubOSSession{}
+	sess.BroadcasterOS = bcastOS
+	sess.OrchestratorOS = orchOS
+	cxn.pl = &stubPlaylistManager{os: bcastOS}
+	cxn.profile.Format = ffmpeg.FormatMPEGTS
+	for i, _ := range sess.Profiles {
+		sess.Profiles[i].Format = ffmpeg.FormatMPEGTS
+	}
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
+
+	_, err = processSegment(cxn, seg)
+
+	assert.Nil(err)
+	for _, p := range sess.Profiles {
+		assert.Equal(ffmpeg.FormatMPEGTS, p.Format)
+	}
+	assert.Equal(ffmpeg.FormatMPEGTS, cxn.profile.Format)
+	assert.Equal([]string{"P240p30fps16x9/0.ts"}, orchOS.saved)
+	assert.Equal([]string{"P240p30fps16x9/0.ts", "P144p30fps16x9/0.ts"}, bcastOS.saved)
+	assert.Equal("saved_P240p30fps16x9/0.ts", seg.Name)
 }
 
 func genBcastSess(t *testing.T, url string, os drivers.OSSession, mid core.ManifestID) *BroadcastSession {

@@ -272,7 +272,12 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	}
 
 	seg.Name = "" // hijack seg.Name to convey the uploaded URI
-	name := fmt.Sprintf("%s/%d.ts", vProfile.Name, seg.SeqNo)
+	ext, err := common.ProfileFormatExtension(vProfile.Format)
+	if err != nil {
+		glog.Errorf("Unknown format extension manifestID=%s seqNo=%d err=%s", mid, seg.SeqNo, err)
+		return nil, err
+	}
+	name := fmt.Sprintf("%s/%d%s", vProfile.Name, seg.SeqNo, ext)
 	uri, err := cpl.GetOSSession().SaveData(name, seg.Data)
 	if err != nil {
 		glog.Errorf("Error saving segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
@@ -436,7 +441,12 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}
 
 		if bos != nil && !drivers.IsOwnExternal(url) {
-			name := fmt.Sprintf("%s/%d.ts", sess.Profiles[i].Name, seg.SeqNo)
+			ext, err := common.ProfileFormatExtension(sess.Profiles[i].Format)
+			if err != nil {
+				errFunc(monitor.SegmentTranscodeErrorSaveData, url, err)
+				return
+			}
+			name := fmt.Sprintf("%s/%d%s", sess.Profiles[i].Name, seg.SeqNo, ext)
 			newURL, err := bos.SaveData(name, data)
 			if err != nil {
 				switch err.Error() {
