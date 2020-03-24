@@ -361,6 +361,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	if sess.Sender != nil {
 		if err := sess.Sender.ValidateTicketParams(pmTicketParams(sess.OrchestratorInfo.TicketParams)); err != nil {
 			if err != pm.ErrTicketParamsExpired {
+				glog.Error("Invalid ticket params err=", err)
 				cxn.sessManager.removeSession(sess)
 				return nil, err
 			}
@@ -378,7 +379,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	if err != nil || res == nil {
 		cxn.sessManager.removeSession(sess)
 		if res == nil && err == nil {
-			return nil, err
+			err = errors.New("empty response")
 		}
 		return nil, err
 	}
