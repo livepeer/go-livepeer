@@ -22,7 +22,7 @@ This creates an `RTMP` endpoint on `127.0.0.1:1935` and an `HLS` media server on
 
 You can serve `RTMP` content into the endpoint using the following command:
 ```
-ffmpeg -re -f lavfi -i testsrc=size=1920x1080:rate=30,format=yuv420p -f lavfi -i sine -threads 1 -c:v libx264 -b:v 4000000 -preset ultrafast -x264-params keyint=30 -strict -2 -c:a aac -f flv rtmp://127.0.0.1:1935/test_signal
+ffmpeg -re -f lavfi -i testsrc=size=1000x1000:rate=30,format=yuv420p -f lavfi -i sine -threads 1 -c:v libx264 -b:v 4000000 -preset ultrafast -x264-params keyint=30 -strict -2 -c:a aac -f flv rtmp://127.0.0.1:1935/test_signal
 ```
 You can query the `HLS` content coming from the media server using:
 ```
@@ -32,7 +32,7 @@ If you receive the following message, your basic `livepeer` node is running:
 ```
 #EXTM3U
 #EXT-X-VERSION:3
-#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=4000000,RESOLUTION=1920x1080
+#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=4000000,RESOLUTION=1000x1000
 test_signal/source.m3u8
 ```
 
