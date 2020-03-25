@@ -92,19 +92,33 @@ into the Livepeer network. Upon ingest, HTTP stream is pushed to the segmenter
 prior to transcoding. The stream can be pushed via a PUT or POST HTTP request to the
 `/live/` endpoint. HTTP request timeout is 8 seconds.
 
-The body of the request should be the binary data of the MPEG TS segment.
+The body of the request should be the binary data of the video segment.
 
 Two HTTP headers should be provided:
   * `Content-Resolution` - in the format `widthxheight`, for example: `1920x1080`.
   * `Content-Duration` - duration of the segment, in milliseconds. Should be an integer.
+    If Content-Duration is missing, 2000ms is assumed by default.
 
 The upload URL should have this structure:
+
+```
 http://broadcasters:8935/live/movie/12.ts
+```
 
 Where `movie` is name of the stream and `12` is the sequence number of the segment.
 
-The HLS manifest will be available at 
+The HLS manifest will be available at:
+
+```
 http://broadcasters:8935/stream/movie.m3u8
+```
+
+MPEG TS and MP4 are supported as formats. To receive results as MP4, upload the
+segment to a path ending with ".mp4" rather than ".ts", such as:
+
+```
+http://broadcasters:8935/live/movie/14.mp4
+```
 
 Possble statuses returned by HTTP request:
 - 500 Internal Server Error - in case there was error during segment's transcode
@@ -125,20 +139,24 @@ Each part will also contain these headers:
 Sample URLs and requests:
 
 ```
-# Push URL
+# Push URL, MPEG TS
 http://localhost:8935/live/movie/12.ts
 
 # HLS Playback URL
 http://localhost:8935/stream/movie.m3u8
 
-# Curl request
+# Curl request, MPEG TS
 curl -X PUT -H "Accept: multipart/mixed" -H "Content-Duration: 2000" -H "Content-Resolution: 1920x1080"  --data-binary "@bbb0.ts" http://localhost:8935/live/movie/0.ts
 
-# FFMPEG request
+# Curl request, MP4
+curl -X PUT -H "Accept: multipart/mixed" -H "Content-Duration: 2000" -H "Content-Resolution: 1920x1080"  --data-binary "@bbb1.ts" http://localhost:8935/live/movie/1.mp4
+
+# HTTP push via FFmpeg
+# (ffmpeg produces 2s segments by default; Content-Duration header will be missing but go-livepeer will presume 2s)
 ffmpeg -re -i movie.mp4 -c:a copy -c:v copy -f hls http://localhost:8935/live/movie/
 ```
 
-Exapmle responses:
+Example responses:
 
 ```
 HTTP/1.1 200 OK
@@ -166,7 +184,25 @@ Transfer-Encoding: chunked
 Content-Disposition: attachment; filename="P240p30fps16x9_10.ts"
 Content-Length: 105656
 Content-Type: video/MP2T
-Rendition-Name: P240p30fps16x9^M
+Rendition-Name: P240p30fps16x9
+
+Binary data here
+
+--94eaf473f7957940e066--
+
+```
+
+```
+HTTP/1.1 200 OK
+Content-Type: multipart/mixed; boundary=94eaf473f7957940e066
+Date: Fri, 31 Jan 2020 00:04:40 GMT
+Transfer-Encoding: chunked
+
+--94eaf473f7957940e066
+Content-Disposition: attachment; filename="P240p30fps16x9_10.mp4"
+Content-Length: 105656
+Content-Type: video/mp4
+Rendition-Name: P240p30fps16x9
 
 Binary data here
 
