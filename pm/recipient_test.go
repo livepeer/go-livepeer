@@ -31,7 +31,7 @@ func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *
 	gm := &stubGasPriceMonitor{gasPrice: big.NewInt(100)}
 	sm := newStubSenderMonitor()
 	sm.maxFloat = big.NewInt(10000000000)
-	tm := &stubTimeManager{lastSeenBlock: big.NewInt(1), round: big.NewInt(1)}
+	tm := &stubTimeManager{lastSeenBlock: big.NewInt(1), round: big.NewInt(1), blkHash: RandHash()}
 	cfg := TicketParamsConfig{
 		EV:               big.NewInt(5),
 		RedeemGas:        10000,
@@ -61,15 +61,16 @@ func ticketParamsOrFatal(t *testing.T, r Recipient, sender ethcommon.Address) *T
 
 func newTicket(sender ethcommon.Address, params *TicketParams, senderNonce uint32) *Ticket {
 	return &Ticket{
-		Recipient:             params.Recipient,
-		Sender:                sender,
-		FaceValue:             params.FaceValue,
-		WinProb:               params.WinProb,
-		SenderNonce:           senderNonce,
-		RecipientRandHash:     params.RecipientRandHash,
-		ParamsExpirationBlock: params.ExpirationBlock,
-		PricePerPixel:         params.PricePerPixel,
-		CreationRound:         1,
+		Recipient:              params.Recipient,
+		Sender:                 sender,
+		FaceValue:              params.FaceValue,
+		WinProb:                params.WinProb,
+		SenderNonce:            senderNonce,
+		RecipientRandHash:      params.RecipientRandHash,
+		ParamsExpirationBlock:  params.ExpirationBlock,
+		PricePerPixel:          params.PricePerPixel,
+		CreationRound:          params.ExpirationParams.CreationRound,
+		CreationRoundBlockHash: params.ExpirationParams.CreationRoundBlockHash,
 	}
 }
 
@@ -81,6 +82,7 @@ func genRecipientRand(sender ethcommon.Address, secret [32]byte, params *TicketP
 	msg = append(msg, params.ExpirationBlock.Bytes()...)
 	msg = append(msg, params.PricePerPixel.Num().Bytes()...)
 	msg = append(msg, params.PricePerPixel.Denom().Bytes()...)
+	msg = append(msg, params.ExpirationParams.AuxData()...)
 	h.Write(msg)
 	return new(big.Int).SetBytes(h.Sum(nil))
 }
@@ -133,6 +135,26 @@ func TestReceiveTicket_InvalidRecipientRand(t *testing.T) {
 	// Test invalid PricePerPixel
 	ticket = newTicket(sender, params, 0)
 	ticket.PricePerPixel = big.NewRat(0, 1) // Using invalid PricePerPixel for generating recipientRand
+	sessionID, won, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.Equal(sessionID, "")
+	assert.Equal(won, false)
+	assert.Equal(err.Error(), errInvalidTicketRecipientRand.Error())
+	_, ok = err.(*FatalReceiveErr)
+	assert.True(ok)
+
+	// Test invalid creation round
+	ticket = newTicket(sender, params, 0)
+	ticket.CreationRound = 999
+	sessionID, won, err = r.ReceiveTicket(ticket, sig, params.Seed)
+	assert.Equal(sessionID, "")
+	assert.Equal(won, false)
+	assert.Equal(err.Error(), errInvalidTicketRecipientRand.Error())
+	_, ok = err.(*FatalReceiveErr)
+	assert.True(ok)
+
+	// Test invalid creation round blockhash
+	ticket = newTicket(sender, params, 0)
+	ticket.CreationRoundBlockHash = RandHash()
 	sessionID, won, err = r.ReceiveTicket(ticket, sig, params.Seed)
 	assert.Equal(sessionID, "")
 	assert.Equal(won, false)
@@ -966,6 +988,9 @@ func TestTicketParams(t *testing.T) {
 		t.Errorf("expected recipientRandHash %x got %x", recipientRandHash, params1.RecipientRandHash)
 	}
 
+	assert.Equal(params1.ExpirationParams.CreationRound, tm.round.Int64())
+	assert.Equal(params1.ExpirationParams.CreationRoundBlockHash.Bytes(), tm.blkHash[:])
+
 	// Test correct params returned and different seed + recipientRandHash
 	params2, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(err)
@@ -1030,7 +1055,6 @@ func TestTicketParams(t *testing.T) {
 
 	// Test insufficient sender reserve error
 	sm.maxFloat = new(big.Int).Sub(cfg.EV, big.NewInt(1))
-
 	_, err = r.TicketParams(sender, big.NewRat(1, 1))
 	assert.EqualError(err, errInsufficientSenderReserve.Error())
 

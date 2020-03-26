@@ -1,7 +1,6 @@
 package pm
 
 import (
-	"bytes"
 	"math/big"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -61,10 +60,6 @@ func (v *validator) ValidateTicket(recipient ethcommon.Address, ticket *Ticket, 
 		return errInvalidTicketSignature
 	}
 
-	if err := v.validateCreationRound(ticket.CreationRound, ticket.CreationRoundBlockHash); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -77,20 +72,4 @@ func (v *validator) IsWinningTicket(ticket *Ticket, sig []byte, recipientRand *b
 	res := new(big.Int).SetBytes(crypto.Keccak256(sig, recipientRandBytes))
 
 	return res.Cmp(ticket.WinProb) < 0
-}
-
-func (v *validator) validateCreationRound(creationRound int64, creationRoundBlockHash ethcommon.Hash) error {
-	round := v.tm.LastInitializedRound()
-	blkHash := v.tm.LastInitializedBlockHash()
-	// Check that creationRound matches last initialized round
-	if big.NewInt(creationRound).Cmp(round) != 0 {
-		return errInvalidCreationRound
-	}
-
-	// Check that creationRoundBlockHash is valid for creationRound
-	if !bytes.Equal(creationRoundBlockHash.Bytes(), blkHash[:]) {
-		return errInvalidCreationRoundBlockHash
-	}
-
-	return nil
 }
