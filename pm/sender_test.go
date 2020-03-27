@@ -164,7 +164,7 @@ func TestSender_ValidateSender(t *testing.T) {
 	err = s.validateSender(info)
 	assert.EqualError(err, "no sender deposit")
 	_, ok = err.(ErrSenderValidation)
-	assert.False(ok)
+	assert.True(ok)
 }
 
 func TestCreateTicketBatch_NonExistantSession_ReturnsError(t *testing.T) {
