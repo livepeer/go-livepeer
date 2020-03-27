@@ -395,6 +395,7 @@ func TestResolutionWithoutContentResolutionHeader(t *testing.T) {
 	resp := w.Result()
 	defer resp.Body.Close()
 
+	assert.Len(server.rtmpConnections, 1)
 	for _, cxn := range server.rtmpConnections {
 		assert.Equal(cxn.profile.Resolution, defaultRes)
 	}
@@ -416,6 +417,7 @@ func TestResolutionWithContentResolutionHeader(t *testing.T) {
 	resp := w.Result()
 	defer resp.Body.Close()
 
+	assert.Len(server.rtmpConnections, 1)
 	for _, cxn := range server.rtmpConnections {
 		assert.Equal(resolution, cxn.profile.Resolution)
 	}
