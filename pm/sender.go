@@ -79,15 +79,18 @@ func (s *sender) EV(sessionID string) (*big.Rat, error) {
 	return ticketEV(session.ticketParams.FaceValue, session.ticketParams.WinProb), nil
 }
 
-func (s *sender) validateSender() error {
-	info, err := s.senderManager.GetSenderInfo(s.signer.Account().Address)
-	if err != nil {
-		return ErrSenderValidation{fmt.Errorf("unable to validate sender: could not get sender info: %v", err)}
-	}
-
+func (s *sender) validateSender(info *SenderInfo) error {
 	maxWithdrawRound := new(big.Int).Add(s.timeManager.LastInitializedRound(), big.NewInt(1))
 	if info.WithdrawRound.Int64() != 0 && info.WithdrawRound.Cmp(maxWithdrawRound) != 1 {
 		return ErrSenderValidation{fmt.Errorf("unable to validate sender: deposit and reserve is set to unlock soon")}
+	}
+
+	if info.Reserve.FundsRemaining.Cmp(big.NewInt(0)) == 0 {
+		return ErrSenderValidation{errors.New("no sender reserve")}
+	}
+
+	if info.Deposit.Cmp(big.NewInt(0)) == 0 {
+		return ErrSenderValidation{errors.New("no sender deposit")}
 	}
 
 	return nil
@@ -97,10 +100,6 @@ func (s *sender) validateSender() error {
 func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, error) {
 	session, err := s.loadSession(sessionID)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := s.validateSender(); err != nil {
 		return nil, err
 	}
 
@@ -146,15 +145,20 @@ func (s *sender) ValidateTicketParams(ticketParams *TicketParams) error {
 
 // validateTicketParams checks if ticket params are acceptable for a specific number of tickets
 func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int) error {
+	info, err := s.senderManager.GetSenderInfo(s.signer.Account().Address)
+	if err != nil {
+		return err
+	}
+
+	// validate sender
+	if err := s.validateSender(info); err != nil {
+		return err
+	}
+
 	ev := ticketEV(ticketParams.FaceValue, ticketParams.WinProb)
 	totalEV := ev.Mul(ev, new(big.Rat).SetInt64(int64(numTickets)))
 	if totalEV.Cmp(s.maxEV) > 0 {
 		return fmt.Errorf("total ticket EV %v for %v tickets > max total ticket EV %v", totalEV.FloatString(5), numTickets, s.maxEV.FloatString(5))
-	}
-
-	info, err := s.senderManager.GetSenderInfo(s.signer.Account().Address)
-	if err != nil {
-		return err
 	}
 
 	maxFaceValue := new(big.Int).Div(info.Deposit, big.NewInt(int64(s.depositMultiplier)))

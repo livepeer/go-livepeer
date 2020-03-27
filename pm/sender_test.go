@@ -93,6 +93,7 @@ func TestSenderEV(t *testing.T) {
 
 func TestSender_ValidateSender(t *testing.T) {
 	assert := assert.New(t)
+	require := require.New(t)
 	account := accounts.Account{
 		Address: RandAddress(),
 	}
@@ -103,6 +104,7 @@ func TestSender_ValidateSender(t *testing.T) {
 	sm := newStubSenderManager()
 	sm.info[account.Address] = &SenderInfo{
 		Deposit:       big.NewInt(100000),
+		Reserve:       &ReserveInfo{FundsRemaining: big.NewInt(1000)},
 		WithdrawRound: big.NewInt(0),
 	}
 	s := &sender{
@@ -112,37 +114,57 @@ func TestSender_ValidateSender(t *testing.T) {
 		maxEV:             big.NewRat(100, 1),
 		depositMultiplier: 2,
 	}
-	// GetSenderInfo error
-	sm.err = errors.New("GetSenderInfo error")
-	err := s.validateSender()
-	_, ok := err.(ErrSenderValidation)
-	assert.True(ok)
-	assert.EqualError(err, "unable to validate sender: could not get sender info: GetSenderInfo error")
-	sm.err = nil
 
 	// Sender's (withdraw round + 1 = current round)
 	sm.info[account.Address].WithdrawRound = big.NewInt(4)
-	err = s.validateSender()
-	_, ok = err.(ErrSenderValidation)
+	info, err := s.senderManager.GetSenderInfo(s.signer.Account().Address)
+	require.Nil(err)
+	err = s.validateSender(info)
+	_, ok := err.(ErrSenderValidation)
 	assert.True(ok)
 	assert.EqualError(err, "unable to validate sender: deposit and reserve is set to unlock soon")
 
 	// withdrawround + 1 < current round
 	sm.info[account.Address].WithdrawRound = big.NewInt(2)
-	err = s.validateSender()
+	info, err = s.senderManager.GetSenderInfo(s.signer.Account().Address)
+	require.Nil(err)
+	err = s.validateSender(info)
 	assert.EqualError(err, "unable to validate sender: deposit and reserve is set to unlock soon")
 	_, ok = err.(ErrSenderValidation)
 	assert.True(ok)
 
 	// Not unlocked
 	sm.info[account.Address].WithdrawRound = big.NewInt(0)
-	err = s.validateSender()
+	info, err = s.senderManager.GetSenderInfo(s.signer.Account().Address)
+	require.Nil(err)
+	err = s.validateSender(info)
 	assert.NoError(err)
 
 	// Unlocked but (withdrawRound + 1 > current round)
 	sm.info[account.Address].WithdrawRound = big.NewInt(100)
-	err = s.validateSender()
+	info, err = s.senderManager.GetSenderInfo(s.signer.Account().Address)
+	require.Nil(err)
+	err = s.validateSender(info)
 	assert.NoError(err)
+
+	// No reserve
+	sm.info[account.Address].Reserve.FundsRemaining = big.NewInt(0)
+	info, err = s.senderManager.GetSenderInfo(s.signer.Account().Address)
+	require.Nil(err)
+	err = s.validateSender(info)
+	assert.EqualError(err, "no sender reserve")
+	_, ok = err.(ErrSenderValidation)
+	assert.True(ok)
+	sm.info[account.Address].Reserve.FundsRemaining = big.NewInt(100)
+
+	// No deposit
+	sm.info[account.Address].Deposit = big.NewInt(0)
+	info, err = s.senderManager.GetSenderInfo(s.signer.Account().Address)
+	require.Nil(err)
+	err = s.validateSender(info)
+	assert.EqualError(err, "no sender deposit")
+	_, ok = err.(ErrSenderValidation)
+	assert.True(ok)
 }
 
 func TestCreateTicketBatch_NonExistantSession_ReturnsError(t *testing.T) {
@@ -159,7 +181,7 @@ func TestCreateTicketBatch_GetSenderInfoError_ReturnsError(t *testing.T) {
 
 	sessionID := sender.StartSession(defaultTicketParams(t, RandAddress()))
 	_, err := sender.CreateTicketBatch(sessionID, 1)
-	assert.EqualError(t, err, "unable to validate sender: could not get sender info: GetSenderInfo error")
+	assert.EqualError(t, err, "GetSenderInfo error")
 }
 
 func TestCreateTicketBatch_EVTooHigh_ReturnsError(t *testing.T) {
@@ -189,31 +211,34 @@ func TestCreateTicketBatch_EVTooHigh_ReturnsError(t *testing.T) {
 }
 
 func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
+	assert := assert.New(t)
 	// Test single ticket faceValue too high
 	sender := defaultSender(t)
 	senderAddr := sender.signer.Account().Address
 	sm := sender.senderManager.(*stubSenderManager)
-	sm.info[senderAddr] = &SenderInfo{
-		Deposit:       big.NewInt(0),
-		WithdrawRound: big.NewInt(0),
-	}
+	sm.info[senderAddr].Deposit = big.NewInt(0)
+	sm.info[senderAddr].WithdrawRound = big.NewInt(0)
 
 	ticketParams := defaultTicketParams(t, RandAddress())
 	ticketParams.FaceValue = big.NewInt(1111)
 	sessionID := sender.StartSession(ticketParams)
-	expErrStr := maxFaceValueErrStr(ticketParams.FaceValue, big.NewInt(0))
 	_, err := sender.CreateTicketBatch(sessionID, 1)
-	assert.EqualError(t, err, expErrStr)
+	assert.EqualError(err, "no sender deposit")
+
+	sm.info[senderAddr].Deposit = big.NewInt(1)
+	expErrStr := maxFaceValueErrStr(ticketParams.FaceValue, big.NewInt(0))
+	_, err = sender.CreateTicketBatch(sessionID, 1)
+	assert.EqualError(err, expErrStr)
 
 	sm.info[senderAddr].Deposit = big.NewInt(2224)
 
 	// Check that faceValue is acceptable for a single ticket
 	_, err = sender.CreateTicketBatch(sessionID, 1)
-	assert.Nil(t, err)
+	assert.Nil(err)
 
 	// Check that faceValue is acceptable for multiple tickets
 	_, err = sender.CreateTicketBatch(sessionID, 2)
-	assert.Nil(t, err)
+	assert.Nil(err)
 }
 
 func TestCreateTicketBatch_UsesSessionParamsInBatch(t *testing.T) {
@@ -401,17 +426,14 @@ func TestValidateTicketParams_FaceValueTooHigh_ReturnsError(t *testing.T) {
 	sender := defaultSender(t)
 	senderAddr := sender.signer.Account().Address
 	sm := sender.senderManager.(*stubSenderManager)
-	sm.info[senderAddr] = &SenderInfo{
-		Deposit: big.NewInt(0),
-	}
+	sm.info[senderAddr].Deposit = big.NewInt(0)
 
 	ticketParams := &TicketParams{
 		FaceValue: big.NewInt(1111),
 		WinProb:   big.NewInt(2222),
 	}
-	expErrStr := maxFaceValueErrStr(ticketParams.FaceValue, big.NewInt(0))
 	err := sender.ValidateTicketParams(ticketParams)
-	assert.EqualError(err, expErrStr)
+	assert.EqualError(err, "no sender deposit")
 
 	// Test when deposit / depositMultiplier < faceValue
 	sm.info[senderAddr].Deposit = big.NewInt(300)
@@ -420,7 +442,7 @@ func TestValidateTicketParams_FaceValueTooHigh_ReturnsError(t *testing.T) {
 	maxFaceValue := new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
 
 	ticketParams.FaceValue = new(big.Int).Add(maxFaceValue, big.NewInt(1))
-	expErrStr = maxFaceValueErrStr(ticketParams.FaceValue, maxFaceValue)
+	expErrStr := maxFaceValueErrStr(ticketParams.FaceValue, maxFaceValue)
 	err = sender.ValidateTicketParams(ticketParams)
 	assert.EqualError(err, expErrStr)
 }
@@ -429,9 +451,7 @@ func TestValidateTicketParams_ExpiredParams_ReturnsError(t *testing.T) {
 	sender := defaultSender(t)
 	senderAddr := sender.signer.Account().Address
 	sm := sender.senderManager.(*stubSenderManager)
-	sm.info[senderAddr] = &SenderInfo{
-		Deposit: big.NewInt(300),
-	}
+	sm.info[senderAddr].Deposit = big.NewInt(300)
 	sender.maxEV = big.NewRat(100, 1)
 	sender.depositMultiplier = 2
 
@@ -469,9 +489,7 @@ func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
 	sender := defaultSender(t)
 	senderAddr := sender.signer.Account().Address
 	sm := sender.senderManager.(*stubSenderManager)
-	sm.info[senderAddr] = &SenderInfo{
-		Deposit: big.NewInt(300),
-	}
+	sm.info[senderAddr].Deposit = big.NewInt(300)
 	sender.maxEV = big.NewRat(100, 1)
 	sender.depositMultiplier = 2
 	maxFaceValue := new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
@@ -531,6 +549,7 @@ func defaultSender(t *testing.T) *sender {
 	sm := newStubSenderManager()
 	sm.info[account.Address] = &SenderInfo{
 		Deposit:       big.NewInt(100000),
+		Reserve:       &ReserveInfo{FundsRemaining: big.NewInt(10)},
 		WithdrawRound: big.NewInt(0),
 	}
 	s := NewSender(am, tm, sm, big.NewRat(100, 1), 2)
