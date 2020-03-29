@@ -2,7 +2,7 @@ package core
 
 import (
 	"context"
-	ogErrors "errors"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -16,7 +16,6 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
-	"github.com/pkg/errors"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
@@ -331,8 +330,8 @@ func NewOrchestrator(n *LivepeerNode, rm common.RoundsManager) *orchestrator {
 
 // LivepeerNode transcode methods
 
-var ErrOrchBusy = ogErrors.New("OrchestratorBusy")
-var ErrOrchCap = ogErrors.New("OrchestratorCapped")
+var ErrOrchBusy = errors.New("OrchestratorBusy")
+var ErrOrchCap = errors.New("OrchestratorCapped")
 
 type TranscodeResult struct {
 	Err           error
