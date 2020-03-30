@@ -53,7 +53,8 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 	errCh := make(chan error, len(o.uris))
 	getOrchInfo := func(uri *url.URL) {
 		info, err := serverGetOrchInfo(ctx, o.bcast, uri)
-		if err == nil && (o.pred == nil || o.pred(info)) {
+		if err == nil && (o.pred == nil || o.pred(info)) &&
+			info != nil && info.Version >= server.NetworkProtocolVersion {
 			infoCh <- info
 			return
 		}

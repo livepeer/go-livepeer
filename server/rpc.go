@@ -29,6 +29,7 @@ import (
 
 const GRPCConnectTimeout = 3 * time.Second
 const GRPCTimeout = 8 * time.Second
+const NetworkProtocolVersion = 1
 
 type Orchestrator interface {
 	ServiceURI() *url.URL
@@ -264,6 +265,7 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 	}
 
 	tr := net.OrchestratorInfo{
+		Version:      NetworkProtocolVersion,
 		Transcoder:   serviceURI,
 		TicketParams: params,
 		PriceInfo:    priceInfo,

@@ -97,6 +97,9 @@ message OrchestratorInfo {
   // Price Info containing the price per pixel to transcode
   PriceInfo price_info = 3;
 
+  // Networking protocol version. Used to determine node compatibility.
+  int32 version = 4;
+
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
 }

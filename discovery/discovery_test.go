@@ -62,7 +62,7 @@ func TestDeadLock(t *testing.T) {
 			first = false
 		}
 		mu.Unlock()
-		return &net.OrchestratorInfo{Transcoder: "transcoderfromtestserver"}, nil
+		return &net.OrchestratorInfo{Transcoder: "transcoderfromtestserver", Version: server.NetworkProtocolVersion}, nil
 	}
 	addresses := []string{}
 	for i := 0; i < 50; i++ {
@@ -95,6 +95,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
+			Version:    server.NetworkProtocolVersion,
 			Transcoder: "transcoderfromtestserver",
 			PriceInfo: &net.PriceInfo{
 				PricePerUnit:  5,
@@ -607,6 +608,7 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
+			Version:    server.NetworkProtocolVersion,
 			Transcoder: expTranscoder,
 			PriceInfo:  expPriceInfo,
 		}, nil
@@ -683,6 +685,7 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.T) {
 	// Test setup
 	goodTranscoder := &net.OrchestratorInfo{
+		Version:    server.NetworkProtocolVersion,
 		Transcoder: "goodPriceTranscoder",
 		PriceInfo: &net.PriceInfo{
 			PricePerUnit:  1,
@@ -690,6 +693,7 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 		},
 	}
 	badTranscoder := &net.OrchestratorInfo{
+		Version:    server.NetworkProtocolVersion,
 		Transcoder: "badPriceTranscoder",
 		PriceInfo: &net.PriceInfo{
 			PricePerUnit:  999,
@@ -801,6 +805,7 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		return &net.OrchestratorInfo{
+			Version:      server.NetworkProtocolVersion,
 			Transcoder:   "transcoder",
 			TicketParams: &net.TicketParams{},
 			PriceInfo: &net.PriceInfo{
@@ -880,6 +885,7 @@ func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
+			Version:    server.NetworkProtocolVersion,
 			Transcoder: expTranscoder,
 			PriceInfo:  expPriceInfo,
 		}, nil
@@ -980,7 +986,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
 	serverGetOrchInfo = func(c context.Context, b common.Broadcaster, s *url.URL) (*net.OrchestratorInfo, error) {
 		defer wg.Done()
-		return &net.OrchestratorInfo{Transcoder: "transcoder"}, nil
+		return &net.OrchestratorInfo{Version: server.NetworkProtocolVersion, Transcoder: "transcoder"}, nil
 	}
 
 	// assert created webhook pool is correct length
@@ -1132,10 +1138,10 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 	orchCb := func() error { return nil }
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, srv *url.URL) (*net.OrchestratorInfo, error) {
 		defer wg.Done()
 		err := orchCb()
-		return &net.OrchestratorInfo{}, err
+		return &net.OrchestratorInfo{Version: server.NetworkProtocolVersion}, err
 	}
 
 	pool := NewOrchestratorPool(nil, addresses)
@@ -1194,9 +1200,9 @@ func TestOrchestratorPool_ShuffleGetOrchestrators(t *testing.T) {
 
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
-		ch <- server
-		return nil, nil
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, srv *url.URL) (*net.OrchestratorInfo, error) {
+		ch <- srv
+		return &net.OrchestratorInfo{Version: server.NetworkProtocolVersion}, nil
 	}
 
 	pool := NewOrchestratorPool(nil, addresses)
@@ -1254,9 +1260,9 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	ch := make(chan struct{})
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, srv *url.URL) (*net.OrchestratorInfo, error) {
 		ch <- struct{}{} // this will block if necessary to simulate a timeout
-		return &net.OrchestratorInfo{}, nil
+		return &net.OrchestratorInfo{Version: server.NetworkProtocolVersion}, nil
 	}
 
 	oldTimeout := getOrchestratorsTimeoutLoop
@@ -1339,4 +1345,32 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	assert.Len(res, 1)
 	assert.False(timedOut(start, end), "Timed out")
 	assert.True(responsesDrained(), "Did not drain responses in time")
+}
+
+func TestOrchestratorPool_VersionMismatch(t *testing.T) {
+	assert := assert.New(t)
+	infos := []net.OrchestratorInfo{
+		{Transcoder: "1", Version: server.NetworkProtocolVersion + 1},
+		{Transcoder: "2", Version: server.NetworkProtocolVersion},
+		{Transcoder: "3", Version: server.NetworkProtocolVersion - 1},
+	}
+	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
+
+	calls := 0
+	mu := &sync.Mutex{}
+	oldOrchInfo := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = oldOrchInfo }()
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, srv *url.URL) (*net.OrchestratorInfo, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		i := calls
+		calls = calls + 1
+		return &infos[i], nil
+	}
+
+	pool := NewOrchestratorPool(nil, addresses)
+	res, err := pool.GetOrchestrators(len(addresses))
+	assert.Nil(err)
+	assert.Len(res, 2)
+	assert.Equal([]*net.OrchestratorInfo{&infos[0], &infos[1]}, res)
 }
