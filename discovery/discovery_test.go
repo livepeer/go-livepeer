@@ -50,9 +50,13 @@ func TestDeadLock(t *testing.T) {
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
+	wg := sync.WaitGroup{}
 	first := true
+	oldOrchInfo := serverGetOrchInfo
+	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		mu.Lock()
+		defer wg.Done()
 		if first {
 			time.Sleep(100 * time.Millisecond)
 			first = false
@@ -66,6 +70,7 @@ func TestDeadLock(t *testing.T) {
 	}
 	uris := stringsToURIs(addresses)
 	assert := assert.New(t)
+	wg.Add(len(uris))
 	pool := NewOrchestratorPool(nil, uris)
 	infos, err := pool.GetOrchestrators(1)
 	assert.Nil(err, "Should not be error")
@@ -77,9 +82,13 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
+	wg := sync.WaitGroup{}
 	first := true
+	oldOrchInfo := serverGetOrchInfo
+	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		mu.Lock()
+		defer wg.Done()
 		if first {
 			time.Sleep(100 * time.Millisecond)
 			first = false
@@ -108,6 +117,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 		return true
 	}
 
+	wg.Add(len(uris))
 	pool := NewOrchestratorPoolWithPred(nil, uris, pred)
 	infos, err := pool.GetOrchestrators(1)
 
@@ -352,13 +362,21 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 	var mu sync.Mutex
 	callCount := 0
 	first := true
+	wg := sync.WaitGroup{}
+	oldOrchInfo := serverGetOrchInfo
+	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		mu.Lock()
+		defer mu.Unlock()
+		// slightly unsafe to be adding to the wg counter here
+		// but we invoke this function rather often / unpredictably due to low
+		// cache interval, so we can't reliably set the counter outside the fn
+		wg.Add(1)
+		defer wg.Done()
 		if first {
 			time.Sleep(100 * time.Millisecond)
 			first = false
 		}
-		mu.Unlock()
 		callCount++
 		return returnInfo, nil
 	}
@@ -413,8 +431,10 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 	}
 
 	// reset callCount to 0 which is now 3 after calling CacheTranscoderPool()
+	mu.Lock()
 	callCount = 0
 	returnInfo = polledOrchInfo
+	mu.Unlock()
 	time.Sleep(1100 * time.Millisecond)
 	dbOrchs, err = pool.store.SelectOrchs(nil)
 	require.Nil(err)
@@ -424,8 +444,10 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 		assert.Equal(o.PricePerPixel, expPrice)
 	}
 	// called serverGetOrchInfo 1100 / 200 * 3 = 15 times
+	mu.Lock()
 	assert.GreaterOrEqual(callCount, 14)
 	assert.LessOrEqual(callCount, 16)
+	mu.Unlock()
 }
 
 func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
@@ -953,7 +975,11 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 		return json.Marshal(&wh)
 	}
 
+	wg := sync.WaitGroup{}
+	oldOrchInfo := serverGetOrchInfo
+	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
 	serverGetOrchInfo = func(c context.Context, b common.Broadcaster, s *url.URL) (*net.OrchestratorInfo, error) {
+		defer wg.Done()
 		return &net.OrchestratorInfo{Transcoder: "transcoder"}, nil
 	}
 
@@ -963,6 +989,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	assert.Equal(3, whpool.Size())
 
 	// assert that list is not refreshed if lastRequest is less than 1 min ago and hash is the same
+	wg.Add(whpool.Size())
 	lastReq := whpool.lastRequest
 	orchInfo, err := whpool.GetOrchestrators(2)
 	require.Nil(err)
@@ -978,6 +1005,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	}
 
 	//  assert that list is not refreshed if lastRequest is more than 1 min ago and hash is the same
+	wg.Add(whpool.Size())
 	lastReq = time.Now().Add(-2 * time.Minute)
 	whpool.lastRequest = lastReq
 	orchInfo, err = whpool.GetOrchestrators(2)
@@ -998,6 +1026,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	addresses = []string{"https://127.0.0.1:8932", "https://127.0.0.1:8933", "https://127.0.0.1:8934"}
 
 	//  assert that list is not refreshed if lastRequest is less than 1 min ago and hash is not the same
+	wg.Add(whpool.Size())
 	lastReq = time.Now()
 	whpool.lastRequest = lastReq
 	orchInfo, err = whpool.GetOrchestrators(2)
@@ -1015,6 +1044,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	}
 
 	//  assert that list is refreshed if lastRequest is longer than 1 min ago and hash is not the same
+	wg.Add(whpool.Size())
 	lastReq = time.Now().Add(-2 * time.Minute)
 	whpool.lastRequest = lastReq
 	orchInfo, err = whpool.GetOrchestrators(2)
@@ -1098,10 +1128,12 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
 
+	wg := sync.WaitGroup{}
 	orchCb := func() error { return nil }
 	oldOrchInfo := serverGetOrchInfo
-	defer func() { serverGetOrchInfo = oldOrchInfo }()
+	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+		defer wg.Done()
 		err := orchCb()
 		return &net.OrchestratorInfo{}, err
 	}
@@ -1109,17 +1141,21 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 	pool := NewOrchestratorPool(nil, addresses)
 
 	// Check that we receive everything
+	wg.Add(len(addresses))
 	res, err := pool.GetOrchestrators(len(addresses))
 	assert.Nil(err)
 	assert.Len(res, len(addresses))
 
 	// Check that partial results are received if requested
+	wg.Add(len(addresses))
 	assert.Greater(len(addresses), 1) // sanity
 	res, err = pool.GetOrchestrators(1)
 	assert.Nil(err)
 	assert.Len(res, 1)
+	wg.Wait() // prevents races on remaining responses
 
 	// Check error handling: all errors
+	wg.Add(len(addresses))
 	orchCb = func() error { return errors.New("Error") }
 	res, err = pool.GetOrchestrators(len(addresses))
 	assert.Nil(err)
@@ -1137,6 +1173,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 		}
 		return nil
 	}
+	wg.Add(len(addresses))
 	start := time.Now()
 	res, err = pool.GetOrchestrators(len(addresses))
 	end := time.Now()

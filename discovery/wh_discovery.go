@@ -44,11 +44,12 @@ func NewWebhookPool(bcast common.Broadcaster, callback *url.URL) *webhookPool {
 func (w *webhookPool) getURLs() ([]*url.URL, error) {
 	w.mu.RLock()
 	lastReq := w.lastRequest
+	pool := w.pool
 	w.mu.RUnlock()
 
 	// retrive addrs from cache if time since lastRequest is less than the refresh interval
 	if time.Since(lastReq) < whRefreshInterval {
-		return w.pool.GetURLs(), nil
+		return pool.GetURLs(), nil
 	}
 
 	// retrive addrs from webhook if time since lastRequest is more than the refresh interval
@@ -61,8 +62,9 @@ func (w *webhookPool) getURLs() ([]*url.URL, error) {
 	if hash == w.responseHash {
 		w.mu.Lock()
 		w.lastRequest = time.Now()
+		pool = w.pool // may have been reset since beginning
 		w.mu.Unlock()
-		return w.pool.GetURLs(), nil
+		return pool.GetURLs(), nil
 	}
 
 	addrs, err := deserializeWebhookJSON(body)
@@ -70,7 +72,7 @@ func (w *webhookPool) getURLs() ([]*url.URL, error) {
 		return nil, err
 	}
 
-	pool := NewOrchestratorPool(w.bcast, addrs)
+	pool = NewOrchestratorPool(w.bcast, addrs)
 
 	w.mu.Lock()
 	w.responseHash = hash

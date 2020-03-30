@@ -45,8 +45,8 @@ func (cfg *BroadcastConfig) MaxPrice() *big.Rat {
 }
 
 func (cfg *BroadcastConfig) SetMaxPrice(price *big.Rat) {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
 	cfg.maxPrice = price
 }
 

@@ -13,11 +13,16 @@ t2_lb=$?
 go test -logtostderr=true -run Nvidia_ -race
 t2_nv=$?
 cd ..
+# Be more strict with discovery tests: run with race detector enabled
+cd discovery
+go test -logtostderr=true -race
+t_discovery=$?
+cd ..
 
 ./test_args.sh
 t_args=$?
 
-if (($t1!=0||$t2_lb!=0||$t2_nv!=0||$t_args!=0))
+if (($t1!=0||$t2_lb!=0||$t2_nv!=0||$t_args!=0||$t_discovery!=0))
 then
     printf "\n\nSome Tests Failed\n\n"
     exit -1
