@@ -165,6 +165,7 @@ type StubClient struct {
 	BlockHashToReturn            common.Hash
 	ProcessHistoricalUnbondError error
 	Orchestrators                []*lpTypes.Transcoder
+	Round                        *big.Int
 	RoundsErr                    error
 	SenderInfo                   *pm.SenderInfo
 	PoolSize                     *big.Int
@@ -182,18 +183,20 @@ type stubTranscoder struct {
 
 func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) error { return nil }
 func (e *StubClient) Account() accounts.Account                                       { return accounts.Account{Address: e.TranscoderAddress} }
-func (e *StubClient) Backend() (Backend, error)                                       { return nil, ErrMissingBackend }
+func (e *StubClient) Backend() (Backend, error)                                       { return nil, nil }
 
 // Rounds
 
-func (e *StubClient) InitializeRound() (*types.Transaction, error)       { return nil, nil }
-func (e *StubClient) CurrentRound() (*big.Int, error)                    { return big.NewInt(0), e.RoundsErr }
-func (e *StubClient) LastInitializedRound() (*big.Int, error)            { return big.NewInt(0), e.RoundsErr }
-func (e *StubClient) BlockHashForRound(round *big.Int) ([32]byte, error) { return [32]byte{}, nil }
-func (e *StubClient) CurrentRoundInitialized() (bool, error)             { return false, nil }
-func (e *StubClient) CurrentRoundLocked() (bool, error)                  { return false, nil }
-func (e *StubClient) CurrentRoundStartBlock() (*big.Int, error)          { return nil, nil }
-func (e *StubClient) Paused() (bool, error)                              { return false, nil }
+func (e *StubClient) InitializeRound() (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) CurrentRound() (*big.Int, error)              { return big.NewInt(0), e.RoundsErr }
+func (e *StubClient) LastInitializedRound() (*big.Int, error)      { return e.Round, e.RoundsErr }
+func (e *StubClient) BlockHashForRound(round *big.Int) ([32]byte, error) {
+	return e.BlockHashToReturn, nil
+}
+func (e *StubClient) CurrentRoundInitialized() (bool, error)    { return false, nil }
+func (e *StubClient) CurrentRoundLocked() (bool, error)         { return false, nil }
+func (e *StubClient) CurrentRoundStartBlock() (*big.Int, error) { return nil, nil }
+func (e *StubClient) Paused() (bool, error)                     { return false, nil }
 
 // Token
 
