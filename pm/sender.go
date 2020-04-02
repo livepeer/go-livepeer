@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 )
 
@@ -113,7 +114,7 @@ func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, er
 	// Ensure backwards compatbility
 	// If no expirationParams are included by O
 	// B sets the values based upon its last seen round
-	if expirationParams == nil {
+	if expirationParams == nil || expirationParams.CreationRound == 0 || expirationParams.CreationRoundBlockHash == (ethcommon.Hash{}) {
 		expirationParams = s.expirationParams()
 	}
 
