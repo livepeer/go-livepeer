@@ -10,7 +10,7 @@ steps:
 - name: wait-for-images
   image: ya7ya/wait-for-docker:latest
   commands:
-  - -h livepeer/go-livepeer -p $DRONE_TARGET_BRANCH -t 5 -r 5
+  - /wait-for-it.sh -h livepeer/go-livepeer -p $(DRONE_TARGET_BRANCH) -t 5 -r 5
 - name: broadcaster
   group: test
   detach: true
