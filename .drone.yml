@@ -10,11 +10,17 @@ steps:
 - name: wait-for-images
   image: ya7ya/wait-for-docker:latest
   commands:
-  - /wait-for-it.sh -h livepeer/go-livepeer -p $(DRONE_TARGET_BRANCH) -t 5 -r 5
+  - /wait-for-it.sh -h livepeer/go-livepeer -p ${DRONE_COMMIT_SHA:0:8} -t 60 -r 10
 - name: broadcaster
   group: test
   detach: true
-  image: livepeer/go-livepeer:master
+  image: livepeer/go-livepeer:${DRONE_COMMIT_SHA:0:8}
+  settings:
+    digest: ${DRONE_COMMIT_SHA:0:8}
+  when:
+    branch:
+      exclude:
+      - master
   depends_on:
   - wait-for-images
   commands:
@@ -22,18 +28,53 @@ steps:
 - name: orchestrator
   group: test
   detach: true
-  image: livepeer/go-livepeer:master
+  image: livepeer/go-livepeer:${DRONE_COMMIT_SHA:0:8}
+  settings:
+    digest: ${DRONE_COMMIT_SHA:0:8}
+  when:
+    branch:
+      exclude:
+      - master
   depends_on:
   - wait-for-images
   environment:
     NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
     NVIDIA : 0,1,2,3,4,5,6,7
-    DRONE_RESOURCE_LIMIT_GPU: "8"
+    DRONE_RESOURCE_LIMIT_GPU: "4"
   commands: 
-  - /usr/bin/livepeer -v=9 -orchestrator -network offchain -transcoder -monitor=true -cliAddr=localhost:7936 -httpAddr=localhost:8936 -serviceAddr=localhost:8936 -maxSessions=80 -nvidia=0,1,2,3,4,5,6
+  - /usr/bin/livepeer -v=9 -orchestrator -network offchain -transcoder -monitor=true -cliAddr=localhost:7936 -httpAddr=localhost:8936 -serviceAddr=localhost:8936 -maxSessions=80 -nvidia=0,1,2,3
   resources:
     limits:
-      nvidia.com/gpu: 8
+      nvidia.com/gpu: 4
+- name: broadcaster-master
+  group: test
+  detach: true
+  image: livepeer/go-livepeer:master
+  when:
+    branch:
+      - master
+  depends_on:
+  - wait-for-images
+  commands:
+  - /usr/bin/livepeer -broadcaster -network offchain -maxSessions=200 -rtmpAddr=localhost:1935 -cliAddr=localhost:7935 -httpAddr=localhost:8935 -orchAddr=localhost:8936 -monitor=true -transcodingOptions=P240p30fps16x9,P360p30fps16x9,P576p30fps16x9,P720p30fps16x9 -v=9
+- name: orchestrator-master
+  group: test
+  detach: true
+  image: livepeer/go-livepeer:master
+  when:
+    branch:
+      - master
+  depends_on:
+  - wait-for-images
+  environment:
+    NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
+    NVIDIA : 0,1,2,3,4,5,6,7
+    DRONE_RESOURCE_LIMIT_GPU: "4"
+  commands: 
+  - /usr/bin/livepeer -v=9 -orchestrator -network offchain -transcoder -monitor=true -cliAddr=localhost:7936 -httpAddr=localhost:8936 -serviceAddr=localhost:8936 -maxSessions=80 -nvidia=0,1,2,3
+  resources:
+    limits:
+      nvidia.com/gpu: 4
 - name: build
   image: golang:1.13
   environment:
@@ -41,13 +82,13 @@ steps:
       GOPATH: /go
       DOCKER_CLI_EXPERIMENTAL: enabled
   commands:
-  - echo 'hi'
   - pwd
+  - echo $DRONE_TARGET_BRANCH $DRONE_COMMIT_SHA
   - cd /drone/src
   - wget https://storage.googleapis.com/lp_testharness_assets/official_test_source_2s_keys_24pfs_3min.mp4
 - name: stream-tester
   group: test
-  image: livepeer/streamtester:latest
+  image: ya7ya/stream-tester:latest
   depends_on:
   - wait-for-images
   - orchestrator
@@ -55,4 +96,23 @@ steps:
   environment:
     GODEBUG: http2client=0
   commands:
-    - /root/streamtester -no-bar -latency  -host 'localhost' -rtmp 1935 -media 8935 -profiles '4' -v '15' -file=/drone/src/official_test_source_2s_keys_24pfs_3min.mp4
+    - /root/streamtester -no-bar -latency  -host 'localhost' -rtmp 1935 -media 8935 -profiles '4' -v '1' -file=/drone/src/official_test_source_2s_keys_24pfs_3min.mp4 -stats-file /drone/src/stream_tester_result.json
+- name: result
+  image: golang:1.13
+  depends_on:
+  - stream-tester
+  commands:
+  - cat /drone/src/stream_tester_result.json
+- name: discord-notification
+  image: appleboy/drone-discord
+  settings:
+    webhook_id:
+      from_secret: discord_webhook_id
+    webhook_token:
+      from_secret: discord_webhook_token
+    message: >
+      {{#success build.status}}
+        build {{build.number}} : ${DRONE_COMMIT_SHA:0:8} succeeded. {{build.link}}
+      {{else}}
+        build {{build.number}} failed. {{build.link}}
+      {{/success}}

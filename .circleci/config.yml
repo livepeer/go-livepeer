@@ -47,14 +47,18 @@ jobs:
           # Our Docker tag name should be our branch name with just alphanums
           BRANCH_TAG=$(echo $CIRCLE_BRANCH | sed 's/\//-/g' | tr -cd '[:alnum:]_-')
           VERSION_TAG=$(./print_version.sh)
+          SHA_TAG=$(git describe --always --long --abbrev=8)
           docker build -t current-build -f docker/Dockerfile.release-linux .
-          for TAG in $BRANCH_TAG $VERSION_TAG; do
+          for TAG in $BRANCH_TAG $VERSION_TAG $SHA_TAG; do
             docker tag current-build livepeer/go-livepeer:${TAG}-linux
             docker push livepeer/go-livepeer:${TAG}-linux
             # Manifest step is optional in case the Windows build hasn't finished yet
             docker manifest create livepeer/go-livepeer:${TAG} livepeer/go-livepeer:${TAG}-linux livepeer/go-livepeer:${TAG}-windows || true
             docker manifest push livepeer/go-livepeer:${TAG} || true
           done
+      - run:
+          name: Notify DroneCI
+          command: curl -X POST https://drone.livepeer-ac.live/hook
 
   build:
     docker:
@@ -99,7 +103,6 @@ jobs:
       - run:
           name: Notify that new build has been uploaded
           command: curl -X POST https://holy-bread-207a.livepeer.workers.dev
-
       - save_cache:
           key: v3-pkg-cache
           paths:
