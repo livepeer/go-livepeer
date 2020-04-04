@@ -513,6 +513,8 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		FullProfiles: fullProfiles,
 		Sig:          sig,
 		Storage:      storage,
+		// Triggers failure on Os that don't know how to use FullProfiles/2
+		Profiles: []byte("invalid"),
 	}
 	data, err := proto.Marshal(segData)
 	if err != nil {

@@ -215,6 +215,7 @@ func TestRPCSeg(t *testing.T) {
 	s := &BroadcastSession{
 		Broadcaster: b,
 		ManifestID:  mid,
+		Profiles:    []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
 	}
 
 	baddr := ethcrypto.PubkeyToAddress(b.priv.PublicKey)

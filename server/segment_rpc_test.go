@@ -85,6 +85,7 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
+		Profiles:    []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
 	}
 	creds, err := genSegCreds(s, &stream.HLSSegment{})
 	require.Nil(t, err)
@@ -122,6 +123,7 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
+		Profiles:    []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
 	creds, err := genSegCreds(s, seg)
@@ -180,6 +182,19 @@ func TestVerifySegCreds_Profiles(t *testing.T) {
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	assert.Nil(err)
 	assert.Equal(profiles, md.Profiles)
+
+	// Check error handling with the default invalid Profiles
+	creds, err = genSegCreds(&BroadcastSession{Broadcaster: stubBroadcaster2()}, &stream.HLSSegment{})
+	assert.Nil(err)
+	buf, err := base64.StdEncoding.DecodeString(creds)
+	assert.Nil(err)
+	segData = &net.SegData{}
+	err = proto.Unmarshal(buf, segData)
+	assert.Nil(err)
+	assert.Equal([]byte("invalid"), segData.Profiles)
+	md, err = verifySegCreds(orch, creds, ethcommon.Address{})
+	assert.Nil(md)
+	assert.Equal(common.ErrProfile, err)
 }
 
 func TestGenSegCreds_FullProfiles(t *testing.T) {
@@ -808,6 +823,7 @@ func TestServeSegment_InsufficientBalanceError(t *testing.T) {
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
+		Profiles:    []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
 	creds, err := genSegCreds(s, seg)
