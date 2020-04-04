@@ -252,7 +252,9 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 	}
 
 	profiles := []ffmpeg.VideoProfile{}
-	if len(segData.FullProfiles) > 0 {
+	if len(segData.FullProfiles2) > 0 {
+		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles2)
+	} else if len(segData.FullProfiles) > 0 {
 		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles)
 	} else if len(segData.Profiles) > 0 {
 		profiles, err = common.BytesToVideoProfile(segData.Profiles)
@@ -507,15 +509,31 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 
 	// Generate serialized segment info
 	segData := &net.SegData{
-		ManifestId:   []byte(md.ManifestID),
-		Seq:          md.Seq,
-		Hash:         hash,
-		FullProfiles: fullProfiles,
-		Sig:          sig,
-		Storage:      storage,
+		ManifestId: []byte(md.ManifestID),
+		Seq:        md.Seq,
+		Hash:       hash,
+		Sig:        sig,
+		Storage:    storage,
 		// Triggers failure on Os that don't know how to use FullProfiles/2
 		Profiles: []byte("invalid"),
 	}
+	// If all outputs are mpegts, use the older SegData.FullProfiles field
+	// for compatibility with older orchestrators
+	allTS := true
+	for i := 0; i < len(sess.Profiles) && allTS; i++ {
+		switch sess.Profiles[i].Format {
+		case ffmpeg.FormatNone: // default output is mpegts for FormatNone
+		case ffmpeg.FormatMPEGTS:
+		default:
+			allTS = false
+		}
+	}
+	if allTS {
+		segData.FullProfiles = fullProfiles
+	} else {
+		segData.FullProfiles2 = fullProfiles
+	}
+
 	data, err := proto.Marshal(segData)
 	if err != nil {
 		glog.Error("Unable to marshal ", err)

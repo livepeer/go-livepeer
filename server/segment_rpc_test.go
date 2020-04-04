@@ -205,6 +205,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 			Bitrate:    "432k",
 			Framerate:  uint(560),
 			Resolution: "123x456",
+			Format:     ffmpeg.FormatMPEGTS,
 		},
 		ffmpeg.VideoProfile{
 			Name:       "prof2",
@@ -213,6 +214,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 			Resolution: "456x987",
 			Format:     ffmpeg.FormatMP4,
 		},
+		ffmpeg.VideoProfile{Resolution: "0x0", Bitrate: "0"},
 	}
 
 	s := &BroadcastSession{
@@ -234,7 +236,38 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 
 	expectedProfiles, err := common.FFmpegProfiletoNetProfile(profiles)
 	assert.Nil(err)
+	assert.Equal([]byte("invalid"), segData.Profiles)
+	assert.Empty(segData.FullProfiles)
+	assert.Equal(expectedProfiles, segData.FullProfiles2)
+
+	// Check when we have a MP4 sandwiched in between two mpegts
+	assert.Len(s.Profiles, 3)
+	assert.Equal(ffmpeg.FormatMPEGTS, s.Profiles[0].Format)
+	assert.Equal(ffmpeg.FormatMP4, s.Profiles[1].Format)
+	assert.Equal(ffmpeg.FormatNone, s.Profiles[2].Format)
+	data, err = genSegCreds(s, seg)
+	assert.Nil(err)
+	buf, err = base64.StdEncoding.DecodeString(data)
+	assert.Nil(err)
+	err = proto.Unmarshal(buf, &segData)
+	assert.Nil(err)
+	expectedProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
+	assert.Equal([]byte("invalid"), segData.Profiles)
+	assert.Empty(segData.FullProfiles)
+	assert.Equal(expectedProfiles, segData.FullProfiles2)
+
+	// Check that FullProfiles field is used for none/mpegts (not FullProfiles2)
+	s.Profiles[1].Format = ffmpeg.FormatMPEGTS
+	data, err = genSegCreds(s, seg)
+	assert.Nil(err)
+	buf, err = base64.StdEncoding.DecodeString(data)
+	assert.Nil(err)
+	err = proto.Unmarshal(buf, &segData)
+	assert.Nil(err)
+	expectedProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
+	assert.Equal([]byte("invalid"), segData.Profiles)
 	assert.Equal(expectedProfiles, segData.FullProfiles)
+	assert.Empty(segData.FullProfiles2)
 
 	// Check that profile format errors propagate
 	s.Profiles[1].Format = -1
@@ -318,6 +351,18 @@ func TestVerifySegCreds_FullProfiles(t *testing.T) {
 	md, err = verifySegCreds(orch, creds, ethcommon.Address{})
 	assert.Nil(md)
 	assert.Equal(errFormat, err)
+
+	// Test deserialization with FullProfiles2
+	// (keep invalid FullProfiles populated to exhibit precedence)
+	segData.FullProfiles2 = []*net.VideoProfile{&net.VideoProfile{Name: "prof3"}}
+	data, err = proto.Marshal(segData)
+	assert.Nil(err)
+	creds = base64.StdEncoding.EncodeToString(data)
+	md, err = verifySegCreds(orch, creds, ethcommon.Address{})
+	expected := []ffmpeg.VideoProfile{{Name: "prof3",
+		Bitrate: "0", Resolution: "0x0",
+		Format: ffmpeg.FormatMPEGTS}}
+	assert.Equal(expected, md.Profiles)
 }
 
 func TestMakeFfmpegVideoProfiles(t *testing.T) {
