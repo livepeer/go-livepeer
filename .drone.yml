@@ -95,24 +95,18 @@ steps:
   - broadcaster
   environment:
     GODEBUG: http2client=0
+    DISCORD_WEBHOOK_URL:
+      from_secret: discord_webhook_url
+    DISCORD_WEBHOOK_USER:
+      from_secret: discord_webhook_user
   commands:
-    - /root/streamtester -no-bar -latency  -host 'localhost' -rtmp 1935 -media 8935 -profiles '4' -v '1' -file=/drone/src/official_test_source_2s_keys_24pfs_3min.mp4 -stats-file /drone/src/stream_tester_result.json
+    - /root/streamtester -no-bar -latency  -host 'localhost' -rtmp 1935 -media 8935 -profiles '4' -v '1' -file=/drone/src/official_test_source_2s_keys_24pfs_3min.mp4 -stats-file /drone/src/stream_tester_result.json -discord-url $DISCORD_WEBHOOK_URL -discord-user-name $DISCORD_WEBHOOK_USER
 - name: result
-  image: golang:1.13
+  image: stedolan/jq
+  entrypoint:
+    - null
   depends_on:
   - stream-tester
   commands:
-  - cat /drone/src/stream_tester_result.json
-- name: discord-notification
-  image: appleboy/drone-discord
-  settings:
-    webhook_id:
-      from_secret: discord_webhook_id
-    webhook_token:
-      from_secret: discord_webhook_token
-    message: >
-      {{#success build.status}}
-        build {{build.number}} : ${DRONE_COMMIT_SHA:0:8} succeeded. {{build.link}}
-      {{else}}
-        build {{build.number}} failed. {{build.link}}
-      {{/success}}
+  - cat /drone/src/stream_tester_result.json | jq .success_rate2
+  
