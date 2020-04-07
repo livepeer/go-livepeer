@@ -74,3 +74,15 @@ type orchTest struct {
 func toOrchTest(addr, serviceURI string, pricePerPixel int64) orchTest {
 	return orchTest{EthereumAddr: addr, ServiceURI: serviceURI, PricePerPixel: pricePerPixel}
 }
+
+type stubSuspender struct {
+	list map[string]int
+}
+
+func newStubSuspender() *stubSuspender {
+	return &stubSuspender{make(map[string]int)}
+}
+
+func (s *stubSuspender) Suspended(orch string) int {
+	return s.list[orch]
+}

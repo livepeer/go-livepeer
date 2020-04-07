@@ -90,7 +90,7 @@ func (dbo *DBOrchestratorPoolCache) GetURLs() []*url.URL {
 	return uris
 }
 
-func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
+func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspender common.Suspender) ([]*net.OrchestratorInfo, error) {
 	uris, err := dbo.getURLs()
 	if err != nil || len(uris) <= 0 {
 		return nil, err
@@ -121,8 +121,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int) ([]*n
 	}
 
 	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred)
-
-	orchInfos, err := orchPool.GetOrchestrators(numOrchestrators)
+	orchInfos, err := orchPool.GetOrchestrators(numOrchestrators, suspender)
 	if err != nil || len(orchInfos) <= 0 {
 		return nil, err
 	}

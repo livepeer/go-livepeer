@@ -15,12 +15,12 @@ type Broadcaster interface {
 
 type OrchestratorPool interface {
 	GetURLs() []*url.URL
-	GetOrchestrators(int) ([]*net.OrchestratorInfo, error)
+	GetOrchestrators(int, Suspender) ([]*net.OrchestratorInfo, error)
 	Size() int
 }
 
 type Suspender interface {
-	Suspended(orch string) int64
+	Suspended(orch string) int
 }
 
 type OrchestratorStore interface {

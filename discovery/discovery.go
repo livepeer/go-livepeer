@@ -44,13 +44,13 @@ func (o *orchestratorPool) GetURLs() []*url.URL {
 	return o.uris
 }
 
-func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
+func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender common.Suspender) ([]*net.OrchestratorInfo, error) {
 	numAvailableOrchs := len(o.uris)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
 	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
 
-	infoCh := make(chan *net.OrchestratorInfo, len(o.uris))
-	errCh := make(chan error, len(o.uris))
+	infoCh := make(chan *net.OrchestratorInfo, numAvailableOrchs)
+	errCh := make(chan error, numAvailableOrchs)
 	getOrchInfo := func(uri *url.URL) {
 		info, err := serverGetOrchInfo(ctx, o.bcast, uri)
 		if err == nil && (o.pred == nil || o.pred(info)) {
@@ -64,8 +64,8 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 	}
 
 	// Shuffle into new slice to avoid mutating underlying data
-	uris := make([]*url.URL, len(o.uris))
-	for i, j := range rand.Perm(len(o.uris)) {
+	uris := make([]*url.URL, numAvailableOrchs)
+	for i, j := range rand.Perm(numAvailableOrchs) {
 		uris[i] = o.uris[j]
 	}
 
@@ -76,11 +76,13 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 	timeout := false
 	infos := []*net.OrchestratorInfo{}
 	nbResp := 0
-	for i := 0; i < len(uris) && len(infos) < numOrchestrators && !timeout; i++ {
+	for i := 0; i < numAvailableOrchs && len(infos) < numOrchestrators && !timeout; i++ {
 		select {
 		case info := <-infoCh:
-			infos = append(infos, info)
-			nbResp++
+			if penalty := suspender.Suspended(info.Transcoder); penalty == 0 {
+				infos = append(infos, info)
+				nbResp++
+			}
 		case <-errCh:
 			nbResp++
 		case <-ctx.Done():
