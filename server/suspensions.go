@@ -8,19 +8,19 @@ import (
 // and the count until which they are suspended
 type suspender struct {
 	mu    sync.Mutex
-	list  map[string]int64 // list of orchestrator => refresh count at which the orchestrator is no longer suspended
-	count int64
+	list  map[string]int // list of orchestrator => refresh count at which the orchestrator is no longer suspended
+	count int
 }
 
 // newSuspender returns the pointer to a new Suspender instance
 func newSuspender() *suspender {
 	return &suspender{
-		list: make(map[string]int64),
+		list: make(map[string]int),
 	}
 }
 
 // suspend an orchestrator for 'penalty' refreshes
-func (s *suspender) suspend(orch string, penalty int64) {
+func (s *suspender) suspend(orch string, penalty int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.list[orch] += penalty
@@ -29,7 +29,7 @@ func (s *suspender) suspend(orch string, penalty int64) {
 // Suspended returns a non-zero value if the orchestrator is suspended
 // 'orch' is the service URI of the orchestrator
 // The value returned is the suspension penalty associated with the orchestrator whereby lower is better
-func (s *suspender) Suspended(orch string) int64 {
+func (s *suspender) Suspended(orch string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.list[orch] < s.count {

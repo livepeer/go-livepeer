@@ -65,6 +65,9 @@ func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
 		createSessions: func() ([]*BroadcastSession, error) {
 			return sessList, nil
 		},
+		sus:      newSuspender(),
+		numOrchs: 1,
+		poolSize: len(sessList),
 	}
 }
 
@@ -105,11 +108,12 @@ func newStubSegmentVerifier(v *stubVerifier) *verification.SegmentVerifier {
 type stubOSSession struct {
 	external bool
 	saved    []string
+	err      error
 }
 
 func (s *stubOSSession) SaveData(name string, data []byte) (string, error) {
 	s.saved = append(s.saved, name)
-	return "saved_" + name, nil
+	return "saved_" + name, s.err
 }
 func (s *stubOSSession) EndSession() {
 }
@@ -265,6 +269,7 @@ func TestSelectSession(t *testing.T) {
 	assert.Len(bsm.sessMap, 2) // map should still track original sessions
 
 	// assert session list gets refreshed if under threshold. check via waitgroup
+	bsm = newSessionsManagerLIFO(bsmWithSessList([]*BroadcastSession{}))
 	bsm.numOrchs = 1
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -479,6 +484,33 @@ func TestCleanupSessions(t *testing.T) {
 //     assert an error from transcoder removes sess from BroadcastSessionManager
 //     assert a success re-adds sess to BroadcastSessionManager
 
+func TestTranscodeSegment_UploadFailed_SuspendAndRemove(t *testing.T) {
+	assert := assert.New(t)
+	mid := core.ManifestID("foo")
+	pl := &stubPlaylistManager{manifestID: mid}
+	drivers.S3BUCKET = "livepeer"
+	mem := &stubOSSession{err: errors.New("some error")}
+	assert.NotNil(mem)
+
+	baseURL := "https://livepeer.s3.amazonaws.com"
+	sess := genBcastSess(t, baseURL, mem, mid)
+	sess.OrchestratorOS = mem
+
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+	cxn := &rtmpConnection{
+		mid:         mid,
+		pl:          pl,
+		profile:     &ffmpeg.P240p30fps16x9,
+		sessManager: bsm,
+	}
+	seg := &stream.HLSSegment{}
+	_, err := transcodeSegment(cxn, seg, "dummy", nil)
+	assert.EqualError(err, "some error")
+	_, ok := cxn.sessManager.sessMap[sess.OrchestratorInfo.GetTranscoder()]
+	assert.False(ok)
+	assert.Greater(cxn.sessManager.sus.Suspended(sess.OrchestratorInfo.GetTranscoder()), 0)
+}
+
 func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -526,12 +558,13 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 		sessManager: bsmWithSessList([]*BroadcastSession{sess}),
 	}
 
-	// Validate TicketParams error (not ErrTicketParamsExpired) -> Don't refresh, remove session
+	// Validate TicketParams error (not ErrTicketParamsExpired) -> Don't refresh, remove session & suspend orch
 	sender.On("ValidateTicketParams", mock.Anything).Return(errors.New("some error")).Once()
 	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 	assert.True(strings.Contains(err.Error(), "some error"))
 	_, ok := cxn.sessManager.sessMap[ts.URL]
 	assert.False(ok)
+	assert.Greater(cxn.sessManager.sus.Suspended(ts.URL), 0)
 
 	cxn = &rtmpConnection{
 		mid:         core.ManifestID("foo"),
@@ -544,6 +577,9 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 	sender.On("ValidateTicketParams", mock.Anything).Return(pm.ErrTicketParamsExpired)
 	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 	assert.True(strings.Contains(err.Error(), "unable to refresh ticket params"))
+	_, ok = cxn.sessManager.sessMap[ts.URL]
+	assert.False(ok)
+	assert.Greater(cxn.sessManager.sus.Suspended(ts.URL), 0)
 
 	// Expired Orchestrator Info -> GetOrchestratorInfo -> Still Expired -> Error
 	cxn = &rtmpConnection{
@@ -577,6 +613,9 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 	balance.On("Credit", mock.Anything)
 	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 	assert.EqualError(err, pm.ErrTicketParamsExpired.Error())
+	_, ok = cxn.sessManager.sessMap[ts.URL]
+	assert.False(ok)
+	assert.Greater(cxn.sessManager.sus.Suspended(ts.URL), 0)
 
 	// Expired Orchestrator Info -> GetOrchestratorInfo -> No Longer Expired -> Complete Session
 	cxn = &rtmpConnection{
@@ -602,6 +641,52 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 	assert.Equal(tr.Info.PriceInfo.PixelsPerUnit, completedSessInfo.PriceInfo.PixelsPerUnit)
 	assert.Equal(tr.Info.PriceInfo.PricePerUnit, completedSessInfo.PriceInfo.PricePerUnit)
 	assert.Equal(tr.Info.TicketParams.ExpirationBlock, completedSessInfo.TicketParams.ExpirationBlock)
+}
+
+func TestTranscodeSegment_SuspendOrchestrator(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+
+	tr := &net.TranscodeResult{
+		Info: &net.OrchestratorInfo{
+			Transcoder:   ts.URL,
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
+			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
+		},
+		Result: &net.TranscodeResult_Error{
+			Error: "OrchestratorBusy",
+		},
+	}
+
+	buf, err := proto.Marshal(tr)
+	require.Nil(err)
+
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+	bsm.poolSize = 40
+	bsm.numOrchs = 8
+	cxn := &rtmpConnection{
+		mid:         core.ManifestID("foo"),
+		nonce:       7,
+		pl:          &stubPlaylistManager{manifestID: core.ManifestID("foo")},
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsm,
+	}
+
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+
+	assert.EqualError(err, "OrchestratorBusy")
+	assert.Equal(bsm.sus.Suspended(ts.URL), bsm.poolSize/bsm.numOrchs)
 }
 
 func TestTranscodeSegment_CompleteSession(t *testing.T) {
@@ -1108,6 +1193,44 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
 	assert.Nil(err)
 	assert.Equal(baseURL+"/resp2", pl.uri)
+}
+
+func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
+	assert := assert.New(t)
+	mid := core.ManifestID("foo")
+	pl := &stubPlaylistManager{manifestID: mid}
+	drivers.S3BUCKET = "livepeer"
+	mem := drivers.NewS3Driver("", drivers.S3BUCKET, "", "").NewSession(string(mid))
+	assert.NotNil(mem)
+
+	baseURL := "https://livepeer.s3.amazonaws.com"
+	sess := genBcastSess(t, baseURL, mem, mid)
+
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+	cxn := &rtmpConnection{
+		mid:         mid,
+		pl:          pl,
+		profile:     &ffmpeg.P240p30fps16x9,
+		sessManager: bsm,
+	}
+	seg := &stream.HLSSegment{}
+	verifier := newStubSegmentVerifier(&stubVerifier{
+		retries: 2,
+		err:     verification.ErrTampered,
+		results: []verification.Results{
+			{Score: 5, Pixels: []int64{100}},
+			{Score: 9, Pixels: []int64{100}},
+			{Score: 1, Pixels: []int64{100}},
+		},
+	})
+	oldDownloadSeg := downloadSeg
+	defer func() { downloadSeg = oldDownloadSeg }()
+	downloadSeg = func(url string) ([]byte, error) { return nil, errors.New("some error") }
+	_, err := transcodeSegment(cxn, seg, "dummy", verifier)
+	assert.EqualError(err, "some error")
+	_, ok := cxn.sessManager.sessMap[sess.OrchestratorInfo.GetTranscoder()]
+	assert.False(ok)
+	assert.Greater(cxn.sessManager.sus.Suspended(sess.OrchestratorInfo.GetTranscoder()), 0)
 }
 
 func TestRefreshSession(t *testing.T) {
