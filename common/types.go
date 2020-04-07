@@ -19,6 +19,10 @@ type OrchestratorPool interface {
 	Size() int
 }
 
+type Suspender interface {
+	Suspended(orch string) int64
+}
+
 type OrchestratorStore interface {
 	OrchCount(filter *DBOrchFilter) (int, error)
 	SelectOrchs(filter *DBOrchFilter) ([]*DBOrch, error)
