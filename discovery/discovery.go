@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"container/heap"
 	"context"
 	"math"
 	"math/rand"
@@ -75,14 +76,17 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 
 	timeout := false
 	infos := []*net.OrchestratorInfo{}
+	suspendedInfos := newSuspensionQueue()
 	nbResp := 0
 	for i := 0; i < numAvailableOrchs && len(infos) < numOrchestrators && !timeout; i++ {
 		select {
 		case info := <-infoCh:
 			if penalty := suspender.Suspended(info.Transcoder); penalty == 0 {
 				infos = append(infos, info)
-				nbResp++
+			} else {
+				heap.Push(suspendedInfos, &suspension{info, penalty})
 			}
+			nbResp++
 		case <-errCh:
 			nbResp++
 		case <-ctx.Done():
@@ -90,6 +94,15 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 		}
 	}
 	cancel()
+
+	if len(infos) < numOrchestrators {
+		diff := numOrchestrators - len(infos)
+		for i := 0; i < diff && suspendedInfos.Len() > 0; i++ {
+			info := heap.Pop(suspendedInfos).(*suspension).orch
+			infos = append(infos, info)
+		}
+	}
+
 	glog.Infof("Done fetching orch info numOrch=%d responses=%d/%d timeout=%t",
 		len(infos), nbResp, len(uris), timeout)
 	return infos, nil
