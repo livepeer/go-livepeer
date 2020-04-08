@@ -990,7 +990,9 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 
 	// assert that list is not refreshed if lastRequest is less than 1 min ago and hash is the same
 	wg.Add(whpool.Size())
+	whpool.mu.Lock()
 	lastReq := whpool.lastRequest
+	whpool.mu.Unlock()
 	orchInfo, err := whpool.GetOrchestrators(2)
 	require.Nil(err)
 	assert.Len(orchInfo, 2)
@@ -1030,14 +1032,16 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	//  assert that list is not refreshed if lastRequest is less than 1 min ago and hash is not the same
 	wg.Add(whpool.Size())
 	lastReq = time.Now()
+	whpool.mu.Lock()
 	whpool.lastRequest = lastReq
+	whpool.mu.Unlock()
 	orchInfo, err = whpool.GetOrchestrators(2)
 	require.Nil(err)
 	assert.Len(orchInfo, 2)
 	assert.Equal(3, whpool.Size())
 	assert.Equal(lastReq, whpool.lastRequest)
 
-	urls = whpool.pool.GetURLs()
+	urls = whpool.GetURLs()
 	assert.Len(urls, 3)
 
 	for _, addr := range addresses {
@@ -1048,7 +1052,9 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	//  assert that list is refreshed if lastRequest is longer than 1 min ago and hash is not the same
 	wg.Add(whpool.Size())
 	lastReq = time.Now().Add(-2 * time.Minute)
+	whpool.mu.Lock()
 	whpool.lastRequest = lastReq
+	whpool.mu.Unlock()
 	orchInfo, err = whpool.GetOrchestrators(2)
 	require.Nil(err)
 	assert.Len(orchInfo, 2)
