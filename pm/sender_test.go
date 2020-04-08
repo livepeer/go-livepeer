@@ -286,9 +286,8 @@ func TestCreateTicketBatch_UsesSessionParamsInBatch(t *testing.T) {
 	assert.Equal(ticketParams.ExpirationBlock, batch.ExpirationBlock)
 	assert.Equal(ticketParams.PricePerPixel, batch.PricePerPixel)
 	assert.Equal(expectedExpParams, batch.ExpirationParams)
-	// No ExpirationParams, get data from TimeManager
 
-	// ExpirationParams sent by orchestrator
+	// No ExpirationParams, get data from TimeManager
 	ticketParams = TicketParams{
 		Recipient:         recipient,
 		FaceValue:         big.NewInt(1111),
@@ -297,6 +296,28 @@ func TestCreateTicketBatch_UsesSessionParamsInBatch(t *testing.T) {
 		RecipientRandHash: recipientRandHash,
 		ExpirationBlock:   big.NewInt(1),
 		PricePerPixel:     big.NewRat(1, 1),
+		ExpirationParams:  &TicketExpirationParams{},
+	}
+	sessionID = sender.StartSession(ticketParams)
+
+	batch, err = sender.CreateTicketBatch(sessionID, 1)
+	require.Nil(t, err)
+	assert.Equal(creationRound, batch.CreationRound)
+	assert.Equal(creationRoundBlkHash[:], batch.CreationRoundBlockHash.Bytes())
+	assert.Equal(&TicketExpirationParams{
+		CreationRound:          creationRound,
+		CreationRoundBlockHash: creationRoundBlkHash,
+	}, batch.TicketExpirationParams)
+
+	ticketParams = TicketParams{
+		Recipient:         recipient,
+		FaceValue:         big.NewInt(1111),
+		WinProb:           big.NewInt(2222),
+		Seed:              big.NewInt(3333),
+		RecipientRandHash: recipientRandHash,
+		ExpirationBlock:   big.NewInt(1),
+		PricePerPixel:     big.NewRat(1, 1),
+		ExpirationParams:  nil,
 	}
 	sessionID = sender.StartSession(ticketParams)
 
