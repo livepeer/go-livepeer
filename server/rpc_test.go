@@ -128,7 +128,7 @@ func (r *stubOrchestrator) ProcessPayment(payment net.Payment, manifestID core.M
 	return nil
 }
 
-func (r *stubOrchestrator) TicketParams(sender ethcommon.Address) (*net.TicketParams, error) {
+func (r *stubOrchestrator) TicketParams(sender ethcommon.Address, price *big.Rat) (*net.TicketParams, error) {
 	return r.ticketParams, nil
 }
 
@@ -707,7 +707,8 @@ func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
 	orch.On("TicketParams", mock.Anything).Return(nil, nil)
-	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
+	priceInfo := &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}
+	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
@@ -749,6 +750,7 @@ func TestGetOrchestrator_TicketParamsError(t *testing.T) {
 	uri := "http://someuri.com"
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
 	expErr := errors.New("TicketParams error")
 	orch.On("TicketParams", mock.Anything).Return(nil, expErr)
 
@@ -871,7 +873,7 @@ func (o *mockOrchestrator) ProcessPayment(payment net.Payment, manifestID core.M
 	return args.Error(0)
 }
 
-func (o *mockOrchestrator) TicketParams(sender ethcommon.Address) (*net.TicketParams, error) {
+func (o *mockOrchestrator) TicketParams(sender ethcommon.Address, price *big.Rat) (*net.TicketParams, error) {
 	args := o.Called(sender)
 	if args.Get(0) != nil {
 		return args.Get(0).(*net.TicketParams), args.Error(1)

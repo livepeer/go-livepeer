@@ -42,7 +42,7 @@ type Orchestrator interface {
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
-	TicketParams(sender ethcommon.Address) (*net.TicketParams, error)
+	TicketParams(sender ethcommon.Address, price *big.Rat) (*net.TicketParams, error)
 	PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error)
 	SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool
 	DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
@@ -253,12 +253,18 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 }
 
 func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI string) (*net.OrchestratorInfo, error) {
-	params, err := orch.TicketParams(addr)
+	priceInfo, err := orch.PriceInfo(addr)
 	if err != nil {
 		return nil, err
 	}
 
-	priceInfo, err := orch.PriceInfo(addr)
+	// priceInfo will be nil in offchain mode
+	var priceRat *big.Rat
+	if priceInfo != nil {
+		priceRat = big.NewRat(priceInfo.GetPricePerUnit(), priceInfo.GetPixelsPerUnit())
+	}
+
+	params, err := orch.TicketParams(addr, priceRat)
 	if err != nil {
 		return nil, err
 	}

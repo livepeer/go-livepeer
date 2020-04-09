@@ -1188,8 +1188,9 @@ func TestTicketParams(t *testing.T) {
 	orch := NewOrchestrator(n, nil)
 
 	assert := assert.New(t)
-
-	actualParams, err := orch.TicketParams(sender)
+	price, err := orch.priceInfo(sender)
+	assert.Nil(err)
+	actualParams, err := orch.TicketParams(sender, price)
 	assert.Nil(err)
 
 	assert.Equal(expectedParams.Recipient.Bytes(), actualParams.Recipient)
@@ -1203,14 +1204,7 @@ func TestTicketParams(t *testing.T) {
 	expErr := errors.New("Recipient TicketParams Error")
 	recipient.On("TxCostMultiplier", mock.Anything).Return(multiplier, nil).Once()
 	recipient.On("TicketParams", mock.Anything, mock.Anything).Return(nil, expErr).Once()
-	actualParams, err = orch.TicketParams(sender)
-	assert.Nil(actualParams)
-	assert.EqualError(err, expErr.Error())
-
-	expErr = errors.New("TxCostMultiplier Error")
-	recipient.On("TxCostMultiplier", mock.Anything).Return(nil, expErr).Once()
-	recipient.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil).Once()
-	actualParams, err = orch.TicketParams(sender)
+	actualParams, err = orch.TicketParams(sender, nil)
 	assert.Nil(actualParams)
 	assert.EqualError(err, expErr.Error())
 }
@@ -1218,7 +1212,7 @@ func TestTicketParams(t *testing.T) {
 func TestTicketParams_GivenNilNode_ReturnsNil(t *testing.T) {
 	orch := &orchestrator{}
 
-	params, err := orch.TicketParams(ethcommon.Address{})
+	params, err := orch.TicketParams(ethcommon.Address{}, nil)
 	assert.Nil(t, err)
 	assert.Nil(t, params)
 }
@@ -1228,7 +1222,7 @@ func TestTicketParams_GivenNilRecipient_ReturnsNil(t *testing.T) {
 	orch := NewOrchestrator(n, nil)
 	n.Recipient = nil
 
-	params, err := orch.TicketParams(ethcommon.Address{})
+	params, err := orch.TicketParams(ethcommon.Address{}, nil)
 	assert.Nil(t, err)
 	assert.Nil(t, params)
 }
