@@ -131,15 +131,15 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 }
 
 func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifySegment) {
-	profiles := []ffmpeg.VideoProfile{}
+	var err error
+	var profiles []ffmpeg.VideoProfile
 	if len(notify.FullProfiles) > 0 {
-		profiles = makeFfmpegVideoProfiles(notify.FullProfiles)
+		profiles, err = makeFfmpegVideoProfiles(notify.FullProfiles)
 	} else if len(notify.Profiles) > 0 {
-		prof, err := common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
-		profiles = prof
-		if err != nil {
-			glog.Error("Unable to deserialize profiles ", err)
-		}
+		profiles, err = common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
+	}
+	if err != nil {
+		glog.Error("Unable to deserialize profiles ", err)
 	}
 
 	glog.Infof("Transcoding taskId=%d url=%s", notify.TaskId, notify.Url)
@@ -148,6 +148,9 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 
 	tData, err := n.Transcoder.Transcode(notify.Job, notify.Url, profiles)
 	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
+	if err == nil && len(tData.Segments) != len(profiles) {
+		err = errors.New("segment / profile mismatch")
+	}
 	if err != nil {
 		glog.Error("Unable to transcode ", err)
 		body.Write([]byte(err.Error()))
@@ -155,10 +158,15 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	} else {
 		boundary := common.RandName()
 		w := multipart.NewWriter(&body)
-		for _, v := range tData.Segments {
+		for i, v := range tData.Segments {
+			ctyp, err := common.ProfileFormatMimeType(profiles[i].Format)
+			if err != nil {
+				glog.Error("Could not find mime type ", err)
+				continue
+			}
 			w.SetBoundary(boundary)
 			hdrs := textproto.MIMEHeader{
-				"Content-Type":   {"video/MP2T"},
+				"Content-Type":   {ctyp},
 				"Content-Length": {strconv.Itoa(len(v.Data))},
 				"Pixels":         {strconv.FormatInt(v.Pixels, 10)},
 			}

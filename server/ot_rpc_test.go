@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -109,6 +110,8 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(testRemoteTranscoderResults.Segments[i].Pixels, pixels)
 
+		assert.Equal("video/mp2t", strings.ToLower(p.Header.Get("Content-Type")))
+
 		i++
 	}
 }
@@ -129,6 +132,7 @@ func TestRemoteTranscoder_FullProfiles(t *testing.T) {
 			Bitrate:    "765k",
 			Framerate:  uint(876),
 			Resolution: "456x987",
+			Format:     ffmpeg.FormatMP4,
 		},
 	}
 
@@ -152,8 +156,15 @@ func TestRemoteTranscoder_FullProfiles(t *testing.T) {
 	assert.Equal(1, tr.called)
 	profiles[0].Bitrate = "432000"
 	profiles[1].Bitrate = "765000"
+	profiles[0].Format = ffmpeg.FormatMPEGTS
 	assert.Equal(profiles, tr.profiles)
 	assert.Equal("linktomanifest", tr.fname)
+
+	// Test deserialization failure from invalid full profile format
+	notify.FullProfiles[1].Format = -1
+	runTranscode(node, "", httpc, notify)
+	assert.Equal(2, tr.called)
+	assert.Nil(nil, tr.profiles)
 }
 
 func TestRemoteTranscoderError(t *testing.T) {
@@ -193,4 +204,15 @@ func TestRemoteTranscoderError(t *testing.T) {
 	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
 	assert.Equal(protoVerLPT, headers.Get("Authorization"))
 	assert.Equal(errText, string(body))
+
+	// mismatched segment / profile error
+	// stub transcoder returns 2 profiles, so we ask for just 1
+	tr.err = nil
+	assert.Len(profiles, 2) // sanity
+	profiles = []ffmpeg.VideoProfile{profiles[0]}
+	notify.Profiles = common.ProfilesToTranscodeOpts(profiles)
+	runTranscode(node, parsedURL.Host, httpc, notify)
+	assert.Equal(2, tr.called)
+	assert.NotNil(body)
+	assert.Equal("segment / profile mismatch", string(body))
 }

@@ -85,6 +85,7 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
+		Profiles:    []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
 	}
 	creds, err := genSegCreds(s, &stream.HLSSegment{})
 	require.Nil(t, err)
@@ -122,6 +123,7 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
+		Profiles:    []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
 	creds, err := genSegCreds(s, seg)
@@ -180,6 +182,19 @@ func TestVerifySegCreds_Profiles(t *testing.T) {
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	assert.Nil(err)
 	assert.Equal(profiles, md.Profiles)
+
+	// Check error handling with the default invalid Profiles
+	creds, err = genSegCreds(&BroadcastSession{Broadcaster: stubBroadcaster2()}, &stream.HLSSegment{})
+	assert.Nil(err)
+	buf, err := base64.StdEncoding.DecodeString(creds)
+	assert.Nil(err)
+	segData = &net.SegData{}
+	err = proto.Unmarshal(buf, segData)
+	assert.Nil(err)
+	assert.Equal([]byte("invalid"), segData.Profiles)
+	md, err = verifySegCreds(orch, creds, ethcommon.Address{})
+	assert.Nil(md)
+	assert.Equal(common.ErrProfile, err)
 }
 
 func TestGenSegCreds_FullProfiles(t *testing.T) {
@@ -190,13 +205,16 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 			Bitrate:    "432k",
 			Framerate:  uint(560),
 			Resolution: "123x456",
+			Format:     ffmpeg.FormatMPEGTS,
 		},
 		ffmpeg.VideoProfile{
 			Name:       "prof2",
 			Bitrate:    "765k",
 			Framerate:  uint(876),
 			Resolution: "456x987",
+			Format:     ffmpeg.FormatMP4,
 		},
+		ffmpeg.VideoProfile{Resolution: "0x0", Bitrate: "0"},
 	}
 
 	s := &BroadcastSession{
@@ -218,7 +236,44 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 
 	expectedProfiles, err := common.FFmpegProfiletoNetProfile(profiles)
 	assert.Nil(err)
+	assert.Equal([]byte("invalid"), segData.Profiles)
+	assert.Empty(segData.FullProfiles)
+	assert.Equal(expectedProfiles, segData.FullProfiles2)
+
+	// Check when we have a MP4 sandwiched in between two mpegts
+	assert.Len(s.Profiles, 3)
+	assert.Equal(ffmpeg.FormatMPEGTS, s.Profiles[0].Format)
+	assert.Equal(ffmpeg.FormatMP4, s.Profiles[1].Format)
+	assert.Equal(ffmpeg.FormatNone, s.Profiles[2].Format)
+	data, err = genSegCreds(s, seg)
+	assert.Nil(err)
+	buf, err = base64.StdEncoding.DecodeString(data)
+	assert.Nil(err)
+	err = proto.Unmarshal(buf, &segData)
+	assert.Nil(err)
+	expectedProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
+	assert.Equal([]byte("invalid"), segData.Profiles)
+	assert.Empty(segData.FullProfiles)
+	assert.Equal(expectedProfiles, segData.FullProfiles2)
+
+	// Check that FullProfiles field is used for none/mpegts (not FullProfiles2)
+	s.Profiles[1].Format = ffmpeg.FormatMPEGTS
+	data, err = genSegCreds(s, seg)
+	assert.Nil(err)
+	buf, err = base64.StdEncoding.DecodeString(data)
+	assert.Nil(err)
+	err = proto.Unmarshal(buf, &segData)
+	assert.Nil(err)
+	expectedProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
+	assert.Equal([]byte("invalid"), segData.Profiles)
 	assert.Equal(expectedProfiles, segData.FullProfiles)
+	assert.Empty(segData.FullProfiles2)
+
+	// Check that profile format errors propagate
+	s.Profiles[1].Format = -1
+	data, err = genSegCreds(s, seg)
+	assert.Empty(data)
+	assert.Equal(common.ErrFormatProto, err)
 }
 
 func TestGenSegCreds_Profiles(t *testing.T) {
@@ -264,6 +319,7 @@ func TestVerifySegCreds_FullProfiles(t *testing.T) {
 			Bitrate:    "765k",
 			Framerate:  uint(876),
 			Resolution: "456x987",
+			Format:     ffmpeg.FormatMP4,
 		},
 	}
 
@@ -284,7 +340,29 @@ func TestVerifySegCreds_FullProfiles(t *testing.T) {
 	assert.Nil(err)
 	profiles[0].Bitrate = "432000"
 	profiles[1].Bitrate = "765000"
+	profiles[0].Format = ffmpeg.FormatMPEGTS
 	assert.Equal(profiles, md.Profiles)
+
+	// Test deserialization failure from invalid full profile format
+	segData.FullProfiles[1].Format = -1
+	data, err = proto.Marshal(segData)
+	assert.Nil(err)
+	creds = base64.StdEncoding.EncodeToString(data)
+	md, err = verifySegCreds(orch, creds, ethcommon.Address{})
+	assert.Nil(md)
+	assert.Equal(errFormat, err)
+
+	// Test deserialization with FullProfiles2
+	// (keep invalid FullProfiles populated to exhibit precedence)
+	segData.FullProfiles2 = []*net.VideoProfile{&net.VideoProfile{Name: "prof3"}}
+	data, err = proto.Marshal(segData)
+	assert.Nil(err)
+	creds = base64.StdEncoding.EncodeToString(data)
+	md, err = verifySegCreds(orch, creds, ethcommon.Address{})
+	expected := []ffmpeg.VideoProfile{{Name: "prof3",
+		Bitrate: "0", Resolution: "0x0",
+		Format: ffmpeg.FormatMPEGTS}}
+	assert.Equal(expected, md.Profiles)
 }
 
 func TestMakeFfmpegVideoProfiles(t *testing.T) {
@@ -313,16 +391,19 @@ func TestMakeFfmpegVideoProfiles(t *testing.T) {
 			Bitrate:    fmt.Sprint(videoProfiles[0].Bitrate),
 			Framerate:  uint(videoProfiles[0].Fps),
 			Resolution: fmt.Sprintf("%dx%d", videoProfiles[0].Width, videoProfiles[0].Height),
+			Format:     ffmpeg.FormatMPEGTS,
 		},
 		{
 			Name:       videoProfiles[1].Name,
 			Bitrate:    fmt.Sprint(videoProfiles[1].Bitrate),
 			Framerate:  uint(videoProfiles[1].Fps),
 			Resolution: fmt.Sprintf("%dx%d", videoProfiles[1].Width, videoProfiles[1].Height),
+			Format:     ffmpeg.FormatMPEGTS,
 		},
 	}
 
-	ffmpegProfiles := makeFfmpegVideoProfiles(videoProfiles)
+	ffmpegProfiles, err := makeFfmpegVideoProfiles(videoProfiles)
+	assert.Nil(err)
 	expectedResolution := fmt.Sprintf("%dx%d", videoProfiles[0].Width, videoProfiles[0].Height)
 	assert.Equal(expectedProfiles, ffmpegProfiles)
 	assert.Equal(ffmpegProfiles[0].Resolution, expectedResolution)
@@ -330,8 +411,115 @@ func TestMakeFfmpegVideoProfiles(t *testing.T) {
 	// empty name should return automatically generated name
 	videoProfiles[0].Name = ""
 	expectedName := "net_" + fmt.Sprintf("%dx%d_%d", videoProfiles[0].Width, videoProfiles[0].Height, videoProfiles[0].Bitrate)
-	ffmpegProfiles = makeFfmpegVideoProfiles(videoProfiles)
+	ffmpegProfiles, err = makeFfmpegVideoProfiles(videoProfiles)
+	assert.Nil(err)
 	assert.Equal(ffmpegProfiles[0].Name, expectedName)
+
+	// Unset format should default to mpegts
+	assert.Equal(videoProfiles[0].Format, videoProfiles[1].Format)
+	assert.Equal(videoProfiles[0].Format, net.VideoProfile_MPEGTS)
+
+	videoProfiles[0].Format = net.VideoProfile_MP4
+	videoProfiles[1].Format = net.VideoProfile_MPEGTS
+	ffmpegProfiles, err = makeFfmpegVideoProfiles(videoProfiles)
+	assert.Nil(err)
+	assert.Equal(ffmpegProfiles[0].Format, ffmpeg.FormatMP4)
+	assert.Equal(ffmpegProfiles[1].Format, ffmpeg.FormatMPEGTS)
+
+	// Invalid format should return error
+	videoProfiles[1].Format = -1
+	ffmpegProfiles, err = makeFfmpegVideoProfiles(videoProfiles)
+	assert.Nil(ffmpegProfiles)
+	assert.Equal(errFormat, err)
+}
+
+func TestServeSegment_SaveDataFormat(t *testing.T) {
+	assert := assert.New(t)
+	os := &stubOSSession{}
+	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{
+		&core.TranscodedSegmentData{Data: []byte("unused1")},
+		&core.TranscodedSegmentData{Data: []byte("unused2")},
+	}}
+	tRes := &core.TranscodeResult{
+		TranscodeData: tData,
+		OS:            os,
+	}
+	orch := &stubOrchestrator{res: tRes, offchain: true}
+	handler := serveSegmentHandler(orch)
+
+	oldStorage := drivers.NodeStorage
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	defer func() { drivers.NodeStorage = oldStorage }()
+
+	sess := &BroadcastSession{
+		Profiles:      []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9, ffmpeg.P720p60fps16x9},
+		Broadcaster:   stubBroadcaster2(),
+		BroadcasterOS: os,
+	}
+	creds, err := genSegCreds(sess, &stream.HLSSegment{})
+	assert.Nil(err)
+	headers := map[string]string{segmentHeader: creds}
+
+	for _, p := range sess.Profiles {
+		assert.Equal(ffmpeg.FormatNone, p.Format) // sanity check
+	}
+
+	// no format in profiles
+	resp := httpPostResp(handler, bytes.NewReader([]byte("")), headers)
+	defer resp.Body.Close()
+	assert.Equal([]string{"P720p30fps16x9/0.ts", "P720p60fps16x9/0.ts"}, os.saved)
+
+	// mp4 format
+	for i, _ := range sess.Profiles {
+		sess.Profiles[i].Format = ffmpeg.FormatMP4
+	}
+	assert.Equal(ffmpeg.FormatNone, ffmpeg.P720p30fps16x9.Format) // sanity
+	assert.Equal(ffmpeg.FormatNone, ffmpeg.P720p60fps16x9.Format) // sanity
+	creds, err = genSegCreds(sess, &stream.HLSSegment{})
+	os = &stubOSSession{} // reset for simplicity
+	tRes.OS = os
+	headers = map[string]string{segmentHeader: creds}
+	resp = httpPostResp(handler, bytes.NewReader([]byte("")), headers)
+	defer resp.Body.Close()
+	assert.Equal([]string{"P720p30fps16x9/0.mp4", "P720p60fps16x9/0.mp4"}, os.saved)
+
+	// mpegts format
+	for i, _ := range sess.Profiles {
+		sess.Profiles[i].Format = ffmpeg.FormatMPEGTS
+	}
+	creds, err = genSegCreds(sess, &stream.HLSSegment{})
+	os = &stubOSSession{} // reset for simplicity
+	tRes.OS = os
+	headers = map[string]string{segmentHeader: creds}
+	resp = httpPostResp(handler, bytes.NewReader([]byte("")), headers)
+	defer resp.Body.Close()
+	assert.Equal([]string{"P720p30fps16x9/0.ts", "P720p60fps16x9/0.ts"}, os.saved)
+
+	// Check for error in format extension detection prior to saving data
+	// Simulate by removing one of the formats from the ffmpeg table
+	assert.Contains(ffmpeg.FormatExtensions, ffmpeg.FormatMPEGTS, "Could not sanity check mpegts format extension")
+	oldExt := ffmpeg.FormatExtensions[ffmpeg.FormatMPEGTS]
+	delete(ffmpeg.FormatExtensions, ffmpeg.FormatMPEGTS)
+	defer func() {
+		ffmpeg.FormatExtensions[ffmpeg.FormatMPEGTS] = oldExt
+		assert.Contains(ffmpeg.FormatExtensions, ffmpeg.FormatMPEGTS)
+	}()
+	assert.NotContains(ffmpeg.FormatExtensions, ffmpeg.FormatMPEGTS)
+	os = &stubOSSession{}
+	tRes.OS = os
+	resp = httpPostResp(handler, bytes.NewReader([]byte("")), headers)
+	defer resp.Body.Close()
+	assert.Empty(os.saved)
+
+	var tr net.TranscodeResult
+	body, err := ioutil.ReadAll(resp.Body)
+	err = proto.Unmarshal(body, &tr)
+	assert.Nil(err)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	res, ok := tr.Result.(*net.TranscodeResult_Error)
+	assert.True(ok)
+	assert.Equal("unknown VideoProfile format for extension", res.Error)
 }
 
 func TestServeSegment_OSSaveDataError(t *testing.T) {
@@ -680,6 +868,7 @@ func TestServeSegment_InsufficientBalanceError(t *testing.T) {
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
+		Profiles:    []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
 	creds, err := genSegCreds(s, seg)

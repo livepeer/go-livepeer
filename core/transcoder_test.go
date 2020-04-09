@@ -19,12 +19,11 @@ func TestLocalTranscoder(t *testing.T) {
 	tc := NewLocalTranscoder(tmp)
 	ffmpeg.InitFFmpeg()
 
-	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-	res, err := tc.Transcode("", "test.ts", profiles)
+	res, err := tc.Transcode("", "test.ts", videoProfiles)
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
-	if len(res.Segments) != len(profiles) {
+	if len(res.Segments) != len(videoProfiles) {
 		t.Error("Mismatched results")
 	}
 	if Over1Pct(len(res.Segments[0].Data), 164876) {
@@ -232,7 +231,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles)
 	assert.Equal(1, len(opts))
-	assert.Equal("foo/out_bar.ts", opts[0].Oname)
+	assert.Equal("foo/out_bar.tempfile", opts[0].Oname)
 	assert.Equal(ffmpeg.Software, opts[0].Accel)
 	assert.Equal(ffmpeg.P144p30fps16x9, opts[0].Profile)
 	assert.Equal("copy", opts[0].AudioEncoder.Name)
@@ -243,7 +242,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	assert.Equal(2, len(opts))
 
 	for i, p := range profiles {
-		assert.Equal("foo/out_bar.ts", opts[i].Oname)
+		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
 		assert.Equal(ffmpeg.Software, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
 		assert.Equal("copy", opts[i].AudioEncoder.Name)
@@ -254,7 +253,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	assert.Equal(2, len(opts))
 
 	for i, p := range profiles {
-		assert.Equal("foo/out_bar.ts", opts[i].Oname)
+		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
 		assert.Equal(ffmpeg.Nvidia, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
 		assert.Equal("copy", opts[i].AudioEncoder.Name)
@@ -281,11 +280,43 @@ func TestAudioCopy(t *testing.T) {
 	_, err := ffmpeg.Transcode3(in, out)
 	assert.Nil(err)
 
-	profs := []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9} // dummy
-	res, err := tc.Transcode("", audioSample, profs)
+	res, err := tc.Transcode("", audioSample, videoProfiles)
 	assert.Nil(err)
 
 	o, err := ioutil.ReadFile(audioSample)
 	assert.Nil(err)
 	assert.Equal(o, res.Segments[0].Data)
+}
+
+func TestTranscoder_Formats(t *testing.T) {
+	// Helps ensure the necessary ffmpeg configure options are enabled
+	assert := assert.New(t)
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+
+	in := &ffmpeg.TranscodeOptionsIn{Fname: "test.ts"}
+	for k, v := range ffmpeg.ExtensionFormats {
+		assert.NotEqual(ffmpeg.FormatNone, v) // sanity check
+
+		p := ffmpeg.P144p30fps16x9 // make a copy bc we mutate the profile
+		p.Format = v
+
+		// use LPMS api directly so we can transcode ; faster
+		out := []ffmpeg.TranscodeOptions{{
+			Oname:        dir + "/tmp" + k,
+			Profile:      p,
+			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+		}}
+		_, err := ffmpeg.Transcode3(in, out)
+		assert.Nil(err)
+
+		// check output is reasonable
+		ofile, err := ioutil.ReadFile(out[0].Oname)
+		assert.Nil(err)
+		assert.Greater(len(ofile), 500000) // large enough for "valid output"
+		// Assume that since the file exists, the actual format is correct
+	}
+	// sanity check the base format wasn't overwritten (has happened before!)
+	assert.Equal(ffmpeg.FormatNone, ffmpeg.P144p30fps16x9.Format)
 }

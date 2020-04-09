@@ -124,8 +124,12 @@ message SegData {
   // XXX should we include this in a sig somewhere until certs are authenticated?
   repeated OSInfo storage = 32;
 
-  // Transcoding profiles to use. Supersedes `profiles` field 
+  // Transcoding profiles to use. Supersedes `profiles` field
+  // Deprecated by `fullProfiles2` but may still be used for mpegts formats
   repeated VideoProfile fullProfiles = 33;
+
+  // Transcoding profiles to use. Supersedes `fullProfiles` field
+  repeated VideoProfile fullProfiles2 = 34;
 }
 
 message VideoProfile {
@@ -143,6 +147,13 @@ message VideoProfile {
 
   // FPS of VideoProfile
   uint32 fps = 20;
+
+  // Desired output format
+  enum Format {
+    MPEGTS     = 0;
+    MP4        = 1;
+  }
+  Format format = 21;
 }
 
 // Individual transcoded segment data.
