@@ -1,11 +1,9 @@
 package core
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -37,7 +35,8 @@ func TestLocalTranscoder(t *testing.T) {
 func TestNvidia_Transcoder(t *testing.T) {
 	tmp, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(tmp)
-	StartNvidiaTranscoders("123,456", tmp)
+	WorkDir = tmp
+	defer func() { WorkDir = "" }()
 	tc := NewNvidiaTranscoder("123")
 	ffmpeg.InitFFmpeg()
 
@@ -58,7 +57,6 @@ func TestNvidia_Transcoder(t *testing.T) {
 		t.Skip("No device specified; skipping remainder of Nvidia tests")
 		return
 	}
-	StartNvidiaTranscoders(dev, tmp)
 	tc = NewNvidiaTranscoder(dev)
 	res, err := tc.Transcode("", fname, profiles)
 	if err != nil {
@@ -70,71 +68,6 @@ func TestNvidia_Transcoder(t *testing.T) {
 	if Over1Pct(len(res.Segments[1].Data), 771740) {
 		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
 	}
-}
-
-func TestNvidia_Stack(t *testing.T) {
-	assert := assert.New(t)
-	ss := newSegStack("")
-	assert.Empty(ss.segs, "Sanity check for empty stack")
-	for i := 0; i < 1000; i++ {
-		fname := fmt.Sprintf("%d", i)
-		ss.push(&nvSegData{fname: fname})
-	}
-	for i := 999; i >= 0; i-- {
-		fname := fmt.Sprintf("%d", i)
-		seg := ss.pop()
-		assert.Equal(fname, seg.fname)
-	}
-	assert.Empty(ss.segs, "Stack nonempty") // sanity check
-
-	// "Check" popping an empty stack blocks. Approximate this with a timeout
-	wg := newWg(1)
-	go func() {
-		ss.pop()
-		wg.Done()
-	}()
-	assert.False(wgWait2(wg, 100*time.Millisecond), "Did not time out on empty stack")
-}
-
-func TestNvidia_ConcurrentStack(t *testing.T) {
-	// Run this under `-race`
-	ss := newSegStack("")
-	wg := newWg(1000)
-	for i := 0; i < 1000; i++ {
-		go ss.push(&nvSegData{})
-		go func() {
-			// can't sanity check returned values here because
-			// order of insertion is unpredictable. Just run this under `-race`
-			ss.pop()
-			wg.Done()
-		}()
-	}
-	wgWait(wg)
-}
-
-func TestNvidia_ConcurrentTranscodes(t *testing.T) {
-	assert := assert.New(t)
-	dev := os.Getenv("NV_DEVICE")
-	if dev == "" {
-		t.Skip("No device specified; skipping remainder of ", t.Name())
-		return
-	}
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
-	StartNvidiaTranscoders(dev, tmp)
-	tc := NewNvidiaTranscoder(dev)
-	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-	wg := newWg(5)
-	for i := 0; i < 5; i++ {
-		go func() {
-			res, err := tc.Transcode("", "test2.ts", profiles)
-			assert.Nil(err, "Error transcoding")
-			assert.InEpsilon(487484, len(res.Segments[0].Data), 0.01, fmt.Sprintf("Expected within 1%% of %d", len(res.Segments[0].Data)))
-			assert.InEpsilon(766288, len(res.Segments[1].Data), 0.01, fmt.Sprintf("Expected within 1%% of %d", len(res.Segments[1].Data)))
-			wg.Done()
-		}()
-	}
-	assert.True(wgWait2(wg, 20*time.Second), "Transcodes timed out") // can be slow
 }
 
 func TestResToTranscodeData(t *testing.T) {
