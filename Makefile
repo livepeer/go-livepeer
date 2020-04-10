@@ -1,9 +1,12 @@
 SHELL=/bin/bash
 
-all: net/lp_rpc.pb.go livepeer livepeer_cli
+all: net/lp_rpc.pb.go core/test_segment.go livepeer livepeer_cli
 
 net/lp_rpc.pb.go: net/lp_rpc.proto
 	protoc -I=. --go_out=plugins=grpc:. $^
+
+core/test_segment.go:
+	core/test_segment.sh core/test_segment.go
 
 version=$(shell cat VERSION)
 

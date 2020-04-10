@@ -1,10 +1,13 @@
 package core
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -75,6 +78,43 @@ func (nv *NvidiaTranscoder) Transcode(job string, fname string, profiles []ffmpe
 		return nil, err
 	}
 	return resToTranscodeData(res, out)
+}
+
+// TestNvidiaTranscoder tries to transcode test segment on all the devices
+func TestNvidiaTranscoder(gpu string) error {
+	devices := strings.Split(gpu, ",")
+	b := bytes.NewReader(testSegment)
+	z, err := gzip.NewReader(b)
+	if err != nil {
+		return err
+	}
+	mp4testSeg, err := ioutil.ReadAll(z)
+	z.Close()
+	if err != nil {
+		return err
+	}
+	fname := filepath.Join(WorkDir, "testseg.tempfile")
+	err = ioutil.WriteFile(fname, mp4testSeg, 0644)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(fname)
+	for _, device := range devices {
+		t1 := NewNvidiaTranscoder(device)
+		p := ffmpeg.VideoProfile{Resolution: "48x48", Bitrate: "1k", Format: ffmpeg.FormatMP4}
+		profiles := []ffmpeg.VideoProfile{p, p, p, p}
+		td, err := t1.Transcode("", fname, profiles)
+
+		t1.Stop()
+		if err != nil {
+			return err
+		}
+		if len(td.Segments) == 0 || td.Pixels == 0 {
+			return errors.New("Empty transcoded segment")
+		}
+	}
+
+	return nil
 }
 
 func NewNvidiaTranscoder(gpu string) TranscoderSession {
