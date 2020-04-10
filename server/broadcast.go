@@ -58,11 +58,13 @@ type BroadcastSessionsManager struct {
 	sel      BroadcastSessionsSelector
 	sessMap  map[string]*BroadcastSession
 	numOrchs int // how many orchs to request at once
+	poolSize int
 
 	refreshing bool // only allow one refresh in-flight
 	finished   bool // set at stream end
 
 	createSessions func() ([]*BroadcastSession, error)
+	sus            *suspender
 }
 
 func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
@@ -133,6 +135,8 @@ func (bsm *BroadcastSessionsManager) refreshSessions() {
 	bsm.refreshing = true
 	bsm.sessLock.Unlock()
 
+	bsm.sus.signalRefresh()
+
 	newBroadcastSessions, err := bsm.createSessions()
 	if err != nil {
 		bsm.sessLock.Lock()
@@ -177,6 +181,10 @@ func (bsm *BroadcastSessionsManager) cleanup() {
 	bsm.sessMap = make(map[string]*BroadcastSession) // prevent segfaults
 }
 
+func (bsm *BroadcastSessionsManager) suspendOrch(sess *BroadcastSession) {
+	bsm.sus.suspend(sess.OrchestratorInfo.GetTranscoder(), bsm.poolSize/bsm.numOrchs)
+}
+
 func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl core.PlaylistManager, sel BroadcastSessionsSelector) *BroadcastSessionsManager {
 	var poolSize float64
 	if node.OrchestratorPool != nil {
@@ -184,25 +192,30 @@ func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl cor
 	}
 	maxInflight := common.HTTPTimeout.Seconds() / SegLen.Seconds()
 	numOrchs := int(math.Min(poolSize, maxInflight*2))
+	sus := newSuspender()
 	bsm := &BroadcastSessionsManager{
-		mid:            params.mid,
-		sel:            sel,
-		sessMap:        make(map[string]*BroadcastSession),
-		createSessions: func() ([]*BroadcastSession, error) { return selectOrchestrator(node, params, pl, numOrchs) },
-		sessLock:       &sync.Mutex{},
-		numOrchs:       numOrchs,
+		mid:     params.mid,
+		sel:     sel,
+		sessMap: make(map[string]*BroadcastSession),
+		createSessions: func() ([]*BroadcastSession, error) {
+			return selectOrchestrator(node, params, pl, numOrchs, sus)
+		},
+		sessLock: &sync.Mutex{},
+		numOrchs: numOrchs,
+		poolSize: int(poolSize),
+		sus:      sus,
 	}
 	bsm.refreshSessions()
 	return bsm
 }
 
-func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core.PlaylistManager, count int) ([]*BroadcastSession, error) {
+func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core.PlaylistManager, count int, sus *suspender) ([]*BroadcastSession, error) {
 	if n.OrchestratorPool == nil {
 		glog.Info("No orchestrators specified; not transcoding")
 		return nil, errDiscovery
 	}
 
-	tinfos, err := n.OrchestratorPool.GetOrchestrators(count)
+	tinfos, err := n.OrchestratorPool.GetOrchestrators(count, sus)
 	if len(tinfos) <= 0 {
 		glog.Info("No orchestrators found; not transcoding. Error: ", err)
 		return nil, errNoOrchs
@@ -355,6 +368,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			if monitor.Enabled {
 				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err.Error(), false)
 			}
+			cxn.sessManager.suspendOrch(sess)
 			cxn.sessManager.removeSession(sess)
 			return nil, err
 		}
@@ -367,6 +381,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		if err := sess.Sender.ValidateTicketParams(pmTicketParams(sess.OrchestratorInfo.TicketParams)); err != nil {
 			if err != pm.ErrTicketParamsExpired {
 				glog.Error("Invalid ticket params err=", err)
+				cxn.sessManager.suspendOrch(sess)
 				cxn.sessManager.removeSession(sess)
 				return nil, err
 			}
@@ -374,6 +389,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			glog.V(common.VERBOSE).Infof("Ticket params expired, refreshing for orch=%v", sess.OrchestratorInfo.Transcoder)
 			newSess, err := refreshSession(sess)
 			if err != nil {
+				cxn.sessManager.suspendOrch(sess)
 				cxn.sessManager.removeSession(sess)
 				return nil, fmt.Errorf("unable to refresh ticket params for orch=%v err=%v", sess.OrchestratorInfo.Transcoder, err)
 			}
@@ -382,6 +398,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 	res, err := SubmitSegment(sess, seg, nonce)
 	if err != nil || res == nil {
+		cxn.sessManager.suspendOrch(sess)
 		cxn.sessManager.removeSession(sess)
 		if res == nil && err == nil {
 			err = errors.New("empty response")
@@ -433,6 +450,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				segLock.Lock()
 				dlErr = err
 				segLock.Unlock()
+				cxn.sessManager.suspendOrch(sess)
 				cxn.sessManager.removeSession(sess)
 				return
 			}

@@ -77,7 +77,7 @@ func (d *stubDiscovery) GetURLs() []*url.URL {
 	return nil
 }
 
-func (d *stubDiscovery) GetOrchestrators(num int) ([]*net.OrchestratorInfo, error) {
+func (d *stubDiscovery) GetOrchestrators(num int, sus common.Suspender) ([]*net.OrchestratorInfo, error) {
 	if d.waitGetOrch != nil {
 		<-d.waitGetOrch
 	}
@@ -135,14 +135,14 @@ func TestSelectOrchestrator(t *testing.T) {
 	sp := &streamParameters{mid: mid, profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}}
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	pl := core.NewBasicPlaylistManager(mid, storage)
-	if _, err := selectOrchestrator(s.LivepeerNode, sp, pl, 4); err != errDiscovery {
+	if _, err := selectOrchestrator(s.LivepeerNode, sp, pl, 4, newSuspender()); err != errDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(s.LivepeerNode, sp, pl, 4); sess != nil || err != errNoOrchs {
+	if sess, err := selectOrchestrator(s.LivepeerNode, sp, pl, 4, newSuspender()); sess != nil || err != errNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -151,7 +151,7 @@ func TestSelectOrchestrator(t *testing.T) {
 		&net.OrchestratorInfo{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}},
 		&net.OrchestratorInfo{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}},
 	}
-	sess, _ := selectOrchestrator(s.LivepeerNode, sp, pl, 4)
+	sess, _ := selectOrchestrator(s.LivepeerNode, sp, pl, 4, newSuspender())
 
 	if len(sess) != len(sd.infos) {
 		t.Error("Expected session length of 2")
@@ -255,7 +255,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	expSessionID2 := "bar"
 	sender.On("StartSession", mock.Anything).Return(expSessionID2).Once()
 
-	sess, err = selectOrchestrator(s.LivepeerNode, sp, pl, 4)
+	sess, err = selectOrchestrator(s.LivepeerNode, sp, pl, 4, newSuspender())
 	require.Nil(err)
 
 	assert := assert.New(t)

@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"container/heap"
 	"context"
 	"math"
 	"math/rand"
@@ -44,13 +45,13 @@ func (o *orchestratorPool) GetURLs() []*url.URL {
 	return o.uris
 }
 
-func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.OrchestratorInfo, error) {
+func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender common.Suspender) ([]*net.OrchestratorInfo, error) {
 	numAvailableOrchs := len(o.uris)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
 	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
 
-	infoCh := make(chan *net.OrchestratorInfo, len(o.uris))
-	errCh := make(chan error, len(o.uris))
+	infoCh := make(chan *net.OrchestratorInfo, numAvailableOrchs)
+	errCh := make(chan error, numAvailableOrchs)
 	getOrchInfo := func(uri *url.URL) {
 		info, err := serverGetOrchInfo(ctx, o.bcast, uri)
 		if err == nil && (o.pred == nil || o.pred(info)) {
@@ -64,8 +65,8 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 	}
 
 	// Shuffle into new slice to avoid mutating underlying data
-	uris := make([]*url.URL, len(o.uris))
-	for i, j := range rand.Perm(len(o.uris)) {
+	uris := make([]*url.URL, numAvailableOrchs)
+	for i, j := range rand.Perm(numAvailableOrchs) {
 		uris[i] = o.uris[j]
 	}
 
@@ -75,11 +76,16 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 
 	timeout := false
 	infos := []*net.OrchestratorInfo{}
+	suspendedInfos := newSuspensionQueue()
 	nbResp := 0
-	for i := 0; i < len(uris) && len(infos) < numOrchestrators && !timeout; i++ {
+	for i := 0; i < numAvailableOrchs && len(infos) < numOrchestrators && !timeout; i++ {
 		select {
 		case info := <-infoCh:
-			infos = append(infos, info)
+			if penalty := suspender.Suspended(info.Transcoder); penalty == 0 {
+				infos = append(infos, info)
+			} else {
+				heap.Push(suspendedInfos, &suspension{info, penalty})
+			}
 			nbResp++
 		case <-errCh:
 			nbResp++
@@ -88,6 +94,15 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int) ([]*net.Orches
 		}
 	}
 	cancel()
+
+	if len(infos) < numOrchestrators {
+		diff := numOrchestrators - len(infos)
+		for i := 0; i < diff && suspendedInfos.Len() > 0; i++ {
+			info := heap.Pop(suspendedInfos).(*suspension).orch
+			infos = append(infos, info)
+		}
+	}
+
 	glog.Infof("Done fetching orch info numOrch=%d responses=%d/%d timeout=%t",
 		len(infos), nbResp, len(uris), timeout)
 	return infos, nil
