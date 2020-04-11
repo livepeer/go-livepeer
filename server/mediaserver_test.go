@@ -42,7 +42,7 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	if S == nil {
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
-		S = NewLivepeerServer("127.0.0.1:1938", n)
+		S = NewLivepeerServer("127.0.0.1:1938", n, true)
 		go S.StartMediaServer(ctx, "", "127.0.0.1:8080")
 		go S.StartCliWebserver("127.0.0.1:8938")
 	}

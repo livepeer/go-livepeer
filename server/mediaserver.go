@@ -114,7 +114,7 @@ type authWebhookResponse struct {
 	} `json:"profiles"`
 }
 
-func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode) *LivepeerServer {
+func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool) *LivepeerServer {
 	opts := lpmscore.LPMSOpts{
 		RtmpAddr:     rtmpAddr,
 		RtmpDisabled: true,
@@ -129,7 +129,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode) *LivepeerServ
 	ls := &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{},
 		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
 	}
-	if lpNode.NodeType == core.BroadcasterNode {
+	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
 	}
 	return ls
