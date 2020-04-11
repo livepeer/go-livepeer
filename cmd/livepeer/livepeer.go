@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -89,6 +90,7 @@ func main() {
 	verifierURL := flag.String("verifierUrl", "", "URL of the verifier to use")
 
 	verifierPath := flag.String("verifierPath", "", "Path to verifier shared volume")
+	httpIngest := flag.Bool("httpIngest", true, "Set to true to enable HTTP ingest")
 
 	// Transcoding:
 	orchestrator := flag.Bool("orchestrator", false, "Set to true to be an orchestrator")
@@ -141,6 +143,9 @@ func main() {
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
+
+	isFlagSet := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) { isFlagSet[f.Name] = true })
 
 	blockPollingTime := time.Duration(*blockPollingInterval) * time.Second
 
@@ -676,6 +681,16 @@ func main() {
 			server.AuthWebhookURL = *authWebhookURL
 		}
 
+		isLocalHTTP, err := isLocalURL("https://" + *httpAddr)
+		if err != nil {
+			glog.Errorf("Error checking for local -httpAddr: %v", err)
+			return
+		}
+		if !isFlagSet["httpIngest"] && !isLocalHTTP && server.AuthWebhookURL == "" {
+			glog.Warning("HTTP ingest is disabled because -httpAddr is publicly accessible. To enable, configure -authWebhookUrl or use the -httpIngest flag")
+			*httpIngest = false
+		}
+
 		// Set up verifier
 		if *verifierURL != "" {
 			_, err := validateURL(*verifierURL)
@@ -724,7 +739,7 @@ func main() {
 	//Create Livepeer Node
 
 	//Set up the media server
-	s := server.NewLivepeerServer(*rtmpAddr, n)
+	s := server.NewLivepeerServer(*rtmpAddr, n, *httpIngest)
 	ec := make(chan error)
 	tc := make(chan struct{})
 	wc := make(chan struct{})
@@ -818,6 +833,20 @@ func validateURL(u string) (*url.URL, error) {
 		return nil, errors.New("URL should be HTTP or HTTPS")
 	}
 	return p, nil
+}
+
+func isLocalURL(u string) (bool, error) {
+	uri, err := url.ParseRequestURI(u)
+	if err != nil {
+		return false, err
+	}
+
+	hostname := uri.Hostname()
+	if net.ParseIP(hostname).IsLoopback() || hostname == "localhost" {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // ServiceURI checking steps:

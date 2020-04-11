@@ -192,4 +192,39 @@ kill $pid
 run_lp -broadcaster -verifierUrl http://host -s3bucket foo/bar -s3creds baz/bat
 kill $pid
 
+# Check that HTTP ingest is disabled when -httpAddr is publicly accessible and there is no auth webhook URL and -httpIngest defaults to false
+run_lp -broadcaster -httpAddr 0.0.0.0
+curl -X PUT http://localhost:8935/live/movie/0.ts | grep "404 page not found"
+kill $pid
+
+# Check that HTTP ingest is disabled when -httpAddr is not publicly accessible and -httpIngest is set to false
+run_lp -broadcaster -httpIngest=false
+curl -X PUT http://localhost:8935/live/movie/0.ts | grep "404 page not found"
+kill $pid
+
+# Check that HTTP ingest is disabled when -httpAddr is publicly accessible and there is a auth webhook URL and -httpIngest is set to false
+run_lp -broadcaster -httpAddr 0.0.0.0 -authWebhookUrl http://foo.com -httpIngest=false
+curl -X PUT http://localhost:8935/live/movie/0.ts | grep "404 page not found"
+kill $pid
+
+# Check that HTTP ingest is enabled when -httpIngest is true
+run_lp -broadcaster -httpAddr 0.0.0.0 -httpIngest
+curl -X PUT http://localhost:8935/live/movie/0.ts | grep -v "404 page not found"
+kill $pid
+
+# Check that HTTP ingest is enabled when -httpAddr sets the hostname to 127.0.0.1
+run_lp -broadcaster -httpAddr 127.0.0.1
+curl -X PUT http://localhost:8935/live/movie/0.ts | grep -v "404 page not found"
+kill $pid
+
+# Check that HTTP ingest is enabled when -httpAddr sets the hostname to localhost
+run_lp -broadcaster -httpAddr localhost 
+curl -X PUT http://localhost:8935/live/movie/0.ts | grep -v "404 page not found"
+kill $pid
+
+# Check that HTTP ingest is enabled when there is an auth webhook URL
+run_lp -broadcaster -httpAddr 0.0.0.0 -authWebhookUrl http://foo.com
+curl -X PUT http://localhost:8935/live/movie/0.ts | grep -v "404 page not found"
+kill $pid
+
 rm -rf $TMPDIR
