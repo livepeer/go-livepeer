@@ -42,23 +42,6 @@ run_lp -broadcaster
 [ -d "$DEFAULT_DATADIR"/offchain ]
 kill $pid
 
-run_lp -broadcaster -network rinkeby $ETH_ARGS
-[ -d "$DEFAULT_DATADIR"/rinkeby ]
-kill $pid
-
-# Error if flags to set MaxBroadcastPrice aren't provided correctly
-res=0
-$TMPDIR/livepeer -broadcaster -network rinkeby $ETH_ARGS -maxPricePerUnit 0 -pixelsPerUnit -5 || res=$?
-[ $res -ne 0 ]
-
-run_lp -broadcaster -network mainnet $ETH_ARGS
-[ -d "$DEFAULT_DATADIR"/mainnet ]
-kill $pid
-
-run_lp -broadcaster -network anyNetwork $ETH_ARGS -ethUrl "https://rinkeby.infura.io/v3/09642b98164d43eb890939eb9a7ec500" -v 99
-[ -d "$DEFAULT_DATADIR"/anyNetwork ]
-kill $pid
-
 # sanity check that custom datadir does not exist
 [ ! -d "$CUSTOM_DATADIR" ]
 
@@ -72,11 +55,6 @@ CUSTOM_DATADIR="$TMPDIR"/customDatadir2
 
 # sanity check that custom datadir does not exist
 [ ! -d "$CUSTOM_DATADIR" ]
-
-# check custom datadir with a network
-run_lp -broadcaster -datadir "$CUSTOM_DATADIR" -network rinkeby $ETH_ARGS
-[ ! -d  "$CUSTOM_DATADIR"/rinkeby ] # sanity check that network isn't included
-kill $pid
 
 # check invalid service address via inserting control character
 $TMPDIR/livepeer -orchestrator -orchSecret asdf -serviceAddr "hibye" 2>&1 | grep "Error getting service URI"
@@ -100,37 +78,91 @@ res=0
 $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 || res=$?
 [ $res -ne 0 ]
 
-# Orchestrator needs to explicitly set PricePerUnit otherwise it will default to 0 resulting in a fatal error
-res=0
-$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -network rinkeby $ETH_ARGS || res=$?
-[ $res -ne 0 ]
-# Orchestrator needs PricePerUnit > 0 
-res=0
-$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit 0 -network rinkeby $ETH_ARGS || res=$?
-[ $res -ne 0 ]
-res=0
-$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit -5 -network rinkeby $ETH_ARGS || res=$?
-[ $res -ne 0 ]
-# Orchestrator needs PixelsPerUnit > 0
-res=0
-$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit 0 -pricePerUnit 5 -network rinkeby $ETH_ARGS || res=$?
-[ $res -ne 0 ]
-res=0
-$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit -5 -pricePerUnit 5 -network rinkeby $ETH_ARGS || res=$?
-[ $res -ne 0 ]
+# Run mainnet tests
+if [ -z ${MAINNET_ETH_URL+x} ]
+then
+    echo "MAINNET_ETH_URL is not set - skipping mainnet tests"
+else
+    # Exit early if -ethUrl is missing
+    res=0
+    $TMPDIR/livepeer -broadcaster -network mainnet $ETH_ARGS || res=$?
+    [ $res -ne 0 ]
 
-# Broadcaster needs a valid rational number for -maxTicketEV
-res=0
-$TMPDIR/livepeer -broadcaster -maxTicketEV abcd -network rinkeby $ETH_ARGS || res=$?
-[ $res -ne 0 ]
-# Broadcaster needs a non-negative number for -maxTicketEV
-res=0
-$TMPDIR/livepeer -broadcaster -maxTicketEV -1 -network rinkeby $ETH_ARGS || res=$?
-[ $res -ne 0 ]
-# Broadcaster needs a postive number for -depositMultiplier
-res=0
-$TMPDIR/livepeer -broadcaster -depositMultiplier 0 -network rinkeby $ETH_ARGS || res=$?
-[ $res -ne 0 ]
+    OLD_ETH_ARGS=$ETH_ARGS
+    ETH_ARGS="${ETH_ARGS} -ethUrl ${MAINNET_ETH_URL}"
+
+    run_lp -broadcaster -network mainnet $ETH_ARGS
+    [ -d "$DEFAULT_DATADIR"/mainnet ]
+    kill $pid
+
+    ETH_ARGS=$OLD_ETH_ARGS
+fi
+
+# Run Rinkeby tests
+if [ -z ${RINKEBY_ETH_URL+x} ]
+then
+    echo "RINKEBY_ETH_URL is not set - skipping Rinkeby tests"
+else
+    # Exit early if -ethUrl is missing
+    res=0
+    $TMPDIR/livepeer -broadcaster -network rinkeby $ETH_ARGS || res=$?
+    [ $res -ne 0 ]
+
+    OLD_ETH_ARGS=$ETH_ARGS
+    ETH_ARGS="${ETH_ARGS} -ethUrl ${RINKEBY_ETH_URL}"
+
+    run_lp -broadcaster -network rinkeby $ETH_ARGS
+    [ -d "$DEFAULT_DATADIR"/rinkeby ]
+    kill $pid
+
+    # Error if flags to set MaxBroadcastPrice aren't provided correctly
+    res=0
+    $TMPDIR/livepeer -broadcaster -network rinkeby $ETH_ARGS -maxPricePerUnit 0 -pixelsPerUnit -5 || res=$?
+    [ $res -ne 0 ]
+
+    run_lp -broadcaster -network anyNetwork $ETH_ARGS -v 99
+    [ -d "$DEFAULT_DATADIR"/anyNetwork ]
+    kill $pid
+
+    # check custom datadir with a network
+    run_lp -broadcaster -datadir "$CUSTOM_DATADIR" -network rinkeby $ETH_ARGS
+    [ ! -d  "$CUSTOM_DATADIR"/rinkeby ] # sanity check that network isn't included
+    kill $pid
+
+    # Orchestrator needs to explicitly set PricePerUnit otherwise it will default to 0 resulting in a fatal error
+    res=0
+    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -network rinkeby $ETH_ARGS || res=$?
+    [ $res -ne 0 ]
+    # Orchestrator needs PricePerUnit > 0 
+    res=0
+    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit 0 -network rinkeby $ETH_ARGS || res=$?
+    [ $res -ne 0 ]
+    res=0
+    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit -5 -network rinkeby $ETH_ARGS || res=$?
+    [ $res -ne 0 ]
+    # Orchestrator needs PixelsPerUnit > 0
+    res=0
+    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit 0 -pricePerUnit 5 -network rinkeby $ETH_ARGS || res=$?
+    [ $res -ne 0 ]
+    res=0
+    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit -5 -pricePerUnit 5 -network rinkeby $ETH_ARGS || res=$?
+    [ $res -ne 0 ]
+
+    # Broadcaster needs a valid rational number for -maxTicketEV
+    res=0
+    $TMPDIR/livepeer -broadcaster -maxTicketEV abcd -network rinkeby $ETH_ARGS || res=$?
+    [ $res -ne 0 ]
+    # Broadcaster needs a non-negative number for -maxTicketEV
+    res=0
+    $TMPDIR/livepeer -broadcaster -maxTicketEV -1 -network rinkeby $ETH_ARGS || res=$?
+    [ $res -ne 0 ]
+    # Broadcaster needs a postive number for -depositMultiplier
+    res=0
+    $TMPDIR/livepeer -broadcaster -depositMultiplier 0 -network rinkeby $ETH_ARGS || res=$?
+    [ $res -ne 0 ]
+
+    ETH_ARGS=$OLD_ETH_ARGS
+fi
 
 # transcoder needs -orchSecret
 res=0
