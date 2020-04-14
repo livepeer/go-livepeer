@@ -92,6 +92,8 @@ into the Livepeer network. Upon ingest, HTTP stream is pushed to the segmenter
 prior to transcoding. The stream can be pushed via a PUT or POST HTTP request to the
 `/live/` endpoint. HTTP request timeout is 8 seconds.
 
+HTTP ingest is enabled by default. However, if the HTTP server is publicly accessible (i.e. listening on a non-local host) and an authentication webhook URL is not specified then HTTP ingest will be disabled. In this case, to enable HTTP ingest, set an authentication webhook URL using `-authWebhookUrl` and/or use the `-httpIngest` flag when starting the node. To always disable HTTP ingest start the node with `-httpIngest=false`.
+
 The body of the request should be the binary data of the video segment.
 
 Two HTTP headers should be provided:

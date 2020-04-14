@@ -247,6 +247,42 @@ func TestShouldUpdateLastUsed(t *testing.T) {
 	assert.True(lu.Before(s.rtmpConnections["mani1"].lastUsed))
 }
 
+func TestPush_HTTPIngest(t *testing.T) {
+	assert := assert.New(t)
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
+
+	reader := strings.NewReader("")
+	req := httptest.NewRequest("POST", "/live/name/1.mp4", reader)
+
+	// HTTP ingest disabled
+	s := NewLivepeerServer("127.0.0.1:1938", n, false)
+	h, pattern := s.HTTPMux.Handler(req)
+	assert.Equal("", pattern)
+
+	writer := httptest.NewRecorder()
+	h.ServeHTTP(writer, req)
+	resp := writer.Result()
+	defer resp.Body.Close()
+	assert.Equal(404, resp.StatusCode)
+
+	// HTTP ingest enabled
+	s = NewLivepeerServer("127.0.0.1:1938", n, true)
+	h, pattern = s.HTTPMux.Handler(req)
+	assert.Equal("/live/", pattern)
+
+	writer = httptest.NewRecorder()
+	h.ServeHTTP(writer, req)
+	resp = writer.Result()
+	defer resp.Body.Close()
+	assert.Equal(503, resp.StatusCode)
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal("No sessions available", strings.TrimSpace(string(body)))
+}
+
 func TestPush_MP4(t *testing.T) {
 
 	// Do a bunch of setup. Would be nice to simplify this one day...
