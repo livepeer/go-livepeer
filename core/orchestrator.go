@@ -224,17 +224,12 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	return nil
 }
 
-func (orch *orchestrator) TicketParams(sender ethcommon.Address) (*net.TicketParams, error) {
+func (orch *orchestrator) TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error) {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil, nil
 	}
 
-	price, err := orch.priceInfo(sender)
-	if err != nil {
-		return nil, err
-	}
-
-	params, err := orch.node.Recipient.TicketParams(sender, price)
+	params, err := orch.node.Recipient.TicketParams(sender, big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit))
 	if err != nil {
 		return nil, err
 	}

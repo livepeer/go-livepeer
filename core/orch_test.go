@@ -1164,6 +1164,7 @@ func TestSufficientBalance_OffChainMode_ReturnsTrue(t *testing.T) {
 func TestTicketParams(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.priceInfo = big.NewRat(1, 1)
+	priceInfo := &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	round := int64(5)
@@ -1181,16 +1182,13 @@ func TestTicketParams(t *testing.T) {
 		},
 	}
 
-	multiplier := big.NewRat(1, 1)
-
 	sender := pm.RandAddress()
-	recipient.On("TxCostMultiplier", mock.Anything).Return(multiplier, nil).Once()
 	recipient.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil).Once()
 	orch := NewOrchestrator(n, nil)
 
 	assert := assert.New(t)
 
-	actualParams, err := orch.TicketParams(sender)
+	actualParams, err := orch.TicketParams(sender, priceInfo)
 	assert.Nil(err)
 
 	assert.Equal(expectedParams.Recipient.Bytes(), actualParams.Recipient)
@@ -1200,26 +1198,20 @@ func TestTicketParams(t *testing.T) {
 	assert.Equal(expectedParams.Seed.Bytes(), actualParams.Seed)
 	assert.Equal(round, actualParams.GetExpirationParams().GetCreationRound())
 	assert.Equal(blkHash.Bytes(), actualParams.GetExpirationParams().GetCreationRoundBlockHash())
+	recipient.AssertCalled(t, "TicketParams", sender, big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit))
 
 	expErr := errors.New("Recipient TicketParams Error")
-	recipient.On("TxCostMultiplier", mock.Anything).Return(multiplier, nil).Once()
 	recipient.On("TicketParams", mock.Anything, mock.Anything).Return(nil, expErr).Once()
-	actualParams, err = orch.TicketParams(sender)
+	actualParams, err = orch.TicketParams(sender, priceInfo)
 	assert.Nil(actualParams)
 	assert.EqualError(err, expErr.Error())
-
-	expErr = errors.New("TxCostMultiplier Error")
-	recipient.On("TxCostMultiplier", mock.Anything).Return(nil, expErr).Once()
-	recipient.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil).Once()
-	actualParams, err = orch.TicketParams(sender)
-	assert.Nil(actualParams)
-	assert.EqualError(err, expErr.Error())
+	recipient.AssertCalled(t, "TicketParams", sender, big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit))
 }
 
 func TestTicketParams_GivenNilNode_ReturnsNil(t *testing.T) {
 	orch := &orchestrator{}
 
-	params, err := orch.TicketParams(ethcommon.Address{})
+	params, err := orch.TicketParams(ethcommon.Address{}, nil)
 	assert.Nil(t, err)
 	assert.Nil(t, params)
 }
@@ -1229,7 +1221,7 @@ func TestTicketParams_GivenNilRecipient_ReturnsNil(t *testing.T) {
 	orch := NewOrchestrator(n, nil)
 	n.Recipient = nil
 
-	params, err := orch.TicketParams(ethcommon.Address{})
+	params, err := orch.TicketParams(ethcommon.Address{}, nil)
 	assert.Nil(t, err)
 	assert.Nil(t, params)
 }
