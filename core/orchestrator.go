@@ -273,6 +273,7 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, e
 	}, nil
 }
 
+// priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
 func (orch *orchestrator) priceInfo(sender ethcommon.Address) (*big.Rat, error) {
 	txCostMultiplier, err := orch.node.Recipient.TxCostMultiplier(sender)
 	if err != nil {
@@ -280,7 +281,11 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address) (*big.Rat, error) 
 	}
 	// pricePerPixel = basePrice * (1 + 1/ txCostMultiplier)
 	overhead := new(big.Rat).Add(big.NewRat(1, 1), new(big.Rat).Inv(txCostMultiplier))
-	return new(big.Rat).Mul(orch.node.GetBasePrice(), overhead), nil
+	fixedPrice, err := common.PriceToFixed(new(big.Rat).Mul(orch.node.GetBasePrice(), overhead))
+	if err != nil {
+		return nil, err
+	}
+	return common.FixedToPrice(fixedPrice), nil
 }
 
 // SufficientBalance checks whether the credit balance for a stream is sufficient
