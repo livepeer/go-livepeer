@@ -108,7 +108,7 @@ func main() {
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
 	ethPassword := flag.String("ethPassword", "", "Password for existing Eth account address")
 	ethKeystorePath := flag.String("ethKeystorePath", "", "Path for the Eth Key")
-	ethUrl := flag.String("ethUrl", "", "geth/parity rpc or websocket url")
+	ethUrl := flag.String("ethUrl", "", "Ethereum node JSON-RPC URL")
 	ethController := flag.String("ethController", "", "Protocol smart contract address")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 0, "Gas price for ETH transactions")
@@ -164,7 +164,6 @@ func main() {
 	}
 
 	type NetworkConfig struct {
-		ethUrl        string
 		ethController string
 	}
 
@@ -172,11 +171,9 @@ func main() {
 
 	configOptions := map[string]*NetworkConfig{
 		"rinkeby": {
-			ethUrl:        "https://rinkeby.infura.io/v3/09642b98164d43eb890939eb9a7ec500",
 			ethController: "0xA268AEa9D048F8d3A592dD7f1821297972D4C8Ea",
 		},
 		"mainnet": {
-			ethUrl:        "wss://mainnet.infura.io/ws/v3/be11162798084102a3519541eded12f6",
 			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
 		},
 	}
@@ -201,9 +198,6 @@ func main() {
 
 	// Setting config options based on specified network
 	if netw, ok := configOptions[*network]; ok {
-		if *ethUrl == "" {
-			*ethUrl = netw.ethUrl
-		}
 		if *ethController == "" {
 			*ethController = netw.ethController
 		}
@@ -329,8 +323,7 @@ func main() {
 
 		//Get the Eth client connection information
 		if *ethUrl == "" {
-			glog.Error("Need to specify ethUrl")
-			return
+			glog.Fatal("Need to specify an Ethereum node JSON-RPC URL using -ethUrl")
 		}
 
 		//Set up eth client
