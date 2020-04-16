@@ -677,7 +677,7 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
-	orch.On("TicketParams", mock.Anything).Return(&net.TicketParams{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 
@@ -803,7 +803,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	uri, err := url.Parse("http://google.com")
 	require.Nil(err)
 	orch.On("ServiceURI").Return(uri)
-	orch.On("TicketParams", mock.Anything).Return(params, nil).Once()
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(params, nil).Once()
 	orch.On("PriceInfo", mock.Anything).Return(price, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil).Once()
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
@@ -845,7 +845,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 
 	// Test orchestratorInfo error
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil).Once()
-	orch.On("TicketParams", mock.Anything).Return(nil, errors.New("TicketParams error")).Once()
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, errors.New("TicketParams error")).Once()
 
 	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
 	defer resp.Body.Close()
@@ -920,7 +920,7 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
-	orch.On("TicketParams", mock.Anything).Return(&net.TicketParams{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 
@@ -984,7 +984,7 @@ func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
-	orch.On("TicketParams", mock.Anything).Return(&net.TicketParams{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 
@@ -1058,7 +1058,7 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
-	orch.On("TicketParams", mock.Anything).Return(&net.TicketParams{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 
@@ -1134,7 +1134,7 @@ func TestServeSegment_DebitFees_TranscodeSegError_ZeroPixelsBilled(t *testing.T)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
-	orch.On("TicketParams", mock.Anything).Return(&net.TicketParams{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
 	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
