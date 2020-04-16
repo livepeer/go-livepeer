@@ -108,5 +108,5 @@ steps:
   depends_on:
   - stream-tester
   commands:
-  - cat /drone/src/stream_tester_result.json | jq .success_rate2
+  - cat /drone/src/stream_tester_result.json
   
