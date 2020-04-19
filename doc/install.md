@@ -8,21 +8,21 @@ The easiest way to install Livepeer is by downloading the pre-built `livepeer` a
 
 1. Go to [Livepeer's release page on Github](https://github.com/livepeer/go-livepeer/releases).
 2. Under "Assets", download the `.tar.gz` files for your operating system - `darwin` for MacOS, `linux` for Linux.
-2. Untar them with `tar -xzf livepeer-linux-amd64.tar.gz` or `tar -xzf livepeer-darwin-amd64.tar.gz`
+3. Untar them with `tar -xzf livepeer-linux-amd64.tar.gz` or `tar -xzf livepeer-darwin-amd64.tar.gz`
 
 ### Running the software
 
-You can then run the `livepeer` binary with the following simple command.
+You can then run the `livepeer` binary with the following simple command in `Terminal`.
 ```
 ./livepeer-linux-amd64/livepeer -broadcaster
 ```
-This creates an `RTMP` endpoint on `127.0.0.1:1935` and an `HLS` media server on `127.0.0.1:8935`.
+This creates an `RTMP` ingest endpoint on `127.0.0.1:1935` and an `HLS/HTTP` media server on `127.0.0.1:8935`.
 
 ### Basic test of the installation
 
 You can serve `RTMP` content into the endpoint using the following command:
 ```
-ffmpeg -re -f lavfi -i testsrc=size=360x640:rate=30,format=yuv420p -f lavfi -i sine -threads 1 -c:v libx264 -b:v 4000000 -preset ultrafast -x264-params keyint=30 -strict -2 -c:a aac -f flv rtmp://127.0.0.1:1935/test_signal
+ffmpeg -re -f lavfi -i testsrc=size=360x640:rate=30,format=yuv420p -f lavfi -i sine -threads 1 -c:v libx264 -b:v 100000 -preset ultrafast -x264-params keyint=30 -strict -2 -c:a aac -f flv rtmp://127.0.0.1:1935/test_signal
 ```
 You can query the `HLS` content coming from the media server using:
 ```
@@ -35,8 +35,11 @@ If you receive the following message, your basic `livepeer` node is running:
 #EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=4000000,RESOLUTION=360x640
 test_signal/source.m3u8
 ```
+This `URL`: `http://127.0.0.1:8935/stream/test_signal.m3u8` is a stream of `hls` video segments (`.hs` files), packaged in a `.m3u8` wrapper served over `http` over `IPv4`.
 
-For regular builds published by Livepeer's automated build process, see below.
+The `URL`: `http://{hostname}:8935/stream/test_signal.m3u8` can also be played back on any device with access to the host, using `ffplay http://{hostname}:8935/stream/test_signal.m3u8`, in [VLC Player](https://www.videolan.org/vlc/index.html) on Mobile and Desktop, or in `Chromium-based` and `Firefox-based` browsers on Mobile (not on Desktop).
+
+For regular builds published by Livepeer's automated build process, see [option 5 below](#option-5-automated-build-process---latest-codebase).
 
 ## Option 2: Build from source
 
@@ -48,21 +51,43 @@ You can also build your own executables from source code.
 
 &ensp; 2\. Make sure you have the necessary libraries installed:
 
- * Linux: `apt-get update && apt-get -y install build-essential pkg-config autoconf gnutls-dev git`
+ * Linux (Ubuntu): `apt-get update && apt-get -y install build-essential pkg-config autoconf gnutls-dev git`
 
  * OSX: `brew update && brew install pkg-config autoconf gnutls`
 
-&ensp; 3\. Fetch the code running `go get github.com/livepeer/go-livepeer/cmd/livepeer` in terminal. This will download the software to `/src/github.com/livepeer/go-livepeer` in your `go` install folder.
+&ensp; 3\. Fetch the code running the following in terminal:
 
-&ensp; 4\. You need to install `FFmpeg` as a dependency.  Run `./install_ffmpeg.sh` from the `go-livepeer` folder.
+```
+mkdir livepeer && cd livepeer
+git clone https://github.com/livepeer/go-livepeer.git
+cd go-livepeer
+```
+
+&ensp; 4\. Install `FFmpeg` as a dependency.  Run the following command from your `livepeer` folder:
+```
+.install_ffmpeg.sh 
+```
 
 ### Make the software
 
-&ensp; 5\. You can now run `HIGHEST_CHAIN_TAG=dev PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make` from the project root directory.
+&ensp; 5\. Run `make`. You can now run the following command from the `go-livepeer` root directory:
+```
+PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make
+```
 
-&ensp; &ensp; a\. `HIGHEST_CHAIN_TAG` (available values: `dev`, `rinkeby` & `mainnet`) represents the highest compatible chain to build for with an ordering of `dev < rinkeby < mainnet`, e.g. using `HIGHEST_CHAIN_TAG=rinkeby` will allow the node to run on the public Rinkeby test network but throw an error when trying to connect to the main Ethereum network.
+&ensp; &ensp; a\. `PKG_CONFIG_PATH` is the path where `pkg-config` files for `FFmpeg` dependencies have been installed _(see step 3 & 4)_. This defaults to `~/compiled/lib/pkgconfig` if you used the `FFmpeg` install script in step 4.
 
-&ensp; &ensp; b\. `PKG_CONFIG_PATH` is the path where `pkg-config` files for `FFmpeg` dependencies have been installed _(see step 3 & 4)_. This defaults to `~/compiled/lib/pkgconfig` if you used the `FFmpeg` install script in step 4.
+&ensp; &ensp; b\. Default builds are `dev` builds and will fail to run on the public `rinkeby` Test Network or Ethereum `mainnet`.
+
+&ensp; &ensp; For a build to also run on the public `rinkeby` Test Network, run
+```
+HIGHEST_CHAIN_TAG=rinkeby PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make
+```
+
+&ensp; &ensp; For a build to also run on Ethereum `mainnet`, run
+```
+HIGHEST_CHAIN_TAG=mainnet PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make
+```
 
 ### Test your build
 
