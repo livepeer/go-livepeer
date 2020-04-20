@@ -14,7 +14,7 @@ You can also build the executables from scratch.
 
 &ensp; 1\. If you have never set up your Go programming environment, do so according to Go's [Getting Started Guide](https://golang.org/doc/install).
 
-&ensp; 2\. You can fetch the code running `go get github.com/livepeer/go-livepeer/cmd/livepeer` in terminal.
+&ensp; 2\. You can fetch the code running `git clone https://github.com/livepeer/go-livepeer.git` in terminal.
 
 &ensp; 3\. Make sure you have the necessary libraries installed:
 
