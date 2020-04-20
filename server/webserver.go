@@ -1077,15 +1077,11 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			w.Write([]byte("0"))
 			return
 		}
-		be, err := s.LivepeerNode.Eth.Backend()
+		chainID, err := s.LivepeerNode.Database.ChainID()
 		if err != nil {
-			glog.Errorf("Error getting eth backend: %v", err)
+			glog.Errorf("Error getting eth network ID err=%v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
-		}
-		chainID, err := be.ChainID(r.Context())
-		if err != nil {
-			glog.Errorf("Error getting eth network ID: %v", err)
 		}
 		w.Write([]byte(chainID.String()))
 	})
