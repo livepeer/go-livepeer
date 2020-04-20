@@ -79,12 +79,12 @@ PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make
 
 &ensp; &ensp; b\. Default builds are `dev` builds and will fail to run on the public `rinkeby` Test Network or Ethereum `mainnet`.
 
-&ensp; &ensp; For a build to also run on the public `rinkeby` Test Network, run
+&ensp; &ensp; For a build to run on `dev` or the public `rinkeby` Test Network, run
 ```
 HIGHEST_CHAIN_TAG=rinkeby PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make
 ```
 
-&ensp; &ensp; For a build to also run on Ethereum `mainnet`, run
+&ensp; &ensp; For a build to run on `dev`, `rinkeby` or on Ethereum `mainnet`, run
 ```
 HIGHEST_CHAIN_TAG=mainnet PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make
 ```
