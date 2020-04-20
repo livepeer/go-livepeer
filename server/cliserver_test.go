@@ -52,17 +52,39 @@ func TestGetStatus(t *testing.T) {
 }
 
 func TestGetEthChainID(t *testing.T) {
-	srv := newMockServer()
-	defer srv.Close()
-	res, err := http.Get(fmt.Sprintf("%s/EthChainID", srv.URL))
+	require := require.New(t)
 	assert := assert.New(t)
-	req := require.New(t)
-	req.Nil(err)
+
+	// test offchain
+	srv := newMockServer()
+	res, err := http.Get(fmt.Sprintf("%s/EthChainID", srv.URL))
+	require.Nil(err)
 	assert.Equal(http.StatusOK, res.StatusCode)
-	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
-	req.Nil(err)
+	require.Nil(err)
 	assert.Equal("0", string(body))
+	defer res.Body.Close()
+	defer srv.Close()
+
+	// test onchain
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require.Nil(err)
+	err = dbh.SetChainID(big.NewInt(1))
+	require.Nil(err)
+	n, _ := core.NewLivepeerNode(&eth.StubClient{}, "./tmp", dbh)
+	s := NewLivepeerServer("127.0.0.1:1938", n, true)
+	mux := s.cliWebServerHandlers("addr")
+	srv = httptest.NewServer(mux)
+	defer srv.Close()
+	res, err = http.Get(fmt.Sprintf("%s/EthChainID", srv.URL))
+	require.Nil(err)
+	assert.Equal(http.StatusOK, res.StatusCode)
+	body, err = ioutil.ReadAll(res.Body)
+	defer res.Body.Close()
+	require.Nil(err)
+	assert.Equal("1", string(body))
 }
 
 func TestGetContractAddresses(t *testing.T) {
