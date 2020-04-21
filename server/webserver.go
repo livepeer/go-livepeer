@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"math/big"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -772,6 +773,11 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("/mime", func(w http.ResponseWriter, r *http.Request) {
+		m := mime.TypeByExtension(r.FormValue("ext"))
+		w.Write([]byte(fmt.Sprintf("Type: '%s'\n", m)))
 	})
 
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
