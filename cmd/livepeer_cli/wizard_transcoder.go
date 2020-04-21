@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	lpcommon "github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/eth/types"
 )
 
 const defaultRPCPort = "8935"
@@ -184,4 +188,59 @@ func (w *wizard) callReward() {
 
 	fmt.Printf("Calling reward for round %v\n", c)
 	httpGet(fmt.Sprintf("http://%v:%v/reward", w.host, w.httpPort))
+}
+
+func (w *wizard) vote() {
+	if w.offchain {
+		glog.Error("Can not vote in 'offchain' mode")
+		return
+	}
+
+	fmt.Print("Enter the contract address for the poll you want to vote in -")
+	poll := w.readStringAndValidate(func(in string) (string, error) {
+		if !ethcommon.IsHexAddress(in) {
+			return "", fmt.Errorf("invalid hex address address=%v", in)
+		}
+		return in, nil
+	})
+
+	var (
+		confirm = "n"
+		choice  = types.VoteChoice(-1)
+	)
+
+	for confirm == "n" {
+		choice = types.VoteChoice(-1)
+		w.showVoteChoices()
+
+		for {
+			fmt.Printf("Enter the ID of the choice you want to vote for -")
+			choice = types.VoteChoice(w.readInt())
+			if choice.IsValid() {
+				break
+			}
+			fmt.Println("Must enter a valid ID")
+		}
+
+		fmt.Printf("Are you sure you want to vote \"%v\"? (y/n) -", choice.String())
+		confirm = w.readStringYesOrNo()
+	}
+
+	data := url.Values{
+		"poll":     {poll},
+		"choiceID": {fmt.Sprintf("%v", int(choice))},
+	}
+
+	result := httpPostWithParams(fmt.Sprintf("http://%v:%v/vote", w.host, w.httpPort), data)
+
+	fmt.Printf("\n%v\n", result)
+}
+
+func (w *wizard) showVoteChoices() {
+	wtr := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', 0)
+	fmt.Fprintln(wtr, "Identifier\tVoting Choices")
+	for _, choice := range types.VoteChoices {
+		fmt.Fprintf(wtr, "%v\t%v\n", int(choice), choice.String())
+	}
+	wtr.Flush()
 }
