@@ -158,6 +158,11 @@ func (m *MockClient) CheckTx(tx *types.Transaction) error {
 	return args.Error(0)
 }
 
+func (m *MockClient) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
 type StubClient struct {
 	SubLogsCh                    chan types.Log
 	TranscoderAddress            common.Address
@@ -173,6 +178,7 @@ type StubClient struct {
 	ClaimedReserveError          error
 	Orch                         *lpTypes.Transcoder
 	Err                          error
+	CheckTxErr                   error
 	TotalStake                   *big.Int
 	TranscoderPoolError          error
 }
@@ -324,7 +330,7 @@ func (c *StubClient) TargetBondingRate() (*big.Int, error)        { return big.N
 
 func (c *StubClient) ContractAddresses() map[string]common.Address { return nil }
 func (c *StubClient) CheckTx(tx *types.Transaction) error {
-	return nil
+	return c.CheckTxErr
 }
 func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, gasPrice *big.Int) (*types.Transaction, error) {
 	return nil, nil
@@ -335,3 +341,8 @@ func (c *StubClient) SetGasInfo(uint64, *big.Int) error { return nil }
 
 // Faucet
 func (c *StubClient) NextValidRequest(common.Address) (*big.Int, error) { return nil, nil }
+
+// Governance
+func (c *StubClient) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Transaction, error) {
+	return nil, c.Err
+}

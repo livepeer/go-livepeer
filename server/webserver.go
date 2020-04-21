@@ -80,6 +80,8 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.Handle("/signMessage", mustHaveFormParams(signMessageHandler(s.LivepeerNode.Eth), "message"))
 
+	mux.Handle("/vote", mustHaveFormParams(voteHandler(s.LivepeerNode.Eth), "poll", "choiceID"))
+
 	//Set the broadcast config for creating onchain jobs.
 	mux.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
