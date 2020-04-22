@@ -115,8 +115,11 @@ func TestMultipartReturn(t *testing.T) {
 			break
 		}
 		assert.NoError(err)
-		mediaType, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
+		mediaType, params, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
 		assert.Nil(err)
+		assert.Contains(params, "name")
+		assert.Len(params, 1)
+		assert.Equal(params["name"], "P144p25fps16x9_17.txt")
 		assert.Equal(`attachment; filename="P144p25fps16x9_17.txt"`, p.Header.Get("Content-Disposition"))
 		assert.Equal("P144p25fps16x9", p.Header.Get("Rendition-Name"))
 		bodyPart, err := ioutil.ReadAll(p)
@@ -166,8 +169,11 @@ func TestMultipartReturn(t *testing.T) {
 			break
 		}
 		assert.NoError(err)
-		mediaType, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
+		mediaType, params, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
 		assert.Nil(err)
+		assert.Contains(params, "name")
+		assert.Len(params, 1)
+		assert.Equal(params["name"], "P144p25fps16x9_12.ts")
 		assert.Equal(`attachment; filename="P144p25fps16x9_12.ts"`, p.Header.Get("Content-Disposition"))
 		assert.Equal("P144p25fps16x9", p.Header.Get("Rendition-Name"))
 		bodyPart, err := ioutil.ReadAll(p)
@@ -389,8 +395,11 @@ func TestPush_MP4(t *testing.T) {
 			break
 		}
 		assert.NoError(err)
-		mediaType, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
+		mediaType, params, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
 		assert.Nil(err)
+		assert.Contains(params, "name")
+		assert.Len(params, 1)
+		assert.Equal(params["name"], "P720p25fps16x9_2.mp4")
 		assert.Equal(`attachment; filename="P720p25fps16x9_2.mp4"`, p.Header.Get("Content-Disposition"))
 		assert.Equal("P720p25fps16x9", p.Header.Get("Rendition-Name"))
 		bodyPart, err := ioutil.ReadAll(p)

@@ -732,7 +732,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		profile := cxn.params.profiles[i].Name
 		fname := fmt.Sprintf(`"%s_%d%s"`, profile, seq, ext)
 		hdrs := textproto.MIMEHeader{
-			"Content-Type":        {typ},
+			"Content-Type":        {typ + "; name=" + fname},
 			"Content-Length":      {strconv.Itoa(length)},
 			"Content-Disposition": {"attachment; filename=" + fname},
 			"Rendition-Name":      {profile},
