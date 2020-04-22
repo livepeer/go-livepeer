@@ -49,3 +49,7 @@ Run-Bash '
   source ./ci_env.sh && make livepeer livepeer_cli
   ./upload_build.sh 
 '
+
+Write-Output "Performing self-check; if we fail after this line there are missing DLLs"
+cd livepeer-windows-amd64
+.\livepeer.exe -version
