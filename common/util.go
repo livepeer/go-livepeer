@@ -39,6 +39,11 @@ var (
 	ErrFormatProto = fmt.Errorf("unknown VideoProfile format for protobufs")
 	ErrFormatMime  = fmt.Errorf("unknown VideoProfile format for mime type")
 	ErrFormatExt   = fmt.Errorf("unknown VideoProfile format for extension")
+
+	ext2mime = map[string]string{
+		".ts":  "video/mp2t",
+		".mp4": "video/mp4",
+	}
 )
 
 func init() {
@@ -226,6 +231,9 @@ func ProfileFormatMimeType(f ffmpeg.Format) (string, error) {
 	ext, err := ProfileFormatExtension(f)
 	if err != nil {
 		return "", err
+	}
+	if m, ok := ext2mime[ext]; ok && m != "" {
+		return m, nil
 	}
 	m := mime.TypeByExtension(ext)
 	if m == "" {
