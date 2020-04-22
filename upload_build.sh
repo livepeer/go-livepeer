@@ -61,6 +61,9 @@ else
   tar -czvf ./$FILE ./$BASE
 fi
 
+# Quick self-check to see if the thing can execute at all
+(cd $BASE && $NODE -version)
+
 if [[ "${GCLOUD_KEY:-}" == "" ]]; then
   echo "GCLOUD_KEY not found, not uploading to Google Cloud."
   exit 0
