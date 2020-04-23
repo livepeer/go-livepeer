@@ -15,12 +15,12 @@ elif [[ "${TRAVIS_BRANCH:-}" != "" ]]; then
   branch="$TRAVIS_BRANCH"
 fi
 
-export HIGHEST_CHAIN_TAG=dev
-for networkBranch in $NETWORK_BRANCHES; do
-  if [[ $branch == "$networkBranch" ]]; then
-    export HIGHEST_CHAIN_TAG=$networkBranch
-  fi
-done
+export HIGHEST_CHAIN_TAG=rinkeby
+# for networkBranch in $NETWORK_BRANCHES; do
+#   if [[ $branch == "$networkBranch" ]]; then
+#     export HIGHEST_CHAIN_TAG=$networkBranch
+#   fi
+# done
 
 # Disallow non-tagged mainnet releases
 generatedVersion=$(./print_version.sh)
