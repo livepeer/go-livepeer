@@ -81,28 +81,37 @@ func (nv *NvidiaTranscoder) Transcode(job string, fname string, profiles []ffmpe
 }
 
 // TestNvidiaTranscoder tries to transcode test segment on all the devices
-func TestNvidiaTranscoder(gpu string) error {
+func TestNvidiaTranscoder(gpu, fileName, resolution, bitrate string, profilesNum int) error {
+
 	devices := strings.Split(gpu, ",")
 	b := bytes.NewReader(testSegment)
 	z, err := gzip.NewReader(b)
 	if err != nil {
 		return err
 	}
+
 	mp4testSeg, err := ioutil.ReadAll(z)
 	z.Close()
 	if err != nil {
 		return err
 	}
-	fname := filepath.Join(WorkDir, "testseg.tempfile")
-	err = ioutil.WriteFile(fname, mp4testSeg, 0644)
-	if err != nil {
-		return err
+	var fname = fileName
+	if fileName == "" {
+		fname := filepath.Join(WorkDir, "testseg.tempfile")
+		err = ioutil.WriteFile(fname, mp4testSeg, 0644)
+		if err != nil {
+			return err
+		}
+		defer os.Remove(fname)
 	}
-	defer os.Remove(fname)
 	for _, device := range devices {
 		t1 := NewNvidiaTranscoder(device)
-		p := ffmpeg.VideoProfile{Resolution: "48x48", Bitrate: "1k", Format: ffmpeg.FormatMP4}
-		profiles := []ffmpeg.VideoProfile{p, p, p, p}
+		p := ffmpeg.VideoProfile{Resolution: resolution, Bitrate: bitrate, Format: ffmpeg.FormatMP4}
+		profiles := []ffmpeg.VideoProfile{}
+		for i := 0; i < profilesNum; i++ {
+			profiles = append(profiles, p)
+		}
+		// profiles := []ffmpeg.VideoProfile{p, p, p, p}
 		td, err := t1.Transcode("", fname, profiles)
 
 		t1.Stop()

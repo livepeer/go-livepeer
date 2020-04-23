@@ -103,6 +103,10 @@ func main() {
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	nvidia := flag.String("nvidia", "", "Comma-separated list of Nvidia GPU device IDs to use for transcoding")
 	testTranscoder := flag.Bool("testTranscoder", true, "Test Nvidia GPU transcoding at startup")
+	testTranscoderFile := flag.String("testTranscoderFile", "", "Test file to use")
+	testResolution := flag.String("testResolution", "64x64", "Test resolution to use")
+	testBitrate := flag.String("testBitrate", "1k", "Test bitrate to use")
+	testProfilesNum := flag.Int("testProfilesNum", 1, "Number of test profiles to use")
 
 	// Onchain:
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
@@ -243,7 +247,7 @@ func main() {
 		core.WorkDir = *datadir
 		if *nvidia != "" {
 			if *testTranscoder {
-				err := core.TestNvidiaTranscoder(*nvidia)
+				err := core.TestNvidiaTranscoder(*nvidia, *testTranscoderFile, *testResolution, *testBitrate, *testProfilesNum)
 				if err != nil {
 					glog.Fatalf("Unable to transcode using nividia gpu=%s err=%v", *nvidia, err)
 				}
