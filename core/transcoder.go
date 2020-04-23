@@ -97,7 +97,7 @@ func TestNvidiaTranscoder(gpu, fileName, resolution, bitrate string, profilesNum
 	}
 	var fname = fileName
 	if fileName == "" {
-		fname := filepath.Join(WorkDir, "testseg.tempfile")
+		fname = filepath.Join(WorkDir, "testseg.tempfile")
 		err = ioutil.WriteFile(fname, mp4testSeg, 0644)
 		if err != nil {
 			return err
