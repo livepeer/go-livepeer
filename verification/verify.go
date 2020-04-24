@@ -138,7 +138,12 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 			reportedPixels := params.Results.Segments[i].Pixels
 			verifiedPixels := pxls[i]
 			if reportedPixels != verifiedPixels {
-				err = ErrPixelMismatch
+				glog.Errorf("PixelMismatch reportedPixels=%v verifiedPixels=%v", reportedPixels, verifiedPixels)
+
+				// Temporarily disable pixel count verification when the broadcaster cannot count any pixels
+				if verifiedPixels != 0 {
+					err = ErrPixelMismatch
+				}
 			}
 		}
 	}
