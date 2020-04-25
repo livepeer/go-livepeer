@@ -211,3 +211,6 @@ Binary data here
 --94eaf473f7957940e066--
 
 ```
+
+### HTTP Push Examples: 
+* [Python example](https://gist.github.com/j0sh/265c33197ce464ff7cd0a26f81be8f78#file-livepeer-multipart-py)
