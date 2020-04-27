@@ -25,6 +25,7 @@ var abis = []string{
 	contracts.RoundsManagerABI,
 	contracts.ServiceRegistryABI,
 	contracts.TicketBrokerABI,
+	contracts.PollABI,
 }
 
 type Backend interface {

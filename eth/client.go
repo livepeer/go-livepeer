@@ -11,7 +11,7 @@ package eth
 //go:generate abigen --abi protocol/abi/RoundsManager.abi --pkg contracts --type RoundsManager --out contracts/roundsManager.go
 //go:generate abigen --abi protocol/abi/Minter.abi --pkg contracts --type Minter --out contracts/minter.go
 //go:generate abigen --abi protocol/abi/LivepeerTokenFaucet.abi --pkg contracts --type LivepeerTokenFaucet --out contracts/livepeerTokenFaucet.go
-
+//go:generate abigen --abi protocol/abi/Poll.abi --pkg contracts --type Poll --out contracts/poll.go
 import (
 	"context"
 	"errors"
@@ -106,6 +106,9 @@ type LivepeerEthClient interface {
 	InflationChange() (*big.Int, error)
 	TargetBondingRate() (*big.Int, error)
 	Paused() (bool, error)
+
+	// Governance
+	Vote(ethcommon.Address, *big.Int) (*types.Transaction, error)
 
 	// Helpers
 	ContractAddresses() map[string]ethcommon.Address
@@ -718,6 +721,21 @@ func (c *client) TranscoderPool() ([]*lpTypes.Transcoder, error) {
 	}
 
 	return transcoders, nil
+}
+
+func (c *client) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Transaction, error) {
+	poll, err := contracts.NewPoll(pollAddr, c.backend)
+	if err != nil {
+		return nil, err
+	}
+
+	gl, gp := c.GetGasInfo()
+	opts, err := c.accountManager.CreateTransactOpts(gl, gp)
+	if err != nil {
+		return nil, err
+	}
+
+	return poll.Vote(opts, choiceID)
 }
 
 // Helpers
