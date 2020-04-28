@@ -761,9 +761,6 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 	transcodeCalls := 0
 	resp := func(w http.ResponseWriter, r *http.Request) {
 		transcodeCalls++
-		if transcodeCalls == 2 {
-			w.WriteHeader(http.StatusNotFound)
-		}
 	}
 	ts1, mux1 := stubTLSServer()
 	defer ts1.Close()
@@ -785,8 +782,7 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 	// Sanity check: zero attempts should not transcode
 	MaxAttempts = 0
 	_, err := processSegment(cxn, seg)
-	assert.NotNil(err)
-	assert.Equal("Hit max transcode attempts", err.Error())
+	assert.Nil(err)
 	assert.Equal(0, transcodeCalls, "Unexpectedly submitted segment")
 	assert.Len(bsm.sessMap, 2)
 
@@ -794,14 +790,14 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 	MaxAttempts = 1
 	_, err = processSegment(cxn, seg)
 	assert.NotNil(err)
-	assert.Equal("Hit max transcode attempts", err.Error())
+	assert.Equal("Hit max transcode attempts: UnknownResponse", err.Error())
 	assert.Equal(1, transcodeCalls, "Segment submission calls did not match")
 	assert.Len(bsm.sessMap, 1)
 
 	// Drain the swamp! Empty out the session list
 	_, err = processSegment(cxn, seg)
 	assert.NotNil(err)
-	assert.Equal("Hit max transcode attempts", err.Error())
+	assert.Equal("Hit max transcode attempts: UnknownResponse", err.Error())
 	assert.Equal(2, transcodeCalls, "Segment submission calls did not match")
 	assert.Len(bsm.sessMap, 0) // Now empty
 
