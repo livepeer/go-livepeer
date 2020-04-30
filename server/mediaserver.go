@@ -680,6 +680,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	// Do the transcoding!
 	urls, err := processSegment(cxn, seg)
 	if err != nil {
+		// TODO distinguish between user errors (400) and server errors (500)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

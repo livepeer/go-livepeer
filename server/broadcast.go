@@ -25,6 +25,8 @@ import (
 )
 
 var refreshTimeout = 2500 * time.Millisecond
+var maxDuration = (5 * time.Minute)
+var maxDurationSec = maxDuration.Seconds()
 
 var Policy *verification.Policy
 var BroadcastCfg = &BroadcastConfig{}
@@ -278,6 +280,11 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	cpl := cxn.pl
 	mid := cxn.mid
 	vProfile := cxn.profile
+
+	if seg.Duration > maxDurationSec || seg.Duration < 0 {
+		glog.Errorf("Invalid duration nonce=%d manifestID=%s seqNo=%d dur=%v", nonce, mid, seg.SeqNo, seg.Duration)
+		return nil, fmt.Errorf("Invalid duration %v", seg.Duration)
+	}
 
 	glog.V(common.DEBUG).Infof("Processing segment nonce=%d manifestID=%s seqNo=%d dur=%v", nonce, mid, seg.SeqNo, seg.Duration)
 	if monitor.Enabled {
