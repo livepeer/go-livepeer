@@ -1468,6 +1468,83 @@ func TestSubmitSegment_TranscodeResultError(t *testing.T) {
 	balance.AssertNotCalled(t, "Credit", mock.Anything)
 }
 
+func TestSubmitSegment_Timeout(t *testing.T) {
+	assert := assert.New(t)
+
+	tr := &net.TranscodeResult{
+		Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{},
+		},
+	}
+	buf, err := proto.Marshal(tr)
+
+	headerTimeout := 0 * time.Millisecond
+	bodyTimeout := 0 * time.Millisecond
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(headerTimeout)
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		time.Sleep(bodyTimeout)
+		w.Write(buf)
+	})
+
+	// sanity check no timeouts
+	sess := &BroadcastSession{
+		Broadcaster:      stubBroadcaster2(),
+		ManifestID:       core.RandomManifestID(),
+		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL},
+	}
+	seg := &stream.HLSSegment{Duration: 0.01}
+	_, err = SubmitSegment(sess, seg, 0)
+	assert.Nil(err)
+
+	oldTimeout := common.HTTPTimeout
+	defer func() { common.HTTPTimeout = oldTimeout }()
+	common.HTTPTimeout = 0
+
+	// time out header
+	headerTimeout = 100 * time.Millisecond
+	_, err = SubmitSegment(sess, seg, 0)
+	assert.Contains(err.Error(), "header timeout")
+	assert.Contains(err.Error(), "context deadline exceeded")
+
+	// time out body
+	headerTimeout = 0
+	bodyTimeout = 100 * time.Millisecond
+	_, err = SubmitSegment(sess, seg, 0)
+	assert.NotNil(err)
+	assert.Equal("body timeout: context deadline exceeded", err.Error())
+
+	// sanity check, again
+	bodyTimeout = 0
+	_, err = SubmitSegment(sess, seg, 0)
+	assert.Nil(err)
+
+	// sanity check default timeouts with a bodyTimeout > seg.Duration
+	common.HTTPTimeout = 1 * time.Second
+	bodyTimeout = 100 * time.Millisecond
+	assert.Greater(common.HTTPTimeout.Milliseconds(), bodyTimeout.Milliseconds())
+	seg.Duration = 0.0 // missing duration
+	_, err = SubmitSegment(sess, seg, 0)
+	assert.Nil(err)
+
+	seg.Duration = -0.01 // negative duration
+	_, err = SubmitSegment(sess, seg, 0)
+	assert.Nil(err)
+
+	seg.Duration = 0.01 // 10ms; less than default timeout. should set default
+	_, err = SubmitSegment(sess, seg, 0)
+	assert.Nil(err)
+
+	// ensure default timeout triggers
+	common.HTTPTimeout = 10 * time.Millisecond
+	assert.Greater(bodyTimeout.Milliseconds(), common.HTTPTimeout.Milliseconds())
+	_, err = SubmitSegment(sess, seg, 0)
+	assert.Equal("body timeout: context deadline exceeded", err.Error())
+}
+
 func TestSubmitSegment_Success(t *testing.T) {
 	info := &net.OrchestratorInfo{
 		Transcoder: "foo",

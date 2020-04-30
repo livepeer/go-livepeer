@@ -24,7 +24,7 @@ import (
 )
 
 // HTTPTimeout timeout used in HTTP connections between nodes
-const HTTPTimeout = 8 * time.Second
+var HTTPTimeout = 8 * time.Second
 
 const maxInt64 = int64(math.MaxInt64)
 
