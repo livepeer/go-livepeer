@@ -28,6 +28,8 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 )
 
+var defaultRecipient = ethcommon.BytesToAddress([]byte("defaultRecipient"))
+
 func TestCurrentBlock(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "")
 	n, err := NewLivepeerNode(nil, tmpdir, nil)
@@ -541,7 +543,7 @@ func TestOrchCheckCapacity(t *testing.T) {
 }
 
 func TestProcessPayment_GivenRecipientError_ReturnsNil(t *testing.T) {
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -622,7 +624,7 @@ func TestProcessPayment_GivenNilRecipient_ReturnsNil(t *testing.T) {
 
 func TestProcessPayment_ActiveOrchestrator(t *testing.T) {
 	assert := assert.New(t)
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -662,7 +664,7 @@ func TestProcessPayment_ActiveOrchestrator(t *testing.T) {
 
 func TestProcessPayment_InvalidExpectedPrice(t *testing.T) {
 	assert := assert.New(t)
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -693,7 +695,7 @@ func TestProcessPayment_InvalidExpectedPrice(t *testing.T) {
 }
 
 func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -725,7 +727,7 @@ func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 }
 
 func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -765,7 +767,7 @@ func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
 }
 
 func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -805,7 +807,7 @@ func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
 }
 
 func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -875,7 +877,7 @@ func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 }
 
 func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -934,7 +936,7 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 }
 
 func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -1002,7 +1004,7 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 
 // Check that a payment error does NOT increase the credit
 func TestProcessPayment_PaymentError_DoesNotIncreaseCreditBalance(t *testing.T) {
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -1037,7 +1039,7 @@ func TestProcessPayment_PaymentError_DoesNotIncreaseCreditBalance(t *testing.T) 
 
 func TestIsActive(t *testing.T) {
 	assert := assert.New(t)
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -1051,21 +1053,20 @@ func TestIsActive(t *testing.T) {
 		round: big.NewInt(10),
 	}
 	orch := NewOrchestrator(n, rm)
-	orch.address = addr
 
-	ok, err := orch.isActive()
+	ok, err := orch.isActive(addr)
 	assert.True(ok)
 	assert.NoError(err)
 
 	// inactive
 	rm.round = big.NewInt(1000)
-	ok, err = orch.isActive()
+	ok, err = orch.isActive(addr)
 	assert.False(ok)
 	assert.NoError(err)
 }
 
 func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -1103,7 +1104,7 @@ func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 }
 
 func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
-	addr := pm.RandAddress()
+	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
 		ActivationRound:   1,
@@ -1473,7 +1474,7 @@ func defaultPayment(t *testing.T) net.Payment {
 
 func defaultPaymentWithTickets(t *testing.T, senderParams []*net.TicketSenderParams) *net.Payment {
 	ticketParams := &net.TicketParams{
-		Recipient:         pm.RandBytes(123),
+		Recipient:         defaultRecipient.Bytes(),
 		FaceValue:         pm.RandBytes(123),
 		WinProb:           pm.RandBytes(123),
 		RecipientRandHash: pm.RandBytes(123),

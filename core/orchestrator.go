@@ -117,7 +117,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 
 	sender := ethcommon.BytesToAddress(payment.Sender)
 
-	ok, err := orch.isActive()
+	ok, err := orch.isActive(ethcommon.BytesToAddress(payment.TicketParams.Recipient))
 	if err != nil {
 		return err
 	}
@@ -307,10 +307,10 @@ func (orch *orchestrator) DebitFees(addr ethcommon.Address, manifestID ManifestI
 	orch.node.Balances.Debit(addr, manifestID, priceRat.Mul(priceRat, big.NewRat(pixels, 1)))
 }
 
-func (orch *orchestrator) isActive() (bool, error) {
+func (orch *orchestrator) isActive(addr ethcommon.Address) (bool, error) {
 	filter := &common.DBOrchFilter{
 		CurrentRound: orch.rm.LastInitializedRound(),
-		Addresses:    []ethcommon.Address{orch.Address()},
+		Addresses:    []ethcommon.Address{addr},
 	}
 	orchs, err := orch.node.Database.SelectOrchs(filter)
 	if err != nil {
