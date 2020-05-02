@@ -243,22 +243,22 @@ func genOrchestratorReq(b common.Broadcaster) (*net.OrchestratorRequest, error) 
 }
 
 func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
-	addr := ethcommon.BytesToAddress(req.Address)
-	if err := verifyOrchestratorReq(orch, addr, req.Sig); err != nil {
+	bAddr := ethcommon.BytesToAddress(req.Address)
+	if err := verifyOrchestratorReq(orch, bAddr, req.Sig); err != nil {
 		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
 	}
 
 	// currently, orchestrator == transcoder
-	return orchestratorInfo(orch, addr, orch.ServiceURI().String())
+	return orchestratorInfo(orch, bAddr, orch.Address(), orch.ServiceURI().String())
 }
 
-func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI string) (*net.OrchestratorInfo, error) {
-	priceInfo, err := orch.PriceInfo(addr)
+func orchestratorInfo(orch Orchestrator, bAddr ethcommon.Address, oAddr ethcommon.Address, serviceURI string) (*net.OrchestratorInfo, error) {
+	priceInfo, err := orch.PriceInfo(bAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	params, err := orch.TicketParams(addr, priceInfo)
+	params, err := orch.TicketParams(bAddr, priceInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +267,7 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 		Transcoder:   serviceURI,
 		TicketParams: params,
 		PriceInfo:    priceInfo,
+		Address:      oAddr.Bytes(),
 	}
 
 	os := drivers.NodeStorage.NewSession(string(core.RandomManifestID()))

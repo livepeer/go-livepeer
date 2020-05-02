@@ -79,7 +79,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String())
+	oInfo, err := orchestratorInfo(orch, sender, orch.Address(), orch.ServiceURI().String())
 	if err != nil {
 		glog.Errorf("Error updating orchestrator info - err=%v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
