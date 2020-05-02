@@ -108,6 +108,7 @@ func main() {
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
 	ethPassword := flag.String("ethPassword", "", "Password for existing Eth account address")
 	ethKeystorePath := flag.String("ethKeystorePath", "", "Path for the Eth Key")
+	ethOrchAddr := flag.String("ethOrchAddr", "", "ETH address of an on-chain registered orchestrator")
 	ethUrl := flag.String("ethUrl", "", "Ethereum node JSON-RPC URL")
 	ethController := flag.String("ethController", "", "Protocol smart contract address")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
@@ -487,7 +488,14 @@ func main() {
 			orchSetupCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
-			if err := setupOrchestrator(orchSetupCtx, n, *initializeRound); err != nil {
+			// By default the ticket recipient is the node's address
+			// If the address of an on-chain registered orchestrator is provided, then it should be specified as the ticket recipient
+			recipientAddr := n.Eth.Account().Address
+			if *ethOrchAddr != "" {
+				recipientAddr = ethcommon.HexToAddress(*ethOrchAddr)
+			}
+
+			if err := setupOrchestrator(orchSetupCtx, n, recipientAddr); err != nil {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
@@ -514,7 +522,7 @@ func main() {
 				TxCostMultiplier: txCostMultiplier,
 			}
 			n.Recipient, err = pm.NewRecipient(
-				n.Eth.Account().Address,
+				recipientAddr,
 				n.Eth,
 				validator,
 				n.Database,
@@ -531,17 +539,22 @@ func main() {
 			n.Recipient.Start()
 			defer n.Recipient.Stop()
 
-			// Create round iniitializer to automatically initialize new rounds
-			if *initializeRound {
-				initializer := eth.NewRoundInitializer(n.Eth, n.Database, timeWatcher, blockPollingTime)
-				go initializer.Start()
-				defer initializer.Stop()
-			}
+			// Only initialize rounds and call reward if the node is using an on-chain registered orchestrator address
+			// Assume that the node is using an on-chain registered orchestrator address if -ethOrchAddr is not specified or
+			// if the ticket recipient is the node's address
+			if *ethOrchAddr == "" || n.Eth.Account().Address == recipientAddr {
+				// Create round iniitializer to automatically initialize new rounds
+				if *initializeRound {
+					initializer := eth.NewRoundInitializer(n.Eth, n.Database, timeWatcher, blockPollingTime)
+					go initializer.Start()
+					defer initializer.Stop()
+				}
 
-			// Create reward service to claim/distribute inflationary rewards every round
-			rs := eventservices.NewRewardService(n.Eth, blockPollingTime)
-			rs.Start(ctx)
-			defer rs.Stop()
+				// Create reward service to claim/distribute inflationary rewards every round
+				rs := eventservices.NewRewardService(n.Eth, blockPollingTime)
+				rs.Start(ctx)
+				defer rs.Stop()
+			}
 		}
 
 		if n.NodeType == core.BroadcasterNode {
@@ -899,21 +912,15 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	return ethUri, nil
 }
 
-func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, initializeRound bool) error {
-	//Check if orchestrator is active
-	active, err := n.Eth.IsActiveTranscoder()
-	if err != nil {
-		return err
-	}
-
+func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, ethOrchAddr ethcommon.Address) error {
 	// add orchestrator to DB
-	orch, err := n.Eth.GetTranscoder(n.Eth.Account().Address)
+	orch, err := n.Eth.GetTranscoder(ethOrchAddr)
 	if err != nil {
 		return err
 	}
 
 	err = n.Database.UpdateOrch(&common.DBOrch{
-		EthereumAddr:      n.Eth.Account().Address.Hex(),
+		EthereumAddr:      ethOrchAddr.Hex(),
 		ActivationRound:   common.ToInt64(orch.ActivationRound),
 		DeactivationRound: common.ToInt64(orch.DeactivationRound),
 	})
@@ -921,10 +928,10 @@ func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, initializeRoun
 		return err
 	}
 
-	if !active {
-		glog.Infof("Orchestrator %v is inactive", n.Eth.Account().Address.Hex())
+	if !orch.Active {
+		glog.Infof("Orchestrator %v is inactive", ethOrchAddr.Hex())
 	} else {
-		glog.Infof("Orchestrator %v is active", n.Eth.Account().Address.Hex())
+		glog.Infof("Orchestrator %v is active", ethOrchAddr.Hex())
 	}
 
 	return nil
