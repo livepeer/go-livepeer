@@ -193,10 +193,15 @@ func (sv *SegmentVerifier) sigVerification(params *Params) error {
 		segHashes[i] = crypto.Keccak256(params.Renditions[i])
 	}
 
-	// Might not have seg hashes if results are directly uploaded to the broadcaster's OS
-	// TODO: Consider downloading the results to generate seg hashes if results are directly uploaded to the broadcaster's OS
+	// Verify the signature against the orchestrator provided address if it exists
+	// Otherwise verify the signature against the ticket recipient address
+	addr := ethcommon.BytesToAddress(params.Orchestrator.Address)
+	if (addr == ethcommon.Address{}) {
+		addr = ethcommon.BytesToAddress(params.Orchestrator.TicketParams.Recipient)
+	}
+
 	if !sv.verifySig(
-		ethcommon.BytesToAddress(params.Orchestrator.TicketParams.Recipient),
+		addr,
 		crypto.Keccak256(segHashes...),
 		params.Results.Sig) {
 		glog.Error("Sig check failed")
