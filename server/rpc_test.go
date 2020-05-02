@@ -115,6 +115,9 @@ func (r *stubOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []b
 }
 
 func (r *stubOrchestrator) Address() ethcommon.Address {
+	if r.offchain {
+		return ethcommon.Address{}
+	}
 	return ethcrypto.PubkeyToAddress(r.priv.PublicKey)
 }
 func (r *stubOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
@@ -706,6 +709,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {
 	uri := "http://someuri.com"
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
@@ -734,6 +738,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 	expectedParams := defaultTicketParams()
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil)
 	orch.On("PriceInfo", mock.Anything, mock.Anything).Return(nil, nil)
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
@@ -749,6 +754,7 @@ func TestGetOrchestrator_TicketParamsError(t *testing.T) {
 	uri := "http://someuri.com"
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Address").Return(ethcommon.Address{})
 	expErr := errors.New("TicketParams error")
 	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, expErr)
@@ -769,6 +775,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchPriceInfo(t *testing.T) {
 	}
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
@@ -786,6 +793,7 @@ func TestGetOrchestrator_PriceInfoError(t *testing.T) {
 
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(nil, expErr)
 
 	_, err := getOrchestrator(orch, &net.OrchestratorRequest{})
@@ -831,8 +839,8 @@ func (o *mockOrchestrator) ServiceURI() *url.URL {
 	return nil
 }
 func (o *mockOrchestrator) Address() ethcommon.Address {
-	o.Called()
-	return ethcommon.Address{}
+	args := o.Called()
+	return args.Get(0).(ethcommon.Address)
 }
 func (o *mockOrchestrator) TranscoderSecret() string {
 	o.Called()
