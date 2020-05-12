@@ -565,9 +565,15 @@ func estimateFee(seg *stream.HLSSegment, profiles []ffmpeg.VideoProfile, priceIn
 		if err != nil {
 			return nil, err
 		}
+		framerate := p.Framerate
+		if framerate == 0 {
+			// FPS is being passed through (no fps adjustment)
+			// TODO incorporate the actual number of frames from the input
+			framerate = 120 // conservative estimate of input fps
+		}
 
 		// Take the ceiling of the duration to always overestimate
-		outPixels += int64(w*h) * int64(p.Framerate) * int64(math.Ceil(seg.Duration))
+		outPixels += int64(w*h) * int64(framerate) * int64(math.Ceil(seg.Duration))
 	}
 
 	// feeEstimate = pixels * pixelEstimateMultiplier * priceInfo
