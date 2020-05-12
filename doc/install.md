@@ -65,7 +65,7 @@ cd go-livepeer
 
 &ensp; 4\. Install `FFmpeg` as a dependency.  Run the following command from your `livepeer` folder:
 ```
-.install_ffmpeg.sh 
+./install_ffmpeg.sh 
 ```
 
 ### Make the software
