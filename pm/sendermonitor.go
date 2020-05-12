@@ -44,12 +44,6 @@ type SenderMonitor interface {
 	ValidateSender(addr ethcommon.Address) error
 }
 
-// ErrorMonitor is an interface that describes methods used to monitor acceptable pm ticket errors as well as acceptable price errors
-type ErrorMonitor interface {
-	AcceptErr(sender ethcommon.Address) bool
-	ClearErrCount(sender ethcommon.Address)
-}
-
 type remoteSender struct {
 	// pendingAmount is the sum of the face values of tickets that are
 	// currently pending redemption on-chain
