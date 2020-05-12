@@ -137,7 +137,9 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 
 //StartMediaServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string, httpAddr string) error {
-	BroadcastJobVideoProfiles = parsePresets(strings.Split(transcodingOptions, ","))
+	if transcodingOptions != "" { // mostly to mitigate race conditions in tests
+		BroadcastJobVideoProfiles = parsePresets(strings.Split(transcodingOptions, ","))
+	}
 
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
