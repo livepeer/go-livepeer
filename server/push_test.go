@@ -36,7 +36,7 @@ func requestSetup(s *LivepeerServer) (http.Handler, *strings.Reader, *httptest.R
 	return handler, reader, writer
 }
 
-func TestMultipartReturn(t *testing.T) {
+func TestPush_MultipartReturn(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()
 	defer serverCleanup(s)
@@ -199,7 +199,7 @@ func TestMultipartReturn(t *testing.T) {
 	assert.Equal(503, resp.StatusCode)
 }
 
-func TestMemoryRequestError(t *testing.T) {
+func TestPush_MemoryRequestError(t *testing.T) {
 	// assert http request body error returned
 	assert := assert.New(t)
 	s := setupServer()
@@ -218,7 +218,7 @@ func TestMemoryRequestError(t *testing.T) {
 	assert.Contains(strings.TrimSpace(string(body)), "Error reading http request body")
 }
 
-func TestEmptyURLError(t *testing.T) {
+func TestPush_EmptyURLError(t *testing.T) {
 	// assert http request body error returned
 	assert := assert.New(t)
 	s := setupServer()
@@ -235,7 +235,7 @@ func TestEmptyURLError(t *testing.T) {
 	assert.Equal("Bad URL\n", string(body))
 }
 
-func TestShouldUpdateLastUsed(t *testing.T) {
+func TestPush_ShouldUpdateLastUsed(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()
 	defer serverCleanup(s)
@@ -541,7 +541,7 @@ func ignoreRoutines() []goleak.Option {
 	return res
 }
 
-func TestShouldRemoveSessionAfterTimeout(t *testing.T) {
+func TestPush_ShouldRemoveSessionAfterTimeout(t *testing.T) {
 	defer goleak.VerifyNone(t, ignoreRoutines()...)
 
 	oldRI := refreshIntervalHttpPush
@@ -566,7 +566,7 @@ func TestShouldRemoveSessionAfterTimeout(t *testing.T) {
 	refreshIntervalHttpPush = oldRI
 }
 
-func TestShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
+func TestPush_ShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
 	oldRI := refreshIntervalHttpPush
 	refreshIntervalHttpPush = 5 * time.Millisecond
 	assert := assert.New(t)
@@ -592,7 +592,7 @@ func TestShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
 	refreshIntervalHttpPush = oldRI
 }
 
-func TestFileExtensionError(t *testing.T) {
+func TestPush_FileExtensionError(t *testing.T) {
 	// assert file extension error returned
 	assert := assert.New(t)
 	s := setupServer()
@@ -610,7 +610,7 @@ func TestFileExtensionError(t *testing.T) {
 	assert.Contains(strings.TrimSpace(string(body)), "ignoring file extension")
 }
 
-func TestStorageError(t *testing.T) {
+func TestPush_StorageError(t *testing.T) {
 	// assert storage error
 	assert := assert.New(t)
 	s := setupServer()
@@ -636,7 +636,7 @@ func TestStorageError(t *testing.T) {
 	drivers.NodeStorage = tempStorage
 }
 
-func TestForAuthWebhookFailure(t *testing.T) {
+func TestPush_ForAuthWebhookFailure(t *testing.T) {
 	// assert app data error
 	assert := assert.New(t)
 	s := setupServer()
@@ -659,7 +659,7 @@ func TestForAuthWebhookFailure(t *testing.T) {
 	AuthWebhookURL = ""
 }
 
-func TestResolutionWithoutContentResolutionHeader(t *testing.T) {
+func TestPush_ResolutionWithoutContentResolutionHeader(t *testing.T) {
 	assert := assert.New(t)
 	server := setupServer()
 	defer serverCleanup(server)
@@ -680,7 +680,7 @@ func TestResolutionWithoutContentResolutionHeader(t *testing.T) {
 	server.rtmpConnections = map[core.ManifestID]*rtmpConnection{}
 }
 
-func TestResolutionWithContentResolutionHeader(t *testing.T) {
+func TestPush_ResolutionWithContentResolutionHeader(t *testing.T) {
 	assert := assert.New(t)
 	server := setupServer()
 	defer serverCleanup(server)
@@ -702,7 +702,7 @@ func TestResolutionWithContentResolutionHeader(t *testing.T) {
 	server.rtmpConnections = map[core.ManifestID]*rtmpConnection{}
 }
 
-func TestWebhookRequestURL(t *testing.T) {
+func TestPush_WebhookRequestURL(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()
 	defer serverCleanup(s)
