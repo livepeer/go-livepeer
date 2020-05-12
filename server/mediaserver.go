@@ -62,6 +62,10 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 var AuthWebhookURL string
 
 var refreshIntervalHttpPush = 1 * time.Minute
+var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
+	sleepDur := time.Duration(int64(float64(refreshIntervalHttpPush) * 0.9))
+	return context.WithTimeout(context.Background(), sleepDur)
+}
 
 type streamParameters struct {
 	mid        core.ManifestID
@@ -678,6 +682,27 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		SeqNo:    seq,
 		Duration: float64(duration) / 1000.0,
 	}
+
+	// Kick watchdog periodically so session doesn't time out during long transcodes
+	requestEnded := make(chan struct{}, 1)
+	defer func() { requestEnded <- struct{}{} }()
+	go func() {
+		for {
+			tick, cancel := httpPushResetTimer()
+			select {
+			case <-requestEnded:
+				cancel()
+				return
+			case <-tick.Done():
+				glog.V(common.VERBOSE).Infof("watchdog reset mid=%s seq=%d dur=%v started=%v", mid, seq, duration, now)
+				s.connectionLock.Lock()
+				if cxn, exists := s.rtmpConnections[mid]; exists {
+					cxn.lastUsed = time.Now()
+				}
+				s.connectionLock.Unlock()
+			}
+		}
+	}()
 
 	// Do the transcoding!
 	urls, err := processSegment(cxn, seg)

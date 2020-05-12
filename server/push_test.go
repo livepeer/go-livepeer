@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"io/ioutil"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -590,6 +592,130 @@ func TestPush_ShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
 	s.connectionLock.Unlock()
 	assert.False(exists)
 	refreshIntervalHttpPush = oldRI
+}
+
+func TestPush_ResetWatchdog(t *testing.T) {
+	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
+	s := setupServer()
+	defer serverCleanup(s)
+
+	waitBarrier := func(ch chan struct{}) bool {
+		select {
+		case <-ch:
+			return true
+		case <-time.After(1 * time.Second):
+			return false
+		}
+	}
+
+	// override reset func with our own instrumentation
+	cancelCount := 0
+	resetCount := 0
+	var wrappedCancel func()
+	var wg sync.WaitGroup // to synchronize on cancels of the watchdog
+	timerCreationBarrier := make(chan struct{})
+	oldResetTimer := httpPushResetTimer
+	httpPushResetTimer = func() (context.Context, context.CancelFunc) {
+		wg.Add(1)
+		ctx, cancel := context.WithCancel(context.Background())
+		resetCount++
+		wrappedCancel = func() {
+			cancelCount++
+			cancel()
+			wg.Done()
+		}
+		timerCreationBarrier <- struct{}{}
+		return ctx, wrappedCancel
+	}
+	defer func() { httpPushResetTimer = oldResetTimer }()
+
+	// sanity check : normal flow should result in a single cancel
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/name/0.ts", nil)
+	s.HandlePush(w, req)
+	assert.True(waitBarrier(timerCreationBarrier), "timer creation timed out")
+	assert.True(wgWait(&wg), "watchdog did not exit")
+	assert.Equal(1, cancelCount)
+	assert.Equal(1, resetCount)
+
+	// set up for "long transcode" : one timeout before returning normally
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+	serverBarrier := make(chan struct{})
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		assert.True(waitBarrier(serverBarrier), "server barrier timed out")
+	})
+	sess := StubBroadcastSession(ts.URL)
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+	s.connectionLock.Lock()
+	cxn, exists := s.rtmpConnections["name"]
+	assert.True(exists)
+	cxn.sessManager = bsm
+	s.connectionLock.Unlock()
+
+	cancelCount = 0
+	resetCount = 0
+	pushFuncBarrier := make(chan struct{})
+	go func() { s.HandlePush(w, req); pushFuncBarrier <- struct{}{} }()
+
+	assert.True(waitBarrier(timerCreationBarrier), "timer creation timed out")
+	assert.Equal(0, cancelCount)
+	assert.Equal(1, resetCount)
+	cxn.lastUsed = time.Time{} // reset. prob should be locked
+
+	// induce a timeout via cancellation
+	wrappedCancel()
+	assert.True(waitBarrier(timerCreationBarrier), "timer creation timed out")
+	assert.Equal(1, cancelCount)
+	assert.Equal(2, resetCount)
+	assert.NotEqual(time.Time{}, cxn.lastUsed, "lastUsed was not reset")
+
+	// check things with a normal return
+	cxn.lastUsed = time.Time{}  // reset again
+	serverBarrier <- struct{}{} // induce server to return
+	assert.True(waitBarrier(pushFuncBarrier), "push func timed out")
+	assert.True(wgWait(&wg), "watchdog did not exit")
+	assert.Equal(2, cancelCount)
+	assert.Equal(2, resetCount)
+	assert.Equal(time.Time{}, cxn.lastUsed, "lastUsed was reset")
+
+	// check lastUsed is not reset if session disappears
+	cancelCount = 0
+	resetCount = 0
+	go func() { s.HandlePush(w, req); pushFuncBarrier <- struct{}{} }()
+	assert.True(waitBarrier(timerCreationBarrier), "timer creation timed out")
+	assert.Equal(0, cancelCount)
+	assert.Equal(1, resetCount)
+	s.connectionLock.Lock()
+	cxn, exists = s.rtmpConnections["name"]
+	assert.True(exists)
+	delete(s.rtmpConnections, "name") // disappear the session
+	assert.NotEqual(time.Time{}, cxn.lastUsed, "lastUsed was not reset")
+	cxn.lastUsed = time.Time{} // use time zero value as a sentinel
+	s.connectionLock.Unlock()
+
+	wrappedCancel() // induce tick
+	assert.True(waitBarrier(timerCreationBarrier), "timer creation timed out")
+	assert.Equal(1, cancelCount)
+	assert.Equal(2, resetCount)
+	assert.Equal(time.Time{}, cxn.lastUsed)
+
+	// clean up and some more sanity checks
+	serverBarrier <- struct{}{}
+	assert.True(waitBarrier(pushFuncBarrier), "push func timed out")
+	assert.True(wgWait(&wg), "watchdog did not exit")
+	assert.Equal(2, cancelCount)
+	assert.Equal(2, resetCount)
+	assert.Equal(time.Time{}, cxn.lastUsed, "lastUsed was reset")
+
+	// cancelling again should not lead to a timer reset since push is complete
+	assert.Panics(wrappedCancel)
+	assert.Equal(3, cancelCount)
+	assert.Equal(2, resetCount)
 }
 
 func TestPush_FileExtensionError(t *testing.T) {
