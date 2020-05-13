@@ -170,11 +170,13 @@ func TestVerify(t *testing.T) {
 
 	// Check sig verifier passes when len(params.Results.Segments) == len(params.Renditions) and sig is valid
 	// We use this stubVerifier to make sure that ffmpeg doesnt try to read from a file
+	// Verify sig against ticket recipient address
+	recipientAddr := ethcommon.BytesToAddress([]byte("foo"))
 	sv = &SegmentVerifier{policy: &Policy{Verifier: &stubVerifier{
 		results: nil,
 		err:     nil,
 	}, Retries: 2},
-		verifySig: func(ethcommon.Address, []byte, []byte) bool { return true },
+		verifySig: func(addr ethcommon.Address, msg []byte, sig []byte) bool { return addr == recipientAddr },
 	}
 
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
@@ -183,7 +185,19 @@ func TestVerify(t *testing.T) {
 	}, Sig: []byte{}}
 
 	renditions = [][]byte{{0}, {0}}
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	params := &net.TicketParams{Recipient: recipientAddr.Bytes()}
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: params}, Renditions: renditions})
+	assert.Nil(err)
+	assert.NotNil(res)
+
+	// Verify sig against orchestrator provided address
+	orchAddr := ethcommon.BytesToAddress([]byte("bar"))
+	sv = &SegmentVerifier{
+		policy:    &Policy{Verifier: &stubVerifier{}, Retries: 2},
+		verifySig: func(addr ethcommon.Address, msg []byte, sig []byte) bool { return addr == orchAddr },
+	}
+
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: params, Address: orchAddr.Bytes()}, Renditions: renditions})
 	assert.Nil(err)
 	assert.NotNil(res)
 

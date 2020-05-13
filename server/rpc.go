@@ -267,6 +267,7 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 		Transcoder:   serviceURI,
 		TicketParams: params,
 		PriceInfo:    priceInfo,
+		Address:      orch.Address().Bytes(),
 	}
 
 	os := drivers.NodeStorage.NewSession(string(core.RandomManifestID()))

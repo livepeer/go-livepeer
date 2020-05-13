@@ -97,6 +97,9 @@ message OrchestratorInfo {
   // Price Info containing the price per pixel to transcode
   PriceInfo price_info = 3;
 
+  // ETH address that should sign transcoded results
+  bytes address = 4;
+
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
 }
