@@ -433,10 +433,11 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// set profiles with valid values, presets empty
 	ts7 := makeServer(`{"manifestID":"a", "profiles": [
 		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456},
-		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": 987}]}`)
+		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": 987},
+		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654}]}`)
 	defer ts7.Close()
 	params = createSid(u).(*streamParameters)
-	assert.Len(params.profiles, 2)
+	assert.Len(params.profiles, 3)
 
 	expectedProfiles := []ffmpeg.VideoProfile{
 		ffmpeg.VideoProfile{
@@ -451,9 +452,15 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			Framerate:  uint(876),
 			Resolution: "456x987",
 		},
+		ffmpeg.VideoProfile{
+			Name:       "passthru_fps",
+			Bitrate:    "890",
+			Resolution: "789x654",
+			Framerate:  0,
+		},
 	}
 
-	assert.Len(params.profiles, 2)
+	assert.Len(params.profiles, 3)
 	assert.Equal(expectedProfiles, params.profiles, "Did not have matching profiles")
 
 	// set profiles with invalid values, presets empty
@@ -468,13 +475,14 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// set profiles and presets
 	ts9 := makeServer(`{"manifestID":"a", "presets":["P240p30fps16x9", "P720p30fps16x9"], "profiles": [
 		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456},
-		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": 987}]}`)
+		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": 987},
+		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654}]}`)
 
 	defer ts9.Close()
 	params = createSid(u).(*streamParameters)
 	jointProfiles := append([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P720p30fps16x9}, expectedProfiles...)
 
-	assert.Len(params.profiles, 4)
+	assert.Len(params.profiles, 5)
 	assert.Equal(jointProfiles, params.profiles, "Did not have matching profiles")
 
 	// all invalid presets in webhook should lead to empty set
