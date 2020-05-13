@@ -26,6 +26,7 @@ type SegTranscodingMetadata struct {
 	Hash       ethcommon.Hash
 	Profiles   []ffmpeg.VideoProfile
 	OS         *net.OSInfo
+	Duration   int
 }
 
 func (md *SegTranscodingMetadata) Flatten() []byte {

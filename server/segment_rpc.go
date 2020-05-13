@@ -39,6 +39,7 @@ const pixelEstimateMultiplier = 1.02
 var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
 var errFormat = errors.New("unrecognized profile output format")
+var errDuration = errors.New("invalid duration")
 
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
 var httpClient = &http.Client{
@@ -265,6 +266,15 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 		return nil, err
 	}
 
+	dur := int(segData.Duration)
+	if dur < 0 || int64(dur) > maxDurationMs {
+		glog.Error("Invalid duration")
+		return nil, errDuration
+	}
+	if dur == 0 {
+		dur = 2000 // assume 2sec default duration
+	}
+
 	mid := core.ManifestID(segData.ManifestId)
 
 	var os *net.OSInfo
@@ -278,6 +288,7 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 		Hash:       ethcommon.BytesToHash(segData.Hash),
 		Profiles:   profiles,
 		OS:         os,
+		Duration:   dur,
 	}
 
 	if !orch.VerifySig(broadcaster, string(md.Flatten()), segData.Sig) {
@@ -500,6 +511,7 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		Seq:        int64(seg.SeqNo),
 		Hash:       ethcommon.BytesToHash(hash),
 		Profiles:   sess.Profiles,
+		Duration:   int(1000.0 * seg.Duration),
 	}
 	sig, err := sess.Broadcaster.Sign(md.Flatten())
 	if err != nil {
@@ -524,6 +536,7 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		Hash:       hash,
 		Sig:        sig,
 		Storage:    storage,
+		Duration:   int32(md.Duration),
 		// Triggers failure on Os that don't know how to use FullProfiles/2
 		Profiles: []byte("invalid"),
 	}

@@ -123,6 +123,9 @@ message SegData {
   // broadcaster.sign(manifestId | seqNo | dataHash | profiles)
   bytes sig  = 5;
 
+  // Duration of the segment to be transcoded, in milliseconds
+  int32 duration = 6;
+
   // Broadcaster's preferred storage medium(s)
   // XXX should we include this in a sig somewhere until certs are authenticated?
   repeated OSInfo storage = 32;
