@@ -104,7 +104,7 @@ func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderRes
 	orch.node.TranscoderManager.transcoderResults(tcID, res)
 }
 
-func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID ManifestID) error {
+func (orch *orchestrator) ProcessPayment(payment net.Payment, segData *SegTranscodingMetadata) error {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil
 	}
@@ -154,6 +154,8 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		CreationRound:          payment.ExpirationParams.CreationRound,
 		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
 	}
+
+	manifestID := segData.ManifestID
 
 	totalEV := big.NewRat(0, 1)
 	totalTickets := 0

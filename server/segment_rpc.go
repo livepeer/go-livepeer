@@ -66,7 +66,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := orch.ProcessPayment(payment, segData.ManifestID); err != nil {
+	if err := orch.ProcessPayment(payment, segData); err != nil {
 		glog.Errorf("error processing payment: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
