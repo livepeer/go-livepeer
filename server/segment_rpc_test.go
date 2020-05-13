@@ -166,6 +166,37 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	assert.Equal("TranscodeSeg error", res.Error)
 }
 
+func TestVerifySegCreds_Duration(t *testing.T) {
+	assert := assert.New(t)
+	orch := &stubOrchestrator{offchain: true}
+	runVerify := func(sd *net.SegData) (*core.SegTranscodingMetadata, error) {
+		data, err := proto.Marshal(sd)
+		assert.Nil(err)
+		creds := base64.StdEncoding.EncodeToString(data)
+		return verifySegCreds(orch, creds, ethcommon.Address{})
+	}
+
+	// check default value
+	md, err := runVerify(&net.SegData{})
+	assert.Nil(err)
+	assert.Equal(2000*time.Millisecond, md.Duration)
+
+	// check regular value
+	md, err = runVerify(&net.SegData{Duration: int32(123)})
+	assert.Nil(err)
+	assert.Equal(123*time.Millisecond, md.Duration)
+
+	// check invalid value : less than zero
+	md, err = runVerify(&net.SegData{Duration: -1})
+	assert.Equal(errDuration, err)
+	assert.Nil(md)
+
+	// check invalid value : greater than max duration
+	md, err = runVerify(&net.SegData{Duration: int32(maxDuration.Milliseconds() + 1)})
+	assert.Equal(errDuration, err)
+	assert.Nil(md)
+}
+
 func TestVerifySegCreds_Profiles(t *testing.T) {
 	assert := assert.New(t)
 	orch := &mockOrchestrator{}

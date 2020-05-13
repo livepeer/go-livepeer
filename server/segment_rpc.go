@@ -39,6 +39,7 @@ const pixelEstimateMultiplier = 1.02
 var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
 var errFormat = errors.New("unrecognized profile output format")
+var errDuration = errors.New("invalid duration")
 
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
 var httpClient = &http.Client{
@@ -484,6 +485,7 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		Hash:       ethcommon.BytesToHash(hash),
 		Profiles:   sess.Profiles,
 		OS:         storage,
+		Duration:   time.Duration(seg.Duration * float64(time.Second)),
 	}
 	sig, err := sess.Broadcaster.Sign(md.Flatten())
 	if err != nil {

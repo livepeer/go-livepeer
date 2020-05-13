@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flyingmutant/rapid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -254,6 +255,24 @@ func TestRPCSeg(t *testing.T) {
 	// sanity check
 	if _, err := verifySegCreds(o, creds, baddr); err != nil {
 		t.Error("Sanity check failed", err)
+	}
+
+	// check duration
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5})
+	if err != nil {
+		t.Error("Could not generate creds ", err)
+	}
+	// manually unmarshal in order to avoid default values in coreSegMetadata
+	buf, err := base64.StdEncoding.DecodeString(creds)
+	if err != nil {
+		t.Error("Could not base64-decode creds ", err)
+	}
+	var netSegData net.SegData
+	if err := proto.Unmarshal(buf, &netSegData); err != nil {
+		t.Error("Unable to unmarshal creds ", err)
+	}
+	if netSegData.Duration != int32(1500) {
+		t.Error("Got unexpected duration ", netSegData.Duration)
 	}
 
 	// test corrupt creds
@@ -810,6 +829,56 @@ func TestGetOrchestrator_PriceInfoError(t *testing.T) {
 	_, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert.EqualError(t, err, expErr.Error())
+}
+
+func TestGenVerify_RoundTrip_Duration(t *testing.T) {
+	sess := &BroadcastSession{Broadcaster: stubBroadcaster2(), Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}}
+	orch := &stubOrchestrator{offchain: true}
+
+	// check invariant : verifySegCreds(genSegCreds(dur)).Duration == dur
+	rapid.Check(t, func(t *rapid.T) {
+		assert := assert.New(t) // in order to pick up the rapid rng
+		randDur := rapid.IntsRange(1, int(maxDuration.Milliseconds())).Draw(t, "dur").(int)
+		dur := time.Duration(randDur * int(time.Millisecond))
+		seg := &stream.HLSSegment{Duration: dur.Seconds()}
+		creds, err := genSegCreds(sess, seg)
+		assert.Nil(err)
+
+		md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+		assert.Nil(err)
+		// allow up to 1ms of difference due to rounding
+		maxDelta := float64(time.Millisecond.Nanoseconds())
+		assert.InDelta(dur.Nanoseconds(), md.Duration.Nanoseconds(), maxDelta, fmt.Sprintf("expected %v got %v", dur, md.Duration))
+	})
+}
+
+func TestCoreNetSegData_RoundTrip_Duration(t *testing.T) {
+	// check invariant : NetSegMetadata(coreSegMetadata(dur)).Duration == dur
+	// and vice versa.
+	rapid.Check(t, func(t *rapid.T) {
+		assert := assert.New(t) // in order to pick up the rapid rng
+		randDur := rapid.IntsRange(1, int(maxDuration.Milliseconds())).Draw(t, "dur").(int)
+		dur := time.Duration(randDur * int(time.Millisecond))
+		segData := &net.SegData{Duration: int32(randDur)}
+		md := &core.SegTranscodingMetadata{Duration: dur, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}}
+
+		convertedMd, err := coreSegMetadata(segData)
+		assert.Nil(err)
+		assert.Equal(md.Duration, convertedMd.Duration)
+
+		convertedSegData, err := core.NetSegData(convertedMd)
+		assert.Nil(err)
+		assert.Equal(segData.Duration, convertedSegData.Duration)
+
+		convertedSegData, err = core.NetSegData(md)
+		assert.Nil(err)
+		assert.Equal(segData.Duration, convertedSegData.Duration)
+
+		convertedMd, err = coreSegMetadata(convertedSegData)
+		assert.Nil(err)
+		assert.Equal(md.Duration, convertedMd.Duration)
+
+	})
 }
 
 type mockOSSession struct {

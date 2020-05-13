@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 
@@ -26,6 +27,7 @@ type SegTranscodingMetadata struct {
 	Hash       ethcommon.Hash
 	Profiles   []ffmpeg.VideoProfile
 	OS         *net.OSInfo
+	Duration   time.Duration
 }
 
 func (md *SegTranscodingMetadata) Flatten() []byte {
@@ -57,6 +59,7 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 		Seq:        md.Seq,
 		Hash:       md.Hash.Bytes(),
 		Storage:    storage,
+		Duration:   int32(md.Duration / time.Millisecond),
 		// Triggers failure on Os that don't know how to use FullProfiles/2
 		Profiles: []byte("invalid"),
 	}

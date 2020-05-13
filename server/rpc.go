@@ -330,11 +330,21 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		os = segData.Storage[0]
 	}
 
+	dur := time.Duration(segData.Duration) * time.Millisecond
+	if dur < 0 || dur > maxDuration {
+		glog.Error("Invalid duration")
+		return nil, errDuration
+	}
+	if dur == 0 {
+		dur = 2 * time.Second // assume 2sec default duration
+	}
+
 	return &core.SegTranscodingMetadata{
 		ManifestID: core.ManifestID(segData.ManifestId),
 		Seq:        segData.Seq,
 		Hash:       ethcommon.BytesToHash(segData.Hash),
 		Profiles:   profiles,
 		OS:         os,
+		Duration:   dur,
 	}, nil
 }
