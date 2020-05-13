@@ -178,10 +178,10 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 		totalStake += stake
 	}
 
-	// Generate a random stake weight between 0 and totalStake
 	r := int64(0)
+	// Generate a random stake weight between 1 and totalStake
 	if totalStake > 0 {
-		r = rand.Int63n(totalStake)
+		r = 1 + rand.Int63n(totalStake)
 	}
 
 	// Run a weighted random selection on unknownSessions
