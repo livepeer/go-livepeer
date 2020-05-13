@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"os"
 	"testing"
 	"time"
@@ -161,6 +162,75 @@ func getSegChan(n *LivepeerNode, m ManifestID) SegmentChan {
 	defer n.segmentMutex.Unlock()
 
 	return n.SegmentChans[m]
+}
+
+func TestEstimateFee(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test nil priceInfo
+	fee, err := EstimateFee(&stream.HLSSegment{}, []ffmpeg.VideoProfile{}, nil)
+	assert.Nil(err)
+	assert.Nil(fee)
+
+	// Test first profile is invalid
+	profiles := []ffmpeg.VideoProfile{ffmpeg.VideoProfile{Resolution: "foo"}}
+	_, err = EstimateFee(&stream.HLSSegment{}, profiles, big.NewRat(1, 1))
+	assert.Error(err)
+
+	// Test non-first profile is invalid
+	profiles = []ffmpeg.VideoProfile{
+		ffmpeg.P144p30fps16x9,
+		ffmpeg.VideoProfile{Resolution: "foo"},
+	}
+	_, err = EstimateFee(&stream.HLSSegment{}, profiles, big.NewRat(1, 1))
+	assert.Error(err)
+
+	// Test no profiles
+	fee, err = EstimateFee(&stream.HLSSegment{Duration: 2.0}, []ffmpeg.VideoProfile{}, big.NewRat(1, 1))
+	assert.Nil(err)
+	assert.Zero(fee.Cmp(big.NewRat(0, 1)))
+
+	// Test estimation with 1 profile
+	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	priceInfo := big.NewRat(3, 1)
+	// pixels = 256 * 144 * 30 * 2
+	expFee := new(big.Rat).SetInt64(2211840)
+	expFee.Mul(expFee, new(big.Rat).SetFloat64(pixelEstimateMultiplier))
+	expFee.Mul(expFee, priceInfo)
+	fee, err = EstimateFee(&stream.HLSSegment{Duration: 2.0}, profiles, priceInfo)
+	assert.Nil(err)
+	assert.Zero(fee.Cmp(expFee))
+
+	// Test estimation with 2 profiles
+	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
+	// pixels = (256 * 144 * 30 * 2) + (426 * 240 * 30 * 2)
+	expFee = new(big.Rat).SetInt64(8346240)
+	expFee.Mul(expFee, new(big.Rat).SetFloat64(pixelEstimateMultiplier))
+	expFee.Mul(expFee, priceInfo)
+	fee, err = EstimateFee(&stream.HLSSegment{Duration: 2.0}, profiles, priceInfo)
+	assert.Nil(err)
+	assert.Zero(fee.Cmp(expFee))
+
+	// Test estimation with non-integer duration
+	// pixels = (256 * 144 * 30 * 3) + (426 * 240 * 30 * 3)
+	expFee = new(big.Rat).SetInt64(12519360)
+	expFee.Mul(expFee, new(big.Rat).SetFloat64(pixelEstimateMultiplier))
+	expFee.Mul(expFee, priceInfo)
+	// Calculations should take ceiling of duration i.e. 2.2 -> 3
+	fee, err = EstimateFee(&stream.HLSSegment{Duration: 2.2}, profiles, priceInfo)
+	assert.Nil(err)
+	assert.Zero(fee.Cmp(expFee))
+
+	// Test estimation with fps pass-through
+	// pixels = (256 * 144 * 120 * 3) + (426 * 240 * 30 * 3)
+	profiles[0].Framerate = 0
+	expFee = new(big.Rat).SetInt64(22472640)
+	expFee.Mul(expFee, new(big.Rat).SetFloat64(pixelEstimateMultiplier))
+	expFee.Mul(expFee, priceInfo)
+	fee, err = EstimateFee(&stream.HLSSegment{Duration: 3.0}, profiles, priceInfo)
+	assert.Nil(err)
+	assert.Zero(fee.Cmp(expFee))
+	assert.Equal(uint(0), profiles[0].Framerate, "Profile framerate was reset")
 }
 
 // XXX unclear what the tests below check

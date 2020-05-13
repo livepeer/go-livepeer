@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"math/big"
 	"net/url"
 	"os"
@@ -28,6 +29,8 @@ import (
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/lpms/stream"
 )
+
+const pixelEstimateMultiplier = 1.02
 
 var transcodeLoopTimeout = 1 * time.Minute
 
@@ -329,6 +332,39 @@ func NewOrchestrator(n *LivepeerNode, rm common.RoundsManager) *orchestrator {
 		address: addr,
 		rm:      rm,
 	}
+}
+
+func EstimateFee(seg *stream.HLSSegment, profiles []ffmpeg.VideoProfile, priceInfo *big.Rat) (*big.Rat, error) {
+	if priceInfo == nil {
+		return nil, nil
+	}
+
+	// TODO: Estimate the number of input pixels
+	// Estimate the number of output pixels
+	var outPixels int64
+	for _, p := range profiles {
+		w, h, err := ffmpeg.VideoProfileResolution(p)
+		if err != nil {
+			return nil, err
+		}
+		framerate := p.Framerate
+		if framerate == 0 {
+			// FPS is being passed through (no fps adjustment)
+			// TODO incorporate the actual number of frames from the input
+			framerate = 120 // conservative estimate of input fps
+		}
+
+		// Take the ceiling of the duration to always overestimate
+		outPixels += int64(w*h) * int64(framerate) * int64(math.Ceil(seg.Duration))
+	}
+
+	// feeEstimate = pixels * pixelEstimateMultiplier * priceInfo
+	fee := new(big.Rat).SetInt64(outPixels)
+	// Multiply pixels by pixelEstimateMultiplier to ensure that we never underpay
+	fee.Mul(fee, new(big.Rat).SetFloat64(pixelEstimateMultiplier))
+	fee.Mul(fee, priceInfo)
+
+	return fee, nil
 }
 
 // LivepeerNode transcode methods
