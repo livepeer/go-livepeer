@@ -421,9 +421,9 @@ func (r *recipient) redeemManager() {
 	// Listen for redeemable tickets that should be retried
 	for {
 		select {
-		case ticket := <-r.sm.Redeemable():
-			if err := r.redeemWinningTicket(ticket.Ticket, ticket.Sig, ticket.RecipientRand); err != nil {
-				glog.Errorf("error redeeming ticket - sender=%x recipientRandHash=%x senderNonce=%v err=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce, err)
+		case red := <-r.sm.Redeemable():
+			if err := r.redeemWinningTicket(red.SignedTicket.Ticket, red.SignedTicket.Sig, red.SignedTicket.RecipientRand); err != nil {
+				glog.Errorf("error redeeming ticket - sender=%x recipientRandHash=%x senderNonce=%v err=%v", red.SignedTicket.Sender, red.SignedTicket.RecipientRandHash, red.SignedTicket.SenderNonce, err)
 			}
 		case <-r.quit:
 			return
