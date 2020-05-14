@@ -20,23 +20,20 @@ type stubBlockStore struct {
 
 type stubTicketStore struct {
 	stubBlockStore
-	tickets         map[string][]*Ticket
-	sigs            map[string][][]byte
-	recipientRands  map[string][]*big.Int
-	storeShouldFail bool
-	loadShouldFail  bool
-	lock            sync.RWMutex
+	tickets          map[string][]*SignedTicket
+	storeShouldFail  bool
+	loadShouldFail   bool
+	removeShouldFail bool
+	lock             sync.RWMutex
 }
 
 func newStubTicketStore() *stubTicketStore {
 	return &stubTicketStore{
-		tickets:        make(map[string][]*Ticket),
-		sigs:           make(map[string][][]byte),
-		recipientRands: make(map[string][]*big.Int),
+		tickets: make(map[string][]*SignedTicket),
 	}
 }
 
-func (ts *stubTicketStore) StoreWinningTicket(sessionID string, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+func (ts *stubTicketStore) StoreWinningTicket(ticket *SignedTicket) error {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 
@@ -44,41 +41,44 @@ func (ts *stubTicketStore) StoreWinningTicket(sessionID string, ticket *Ticket, 
 		return fmt.Errorf("stub ticket store store error")
 	}
 
-	ts.tickets[sessionID] = append(ts.tickets[sessionID], ticket)
-	ts.sigs[sessionID] = append(ts.sigs[sessionID], sig)
-	ts.recipientRands[sessionID] = append(ts.recipientRands[sessionID], recipientRand)
-
+	ts.tickets[ticket.Sender.Hex()] = append(ts.tickets[ticket.Sender.Hex()], ticket)
 	return nil
 }
 
-func (ts *stubTicketStore) LoadWinningTickets(sessionIDs []string) ([]*Ticket, [][]byte, []*big.Int, error) {
-	ts.lock.RLock()
-	defer ts.lock.RUnlock()
-
+func (ts *stubTicketStore) LoadLatestTicket(sender ethcommon.Address) (*SignedTicket, error) {
+	ts.lock.Lock()
+	defer ts.lock.Unlock()
 	if ts.loadShouldFail {
-		return nil, nil, nil, fmt.Errorf("stub ticket store load error")
+		return nil, fmt.Errorf("stub TicketStore load error")
 	}
+	return ts.tickets[sender.Hex()][0], nil
+}
 
-	allTix := make([]*Ticket, 0)
-	allSigs := make([][]byte, 0)
-	allRecipientRands := make([]*big.Int, 0)
-
-	for _, sessionID := range sessionIDs {
-		tickets := ts.tickets[sessionID]
-		if tickets != nil && len(tickets) > 0 {
-			allTix = append(allTix, tickets...)
-		}
-		sigs := ts.sigs[sessionID]
-		if sigs != nil && len(sigs) > 0 {
-			allSigs = append(allSigs, sigs...)
-		}
-		recipientRands := ts.recipientRands[sessionID]
-		if recipientRands != nil && len(recipientRands) > 0 {
-			allRecipientRands = append(allRecipientRands, recipientRands...)
-		}
+func (ts *stubTicketStore) RemoveWinningTicket(ticket *SignedTicket) error {
+	ts.lock.Lock()
+	defer ts.lock.Unlock()
+	if ts.removeShouldFail {
+		return fmt.Errorf("stub TicketStore remove error")
 	}
+	for i, t := range ts.tickets[ticket.Sender.Hex()] {
+		if ethcommon.Bytes2Hex(t.Sig) != ethcommon.Bytes2Hex(ticket.Sig) {
+			continue
+		}
+		tickets := ts.tickets[ticket.Sender.Hex()][:i]
+		if i != len(ts.tickets[ticket.Sender.Hex()])-1 {
+			tickets = append(tickets, ts.tickets[ticket.Sender.Hex()][i+1:]...)
+		}
+		ts.tickets[ticket.Sender.Hex()] = tickets
+		break
+	}
+	return nil
+}
 
-	return allTix, allSigs, allRecipientRands, nil
+func (ts *stubTicketStore) WinningTicketCount(sender ethcommon.Address) (int, error) {
+	if ts.loadShouldFail {
+		return 0, fmt.Errorf("stub TicketStore load error")
+	}
+	return len(ts.tickets[sender.Hex()]), nil
 }
 
 func (ts *stubBlockStore) LastSeenBlock() (*big.Int, error) {
@@ -326,6 +326,7 @@ type stubSenderMonitor struct {
 	addFloatErr       error
 	maxFloatErr       error
 	validateSenderErr error
+	shouldFail        error
 }
 
 func newStubSenderMonitor() *stubSenderMonitor {
@@ -343,8 +344,12 @@ func (s *stubSenderMonitor) Redeemable() chan *SignedTicket {
 	return s.redeemable
 }
 
-func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) {
+func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error {
+	if s.shouldFail != nil {
+		return s.shouldFail
+	}
 	s.queued = append(s.queued, ticket)
+	return nil
 }
 
 func (s *stubSenderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error {
