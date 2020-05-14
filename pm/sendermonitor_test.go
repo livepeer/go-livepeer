@@ -38,7 +38,7 @@ func TestMaxFloat(t *testing.T) {
 	}
 	smgr.claimedReserve[addr] = big.NewInt(100)
 	tm.transcoderPoolSize = big.NewInt(50)
-	sm := NewSenderMonitor(claimant, b, smgr, tm, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 
@@ -93,7 +93,7 @@ func TestSubFloat(t *testing.T) {
 	}
 	smgr.claimedReserve[addr] = big.NewInt(100)
 	tm.transcoderPoolSize = big.NewInt(50)
-	sm := NewSenderMonitor(claimant, b, smgr, tm, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 
@@ -133,7 +133,7 @@ func TestAddFloat(t *testing.T) {
 	}
 	smgr.claimedReserve[addr] = big.NewInt(100)
 	tm.transcoderPoolSize = big.NewInt(1)
-	sm := NewSenderMonitor(claimant, b, smgr, tm, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 
@@ -185,19 +185,27 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 			ClaimedInCurrentRound: big.NewInt(0),
 		},
 	}
+
+	ts := newStubTicketStore()
 	smgr.claimedReserve[addr] = big.NewInt(100)
-	sm := NewSenderMonitor(claimant, b, smgr, tm, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, ts, 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 
 	assert := assert.New(t)
 
 	// Test queue ticket
+	// test fail
+	ts.storeShouldFail = true
+	assert.EqualError(sm.QueueTicket(addr, defaultSignedTicket(addr, uint32(0))), "stub ticket store store error")
+	ts.storeShouldFail = false
 
-	sm.QueueTicket(addr, defaultSignedTicket(uint32(0)))
+	err := sm.QueueTicket(addr, defaultSignedTicket(addr, uint32(0)))
+	assert.Nil(err)
 	time.Sleep(20 * time.Millisecond)
-
-	assert.Equal(sm.(*senderMonitor).senders[addr].queue.Length(), int32(1))
+	qlen, err := sm.(*senderMonitor).senders[addr].queue.Length()
+	assert.Nil(err)
+	assert.Equal(qlen, 1)
 
 	qc := &queueConsumer{}
 	go qc.Wait(1, sm)
@@ -206,7 +214,9 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	// check that ticket is now removed from queue
-	assert.Equal(sm.(*senderMonitor).senders[addr].queue.Length(), int32(0))
+	qlen, err = sm.(*senderMonitor).senders[addr].queue.Length()
+	assert.Nil(err)
+	assert.Equal(qlen, 0)
 
 	tickets := qc.Redeemable()
 	assert.Equal(1, len(tickets))
@@ -228,15 +238,19 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	qc = &queueConsumer{}
 	go qc.Wait(2, sm)
 
-	sm.QueueTicket(addr, defaultSignedTicket(uint32(2)))
+	sm.QueueTicket(addr, defaultSignedTicket(addr, (2)))
 	time.Sleep(20 * time.Millisecond)
-	assert.Equal(sm.(*senderMonitor).senders[addr].queue.Length(), int32(1))
+	qlen, err = sm.(*senderMonitor).senders[addr].queue.Length()
+	assert.Nil(err)
+	assert.Equal(qlen, 1)
 	tm.blockNumSink <- big.NewInt(5)
 	time.Sleep(20 * time.Millisecond)
 
-	sm.QueueTicket(addr2, defaultSignedTicket(uint32(3)))
+	sm.QueueTicket(addr2, defaultSignedTicket(addr2, uint32(3)))
 	time.Sleep(20 * time.Millisecond)
-	assert.Equal(sm.(*senderMonitor).senders[addr2].queue.Length(), int32(1))
+	qlen, err = sm.(*senderMonitor).senders[addr2].queue.Length()
+	assert.Nil(err)
+	assert.Equal(qlen, 1)
 	tm.blockNumSink <- big.NewInt(5)
 	time.Sleep(20 * time.Millisecond)
 
@@ -248,7 +262,7 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 
 func TestCleanup(t *testing.T) {
 	claimant, b, smgr, tm := senderMonitorFixture()
-	sm := NewSenderMonitor(claimant, b, smgr, tm, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 
@@ -432,7 +446,7 @@ func TestReserveAlloc(t *testing.T) {
 		},
 	}
 	smgr.claimedReserve[addr] = big.NewInt(100)
-	sm := NewSenderMonitor(claimant, b, smgr, tm, 5*time.Minute, 3600).(*senderMonitor)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600).(*senderMonitor)
 
 	// test GetSenderInfo error
 	smgr.err = errors.New("GetSenderInfo error")
@@ -453,7 +467,7 @@ func TestSenderMonitor_ValidateSender(t *testing.T) {
 	smgr.info[addr] = &SenderInfo{
 		WithdrawRound: big.NewInt(10),
 	}
-	sm := NewSenderMonitor(claimant, b, smgr, tm, 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 

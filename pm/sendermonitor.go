@@ -7,7 +7,6 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -29,7 +28,7 @@ type SenderMonitor interface {
 	Stop()
 
 	// QueueTicket adds a ticket to the queue for a remote sender
-	QueueTicket(addr ethcommon.Address, ticket *SignedTicket)
+	QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error
 
 	// AddFloat adds to a remote sender's max float
 	AddFloat(addr ethcommon.Address, amount *big.Int) error
@@ -147,15 +146,13 @@ func (sm *senderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
 }
 
 // QueueTicket adds a ticket to the queue for a remote sender
-func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) {
+func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
 	sm.ensureCache(addr)
 
-	sm.senders[addr].queue.Add(ticket)
-	glog.Infof("Queued ticket sender=%v recipientRandHash=%v senderNonce=%v", ticket.Sender.Hex(), ticket.RecipientRandHash.Hex(), ticket.SenderNonce)
-
+	return sm.senders[addr].queue.Add(ticket)
 }
 
 // ValidateSender checks whether a sender's unlock period ends the round after the next round
