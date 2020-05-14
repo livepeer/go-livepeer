@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -737,6 +738,62 @@ func TestDBUnbondingLocks(t *testing.T) {
 	}
 }
 
+func TestWinningTicketCount(t *testing.T) {
+	assert := assert.New(t)
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	sender := pm.RandAddress()
+
+	_, ticket, sig, recipientRand := defaultWinningTicket(t)
+	ticket.Sender = sender
+	count, err := dbh.WinningTicketCount(sender)
+	assert.Nil(err)
+	assert.Equal(count, 0)
+
+	err = dbh.StoreWinningTicket(&pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	})
+	require.Nil(err)
+
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.Sender = pm.RandAddress()
+	err = dbh.StoreWinningTicket(&pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	})
+	require.Nil(err)
+
+	count, err = dbh.WinningTicketCount(sender)
+	assert.Nil(err)
+	assert.Equal(count, 1)
+
+	// add a submitted ticket , should not change count
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.Sender = sender
+	err = dbh.StoreWinningTicket(&pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	})
+	dbh.MarkWinningTicketRedeemed(&pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}, pm.RandHash())
+	require.Nil(err)
+
+	count, err = dbh.WinningTicketCount(sender)
+	assert.Nil(err)
+	assert.Equal(count, 1)
+}
+
 func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
@@ -744,16 +801,22 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	require := require.New(t)
 	require.Nil(err)
 
-	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
+	_, ticket, sig, recipientRand := defaultWinningTicket(t)
 
-	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
+	err = dbh.StoreWinningTicket(&pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	})
 	require.Nil(err)
 
-	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets")
-	var actualSender, actualRecipient, actualRecipientRandHash, actualSessionID string
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue")
+	var actualSender, actualRecipient, actualRecipientRandHash, actualCreationRoundBlockHash string
 	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
 	var actualSenderNonce uint32
-	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualSessionID)
+	var actualCreationRound int64
+	var paramsExpirationBlock int64
+	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualCreationRound, &actualCreationRoundBlockHash, &paramsExpirationBlock)
 
 	assert := assert.New(t)
 	assert.Equal(ticket.Sender.Hex(), actualSender)
@@ -763,10 +826,12 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	assert.Equal(ticket.SenderNonce, actualSenderNonce)
 	assert.Equal(recipientRand, new(big.Int).SetBytes(actualRecipientRandBytes))
 	assert.Equal(ticket.RecipientRandHash, ethcommon.HexToHash(actualRecipientRandHash))
+	assert.Equal(ticket.CreationRound, actualCreationRound)
+	assert.Equal(ticket.CreationRoundBlockHash, ethcommon.HexToHash(actualCreationRoundBlockHash))
+	assert.Equal(ticket.ParamsExpirationBlock.Int64(), paramsExpirationBlock)
 	assert.Equal(sig, actualSig)
-	assert.Equal(sessionID, actualSessionID)
 
-	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM winningTickets", dbraw, t)
+	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM ticketQueue", dbraw, t)
 	assert.Equal(1, ticketsCount)
 }
 
@@ -777,19 +842,25 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	require := require.New(t)
 	require.Nil(err)
 
-	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
+	_, ticket, sig, recipientRand := defaultWinningTicket(t)
 	ticket.FaceValue = MaxUint256OrFatal(t)
 	ticket.WinProb = MaxUint256OrFatal(t)
 	ticket.SenderNonce = math.MaxUint32
 
-	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
+	err = dbh.StoreWinningTicket(&pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	})
 	require.Nil(err)
 
-	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets")
-	var actualSender, actualRecipient, actualRecipientRandHash, actualSessionID string
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue")
+	var actualSender, actualRecipient, actualRecipientRandHash, actualCreationRoundBlockHash string
 	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
 	var actualSenderNonce uint32
-	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualSessionID)
+	var actualCreationRound int64
+	var paramsExpirationBlock int64
+	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualCreationRound, &actualCreationRoundBlockHash, &paramsExpirationBlock)
 
 	assert := assert.New(t)
 	assert.Equal(ticket.Sender.Hex(), actualSender)
@@ -799,10 +870,12 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	assert.Equal(ticket.SenderNonce, actualSenderNonce)
 	assert.Equal(recipientRand, new(big.Int).SetBytes(actualRecipientRandBytes))
 	assert.Equal(ticket.RecipientRandHash, ethcommon.HexToHash(actualRecipientRandHash))
+	assert.Equal(ticket.CreationRound, actualCreationRound)
+	assert.Equal(ticket.CreationRoundBlockHash, ethcommon.HexToHash(actualCreationRoundBlockHash))
+	assert.Equal(ticket.ParamsExpirationBlock.Int64(), paramsExpirationBlock)
 	assert.Equal(sig, actualSig)
-	assert.Equal(sessionID, actualSessionID)
 
-	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM winningTickets", dbraw, t)
+	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM ticketQueue", dbraw, t)
 	assert.Equal(1, ticketsCount)
 }
 
@@ -813,12 +886,13 @@ func TestStoreWinningTicket_GivenNilTicket_ReturnsError(t *testing.T) {
 	require := require.New(t)
 	require.Nil(err)
 
-	sig := pm.RandBytes(42)
-	recipientRand := new(big.Int).SetInt64(1234)
-
-	err = dbh.StoreWinningTicket("sessionID", nil, sig, recipientRand)
+	err = dbh.StoreWinningTicket(nil)
 
 	assert := assert.New(t)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "nil ticket")
+
+	err = dbh.StoreWinningTicket(&pm.SignedTicket{})
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "nil ticket")
 }
@@ -830,9 +904,12 @@ func TestStoreWinningTicket_GivenNilSig_ReturnsError(t *testing.T) {
 	require := require.New(t)
 	require.Nil(err)
 
-	sessionID, ticket, _, recipientRand := defaultWinningTicket(t)
+	_, ticket, _, recipientRand := defaultWinningTicket(t)
 
-	err = dbh.StoreWinningTicket(sessionID, ticket, nil, recipientRand)
+	err = dbh.StoreWinningTicket(&pm.SignedTicket{
+		Ticket:        ticket,
+		RecipientRand: recipientRand,
+	})
 
 	assert := assert.New(t)
 	assert.NotNil(err)
@@ -846,141 +923,191 @@ func TestStoreWinningTicket_GivenNilRecipientRand_ReturnsError(t *testing.T) {
 	require := require.New(t)
 	require.Nil(err)
 
-	sessionID, ticket, sig, _ := defaultWinningTicket(t)
+	_, ticket, sig, _ := defaultWinningTicket(t)
 
-	err = dbh.StoreWinningTicket(sessionID, ticket, sig, nil)
+	err = dbh.StoreWinningTicket(&pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: nil,
+	})
 
 	assert := assert.New(t)
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "nil recipientRand")
 }
 
-func TestLoadWinningTicket_GivenStoredTicket_LoadsItCorrectly(t *testing.T) {
+func TestSelectEarliestWinningTicket(t *testing.T) {
+	assert := assert.New(t)
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
 	require := require.New(t)
 	require.Nil(err)
 
-	sessionID, ticket, sig, recipientRand := defaultWinningTicket(t)
-	err = dbh.StoreWinningTicket(sessionID, ticket, sig, recipientRand)
+	_, ticket, sig, recipientRand := defaultWinningTicket(t)
+	ticket.Sender = ethcommon.HexToAddress("charizard")
+
+	signedTicket0 := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}
+
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.Sender = ethcommon.HexToAddress("pikachu")
+	signedTicket1 := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}
+	err = dbh.StoreWinningTicket(signedTicket1)
 	require.Nil(err)
 
-	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets([]string{sessionID})
-	require.Nil(err)
-
-	assert := assert.New(t)
-	assert.Len(tickets, 1)
-	assert.Len(sigs, 1)
-	assert.Len(recipientRands, 1)
-	actualTicket := tickets[0]
-	actualSig := sigs[0]
-	actualRecipientRand := recipientRands[0]
-	assert.Equal(ticket, actualTicket)
-	assert.Equal(sig, actualSig)
-	assert.Equal(recipientRand, actualRecipientRand)
-}
-
-func TestLoadWinningTicket_GivenStoredTicketsFromDifferentSessions_OnlyLoadsFromSpecificSessionID(t *testing.T) {
-	dbh, dbraw, err := TempDB(t)
-	defer dbh.Close()
-	defer dbraw.Close()
-	require := require.New(t)
-	require.Nil(err)
-
-	// Two tickets in the first session
-	firstSessionID := "first session"
-	_, ticket0, sig0, recipientRand0 := defaultWinningTicket(t)
-	err = dbh.StoreWinningTicket(firstSessionID, ticket0, sig0, recipientRand0)
-	require.Nil(err)
-
-	_, ticket1, sig1, recipientRand1 := defaultWinningTicket(t)
-	err = dbh.StoreWinningTicket(firstSessionID, ticket1, sig1, recipientRand1)
-	require.Nil(err)
-
-	// One ticket in the second session
-	secondSessionID := "second session"
-	_, ticket2, sig2, recipientRand2 := defaultWinningTicket(t)
-	err = dbh.StoreWinningTicket(secondSessionID, ticket2, sig2, recipientRand2)
-	require.Nil(err)
-
-	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets([]string{firstSessionID})
-
-	assert := assert.New(t)
+	// no tickets found
+	earliest, err := dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"))
 	assert.Nil(err)
-	assert.Len(tickets, 2)
-	assert.Len(sigs, 2)
-	assert.Len(recipientRands, 2)
-	assert.Equal(ticket0, tickets[0])
-	assert.Equal(sig0, sigs[0])
-	assert.Equal(recipientRand0, recipientRands[0])
-	assert.Equal(ticket1, tickets[1])
-	assert.Equal(sig1, sigs[1])
-	assert.Equal(recipientRand1, recipientRands[1])
-}
+	assert.Nil(earliest)
 
-func TestLoadWinningTicket_GivenNonexistentSessionID_ReturnsEmptySlicesNoError(t *testing.T) {
-	dbh, dbraw, err := TempDB(t)
-	defer dbh.Close()
-	defer dbraw.Close()
-	require := require.New(t)
+	err = dbh.StoreWinningTicket(signedTicket0)
 	require.Nil(err)
-
-	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets([]string{"some sessionID"})
-
-	assert := assert.New(t)
+	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"))
 	assert.Nil(err)
-	assert.Len(tickets, 0)
-	assert.Len(sigs, 0)
-	assert.Len(recipientRands, 0)
-}
+	assert.Equal(signedTicket0, earliest)
 
-func TestLoadWinningTicket_GivenEmptySessionID_ReturnsEmptySlicesNoError(t *testing.T) {
-	dbh, dbraw, err := TempDB(t)
-	defer dbh.Close()
-	defer dbraw.Close()
-	require := require.New(t)
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.Sender = ethcommon.HexToAddress("charizard")
+	signedTicket2 := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           pm.RandBytes(32),
+		RecipientRand: new(big.Int).SetBytes(pm.RandBytes(32)),
+	}
+
+	err = dbh.StoreWinningTicket(signedTicket2)
 	require.Nil(err)
 
-	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets([]string{""})
-
-	assert := assert.New(t)
+	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"))
 	assert.Nil(err)
-	assert.Len(tickets, 0)
-	assert.Len(sigs, 0)
-	assert.Len(recipientRands, 0)
+	assert.Equal(earliest, signedTicket0)
+
+	// Test excluding submitted tickets
+	err = dbh.MarkWinningTicketRedeemed(signedTicket0, pm.RandHash())
+	require.Nil(err)
+	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"))
+	assert.Equal(earliest, signedTicket2)
 }
 
-func TestLoadWinningTickets_GivenTwoSessionsWithTickets_ReturnsAllTickets(t *testing.T) {
+func TestMarkWinningTicketRedeemed_GivenNilTicket_ReturnsError(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
 	defer dbraw.Close()
 	require := require.New(t)
 	require.Nil(err)
 
-	firstSessionID := "first session"
-	_, ticket0, sig0, recipientRand0 := defaultWinningTicket(t)
-	err = dbh.StoreWinningTicket(firstSessionID, ticket0, sig0, recipientRand0)
-	require.Nil(err)
-
-	secondSessionID := "second session"
-	_, ticket1, sig1, recipientRand1 := defaultWinningTicket(t)
-	err = dbh.StoreWinningTicket(secondSessionID, ticket1, sig1, recipientRand1)
-	require.Nil(err)
-
-	tickets, sigs, recipientRands, err := dbh.LoadWinningTickets([]string{firstSessionID, secondSessionID})
-	require.Nil(err)
+	err = dbh.MarkWinningTicketRedeemed(nil, ethcommon.Hash{})
 
 	assert := assert.New(t)
-	assert.Len(tickets, 2)
-	assert.Len(sigs, 2)
-	assert.Len(recipientRands, 2)
-	assert.Equal(ticket0, tickets[0])
-	assert.Equal(sig0, sigs[0])
-	assert.Equal(recipientRand0, recipientRands[0])
-	assert.Equal(ticket1, tickets[1])
-	assert.Equal(sig1, sigs[1])
-	assert.Equal(recipientRand1, recipientRands[1])
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "nil ticket")
+
+	err = dbh.MarkWinningTicketRedeemed(&pm.SignedTicket{}, ethcommon.Hash{})
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "nil ticket")
+}
+
+func TestMarkWinningTicketRedeemed_GivenNilSig_ReturnsError(t *testing.T) {
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	_, ticket, _, recipientRand := defaultWinningTicket(t)
+
+	err = dbh.MarkWinningTicketRedeemed(&pm.SignedTicket{
+		Ticket:        ticket,
+		RecipientRand: recipientRand,
+	}, ethcommon.Hash{})
+
+	assert := assert.New(t)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "nil sig")
+}
+
+func TestMarkWinningTicketRedeemed_Update_TxHash_And_SubmittedAt(t *testing.T) {
+	assert := assert.New(t)
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	_, ticket, sig, recipientRand := defaultWinningTicket(t)
+
+	txHash := pm.RandHash()
+	signedT := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}
+	// test no record found
+	err = dbh.MarkWinningTicketRedeemed(signedT, txHash)
+	assert.EqualError(err, fmt.Sprintf("no record found for sig=0x%x", sig))
+
+	// store a record
+	err = dbh.StoreWinningTicket(signedT)
+	require.Nil(err)
+
+	// success
+	err = dbh.MarkWinningTicketRedeemed(signedT, txHash)
+	assert.Nil(err)
+	row := dbraw.QueryRow("SELECT txHash, redeemedAt FROM ticketQueue WHERE sig=?", sig)
+	var txHashActual string
+	var redeemedAt time.Time
+	err = row.Scan(&txHashActual, &redeemedAt)
+	require.Nil(err)
+	assert.Equal(txHash.Hex(), txHashActual)
+	assert.Equal(redeemedAt.Day(), time.Now().Day())
+}
+
+func TestRemoveWinningTicket(t *testing.T) {
+	assert := assert.New(t)
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	_, ticket, sig, recipientRand := defaultWinningTicket(t)
+
+	signedTicket := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}
+
+	err = dbh.StoreWinningTicket(signedTicket)
+	require.Nil(err)
+
+	// confirm ticket is added correctly
+	count, err := dbh.WinningTicketCount(ticket.Sender)
+	require.Nil(err)
+	require.Equal(count, 1)
+
+	// removing the wrong ticket should return nil
+	signedTicketDup := *signedTicket
+	signedTicketDup.Sig = pm.RandBytes(32)
+	err = dbh.RemoveWinningTicket(&signedTicketDup)
+	assert.NoError(err)
+	// confirm ticket is not removed
+	count, err = dbh.WinningTicketCount(signedTicket.Sender)
+	require.Nil(err)
+	assert.Equal(count, 1)
+
+	err = dbh.RemoveWinningTicket(signedTicket)
+	assert.Nil(err)
+	// confirm ticket is removed correctly
+	count, _ = dbh.WinningTicketCount(ticket.Sender)
+	require.Equal(count, 0)
 }
 
 func TestInsertMiniHeader_ReturnsFindLatestMiniHeader(t *testing.T) {
@@ -1009,9 +1136,9 @@ func TestInsertMiniHeader_ReturnsFindLatestMiniHeader(t *testing.T) {
 	})
 	err = dbh.InsertMiniHeader(h1)
 	require.Nil(err)
-	latest, err := dbh.FindLatestMiniHeader()
+	earliest, err := dbh.FindLatestMiniHeader()
 	require.Nil(err)
-	assert.Equal(h1, latest)
+	assert.Equal(h1, earliest)
 	assert.Equal(len(h1.Logs), 2)
 
 	// test MiniHeader = nil error
@@ -1110,12 +1237,13 @@ func TestDeleteMiniHeader(t *testing.T) {
 func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) {
 	sessionID = "foo bar"
 	ticket = &pm.Ticket{
-		Sender:            pm.RandAddress(),
-		Recipient:         pm.RandAddress(),
-		FaceValue:         big.NewInt(1234),
-		WinProb:           big.NewInt(2345),
-		SenderNonce:       uint32(123),
-		RecipientRandHash: pm.RandHash(),
+		Sender:                pm.RandAddress(),
+		Recipient:             pm.RandAddress(),
+		FaceValue:             big.NewInt(1234),
+		WinProb:               big.NewInt(2345),
+		SenderNonce:           uint32(123),
+		RecipientRandHash:     pm.RandHash(),
+		ParamsExpirationBlock: big.NewInt(1337),
 	}
 	sig = pm.RandBytes(42)
 	recipientRand = big.NewInt(4567)
