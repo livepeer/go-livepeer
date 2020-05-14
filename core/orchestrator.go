@@ -201,7 +201,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 
 			go func(ticket *pm.Ticket, sig []byte, seed *big.Int) {
 				if err := orch.node.Recipient.RedeemWinningTicket(ticket, sig, seed); err != nil {
-					glog.Errorf("error redeeming ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
+					glog.Errorf("error redeeming ticket manifestID=%v recipientRandHash=%x senderNonce=%v err=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 				}
 			}(ticket, tsp.Sig, seed)
 		}
