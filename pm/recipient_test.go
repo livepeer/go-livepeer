@@ -440,8 +440,7 @@ func TestRedeemWinningTicket_SingleTicket_RedeemError(t *testing.T) {
 	sender, b, v, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
 	r := NewRecipientWithSecret(RandAddress(), b, v, gm, sm, tm, secret, cfg).(*recipient)
-	r.Start()
-	defer r.Stop()
+
 	time.Sleep(20 * time.Millisecond)
 	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)

@@ -80,8 +80,6 @@ type recipient struct {
 	senderNoncesLock sync.Mutex
 
 	cfg TicketParamsConfig
-
-	quit chan struct{}
 }
 
 // NewRecipient creates an instance of a recipient with an
@@ -112,18 +110,7 @@ func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator
 		secret:       secret,
 		senderNonces: make(map[string]uint32),
 		cfg:          cfg,
-		quit:         make(chan struct{}),
 	}
-}
-
-// Start initiates the helper goroutines for the recipient
-func (r *recipient) Start() {
-	go r.redeemManager()
-}
-
-// Stop signals the recipient to exit gracefully
-func (r *recipient) Stop() {
-	close(r.quit)
 }
 
 // ReceiveTicket validates and processes a received ticket
@@ -395,13 +382,9 @@ func (r *recipient) clearSenderNonce(rand *big.Int) {
 func (r *recipient) redeemManager() {
 	// Listen for redeemable tickets that should be retried
 	for {
-		select {
-		case ticket := <-r.sm.Redeemable():
-			if err := r.redeemWinningTicket(ticket.Ticket, ticket.Sig, ticket.RecipientRand); err != nil {
-				glog.Errorf("error redeeming ticket - sender=%x recipientRandHash=%x senderNonce=%v err=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce, err)
-			}
-		case <-r.quit:
-			return
+		ticket := <-r.sm.Redeemable()
+		if err := r.redeemWinningTicket(ticket.Ticket, ticket.Sig, ticket.RecipientRand); err != nil {
+			glog.Errorf("error redeeming ticket - sender=%x recipientRandHash=%x senderNonce=%v err=%v", ticket.Sender, ticket.RecipientRandHash, ticket.SenderNonce, err)
 		}
 	}
 }
