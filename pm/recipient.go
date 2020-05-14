@@ -28,12 +28,6 @@ var paramsExpirationBlock = big.NewInt(5)
 // Recipient is an interface which describes an object capable
 // of receiving tickets
 type Recipient interface {
-	// Start initiates the helper goroutines for the recipient
-	Start()
-
-	// Stop signals the recipient to exit gracefully
-	Stop()
-
 	// ReceiveTicket validates and processes a received ticket
 	ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error)
 
@@ -88,8 +82,6 @@ type recipient struct {
 	senderNoncesLock sync.Mutex
 
 	cfg TicketParamsConfig
-
-	quit chan struct{}
 }
 
 // NewRecipient creates an instance of a recipient with an
@@ -120,18 +112,7 @@ func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator
 		secret:       secret,
 		senderNonces: make(map[string]uint32),
 		cfg:          cfg,
-		quit:         make(chan struct{}),
 	}
-}
-
-// Start initiates the helper goroutines for the recipient
-func (r *recipient) Start() {
-	go r.redeemManager()
-}
-
-// Stop signals the recipient to exit gracefully
-func (r *recipient) Stop() {
-	close(r.quit)
 }
 
 // ReceiveTicket validates and processes a received ticket
@@ -425,8 +406,6 @@ func (r *recipient) redeemManager() {
 			if err := r.redeemWinningTicket(red.SignedTicket.Ticket, red.SignedTicket.Sig, red.SignedTicket.RecipientRand); err != nil {
 				glog.Errorf("error redeeming ticket - sender=%x recipientRandHash=%x senderNonce=%v err=%v", red.SignedTicket.Sender, red.SignedTicket.RecipientRandHash, red.SignedTicket.SenderNonce, err)
 			}
-		case <-r.quit:
-			return
 		}
 	}
 }

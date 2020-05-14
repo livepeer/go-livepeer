@@ -535,9 +535,6 @@ func main() {
 				return
 			}
 
-			n.Recipient.Start()
-			defer n.Recipient.Stop()
-
 			// Only initialize rounds and call reward if the node is using an on-chain registered orchestrator address
 			// Assume that the node is using an on-chain registered orchestrator address if -ethOrchAddr is not specified or
 			// if the ticket recipient is the node's address
