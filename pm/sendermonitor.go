@@ -78,11 +78,13 @@ type senderMonitor struct {
 	// each of currently active remote senders
 	redeemable chan *SignedTicket
 
+	ticketStore func() TicketStore
+
 	quit chan struct{}
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderManager, tm TimeManager, cleanupInterval time.Duration, ttl int) SenderMonitor {
+func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderManager, tm TimeManager, store TicketStore, cleanupInterval time.Duration, ttl int) SenderMonitor {
 	return &senderMonitor{
 		claimant:        claimant,
 		cleanupInterval: cleanupInterval,
@@ -92,6 +94,7 @@ func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderMana
 		tm:              tm,
 		senders:         make(map[ethcommon.Address]*remoteSender),
 		redeemable:      make(chan *SignedTicket),
+		ticketStore:     func() TicketStore { return store },
 		quit:            make(chan struct{}),
 	}
 }
@@ -215,7 +218,7 @@ func (sm *senderMonitor) ensureCache(addr ethcommon.Address) {
 // Caller should hold the lock for senderMonitor unless the caller is
 // ensureCache() in which case the caller of ensureCache() should hold the lock
 func (sm *senderMonitor) cache(addr ethcommon.Address) {
-	queue := newTicketQueue(sm.tm.SubscribeBlocks)
+	queue := newTicketQueue(sm.ticketStore(), addr, sm.tm.SubscribeBlocks)
 	queue.Start()
 	done := make(chan struct{})
 	go sm.startTicketQueueConsumerLoop(queue, done)

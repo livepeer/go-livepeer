@@ -6,12 +6,14 @@ import (
 	"testing"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func defaultSignedTicket(senderNonce uint32) *SignedTicket {
+func defaultSignedTicket(sender ethcommon.Address, senderNonce uint32) *SignedTicket {
 	return &SignedTicket{
-		&Ticket{FaceValue: big.NewInt(50), SenderNonce: senderNonce, ParamsExpirationBlock: big.NewInt(0)},
+		&Ticket{Sender: sender, FaceValue: big.NewInt(50), SenderNonce: senderNonce, ParamsExpirationBlock: big.NewInt(0)},
 		[]byte("foo"),
 		big.NewInt(7),
 	}
@@ -50,9 +52,11 @@ func (qc *queueConsumer) Wait(num int, e RedeemableEmitter) {
 func TestTicketQueueLoop(t *testing.T) {
 	assert := assert.New(t)
 
+	sender := RandAddress()
+	ts := newStubTicketStore()
 	tm := &stubTimeManager{}
 
-	q := newTicketQueue(tm.SubscribeBlocks)
+	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
 	q.Start()
 	defer q.Stop()
 
@@ -61,14 +65,16 @@ func TestTicketQueueLoop(t *testing.T) {
 	numTickets := 10
 
 	for i := 0; i < numTickets; i++ {
-		q.Add(defaultSignedTicket(uint32(i)))
+		q.Add(defaultSignedTicket(sender, uint32(i)))
 	}
 
 	// Add ticket with non-expired params
-	nonExpTicket := defaultSignedTicket(10)
+	nonExpTicket := defaultSignedTicket(sender, 10)
 	nonExpTicket.ParamsExpirationBlock = big.NewInt(100)
 	q.Add(nonExpTicket)
-	assert.Equal(int32(numTickets+1), q.Length())
+	qlen, err := q.Length()
+	assert.Nil(err)
+	assert.Equal(numTickets+1, qlen)
 	time.Sleep(time.Millisecond * 20)
 
 	qc := &queueConsumer{}
@@ -82,8 +88,12 @@ func TestTicketQueueLoop(t *testing.T) {
 
 	// Queue should contain only the non-expired ticket now
 	time.Sleep(time.Millisecond * 20)
-	assert.Equal(int32(1), q.Length())
-	assert.Equal(q.queue[0], nonExpTicket)
+	qlen, err = q.Length()
+	assert.Nil(err)
+	assert.Equal(1, qlen)
+	popped, err := q.pop()
+	assert.Nil(err)
+	assert.Equal(popped, nonExpTicket)
 
 	// The popped tickets should be in the same order
 	// that they were added i.e. since we added them
@@ -99,9 +109,11 @@ func TestTicketQueueLoop(t *testing.T) {
 func TestTicketQueueLoopConcurrent(t *testing.T) {
 	assert := assert.New(t)
 
+	sender := RandAddress()
+	ts := newStubTicketStore()
 	tm := &stubTimeManager{}
 
-	q := newTicketQueue(tm.SubscribeBlocks)
+	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
 	q.Start()
 	defer q.Stop()
 
@@ -110,18 +122,22 @@ func TestTicketQueueLoopConcurrent(t *testing.T) {
 	numTickets := 5
 
 	for i := 0; i < numTickets; i++ {
-		q.Add(defaultSignedTicket(uint32(i)))
+		q.Add(defaultSignedTicket(sender, uint32(i)))
 	}
-	assert.Equal(q.Length(), int32(numTickets))
+	qlen, err := q.Length()
+	assert.Nil(err)
+	assert.Equal(qlen, numTickets)
 
 	// Concurrently add tickets to the queue
 
 	numAdds := 2
 	for i := numTickets; i < numTickets+numAdds; i++ {
-		go q.Add(defaultSignedTicket(uint32(i)))
+		go q.Add(defaultSignedTicket(sender, uint32(i)))
 	}
 	time.Sleep(time.Millisecond * 20)
-	assert.Equal(q.Length(), int32(numTickets+numAdds))
+	qlen, err = q.Length()
+	assert.Nil(err)
+	assert.Equal(qlen, numTickets+numAdds)
 
 	// Concurrently signal block updates that do not remove tickets
 
@@ -146,15 +162,19 @@ func TestTicketQueueLoopConcurrent(t *testing.T) {
 
 	// Queue length should be empty
 	time.Sleep(time.Millisecond * 20)
-	assert.Equal(int32(0), q.Length())
+	qlen, err = q.Length()
+	assert.Nil(err)
+	assert.Equal(0, qlen)
 }
 
 func TestTicketQueueConsumeBlockNums(t *testing.T) {
 	assert := assert.New(t)
 
+	sender := RandAddress()
+	ts := newStubTicketStore()
 	tm := &stubTimeManager{}
 
-	q := newTicketQueue(tm.SubscribeBlocks)
+	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
 	q.Start()
 	defer q.Stop()
 	time.Sleep(5 * time.Millisecond)
@@ -163,4 +183,91 @@ func TestTicketQueueConsumeBlockNums(t *testing.T) {
 	time.Sleep(5 * time.Millisecond)
 	// Check that the value is consumed
 	assert.Len(tm.blockNumSink, 0)
+}
+
+func TestTicketQueue_Add(t *testing.T) {
+	assert := assert.New(t)
+
+	sender := RandAddress()
+	ts := newStubTicketStore()
+	tm := &stubTimeManager{}
+
+	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
+	q.Start()
+	defer q.Stop()
+	time.Sleep(5 * time.Millisecond)
+
+	ticket := defaultSignedTicket(sender, 0)
+
+	ts.storeShouldFail = true
+	err := q.Add(ticket)
+	assert.EqualError(err, "stub ticket store store error")
+	ts.storeShouldFail = false
+
+	err = q.Add(ticket)
+	assert.Nil(err)
+	t.Log(ts.tickets[sender.Hex()])
+	assert.Equal(ts.tickets[sender.Hex()][0], ticket)
+}
+
+func TestTicketQueue_Pop(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	sender := RandAddress()
+	ts := newStubTicketStore()
+	tm := &stubTimeManager{}
+
+	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
+	q.Start()
+	defer q.Stop()
+	time.Sleep(5 * time.Millisecond)
+
+	ticket := defaultSignedTicket(sender, 0)
+	err := ts.StoreWinningTicket(ticket)
+	require.Nil(err)
+
+	ts.loadShouldFail = true
+	popped, err := q.pop()
+	assert.Nil(popped)
+	assert.EqualError(err, "stub TicketStore load error")
+	assert.Len(ts.tickets[sender.Hex()], 1)
+	ts.loadShouldFail = false
+
+	ts.removeShouldFail = true
+	assert.Len(ts.tickets[sender.Hex()], 1)
+	popped, err = q.pop()
+	assert.Nil(popped)
+	assert.EqualError(err, "stub TicketStore remove error")
+	assert.Len(ts.tickets[sender.Hex()], 1)
+	ts.removeShouldFail = false
+
+	popped, err = q.pop()
+	assert.Nil(err)
+	assert.Equal(popped, ticket)
+}
+
+func TestTicketQueue_Length(t *testing.T) {
+	assert := assert.New(t)
+
+	sender := RandAddress()
+	ts := newStubTicketStore()
+	tm := &stubTimeManager{}
+
+	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
+	q.Start()
+	defer q.Stop()
+	time.Sleep(5 * time.Millisecond)
+
+	ts.tickets[sender.Hex()] = []*SignedTicket{defaultSignedTicket(sender, 0), defaultSignedTicket(sender, 1), defaultSignedTicket(sender, 2)}
+
+	ts.loadShouldFail = true
+	qlen, err := q.Length()
+	assert.Equal(0, qlen)
+	assert.EqualError(err, "stub TicketStore load error")
+	ts.loadShouldFail = false
+
+	qlen, err = q.Length()
+	assert.Nil(err)
+	assert.Equal(qlen, 3)
 }
