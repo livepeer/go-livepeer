@@ -1,17 +1,17 @@
 package pm
 
-import (
-	"math/big"
-)
+import ethcommon "github.com/ethereum/go-ethereum/common"
 
 // TicketStore is an interface which describes an object capable
 // of persisting tickets
 type TicketStore interface {
-	// Store persists a ticket with its signature and recipientRand
-	// for a session ID
-	StoreWinningTicket(sessionID string, ticket *Ticket, sig []byte, recipientRand *big.Int) error
+	SelectEarliestWinningTicket(sender ethcommon.Address) (*SignedTicket, error)
 
-	// Load fetches all persisted tickets in the store with their signatures and recipientRands
-	// for a session ID
-	LoadWinningTickets(sessionIDs []string) (tickets []*Ticket, sigs [][]byte, recipientRands []*big.Int, err error)
+	// RemoveWinningTicket removes a ticket from the TicketStore
+	RemoveWinningTicket(ticket *SignedTicket) error
+
+	// Store persists a signed winning ticket
+	StoreWinningTicket(ticket *SignedTicket) error
+
+	WinningTicketCount(sender ethcommon.Address) (int, error)
 }
