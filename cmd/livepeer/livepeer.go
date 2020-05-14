@@ -503,7 +503,7 @@ func main() {
 			}
 			defer gpm.Stop()
 
-			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, senderWatcher, timeWatcher, cleanupInterval, smTTL)
+			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, senderWatcher, timeWatcher, n.Database, cleanupInterval, smTTL)
 			// Start sender monitor
 			sm.Start()
 			defer sm.Stop()
@@ -517,7 +517,6 @@ func main() {
 				n.Eth.Account().Address,
 				n.Eth,
 				validator,
-				n.Database,
 				gpm,
 				sm,
 				timeWatcher,
