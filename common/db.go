@@ -33,6 +33,9 @@ type DB struct {
 	unbondingLocks                   *sql.Stmt
 	withdrawableUnbondingLocks       *sql.Stmt
 	insertWinningTicket              *sql.Stmt
+	loadLatestTicket                 *sql.Stmt
+	winningTicketCount               *sql.Stmt
+	removeWinningTicket              *sql.Stmt
 	insertMiniHeader                 *sql.Stmt
 	findLatestMiniHeader             *sql.Stmt
 	findAllMiniHeadersSortedByNumber *sql.Stmt
@@ -100,7 +103,7 @@ var schema = `
 	CREATE INDEX IF NOT EXISTS idx_unbondinglocks_usedblock ON unbondingLocks(usedBlock);
 
 	CREATE TABLE IF NOT EXISTS winningTickets (
-		createdAt STRING DEFAULT CURRENT_TIMESTAMP,
+		createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
 		sender STRING,
 		recipient STRING,
 		faceValue BLOB,
@@ -109,10 +112,11 @@ var schema = `
 		recipientRand BLOB,
 		recipientRandHash STRING,
 		sig BLOB,
-		sessionID STRING
+		creationRound int64,
+		creationRoundBlockHash BLOB
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_winningtickets_sessionid ON winningTickets(sessionID);
+	CREATE INDEX IF NOT EXISTS idx_winningtickets_sender ON winningTickets(sender);
 
 	CREATE TABLE IF NOT EXISTS blockheaders (
 		number int64,
@@ -269,13 +273,42 @@ func InitDB(dbPath string) (*DB, error) {
 	d.withdrawableUnbondingLocks = stmt
 
 	// Winning tickets prepared statements
-	stmt, err = db.Prepare("INSERT INTO winningTickets(sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	stmt, err = db.Prepare(`
+	INSERT INTO winningTickets(createdAt, sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash)
+	VALUES(datetime('now'), :sender, :recipient, :faceValue, :winProb, :senderNonce, :recipientRand, :recipientRandHash, :sig, :creationRound, :creationRoundBlockHash)
+	`)
 	if err != nil {
 		glog.Error("Unable to prepare insertWinningTicket ", err)
 		d.Close()
 		return nil, err
 	}
 	d.insertWinningTicket = stmt
+
+	// Find latest ticket
+	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash FROM winningTickets WHERE sender=? ORDER BY createdAt ASC LIMIT 1")
+	if err != nil {
+		glog.Error("Unable to prepare loadLatestTicket")
+		d.Close()
+		return nil, err
+	}
+	d.loadLatestTicket = stmt
+
+	stmt, err = db.Prepare("SELECT count(sig) FROM winningTickets WHERE sender=?")
+	if err != nil {
+		glog.Error("Unable to prepare loadWinningTicketCount")
+		d.Close()
+		return nil, err
+	}
+	d.winningTicketCount = stmt
+
+	// Remove latest ticket
+	stmt, err = db.Prepare("DELETE FROM winningTickets WHERE sender=? AND sig=?")
+	if err != nil {
+		glog.Error("Unable to prepare removeWinningTicket")
+		d.Close()
+		return nil, err
+	}
+	d.removeWinningTicket = stmt
 
 	// Insert block header
 	stmt, err = db.Prepare("INSERT INTO blockheaders(number, parent, hash, logs) VALUES(?, ?, ?, ?)")
@@ -345,6 +378,15 @@ func (db *DB) Close() {
 	}
 	if db.insertWinningTicket != nil {
 		db.insertWinningTicket.Close()
+	}
+	if db.loadLatestTicket != nil {
+		db.loadLatestTicket.Close()
+	}
+	if db.winningTicketCount != nil {
+		db.winningTicketCount.Close()
+	}
+	if db.removeWinningTicket != nil {
+		db.removeWinningTicket.Close()
 	}
 	if db.insertMiniHeader != nil {
 		db.insertMiniHeader.Close()
@@ -600,74 +642,104 @@ func (db *DB) UnbondingLocks(currentRound *big.Int) ([]*DBUnbondingLock, error) 
 	return unbondingLocks, nil
 }
 
-func (db *DB) StoreWinningTicket(sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) error {
-	if ticket == nil {
+func (db *DB) StoreWinningTicket(ticket *pm.SignedTicket) error {
+	if ticket == nil || ticket.Ticket == nil {
 		return errors.New("cannot store nil ticket")
 	}
-	if sig == nil {
+	if ticket.Sig == nil {
 		return errors.New("cannot store nil sig")
 	}
-	if recipientRand == nil {
+	if ticket.RecipientRand == nil {
 		return errors.New("cannot store nil recipientRand")
 	}
-	glog.V(DEBUG).Infof("db: Inserting winning ticket from %v, recipientRand %d, senderNonce %d", ticket.Sender.Hex(), recipientRand, ticket.SenderNonce)
 
-	_, err := db.insertWinningTicket.Exec(ticket.Sender.Hex(), ticket.Recipient.Hex(), ticket.FaceValue.Bytes(), ticket.WinProb.Bytes(), ticket.SenderNonce, recipientRand.Bytes(), ticket.RecipientRandHash.Hex(), sig, sessionID)
+	_, err := db.insertWinningTicket.Exec(
+		sql.Named("sender", ticket.Ticket.Sender.Hex()),
+		sql.Named("recipient", ticket.Ticket.Recipient.Hex()),
+		sql.Named("faceValue", ticket.Ticket.FaceValue.Bytes()),
+		sql.Named("winProb", ticket.Ticket.WinProb.Bytes()),
+		sql.Named("senderNonce", ticket.Ticket.SenderNonce),
+		sql.Named("recipientRand", ticket.RecipientRand.Bytes()),
+		sql.Named("recipientRandHash", ticket.Ticket.RecipientRandHash.Hex()),
+		sql.Named("sig", ticket.Sig),
+		sql.Named("creationRound", ticket.Ticket.CreationRound),
+		sql.Named("creationRoundBlockHash", ticket.Ticket.CreationRoundBlockHash.Bytes()),
+	)
 
 	if err != nil {
-		return errors.Wrapf(err, "failed inserting winning ticket for sessionID: %v, ticket: %v", sessionID, ticket)
+		return errors.Wrapf(err, "failed inserting winning ticket sender=%v recipientRand=%v nonce=%v", ticket.Ticket.Sender.Hex(), ticket.RecipientRand, ticket.Ticket.SenderNonce)
 	}
 	return nil
 }
 
-func (db *DB) LoadWinningTickets(sessionIDs []string) (tickets []*pm.Ticket, sigs [][]byte, recipientRands []*big.Int, err error) {
-	rows, err := db.dbh.Query(buildWinningTicketsQuery(sessionIDs))
-	defer rows.Close()
+func (db *DB) RemoveWinningTicket(ticket *pm.SignedTicket) error {
+	if ticket == nil || ticket.Ticket == nil {
+		return errors.New("cannot delete nil ticket")
+	}
+	if ticket.Sig == nil {
+		return errors.New("cannot delete nil sig")
+	}
 
+	_, err := db.removeWinningTicket.Exec(
+		ticket.Ticket.Sender.Hex(),
+		ticket.Sig,
+	)
 	if err != nil {
-		err = errors.Wrapf(err, "failed loading winning tickets for sessionIDs %v", sessionIDs)
-		return
+		return errors.Wrapf(err, "failed deleting winning ticket sender=%v recipientRand=%v nonce=%v sig=%v", ticket.Sender.Hex(), ticket.RecipientRand, ticket.SenderNonce, ticket.Sig)
 	}
-
-	for rows.Next() {
-		var sender, recipient, recipientRandHash, sessionID string
-		var faceValue, winProb, recipientRandBytes, sig []byte
-		var senderNonce uint32
-
-		err = rows.Scan(&sender, &recipient, &faceValue, &winProb, &senderNonce, &recipientRandBytes, &recipientRandHash, &sig, &sessionID)
-		if err != nil {
-			err = errors.Wrapf(err, "failed scanning a winning ticket row for sessionID %v", sessionID)
-			return
-		}
-
-		ticket := &pm.Ticket{
-			Sender:            ethcommon.HexToAddress(sender),
-			Recipient:         ethcommon.HexToAddress(recipient),
-			FaceValue:         new(big.Int).SetBytes(faceValue),
-			WinProb:           new(big.Int).SetBytes(winProb),
-			SenderNonce:       senderNonce,
-			RecipientRandHash: ethcommon.HexToHash(recipientRandHash),
-		}
-		recipientRand := new(big.Int).SetBytes(recipientRandBytes)
-
-		tickets = append(tickets, ticket)
-		sigs = append(sigs, sig)
-		recipientRands = append(recipientRands, recipientRand)
-	}
-
-	return
+	return nil
 }
 
-// We are building a query string instead of using a prepared statement because prepared statements don't
-// support IN queries. We want to use IN for the performance benefit, rather than running len(sessionIDs)
-// queries.
-// The known risk with string queries is SQL injection, however in this case all sessionID values are generated
-// by O, so such injections are not likely.
-func buildWinningTicketsQuery(sessionIDs []string) string {
-	for i := 0; i < len(sessionIDs); i++ {
-		sessionIDs[i] = strconv.Quote(sessionIDs[i])
+func (db *DB) LoadLatestTicket(sender ethcommon.Address) (*pm.SignedTicket, error) {
+	row := db.loadLatestTicket.QueryRow(sender.Hex())
+	var (
+		senderString           string
+		recipient              string
+		faceValue              []byte
+		winProb                []byte
+		senderNonce            int
+		recipientRand          []byte
+		recipientRandHash      string
+		sig                    []byte
+		creationRound          int64
+		creationRoundBlockHash []byte
+	)
+	if err := row.Scan(&senderString, &recipient, &faceValue, &winProb, &senderNonce, &recipientRand, &recipientRandHash, &sig, &creationRound, &creationRoundBlockHash); err != nil {
+		if err.Error() != "sql: no rows in result set" {
+			return nil, fmt.Errorf("could not retrieve latest header: %v", err)
+		}
+		// If there is no result return no error, just nil value
+		return nil, nil
 	}
-	return "SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, sessionID FROM winningTickets WHERE sessionID IN (" + strings.Join(sessionIDs, ", ") + ")"
+
+	return &pm.SignedTicket{
+		Ticket: &pm.Ticket{
+			Sender:                 sender,
+			Recipient:              ethcommon.HexToAddress(recipient),
+			FaceValue:              new(big.Int).SetBytes(faceValue),
+			WinProb:                new(big.Int).SetBytes(winProb),
+			SenderNonce:            uint32(senderNonce),
+			RecipientRandHash:      ethcommon.HexToHash(recipientRandHash),
+			CreationRound:          creationRound,
+			CreationRoundBlockHash: ethcommon.BytesToHash(creationRoundBlockHash),
+		},
+		Sig:           sig,
+		RecipientRand: new(big.Int).SetBytes(recipientRand),
+	}, nil
+}
+
+func (db *DB) WinningTicketCount(sender ethcommon.Address) (int, error) {
+	row := db.winningTicketCount.QueryRow(sender.Hex())
+	var count64 int64
+	if err := row.Scan(&count64); err != nil {
+		if err.Error() != "sql: no rows in result set" {
+			return 0, fmt.Errorf("could not retrieve latest header: %v", err)
+		}
+		// If there is no result return no error, just nil value
+		return 0, nil
+	}
+
+	return int(count64), nil
 }
 
 func buildSelectOrchsQuery(filter *DBOrchFilter) (string, error) {
