@@ -54,10 +54,9 @@ func (ts *stubTicketStore) StoreWinningTicket(ticket *SignedTicket) error {
 	return nil
 }
 
-func (ts *stubTicketStore) LoadWinningTickets(sessionIDs []string) ([]*Ticket, [][]byte, []*big.Int, error) {
-	ts.lock.RLock()
-	defer ts.lock.RUnlock()
-
+func (ts *stubTicketStore) SelectEarliestWinningTicket(sender ethcommon.Address) (*SignedTicket, error) {
+	ts.lock.Lock()
+	defer ts.lock.Unlock()
 	if ts.loadShouldFail {
 		return nil, fmt.Errorf("stub TicketStore load error")
 	}
@@ -93,6 +92,8 @@ func (ts *stubTicketStore) RemoveWinningTicket(ticket *SignedTicket) error {
 		ts.tickets[ticket.Sender] = tickets
 		break
 	}
+	return nil
+}
 
 func (ts *stubTicketStore) WinningTicketCount(sender ethcommon.Address) (int, error) {
 	ts.lock.Lock()
@@ -354,6 +355,7 @@ type stubSenderMonitor struct {
 	addFloatErr       error
 	maxFloatErr       error
 	validateSenderErr error
+	shouldFail        error
 }
 
 func newStubSenderMonitor() *stubSenderMonitor {
@@ -371,8 +373,12 @@ func (s *stubSenderMonitor) Redeemable() chan *redemption {
 	return s.redeemable
 }
 
-func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) {
+func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error {
+	if s.shouldFail != nil {
+		return s.shouldFail
+	}
 	s.queued = append(s.queued, ticket)
+	return nil
 }
 
 func (s *stubSenderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error {
