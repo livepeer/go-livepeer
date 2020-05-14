@@ -269,8 +269,6 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	sender, b, v, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
 	r := NewRecipientWithSecret(RandAddress(), b, v, gm, sm, tm, secret, cfg)
-	r.Start()
-	defer r.Stop()
 	time.Sleep(20 * time.Millisecond)
 	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
@@ -801,8 +799,6 @@ func TestRedeemManager_Error(t *testing.T) {
 	sender, b, v, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
 	r := NewRecipientWithSecret(RandAddress(), b, v, gm, sm, tm, secret, cfg)
-	r.Start()
-	defer r.Stop()
 
 	params := ticketParamsOrFatal(t, r, sender)
 	ticket := newTicket(sender, params, 1)
@@ -840,8 +836,6 @@ func TestRedeemManager(t *testing.T) {
 	sender, b, v, gm, sm, tm, cfg, sig := newRecipientFixtureOrFatal(t)
 	secret := [32]byte{3}
 	r := NewRecipientWithSecret(RandAddress(), b, v, gm, sm, tm, secret, cfg)
-	r.Start()
-	defer r.Stop()
 
 	params := ticketParamsOrFatal(t, r, sender)
 	ticket := newTicket(sender, params, 1)

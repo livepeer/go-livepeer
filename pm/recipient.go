@@ -28,12 +28,6 @@ var paramsExpirationBlock = big.NewInt(5)
 // Recipient is an interface which describes an object capable
 // of receiving tickets
 type Recipient interface {
-	// Start initiates the helper goroutines for the recipient
-	Start()
-
-	// Stop signals the recipient to exit gracefully
-	Stop()
-
 	// ReceiveTicket validates and processes a received ticket
 	ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (sessionID string, won bool, err error)
 
