@@ -476,8 +476,6 @@ func TestRedeemWinningTicket_SingleTicket_RedeemError(t *testing.T) {
 	assert.NoError(err)
 	assert.False(used)
 
-	_, ok := r.invalidRands.Load(recipientRand.String())
-	assert.False(ok)
 	assert.Contains(r.senderNonces, recipientRand.String())
 }
 
@@ -544,10 +542,7 @@ func TestRedeemWinningTicket_SingleTicket(t *testing.T) {
 	assert.NoError(err)
 	assert.True(used)
 
-	_, ok := r.invalidRands.Load(recipientRand.String())
-	assert.True(ok)
-
-	_, ok = r.senderNonces[recipientRand.String()]
+	_, ok := r.senderNonces[recipientRand.String()]
 	assert.False(ok)
 }
 
@@ -610,10 +605,7 @@ func TestRedeemWinningTickets_MultipleTickets(t *testing.T) {
 	assert.NoError(err)
 	assert.True(used)
 
-	_, ok := r.invalidRands.Load(recipientRand.String())
-	assert.True(ok)
-
-	_, ok = r.senderNonces[recipientRand.String()]
+	_, ok := r.senderNonces[recipientRand.String()]
 	assert.False(ok)
 }
 
@@ -676,12 +668,7 @@ func TestRedeemWinningTickets_MultipleTicketsFromMultipleSessions(t *testing.T) 
 	require.Nil(err)
 	assert.True(used)
 
-	_, ok := r.invalidRands.Load(recipientRand0.String())
-	assert.True(ok)
-	_, ok = r.invalidRands.Load(recipientRand1.String())
-	assert.True(ok)
-
-	_, ok = r.senderNonces[recipientRand0.String()]
+	_, ok := r.senderNonces[recipientRand0.String()]
 	assert.False(ok)
 	_, ok = r.senderNonces[recipientRand1.String()]
 	assert.False(ok)
@@ -750,10 +737,7 @@ func TestRedeemWinningTicket_AddFloatError(t *testing.T) {
 	require.Nil(err)
 	assert.True(used)
 
-	_, ok := r.invalidRands.Load(recipientRand.String())
-	assert.True(ok)
-
-	_, ok = r.senderNonces[recipientRand.String()]
+	_, ok := r.senderNonces[recipientRand.String()]
 	assert.False(ok)
 }
 
@@ -786,10 +770,7 @@ func TestRedeemWinningTicket(t *testing.T) {
 	require.Nil(err)
 	assert.True(used)
 
-	_, ok := r.invalidRands.Load(recipientRand.String())
-	assert.True(ok)
-
-	_, ok = r.senderNonces[recipientRand.String()]
+	_, ok := r.senderNonces[recipientRand.String()]
 	assert.False(ok)
 }
 
@@ -825,10 +806,7 @@ func TestRedeemManager_Error(t *testing.T) {
 	require.Nil(err)
 	assert.False(used)
 
-	_, ok := r.(*recipient).invalidRands.Load(recipientRand.String())
-	assert.False(ok)
-
-	_, ok = r.(*recipient).senderNonces[recipientRand.String()]
+	_, ok := r.(*recipient).senderNonces[recipientRand.String()]
 	assert.True(ok)
 }
 
@@ -863,11 +841,8 @@ func TestRedeemManager(t *testing.T) {
 	require.Nil(err)
 	assert.True(used)
 
-	_, ok := r.(*recipient).invalidRands.Load(recipientRand.String())
-	assert.True(ok)
-
 	r.(*recipient).senderNoncesLock.Lock()
-	_, ok = r.(*recipient).senderNonces[recipientRand.String()]
+	_, ok := r.(*recipient).senderNonces[recipientRand.String()]
 	r.(*recipient).senderNoncesLock.Unlock()
 	assert.False(ok)
 }

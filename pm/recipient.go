@@ -76,8 +76,6 @@ type recipient struct {
 	addr   ethcommon.Address
 	secret [32]byte
 
-	invalidRands sync.Map
-
 	senderNonces     map[string]uint32
 	senderNoncesLock sync.Mutex
 
@@ -137,10 +135,6 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 	if r.val.IsWinningTicket(ticket, sig, recipientRand) {
 		sessionID = ticket.RecipientRandHash.Hex()
 		won = true
-	}
-
-	if !r.validRand(recipientRand) {
-		return sessionID, won, fmt.Errorf("recipientRand already revealed recipientRand=%v", recipientRand)
 	}
 
 	if err := r.updateSenderNonce(recipientRand, ticket.SenderNonce); err != nil {
@@ -327,10 +321,6 @@ func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRan
 		return err
 	}
 
-	// If there is no error, the transaction has been submitted. As a result,
-	// we assume that recipientRand has been revealed so we should invalidate it locally
-	r.updateInvalidRands(recipientRand)
-
 	// After we invalidate recipientRand we can clear the memory used to track
 	// its latest senderNonce
 	r.clearSenderNonce(recipientRand)
@@ -365,15 +355,6 @@ func (r *recipient) rand(seed *big.Int, sender ethcommon.Address, faceValue *big
 
 	h.Write(msg)
 	return new(big.Int).SetBytes(h.Sum(nil))
-}
-
-func (r *recipient) validRand(rand *big.Int) bool {
-	_, ok := r.invalidRands.Load(rand.String())
-	return !ok
-}
-
-func (r *recipient) updateInvalidRands(rand *big.Int) {
-	r.invalidRands.Store(rand.String(), true)
 }
 
 func (r *recipient) updateSenderNonce(rand *big.Int, senderNonce uint32) error {
