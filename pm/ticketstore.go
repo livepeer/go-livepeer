@@ -13,5 +13,8 @@ type TicketStore interface {
 	// Store persists a signed winning ticket
 	StoreWinningTicket(ticket *SignedTicket) error
 
+	// MarkWinningTicketRedeemed stores the submission time and transaction hash
+	MarkWinningTicketRedeemed(ticket *SignedTicket, txHash ethcommon.Hash) error
+
 	WinningTicketCount(sender ethcommon.Address) (int, error)
 }

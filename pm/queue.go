@@ -2,9 +2,8 @@ package pm
 
 import (
 	"math/big"
-	"sync"
-	"sync/atomic"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
 )
@@ -14,7 +13,15 @@ import (
 type RedeemableEmitter interface {
 	// Redeemable returns a channel that a consumer can use to receive tickets that
 	// should be redeemed
-	Redeemable() chan *SignedTicket
+	Redeemable() chan *redemption
+}
+
+type redemption struct {
+	SignedTicket *SignedTicket
+	resCh        chan struct {
+		txHash ethcommon.Hash
+		err    error
+	}
 }
 
 // ticketQueue is a queue of winning tickets that are in line for redemption on-chain.
@@ -25,34 +32,26 @@ type RedeemableEmitter interface {
 //
 // Based off of: https://github.com/lightningnetwork/lnd/blob/master/htlcswitch/queue.go
 type ticketQueue struct {
-	queue []*SignedTicket
-
-	// queueLen is an internal length counter that keeps track
-	// of the size of the queue. We maintain this counter instead
-	// of reading len(queue) in order to avoid acquiring the main lock
-	// used by the queue loop goroutine
-	queueLen int32
-
-	// cond is a conditional variable that is used by the main
-	// queue loop goroutine to wait for new tickets added to the queue
-	cond *sync.Cond
-
 	// blockSub returns a subscription to receive the last seen block number
 	blockSub func(chan<- *big.Int) event.Subscription
 
-	// redeemable is a channel that a recipient will receive
+	// redeemable is a channel that a queue consumer will receive
 	// redeemable tickets on as a sender's max float becomes
 	// sufficient to cover the face value of tickets
-	redeemable chan *SignedTicket
+	redeemable chan *redemption
+
+	sender ethcommon.Address
+	store  TicketStore
 
 	quit chan struct{}
 }
 
-func newTicketQueue(blockSub func(chan<- *big.Int) event.Subscription) *ticketQueue {
+func newTicketQueue(store TicketStore, sender ethcommon.Address, blockSub func(chan<- *big.Int) event.Subscription) *ticketQueue {
 	return &ticketQueue{
-		cond:       sync.NewCond(&sync.Mutex{}),
 		blockSub:   blockSub,
-		redeemable: make(chan *SignedTicket),
+		redeemable: make(chan *redemption),
+		store:      store,
+		sender:     sender,
 		quit:       make(chan struct{}),
 	}
 }
@@ -68,34 +67,20 @@ func (q *ticketQueue) Stop() {
 }
 
 // Add adds a ticket to the queue
-// An external caller should call this method whenever the sender's max float
-// is insufficient to cover the ticket face value i.e. if the recipient received
-// multiple winning tickets in close succession such that the sender's max float
-// cannot cover all of the tickets at once. In this scenario, the recipient should
-// submit transactions for tickets that can be covered by the sender's max float, add the
-// other tickets to the queue and wait for the transactions to confirm to check if the sender's
-// max float is sufficient to cover the tickets in the queue
-func (q *ticketQueue) Add(ticket *SignedTicket) {
-	// Lock conditional variable while adding to the queue
-	q.cond.L.Lock()
-	q.queue = append(q.queue, ticket)
-	atomic.AddInt32(&q.queueLen, 1)
-	q.cond.L.Unlock()
-
-	// Signal that there are tickets in the queue
-	q.cond.Signal()
+func (q *ticketQueue) Add(ticket *SignedTicket) error {
+	return q.store.StoreWinningTicket(ticket)
 }
 
 // Redeemable returns a channel that a consumer can use to receive tickets that
 // should be redeemed
 // pm.SenderMonitor is the primary consumer of this channel
-func (q *ticketQueue) Redeemable() chan *SignedTicket {
+func (q *ticketQueue) Redeemable() chan *redemption {
 	return q.redeemable
 }
 
 // Length returns the current length of the queue
-func (q *ticketQueue) Length() int32 {
-	return atomic.LoadInt32(&q.queueLen)
+func (q *ticketQueue) Length() (int, error) {
+	return q.store.WinningTicketCount(q.sender)
 }
 
 // startQueueLoop blocks until the ticket queue is non-empty. When the queue is non-empty
@@ -110,6 +95,7 @@ func (q *ticketQueue) startQueueLoop() {
 	sub := q.blockSub(blockNums)
 	defer sub.Unsubscribe()
 
+ticketLoop:
 	for {
 		select {
 		case err := <-sub.Err():
@@ -117,15 +103,37 @@ func (q *ticketQueue) startQueueLoop() {
 				glog.Errorf("Block subscription error err=%v", err)
 			}
 		case latestBlock := <-blockNums:
-			numTickets := q.Length()
+			numTickets, err := q.Length()
+			if err != nil {
+				glog.Errorf("Error getting queue length err=%v", err)
+				continue
+			}
 			for i := 0; i < int(numTickets); i++ {
-				q.cond.L.Lock()
-				nextTicket := q.queue[0]
-				q.cond.L.Unlock()
-				q.removeHead()
+				nextTicket, err := q.store.SelectEarliestWinningTicket(q.sender)
+				if err != nil {
+					glog.Errorf("Unable select earliest winning ticket err=%v", err)
+					continue ticketLoop
+				}
+				if nextTicket == nil {
+					continue ticketLoop
+				}
 				if nextTicket.ParamsExpirationBlock.Cmp(latestBlock) <= 0 {
+					resCh := make(chan struct {
+						txHash ethcommon.Hash
+						err    error
+					})
 					select {
-					case q.redeemable <- nextTicket:
+					case q.redeemable <- &redemption{nextTicket, resCh}:
+						res := <-resCh
+						if res.err != nil {
+							glog.Error(err)
+							continue
+						}
+						err := q.store.MarkWinningTicketRedeemed(nextTicket, res.txHash)
+						if err != nil {
+							glog.Error(err)
+							continue
+						}
 					case <-q.quit:
 						return
 					}
@@ -138,14 +146,4 @@ func (q *ticketQueue) startQueueLoop() {
 		default:
 		}
 	}
-}
-
-// removeHead removes the head of the queue
-func (q *ticketQueue) removeHead() {
-	// Lock conditional variable while removing from the queue
-	q.cond.L.Lock()
-	q.queue[0] = nil
-	q.queue = q.queue[1:]
-	atomic.AddInt32(&q.queueLen, -1)
-	q.cond.L.Unlock()
 }

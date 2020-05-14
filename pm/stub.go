@@ -20,34 +20,37 @@ type stubBlockStore struct {
 
 type stubTicketStore struct {
 	stubBlockStore
-	tickets         map[string][]*Ticket
-	sigs            map[string][][]byte
-	recipientRands  map[string][]*big.Int
-	storeShouldFail bool
-	loadShouldFail  bool
-	lock            sync.RWMutex
+	tickets          map[ethcommon.Address][]*SignedTicket
+	submitted        map[string]bool
+	storeShouldFail  bool
+	loadShouldFail   bool
+	removeShouldFail bool
+	lock             sync.RWMutex
 }
 
 func newStubTicketStore() *stubTicketStore {
 	return &stubTicketStore{
-		tickets:        make(map[string][]*Ticket),
-		sigs:           make(map[string][][]byte),
-		recipientRands: make(map[string][]*big.Int),
+		tickets:   make(map[ethcommon.Address][]*SignedTicket),
+		submitted: make(map[string]bool),
 	}
 }
 
-func (ts *stubTicketStore) StoreWinningTicket(sessionID string, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+func (ts *stubTicketStore) StoreWinningTicket(ticket *SignedTicket) error {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 
 	if ts.storeShouldFail {
-		return fmt.Errorf("stub ticket store store error")
+		return fmt.Errorf("stub TicketStore store error")
 	}
 
-	ts.tickets[sessionID] = append(ts.tickets[sessionID], ticket)
-	ts.sigs[sessionID] = append(ts.sigs[sessionID], sig)
-	ts.recipientRands[sessionID] = append(ts.recipientRands[sessionID], recipientRand)
+	// if ticket exists don't insert it
+	for _, t := range ts.tickets[ticket.Sender] {
+		if fmt.Sprintf("%x", t.Sig) == fmt.Sprintf("%x", ticket.Sig) {
+			return nil
+		}
+	}
 
+	ts.tickets[ticket.Sender] = append(ts.tickets[ticket.Sender], ticket)
 	return nil
 }
 
@@ -56,29 +59,54 @@ func (ts *stubTicketStore) LoadWinningTickets(sessionIDs []string) ([]*Ticket, [
 	defer ts.lock.RUnlock()
 
 	if ts.loadShouldFail {
-		return nil, nil, nil, fmt.Errorf("stub ticket store load error")
+		return nil, fmt.Errorf("stub TicketStore load error")
 	}
-
-	allTix := make([]*Ticket, 0)
-	allSigs := make([][]byte, 0)
-	allRecipientRands := make([]*big.Int, 0)
-
-	for _, sessionID := range sessionIDs {
-		tickets := ts.tickets[sessionID]
-		if tickets != nil && len(tickets) > 0 {
-			allTix = append(allTix, tickets...)
-		}
-		sigs := ts.sigs[sessionID]
-		if sigs != nil && len(sigs) > 0 {
-			allSigs = append(allSigs, sigs...)
-		}
-		recipientRands := ts.recipientRands[sessionID]
-		if recipientRands != nil && len(recipientRands) > 0 {
-			allRecipientRands = append(allRecipientRands, recipientRands...)
+	for _, t := range ts.tickets[sender] {
+		if !ts.submitted[fmt.Sprintf("%x", t.Sig)] {
+			return t, nil
 		}
 	}
+	return nil, nil
+}
 
-	return allTix, allSigs, allRecipientRands, nil
+func (ts *stubTicketStore) MarkWinningTicketRedeemed(ticket *SignedTicket, txHash ethcommon.Hash) error {
+	ts.lock.Lock()
+	defer ts.lock.Unlock()
+	ts.submitted[fmt.Sprintf("%x", ticket.Sig)] = true
+	return nil
+}
+
+func (ts *stubTicketStore) RemoveWinningTicket(ticket *SignedTicket) error {
+	ts.lock.Lock()
+	defer ts.lock.Unlock()
+	if ts.removeShouldFail {
+		return fmt.Errorf("stub TicketStore remove error")
+	}
+	for i, t := range ts.tickets[ticket.Sender] {
+		if ethcommon.Bytes2Hex(t.Sig) != ethcommon.Bytes2Hex(ticket.Sig) {
+			continue
+		}
+		tickets := ts.tickets[ticket.Sender][:i]
+		if i != len(ts.tickets[ticket.Sender])-1 {
+			tickets = append(tickets, ts.tickets[ticket.Sender][i+1:]...)
+		}
+		ts.tickets[ticket.Sender] = tickets
+		break
+	}
+
+func (ts *stubTicketStore) WinningTicketCount(sender ethcommon.Address) (int, error) {
+	ts.lock.Lock()
+	defer ts.lock.Unlock()
+	if ts.loadShouldFail {
+		return 0, fmt.Errorf("stub TicketStore load error")
+	}
+	count := 0
+	for _, t := range ts.tickets[sender] {
+		if !ts.submitted[fmt.Sprintf("%x", t.Sig)] {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (ts *stubBlockStore) LastSeenBlock() (*big.Int, error) {
@@ -320,7 +348,7 @@ func (s *stubGasPriceMonitor) GasPrice() *big.Int {
 
 type stubSenderMonitor struct {
 	maxFloat          *big.Int
-	redeemable        chan *SignedTicket
+	redeemable        chan *redemption
 	queued            []*SignedTicket
 	acceptable        bool
 	addFloatErr       error
@@ -331,7 +359,7 @@ type stubSenderMonitor struct {
 func newStubSenderMonitor() *stubSenderMonitor {
 	return &stubSenderMonitor{
 		maxFloat:   big.NewInt(0),
-		redeemable: make(chan *SignedTicket),
+		redeemable: make(chan *redemption),
 	}
 }
 
@@ -339,7 +367,7 @@ func (s *stubSenderMonitor) Start() {}
 
 func (s *stubSenderMonitor) Stop() {}
 
-func (s *stubSenderMonitor) Redeemable() chan *SignedTicket {
+func (s *stubSenderMonitor) Redeemable() chan *redemption {
 	return s.redeemable
 }
 

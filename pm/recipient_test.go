@@ -289,10 +289,12 @@ func TestReceiveTicket_InvalidRecipientRand_AlreadyRevealed(t *testing.T) {
 	r.RedeemWinningTicket(ticket, sig, params.Seed)
 	recipientRand := genRecipientRand(sender, secret, params)
 	// Redeem ticket to invalidate recipientRand
-	sm.Redeemable() <- &SignedTicket{
-		Ticket:        ticket,
-		Sig:           sig,
-		RecipientRand: recipientRand,
+	sm.Redeemable() <- &redemption{
+		SignedTicket: &SignedTicket{
+			Ticket:        ticket,
+			Sig:           sig,
+			RecipientRand: recipientRand,
+		},
 	}
 	time.Sleep(20 * time.Millisecond)
 
@@ -814,7 +816,9 @@ func TestRedeemManager_Error(t *testing.T) {
 	errorLogsBefore := glog.Stats.Error.Lines()
 
 	sm.maxFloatErr = errors.New("MaxFloat error")
-	sm.redeemable <- &SignedTicket{ticket, sig, recipientRand}
+	sm.redeemable <- &redemption{
+		SignedTicket: &SignedTicket{ticket, sig, recipientRand},
+	}
 
 	time.Sleep(time.Millisecond * 20)
 	errorLogsAfter := glog.Stats.Error.Lines()
@@ -852,7 +856,9 @@ func TestRedeemManager(t *testing.T) {
 
 	errorLogsBefore := glog.Stats.Error.Lines()
 
-	sm.redeemable <- &SignedTicket{ticket, sig, recipientRand}
+	sm.redeemable <- &redemption{
+		SignedTicket: &SignedTicket{ticket, sig, recipientRand},
+	}
 
 	time.Sleep(time.Millisecond * 20)
 	errorLogsAfter := glog.Stats.Error.Lines()

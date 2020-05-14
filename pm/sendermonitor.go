@@ -70,13 +70,15 @@ type senderMonitor struct {
 	// redeemable is a channel that an external caller can use to
 	// receive tickets that are fed from the ticket queues for
 	// each of currently active remote senders
-	redeemable chan *SignedTicket
+	redeemable chan *redemption
+
+	ticketStore TicketStore
 
 	quit chan struct{}
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderManager, tm TimeManager, cleanupInterval time.Duration, ttl int) SenderMonitor {
+func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderManager, tm TimeManager, store TicketStore, cleanupInterval time.Duration, ttl int) SenderMonitor {
 	return &senderMonitor{
 		claimant:        claimant,
 		cleanupInterval: cleanupInterval,
@@ -85,7 +87,8 @@ func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderMana
 		smgr:            smgr,
 		tm:              tm,
 		senders:         make(map[ethcommon.Address]*remoteSender),
-		redeemable:      make(chan *SignedTicket),
+		redeemable:      make(chan *redemption),
+		ticketStore:     store,
 		quit:            make(chan struct{}),
 	}
 }
@@ -102,7 +105,7 @@ func (sm *senderMonitor) Stop() {
 
 // Redeemable returns a channel that a consumer can use to receive tickets that
 // should be redeemed
-func (sm *senderMonitor) Redeemable() chan *SignedTicket {
+func (sm *senderMonitor) Redeemable() chan *redemption {
 	return sm.redeemable
 }
 
@@ -209,7 +212,7 @@ func (sm *senderMonitor) ensureCache(addr ethcommon.Address) {
 // Caller should hold the lock for senderMonitor unless the caller is
 // ensureCache() in which case the caller of ensureCache() should hold the lock
 func (sm *senderMonitor) cache(addr ethcommon.Address) {
-	queue := newTicketQueue(sm.tm.SubscribeBlocks)
+	queue := newTicketQueue(sm.ticketStore, addr, sm.tm.SubscribeBlocks)
 	queue.Start()
 	done := make(chan struct{})
 	go sm.startTicketQueueConsumerLoop(queue, done)

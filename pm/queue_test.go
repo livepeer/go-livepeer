@@ -6,24 +6,25 @@ import (
 	"testing"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 )
 
-func defaultSignedTicket(senderNonce uint32) *SignedTicket {
+func defaultSignedTicket(sender ethcommon.Address, senderNonce uint32) *SignedTicket {
 	return &SignedTicket{
-		&Ticket{FaceValue: big.NewInt(50), SenderNonce: senderNonce, ParamsExpirationBlock: big.NewInt(0)},
-		[]byte("foo"),
+		&Ticket{Sender: sender, FaceValue: big.NewInt(50), SenderNonce: senderNonce, ParamsExpirationBlock: big.NewInt(0)},
+		RandBytes(32),
 		big.NewInt(7),
 	}
 }
 
 type queueConsumer struct {
-	redeemable []*SignedTicket
+	redeemable []*redemption
 	mu         sync.Mutex
 }
 
 // Redeemable returns the consumed redeemable tickets from a ticket queue
-func (qc *queueConsumer) Redeemable() []*SignedTicket {
+func (qc *queueConsumer) Redeemable() []*redemption {
 	qc.mu.Lock()
 	defer qc.mu.Unlock()
 
@@ -32,27 +33,32 @@ func (qc *queueConsumer) Redeemable() []*SignedTicket {
 
 // Wait receives on the output channel from a ticket queue
 // until it has received a certain number of tickets and then exits
-func (qc *queueConsumer) Wait(num int, e RedeemableEmitter) {
+func (qc *queueConsumer) Wait(num int, e RedeemableEmitter, done chan struct{}) {
 	count := 0
-
 	for count < num {
 		select {
 		case ticket := <-e.Redeemable():
 			count++
-
 			qc.mu.Lock()
 			qc.redeemable = append(qc.redeemable, ticket)
 			qc.mu.Unlock()
+			ticket.resCh <- struct {
+				txHash ethcommon.Hash
+				err    error
+			}{}
 		}
 	}
+	done <- struct{}{}
 }
 
 func TestTicketQueueLoop(t *testing.T) {
 	assert := assert.New(t)
 
+	sender := RandAddress()
+	ts := newStubTicketStore()
 	tm := &stubTimeManager{}
 
-	q := newTicketQueue(tm.SubscribeBlocks)
+	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
 	q.Start()
 	defer q.Stop()
 
@@ -61,29 +67,34 @@ func TestTicketQueueLoop(t *testing.T) {
 	numTickets := 10
 
 	for i := 0; i < numTickets; i++ {
-		q.Add(defaultSignedTicket(uint32(i)))
+		q.Add(defaultSignedTicket(sender, uint32(i)))
 	}
 
 	// Add ticket with non-expired params
-	nonExpTicket := defaultSignedTicket(10)
+	nonExpTicket := defaultSignedTicket(sender, uint32(numTickets))
 	nonExpTicket.ParamsExpirationBlock = big.NewInt(100)
 	q.Add(nonExpTicket)
-	assert.Equal(int32(numTickets+1), q.Length())
+	qlen, err := q.Length()
+	assert.Nil(err)
+	assert.Equal(numTickets+1, qlen)
 	time.Sleep(time.Millisecond * 20)
-
 	qc := &queueConsumer{}
-
+	done := make(chan struct{})
 	// Wait for all numTickets tickets to be
 	// received on the output channel returned by Redeemable()
-	go qc.Wait(numTickets, q)
+	go qc.Wait(numTickets, q, done)
 
 	// Test signaling a new blockNum and remove tickets
 	tm.blockNumSink <- big.NewInt(1)
-
+	time.Sleep(20 * time.Millisecond)
+	<-done
 	// Queue should contain only the non-expired ticket now
-	time.Sleep(time.Millisecond * 20)
-	assert.Equal(int32(1), q.Length())
-	assert.Equal(q.queue[0], nonExpTicket)
+	qlen, err = q.Length()
+	assert.Nil(err)
+	assert.Equal(1, qlen)
+	earliest, err := q.store.SelectEarliestWinningTicket(sender)
+	assert.Nil(err)
+	assert.Equal(earliest, nonExpTicket)
 
 	// The popped tickets should be in the same order
 	// that they were added i.e. since we added them
@@ -92,16 +103,18 @@ func TestTicketQueueLoop(t *testing.T) {
 	// in order
 	redeemable := qc.Redeemable()
 	for i := 0; i < numTickets; i++ {
-		assert.Equal(uint32(i), redeemable[i].SenderNonce)
+		assert.Equal(uint32(i), redeemable[i].SignedTicket.SenderNonce)
 	}
 }
 
 func TestTicketQueueLoopConcurrent(t *testing.T) {
 	assert := assert.New(t)
 
+	sender := RandAddress()
+	ts := newStubTicketStore()
 	tm := &stubTimeManager{}
 
-	q := newTicketQueue(tm.SubscribeBlocks)
+	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
 	q.Start()
 	defer q.Stop()
 
@@ -110,18 +123,22 @@ func TestTicketQueueLoopConcurrent(t *testing.T) {
 	numTickets := 5
 
 	for i := 0; i < numTickets; i++ {
-		q.Add(defaultSignedTicket(uint32(i)))
+		q.Add(defaultSignedTicket(sender, uint32(i)))
 	}
-	assert.Equal(q.Length(), int32(numTickets))
+	qlen, err := q.Length()
+	assert.Nil(err)
+	assert.Equal(qlen, numTickets)
 
 	// Concurrently add tickets to the queue
 
 	numAdds := 2
 	for i := numTickets; i < numTickets+numAdds; i++ {
-		go q.Add(defaultSignedTicket(uint32(i)))
+		go q.Add(defaultSignedTicket(sender, uint32(i)))
 	}
 	time.Sleep(time.Millisecond * 20)
-	assert.Equal(q.Length(), int32(numTickets+numAdds))
+	qlen, err = q.Length()
+	assert.Nil(err)
+	assert.Equal(qlen, numTickets+numAdds)
 
 	// Concurrently signal block updates that do not remove tickets
 
@@ -136,7 +153,8 @@ func TestTicketQueueLoopConcurrent(t *testing.T) {
 	removeSignals := 2
 
 	qc := &queueConsumer{}
-	go qc.Wait(numTickets+numAdds, q)
+	done := make(chan struct{})
+	go qc.Wait(numTickets+numAdds, q, done)
 
 	for i := 0; i < removeSignals; i++ {
 		go func() {
@@ -145,16 +163,21 @@ func TestTicketQueueLoopConcurrent(t *testing.T) {
 	}
 
 	// Queue length should be empty
-	time.Sleep(time.Millisecond * 20)
-	assert.Equal(int32(0), q.Length())
+	time.Sleep(20 * time.Millisecond)
+	<-done
+	qlen, err = q.Length()
+	assert.Nil(err)
+	assert.Equal(0, qlen)
 }
 
 func TestTicketQueueConsumeBlockNums(t *testing.T) {
 	assert := assert.New(t)
 
+	sender := RandAddress()
+	ts := newStubTicketStore()
 	tm := &stubTimeManager{}
 
-	q := newTicketQueue(tm.SubscribeBlocks)
+	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
 	q.Start()
 	defer q.Stop()
 	time.Sleep(5 * time.Millisecond)
@@ -163,4 +186,47 @@ func TestTicketQueueConsumeBlockNums(t *testing.T) {
 	time.Sleep(5 * time.Millisecond)
 	// Check that the value is consumed
 	assert.Len(tm.blockNumSink, 0)
+}
+
+func TestTicketQueue_Add(t *testing.T) {
+	assert := assert.New(t)
+
+	sender := RandAddress()
+	ts := newStubTicketStore()
+	tm := &stubTimeManager{}
+
+	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
+
+	ticket := defaultSignedTicket(sender, 0)
+
+	ts.storeShouldFail = true
+	err := q.Add(ticket)
+	assert.EqualError(err, "stub TicketStore store error")
+	ts.storeShouldFail = false
+
+	err = q.Add(ticket)
+	assert.Nil(err)
+	assert.Equal(ts.tickets[sender][0], ticket)
+}
+
+func TestTicketQueue_Length(t *testing.T) {
+	assert := assert.New(t)
+
+	sender := RandAddress()
+	ts := newStubTicketStore()
+	tm := &stubTimeManager{}
+
+	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
+
+	ts.tickets[sender] = []*SignedTicket{defaultSignedTicket(sender, 0), defaultSignedTicket(sender, 1), defaultSignedTicket(sender, 2)}
+
+	ts.loadShouldFail = true
+	qlen, err := q.Length()
+	assert.Equal(0, qlen)
+	assert.EqualError(err, "stub TicketStore load error")
+	ts.loadShouldFail = false
+
+	qlen, err = q.Length()
+	assert.Nil(err)
+	assert.Equal(qlen, 3)
 }

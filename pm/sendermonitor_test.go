@@ -197,7 +197,7 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	// Test queue ticket
 	// test fail
 	ts.storeShouldFail = true
-	assert.EqualError(sm.QueueTicket(addr, defaultSignedTicket(addr, uint32(0))), "stub ticket store store error")
+	assert.EqualError(sm.QueueTicket(addr, defaultSignedTicket(addr, uint32(0))), "stub TicketStore store error")
 	ts.storeShouldFail = false
 
 	err := sm.QueueTicket(addr, defaultSignedTicket(addr, uint32(0)))
@@ -208,19 +208,20 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	assert.Equal(qlen, 1)
 
 	qc := &queueConsumer{}
-	go qc.Wait(1, sm)
+	done := make(chan struct{})
+	go qc.Wait(1, sm, done)
 
 	tm.blockNumSink <- big.NewInt(5)
-	time.Sleep(20 * time.Millisecond)
-
+	<-done
 	// check that ticket is now removed from queue
+	time.Sleep(20 * time.Millisecond)
 	qlen, err = sm.(*senderMonitor).senders[addr].queue.Length()
 	assert.Nil(err)
 	assert.Equal(qlen, 0)
 
-	tickets := qc.Redeemable()
-	assert.Equal(1, len(tickets))
-	assert.Equal(uint32(0), tickets[0].SenderNonce)
+	redemptions := qc.Redeemable()
+	assert.Equal(1, len(redemptions))
+	assert.Equal(uint32(0), redemptions[0].SignedTicket.SenderNonce)
 
 	// Test queue tickets from multiple senders
 
@@ -236,7 +237,8 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	smgr.claimedReserve[addr2] = big.NewInt(100)
 
 	qc = &queueConsumer{}
-	go qc.Wait(2, sm)
+	done = make(chan struct{})
+	go qc.Wait(2, sm, done)
 
 	sm.QueueTicket(addr, defaultSignedTicket(addr, (2)))
 	time.Sleep(20 * time.Millisecond)
@@ -244,7 +246,6 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(qlen, 1)
 	tm.blockNumSink <- big.NewInt(5)
-	time.Sleep(20 * time.Millisecond)
 
 	sm.QueueTicket(addr2, defaultSignedTicket(addr2, uint32(3)))
 	time.Sleep(20 * time.Millisecond)
@@ -252,12 +253,13 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(qlen, 1)
 	tm.blockNumSink <- big.NewInt(5)
-	time.Sleep(20 * time.Millisecond)
 
-	tickets = qc.Redeemable()
-	assert.Equal(2, len(tickets))
-	assert.Equal(uint32(2), tickets[0].Ticket.SenderNonce)
-	assert.Equal(uint32(3), tickets[1].Ticket.SenderNonce)
+	<-done
+
+	redemptions = qc.Redeemable()
+	assert.Equal(2, len(redemptions))
+	assert.Equal(uint32(2), redemptions[0].SignedTicket.SenderNonce)
+	assert.Equal(uint32(3), redemptions[1].SignedTicket.SenderNonce)
 }
 
 func TestCleanup(t *testing.T) {
