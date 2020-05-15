@@ -527,9 +527,6 @@ func main() {
 				return
 			}
 
-			n.Recipient.Start()
-			defer n.Recipient.Stop()
-
 			// Create round iniitializer to automatically initialize new rounds
 			if *initializeRound {
 				initializer := eth.NewRoundInitializer(n.Eth, n.Database, timeWatcher, blockPollingTime)
