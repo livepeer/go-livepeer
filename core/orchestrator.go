@@ -225,6 +225,17 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, segData *SegTransc
 		return receiveErr
 	}
 
+	// Check whether the balance can cover the estimated fee
+	balance := orch.node.Balances.Balance(sender, manifestID)
+	dur := float64(segData.Duration) / 1000.0
+	estimatedFee, err := EstimateFee(&stream.HLSSegment{Duration: dur}, segData.Profiles, priceInfoRat)
+	if err != nil {
+		return err
+	}
+	if balance == nil || balance.Cmp(estimatedFee) < 0 {
+		return errors.New("insufficient balance for estimated fee")
+	}
+
 	return nil
 }
 

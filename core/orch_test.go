@@ -1087,6 +1087,49 @@ func TestProcessPayment_PaymentError_DoesNotIncreaseCreditBalance(t *testing.T) 
 	assert.Nil(orch.node.Balances.Balance(ethcommon.BytesToAddress(payment.Sender), manifestID))
 }
 
+func TestProcessPayment_EstimateFee(t *testing.T) {
+	addr := pm.RandAddress()
+	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
+		EthereumAddr:      addr.Hex(),
+		ActivationRound:   1,
+		DeactivationRound: 999,
+	})
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	assert := assert.New(t)
+
+	recipient := new(pm.MockRecipient)
+	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
+	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
+
+	n, _ := NewLivepeerNode(nil, "", dbh)
+	n.Balances = NewAddressBalances(5 * time.Second)
+	n.Recipient = recipient
+	n.SetBasePrice(big.NewRat(1000, 1))
+
+	orch := NewOrchestrator(n, &stubRoundsManager{round: big.NewInt(10)})
+	orch.address = addr
+
+	// set ticket to have a very small face value so it fails fee estimation
+	payment := defaultPayment(t)
+	payment.TicketParams.FaceValue = big.NewInt(100).Bytes()
+	payment.TicketParams.WinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1)).Bytes()
+
+	md := &SegTranscodingMetadata{
+		Profiles: []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		Duration: 1000000,
+	}
+	err := orch.ProcessPayment(payment, md)
+	assert.NotNil(err)
+	assert.Equal("insufficient balance for estimated fee", err.Error())
+
+	// passing case
+	payment = defaultPayment(t)
+	err = orch.ProcessPayment(payment, md)
+
+}
+
 func TestIsActive(t *testing.T) {
 	assert := assert.New(t)
 	addr := defaultRecipient
