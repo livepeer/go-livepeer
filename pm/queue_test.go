@@ -13,7 +13,18 @@ import (
 
 func defaultSignedTicket(sender ethcommon.Address, senderNonce uint32) *SignedTicket {
 	return &SignedTicket{
-		&Ticket{Sender: sender, FaceValue: big.NewInt(50), SenderNonce: senderNonce, ParamsExpirationBlock: big.NewInt(0)},
+		&Ticket{
+			Recipient:              RandAddress(),
+			Sender:                 sender,
+			FaceValue:              big.NewInt(50),
+			WinProb:                big.NewInt(500),
+			SenderNonce:            senderNonce,
+			RecipientRandHash:      RandHash(),
+			CreationRound:          100,
+			CreationRoundBlockHash: RandHash(),
+			ParamsExpirationBlock:  big.NewInt(0),
+			PricePerPixel:          big.NewRat(1, 1),
+		},
 		[]byte("foo"),
 		big.NewInt(7),
 	}
