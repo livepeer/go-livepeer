@@ -40,6 +40,47 @@ func (md *SegTranscodingMetadata) Flatten() []byte {
 	return buf
 }
 
+func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
+
+	fullProfiles, err := common.FFmpegProfiletoNetProfile(md.Profiles)
+	if err != nil {
+		return nil, err
+	}
+	storage := []*net.OSInfo{}
+	if md.OS != nil {
+		storage = append(storage, md.OS)
+	}
+
+	// Generate serialized segment info
+	segData := &net.SegData{
+		ManifestId: []byte(md.ManifestID),
+		Seq:        md.Seq,
+		Hash:       md.Hash.Bytes(),
+		Storage:    storage,
+		// Triggers failure on Os that don't know how to use FullProfiles/2
+		Profiles: []byte("invalid"),
+	}
+
+	// If all outputs are mpegts, use the older SegData.FullProfiles field
+	// for compatibility with older orchestrators
+	allTS := true
+	for i := 0; i < len(md.Profiles) && allTS; i++ {
+		switch md.Profiles[i].Format {
+		case ffmpeg.FormatNone: // default output is mpegts for FormatNone
+		case ffmpeg.FormatMPEGTS:
+		default:
+			allTS = false
+		}
+	}
+	if allTS {
+		segData.FullProfiles = fullProfiles
+	} else {
+		segData.FullProfiles2 = fullProfiles
+	}
+
+	return segData, nil
+}
+
 type ManifestID string
 
 // The StreamID represents a particular variant of a stream.

@@ -211,17 +211,23 @@ message NotifySegment {
     // URL of the segment to transcode.
     string url      = 1;
 
-    // Job the segment belongs to.
-    string job      = 2;
+    // Configuration for the transcoding job
+    SegData segData = 3;
 
     // ID for this particular transcoding task.
     int64 taskId   = 16;
 
-    // Set of profiles to transcode this segment into.
+    // All fields below are deprecated. May still be populated if necessary
+
+    // Deprecated by segData. Job the segment belongs to.
+    reserved 2; // Formerly "string job"
+
+    // Deprecated by fullProfiles. Set of presets to transcode into.
+    // Should be set to an invalid value to induce failures
     bytes profiles = 17;
 
-    // Transcoding profiles to use. Supersedes `profiles` field 
-    repeated VideoProfile fullProfiles = 33;
+    // Deprecated by segData. Transcoding configuration to use.
+    reserved 33; // Formerly "repeated VideoProfile fullProfiles"
 }
 
 // Required parameters for probabilistic micropayment tickets
