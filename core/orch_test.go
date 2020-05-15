@@ -1150,7 +1150,7 @@ func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 	err := orch.ProcessPayment(payment, &SegTranscodingMetadata{ManifestID: manifestID})
 	assert.Nil(err)
 	recipient.On("EV").Return(big.NewRat(100, 1))
-	assert.True(orch.SufficientBalance(ethcommon.BytesToAddress(payment.Sender), manifestID))
+	assert.True(orch.SufficientBalance(ethcommon.BytesToAddress(payment.Sender), &SegTranscodingMetadata{ManifestID: manifestID}))
 }
 
 func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
@@ -1174,14 +1174,12 @@ func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
 	orch.address = addr
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 
-	manifestID := ManifestID("some manifest")
-
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil).Once()
 	assert := assert.New(t)
 
 	// Check when the balance is nil because no payment was received yet and there is no cached balance
-	assert.False(orch.SufficientBalance(ethcommon.BytesToAddress([]byte("foo")), manifestID))
+	assert.False(orch.SufficientBalance(ethcommon.BytesToAddress([]byte("foo")), &SegTranscodingMetadata{}))
 
 	// Create a ticket where faceVal < EV so that the balance < EV
 	payment := defaultPayment(t)
@@ -1191,25 +1189,25 @@ func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
 	err := orch.ProcessPayment(payment, &SegTranscodingMetadata{})
 	assert.Nil(err)
 	recipient.On("EV").Return(big.NewRat(10000, 1))
-	assert.False(orch.SufficientBalance(ethcommon.BytesToAddress(payment.Sender), manifestID))
+	assert.False(orch.SufficientBalance(ethcommon.BytesToAddress(payment.Sender), &SegTranscodingMetadata{}))
 }
 
 func TestSufficientBalance_OffChainMode_ReturnsTrue(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	addr := ethcommon.Address{}
-	manifestID := ManifestID("some manifest")
+	md := &SegTranscodingMetadata{ManifestID: ManifestID("some manifest")}
 	orch := NewOrchestrator(n, nil)
-	assert.True(t, orch.SufficientBalance(addr, manifestID))
+	assert.True(t, orch.SufficientBalance(addr, md))
 
 	orch.node.Recipient = new(pm.MockRecipient)
-	assert.True(t, orch.SufficientBalance(addr, manifestID))
+	assert.True(t, orch.SufficientBalance(addr, md))
 
 	orch.node.Recipient = nil
 	orch.node.Balances = NewAddressBalances(5 * time.Second)
-	assert.True(t, orch.SufficientBalance(addr, manifestID))
+	assert.True(t, orch.SufficientBalance(addr, md))
 
 	orch.node = nil
-	assert.True(t, orch.SufficientBalance(addr, manifestID))
+	assert.True(t, orch.SufficientBalance(addr, md))
 }
 
 func TestTicketParams(t *testing.T) {

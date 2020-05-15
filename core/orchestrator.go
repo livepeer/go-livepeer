@@ -289,12 +289,12 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address) (*big.Rat, error) 
 
 // SufficientBalance checks whether the credit balance for a stream is sufficient
 // to proceed with downloading and transcoding
-func (orch *orchestrator) SufficientBalance(addr ethcommon.Address, manifestID ManifestID) bool {
+func (orch *orchestrator) SufficientBalance(addr ethcommon.Address, segData *SegTranscodingMetadata) bool {
 	if orch.node == nil || orch.node.Recipient == nil || orch.node.Balances == nil {
 		return true
 	}
 
-	balance := orch.node.Balances.Balance(addr, manifestID)
+	balance := orch.node.Balances.Balance(addr, segData.ManifestID)
 	if balance == nil || balance.Cmp(orch.node.Recipient.EV()) < 0 {
 		return false
 	}

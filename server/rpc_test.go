@@ -140,7 +140,7 @@ func (r *stubOrchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, 
 	return r.priceInfo, nil
 }
 
-func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
+func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, segData *core.SegTranscodingMetadata) bool {
 	return true
 }
 
@@ -910,8 +910,8 @@ func (o *mockOrchestrator) CheckCapacity(mid core.ManifestID) error {
 	return nil
 }
 
-func (o *mockOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
-	args := o.Called(addr, manifestID)
+func (o *mockOrchestrator) SufficientBalance(addr ethcommon.Address, segData *core.SegTranscodingMetadata) bool {
+	args := o.Called(addr, segData)
 	return args.Bool(0)
 }
 

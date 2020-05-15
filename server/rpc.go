@@ -44,7 +44,7 @@ type Orchestrator interface {
 	ProcessPayment(payment net.Payment, segData *core.SegTranscodingMetadata) error
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
 	PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error)
-	SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool
+	SufficientBalance(addr ethcommon.Address, segData *core.SegTranscodingMetadata) bool
 	DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
 }
 
