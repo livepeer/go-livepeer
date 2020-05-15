@@ -1253,6 +1253,10 @@ func TestSufficientBalance_OffChainMode_ReturnsTrue(t *testing.T) {
 	assert.True(t, orch.SufficientBalance(addr, md))
 }
 
+func TestSufficientBalance_EstimateFee(t *testing.T) {
+	// TODO
+}
+
 func TestTicketParams(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.priceInfo = big.NewRat(1, 1)

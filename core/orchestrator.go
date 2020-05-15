@@ -309,6 +309,17 @@ func (orch *orchestrator) SufficientBalance(addr ethcommon.Address, segData *Seg
 	if balance == nil || balance.Cmp(orch.node.Recipient.EV()) < 0 {
 		return false
 	}
+
+	// Check whether the balance can cover the estimated fee
+	priceInfo, err := orch.priceInfo(addr)
+	if err != nil {
+		return false
+	}
+	dur := float64(segData.Duration) / 1000.0
+	estimatedFee, err := EstimateFee(&stream.HLSSegment{Duration: dur}, segData.Profiles, priceInfo)
+	if err != nil || balance.Cmp(estimatedFee) < 0 {
+		return false
+	}
 	return true
 }
 
