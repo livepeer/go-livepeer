@@ -685,7 +685,19 @@ func (rt *RemoteTranscoder) Transcode(fname string, md *SegTranscodingMetadata) 
 	if err != nil {
 		return signalEOF(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), RemoteTranscoderTimeout)
+
+	// set a minimum timeout to accommodate transport / processing overhead
+	dur := common.HTTPTimeout
+	paddedDur := int64(4.0 * md.Duration) // use a multiplier of 4 for now
+	if paddedDur > dur.Milliseconds() {
+		dur, err = time.ParseDuration(fmt.Sprintf("%dms", paddedDur))
+		if err != nil {
+			glog.Errorf("Could not parse duration dur=%v err=%v", md.Duration, err)
+			return nil, err
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dur)
 	defer cancel()
 	select {
 	case <-ctx.Done():
