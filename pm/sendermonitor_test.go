@@ -197,31 +197,27 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	// Test queue ticket
 	// test fail
 	ts.storeShouldFail = true
-	assert.EqualError(sm.QueueTicket(addr, defaultSignedTicket(addr, uint32(0))), "stub TicketStore store error")
+	assert.EqualError(sm.QueueTicket(defaultSignedTicket(addr, uint32(0))), "stub ticket store store error")
 	ts.storeShouldFail = false
 
-	err := sm.QueueTicket(addr, defaultSignedTicket(addr, uint32(0)))
+	signedT := defaultSignedTicket(addr, uint32(0))
+	err := sm.QueueTicket(signedT)
 	assert.Nil(err)
 	time.Sleep(20 * time.Millisecond)
-	qlen, err := sm.(*senderMonitor).senders[addr].queue.Length()
+	qlen, err := sm.senders[addr].queue.Length()
 	assert.Nil(err)
 	assert.Equal(qlen, 1)
 
-	qc := &queueConsumer{}
-	done := make(chan struct{})
-	go qc.Wait(1, sm, done)
-
 	tm.blockNumSink <- big.NewInt(5)
-	<-done
-	// check that ticket is now removed from queue
 	time.Sleep(20 * time.Millisecond)
-	qlen, err = sm.(*senderMonitor).senders[addr].queue.Length()
+
+	// check that ticket is now removed from queue
+	qlen, err = sm.senders[addr].queue.Length()
 	assert.Nil(err)
 	assert.Equal(qlen, 0)
 
-	redemptions := qc.Redeemable()
-	assert.Equal(1, len(redemptions))
-	assert.Equal(uint32(0), redemptions[0].SignedTicket.SenderNonce)
+	// check that ticket is used
+	assert.True(b.IsUsedTicket(signedT.Ticket))
 
 	// Test queue tickets from multiple senders
 
@@ -236,30 +232,26 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	}
 	smgr.claimedReserve[addr2] = big.NewInt(100)
 
-	qc = &queueConsumer{}
-	done = make(chan struct{})
-	go qc.Wait(2, sm, done)
-
-	sm.QueueTicket(addr, defaultSignedTicket(addr, (2)))
+	signedT2 := defaultSignedTicket(addr, (2))
+	sm.QueueTicket(signedT2)
 	time.Sleep(20 * time.Millisecond)
-	qlen, err = sm.(*senderMonitor).senders[addr].queue.Length()
+	qlen, err = sm.senders[addr].queue.Length()
 	assert.Nil(err)
 	assert.Equal(qlen, 1)
 	tm.blockNumSink <- big.NewInt(5)
-
-	sm.QueueTicket(addr2, defaultSignedTicket(addr2, uint32(3)))
 	time.Sleep(20 * time.Millisecond)
-	qlen, err = sm.(*senderMonitor).senders[addr2].queue.Length()
+
+	signedT3 := defaultSignedTicket(addr2, uint32(3))
+	sm.QueueTicket(signedT3)
+	time.Sleep(20 * time.Millisecond)
+	qlen, err = sm.senders[addr2].queue.Length()
 	assert.Nil(err)
 	assert.Equal(qlen, 1)
 	tm.blockNumSink <- big.NewInt(5)
+	time.Sleep(20 * time.Millisecond)
 
-	<-done
-
-	redemptions = qc.Redeemable()
-	assert.Equal(2, len(redemptions))
-	assert.Equal(uint32(2), redemptions[0].SignedTicket.SenderNonce)
-	assert.Equal(uint32(3), redemptions[1].SignedTicket.SenderNonce)
+	assert.True(b.IsUsedTicket(signedT2.Ticket))
+	assert.True(b.IsUsedTicket(signedT3.Ticket))
 }
 
 func TestCleanup(t *testing.T) {
@@ -504,6 +496,189 @@ func TestSenderMonitor_ValidateSender(t *testing.T) {
 	tm.round = big.NewInt(10)
 	err = sm.ValidateSender(addr)
 	assert.EqualError(err, expErr)
+}
+
+func TestRedeemWinningTicket_SingleTicket_ZeroMaxFloat(t *testing.T) {
+	claimant, b, smgr, tm := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		WithdrawRound: big.NewInt(0),
+		Reserve: &ReserveInfo{
+			FundsRemaining:        big.NewInt(500),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
+	}
+
+	ts := newStubTicketStore()
+	smgr.claimedReserve[addr] = big.NewInt(100)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, ts, 5*time.Minute, 3600)
+	sm.Start()
+	defer sm.Stop()
+
+	assert := assert.New(t)
+
+	signedT := defaultSignedTicket(addr, uint32(0))
+
+	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	assert.EqualError(err, "max float is zero")
+}
+
+func TestRedeemWinningTicket_SingleTicket_RedeemError(t *testing.T) {
+	claimant, b, smgr, tm := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		WithdrawRound: big.NewInt(0),
+		Reserve: &ReserveInfo{
+			FundsRemaining:        big.NewInt(1000),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
+	}
+
+	ts := newStubTicketStore()
+	smgr.claimedReserve[addr] = big.NewInt(100)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, ts, 5*time.Minute, 3600)
+	sm.Start()
+	defer sm.Stop()
+
+	assert := assert.New(t)
+
+	signedT := defaultSignedTicket(addr, uint32(0))
+
+	b.redeemShouldFail = true
+	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	assert.EqualError(err, "stub broker redeem error")
+
+	used, err := b.IsUsedTicket(signedT.Ticket)
+	assert.NoError(err)
+	assert.False(used)
+}
+
+func TestRedeemWinningTicket_SingleTicket_CheckTxError(t *testing.T) {
+	claimant, b, smgr, tm := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		WithdrawRound: big.NewInt(0),
+		Reserve: &ReserveInfo{
+			FundsRemaining:        big.NewInt(1000),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
+	}
+
+	ts := newStubTicketStore()
+	smgr.claimedReserve[addr] = big.NewInt(100)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, ts, 5*time.Minute, 3600)
+	sm.Start()
+	defer sm.Stop()
+	b.checkTxErr = errors.New("checktx error")
+	assert := assert.New(t)
+
+	signedT := defaultSignedTicket(addr, uint32(0))
+
+	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	assert.EqualError(err, b.checkTxErr.Error())
+}
+
+func TestRedeemWinningTicket_SingleTicket(t *testing.T) {
+	claimant, b, smgr, tm := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		WithdrawRound: big.NewInt(0),
+		Reserve: &ReserveInfo{
+			FundsRemaining:        big.NewInt(1000),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
+	}
+
+	ts := newStubTicketStore()
+	smgr.claimedReserve[addr] = big.NewInt(100)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, ts, 5*time.Minute, 3600)
+	sm.Start()
+	defer sm.Stop()
+	assert := assert.New(t)
+
+	signedT := defaultSignedTicket(addr, uint32(0))
+
+	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	assert.Nil(err)
+
+	ok, err := b.IsUsedTicket(signedT.Ticket)
+	assert.Nil(err)
+	assert.True(ok)
+}
+
+func TestRedeemWinningTicket_MaxFloatError(t *testing.T) {
+	claimant, b, smgr, tm := senderMonitorFixture()
+	addr := RandAddress()
+
+	ts := newStubTicketStore()
+	sm := NewSenderMonitor(claimant, b, smgr, tm, ts, 5*time.Minute, 3600)
+	sm.Start()
+	defer sm.Stop()
+
+	assert := assert.New(t)
+
+	signedT := defaultSignedTicket(addr, uint32(0))
+	smgr.err = errors.New("maxfloat err")
+	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	assert.EqualError(err, smgr.err.Error())
+}
+
+func TestRedeemWinningTicket_InsufficientMaxFloat_QueueTicket(t *testing.T) {
+	claimant, b, smgr, tm := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		WithdrawRound: big.NewInt(0),
+		Reserve: &ReserveInfo{
+			FundsRemaining:        big.NewInt(525),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
+	}
+
+	ts := newStubTicketStore()
+	smgr.claimedReserve[addr] = big.NewInt(100)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, ts, 5*time.Minute, 3600)
+	sm.Start()
+	defer sm.Stop()
+
+	assert := assert.New(t)
+
+	signedT := defaultSignedTicket(addr, uint32(0))
+
+	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	assert.EqualError(err, fmt.Sprintf("insufficient max float sender=%v faceValue=%v maxFloat=%v", addr.Hex(), signedT.FaceValue, new(big.Int).Sub(new(big.Int).Div(smgr.info[addr].Reserve.FundsRemaining, tm.transcoderPoolSize), smgr.claimedReserve[addr])))
+}
+
+func TestRedeemWinningTicket_AddFloatError(t *testing.T) {
+	claimant, b, smgr, tm := senderMonitorFixture()
+	addr := RandAddress()
+	smgr.info[addr] = &SenderInfo{
+		Deposit:       big.NewInt(500),
+		WithdrawRound: big.NewInt(0),
+		Reserve: &ReserveInfo{
+			FundsRemaining:        big.NewInt(5000),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
+	}
+
+	ts := newStubTicketStore()
+	smgr.claimedReserve[addr] = big.NewInt(100)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, ts, 5*time.Minute, 3600)
+	sm.Start()
+	defer sm.Stop()
+
+	assert := assert.New(t)
+
+	signedT := defaultSignedTicket(addr, uint32(0))
+	sm.(*senderMonitor).ensureCache(addr)
+	sm.(*senderMonitor).senders[addr].pendingAmount = big.NewInt(-100)
+
+	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	assert.EqualError(err, "cannot subtract from insufficient pendingAmount")
 }
 
 func senderMonitorFixture() (ethcommon.Address, *stubBroker, *stubSenderManager, *stubTimeManager) {

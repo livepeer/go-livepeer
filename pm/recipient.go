@@ -4,14 +4,11 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"fmt"
 	"math/big"
 	"sync"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/pkg/errors"
 )
 
@@ -153,7 +150,7 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 // RedeemWinningTicket redeems a single winning ticket
 func (r *recipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error {
 	recipientRand := r.rand(seed, ticket.Sender, ticket.FaceValue, ticket.WinProb, ticket.ParamsExpirationBlock, ticket.PricePerPixel, ticket.expirationParams())
-	return r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand})
+	return r.sm.QueueTicket(&SignedTicket{ticket, sig, recipientRand})
 }
 
 // TicketParams returns the recipient's currently accepted ticket parameters
@@ -267,82 +264,6 @@ func (r *recipient) TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error)
 	return new(big.Rat).SetFrac(faceValue, r.txCost()), nil
 }
 
-func (r *recipient) redeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
-	maxFloat, err := r.sm.MaxFloat(ticket.Sender)
-	if err != nil {
-		return err
-	}
-
-	// if max float is zero, there is no claimable reserve left or reserve is 0
-	if maxFloat.Cmp(big.NewInt(0)) == 0 {
-		if err := r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand}); err != nil {
-			return err
-		}
-		return errors.Errorf("max float is zero")
-	}
-
-	// If max float is insufficient to cover the ticket face value, queue
-	// the ticket to be retried later
-	if maxFloat.Cmp(ticket.FaceValue) < 0 {
-		if err := r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand}); err != nil {
-			return err
-		}
-		return fmt.Errorf("insufficient max float - faceValue=%v maxFloat=%v", ticket.FaceValue, maxFloat)
-	}
-
-	// Subtract the ticket face value from the sender's current max float
-	// This amount will be considered pending until the ticket redemption
-	// transaction confirms on-chain
-	r.sm.SubFloat(ticket.Sender, ticket.FaceValue)
-
-	defer func() {
-		// Add the ticket face value back to the sender's current max float
-		// This amount is no longer considered pending since the ticket
-		// redemption transaction either confirmed on-chain or was not
-		// submitted at all
-		//
-		// TODO(yondonfu): Should ultimately add back only the amount that
-		// was actually successfully redeemed in order to take into account
-		// the case where the ticket was not redeemd for its full face value
-		// because the reserve was insufficient
-		if err := r.sm.AddFloat(ticket.Sender, ticket.FaceValue); err != nil {
-			glog.Errorf("error updating sender %x max float: %v", ticket.Sender, err)
-		}
-	}()
-
-	// Assume that that this call will return immediately if there
-	// is an error in transaction submission
-	tx, err := r.broker.RedeemWinningTicket(ticket, sig, recipientRand)
-	if err != nil {
-		if monitor.Enabled {
-			monitor.TicketRedemptionError(ticket.Sender.String())
-		}
-
-		return err
-	}
-
-	// After we invalidate recipientRand we can clear the memory used to track
-	// its latest senderNonce
-	r.clearSenderNonce(recipientRand)
-
-	// Wait for transaction to confirm
-	if err := r.broker.CheckTx(tx); err != nil {
-		if monitor.Enabled {
-			monitor.TicketRedemptionError(ticket.Sender.String())
-		}
-
-		return err
-	}
-
-	if monitor.Enabled {
-		// TODO(yondonfu): Handle case where < ticket.FaceValue is actually
-		// redeemed i.e. if sender reserve cannot cover the full ticket.FaceValue
-		monitor.ValueRedeemed(ticket.Sender.String(), ticket.FaceValue)
-	}
-
-	return nil
-}
-
 func (r *recipient) rand(seed *big.Int, sender ethcommon.Address, faceValue *big.Int, winProb *big.Int, expirationBlock *big.Int, price *big.Rat, ticketExpirationParams *TicketExpirationParams) *big.Int {
 	h := hmac.New(sha256.New, r.secret[:])
 	msg := append(seed.Bytes(), sender.Bytes()...)
@@ -377,18 +298,6 @@ func (r *recipient) clearSenderNonce(rand *big.Int) {
 	defer r.senderNoncesLock.Unlock()
 
 	delete(r.senderNonces, rand.String())
-}
-
-func (r *recipient) redeemManager() {
-	// Listen for redeemable tickets that should be retried
-	for {
-		select {
-		case red := <-r.sm.Redeemable():
-			if err := r.redeemWinningTicket(red.SignedTicket.Ticket, red.SignedTicket.Sig, red.SignedTicket.RecipientRand); err != nil {
-				glog.Errorf("error redeeming ticket - sender=%x recipientRandHash=%x senderNonce=%v err=%v", red.SignedTicket.Sender, red.SignedTicket.RecipientRandHash, red.SignedTicket.SenderNonce, err)
-			}
-		}
-	}
 }
 
 // EV Returns the required ticket EV for a recipient

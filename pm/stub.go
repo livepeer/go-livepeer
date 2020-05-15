@@ -373,7 +373,7 @@ func (s *stubSenderMonitor) Redeemable() chan *redemption {
 	return s.redeemable
 }
 
-func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error {
+func (s *stubSenderMonitor) QueueTicket(ticket *SignedTicket) error {
 	if s.shouldFail != nil {
 		return s.shouldFail
 	}
