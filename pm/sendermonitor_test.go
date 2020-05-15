@@ -80,7 +80,7 @@ func TestMaxFloat(t *testing.T) {
 	}
 }
 
-func TestsubFloat(t *testing.T) {
+func TestSubFloat(t *testing.T) {
 	claimant, b, smgr, tm := senderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
@@ -120,7 +120,7 @@ func TestsubFloat(t *testing.T) {
 	)
 }
 
-func TestaddFloat(t *testing.T) {
+func TestAddFloat(t *testing.T) {
 	claimant, b, smgr, tm := senderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
