@@ -61,9 +61,10 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 
 var AuthWebhookURL string
 
-var refreshIntervalHttpPush = 1 * time.Minute
+// For HTTP push watchdog
+var httpPushTimeout = 1 * time.Minute
 var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
-	sleepDur := time.Duration(int64(float64(refreshIntervalHttpPush) * 0.9))
+	sleepDur := time.Duration(int64(float64(httpPushTimeout) * 0.9))
 	return context.WithTimeout(context.Background(), sleepDur)
 }
 
@@ -645,8 +646,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		ticker := time.NewTicker(refreshIntervalHttpPush)
-
+		// Start a watchdog to remove session after a period of inactivity
+		ticker := time.NewTicker(httpPushTimeout)
 		go func(s *LivepeerServer, mid core.ManifestID) {
 			defer ticker.Stop()
 			for range ticker.C {
@@ -656,7 +657,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 					lastUsed = cxn.lastUsed
 				}
 				s.connectionLock.RUnlock()
-				if time.Since(lastUsed) > refreshIntervalHttpPush {
+				if time.Since(lastUsed) > httpPushTimeout {
 					_ = removeRTMPStream(s, mid)
 					return
 				}

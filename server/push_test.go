@@ -546,8 +546,9 @@ func ignoreRoutines() []goleak.Option {
 func TestPush_ShouldRemoveSessionAfterTimeout(t *testing.T) {
 	defer goleak.VerifyNone(t, ignoreRoutines()...)
 
-	oldRI := refreshIntervalHttpPush
-	refreshIntervalHttpPush = 2 * time.Millisecond
+	oldRI := httpPushTimeout
+	httpPushTimeout = 2 * time.Millisecond
+	defer func() { httpPushTimeout = oldRI }()
 	assert := assert.New(t)
 	s, cancel := setupServerWithCancel()
 	w := httptest.NewRecorder()
@@ -565,12 +566,12 @@ func TestPush_ShouldRemoveSessionAfterTimeout(t *testing.T) {
 	s.connectionLock.Unlock()
 	cancel()
 	assert.False(exists)
-	refreshIntervalHttpPush = oldRI
 }
 
 func TestPush_ShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
-	oldRI := refreshIntervalHttpPush
-	refreshIntervalHttpPush = 5 * time.Millisecond
+	oldRI := httpPushTimeout
+	httpPushTimeout = 5 * time.Millisecond
+	defer func() { httpPushTimeout = oldRI }()
 	assert := assert.New(t)
 	s := setupServer()
 	defer serverCleanup(s)
@@ -591,7 +592,6 @@ func TestPush_ShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
 	_, exists = s.rtmpConnections["mani2"]
 	s.connectionLock.Unlock()
 	assert.False(exists)
-	refreshIntervalHttpPush = oldRI
 }
 
 func TestPush_ResetWatchdog(t *testing.T) {
