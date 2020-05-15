@@ -129,16 +129,70 @@ func TestRemoteTranscoder(t *testing.T) {
 		t.Error("Unexpected error ", err, fatal)
 	}
 
-	// simulate timeout
+	assert := assert.New(t)
+
+	// check default timeout
 	tc, strm = initTranscoder()
 	strm.WithholdResults = true
 	m.taskCount = 1001
-	RemoteTranscoderTimeout = 1 * time.Millisecond
-	_, err = tc.Transcode(&SegTranscodingMetadata{ManifestID: ManifestID("fileName")})
-	if err.Error() != "Remote transcoder took too long" {
-		t.Error("Unexpected error: ", err)
+	oldTimeout := common.HTTPTimeout
+	defer func() { common.HTTPTimeout = oldTimeout }()
+	common.HTTPTimeout = 5 * time.Millisecond
+
+	// count relative ticks rather than wall clock to mitigate CI slowness
+	countTicks := func(exitVal chan int, stopper chan struct{}) {
+		ticker := time.NewTicker(time.Millisecond)
+		ticks := 0
+		for {
+			select {
+			case <-stopper:
+				exitVal <- ticks
+				return
+			case <-ticker.C:
+				ticks++
+			}
+		}
 	}
-	RemoteTranscoderTimeout = 8 * time.Second
+	tickCh := make(chan int, 1)
+	stopper := make(chan struct{})
+	go countTicks(tickCh, stopper)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		_, err = tc.Transcode(&SegTranscodingMetadata{ManifestID: ManifestID("fileName")})
+		assert.Equal("Remote transcoder took too long", err.Error())
+		wg.Done()
+	}()
+	assert.True(wgWait(&wg), "transcoder took too long to timeout")
+	stopper <- struct{}{}
+	ticksWhenSegIsShort := <-tickCh
+
+	// check timeout based on segment duration
+	tc, strm = initTranscoder()
+	strm.WithholdResults = true
+	m.taskCount = 1002
+	assert.Equal(5*time.Millisecond, common.HTTPTimeout) // sanity check
+
+	tickCh = make(chan int, 1)
+	stopper = make(chan struct{}, 1)
+	go countTicks(tickCh, stopper)
+
+	wg.Add(1)
+	go func() {
+		dur := 25 * time.Millisecond
+		_, err = tc.Transcode(&SegTranscodingMetadata{Duration: dur})
+		assert.Equal("Remote transcoder took too long", err.Error())
+		wg.Done()
+	}()
+	assert.True(wgWait(&wg), "transcoder took too long to timeout")
+	stopper <- struct{}{}
+	ticksWhenSegIsLong := <-tickCh
+
+	// attempt to ensure that we didn't trigger the default timeout
+	assert.Greater(ticksWhenSegIsLong, ticksWhenSegIsShort*2, "not enough of a difference between default and long timeouts")
+	// sanity check that ticksWhenSegIsShort is also a reasonable value
+	assert.Greater(ticksWhenSegIsShort*25, ticksWhenSegIsLong)
 }
 
 func newWg(delta int) *sync.WaitGroup {
@@ -352,7 +406,9 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	assert.Len(m.remoteTranscoders, 1) // sanity check
 	assert.Len(m.liveTranscoders, 1)
 	s.WithholdResults = true
-	RemoteTranscoderTimeout = 1 * time.Millisecond
+	oldTimeout := common.HTTPTimeout
+	common.HTTPTimeout = 1 * time.Millisecond
+	defer func() { common.HTTPTimeout = oldTimeout }()
 	_, err = m.Transcode(&SegTranscodingMetadata{})
 	_, fatal := err.(RemoteTranscoderFatalError)
 	wg.Wait()
@@ -360,7 +416,6 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	assert.Len(m.liveTranscoders, 0)
 	assert.Len(m.remoteTranscoders, 1) // no retries, so don't drain
 	s.WithholdResults = false
-	RemoteTranscoderTimeout = 8 * time.Second
 }
 
 func TestTaskChan(t *testing.T) {

@@ -642,7 +642,6 @@ func NewRemoteTranscoderFatalError(err error) error {
 	return RemoteTranscoderFatalError{err}
 }
 
-var RemoteTranscoderTimeout = 8 * time.Second
 var ErrRemoteTranscoderTimeout = errors.New("Remote transcoder took too long")
 
 func (rt *RemoteTranscoder) done() {
@@ -686,7 +685,15 @@ func (rt *RemoteTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 	if err != nil {
 		return signalEOF(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), RemoteTranscoderTimeout)
+
+	// set a minimum timeout to accommodate transport / processing overhead
+	dur := common.HTTPTimeout
+	paddedDur := 4.0 * md.Duration // use a multiplier of 4 for now
+	if paddedDur > dur {
+		dur = paddedDur
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), dur)
 	defer cancel()
 	select {
 	case <-ctx.Done():
