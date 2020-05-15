@@ -30,12 +30,6 @@ type SenderMonitor interface {
 	// QueueTicket adds a ticket to the queue for a remote sender
 	QueueTicket(ticket *SignedTicket) error
 
-	// AddFloat adds to a remote sender's max float
-	AddFloat(addr ethcommon.Address, amount *big.Int) error
-
-	// SubFloat subtracts from a remote sender's max float
-	SubFloat(addr ethcommon.Address, amount *big.Int)
-
 	// MaxFloat returns a remote sender's max float
 	MaxFloat(addr ethcommon.Address) (*big.Int, error)
 
@@ -103,8 +97,8 @@ func (sm *senderMonitor) Stop() {
 	close(sm.quit)
 }
 
-// AddFloat adds to a remote sender's max float
-func (sm *senderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error {
+// addFloat adds to a remote sender's max float
+func (sm *senderMonitor) addFloat(addr ethcommon.Address, amount *big.Int) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -120,8 +114,8 @@ func (sm *senderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error
 	return nil
 }
 
-// SubFloat subtracts from a remote sender's max float
-func (sm *senderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) {
+// subFloat subtracts from a remote sender's max float
+func (sm *senderMonitor) subFloat(addr ethcommon.Address, amount *big.Int) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -302,7 +296,7 @@ func (sm *senderMonitor) redeemWinningTicket(ticket *SignedTicket) (err error) {
 	// Subtract the ticket face value from the sender's current max float
 	// This amount will be considered pending until the ticket redemption
 	// transaction confirms on-chain
-	sm.SubFloat(ticket.Ticket.Sender, ticket.Ticket.FaceValue)
+	sm.subFloat(ticket.Ticket.Sender, ticket.Ticket.FaceValue)
 
 	defer func() {
 		// Add the ticket face value back to the sender's current max float
@@ -314,7 +308,7 @@ func (sm *senderMonitor) redeemWinningTicket(ticket *SignedTicket) (err error) {
 		// was actually successfully redeemed in order to take into account
 		// the case where the ticket was not redeemd for its full face value
 		// because the reserve was insufficient
-		e := sm.AddFloat(ticket.Ticket.Sender, ticket.Ticket.FaceValue)
+		e := sm.addFloat(ticket.Ticket.Sender, ticket.Ticket.FaceValue)
 		if e != nil {
 			err = e
 		}

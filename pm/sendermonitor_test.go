@@ -104,12 +104,12 @@ func TestSubFloat(t *testing.T) {
 	reserveAlloc := new(big.Int).Sub(new(big.Int).Div(reserve, tm.transcoderPoolSize), smgr.claimedReserve[addr])
 
 	amount := big.NewInt(5)
-	sm.SubFloat(addr, amount)
+	sm.(*senderMonitor).subFloat(addr, amount)
 	mf, err := sm.MaxFloat(addr)
 	require.Nil(err)
 	assert.Equal(new(big.Int).Sub(reserveAlloc, amount), mf)
 
-	sm.SubFloat(addr, amount)
+	sm.(*senderMonitor).subFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err = sm.MaxFloat(addr)
@@ -146,13 +146,13 @@ func TestAddFloat(t *testing.T) {
 	reserveAlloc := new(big.Int).Sub(new(big.Int).Div(reserve, tm.transcoderPoolSize), smgr.claimedReserve[addr])
 
 	amount := big.NewInt(20)
-	err := sm.AddFloat(addr, amount)
+	err := sm.(*senderMonitor).addFloat(addr, amount)
 	assert.EqualError(err, "cannot subtract from insufficient pendingAmount")
 
 	// Test value cached and no pendingAmount error
-	sm.SubFloat(addr, amount)
+	sm.(*senderMonitor).subFloat(addr, amount)
 
-	err = sm.AddFloat(addr, amount)
+	err = sm.(*senderMonitor).addFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err := sm.MaxFloat(addr)
@@ -164,9 +164,9 @@ func TestAddFloat(t *testing.T) {
 	reserve = new(big.Int).Add(smgr.info[addr].Reserve.FundsRemaining, smgr.info[addr].Reserve.ClaimedInCurrentRound)
 	reserveAlloc = new(big.Int).Sub(new(big.Int).Div(reserve, tm.transcoderPoolSize), smgr.claimedReserve[addr])
 
-	sm.SubFloat(addr, amount)
+	sm.(*senderMonitor).subFloat(addr, amount)
 
-	err = sm.AddFloat(addr, amount)
+	err = sm.(*senderMonitor).addFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err = sm.MaxFloat(addr)
@@ -369,11 +369,11 @@ func TestCleanup(t *testing.T) {
 	assert.Equal(expectedAlloc2, mf2)
 
 	// Test clean up excluding items
-	// with updated lastAccess due to AddFloat()
+	// with updated lastAccess due to addFloat()
 
 	// Update lastAccess for addr2
 	increaseTime(4)
-	err = sm.AddFloat(addr2, big.NewInt(0))
+	err = sm.(*senderMonitor).addFloat(addr2, big.NewInt(0))
 	require.Nil(err)
 
 	increaseTime(1)
@@ -381,7 +381,7 @@ func TestCleanup(t *testing.T) {
 	// Change stub broker value
 	// SenderMonitor should:
 	// - Use new value for addr1 because it was cleaned up
-	// - Use cached value for addr2 because it was accessed recently via AddFloat()
+	// - Use cached value for addr2 because it was accessed recently via addFloat()
 	reserve4 := big.NewInt(101)
 	smgr.info[addr1].Reserve.FundsRemaining = reserve4
 
@@ -399,17 +399,17 @@ func TestCleanup(t *testing.T) {
 	assert.Equal(expectedAlloc2, mf2)
 
 	// Test clean up excluding items
-	// with updated lastAccess due to SubFloat()
+	// with updated lastAccess due to subFloat()
 
 	// Update lastAccess for addr1
 	increaseTime(4)
-	sm.SubFloat(addr1, big.NewInt(0))
+	sm.(*senderMonitor).subFloat(addr1, big.NewInt(0))
 
 	increaseTime(1)
 
 	// Change stub broker value
 	// SenderMonitor should:
-	// - Use cached value for addr1 because it was accessed recently via SubFloat()
+	// - Use cached value for addr1 because it was accessed recently via subFloat()
 	// - Use new value for addr2 because it was cleaned up
 	reserve5 := big.NewInt(999)
 	smgr.info[addr2].Reserve.FundsRemaining = reserve5
@@ -653,7 +653,7 @@ func TestRedeemWinningTicket_InsufficientMaxFloat_QueueTicket(t *testing.T) {
 	assert.EqualError(err, fmt.Sprintf("insufficient max float sender=%v faceValue=%v maxFloat=%v", addr.Hex(), signedT.FaceValue, new(big.Int).Sub(new(big.Int).Div(smgr.info[addr].Reserve.FundsRemaining, tm.transcoderPoolSize), smgr.claimedReserve[addr])))
 }
 
-func TestRedeemWinningTicket_AddFloatError(t *testing.T) {
+func TestRedeemWinningTicket_addFloatError(t *testing.T) {
 	claimant, b, smgr, tm := senderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
