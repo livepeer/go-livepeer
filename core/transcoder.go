@@ -20,7 +20,7 @@ import (
 )
 
 type Transcoder interface {
-	Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error)
+	Transcode(md *SegTranscodingMetadata) (*TranscodeData, error)
 }
 
 type LocalTranscoder struct {
@@ -29,15 +29,16 @@ type LocalTranscoder struct {
 
 var WorkDir string
 
-func (lt *LocalTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+func (lt *LocalTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
-		Fname: fname,
+		Fname: md.Fname,
 		Accel: ffmpeg.Software,
 	}
+	profiles := md.Profiles
 	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles)
 
-	_, seqNo, parseErr := parseURI(fname)
+	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
 
 	res, err := ffmpeg.Transcode3(in, opts)
@@ -65,14 +66,14 @@ type NvidiaTranscoder struct {
 	session *ffmpeg.Transcoder
 }
 
-func (nv *NvidiaTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
 
 	in := &ffmpeg.TranscodeOptionsIn{
-		Fname:  fname,
+		Fname:  md.Fname,
 		Accel:  ffmpeg.Nvidia,
 		Device: nv.device,
 	}
-	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles)
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md.Profiles)
 	res, err := nv.session.Transcode(in, out)
 	if err != nil {
 		return nil, err
@@ -103,8 +104,8 @@ func TestNvidiaTranscoder(gpu string) error {
 		t1 := NewNvidiaTranscoder(device)
 		// "145x1" is the minimal resolution that succeeds on Windows, so use "145x145"
 		p := ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1k", Format: ffmpeg.FormatMP4}
-		profiles := []ffmpeg.VideoProfile{p, p, p, p}
-		td, err := t1.Transcode("", fname, profiles)
+		md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{p, p, p, p}}
+		td, err := t1.Transcode(md)
 
 		t1.Stop()
 		if err != nil {

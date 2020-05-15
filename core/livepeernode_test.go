@@ -31,7 +31,7 @@ func stubTranscoderWithProfiles(profiles []ffmpeg.VideoProfile) *StubTranscoder 
 	return &StubTranscoder{Profiles: profiles}
 }
 
-func (t *StubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+func (t *StubTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
 	if t.FailTranscode {
 		return nil, ErrTranscode
 	}

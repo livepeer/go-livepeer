@@ -11,13 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func stubMetadata(sess string, profile ...ffmpeg.VideoProfile) *SegTranscodingMetadata {
+	return &SegTranscodingMetadata{ManifestID: ManifestID(sess), Profiles: profile}
+}
+
 func TestLocalTranscoder(t *testing.T) {
 	tmp, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(tmp)
 	tc := NewLocalTranscoder(tmp)
 	ffmpeg.InitFFmpeg()
 
-	res, err := tc.Transcode("", "test.ts", videoProfiles)
+	md := stubMetadata("", videoProfiles...)
+	md.Fname = "test.ts"
+	res, err := tc.Transcode(md)
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
@@ -45,7 +51,9 @@ func TestNvidia_Transcoder(t *testing.T) {
 
 	// transcoding should fail due to invalid devices
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-	_, err := tc.Transcode("", fname, profiles)
+	md := stubMetadata("", profiles...)
+	md.Fname = fname
+	_, err := tc.Transcode(md)
 	if err == nil ||
 		(err.Error() != "Unknown error occurred" &&
 			err.Error() != "Cannot allocate memory") {
@@ -58,7 +66,7 @@ func TestNvidia_Transcoder(t *testing.T) {
 		return
 	}
 	tc = NewNvidiaTranscoder(dev)
-	res, err := tc.Transcode("", fname, profiles)
+	res, err := tc.Transcode(md)
 	if err != nil {
 		t.Error(err)
 	}
@@ -213,7 +221,9 @@ func TestAudioCopy(t *testing.T) {
 	_, err := ffmpeg.Transcode3(in, out)
 	assert.Nil(err)
 
-	res, err := tc.Transcode("", audioSample, videoProfiles)
+	md := stubMetadata("", videoProfiles...)
+	md.Fname = audioSample
+	res, err := tc.Transcode(md)
 	assert.Nil(err)
 
 	o, err := ioutil.ReadFile(audioSample)

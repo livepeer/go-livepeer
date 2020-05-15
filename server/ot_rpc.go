@@ -142,10 +142,9 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		// See https://github.com/livepeer/go-livepeer/issues/1518
 	}
 	profiles := md.Profiles
-	job := string(md.ManifestID)
 	md.Fname = notify.Url
 
-	tData, err := n.Transcoder.Transcode(job, notify.Url, profiles)
+	tData, err := n.Transcoder.Transcode(md)
 	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
 	if err == nil && len(tData.Segments) != len(profiles) {
 		err = errors.New("segment / profile mismatch")
