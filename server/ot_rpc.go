@@ -141,9 +141,8 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		// TODO short-circuit error handling
 	}
 	profiles := md.Profiles
-	job := string(md.ManifestID)
 
-	tData, err := n.Transcoder.Transcode(job, notify.Url, profiles)
+	tData, err := n.Transcoder.Transcode(notify.Url, md)
 	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
 	if err == nil && len(tData.Segments) != len(profiles) {
 		err = errors.New("segment / profile mismatch")

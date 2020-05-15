@@ -38,10 +38,10 @@ var testRemoteTranscoderResults = &core.TranscodeData{
 	Pixels: 999,
 }
 
-func (st *stubTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*core.TranscodeData, error) {
+func (st *stubTranscoder) Transcode(fname string, md *core.SegTranscodingMetadata) (*core.TranscodeData, error) {
 	st.called++
 	st.fname = fname
-	st.profiles = profiles
+	st.profiles = md.Profiles
 	if st.err != nil {
 		return nil, st.err
 	}
