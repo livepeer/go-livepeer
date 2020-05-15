@@ -305,3 +305,46 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 		},
 	}
 }
+
+func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error) {
+	if segData == nil {
+		glog.Error("Empty seg data")
+		return nil, errors.New("empty seg data")
+	}
+	var err error
+	profiles := []ffmpeg.VideoProfile{}
+	if len(segData.FullProfiles2) > 0 {
+		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles2)
+	} else if len(segData.FullProfiles) > 0 {
+		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles)
+	} else if len(segData.Profiles) > 0 {
+		profiles, err = common.BytesToVideoProfile(segData.Profiles)
+	}
+	if err != nil {
+		glog.Error("Unable to deserialize profiles ", err)
+		return nil, err
+	}
+
+	dur := int(segData.Duration)
+	if dur < 0 || int64(dur) > maxDurationMs {
+		glog.Error("Invalid duration")
+		return nil, errDuration
+	}
+	if dur == 0 {
+		dur = 2000 // assume 2sec default duration
+	}
+
+	var os *net.OSInfo
+	if len(segData.Storage) > 0 {
+		os = segData.Storage[0]
+	}
+
+	return &core.SegTranscodingMetadata{
+		ManifestID: core.ManifestID(segData.ManifestId),
+		Seq:        segData.Seq,
+		Hash:       ethcommon.BytesToHash(segData.Hash),
+		Profiles:   profiles,
+		OS:         os,
+		Duration:   dur,
+	}, nil
+}

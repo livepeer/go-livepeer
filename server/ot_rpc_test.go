@@ -55,11 +55,12 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
 
 	assert := assert.New(t)
-	assert.Nil(nil)
+	segData, err := core.NetSegData(&core.SegTranscodingMetadata{Profiles: profiles})
+	assert.Nil(err)
 	notify := &net.NotifySegment{
-		TaskId:   742,
-		Profiles: common.ProfilesToTranscodeOpts(profiles),
-		Url:      "linktomanifest",
+		TaskId:  742,
+		SegData: segData,
+		Url:     "linktomanifest",
 	}
 	tr := &stubTranscoder{}
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
@@ -68,6 +69,13 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 
 	runTranscode(node, "badaddress", httpc, notify)
 	assert.Equal(1, tr.called)
+	// reset some things that are different when using profiles
+	profiles[0].Bitrate = "6000000" // presets use "k" abbrev; conversions don't
+	profiles[1].Bitrate = "400000"
+	profiles[0].AspectRatio = "" // unused across the wire
+	profiles[1].AspectRatio = ""
+	profiles[0].Format = ffmpeg.FormatMPEGTS // default is ffmpeg.FormatNone
+	profiles[1].Format = ffmpeg.FormatMPEGTS
 	assert.Equal(profiles, tr.profiles)
 	assert.Equal("linktomanifest", tr.fname)
 
@@ -136,13 +144,13 @@ func TestRemoteTranscoder_FullProfiles(t *testing.T) {
 		},
 	}
 
-	fullProfiles, err := common.FFmpegProfiletoNetProfile(profiles)
+	segData, err := core.NetSegData(&core.SegTranscodingMetadata{Profiles: profiles})
 	assert.Nil(err)
 
 	notify := &net.NotifySegment{
-		TaskId:       742,
-		FullProfiles: fullProfiles,
-		Url:          "linktomanifest",
+		TaskId:  742,
+		Url:     "linktomanifest",
+		SegData: segData,
 	}
 	tr := &stubTranscoder{}
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
@@ -161,7 +169,7 @@ func TestRemoteTranscoder_FullProfiles(t *testing.T) {
 	assert.Equal("linktomanifest", tr.fname)
 
 	// Test deserialization failure from invalid full profile format
-	notify.FullProfiles[1].Format = -1
+	notify.SegData.FullProfiles2[1].Format = -1
 	runTranscode(node, "", httpc, notify)
 	assert.Equal(2, tr.called)
 	assert.Nil(nil, tr.profiles)
