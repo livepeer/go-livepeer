@@ -211,16 +211,21 @@ message NotifySegment {
     // URL of the segment to transcode.
     string url      = 1;
 
-    // Job the segment belongs to.
-    string job      = 2;
+    // Configuration for the transcoding job
+    SegData segData = 3;
 
     // ID for this particular transcoding task.
     int64 taskId   = 16;
 
-    // Set of profiles to transcode this segment into.
+// Deprecated fields. May still be populated sometimes for back compat
+
+    // Deprecated by segData. Job the segment belongs to.
+    string job      = 2;
+
+    // Deprecated by fullProfiles. Set of presets to transcode into.
     bytes profiles = 17;
 
-    // Transcoding profiles to use. Supersedes `profiles` field 
+    // Deprecated by segData. Transcoding configuration to use.
     repeated VideoProfile fullProfiles = 33;
 }
 

@@ -663,16 +663,21 @@ func (rt *RemoteTranscoder) Transcode(job string, fname string, profiles []ffmpe
 		return nil, RemoteTranscoderFatalError{err}
 	}
 
-	fullProfiles, err := common.FFmpegProfiletoNetProfile(profiles)
+	md := &SegTranscodingMetadata{
+		ManifestID: ManifestID(job),
+		Profiles:   profiles,
+	}
+	segData, err := NetSegData(md)
 	if err != nil {
 		return nil, err
 	}
 
 	msg := &net.NotifySegment{
-		Job:          job,
-		Url:          fname,
-		TaskId:       taskID,
-		FullProfiles: fullProfiles,
+		Url:     fname,
+		TaskId:  taskID,
+		SegData: segData,
+		// Triggers failure on Os that don't know how to use SegData
+		Profiles: []byte("invalid"),
 	}
 	err = rt.stream.Send(msg)
 

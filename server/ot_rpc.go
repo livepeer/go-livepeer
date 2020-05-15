@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +21,6 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
-	"github.com/livepeer/lpms/ffmpeg"
 	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -131,22 +129,21 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 }
 
 func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifySegment) {
-	var err error
-	var profiles []ffmpeg.VideoProfile
-	if len(notify.FullProfiles) > 0 {
-		profiles, err = makeFfmpegVideoProfiles(notify.FullProfiles)
-	} else if len(notify.Profiles) > 0 {
-		profiles, err = common.TxDataToVideoProfile(hex.EncodeToString(notify.Profiles))
-	}
-	if err != nil {
-		glog.Error("Unable to deserialize profiles ", err)
-	}
 
 	glog.Infof("Transcoding taskId=%d url=%s", notify.TaskId, notify.Url)
 	var contentType string
 	var body bytes.Buffer
 
-	tData, err := n.Transcoder.Transcode(notify.Job, notify.Url, profiles)
+	md, err := coreSegMetadata(notify.SegData)
+	if err != nil {
+		glog.Error("Unable to parse segData err=", err)
+		md = &core.SegTranscodingMetadata{} // avoid crash.
+		// TODO short-circuit error handling
+	}
+	profiles := md.Profiles
+	job := string(md.ManifestID)
+
+	tData, err := n.Transcoder.Transcode(job, notify.Url, profiles)
 	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
 	if err == nil && len(tData.Segments) != len(profiles) {
 		err = errors.New("segment / profile mismatch")

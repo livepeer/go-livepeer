@@ -252,32 +252,9 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 		return nil, err
 	}
 
-	profiles := []ffmpeg.VideoProfile{}
-	if len(segData.FullProfiles2) > 0 {
-		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles2)
-	} else if len(segData.FullProfiles) > 0 {
-		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles)
-	} else if len(segData.Profiles) > 0 {
-		profiles, err = common.BytesToVideoProfile(segData.Profiles)
-	}
+	md, err := coreSegMetadata(&segData)
 	if err != nil {
-		glog.Error("Unable to deserialize profiles ", err)
 		return nil, err
-	}
-
-	mid := core.ManifestID(segData.ManifestId)
-
-	var os *net.OSInfo
-	if len(segData.Storage) > 0 {
-		os = segData.Storage[0]
-	}
-
-	md := &core.SegTranscodingMetadata{
-		ManifestID: mid,
-		Seq:        segData.Seq,
-		Hash:       ethcommon.BytesToHash(segData.Hash),
-		Profiles:   profiles,
-		OS:         os,
 	}
 
 	if !orch.VerifySig(broadcaster, string(md.Flatten()), segData.Sig) {
@@ -285,7 +262,7 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 		return nil, errSegSig
 	}
 
-	if err := orch.CheckCapacity(mid); err != nil {
+	if err := orch.CheckCapacity(md.ManifestID); err != nil {
 		glog.Error("Cannot process manifest: ", err)
 		return nil, err
 	}
@@ -493,6 +470,12 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 
 func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error) {
 
+	// Send credentials for our own storage
+	var storage *net.OSInfo
+	if bos := sess.BroadcasterOS; bos != nil && bos.IsExternal() {
+		storage = bos.GetInfo()
+	}
+
 	// Generate signature for relevant parts of segment
 	hash := crypto.Keccak256(seg.Data)
 	md := &core.SegTranscodingMetadata{
@@ -500,49 +483,19 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		Seq:        int64(seg.SeqNo),
 		Hash:       ethcommon.BytesToHash(hash),
 		Profiles:   sess.Profiles,
+		OS:         storage,
 	}
 	sig, err := sess.Broadcaster.Sign(md.Flatten())
 	if err != nil {
 		return "", err
 	}
 
-	// Send credentials for our own storage
-	var storage []*net.OSInfo
-	if bos := sess.BroadcasterOS; bos != nil && bos.IsExternal() {
-		storage = []*net.OSInfo{bos.GetInfo()}
-	}
-
-	fullProfiles, err := common.FFmpegProfiletoNetProfile(sess.Profiles)
+	// convert to segData
+	segData, err := core.NetSegData(md)
 	if err != nil {
 		return "", err
 	}
-
-	// Generate serialized segment info
-	segData := &net.SegData{
-		ManifestId: []byte(md.ManifestID),
-		Seq:        md.Seq,
-		Hash:       hash,
-		Sig:        sig,
-		Storage:    storage,
-		// Triggers failure on Os that don't know how to use FullProfiles/2
-		Profiles: []byte("invalid"),
-	}
-	// If all outputs are mpegts, use the older SegData.FullProfiles field
-	// for compatibility with older orchestrators
-	allTS := true
-	for i := 0; i < len(sess.Profiles) && allTS; i++ {
-		switch sess.Profiles[i].Format {
-		case ffmpeg.FormatNone: // default output is mpegts for FormatNone
-		case ffmpeg.FormatMPEGTS:
-		default:
-			allTS = false
-		}
-	}
-	if allTS {
-		segData.FullProfiles = fullProfiles
-	} else {
-		segData.FullProfiles2 = fullProfiles
-	}
+	segData.Sig = sig
 
 	data, err := proto.Marshal(segData)
 	if err != nil {
