@@ -45,28 +45,29 @@ func NewLoadBalancingTranscoder(devices string, newTranscoderFn newTranscoderFn)
 	}
 }
 
-func (lb *LoadBalancingTranscoder) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
+func (lb *LoadBalancingTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
 
 	lb.mu.RLock()
-	session, exists := lb.sessions[job]
+	session, exists := lb.sessions[string(md.ManifestID)]
 	lb.mu.RUnlock()
 	if exists {
 		glog.V(common.DEBUG).Info("LB: Using existing transcode session for ", session.key)
 	} else {
 		var err error
-		session, err = lb.createSession(job, fname, profiles)
+		session, err = lb.createSession(md)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return session.Transcode(job, fname, profiles)
+	return session.Transcode(md)
 }
 
-func (lb *LoadBalancingTranscoder) createSession(job string, fname string, profiles []ffmpeg.VideoProfile) (*transcoderSession, error) {
+func (lb *LoadBalancingTranscoder) createSession(md *SegTranscodingMetadata) (*transcoderSession, error) {
 
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
+	job := string(md.ManifestID)
 	if session, exists := lb.sessions[job]; exists {
 		glog.V(common.DEBUG).Info("Attempted to create session but already exists ", session.key)
 		return session, nil
@@ -77,7 +78,7 @@ func (lb *LoadBalancingTranscoder) createSession(job string, fname string, profi
 
 	// Acquire transcode session. Map to job id + assigned transcoder
 	key := job + "_" + transcoder
-	costEstimate := calculateCost(profiles)
+	costEstimate := calculateCost(md.Profiles)
 	session := &transcoderSession{
 		transcoder:  lb.newT(transcoder),
 		key:         key,
@@ -125,10 +126,8 @@ func (lb *LoadBalancingTranscoder) leastLoaded() string {
 }
 
 type transcoderParams struct {
-	job      string
-	fname    string
-	profiles []ffmpeg.VideoProfile
-	res      chan struct {
+	md  *SegTranscodingMetadata
+	res chan struct {
 		*TranscodeData
 		error
 	}
@@ -178,7 +177,7 @@ func (sess *transcoderSession) loop() {
 		case params := <-sess.sender:
 			cancel()
 			res, err :=
-				sess.transcoder.Transcode(params.job, params.fname, params.profiles)
+				sess.transcoder.Transcode(params.md)
 			params.res <- struct {
 				*TranscodeData
 				error
@@ -191,8 +190,8 @@ func (sess *transcoderSession) loop() {
 	}
 }
 
-func (sess *transcoderSession) Transcode(job string, fname string, profiles []ffmpeg.VideoProfile) (*TranscodeData, error) {
-	params := &transcoderParams{job: job, fname: fname, profiles: profiles,
+func (sess *transcoderSession) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
+	params := &transcoderParams{md: md,
 		res: make(chan struct {
 			*TranscodeData
 			error
