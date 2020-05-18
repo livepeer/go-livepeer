@@ -1462,6 +1462,21 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	assert.Equal("saved_P240p30fps16x9/0.ts", seg.Name)
 }
 
+func TestProcessSegment_CheckDuration(t *testing.T) {
+	assert := assert.New(t)
+	seg := &stream.HLSSegment{Duration: -1.0}
+	cxn := &rtmpConnection{}
+
+	// Check less-than-zero
+	_, err := processSegment(cxn, seg)
+	assert.Equal("Invalid duration -1", err.Error())
+
+	// CHeck greater than max duration
+	seg.Duration = maxDurationSec + 0.01
+	_, err = processSegment(cxn, seg)
+	assert.Equal("Invalid duration 300.01", err.Error())
+}
+
 func genBcastSess(t *testing.T, url string, os drivers.OSSession, mid core.ManifestID) *BroadcastSession {
 	segData := []*net.TranscodedSegmentData{
 		{Url: url, Pixels: 100},

@@ -18,11 +18,16 @@ cd discovery
 go test -logtostderr=true -race
 t_discovery=$?
 cd ..
+# Be more strict with HTTP push tests: run with race detector enabled
+cd server
+go test -logtostderr=true -run Push_ -race
+t_push=$?
+cd ..
 
 ./test_args.sh
 t_args=$?
 
-if (($t1!=0||$t2_lb!=0||$t2_nv!=0||$t_args!=0||$t_discovery!=0))
+if (($t1!=0||$t2_lb!=0||$t2_nv!=0||$t_args!=0||$t_discovery!=0||$t_push!=0))
 then
     printf "\n\nSome Tests Failed\n\n"
     exit -1

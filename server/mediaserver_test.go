@@ -32,6 +32,8 @@ import (
 
 var S *LivepeerServer
 
+var pushResetWg sync.WaitGroup // needed to synchronize exits from HTTP push
+
 func setupServer() *LivepeerServer {
 	s, _ := setupServerWithCancel()
 	return s
@@ -41,6 +43,15 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	if S == nil {
+		httpPushResetTimer = func() (context.Context, context.CancelFunc) {
+			ctx, cancel := context.WithCancel(context.Background())
+			pushResetWg.Add(1)
+			wrapCancel := func() {
+				cancel()
+				pushResetWg.Done()
+			}
+			return ctx, wrapCancel
+		}
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		S = NewLivepeerServer("127.0.0.1:1938", n, true)
 		go S.StartMediaServer(ctx, "", "127.0.0.1:8080")

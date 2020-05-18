@@ -61,7 +61,12 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 
 var AuthWebhookURL string
 
-var refreshIntervalHttpPush = 1 * time.Minute
+// For HTTP push watchdog
+var httpPushTimeout = 1 * time.Minute
+var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
+	sleepDur := time.Duration(int64(float64(httpPushTimeout) * 0.9))
+	return context.WithTimeout(context.Background(), sleepDur)
+}
 
 type streamParameters struct {
 	mid        core.ManifestID
@@ -137,7 +142,9 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 
 //StartMediaServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string, httpAddr string) error {
-	BroadcastJobVideoProfiles = parsePresets(strings.Split(transcodingOptions, ","))
+	if transcodingOptions != "" { // mostly to mitigate race conditions in tests
+		BroadcastJobVideoProfiles = parsePresets(strings.Split(transcodingOptions, ","))
+	}
 
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
@@ -639,8 +646,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		ticker := time.NewTicker(refreshIntervalHttpPush)
-
+		// Start a watchdog to remove session after a period of inactivity
+		ticker := time.NewTicker(httpPushTimeout)
 		go func(s *LivepeerServer, mid core.ManifestID) {
 			defer ticker.Stop()
 			for range ticker.C {
@@ -650,7 +657,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 					lastUsed = cxn.lastUsed
 				}
 				s.connectionLock.RUnlock()
-				if time.Since(lastUsed) > refreshIntervalHttpPush {
+				if time.Since(lastUsed) > httpPushTimeout {
 					_ = removeRTMPStream(s, mid)
 					return
 				}
@@ -677,9 +684,31 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		Duration: float64(duration) / 1000.0,
 	}
 
+	// Kick watchdog periodically so session doesn't time out during long transcodes
+	requestEnded := make(chan struct{}, 1)
+	defer func() { requestEnded <- struct{}{} }()
+	go func() {
+		for {
+			tick, cancel := httpPushResetTimer()
+			select {
+			case <-requestEnded:
+				cancel()
+				return
+			case <-tick.Done():
+				glog.V(common.VERBOSE).Infof("watchdog reset mid=%s seq=%d dur=%v started=%v", mid, seq, duration, now)
+				s.connectionLock.Lock()
+				if cxn, exists := s.rtmpConnections[mid]; exists {
+					cxn.lastUsed = time.Now()
+				}
+				s.connectionLock.Unlock()
+			}
+		}
+	}()
+
 	// Do the transcoding!
 	urls, err := processSegment(cxn, seg)
 	if err != nil {
+		// TODO distinguish between user errors (400) and server errors (500)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

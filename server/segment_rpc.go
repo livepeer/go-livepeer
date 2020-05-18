@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
@@ -42,7 +43,7 @@ var errFormat = errors.New("unrecognized profile output format")
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
 var httpClient = &http.Client{
 	Transport: &http2.Transport{TLSClientConfig: tlsConfig},
-	Timeout:   common.HTTPTimeout,
+	// Don't set a timeout here; pass a context to the request
 }
 
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
@@ -340,8 +341,17 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
+	// set a minimum timeout to accommodate transport / processing overhead
+	dur := common.HTTPTimeout
+	paddedDur := 4.0 * seg.Duration // use a multiplier of 4 for now
+	if paddedDur > dur.Seconds() {
+		dur = time.Duration(paddedDur * float64(time.Second))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), dur)
+	defer cancel()
+
 	ti := sess.OrchestratorInfo
-	req, err := http.NewRequest("POST", ti.Transcoder+"/segment", bytes.NewBuffer(data))
+	req, err := http.NewRequestWithContext(ctx, "POST", ti.Transcoder+"/segment", bytes.NewBuffer(data))
 	if err != nil {
 		glog.Errorf("Could not generate transcode request to orch=%s", ti.Transcoder)
 		if monitor.Enabled {
@@ -369,7 +379,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), false)
 		}
-		return nil, err
+		return nil, fmt.Errorf("header timeout: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -407,7 +417,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorReadBody, nonce, seg.SeqNo, err, false)
 		}
-		return nil, err
+		return nil, fmt.Errorf("body timeout: %w", err)
 	}
 	transcodeDur := tookAllDur - uploadDur
 
