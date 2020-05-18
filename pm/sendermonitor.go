@@ -28,7 +28,7 @@ type SenderMonitor interface {
 	Stop()
 
 	// QueueTicket adds a ticket to the queue for a remote sender
-	QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error
+	QueueTicket(ticket *SignedTicket) error
 
 	// MaxFloat returns a remote sender's max float
 	MaxFloat(addr ethcommon.Address) (*big.Int, error)
@@ -137,13 +137,13 @@ func (sm *senderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
 }
 
 // QueueTicket adds a ticket to the queue for a remote sender
-func (sm *senderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error {
+func (sm *senderMonitor) QueueTicket(ticket *SignedTicket) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	sm.ensureCache(addr)
+	sm.ensureCache(ticket.Sender)
 
-	return sm.senders[addr].queue.Add(ticket)
+	return sm.senders[ticket.Sender].queue.Add(ticket)
 }
 
 // ValidateSender checks whether a sender's unlock period ends the round after the next round
@@ -280,7 +280,7 @@ func (sm *senderMonitor) redeemWinningTicket(ticket *SignedTicket) (err error) {
 
 	// if max float is zero, there is no claimable reserve left or reserve is 0
 	if maxFloat.Cmp(big.NewInt(0)) <= 0 {
-		sm.QueueTicket(ticket.Ticket.Sender, ticket)
+		sm.QueueTicket(ticket)
 		err = errors.Errorf("max float is zero")
 		return
 	}
@@ -288,7 +288,7 @@ func (sm *senderMonitor) redeemWinningTicket(ticket *SignedTicket) (err error) {
 	// If max float is insufficient to cover the ticket face value, queue
 	// the ticket to be retried later
 	if maxFloat.Cmp(ticket.Ticket.FaceValue) < 0 {
-		sm.QueueTicket(ticket.Ticket.Sender, ticket)
+		sm.QueueTicket(ticket)
 		err = fmt.Errorf("insufficient max float sender=%v faceValue=%v maxFloat=%v", ticket.Ticket.Sender.Hex(), ticket.Ticket.FaceValue, maxFloat)
 		return
 	}

@@ -197,11 +197,11 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	// Test queue ticket
 	// test fail
 	ts.storeShouldFail = true
-	assert.EqualError(sm.QueueTicket(addr, defaultSignedTicket(addr, uint32(0))), "stub ticket store store error")
+	assert.EqualError(sm.QueueTicket(defaultSignedTicket(addr, uint32(0))), "stub ticket store store error")
 	ts.storeShouldFail = false
 
 	signedT := defaultSignedTicket(addr, uint32(0))
-	err := sm.QueueTicket(addr, signedT)
+	err := sm.QueueTicket(signedT)
 	assert.Nil(err)
 	time.Sleep(20 * time.Millisecond)
 	qlen, err := sm.(*senderMonitor).senders[addr].queue.Length()
@@ -233,7 +233,7 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	smgr.claimedReserve[addr2] = big.NewInt(100)
 
 	signedT2 := defaultSignedTicket(addr, (2))
-	sm.QueueTicket(addr, signedT2)
+	sm.QueueTicket(signedT2)
 	time.Sleep(20 * time.Millisecond)
 	qlen, err = sm.(*senderMonitor).senders[addr].queue.Length()
 	assert.Nil(err)
@@ -242,7 +242,7 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	signedT3 := defaultSignedTicket(addr2, uint32(3))
-	sm.QueueTicket(addr2, signedT3)
+	sm.QueueTicket(signedT3)
 	time.Sleep(20 * time.Millisecond)
 	qlen, err = sm.(*senderMonitor).senders[addr2].queue.Length()
 	assert.Nil(err)

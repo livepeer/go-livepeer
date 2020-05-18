@@ -150,7 +150,7 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 // RedeemWinningTicket redeems a single winning ticket
 func (r *recipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error {
 	recipientRand := r.rand(seed, ticket.Sender, ticket.FaceValue, ticket.WinProb, ticket.ParamsExpirationBlock, ticket.PricePerPixel, ticket.expirationParams())
-	return r.sm.QueueTicket(ticket.Sender, &SignedTicket{ticket, sig, recipientRand})
+	return r.sm.QueueTicket(&SignedTicket{ticket, sig, recipientRand})
 }
 
 // TicketParams returns the recipient's currently accepted ticket parameters
