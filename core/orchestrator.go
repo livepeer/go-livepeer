@@ -487,9 +487,9 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	transcoder := n.Transcoder
 
 	var url string
-	_, isLocal := transcoder.(*LocalTranscoder)
+	_, isRemote := transcoder.(*RemoteTranscoderManager)
 	// Small optimization: serve from disk for local transcoding
-	if isLocal {
+	if !isRemote {
 		url = fname
 	} else if drivers.IsOwnExternal(seg.Name) {
 		// We're using a remote TC and segment is already in our own OS
@@ -523,7 +523,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 
 	took := time.Since(start)
 	glog.V(common.DEBUG).Infof("Transcoding of segment manifestID=%s seqNo=%d took=%v", string(md.ManifestID), seg.SeqNo, took)
-	if isLocal && monitor.Enabled {
+	if !isRemote && monitor.Enabled {
 		monitor.SegmentTranscoded(0, seg.SeqNo, took, common.ProfilesNames(md.Profiles))
 	}
 
