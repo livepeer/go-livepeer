@@ -103,6 +103,20 @@ var schema = `
 	CREATE INDEX IF NOT EXISTS idx_unbondinglocks_usedblock ON unbondingLocks(usedBlock);
 
 	CREATE TABLE IF NOT EXISTS winningTickets (
+		createdAt STRING DEFAULT CURRENT_TIMESTAMP,
+		sender STRING,
+		recipient STRING,
+		faceValue BLOB,
+		winProb BLOB,
+		senderNonce INTEGER,
+		recipientRand BLOB,
+		recipientRandHash STRING,
+		sig BLOB,
+		sessionID STRING
+	);
+	CREATE INDEX IF NOT EXISTS idx_winningtickets_sessionid ON winningTickets(sessionID);
+
+	CREATE TABLE IF NOT EXISTS ticketQueue (
 		createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
 		sender STRING,
 		recipient STRING,
@@ -116,7 +130,7 @@ var schema = `
 		creationRoundBlockHash BLOB
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_winningtickets_sender ON winningTickets(sender);
+	CREATE INDEX IF NOT EXISTS idx_ticketqueue_sender ON ticketQueue(sender);
 
 	CREATE TABLE IF NOT EXISTS blockheaders (
 		number int64,
@@ -274,7 +288,7 @@ func InitDB(dbPath string) (*DB, error) {
 
 	// Winning tickets prepared statements
 	stmt, err = db.Prepare(`
-	INSERT INTO winningTickets(createdAt, sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash)
+	INSERT INTO ticketQueue(createdAt, sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash)
 	VALUES(datetime('now'), :sender, :recipient, :faceValue, :winProb, :senderNonce, :recipientRand, :recipientRandHash, :sig, :creationRound, :creationRoundBlockHash)
 	`)
 	if err != nil {
@@ -285,7 +299,7 @@ func InitDB(dbPath string) (*DB, error) {
 	d.insertWinningTicket = stmt
 
 	// Find latest ticket
-	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash FROM winningTickets WHERE sender=? ORDER BY createdAt ASC LIMIT 1")
+	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash FROM ticketQueue WHERE sender=? ORDER BY createdAt ASC LIMIT 1")
 	if err != nil {
 		glog.Error("Unable to prepare loadLatestTicket")
 		d.Close()
@@ -293,7 +307,7 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.loadLatestTicket = stmt
 
-	stmt, err = db.Prepare("SELECT count(sig) FROM winningTickets WHERE sender=?")
+	stmt, err = db.Prepare("SELECT count(sig) FROM ticketQueue WHERE sender=?")
 	if err != nil {
 		glog.Error("Unable to prepare loadWinningTicketCount")
 		d.Close()
@@ -302,7 +316,7 @@ func InitDB(dbPath string) (*DB, error) {
 	d.winningTicketCount = stmt
 
 	// Remove latest ticket
-	stmt, err = db.Prepare("DELETE FROM winningTickets WHERE sender=? AND sig=?")
+	stmt, err = db.Prepare("DELETE FROM ticketQueue WHERE sender=? AND sig=?")
 	if err != nil {
 		glog.Error("Unable to prepare removeWinningTicket")
 		d.Close()

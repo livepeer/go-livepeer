@@ -779,7 +779,7 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	})
 	require.Nil(err)
 
-	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash FROM winningTickets")
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash FROM ticketQueue")
 	var actualSender, actualRecipient, actualRecipientRandHash string
 	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig, actualCreationRoundBlockHash []byte
 	var actualSenderNonce uint32
@@ -798,7 +798,7 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	assert.Equal(ticket.CreationRoundBlockHash, ethcommon.BytesToHash(actualCreationRoundBlockHash))
 	assert.Equal(sig, actualSig)
 
-	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM winningTickets", dbraw, t)
+	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM ticketQueue", dbraw, t)
 	assert.Equal(1, ticketsCount)
 }
 
@@ -821,7 +821,7 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	})
 	require.Nil(err)
 
-	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash FROM winningTickets")
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash FROM ticketQueue")
 	var actualSender, actualRecipient, actualRecipientRandHash string
 	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig, actualCreationRoundBlockHash []byte
 	var actualSenderNonce uint32
@@ -840,7 +840,7 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	assert.Equal(ticket.CreationRoundBlockHash, ethcommon.BytesToHash(actualCreationRoundBlockHash))
 	assert.Equal(sig, actualSig)
 
-	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM winningTickets", dbraw, t)
+	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM ticketQueue", dbraw, t)
 	assert.Equal(1, ticketsCount)
 }
 
