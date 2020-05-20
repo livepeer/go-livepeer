@@ -505,6 +505,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 		}
 		seg.Name = url
 	}
+	md.Fname = url
 
 	//Do the transcoding
 	start := time.Now()

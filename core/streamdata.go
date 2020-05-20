@@ -23,6 +23,7 @@ const (
 
 type SegTranscodingMetadata struct {
 	ManifestID ManifestID
+	Fname      string
 	Seq        int64
 	Hash       ethcommon.Hash
 	Profiles   []ffmpeg.VideoProfile

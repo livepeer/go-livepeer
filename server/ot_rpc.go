@@ -143,6 +143,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	}
 	profiles := md.Profiles
 	job := string(md.ManifestID)
+	md.Fname = notify.Url
 
 	tData, err := n.Transcoder.Transcode(job, notify.Url, profiles)
 	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
