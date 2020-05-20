@@ -246,7 +246,7 @@ func main() {
 			if *testTranscoder {
 				err := core.TestNvidiaTranscoder(*nvidia)
 				if err != nil {
-					glog.Fatalf("Unable to transcode using nividia gpu=%s err=%v", *nvidia, err)
+					glog.Fatalf("Unable to transcode using Nvidia gpu=%s err=%v", *nvidia, err)
 				}
 			}
 			n.Transcoder = core.NewLoadBalancingTranscoder(*nvidia, core.NewNvidiaTranscoder)

@@ -101,7 +101,7 @@ func TestNvidiaTranscoder(gpu string) error {
 	defer os.Remove(fname)
 	for _, device := range devices {
 		t1 := NewNvidiaTranscoder(device)
-		// "145x1" is the mininal resolution that not leads to error on Windows, so use "145x145"
+		// "145x1" is the minimal resolution that succeeds on Windows, so use "145x145"
 		p := ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1k", Format: ffmpeg.FormatMP4}
 		profiles := []ffmpeg.VideoProfile{p, p, p, p}
 		td, err := t1.Transcode("", fname, profiles)
