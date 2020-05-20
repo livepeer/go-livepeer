@@ -173,7 +173,11 @@ func TestVerifySegCreds_Duration(t *testing.T) {
 		data, err := proto.Marshal(sd)
 		assert.Nil(err)
 		creds := base64.StdEncoding.EncodeToString(data)
-		return verifySegCreds(orch, creds, ethcommon.Address{})
+		md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+		md2, err2 := coreSegMetadata(sd)
+		assert.Equal(md, md2, "Did verifySegCreds call coreSegMetadata?")
+		assert.Equal(err, err2)
+		return md, err
 	}
 
 	// check default value
@@ -197,35 +201,23 @@ func TestVerifySegCreds_Duration(t *testing.T) {
 	assert.Nil(md)
 }
 
-func TestVerifySegCreds_Profiles(t *testing.T) {
+func TestCoreSegMetadata_Profiles(t *testing.T) {
 	assert := assert.New(t)
-	orch := &mockOrchestrator{}
-	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	// testing with the following profiles doesn't work: ffmpeg.P720p60fps16x9, ffmpeg.P144p25fps16x9
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P576p30fps16x9, ffmpeg.P240p30fps4x3}
 	segData := &net.SegData{
 		ManifestId: []byte("manifestID"),
 		Profiles:   common.ProfilesToTranscodeOpts(profiles),
 	}
-	data, err := proto.Marshal(segData)
-	assert.Nil(err)
-
-	creds := base64.StdEncoding.EncodeToString(data)
-
-	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	md, err := coreSegMetadata(segData)
 	assert.Nil(err)
 	assert.Equal(profiles, md.Profiles)
 
 	// Check error handling with the default invalid Profiles
-	creds, err = genSegCreds(&BroadcastSession{Broadcaster: stubBroadcaster2()}, &stream.HLSSegment{})
-	assert.Nil(err)
-	buf, err := base64.StdEncoding.DecodeString(creds)
-	assert.Nil(err)
-	segData = &net.SegData{}
-	err = proto.Unmarshal(buf, segData)
+	segData, err = core.NetSegData(&core.SegTranscodingMetadata{})
 	assert.Nil(err)
 	assert.Equal([]byte("invalid"), segData.Profiles)
-	md, err = verifySegCreds(orch, creds, ethcommon.Address{})
+	md, err = coreSegMetadata(segData)
 	assert.Nil(md)
 	assert.Equal(common.ErrProfile, err)
 }
@@ -335,10 +327,8 @@ func TestGenSegCreds_Profiles(t *testing.T) {
 	assert.Equal(expectedProfiles, segData.FullProfiles)
 }
 
-func TestVerifySegCreds_FullProfiles(t *testing.T) {
+func TestCoreSegMetadata_FullProfiles(t *testing.T) {
 	assert := assert.New(t)
-	orch := &mockOrchestrator{}
-	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 
 	profiles := []ffmpeg.VideoProfile{
 		ffmpeg.VideoProfile{
@@ -364,12 +354,7 @@ func TestVerifySegCreds_FullProfiles(t *testing.T) {
 		FullProfiles: fullProfiles,
 	}
 
-	data, err := proto.Marshal(segData)
-	assert.Nil(err)
-
-	creds := base64.StdEncoding.EncodeToString(data)
-
-	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	md, err := coreSegMetadata(segData)
 	assert.Nil(err)
 	profiles[0].Bitrate = "432000"
 	profiles[1].Bitrate = "765000"
@@ -378,20 +363,14 @@ func TestVerifySegCreds_FullProfiles(t *testing.T) {
 
 	// Test deserialization failure from invalid full profile format
 	segData.FullProfiles[1].Format = -1
-	data, err = proto.Marshal(segData)
-	assert.Nil(err)
-	creds = base64.StdEncoding.EncodeToString(data)
-	md, err = verifySegCreds(orch, creds, ethcommon.Address{})
+	md, err = coreSegMetadata(segData)
 	assert.Nil(md)
 	assert.Equal(errFormat, err)
 
 	// Test deserialization with FullProfiles2
 	// (keep invalid FullProfiles populated to exhibit precedence)
 	segData.FullProfiles2 = []*net.VideoProfile{&net.VideoProfile{Name: "prof3"}}
-	data, err = proto.Marshal(segData)
-	assert.Nil(err)
-	creds = base64.StdEncoding.EncodeToString(data)
-	md, err = verifySegCreds(orch, creds, ethcommon.Address{})
+	md, err = coreSegMetadata(segData)
 	expected := []ffmpeg.VideoProfile{{Name: "prof3",
 		Bitrate: "0", Resolution: "0x0",
 		Format: ffmpeg.FormatMPEGTS}}
