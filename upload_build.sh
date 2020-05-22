@@ -15,6 +15,9 @@ fi
 
 BASE="livepeer-$ARCH-amd64"
 BRANCH="${TRAVIS_BRANCH:-${CIRCLE_BRANCH:-unknown}}"
+if [[ "${GITHUB_REF:-}" != "" ]]; then
+  BRANCH="$(echo $GITHUB_REF | sed 's/refs\/heads\///')"
+fi
 VERSION="$(./print_version.sh)"
 if echo $VERSION | grep dirty; then
   echo "Error: git state dirty, refusing to upload build"
