@@ -30,15 +30,8 @@ Alternative Livepeer installation options are also available:
 
 #### Building on Windows
 
-Building on Windows is possible using MSYS2 and mingw64. For convenience, there is an `.\windows-build.ps1` script
-that initializes an appropriate MSYS2 environment in the `.\msys2` directory. Steps to use:
-
-1. Install [Chocolatey](https://chocolatey.org/)
-2. Run `.\windows-build.ps1`
-3. Wait around 20 minutes
-
-If you run into problems, it's recommended to delete your local `.\msys2` directory and re-run the script to rebuild
-everything from scratch.
+Building on Windows is possible using MSYS2 and mingw64. [See the GitHub Action build definition for
+an example.](https://github.com/livepeer/go-livepeer/blob/eli/windows-build-github-actions/.github/workflows/main.yml)
 
 ## Running Livepeer
 
