@@ -1,9 +1,22 @@
 #!/bin/bash
 
 # Script to populate some environment variables in various CI processes. Should be
-# invoked with `source ci_env.sh`.
+# invoked by `ci_env.sh [script-name]`.
 
 set -e
+
+# Populate necessary Windows build path stuff
+if [[ $(uname) == *"MSYS"* ]]; then
+  export PATH="/usr/bin:/mingw64/bin:$PATH"
+  export C_INCLUDE_PATH="/mingw64/lib:${C_INCLUDE_PATH:-}"
+  export HOME="/build"
+  mkdir -p $HOME
+
+  export PATH="$HOME/compiled/bin":$PATH
+  export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig:$HOME/compiled/lib/pkgconfig"
+  export GOROOT=/mingw64/lib/go
+  export GOPATH=/mingw64
+fi
 
 # If we want to build with branch --> network support for any other networks, add them here!
 NETWORK_BRANCHES="rinkeby mainnet"
@@ -36,3 +49,5 @@ else
     exit 1
   fi
 fi
+
+exec "$@"
