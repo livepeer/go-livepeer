@@ -194,7 +194,7 @@ message TranscodeResult {
         TranscodeData data = 3;
     }
 
-    // Used to notify a broadcaster of updated orchestrator information 
+    // Used to notify a broadcaster of updated orchestrator information
     OrchestratorInfo info = 16;
 }
 
@@ -204,7 +204,7 @@ message RegisterRequest {
     // Shared secret for auth
     string secret = 1;
 
-    // Transcoder capacity 
+    // Transcoder capacity
     int64 capacity = 2;
 }
 
@@ -259,7 +259,7 @@ message TicketParams {
   TicketExpirationParams expiration_params = 7;
 }
 
-// Sender Params (nonces and signatures) 
+// Sender Params (nonces and signatures)
 message TicketSenderParams {
   // Monotonically increasing counter that makes the ticket
   // unique relative to a particular hash commitment to a recipient's random number
@@ -291,7 +291,7 @@ message Payment {
 
   // Ticket params for expiration related validation
   TicketExpirationParams expiration_params = 3;
- 
+
   repeated TicketSenderParams ticket_sender_params = 4;
 
   // O's last known price
