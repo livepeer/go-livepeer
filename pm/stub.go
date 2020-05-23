@@ -45,7 +45,7 @@ func (ts *stubTicketStore) StoreWinningTicket(ticket *SignedTicket) error {
 	return nil
 }
 
-func (ts *stubTicketStore) LoadLatestTicket(sender ethcommon.Address) (*SignedTicket, error) {
+func (ts *stubTicketStore) SelectEarliestWinningTicket(sender ethcommon.Address) (*SignedTicket, error) {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 	if ts.loadShouldFail {
