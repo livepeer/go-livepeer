@@ -779,12 +779,13 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	})
 	require.Nil(err)
 
-	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash FROM ticketQueue")
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue")
 	var actualSender, actualRecipient, actualRecipientRandHash string
 	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig, actualCreationRoundBlockHash []byte
 	var actualSenderNonce uint32
 	var actualCreationRound int64
-	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualCreationRound, &actualCreationRoundBlockHash)
+	var paramsExpirationBlock int64
+	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualCreationRound, &actualCreationRoundBlockHash, &paramsExpirationBlock)
 
 	assert := assert.New(t)
 	assert.Equal(ticket.Sender.Hex(), actualSender)
@@ -796,6 +797,7 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	assert.Equal(ticket.RecipientRandHash, ethcommon.HexToHash(actualRecipientRandHash))
 	assert.Equal(ticket.CreationRound, actualCreationRound)
 	assert.Equal(ticket.CreationRoundBlockHash, ethcommon.BytesToHash(actualCreationRoundBlockHash))
+	assert.Equal(ticket.ParamsExpirationBlock.Int64(), paramsExpirationBlock)
 	assert.Equal(sig, actualSig)
 
 	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM ticketQueue", dbraw, t)
@@ -821,12 +823,13 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	})
 	require.Nil(err)
 
-	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash FROM ticketQueue")
+	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue")
 	var actualSender, actualRecipient, actualRecipientRandHash string
 	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig, actualCreationRoundBlockHash []byte
 	var actualSenderNonce uint32
 	var actualCreationRound int64
-	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualCreationRound, &actualCreationRoundBlockHash)
+	var paramsExpirationBlock int64
+	err = row.Scan(&actualSender, &actualRecipient, &actualFaceValueBytes, &actualWinProbBytes, &actualSenderNonce, &actualRecipientRandBytes, &actualRecipientRandHash, &actualSig, &actualCreationRound, &actualCreationRoundBlockHash, &paramsExpirationBlock)
 
 	assert := assert.New(t)
 	assert.Equal(ticket.Sender.Hex(), actualSender)
@@ -838,6 +841,7 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	assert.Equal(ticket.RecipientRandHash, ethcommon.HexToHash(actualRecipientRandHash))
 	assert.Equal(ticket.CreationRound, actualCreationRound)
 	assert.Equal(ticket.CreationRoundBlockHash, ethcommon.BytesToHash(actualCreationRoundBlockHash))
+	assert.Equal(ticket.ParamsExpirationBlock.Int64(), paramsExpirationBlock)
 	assert.Equal(sig, actualSig)
 
 	ticketsCount := getRowCountOrFatal("SELECT count(*) FROM ticketQueue", dbraw, t)
@@ -1108,12 +1112,13 @@ func TestDeleteMiniHeader(t *testing.T) {
 func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, sig []byte, recipientRand *big.Int) {
 	sessionID = "foo bar"
 	ticket = &pm.Ticket{
-		Sender:            pm.RandAddress(),
-		Recipient:         pm.RandAddress(),
-		FaceValue:         big.NewInt(1234),
-		WinProb:           big.NewInt(2345),
-		SenderNonce:       uint32(123),
-		RecipientRandHash: pm.RandHash(),
+		Sender:                pm.RandAddress(),
+		Recipient:             pm.RandAddress(),
+		FaceValue:             big.NewInt(1234),
+		WinProb:               big.NewInt(2345),
+		SenderNonce:           uint32(123),
+		RecipientRandHash:     pm.RandHash(),
+		ParamsExpirationBlock: big.NewInt(1337),
 	}
 	sig = pm.RandBytes(42)
 	recipientRand = big.NewInt(4567)

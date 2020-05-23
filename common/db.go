@@ -127,7 +127,8 @@ var schema = `
 		recipientRandHash STRING,
 		sig BLOB,
 		creationRound int64,
-		creationRoundBlockHash BLOB
+		creationRoundBlockHash BLOB,
+		paramsExpirationBlock int64
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_ticketqueue_sender ON ticketQueue(sender);
@@ -288,8 +289,8 @@ func InitDB(dbPath string) (*DB, error) {
 
 	// Winning tickets prepared statements
 	stmt, err = db.Prepare(`
-	INSERT INTO ticketQueue(sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash)
-	VALUES(:sender, :recipient, :faceValue, :winProb, :senderNonce, :recipientRand, :recipientRandHash, :sig, :creationRound, :creationRoundBlockHash)
+	INSERT INTO ticketQueue(sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock)
+	VALUES(:sender, :recipient, :faceValue, :winProb, :senderNonce, :recipientRand, :recipientRandHash, :sig, :creationRound, :creationRoundBlockHash, :paramsExpirationBlock)
 	`)
 	if err != nil {
 		glog.Error("Unable to prepare insertWinningTicket ", err)
@@ -299,7 +300,7 @@ func InitDB(dbPath string) (*DB, error) {
 	d.insertWinningTicket = stmt
 
 	// Find latest ticket
-	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash FROM ticketQueue WHERE sender=? ORDER BY createdAt ASC LIMIT 1")
+	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue WHERE sender=? ORDER BY createdAt ASC LIMIT 1")
 	if err != nil {
 		glog.Error("Unable to prepare selectEarliestWinningTicket")
 		d.Close()
@@ -678,6 +679,7 @@ func (db *DB) StoreWinningTicket(ticket *pm.SignedTicket) error {
 		sql.Named("sig", ticket.Sig),
 		sql.Named("creationRound", ticket.Ticket.CreationRound),
 		sql.Named("creationRoundBlockHash", ticket.Ticket.CreationRoundBlockHash.Bytes()),
+		sql.Named("paramsExpirationBlock", ticket.ParamsExpirationBlock.Int64()),
 	)
 
 	if err != nil {
@@ -717,8 +719,9 @@ func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address) (*pm.SignedT
 		sig                    []byte
 		creationRound          int64
 		creationRoundBlockHash []byte
+		paramsExpirationBlock  int64
 	)
-	if err := row.Scan(&senderString, &recipient, &faceValue, &winProb, &senderNonce, &recipientRand, &recipientRandHash, &sig, &creationRound, &creationRoundBlockHash); err != nil {
+	if err := row.Scan(&senderString, &recipient, &faceValue, &winProb, &senderNonce, &recipientRand, &recipientRandHash, &sig, &creationRound, &creationRoundBlockHash, &paramsExpirationBlock); err != nil {
 		if err.Error() != "sql: no rows in result set" {
 			return nil, fmt.Errorf("could not retrieve latest header: %v", err)
 		}
@@ -736,6 +739,7 @@ func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address) (*pm.SignedT
 			RecipientRandHash:      ethcommon.HexToHash(recipientRandHash),
 			CreationRound:          creationRound,
 			CreationRoundBlockHash: ethcommon.BytesToHash(creationRoundBlockHash),
+			ParamsExpirationBlock:  big.NewInt(paramsExpirationBlock),
 		},
 		Sig:           sig,
 		RecipientRand: new(big.Int).SetBytes(recipientRand),
