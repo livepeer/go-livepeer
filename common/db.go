@@ -33,7 +33,7 @@ type DB struct {
 	unbondingLocks                   *sql.Stmt
 	withdrawableUnbondingLocks       *sql.Stmt
 	insertWinningTicket              *sql.Stmt
-	loadLatestTicket                 *sql.Stmt
+	selectEarliestWinningTicket      *sql.Stmt
 	winningTicketCount               *sql.Stmt
 	removeWinningTicket              *sql.Stmt
 	insertMiniHeader                 *sql.Stmt
@@ -288,8 +288,8 @@ func InitDB(dbPath string) (*DB, error) {
 
 	// Winning tickets prepared statements
 	stmt, err = db.Prepare(`
-	INSERT INTO ticketQueue(createdAt, sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash)
-	VALUES(datetime('now'), :sender, :recipient, :faceValue, :winProb, :senderNonce, :recipientRand, :recipientRandHash, :sig, :creationRound, :creationRoundBlockHash)
+	INSERT INTO ticketQueue(sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash)
+	VALUES(:sender, :recipient, :faceValue, :winProb, :senderNonce, :recipientRand, :recipientRandHash, :sig, :creationRound, :creationRoundBlockHash)
 	`)
 	if err != nil {
 		glog.Error("Unable to prepare insertWinningTicket ", err)
@@ -301,11 +301,11 @@ func InitDB(dbPath string) (*DB, error) {
 	// Find latest ticket
 	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash FROM ticketQueue WHERE sender=? ORDER BY createdAt ASC LIMIT 1")
 	if err != nil {
-		glog.Error("Unable to prepare loadLatestTicket")
+		glog.Error("Unable to prepare selectEarliestWinningTicket")
 		d.Close()
 		return nil, err
 	}
-	d.loadLatestTicket = stmt
+	d.selectEarliestWinningTicket = stmt
 
 	stmt, err = db.Prepare("SELECT count(sig) FROM ticketQueue WHERE sender=?")
 	if err != nil {
@@ -393,8 +393,8 @@ func (db *DB) Close() {
 	if db.insertWinningTicket != nil {
 		db.insertWinningTicket.Close()
 	}
-	if db.loadLatestTicket != nil {
-		db.loadLatestTicket.Close()
+	if db.selectEarliestWinningTicket != nil {
+		db.selectEarliestWinningTicket.Close()
 	}
 	if db.winningTicketCount != nil {
 		db.winningTicketCount.Close()
@@ -704,8 +704,8 @@ func (db *DB) RemoveWinningTicket(ticket *pm.SignedTicket) error {
 	return nil
 }
 
-func (db *DB) LoadLatestTicket(sender ethcommon.Address) (*pm.SignedTicket, error) {
-	row := db.loadLatestTicket.QueryRow(sender.Hex())
+func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address) (*pm.SignedTicket, error) {
+	row := db.selectEarliestWinningTicket.QueryRow(sender.Hex())
 	var (
 		senderString           string
 		recipient              string

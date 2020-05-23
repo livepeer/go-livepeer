@@ -901,7 +901,7 @@ func TestStoreWinningTicket_GivenNilRecipientRand_ReturnsError(t *testing.T) {
 	assert.Contains(err.Error(), "nil recipientRand")
 }
 
-func TestLoadLatestWinningTicket(t *testing.T) {
+func TestSelectEarliestWinningTicket(t *testing.T) {
 	assert := assert.New(t)
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
@@ -918,13 +918,13 @@ func TestLoadLatestWinningTicket(t *testing.T) {
 	}
 
 	// no tickets found
-	latest, err := dbh.LoadLatestTicket(ticket.Sender)
+	latest, err := dbh.SelectEarliestWinningTicket(ticket.Sender)
 	assert.Nil(err)
 	assert.Nil(latest)
 
 	err = dbh.StoreWinningTicket(signedTicket0)
 	require.Nil(err)
-	latest, err = dbh.LoadLatestTicket(ticket.Sender)
+	latest, err = dbh.SelectEarliestWinningTicket(ticket.Sender)
 	assert.Nil(err)
 	assert.Equal(signedTicket0.Ticket, latest.Ticket)
 	assert.Equal(signedTicket0.RecipientRand, latest.RecipientRand)
@@ -939,7 +939,7 @@ func TestLoadLatestWinningTicket(t *testing.T) {
 	err = dbh.StoreWinningTicket(signedTicket1)
 	require.Nil(err)
 
-	latest, err = dbh.LoadLatestTicket(ticket.Sender)
+	latest, err = dbh.SelectEarliestWinningTicket(ticket.Sender)
 	assert.Nil(err)
 	assert.Equal(latest, signedTicket0)
 }
