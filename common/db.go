@@ -700,7 +700,7 @@ func (db *DB) RemoveWinningTicket(ticket *pm.SignedTicket) error {
 		ticket.Sig,
 	)
 	if err != nil {
-		return errors.Wrapf(err, "failed deleting winning ticket sender=%v recipientRand=%v nonce=%v sig=%v", ticket.Sender.Hex(), ticket.RecipientRand, ticket.SenderNonce, ticket.Sig)
+		return errors.Wrapf(err, "failed deleting winning ticket sender=%v", ticket.Sender.Hex())
 	}
 	return nil
 }
@@ -722,7 +722,7 @@ func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address) (*pm.SignedT
 	)
 	if err := row.Scan(&senderString, &recipient, &faceValue, &winProb, &senderNonce, &recipientRand, &recipientRandHash, &sig, &creationRound, &creationRoundBlockHash, &paramsExpirationBlock); err != nil {
 		if err.Error() != "sql: no rows in result set" {
-			return nil, fmt.Errorf("could not retrieve latest header: %v", err)
+			return nil, fmt.Errorf("could not retrieve earliest ticket err=%v", err)
 		}
 		// If there is no result return no error, just nil value
 		return nil, nil
