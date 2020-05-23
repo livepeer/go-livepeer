@@ -758,6 +758,15 @@ func TestWinningTicketCount(t *testing.T) {
 	})
 	require.Nil(err)
 
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.Sender = pm.RandAddress()
+	err = dbh.StoreWinningTicket(&pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	})
+	require.Nil(err)
+
 	count, err = dbh.WinningTicketCount(ticket.Sender)
 	assert.Nil(err)
 	assert.Equal(count, 1)
