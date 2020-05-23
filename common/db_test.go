@@ -923,6 +923,7 @@ func TestSelectEarliestWinningTicket(t *testing.T) {
 	require.Nil(err)
 
 	_, ticket, sig, recipientRand := defaultWinningTicket(t)
+	ticket.Sender = ethcommon.HexToAddress("charizard")
 
 	signedTicket0 := &pm.SignedTicket{
 		Ticket:        ticket,
@@ -930,27 +931,39 @@ func TestSelectEarliestWinningTicket(t *testing.T) {
 		RecipientRand: recipientRand,
 	}
 
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.Sender = ethcommon.HexToAddress("pikachu")
+	signedTicket1 := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}
+	err = dbh.StoreWinningTicket(signedTicket1)
+	require.Nil(err)
+
 	// no tickets found
-	latest, err := dbh.SelectEarliestWinningTicket(ticket.Sender)
+	latest, err := dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"))
 	assert.Nil(err)
 	assert.Nil(latest)
 
 	err = dbh.StoreWinningTicket(signedTicket0)
 	require.Nil(err)
-	latest, err = dbh.SelectEarliestWinningTicket(ticket.Sender)
+	latest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"))
 	assert.Nil(err)
 	assert.Equal(signedTicket0, latest)
 
-	signedTicket1 := &pm.SignedTicket{
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.Sender = ethcommon.HexToAddress("charizard")
+	signedTicket2 := &pm.SignedTicket{
 		Ticket:        ticket,
 		Sig:           pm.RandBytes(32),
 		RecipientRand: new(big.Int).SetBytes(pm.RandBytes(32)),
 	}
 
-	err = dbh.StoreWinningTicket(signedTicket1)
+	err = dbh.StoreWinningTicket(signedTicket2)
 	require.Nil(err)
 
-	latest, err = dbh.SelectEarliestWinningTicket(ticket.Sender)
+	latest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"))
 	assert.Nil(err)
 	assert.Equal(latest, signedTicket0)
 }
@@ -981,9 +994,13 @@ func TestRemoveWinningTicket(t *testing.T) {
 
 	// removing the wrong ticket should return nil
 	signedTicketDup := *signedTicket
-	signedTicket.Sender = pm.RandAddress()
+	signedTicketDup.Sig = pm.RandBytes(32)
 	err = dbh.RemoveWinningTicket(&signedTicketDup)
 	assert.NoError(err)
+	// confirm ticket is not removed
+	count, err = dbh.WinningTicketCount(signedTicket.Sender)
+	require.Nil(err)
+	assert.Equal(count, 1)
 
 	err = dbh.RemoveWinningTicket(signedTicket)
 	assert.Nil(err)
