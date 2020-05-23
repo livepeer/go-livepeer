@@ -669,21 +669,21 @@ func (db *DB) StoreWinningTicket(ticket *pm.SignedTicket) error {
 	}
 
 	_, err := db.insertWinningTicket.Exec(
-		sql.Named("sender", ticket.Ticket.Sender.Hex()),
-		sql.Named("recipient", ticket.Ticket.Recipient.Hex()),
-		sql.Named("faceValue", ticket.Ticket.FaceValue.Bytes()),
-		sql.Named("winProb", ticket.Ticket.WinProb.Bytes()),
-		sql.Named("senderNonce", ticket.Ticket.SenderNonce),
+		sql.Named("sender", ticket.Sender.Hex()),
+		sql.Named("recipient", ticket.Recipient.Hex()),
+		sql.Named("faceValue", ticket.FaceValue.Bytes()),
+		sql.Named("winProb", ticket.WinProb.Bytes()),
+		sql.Named("senderNonce", ticket.SenderNonce),
 		sql.Named("recipientRand", ticket.RecipientRand.Bytes()),
-		sql.Named("recipientRandHash", ticket.Ticket.RecipientRandHash.Hex()),
+		sql.Named("recipientRandHash", ticket.RecipientRandHash.Hex()),
 		sql.Named("sig", ticket.Sig),
-		sql.Named("creationRound", ticket.Ticket.CreationRound),
-		sql.Named("creationRoundBlockHash", ticket.Ticket.CreationRoundBlockHash.Bytes()),
+		sql.Named("creationRound", ticket.CreationRound),
+		sql.Named("creationRoundBlockHash", ticket.CreationRoundBlockHash.Bytes()),
 		sql.Named("paramsExpirationBlock", ticket.ParamsExpirationBlock.Int64()),
 	)
 
 	if err != nil {
-		return errors.Wrapf(err, "failed inserting winning ticket sender=%v recipientRand=%v nonce=%v", ticket.Ticket.Sender.Hex(), ticket.RecipientRand, ticket.Ticket.SenderNonce)
+		return errors.Wrapf(err, "failed inserting winning ticket sender=%v recipientRand=%v nonce=%v", ticket.Sender.Hex(), ticket.RecipientRand, ticket.SenderNonce)
 	}
 	return nil
 }
