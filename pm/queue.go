@@ -59,13 +59,6 @@ func (q *ticketQueue) Stop() {
 }
 
 // Add adds a ticket to the queue
-// An external caller should call this method whenever the sender's max float
-// is insufficient to cover the ticket face value i.e. if the recipient received
-// multiple winning tickets in close succession such that the sender's max float
-// cannot cover all of the tickets at once. In this scenario, the recipient should
-// submit transactions for tickets that can be covered by the sender's max float, add the
-// other tickets to the queue and wait for the transactions to confirm to check if the sender's
-// max float is sufficient to cover the tickets in the queue
 func (q *ticketQueue) Add(ticket *SignedTicket) error {
 	return q.store.StoreWinningTicket(ticket)
 }
@@ -130,7 +123,7 @@ ticketLoop:
 	}
 }
 
-// removeHead removes the head of the queue
+// pop returns the head of the queue
 func (q *ticketQueue) pop() (*SignedTicket, error) {
 	ticket, err := q.store.SelectEarliestWinningTicket(q.sender)
 	if err != nil {
