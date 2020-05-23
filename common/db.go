@@ -317,7 +317,7 @@ func InitDB(dbPath string) (*DB, error) {
 	d.winningTicketCount = stmt
 
 	// Remove latest ticket
-	stmt, err = db.Prepare("DELETE FROM ticketQueue WHERE sender=? AND sig=?")
+	stmt, err = db.Prepare("DELETE FROM ticketQueue WHERE sig=?")
 	if err != nil {
 		glog.Error("Unable to prepare removeWinningTicket", err)
 		d.Close()
@@ -697,7 +697,6 @@ func (db *DB) RemoveWinningTicket(ticket *pm.SignedTicket) error {
 	}
 
 	_, err := db.removeWinningTicket.Exec(
-		ticket.Ticket.Sender.Hex(),
 		ticket.Sig,
 	)
 	if err != nil {
