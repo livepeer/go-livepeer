@@ -132,7 +132,7 @@ ticketLoop:
 
 // removeHead removes the head of the queue
 func (q *ticketQueue) pop() (*SignedTicket, error) {
-	ticket, err := q.store.LoadLatestTicket(q.sender)
+	ticket, err := q.store.SelectEarliestWinningTicket(q.sender)
 	if err != nil {
 		return nil, err
 	}
