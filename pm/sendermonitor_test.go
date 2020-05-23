@@ -681,6 +681,44 @@ func TestRedeemWinningTicket_addFloatError(t *testing.T) {
 	assert.EqualError(err, "cannot subtract from insufficient pendingAmount")
 }
 
+func TestMonitorMaxFloat(t *testing.T) {
+	claimant, b, smgr, tm := senderMonitorFixture()
+	addr := RandAddress()
+	initialReserve := big.NewInt(500)
+	smgr.info[addr] = &SenderInfo{
+		Reserve: &ReserveInfo{
+			FundsRemaining:        initialReserve,
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
+	}
+	smgr.claimedReserve[addr] = big.NewInt(0)
+	tm.transcoderPoolSize = big.NewInt(1)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
+	sm.Start()
+	defer sm.Stop()
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	sink := make(chan *big.Int, 10)
+	sub := sm.MonitorMaxFloat(addr, sink)
+	defer sub.Unsubscribe()
+
+	amount := big.NewInt(100)
+	err := sm.(*senderMonitor).subFloat(addr, amount)
+	require.Nil(err)
+	mfu := <-sink
+	newMaxFloat := new(big.Int).Sub(initialReserve, amount)
+	assert.Equal(newMaxFloat, mfu)
+
+	amount = big.NewInt(50)
+	err = sm.(*senderMonitor).addFloat(addr, amount)
+	require.Nil(err)
+	mfu = <-sink
+	newMaxFloat = new(big.Int).Add(newMaxFloat, amount)
+	assert.Equal(newMaxFloat, mfu)
+}
+
 func senderMonitorFixture() (ethcommon.Address, *stubBroker, *stubSenderManager, *stubTimeManager) {
 	claimant := RandAddress()
 	b := newStubBroker()
