@@ -51,6 +51,9 @@ func (ts *stubTicketStore) SelectEarliestWinningTicket(sender ethcommon.Address)
 	if ts.loadShouldFail {
 		return nil, fmt.Errorf("stub TicketStore load error")
 	}
+	if len(ts.tickets[sender.Hex()]) == 0 {
+		return nil, nil
+	}
 	return ts.tickets[sender.Hex()][0], nil
 }
 

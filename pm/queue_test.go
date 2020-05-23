@@ -193,9 +193,6 @@ func TestTicketQueue_Add(t *testing.T) {
 	tm := &stubTimeManager{}
 
 	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
-	q.Start()
-	defer q.Stop()
-	time.Sleep(5 * time.Millisecond)
 
 	ticket := defaultSignedTicket(sender, 0)
 
@@ -206,7 +203,6 @@ func TestTicketQueue_Add(t *testing.T) {
 
 	err = q.Add(ticket)
 	assert.Nil(err)
-	t.Log(ts.tickets[sender.Hex()])
 	assert.Equal(ts.tickets[sender.Hex()][0], ticket)
 }
 
@@ -219,9 +215,6 @@ func TestTicketQueue_Pop(t *testing.T) {
 	tm := &stubTimeManager{}
 
 	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
-	q.Start()
-	defer q.Stop()
-	time.Sleep(5 * time.Millisecond)
 
 	ticket := defaultSignedTicket(sender, 0)
 	err := ts.StoreWinningTicket(ticket)
@@ -245,6 +238,11 @@ func TestTicketQueue_Pop(t *testing.T) {
 	popped, err = q.pop()
 	assert.Nil(err)
 	assert.Equal(popped, ticket)
+	// check that ticket is removed by popping again
+	popped2, err := q.pop()
+	assert.Nil(err)
+	assert.Nil(popped2)
+	assert.NotEqual(popped, popped2)
 }
 
 func TestTicketQueue_Length(t *testing.T) {
@@ -255,9 +253,6 @@ func TestTicketQueue_Length(t *testing.T) {
 	tm := &stubTimeManager{}
 
 	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
-	q.Start()
-	defer q.Stop()
-	time.Sleep(5 * time.Millisecond)
 
 	ts.tickets[sender.Hex()] = []*SignedTicket{defaultSignedTicket(sender, 0), defaultSignedTicket(sender, 1), defaultSignedTicket(sender, 2)}
 

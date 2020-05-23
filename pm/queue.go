@@ -129,6 +129,9 @@ func (q *ticketQueue) pop() (*SignedTicket, error) {
 	if err != nil {
 		return nil, err
 	}
+	if ticket == nil {
+		return nil, nil
+	}
 	if err := q.store.RemoveWinningTicket(ticket); err != nil {
 		return nil, err
 	}
