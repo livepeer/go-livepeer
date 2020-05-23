@@ -780,8 +780,8 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	require.Nil(err)
 
 	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue")
-	var actualSender, actualRecipient, actualRecipientRandHash string
-	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig, actualCreationRoundBlockHash []byte
+	var actualSender, actualRecipient, actualRecipientRandHash, actualCreationRoundBlockHash string
+	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
 	var actualSenderNonce uint32
 	var actualCreationRound int64
 	var paramsExpirationBlock int64
@@ -796,7 +796,7 @@ func TestInsertWinningTicket_GivenValidInputs_InsertsOneRowCorrectly(t *testing.
 	assert.Equal(recipientRand, new(big.Int).SetBytes(actualRecipientRandBytes))
 	assert.Equal(ticket.RecipientRandHash, ethcommon.HexToHash(actualRecipientRandHash))
 	assert.Equal(ticket.CreationRound, actualCreationRound)
-	assert.Equal(ticket.CreationRoundBlockHash, ethcommon.BytesToHash(actualCreationRoundBlockHash))
+	assert.Equal(ticket.CreationRoundBlockHash, ethcommon.HexToHash(actualCreationRoundBlockHash))
 	assert.Equal(ticket.ParamsExpirationBlock.Int64(), paramsExpirationBlock)
 	assert.Equal(sig, actualSig)
 
@@ -824,8 +824,8 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	require.Nil(err)
 
 	row := dbraw.QueryRow("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue")
-	var actualSender, actualRecipient, actualRecipientRandHash string
-	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig, actualCreationRoundBlockHash []byte
+	var actualSender, actualRecipient, actualRecipientRandHash, actualCreationRoundBlockHash string
+	var actualFaceValueBytes, actualWinProbBytes, actualRecipientRandBytes, actualSig []byte
 	var actualSenderNonce uint32
 	var actualCreationRound int64
 	var paramsExpirationBlock int64
@@ -840,7 +840,7 @@ func TestInsertWinningTicket_GivenMaxValueInputs_InsertsOneRowCorrectly(t *testi
 	assert.Equal(recipientRand, new(big.Int).SetBytes(actualRecipientRandBytes))
 	assert.Equal(ticket.RecipientRandHash, ethcommon.HexToHash(actualRecipientRandHash))
 	assert.Equal(ticket.CreationRound, actualCreationRound)
-	assert.Equal(ticket.CreationRoundBlockHash, ethcommon.BytesToHash(actualCreationRoundBlockHash))
+	assert.Equal(ticket.CreationRoundBlockHash, ethcommon.HexToHash(actualCreationRoundBlockHash))
 	assert.Equal(ticket.ParamsExpirationBlock.Int64(), paramsExpirationBlock)
 	assert.Equal(sig, actualSig)
 

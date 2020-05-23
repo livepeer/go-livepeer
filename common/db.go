@@ -127,7 +127,7 @@ var schema = `
 		recipientRandHash STRING,
 		sig BLOB,
 		creationRound int64,
-		creationRoundBlockHash BLOB,
+		creationRoundBlockHash STRING,
 		paramsExpirationBlock int64
 	);
 
@@ -678,7 +678,7 @@ func (db *DB) StoreWinningTicket(ticket *pm.SignedTicket) error {
 		sql.Named("recipientRandHash", ticket.RecipientRandHash.Hex()),
 		sql.Named("sig", ticket.Sig),
 		sql.Named("creationRound", ticket.CreationRound),
-		sql.Named("creationRoundBlockHash", ticket.CreationRoundBlockHash.Bytes()),
+		sql.Named("creationRoundBlockHash", ticket.CreationRoundBlockHash.Hex()),
 		sql.Named("paramsExpirationBlock", ticket.ParamsExpirationBlock.Int64()),
 	)
 
@@ -717,7 +717,7 @@ func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address) (*pm.SignedT
 		recipientRandHash      string
 		sig                    []byte
 		creationRound          int64
-		creationRoundBlockHash []byte
+		creationRoundBlockHash string
 		paramsExpirationBlock  int64
 	)
 	if err := row.Scan(&senderString, &recipient, &faceValue, &winProb, &senderNonce, &recipientRand, &recipientRandHash, &sig, &creationRound, &creationRoundBlockHash, &paramsExpirationBlock); err != nil {
@@ -737,7 +737,7 @@ func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address) (*pm.SignedT
 			SenderNonce:            uint32(senderNonce),
 			RecipientRandHash:      ethcommon.HexToHash(recipientRandHash),
 			CreationRound:          creationRound,
-			CreationRoundBlockHash: ethcommon.BytesToHash(creationRoundBlockHash),
+			CreationRoundBlockHash: ethcommon.HexToHash(creationRoundBlockHash),
 			ParamsExpirationBlock:  big.NewInt(paramsExpirationBlock),
 		},
 		Sig:           sig,
