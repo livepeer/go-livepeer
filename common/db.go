@@ -299,7 +299,7 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.insertWinningTicket = stmt
 
-	// Find latest ticket
+	// Select earliest ticket
 	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue WHERE sender=? ORDER BY createdAt ASC LIMIT 1")
 	if err != nil {
 		glog.Error("Unable to prepare selectEarliestWinningTicket", err)
