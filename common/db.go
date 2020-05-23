@@ -302,7 +302,7 @@ func InitDB(dbPath string) (*DB, error) {
 	// Find latest ticket
 	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue WHERE sender=? ORDER BY createdAt ASC LIMIT 1")
 	if err != nil {
-		glog.Error("Unable to prepare selectEarliestWinningTicket")
+		glog.Error("Unable to prepare selectEarliestWinningTicket", err)
 		d.Close()
 		return nil, err
 	}
@@ -310,7 +310,7 @@ func InitDB(dbPath string) (*DB, error) {
 
 	stmt, err = db.Prepare("SELECT count(sig) FROM ticketQueue WHERE sender=?")
 	if err != nil {
-		glog.Error("Unable to prepare loadWinningTicketCount")
+		glog.Error("Unable to prepare winningTicketCount", err)
 		d.Close()
 		return nil, err
 	}
@@ -319,7 +319,7 @@ func InitDB(dbPath string) (*DB, error) {
 	// Remove latest ticket
 	stmt, err = db.Prepare("DELETE FROM ticketQueue WHERE sender=? AND sig=?")
 	if err != nil {
-		glog.Error("Unable to prepare removeWinningTicket")
+		glog.Error("Unable to prepare removeWinningTicket", err)
 		d.Close()
 		return nil, err
 	}
