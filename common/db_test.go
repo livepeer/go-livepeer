@@ -930,9 +930,7 @@ func TestSelectEarliestWinningTicket(t *testing.T) {
 	require.Nil(err)
 	latest, err = dbh.SelectEarliestWinningTicket(ticket.Sender)
 	assert.Nil(err)
-	assert.Equal(signedTicket0.Ticket, latest.Ticket)
-	assert.Equal(signedTicket0.RecipientRand, latest.RecipientRand)
-	assert.Equal(signedTicket0.Sig, latest.Sig)
+	assert.Equal(signedTicket0, latest)
 
 	signedTicket1 := &pm.SignedTicket{
 		Ticket:        ticket,
