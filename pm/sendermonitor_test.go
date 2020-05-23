@@ -7,6 +7,7 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,7 @@ var increaseTime = func(sec int64) {
 }
 
 func TestMaxFloat(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -81,7 +82,7 @@ func TestMaxFloat(t *testing.T) {
 }
 
 func TestSubFloat(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -104,12 +105,12 @@ func TestSubFloat(t *testing.T) {
 	reserveAlloc := new(big.Int).Sub(new(big.Int).Div(reserve, tm.transcoderPoolSize), smgr.claimedReserve[addr])
 
 	amount := big.NewInt(5)
-	sm.(*senderMonitor).subFloat(addr, amount)
+	sm.(*LocalSenderMonitor).subFloat(addr, amount)
 	mf, err := sm.MaxFloat(addr)
 	require.Nil(err)
 	assert.Equal(new(big.Int).Sub(reserveAlloc, amount), mf)
 
-	sm.(*senderMonitor).subFloat(addr, amount)
+	sm.(*LocalSenderMonitor).subFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err = sm.MaxFloat(addr)
@@ -121,7 +122,7 @@ func TestSubFloat(t *testing.T) {
 }
 
 func TestAddFloat(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -146,13 +147,13 @@ func TestAddFloat(t *testing.T) {
 	reserveAlloc := new(big.Int).Sub(new(big.Int).Div(reserve, tm.transcoderPoolSize), smgr.claimedReserve[addr])
 
 	amount := big.NewInt(20)
-	err := sm.(*senderMonitor).addFloat(addr, amount)
+	err := sm.(*LocalSenderMonitor).addFloat(addr, amount)
 	assert.EqualError(err, "cannot subtract from insufficient pendingAmount")
 
 	// Test value cached and no pendingAmount error
-	sm.(*senderMonitor).subFloat(addr, amount)
+	sm.(*LocalSenderMonitor).subFloat(addr, amount)
 
-	err = sm.(*senderMonitor).addFloat(addr, amount)
+	err = sm.(*LocalSenderMonitor).addFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err := sm.MaxFloat(addr)
@@ -164,9 +165,9 @@ func TestAddFloat(t *testing.T) {
 	reserve = new(big.Int).Add(smgr.info[addr].Reserve.FundsRemaining, smgr.info[addr].Reserve.ClaimedInCurrentRound)
 	reserveAlloc = new(big.Int).Sub(new(big.Int).Div(reserve, tm.transcoderPoolSize), smgr.claimedReserve[addr])
 
-	sm.(*senderMonitor).subFloat(addr, amount)
+	sm.(*LocalSenderMonitor).subFloat(addr, amount)
 
-	err = sm.(*senderMonitor).addFloat(addr, amount)
+	err = sm.(*LocalSenderMonitor).addFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err = sm.MaxFloat(addr)
@@ -175,7 +176,7 @@ func TestAddFloat(t *testing.T) {
 }
 
 func TestQueueTicketAndSignalNewBlock(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -255,7 +256,7 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 }
 
 func TestCleanup(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
@@ -300,7 +301,7 @@ func TestCleanup(t *testing.T) {
 	// Change stub SenderManager values
 	// SenderMonitor should no longer use cached values
 	// since they have been cleaned up
-	sm.(*senderMonitor).cleanup()
+	sm.(*LocalSenderMonitor).cleanup()
 	smgr.Clear(addr1)
 	smgr.Clear(addr2)
 	assert.Nil(smgr.info[addr1])
@@ -356,7 +357,7 @@ func TestCleanup(t *testing.T) {
 	reserve3 := big.NewInt(100)
 	smgr.info[addr2].Reserve.FundsRemaining = reserve3
 
-	sm.(*senderMonitor).cleanup()
+	sm.(*LocalSenderMonitor).cleanup()
 
 	mf1, err = sm.MaxFloat(addr1)
 	require.Nil(err)
@@ -373,7 +374,7 @@ func TestCleanup(t *testing.T) {
 
 	// Update lastAccess for addr2
 	increaseTime(4)
-	err = sm.(*senderMonitor).addFloat(addr2, big.NewInt(0))
+	err = sm.(*LocalSenderMonitor).addFloat(addr2, big.NewInt(0))
 	require.Nil(err)
 
 	increaseTime(1)
@@ -385,7 +386,7 @@ func TestCleanup(t *testing.T) {
 	reserve4 := big.NewInt(101)
 	smgr.info[addr1].Reserve.FundsRemaining = reserve4
 
-	sm.(*senderMonitor).cleanup()
+	sm.(*LocalSenderMonitor).cleanup()
 
 	mf1, err = sm.MaxFloat(addr1)
 	require.Nil(err)
@@ -403,7 +404,7 @@ func TestCleanup(t *testing.T) {
 
 	// Update lastAccess for addr1
 	increaseTime(4)
-	sm.(*senderMonitor).subFloat(addr1, big.NewInt(0))
+	sm.(*LocalSenderMonitor).subFloat(addr1, big.NewInt(0))
 
 	increaseTime(1)
 
@@ -414,7 +415,7 @@ func TestCleanup(t *testing.T) {
 	reserve5 := big.NewInt(999)
 	smgr.info[addr2].Reserve.FundsRemaining = reserve5
 
-	sm.(*senderMonitor).cleanup()
+	sm.(*LocalSenderMonitor).cleanup()
 
 	mf1, err = sm.MaxFloat(addr1)
 	require.Nil(err)
@@ -429,7 +430,7 @@ func TestCleanup(t *testing.T) {
 
 func TestReserveAlloc(t *testing.T) {
 	assert := assert.New(t)
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -440,7 +441,7 @@ func TestReserveAlloc(t *testing.T) {
 		},
 	}
 	smgr.claimedReserve[addr] = big.NewInt(100)
-	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600).(*senderMonitor)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600).(*LocalSenderMonitor)
 
 	// test GetSenderInfo error
 	smgr.err = errors.New("GetSenderInfo error")
@@ -456,7 +457,7 @@ func TestReserveAlloc(t *testing.T) {
 }
 
 func TestSenderMonitor_ValidateSender(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		WithdrawRound: big.NewInt(10),
@@ -499,7 +500,7 @@ func TestSenderMonitor_ValidateSender(t *testing.T) {
 }
 
 func TestRedeemWinningTicket_SingleTicket_ZeroMaxFloat(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -520,12 +521,12 @@ func TestRedeemWinningTicket_SingleTicket_ZeroMaxFloat(t *testing.T) {
 
 	signedT := defaultSignedTicket(addr, uint32(0))
 
-	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
-	assert.EqualError(err, "max float is zero")
+	err := sm.(*LocalSenderMonitor).redeemWinningTicket(signedT)
+	assert.EqualError(err, "max float is 0")
 }
 
 func TestRedeemWinningTicket_SingleTicket_RedeemError(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -547,7 +548,7 @@ func TestRedeemWinningTicket_SingleTicket_RedeemError(t *testing.T) {
 	signedT := defaultSignedTicket(addr, uint32(0))
 
 	b.redeemShouldFail = true
-	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	err := sm.(*LocalSenderMonitor).redeemWinningTicket(signedT)
 	assert.EqualError(err, "stub broker redeem error")
 
 	used, err := b.IsUsedTicket(signedT.Ticket)
@@ -556,7 +557,7 @@ func TestRedeemWinningTicket_SingleTicket_RedeemError(t *testing.T) {
 }
 
 func TestRedeemWinningTicket_SingleTicket_CheckTxError(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -577,12 +578,12 @@ func TestRedeemWinningTicket_SingleTicket_CheckTxError(t *testing.T) {
 
 	signedT := defaultSignedTicket(addr, uint32(0))
 
-	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	err := sm.(*LocalSenderMonitor).redeemWinningTicket(signedT)
 	assert.EqualError(err, b.checkTxErr.Error())
 }
 
 func TestRedeemWinningTicket_SingleTicket(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -602,7 +603,7 @@ func TestRedeemWinningTicket_SingleTicket(t *testing.T) {
 
 	signedT := defaultSignedTicket(addr, uint32(0))
 
-	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	err := sm.(*LocalSenderMonitor).redeemWinningTicket(signedT)
 	assert.Nil(err)
 
 	ok, err := b.IsUsedTicket(signedT.Ticket)
@@ -611,7 +612,7 @@ func TestRedeemWinningTicket_SingleTicket(t *testing.T) {
 }
 
 func TestRedeemWinningTicket_MaxFloatError(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 
 	ts := newStubTicketStore()
@@ -623,12 +624,12 @@ func TestRedeemWinningTicket_MaxFloatError(t *testing.T) {
 
 	signedT := defaultSignedTicket(addr, uint32(0))
 	smgr.err = errors.New("maxfloat err")
-	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	err := sm.(*LocalSenderMonitor).redeemWinningTicket(signedT)
 	assert.EqualError(err, smgr.err.Error())
 }
 
 func TestRedeemWinningTicket_InsufficientMaxFloat_QueueTicket(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -649,12 +650,12 @@ func TestRedeemWinningTicket_InsufficientMaxFloat_QueueTicket(t *testing.T) {
 
 	signedT := defaultSignedTicket(addr, uint32(0))
 
-	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
+	err := sm.(*LocalSenderMonitor).redeemWinningTicket(signedT)
 	assert.EqualError(err, fmt.Sprintf("insufficient max float sender=%v faceValue=%v maxFloat=%v", addr.Hex(), signedT.FaceValue, new(big.Int).Sub(new(big.Int).Div(smgr.info[addr].Reserve.FundsRemaining, tm.transcoderPoolSize), smgr.claimedReserve[addr])))
 }
 
 func TestRedeemWinningTicket_addFloatError(t *testing.T) {
-	claimant, b, smgr, tm := senderMonitorFixture()
+	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
 		Deposit:       big.NewInt(500),
@@ -674,14 +675,59 @@ func TestRedeemWinningTicket_addFloatError(t *testing.T) {
 	assert := assert.New(t)
 
 	signedT := defaultSignedTicket(addr, uint32(0))
-	sm.(*senderMonitor).ensureCache(addr)
-	sm.(*senderMonitor).senders[addr].pendingAmount = big.NewInt(-100)
+	sm.(*LocalSenderMonitor).ensureCache(addr)
+	sm.(*LocalSenderMonitor).senders[addr].pendingAmount = big.NewInt(-100)
 
-	err := sm.(*senderMonitor).redeemWinningTicket(signedT)
-	assert.EqualError(err, "cannot subtract from insufficient pendingAmount")
+	errLogsBefore := glog.Stats.Error.Lines()
+	err := sm.(*LocalSenderMonitor).redeemWinningTicket(signedT)
+	errLogsAfter := glog.Stats.Error.Lines()
+	assert.Nil(err)
+	assert.Greater(errLogsAfter, errLogsBefore)
 }
 
-func senderMonitorFixture() (ethcommon.Address, *stubBroker, *stubSenderManager, *stubTimeManager) {
+func TestSubscribeMaxFloatChange(t *testing.T) {
+	claimant, b, smgr, tm := localSenderMonitorFixture()
+	addr := RandAddress()
+	initialReserve := big.NewInt(500)
+	smgr.info[addr] = &SenderInfo{
+		Reserve: &ReserveInfo{
+			FundsRemaining:        initialReserve,
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
+	}
+	smgr.claimedReserve[addr] = big.NewInt(0)
+	tm.transcoderPoolSize = big.NewInt(1)
+	smI := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
+	sm := smI.(*LocalSenderMonitor)
+	sm.Start()
+	defer sm.Stop()
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	sink := make(chan struct{}, 10)
+	sub := sm.SubscribeMaxFloatChange(addr, sink)
+	defer sub.Unsubscribe()
+
+	amount := big.NewInt(100)
+	sm.subFloat(addr, amount)
+	<-sink
+	newMaxFloat := new(big.Int).Sub(initialReserve, amount)
+	mf, err := sm.MaxFloat(addr)
+	assert.Nil(err)
+	assert.Equal(newMaxFloat, mf)
+
+	amount = big.NewInt(50)
+	err = sm.addFloat(addr, amount)
+	require.Nil(err)
+	<-sink
+	newMaxFloat = new(big.Int).Add(newMaxFloat, amount)
+	mf, err = sm.MaxFloat(addr)
+	assert.Nil(err)
+	assert.Equal(newMaxFloat, mf)
+}
+
+func localSenderMonitorFixture() (ethcommon.Address, *stubBroker, *stubSenderManager, *stubTimeManager) {
 	claimant := RandAddress()
 	b := newStubBroker()
 	smgr := newStubSenderManager()
