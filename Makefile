@@ -2,7 +2,7 @@ SHELL=/bin/bash
 
 all: net/lp_rpc.pb.go core/test_segment.go livepeer livepeer_cli
 
-net/lp_rpc.pb.go: net/lp_rpc.proto
+net/lp_rpc.pb.go: net/*.proto
 	protoc -I=. --go_out=plugins=grpc:. $^
 
 core/test_segment.go:
