@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
+package net;
+
+service TicketRedeemer {
+    rpc QueueTicket(Ticket) returns (google.protobuf.Empty) {}
+    rpc MonitorMaxFloat(google.protobuf.Empty) returns (stream MaxFloatUpdate) {}
+}
+
+message Ticket {
+    bytes recipient = 1;
+    bytes sender = 2;
+    bytes face_value = 3;
+    bytes win_prob = 4;
+    uint32 sender_nonce = 5;
+    bytes recipient_rand_hash = 6;
+    int64 creation_round = 7;
+    bytes creation_round_block_hash = 8;
+    bytes sig = 9;
+    bytes recipient_rand = 10;
+    int64 params_expiration_block = 11;
+}
+
+message MaxFloatUpdate {
+        bytes sender = 1;
+        bytes max_float= 2;
+}
