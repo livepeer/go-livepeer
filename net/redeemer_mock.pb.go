@@ -56,6 +56,26 @@ func (mr *MockTicketRedeemerClientMockRecorder) QueueTicket(ctx, in interface{},
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueTicket", reflect.TypeOf((*MockTicketRedeemerClient)(nil).QueueTicket), varargs...)
 }
 
+// MaxFloat mocks base method.
+func (m *MockTicketRedeemerClient) MaxFloat(ctx context.Context, in *MaxFloatRequest, opts ...grpc.CallOption) (*MaxFloatUpdate, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "MaxFloat", varargs...)
+	ret0, _ := ret[0].(*MaxFloatUpdate)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MaxFloat indicates an expected call of MaxFloat.
+func (mr *MockTicketRedeemerClientMockRecorder) MaxFloat(ctx, in interface{}, opts ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MaxFloat", reflect.TypeOf((*MockTicketRedeemerClient)(nil).MaxFloat), varargs...)
+}
+
 // MonitorMaxFloat mocks base method.
 func (m *MockTicketRedeemerClient) MonitorMaxFloat(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (TicketRedeemer_MonitorMaxFloatClient, error) {
 	m.ctrl.T.Helper()
@@ -235,6 +255,21 @@ func (m *MockTicketRedeemerServer) QueueTicket(arg0 context.Context, arg1 *Ticke
 func (mr *MockTicketRedeemerServerMockRecorder) QueueTicket(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueTicket", reflect.TypeOf((*MockTicketRedeemerServer)(nil).QueueTicket), arg0, arg1)
+}
+
+// MaxFloat mocks base method.
+func (m *MockTicketRedeemerServer) MaxFloat(arg0 context.Context, arg1 *MaxFloatRequest) (*MaxFloatUpdate, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MaxFloat", arg0, arg1)
+	ret0, _ := ret[0].(*MaxFloatUpdate)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MaxFloat indicates an expected call of MaxFloat.
+func (mr *MockTicketRedeemerServerMockRecorder) MaxFloat(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MaxFloat", reflect.TypeOf((*MockTicketRedeemerServer)(nil).MaxFloat), arg0, arg1)
 }
 
 // MonitorMaxFloat mocks base method.

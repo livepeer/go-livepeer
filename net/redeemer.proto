@@ -6,7 +6,12 @@ package net;
 
 service TicketRedeemer {
     rpc QueueTicket(Ticket) returns (google.protobuf.Empty) {}
+    rpc MaxFloat(MaxFloatRequest) returns (MaxFloatUpdate) {}
     rpc MonitorMaxFloat(google.protobuf.Empty) returns (stream MaxFloatUpdate) {}
+}
+
+message MaxFloatRequest {
+    bytes sender = 1;
 }
 
 message Ticket {

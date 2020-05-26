@@ -213,6 +213,35 @@ func TestRedeemerServer_MonitorMaxFloat(t *testing.T) {
 	assert.Nil(err)
 }
 
+func TestRedeemerServer_MaxFloat(t *testing.T) {
+	assert := assert.New(t)
+	sm := newStubSenderMonitor()
+	r := &redeemer{
+		sm: sm,
+	}
+
+	sender := ethcommon.HexToAddress("foo").Bytes()
+
+	// test error
+	sm.shouldFail = errors.New("max float error")
+	mf, err := r.MaxFloat(context.TODO(), &net.MaxFloatRequest{
+		Sender: sender,
+	})
+	assert.Nil(mf)
+	assert.EqualError(err, baseRPCErr+fmt.Sprintf("max float error: %v", sm.shouldFail.Error()))
+	sm.shouldFail = nil
+
+	// test success
+	sm.maxFloat = big.NewInt(100)
+	mf, err = r.MaxFloat(context.TODO(), &net.MaxFloatRequest{
+		Sender: sender,
+	})
+	assert.Nil(err)
+	assert.Equal(mf.Sender, sender)
+	assert.Equal(mf.MaxFloat, sm.maxFloat.Bytes())
+
+}
+
 func TestRedeemerServer_CleanupLoop(t *testing.T) {
 	assert := assert.New(t)
 	r := &redeemer{
@@ -308,9 +337,8 @@ func TestRedeemerClient_MonitorMaxFloat_StreamRecvErr(t *testing.T) {
 	errLogsAfter := glog.Stats.Error.Lines()
 	assert.Greater(errLogsAfter-errLogsBefore, int64(0))
 	// check that maxfloat didn't change
-	mf, err := rc.MaxFloat(sender)
-	assert.Nil(err)
-	assert.Nil(mf)
+	_, ok := rc.maxFloat[sender]
+	assert.False(ok)
 }
 
 func TestRedeemerClient_MonitorMaxFloat_ContextDone(t *testing.T) {
@@ -338,9 +366,8 @@ func TestRedeemerClient_MonitorMaxFloat_ContextDone(t *testing.T) {
 	errLogsAfter := glog.Stats.Info.Lines()
 	assert.Greater(errLogsAfter-errLogsBefore, int64(0))
 	// check that maxfloat didn't change
-	mf, err := rc.MaxFloat(sender)
-	assert.Nil(err)
-	assert.Nil(mf)
+	_, ok := rc.maxFloat[sender]
+	assert.False(ok)
 }
 
 func TestRedeemerClient_MonitorMaxFloat_UpdateMaxFloat(t *testing.T) {
@@ -428,7 +455,7 @@ func TestRedeemerClient_QueueTicket_Success(t *testing.T) {
 	assert.Nil(err)
 }
 
-func TestRedeemerClient_MaxFloat(t *testing.T) {
+func TestRedeemerClient_MaxFloat_LocalExists(t *testing.T) {
 	assert := assert.New(t)
 	rc := &redeemerClient{
 		maxFloat: make(map[ethcommon.Address]*big.Int),
@@ -438,6 +465,78 @@ func TestRedeemerClient_MaxFloat(t *testing.T) {
 	mf, err := rc.MaxFloat(sender)
 	assert.Nil(err)
 	assert.Equal(mf, big.NewInt(100))
+}
+
+func TestRedeemerClient_MaxFloat_RPCErr(t *testing.T) {
+	assert := assert.New(t)
+	ctrl := gomock.NewController(t)
+	rpc := net.NewMockTicketRedeemerClient(ctrl)
+	defer ctrl.Finish()
+	rc := &redeemerClient{
+		maxFloat: make(map[ethcommon.Address]*big.Int),
+		rpc:      rpc,
+	}
+
+	// test error
+	expErr := errors.New("max float error")
+	rpc.EXPECT().MaxFloat(gomock.Any(), gomock.Any()).Return(nil, expErr)
+
+	resC := make(chan struct {
+		mf  *big.Int
+		err error
+	})
+
+	go func() {
+		mf, err := rc.MaxFloat(ethcommon.HexToAddress("foo"))
+		resC <- struct {
+			mf  *big.Int
+			err error
+		}{mf, err}
+	}()
+
+	res := <-resC
+
+	assert.Nil(res.mf)
+	assert.EqualError(res.err, "max float error: "+expErr.Error())
+}
+
+func TestRedeemerClient_MaxFloat_Success(t *testing.T) {
+	assert := assert.New(t)
+	ctrl := gomock.NewController(t)
+	rpc := net.NewMockTicketRedeemerClient(ctrl)
+	defer ctrl.Finish()
+	rc := &redeemerClient{
+		maxFloat: make(map[ethcommon.Address]*big.Int),
+		rpc:      rpc,
+	}
+
+	expMf := big.NewInt(100)
+	update := &net.MaxFloatUpdate{
+		MaxFloat: expMf.Bytes(),
+		Sender:   ethcommon.HexToAddress("foo").Bytes(),
+	}
+	rpc.EXPECT().MaxFloat(gomock.Any(), gomock.Any()).Return(update, nil)
+
+	resC := make(chan struct {
+		mf  *big.Int
+		err error
+	})
+
+	sender := ethcommon.HexToAddress("foo")
+
+	go func() {
+		mf, err := rc.MaxFloat(sender)
+		resC <- struct {
+			mf  *big.Int
+			err error
+		}{mf, err}
+	}()
+
+	res := <-resC
+
+	assert.Nil(res.err)
+	assert.Equal(expMf, res.mf)
+	assert.Equal(rc.maxFloat[sender], expMf)
 }
 
 func TestRedeemerClient_ValidateSender_SenderInfoErr(t *testing.T) {

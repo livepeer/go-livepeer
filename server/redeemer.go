@@ -1,7 +1,11 @@
 package server
 
+// generate the go bindings for github.com/livepeer/go-livepeer/net/redeemer.proto first !
+//go:generate mockgen -source github.com/livepeer/go-livepeer/net/redeemer.pb.go -destination github.com/livepeer/go-livepeer/net/redeemer_mock.pb.go -package net
+
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -173,6 +177,17 @@ func (r *redeemer) MonitorMaxFloat(req *empty.Empty, stream net.TicketRedeemer_M
 	}
 }
 
+func (r *redeemer) MaxFloat(ctx context.Context, req *net.MaxFloatRequest) (*net.MaxFloatUpdate, error) {
+	mf, err := r.sm.MaxFloat(ethcommon.BytesToAddress(req.Sender))
+	if err != nil {
+		return nil, status.Error(codes.Internal, fmt.Errorf("max float error: %v", err).Error())
+	}
+	return &net.MaxFloatUpdate{
+		Sender:   req.Sender,
+		MaxFloat: mf.Bytes(),
+	}, nil
+}
+
 func (r *redeemer) startCleanupLoop() {
 	ticker := time.NewTicker(cleanupLoopTime)
 	for {
@@ -234,14 +249,51 @@ func (r *redeemerClient) QueueTicket(ticket *pm.SignedTicket) error {
 	defer cancel()
 	// QueueTicket either returns an error on failure
 	// or an empty object on success so we can ignore the response object.
-	_, err := r.rpc.QueueTicket(ctx, protoTicket(ticket))
-	return err
+	res := make(chan error)
+	go func() {
+		_, err := r.rpc.QueueTicket(ctx, protoTicket(ticket))
+		res <- err
+	}()
+	select {
+	case <-ctx.Done():
+		return errors.New("QueueTicket request timed out")
+	case err := <-res:
+		return err
+	}
 }
 
 func (r *redeemerClient) MaxFloat(sender ethcommon.Address) (*big.Int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.maxFloat[sender], nil
+
+	if mf, ok := r.maxFloat[sender]; ok && mf != nil {
+		return mf, nil
+	}
+
+	// request max float from redeemer if not locally available
+	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+	defer cancel()
+
+	mfC := make(chan *big.Int)
+	errC := make(chan error)
+	go func() {
+		mf, err := r.rpc.MaxFloat(ctx, &net.MaxFloatRequest{Sender: sender.Bytes()})
+		if err != nil {
+			errC <- err
+			return
+		}
+		mfC <- new(big.Int).SetBytes(mf.MaxFloat)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, errors.New("max float request timed out")
+	case err := <-errC:
+		return nil, fmt.Errorf("max float error: %v", err)
+	case mf := <-mfC:
+		r.maxFloat[sender] = mf
+		return mf, nil
+	}
 }
 
 func (r *redeemerClient) ValidateSender(sender ethcommon.Address) error {
