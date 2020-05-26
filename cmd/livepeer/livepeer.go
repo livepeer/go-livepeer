@@ -66,6 +66,7 @@ var (
 const RtmpPort = "1935"
 const RpcPort = "8935"
 const CliPort = "7935"
+const gRPCPort = "6935"
 
 func main() {
 	// Override the default flag set since there are dependencies that
@@ -126,6 +127,9 @@ func main() {
 	pixelsPerUnit := flag.Int("pixelsPerUnit", 1, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
 	// Interval to poll for blocks
 	blockPollingInterval := flag.Int("blockPollingInterval", 5, "Interval in seconds at which different blockchain event services poll for blocks")
+	// Redemption service
+	redeemer := flag.Bool("redeemer", false, "Set to true to run a ticket redemption service")
+	redeemerAddr := flag.String("redeemerAddr", "", "Ticket redemption service to connect to")
 	// Metrics & logging:
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	version := flag.Bool("version", false, "Print out the version")
@@ -299,6 +303,7 @@ func main() {
 	}
 
 	watcherErr := make(chan error)
+	redeemerErr := make(chan error)
 	var timeWatcher *watchers.TimeWatcher
 	if *network == "offchain" {
 		glog.Infof("***Livepeer is in off-chain mode***")
@@ -460,7 +465,6 @@ func main() {
 		defer n.Balances.StopCleanup()
 
 		if *orchestrator {
-
 			// Set price per pixel base info
 			if *pixelsPerUnit <= 0 {
 				// Can't divide by 0
@@ -504,6 +508,55 @@ func main() {
 			defer gpm.Stop()
 
 			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, senderWatcher, timeWatcher, n.Database, cleanupInterval, smTTL)
+			if *redeemer {
+				r, err := server.NewRedeemer(
+					n.Eth.Account().Address,
+					n.Eth,
+					sm,
+				)
+				if err != nil {
+					glog.Errorf("Unable to create redeemer: %v", err)
+					return
+				}
+
+				go func() {
+					uri, err := url.Parse("localhost:" + gRPCPort)
+					if err != nil {
+						redeemerErr <- err
+						return
+					}
+					if err := r.Start(uri); err != nil {
+						redeemerErr <- err
+						return
+					}
+				}()
+				defer r.Stop()
+				glog.Info("redeemer started")
+
+				uri, err := url.Parse(fmt.Sprintf("localhost:%v", gRPCPort))
+				if err != nil {
+					glog.Error("Unable to start redeemer client:", err)
+					return
+				}
+				rc, conn, err := server.NewRedeemerClient(uri, senderWatcher, timeWatcher)
+				if err != nil {
+					glog.Error("Unable to start redeemer client:", err)
+					return
+				}
+
+				defer conn.Close()
+				sm = rc
+			}
+			if *redeemerAddr != "" {
+				uri, err := url.Parse(*redeemerAddr)
+				if err != nil {
+					glog.Error("Unable to start redeemer client:", err)
+					return
+				}
+				rc, conn, err := server.NewRedeemerClient(uri, senderWatcher, timeWatcher)
+				defer conn.Close()
+				sm = rc
+			}
 			// Start sender monitor
 			sm.Start()
 			defer sm.Stop()
@@ -801,6 +854,9 @@ func main() {
 		return
 	case err := <-ec:
 		glog.Infof("Error from media server: %v", err)
+		return
+	case err := <-redeemerErr:
+		glog.Error(err)
 		return
 	case <-msCtx.Done():
 		glog.Infof("MediaServer Done()")
