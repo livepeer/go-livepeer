@@ -31,6 +31,13 @@ const rpcTimeout = 8 * time.Second
 
 var cleanupLoopTime = 1 * time.Hour
 
+// Redeemer is the interface for a ticket redemption gRPC service
+type Redeemer interface {
+	net.TicketRedeemerServer
+	Start(host *url.URL) error
+	Stop()
+}
+
 type redeemer struct {
 	recipient   ethcommon.Address
 	subs        sync.Map
@@ -41,7 +48,7 @@ type redeemer struct {
 }
 
 // NewRedeemer creates a new ticket redemption service instance
-func NewRedeemer(recipient ethcommon.Address, eth eth.LivepeerEthClient, sm pm.SenderMonitor) (net.TicketRedeemerServer, error) {
+func NewRedeemer(recipient ethcommon.Address, eth eth.LivepeerEthClient, sm pm.SenderMonitor) (Redeemer, error) {
 
 	if recipient == (ethcommon.Address{}) {
 		return nil, fmt.Errorf("must provide a recipient")
@@ -63,8 +70,11 @@ func NewRedeemer(recipient ethcommon.Address, eth eth.LivepeerEthClient, sm pm.S
 	}, nil
 }
 
-func (r *redeemer) Start() error {
-	listener, err := gonet.Listen("tcp", ":50051")
+func (r *redeemer) Start(host *url.URL) error {
+	listener, err := gonet.Listen("tcp", host.String())
+	if err != nil {
+		return err
+	}
 	defer listener.Close()
 	if err != nil {
 		return err
@@ -92,6 +102,7 @@ func (r *redeemer) QueueTicket(ctx context.Context, ticket *net.Ticket) (*empty.
 	if err := r.sm.QueueTicket(t); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	glog.Infof("ticket queued sender=0x%x", ticket.Sender)
 
 	go r.monitorMaxFloat(ethcommon.BytesToAddress(ticket.Sender))
 	return &empty.Empty{}, nil
@@ -218,7 +229,8 @@ type redeemerClient struct {
 // NewRedeemerClient instantiates a new client for the ticket redemption service
 // The client implements the pm.SenderMonitor interface
 func NewRedeemerClient(uri *url.URL, sm pm.SenderManager, tm pm.TimeManager) (pm.SenderMonitor, *grpc.ClientConn, error) {
-	conn, err := grpc.Dial(uri.Host,
+	conn, err := grpc.Dial(
+		uri.String(),
 		grpc.WithBlock(),
 		grpc.WithTimeout(GRPCConnectTimeout),
 		grpc.WithInsecure(),

@@ -306,9 +306,8 @@ func TestRedeemerClient_MonitorMaxFloat_RequestErr(t *testing.T) {
 	errLogsAfter := glog.Stats.Error.Lines()
 	assert.Equal(errLogsAfter-errLogsBefore, int64(1))
 	// check that maxfloat didn't change
-	mf, err := rc.MaxFloat(sender)
-	assert.Nil(err)
-	assert.Nil(mf)
+	_, ok := rc.maxFloat[sender]
+	assert.False(ok)
 }
 
 func TestRedeemerClient_MonitorMaxFloat_StreamRecvErr(t *testing.T) {
