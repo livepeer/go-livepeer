@@ -191,6 +191,113 @@ func (r *redeemer) startCleanupLoop() {
 	}
 }
 
+type redeemerClient struct {
+	rpc      net.TicketRedeemerClient
+	maxFloat map[ethcommon.Address]*big.Int
+	mu       sync.RWMutex
+	quit     chan struct{}
+	sm       pm.SenderManager
+	tm       pm.TimeManager
+}
+
+// NewRedeemerClient instantiates a new client for the ticket redemption service
+// The client implements the pm.SenderMonitor interface
+func NewRedeemerClient(uri *url.URL, sm pm.SenderManager, tm pm.TimeManager) (pm.SenderMonitor, *grpc.ClientConn, error) {
+	conn, err := grpc.Dial(uri.Host,
+		grpc.WithBlock(),
+		grpc.WithTimeout(GRPCConnectTimeout),
+		grpc.WithInsecure(),
+	)
+
+	//TODO: PROVIDE KEEPALIVE SETTINGS
+	if err != nil {
+		glog.Errorf("Did not connect to orch=%v err=%v", uri, err)
+		return nil, nil, fmt.Errorf("Did not connect to orch=%v err=%v", uri, err)
+	}
+	return &redeemerClient{
+		rpc:      net.NewTicketRedeemerClient(conn),
+		maxFloat: make(map[ethcommon.Address]*big.Int),
+		quit:     make(chan struct{}),
+	}, conn, nil
+}
+
+func (r *redeemerClient) Start() {
+	go r.monitorMaxFloat(context.Background())
+}
+
+func (r *redeemerClient) Stop() {
+	close(r.quit)
+}
+
+func (r *redeemerClient) QueueTicket(ticket *pm.SignedTicket) error {
+	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+	defer cancel()
+	// QueueTicket either returns an error on failure
+	// or an empty object on success so we can ignore the response object.
+	_, err := r.rpc.QueueTicket(ctx, protoTicket(ticket))
+	return err
+}
+
+func (r *redeemerClient) MaxFloat(sender ethcommon.Address) (*big.Int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.maxFloat[sender], nil
+}
+
+func (r *redeemerClient) ValidateSender(sender ethcommon.Address) error {
+	info, err := r.sm.GetSenderInfo(sender)
+	if err != nil {
+		return fmt.Errorf("could not get sender info for %v: %v", sender.Hex(), err)
+	}
+	maxWithdrawRound := new(big.Int).Add(r.tm.LastInitializedRound(), big.NewInt(1))
+	if info.WithdrawRound.Int64() != 0 && info.WithdrawRound.Cmp(maxWithdrawRound) != 1 {
+		return fmt.Errorf("deposit and reserve for sender %v is set to unlock soon", sender.Hex())
+	}
+	return nil
+}
+
+func (r *redeemerClient) MonitorMaxFloat(sender ethcommon.Address, sink chan<- *big.Int) event.Subscription {
+	return nil
+}
+
+func (r *redeemerClient) monitorMaxFloat(ctx context.Context) {
+	stream, err := r.rpc.MonitorMaxFloat(ctx, &empty.Empty{})
+	if err != nil {
+		glog.Errorf("Unable to get MonitorMaxFloat stream")
+		return
+	}
+
+	updateC := make(chan *net.MaxFloatUpdate)
+	errC := make(chan error)
+	go func() {
+		for {
+			update, err := stream.Recv()
+			if err != nil {
+				errC <- err
+			} else {
+				updateC <- update
+			}
+		}
+	}()
+
+	for {
+		select {
+		case <-r.quit:
+			glog.Infof("closing redeemer service")
+			return
+		case <-ctx.Done():
+			glog.Infof("closing redeemer service")
+			return
+		case update := <-updateC:
+			r.mu.Lock()
+			r.maxFloat[ethcommon.BytesToAddress(update.Sender)] = new(big.Int).SetBytes(update.MaxFloat)
+			r.mu.Unlock()
+		case err := <-errC:
+			glog.Error(err)
+		}
+	}
+}
+
 func pmTicket(ticket *net.Ticket) *pm.SignedTicket {
 	return &pm.SignedTicket{
 		Ticket: &pm.Ticket{

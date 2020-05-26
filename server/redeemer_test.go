@@ -254,6 +254,244 @@ func TestRedeemerServer_CleanupLoop(t *testing.T) {
 	assert.False(ok)
 }
 
+// Test client
+func TestRedeemerClient_MonitorMaxFloat_RequestErr(t *testing.T) {
+	assert := assert.New(t)
+
+	sender := ethcommon.HexToAddress("foo")
+	ctrl := gomock.NewController(t)
+	rpc := net.NewMockTicketRedeemerClient(ctrl)
+	defer ctrl.Finish()
+	rc := &redeemerClient{
+		rpc:      rpc,
+		maxFloat: make(map[ethcommon.Address]*big.Int),
+		quit:     make(chan struct{}),
+	}
+
+	ctx := context.TODO()
+
+	// rpc.MonitorMaxFloat error
+	rpc.EXPECT().MonitorMaxFloat(ctx, gomock.Any()).Return(nil, errors.New("error")).Times(1)
+	errLogsBefore := glog.Stats.Error.Lines()
+	rc.monitorMaxFloat(ctx)
+	errLogsAfter := glog.Stats.Error.Lines()
+	assert.Equal(errLogsAfter-errLogsBefore, int64(1))
+	// check that maxfloat didn't change
+	mf, err := rc.MaxFloat(sender)
+	assert.Nil(err)
+	assert.Nil(mf)
+}
+
+func TestRedeemerClient_MonitorMaxFloat_StreamRecvErr(t *testing.T) {
+	assert := assert.New(t)
+
+	sender := ethcommon.HexToAddress("foo")
+	ctrl := gomock.NewController(t)
+	rpc := net.NewMockTicketRedeemerClient(ctrl)
+	defer ctrl.Finish()
+	rc := &redeemerClient{
+		rpc:      rpc,
+		maxFloat: make(map[ethcommon.Address]*big.Int),
+		quit:     make(chan struct{}),
+	}
+	// clean up go routine
+	defer rc.Stop()
+
+	ctx := context.TODO()
+	// stream.Recv error
+	stream := net.NewMockTicketRedeemer_MonitorMaxFloatClient(ctrl)
+	rpc.EXPECT().MonitorMaxFloat(ctx, gomock.Any()).Return(stream, nil).Times(1)
+	stream.EXPECT().Recv().Return(nil, errors.New("error")).AnyTimes()
+	errLogsBefore := glog.Stats.Error.Lines()
+	go rc.monitorMaxFloat(ctx)
+	time.Sleep(5 * time.Millisecond)
+	errLogsAfter := glog.Stats.Error.Lines()
+	assert.Greater(errLogsAfter-errLogsBefore, int64(0))
+	// check that maxfloat didn't change
+	mf, err := rc.MaxFloat(sender)
+	assert.Nil(err)
+	assert.Nil(mf)
+}
+
+func TestRedeemerClient_MonitorMaxFloat_ContextDone(t *testing.T) {
+	assert := assert.New(t)
+
+	sender := ethcommon.HexToAddress("foo")
+	ctrl := gomock.NewController(t)
+	rpc := net.NewMockTicketRedeemerClient(ctrl)
+	defer ctrl.Finish()
+	rc := &redeemerClient{
+		rpc:      rpc,
+		maxFloat: make(map[ethcommon.Address]*big.Int),
+		quit:     make(chan struct{}),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := net.NewMockTicketRedeemer_MonitorMaxFloatClient(ctrl)
+	rpc.EXPECT().MonitorMaxFloat(ctx, gomock.Any()).Return(stream, nil).Times(1)
+	stream.EXPECT().Recv().Return(&net.MaxFloatUpdate{Sender: (ethcommon.Address{}).Bytes(), MaxFloat: big.NewInt(10).Bytes()}, nil).AnyTimes()
+	errLogsBefore := glog.Stats.Info.Lines()
+	go rc.monitorMaxFloat(ctx)
+	time.Sleep(time.Millisecond)
+	cancel()
+	time.Sleep(time.Millisecond)
+	errLogsAfter := glog.Stats.Info.Lines()
+	assert.Greater(errLogsAfter-errLogsBefore, int64(0))
+	// check that maxfloat didn't change
+	mf, err := rc.MaxFloat(sender)
+	assert.Nil(err)
+	assert.Nil(mf)
+}
+
+func TestRedeemerClient_MonitorMaxFloat_UpdateMaxFloat(t *testing.T) {
+	assert := assert.New(t)
+
+	sender := ethcommon.HexToAddress("foo")
+	ctrl := gomock.NewController(t)
+	rpc := net.NewMockTicketRedeemerClient(ctrl)
+	defer ctrl.Finish()
+	rc := &redeemerClient{
+		rpc:      rpc,
+		maxFloat: make(map[ethcommon.Address]*big.Int),
+		quit:     make(chan struct{}),
+	}
+	// clean up go routine
+	defer rc.Stop()
+
+	ctx := context.TODO()
+	stream := net.NewMockTicketRedeemer_MonitorMaxFloatClient(ctrl)
+	rpc.EXPECT().MonitorMaxFloat(ctx, gomock.Any()).Return(stream, nil).Times(1)
+	stream.EXPECT().Recv().Return(&net.MaxFloatUpdate{Sender: sender.Bytes(), MaxFloat: big.NewInt(10).Bytes()}, nil).AnyTimes()
+	go rc.monitorMaxFloat(ctx)
+	time.Sleep(time.Millisecond)
+	mf, err := rc.MaxFloat(sender)
+	assert.Nil(err)
+	assert.Equal(mf, big.NewInt(10))
+}
+
+func TestRedeemerClient_QueueTicket_RPCErr(t *testing.T) {
+	assert := assert.New(t)
+
+	ctrl := gomock.NewController(t)
+	rpc := net.NewMockTicketRedeemerClient(ctrl)
+	defer ctrl.Finish()
+	rc := &redeemerClient{
+		rpc:      rpc,
+		maxFloat: make(map[ethcommon.Address]*big.Int),
+		quit:     make(chan struct{}),
+	}
+
+	ticket := &net.Ticket{
+		Recipient:              pm.RandAddress().Bytes(),
+		Sender:                 pm.RandAddress().Bytes(),
+		FaceValue:              big.NewInt(100).Bytes(),
+		WinProb:                big.NewInt(100).Bytes(),
+		SenderNonce:            1,
+		CreationRound:          100,
+		CreationRoundBlockHash: pm.RandHash().Bytes(),
+		Sig:                    pm.RandBytes(32),
+		RecipientRand:          big.NewInt(1337).Bytes(),
+		ParamsExpirationBlock:  100,
+	}
+
+	rpc.EXPECT().QueueTicket(gomock.Any(), gomock.Any()).Return(nil, errors.New("QueueTicket error"))
+	assert.EqualError(rc.QueueTicket(pmTicket(ticket)), "QueueTicket error")
+}
+
+func TestRedeemerClient_QueueTicket_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	ctrl := gomock.NewController(t)
+	rpc := net.NewMockTicketRedeemerClient(ctrl)
+	defer ctrl.Finish()
+	rc := &redeemerClient{
+		rpc:      rpc,
+		maxFloat: make(map[ethcommon.Address]*big.Int),
+		quit:     make(chan struct{}),
+	}
+
+	ticket := &net.Ticket{
+		Recipient:              pm.RandAddress().Bytes(),
+		Sender:                 pm.RandAddress().Bytes(),
+		FaceValue:              big.NewInt(100).Bytes(),
+		WinProb:                big.NewInt(100).Bytes(),
+		SenderNonce:            1,
+		CreationRound:          100,
+		CreationRoundBlockHash: pm.RandHash().Bytes(),
+		Sig:                    pm.RandBytes(32),
+		RecipientRand:          big.NewInt(1337).Bytes(),
+		ParamsExpirationBlock:  100,
+	}
+
+	rpc.EXPECT().QueueTicket(gomock.Any(), gomock.Any()).Return(nil, nil)
+	err := rc.QueueTicket(pmTicket(ticket))
+	assert.Nil(err)
+}
+
+func TestRedeemerClient_MaxFloat(t *testing.T) {
+	assert := assert.New(t)
+	rc := &redeemerClient{
+		maxFloat: make(map[ethcommon.Address]*big.Int),
+	}
+	sender := pm.RandAddress()
+	rc.maxFloat[sender] = big.NewInt(100)
+	mf, err := rc.MaxFloat(sender)
+	assert.Nil(err)
+	assert.Equal(mf, big.NewInt(100))
+}
+
+func TestRedeemerClient_ValidateSender_SenderInfoErr(t *testing.T) {
+	assert := assert.New(t)
+	rc := &redeemerClient{
+		sm: newStubSenderManager(),
+	}
+	rc.sm.(*stubSenderManager).err = errors.New("GetSenderInfo error")
+	assert.True(strings.Contains(rc.ValidateSender(pm.RandAddress()).Error(), "GetSenderInfo error"))
+}
+
+func TestRedeemerClient_ValidateSender_MaxWithDrawRoundErr(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	rc := &redeemerClient{
+		sm: newStubSenderManager(),
+		tm: &stubTimeManager{
+			round: big.NewInt(10),
+		},
+	}
+	sender := pm.RandAddress()
+	rc.sm.(*stubSenderManager).info[sender] = &pm.SenderInfo{
+		WithdrawRound: big.NewInt(10),
+	}
+	info, err := rc.sm.GetSenderInfo(sender)
+	require.Nil(err)
+	require.Equal(info.WithdrawRound, big.NewInt(10))
+
+	err = rc.ValidateSender(sender)
+	assert.EqualError(err, fmt.Sprintf("deposit and reserve for sender %v is set to unlock soon", sender.Hex()))
+}
+
+func TestRedeemerClient_ValidateSender_Success(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	rc := &redeemerClient{
+		sm: newStubSenderManager(),
+		tm: &stubTimeManager{
+			round: big.NewInt(0),
+		},
+	}
+	sender := pm.RandAddress()
+	rc.sm.(*stubSenderManager).info[sender] = &pm.SenderInfo{
+		WithdrawRound: big.NewInt(10),
+	}
+	info, err := rc.sm.GetSenderInfo(sender)
+	require.Nil(err)
+	require.Equal(info.WithdrawRound, big.NewInt(10))
+
+	assert.Nil(rc.ValidateSender(sender))
+}
+
 // Stubs
 
 type stubSenderMonitor struct {
