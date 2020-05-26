@@ -127,6 +127,9 @@ func main() {
 	pixelsPerUnit := flag.Int("pixelsPerUnit", 1, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
 	// Interval to poll for blocks
 	blockPollingInterval := flag.Int("blockPollingInterval", 5, "Interval in seconds at which different blockchain event services poll for blocks")
+	// Redemption service
+	redeemer := flag.Bool("redeemer", false, "Set to true to run a ticket redemption service")
+	redeemerAddr := flag.String("redeemerAddr", "", "URL of the ticket redemption service to use")
 	// Metrics & logging:
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	version := flag.Bool("version", false, "Print out the version")
@@ -265,6 +268,8 @@ func main() {
 		n.NodeType = core.TranscoderNode
 	} else if *broadcaster {
 		n.NodeType = core.BroadcasterNode
+	} else if *redeemer {
+		n.NodeType = core.RedeemerNode
 	} else {
 		glog.Fatalf("Node type not set; must be one of -broadcaster, -transcoder or -orchestrator")
 	}
@@ -282,6 +287,8 @@ func main() {
 			nodeType = "orch"
 		case core.TranscoderNode:
 			nodeType = "trcr"
+		case core.RedeemerNode:
+			nodeType = "rdmr"
 		}
 		lpmon.InitCensus(nodeType, nodeID, core.LivepeerVersion)
 	}
@@ -300,6 +307,7 @@ func main() {
 	}
 
 	watcherErr := make(chan error)
+	redeemerErr := make(chan error)
 	var timeWatcher *watchers.TimeWatcher
 	if *network == "offchain" {
 		glog.Infof("***Livepeer is in off-chain mode***")
@@ -460,8 +468,14 @@ func main() {
 		n.Balances = core.NewAddressBalances(cleanupInterval)
 		defer n.Balances.StopCleanup()
 
-		if *orchestrator {
+		// By default the ticket recipient is the node's address
+		// If the address of an on-chain registered orchestrator is provided, then it should be specified as the ticket recipient
+		recipientAddr := n.Eth.Account().Address
+		if *ethOrchAddr != "" {
+			recipientAddr = ethcommon.HexToAddress(*ethOrchAddr)
+		}
 
+		if *orchestrator {
 			// Set price per pixel base info
 			if *pixelsPerUnit <= 0 {
 				// Can't divide by 0
@@ -488,13 +502,6 @@ func main() {
 			orchSetupCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
-			// By default the ticket recipient is the node's address
-			// If the address of an on-chain registered orchestrator is provided, then it should be specified as the ticket recipient
-			recipientAddr := n.Eth.Account().Address
-			if *ethOrchAddr != "" {
-				recipientAddr = ethcommon.HexToAddress(*ethOrchAddr)
-			}
-
 			if err := setupOrchestrator(orchSetupCtx, n, recipientAddr); err != nil {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
@@ -511,7 +518,19 @@ func main() {
 			}
 			defer gpm.Stop()
 
-			sm := pm.NewSenderMonitor(n.Eth.Account().Address, n.Eth, senderWatcher, timeWatcher, n.Database, cleanupInterval, smTTL)
+			var sm pm.SenderMonitor
+			if *redeemerAddr != "" {
+				*redeemerAddr = defaultAddr(*redeemerAddr, "127.0.0.1", RpcPort)
+				rc, err := server.NewRedeemerClient(*redeemerAddr, senderWatcher, timeWatcher)
+				if err != nil {
+					glog.Error("Unable to start redeemer client:", err)
+					return
+				}
+				sm = rc
+			} else {
+				sm = pm.NewSenderMonitor(recipientAddr, n.Eth, senderWatcher, timeWatcher, n.Database, cleanupInterval, smTTL)
+			}
+
 			// Start sender monitor
 			sm.Start()
 			defer sm.Stop()
@@ -579,6 +598,28 @@ func main() {
 				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *maxPricePerUnit)
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
 			}
+		}
+
+		if *redeemer {
+			r, err := server.NewRedeemer(
+				recipientAddr,
+				n.Eth,
+				pm.NewSenderMonitor(recipientAddr, n.Eth, senderWatcher, timeWatcher, n.Database, cleanupInterval, smTTL),
+			)
+			if err != nil {
+				glog.Errorf("Unable to create redeemer: %v", err)
+				return
+			}
+
+			*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
+			go func() {
+				if err := r.Start(*httpAddr); err != nil {
+					redeemerErr <- err
+					return
+				}
+			}()
+			defer r.Stop()
+			glog.Infof("Redeemer started on %v", *httpAddr)
 		}
 
 		blockWatchCtx, cancel := context.WithCancel(ctx)
@@ -764,9 +805,11 @@ func main() {
 		s.StartCliWebserver(*cliAddr)
 		close(wc)
 	}()
-	go func() {
-		ec <- s.StartMediaServer(msCtx, *transcodingOptions, *httpAddr)
-	}()
+	if n.NodeType != core.RedeemerNode {
+		go func() {
+			ec <- s.StartMediaServer(msCtx, *transcodingOptions, *httpAddr)
+		}()
+	}
 
 	go func() {
 		if core.OrchestratorNode != n.NodeType {
@@ -799,6 +842,8 @@ func main() {
 		glog.Infof("Video Ingest Endpoint - rtmp://%v", *rtmpAddr)
 	case core.TranscoderNode:
 		glog.Infof("**Liveepeer Running in Transcoder Mode***")
+	case core.RedeemerNode:
+		glog.Infof("**Livepeer Running in Redeemer Mode**")
 	}
 
 	c := make(chan os.Signal)
@@ -810,6 +855,10 @@ func main() {
 	case err := <-ec:
 		glog.Infof("Error from media server: %v", err)
 		return
+	case err := <-redeemerErr:
+		if err != nil {
+			glog.Fatalf("Error starting redemption service: %v", err)
+		}
 	case <-msCtx.Done():
 		glog.Infof("MediaServer Done()")
 		return

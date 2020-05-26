@@ -41,6 +41,7 @@ const (
 	BroadcasterNode NodeType = iota
 	OrchestratorNode
 	TranscoderNode
+	RedeemerNode
 )
 
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
