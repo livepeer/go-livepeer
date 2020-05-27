@@ -243,6 +243,8 @@ func NewRedeemerClient(uri *url.URL, sm pm.SenderManager, tm pm.TimeManager) (pm
 	}
 	return &redeemerClient{
 		rpc:      net.NewTicketRedeemerClient(conn),
+		sm:       sm,
+		tm:       tm,
 		maxFloat: make(map[ethcommon.Address]*big.Int),
 		quit:     make(chan struct{}),
 	}, conn, nil
