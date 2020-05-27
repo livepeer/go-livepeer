@@ -374,6 +374,18 @@ func TestEstimateFee(t *testing.T) {
 	assert.Nil(err)
 	assert.Zero(fee.Cmp(expFee))
 	assert.Equal(uint(0), profiles[0].Framerate, "Profile framerate was reset")
+
+	// Test estimation with non-integer fps
+	// pixels = (256 * 144 * ceil(30000/1001) * 3) + (426 * 240 * 30 * 3)
+	// Calculations should take ceiling of fps i.e. 29.97 -> 30
+	profiles[0].Framerate = 30000
+	profiles[0].FramerateDen = 1001
+	expFee = new(big.Rat).SetInt64(12519360)
+	expFee.Mul(expFee, new(big.Rat).SetFloat64(pixelEstimateMultiplier))
+	expFee.Mul(expFee, priceInfo)
+	fee, err = estimateFee(&stream.HLSSegment{Duration: 3.0}, profiles, priceInfo)
+	assert.Nil(err)
+	assert.Zero(fee.Cmp(expFee))
 }
 
 func TestNewBalanceUpdate(t *testing.T) {

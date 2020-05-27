@@ -386,6 +386,7 @@ func TestMakeFfmpegVideoProfiles(t *testing.T) {
 			Height:  int32(456),
 			Bitrate: int32(789),
 			Fps:     uint32(912),
+			FpsDen:  uint32(15),
 		},
 		{
 			Name:    "prof2",
@@ -393,24 +394,27 @@ func TestMakeFfmpegVideoProfiles(t *testing.T) {
 			Height:  int32(654),
 			Bitrate: int32(321),
 			Fps:     uint32(198),
+			//FpsDen:  0,
 		},
 	}
 
 	// testing happy case scenario
 	expectedProfiles := []ffmpeg.VideoProfile{
 		{
-			Name:       videoProfiles[0].Name,
-			Bitrate:    fmt.Sprint(videoProfiles[0].Bitrate),
-			Framerate:  uint(videoProfiles[0].Fps),
-			Resolution: fmt.Sprintf("%dx%d", videoProfiles[0].Width, videoProfiles[0].Height),
-			Format:     ffmpeg.FormatMPEGTS,
+			Name:         videoProfiles[0].Name,
+			Bitrate:      fmt.Sprint(videoProfiles[0].Bitrate),
+			Framerate:    uint(videoProfiles[0].Fps),
+			FramerateDen: uint(videoProfiles[0].FpsDen),
+			Resolution:   fmt.Sprintf("%dx%d", videoProfiles[0].Width, videoProfiles[0].Height),
+			Format:       ffmpeg.FormatMPEGTS,
 		},
 		{
-			Name:       videoProfiles[1].Name,
-			Bitrate:    fmt.Sprint(videoProfiles[1].Bitrate),
-			Framerate:  uint(videoProfiles[1].Fps),
-			Resolution: fmt.Sprintf("%dx%d", videoProfiles[1].Width, videoProfiles[1].Height),
-			Format:     ffmpeg.FormatMPEGTS,
+			Name:         videoProfiles[1].Name,
+			Bitrate:      fmt.Sprint(videoProfiles[1].Bitrate),
+			Framerate:    uint(videoProfiles[1].Fps),
+			FramerateDen: uint(0),
+			Resolution:   fmt.Sprintf("%dx%d", videoProfiles[1].Width, videoProfiles[1].Height),
+			Format:       ffmpeg.FormatMPEGTS,
 		},
 	}
 

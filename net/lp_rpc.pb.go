@@ -562,6 +562,7 @@ type VideoProfile struct {
 	// FPS of VideoProfile
 	Fps                  uint32              `protobuf:"varint,20,opt,name=fps,proto3" json:"fps,omitempty"`
 	Format               VideoProfile_Format `protobuf:"varint,21,opt,name=format,proto3,enum=net.VideoProfile_Format" json:"format,omitempty"`
+	FpsDen               uint32              `protobuf:"varint,22,opt,name=fpsDen,proto3 json:"fpsDen,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}            `json:"-"`
 	XXX_unrecognized     []byte              `json:"-"`
 	XXX_sizecache        int32               `json:"-"`

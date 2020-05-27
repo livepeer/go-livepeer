@@ -160,6 +160,9 @@ message VideoProfile {
     MP4        = 1;
   }
   Format format = 21;
+
+  // FPS Denominator of VideoProfile
+  uint32 fpsDen = 22;
 }
 
 // Individual transcoded segment data.

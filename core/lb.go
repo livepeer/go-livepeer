@@ -219,7 +219,12 @@ func calculateCost(profiles []ffmpeg.VideoProfile) int {
 			// passthrough; estimate 30fps for load balancing purposes
 			framerate = 30
 		}
-		cost += w * h * framerate // TODO incorporate duration
+		framerateDen := int(v.FramerateDen)
+		if 0 == framerateDen {
+			// denominator unset; treat as 1
+			framerateDen = 1
+		}
+		cost += w * h * (framerate / framerateDen) // TODO incorporate duration
 	}
 	return cost
 }

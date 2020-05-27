@@ -229,11 +229,12 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 			return nil, errFormat
 		}
 		prof := ffmpeg.VideoProfile{
-			Name:       name,
-			Bitrate:    fmt.Sprint(profile.Bitrate),
-			Framerate:  uint(profile.Fps),
-			Resolution: fmt.Sprintf("%dx%d", profile.Width, profile.Height),
-			Format:     format,
+			Name:         name,
+			Bitrate:      fmt.Sprint(profile.Bitrate),
+			Framerate:    uint(profile.Fps),
+			FramerateDen: uint(profile.FpsDen),
+			Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
+			Format:       format,
 		}
 		profiles = append(profiles, prof)
 	}
@@ -526,9 +527,14 @@ func estimateFee(seg *stream.HLSSegment, profiles []ffmpeg.VideoProfile, priceIn
 			// TODO incorporate the actual number of frames from the input
 			framerate = 120 // conservative estimate of input fps
 		}
-
-		// Take the ceiling of the duration to always overestimate
-		outPixels += int64(w*h) * int64(framerate) * int64(math.Ceil(seg.Duration))
+		framerateDen := p.FramerateDen
+		if framerateDen == 0 {
+			// Denominator not set, treat as 1
+			framerateDen = 1
+		}
+		// Take ceilings, as it is better to overestimate
+		fps := math.Ceil((float64(framerate) / float64(framerateDen)))
+		outPixels += int64(w*h) * int64(fps) * int64(math.Ceil(seg.Duration))
 	}
 
 	// feeEstimate = pixels * pixelEstimateMultiplier * priceInfo
