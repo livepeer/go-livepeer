@@ -106,6 +106,9 @@ ticketLoop:
 					glog.Errorf("Unable to pop ticket from queue err=%v", err)
 					continue ticketLoop
 				}
+				if nextTicket == nil {
+					continue ticketLoop
+				}
 				if nextTicket.ParamsExpirationBlock.Cmp(latestBlock) <= 0 {
 					select {
 					case q.redeemable <- nextTicket:
