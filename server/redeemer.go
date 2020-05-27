@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
@@ -102,7 +103,7 @@ func (r *redeemer) QueueTicket(ctx context.Context, ticket *net.Ticket) (*empty.
 	if err := r.sm.QueueTicket(t); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	glog.Infof("ticket queued sender=0x%x", ticket.Sender)
+	glog.V(common.NEW).Infof("ticket queued sender=0x%x faceValue=%v", ticket.Sender, new(big.Int).SetBytes(ticket.FaceValue))
 
 	go r.monitorMaxFloat(ethcommon.BytesToAddress(ticket.Sender))
 	return &empty.Empty{}, nil
@@ -138,6 +139,7 @@ func (r *redeemer) sendMaxFloatUpdate(sender ethcommon.Address, maxFloat *big.In
 			if maxFloat != nil {
 				maxFloatB = maxFloat.Bytes()
 			}
+			glog.V(common.NEW).Infof("Sending maxFloatUpdate sender=%v maxFloat=%v", sender.Hex(), maxFloat)
 			value.(chan *net.MaxFloatUpdate) <- &net.MaxFloatUpdate{
 				Sender:   sender.Bytes(),
 				MaxFloat: maxFloatB,
@@ -356,6 +358,7 @@ func (r *redeemerClient) monitorMaxFloat(ctx context.Context) {
 			return
 		case update := <-updateC:
 			r.mu.Lock()
+			glog.V(common.NEW).Infof("Received max float update sender=0x%x maxFloat=%v", update.Sender, new(big.Int).SetBytes(update.MaxFloat))
 			r.maxFloat[ethcommon.BytesToAddress(update.Sender)] = new(big.Int).SetBytes(update.MaxFloat)
 			r.mu.Unlock()
 		case err := <-errC:

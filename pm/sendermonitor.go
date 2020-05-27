@@ -124,6 +124,7 @@ func (sm *senderMonitor) addFloat(addr ethcommon.Address, amount *big.Int) error
 	if err != nil {
 		return err
 	}
+	glog.V(3).Infof("added max float sender=%v amount=%v maxFloat=%v", addr.Hex(), amount, mf)
 	sm.senders[addr].subFeed.Send(mf)
 	return nil
 }
@@ -142,6 +143,7 @@ func (sm *senderMonitor) subFloat(addr ethcommon.Address, amount *big.Int) error
 	if err != nil {
 		return err
 	}
+	glog.V(3).Infof("substracted max float sender=%v amount=%v maxFloat=%v", addr.Hex(), amount, mf)
 	sm.senders[addr].subFeed.Send(mf)
 	return nil
 }
