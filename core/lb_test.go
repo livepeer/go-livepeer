@@ -16,11 +16,14 @@ import (
 
 func TestLB_CalculateCost(t *testing.T) {
 	assert := assert.New(t)
-	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P144p30fps16x9}
+	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P144p30fps16x9, ffmpeg.P144p30fps16x9}
 	profiles[0].Framerate = 1
 	profiles[1].Framerate = 0 // passthru; estimated to be 30fps for load
-	// 256 * 144 * 1 + 256 * 144 * 30
-	assert.Equal(1142784, calculateCost(profiles))
+	// rational FPS 29.97
+	profiles[2].Framerate = 30000
+	profiles[2].FramerateDen = 1001
+	// (256 * 144 * 1) + (256 * 144 * 30) + (256 * 144 * 29)
+	assert.Equal(2211840, calculateCost(profiles))
 }
 
 func TestLB_LeastLoaded(t *testing.T) {
