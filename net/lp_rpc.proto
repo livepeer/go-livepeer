@@ -135,7 +135,11 @@ message SegData {
   repeated VideoProfile fullProfiles = 33;
 
   // Transcoding profiles to use. Supersedes `fullProfiles` field
+  // Deprecated by `fullProfiles3` but may still be used for integer FPS
   repeated VideoProfile fullProfiles2 = 34;
+
+  // Transcoding profiles to use. Supersedes `fullProfiles2` field
+  repeated VideoProfile fullProfiles3 = 35;
 }
 
 message VideoProfile {

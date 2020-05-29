@@ -313,7 +313,9 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 	}
 	var err error
 	profiles := []ffmpeg.VideoProfile{}
-	if len(segData.FullProfiles2) > 0 {
+	if len(segData.FullProfiles3) > 0 {
+		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles3)
+	} else if len(segData.FullProfiles2) > 0 {
 		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles2)
 	} else if len(segData.FullProfiles) > 0 {
 		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles)
