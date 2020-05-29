@@ -116,6 +116,7 @@ type authWebhookResponse struct {
 		Height  int    `json:"height"`
 		Bitrate int    `json:"bitrate"`
 		FPS     uint   `json:"fps"`
+		FPSDen  uint   `json:"fpsDen"`
 	} `json:"profiles"`
 }
 
@@ -217,10 +218,11 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 						profile.Bitrate)
 				}
 				prof := ffmpeg.VideoProfile{
-					Name:       name,
-					Bitrate:    fmt.Sprint(profile.Bitrate),
-					Framerate:  profile.FPS,
-					Resolution: fmt.Sprintf("%dx%d", profile.Width, profile.Height),
+					Name:         name,
+					Bitrate:      fmt.Sprint(profile.Bitrate),
+					Framerate:    profile.FPS,
+					FramerateDen: profile.FPSDen,
+					Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
 				}
 				profiles = append(profiles, prof)
 			}

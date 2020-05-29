@@ -433,7 +433,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// set profiles with valid values, presets empty
 	ts7 := makeServer(`{"manifestID":"a", "profiles": [
 		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456},
-		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": 987},
+		{"name": "prof2", "bitrate": 765, "fps": 876, "fpsDen": 12, "width": 456, "height": 987},
 		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654}]}`)
 	defer ts7.Close()
 	params = createSid(u).(*streamParameters)
@@ -441,22 +441,25 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 
 	expectedProfiles := []ffmpeg.VideoProfile{
 		ffmpeg.VideoProfile{
-			Name:       "prof1",
-			Bitrate:    "432",
-			Framerate:  uint(560),
-			Resolution: "123x456",
+			Name:         "prof1",
+			Bitrate:      "432",
+			Framerate:    uint(560),
+			FramerateDen: 0,
+			Resolution:   "123x456",
 		},
 		ffmpeg.VideoProfile{
-			Name:       "prof2",
-			Bitrate:    "765",
-			Framerate:  uint(876),
-			Resolution: "456x987",
+			Name:         "prof2",
+			Bitrate:      "765",
+			Framerate:    uint(876),
+			FramerateDen: uint(12),
+			Resolution:   "456x987",
 		},
 		ffmpeg.VideoProfile{
-			Name:       "passthru_fps",
-			Bitrate:    "890",
-			Resolution: "789x654",
-			Framerate:  0,
+			Name:         "passthru_fps",
+			Bitrate:      "890",
+			Resolution:   "789x654",
+			Framerate:    0,
+			FramerateDen: 0,
 		},
 	}
 
@@ -475,7 +478,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// set profiles and presets
 	ts9 := makeServer(`{"manifestID":"a", "presets":["P240p30fps16x9", "P720p30fps16x9"], "profiles": [
 		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456},
-		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": 987},
+		{"name": "prof2", "bitrate": 765, "fps": 876, "fpsDen": 12, "width": 456, "height": 987},
 		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654}]}`)
 
 	defer ts9.Close()
