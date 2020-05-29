@@ -456,7 +456,10 @@ type SegData struct {
 	// Deprecated by `fullProfiles2` but may still be used for mpegts formats
 	FullProfiles []*VideoProfile `protobuf:"bytes,33,rep,name=fullProfiles,proto3" json:"fullProfiles,omitempty"`
 	// Transcoding profiles to use. Supersedes `fullProfiles` field
-	FullProfiles2        []*VideoProfile `protobuf:"bytes,34,rep,name=fullProfiles2,proto3" json:"fullProfiles2,omitempty"`
+	// Deprecated by `fullProfiles3` but may still be used for integer FPS
+	FullProfiles2 []*VideoProfile `protobuf:"bytes,34,rep,name=fullProfiles2,proto3" json:"fullProfiles2,omitempty"`
+	// Transcoding profiles to use. Supersedes `fullProfiles2` field
+	FullProfiles3        []*VideoProfile `protobuf:"bytes,35,rep,name=fullProfiles3,proto3" json:"fullProfiles3,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}        `json:"-"`
 	XXX_unrecognized     []byte          `json:"-"`
 	XXX_sizecache        int32           `json:"-"`
@@ -546,6 +549,13 @@ func (m *SegData) GetFullProfiles() []*VideoProfile {
 func (m *SegData) GetFullProfiles2() []*VideoProfile {
 	if m != nil {
 		return m.FullProfiles2
+	}
+	return nil
+}
+
+func (m *SegData) GetFullProfiles3() []*VideoProfile {
+	if m != nil {
+		return m.FullProfiles3
 	}
 	return nil
 }

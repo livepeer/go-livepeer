@@ -294,6 +294,20 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	assert.Equal(expectedProfiles, segData.FullProfiles)
 	assert.Empty(segData.FullProfiles2)
 
+	// Check that FullProfiles3 field is used if any profile has FPS denominator
+	s.Profiles[1].FramerateDen = uint(12)
+	data, err = genSegCreds(s, seg)
+	assert.Nil(err)
+	buf, err = base64.StdEncoding.DecodeString(data)
+	assert.Nil(err)
+	err = proto.Unmarshal(buf, &segData)
+	assert.Nil(err)
+	expectedProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
+	assert.Equal([]byte("invalid"), segData.Profiles)
+	assert.Equal(expectedProfiles, segData.FullProfiles3)
+	assert.Empty(segData.FullProfiles)
+	assert.Empty(segData.FullProfiles2)
+
 	// Check that profile format errors propagate
 	s.Profiles[1].Format = -1
 	data, err = genSegCreds(s, seg)
@@ -375,6 +389,17 @@ func TestCoreSegMetadata_FullProfiles(t *testing.T) {
 		Bitrate: "0", Resolution: "0x0",
 		Format: ffmpeg.FormatMPEGTS}}
 	assert.Equal(expected, md.Profiles)
+
+	// Test deserialization with FullProfiles3
+	// (keep invalid FullProfiles populated to exhibit precedence)
+	segData.FullProfiles3 = []*net.VideoProfile{&net.VideoProfile{Name: "prof4"}}
+	md, err = coreSegMetadata(segData)
+	expected = []ffmpeg.VideoProfile{{Name: "prof4",
+		Bitrate: "0", Resolution: "0x0",
+		Framerate: uint(0), FramerateDen: uint(0),
+		Format: ffmpeg.FormatMPEGTS}}
+	assert.Equal(expected, md.Profiles)
+
 }
 
 func TestMakeFfmpegVideoProfiles(t *testing.T) {

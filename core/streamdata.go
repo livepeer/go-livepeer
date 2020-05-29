@@ -61,7 +61,7 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 		Hash:       md.Hash.Bytes(),
 		Storage:    storage,
 		Duration:   int32(md.Duration / time.Millisecond),
-		// Triggers failure on Os that don't know how to use FullProfiles/2
+		// Triggers failure on Os that don't know how to use FullProfiles/2/3
 		Profiles: []byte("invalid"),
 	}
 
@@ -76,10 +76,20 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 			allTS = false
 		}
 	}
-	if allTS {
-		segData.FullProfiles = fullProfiles
+	allIntFPS := true
+	for i := 0; i < len(md.Profiles) && allIntFPS; i++ {
+		if md.Profiles[i].FramerateDen != 0 {
+			allIntFPS = false
+		}
+	}
+	if allIntFPS {
+		if allTS {
+			segData.FullProfiles = fullProfiles
+		} else {
+			segData.FullProfiles2 = fullProfiles
+		}
 	} else {
-		segData.FullProfiles2 = fullProfiles
+		segData.FullProfiles3 = fullProfiles
 	}
 
 	return segData, nil
