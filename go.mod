@@ -4,6 +4,7 @@ go 1.13
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.1.0
+	github.com/NebulousLabs/go-skynet v0.0.0-20200306163948-8394a3e261ba
 	github.com/allegro/bigcache v1.2.1 // indirect
 	github.com/apilayer/freegeoip v3.5.0+incompatible // indirect
 	github.com/aristanetworks/goarista v0.0.0-20190909155222-05df9ecbb0dc // indirect

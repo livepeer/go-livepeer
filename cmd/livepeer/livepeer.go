@@ -138,6 +138,7 @@ func main() {
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
 	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
 	gsKey := flag.String("gskey", "", "Google Storage private key file name (in json format)")
+	sia := flag.Bool("sia", false, "Enables Sia as CDN")
 
 	// API
 	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
@@ -638,6 +639,14 @@ func main() {
 		drivers.NodeStorage, err = drivers.NewGoogleDriver(*gsBucket, *gsKey)
 		if err != nil {
 			glog.Error("Error creating Google Storage driver:", err)
+			return
+		}
+	}
+
+	if *sia != false {
+		drivers.NodeStorage, err = drivers.NewSiaDriver()
+		if err != nil {
+			glog.Error("Error creating Sia driver:", err)
 			return
 		}
 	}
