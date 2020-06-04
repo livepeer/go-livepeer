@@ -143,7 +143,7 @@ func TestSelectOrchestrator(t *testing.T) {
 
 	// Empty discovery
 	mid := core.RandomManifestID()
-	sp := &streamParameters{mid: mid, profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}}
+	sp := &streamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}}
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	pl := core.NewBasicPlaylistManager(mid, storage)
 	if _, err := selectOrchestrator(s.LivepeerNode, sp, pl, 4, newSuspender()); err != errDiscovery {
@@ -182,7 +182,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	if sess[0].OrchestratorInfo != sd.infos[0] || sd.infos[0] == sd.infos[1] {
 		t.Error("Unexpected orchestrator info")
 	}
-	if len(sess[0].Profiles) != 1 || sess[0].Profiles[0] != sp.profiles[0] {
+	if len(sess[0].Profiles) != 1 || sess[0].Profiles[0] != sp.Profiles[0] {
 		t.Error("Unexpected profiles")
 	}
 	if sess[0].Sender != nil {
@@ -291,7 +291,7 @@ func TestSelectOrchestrator(t *testing.T) {
 }
 
 func newStreamParams(mid core.ManifestID, rtmpKey string) *streamParameters {
-	return &streamParameters{mid: mid, rtmpKey: rtmpKey}
+	return &streamParameters{ManifestID: mid, RtmpKey: rtmpKey}
 }
 
 func TestStreamParameters(t *testing.T) {
@@ -302,16 +302,16 @@ func TestStreamParameters(t *testing.T) {
 	assert.Equal("/", s.StreamID())
 
 	// key only
-	s = streamParameters{rtmpKey: "source"}
+	s = streamParameters{RtmpKey: "source"}
 	assert.Equal("/source", s.StreamID())
 
 	// mid only
 	mid := core.ManifestID("abc")
-	s = streamParameters{mid: mid}
+	s = streamParameters{ManifestID: mid}
 	assert.Equal("abc/", s.StreamID())
 
 	// both mid + key
-	s = streamParameters{mid: mid, rtmpKey: "source"}
+	s = streamParameters{ManifestID: mid, RtmpKey: "source"}
 	assert.Equal("abc/source", s.StreamID())
 
 	// quick sanity check of newStreamParams test-only helper
@@ -330,7 +330,7 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 	core.MaxSessions = 1
 	// happy case
 	sid := createSid(u).(*streamParameters)
-	mid := sid.mid
+	mid := sid.ManifestID
 	if mid != "id1" {
 		t.Error("Stream should be allowd", sid)
 	}
@@ -406,28 +406,28 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	ts4 := makeServer(`{"manifestID":"xy"}`)
 	defer ts4.Close()
 	params := createSid(u).(*streamParameters)
-	mid := params.mid
-	assert.Equal(core.ManifestID("xy"), params.mid, "Should set manifest id to one provided by webhook")
+	mid := params.ManifestID
+	assert.Equal(core.ManifestID("xy"), mid, "Should set manifest id to one provided by webhook")
 
 	// ensure the presets match defaults
-	assert.Len(params.profiles, 1)
-	assert.Equal(params.profiles, BroadcastJobVideoProfiles, "Default presets did not match")
+	assert.Len(params.Profiles, 1)
+	assert.Equal(params.Profiles, BroadcastJobVideoProfiles, "Default presets did not match")
 
 	// set manifestID + streamKey
 	ts5 := makeServer(`{"manifestID":"xyz", "streamKey":"zyx"}`)
 	defer ts5.Close()
 	params = createSid(u).(*streamParameters)
-	mid = params.mid
+	mid = params.ManifestID
 	assert.Equal(core.ManifestID("xyz"), mid, "Should set manifest to one provided by webhook")
 	assert.Equal("xyz/zyx", params.StreamID(), "Should set streamkey to one provided by webhook")
-	assert.Equal("zyx", params.rtmpKey, "Should set rtmp key to one provided by webhook")
+	assert.Equal("zyx", params.RtmpKey, "Should set rtmp key to one provided by webhook")
 
 	// set presets (with some invalid)
 	ts6 := makeServer(`{"manifestID":"a", "presets":["P240p30fps16x9", "unknown", "P720p30fps16x9"]}`)
 	defer ts6.Close()
 	params = createSid(u).(*streamParameters)
-	assert.Len(params.profiles, 2)
-	assert.Equal(params.profiles, []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9,
+	assert.Len(params.Profiles, 2)
+	assert.Equal(params.Profiles, []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9,
 		ffmpeg.P720p30fps16x9}, "Did not have matching presets")
 
 	// set profiles with valid values, presets empty
@@ -437,7 +437,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654}]}`)
 	defer ts7.Close()
 	params = createSid(u).(*streamParameters)
-	assert.Len(params.profiles, 3)
+	assert.Len(params.Profiles, 3)
 
 	expectedProfiles := []ffmpeg.VideoProfile{
 		ffmpeg.VideoProfile{
@@ -463,8 +463,8 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		},
 	}
 
-	assert.Len(params.profiles, 3)
-	assert.Equal(expectedProfiles, params.profiles, "Did not have matching profiles")
+	assert.Len(params.Profiles, 3)
+	assert.Equal(expectedProfiles, params.Profiles, "Did not have matching profiles")
 
 	// set profiles with invalid values, presets empty
 	ts8 := makeServer(`{"manifestID":"a", "profiles": [
@@ -485,14 +485,14 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	params = createSid(u).(*streamParameters)
 	jointProfiles := append([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P720p30fps16x9}, expectedProfiles...)
 
-	assert.Len(params.profiles, 5)
-	assert.Equal(jointProfiles, params.profiles, "Did not have matching profiles")
+	assert.Len(params.Profiles, 5)
+	assert.Equal(jointProfiles, params.Profiles, "Did not have matching profiles")
 
 	// all invalid presets in webhook should lead to empty set
 	ts10 := makeServer(`{"manifestID":"a", "presets":["very", "unknown"]}`)
 	defer ts10.Close()
 	params = createSid(u).(*streamParameters)
-	assert.Len(params.profiles, 0, "Unexpected value in presets")
+	assert.Len(params.Profiles, 0, "Unexpected value in presets")
 }
 
 func TestCreateRTMPStreamHandler(t *testing.T) {
@@ -608,7 +608,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	vProfile := ffmpeg.P720p30fps16x9
 	hlsStrmID := core.MakeStreamID(core.ManifestID("ghijkl"), &vProfile)
 	u, _ := url.Parse("rtmp://localhost:1935/movie")
-	strm := stream.NewBasicRTMPVideoStream(&streamParameters{mid: hlsStrmID.ManifestID})
+	strm := stream.NewBasicRTMPVideoStream(&streamParameters{ManifestID: hlsStrmID.ManifestID})
 	expectedSid := core.MakeStreamIDFromString(string(hlsStrmID.ManifestID), "source")
 
 	// Check for invalid node storage
@@ -625,7 +625,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	}
 
 	// Check assigned IDs
-	mid := streamParams(strm).mid
+	mid := streamParams(strm).ManifestID
 	if s.LatestPlaylist().ManifestID() != mid {
 		t.Error("Unexpected Manifest ID")
 	}
@@ -779,7 +779,7 @@ func TestRegisterConnection(t *testing.T) {
 	s := setupServer()
 	defer serverCleanup(s)
 	mid := core.SplitStreamIDString(t.Name()).ManifestID
-	strm := stream.NewBasicRTMPVideoStream(&streamParameters{mid: mid})
+	strm := stream.NewBasicRTMPVideoStream(&streamParameters{ManifestID: mid})
 
 	// Should return an error if missing node storage
 	drivers.NodeStorage = nil
@@ -813,7 +813,7 @@ func TestRegisterConnection(t *testing.T) {
 			defer wg.Done()
 			name := fmt.Sprintf("%v_%v", t.Name(), i)
 			mid := core.SplitStreamIDString(name).ManifestID
-			strm := stream.NewBasicRTMPVideoStream(&streamParameters{mid: mid})
+			strm := stream.NewBasicRTMPVideoStream(&streamParameters{ManifestID: mid})
 			cxn, err := s.registerConnection(strm)
 
 			assert.Nil(err)
@@ -848,7 +848,7 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	u, _ := url.Parse("rtmp://localhost")
 	sid := createSid(u)
 	st := stream.NewBasicRTMPVideoStream(sid)
-	mid := streamParams(st).mid
+	mid := streamParams(st).ManifestID
 
 	// assert that ManifestID has not been added to rtmpConnections yet
 	_, exists := s.rtmpConnections[mid]

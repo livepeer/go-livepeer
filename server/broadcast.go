@@ -196,7 +196,7 @@ func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl cor
 	numOrchs := int(math.Min(poolSize, maxInflight*2))
 	sus := newSuspender()
 	bsm := &BroadcastSessionsManager{
-		mid:     params.mid,
+		mid:     params.ManifestID,
 		sel:     sel,
 		sessMap: make(map[string]*BroadcastSession),
 		createSessions: func() ([]*BroadcastSession, error) {
@@ -241,7 +241,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 		}
 
 		if n.Balances != nil {
-			balance = core.NewBalance(ticketParams.Recipient, params.mid, n.Balances)
+			balance = core.NewBalance(ticketParams.Recipient, params.ManifestID, n.Balances)
 		}
 
 		var orchOS drivers.OSSession
@@ -258,8 +258,8 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 
 		session := &BroadcastSession{
 			Broadcaster:      core.NewBroadcaster(n),
-			ManifestID:       params.mid,
-			Profiles:         params.profiles,
+			ManifestID:       params.ManifestID,
+			Profiles:         params.Profiles,
 			OrchestratorInfo: tinfo,
 			OrchestratorOS:   orchOS,
 			BroadcasterOS:    bcastOS,

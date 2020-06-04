@@ -69,15 +69,15 @@ var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
 }
 
 type streamParameters struct {
-	mid        core.ManifestID
-	rtmpKey    string
-	profiles   []ffmpeg.VideoProfile
-	resolution string
-	format     ffmpeg.Format
+	ManifestID core.ManifestID
+	RtmpKey    string
+	Profiles   []ffmpeg.VideoProfile
+	Resolution string
+	Format     ffmpeg.Format
 }
 
 func (s *streamParameters) StreamID() string {
-	return string(s.mid) + "/" + s.rtmpKey
+	return string(s.ManifestID) + "/" + s.RtmpKey
 }
 
 type rtmpConnection struct {
@@ -260,10 +260,10 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			key = common.RandomIDGenerator(StreamKeyBytes)
 		}
 		return &streamParameters{
-			mid:     mid,
-			rtmpKey: key,
+			ManifestID: mid,
+			RtmpKey:    key,
 			// HTTP push mutates `profiles` so make a copy of it
-			profiles: append([]ffmpeg.VideoProfile(nil), profiles...),
+			Profiles: append([]ffmpeg.VideoProfile(nil), profiles...),
 		}
 	}
 }
@@ -379,7 +379,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 
 		//Remove RTMP stream
-		err := removeRTMPStream(s, params.mid)
+		err := removeRTMPStream(s, params.ManifestID)
 		if err != nil {
 			return err
 		}
@@ -395,21 +395,21 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	if params == nil {
 		return nil, errMismatchedParams
 	}
-	mid := params.mid
+	mid := params.ManifestID
 	if drivers.NodeStorage == nil {
 		glog.Error("Missing node storage")
 		return nil, errStorage
 	}
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	// Build the source video profile from the RTMP stream.
-	if params.resolution == "" {
-		params.resolution = fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
+	if params.Resolution == "" {
+		params.Resolution = fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
 	}
 	vProfile := ffmpeg.VideoProfile{
 		Name:       "source",
-		Resolution: params.resolution,
+		Resolution: params.Resolution,
 		Bitrate:    "4000k", // Fix this
-		Format:     params.format,
+		Format:     params.Format,
 	}
 	hlsStrmID := core.MakeStreamID(mid, &vProfile)
 	s.connectionLock.RLock()
@@ -633,12 +633,12 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		}
 		st := stream.NewBasicRTMPVideoStream(appData)
 		params := streamParams(st)
-		params.resolution = r.Header.Get("Content-Resolution")
-		params.format = format
+		params.Resolution = r.Header.Get("Content-Resolution")
+		params.Format = format
 		// Set output formats if not explicitly specified
-		for i, v := range params.profiles {
+		for i, v := range params.Profiles {
 			if ffmpeg.FormatNone == v.Format {
-				params.profiles[i].Format = format
+				params.Profiles[i].Format = format
 			}
 		}
 
@@ -749,7 +749,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		if length == 0 {
 			typ, ext, length = "application/vnd+livepeer.uri", ".txt", len(url)
 		} else {
-			format := cxn.params.profiles[i].Format
+			format := cxn.params.Profiles[i].Format
 			ext, err = common.ProfileFormatExtension(format)
 			if err != nil {
 				glog.Error("Unknown extension for format: ", err)
@@ -760,7 +760,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 				glog.Error("Unknown mime type for format: ", err)
 			}
 		}
-		profile := cxn.params.profiles[i].Name
+		profile := cxn.params.Profiles[i].Name
 		fname := fmt.Sprintf(`"%s_%d%s"`, profile, seq, ext)
 		hdrs := textproto.MIMEHeader{
 			"Content-Type":        {typ + "; name=" + fname},
