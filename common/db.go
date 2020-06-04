@@ -672,6 +672,7 @@ func (db *DB) UnbondingLocks(currentRound *big.Int) ([]*DBUnbondingLock, error) 
 	return unbondingLocks, nil
 }
 
+// StoreWinningTicket stores a signed ticket
 func (db *DB) StoreWinningTicket(ticket *pm.SignedTicket) error {
 	if ticket == nil || ticket.Ticket == nil {
 		return errors.New("cannot store nil ticket")
@@ -703,6 +704,8 @@ func (db *DB) StoreWinningTicket(ticket *pm.SignedTicket) error {
 	return nil
 }
 
+// MarkWinningTicketRedeemed stores the on-chain transaction hash and timestamp of redemption
+// This marks the ticket as being 'redeemed'
 func (db *DB) MarkWinningTicketRedeemed(ticket *pm.SignedTicket, txHash ethcommon.Hash) error {
 	if ticket == nil || ticket.Ticket == nil {
 		return errors.New("cannot update nil ticket")
@@ -725,6 +728,7 @@ func (db *DB) MarkWinningTicketRedeemed(ticket *pm.SignedTicket, txHash ethcommo
 	return nil
 }
 
+// RemoveWinningTicket removes a ticket
 func (db *DB) RemoveWinningTicket(ticket *pm.SignedTicket) error {
 	if ticket == nil || ticket.Ticket == nil {
 		return errors.New("cannot delete nil ticket")
@@ -742,6 +746,8 @@ func (db *DB) RemoveWinningTicket(ticket *pm.SignedTicket) error {
 	return nil
 }
 
+// SelectEarliestWinningTicket selects the earliest stored winning ticket for a 'sender'
+// which is not yet redeemed
 func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address) (*pm.SignedTicket, error) {
 	row := db.selectEarliestWinningTicket.QueryRow(sender.Hex())
 	var (
@@ -782,6 +788,7 @@ func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address) (*pm.SignedT
 	}, nil
 }
 
+// WinningTicketCount returns the amount of non-redeemed winning tickets for a 'sender'
 func (db *DB) WinningTicketCount(sender ethcommon.Address) (int, error) {
 	row := db.winningTicketCount.QueryRow(sender.Hex())
 	var count64 int64
