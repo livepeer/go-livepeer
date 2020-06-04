@@ -95,6 +95,8 @@ func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderMana
 // Start initiates the helper goroutines for the monitor
 func (sm *LocalSenderMonitor) Start() {
 	go sm.startCleanupLoop()
+	go sm.watchReserveChange()
+	go sm.watchPoolSizeChange()
 }
 
 // Stop signals the monitor to exit gracefully
@@ -348,6 +350,8 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) error {
 	return nil
 }
 
+// SubscribeMaxFloatChange notifies subcribers when the max float for a sender has changed
+// and that it should call LocalSenderMonitor.MaxFloat() to get the latest value
 func (sm *LocalSenderMonitor) SubscribeMaxFloatChange(sender ethcommon.Address, sink chan<- struct{}) event.Subscription {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -362,4 +366,24 @@ func (sm *LocalSenderMonitor) SubscribeMaxFloatChange(sender ethcommon.Address, 
 // The caller of this function should hold the lock for sm.senders
 func (sm *LocalSenderMonitor) sendMaxFloatChange(sender ethcommon.Address) {
 	sm.senders[sender].subFeed.Send(struct{}{})
+}
+
+func (sm *LocalSenderMonitor) watchReserveChange() {
+	sink := make(chan ethcommon.Address, 10)
+	sub := sm.smgr.SubscribeReserveChange(sink)
+	defer sub.Unsubscribe()
+
+	for {
+		select {
+		case <-sm.quit:
+			return
+		case err := <-sub.Err():
+			glog.Error(err)
+			continue
+		case sender := <-sink:
+			sm.mu.Lock()
+			sm.sendMaxFloatChange(sender)
+			sm.mu.Unlock()
+		}
+	}
 }
