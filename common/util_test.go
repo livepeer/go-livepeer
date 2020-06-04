@@ -64,10 +64,11 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 			Resolution: "123x456",
 		},
 		ffmpeg.VideoProfile{
-			Name:       "prof2",
-			Bitrate:    "765k",
-			Framerate:  uint(876),
-			Resolution: "456x987",
+			Name:         "prof2",
+			Bitrate:      "765k",
+			Framerate:    uint(876),
+			FramerateDen: uint(12),
+			Resolution:   "456x987",
 		},
 	}
 
@@ -114,11 +115,16 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 	assert.Equal(fullProfiles[0].Format, net.VideoProfile_MP4)
 	assert.Equal(fullProfiles[1].Format, net.VideoProfile_MPEGTS)
 
+	// Verify FPS denominator behaviour
+	assert.Equal(fullProfiles[0].FpsDen, uint32(0))
+	assert.Equal(fullProfiles[1].FpsDen, uint32(profiles[1].FramerateDen))
+
 	// Invalid format should return error
 	profiles[1].Format = -1
 	fullProfiles, err = FFmpegProfiletoNetProfile(profiles)
 	assert.Equal(ErrFormatProto, err)
 	assert.Nil(fullProfiles)
+
 }
 
 func TestProfilesToHex(t *testing.T) {

@@ -303,6 +303,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	err = proto.Unmarshal(buf, &segData)
 	assert.Nil(err)
 	expectedProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
+	assert.Equal(expectedProfiles[1].FpsDen, uint32(s.Profiles[1].FramerateDen))
 	assert.Equal([]byte("invalid"), segData.Profiles)
 	assert.Equal(expectedProfiles, segData.FullProfiles3)
 	assert.Empty(segData.FullProfiles)
@@ -352,11 +353,12 @@ func TestCoreSegMetadata_FullProfiles(t *testing.T) {
 			Resolution: "123x456",
 		},
 		ffmpeg.VideoProfile{
-			Name:       "prof2",
-			Bitrate:    "765k",
-			Framerate:  uint(876),
-			Resolution: "456x987",
-			Format:     ffmpeg.FormatMP4,
+			Name:         "prof2",
+			Bitrate:      "765k",
+			Framerate:    uint(876),
+			FramerateDen: uint(12),
+			Resolution:   "456x987",
+			Format:       ffmpeg.FormatMP4,
 		},
 	}
 
@@ -419,7 +421,6 @@ func TestMakeFfmpegVideoProfiles(t *testing.T) {
 			Height:  int32(654),
 			Bitrate: int32(321),
 			Fps:     uint32(198),
-			//FpsDen:  0,
 		},
 	}
 

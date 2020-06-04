@@ -29,7 +29,7 @@ The webhook may respond with an empty body.  In this case, the `manifestID` prop
     "manifestID": "ManifestID",
     "streamKey":  "SecretKey",
     "presets":    ["Preset", "Names"],
-    "profiles":   [{"name":"ProfileName", "width":320, "height":240, "bitrate":1000000, "fps":30}]
+    "profiles":   [{"name":"ProfileName", "width":320, "height":240, "bitrate":1000000, "fps":30, "fps_den":1}]
 }
 ```
 The Livepeer node will use the returned `manifestID` for the given stream.
@@ -40,6 +40,6 @@ An optional streamKey may be provided in order to protect the RTMP stream from p
 
 Presets can be specified to override the default transcoding options. The available presets are listed [here](https://github.com/livepeer/go-livepeer/blob/master/common/videoprofile_ids.go).
 
-Custom transcoding profiles can be provided if the presets are not sufficient. Given a stream name (manifest ID) of "ManifestID" and a profile name of "ProfileName", the specific profile will be available for playback at `/stream/ManifestID/ProfileName.m3u8`. However, to take advantage of ABR features in HLS players, the top-level stream name should usually be supplied instead, eg `/stream/ManifestID.m3u8` The `bitrate` field is in bits per second. The `fps` field can be omitted to preserve the source frame rate. Both presets and profiles can be used together to specify the desired transcodes.
+Custom transcoding profiles can be provided if the presets are not sufficient. Given a stream name (manifest ID) of "ManifestID" and a profile name of "ProfileName", the specific profile will be available for playback at `/stream/ManifestID/ProfileName.m3u8`. However, to take advantage of ABR features in HLS players, the top-level stream name should usually be supplied instead, eg `/stream/ManifestID.m3u8` The `bitrate` field is in bits per second. The `fps` field can be omitted to preserve the source frame rate. The `fps_den` (denominator) field can also be omitted for a default of `1`. Both presets and profiles can be used together to specify the desired transcodes.
 
 There is simple webhook authentication server [example](https://github.com/livepeer/go-livepeer/blob/master/cmd/simple_auth_server/simple_auth_server.go).

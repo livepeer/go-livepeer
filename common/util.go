@@ -183,6 +183,7 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 			Height:  int32(height),
 			Bitrate: int32(bitrate),
 			Fps:     uint32(profile.Framerate),
+			FpsDen:  uint32(profile.FramerateDen),
 			Format:  format,
 		}
 		profiles = append(profiles, &fullProfile)
