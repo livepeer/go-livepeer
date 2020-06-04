@@ -5,16 +5,20 @@ import ethcommon "github.com/ethereum/go-ethereum/common"
 // TicketStore is an interface which describes an object capable
 // of persisting tickets
 type TicketStore interface {
+	// SelectEarliestWinningTicket selects the earliest stored winning ticket for a 'sender'
+	// which is not yet redeemed
 	SelectEarliestWinningTicket(sender ethcommon.Address) (*SignedTicket, error)
 
-	// RemoveWinningTicket removes a ticket from the TicketStore
+	// RemoveWinningTicket removes a ticket
 	RemoveWinningTicket(ticket *SignedTicket) error
 
-	// Store persists a signed winning ticket
+	// StoreWinningTicket stores a signed ticket
 	StoreWinningTicket(ticket *SignedTicket) error
 
-	// MarkWinningTicketRedeemed stores the submission time and transaction hash
+	// MarkWinningTicketRedeemed stores the on-chain transaction hash and timestamp of redemption
+	// This marks the ticket as being 'redeemed'
 	MarkWinningTicketRedeemed(ticket *SignedTicket, txHash ethcommon.Hash) error
 
+	// WinningTicketCount returns the amount of non-redeemed winning tickets for a sender in the TicketStore
 	WinningTicketCount(sender ethcommon.Address) (int, error)
 }
