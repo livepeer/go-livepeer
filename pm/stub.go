@@ -265,6 +265,9 @@ type stubTimeManager struct {
 
 	blockNumSink chan<- *big.Int
 	blockNumSub  event.Subscription
+
+	roundSink chan<- types.Log
+	roundSub  event.Subscription
 }
 
 func (m *stubTimeManager) LastInitializedRound() *big.Int {
@@ -284,7 +287,9 @@ func (m *stubTimeManager) LastSeenBlock() *big.Int {
 }
 
 func (m *stubTimeManager) SubscribeRounds(sink chan<- types.Log) event.Subscription {
-	return &stubSubscription{}
+	m.roundSink = sink
+	m.roundSub = &stubSubscription{errCh: make(<-chan error)}
+	return m.roundSub
 }
 
 func (m *stubTimeManager) SubscribeBlocks(sink chan<- *big.Int) event.Subscription {

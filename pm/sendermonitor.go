@@ -7,6 +7,7 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/monitor"
@@ -385,5 +386,36 @@ func (sm *LocalSenderMonitor) watchReserveChange() {
 			sm.sendMaxFloatChange(sender)
 			sm.mu.Unlock()
 		}
+	}
+}
+
+func (sm *LocalSenderMonitor) watchPoolSizeChange() {
+	sink := make(chan types.Log, 10)
+	sub := sm.tm.SubscribeRounds(sink)
+	defer sub.Unsubscribe()
+
+	lastPoolSize := sm.tm.GetTranscoderPoolSize()
+	for {
+		select {
+		case <-sm.quit:
+			return
+		case err := <-sub.Err():
+			glog.Error(err)
+			continue
+		case <-sink:
+			poolSize := sm.tm.GetTranscoderPoolSize()
+			if poolSize.Cmp(lastPoolSize) != 0 {
+				sm.handlePoolSizeChange()
+				lastPoolSize = poolSize
+			}
+		}
+	}
+}
+
+func (sm *LocalSenderMonitor) handlePoolSizeChange() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	for sender := range sm.senders {
+		sm.sendMaxFloatChange(sender)
 	}
 }
