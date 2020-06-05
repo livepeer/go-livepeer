@@ -207,7 +207,7 @@ func TestNewSessionManager(t *testing.T) {
 
 	mid := core.RandomManifestID()
 	storage := drivers.NewMemoryDriver(nil).NewSession(string(mid))
-	params := &streamParameters{OS: storage}
+	params := &core.StreamParameters{OS: storage}
 
 	// Check empty pool produces expected numOrchs
 	sess := NewSessionManager(n, params, &LIFOSelector{})

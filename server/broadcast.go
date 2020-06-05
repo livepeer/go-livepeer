@@ -187,7 +187,7 @@ func (bsm *BroadcastSessionsManager) suspendOrch(sess *BroadcastSession) {
 	bsm.sus.suspend(sess.OrchestratorInfo.GetTranscoder(), bsm.poolSize/bsm.numOrchs)
 }
 
-func NewSessionManager(node *core.LivepeerNode, params *streamParameters, sel BroadcastSessionsSelector) *BroadcastSessionsManager {
+func NewSessionManager(node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelector) *BroadcastSessionsManager {
 	var poolSize float64
 	if node.OrchestratorPool != nil {
 		poolSize = float64(node.OrchestratorPool.Size())
@@ -211,7 +211,7 @@ func NewSessionManager(node *core.LivepeerNode, params *streamParameters, sel Br
 	return bsm
 }
 
-func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, count int, sus *suspender) ([]*BroadcastSession, error) {
+func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, count int, sus *suspender) ([]*BroadcastSession, error) {
 	if n.OrchestratorPool == nil {
 		glog.Info("No orchestrators specified; not transcoding")
 		return nil, errDiscovery

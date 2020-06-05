@@ -95,7 +95,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 		pl:          pl,
 		profile:     &ffmpeg.P144p30fps16x9,
 		sessManager: bsm,
-		params:      &streamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p25fps16x9}},
+		params:      &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p25fps16x9}},
 	}
 
 	s.rtmpConnections["mani"] = cxn

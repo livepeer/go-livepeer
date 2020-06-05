@@ -68,26 +68,13 @@ var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), sleepDur)
 }
 
-type streamParameters struct {
-	ManifestID core.ManifestID
-	RtmpKey    string
-	Profiles   []ffmpeg.VideoProfile
-	Resolution string
-	Format     ffmpeg.Format
-	OS         drivers.OSSession
-}
-
-func (s *streamParameters) StreamID() string {
-	return string(s.ManifestID) + "/" + s.RtmpKey
-}
-
 type rtmpConnection struct {
 	mid         core.ManifestID
 	nonce       uint64
 	stream      stream.RTMPVideoStream
 	pl          core.PlaylistManager
 	profile     *ffmpeg.VideoProfile
-	params      *streamParameters
+	params      *core.StreamParameters
 	sessManager *BroadcastSessionsManager
 	lastUsed    time.Time
 }
@@ -260,7 +247,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		if key == "" {
 			key = common.RandomIDGenerator(StreamKeyBytes)
 		}
-		return &streamParameters{
+		return &core.StreamParameters{
 			ManifestID: mid,
 			RtmpKey:    key,
 			// HTTP push mutates `profiles` so make a copy of it
@@ -308,9 +295,9 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 	return &authResp, nil
 }
 
-func streamParams(rtmpStrm stream.RTMPVideoStream) *streamParameters {
+func streamParams(rtmpStrm stream.RTMPVideoStream) *core.StreamParameters {
 	d := rtmpStrm.AppData()
-	p, ok := d.(*streamParameters)
+	p, ok := d.(*core.StreamParameters)
 	if !ok {
 		glog.Error("Mismatched type for RTMP app data")
 		return nil
