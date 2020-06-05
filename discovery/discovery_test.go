@@ -163,7 +163,7 @@ func TestDBOrchestratorPoolCacheSize(t *testing.T) {
 	require.NotNil(emptyPool)
 	assert.Equal(0, emptyPool.Size())
 
-	addresses := []string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"}
+	addresses := []string{"stub1", "stub2", "stub3"}
 	orchestrators := StubOrchestrators(addresses)
 	for _, o := range orchestrators {
 		dbh.UpdateOrch(ethOrchToDBOrch(o))
