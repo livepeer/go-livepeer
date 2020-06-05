@@ -74,6 +74,7 @@ type streamParameters struct {
 	Profiles   []ffmpeg.VideoProfile
 	Resolution string
 	Format     ffmpeg.Format
+	OS         drivers.OSSession
 }
 
 func (s *streamParameters) StreamID() string {
@@ -400,11 +401,14 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		glog.Error("Missing node storage")
 		return nil, errStorage
 	}
-	storage := drivers.NodeStorage.NewSession(string(mid))
 	// Build the source video profile from the RTMP stream.
 	if params.Resolution == "" {
 		params.Resolution = fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
 	}
+	if params.OS == nil {
+		params.OS = drivers.NodeStorage.NewSession(string(mid))
+	}
+	storage := params.OS
 	vProfile := ffmpeg.VideoProfile{
 		Name:       "source",
 		Resolution: params.Resolution,
@@ -433,7 +437,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		pl:          playlist,
 		profile:     &vProfile,
 		params:      params,
-		sessManager: NewSessionManager(s.LivepeerNode, params, playlist, NewMinLSSelector(stakeRdr, 1.0)),
+		sessManager: NewSessionManager(s.LivepeerNode, params, NewMinLSSelector(stakeRdr, 1.0)),
 		lastUsed:    time.Now(),
 	}
 

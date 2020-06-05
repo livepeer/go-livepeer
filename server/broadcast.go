@@ -187,7 +187,7 @@ func (bsm *BroadcastSessionsManager) suspendOrch(sess *BroadcastSession) {
 	bsm.sus.suspend(sess.OrchestratorInfo.GetTranscoder(), bsm.poolSize/bsm.numOrchs)
 }
 
-func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl core.PlaylistManager, sel BroadcastSessionsSelector) *BroadcastSessionsManager {
+func NewSessionManager(node *core.LivepeerNode, params *streamParameters, sel BroadcastSessionsSelector) *BroadcastSessionsManager {
 	var poolSize float64
 	if node.OrchestratorPool != nil {
 		poolSize = float64(node.OrchestratorPool.Size())
@@ -200,7 +200,7 @@ func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl cor
 		sel:     sel,
 		sessMap: make(map[string]*BroadcastSession),
 		createSessions: func() ([]*BroadcastSession, error) {
-			return selectOrchestrator(node, params, pl, numOrchs, sus)
+			return selectOrchestrator(node, params, numOrchs, sus)
 		},
 		sessLock: &sync.Mutex{},
 		numOrchs: numOrchs,
@@ -211,7 +211,7 @@ func NewSessionManager(node *core.LivepeerNode, params *streamParameters, pl cor
 	return bsm
 }
 
-func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core.PlaylistManager, count int, sus *suspender) ([]*BroadcastSession, error) {
+func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, count int, sus *suspender) ([]*BroadcastSession, error) {
 	if n.OrchestratorPool == nil {
 		glog.Info("No orchestrators specified; not transcoding")
 		return nil, errDiscovery
@@ -249,10 +249,10 @@ func selectOrchestrator(n *core.LivepeerNode, params *streamParameters, cpl core
 			orchOS = drivers.NewSession(tinfo.Storage[0])
 		}
 
-		bcastOS := cpl.GetOSSession()
+		bcastOS := params.OS
 		if bcastOS.IsExternal() {
 			// Give each O its own OS session to prevent front running uploads
-			pfx := fmt.Sprintf("%v/%v", cpl.ManifestID(), core.RandomManifestID())
+			pfx := fmt.Sprintf("%v/%v", params.ManifestID, core.RandomManifestID())
 			bcastOS = drivers.NodeStorage.NewSession(pfx)
 		}
 

@@ -143,17 +143,16 @@ func TestSelectOrchestrator(t *testing.T) {
 
 	// Empty discovery
 	mid := core.RandomManifestID()
-	sp := &streamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}}
 	storage := drivers.NodeStorage.NewSession(string(mid))
-	pl := core.NewBasicPlaylistManager(mid, storage)
-	if _, err := selectOrchestrator(s.LivepeerNode, sp, pl, 4, newSuspender()); err != errDiscovery {
+	sp := &streamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}, OS: storage}
+	if _, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender()); err != errDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(s.LivepeerNode, sp, pl, 4, newSuspender()); sess != nil || err != errNoOrchs {
+	if sess, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender()); sess != nil || err != errNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -162,7 +161,7 @@ func TestSelectOrchestrator(t *testing.T) {
 		&net.OrchestratorInfo{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}},
 		&net.OrchestratorInfo{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}},
 	}
-	sess, _ := selectOrchestrator(s.LivepeerNode, sp, pl, 4, newSuspender())
+	sess, _ := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender())
 
 	if len(sess) != len(sd.infos) {
 		t.Error("Expected session length of 2")
@@ -266,7 +265,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	expSessionID2 := "bar"
 	sender.On("StartSession", mock.Anything).Return(expSessionID2).Once()
 
-	sess, err = selectOrchestrator(s.LivepeerNode, sp, pl, 4, newSuspender())
+	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender())
 	require.Nil(err)
 
 	assert := assert.New(t)
@@ -800,10 +799,21 @@ func TestRegisterConnection(t *testing.T) {
 
 	assert.Equal(mid, s.LastManifestID())
 	assert.Equal(string(mid)+"/source", s.LastHLSStreamID().String())
+	assert.NotNil(cxn.params.OS)
+	assert.Nil(cxn.params.OS.GetInfo())
 
 	// Should return an error if creating another cxn with the same mid
 	_, err = s.registerConnection(strm)
 	assert.Equal(err, errAlreadyExists)
+
+	// Check for params with an existing OS assigned
+	storage := drivers.NewS3Driver("", "", "", "").NewSession("")
+	strm = stream.NewBasicRTMPVideoStream(&streamParameters{ManifestID: core.RandomManifestID(), OS: storage})
+	cxn, err = s.registerConnection(strm)
+	assert.Nil(err)
+	assert.Equal(storage, cxn.params.OS)
+	assert.Equal(net.OSInfo_S3, cxn.params.OS.GetInfo().StorageType)
+	assert.Equal(cxn.params.OS, cxn.pl.GetOSSession())
 
 	// Ensure thread-safety under -race
 	var wg sync.WaitGroup

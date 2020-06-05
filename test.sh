@@ -21,6 +21,7 @@ cd ..
 # Be more strict with HTTP push tests: run with race detector enabled
 cd server
 go test -run Push_ -race
+go test -run RegisterConnection -race
 cd ..
 
 ./test_args.sh
