@@ -106,12 +106,12 @@ func TestSubFloat(t *testing.T) {
 	reserveAlloc := new(big.Int).Sub(new(big.Int).Div(reserve, tm.transcoderPoolSize), smgr.claimedReserve[addr])
 
 	amount := big.NewInt(5)
-	sm.(*LocalSenderMonitor).subFloat(addr, amount)
+	sm.subFloat(addr, amount)
 	mf, err := sm.MaxFloat(addr)
 	require.Nil(err)
 	assert.Equal(new(big.Int).Sub(reserveAlloc, amount), mf)
 
-	sm.(*LocalSenderMonitor).subFloat(addr, amount)
+	sm.subFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err = sm.MaxFloat(addr)
@@ -148,13 +148,13 @@ func TestAddFloat(t *testing.T) {
 	reserveAlloc := new(big.Int).Sub(new(big.Int).Div(reserve, tm.transcoderPoolSize), smgr.claimedReserve[addr])
 
 	amount := big.NewInt(20)
-	err := sm.(*LocalSenderMonitor).addFloat(addr, amount)
+	err := sm.addFloat(addr, amount)
 	assert.EqualError(err, "cannot subtract from insufficient pendingAmount")
 
 	// Test value cached and no pendingAmount error
-	sm.(*LocalSenderMonitor).subFloat(addr, amount)
+	sm.subFloat(addr, amount)
 
-	err = sm.(*LocalSenderMonitor).addFloat(addr, amount)
+	err = sm.addFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err := sm.MaxFloat(addr)
@@ -166,9 +166,9 @@ func TestAddFloat(t *testing.T) {
 	reserve = new(big.Int).Add(smgr.info[addr].Reserve.FundsRemaining, smgr.info[addr].Reserve.ClaimedInCurrentRound)
 	reserveAlloc = new(big.Int).Sub(new(big.Int).Div(reserve, tm.transcoderPoolSize), smgr.claimedReserve[addr])
 
-	sm.(*LocalSenderMonitor).subFloat(addr, amount)
+	sm.subFloat(addr, amount)
 
-	err = sm.(*LocalSenderMonitor).addFloat(addr, amount)
+	err = sm.addFloat(addr, amount)
 	assert.Nil(err)
 
 	mf, err = sm.MaxFloat(addr)
@@ -302,7 +302,7 @@ func TestCleanup(t *testing.T) {
 	// Change stub SenderManager values
 	// SenderMonitor should no longer use cached values
 	// since they have been cleaned up
-	sm.(*LocalSenderMonitor).cleanup()
+	sm.cleanup()
 	smgr.Clear(addr1)
 	smgr.Clear(addr2)
 	assert.Nil(smgr.info[addr1])
@@ -358,7 +358,7 @@ func TestCleanup(t *testing.T) {
 	reserve3 := big.NewInt(100)
 	smgr.info[addr2].Reserve.FundsRemaining = reserve3
 
-	sm.(*LocalSenderMonitor).cleanup()
+	sm.cleanup()
 
 	mf1, err = sm.MaxFloat(addr1)
 	require.Nil(err)
@@ -375,7 +375,7 @@ func TestCleanup(t *testing.T) {
 
 	// Update lastAccess for addr2
 	increaseTime(4)
-	err = sm.(*LocalSenderMonitor).addFloat(addr2, big.NewInt(0))
+	err = sm.addFloat(addr2, big.NewInt(0))
 	require.Nil(err)
 
 	increaseTime(1)
@@ -387,7 +387,7 @@ func TestCleanup(t *testing.T) {
 	reserve4 := big.NewInt(101)
 	smgr.info[addr1].Reserve.FundsRemaining = reserve4
 
-	sm.(*LocalSenderMonitor).cleanup()
+	sm.cleanup()
 
 	mf1, err = sm.MaxFloat(addr1)
 	require.Nil(err)
@@ -405,7 +405,7 @@ func TestCleanup(t *testing.T) {
 
 	// Update lastAccess for addr1
 	increaseTime(4)
-	sm.(*LocalSenderMonitor).subFloat(addr1, big.NewInt(0))
+	sm.subFloat(addr1, big.NewInt(0))
 
 	increaseTime(1)
 
@@ -416,7 +416,7 @@ func TestCleanup(t *testing.T) {
 	reserve5 := big.NewInt(999)
 	smgr.info[addr2].Reserve.FundsRemaining = reserve5
 
-	sm.(*LocalSenderMonitor).cleanup()
+	sm.cleanup()
 
 	mf1, err = sm.MaxFloat(addr1)
 	require.Nil(err)
@@ -442,7 +442,7 @@ func TestReserveAlloc(t *testing.T) {
 		},
 	}
 	smgr.claimedReserve[addr] = big.NewInt(100)
-	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600).(*LocalSenderMonitor)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
 
 	// test GetSenderInfo error
 	smgr.err = errors.New("GetSenderInfo error")
@@ -698,8 +698,7 @@ func TestSubscribeMaxFloatChange(t *testing.T) {
 	}
 	smgr.claimedReserve[addr] = big.NewInt(0)
 	tm.transcoderPoolSize = big.NewInt(1)
-	smI := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
-	sm := smI.(*LocalSenderMonitor)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
 	sm.Start()
 	defer sm.Stop()
 
@@ -753,8 +752,7 @@ func TestWatchReserveChange(t *testing.T) {
 func TestWatchPoolSizeChange(t *testing.T) {
 	assert := assert.New(t)
 	claimant, b, smgr, tm := localSenderMonitorFixture()
-	smI := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
-	sm := smI.(*LocalSenderMonitor)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
 
 	sender := RandAddress()
 	tm.transcoderPoolSize = big.NewInt(10)

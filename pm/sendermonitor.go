@@ -78,7 +78,7 @@ type LocalSenderMonitor struct {
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderManager, tm TimeManager, store TicketStore, cleanupInterval time.Duration, ttl int) SenderMonitor {
+func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderManager, tm TimeManager, store TicketStore, cleanupInterval time.Duration, ttl int) *LocalSenderMonitor {
 	return &LocalSenderMonitor{
 		claimant:        claimant,
 		cleanupInterval: cleanupInterval,
@@ -209,7 +209,7 @@ func (sm *LocalSenderMonitor) ensureCache(addr ethcommon.Address) {
 // starts a ticket queue for the remote sender
 // Caller should hold the lock for LocalSenderMonitor unless the caller is
 // ensureCache() in which case the caller of ensureCache() should hold the lock
-func (sm *senderMonitor) cache(addr ethcommon.Address) {
+func (sm *LocalSenderMonitor) cache(addr ethcommon.Address) {
 	queue := newTicketQueue(sm.ticketStore, addr, sm.tm.SubscribeBlocks)
 	queue.Start()
 	done := make(chan struct{})
