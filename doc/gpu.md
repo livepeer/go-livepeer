@@ -29,6 +29,7 @@ CUDA | Nvidia
 10.0.130 |
 10.1 | 418.39 , 430.50
 10.2.89 | 440.33.01
+11.0 | 450.36.06
 
 * **Driver Limits** "Retail GPU cards may impose a software limit on the number of concurrent transcode sessions allowed on the system in official drivers.
 
