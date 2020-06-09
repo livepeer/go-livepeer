@@ -51,7 +51,7 @@ You can also build your own executables from source code.
 
 &ensp; 2\. Make sure you have the necessary libraries installed:
 
- * Linux (Ubuntu 18.04): `apt-get update && apt-get -y install build-essential pkg-config autoconf gnutls-dev git curl`
+ * Linux (Ubuntu: 16.04 or 18.04): `apt-get update && apt-get -y install build-essential pkg-config autoconf gnutls-dev git curl`
 
  * OSX: `brew update && brew install pkg-config autoconf gnutls`
 
