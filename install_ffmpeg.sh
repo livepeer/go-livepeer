@@ -59,9 +59,7 @@ if [[ $(uname) != *"MSYS"* ]]; then
   if [ ! -e "$HOME/gmp-6.1.2" ]; then
     cd "$HOME"
     curl -LO https://github.com/livepeer/livepeer-builddeps/raw/34900f2b1be4e366c5270e3ee5b0d001f12bd8a4/gmp-6.1.2.tar.xz
-    xz -d gmp-6.1.2.tar.xz
-    tar xf gmp-6.1.2.tar
-    rm gmp-6.1.2.tar
+    tar xf gmp-6.1.2.tar.xz
     cd "$HOME/gmp-6.1.2"
     ./configure --prefix="$HOME/compiled" --disable-shared  --with-pic --enable-fat
     make
@@ -73,7 +71,6 @@ if [[ $(uname) != *"MSYS"* ]]; then
     cd $HOME
     curl -LO https://github.com/livepeer/livepeer-builddeps/raw/34900f2b1be4e366c5270e3ee5b0d001f12bd8a4/nettle-3.4.1.tar.gz
     tar xf nettle-3.4.1.tar.gz
-    rm nettle-3.4.1.tar.gz
     cd nettle-3.4.1
     LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --disable-shared --enable-pic
     make
@@ -84,9 +81,7 @@ if [[ $(uname) != *"MSYS"* ]]; then
   if [ ! -e "$HOME/gnutls-3.5.18" ]; then
     cd $HOME
     curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.5/gnutls-3.5.18.tar.xz
-    xz -d gnutls-3.5.18.tar.xz
-    tar xf gnutls-3.5.18.tar
-    rm gnutls-3.5.18.tar
+    tar xf gnutls-3.5.18.tar.xz
     cd gnutls-3.5.18
     LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" LIBS="-lhogweed -lnettle -lgmp" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --without-idn --without-zlib --disable-doc --disable-cxx --disable-tools
     make
