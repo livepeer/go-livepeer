@@ -24,7 +24,7 @@ func defaultSignedTicket(sender ethcommon.Address, senderNonce uint32) *SignedTi
 			ParamsExpirationBlock:  big.NewInt(0),
 			PricePerPixel:          big.NewRat(1, 1),
 		},
-		[]byte("foo"),
+		RandBytes(32),
 		big.NewInt(7),
 	}
 }
@@ -56,7 +56,7 @@ func (qc *queueConsumer) Wait(num int, e RedeemableEmitter, done chan struct{}) 
 			ticket.resCh <- struct {
 				txHash ethcommon.Hash
 				err    error
-			}{}
+			}{RandHash(), nil}
 		}
 	}
 	done <- struct{}{}
@@ -94,11 +94,13 @@ func TestTicketQueueLoop(t *testing.T) {
 	// Wait for all numTickets tickets to be
 	// received on the output channel returned by Redeemable()
 	go qc.Wait(numTickets, q, done)
+	time.Sleep(time.Millisecond * 20)
 
 	// Test signaling a new blockNum and remove tickets
 	tm.blockNumSink <- big.NewInt(1)
-	time.Sleep(20 * time.Millisecond)
 	<-done
+	time.Sleep(20 * time.Millisecond)
+
 	// Queue should contain only the non-expired ticket now
 	qlen, err = q.Length()
 	assert.Nil(err)

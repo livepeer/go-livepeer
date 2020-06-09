@@ -229,9 +229,19 @@ func (sm *LocalSenderMonitor) cache(addr ethcommon.Address) {
 func (sm *LocalSenderMonitor) startTicketQueueConsumerLoop(queue *ticketQueue, done chan struct{}) {
 	for {
 		select {
-		case ticket := <-queue.Redeemable():
-			if err := sm.redeemWinningTicket(ticket); err != nil {
+		case red := <-queue.Redeemable():
+			tx, err := sm.redeemWinningTicket(red.SignedTicket)
+			if err != nil {
 				glog.Errorf("error redeeming err=%v", err)
+				red.resCh <- struct {
+					txHash ethcommon.Hash
+					err    error
+				}{ethcommon.Hash{}, err}
+			} else {
+				red.resCh <- struct {
+					txHash ethcommon.Hash
+					err    error
+				}{tx.Hash(), nil}
 			}
 		case <-done:
 			// When the ticket consumer exits, tell the ticketQueue
@@ -281,27 +291,27 @@ func (sm *LocalSenderMonitor) cleanup() {
 	}
 }
 
-func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) error {
+func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.Transaction, error) {
 	maxFloat, err := sm.MaxFloat(ticket.Ticket.Sender)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// if max float is zero, there is no claimable reserve left or reserve is 0
 	if maxFloat.Cmp(big.NewInt(0)) <= 0 {
 		if err := sm.QueueTicket(ticket); err != nil {
-			return err
+			return nil, err
 		}
-		return errors.New("max float is 0")
+		return nil, errors.New("max float is 0")
 	}
 
 	// If max float is insufficient to cover the ticket face value, queue
 	// the ticket to be retried later
 	if maxFloat.Cmp(ticket.Ticket.FaceValue) < 0 {
 		if err := sm.QueueTicket(ticket); err != nil {
-			return err
+			return nil, err
 		}
-		return fmt.Errorf("insufficient max float sender=%v faceValue=%v maxFloat=%v", ticket.Ticket.Sender.Hex(), ticket.Ticket.FaceValue, maxFloat)
+		return nil, fmt.Errorf("insufficient max float sender=%v faceValue=%v maxFloat=%v", ticket.Ticket.Sender.Hex(), ticket.Ticket.FaceValue, maxFloat)
 	}
 
 	// Subtract the ticket face value from the sender's current max float
@@ -331,7 +341,7 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) error {
 		if monitor.Enabled {
 			monitor.TicketRedemptionError(ticket.Ticket.Sender.String())
 		}
-		return err
+		return nil, err
 	}
 
 	// Wait for transaction to confirm
@@ -339,7 +349,7 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) error {
 		if monitor.Enabled {
 			monitor.TicketRedemptionError(ticket.Ticket.Sender.String())
 		}
-		return err
+		return nil, err
 	}
 
 	if monitor.Enabled {
@@ -348,7 +358,7 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) error {
 		monitor.ValueRedeemed(ticket.Ticket.Sender.String(), ticket.Ticket.FaceValue)
 	}
 
-	return nil
+	return tx, nil
 }
 
 // SubscribeMaxFloatChange notifies subcribers when the max float for a sender has changed
