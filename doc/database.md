@@ -57,7 +57,7 @@ Column | Type | Description
 createdAt | STRING DEFAULT CURRENT_TIMESTAMP | Time this row was inserted.
 sender | STRING | Address of the broadcaster that sent the winning ticket.
 recipient | STRING | Address of the orchestrator that payments will be credited to.
-faceValue | BLOB | Face value of the ticket, in wei Unique nonce sent by the broadcaster.
+faceValue | BLOB | Face value of the ticket, in wei.
 winProb | BLOB | The ticket's winning probability in the range of 0 through 2^256-1.
 senderNonce | INTEGER | Nonce incorporated by the broadcaster with each ticket.
 recipientRand | BLOB | Value used by the orchestrator when constructing the initial ticket parameters.
@@ -71,17 +71,17 @@ sessionID | STRING | Broadcast session which this ticket belongs to.
 
 Column | Type | Description
 ---|---|---
-createdAt | DATETIME DEFAULT CURRENT_TIMESTAMP | Time this row was inserted 
+createdAt | DATETIME DEFAULT CURRENT_TIMESTAMP | Time this row was inserted. 
 sender | STRING | Address of the broadcaster that sent the winning ticket.
 recipient | STRING | Address of the orchestrator that payments will be credited to.
-faceValue | BLOB | Face value of the ticket, in wei Unique nonce sent by the broadcaster.
+faceValue | BLOB | Face value of the ticket, in wei.
 winProb | BLOB | The ticket's winning probability in the range of 0 through 2^256-1.
 senderNonce | INTEGER | Nonce incorporated by the broadcaster with each ticket.
 recipientRand | BLOB | Value used by the orchestrator when constructing the initial ticket parameters.
-recipientRandHash | STRING | Hash of the recipient rand, keccak256(recipientRand).,
-sig | BLOB PRIMARY KEY | The broadcaster's signature over the ticket parameters.,
-creationRound | int64 | The round in which the ticket was created.,
+recipientRandHash | STRING | Hash of the recipient rand, keccak256(recipientRand).
+sig | BLOB PRIMARY KEY | The broadcaster's signature over the ticket parameters.
+creationRound | int64 | The round in which the ticket was created.
 creationRoundBlockHash | STRING | The block hash of the block the ticket creation round was initialised.
-paramsExpirationBlock | int64 | The block height at which the current recipientRand expires,
+paramsExpirationBlock | int64 | The block height at which the current recipientRand expires.
 redeemedAt | DATETIME | Time the ticket was redeemed on-chain.
 txHash | STRING | Transaction hash of the winning ticket redemption on-chain. 

@@ -107,7 +107,7 @@ Processing a `/segment` request consists of the following steps:
 
 The response is split into two parts: the 200 OK  (or error) is sent after the download, and the response body consisting of a `TranscodeResult` is sent after the transcode completes. This gives broadcasters approximate visibility into how long the upload and transcode steps each take.
 
-```proto
+```protobuf
 // Response that a transcoder sends after transcoding a segment.
 message TranscodeResult {
 
@@ -154,7 +154,7 @@ There is an end-to-end request timeout of 8 seconds, However, issues are likely 
 
 Upon startup, an orchestrator will verify its availability on the network. This is done by sending itself a `Ping` request with a random value, and verifying its own signature in the response.
 
-```proto
+```protobuf
 message PingPong {
 
   // Implementation defined
@@ -168,6 +168,65 @@ The address the orchestrator uses to check availability is as follows:
 * If a `-serviceAddr` is set, use that address
 * If a Service URI is set in the Ethereum service registry, use that address
 * Otherwise, discover the node's public IP and use that address
+
+## Orchestrator To Redeemer
+
+*Applicable when running a ticket redemption service by using the `-redeemer` flag*
+
+### gRPC `QueueTicket`: `Ticket` -> `QueueTicketRes`
+
+`QueueTicket` is a unary RPC method that is called by an Orchestrator to send a winning ticket to the `Redeemer`. The request message has following format: 
+
+```protobuf
+message Ticket {
+    TicketParams ticket_params                  = 1;
+    bytes sender                                = 2;
+    TicketExpirationParams expiration_params    = 3;
+    TicketSenderParams sender_params            = 4;
+    bytes recipient_rand                        = 5;
+}
+```
+
+The `Redeemer` will send back an empty message, `QueueTicketRes` on success as well as a `200 OK` status. Upon error a `500 Internal Server Error` error code will be returned along side the error. 
+
+### gRPC `MaxFloat`: `MaxFloatReq` -> `MaxFloatUpdate`
+
+`MaxFloat` is a unary RPC method that is called by an Orchestrator when it requires the max float for a sender but no local cache is available. It's request takes in a sender's ethereum address:
+
+```protobuf
+message MaxFloatReq {
+    bytes sender = 1;
+}
+```
+
+The server will respond with the `MaxFloat` for that `sender` in raw bytes format:
+
+```protobuf
+message MaxFloatUpdate {
+    bytes max_float = 1;
+}
+```
+
+### gRPC `MonitorMaxFloat`: `MaxFloatReq` -> stream `MaxFloatUpdate`
+
+`MonitorMaxFloat` is a server-side streming RPC method that is called by an Orchestrator to receive max float updates for a sender. The stream will remain open until either the client or the server closes the stream or connection. 
+
+The request follows the same format as the `MaxFloat` method:
+
+```protobuf
+message MaxFloatReq {
+    bytes sender = 1;
+}
+```
+
+The response message also follows the same format but is now a _stream_  of `MaxFloatUpdate` messages: 
+
+```protobuf
+message MaxFloatUpdate {
+    bytes max_float = 1;
+}
+```
+
 
 ## TLS Certificates
 
