@@ -11,6 +11,7 @@ cd core
 go test -run LB_ -race
 # Be more strict with nvidia tests: run with race detector enabled
 go test -run Nvidia_ -race
+go test -run Capabilities_ -race
 cd ..
 
 # Be more strict with discovery tests: run with race detector enabled

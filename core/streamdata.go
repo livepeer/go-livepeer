@@ -23,12 +23,13 @@ const (
 )
 
 type StreamParameters struct {
-	ManifestID ManifestID
-	RtmpKey    string
-	Profiles   []ffmpeg.VideoProfile
-	Resolution string
-	Format     ffmpeg.Format
-	OS         drivers.OSSession
+	ManifestID   ManifestID
+	RtmpKey      string
+	Profiles     []ffmpeg.VideoProfile
+	Resolution   string
+	Format       ffmpeg.Format
+	OS           drivers.OSSession
+	Capabilities *Capabilities
 }
 
 func (s *StreamParameters) StreamID() string {
