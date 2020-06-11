@@ -191,3 +191,28 @@ func TestCapability_StorageToCapability(t *testing.T) {
 	assert.Equal(Capability_Unused, c)
 	assert.Nil(err)
 }
+
+func TestCapabilities_LegacyCheck(t *testing.T) {
+	assert := assert.New(t)
+	legacyLen := len(legacyCapabilities)
+	caps := legacyCapabilities
+	capStr := NewCapabilityString(caps)
+
+	assert.True(capStr.CompatibleWith(legacyCapabilityString)) // sanity check
+
+	// adding a non-legacy cap should fail the check
+	caps = append(caps, Capability(50))
+	capStr = NewCapabilityString(caps)
+	assert.False(capStr.CompatibleWith(legacyCapabilityString))
+
+	// having a subset of legacy caps should still be ok
+	// TODO randomly select subset via rapid check
+	caps = legacyCapabilities
+	caps = caps[:len(caps)-1]
+	caps = caps[:len(caps)-1]
+	assert.Len(caps, len(legacyCapabilities)-2) // sanity check
+	capStr = NewCapabilityString(caps)
+	assert.True(capStr.CompatibleWith(legacyCapabilityString))
+
+	assert.Len(legacyCapabilities, legacyLen) // sanity check no modifications
+}

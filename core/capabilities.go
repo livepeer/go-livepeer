@@ -100,6 +100,22 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 	return &Capabilities{bitstring: NewCapabilityString(capList)}, nil
 }
 
+func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
+	// Ensure bcast and orch are compatible with one another.
+
+	if bcast == nil {
+		// Weird golang behavior: interface value can evaluate to non-nil
+		// even if the underlying concrete type is nil.
+		// cf. common.CapabilityComparator
+		return false
+	}
+	return bcast.bitstring.CompatibleWith(orch.Bitstring)
+}
+
+func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
+	return &net.Capabilities{Bitstring: c.bitstring}
+}
+
 func NewCapabilities(caps []Capability) *Capabilities {
 	return &Capabilities{bitstring: NewCapabilityString(caps)}
 }
@@ -129,4 +145,28 @@ func storageToCapability(os drivers.OSSession) (Capability, error) {
 		return Capability_StorageDirect, nil
 	}
 	return Capability_Invalid, capStorageConv
+}
+
+// Fixed forever - don't change this list unless removing interoperability
+// with nodes that don't support capability discovery
+// (in which case, just remove everything)
+var legacyCapabilities = []Capability{
+	Capability_H264,
+	Capability_MPEGTS,
+	Capability_MP4,
+	Capability_FractionalFramerates,
+	Capability_StorageDirect,
+	Capability_StorageS3,
+	Capability_StorageGCS,
+}
+var legacyCapabilityString = NewCapabilityString(legacyCapabilities)
+
+func (bcast *Capabilities) LegacyOnly() bool {
+	if bcast == nil {
+		// Weird golang behavior: interface value can evaluate to non-nil
+		// even if the underlying concrete type is nil.
+		// cf. common.CapabilityComparator
+		return false
+	}
+	return bcast.bitstring.CompatibleWith(legacyCapabilityString)
 }

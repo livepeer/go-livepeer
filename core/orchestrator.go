@@ -306,6 +306,13 @@ func (orch *orchestrator) DebitFees(addr ethcommon.Address, manifestID ManifestI
 	orch.node.Balances.Debit(addr, manifestID, priceRat.Mul(priceRat, big.NewRat(pixels, 1)))
 }
 
+func (orch *orchestrator) Capabilities() *net.Capabilities {
+	if orch.node == nil {
+		return nil
+	}
+	return orch.node.Capabilities.ToNetCapabilities()
+}
+
 func (orch *orchestrator) isActive(addr ethcommon.Address) (bool, error) {
 	filter := &common.DBOrchFilter{
 		CurrentRound: orch.rm.LastInitializedRound(),

@@ -147,6 +147,13 @@ func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID 
 func (r *stubOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
 }
 
+func (r *stubOrchestrator) Capabilities() *net.Capabilities {
+	return nil
+}
+func (r *stubOrchestrator) LegacyOnly() bool {
+	return true
+}
+
 func newStubOrchestrator() *stubOrchestrator {
 	pk, err := ethcrypto.GenerateKey()
 	if err != nil {
@@ -1000,6 +1007,13 @@ func (o *mockOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID 
 
 func (o *mockOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
 	o.Called(addr, manifestID, price, pixels)
+}
+
+func (o *mockOrchestrator) Capabilities() *net.Capabilities {
+	return nil
+}
+func (o *mockOrchestrator) LegacyOnly() bool {
+	return true
 }
 
 func defaultTicketParams() *net.TicketParams {

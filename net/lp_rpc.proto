@@ -84,6 +84,17 @@ message PriceInfo {
   int64 pixelsPerUnit = 2;
 }
 
+message Capabilities {
+
+    // Bit string of supported features - one bit per feature
+    repeated uint64 bitstring = 1;
+
+    // Non-binary capability constraints, such as supported ranges.
+    message Constraints {
+            // Empty for now
+    }
+}
+
 // The orchestrator sends this in response to `GetOrchestrator`, containing
 // miscellaneous data related to the job.
 message OrchestratorInfo {
@@ -99,6 +110,9 @@ message OrchestratorInfo {
 
   // ETH address that should sign transcoded results
   bytes address = 4;
+
+  // Features and constraints supported by the orchestrator
+  Capabilities capabilities = 5;
 
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;

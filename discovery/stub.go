@@ -8,6 +8,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 )
 
@@ -85,4 +86,20 @@ func newStubSuspender() *stubSuspender {
 
 func (s *stubSuspender) Suspended(orch string) int {
 	return s.list[orch]
+}
+
+var capCompatString = []uint64{uint64(0x1337)}
+
+type stubCapabilities struct {
+	isLegacy bool
+}
+
+func newStubCapabilities() *stubCapabilities {
+	return &stubCapabilities{isLegacy: true}
+}
+func (s *stubCapabilities) CompatibleWith(caps *net.Capabilities) bool {
+	return len(caps.Bitstring) > 0 && caps.Bitstring[0] == capCompatString[0]
+}
+func (s *stubCapabilities) LegacyOnly() bool {
+	return s.isLegacy
 }

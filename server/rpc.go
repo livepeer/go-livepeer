@@ -46,6 +46,7 @@ type Orchestrator interface {
 	PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error)
 	SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool
 	DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
+	Capabilities() *net.Capabilities
 }
 
 // Balance describes methods for a session's balance maintenance
@@ -267,6 +268,7 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 		TicketParams: params,
 		PriceInfo:    priceInfo,
 		Address:      orch.Address().Bytes(),
+		Capabilities: orch.Capabilities(),
 	}
 
 	os := drivers.NodeStorage.NewSession(string(core.RandomManifestID()))

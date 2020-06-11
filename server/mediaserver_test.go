@@ -88,7 +88,7 @@ func (d *stubDiscovery) GetURLs() []*url.URL {
 	return nil
 }
 
-func (d *stubDiscovery) GetOrchestrators(num int, sus common.Suspender) ([]*net.OrchestratorInfo, error) {
+func (d *stubDiscovery) GetOrchestrators(num int, sus common.Suspender, caps common.CapabilityComparator) ([]*net.OrchestratorInfo, error) {
 	if d.waitGetOrch != nil {
 		<-d.waitGetOrch
 	}
