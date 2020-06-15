@@ -258,7 +258,7 @@ func TestQueueTicketAndSignalNewBlock(t *testing.T) {
 
 func TestCleanup(t *testing.T) {
 	claimant, b, smgr, tm := localSenderMonitorFixture()
-	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 5)
 	sm.Start()
 	defer sm.Stop()
 
@@ -303,8 +303,6 @@ func TestCleanup(t *testing.T) {
 	// SenderMonitor should no longer use cached values
 	// since they have been cleaned up
 	sm.cleanup()
-	smgr.Clear(addr1)
-	smgr.Clear(addr2)
 	assert.Nil(smgr.info[addr1])
 	assert.Nil(smgr.claimedReserve[addr1])
 	assert.Nil(smgr.info[addr2])
@@ -427,6 +425,16 @@ func TestCleanup(t *testing.T) {
 	expectedAlloc4 := new(big.Int).Sub(new(big.Int).Div(expectedReserve4, tm.transcoderPoolSize), smgr.claimedReserve[addr2])
 	assert.Equal(expectedAlloc3, mf1)
 	assert.Equal(expectedAlloc4, mf2)
+
+	// Add a subscription for addr1
+	// It should not be cleaned up
+	sink := make(chan struct{})
+	sub := sm.senders[addr1].subScope.Track(sm.senders[addr1].subFeed.Subscribe(sink))
+	defer sub.Unsubscribe()
+	increaseTime(10)
+	sm.cleanup()
+	assert.NotNil(sm.senders[addr1])
+	assert.Nil(sm.senders[addr2])
 }
 
 func TestReserveAlloc(t *testing.T) {
