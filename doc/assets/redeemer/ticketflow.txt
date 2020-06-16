@@ -1,0 +1,94 @@
+title Ticket Redemption Service: Winning Ticket Flow
+
+participantgroup #lightgreen **Orchestrator**
+participant Recipient
+participant Redeemer Client (SenderMonitor)
+end
+participantgroup #lightblue **Redeemer**
+participant Redeemer gRPC server
+participant LocalSenderMonitor
+participant TicketQueue
+database TicketStore
+end
+participant Ethereum Node
+participantgroup 
+
+Recipient->Redeemer Client (SenderMonitor):MaxFloat(sender)
+group MaxFloat(sender)
+
+note over Redeemer Client (SenderMonitor): No Local Cache
+Redeemer Client (SenderMonitor)->>Redeemer gRPC server: MaxFloat(sender)
+Redeemer gRPC server->LocalSenderMonitor: MaxFloat(sender)
+Redeemer gRPC server<--LocalSenderMonitor: MaxFloat
+Redeemer Client (SenderMonitor)<<--Redeemer gRPC server: MaxFloatUpdate
+Redeemer Client (SenderMonitor)-#blue>>Redeemer gRPC server: <color:#blue>MonitorMaxFloat(sender)    
+Redeemer gRPC server-#red>LocalSenderMonitor: <color:#red>SubscribeMaxFloatChange(Sender)
+end 
+Recipient<--Redeemer Client (SenderMonitor): MaxFloat
+
+entryspacing 3
+
+Recipient->Redeemer Client (SenderMonitor): RedeemWinningTicket
+entryspacing 1
+group queue ticket
+Redeemer Client (SenderMonitor)-#green>>Redeemer gRPC server:<color:#green>QueueTicket:Ticket
+note over Redeemer gRPC server: <color:#blue> Ticket.Sender == sender
+parallel
+Redeemer gRPC server->LocalSenderMonitor:QueueTicket
+activate TicketQueue
+LocalSenderMonitor->TicketQueue:QueueTicket
+parallel off
+TicketQueue->TicketStore:StoreWinningTicket
+note over TicketStore:submittedAt==NULL\ntxHash==NULL
+Redeemer Client (SenderMonitor)<<#green--Redeemer gRPC server:<color:#green>QueueTicketRes    
+end
+Recipient<--Redeemer Client (SenderMonitor): RedeemWinningTicket
+
+entryspacing 3
+note over TicketQueue: New Block Event
+entryspacing 1
+loop i < queue.Length()
+TicketQueue->TicketStore:EarliestWinningTicket
+TicketQueue<--TicketStore: Ticket
+LocalSenderMonitor(3)<-TicketQueue: Ticket
+end
+entryspacing 3
+
+group MaxFloat update
+entryspacing 1
+note over LocalSenderMonitor: subFloat(sender,\n ticket.faceValue)
+Redeemer gRPC server(3)<#red-LocalSenderMonitor: <color:#red>sendMaxFloatChange(sender)
+Redeemer gRPC server->LocalSenderMonitor: MaxFloat(sender)
+Redeemer gRPC server<--LocalSenderMonitor: MaxFloat
+parallel
+Redeemer Client (SenderMonitor)(3)<<#blue--Redeemer gRPC server:<color:#blue>MaxFloatUpdate(sender, MaxFloat)
+end
+LocalSenderMonitor->Ethereum Node: RedeemWinningTicket
+entryspacing 3
+activate Ethereum Node
+parallel off
+
+LocalSenderMonitor<--Ethereum Node: Tx Receipt
+deactivate Ethereum Node
+entryspacing 1.5
+group MaxFloat update
+entryspacing 1
+note over LocalSenderMonitor: addFloat(sender,\n ticket.faceValue)
+Redeemer gRPC server(3)<#red-LocalSenderMonitor: <color:#red>sendMaxFloatChange(sender)
+Redeemer gRPC server->LocalSenderMonitor: MaxFloat(sender)
+Redeemer gRPC server<--LocalSenderMonitor: MaxFloat
+parallel
+Redeemer Client (SenderMonitor)(3)<<#blue--Redeemer gRPC server:<color:#blue>MaxFloatUpdate(sender, MaxFloat)
+end
+LocalSenderMonitor->(3)TicketQueue: Tx Hash
+TicketQueue->TicketStore: MarkWinningTicketRedeemed
+parallel off
+note over TicketStore: submittedAt==time.Now\ntxHash==txHash
+deactivate TicketQueue
+
+entryspacing 3
+Recipient->Redeemer Client (SenderMonitor): MaxFloat(sender)
+entryspacing 1
+note over Redeemer Client (SenderMonitor): Local cache available
+Recipient<--Redeemer Client (SenderMonitor): MaxFloat(sender)
+end
