@@ -39,6 +39,7 @@ const pixelEstimateMultiplier = 1.02
 var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
 var errFormat = errors.New("unrecognized profile output format")
+var errProfile = errors.New("unrecognized encoder profile")
 var errDuration = errors.New("invalid duration")
 
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
@@ -228,6 +229,20 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 		default:
 			return nil, errFormat
 		}
+		encoderProf := ffmpeg.ProfileNone
+		switch profile.Profile {
+		case net.VideoProfile_ENCODER_DEFAULT:
+		case net.VideoProfile_H264_BASELINE:
+			encoderProf = ffmpeg.ProfileH264Baseline
+		case net.VideoProfile_H264_MAIN:
+			encoderProf = ffmpeg.ProfileH264Main
+		case net.VideoProfile_H264_HIGH:
+			encoderProf = ffmpeg.ProfileH264High
+		case net.VideoProfile_H264_CONSTRAINED_HIGH:
+			encoderProf = ffmpeg.ProfileH264ConstrainedHigh
+		default:
+			return nil, errProfile
+		}
 		prof := ffmpeg.VideoProfile{
 			Name:         name,
 			Bitrate:      fmt.Sprint(profile.Bitrate),
@@ -235,6 +250,7 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 			FramerateDen: uint(profile.FpsDen),
 			Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
 			Format:       format,
+			Profile:      encoderProf,
 		}
 		profiles = append(profiles, prof)
 	}

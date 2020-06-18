@@ -167,6 +167,16 @@ message VideoProfile {
 
   // FPS Denominator of VideoProfile
   uint32 fpsDen = 22;
+
+  enum Profile {
+    ENCODER_DEFAULT       = 0;
+    H264_BASELINE         = 1;
+    H264_MAIN             = 2;
+    H264_HIGH             = 3;
+    H264_CONSTRAINED_HIGH = 4;
+  }
+  // Desired codec profile
+  Profile profile = 23;
 }
 
 // Individual transcoded segment data.
