@@ -421,6 +421,7 @@ func TestMakeFfmpegVideoProfiles(t *testing.T) {
 			Height:  int32(654),
 			Bitrate: int32(321),
 			Fps:     uint32(198),
+			Profile: net.VideoProfile_H264_BASELINE,
 		},
 	}
 
@@ -433,6 +434,7 @@ func TestMakeFfmpegVideoProfiles(t *testing.T) {
 			FramerateDen: uint(videoProfiles[0].FpsDen),
 			Resolution:   fmt.Sprintf("%dx%d", videoProfiles[0].Width, videoProfiles[0].Height),
 			Format:       ffmpeg.FormatMPEGTS,
+			Profile:      ffmpeg.ProfileNone,
 		},
 		{
 			Name:         videoProfiles[1].Name,
@@ -441,6 +443,7 @@ func TestMakeFfmpegVideoProfiles(t *testing.T) {
 			FramerateDen: uint(0),
 			Resolution:   fmt.Sprintf("%dx%d", videoProfiles[1].Width, videoProfiles[1].Height),
 			Format:       ffmpeg.FormatMPEGTS,
+			Profile:      ffmpeg.ProfileH264Baseline,
 		},
 	}
 
