@@ -82,7 +82,13 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 			allIntFPS = false
 		}
 	}
-	if allIntFPS {
+	allDefaultProfiles := true
+	for i := 0; i < len(md.Profiles) && allDefaultProfiles; i++ {
+		if md.Profiles[i].Profile != ffmpeg.ProfileNone {
+			allDefaultProfiles = false
+		}
+	}
+	if allIntFPS && allDefaultProfiles {
 		if allTS {
 			segData.FullProfiles = fullProfiles
 		} else {
