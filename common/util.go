@@ -228,6 +228,22 @@ func ProfilesNames(profiles []ffmpeg.VideoProfile) string {
 	return strings.Join(names, ",")
 }
 
+func EncoderProfileNameToValue(profile string) ffmpeg.Profile {
+	var EncoderProfileLookup = map[string]ffmpeg.Profile{
+		"":                    ffmpeg.ProfileNone,
+		"none":                ffmpeg.ProfileNone,
+		"h264baseline":        ffmpeg.ProfileH264Baseline,
+		"h264main":            ffmpeg.ProfileH264Main,
+		"h264high":            ffmpeg.ProfileH264High,
+		"h264constrainedhigh": ffmpeg.ProfileH264ConstrainedHigh,
+	}
+	p, ok := EncoderProfileLookup[strings.ToLower(profile)]
+	if !ok {
+		return ffmpeg.ProfileNone
+	}
+	return p
+}
+
 func ProfileExtensionFormat(ext string) ffmpeg.Format {
 	p, ok := ffmpeg.ExtensionFormats[ext]
 	if !ok {
