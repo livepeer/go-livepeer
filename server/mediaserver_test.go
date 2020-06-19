@@ -432,9 +432,9 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 
 	// set profiles with valid values, presets empty
 	ts7 := makeServer(`{"manifestID":"a", "profiles": [
-		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456},
+		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456, "profile": "H264Baseline"},
 		{"name": "prof2", "bitrate": 765, "fps": 876, "fpsDen": 12, "width": 456, "height": 987},
-		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654}]}`)
+		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654, "profile": "H264ConstrainedHigh"}]}`)
 	defer ts7.Close()
 	params = createSid(u).(*streamParameters)
 	assert.Len(params.profiles, 3)
@@ -446,6 +446,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			Framerate:    uint(560),
 			FramerateDen: 0,
 			Resolution:   "123x456",
+			Profile:      ffmpeg.ProfileH264Baseline,
 		},
 		ffmpeg.VideoProfile{
 			Name:         "prof2",
@@ -453,6 +454,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			Framerate:    uint(876),
 			FramerateDen: uint(12),
 			Resolution:   "456x987",
+			Profile:      ffmpeg.ProfileNone,
 		},
 		ffmpeg.VideoProfile{
 			Name:         "passthru_fps",
@@ -460,6 +462,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			Resolution:   "789x654",
 			Framerate:    0,
 			FramerateDen: 0,
+			Profile:      ffmpeg.ProfileH264ConstrainedHigh,
 		},
 	}
 
@@ -477,9 +480,9 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 
 	// set profiles and presets
 	ts9 := makeServer(`{"manifestID":"a", "presets":["P240p30fps16x9", "P720p30fps16x9"], "profiles": [
-		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456},
+		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456, "profile": "H264Baseline"},
 		{"name": "prof2", "bitrate": 765, "fps": 876, "fpsDen": 12, "width": 456, "height": 987},
-		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654}]}`)
+		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654, "profile": "H264ConstrainedHigh"}]}`)
 
 	defer ts9.Close()
 	params = createSid(u).(*streamParameters)
