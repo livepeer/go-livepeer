@@ -309,6 +309,22 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	assert.Empty(segData.FullProfiles)
 	assert.Empty(segData.FullProfiles2)
 
+	// Check that FullProfiles3 field is used if any profile has non-empty encoder profile
+	s.Profiles[1].FramerateDen = uint(0) // unset FramerateDen as that also triggers FullProfile3
+	s.Profiles[0].Profile = ffmpeg.ProfileH264High
+	data, err = genSegCreds(s, seg)
+	assert.Nil(err)
+	buf, err = base64.StdEncoding.DecodeString(data)
+	assert.Nil(err)
+	err = proto.Unmarshal(buf, &segData)
+	assert.Nil(err)
+	expectedProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
+	assert.Equal(expectedProfiles[0].Profile, net.VideoProfile_H264_HIGH)
+	assert.Equal([]byte("invalid"), segData.Profiles)
+	assert.Equal(expectedProfiles, segData.FullProfiles3)
+	assert.Empty(segData.FullProfiles)
+	assert.Empty(segData.FullProfiles2)
+
 	// Check that profile format errors propagate
 	s.Profiles[1].Format = -1
 	data, err = genSegCreds(s, seg)
@@ -359,6 +375,7 @@ func TestCoreSegMetadata_FullProfiles(t *testing.T) {
 			FramerateDen: uint(12),
 			Resolution:   "456x987",
 			Format:       ffmpeg.FormatMP4,
+			Profile:      ffmpeg.ProfileH264ConstrainedHigh,
 		},
 	}
 
