@@ -759,11 +759,6 @@ func main() {
 	msCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if err != nil {
-		glog.Errorf("Error setting max price per segment: %v", err)
-		return
-	}
-
 	if *currentManifest {
 		glog.Info("Current ManifestID will be available over ", *httpAddr)
 		s.ExposeCurrentManifest = *currentManifest
