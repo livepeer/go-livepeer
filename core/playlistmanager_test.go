@@ -170,19 +170,22 @@ func TestCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectedURI := "test://some.host/stream/testPath/testName"
+	expectedURI := "testName"
 	if uri != expectedURI {
 		t.Fatalf("Expected %s, got %s", expectedURI, uri)
 	}
-	data := memoryOS.GetData("testPath/testName")
+	data, err := osd.GetData("testPath/testName")
+	if err != nil {
+		t.Fatal("Unexpected error ", err)
+	}
 	if bytes.Compare(testData, data) != 0 {
 		t.Logf("should be: %x", testData)
 		t.Logf("got      : %s", data)
 		t.Fatal("Data should be equal")
 	}
 	c.Cleanup()
-	data = memoryOS.GetData("testPath/testName")
-	if data != nil {
+	data, err = memoryOS.GetData("testPath/testName")
+	if data != nil || err == nil || err.Error() != "memory os: object does not exist" {
 		t.Fatal("Data should be cleaned up")
 	}
 }

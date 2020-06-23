@@ -175,7 +175,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 		assert.Nil(err)
 		assert.Contains(params, "name")
 		assert.Len(params, 1)
-		assert.Equal(params["name"], "P144p25fps16x9_12.ts")
+		assert.Equal("P144p25fps16x9_12.ts", params["name"])
 		assert.Equal(`attachment; filename="P144p25fps16x9_12.ts"`, p.Header.Get("Content-Disposition"))
 		assert.Equal("P144p25fps16x9", p.Header.Get("Rendition-Name"))
 		bodyPart, err := ioutil.ReadAll(p)

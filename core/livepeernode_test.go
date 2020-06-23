@@ -8,7 +8,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
@@ -123,32 +122,25 @@ func TestServiceURIChange(t *testing.T) {
 
 	n, err := NewLivepeerNode(nil, "", nil)
 	require.Nil(err)
+	assert.Equal("", n.GetServiceURI().String()) // sanity
 
+	// Check default
+	origUrl, err := url.Parse("orig://url")
+	assert.Nil(err)
+	n.serviceURI = *origUrl
+	assert.Equal(origUrl, n.GetServiceURI())
+
+	// Set ServiceURI to a URL
 	sUrl, err := url.Parse("test://testurl.com")
 	require.Nil(err)
 	n.SetServiceURI(sUrl)
+	assert.Equal(sUrl, n.GetServiceURI())
 
-	drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
-	sesh := drivers.NodeStorage.NewSession("testpath")
-	savedUrl, err := sesh.SaveData("testdata1", []byte{0, 0, 0})
-	require.Nil(err)
-	assert.Equal("test://testurl.com/stream/testpath/testdata1", savedUrl)
-
-	glog.Infof("Setting service URL to newurl")
+	// Set ServiceURI to another URL
 	newUrl, err := url.Parse("test://newurl.com")
+	require.Nil(err)
 	n.SetServiceURI(newUrl)
-	require.Nil(err)
-	furl, err := sesh.SaveData("testdata2", []byte{0, 0, 0})
-	require.Nil(err)
-	assert.Equal("test://newurl.com/stream/testpath/testdata2", furl)
-
-	glog.Infof("Setting service URL to secondurl")
-	secondUrl, err := url.Parse("test://secondurl.com")
-	n.SetServiceURI(secondUrl)
-	require.Nil(err)
-	surl, err := sesh.SaveData("testdata3", []byte{0, 0, 0})
-	require.Nil(err)
-	assert.Equal("test://secondurl.com/stream/testpath/testdata3", surl)
+	assert.Equal(newUrl, n.GetServiceURI())
 }
 
 func TestSetAndGetBasePrice(t *testing.T) {

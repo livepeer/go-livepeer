@@ -658,7 +658,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		// XXX we shouldn't do this. Need threadsafe accessors for playlist
 		seg := pl.Segments[i]
-		shouldSegName := fmt.Sprintf("/stream/%s/%s/%d.ts", mid, expectedSid.Rendition, i)
+		shouldSegName := fmt.Sprintf("%s/%d.ts", expectedSid.Rendition, i)
 		if seg.URI != shouldSegName {
 			t.Fatalf("Wrong segment, should have URI %s, has %s", shouldSegName, seg.URI)
 		}

@@ -56,6 +56,7 @@ func (mgr *BasicPlaylistManager) ManifestID() ManifestID {
 }
 
 func (mgr *BasicPlaylistManager) Cleanup() {
+	// TODO remove master m3u8
 	mgr.storageSession.EndSession()
 }
 
@@ -85,6 +86,14 @@ func (mgr *BasicPlaylistManager) getOrCreatePL(profile *ffmpeg.VideoProfile) (*m
 	vParams := ffmpeg.VideoProfileToVariantParams(*profile)
 	url := fmt.Sprintf("%v/%v.m3u8", mgr.manifestID, profile.Name)
 	mgr.masterPList.Append(url, mpl, vParams)
+	if mgr.GetOSSession() != nil && !mgr.GetOSSession().IsExternal() {
+		// external OS doesn't work too well with eventual consistency
+		path := string(mgr.ManifestID()) + ".m3u8"
+		err = drivers.NodeStorage.SaveData(path, []byte(mgr.masterPList.String()))
+		if err != nil {
+			return nil, err
+		}
+	}
 	return mpl, nil
 }
 
@@ -103,7 +112,16 @@ func (mgr *BasicPlaylistManager) InsertHLSSegment(profile *ffmpeg.VideoProfile, 
 		mpl.SeqNo = mseg.SeqId
 	}
 
-	return mpl.InsertSegment(seqNo, mseg)
+	err = mpl.InsertSegment(seqNo, mseg)
+	if err != nil {
+		return err
+	}
+	if mgr.GetOSSession() == nil || mgr.GetOSSession().IsExternal() {
+		// external OS doesn't work too well with eventual consistency
+		return nil
+	}
+	url := fmt.Sprintf("%v/%v.m3u8", mgr.ManifestID(), profile.Name)
+	return drivers.NodeStorage.SaveData(url, []byte(mpl.String()))
 }
 
 // GetHLSMasterPlaylist ..

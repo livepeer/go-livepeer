@@ -109,6 +109,15 @@ func (os *s3OS) NewSession(path string) OSSession {
 	return sess
 }
 
+func (os *s3OS) SaveData(uri string, data []byte) error {
+	_, err := os.NewSession("").SaveData(uri, data)
+	return err
+}
+
+func (os *s3OS) GetData(uri string) ([]byte, error) {
+	return getSegmentDataHTTP(uri)
+}
+
 func s3GetFields(sess *s3Session) map[string]string {
 	return map[string]string{
 		"x-amz-algorithm":  "AWS4-HMAC-SHA256",
@@ -140,6 +149,11 @@ func (os *s3Session) SaveData(name string, data []byte) (string, error) {
 	glog.V(common.VERBOSE).Infof("Saved to S3 %s", tentativeURL)
 
 	return url, err
+}
+
+func (os *s3Session) GetData(name string) ([]byte, error) {
+	// TODO ?
+	return nil, nil
 }
 
 func (os *s3Session) getAbsURL(path string) string {
