@@ -10,7 +10,29 @@ import (
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/ffmpeg"
+	"github.com/stretchr/testify/assert"
 )
+
+func TestStreamParameters(t *testing.T) {
+	assert := assert.New(t)
+
+	// empty params
+	s := StreamParameters{}
+	assert.Equal("/", s.StreamID())
+
+	// key only
+	s = StreamParameters{RtmpKey: "source"}
+	assert.Equal("/source", s.StreamID())
+
+	// mid only
+	mid := ManifestID("abc")
+	s = StreamParameters{ManifestID: mid}
+	assert.Equal("abc/", s.StreamID())
+
+	// both mid + key
+	s = StreamParameters{ManifestID: mid, RtmpKey: "source"}
+	assert.Equal("abc/source", s.StreamID())
+}
 
 func TestSegmentFlatten(t *testing.T) {
 	md := SegTranscodingMetadata{

@@ -10,6 +10,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 
 	"github.com/livepeer/lpms/ffmpeg"
@@ -20,6 +21,19 @@ var ErrManifestID = errors.New("ErrManifestID")
 const (
 	DefaultManifestIDLength = 4
 )
+
+type StreamParameters struct {
+	ManifestID ManifestID
+	RtmpKey    string
+	Profiles   []ffmpeg.VideoProfile
+	Resolution string
+	Format     ffmpeg.Format
+	OS         drivers.OSSession
+}
+
+func (s *StreamParameters) StreamID() string {
+	return string(s.ManifestID) + "/" + s.RtmpKey
+}
 
 type SegTranscodingMetadata struct {
 	ManifestID ManifestID

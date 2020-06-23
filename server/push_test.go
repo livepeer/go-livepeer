@@ -95,7 +95,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 		pl:          pl,
 		profile:     &ffmpeg.P144p30fps16x9,
 		sessManager: bsm,
-		params:      &streamParameters{profiles: []ffmpeg.VideoProfile{ffmpeg.P144p25fps16x9}},
+		params:      &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p25fps16x9}},
 	}
 
 	s.rtmpConnections["mani"] = cxn
@@ -416,7 +416,7 @@ func TestPush_MP4(t *testing.T) {
 	// Check formats
 	for _, cxn := range s.rtmpConnections {
 		assert.Equal(ffmpeg.FormatMP4, cxn.profile.Format)
-		for _, p := range cxn.params.profiles {
+		for _, p := range cxn.params.Profiles {
 			assert.Equal(ffmpeg.FormatMP4, p.Format)
 		}
 	}
@@ -446,9 +446,9 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 	assert.Len(s.rtmpConnections, 1)
 	for _, cxn := range s.rtmpConnections {
 		assert.Equal(ffmpeg.FormatMPEGTS, cxn.profile.Format)
-		assert.Len(cxn.params.profiles, 2)
+		assert.Len(cxn.params.Profiles, 2)
 		assert.Len(BroadcastJobVideoProfiles, 2)
-		for i, p := range cxn.params.profiles {
+		for i, p := range cxn.params.Profiles {
 			assert.Equal(ffmpeg.FormatMPEGTS, p.Format)
 			// HTTP push mutates the profiles, causing undesirable changes to
 			// the default set of broadcast profiles that persist to subsequent
@@ -467,9 +467,9 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 	assert.Len(s.rtmpConnections, 1)
 	for _, cxn := range s.rtmpConnections {
 		assert.Equal(ffmpeg.FormatMPEGTS, cxn.profile.Format)
-		assert.Len(cxn.params.profiles, 2)
+		assert.Len(cxn.params.Profiles, 2)
 		assert.Len(BroadcastJobVideoProfiles, 2)
-		for i, p := range cxn.params.profiles {
+		for i, p := range cxn.params.Profiles {
 			assert.Equal(ffmpeg.FormatMPEGTS, p.Format)
 			assert.Equal(ffmpeg.FormatNone, BroadcastJobVideoProfiles[i].Format)
 		}
@@ -486,9 +486,9 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 	cxn, ok := s.rtmpConnections["new"]
 	assert.True(ok, "stream did not exist")
 	assert.Equal(ffmpeg.FormatMP4, cxn.profile.Format)
-	assert.Len(cxn.params.profiles, 2)
+	assert.Len(cxn.params.Profiles, 2)
 	assert.Len(BroadcastJobVideoProfiles, 2)
-	for i, p := range cxn.params.profiles {
+	for i, p := range cxn.params.Profiles {
 		assert.Equal(ffmpeg.FormatMP4, p.Format)
 		assert.Equal(ffmpeg.FormatNone, BroadcastJobVideoProfiles[i].Format)
 	}
@@ -517,9 +517,9 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 	cxn, ok = s.rtmpConnections["web"]
 	assert.True(ok, "stream did not exist")
 	assert.Equal(ffmpeg.FormatMP4, cxn.profile.Format)
-	assert.Len(cxn.params.profiles, 2)
+	assert.Len(cxn.params.Profiles, 2)
 	assert.Len(BroadcastJobVideoProfiles, 2)
-	for i, p := range cxn.params.profiles {
+	for i, p := range cxn.params.Profiles {
 		assert.Equal(ffmpeg.FormatMP4, p.Format)
 		assert.Equal(ffmpeg.FormatNone, BroadcastJobVideoProfiles[i].Format)
 	}
