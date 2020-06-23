@@ -1170,6 +1170,7 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 
 	mos.On("SaveData", mock.Anything, mock.Anything).Return("720pdotcom", nil).Once()
 	mos.On("SaveData", mock.Anything, mock.Anything).Return("", errors.New("SaveData error")).Once()
+	mos.On("IsExternal").Return(true)
 
 	orch.On("DebitFees", mock.Anything, md.ManifestID, mock.Anything, tData720.Pixels)
 

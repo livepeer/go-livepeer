@@ -142,6 +142,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// Upload to OS and construct segment result set
 	var segments []*net.TranscodedSegmentData
 	var pixels int64
+	base := fmt.Sprintf("%s/stream/%s/", orch.ServiceURI().String(), segData.ManifestID)
 	for i := 0; err == nil && i < len(res.TranscodeData.Segments); i++ {
 		var ext string
 		ext, err = common.ProfileFormatExtension(segData.Profiles[i].Format)
@@ -155,6 +156,9 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			glog.Error("Could not upload segment ", segData.Seq)
 			break
+		}
+		if !res.OS.IsExternal() {
+			uri = base + name
 		}
 		pixels += res.TranscodeData.Segments[i].Pixels
 		d := &net.TranscodedSegmentData{

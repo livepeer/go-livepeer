@@ -344,14 +344,18 @@ func TestVerifyPixels(t *testing.T) {
 	assert.EqualError(err, "Invalid data found when processing input")
 
 	// Test writing temp file for relative URI and local memory storage with incorrect pixels
-	err = verifyPixels(fname, memOS.GetData(fname), 50)
+	data, err = memOS.GetData(fname)
+	assert.Nil(err)
+	err = verifyPixels(fname, data, 50)
 	assert.Equal(ErrPixelMismatch, err)
 
 	// Test writing temp file for relative URI and local memory storage with correct pixels
 	// Make sure that verifyPixels() checks against the output of pixels()
 	p, err := pixels("../server/test.flv")
 	require.Nil(err)
-	err = verifyPixels(fname, memOS.GetData(fname), p)
+	data, err = memOS.GetData(fname)
+	assert.Nil(err)
+	err = verifyPixels(fname, data, p)
 	assert.Nil(err)
 
 	// Test nil data

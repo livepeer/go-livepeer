@@ -806,6 +806,8 @@ func main() {
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK
 		drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
+		mediaDir := filepath.Join(n.WorkDir, "media")
+		drivers.NodeStorage = drivers.NewFilesystemDriver(mediaDir)
 	}
 
 	//Create Livepeer Node

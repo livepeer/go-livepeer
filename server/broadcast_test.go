@@ -115,6 +115,9 @@ func (s *stubOSSession) SaveData(name string, data []byte) (string, error) {
 	s.saved = append(s.saved, name)
 	return "saved_" + name, s.err
 }
+func (s *stubOSSession) GetData(name string) ([]byte, error) {
+	return nil, nil
+}
 func (s *stubOSSession) EndSession() {
 }
 func (s *stubOSSession) GetInfo() *net.OSInfo {
@@ -1114,7 +1117,10 @@ func TestVerifier_Verify(t *testing.T) {
 	assert.True(ok)
 	name, err := mem.SaveData("/rendition/seg/1", []byte("attempt1"))
 	assert.Nil(err)
-	assert.Equal([]byte("attempt1"), mem.GetData(name))
+	data, err := mem.GetData(name)
+	assert.Nil(err)
+	assert.Equal([]byte("attempt1"), data)
+
 	sess.BroadcasterOS = mem
 	verifier = newStubSegmentVerifier(sv)
 	URIs[0] = name
@@ -1126,11 +1132,15 @@ func TestVerifier_Verify(t *testing.T) {
 	// and ensure 1st attempt is what remains after verification
 	_, err = mem.SaveData("/rendition/seg/1", []byte("attempt2"))
 	assert.Nil(err)
-	assert.Equal([]byte("attempt2"), mem.GetData(name))
+	data, err = mem.GetData(name)
+	assert.Nil(err)
+	assert.Equal([]byte("attempt2"), data)
 	renditionData = [][]byte{[]byte("attempt2")}
 	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Nil(err)
-	assert.Equal([]byte("attempt1"), mem.GetData(name))
+	data, err = mem.GetData(name)
+	assert.Nil(err)
+	assert.Equal([]byte("attempt1"), data)
 }
 
 func TestVerifier_HLSInsertion(t *testing.T) {

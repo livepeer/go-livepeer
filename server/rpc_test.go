@@ -902,6 +902,10 @@ func (s *mockOSSession) SaveData(name string, data []byte) (string, error) {
 	return args.String(0), args.Error(1)
 }
 
+func (s *mockOSSession) GetData(name string) ([]byte, error) {
+	return nil, nil
+}
+
 func (s *mockOSSession) EndSession() {
 	s.Called()
 }

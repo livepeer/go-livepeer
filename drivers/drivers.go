@@ -19,10 +19,13 @@ var NodeStorage OSDriver
 // OSDriver common interface for Object Storage
 type OSDriver interface {
 	NewSession(path string) OSSession
+	SaveData(name string, data []byte) error
+	GetData(name string) ([]byte, error)
 }
 
 type OSSession interface {
 	SaveData(name string, data []byte) (string, error)
+	GetData(name string) ([]byte, error)
 	EndSession()
 
 	// Info in order to have this session used via RPC

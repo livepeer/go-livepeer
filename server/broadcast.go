@@ -475,7 +475,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				return
 			}
 			name := fmt.Sprintf("%s/%d%s", sess.Profiles[i].Name, seg.SeqNo, ext)
-			newURL, err := bos.SaveData(name, data)
+			_, err = bos.SaveData(name, data)
 			if err != nil {
 				switch err.Error() {
 				case "Session ended":
@@ -485,7 +485,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				}
 				return
 			}
-			url = newURL
+			url = name
 		}
 
 		// Store URLs for the verifier. Be aware that the segment is

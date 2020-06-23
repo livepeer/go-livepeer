@@ -549,22 +549,10 @@ func getHLSSegmentHandler(s *LivepeerServer) func(url *url.URL) ([]byte, error) 
 			glog.Error("SegName not found or storage nil")
 			return nil, vidplayer.ErrNotFound
 		}
-		parts := strings.SplitN(segName, "/", 2)
-		if len(parts) <= 0 {
-			glog.Error("Unexpected path structure")
-			return nil, vidplayer.ErrNotFound
+		data, err := drivers.NodeStorage.GetData(segName)
+		if err != nil {
+			return nil, err
 		}
-		memoryOS, ok := drivers.NodeStorage.(*drivers.MemoryOS)
-		if !ok {
-			return nil, vidplayer.ErrNotFound
-		}
-		// We index the session by the first entry of the path, eg
-		// <session>/<more-path>/<data>
-		os := memoryOS.GetSession(parts[0])
-		if os == nil {
-			return nil, vidplayer.ErrNotFound
-		}
-		data := os.GetData(segName)
 		if len(data) > 0 {
 			return data, nil
 		}
@@ -728,10 +716,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	renditionData := make([][]byte, len(urls))
 	// find data in local storage
-	memOS, ok := cxn.pl.GetOSSession().(*drivers.MemorySession)
-	if ok {
+	if !cxn.pl.GetOSSession().IsExternal() {
 		for i, fname := range urls {
-			data := memOS.GetData(fname)
+			data, _ := cxn.pl.GetOSSession().GetData(fname) // TODO fix / test
 			if data != nil {
 				renditionData[i] = data
 			}
