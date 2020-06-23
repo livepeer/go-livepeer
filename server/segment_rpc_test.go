@@ -1355,7 +1355,7 @@ func TestSubmitSegment_HttpPostError(t *testing.T) {
 		Broadcaster: stubBroadcaster2(),
 		ManifestID:  core.RandomManifestID(),
 		OrchestratorInfo: &net.OrchestratorInfo{
-			Transcoder: "https://foo.com",
+			Transcoder: "https://127.0.0.1",
 			PriceInfo: &net.PriceInfo{
 				PricePerUnit:  1,
 				PixelsPerUnit: 1,
