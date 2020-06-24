@@ -7,6 +7,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
@@ -24,6 +25,10 @@ type SenderWatcher struct {
 	tw             timeWatcher
 	lpEth          eth.LivepeerEthClient
 	dec            *EventDecoder
+
+	// subscriptions
+	reserveChangeFeed  event.Feed
+	reserveChangeScope event.SubscriptionScope
 }
 
 // NewSenderWatcher initiates a new SenderWatcher
@@ -114,6 +119,7 @@ func (sw *SenderWatcher) Watch() {
 // Stop watching for events
 func (sw *SenderWatcher) Stop() {
 	close(sw.quit)
+	sw.reserveChangeScope.Close()
 }
 
 // Clear removes a key-value pair from the map
@@ -126,6 +132,11 @@ func (sw *SenderWatcher) Clear(addr ethcommon.Address) {
 	if _, ok := sw.claimedReserve[addr]; ok {
 		delete(sw.claimedReserve, addr)
 	}
+}
+
+// SubscribeReserveChange notifies subscribers when the sender info for a particular sender changes
+func (sw *SenderWatcher) SubscribeReserveChange(sink chan<- ethcommon.Address) event.Subscription {
+	return sw.reserveChangeScope.Track(sw.reserveChangeFeed.Subscribe(sink))
 }
 
 func (sw *SenderWatcher) handleBlockEvents(events []*blockwatch.Event) {
@@ -170,6 +181,7 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 		sender = reserveFunded.ReserveHolder
 		if info, ok := sw.senders[sender]; ok && !log.Removed {
 			info.Reserve.FundsRemaining.Add(info.Reserve.FundsRemaining, reserveFunded.Amount)
+			sw.reserveChangeFeed.Send(sender)
 		}
 	case "Withdrawal":
 		var withdrawal contracts.TicketBrokerWithdrawal
@@ -244,6 +256,9 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 			return fmt.Errorf("GetSenderInfo RPC call to remote node failed: %v", err)
 		}
 		sw.senders[sender] = info
+		if eventName == "ReserveFunded" {
+			sw.reserveChangeFeed.Send(sender)
+		}
 	}
 
 	return nil

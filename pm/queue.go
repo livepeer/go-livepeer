@@ -117,14 +117,18 @@ ticketLoop:
 				if nextTicket == nil {
 					continue ticketLoop
 				}
+
 				if nextTicket.ParamsExpirationBlock.Cmp(latestBlock) <= 0 {
 					resCh := make(chan struct {
 						txHash ethcommon.Hash
 						err    error
 					})
+
+					q.redeemable <- &redemption{nextTicket, resCh}
 					select {
-					case q.redeemable <- &redemption{nextTicket, resCh}:
-						res := <-resCh
+					case res := <-resCh:
+						// after receiving the response we can close the channel so it can be GC'd
+						close(resCh)
 						if res.err != nil {
 							glog.Error(err)
 							continue
@@ -137,8 +141,6 @@ ticketLoop:
 					case <-q.quit:
 						return
 					}
-				} else {
-					q.Add(nextTicket)
 				}
 			}
 		case <-q.quit:

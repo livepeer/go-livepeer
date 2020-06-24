@@ -708,3 +708,75 @@ func TestNewRoundEvent_LogRemoved(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(claimed, expectedClaimedAmount)
 }
+
+func TestSubscribeReserveChange(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	watcher := &stubBlockWatcher{}
+	lpEth := &eth.StubClient{
+		SenderInfo: &pm.SenderInfo{
+			Reserve: &pm.ReserveInfo{
+				FundsRemaining: big.NewInt(100),
+			},
+		},
+	}
+
+	sm, err := NewSenderWatcher(stubTicketBrokerAddr, watcher, lpEth, &stubTimeWatcher{})
+	require.Nil(err)
+
+	header := defaultMiniHeader()
+
+	// Test reserve funded
+	fundedEvent := newStubReserveFundedLog()
+	header.Logs = append(header.Logs, fundedEvent)
+
+	blockEvent := &blockwatch.Event{
+		Type:        blockwatch.Added,
+		BlockHeader: header,
+	}
+
+	sink := make(chan ethcommon.Address, 10)
+	sub := sm.SubscribeReserveChange(sink)
+	defer sub.Unsubscribe()
+
+	go sm.Watch()
+	defer sm.Stop()
+	time.Sleep(time.Millisecond)
+
+	// set initial values
+	_, err = sm.GetSenderInfo(stubSender)
+	require.Nil(err)
+
+	sm.handleBlockEvents([]*blockwatch.Event{blockEvent})
+	sender := <-sink
+	assert.Equal(sender, stubSender)
+
+	// Test log removed
+	blockEvent.Type = blockwatch.Removed
+	sm.handleBlockEvents([]*blockwatch.Event{blockEvent})
+	sender = <-sink
+	assert.Equal(sender, stubSender)
+
+	// Test log removed for event that is not ReserveFunded (no value received on the sink channel)
+	header = defaultMiniHeader()
+	header.Logs = append(header.Logs, newStubBaseLog())
+	blockEvent = &blockwatch.Event{
+		Type:        blockwatch.Removed,
+		BlockHeader: header,
+	}
+	sm.handleBlockEvents([]*blockwatch.Event{blockEvent})
+
+	waitC := make(chan struct{})
+	defer close(waitC)
+	go func() {
+		time.Sleep(1 * time.Second)
+		waitC <- struct{}{}
+	}()
+
+	select {
+	case _, ok := <-waitC:
+		assert.True(ok)
+	case <-sink:
+		t.Fail()
+	}
+}

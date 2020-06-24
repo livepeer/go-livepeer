@@ -181,7 +181,7 @@ func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRa
 
 	b.usedTickets[ticket.Hash()] = true
 
-	return nil, nil
+	return &types.Transaction{}, nil
 }
 
 func (b *stubBroker) IsUsedTicket(ticket *Ticket) (bool, error) {
@@ -265,6 +265,9 @@ type stubTimeManager struct {
 
 	blockNumSink chan<- *big.Int
 	blockNumSub  event.Subscription
+
+	roundSink chan<- types.Log
+	roundSub  event.Subscription
 }
 
 func (m *stubTimeManager) LastInitializedRound() *big.Int {
@@ -284,7 +287,9 @@ func (m *stubTimeManager) LastSeenBlock() *big.Int {
 }
 
 func (m *stubTimeManager) SubscribeRounds(sink chan<- types.Log) event.Subscription {
-	return &stubSubscription{}
+	m.roundSink = sink
+	m.roundSub = &stubSubscription{errCh: make(<-chan error)}
+	return m.roundSub
 }
 
 func (m *stubTimeManager) SubscribeBlocks(sink chan<- *big.Int) event.Subscription {
@@ -307,9 +312,11 @@ func (s *stubSubscription) Err() <-chan error {
 }
 
 type stubSenderManager struct {
-	info           map[ethcommon.Address]*SenderInfo
-	claimedReserve map[ethcommon.Address]*big.Int
-	err            error
+	info              map[ethcommon.Address]*SenderInfo
+	claimedReserve    map[ethcommon.Address]*big.Int
+	err               error
+	reserveChangeSub  event.Subscription
+	reserveChangeSink chan<- ethcommon.Address
 }
 
 func newStubSenderManager() *stubSenderManager {
@@ -337,6 +344,12 @@ func (s *stubSenderManager) ClaimedReserve(reserveHolder ethcommon.Address, clai
 func (s *stubSenderManager) Clear(addr ethcommon.Address) {
 	delete(s.info, addr)
 	delete(s.claimedReserve, addr)
+}
+
+func (s *stubSenderManager) SubscribeReserveChange(sink chan<- ethcommon.Address) event.Subscription {
+	s.reserveChangeSink = sink
+	s.reserveChangeSub = &stubSubscription{errCh: make(<-chan error)}
+	return s.reserveChangeSub
 }
 
 type stubGasPriceMonitor struct {
@@ -373,7 +386,7 @@ func (s *stubSenderMonitor) Redeemable() chan *redemption {
 	return s.redeemable
 }
 
-func (s *stubSenderMonitor) QueueTicket(addr ethcommon.Address, ticket *SignedTicket) error {
+func (s *stubSenderMonitor) QueueTicket(ticket *SignedTicket) error {
 	if s.shouldFail != nil {
 		return s.shouldFail
 	}
