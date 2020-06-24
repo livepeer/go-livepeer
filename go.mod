@@ -22,6 +22,7 @@ require (
 	github.com/flyingmutant/rapid v0.0.0-20190904072629-5761511f78c8
 	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
+	github.com/golang/mock v1.4.3
 	github.com/golang/protobuf v1.3.2
 	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/graph-gophers/graphql-go v0.0.0-20190917030536-38a077bc812d // indirect

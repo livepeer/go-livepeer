@@ -281,7 +281,7 @@ func (sm *LocalSenderMonitor) cleanup() {
 	defer sm.mu.Unlock()
 
 	for k, v := range sm.senders {
-		if unixNow()-v.lastAccess > int64(sm.ttl) {
+		if unixNow()-v.lastAccess > int64(sm.ttl) && v.subScope.Count() == 0 {
 			// Signal the ticket queue consumer to exit gracefully
 			v.done <- struct{}{}
 			v.subScope.Close() // close the maxfloat subscriptions
