@@ -104,6 +104,8 @@ type (
 		mTicketValueSent    *stats.Float64Measure
 		mTicketsSent        *stats.Int64Measure
 		mPaymentCreateError *stats.Int64Measure
+		mDeposit            *stats.Float64Measure
+		mReserve            *stats.Float64Measure
 
 		// Metrics for receiving payments
 		mTicketValueRecv       *stats.Float64Measure
@@ -209,6 +211,8 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.mTicketValueSent = stats.Float64("ticket_value_sent", "TicketValueSent", "gwei")
 	census.mTicketsSent = stats.Int64("tickets_sent", "TicketsSent", "tot")
 	census.mPaymentCreateError = stats.Int64("payment_create_errors", "PaymentCreateError", "tot")
+	census.mDeposit = stats.Float64("broadcaster_deposit", "Current remaining deposit for the broadcaster node", "gwei")
+	census.mReserve = stats.Float64("broadcaster_reserve", "Current remaiing reserve for the broadcaster node", "gwei")
 
 	// Metrics for receiving payments
 	census.mTicketValueRecv = stats.Float64("ticket_value_recv", "TicketValueRecv", "gwei")
@@ -462,6 +466,20 @@ func InitCensus(nodeType, nodeID, version string) {
 			Description: "Errors when creating payments",
 			TagKeys:     append([]tag.Key{census.kRecipient, census.kManifestID}, baseTags...),
 			Aggregation: view.Sum(),
+		},
+		{
+			Name:        "broadcaster_deposit",
+			Measure:     census.mDeposit,
+			Description: "Current remaining deposit for the broadcaster node",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "broadcaster_reserve",
+			Measure:     census.mReserve,
+			Description: "Current remaining reserve for the broadcaster node",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
 		},
 
 		// Metrics for receiving payments
@@ -1066,6 +1084,15 @@ func PaymentCreateError(recipient string, manifestID string) {
 	}
 
 	stats.Record(ctx, census.mPaymentCreateError.M(1))
+}
+
+// Deposit records the current deposit for the broadcaster
+func Deposit(sender string, deposit *big.Int) {
+	stats.Record(census.ctx, census.mDeposit.M(wei2gwei(deposit)))
+}
+
+func Reserve(sender string, reserve *big.Int) {
+	stats.Record(census.ctx, census.mReserve.M(wei2gwei(reserve)))
 }
 
 // TicketValueRecv records the ticket value received from a sender for a manifestID

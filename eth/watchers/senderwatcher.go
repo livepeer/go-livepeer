@@ -12,6 +12,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/contracts"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
 )
 
@@ -259,6 +260,11 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 		if eventName == "ReserveFunded" {
 			sw.reserveChangeFeed.Send(sender)
 		}
+	}
+
+	if sender == sw.lpEth.Account().Address && monitor.Enabled {
+		monitor.Deposit(sender.Hex(), sw.senders[sender].Deposit)
+		monitor.Reserve(sender.Hex(), sw.senders[sender].Reserve.FundsRemaining)
 	}
 
 	return nil
