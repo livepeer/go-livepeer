@@ -1,15 +1,9 @@
 SHELL=/bin/bash
 
-all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go livepeer livepeer_cli
+all: net/lp_rpc.pb.go core/test_segment.go livepeer livepeer_cli
 
 net/lp_rpc.pb.go: net/lp_rpc.proto
 	protoc -I=. --go_out=plugins=grpc:. $^
-
-net/redeemer.pb.go: net/redeemer.proto
-	protoc -I=. --go_out=plugins=grpc:. $^
-
-net/redeemer_mock.pb.go: net/redeemer.pb.go
-	mockgen -source net/redeemer.pb.go -destination net/redeemer_mock.pb.go -package net $^
 
 core/test_segment.go:
 	core/test_segment.sh core/test_segment.go
