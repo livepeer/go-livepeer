@@ -1,0 +1,27 @@
+syntax =  "proto3";
+import  "net/lp_rpc.proto";
+package net;
+
+service TicketRedeemer {
+    rpc QueueTicket(Ticket) returns (QueueTicketRes) {}
+    rpc MaxFloat(MaxFloatReq) returns (MaxFloatUpdate) {}
+    rpc MonitorMaxFloat(MaxFloatReq) returns (stream MaxFloatUpdate) {}
+}
+
+message Ticket {
+    TicketParams ticket_params = 1;
+    bytes sender = 2;
+    TicketExpirationParams expiration_params = 3;
+    TicketSenderParams sender_params = 4;
+    bytes recipient_rand = 5;
+}
+
+message QueueTicketRes {}
+
+message MaxFloatReq {
+    bytes sender = 1;
+}
+
+message MaxFloatUpdate {
+    bytes max_float = 1;
+}
