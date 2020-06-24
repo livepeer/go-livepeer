@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -223,8 +224,8 @@ func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
 	recipientRand := genRecipientRand(sender, secret, params)
 	senderNonce := r.(*recipient).senderNonces[recipientRand.String()]
 
-	if senderNonce != newSenderNonce {
-		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce)
+	if senderNonce.nonce != newSenderNonce {
+		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce.nonce)
 	}
 }
 
@@ -256,8 +257,8 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 	recipientRand := genRecipientRand(sender, secret, params)
 	senderNonce := r.(*recipient).senderNonces[recipientRand.String()]
 
-	if senderNonce != newSenderNonce {
-		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce)
+	if senderNonce.nonce != newSenderNonce {
+		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce.nonce)
 	}
 }
 
@@ -563,4 +564,70 @@ func TestTxCostMultiplier_InsufficientReserve_ReturnsError(t *testing.T) {
 	mul, err := r.TxCostMultiplier(sender)
 	assert.Nil(t, mul)
 	assert.EqualError(t, err, errInsufficientSenderReserve.Error())
+}
+
+func TestSenderNoncesCleanupLoop(t *testing.T) {
+	assert := assert.New(t)
+
+	tm := &stubTimeManager{}
+
+	r := &recipient{
+		tm:   tm,
+		quit: make(chan struct{}),
+		senderNonces: make(map[string]*struct {
+			nonce           uint32
+			expirationBlock *big.Int
+		}),
+	}
+
+	// add some senderNonces
+	rand0 := "blastoise"
+	rand1 := "charizard"
+	rand2 := "raichu"
+	r.senderNonces[rand0] = &struct {
+		nonce           uint32
+		expirationBlock *big.Int
+	}{1, big.NewInt(3)}
+	r.senderNonces[rand1] = &struct {
+		nonce           uint32
+		expirationBlock *big.Int
+	}{1, big.NewInt(2)}
+	r.senderNonces[rand2] = &struct {
+		nonce           uint32
+		expirationBlock *big.Int
+	}{1, big.NewInt(1)}
+
+	go r.senderNoncesCleanupLoop()
+	time.Sleep(time.Millisecond)
+
+	lsb := big.NewInt(1)
+	tm.blockNumSink <- lsb
+	time.Sleep(time.Millisecond)
+
+	// rand0 should still be present
+	_, ok := r.senderNonces[rand0]
+	assert.True(ok)
+	// rand1 should still be present
+	_, ok = r.senderNonces[rand1]
+	assert.True(ok)
+	// rand2 should be deleted
+	_, ok = r.senderNonces[rand2]
+	assert.False(ok)
+
+	lsb = big.NewInt(2)
+	tm.blockNumSink <- lsb
+	time.Sleep(time.Millisecond)
+
+	// rand0 should still be present
+	_, ok = r.senderNonces[rand0]
+	assert.True(ok)
+	// rand1 should be deleted
+	_, ok = r.senderNonces[rand1]
+	assert.False(ok)
+	// rand2 was already deleted
+
+	// test quit
+	r.Stop()
+	time.Sleep(time.Millisecond)
+	assert.True(tm.blockNumSub.(*stubSubscription).unsubscribed)
 }

@@ -9,6 +9,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -73,10 +74,15 @@ type recipient struct {
 	addr   ethcommon.Address
 	secret [32]byte
 
-	senderNonces     map[string]uint32
+	senderNonces map[string]*struct {
+		nonce           uint32
+		expirationBlock *big.Int
+	}
 	senderNoncesLock sync.Mutex
 
 	cfg TicketParamsConfig
+
+	quit chan struct{}
 }
 
 // NewRecipient creates an instance of a recipient with an
@@ -98,16 +104,30 @@ func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, gpm GasP
 // automatically generate a random secret
 func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, gpm GasPriceMonitor, sm SenderMonitor, tm TimeManager, secret [32]byte, cfg TicketParamsConfig) Recipient {
 	return &recipient{
-		broker:       broker,
-		val:          val,
-		gpm:          gpm,
-		sm:           sm,
-		tm:           tm,
-		addr:         addr,
-		secret:       secret,
-		senderNonces: make(map[string]uint32),
-		cfg:          cfg,
+		broker: broker,
+		val:    val,
+		gpm:    gpm,
+		sm:     sm,
+		tm:     tm,
+		addr:   addr,
+		secret: secret,
+		senderNonces: make(map[string]*struct {
+			nonce           uint32
+			expirationBlock *big.Int
+		}),
+		cfg:  cfg,
+		quit: make(chan struct{}),
 	}
+}
+
+// Start initiates the helper goroutines for the recipient
+func (r *recipient) Start() {
+	go r.senderNoncesCleanupLoop()
+}
+
+// Stop signals the recipient to exit gracefully
+func (r *recipient) Stop() {
+	close(r.quit)
 }
 
 // ReceiveTicket validates and processes a received ticket
@@ -134,7 +154,7 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 		won = true
 	}
 
-	if err := r.updateSenderNonce(recipientRand, ticket.SenderNonce); err != nil {
+	if err := r.updateSenderNonce(recipientRand, ticket); err != nil {
 		return sessionID, won, err
 	}
 
@@ -278,31 +298,49 @@ func (r *recipient) rand(seed *big.Int, sender ethcommon.Address, faceValue *big
 	return new(big.Int).SetBytes(h.Sum(nil))
 }
 
-func (r *recipient) updateSenderNonce(rand *big.Int, senderNonce uint32) error {
+func (r *recipient) updateSenderNonce(rand *big.Int, ticket *Ticket) error {
 	r.senderNoncesLock.Lock()
 	defer r.senderNoncesLock.Unlock()
 
 	randStr := rand.String()
-	nonce, ok := r.senderNonces[randStr]
-	if ok && senderNonce <= nonce {
-		return errors.Errorf("invalid ticket senderNonce %v - highest seen is %v", senderNonce, nonce)
+	sn, ok := r.senderNonces[randStr]
+	if ok && ticket.SenderNonce <= sn.nonce {
+		return errors.Errorf("invalid ticket senderNonce sender=%v nonce=%v highest=%v", ticket.Sender.Hex(), ticket.SenderNonce, sn.nonce)
 	}
 
-	r.senderNonces[randStr] = senderNonce
+	r.senderNonces[randStr] = &struct {
+		nonce           uint32
+		expirationBlock *big.Int
+	}{ticket.SenderNonce, ticket.ParamsExpirationBlock}
 
 	return nil
-}
-
-func (r *recipient) clearSenderNonce(rand *big.Int) {
-	r.senderNoncesLock.Lock()
-	defer r.senderNoncesLock.Unlock()
-
-	delete(r.senderNonces, rand.String())
 }
 
 // EV Returns the required ticket EV for a recipient
 func (r *recipient) EV() *big.Rat {
 	return new(big.Rat).SetFrac(r.cfg.EV, big.NewInt(1))
+}
+
+func (r *recipient) senderNoncesCleanupLoop() {
+	sink := make(chan *big.Int, 10)
+	sub := r.tm.SubscribeBlocks(sink)
+	defer sub.Unsubscribe()
+	for {
+		select {
+		case <-r.quit:
+			return
+		case err := <-sub.Err():
+			glog.Error(err)
+		case latestBlock := <-sink:
+			r.senderNoncesLock.Lock()
+			for recipientRand, sn := range r.senderNonces {
+				if sn.expirationBlock.Cmp(latestBlock) <= 0 {
+					delete(r.senderNonces, recipientRand)
+				}
+			}
+			r.senderNoncesLock.Unlock()
+		}
+	}
 }
 
 type FatalReceiveErr struct {
