@@ -258,7 +258,9 @@ func main() {
 		}
 	}
 
-	if *orchestrator {
+	if *redeemer {
+		n.NodeType = core.RedeemerNode
+	} else if *orchestrator {
 		n.NodeType = core.OrchestratorNode
 		if !*transcoder {
 			n.TranscoderManager = core.NewRemoteTranscoderManager()
@@ -268,10 +270,8 @@ func main() {
 		n.NodeType = core.TranscoderNode
 	} else if *broadcaster {
 		n.NodeType = core.BroadcasterNode
-	} else if *redeemer {
-		n.NodeType = core.RedeemerNode
 	} else {
-		glog.Fatalf("Node type not set; must be one of -broadcaster, -transcoder or -orchestrator")
+		glog.Info("Node type not set with -broadcaster, -transcoder, -orchestrator or -redeemer")
 	}
 
 	if *monitor {
@@ -289,6 +289,8 @@ func main() {
 			nodeType = "trcr"
 		case core.RedeemerNode:
 			nodeType = "rdmr"
+		default:
+			nodeType = "dflt"
 		}
 		lpmon.InitCensus(nodeType, nodeID, core.LivepeerVersion)
 	}
@@ -553,23 +555,6 @@ func main() {
 				glog.Errorf("Error setting up PM recipient: %v", err)
 				return
 			}
-
-			// Only initialize rounds and call reward if the node is using an on-chain registered orchestrator address
-			// Assume that the node is using an on-chain registered orchestrator address if -ethOrchAddr is not specified or
-			// if the ticket recipient is the node's address
-			if *ethOrchAddr == "" || n.Eth.Account().Address == recipientAddr {
-				// Create round iniitializer to automatically initialize new rounds
-				if *initializeRound {
-					initializer := eth.NewRoundInitializer(n.Eth, n.Database, timeWatcher, blockPollingTime)
-					go initializer.Start()
-					defer initializer.Stop()
-				}
-
-				// Create reward service to claim/distribute inflationary rewards every round
-				rs := eventservices.NewRewardService(n.Eth, blockPollingTime)
-				rs.Start(ctx)
-				defer rs.Stop()
-			}
 		}
 
 		if n.NodeType == core.BroadcasterNode {
@@ -609,7 +594,7 @@ func main() {
 			}
 		}
 
-		if *redeemer {
+		if n.NodeType == core.RedeemerNode {
 			r, err := server.NewRedeemer(
 				recipientAddr,
 				n.Eth,
@@ -635,6 +620,28 @@ func main() {
 			}()
 			defer r.Stop()
 			glog.Infof("Redeemer started on %v", *httpAddr)
+		}
+
+		// If the node address is an on-chain registered address, start the reward service
+		t, err := n.Eth.GetTranscoder(n.Eth.Account().Address)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+		if t.Status == "Registered" {
+			// Start reward service
+			// The node will only call reward if it is active in the current round
+			rs := eventservices.NewRewardService(n.Eth, blockPollingTime)
+			rs.Start(ctx)
+			defer rs.Stop()
+		}
+
+		if *initializeRound {
+			// Start round initializer
+			// The node will only initialize rounds if it in the upcoming active set for the round
+			initializer := eth.NewRoundInitializer(n.Eth, n.Database, timeWatcher, blockPollingTime)
+			go initializer.Start()
+			defer initializer.Stop()
 		}
 
 		blockWatchCtx, cancel := context.WithCancel(ctx)
