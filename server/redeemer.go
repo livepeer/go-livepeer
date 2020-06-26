@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	gonet "net"
+	"net/url"
 	"sync"
 	"time"
 
@@ -60,14 +61,24 @@ func NewRedeemer(recipient ethcommon.Address, eth eth.LivepeerEthClient, sm *pm.
 
 // Start starts a Redeemer server
 // This method will block
-func (r *Redeemer) Start(host string) error {
-	listener, err := gonet.Listen("tcp", host)
+func (r *Redeemer) Start(url *url.URL, workDir string) error {
+	listener, err := gonet.Listen("tcp", url.Host)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
 
-	s := grpc.NewServer()
+	certFile, keyFile, err := getCert(url, workDir)
+	if err != nil {
+		return err
+	}
+
+	creds, err := credentials.NewServerTLSFromFile(certFile, keyFile)
+	if err != nil {
+		return err
+	}
+
+	s := grpc.NewServer(grpc.Creds(creds))
 	r.server = s
 
 	net.RegisterTicketRedeemerServer(s, r)
