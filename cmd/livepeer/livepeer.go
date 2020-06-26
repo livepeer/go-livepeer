@@ -523,7 +523,7 @@ func main() {
 				*redeemerAddr = defaultAddr(*redeemerAddr, "127.0.0.1", RpcPort)
 				rc, err := server.NewRedeemerClient(*redeemerAddr, senderWatcher, timeWatcher)
 				if err != nil {
-					glog.Error("Unable to start redeemer client:", err)
+					glog.Error("Unable to start redeemer client: ", err)
 					return
 				}
 				sm = rc
@@ -612,8 +612,14 @@ func main() {
 			}
 
 			*httpAddr = defaultAddr(*httpAddr, "127.0.0.1", RpcPort)
+			url, err := url.ParseRequestURI("https://" + *httpAddr)
+			if err != nil {
+				glog.Error("Could not parse redeemer URI: ", err)
+				return
+			}
+
 			go func() {
-				if err := r.Start(*httpAddr); err != nil {
+				if err := r.Start(url, n.WorkDir); err != nil {
 					redeemerErr <- err
 					return
 				}
