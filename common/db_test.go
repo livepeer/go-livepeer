@@ -1066,7 +1066,7 @@ func TestMarkWinningTicketRedeemed_Update_TxHash_And_SubmittedAt(t *testing.T) {
 	err = row.Scan(&txHashActual, &redeemedAt)
 	require.Nil(err)
 	assert.Equal(txHash.Hex(), txHashActual)
-	assert.Equal(redeemedAt.Day(), time.Now().Day())
+	assert.InDelta(redeemedAt.Day(), time.Now().Day(), 1)
 }
 
 func TestRemoveWinningTicket(t *testing.T) {
