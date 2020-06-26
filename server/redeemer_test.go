@@ -652,7 +652,7 @@ func TestRedeemerClient_CleanupLoop(t *testing.T) {
 	}
 
 	oldCleanupTime := cleanupLoopTime
-	cleanupLoopTime = 3 * time.Millisecond
+	cleanupLoopTime = 20 * time.Millisecond
 	defer func() {
 		cleanupLoopTime = oldCleanupTime
 	}()
@@ -669,13 +669,13 @@ func TestRedeemerClient_CleanupLoop(t *testing.T) {
 	// sender1 will be cleared
 	go r.startCleanupLoop()
 	time.Sleep(cleanupLoopTime)
-	close(r.quit)
-	time.Sleep(time.Millisecond)
-	r.quit = make(chan struct{})
+	time.Sleep(10 * time.Millisecond)
 	_, ok := r.senders[sender0]
 	assert.True(ok)
 	_, ok = r.senders[sender1]
 	assert.False(ok)
+
+	close(r.quit)
 }
 
 // Stubs
