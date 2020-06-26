@@ -29,7 +29,7 @@ The webhook may respond with an empty body.  In this case, the `manifestID` prop
     "manifestID": "ManifestID",
     "streamKey":  "SecretKey",
     "presets":    ["Preset", "Names"],
-    "profiles":   [{"name":"ProfileName", "width":320, "height":240, "bitrate":1000000, "fps":30, "fpsDen":1, "profile":"H264Baseline"}]
+    "profiles":   [{"name":"ProfileName", "width":320, "height":240, "bitrate":1000000, "fps":30, "fpsDen":1, "profile":"H264Baseline", "gop" "2.5"}]
 }
 ```
 The Livepeer node will use the returned `manifestID` for the given stream.
@@ -43,5 +43,7 @@ Presets can be specified to override the default transcoding options. The availa
 Custom transcoding profiles can be provided if the presets are not sufficient. Given a stream name (manifest ID) of "ManifestID" and a profile name of "ProfileName", the specific profile will be available for playback at `/stream/ManifestID/ProfileName.m3u8`. However, to take advantage of ABR features in HLS players, the top-level stream name should usually be supplied instead, eg `/stream/ManifestID.m3u8` The `bitrate` field is in bits per second. The `fps` field can be omitted to preserve the source frame rate. The `fpsDen` (denominator) field can also be omitted for a default of `1`. Both presets and profiles can be used together to specify the desired transcodes.
 
 The `profile` field is used to select the codec (H264) profile. Supported values are `"H264Baseline, H264Main, H264High, H264ConstrainedHigh"`, the field can be omitted (or set to `"None"`) to use the encoder default.
+
+The `gop` field is used to set the [GOP](https://en.wikipedia.org/wiki/Group_of_pictures) length, in seconds. This may help in post-transcoding segmentation to smooth out playback if the original segments are long or irregularly sized. Omitting this field will use the encoder default. To force all intra frames, use "intra".
 
 There is simple webhook authentication server [example](https://github.com/livepeer/go-livepeer/blob/master/cmd/simple_auth_server/simple_auth_server.go).

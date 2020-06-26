@@ -243,6 +243,12 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 		default:
 			return nil, errProfile
 		}
+		var gop time.Duration
+		if profile.Gop < 0 {
+			gop = time.Duration(profile.Gop)
+		} else {
+			gop = time.Duration(profile.Gop) * time.Millisecond
+		}
 		prof := ffmpeg.VideoProfile{
 			Name:         name,
 			Bitrate:      fmt.Sprint(profile.Bitrate),
@@ -251,6 +257,7 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 			Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
 			Format:       format,
 			Profile:      encoderProf,
+			GOP:          gop,
 		}
 		profiles = append(profiles, prof)
 	}

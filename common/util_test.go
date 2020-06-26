@@ -63,6 +63,7 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 			Framerate:  uint(560),
 			Resolution: "123x456",
 			Profile:    ffmpeg.ProfileH264Main,
+			GOP:        123 * 1000000, //  milliseconds (in nanoseconds)
 		},
 		ffmpeg.VideoProfile{
 			Name:         "prof2",
@@ -70,6 +71,7 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 			Framerate:    uint(876),
 			FramerateDen: uint(12),
 			Resolution:   "456x987",
+			GOP:          -100,
 		},
 	}
 
@@ -123,6 +125,10 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 	// Verify Encoder profile behaviour
 	assert.Equal(fullProfiles[0].Profile, net.VideoProfile_H264_MAIN)
 	assert.Equal(fullProfiles[1].Profile, net.VideoProfile_ENCODER_DEFAULT)
+
+	// Verify GOP behavior
+	assert.Equal(fullProfiles[0].Gop, int32(123))
+	assert.Equal(fullProfiles[1].Gop, int32(-100))
 
 	// Invalid format should return error
 	profiles[1].Format = -1

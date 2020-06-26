@@ -192,6 +192,12 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 		default:
 			return nil, ErrProfProto
 		}
+		gop := int32(0)
+		if profile.GOP < 0 {
+			gop = int32(profile.GOP)
+		} else {
+			gop = int32(profile.GOP.Milliseconds())
+		}
 		fullProfile := net.VideoProfile{
 			Name:    name,
 			Width:   int32(width),
@@ -201,6 +207,7 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 			FpsDen:  uint32(profile.FramerateDen),
 			Format:  format,
 			Profile: encoderProf,
+			Gop:     gop,
 		}
 		profiles = append(profiles, &fullProfile)
 	}

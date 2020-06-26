@@ -177,6 +177,9 @@ message VideoProfile {
   }
   // Desired codec profile
   Profile profile = 23;
+
+  // GOP interval
+  int32 gop = 24;
 }
 
 // Individual transcoded segment data.
