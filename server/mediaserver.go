@@ -110,7 +110,7 @@ type authWebhookResponse struct {
 	} `json:"profiles"`
 }
 
-func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool) *LivepeerServer {
+func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
 	opts := lpmscore.LPMSOpts{
 		RtmpAddr:     rtmpAddr,
 		RtmpDisabled: true,
@@ -120,6 +120,30 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 	switch lpNode.NodeType {
 	case core.BroadcasterNode:
 		opts.RtmpDisabled = false
+
+		if transcodingOptions != "" {
+			profiles := BroadcastJobVideoProfiles
+			content, err := ioutil.ReadFile(transcodingOptions)
+			if err == nil && len(content) > 0 {
+				stubResp := &authWebhookResponse{}
+				err = json.Unmarshal(content, &stubResp.Profiles)
+				if err != nil {
+					return nil, err
+				}
+				profiles, err = jsonProfileToVideoProfile(stubResp)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				// check the built-in profiles
+				profiles = parsePresets(strings.Split(transcodingOptions, ","))
+			}
+			if len(profiles) <= 0 {
+				glog.Info("No transcoding profiles found; transcoding will not happen")
+			}
+			BroadcastJobVideoProfiles = profiles
+		}
+
 	}
 	server := lpmscore.New(&opts)
 	ls := &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{},
@@ -128,15 +152,11 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
 	}
-	return ls
+	return ls, nil
 }
 
 //StartMediaServer starts the LPMS server
-func (s *LivepeerServer) StartMediaServer(ctx context.Context, transcodingOptions string, httpAddr string) error {
-	if transcodingOptions != "" { // mostly to mitigate race conditions in tests
-		BroadcastJobVideoProfiles = parsePresets(strings.Split(transcodingOptions, ","))
-	}
-
+func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) error {
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
 	//LPMS handlers for handling RTMP video
@@ -199,38 +219,11 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 				profiles = parsePresets(resp.Presets)
 			}
 
-			for _, profile := range resp.Profiles {
-				name := profile.Name
-				if name == "" {
-					name = "webhook_" + common.DefaultProfileName(
-						profile.Width,
-						profile.Height,
-						profile.Bitrate)
-				}
-				var gop time.Duration
-				if profile.GOP != "" {
-					if profile.GOP == "intra" {
-						gop = ffmpeg.GOPIntraOnly
-					} else {
-						gopFloat, err := strconv.ParseFloat(profile.GOP, 64)
-						if err != nil || gopFloat <= 0.0 {
-							glog.Error("Invalid GOP from webhook err=", err)
-							return nil
-						}
-						gop = time.Duration(gopFloat * float64(time.Second))
-					}
-				}
-				prof := ffmpeg.VideoProfile{
-					Name:         name,
-					Bitrate:      fmt.Sprint(profile.Bitrate),
-					Framerate:    profile.FPS,
-					FramerateDen: profile.FPSDen,
-					Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
-					Profile:      common.EncoderProfileNameToValue(profile.Profile),
-					GOP:          gop,
-				}
-				profiles = append(profiles, prof)
+			parsedProfiles, err := jsonProfileToVideoProfile(resp)
+			if err != nil {
+				return nil
 			}
+			profiles = append(profiles, parsedProfiles...)
 
 			// Only set defaults if user did not specify a preset/profile
 			if len(resp.Profiles) <= 0 && len(resp.Presets) <= 0 {
@@ -310,6 +303,47 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 		monitor.AuthWebhookFinished(took)
 	}
 	return &authResp, nil
+}
+
+func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile, error) {
+	profiles := []ffmpeg.VideoProfile{}
+	for _, profile := range resp.Profiles {
+		name := profile.Name
+		if name == "" {
+			name = "webhook_" + common.DefaultProfileName(
+				profile.Width,
+				profile.Height,
+				profile.Bitrate)
+		}
+		var gop time.Duration
+		if profile.GOP != "" {
+			if profile.GOP == "intra" {
+				gop = ffmpeg.GOPIntraOnly
+			} else {
+				gopFloat, err := strconv.ParseFloat(profile.GOP, 64)
+				if err != nil || gopFloat <= 0.0 {
+					glog.Error("Invalid GOP from webhook err=", err)
+					if err != nil {
+						return nil, err
+					}
+					return nil, errors.New("invalid gop value")
+				}
+				gop = time.Duration(gopFloat * float64(time.Second))
+			}
+		}
+
+		prof := ffmpeg.VideoProfile{
+			Name:         name,
+			Bitrate:      fmt.Sprint(profile.Bitrate),
+			Framerate:    profile.FPS,
+			FramerateDen: profile.FPSDen,
+			Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
+			Profile:      common.EncoderProfileNameToValue(profile.Profile),
+			GOP:          gop,
+		}
+		profiles = append(profiles, prof)
+	}
+	return profiles, nil
 }
 
 func streamParams(rtmpStrm stream.RTMPVideoStream) *core.StreamParameters {

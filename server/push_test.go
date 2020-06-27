@@ -265,7 +265,7 @@ func TestPush_HTTPIngest(t *testing.T) {
 	req := httptest.NewRequest("POST", "/live/name/1.mp4", reader)
 
 	// HTTP ingest disabled
-	s := NewLivepeerServer("127.0.0.1:1938", n, false)
+	s, _ := NewLivepeerServer("127.0.0.1:1938", n, false, "")
 	h, pattern := s.HTTPMux.Handler(req)
 	assert.Equal("", pattern)
 
@@ -276,7 +276,7 @@ func TestPush_HTTPIngest(t *testing.T) {
 	assert.Equal(404, resp.StatusCode)
 
 	// HTTP ingest enabled
-	s = NewLivepeerServer("127.0.0.1:1938", n, true)
+	s, _ = NewLivepeerServer("127.0.0.1:1938", n, true, "")
 	h, pattern = s.HTTPMux.Handler(req)
 	assert.Equal("/live/", pattern)
 

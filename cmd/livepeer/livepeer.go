@@ -97,7 +97,7 @@ func main() {
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	broadcaster := flag.Bool("broadcaster", false, "Set to true to be a broadcaster")
 	orchSecret := flag.String("orchSecret", "", "Shared secret with the orchestrator as a standalone transcoder")
-	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job")
+	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9", "Transcoding options for broadcast job, or path to json config")
 	maxAttempts := flag.Int("maxAttempts", 3, "Maximum transcode attempts")
 	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
@@ -813,7 +813,12 @@ func main() {
 	//Create Livepeer Node
 
 	//Set up the media server
-	s := server.NewLivepeerServer(*rtmpAddr, n, *httpIngest)
+	s, err := server.NewLivepeerServer(*rtmpAddr, n, *httpIngest, *transcodingOptions)
+	if err != nil {
+		glog.Fatal("Error creating Livepeer server err=", err)
+		// TODO add args test!
+	}
+
 	ec := make(chan error)
 	tc := make(chan struct{})
 	wc := make(chan struct{})
@@ -831,7 +836,7 @@ func main() {
 	}()
 	if n.NodeType != core.RedeemerNode {
 		go func() {
-			ec <- s.StartMediaServer(msCtx, *transcodingOptions, *httpAddr)
+			ec <- s.StartMediaServer(msCtx, *httpAddr)
 		}()
 	}
 
