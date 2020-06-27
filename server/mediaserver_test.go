@@ -53,8 +53,8 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 			return ctx, wrapCancel
 		}
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
-		S = NewLivepeerServer("127.0.0.1:1938", n, true)
-		go S.StartMediaServer(ctx, "", "127.0.0.1:8080")
+		S, _ = NewLivepeerServer("127.0.0.1:1938", n, true, "")
+		go S.StartMediaServer(ctx, "127.0.0.1:8080")
 		go S.StartCliWebserver("127.0.0.1:8938")
 	}
 	return S, cancel
@@ -983,5 +983,73 @@ func TestParsePresets(t *testing.T) {
 
 	p = parsePresets(presets)
 	assert.Equal([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P720p30fps16x9}, p)
+
+}
+
+func TestJsonProfileToVideoProfiles(t *testing.T) {
+	assert := assert.New(t)
+	initialValue := []byte(`[{"Width":1,"Height":2}]`)
+	resp := &authWebhookResponse{}
+
+	// test empty case
+	p, err := jsonProfileToVideoProfile(resp)
+	assert.Nil(err)
+	assert.Len(p, 0)
+
+	err = json.Unmarshal(initialValue, &resp.Profiles)
+
+	// test default name
+	p, err = jsonProfileToVideoProfile(resp)
+	assert.Nil(err)
+	assert.Equal("webhook_1x2_0", p[0].Name)
+
+	// test provided name
+	resp.Profiles[0].Name = "abc"
+	p, err = jsonProfileToVideoProfile(resp)
+	assert.Nil(err)
+	assert.Equal("abc", p[0].Name)
+
+	// test gop empty
+	assert.Equal("", resp.Profiles[0].GOP)
+	assert.Equal(time.Duration(0), p[0].GOP)
+
+	// test gop intra
+	resp.Profiles[0].GOP = "intra"
+	p, err = jsonProfileToVideoProfile(resp)
+	assert.Nil(err)
+	assert.Equal(ffmpeg.GOPIntraOnly, p[0].GOP)
+
+	// test gop float
+	resp.Profiles[0].GOP = "1.2"
+	p, err = jsonProfileToVideoProfile(resp)
+	assert.Nil(err)
+	assert.Equal(time.Duration(1200)*time.Millisecond, p[0].GOP)
+
+	// test gop integer
+	resp.Profiles[0].GOP = "60"
+	p, err = jsonProfileToVideoProfile(resp)
+	assert.Nil(err)
+	assert.Equal(time.Minute, p[0].GOP)
+
+	// test gop 0
+	resp.Profiles[0].GOP = "0"
+	p, err = jsonProfileToVideoProfile(resp)
+	assert.Nil(p)
+	assert.NotNil(err)
+	assert.Equal("invalid gop value", err.Error())
+
+	// test gop <0
+	resp.Profiles[0].GOP = "-0.001"
+	p, err = jsonProfileToVideoProfile(resp)
+	assert.Nil(p)
+	assert.NotNil(err)
+	assert.Equal("invalid gop value", err.Error())
+
+	// test gop non-numeric
+	resp.Profiles[0].GOP = " 1 "
+	p, err = jsonProfileToVideoProfile(resp)
+	assert.Nil(p)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "strconv.ParseFloat: parsing")
 
 }
