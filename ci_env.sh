@@ -35,15 +35,10 @@ for networkBranch in $NETWORK_BRANCHES; do
   fi
 done
 
-# Disallow non-tagged mainnet releases
+# Allow non-tagged mainnet builds, but tagged releases should be on the mainnet branch
 generatedVersion=$(./print_version.sh)
 definedVersion=$(cat VERSION)
-if [[ $HIGHEST_CHAIN_TAG == "mainnet" ]]; then
-  if [[ $generatedVersion != $definedVersion ]]; then
-    echo "disallowing mainnet release without semver tag; $generatedVersion != $definedVersion"
-    exit 1
-  fi
-else
+if [[ $HIGHEST_CHAIN_TAG != "mainnet" ]]; then
   if [[ $generatedVersion == $definedVersion ]]; then
     echo "disallowing semver tag release $generatedVersion on branch '$branch', should be 'mainnet'"
     exit 1
