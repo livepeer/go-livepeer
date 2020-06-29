@@ -598,11 +598,11 @@ func TestSenderNoncesCleanupLoop(t *testing.T) {
 	}{1, big.NewInt(1)}
 
 	go r.senderNoncesCleanupLoop()
-	time.Sleep(time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 
 	lsb := big.NewInt(1)
 	tm.blockNumSink <- lsb
-	time.Sleep(time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 
 	// rand0 should still be present
 	_, ok := r.senderNonces[rand0]
@@ -616,7 +616,7 @@ func TestSenderNoncesCleanupLoop(t *testing.T) {
 
 	lsb = big.NewInt(2)
 	tm.blockNumSink <- lsb
-	time.Sleep(time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 
 	// rand0 should still be present
 	_, ok = r.senderNonces[rand0]
@@ -628,6 +628,6 @@ func TestSenderNoncesCleanupLoop(t *testing.T) {
 
 	// test quit
 	r.Stop()
-	time.Sleep(time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	assert.True(tm.blockNumSub.(*stubSubscription).unsubscribed)
 }
