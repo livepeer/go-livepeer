@@ -51,6 +51,7 @@ type LivepeerNode struct {
 	// Common fields
 	Eth      eth.LivepeerEthClient
 	WorkDir  string
+	MediaDir string
 	NodeType NodeType
 	Database *common.DB
 

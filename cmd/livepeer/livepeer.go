@@ -160,6 +160,8 @@ func main() {
 
 	// Storage:
 	datadir := flag.String("datadir", "", "data directory")
+	// TODO alias datadir to dataDir
+	mediaDir := flag.String("mediaDir", "", "media directory")
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
 	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
@@ -847,11 +849,19 @@ func main() {
 	}
 	*cliAddr = defaultAddr(*cliAddr, "127.0.0.1", CliPort)
 
+	if *mediaDir != "" {
+		n.MediaDir = *mediaDir
+	} else {
+		n.MediaDir = filepath.Join(n.WorkDir, "media")
+	}
+	if err := os.MkdirAll(n.MediaDir, 0755); err != nil {
+		glog.Fatal("Could not create media dir, err=", err)
+	}
+
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK
 		drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
-		mediaDir := filepath.Join(n.WorkDir, "media")
-		drivers.NodeStorage = drivers.NewFilesystemDriver(mediaDir)
+		drivers.NodeStorage = drivers.NewFilesystemDriver(n.MediaDir) // TODO error handling?
 	}
 
 	//Create Livepeer Node
