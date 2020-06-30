@@ -586,6 +586,15 @@ func main() {
 				panic(fmt.Errorf("-depositMultiplier must be greater than 0, but %v provided. Restart the node with a valid value for -depositMultiplier", *depositMultiplier))
 			}
 
+			// Fetch and cache broadcaster on-chain info
+			info, err := senderWatcher.GetSenderInfo(n.Eth.Account().Address)
+			if err != nil {
+				glog.Error("Failed to get broadcaster on-chain info: ", err)
+				return
+			}
+			glog.Info("Broadcaster Deposit: ", eth.FormatUnits(info.Deposit, "ETH"))
+			glog.Info("Broadcaster Reserve: ", eth.FormatUnits(info.Reserve.FundsRemaining, "ETH"))
+
 			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, ev, *depositMultiplier)
 
 			if *pixelsPerUnit <= 0 {
