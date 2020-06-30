@@ -52,8 +52,8 @@ var (
 	// The maximum blocks for the block watcher to retain
 	blockWatcherRetentionLimit = 20
 
-	// The gas required to redeem a PM ticket
-	redeemGas = 100000
+	// Estimate of the gas required to redeem a PM ticket
+	redeemGas = 250000
 	// The multiplier on the transaction cost to use for PM ticket faceValue
 	txCostMultiplier = 100
 
