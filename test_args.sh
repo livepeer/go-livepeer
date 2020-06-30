@@ -287,5 +287,18 @@ $TMPDIR/livepeer -broadcaster -transcodingOptions $TMPDIR/invalid.json 2>&1 |   
 echo '[{"width":"1","height":"2"}]' > $TMPDIR/schema.json
 $TMPDIR/livepeer -broadcaster -transcodingOptions $TMPDIR/schema.json 2>&1 | grep "cannot unmarshal string into Go struct field .width of type int"
 
+# Check pull
+# TODO verify results once they are persistent
+$TMPDIR/livepeer -pull server/test.flv
+
+# Check pull with streamname
+# TODO verify results once they are persistent
+$TMPDIR/livepeer -pull server/test.flv -streamName foo
+
+# Check pull of invalid file
+$TMPDIR/livepeer -pull go.mod 2>&1 | grep "pull segmenter err=Invalid data found when processing input"
+
+# Check pull of nonexistent file
+$TMPDIR/livepeer -pull nonexistent 2>&1 | grep "pull segmenter err=No such file or directory"
 
 rm -rf $TMPDIR
