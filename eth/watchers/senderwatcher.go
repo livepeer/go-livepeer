@@ -71,6 +71,11 @@ func (sw *SenderWatcher) setSenderInfo(addr ethcommon.Address, info *pm.SenderIn
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
 	sw.senders[addr] = info
+
+	if addr == sw.lpEth.Account().Address && monitor.Enabled {
+		monitor.Deposit(addr.Hex(), info.Deposit)
+		monitor.Reserve(addr.Hex(), info.Reserve.FundsRemaining)
+	}
 }
 
 // ClaimedReserve returns the amount claimed from a sender's reserve by the node operator
