@@ -598,6 +598,18 @@ func main() {
 				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *maxPricePerUnit)
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
 			}
+
+			// set broadcaster sender info cache
+			info, err := senderWatcher.GetSenderInfo(n.Eth.Account().Address)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+			if *monitor {
+				lpmon.Deposit(n.Eth.Account().Address.Hex(), info.Deposit)
+				lpmon.Reserve(n.Eth.Account().Address.Hex(), info.Reserve.FundsRemaining)
+			}
+
 		}
 
 		if *redeemer {
