@@ -539,6 +539,10 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}
 	}
 
+	if cxn.recorder != nil {
+		cxn.recorder.RecordSegment(int32(seg.SeqNo))
+	}
+
 	if monitor.Enabled {
 		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), errCode)
 	}

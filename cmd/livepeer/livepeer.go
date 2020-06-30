@@ -139,6 +139,7 @@ func main() {
 	datadir := flag.String("datadir", "", "data directory")
 	// TODO alias datadir to dataDir
 	mediaDir := flag.String("mediaDir", "", "media directory")
+	recordingDir := flag.String("recordingDir", "", "recording directory")
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
 	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
@@ -812,6 +813,13 @@ func main() {
 	}
 	if err := os.MkdirAll(n.MediaDir, 0755); err != nil {
 		glog.Fatal("Could not create media dir, err=", err)
+	}
+
+	if *recordingDir != "" {
+		n.RecordingDir = *recordingDir
+		if err := os.MkdirAll(n.RecordingDir, 0755); err != nil {
+			glog.Fatal("Could not create recording dir, err=", err)
+		}
 	}
 
 	if drivers.NodeStorage == nil {
