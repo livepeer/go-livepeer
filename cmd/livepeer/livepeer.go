@@ -93,6 +93,8 @@ func main() {
 	httpIngest := flag.Bool("httpIngest", true, "Set to true to enable HTTP ingest")
 
 	// Transcoding:
+	pull := flag.String("pull", "", "URL or path to transcode")
+	streamName := flag.String("streamName", "", "Stream name for output (pull only)")
 	orchestrator := flag.Bool("orchestrator", false, "Set to true to be an orchestrator")
 	transcoder := flag.Bool("transcoder", false, "Set to true to be a transcoder")
 	broadcaster := flag.Bool("broadcaster", false, "Set to true to be a broadcaster")
@@ -271,7 +273,7 @@ func main() {
 		}
 	} else if *transcoder {
 		n.NodeType = core.TranscoderNode
-	} else if *broadcaster {
+	} else if *broadcaster || *pull != "" {
 		n.NodeType = core.BroadcasterNode
 	} else {
 		glog.Info("Node type not set with -broadcaster, -transcoder, -orchestrator or -redeemer")
@@ -835,6 +837,18 @@ func main() {
 	if err != nil {
 		glog.Fatal("Error creating Livepeer server err=", err)
 		// TODO add args test!
+	}
+
+	if *pull != "" {
+		var sn core.ManifestID
+		if *streamName == "" {
+			sn = core.RandomManifestID()
+		} else {
+			sn = core.MakeStreamIDFromString(*streamName, "").ManifestID
+		}
+
+		s.Pull(*pull, sn)
+		return
 	}
 
 	ec := make(chan error)
