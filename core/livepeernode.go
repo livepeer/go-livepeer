@@ -55,6 +55,8 @@ type LivepeerNode struct {
 	NodeType NodeType
 	Database *common.DB
 
+	RecordingDir string
+
 	// Transcoder public fields
 	SegmentChans      map[ManifestID]SegmentChan
 	Recipient         pm.Recipient

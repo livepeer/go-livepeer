@@ -76,6 +76,7 @@ type rtmpConnection struct {
 	profile     *ffmpeg.VideoProfile
 	params      *core.StreamParameters
 	sessManager *BroadcastSessionsManager
+	recorder    *core.Recorder
 	lastUsed    time.Time
 }
 
@@ -477,6 +478,14 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	if s.LivepeerNode.Eth != nil {
 		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}
 	}
+	var recorder *core.Recorder
+	if s.LivepeerNode.RecordingDir != " " {
+		var err error
+		recorder, err = core.NewRecorder(s.LivepeerNode, params)
+		if err != nil {
+			return nil, err
+		}
+	}
 	cxn := &rtmpConnection{
 		mid:         mid,
 		nonce:       nonce,
@@ -485,6 +494,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		profile:     &vProfile,
 		params:      params,
 		sessManager: NewSessionManager(s.LivepeerNode, params, NewMinLSSelector(stakeRdr, 1.0)),
+		recorder:    recorder,
 		lastUsed:    time.Now(),
 	}
 
@@ -517,6 +527,11 @@ func removeRTMPStream(s *LivepeerServer, mid core.ManifestID) error {
 	if !ok || cxn.pl == nil {
 		glog.Error("Attempted to end unknown stream with manifest ID ", mid)
 		return errUnknownStream
+	}
+	if cxn.recorder != nil {
+		if err := cxn.recorder.Complete(); err != nil {
+			glog.Error("Error completing the recording err=", err)
+		}
 	}
 	cxn.stream.Close()
 	cxn.sessManager.cleanup()
