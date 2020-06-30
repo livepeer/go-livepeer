@@ -299,4 +299,18 @@ $TMPDIR/livepeer -broadcaster -transcodingOptions invalid 2>&1 | grep -v "Local 
 # Check that local verification is enabled via -localVerify in off-chain mode
 $TMPDIR/livepeer -broadcaster -transcodingOptions invalid -localVerify=true 2>&1 | grep "Local verification enabled"
 
+# Check pull
+# TODO verify results once they are persistent
+$TMPDIR/livepeer -pull server/test.flv
+
+# Check pull with streamname
+# TODO verify results once they are persistent
+$TMPDIR/livepeer -pull server/test.flv -streamName foo
+
+# Check pull of invalid file
+$TMPDIR/livepeer -pull go.mod 2>&1 | grep "pull segmenter err=Invalid data found when processing input"
+
+# Check pull of nonexistent file
+$TMPDIR/livepeer -pull nonexistent 2>&1 | grep "pull segmenter err=No such file or directory"
+
 rm -rf $TMPDIR

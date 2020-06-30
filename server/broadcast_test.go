@@ -753,6 +753,7 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 }
 
 func TestProcessSegment_MaxAttempts(t *testing.T) {
+	// TODO This fails sometimes. Making this function -race safe might help.
 	assert := assert.New(t)
 
 	// Preliminaries and test setup
