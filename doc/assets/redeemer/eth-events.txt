@@ -1,0 +1,64 @@
+title Ticket Redemption Service: Ethereum Events
+
+participantgroup #lightgreen **Orchestrator**
+participant Recipient
+participant Redeemer Client (SenderMonitor)
+end
+participantgroup #lightblue **Redeemer**
+participant Redeemer gRPC server
+participant LocalSenderMonitor
+participant SenderManager
+end
+participant Ethereum Node
+participantgroup 
+
+Recipient->Redeemer Client (SenderMonitor):MaxFloat(sender)
+group MaxFloat(sender)
+
+note over Redeemer Client (SenderMonitor): No Local Cache
+Redeemer Client (SenderMonitor)->>Redeemer gRPC server: MaxFloat(sender)
+Redeemer gRPC server->LocalSenderMonitor: MaxFloat(sender)
+Redeemer gRPC server<--LocalSenderMonitor: MaxFloat
+Redeemer Client (SenderMonitor)<<--Redeemer gRPC server: MaxFloatUpdate
+Redeemer Client (SenderMonitor)-#blue>>Redeemer gRPC server: <color:#blue>MonitorMaxFloat(sender)    
+Redeemer gRPC server-#red>LocalSenderMonitor: <color:#red>SubscribeMaxFloatChange(sender)
+end 
+Recipient<--Redeemer Client (SenderMonitor): MaxFloat
+
+entryspacing 3
+
+note over Ethereum Node: FundReserve(sender) Event
+entryspacing 0.1
+Ethereum Node-->(3)SenderManager:FundReserve
+SenderManager--#purple>(3)LocalSenderMonitor:<color:#purple>ReserveChange(sender)
+
+group MaxFloat update
+Redeemer gRPC server(3)<#red--LocalSenderMonitor: <color:#red>SubscribeMaxFloatChange(sender)
+entryspacing 2
+Redeemer gRPC server->LocalSenderMonitor: MaxFloat(sender)
+Redeemer gRPC server<--LocalSenderMonitor: MaxFloat
+entryspacing 0.1
+Redeemer Client (SenderMonitor)(3)<<#blue--Redeemer gRPC server:<color:#blue>MaxFloatUpdate
+entryspacing 2
+end
+
+entryspacing 4
+note over Ethereum Node: NewRound event
+entryspacing 0.1
+SenderManager<--Ethereum Node:NewRound
+entryspacing 1.5
+note over SenderManager: Pool size change
+entryspacing 0.1
+SenderManager--#a16545>(3)LocalSenderMonitor:<color:#a16545>PoolSizeChange
+loop i < len(LocalSenderMonitor.remoteSenders)
+entryspacing 1.5
+group MaxFloat update
+Redeemer gRPC server(3)<#red--LocalSenderMonitor: <color:#red>SubscribeMaxFloatChange(sender)
+entryspacing 2
+Redeemer gRPC server->LocalSenderMonitor: MaxFloat(ticket.sender)
+Redeemer gRPC server<--LocalSenderMonitor: MaxFloat
+entryspacing 0.1
+Redeemer Client (SenderMonitor)(3)<<#blue--Redeemer gRPC server:<color:#blue>MaxFloatUpdate
+entryspacing 2
+end
+end
