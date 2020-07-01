@@ -166,7 +166,7 @@ func runSegmenter(node *core.LivepeerNode, cxn *rtmpConnection, fname string) {
 	}()
 
 	// worker queue.
-	nbWorkers := 3
+	nbWorkers := 1
 	workerTermCh := make(chan struct{}, nbWorkers)
 	for i := 0; i < nbWorkers; i++ {
 		go func(worker int) {
