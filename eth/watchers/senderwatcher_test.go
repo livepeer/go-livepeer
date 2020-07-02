@@ -207,11 +207,11 @@ func TestFundDepositEvent(t *testing.T) {
 
 	go sw.Watch()
 	defer sw.Stop()
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 
 	// If map entry is nil don't handle event
 	watcher.sink <- []*blockwatch.Event{blockEvent}
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	_, ok := sw.senders[stubSender]
 	assert.False(ok)
 
@@ -219,7 +219,7 @@ func TestFundDepositEvent(t *testing.T) {
 	blockEvent.Type = blockwatch.Removed
 	sw.senders[stubSender] = &pm.SenderInfo{}
 	watcher.sink <- []*blockwatch.Event{blockEvent}
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	info, ok := sw.senders[stubSender]
 	assert.True(ok)
 	assert.Zero(info.Deposit.Cmp(startDeposit))
@@ -228,7 +228,7 @@ func TestFundDepositEvent(t *testing.T) {
 	blockEvent.Type = blockwatch.Added
 	expectedDeposit := new(big.Int).Add(startDeposit, new(big.Int).SetBytes(newDepositEvent.Data))
 	watcher.sink <- []*blockwatch.Event{blockEvent}
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	info, err = sw.GetSenderInfo(stubSender)
 	assert.Nil(err)
 	assert.Zero(info.Deposit.Cmp(expectedDeposit))
@@ -240,7 +240,7 @@ func TestFundDepositEvent(t *testing.T) {
 	copy(senderTopic[:], sender[:])
 	newDepositEvent.Topics[1] = senderTopic
 	watcher.sink <- []*blockwatch.Event{blockEvent}
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	_, ok = sw.senders[s]
 	assert.False(ok)
 }

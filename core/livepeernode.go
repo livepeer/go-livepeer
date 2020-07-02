@@ -38,7 +38,8 @@ var MaxSessions = 10
 type NodeType int
 
 const (
-	BroadcasterNode NodeType = iota
+	DefaultNode NodeType = iota
+	BroadcasterNode
 	OrchestratorNode
 	TranscoderNode
 	RedeemerNode

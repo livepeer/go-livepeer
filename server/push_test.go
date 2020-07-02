@@ -260,7 +260,7 @@ func TestPush_HTTPIngest(t *testing.T) {
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
-
+	n.NodeType = core.BroadcasterNode
 	reader := strings.NewReader("")
 	req := httptest.NewRequest("POST", "/live/name/1.mp4", reader)
 
