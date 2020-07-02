@@ -8,9 +8,11 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/golang/glog"
 
@@ -98,6 +100,21 @@ func runSegmenter(node *core.LivepeerNode, cxn *rtmpConnection, fname string) {
 	ioTermCh := make(chan struct{})
 	feederTermCh := make(chan struct{})
 	ctx, ctxCancel := context.WithCancel(context.Background())
+
+	// Catch interrupt to cleanly terminate the pull
+	// TODO completely broken! does not work!
+	// TODO Need to drain queue (ensure head == nil)
+	exitChan := make(chan os.Signal)
+	signal.Notify(exitChan, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(exitChan)
+	go func() {
+		select {
+		case <-exitChan:
+			glog.Info("Got exit signal")
+			closeFds()
+			ctxCancel()
+		}
+	}()
 
 	// ffmpeg io queue
 	go func(reader io.Reader) {
