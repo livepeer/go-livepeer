@@ -710,6 +710,26 @@ func TestRedeemerClient_CleanupLoop(t *testing.T) {
 	close(r.quit)
 }
 
+func TestProtoTicket(t *testing.T) {
+	ogTicket := &pm.SignedTicket{
+		Ticket: &pm.Ticket{
+			Recipient:              ethcommon.BytesToAddress([]byte("foo")),
+			Sender:                 ethcommon.BytesToAddress([]byte("bar")),
+			FaceValue:              big.NewInt(1),
+			WinProb:                big.NewInt(2),
+			SenderNonce:            3,
+			RecipientRandHash:      ethcommon.BytesToHash([]byte("baz")),
+			CreationRound:          4,
+			CreationRoundBlockHash: ethcommon.BytesToHash([]byte("jar")),
+			ParamsExpirationBlock:  big.NewInt(5),
+		},
+		RecipientRand: big.NewInt(1),
+		Sig:           []byte("boo"),
+	}
+	pTicket := protoTicket(ogTicket)
+	assert.Equal(t, ogTicket, pmTicket(pTicket))
+}
+
 // Stubs
 
 type stubSenderMonitor struct {
