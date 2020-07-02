@@ -281,16 +281,16 @@ func main() {
 			hn, _ := os.Hostname()
 			nodeID = hn
 		}
-		nodeType := "bctr"
+		nodeType := "dflt"
 		switch n.NodeType {
+		case core.BroadcasterNode:
+			nodeType = "bctr"
 		case core.OrchestratorNode:
 			nodeType = "orch"
 		case core.TranscoderNode:
 			nodeType = "trcr"
 		case core.RedeemerNode:
 			nodeType = "rdmr"
-		default:
-			nodeType = "dflt"
 		}
 		lpmon.InitCensus(nodeType, nodeID, core.LivepeerVersion)
 	}
