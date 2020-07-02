@@ -130,7 +130,7 @@ ticketLoop:
 						// after receiving the response we can close the channel so it can be GC'd
 						close(resCh)
 						if res.err != nil {
-							glog.Error(err)
+							glog.Errorf("Error redeeming err=%v", res.err)
 							continue
 						}
 						err := q.store.MarkWinningTicketRedeemed(nextTicket, res.txHash)
