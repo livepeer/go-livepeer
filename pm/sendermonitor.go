@@ -232,7 +232,6 @@ func (sm *LocalSenderMonitor) startTicketQueueConsumerLoop(queue *ticketQueue, d
 		case red := <-queue.Redeemable():
 			tx, err := sm.redeemWinningTicket(red.SignedTicket)
 			if err != nil {
-				glog.Errorf("error redeeming err=%v", err)
 				red.resCh <- struct {
 					txHash ethcommon.Hash
 					err    error
