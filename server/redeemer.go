@@ -364,7 +364,7 @@ func pmTicket(ticket *net.Ticket) *pm.SignedTicket {
 func protoTicket(ticket *pm.SignedTicket) *net.Ticket {
 	return &net.Ticket{
 		Sender:        ticket.Sender.Bytes(),
-		RecipientRand: ticket.Recipient.Bytes(),
+		RecipientRand: ticket.RecipientRand.Bytes(),
 		TicketParams: &net.TicketParams{
 			Recipient:         ticket.Recipient.Bytes(),
 			FaceValue:         ticket.FaceValue.Bytes(),
