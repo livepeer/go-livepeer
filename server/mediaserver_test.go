@@ -1051,5 +1051,22 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 	assert.Nil(p)
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "strconv.ParseFloat: parsing")
+	resp.Profiles[0].GOP = ""
 
+	// test default encoding profile
+	p, err = jsonProfileToVideoProfile(resp)
+	assert.Nil(err)
+	assert.Equal(ffmpeg.ProfileNone, p[0].Profile)
+
+	// test encoding profile
+	resp.Profiles[0].Profile = "h264baseline"
+	p, err = jsonProfileToVideoProfile(resp)
+	assert.Nil(err)
+	assert.Equal(ffmpeg.ProfileH264Baseline, p[0].Profile)
+
+	// test invalid encoding profile
+	resp.Profiles[0].Profile = "invalid"
+	p, err = jsonProfileToVideoProfile(resp)
+	assert.Nil(p)
+	assert.Equal(common.ErrProfName, err)
 }

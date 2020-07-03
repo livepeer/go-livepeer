@@ -329,14 +329,17 @@ func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile
 				gop = time.Duration(gopFloat * float64(time.Second))
 			}
 		}
-
+		encodingProfile, err := common.EncoderProfileNameToValue(profile.Profile)
+		if err != nil {
+			return nil, err
+		}
 		prof := ffmpeg.VideoProfile{
 			Name:         name,
 			Bitrate:      fmt.Sprint(profile.Bitrate),
 			Framerate:    profile.FPS,
 			FramerateDen: profile.FPSDen,
 			Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
-			Profile:      common.EncoderProfileNameToValue(profile.Profile),
+			Profile:      encodingProfile,
 			GOP:          gop,
 		}
 		profiles = append(profiles, prof)

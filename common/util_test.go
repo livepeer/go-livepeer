@@ -201,6 +201,24 @@ func TestVideoProfile_FormatExtension(t *testing.T) {
 		t.Error("Did not get expected error")
 	}
 }
+
+func TestVideoProfile_ProfileNameToValue(t *testing.T) {
+	assert := assert.New(t)
+	inp := []string{"", "h264baseline", "h264main", "h264high", "h264constrainedhigh"}
+	assert.Len(inp, len(ffmpeg.ProfileParameters), "Missing a new profile?")
+	outp := []ffmpeg.Profile{ffmpeg.ProfileNone, ffmpeg.ProfileH264Baseline, ffmpeg.ProfileH264Main, ffmpeg.ProfileH264High, ffmpeg.ProfileH264ConstrainedHigh}
+	assert.Len(inp, len(outp))
+	for i, profile := range inp {
+		p, err := EncoderProfileNameToValue(profile)
+		assert.Nil(err)
+		assert.Equal(outp[i], p)
+	}
+	p, _ := EncoderProfileNameToValue("none")
+	assert.Equal(ffmpeg.ProfileNone, p)
+	_, err := EncoderProfileNameToValue("invalid")
+	assert.Equal(ErrProfName, err, "Could not get profile value")
+}
+
 func TestPriceToFixed(t *testing.T) {
 	assert := assert.New(t)
 

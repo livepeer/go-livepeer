@@ -40,6 +40,7 @@ var (
 	ErrFormatMime  = fmt.Errorf("unknown VideoProfile format for mime type")
 	ErrFormatExt   = fmt.Errorf("unknown VideoProfile format for extension")
 	ErrProfProto   = fmt.Errorf("unknown VideoProfile profile for protobufs")
+	ErrProfName    = fmt.Errorf("unknown VideoProfile profile name")
 
 	ext2mime = map[string]string{
 		".ts":  "video/mp2t",
@@ -235,7 +236,7 @@ func ProfilesNames(profiles []ffmpeg.VideoProfile) string {
 	return strings.Join(names, ",")
 }
 
-func EncoderProfileNameToValue(profile string) ffmpeg.Profile {
+func EncoderProfileNameToValue(profile string) (ffmpeg.Profile, error) {
 	var EncoderProfileLookup = map[string]ffmpeg.Profile{
 		"":                    ffmpeg.ProfileNone,
 		"none":                ffmpeg.ProfileNone,
@@ -246,9 +247,9 @@ func EncoderProfileNameToValue(profile string) ffmpeg.Profile {
 	}
 	p, ok := EncoderProfileLookup[strings.ToLower(profile)]
 	if !ok {
-		return ffmpeg.ProfileNone
+		return -1, ErrProfName
 	}
-	return p
+	return p, nil
 }
 
 func ProfileExtensionFormat(ext string) ffmpeg.Format {
