@@ -82,7 +82,36 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.Handle("/vote", mustHaveFormParams(voteHandler(s.LivepeerNode.Eth), "poll", "choiceID"))
 
-	//Set the broadcast config for creating onchain jobs.
+	// Set the broadcaster's max price
+	mux.HandleFunc("/setBroadcastMaxPrice", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			glog.Errorf("Parse Form Error: %v", err)
+			return
+		}
+
+		ppuS := r.FormValue("pricePerUnit")
+		ppu, err := strconv.ParseInt(ppuS, 10, 64)
+		if err != nil {
+			glog.Errorf("Error converting string to int64: %v\n", err)
+			return
+		}
+
+		ppxS := r.FormValue("pixelsPerUnit")
+		ppx, err := strconv.ParseInt(ppxS, 10, 64)
+		if err != nil {
+			glog.Errorf("Error converting string to int64: %v\n", err)
+			return
+		}
+
+		if ppu == 0 {
+			glog.Error("price per unit set is 0")
+			return
+		}
+
+		BroadcastCfg.SetMaxPrice(big.NewRat(ppu, ppx))
+	})
+
+	//Set the broadcast config for creating jobs.
 	mux.HandleFunc("/setBroadcastConfig", func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			glog.Errorf("Parse Form Error: %v", err)
@@ -332,6 +361,21 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			if err := s.setServiceURI(serviceURI); err != nil {
 				return
 			}
+		}
+	})
+
+	mux.HandleFunc("/setOrchestratorPrice", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			glog.Errorf("Parse Form Error: %v", err)
+			return
+		}
+
+		ppuS := r.FormValue("pricePerUnit")
+		ppxS := r.FormValue("pixelsPerUnit")
+
+		if err := s.setOrchestratorPriceInfo(ppuS, ppxS); err != nil {
+			glog.Error(err)
+			return
 		}
 	})
 
