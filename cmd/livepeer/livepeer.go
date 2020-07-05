@@ -130,6 +130,8 @@ func main() {
 	// Redemption service
 	redeemer := flag.Bool("redeemer", false, "Set to true to run a ticket redemption service")
 	redeemerAddr := flag.String("redeemerAddr", "", "URL of the ticket redemption service to use")
+	// Reward service
+	reward := flag.Bool("reward", false, "Set to true to run a reward service")
 	// Metrics & logging:
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	version := flag.Bool("version", false, "Print out the version")
@@ -622,13 +624,19 @@ func main() {
 			glog.Infof("Redeemer started on %v", *httpAddr)
 		}
 
-		// If the node address is an on-chain registered address, start the reward service
-		t, err := n.Eth.GetTranscoder(n.Eth.Account().Address)
-		if err != nil {
-			glog.Error(err)
-			return
+		if !isFlagSet["reward"] {
+			// If the node address is an on-chain registered address, start the reward service
+			t, err := n.Eth.GetTranscoder(n.Eth.Account().Address)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+			if t.Status == "Registered" {
+				*reward = true
+			}
 		}
-		if t.Status == "Registered" {
+
+		if *reward {
 			// Start reward service
 			// The node will only call reward if it is active in the current round
 			rs := eventservices.NewRewardService(n.Eth, blockPollingTime)
