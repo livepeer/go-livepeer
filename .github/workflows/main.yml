@@ -6,6 +6,8 @@ jobs:
     - name: configure git line endings
       run: git config --global core.autocrlf false
     - uses: actions/checkout@v1
+      with:
+        ref: 9fd21617aee0d73ac10e191ab4b6c5b33789c1dc
     - name: Setup Msys2 environment
       uses: numworks/setup-msys2@v1
       with:
@@ -18,9 +20,11 @@ jobs:
       run: msys2do ./install_ffmpeg.sh
     - name: Build Livepeer
       run: msys2do ./ci_env.sh make livepeer livepeer_cli
+      env:
+        CIRCLE_BRANCH: mainnet
     - name: Upload build
       env: 
-        CIRCLE_BRANCH: ${{ github.head_ref }}
+        CIRCLE_BRANCH: mainnet
         GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
         GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
         DISCORD_URL: ${{ secrets.DISCORD_URL }}
