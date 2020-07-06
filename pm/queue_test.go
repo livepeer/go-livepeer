@@ -193,10 +193,10 @@ func TestTicketQueueConsumeBlockNums(t *testing.T) {
 	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
 	q.Start()
 	defer q.Stop()
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 
 	tm.blockNumSink <- big.NewInt(10)
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	// Check that the value is consumed
 	assert.Len(tm.blockNumSink, 0)
 }
