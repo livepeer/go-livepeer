@@ -272,8 +272,8 @@ func main() {
 		n.NodeType = core.TranscoderNode
 	} else if *broadcaster {
 		n.NodeType = core.BroadcasterNode
-	} else {
-		glog.Info("Node type not set with -broadcaster, -transcoder, -orchestrator or -redeemer")
+	} else if !*reward && !*initializeRound {
+		glog.Fatalf("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
 	if *monitor {

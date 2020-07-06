@@ -32,6 +32,11 @@ run_lp () {
 # sanity check that default datadir does not exist
 [ ! -d "$DEFAULT_DATADIR" ]
 
+# check that we exit early if no services are enabled
+res=0
+$TMPDIR/livepeer || res=$?
+[ $res -ne 0 ]
+
 run_lp -broadcaster
 [ -d "$DEFAULT_DATADIR"/offchain ]
 kill $pid
