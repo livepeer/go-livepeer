@@ -154,7 +154,10 @@ func (w *wizard) activateOrchestrator() {
 		}
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/activateOrchestrator", w.host, w.httpPort), val)
+	result := httpPostWithParams(fmt.Sprintf("http://%v:%v/activateOrchestrator", w.host, w.httpPort), val)
+	if result == "" {
+		return
+	}
 	// TODO we should confirm if the transaction was actually sent
 	fmt.Println("\nTransaction sent. Once confirmed, please restart your node.")
 }
@@ -164,8 +167,11 @@ func (w *wizard) setOrchestratorConfig() {
 
 	val := w.getOrchestratorConfigFormValues()
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/setOrchestratorConfig", w.host, w.httpPort), val)
-	// TODO we should confirm if the transaction was actually sent
+	result := httpPostWithParams(fmt.Sprintf("http://%v:%v/setOrchestratorConfig", w.host, w.httpPort), val)
+
+	if result == "" {
+		return
+	}
 	fmt.Println("\nTransaction sent. Once confirmed, please restart your node if the ServiceURI has been reset")
 }
 
