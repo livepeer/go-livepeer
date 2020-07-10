@@ -14,9 +14,9 @@ package eth
 //go:generate abigen --abi protocol/abi/Poll.abi --pkg contracts --type Poll --out contracts/poll.go
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,6 +32,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth/contracts"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -738,7 +739,107 @@ func (c *client) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Tra
 	return poll.Vote(opts, choiceID)
 }
 
+func (c *client) Reward() (*types.Transaction, error) {
+	addr := c.accountManager.Account().Address
+
+	currentRound, err := c.CurrentRound()
+	if err != nil {
+		return nil, err
+	}
+
+	ep, err := c.GetTranscoderEarningsPoolForRound(c.accountManager.Account().Address, currentRound)
+	if err != nil {
+		return nil, err
+	}
+
+	mintable, err := c.CurrentMintableTokens()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get current mintable tokens")
+	}
+
+	totalBonded, err := c.GetTotalBonded()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get total bonded")
+	}
+
+	if totalBonded.Cmp(big.NewInt(0)) == 0 {
+		return nil, errors.New("no rewards to be minted")
+	}
+
+	// reward = (current mintable tokens for the round * active transcoder stake) / total active stake
+	reward := new(big.Int).Div(new(big.Int).Mul(mintable, ep.TotalStake), totalBonded)
+
+	// get the transcoder pool
+	transcoders, err := c.TranscoderPool()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get transcoder pool")
+	}
+
+	// get max pool size
+	maxSize, err := c.GetTranscoderPoolMaxSize()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get transcoder pool max size")
+	}
+
+	hints := simulateTranscoderPoolUpdate(addr, reward.Add(reward, ep.TotalStake), transcoders, len(transcoders) == int(maxSize.Int64()))
+
+	return c.RewardWithHint(hints.PosPrev, hints.PosNext)
+}
+
 // Helpers
+
+// simulateTranscoderPoolUpdate simulates an update to the transcoder pool and returns the positional hints for a transcoder accordingly.
+// if the transcoder will not be in the updated set no hints will be returned
+func simulateTranscoderPoolUpdate(del ethcommon.Address, newStake *big.Int, transcoders []*lpTypes.Transcoder, isFull bool) lpTypes.TranscoderPoolHints {
+	for i, t := range transcoders {
+		if t.Address == del {
+			// I don't think an out-of-bounds panic is an issue here when i == len(transcoders) - 1
+			// because transcoders[len(transcoders):] is valid
+			transcoders = append(transcoders[:i], transcoders[i+1:]...)
+			break
+		}
+	}
+
+	// insert 'del' into the pool
+	transcoders = append(transcoders, &lpTypes.Transcoder{
+		Address:        del,
+		DelegatedStake: newStake,
+	})
+
+	// re-sort the list
+	sort.SliceStable(transcoders, func(i, j int) bool {
+		return transcoders[i].DelegatedStake.Cmp(transcoders[j].DelegatedStake) > 0
+	})
+
+	// if the list was full evict the last transcoder
+	if isFull {
+		transcoders = transcoders[:len(transcoders)-1]
+	}
+
+	return findTranscoderHints(del, transcoders)
+}
+
+func findTranscoderHints(del ethcommon.Address, transcoders []*lpTypes.Transcoder) lpTypes.TranscoderPoolHints {
+	hints := lpTypes.TranscoderPoolHints{}
+
+	// do a linear search to get the previous and next transcoder relative to 'del'
+	for i, t := range transcoders {
+		if t.Address == del && len(transcoders) > 1 {
+			if i == 0 {
+				// 'del' is head
+				hints.PosNext = transcoders[i+1].Address
+			} else if i == len(transcoders)-1 {
+				// 'del' is tail
+				hints.PosPrev = transcoders[i-1].Address
+			} else {
+				hints.PosNext = transcoders[i+1].Address
+				hints.PosPrev = transcoders[i-1].Address
+			}
+		}
+	}
+
+	return hints
+}
 
 func (c *client) ContractAddresses() map[string]ethcommon.Address {
 	addrMap := make(map[string]ethcommon.Address)
