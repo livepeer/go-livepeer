@@ -361,6 +361,6 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("vote success"))
+		w.Write(tx.Hash().Bytes())
 	})
 }

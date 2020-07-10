@@ -233,7 +233,12 @@ func (w *wizard) vote() {
 
 	result := httpPostWithParams(fmt.Sprintf("http://%v:%v/vote", w.host, w.httpPort), data)
 
-	fmt.Printf("\n%v\n", result)
+	if result == "" {
+		fmt.Println("vote failed")
+		return
+	}
+
+	fmt.Printf("\nVote success tx=0x%x\n", []byte(result))
 }
 
 func (w *wizard) showVoteChoices() {
