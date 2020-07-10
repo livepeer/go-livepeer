@@ -12,6 +12,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	lpcommon "github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
 )
 
@@ -38,11 +39,21 @@ func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string)
 		feeShare       float64
 	)
 
-	fmt.Printf("Enter block reward cut percentage (default: 10) - ")
-	blockRewardCut = w.readDefaultFloat(10.0)
+	orch, _, err := w.getOrchestratorInfo()
+	if err != nil || orch == nil {
+		fmt.Println("unable to get current reward cut and fee share")
+		blockRewardCut = 0
+		feeShare = 0
+	}
 
-	fmt.Printf("Enter fee share percentage (default: 5) - ")
-	feeShare = w.readDefaultFloat(5.0)
+	blockRewardCut = eth.ToPerc(orch.RewardCut)
+	feeShare = eth.ToPerc(orch.FeeShare)
+
+	fmt.Printf("Enter block reward cut percentage (current=%v default=10) - ", blockRewardCut)
+	blockRewardCut = w.readDefaultFloat(blockRewardCut)
+
+	fmt.Printf("Enter fee share percentage (current=%v default=5) - ", feeShare)
+	feeShare = w.readDefaultFloat(eth.ToPerc(orch.FeeShare))
 
 	fmt.Println("Enter a transcoding base price in wei per pixels")
 	fmt.Println("eg. 1 wei / 10 pixels = 0,1 wei per pixel")
