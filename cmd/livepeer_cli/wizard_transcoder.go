@@ -44,16 +44,16 @@ func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string)
 		fmt.Println("unable to get current reward cut and fee share")
 		blockRewardCut = 0
 		feeShare = 0
+	} else {
+		blockRewardCut = eth.ToPerc(orch.RewardCut)
+		feeShare = eth.ToPerc(orch.FeeShare)
 	}
-
-	blockRewardCut = eth.ToPerc(orch.RewardCut)
-	feeShare = eth.ToPerc(orch.FeeShare)
 
 	fmt.Printf("Enter block reward cut percentage (current=%v default=10) - ", blockRewardCut)
 	blockRewardCut = w.readDefaultFloat(blockRewardCut)
 
 	fmt.Printf("Enter fee share percentage (current=%v default=5) - ", feeShare)
-	feeShare = w.readDefaultFloat(eth.ToPerc(orch.FeeShare))
+	feeShare = w.readDefaultFloat(feeShare)
 
 	fmt.Println("Enter a transcoding base price in wei per pixels")
 	fmt.Println("eg. 1 wei / 10 pixels = 0,1 wei per pixel")

@@ -18,12 +18,12 @@ func TestSetOrchestratorPriceInfo(t *testing.T) {
 	// pricePerUnit is not an integer
 	err := s.setOrchestratorPriceInfo("nil", "1")
 	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "Error converting pricePerUnit string to int64"))
+	assert.True(t, strings.Contains(err.Error(), "pricePerUnit is not a valid integer"))
 
 	// pixelsPerUnit is not an integer
 	err = s.setOrchestratorPriceInfo("1", "nil")
 	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "Error converting pixelsPerUnit string to int64"))
+	assert.True(t, strings.Contains(err.Error(), "pixelsPerUnit is not a valid integer"))
 
 	err = s.setOrchestratorPriceInfo("1", "1")
 	assert.Nil(t, err)
