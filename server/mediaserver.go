@@ -106,7 +106,7 @@ type authWebhookResponse struct {
 		FPS     uint   `json:"fps"`
 		FPSDen  uint   `json:"fpsDen"`
 		Profile string `json:"profile"`
-		GOP     string `json:gop`
+		GOP     string `json:"gop"`
 	} `json:"profiles"`
 }
 
