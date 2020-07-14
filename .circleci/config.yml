@@ -22,10 +22,7 @@ jobs:
 
     steps:
       - checkout
-      - setup_remote_docker:
-          # This actually only exists for paid plans. But it's good luck!
-          docker_layer_caching: true
-
+      - setup_remote_docker
       - run: docker login -u $DOCKER_USER -p $DOCKER_PASS
 
       # First, build the Linux-specific builder container
@@ -70,9 +67,7 @@ jobs:
     steps:
       - checkout
 
-      - setup_remote_docker:
-          # This actually only exists for paid plans. But it's good luck!
-          docker_layer_caching: true
+      - setup_remote_docker
 
       - run: mkdir -p $TEST_RESULTS
 
