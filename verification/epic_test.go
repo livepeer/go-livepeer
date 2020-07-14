@@ -35,8 +35,8 @@ func TestEpic_EpicResultsToVerificationResults(t *testing.T) {
 	// Success case
 	r = &epicResults{
 		Results: []epicResultFields{
-			{VideoAvailable: true, Pixels: 123, Tamper: 2.0},
-			{VideoAvailable: true, Pixels: 456, Tamper: 3.0},
+			{VideoAvailable: true, Pixels: 123, Tamper: 0, OCSVMDist: 2.0},
+			{VideoAvailable: true, Pixels: 456, Tamper: 0, OCSVMDist: 3.0},
 		},
 	}
 	res, err = fn(r)
@@ -56,7 +56,8 @@ func TestEpic_EpicResultsToVerificationResults(t *testing.T) {
 
 	// Check tampering. Tamper first result only.
 	// We have audio mismatch set already, which takes precedence, being fatal
-	r.Results[0].Tamper = -2.0
+	r.Results[0].Tamper = 1
+	r.Results[0].OCSVMDist = -2.0
 	res, err = fn(r)
 	assert.Equal(ErrAudioMismatch, err)
 	assert.Equal([]int64{123, 456}, res.Pixels)
@@ -69,21 +70,24 @@ func TestEpic_EpicResultsToVerificationResults(t *testing.T) {
 	assert.Equal((-2.0+3.0)/2., res.Score)
 
 	// Tamper both results
-	r.Results[1].Tamper = -3.0
+	r.Results[1].Tamper = 1
+	r.Results[1].OCSVMDist = -3.0
 	res, err = fn(r)
 	assert.Equal(ErrTampered, err)
 	assert.Equal([]int64{123, 456}, res.Pixels)
 	assert.Equal((-2.0+-3.0)/2., res.Score)
 
 	// Tamper second result only
-	r.Results[0].Tamper = 2.0
+	r.Results[0].Tamper = 0
+	r.Results[0].OCSVMDist = 2.0
 	res, err = fn(r)
 	assert.Equal(ErrTampered, err)
 	assert.Equal([]int64{123, 456}, res.Pixels)
 	assert.Equal((2.0-3.0)/2., res.Score)
 
 	// Unset tamper, sanity check success
-	r.Results[1].Tamper = 3.0
+	r.Results[1].Tamper = 0
+	r.Results[1].OCSVMDist = 3.0
 	res, err = fn(r)
 	assert.Nil(err)
 	assert.Equal([]int64{123, 456}, res.Pixels)
@@ -168,7 +172,7 @@ func TestEpic_Verify(t *testing.T) {
 	mux.HandleFunc("/verify", func(w http.ResponseWriter, r *http.Request) {
 		buf, err := json.Marshal(&epicResults{
 			Results: []epicResultFields{
-				{VideoAvailable: true, Tamper: -1.0},
+				{VideoAvailable: true, Tamper: 1, OCSVMDist: -1.0},
 			},
 		})
 		assert.Nil(err)
@@ -226,14 +230,13 @@ func TestEpic_Verify(t *testing.T) {
 				{URI: params.URIs[0], Framerate: 30, Resolution: epicResolution{Width: 426, Height: 240}},
 				{URI: params.URIs[1], Framerate: 60, Resolution: epicResolution{Width: 1280, Height: 720}},
 			},
-			Model: "https://storage.googleapis.com/verification-models/verification.tar.xz",
 		}
 		assert.Equal(expected, req)
 
 		buf, err := json.Marshal(&epicResults{
 			Results: []epicResultFields{
-				{VideoAvailable: true, Tamper: 1.0, Pixels: 123},
-				{VideoAvailable: true, Tamper: 2.0, Pixels: 456},
+				{VideoAvailable: true, Tamper: 0, OCSVMDist: 1.0, Pixels: 123},
+				{VideoAvailable: true, Tamper: 0, OCSVMDist: 2.0, Pixels: 456},
 			},
 		})
 		assert.Nil(err)

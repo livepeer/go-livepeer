@@ -44,7 +44,6 @@ type epicRequest struct {
 	Source         string          `json:"source"`
 	Renditions     []epicRendition `json:"renditions"`
 	OrchestratorID string          `json:"orchestratorID"`
-	Model          string          `json:"model"`
 }
 
 type epicResultFields struct {
@@ -52,7 +51,11 @@ type epicResultFields struct {
 	AudioAvailable bool    `json:"audio_available"`
 	AudioDistance  float64 `json:"audio_dist"`
 	Pixels         int64   `json:"pixels"`
-	Tamper         float64 `json:"tamper"`
+	// 1 if the model detects a tamper and 0 otherwise
+	Tamper int `json:"tamper"`
+	// This value is used to order multiple results that are all marked as tampered which might indicate a misclassification
+	// In this case, the result with the highest distance is considered the most preferable
+	OCSVMDist float64 `json:"ocsvm_dist"`
 }
 
 type epicResults struct {
@@ -79,13 +82,13 @@ func epicResultsToVerificationResults(er *epicResults) (*Results, error) {
 		if v.AudioAvailable && v.AudioDistance != 0.0 && err == nil {
 			err = ErrAudioMismatch
 		}
-		if v.VideoAvailable && v.Tamper <= 0 && err == nil {
+		if v.VideoAvailable && v.Tamper > 0 && err == nil {
 			err = ErrTampered
 		}
 		if !v.VideoAvailable && err == nil {
 			err = ErrVideoUnavailable
 		}
-		score += v.Tamper / float64(len(er.Results))
+		score += v.OCSVMDist / float64(len(er.Results))
 		pixels = append(pixels, v.Pixels)
 	}
 	return &Results{Score: score, Pixels: pixels}, err
@@ -135,7 +138,6 @@ func (e *EpicClassifier) Verify(params *Params) (*Results, error) {
 		Source:         sourcePath,
 		Renditions:     renditions,
 		OrchestratorID: oid,
-		Model:          "https://storage.googleapis.com/verification-models/verification.tar.xz",
 	}
 	reqData, err := json.Marshal(req)
 	if err != nil {
