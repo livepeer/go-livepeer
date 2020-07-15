@@ -297,6 +297,15 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		return nil, err
 	}
 	name := fmt.Sprintf("%s/%d%s", vProfile.Name, seg.SeqNo, ext)
+	ros := cpl.GetRecordOSSession()
+	if ros != nil {
+		go func() {
+			_, err := ros.SaveData(name, seg.Data)
+			if err != nil {
+				glog.Errorf("Error recording: %s", err)
+			}
+		}()
+	}
 	uri, err := cpl.GetOSSession().SaveData(name, seg.Data)
 	if err != nil {
 		glog.Errorf("Error saving segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
@@ -466,6 +475,19 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			}
 
 			data = d
+		}
+
+		bros := cpl.GetRecordOSSession()
+		if bros != nil {
+			go func() {
+				ext, _ := common.ProfileFormatExtension(profile.Format)
+				name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
+				_, err = bros.SaveData(name, data)
+				if err != nil {
+					glog.Errorf("Error saving %s to record store: %s", name, err)
+				}
+				glog.Infof("Successfully saved %s to record store", name)
+			}()
 		}
 
 		if bos != nil && !bos.IsOwn(url) {
