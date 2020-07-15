@@ -258,4 +258,34 @@ run_lp -broadcaster -httpAddr 0.0.0.0 -authWebhookUrl http://foo.com
 curl -X PUT http://localhost:8935/live/movie/0.ts | grep -v "404 page not found"
 kill $pid
 
+# Check that the default presets are used
+run_lp -broadcaster
+curl -s --stderr - http://localhost:7935/getBroadcastConfig | grep P240p30fps16x9,P360p30fps16x9
+kill $pid
+
+# Check that the presets passed in are used
+run_lp -broadcaster -transcodingOptions P144p30fps16x9,P720p30fps16x9
+curl -s --stderr - http://localhost:7935/getBroadcastConfig | grep P144p30fps16x9,P720p30fps16x9
+kill $pid
+
+# Check that config file profiles passed in are used
+cat > $TMPDIR/profile.json <<PROFILE_JSON
+[{"name":"abc","width":1,"height":2},{"name":"def","width":1,"height":2}]
+PROFILE_JSON
+run_lp -broadcaster -transcodingOptions $TMPDIR/profile.json
+curl -s --stderr - http://localhost:7935/getBroadcastConfig | grep abc,def
+kill $pid
+
+# Check nonexistent profile config file
+$TMPDIR/livepeer -broadcaster -transcodingOptions notarealfile 2>&1 | grep "No transcoding profiles found"
+
+# Check that it fails out on an malformed profiles json
+echo "not json" > $TMPDIR/invalid.json
+$TMPDIR/livepeer -broadcaster -transcodingOptions $TMPDIR/invalid.json 2>&1 |    grep "invalid character"
+
+# Check that it fails out on an invalid schema - width / height as strings
+echo '[{"width":"1","height":"2"}]' > $TMPDIR/schema.json
+$TMPDIR/livepeer -broadcaster -transcodingOptions $TMPDIR/schema.json 2>&1 | grep "cannot unmarshal string into Go struct field .width of type int"
+
+
 rm -rf $TMPDIR

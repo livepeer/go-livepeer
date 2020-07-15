@@ -74,6 +74,8 @@ where the "movie" stream name is taken from the path in the RTMP URL.
 
 See the documentation on [RTMP ingest](doc/ingest.md) or [HTTP ingest](doc/ingest.md#http-push) for more details.
 
+For information on configuring the [transcoding options](doc/transcodingoptions.md), see the documentation.
+
 #### Authentication of incoming streams
 
 Incoming streams can be authenticated using a webhook. More details in the [webhook docs](doc/rtmpwebhookauth.md).
