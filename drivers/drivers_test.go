@@ -30,7 +30,7 @@ func TestCustomS3URL(t *testing.T) {
 	s3, iss3 := os.(*s3OS)
 	assert.Equal(true, iss3)
 	assert.Equal(nil, err)
-	assert.Equal("http://example.com:9000/path/to/bucket-name", s3.host)
+	assert.Equal("http://example.com:9000", s3.host)
 	assert.Equal("bucket-name", s3.bucket)
 	assert.Equal("user", s3.awsAccessKeyID)
 	assert.Equal("password", s3.awsSecretAccessKey)

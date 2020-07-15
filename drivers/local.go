@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"path"
@@ -59,6 +60,10 @@ func (ostore *MemoryOS) GetSession(path string) *MemorySession {
 	return nil
 }
 
+func (ostore *MemorySession) OS() OSDriver {
+	return ostore.os
+}
+
 // EndSession clears memory cache
 func (ostore *MemorySession) EndSession() {
 	ostore.dLock.Lock()
@@ -71,6 +76,14 @@ func (ostore *MemorySession) EndSession() {
 	ostore.os.lock.Lock()
 	delete(ostore.os.sessions, ostore.path)
 	ostore.os.lock.Unlock()
+}
+
+func (ostore *MemorySession) ListFiles(ctx context.Context, prefix, delim string) (PageInfo, error) {
+	return nil, fmt.Errorf("Not implemented")
+}
+
+func (ostore *MemorySession) ReadData(ctx context.Context, name string) (*FileInfoReader, error) {
+	return nil, fmt.Errorf("Not implemented")
 }
 
 // GetData returns the cached data for a name.
@@ -113,7 +126,7 @@ func (ostore *MemorySession) GetInfo() *net.OSInfo {
 	return nil
 }
 
-func (ostore *MemorySession) SaveData(name string, data []byte) (string, error) {
+func (ostore *MemorySession) SaveData(name string, data []byte, meta map[string]string) (string, error) {
 	path, file := path.Split(ostore.getAbsolutePath(name))
 
 	ostore.dLock.Lock()

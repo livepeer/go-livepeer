@@ -164,6 +164,7 @@ func main() {
 	// Storage:
 	datadir := flag.String("datadir", "", "data directory")
 	objectstore := flag.String("objectStore", "", "url of primary object store")
+	recordstore := flag.String("recordStore", "", "url of object store for recodings")
 
 	// All deprecated
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
@@ -747,11 +748,25 @@ func main() {
 			glog.Error("Error creating object store driver: ", err)
 			return
 		}
-		drivers.NodeStorage, err = drivers.ParseOSURL(prepared, true)
+		drivers.NodeStorage, err = drivers.ParseOSURL(prepared, false)
+	}
+
+	if *recordstore != "" {
+		prepared, err := drivers.PrepareOSURL(*recordstore)
+		if err != nil {
+			glog.Error("Error creating recordings object store driver: ", err)
+			return
+		}
+		drivers.RecordStorage, err = drivers.ParseOSURL(prepared, true)
+	}
+
+	if *gsBucket != "" && *gsKey != "" {
+		store, err := drivers.NewGoogleDriver(*gsBucket, *gsKey, false)
 		if err != nil {
 			glog.Error("Error creating object store driver: ", err)
 			return
 		}
+		drivers.NodeStorage = store
 	}
 
 	core.MaxSessions = *maxSessions

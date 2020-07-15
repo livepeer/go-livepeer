@@ -2,8 +2,10 @@
 package drivers
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -18,13 +20,41 @@ import (
 // NodeStorage is current node's primary driver
 var NodeStorage OSDriver
 
+// RecordStorage is current node's "stream recording" driver
+var RecordStorage OSDriver
+
 // OSDriver common interface for Object Storage
 type OSDriver interface {
 	NewSession(path string) OSSession
 }
 
+// ErrNoNextPage indicates that there is no next page in ListFiles
+var ErrNoNextPage = fmt.Errorf("no next page")
+
+type FileInfo struct {
+	Name         string
+	ETag         string
+	LastModified time.Time
+	Size         int64
+}
+
+type FileInfoReader struct {
+	FileInfo
+	Metadata map[string]string
+	Body     io.ReadCloser
+}
+
+type PageInfo interface {
+	Files() []FileInfo
+	Directories() []string
+	HasNextPage() bool
+	NextPage() (PageInfo, error)
+}
+
 type OSSession interface {
-	SaveData(name string, data []byte) (string, error)
+	OS() OSDriver
+
+	SaveData(name string, data []byte, meta map[string]string) (string, error)
 	EndSession()
 
 	// Info in order to have this session used via RPC
@@ -35,6 +65,11 @@ type OSSession interface {
 
 	// Indicates whether this is the correct OS for a given URL
 	IsOwn(url string) bool
+
+	// ListFiles return list of files
+	ListFiles(ctx context.Context, prefix, delim string) (PageInfo, error)
+
+	ReadData(ctx context.Context, name string) (*FileInfoReader, error)
 }
 
 // NewSession returns new session based on OSInfo received from the network
@@ -51,15 +86,11 @@ func NewSession(info *net.OSInfo) OSSession {
 	return nil
 }
 
-func IsOwnExternal(uri string) bool {
-	return IsOwnStorageS3(uri) || IsOwnStorageGS(uri)
-}
-
 func GetSegmentData(uri string) ([]byte, error) {
 	return getSegmentDataHTTP(uri)
 }
 
-// Used for resolving files when necessary and turning into a URL. Don't use
+// PrepareOSURL used for resolving files when necessary and turning into a URL. Don't use
 // this when the URL comes from untrusted sources e.g. AuthWebhookUrl.
 func PrepareOSURL(input string) (string, error) {
 	u, err := url.Parse(input)
@@ -83,8 +114,8 @@ func PrepareOSURL(input string) (string, error) {
 	return u.String(), nil
 }
 
-// Return the correct OS for a given OS url
-func ParseOSURL(input string, own bool) (OSDriver, error) {
+// ParseOSURL returns the correct OS for a given OS url
+func ParseOSURL(input string, useFullAPI bool) (OSDriver, error) {
 	u, err := url.Parse(input)
 	if err != nil {
 		return nil, err
@@ -95,13 +126,7 @@ func ParseOSURL(input string, own bool) (OSDriver, error) {
 			return nil, fmt.Errorf("password is required with s3:// OS")
 		}
 		base := path.Base(u.Path)
-		if own {
-			if S3BUCKET != "" {
-				return nil, fmt.Errorf("we already have our own bucket (%s) but we tried to add another one (%s)", S3BUCKET, base)
-			}
-			S3BUCKET = base
-		}
-		return NewS3Driver(u.Host, base, u.User.Username(), pw), nil
+		return NewS3Driver(u.Host, base, u.User.Username(), pw, useFullAPI), nil
 	}
 	// custom s3-compatible store
 	if u.Scheme == "s3+http" || u.Scheme == "s3+https" {
@@ -116,21 +141,16 @@ func ParseOSURL(input string, own bool) (OSDriver, error) {
 		}
 		hosturl.User = nil
 		hosturl.Scheme = scheme
+		hosturl.Path = ""
 		pw, ok := u.User.Password()
 		if ok == false {
 			return nil, fmt.Errorf("password is required with s3:// OS")
 		}
-		return NewCustomS3Driver(hosturl.String(), bucket, u.User.Username(), pw), nil
+		return NewCustomS3Driver(hosturl.String(), bucket, u.User.Username(), pw, useFullAPI), nil
 	}
 	if u.Scheme == "gs" {
 		file := u.User.Username()
-		if own {
-			if GSBUCKET != "" {
-				return nil, fmt.Errorf("we already have our own gs bucket (%s) but we tried to add another one (%s)", GSBUCKET, u.Host)
-			}
-			GSBUCKET = u.Host
-		}
-		return NewGoogleDriver(u.Host, file)
+		return NewGoogleDriver(u.Host, file, useFullAPI)
 	}
 	return nil, fmt.Errorf("unrecognized OS scheme: %s", u.Scheme)
 }

@@ -32,6 +32,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 	lpmscore "github.com/livepeer/lpms/core"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
@@ -96,11 +97,12 @@ type LivepeerServer struct {
 }
 
 type authWebhookResponse struct {
-	ManifestID  string   `json:"manifestID"`
-	StreamKey   string   `json:"streamKey"`
-	Presets     []string `json:"presets"`
-	ObjectStore string   `json:"objectStore"`
-	Profiles    []struct {
+	ManifestID        string   `json:"manifestID"`
+	StreamKey         string   `json:"streamKey"`
+	Presets           []string `json:"presets"`
+	ObjectStore       string   `json:"objectStore"`
+	RecordObjectStore string   `json:"recordObjectStore"`
+	Profiles          []struct {
 		Name    string `json:"name"`
 		Width   int    `json:"width"`
 		Height  int    `json:"height"`
@@ -154,6 +156,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
 	}
+	opts.HttpMux.HandleFunc("/recordings/", ls.HandleRecordings)
 	return ls, nil
 }
 
@@ -209,8 +212,8 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		var mid core.ManifestID
 		var err error
 		var key string
-		var os drivers.OSDriver
-		var oss drivers.OSSession
+		var os, ros drivers.OSDriver
+		var oss, ross drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
 		if resp, err = authenticateStream(url.String()); err != nil {
 			glog.Error("Authentication denied for ", err)
@@ -242,6 +245,14 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 					return nil
 				}
 			}
+			// set Recording OS if it was provided
+			if resp.RecordObjectStore != "" {
+				ros, err = drivers.ParseOSURL(resp.RecordObjectStore, true)
+				if err != nil {
+					glog.Error("Failed to parse object store url ", err)
+					return nil
+				}
+			}
 		} else {
 			profiles = BroadcastJobVideoProfiles
 		}
@@ -256,6 +267,11 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 		if os != nil {
 			oss = os.NewSession(string(mid))
+		}
+
+		if ros != nil {
+			recordPath := fmt.Sprintf("%s/%s", mid, lpmon.NodeID)
+			ross = ros.NewSession(recordPath)
 		}
 
 		// Ensure there's no concurrent StreamID with the same name
@@ -280,6 +296,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			// HTTP push mutates `profiles` so make a copy of it
 			Profiles: append([]ffmpeg.VideoProfile(nil), profiles...),
 			OS:       oss,
+			RecordOS: ross,
 		}
 	}
 }
@@ -466,6 +483,10 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	if params.OS == nil {
 		params.OS = drivers.NodeStorage.NewSession(string(mid))
 	}
+	if params.RecordOS == nil && drivers.RecordStorage != nil {
+		recordPath := fmt.Sprintf("%s/%s", mid, lpmon.NodeID)
+		params.RecordOS = drivers.RecordStorage.NewSession(recordPath)
+	}
 	storage := params.OS
 
 	// Generate and set capabilities
@@ -475,6 +496,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 	params.Capabilities = caps
 
+	recordStorage := params.RecordOS
 	vProfile := ffmpeg.VideoProfile{
 		Name:       "source",
 		Resolution: params.Resolution,
@@ -491,7 +513,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		return nil, errAlreadyExists
 	}
 
-	playlist := core.NewBasicPlaylistManager(mid, storage)
+	playlist := core.NewBasicPlaylistManager(mid, storage, recordStorage)
 	var stakeRdr stakeReader
 	if s.LivepeerNode.Eth != nil {
 		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}
@@ -910,6 +932,205 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	if monitor.Enabled {
 		monitor.SegmentFullyProcessed(seg.Duration, roundtripTime.Seconds())
+	}
+}
+
+// HandleRecordings handle requests to /recodings/ endpoint
+func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request) {
+	ext := path.Ext(r.URL.Path)
+	if ext != ".m3u8" && ext != ".ts" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	pp := strings.Split(r.URL.Path, "/")
+	finalize := r.URL.Query().Get("finalize") == "true"
+	if len(pp) < 4 {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	glog.Infof("Got requst %s", r.URL.String())
+	returnMasterPlaylist := pp[3] == "index.m3u8"
+	var track string
+	if !returnMasterPlaylist {
+		tp := strings.Split(pp[3], ".")
+		track = tp[0]
+	}
+	manifestID := pp[2]
+	requestFileName := strings.Join(pp[2:], "/")
+	ctx := r.Context()
+	sess := drivers.RecordStorage.NewSession(manifestID)
+	fi, err := sess.ReadData(ctx, requestFileName)
+	if err == context.Canceled {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if err == nil && fi != nil && fi.Body != nil {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		if ext == ".ts" {
+			contentType, _ := common.TypeByExtension(".ts")
+			w.Header().Set("Content-Type", contentType)
+		} else {
+			w.Header().Set("Cache-Control", "max-age=5")
+			w.Header().Set("Content-Type", "application/x-mpegURL")
+		}
+		w.Header().Set("Connection", "keep-alive")
+		io.Copy(w, fi.Body)
+		fi.Body.Close()
+		return
+	}
+	filesPage, err := sess.ListFiles(ctx, manifestID+"/", "/")
+	if err != nil {
+		glog.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	dirs := filesPage.Directories()
+	if len(dirs) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	var latestPlaylistTime time.Time
+	var jsonFiles []string
+	for _, dirName := range dirs {
+		dirOnePage, err := sess.ListFiles(ctx, dirName+"playlist_", "")
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for {
+			playlistsNames := dirOnePage.Files()
+			for _, plf := range playlistsNames {
+				if plf.LastModified.After(latestPlaylistTime) {
+					latestPlaylistTime = plf.LastModified
+				}
+				jsonFiles = append(jsonFiles, plf.Name)
+			}
+			if !dirOnePage.HasNextPage() {
+				break
+			}
+			dirOnePage, err = dirOnePage.NextPage()
+			if err != nil {
+				glog.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+	if len(jsonFiles) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if time.Since(latestPlaylistTime) > 24*time.Hour {
+		finalize = true
+	}
+
+	masterPList := m3u8.NewMasterPlaylist()
+	mediaLists := make(map[string]*m3u8.MediaPlaylist)
+	mainJspl := core.NewJSONPlaylist()
+	for _, fn := range jsonFiles {
+		fi, err := sess.ReadData(ctx, fn)
+		if err != nil || fi == nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		jspl := &core.JsonPlaylist{}
+		fb, err := ioutil.ReadAll(fi.Body)
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		fi.Body.Close()
+
+		err = json.Unmarshal(fb, jspl)
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		mainJspl.AddMaster(jspl)
+		if finalize {
+			for trackName := range jspl.Segments {
+				mainJspl.AddTrack(jspl, trackName)
+			}
+		} else if track != "" {
+			mainJspl.AddTrack(jspl, track)
+		}
+	}
+	for _, track := range mainJspl.Tracks {
+		segments := mainJspl.Segments[track.Name]
+		mpl, err := m3u8.NewMediaPlaylist(uint(len(segments)), uint(len(segments)))
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		// vParams := ffmpeg.VideoProfileToVariantParams(*profile)
+		// url := fmt.Sprintf("%s/%s.m3u8", manifestID, track.Name)
+		url := fmt.Sprintf("%s.m3u8", track.Name)
+		vParams := m3u8.VariantParams{Bandwidth: track.Bandwidth, Resolution: track.Resolution}
+		masterPList.Append(url, mpl, vParams)
+		mpl.Live = false
+		mediaLists[track.Name] = mpl
+	}
+	select {
+	case <-ctx.Done():
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	default:
+	}
+	if finalize {
+		for trackName := range mainJspl.Segments {
+			mpl := mediaLists[trackName]
+			mainJspl.AddSegmentsToMPL(manifestID, trackName, mpl)
+			_, err = sess.SaveData(trackName+".m3u8", mpl.Encode().Bytes(), nil)
+			if err != nil {
+				glog.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+		_, err = sess.SaveData("index.m3u8", masterPList.Encode().Bytes(), nil)
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+	} else if !returnMasterPlaylist {
+		mpl := mediaLists[track]
+		mainJspl.AddSegmentsToMPL(manifestID, track, mpl)
+		// check (debug code)
+		startSeq := mpl.Segments[0].SeqId
+		for _, seg := range mpl.Segments[1:] {
+			if seg.SeqId != startSeq+1 {
+				glog.Infof("prev seq is %d but next is %d", startSeq, seg.SeqId)
+			}
+			startSeq = seg.SeqId
+		}
+	}
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+	w.Header().Set("Cache-Control", "max-age=5")
+	w.Header().Set("Content-Type", "application/x-mpegURL")
+	if returnMasterPlaylist {
+		w.Header().Set("Connection", "keep-alive")
+		_, err = w.Write(masterPList.Encode().Bytes())
+	} else if track != "" {
+		mediaPl := mediaLists[track]
+		if mediaPl != nil {
+			w.Header().Set("Connection", "keep-alive")
+			_, err = w.Write(mediaPl.Encode().Bytes())
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
 }
 

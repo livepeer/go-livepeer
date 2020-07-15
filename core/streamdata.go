@@ -29,6 +29,7 @@ type StreamParameters struct {
 	Resolution   string
 	Format       ffmpeg.Format
 	OS           drivers.OSSession
+	RecordOS     drivers.OSSession
 	Capabilities *Capabilities
 }
 
