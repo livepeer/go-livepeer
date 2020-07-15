@@ -63,9 +63,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 	defer ts.Close()
 
 	segPath := "/transcoded/segment.ts"
-	tSegData := []*net.TranscodedSegmentData{
-		&net.TranscodedSegmentData{Url: ts.URL + segPath, Pixels: 100},
-	}
+	tSegData := []*net.TranscodedSegmentData{{Url: ts.URL + segPath, Pixels: 100}}
 	tr := dummyRes(tSegData)
 	buf, err := proto.Marshal(tr)
 	require.Nil(t, err)
@@ -88,7 +86,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 	osd := drivers.NewMemoryDriver(url)
 	osSession := osd.NewSession("testPath")
 
-	pl := core.NewBasicPlaylistManager("xx", osSession)
+	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
 
 	cxn := &rtmpConnection{
 		mid:         core.ManifestID("mani"),
@@ -153,6 +151,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 
 	// Binary data should be returned
 	reader.Seek(0, 0)
+	reader = strings.NewReader("InsteadOf.TS")
 	req = httptest.NewRequest("POST", "/live/mani/12.ts", reader)
 	w = httptest.NewRecorder()
 	req.Header.Set("Accept", "multipart/mixed")
@@ -176,7 +175,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 		assert.Nil(err)
 		assert.Contains(params, "name")
 		assert.Len(params, 1)
-		assert.Equal(params["name"], "P144p25fps16x9_12.ts")
+		assert.Equal("P144p25fps16x9_12.ts", params["name"])
 		assert.Equal(`attachment; filename="P144p25fps16x9_12.ts"`, p.Header.Get("Content-Disposition"))
 		assert.Equal("P144p25fps16x9", p.Header.Get("Rendition-Name"))
 		bodyPart, err := ioutil.ReadAll(p)
@@ -326,9 +325,7 @@ func TestPush_MP4(t *testing.T) {
 		}
 	}
 	segPath := "/random"
-	tSegData := []*net.TranscodedSegmentData{
-		&net.TranscodedSegmentData{Url: ts.URL + segPath, Pixels: 100},
-	}
+	tSegData := []*net.TranscodedSegmentData{{Url: ts.URL + segPath, Pixels: 100}}
 	tr := dummyRes(tSegData)
 	buf, err := proto.Marshal(tr)
 	require.Nil(t, err)

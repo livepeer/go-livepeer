@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -27,7 +28,7 @@ import (
 // S3_POLICY_EXPIRE_IN_HOURS how long access rights given to other node will be valid
 const S3_POLICY_EXPIRE_IN_HOURS = 24
 
-/* S3OS S# backed object storage driver. For own storage access key and access key secret
+/* S3OS S3 backed object storage driver. For own storage access key and access key secret
    should be specified. To give to other nodes access to own S3 storage so called 'POST' policy
    is created. This policy is valid for S3_POLICY_EXPIRE_IN_HOURS hours.
 */
@@ -38,10 +39,13 @@ type s3OS struct {
 	awsAccessKeyID     string
 	awsSecretAccessKey string
 	s3svc              *s3.S3
+	useFullAPI         bool
 }
 
 type s3Session struct {
+	os          *s3OS
 	host        string
+	bucket      string
 	key         string
 	policy      string
 	signature   string
@@ -49,18 +53,11 @@ type s3Session struct {
 	xAmzDate    string
 	storageType net.OSInfo_StorageType
 	fields      map[string]string
+	s3svc       *s3.S3
 }
-
-// S3BUCKET s3 bucket owned by this node
-var S3BUCKET string
 
 func s3Host(bucket string) string {
 	return fmt.Sprintf("https://%s.s3.amazonaws.com", bucket)
-}
-
-// IsOwnStorageS3 returns true if uri points to S3 bucket owned by this node
-func IsOwnStorageS3(uri string) bool {
-	return strings.HasPrefix(uri, s3Host(S3BUCKET))
 }
 
 func newS3Session(info *net.S3OSInfo) OSSession {
@@ -77,13 +74,15 @@ func newS3Session(info *net.S3OSInfo) OSSession {
 	return sess
 }
 
-func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
+func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI bool) OSDriver {
+	glog.Infof("Creating S3 with region %s bucket %s", region, bucket)
 	os := &s3OS{
 		host:               s3Host(bucket),
 		region:             region,
 		bucket:             bucket,
 		awsAccessKeyID:     accessKey,
 		awsSecretAccessKey: accessKeySecret,
+		useFullAPI:         useFullAPI,
 	}
 	if os.awsAccessKeyID != "" {
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
@@ -93,17 +92,25 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
 	return os
 }
 
-// For creating S3-compatible stores other than S3 itself
-func NewCustomS3Driver(host, bucket, accessKey, accessKeySecret string) OSDriver {
+// NewCustomS3Driver for creating S3-compatible stores other than S3 itself
+func NewCustomS3Driver(host, bucket, accessKey, accessKeySecret string, useFullAPI bool) OSDriver {
+	glog.Infof("using custom s3 with url: %s, bucket %s use full API %v", host, bucket, useFullAPI)
 	os := &s3OS{
 		host:               host,
 		bucket:             bucket,
 		awsAccessKeyID:     accessKey,
 		awsSecretAccessKey: accessKeySecret,
+		region:             "ignored",
+		useFullAPI:         useFullAPI,
+	}
+	if !useFullAPI {
+		os.host += "/" + bucket
 	}
 	if os.awsAccessKeyID != "" {
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
 		cfg := aws.NewConfig().WithRegion(os.region).WithCredentials(creds)
+		cfg = cfg.WithEndpoint(host)
+		cfg = cfg.WithS3ForcePathStyle(true)
 		os.s3svc = s3.New(session.New(), cfg)
 	}
 	return os
@@ -113,13 +120,18 @@ func (os *s3OS) NewSession(path string) OSSession {
 	policy, signature, credential, xAmzDate := createPolicy(os.awsAccessKeyID,
 		os.bucket, os.region, os.awsSecretAccessKey, path)
 	sess := &s3Session{
+		os:          os,
 		host:        os.host,
+		bucket:      os.bucket,
 		key:         path,
 		policy:      policy,
 		signature:   signature,
 		credential:  credential,
 		xAmzDate:    xAmzDate,
 		storageType: net.OSInfo_S3,
+	}
+	if os.useFullAPI {
+		sess.s3svc = os.s3svc
 	}
 	sess.fields = s3GetFields(sess)
 	return sess
@@ -134,6 +146,10 @@ func s3GetFields(sess *s3Session) map[string]string {
 	}
 }
 
+func (os *s3Session) OS() OSDriver {
+	return os.os
+}
+
 func (os *s3Session) IsExternal() bool {
 	return true
 }
@@ -141,11 +157,157 @@ func (os *s3Session) IsExternal() bool {
 func (os *s3Session) EndSession() {
 }
 
-func (os *s3Session) SaveData(name string, data []byte) (string, error) {
+type s3pageInfo struct {
+	files       []FileInfo
+	directories []string
+	ctx         context.Context
+	s3svc       *s3.S3
+	params      *s3.ListObjectsInput
+	nextMarker  string
+}
+
+func (s3pi *s3pageInfo) Files() []FileInfo {
+	return s3pi.files
+}
+func (s3pi *s3pageInfo) Directories() []string {
+	return s3pi.directories
+}
+func (s3pi *s3pageInfo) HasNextPage() bool {
+	return s3pi.nextMarker != ""
+}
+func (s3pi *s3pageInfo) NextPage() (PageInfo, error) {
+	if s3pi.nextMarker == "" {
+		return nil, ErrNoNextPage
+	}
+	next := &s3pageInfo{
+		s3svc:  s3pi.s3svc,
+		params: s3pi.params,
+		ctx:    s3pi.ctx,
+	}
+	next.params.Marker = &s3pi.nextMarker
+	if err := next.listFiles(); err != nil {
+		return nil, err
+	}
+	return next, nil
+}
+
+func (s3pi *s3pageInfo) listFiles() error {
+	resp, err := s3pi.s3svc.ListObjectsWithContext(s3pi.ctx, s3pi.params)
+	if err != nil {
+		return err
+	}
+	for _, cont := range resp.CommonPrefixes {
+		s3pi.directories = append(s3pi.directories, *cont.Prefix)
+	}
+	for _, cont := range resp.Contents {
+		fi := FileInfo{
+			Name:         *cont.Key,
+			ETag:         *cont.ETag,
+			LastModified: *cont.LastModified,
+			Size:         *cont.Size,
+		}
+		s3pi.files = append(s3pi.files, fi)
+	}
+	if resp.NextMarker != nil {
+		s3pi.nextMarker = *resp.NextMarker
+	} else if *resp.IsTruncated && len(resp.Contents) > 0 {
+		s3pi.nextMarker = *resp.Contents[len(resp.Contents)-1].Key
+	}
+	return nil
+}
+
+func (os *s3Session) ListFiles(ctx context.Context, prefix, delim string) (PageInfo, error) {
+	if os.s3svc != nil {
+		bucket := aws.String(os.bucket)
+		params := &s3.ListObjectsInput{
+			Bucket: bucket,
+		}
+		if prefix != "" {
+			params.Prefix = aws.String(prefix)
+		}
+		if delim != "" {
+			params.Delimiter = aws.String(delim)
+		}
+		pi := &s3pageInfo{
+			ctx:    ctx,
+			s3svc:  os.s3svc,
+			params: params,
+		}
+		if err := pi.listFiles(); err != nil {
+			return nil, err
+		}
+		return pi, nil
+	}
+
+	return nil, fmt.Errorf("Not implemented")
+}
+
+func (os *s3Session) ReadData(ctx context.Context, name string) (*FileInfoReader, error) {
+	if os.s3svc == nil {
+		return nil, fmt.Errorf("Not implemented")
+	}
+	params := &s3.GetObjectInput{
+		Bucket: aws.String(os.bucket),
+		Key:    aws.String(name),
+	}
+	resp, err := os.s3svc.GetObjectWithContext(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	res := &FileInfoReader{
+		Body: resp.Body,
+	}
+	res.LastModified = *resp.LastModified
+	res.ETag = *resp.ETag
+	res.Name = name
+	res.Size = *resp.ContentLength
+	if len(resp.Metadata) > 0 {
+		res.Metadata = make(map[string]string, len(resp.Metadata))
+		for k, v := range resp.Metadata {
+			res.Metadata[k] = *v
+		}
+	}
+	return res, nil
+}
+
+func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]string) (string, error) {
+	bucket := aws.String(os.bucket)
+	keyname := aws.String(os.key + "/" + name)
+	var metadata map[string]*string
+	if len(meta) > 0 {
+		metadata = make(map[string]*string)
+		for k, v := range meta {
+			metadata[k] = aws.String(v)
+		}
+	}
+	contentType := aws.String(os.getContentType(name, data))
+
+	params := &s3.PutObjectInput{
+		Bucket:        bucket,  // Required
+		Key:           keyname, // Required
+		Metadata:      metadata,
+		Body:          bytes.NewReader(data),
+		ContentType:   contentType,
+		ContentLength: aws.Int64(int64(len(data))),
+	}
+	resp, err := os.s3svc.PutObject(params)
+	if err != nil {
+		return "", err
+	}
+	glog.Infof("resp: %s", resp.String())
+	uri := os.getAbsURL(*keyname)
+	glog.V(common.VERBOSE).Infof("Saved to S3 %s", uri)
+	return uri, err
+}
+
+func (os *s3Session) SaveData(name string, data []byte, meta map[string]string) (string, error) {
+	if os.s3svc != nil {
+		return os.saveDataPut(name, data, meta)
+	}
 	// tentativeUrl just used for logging
 	tentativeURL := path.Join(os.host, os.key, name)
 	glog.V(common.VERBOSE).Infof("Saving to S3 %s", tentativeURL)
-	path, err := os.postData(name, data)
+	path, err := os.postData(name, data, meta)
 	if err != nil {
 		// handle error
 		glog.Errorf("Save S3 error: %v", err)
@@ -159,7 +321,10 @@ func (os *s3Session) SaveData(name string, data []byte) (string, error) {
 }
 
 func (os *s3Session) getAbsURL(path string) string {
-	return os.host + "/" + path
+	if strings.Contains(os.host, os.bucket) {
+		return os.host + "/" + path
+	}
+	return os.host + "/" + os.bucket + "/" + path
 }
 
 func (os *s3Session) GetInfo() *net.OSInfo {
@@ -177,10 +342,19 @@ func (os *s3Session) GetInfo() *net.OSInfo {
 	return oi
 }
 
+func (os *s3Session) getContentType(fileName string, buffer []byte) string {
+	ext := path.Ext(fileName)
+	fileType, err := common.TypeByExtension(ext)
+	if err != nil {
+		fileType = http.DetectContentType(buffer)
+	}
+	return fileType
+}
+
 // if s3 storage is not our own, we are saving data into it using POST request
-func (os *s3Session) postData(fileName string, buffer []byte) (string, error) {
+func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]string) (string, error) {
 	fileBytes := bytes.NewReader(buffer)
-	fileType := http.DetectContentType(buffer)
+	fileType := os.getContentType(fileName, buffer)
 	path, fileName := path.Split(path.Join(os.key, fileName))
 	fields := map[string]string{
 		"acl":          "public-read",
@@ -191,7 +365,11 @@ func (os *s3Session) postData(fileName string, buffer []byte) (string, error) {
 	for k, v := range os.fields {
 		fields[k] = v
 	}
-	req, err := newfileUploadRequest(os.host, fields, fileBytes, fileName)
+	postURL := os.host
+	if !strings.Contains(postURL, os.bucket) {
+		postURL += "/" + os.bucket
+	}
+	req, err := newfileUploadRequest(postURL, fields, fileBytes, fileName)
 	if err != nil {
 		glog.Error(err)
 		return "", err
@@ -262,6 +440,7 @@ func createPolicy(key, bucket, region, secret, path string) (string, string, str
 }
 
 func newfileUploadRequest(uri string, params map[string]string, fData io.Reader, fileName string) (*http.Request, error) {
+	glog.Infof("Posting data to %s (params %+v)", uri, params)
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	for key, val := range params {

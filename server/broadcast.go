@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/big"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -254,7 +255,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 		if bcastOS.IsExternal() {
 			// Give each O its own OS session to prevent front running uploads
 			pfx := fmt.Sprintf("%v/%v", params.ManifestID, tinfo.AuthToken.SessionId)
-			bcastOS = drivers.NodeStorage.NewSession(pfx)
+			bcastOS = bcastOS.OS().NewSession(pfx)
 		}
 
 		session := &BroadcastSession{
@@ -299,7 +300,19 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		return nil, err
 	}
 	name := fmt.Sprintf("%s/%d%s", vProfile.Name, seg.SeqNo, ext)
-	uri, err := cpl.GetOSSession().SaveData(name, seg.Data)
+	ros := cpl.GetRecordOSSession()
+	segDurMs := strconv.Itoa(int(seg.Duration * 1000))
+	if ros != nil {
+		go func() {
+			uri, err := ros.SaveData(name, seg.Data, map[string]string{"duration": segDurMs})
+			if err != nil {
+				glog.Errorf("Error recording: %s", err)
+			} else {
+				cpl.InsertHLSSegmentJSON(vProfile, seg.SeqNo, uri, seg.Duration)
+			}
+		}()
+	}
+	uri, err := cpl.GetOSSession().SaveData(name, seg.Data, nil)
 	if err != nil {
 		glog.Errorf("Error saving segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
 		if monitor.Enabled {
@@ -374,7 +387,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	// storage the orchestrator prefers
 	if ios := sess.OrchestratorOS; ios != nil {
 		// XXX handle case when orch expects direct upload
-		uri, err := ios.SaveData(name, seg.Data)
+		uri, err := ios.SaveData(name, seg.Data, nil)
 		if err != nil {
 			glog.Errorf("Error saving segment to OS nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
 			if monitor.Enabled {
@@ -450,11 +463,12 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		bos := sess.BroadcasterOS
 		profile := sess.Params.Profiles[i]
 
+		bros := cpl.GetRecordOSSession()
 		var data []byte
 		// Download segment data in the following cases:
 		// - A verification policy is set. The segment data is needed for signature verification and/or pixel count verification
 		// - The segment data needs to be uploaded to the broadcaster's own OS
-		if verifier != nil || (bos != nil && !bos.IsOwn(url)) {
+		if verifier != nil || bros != nil || bos != nil && !bos.IsOwn(url) {
 			d, err := downloadSeg(url)
 			if err != nil {
 				errFunc(monitor.SegmentTranscodeErrorDownload, url, err)
@@ -469,6 +483,21 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			data = d
 		}
 
+		if bros != nil {
+			go func() {
+				ext, _ := common.ProfileFormatExtension(profile.Format)
+				name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
+				segDurMs := strconv.Itoa(int(seg.Duration * 1000))
+				uri, err := bros.SaveData(name, data, map[string]string{"duration": segDurMs})
+				if err != nil {
+					glog.Errorf("Error saving %s to record store: %s", name, err)
+				} else {
+					cpl.InsertHLSSegmentJSON(&profile, seg.SeqNo, uri, seg.Duration)
+					glog.Infof("Successfully saved %s to record store", name)
+				}
+			}()
+		}
+
 		if bos != nil && !bos.IsOwn(url) {
 			ext, err := common.ProfileFormatExtension(profile.Format)
 			if err != nil {
@@ -476,7 +505,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				return
 			}
 			name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
-			newURL, err := bos.SaveData(name, data)
+			newURL, err := bos.SaveData(name, data, nil)
 			if err != nil {
 				switch err.Error() {
 				case "Session ended":
@@ -525,7 +554,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 
 	if verifier != nil {
 		// verify potentially can change content of segURLs
-		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs, segData)
+		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs, segData, cpl.GetOSSession())
 		if err != nil {
 			glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
 			return nil, err
@@ -545,6 +574,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			}
 		}
 	}
+	cpl.FlushRecord()
 
 	if monitor.Enabled {
 		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode)
@@ -564,7 +594,7 @@ func shouldStopSession(err error) bool {
 
 func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 	sess *BroadcastSession, source *stream.HLSSegment,
-	res *net.TranscodeData, URIs []string, segData [][]byte) error {
+	res *net.TranscodeData, URIs []string, segData [][]byte, os drivers.OSSession) error {
 
 	// Cache segment contents in params.Renditions
 	// If we need to retry transcoding because verification fails,
@@ -578,6 +608,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 		Results:      res,
 		URIs:         URIs,
 		Renditions:   segData,
+		OS:           os,
 	}
 
 	// The return value from the verifier, if any, are the *accepted* params.
@@ -608,7 +639,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 				// Hence, trim the /stream/<manifestID> prefix if it exists.
 				pfx := fmt.Sprintf("/stream/%s/", sess.Params.ManifestID)
 				uri := strings.TrimPrefix(accepted.URIs[i], pfx)
-				_, err := sess.BroadcasterOS.SaveData(uri, data)
+				_, err := sess.BroadcasterOS.SaveData(uri, data, nil)
 				if err != nil {
 					return err
 				}

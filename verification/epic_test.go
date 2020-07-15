@@ -143,9 +143,12 @@ func TestEpic_WriteSegments(t *testing.T) {
 
 	// TODO Trigger an error writing to disk, for both source and renditions
 
-	// Set an external bucket
-	drivers.S3BUCKET = "livepeer"
-	defer func() { drivers.S3BUCKET = "" }()
+	// Set an external OS
+	storageURI := "s3://K:S@eu-central-1/livepeer"
+	os, err := drivers.ParseOSURL(storageURI, false)
+	p.OS = os.NewSession("path")
+	assert.Nil(err)
+	drivers.NodeStorage = os
 	srcPath, rPaths, err = writeSegments(p, dir)
 	assert.Nil(err)
 	assert.Equal(p.Source.Name, srcPath)
@@ -164,8 +167,9 @@ func TestEpic_Verify(t *testing.T) {
 	assert := assert.New(t)
 
 	// Use external S3 bucket
-	drivers.S3BUCKET = "livepeer"
-	defer func() { drivers.S3BUCKET = "" }()
+	storageURI := "s3://K:S@eu-central-1/livepeer"
+	os, err := drivers.ParseOSURL(storageURI, false)
+	assert.Nil(err)
 
 	ts, mux := stubVerificationServer()
 	defer ts.Close()
@@ -185,15 +189,16 @@ func TestEpic_Verify(t *testing.T) {
 		Source:       &stream.HLSSegment{SeqNo: 73},
 		Results:      &net.TranscodeData{},
 		Orchestrator: &net.OrchestratorInfo{Transcoder: "pretend"},
+		OS:           os.NewSession("path"),
 	}
-	_, err := ec.Verify(params)
+	_, err = ec.Verify(params)
 	assert.Equal(ErrTampered, err)
 
 	// Check invalid URLs
 	ec.Addr = ""
 	_, err = ec.Verify(params)
 	assert.NotNil(err)
-	assert.Equal(`Post : unsupported protocol scheme ""`, err.Error())
+	assert.Contains(err.Error(), "unsupported protocol scheme")
 
 	ec.Addr = ts.URL + "/nonexistent" // 404s
 	_, err = ec.Verify(params)
