@@ -25,11 +25,14 @@ type PlaylistManager interface {
 
 	GetOSSession() drivers.OSSession
 
+	GetRecordOSSession() drivers.OSSession
+
 	Cleanup()
 }
 
 type BasicPlaylistManager struct {
 	storageSession drivers.OSSession
+	recordSession  drivers.OSSession
 	manifestID     ManifestID
 	// Live playlist used for broadcasting
 	masterPList *m3u8.MasterPlaylist
@@ -39,10 +42,11 @@ type BasicPlaylistManager struct {
 
 // NewBasicPlaylistManager create new BasicPlaylistManager struct
 func NewBasicPlaylistManager(manifestID ManifestID,
-	storageSession drivers.OSSession) *BasicPlaylistManager {
+	storageSession, recordSession drivers.OSSession) *BasicPlaylistManager {
 
 	bplm := &BasicPlaylistManager{
 		storageSession: storageSession,
+		recordSession:  recordSession,
 		manifestID:     manifestID,
 		masterPList:    m3u8.NewMasterPlaylist(),
 		mediaLists:     make(map[string]*m3u8.MediaPlaylist),
@@ -61,6 +65,10 @@ func (mgr *BasicPlaylistManager) Cleanup() {
 
 func (mgr *BasicPlaylistManager) GetOSSession() drivers.OSSession {
 	return mgr.storageSession
+}
+
+func (mgr *BasicPlaylistManager) GetRecordOSSession() drivers.OSSession {
+	return mgr.recordSession
 }
 
 func (mgr *BasicPlaylistManager) getPL(rendition string) *m3u8.MediaPlaylist {

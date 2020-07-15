@@ -464,6 +464,9 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	if params.OS == nil {
 		params.OS = drivers.NodeStorage.NewSession(string(mid))
 	}
+	if params.RecordOS == nil && drivers.RecordStorage != nil {
+		params.RecordOS = drivers.RecordStorage.NewSession(string(mid))
+	}
 	storage := params.OS
 
 	// Generate and set capabilities
@@ -473,6 +476,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 	params.Capabilities = caps
 
+	recordStorage := params.RecordOS
 	vProfile := ffmpeg.VideoProfile{
 		Name:       "source",
 		Resolution: params.Resolution,
@@ -489,7 +493,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		return nil, errAlreadyExists
 	}
 
-	playlist := core.NewBasicPlaylistManager(mid, storage)
+	playlist := core.NewBasicPlaylistManager(mid, storage, recordStorage)
 	var stakeRdr stakeReader
 	if s.LivepeerNode.Eth != nil {
 		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}

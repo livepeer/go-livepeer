@@ -18,6 +18,9 @@ import (
 // NodeStorage is current node's primary driver
 var NodeStorage OSDriver
 
+// RecordStorage is current node's "stream recording" driver
+var RecordStorage OSDriver
+
 // OSDriver common interface for Object Storage
 type OSDriver interface {
 	NewSession(path string) OSSession

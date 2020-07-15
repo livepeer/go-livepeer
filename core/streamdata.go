@@ -30,6 +30,7 @@ type StreamParameters struct {
 	Format       ffmpeg.Format
 	OS           drivers.OSSession
 	Capabilities *Capabilities
+	RecordOS     drivers.OSSession
 }
 
 func (s *StreamParameters) StreamID() string {
