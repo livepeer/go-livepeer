@@ -84,8 +84,10 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles:    []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles:   []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		},
 	}
 	creds, err := genSegCreds(s, &stream.HLSSegment{})
 	require.Nil(t, err)
@@ -96,8 +98,8 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 	headers := map[string]string{
 		paymentHeader: "",
 		segmentHeader: creds,
@@ -123,8 +125,10 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles:    []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles:   []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
 	creds, err := genSegCreds(s, seg)
@@ -139,8 +143,8 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
 	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 
@@ -244,8 +248,10 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles:    profiles,
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles:   profiles,
+		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
 
@@ -266,10 +272,10 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	assert.Equal(expectedProfiles, segData.FullProfiles2)
 
 	// Check when we have a MP4 sandwiched in between two mpegts
-	assert.Len(s.Profiles, 3)
-	assert.Equal(ffmpeg.FormatMPEGTS, s.Profiles[0].Format)
-	assert.Equal(ffmpeg.FormatMP4, s.Profiles[1].Format)
-	assert.Equal(ffmpeg.FormatNone, s.Profiles[2].Format)
+	assert.Len(s.Params.Profiles, 3)
+	assert.Equal(ffmpeg.FormatMPEGTS, s.Params.Profiles[0].Format)
+	assert.Equal(ffmpeg.FormatMP4, s.Params.Profiles[1].Format)
+	assert.Equal(ffmpeg.FormatNone, s.Params.Profiles[2].Format)
 	data, err = genSegCreds(s, seg)
 	assert.Nil(err)
 	buf, err = base64.StdEncoding.DecodeString(data)
@@ -282,7 +288,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	assert.Equal(expectedProfiles, segData.FullProfiles2)
 
 	// Check that FullProfiles field is used for none/mpegts (not FullProfiles2)
-	s.Profiles[1].Format = ffmpeg.FormatMPEGTS
+	s.Params.Profiles[1].Format = ffmpeg.FormatMPEGTS
 	data, err = genSegCreds(s, seg)
 	assert.Nil(err)
 	buf, err = base64.StdEncoding.DecodeString(data)
@@ -295,7 +301,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	assert.Empty(segData.FullProfiles2)
 
 	// Check that FullProfiles3 field is used if any profile has FPS denominator
-	s.Profiles[1].FramerateDen = uint(12)
+	s.Params.Profiles[1].FramerateDen = uint(12)
 	data, err = genSegCreds(s, seg)
 	assert.Nil(err)
 	buf, err = base64.StdEncoding.DecodeString(data)
@@ -303,15 +309,15 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	err = proto.Unmarshal(buf, &segData)
 	assert.Nil(err)
 	expectedProfiles, err = common.FFmpegProfiletoNetProfile(profiles)
-	assert.Equal(expectedProfiles[1].FpsDen, uint32(s.Profiles[1].FramerateDen))
+	assert.Equal(expectedProfiles[1].FpsDen, uint32(s.Params.Profiles[1].FramerateDen))
 	assert.Equal([]byte("invalid"), segData.Profiles)
 	assert.Equal(expectedProfiles, segData.FullProfiles3)
 	assert.Empty(segData.FullProfiles)
 	assert.Empty(segData.FullProfiles2)
 
 	// Check that FullProfiles3 field is used if any profile has non-empty encoder profile
-	s.Profiles[1].FramerateDen = uint(0) // unset FramerateDen as that also triggers FullProfile3
-	s.Profiles[0].Profile = ffmpeg.ProfileH264High
+	s.Params.Profiles[1].FramerateDen = uint(0) // unset FramerateDen as that also triggers FullProfile3
+	s.Params.Profiles[0].Profile = ffmpeg.ProfileH264High
 	data, err = genSegCreds(s, seg)
 	assert.Nil(err)
 	buf, err = base64.StdEncoding.DecodeString(data)
@@ -326,8 +332,8 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	assert.Empty(segData.FullProfiles2)
 
 	// Check that FullProfiles3 is used if any profile has a GOP set
-	s.Profiles[0].Profile = ffmpeg.ProfileNone // unset Profile as that also triggers FullProfile3
-	s.Profiles[1].GOP = time.Duration(123) * time.Millisecond
+	s.Params.Profiles[0].Profile = ffmpeg.ProfileNone // unset Profile as that also triggers FullProfile3
+	s.Params.Profiles[1].GOP = time.Duration(123) * time.Millisecond
 	data, err = genSegCreds(s, seg)
 	assert.Nil(err)
 	buf, err = base64.StdEncoding.DecodeString(data)
@@ -341,7 +347,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	assert.Equal([]byte("invalid"), segData.Profiles)
 
 	// Check that profile format errors propagate
-	s.Profiles[1].Format = -1
+	s.Params.Profiles[1].Format = -1
 	data, err = genSegCreds(s, seg)
 	assert.Empty(data)
 	assert.Equal(common.ErrFormatProto, err)
@@ -352,8 +358,10 @@ func TestGenSegCreds_Profiles(t *testing.T) {
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P360p30fps16x9}
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles:    profiles,
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles:   profiles,
+		},
 	}
 
 	seg := &stream.HLSSegment{Data: []byte("foo")}
@@ -532,7 +540,7 @@ func TestServeSegment_SaveDataFormat(t *testing.T) {
 	defer func() { drivers.NodeStorage = oldStorage }()
 
 	sess := &BroadcastSession{
-		Profiles:      []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9, ffmpeg.P720p60fps16x9},
+		Params:        &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9, ffmpeg.P720p60fps16x9}},
 		Broadcaster:   stubBroadcaster2(),
 		BroadcasterOS: os,
 	}
@@ -540,7 +548,7 @@ func TestServeSegment_SaveDataFormat(t *testing.T) {
 	assert.Nil(err)
 	headers := map[string]string{segmentHeader: creds}
 
-	for _, p := range sess.Profiles {
+	for _, p := range sess.Params.Profiles {
 		assert.Equal(ffmpeg.FormatNone, p.Format) // sanity check
 	}
 
@@ -550,8 +558,8 @@ func TestServeSegment_SaveDataFormat(t *testing.T) {
 	assert.Equal([]string{"P720p30fps16x9/0.ts", "P720p60fps16x9/0.ts"}, os.saved)
 
 	// mp4 format
-	for i, _ := range sess.Profiles {
-		sess.Profiles[i].Format = ffmpeg.FormatMP4
+	for i, _ := range sess.Params.Profiles {
+		sess.Params.Profiles[i].Format = ffmpeg.FormatMP4
 	}
 	assert.Equal(ffmpeg.FormatNone, ffmpeg.P720p30fps16x9.Format) // sanity
 	assert.Equal(ffmpeg.FormatNone, ffmpeg.P720p60fps16x9.Format) // sanity
@@ -564,8 +572,8 @@ func TestServeSegment_SaveDataFormat(t *testing.T) {
 	assert.Equal([]string{"P720p30fps16x9/0.mp4", "P720p60fps16x9/0.mp4"}, os.saved)
 
 	// mpegts format
-	for i, _ := range sess.Profiles {
-		sess.Profiles[i].Format = ffmpeg.FormatMPEGTS
+	for i, _ := range sess.Params.Profiles {
+		sess.Params.Profiles[i].Format = ffmpeg.FormatMPEGTS
 	}
 	creds, err = genSegCreds(sess, &stream.HLSSegment{})
 	os = &stubOSSession{} // reset for simplicity
@@ -612,9 +620,11 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles: []ffmpeg.VideoProfile{
-			ffmpeg.P720p60fps16x9,
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles: []ffmpeg.VideoProfile{
+				ffmpeg.P720p60fps16x9,
+			},
 		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
@@ -630,8 +640,8 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 
 	mos := &mockOSSession{}
 
@@ -679,9 +689,11 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles: []ffmpeg.VideoProfile{
-			ffmpeg.P720p60fps16x9,
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles: []ffmpeg.VideoProfile{
+				ffmpeg.P720p60fps16x9,
+			},
 		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
@@ -697,8 +709,8 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 
 	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo")}}}
 	tRes := &core.TranscodeResult{
@@ -742,10 +754,12 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles: []ffmpeg.VideoProfile{
-			ffmpeg.P720p60fps16x9,
-			ffmpeg.P240p30fps16x9,
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles: []ffmpeg.VideoProfile{
+				ffmpeg.P720p60fps16x9,
+				ffmpeg.P240p30fps16x9,
+			},
 		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
@@ -761,8 +775,8 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 
 	tData := &core.TranscodedSegmentData{Data: []byte("foo")}
 	tRes := &core.TranscodeResult{
@@ -806,9 +820,11 @@ func TestServeSegment_ProcessPaymentError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles: []ffmpeg.VideoProfile{
-			ffmpeg.P720p60fps16x9,
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles: []ffmpeg.VideoProfile{
+				ffmpeg.P720p60fps16x9,
+			},
 		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
@@ -819,7 +835,7 @@ func TestServeSegment_ProcessPaymentError(t *testing.T) {
 	require.Nil(err)
 
 	// Return an error to trigger bad request
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some error"), false).Once()
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(errors.New("some error"), false).Once()
 
 	headers := map[string]string{
 		paymentHeader: "",
@@ -835,7 +851,7 @@ func TestServeSegment_ProcessPaymentError(t *testing.T) {
 	assert.Equal("some error", strings.TrimSpace(string(body)))
 	resp.Body.Close()
 
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(errors.New("some error")).Once()
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(errors.New("some error")).Once()
 	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
 	defer resp.Body.Close()
 
@@ -856,9 +872,11 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles: []ffmpeg.VideoProfile{
-			ffmpeg.P720p60fps16x9,
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles: []ffmpeg.VideoProfile{
+				ffmpeg.P720p60fps16x9,
+			},
 		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
@@ -890,8 +908,8 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	orch.On("Address").Return(addr)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(params, nil).Once()
 	orch.On("PriceInfo", mock.Anything).Return(price, nil)
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil).Once()
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil).Once()
+	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 
 	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo")}}}
 	tRes := &core.TranscodeResult{
@@ -930,7 +948,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal(addr.Bytes(), tr.Info.Address)
 
 	// Test orchestratorInfo error
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil).Once()
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil).Once()
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, errors.New("TicketParams error")).Once()
 
 	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
@@ -953,8 +971,10 @@ func TestServeSegment_InsufficientBalanceError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles:    []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles:   []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
 	creds, err := genSegCreds(s, seg)
@@ -963,8 +983,8 @@ func TestServeSegment_InsufficientBalanceError(t *testing.T) {
 	_, err = verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
 
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(false)
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(false)
 
 	headers := map[string]string{
 		paymentHeader: "",
@@ -990,9 +1010,11 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles: []ffmpeg.VideoProfile{
-			ffmpeg.P720p60fps16x9,
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles: []ffmpeg.VideoProfile{
+				ffmpeg.P720p60fps16x9,
+			},
 		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
@@ -1008,8 +1030,8 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 
 	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo"), Pixels: int64(110592000)}}}
 	tRes := &core.TranscodeResult{
@@ -1055,10 +1077,12 @@ func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles: []ffmpeg.VideoProfile{
-			ffmpeg.P720p60fps16x9,
-			ffmpeg.P240p30fps16x9,
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles: []ffmpeg.VideoProfile{
+				ffmpeg.P720p60fps16x9,
+				ffmpeg.P240p30fps16x9,
+			},
 		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
@@ -1073,8 +1097,8 @@ func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 
 	tData720 := &core.TranscodedSegmentData{
 		Data:   []byte("foo"),
@@ -1130,10 +1154,12 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles: []ffmpeg.VideoProfile{
-			ffmpeg.P720p60fps16x9,
-			ffmpeg.P240p30fps16x9,
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles: []ffmpeg.VideoProfile{
+				ffmpeg.P720p60fps16x9,
+				ffmpeg.P240p30fps16x9,
+			},
 		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
@@ -1148,8 +1174,8 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 
 	mos := &mockOSSession{}
 
@@ -1208,9 +1234,11 @@ func TestServeSegment_DebitFees_TranscodeSegError_ZeroPixelsBilled(t *testing.T)
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
-		Profiles: []ffmpeg.VideoProfile{
-			ffmpeg.P720p60fps16x9,
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles: []ffmpeg.VideoProfile{
+				ffmpeg.P720p60fps16x9,
+			},
 		},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
@@ -1225,8 +1253,8 @@ func TestServeSegment_DebitFees_TranscodeSegError_ZeroPixelsBilled(t *testing.T)
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
-	orch.On("ProcessPayment", net.Payment{}, s.ManifestID).Return(nil)
-	orch.On("SufficientBalance", mock.Anything, s.ManifestID).Return(true)
+	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
 	orch.On("DebitFees", mock.Anything, md.ManifestID, mock.Anything, int64(0))
 
@@ -1259,7 +1287,7 @@ func TestSubmitSegment_GenSegCredsError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: b,
-		ManifestID:  core.RandomManifestID(),
+		Params:      &core.StreamParameters{ManifestID: core.RandomManifestID()},
 	}
 
 	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
@@ -1272,7 +1300,7 @@ func TestSubmitSegment_RatPriceInfoError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: b,
-		ManifestID:  core.RandomManifestID(),
+		Params:      &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		OrchestratorInfo: &net.OrchestratorInfo{
 			PriceInfo: &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 0},
 		},
@@ -1288,9 +1316,11 @@ func TestSubmitSegment_EstimateFeeError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: b,
-		ManifestID:  core.RandomManifestID(),
-		// Contains invalid profile
-		Profiles: []ffmpeg.VideoProfile{ffmpeg.VideoProfile{Resolution: "foo"}},
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			// Contains invalid profile
+			Profiles: []ffmpeg.VideoProfile{ffmpeg.VideoProfile{Resolution: "foo"}},
+		},
 		OrchestratorInfo: &net.OrchestratorInfo{
 			PriceInfo: &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 1},
 		},
@@ -1309,7 +1339,7 @@ func TestSubmitSegment_NewBalanceUpdateError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: b,
-		ManifestID:  core.RandomManifestID(),
+		Params:      &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		Sender:      sender,
 		Balance:     &mockBalance{},
 		OrchestratorInfo: &net.OrchestratorInfo{
@@ -1342,7 +1372,7 @@ func TestSubmitSegment_GenPaymentError_CreateTicketBatchError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster:      b,
-		ManifestID:       core.RandomManifestID(),
+		Params:           &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		Sender:           sender,
 		Balance:          balance,
 		OrchestratorInfo: oInfo,
@@ -1373,7 +1403,7 @@ func TestSubmitSegment_GenPaymentError_ValidatePriceError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster:      b,
-		ManifestID:       core.RandomManifestID(),
+		Params:           &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		Sender:           sender,
 		Balance:          balance,
 		OrchestratorInfo: oinfo,
@@ -1391,7 +1421,7 @@ func TestSubmitSegment_GenPaymentError_ValidatePriceError(t *testing.T) {
 func TestSubmitSegment_HttpPostError(t *testing.T) {
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
+		Params:      &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: "https://127.0.0.1",
 			PriceInfo: &net.PriceInfo{
@@ -1430,7 +1460,7 @@ func TestSubmitSegment_Non200StatusCode(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
+		Params:      &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
 			PriceInfo: &net.PriceInfo{
@@ -1470,7 +1500,7 @@ func TestSubmitSegment_ProtoUnmarshalError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
+		Params:      &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
 			PriceInfo: &net.PriceInfo{
@@ -1516,7 +1546,7 @@ func TestSubmitSegment_TranscodeResultError(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
+		Params:      &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
 			PriceInfo: &net.PriceInfo{
@@ -1571,7 +1601,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	// sanity check no timeouts
 	sess := &BroadcastSession{
 		Broadcaster:      stubBroadcaster2(),
-		ManifestID:       core.RandomManifestID(),
+		Params:           &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL},
 	}
 	seg := &stream.HLSSegment{Duration: 0.01}
@@ -1670,7 +1700,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
+		Params:      &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: ts.URL,
 			PriceInfo: &net.PriceInfo{

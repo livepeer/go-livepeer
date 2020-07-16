@@ -315,7 +315,8 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
-	fee, err := estimateFee(seg, sess.Profiles, priceInfo)
+	params := sess.Params
+	fee, err := estimateFee(seg, params.Profiles, priceInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -333,11 +334,11 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 
 	payment, err := genPayment(sess, balUpdate.NumTickets)
 	if err != nil {
-		glog.Errorf("Could not create payment nonce=%d manifestID=%s seqNo=%d bytes=%v err=%v", nonce, sess.ManifestID, seg.SeqNo, len(data), err)
+		glog.Errorf("Could not create payment nonce=%d manifestID=%s seqNo=%d bytes=%v err=%v", nonce, sess.Params.ManifestID, seg.SeqNo, len(data), err)
 
 		if monitor.Enabled && sess.OrchestratorInfo.TicketParams != nil {
 			recipient := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient).String()
-			monitor.PaymentCreateError(recipient, string(sess.ManifestID))
+			monitor.PaymentCreateError(recipient, string(params.ManifestID))
 		}
 
 		return nil, err
@@ -372,12 +373,12 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		req.Header.Set("Content-Type", "video/MP2T")
 	}
 
-	glog.Infof("Submitting segment nonce=%d manifestID=%s seqNo=%d bytes=%v orch=%s", nonce, sess.ManifestID, seg.SeqNo, len(data), ti.Transcoder)
+	glog.Infof("Submitting segment nonce=%d manifestID=%s seqNo=%d bytes=%v orch=%s", nonce, params.ManifestID, seg.SeqNo, len(data), ti.Transcoder)
 	start := time.Now()
 	resp, err := httpClient.Do(req)
 	uploadDur := time.Since(start)
 	if err != nil {
-		glog.Errorf("Unable to submit segment orch=%v nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", ti.Transcoder, nonce, sess.ManifestID, seg.SeqNo, ti.Transcoder, err)
+		glog.Errorf("Unable to submit segment orch=%v nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", ti.Transcoder, nonce, params.ManifestID, seg.SeqNo, ti.Transcoder, err)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), false)
 		}
@@ -390,7 +391,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	balUpdate.Status = CreditSpent
 	if monitor.Enabled && sess.OrchestratorInfo.TicketParams != nil {
 		recipient := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient).String()
-		mid := string(sess.ManifestID)
+		mid := string(params.ManifestID)
 
 		monitor.TicketValueSent(recipient, mid, balUpdate.NewCredit)
 		monitor.TicketsSent(recipient, mid, balUpdate.NumTickets)
@@ -399,14 +400,14 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)
 		errorString := strings.TrimSpace(string(data))
-		glog.Errorf("Error submitting segment nonce=%d manifestID=%s seqNo=%d code=%d orch=%s err=%v", nonce, sess.ManifestID, seg.SeqNo, resp.StatusCode, ti.Transcoder, string(data))
+		glog.Errorf("Error submitting segment nonce=%d manifestID=%s seqNo=%d code=%d orch=%s err=%v", nonce, params.ManifestID, seg.SeqNo, resp.StatusCode, ti.Transcoder, string(data))
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadError(resp.Status),
 				fmt.Sprintf("Code: %d Error: %s", resp.StatusCode, errorString), false)
 		}
 		return nil, fmt.Errorf(errorString)
 	}
-	glog.Infof("Uploaded segment nonce=%d manifestID=%s seqNo=%d orch=%s dur=%s", nonce, sess.ManifestID, seg.SeqNo, ti.Transcoder, uploadDur)
+	glog.Infof("Uploaded segment nonce=%d manifestID=%s seqNo=%d orch=%s dur=%s", nonce, params.ManifestID, seg.SeqNo, ti.Transcoder, uploadDur)
 	if monitor.Enabled {
 		monitor.SegmentUploaded(nonce, seg.SeqNo, uploadDur)
 	}
@@ -415,7 +416,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	tookAllDur := time.Since(start)
 
 	if err != nil {
-		glog.Errorf("Unable to read response body for segment nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", nonce, sess.ManifestID, seg.SeqNo, ti.Transcoder, err)
+		glog.Errorf("Unable to read response body for segment nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", nonce, params.ManifestID, seg.SeqNo, ti.Transcoder, err)
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorReadBody, nonce, seg.SeqNo, err, false)
 		}
@@ -426,7 +427,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	var tr net.TranscodeResult
 	err = proto.Unmarshal(data, &tr)
 	if err != nil {
-		glog.Errorf("Unable to parse response for segment nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", nonce, sess.ManifestID, seg.SeqNo, ti.Transcoder, err)
+		glog.Errorf("Unable to parse response for segment nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", nonce, params.ManifestID, seg.SeqNo, ti.Transcoder, err)
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorParseResponse, nonce, seg.SeqNo, err, false)
 		}
@@ -438,7 +439,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	switch res := tr.Result.(type) {
 	case *net.TranscodeResult_Error:
 		err = fmt.Errorf(res.Error)
-		glog.Errorf("Transcode failed for segment nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", nonce, sess.ManifestID, seg.SeqNo, ti.Transcoder, err)
+		glog.Errorf("Transcode failed for segment nonce=%d manifestID=%s seqNo=%d orch=%s err=%v", nonce, params.ManifestID, seg.SeqNo, ti.Transcoder, err)
 		if err.Error() == "MediaStats Failure" {
 			glog.Info("Ensure the keyframe interval is 4 seconds or less")
 		}
@@ -457,7 +458,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		// fall through here for the normal case
 		tdata = res.Data
 	default:
-		glog.Errorf("Unexpected or unset transcode response field for nonce=%d manifestID=%s seqNo=%d orch=%s", nonce, sess.ManifestID, seg.SeqNo, ti.Transcoder)
+		glog.Errorf("Unexpected or unset transcode response field for nonce=%d manifestID=%s seqNo=%d orch=%s", nonce, params.ManifestID, seg.SeqNo, ti.Transcoder)
 		err = fmt.Errorf("UnknownResponse")
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorUnknownResponse, nonce, seg.SeqNo, err, false)
@@ -480,11 +481,11 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 
 	// transcode succeeded; continue processing response
 	if monitor.Enabled {
-		monitor.SegmentTranscoded(nonce, seg.SeqNo, transcodeDur, common.ProfilesNames(sess.Profiles))
+		monitor.SegmentTranscoded(nonce, seg.SeqNo, transcodeDur, common.ProfilesNames(params.Profiles))
 	}
 
 	glog.Infof("Successfully transcoded segment nonce=%d manifestID=%s segName=%s seqNo=%d orch=%s dur=%s", nonce,
-		string(sess.ManifestID), seg.Name, seg.SeqNo, ti.Transcoder, transcodeDur)
+		string(params.ManifestID), seg.Name, seg.SeqNo, ti.Transcoder, transcodeDur)
 
 	return &ReceivedTranscodeResult{
 		TranscodeData: tdata,
@@ -502,12 +503,13 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 	}
 
 	// Generate signature for relevant parts of segment
+	params := sess.Params
 	hash := crypto.Keccak256(seg.Data)
 	md := &core.SegTranscodingMetadata{
-		ManifestID: sess.ManifestID,
+		ManifestID: params.ManifestID,
 		Seq:        int64(seg.SeqNo),
 		Hash:       ethcommon.BytesToHash(hash),
-		Profiles:   sess.Profiles,
+		Profiles:   params.Profiles,
 		OS:         storage,
 		Duration:   time.Duration(seg.Duration * float64(time.Second)),
 	}
@@ -671,7 +673,7 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 
 		ratPrice, _ := common.RatPriceInfo(protoPayment.ExpectedPrice)
 		glog.V(common.VERBOSE).Infof("Created new payment - manifestID=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v",
-			sess.ManifestID,
+			sess.Params.ManifestID,
 			batch.Recipient.Hex(),
 			eth.FormatUnits(batch.FaceValue, "ETH"),
 			batch.WinProbRat().FloatString(10),

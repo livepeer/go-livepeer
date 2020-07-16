@@ -258,8 +258,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 
 		session := &BroadcastSession{
 			Broadcaster:      core.NewBroadcaster(n),
-			ManifestID:       params.ManifestID,
-			Profiles:         params.Profiles,
+			Params:           params,
 			OrchestratorInfo: tinfo,
 			OrchestratorOS:   orchOS,
 			BroadcasterOS:    bcastOS,
@@ -448,6 +447,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}()
 
 		bos := sess.BroadcasterOS
+		profile := sess.Params.Profiles[i]
 
 		var data []byte
 		// Download segment data in the following cases:
@@ -469,12 +469,12 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}
 
 		if bos != nil && !drivers.IsOwnExternal(url) {
-			ext, err := common.ProfileFormatExtension(sess.Profiles[i].Format)
+			ext, err := common.ProfileFormatExtension(profile.Format)
 			if err != nil {
 				errFunc(monitor.SegmentTranscodeErrorSaveData, url, err)
 				return
 			}
-			name := fmt.Sprintf("%s/%d%s", sess.Profiles[i].Name, seg.SeqNo, ext)
+			name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
 			newURL, err := bos.SaveData(name, data)
 			if err != nil {
 				switch err.Error() {
@@ -499,7 +499,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		segLock.Unlock()
 
 		if monitor.Enabled {
-			monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, sess.Profiles[i].Name)
+			monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, profile.Name)
 		}
 	}
 
@@ -526,7 +526,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	for i, url := range segURLs {
-		err := cpl.InsertHLSSegment(&sess.Profiles[i], seg.SeqNo, url, seg.Duration)
+		err := cpl.InsertHLSSegment(&sess.Params.Profiles[i], seg.SeqNo, url, seg.Duration)
 		if err != nil {
 			// InsertHLSSegment only returns ErrSegmentAlreadyExists error
 			// Right now InsertHLSSegment call is atomic regarding transcoded segments - we either inserting
@@ -540,7 +540,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	if monitor.Enabled {
-		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Profiles), errCode)
+		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode)
 	}
 
 	glog.V(common.DEBUG).Infof("Successfully validated segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
@@ -564,9 +564,9 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 	// the the segments' OS location will be overwritten.
 	// Cache the segments so we can restore them in OS if necessary.
 	params := &verification.Params{
-		ManifestID:   sess.ManifestID,
+		ManifestID:   sess.Params.ManifestID,
 		Source:       source,
-		Profiles:     sess.Profiles,
+		Profiles:     sess.Params.Profiles,
 		Orchestrator: sess.OrchestratorInfo,
 		Results:      res,
 		URIs:         URIs,
@@ -599,7 +599,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 				// However, it returns /stream/<manifestID>/<rendition>/<seqNo>
 				// The incoming URI is likely to be in the longer format.
 				// Hence, trim the /stream/<manifestID> prefix if it exists.
-				pfx := fmt.Sprintf("/stream/%s/", sess.ManifestID)
+				pfx := fmt.Sprintf("/stream/%s/", sess.Params.ManifestID)
 				uri := strings.TrimPrefix(accepted.URIs[i], pfx)
 				_, err := sess.BroadcasterOS.SaveData(uri, data)
 				if err != nil {

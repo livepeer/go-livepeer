@@ -172,7 +172,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	}
 
 	// Sanity check a few easy fields
-	if sess[0].ManifestID != mid {
+	if sess[0].Params.ManifestID != mid {
 		t.Error("Expected manifest id")
 	}
 	if sess[0].BroadcasterOS != storage {
@@ -181,7 +181,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	if sess[0].OrchestratorInfo != sd.infos[0] || sd.infos[0] == sd.infos[1] {
 		t.Error("Unexpected orchestrator info")
 	}
-	if len(sess[0].Profiles) != 1 || sess[0].Profiles[0] != sp.Profiles[0] {
+	if len(sess[0].Params.Profiles) != 1 || sess[0].Params.Profiles[0] != sp.Profiles[0] {
 		t.Error("Unexpected profiles")
 	}
 	if sess[0].Sender != nil {

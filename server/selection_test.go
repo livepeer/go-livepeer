@@ -12,6 +12,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/stretchr/testify/assert"
 )
@@ -483,9 +484,9 @@ func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 
 	// Use ManifestID to identify each session
 	sessions := []*BroadcastSession{
-		&BroadcastSession{ManifestID: "foo"},
-		&BroadcastSession{ManifestID: "bar"},
-		&BroadcastSession{ManifestID: "baz"},
+		&BroadcastSession{Params: &core.StreamParameters{ManifestID: "foo"}},
+		&BroadcastSession{Params: &core.StreamParameters{ManifestID: "bar"}},
+		&BroadcastSession{Params: &core.StreamParameters{ManifestID: "baz"}},
 	}
 
 	resetUnknownSessions := func() {
@@ -498,22 +499,22 @@ func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 	resetUnknownSessions()
 	sel.removeUnknownSession(0)
 	assert.Len(sel.unknownSessions, 2)
-	assert.Equal("baz", string(sel.unknownSessions[0].ManifestID))
-	assert.Equal("bar", string(sel.unknownSessions[1].ManifestID))
+	assert.Equal("baz", string(sel.unknownSessions[0].Params.ManifestID))
+	assert.Equal("bar", string(sel.unknownSessions[1].Params.ManifestID))
 
 	// Test remove from middle of list
 	resetUnknownSessions()
 	sel.removeUnknownSession(1)
 	assert.Len(sel.unknownSessions, 2)
-	assert.Equal("foo", string(sel.unknownSessions[0].ManifestID))
-	assert.Equal("baz", string(sel.unknownSessions[1].ManifestID))
+	assert.Equal("foo", string(sel.unknownSessions[0].Params.ManifestID))
+	assert.Equal("baz", string(sel.unknownSessions[1].Params.ManifestID))
 
 	// Test remove from back of list
 	resetUnknownSessions()
 	sel.removeUnknownSession(2)
 	assert.Len(sel.unknownSessions, 2)
-	assert.Equal("foo", string(sel.unknownSessions[0].ManifestID))
-	assert.Equal("bar", string(sel.unknownSessions[1].ManifestID))
+	assert.Equal("foo", string(sel.unknownSessions[0].Params.ManifestID))
+	assert.Equal("bar", string(sel.unknownSessions[1].Params.ManifestID))
 
 	// Test remove when list length = 1
 	sel.unknownSessions = []*BroadcastSession{&BroadcastSession{}}

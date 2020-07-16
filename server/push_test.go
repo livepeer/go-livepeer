@@ -79,8 +79,8 @@ func TestPush_MultipartReturn(t *testing.T) {
 	})
 
 	sess := StubBroadcastSession(ts.URL)
-	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
-	sess.ManifestID = "mani"
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.Params.ManifestID = "mani"
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
 
 	url, _ := url.ParseRequestURI("test://some.host")
