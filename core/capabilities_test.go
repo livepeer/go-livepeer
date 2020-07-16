@@ -110,6 +110,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		{FramerateDen: 1},
 		{Profile: ffmpeg.ProfileH264Main},
 		{Profile: ffmpeg.ProfileH264High},
+		{GOP: 1},
 	}
 	storage := drivers.NewS3Driver("", "", "", "").NewSession("")
 	params := &StreamParameters{Profiles: profs, OS: storage}
@@ -121,6 +122,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		Capability_StorageS3,
 		Capability_ProfileH264Main,
 		Capability_ProfileH264High,
+		Capability_GOP,
 	}), "failed with everything enabled")
 
 	// check fractional framerates

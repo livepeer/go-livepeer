@@ -31,6 +31,7 @@ const (
 	Capability_ProfileH264Main
 	Capability_ProfileH264High
 	Capability_ProfileH264ConstrainedHigh
+	Capability_GOP
 )
 
 var capFormatConv = errors.New("capability: unknown format")
@@ -92,6 +93,11 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 			return nil, err
 		}
 		caps[c] = true
+
+		// gop
+		if v.GOP != 0 {
+			caps[Capability_GOP] = true
+		}
 	}
 
 	// capabilities based on broadacster or stream properties
@@ -190,6 +196,7 @@ var legacyCapabilities = []Capability{
 	Capability_ProfileH264Main,
 	Capability_ProfileH264High,
 	Capability_ProfileH264ConstrainedHigh,
+	Capability_GOP,
 }
 var legacyCapabilityString = NewCapabilityString(legacyCapabilities)
 

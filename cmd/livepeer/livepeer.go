@@ -80,6 +80,7 @@ var defaultCapabilities = []core.Capability{
 	core.Capability_ProfileH264Main,
 	core.Capability_ProfileH264High,
 	core.Capability_ProfileH264ConstrainedHigh,
+	core.Capability_GOP,
 }
 
 func main() {
