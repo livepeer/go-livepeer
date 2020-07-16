@@ -218,8 +218,10 @@ func TestRPCSeg(t *testing.T) {
 	o := newStubOrchestrator()
 	s := &BroadcastSession{
 		Broadcaster: b,
-		ManifestID:  mid,
-		Profiles:    []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		Params: &core.StreamParameters{
+			ManifestID: mid,
+			Profiles:   []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		},
 	}
 
 	baddr := ethcrypto.PubkeyToAddress(b.priv.PublicKey)
@@ -294,14 +296,14 @@ func TestRPCSeg(t *testing.T) {
 	corruptSegData(&net.SegData{Profiles: []byte("abc")}, common.ErrProfile)
 
 	// corrupt sig
-	sd := &net.SegData{ManifestId: []byte(s.ManifestID)}
+	sd := &net.SegData{ManifestId: []byte(s.Params.ManifestID)}
 	corruptSegData(sd, errSegSig) // missing sig
 	sd.Sig = []byte("abc")
 	corruptSegData(sd, errSegSig) // invalid sig
 
 	// at capacity
-	sd = &net.SegData{ManifestId: []byte(s.ManifestID)}
-	sd.Sig, _ = b.Sign((&core.SegTranscodingMetadata{ManifestID: s.ManifestID}).Flatten())
+	sd = &net.SegData{ManifestId: []byte(s.Params.ManifestID)}
+	sd.Sig, _ = b.Sign((&core.SegTranscodingMetadata{ManifestID: s.Params.ManifestID}).Flatten())
 	o.sessCapErr = fmt.Errorf("At capacity")
 	corruptSegData(sd, o.sessCapErr)
 	o.sessCapErr = nil
@@ -391,7 +393,7 @@ func TestEstimateFee(t *testing.T) {
 func TestNewBalanceUpdate(t *testing.T) {
 	mid := core.RandomManifestID()
 	s := &BroadcastSession{
-		ManifestID:  mid,
+		Params:      &core.StreamParameters{ManifestID: mid},
 		PMSessionID: "foo",
 	}
 
@@ -481,7 +483,7 @@ func TestGenPayment(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster:      b,
-		ManifestID:       mid,
+		Params:           &core.StreamParameters{ManifestID: mid},
 		OrchestratorInfo: oinfo,
 		PMSessionID:      "foo",
 	}
@@ -623,7 +625,7 @@ func TestValidatePrice(t *testing.T) {
 
 	s := &BroadcastSession{
 		Broadcaster:      b,
-		ManifestID:       mid,
+		Params:           &core.StreamParameters{ManifestID: mid},
 		OrchestratorInfo: oinfo,
 		PMSessionID:      "foo",
 	}
@@ -844,7 +846,7 @@ func TestGetOrchestrator_PriceInfoError(t *testing.T) {
 }
 
 func TestGenVerify_RoundTrip_Duration(t *testing.T) {
-	sess := &BroadcastSession{Broadcaster: stubBroadcaster2(), Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}}
+	sess := &BroadcastSession{Broadcaster: stubBroadcaster2(), Params: &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}}}
 	orch := &stubOrchestrator{offchain: true}
 
 	// check invariant : verifySegCreds(genSegCreds(dur)).Duration == dur

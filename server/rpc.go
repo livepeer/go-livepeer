@@ -90,8 +90,7 @@ type BalanceUpdate struct {
 // BroadcastSession - session-specific state for broadcasters
 type BroadcastSession struct {
 	Broadcaster      common.Broadcaster
-	ManifestID       core.ManifestID
-	Profiles         []ffmpeg.VideoProfile
+	Params           *core.StreamParameters
 	OrchestratorInfo *net.OrchestratorInfo
 	OrchestratorOS   drivers.OSSession
 	BroadcasterOS    drivers.OSSession

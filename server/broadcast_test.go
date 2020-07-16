@@ -31,7 +31,7 @@ import (
 func StubBroadcastSession(transcoder string) *BroadcastSession {
 	return &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
-		ManifestID:  core.RandomManifestID(),
+		Params:      &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		OrchestratorInfo: &net.OrchestratorInfo{
 			Transcoder: transcoder,
 			PriceInfo: &net.PriceInfo{
@@ -544,7 +544,7 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 	sess.Sender = sender
 	balance := &mockBalance{}
 	sess.Balance = balance
-	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	sess.OrchestratorInfo = &net.OrchestratorInfo{
 		Transcoder: ts.URL,
 	}
@@ -670,7 +670,7 @@ func TestTranscodeSegment_SuspendOrchestrator(t *testing.T) {
 	})
 
 	sess := StubBroadcastSession(ts.URL)
-	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
 	bsm.poolSize = 40
 	bsm.numOrchs = 8
@@ -712,7 +712,7 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	})
 
 	sess := StubBroadcastSession(ts.URL)
-	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
 	cxn := &rtmpConnection{
 		mid:         core.ManifestID("foo"),
@@ -840,7 +840,7 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	})
 
 	sess := StubBroadcastSession(ts.URL)
-	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
 	cxn := &rtmpConnection{
 		mid:         core.ManifestID("foo"),
@@ -964,12 +964,12 @@ func TestHLSInsertion(t *testing.T) {
 	})
 
 	sess := StubBroadcastSession(ts.URL)
-	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
-	sess.ManifestID = core.ManifestID("foo")
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.Params.ManifestID = core.ManifestID("foo")
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
 	pl := &stubPlaylistManager{manifestID: core.ManifestID("foo")}
 	cxn := &rtmpConnection{
-		mid:         sess.ManifestID,
+		mid:         sess.Params.ManifestID,
 		nonce:       7,
 		pl:          pl,
 		profile:     &ffmpeg.P240p30fps16x9,
@@ -981,12 +981,12 @@ func TestHLSInsertion(t *testing.T) {
 	assert.Nil(err)
 
 	// some sanity checks
-	assert.Greater(len(sess.Profiles), 0)
+	assert.Greater(len(sess.Params.Profiles), 0)
 	assert.NotEqual(pl.profile, *cxn.profile, "HLS profile matched")
 
 	// Check HLS insertion
 	assert.Equal(seg.SeqNo, pl.seq, "HLS insertion failed")
-	assert.Equal(pl.profile, sess.Profiles[0], "HLS profile mismatch")
+	assert.Equal(pl.profile, sess.Params.Profiles[0], "HLS profile mismatch")
 }
 
 func TestVerifier_Invocation(t *testing.T) {
@@ -1016,12 +1016,12 @@ func TestVerifier_Invocation(t *testing.T) {
 	})
 
 	sess := StubBroadcastSession(ts.URL)
-	sess.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
-	sess.ManifestID = core.ManifestID("foo")
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.Params.ManifestID = core.ManifestID("foo")
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
 	pl := &stubPlaylistManager{manifestID: core.ManifestID("foo")}
 	cxn := &rtmpConnection{
-		mid:         sess.ManifestID,
+		mid:         sess.Params.ManifestID,
 		nonce:       7,
 		pl:          pl,
 		profile:     &ffmpeg.P144p30fps16x9,
@@ -1059,7 +1059,7 @@ func TestVerifier_Verify(t *testing.T) {
 	assert := assert.New(t)
 
 	cxn := &rtmpConnection{}
-	sess := &BroadcastSession{}
+	sess := &BroadcastSession{Params: &core.StreamParameters{}}
 	source := &stream.HLSSegment{}
 	res := &net.TranscodeData{}
 	verifier := verification.NewSegmentVerifier(&verification.Policy{})
@@ -1068,7 +1068,7 @@ func TestVerifier_Verify(t *testing.T) {
 	err := verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Nil(err)
 
-	sess.ManifestID = core.ManifestID("streamName")
+	sess.Params.ManifestID = core.ManifestID("streamName")
 	URIs = append(URIs, "filename")
 	renditionData = [][]byte{[]byte("foo")}
 
@@ -1389,7 +1389,7 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	orchOS := &stubOSSession{}
 	sess := genBcastSess(t, "", bcastOS, "")
 	sess.OrchestratorOS = orchOS
-	sess.Profiles = append([]ffmpeg.VideoProfile{}, sess.Profiles...)
+	sess.Params.Profiles = append([]ffmpeg.VideoProfile{}, sess.Params.Profiles...)
 	sourceProfile := ffmpeg.P240p30fps16x9 // make copy bc we mutate the preset
 	cxn := &rtmpConnection{
 		pl:          &stubPlaylistManager{os: bcastOS},
@@ -1407,7 +1407,7 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 
 	assert.Nil(err)
 	assert.Equal(ffmpeg.FormatNone, cxn.profile.Format)
-	for _, p := range sess.Profiles {
+	for _, p := range sess.Params.Profiles {
 		assert.Equal(ffmpeg.FormatNone, p.Format)
 	}
 	assert.Equal([]string{"P240p30fps16x9/0.ts"}, orchOS.saved)
@@ -1421,15 +1421,15 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	sess.OrchestratorOS = orchOS
 	cxn.pl = &stubPlaylistManager{os: bcastOS}
 	cxn.profile.Format = ffmpeg.FormatMP4
-	for i, _ := range sess.Profiles {
-		sess.Profiles[i].Format = ffmpeg.FormatMP4
+	for i, _ := range sess.Params.Profiles {
+		sess.Params.Profiles[i].Format = ffmpeg.FormatMP4
 	}
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
 
 	_, err = processSegment(cxn, seg)
 
 	assert.Nil(err)
-	for _, p := range sess.Profiles {
+	for _, p := range sess.Params.Profiles {
 		assert.Equal(ffmpeg.FormatMP4, p.Format)
 	}
 	assert.Equal(ffmpeg.FormatMP4, cxn.profile.Format)
@@ -1444,15 +1444,15 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	sess.OrchestratorOS = orchOS
 	cxn.pl = &stubPlaylistManager{os: bcastOS}
 	cxn.profile.Format = ffmpeg.FormatMPEGTS
-	for i, _ := range sess.Profiles {
-		sess.Profiles[i].Format = ffmpeg.FormatMPEGTS
+	for i, _ := range sess.Params.Profiles {
+		sess.Params.Profiles[i].Format = ffmpeg.FormatMPEGTS
 	}
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
 
 	_, err = processSegment(cxn, seg)
 
 	assert.Nil(err)
-	for _, p := range sess.Profiles {
+	for _, p := range sess.Params.Profiles {
 		assert.Equal(ffmpeg.FormatMPEGTS, p.Format)
 	}
 	assert.Equal(ffmpeg.FormatMPEGTS, cxn.profile.Format)
@@ -1505,8 +1505,7 @@ func genBcastSess(t *testing.T, url string, os drivers.OSSession, mid core.Manif
 	}()
 	return &BroadcastSession{
 		Broadcaster:      stubBroadcaster2(),
-		ManifestID:       mid,
-		Profiles:         []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9},
+		Params:           &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}},
 		BroadcasterOS:    os,
 		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL},
 	}
