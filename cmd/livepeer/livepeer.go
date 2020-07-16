@@ -83,6 +83,10 @@ var defaultCapabilities = []core.Capability{
 	core.Capability_GOP,
 }
 
+// Add to this list as certain features become mandatory. Orchestrator only
+// Use sparingly, as adding to this is a hard break with older nodes
+var mandatoryCapabilities = []core.Capability{}
+
 func main() {
 	// Override the default flag set since there are dependencies that
 	// incorrectly add their own flags (specifically, due to the 'testing'
@@ -821,7 +825,7 @@ func main() {
 		// take the port to listen to from the service URI
 		*httpAddr = defaultAddr(*httpAddr, "", n.GetServiceURI().Port())
 
-		n.Capabilities = core.NewCapabilities(defaultCapabilities)
+		n.Capabilities = core.NewCapabilities(defaultCapabilities, mandatoryCapabilities)
 
 		if !*transcoder && n.OrchSecret == "" {
 			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")

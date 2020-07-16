@@ -13,6 +13,7 @@ type CapabilityString []uint64
 type Constraints struct{}
 type Capabilities struct {
 	bitstring   CapabilityString
+	mandatories CapabilityString
 	constraints Constraints
 }
 
@@ -71,6 +72,8 @@ func (c1 CapabilityString) CompatibleWith(c2 CapabilityString) bool {
 
 func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 	caps := make(map[Capability]bool)
+
+	// Define any default capabilities (especially ones that may be mandatory)
 	caps[Capability_H264] = true
 
 	// capabilities based on requested output
@@ -127,15 +130,37 @@ func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 		// cf. common.CapabilityComparator
 		return false
 	}
+
+	// For now, check this:
+	// ( orch.mandatories  AND bcast.bitstring ) == orch.mandatories &&
+	// ( bcast.bitstring   AND orch.bitstring  ) == bcast.bitstring
+
+	// TODO Can simplify later on to:
+	// ( bcast.bitstring AND orch.bitstring ) == ( bcast.bistring OR orch.mandatories )
+
+	if !CapabilityString(orch.Mandatories).CompatibleWith(bcast.bitstring) {
+		return false
+	}
+
 	return bcast.bitstring.CompatibleWith(orch.Bitstring)
 }
 
 func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
-	return &net.Capabilities{Bitstring: c.bitstring}
+	if c == nil {
+		return nil
+	}
+	return &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories}
 }
 
-func NewCapabilities(caps []Capability) *Capabilities {
-	return &Capabilities{bitstring: NewCapabilityString(caps)}
+func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
+	c := &Capabilities{}
+	if caps != nil && len(caps) > 0 {
+		c.bitstring = NewCapabilityString(caps)
+	}
+	if m != nil && len(m) > 0 {
+		c.mandatories = NewCapabilityString(m)
+	}
+	return c
 }
 
 func formatToCapability(format ffmpeg.Format) (Capability, error) {

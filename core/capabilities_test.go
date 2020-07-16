@@ -151,6 +151,58 @@ func TestCapability_JobCapabilities(t *testing.T) {
 	assert.Equal(capStorageConv, err)
 }
 
+func TestCapability_CompatibleWithNetCap(t *testing.T) {
+	assert := assert.New(t)
+
+	// sanity checks
+	bcast := NewCapabilities(nil, nil)
+	orch := NewCapabilities(nil, nil)
+	assert.Nil(bcast.bitstring)
+	assert.Nil(orch.bitstring)
+	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
+	assert.True(orch.CompatibleWith(bcast.ToNetCapabilities()))
+
+	// orchestrator is not compatible with broadcaster - empty cap set
+	bcast = NewCapabilities([]Capability{1}, nil)
+	assert.Empty(orch.bitstring)
+	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
+	assert.True(orch.CompatibleWith(bcast.ToNetCapabilities())) // sanity check; not commutative
+
+	// orchestrator is not compatible with broadcaster - different cap set
+	orch = NewCapabilities([]Capability{2}, nil)
+	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// B / O are equivalent
+	orch = NewCapabilities([]Capability{1}, nil)
+	assert.Equal(bcast.bitstring, orch.bitstring)
+	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
+	assert.True(orch.CompatibleWith(bcast.ToNetCapabilities()))
+
+	// O supports a superset of B's capabilities
+	orch = NewCapabilities([]Capability{1, 2}, nil)
+	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// check a mandatory capability - no match
+	mandatory := []Capability{3}
+	orch = NewCapabilities([]Capability{1, 2, 3}, mandatory)
+	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
+	assert.False(orch.CompatibleWith(bcast.ToNetCapabilities()))
+
+	// check a mandatory capability - match only the single mandatory capability
+	assert.Equal(NewCapabilityString(mandatory), orch.mandatories)
+	bcast = NewCapabilities(mandatory, nil)
+	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// check a mandatory capability - match with B's multiple capabilities
+	bcast = NewCapabilities([]Capability{1, 3}, nil)
+	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// broadcaster "mandatory" capabilities have no effect during regular match
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, []Capability{1})
+	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
+}
+
 func TestCapability_FormatToCapability(t *testing.T) {
 	assert := assert.New(t)
 	// Ensure all ffmpeg-enumerated formats are represented during conversion
