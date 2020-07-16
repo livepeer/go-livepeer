@@ -1,6 +1,7 @@
 package core
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/livepeer/go-livepeer/drivers"
@@ -107,6 +108,8 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		{Format: ffmpeg.FormatMPEGTS},
 		{Format: ffmpeg.FormatMP4},
 		{FramerateDen: 1},
+		{Profile: ffmpeg.ProfileH264Main},
+		{Profile: ffmpeg.ProfileH264High},
 	}
 	storage := drivers.NewS3Driver("", "", "", "").NewSession("")
 	params := &StreamParameters{Profiles: profs, OS: storage}
@@ -116,6 +119,8 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		Capability_MPEGTS,
 		Capability_FractionalFramerates,
 		Capability_StorageS3,
+		Capability_ProfileH264Main,
+		Capability_ProfileH264High,
 	}), "failed with everything enabled")
 
 	// check fractional framerates
@@ -131,6 +136,11 @@ func TestCapability_JobCapabilities(t *testing.T) {
 	params.Profiles = []ffmpeg.VideoProfile{{Format: -1}}
 	_, err := JobCapabilities(params)
 	assert.Equal(capFormatConv, err)
+
+	// check error case with profiles
+	params.Profiles = []ffmpeg.VideoProfile{{Profile: -1}}
+	_, err = JobCapabilities(params)
+	assert.Equal(capProfileConv, err)
 
 	// check error case with storage
 	params.Profiles = nil
@@ -190,6 +200,29 @@ func TestCapability_StorageToCapability(t *testing.T) {
 	c, err = storageToCapability(nil)
 	assert.Equal(Capability_Unused, c)
 	assert.Nil(err)
+}
+
+func TestCapability_ProfileToCapability(t *testing.T) {
+	assert := assert.New(t)
+	caps := []Capability{Capability_Unused, Capability_ProfileH264Baseline, Capability_ProfileH264Main, Capability_ProfileH264High, Capability_ProfileH264ConstrainedHigh}
+
+	// iterate through lpms-defined profiles to ensure all are accounted for
+	// need to put into a slice and sort to ensure consistent ordering
+	profs := []int{}
+	for k, _ := range ffmpeg.ProfileParameters {
+		profs = append(profs, int(k))
+	}
+	sort.Ints(profs)
+	for i := range profs {
+		c, err := profileToCapability(ffmpeg.Profile(profs[i]))
+		assert.Nil(err)
+		assert.Equal(caps[i], c)
+	}
+
+	// check invalid profile handling
+	c, err := profileToCapability(-1)
+	assert.Equal(Capability_Invalid, c)
+	assert.Equal(capProfileConv, err)
 }
 
 func TestCapabilities_LegacyCheck(t *testing.T) {

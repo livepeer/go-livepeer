@@ -27,10 +27,15 @@ const (
 	Capability_StorageDirect
 	Capability_StorageS3
 	Capability_StorageGCS
+	Capability_ProfileH264Baseline
+	Capability_ProfileH264Main
+	Capability_ProfileH264High
+	Capability_ProfileH264ConstrainedHigh
 )
 
 var capFormatConv = errors.New("capability: unknown format")
 var capStorageConv = errors.New("capability: unknown storage")
+var capProfileConv = errors.New("capability: unknown profile")
 
 func NewCapabilityString(caps []Capability) CapabilityString {
 	capStr := []uint64{}
@@ -80,6 +85,13 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 		if v.FramerateDen > 0 {
 			caps[Capability_FractionalFramerates] = true
 		}
+
+		// set profiles
+		c, err = profileToCapability(v.Profile)
+		if err != nil {
+			return nil, err
+		}
+		caps[c] = true
 	}
 
 	// capabilities based on broadacster or stream properties
@@ -147,6 +159,22 @@ func storageToCapability(os drivers.OSSession) (Capability, error) {
 	return Capability_Invalid, capStorageConv
 }
 
+func profileToCapability(profile ffmpeg.Profile) (Capability, error) {
+	switch profile {
+	case ffmpeg.ProfileNone:
+		return Capability_Unused, nil
+	case ffmpeg.ProfileH264Baseline:
+		return Capability_ProfileH264Baseline, nil
+	case ffmpeg.ProfileH264Main:
+		return Capability_ProfileH264Main, nil
+	case ffmpeg.ProfileH264High:
+		return Capability_ProfileH264High, nil
+	case ffmpeg.ProfileH264ConstrainedHigh:
+		return Capability_ProfileH264ConstrainedHigh, nil
+	}
+	return Capability_Invalid, capProfileConv
+}
+
 // Fixed forever - don't change this list unless removing interoperability
 // with nodes that don't support capability discovery
 // (in which case, just remove everything)
@@ -158,6 +186,10 @@ var legacyCapabilities = []Capability{
 	Capability_StorageDirect,
 	Capability_StorageS3,
 	Capability_StorageGCS,
+	Capability_ProfileH264Baseline,
+	Capability_ProfileH264Main,
+	Capability_ProfileH264High,
+	Capability_ProfileH264ConstrainedHigh,
 }
 var legacyCapabilityString = NewCapabilityString(legacyCapabilities)
 

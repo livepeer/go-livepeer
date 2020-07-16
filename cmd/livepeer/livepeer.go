@@ -76,6 +76,10 @@ var defaultCapabilities = []core.Capability{
 	core.Capability_StorageDirect,
 	core.Capability_StorageS3,
 	core.Capability_StorageGCS,
+	core.Capability_ProfileH264Baseline,
+	core.Capability_ProfileH264Main,
+	core.Capability_ProfileH264High,
+	core.Capability_ProfileH264ConstrainedHigh,
 }
 
 func main() {
