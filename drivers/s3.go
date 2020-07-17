@@ -49,6 +49,7 @@ type s3Session struct {
 	xAmzDate    string
 	storageType net.OSInfo_StorageType
 	fields      map[string]string
+	metaPrefix  string
 }
 
 // S3BUCKET s3 bucket owned by this node
@@ -72,6 +73,7 @@ func newS3Session(info *net.S3OSInfo) OSSession {
 		xAmzDate:    info.XAmzDate,
 		credential:  info.Credential,
 		storageType: net.OSInfo_S3,
+		metaPrefix:  "x-amz-meta-",
 	}
 	sess.fields = s3GetFields(sess)
 	return sess
@@ -120,6 +122,7 @@ func (os *s3OS) NewSession(path string) OSSession {
 		credential:  credential,
 		xAmzDate:    xAmzDate,
 		storageType: net.OSInfo_S3,
+		metaPrefix:  "x-amz-meta-",
 	}
 	sess.fields = s3GetFields(sess)
 	return sess
@@ -141,11 +144,11 @@ func (os *s3Session) IsExternal() bool {
 func (os *s3Session) EndSession() {
 }
 
-func (os *s3Session) SaveData(name string, data []byte) (string, error) {
+func (os *s3Session) SaveData(name string, data []byte, meta map[string]string) (string, error) {
 	// tentativeUrl just used for logging
 	tentativeURL := path.Join(os.host, os.key, name)
 	glog.V(common.VERBOSE).Infof("Saving to S3 %s", tentativeURL)
-	path, err := os.postData(name, data)
+	path, err := os.postData(name, data, meta)
 	if err != nil {
 		// handle error
 		glog.Errorf("Save S3 error: %v", err)
@@ -178,7 +181,7 @@ func (os *s3Session) GetInfo() *net.OSInfo {
 }
 
 // if s3 storage is not our own, we are saving data into it using POST request
-func (os *s3Session) postData(fileName string, buffer []byte) (string, error) {
+func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]string) (string, error) {
 	fileBytes := bytes.NewReader(buffer)
 	fileType := http.DetectContentType(buffer)
 	path, fileName := path.Split(path.Join(os.key, fileName))
@@ -190,6 +193,9 @@ func (os *s3Session) postData(fileName string, buffer []byte) (string, error) {
 	}
 	for k, v := range os.fields {
 		fields[k] = v
+	}
+	for k, v := range meta {
+		fields[os.metaPrefix+k] = v
 	}
 	req, err := newfileUploadRequest(os.host, fields, fileBytes, fileName)
 	if err != nil {

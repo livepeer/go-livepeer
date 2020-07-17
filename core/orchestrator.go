@@ -505,7 +505,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 		// Need to store segment in our local OS
 		var err error
 		name := fmt.Sprintf("%d.tempfile", seg.SeqNo)
-		url, err = config.LocalOS.SaveData(name, seg.Data)
+		url, err = config.LocalOS.SaveData(name, seg.Data, nil)
 		if err != nil {
 			return terr(err)
 		}

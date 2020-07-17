@@ -27,7 +27,7 @@ type OSDriver interface {
 }
 
 type OSSession interface {
-	SaveData(name string, data []byte) (string, error)
+	SaveData(name string, data []byte, meta map[string]string) (string, error)
 	EndSession()
 
 	// Info in order to have this session used via RPC

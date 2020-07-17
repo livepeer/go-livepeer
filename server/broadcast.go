@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/big"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -298,15 +299,16 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	}
 	name := fmt.Sprintf("%s/%d%s", vProfile.Name, seg.SeqNo, ext)
 	ros := cpl.GetRecordOSSession()
+	segDurMs := strconv.Itoa(int(seg.Duration * 1000))
 	if ros != nil {
 		go func() {
-			_, err := ros.SaveData(name, seg.Data)
+			_, err := ros.SaveData(name, seg.Data, map[string]string{"duration": segDurMs})
 			if err != nil {
 				glog.Errorf("Error recording: %s", err)
 			}
 		}()
 	}
-	uri, err := cpl.GetOSSession().SaveData(name, seg.Data)
+	uri, err := cpl.GetOSSession().SaveData(name, seg.Data, nil)
 	if err != nil {
 		glog.Errorf("Error saving segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
 		if monitor.Enabled {
@@ -381,7 +383,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	// storage the orchestrator prefers
 	if ios := sess.OrchestratorOS; ios != nil {
 		// XXX handle case when orch expects direct upload
-		uri, err := ios.SaveData(name, seg.Data)
+		uri, err := ios.SaveData(name, seg.Data, nil)
 		if err != nil {
 			glog.Errorf("Error saving segment to OS nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
 			if monitor.Enabled {
@@ -482,7 +484,8 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			go func() {
 				ext, _ := common.ProfileFormatExtension(profile.Format)
 				name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
-				_, err = bros.SaveData(name, data)
+				segDurMs := strconv.Itoa(int(seg.Duration * 1000))
+				_, err = bros.SaveData(name, data, map[string]string{"duration": segDurMs})
 				if err != nil {
 					glog.Errorf("Error saving %s to record store: %s", name, err)
 				}
@@ -497,7 +500,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				return
 			}
 			name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
-			newURL, err := bos.SaveData(name, data)
+			newURL, err := bos.SaveData(name, data, nil)
 			if err != nil {
 				switch err.Error() {
 				case "Session ended":
@@ -623,7 +626,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 				// Hence, trim the /stream/<manifestID> prefix if it exists.
 				pfx := fmt.Sprintf("/stream/%s/", sess.Params.ManifestID)
 				uri := strings.TrimPrefix(accepted.URIs[i], pfx)
-				_, err := sess.BroadcasterOS.SaveData(uri, data)
+				_, err := sess.BroadcasterOS.SaveData(uri, data, nil)
 				if err != nil {
 					return err
 				}
