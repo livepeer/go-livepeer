@@ -134,13 +134,13 @@ func gsGetFields(sess *s3Session) map[string]string {
 func gsCreatePolicy(signer *gsSigner, bucket, region, path string) (string, string) {
 	const timeFormat = "2006-01-02T15:04:05.999Z"
 	const shortTimeFormat = "20060102"
+	//   ["starts-with", "$x-goog-meta-duration", ""],
 
 	expireAt := time.Now().Add(S3_POLICY_EXPIRE_IN_HOURS * time.Hour)
 	expireFmt := expireAt.UTC().Format(timeFormat)
 	src := fmt.Sprintf(`{ "expiration": "%s",
     "conditions": [
 	  {"bucket": "%s"},
-	  ["starts-with", "$x-goog-meta-duration", ""],
       {"acl": "public-read"},
       ["starts-with", "$Content-Type", ""],
       ["starts-with", "$key", "%s"]
