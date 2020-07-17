@@ -53,6 +53,8 @@ const (
 // Enabled true if metrics was enabled in command line
 var Enabled bool
 
+var NodeID string
+
 var timeToWaitForError = 8500 * time.Millisecond
 var timeoutWatcherPause = 15 * time.Second
 
@@ -154,6 +156,7 @@ var census censusMetricsCounter
 var unitTestMode bool
 
 func InitCensus(nodeType, nodeID, version string) {
+	NodeID = nodeID
 	census = censusMetricsCounter{
 		emergeTimes: make(map[uint64]map[uint64]time.Time),
 		nodeID:      nodeID,
