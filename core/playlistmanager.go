@@ -172,9 +172,6 @@ func (mgr *BasicPlaylistManager) InsertHLSSegment(profile *ffmpeg.VideoProfile, 
 	if mpl.Count() == 0 {
 		mpl.SeqNo = mseg.SeqId
 	}
-	if mgr.jsonList != nil {
-		mgr.jsonList.InsertHLSSegment(profile, seqNo, uri, duration)
-	}
 
 	return mpl.InsertSegment(seqNo, mseg)
 }
