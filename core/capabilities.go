@@ -152,6 +152,16 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	return &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories}
 }
 
+func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
+	if caps == nil {
+		return nil
+	}
+	return &Capabilities{
+		bitstring:   caps.Bitstring,
+		mandatories: caps.Mandatories,
+	}
+}
+
 func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
 	c := &Capabilities{}
 	if caps != nil && len(caps) > 0 {

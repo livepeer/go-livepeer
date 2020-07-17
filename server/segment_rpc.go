@@ -41,6 +41,7 @@ var errSegSig = errors.New("ErrSegSig")
 var errFormat = errors.New("unrecognized profile output format")
 var errProfile = errors.New("unrecognized encoder profile")
 var errDuration = errors.New("invalid duration")
+var errCapCompat = errors.New("incompatible capabilities")
 
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
 var httpClient = &http.Client{
@@ -287,6 +288,11 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 		return nil, errSegSig
 	}
 
+	if !md.Caps.CompatibleWith(orch.Capabilities()) {
+		glog.Error("Capability check failed")
+		return nil, errCapCompat
+	}
+
 	if err := orch.CheckCapacity(md.ManifestID); err != nil {
 		glog.Error("Cannot process manifest: ", err)
 		return nil, err
@@ -512,6 +518,7 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		Profiles:   params.Profiles,
 		OS:         storage,
 		Duration:   time.Duration(seg.Duration * float64(time.Second)),
+		Caps:       params.Capabilities,
 	}
 	sig, err := sess.Broadcaster.Sign(md.Flatten())
 	if err != nil {

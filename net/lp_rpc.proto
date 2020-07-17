@@ -143,6 +143,9 @@ message SegData {
   // Duration of the segment to be transcoded, in milliseconds
   int32 duration = 6;
 
+  // Capabilities used by this segment.
+  Capabilities capabilities = 7;
+
   // Broadcaster's preferred storage medium(s)
   // XXX should we include this in a sig somewhere until certs are authenticated?
   repeated OSInfo storage = 32;

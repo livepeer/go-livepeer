@@ -342,6 +342,13 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		dur = 2 * time.Second // assume 2sec default duration
 	}
 
+	caps := core.CapabilitiesFromNetCapabilities(segData.Capabilities)
+	if caps == nil {
+		// For older broadcasters. Note if there are any orchestrator
+		// mandatory capabilities, seg creds verification will fail.
+		caps = core.NewCapabilities(nil, nil)
+	}
+
 	return &core.SegTranscodingMetadata{
 		ManifestID: core.ManifestID(segData.ManifestId),
 		Seq:        segData.Seq,
@@ -349,5 +356,6 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		Profiles:   profiles,
 		OS:         os,
 		Duration:   dur,
+		Caps:       caps,
 	}, nil
 }

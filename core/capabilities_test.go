@@ -203,6 +203,35 @@ func TestCapability_CompatibleWithNetCap(t *testing.T) {
 	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
 }
 
+func TestCapability_RoundTrip_Net(t *testing.T) {
+	// check invariant:
+	// cap == CapabilitiesFromNetCapabilities(cap.ToNetCapabilies())
+	// and vice versa:
+	// net == CapabilitiesFromNetCapabilities(net).ToNetCapabilities()
+
+	rapid.Check(t, func(t *rapid.T) {
+		assert := assert.New(t) // in order to pick up the rapid rng
+
+		makeCapList := func() []Capability {
+			randCapsLen := rapid.IntsRange(0, 256).Draw(t, "capLen").(int)
+			randCaps := rapid.IntsRange(0, 512)
+			capList := []Capability{}
+			for i := 0; i < randCapsLen; i++ {
+				capList = append(capList, Capability(randCaps.Draw(t, "cap").(int)))
+			}
+			return capList
+		}
+
+		// cap == CapabilitiesFromNetCapabilities(cap.ToNetCapabilies())
+		caps := NewCapabilities(makeCapList(), makeCapList())
+		assert.Equal(caps, CapabilitiesFromNetCapabilities(caps.ToNetCapabilities()))
+
+		// net == CapabilitiesFromNetCapabilities(net).ToNetCapabilities()
+		netCaps := NewCapabilities(makeCapList(), makeCapList()).ToNetCapabilities()
+		assert.Equal(netCaps, CapabilitiesFromNetCapabilities(netCaps).ToNetCapabilities())
+	})
+}
+
 func TestCapability_FormatToCapability(t *testing.T) {
 	assert := assert.New(t)
 	// Ensure all ffmpeg-enumerated formats are represented during conversion

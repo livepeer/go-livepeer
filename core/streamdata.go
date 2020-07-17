@@ -44,6 +44,7 @@ type SegTranscodingMetadata struct {
 	Profiles   []ffmpeg.VideoProfile
 	OS         *net.OSInfo
 	Duration   time.Duration
+	Caps       *Capabilities
 }
 
 func (md *SegTranscodingMetadata) Flatten() []byte {
@@ -71,11 +72,12 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 
 	// Generate serialized segment info
 	segData := &net.SegData{
-		ManifestId: []byte(md.ManifestID),
-		Seq:        md.Seq,
-		Hash:       md.Hash.Bytes(),
-		Storage:    storage,
-		Duration:   int32(md.Duration / time.Millisecond),
+		ManifestId:   []byte(md.ManifestID),
+		Seq:          md.Seq,
+		Hash:         md.Hash.Bytes(),
+		Storage:      storage,
+		Duration:     int32(md.Duration / time.Millisecond),
+		Capabilities: md.Caps.ToNetCapabilities(),
 		// Triggers failure on Os that don't know how to use FullProfiles/2/3
 		Profiles: []byte("invalid"),
 	}
