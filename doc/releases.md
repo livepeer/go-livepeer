@@ -6,30 +6,48 @@ We presently use three branches for go-livepeer releases.
 
 #### master
 
-Built in CI with go build `-tags dev`, releasing binaries that may only connect to private networks. Published to Docker Hub as `livepeer/go-livepeer:master`.
+This branch is compatible with contracts on Rinkeby and mainnet. Code committed to this branch MUST NOT break contract compatibility on Rinkeby or mainnet.
+
+Releases are cut from this branch. All releases should have a tag of the form `vMAJOR.MINOR.PATCH`.
+
+Built in CI with `-tags mainnet` so resulting binaries can connect to private networks, Rinkeby and mainnet. Published to Docker Hub as `livepeer/go-livepeer:master` and e.g. `livepeer/go-livepeer:0.5.3`.
 
 #### rinkeby
 
-Cut off of master periodically when we're comfortable that it's reasonably stable. Built in CI with `-tags rinkeby`, so it can connect to the Rinkeby test network. Published to Docker Hub as `livepeer/go-livepeer:rinkeby`.
+This branch is compatible with contracts on Rinkeby, but may be incompatible with contracts on mainnet. Code committed to this branch MUST NOT break contract compatibility on Rinkeby, but may break contract compatibility on mainnet. This branch can be merged into `master` when it is compatible with contracts on mainnet.
 
-#### mainnet
+Built in CI with `-tags rinkeby` so resulting binaries can connect to private networks or Rinkeby. Published to Docker Hub as `livepeer/go-livepeer:rinkeby`.
 
-Cut off of `rinkeby` when we want to do a proper mainnet release. Built in CI with `-tags mainnet`, giving it the ability to connect to the Ethereum mainnet.
+#### dev 
 
-This is the only branch that receives proper semver updates; all releases should have a tag of the form `vMAJOR.MINOR.PATCH`. Published to Docker Hub as `livepeer/go-livepeer:mainnet` and e.g. `livepeer/go-livepeer:0.5.3`.
+This branch may be incompatible with contracts on Rinkeby and mainnet. Code committed to this branch can break contract compatibility with Rinkeby or mainnet. This branch can be merged into `rinkeby` when it becomes compatible with contracts on Rinkeby.
+
+Built in CI with `-tags dev` so resulting binaries can only connect to private networks. Published to DockerHub as `livepeer/go-livepeer:dev`.
+
+### Contract Compatible Changes
+
+If changes are compatible with contracts on Rinkeby and mainnet then they can be committed directly to the `master` branch.
+
+### Contract Incompatible Changes
+
+Suppose certain changes depend on a new contract that has not been deployed on Rinkeby or mainnet yet or a contract upgrade that has not been executed on Rinkeby or mainnet yet. The steps to land these changes on the `master` branch would be:
+
+1. Deploy the contract(s) on a private network
+2. Test the changes on the private network
+3. Merge the PR(s) into `dev`
+4. Deploy/upgrade the contract(s) on Rinkeby
+5. Merge `dev` into `rinkeby` via PR
+6. Test the changes on Rinkeby
+7. Deploy/upgrade the contract(s) on mainnet
+8. Merge `rinkeby` into `master` via PR
+
+Note that step 3 and on do not need to be executed after every single PR merge in `dev`. Multiple PRs can be merged to `dev` before executing step 3 and on. 
 
 ### Release flow
 
-Once all planned code updates are merged into `master`, we create release candidate binaries that can connect to Rinkeby:
+Once all planned code updates are merged into `master`, we use the release candidate binaries built by CI for internal testing on mainnet. During this stage, we
 
-```bash
-git checkout rinkeby
-git merge --ff-only master 
-```
-
-We use the release candidate binaries for internal testing on Rinkeby. During this stage, we
-
-1. Roll out the binaries to internal Rinkeby infrastructure
+1. Roll out the binaries to internal mainnet infrastructure
 2. Check that user facing bugs described in closed bug reports cannot be reproduced
 3. Check that user facing features are working as expected
 4. Run stream tests that involve sending/monitoring streams sent into broadcasters that are then routed to one or many orchestrators
@@ -44,7 +62,7 @@ Once we complete this stage, we prepare a mainnet release.
 
 ### Cutting a mainnet release of go-livepeer
 
-This process will vary somewhat based on the particular states of the branches, whether we're doing a hotfix, etc. But the overall steps are the same. First, make the release commit on a branch:
+First, make the release commit on a branch:
 
 ```bash
 git checkout -b release-0.5.2 
@@ -53,21 +71,10 @@ git commit -am 'release v0.5.2'
 git push -u origin release-0.5.2
 ```
 
-Merge the release commit into master via PR. Then, merge the version bump into rinkeby:
+Merge the release commit into `master` via PR. Then, push the release tag up.
 
 ```bash
-git checkout rinkeby
-git merge --ff-only master 
-git push origin rinkeby
-```
-
-Wait just a moment for the Rinkeby build to start so that it doesn't build with the mainnet release tag. Then, merge the version bump into mainnet and create the release tag:
-
-```bash
-git checkout mainnet
-git merge --ff-only rinkeby
+git checkout master
 git tag v0.5.2
-git push --atomic origin mainnet v0.5.2
+git push origin v0.5.2
 ```
-
-If there's different commits on those branches then we'd omit the --ff-only flag, but the cleanest possible scenario after a mainnet release is that all three branches are pointed at the same ref.
