@@ -19,7 +19,7 @@ if [[ $(uname) == *"MSYS"* ]]; then
 fi
 
 # If we want to build with branch --> network support for any other networks, add them here!
-NETWORK_BRANCHES="rinkeby mainnet"
+NETWORK_BRANCHES="dev rinkeby"
 
 branch=""
 if [[ "${CIRCLE_BRANCH:-}" != "" ]]; then
@@ -28,14 +28,17 @@ elif [[ "${TRAVIS_BRANCH:-}" != "" ]]; then
   branch="$TRAVIS_BRANCH"
 fi
 
-export HIGHEST_CHAIN_TAG=dev
+# By default we build with mainnet support
+# If we are on the dev branch then we do not build with Rinkeby or mainnet support
+# If we are on the rinkeby branch then we build with Rinkeby support, but not mainnet support
+export HIGHEST_CHAIN_TAG=mainnet
 for networkBranch in $NETWORK_BRANCHES; do
   if [[ $branch == "$networkBranch" ]]; then
     export HIGHEST_CHAIN_TAG=$networkBranch
   fi
 done
 
-# Allow non-tagged mainnet builds, but tagged releases should be on the mainnet branch
+# Allow non-tagged mainnet builds, but tagged releases should have mainnet support
 generatedVersion=$(./print_version.sh)
 definedVersion=$(cat VERSION)
 if [[ $HIGHEST_CHAIN_TAG != "mainnet" ]]; then
