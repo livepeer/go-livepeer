@@ -139,7 +139,8 @@ func gsCreatePolicy(signer *gsSigner, bucket, region, path string) (string, stri
 	expireFmt := expireAt.UTC().Format(timeFormat)
 	src := fmt.Sprintf(`{ "expiration": "%s",
     "conditions": [
-      {"bucket": "%s"},
+	  {"bucket": "%s"},
+	  ["starts-with", "$x-goog-meta-duration", ""],
       {"acl": "public-read"},
       ["starts-with", "$Content-Type", ""],
       ["starts-with", "$key", "%s"]
