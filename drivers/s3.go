@@ -194,9 +194,9 @@ func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]st
 	for k, v := range os.fields {
 		fields[k] = v
 	}
-	for k, v := range meta {
-		fields[os.metaPrefix+k] = v
-	}
+	// for k, v := range meta {
+	// 	fields[os.metaPrefix+k] = v
+	// }
 	req, err := newfileUploadRequest(os.host, fields, fileBytes, fileName)
 	if err != nil {
 		glog.Error(err)
