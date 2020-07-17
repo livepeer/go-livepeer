@@ -21,6 +21,8 @@ type PlaylistManager interface {
 	// Inserts in media playlist given a link to a segment
 	InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo uint64, uri string, duration float64) error
 
+	InsertHLSSegmentJSON(profile *ffmpeg.VideoProfile, seqNo uint64, uri string, duration float64)
+
 	GetHLSMasterPlaylist() *m3u8.MasterPlaylist
 
 	GetHLSMediaPlaylist(rendition string) *m3u8.MediaPlaylist
@@ -146,6 +148,14 @@ func (mgr *BasicPlaylistManager) getOrCreatePL(profile *ffmpeg.VideoProfile) (*m
 	url := fmt.Sprintf("%v/%v.m3u8", mgr.manifestID, profile.Name)
 	mgr.masterPList.Append(url, mpl, vParams)
 	return mpl, nil
+}
+
+func (mgr *BasicPlaylistManager) InsertHLSSegmentJSON(profile *ffmpeg.VideoProfile, seqNo uint64, uri string,
+	duration float64) {
+
+	if mgr.jsonList != nil {
+		mgr.jsonList.InsertHLSSegment(profile, seqNo, uri, duration)
+	}
 }
 
 func (mgr *BasicPlaylistManager) InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo uint64, uri string,
