@@ -113,7 +113,7 @@ func (ostore *MemorySession) GetInfo() *net.OSInfo {
 	return nil
 }
 
-func (ostore *MemorySession) SaveData(name string, data []byte) (string, error) {
+func (ostore *MemorySession) SaveData(name string, data []byte, meta map[string]string) (string, error) {
 	path, file := path.Split(ostore.getAbsolutePath(name))
 
 	ostore.dLock.Lock()

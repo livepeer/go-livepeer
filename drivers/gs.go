@@ -103,6 +103,7 @@ func (os *gsOS) NewSession(path string) OSSession {
 		signature:   signature,
 		credential:  os.gsSigner.clientEmail(),
 		storageType: net.OSInfo_GOOGLE,
+		metaPrefix:  "x-goog-meta-",
 	}
 	sess.fields = gsGetFields(sess)
 	return sess
@@ -116,6 +117,7 @@ func newGSSession(info *net.S3OSInfo) OSSession {
 		signature:   info.Signature,
 		credential:  info.Credential,
 		storageType: net.OSInfo_GOOGLE,
+		metaPrefix:  "x-goog-meta-",
 	}
 	sess.fields = gsGetFields(sess)
 	return sess
