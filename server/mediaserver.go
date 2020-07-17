@@ -32,6 +32,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 	lpmscore "github.com/livepeer/lpms/core"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
@@ -465,7 +466,8 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		params.OS = drivers.NodeStorage.NewSession(string(mid))
 	}
 	if params.RecordOS == nil && drivers.RecordStorage != nil {
-		params.RecordOS = drivers.RecordStorage.NewSession(string(mid))
+		recordPath := fmt.Sprintf("%s/%s", mid, lpmon.NodeID)
+		params.RecordOS = drivers.RecordStorage.NewSession(recordPath)
 	}
 	storage := params.OS
 
