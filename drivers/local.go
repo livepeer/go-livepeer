@@ -73,6 +73,16 @@ func (ostore *MemorySession) EndSession() {
 	ostore.os.lock.Unlock()
 }
 
+func (ostore *MemorySession) ListFiles(prefix, delim string) ([]string, error) {
+
+	return nil, fmt.Errorf("Not implemented")
+}
+
+func (ostore *MemorySession) ReadData(name string) ([]byte, map[string]string, error) {
+
+	return nil, nil, fmt.Errorf("Not implemented")
+}
+
 // GetData returns the cached data for a name.
 //
 // A name can be an absolute or relative URI.

@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -11,8 +12,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"strings"
 	"time"
+
+	"cloud.google.com/go/storage"
+	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 
 	"github.com/livepeer/go-livepeer/net"
 )
@@ -38,7 +44,13 @@ type (
 
 	gsOS struct {
 		s3OS
-		gsSigner *gsSigner
+		gsSigner    *gsSigner
+		keyFileName string
+	}
+
+	gsSession struct {
+		s3Session
+		keyFileName string
 	}
 )
 
@@ -71,12 +83,64 @@ func gsParseKey(key []byte) (*rsa.PrivateKey, error) {
 	return parsed, nil
 }
 
-func NewGoogleDriver(bucket, keyData string) (OSDriver, error) {
+// listFilesWithPrefix lists objects using prefix and delimeter.
+func listFilesWithPrefix(bucket, prefix, delim, keyFileName string) ([]string, error) {
+	// bucket := "bucket-name"
+	// prefix := "/foo"
+	// delim := "_"
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx, option.WithCredentialsFile(keyFileName))
+	if err != nil {
+		return nil, fmt.Errorf("storage.NewClient: %v", err)
+	}
+	defer client.Close()
+
+	// Prefixes and delimiters can be used to emulate directory listings.
+	// Prefixes can be used to filter objects starting with prefix.
+	// The delimiter argument can be used to restrict the results to only the
+	// objects in the given "directory". Without the delimiter, the entire tree
+	// under the prefix is returned.
+	//
+	// For example, given these blobs:
+	//   /a/1.txt
+	//   /a/b/2.txt
+	//
+	// If you just specify prefix="a/", you'll get back:
+	//   /a/1.txt
+	//   /a/b/2.txt
+	//
+	// However, if you specify prefix="a/" and delim="/", you'll get back:
+	//   /a/1.txt
+	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+	defer cancel()
+
+	it := client.Bucket(bucket).Objects(ctx, &storage.Query{
+		Prefix:    prefix,
+		Delimiter: delim,
+	})
+	var res []string
+	for {
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("Bucket(%q).Objects(): %v", bucket, err)
+		}
+		// fmt.Fprintln(w, attrs.Name)
+		// glog.Infof("Got %+v", attrs)
+		res = append(res, attrs.Name)
+	}
+	return res, nil
+}
+
+func NewGoogleDriver(bucket, keyFileName string) (OSDriver, error) {
 	os := &gsOS{
 		s3OS: s3OS{
 			host:   gsHost(bucket),
 			bucket: bucket,
 		},
+		keyFileName: keyFileName,
 	}
 
 	var gsKey gsKeyJSON
@@ -106,7 +170,11 @@ func (os *gsOS) NewSession(path string) OSSession {
 		metaPrefix:  "x-goog-meta-",
 	}
 	sess.fields = gsGetFields(sess)
-	return sess
+	return &gsSession{
+		s3Session:   *sess,
+		keyFileName: os.keyFileName,
+	}
+	// return sess
 }
 
 func newGSSession(info *net.S3OSInfo) OSSession {
@@ -121,6 +189,37 @@ func newGSSession(info *net.S3OSInfo) OSSession {
 	}
 	sess.fields = gsGetFields(sess)
 	return sess
+}
+
+func (os *gsSession) ListFiles(prefix, delim string) ([]string, error) {
+	res, err := listFilesWithPrefix(GSBUCKET, prefix, delim, os.keyFileName)
+	return res, err
+}
+
+func (os *gsSession) ReadData(name string) ([]byte, map[string]string, error) {
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx, option.WithCredentialsFile(os.keyFileName))
+	if err != nil {
+		return nil, nil, fmt.Errorf("storage.NewClient: %v", err)
+	}
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(ctx, time.Second*50)
+	defer cancel()
+
+	objh := client.Bucket(GSBUCKET).Object(name)
+	rc, err := objh.NewReader(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Object(%q).NewReader: %v", name, err)
+	}
+	defer rc.Close()
+
+	data, err := ioutil.ReadAll(rc)
+	if err != nil {
+		return nil, nil, fmt.Errorf("ioutil.ReadAll: %v", err)
+	}
+
+	return data, nil, nil
 }
 
 func gsGetFields(sess *s3Session) map[string]string {

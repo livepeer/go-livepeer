@@ -43,7 +43,7 @@ type BasicPlaylistManager struct {
 	// Live playlist used for broadcasting
 	masterPList *m3u8.MasterPlaylist
 	mediaLists  map[string]*m3u8.MediaPlaylist
-	jsonList    *jsonPlaylist
+	jsonList    *JsonPlaylist
 	mapSync     *sync.RWMutex
 }
 
@@ -53,25 +53,40 @@ type jsonSeg struct {
 	DurationMS uint64 `json:"duration_ms,omitempty"`
 }
 
-type jsonPlaylist struct {
-	name       string
+type JsonPlaylist struct {
+	name       string               `json:"name,omitempty"`
 	DurationMs uint64               `json:"duration_ms,omitempty"` // total duration of the saved sagments
+	Tracks     []JsonMediaTrack     `json:"tracks,omitempty"`
 	Segments   map[string][]jsonSeg `json:"segments,omitempty"`
 }
 
-func newJSONPlaylist() *jsonPlaylist {
-	return &jsonPlaylist{
+type JsonMediaTrack struct {
+	Name       string `json:"name,omitempty"`
+	Bandwidth  uint32 `json:"bandwidth,omitempty"`
+	Resolution string `json:"resolution,omitempty"`
+}
+
+func newJSONPlaylist() *JsonPlaylist {
+	return &JsonPlaylist{
 		name:     fmt.Sprintf("playlist_%d.json", time.Now().Unix()),
 		Segments: make(map[string][]jsonSeg),
 	}
 }
 
-func (jpl *jsonPlaylist) InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo uint64, uri string,
+func (jpl *JsonPlaylist) InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo uint64, uri string,
 	duration float64) {
 
 	durationMs := uint64(duration * 1000)
 	if profile.Name == "source" {
 		jpl.DurationMs += durationMs
+	}
+	if _, has := jpl.Segments[profile.Name]; !has {
+		vParams := ffmpeg.VideoProfileToVariantParams(*profile)
+		jpl.Tracks = append(jpl.Tracks, JsonMediaTrack{
+			Name:       profile.Name,
+			Bandwidth:  vParams.Bandwidth,
+			Resolution: vParams.Resolution,
+		})
 	}
 	jpl.Segments[profile.Name] = append(jpl.Segments[profile.Name], jsonSeg{
 		URI:        uri,
