@@ -38,6 +38,11 @@ type OSSession interface {
 
 	// Indicates whether this is the correct OS for a given URL
 	IsOwn(url string) bool
+
+	// ListFiles not final interfaces, will be changed
+	ListFiles(prefix, delim string) ([]string, error)
+
+	ReadData(name string) ([]byte, map[string]string, error)
 }
 
 // NewSession returns new session based on OSInfo received from the network

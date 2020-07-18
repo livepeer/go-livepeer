@@ -153,6 +153,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
 	}
+	opts.HttpMux.HandleFunc("/recordings/", ls.HandleRecordings)
 	return ls, nil
 }
 
@@ -854,6 +855,109 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	mw.Close()
+}
+
+func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request) {
+	// we read this unconditionally, mostly for ffmpeg
+	// body, err := ioutil.ReadAll(r.Body)
+
+	// if err != nil {
+	// 	httpErr := fmt.Sprintf(`Error reading http request body: %s`, err.Error())
+	// 	glog.Error(httpErr)
+	// 	http.Error(w, httpErr, http.StatusInternalServerError)
+	// 	return
+	// }
+	// r.Body.Close()
+	// r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
+
+	// Determine the input format the request is claiming to have
+	// ext := path.Ext(r.URL.Path)
+	// format := common.ProfileExtensionFormat(ext)
+	pp := strings.Split(r.URL.Path, "/")
+	glog.Infof("Got requst %s (path is %s, parts %+v)", r.URL.String(), r.URL.Path, pp)
+	if len(pp) < 3 {
+		glog.Infof("Please provide manifest id")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	sess := drivers.RecordStorage.NewSession("")
+	// files, err := sess.ListFiles("b554f738-2bfb-42b5-b1ab-edc7631ff061/", "/")
+	mp := strings.Split(pp[2], ".")
+	returnMasterPlaylist := len(pp) == 3
+	var track string
+	if !returnMasterPlaylist {
+		tp := strings.Split(pp[3], ".")
+		track = tp[0]
+	}
+	manfiestID := mp[0]
+	files, err := sess.ListFiles(manfiestID+"/", "")
+	// files, err := sess.ListFiles("", "")
+	if err != nil {
+		glog.Error(err)
+		return
+	}
+	// glog.Infof("Got %d files:", len(files))
+	var jsonFiles []string
+	for _, fn := range files {
+		// glog.Info(fn)
+		if strings.HasSuffix(fn, ".json") {
+			jsonFiles = append(jsonFiles, fn)
+		}
+	}
+	masterPList := m3u8.NewMasterPlaylist()
+	mediaLists := make(map[string]*m3u8.MediaPlaylist)
+	for _, fn := range jsonFiles {
+		glog.Info(fn)
+		fb, _, err := sess.ReadData(fn)
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		jspl := &core.JsonPlaylist{}
+
+		err = json.Unmarshal(fb, jspl)
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, track := range jspl.Tracks {
+			segments := jspl.Segments[track.Name]
+			mpl, err := m3u8.NewMediaPlaylist(uint(len(segments)), uint(len(segments)))
+			if err != nil {
+				glog.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			// vParams := ffmpeg.VideoProfileToVariantParams(*profile)
+			url := fmt.Sprintf("%s/%s.m3u8", manfiestID, track.Name)
+			vParams := m3u8.VariantParams{Bandwidth: track.Bandwidth, Resolution: track.Resolution}
+			masterPList.Append(url, mpl, vParams)
+			mpl.Live = false
+			mediaLists[track.Name] = mpl
+		}
+		if !returnMasterPlaylist {
+			mpl := mediaLists[track]
+			segments := jspl.Segments[track]
+			for _, seg := range segments {
+				mpl.Append(seg.URI, float64(seg.DurationMS)/1000.0, "")
+			}
+		}
+	}
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+	w.Header().Set("Cache-Control", "max-age=5")
+	w.Header().Set("Content-Type", "application/x-mpegURL")
+	if returnMasterPlaylist {
+		w.Header().Set("Connection", "keep-alive")
+		_, err = w.Write(masterPList.Encode().Bytes())
+	} else {
+		mediaPl := mediaLists[track]
+		w.Header().Set("Connection", "keep-alive")
+		_, err = w.Write(mediaPl.Encode().Bytes())
+
+	}
 }
 
 //Helper Methods Begin

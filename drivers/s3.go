@@ -144,6 +144,16 @@ func (os *s3Session) IsExternal() bool {
 func (os *s3Session) EndSession() {
 }
 
+func (os *s3Session) ListFiles(prefix, delim string) ([]string, error) {
+
+	return nil, fmt.Errorf("Not implemented")
+}
+
+func (os *s3Session) ReadData(name string) ([]byte, map[string]string, error) {
+
+	return nil, nil, fmt.Errorf("Not implemented")
+}
+
 func (os *s3Session) SaveData(name string, data []byte, meta map[string]string) (string, error) {
 	// tentativeUrl just used for logging
 	tentativeURL := path.Join(os.host, os.key, name)
