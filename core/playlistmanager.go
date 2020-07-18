@@ -68,7 +68,7 @@ type JsonMediaTrack struct {
 
 func newJSONPlaylist() *JsonPlaylist {
 	return &JsonPlaylist{
-		name:     fmt.Sprintf("playlist_%d.json", time.Now().Unix()),
+		name:     fmt.Sprintf("playlist_%d.json", time.Now().UnixNano()),
 		Segments: make(map[string][]jsonSeg),
 	}
 }
@@ -137,6 +137,9 @@ func (mgr *BasicPlaylistManager) FlushRecord() {
 			return
 		}
 		mgr.recordSession.SaveData(mgr.jsonList.name, b, nil)
+		if mgr.jsonList.DurationMs > 60*1000 { // 1 min for now
+			mgr.jsonList = newJSONPlaylist()
+		}
 	}
 }
 
