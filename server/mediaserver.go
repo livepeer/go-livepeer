@@ -952,11 +952,18 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	if returnMasterPlaylist {
 		w.Header().Set("Connection", "keep-alive")
 		_, err = w.Write(masterPList.Encode().Bytes())
-	} else {
+	} else if track != "" {
 		mediaPl := mediaLists[track]
-		w.Header().Set("Connection", "keep-alive")
-		_, err = w.Write(mediaPl.Encode().Bytes())
-
+		if mediaPl != nil {
+			w.Header().Set("Connection", "keep-alive")
+			_, err = w.Write(mediaPl.Encode().Bytes())
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
 }
 
