@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+	"path"
 	"time"
 
 	"github.com/golang/glog"
@@ -52,6 +54,23 @@ func IsOwnExternal(uri string) bool {
 
 func GetSegmentData(uri string) ([]byte, error) {
 	return getSegmentDataHTTP(uri)
+}
+
+func ParseOSURL(input string) (OSDriver, error) {
+	u, err := url.Parse(input)
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme == "s3" {
+		pw, ok := u.User.Password()
+		if ok == false {
+			return nil, fmt.Errorf("password is required with s3:// OS")
+		}
+		base := path.Base(u.Path)
+		return NewS3Driver(u.Host, base, u.User.Username(), pw), nil
+	}
+	return nil, fmt.Errorf("unrecognized OS scheme: %s", u.Scheme)
+	// return NewS3Driver("a", "b", "c", "d"), nil
 }
 
 var httpc = &http.Client{
