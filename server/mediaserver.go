@@ -906,6 +906,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	}
 	masterPList := m3u8.NewMasterPlaylist()
 	mediaLists := make(map[string]*m3u8.MediaPlaylist)
+	mainJspl := core.NewJSONPlaylist()
 	for _, fn := range jsonFiles {
 		glog.Info(fn)
 		fb, _, err := sess.ReadData(fn)
@@ -922,27 +923,31 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		for _, track := range jspl.Tracks {
-			segments := jspl.Segments[track.Name]
-			mpl, err := m3u8.NewMediaPlaylist(uint(len(segments)), uint(len(segments)))
-			if err != nil {
-				glog.Error(err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			// vParams := ffmpeg.VideoProfileToVariantParams(*profile)
-			url := fmt.Sprintf("%s/%s.m3u8", manfiestID, track.Name)
-			vParams := m3u8.VariantParams{Bandwidth: track.Bandwidth, Resolution: track.Resolution}
-			masterPList.Append(url, mpl, vParams)
-			mpl.Live = false
-			mediaLists[track.Name] = mpl
+		mainJspl.AddMaster(jspl)
+		if track != "" {
+			mainJspl.AddTrack(jspl, track)
 		}
-		if !returnMasterPlaylist {
-			mpl := mediaLists[track]
-			segments := jspl.Segments[track]
-			for _, seg := range segments {
-				mpl.Append(seg.URI, float64(seg.DurationMS)/1000.0, "")
-			}
+	}
+	for _, track := range mainJspl.Tracks {
+		segments := mainJspl.Segments[track.Name]
+		mpl, err := m3u8.NewMediaPlaylist(uint(len(segments)), uint(len(segments)))
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		// vParams := ffmpeg.VideoProfileToVariantParams(*profile)
+		url := fmt.Sprintf("%s/%s.m3u8", manfiestID, track.Name)
+		vParams := m3u8.VariantParams{Bandwidth: track.Bandwidth, Resolution: track.Resolution}
+		masterPList.Append(url, mpl, vParams)
+		mpl.Live = false
+		mediaLists[track.Name] = mpl
+	}
+	if !returnMasterPlaylist {
+		mpl := mediaLists[track]
+		segments := mainJspl.Segments[track]
+		for _, seg := range segments {
+			mpl.Append(seg.URI, float64(seg.DurationMS)/1000.0, "")
 		}
 	}
 	w.Header().Set("Access-Control-Allow-Origin", "*")

@@ -2,6 +2,8 @@ package core
 
 import (
 	"bytes"
+	"encoding/json"
+	"io/ioutil"
 	"net/url"
 	"testing"
 
@@ -10,11 +12,42 @@ import (
 	"github.com/livepeer/m3u8"
 )
 
+func readJSONPlaylist(t *testing.T, fileName string) *JsonPlaylist {
+	fd, err := ioutil.ReadFile(fileName)
+	if err != nil {
+		t.Error(err)
+	}
+	jspl := &JsonPlaylist{}
+
+	err = json.Unmarshal(fd, jspl)
+	if err != nil {
+		t.Error(err)
+	}
+	return jspl
+}
+
+func TestJSONListJoinTrack(t *testing.T) {
+	mainJspl := NewJSONPlaylist()
+	jspl := readJSONPlaylist(t, "playlist_1595101950232701011.json")
+	mainJspl.AddMaster(jspl)
+	mainJspl.AddTrack(jspl, "source")
+	jspl = readJSONPlaylist(t, "playlist_1595102011582863985.json")
+	mainJspl.AddMaster(jspl)
+	mainJspl.AddTrack(jspl, "source")
+	var lastSeq uint64
+	for _, seg := range mainJspl.Segments["source"] {
+		if seg.SeqNo < lastSeq {
+			t.Errorf("got seq %d but last %d", seg.SeqNo, lastSeq)
+		}
+		lastSeq = seg.SeqNo
+	}
+}
+
 func TestGetMasterPlaylist(t *testing.T) {
 	vProfile := ffmpeg.P144p30fps16x9
 	hlsStrmID := MakeStreamID(RandomManifestID(), &vProfile)
 	mid := hlsStrmID.ManifestID
-	c := NewBasicPlaylistManager(mid, nil)
+	c := NewBasicPlaylistManager(mid, nil, nil)
 	segName := "test_seg/1.ts"
 	err := c.InsertHLSSegment(&vProfile, 1, segName, 12)
 	if err != nil {
@@ -40,7 +73,7 @@ func TestGetMasterPlaylist(t *testing.T) {
 
 func TestGetOrCreatePL(t *testing.T) {
 
-	c := NewBasicPlaylistManager(RandomManifestID(), nil)
+	c := NewBasicPlaylistManager(RandomManifestID(), nil, nil)
 	vProfile := &ffmpeg.P144p30fps16x9
 
 	// Sanity check some properties of an empty master playlist
@@ -87,7 +120,7 @@ func TestGetOrCreatePL(t *testing.T) {
 
 func TestPlaylists(t *testing.T) {
 
-	c := NewBasicPlaylistManager(RandomManifestID(), nil)
+	c := NewBasicPlaylistManager(RandomManifestID(), nil, nil)
 	vProfile := &ffmpeg.P144p30fps16x9
 
 	// Check getting a nonexistent media PL
@@ -165,8 +198,8 @@ func TestCleanup(t *testing.T) {
 	memoryOS := osSession.(*drivers.MemorySession)
 	testData := []byte{1, 2, 3, 4}
 
-	c := NewBasicPlaylistManager(mid, osSession)
-	uri, err := c.GetOSSession().SaveData("testName", testData)
+	c := NewBasicPlaylistManager(mid, osSession, nil)
+	uri, err := c.GetOSSession().SaveData("testName", testData, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
