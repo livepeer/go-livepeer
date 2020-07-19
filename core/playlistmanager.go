@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -41,10 +42,11 @@ type BasicPlaylistManager struct {
 	recordSession  drivers.OSSession
 	manifestID     ManifestID
 	// Live playlist used for broadcasting
-	masterPList *m3u8.MasterPlaylist
-	mediaLists  map[string]*m3u8.MediaPlaylist
-	jsonList    *JsonPlaylist
-	mapSync     *sync.RWMutex
+	masterPList  *m3u8.MasterPlaylist
+	mediaLists   map[string]*m3u8.MediaPlaylist
+	mapSync      *sync.RWMutex
+	jsonList     *JsonPlaylist
+	jsonListSync *sync.Mutex
 }
 
 type jsonSeg struct {
@@ -54,7 +56,7 @@ type jsonSeg struct {
 }
 
 type JsonPlaylist struct {
-	name       string               `json:"name,omitempty"`
+	name       string
 	DurationMs uint64               `json:"duration_ms,omitempty"` // total duration of the saved sagments
 	Tracks     []JsonMediaTrack     `json:"tracks,omitempty"`
 	Segments   map[string][]jsonSeg `json:"segments,omitempty"`
@@ -66,11 +68,68 @@ type JsonMediaTrack struct {
 	Resolution string `json:"resolution,omitempty"`
 }
 
-func newJSONPlaylist() *JsonPlaylist {
+func NewJSONPlaylist() *JsonPlaylist {
 	return &JsonPlaylist{
 		name:     fmt.Sprintf("playlist_%d.json", time.Now().UnixNano()),
 		Segments: make(map[string][]jsonSeg),
 	}
+}
+
+// AddMaster adds data about tracks
+func (jpl *JsonPlaylist) AddMaster(ajpl *JsonPlaylist) {
+	for _, track := range ajpl.Tracks {
+		if !jpl.hasTrack(track.Name) {
+			jpl.Tracks = append(jpl.Tracks, track)
+		}
+	}
+}
+
+func (jpl *JsonPlaylist) hasTrack(trackName string) bool {
+	for _, track := range jpl.Tracks {
+		if track.Name == trackName {
+			return true
+		}
+	}
+	return false
+}
+
+// AddTrack adds segments data for specified rendition
+func (jpl *JsonPlaylist) AddTrack(ajpl *JsonPlaylist, trackName string) {
+	curSegs := jpl.Segments[trackName]
+	var lastSeq uint64
+	if len(curSegs) > 0 {
+		lastSeq = curSegs[len(curSegs)-1].SeqNo
+	}
+
+	for _, seg := range ajpl.Segments[trackName] {
+		needSort := false
+		if seg.SeqNo > lastSeq {
+			curSegs = append(curSegs, seg)
+		} else {
+			i := sort.Search(len(curSegs), func(i int) bool {
+				return curSegs[i].SeqNo >= seg.SeqNo
+			})
+			if i < len(curSegs) && curSegs[i].SeqNo == seg.SeqNo {
+				// x is present at data[i]
+			} else {
+				// x is not present in data,
+				// but i is the index where it would be inserted.
+				if i < len(curSegs) {
+					// glog.Errorf("track %s cur segs len %d i %d seq %d", trackName, len(curSegs), i, seg.SeqNo)
+					// panic("not implemented")
+					needSort = true
+				}
+				curSegs = append(curSegs, seg)
+			}
+		}
+		if needSort {
+			sort.Slice(curSegs, func(i, j int) bool {
+				return curSegs[i].SeqNo < curSegs[j].SeqNo
+			})
+		}
+		lastSeq = curSegs[len(curSegs)-1].SeqNo
+	}
+	jpl.Segments[trackName] = curSegs
 }
 
 func (jpl *JsonPlaylist) InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo uint64, uri string,
@@ -108,7 +167,8 @@ func NewBasicPlaylistManager(manifestID ManifestID,
 		mapSync:        &sync.RWMutex{},
 	}
 	if recordSession != nil {
-		bplm.jsonList = newJSONPlaylist()
+		bplm.jsonList = NewJSONPlaylist()
+		bplm.jsonListSync = &sync.Mutex{}
 	}
 	return bplm
 }
@@ -131,6 +191,8 @@ func (mgr *BasicPlaylistManager) GetRecordOSSession() drivers.OSSession {
 
 func (mgr *BasicPlaylistManager) FlushRecord() {
 	if mgr.recordSession != nil {
+		mgr.jsonListSync.Lock()
+		defer mgr.jsonListSync.Unlock()
 		b, err := json.Marshal(mgr.jsonList)
 		if err != nil {
 			glog.Error("Error encoding playlist: ", err)
@@ -138,7 +200,7 @@ func (mgr *BasicPlaylistManager) FlushRecord() {
 		}
 		mgr.recordSession.SaveData(mgr.jsonList.name, b, nil)
 		if mgr.jsonList.DurationMs > 60*1000 { // 1 min for now
-			mgr.jsonList = newJSONPlaylist()
+			mgr.jsonList = NewJSONPlaylist()
 		}
 	}
 }
@@ -172,7 +234,9 @@ func (mgr *BasicPlaylistManager) InsertHLSSegmentJSON(profile *ffmpeg.VideoProfi
 	duration float64) {
 
 	if mgr.jsonList != nil {
+		mgr.jsonListSync.Lock()
 		mgr.jsonList.InsertHLSSegment(profile, seqNo, uri, duration)
+		mgr.jsonListSync.Unlock()
 	}
 }
 
