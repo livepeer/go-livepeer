@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"path"
@@ -73,12 +74,12 @@ func (ostore *MemorySession) EndSession() {
 	ostore.os.lock.Unlock()
 }
 
-func (ostore *MemorySession) ListFiles(prefix, delim string) ([]string, error) {
+func (ostore *MemorySession) ListFiles(ctx context.Context, prefix, delim string) ([]string, error) {
 
 	return nil, fmt.Errorf("Not implemented")
 }
 
-func (ostore *MemorySession) ReadData(name string) ([]byte, map[string]string, error) {
+func (ostore *MemorySession) ReadData(ctx context.Context, name string) ([]byte, map[string]string, error) {
 
 	return nil, nil, fmt.Errorf("Not implemented")
 }

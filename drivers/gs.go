@@ -84,11 +84,10 @@ func gsParseKey(key []byte) (*rsa.PrivateKey, error) {
 }
 
 // listFilesWithPrefix lists objects using prefix and delimeter.
-func listFilesWithPrefix(bucket, prefix, delim, keyFileName string) ([]string, error) {
+func listFilesWithPrefix(ctx context.Context, bucket, prefix, delim, keyFileName string) ([]string, error) {
 	// bucket := "bucket-name"
 	// prefix := "/foo"
 	// delim := "_"
-	ctx := context.Background()
 	client, err := storage.NewClient(ctx, option.WithCredentialsFile(keyFileName))
 	if err != nil {
 		return nil, fmt.Errorf("storage.NewClient: %v", err)
@@ -191,13 +190,12 @@ func newGSSession(info *net.S3OSInfo) OSSession {
 	return sess
 }
 
-func (os *gsSession) ListFiles(prefix, delim string) ([]string, error) {
-	res, err := listFilesWithPrefix(GSBUCKET, prefix, delim, os.keyFileName)
+func (os *gsSession) ListFiles(ctx context.Context, prefix, delim string) ([]string, error) {
+	res, err := listFilesWithPrefix(ctx, GSBUCKET, prefix, delim, os.keyFileName)
 	return res, err
 }
 
-func (os *gsSession) ReadData(name string) ([]byte, map[string]string, error) {
-	ctx := context.Background()
+func (os *gsSession) ReadData(ctx context.Context, name string) ([]byte, map[string]string, error) {
 	client, err := storage.NewClient(ctx, option.WithCredentialsFile(os.keyFileName))
 	if err != nil {
 		return nil, nil, fmt.Errorf("storage.NewClient: %v", err)

@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -144,12 +145,12 @@ func (os *s3Session) IsExternal() bool {
 func (os *s3Session) EndSession() {
 }
 
-func (os *s3Session) ListFiles(prefix, delim string) ([]string, error) {
+func (os *s3Session) ListFiles(ctx context.Context, prefix, delim string) ([]string, error) {
 
 	return nil, fmt.Errorf("Not implemented")
 }
 
-func (os *s3Session) ReadData(name string) ([]byte, map[string]string, error) {
+func (os *s3Session) ReadData(ctx context.Context, name string) ([]byte, map[string]string, error) {
 
 	return nil, nil, fmt.Errorf("Not implemented")
 }
