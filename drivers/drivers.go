@@ -2,6 +2,7 @@
 package drivers
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io/ioutil"
@@ -40,9 +41,9 @@ type OSSession interface {
 	IsOwn(url string) bool
 
 	// ListFiles not final interfaces, will be changed
-	ListFiles(prefix, delim string) ([]string, error)
+	ListFiles(ctx context.Context, prefix, delim string) ([]string, error)
 
-	ReadData(name string) ([]byte, map[string]string, error)
+	ReadData(ctx context.Context, name string) ([]byte, map[string]string, error)
 }
 
 // NewSession returns new session based on OSInfo received from the network
