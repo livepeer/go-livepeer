@@ -273,6 +273,10 @@ func ProfileFormatMimeType(f ffmpeg.Format) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return TypeByExtension(ext)
+}
+
+func TypeByExtension(ext string) (string, error) {
 	if m, ok := ext2mime[ext]; ok && m != "" {
 		return m, nil
 	}
