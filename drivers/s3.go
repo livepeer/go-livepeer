@@ -194,7 +194,11 @@ func (os *s3Session) GetInfo() *net.OSInfo {
 // if s3 storage is not our own, we are saving data into it using POST request
 func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]string) (string, error) {
 	fileBytes := bytes.NewReader(buffer)
-	fileType := http.DetectContentType(buffer)
+	ext := path.Ext(fileName)
+	fileType, err := common.TypeByExtension(ext)
+	if err != nil {
+		fileType = http.DetectContentType(buffer)
+	}
 	path, fileName := path.Split(path.Join(os.key, fileName))
 	fields := map[string]string{
 		"acl":          "public-read",
