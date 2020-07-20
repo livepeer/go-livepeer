@@ -870,14 +870,17 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	// r.Body.Close()
 	// r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
 
-	// Determine the input format the request is claiming to have
-	// ext := path.Ext(r.URL.Path)
+	ext := path.Ext(r.URL.Path)
+	if ext != ".m3u8" && ext != ".ts" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	// format := common.ProfileExtensionFormat(ext)
 	pp := strings.Split(r.URL.Path, "/")
 	glog.Infof("Got requst %s (path is %s, parts %+v)", r.URL.String(), r.URL.Path, pp)
 	finalize := r.URL.Query().Get("finalize") == "true"
 	glog.Infof("query: %+v finalize %v", r.URL.Query(), finalize)
-	if len(pp) != 4 {
+	if len(pp) < 4 {
 		// glog.Infof("Please provide manifest id")
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -903,11 +906,16 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err == nil && len(fd) > 0 && false {
+	if err == nil && len(fd) > 0 {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
-		w.Header().Set("Cache-Control", "max-age=5")
-		w.Header().Set("Content-Type", "application/x-mpegURL")
+		if ext == ".ts" {
+			contentType, _ := common.TypeByExtension(".ts")
+			w.Header().Set("Content-Type", contentType)
+		} else {
+			w.Header().Set("Cache-Control", "max-age=5")
+			w.Header().Set("Content-Type", "application/x-mpegURL")
+		}
 		w.Header().Set("Connection", "keep-alive")
 		w.Write(fd)
 		return
@@ -999,8 +1007,14 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		mpl := mediaLists[track]
 		segments := mainJspl.Segments[track]
 		for _, seg := range segments {
+			// make relative URL from absolute one
+			uri := seg.URI
+			mindex := strings.Index(uri, manifestID)
+			if mindex != -1 {
+				uri = uri[mindex+len(manifestID)+1:]
+			}
 			mseg := &m3u8.MediaSegment{
-				URI:      seg.URI,
+				URI:      uri,
 				Duration: float64(seg.DurationMS) / 1000.0,
 			}
 			mpl.InsertSegment(seg.SeqNo, mseg)
