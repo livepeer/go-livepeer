@@ -87,7 +87,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 	osd := drivers.NewMemoryDriver(url)
 	osSession := osd.NewSession("testPath")
 
-	pl := core.NewBasicPlaylistManager("xx", osSession)
+	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
 
 	cxn := &rtmpConnection{
 		mid:         core.ManifestID("mani"),

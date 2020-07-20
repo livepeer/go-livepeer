@@ -941,7 +941,7 @@ type mockOSSession struct {
 	mock.Mock
 }
 
-func (s *mockOSSession) SaveData(name string, data []byte) (string, error) {
+func (s *mockOSSession) SaveData(name string, data []byte, meta map[string]string) (string, error) {
 	args := s.Called()
 	return args.String(0), args.Error(1)
 }
@@ -966,6 +966,14 @@ func (s *mockOSSession) IsExternal() bool {
 func (s *mockOSSession) IsOwn(url string) bool {
 	args := s.Called()
 	return args.Bool(0)
+}
+
+func (s *mockOSSession) ListFiles(ctx context.Context, prefix, delim string) ([]string, error) {
+	return nil, nil
+}
+
+func (s *mockOSSession) ReadData(ctx context.Context, name string) ([]byte, map[string]string, error) {
+	return nil, nil, nil
 }
 
 type mockOrchestrator struct {

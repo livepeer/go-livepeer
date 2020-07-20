@@ -111,7 +111,7 @@ type stubOSSession struct {
 	err      error
 }
 
-func (s *stubOSSession) SaveData(name string, data []byte) (string, error) {
+func (s *stubOSSession) SaveData(name string, data []byte, meta map[string]string) (string, error) {
 	s.saved = append(s.saved, name)
 	return "saved_" + name, s.err
 }
@@ -125,6 +125,12 @@ func (s *stubOSSession) IsExternal() bool {
 }
 func (s *stubOSSession) IsOwn(url string) bool {
 	return true
+}
+func (s *stubOSSession) ListFiles(ctx context.Context, prefix, delim string) ([]string, error) {
+	return nil, nil
+}
+func (s *stubOSSession) ReadData(ctx context.Context, name string) ([]byte, map[string]string, error) {
+	return nil, nil, nil
 }
 
 type stubPlaylistManager struct {
@@ -158,7 +164,13 @@ func (pm *stubPlaylistManager) GetOSSession() drivers.OSSession {
 	return pm.os
 }
 
-func (pm *stubPlaylistManager) Cleanup() {}
+func (pm *stubPlaylistManager) Cleanup()     {}
+func (pm *stubPlaylistManager) FlushRecord() {}
+func (pm *stubPlaylistManager) GetRecordOSSession() drivers.OSSession {
+	return nil
+}
+func (pm *stubPlaylistManager) InsertHLSSegmentJSON(profile *ffmpeg.VideoProfile, seqNo uint64, uri string, duration float64) {
+}
 
 type stubSelector struct {
 	sess *BroadcastSession
@@ -1115,7 +1127,7 @@ func TestVerifier_Verify(t *testing.T) {
 	}
 	mem, ok := drivers.NewMemoryDriver(nil).NewSession("streamName").(*drivers.MemorySession)
 	assert.True(ok)
-	name, err := mem.SaveData("/rendition/seg/1", []byte("attempt1"))
+	name, err := mem.SaveData("/rendition/seg/1", []byte("attempt1"), nil)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt1"), mem.GetData(name))
 	sess.BroadcasterOS = mem
@@ -1127,7 +1139,7 @@ func TestVerifier_Verify(t *testing.T) {
 
 	// Now "insert" 2nd attempt into OS
 	// and ensure 1st attempt is what remains after verification
-	_, err = mem.SaveData("/rendition/seg/1", []byte("attempt2"))
+	_, err = mem.SaveData("/rendition/seg/1", []byte("attempt2"), nil)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt2"), mem.GetData(name))
 	renditionData = [][]byte{[]byte("attempt2")}
