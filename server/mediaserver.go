@@ -875,22 +875,44 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	// format := common.ProfileExtensionFormat(ext)
 	pp := strings.Split(r.URL.Path, "/")
 	glog.Infof("Got requst %s (path is %s, parts %+v)", r.URL.String(), r.URL.Path, pp)
-	if len(pp) < 3 {
-		glog.Infof("Please provide manifest id")
+	finalize := r.URL.Query().Get("finalize") == "true"
+	glog.Infof("query: %+v finalize %v", r.URL.Query(), finalize)
+	if len(pp) != 4 {
+		// glog.Infof("Please provide manifest id")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	sess := drivers.RecordStorage.NewSession("")
 	// files, err := sess.ListFiles("b554f738-2bfb-42b5-b1ab-edc7631ff061/", "/")
-	mp := strings.Split(pp[2], ".")
-	returnMasterPlaylist := len(pp) == 3
+	// mp := strings.Split(pp[2], ".")
+	// returnMasterPlaylist := len(pp) == 3
+	returnMasterPlaylist := pp[3] == "index.m3u8"
 	var track string
 	if !returnMasterPlaylist {
 		tp := strings.Split(pp[3], ".")
 		track = tp[0]
 	}
-	manfiestID := mp[0]
-	files, err := sess.ListFiles(manfiestID+"/", "")
+	// manifestID := mp[0]
+	manifestID := pp[2]
+	requestFileName := strings.Join(pp[2:], "/")
+	glog.Infof("lp: %s", requestFileName)
+	ctx := r.Context()
+	sess := drivers.RecordStorage.NewSession(manifestID)
+	fd, _, err := sess.ReadData(ctx, requestFileName)
+	if err == context.Canceled {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if err == nil && len(fd) > 0 && false {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		w.Header().Set("Cache-Control", "max-age=5")
+		w.Header().Set("Content-Type", "application/x-mpegURL")
+		w.Header().Set("Connection", "keep-alive")
+		w.Write(fd)
+		return
+	}
+	files, err := sess.ListFiles(ctx, manifestID+"/", "")
 	// files, err := sess.ListFiles("", "")
 	if err != nil {
 		glog.Error(err)
@@ -909,7 +931,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	mainJspl := core.NewJSONPlaylist()
 	for _, fn := range jsonFiles {
 		glog.Info(fn)
-		fb, _, err := sess.ReadData(fn)
+		fb, _, err := sess.ReadData(ctx, fn)
 		if err != nil {
 			glog.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -924,7 +946,11 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			return
 		}
 		mainJspl.AddMaster(jspl)
-		if track != "" {
+		if finalize {
+			for trackName := range jspl.Segments {
+				mainJspl.AddTrack(jspl, trackName)
+			}
+		} else if track != "" {
 			mainJspl.AddTrack(jspl, track)
 		}
 	}
@@ -937,17 +963,55 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			return
 		}
 		// vParams := ffmpeg.VideoProfileToVariantParams(*profile)
-		url := fmt.Sprintf("%s/%s.m3u8", manfiestID, track.Name)
+		// url := fmt.Sprintf("%s/%s.m3u8", manifestID, track.Name)
+		url := fmt.Sprintf("%s.m3u8", track.Name)
 		vParams := m3u8.VariantParams{Bandwidth: track.Bandwidth, Resolution: track.Resolution}
 		masterPList.Append(url, mpl, vParams)
 		mpl.Live = false
 		mediaLists[track.Name] = mpl
 	}
-	if !returnMasterPlaylist {
+	select {
+	case <-ctx.Done():
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	default:
+	}
+	if finalize {
+		for trackName, segments := range mainJspl.Segments {
+			mpl := mediaLists[trackName]
+			for _, seg := range segments {
+				mpl.Append(seg.URI, float64(seg.DurationMS)/1000.0, "")
+			}
+			_, err = sess.SaveData(trackName+".m3u8", mpl.Encode().Bytes(), nil)
+			if err != nil {
+				glog.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+		_, err = sess.SaveData("index.m3u8", masterPList.Encode().Bytes(), nil)
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+	} else if !returnMasterPlaylist {
 		mpl := mediaLists[track]
 		segments := mainJspl.Segments[track]
 		for _, seg := range segments {
-			mpl.Append(seg.URI, float64(seg.DurationMS)/1000.0, "")
+			mseg := &m3u8.MediaSegment{
+				URI:      seg.URI,
+				Duration: float64(seg.DurationMS) / 1000.0,
+			}
+			mpl.InsertSegment(seg.SeqNo, mseg)
+		}
+		// check (debug code)
+		startSeq := mpl.Segments[0].SeqId
+		for _, seg := range mpl.Segments[1:] {
+			if seg.SeqId != startSeq+1 {
+				glog.Infof("prev seq is %d but next is %d", startSeq, seg.SeqId)
+			}
+			startSeq = seg.SeqId
 		}
 	}
 	w.Header().Set("Access-Control-Allow-Origin", "*")
