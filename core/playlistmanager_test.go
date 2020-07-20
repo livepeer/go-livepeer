@@ -26,6 +26,7 @@ func readJSONPlaylist(t *testing.T, fileName string) *JsonPlaylist {
 	return jspl
 }
 
+/*
 func TestJSONListJoinTrack(t *testing.T) {
 	mainJspl := NewJSONPlaylist()
 	jspl := readJSONPlaylist(t, "playlist_1595101950232701011.json")
@@ -42,6 +43,7 @@ func TestJSONListJoinTrack(t *testing.T) {
 		lastSeq = seg.SeqNo
 	}
 }
+*/
 
 func TestGetMasterPlaylist(t *testing.T) {
 	vProfile := ffmpeg.P144p30fps16x9
