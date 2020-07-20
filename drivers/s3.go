@@ -58,7 +58,7 @@ var S3BUCKET string
 
 func s3Host(bucket string) string {
 	// return fmt.Sprintf("https://%s.s3.amazonaws.com", bucket)
-	return fmt.Sprintf("https://s3.%s.backblazeb2.com", bucket)
+	return fmt.Sprintf("https://%s.s3.us-west-002.backblazeb2.com", bucket)
 }
 
 // IsOwnStorageS3 returns true if uri points to S3 bucket owned by this node
