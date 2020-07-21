@@ -13,14 +13,27 @@ import (
 
 func TestS3URL(t *testing.T) {
 	assert := assert.New(t)
-	os, err := ParseOSURL("s3://user:xxxxxxxxx%2Bxxxxxxxxx%2Fxxxxxxxx%2Bxxxxxxxxxxxxx@us-west-2/example-bucket")
+	os, err := ParseOSURL("s3://user:xxxxxxxxx%2Bxxxxxxxxx%2Fxxxxxxxx%2Bxxxxxxxxxxxxx@us-west-2/example-bucket", true)
 	assert.Equal(nil, err)
-	s3, ok := os.(*s3OS)
-	assert.Equal(true, ok)
+	s3, iss3 := os.(*s3OS)
+	assert.Equal(true, iss3)
 	assert.Equal("user", s3.awsAccessKeyID)
 	assert.Equal("xxxxxxxxx+xxxxxxxxx/xxxxxxxx+xxxxxxxxxxxxx", s3.awsSecretAccessKey)
+	assert.Equal("https://example-bucket.s3.amazonaws.com", s3.host)
 	assert.Equal("us-west-2", s3.region)
 	assert.Equal("example-bucket", s3.bucket)
+}
+
+func TestCustomS3URL(t *testing.T) {
+	assert := assert.New(t)
+	os, err := ParseOSURL("s3+http://user:password@example.com:9000/path/to/bucket-name", true)
+	s3, iss3 := os.(*s3OS)
+	assert.Equal(true, iss3)
+	assert.Equal(nil, err)
+	assert.Equal("http://user:password@example.com:9000/path/to/bucket-name", s3.host)
+	assert.Equal("bucket-name", s3.bucket)
+	assert.Equal("user", s3.awsAccessKeyID)
+	assert.Equal("password", s3.awsSecretAccessKey)
 }
 
 func TestGSURL(t *testing.T) {
@@ -48,11 +61,11 @@ func TestGSURL(t *testing.T) {
 	file.WriteString(testGSToken)
 
 	// Set up test URL
-	u, _ := url.Parse("gs://us-central-1/bucket-name")
+	u, _ := url.Parse("gs://bucket-name")
 	info := url.User(file.Name())
 	u.User = info
 	urlstr := fmt.Sprintf("%s", u)
-	os, err := ParseOSURL(urlstr)
+	os, err := ParseOSURL(urlstr, true)
 	assert.Equal(nil, err)
 	gs, ok := os.(*gsOS)
 	assert.Equal(true, ok)
