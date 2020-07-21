@@ -110,6 +110,7 @@ func main() {
 	verifierURL := flag.String("verifierUrl", "", "URL of the verifier to use")
 
 	verifierPath := flag.String("verifierPath", "", "Path to verifier shared volume")
+	localVerify := flag.Bool("localVerify", true, "Set to true to enable local verification i.e. pixel count and signature verification.")
 	httpIngest := flag.Bool("httpIngest", true, "Set to true to enable HTTP ingest")
 
 	// Transcoding:
@@ -800,7 +801,12 @@ func main() {
 			*httpIngest = false
 		}
 
-		// Set up verifier
+		// Disable local verification when running in off-chain mode
+		// To enable, set -localVerify or -verifierURL
+		if !isFlagSet["localVerify"] && *network == "offchain" {
+			*localVerify = false
+		}
+
 		if *verifierURL != "" {
 			_, err := validateURL(*verifierURL)
 			if err != nil {
@@ -808,8 +814,6 @@ func main() {
 			}
 			glog.Info("Using the Epic Labs classifier for verification at ", *verifierURL)
 			server.Policy = &verification.Policy{Retries: 2, Verifier: &verification.EpicClassifier{Addr: *verifierURL}}
-			// TODO Set up a default "empty" verifier-less policy for onchain
-			//      that only checks sigs and pixels?
 
 			// Set the verifier path. Remove once [1] is implemented!
 			// [1] https://github.com/livepeer/verification-classifier/issues/64
@@ -817,7 +821,7 @@ func main() {
 				glog.Fatal("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath, S3 or GCS")
 			}
 			verification.VerifierPath = *verifierPath
-		} else if *network != "offchain" {
+		} else if *localVerify {
 			server.Policy = &verification.Policy{Retries: 2}
 		}
 
