@@ -159,6 +159,9 @@ func main() {
 
 	// Storage:
 	datadir := flag.String("datadir", "", "data directory")
+	objectstore := flag.String("objectStore", "", "url of primary object store")
+
+	// All deprecated
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
 	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
@@ -704,10 +707,6 @@ func main() {
 		glog.Error("Should specify both s3bucket and s3creds")
 		return
 	}
-	if *s3bucket != "" {
-		s3bp := strings.Split(*s3bucket, "/")
-		drivers.S3BUCKET = s3bp[1]
-	}
 	if *gsBucket != "" && *gsKey == "" || *gsBucket == "" && *gsKey != "" {
 		glog.Error("Should specify both gsbucket and gskey")
 		return
@@ -717,16 +716,35 @@ func main() {
 	if *s3bucket != "" && *s3creds != "" {
 		br := strings.Split(*s3bucket, "/")
 		cr := strings.Split(*s3creds, "/")
-		drivers.NodeStorage = drivers.NewS3Driver(br[0], br[1], cr[0], cr[1])
+		u := url.URL{
+			Scheme: "s3",
+			Host:   br[0],
+			Path:   fmt.Sprintf("/%s", br[1]),
+			User:   url.UserPassword(cr[0], cr[1]),
+		}
+		glog.Warningf("-s3bucket and -s3creds are deprecated. Instead, you can use -objectStore %s", u.String())
+		ustr := u.String()
+		objectstore = &ustr
 	}
 
 	if *gsBucket != "" && *gsKey != "" {
-		drivers.GSBUCKET = *gsBucket
-		drivers.NodeStorage, err = drivers.NewGoogleDriver(*gsBucket, *gsKey)
+		u := url.URL{
+			Scheme: "gs",
+			Host:   *gsBucket,
+			User:   url.User(*gsKey),
+		}
+		glog.Warningf("-gsbucket and -gskey are deprecated. Instead, you can use -objectStore %s", u.String())
+		ustr := u.String()
+		objectstore = &ustr
+	}
+
+	if *objectstore != "" {
+		drivers.NodeStorage, err = drivers.ParseOSURL(*objectstore, true)
 		if err != nil {
-			glog.Error("Error creating Google Storage driver:", err)
+			glog.Error("Error creating object store driver:", err)
 			return
 		}
+
 	}
 
 	core.MaxSessions = *maxSessions

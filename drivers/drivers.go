@@ -57,7 +57,7 @@ func GetSegmentData(uri string) ([]byte, error) {
 }
 
 // Return the correct OS for a given OS url
-func ParseOSURL(input string) (OSDriver, error) {
+func ParseOSURL(input string, own bool) (OSDriver, error) {
 	u, err := url.Parse(input)
 	if err != nil {
 		return nil, err
@@ -68,12 +68,23 @@ func ParseOSURL(input string) (OSDriver, error) {
 			return nil, fmt.Errorf("password is required with s3:// OS")
 		}
 		base := path.Base(u.Path)
+		if own {
+			if S3BUCKET != "" {
+				return nil, fmt.Errorf("we already have our own bucket (%s) but we tried to add another one (%s)", S3BUCKET, base)
+			}
+			S3BUCKET = base
+		}
 		return NewS3Driver(u.Host, base, u.User.Username(), pw), nil
 	}
 	if u.Scheme == "gs" {
-		base := path.Base(u.Path)
 		file := u.User.Username()
-		return NewGoogleDriver(base, file)
+		if own {
+			if GSBUCKET != "" {
+				return nil, fmt.Errorf("we already have our own gs bucket (%s) but we tried to add another one (%s)", GSBUCKET, u.Host)
+			}
+			GSBUCKET = u.Host
+		}
+		return NewGoogleDriver(u.Host, file)
 	}
 	return nil, fmt.Errorf("unrecognized OS scheme: %s", u.Scheme)
 }
