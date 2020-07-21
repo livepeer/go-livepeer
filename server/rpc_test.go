@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flyingmutant/rapid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"pgregory.net/rapid"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -867,8 +867,8 @@ func TestGenVerify_RoundTrip_Capabilities(t *testing.T) {
 	// check invariant : verifySegCreds(genSegCreds(caps)).Capabilities == caps
 	rapid.Check(t, func(t *rapid.T) {
 		assert := assert.New(t) // in order to pick up the rapid rng
-		randCapsLen := rapid.IntsRange(0, 256).Draw(t, "capLen").(int)
-		randCaps := rapid.IntsRange(0, 512)
+		randCapsLen := rapid.IntRange(0, 256).Draw(t, "capLen").(int)
+		randCaps := rapid.IntRange(0, 512)
 		caps := []core.Capability{}
 		for i := 0; i < randCapsLen; i++ {
 			caps = append(caps, core.Capability(randCaps.Draw(t, "cap").(int)))
@@ -894,7 +894,7 @@ func TestGenVerify_RoundTrip_Duration(t *testing.T) {
 	// check invariant : verifySegCreds(genSegCreds(dur)).Duration == dur
 	rapid.Check(t, func(t *rapid.T) {
 		assert := assert.New(t) // in order to pick up the rapid rng
-		randDur := rapid.IntsRange(1, int(maxDuration.Milliseconds())).Draw(t, "dur").(int)
+		randDur := rapid.IntRange(1, int(maxDuration.Milliseconds())).Draw(t, "dur").(int)
 		dur := time.Duration(randDur * int(time.Millisecond))
 		seg := &stream.HLSSegment{Duration: dur.Seconds()}
 		creds, err := genSegCreds(sess, seg)
@@ -913,7 +913,7 @@ func TestCoreNetSegData_RoundTrip_Duration(t *testing.T) {
 	// and vice versa.
 	rapid.Check(t, func(t *rapid.T) {
 		assert := assert.New(t) // in order to pick up the rapid rng
-		randDur := rapid.IntsRange(1, int(maxDuration.Milliseconds())).Draw(t, "dur").(int)
+		randDur := rapid.IntRange(1, int(maxDuration.Milliseconds())).Draw(t, "dur").(int)
 		dur := time.Duration(randDur * int(time.Millisecond))
 		segData := &net.SegData{Duration: int32(randDur)}
 		md := &core.SegTranscodingMetadata{Duration: dur, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}}

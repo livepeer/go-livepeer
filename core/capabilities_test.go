@@ -8,8 +8,8 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
 
-	"github.com/flyingmutant/rapid"
 	"github.com/stretchr/testify/assert"
+	"pgregory.net/rapid"
 )
 
 func TestCapability_NewString(t *testing.T) {
@@ -38,8 +38,8 @@ func TestCapability_CompatibleBitstring(t *testing.T) {
 		assert := assert.New(t) // in order to pick up the rapid rng
 
 		// generate initial list of caps
-		nbCaps := rapid.IntsRange(0, 512).Draw(t, "nbCaps").(int)
-		isSet := rapid.IntsRange(0, 1)
+		nbCaps := rapid.IntRange(0, 512).Draw(t, "nbCaps").(int)
+		isSet := rapid.IntRange(0, 1)
 		caps := []Capability{}
 		for i := 0; i < nbCaps; i++ {
 			if 1 == isSet.Draw(t, "isSet").(int) {
@@ -48,12 +48,12 @@ func TestCapability_CompatibleBitstring(t *testing.T) {
 		}
 
 		// generate a subset of caps
-		reductionSz := rapid.IntsRange(0, len(caps)).Draw(t, "reductionSz").(int)
+		reductionSz := rapid.IntRange(0, len(caps)).Draw(t, "reductionSz").(int)
 		subsetCaps := make([]Capability, len(caps))
 		copy(subsetCaps, caps)
 		for i := 0; i < reductionSz; i++ {
 			// select an index k, and remove it
-			k := rapid.IntsRange(0, len(subsetCaps)-1).Draw(t, "k").(int)
+			k := rapid.IntRange(0, len(subsetCaps)-1).Draw(t, "k").(int)
 			subsetCaps[k] = subsetCaps[len(subsetCaps)-1]
 			subsetCaps = subsetCaps[:len(subsetCaps)-1]
 		}
@@ -213,8 +213,8 @@ func TestCapability_RoundTrip_Net(t *testing.T) {
 		assert := assert.New(t) // in order to pick up the rapid rng
 
 		makeCapList := func() []Capability {
-			randCapsLen := rapid.IntsRange(0, 256).Draw(t, "capLen").(int)
-			randCaps := rapid.IntsRange(0, 512)
+			randCapsLen := rapid.IntRange(0, 256).Draw(t, "capLen").(int)
+			randCaps := rapid.IntRange(0, 512)
 			capList := []Capability{}
 			for i := 0; i < randCapsLen; i++ {
 				capList = append(capList, Capability(randCaps.Draw(t, "cap").(int)))

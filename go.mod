@@ -19,7 +19,6 @@ require (
 	github.com/fatih/color v1.7.0 // indirect
 	// replace example.com/some/dependency => example.com/some/dependency-fork v1.2.3
 	github.com/fjl/memsize v0.0.0-20190710130421-bcb5799ab5e5 // indirect
-	github.com/flyingmutant/rapid v0.0.0-20190904072629-5761511f78c8
 	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/mock v1.4.3
@@ -68,6 +67,7 @@ require (
 	gopkg.in/olebedev/go-duktape.v3 v3.0.0-20190709231704-1e4459ed25ff // indirect
 	gopkg.in/sourcemap.v1 v1.0.5 // indirect
 	gopkg.in/urfave/cli.v1 v1.0.0-00010101000000-000000000000 // indirect
+	pgregory.net/rapid v0.4.0
 )
 
 replace gopkg.in/urfave/cli.v1 => github.com/urfave/cli v1.22.2-0.20191002033821-63cd2e3d6bb5
