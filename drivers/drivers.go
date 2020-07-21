@@ -76,6 +76,24 @@ func ParseOSURL(input string, own bool) (OSDriver, error) {
 		}
 		return NewS3Driver(u.Host, base, u.User.Username(), pw), nil
 	}
+	// custom s3-compatible store
+	if u.Scheme == "s3+http" || u.Scheme == "s3+https" {
+		scheme := "http"
+		if u.Scheme == "s3+https" {
+			scheme = "https"
+		}
+		_, bucket := path.Split(u.Path)
+		hosturl, err := url.Parse(input)
+		if err != nil {
+			return nil, err
+		}
+		hosturl.Scheme = scheme
+		pw, ok := u.User.Password()
+		if ok == false {
+			return nil, fmt.Errorf("password is required with s3:// OS")
+		}
+		return NewCustomS3Driver(hosturl.String(), bucket, u.User.Username(), pw), nil
+	}
 	if u.Scheme == "gs" {
 		file := u.User.Username()
 		if own {

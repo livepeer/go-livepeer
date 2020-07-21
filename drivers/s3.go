@@ -93,11 +93,27 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string) OSDriver {
 	return os
 }
 
+// For creating S3-compatible stores other than S3 itself
+func NewCustomS3Driver(host, bucket, accessKey, accessKeySecret string) OSDriver {
+	os := &s3OS{
+		host:               host,
+		bucket:             bucket,
+		awsAccessKeyID:     accessKey,
+		awsSecretAccessKey: accessKeySecret,
+	}
+	if os.awsAccessKeyID != "" {
+		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
+		cfg := aws.NewConfig().WithRegion(os.region).WithCredentials(creds)
+		os.s3svc = s3.New(session.New(), cfg)
+	}
+	return os
+}
+
 func (os *s3OS) NewSession(path string) OSSession {
 	policy, signature, credential, xAmzDate := createPolicy(os.awsAccessKeyID,
 		os.bucket, os.region, os.awsSecretAccessKey, path)
 	sess := &s3Session{
-		host:        s3Host(os.bucket),
+		host:        os.host,
 		key:         path,
 		policy:      policy,
 		signature:   signature,
@@ -262,6 +278,9 @@ func newfileUploadRequest(uri string, params map[string]string, fData io.Reader,
 	}
 
 	req, err := http.NewRequest("POST", uri, body)
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	return req, err
 }
