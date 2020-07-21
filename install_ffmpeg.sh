@@ -115,7 +115,7 @@ if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
     --disable-postproc --disable-lzma \
     --enable-gnutls --enable-libx264 --enable-gpl \
-    --enable-protocol=https,rtmp,file \
+    --enable-protocol=https,http,rtmp,file \
     --enable-muxer=mpegts,hls,segment,mp4 --enable-demuxer=flv,mpegts,mp4,mov \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps \
     --enable-parser=aac,aac_latm,h264 \
