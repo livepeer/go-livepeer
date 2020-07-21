@@ -448,6 +448,14 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		params.OS = drivers.NodeStorage.NewSession(string(mid))
 	}
 	storage := params.OS
+
+	// Generate and set capabilities
+	caps, err := core.JobCapabilities(params)
+	if err != nil {
+		return nil, err
+	}
+	params.Capabilities = caps
+
 	vProfile := ffmpeg.VideoProfile{
 		Name:       "source",
 		Resolution: params.Resolution,

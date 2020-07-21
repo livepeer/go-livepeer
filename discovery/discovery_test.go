@@ -72,7 +72,7 @@ func TestDeadLock(t *testing.T) {
 	assert := assert.New(t)
 	wg.Add(len(uris))
 	pool := NewOrchestratorPool(nil, uris)
-	infos, err := pool.GetOrchestrators(1, newStubSuspender())
+	infos, err := pool.GetOrchestrators(1, newStubSuspender(), newStubCapabilities())
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 1, "Should return one orchestrator")
 	assert.Equal("transcoderfromtestserver", infos[0].Transcoder)
@@ -119,7 +119,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 
 	wg.Add(len(uris))
 	pool := NewOrchestratorPoolWithPred(nil, uris, pred)
-	infos, err := pool.GetOrchestrators(1, newStubSuspender())
+	infos, err := pool.GetOrchestrators(1, newStubSuspender(), newStubCapabilities())
 
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 1, "Should return one orchestrator")
@@ -235,7 +235,7 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
 	require.NoError(err)
 	assert.Equal(pool.Size(), 3)
-	orchs, err := pool.GetOrchestrators(pool.Size(), newStubSuspender())
+	orchs, err := pool.GetOrchestrators(pool.Size(), newStubSuspender(), newStubCapabilities())
 	for _, o := range orchs {
 		assert.Equal(o.PriceInfo, expPriceInfo)
 		assert.Equal(o.Transcoder, expTranscoder)
@@ -579,7 +579,7 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) 
 
 	urls := pool.GetURLs()
 	assert.Len(urls, 0)
-	infos, err := pool.GetOrchestrators(len(addresses), newStubSuspender())
+	infos, err := pool.GetOrchestrators(len(addresses), newStubSuspender(), newStubCapabilities())
 
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 0)
@@ -670,7 +670,7 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 	for _, url := range urls {
 		assert.Contains(addresses, url.String())
 	}
-	infos, err := pool.GetOrchestrators(50, newStubSuspender())
+	infos, err := pool.GetOrchestrators(50, newStubSuspender(), newStubCapabilities())
 	for _, info := range infos {
 		assert.Equal(info.PriceInfo, expPriceInfo)
 		assert.Equal(info.Transcoder, expTranscoder)
@@ -782,7 +782,7 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 		assert.Contains(addresses[25:], url.String())
 	}
 
-	infos, err := pool.GetOrchestrators(len(orchestrators), newStubSuspender())
+	infos, err := pool.GetOrchestrators(len(orchestrators), newStubSuspender(), newStubCapabilities())
 
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 25)
@@ -844,7 +844,7 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 	sender.On("ValidateTicketParams", mock.Anything).Return(errors.New("ValidateTicketParams error")).Times(25)
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil).Times(25)
 
-	infos, err := pool.GetOrchestrators(len(addresses), newStubSuspender())
+	infos, err := pool.GetOrchestrators(len(addresses), newStubSuspender(), newStubCapabilities())
 	assert.Nil(err)
 	assert.Len(infos, 25)
 	sender.AssertNumberOfCalls(t, "ValidateTicketParams", 50)
@@ -852,7 +852,7 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 	// Test 0 out of 50 orchs pass ticket params validation
 	sender.On("ValidateTicketParams", mock.Anything).Return(errors.New("ValidateTicketParams error")).Times(50)
 
-	infos, err = pool.GetOrchestrators(len(addresses), newStubSuspender())
+	infos, err = pool.GetOrchestrators(len(addresses), newStubSuspender(), newStubCapabilities())
 	assert.Nil(err)
 	assert.Len(infos, 0)
 	sender.AssertNumberOfCalls(t, "ValidateTicketParams", 100)
@@ -950,7 +950,7 @@ func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
 	for _, url := range urls {
 		assert.Contains(addresses[:25], url.String())
 	}
-	infos, err := pool.GetOrchestrators(50, newStubSuspender())
+	infos, err := pool.GetOrchestrators(50, newStubSuspender(), newStubCapabilities())
 	for _, info := range infos {
 		assert.Equal(info.PriceInfo, expPriceInfo)
 		assert.Equal(info.Transcoder, expTranscoder)
@@ -993,7 +993,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	whpool.mu.Lock()
 	lastReq := whpool.lastRequest
 	whpool.mu.Unlock()
-	orchInfo, err := whpool.GetOrchestrators(2, newStubSuspender())
+	orchInfo, err := whpool.GetOrchestrators(2, newStubSuspender(), newStubCapabilities())
 	require.Nil(err)
 	assert.Len(orchInfo, 2)
 	assert.Equal(3, whpool.Size())
@@ -1012,7 +1012,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	whpool.mu.Lock()
 	whpool.lastRequest = lastReq
 	whpool.mu.Unlock()
-	orchInfo, err = whpool.GetOrchestrators(2, newStubSuspender())
+	orchInfo, err = whpool.GetOrchestrators(2, newStubSuspender(), newStubCapabilities())
 	require.Nil(err)
 	assert.Len(orchInfo, 2)
 	assert.Equal(3, whpool.Size())
@@ -1035,7 +1035,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	whpool.mu.Lock()
 	whpool.lastRequest = lastReq
 	whpool.mu.Unlock()
-	orchInfo, err = whpool.GetOrchestrators(2, newStubSuspender())
+	orchInfo, err = whpool.GetOrchestrators(2, newStubSuspender(), newStubCapabilities())
 	require.Nil(err)
 	assert.Len(orchInfo, 2)
 	assert.Equal(3, whpool.Size())
@@ -1055,7 +1055,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	whpool.mu.Lock()
 	whpool.lastRequest = lastReq
 	whpool.mu.Unlock()
-	orchInfo, err = whpool.GetOrchestrators(2, newStubSuspender())
+	orchInfo, err = whpool.GetOrchestrators(2, newStubSuspender(), newStubCapabilities())
 	require.Nil(err)
 	assert.Len(orchInfo, 2)
 	assert.Equal(3, whpool.Size())
@@ -1152,14 +1152,14 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 
 	// Check that we receive everything
 	wg.Add(len(addresses))
-	res, err := pool.GetOrchestrators(len(addresses), newStubSuspender())
+	res, err := pool.GetOrchestrators(len(addresses), newStubSuspender(), newStubCapabilities())
 	assert.Nil(err)
 	assert.Len(res, len(addresses))
 
 	// Check that partial results are received if requested
 	wg.Add(len(addresses))
 	assert.Greater(len(addresses), 1) // sanity
-	res, err = pool.GetOrchestrators(1, newStubSuspender())
+	res, err = pool.GetOrchestrators(1, newStubSuspender(), newStubCapabilities())
 	assert.Nil(err)
 	assert.Len(res, 1)
 	wg.Wait() // prevents races on remaining responses
@@ -1167,7 +1167,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 	// Check error handling: all errors
 	wg.Add(len(addresses))
 	orchCb = func() error { return errors.New("Error") }
-	res, err = pool.GetOrchestrators(len(addresses), newStubSuspender())
+	res, err = pool.GetOrchestrators(len(addresses), newStubSuspender(), newStubCapabilities())
 	assert.Nil(err)
 	assert.Len(res, 0)
 
@@ -1185,7 +1185,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 	}
 	wg.Add(len(addresses))
 	start := time.Now()
-	res, err = pool.GetOrchestrators(len(addresses), newStubSuspender())
+	res, err = pool.GetOrchestrators(len(addresses), newStubSuspender(), newStubCapabilities())
 	end := time.Now()
 	assert.Nil(err)
 	assert.Len(res, len(addresses)-1)
@@ -1220,9 +1220,11 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 	sus.list["https://127.0.0.1:8938"] = 5
 	require.Greater(sus.Suspended("https://127.0.0.1:8938"), 0)
 
+	caps := newStubCapabilities()
+
 	// don't include suspended orchestrators if enough orchestrators are available
 	wg.Add(len(addresses))
-	res, err := pool.GetOrchestrators(2, sus)
+	res, err := pool.GetOrchestrators(2, sus, caps)
 	assert.Nil(err)
 	assert.Len(res, 2)
 	assert.NotEqual(res[0].GetTranscoder(), "https://127.0.0.1:8938")
@@ -1231,7 +1233,7 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 	// include suspended O's if not enough non-suspended O's available
 	wg.Add(len(addresses))
 	require.Greater(sus.Suspended("https://127.0.0.1:8938"), 0)
-	res, err = pool.GetOrchestrators(3, sus)
+	res, err = pool.GetOrchestrators(3, sus, caps)
 	assert.Nil(err)
 	assert.Len(res, 3)
 	// suspended Os are added last
@@ -1240,7 +1242,7 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 	// no suspended O's, insufficient non-suspended O's
 	sus = newStubSuspender()
 	wg.Add(len(addresses))
-	res, err = pool.GetOrchestrators(4, sus)
+	res, err = pool.GetOrchestrators(4, sus, caps)
 	assert.Nil(err)
 	assert.Len(res, 3)
 
@@ -1248,7 +1250,7 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 	wg.Add(len(addresses))
 	sus.list["https://127.0.0.1:8938"] = 5
 	require.Greater(sus.Suspended("https://127.0.0.1:8938"), 0)
-	res, err = pool.GetOrchestrators(4, sus)
+	res, err = pool.GetOrchestrators(4, sus, caps)
 	assert.Nil(err)
 	assert.Len(res, 3)
 	// suspended Os are added last
@@ -1259,7 +1261,7 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 	sus.list["https://127.0.0.1:8937"] = 2
 	require.Greater(sus.Suspended("https://127.0.0.1:8937"), 0)
 	// https://127.0.0.1:8937 should be a lower index than https://127.0.0.1:8938
-	res, err = pool.GetOrchestrators(4, sus)
+	res, err = pool.GetOrchestrators(4, sus, caps)
 	assert.Nil(err)
 	assert.Len(res, 3)
 	assert.Equal(res[1].Transcoder, "https://127.0.0.1:8937")
@@ -1288,7 +1290,7 @@ func TestOrchestratorPool_ShuffleGetOrchestrators(t *testing.T) {
 	iters := 0
 	for j := 0; j < 10; j++ {
 		iters++
-		_, err := pool.GetOrchestrators(len(addresses), newStubSuspender())
+		_, err := pool.GetOrchestrators(len(addresses), newStubSuspender(), newStubCapabilities())
 		responses := []*url.URL{}
 		for i := 0; i < len(addresses); i++ {
 			select {
@@ -1357,7 +1359,7 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	getOrchestrators := func(nb int) ([]*net.OrchestratorInfo, error) {
 		// requests go out to all Os in the pool, regardless of number requested
 		wg.Add(pool.Size())
-		return pool.GetOrchestrators(nb, newStubSuspender())
+		return pool.GetOrchestrators(nb, newStubSuspender(), newStubCapabilities())
 	}
 	drainOrchResponses := func(nb int) {
 		for i := 0; i < nb; i++ {
@@ -1420,4 +1422,68 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	assert.Len(res, 1)
 	assert.False(timedOut(start, end), "Timed out")
 	assert.True(responsesDrained(), "Did not drain responses in time")
+}
+
+func TestOrchestratorPool_Capabilities(t *testing.T) {
+	assert := assert.New(t)
+
+	// should succeed: legacy caps only
+	i1 := &net.OrchestratorInfo{}
+	// should fail: incompatible caps
+	i2 := &net.OrchestratorInfo{Capabilities: &net.Capabilities{}}
+	i3 := &net.OrchestratorInfo{Capabilities: &net.Capabilities{Bitstring: []uint64{1}}}
+	// should succeed: compatible caps
+	i4 := &net.OrchestratorInfo{Capabilities: &net.Capabilities{Bitstring: capCompatString}}
+
+	responses := []*net.OrchestratorInfo{i1, i2, i3, i4}
+	addresses := stringsToURIs([]string{"a://b", "a://b", "a://b", "a://b"})
+	pool := NewOrchestratorPool(nil, addresses)
+
+	// some sanity checks
+	assert.Len(addresses, len(responses))
+	assert.NotEqual(capCompatString, i2.Capabilities.Bitstring)
+	assert.NotEqual(capCompatString, i3.Capabilities.Bitstring)
+	assert.Equal(capCompatString, i4.Capabilities.Bitstring)
+	assert.True(newStubCapabilities().CompatibleWith(i4.Capabilities))
+
+	mu := &sync.Mutex{}
+	calls := 0
+	oldOrchInfo := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = oldOrchInfo }()
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+		mu.Lock()
+		defer func() {
+			calls = (calls + 1) % len(responses)
+			mu.Unlock()
+		}()
+		return responses[calls], nil
+	}
+	sus := newStubSuspender()
+
+	// weird golang behavior: interface values do not check as nil
+	// even though they may actually be nil. cf. common.CapabilityComparator
+	// Following will segfault unless an additional nil check is placed within
+	// the CapabilityComparator methods.
+	// Having params.Capabilities == nil would indicate a bug elsewhere.
+	// So this should fail to return any orchestrators.
+	params := core.StreamParameters{}
+	assert.Nil(params.Capabilities)
+	infos, err := pool.GetOrchestrators(len(responses), sus, params.Capabilities)
+	assert.Nil(err)
+	assert.Len(infos, 0)
+
+	// stub (legacy) capability for broadcaster
+	caps := newStubCapabilities()
+	assert.True(caps.LegacyOnly()) // sanity check
+	infos, err = pool.GetOrchestrators(len(responses), sus, caps)
+	assert.Nil(err)
+	assert.ElementsMatch(infos, []*net.OrchestratorInfo{i1, i4})
+
+	// non-legacy. only one should pass the filter
+	caps.isLegacy = false
+	assert.False(caps.LegacyOnly()) // sanity check
+	infos, err = pool.GetOrchestrators(len(responses), sus, caps)
+	assert.Nil(err)
+	assert.Len(infos, 1)
+	assert.Equal(i4, infos[0])
 }

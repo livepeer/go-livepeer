@@ -217,7 +217,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 		return nil, errDiscovery
 	}
 
-	tinfos, err := n.OrchestratorPool.GetOrchestrators(count, sus)
+	tinfos, err := n.OrchestratorPool.GetOrchestrators(count, sus, params.Capabilities)
 	if len(tinfos) <= 0 {
 		glog.Info("No orchestrators found; not transcoding. Error: ", err)
 		return nil, errNoOrchs

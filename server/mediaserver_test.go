@@ -88,7 +88,7 @@ func (d *stubDiscovery) GetURLs() []*url.URL {
 	return nil
 }
 
-func (d *stubDiscovery) GetOrchestrators(num int, sus common.Suspender) ([]*net.OrchestratorInfo, error) {
+func (d *stubDiscovery) GetOrchestrators(num int, sus common.Suspender, caps common.CapabilityComparator) ([]*net.OrchestratorInfo, error) {
 	if d.waitGetOrch != nil {
 		<-d.waitGetOrch
 	}
@@ -800,6 +800,7 @@ func TestRegisterConnection(t *testing.T) {
 	assert.Equal(string(mid)+"/source", s.LastHLSStreamID().String())
 	assert.NotNil(cxn.params.OS)
 	assert.Nil(cxn.params.OS.GetInfo())
+	assert.NotNil(cxn.params.Capabilities)
 
 	// Should return an error if creating another cxn with the same mid
 	_, err = s.registerConnection(strm)
@@ -813,6 +814,22 @@ func TestRegisterConnection(t *testing.T) {
 	assert.Equal(storage, cxn.params.OS)
 	assert.Equal(net.OSInfo_S3, cxn.params.OS.GetInfo().StorageType)
 	assert.Equal(cxn.params.OS, cxn.pl.GetOSSession())
+
+	// check for capabilities
+	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
+	cxn, err = s.registerConnection(strm)
+	assert.Nil(err)
+	job, err := core.JobCapabilities(streamParams(strm))
+	assert.Nil(err)
+	assert.Equal(job, cxn.params.Capabilities)
+	// check for capabilities: exit with an invalid cap
+	profiles[0].Format = -1
+	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
+	cxn, err = s.registerConnection(strm)
+	assert.Equal("capability: unknown format", err.Error())
+	// TODO test with non-legacy capabilities once we have some
+	// Should result in a non-nil `cxn.params.Capabilities`.
 
 	// Ensure thread-safety under -race
 	var wg sync.WaitGroup

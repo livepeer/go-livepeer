@@ -13,9 +13,14 @@ type Broadcaster interface {
 	Sign([]byte) ([]byte, error)
 }
 
+type CapabilityComparator interface {
+	CompatibleWith(*net.Capabilities) bool
+	LegacyOnly() bool
+}
+
 type OrchestratorPool interface {
 	GetURLs() []*url.URL
-	GetOrchestrators(int, Suspender) ([]*net.OrchestratorInfo, error)
+	GetOrchestrators(int, Suspender, CapabilityComparator) ([]*net.OrchestratorInfo, error)
 	Size() int
 }
 

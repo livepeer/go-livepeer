@@ -67,6 +67,26 @@ const RtmpPort = "1935"
 const RpcPort = "8935"
 const CliPort = "7935"
 
+// Add to this list as new features are added. Orchestrator only
+var defaultCapabilities = []core.Capability{
+	core.Capability_H264,
+	core.Capability_MPEGTS,
+	core.Capability_MP4,
+	core.Capability_FractionalFramerates,
+	core.Capability_StorageDirect,
+	core.Capability_StorageS3,
+	core.Capability_StorageGCS,
+	core.Capability_ProfileH264Baseline,
+	core.Capability_ProfileH264Main,
+	core.Capability_ProfileH264High,
+	core.Capability_ProfileH264ConstrainedHigh,
+	core.Capability_GOP,
+}
+
+// Add to this list as certain features become mandatory. Orchestrator only
+// Use sparingly, as adding to this is a hard break with older nodes
+var mandatoryCapabilities = []core.Capability{}
+
 func main() {
 	// Override the default flag set since there are dependencies that
 	// incorrectly add their own flags (specifically, due to the 'testing'
@@ -804,6 +824,8 @@ func main() {
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
 		*httpAddr = defaultAddr(*httpAddr, "", n.GetServiceURI().Port())
+
+		n.Capabilities = core.NewCapabilities(defaultCapabilities, mandatoryCapabilities)
 
 		if !*transcoder && n.OrchSecret == "" {
 			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")

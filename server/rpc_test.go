@@ -70,6 +70,7 @@ type stubOrchestrator struct {
 	serviceURI   string
 	res          *core.TranscodeResult
 	offchain     bool
+	caps         *core.Capabilities
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
@@ -145,6 +146,16 @@ func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID 
 }
 
 func (r *stubOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
+}
+
+func (r *stubOrchestrator) Capabilities() *net.Capabilities {
+	if r.caps != nil {
+		return r.caps.ToNetCapabilities()
+	}
+	return core.NewCapabilities(nil, nil).ToNetCapabilities()
+}
+func (r *stubOrchestrator) LegacyOnly() bool {
+	return true
 }
 
 func newStubOrchestrator() *stubOrchestrator {
@@ -300,6 +311,11 @@ func TestRPCSeg(t *testing.T) {
 	corruptSegData(sd, errSegSig) // missing sig
 	sd.Sig = []byte("abc")
 	corruptSegData(sd, errSegSig) // invalid sig
+
+	// incompatible capabilities
+	sd = &net.SegData{Capabilities: &net.Capabilities{Bitstring: []uint64{1}}}
+	sd.Sig, _ = b.Sign((&core.SegTranscodingMetadata{}).Flatten())
+	corruptSegData(sd, errCapCompat)
 
 	// at capacity
 	sd = &net.SegData{ManifestId: []byte(s.Params.ManifestID)}
@@ -845,6 +861,32 @@ func TestGetOrchestrator_PriceInfoError(t *testing.T) {
 	assert.EqualError(t, err, expErr.Error())
 }
 
+func TestGenVerify_RoundTrip_Capabilities(t *testing.T) {
+	orch := &stubOrchestrator{offchain: true}
+
+	// check invariant : verifySegCreds(genSegCreds(caps)).Capabilities == caps
+	rapid.Check(t, func(t *rapid.T) {
+		assert := assert.New(t) // in order to pick up the rapid rng
+		randCapsLen := rapid.IntsRange(0, 256).Draw(t, "capLen").(int)
+		randCaps := rapid.IntsRange(0, 512)
+		caps := []core.Capability{}
+		for i := 0; i < randCapsLen; i++ {
+			caps = append(caps, core.Capability(randCaps.Draw(t, "cap").(int)))
+		}
+		sess := &BroadcastSession{
+			Broadcaster: stubBroadcaster2(),
+			Params: &core.StreamParameters{
+				Profiles:     []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9},
+				Capabilities: core.NewCapabilities(caps, nil),
+			}}
+		orch.caps = sess.Params.Capabilities
+		creds, err := genSegCreds(sess, &stream.HLSSegment{})
+		assert.Nil(err)
+		md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+		assert.Equal(sess.Params.Capabilities, md.Caps)
+	})
+}
+
 func TestGenVerify_RoundTrip_Duration(t *testing.T) {
 	sess := &BroadcastSession{Broadcaster: stubBroadcaster2(), Params: &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}}}
 	orch := &stubOrchestrator{offchain: true}
@@ -1000,6 +1042,13 @@ func (o *mockOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID 
 
 func (o *mockOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
 	o.Called(addr, manifestID, price, pixels)
+}
+
+func (o *mockOrchestrator) Capabilities() *net.Capabilities {
+	return core.NewCapabilities(nil, nil).ToNetCapabilities()
+}
+func (o *mockOrchestrator) LegacyOnly() bool {
+	return true
 }
 
 func defaultTicketParams() *net.TicketParams {

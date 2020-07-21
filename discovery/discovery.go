@@ -45,16 +45,43 @@ func (o *orchestratorPool) GetURLs() []*url.URL {
 	return o.uris
 }
 
-func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender common.Suspender) ([]*net.OrchestratorInfo, error) {
+func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator) ([]*net.OrchestratorInfo, error) {
 	numAvailableOrchs := len(o.uris)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
 	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
 
 	infoCh := make(chan *net.OrchestratorInfo, numAvailableOrchs)
 	errCh := make(chan error, numAvailableOrchs)
+
+	// The following allows us to avoid capability check for jobs that only
+	// depend on "legacy" features, since older orchestrators support these
+	// features without capability discovery. This enables interop between
+	// older orchestrators and newer orchestrators as long as the job only
+	// requires the legacy feature set.
+	//
+	// When / if it's justified to completely break interop with older
+	// orchestrators, then we can probably remove this check and work with
+	// the assumption that all orchestrators support capability discovery.
+	legacyCapsOnly := caps.LegacyOnly()
+
+	isCompatible := func(info *net.OrchestratorInfo) bool {
+		if o.pred != nil && !o.pred(info) {
+			return false
+		}
+		// Legacy features already have support on the orchestrator.
+		// Capabilities can be omitted in this case for older orchestrators.
+		// Otherwise, capabilities are required to be present.
+		if info.Capabilities == nil {
+			if legacyCapsOnly {
+				return true
+			}
+			return false
+		}
+		return caps.CompatibleWith(info.Capabilities)
+	}
 	getOrchInfo := func(uri *url.URL) {
 		info, err := serverGetOrchInfo(ctx, o.bcast, uri)
-		if err == nil && (o.pred == nil || o.pred(info)) {
+		if err == nil && isCompatible(info) {
 			infoCh <- info
 			return
 		}

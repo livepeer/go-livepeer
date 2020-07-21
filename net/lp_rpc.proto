@@ -84,6 +84,20 @@ message PriceInfo {
   int64 pixelsPerUnit = 2;
 }
 
+message Capabilities {
+
+    // Bit string of supported features - one bit per feature
+    repeated uint64 bitstring = 1;
+
+    // Bit string of features that are required to be supported
+    repeated uint64 mandatories = 2;
+
+    // Non-binary capability constraints, such as supported ranges.
+    message Constraints {
+            // Empty for now
+    }
+}
+
 // The orchestrator sends this in response to `GetOrchestrator`, containing
 // miscellaneous data related to the job.
 message OrchestratorInfo {
@@ -99,6 +113,9 @@ message OrchestratorInfo {
 
   // ETH address that should sign transcoded results
   bytes address = 4;
+
+  // Features and constraints supported by the orchestrator
+  Capabilities capabilities = 5;
 
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
@@ -125,6 +142,9 @@ message SegData {
 
   // Duration of the segment to be transcoded, in milliseconds
   int32 duration = 6;
+
+  // Capabilities used by this segment.
+  Capabilities capabilities = 7;
 
   // Broadcaster's preferred storage medium(s)
   // XXX should we include this in a sig somewhere until certs are authenticated?
