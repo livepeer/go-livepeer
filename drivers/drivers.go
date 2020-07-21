@@ -56,6 +56,7 @@ func GetSegmentData(uri string) ([]byte, error) {
 	return getSegmentDataHTTP(uri)
 }
 
+// Return the correct OS for a given OS url
 func ParseOSURL(input string) (OSDriver, error) {
 	u, err := url.Parse(input)
 	if err != nil {
@@ -69,8 +70,12 @@ func ParseOSURL(input string) (OSDriver, error) {
 		base := path.Base(u.Path)
 		return NewS3Driver(u.Host, base, u.User.Username(), pw), nil
 	}
+	if u.Scheme == "gs" {
+		base := path.Base(u.Path)
+		file := u.User.Username()
+		return NewGoogleDriver(base, file)
+	}
 	return nil, fmt.Errorf("unrecognized OS scheme: %s", u.Scheme)
-	// return NewS3Driver("a", "b", "c", "d"), nil
 }
 
 var httpc = &http.Client{
