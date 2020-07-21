@@ -96,10 +96,11 @@ type LivepeerServer struct {
 }
 
 type authWebhookResponse struct {
-	ManifestID string   `json:"manifestID"`
-	StreamKey  string   `json:"streamKey"`
-	Presets    []string `json:"presets"`
-	Profiles   []struct {
+	ManifestID  string   `json:"manifestID"`
+	StreamKey   string   `json:"streamKey"`
+	Presets     []string `json:"presets"`
+	ObjectStore string   `json:"objectStore"`
+	Profiles    []struct {
 		Name    string `json:"name"`
 		Width   int    `json:"width"`
 		Height  int    `json:"height"`
@@ -208,6 +209,8 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		var mid core.ManifestID
 		var err error
 		var key string
+		var os drivers.OSDriver
+		var oss drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
 		if resp, err = authenticateStream(url.String()); err != nil {
 			glog.Error("Authentication denied for ", err)
@@ -230,6 +233,15 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			if len(resp.Profiles) <= 0 && len(resp.Presets) <= 0 {
 				profiles = BroadcastJobVideoProfiles
 			}
+
+			// set OS if it was provided
+			if resp.ObjectStore != "" {
+				os, err = drivers.ParseOSURL(resp.ObjectStore, false)
+				if err != nil {
+					glog.Error("Failed to parse object store url ", err)
+					return nil
+				}
+			}
 		} else {
 			profiles = BroadcastJobVideoProfiles
 		}
@@ -240,6 +252,10 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		}
 		if mid == "" {
 			mid = core.RandomManifestID()
+		}
+
+		if os != nil {
+			oss = os.NewSession(string(mid))
 		}
 
 		// Ensure there's no concurrent StreamID with the same name
@@ -263,6 +279,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			RtmpKey:    key,
 			// HTTP push mutates `profiles` so make a copy of it
 			Profiles: append([]ffmpeg.VideoProfile(nil), profiles...),
+			OS:       oss,
 		}
 	}
 }
