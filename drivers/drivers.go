@@ -87,6 +87,7 @@ func ParseOSURL(input string, own bool) (OSDriver, error) {
 		if err != nil {
 			return nil, err
 		}
+		hosturl.User = nil
 		hosturl.Scheme = scheme
 		pw, ok := u.User.Password()
 		if ok == false {
