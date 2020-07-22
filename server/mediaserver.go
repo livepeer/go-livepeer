@@ -858,24 +858,11 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request) {
-	// we read this unconditionally, mostly for ffmpeg
-	// body, err := ioutil.ReadAll(r.Body)
-
-	// if err != nil {
-	// 	httpErr := fmt.Sprintf(`Error reading http request body: %s`, err.Error())
-	// 	glog.Error(httpErr)
-	// 	http.Error(w, httpErr, http.StatusInternalServerError)
-	// 	return
-	// }
-	// r.Body.Close()
-	// r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
-
 	ext := path.Ext(r.URL.Path)
 	if ext != ".m3u8" && ext != ".ts" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	// format := common.ProfileExtensionFormat(ext)
 	pp := strings.Split(r.URL.Path, "/")
 	glog.Infof("Got requst %s (path is %s, parts %+v)", r.URL.String(), r.URL.Path, pp)
 	finalize := r.URL.Query().Get("finalize") == "true"
@@ -900,13 +887,13 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	glog.Infof("lp: %s", requestFileName)
 	ctx := r.Context()
 	sess := drivers.RecordStorage.NewSession(manifestID)
-	fd, _, err := sess.ReadData(ctx, requestFileName)
+	freader, _, err := sess.ReadData(ctx, requestFileName)
 	if err == context.Canceled {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	if err == nil && len(fd) > 0 {
+	if err == nil && freader != nil {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
 		if ext == ".ts" {
@@ -917,21 +904,23 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			w.Header().Set("Content-Type", "application/x-mpegURL")
 		}
 		w.Header().Set("Connection", "keep-alive")
-		w.Write(fd)
+		io.Copy(w, freader)
+		freader.Close()
 		return
 	}
-	files, err := sess.ListFiles(ctx, manifestID+"/", "")
+	filesPage, err := sess.ListFiles(ctx, manifestID+"/", "")
 	// files, err := sess.ListFiles("", "")
 	if err != nil {
 		glog.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	// glog.Infof("Got %d files:", len(files))
 	var jsonFiles []string
-	for _, fn := range files {
+	for _, fileInfo := range filesPage.Files() {
 		// glog.Info(fn)
-		if strings.HasSuffix(fn, ".json") {
-			jsonFiles = append(jsonFiles, fn)
+		if strings.HasSuffix(fileInfo.Name, ".json") {
+			jsonFiles = append(jsonFiles, fileInfo.Name)
 		}
 	}
 	masterPList := m3u8.NewMasterPlaylist()
@@ -939,13 +928,20 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	mainJspl := core.NewJSONPlaylist()
 	for _, fn := range jsonFiles {
 		glog.Info(fn)
-		fb, _, err := sess.ReadData(ctx, fn)
+		fbr, _, err := sess.ReadData(ctx, fn)
 		if err != nil {
 			glog.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		jspl := &core.JsonPlaylist{}
+		fb, err := ioutil.ReadAll(fbr)
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		fbr.Close()
 
 		err = json.Unmarshal(fb, jspl)
 		if err != nil {

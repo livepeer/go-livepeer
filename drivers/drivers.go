@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -27,6 +28,23 @@ type OSDriver interface {
 	NewSession(path string) OSSession
 }
 
+// ErrNoNextPage indicates that there is no next page in ListFiles
+var ErrNoNextPage = fmt.Errorf("no next page")
+
+type FileInfo struct {
+	Name         string
+	ETag         string
+	LastModified time.Time
+	Size         int64
+}
+
+type PageInfo interface {
+	Files() []FileInfo
+	Directories() []string
+	HasNextPage() bool
+	NextPage() (PageInfo, error)
+}
+
 type OSSession interface {
 	SaveData(name string, data []byte, meta map[string]string) (string, error)
 	EndSession()
@@ -40,10 +58,10 @@ type OSSession interface {
 	// Indicates whether this is the correct OS for a given URL
 	IsOwn(url string) bool
 
-	// ListFiles not final interfaces, will be changed
-	ListFiles(ctx context.Context, prefix, delim string) ([]string, error)
+	// ListFiles return list of files
+	ListFiles(ctx context.Context, prefix, delim string) (PageInfo, error)
 
-	ReadData(ctx context.Context, name string) ([]byte, map[string]string, error)
+	ReadData(ctx context.Context, name string) (io.ReadCloser, map[string]string, error)
 }
 
 // NewSession returns new session based on OSInfo received from the network

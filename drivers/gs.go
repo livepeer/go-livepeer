@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"strings"
 	"time"
@@ -166,14 +167,12 @@ func (os *gsOS) NewSession(path string) OSSession {
 		signature:   signature,
 		credential:  os.gsSigner.clientEmail(),
 		storageType: net.OSInfo_GOOGLE,
-		metaPrefix:  "x-goog-meta-",
 	}
 	sess.fields = gsGetFields(sess)
 	return &gsSession{
 		s3Session:   *sess,
 		keyFileName: os.keyFileName,
 	}
-	// return sess
 }
 
 func newGSSession(info *net.S3OSInfo) OSSession {
@@ -184,18 +183,18 @@ func newGSSession(info *net.S3OSInfo) OSSession {
 		signature:   info.Signature,
 		credential:  info.Credential,
 		storageType: net.OSInfo_GOOGLE,
-		metaPrefix:  "x-goog-meta-",
 	}
 	sess.fields = gsGetFields(sess)
 	return sess
 }
 
-func (os *gsSession) ListFiles(ctx context.Context, prefix, delim string) ([]string, error) {
-	res, err := listFilesWithPrefix(ctx, GSBUCKET, prefix, delim, os.keyFileName)
-	return res, err
+func (os *gsSession) ListFiles(ctx context.Context, prefix, delim string) (PageInfo, error) {
+	return nil, errors.New("Not implemented")
+	// res, err := listFilesWithPrefix(ctx, GSBUCKET, prefix, delim, os.keyFileName)
+	// return res, err
 }
 
-func (os *gsSession) ReadData(ctx context.Context, name string) ([]byte, map[string]string, error) {
+func (os *gsSession) ReadData(ctx context.Context, name string) (io.ReadCloser, map[string]string, error) {
 	client, err := storage.NewClient(ctx, option.WithCredentialsFile(os.keyFileName))
 	if err != nil {
 		return nil, nil, fmt.Errorf("storage.NewClient: %v", err)
@@ -210,14 +209,17 @@ func (os *gsSession) ReadData(ctx context.Context, name string) ([]byte, map[str
 	if err != nil {
 		return nil, nil, fmt.Errorf("Object(%q).NewReader: %v", name, err)
 	}
-	defer rc.Close()
+	return rc, nil, nil
+	/*
+		defer rc.Close()
 
-	data, err := ioutil.ReadAll(rc)
-	if err != nil {
-		return nil, nil, fmt.Errorf("ioutil.ReadAll: %v", err)
-	}
+		data, err := ioutil.ReadAll(rc)
+		if err != nil {
+			return nil, nil, fmt.Errorf("ioutil.ReadAll: %v", err)
+		}
 
-	return data, nil, nil
+		return data, nil, nil
+	*/
 }
 
 func gsGetFields(sess *s3Session) map[string]string {

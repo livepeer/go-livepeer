@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -126,10 +127,10 @@ func (s *stubOSSession) IsExternal() bool {
 func (s *stubOSSession) IsOwn(url string) bool {
 	return true
 }
-func (s *stubOSSession) ListFiles(ctx context.Context, prefix, delim string) ([]string, error) {
+func (s *stubOSSession) ListFiles(ctx context.Context, prefix, delim string) (drivers.PageInfo, error) {
 	return nil, nil
 }
-func (s *stubOSSession) ReadData(ctx context.Context, name string) ([]byte, map[string]string, error) {
+func (s *stubOSSession) ReadData(ctx context.Context, name string) (io.ReadCloser, map[string]string, error) {
 	return nil, nil, nil
 }
 
@@ -1162,7 +1163,7 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	mid := core.ManifestID("foo")
 	pl := &stubPlaylistManager{manifestID: mid}
 	drivers.S3BUCKET = "livepeer"
-	mem := drivers.NewS3Driver("", drivers.S3BUCKET, "", "").NewSession(string(mid))
+	mem := drivers.NewS3Driver("", drivers.S3BUCKET, "", "", false).NewSession(string(mid))
 	assert.NotNil(mem)
 
 	baseURL := "https://livepeer.s3.amazonaws.com"
@@ -1210,7 +1211,7 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 	mid := core.ManifestID("foo")
 	pl := &stubPlaylistManager{manifestID: mid}
 	drivers.S3BUCKET = "livepeer"
-	mem := drivers.NewS3Driver("", drivers.S3BUCKET, "", "").NewSession(string(mid))
+	mem := drivers.NewS3Driver("", drivers.S3BUCKET, "", "", false).NewSession(string(mid))
 	assert.NotNil(mem)
 
 	baseURL := "https://livepeer.s3.amazonaws.com"
