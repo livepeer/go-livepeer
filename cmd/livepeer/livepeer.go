@@ -747,9 +747,9 @@ func main() {
 		}
 		drivers.NodeStorage, err = drivers.ParseOSURL(prepared, true)
 		if *record {
-			drivers.RecordStorage = drivers.NewS3Driver(br[0], br[1], cr[0], cr[1])
+			drivers.RecordStorage = drivers.NewS3Driver(br[0], br[1], cr[0], cr[1], true)
 		} else {
-			drivers.NodeStorage = drivers.NewS3Driver(br[0], br[1], cr[0], cr[1])
+			drivers.NodeStorage = drivers.NewS3Driver(br[0], br[1], cr[0], cr[1], false)
 		}
 	}
 

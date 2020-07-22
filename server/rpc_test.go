@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/url"
 	"testing"
@@ -968,11 +969,11 @@ func (s *mockOSSession) IsOwn(url string) bool {
 	return args.Bool(0)
 }
 
-func (s *mockOSSession) ListFiles(ctx context.Context, prefix, delim string) ([]string, error) {
+func (s *mockOSSession) ListFiles(ctx context.Context, prefix, delim string) (drivers.PageInfo, error) {
 	return nil, nil
 }
 
-func (s *mockOSSession) ReadData(ctx context.Context, name string) ([]byte, map[string]string, error) {
+func (s *mockOSSession) ReadData(ctx context.Context, name string) (io.ReadCloser, map[string]string, error) {
 	return nil, nil, nil
 }
 

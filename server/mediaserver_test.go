@@ -807,7 +807,7 @@ func TestRegisterConnection(t *testing.T) {
 	assert.Equal(err, errAlreadyExists)
 
 	// Check for params with an existing OS assigned
-	storage := drivers.NewS3Driver("", "", "", "").NewSession("")
+	storage := drivers.NewS3Driver("", "", "", "", false).NewSession("")
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), OS: storage})
 	cxn, err = s.registerConnection(strm)
 	assert.Nil(err)
