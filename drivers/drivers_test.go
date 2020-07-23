@@ -60,14 +60,26 @@ func TestGSURL(t *testing.T) {
 	defer os.Remove(file.Name())
 	file.WriteString(testGSToken)
 
-	// Set up test URL
-	u, _ := url.Parse("gs://bucket-name")
-	info := url.User(file.Name())
-	u.User = info
-	urlstr := fmt.Sprintf("%s", u)
-	os, err := ParseOSURL(urlstr, true)
+	// Set up test URL from filesystem when trusted
+	u, _ := url.Parse(fmt.Sprintf("gs://bucket-name?keyfile=%s", file.Name()))
+	prepared, err := PrepareOSURL(u.String())
+	assert.Equal(nil, err)
+	os, err := ParseOSURL(prepared, true)
 	assert.Equal(nil, err)
 	gs, ok := os.(*gsOS)
+	assert.Equal(true, ok)
+	assert.Equal("https://bucket-name.storage.googleapis.com", gs.s3OS.host)
+	assert.Equal("bucket-name", gs.s3OS.bucket)
+
+	// Also test embedding the thing in the URL itself
+	u = &url.URL{
+		Scheme: "gs",
+		Host:   "bucket-name",
+		User:   url.User(testGSToken),
+	}
+	os, err = ParseOSURL(u.String(), false)
+	assert.Equal(nil, err)
+	gs, ok = os.(*gsOS)
 	assert.Equal(true, ok)
 	assert.Equal("https://bucket-name.storage.googleapis.com", gs.s3OS.host)
 	assert.Equal("bucket-name", gs.s3OS.bucket)

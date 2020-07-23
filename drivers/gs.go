@@ -11,7 +11,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"strings"
 	"time"
 
@@ -72,19 +71,16 @@ func gsParseKey(key []byte) (*rsa.PrivateKey, error) {
 	return parsed, nil
 }
 
-func NewGoogleDriver(bucket, keyFileName string) (OSDriver, error) {
+func NewGoogleDriver(bucket, keyData string) (OSDriver, error) {
 	os := &gsOS{
 		s3OS: s3OS{
 			host:   gsHost(bucket),
 			bucket: bucket,
 		},
 	}
-	rawFile, err := ioutil.ReadFile(keyFileName)
-	if err != nil {
-		return nil, err
-	}
+
 	var gsKey gsKeyJSON
-	if err := json.Unmarshal(rawFile, &gsKey); err != nil {
+	if err := json.Unmarshal([]byte(keyData), &gsKey); err != nil {
 		return nil, err
 	}
 	parsedKey, err := gsParseKey([]byte(gsKey.PrivateKey))
