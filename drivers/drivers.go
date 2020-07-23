@@ -56,6 +56,30 @@ func GetSegmentData(uri string) ([]byte, error) {
 	return getSegmentDataHTTP(uri)
 }
 
+// Used for resolving files when necessary and turning into a URL. Don't use
+// this when the URL comes from untrusted sources e.g. AuthWebhookUrl.
+func PrepareOSURL(input string) (string, error) {
+	u, err := url.Parse(input)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme == "gs" {
+		m, _ := url.ParseQuery(u.RawQuery)
+		keyfiles, ok := m["keyfile"]
+		if !ok {
+			return u.String(), nil
+		}
+
+		keyfile := keyfiles[0]
+		content, err := ioutil.ReadFile(keyfile)
+		if err != nil {
+			return "", err
+		}
+		u.User = url.User(string(content))
+	}
+	return u.String(), nil
+}
+
 // Return the correct OS for a given OS url
 func ParseOSURL(input string, own bool) (OSDriver, error) {
 	u, err := url.Parse(input)
