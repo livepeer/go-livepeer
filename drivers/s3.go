@@ -217,6 +217,10 @@ func (os *s3Session) postData(fileName string, buffer []byte) (string, error) {
 	return path + fileName, err
 }
 
+func (os *s3Session) IsOwn(url string) bool {
+	return strings.HasPrefix(url, os.host)
+}
+
 func makeHmac(key []byte, data []byte) []byte {
 	hash := hmac.New(sha256.New, key)
 	hash.Write(data)
