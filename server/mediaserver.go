@@ -236,7 +236,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 			// set OS if it was provided
 			if resp.ObjectStore != "" {
-				os, err = drivers.ParseOSURL(resp.ObjectStore, false)
+				os, err = drivers.ParseOSURL(resp.ObjectStore, false, false)
 				if err != nil {
 					glog.Error("Failed to parse object store url ", err)
 					return nil
