@@ -454,7 +454,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// Download segment data in the following cases:
 		// - A verification policy is set. The segment data is needed for signature verification and/or pixel count verification
 		// - The segment data needs to be uploaded to the broadcaster's own OS
-		if verifier != nil || (bos != nil && !drivers.IsOwnExternal(url)) {
+		if verifier != nil || (bos != nil && !bos.IsOwn(url)) {
 			d, err := downloadSeg(url)
 			if err != nil {
 				errFunc(monitor.SegmentTranscodeErrorDownload, url, err)
@@ -469,7 +469,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			data = d
 		}
 
-		if bos != nil && !drivers.IsOwnExternal(url) {
+		if bos != nil && !bos.IsOwn(url) {
 			ext, err := common.ProfileFormatExtension(profile.Format)
 			if err != nil {
 				errFunc(monitor.SegmentTranscodeErrorSaveData, url, err)

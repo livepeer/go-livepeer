@@ -32,6 +32,9 @@ type OSSession interface {
 
 	// Indicates whether data may be external to this node
 	IsExternal() bool
+
+	// Indicates whether this is the correct OS for a given URL
+	IsOwn(url string) bool
 }
 
 // NewSession returns new session based on OSInfo received from the network

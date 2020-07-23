@@ -105,6 +105,10 @@ func (ostore *MemorySession) IsExternal() bool {
 	return false
 }
 
+func (ostore *MemorySession) IsOwn(url string) bool {
+	return strings.HasPrefix(url, ostore.path)
+}
+
 func (ostore *MemorySession) GetInfo() *net.OSInfo {
 	return nil
 }

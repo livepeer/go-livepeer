@@ -125,6 +125,9 @@ func (s *stubOSSession) GetInfo() *net.OSInfo {
 func (s *stubOSSession) IsExternal() bool {
 	return s.external
 }
+func (s *stubOSSession) IsOwn(url string) bool {
+	return true
+}
 
 type stubPlaylistManager struct {
 	manifestID core.ManifestID
