@@ -729,22 +729,26 @@ func main() {
 
 	if *gsBucket != "" && *gsKey != "" {
 		u := url.URL{
-			Scheme: "gs",
-			Host:   *gsBucket,
-			User:   url.User(*gsKey),
+			Scheme:   "gs",
+			Host:     *gsBucket,
+			RawQuery: fmt.Sprintf("keyfile=%s", *gsKey),
 		}
-		glog.Warningf("-gsbucket and -gskey are deprecated. Instead, you can use -objectStore %s", u.String())
+		glog.Warningf("-gsbucket and -gskey are deprecated. Instead, you can use -objectStore '%s'", u.String())
 		ustr := u.String()
 		objectstore = &ustr
 	}
 
 	if *objectstore != "" {
-		drivers.NodeStorage, err = drivers.ParseOSURL(*objectstore, true)
+		prepared, err := drivers.PrepareOSURL(*objectstore)
 		if err != nil {
-			glog.Error("Error creating object store driver:", err)
+			glog.Error("Error creating object store driver: ", err)
 			return
 		}
-
+		drivers.NodeStorage, err = drivers.ParseOSURL(prepared, true)
+		if err != nil {
+			glog.Error("Error creating object store driver: ", err)
+			return
+		}
 	}
 
 	core.MaxSessions = *maxSessions
