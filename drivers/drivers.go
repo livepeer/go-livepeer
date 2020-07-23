@@ -111,7 +111,7 @@ func PrepareOSURL(input string) (string, error) {
 }
 
 // Return the correct OS for a given OS url
-func ParseOSURL(input string, own bool) (OSDriver, error) {
+func ParseOSURL(input string, own, useFullAPI bool) (OSDriver, error) {
 	u, err := url.Parse(input)
 	if err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func ParseOSURL(input string, own bool) (OSDriver, error) {
 			}
 			S3BUCKET = base
 		}
-		return NewS3Driver(u.Host, base, u.User.Username(), pw), nil
+		return NewS3Driver(u.Host, base, u.User.Username(), pw, useFullAPI), nil
 	}
 	// custom s3-compatible store
 	if u.Scheme == "s3+http" || u.Scheme == "s3+https" {

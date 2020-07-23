@@ -491,7 +491,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				if err != nil {
 					glog.Errorf("Error saving %s to record store: %s", name, err)
 				} else {
-					cpl.InsertHLSSegmentJSON(&sess.Profiles[i], seg.SeqNo, uri, seg.Duration)
+					cpl.InsertHLSSegmentJSON(&profile, seg.SeqNo, uri, seg.Duration)
 					glog.Infof("Successfully saved %s to record store", name)
 				}
 			}()

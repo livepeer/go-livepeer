@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 	"time"
 
@@ -134,13 +133,12 @@ func listFilesWithPrefix(ctx context.Context, bucket, prefix, delim, keyFileName
 	return res, nil
 }
 
-func NewGoogleDriver(bucket, keyFileName string) (OSDriver, error) {
+func NewGoogleDriver(bucket, keyData string) (OSDriver, error) {
 	os := &gsOS{
 		s3OS: s3OS{
 			host:   gsHost(bucket),
 			bucket: bucket,
 		},
-		keyFileName: keyFileName,
 	}
 
 	var gsKey gsKeyJSON
