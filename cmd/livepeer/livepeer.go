@@ -160,13 +160,13 @@ func main() {
 	// Storage:
 	datadir := flag.String("datadir", "", "data directory")
 	objectstore := flag.String("objectStore", "", "url of primary object store")
+	recordstore := flag.String("recordStore", "", "url of object store for recodings")
 
 	// All deprecated
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
 	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
 	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
 	gsKey := flag.String("gskey", "", "Google Storage private key file name (in json format)")
-	record := flag.Bool("record", false, "Use object store in record mode")
 
 	// API
 	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
@@ -745,12 +745,16 @@ func main() {
 			glog.Error("Error creating object store driver: ", err)
 			return
 		}
-		drivers.NodeStorage, err = drivers.ParseOSURL(prepared, true)
-		if *record {
-			drivers.RecordStorage = drivers.NewS3Driver(br[0], br[1], cr[0], cr[1], true)
-		} else {
-			drivers.NodeStorage = drivers.NewS3Driver(br[0], br[1], cr[0], cr[1], false)
+		drivers.NodeStorage, err = drivers.ParseOSURL(prepared, true, false)
+	}
+
+	if *recordstore != "" {
+		prepared, err := drivers.PrepareOSURL(*recordstore)
+		if err != nil {
+			glog.Error("Error creating recordings object store driver: ", err)
+			return
 		}
+		drivers.RecordStorage, err = drivers.ParseOSURL(prepared, false, true)
 	}
 
 	if *gsBucket != "" && *gsKey != "" {
@@ -761,11 +765,7 @@ func main() {
 			glog.Error("Error creating object store driver: ", err)
 			return
 		}
-		if *record {
-			drivers.RecordStorage = store
-		} else {
-			drivers.NodeStorage = store
-		}
+		drivers.NodeStorage = store
 	}
 
 	core.MaxSessions = *maxSessions
