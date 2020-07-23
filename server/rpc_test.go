@@ -1090,6 +1090,11 @@ func (s *mockOSSession) IsExternal() bool {
 	return args.Bool(0)
 }
 
+func (s *mockOSSession) IsOwn(url string) bool {
+	args := s.Called()
+	return args.Bool(0)
+}
+
 type mockOrchestrator struct {
 	mock.Mock
 }
