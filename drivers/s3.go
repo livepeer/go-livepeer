@@ -102,15 +102,18 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI b
 }
 
 // For creating S3-compatible stores other than S3 itself
-func NewCustomS3Driver(host, bucket, accessKey, accessKeySecret string) OSDriver {
-	glog.Infof("using custom s3 with url: %s, bucket %s", host, bucket)
+func NewCustomS3Driver(host, bucket, accessKey, accessKeySecret string, useFullAPI bool) OSDriver {
+	glog.Infof("using custom s3 with url: %s, bucket %s use full API %v", host, bucket, useFullAPI)
 	os := &s3OS{
 		host:               host,
 		bucket:             bucket,
 		awsAccessKeyID:     accessKey,
 		awsSecretAccessKey: accessKeySecret,
 		region:             "ignored",
-		useFullAPI:         true,
+		useFullAPI:         useFullAPI,
+	}
+	if !useFullAPI {
+		os.host += "/" + bucket
 	}
 	if os.awsAccessKeyID != "" {
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
@@ -389,7 +392,11 @@ func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]st
 	for k, v := range os.fields {
 		fields[k] = v
 	}
-	req, err := newfileUploadRequest(os.host, fields, fileBytes, fileName)
+	postURL := os.host
+	if !strings.Contains(postURL, os.bucket) {
+		postURL += "/" + os.bucket
+	}
+	req, err := newfileUploadRequest(postURL, fields, fileBytes, fileName)
 	if err != nil {
 		glog.Error(err)
 		return "", err
@@ -460,6 +467,7 @@ func createPolicy(key, bucket, region, secret, path string) (string, string, str
 }
 
 func newfileUploadRequest(uri string, params map[string]string, fData io.Reader, fileName string) (*http.Request, error) {
+	glog.Infof("Posting data to %s (params %+v)", uri, params)
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	for key, val := range params {
