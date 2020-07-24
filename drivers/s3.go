@@ -21,7 +21,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
@@ -128,6 +127,7 @@ func NewCustomS3Driver(host, bucket, accessKey, accessKeySecret string) OSDriver
 	return os
 }
 
+/*
 func (os *s3OS) EndpointFor(service, region string, opts ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
 	glog.Infof("Got endpoint request for service %s region '%s' opts: %+v", service, region, opts)
 	res := endpoints.ResolvedEndpoint{
@@ -137,6 +137,7 @@ func (os *s3OS) EndpointFor(service, region string, opts ...func(*endpoints.Opti
 	glog.Infof("Returning: %+v", res)
 	return res, nil
 }
+*/
 
 func (os *s3OS) NewSession(path string) OSSession {
 	policy, signature, credential, xAmzDate := createPolicy(os.awsAccessKeyID,
@@ -310,12 +311,13 @@ func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]strin
 		return "", err
 	}
 	glog.Infof("resp: %s", resp.String())
-	var uri string
-	if strings.Contains(os.host, os.bucket) {
-		uri = os.getAbsURL(*keyname)
-	} else {
-		uri = os.host + "/" + os.bucket + "/" + *keyname
-	}
+	// var uri string
+	uri := os.getAbsURL(*keyname)
+	// if strings.Contains(os.host, os.bucket) {
+	// 	uri = os.getAbsURL(*keyname)
+	// } else {
+	// 	uri = os.host + "/" + os.bucket + "/" + *keyname
+	// }
 
 	glog.V(common.VERBOSE).Infof("Saved to S3 %s", uri)
 
@@ -343,7 +345,10 @@ func (os *s3Session) SaveData(name string, data []byte, meta map[string]string) 
 }
 
 func (os *s3Session) getAbsURL(path string) string {
-	return os.host + "/" + path
+	if strings.Contains(os.host, os.bucket) {
+		return os.host + "/" + path
+	}
+	return os.host + "/" + os.bucket + "/" + path
 }
 
 func (os *s3Session) GetInfo() *net.OSInfo {
