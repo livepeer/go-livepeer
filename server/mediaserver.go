@@ -908,21 +908,56 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		freader.Close()
 		return
 	}
-	filesPage, err := sess.ListFiles(ctx, manifestID+"/", "")
+	filesPage, err := sess.ListFiles(ctx, manifestID+"/", "/")
 	// files, err := sess.ListFiles("", "")
 	if err != nil {
 		glog.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	// glog.Infof("Got %d files:", len(files))
+	dirs := filesPage.Directories()
+	if len(dirs) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	glog.Infof("Got %d directoris: %+v", len(dirs), dirs)
+	var latestPlaylistTime time.Time
 	var jsonFiles []string
-	for _, fileInfo := range filesPage.Files() {
-		// glog.Info(fn)
-		if strings.HasSuffix(fileInfo.Name, ".json") {
-			jsonFiles = append(jsonFiles, fileInfo.Name)
+	for _, dirName := range dirs {
+		dirOnePage, err := sess.ListFiles(ctx, dirName+"playlist_", "")
+		if err != nil {
+			glog.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for {
+			playlistsNames := dirOnePage.Files()
+			glog.Infof("Got %d playlists", len(playlistsNames))
+			for _, plf := range playlistsNames {
+				if plf.LastModified.After(latestPlaylistTime) {
+					latestPlaylistTime = plf.LastModified
+				}
+				jsonFiles = append(jsonFiles, plf.Name)
+			}
+			if !dirOnePage.HasNextPage() {
+				break
+			}
+			dirOnePage, err = dirOnePage.NextPage()
+			if err != nil {
+				glog.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 		}
 	}
+	if len(jsonFiles) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if time.Since(latestPlaylistTime) > 24*time.Hour {
+		finalize = true
+	}
+
 	masterPList := m3u8.NewMasterPlaylist()
 	mediaLists := make(map[string]*m3u8.MediaPlaylist)
 	mainJspl := core.NewJSONPlaylist()
