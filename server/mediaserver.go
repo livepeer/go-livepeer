@@ -96,11 +96,12 @@ type LivepeerServer struct {
 }
 
 type authWebhookResponse struct {
-	ManifestID  string   `json:"manifestID"`
-	StreamKey   string   `json:"streamKey"`
-	Presets     []string `json:"presets"`
-	ObjectStore string   `json:"objectStore"`
-	Profiles    []struct {
+	ManifestID        string   `json:"manifestID"`
+	StreamKey         string   `json:"streamKey"`
+	Presets           []string `json:"presets"`
+	ObjectStore       string   `json:"objectStore"`
+	RecordObjectStore string   `json:"recordObjectStore"`
+	Profiles          []struct {
 		Name    string `json:"name"`
 		Width   int    `json:"width"`
 		Height  int    `json:"height"`
@@ -209,8 +210,8 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		var mid core.ManifestID
 		var err error
 		var key string
-		var os drivers.OSDriver
-		var oss drivers.OSSession
+		var os, ros drivers.OSDriver
+		var oss, ross drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
 		if resp, err = authenticateStream(url.String()); err != nil {
 			glog.Error("Authentication denied for ", err)
@@ -242,6 +243,14 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 					return nil
 				}
 			}
+			// set Recording OS if it was provided
+			if resp.RecordObjectStore != "" {
+				ros, err = drivers.ParseOSURL(resp.RecordObjectStore, false, true)
+				if err != nil {
+					glog.Error("Failed to parse object store url ", err)
+					return nil
+				}
+			}
 		} else {
 			profiles = BroadcastJobVideoProfiles
 		}
@@ -256,6 +265,11 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 		if os != nil {
 			oss = os.NewSession(string(mid))
+		}
+
+		if ros != nil {
+			recordPath := fmt.Sprintf("%s/%s", mid, lpmon.NodeID)
+			ross = os.NewSession(recordPath)
 		}
 
 		// Ensure there's no concurrent StreamID with the same name
@@ -280,6 +294,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			// HTTP push mutates `profiles` so make a copy of it
 			Profiles: append([]ffmpeg.VideoProfile(nil), profiles...),
 			OS:       oss,
+			RecordOS: ross,
 		}
 	}
 }
