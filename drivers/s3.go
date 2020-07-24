@@ -211,7 +211,7 @@ func (s3pi *s3pageInfo) NextPage() (PageInfo, error) {
 
 func (s3pi *s3pageInfo) listFiles() error {
 	resp, err := s3pi.s3svc.ListObjectsWithContext(s3pi.ctx, s3pi.params)
-	glog.Infof("list resp: %s", resp)
+	// glog.Infof("list resp: %s", resp)
 	if err != nil {
 		return err
 	}
