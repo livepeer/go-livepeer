@@ -21,6 +21,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
@@ -59,8 +60,8 @@ type s3Session struct {
 var S3BUCKET string
 
 func s3Host(bucket string) string {
-	// return fmt.Sprintf("https://%s.s3.amazonaws.com", bucket)
-	return fmt.Sprintf("https://%s.s3.us-west-002.backblazeb2.com", bucket)
+	return fmt.Sprintf("https://%s.s3.amazonaws.com", bucket)
+	// return fmt.Sprintf("https://%s.s3.us-west-002.backblazeb2.com", bucket)
 	// return fmt.Sprintf("https://%s.storage.googleapis.com", bucket)
 }
 
@@ -84,6 +85,7 @@ func newS3Session(info *net.S3OSInfo) OSSession {
 }
 
 func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI bool) OSDriver {
+	glog.Infof("Creating S3 with region %s bucket %s", region, bucket)
 	os := &s3OS{
 		host:               s3Host(bucket),
 		region:             region,
@@ -95,8 +97,6 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI b
 	if os.awsAccessKeyID != "" {
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
 		cfg := aws.NewConfig().WithRegion(os.region).WithCredentials(creds)
-		cfg = cfg.WithEndpoint("https://s3.us-west-002.backblazeb2.com")
-		// cfg = cfg.WithEndpoint("https://storage.googleapis.com")
 		os.s3svc = s3.New(session.New(), cfg)
 	}
 	return os
@@ -104,18 +104,38 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI b
 
 // For creating S3-compatible stores other than S3 itself
 func NewCustomS3Driver(host, bucket, accessKey, accessKeySecret string) OSDriver {
+	glog.Infof("using custom s3 with url: %s, bucket %s", host, bucket)
 	os := &s3OS{
 		host:               host,
 		bucket:             bucket,
 		awsAccessKeyID:     accessKey,
 		awsSecretAccessKey: accessKeySecret,
+		region:             "ignored",
+		useFullAPI:         true,
 	}
 	if os.awsAccessKeyID != "" {
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
 		cfg := aws.NewConfig().WithRegion(os.region).WithCredentials(creds)
+		// cfg := aws.NewConfig().WithCredentials(creds)
+		cfg = cfg.WithEndpoint(host)
+		cfg = cfg.WithS3ForcePathStyle(true)
+		// cfg = cfg.WithEndpointResolver(os)
+		// cfg = cfg.WithDisableEndpointHostPrefix(true)
+		// cfg = cfg.WithEndpoint("https://s3.us-west-002.backblazeb2.com")
+		// cfg = cfg.WithEndpoint("https://storage.googleapis.com")
 		os.s3svc = s3.New(session.New(), cfg)
 	}
 	return os
+}
+
+func (os *s3OS) EndpointFor(service, region string, opts ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+	glog.Infof("Got endpoint request for service %s region '%s' opts: %+v", service, region, opts)
+	res := endpoints.ResolvedEndpoint{
+		URL:           os.host,
+		SigningRegion: os.region,
+	}
+	glog.Infof("Returning: %+v", res)
+	return res, nil
 }
 
 func (os *s3OS) NewSession(path string) OSSession {
@@ -290,7 +310,12 @@ func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]strin
 		return "", err
 	}
 	glog.Infof("resp: %s", resp.String())
-	uri := os.getAbsURL(*keyname)
+	var uri string
+	if strings.Contains(os.host, os.bucket) {
+		uri = os.getAbsURL(*keyname)
+	} else {
+		uri = os.host + "/" + os.bucket + "/" + *keyname
+	}
 
 	glog.V(common.VERBOSE).Infof("Saved to S3 %s", uri)
 

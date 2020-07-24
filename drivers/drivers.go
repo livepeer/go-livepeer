@@ -143,6 +143,7 @@ func ParseOSURL(input string, own, useFullAPI bool) (OSDriver, error) {
 		}
 		hosturl.User = nil
 		hosturl.Scheme = scheme
+		hosturl.Path = ""
 		pw, ok := u.User.Password()
 		if ok == false {
 			return nil, fmt.Errorf("password is required with s3:// OS")
