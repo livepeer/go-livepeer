@@ -242,26 +242,32 @@ func (os *s3Session) ListFiles(ctx context.Context, prefix, delim string) (PageI
 	return nil, fmt.Errorf("Not implemented")
 }
 
-func (os *s3Session) ReadData(ctx context.Context, name string) (io.ReadCloser, map[string]string, error) {
-	if os.s3svc != nil {
-		params := &s3.GetObjectInput{
-			Bucket: aws.String(os.bucket),
-			Key:    aws.String(name),
-		}
-		resp, err := os.s3svc.GetObjectWithContext(ctx, params)
-		if err != nil {
-			return nil, nil, err
-		}
-		meta := map[string]string{
-			"ETag":         *resp.ETag,
-			"LastModified": (*resp.LastModified).String(),
-		}
-		for k, v := range resp.Metadata {
-			meta[k] = *v
-		}
-		return resp.Body, meta, nil
+func (os *s3Session) ReadData(ctx context.Context, name string) (*FileInfoReader, error) {
+	if os.s3svc == nil {
+		return nil, fmt.Errorf("Not implemented")
 	}
-	return nil, nil, fmt.Errorf("Not implemented")
+	params := &s3.GetObjectInput{
+		Bucket: aws.String(os.bucket),
+		Key:    aws.String(name),
+	}
+	resp, err := os.s3svc.GetObjectWithContext(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	res := &FileInfoReader{
+		Body: resp.Body,
+	}
+	res.LastModified = *resp.LastModified
+	res.ETag = *resp.ETag
+	res.Name = name
+	res.Size = *resp.ContentLength
+	if len(resp.Metadata) > 0 {
+		res.Metadata = make(map[string]string, len(resp.Metadata))
+		for k, v := range resp.Metadata {
+			res.Metadata[k] = *v
+		}
+	}
+	return res, nil
 }
 
 func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]string) (string, error) {

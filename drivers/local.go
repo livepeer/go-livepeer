@@ -3,7 +3,6 @@ package drivers
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/url"
 	"path"
 	"strings"
@@ -80,13 +79,11 @@ func (ostore *MemorySession) EndSession() {
 }
 
 func (ostore *MemorySession) ListFiles(ctx context.Context, prefix, delim string) (PageInfo, error) {
-
 	return nil, fmt.Errorf("Not implemented")
 }
 
-func (ostore *MemorySession) ReadData(ctx context.Context, name string) (io.ReadCloser, map[string]string, error) {
-
-	return nil, nil, fmt.Errorf("Not implemented")
+func (ostore *MemorySession) ReadData(ctx context.Context, name string) (*FileInfoReader, error) {
+	return nil, fmt.Errorf("Not implemented")
 }
 
 // GetData returns the cached data for a name.
