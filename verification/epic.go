@@ -14,7 +14,6 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/livepeer/go-livepeer/common"
-	"github.com/livepeer/go-livepeer/drivers"
 
 	"github.com/livepeer/lpms/ffmpeg"
 )
@@ -187,7 +186,7 @@ func writeSegments(params *Params, dir string) (string, []string, error) {
 
 	// Write out source
 	var srcPath string
-	if drivers.IsOwnExternal(params.Source.Name) {
+	if params.OS != nil && params.OS.IsExternal() && params.OS.IsOwn(params.Source.Name) {
 		// We're using a non-local store, so use the URL of that
 		srcPath = params.Source.Name
 	} else {
@@ -206,7 +205,7 @@ func writeSegments(params *Params, dir string) (string, []string, error) {
 	renditionPaths := make([]string, len(params.URIs))
 	for i, fname := range params.URIs {
 		// If the broadcaster is using its own external storage, use that
-		if drivers.IsOwnExternal(fname) {
+		if params.OS != nil && params.OS.IsExternal() && params.OS.IsOwn(fname) {
 			renditionPaths[i] = fname
 			continue
 		}

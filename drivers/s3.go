@@ -28,7 +28,7 @@ import (
 // S3_POLICY_EXPIRE_IN_HOURS how long access rights given to other node will be valid
 const S3_POLICY_EXPIRE_IN_HOURS = 24
 
-/* S3OS S# backed object storage driver. For own storage access key and access key secret
+/* S3OS S3 backed object storage driver. For own storage access key and access key secret
    should be specified. To give to other nodes access to own S3 storage so called 'POST' policy
    is created. This policy is valid for S3_POLICY_EXPIRE_IN_HOURS hours.
 */
@@ -43,6 +43,7 @@ type s3OS struct {
 }
 
 type s3Session struct {
+	os          *s3OS
 	host        string
 	bucket      string
 	key         string
@@ -55,18 +56,8 @@ type s3Session struct {
 	s3svc       *s3.S3
 }
 
-// S3BUCKET s3 bucket owned by this node
-var S3BUCKET string
-
 func s3Host(bucket string) string {
 	return fmt.Sprintf("https://%s.s3.amazonaws.com", bucket)
-	// return fmt.Sprintf("https://%s.s3.us-west-002.backblazeb2.com", bucket)
-	// return fmt.Sprintf("https://%s.storage.googleapis.com", bucket)
-}
-
-// IsOwnStorageS3 returns true if uri points to S3 bucket owned by this node
-func IsOwnStorageS3(uri string) bool {
-	return strings.HasPrefix(uri, s3Host(S3BUCKET))
 }
 
 func newS3Session(info *net.S3OSInfo) OSSession {
@@ -101,7 +92,7 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI b
 	return os
 }
 
-// For creating S3-compatible stores other than S3 itself
+// NewCustomS3Driver for creating S3-compatible stores other than S3 itself
 func NewCustomS3Driver(host, bucket, accessKey, accessKeySecret string, useFullAPI bool) OSDriver {
 	glog.Infof("using custom s3 with url: %s, bucket %s use full API %v", host, bucket, useFullAPI)
 	os := &s3OS{
@@ -118,34 +109,18 @@ func NewCustomS3Driver(host, bucket, accessKey, accessKeySecret string, useFullA
 	if os.awsAccessKeyID != "" {
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
 		cfg := aws.NewConfig().WithRegion(os.region).WithCredentials(creds)
-		// cfg := aws.NewConfig().WithCredentials(creds)
 		cfg = cfg.WithEndpoint(host)
 		cfg = cfg.WithS3ForcePathStyle(true)
-		// cfg = cfg.WithEndpointResolver(os)
-		// cfg = cfg.WithDisableEndpointHostPrefix(true)
-		// cfg = cfg.WithEndpoint("https://s3.us-west-002.backblazeb2.com")
-		// cfg = cfg.WithEndpoint("https://storage.googleapis.com")
 		os.s3svc = s3.New(session.New(), cfg)
 	}
 	return os
 }
 
-/*
-func (os *s3OS) EndpointFor(service, region string, opts ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
-	glog.Infof("Got endpoint request for service %s region '%s' opts: %+v", service, region, opts)
-	res := endpoints.ResolvedEndpoint{
-		URL:           os.host,
-		SigningRegion: os.region,
-	}
-	glog.Infof("Returning: %+v", res)
-	return res, nil
-}
-*/
-
 func (os *s3OS) NewSession(path string) OSSession {
 	policy, signature, credential, xAmzDate := createPolicy(os.awsAccessKeyID,
 		os.bucket, os.region, os.awsSecretAccessKey, path)
 	sess := &s3Session{
+		os:          os,
 		host:        os.host,
 		bucket:      os.bucket,
 		key:         path,
@@ -171,6 +146,10 @@ func s3GetFields(sess *s3Session) map[string]string {
 	}
 }
 
+func (os *s3Session) OS() OSDriver {
+	return os.os
+}
+
 func (os *s3Session) IsExternal() bool {
 	return true
 }
@@ -181,7 +160,6 @@ func (os *s3Session) EndSession() {
 type s3pageInfo struct {
 	files       []FileInfo
 	directories []string
-	hasNextPage bool
 	ctx         context.Context
 	s3svc       *s3.S3
 	params      *s3.ListObjectsInput
@@ -195,10 +173,10 @@ func (s3pi *s3pageInfo) Directories() []string {
 	return s3pi.directories
 }
 func (s3pi *s3pageInfo) HasNextPage() bool {
-	return s3pi.hasNextPage
+	return s3pi.nextMarker != ""
 }
 func (s3pi *s3pageInfo) NextPage() (PageInfo, error) {
-	if !s3pi.hasNextPage {
+	if s3pi.nextMarker == "" {
 		return nil, ErrNoNextPage
 	}
 	next := &s3pageInfo{
@@ -215,14 +193,12 @@ func (s3pi *s3pageInfo) NextPage() (PageInfo, error) {
 
 func (s3pi *s3pageInfo) listFiles() error {
 	resp, err := s3pi.s3svc.ListObjectsWithContext(s3pi.ctx, s3pi.params)
-	// glog.Infof("list resp: %s", resp)
 	if err != nil {
 		return err
 	}
 	for _, cont := range resp.CommonPrefixes {
 		s3pi.directories = append(s3pi.directories, *cont.Prefix)
 	}
-	s3pi.hasNextPage = *resp.IsTruncated
 	for _, cont := range resp.Contents {
 		fi := FileInfo{
 			Name:         *cont.Key,
@@ -301,10 +277,9 @@ func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]strin
 	contentType := aws.String(os.getContentType(name, data))
 
 	params := &s3.PutObjectInput{
-		Bucket:   bucket,  // Required
-		Key:      keyname, // Required
-		Metadata: metadata,
-		// ACL:    aws.String("bucket-owner-full-control"),
+		Bucket:        bucket,  // Required
+		Key:           keyname, // Required
+		Metadata:      metadata,
 		Body:          bytes.NewReader(data),
 		ContentType:   contentType,
 		ContentLength: aws.Int64(int64(len(data))),
@@ -314,16 +289,8 @@ func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]strin
 		return "", err
 	}
 	glog.Infof("resp: %s", resp.String())
-	// var uri string
 	uri := os.getAbsURL(*keyname)
-	// if strings.Contains(os.host, os.bucket) {
-	// 	uri = os.getAbsURL(*keyname)
-	// } else {
-	// 	uri = os.host + "/" + os.bucket + "/" + *keyname
-	// }
-
 	glog.V(common.VERBOSE).Infof("Saved to S3 %s", uri)
-
 	return uri, err
 }
 

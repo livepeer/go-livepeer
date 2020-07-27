@@ -745,7 +745,7 @@ func main() {
 			glog.Error("Error creating object store driver: ", err)
 			return
 		}
-		drivers.NodeStorage, err = drivers.ParseOSURL(prepared, true, false)
+		drivers.NodeStorage, err = drivers.ParseOSURL(prepared, false)
 	}
 
 	if *recordstore != "" {
@@ -754,13 +754,11 @@ func main() {
 			glog.Error("Error creating recordings object store driver: ", err)
 			return
 		}
-		drivers.RecordStorage, err = drivers.ParseOSURL(prepared, false, true)
+		drivers.RecordStorage, err = drivers.ParseOSURL(prepared, true)
 	}
 
 	if *gsBucket != "" && *gsKey != "" {
-		drivers.GSBUCKET = *gsBucket
-
-		store, err := drivers.NewGoogleDriver(*gsBucket, *gsKey)
+		store, err := drivers.NewGoogleDriver(*gsBucket, *gsKey, false)
 		if err != nil {
 			glog.Error("Error creating object store driver: ", err)
 			return

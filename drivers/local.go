@@ -61,6 +61,10 @@ func (ostore *MemoryOS) GetSession(path string) *MemorySession {
 	return nil
 }
 
+func (ostore *MemorySession) OS() OSDriver {
+	return ostore.os
+}
+
 // EndSession clears memory cache
 func (ostore *MemorySession) EndSession() {
 	ostore.dLock.Lock()

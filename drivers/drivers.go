@@ -46,6 +46,8 @@ type PageInfo interface {
 }
 
 type OSSession interface {
+	OS() OSDriver
+
 	SaveData(name string, data []byte, meta map[string]string) (string, error)
 	EndSession()
 
@@ -78,15 +80,11 @@ func NewSession(info *net.OSInfo) OSSession {
 	return nil
 }
 
-func IsOwnExternal(uri string) bool {
-	return IsOwnStorageS3(uri) || IsOwnStorageGS(uri)
-}
-
 func GetSegmentData(uri string) ([]byte, error) {
 	return getSegmentDataHTTP(uri)
 }
 
-// Used for resolving files when necessary and turning into a URL. Don't use
+// PrepareOSURL used for resolving files when necessary and turning into a URL. Don't use
 // this when the URL comes from untrusted sources e.g. AuthWebhookUrl.
 func PrepareOSURL(input string) (string, error) {
 	u, err := url.Parse(input)
@@ -110,8 +108,8 @@ func PrepareOSURL(input string) (string, error) {
 	return u.String(), nil
 }
 
-// Return the correct OS for a given OS url
-func ParseOSURL(input string, own, useFullAPI bool) (OSDriver, error) {
+// ParseOSURL returns the correct OS for a given OS url
+func ParseOSURL(input string, useFullAPI bool) (OSDriver, error) {
 	u, err := url.Parse(input)
 	if err != nil {
 		return nil, err
@@ -122,12 +120,6 @@ func ParseOSURL(input string, own, useFullAPI bool) (OSDriver, error) {
 			return nil, fmt.Errorf("password is required with s3:// OS")
 		}
 		base := path.Base(u.Path)
-		if own {
-			if S3BUCKET != "" {
-				return nil, fmt.Errorf("we already have our own bucket (%s) but we tried to add another one (%s)", S3BUCKET, base)
-			}
-			S3BUCKET = base
-		}
 		return NewS3Driver(u.Host, base, u.User.Username(), pw, useFullAPI), nil
 	}
 	// custom s3-compatible store
@@ -152,13 +144,7 @@ func ParseOSURL(input string, own, useFullAPI bool) (OSDriver, error) {
 	}
 	if u.Scheme == "gs" {
 		file := u.User.Username()
-		if own {
-			if GSBUCKET != "" {
-				return nil, fmt.Errorf("we already have our own gs bucket (%s) but we tried to add another one (%s)", GSBUCKET, u.Host)
-			}
-			GSBUCKET = u.Host
-		}
-		return NewGoogleDriver(u.Host, file)
+		return NewGoogleDriver(u.Host, file, useFullAPI)
 	}
 	return nil, fmt.Errorf("unrecognized OS scheme: %s", u.Scheme)
 }

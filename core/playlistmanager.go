@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -81,6 +82,23 @@ func (jpl *JsonPlaylist) AddMaster(ajpl *JsonPlaylist) {
 		if !jpl.hasTrack(track.Name) {
 			jpl.Tracks = append(jpl.Tracks, track)
 		}
+	}
+}
+
+// AddSegmentsToMPL adds segments to the MediaPlaylist
+func (jpl *JsonPlaylist) AddSegmentsToMPL(manifestID, trackName string, mpl *m3u8.MediaPlaylist) {
+	for _, seg := range jpl.Segments[trackName] {
+		// make relative URL from absolute one
+		uri := seg.URI
+		mindex := strings.Index(uri, manifestID)
+		if mindex != -1 {
+			uri = uri[mindex+len(manifestID)+1:]
+		}
+		mseg := &m3u8.MediaSegment{
+			URI:      uri,
+			Duration: float64(seg.DurationMS) / 1000.0,
+		}
+		mpl.InsertSegment(seg.SeqNo, mseg)
 	}
 }
 

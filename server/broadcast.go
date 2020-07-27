@@ -254,7 +254,9 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 		if bcastOS.IsExternal() {
 			// Give each O its own OS session to prevent front running uploads
 			pfx := fmt.Sprintf("%v/%v", params.ManifestID, core.RandomManifestID())
-			bcastOS = drivers.NodeStorage.NewSession(pfx)
+			// todo: write unit tests for this case
+			bcastOS = bcastOS.OS().NewSession(pfx)
+			// bcastOS = drivers.NodeStorage.NewSession(pfx)
 		}
 
 		session := &BroadcastSession{
@@ -547,7 +549,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 
 	if verifier != nil {
 		// verify potentially can change content of segURLs
-		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs, segData)
+		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs, segData, cpl.GetOSSession())
 		if err != nil {
 			glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
 			return nil, err
@@ -587,7 +589,7 @@ func shouldStopSession(err error) bool {
 
 func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 	sess *BroadcastSession, source *stream.HLSSegment,
-	res *net.TranscodeData, URIs []string, segData [][]byte) error {
+	res *net.TranscodeData, URIs []string, segData [][]byte, os drivers.OSSession) error {
 
 	// Cache segment contents in params.Renditions
 	// If we need to retry transcoding because verification fails,
@@ -601,6 +603,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 		Results:      res,
 		URIs:         URIs,
 		Renditions:   segData,
+		OS:           os,
 	}
 
 	// The return value from the verifier, if any, are the *accepted* params.
