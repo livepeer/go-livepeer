@@ -291,33 +291,38 @@ func (os *gsSession) EndSession() {
 	}
 }
 
-func (os *gsSession) ReadData(ctx context.Context, name string) (io.ReadCloser, map[string]string, error) {
+func (os *gsSession) ReadData(ctx context.Context, name string) (*FileInfoReader, error) {
 	if !os.useFullAPI {
-		return nil, nil, errors.New("Not implemented")
+		return nil, errors.New("Not implemented")
 	}
 	if os.client == nil {
 		if err := os.createClient(); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 
 	objh := os.client.Bucket(os.bucket).Object(name)
 	attrs, err := objh.Attrs(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	meta := map[string]string{
-		"ETag":         attrs.Etag,
-		"LastModified": attrs.Updated.String(),
-	}
-	for k, v := range attrs.Metadata {
-		meta[k] = v
+	res := &FileInfoReader{}
+	res.Name = name
+	res.Size = attrs.Size
+	res.ETag = attrs.Etag
+	res.LastModified = attrs.Updated
+	if len(attrs.Metadata) > 0 {
+		for k, v := range attrs.Metadata {
+			res.Metadata = make(map[string]string, len(attrs.Metadata))
+			res.Metadata[k] = v
+		}
 	}
 	rc, err := objh.NewReader(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return rc, meta, nil
+	res.Body = rc
+	return res, nil
 }
 
 func gsGetFields(sess *s3Session) map[string]string {

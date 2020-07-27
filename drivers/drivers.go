@@ -38,6 +38,12 @@ type FileInfo struct {
 	Size         int64
 }
 
+type FileInfoReader struct {
+	FileInfo
+	Metadata map[string]string
+	Body     io.ReadCloser
+}
+
 type PageInfo interface {
 	Files() []FileInfo
 	Directories() []string
@@ -63,7 +69,7 @@ type OSSession interface {
 	// ListFiles return list of files
 	ListFiles(ctx context.Context, prefix, delim string) (PageInfo, error)
 
-	ReadData(ctx context.Context, name string) (io.ReadCloser, map[string]string, error)
+	ReadData(ctx context.Context, name string) (*FileInfoReader, error)
 }
 
 // NewSession returns new session based on OSInfo received from the network
