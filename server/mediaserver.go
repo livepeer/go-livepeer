@@ -237,7 +237,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 			// set OS if it was provided
 			if resp.ObjectStore != "" {
-				os, err = drivers.ParseOSURL(resp.ObjectStore, false, false)
+				os, err = drivers.ParseOSURL(resp.ObjectStore, false)
 				if err != nil {
 					glog.Error("Failed to parse object store url ", err)
 					return nil
@@ -245,7 +245,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			}
 			// set Recording OS if it was provided
 			if resp.RecordObjectStore != "" {
-				ros, err = drivers.ParseOSURL(resp.RecordObjectStore, false, true)
+				ros, err = drivers.ParseOSURL(resp.RecordObjectStore, true)
 				if err != nil {
 					glog.Error("Failed to parse object store url ", err)
 					return nil
@@ -1031,11 +1031,9 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	default:
 	}
 	if finalize {
-		for trackName, segments := range mainJspl.Segments {
+		for trackName := range mainJspl.Segments {
 			mpl := mediaLists[trackName]
-			for _, seg := range segments {
-				mpl.Append(seg.URI, float64(seg.DurationMS)/1000.0, "")
-			}
+			mainJspl.AddSegmentsToMPL(manifestID, trackName, mpl)
 			_, err = sess.SaveData(trackName+".m3u8", mpl.Encode().Bytes(), nil)
 			if err != nil {
 				glog.Error(err)
@@ -1051,20 +1049,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		}
 	} else if !returnMasterPlaylist {
 		mpl := mediaLists[track]
-		segments := mainJspl.Segments[track]
-		for _, seg := range segments {
-			// make relative URL from absolute one
-			uri := seg.URI
-			mindex := strings.Index(uri, manifestID)
-			if mindex != -1 {
-				uri = uri[mindex+len(manifestID)+1:]
-			}
-			mseg := &m3u8.MediaSegment{
-				URI:      uri,
-				Duration: float64(seg.DurationMS) / 1000.0,
-			}
-			mpl.InsertSegment(seg.SeqNo, mseg)
-		}
+		mainJspl.AddSegmentsToMPL(manifestID, track, mpl)
 		// check (debug code)
 		startSeq := mpl.Segments[0].SeqId
 		for _, seg := range mpl.Segments[1:] {

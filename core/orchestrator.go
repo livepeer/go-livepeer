@@ -497,7 +497,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	// Small optimization: serve from disk for local transcoding
 	if !isRemote {
 		url = fname
-	} else if drivers.IsOwnExternal(seg.Name) {
+	} else if config.OS.IsExternal() && config.OS.IsOwn(seg.Name) {
 		// We're using a remote TC and segment is already in our own OS
 		// Incurs an additional download for topologies with T on local network!
 		url = seg.Name

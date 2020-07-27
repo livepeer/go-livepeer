@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -13,13 +14,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
+	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 )
 
@@ -44,22 +46,18 @@ type (
 
 	gsOS struct {
 		s3OS
-		gsSigner    *gsSigner
-		keyFileName string
+		gsSigner *gsSigner
+		keyData  []byte
 	}
 
 	gsSession struct {
 		s3Session
-		keyFileName string
+		gos        *gsOS
+		client     *storage.Client
+		keyData    []byte
+		useFullAPI bool
 	}
 )
-
-var GSBUCKET string
-
-// IsOwnStorageGS returns true if uri points to Google Cloud Storage bucket owned by this node
-func IsOwnStorageGS(uri string) bool {
-	return strings.HasPrefix(uri, gsHost(GSBUCKET))
-}
 
 func gsHost(bucket string) string {
 	return fmt.Sprintf("https://%s.storage.googleapis.com", bucket)
@@ -83,62 +81,14 @@ func gsParseKey(key []byte) (*rsa.PrivateKey, error) {
 	return parsed, nil
 }
 
-// listFilesWithPrefix lists objects using prefix and delimeter.
-func listFilesWithPrefix(ctx context.Context, bucket, prefix, delim, keyFileName string) ([]string, error) {
-	// bucket := "bucket-name"
-	// prefix := "/foo"
-	// delim := "_"
-	client, err := storage.NewClient(ctx, option.WithCredentialsFile(keyFileName))
-	if err != nil {
-		return nil, fmt.Errorf("storage.NewClient: %v", err)
-	}
-	defer client.Close()
-
-	// Prefixes and delimiters can be used to emulate directory listings.
-	// Prefixes can be used to filter objects starting with prefix.
-	// The delimiter argument can be used to restrict the results to only the
-	// objects in the given "directory". Without the delimiter, the entire tree
-	// under the prefix is returned.
-	//
-	// For example, given these blobs:
-	//   /a/1.txt
-	//   /a/b/2.txt
-	//
-	// If you just specify prefix="a/", you'll get back:
-	//   /a/1.txt
-	//   /a/b/2.txt
-	//
-	// However, if you specify prefix="a/" and delim="/", you'll get back:
-	//   /a/1.txt
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
-	defer cancel()
-
-	it := client.Bucket(bucket).Objects(ctx, &storage.Query{
-		Prefix:    prefix,
-		Delimiter: delim,
-	})
-	var res []string
-	for {
-		attrs, err := it.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("Bucket(%q).Objects(): %v", bucket, err)
-		}
-		// fmt.Fprintln(w, attrs.Name)
-		// glog.Infof("Got %+v", attrs)
-		res = append(res, attrs.Name)
-	}
-	return res, nil
-}
-
-func NewGoogleDriver(bucket, keyData string) (OSDriver, error) {
+func NewGoogleDriver(bucket, keyData string, useFullAPI bool) (OSDriver, error) {
 	os := &gsOS{
 		s3OS: s3OS{
-			host:   gsHost(bucket),
-			bucket: bucket,
+			host:       gsHost(bucket),
+			bucket:     bucket,
+			useFullAPI: useFullAPI,
 		},
+		keyData: []byte(keyData),
 	}
 
 	var gsKey gsKeyJSON
@@ -153,6 +103,13 @@ func NewGoogleDriver(bucket, keyData string) (OSDriver, error) {
 		jsKey:     &gsKey,
 		parsedKey: parsedKey,
 	}
+	if useFullAPI {
+		client, err := storage.NewClient(context.Background(), option.WithCredentialsJSON(os.keyData))
+		if err != nil {
+			return nil, err
+		}
+		client.Close()
+	}
 	return os, nil
 }
 
@@ -160,6 +117,7 @@ func (os *gsOS) NewSession(path string) OSSession {
 	var policy, signature = gsCreatePolicy(os.gsSigner, os.bucket, os.region, path)
 	sess := &s3Session{
 		host:        gsHost(os.bucket),
+		bucket:      os.bucket,
 		key:         path,
 		policy:      policy,
 		signature:   signature,
@@ -167,10 +125,13 @@ func (os *gsOS) NewSession(path string) OSSession {
 		storageType: net.OSInfo_GOOGLE,
 	}
 	sess.fields = gsGetFields(sess)
-	return &gsSession{
-		s3Session:   *sess,
-		keyFileName: os.keyFileName,
+	gs := &gsSession{
+		s3Session:  *sess,
+		gos:        os,
+		useFullAPI: os.useFullAPI,
+		keyData:    os.keyData,
 	}
+	return gs
 }
 
 func newGSSession(info *net.S3OSInfo) OSSession {
@@ -186,38 +147,177 @@ func newGSSession(info *net.S3OSInfo) OSSession {
 	return sess
 }
 
+func (os *gsSession) OS() OSDriver {
+	return os.gos
+}
+
+func (os *gsSession) createClient() error {
+	client, err := storage.NewClient(context.Background(), option.WithCredentialsJSON(os.keyData))
+	if err != nil {
+		glog.Errorf("Error creating GCP client err=%v", err)
+		return err
+	}
+	os.client = client
+	return nil
+}
+
+func (os *gsSession) SaveData(name string, data []byte, meta map[string]string) (string, error) {
+	if os.useFullAPI {
+		if os.client == nil {
+			if err := os.createClient(); err != nil {
+				return "", err
+			}
+		}
+		keyname := os.key + "/" + name
+		objh := os.client.Bucket(os.bucket).Object(keyname)
+		glog.V(common.VERBOSE).Infof("Saving to GS %s/%s", os.bucket, keyname)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*50)
+		defer cancel()
+		wr := objh.NewWriter(ctx)
+		if len(meta) > 0 && wr.Metadata == nil {
+			wr.Metadata = make(map[string]string, len(meta))
+		}
+		for k, v := range meta {
+			wr.Metadata[k] = v
+		}
+		wr.ContentType = os.getContentType(name, data)
+		_, err := io.Copy(wr, bytes.NewReader(data))
+		err2 := wr.Close()
+		if err != nil {
+			return "", err
+		}
+		if err2 != nil {
+			return "", err2
+		}
+		uri := os.getAbsURL(keyname)
+		glog.V(common.VERBOSE).Infof("Saved to GS %s", uri)
+		return uri, err
+	}
+	return os.s3Session.SaveData(name, data, meta)
+}
+
+type gsPageInfo struct {
+	s3pageInfo
+	bucket string
+	client *storage.Client
+	query  *storage.Query
+	it     *storage.ObjectIterator
+}
+
+func (gspi *gsPageInfo) NextPage() (PageInfo, error) {
+	if gspi.nextMarker == "" {
+		return nil, ErrNoNextPage
+	}
+	next := &gsPageInfo{
+		s3pageInfo: s3pageInfo{
+			ctx:        gspi.ctx,
+			nextMarker: gspi.nextMarker,
+		},
+		query:  gspi.query,
+		bucket: gspi.bucket,
+		client: gspi.client,
+		it:     gspi.it,
+	}
+	if err := next.listFiles(); err != nil {
+		return nil, err
+	}
+	return next, nil
+}
+
+func (gspi *gsPageInfo) listFiles() error {
+	it := gspi.it
+	if gspi.it == nil {
+		it = gspi.client.Bucket(gspi.bucket).Objects(gspi.ctx, gspi.query)
+	}
+	it.PageInfo().Token = gspi.nextMarker
+	for {
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if attrs.Name == "" {
+			gspi.directories = append(gspi.directories, attrs.Prefix)
+		} else {
+			fi := FileInfo{
+				Name:         attrs.Name,
+				ETag:         attrs.Etag,
+				LastModified: attrs.Updated,
+				Size:         attrs.Size,
+			}
+			gspi.files = append(gspi.files, fi)
+		}
+		if it.PageInfo().Remaining() == 0 {
+			break
+		}
+	}
+	gspi.nextMarker = it.PageInfo().Token
+	return nil
+}
+
 func (os *gsSession) ListFiles(ctx context.Context, prefix, delim string) (PageInfo, error) {
-	return nil, errors.New("Not implemented")
-	// res, err := listFilesWithPrefix(ctx, GSBUCKET, prefix, delim, os.keyFileName)
-	// return res, err
+	if !os.useFullAPI {
+		return nil, errors.New("Not implemented")
+	}
+	if os.client == nil {
+		if err := os.createClient(); err != nil {
+			return nil, err
+		}
+	}
+	query := &storage.Query{
+		Prefix:    prefix,
+		Delimiter: delim,
+	}
+	pi := &gsPageInfo{
+		s3pageInfo: s3pageInfo{
+			ctx: ctx,
+		},
+		query:  query,
+		bucket: os.bucket,
+		client: os.client,
+	}
+	if err := pi.listFiles(); err != nil {
+		return nil, err
+	}
+	return pi, nil
+}
+
+func (os *gsSession) EndSession() {
+	if os.client != nil {
+		os.client.Close()
+		os.client = nil
+	}
 }
 
 func (os *gsSession) ReadData(ctx context.Context, name string) (io.ReadCloser, map[string]string, error) {
-	client, err := storage.NewClient(ctx, option.WithCredentialsFile(os.keyFileName))
-	if err != nil {
-		return nil, nil, fmt.Errorf("storage.NewClient: %v", err)
+	if !os.useFullAPI {
+		return nil, nil, errors.New("Not implemented")
 	}
-	defer client.Close()
+	if os.client == nil {
+		if err := os.createClient(); err != nil {
+			return nil, nil, err
+		}
+	}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Second*50)
-	defer cancel()
-
-	objh := client.Bucket(GSBUCKET).Object(name)
+	objh := os.client.Bucket(os.bucket).Object(name)
+	attrs, err := objh.Attrs(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	meta := map[string]string{
+		"ETag":         attrs.Etag,
+		"LastModified": attrs.Updated.String(),
+	}
+	for k, v := range attrs.Metadata {
+		meta[k] = v
+	}
 	rc, err := objh.NewReader(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Object(%q).NewReader: %v", name, err)
+		return nil, nil, err
 	}
-	return rc, nil, nil
-	/*
-		defer rc.Close()
-
-		data, err := ioutil.ReadAll(rc)
-		if err != nil {
-			return nil, nil, fmt.Errorf("ioutil.ReadAll: %v", err)
-		}
-
-		return data, nil, nil
-	*/
+	return rc, meta, nil
 }
 
 func gsGetFields(sess *s3Session) map[string]string {
@@ -231,7 +331,6 @@ func gsGetFields(sess *s3Session) map[string]string {
 func gsCreatePolicy(signer *gsSigner, bucket, region, path string) (string, string) {
 	const timeFormat = "2006-01-02T15:04:05.999Z"
 	const shortTimeFormat = "20060102"
-	//   ["starts-with", "$x-goog-meta-duration", ""],
 
 	expireAt := time.Now().Add(S3_POLICY_EXPIRE_IN_HOURS * time.Hour)
 	expireFmt := expireAt.UTC().Format(timeFormat)
