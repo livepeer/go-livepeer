@@ -107,6 +107,7 @@ func newStubSegmentVerifier(v *stubVerifier) *verification.SegmentVerifier {
 
 type stubOSSession struct {
 	external bool
+	host     string
 	saved    []string
 	err      error
 }
@@ -124,7 +125,7 @@ func (s *stubOSSession) IsExternal() bool {
 	return s.external
 }
 func (s *stubOSSession) IsOwn(url string) bool {
-	return true
+	return strings.HasPrefix(url, s.host)
 }
 func (s *stubOSSession) ListFiles(ctx context.Context, prefix, delim string) (drivers.PageInfo, error) {
 	return nil, nil
@@ -1267,7 +1268,7 @@ func TestRefreshSession(t *testing.T) {
 	newSess, err := refreshSession(sess)
 	assert.Nil(newSess)
 	assert.Error(err)
-	assert.EqualError(err, "parse \u007f: net/url: invalid control character in URL")
+	assert.Contains(err.Error(), "net/url: invalid control character in URL")
 
 	// trigger getOrchestratorInfo error
 	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
@@ -1328,7 +1329,10 @@ func TestVerifier_SegDownload(t *testing.T) {
 	mid := core.ManifestID("foo")
 
 	// S3BUCKET := "livepeer"
-	externalOS := &stubOSSession{}
+	externalOS := &stubOSSession{
+		external: true,
+		host:     "https://livepeer.s3.amazonaws.com",
+	}
 	bsm := bsmWithSessList([]*BroadcastSession{})
 	cxn := &rtmpConnection{
 		mid:         mid,
