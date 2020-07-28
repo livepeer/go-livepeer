@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
 	"net/url"
 	"testing"
@@ -973,8 +972,11 @@ func (s *mockOSSession) ListFiles(ctx context.Context, prefix, delim string) (dr
 	return nil, nil
 }
 
-func (s *mockOSSession) ReadData(ctx context.Context, name string) (io.ReadCloser, map[string]string, error) {
-	return nil, nil, nil
+func (s *mockOSSession) ReadData(ctx context.Context, name string) (*drivers.FileInfoReader, error) {
+	return nil, nil
+}
+func (s *mockOSSession) OS() drivers.OSDriver {
+	return nil
 }
 
 type mockOrchestrator struct {

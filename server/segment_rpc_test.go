@@ -647,7 +647,7 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 
 	mos.On("SaveData", mock.Anything, mock.Anything).Return("", errors.New("SaveData error"))
 
-	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo")}}}
+	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{{Data: []byte("foo")}}}
 	tRes := &core.TranscodeResult{
 		TranscodeData: tData,
 		Sig:           []byte("foo"),

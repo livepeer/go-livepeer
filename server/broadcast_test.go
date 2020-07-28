@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -130,8 +129,11 @@ func (s *stubOSSession) IsOwn(url string) bool {
 func (s *stubOSSession) ListFiles(ctx context.Context, prefix, delim string) (drivers.PageInfo, error) {
 	return nil, nil
 }
-func (s *stubOSSession) ReadData(ctx context.Context, name string) (io.ReadCloser, map[string]string, error) {
-	return nil, nil, nil
+func (s *stubOSSession) ReadData(ctx context.Context, name string) (*drivers.FileInfoReader, error) {
+	return nil, nil
+}
+func (s *stubOSSession) OS() drivers.OSDriver {
+	return nil
 }
 
 type stubPlaylistManager struct {
@@ -503,7 +505,7 @@ func TestTranscodeSegment_UploadFailed_SuspendAndRemove(t *testing.T) {
 	assert := assert.New(t)
 	mid := core.ManifestID("foo")
 	pl := &stubPlaylistManager{manifestID: mid}
-	drivers.S3BUCKET = "livepeer"
+	// drivers.S3BUCKET = "livepeer"
 	mem := &stubOSSession{err: errors.New("some error")}
 	assert.NotNil(mem)
 
@@ -1081,7 +1083,8 @@ func TestVerifier_Verify(t *testing.T) {
 	verifier := verification.NewSegmentVerifier(&verification.Policy{})
 	URIs := []string{}
 	renditionData := [][]byte{}
-	err := verify(verifier, cxn, sess, source, res, URIs, renditionData)
+	os := drivers.NewMemoryDriver(nil).NewSession("")
+	err := verify(verifier, cxn, sess, source, res, URIs, renditionData, os)
 	assert.Nil(err)
 
 	sess.Params.ManifestID = core.ManifestID("streamName")
@@ -1096,7 +1099,7 @@ func TestVerifier_Verify(t *testing.T) {
 	verifier = newStubSegmentVerifier(sv)
 	assert.Equal(0, sv.calls)  // sanity check initial call count
 	assert.Len(bsm.sessMap, 1) // sanity check initial bsm map
-	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData, os)
 	assert.NotNil(err)
 	assert.Equal(1, sv.calls)
 	assert.Equal(sv.err, err)
@@ -1108,7 +1111,7 @@ func TestVerifier_Verify(t *testing.T) {
 	_, retryable := sv.err.(verification.Retryable)
 	assert.True(retryable)
 	verifier = newStubSegmentVerifier(sv)
-	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData, os)
 	assert.NotNil(err)
 	assert.Equal(2, sv.calls)
 	assert.Equal(sv.err, err)
@@ -1135,7 +1138,7 @@ func TestVerifier_Verify(t *testing.T) {
 	verifier = newStubSegmentVerifier(sv)
 	URIs[0] = name
 	renditionData = [][]byte{[]byte("attempt1")}
-	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData, os)
 	assert.Equal(sv.err, err)
 
 	// Now "insert" 2nd attempt into OS
@@ -1144,7 +1147,7 @@ func TestVerifier_Verify(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal([]byte("attempt2"), mem.GetData(name))
 	renditionData = [][]byte{[]byte("attempt2")}
-	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData, os)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt1"), mem.GetData(name))
 }
@@ -1162,8 +1165,9 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	//   6. Insert seg2 into playlist
 	mid := core.ManifestID("foo")
 	pl := &stubPlaylistManager{manifestID: mid}
-	drivers.S3BUCKET = "livepeer"
-	mem := drivers.NewS3Driver("", drivers.S3BUCKET, "", "", false).NewSession(string(mid))
+	// drivers.S3BUCKET = "livepeer"
+	S3BUCKET := "livepeer"
+	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(string(mid))
 	assert.NotNil(mem)
 
 	baseURL := "https://livepeer.s3.amazonaws.com"
@@ -1210,8 +1214,8 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 	assert := assert.New(t)
 	mid := core.ManifestID("foo")
 	pl := &stubPlaylistManager{manifestID: mid}
-	drivers.S3BUCKET = "livepeer"
-	mem := drivers.NewS3Driver("", drivers.S3BUCKET, "", "", false).NewSession(string(mid))
+	S3BUCKET := "livepeer"
+	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(string(mid))
 	assert.NotNil(mem)
 
 	baseURL := "https://livepeer.s3.amazonaws.com"
@@ -1323,7 +1327,7 @@ func TestVerifier_SegDownload(t *testing.T) {
 
 	mid := core.ManifestID("foo")
 
-	drivers.S3BUCKET = "livepeer"
+	// S3BUCKET := "livepeer"
 	externalOS := &stubOSSession{}
 	bsm := bsmWithSessList([]*BroadcastSession{})
 	cxn := &rtmpConnection{
@@ -1437,7 +1441,7 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	sess.OrchestratorOS = orchOS
 	cxn.pl = &stubPlaylistManager{os: bcastOS}
 	cxn.profile.Format = ffmpeg.FormatMP4
-	for i, _ := range sess.Params.Profiles {
+	for i := range sess.Params.Profiles {
 		sess.Params.Profiles[i].Format = ffmpeg.FormatMP4
 	}
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
@@ -1460,7 +1464,7 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	sess.OrchestratorOS = orchOS
 	cxn.pl = &stubPlaylistManager{os: bcastOS}
 	cxn.profile.Format = ffmpeg.FormatMPEGTS
-	for i, _ := range sess.Params.Profiles {
+	for i := range sess.Params.Profiles {
 		sess.Params.Profiles[i].Format = ffmpeg.FormatMPEGTS
 	}
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})

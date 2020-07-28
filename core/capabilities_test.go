@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"sort"
 	"testing"
 
@@ -112,8 +113,10 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		{Profile: ffmpeg.ProfileH264High},
 		{GOP: 1},
 	}
-	storage := drivers.NewS3Driver("", "", "", "").NewSession("")
-	params := &StreamParameters{Profiles: profs, OS: storage}
+	storageURI := "s3+http://K:P@localhost:9000/bucket"
+	os, err := drivers.ParseOSURL(storageURI, false)
+	assert.Nil(err)
+	params := &StreamParameters{Profiles: profs, OS: os.NewSession("")}
 	assert.True(checkSuccess(params, []Capability{
 		Capability_H264,
 		Capability_MP4,
@@ -136,7 +139,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 
 	// check error case with format
 	params.Profiles = []ffmpeg.VideoProfile{{Format: -1}}
-	_, err := JobCapabilities(params)
+	_, err = JobCapabilities(params)
 	assert.Equal(capFormatConv, err)
 
 	// check error case with profiles
@@ -258,9 +261,19 @@ func (os *stubOS) GetInfo() *net.OSInfo {
 	}
 	return &net.OSInfo{StorageType: net.OSInfo_StorageType(os.storageType)}
 }
-func (os *stubOS) EndSession()                             {}
-func (os *stubOS) SaveData(string, []byte) (string, error) { return "", nil }
-func (os *stubOS) IsExternal() bool                        { return false }
+func (os *stubOS) EndSession()                                                {}
+func (os *stubOS) SaveData(string, []byte, map[string]string) (string, error) { return "", nil }
+func (os *stubOS) IsExternal() bool                                           { return false }
+func (os *stubOS) IsOwn(url string) bool                                      { return true }
+func (os *stubOS) ListFiles(ctx context.Context, prefix, delim string) (drivers.PageInfo, error) {
+	return nil, nil
+}
+func (os *stubOS) ReadData(ctx context.Context, name string) (*drivers.FileInfoReader, error) {
+	return nil, nil
+}
+func (os *stubOS) OS() drivers.OSDriver {
+	return nil
+}
 
 func TestCapability_StorageToCapability(t *testing.T) {
 	assert := assert.New(t)
