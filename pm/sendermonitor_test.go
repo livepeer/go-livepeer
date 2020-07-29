@@ -82,11 +82,64 @@ func TestMaxFloat(t *testing.T) {
 	}
 }
 
+func TestMaxFloat_MinDepositPendingRatio(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	claimant, b, smgr, tm := localSenderMonitorFixture()
+	addr := ethcommon.BytesToAddress([]byte("foo"))
+
+	smgr.info[addr] = &SenderInfo{
+		Reserve: &ReserveInfo{
+			FundsRemaining:        big.NewInt(500),
+			ClaimedInCurrentRound: big.NewInt(0),
+		},
+	}
+	smgr.claimedReserve[addr] = big.NewInt(0)
+	tm.transcoderPoolSize = big.NewInt(1)
+
+	sm := NewSenderMonitor(claimant, b, smgr, tm, newStubTicketStore(), 5*time.Minute, 3600)
+
+	reserveAlloc := smgr.info[addr].Reserve.FundsRemaining
+	pendingAmount := big.NewInt(100)
+	// Set pendingAmount
+	sm.subFloat(addr, pendingAmount)
+	// Set deposit pending ratio above the min ratio
+	smgr.info[addr].Deposit = new(big.Int).Mul(pendingAmount, big.NewInt(int64(minDepositPendingRatio)+1))
+	mf, err := sm.MaxFloat(addr)
+	require.Nil(err)
+	assert.Equal(reserveAlloc, mf)
+
+	// Set deposit pending ratio equal to the min ratio
+	smgr.info[addr].Deposit = new(big.Int).Mul(pendingAmount, big.NewInt(int64(minDepositPendingRatio)))
+	mf, err = sm.MaxFloat(addr)
+	require.Nil(err)
+	assert.Equal(reserveAlloc, mf)
+
+	// Set deposit pending ratio below the min ratio
+	smgr.info[addr].Deposit = new(big.Int).Mul(pendingAmount, big.NewInt(int64(minDepositPendingRatio)-1))
+	mf, err = sm.MaxFloat(addr)
+	require.Nil(err)
+	assert.Equal(new(big.Int).Sub(reserveAlloc, pendingAmount), mf)
+
+	// Set deposit to 0
+	smgr.info[addr].Deposit = big.NewInt(0)
+	mf, err = sm.MaxFloat(addr)
+	require.Nil(err)
+	assert.Equal(new(big.Int).Sub(reserveAlloc, pendingAmount), mf)
+
+	// Set pendingAmount to 0
+	require.Nil(sm.addFloat(addr, pendingAmount))
+	mf, err = sm.MaxFloat(addr)
+	require.Nil(err)
+	assert.Equal(reserveAlloc, mf)
+}
+
 func TestSubFloat(t *testing.T) {
 	claimant, b, smgr, tm := localSenderMonitorFixture()
 	addr := RandAddress()
 	smgr.info[addr] = &SenderInfo{
-		Deposit:       big.NewInt(500),
+		Deposit:       big.NewInt(0),
 		WithdrawRound: big.NewInt(0),
 		Reserve: &ReserveInfo{
 			FundsRemaining:        big.NewInt(500),
@@ -705,6 +758,7 @@ func TestSubscribeMaxFloatChange(t *testing.T) {
 	addr := RandAddress()
 	initialReserve := big.NewInt(500)
 	smgr.info[addr] = &SenderInfo{
+		Deposit: big.NewInt(0),
 		Reserve: &ReserveInfo{
 			FundsRemaining:        initialReserve,
 			ClaimedInCurrentRound: big.NewInt(0),
