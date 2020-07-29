@@ -269,7 +269,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 		if ros != nil {
 			recordPath := fmt.Sprintf("%s/%s", mid, lpmon.NodeID)
-			ross = os.NewSession(recordPath)
+			ross = ros.NewSession(recordPath)
 		}
 
 		// Ensure there's no concurrent StreamID with the same name
