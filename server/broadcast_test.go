@@ -1317,9 +1317,7 @@ func defaultTicketBatch() *pm.TicketBatch {
 		},
 		TicketExpirationParams: &pm.TicketExpirationParams{},
 		Sender:                 pm.RandAddress(),
-		SenderParams: []*pm.TicketSenderParams{
-			&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
-		},
+		SenderParams:           []*pm.TicketSenderParams{{SenderNonce: 777, Sig: pm.RandBytes(42)}},
 	}
 }
 
@@ -1328,7 +1326,6 @@ func TestVerifier_SegDownload(t *testing.T) {
 
 	mid := core.ManifestID("foo")
 
-	// S3BUCKET := "livepeer"
 	externalOS := &stubOSSession{
 		external: true,
 		host:     "https://livepeer.s3.amazonaws.com",
@@ -1406,12 +1403,11 @@ func TestVerifier_SegDownload(t *testing.T) {
 }
 
 func TestProcessSegment_VideoFormat(t *testing.T) {
-	return
 	// Test format from saving "transcoder" data into broadcaster/transcoder OS.
 	// For each rendition, check extension based on format (none, mp4, mpegts).
 	assert := assert.New(t)
-	bcastOS := &stubOSSession{}
-	orchOS := &stubOSSession{}
+	bcastOS := &stubOSSession{host: "test://broad.com"}
+	orchOS := &stubOSSession{host: "test://orch.com"}
 	sess := genBcastSess(t, "", bcastOS, "")
 	sess.OrchestratorOS = orchOS
 	sess.Params.Profiles = append([]ffmpeg.VideoProfile{}, sess.Params.Profiles...)
@@ -1440,8 +1436,8 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	assert.Equal("saved_P240p30fps16x9/0.ts", seg.Name)
 
 	// Check MP4. Reset OS for simplicity
-	bcastOS = &stubOSSession{}
-	orchOS = &stubOSSession{}
+	bcastOS = &stubOSSession{host: "test://broad.com"}
+	orchOS = &stubOSSession{host: "test://orch.com"}
 	sess.BroadcasterOS = bcastOS
 	sess.OrchestratorOS = orchOS
 	cxn.pl = &stubPlaylistManager{os: bcastOS}
@@ -1463,8 +1459,8 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	assert.Equal("saved_P240p30fps16x9/0.mp4", seg.Name)
 
 	// Check mpegts. Reset OS for simplicity
-	bcastOS = &stubOSSession{}
-	orchOS = &stubOSSession{}
+	bcastOS = &stubOSSession{host: "test://broad.com"}
+	orchOS = &stubOSSession{host: "test://orch.com"}
 	sess.BroadcasterOS = bcastOS
 	sess.OrchestratorOS = orchOS
 	cxn.pl = &stubPlaylistManager{os: bcastOS}
@@ -1530,7 +1526,7 @@ func genBcastSess(t *testing.T, url string, os drivers.OSSession, mid core.Manif
 	}()
 	return &BroadcastSession{
 		Broadcaster:      stubBroadcaster2(),
-		Params:           &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}},
+		Params:           &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}, OS: os},
 		BroadcasterOS:    os,
 		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL},
 	}
