@@ -30,10 +30,10 @@ func TestLocalTranscoder(t *testing.T) {
 	if len(res.Segments) != len(videoProfiles) {
 		t.Error("Mismatched results")
 	}
-	if Over1Pct(len(res.Segments[0].Data), 164876) {
+	if Over1Pct(len(res.Segments[0].Data), 152280) {
 		t.Errorf("Wrong data %v", len(res.Segments[0].Data))
 	}
-	if Over1Pct(len(res.Segments[1].Data), 224848) {
+	if Over1Pct(len(res.Segments[1].Data), 208116) {
 		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
 	}
 }
