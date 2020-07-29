@@ -14,6 +14,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+// The minimum value for the ratio between a sender's deposit and its pending amount required for the
+// pending amount to be ignored when calculating the sender's max float
+const minDepositPendingRatio = 3.0
+
 // unixNow returns the current unix time
 // This is a wrapper function that can be stubbed in tests
 var unixNow = func() int64 {
@@ -169,15 +173,33 @@ func (sm *LocalSenderMonitor) ValidateSender(addr ethcommon.Address) error {
 	return nil
 }
 
-// maxFloat is a helper that returns the sender's max float as:
-// reserveAlloc - pendingAmount
+// maxFloat is a helper that returns the sender's max float
+// If the sender's deposit pending ratio (deposit / pendingAmount) >= minDepositPendingRatio, then the max float is reserveAlloc
+// Otherwise, the max float is reserveAlloc - pendingAmount
 // Caller should hold the lock for LocalSenderMonitor
 func (sm *LocalSenderMonitor) maxFloat(addr ethcommon.Address) (*big.Int, error) {
 	reserveAlloc, err := sm.reserveAlloc(addr)
 	if err != nil {
 		return nil, err
 	}
-	return new(big.Int).Sub(reserveAlloc, sm.senders[addr].pendingAmount), nil
+
+	info, err := sm.smgr.GetSenderInfo(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	pendingAmount := sm.senders[addr].pendingAmount
+	depositPendingRatio := big.NewFloat(0.0)
+	if pendingAmount.Cmp(big.NewInt(0)) > 0 {
+		depositPendingRatio.Quo(new(big.Float).SetInt(info.Deposit), new(big.Float).SetInt(pendingAmount))
+	}
+	// If the actual deposit pending ratio exceeds the minimum deposit pending ratio we ignore the sender's pendingAmount
+	// and return the sender's reserve allocation as the max float
+	if depositPendingRatio.Cmp(big.NewFloat(minDepositPendingRatio)) >= 0 {
+		return reserveAlloc, nil
+	}
+
+	return new(big.Int).Sub(reserveAlloc, pendingAmount), nil
 }
 
 func (sm *LocalSenderMonitor) reserveAlloc(addr ethcommon.Address) (*big.Int, error) {
