@@ -83,7 +83,7 @@ if [[ $(uname) != *"MSYS"* ]]; then
     curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.5/gnutls-3.5.18.tar.xz
     tar xf gnutls-3.5.18.tar.xz
     cd gnutls-3.5.18
-    LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" LIBS="-lhogweed -lnettle -lgmp" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --without-idn --without-zlib --disable-doc --disable-cxx --disable-tools
+    LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" LIBS="-lhogweed -lnettle -lgmp" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --without-idn --without-zlib --disable-doc --disable-cxx --disable-tools --disable-nls
     make
     make install
     # gnutls doesn't properly set up its pkg-config or something? without this line ffmpeg and go
