@@ -48,14 +48,14 @@ func TestMaxFloat(t *testing.T) {
 	assert := assert.New(t)
 
 	// Test ClaimedReserve() error
-	smgr.err = errors.New("ClaimedReserve error")
+	smgr.claimedReserveErr = errors.New("ClaimedReserve error")
 
 	_, err := sm.MaxFloat(RandAddress())
 	assert.EqualError(err, "ClaimedReserve error")
 
 	// Test value cached
 
-	smgr.err = nil
+	smgr.claimedReserveErr = nil
 	reserve := new(big.Int).Add(smgr.info[addr].Reserve.FundsRemaining, smgr.info[addr].Reserve.ClaimedInCurrentRound)
 	reserveAlloc := new(big.Int).Sub(new(big.Int).Div(reserve, tm.transcoderPoolSize), smgr.claimedReserve[addr])
 

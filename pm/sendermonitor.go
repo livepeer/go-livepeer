@@ -219,6 +219,9 @@ func (sm *LocalSenderMonitor) reserveAlloc(addr ethcommon.Address) (*big.Int, er
 		return nil, err
 	}
 	claimed, err := sm.smgr.ClaimedReserve(addr, sm.cfg.Claimant)
+	if err != nil {
+		return nil, err
+	}
 	poolSize := sm.tm.GetTranscoderPoolSize()
 	if poolSize.Cmp(big.NewInt(0)) == 0 {
 		return big.NewInt(0), nil
