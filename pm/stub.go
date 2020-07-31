@@ -315,6 +315,7 @@ type stubSenderManager struct {
 	info              map[ethcommon.Address]*SenderInfo
 	claimedReserve    map[ethcommon.Address]*big.Int
 	err               error
+	claimedReserveErr error
 	reserveChangeSub  event.Subscription
 	reserveChangeSink chan<- ethcommon.Address
 }
@@ -335,8 +336,8 @@ func (s *stubSenderManager) GetSenderInfo(addr ethcommon.Address) (*SenderInfo, 
 }
 
 func (s *stubSenderManager) ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
-	if s.err != nil {
-		return nil, s.err
+	if s.claimedReserveErr != nil {
+		return nil, s.claimedReserveErr
 	}
 	return s.claimedReserve[reserveHolder], nil
 }
