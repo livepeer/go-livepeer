@@ -499,6 +499,15 @@ func main() {
 			recipientAddr = ethcommon.HexToAddress(*ethOrchAddr)
 		}
 
+		smCfg := &pm.LocalSenderMonitorConfig{
+			Claimant:        recipientAddr,
+			CleanupInterval: cleanupInterval,
+			TTL:             smTTL,
+			RedeemGas:       redeemGas,
+			SuggestGasPrice: backend.SuggestGasPrice,
+			RPCTimeout:      ethRPCTimeout,
+		}
+
 		if *orchestrator {
 			// Set price per pixel base info
 			if *pixelsPerUnit <= 0 {
@@ -552,7 +561,7 @@ func main() {
 				}
 				sm = rc
 			} else {
-				sm = pm.NewSenderMonitor(recipientAddr, n.Eth, senderWatcher, timeWatcher, n.Database, cleanupInterval, smTTL)
+				sm = pm.NewSenderMonitor(smCfg, n.Eth, senderWatcher, timeWatcher, n.Database)
 			}
 
 			// Start sender monitor
@@ -620,7 +629,7 @@ func main() {
 			r, err := server.NewRedeemer(
 				recipientAddr,
 				n.Eth,
-				pm.NewSenderMonitor(recipientAddr, n.Eth, senderWatcher, timeWatcher, n.Database, cleanupInterval, smTTL),
+				pm.NewSenderMonitor(smCfg, n.Eth, senderWatcher, timeWatcher, n.Database),
 			)
 			if err != nil {
 				glog.Errorf("Unable to create redeemer: %v", err)
