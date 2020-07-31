@@ -1,6 +1,7 @@
 package pm
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"sync"
@@ -59,10 +60,22 @@ type remoteSender struct {
 	lastAccess int64
 }
 
+type LocalSenderMonitorConfig struct {
+	// The address that will be claiming from senders' reserves
+	Claimant ethcommon.Address
+	// The interval at which to cleanup inactive remote senders from the cache
+	CleanupInterval time.Duration
+	// The interval at which to run the cleanup process
+	TTL int
+
+	// Gas cost estimate for ticket redemption
+	RedeemGas       int
+	SuggestGasPrice func(context.Context) (*big.Int, error)
+	RPCTimeout      time.Duration
+}
+
 type LocalSenderMonitor struct {
-	claimant        ethcommon.Address
-	cleanupInterval time.Duration
-	ttl             int
+	cfg *LocalSenderMonitorConfig
 
 	mu      sync.Mutex
 	senders map[ethcommon.Address]*remoteSender
@@ -82,18 +95,16 @@ type LocalSenderMonitor struct {
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(claimant ethcommon.Address, broker Broker, smgr SenderManager, tm TimeManager, store TicketStore, cleanupInterval time.Duration, ttl int) *LocalSenderMonitor {
+func NewSenderMonitor(cfg *LocalSenderMonitorConfig, broker Broker, smgr SenderManager, tm TimeManager, store TicketStore) *LocalSenderMonitor {
 	return &LocalSenderMonitor{
-		claimant:        claimant,
-		cleanupInterval: cleanupInterval,
-		ttl:             ttl,
-		broker:          broker,
-		smgr:            smgr,
-		tm:              tm,
-		senders:         make(map[ethcommon.Address]*remoteSender),
-		redeemable:      make(chan *redemption),
-		ticketStore:     store,
-		quit:            make(chan struct{}),
+		cfg:         cfg,
+		broker:      broker,
+		smgr:        smgr,
+		tm:          tm,
+		senders:     make(map[ethcommon.Address]*remoteSender),
+		redeemable:  make(chan *redemption),
+		ticketStore: store,
+		quit:        make(chan struct{}),
 	}
 }
 
@@ -207,13 +218,35 @@ func (sm *LocalSenderMonitor) reserveAlloc(addr ethcommon.Address) (*big.Int, er
 	if err != nil {
 		return nil, err
 	}
-	claimed, err := sm.smgr.ClaimedReserve(addr, sm.claimant)
+	claimed, err := sm.smgr.ClaimedReserve(addr, sm.cfg.Claimant)
 	poolSize := sm.tm.GetTranscoderPoolSize()
 	if poolSize.Cmp(big.NewInt(0)) == 0 {
 		return big.NewInt(0), nil
 	}
 	reserve := new(big.Int).Add(info.Reserve.FundsRemaining, info.Reserve.ClaimedInCurrentRound)
 	return new(big.Int).Sub(new(big.Int).Div(reserve, poolSize), claimed), nil
+}
+
+// Returns the current available funds for a sender that could cover redemptions
+func (sm *LocalSenderMonitor) availableFunds(addr ethcommon.Address) (*big.Int, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.ensureCache(addr)
+
+	info, err := sm.smgr.GetSenderInfo(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	reserveAlloc, err := sm.reserveAlloc(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	pendingAmount := sm.senders[addr].pendingAmount
+
+	return new(big.Int).Sub(new(big.Int).Add(reserveAlloc, info.Deposit), pendingAmount), nil
 }
 
 // ensureCache is a helper that checks if a remote sender is initialized
@@ -283,7 +316,7 @@ func (sm *LocalSenderMonitor) startTicketQueueConsumerLoop(queue *ticketQueue, d
 // startCleanupLoop initiates a loop that runs a cleanup worker
 // every cleanupInterval
 func (sm *LocalSenderMonitor) startCleanupLoop() {
-	ticker := time.NewTicker(sm.cleanupInterval)
+	ticker := time.NewTicker(sm.cfg.CleanupInterval)
 
 	for {
 		select {
@@ -302,7 +335,7 @@ func (sm *LocalSenderMonitor) cleanup() {
 	defer sm.mu.Unlock()
 
 	for k, v := range sm.senders {
-		if unixNow()-v.lastAccess > int64(sm.ttl) && v.subScope.Count() == 0 {
+		if unixNow()-v.lastAccess > int64(sm.cfg.TTL) && v.subScope.Count() == 0 {
 			// Signal the ticket queue consumer to exit gracefully
 			v.done <- struct{}{}
 			v.subScope.Close() // close the maxfloat subscriptions
@@ -313,26 +346,24 @@ func (sm *LocalSenderMonitor) cleanup() {
 }
 
 func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.Transaction, error) {
-	maxFloat, err := sm.MaxFloat(ticket.Ticket.Sender)
+	availableFunds, err := sm.availableFunds(ticket.Sender)
 	if err != nil {
 		return nil, err
 	}
 
-	// if max float is zero, there is no claimable reserve left or reserve is 0
-	if maxFloat.Cmp(big.NewInt(0)) <= 0 {
-		if err := sm.QueueTicket(ticket); err != nil {
-			return nil, err
-		}
-		return nil, errors.New("max float is 0")
+	ctx, cancel := context.WithTimeout(context.Background(), sm.cfg.RPCTimeout)
+	gasPrice, err := sm.cfg.SuggestGasPrice(ctx)
+	if err != nil {
+		cancel()
+		return nil, err
 	}
+	cancel()
 
-	// If max float is insufficient to cover the ticket face value, queue
-	// the ticket to be retried later
-	if maxFloat.Cmp(ticket.Ticket.FaceValue) < 0 {
-		if err := sm.QueueTicket(ticket); err != nil {
-			return nil, err
-		}
-		return nil, fmt.Errorf("insufficient max float sender=%v faceValue=%v maxFloat=%v", ticket.Ticket.Sender.Hex(), ticket.Ticket.FaceValue, maxFloat)
+	// We only submit a redemption if availableFunds covers the redemption tx cost
+	// Otherwise, we return an error so we can try the redemption later
+	txCost := new(big.Int).Mul(big.NewInt(int64(sm.cfg.RedeemGas)), gasPrice)
+	if availableFunds.Cmp(txCost) <= 0 {
+		return nil, errors.New("insufficient sender funds for redeem tx cost")
 	}
 
 	// Subtract the ticket face value from the sender's current max float
