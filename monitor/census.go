@@ -155,11 +155,10 @@ var census censusMetricsCounter
 // used in unit tests
 var unitTestMode bool
 
-func InitCensus(nodeType, nodeID, version string) {
-	NodeID = nodeID
+func InitCensus(nodeType, version string) {
 	census = censusMetricsCounter{
 		emergeTimes: make(map[uint64]map[uint64]time.Time),
-		nodeID:      nodeID,
+		nodeID:      NodeID,
 		nodeType:    nodeType,
 		success:     make(map[uint64]*segmentsAverager),
 	}
@@ -175,7 +174,7 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.kSender = tag.MustNewKey("sender")
 	census.kRecipient = tag.MustNewKey("recipient")
 	census.kManifestID = tag.MustNewKey("manifestID")
-	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, nodeType), tag.Insert(census.kNodeID, nodeID))
+	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, nodeType), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Fatal("Error creating context", err)
 	}
@@ -229,14 +228,14 @@ func InitCensus(nodeType, nodeID, version string) {
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
-	glog.Infof("Node type %s node ID %s", nodeType, nodeID)
+	glog.Infof("Node type %s node ID %s", nodeType, NodeID)
 	mVersions := stats.Int64("versions", "Version information.", "Num")
 	compiler := tag.MustNewKey("compiler")
 	goarch := tag.MustNewKey("goarch")
 	goos := tag.MustNewKey("goos")
 	goversion := tag.MustNewKey("goversion")
 	livepeerversion := tag.MustNewKey("livepeerversion")
-	ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, nodeType), tag.Insert(census.kNodeID, nodeID),
+	ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, nodeType), tag.Insert(census.kNodeID, NodeID),
 		tag.Insert(compiler, runtime.Compiler), tag.Insert(goarch, runtime.GOARCH), tag.Insert(goos, runtime.GOOS),
 		tag.Insert(goversion, runtime.Version()), tag.Insert(livepeerversion, version))
 	if err != nil {

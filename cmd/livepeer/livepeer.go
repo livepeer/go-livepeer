@@ -301,13 +301,15 @@ func main() {
 		glog.Fatalf("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
+	lpmon.NodeID = *ethAcctAddr
+	if lpmon.NodeID != "" {
+		lpmon.NodeID += "-"
+	}
+	hn, _ := os.Hostname()
+	lpmon.NodeID += hn
+
 	if *monitor {
 		lpmon.Enabled = true
-		nodeID := *ethAcctAddr
-		if nodeID == "" {
-			hn, _ := os.Hostname()
-			nodeID = hn
-		}
 		nodeType := "dflt"
 		switch n.NodeType {
 		case core.BroadcasterNode:
@@ -319,7 +321,7 @@ func main() {
 		case core.RedeemerNode:
 			nodeType = "rdmr"
 		}
-		lpmon.InitCensus(nodeType, nodeID, core.LivepeerVersion)
+		lpmon.InitCensus(nodeType, core.LivepeerVersion)
 	}
 
 	if n.NodeType == core.TranscoderNode {
