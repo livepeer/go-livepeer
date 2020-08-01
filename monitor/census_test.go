@@ -47,7 +47,9 @@ func TestAveragerCanBeRemoved(t *testing.T) {
 func TestLastSegmentTimeout(t *testing.T) {
 	unitTestMode = true
 	defer func() { unitTestMode = false }()
-	InitCensus("tst", "testid", "testversion")
+	NodeID = "testid"
+
+	InitCensus("tst", "testversion")
 	// defer func() {
 	// 	shutDown <- nil
 	// }()
