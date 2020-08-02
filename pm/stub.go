@@ -54,7 +54,7 @@ func (ts *stubTicketStore) StoreWinningTicket(ticket *SignedTicket) error {
 	return nil
 }
 
-func (ts *stubTicketStore) SelectEarliestWinningTicket(sender ethcommon.Address) (*SignedTicket, error) {
+func (ts *stubTicketStore) SelectEarliestWinningTicket(sender ethcommon.Address, minCreationRound int64) (*SignedTicket, error) {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 	if ts.loadShouldFail {
@@ -95,7 +95,7 @@ func (ts *stubTicketStore) RemoveWinningTicket(ticket *SignedTicket) error {
 	return nil
 }
 
-func (ts *stubTicketStore) WinningTicketCount(sender ethcommon.Address) (int, error) {
+func (ts *stubTicketStore) WinningTicketCount(sender ethcommon.Address, minCreationRound int64) (int, error) {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 	if ts.loadShouldFail {

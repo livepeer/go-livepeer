@@ -268,7 +268,7 @@ func (sm *LocalSenderMonitor) ensureCache(addr ethcommon.Address) {
 // Caller should hold the lock for LocalSenderMonitor unless the caller is
 // ensureCache() in which case the caller of ensureCache() should hold the lock
 func (sm *LocalSenderMonitor) cache(addr ethcommon.Address) {
-	queue := newTicketQueue(sm.ticketStore, addr, sm.tm.SubscribeBlocks)
+	queue := newTicketQueue(addr, sm)
 	queue.Start()
 	done := make(chan struct{})
 	go sm.startTicketQueueConsumerLoop(queue, done)

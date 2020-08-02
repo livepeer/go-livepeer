@@ -67,9 +67,13 @@ func TestTicketQueueLoop(t *testing.T) {
 
 	sender := RandAddress()
 	ts := newStubTicketStore()
-	tm := &stubTimeManager{}
+	tm := &stubTimeManager{round: big.NewInt(100)}
+	sm := &LocalSenderMonitor{
+		ticketStore: ts,
+		tm:          tm,
+	}
 
-	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
+	q := newTicketQueue(sender, sm)
 	q.Start()
 	defer q.Stop()
 
@@ -105,7 +109,7 @@ func TestTicketQueueLoop(t *testing.T) {
 	qlen, err = q.Length()
 	assert.Nil(err)
 	assert.Equal(1, qlen)
-	earliest, err := q.store.SelectEarliestWinningTicket(sender)
+	earliest, err := q.store.SelectEarliestWinningTicket(sender, nonExpTicket.CreationRound)
 	assert.Nil(err)
 	assert.Equal(earliest, nonExpTicket)
 
@@ -125,9 +129,13 @@ func TestTicketQueueLoopConcurrent(t *testing.T) {
 
 	sender := RandAddress()
 	ts := newStubTicketStore()
-	tm := &stubTimeManager{}
+	tm := &stubTimeManager{round: big.NewInt(100)}
+	sm := &LocalSenderMonitor{
+		ticketStore: ts,
+		tm:          tm,
+	}
 
-	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
+	q := newTicketQueue(sender, sm)
 	q.Start()
 	defer q.Stop()
 
@@ -188,9 +196,13 @@ func TestTicketQueueConsumeBlockNums(t *testing.T) {
 
 	sender := RandAddress()
 	ts := newStubTicketStore()
-	tm := &stubTimeManager{}
+	tm := &stubTimeManager{round: big.NewInt(100)}
+	sm := &LocalSenderMonitor{
+		ticketStore: ts,
+		tm:          tm,
+	}
 
-	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
+	q := newTicketQueue(sender, sm)
 	q.Start()
 	defer q.Stop()
 	time.Sleep(20 * time.Millisecond)
@@ -206,9 +218,13 @@ func TestTicketQueue_Add(t *testing.T) {
 
 	sender := RandAddress()
 	ts := newStubTicketStore()
-	tm := &stubTimeManager{}
+	tm := &stubTimeManager{round: big.NewInt(100)}
+	sm := &LocalSenderMonitor{
+		ticketStore: ts,
+		tm:          tm,
+	}
 
-	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
+	q := newTicketQueue(sender, sm)
 
 	ticket := defaultSignedTicket(sender, 0)
 
@@ -227,9 +243,13 @@ func TestTicketQueue_Length(t *testing.T) {
 
 	sender := RandAddress()
 	ts := newStubTicketStore()
-	tm := &stubTimeManager{}
+	tm := &stubTimeManager{round: big.NewInt(100)}
+	sm := &LocalSenderMonitor{
+		ticketStore: ts,
+		tm:          tm,
+	}
 
-	q := newTicketQueue(ts, sender, tm.SubscribeBlocks)
+	q := newTicketQueue(sender, sm)
 
 	ts.tickets[sender] = []*SignedTicket{defaultSignedTicket(sender, 0), defaultSignedTicket(sender, 1), defaultSignedTicket(sender, 2)}
 

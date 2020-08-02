@@ -896,6 +896,7 @@ func localSenderMonitorFixture() (*LocalSenderMonitorConfig, *stubBroker, *stubS
 	smgr := newStubSenderManager()
 	tm := &stubTimeManager{
 		transcoderPoolSize: big.NewInt(5),
+		round:              big.NewInt(100),
 	}
 	return cfg, b, smgr, tm
 }
