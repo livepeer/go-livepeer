@@ -885,7 +885,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	glog.Infof("Got requst %s", r.URL.String())
+	glog.Infof("Got request %s", r.URL.String())
 	returnMasterPlaylist := pp[3] == "index.m3u8"
 	var track string
 	if !returnMasterPlaylist {
@@ -894,8 +894,32 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	}
 	manifestID := pp[2]
 	requestFileName := strings.Join(pp[2:], "/")
+	var err error
+	var resp *authWebhookResponse
+	if resp, err = authenticateStream(r.URL.String()); err != nil {
+		glog.Error("Authentication denied for ", err)
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	var sess drivers.OSSession
 	ctx := r.Context()
-	sess := drivers.RecordStorage.NewSession(manifestID)
+
+	if resp != nil && resp.RecordObjectStore != "" {
+		os, err := drivers.ParseOSURL(resp.RecordObjectStore, true)
+		if err != nil {
+			glog.Error("Error parsing OS URL: ", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		sess = os.NewSession(manifestID)
+	} else if drivers.RecordStorage != nil {
+		sess = drivers.RecordStorage.NewSession(manifestID)
+	} else {
+		glog.Error("No record object store defined")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
 	fi, err := sess.ReadData(ctx, requestFileName)
 	if err == context.Canceled {
 		w.WriteHeader(http.StatusBadRequest)
