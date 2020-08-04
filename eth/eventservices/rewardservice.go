@@ -122,20 +122,17 @@ func (s *RewardService) tryReward() error {
 			}
 		}
 
+		s.pendingTx = tx
+
 		err = s.client.CheckTx(tx)
 		if err != nil {
 			if err == context.DeadlineExceeded {
 				glog.Infof("Reward tx did not confirm within defined time window - will try to replace pending tx next time")
-
-				// Tx did not confirm within defined time window
-				// Store pending tx
-				s.pendingTx = tx
 			}
 
 			return err
 		}
 
-		// Transaction confirmed so there is no pending call for reward()
 		s.pendingTx = nil
 
 		tp, err := s.client.GetTranscoderEarningsPoolForRound(s.client.Account().Address, currentRound)
