@@ -317,7 +317,7 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 	rbody, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, errors.New(resp.Status)
+		return nil, fmt.Errorf("Status=%d error=%s", resp.StatusCode, string(rbody))
 	}
 	if len(rbody) == 0 {
 		return nil, nil
