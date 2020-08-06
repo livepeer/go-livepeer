@@ -73,15 +73,11 @@ func (b *backend) PendingNonceAt(ctx context.Context, account common.Address) (u
 func (b *backend) SendTransaction(ctx context.Context, tx *types.Transaction) error {
 	sendErr := b.Client.SendTransaction(ctx, tx)
 
-	// update local nonce
 	msg, err := tx.AsMessage(b.signer)
 	if err != nil {
 		return err
 	}
 	sender := msg.From()
-	b.nonceManager.Lock(sender)
-	b.nonceManager.Update(sender, tx.Nonce())
-	b.nonceManager.Unlock(sender)
 
 	txLog, err := b.newTxLog(tx)
 	if err != nil {
@@ -92,6 +88,11 @@ func (b *backend) SendTransaction(ctx context.Context, tx *types.Transaction) er
 		glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\". Inputs: \"%v\"   \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, txLog.inputs, sendErr, strings.Repeat("*", 75))
 		return sendErr
 	}
+
+	// update local nonce
+	b.nonceManager.Lock(sender)
+	b.nonceManager.Update(sender, tx.Nonce())
+	b.nonceManager.Unlock(sender)
 
 	glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\". Inputs: \"%v\"  Hash: \"%v\". \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, txLog.inputs, tx.Hash().String(), strings.Repeat("*", 75))
 

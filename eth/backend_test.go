@@ -1,11 +1,16 @@
 package eth
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"log"
 	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,4 +49,47 @@ func TestNewTxLog(t *testing.T) {
 	tx = types.NewTransaction(2, common.HexToAddress("foo"), big.NewInt(0), 200000, big.NewInt(1000000), nil)
 	txLog, err = b.newTxLog(tx)
 	assert.EqualError(err, "no method signature")
+}
+
+func TestSendTransaction_SendErr_DontUpdateNonce(t *testing.T) {
+	// client := &ethclient.Client{}
+	client, err := ethclient.Dial("https://rinkeby.infura.io")
+	require.Nil(t, err)
+	signer := types.NewEIP155Signer(big.NewInt(1234))
+
+	privateKey, err := crypto.HexToECDSA("fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d5817ac83d38b6a19")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	require.True(t, ok)
+
+	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+	nonce := uint64(10)
+
+	value := big.NewInt(1000000000000000000) // in wei (1 eth)
+	gasLimit := uint64(21000)                // in units
+	gasPrice := big.NewInt(10000)
+
+	toAddress := common.HexToAddress("0x4592d8f8d7b001e72cb26a73e4fa1806a51ac79d")
+	var data []byte
+	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, data)
+
+	signedTx, err := types.SignTx(tx, signer, privateKey)
+	require.Nil(t, err)
+
+	bi, err := NewBackend(client, signer)
+	require.Nil(t, err)
+
+	nonceLockBefore := bi.(*backend).nonceManager.getNonceLock(fromAddress)
+
+	err = bi.SendTransaction(context.TODO(), signedTx)
+	// "projectID ID not provided" error because we didn't specify an infura "key"
+	assert.NotNil(t, err)
+
+	nonceLockAfter := bi.(*backend).nonceManager.getNonceLock(fromAddress)
+
+	assert.Equal(t, nonceLockBefore.nonce, nonceLockAfter.nonce)
 }
