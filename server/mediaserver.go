@@ -39,6 +39,7 @@ import (
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/vidplayer"
 	"github.com/livepeer/m3u8"
+	"github.com/patrickmn/go-cache"
 )
 
 var errAlreadyExists = errors.New("StreamAlreadyExists")
@@ -81,11 +82,12 @@ type rtmpConnection struct {
 }
 
 type LivepeerServer struct {
-	RTMPSegmenter         lpmscore.RTMPSegmenter
-	LPMS                  *lpmscore.LPMS
-	LivepeerNode          *core.LivepeerNode
-	HTTPMux               *http.ServeMux
-	ExposeCurrentManifest bool
+	RTMPSegmenter           lpmscore.RTMPSegmenter
+	LPMS                    *lpmscore.LPMS
+	LivepeerNode            *core.LivepeerNode
+	HTTPMux                 *http.ServeMux
+	ExposeCurrentManifest   bool
+	recordingsAuthResponses *cache.Cache
 
 	// Thread sensitive fields. All accesses to the
 	// following fields should be protected by `connectionLock`
@@ -149,7 +151,8 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 	}
 	server := lpmscore.New(&opts)
 	ls := &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{},
-		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
+		rtmpConnections:         make(map[core.ManifestID]*rtmpConnection),
+		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
 	}
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
@@ -895,15 +898,22 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	}
 	manifestID := pp[2]
 	requestFileName := strings.Join(pp[2:], "/")
+	var fromCache bool
 	var err error
 	var resp *authWebhookResponse
-	if resp, err = authenticateStream(r.URL.String()); err != nil {
+	if cresp, has := s.recordingsAuthResponses.Get(manifestID); has {
+		resp = cresp.(*authWebhookResponse)
+		fromCache = true
+	} else if resp, err = authenticateStream(r.URL.String()); err != nil {
 		glog.Error("Authentication denied for ", err)
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
 	var sess drivers.OSSession
 	ctx := r.Context()
+	if resp != nil && !fromCache {
+		s.recordingsAuthResponses.SetDefault(manifestID, resp)
+	}
 
 	if resp != nil && resp.RecordObjectStore != "" {
 		os, err := drivers.ParseOSURL(resp.RecordObjectStore, true)
