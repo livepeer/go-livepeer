@@ -879,6 +879,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
 	pp := strings.Split(r.URL.Path, "/")
 	finalize := r.URL.Query().Get("finalize") == "true"
 	if len(pp) < 4 {
