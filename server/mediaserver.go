@@ -702,7 +702,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`ignoring file extension: %s`, ext), http.StatusBadRequest)
 		return
 	}
-	glog.Infof("Got push request at url=%s ua=%s addr=%s len=%d", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body))
+	glog.Infof("Got push request at url=%s ua=%s addr=%s len=%d dur=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
+		r.Header.Get("Content-Duration"))
 
 	now := time.Now()
 	mid := parseManifestID(r.URL.Path)
