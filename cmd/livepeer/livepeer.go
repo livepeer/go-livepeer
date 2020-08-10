@@ -822,6 +822,7 @@ func main() {
 			}
 			verification.VerifierPath = *verifierPath
 		} else if *localVerify {
+			glog.Info("Local verification enabled")
 			server.Policy = &verification.Policy{Retries: 2}
 		}
 

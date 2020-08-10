@@ -160,6 +160,12 @@ else
     $TMPDIR/livepeer -broadcaster -depositMultiplier 0 -network rinkeby $ETH_ARGS || res=$?
     [ $res -ne 0 ]
 
+    # Check that local verification is enabled by default in on-chain mode
+    $TMPDIR/livepeer -broadcaster -transcodingOptions invalid -network rinkeby $ETH_ARGS 2>&1 | grep "Local verification enabled"
+    
+    # Check that local verification is disabled via -localVerify in on-chain mode
+    $TMPDIR/livepeer -broadcaster -transcodingOptions invalid -localVerify=false -network rinkeby $ETH_ARGS 2>&1 | grep -v "Local verification enabled"
+
     ETH_ARGS=$OLD_ETH_ARGS
 fi
 
@@ -287,5 +293,10 @@ $TMPDIR/livepeer -broadcaster -transcodingOptions $TMPDIR/invalid.json 2>&1 |   
 echo '[{"width":"1","height":"2"}]' > $TMPDIR/schema.json
 $TMPDIR/livepeer -broadcaster -transcodingOptions $TMPDIR/schema.json 2>&1 | grep "cannot unmarshal string into Go struct field .width of type int"
 
+# Check that local verification is disabled by default in off-chain mode
+$TMPDIR/livepeer -broadcaster -transcodingOptions invalid 2>&1 | grep -v "Local verification enabled"
+
+# Check that local verification is enabled via -localVerify in off-chain mode
+$TMPDIR/livepeer -broadcaster -transcodingOptions invalid -localVerify=true 2>&1 | grep "Local verification enabled"
 
 rm -rf $TMPDIR
