@@ -882,6 +882,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 // HandleRecordings handle requests to /recodings/ endpoint
 func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	ext := path.Ext(r.URL.Path)
 	if ext != ".m3u8" && ext != ".ts" {
 		w.WriteHeader(http.StatusBadRequest)
@@ -894,7 +898,11 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	glog.Infof("Got request %s", r.URL.String())
+	glog.V(common.DEBUG).Infof("Got recordings request=%s", r.URL.String())
+	now := time.Now()
+	defer func() {
+		glog.V(common.VERBOSE).Infof("request=%s took=%s", r.URL.String(), time.Since(now))
+	}()
 	returnMasterPlaylist := pp[3] == "index.m3u8"
 	var track string
 	if !returnMasterPlaylist {
@@ -910,7 +918,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		resp = cresp.(*authWebhookResponse)
 		fromCache = true
 	} else if resp, err = authenticateStream(r.URL.String()); err != nil {
-		glog.Error("Authentication denied for ", err)
+		glog.Errorf("Authentication denied for url=%s err=%v", r.URL.String(), err)
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
@@ -923,7 +931,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	if resp != nil && resp.RecordObjectStore != "" {
 		os, err := drivers.ParseOSURL(resp.RecordObjectStore, true)
 		if err != nil {
-			glog.Error("Error parsing OS URL: ", err)
+			glog.Errorf("Error parsing OS URL err=%v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -953,16 +961,20 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			w.Header().Set("Content-Type", "application/x-mpegURL")
 		}
 		w.Header().Set("Connection", "keep-alive")
+		now2 := time.Now()
 		io.Copy(w, fi.Body)
 		fi.Body.Close()
+		glog.V(common.VERBOSE).Infof("Request=%s streaming filename=%s took=%s", r.URL.String(), requestFileName, time.Since(now2))
 		return
 	}
+	now2 := time.Now()
 	filesPage, err := sess.ListFiles(ctx, manifestID+"/", "/")
 	if err != nil {
 		glog.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	glog.V(common.VERBOSE).Infof("Listing directories for manifestID=%s took=%s", manifestID, time.Since(now2))
 	dirs := filesPage.Directories()
 	if len(dirs) == 0 {
 		w.WriteHeader(http.StatusNotFound)
@@ -971,7 +983,9 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	var latestPlaylistTime time.Time
 	var jsonFiles []string
 	for _, dirName := range dirs {
+		now2 = time.Now()
 		dirOnePage, err := sess.ListFiles(ctx, dirName+"playlist_", "")
+		glog.V(common.VERBOSE).Infof("Listing playlist files for manifestID=%s took=%s", manifestID, time.Since(now2))
 		if err != nil {
 			glog.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -1007,8 +1021,11 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	masterPList := m3u8.NewMasterPlaylist()
 	mediaLists := make(map[string]*m3u8.MediaPlaylist)
 	mainJspl := core.NewJSONPlaylist()
+	now1 := time.Now()
 	for _, fn := range jsonFiles {
+		now2 = time.Now()
 		fi, err := sess.ReadData(ctx, fn)
+		glog.V(common.VERBOSE).Infof("Reading playlist file=%s for manifestID=%s took=%s", fn, manifestID, time.Since(now2))
 		if err != nil || fi == nil {
 			glog.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -1060,18 +1077,24 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		return
 	default:
 	}
+	glog.V(common.VERBOSE).Infof("Playlist generation for manifestID=%s took=%s", manifestID, time.Since(now1))
 	if finalize {
 		for trackName := range mainJspl.Segments {
 			mpl := mediaLists[trackName]
 			mainJspl.AddSegmentsToMPL(manifestID, trackName, mpl)
-			_, err = sess.SaveData(trackName+".m3u8", mpl.Encode().Bytes(), nil)
+			fileName := trackName + ".m3u8"
+			nows := time.Now()
+			_, err = sess.SaveData(fileName, mpl.Encode().Bytes(), nil)
+			glog.V(common.VERBOSE).Infof("Saving playlist fileName=%s for manifestID=%s took=%s", fileName, manifestID, time.Since(nows))
 			if err != nil {
 				glog.Error(err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 		}
+		nows := time.Now()
 		_, err = sess.SaveData("index.m3u8", masterPList.Encode().Bytes(), nil)
+		glog.V(common.VERBOSE).Infof("Saving playlist fileName=%s for manifestID=%s took=%s", "index.m3u8", manifestID, time.Since(nows))
 		if err != nil {
 			glog.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
