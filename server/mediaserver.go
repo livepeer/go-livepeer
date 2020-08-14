@@ -944,6 +944,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	nowr := time.Now()
 	fi, err := sess.ReadData(ctx, requestFileName)
 	if err == context.Canceled {
 		w.WriteHeader(http.StatusBadRequest)
@@ -964,7 +965,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		now2 := time.Now()
 		io.Copy(w, fi.Body)
 		fi.Body.Close()
-		glog.V(common.VERBOSE).Infof("Request=%s streaming filename=%s took=%s", r.URL.String(), requestFileName, time.Since(now2))
+		glog.V(common.VERBOSE).Infof("Request=%s streaming filename=%s took=%s from_read_took=%s", r.URL.String(), requestFileName, time.Since(now2), time.Since(nowr))
 		return
 	}
 	now2 := time.Now()
