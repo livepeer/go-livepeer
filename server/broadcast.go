@@ -489,12 +489,14 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				ext, _ := common.ProfileFormatExtension(profile.Format)
 				name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
 				segDurMs := strconv.Itoa(int(seg.Duration * 1000))
+				now := time.Now()
 				uri, err := bros.SaveData(name, data, map[string]string{"duration": segDurMs})
 				if err != nil {
 					glog.Errorf("Error saving %s to record store: %s", name, err)
 				} else {
 					cpl.InsertHLSSegmentJSON(&profile, seg.SeqNo, uri, seg.Duration)
-					glog.Infof("Successfully saved %s to record store", name)
+					glog.Infof("Successfully saved name=%s size=%d bytes to record store took=%s",
+						name, len(data), time.Since(now))
 				}
 			}()
 		}
