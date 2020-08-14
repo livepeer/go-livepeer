@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/m3u8"
@@ -216,8 +217,11 @@ func (mgr *BasicPlaylistManager) FlushRecord() {
 			glog.Error("Error encoding playlist: ", err)
 			return
 		}
+		now := time.Now()
 		mgr.recordSession.SaveData(mgr.jsonList.name, b, nil)
-		if mgr.jsonList.DurationMs > 60*1000 { // 1 min for now
+		glog.V(common.VERBOSE).Infof("Saving json playlist name=%s size=%d bytes took=%s", mgr.jsonList.name,
+			len(b), time.Since(now))
+		if mgr.jsonList.DurationMs > 60*60*1000 { // 1 hour
 			mgr.jsonList = NewJSONPlaylist()
 		}
 	}
