@@ -695,6 +695,15 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body.Close()
 	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
+	rv := rand.Float64()
+	if rv < 0.3 {
+		http.Error(w, "Returning internal server error", http.StatusInternalServerError)
+		return
+	} else if rv < 0.6 {
+		glog.Infof("Forcing request to timeout")
+		time.Sleep(2 * time.Minute)
+		return
+	}
 
 	// Determine the input format the request is claiming to have
 	ext := path.Ext(r.URL.Path)
