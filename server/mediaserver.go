@@ -696,10 +696,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	r.Body.Close()
 	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
 	rv := rand.Float64()
-	if rv < 0.3 {
+	if rv < 0.05 {
 		http.Error(w, "Returning internal server error", http.StatusInternalServerError)
 		return
-	} else if rv < 0.6 {
+	} else if rv < 0.1 {
 		glog.Infof("Forcing request to timeout")
 		time.Sleep(2 * time.Minute)
 		return
