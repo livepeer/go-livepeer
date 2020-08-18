@@ -16,6 +16,7 @@ import (
 
 const maxDecimals = 18
 const percDivisor = 1000000
+const percDivisorMinter = 1000000000
 
 var (
 	BlocksUntilFirstClaimDeadline = big.NewInt(200)
@@ -42,6 +43,11 @@ func FormatUnits(baseAmount *big.Int, name string) string {
 			return fmt.Sprintf("%v LPT", FromBaseAmount(baseAmount))
 		}
 	}
+}
+
+func FormatPercMinter(value *big.Int) string {
+	pMultiplier := percDivisorMinter / 100.0
+	return fmt.Sprintf("%v", float64(value.Int64())/pMultiplier)
 }
 
 func FormatPerc(value *big.Int) string {

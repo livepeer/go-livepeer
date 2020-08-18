@@ -12,6 +12,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestFormatPercMinter(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal("0", FormatPercMinter(big.NewInt(0)))
+	assert.Equal("100", FormatPercMinter(big.NewInt(percDivisorMinter)))
+	assert.Equal("50", FormatPercMinter(big.NewInt(.5*percDivisorMinter)))
+	assert.Equal("34", FormatPercMinter(big.NewInt(.34*percDivisorMinter)))
+	assert.NotEqual(FormatPerc(big.NewInt(.5*percDivisorMinter)), FormatPercMinter(big.NewInt(.5*percDivisorMinter)))
+}
+
 func TestFormatPerc(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal("0", FormatPerc(big.NewInt(0)))
