@@ -15,6 +15,7 @@ import (
 )
 
 const maxDecimals = 18
+const percDivisor = 1000000
 
 var (
 	BlocksUntilFirstClaimDeadline = big.NewInt(200)
@@ -50,13 +51,13 @@ func FormatPerc(value *big.Int) string {
 }
 
 func ToPerc(value *big.Int) float64 {
-	pMultiplier := 10000.0
+	pMultiplier := percDivisor / 100.0
 
 	return float64(value.Int64()) / pMultiplier
 }
 
 func FromPerc(perc float64) *big.Int {
-	return fromPerc(perc, big.NewFloat(10000.0))
+	return fromPerc(perc, big.NewFloat(percDivisor/100.0))
 }
 
 func FromPercOfUint256(perc float64) *big.Int {
