@@ -171,7 +171,7 @@ func (os *gsSession) SaveData(name string, data []byte, meta map[string]string) 
 		keyname := os.key + "/" + name
 		objh := os.client.Bucket(os.bucket).Object(keyname)
 		glog.V(common.VERBOSE).Infof("Saving to GS %s/%s", os.bucket, keyname)
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*50)
+		ctx, cancel := context.WithTimeout(context.Background(), saveTimeout)
 		defer cancel()
 		wr := objh.NewWriter(ctx)
 		if len(meta) > 0 && wr.Metadata == nil {
