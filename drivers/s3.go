@@ -21,12 +21,15 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 // S3_POLICY_EXPIRE_IN_HOURS how long access rights given to other node will be valid
 const S3_POLICY_EXPIRE_IN_HOURS = 24
+
+var saveTimeout = 10 * time.Second
 
 /* S3OS S3 backed object storage driver. For own storage access key and access key secret
    should be specified. To give to other nodes access to own S3 storage so called 'POST' policy
@@ -290,7 +293,9 @@ func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]strin
 		ContentType:   contentType,
 		ContentLength: aws.Int64(int64(len(data))),
 	}
-	resp, err := os.s3svc.PutObject(params)
+	ctx, cancel := context.WithTimeout(context.Background(), saveTimeout)
+	resp, err := os.s3svc.PutObjectWithContext(ctx, params, request.WithLogLevel(aws.LogDebug))
+	cancel()
 	if err != nil {
 		return "", err
 	}
@@ -369,7 +374,7 @@ func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]st
 	if !strings.Contains(postURL, os.bucket) {
 		postURL += "/" + os.bucket
 	}
-	req, err := newfileUploadRequest(postURL, fields, fileBytes, fileName)
+	req, cancel, err := newfileUploadRequest(postURL, fields, fileBytes, fileName)
 	if err != nil {
 		glog.Error(err)
 		return "", err
@@ -380,6 +385,7 @@ func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]st
 		glog.Error(err)
 		return "", err
 	}
+	cancel()
 	body := &bytes.Buffer{}
 	sz, err := body.ReadFrom(resp.Body)
 	if err != nil {
@@ -439,7 +445,7 @@ func createPolicy(key, bucket, region, secret, path string) (string, string, str
 	return policy, signString(policy, region, xAmzDate, secret), xAmzCredential, xAmzDate + "T000000Z"
 }
 
-func newfileUploadRequest(uri string, params map[string]string, fData io.Reader, fileName string) (*http.Request, error) {
+func newfileUploadRequest(uri string, params map[string]string, fData io.Reader, fileName string) (*http.Request, context.CancelFunc, error) {
 	glog.Infof("Posting data to %s (params %+v)", uri, params)
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -451,19 +457,21 @@ func newfileUploadRequest(uri string, params map[string]string, fData io.Reader,
 	}
 	part, err := writer.CreateFormFile("file", fileName)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	_, err = io.Copy(part, fData)
 
 	err = writer.Close()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	req, err := http.NewRequest("POST", uri, body)
+	ctx, cancel := context.WithTimeout(context.Background(), saveTimeout)
+	req, err := http.NewRequestWithContext(ctx, "POST", uri, body)
 	if err != nil {
-		return nil, err
+		cancel()
+		return nil, nil, err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	return req, err
+	return req, cancel, err
 }
