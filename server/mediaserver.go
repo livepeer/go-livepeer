@@ -716,8 +716,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`ignoring file extension: %s`, ext), http.StatusBadRequest)
 		return
 	}
-	glog.Infof("Got push request at url=%s ua=%s addr=%s len=%d dur=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
-		r.Header.Get("Content-Duration"))
+	glog.Infof("Got push request at url=%s ua=%s addr=%s len=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
+		r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"))
 
 	now := time.Now()
 	mid := parseManifestID(r.URL.Path)
@@ -784,6 +784,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			mid = cxn.mid
 		}
 	}
+	defer func(now time.Time) {
+		glog.Infof("Finished push request at url=%s ua=%s addr=%s len=%d dur=%s resolution=%s took=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
+			r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"), time.Since(now))
+	}(now)
 
 	fname := path.Base(r.URL.Path)
 	seq, err := strconv.ParseUint(strings.TrimSuffix(fname, ext), 10, 64)
@@ -815,7 +819,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 				cancel()
 				return
 			case <-tick.Done():
-				glog.V(common.VERBOSE).Infof("watchdog reset mid=%s seq=%d dur=%v started=%v", mid, seq, duration, now)
+				glog.V(common.VERBOSE).Infof("watchdog reset manifestID=%s seq=%d dur=%v started=%v", mid, seq, duration, now)
 				s.connectionLock.RLock()
 				if cxn, exists := s.rtmpConnections[mid]; exists {
 					cxn.lastUsed = time.Now()
@@ -842,6 +846,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	default:
 	}
 	if len(urls) == 0 {
+		glog.Infof("No sessions available for manifestID=%s seqNo=%d name=%s", mid, seq, fname)
 		http.Error(w, "No sessions available", http.StatusServiceUnavailable)
 		return
 	}
@@ -856,6 +861,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	glog.Infof("Finished transcoding push request at url=%s manifestID=%s seqNo=%d took=%s", r.URL.String(), mid, seq, time.Since(now))
 
 	boundary := common.RandName()
 	accept := r.Header.Get("Accept")
@@ -964,7 +970,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	glog.V(common.DEBUG).Infof("Got recordings request=%s", r.URL.String())
 	now := time.Now()
 	defer func() {
-		glog.V(common.VERBOSE).Infof("request=%s took=%s", r.URL.String(), time.Since(now))
+		glog.V(common.VERBOSE).Infof("request=%s took=%s headers=%+v", r.URL.String(), time.Since(now), w.Header())
 	}()
 	returnMasterPlaylist := pp[3] == "index.m3u8"
 	var track string

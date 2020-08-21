@@ -1083,7 +1083,7 @@ func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, errCode Segmen
 }
 
 func TranscodedSegmentAppeared(nonce, seqNo uint64, profile string) {
-	glog.V(logLevel).Infof("Logging LogTranscodedSegmentAppeared... nonce=%d SeqNo=%d profile=%s", nonce, seqNo, profile)
+	glog.V(logLevel).Infof("Logging LogTranscodedSegmentAppeared... nonce=%d seqNo=%d profile=%s", nonce, seqNo, profile)
 	census.segmentTranscodedAppeared(nonce, seqNo, profile)
 }
 

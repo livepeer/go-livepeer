@@ -288,7 +288,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		return nil, fmt.Errorf("Invalid duration %v", seg.Duration)
 	}
 
-	glog.V(common.DEBUG).Infof("Processing segment nonce=%d manifestID=%s seqNo=%d dur=%v", nonce, mid, seg.SeqNo, seg.Duration)
+	glog.V(common.DEBUG).Infof("Processing segment nonce=%d manifestID=%s seqNo=%d dur=%v bytes=%v", nonce, mid, seg.SeqNo, seg.Duration, len(seg.Data))
 	if monitor.Enabled {
 		monitor.SegmentEmerged(nonce, seg.SeqNo, len(BroadcastJobVideoProfiles), seg.Duration)
 	}
@@ -308,11 +308,11 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 				now := time.Now()
 				uri, err := ros.SaveData(name, seg.Data, map[string]string{"duration": segDurMs})
 				if err != nil {
-					glog.Errorf("Error saving %s to record store try=%d err=%v", name, i, err)
+					glog.Errorf("Error saving nonce=%d manifestID=%s name=%s to record store try=%d err=%v", nonce, mid, name, i, err)
 				} else {
 					cpl.InsertHLSSegmentJSON(vProfile, seg.SeqNo, uri, seg.Duration)
-					glog.Infof("Successfully saved name=%s size=%d bytes to record store took=%s",
-						name, len(seg.Data), time.Since(now))
+					glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s size=%d bytes to record store took=%s",
+						nonce, mid, name, len(seg.Data), time.Since(now))
 					break
 				}
 			}
@@ -498,11 +498,11 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 					now := time.Now()
 					uri, err := bros.SaveData(name, data, map[string]string{"duration": segDurMs})
 					if err != nil {
-						glog.Errorf("Error saving %s to record store try=%d err=%v", name, i, err)
+						glog.Errorf("Error saving nonce=%d manifestID=%s name=%s to record store try=%d err=%v", nonce, cxn.mid, name, i, err)
 					} else {
 						cpl.InsertHLSSegmentJSON(&profile, seg.SeqNo, uri, seg.Duration)
-						glog.Infof("Successfully saved name=%s size=%d bytes to record store took=%s",
-							name, len(data), time.Since(now))
+						glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s size=%d bytes to record store took=%s",
+							nonce, cxn.mid, name, len(data), time.Since(now))
 						break
 					}
 				}

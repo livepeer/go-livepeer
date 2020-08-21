@@ -119,7 +119,7 @@ func TestPopConcurrent(t *testing.T) {
 	// Insert headers into store
 	headerMap := make(map[ethcommon.Hash]bool)
 	for i := 0; i < 10; i++ {
-		hash := ethcommon.BytesToHash([]byte(string(i)))
+		hash := ethcommon.BytesToHash([]byte(string(rune(i))))
 		headerMap[hash] = true
 
 		require.Nil(store.InsertMiniHeader(&MiniHeader{Hash: hash}))
@@ -228,7 +228,7 @@ func TestPushConcurrent(t *testing.T) {
 	require := require.New(t)
 
 	headerHash := func(i int) ethcommon.Hash {
-		return ethcommon.BytesToHash([]byte(string(i)))
+		return ethcommon.BytesToHash([]byte(string(rune(i))))
 	}
 
 	// Insert headers into store
