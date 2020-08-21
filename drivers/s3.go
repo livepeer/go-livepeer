@@ -274,6 +274,7 @@ func (os *s3Session) ReadData(ctx context.Context, name string) (*FileInfoReader
 }
 
 func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]string) (string, error) {
+	now := time.Now()
 	bucket := aws.String(os.bucket)
 	keyname := aws.String(os.key + "/" + name)
 	var metadata map[string]*string
@@ -301,7 +302,7 @@ func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]strin
 	}
 	glog.Infof("resp: %s", resp.String())
 	uri := os.getAbsURL(*keyname)
-	glog.V(common.VERBOSE).Infof("Saved to S3 %s", uri)
+	glog.V(common.VERBOSE).Infof("Saved to S3 %s bytes=%v dur=%s", uri, len(data), time.Since(now))
 	return uri, err
 }
 
