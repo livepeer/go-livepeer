@@ -659,7 +659,7 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(true)
 
-	mos := &mockOSSession{}
+	mos := &drivers.MockOSSession{}
 
 	mos.On("SaveData", mock.Anything, mock.Anything).Return("", errors.New("SaveData error"))
 
@@ -1248,7 +1248,7 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(true)
 
-	mos := &mockOSSession{}
+	mos := &drivers.MockOSSession{}
 
 	tData720 := &core.TranscodedSegmentData{
 		Data:   []byte("foo"),

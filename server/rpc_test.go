@@ -1064,48 +1064,6 @@ func TestCoreNetSegData_RoundTrip_Duration(t *testing.T) {
 	})
 }
 
-type mockOSSession struct {
-	mock.Mock
-}
-
-func (s *mockOSSession) SaveData(name string, data []byte, meta map[string]string) (string, error) {
-	args := s.Called()
-	return args.String(0), args.Error(1)
-}
-
-func (s *mockOSSession) EndSession() {
-	s.Called()
-}
-
-func (s *mockOSSession) GetInfo() *net.OSInfo {
-	args := s.Called()
-	if args.Get(0) != nil {
-		return args.Get(0).(*net.OSInfo)
-	}
-	return nil
-}
-
-func (s *mockOSSession) IsExternal() bool {
-	args := s.Called()
-	return args.Bool(0)
-}
-
-func (s *mockOSSession) IsOwn(url string) bool {
-	args := s.Called()
-	return args.Bool(0)
-}
-
-func (s *mockOSSession) ListFiles(ctx context.Context, prefix, delim string) (drivers.PageInfo, error) {
-	return nil, nil
-}
-
-func (s *mockOSSession) ReadData(ctx context.Context, name string) (*drivers.FileInfoReader, error) {
-	return nil, nil
-}
-func (s *mockOSSession) OS() drivers.OSDriver {
-	return nil
-}
-
 type mockOrchestrator struct {
 	mock.Mock
 }

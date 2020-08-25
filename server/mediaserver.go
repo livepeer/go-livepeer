@@ -1086,25 +1086,16 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	mediaLists := make(map[string]*m3u8.MediaPlaylist)
 	mainJspl := core.NewJSONPlaylist()
 	now1 := time.Now()
-	for _, fn := range jsonFiles {
-		now2 = time.Now()
-		fi, err := sess.ReadData(ctx, fn)
-		glog.V(common.VERBOSE).Infof("Reading playlist file=%s for manifestID=%s took=%s", fn, manifestID, time.Since(now2))
-		if err != nil || fi == nil {
-			glog.Error(err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
+	_, datas, err := drivers.ParallelReadFiles(ctx, sess, jsonFiles, 16)
+	if err != nil {
+		glog.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	glog.V(common.VERBOSE).Infof("Finished reading num=%d playlist files for manifestID=%s took=%s", len(jsonFiles), manifestID, time.Since(now1))
+	for i := range jsonFiles {
 		jspl := &core.JsonPlaylist{}
-		fb, err := ioutil.ReadAll(fi.Body)
-		if err != nil {
-			glog.Error(err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		fi.Body.Close()
-
-		err = json.Unmarshal(fb, jspl)
+		err = json.Unmarshal(datas[i], jspl)
 		if err != nil {
 			glog.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
