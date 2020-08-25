@@ -304,11 +304,17 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	segDurMs := strconv.Itoa(int(seg.Duration * 1000))
 	if ros != nil {
 		go func() {
-			uri, err := ros.SaveData(name, seg.Data, map[string]string{"duration": segDurMs})
-			if err != nil {
-				glog.Errorf("Error recording: %s", err)
-			} else {
-				cpl.InsertHLSSegmentJSON(vProfile, seg.SeqNo, uri, seg.Duration)
+			for i := 0; i < 2; i++ {
+				now := time.Now()
+				uri, err := ros.SaveData(name, seg.Data, map[string]string{"duration": segDurMs})
+				if err != nil {
+					glog.Errorf("Error saving %s to record store try=%d err=%v", name, i, err)
+				} else {
+					cpl.InsertHLSSegmentJSON(vProfile, seg.SeqNo, uri, seg.Duration)
+					glog.Infof("Successfully saved name=%s size=%d bytes to record store took=%s",
+						name, len(seg.Data), time.Since(now))
+					break
+				}
 			}
 		}()
 	}
@@ -492,7 +498,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 					now := time.Now()
 					uri, err := bros.SaveData(name, data, map[string]string{"duration": segDurMs})
 					if err != nil {
-						glog.Errorf("Error saving %s to record store try=%d: %s", name, i, err)
+						glog.Errorf("Error saving %s to record store try=%d err=%v", name, i, err)
 					} else {
 						cpl.InsertHLSSegmentJSON(&profile, seg.SeqNo, uri, seg.Duration)
 						glog.Infof("Successfully saved name=%s size=%d bytes to record store took=%s",
