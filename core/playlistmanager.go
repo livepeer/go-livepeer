@@ -217,10 +217,12 @@ func (mgr *BasicPlaylistManager) FlushRecord() {
 			glog.Error("Error encoding playlist: ", err)
 			return
 		}
-		now := time.Now()
-		mgr.recordSession.SaveData(mgr.jsonList.name, b, nil)
-		glog.V(common.VERBOSE).Infof("Saving json playlist name=%s size=%d bytes took=%s", mgr.jsonList.name,
-			len(b), time.Since(now))
+		go func(name string, data []byte) {
+			now := time.Now()
+			mgr.recordSession.SaveData(name, b, nil)
+			glog.V(common.VERBOSE).Infof("Saving json playlist name=%s size=%d bytes took=%s", name,
+				len(b), time.Since(now))
+		}(mgr.jsonList.name, b)
 		if mgr.jsonList.DurationMs > 60*60*1000 { // 1 hour
 			mgr.jsonList = NewJSONPlaylist()
 		}
