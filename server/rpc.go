@@ -283,8 +283,12 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 
 	os := drivers.NodeStorage.NewSession(authToken.SessionId)
 
-	if os != nil && os.IsExternal() {
-		tr.Storage = []*net.OSInfo{os.GetInfo()}
+	if os != nil {
+		if os.IsExternal() {
+			tr.Storage = []*net.OSInfo{os.GetInfo()}
+		} else {
+			os.EndSession()
+		}
 	}
 
 	return &tr, nil
