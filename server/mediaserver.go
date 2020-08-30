@@ -960,9 +960,10 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
+	r.URL.Host = r.Host
 	pp := strings.Split(r.URL.Path, "/")
 	finalize := r.URL.Query().Get("finalize") == "true"
+	_, finalizeSet := r.URL.Query()["finalize"]
 	if len(pp) < 4 {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -1084,7 +1085,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	if time.Since(latestPlaylistTime) > 24*time.Hour {
+	if time.Since(latestPlaylistTime) > 24*time.Hour && !finalizeSet {
 		finalize = true
 	}
 
@@ -1124,8 +1125,6 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		// vParams := ffmpeg.VideoProfileToVariantParams(*profile)
-		// url := fmt.Sprintf("%s/%s.m3u8", manifestID, track.Name)
 		url := fmt.Sprintf("%s.m3u8", track.Name)
 		vParams := m3u8.VariantParams{Bandwidth: track.Bandwidth, Resolution: track.Resolution}
 		masterPList.Append(url, mpl, vParams)

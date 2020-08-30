@@ -23,6 +23,12 @@ var NodeStorage OSDriver
 // RecordStorage is current node's "stream recording" driver
 var RecordStorage OSDriver
 
+// Testing indicates that test is running
+var Testing bool
+
+// TestMemoryStorages used for testing purposes
+var TestMemoryStorages map[string]*MemoryOS
+
 // OSDriver common interface for Object Storage
 type OSDriver interface {
 	NewSession(path string) OSSession
@@ -151,6 +157,17 @@ func ParseOSURL(input string, useFullAPI bool) (OSDriver, error) {
 	if u.Scheme == "gs" {
 		file := u.User.Username()
 		return NewGoogleDriver(u.Host, file, useFullAPI)
+	}
+	if u.Scheme == "memory" && Testing {
+		if TestMemoryStorages == nil {
+			TestMemoryStorages = make(map[string]*MemoryOS)
+		}
+		os, ok := TestMemoryStorages[u.Host]
+		if !ok {
+			os = NewMemoryDriver(nil)
+			TestMemoryStorages[u.Host] = os
+		}
+		return os, nil
 	}
 	return nil, fmt.Errorf("unrecognized OS scheme: %s", u.Scheme)
 }

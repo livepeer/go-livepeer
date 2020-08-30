@@ -1,8 +1,11 @@
 package drivers
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"path"
 	"strings"
@@ -79,11 +82,63 @@ func (ostore *MemorySession) EndSession() {
 }
 
 func (ostore *MemorySession) ListFiles(ctx context.Context, prefix, delim string) (PageInfo, error) {
-	return nil, fmt.Errorf("Not implemented")
+	pi := &dumbPageInfo{}
+	if prefix == "" {
+		return pi, nil
+	}
+	ostore.dLock.RLock()
+	defer ostore.dLock.RUnlock()
+	cprefix := prefix
+	pprefix := ""
+	if cprefix != "" && string(cprefix[len(cprefix)-1]) != "/" {
+		pp := strings.Split(cprefix, "/")
+		cprefix = strings.Join(pp[:len(pp)-1], "/") + "/"
+		pprefix = pp[len(pp)-1]
+	}
+
+	for cachePath, cache := range ostore.dCache {
+		if strings.HasPrefix(cachePath, cprefix) {
+			for _, it := range cache.cache {
+				if it.name != "" {
+					if delim == "/" {
+						dir := strings.Split(strings.TrimPrefix(cachePath, cprefix), "/")[0]
+						dir = path.Join(prefix, dir) + "/"
+						found := false
+						for _, cd := range pi.directories {
+							if cd == dir {
+								found = true
+								break
+							}
+						}
+						if !found {
+							pi.directories = append(pi.directories, dir)
+						}
+					} else {
+						if pprefix == "" || strings.HasPrefix(it.name, pprefix) {
+							fi := FileInfo{Name: path.Join(cachePath, it.name), Size: int64(len(it.data))}
+							pi.files = append(pi.files, fi)
+						}
+					}
+				}
+			}
+		}
+	}
+	return pi, nil
 }
 
 func (ostore *MemorySession) ReadData(ctx context.Context, name string) (*FileInfoReader, error) {
-	return nil, fmt.Errorf("Not implemented")
+	data := ostore.GetData(name)
+	if data == nil {
+		return nil, errors.New("Not found")
+	}
+	res := &FileInfoReader{
+		FileInfo: FileInfo{
+			Name: name,
+			Size: int64(len(data)),
+		},
+		Body: ioutil.NopCloser(bytes.NewReader(data)),
+	}
+	return res, nil
 }
 
 // GetData returns the cached data for a name.
@@ -201,4 +256,22 @@ func (dc *dataCache) GetData(name string) []byte {
 		}
 	}
 	return nil
+}
+
+type dumbPageInfo struct {
+	files       []FileInfo
+	directories []string
+}
+
+func (dpi *dumbPageInfo) Files() []FileInfo {
+	return dpi.files
+}
+func (dpi *dumbPageInfo) Directories() []string {
+	return dpi.directories
+}
+func (dpi *dumbPageInfo) HasNextPage() bool {
+	return false
+}
+func (dpi *dumbPageInfo) NextPage() (PageInfo, error) {
+	return nil, ErrNoNextPage
 }

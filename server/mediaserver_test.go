@@ -264,14 +264,14 @@ func TestSelectOrchestrator(t *testing.T) {
 	}
 
 	sd.infos = []*net.OrchestratorInfo{
-		&net.OrchestratorInfo{
+		{
 			TicketParams: protoParams,
 			PriceInfo: &net.PriceInfo{
 				PricePerUnit:  params.PricePerPixel.Num().Int64(),
 				PixelsPerUnit: params.PricePerPixel.Denom().Int64(),
 			},
 		},
-		&net.OrchestratorInfo{
+		{
 			TicketParams: protoParams2,
 			PriceInfo: &net.PriceInfo{
 				PricePerUnit:  params2.PricePerPixel.Num().Int64(),
@@ -434,7 +434,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	assert.Len(params.Profiles, 3)
 
 	expectedProfiles := []ffmpeg.VideoProfile{
-		ffmpeg.VideoProfile{
+		{
 			Name:         "prof1",
 			Bitrate:      "432",
 			Framerate:    uint(560),
@@ -443,7 +443,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			Profile:      ffmpeg.ProfileH264Baseline,
 			GOP:          time.Duration(0),
 		},
-		ffmpeg.VideoProfile{
+		{
 			Name:         "prof2",
 			Bitrate:      "765",
 			Framerate:    uint(876),
@@ -452,7 +452,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			Profile:      ffmpeg.ProfileNone,
 			GOP:          ffmpeg.GOPIntraOnly,
 		},
-		ffmpeg.VideoProfile{
+		{
 			Name:         "passthru_fps",
 			Bitrate:      "890",
 			Resolution:   "789x654",
@@ -511,6 +511,33 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	params = createSid(u).(*core.StreamParameters)
 	assert.Len(params.Profiles, 1)
 	assert.Equal(ffmpeg.GOPIntraOnly, params.Profiles[0].GOP)
+
+	// do not create stream if ObjectStore URL is invalid
+	ts15 := makeServer(`{"manifestID":"a2", "objectStore": "invalid://object.store", "recordObjectStore": ""}`)
+	defer ts15.Close()
+	sid = createSid(u)
+	assert.Nil(sid)
+
+	// do not create stream if RecordObjectStore URL is invalid
+	ts16 := makeServer(`{"manifestID":"a2", "objectStore": "", "recordObjectStore": "invalid://object.store"}`)
+	defer ts16.Close()
+	sid = createSid(u)
+	assert.Nil(sid)
+
+	ts17 := makeServer(`{"manifestID":"a3", "objectStore": "s3+http://us:pass@object.store/path", "recordObjectStore": "s3+http://us:pass@record.store"}`)
+	defer ts17.Close()
+	params = createSid(u).(*core.StreamParameters)
+	assert.Equal(core.ManifestID("a3"), params.ManifestID)
+	assert.NotNil(params.OS)
+	assert.True(params.OS.IsExternal())
+	osinfo := params.OS.GetInfo()
+	assert.Equal(net.OSInfo_S3, osinfo.GetStorageType())
+	assert.Equal("http://object.store/path", osinfo.GetS3Info().Host)
+	assert.NotNil(params.RecordOS)
+	assert.True(params.RecordOS.IsExternal())
+	osinfo = params.RecordOS.GetInfo()
+	assert.Equal(net.OSInfo_S3, osinfo.GetStorageType())
+	assert.Equal("http://record.store", osinfo.GetS3Info().Host)
 }
 
 func TestCreateRTMPStreamHandler(t *testing.T) {
@@ -883,8 +910,8 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	// populate stub discovery
 	sd := &stubDiscovery{}
 	sd.infos = []*net.OrchestratorInfo{
-		&net.OrchestratorInfo{Transcoder: "transcoder1", TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
-		&net.OrchestratorInfo{Transcoder: "transcoder2", TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
+		{Transcoder: "transcoder1", TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
+		{Transcoder: "transcoder2", TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
 	}
 	s.LivepeerNode.OrchestratorPool = sd
 
