@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"mime"
@@ -25,6 +26,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/vidplayer"
@@ -292,7 +294,6 @@ func TestPush_HTTPIngest(t *testing.T) {
 }
 
 func TestPush_MP4(t *testing.T) {
-
 	// Do a bunch of setup. Would be nice to simplify this one day...
 	assert := assert.New(t)
 	s := setupServer()
@@ -923,4 +924,115 @@ func TestPush_WebhookRequestURL(t *testing.T) {
 
 	// Server has empty sessions list, so it will return 503
 	assert.Equal(503, resp.StatusCode)
+}
+
+func TestPush_OSPerStream(t *testing.T) {
+	lpmon.NodeID = "testNode"
+	drivers.Testing = true
+	assert := assert.New(t)
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
+	s, _ := NewLivepeerServer("127.0.0.1:1939", n, true, "")
+	defer serverCleanup(s)
+
+	whts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		out, _ := ioutil.ReadAll(r.Body)
+		var req authWebhookReq
+		err := json.Unmarshal(out, &req)
+		if err != nil {
+			glog.Error("Error parsing URL: ", err)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		assert.Equal(req.URL, "http://example.com/live/sess1/1.ts")
+		w.Write([]byte(`{"manifestID":"OSTEST01", "objectStore": "memory://store1", "recordObjectStore": "memory://store2"}`))
+	}))
+
+	defer whts.Close()
+	AuthWebhookURL = whts.URL
+
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+
+	// sometimes LivepeerServer needs time  to start
+	// esp if this is the only test in the suite being run (eg, via `-run)
+	time.Sleep(10 * time.Millisecond)
+
+	oldProfs := BroadcastJobVideoProfiles
+	defer func() { BroadcastJobVideoProfiles = oldProfs }()
+	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P720p25fps16x9}
+
+	sd := &stubDiscovery{}
+	sd.infos = []*net.OrchestratorInfo{{Transcoder: ts.URL}}
+	s.LivepeerNode.OrchestratorPool = sd
+
+	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
+		return &net.TranscodeResult{
+			Result: &net.TranscodeResult_Data{
+				Data: &net.TranscodeData{
+					Segments: tSegData,
+				},
+			},
+		}
+	}
+	segPath := "/random"
+	tSegData := []*net.TranscodedSegmentData{{Url: ts.URL + segPath, Pixels: 100}}
+	tr := dummyRes(tSegData)
+	buf, err := proto.Marshal(tr)
+	require.Nil(t, err)
+
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+	mux.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("transcoded binary data"))
+	})
+
+	handler, reader, w := requestSetup(s)
+	reader = strings.NewReader("segmentbody")
+	req := httptest.NewRequest("POST", "/live/sess1/1.ts", reader)
+	req.Header.Set("Accept", "multipart/mixed")
+	handler.ServeHTTP(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+	assert.NotNil(drivers.TestMemoryStorages)
+	assert.Contains(drivers.TestMemoryStorages, "store1")
+	assert.Contains(drivers.TestMemoryStorages, "store2")
+	store1 := drivers.TestMemoryStorages["store1"]
+	sess1 := store1.GetSession("OSTEST01")
+	assert.NotNil(sess1)
+	ctx := context.Background()
+	fi, err := sess1.ReadData(ctx, "OSTEST01/source/1.ts")
+	assert.Nil(err)
+	assert.NotNil(fi)
+	body, _ := ioutil.ReadAll(fi.Body)
+	assert.Equal("segmentbody", string(body))
+	assert.Equal("OSTEST01/source/1.ts", fi.Name)
+
+	fi, err = sess1.ReadData(ctx, "OSTEST01/P720p25fps16x9/1.ts")
+	assert.Nil(err)
+	assert.NotNil(fi)
+	body, _ = ioutil.ReadAll(fi.Body)
+	assert.Equal("transcoded binary data", string(body))
+
+	store2 := drivers.TestMemoryStorages["store2"]
+	sess2 := store2.GetSession("OSTEST01/" + lpmon.NodeID)
+	assert.NotNil(sess2)
+	fi, err = sess2.ReadData(ctx, fmt.Sprintf("OSTEST01/%s/source/1.ts", lpmon.NodeID))
+	assert.Nil(err)
+	assert.NotNil(fi)
+	body, _ = ioutil.ReadAll(fi.Body)
+	assert.Equal("segmentbody", string(body))
+
+	fi, err = sess2.ReadData(ctx, fmt.Sprintf("OSTEST01/%s/P720p25fps16x9/1.ts", lpmon.NodeID))
+	assert.Nil(err)
+	assert.NotNil(fi)
+	body, _ = ioutil.ReadAll(fi.Body)
+	assert.Equal("transcoded binary data", string(body))
+
+	assert.Equal(200, resp.StatusCode)
+	body, _ = ioutil.ReadAll(resp.Body)
+	assert.True(len(body) > 0)
 }

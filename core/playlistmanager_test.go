@@ -2,59 +2,119 @@ package core
 
 import (
 	"bytes"
-	"encoding/json"
+	"context"
 	"io/ioutil"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/livepeer/go-livepeer/drivers"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/m3u8"
+	"github.com/stretchr/testify/assert"
 )
 
-func readJSONPlaylist(t *testing.T, fileName string) *JsonPlaylist {
-	fd, err := ioutil.ReadFile(fileName)
-	if err != nil {
-		t.Error(err)
-	}
-	jspl := &JsonPlaylist{}
+func TestJSONList1(t *testing.T) {
+	assert := assert.New(t)
+	jspl1 := NewJSONPlaylist()
+	vProfile := ffmpeg.P144p30fps16x9
+	vProfile.Name = "source"
+	jspl1.InsertHLSSegment(&vProfile, 1, "manifestID/test_seg/1.ts", 2.1)
+	jspl1.InsertHLSSegment(&vProfile, 3, "manifestID/test_seg/3.ts", 2.5)
+	jspl1.InsertHLSSegment(&vProfile, 4, "manifestID/test_seg/4.ts", 2.5)
+	assert.Len(jspl1.Segments, 1)
+	assert.Len(jspl1.Segments["source"], 3)
+	assert.Equal(uint64(2100+2500+2500), jspl1.DurationMs)
 
-	err = json.Unmarshal(fd, jspl)
-	if err != nil {
-		t.Error(err)
-	}
-	return jspl
-}
+	jspl2 := NewJSONPlaylist()
+	jspl2.InsertHLSSegment(&vProfile, 2, "manifestID/test_seg/2.ts", 2)
+	jspl2.InsertHLSSegment(&vProfile, 4, "manifestID/test_seg/4.ts", 2)
+	assert.Len(jspl2.Segments, 1)
+	assert.Len(jspl2.Tracks, 1)
+	assert.Len(jspl2.Segments["source"], 2)
+	assert.Equal(uint64(4000), jspl2.DurationMs)
 
-/*
-func TestJSONListJoinTrack(t *testing.T) {
-	mainJspl := NewJSONPlaylist()
-	jspl := readJSONPlaylist(t, "playlist_1595101950232701011.json")
-	mainJspl.AddMaster(jspl)
-	mainJspl.AddTrack(jspl, "source")
-	jspl = readJSONPlaylist(t, "playlist_1595102011582863985.json")
-	mainJspl.AddMaster(jspl)
-	mainJspl.AddTrack(jspl, "source")
+	vProfile = ffmpeg.P144p30fps16x9
+	vProfile.Name = "trans1"
+	jspl3 := NewJSONPlaylist()
+	jspl3.InsertHLSSegment(&vProfile, 1, "manifestID/test_seg/1.ts", 2)
+	jspl3.InsertHLSSegment(&vProfile, 4, "manifestID/test_seg/4.ts", 2)
+	assert.Len(jspl3.Segments, 1)
+	assert.Len(jspl3.Tracks, 1)
+	assert.Len(jspl3.Segments["trans1"], 2)
+	assert.Equal(uint64(0), jspl3.DurationMs)
+
+	mjspl := NewJSONPlaylist()
+	mjspl.AddMaster(jspl1)
+	mjspl.AddMaster(jspl2)
+	mjspl.AddMaster(jspl3)
+	mjspl.AddTrack(jspl1, "source")
+	mjspl.AddTrack(jspl2, "source")
+	mjspl.AddTrack(jspl3, "trans1")
+	assert.Len(mjspl.Tracks, 2)
+	assert.Len(mjspl.Segments, 2)
+	assert.Len(mjspl.Segments["source"], 4)
+	assert.Len(mjspl.Segments["trans1"], 2)
+	assert.Equal(uint64(2), mjspl.Segments["source"][1].SeqNo)
+	assert.Equal("manifestID/test_seg/2.ts", mjspl.Segments["source"][1].URI)
+	assert.Equal(uint64(2000), mjspl.Segments["source"][1].DurationMS)
+
 	var lastSeq uint64
-	for _, seg := range mainJspl.Segments["source"] {
+	for _, seg := range mjspl.Segments["source"] {
 		if seg.SeqNo < lastSeq {
 			t.Errorf("got seq %d but last %d", seg.SeqNo, lastSeq)
 		}
 		lastSeq = seg.SeqNo
 	}
+	segments := mjspl.Segments["source"]
+	mpl, err := m3u8.NewMediaPlaylist(uint(len(segments)), uint(len(segments)))
+	assert.Nil(err)
+	assert.NotNil(mpl)
+	mpl.Live = false
+	mjspl.AddSegmentsToMPL("manifestID", "source", mpl)
+	mpls := string(mpl.Encode().Bytes())
+	assert.Equal("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:3\n#EXTINF:2.100,\ntest_seg/1.ts\n#EXTINF:2.000,\ntest_seg/2.ts\n#EXTINF:2.500,\ntest_seg/3.ts\n#EXTINF:2.500,\ntest_seg/4.ts\n#EXT-X-ENDLIST\n", mpls)
 }
-*/
+
+func TestJsonFlush(t *testing.T) {
+	assert := assert.New(t)
+	os := drivers.NewMemoryDriver(nil)
+	msess := os.NewSession("sess1")
+	vProfile := ffmpeg.P144p30fps16x9
+	vProfile.Name = "source"
+	hlsStrmID := MakeStreamID(RandomManifestID(), &vProfile)
+	mid := hlsStrmID.ManifestID
+	c := NewBasicPlaylistManager(mid, nil, msess)
+	assert.Equal(msess, c.GetRecordOSSession())
+	segName := "test_seg/1.ts"
+	c.InsertHLSSegmentJSON(&vProfile, 1, segName, 12*60*60)
+	assert.NotNil(c.jsonList)
+	assert.True(c.jsonList.hasTrack(vProfile.Name))
+	assert.Len(c.jsonList.Segments, 1)
+	assert.Len(c.jsonList.Segments[vProfile.Name], 1)
+	plName := c.jsonList.name
+	c.FlushRecord()
+	assert.False(c.jsonList.hasTrack(vProfile.Name))
+	assert.Len(c.jsonList.Segments, 0)
+	assert.Len(c.jsonList.Segments[vProfile.Name], 0)
+	time.Sleep(10 * time.Millisecond)
+	fir, err := msess.ReadData(context.Background(), "sess1/"+plName)
+	assert.Nil(err)
+	assert.NotNil(fir)
+	data, err := ioutil.ReadAll(fir.Body)
+	assert.Nil(err)
+	assert.Equal(`{"duration_ms":43200000,"tracks":[{"name":"source","bandwidth":400000,"resolution":"256x144"}],"segments":{"source":[{"seq_no":1,"uri":"test_seg/1.ts","duration_ms":43200000}]}}`, string(data))
+}
 
 func TestGetMasterPlaylist(t *testing.T) {
+	assert := assert.New(t)
 	vProfile := ffmpeg.P144p30fps16x9
 	hlsStrmID := MakeStreamID(RandomManifestID(), &vProfile)
 	mid := hlsStrmID.ManifestID
 	c := NewBasicPlaylistManager(mid, nil, nil)
 	segName := "test_seg/1.ts"
 	err := c.InsertHLSSegment(&vProfile, 1, segName, 12)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(err)
 	pl := m3u8.NewMasterPlaylist()
 	pl.Append(hlsStrmID.String()+".m3u8", nil, ffmpeg.VideoProfileToVariantParams(vProfile))
 	testpl := c.GetHLSMasterPlaylist()
@@ -64,13 +124,9 @@ func TestGetMasterPlaylist(t *testing.T) {
 	}
 
 	mpl := c.GetHLSMediaPlaylist(vProfile.Name)
-	if mpl == nil {
-		t.Fatalf("Expecting pl, got nil")
-	}
+	assert.NotNil(mpl)
 	s := mpl.Segments[0]
-	if s.URI != segName {
-		t.Errorf("Expecting %s, got %s", segName, s.URI)
-	}
+	assert.Equal(segName, s.URI)
 }
 
 func TestGetOrCreatePL(t *testing.T) {
