@@ -252,6 +252,9 @@ type stubOS struct {
 	storageType int32
 }
 
+func (os *stubOS) GetData(name string) ([]byte, error) {
+	return []byte("foo"), nil
+}
 func (os *stubOS) GetInfo() *net.OSInfo {
 	if os.storageType == stubOSMagic {
 		return nil
