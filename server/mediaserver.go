@@ -96,19 +96,26 @@ type LivepeerServer struct {
 }
 
 type authWebhookResponse struct {
-	ManifestID string   `json:"manifestID"`
-	StreamKey  string   `json:"streamKey"`
-	Presets    []string `json:"presets"`
-	Profiles   []struct {
-		Name    string `json:"name"`
-		Width   int    `json:"width"`
-		Height  int    `json:"height"`
-		Bitrate int    `json:"bitrate"`
-		FPS     uint   `json:"fps"`
-		FPSDen  uint   `json:"fpsDen"`
-		Profile string `json:"profile"`
-		GOP     string `json:"gop"`
-	} `json:"profiles"`
+	ManifestID string        `json:"manifestID"`
+	StreamKey  string        `json:"streamKey"`
+	Presets    []string      `json:"presets"`
+	Profiles   []jsonProfile `json:"profiles"`
+}
+
+type jsonProfile struct {
+	Name    string `json:"name"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Bitrate int    `json:"bitrate"`
+	FPS     uint   `json:"fps"`
+	FPSDen  uint   `json:"fpsDen"`
+	Profile string `json:"profile"`
+	GOP     string `json:"gop"`
+}
+
+type apiTranscodingOptions struct {
+	Name     string        `json:"name"`
+	Profiles []jsonProfile `json:"profiles"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
@@ -126,11 +133,19 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 			profiles := BroadcastJobVideoProfiles
 			content, err := ioutil.ReadFile(transcodingOptions)
 			if err == nil && len(content) > 0 {
+				stubOpts := &apiTranscodingOptions{}
+				err = json.Unmarshal(content, &stubOpts)
+
 				stubResp := &authWebhookResponse{}
-				err = json.Unmarshal(content, &stubResp.Profiles)
 				if err != nil {
-					return nil, err
+					err = json.Unmarshal(content, &stubResp.Profiles)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					stubResp.Profiles = stubOpts.Profiles
 				}
+
 				profiles, err = jsonProfileToVideoProfile(stubResp)
 				if err != nil {
 					return nil, err

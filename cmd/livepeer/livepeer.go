@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/livepeer/go-livepeer/api"
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
@@ -114,6 +115,7 @@ func main() {
 	httpIngest := flag.Bool("httpIngest", true, "Set to true to enable HTTP ingest")
 
 	// Transcoding:
+	apiKey := flag.String("apiKey", "", "API key for livepeer.com")
 	pull := flag.String("pull", "", "URL or path to transcode")
 	streamName := flag.String("streamName", "", "Stream name for output (pull only)")
 	orchestrator := flag.Bool("orchestrator", false, "Set to true to be an orchestrator")
@@ -884,7 +886,21 @@ func main() {
 
 	if *pull != "" {
 		var sn core.ManifestID
-		if *streamName == "" {
+		if *apiKey != "" {
+			apiSn, err := api.CreateStream(*apiKey, *transcodingOptions)
+			if err != nil {
+				glog.Fatal(err)
+			}
+			glog.Infof("New API stream name: %v", apiSn)
+			sn = core.MakeStreamIDFromString(apiSn, "").ManifestID
+
+			url, err := api.GetBroadcaster(*apiKey)
+			if err != nil {
+				glog.Fatal(err)
+			}
+
+			server.UsePushClient(server.NewPushClient(url, apiSn))
+		} else if *streamName == "" {
 			sn = core.RandomManifestID()
 		} else {
 			sn = core.MakeStreamIDFromString(*streamName, "").ManifestID

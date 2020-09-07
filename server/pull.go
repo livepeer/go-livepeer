@@ -95,6 +95,7 @@ func process(cxn *rtmpConnection, segInfo string) error {
 		return fmt.Errorf("could not read file: %w", err)
 	}
 	seg := &stream.HLSSegment{
+		Name:     fname,
 		Data:     segData,
 		SeqNo:    uint64(seq),
 		Duration: segEnd - segBegin,

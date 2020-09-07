@@ -34,6 +34,7 @@ var MaxAttempts = 3
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
 var downloadSeg = drivers.GetSegmentData
+var transcodeSegFunc = transcodeSegment
 
 type BroadcastConfig struct {
 	maxPrice *big.Rat
@@ -327,7 +328,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	for i := 0; i < MaxAttempts; i++ {
 		// if fails, retry; rudimentary
 		var urls []string
-		if urls, err = transcodeSegment(cxn, seg, name, sv); err == nil {
+		if urls, err = transcodeSegFunc(cxn, seg, name, sv); err == nil {
 			return urls, nil
 		}
 
