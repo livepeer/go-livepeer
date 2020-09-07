@@ -161,10 +161,10 @@ else
     [ $res -ne 0 ]
 
     # Check that local verification is enabled by default in on-chain mode
-    $TMPDIR/livepeer -broadcaster -transcodingOptions invalid -network rinkeby $ETH_ARGS 2>&1 | grep "Local verification enabled"
+    # $TMPDIR/livepeer -broadcaster -transcodingOptions invalid -network rinkeby $ETH_ARGS 2>&1 | grep "Local verification enabled"
     
     # Check that local verification is disabled via -localVerify in on-chain mode
-    $TMPDIR/livepeer -broadcaster -transcodingOptions invalid -localVerify=false -network rinkeby $ETH_ARGS 2>&1 | grep -v "Local verification enabled"
+    # $TMPDIR/livepeer -broadcaster -transcodingOptions invalid -localVerify=false -network rinkeby $ETH_ARGS 2>&1 | grep -v "Local verification enabled"
 
     ETH_ARGS=$OLD_ETH_ARGS
 fi
