@@ -24,7 +24,7 @@ jobs:
       - checkout
       - setup_remote_docker:
           # This actually only exists for paid plans. But it's good luck!
-          docker_layer_caching: true
+          #          docker_layer_caching: true
 
       - run: docker login -u $DOCKER_USER -p $DOCKER_PASS
 
@@ -36,7 +36,7 @@ jobs:
       # Then, build the actual app in a container shared between Linux and Windows
       - run: docker pull livepeerci/build:latest || echo 'no pre-existing cache found'
       - run: |-
-          ./ci_env.sh docker build --build-arg HIGHEST_CHAIN_TAG -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
+          ./ci_env.sh docker build --build-arg HIGHEST_CHAIN_TAG=mainnet -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
       - run: docker push livepeerci/build:latest
 
       # Finally, build the minimal go-livepeer distributable. We publish two tags for each build:
@@ -72,7 +72,7 @@ jobs:
 
       - setup_remote_docker:
           # This actually only exists for paid plans. But it's good luck!
-          docker_layer_caching: true
+          # docker_layer_caching: true
 
       - run: mkdir -p $TEST_RESULTS
 
