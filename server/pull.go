@@ -47,10 +47,21 @@ func (s *LivepeerServer) Pull(fname string, streamName core.ManifestID) error {
 	if err != nil {
 		return err
 	}
+
+	base := []string{s.LivepeerNode.WorkDir, "media", string(cxn.params.ManifestID)}
+	baseDir := filepath.Join(base...)
+	err = os.MkdirAll(baseDir, 0744)
+	if err != nil {
+		return fmt.Errorf("creating pull directory err=%w", err)
+	}
+	defer os.RemoveAll(baseDir) // TODO integrate with proper filesystem OS
+
 	if err := runSegmenter(s.LivepeerNode, cxn, fname); err != nil {
 		return err
 	}
-	removeRTMPStream(s, cxn.mid)
+	if err := removeRTMPStream(s, cxn.mid); err != nil {
+		return err
+	}
 	// TODO remove based on prefix?
 	return nil
 }
@@ -151,12 +162,12 @@ func runSegmenter(node *core.LivepeerNode, cxn *rtmpConnection, fname string) er
 	}
 
 	base := []string{node.WorkDir, "media", string(cxn.params.ManifestID)}
-	baseDir := filepath.Join(base...)
-	err = os.MkdirAll(baseDir, 0744)
-	if err != nil {
-		return fmt.Errorf("creating pull directory err=%w", err)
-	}
-	defer os.RemoveAll(baseDir) // TODO integrate with proper filesystem OS
+	// baseDir := filepath.Join(base...)
+	// err = os.MkdirAll(baseDir, 0744)
+	// if err != nil {
+	// 	return fmt.Errorf("creating pull directory err=%w", err)
+	// }
+	// defer os.RemoveAll(baseDir) // TODO integrate with proper filesystem OS
 
 	oname := filepath.Join(append(base, "%d.ts")...)
 	err = ffmpeg.Transcode2(&ffmpeg.TranscodeOptionsIn{Fname: fname},
