@@ -77,11 +77,11 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !orch.SufficientBalance(sender, segData.ManifestID) {
-		glog.Errorf("Insufficient credit balance for stream - manifestID=%v\n", segData.ManifestID)
-		http.Error(w, "Insufficient balance", http.StatusBadRequest)
-		return
-	}
+	// if !orch.SufficientBalance(sender, segData.ManifestID) {
+	// 	glog.Errorf("Insufficient credit balance for stream - manifestID=%v\n", segData.ManifestID)
+	// 	http.Error(w, "Insufficient balance", http.StatusBadRequest)
+	// 	return
+	// }
 
 	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String())
 	if err != nil {
