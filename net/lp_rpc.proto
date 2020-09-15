@@ -117,8 +117,24 @@ message OrchestratorInfo {
   // Features and constraints supported by the orchestrator
   Capabilities capabilities = 5;
 
+  // Data for transcoding authentication
+  AuthToken auth_token = 6;
+
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
+}
+
+// Data for transcoding authentication that is included in the OrchestratorInfo message during discovery
+message AuthToken {
+  // Record used to authenticate for a transcode session
+  // Opaque to the receiver
+  bytes token = 1;
+
+  // ID of the transcode session that the token is authenticating for
+  string session_id = 2;
+
+  // Timestamp when the token expires
+  int64 expiration = 3;
 }
 
 // Data included by the broadcaster when submitting a segment for transcoding.
@@ -145,6 +161,9 @@ message SegData {
 
   // Capabilities used by this segment.
   Capabilities capabilities = 7;
+
+  // Data for transcoding authentication
+  AuthToken auth_token = 8;
 
   // Broadcaster's preferred storage medium(s)
   // XXX should we include this in a sig somewhere until certs are authenticated?
