@@ -1528,6 +1528,56 @@ func TestDebitFees_OffChain_Returns(t *testing.T) {
 	assert.NotPanics(t, func() { orch.DebitFees(addr, manifestID, price, pixels) })
 }
 
+func TestAuthToken(t *testing.T) {
+	assert := assert.New(t)
+
+	origFunc := common.RandomBytesGenerator
+	defer func() { common.RandomBytesGenerator = origFunc }()
+
+	n, err := NewLivepeerNode(nil, "", nil)
+	require.Nil(t, err)
+
+	common.RandomBytesGenerator = func(length uint) []byte { return []byte("foo") }
+	orch := NewOrchestrator(n, nil)
+
+	authToken0 := orch.AuthToken("bar", 100)
+	assert.Equal("bar", authToken0.SessionId)
+	assert.Equal(int64(100), authToken0.Expiration)
+
+	// Check that using a different sessionID results in a different token
+	authToken1 := orch.AuthToken("notbar", authToken0.Expiration)
+	assert.NotEqual(authToken0.Token, authToken1.Token)
+	assert.Equal("notbar", authToken1.SessionId)
+	assert.Equal(authToken0.Expiration, authToken1.Expiration)
+
+	// Check that using a different expiration results in a different token
+	authToken2 := orch.AuthToken(authToken0.SessionId, 200)
+	assert.NotEqual(authToken0.Token, authToken2.Token)
+	assert.Equal(authToken0.SessionId, authToken2.SessionId)
+	assert.Equal(int64(200), authToken2.Expiration)
+
+	// Check that using a different sessionID and expiration results in a different token
+	authToken3 := orch.AuthToken("notbar", 200)
+	assert.NotEqual(authToken0.Token, authToken3.Token)
+	assert.Equal("notbar", authToken3.SessionId)
+	assert.Equal(int64(200), authToken3.Expiration)
+
+	// Check that using the same sessionID and expiration results in the same token
+	authToken4 := orch.AuthToken(authToken0.SessionId, authToken0.Expiration)
+	assert.Equal(authToken0.Token, authToken4.Token)
+	assert.Equal(authToken0.SessionId, authToken4.SessionId)
+	assert.Equal(authToken0.Expiration, authToken4.Expiration)
+
+	// Check that using the same sessionID and expiration with a different secret results in a different token
+	common.RandomBytesGenerator = func(length uint) []byte { return []byte("notfoo") }
+	orch = NewOrchestrator(n, nil)
+
+	authToken5 := orch.AuthToken(authToken0.SessionId, authToken0.Expiration)
+	assert.NotEqual(authToken0.Token, authToken5.Token)
+	assert.Equal(authToken0.SessionId, authToken5.SessionId)
+	assert.Equal(authToken0.Expiration, authToken5.Expiration)
+}
+
 func defaultPayment(t *testing.T) net.Payment {
 	ticketSenderParams := &net.TicketSenderParams{
 		SenderNonce: 456,
