@@ -100,6 +100,7 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 	headers := map[string]string{
 		paymentHeader: "",
 		segmentHeader: creds,
@@ -147,6 +148,7 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
 	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 
 	headers := map[string]string{
 		paymentHeader: "",
@@ -642,6 +644,7 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 
 	mos := &mockOSSession{}
 
@@ -711,6 +714,7 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 
 	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo")}}}
 	tRes := &core.TranscodeResult{
@@ -777,6 +781,7 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 
 	tData := &core.TranscodedSegmentData{Data: []byte("foo")}
 	tRes := &core.TranscodeResult{
@@ -899,6 +904,13 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 		PricePerUnit:  2,
 		PixelsPerUnit: 3,
 	}
+
+	origRandomIDGenerator := common.RandomIDGenerator
+	defer func() { common.RandomIDGenerator = origRandomIDGenerator }()
+
+	authToken := &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(authTokenValidPeriod).Unix()}
+	common.RandomIDGenerator = func(length uint) string { return authToken.SessionId }
+
 	// trigger an update to orchestrator info
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	uri, err := url.Parse("http://google.com")
@@ -910,6 +922,10 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	orch.On("PriceInfo", mock.Anything).Return(price, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil).Once()
 	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
+	// This could be flaky if time.Now() changes between the time when we set authToken.Expiration and the time
+	// when the mocked AuthToken is called. 1 second would need to elapse which should only really happen if the test
+	// is run in a really slow environment
+	orch.On("AuthToken", authToken.SessionId, authToken.Expiration).Return(authToken)
 
 	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo")}}}
 	tRes := &core.TranscodeResult{
@@ -946,6 +962,10 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal(price.PricePerUnit, tr.Info.PriceInfo.PricePerUnit)
 	assert.Equal(price.PixelsPerUnit, tr.Info.PriceInfo.PixelsPerUnit)
 	assert.Equal(addr.Bytes(), tr.Info.Address)
+
+	assert.Equal(authToken.Token, tr.Info.AuthToken.Token)
+	assert.Equal(authToken.SessionId, tr.Info.AuthToken.SessionId)
+	assert.Equal(authToken.Expiration, tr.Info.AuthToken.Expiration)
 
 	// Test orchestratorInfo error
 	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil).Once()
@@ -1056,6 +1076,7 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 
 	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo"), Pixels: int64(110592000)}}}
 	tRes := &core.TranscodeResult{
@@ -1123,6 +1144,7 @@ func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 
 	tData720 := &core.TranscodedSegmentData{
 		Data:   []byte("foo"),
@@ -1200,6 +1222,7 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 
 	mos := &mockOSSession{}
 
@@ -1281,6 +1304,7 @@ func TestServeSegment_DebitFees_TranscodeSegError_ZeroPixelsBilled(t *testing.T)
 	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(true)
 	orch.On("TranscodeSeg", md, seg).Return(nil, errors.New("TranscodeSeg error"))
 	orch.On("DebitFees", mock.Anything, md.ManifestID, mock.Anything, int64(0))
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 
 	headers := map[string]string{
 		paymentHeader: "",
