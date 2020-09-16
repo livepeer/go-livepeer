@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -41,6 +43,7 @@ type orchestrator struct {
 	address ethcommon.Address
 	node    *LivepeerNode
 	rm      common.RoundsManager
+	secret  []byte
 }
 
 func (orch *orchestrator) ServiceURI() *url.URL {
@@ -320,6 +323,18 @@ func (orch *orchestrator) Capabilities() *net.Capabilities {
 	return orch.node.Capabilities.ToNetCapabilities()
 }
 
+func (orch *orchestrator) AuthToken(sessionID string, expiration int64) *net.AuthToken {
+	h := hmac.New(sha256.New, orch.secret)
+	msg := append([]byte(sessionID), new(big.Int).SetInt64(expiration).Bytes()...)
+	h.Write(msg)
+
+	return &net.AuthToken{
+		Token:      h.Sum(nil),
+		SessionId:  sessionID,
+		Expiration: expiration,
+	}
+}
+
 func (orch *orchestrator) isActive(addr ethcommon.Address) (bool, error) {
 	filter := &common.DBOrchFilter{
 		CurrentRound: orch.rm.LastInitializedRound(),
@@ -342,6 +357,7 @@ func NewOrchestrator(n *LivepeerNode, rm common.RoundsManager) *orchestrator {
 		node:    n,
 		address: addr,
 		rm:      rm,
+		secret:  common.RandomBytesGenerator(32),
 	}
 }
 
