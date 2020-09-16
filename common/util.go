@@ -340,11 +340,15 @@ func ratToFixed(rat *big.Rat, scalingFactor int64) (int64, error) {
 // RandomIDGenerator generates random hexadecimal string of specified length
 // defined as variable for unit tests
 var RandomIDGenerator = func(length uint) string {
+	return hex.EncodeToString(RandomBytesGenerator(length))
+}
+
+var RandomBytesGenerator = func(length uint) []byte {
 	x := make([]byte, length, length)
 	for i := 0; i < len(x); i++ {
 		x[i] = byte(rand.Uint32())
 	}
-	return hex.EncodeToString(x)
+	return x
 }
 
 // RandName generates random hexadecimal string
