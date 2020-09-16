@@ -30,6 +30,8 @@ import (
 const GRPCConnectTimeout = 3 * time.Second
 const GRPCTimeout = 8 * time.Second
 
+var authTokenValidPeriod = 30 * time.Minute
+
 type Orchestrator interface {
 	ServiceURI() *url.URL
 	Address() ethcommon.Address
@@ -47,6 +49,7 @@ type Orchestrator interface {
 	SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool
 	DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
 	Capabilities() *net.Capabilities
+	AuthToken(sessionID string, expiration int64) *net.AuthToken
 }
 
 // Balance describes methods for a session's balance maintenance
@@ -263,12 +266,18 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 		return nil, err
 	}
 
+	// Generate auth token
+	sessionID := string(core.RandomManifestID())
+	expiration := time.Now().Add(authTokenValidPeriod).Unix()
+	authToken := orch.AuthToken(sessionID, expiration)
+
 	tr := net.OrchestratorInfo{
 		Transcoder:   serviceURI,
 		TicketParams: params,
 		PriceInfo:    priceInfo,
 		Address:      orch.Address().Bytes(),
 		Capabilities: orch.Capabilities(),
+		AuthToken:    authToken,
 	}
 
 	os := drivers.NodeStorage.NewSession(string(core.RandomManifestID()))

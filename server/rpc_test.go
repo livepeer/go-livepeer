@@ -158,6 +158,10 @@ func (r *stubOrchestrator) LegacyOnly() bool {
 	return true
 }
 
+func (r *stubOrchestrator) AuthToken(sessionID string, expiration int64) *net.AuthToken {
+	return &net.AuthToken{Token: []byte("foo"), SessionId: sessionID, Expiration: expiration}
+}
+
 func newStubOrchestrator() *stubOrchestrator {
 	pk, err := ethcrypto.GenerateKey()
 	if err != nil {
@@ -774,6 +778,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
@@ -803,6 +808,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil)
 	orch.On("PriceInfo", mock.Anything, mock.Anything).Return(nil, nil)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
@@ -840,6 +846,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchPriceInfo(t *testing.T) {
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
@@ -861,6 +868,35 @@ func TestGetOrchestrator_PriceInfoError(t *testing.T) {
 	_, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert.EqualError(t, err, expErr.Error())
+}
+
+func TestGetOrchestrator_GivenValidSig_ReturnsAuthToken(t *testing.T) {
+	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+
+	origRandomIDGenerator := common.RandomIDGenerator
+	defer func() { common.RandomIDGenerator = origRandomIDGenerator }()
+
+	authToken := &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(authTokenValidPeriod).Unix()}
+	common.RandomIDGenerator = func(length uint) string { return authToken.SessionId }
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("ServiceURI").Return(url.Parse("http://someuri.com"))
+	orch.On("Address").Return(ethcommon.Address{})
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
+	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
+	// This could be flaky if time.Now() changes between the time when we set authToken.Expiration and the time
+	// when the mocked AuthToken is called. 1 second would need to elapse which should only really happen if the test
+	// is run in a really slow environment
+	orch.On("AuthToken", authToken.SessionId, authToken.Expiration).Return(authToken)
+
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Equal(authToken.Token, oInfo.AuthToken.Token)
+	assert.Equal(authToken.SessionId, oInfo.AuthToken.SessionId)
+	assert.Equal(authToken.Expiration, oInfo.AuthToken.Expiration)
 }
 
 func TestGenVerify_RoundTrip_Capabilities(t *testing.T) {
@@ -1051,6 +1087,14 @@ func (o *mockOrchestrator) Capabilities() *net.Capabilities {
 }
 func (o *mockOrchestrator) LegacyOnly() bool {
 	return true
+}
+
+func (o *mockOrchestrator) AuthToken(sessionID string, expiration int64) *net.AuthToken {
+	args := o.Called(sessionID, expiration)
+	if args.Get(0) != nil {
+		return args.Get(0).(*net.AuthToken)
+	}
+	return nil
 }
 
 func defaultTicketParams() *net.TicketParams {
