@@ -92,6 +92,8 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	// Use existing auth token because new auth tokens should only be sent out in GetOrchestrator() RPC calls
+	oInfo.AuthToken = segData.AuthToken
 
 	// download the segment and check the hash
 	data, err := ioutil.ReadAll(r.Body)
@@ -294,6 +296,21 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 	if !md.Caps.CompatibleWith(orch.Capabilities()) {
 		glog.Error("Capability check failed")
 		return nil, errCapCompat
+	}
+
+	// Check that auth token is valid and not expired
+	if segData.AuthToken == nil {
+		return nil, errors.New("missing auth token")
+	}
+
+	verifyToken := orch.AuthToken(segData.AuthToken.SessionId, segData.AuthToken.Expiration)
+	if !bytes.Equal(verifyToken.Token, segData.AuthToken.Token) {
+		return nil, errors.New("invalid auth token")
+	}
+
+	expiration := time.Unix(segData.AuthToken.Expiration, 0)
+	if time.Now().After(expiration) {
+		return nil, errors.New("expired auth token")
 	}
 
 	if err := orch.CheckCapacity(md.ManifestID); err != nil {
@@ -522,6 +539,7 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		OS:         storage,
 		Duration:   time.Duration(seg.Duration * float64(time.Second)),
 		Caps:       params.Capabilities,
+		AuthToken:  sess.OrchestratorInfo.GetAuthToken(),
 	}
 	sig, err := sess.Broadcaster.Sign(md.Flatten())
 	if err != nil {
