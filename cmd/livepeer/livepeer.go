@@ -513,11 +513,14 @@ func main() {
 			// Set price per pixel base info
 			if *pixelsPerUnit <= 0 {
 				// Can't divide by 0
-				panic(fmt.Errorf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *pixelsPerUnit))
+				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %d", *pixelsPerUnit))
 			}
-			if *pricePerUnit <= 0 {
-				// Prevent orchestrator from unknowingly provide free transcoding
-				panic(fmt.Errorf("Price per unit of pixels must be greater than 0, provided %d instead\n", *pricePerUnit))
+			if !isFlagSet["pricePerUnit"] && *pricePerUnit == 0 {
+				// Prevent orchestrators from unknowingly providing free transcoding
+				panic(fmt.Errorf("-pricePerUnit must be set"))
+			}
+			if *pricePerUnit < 0 {
+				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %d", *pricePerUnit))
 			}
 			n.SetBasePrice(big.NewRat(int64(*pricePerUnit), int64(*pixelsPerUnit)))
 			glog.Infof("Price: %d wei for %d pixels\n ", *pricePerUnit, *pixelsPerUnit)
