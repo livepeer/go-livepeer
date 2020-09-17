@@ -961,7 +961,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal("Internal Server Error", strings.TrimSpace(string(body)))
 }
 
-func TestServeSegment_InsufficientBalanceError(t *testing.T) {
+func TestServeSegment_InsufficientBalance(t *testing.T) {
 	orch := &mockOrchestrator{}
 	handler := serveSegmentHandler(orch)
 
@@ -975,6 +975,8 @@ func TestServeSegment_InsufficientBalanceError(t *testing.T) {
 			ManifestID: core.RandomManifestID(),
 			Profiles:   []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
 		},
+		Sender:           &pm.MockSender{},
+		OrchestratorInfo: &net.OrchestratorInfo{PriceInfo: &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 1}},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
 	creds, err := genSegCreds(s, seg)
@@ -983,17 +985,39 @@ func TestServeSegment_InsufficientBalanceError(t *testing.T) {
 	_, err = verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
 
-	orch.On("ProcessPayment", net.Payment{}, s.Params.ManifestID).Return(nil)
+	orch.On("ProcessPayment", mock.Anything, s.Params.ManifestID).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, s.Params.ManifestID).Return(false)
+	url, _ := url.Parse("foo")
+	orch.On("ServiceURI").Return(url)
+	orch.On("PriceInfo", mock.Anything).Return(nil, errors.New("PriceInfo error"))
+
+	// Check when price = 0
+	payment, err := genPayment(s, 0)
+	require.Nil(err)
 
 	headers := map[string]string{
-		paymentHeader: "",
+		paymentHeader: payment,
 		segmentHeader: creds,
 	}
 	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("Internal Server Error", strings.TrimSpace(string(body)))
+
+	// Check when price > 0
+	s.OrchestratorInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}
+	payment, err = genPayment(s, 0)
+	require.Nil(err)
+
+	headers[paymentHeader] = payment
+	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err = ioutil.ReadAll(resp.Body)
 	require.Nil(err)
 
 	assert.Equal(http.StatusBadRequest, resp.StatusCode)

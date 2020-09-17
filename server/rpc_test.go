@@ -650,6 +650,8 @@ func TestValidatePrice(t *testing.T) {
 	err := validatePrice(s)
 	assert.Nil(err)
 
+	defer BroadcastCfg.SetMaxPrice(nil)
+
 	// B MaxPrice > O Price
 	BroadcastCfg.SetMaxPrice(big.NewRat(5, 1))
 	err = validatePrice(s)

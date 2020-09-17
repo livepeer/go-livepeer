@@ -77,7 +77,10 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !orch.SufficientBalance(sender, segData.ManifestID) {
+	// Balance check is only necessary if the price is non-zero
+	// We do not need to worry about differentiating between the case where the price is 0 as the default when no price is attached vs.
+	// the case where the price is actually set to 0 because ProcessPayment() should guarantee a price attached
+	if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !orch.SufficientBalance(sender, segData.ManifestID) {
 		glog.Errorf("Insufficient credit balance for stream - manifestID=%v\n", segData.ManifestID)
 		http.Error(w, "Insufficient balance", http.StatusBadRequest)
 		return
