@@ -33,6 +33,7 @@ const (
 	Capability_ProfileH264High
 	Capability_ProfileH264ConstrainedHigh
 	Capability_GOP
+	Capability_AuthToken
 )
 
 var capFormatConv = errors.New("capability: unknown format")
@@ -75,6 +76,7 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 
 	// Define any default capabilities (especially ones that may be mandatory)
 	caps[Capability_H264] = true
+	caps[Capability_AuthToken] = true
 
 	// capabilities based on requested output
 	for _, v := range params.Profiles {

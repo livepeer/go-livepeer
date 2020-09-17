@@ -101,6 +101,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 	// check with everything empty
 	assert.True(checkSuccess(&StreamParameters{}, []Capability{
 		Capability_H264,
+		Capability_AuthToken,
 	}), "failed with empty params")
 
 	// check with everything enabled
@@ -123,6 +124,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		Capability_ProfileH264Main,
 		Capability_ProfileH264High,
 		Capability_GOP,
+		Capability_AuthToken,
 	}), "failed with everything enabled")
 
 	// check fractional framerates
@@ -132,6 +134,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		Capability_H264,
 		Capability_MPEGTS,
 		Capability_FractionalFramerates,
+		Capability_AuthToken,
 	}), "failed with fractional framerates")
 
 	// check error case with format
