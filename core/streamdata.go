@@ -45,6 +45,7 @@ type SegTranscodingMetadata struct {
 	OS         *net.OSInfo
 	Duration   time.Duration
 	Caps       *Capabilities
+	AuthToken  *net.AuthToken
 }
 
 func (md *SegTranscodingMetadata) Flatten() []byte {
@@ -78,6 +79,7 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 		Storage:      storage,
 		Duration:     int32(md.Duration / time.Millisecond),
 		Capabilities: md.Caps.ToNetCapabilities(),
+		AuthToken:    md.AuthToken,
 		// Triggers failure on Os that don't know how to use FullProfiles/2/3
 		Profiles: []byte("invalid"),
 	}

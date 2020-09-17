@@ -71,6 +71,7 @@ type stubOrchestrator struct {
 	res          *core.TranscodeResult
 	offchain     bool
 	caps         *core.Capabilities
+	authToken    *net.AuthToken
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
@@ -159,6 +160,9 @@ func (r *stubOrchestrator) LegacyOnly() bool {
 }
 
 func (r *stubOrchestrator) AuthToken(sessionID string, expiration int64) *net.AuthToken {
+	if r.authToken != nil {
+		return r.authToken
+	}
 	return &net.AuthToken{Token: []byte("foo"), SessionId: sessionID, Expiration: expiration}
 }
 
@@ -231,11 +235,15 @@ func TestRPCSeg(t *testing.T) {
 	mid := core.RandomManifestID()
 	b := stubBroadcaster2()
 	o := newStubOrchestrator()
+	authToken := o.AuthToken("bar", time.Now().Add(1*time.Hour).Unix())
 	s := &BroadcastSession{
 		Broadcaster: b,
 		Params: &core.StreamParameters{
 			ManifestID: mid,
 			Profiles:   []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		},
+		OrchestratorInfo: &net.OrchestratorInfo{
+			AuthToken: authToken,
 		},
 	}
 
@@ -274,6 +282,27 @@ func TestRPCSeg(t *testing.T) {
 		t.Error("Sanity check failed", err)
 	}
 
+	// missing auth token
+	s.OrchestratorInfo.AuthToken = nil
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5})
+	require.Nil(t, err)
+	_, err = verifySegCreds(o, creds, baddr)
+	assert.Equal(t, "missing auth token", err.Error())
+
+	// invalid auth token
+	s.OrchestratorInfo.AuthToken = &net.AuthToken{Token: []byte("notfoo")}
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5})
+	require.Nil(t, err)
+	_, err = verifySegCreds(o, creds, baddr)
+	assert.Equal(t, "invalid auth token", err.Error())
+
+	// expired auth token
+	s.OrchestratorInfo.AuthToken = &net.AuthToken{Token: authToken.Token, SessionId: authToken.SessionId, Expiration: time.Now().Add(-1 * time.Hour).Unix()}
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5})
+	_, err = verifySegCreds(o, creds, baddr)
+	assert.Equal(t, "expired auth token", err.Error())
+	s.OrchestratorInfo.AuthToken = authToken
+
 	// check duration
 	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5})
 	if err != nil {
@@ -308,21 +337,21 @@ func TestRPCSeg(t *testing.T) {
 	}
 
 	// corrupt profiles
-	corruptSegData(&net.SegData{Profiles: []byte("abc")}, common.ErrProfile)
+	corruptSegData(&net.SegData{Profiles: []byte("abc"), AuthToken: authToken}, common.ErrProfile)
 
 	// corrupt sig
-	sd := &net.SegData{ManifestId: []byte(s.Params.ManifestID)}
+	sd := &net.SegData{ManifestId: []byte(s.Params.ManifestID), AuthToken: authToken}
 	corruptSegData(sd, errSegSig) // missing sig
 	sd.Sig = []byte("abc")
 	corruptSegData(sd, errSegSig) // invalid sig
 
 	// incompatible capabilities
-	sd = &net.SegData{Capabilities: &net.Capabilities{Bitstring: []uint64{1}}}
+	sd = &net.SegData{Capabilities: &net.Capabilities{Bitstring: []uint64{1}}, AuthToken: authToken}
 	sd.Sig, _ = b.Sign((&core.SegTranscodingMetadata{}).Flatten())
 	corruptSegData(sd, errCapCompat)
 
 	// at capacity
-	sd = &net.SegData{ManifestId: []byte(s.Params.ManifestID)}
+	sd = &net.SegData{ManifestId: []byte(s.Params.ManifestID), AuthToken: authToken}
 	sd.Sig, _ = b.Sign((&core.SegTranscodingMetadata{ManifestID: s.Params.ManifestID}).Flatten())
 	o.sessCapErr = fmt.Errorf("At capacity")
 	corruptSegData(sd, o.sessCapErr)
@@ -899,6 +928,36 @@ func TestGetOrchestrator_GivenValidSig_ReturnsAuthToken(t *testing.T) {
 	assert.Equal(authToken.Expiration, oInfo.AuthToken.Expiration)
 }
 
+func TestGenVerify_RoundTrip_AuthToken(t *testing.T) {
+	orch := &stubOrchestrator{offchain: true}
+
+	origAuthTokenValidPeriod := authTokenValidPeriod
+	defer func() { authTokenValidPeriod = origAuthTokenValidPeriod }()
+
+	// check invariant : verifySegCreds(genSegCreds(authToken)).AuthToken == authToken
+	rapid.Check(t, func(t *rapid.T) {
+		assert := assert.New(t) // in order to pick up the rapid rng
+
+		authTokenValidPeriod = time.Duration(rapid.Int64Range(int64(1*time.Minute), int64(2*time.Hour)).Draw(t, "authTokenValidPeriod").(int64))
+		randToken := rapid.SliceOfN(rapid.Byte(), 32, 32).Draw(t, "token").([]byte)
+		randSessionID := rapid.String().Draw(t, "sessionID").(string)
+		authToken := &net.AuthToken{Token: randToken, SessionId: randSessionID, Expiration: time.Now().Add(authTokenValidPeriod).Unix()}
+
+		sess := &BroadcastSession{
+			Broadcaster:      stubBroadcaster2(),
+			Params:           &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}},
+			OrchestratorInfo: &net.OrchestratorInfo{AuthToken: authToken},
+		}
+		orch.authToken = authToken
+
+		creds, err := genSegCreds(sess, &stream.HLSSegment{})
+		assert.Nil(err)
+		md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+		assert.Nil(err)
+		assert.True(proto.Equal(sess.OrchestratorInfo.AuthToken, md.AuthToken))
+	})
+}
+
 func TestGenVerify_RoundTrip_Capabilities(t *testing.T) {
 	orch := &stubOrchestrator{offchain: true}
 
@@ -916,7 +975,9 @@ func TestGenVerify_RoundTrip_Capabilities(t *testing.T) {
 			Params: &core.StreamParameters{
 				Profiles:     []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9},
 				Capabilities: core.NewCapabilities(caps, nil),
-			}}
+			},
+			OrchestratorInfo: &net.OrchestratorInfo{AuthToken: orch.AuthToken("bar", time.Now().Add(1*time.Hour).Unix())},
+		}
 		orch.caps = sess.Params.Capabilities
 		creds, err := genSegCreds(sess, &stream.HLSSegment{})
 		assert.Nil(err)
@@ -926,8 +987,12 @@ func TestGenVerify_RoundTrip_Capabilities(t *testing.T) {
 }
 
 func TestGenVerify_RoundTrip_Duration(t *testing.T) {
-	sess := &BroadcastSession{Broadcaster: stubBroadcaster2(), Params: &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}}}
 	orch := &stubOrchestrator{offchain: true}
+	sess := &BroadcastSession{
+		Broadcaster:      stubBroadcaster2(),
+		Params:           &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}},
+		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: orch.AuthToken("bar", time.Now().Add(1*time.Hour).Unix())},
+	}
 
 	// check invariant : verifySegCreds(genSegCreds(dur)).Duration == dur
 	rapid.Check(t, func(t *rapid.T) {
