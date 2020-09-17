@@ -1184,13 +1184,12 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 }
 
 func (s *LivepeerServer) setOrchestratorPriceInfo(pricePerUnitStr, pixelsPerUnitStr string) error {
-
 	pricePerUnit, err := strconv.ParseInt(pricePerUnitStr, 10, 64)
 	if err != nil {
 		return fmt.Errorf("Error converting pricePerUnit string to int64: %v\n", err)
 	}
-	if pricePerUnit <= 0 {
-		return fmt.Errorf("price unit must be greater than 0, provided %d\n", pricePerUnit)
+	if pricePerUnit < 0 {
+		return fmt.Errorf("price unit must be greater than or equal to 0, provided %d\n", pricePerUnit)
 	}
 
 	pixelsPerUnit, err := strconv.ParseInt(pixelsPerUnitStr, 10, 64)
