@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"strings"
 	"testing"
+
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/stretchr/testify/assert"
 )
@@ -28,11 +29,8 @@ func TestSetOrchestratorPriceInfo(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Zero(t, s.LivepeerNode.GetBasePrice().Cmp(big.NewRat(1, 1)))
 
-	//Price per unit <= 0
-	err = s.setOrchestratorPriceInfo("0", "1")
-	assert.EqualErrorf(t, err, err.Error(), "price unit must be greater than 0, provided %d\n", 0)
 	err = s.setOrchestratorPriceInfo("-5", "1")
-	assert.EqualErrorf(t, err, err.Error(), "price unit must be greater than 0, provided %d\n", -5)
+	assert.EqualErrorf(t, err, err.Error(), "price unit must be greater than or equal to 0, provided %d\n", -5)
 
 	// pixels per unit <= 0
 	err = s.setOrchestratorPriceInfo("1", "0")
