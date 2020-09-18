@@ -15,6 +15,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
@@ -39,6 +40,10 @@ var videoProfiles = func() []ffmpeg.VideoProfile {
 	return p
 }()
 
+func stubAuthToken() *net.AuthToken {
+	return &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(1 * time.Hour).Unix()}
+}
+
 func TestTranscode(t *testing.T) {
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
@@ -49,7 +54,7 @@ func TestTranscode(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 
 	ss := StubSegment()
-	md := &SegTranscodingMetadata{Profiles: videoProfiles}
+	md := &SegTranscodingMetadata{Profiles: videoProfiles, AuthToken: stubAuthToken()}
 
 	// Check nil transcoder.
 	tr, err := n.sendToTranscodeLoop(md, ss)
@@ -63,6 +68,11 @@ func TestTranscode(t *testing.T) {
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
+
+	// Check that local OS is initialize auth token sessionID and not the manifestID supplied by B
+	memOS := drivers.NodeStorage.(*drivers.MemoryOS)
+	assert.NotNil(t, memOS.GetSession(md.AuthToken.SessionId))
+	assert.Nil(t, memOS.GetSession(string(md.ManifestID)))
 
 	if len(tr.TranscodeData.Segments) != len(videoProfiles) && len(videoProfiles) != 2 {
 		t.Error("Job profile count did not match broadcasters")
@@ -88,7 +98,7 @@ func TestTranscodeSeg(t *testing.T) {
 	n.Transcoder = stubTranscoderWithProfiles(profiles)
 
 	conf := transcodeConfig{LocalOS: (drivers.NewMemoryDriver(nil)).NewSession("")}
-	md := &SegTranscodingMetadata{Profiles: profiles}
+	md := &SegTranscodingMetadata{Profiles: profiles, AuthToken: stubAuthToken()}
 	seg := StubSegment()
 
 	assert := assert.New(t)
@@ -128,21 +138,23 @@ func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T
 	n, _ := NewLivepeerNode(seth, tmp, nil)
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()
-	md := &SegTranscodingMetadata{Profiles: videoProfiles}
+	md := &SegTranscodingMetadata{Profiles: videoProfiles, AuthToken: stubAuthToken()}
 	n.Transcoder = NewLocalTranscoder(tmp)
 
 	transcodeLoopTimeout = 100 * time.Millisecond
 	assert := assert.New(t)
 	require := require.New(t)
 
+	mid := ManifestID(md.AuthToken.SessionId)
+
 	_, err := n.sendToTranscodeLoop(md, ss)
 	require.Nil(err)
-	segChan := getSegChan(n, md.ManifestID)
+	segChan := getSegChan(n, mid)
 	require.NotNil(segChan)
 
-	waitForTranscoderLoopTimeout(n, md.ManifestID)
+	waitForTranscoderLoopTimeout(n, mid)
 
-	segChan = getSegChan(n, md.ManifestID)
+	segChan = getSegChan(n, mid)
 	assert.Nil(segChan)
 }
 

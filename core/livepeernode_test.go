@@ -70,7 +70,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	defer os.RemoveAll(tmpdir)
 	n.Transcoder = tr
 
-	md := &SegTranscodingMetadata{Profiles: p}
+	md := &SegTranscodingMetadata{Profiles: p, AuthToken: stubAuthToken()}
 	ss := StubSegment()
 	res := n.transcodeSeg(config, ss, md)
 	if res.Err != nil {
