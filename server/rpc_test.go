@@ -928,6 +928,29 @@ func TestGetOrchestrator_GivenValidSig_ReturnsAuthToken(t *testing.T) {
 	assert.Equal(authToken.Expiration, oInfo.AuthToken.Expiration)
 }
 
+func TestGetOrchestrator_StorageInit(t *testing.T) {
+	assert := assert.New(t)
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	orch := &stubOrchestrator{offchain: true}
+	orch.authToken = stubAuthToken
+
+	// Check when local storage is used
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+	assert.Nil(err)
+	assert.Nil(oInfo.Storage)
+
+	// Check when external storage is used
+	drivers.NodeStorage = drivers.NewS3Driver("us", "livepeer", "key", "secret")
+
+	oInfo, err = getOrchestrator(orch, &net.OrchestratorRequest{})
+	assert.Nil(err)
+	assert.Len(oInfo.Storage, 1)
+	assert.Equal(stubAuthToken.SessionId, oInfo.Storage[0].S3Info.Key)
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+}
+
 func TestGenVerify_RoundTrip_AuthToken(t *testing.T) {
 	orch := &stubOrchestrator{offchain: true}
 
