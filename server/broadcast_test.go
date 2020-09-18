@@ -38,6 +38,7 @@ func StubBroadcastSession(transcoder string) *BroadcastSession {
 				PricePerUnit:  1,
 				PixelsPerUnit: 1,
 			},
+			AuthToken: stubAuthToken,
 		},
 	}
 }
@@ -510,7 +511,7 @@ func TestTranscodeSegment_UploadFailed_SuspendAndRemove(t *testing.T) {
 	assert.Greater(cxn.sessManager.sus.Suspended(sess.OrchestratorInfo.GetTranscoder()), 0)
 }
 
-func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T) {
+func TestTranscodeSegment_RefreshSession(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -523,6 +524,7 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 			Transcoder:   ts.URL,
 			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
 			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
+			AuthToken:    stubAuthToken,
 		},
 		Result: &net.TranscodeResult_Data{
 			Data: &net.TranscodeData{
@@ -547,6 +549,7 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	sess.OrchestratorInfo = &net.OrchestratorInfo{
 		Transcoder: ts.URL,
+		AuthToken:  stubAuthToken,
 	}
 
 	cxn := &rtmpConnection{
@@ -572,15 +575,15 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 		profile:     &ffmpeg.P144p30fps16x9,
 		sessManager: bsmWithSessList([]*BroadcastSession{sess}),
 	}
-	// Expired Orchestrator Info -> GetOrchestratorInfo error -> Error
+	// Expired ticket params -> GetOrchestratorInfo error -> Error
 	sender.On("ValidateTicketParams", mock.Anything).Return(pm.ErrTicketParamsExpired)
 	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
-	assert.True(strings.Contains(err.Error(), "unable to refresh ticket params"))
+	assert.True(strings.Contains(err.Error(), "Could not get orchestrator"))
 	_, ok = cxn.sessManager.sessMap[ts.URL]
 	assert.False(ok)
 	assert.Greater(cxn.sessManager.sus.Suspended(ts.URL), 0)
 
-	// Expired Orchestrator Info -> GetOrchestratorInfo -> Still Expired -> Error
+	// Expired ticket params -> GetOrchestratorInfo -> Still Expired -> Error
 	cxn = &rtmpConnection{
 		mid:         core.ManifestID("bar"),
 		nonce:       8,
@@ -616,7 +619,7 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 	assert.False(ok)
 	assert.Greater(cxn.sessManager.sus.Suspended(ts.URL), 0)
 
-	// Expired Orchestrator Info -> GetOrchestratorInfo -> No Longer Expired -> Complete Session
+	// Expired ticket params -> GetOrchestratorInfo -> No Longer Expired -> Complete Session
 	cxn = &rtmpConnection{
 		mid:         core.ManifestID("baz"),
 		nonce:       9,
@@ -626,7 +629,7 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 	}
 
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
-	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil).Once()
+	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil)
 	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 	assert.Nil(err)
 
@@ -640,6 +643,32 @@ func TestTranscodeSegment_ExpiredParams_GetOrchestratorInfoAndRetry(t *testing.T
 	assert.Equal(tr.Info.PriceInfo.PixelsPerUnit, completedSessInfo.PriceInfo.PixelsPerUnit)
 	assert.Equal(tr.Info.PriceInfo.PricePerUnit, completedSessInfo.PriceInfo.PricePerUnit)
 	assert.Equal(tr.Info.TicketParams.ExpirationBlock, completedSessInfo.TicketParams.ExpirationBlock)
+
+	// Missing auth token
+	sess.OrchestratorInfo.AuthToken = nil
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{}, "dummy", nil)
+	assert.Equal("missing auth token", err.Error())
+
+	// Refresh session for expired auth token
+	sess.OrchestratorInfo.AuthToken = &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(-1 * time.Hour).Unix()}
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{}, "dummy", nil)
+	assert.Nil(err)
+
+	completedSessInfo = cxn.sessManager.sessMap[tr.Info.Transcoder].OrchestratorInfo
+	assert.True(time.Now().Before(time.Unix(completedSessInfo.AuthToken.Expiration, 0)))
+	assert.True(proto.Equal(completedSessInfo.AuthToken, stubAuthToken))
+
+	// Refresh session for almost expired auth token
+	sess.OrchestratorInfo.AuthToken = &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(30 * time.Second).Unix()}
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
+	_, err = transcodeSegment(cxn, &stream.HLSSegment{}, "dummy", nil)
+	assert.Nil(err)
+
+	completedSessInfo = cxn.sessManager.sessMap[tr.Info.Transcoder].OrchestratorInfo
+	assert.True(time.Now().Before(time.Unix(completedSessInfo.AuthToken.Expiration, 0)))
+	assert.True(proto.Equal(completedSessInfo.AuthToken, stubAuthToken))
 }
 
 func TestTranscodeSegment_SuspendOrchestrator(t *testing.T) {
@@ -1507,6 +1536,6 @@ func genBcastSess(t *testing.T, url string, os drivers.OSSession, mid core.Manif
 		Broadcaster:      stubBroadcaster2(),
 		Params:           &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}},
 		BroadcasterOS:    os,
-		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL},
+		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL, AuthToken: stubAuthToken},
 	}
 }
