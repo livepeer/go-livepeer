@@ -133,12 +133,14 @@ func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVide
 }
 
 func TestSelectOrchestrator(t *testing.T) {
+	assert := assert.New(t)
 	require := require.New(t)
 	s := setupServer()
 	defer serverCleanup(s)
 
 	defer func() {
 		s.LivepeerNode.Sender = nil
+		s.LivepeerNode.OrchestratorPool = nil
 	}()
 
 	// Empty discovery
@@ -157,9 +159,11 @@ func TestSelectOrchestrator(t *testing.T) {
 	}
 
 	// populate stub discovery
+	authToken0 := stubAuthToken
+	authToken1 := &net.AuthToken{Token: stubAuthToken.Token, SessionId: "somethinglese", Expiration: stubAuthToken.Expiration}
 	sd.infos = []*net.OrchestratorInfo{
-		&net.OrchestratorInfo{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}},
-		&net.OrchestratorInfo{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}},
+		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken0},
+		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken1},
 	}
 	sess, _ := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender())
 
@@ -190,6 +194,23 @@ func TestSelectOrchestrator(t *testing.T) {
 	if sess[0].PMSessionID != "" {
 		t.Error("Unexpected PM sessionID")
 	}
+
+	// Check broadcaster OS session initialization when OS is external
+	drivers.NodeStorage = drivers.NewS3Driver("us", "livepeer", "key", "secret")
+	externalStorage := drivers.NodeStorage.NewSession(string(mid))
+	sp.OS = externalStorage
+
+	sess, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender())
+	assert.Nil(err)
+
+	// B should initialize new OS session using auth token sessionID
+	assert.NotEqual(externalStorage, sess[0].BroadcasterOS)
+	assert.Equal(fmt.Sprintf("%v/%v", sp.ManifestID, authToken0.SessionId), sess[0].BroadcasterOS.GetInfo().S3Info.Key)
+	assert.NotEqual(externalStorage, sess[1].BroadcasterOS)
+	assert.Equal(fmt.Sprintf("%v/%v", sp.ManifestID, authToken1.SessionId), sess[1].BroadcasterOS.GetInfo().S3Info.Key)
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	sp.OS = storage
 
 	// Test start PM session
 	sender := &pm.MockSender{}
@@ -268,7 +289,6 @@ func TestSelectOrchestrator(t *testing.T) {
 	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender())
 	require.Nil(err)
 
-	assert := assert.New(t)
 	assert.Len(sess, 2)
 	assert.Equal(sender, sess[0].Sender)
 	assert.Equal(expSessionID, sess[0].PMSessionID)
@@ -855,7 +875,11 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	assert := assert.New(t)
 
 	s := setupServer()
-	defer serverCleanup(s)
+	defer func() {
+		s.LivepeerNode.OrchestratorPool = nil
+		serverCleanup(s)
+	}()
+
 	// populate stub discovery
 	sd := &stubDiscovery{}
 	sd.infos = []*net.OrchestratorInfo{
