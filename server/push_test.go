@@ -312,7 +312,7 @@ func TestPush_MP4(t *testing.T) {
 	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P720p25fps16x9}
 
 	sd := &stubDiscovery{}
-	sd.infos = []*net.OrchestratorInfo{&net.OrchestratorInfo{Transcoder: ts.URL}}
+	sd.infos = []*net.OrchestratorInfo{{Transcoder: ts.URL, AuthToken: stubAuthToken}}
 	s.LivepeerNode.OrchestratorPool = sd
 
 	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {

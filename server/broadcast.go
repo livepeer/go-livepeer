@@ -385,26 +385,25 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		seg.Name = uri // hijack seg.Name to convey the uploaded URI
 	}
 
-	// send segment to the orchestrator
-	if sess.Sender != nil {
-		if err := sess.Sender.ValidateTicketParams(pmTicketParams(sess.OrchestratorInfo.TicketParams)); err != nil {
-			if err != pm.ErrTicketParamsExpired {
-				glog.Error("Invalid ticket params err=", err)
-				cxn.sessManager.suspendOrch(sess)
-				cxn.sessManager.removeSession(sess)
-				return nil, err
-			}
-
-			glog.V(common.VERBOSE).Infof("Ticket params expired, refreshing for orch=%v", sess.OrchestratorInfo.Transcoder)
-			newSess, err := refreshSession(sess)
-			if err != nil {
-				cxn.sessManager.suspendOrch(sess)
-				cxn.sessManager.removeSession(sess)
-				return nil, fmt.Errorf("unable to refresh ticket params for orch=%v err=%v", sess.OrchestratorInfo.Transcoder, err)
-			}
-			sess = newSess
-		}
+	refresh, err := shouldRefreshSession(sess)
+	if err != nil {
+		glog.Errorf("Error checking whether to refresh session manifestID=%s orch=%v err=%v", cxn.mid, sess.OrchestratorInfo.Transcoder, err)
+		cxn.sessManager.suspendOrch(sess)
+		cxn.sessManager.removeSession(sess)
+		return nil, err
 	}
+
+	if refresh {
+		newSess, err := refreshSession(sess)
+		if err != nil {
+			glog.Errorf("Error refreshing session manifestID=%s orch=%v err=%v", cxn.mid, sess.OrchestratorInfo.Transcoder, err)
+			cxn.sessManager.suspendOrch(sess)
+			cxn.sessManager.removeSession(sess)
+			return nil, err
+		}
+		sess = newSess
+	}
+
 	res, err := SubmitSegment(sess, seg, nonce)
 	if err != nil || res == nil {
 		cxn.sessManager.suspendOrch(sess)
@@ -671,4 +670,33 @@ func refreshSession(sess *BroadcastSession) (*BroadcastSession, error) {
 	}
 
 	return updateSession(sess, res), nil
+}
+
+func shouldRefreshSession(sess *BroadcastSession) (bool, error) {
+	if sess.OrchestratorInfo.AuthToken == nil {
+		return false, errors.New("missing auth token")
+	}
+
+	// Refresh auth token if we are within the last 10% of the token's valid period
+	authTokenExpireBuffer := 0.1
+	refreshPoint := sess.OrchestratorInfo.AuthToken.Expiration - int64(authTokenValidPeriod.Seconds()*authTokenExpireBuffer)
+	if time.Now().After(time.Unix(refreshPoint, 0)) {
+		glog.V(common.VERBOSE).Infof("Auth token expired, refreshing for orch=%v", sess.OrchestratorInfo.Transcoder)
+
+		return true, nil
+	}
+
+	if sess.Sender != nil {
+		if err := sess.Sender.ValidateTicketParams(pmTicketParams(sess.OrchestratorInfo.TicketParams)); err != nil {
+			if err != pm.ErrTicketParamsExpired {
+				return false, err
+			}
+
+			glog.V(common.VERBOSE).Infof("Ticket params expired, refreshing for orch=%v", sess.OrchestratorInfo.Transcoder)
+
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
