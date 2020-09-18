@@ -189,8 +189,6 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 		r = 1 + rand.Int63n(totalStake)
 	}
 
-	// Generate a random integer used to determine how to divide stake between sessions for the same address
-	stakeDivRand := rand.Int()
 	// Run a weighted random selection on unknownSessions
 	// We iterate through each session and subtract the stake weight for the session's orchestrator from r (initialized to a random stake weight)
 	// If subtracting the stake weight for the current session from r results in a value <= 0, we select the current session
@@ -198,20 +196,11 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 	// will result in a value <= 0
 	for i, sess := range s.unknownSessions {
 		addr := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient)
-		// If we could not fetch the stake weight for addrs[i] then its stake weight defaults to 0
-		// The stake weight for a session is the stake weight of the address divided by the # of sessions the
-		// address is associated with
-		stake := stakes[addr] / int64(addrCount[addr])
-		// If stakeDivRand % addrCount[addr] == 0 then the session is assigned any "leftover" stake that cannot be evenly divided
-		// between all sessions for addr
-		if stakeDivRand%addrCount[addr] == 0 {
-			stake += stakes[addr] % int64(addrCount[addr])
-		}
-		r -= stake
-		// Decrement stake weight available for the address' remaining sessions so the last session
-		// uses the remaining stake weight available for the address
-		stakes[addr] -= stake
-		addrCount[addr]--
+		// If we could not fetch the stake weight for addr then its stake weight defaults to 0
+		r -= stakes[addr]
+		// The first session in the list of a particular address gets *all* the stake
+		// so set the remaining stake for that address's session to zero
+		stakes[addr] = 0
 
 		if r <= 0 {
 			s.removeUnknownSession(i)

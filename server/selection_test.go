@@ -322,13 +322,12 @@ func TestMinLSSelector_SelectUnknownSession_UniformWeights(t *testing.T) {
 	}
 }
 
-func TestMinLSSelector_SelectUnknownSession_SameAddressDivideStake(t *testing.T) {
+func TestMinLSSelector_SelectUnknownSession_SameAddress(t *testing.T) {
 	stakeRdr := newStubStakeReader()
 
-	addr := ethcommon.BytesToAddress([]byte("foo"))
 	selections := 100000
 
-	createSessions := func(num int) []*BroadcastSession {
+	createSessions := func(num int, addr ethcommon.Address) []*BroadcastSession {
 		sessions := make([]*BroadcastSession, num)
 		for i := 0; i < num; i++ {
 			sessions[i] = &BroadcastSession{
@@ -352,15 +351,21 @@ func TestMinLSSelector_SelectUnknownSession_SameAddressDivideStake(t *testing.T)
 		return sessCount
 	}
 
-	checkSelectionCount := func(sessCount map[*BroadcastSession]int, addrCount map[ethcommon.Address]int, stakeMap map[ethcommon.Address]int64, totalStake int64) {
+	checkSelectionCount := func(sessions []*BroadcastSession, sessCount map[*BroadcastSession]int, stakeMap map[ethcommon.Address]int64, totalStake int64) {
 		// Check that the difference between the selection count ratio and the stake weight ratio of a session is less than some small delta
 		maxDelta := .017
-		for sess, count := range sessCount {
-			// Selection count ratio = # times selected / total selections
-			countRat := big.NewRat(int64(count), int64(selections))
-			// Stake weight ratio = (stake / # sessions per address) / totalStake
+		addrSeenMap := make(map[ethcommon.Address]bool)
+		for _, sess := range sessions {
 			addr := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient)
-			stakeRat := new(big.Rat).Mul(big.NewRat(stakeMap[addr], int64(addrCount[addr])), big.NewRat(1, totalStake))
+			// Selection count ratio = # times selected / total selections
+			countRat := big.NewRat(int64(sessCount[sess]), int64(selections))
+			// Stake weight ratio = 0 by default
+			stakeRat := big.NewRat(0, 1)
+			// Stake weight ratio = (stake / totalStake) **only if first session for a particular address**
+			if _, ok := addrSeenMap[addr]; !ok {
+				stakeRat = big.NewRat(stakeMap[addr], totalStake)
+				addrSeenMap[addr] = true
+			}
 			deltaRat := new(big.Rat).Sub(stakeRat, countRat)
 			deltaRat.Abs(deltaRat)
 			delta, _ := deltaRat.Float64()
@@ -368,48 +373,19 @@ func TestMinLSSelector_SelectUnknownSession_SameAddressDivideStake(t *testing.T)
 		}
 	}
 
-	stake := int64(1000)
-	stakeMap := map[ethcommon.Address]int64{addr: stake}
-	totalStake := stake
-	stakeRdr.SetStakes(stakeMap)
-
-	// 2 sessions with the same address
-	addrCount := map[ethcommon.Address]int{addr: 2}
-	sessions := createSessions(2)
-	sessCount := countSelections(sessions)
-	checkSelectionCount(sessCount, addrCount, stakeMap, totalStake)
-
-	// 3 sessions with the same address
-	addrCount = map[ethcommon.Address]int{addr: 3}
-	sessions = createSessions(3)
-	sessCount = countSelections(sessions)
-	checkSelectionCount(sessCount, addrCount, stakeMap, totalStake)
-
-	// 3 sessions with the same address, 1 session with a different address
+	// 3 sessions with the same address, 2 sessions with a different address
+	addr := ethcommon.BytesToAddress([]byte("foo"))
+	sessions := createSessions(3, addr)
+	// Include a session with a different address than the rest of the sessions
 	otherAddr := ethcommon.BytesToAddress([]byte("other"))
-	addrCount = map[ethcommon.Address]int{addr: 3, otherAddr: 1}
-	stakeMap = map[ethcommon.Address]int64{addr: stake, otherAddr: stake}
-	totalStake = 2 * stake
+	sessions = append(sessions, createSessions(2, otherAddr)...)
+	// Give both address 1000 stake
+	stake := int64(1000)
+	stakeMap := map[ethcommon.Address]int64{addr: stake, otherAddr: stake}
+	totalStake := 2 * stake
 	stakeRdr.SetStakes(stakeMap)
-	// Include a session with a different address than the rest of the sessions
-	newSessions := append(sessions, &BroadcastSession{OrchestratorInfo: &net.OrchestratorInfo{TicketParams: &net.TicketParams{Recipient: otherAddr.Bytes()}}})
-	sessCount = countSelections(newSessions)
-	checkSelectionCount(sessCount, addrCount, stakeMap, totalStake)
-
-	// 3 sessions with the same address, 1 session with a different address
-	// Address A stake = 4 -> split across 3 sessions: 1, 1, 2
-	// Address B stake = 1
-	// Each of address A's sessions should be selected 1.33 out of every 5 selections
-	stake = 4
-	otherStake := int64(1)
-	addrCount = map[ethcommon.Address]int{addr: 3, otherAddr: 1}
-	stakeMap = map[ethcommon.Address]int64{addr: stake, otherAddr: otherStake}
-	totalStake = 5
-	stakeRdr.SetStakes(stakeMap)
-	// Include a session with a different address than the rest of the sessions
-	newSessions = append(sessions, &BroadcastSession{OrchestratorInfo: &net.OrchestratorInfo{TicketParams: &net.TicketParams{Recipient: otherAddr.Bytes()}}})
-	sessCount = countSelections(newSessions)
-	checkSelectionCount(sessCount, addrCount, stakeMap, totalStake)
+	sessCount := countSelections(sessions)
+	checkSelectionCount(sessions, sessCount, stakeMap, totalStake)
 }
 
 func TestMinLSSelector_SelectUnknownSession_AllMissingStake(t *testing.T) {
