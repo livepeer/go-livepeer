@@ -170,7 +170,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			tsp.SenderNonce,
 		)
 
-		glog.V(common.DEBUG).Infof("Receiving ticket manifestID=%v faceValue=%v winProb=%v ev=%v", manifestID, eth.FormatUnits(ticket.FaceValue, "ETH"), ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
+		glog.V(common.DEBUG).Infof("Receiving ticket sessionID=%v faceValue=%v winProb=%v ev=%v", manifestID, eth.FormatUnits(ticket.FaceValue, "ETH"), ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
 
 		_, won, err := orch.node.Recipient.ReceiveTicket(
 			ticket,
@@ -178,7 +178,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			seed,
 		)
 		if err != nil {
-			glog.Errorf("Error receiving ticket manifestID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
+			glog.Errorf("Error receiving ticket sessionID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 
 			if monitor.Enabled {
 				monitor.PaymentRecvError(sender.String(), string(manifestID), err.Error())
@@ -198,13 +198,13 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		}
 
 		if won {
-			glog.V(common.DEBUG).Infof("Received winning ticket manifestID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
+			glog.V(common.DEBUG).Infof("Received winning ticket sessionID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
 
 			totalWinningTickets++
 
 			go func(ticket *pm.Ticket, sig []byte, seed *big.Int) {
 				if err := orch.node.Recipient.RedeemWinningTicket(ticket, sig, seed); err != nil {
-					glog.Errorf("error redeeming ticket manifestID=%v recipientRandHash=%x senderNonce=%v err=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
+					glog.Errorf("error redeeming ticket sessionID=%v recipientRandHash=%x senderNonce=%v err=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 				}
 			}(ticket, tsp.Sig, seed)
 		}
@@ -441,18 +441,18 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 	// concurrency concerns here? what if a chan is added mid-call?
 	n.segmentMutex.Lock()
 	defer n.segmentMutex.Unlock()
-	if sc, ok := n.SegmentChans[md.ManifestID]; ok {
+	if sc, ok := n.SegmentChans[ManifestID(md.AuthToken.SessionId)]; ok {
 		return sc, nil
 	}
 	if len(n.SegmentChans) >= MaxSessions {
 		return nil, ErrOrchCap
 	}
 	sc := make(SegmentChan, 1)
-	glog.V(common.DEBUG).Info("Creating new segment chan for manifest ", md.ManifestID)
+	glog.V(common.DEBUG).Infof("Creating new segment chan for manifestID=%s sessionID=%s", md.ManifestID, md.AuthToken.SessionId)
 	if err := n.transcodeSegmentLoop(md, sc); err != nil {
 		return nil, err
 	}
-	n.SegmentChans[md.ManifestID] = sc
+	n.SegmentChans[ManifestID(md.AuthToken.SessionId)] = sc
 	if lpmon.Enabled {
 		lpmon.CurrentSessions(len(n.SegmentChans))
 	}
@@ -460,7 +460,7 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 }
 
 func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
-	glog.V(common.DEBUG).Infof("Starting to transcode segment manifestID=%s seqNo=%d", string(md.ManifestID), md.Seq)
+	glog.V(common.DEBUG).Infof("Starting to transcode segment manifestID=%s sessionID=%s seqNo=%d", string(md.ManifestID), md.AuthToken.SessionId, md.Seq)
 	ch, err := n.getSegmentChan(md)
 	if err != nil {
 		glog.Error("Could not find segment chan ", err)
@@ -469,10 +469,10 @@ func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stre
 	segChanData := &SegChanData{seg: seg, md: md, res: make(chan *TranscodeResult, 1)}
 	select {
 	case ch <- segChanData:
-		glog.V(common.DEBUG).Infof("Submitted segment to transcode loop manifestID=%s seqNo=%d", md.ManifestID, md.Seq)
+		glog.V(common.DEBUG).Infof("Submitted segment to transcode loop manifestID=%s sessionID=%s seqNo=%d", md.ManifestID, md.AuthToken.SessionId, md.Seq)
 	default:
 		// sending segChan should not block; if it does, the channel is busy
-		glog.Errorf("Transcoder was busy with a previous segment manifestID=%s seqNo=%d", md.ManifestID, md.Seq)
+		glog.Errorf("Transcoder was busy with a previous segment manifestID=%s sessionID=%s seqNo=%d", md.ManifestID, md.AuthToken.SessionId, md.Seq)
 		return nil, ErrOrchBusy
 	}
 	res := <-segChanData.res
@@ -540,19 +540,19 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	start := time.Now()
 	tData, err := transcoder.Transcode(md)
 	if err != nil {
-		glog.Errorf("Error transcoding manifestID=%s segNo=%d segName=%s - %v", string(md.ManifestID), seg.SeqNo, seg.Name, err)
+		glog.Errorf("Error transcoding manifestID=%s sessionID=%s segNo=%d segName=%s - %v", string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, seg.Name, err)
 		return terr(err)
 	}
 
 	tSegments := tData.Segments
 	if len(tSegments) != len(md.Profiles) {
-		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v manifestID=%s seqNo=%d", len(tSegments),
-			len(md.Profiles), string(md.ManifestID), seg.SeqNo)
+		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v manifestID=%s sessionID=%s seqNo=%d", len(tSegments),
+			len(md.Profiles), string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo)
 		return terr(fmt.Errorf("MismatchedSegments"))
 	}
 
 	took := time.Since(start)
-	glog.V(common.DEBUG).Infof("Transcoding of segment manifestID=%s seqNo=%d took=%v", string(md.ManifestID), seg.SeqNo, took)
+	glog.V(common.DEBUG).Infof("Transcoding of segment manifestID=%s sessionID=%s seqNo=%d took=%v", string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, took)
 	if !isRemote && monitor.Enabled {
 		monitor.SegmentTranscoded(0, seg.SeqNo, took, common.ProfilesNames(md.Profiles))
 	}
@@ -563,12 +563,12 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 
 	for i := range md.Profiles {
 		if tSegments[i].Data == nil || len(tSegments[i].Data) < 25 {
-			glog.Errorf("Cannot find transcoded segment for manifestID=%s seqNo=%d len=%d",
-				string(md.ManifestID), seg.SeqNo, len(tSegments[i].Data))
+			glog.Errorf("Cannot find transcoded segment for manifestID=%s sessionID=%s seqNo=%d len=%d",
+				string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, len(tSegments[i].Data))
 			return terr(fmt.Errorf("ZeroSegments"))
 		}
-		glog.V(common.DEBUG).Infof("Transcoded segment manifestID=%s seqNo=%d profile=%s len=%d",
-			string(md.ManifestID), seg.SeqNo, md.Profiles[i].Name, len(tSegments[i].Data))
+		glog.V(common.DEBUG).Infof("Transcoded segment manifestID=%s sessionID=%s seqNo=%d profile=%s len=%d",
+			string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, md.Profiles[i].Name, len(tSegments[i].Data))
 		hash := crypto.Keccak256(tSegments[i].Data)
 		segHashes[i] = hash
 	}
@@ -589,14 +589,14 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 }
 
 func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan SegmentChan) error {
-	glog.V(common.DEBUG).Info("Starting transcode segment loop for ", md.ManifestID)
+	glog.V(common.DEBUG).Infof("Starting transcode segment loop for manifestID=%s sessionID=%s", md.ManifestID, md.AuthToken.SessionId)
 
 	// Set up local OS for any remote transcoders to use if necessary
 	if drivers.NodeStorage == nil {
 		return fmt.Errorf("Missing local storage")
 	}
 
-	los := drivers.NodeStorage.NewSession(string(md.ManifestID))
+	los := drivers.NodeStorage.NewSession(md.AuthToken.SessionId)
 
 	// determine appropriate OS to use
 	os := drivers.NewSession(md.OS)
@@ -618,11 +618,12 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 				// timeout; clean up goroutine here
 				os.EndSession()
 				los.EndSession()
-				glog.V(common.DEBUG).Info("Segment loop timed out; closing ", md.ManifestID)
+				glog.V(common.DEBUG).Infof("Segment loop timed out; closing manifestID=%s sessionID=%s", md.ManifestID, md.AuthToken.SessionId)
 				n.segmentMutex.Lock()
-				if _, ok := n.SegmentChans[md.ManifestID]; ok {
-					close(n.SegmentChans[md.ManifestID])
-					delete(n.SegmentChans, md.ManifestID)
+				mid := ManifestID(md.AuthToken.SessionId)
+				if _, ok := n.SegmentChans[mid]; ok {
+					close(n.SegmentChans[mid])
+					delete(n.SegmentChans, mid)
 					if lpmon.Enabled {
 						lpmon.CurrentSessions(len(n.SegmentChans))
 					}

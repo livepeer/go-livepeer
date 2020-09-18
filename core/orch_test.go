@@ -518,6 +518,7 @@ func StubSegTranscodingMetadata() *SegTranscodingMetadata {
 		Hash:       ethcommon.BytesToHash(ethcommon.RightPadBytes([]byte("browns"), 32)),
 		Profiles:   []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9},
 		OS:         &net.OSInfo{StorageType: net.OSInfo_DIRECT},
+		AuthToken:  stubAuthToken(),
 	}
 }
 
@@ -531,7 +532,7 @@ func TestGetSegmentChan(t *testing.T) {
 		t.Error("error with getSegmentChan", err)
 	}
 
-	if sc != n.SegmentChans[segData.ManifestID] {
+	if sc != n.SegmentChans[ManifestID(segData.AuthToken.SessionId)] {
 		t.Error("SegmentChans mapping did not include channel")
 	}
 
@@ -541,7 +542,8 @@ func TestGetSegmentChan(t *testing.T) {
 	if _, err := n.getSegmentChan(segData); err != nil {
 		t.Error("Existing mid should continue processing even when O is at capacity: ", err)
 	}
-	segData.ManifestID = ManifestID(t.Name())
+	segData.AuthToken = stubAuthToken()
+	segData.AuthToken.SessionId = t.Name()
 	if _, err := n.getSegmentChan(segData); err != ErrOrchCap {
 		t.Error("Didn't fail when orch cap hit: ", err)
 	}
@@ -582,19 +584,21 @@ func TestOrchCheckCapacity(t *testing.T) {
 	cap := MaxSessions
 	assert := assert.New(t)
 
+	mid := ManifestID(md.AuthToken.SessionId)
+
 	// happy case
-	assert.Nil(o.CheckCapacity(md.ManifestID))
+	assert.Nil(o.CheckCapacity(mid))
 
 	// capped case
 	MaxSessions = 0
-	assert.Equal(ErrOrchCap, o.CheckCapacity(md.ManifestID))
+	assert.Equal(ErrOrchCap, o.CheckCapacity(mid))
 
 	// ensure existing segment chans pass while cap is active
 	MaxSessions = cap
 	_, err := n.getSegmentChan(md) // store md into segment chans
 	assert.Nil(err)
 	MaxSessions = 0
-	assert.Nil(o.CheckCapacity(md.ManifestID))
+	assert.Nil(o.CheckCapacity(mid))
 }
 
 func TestProcessPayment_GivenRecipientError_ReturnsNil(t *testing.T) {
