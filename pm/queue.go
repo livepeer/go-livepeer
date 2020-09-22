@@ -145,7 +145,6 @@ ticketLoop:
 			}
 		case <-q.quit:
 			return
-		default:
 		}
 	}
 }
