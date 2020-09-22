@@ -599,6 +599,7 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 			PixelsPerUnit: 1,
 		},
 		TicketParams: &net.TicketParams{},
+		AuthToken:    stubAuthToken,
 	}
 
 	oldGetOrchestratorInfoRPC := getOrchestratorInfoRPC

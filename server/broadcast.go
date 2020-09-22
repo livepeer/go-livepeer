@@ -241,7 +241,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 		}
 
 		if n.Balances != nil {
-			balance = core.NewBalance(ticketParams.Recipient, params.ManifestID, n.Balances)
+			balance = core.NewBalance(ticketParams.Recipient, core.ManifestID(tinfo.AuthToken.SessionId), n.Balances)
 		}
 
 		var orchOS drivers.OSSession
