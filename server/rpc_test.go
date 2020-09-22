@@ -528,6 +528,7 @@ func TestGenPayment(t *testing.T) {
 			PricePerUnit:  1,
 			PixelsPerUnit: 3,
 		},
+		AuthToken: stubAuthToken,
 	}
 
 	s := &BroadcastSession{
