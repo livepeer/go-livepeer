@@ -59,6 +59,10 @@ func (c *PushClient) TranscodeSegment(cxn *rtmpConnection, seg *stream.HLSSegmen
 	for {
 		p, err := mr.NextPart()
 		if err == io.EOF {
+			if cxn.recorder != nil {
+				cxn.recorder.RecordSegment(int32(seg.SeqNo))
+			}
+
 			return nil, nil
 		}
 		if err != nil {
@@ -89,10 +93,6 @@ func (c *PushClient) TranscodeSegment(cxn *rtmpConnection, seg *stream.HLSSegmen
 
 		if err := cxn.pl.InsertHLSSegment(&profile, seg.SeqNo, uri, seg.Duration); err != nil {
 			return nil, err
-		}
-
-		if cxn.recorder != nil {
-			cxn.recorder.RecordSegment(int32(seg.SeqNo))
 		}
 	}
 }
