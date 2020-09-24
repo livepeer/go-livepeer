@@ -392,9 +392,21 @@ func TestTicketParams(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
+	// Test price = 0
+	params, err := r.TicketParams(sender, big.NewRat(0, 1))
+	assert.Nil(err)
+	assert.Equal(big.NewInt(0), params.FaceValue)
+	assert.Equal(big.NewInt(0), params.WinProb)
+
+	// Test price < 0
+	params, err = r.TicketParams(sender, big.NewRat(-1, 1))
+	assert.Nil(err)
+	assert.Equal(big.NewInt(0), params.FaceValue)
+	assert.Equal(big.NewInt(0), params.WinProb)
+
 	// Test SenderMonitor.MaxFloat() error
 	sm.maxFloatErr = errors.New("MaxFloat error")
-	_, err := r.TicketParams(sender, big.NewRat(1, 1))
+	_, err = r.TicketParams(sender, big.NewRat(1, 1))
 	assert.EqualError(err, sm.maxFloatErr.Error())
 
 	// Test correct params returned when default faceValue < maxFloat

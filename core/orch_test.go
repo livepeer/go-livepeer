@@ -1408,6 +1408,15 @@ func TestPriceInfo(t *testing.T) {
 	assert.Equal(priceInfo.PricePerUnit, expPrice.Num().Int64())
 	assert.Equal(priceInfo.PixelsPerUnit, expPrice.Denom().Int64())
 
+	// basePrice = 0 => expPricePerPixel = 0
+	n.SetBasePrice(big.NewRat(0, 1))
+	orch = NewOrchestrator(n, nil)
+
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(err)
+	assert.Zero(priceInfo.PricePerUnit)
+	assert.Equal(int64(1), priceInfo.PixelsPerUnit)
+
 	// test no overflows
 	basePrice = big.NewRat(25000, 1)
 	n.SetBasePrice(basePrice)
@@ -1456,6 +1465,7 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 	expError := errors.New("TxMultiplier Error")
 
 	n, _ := NewLivepeerNode(nil, "", nil)
+	n.SetBasePrice(big.NewRat(1, 1))
 	recipient := new(pm.MockRecipient)
 	n.Recipient = recipient
 	recipient.On("TxCostMultiplier", mock.Anything).Return(nil, expError)
