@@ -146,17 +146,29 @@ func (s *sender) ValidateTicketParams(ticketParams *TicketParams) error {
 
 // validateTicketParams checks if ticket params are acceptable for a specific number of tickets
 func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int) error {
+	if ticketParams.ExpirationBlock.Int64() == 0 {
+		return nil
+	}
+
+	latestBlock := s.timeManager.LastSeenBlock()
+	if ticketParams.ExpirationBlock.Cmp(latestBlock) <= 0 {
+		return ErrTicketParamsExpired
+	}
+
+	ev := ticketEV(ticketParams.FaceValue, ticketParams.WinProb)
+	if ev.Cmp(big.NewRat(0, 1)) <= 0 {
+		return nil
+	}
+
 	info, err := s.senderManager.GetSenderInfo(s.signer.Account().Address)
 	if err != nil {
 		return err
 	}
 
-	// validate sender
 	if err := s.validateSender(info); err != nil {
 		return err
 	}
 
-	ev := ticketEV(ticketParams.FaceValue, ticketParams.WinProb)
 	totalEV := ev.Mul(ev, new(big.Rat).SetInt64(int64(numTickets)))
 	if totalEV.Cmp(s.maxEV) > 0 {
 		return fmt.Errorf("total ticket EV %v for %v tickets > max total ticket EV %v", totalEV.FloatString(5), numTickets, s.maxEV.FloatString(5))
@@ -165,15 +177,6 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 	maxFaceValue := new(big.Int).Div(info.Deposit, big.NewInt(int64(s.depositMultiplier)))
 	if ticketParams.FaceValue.Cmp(maxFaceValue) > 0 {
 		return fmt.Errorf("ticket faceValue %v > max faceValue %v", ticketParams.FaceValue, maxFaceValue)
-	}
-
-	if ticketParams.ExpirationBlock.Int64() == 0 {
-		return nil
-	}
-
-	latestBlock := s.timeManager.LastSeenBlock()
-	if ticketParams.ExpirationBlock.Cmp(latestBlock) <= 0 {
-		return ErrTicketParamsExpired
 	}
 
 	return nil
