@@ -36,7 +36,7 @@ type Recipient interface {
 	// for a provided sender ETH adddress
 	TicketParams(sender ethcommon.Address, price *big.Rat) (*TicketParams, error)
 
-	// TxCostMultiplier returns the multiplier -
+	// TxCostMultiplier returns the tx cost multiplier for an address
 	TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error)
 
 	// EV returns the recipients EV requirement for a ticket as configured on startup
@@ -179,9 +179,14 @@ func (r *recipient) TicketParams(sender ethcommon.Address, price *big.Rat) (*Tic
 
 	seed := new(big.Int).SetBytes(randBytes)
 
-	faceValue, err := r.faceValue(sender)
-	if err != nil {
-		return nil, err
+	faceValue := big.NewInt(0)
+	// If price is 0 face value, win prob and EV are 0 because no payments are required
+	if price.Num().Cmp(big.NewInt(0)) > 0 {
+		var err error
+		faceValue, err = r.faceValue(sender)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	lastBlock := r.tm.LastSeenBlock()
