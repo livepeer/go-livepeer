@@ -32,7 +32,7 @@ func UsePushClient(client *PushClient) {
 }
 
 func (c *PushClient) TranscodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string, verifier *verification.SegmentVerifier) ([]string, error) {
-	uploadURL := fmt.Sprintf("%v/live/%v/%v.%s", c.url, c.streamName, seg.SeqNo, filepath.Ext(name))
+	uploadURL := fmt.Sprintf("%v/live/%v/%v%s", c.url, c.streamName, seg.SeqNo, filepath.Ext(name))
 	req, err := http.NewRequest("POST", uploadURL, bytes.NewBuffer(seg.Data))
 	if err != nil {
 		return nil, err
