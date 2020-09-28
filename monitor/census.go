@@ -99,6 +99,7 @@ type (
 		mTranscodeOverallLatency      *stats.Float64Measure
 		mUploadTime                   *stats.Float64Measure
 		mAuthWebhookTime              *stats.Float64Measure
+		mSourceSegmentDuration        *stats.Float64Measure
 
 		// Metrics for sending payments
 		mTicketValueSent    *stats.Float64Measure
@@ -206,6 +207,7 @@ func InitCensus(nodeType, nodeID, version string) {
 		"Transcoding latency, from source segment emered from segmenter till all transcoded segment apeeared in manifest", "sec")
 	census.mUploadTime = stats.Float64("upload_time_seconds", "Upload (to Orchestrator) time", "sec")
 	census.mAuthWebhookTime = stats.Float64("auth_webhook_time_milliseconds", "Authentication webhook execution time", "ms")
+	census.mSourceSegmentDuration = stats.Float64("source_segment_duration_seconds", "Source segment's duration", "sec")
 
 	// Metrics for sending payments
 	census.mTicketValueSent = stats.Float64("ticket_value_sent", "TicketValueSent", "gwei")
@@ -394,6 +396,13 @@ func InitCensus(nodeType, nodeID, version string) {
 			Description: "Authentication webhook execution time, milliseconds",
 			TagKeys:     baseTags,
 			Aggregation: view.Distribution(0, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 5000, 10000),
+		},
+		{
+			Name:        "source_segment_duration_seconds",
+			Measure:     census.mSourceSegmentDuration,
+			Description: "Source segment's duration",
+			TagKeys:     baseTags,
+			Aggregation: view.Distribution(0, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 5000, 10000, 20000, 30000),
 		},
 		{
 			Name:        "max_sessions_total",
@@ -787,9 +796,10 @@ func SetTranscodersNumberAndLoad(load, capacity, number int) {
 	stats.Record(census.ctx, census.mTranscodersNumber.M(int64(number)))
 }
 
-func SegmentEmerged(nonce, seqNo uint64, profilesNum int) {
-	glog.V(logLevel).Infof("Logging SegmentEmerged... nonce=%d seqNo=%d", nonce, seqNo)
+func SegmentEmerged(nonce, seqNo uint64, profilesNum int, dur float64) {
+	glog.V(logLevel).Infof("Logging SegmentEmerged... nonce=%d seqNo=%d duration=%v", nonce, seqNo, dur)
 	census.segmentEmerged(nonce, seqNo, profilesNum)
+	stats.Record(census.ctx, census.mSourceSegmentDuration.M(dur))
 }
 
 func (cen *censusMetricsCounter) segmentEmerged(nonce, seqNo uint64, profilesNum int) {
