@@ -55,7 +55,7 @@ func TestLastSegmentTimeout(t *testing.T) {
 	if len(census.success) != 1 {
 		t.Fatal("Should be one stream")
 	}
-	SegmentEmerged(1, 1, 3)
+	SegmentEmerged(1, 1, 3, 1)
 	if sr := census.successRate(); sr != 1 {
 		t.Fatalf("Success rate should be 1, not %f", sr)
 	}
@@ -63,14 +63,14 @@ func TestLastSegmentTimeout(t *testing.T) {
 	if sr := census.successRate(); sr != 1 {
 		t.Fatalf("Success rate should be 1, not %f", sr)
 	}
-	SegmentEmerged(1, 2, 3)
+	SegmentEmerged(1, 2, 3, 1)
 	SegmentTranscodeFailed(SegmentTranscodeErrorOrchestratorBusy, 1, 2, fmt.Errorf("some"), true)
 	if sr := census.successRate(); sr != 0.5 {
 		t.Fatalf("Success rate should be 0.5, not %f", sr)
 	}
-	SegmentEmerged(1, 3, 3)
+	SegmentEmerged(1, 3, 3, 1)
 	SegmentTranscodeFailed(SegmentTranscodeErrorSessionEnded, 1, 3, fmt.Errorf("some"), true)
-	SegmentEmerged(1, 4, 3)
+	SegmentEmerged(1, 4, 3, 1)
 	SegmentFullyTranscoded(1, 4, "ps", "")
 	if sr := census.successRate(); sr != 0.75 {
 		t.Fatalf("Success rate should be 0.75, not %f", sr)
@@ -81,9 +81,9 @@ func TestLastSegmentTimeout(t *testing.T) {
 	}
 
 	StreamCreated("h1", 2)
-	SegmentEmerged(2, 1, 3)
+	SegmentEmerged(2, 1, 3, 1)
 	SegmentFullyTranscoded(2, 1, "ps", "")
-	SegmentEmerged(2, 2, 3)
+	SegmentEmerged(2, 2, 3, 1)
 	StreamEnded(2)
 	if len(census.success) != 1 {
 		t.Fatalf("Should be one stream, instead have %d", len(census.success))
@@ -107,9 +107,9 @@ func TestLastSegmentTimeout(t *testing.T) {
 	timeToWaitForError = old1
 
 	StreamCreated("h3", 3)
-	SegmentEmerged(3, 1, 3)
+	SegmentEmerged(3, 1, 3, 1)
 	SegmentFullyTranscoded(3, 1, "ps", "")
-	SegmentEmerged(3, 2, 3)
+	SegmentEmerged(3, 2, 3, 1)
 	StreamEnded(3)
 	if len(census.success) != 1 {
 		t.Fatalf("Should be one stream, instead have %d", len(census.success))
