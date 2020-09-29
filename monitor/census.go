@@ -95,8 +95,10 @@ type (
 		mTranscodersLoad              *stats.Int64Measure
 		mSuccessRate                  *stats.Float64Measure
 		mTranscodeTime                *stats.Float64Measure
+		mTranscodeTimeAvg             *stats.Float64Measure
 		mTranscodeLatency             *stats.Float64Measure
 		mTranscodeOverallLatency      *stats.Float64Measure
+		mTranscodeOverallLatencyAvg   *stats.Float64Measure
 		mUploadTime                   *stats.Float64Measure
 		mAuthWebhookTime              *stats.Float64Measure
 		mSourceSegmentDuration        *stats.Float64Measure
@@ -125,9 +127,11 @@ type (
 		mSuggestedGasPrice     *stats.Float64Measure
 		mTranscodingPrice      *stats.Float64Measure
 
-		lock        sync.Mutex
-		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
-		success     map[uint64]*segmentsAverager
+		lock                           sync.Mutex
+		emergeTimes                    map[uint64]map[uint64]time.Time // nonce:seqNo
+		success                        map[uint64]*segmentsAverager
+		transcodeOverallLatencyAverage *movingAverage
+		transcodeTimeAverage           *movingAverage
 	}
 
 	segmentCount struct {
@@ -151,6 +155,21 @@ type (
 		removedAt time.Time
 		tries     map[uint64]tryData // seqNo:try
 	}
+
+	movingAverage struct {
+		windowSize time.Duration
+		data       *ringArray
+	}
+	timeValue struct {
+		time  time.Time
+		value float64
+	}
+
+	ringArray struct {
+		data []timeValue
+		head int
+		tail int
+	}
 )
 
 // Exporter Prometheus exporter that handles `/metrics` endpoint
@@ -163,10 +182,12 @@ var unitTestMode bool
 
 func InitCensus(nodeType, nodeID, version string) {
 	census = censusMetricsCounter{
-		emergeTimes: make(map[uint64]map[uint64]time.Time),
-		nodeID:      nodeID,
-		nodeType:    nodeType,
-		success:     make(map[uint64]*segmentsAverager),
+		emergeTimes:                    make(map[uint64]map[uint64]time.Time),
+		nodeID:                         nodeID,
+		nodeType:                       nodeType,
+		success:                        make(map[uint64]*segmentsAverager),
+		transcodeOverallLatencyAverage: newMovingAverage(time.Minute, 128),
+		transcodeTimeAverage:           newMovingAverage(time.Minute, 128),
 	}
 	var err error
 	ctx := context.Background()
@@ -215,10 +236,13 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.mTranscodersLoad = stats.Int64("transcoders_load", "Total load of transcoders currently connected to orchestrator", "tot")
 	census.mSuccessRate = stats.Float64("success_rate", "Success rate", "per")
 	census.mTranscodeTime = stats.Float64("transcode_time_seconds", "Transcoding time", "sec")
+	census.mTranscodeTimeAvg = stats.Float64("transcode_time_avg_seconds", "Transcoding time average over one minute", "sec")
 	census.mTranscodeLatency = stats.Float64("transcode_latency_seconds",
 		"Transcoding latency, from source segment emered from segmenter till transcoded segment apeeared in manifest", "sec")
 	census.mTranscodeOverallLatency = stats.Float64("transcode_overall_latency_seconds",
 		"Transcoding latency, from source segment emered from segmenter till all transcoded segment apeeared in manifest", "sec")
+	census.mTranscodeOverallLatencyAvg = stats.Float64("transcode_overall_latency_avg_seconds",
+		"Transcoding latency average over one minute, from source segment emered from segmenter till all transcoded segment apeeared in manifest", "sec")
 	census.mUploadTime = stats.Float64("upload_time_seconds", "Upload (to Orchestrator) time", "sec")
 	census.mAuthWebhookTime = stats.Float64("auth_webhook_time_milliseconds", "Authentication webhook execution time", "ms")
 	census.mSourceSegmentDuration = stats.Float64("source_segment_duration_seconds", "Source segment's duration", "sec")
@@ -430,21 +454,35 @@ func InitCensus(nodeType, nodeID, version string) {
 			Measure:     census.mTranscodeTime,
 			Description: "TranscodeTime, seconds",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
-			Aggregation: view.Distribution(0, .250, .500, .750, 1.000, 1.250, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
+			Aggregation: view.Distribution(0, .250, .500, .750, 1.000, 1.250, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000, 20.0, 30.0),
+		},
+		{
+			Name:        "transcode_time_avg_seconds",
+			Measure:     census.mTranscodeTimeAvg,
+			Description: "TranscodeTime, seconds",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "transcode_latency_seconds",
 			Measure:     census.mTranscodeLatency,
 			Description: "Transcoding latency, from source segment emered from segmenter till transcoded segment apeeared in manifest",
 			TagKeys:     append([]tag.Key{census.kProfile}, baseTags...),
-			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
+			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000, 20.0, 30.0),
 		},
 		{
 			Name:        "transcode_overall_latency_seconds",
 			Measure:     census.mTranscodeOverallLatency,
 			Description: "Transcoding latency, from source segment emered from segmenter till all transcoded segment apeeared in manifest",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
-			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
+			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000, 20.0, 30.0),
+		},
+		{
+			Name:        "transcode_overall_latency_avg_seconds",
+			Measure:     census.mTranscodeOverallLatencyAvg,
+			Description: "Transcoding latency average over one minute, from source segment emered from segmenter till all transcoded segment apeeared in manifest",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "upload_time_seconds",
@@ -985,7 +1023,8 @@ func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, transcod
 		glog.Error("Error creating context", err)
 		return
 	}
-	stats.Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(float64(transcodeDur/time.Second)))
+	stats.Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(transcodeDur.Seconds()))
+	stats.Record(cen.ctx, cen.mTranscodeTimeAvg.M(cen.transcodeTimeAverage.addSample(time.Now(), transcodeDur.Seconds())))
 }
 
 func SegmentTranscodeFailed(subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
@@ -1037,8 +1076,11 @@ func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, errCode Segmen
 
 	if st, ok := census.emergeTimes[nonce][seqNo]; ok {
 		if errCode == "" {
-			latency := time.Since(st)
-			stats.Record(ctx, census.mTranscodeOverallLatency.M(float64(latency/time.Second)))
+			now := time.Now()
+			latency := now.Sub(st).Seconds()
+			avg := census.transcodeOverallLatencyAverage.addSample(now, latency)
+			stats.Record(ctx, census.mTranscodeOverallLatency.M(latency))
+			stats.Record(census.ctx, census.mTranscodeOverallLatencyAvg.M(avg))
 		}
 		census.countSegmentEmerged(nonce, seqNo)
 	}
@@ -1336,4 +1378,115 @@ func wei2gwei(wei *big.Int) float64 {
 func fracwei2gwei(wei *big.Rat) float64 {
 	floatWei, _ := wei.Float64()
 	return floatWei / gweiConversionFactor
+}
+
+func newMovingAverage(windowSize time.Duration, dataSize int) *movingAverage {
+	return &movingAverage{
+		windowSize: windowSize,
+		data:       newRingArray(dataSize),
+	}
+}
+
+func newRingArray(size int) *ringArray {
+	return &ringArray{
+		data: make([]timeValue, size),
+		head: -1,
+		tail: -1,
+	}
+}
+
+func (ma *movingAverage) addSample(now time.Time, val float64) float64 {
+	for ma.data.hasData() {
+		if tt, _ := ma.data.getTail(); now.Sub(tt) >= ma.windowSize {
+			ma.data.pop()
+		} else {
+			break
+		}
+	}
+	ma.data.push(now, val)
+	return ma.data.average()
+}
+
+func (ra *ringArray) push(time time.Time, value float64) {
+	if ra.head == -1 && ra.tail == -1 {
+		ra.head = 0
+		ra.tail = 0
+		ra.data[0] = timeValue{time: time, value: value}
+		return
+	}
+	newHead := ra.head + 1
+	if newHead == ra.tail || newHead == len(ra.data) && ra.tail == 0 {
+		newData := make([]timeValue, cap(ra.data)*2)
+		if ra.tail < ra.head {
+			copy(newData, ra.data[ra.tail:ra.head+1])
+			ra.head = ra.head - ra.tail
+		} else {
+			copy(newData, ra.data[ra.tail:len(ra.data)])
+			copy(newData[len(ra.data)-ra.tail:], ra.data[:ra.head+1])
+			ra.head = len(ra.data) - ra.tail + ra.head
+		}
+		ra.tail = 0
+		ra.data = newData
+	}
+	ra.head++
+	if ra.head == len(ra.data) {
+		ra.head = 0
+	}
+	ra.data[ra.head] = timeValue{time: time, value: value}
+}
+
+func (ra *ringArray) pop() (time.Time, float64) {
+	if ra.tail == -1 {
+		var t time.Time
+		return t, 0
+	}
+	tailVal := ra.data[ra.tail]
+	if ra.tail == ra.head {
+		ra.tail = -1
+		ra.head = -1
+		return tailVal.time, tailVal.value
+	}
+	ra.tail++
+	if ra.tail >= len(ra.data) {
+		ra.tail = 0
+	}
+	return tailVal.time, tailVal.value
+}
+
+func (ra *ringArray) hasData() bool {
+	return ra.head != -1 && ra.tail != -1
+}
+
+func (ra *ringArray) getTail() (time.Time, float64) {
+	if ra.tail != -1 {
+		dp := ra.data[ra.tail]
+		return dp.time, dp.value
+	}
+	var t time.Time
+	return t, 0
+}
+
+func (ra *ringArray) average() float64 {
+	if !ra.hasData() {
+		return 0
+	}
+	if ra.head == ra.tail {
+		return ra.data[ra.head].value
+	}
+	var acc, num float64
+	i := ra.tail
+	for {
+		acc += ra.data[i].value
+		num++
+		i++
+		if i == len(ra.data) {
+			i = 0
+		}
+		if i == ra.head {
+			acc += ra.data[i].value
+			num++
+			break
+		}
+	}
+	return acc / num
 }
