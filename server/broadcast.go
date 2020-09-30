@@ -541,7 +541,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	if monitor.Enabled {
-		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode)
+		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, seg.Duration, common.ProfilesNames(sess.Params.Profiles), errCode)
 	}
 
 	glog.V(common.DEBUG).Infof("Successfully validated segment nonce=%d seqNo=%d", nonce, seg.SeqNo)

@@ -58,57 +58,61 @@ var timeoutWatcherPause = 15 * time.Second
 
 type (
 	censusMetricsCounter struct {
-		nodeType                      string
-		nodeID                        string
-		ctx                           context.Context
-		kGPU                          tag.Key
-		kNodeType                     tag.Key
-		kNodeID                       tag.Key
-		kProfile                      tag.Key
-		kProfiles                     tag.Key
-		kErrorCode                    tag.Key
-		kTry                          tag.Key
-		kSender                       tag.Key
-		kRecipient                    tag.Key
-		kManifestID                   tag.Key
-		mSegmentSourceAppeared        *stats.Int64Measure
-		mSegmentEmerged               *stats.Int64Measure
-		mSegmentEmergedUnprocessed    *stats.Int64Measure
-		mSegmentUploaded              *stats.Int64Measure
-		mSegmentUploadFailed          *stats.Int64Measure
-		mSegmentTranscoded            *stats.Int64Measure
-		mSegmentTranscodedUnprocessed *stats.Int64Measure
-		mSegmentTranscodeFailed       *stats.Int64Measure
-		mSegmentTranscodedAppeared    *stats.Int64Measure
-		mSegmentTranscodedAllAppeared *stats.Int64Measure
-		mStartBroadcastClientFailed   *stats.Int64Measure
-		mStreamCreateFailed           *stats.Int64Measure
-		mStreamCreated                *stats.Int64Measure
-		mStreamStarted                *stats.Int64Measure
-		mStreamEnded                  *stats.Int64Measure
-		mMaxSessions                  *stats.Int64Measure
-		mCurrentSessions              *stats.Int64Measure
-		mDiscoveryError               *stats.Int64Measure
-		mTranscodeRetried             *stats.Int64Measure
-		mTranscodersNumber            *stats.Int64Measure
-		mTranscodersCapacity          *stats.Int64Measure
-		mTranscodersLoad              *stats.Int64Measure
-		mSuccessRate                  *stats.Float64Measure
-		mTranscodeTime                *stats.Float64Measure
-		mTranscodeTimeAvg             *stats.Float64Measure
-		mTranscodeLatency             *stats.Float64Measure
-		mTranscodeOverallLatency      *stats.Float64Measure
-		mTranscodeOverallLatencyAvg   *stats.Float64Measure
-		mUploadTime                   *stats.Float64Measure
-		mAuthWebhookTime              *stats.Float64Measure
-		mSourceSegmentDuration        *stats.Float64Measure
-		mHTTPClientTimeout1           *stats.Int64Measure
-		mHTTPClientTimeout2           *stats.Int64Measure
-		mRealtime3x                   *stats.Int64Measure
-		mRealtime2x                   *stats.Int64Measure
-		mRealtime1x                   *stats.Int64Measure
-		mRealtimeHalf                 *stats.Int64Measure
-		mRealtimeSlow                 *stats.Int64Measure
+		nodeType                                 string
+		nodeID                                   string
+		ctx                                      context.Context
+		kGPU                                     tag.Key
+		kNodeType                                tag.Key
+		kNodeID                                  tag.Key
+		kProfile                                 tag.Key
+		kProfiles                                tag.Key
+		kErrorCode                               tag.Key
+		kTry                                     tag.Key
+		kSender                                  tag.Key
+		kRecipient                               tag.Key
+		kManifestID                              tag.Key
+		mSegmentSourceAppeared                   *stats.Int64Measure
+		mSegmentEmerged                          *stats.Int64Measure
+		mSegmentEmergedUnprocessed               *stats.Int64Measure
+		mSegmentUploaded                         *stats.Int64Measure
+		mSegmentUploadFailed                     *stats.Int64Measure
+		mSegmentTranscoded                       *stats.Int64Measure
+		mSegmentTranscodedUnprocessed            *stats.Int64Measure
+		mSegmentTranscodeFailed                  *stats.Int64Measure
+		mSegmentTranscodedAppeared               *stats.Int64Measure
+		mSegmentTranscodedAllAppeared            *stats.Int64Measure
+		mStartBroadcastClientFailed              *stats.Int64Measure
+		mStreamCreateFailed                      *stats.Int64Measure
+		mStreamCreated                           *stats.Int64Measure
+		mStreamStarted                           *stats.Int64Measure
+		mStreamEnded                             *stats.Int64Measure
+		mMaxSessions                             *stats.Int64Measure
+		mCurrentSessions                         *stats.Int64Measure
+		mDiscoveryError                          *stats.Int64Measure
+		mTranscodeRetried                        *stats.Int64Measure
+		mTranscodersNumber                       *stats.Int64Measure
+		mTranscodersCapacity                     *stats.Int64Measure
+		mTranscodersLoad                         *stats.Int64Measure
+		mSuccessRate                             *stats.Float64Measure
+		mTranscodeTime                           *stats.Float64Measure
+		mTranscodeTimeAvg                        *stats.Float64Measure
+		mTranscodeTimeRealtimeRatio              *stats.Float64Measure
+		mTranscodeTimeRealtimeRatioAvg           *stats.Float64Measure
+		mTranscodeLatency                        *stats.Float64Measure
+		mTranscodeOverallLatency                 *stats.Float64Measure
+		mTranscodeOverallLatencyAvg              *stats.Float64Measure
+		mTranscodeOverallLatencyRealtimeRatio    *stats.Float64Measure
+		mTranscodeOverallLatencyRealtimeRatioAvg *stats.Float64Measure
+		mUploadTime                              *stats.Float64Measure
+		mAuthWebhookTime                         *stats.Float64Measure
+		mSourceSegmentDuration                   *stats.Float64Measure
+		mHTTPClientTimeout1                      *stats.Int64Measure
+		mHTTPClientTimeout2                      *stats.Int64Measure
+		mRealtime3x                              *stats.Int64Measure
+		mRealtime2x                              *stats.Int64Measure
+		mRealtime1x                              *stats.Int64Measure
+		mRealtimeHalf                            *stats.Int64Measure
+		mRealtimeSlow                            *stats.Int64Measure
 
 		// Metrics for sending payments
 		mTicketValueSent    *stats.Float64Measure
@@ -127,11 +131,13 @@ type (
 		mSuggestedGasPrice     *stats.Float64Measure
 		mTranscodingPrice      *stats.Float64Measure
 
-		lock                           sync.Mutex
-		emergeTimes                    map[uint64]map[uint64]time.Time // nonce:seqNo
-		success                        map[uint64]*segmentsAverager
-		transcodeOverallLatencyAverage *movingAverage
-		transcodeTimeAverage           *movingAverage
+		lock                                sync.Mutex
+		emergeTimes                         map[uint64]map[uint64]time.Time // nonce:seqNo
+		success                             map[uint64]*segmentsAverager
+		transcodeOverallLatencyAverage      *movingAverage
+		transcodeOverallLatencyRatioAverage *movingAverage
+		transcodeTimeAverage                *movingAverage
+		transcodeTimeRatioAverage           *movingAverage
 	}
 
 	segmentCount struct {
@@ -182,12 +188,14 @@ var unitTestMode bool
 
 func InitCensus(nodeType, nodeID, version string) {
 	census = censusMetricsCounter{
-		emergeTimes:                    make(map[uint64]map[uint64]time.Time),
-		nodeID:                         nodeID,
-		nodeType:                       nodeType,
-		success:                        make(map[uint64]*segmentsAverager),
-		transcodeOverallLatencyAverage: newMovingAverage(time.Minute, 128),
-		transcodeTimeAverage:           newMovingAverage(time.Minute, 128),
+		emergeTimes:                         make(map[uint64]map[uint64]time.Time),
+		nodeID:                              nodeID,
+		nodeType:                            nodeType,
+		success:                             make(map[uint64]*segmentsAverager),
+		transcodeOverallLatencyAverage:      newMovingAverage(time.Minute, 128),
+		transcodeOverallLatencyRatioAverage: newMovingAverage(time.Minute, 128),
+		transcodeTimeAverage:                newMovingAverage(time.Minute, 128),
+		transcodeTimeRatioAverage:           newMovingAverage(time.Minute, 128),
 	}
 	var err error
 	ctx := context.Background()
@@ -237,12 +245,18 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.mSuccessRate = stats.Float64("success_rate", "Success rate", "per")
 	census.mTranscodeTime = stats.Float64("transcode_time_seconds", "Transcoding time", "sec")
 	census.mTranscodeTimeAvg = stats.Float64("transcode_time_avg_seconds", "Transcoding time average over one minute", "sec")
+	census.mTranscodeTimeRealtimeRatio = stats.Float64("transcode_time_realtime_ratio", "Transcoding time divided by segment's duration", "perc")
+	census.mTranscodeTimeRealtimeRatioAvg = stats.Float64("transcode_time_realtime_ratio_avg", "Transcoding time divided by segment's duration average over one minute", "perc")
 	census.mTranscodeLatency = stats.Float64("transcode_latency_seconds",
-		"Transcoding latency, from source segment emered from segmenter till transcoded segment apeeared in manifest", "sec")
+		"Transcoding latency, from source segment emered from segmenter till transcoded segment appeared in manifest", "sec")
 	census.mTranscodeOverallLatency = stats.Float64("transcode_overall_latency_seconds",
-		"Transcoding latency, from source segment emered from segmenter till all transcoded segment apeeared in manifest", "sec")
+		"Transcoding latency, from source segment emered from segmenter till all transcoded segment appeared in manifest", "sec")
 	census.mTranscodeOverallLatencyAvg = stats.Float64("transcode_overall_latency_avg_seconds",
 		"Transcoding latency average over one minute, from source segment emered from segmenter till all transcoded segment apeeared in manifest", "sec")
+	census.mTranscodeOverallLatencyRealtimeRatio = stats.Float64("transcode_overall_latency_realtime_ratio",
+		"Transcoding latency divided by segment's duration", "perc")
+	census.mTranscodeOverallLatencyRealtimeRatioAvg = stats.Float64("transcode_overall_latency_realtime_ratio_avg",
+		"Transcoding latency divided by segment's duration average over one minute", "perc")
 	census.mUploadTime = stats.Float64("upload_time_seconds", "Upload (to Orchestrator) time", "sec")
 	census.mAuthWebhookTime = stats.Float64("auth_webhook_time_milliseconds", "Authentication webhook execution time", "ms")
 	census.mSourceSegmentDuration = stats.Float64("source_segment_duration_seconds", "Source segment's duration", "sec")
@@ -464,6 +478,20 @@ func InitCensus(nodeType, nodeID, version string) {
 			Aggregation: view.LastValue(),
 		},
 		{
+			Name:        "transcode_time_realtime_ratio",
+			Measure:     census.mTranscodeTimeRealtimeRatio,
+			Description: "Transcoding time divided by segment duration",
+			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
+			Aggregation: view.Distribution(0, .050, .100, 0.250, .500, 0.750, 1.000, 1.250, 1.500, 2.0, 3.000, 4.000, 5.000, 10.0, 20.0, 50.0),
+		},
+		{
+			Name:        "transcode_time_realtime_ratio_avg",
+			Measure:     census.mTranscodeTimeRealtimeRatioAvg,
+			Description: "Transcoding time divided by segment duration average over one minute",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
+		{
 			Name:        "transcode_latency_seconds",
 			Measure:     census.mTranscodeLatency,
 			Description: "Transcoding latency, from source segment emered from segmenter till transcoded segment apeeared in manifest",
@@ -481,6 +509,20 @@ func InitCensus(nodeType, nodeID, version string) {
 			Name:        "transcode_overall_latency_avg_seconds",
 			Measure:     census.mTranscodeOverallLatencyAvg,
 			Description: "Transcoding latency average over one minute, from source segment emered from segmenter till all transcoded segment apeeared in manifest",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "transcode_overall_latency_realtime_ratio",
+			Measure:     census.mTranscodeOverallLatencyRealtimeRatio,
+			Description: "Transcoding latency divided by segment's duration",
+			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
+			Aggregation: view.Distribution(0, .050, .100, 0.250, .500, 0.750, 1.000, 1.250, 1.500, 2.0, 3.000, 4.000, 5.000, 10.0, 20.0, 50.0),
+		},
+		{
+			Name:        "transcode_overall_latency_realtime_ratio_avg",
+			Measure:     census.mTranscodeOverallLatencyRealtimeRatioAvg,
+			Description: "Transcoding latency divided by segment's duration average over one minute",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
@@ -1009,12 +1051,12 @@ func (cen *censusMetricsCounter) segmentUploadFailed(nonce, seqNo uint64, code S
 	}
 }
 
-func SegmentTranscoded(nonce, seqNo uint64, transcodeDur time.Duration, profiles string) {
-	glog.V(logLevel).Infof("Logging SegmentTranscode nonce=%d seqNo=%d dur=%s", nonce, seqNo, transcodeDur)
-	census.segmentTranscoded(nonce, seqNo, transcodeDur, profiles)
+func SegmentTranscoded(nonce, seqNo uint64, segDuration float64, transcodeDur time.Duration, profiles string) {
+	glog.V(logLevel).Infof("Logging SegmentTranscode nonce=%d seqNo=%d dur=%s segment_duration=%v", nonce, seqNo, transcodeDur, segDuration)
+	census.segmentTranscoded(nonce, seqNo, segDuration, transcodeDur, profiles)
 }
 
-func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, transcodeDur time.Duration,
+func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, segDuration float64, transcodeDur time.Duration,
 	profiles string) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
@@ -1023,8 +1065,15 @@ func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, transcod
 		glog.Error("Error creating context", err)
 		return
 	}
-	stats.Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(transcodeDur.Seconds()))
-	stats.Record(cen.ctx, cen.mTranscodeTimeAvg.M(cen.transcodeTimeAverage.addSample(time.Now(), transcodeDur.Seconds())))
+	transDurSec := transcodeDur.Seconds()
+	now := time.Now()
+	stats.Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(transDurSec))
+	stats.Record(cen.ctx, cen.mTranscodeTimeAvg.M(cen.transcodeTimeAverage.addSample(now, transDurSec)))
+	if segDuration > 0 {
+		ratio := transDurSec / segDuration
+		stats.Record(ctx, cen.mTranscodeTimeRealtimeRatio.M(ratio))
+		stats.Record(cen.ctx, cen.mTranscodeTimeRealtimeRatioAvg.M(cen.transcodeTimeRatioAverage.addSample(now, ratio)))
+	}
 }
 
 func SegmentTranscodeFailed(subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
@@ -1065,7 +1114,7 @@ func (cen *censusMetricsCounter) sendSuccess() {
 	stats.Record(cen.ctx, cen.mSuccessRate.M(cen.successRate()))
 }
 
-func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, errCode SegmentTranscodeError) {
+func SegmentFullyTranscoded(nonce, seqNo uint64, segDuration float64, profiles string, errCode SegmentTranscodeError) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 	ctx, err := tag.New(census.ctx, tag.Insert(census.kProfiles, profiles))
@@ -1081,6 +1130,12 @@ func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, errCode Segmen
 			avg := census.transcodeOverallLatencyAverage.addSample(now, latency)
 			stats.Record(ctx, census.mTranscodeOverallLatency.M(latency))
 			stats.Record(census.ctx, census.mTranscodeOverallLatencyAvg.M(avg))
+
+			if segDuration > 0 {
+				ratio := latency / segDuration
+				stats.Record(ctx, census.mTranscodeOverallLatencyRealtimeRatio.M(ratio))
+				stats.Record(census.ctx, census.mTranscodeOverallLatencyRealtimeRatioAvg.M(census.transcodeOverallLatencyRatioAverage.addSample(now, ratio)))
+			}
 		}
 		census.countSegmentEmerged(nonce, seqNo)
 	}
