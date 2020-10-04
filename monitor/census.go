@@ -248,11 +248,11 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.mTranscodeTimeRealtimeRatio = stats.Float64("transcode_time_realtime_ratio", "Transcoding time divided by segment's duration", "perc")
 	census.mTranscodeTimeRealtimeRatioAvg = stats.Float64("transcode_time_realtime_ratio_avg", "Transcoding time divided by segment's duration average over one minute", "perc")
 	census.mTranscodeLatency = stats.Float64("transcode_latency_seconds",
-		"Transcoding latency, from source segment emered from segmenter till transcoded segment appeared in manifest", "sec")
+		"Transcoding latency, from source segment emerged from segmenter till transcoded segment appeared in manifest", "sec")
 	census.mTranscodeOverallLatency = stats.Float64("transcode_overall_latency_seconds",
-		"Transcoding latency, from source segment emered from segmenter till all transcoded segment appeared in manifest", "sec")
+		"Transcoding latency, from source segment emerged from segmenter till all transcoded segment appeared in manifest", "sec")
 	census.mTranscodeOverallLatencyAvg = stats.Float64("transcode_overall_latency_avg_seconds",
-		"Transcoding latency average over one minute, from source segment emered from segmenter till all transcoded segment apeeared in manifest", "sec")
+		"Transcoding latency average over one minute, from source segment emerged from segmenter till all transcoded segment apeeared in manifest", "sec")
 	census.mTranscodeOverallLatencyRealtimeRatio = stats.Float64("transcode_overall_latency_realtime_ratio",
 		"Transcoding latency divided by segment's duration", "perc")
 	census.mTranscodeOverallLatencyRealtimeRatioAvg = stats.Float64("transcode_overall_latency_realtime_ratio_avg",
@@ -494,21 +494,21 @@ func InitCensus(nodeType, nodeID, version string) {
 		{
 			Name:        "transcode_latency_seconds",
 			Measure:     census.mTranscodeLatency,
-			Description: "Transcoding latency, from source segment emered from segmenter till transcoded segment apeeared in manifest",
+			Description: "Transcoding latency, from source segment emerged from segmenter till transcoded segment apeeared in manifest",
 			TagKeys:     append([]tag.Key{census.kProfile}, baseTags...),
 			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000, 20.0, 30.0),
 		},
 		{
 			Name:        "transcode_overall_latency_seconds",
 			Measure:     census.mTranscodeOverallLatency,
-			Description: "Transcoding latency, from source segment emered from segmenter till all transcoded segment apeeared in manifest",
+			Description: "Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
 			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000, 20.0, 30.0),
 		},
 		{
 			Name:        "transcode_overall_latency_avg_seconds",
 			Measure:     census.mTranscodeOverallLatencyAvg,
-			Description: "Transcoding latency average over one minute, from source segment emered from segmenter till all transcoded segment apeeared in manifest",
+			Description: "Transcoding latency average over one minute, from source segment emerged from segmenter till all transcoded segment apeeared in manifest",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
