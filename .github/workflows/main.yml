@@ -7,21 +7,26 @@ jobs:
       run: git config --global core.autocrlf false
     - uses: actions/checkout@v1
     - name: Setup Msys2 environment
-      uses: numworks/setup-msys2@v1
+      uses: msys2/setup-msys2@v2
       with:
         msystem: MSYS
     - name: Install prerequisites
-      run: msys2do pacman -S --noconfirm --noprogressbar --ask=20 perl binutils git make autoconf zip mingw-w64-x86_64-gcc mingw-w64-x86_64-libtool mingw-w64-x86_64-gnutls mingw-w64-x86_64-pkg-config mingw-w64-x86_64-clang
+      shell: msys2 {0}
+      run: pacman -S --noconfirm --noprogressbar --ask=20 perl binutils git make autoconf zip mingw-w64-x86_64-gcc mingw-w64-x86_64-libtool mingw-w64-x86_64-gnutls mingw-w64-x86_64-pkg-config mingw-w64-x86_64-clang
     - name: Install Go 1.13
-      run: msys2do pacman -U --noconfirm --noprogressbar --ask=20 http://repo.msys2.org/mingw/x86_64/mingw-w64-x86_64-go-1.13.8-1-any.pkg.tar.xz
+      shell: msys2 {0}
+      run: pacman -U --noconfirm --noprogressbar --ask=20 http://repo.msys2.org/mingw/x86_64/mingw-w64-x86_64-go-1.13.8-1-any.pkg.tar.xz
     - name: Build ffmpeg
-      run: msys2do ./install_ffmpeg.sh
+      shell: msys2 {0}
+      run: ./install_ffmpeg.sh
     - name: Build Livepeer
-      run: msys2do ./ci_env.sh make livepeer livepeer_cli
+      shell: msys2 {0}
+      run: ./ci_env.sh make livepeer livepeer_cli
     - name: Upload build
+      shell: msys2 {0}
       env: 
         CIRCLE_BRANCH: ${{ github.head_ref }}
         GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
         GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
         DISCORD_URL: ${{ secrets.DISCORD_URL }}
-      run: msys2do ./upload_build.sh
+      run: ./upload_build.sh
