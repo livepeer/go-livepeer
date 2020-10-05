@@ -638,6 +638,7 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 // HandlePush processes request for HTTP ingest
 func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	// we read this unconditionally, mostly for ffmpeg
 	body, err := ioutil.ReadAll(r.Body)
 
@@ -765,6 +766,15 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	select {
+	case <-r.Context().Done():
+		// HTTP request already timed out
+		if monitor.Enabled {
+			monitor.HTTPClientTimedOut1()
+		}
+		return
+	default:
+	}
 	if len(urls) == 0 {
 		http.Error(w, "No sessions available", http.StatusServiceUnavailable)
 		return
@@ -793,6 +803,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mw := multipart.NewWriter(w)
+	var fw io.Writer
 	for i, url := range urls {
 		mw.SetBoundary(boundary)
 		var typ, ext string
@@ -819,18 +830,47 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			"Content-Disposition": {"attachment; filename=" + fname},
 			"Rendition-Name":      {profile},
 		}
-		fw, err := mw.CreatePart(hdrs)
+		fw, err = mw.CreatePart(hdrs)
 		if err != nil {
 			glog.Error("Could not create multipart part ", err)
 			break
 		}
 		if len(renditionData[i]) > 0 {
-			io.Copy(fw, bytes.NewBuffer(renditionData[i]))
+			_, err = io.Copy(fw, bytes.NewBuffer(renditionData[i]))
+			if err != nil {
+				break
+			}
 		} else {
-			fw.Write([]byte(url))
+			_, err = fw.Write([]byte(url))
+			if err != nil {
+				break
+			}
 		}
 	}
-	mw.Close()
+	if err == nil {
+		err = mw.Close()
+	}
+	if err != nil {
+		glog.Errorf("Error sending transcoded response url=%s err=%v", r.URL.String(), err)
+		if monitor.Enabled {
+			monitor.HTTPClientTimedOut2()
+		}
+		return
+	}
+	w.(http.Flusher).Flush()
+	roundtripTime := time.Since(start)
+	select {
+	case <-r.Context().Done():
+		// HTTP request already timed out
+		if monitor.Enabled {
+			monitor.HTTPClientTimedOut2()
+		}
+		return
+	default:
+	}
+	if monitor.Enabled {
+		monitor.SegmentFullyProcessed(seg.Duration, roundtripTime.Seconds())
+	}
 }
 
 //Helper Methods Begin
