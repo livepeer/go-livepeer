@@ -217,6 +217,7 @@ github.com/kr/text v0.1.0 h1:45sCR5RtlFHMR4UwH9sdQ5TC8v0qDQCHnXt+kaKSTVE=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
 github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded h1:ZQlvR5RB4nfT+cOQee+WqmaDOgGtP2oDMhcVvR4L0yA=
 github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded/go.mod h1:xkDdm+akniYxVT9KW1Y2Y7Hso6aW+rZObz3nrA9yTHw=
+github.com/livepeer/lpms v0.0.0-20200728164107-da8d5c9b1d0f/go.mod h1:Vd2O4BVQI/Yj2hzjnNcyTj+qib8zb0hh7GunKP6KJc8=
 github.com/livepeer/lpms v0.0.0-20200924111720-d5c85d86b206 h1:9+CBN2hR3XaQB2TfffYTqzQo/mvj2Md0uq+qELyvLcg=
 github.com/livepeer/lpms v0.0.0-20200924111720-d5c85d86b206/go.mod h1:Vd2O4BVQI/Yj2hzjnNcyTj+qib8zb0hh7GunKP6KJc8=
 github.com/livepeer/m3u8 v0.11.0 h1:aI2hLXV5h5VqxjjmAOs55TpUR35KzNL2XWLkbETql5g=
