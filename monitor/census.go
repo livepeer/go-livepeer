@@ -100,6 +100,13 @@ type (
 		mUploadTime                   *stats.Float64Measure
 		mAuthWebhookTime              *stats.Float64Measure
 		mSourceSegmentDuration        *stats.Float64Measure
+		mHTTPClientTimeout1           *stats.Int64Measure
+		mHTTPClientTimeout2           *stats.Int64Measure
+		mRealtime3x                   *stats.Int64Measure
+		mRealtime2x                   *stats.Int64Measure
+		mRealtime1x                   *stats.Int64Measure
+		mRealtimeHalf                 *stats.Int64Measure
+		mRealtimeSlow                 *stats.Int64Measure
 
 		// Metrics for sending payments
 		mTicketValueSent    *stats.Float64Measure
@@ -177,6 +184,13 @@ func InitCensus(nodeType, nodeID, version string) {
 	if err != nil {
 		glog.Fatal("Error creating context", err)
 	}
+	census.mHTTPClientTimeout1 = stats.Int64("http_client_timeout_1", "Number of times HTTP connection was dropped before transcoding complete", "tot")
+	census.mHTTPClientTimeout2 = stats.Int64("http_client_timeout_2", "Number of times HTTP connection was dropped before transcoded segments was sent back to client", "tot")
+	census.mRealtime3x = stats.Int64("segment_transcoded_realtime_3x", "Number of segment transcoded 3x faster than realtime", "tot")
+	census.mRealtime2x = stats.Int64("segment_transcoded_realtime_2x", "Number of segment transcoded 2x faster than realtime", "tot")
+	census.mRealtime1x = stats.Int64("segment_transcoded_realtime_1x", "Number of segment transcoded 1x faster than realtime", "tot")
+	census.mRealtimeHalf = stats.Int64("segment_transcoded_realtime_half", "Number of segment transcoded no more than two times slower than realtime", "tot")
+	census.mRealtimeSlow = stats.Int64("segment_transcoded_realtime_slow", "Number of segment transcoded more than two times slower than realtime", "tot")
 	census.mSegmentSourceAppeared = stats.Int64("segment_source_appeared_total", "SegmentSourceAppeared", "tot")
 	census.mSegmentEmerged = stats.Int64("segment_source_emerged_total", "SegmentEmerged", "tot")
 	census.mSegmentEmergedUnprocessed = stats.Int64("segment_source_emerged_unprocessed_total", "SegmentEmerged, counted by number of transcode profiles", "tot")
@@ -282,6 +296,55 @@ func InitCensus(nodeType, nodeID, version string) {
 			Name:        "stream_create_failed_total",
 			Measure:     census.mStreamCreateFailed,
 			Description: "StreamCreateFailed",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "http_client_timeout_1",
+			Measure:     census.mHTTPClientTimeout1,
+			Description: "Number of times HTTP connection was dropped before transcoding complete",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "http_client_timeout_2",
+			Measure:     census.mHTTPClientTimeout2,
+			Description: "Number of times HTTP connection was dropped before transcoded segments was sent back to client",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "segment_transcoded_realtime_3x",
+			Measure:     census.mRealtime3x,
+			Description: "Number of segment transcoded 3x faster than realtime",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "segment_transcoded_realtime_2x",
+			Measure:     census.mRealtime2x,
+			Description: "Number of segment transcoded 2x faster than realtime",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "segment_transcoded_realtime_1x",
+			Measure:     census.mRealtime1x,
+			Description: "Number of segment transcoded 1x faster than realtime",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "segment_transcoded_realtime_half",
+			Measure:     census.mRealtimeHalf,
+			Description: "Number of segment transcoded no more than two times slower than realtime",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "segment_transcoded_realtime_slow",
+			Measure:     census.mRealtimeSlow,
+			Description: "Number of segment transcoded more than two times slower than realtime",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
 		},
@@ -839,6 +902,33 @@ func SegmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
 
 func (cen *censusMetricsCounter) segmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
 	stats.Record(cen.ctx, cen.mSegmentUploaded.M(1), cen.mUploadTime.M(float64(uploadDur/time.Second)))
+}
+
+func HTTPClientTimedOut1() {
+	stats.Record(census.ctx, census.mHTTPClientTimeout1.M(1))
+}
+
+func HTTPClientTimedOut2() {
+	stats.Record(census.ctx, census.mHTTPClientTimeout2.M(1))
+}
+
+func SegmentFullyProcessed(segDur, processDur float64) {
+	if processDur == 0 {
+		return
+	}
+	xRealtime := processDur / segDur
+	switch {
+	case xRealtime < 1.0/3.0:
+		stats.Record(census.ctx, census.mRealtime3x.M(1))
+	case xRealtime < 1.0/2.0:
+		stats.Record(census.ctx, census.mRealtime2x.M(1))
+	case xRealtime < 1.0:
+		stats.Record(census.ctx, census.mRealtime1x.M(1))
+	case xRealtime < 2.0:
+		stats.Record(census.ctx, census.mRealtimeHalf.M(1))
+	default:
+		stats.Record(census.ctx, census.mRealtimeSlow.M(1))
+	}
 }
 
 func AuthWebhookFinished(dur time.Duration) {
