@@ -59,7 +59,7 @@ require (
 	github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356 // indirect
 	github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
 	github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded
-	github.com/livepeer/lpms v0.0.0-20200728164107-da8d5c9b1d0f
+	github.com/livepeer/lpms v0.0.0-20200924111720-d5c85d86b206
 	github.com/livepeer/m3u8 v0.11.0
 	github.com/mattn/go-colorable v0.1.2
 	github.com/mattn/go-isatty v0.0.8
