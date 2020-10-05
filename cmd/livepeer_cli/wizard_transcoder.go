@@ -154,8 +154,9 @@ func (w *wizard) activateOrchestrator() {
 		}
 	}
 
-	result := httpPostWithParams(fmt.Sprintf("http://%v:%v/activateOrchestrator", w.host, w.httpPort), val)
-	if result == "" {
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/activateOrchestrator", w.host, w.httpPort), val)
+	if !ok {
+		fmt.Printf("Error activating orchestrator: %v\n", result)
 		return
 	}
 	// TODO we should confirm if the transaction was actually sent
@@ -167,11 +168,13 @@ func (w *wizard) setOrchestratorConfig() {
 
 	val := w.getOrchestratorConfigFormValues()
 
-	result := httpPostWithParams(fmt.Sprintf("http://%v:%v/setOrchestratorConfig", w.host, w.httpPort), val)
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setOrchestratorConfig", w.host, w.httpPort), val)
 
-	if result == "" {
+	if !ok {
+		fmt.Printf("Error applying configuration: %s\n", result)
 		return
 	}
+
 	fmt.Println("\nTransaction sent. Once confirmed, please restart your node if the ServiceURI has been reset")
 }
 
@@ -248,13 +251,12 @@ func (w *wizard) vote() {
 		"choiceID": {fmt.Sprintf("%v", int(choice))},
 	}
 
-	result := httpPostWithParams(fmt.Sprintf("http://%v:%v/vote", w.host, w.httpPort), data)
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/vote", w.host, w.httpPort), data)
 
-	if result == "" {
-		fmt.Println("vote failed")
+	if !ok {
+		fmt.Printf("Error voting: %s\n", result)
 		return
 	}
-
 	fmt.Printf("\nVote success tx=0x%x\n", []byte(result))
 }
 
