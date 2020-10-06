@@ -1,6 +1,7 @@
 package pm
 
 import (
+	"fmt"
 	"math/big"
 	"sync"
 	"testing"
@@ -30,8 +31,9 @@ func defaultSignedTicket(sender ethcommon.Address, senderNonce uint32) *SignedTi
 }
 
 type queueConsumer struct {
-	redeemable []*redemption
-	mu         sync.Mutex
+	redeemable    []*redemption
+	mu            sync.Mutex
+	redemptionErr error
 }
 
 // Redeemable returns the consumed redeemable tickets from a ticket queue
@@ -56,7 +58,7 @@ func (qc *queueConsumer) Wait(num int, e RedeemableEmitter, done chan struct{}) 
 			ticket.resCh <- struct {
 				txHash ethcommon.Hash
 				err    error
-			}{RandHash(), nil}
+			}{ticket.SignedTicket.Hash(), qc.redemptionErr}
 		}
 	}
 	done <- struct{}{}
@@ -121,7 +123,42 @@ func TestTicketQueueLoop(t *testing.T) {
 	redeemable := qc.Redeemable()
 	for i := 0; i < numTickets; i++ {
 		assert.Equal(uint32(i), redeemable[i].SignedTicket.SenderNonce)
+		assert.True(ts.submitted[fmt.Sprintf("%x", redeemable[i].SignedTicket.Sig)])
 	}
+}
+
+func TestTicketQueueLoop_IsUsedTicket_MarkAsRedeemed(t *testing.T) {
+	assert := assert.New(t)
+
+	sender := RandAddress()
+	ts := newStubTicketStore()
+	tm := &stubTimeManager{round: big.NewInt(100)}
+	sm := &LocalSenderMonitor{
+		ticketStore: ts,
+		tm:          tm,
+	}
+
+	q := newTicketQueue(sender, sm)
+	q.Start()
+	defer q.Stop()
+
+	ticket := defaultSignedTicket(sender, 0)
+	q.Add(ticket)
+
+	qlen, err := q.Length()
+	assert.Nil(err)
+	assert.Equal(1, qlen)
+
+	qc := &queueConsumer{redemptionErr: errIsUsedTicket}
+	done := make(chan struct{})
+	go qc.Wait(1, q, done)
+	time.Sleep(20 * time.Millisecond)
+
+	tm.blockNumSink <- big.NewInt(1)
+	<-done
+	time.Sleep(20 * time.Millisecond)
+
+	assert.True(ts.submitted[fmt.Sprintf("%x", ticket.Sig)])
 }
 
 func TestTicketQueueLoopConcurrent(t *testing.T) {

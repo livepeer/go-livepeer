@@ -138,6 +138,7 @@ type stubBroker struct {
 	claimableReserveShouldFail bool
 
 	checkTxErr error
+	isUsedErr  error
 }
 
 func newStubBroker() *stubBroker {
@@ -187,6 +188,10 @@ func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRa
 func (b *stubBroker) IsUsedTicket(ticket *Ticket) (bool, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	if b.isUsedErr != nil {
+		return false, b.isUsedErr
+	}
 
 	return b.usedTickets[ticket.Hash()], nil
 }

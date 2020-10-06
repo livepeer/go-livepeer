@@ -354,6 +354,21 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 		return nil, err
 	}
 
+	// Fail early if ticket is used
+	used, err := sm.broker.IsUsedTicket(ticket.Ticket)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.TicketRedemptionError(ticket.Ticket.Sender.String())
+		}
+		return nil, err
+	}
+	if used {
+		if monitor.Enabled {
+			monitor.TicketRedemptionError(ticket.Ticket.Sender.String())
+		}
+		return nil, errIsUsedTicket
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), sm.cfg.RPCTimeout)
 	gasPrice, err := sm.cfg.SuggestGasPrice(ctx)
 	if err != nil {

@@ -15,6 +15,7 @@ var (
 	errInvalidTicketSignature        = errors.New("invalid ticket signature")
 	errInvalidCreationRound          = errors.New("invalid ticket creation round")
 	errInvalidCreationRoundBlockHash = errors.New("invalid ticket creation round block hash")
+	errIsUsedTicket                  = errors.New("ticket already used")
 )
 
 // Validator is an interface which describes an object capable
