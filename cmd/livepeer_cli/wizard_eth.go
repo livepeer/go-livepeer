@@ -23,6 +23,9 @@ func (w *wizard) signMessage() {
 	val := url.Values{
 		"message": {msg},
 	}
-	sig := httpPostWithParams(fmt.Sprintf("http://%v:%v/signMessage", w.host, w.httpPort), val)
-	fmt.Println(fmt.Sprintf("\n\nSignature:\n0x%x", sig))
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/signMessage", w.host, w.httpPort), val)
+	if !ok {
+		fmt.Printf("Error signing message: %v\n", result)
+	}
+	fmt.Println(fmt.Sprintf("\n\nSignature:\n0x%x", result))
 }

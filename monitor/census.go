@@ -1220,8 +1220,10 @@ func TranscodingPrice(sender string, price *big.Rat) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
-	floatWei, _ := price.Float64()
-	stats.Record(census.ctx, census.mTranscodingPrice.M(floatWei))
+	floatWei, ok := price.Float64()
+	if ok {
+		stats.Record(census.ctx, census.mTranscodingPrice.M(floatWei))
+	}
 }
 
 // Convert wei to gwei

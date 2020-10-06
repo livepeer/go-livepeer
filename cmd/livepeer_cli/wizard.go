@@ -283,22 +283,22 @@ func httpGet(url string) string {
 
 }
 
-func httpPostWithParams(url string, val url.Values) string {
+func httpPostWithParams(url string, val url.Values) (string, bool) {
 	body := bytes.NewBufferString(val.Encode())
 
 	resp, err := http.Post(url, "application/x-www-form-urlencoded", body)
 	if err != nil {
 		log.Error("Error sending HTTP POST", "url", url, "err", err)
-		return ""
+		return "", false
 	}
 
 	defer resp.Body.Close()
 	result, err := ioutil.ReadAll(resp.Body)
 	if err != nil || string(result) == "" {
-		return ""
+		return "", false
 	}
 
-	return string(result)
+	return string(result), resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
 func httpPost(url string) string {

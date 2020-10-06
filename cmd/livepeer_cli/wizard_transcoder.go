@@ -12,6 +12,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	lpcommon "github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
 )
 
@@ -38,11 +39,21 @@ func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string)
 		feeShare       float64
 	)
 
-	fmt.Printf("Enter block reward cut percentage (default: 10) - ")
-	blockRewardCut = w.readDefaultFloat(10.0)
+	orch, _, err := w.getOrchestratorInfo()
+	if err != nil || orch == nil {
+		fmt.Println("unable to get current reward cut and fee share")
+		blockRewardCut = 0
+		feeShare = 0
+	} else {
+		blockRewardCut = eth.ToPerc(orch.RewardCut)
+		feeShare = eth.ToPerc(orch.FeeShare)
+	}
 
-	fmt.Printf("Enter fee share percentage (default: 5) - ")
-	feeShare = w.readDefaultFloat(5.0)
+	fmt.Printf("Enter block reward cut percentage (current=%v default=10) - ", blockRewardCut)
+	blockRewardCut = w.readDefaultFloat(blockRewardCut)
+
+	fmt.Printf("Enter fee share percentage (current=%v default=5) - ", feeShare)
+	feeShare = w.readDefaultFloat(feeShare)
 
 	fmt.Println("Enter a transcoding base price in wei per pixels")
 	fmt.Println("eg. 1 wei / 10 pixels = 0,1 wei per pixel")
@@ -143,7 +154,11 @@ func (w *wizard) activateOrchestrator() {
 		}
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/activateOrchestrator", w.host, w.httpPort), val)
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/activateOrchestrator", w.host, w.httpPort), val)
+	if !ok {
+		fmt.Printf("Error activating orchestrator: %v\n", result)
+		return
+	}
 	// TODO we should confirm if the transaction was actually sent
 	fmt.Println("\nTransaction sent. Once confirmed, please restart your node.")
 }
@@ -153,8 +168,13 @@ func (w *wizard) setOrchestratorConfig() {
 
 	val := w.getOrchestratorConfigFormValues()
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/setOrchestratorConfig", w.host, w.httpPort), val)
-	// TODO we should confirm if the transaction was actually sent
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setOrchestratorConfig", w.host, w.httpPort), val)
+
+	if !ok {
+		fmt.Printf("Error applying configuration: %s\n", result)
+		return
+	}
+
 	fmt.Println("\nTransaction sent. Once confirmed, please restart your node if the ServiceURI has been reset")
 }
 
@@ -231,9 +251,13 @@ func (w *wizard) vote() {
 		"choiceID": {fmt.Sprintf("%v", int(choice))},
 	}
 
-	result := httpPostWithParams(fmt.Sprintf("http://%v:%v/vote", w.host, w.httpPort), data)
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/vote", w.host, w.httpPort), data)
 
-	fmt.Printf("\n%v\n", result)
+	if !ok {
+		fmt.Printf("Error voting: %s\n", result)
+		return
+	}
+	fmt.Printf("\nVote success tx=0x%x\n", []byte(result))
 }
 
 func (w *wizard) showVoteChoices() {

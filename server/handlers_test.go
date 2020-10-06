@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
@@ -798,7 +799,7 @@ func TestVoteHandler(t *testing.T) {
 	defer resp.Body.Close()
 	body, _ = ioutil.ReadAll(resp.Body)
 	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal([]byte("vote success"), body)
+	assert.Equal((&types.Transaction{}).Hash().Bytes(), body)
 }
 
 func httpPostFormResp(handler http.Handler, body io.Reader) *http.Response {

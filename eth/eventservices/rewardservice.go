@@ -15,6 +15,8 @@ var (
 	ErrRewardServiceStopped = fmt.Errorf("reward service already stopped")
 )
 
+const blockTime = 15 * time.Second
+
 type RewardService struct {
 	client          eth.LivepeerEthClient
 	pendingTx       *types.Transaction

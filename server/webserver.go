@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -71,6 +72,8 @@ func (s *LivepeerServer) StartCliWebserver(bindAddr string) {
 	glog.Info("CLI server listening on ", bindAddr)
 	srv.ListenAndServe()
 }
+
+func (s *LivepeerServer) setOnChainConfig() {}
 
 func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	// Override default mux because pprof only uses the default mux
@@ -219,53 +222,65 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		t, err := s.LivepeerNode.Eth.GetTranscoder(s.LivepeerNode.Eth.Account().Address)
 		if err != nil {
 			glog.Error(err)
+			respondWith500(w, err.Error())
 			return
 		}
 
 		if t.Status == "Registered" {
-			glog.Error("Orchestrator is already registered")
+			respondWithError(w, "orchestrator already registered", http.StatusBadRequest)
+			return
+		}
+
+		ok, err := s.LivepeerNode.Eth.CurrentRoundLocked()
+		if err != nil {
+			respondWith500(w, err.Error())
+			return
+		}
+		if !ok {
+			respondWith500(w, "current round is locked")
 			return
 		}
 
 		if err := r.ParseForm(); err != nil {
-			glog.Errorf("Parse Form Error: %v", err)
+			respondWith400(w, fmt.Sprintf("Parse form error: %v", err))
 			return
 		}
 
 		blockRewardCutStr := r.FormValue("blockRewardCut")
 		if blockRewardCutStr == "" {
-			glog.Errorf("Need to provide block reward cut")
+			respondWith400(w, "Need to provide block reward cut")
 			return
 		}
 		blockRewardCut, err := strconv.ParseFloat(blockRewardCutStr, 64)
 		if err != nil {
+			respondWith400(w, err.Error())
 			glog.Error(err)
 			return
 		}
 
 		feeShareStr := r.FormValue("feeShare")
 		if feeShareStr == "" {
-			glog.Errorf("Need to provide fee share")
+			respondWith400(w, "Need to provide fee share")
 			return
 		}
 		feeShare, err := strconv.ParseFloat(feeShareStr, 64)
 		if err != nil {
-			glog.Error(err)
+			respondWith400(w, err.Error())
 			return
 		}
 
 		if err := s.setOrchestratorPriceInfo(r.FormValue("pricePerUnit"), r.FormValue("pixelsPerUnit")); err != nil {
-			glog.Error(err)
+			respondWith400(w, err.Error())
 			return
 		}
 
 		serviceURI := r.FormValue("serviceURI")
 		if serviceURI == "" {
-			glog.Errorf("Need to provide a service URI")
+			respondWith400(w, "Need to provide a service URI")
 			return
 		}
 		if _, err := url.ParseRequestURI(serviceURI); err != nil {
-			glog.Error(err)
+			respondWith400(w, err.Error())
 			return
 		}
 
@@ -273,7 +288,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		if unbondingLockIDStr != "" {
 			unbondingLockID, err := lpcommon.ParseBigInt(unbondingLockIDStr)
 			if err != nil {
-				glog.Error(err)
+				respondWith400(w, err.Error())
 				return
 			}
 
@@ -281,13 +296,13 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 			tx, err := s.LivepeerNode.Eth.RebondFromUnbonded(s.LivepeerNode.Eth.Account().Address, unbondingLockID)
 			if err != nil {
-				glog.Error(err)
+				respondWith500(w, err.Error())
 				return
 			}
 
 			err = s.LivepeerNode.Eth.CheckTx(tx)
 			if err != nil {
-				glog.Error(err)
+				respondWith500(w, err.Error())
 				return
 			}
 		}
@@ -296,7 +311,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		if amountStr != "" {
 			amount, err := lpcommon.ParseBigInt(amountStr)
 			if err != nil {
-				glog.Error(err)
+				respondWith400(w, err.Error())
 				return
 			}
 
@@ -305,13 +320,13 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 				tx, err := s.LivepeerNode.Eth.Bond(amount, s.LivepeerNode.Eth.Account().Address)
 				if err != nil {
-					glog.Error(err)
+					respondWith500(w, err.Error())
 					return
 				}
 
 				err = s.LivepeerNode.Eth.CheckTx(tx)
 				if err != nil {
-					glog.Error(err)
+					respondWith500(w, err.Error())
 					return
 				}
 			}
@@ -321,27 +336,31 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 		tx, err := s.LivepeerNode.Eth.Transcoder(eth.FromPerc(blockRewardCut), eth.FromPerc(feeShare))
 		if err != nil {
-			glog.Error(err)
+			respondWith500(w, err.Error())
 			return
 		}
 
 		err = s.LivepeerNode.Eth.CheckTx(tx)
 		if err != nil {
-			glog.Error(err)
+			respondWith500(w, err.Error())
 			return
 		}
 
 		currentServiceURI, err := s.LivepeerNode.Eth.GetServiceURI(s.LivepeerNode.Eth.Account().Address)
 		if err != nil {
-			glog.Error(err)
+			respondWith500(w, err.Error())
 			return
 		}
 
 		if currentServiceURI != serviceURI {
 			if err := s.setServiceURI(serviceURI); err != nil {
+				respondWith500(w, err.Error())
 				return
 			}
 		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("success"))
 	})
 
 	//Set transcoder config on-chain.
@@ -432,6 +451,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 				}
 			}
 		}
+
 	})
 
 	//Bond some amount of tokens to an orchestrator.
@@ -1184,21 +1204,38 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 }
 
 func (s *LivepeerServer) setOrchestratorPriceInfo(pricePerUnitStr, pixelsPerUnitStr string) error {
+	ok, err := regexp.MatchString("^[0-9]+$", pricePerUnitStr)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("pricePerUnit is not a valid integer, provided %v", pricePerUnitStr)
+	}
+
+	ok, err = regexp.MatchString("^[0-9]+$", pixelsPerUnitStr)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("pixelsPerUnit is not a valid integer, provided %v", pixelsPerUnitStr)
+	}
+
 	pricePerUnit, err := strconv.ParseInt(pricePerUnitStr, 10, 64)
 	if err != nil {
-		return fmt.Errorf("Error converting pricePerUnit string to int64: %v\n", err)
+		return fmt.Errorf("error converting pricePerUnit string to int64: %v", err)
 	}
 	if pricePerUnit < 0 {
-		return fmt.Errorf("price unit must be greater than or equal to 0, provided %d\n", pricePerUnit)
+		return fmt.Errorf("price unit must be greater than or equal to 0, provided %d", pricePerUnit)
 	}
 
 	pixelsPerUnit, err := strconv.ParseInt(pixelsPerUnitStr, 10, 64)
 	if err != nil {
-		return fmt.Errorf("Error converting pixelsPerUnit string to int64: %v\n", err)
+		return fmt.Errorf("error converting pixelsPerUnit string to int64: %v", err)
 	}
 	if pixelsPerUnit <= 0 {
-		return fmt.Errorf("pixels per unit must be greater than 0, provided %d\n", pixelsPerUnit)
+		return fmt.Errorf("pixels per unit must be greater than 0, provided %d", pixelsPerUnit)
 	}
+
 	s.LivepeerNode.SetBasePrice(big.NewRat(pricePerUnit, pixelsPerUnit))
 	glog.Infof("Price per pixel set to %d wei for %d pixels\n", pricePerUnit, pixelsPerUnit)
 	return nil
