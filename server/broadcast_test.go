@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -925,7 +926,9 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 func TestUpdateSession(t *testing.T) {
 	assert := assert.New(t)
 
-	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1}
+	balances := core.NewAddressBalances(5 * time.Minute)
+	defer balances.StopCleanup()
+	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1, Balances: balances}
 	res := &ReceivedTranscodeResult{
 		LatencyScore: 2.1,
 	}
@@ -955,21 +958,34 @@ func TestUpdateSession(t *testing.T) {
 
 	sender := &pm.MockSender{}
 	sess.Sender = sender
+	sess.OrchestratorInfo = &net.OrchestratorInfo{AuthToken: stubAuthToken}
 	res.Info = &net.OrchestratorInfo{
 		TicketParams: &net.TicketParams{},
 		PriceInfo:    &net.PriceInfo{},
+		AuthToken:    stubAuthToken,
 	}
 	sender.On("StartSession", mock.Anything).Return("foo").Once()
 	newSess = updateSession(sess, res)
 	// Check that a new PM session is not created because OrchestratorInfo.TicketParams = nil
 	assert.Equal("foo", newSess.PMSessionID)
 
-	sender.On("StartSession", mock.Anything).Return("bar").Once()
+	sender.On("StartSession", mock.Anything).Return("bar")
 	newSess = updateSession(sess, res)
 	// Check that a new PM session is created
 	assert.Equal("bar", newSess.PMSessionID)
 	// Check that PMSessionID of old session is not mutated
 	assert.Equal("foo", sess.PMSessionID)
+	// Check that Balance of new session is not different because auth token sessionID did not change
+	assert.Equal(newSess.Balance, sess.Balance)
+
+	res.Info.AuthToken = &net.AuthToken{SessionId: "diffdiff"}
+	newSess = updateSession(sess, res)
+	// Check that Balance of new session is different because auth token sessionID did change
+	assert.NotEqual(newSess.Balance, sess.Balance)
+	// Check that new Balance initialized with new auth token sessionID
+	assert.Nil(balances.Balance(ethcommon.Address{}, core.ManifestID("diffdiff")))
+	newSess.Balance.Credit(big.NewRat(5, 1))
+	assert.Equal(balances.Balance(ethcommon.Address{}, core.ManifestID("diffdiff")), big.NewRat(5, 1))
 }
 
 func TestHLSInsertion(t *testing.T) {

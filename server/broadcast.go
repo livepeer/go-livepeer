@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -264,6 +265,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 			BroadcasterOS:    bcastOS,
 			Sender:           n.Sender,
 			PMSessionID:      sessionID,
+			Balances:         n.Balances,
 			Balance:          balance,
 		}
 
@@ -645,6 +647,11 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) *Broadc
 		// during ticket creation in genPayment(). If ticket params validation during ticket
 		// creation fails, then this BroadcastSession will be removed
 		newSess.PMSessionID = newSess.Sender.StartSession(*pmTicketParams(oInfo.TicketParams))
+
+		// Session ID changed so we need to make sure the balance tracks the new session ID
+		if sess.OrchestratorInfo.AuthToken.SessionId != oInfo.AuthToken.SessionId {
+			newSess.Balance = core.NewBalance(ethcommon.BytesToAddress(newSess.OrchestratorInfo.TicketParams.Recipient), core.ManifestID(newSess.OrchestratorInfo.AuthToken.SessionId), sess.Balances)
+		}
 	}
 
 	return newSess

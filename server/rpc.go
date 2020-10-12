@@ -100,6 +100,7 @@ type BroadcastSession struct {
 	BroadcasterOS    drivers.OSSession
 	Sender           pm.Sender
 	PMSessionID      string
+	Balances         *core.AddressBalances
 	Balance          Balance
 	LatencyScore     float64
 }
