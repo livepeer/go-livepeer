@@ -1289,7 +1289,7 @@ func TestRefreshSession(t *testing.T) {
 	defer func() { getOrchestratorInfoRPC = oldGetOrchestratorInfoRPC }()
 
 	// trigger parse URL error
-	sess := StubBroadcastSession(string(0x7f))
+	sess := StubBroadcastSession(string(rune(0x7f)))
 	newSess, err := refreshSession(sess)
 	assert.Nil(newSess)
 	assert.Error(err)
