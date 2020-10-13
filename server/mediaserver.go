@@ -88,10 +88,11 @@ type LivepeerServer struct {
 
 	// Thread sensitive fields. All accesses to the
 	// following fields should be protected by `connectionLock`
-	rtmpConnections map[core.ManifestID]*rtmpConnection
-	lastHLSStreamID core.StreamID
-	lastManifestID  core.ManifestID
-	connectionLock  *sync.RWMutex
+	rtmpConnections   map[core.ManifestID]*rtmpConnection
+	internalManifests map[core.ManifestID]core.ManifestID
+	lastHLSStreamID   core.StreamID
+	lastManifestID    core.ManifestID
+	connectionLock    *sync.RWMutex
 }
 
 type authWebhookResponse struct {
@@ -146,7 +147,8 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 	}
 	server := lpmscore.New(&opts)
 	ls := &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{},
-		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
+		rtmpConnections:   make(map[core.ManifestID]*rtmpConnection),
+		internalManifests: make(map[core.ManifestID]core.ManifestID),
 	}
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
@@ -510,19 +512,26 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	return cxn, nil
 }
 
-func removeRTMPStream(s *LivepeerServer, mid core.ManifestID) error {
+func removeRTMPStream(s *LivepeerServer, extmid core.ManifestID) error {
 	s.connectionLock.Lock()
 	defer s.connectionLock.Unlock()
-	cxn, ok := s.rtmpConnections[mid]
+	intmid := extmid
+	if _intmid, exists := s.internalManifests[extmid]; exists {
+		// Use the internal manifestID that was stored for the provided manifestID
+		// to index into rtmpConnections
+		intmid = _intmid
+	}
+	cxn, ok := s.rtmpConnections[intmid]
 	if !ok || cxn.pl == nil {
-		glog.Error("Attempted to end unknown stream with manifest ID ", mid)
+		glog.Errorf("Attempted to end unknown stream with manifestID=%s", extmid)
 		return errUnknownStream
 	}
 	cxn.stream.Close()
 	cxn.sessManager.cleanup()
 	cxn.pl.Cleanup()
-	glog.Infof("Ended stream with id=%s", mid)
-	delete(s.rtmpConnections, mid)
+	glog.Infof("Ended stream with manifestID=%s external manifestID=%s", intmid, extmid)
+	delete(s.rtmpConnections, intmid)
+	delete(s.internalManifests, extmid)
 
 	if monitor.Enabled {
 		monitor.StreamEnded(cxn.nonce)
@@ -669,12 +678,15 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `Bad URL`, http.StatusBadRequest)
 		return
 	}
-	s.connectionLock.Lock()
+	s.connectionLock.RLock()
+	if intmid, exists := s.internalManifests[mid]; exists {
+		mid = intmid
+	}
 	cxn, exists := s.rtmpConnections[mid]
 	if exists && cxn != nil {
 		cxn.lastUsed = now
 	}
-	s.connectionLock.Unlock()
+	s.connectionLock.RUnlock()
 
 	// Check for presence and register if a fresh cxn
 	if !exists {
@@ -702,21 +714,28 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 		// Start a watchdog to remove session after a period of inactivity
 		ticker := time.NewTicker(httpPushTimeout)
-		go func(s *LivepeerServer, mid core.ManifestID) {
+		go func(s *LivepeerServer, intmid, extmid core.ManifestID) {
 			defer ticker.Stop()
 			for range ticker.C {
 				var lastUsed time.Time
 				s.connectionLock.RLock()
-				if cxn, exists := s.rtmpConnections[mid]; exists {
+				if cxn, exists := s.rtmpConnections[intmid]; exists {
 					lastUsed = cxn.lastUsed
 				}
 				s.connectionLock.RUnlock()
 				if time.Since(lastUsed) > httpPushTimeout {
-					_ = removeRTMPStream(s, mid)
+					_ = removeRTMPStream(s, extmid)
 					return
 				}
 			}
-		}(s, mid)
+		}(s, cxn.mid, mid)
+		if cxn.mid != mid {
+			// AuthWebhook provided different ManifestID
+			s.connectionLock.Lock()
+			s.internalManifests[mid] = cxn.mid
+			s.connectionLock.Unlock()
+			mid = cxn.mid
+		}
 	}
 
 	fname := path.Base(r.URL.Path)
@@ -750,11 +769,11 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 				return
 			case <-tick.Done():
 				glog.V(common.VERBOSE).Infof("watchdog reset mid=%s seq=%d dur=%v started=%v", mid, seq, duration, now)
-				s.connectionLock.Lock()
+				s.connectionLock.RLock()
 				if cxn, exists := s.rtmpConnections[mid]; exists {
 					cxn.lastUsed = time.Now()
 				}
-				s.connectionLock.Unlock()
+				s.connectionLock.RUnlock()
 			}
 		}
 	}()

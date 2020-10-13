@@ -493,14 +493,16 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 		assert.Equal(ffmpeg.FormatNone, BroadcastJobVideoProfiles[i].Format)
 	}
 
+	hookCalled := 0
 	// Sanity check that default profile with webhook is copied
 	// Checking since there is special handling for the default set of profiles
 	// within the webhook hander.
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth := authWebhookResponse{ManifestID: "web"}
+		auth := authWebhookResponse{ManifestID: "intweb"}
 		val, err := json.Marshal(auth)
 		assert.Nil(err, "invalid auth webhook response")
 		w.Write(val)
+		hookCalled++
 	}))
 	defer ts.Close()
 	oldURL := AuthWebhookURL
@@ -512,9 +514,12 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 	h.ServeHTTP(w, req)
 	resp = w.Result()
 	defer resp.Body.Close()
+	assert.Equal(1, hookCalled)
 
 	assert.Len(s.rtmpConnections, 3)
 	cxn, ok = s.rtmpConnections["web"]
+	assert.False(ok, "stream should not exist")
+	cxn, ok = s.rtmpConnections["intweb"]
 	assert.True(ok, "stream did not exist")
 	assert.Equal(ffmpeg.FormatMP4, cxn.profile.Format)
 	assert.Len(cxn.params.Profiles, 2)
@@ -523,6 +528,69 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 		assert.Equal(ffmpeg.FormatMP4, p.Format)
 		assert.Equal(ffmpeg.FormatNone, BroadcastJobVideoProfiles[i].Format)
 	}
+	// Server has empty sessions list, so it will return 503
+	assert.Equal(503, resp.StatusCode)
+
+	h, r, w = requestSetup(s)
+	req = httptest.NewRequest("POST", "/live/web/1.mp4", r)
+	h.ServeHTTP(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	// webhook should not be called again
+	assert.Equal(1, hookCalled)
+
+	assert.Len(s.rtmpConnections, 3)
+	cxn, ok = s.rtmpConnections["web"]
+	assert.False(ok, "stream should not exist")
+	cxn, ok = s.rtmpConnections["intweb"]
+	assert.True(ok, "stream did not exist")
+	assert.Equal(503, resp.StatusCode)
+}
+
+func TestPush_ShouldRemoveSessionAfterTimeoutIfInternalMIDIsUsed(t *testing.T) {
+	defer goleak.VerifyNone(t, ignoreRoutines()...)
+
+	oldRI := httpPushTimeout
+	httpPushTimeout = 2 * time.Millisecond
+	defer func() { httpPushTimeout = oldRI }()
+	assert := assert.New(t)
+	s, cancel := setupServerWithCancel()
+
+	hookCalled := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := authWebhookResponse{ManifestID: "intmid"}
+		val, err := json.Marshal(auth)
+		assert.Nil(err, "invalid auth webhook response")
+		w.Write(val)
+		hookCalled++
+	}))
+	defer ts.Close()
+	oldURL := AuthWebhookURL
+	defer func() { AuthWebhookURL = oldURL }()
+	AuthWebhookURL = ts.URL
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/extmid1/1.ts", nil)
+	s.HandlePush(w, req)
+	resp := w.Result()
+	resp.Body.Close()
+	assert.Equal(1, hookCalled)
+	s.connectionLock.Lock()
+	_, exists := s.rtmpConnections["intmid"]
+	_, existsExt := s.rtmpConnections["extmid1"]
+	intmid := s.internalManifests["extmid1"]
+	s.connectionLock.Unlock()
+	assert.Equal("intmid", string(intmid))
+	assert.True(exists)
+	assert.False(existsExt)
+	time.Sleep(50 * time.Millisecond)
+	s.connectionLock.Lock()
+	_, exists = s.rtmpConnections["intmid"]
+	_, extEx := s.internalManifests["extmid1"]
+	s.connectionLock.Unlock()
+	cancel()
+	assert.False(exists)
+	assert.False(extEx)
 }
 
 func ignoreRoutines() []goleak.Option {
