@@ -216,9 +216,9 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.mSuccessRate = stats.Float64("success_rate", "Success rate", "per")
 	census.mTranscodeTime = stats.Float64("transcode_time_seconds", "Transcoding time", "sec")
 	census.mTranscodeLatency = stats.Float64("transcode_latency_seconds",
-		"Transcoding latency, from source segment emered from segmenter till transcoded segment apeeared in manifest", "sec")
+		"Transcoding latency, from source segment emerged from segmenter till transcoded segment apeeared in manifest", "sec")
 	census.mTranscodeOverallLatency = stats.Float64("transcode_overall_latency_seconds",
-		"Transcoding latency, from source segment emered from segmenter till all transcoded segment apeeared in manifest", "sec")
+		"Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest", "sec")
 	census.mUploadTime = stats.Float64("upload_time_seconds", "Upload (to Orchestrator) time", "sec")
 	census.mAuthWebhookTime = stats.Float64("auth_webhook_time_milliseconds", "Authentication webhook execution time", "ms")
 	census.mSourceSegmentDuration = stats.Float64("source_segment_duration_seconds", "Source segment's duration", "sec")
@@ -435,14 +435,14 @@ func InitCensus(nodeType, nodeID, version string) {
 		{
 			Name:        "transcode_latency_seconds",
 			Measure:     census.mTranscodeLatency,
-			Description: "Transcoding latency, from source segment emered from segmenter till transcoded segment apeeared in manifest",
+			Description: "Transcoding latency, from source segment emerged from segmenter till transcoded segment apeeared in manifest",
 			TagKeys:     append([]tag.Key{census.kProfile}, baseTags...),
 			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
 		},
 		{
 			Name:        "transcode_overall_latency_seconds",
 			Measure:     census.mTranscodeOverallLatency,
-			Description: "Transcoding latency, from source segment emered from segmenter till all transcoded segment apeeared in manifest",
+			Description: "Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
 			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
 		},
