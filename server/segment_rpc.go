@@ -135,7 +135,9 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// Send down 200OK early as an indication that the upload completed
 	// Any further errors come through the response body
 	w.WriteHeader(http.StatusOK)
-	w.(http.Flusher).Flush()
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 
 	hlsStream := stream.HLSSegment{
 		SeqNo: uint64(segData.Seq),

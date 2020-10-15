@@ -798,7 +798,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", contentType)
 	}
 	w.WriteHeader(http.StatusOK)
-	w.(http.Flusher).Flush()
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 	if accept != "multipart/mixed" {
 		return
 	}
@@ -857,7 +859,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	w.(http.Flusher).Flush()
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 	roundtripTime := time.Since(start)
 	select {
 	case <-r.Context().Done():
