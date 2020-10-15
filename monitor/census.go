@@ -901,7 +901,7 @@ func SegmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
 }
 
 func (cen *censusMetricsCounter) segmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
-	stats.Record(cen.ctx, cen.mSegmentUploaded.M(1), cen.mUploadTime.M(float64(uploadDur/time.Second)))
+	stats.Record(cen.ctx, cen.mSegmentUploaded.M(1), cen.mUploadTime.M(uploadDur.Seconds()))
 }
 
 func HTTPClientTimedOut1() {
@@ -985,7 +985,7 @@ func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, transcod
 		glog.Error("Error creating context", err)
 		return
 	}
-	stats.Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(float64(transcodeDur/time.Second)))
+	stats.Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(transcodeDur.Seconds()))
 }
 
 func SegmentTranscodeFailed(subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
@@ -1038,7 +1038,7 @@ func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, errCode Segmen
 	if st, ok := census.emergeTimes[nonce][seqNo]; ok {
 		if errCode == "" {
 			latency := time.Since(st)
-			stats.Record(ctx, census.mTranscodeOverallLatency.M(float64(latency/time.Second)))
+			stats.Record(ctx, census.mTranscodeOverallLatency.M(latency.Seconds()))
 		}
 		census.countSegmentEmerged(nonce, seqNo)
 	}
@@ -1071,7 +1071,7 @@ func (cen *censusMetricsCounter) segmentTranscodedAppeared(nonce, seqNo uint64, 
 	if st, ok := cen.emergeTimes[nonce][seqNo]; ok {
 		latency := time.Since(st)
 		glog.V(logLevel).Infof("Recording latency for segment nonce=%d seqNo=%d profile=%s latency=%s", nonce, seqNo, profile, latency)
-		stats.Record(ctx, cen.mTranscodeLatency.M(float64(latency/time.Second)))
+		stats.Record(ctx, cen.mTranscodeLatency.M(latency.Seconds()))
 	}
 
 	stats.Record(ctx, cen.mSegmentTranscodedAppeared.M(1))
