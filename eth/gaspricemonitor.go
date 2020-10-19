@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/monitor"
 )
 
@@ -130,8 +129,6 @@ func (gpm *GasPriceMonitor) fetchAndUpdateGasPrice(ctx context.Context) error {
 	if monitor.Enabled {
 		monitor.SuggestedGasPrice(gasPrice)
 	}
-
-	glog.V(common.DEBUG).Infof("Cached gas price: %v", gasPrice)
 
 	return nil
 }
