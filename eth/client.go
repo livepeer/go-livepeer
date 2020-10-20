@@ -75,7 +75,7 @@ type LivepeerEthClient interface {
 	Unbond(amount *big.Int) (*types.Transaction, error)
 	WithdrawStake(unbondingLockID *big.Int) (*types.Transaction, error)
 	WithdrawFees() (*types.Transaction, error)
-	ClaimEarnings(endRound *big.Int) error
+	ClaimEarnings(endRound *big.Int) (*types.Transaction, error)
 	GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, error)
 	GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error)
 	GetDelegatorUnbondingLock(addr ethcommon.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error)
@@ -410,15 +410,6 @@ func (c *client) Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transacti
 }
 
 func (c *client) Bond(amount *big.Int, to ethcommon.Address) (*types.Transaction, error) {
-	currentRound, err := c.CurrentRound()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.autoClaimEarnings(currentRound, false); err != nil {
-		return nil, err
-	}
-
 	allowance, err := c.Allowance(c.Account().Address, c.bondingManagerAddr)
 	if err != nil {
 		return nil, err
@@ -439,125 +430,6 @@ func (c *client) Bond(amount *big.Int, to ethcommon.Address) (*types.Transaction
 	}
 
 	return c.BondingManagerSession.Bond(amount, to)
-}
-
-func (c *client) Rebond(unbondingLockID *big.Int) (*types.Transaction, error) {
-	currentRound, err := c.CurrentRound()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.autoClaimEarnings(currentRound, false); err != nil {
-		return nil, err
-	}
-
-	return c.BondingManagerSession.Rebond(unbondingLockID)
-}
-
-func (c *client) RebondFromUnbonded(toAddr ethcommon.Address, unbondingLockID *big.Int) (*types.Transaction, error) {
-	currentRound, err := c.CurrentRound()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.autoClaimEarnings(currentRound, false); err != nil {
-		return nil, err
-	}
-
-	return c.BondingManagerSession.RebondFromUnbonded(toAddr, unbondingLockID)
-}
-
-func (c *client) Unbond(amount *big.Int) (*types.Transaction, error) {
-	currentRound, err := c.CurrentRound()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.autoClaimEarnings(currentRound, false); err != nil {
-		return nil, err
-	}
-
-	return c.BondingManagerSession.Unbond(amount)
-}
-
-func (c *client) WithdrawFees() (*types.Transaction, error) {
-	currentRound, err := c.CurrentRound()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.autoClaimEarnings(currentRound, false); err != nil {
-		return nil, err
-	}
-
-	return c.BondingManagerSession.WithdrawFees()
-}
-
-func (c *client) ClaimEarnings(endRound *big.Int) error {
-	return c.autoClaimEarnings(endRound, true)
-}
-
-func (c *client) autoClaimEarnings(endRound *big.Int, allRounds bool) error {
-	dStatus, err := c.DelegatorStatus(c.Account().Address)
-	if err != nil {
-		return err
-	}
-
-	maxRoundsPerClaim, err := c.MaxEarningsClaimsRounds()
-	if err != nil {
-		return err
-	}
-
-	if dStatus == 1 {
-		dInfo, err := c.BondingManagerSession.GetDelegator(c.Account().Address)
-		if err != nil {
-			return err
-		}
-
-		lastClaimRound := dInfo.LastClaimRound
-
-		var currentEndRound *big.Int
-
-		// Keep claiming `maxRoundsPerClaim` at a time until there are <= `maxRoundsPerClaim` rounds
-		// At this point, any subsequent bonding action will automatically claim through the rest of the rounds
-		// so we do not need to submit an additional `claimEarnings()` transaction
-		for new(big.Int).Sub(endRound, lastClaimRound).Cmp(maxRoundsPerClaim) == 1 {
-			currentEndRound = new(big.Int).Add(lastClaimRound, maxRoundsPerClaim)
-
-			tx, err := c.BondingManagerSession.ClaimEarnings(currentEndRound)
-			if err != nil {
-				return err
-			}
-
-			err = c.CheckTx(tx)
-			if err != nil {
-				return err
-			}
-
-			glog.V(common.SHORT).Infof("Claimed earnings from round %v through %v", lastClaimRound, currentEndRound)
-
-			lastClaimRound = currentEndRound
-		}
-
-		// If `allRounds` is true and there are remaining rounds to be claimed through, claim earnings for them
-		if allRounds && lastClaimRound.Cmp(endRound) == -1 {
-			tx, err := c.BondingManagerSession.ClaimEarnings(endRound)
-			if err != nil {
-				return err
-			}
-
-			err = c.CheckTx(tx)
-			if err != nil {
-				return err
-			}
-
-			glog.V(common.SHORT).Infof("Finished claiming earnings through the end round %v", endRound)
-		} else {
-			glog.V(common.SHORT).Infof("Finished claiming earnings through round %v. Remaining rounds can be automatically claimed through a bonding action", lastClaimRound)
-		}
-	}
-
-	return nil
 }
 
 func (c *client) IsActiveTranscoder() (bool, error) {

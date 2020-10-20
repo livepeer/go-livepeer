@@ -717,7 +717,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 				if !init {
 					return errors.New("Round not initialized")
 				}
-				err = s.LivepeerNode.Eth.ClaimEarnings(endRound)
+				_, err = s.LivepeerNode.Eth.ClaimEarnings(endRound)
 				if err != nil {
 					return err
 				}
