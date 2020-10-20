@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"math"
+	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/golang/glog"
 
@@ -15,6 +18,21 @@ import (
 
 var ErrTranscoderBusy = errors.New("TranscoderBusy")
 var ErrTranscoderStopped = errors.New("TranscoderStopped")
+
+var stopCount int32
+
+func init() {
+	go func() {
+		for {
+			time.Sleep(time.Minute)
+			curCount := atomic.LoadInt32(&stopCount)
+			if curCount > 30 {
+				glog.Errorf("Number of stuck sessions is %d, killing myself", curCount)
+				os.Exit(94)
+			}
+		}
+	}()
+}
 
 type TranscoderSession interface {
 	Transcoder
@@ -143,7 +161,9 @@ type transcoderSession struct {
 
 func (sess *transcoderSession) loop() {
 	defer func() {
+		atomic.AddInt32(&stopCount, 1)
 		sess.transcoder.Stop()
+		atomic.AddInt32(&stopCount, -1)
 		// Attempt to drain any pending messages in the channel.
 		// Otherwise, write a message into the channel to fill it up.
 		// Since we know the channel is buffered with size 1, any
