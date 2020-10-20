@@ -692,22 +692,6 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.HandleFunc("/claimEarnings", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			if err := r.ParseForm(); err != nil {
-				glog.Errorf("Parse Form Error: %v", err)
-				return
-			}
-
-			endRoundStr := r.FormValue("endRound")
-			if endRoundStr == "" {
-				glog.Errorf("Need to provide amount")
-				return
-			}
-			endRound, err := lpcommon.ParseBigInt(endRoundStr)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
 			claim := func() error {
 				init, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
 				if err != nil {
@@ -717,11 +701,15 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 				if !init {
 					return errors.New("Round not initialized")
 				}
-				_, err = s.LivepeerNode.Eth.ClaimEarnings(endRound)
+				currRound, err := s.LivepeerNode.Eth.CurrentRound()
 				if err != nil {
 					return err
 				}
-				return nil
+				tx, err := s.LivepeerNode.Eth.ClaimEarnings(currRound)
+				if err != nil {
+					return err
+				}
+				return s.LivepeerNode.Eth.CheckTx(tx)
 			}
 
 			if err := backoff.Retry(claim, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*15), 5)); err != nil {
