@@ -303,7 +303,7 @@ func InitDB(dbPath string) (*DB, error) {
 	d.insertWinningTicket = stmt
 
 	// Select earliest ticket
-	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue WHERE sender=? AND redeemedAt IS NULL AND txHash IS NULL ORDER BY createdAt ASC LIMIT 1")
+	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue WHERE sender=? AND creationRound >= ? AND redeemedAt IS NULL AND txHash IS NULL ORDER BY createdAt ASC LIMIT 1")
 	if err != nil {
 		glog.Error("Unable to prepare selectEarliestWinningTicket ", err)
 		d.Close()
@@ -311,7 +311,7 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.selectEarliestWinningTicket = stmt
 
-	stmt, err = db.Prepare("SELECT count(sig) FROM ticketQueue WHERE sender=? AND redeemedAt IS NULL AND txHash IS NULL")
+	stmt, err = db.Prepare("SELECT count(sig) FROM ticketQueue WHERE sender=? AND creationRound >= ? AND redeemedAt IS NULL AND txHash IS NULL")
 	if err != nil {
 		glog.Error("Unable to prepare winningTicketCount ", err)
 		d.Close()
@@ -746,10 +746,10 @@ func (db *DB) RemoveWinningTicket(ticket *pm.SignedTicket) error {
 	return nil
 }
 
-// SelectEarliestWinningTicket selects the earliest stored winning ticket for a 'sender'
-// which is not yet redeemed
-func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address) (*pm.SignedTicket, error) {
-	row := db.selectEarliestWinningTicket.QueryRow(sender.Hex())
+// SelectEarliestWinningTicket selects the earliest stored winning ticket for a 'sender' that is not expired and not yet redeemed
+func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address, minCreationRound int64) (*pm.SignedTicket, error) {
+
+	row := db.selectEarliestWinningTicket.QueryRow(sender.Hex(), minCreationRound)
 	var (
 		senderString           string
 		recipient              string
@@ -789,8 +789,8 @@ func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address) (*pm.SignedT
 }
 
 // WinningTicketCount returns the amount of non-redeemed winning tickets for a 'sender'
-func (db *DB) WinningTicketCount(sender ethcommon.Address) (int, error) {
-	row := db.winningTicketCount.QueryRow(sender.Hex())
+func (db *DB) WinningTicketCount(sender ethcommon.Address, minCreationRound int64) (int, error) {
+	row := db.winningTicketCount.QueryRow(sender.Hex(), minCreationRound)
 	var count64 int64
 	if err := row.Scan(&count64); err != nil {
 		if err.Error() != "sql: no rows in result set" {

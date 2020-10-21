@@ -268,7 +268,7 @@ func (sm *LocalSenderMonitor) ensureCache(addr ethcommon.Address) {
 // Caller should hold the lock for LocalSenderMonitor unless the caller is
 // ensureCache() in which case the caller of ensureCache() should hold the lock
 func (sm *LocalSenderMonitor) cache(addr ethcommon.Address) {
-	queue := newTicketQueue(sm.ticketStore, addr, sm.tm.SubscribeBlocks)
+	queue := newTicketQueue(addr, sm)
 	queue.Start()
 	done := make(chan struct{})
 	go sm.startTicketQueueConsumerLoop(queue, done)
@@ -352,6 +352,21 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 	availableFunds, err := sm.availableFunds(ticket.Sender)
 	if err != nil {
 		return nil, err
+	}
+
+	// Fail early if ticket is used
+	used, err := sm.broker.IsUsedTicket(ticket.Ticket)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.TicketRedemptionError(ticket.Ticket.Sender.String())
+		}
+		return nil, err
+	}
+	if used {
+		if monitor.Enabled {
+			monitor.TicketRedemptionError(ticket.Ticket.Sender.String())
+		}
+		return nil, errIsUsedTicket
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), sm.cfg.RPCTimeout)

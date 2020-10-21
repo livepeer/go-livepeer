@@ -4,9 +4,10 @@ import (
 	"math/big"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
 )
+
+const ticketValidityPeriod = 2
 
 // RedeemableEmitter is an interface that describes methods for
 // emitting redeemable tickets
@@ -32,9 +33,7 @@ type redemption struct {
 //
 // Based off of: https://github.com/lightningnetwork/lnd/blob/master/htlcswitch/queue.go
 type ticketQueue struct {
-	// blockSub returns a subscription to receive the last seen block number
-	blockSub func(chan<- *big.Int) event.Subscription
-
+	tm TimeManager
 	// redeemable is a channel that a queue consumer will receive
 	// redeemable tickets on as a sender's max float becomes
 	// sufficient to cover the face value of tickets
@@ -46,11 +45,11 @@ type ticketQueue struct {
 	quit chan struct{}
 }
 
-func newTicketQueue(store TicketStore, sender ethcommon.Address, blockSub func(chan<- *big.Int) event.Subscription) *ticketQueue {
+func newTicketQueue(sender ethcommon.Address, sm *LocalSenderMonitor) *ticketQueue {
 	return &ticketQueue{
-		blockSub:   blockSub,
+		tm:         sm.tm,
 		redeemable: make(chan *redemption),
-		store:      store,
+		store:      sm.ticketStore,
 		sender:     sender,
 		quit:       make(chan struct{}),
 	}
@@ -80,7 +79,7 @@ func (q *ticketQueue) Redeemable() chan *redemption {
 
 // Length returns the current length of the queue
 func (q *ticketQueue) Length() (int, error) {
-	return q.store.WinningTicketCount(q.sender)
+	return q.store.WinningTicketCount(q.sender, new(big.Int).Sub(q.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod)).Int64())
 }
 
 // startQueueLoop blocks until the ticket queue is non-empty. When the queue is non-empty
@@ -92,7 +91,7 @@ func (q *ticketQueue) Length() (int, error) {
 // the ticket at the head of the queue and send it into q.redeemable which an external listener can use to receive redeemable tickets
 func (q *ticketQueue) startQueueLoop() {
 	blockNums := make(chan *big.Int, 10)
-	sub := q.blockSub(blockNums)
+	sub := q.tm.SubscribeBlocks(blockNums)
 	defer sub.Unsubscribe()
 
 ticketLoop:
@@ -109,7 +108,7 @@ ticketLoop:
 				continue
 			}
 			for i := 0; i < int(numTickets); i++ {
-				nextTicket, err := q.store.SelectEarliestWinningTicket(q.sender)
+				nextTicket, err := q.store.SelectEarliestWinningTicket(q.sender, new(big.Int).Sub(q.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod)).Int64())
 				if err != nil {
 					glog.Errorf("Unable select earliest winning ticket err=%v", err)
 					continue ticketLoop
@@ -129,9 +128,12 @@ ticketLoop:
 					case res := <-resCh:
 						// after receiving the response we can close the channel so it can be GC'd
 						close(resCh)
+						// If the ticket is used, we can mark it as redeemed
 						if res.err != nil {
 							glog.Errorf("Error redeeming err=%v", res.err)
-							continue
+							if res.err != errIsUsedTicket {
+								continue
+							}
 						}
 						err := q.store.MarkWinningTicketRedeemed(nextTicket, res.txHash)
 						if err != nil {

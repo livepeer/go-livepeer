@@ -54,7 +54,7 @@ func (ts *stubTicketStore) StoreWinningTicket(ticket *SignedTicket) error {
 	return nil
 }
 
-func (ts *stubTicketStore) SelectEarliestWinningTicket(sender ethcommon.Address) (*SignedTicket, error) {
+func (ts *stubTicketStore) SelectEarliestWinningTicket(sender ethcommon.Address, minCreationRound int64) (*SignedTicket, error) {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 	if ts.loadShouldFail {
@@ -95,7 +95,7 @@ func (ts *stubTicketStore) RemoveWinningTicket(ticket *SignedTicket) error {
 	return nil
 }
 
-func (ts *stubTicketStore) WinningTicketCount(sender ethcommon.Address) (int, error) {
+func (ts *stubTicketStore) WinningTicketCount(sender ethcommon.Address, minCreationRound int64) (int, error) {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 	if ts.loadShouldFail {
@@ -138,6 +138,7 @@ type stubBroker struct {
 	claimableReserveShouldFail bool
 
 	checkTxErr error
+	isUsedErr  error
 }
 
 func newStubBroker() *stubBroker {
@@ -187,6 +188,10 @@ func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRa
 func (b *stubBroker) IsUsedTicket(ticket *Ticket) (bool, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	if b.isUsedErr != nil {
+		return false, b.isUsedErr
+	}
 
 	return b.usedTickets[ticket.Hash()], nil
 }
