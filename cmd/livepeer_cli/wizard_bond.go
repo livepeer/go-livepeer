@@ -332,29 +332,3 @@ func (w *wizard) withdrawStake() {
 func (w *wizard) withdrawFees() {
 	httpPost(fmt.Sprintf("http://%v:%v/withdrawFees", w.host, w.httpPort))
 }
-
-func (w *wizard) claimRewardsAndFees() {
-	currentRound, err := w.currentRound()
-	if err != nil {
-		glog.Errorf("error getting current round: %v\n", err)
-		return
-	}
-	fmt.Printf("Current round: %v\n", currentRound.Int64())
-
-	d, err := w.getDelegatorInfo()
-	if err != nil {
-		glog.Error(err)
-		return
-	}
-
-	fmt.Printf("Last claim round: %v\n", d.LastClaimRound)
-
-	fmt.Printf("Enter end round - ")
-	endRound := w.readBigInt()
-
-	val := url.Values{
-		"endRound": {fmt.Sprintf("%v", endRound.String())},
-	}
-
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/claimEarnings", w.host, w.httpPort), val)
-}

@@ -241,8 +241,8 @@ func (e *StubClient) WithdrawStake(*big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
 func (e *StubClient) WithdrawFees() (*types.Transaction, error) { return nil, nil }
-func (e *StubClient) ClaimEarnings(endRound *big.Int) error {
-	return nil
+func (e *StubClient) ClaimEarnings(endRound *big.Int) (*types.Transaction, error) {
+	return nil, nil
 }
 func (e *StubClient) GetTranscoder(addr common.Address) (*lpTypes.Transcoder, error) {
 	if e.Err != nil {
