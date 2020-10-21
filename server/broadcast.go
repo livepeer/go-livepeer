@@ -236,7 +236,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 			ticketParams *pm.TicketParams
 		)
 
-		if n.Sender != nil {
+		if n.Sender != nil && tinfo.TicketParams != nil {
 			ticketParams = pmTicketParams(tinfo.TicketParams)
 			sessionID = n.Sender.StartSession(*ticketParams)
 		}
