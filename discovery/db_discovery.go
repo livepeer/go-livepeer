@@ -240,7 +240,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 		return fmt.Errorf("could not retrieve orchestrators from DB: %v", err)
 	}
 
-	resc, errc := make(chan *common.DBOrch), make(chan error)
+	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
 	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
 	defer cancel()
 
