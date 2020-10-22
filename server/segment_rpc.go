@@ -401,7 +401,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		req.Header.Set("Content-Type", "video/MP2T")
 	}
 
-	glog.Infof("Submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d bytes=%v orch=%s", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, len(data), ti.Transcoder)
+	glog.Infof("Submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d bytes=%v orch=%s timeout=%s", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, len(data), ti.Transcoder, dur)
 	start := time.Now()
 	resp, err := httpClient.Do(req)
 	uploadDur := time.Since(start)
