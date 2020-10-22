@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestNewDBOrchestratorPoolCache_NilEthClient_ReturnsError(t *testing.T) {
@@ -144,8 +145,6 @@ func TestPoolSize(t *testing.T) {
 func TestDBOrchestratorPoolCacheSize(t *testing.T) {
 	assert := assert.New(t)
 	dbh, dbraw, err := common.TempDB(t)
-	defer dbh.Close()
-	defer dbraw.Close()
 	require := require.New(t)
 	require.Nil(err)
 
@@ -156,7 +155,12 @@ func TestDBOrchestratorPoolCacheSize(t *testing.T) {
 		Sender:   sender,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	defer func() {
+		cancel()
+		dbh.Close()
+		dbraw.Close()
+		goleak.VerifyNone(t, common.IgnoreRoutines()...)
+	}()
 
 	emptyPool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{})
 	require.NoError(err)
@@ -1330,6 +1334,7 @@ func TestOrchestratorPool_ShuffleGetOrchestrators(t *testing.T) {
 }
 
 func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	assert := assert.New(t)
 
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
