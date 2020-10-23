@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"math"
 	"math/big"
+	gonet "net"
 	"net/http"
 	"strings"
 	"time"
@@ -45,7 +46,18 @@ var errCapCompat = errors.New("incompatible capabilities")
 
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
 var httpClient = &http.Client{
-	Transport: &http2.Transport{TLSClientConfig: tlsConfig},
+	Transport: &http2.Transport{
+		TLSClientConfig: tlsConfig,
+		DialTLS: func(network, addr string, cfg *tls.Config) (gonet.Conn, error) {
+			dialer := &tls.Dialer{
+				NetDialer: new(gonet.Dialer),
+				Config:    cfg,
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			return dialer.DialContext(ctx, network, addr)
+		},
+	},
 	// Don't set a timeout here; pass a context to the request
 }
 
