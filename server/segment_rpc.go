@@ -49,13 +49,10 @@ var httpClient = &http.Client{
 	Transport: &http2.Transport{
 		TLSClientConfig: tlsConfig,
 		DialTLS: func(network, addr string, cfg *tls.Config) (gonet.Conn, error) {
-			dialer := &tls.Dialer{
-				NetDialer: new(gonet.Dialer),
-				Config:    cfg,
+			netDialer := &gonet.Dialer{
+				Timeout: 2 * time.Second,
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			return dialer.DialContext(ctx, network, addr)
+			return tls.DialWithDialer(netDialer, network, addr, cfg)
 		},
 	},
 	// Don't set a timeout here; pass a context to the request
