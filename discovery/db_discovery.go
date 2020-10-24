@@ -164,7 +164,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 		return fmt.Errorf("could not retrieve orchestrators from DB: %v", err)
 	}
 
-	resc, errc := make(chan *common.DBOrch), make(chan error)
+	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
 	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
 	defer cancel()
 
@@ -201,7 +201,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 			glog.Errorln(err)
 		case <-ctx.Done():
 			glog.Info("Done fetching stake for orchestrators, context timeout")
-			break
+			return nil
 		}
 	}
 
@@ -270,7 +270,6 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 		}
 		numOrchs++
 		go getOrchInfo(orch)
-
 	}
 
 	for i := 0; i < numOrchs; i++ {
@@ -283,7 +282,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			glog.Errorln(err)
 		case <-ctx.Done():
 			glog.Info("Done fetching orch info for orchestrators, context timeout")
-			break
+			return nil
 		}
 	}
 
