@@ -196,7 +196,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	}
 
 	// Check broadcaster OS session initialization when OS is external
-	drivers.NodeStorage = drivers.NewS3Driver("us", "livepeer", "key", "secret")
+	drivers.NodeStorage, _ = drivers.ParseOSURL("s3://key:secret@us/livepeer", false)
 	externalStorage := drivers.NodeStorage.NewSession(string(mid))
 	sp.OS = externalStorage
 

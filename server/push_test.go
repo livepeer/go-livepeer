@@ -592,24 +592,6 @@ func TestPush_ShouldRemoveSessionAfterTimeoutIfInternalMIDIsUsed(t *testing.T) {
 	assert.False(extEx)
 }
 
-func ignoreRoutines() []goleak.Option {
-	// goleak works by making list of all running goroutines and reporting error if it finds any
-	// this list tells goleak to ignore these goroutines - we're not interested in these particular goroutines
-	funcs2ignore := []string{"github.com/golang/glog.(*loggingT).flushDaemon", "go.opencensus.io/stats/view.(*worker).start",
-		"github.com/rjeczalik/notify.(*recursiveTree).dispatch", "github.com/rjeczalik/notify._Cfunc_CFRunLoopRun", "github.com/ethereum/go-ethereum/metrics.(*meterArbiter).tick",
-		"github.com/ethereum/go-ethereum/consensus/ethash.(*Ethash).remote", "github.com/ethereum/go-ethereum/core.(*txSenderCacher).cache",
-		"internal/poll.runtime_pollWait", "github.com/livepeer/go-livepeer/core.(*RemoteTranscoderManager).Manage", "github.com/livepeer/lpms/core.(*LPMS).Start",
-		"github.com/livepeer/go-livepeer/server.(*LivepeerServer).StartMediaServer", "github.com/livepeer/go-livepeer/core.(*RemoteTranscoderManager).Manage.func1",
-		"github.com/livepeer/go-livepeer/server.(*LivepeerServer).HandlePush.func1", "github.com/rjeczalik/notify.(*nonrecursiveTree).dispatch",
-		"github.com/rjeczalik/notify.(*nonrecursiveTree).internal", "github.com/livepeer/lpms/stream.NewBasicRTMPVideoStream.func1", "github.com/patrickmn/go-cache.(*janitor).Run"}
-
-	res := make([]goleak.Option, 0, len(funcs2ignore))
-	for _, f := range funcs2ignore {
-		res = append(res, goleak.IgnoreTopFunction(f))
-	}
-	return res
-}
-
 func TestPush_ShouldRemoveSessionAfterTimeout(t *testing.T) {
 	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 
@@ -963,7 +945,7 @@ func TestPush_OSPerStream(t *testing.T) {
 	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P720p25fps16x9}
 
 	sd := &stubDiscovery{}
-	sd.infos = []*net.OrchestratorInfo{{Transcoder: ts.URL}}
+	sd.infos = []*net.OrchestratorInfo{{Transcoder: ts.URL, AuthToken: stubAuthToken}}
 	s.LivepeerNode.OrchestratorPool = sd
 
 	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
