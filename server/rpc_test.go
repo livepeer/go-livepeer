@@ -942,7 +942,7 @@ func TestGetOrchestrator_StorageInit(t *testing.T) {
 	assert.Nil(oInfo.Storage)
 
 	// Check when external storage is used
-	drivers.NodeStorage = drivers.NewS3Driver("us", "livepeer", "key", "secret")
+	drivers.NodeStorage, _ = drivers.ParseOSURL("s3://key:secret@us/livepeer", false)
 
 	oInfo, err = getOrchestrator(orch, &net.OrchestratorRequest{})
 	assert.Nil(err)
