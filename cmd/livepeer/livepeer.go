@@ -321,19 +321,6 @@ func main() {
 		lpmon.InitCensus(nodeType, nodeID, core.LivepeerVersion)
 	}
 
-	if n.NodeType == core.TranscoderNode {
-		glog.Info("***Livepeer is in transcoder mode ***")
-		if n.OrchSecret == "" {
-			glog.Fatal("Missing -orchSecret")
-		}
-		if len(orchURLs) > 0 {
-			server.RunTranscoder(n, orchURLs[0].Host, *maxSessions)
-		} else {
-			glog.Fatal("Missing -orchAddr")
-		}
-		return
-	}
-
 	watcherErr := make(chan error)
 	redeemerErr := make(chan error)
 	var timeWatcher *watchers.TimeWatcher
@@ -909,6 +896,17 @@ func main() {
 		}
 
 	}()
+
+	if n.NodeType == core.TranscoderNode {
+		if n.OrchSecret == "" {
+			glog.Fatal("Missing -orchSecret")
+		}
+		if len(orchURLs) <= 0 {
+			glog.Fatal("Missing -orchAddr")
+		}
+
+		go server.RunTranscoder(n, orchURLs[0].Host, *maxSessions)
+	}
 
 	switch n.NodeType {
 	case core.OrchestratorNode:
