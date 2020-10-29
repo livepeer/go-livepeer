@@ -231,12 +231,12 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			return
 		}
 
-		ok, err := s.LivepeerNode.Eth.CurrentRoundLocked()
+		isLocked, err := s.LivepeerNode.Eth.CurrentRoundLocked()
 		if err != nil {
 			respondWith500(w, err.Error())
 			return
 		}
-		if !ok {
+		if isLocked {
 			respondWith500(w, "current round is locked")
 			return
 		}
