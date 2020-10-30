@@ -29,6 +29,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 )
 
@@ -144,8 +145,9 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	profiles := md.Profiles
 	md.Fname = notify.Url
 
+	start := time.Now()
 	tData, err := n.Transcoder.Transcode(md)
-	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
+	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s dur=%v err=%v", notify.TaskId, notify.Url, time.Since(start), err)
 	if err == nil && len(tData.Segments) != len(profiles) {
 		err = errors.New("segment / profile mismatch")
 	}
@@ -188,6 +190,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	if tData != nil {
 		req.Header.Set("Pixels", strconv.FormatInt(tData.Pixels, 10))
 	}
+	uploadStart := time.Now()
 	resp, err := httpc.Do(req)
 	if err != nil {
 		glog.Error("Error submitting results ", err)
@@ -195,7 +198,12 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 	}
-	glog.V(common.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
+	uploadDur := time.Since(uploadStart)
+	glog.V(common.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s dur=%v err=%v", notify.TaskId, notify.Url, uploadDur, err)
+
+	if monitor.Enabled {
+		monitor.SegmentUploaded(0, uint64(notify.TaskId), uploadDur)
+	}
 }
 
 // Orchestrator gRPC
@@ -275,6 +283,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 
 	var segments []*core.TranscodedSegmentData
 	if "multipart/mixed" == mediaType {
+		start := time.Now()
 		mr := multipart.NewReader(r.Body, params["boundary"])
 		for {
 			p, err := mr.NextPart()
@@ -306,6 +315,13 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 			Segments: segments,
 			Pixels:   decodedPixels,
 		}
+		dlDur := time.Since(start)
+		glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%v", r.RemoteAddr, tid, dlDur)
+
+		if monitor.Enabled {
+			monitor.SegmentDownloaded(0, uint64(tid), dlDur)
+		}
+
 		orch.TranscoderResults(tid, &res)
 	}
 	if res.Err != nil {
