@@ -704,6 +704,7 @@ func (rt *RemoteTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 		return nil, err
 	}
 
+	start := time.Now()
 	msg := &net.NotifySegment{
 		Url:     fname,
 		TaskId:  taskID,
@@ -730,8 +731,8 @@ func (rt *RemoteTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 	case <-ctx.Done():
 		return signalEOF(ErrRemoteTranscoderTimeout)
 	case chanData := <-taskChan:
-		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s err=%v",
-			rt.addr, len(chanData.TranscodeData.Segments), taskID, fname, chanData.Err)
+		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v err=%v",
+			rt.addr, len(chanData.TranscodeData.Segments), taskID, fname, time.Since(start), chanData.Err)
 		return chanData.TranscodeData, chanData.Err
 	}
 }
