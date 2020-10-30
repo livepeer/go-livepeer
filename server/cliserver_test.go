@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,7 +9,10 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +37,158 @@ func newMockServer() *httptest.Server {
 	mux := s.cliWebServerHandlers("addr")
 	srv := httptest.NewServer(mux)
 	return srv
+}
+
+func TestActivateOrchestrator(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	eth := &eth.StubClient{
+		Orch: &lpTypes.Transcoder{},
+	}
+	n, _ := core.NewLivepeerNode(eth, "./tmp", nil)
+	n.NodeType = core.TranscoderNode
+	n.TranscoderManager = core.NewRemoteTranscoderManager()
+	strm := &common.StubServerStream{}
+	go func() { n.TranscoderManager.Manage(strm, 5) }()
+	time.Sleep(1 * time.Millisecond)
+	n.Transcoder = n.TranscoderManager
+	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
+	mux := s.cliWebServerHandlers("addr")
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	var (
+		blockRewardCut int    = 5
+		feeShare       int    = 10
+		pricePerUnit   int    = 1
+		pixelsPerUnit  int    = 1
+		serviceURI     string = "http://foo.bar:1337"
+	)
+
+	form := url.Values{
+		"blockRewardCut": {fmt.Sprintf("%v", blockRewardCut)},
+		"feeShare":       {fmt.Sprintf("%v", feeShare)},
+		"pricePerUnit":   {fmt.Sprintf("%v", strconv.Itoa(pricePerUnit))},
+		"pixelsPerUnit":  {fmt.Sprintf("%v", strconv.Itoa(pixelsPerUnit))},
+		"serviceURI":     {fmt.Sprintf("%v", serviceURI)},
+	}
+
+	// Test GetTranscoderError
+	eth.Err = errors.New("GetTranscoder error")
+	req := bytes.NewBufferString(form.Encode())
+	res, err := http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	require.Equal(http.StatusInternalServerError, res.StatusCode)
+	body, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	require.Nil(err)
+	assert.Equal(strings.TrimSpace(string(body)), eth.Err.Error())
+	eth.Err = nil
+
+	// Test Transcoder Registered
+	eth.Orch.Status = "Registered"
+	req = bytes.NewBufferString(form.Encode())
+	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	require.Equal(http.StatusBadRequest, res.StatusCode)
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	require.Nil(err)
+	assert.Equal(strings.TrimSpace(string(body)), "orchestrator already registered")
+	eth.Orch.Status = ""
+
+	// Test CurrentRoundLocked error
+	eth.RoundLockedErr = errors.New("CurrentRoundLocked error")
+	req = bytes.NewBufferString(form.Encode())
+	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	require.Equal(http.StatusInternalServerError, res.StatusCode)
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	require.Nil(err)
+	assert.Equal(strings.TrimSpace(string(body)), eth.RoundLockedErr.Error())
+	eth.RoundLockedErr = nil
+
+	// Test Round Locked
+	eth.RoundLocked = true
+	req = bytes.NewBufferString(form.Encode())
+	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	require.Equal(http.StatusInternalServerError, res.StatusCode)
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	require.Nil(err)
+	assert.Equal(strings.TrimSpace(string(body)), "current round is locked")
+	eth.RoundLocked = false
+
+	// Test no block reward cut
+	form["blockRewardCut"] = []string{""}
+	req = bytes.NewBufferString(form.Encode())
+	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	require.Equal(http.StatusBadRequest, res.StatusCode)
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	require.Nil(err)
+	assert.Equal(strings.TrimSpace(string(body)), "Need to provide block reward cut")
+
+	// Test invalid block reward cut
+	form["blockRewardCut"] = []string{"foo"}
+	req = bytes.NewBufferString(form.Encode())
+	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	require.Equal(http.StatusBadRequest, res.StatusCode)
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	require.Nil(err)
+	assert.Equal(strings.TrimSpace(string(body)), "strconv.ParseFloat: parsing \"foo\": invalid syntax")
+	form["blockRewardCut"] = []string{"5"}
+
+	// Test no feeshare
+	form["feeShare"] = []string{""}
+	req = bytes.NewBufferString(form.Encode())
+	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	require.Equal(http.StatusBadRequest, res.StatusCode)
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	require.Nil(err)
+	assert.Equal(strings.TrimSpace(string(body)), "Need to provide fee share")
+
+	// Test invalid feeshare
+	form["feeShare"] = []string{"foo"}
+	req = bytes.NewBufferString(form.Encode())
+	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	require.Equal(http.StatusBadRequest, res.StatusCode)
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	require.Nil(err)
+	assert.Equal(strings.TrimSpace(string(body)), "strconv.ParseFloat: parsing \"foo\": invalid syntax")
+	form["feeShare"] = []string{"10"}
+
+	// setOrchestratorPriceInfo is tested in webserver_test.go seperately
+
+	// Test no serviceURI
+	form["serviceURI"] = []string{""}
+	req = bytes.NewBufferString(form.Encode())
+	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	require.Equal(http.StatusBadRequest, res.StatusCode)
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	require.Nil(err)
+	assert.Equal(strings.TrimSpace(string(body)), "Need to provide a service URI")
+
+	// Test invalid ServiceURI
+	form["serviceURI"] = []string{"hello world"}
+	req = bytes.NewBufferString(form.Encode())
+	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	require.Equal(http.StatusBadRequest, res.StatusCode)
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	require.Nil(err)
+	assert.Equal(strings.TrimSpace(string(body)), "parse hello world: invalid URI for request")
+	form["serviceURI"] = []string{"http://foo.bar:1337"}
+
+	req = bytes.NewBufferString(form.Encode())
+	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	require.Equal(http.StatusOK, res.StatusCode)
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	require.Nil(err)
+	assert.Equal(strings.TrimSpace(string(body)), "success")
 }
 
 func TestGetStatus(t *testing.T) {

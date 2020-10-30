@@ -181,6 +181,8 @@ type StubClient struct {
 	CheckTxErr                   error
 	TotalStake                   *big.Int
 	TranscoderPoolError          error
+	RoundLocked                  bool
+	RoundLockedErr               error
 }
 
 type stubTranscoder struct {
@@ -200,7 +202,7 @@ func (e *StubClient) BlockHashForRound(round *big.Int) ([32]byte, error) {
 	return e.BlockHashToReturn, nil
 }
 func (e *StubClient) CurrentRoundInitialized() (bool, error)    { return false, nil }
-func (e *StubClient) CurrentRoundLocked() (bool, error)         { return false, nil }
+func (e *StubClient) CurrentRoundLocked() (bool, error)         { return e.RoundLocked, e.RoundLockedErr }
 func (e *StubClient) CurrentRoundStartBlock() (*big.Int, error) { return nil, nil }
 func (e *StubClient) Paused() (bool, error)                     { return false, nil }
 
