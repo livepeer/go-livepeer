@@ -73,11 +73,25 @@ func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 		Accel:  ffmpeg.Nvidia,
 		Device: nv.device,
 	}
-	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md.Profiles)
+	profiles := md.Profiles
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles)
+
+	_, seqNo, parseErr := parseURI(md.Fname)
+	start := time.Now()
+
 	res, err := nv.session.Transcode(in, out)
 	if err != nil {
 		return nil, err
 	}
+
+	if monitor.Enabled && parseErr == nil {
+		// This will run only when fname is actual URL and contains seqNo in it.
+		// When orchestrator works as transcoder, `fname` will be relative path to file in local
+		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
+		// be called in orchestrator.go
+		monitor.SegmentTranscoded(0, seqNo, time.Since(start), common.ProfilesNames(profiles))
+	}
+
 	return resToTranscodeData(res, out)
 }
 
