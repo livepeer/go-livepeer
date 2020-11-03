@@ -66,8 +66,6 @@ require (
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/olebedev/go-duktape.v3 v3.0.0-20190709231704-1e4459ed25ff // indirect
 	gopkg.in/sourcemap.v1 v1.0.5 // indirect
-	gopkg.in/urfave/cli.v1 v1.0.0-00010101000000-000000000000 // indirect
+	gopkg.in/urfave/cli.v1 v1.20.0 // indirect
 	pgregory.net/rapid v0.4.0
 )
-
-replace gopkg.in/urfave/cli.v1 => github.com/urfave/cli v1.22.2-0.20191002033821-63cd2e3d6bb5
