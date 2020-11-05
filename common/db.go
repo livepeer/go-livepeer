@@ -521,11 +521,11 @@ func (db *DB) SelectOrchs(filter *DBOrchFilter) ([]*DBOrch, error) {
 	}
 
 	rows, err := db.dbh.Query(buildSelectOrchsQuery(filter))
-	defer rows.Close()
 	if err != nil {
 		glog.Error("db: Unable to get orchestrators updated in the last 24 hours: ", err)
 		return nil, err
 	}
+	defer rows.Close()
 	orchs := []*DBOrch{}
 	for rows.Next() {
 		var (
@@ -881,10 +881,10 @@ func (db *DB) FindLatestMiniHeader() (*blockwatch.MiniHeader, error) {
 func (db *DB) FindAllMiniHeadersSortedByNumber() ([]*blockwatch.MiniHeader, error) {
 	var headers []*blockwatch.MiniHeader
 	rows, err := db.findAllMiniHeadersSortedByNumber.Query()
-	defer rows.Close()
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var (
 			number  int64
