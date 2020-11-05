@@ -76,6 +76,7 @@ type (
 		mSegmentEmergedUnprocessed    *stats.Int64Measure
 		mSegmentUploaded              *stats.Int64Measure
 		mSegmentUploadFailed          *stats.Int64Measure
+		mSegmentDownloaded            *stats.Int64Measure
 		mSegmentTranscoded            *stats.Int64Measure
 		mSegmentTranscodedUnprocessed *stats.Int64Measure
 		mSegmentTranscodeFailed       *stats.Int64Measure
@@ -98,6 +99,7 @@ type (
 		mTranscodeLatency             *stats.Float64Measure
 		mTranscodeOverallLatency      *stats.Float64Measure
 		mUploadTime                   *stats.Float64Measure
+		mDownloadTime                 *stats.Float64Measure
 		mAuthWebhookTime              *stats.Float64Measure
 		mSourceSegmentDuration        *stats.Float64Measure
 		mHTTPClientTimeout1           *stats.Int64Measure
@@ -196,6 +198,7 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.mSegmentEmergedUnprocessed = stats.Int64("segment_source_emerged_unprocessed_total", "SegmentEmerged, counted by number of transcode profiles", "tot")
 	census.mSegmentUploaded = stats.Int64("segment_source_uploaded_total", "SegmentUploaded", "tot")
 	census.mSegmentUploadFailed = stats.Int64("segment_source_upload_failed_total", "SegmentUploadedFailed", "tot")
+	census.mSegmentDownloaded = stats.Int64("segment_transcoded_downloaded_total", "SegmentDownloaded", "tot")
 	census.mSegmentTranscoded = stats.Int64("segment_transcoded_total", "SegmentTranscoded", "tot")
 	census.mSegmentTranscodedUnprocessed = stats.Int64("segment_transcoded_unprocessed_total", "SegmentTranscodedUnprocessed", "tot")
 	census.mSegmentTranscodeFailed = stats.Int64("segment_transcode_failed_total", "SegmentTranscodeFailed", "tot")
@@ -220,6 +223,7 @@ func InitCensus(nodeType, nodeID, version string) {
 	census.mTranscodeOverallLatency = stats.Float64("transcode_overall_latency_seconds",
 		"Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest", "sec")
 	census.mUploadTime = stats.Float64("upload_time_seconds", "Upload (to Orchestrator) time", "sec")
+	census.mDownloadTime = stats.Float64("download_time_seconds", "Download (from orchestrator) time", "sec")
 	census.mAuthWebhookTime = stats.Float64("auth_webhook_time_milliseconds", "Authentication webhook execution time", "ms")
 	census.mSourceSegmentDuration = stats.Float64("source_segment_duration_seconds", "Source segment's duration", "sec")
 
@@ -384,6 +388,13 @@ func InitCensus(nodeType, nodeID, version string) {
 			Aggregation: view.Count(),
 		},
 		{
+			Name:        "segment_transcoded_downloaded_total",
+			Measure:     census.mSegmentDownloaded,
+			Description: "SegmentDownloaded",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
 			Name:        "segment_transcoded_total",
 			Measure:     census.mSegmentTranscoded,
 			Description: "SegmentTranscoded",
@@ -450,6 +461,12 @@ func InitCensus(nodeType, nodeID, version string) {
 			Name:        "upload_time_seconds",
 			Measure:     census.mUploadTime,
 			Description: "UploadTime, seconds",
+			TagKeys:     baseTags,
+			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
+		},
+		{
+			Name:        "download_time_seconds",
+			Measure:     census.mDownloadTime,
 			TagKeys:     baseTags,
 			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
 		},
@@ -902,6 +919,15 @@ func SegmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
 
 func (cen *censusMetricsCounter) segmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
 	stats.Record(cen.ctx, cen.mSegmentUploaded.M(1), cen.mUploadTime.M(uploadDur.Seconds()))
+}
+
+func SegmentDownloaded(nonce, seqNo uint64, downloadDur time.Duration) {
+	glog.V(logLevel).Infof("Logging SegmentDownloaded... nonce=%d seqNo=%d dur=%s", nonce, seqNo, downloadDur)
+	census.segmentDownloaded(nonce, seqNo, downloadDur)
+}
+
+func (cen *censusMetricsCounter) segmentDownloaded(nonce, seqNo uint64, downloadDur time.Duration) {
+	stats.Record(cen.ctx, cen.mSegmentDownloaded.M(1), cen.mDownloadTime.M(downloadDur.Seconds()))
 }
 
 func HTTPClientTimedOut1() {
