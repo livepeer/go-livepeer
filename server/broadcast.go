@@ -504,6 +504,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}
 	}
 
+	dlStart := time.Now()
 	for i, v := range res.Segments {
 		go dlFunc(v.Url, v.Pixels, i)
 	}
@@ -515,6 +516,11 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	cond.L.Unlock()
 	if dlErr != nil {
 		return nil, dlErr
+	}
+
+	downloadDur := time.Since(dlStart)
+	if monitor.Enabled {
+		monitor.SegmentDownloaded(nonce, seg.SeqNo, downloadDur)
 	}
 
 	if verifier != nil {
