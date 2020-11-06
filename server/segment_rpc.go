@@ -412,7 +412,27 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 
 	glog.Infof("Submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d bytes=%v orch=%s timeout=%s", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, len(data), ti.Transcoder, dur)
 	start := time.Now()
-	resp, err := httpClient.Do(req)
+	uploadCh := make(chan struct {
+		resp *http.Response
+		err  error
+	})
+	go func() {
+		resp, err := httpClient.Do(req)
+		uploadCh <- struct {
+			resp *http.Response
+			err  error
+		}{resp, err}
+	}()
+
+	var resp *http.Response
+	select {
+	case upload := <-uploadCh:
+		resp = upload.resp
+		err = upload.err
+	case <-time.After(time.Duration(seg.Duration * 0.25)):
+		err = errors.New("segment upload timed out")
+	}
+
 	uploadDur := time.Since(start)
 	if err != nil {
 		glog.Errorf("Unable to submit segment orch=%v nonce=%d manifestID=%s sessionID=%s seqNo=%d orch=%s err=%v", ti.Transcoder, nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, ti.Transcoder, err)
