@@ -338,6 +338,8 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), true)
 		}
+	} else {
+		cpl.FlushRecord()
 	}
 
 	var sv *verification.SegmentVerifier
