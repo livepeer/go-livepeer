@@ -1000,15 +1000,15 @@ func TestPush_OSPerStream(t *testing.T) {
 	assert.Equal("transcoded binary data", string(body))
 
 	store2 := drivers.TestMemoryStorages["store2"]
-	sess2 := store2.GetSession("OSTEST01/" + lpmon.NodeID)
+	sess2 := store2.GetSession("sess1/" + lpmon.NodeID)
 	assert.NotNil(sess2)
-	fi, err = sess2.ReadData(ctx, fmt.Sprintf("OSTEST01/%s/source/1.ts", lpmon.NodeID))
+	fi, err = sess2.ReadData(ctx, fmt.Sprintf("sess1/%s/source/1.ts", lpmon.NodeID))
 	assert.Nil(err)
 	assert.NotNil(fi)
 	body, _ = ioutil.ReadAll(fi.Body)
 	assert.Equal("segmentbody", string(body))
 
-	fi, err = sess2.ReadData(ctx, fmt.Sprintf("OSTEST01/%s/P720p25fps16x9/1.ts", lpmon.NodeID))
+	fi, err = sess2.ReadData(ctx, fmt.Sprintf("sess1/%s/P720p25fps16x9/1.ts", lpmon.NodeID))
 	assert.Nil(err)
 	assert.NotNil(fi)
 	body, _ = ioutil.ReadAll(fi.Body)

@@ -739,7 +739,7 @@ func main() {
 			Host:     *gsBucket,
 			RawQuery: fmt.Sprintf("keyfile=%s", *gsKey),
 		}
-		glog.Warningf("-gsbucket and -gskey are deprecated. Instead, you can use -objectStore '%s'", u.String())
+		glog.Warningf("-gsbucket and -gskey are deprecated. Instead, you can use -objectStore %s", u.String())
 		ustr := u.String()
 		objectstore = &ustr
 	}
@@ -751,6 +751,10 @@ func main() {
 			return
 		}
 		drivers.NodeStorage, err = drivers.ParseOSURL(prepared, false)
+		if err != nil {
+			glog.Error("Error creating object store driver: ", err)
+			return
+		}
 	}
 
 	if *recordstore != "" {
@@ -760,15 +764,10 @@ func main() {
 			return
 		}
 		drivers.RecordStorage, err = drivers.ParseOSURL(prepared, true)
-	}
-
-	if *gsBucket != "" && *gsKey != "" {
-		store, err := drivers.NewGoogleDriver(*gsBucket, *gsKey, false)
 		if err != nil {
-			glog.Error("Error creating object store driver: ", err)
+			glog.Error("Error creating recordings object store driver: ", err)
 			return
 		}
-		drivers.NodeStorage = store
 	}
 
 	core.MaxSessions = *maxSessions

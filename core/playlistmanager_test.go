@@ -57,7 +57,7 @@ func TestJSONList1(t *testing.T) {
 	assert.Len(mjspl.Segments["trans1"], 2)
 	assert.Equal(uint64(2), mjspl.Segments["source"][1].SeqNo)
 	assert.Equal("manifestID/test_seg/2.ts", mjspl.Segments["source"][1].URI)
-	assert.Equal(uint64(2000), mjspl.Segments["source"][1].DurationMS)
+	assert.Equal(uint64(2000), mjspl.Segments["source"][1].DurationMs)
 
 	var lastSeq uint64
 	for _, seg := range mjspl.Segments["source"] {
@@ -71,7 +71,7 @@ func TestJSONList1(t *testing.T) {
 	assert.Nil(err)
 	assert.NotNil(mpl)
 	mpl.Live = false
-	mjspl.AddSegmentsToMPL("manifestID", "source", mpl)
+	mjspl.AddSegmentsToMPL("manifestID", "source", mpl, "")
 	mpls := string(mpl.Encode().Bytes())
 	assert.Equal("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:3\n#EXTINF:2.100,\ntest_seg/1.ts\n#EXTINF:2.000,\ntest_seg/2.ts\n#EXTINF:2.500,\ntest_seg/3.ts\n#EXTINF:2.500,\ntest_seg/4.ts\n#EXT-X-ENDLIST\n", mpls)
 }

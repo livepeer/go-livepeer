@@ -103,13 +103,6 @@ func NewGoogleDriver(bucket, keyData string, useFullAPI bool) (OSDriver, error) 
 		jsKey:     &gsKey,
 		parsedKey: parsedKey,
 	}
-	if useFullAPI {
-		client, err := storage.NewClient(context.Background(), option.WithCredentialsJSON(os.keyData))
-		if err != nil {
-			return nil, err
-		}
-		client.Close()
-	}
 	return os, nil
 }
 
@@ -154,8 +147,7 @@ func (os *gsSession) OS() OSDriver {
 func (os *gsSession) createClient() error {
 	client, err := storage.NewClient(context.Background(), option.WithCredentialsJSON(os.keyData))
 	if err != nil {
-		glog.Errorf("Error creating GCP client err=%v", err)
-		return err
+		return fmt.Errorf("Error creating GCP client err=%w", err)
 	}
 	os.client = client
 	return nil

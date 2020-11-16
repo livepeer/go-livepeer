@@ -1123,15 +1123,18 @@ func TestVerifier_Invocation(t *testing.T) {
 func TestVerifier_Verify(t *testing.T) {
 	assert := assert.New(t)
 
-	cxn := &rtmpConnection{}
+	os := drivers.NewMemoryDriver(nil).NewSession("")
+	c := core.NewBasicPlaylistManager(core.ManifestID("streamName"), os, nil)
+	cxn := &rtmpConnection{
+		pl: c,
+	}
 	sess := &BroadcastSession{Params: &core.StreamParameters{}}
 	source := &stream.HLSSegment{}
 	res := &net.TranscodeData{}
 	verifier := verification.NewSegmentVerifier(&verification.Policy{})
 	URIs := []string{}
 	renditionData := [][]byte{}
-	os := drivers.NewMemoryDriver(nil).NewSession("")
-	err := verify(verifier, cxn, sess, source, res, URIs, renditionData, os)
+	err := verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Nil(err)
 
 	sess.Params.ManifestID = core.ManifestID("streamName")
@@ -1146,7 +1149,7 @@ func TestVerifier_Verify(t *testing.T) {
 	verifier = newStubSegmentVerifier(sv)
 	assert.Equal(0, sv.calls)  // sanity check initial call count
 	assert.Len(bsm.sessMap, 1) // sanity check initial bsm map
-	err = verify(verifier, cxn, sess, source, res, URIs, renditionData, os)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.NotNil(err)
 	assert.Equal(1, sv.calls)
 	assert.Equal(sv.err, err)
@@ -1158,7 +1161,7 @@ func TestVerifier_Verify(t *testing.T) {
 	_, retryable := sv.err.(verification.Retryable)
 	assert.True(retryable)
 	verifier = newStubSegmentVerifier(sv)
-	err = verify(verifier, cxn, sess, source, res, URIs, renditionData, os)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.NotNil(err)
 	assert.Equal(2, sv.calls)
 	assert.Equal(sv.err, err)
@@ -1185,7 +1188,7 @@ func TestVerifier_Verify(t *testing.T) {
 	verifier = newStubSegmentVerifier(sv)
 	URIs[0] = name
 	renditionData = [][]byte{[]byte("attempt1")}
-	err = verify(verifier, cxn, sess, source, res, URIs, renditionData, os)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Equal(sv.err, err)
 
 	// Now "insert" 2nd attempt into OS
@@ -1194,7 +1197,7 @@ func TestVerifier_Verify(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal([]byte("attempt2"), mem.GetData(name))
 	renditionData = [][]byte{[]byte("attempt2")}
-	err = verify(verifier, cxn, sess, source, res, URIs, renditionData, os)
+	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt1"), mem.GetData(name))
 }
