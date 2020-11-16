@@ -82,7 +82,7 @@ func (ostore *MemorySession) EndSession() {
 }
 
 func (ostore *MemorySession) ListFiles(ctx context.Context, prefix, delim string) (PageInfo, error) {
-	pi := &dumbPageInfo{}
+	pi := &singlePageInfo{}
 	if prefix == "" {
 		return pi, nil
 	}
@@ -258,20 +258,20 @@ func (dc *dataCache) GetData(name string) []byte {
 	return nil
 }
 
-type dumbPageInfo struct {
+type singlePageInfo struct {
 	files       []FileInfo
 	directories []string
 }
 
-func (dpi *dumbPageInfo) Files() []FileInfo {
+func (dpi *singlePageInfo) Files() []FileInfo {
 	return dpi.files
 }
-func (dpi *dumbPageInfo) Directories() []string {
+func (dpi *singlePageInfo) Directories() []string {
 	return dpi.directories
 }
-func (dpi *dumbPageInfo) HasNextPage() bool {
+func (dpi *singlePageInfo) HasNextPage() bool {
 	return false
 }
-func (dpi *dumbPageInfo) NextPage() (PageInfo, error) {
+func (dpi *singlePageInfo) NextPage() (PageInfo, error) {
 	return nil, ErrNoNextPage
 }

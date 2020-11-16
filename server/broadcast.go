@@ -301,7 +301,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	}
 	name := fmt.Sprintf("%s/%d%s", vProfile.Name, seg.SeqNo, ext)
 	ros := cpl.GetRecordOSSession()
-	segDurMs := strconv.Itoa(int(seg.Duration * 1000))
+	segDurMs := getSegDurMsString(seg)
 	if ros != nil {
 		go func() {
 			for i := 0; i < 2; i++ {
@@ -311,7 +311,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 					glog.Errorf("Error saving nonce=%d manifestID=%s name=%s to record store try=%d err=%v", nonce, mid, name, i, err)
 				} else {
 					cpl.InsertHLSSegmentJSON(vProfile, seg.SeqNo, uri, seg.Duration)
-					glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s size=%d bytes to record store took=%s",
+					glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s bytes=%d to record store took=%s",
 						nonce, mid, name, len(seg.Data), time.Since(now))
 					break
 				}
@@ -495,7 +495,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			go func() {
 				ext, _ := common.ProfileFormatExtension(profile.Format)
 				name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
-				segDurMs := strconv.Itoa(int(seg.Duration * 1000))
+				segDurMs := getSegDurMsString(seg)
 				for i := 0; i < 2; i++ {
 					now := time.Now()
 					uri, err := bros.SaveData(name, data, map[string]string{"duration": segDurMs})
@@ -567,7 +567,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 
 	if verifier != nil {
 		// verify potentially can change content of segURLs
-		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs, segData, cpl.GetOSSession())
+		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs, segData)
 		if err != nil {
 			glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
 			return nil, err
@@ -607,7 +607,7 @@ func shouldStopSession(err error) bool {
 
 func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 	sess *BroadcastSession, source *stream.HLSSegment,
-	res *net.TranscodeData, URIs []string, segData [][]byte, os drivers.OSSession) error {
+	res *net.TranscodeData, URIs []string, segData [][]byte) error {
 
 	// Cache segment contents in params.Renditions
 	// If we need to retry transcoding because verification fails,
@@ -621,7 +621,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 		Results:      res,
 		URIs:         URIs,
 		Renditions:   segData,
-		OS:           os,
+		OS:           cxn.pl.GetOSSession(),
 	}
 
 	// The return value from the verifier, if any, are the *accepted* params.
@@ -756,4 +756,8 @@ func shouldRefreshSession(sess *BroadcastSession) (bool, error) {
 	}
 
 	return false, nil
+}
+
+func getSegDurMsString(seg *stream.HLSSegment) string {
+	return strconv.Itoa(int(seg.Duration * 1000))
 }

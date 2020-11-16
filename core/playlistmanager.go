@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -16,6 +17,8 @@ import (
 )
 
 const LIVE_LIST_LENGTH uint = 6
+
+const jsonPlaylistRotationInterval = 60 * 60 * 1000 // 1 hour (in ms)
 
 //	PlaylistManager manages playlists and data for one video stream, backed by one object storage.
 type PlaylistManager interface {
@@ -54,7 +57,7 @@ type BasicPlaylistManager struct {
 type jsonSeg struct {
 	SeqNo      uint64 `json:"seq_no,omitempty"`
 	URI        string `json:"uri,omitempty"`
-	DurationMS uint64 `json:"duration_ms,omitempty"`
+	DurationMs uint64 `json:"duration_ms,omitempty"`
 }
 
 type JsonPlaylist struct {
@@ -87,17 +90,28 @@ func (jpl *JsonPlaylist) AddMaster(ajpl *JsonPlaylist) {
 }
 
 // AddSegmentsToMPL adds segments to the MediaPlaylist
-func (jpl *JsonPlaylist) AddSegmentsToMPL(manifestID, trackName string, mpl *m3u8.MediaPlaylist) {
+func (jpl *JsonPlaylist) AddSegmentsToMPL(manifestID, trackName string, mpl *m3u8.MediaPlaylist, extURL string) {
 	for _, seg := range jpl.Segments[trackName] {
 		// make relative URL from absolute one
 		uri := seg.URI
 		mindex := strings.Index(uri, manifestID)
 		if mindex != -1 {
-			uri = uri[mindex+len(manifestID)+1:]
+			// If extURL was specified we will put absolute URL to the segment into manifest
+			// extURL points to the root of object store, so we should take part of the 'uri'
+			// which contains manifestID.
+			// If extURL is not specified then we're serving relative URL to the segment,
+			// and address at which manifest is served already contains manfiestID
+			// (broadcaster.com/recordings/manifestID/index.m3u8), so we're taking
+			// part of the 'uri' after the manifestID
+			if extURL != "" {
+				uri = path.Join(extURL, uri[mindex:])
+			} else {
+				uri = uri[mindex+len(manifestID)+1:]
+			}
 		}
 		mseg := &m3u8.MediaSegment{
 			URI:      uri,
-			Duration: float64(seg.DurationMS) / 1000.0,
+			Duration: float64(seg.DurationMs) / 1000.0,
 		}
 		mpl.InsertSegment(seg.SeqNo, mseg)
 	}
@@ -134,8 +148,6 @@ func (jpl *JsonPlaylist) AddTrack(ajpl *JsonPlaylist, trackName string) {
 				// x is not present in data,
 				// but i is the index where it would be inserted.
 				if i < len(curSegs) {
-					// glog.Errorf("track %s cur segs len %d i %d seq %d", trackName, len(curSegs), i, seg.SeqNo)
-					// panic("not implemented")
 					needSort = true
 				}
 				curSegs = append(curSegs, seg)
@@ -168,7 +180,7 @@ func (jpl *JsonPlaylist) InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo ui
 	}
 	jpl.Segments[profile.Name] = append(jpl.Segments[profile.Name], jsonSeg{
 		URI:        uri,
-		DurationMS: durationMs,
+		DurationMs: durationMs,
 		SeqNo:      seqNo,
 	})
 }
@@ -219,11 +231,11 @@ func (mgr *BasicPlaylistManager) FlushRecord() {
 		}
 		go func(name string, data []byte) {
 			now := time.Now()
-			mgr.recordSession.SaveData(name, b, nil)
-			glog.V(common.VERBOSE).Infof("Saving json playlist name=%s size=%d bytes took=%s", name,
-				len(b), time.Since(now))
+			_, err := mgr.recordSession.SaveData(name, b, nil)
+			glog.V(common.VERBOSE).Infof("Saving json playlist name=%s size=%d bytes took=%s err=%v", name,
+				len(b), time.Since(now), err)
 		}(mgr.jsonList.name, b)
-		if mgr.jsonList.DurationMs > 60*60*1000 { // 1 hour
+		if mgr.jsonList.DurationMs > jsonPlaylistRotationInterval {
 			mgr.jsonList = NewJSONPlaylist()
 		}
 	}

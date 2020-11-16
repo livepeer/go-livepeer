@@ -99,12 +99,13 @@ type LivepeerServer struct {
 }
 
 type authWebhookResponse struct {
-	ManifestID        string   `json:"manifestID"`
-	StreamKey         string   `json:"streamKey"`
-	Presets           []string `json:"presets"`
-	ObjectStore       string   `json:"objectStore"`
-	RecordObjectStore string   `json:"recordObjectStore"`
-	Profiles          []struct {
+	ManifestID           string   `json:"manifestID"`
+	StreamKey            string   `json:"streamKey"`
+	Presets              []string `json:"presets"`
+	ObjectStore          string   `json:"objectStore"`
+	RecordObjectStore    string   `json:"recordObjectStore"`
+	RecordObjectStoreURL string   `json:"recordObjectStoreUrl"`
+	Profiles             []struct {
 		Name    string `json:"name"`
 		Width   int    `json:"width"`
 		Height  int    `json:"height"`
@@ -260,8 +261,9 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			profiles = BroadcastJobVideoProfiles
 		}
 
+		sid := parseStreamID(url.Path)
+		extmid := sid.ManifestID
 		if mid == "" {
-			sid := parseStreamID(url.Path)
 			mid, key = sid.ManifestID, sid.Rendition
 		}
 		if mid == "" {
@@ -272,9 +274,11 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			oss = os.NewSession(string(mid))
 		}
 
+		recordPath := fmt.Sprintf("%s/%s", extmid, lpmon.NodeID)
 		if ros != nil {
-			recordPath := fmt.Sprintf("%s/%s", mid, lpmon.NodeID)
 			ross = ros.NewSession(recordPath)
+		} else if drivers.RecordStorage != nil {
+			ross = drivers.RecordStorage.NewSession(recordPath)
 		}
 
 		// Ensure there's no concurrent StreamID with the same name
@@ -322,7 +326,7 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 	rbody, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Status=%d error=%s", resp.StatusCode, string(rbody))
+		return nil, fmt.Errorf("status=%d error=%s", resp.StatusCode, string(rbody))
 	}
 	if len(rbody) == 0 {
 		return nil, nil
@@ -485,10 +489,6 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 	if params.OS == nil {
 		params.OS = drivers.NodeStorage.NewSession(string(mid))
-	}
-	if params.RecordOS == nil && drivers.RecordStorage != nil {
-		recordPath := fmt.Sprintf("%s/%s", mid, lpmon.NodeID)
-		params.RecordOS = drivers.RecordStorage.NewSession(recordPath)
 	}
 	storage := params.OS
 
@@ -691,6 +691,7 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if r.Method != "POST" && r.Method != "PUT" {
+		glog.Errorf(`http push request wrong method=%s url=%s host=%s`, r.Method, r.URL, r.Host)
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
@@ -949,26 +950,32 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleRecordings handle requests to /recodings/ endpoint
+// HandleRecordings handle requests to /recordings/ endpoint
 func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
+		glog.Errorf(`/recordings request wrong method=%s url=%s host=%s`, r.Method, r.URL, r.Host)
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 	ext := path.Ext(r.URL.Path)
 	if ext != ".m3u8" && ext != ".ts" {
+		glog.Errorf(`/recordings request wrong extension=%s url=%s host=%s`, ext, r.URL, r.Host)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	r.URL.Host = r.Host
+	if r.URL.Scheme == "" {
+		r.URL.Scheme = "http"
+	}
 	pp := strings.Split(r.URL.Path, "/")
 	finalize := r.URL.Query().Get("finalize") == "true"
 	_, finalizeSet := r.URL.Query()["finalize"]
 	if len(pp) < 4 {
+		glog.Errorf(`/recordings request wrong url structure url=%s host=%s`, r.URL, r.Host)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	glog.V(common.DEBUG).Infof("Got recordings request=%s", r.URL.String())
+	glog.V(common.VERBOSE).Infof("/recordings request=%s", r.URL.String())
 	now := time.Now()
 	defer func() {
 		glog.V(common.VERBOSE).Infof("request=%s took=%s headers=%+v", r.URL.String(), time.Since(now), w.Header())
@@ -1001,7 +1008,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	if resp != nil && resp.RecordObjectStore != "" {
 		os, err := drivers.ParseOSURL(resp.RecordObjectStore, true)
 		if err != nil {
-			glog.Errorf("Error parsing OS URL err=%v", err)
+			glog.Errorf("Error parsing OS URL err=%v request url=%s", err, r.URL)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -1009,7 +1016,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	} else if drivers.RecordStorage != nil {
 		sess = drivers.RecordStorage.NewSession(manifestID)
 	} else {
-		glog.Error("No record object store defined")
+		glog.Errorf("No record object store defined for request url=%s", r.URL)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -1035,7 +1042,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		now2 := time.Now()
 		io.Copy(w, fi.Body)
 		fi.Body.Close()
-		glog.V(common.VERBOSE).Infof("Request=%s streaming filename=%s took=%s from_read_took=%s", r.URL.String(), requestFileName, time.Since(now2), time.Since(nowr))
+		glog.V(common.VERBOSE).Infof("request url=%s streaming filename=%s took=%s from_read_took=%s", r.URL.String(), requestFileName, time.Since(now2), time.Since(nowr))
 		return
 	}
 	now2 := time.Now()
@@ -1141,7 +1148,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	if finalize {
 		for trackName := range mainJspl.Segments {
 			mpl := mediaLists[trackName]
-			mainJspl.AddSegmentsToMPL(manifestID, trackName, mpl)
+			mainJspl.AddSegmentsToMPL(manifestID, trackName, mpl, resp.RecordObjectStoreURL)
 			fileName := trackName + ".m3u8"
 			nows := time.Now()
 			_, err = sess.SaveData(fileName, mpl.Encode().Bytes(), nil)
@@ -1162,7 +1169,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		}
 	} else if !returnMasterPlaylist {
 		mpl := mediaLists[track]
-		mainJspl.AddSegmentsToMPL(manifestID, track, mpl)
+		mainJspl.AddSegmentsToMPL(manifestID, track, mpl, resp.RecordObjectStoreURL)
 		// check (debug code)
 		startSeq := mpl.Segments[0].SeqId
 		for _, seg := range mpl.Segments[1:] {

@@ -104,7 +104,10 @@ func PrepareOSURL(input string) (string, error) {
 		return "", err
 	}
 	if u.Scheme == "gs" {
-		m, _ := url.ParseQuery(u.RawQuery)
+		m, err := url.ParseQuery(u.RawQuery)
+		if err != nil {
+			return "", err
+		}
 		keyfiles, ok := m["keyfile"]
 		if !ok {
 			return u.String(), nil
