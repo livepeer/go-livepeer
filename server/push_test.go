@@ -236,7 +236,7 @@ func TestPush_EmptyURLError(t *testing.T) {
 	body, err := ioutil.ReadAll(resp.Body)
 	require.Nil(t, err)
 	assert.Equal(http.StatusBadRequest, resp.StatusCode)
-	assert.Equal("Bad URL\n", string(body))
+	assert.Contains(string(body), "Bad URL")
 }
 
 func TestPush_ShouldUpdateLastUsed(t *testing.T) {

@@ -691,8 +691,9 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if r.Method != "POST" && r.Method != "PUT" {
-		glog.Errorf(`http push request wrong method=%s url=%s host=%s`, r.Method, r.URL, r.Host)
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		httpErr := fmt.Sprintf(`http push request wrong method=%s url=%s host=%s`, r.Method, r.URL, r.Host)
+		glog.Error(httpErr)
+		http.Error(w, httpErr, http.StatusMethodNotAllowed)
 		return
 	}
 	// we read this unconditionally, mostly for ffmpeg
@@ -714,16 +715,20 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		// ffmpeg sends us a m3u8 as well, so ignore
 		// Alternatively, reject m3u8s explicitly and take any other type
 		// TODO also look at use content-type
-		http.Error(w, fmt.Sprintf(`ignoring file extension: %s`, ext), http.StatusBadRequest)
+		httpErr := fmt.Sprintf(`ignoring file extension: %s`, ext)
+		glog.Error(httpErr)
+		http.Error(w, httpErr, http.StatusBadRequest)
 		return
 	}
-	glog.Infof("Got push request at url=%s ua=%s addr=%s len=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
+	glog.Infof("Got push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
 		r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"))
 
 	now := time.Now()
 	mid := parseManifestID(r.URL.Path)
 	if mid == "" {
-		http.Error(w, `Bad URL`, http.StatusBadRequest)
+		httpErr := fmt.Sprintf("Bad URL url=%s", r.URL)
+		glog.Error(httpErr)
+		http.Error(w, httpErr, http.StatusBadRequest)
 		return
 	}
 	s.connectionLock.RLock()
@@ -740,7 +745,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	if !exists {
 		appData := (createRTMPStreamIDHandler(s))(r.URL)
 		if appData == nil {
-			http.Error(w, "Could not create stream ID: ", http.StatusInternalServerError)
+			httpErr := fmt.Sprintf("Could not create stream ID: url=%s", r.URL)
+			glog.Error(httpErr)
+			http.Error(w, httpErr, http.StatusInternalServerError)
 			return
 		}
 		st := stream.NewBasicRTMPVideoStream(appData)
@@ -756,7 +763,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 		cxn, err = s.registerConnection(st)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpErr := fmt.Sprintf("http push error url=%s err=%v", r.URL, err)
+			glog.Error(httpErr)
+			http.Error(w, httpErr, http.StatusInternalServerError)
 			return
 		}
 
@@ -834,7 +843,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	urls, err := processSegment(cxn, seg)
 	if err != nil {
 		// TODO distinguish between user errors (400) and server errors (500)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpErr := fmt.Sprintf("http push error processing segment url=%s manifestID=%s err=%v", r.URL, mid, err)
+		glog.Error(httpErr)
+		http.Error(w, httpErr, http.StatusInternalServerError)
 		return
 	}
 	select {
@@ -847,7 +858,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	default:
 	}
 	if len(urls) == 0 {
-		glog.Infof("No sessions available for manifestID=%s seqNo=%d name=%s", mid, seq, fname)
+		glog.Infof("No sessions available for manifestID=%s seqNo=%d name=%s url=%s", mid, seq, fname, r.URL)
 		http.Error(w, "No sessions available", http.StatusServiceUnavailable)
 		return
 	}
@@ -894,7 +905,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 			typ, err = common.ProfileFormatMimeType(format)
 			if err != nil {
-				glog.Error("Unknown mime type for format: ", err)
+				glog.Errorf("Unknown mime type for format url=%s manifestID=%s err=%v ", r.URL, mid, err)
 			}
 		}
 		profile := cxn.params.Profiles[i].Name
