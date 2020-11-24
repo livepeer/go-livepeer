@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 
@@ -23,68 +21,63 @@ type webhookResponse struct {
 }
 
 type webhookPool struct {
-	pool         *orchestratorPool
-	callback     *url.URL
-	responseHash ethcommon.Hash
-	lastRequest  time.Time
-	mu           *sync.RWMutex
-	bcast        common.Broadcaster
+	pool        *orchestratorPool
+	callback    *url.URL
+	lastRequest time.Time
+	*sync.RWMutex
+	bcast common.Broadcaster
 }
 
 func NewWebhookPool(bcast common.Broadcaster, callback *url.URL) *webhookPool {
 	p := &webhookPool{
 		callback: callback,
-		mu:       &sync.RWMutex{},
 		bcast:    bcast,
+		RWMutex:  &sync.RWMutex{},
 	}
-	go p.getURLs()
+	p.getURLs()
 	return p
 }
 
 func (w *webhookPool) getURLs() ([]*url.URL, error) {
-	w.mu.RLock()
+	w.RLock()
 	lastReq := w.lastRequest
 	pool := w.pool
-	w.mu.RUnlock()
+	w.RUnlock()
 
+	var addrs []*url.URL
 	// retrive addrs from cache if time since lastRequest is less than the refresh interval
 	if time.Since(lastReq) < whRefreshInterval {
-		return pool.GetURLs(), nil
-	}
+		addrs = pool.GetURLs()
+	} else {
+		// retrive addrs from webhook if time since lastRequest is more than the refresh interval
+		body, err := getURLsfromWebhook(w.callback)
+		if err != nil {
+			return nil, err
+		}
 
-	// retrive addrs from webhook if time since lastRequest is more than the refresh interval
-	body, err := getURLsfromWebhook(w.callback)
-	if err != nil {
-		return nil, err
-	}
+		addrs, err = deserializeWebhookJSON(body)
+		if err != nil {
+			return nil, err
+		}
 
-	hash := ethcommon.BytesToHash(crypto.Keccak256(body))
-	if hash == w.responseHash {
-		w.mu.Lock()
+		w.Lock()
+		w.pool = NewOrchestratorPool(w.bcast, addrs)
 		w.lastRequest = time.Now()
-		pool = w.pool // may have been reset since beginning
-		w.mu.Unlock()
-		return pool.GetURLs(), nil
+		w.Unlock()
 	}
-
-	addrs, err := deserializeWebhookJSON(body)
-	if err != nil {
-		return nil, err
-	}
-
-	pool = NewOrchestratorPool(w.bcast, addrs)
-
-	w.mu.Lock()
-	w.responseHash = hash
-	w.pool = pool
-	w.lastRequest = time.Now()
-	w.mu.Unlock()
 
 	return addrs, nil
 }
 
 func (w *webhookPool) GetURLs() []*url.URL {
-	uris, _ := w.getURLs()
+	uris, err := w.getURLs()
+	if err != nil {
+		glog.Error(err)
+		return nil
+	}
+	for _, uri := range uris {
+		glog.Infof("using webhook pool URI: %s", uri.String())
+	}
 	return uris
 }
 
@@ -98,8 +91,8 @@ func (w *webhookPool) GetOrchestrators(numOrchestrators int, suspender common.Su
 		return nil, err
 	}
 
-	w.mu.RLock()
-	defer w.mu.RUnlock()
+	w.RLock()
+	defer w.RUnlock()
 
 	return w.pool.GetOrchestrators(numOrchestrators, suspender, caps)
 }
