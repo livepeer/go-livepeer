@@ -220,7 +220,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		var oss, ross drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
 		if resp, err = authenticateStream(url.String()); err != nil {
-			glog.Error("Authentication denied for ", err)
+			glog.Errorf("Authentication denied for streamID url=%s err=%v", url.String(), err)
 			return nil
 		}
 		if resp != nil {
@@ -232,6 +232,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 			parsedProfiles, err := jsonProfileToVideoProfile(resp)
 			if err != nil {
+				glog.Errorf("Failed to parse JSON video profile for streamID url=%s err=%v", url.String(), err)
 				return nil
 			}
 			profiles = append(profiles, parsedProfiles...)
@@ -245,7 +246,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			if resp.ObjectStore != "" {
 				os, err = drivers.ParseOSURL(resp.ObjectStore, false)
 				if err != nil {
-					glog.Error("Failed to parse object store url ", err)
+					glog.Errorf("Failed to parse object store url for streamID url=%s err=%v", url.String(), err)
 					return nil
 				}
 			}
@@ -253,7 +254,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			if resp.RecordObjectStore != "" {
 				ros, err = drivers.ParseOSURL(resp.RecordObjectStore, true)
 				if err != nil {
-					glog.Error("Failed to parse object store url ", err)
+					glog.Errorf("Failed to parse recording object store url for streamID url=%s err=%v", url.String(), err)
 					return nil
 				}
 			}
@@ -285,11 +286,11 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		s.connectionLock.RLock()
 		defer s.connectionLock.RUnlock()
 		if core.MaxSessions > 0 && len(s.rtmpConnections) >= core.MaxSessions {
-			glog.Error("Too many connections")
+			glog.Errorf("Too many connections for streamID url=%s err=%v", url.String(), err)
 			return nil
 		}
 		if _, exists := s.rtmpConnections[mid]; exists {
-			glog.Error("Manifest already exists ", mid)
+			glog.Errorf("Manifest manifestID=%v already exists for streamID url=%s", mid, url.String())
 			return nil
 		}
 
