@@ -10,7 +10,10 @@ type RemoteTranscoderInfo struct {
 }
 
 type NodeStatus struct {
-	Manifests                   map[string]*m3u8.MasterPlaylist
+	Manifests map[string]*m3u8.MasterPlaylist
+	// maps external manifest (provided in HTTP push URL to the internal one
+	// (returned from webhook))
+	InternalManifests           map[string]string
 	OrchestratorPool            []string
 	Version                     string
 	GolangRuntimeVersion        string
