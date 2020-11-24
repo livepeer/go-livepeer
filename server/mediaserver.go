@@ -952,6 +952,7 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 	}
 	res := &net.NodeStatus{
 		Manifests:             m,
+		InternalManifests:     make(map[string]string),
 		Version:               core.LivepeerVersion,
 		GolangRuntimeVersion:  runtime.Version(),
 		GOArch:                runtime.GOARCH,
@@ -959,6 +960,9 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 		OrchestratorPool:      []string{},
 		RegisteredTranscoders: []net.RemoteTranscoderInfo{},
 		LocalTranscoding:      s.LivepeerNode.TranscoderManager == nil,
+	}
+	for k, v := range s.internalManifests {
+		res.InternalManifests[string(k)] = string(v)
 	}
 	if s.LivepeerNode.TranscoderManager != nil {
 		res.RegisteredTranscodersNumber = s.LivepeerNode.TranscoderManager.RegisteredTranscodersCount()
