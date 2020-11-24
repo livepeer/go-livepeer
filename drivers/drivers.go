@@ -175,6 +175,22 @@ func ParseOSURL(input string, useFullAPI bool) (OSDriver, error) {
 	return nil, fmt.Errorf("unrecognized OS scheme: %s", u.Scheme)
 }
 
+// SaveRetried tries to SaveData specified number of times
+func SaveRetried(sess OSSession, name string, data []byte, meta map[string]string, retryCount int) (string, error) {
+	if retryCount < 1 {
+		return "", fmt.Errorf("Invalid retry count %d", retryCount)
+	}
+	var uri string
+	var err error
+	for i := 0; i < retryCount; i++ {
+		uri, err = sess.SaveData(name, data, meta)
+		if err == nil {
+			return uri, err
+		}
+	}
+	return uri, err
+}
+
 var httpc = &http.Client{
 	Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
 	Timeout:   common.HTTPTimeout / 2,

@@ -304,17 +304,14 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	segDurMs := getSegDurMsString(seg)
 	if ros != nil {
 		go func() {
-			for i := 0; i < 2; i++ {
-				now := time.Now()
-				uri, err := ros.SaveData(name, seg.Data, map[string]string{"duration": segDurMs})
-				if err != nil {
-					glog.Errorf("Error saving nonce=%d manifestID=%s name=%s to record store try=%d err=%v", nonce, mid, name, i, err)
-				} else {
-					cpl.InsertHLSSegmentJSON(vProfile, seg.SeqNo, uri, seg.Duration)
-					glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s bytes=%d to record store took=%s",
-						nonce, mid, name, len(seg.Data), time.Since(now))
-					break
-				}
+			now := time.Now()
+			uri, err := drivers.SaveRetried(ros, name, seg.Data, map[string]string{"duration": segDurMs}, 2)
+			if err != nil {
+				glog.Errorf("Error saving nonce=%d manifestID=%s name=%s to record store err=%v", nonce, mid, name, err)
+			} else {
+				cpl.InsertHLSSegmentJSON(vProfile, seg.SeqNo, uri, seg.Duration)
+				glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s bytes=%d to record store took=%s",
+					nonce, mid, name, len(seg.Data), time.Since(now))
 			}
 		}()
 	}
@@ -496,17 +493,14 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				ext, _ := common.ProfileFormatExtension(profile.Format)
 				name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
 				segDurMs := getSegDurMsString(seg)
-				for i := 0; i < 2; i++ {
-					now := time.Now()
-					uri, err := bros.SaveData(name, data, map[string]string{"duration": segDurMs})
-					if err != nil {
-						glog.Errorf("Error saving nonce=%d manifestID=%s name=%s to record store try=%d err=%v", nonce, cxn.mid, name, i, err)
-					} else {
-						cpl.InsertHLSSegmentJSON(&profile, seg.SeqNo, uri, seg.Duration)
-						glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s size=%d bytes to record store took=%s",
-							nonce, cxn.mid, name, len(data), time.Since(now))
-						break
-					}
+				now := time.Now()
+				uri, err := drivers.SaveRetried(bros, name, data, map[string]string{"duration": segDurMs}, 2)
+				if err != nil {
+					glog.Errorf("Error saving nonce=%d manifestID=%s name=%s to record store err=%v", nonce, cxn.mid, name, err)
+				} else {
+					cpl.InsertHLSSegmentJSON(&profile, seg.SeqNo, uri, seg.Duration)
+					glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s size=%d bytes to record store took=%s",
+						nonce, cxn.mid, name, len(data), time.Since(now))
 				}
 			}()
 		}
