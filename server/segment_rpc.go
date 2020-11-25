@@ -80,6 +80,12 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	glog.V(common.VERBOSE).Infof("Received segment manifestID=%s sessionID=%s seqNo=%d dur=%v", segData.ManifestID, segData.AuthToken.SessionId, segData.Seq, segData.Duration)
+
+	if monitor.Enabled {
+		monitor.SegmentEmerged(0, uint64(segData.Seq), len(segData.Profiles), segData.Duration.Seconds())
+	}
+
 	if err := orch.ProcessPayment(payment, core.ManifestID(segData.AuthToken.SessionId)); err != nil {
 		glog.Errorf("error processing payment: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -105,11 +111,19 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	oInfo.AuthToken = segData.AuthToken
 
 	// download the segment and check the hash
+	dlStart := time.Now()
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		glog.Errorf("Could not read request body - err=%v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+
+	dlDur := time.Since(dlStart)
+	glog.V(common.VERBOSE).Infof("Downloaded segment manifestID=%s sessionID=%s seqNo=%d dur=%v", segData.ManifestID, segData.AuthToken.SessionId, segData.Seq, dlDur)
+
+	if monitor.Enabled {
+		monitor.SegmentDownloaded(0, uint64(segData.Seq), dlDur)
 	}
 
 	uri := ""
