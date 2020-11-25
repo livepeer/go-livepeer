@@ -479,7 +479,7 @@ func InitCensus(nodeType NodeType, version string) {
 		{
 			Name:        "download_time_seconds",
 			Measure:     census.mDownloadTime,
-			Description: "Download (from orchestrator) time",
+			Description: "Download time",
 			TagKeys:     baseTags,
 			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
 		},
