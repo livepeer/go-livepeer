@@ -121,6 +121,7 @@ type (
 		mRealtime1x                   *stats.Int64Measure
 		mRealtimeHalf                 *stats.Int64Measure
 		mRealtimeSlow                 *stats.Int64Measure
+		mTranscodeScore               *stats.Float64Measure
 
 		// Metrics for sending payments
 		mTicketValueSent    *stats.Float64Measure
@@ -238,6 +239,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mDownloadTime = stats.Float64("download_time_seconds", "Download (from orchestrator) time", "sec")
 	census.mAuthWebhookTime = stats.Float64("auth_webhook_time_milliseconds", "Authentication webhook execution time", "ms")
 	census.mSourceSegmentDuration = stats.Float64("source_segment_duration_seconds", "Source segment's duration", "sec")
+	census.mTranscodeScore = stats.Float64("transcode_score", "Ratio of source segment duration vs. transcode time", "rat")
 
 	// Metrics for sending payments
 	census.mTicketValueSent = stats.Float64("ticket_value_sent", "TicketValueSent", "gwei")
@@ -468,6 +470,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Description: "Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
 			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
+		},
+		{
+			Name:        "transcode_score",
+			Measure:     census.mTranscodeScore,
+			Description: "Ratio of source segment duration vs. transcode time",
+			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
+			Aggregation: view.Distribution(0, .25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75, 4),
 		},
 		{
 			Name:        "upload_time_seconds",
@@ -1012,12 +1021,12 @@ func (cen *censusMetricsCounter) segmentUploadFailed(nonce, seqNo uint64, code S
 	}
 }
 
-func SegmentTranscoded(nonce, seqNo uint64, transcodeDur time.Duration, profiles string) {
+func SegmentTranscoded(nonce, seqNo uint64, sourceDur time.Duration, transcodeDur time.Duration, profiles string) {
 	glog.V(logLevel).Infof("Logging SegmentTranscode nonce=%d seqNo=%d dur=%s", nonce, seqNo, transcodeDur)
-	census.segmentTranscoded(nonce, seqNo, transcodeDur, profiles)
+	census.segmentTranscoded(nonce, seqNo, sourceDur, transcodeDur, profiles)
 }
 
-func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, transcodeDur time.Duration,
+func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, sourceDur time.Duration, transcodeDur time.Duration,
 	profiles string) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
@@ -1026,7 +1035,7 @@ func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, transcod
 		glog.Error("Error creating context", err)
 		return
 	}
-	stats.Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(transcodeDur.Seconds()))
+	stats.Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(transcodeDur.Seconds()), cen.mTranscodeScore.M(sourceDur.Seconds()/transcodeDur.Seconds()))
 }
 
 func SegmentTranscodeFailed(subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
