@@ -495,7 +495,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Measure:     census.mSourceSegmentDuration,
 			Description: "Source segment's duration",
 			TagKeys:     baseTags,
-			Aggregation: view.Distribution(0, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 5000, 10000, 20000, 30000),
+			Aggregation: view.Distribution(0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 10, 15, 20),
 		},
 		{
 			Name:        "max_sessions_total",
