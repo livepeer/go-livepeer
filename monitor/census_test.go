@@ -49,7 +49,7 @@ func TestLastSegmentTimeout(t *testing.T) {
 	defer func() { unitTestMode = false }()
 	NodeID = "testid"
 
-	InitCensus("tst", "testversion")
+	InitCensus("bctr", "testversion")
 	// defer func() {
 	// 	shutDown <- nil
 	// }()
