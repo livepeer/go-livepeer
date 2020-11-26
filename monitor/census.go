@@ -50,6 +50,16 @@ const (
 	// importing `common` package here introduces import cycles
 )
 
+type NodeType string
+
+const (
+	Default      NodeType = "dflt"
+	Orchestrator NodeType = "orch"
+	Broadcaster  NodeType = "bctr"
+	Transcoder   NodeType = "trcr"
+	Redeemer     NodeType = "rdmr"
+)
+
 // Enabled true if metrics was enabled in command line
 var Enabled bool
 
@@ -60,7 +70,7 @@ var timeoutWatcherPause = 15 * time.Second
 
 type (
 	censusMetricsCounter struct {
-		nodeType                      string
+		nodeType                      NodeType
 		nodeID                        string
 		ctx                           context.Context
 		kGPU                          tag.Key
@@ -165,7 +175,7 @@ var census censusMetricsCounter
 // used in unit tests
 var unitTestMode bool
 
-func InitCensus(nodeType, version string) {
+func InitCensus(nodeType NodeType, version string) {
 	census = censusMetricsCounter{
 		emergeTimes: make(map[uint64]map[uint64]time.Time),
 		nodeID:      NodeID,
@@ -184,7 +194,7 @@ func InitCensus(nodeType, version string) {
 	census.kSender = tag.MustNewKey("sender")
 	census.kRecipient = tag.MustNewKey("recipient")
 	census.kManifestID = tag.MustNewKey("manifestID")
-	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, nodeType), tag.Insert(census.kNodeID, NodeID))
+	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Fatal("Error creating context", err)
 	}
@@ -255,7 +265,7 @@ func InitCensus(nodeType, version string) {
 	goos := tag.MustNewKey("goos")
 	goversion := tag.MustNewKey("goversion")
 	livepeerversion := tag.MustNewKey("livepeerversion")
-	ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, nodeType), tag.Insert(census.kNodeID, NodeID),
+	ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID),
 		tag.Insert(compiler, runtime.Compiler), tag.Insert(goarch, runtime.GOARCH), tag.Insert(goos, runtime.GOOS),
 		tag.Insert(goversion, runtime.Version()), tag.Insert(livepeerversion, version))
 	if err != nil {
