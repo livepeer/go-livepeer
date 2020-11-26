@@ -313,16 +313,16 @@ func main() {
 
 	if *monitor {
 		lpmon.Enabled = true
-		nodeType := "dflt"
+		nodeType := lpmon.Default
 		switch n.NodeType {
 		case core.BroadcasterNode:
-			nodeType = "bctr"
+			nodeType = lpmon.Broadcaster
 		case core.OrchestratorNode:
-			nodeType = "orch"
+			nodeType = lpmon.Orchestrator
 		case core.TranscoderNode:
-			nodeType = "trcr"
+			nodeType = lpmon.Transcoder
 		case core.RedeemerNode:
-			nodeType = "rdmr"
+			nodeType = lpmon.Redeemer
 		}
 		lpmon.InitCensus(nodeType, core.LivepeerVersion)
 	}
