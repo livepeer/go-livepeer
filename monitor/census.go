@@ -891,7 +891,9 @@ func SetTranscodersNumberAndLoad(load, capacity, number int) {
 
 func SegmentEmerged(nonce, seqNo uint64, profilesNum int, dur float64) {
 	glog.V(logLevel).Infof("Logging SegmentEmerged... nonce=%d seqNo=%d duration=%v", nonce, seqNo, dur)
-	census.segmentEmerged(nonce, seqNo, profilesNum)
+	if census.nodeType == Broadcaster {
+		census.segmentEmerged(nonce, seqNo, profilesNum)
+	}
 	stats.Record(census.ctx, census.mSourceSegmentDuration.M(dur))
 }
 
