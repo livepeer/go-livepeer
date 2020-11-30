@@ -511,11 +511,11 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	hlsStrmID := core.MakeStreamID(mid, &vProfile)
 	s.connectionLock.RLock()
 	// Fast path - check early if session exists - creating new session can take time
-	_, exists := s.rtmpConnections[mid]
+	oldCxn, exists := s.rtmpConnections[mid]
 	s.connectionLock.RUnlock()
 	if exists {
 		// We can only have one concurrent stream per ManifestID
-		return nil, errAlreadyExists
+		return oldCxn, errAlreadyExists
 	}
 
 	playlist := core.NewBasicPlaylistManager(mid, storage, recordStorage)
@@ -535,13 +535,13 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 
 	s.connectionLock.Lock()
-	_, exists = s.rtmpConnections[mid]
+	oldCxn, exists = s.rtmpConnections[mid]
 	// Check if session exist again - potentially two sessions can be created simultaneously,
 	// so we don't want to overwrite one that was already created
 	if exists {
 		// We can only have one concurrent stream per ManifestID
 		s.connectionLock.Unlock()
-		return nil, errAlreadyExists
+		return oldCxn, errAlreadyExists
 	}
 	s.rtmpConnections[mid] = cxn
 	s.lastManifestID = mid
@@ -765,29 +765,31 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 		cxn, err = s.registerConnection(st)
 		if err != nil {
-			httpErr := fmt.Sprintf("http push error url=%s err=%v", r.URL, err)
-			glog.Error(httpErr)
-			http.Error(w, httpErr, http.StatusInternalServerError)
-			return
-		}
-
-		// Start a watchdog to remove session after a period of inactivity
-		ticker := time.NewTicker(httpPushTimeout)
-		go func(s *LivepeerServer, intmid, extmid core.ManifestID) {
-			defer ticker.Stop()
-			for range ticker.C {
-				var lastUsed time.Time
-				s.connectionLock.RLock()
-				if cxn, exists := s.rtmpConnections[intmid]; exists {
-					lastUsed = cxn.lastUsed
-				}
-				s.connectionLock.RUnlock()
-				if time.Since(lastUsed) > httpPushTimeout {
-					_ = removeRTMPStream(s, extmid)
-					return
-				}
+			if err != errAlreadyExists {
+				httpErr := fmt.Sprintf("http push error url=%s err=%v", r.URL, err)
+				glog.Error(httpErr)
+				http.Error(w, httpErr, http.StatusInternalServerError)
+				return
 			}
-		}(s, cxn.mid, mid)
+		} else {
+			// Start a watchdog to remove session after a period of inactivity
+			ticker := time.NewTicker(httpPushTimeout)
+			go func(s *LivepeerServer, intmid, extmid core.ManifestID) {
+				defer ticker.Stop()
+				for range ticker.C {
+					var lastUsed time.Time
+					s.connectionLock.RLock()
+					if cxn, exists := s.rtmpConnections[intmid]; exists {
+						lastUsed = cxn.lastUsed
+					}
+					s.connectionLock.RUnlock()
+					if time.Since(lastUsed) > httpPushTimeout {
+						_ = removeRTMPStream(s, extmid)
+						return
+					}
+				}
+			}(s, cxn.mid, mid)
+		}
 		if cxn.mid != mid {
 			// AuthWebhook provided different ManifestID
 			s.connectionLock.Lock()
