@@ -55,9 +55,10 @@ type BasicPlaylistManager struct {
 }
 
 type jsonSeg struct {
-	SeqNo      uint64 `json:"seq_no,omitempty"`
-	URI        string `json:"uri,omitempty"`
-	DurationMs uint64 `json:"duration_ms,omitempty"`
+	SeqNo         uint64 `json:"seq_no,omitempty"`
+	URI           string `json:"uri,omitempty"`
+	DurationMs    uint64 `json:"duration_ms,omitempty"`
+	discontinuity bool
 }
 
 type JsonPlaylist struct {
@@ -110,8 +111,9 @@ func (jpl *JsonPlaylist) AddSegmentsToMPL(manifestID, trackName string, mpl *m3u
 			}
 		}
 		mseg := &m3u8.MediaSegment{
-			URI:      uri,
-			Duration: float64(seg.DurationMs) / 1000.0,
+			URI:           uri,
+			Duration:      float64(seg.DurationMs) / 1000.0,
+			Discontinuity: seg.discontinuity,
 		}
 		mpl.InsertSegment(seg.SeqNo, mseg)
 	}
@@ -124,6 +126,26 @@ func (jpl *JsonPlaylist) hasTrack(trackName string) bool {
 		}
 	}
 	return false
+}
+
+// AddDiscontinuedTrack appends all segments for specified rendition, mark first one as discontinued
+func (jpl *JsonPlaylist) AddDiscontinuedTrack(ajpl *JsonPlaylist, trackName string) {
+	curSegs := jpl.Segments[trackName]
+	var lastSeq uint64
+	var disc bool
+	if len(curSegs) > 0 {
+		lastSeq = curSegs[len(curSegs)-1].SeqNo
+		lastSeq++
+		disc = true
+	}
+	for i, seg := range ajpl.Segments[trackName] {
+		if i == 0 {
+			seg.discontinuity = disc
+		}
+		seg.SeqNo += lastSeq
+		curSegs = append(curSegs, seg)
+	}
+	jpl.Segments[trackName] = curSegs
 }
 
 // AddTrack adds segments data for specified rendition
