@@ -115,6 +115,7 @@ type authWebhookResponse struct {
 		Profile string `json:"profile"`
 		GOP     string `json:"gop"`
 	} `json:"profiles"`
+	PreviousSessions []string `json:"previousSessions"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
@@ -962,6 +963,51 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func getPlalistsFromStore(ctx context.Context, sess drivers.OSSession, manifests []string) (map[string][]int, []string, time.Time, error) {
+	var latestPlaylistTime time.Time
+	var jsonFiles []string
+	filesMap := make(map[string][]int)
+	for _, manifestID := range manifests {
+		filesMap[manifestID] = nil
+		now2 := time.Now()
+		filesPage, err := sess.ListFiles(ctx, manifestID+"/", "/")
+		if err != nil {
+			return nil, nil, latestPlaylistTime, err
+		}
+		glog.V(common.VERBOSE).Infof("Listing directories for manifestID=%s took=%s", manifestID, time.Since(now2))
+		dirs := filesPage.Directories()
+		if len(dirs) == 0 {
+			continue
+		}
+		for _, dirName := range dirs {
+			now2 = time.Now()
+			dirOnePage, err := sess.ListFiles(ctx, dirName+"playlist_", "")
+			glog.V(common.VERBOSE).Infof("Listing playlist files for manifestID=%s took=%s", manifestID, time.Since(now2))
+			if err != nil {
+				return nil, nil, latestPlaylistTime, err
+			}
+			for {
+				playlistsNames := dirOnePage.Files()
+				for _, plf := range playlistsNames {
+					if plf.LastModified.After(latestPlaylistTime) {
+						latestPlaylistTime = plf.LastModified
+					}
+					filesMap[manifestID] = append(filesMap[manifestID], len(jsonFiles))
+					jsonFiles = append(jsonFiles, plf.Name)
+				}
+				if !dirOnePage.HasNextPage() {
+					break
+				}
+				dirOnePage, err = dirOnePage.NextPage()
+				if err != nil {
+					return nil, nil, latestPlaylistTime, err
+				}
+			}
+		}
+	}
+	return filesMap, jsonFiles, latestPlaylistTime, nil
+}
+
 // HandleRecordings handle requests to /recordings/ endpoint
 func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
@@ -1008,7 +1054,11 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		fromCache = true
 	} else if resp, err = authenticateStream(r.URL.String()); err != nil {
 		glog.Errorf("Authentication denied for url=%s err=%v", r.URL.String(), err)
-		w.WriteHeader(http.StatusForbidden)
+		if strings.Contains(err.Error(), "not found") {
+			w.WriteHeader(http.StatusNotFound)
+		} else {
+			w.WriteHeader(http.StatusForbidden)
+		}
 		return
 	}
 	var sess drivers.OSSession
@@ -1057,49 +1107,20 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		glog.V(common.VERBOSE).Infof("request url=%s streaming filename=%s took=%s from_read_took=%s", r.URL.String(), requestFileName, time.Since(now2), time.Since(nowr))
 		return
 	}
-	now2 := time.Now()
-	filesPage, err := sess.ListFiles(ctx, manifestID+"/", "/")
+	var manifests []string
+	if len(resp.PreviousSessions) > 0 {
+		manifests = append(resp.PreviousSessions, manifestID)
+	} else {
+		manifests = []string{manifestID}
+	}
+	jsonFilesMap, jsonFiles, latestPlaylistTime, err := getPlalistsFromStore(ctx, sess, manifests)
 	if err != nil {
 		glog.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	glog.V(common.VERBOSE).Infof("Listing directories for manifestID=%s took=%s", manifestID, time.Since(now2))
-	dirs := filesPage.Directories()
-	if len(dirs) == 0 {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	var latestPlaylistTime time.Time
-	var jsonFiles []string
-	for _, dirName := range dirs {
-		now2 = time.Now()
-		dirOnePage, err := sess.ListFiles(ctx, dirName+"playlist_", "")
-		glog.V(common.VERBOSE).Infof("Listing playlist files for manifestID=%s took=%s", manifestID, time.Since(now2))
-		if err != nil {
-			glog.Error(err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		for {
-			playlistsNames := dirOnePage.Files()
-			for _, plf := range playlistsNames {
-				if plf.LastModified.After(latestPlaylistTime) {
-					latestPlaylistTime = plf.LastModified
-				}
-				jsonFiles = append(jsonFiles, plf.Name)
-			}
-			if !dirOnePage.HasNextPage() {
-				break
-			}
-			dirOnePage, err = dirOnePage.NextPage()
-			if err != nil {
-				glog.Error(err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		}
-	}
+	glog.V(common.VERBOSE).Infof("request url=%s found json files: %+v", r.URL, jsonFiles)
+
 	if len(jsonFiles) == 0 {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -1107,10 +1128,8 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	if time.Since(latestPlaylistTime) > 24*time.Hour && !finalizeSet {
 		finalize = true
 	}
+	// finalize = false // REMOVE
 
-	masterPList := m3u8.NewMasterPlaylist()
-	mediaLists := make(map[string]*m3u8.MediaPlaylist)
-	mainJspl := core.NewJSONPlaylist()
 	now1 := time.Now()
 	_, datas, err := drivers.ParallelReadFiles(ctx, sess, jsonFiles, 16)
 	if err != nil {
@@ -1119,23 +1138,54 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		return
 	}
 	glog.V(common.VERBOSE).Infof("Finished reading num=%d playlist files for manifestID=%s took=%s", len(jsonFiles), manifestID, time.Since(now1))
-	for i := range jsonFiles {
-		jspl := &core.JsonPlaylist{}
-		err = json.Unmarshal(datas[i], jspl)
-		if err != nil {
-			glog.Error(err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+
+	var jsonPlaylists []*core.JsonPlaylist
+	for _, manifestID := range manifests {
+		if len(jsonFilesMap[manifestID]) == 0 {
+			continue
 		}
-		mainJspl.AddMaster(jspl)
-		if finalize {
-			for trackName := range jspl.Segments {
-				mainJspl.AddTrack(jspl, trackName)
+		// reconstruct sessions
+		manifestMainJspl := core.NewJSONPlaylist()
+		jsonPlaylists = append(jsonPlaylists, manifestMainJspl)
+		for _, i := range jsonFilesMap[manifestID] {
+			jspl := &core.JsonPlaylist{}
+			err = json.Unmarshal(datas[i], jspl)
+			if err != nil {
+				glog.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
 			}
-		} else if track != "" {
-			mainJspl.AddTrack(jspl, track)
+			manifestMainJspl.AddMaster(jspl)
+			if finalize {
+				for trackName := range jspl.Segments {
+					manifestMainJspl.AddTrack(jspl, trackName)
+				}
+			} else if track != "" {
+				manifestMainJspl.AddTrack(jspl, track)
+			}
 		}
 	}
+	var mainJspl *core.JsonPlaylist
+	if len(jsonPlaylists) == 1 {
+		mainJspl = jsonPlaylists[0]
+	} else {
+		mainJspl = core.NewJSONPlaylist()
+		// join sessions
+		for _, jspl := range jsonPlaylists {
+			mainJspl.AddMaster(jspl)
+			if finalize {
+				for trackName := range jspl.Segments {
+					mainJspl.AddDiscontinuedTrack(jspl, trackName)
+				}
+			} else if track != "" {
+				mainJspl.AddDiscontinuedTrack(jspl, track)
+			}
+		}
+	}
+
+	masterPList := m3u8.NewMasterPlaylist()
+	mediaLists := make(map[string]*m3u8.MediaPlaylist)
+
 	for _, track := range mainJspl.Tracks {
 		segments := mainJspl.Segments[track.Name]
 		mpl, err := m3u8.NewMediaPlaylist(uint(len(segments)), uint(len(segments)))
