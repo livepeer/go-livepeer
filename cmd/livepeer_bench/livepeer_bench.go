@@ -70,6 +70,7 @@ func main() {
 	}
 
 	ffmpeg.InitFFmpeg()
+	segCount := 0
 	var wg sync.WaitGroup
 	dir := path.Dir(*fname)
 	start := time.Now()
@@ -80,7 +81,7 @@ func main() {
 		go func(k int, wg *sync.WaitGroup) {
 			tc := ffmpeg.NewTranscoder()
 			for j, v := range pl.Segments {
-				if *segs != 0 && j >= *segs {
+				if *segs > 0 && j >= *segs {
 					break
 				}
 				if v == nil {
@@ -119,6 +120,7 @@ func main() {
 				if err != nil {
 					panic(err)
 				}
+				segCount++
 			}
 			tc.StopTranscoder()
 			wg.Done()
@@ -127,7 +129,7 @@ func main() {
 	}
 	wg.Wait()
 	fmt.Fprintf(os.Stderr, "Took %v to transcode %v segments\n",
-		time.Now().Sub(start).Seconds(), *segs)
+		time.Now().Sub(start).Seconds(), segCount)
 }
 
 func parseVideoProfiles(inp string) []ffmpeg.VideoProfile {
