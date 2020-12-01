@@ -32,6 +32,11 @@ livepeer:
 livepeer_cli:
 	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -tags "$(HIGHEST_CHAIN_TAG)" -ldflags="$(ldflags)" cmd/livepeer_cli/*.go
 
+.PHONY: livepeer_bench
+livepeer_bench:
+	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -ldflags="$(ldflags)" cmd/livepeer_bench/*.go
+
+
 .PHONY: localdocker
 localdocker:
 	./print_version.sh > .git.describe
