@@ -2,40 +2,23 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	//"runtime/pprof"
 
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/m3u8"
 )
-
-func validRenditions() []string {
-	valids := make([]string, len(ffmpeg.VideoProfileLookup))
-	for p := range ffmpeg.VideoProfileLookup {
-		valids = append(valids, p)
-	}
-	return valids
-}
-
-func str2profs(inp string) []ffmpeg.VideoProfile {
-	profs := []ffmpeg.VideoProfile{}
-	strs := strings.Split(inp, ",")
-	for _, k := range strs {
-		p, ok := ffmpeg.VideoProfileLookup[k]
-		if !ok {
-			panic(fmt.Sprintf("Invalid rendition %s. Valid renditions are:\n%s", k, validRenditions()))
-		}
-		profs = append(profs, p)
-	}
-	return profs
-}
 
 func main() {
 	/*
@@ -64,7 +47,7 @@ func main() {
 		panic("Please provide the input manifest as `-fname <input.m3u8>`. See -h or -help for more.")
 	}
 
-	profiles := str2profs(*profs)
+	profiles := parseVideoProfiles(*profs)
 
 	f, err := os.Open(*fname)
 	if err != nil {
@@ -90,14 +73,14 @@ func main() {
 	var wg sync.WaitGroup
 	dir := path.Dir(*fname)
 	start := time.Now()
-	fmt.Fprintf(os.Stderr, "Program %s Source %s Segments %d Concurrency %d\n", os.Args[0], *fname, *segs, *conc)
+	fmt.Fprintf(os.Stderr, "Program %s Source %s Concurrency %d Profiles %s\n", os.Args[0], *fname, *conc, *profs)
 	fmt.Println("time,stream,segment,length")
 	for i := 0; i < *conc; i++ {
 		wg.Add(1)
 		go func(k int, wg *sync.WaitGroup) {
 			tc := ffmpeg.NewTranscoder()
 			for j, v := range pl.Segments {
-				if j >= *segs {
+				if *segs != 0 && j >= *segs {
 					break
 				}
 				if v == nil {
@@ -145,4 +128,83 @@ func main() {
 	wg.Wait()
 	fmt.Fprintf(os.Stderr, "Took %v to transcode %v segments\n",
 		time.Now().Sub(start).Seconds(), *segs)
+}
+
+func parseVideoProfiles(inp string) []ffmpeg.VideoProfile {
+	type profilesJson struct {
+		Profiles []struct {
+			Name    string `json:"name"`
+			Width   int    `json:"width"`
+			Height  int    `json:"height"`
+			Bitrate int    `json:"bitrate"`
+			FPS     uint   `json:"fps"`
+			FPSDen  uint   `json:"fpsDen"`
+			Profile string `json:"profile"`
+			GOP     string `json:"gop"`
+		} `json:"profiles"`
+	}
+	profs := []ffmpeg.VideoProfile{}
+	if inp != "" {
+		// try opening up json file with profiles
+		content, err := ioutil.ReadFile(inp)
+		if err == nil && len(content) > 0 {
+			// parse json profiles
+			resp := &profilesJson{}
+			err = json.Unmarshal(content, &resp.Profiles)
+			if err != nil {
+				panic(err)
+			}
+			for _, profile := range resp.Profiles {
+				name := profile.Name
+				if name == "" {
+					name = "custom_" + common.DefaultProfileName(
+						profile.Width,
+						profile.Height,
+						profile.Bitrate)
+				}
+				var gop time.Duration
+				if profile.GOP != "" {
+					if profile.GOP == "intra" {
+						gop = ffmpeg.GOPIntraOnly
+					} else {
+						gopFloat, err := strconv.ParseFloat(profile.GOP, 64)
+						if err != nil {
+							panic(err)
+						}
+						if gopFloat <= 0.0 {
+							panic("invalid gop value")
+						}
+						gop = time.Duration(gopFloat * float64(time.Second))
+					}
+				}
+				encodingProfile, err := common.EncoderProfileNameToValue(profile.Profile)
+				if err != nil {
+					panic(err)
+				}
+				prof := ffmpeg.VideoProfile{
+					Name:         name,
+					Bitrate:      fmt.Sprint(profile.Bitrate),
+					Framerate:    profile.FPS,
+					FramerateDen: profile.FPSDen,
+					Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
+					Profile:      encodingProfile,
+					GOP:          gop,
+				}
+				profs = append(profs, prof)
+			}
+		} else {
+			// check the built-in profiles
+			profs = make([]ffmpeg.VideoProfile, 0)
+			presets := strings.Split(inp, ",")
+			for _, v := range presets {
+				if p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(v)]; ok {
+					profs = append(profs, p)
+				}
+			}
+		}
+		if len(profs) <= 0 {
+			panic(fmt.Errorf("No transcoding profiles found"))
+		}
+	}
+	return profs
 }
