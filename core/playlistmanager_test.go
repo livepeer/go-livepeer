@@ -76,6 +76,30 @@ func TestJSONList1(t *testing.T) {
 	assert.Equal("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:3\n#EXTINF:2.100,\ntest_seg/1.ts\n#EXTINF:2.000,\ntest_seg/2.ts\n#EXTINF:2.500,\ntest_seg/3.ts\n#EXTINF:2.500,\ntest_seg/4.ts\n#EXT-X-ENDLIST\n", mpls)
 }
 
+func TestJSONListJoin(t *testing.T) {
+	assert := assert.New(t)
+	jspl1 := NewJSONPlaylist()
+	vProfile := ffmpeg.P144p30fps16x9
+	vProfile.Name = "source"
+	jspl1.InsertHLSSegment(&vProfile, 1, "manifestID/test_seg/1.ts", 2.1)
+	jspl1.InsertHLSSegment(&vProfile, 3, "manifestID/test_seg/3.ts", 2.5)
+	jspl1.InsertHLSSegment(&vProfile, 4, "manifestID/test_seg/4.ts", 2.5)
+	assert.Len(jspl1.Segments, 1)
+	assert.Len(jspl1.Segments["source"], 3)
+	assert.Equal(uint64(2100+2500+2500), jspl1.DurationMs)
+
+	jspl2 := NewJSONPlaylist()
+	jspl2.InsertHLSSegment(&vProfile, 2, "manifestID2/test_seg/2.ts", 2)
+	jspl2.InsertHLSSegment(&vProfile, 4, "manifestID2/test_seg/4.ts", 2)
+	assert.Len(jspl2.Segments, 1)
+	assert.Len(jspl2.Tracks, 1)
+	assert.Len(jspl2.Segments["source"], 2)
+	assert.Equal(uint64(4000), jspl2.DurationMs)
+	jspl1.AddDiscontinuedTrack(jspl2, "source")
+	assert.Len(jspl1.Segments["source"], 5)
+	assert.True(jspl1.Segments["source"][3].discontinuity)
+}
+
 func TestJsonFlush(t *testing.T) {
 	assert := assert.New(t)
 	os := drivers.NewMemoryDriver(nil)
