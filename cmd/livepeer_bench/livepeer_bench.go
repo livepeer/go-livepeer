@@ -67,7 +67,6 @@ func main() {
 	}
 
 	ffmpeg.InitFFmpeg()
-	segCount := 0
 	var wg sync.WaitGroup
 	dir := path.Dir(*in)
 	start := time.Now()
@@ -89,6 +88,8 @@ func main() {
 	table.Render()
 
 	fmt.Println("timestamp,session,segment,transcode_time")
+	segCount := 0
+	segTotalDur := 0.0
 	for i := 0; i < *concurrentSessions; i++ {
 		wg.Add(1)
 		go func(k int, wg *sync.WaitGroup) {
@@ -139,7 +140,10 @@ func main() {
 				if err != nil {
 					glog.Fatalf("Transcoding failed for session %d segment %d: %v", k, j, err)
 				}
-				segCount++
+				if k == 0 {
+					segTotalDur += v.Duration
+					segCount++
+				}
 			}
 			tc.StopTranscoder()
 			wg.Done()
@@ -147,8 +151,8 @@ func main() {
 		time.Sleep(300 * time.Millisecond)
 	}
 	wg.Wait()
-	fmt.Fprintf(os.Stderr, "Took %0.4v seconds to transcode total %v segments (%v concurrent sessions)\n",
-		time.Since(start).Seconds(), segCount, *concurrentSessions)
+	fmt.Fprintf(os.Stderr, "Took %0.4v seconds to transcode %v segments of total duration %vs (%v concurrent sessions)\n",
+		time.Since(start).Seconds(), segCount, segTotalDur, *concurrentSessions)
 }
 
 func parseVideoProfiles(inp string) []ffmpeg.VideoProfile {
