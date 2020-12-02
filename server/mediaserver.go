@@ -963,12 +963,12 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// getPlalistsFromStore finds all the json playlist files belonging to the provided manifests
+// getPlaylistsFromStore finds all the json playlist files belonging to the provided manifests
 // returns:
 // - a map of manifestID -> a list of indices pointing to JSON files in the returned list of JSON files
 // - a list of JSON files for all manifestIDs provided
 // - the latest playlist time
-func getPlalistsFromStore(ctx context.Context, sess drivers.OSSession, manifests []string) (map[string][]int, []string, time.Time, error) {
+func getPlaylistsFromStore(ctx context.Context, sess drivers.OSSession, manifests []string) (map[string][]int, []string, time.Time, error) {
 	var latestPlaylistTime time.Time
 	var jsonFiles []string
 	filesMap := make(map[string][]int)
@@ -1118,7 +1118,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	} else {
 		manifests = []string{manifestID}
 	}
-	jsonFilesMap, jsonFiles, latestPlaylistTime, err := getPlalistsFromStore(ctx, sess, manifests)
+	jsonFilesMap, jsonFiles, latestPlaylistTime, err := getPlaylistsFromStore(ctx, sess, manifests)
 	if err != nil {
 		glog.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
