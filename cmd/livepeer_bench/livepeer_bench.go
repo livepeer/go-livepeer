@@ -19,6 +19,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/m3u8"
+	"github.com/olekukonko/tablewriter"
 )
 
 func main() {
@@ -70,8 +71,24 @@ func main() {
 	var wg sync.WaitGroup
 	dir := path.Dir(*in)
 	start := time.Now()
-	fmt.Fprintf(os.Stderr, "Program %s Source %s Concurrent Sessions %d Transcoding Opts %s\n", os.Args[0], *in, *concurrentSessions, *transcodingOptions)
-	fmt.Println("time,stream,segment,length")
+
+	table := tablewriter.NewWriter(os.Stderr)
+	data := [][]string{
+		{"Source File", *in},
+		{"Transcoding Options", *transcodingOptions},
+		{"Concurrent Sessions", fmt.Sprintf("%v", *concurrentSessions)},
+	}
+
+	for _, v := range data {
+		table.Append(v)
+	}
+
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+	table.SetCenterSeparator("*")
+	table.SetColumnSeparator("|")
+	table.Render()
+
+	fmt.Println("timestamp,session,segment,transcode_time")
 	for i := 0; i < *concurrentSessions; i++ {
 		wg.Add(1)
 		go func(k int, wg *sync.WaitGroup) {
@@ -118,7 +135,7 @@ func main() {
 				t := time.Now()
 				_, err := tc.Transcode(in, out)
 				end := time.Now()
-				fmt.Printf("%s,%d,%d,%0.2v\n", end.Format("2006-01-02 15:04:05.999999999"), k, j, end.Sub(t).Seconds())
+				fmt.Printf("%s,%d,%d,%0.4v\n", end.Format("2006-01-02 15:04:05.9999"), k, j, end.Sub(t).Seconds())
 				if err != nil {
 					glog.Fatalf("Transcoding failed for session %d segment %d: %v", k, j, err)
 				}
@@ -130,8 +147,8 @@ func main() {
 		time.Sleep(300 * time.Millisecond)
 	}
 	wg.Wait()
-	fmt.Fprintf(os.Stderr, "Took %v to transcode %v segments\n",
-		time.Now().Sub(start).Seconds(), segCount)
+	fmt.Fprintf(os.Stderr, "Took %0.4v seconds to transcode total %v segments (%v concurrent sessions)\n",
+		time.Since(start).Seconds(), segCount, *concurrentSessions)
 }
 
 func parseVideoProfiles(inp string) []ffmpeg.VideoProfile {
