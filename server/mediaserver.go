@@ -963,26 +963,31 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// getPlalistsFromStore finds all the json playlist files belonging to the provided manifests
+// returns:
+// - a map of manifestID -> a list of indices pointing to JSON files in the returned list of JSON files
+// - a list of JSON files for all manifestIDs provided
+// - the latest playlist time
 func getPlalistsFromStore(ctx context.Context, sess drivers.OSSession, manifests []string) (map[string][]int, []string, time.Time, error) {
 	var latestPlaylistTime time.Time
 	var jsonFiles []string
 	filesMap := make(map[string][]int)
 	for _, manifestID := range manifests {
 		filesMap[manifestID] = nil
-		now2 := time.Now()
+		start := time.Now()
 		filesPage, err := sess.ListFiles(ctx, manifestID+"/", "/")
 		if err != nil {
 			return nil, nil, latestPlaylistTime, err
 		}
-		glog.V(common.VERBOSE).Infof("Listing directories for manifestID=%s took=%s", manifestID, time.Since(now2))
+		glog.V(common.VERBOSE).Infof("Listing directories for manifestID=%s took=%s", manifestID, time.Since(start))
 		dirs := filesPage.Directories()
 		if len(dirs) == 0 {
 			continue
 		}
 		for _, dirName := range dirs {
-			now2 = time.Now()
+			start = time.Now()
 			dirOnePage, err := sess.ListFiles(ctx, dirName+"playlist_", "")
-			glog.V(common.VERBOSE).Infof("Listing playlist files for manifestID=%s took=%s", manifestID, time.Since(now2))
+			glog.V(common.VERBOSE).Infof("Listing playlist files for manifestID=%s took=%s", manifestID, time.Since(start))
 			if err != nil {
 				return nil, nil, latestPlaylistTime, err
 			}
@@ -1083,7 +1088,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	nowr := time.Now()
+	startRead := time.Now()
 	fi, err := sess.ReadData(ctx, requestFileName)
 	if err == context.Canceled {
 		w.WriteHeader(http.StatusBadRequest)
@@ -1101,10 +1106,10 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			w.Header().Set("Content-Type", "application/x-mpegURL")
 		}
 		w.Header().Set("Connection", "keep-alive")
-		now2 := time.Now()
+		startWrite := time.Now()
 		io.Copy(w, fi.Body)
 		fi.Body.Close()
-		glog.V(common.VERBOSE).Infof("request url=%s streaming filename=%s took=%s from_read_took=%s", r.URL.String(), requestFileName, time.Since(now2), time.Since(nowr))
+		glog.V(common.VERBOSE).Infof("request url=%s streaming filename=%s took=%s from_read_took=%s", r.URL.String(), requestFileName, time.Since(startWrite), time.Since(startRead))
 		return
 	}
 	var manifests []string
@@ -1128,7 +1133,6 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	if time.Since(latestPlaylistTime) > 24*time.Hour && !finalizeSet {
 		finalize = true
 	}
-	// finalize = false // REMOVE
 
 	now1 := time.Now()
 	_, datas, err := drivers.ParallelReadFiles(ctx, sess, jsonFiles, 16)
