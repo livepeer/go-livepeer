@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -28,6 +29,7 @@ var Testing bool
 
 // TestMemoryStorages used for testing purposes
 var TestMemoryStorages map[string]*MemoryOS
+var testMemoryStoragesLock = &sync.Mutex{}
 
 // OSDriver common interface for Object Storage
 type OSDriver interface {
@@ -162,6 +164,7 @@ func ParseOSURL(input string, useFullAPI bool) (OSDriver, error) {
 		return NewGoogleDriver(u.Host, file, useFullAPI)
 	}
 	if u.Scheme == "memory" && Testing {
+		testMemoryStoragesLock.Lock()
 		if TestMemoryStorages == nil {
 			TestMemoryStorages = make(map[string]*MemoryOS)
 		}
@@ -170,6 +173,7 @@ func ParseOSURL(input string, useFullAPI bool) (OSDriver, error) {
 			os = NewMemoryDriver(nil)
 			TestMemoryStorages[u.Host] = os
 		}
+		testMemoryStoragesLock.Unlock()
 		return os, nil
 	}
 	return nil, fmt.Errorf("unrecognized OS scheme: %s", u.Scheme)
