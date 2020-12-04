@@ -1018,3 +1018,43 @@ func TestPush_OSPerStream(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 	assert.True(len(body) > 0)
 }
+
+func TestPush_ConcurrentSegments(t *testing.T) {
+	assert := assert.New(t)
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
+	n.NodeType = core.BroadcasterNode
+	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
+	oldURL := AuthWebhookURL
+	defer func() { AuthWebhookURL = oldURL }()
+	AuthWebhookURL = ""
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	sendSeg := func(url string) {
+		reader := strings.NewReader("")
+		req := httptest.NewRequest("POST", url, reader)
+		h, pattern := s.HTTPMux.Handler(req)
+		assert.Equal("/live/", pattern)
+		writer := httptest.NewRecorder()
+		<-start
+		h.ServeHTTP(writer, req)
+		resp := writer.Result()
+		defer resp.Body.Close()
+		assert.Equal(503, resp.StatusCode)
+		body, err := ioutil.ReadAll(resp.Body)
+		require.Nil(t, err)
+		assert.Equal("No sessions available", strings.TrimSpace(string(body)))
+		wg.Done()
+	}
+	// Send concurrent segments on the same streamID
+	wg.Add(2)
+	go sendSeg("/live/streamID/0.ts")
+	go sendSeg("/live/streamID/1.ts")
+	time.Sleep(300 * time.Millisecond)
+	// Send signal to go-routines so the requests are as-close-together-as-possible
+	close(start)
+	// Wait for goroutines to end
+	wg.Wait()
+}
