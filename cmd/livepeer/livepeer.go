@@ -134,6 +134,7 @@ func main() {
 	ethOrchAddr := flag.String("ethOrchAddr", "", "ETH address of an on-chain registered orchestrator")
 	ethUrl := flag.String("ethUrl", "", "Ethereum node JSON-RPC URL")
 	ethController := flag.String("ethController", "", "Protocol smart contract address")
+	subgraphUrl := flag.String("subgraph", "", "Livepeer subgraph URL")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
 	gasPrice := flag.Int("gasPrice", 0, "Gas price for ETH transactions")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
