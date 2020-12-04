@@ -291,8 +291,14 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			return nil
 		}
 		if _, exists := s.rtmpConnections[mid]; exists {
-			glog.Errorf("Manifest manifestID=%v already exists for streamID url=%s", mid, url.String())
-			return nil
+			if extmid != mid {
+				// only error out if we're seeing segments from different extmids but same mid trying to use the same connection
+				// FIXME s.internalManifests might not be updated if segments are too close together
+				if _, extmidSeenBefore := s.internalManifests[extmid]; !extmidSeenBefore {
+					glog.Errorf("RTMP connection for manifest manifestID=%v already exists (streamID url=%s)", mid, url.String())
+					return nil
+				}
+			} // by default we will handle re-using the extmid's older connection in HandlePush
 		}
 
 		// Generate RTMP part of StreamID
@@ -541,6 +547,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	if exists {
 		// We can only have one concurrent stream per ManifestID
 		s.connectionLock.Unlock()
+		cxn.sessManager.cleanup()
 		return oldCxn, errAlreadyExists
 	}
 	s.rtmpConnections[mid] = cxn
@@ -765,12 +772,13 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 		cxn, err = s.registerConnection(st)
 		if err != nil {
+			st.Close()
 			if err != errAlreadyExists {
 				httpErr := fmt.Sprintf("http push error url=%s err=%v", r.URL, err)
 				glog.Error(httpErr)
 				http.Error(w, httpErr, http.StatusInternalServerError)
 				return
-			}
+			} // else we continue with the old cxn
 		} else {
 			// Start a watchdog to remove session after a period of inactivity
 			ticker := time.NewTicker(httpPushTimeout)
@@ -790,6 +798,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 				}
 			}(s, cxn.mid, mid)
 		}
+		// Regardless of old/new cxn returned by registerConnection, we make sure
+		// our internalManifests mapping is OK before moving on
 		if cxn.mid != mid {
 			// AuthWebhook provided different ManifestID
 			s.connectionLock.Lock()
