@@ -574,6 +574,11 @@ func (c *client) Paused() (bool, error) {
 }
 
 func (c *client) TranscoderPool() ([]*lpTypes.Transcoder, error) {
+	// If a subgraph is present we can use it to query the active pool in a single request
+	if c.subgraph != nil {
+		return c.subgraph.GetActiveTranscoders()
+	}
+
 	var transcoders []*lpTypes.Transcoder
 
 	tAddr, err := c.GetFirstTranscoderInPool()
