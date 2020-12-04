@@ -379,7 +379,12 @@ func main() {
 			return
 		}
 
-		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, backend, ethcommon.HexToAddress(*ethController), EthTxTimeout)
+		var subgraph eth.LivepeerSubgraph
+		if *subgraphUrl != "" {
+			subgraph = eth.NewLivepeerSubgraph(*subgraphUrl, ethRPCTimeout)
+		}
+
+		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, backend, ethcommon.HexToAddress(*ethController), subgraph, EthTxTimeout)
 		if err != nil {
 			glog.Errorf("Failed to create client: %v", err)
 			return

@@ -123,6 +123,7 @@ type LivepeerEthClient interface {
 type client struct {
 	accountManager AccountManager
 	backend        Backend
+	subgraph       LivepeerSubgraph
 
 	controllerAddr      ethcommon.Address
 	tokenAddr           ethcommon.Address
@@ -150,7 +151,7 @@ type client struct {
 	txTimeout time.Duration
 }
 
-func NewClient(accountAddr ethcommon.Address, keystoreDir string, eth *ethclient.Client, controllerAddr ethcommon.Address, txTimeout time.Duration) (LivepeerEthClient, error) {
+func NewClient(accountAddr ethcommon.Address, keystoreDir string, eth *ethclient.Client, controllerAddr ethcommon.Address, subgraph LivepeerSubgraph, txTimeout time.Duration) (LivepeerEthClient, error) {
 	chainID, err := eth.ChainID(context.Background())
 	if err != nil {
 		return nil, err
@@ -171,6 +172,7 @@ func NewClient(accountAddr ethcommon.Address, keystoreDir string, eth *ethclient
 	return &client{
 		accountManager: am,
 		backend:        backend,
+		subgraph:       subgraph,
 		controllerAddr: controllerAddr,
 		txTimeout:      txTimeout,
 	}, nil
