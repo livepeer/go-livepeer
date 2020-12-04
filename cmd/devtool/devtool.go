@@ -158,9 +158,8 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		return
 	}
 	glog.Infof("Using controller address %s", ethController)
-
 	client, err := eth.NewClient(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, backend,
-		ethcommon.HexToAddress(ethController), ethTxTimeout)
+		ethcommon.HexToAddress(ethController), nil, ethTxTimeout)
 	if err != nil {
 		glog.Errorf("Failed to create client: %v", err)
 		return
