@@ -476,7 +476,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Measure:     census.mTranscodeScore,
 			Description: "Ratio of source segment duration vs. transcode time",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
-			Aggregation: view.Distribution(0, .25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75, 4),
+			Aggregation: view.Distribution(0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 10, 15, 20, 40),
 		},
 		{
 			Name:        "upload_time_seconds",
