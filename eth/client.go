@@ -576,7 +576,11 @@ func (c *client) Paused() (bool, error) {
 func (c *client) TranscoderPool() ([]*lpTypes.Transcoder, error) {
 	// If a subgraph is present we can use it to query the active pool in a single request
 	if c.subgraph != nil {
-		return c.subgraph.GetActiveTranscoders()
+		transcoders, err := c.subgraph.GetActiveTranscoders()
+		if err == nil {
+			return transcoders, nil
+		}
+		glog.Errorf("unable to fetch orchestrators using subgraph, using JSON-RPC instead: %v", err)
 	}
 
 	var transcoders []*lpTypes.Transcoder
