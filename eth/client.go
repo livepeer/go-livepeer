@@ -30,6 +30,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth/contracts"
+	"github.com/livepeer/go-livepeer/eth/subgraph"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/pkg/errors"
@@ -123,7 +124,7 @@ type LivepeerEthClient interface {
 type client struct {
 	accountManager AccountManager
 	backend        Backend
-	subgraph       LivepeerSubgraph
+	subgraph       subgraph.LivepeerSubgraph
 
 	controllerAddr      ethcommon.Address
 	tokenAddr           ethcommon.Address
@@ -151,7 +152,7 @@ type client struct {
 	txTimeout time.Duration
 }
 
-func NewClient(accountAddr ethcommon.Address, keystoreDir string, eth *ethclient.Client, controllerAddr ethcommon.Address, subgraph LivepeerSubgraph, txTimeout time.Duration) (LivepeerEthClient, error) {
+func NewClient(accountAddr ethcommon.Address, keystoreDir string, eth *ethclient.Client, controllerAddr ethcommon.Address, subgraph subgraph.LivepeerSubgraph, txTimeout time.Duration) (LivepeerEthClient, error) {
 	chainID, err := eth.ChainID(context.Background())
 	if err != nil {
 		return nil, err
