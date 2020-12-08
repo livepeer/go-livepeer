@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"net/http"
+	"strings"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -29,7 +30,7 @@ type livepeerSubgraph struct {
 }
 
 type data struct {
-	Data json.RawMessage
+	Data map[string]json.RawMessage
 }
 
 func NewLivepeerSubgraph(addr string, timeout time.Duration) (*livepeerSubgraph, error) {
@@ -89,14 +90,16 @@ func (s *livepeerSubgraph) GetActiveTranscoders() ([]*lpTypes.Transcoder, error)
 		return nil, errors.New(string(body))
 	}
 
-	data := data{}
+	data := data{
+		Data: make(map[string]json.RawMessage),
+	}
 
 	if err := json.Unmarshal(body, &data); err != nil {
 		return nil, err
 	}
 
 	transcodersJSON := []*transcoder{}
-	if err := json.Unmarshal(data.Data, &transcodersJSON); err != nil {
+	if err := json.Unmarshal([]byte(data.Data["transcoders"]), &transcodersJSON); err != nil {
 		return nil, err
 	}
 
@@ -118,11 +121,15 @@ func (b bigInt) MarshalJSON() ([]byte, error) {
 }
 
 func (b *bigInt) UnmarshalJSON(p []byte) error {
-	if string(p) == "null" {
+	str := string(p)
+	if str == "null" {
 		return nil
 	}
+	if strings.HasPrefix(str, `"`) {
+		json.Unmarshal(p, &str)
+	}
 	var z big.Int
-	_, ok := z.SetString(string(p), 10)
+	_, ok := z.SetString(str, 10)
 	if !ok {
 		return fmt.Errorf("not a valid big integer: %s", p)
 	}
@@ -134,7 +141,7 @@ type transcoder struct {
 	ID                string `json:"id"`
 	FeeShare          bigInt `json:"feeShare"`
 	RewardCut         bigInt `json:"rewardCut"`
-	LastRewardRound   *round `json:"lastRewardRound"`
+	LastRewardRound   round  `json:"lastRewardRound"`
 	ActivationRound   bigInt `json:"activationRound"`
 	DeactivationRound bigInt `json:"deactivationRound"`
 	TotalStake        bigInt `json:"totalStake"`

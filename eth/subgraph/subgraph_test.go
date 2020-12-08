@@ -82,7 +82,7 @@ func TestGetActiveTranscoders(t *testing.T) {
 			ID:        id,
 			FeeShare:  bigInt{*big.NewInt(int64(i + 10))},
 			RewardCut: bigInt{*big.NewInt(int64(i + 10))},
-			LastRewardRound: &round{
+			LastRewardRound: round{
 				Number: bigInt{*big.NewInt(int64(i))},
 			},
 			ActivationRound:   bigInt{*big.NewInt(int64(i))},
@@ -95,8 +95,10 @@ func TestGetActiveTranscoders(t *testing.T) {
 	}
 	jsonTs, err := json.Marshal(transcoders)
 	require.Nil(err)
+	dataMap := make(map[string]json.RawMessage)
+	dataMap["transcoders"] = jsonTs
 	data := data{
-		Data: json.RawMessage(jsonTs),
+		Data: dataMap,
 	}
 	dataJSON, err := json.Marshal(data)
 	require.Nil(err)
@@ -126,7 +128,7 @@ func TestParseLivepeerTranscoder(t *testing.T) {
 		ID:        id,
 		FeeShare:  bigInt{*big.NewInt(feeShare)},
 		RewardCut: bigInt{*big.NewInt(rewardCut)},
-		LastRewardRound: &round{
+		LastRewardRound: round{
 			Number: bigInt{*big.NewInt(lastRewardRound)},
 		},
 		ActivationRound:   bigInt{*big.NewInt(activationRound)},
