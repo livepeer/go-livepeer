@@ -95,8 +95,15 @@ func (ostore *MemorySession) ListFiles(ctx context.Context, prefix, delim string
 		cprefix = strings.Join(pp[:len(pp)-1], "/") + "/"
 		pprefix = pp[len(pp)-1]
 	}
+	dCache := ostore.dCache
+	if prefix != "" && Testing {
+		sid := strings.Split(prefix, "/")[0]
+		if osess, has := ostore.os.sessions[sid]; has {
+			dCache = osess.dCache
+		}
+	}
 
-	for cachePath, cache := range ostore.dCache {
+	for cachePath, cache := range dCache {
 		if strings.HasPrefix(cachePath, cprefix) {
 			for _, it := range cache.cache {
 				if it.name != "" {
@@ -162,8 +169,14 @@ func (ostore *MemorySession) GetData(name string) []byte {
 
 	ostore.dLock.RLock()
 	defer ostore.dLock.RUnlock()
-
-	if cache, ok := ostore.dCache[path]; ok {
+	dCache := ostore.dCache
+	if Testing {
+		sid := strings.Split(path, "/")[0]
+		if osess, has := ostore.os.sessions[sid]; has {
+			dCache = osess.dCache
+		}
+	}
+	if cache, ok := dCache[path]; ok {
 		return cache.GetData(file)
 	}
 	return nil

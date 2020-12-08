@@ -1226,7 +1226,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	if finalize {
 		for trackName := range mainJspl.Segments {
 			mpl := mediaLists[trackName]
-			mainJspl.AddSegmentsToMPL(manifestID, trackName, mpl, resp.RecordObjectStoreURL)
+			mainJspl.AddSegmentsToMPL(manifests, trackName, mpl, resp.RecordObjectStoreURL)
 			fileName := trackName + ".m3u8"
 			nows := time.Now()
 			_, err = sess.SaveData(fileName, mpl.Encode().Bytes(), nil)
@@ -1247,7 +1247,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		}
 	} else if !returnMasterPlaylist {
 		mpl := mediaLists[track]
-		mainJspl.AddSegmentsToMPL(manifestID, track, mpl, resp.RecordObjectStoreURL)
+		mainJspl.AddSegmentsToMPL(manifests, track, mpl, resp.RecordObjectStoreURL)
 		// check (debug code)
 		startSeq := mpl.Segments[0].SeqId
 		for _, seg := range mpl.Segments[1:] {

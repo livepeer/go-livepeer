@@ -71,7 +71,7 @@ func TestJSONList1(t *testing.T) {
 	assert.Nil(err)
 	assert.NotNil(mpl)
 	mpl.Live = false
-	mjspl.AddSegmentsToMPL("manifestID", "source", mpl, "")
+	mjspl.AddSegmentsToMPL([]string{"manifestID"}, "source", mpl, "")
 	mpls := string(mpl.Encode().Bytes())
 	assert.Equal("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:3\n#EXTINF:2.100,\ntest_seg/1.ts\n#EXTINF:2.000,\ntest_seg/2.ts\n#EXTINF:2.500,\ntest_seg/3.ts\n#EXTINF:2.500,\ntest_seg/4.ts\n#EXT-X-ENDLIST\n", mpls)
 }

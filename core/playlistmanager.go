@@ -3,7 +3,6 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -91,11 +90,11 @@ func (jpl *JsonPlaylist) AddMaster(ajpl *JsonPlaylist) {
 }
 
 // AddSegmentsToMPL adds segments to the MediaPlaylist
-func (jpl *JsonPlaylist) AddSegmentsToMPL(manifestID, trackName string, mpl *m3u8.MediaPlaylist, extURL string) {
+func (jpl *JsonPlaylist) AddSegmentsToMPL(manifestIDs []string, trackName string, mpl *m3u8.MediaPlaylist, extURL string) {
 	for _, seg := range jpl.Segments[trackName] {
 		// make relative URL from absolute one
 		uri := seg.URI
-		mindex := strings.Index(uri, manifestID)
+		mindex, manifestIDlen := indexOf(uri, manifestIDs)
 		if mindex != -1 {
 			// If extURL was specified we will put absolute URL to the segment into manifest
 			// extURL points to the root of object store, so we should take part of the 'uri'
@@ -105,9 +104,9 @@ func (jpl *JsonPlaylist) AddSegmentsToMPL(manifestID, trackName string, mpl *m3u
 			// (broadcaster.com/recordings/manifestID/index.m3u8), so we're taking
 			// part of the 'uri' after the manifestID
 			if extURL != "" {
-				uri = path.Join(extURL, uri[mindex:])
+				uri = common.JoinURL(extURL, uri[mindex:])
 			} else {
-				uri = uri[mindex+len(manifestID)+1:]
+				uri = uri[mindex+manifestIDlen+1:]
 			}
 		}
 		mseg := &m3u8.MediaSegment{
@@ -331,4 +330,16 @@ func newMediaSegment(uri string, duration float64) *m3u8.MediaSegment {
 		URI:      uri,
 		Duration: duration,
 	}
+}
+
+// indexOf finds index of one of substrings
+// returns index and length of substring
+func indexOf(str string, substrs []string) (int, int) {
+	for _, sub := range substrs {
+		mindex := strings.Index(str, sub)
+		if mindex != -1 {
+			return mindex, len(sub)
+		}
+	}
+	return -1, 0
 }

@@ -380,3 +380,10 @@ func RatPriceInfo(priceInfo *net.PriceInfo) (*big.Rat, error) {
 
 	return big.NewRat(priceInfo.PricePerUnit, pixelsPerUnit), nil
 }
+
+func JoinURL(url, path string) string {
+	if !strings.HasSuffix(url, "/") {
+		return url + "/" + path
+	}
+	return url + path
+}
