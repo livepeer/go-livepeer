@@ -179,7 +179,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	require.Nil(err)
-	assert.Equal(strings.TrimSpace(string(body)), "parse hello world: invalid URI for request")
+	assert.Equal(strings.TrimSpace(string(body)), "parse \"hello world\": invalid URI for request")
 	form["serviceURI"] = []string{"http://foo.bar:1337"}
 
 	req = bytes.NewBufferString(form.Encode())
