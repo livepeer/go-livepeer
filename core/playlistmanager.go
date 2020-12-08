@@ -3,7 +3,6 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -105,7 +104,7 @@ func (jpl *JsonPlaylist) AddSegmentsToMPL(manifestIDs []string, trackName string
 			// (broadcaster.com/recordings/manifestID/index.m3u8), so we're taking
 			// part of the 'uri' after the manifestID
 			if extURL != "" {
-				uri = path.Join(extURL, uri[mindex:])
+				uri = common.JoinPaths(extURL, uri[mindex:])
 			} else {
 				uri = uri[mindex+manifestIDlen+1:]
 			}
