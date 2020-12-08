@@ -36,6 +36,7 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
+	"github.com/livepeer/go-livepeer/eth/subgraph"
 	"github.com/livepeer/go-livepeer/eth/watchers"
 	"github.com/livepeer/go-livepeer/verification"
 
@@ -379,12 +380,15 @@ func main() {
 			return
 		}
 
-		var subgraph eth.LivepeerSubgraph
+		var sg subgraph.LivepeerSubgraph
 		if *subgraphUrl != "" {
-			subgraph = eth.NewLivepeerSubgraph(*subgraphUrl, ethRPCTimeout)
+			sg, err = subgraph.NewLivepeerSubgraph(*subgraphUrl, ethRPCTimeout)
+			if err != nil {
+				glog.Infof("unable to create subgraph client, continuing without %v", err)
+			}
 		}
 
-		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, backend, ethcommon.HexToAddress(*ethController), subgraph, EthTxTimeout)
+		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, backend, ethcommon.HexToAddress(*ethController), sg, EthTxTimeout)
 		if err != nil {
 			glog.Errorf("Failed to create client: %v", err)
 			return
