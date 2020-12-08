@@ -3,8 +3,10 @@ package eventservices
 import (
 	"context"
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/watchers"
@@ -19,7 +21,12 @@ type RewardService struct {
 	client       eth.LivepeerEthClient
 	working      bool
 	cancelWorker context.CancelFunc
-	tw           *watchers.TimeWatcher
+	tw           roundsWatcher
+}
+
+type roundsWatcher interface {
+	SubscribeRounds(sink chan<- types.Log) event.Subscription
+	LastInitializedRound() *big.Int
 }
 
 func NewRewardService(client eth.LivepeerEthClient, tw *watchers.TimeWatcher) *RewardService {
@@ -55,7 +62,7 @@ func (s *RewardService) Start(ctx context.Context) error {
 		case <-rounds:
 			err := s.tryReward()
 			if err != nil {
-				glog.Errorf("Error trying to call reward: %v", err)
+				glog.Errorf("Error trying to call reward err=%v", err)
 			}
 		case <-cancelCtx.Done():
 			glog.V(5).Infof("Reward service done")
@@ -80,27 +87,14 @@ func (s *RewardService) IsWorking() bool {
 }
 
 func (s *RewardService) tryReward() error {
-	currentRound, err := s.client.CurrentRound()
-	if err != nil {
-		return err
-	}
-
-	initialized, err := s.client.CurrentRoundInitialized()
-	if err != nil {
-		return err
-	}
+	currentRound := s.tw.LastInitializedRound()
 
 	t, err := s.client.GetTranscoder(s.client.Account().Address)
 	if err != nil {
 		return err
 	}
 
-	active, err := s.client.IsActiveTranscoder()
-	if err != nil {
-		return err
-	}
-
-	if t.LastRewardRound.Cmp(currentRound) == -1 && initialized && active {
+	if t.LastRewardRound.Cmp(currentRound) == -1 && t.Active {
 		tx, err := s.client.Reward()
 		if err != nil {
 			return err
@@ -116,9 +110,12 @@ func (s *RewardService) tryReward() error {
 				if err != nil {
 					return err
 				}
+				if err := s.client.CheckTx(tx); err != nil {
+					return err
+				}
+			} else {
+				return err
 			}
-
-			return err
 		}
 
 		tp, err := s.client.GetTranscoderEarningsPoolForRound(s.client.Account().Address, currentRound)
