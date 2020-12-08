@@ -3,11 +3,11 @@ package eventservices
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/eth/watchers"
 )
 
 var (
@@ -15,20 +15,17 @@ var (
 	ErrRewardServiceStopped = fmt.Errorf("reward service already stopped")
 )
 
-const blockTime = 15 * time.Second
-
 type RewardService struct {
-	client          eth.LivepeerEthClient
-	pendingTx       *types.Transaction
-	working         bool
-	cancelWorker    context.CancelFunc
-	pollingInterval time.Duration
+	client       eth.LivepeerEthClient
+	working      bool
+	cancelWorker context.CancelFunc
+	tw           *watchers.TimeWatcher
 }
 
-func NewRewardService(client eth.LivepeerEthClient, pollingInterval time.Duration) *RewardService {
+func NewRewardService(client eth.LivepeerEthClient, tw *watchers.TimeWatcher) *RewardService {
 	return &RewardService{
-		client:          client,
-		pollingInterval: pollingInterval,
+		client: client,
+		tw:     tw,
 	}
 }
 
@@ -40,12 +37,18 @@ func (s *RewardService) Start(ctx context.Context) error {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	s.cancelWorker = cancel
 
-	tickCh := time.NewTicker(s.pollingInterval).C
+	rounds := make(chan types.Log, 10)
+	sub := s.tw.SubscribeRounds(rounds)
+	defer sub.Unsubscribe()
 
 	go func(ctx context.Context) {
 		for {
 			select {
-			case <-tickCh:
+			case err := <-sub.Err():
+				if err != nil {
+					glog.Errorf("Block subscription error err=%v", err)
+				}
+			case <-rounds:
 				err := s.tryReward()
 				if err != nil {
 					glog.Errorf("Error trying to call reward: %v", err)
@@ -99,43 +102,25 @@ func (s *RewardService) tryReward() error {
 	}
 
 	if t.LastRewardRound.Cmp(currentRound) == -1 && initialized && active {
-		var (
-			tx  *types.Transaction
-			err error
-		)
-
-		if s.pendingTx != nil {
-			// Previous attempt to call reward() still pending
-			// Replace pending tx by bumping gas price
-			tx, err = s.client.ReplaceTransaction(s.pendingTx, "reward", nil)
-			if err != nil {
-				if err == eth.ErrReplacingMinedTx || err.Error() == "nonce too low" {
-					// Pending tx confirmed so we should not try to replace next time
-					s.pendingTx = nil
-				}
-
-				return err
-			}
-		} else {
-			// No previous attempt to call reward(), invoke with next nonce
-			tx, err = s.client.Reward()
-			if err != nil {
-				return err
-			}
+		tx, err := s.client.Reward()
+		if err != nil {
+			return err
 		}
-
-		s.pendingTx = tx
 
 		err = s.client.CheckTx(tx)
 		if err != nil {
 			if err == context.DeadlineExceeded {
-				glog.Infof("Reward tx did not confirm within defined time window - will try to replace pending tx next time")
+				glog.Infof("Reward tx did not confirm within defined time window - will try to replace pending tx once")
+				// Previous attempt to call reward() still pending
+				// Replace pending tx by bumping gas price
+				tx, err = s.client.ReplaceTransaction(tx, "reward", nil)
+				if err != nil {
+					return err
+				}
 			}
 
 			return err
 		}
-
-		s.pendingTx = nil
 
 		tp, err := s.client.GetTranscoderEarningsPoolForRound(s.client.Account().Address, currentRound)
 		if err != nil {

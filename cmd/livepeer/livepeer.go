@@ -668,7 +668,7 @@ func main() {
 		if *reward {
 			// Start reward service
 			// The node will only call reward if it is active in the current round
-			rs := eventservices.NewRewardService(n.Eth, blockPollingTime)
+			rs := eventservices.NewRewardService(n.Eth, timeWatcher)
 			rs.Start(ctx)
 			defer rs.Stop()
 		}
