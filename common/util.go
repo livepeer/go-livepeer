@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"math/rand"
 	"mime"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -386,4 +387,12 @@ func JoinURL(url, path string) string {
 		return url + "/" + path
 	}
 	return url + path
+}
+
+func ValidateURL(addr string) (string, error) {
+	url, err := url.ParseRequestURI(addr)
+	if err != nil {
+		return "", err
+	}
+	return url.String(), nil
 }
