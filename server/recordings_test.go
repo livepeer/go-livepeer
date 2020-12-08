@@ -36,6 +36,8 @@ func TestRecordingHandler(t *testing.T) {
 		"previousSessions":["sess1","sess2"]}`))
 	}))
 	defer whts.Close()
+	oldURL := AuthWebhookURL
+	defer func() { AuthWebhookURL = oldURL }()
 	AuthWebhookURL = whts.URL
 
 	makeReq := func(method, uri string) *http.Response {
@@ -73,13 +75,13 @@ func TestRecordingHandler(t *testing.T) {
 	body, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	assert.Equal(200, resp.StatusCode)
-	assert.Equal("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:2100\n#EXTINF:2100.000,\nhttps:/pub.test/sess1/testNode/P144p25fps16x9/1.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:2100.000,\nhttps:/pub.test/sess2/testNode/P144p25fps16x9/2.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:2100.000,\nhttps:/pub.test/sess3/testNode/P144p25fps16x9/3.ts\n#EXT-X-ENDLIST\n", string(body))
+	assert.Equal("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:2100\n#EXTINF:2100.000,\nhttps://pub.test/sess1/testNode/P144p25fps16x9/1.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:2100.000,\nhttps://pub.test/sess2/testNode/P144p25fps16x9/2.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:2100.000,\nhttps://pub.test/sess3/testNode/P144p25fps16x9/3.ts\n#EXT-X-ENDLIST\n", string(body))
 	fir, err := msess3.ReadData(context.Background(), "sess3/P144p25fps16x9.m3u8")
 	assert.Nil(err)
 	assert.NotNil(fir)
 	body, _ = ioutil.ReadAll(fir.Body)
 	fir.Body.Close()
-	assert.Equal("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:2100\n#EXTINF:2100.000,\nhttps:/pub.test/sess1/testNode/P144p25fps16x9/1.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:2100.000,\nhttps:/pub.test/sess2/testNode/P144p25fps16x9/2.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:2100.000,\nhttps:/pub.test/sess3/testNode/P144p25fps16x9/3.ts\n#EXT-X-ENDLIST\n", string(body))
+	assert.Equal("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:2100\n#EXTINF:2100.000,\nhttps://pub.test/sess1/testNode/P144p25fps16x9/1.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:2100.000,\nhttps://pub.test/sess2/testNode/P144p25fps16x9/2.ts\n#EXT-X-DISCONTINUITY\n#EXTINF:2100.000,\nhttps://pub.test/sess3/testNode/P144p25fps16x9/3.ts\n#EXT-X-ENDLIST\n", string(body))
 }
 
 func TestRecording(t *testing.T) {
@@ -102,6 +104,8 @@ func TestRecording(t *testing.T) {
 	}))
 
 	defer whts.Close()
+	oldURL := AuthWebhookURL
+	defer func() { AuthWebhookURL = oldURL }()
 	AuthWebhookURL = whts.URL
 	makeReq := func(method, uri string) *http.Response {
 		writer := httptest.NewRecorder()

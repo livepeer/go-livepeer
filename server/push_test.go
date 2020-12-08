@@ -818,6 +818,8 @@ func TestPush_ForAuthWebhookFailure(t *testing.T) {
 	defer serverCleanup(s)
 	handler, reader, w := requestSetup(s)
 
+	oldURL := AuthWebhookURL
+	defer func() { AuthWebhookURL = oldURL }()
 	AuthWebhookURL = "notaurl"
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
 
@@ -829,9 +831,6 @@ func TestPush_ForAuthWebhookFailure(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	assert.Contains(strings.TrimSpace(string(body)), "Could not create stream ID")
-
-	// reset AuthWebhookURL to original value
-	AuthWebhookURL = ""
 }
 
 func TestPush_ResolutionWithoutContentResolutionHeader(t *testing.T) {
@@ -897,6 +896,8 @@ func TestPush_WebhookRequestURL(t *testing.T) {
 
 	defer ts.Close()
 
+	oldURL := AuthWebhookURL
+	defer func() { AuthWebhookURL = oldURL }()
 	AuthWebhookURL = ts.URL
 	handler, reader, w := requestSetup(s)
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
@@ -931,6 +932,8 @@ func TestPush_OSPerStream(t *testing.T) {
 	}))
 
 	defer whts.Close()
+	oldURL := AuthWebhookURL
+	defer func() { AuthWebhookURL = oldURL }()
 	AuthWebhookURL = whts.URL
 
 	ts, mux := stubTLSServer()
