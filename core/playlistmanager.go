@@ -104,7 +104,7 @@ func (jpl *JsonPlaylist) AddSegmentsToMPL(manifestIDs []string, trackName string
 			// (broadcaster.com/recordings/manifestID/index.m3u8), so we're taking
 			// part of the 'uri' after the manifestID
 			if extURL != "" {
-				uri = common.JoinPaths(extURL, uri[mindex:])
+				uri = common.JoinURL(extURL, uri[mindex:])
 			} else {
 				uri = uri[mindex+manifestIDlen+1:]
 			}
