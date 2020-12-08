@@ -41,28 +41,27 @@ func (s *RewardService) Start(ctx context.Context) error {
 	sub := s.tw.SubscribeRounds(rounds)
 	defer sub.Unsubscribe()
 
-	go func(ctx context.Context) {
-		for {
-			select {
-			case err := <-sub.Err():
-				if err != nil {
-					glog.Errorf("Block subscription error err=%v", err)
-				}
-			case <-rounds:
-				err := s.tryReward()
-				if err != nil {
-					glog.Errorf("Error trying to call reward: %v", err)
-				}
-			case <-ctx.Done():
-				glog.V(5).Infof("Reward service done")
-				return
-			}
-		}
-	}(cancelCtx)
-
 	s.working = true
+	defer func() {
+		s.working = false
+	}()
 
-	return nil
+	for {
+		select {
+		case err := <-sub.Err():
+			if err != nil {
+				glog.Errorf("Block subscription error err=%v", err)
+			}
+		case <-rounds:
+			err := s.tryReward()
+			if err != nil {
+				glog.Errorf("Error trying to call reward: %v", err)
+			}
+		case <-cancelCtx.Done():
+			glog.V(5).Infof("Reward service done")
+			return nil
+		}
+	}
 }
 
 func (s *RewardService) Stop() error {

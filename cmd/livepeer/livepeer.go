@@ -328,7 +328,7 @@ func main() {
 	}
 
 	watcherErr := make(chan error)
-	redeemerErr := make(chan error)
+	serviceErr := make(chan error)
 	var timeWatcher *watchers.TimeWatcher
 	if *network == "offchain" {
 		glog.Infof("***Livepeer is in off-chain mode***")
@@ -645,7 +645,7 @@ func main() {
 
 			go func() {
 				if err := r.Start(url, n.WorkDir); err != nil {
-					redeemerErr <- err
+					serviceErr <- err
 					return
 				}
 			}()
@@ -669,7 +669,12 @@ func main() {
 			// Start reward service
 			// The node will only call reward if it is active in the current round
 			rs := eventservices.NewRewardService(n.Eth, timeWatcher)
-			rs.Start(ctx)
+			go func() {
+				if err := rs.Start(ctx); err != nil {
+					serviceErr <- err
+					return
+				}
+			}()
 			defer rs.Stop()
 		}
 
@@ -967,9 +972,9 @@ func main() {
 	case err := <-ec:
 		glog.Infof("Error from media server: %v", err)
 		return
-	case err := <-redeemerErr:
+	case err := <-serviceErr:
 		if err != nil {
-			glog.Fatalf("Error starting redemption service: %v", err)
+			glog.Fatalf("Error starting service: %v", err)
 		}
 	case <-msCtx.Done():
 		glog.Infof("MediaServer Done()")
