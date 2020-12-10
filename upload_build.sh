@@ -39,13 +39,16 @@ done
 
 NODE="./livepeer${EXT}"
 CLI="./livepeer_cli${EXT}"
+BENCH="./livepeer_bench${EXT}"
 
 mkdir $BASE
 cp $NODE $BASE
 cp $CLI $BASE
+cp $BENCH $BASE
 
 NODE_SHA256=`shasum -a 256 ${NODE}`
 CLI_SHA256=`shasum -a 256 ${CLI}`
+BENCH_SHA256=`shasum -a 256 ${BENCH}`
 
 # do a basic upload so we know if stuff's working prior to doing everything else
 if [[ $ARCH == "windows" ]]; then
@@ -92,5 +95,5 @@ curl -X PUT -T "${FILE}" \
   -H "Authorization: AWS ${GCLOUD_KEY}:${signature}" \
   $fullUrl
 
-curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nSHA256:\n${NODE_SHA256}\n${CLI_SHA256}\"}" $DISCORD_URL 2>/dev/null
+curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nSHA256:\n${NODE_SHA256}\n${CLI_SHA256}\n${BENCH_SHA256}\"}" $DISCORD_URL 2>/dev/null
 echo "done"
