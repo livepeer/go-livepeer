@@ -333,7 +333,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	if err != nil {
 		glog.Errorf("Error inserting segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), true)
+			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err.Error(), false)
 		}
 	} else {
 		cpl.FlushRecord()
@@ -577,7 +577,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			// But report in case that InsertHLSSegment changed or something wrong is going on in other parts of workflow
 			glog.Errorf("Playlist insertion error nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
 			if monitor.Enabled {
-				monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorPlaylist, nonce, seg.SeqNo, err, false)
+				monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorDuplicateSegment, nonce, seg.SeqNo, err, false)
 			}
 		}
 	}

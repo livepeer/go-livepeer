@@ -30,6 +30,7 @@ const (
 	SegmentUploadErrorSessionEnded          SegmentUploadError    = "SessionEnded"
 	SegmentUploadErrorInsufficientBalance   SegmentUploadError    = "InsufficientBalance"
 	SegmentUploadErrorTimeout               SegmentUploadError    = "Timeout"
+	SegmentUploadErrorDuplicateSegment      SegmentUploadError    = "DuplicateSegment"
 	SegmentTranscodeErrorUnknown            SegmentTranscodeError = "Unknown"
 	SegmentTranscodeErrorUnknownResponse    SegmentTranscodeError = "UnknownResponse"
 	SegmentTranscodeErrorTranscode          SegmentTranscodeError = "Transcode"
@@ -41,7 +42,7 @@ const (
 	SegmentTranscodeErrorDownload           SegmentTranscodeError = "Download"
 	SegmentTranscodeErrorSaveData           SegmentTranscodeError = "SaveData"
 	SegmentTranscodeErrorSessionEnded       SegmentTranscodeError = "SessionEnded"
-	SegmentTranscodeErrorPlaylist           SegmentTranscodeError = "Playlist"
+	SegmentTranscodeErrorDuplicateSegment   SegmentTranscodeError = "DuplicateSegment"
 
 	numberOfSegmentsToCalcAverage = 30
 	gweiConversionFactor          = 1000000000
