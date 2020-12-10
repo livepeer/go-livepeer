@@ -453,8 +453,12 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		errorString := strings.TrimSpace(string(data))
 		glog.Errorf("Error submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d code=%d orch=%s err=%v", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, resp.StatusCode, ti.Transcoder, string(data))
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadError(resp.Status),
-				fmt.Sprintf("Code: %d Error: %s", resp.StatusCode, errorString), false)
+			if resp.StatusCode == 403 && strings.Contains(errorString, "OrchestratorCapped") {
+				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOrchestratorCapped, errorString, false)
+			} else {
+				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadError(resp.Status),
+					fmt.Sprintf("Code: %d Error: %s", resp.StatusCode, errorString), false)
+			}
 		}
 		return nil, fmt.Errorf(errorString)
 	}
