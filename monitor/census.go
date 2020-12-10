@@ -31,6 +31,7 @@ const (
 	SegmentUploadErrorInsufficientBalance   SegmentUploadError    = "InsufficientBalance"
 	SegmentUploadErrorTimeout               SegmentUploadError    = "Timeout"
 	SegmentUploadErrorDuplicateSegment      SegmentUploadError    = "DuplicateSegment"
+	SegmentUploadErrorOrchestratorCapped    SegmentUploadError    = "OrchestratorCapped"
 	SegmentTranscodeErrorUnknown            SegmentTranscodeError = "Unknown"
 	SegmentTranscodeErrorUnknownResponse    SegmentTranscodeError = "UnknownResponse"
 	SegmentTranscodeErrorTranscode          SegmentTranscodeError = "Transcode"
