@@ -57,7 +57,7 @@ func (s *RewardService) Start(ctx context.Context) error {
 		select {
 		case err := <-sub.Err():
 			if err != nil {
-				glog.Errorf("Block subscription error err=%v", err)
+				glog.Errorf("Round subscription error err=%v", err)
 			}
 		case <-rounds:
 			err := s.tryReward()

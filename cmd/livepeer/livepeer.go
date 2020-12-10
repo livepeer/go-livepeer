@@ -672,8 +672,8 @@ func main() {
 			go func() {
 				if err := rs.Start(ctx); err != nil {
 					serviceErr <- err
-					return
 				}
+				return
 			}()
 			defer rs.Stop()
 		}
@@ -681,8 +681,13 @@ func main() {
 		if *initializeRound {
 			// Start round initializer
 			// The node will only initialize rounds if it in the upcoming active set for the round
-			initializer := eth.NewRoundInitializer(n.Eth, n.Database, timeWatcher, blockPollingTime)
-			go initializer.Start()
+			initializer := eth.NewRoundInitializer(n.Eth, timeWatcher)
+			go func() {
+				if err := initializer.Start(); err != nil {
+					serviceErr <- err
+				}
+				return
+			}()
 			defer initializer.Stop()
 		}
 
