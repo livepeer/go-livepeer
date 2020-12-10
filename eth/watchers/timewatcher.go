@@ -29,6 +29,7 @@ type TimeWatcher struct {
 	mu                       sync.RWMutex
 	lastInitializedRound     *big.Int
 	lastInitializedBlockHash [32]byte
+	currentRoundStartBlock   *big.Int
 	transcoderPoolSize       *big.Int
 	lastSeenBlock            *big.Int
 
@@ -75,11 +76,18 @@ func (tw *TimeWatcher) LastInitializedBlockHash() [32]byte {
 	return tw.lastInitializedBlockHash
 }
 
-func (tw *TimeWatcher) setLastInitializedRound(round *big.Int, hash [32]byte) {
+func (tw *TimeWatcher) CurrentRoundStartBlock() *big.Int {
+	tw.mu.RLock()
+	defer tw.mu.RUnlock()
+	return tw.currentRoundStartBlock
+}
+
+func (tw *TimeWatcher) setLastInitializedRound(round *big.Int, hash [32]byte, startBlk *big.Int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 	tw.lastInitializedRound = round
 	tw.lastInitializedBlockHash = hash
+	tw.currentRoundStartBlock = startBlk
 }
 
 func (tw *TimeWatcher) GetTranscoderPoolSize() *big.Int {
@@ -116,7 +124,11 @@ func (tw *TimeWatcher) Watch() error {
 	if err != nil {
 		return fmt.Errorf("error fetching initial lastInitializedBlockHash value err=%v", err)
 	}
-	tw.setLastInitializedRound(lr, bh)
+	num, err := tw.lpEth.CurrentRoundStartBlock()
+	if err != nil {
+		return fmt.Errorf("error fetching current round start block %v=", err)
+	}
+	tw.setLastInitializedRound(lr, bh, num)
 
 	if err := tw.fetchAndSetTranscoderPoolSize(); err != nil {
 		return fmt.Errorf("error fetching initial transcoderPoolSize err=%v", err)
@@ -209,8 +221,10 @@ func (tw *TimeWatcher) handleLog(log types.Log) error {
 		return fmt.Errorf("unable to decode event: %v", err)
 	}
 
-	tw.roundSubFeed.Send(log)
-
+	roundStartBlock, err := tw.lpEth.CurrentRoundStartBlock()
+	if err != nil {
+		return err
+	}
 	if log.Removed {
 		lr, err := tw.lpEth.LastInitializedRound()
 		if err != nil {
@@ -220,15 +234,17 @@ func (tw *TimeWatcher) handleLog(log types.Log) error {
 		if err != nil {
 			return err
 		}
-		tw.setLastInitializedRound(lr, bh)
+		tw.setLastInitializedRound(lr, bh, roundStartBlock)
 	} else {
-		tw.setLastInitializedRound(nr.Round, nr.BlockHash)
+		tw.setLastInitializedRound(nr.Round, nr.BlockHash, roundStartBlock)
 	}
 
 	// Get the active transcoder pool size when we receive a NewRound event
 	if err := tw.fetchAndSetTranscoderPoolSize(); err != nil {
 		return err
 	}
+
+	tw.roundSubFeed.Send(log)
 
 	return nil
 }
