@@ -60,6 +60,26 @@ func (m *MockClient) GetTranscoderPoolMaxSize() (*big.Int, error) {
 	return mockBigInt(args, 0), args.Error(1)
 }
 
+func (m *MockClient) GetTranscoder(address common.Address) (*lpTypes.Transcoder, error) {
+	args := m.Called()
+	return args.Get(0).(*lpTypes.Transcoder), args.Error(1)
+}
+
+func (m *MockClient) IsActiveTranscoder() (bool, error) {
+	args := m.Called()
+	return args.Get(0).(bool), args.Error(1)
+}
+
+func (m *MockClient) Reward() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) GetTranscoderEarningsPoolForRound(address common.Address, round *big.Int) (*lpTypes.TokenPools, error) {
+	args := m.Called()
+	return args.Get(0).(*lpTypes.TokenPools), args.Error(1)
+}
+
 // RoundsManager
 
 // InitializeRound submits a round initialization transaction
@@ -156,6 +176,11 @@ func (m *MockClient) Account() accounts.Account {
 func (m *MockClient) CheckTx(tx *types.Transaction) error {
 	args := m.Called()
 	return args.Error(0)
+}
+
+func (m *MockClient) ReplaceTransaction(tx *types.Transaction, method string, gasPrice *big.Int) (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
 }
 
 func (m *MockClient) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Transaction, error) {
