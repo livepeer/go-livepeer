@@ -1,15 +1,11 @@
-package eventservices
+package eth
 
 import (
 	"context"
 	"fmt"
-	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/eth/watchers"
 )
 
 var (
@@ -18,18 +14,13 @@ var (
 )
 
 type RewardService struct {
-	client       eth.LivepeerEthClient
+	client       LivepeerEthClient
 	working      bool
 	cancelWorker context.CancelFunc
-	tw           roundsWatcher
+	tw           timeWatcher
 }
 
-type roundsWatcher interface {
-	SubscribeRounds(sink chan<- types.Log) event.Subscription
-	LastInitializedRound() *big.Int
-}
-
-func NewRewardService(client eth.LivepeerEthClient, tw *watchers.TimeWatcher) *RewardService {
+func NewRewardService(client LivepeerEthClient, tw timeWatcher) *RewardService {
 	return &RewardService{
 		client: client,
 		tw:     tw,
@@ -123,7 +114,7 @@ func (s *RewardService) tryReward() error {
 			return err
 		}
 
-		glog.Infof("Called reward for round %v - %v rewards minted", currentRound, eth.FormatUnits(tp.RewardPool, "LPTU"))
+		glog.Infof("Called reward for round %v - %v rewards minted", currentRound, FormatUnits(tp.RewardPool, "LPTU"))
 
 		return nil
 	}

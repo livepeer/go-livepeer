@@ -36,7 +36,6 @@ import (
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
-	"github.com/livepeer/go-livepeer/eth/eventservices"
 	"github.com/livepeer/go-livepeer/eth/watchers"
 	"github.com/livepeer/go-livepeer/verification"
 
@@ -668,7 +667,7 @@ func main() {
 		if *reward {
 			// Start reward service
 			// The node will only call reward if it is active in the current round
-			rs := eventservices.NewRewardService(n.Eth, timeWatcher)
+			rs := eth.NewRewardService(n.Eth, timeWatcher)
 			go func() {
 				if err := rs.Start(ctx); err != nil {
 					serviceErr <- err
