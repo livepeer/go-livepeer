@@ -271,6 +271,10 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		if mid == "" {
 			mid = core.RandomManifestID()
 		}
+		// Generate RTMP part of StreamID
+		if key == "" {
+			key = common.RandomIDGenerator(StreamKeyBytes)
+		}
 
 		if os != nil {
 			oss = os.NewSession(string(mid))
@@ -282,28 +286,12 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		} else if drivers.RecordStorage != nil {
 			ross = drivers.RecordStorage.NewSession(recordPath)
 		}
-
 		// Ensure there's no concurrent StreamID with the same name
 		s.connectionLock.RLock()
 		defer s.connectionLock.RUnlock()
 		if core.MaxSessions > 0 && len(s.rtmpConnections) >= core.MaxSessions {
 			glog.Errorf("Too many connections for streamID url=%s err=%v", url.String(), err)
 			return nil
-		}
-		if _, exists := s.rtmpConnections[mid]; exists {
-			if extmid != mid {
-				// only error out if we're seeing segments from different extmids but same mid trying to use the same connection
-				// FIXME s.internalManifests might not be updated if segments are too close together
-				if _, extmidSeenBefore := s.internalManifests[extmid]; !extmidSeenBefore {
-					glog.Errorf("RTMP connection for manifest manifestID=%v already exists (streamID url=%s)", mid, url.String())
-					return nil
-				}
-			} // by default we will handle re-using the extmid's older connection in HandlePush
-		}
-
-		// Generate RTMP part of StreamID
-		if key == "" {
-			key = common.RandomIDGenerator(StreamKeyBytes)
 		}
 		return &core.StreamParameters{
 			ManifestID: mid,
@@ -398,8 +386,7 @@ func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile
 	return profiles, nil
 }
 
-func streamParams(rtmpStrm stream.RTMPVideoStream) *core.StreamParameters {
-	d := rtmpStrm.AppData()
+func streamParams(d stream.AppData) *core.StreamParameters {
 	p, ok := d.(*core.StreamParameters)
 	if !ok {
 		glog.Error("Mismatched type for RTMP app data")
@@ -464,7 +451,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
-		params := streamParams(rtmpStrm)
+		params := streamParams(rtmpStrm.AppData())
 		if params == nil {
 			return errMismatchedParams
 		}
@@ -482,7 +469,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	nonce := rand.Uint64()
 
 	// Set up the connection tracking
-	params := streamParams(rtmpStrm)
+	params := streamParams(rtmpStrm.AppData())
 	if params == nil {
 		return nil, errMismatchedParams
 	}
@@ -574,7 +561,7 @@ func removeRTMPStream(s *LivepeerServer, extmid core.ManifestID) error {
 	}
 	cxn, ok := s.rtmpConnections[intmid]
 	if !ok || cxn.pl == nil {
-		glog.Errorf("Attempted to end unknown stream with manifestID=%s", extmid)
+		glog.Warningf("Attempted to end unknown stream with manifestID=%s", extmid)
 		return errUnknownStream
 	}
 	cxn.stream.Close()
@@ -759,10 +746,31 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, httpErr, http.StatusInternalServerError)
 			return
 		}
-		st := stream.NewBasicRTMPVideoStream(appData)
-		params := streamParams(st)
+		params := streamParams(appData)
 		params.Resolution = r.Header.Get("Content-Resolution")
 		params.Format = format
+		s.connectionLock.RLock()
+		if mid != params.ManifestID && s.rtmpConnections[params.ManifestID] != nil && s.internalManifests[mid] == "" {
+			// Pre-existing connection found for this new stream with the same underlying manifestID
+			var oldStreamID core.ManifestID
+			for k, v := range s.internalManifests {
+				if v == params.ManifestID {
+					oldStreamID = k
+					break
+				}
+			}
+			s.connectionLock.RUnlock()
+			if oldStreamID != "" && mid != oldStreamID {
+				// Close the old connection, and open a new one
+				// TODO try to re-use old HLS playlist?
+				glog.Warningf("Ending streamID=%v as new streamID=%s with same manifestID=%s has arrived",
+					oldStreamID, mid, params.ManifestID)
+				removeRTMPStream(s, oldStreamID)
+			}
+		} else {
+			s.connectionLock.RUnlock()
+		}
+		st := stream.NewBasicRTMPVideoStream(appData)
 		// Set output formats if not explicitly specified
 		for i, v := range params.Profiles {
 			if ffmpeg.FormatNone == v.Format {
@@ -789,6 +797,11 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 					s.connectionLock.RLock()
 					if cxn, exists := s.rtmpConnections[intmid]; exists {
 						lastUsed = cxn.lastUsed
+					}
+					if _, exists := s.internalManifests[extmid]; !exists && intmid != extmid {
+						s.connectionLock.RUnlock()
+						glog.Warningf("Watchdog tried closing session for streamID=%s, which was already closed", extmid)
+						return
 					}
 					s.connectionLock.RUnlock()
 					if time.Since(lastUsed) > httpPushTimeout {

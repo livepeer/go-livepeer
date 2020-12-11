@@ -587,8 +587,8 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 		t.Error("Handler failed ", err)
 	}
 	// Test collisions via stream reuse
-	if sid := createSid(u); sid != nil {
-		t.Error("Expected failure due to naming collision")
+	if sid := createSid(u); sid == nil {
+		t.Error("Did not expect a failure due to naming collision")
 	}
 	// Ensure the stream ID is reusable after the stream ends
 	if err := endHandler(u, st); err != nil {
@@ -670,7 +670,7 @@ func TestGotRTMPStreamHandler(t *testing.T) {
 	}
 
 	// Check assigned IDs
-	mid := streamParams(strm).ManifestID
+	mid := streamParams(strm.AppData()).ManifestID
 	if s.LatestPlaylist().ManifestID() != mid {
 		t.Error("Unexpected Manifest ID")
 	}
@@ -867,7 +867,7 @@ func TestRegisterConnection(t *testing.T) {
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
 	cxn, err = s.registerConnection(strm)
 	assert.Nil(err)
-	job, err := core.JobCapabilities(streamParams(strm))
+	job, err := core.JobCapabilities(streamParams(strm.AppData()))
 	assert.Nil(err)
 	assert.Equal(job, cxn.params.Capabilities)
 	// check for capabilities: exit with an invalid cap
@@ -925,7 +925,7 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	u, _ := url.Parse("rtmp://localhost")
 	sid := createSid(u)
 	st := stream.NewBasicRTMPVideoStream(sid)
-	mid := streamParams(st).ManifestID
+	mid := streamParams(st.AppData()).ManifestID
 
 	// assert that ManifestID has not been added to rtmpConnections yet
 	_, exists := s.rtmpConnections[mid]
