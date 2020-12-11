@@ -106,6 +106,11 @@ func (m *MockClient) CurrentRoundStartBlock() (*big.Int, error) {
 	return mockBigInt(args, 0), args.Error(1)
 }
 
+func (m *MockClient) RoundLength() (*big.Int, error) {
+	args := m.Called()
+	return mockBigInt(args, 0), args.Error(1)
+}
+
 // TicketBroker
 
 func (m *MockClient) FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*types.Transaction, error) {

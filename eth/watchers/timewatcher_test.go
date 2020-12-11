@@ -21,7 +21,8 @@ func TestSetAndGet_LastInitializedRound_LastInitializedBlockHash(t *testing.T) {
 	round := big.NewInt(5)
 	var hash [32]byte
 	copy(hash[:], "hello world")
-	tw.setLastInitializedRound(round, hash)
+	num := big.NewInt(10)
+	tw.setLastInitializedRound(round, hash, num)
 	assert.Equal(tw.lastInitializedRound, round)
 	assert.Equal(tw.lastInitializedBlockHash, hash)
 
@@ -29,6 +30,7 @@ func TestSetAndGet_LastInitializedRound_LastInitializedBlockHash(t *testing.T) {
 	assert.Equal(r, round)
 	h := tw.LastInitializedBlockHash()
 	assert.Equal(h, hash)
+	assert.Equal(tw.CurrentRoundStartBlock(), num)
 }
 
 func TestSetAndGet_TranscoderPoolSize(t *testing.T) {

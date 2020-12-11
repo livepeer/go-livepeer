@@ -1,4 +1,4 @@
-package eventservices
+package eth
 
 import (
 	"context"
@@ -8,15 +8,13 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestStart(t *testing.T) {
+func TestRewardService_Start(t *testing.T) {
 	assert := assert.New(t)
 	rs := RewardService{
 		working: true,
@@ -37,7 +35,7 @@ func TestStart(t *testing.T) {
 	assert.Nil(err)
 }
 
-func TestStop(t *testing.T) {
+func TestRewardService_Stop(t *testing.T) {
 	assert := assert.New(t)
 	rs := RewardService{
 		working: false,
@@ -56,7 +54,7 @@ func TestStop(t *testing.T) {
 	assert.False(rs.working)
 }
 
-func TestIsWorking(t *testing.T) {
+func TestRewardService_IsWorking(t *testing.T) {
 	assert := assert.New(t)
 	rs := RewardService{
 		working: false,
@@ -66,10 +64,10 @@ func TestIsWorking(t *testing.T) {
 	assert.True(rs.IsWorking())
 }
 
-func TestReceiveRoundEvent_TryReward(t *testing.T) {
+func TestRewardService_ReceiveRoundEvent_TryReward(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	eth := &eth.MockClient{}
+	eth := &MockClient{}
 	tw := &stubTimeWatcher{
 		lastInitializedRound: big.NewInt(100),
 	}
@@ -151,33 +149,4 @@ func TestReceiveRoundEvent_TryReward(t *testing.T) {
 	infoLogsAfter = glog.Stats.Info.Lines()
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
 	assert.Equal(int64(1), infoLogsAfter-infoLogsBefore)
-}
-
-type stubTimeWatcher struct {
-	lastInitializedRound *big.Int
-	roundSink            chan<- types.Log
-	roundSub             event.Subscription
-}
-
-func (m *stubTimeWatcher) SubscribeRounds(sink chan<- types.Log) event.Subscription {
-	m.roundSink = sink
-	m.roundSub = &stubSubscription{errCh: make(<-chan error)}
-	return m.roundSub
-}
-
-func (m *stubTimeWatcher) LastInitializedRound() *big.Int {
-	return m.lastInitializedRound
-}
-
-type stubSubscription struct {
-	errCh        <-chan error
-	unsubscribed bool
-}
-
-func (s *stubSubscription) Unsubscribe() {
-	s.unsubscribed = true
-}
-
-func (s *stubSubscription) Err() <-chan error {
-	return s.errCh
 }
