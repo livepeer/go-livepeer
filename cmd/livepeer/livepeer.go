@@ -27,15 +27,17 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
 
+	"github.com/0xProject/0x-mesh/ethereum/blockwatch"
+	"github.com/0xProject/0x-mesh/ethereum/ethrpcclient"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/discovery"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/watchers"
 	"github.com/livepeer/go-livepeer/verification"
 
@@ -355,7 +357,6 @@ func main() {
 			glog.Fatal("Need to specify an Ethereum node JSON-RPC URL using -ethUrl")
 		}
 
-		//Set up eth client
 		backend, err := ethclient.Dial(*ethUrl)
 		if err != nil {
 			glog.Errorf("Failed to connect to Ethereum client: %v", err)
@@ -399,40 +400,29 @@ func main() {
 
 		addrMap := n.Eth.ContractAddresses()
 
-		// Initialize block watcher that will emit logs used by event watchers
-		blockWatcherClient, err := blockwatch.NewRPCClient(*ethUrl, ethRPCTimeout)
-		if err != nil {
-			glog.Errorf("Failed to setup blockwatch client: %v", err)
-			return
-		}
 		topics := watchers.FilterTopics()
 
-		// Determine backfilling start block
-		originalLastSeenBlock, err := dbh.LastSeenBlock()
+		stack := eth.NewBlockStack(n.Database, blockWatcherRetentionLimit)
+
+		bwRPC, err := ethrpcclient.New(*ethUrl, EthTxTimeout, nil)
 		if err != nil {
-			glog.Errorf("db: failed to retrieve latest retained block: %v", err)
-			return
-		}
-		currentRoundStartBlock, err := client.CurrentRoundStartBlock()
-		if err != nil {
-			glog.Errorf("eth: failed to retrieve current round start block: %v", err)
+			glog.Errorf("Failed to setup blockwatcher rpc client: %v", err)
 			return
 		}
 
-		var blockWatcherBackfillStartBlock *big.Int
-		if originalLastSeenBlock == nil || originalLastSeenBlock.Cmp(currentRoundStartBlock) < 0 {
-			blockWatcherBackfillStartBlock = currentRoundStartBlock
+		bwClient, err := blockwatch.NewRpcClient(bwRPC)
+		if err != nil {
+			glog.Errorf("Failed to setup blockwatcher client: %v", err)
+			return
 		}
 
 		blockWatcherCfg := blockwatch.Config{
-			Store:               n.Database,
-			PollingInterval:     blockPollingTime,
-			StartBlockDepth:     rpc.LatestBlockNumber,
-			BackfillStartBlock:  blockWatcherBackfillStartBlock,
-			BlockRetentionLimit: blockWatcherRetentionLimit,
-			WithLogs:            true,
-			Topics:              topics,
-			Client:              blockWatcherClient,
+			Stack:           stack,
+			PollingInterval: blockPollingTime,
+			StartBlockDepth: rpc.LatestBlockNumber,
+			WithLogs:        true,
+			Topics:          topics,
+			Client:          bwClient,
 		}
 		// Wait until all event watchers have been initialized before starting the block watcher
 		blockWatcher := blockwatch.New(blockWatcherCfg)
@@ -692,14 +682,6 @@ func main() {
 
 		blockWatchCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
-
-		// Backfill events that the node has missed since its last seen block. This method will block
-		// and the node will not continue setup until it finishes
-		if err := blockWatcher.BackfillEventsIfNeeded(blockWatchCtx); err != nil {
-			glog.Errorf("Failed to backfill events: %v", err)
-			return
-		}
-
 		blockWatcherErr := make(chan error, 1)
 		go func() {
 			if err := blockWatcher.Watch(blockWatchCtx); err != nil {
