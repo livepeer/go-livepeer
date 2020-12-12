@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xProject/0x-mesh/ethereum/miniheader"
 	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	_ "github.com/mattn/go-sqlite3"
@@ -1178,7 +1178,7 @@ func TestFindAllMiniHeadersSortedByNumber(t *testing.T) {
 	require := require.New(t)
 	require.Nil(err)
 
-	added := make([]*blockwatch.MiniHeader, 10)
+	added := make([]*miniheader.MiniHeader, 10)
 	for i := 0; i < 10; i++ {
 		h := defaultMiniHeader()
 		h.Number = big.NewInt(int64(i))
@@ -1278,8 +1278,8 @@ func getRowCountOrFatal(query string, dbraw *sql.DB, t *testing.T) int {
 	return count
 }
 
-func defaultMiniHeader() *blockwatch.MiniHeader {
-	block := &blockwatch.MiniHeader{
+func defaultMiniHeader() *miniheader.MiniHeader {
+	block := &miniheader.MiniHeader{
 		Number: big.NewInt(450),
 		Parent: pm.RandHash(),
 		Hash:   pm.RandHash(),

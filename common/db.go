@@ -10,10 +10,10 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/0xProject/0x-mesh/ethereum/miniheader"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/pm"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pkg/errors"
@@ -849,7 +849,7 @@ func buildFilterOrchsQuery(filter *DBOrchFilter) (string, error) {
 }
 
 // FindLatestMiniHeader returns the MiniHeader with the highest blocknumber in the DB
-func (db *DB) FindLatestMiniHeader() (*blockwatch.MiniHeader, error) {
+func (db *DB) FindLatestMiniHeader() (*miniheader.MiniHeader, error) {
 	row := db.findLatestMiniHeader.QueryRow()
 	var (
 		number  int64
@@ -869,7 +869,7 @@ func (db *DB) FindLatestMiniHeader() (*blockwatch.MiniHeader, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &blockwatch.MiniHeader{
+	return &miniheader.MiniHeader{
 		Number: big.NewInt(number),
 		Parent: ethcommon.HexToHash(parent),
 		Hash:   ethcommon.HexToHash(hash),
@@ -878,8 +878,8 @@ func (db *DB) FindLatestMiniHeader() (*blockwatch.MiniHeader, error) {
 }
 
 // FindAllMiniHeadersSortedByNumber returns all MiniHeaders in the DB sorting in descending order by block number
-func (db *DB) FindAllMiniHeadersSortedByNumber() ([]*blockwatch.MiniHeader, error) {
-	var headers []*blockwatch.MiniHeader
+func (db *DB) FindAllMiniHeadersSortedByNumber() ([]*miniheader.MiniHeader, error) {
+	var headers []*miniheader.MiniHeader
 	rows, err := db.findAllMiniHeadersSortedByNumber.Query()
 	if err != nil {
 		return nil, err
@@ -899,7 +899,7 @@ func (db *DB) FindAllMiniHeadersSortedByNumber() ([]*blockwatch.MiniHeader, erro
 		if err != nil {
 			return nil, err
 		}
-		headers = append(headers, &blockwatch.MiniHeader{
+		headers = append(headers, &miniheader.MiniHeader{
 			Number: big.NewInt(number),
 			Parent: ethcommon.HexToHash(parent),
 			Hash:   ethcommon.HexToHash(hash),
@@ -910,7 +910,7 @@ func (db *DB) FindAllMiniHeadersSortedByNumber() ([]*blockwatch.MiniHeader, erro
 }
 
 // InsertMiniHeader inserts a MiniHeader into the database
-func (db *DB) InsertMiniHeader(header *blockwatch.MiniHeader) error {
+func (db *DB) InsertMiniHeader(header *miniheader.MiniHeader) error {
 	if header == nil {
 		return errors.New("must provide a MiniHeader")
 	}
