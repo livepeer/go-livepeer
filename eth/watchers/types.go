@@ -1,14 +1,15 @@
 package watchers
 
 import (
+	"github.com/0xProject/0x-mesh/ethereum/blockwatch"
+	"github.com/0xProject/0x-mesh/ethereum/miniheader"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
-	"github.com/livepeer/go-livepeer/eth/blockwatch"
 )
 
 type BlockWatcher interface {
 	Subscribe(sink chan<- []*blockwatch.Event) event.Subscription
-	GetLatestBlock() (*blockwatch.MiniHeader, error)
+	GetLatestBlockProcessed() (*miniheader.MiniHeader, error)
 }
 
 type timeWatcher interface {

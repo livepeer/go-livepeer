@@ -3,13 +3,14 @@ package watchers
 import (
 	"math/big"
 
+	"github.com/0xProject/0x-mesh/ethereum/blockwatch"
+	"github.com/0xProject/0x-mesh/ethereum/miniheader"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/livepeer/go-livepeer/common"
-	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/pm"
 )
 
@@ -268,7 +269,7 @@ func (s *stubSubscription) Err() <-chan error {
 type stubBlockWatcher struct {
 	sink         chan<- []*blockwatch.Event
 	sub          *stubSubscription
-	latestHeader *blockwatch.MiniHeader
+	latestHeader *miniheader.MiniHeader
 	err          error
 }
 
@@ -278,7 +279,7 @@ func (bw *stubBlockWatcher) Subscribe(sink chan<- []*blockwatch.Event) event.Sub
 	return bw.sub
 }
 
-func (bw *stubBlockWatcher) GetLatestBlock() (*blockwatch.MiniHeader, error) {
+func (bw *stubBlockWatcher) GetLatestBlockProcessed() (*miniheader.MiniHeader, error) {
 	return bw.latestHeader, bw.err
 }
 
@@ -340,8 +341,8 @@ func (s *stubUnbondingLockStore) Get(id int64) *stubUnbondingLock {
 	return s.unbondingLocks[id]
 }
 
-func defaultMiniHeader() *blockwatch.MiniHeader {
-	block := &blockwatch.MiniHeader{
+func defaultMiniHeader() *miniheader.MiniHeader {
+	block := &miniheader.MiniHeader{
 		Number: big.NewInt(450),
 		Parent: pm.RandHash(),
 		Hash:   pm.RandHash(),

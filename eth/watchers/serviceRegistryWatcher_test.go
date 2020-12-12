@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xProject/0x-mesh/ethereum/blockwatch"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/stretchr/testify/assert"
 )

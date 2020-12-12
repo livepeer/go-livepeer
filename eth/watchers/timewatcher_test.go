@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xProject/0x-mesh/ethereum/blockwatch"
+	"github.com/0xProject/0x-mesh/ethereum/miniheader"
 	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,7 +56,7 @@ func TestTimeWatcher_WatchAndStop(t *testing.T) {
 		Round:             round,
 	}
 	watcher := &stubBlockWatcher{
-		latestHeader: &blockwatch.MiniHeader{Number: block},
+		latestHeader: &miniheader.MiniHeader{Number: block},
 	}
 	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, lpEth)
 	assert.Nil(err)
@@ -175,7 +176,7 @@ func TestLastSeenBlock(t *testing.T) {
 func TestHandleBlockNum(t *testing.T) {
 	assert := assert.New(t)
 	watcher := &stubBlockWatcher{
-		latestHeader: &blockwatch.MiniHeader{Number: big.NewInt(1)},
+		latestHeader: &miniheader.MiniHeader{Number: big.NewInt(1)},
 	}
 
 	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, &eth.StubClient{})
@@ -198,7 +199,7 @@ func TestHandleBlockNum(t *testing.T) {
 func TestSubscribeBlocks(t *testing.T) {
 	assert := assert.New(t)
 	watcher := &stubBlockWatcher{
-		latestHeader: &blockwatch.MiniHeader{Number: big.NewInt(1)},
+		latestHeader: &miniheader.MiniHeader{Number: big.NewInt(1)},
 	}
 
 	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, &eth.StubClient{})
@@ -226,7 +227,7 @@ func TestSubscribeBlocks(t *testing.T) {
 func TestSubscribeRounds(t *testing.T) {
 	assert := assert.New(t)
 	watcher := &stubBlockWatcher{
-		latestHeader: &blockwatch.MiniHeader{Number: big.NewInt(1)},
+		latestHeader: &miniheader.MiniHeader{Number: big.NewInt(1)},
 	}
 
 	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, &eth.StubClient{})

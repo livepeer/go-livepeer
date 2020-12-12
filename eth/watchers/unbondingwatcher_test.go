@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xProject/0x-mesh/ethereum/blockwatch"
+	"github.com/0xProject/0x-mesh/ethereum/miniheader"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +34,7 @@ func TestUnbondingWatcherLoop(t *testing.T) {
 
 		return &blockwatch.Event{
 			Type: eventType,
-			BlockHeader: &blockwatch.MiniHeader{
+			BlockHeader: &miniheader.MiniHeader{
 				Logs: logs,
 			},
 		}

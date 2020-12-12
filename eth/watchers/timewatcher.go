@@ -10,9 +10,9 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 
+	"github.com/0xProject/0x-mesh/ethereum/blockwatch"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/eth/blockwatch"
 )
 
 // TimeWatcher is a type for a thread safe in-memory cache that watches for the following on-chain events:
@@ -134,7 +134,7 @@ func (tw *TimeWatcher) Watch() error {
 		return fmt.Errorf("error fetching initial transcoderPoolSize err=%v", err)
 	}
 
-	lastSeenBlock, err := tw.watcher.GetLatestBlock()
+	lastSeenBlock, err := tw.watcher.GetLatestBlockProcessed()
 	if err != nil {
 		return fmt.Errorf("error fetching last seen block err=%v", err)
 	}
