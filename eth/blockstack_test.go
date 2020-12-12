@@ -1,24 +1,25 @@
-package blockwatch
+package eth
 
 import (
 	"errors"
 	"sync"
 	"testing"
 
+	"github.com/0xProject/0x-mesh/ethereum/miniheader"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type stubMiniHeaderStore struct {
-	headers           []*MiniHeader
+	headers           []*miniheader.MiniHeader
 	latestErr         error
 	sortedByNumberErr error
 	insertErr         error
 	deleteErr         error
 }
 
-func (s *stubMiniHeaderStore) FindLatestMiniHeader() (*MiniHeader, error) {
+func (s *stubMiniHeaderStore) FindLatestMiniHeader() (*miniheader.MiniHeader, error) {
 	if s.latestErr != nil {
 		return nil, s.latestErr
 	}
@@ -30,7 +31,7 @@ func (s *stubMiniHeaderStore) FindLatestMiniHeader() (*MiniHeader, error) {
 	return s.headers[len(s.headers)-1], nil
 }
 
-func (s *stubMiniHeaderStore) FindAllMiniHeadersSortedByNumber() ([]*MiniHeader, error) {
+func (s *stubMiniHeaderStore) FindAllMiniHeadersSortedByNumber() ([]*miniheader.MiniHeader, error) {
 	if s.sortedByNumberErr != nil {
 		return nil, s.sortedByNumberErr
 	}
@@ -38,7 +39,7 @@ func (s *stubMiniHeaderStore) FindAllMiniHeadersSortedByNumber() ([]*MiniHeader,
 	return s.headers, nil
 }
 
-func (s *stubMiniHeaderStore) InsertMiniHeader(header *MiniHeader) error {
+func (s *stubMiniHeaderStore) InsertMiniHeader(header *miniheader.MiniHeader) error {
 	if s.insertErr != nil {
 		return s.insertErr
 	}
@@ -67,7 +68,7 @@ func (s *stubMiniHeaderStore) DeleteMiniHeader(hash ethcommon.Hash) error {
 
 func TestPop(t *testing.T) {
 	store := &stubMiniHeaderStore{}
-	stack := NewStack(store, 10)
+	stack := NewBlockStack(store, 10)
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -83,7 +84,7 @@ func TestPop(t *testing.T) {
 	assert.Nil(header)
 	assert.Nil(err)
 
-	h0 := &MiniHeader{Hash: ethcommon.BytesToHash([]byte("h0"))}
+	h0 := &miniheader.MiniHeader{Hash: ethcommon.BytesToHash([]byte("h0"))}
 	require.Nil(store.InsertMiniHeader(h0))
 
 	// Test when store.DeleteMiniHeader() returns error
@@ -99,7 +100,7 @@ func TestPop(t *testing.T) {
 	assert.Equal(0, len(store.headers))
 
 	// Test header popped when size > 1
-	h1 := &MiniHeader{Hash: ethcommon.BytesToHash([]byte("h1"))}
+	h1 := &miniheader.MiniHeader{Hash: ethcommon.BytesToHash([]byte("h1"))}
 	require.Nil(store.InsertMiniHeader(h0))
 	require.Nil(store.InsertMiniHeader(h1))
 
@@ -111,7 +112,7 @@ func TestPop(t *testing.T) {
 
 func TestPopConcurrent(t *testing.T) {
 	store := &stubMiniHeaderStore{}
-	stack := NewStack(store, 10)
+	stack := NewBlockStack(store, 10)
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -122,13 +123,13 @@ func TestPopConcurrent(t *testing.T) {
 		hash := ethcommon.BytesToHash([]byte(string(rune(i))))
 		headerMap[hash] = true
 
-		require.Nil(store.InsertMiniHeader(&MiniHeader{Hash: hash}))
+		require.Nil(store.InsertMiniHeader(&miniheader.MiniHeader{Hash: hash}))
 	}
 
 	// Ensure that headerMap starts off with the correct # of entries
 	assert.Equal(10, len(headerMap))
 
-	popCh := make(chan *MiniHeader)
+	popCh := make(chan *miniheader.MiniHeader)
 
 	var wg sync.WaitGroup
 	wg.Add(10)
@@ -163,23 +164,23 @@ func TestPopConcurrent(t *testing.T) {
 
 func TestPush(t *testing.T) {
 	store := &stubMiniHeaderStore{}
-	stack := NewStack(store, 2)
+	stack := NewBlockStack(store, 2)
 
 	assert := assert.New(t)
 	require := require.New(t)
 
 	// Test when store.FindAllMiniHeadersSortedByNumber() returns error
 	store.sortedByNumberErr = errors.New("FindAllMiniHeadersSortedByNumber error")
-	h0 := &MiniHeader{Hash: ethcommon.BytesToHash([]byte("h0"))}
+	h0 := &miniheader.MiniHeader{Hash: ethcommon.BytesToHash([]byte("h0"))}
 	err := stack.Push(h0)
 	assert.EqualError(err, store.sortedByNumberErr.Error())
 
 	// Test stack at limit and store.DeleteMiniHeader() returns error
-	h1 := &MiniHeader{Hash: ethcommon.BytesToHash([]byte("h1"))}
+	h1 := &miniheader.MiniHeader{Hash: ethcommon.BytesToHash([]byte("h1"))}
 	require.Nil(store.InsertMiniHeader(h0))
 	require.Nil(store.InsertMiniHeader(h1))
 
-	h2 := &MiniHeader{Hash: ethcommon.BytesToHash([]byte("h2"))}
+	h2 := &miniheader.MiniHeader{Hash: ethcommon.BytesToHash([]byte("h2"))}
 	store.sortedByNumberErr = nil
 	store.deleteErr = errors.New("DeleteMiniHeader error")
 	err = stack.Push(h2)
@@ -197,7 +198,7 @@ func TestPush(t *testing.T) {
 	store.insertErr = nil
 	require.Nil(store.InsertMiniHeader(h2))
 
-	h3 := &MiniHeader{Hash: ethcommon.BytesToHash([]byte("h3"))}
+	h3 := &miniheader.MiniHeader{Hash: ethcommon.BytesToHash([]byte("h3"))}
 	err = stack.Push(h3)
 	assert.Nil(err)
 	assert.Equal(h3, store.headers[len(store.headers)-1])
@@ -207,7 +208,7 @@ func TestPush(t *testing.T) {
 	// Test stack not at limit and store.InsertMiniHeader() returns error
 	require.Nil(store.DeleteMiniHeader(h2.Hash))
 
-	h4 := &MiniHeader{Hash: ethcommon.BytesToHash([]byte("h4"))}
+	h4 := &miniheader.MiniHeader{Hash: ethcommon.BytesToHash([]byte("h4"))}
 	store.insertErr = errors.New("InsertMiniHeader error")
 	err = stack.Push(h4)
 	assert.EqualError(err, store.insertErr.Error())
@@ -222,7 +223,7 @@ func TestPush(t *testing.T) {
 
 func TestPushConcurrent(t *testing.T) {
 	store := &stubMiniHeaderStore{}
-	stack := NewStack(store, 10)
+	stack := NewBlockStack(store, 10)
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -233,7 +234,7 @@ func TestPushConcurrent(t *testing.T) {
 
 	// Insert headers into store
 	for i := 0; i < 10; i++ {
-		require.Nil(store.InsertMiniHeader(&MiniHeader{Hash: headerHash(i)}))
+		require.Nil(store.InsertMiniHeader(&miniheader.MiniHeader{Hash: headerHash(i)}))
 	}
 
 	// Create headerMap with expected entries after all stack pushes are complete
@@ -246,7 +247,7 @@ func TestPushConcurrent(t *testing.T) {
 	wg.Add(10)
 	for i := 10; i < 20; i++ {
 		go func(i int) {
-			err := stack.Push(&MiniHeader{Hash: headerHash(i)})
+			err := stack.Push(&miniheader.MiniHeader{Hash: headerHash(i)})
 			require.Nil(err)
 
 			wg.Done()
@@ -255,7 +256,7 @@ func TestPushConcurrent(t *testing.T) {
 
 	wg.Wait()
 
-	headers, err := stack.Inspect()
+	headers, err := stack.PeekAll()
 	require.Nil(err)
 
 	for _, h := range headers {
@@ -272,7 +273,7 @@ func TestPushConcurrent(t *testing.T) {
 
 func TestPeek(t *testing.T) {
 	store := &stubMiniHeaderStore{}
-	stack := NewStack(store, 10)
+	stack := NewBlockStack(store, 10)
 
 	assert := assert.New(t)
 
@@ -282,7 +283,7 @@ func TestPeek(t *testing.T) {
 	assert.EqualError(err, store.latestErr.Error())
 
 	// Test header returned
-	h := &MiniHeader{Hash: ethcommon.BytesToHash([]byte("h"))}
+	h := &miniheader.MiniHeader{Hash: ethcommon.BytesToHash([]byte("h"))}
 	require.Nil(t, store.InsertMiniHeader(h))
 
 	store.latestErr = nil
@@ -293,23 +294,23 @@ func TestPeek(t *testing.T) {
 
 func TestInspect(t *testing.T) {
 	store := &stubMiniHeaderStore{}
-	stack := NewStack(store, 10)
+	stack := NewBlockStack(store, 10)
 
 	assert := assert.New(t)
 
 	// Test store.FindAllMiniHeadersSortedByNumber() returns error
 	store.sortedByNumberErr = errors.New("FindAllMiniHeadersSortedByNumber error")
-	_, err := stack.Inspect()
+	_, err := stack.PeekAll()
 	assert.EqualError(err, store.sortedByNumberErr.Error())
 
 	// Test headers returned
-	h0 := &MiniHeader{Hash: ethcommon.BytesToHash([]byte("h0"))}
-	h1 := &MiniHeader{Hash: ethcommon.BytesToHash([]byte("h1"))}
+	h0 := &miniheader.MiniHeader{Hash: ethcommon.BytesToHash([]byte("h0"))}
+	h1 := &miniheader.MiniHeader{Hash: ethcommon.BytesToHash([]byte("h1"))}
 	require.Nil(t, store.InsertMiniHeader(h0))
 	require.Nil(t, store.InsertMiniHeader(h1))
 
 	store.sortedByNumberErr = nil
-	headers, err := stack.Inspect()
+	headers, err := stack.PeekAll()
 	assert.Nil(err)
 	assert.Equal(2, len(headers))
 	assert.Equal(h0, headers[0])
