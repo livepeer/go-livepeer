@@ -1061,3 +1061,71 @@ func TestPush_ConcurrentSegments(t *testing.T) {
 	// Wait for goroutines to end
 	wg.Wait()
 }
+
+func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
+
+	reader := strings.NewReader("InsteadOf.TS")
+	oldRI := httpPushTimeout
+	httpPushTimeout = 10 * time.Millisecond
+	defer func() { httpPushTimeout = oldRI }()
+	assert := assert.New(t)
+	s, cancel := setupServerWithCancel()
+
+	hookCalled := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := authWebhookResponse{ManifestID: "intmid"}
+		val, err := json.Marshal(auth)
+		assert.Nil(err, "invalid auth webhook response")
+		w.Write(val)
+		hookCalled++
+	}))
+	defer ts.Close()
+	oldURL := AuthWebhookURL
+	defer func() { AuthWebhookURL = oldURL }()
+	AuthWebhookURL = ts.URL
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/extmid1/0.ts", reader)
+	s.HandlePush(w, req)
+	resp := w.Result()
+	assert.Equal(503, resp.StatusCode)
+	resp.Body.Close()
+	assert.Equal(1, hookCalled)
+	s.connectionLock.Lock()
+	_, exists := s.rtmpConnections["intmid"]
+	intmid := s.internalManifests["extmid1"]
+	s.connectionLock.Unlock()
+	assert.Equal("intmid", string(intmid))
+	assert.True(exists)
+
+	time.Sleep(4 * time.Millisecond)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/live/extmid2/0.ts", reader)
+	s.HandlePush(w, req)
+	resp = w.Result()
+	assert.Equal(503, resp.StatusCode)
+	resp.Body.Close()
+	assert.Equal(2, hookCalled)
+	s.connectionLock.Lock()
+	_, exists = s.rtmpConnections["intmid"]
+	intmid = s.internalManifests["extmid2"]
+	_, existsOld := s.internalManifests["extmid1"]
+	s.connectionLock.Unlock()
+	assert.Equal("intmid", string(intmid))
+	assert.True(exists)
+	assert.False(existsOld)
+
+	time.Sleep(50 * time.Millisecond)
+
+	s.connectionLock.Lock()
+	_, exists = s.rtmpConnections["intmid"]
+	_, extEx := s.internalManifests["extmid1"]
+	_, extEx2 := s.internalManifests["extmid2"]
+	s.connectionLock.Unlock()
+	cancel()
+	assert.False(exists)
+	assert.False(extEx)
+	assert.False(extEx2)
+}
