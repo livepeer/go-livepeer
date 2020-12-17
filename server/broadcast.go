@@ -306,12 +306,17 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		go func() {
 			now := time.Now()
 			uri, err := drivers.SaveRetried(ros, name, seg.Data, map[string]string{"duration": segDurMs}, 2)
+			took := time.Since(now)
 			if err != nil {
-				glog.Errorf("Error saving nonce=%d manifestID=%s name=%s to record store err=%v", nonce, mid, name, err)
+				glog.Errorf("Error saving nonce=%d manifestID=%s name=%s bytes=%d to record store err=%v",
+					nonce, mid, name, len(seg.Data), err)
 			} else {
 				cpl.InsertHLSSegmentJSON(vProfile, seg.SeqNo, uri, seg.Duration)
 				glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s bytes=%d to record store took=%s",
-					nonce, mid, name, len(seg.Data), time.Since(now))
+					nonce, mid, name, len(seg.Data), took)
+			}
+			if monitor.Enabled {
+				monitor.RecordingSegmentSaved(took, err)
 			}
 		}()
 	}
@@ -328,7 +333,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	}
 	err = cpl.InsertHLSSegment(vProfile, seg.SeqNo, uri, seg.Duration)
 	if monitor.Enabled {
-		monitor.SourceSegmentAppeared(nonce, seg.SeqNo, string(mid), vProfile.Name)
+		monitor.SourceSegmentAppeared(nonce, seg.SeqNo, string(mid), vProfile.Name, ros != nil)
 	}
 	if err != nil {
 		glog.Errorf("Error inserting segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
@@ -495,12 +500,16 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				segDurMs := getSegDurMsString(seg)
 				now := time.Now()
 				uri, err := drivers.SaveRetried(bros, name, data, map[string]string{"duration": segDurMs}, 2)
+				took := time.Since(now)
 				if err != nil {
 					glog.Errorf("Error saving nonce=%d manifestID=%s name=%s to record store err=%v", nonce, cxn.mid, name, err)
 				} else {
 					cpl.InsertHLSSegmentJSON(&profile, seg.SeqNo, uri, seg.Duration)
 					glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s size=%d bytes to record store took=%s",
-						nonce, cxn.mid, name, len(data), time.Since(now))
+						nonce, cxn.mid, name, len(data), took)
+				}
+				if monitor.Enabled {
+					monitor.RecordingSegmentSaved(took, err)
 				}
 			}()
 		}
@@ -536,7 +545,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		segLock.Unlock()
 
 		if monitor.Enabled {
-			monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, profile.Name)
+			monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, profile.Name, bros != nil)
 		}
 	}
 

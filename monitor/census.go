@@ -60,6 +60,9 @@ const (
 	Broadcaster  NodeType = "bctr"
 	Transcoder   NodeType = "trcr"
 	Redeemer     NodeType = "rdmr"
+
+	segTypeRegular = "regular"
+	segTypeRec     = "recorded" // segment in the stream for which recording is enabled
 )
 
 // Enabled true if metrics was enabled in command line
@@ -85,6 +88,7 @@ type (
 		kSender                       tag.Key
 		kRecipient                    tag.Key
 		kManifestID                   tag.Key
+		kSegmentType                  tag.Key
 		mSegmentSourceAppeared        *stats.Int64Measure
 		mSegmentEmerged               *stats.Int64Measure
 		mSegmentEmergedUnprocessed    *stats.Int64Measure
@@ -124,6 +128,9 @@ type (
 		mRealtimeHalf                 *stats.Int64Measure
 		mRealtimeSlow                 *stats.Int64Measure
 		mTranscodeScore               *stats.Float64Measure
+		mRecordingSaveLatency         *stats.Float64Measure
+		mRecordingSaveErrors          *stats.Int64Measure
+		mRecordingSavedSegments       *stats.Int64Measure
 
 		// Metrics for sending payments
 		mTicketValueSent    *stats.Float64Measure
@@ -197,6 +204,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kSender = tag.MustNewKey("sender")
 	census.kRecipient = tag.MustNewKey("recipient")
 	census.kManifestID = tag.MustNewKey("manifestID")
+	census.kSegmentType = tag.MustNewKey("seg_type")
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Fatal("Error creating context", err)
@@ -242,6 +250,10 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAuthWebhookTime = stats.Float64("auth_webhook_time_milliseconds", "Authentication webhook execution time", "ms")
 	census.mSourceSegmentDuration = stats.Float64("source_segment_duration_seconds", "Source segment's duration", "sec")
 	census.mTranscodeScore = stats.Float64("transcode_score", "Ratio of source segment duration vs. transcode time", "rat")
+	census.mRecordingSaveLatency = stats.Float64("recording_save_latency",
+		"How long it takes to save segment to the OS", "sec")
+	census.mRecordingSaveErrors = stats.Int64("recording_save_errors", "Number of errors during save to the recording OS", "tot")
+	census.mRecordingSavedSegments = stats.Int64("recording_saved_segments", "Number of segments saved to the recording OS", "tot")
 
 	// Metrics for sending payments
 	census.mTicketValueSent = stats.Float64("ticket_value_sent", "TicketValueSent", "gwei")
@@ -372,7 +384,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "segment_source_appeared_total",
 			Measure:     census.mSegmentSourceAppeared,
 			Description: "SegmentSourceAppeared",
-			TagKeys:     append([]tag.Key{census.kProfile}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kProfile, census.kSegmentType}, baseTags...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -435,7 +447,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "segment_transcoded_appeared_total",
 			Measure:     census.mSegmentTranscodedAppeared,
 			Description: "SegmentTranscodedAppeared",
-			TagKeys:     append([]tag.Key{census.kProfile}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kProfile, census.kSegmentType}, baseTags...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -479,6 +491,27 @@ func InitCensus(nodeType NodeType, version string) {
 			Description: "Ratio of source segment duration vs. transcode time",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
 			Aggregation: view.Distribution(0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 10, 15, 20, 40),
+		},
+		{
+			Name:        "recording_save_latency",
+			Measure:     census.mRecordingSaveLatency,
+			Description: "How long it takes to save segment to the OS",
+			TagKeys:     baseTags,
+			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000, 30.000),
+		},
+		{
+			Name:        "recording_save_errors",
+			Measure:     census.mRecordingSaveErrors,
+			Description: "Number of errors during save to the recording OS",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "recording_saved_segments",
+			Measure:     census.mRecordingSavedSegments,
+			Description: "Number of segments saved to the recording OS",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
 		},
 		{
 			Name:        "upload_time_seconds",
@@ -921,16 +954,25 @@ func (cen *censusMetricsCounter) segmentEmerged(nonce, seqNo uint64, profilesNum
 	stats.Record(cen.ctx, cen.mSegmentEmergedUnprocessed.M(1))
 }
 
-func SourceSegmentAppeared(nonce, seqNo uint64, manifestID, profile string) {
+func SourceSegmentAppeared(nonce, seqNo uint64, manifestID, profile string, recordingEnabled bool) {
 	glog.V(logLevel).Infof("Logging SourceSegmentAppeared... nonce=%d manifestID=%s seqNo=%d profile=%s", nonce,
 		manifestID, seqNo, profile)
-	census.segmentSourceAppeared(nonce, seqNo, profile)
+	census.segmentSourceAppeared(nonce, seqNo, profile, recordingEnabled)
 }
 
-func (cen *censusMetricsCounter) segmentSourceAppeared(nonce, seqNo uint64, profile string) {
+func (cen *censusMetricsCounter) segmentSourceAppeared(nonce, seqNo uint64, profile string, recordingEnabled bool) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 	ctx, err := tag.New(cen.ctx, tag.Insert(census.kProfile, profile))
+	if err != nil {
+		glog.Error("Error creating context", err)
+		return
+	}
+	segType := segTypeRegular
+	if recordingEnabled {
+		segType = segTypeRec
+	}
+	ctx, err = tag.New(ctx, tag.Insert(cen.kSegmentType, segType))
 	if err != nil {
 		glog.Error("Error creating context", err)
 		return
@@ -1105,12 +1147,29 @@ func SegmentFullyTranscoded(nonce, seqNo uint64, profiles string, errCode Segmen
 	census.sendSuccess()
 }
 
-func TranscodedSegmentAppeared(nonce, seqNo uint64, profile string) {
-	glog.V(logLevel).Infof("Logging LogTranscodedSegmentAppeared... nonce=%d seqNo=%d profile=%s", nonce, seqNo, profile)
-	census.segmentTranscodedAppeared(nonce, seqNo, profile)
+func RecordingPlaylistSaved(dur time.Duration, err error) {
+	if err != nil {
+		stats.Record(census.ctx, census.mRecordingSaveErrors.M(1))
+	} else {
+		stats.Record(census.ctx, census.mRecordingSaveLatency.M(dur.Seconds()))
+	}
 }
 
-func (cen *censusMetricsCounter) segmentTranscodedAppeared(nonce, seqNo uint64, profile string) {
+func RecordingSegmentSaved(dur time.Duration, err error) {
+	if err != nil {
+		stats.Record(census.ctx, census.mRecordingSaveErrors.M(1))
+	} else {
+		stats.Record(census.ctx, census.mRecordingSaveLatency.M(dur.Seconds()))
+		stats.Record(census.ctx, census.mRecordingSavedSegments.M(1))
+	}
+}
+
+func TranscodedSegmentAppeared(nonce, seqNo uint64, profile string, recordingEnabled bool) {
+	glog.V(logLevel).Infof("Logging LogTranscodedSegmentAppeared... nonce=%d seqNo=%d profile=%s", nonce, seqNo, profile)
+	census.segmentTranscodedAppeared(nonce, seqNo, profile, recordingEnabled)
+}
+
+func (cen *censusMetricsCounter) segmentTranscodedAppeared(nonce, seqNo uint64, profile string, recordingEnabled bool) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 	ctx, err := tag.New(cen.ctx, tag.Insert(cen.kProfile, profile))
@@ -1126,6 +1185,15 @@ func (cen *censusMetricsCounter) segmentTranscodedAppeared(nonce, seqNo uint64, 
 		stats.Record(ctx, cen.mTranscodeLatency.M(latency.Seconds()))
 	}
 
+	segType := segTypeRegular
+	if recordingEnabled {
+		segType = segTypeRec
+	}
+	ctx, err = tag.New(ctx, tag.Insert(cen.kSegmentType, segType))
+	if err != nil {
+		glog.Error("Error creating context", err)
+		return
+	}
 	stats.Record(ctx, cen.mSegmentTranscodedAppeared.M(1))
 }
 

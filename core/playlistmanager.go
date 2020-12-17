@@ -11,6 +11,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-livepeer/monitor"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/m3u8"
 )
@@ -253,8 +254,17 @@ func (mgr *BasicPlaylistManager) FlushRecord() {
 		go func(name string, data []byte) {
 			now := time.Now()
 			_, err := mgr.recordSession.SaveData(name, b, nil)
-			glog.V(common.VERBOSE).Infof("Saving json playlist name=%s size=%d bytes took=%s err=%v", name,
-				len(b), time.Since(now), err)
+			took := time.Since(now)
+			if err != nil {
+				glog.Errorf("Error saving json playlist name=%s bytes=%d took=%s err=%v", name,
+					len(b), took, err)
+			} else {
+				glog.V(common.VERBOSE).Infof("Saving json playlist name=%s bytes=%d took=%s err=%v", name,
+					len(b), took, err)
+			}
+			if monitor.Enabled {
+				monitor.RecordingPlaylistSaved(took, err)
+			}
 		}(mgr.jsonList.name, b)
 		if mgr.jsonList.DurationMs > jsonPlaylistRotationInterval {
 			mgr.jsonList = NewJSONPlaylist()
