@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"math/big"
+	"net"
 	"runtime"
 	"strconv"
 	"strings"
@@ -1033,15 +1034,22 @@ func (cen *censusMetricsCounter) authWebhookFinished(dur time.Duration) {
 	stats.Record(cen.ctx, cen.mAuthWebhookTime.M(float64(dur)/float64(time.Millisecond)))
 }
 
-func SegmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, reason string, permanent bool) {
+func SegmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, err error, permanent bool) {
 	if code == SegmentUploadErrorUnknown {
-		if strings.Contains(reason, "Client.Timeout") {
+		reason := err.Error()
+		var timedout bool
+		if err, ok := err.(net.Error); ok && err.Timeout() {
+			timedout = true
+		}
+		if timedout || strings.Contains(reason, "Client.Timeout") || strings.Contains(reason, "timed out") ||
+			strings.Contains(reason, "timeout") || strings.Contains(reason, "context deadline exceeded") ||
+			strings.Contains(reason, "EOF") {
 			code = SegmentUploadErrorTimeout
 		} else if reason == "Session ended" {
 			code = SegmentUploadErrorSessionEnded
 		}
 	}
-	glog.Errorf("Logging SegmentUploadFailed... code=%v reason='%s'", code, reason)
+	glog.Errorf("Logging SegmentUploadFailed... code=%v reason='%s'", code, err.Error())
 
 	census.segmentUploadFailed(nonce, seqNo, code, permanent)
 }

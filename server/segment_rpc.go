@@ -352,7 +352,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	segCreds, err := genSegCreds(sess, seg)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error(), false)
+			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err, false)
 		}
 		return nil, err
 	}
@@ -409,7 +409,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if err != nil {
 		glog.Errorf("Could not generate transcode request to orch=%s", ti.Transcoder)
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err.Error(), false)
+			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err, false)
 		}
 		return nil, err
 	}
@@ -431,7 +431,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if err != nil {
 		glog.Errorf("Unable to submit segment orch=%v nonce=%d manifestID=%s sessionID=%s seqNo=%d orch=%s err=%v", ti.Transcoder, nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, ti.Transcoder, err)
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err.Error(), false)
+			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, false)
 		}
 		return nil, fmt.Errorf("header timeout: %w", err)
 	}
@@ -454,10 +454,10 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		glog.Errorf("Error submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d code=%d orch=%s err=%v", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, resp.StatusCode, ti.Transcoder, string(data))
 		if monitor.Enabled {
 			if resp.StatusCode == 403 && strings.Contains(errorString, "OrchestratorCapped") {
-				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOrchestratorCapped, errorString, false)
+				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOrchestratorCapped, errors.New(errorString), false)
 			} else {
 				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadError(resp.Status),
-					fmt.Sprintf("Code: %d Error: %s", resp.StatusCode, errorString), false)
+					fmt.Errorf("Code: %d Error: %s", resp.StatusCode, errorString), false)
 			}
 		}
 		return nil, fmt.Errorf(errorString)
