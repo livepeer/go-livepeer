@@ -91,6 +91,11 @@ func TestGetActiveTranscoders(t *testing.T) {
 			ServiceURI:        fmt.Sprintf("%v:%v", id, i),
 			Active:            true,
 			Status:            "Registered",
+			Pools: []*pool{
+				{
+					TotalStake: bigInt{*big.NewInt(int64(i))},
+				},
+			},
 		})
 	}
 	jsonTs, err := json.Marshal(transcoders)
@@ -133,10 +138,15 @@ func TestParseLivepeerTranscoder(t *testing.T) {
 		},
 		ActivationRound:   bigInt{*big.NewInt(activationRound)},
 		DeactivationRound: bigInt{*big.NewInt(deactivationRound)},
-		TotalStake:        bigInt{*big.NewInt(totalStake)},
+		TotalStake:        bigInt{*big.NewInt(0)},
 		ServiceURI:        serviceURI,
 		Active:            true,
 		Status:            status,
+		Pools: []*pool{
+			{
+				TotalStake: bigInt{*big.NewInt(totalStake)},
+			},
+		},
 	}
 
 	lpT := sgT.parseLivepeerTranscoder()
@@ -150,4 +160,10 @@ func TestParseLivepeerTranscoder(t *testing.T) {
 	assert.Equal(lpT.ServiceURI, serviceURI)
 	assert.Equal(lpT.Active, true)
 	assert.Equal(lpT.Status, status)
+
+	// test len(Pools) == 0 , use transcoder.TotalStake
+	sgT.Pools = nil
+	sgT.TotalStake = bigInt{*big.NewInt(5)}
+	lpT = sgT.parseLivepeerTranscoder()
+	assert.Equal(lpT.DelegatedStake.Int64(), int64(5))
 }

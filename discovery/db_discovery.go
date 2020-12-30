@@ -188,7 +188,9 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 	}
 
 	for _, o := range orchs {
-		go getStake(o)
+		if o.Stake == 0 {
+			go getStake(o)
+		}
 	}
 
 	for i := 0; i < len(orchs); i++ {
@@ -305,11 +307,14 @@ func ethOrchToDBOrch(orch *lpTypes.Transcoder) *common.DBOrch {
 		return nil
 	}
 
+	stake, _ := common.BaseTokenAmountToFixed(orch.DelegatedStake)
+
 	dbo := &common.DBOrch{
 		ServiceURI:        orch.ServiceURI,
 		EthereumAddr:      orch.Address.String(),
 		ActivationRound:   common.ToInt64(orch.ActivationRound),
 		DeactivationRound: common.ToInt64(orch.DeactivationRound),
+		Stake:             stake,
 	}
 
 	return dbo

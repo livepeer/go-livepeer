@@ -62,7 +62,10 @@ func (s *livepeerSubgraph) GetActiveTranscoders() ([]*lpTypes.Transcoder, error)
 			  	totalStake
 				serviceURI
 			  	active
-			  	status
+				status
+				pools (first: 1, orderBy: id, orderDirection: desc) {
+					totalStake
+				}
 			}
 		  }
 		`,
@@ -138,26 +141,35 @@ func (b *bigInt) UnmarshalJSON(p []byte) error {
 }
 
 type transcoder struct {
-	ID                string `json:"id"`
-	FeeShare          bigInt `json:"feeShare"`
-	RewardCut         bigInt `json:"rewardCut"`
-	LastRewardRound   round  `json:"lastRewardRound"`
-	ActivationRound   bigInt `json:"activationRound"`
-	DeactivationRound bigInt `json:"deactivationRound"`
-	TotalStake        bigInt `json:"totalStake"`
-	ServiceURI        string `json:"serviceURI"`
-	Active            bool   `json:"active"`
-	Status            string `json:"status"`
+	ID                string  `json:"id"`
+	FeeShare          bigInt  `json:"feeShare"`
+	RewardCut         bigInt  `json:"rewardCut"`
+	LastRewardRound   round   `json:"lastRewardRound"`
+	ActivationRound   bigInt  `json:"activationRound"`
+	DeactivationRound bigInt  `json:"deactivationRound"`
+	TotalStake        bigInt  `json:"totalStake"`
+	ServiceURI        string  `json:"serviceURI"`
+	Active            bool    `json:"active"`
+	Status            string  `json:"status"`
+	Pools             []*pool `json:"pools"`
+}
+
+type pool struct {
+	TotalStake bigInt `json:"totalStake"`
 }
 
 func (t *transcoder) parseLivepeerTranscoder() *lpTypes.Transcoder {
+	stake := t.TotalStake.Int
+	if len(t.Pools) > 0 {
+		stake = t.Pools[0].TotalStake.Int
+	}
 	return &lpTypes.Transcoder{
 		Address:           ethcommon.HexToAddress(t.ID),
 		ServiceURI:        t.ServiceURI,
 		LastRewardRound:   &t.LastRewardRound.Number.Int,
 		RewardCut:         &t.RewardCut.Int,
 		FeeShare:          &t.FeeShare.Int,
-		DelegatedStake:    &t.TotalStake.Int,
+		DelegatedStake:    &stake, // Current round total active stake
 		ActivationRound:   &t.ActivationRound.Int,
 		DeactivationRound: &t.DeactivationRound.Int,
 		Active:            t.Active,
