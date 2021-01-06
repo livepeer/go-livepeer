@@ -1,6 +1,6 @@
 # Webhook Authentication
 
-Incoming streams can be authenticated using webhooks. To use these webhooks, node operators must implement their own web service / endpoint to be accessed only by the Livepeer node. As new streams appear, the Livepeer node will call this endpoint to determine whether the given stream is allowed.
+Incoming streams can be authenticated using webhooks on both orchestrator and broadcaster nodes. To use these webhooks, node operators must implement their own web service / endpoint to be accessed only by the Livepeer node. As new streams appear, the Livepeer node will call this endpoint to determine whether the given stream is allowed.
 
 Webhooks can authenticate streams supported by the RTMP and HTTP push ingest protocols. See the [ingest documentation](ingest.md) for details on how to use these protocols.
 
