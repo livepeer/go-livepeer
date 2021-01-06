@@ -68,7 +68,7 @@ type Watcher struct {
 	ticker              *time.Ticker
 	withLogs            bool
 	topics              []common.Hash
-	mu                  sync.RWMutex
+	sync.RWMutex
 }
 
 // New creates a new Watcher instance.
@@ -105,13 +105,13 @@ func (w *Watcher) BackfillEventsIfNeeded(ctx context.Context) error {
 // Watch starts the Watcher. It will continuously look for new blocks and blocks
 // until the given context is canceled. Typically, you want to call Watch inside a goroutine.
 func (w *Watcher) Watch(ctx context.Context) error {
-	w.mu.Lock()
+	w.Lock()
 	if w.wasStartedOnce {
-		w.mu.Unlock()
+		w.Unlock()
 		return errors.New("Can only start Watcher once per instance")
 	}
 	w.wasStartedOnce = true
-	w.mu.Unlock()
+	w.Unlock()
 
 	ticker := time.NewTicker(w.pollingInterval)
 	for {
@@ -120,7 +120,7 @@ func (w *Watcher) Watch(ctx context.Context) error {
 			ticker.Stop()
 			return nil
 		case <-ticker.C:
-			if err := w.pollNextBlock(); err != nil {
+			if err := w.syncToLatestBlock(); err != nil {
 				glog.Errorf("blockwatch.Watcher error encountered - trying again on next polling interval err=%v", err)
 			}
 		}
@@ -144,6 +144,27 @@ func (w *Watcher) GetLatestBlock() (*MiniHeader, error) {
 // particularly performant and therefore should only be used for debugging and testing purposes.
 func (w *Watcher) InspectRetainedBlocks() ([]*MiniHeader, error) {
 	return w.stack.Inspect()
+}
+
+func (w *Watcher) syncToLatestBlock() error {
+	w.Lock()
+	defer w.Unlock()
+	newestHeader, err := w.client.HeaderByNumber(nil)
+	if err != nil {
+		return err
+	}
+
+	lastSeenHeader, err := w.stack.Peek()
+	if err != nil {
+		return err
+	}
+
+	for i := lastSeenHeader.Number; i.Cmp(newestHeader.Number) < 0; i = i.Add(i, big.NewInt(1)) {
+		if err := w.pollNextBlock(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // pollNextBlock polls for the next block header to be added to the block stack.
