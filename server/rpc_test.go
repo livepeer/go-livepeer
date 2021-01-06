@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
@@ -830,6 +832,73 @@ func TestGetOrchestrator_GivenInvalidSig_ReturnsError(t *testing.T) {
 
 func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	uri := "http://someuri.com"
+	expectedParams := defaultTicketParams()
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Address").Return(ethcommon.Address{})
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil)
+	orch.On("PriceInfo", mock.Anything, mock.Anything).Return(nil, nil)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Equal(expectedParams, oInfo.TicketParams)
+}
+
+func TestGetOrchestrator_WebhookAuth_Error(t *testing.T) {
+	orch := &mockOrchestrator{}
+	AuthWebhookURL = "http://fail"
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Nil(oInfo)
+	assert.Contains(err.Error(), "authentication failed")
+}
+
+func TestGetOrchestrator_WebhookAuth_ReturnsNotOK(t *testing.T) {
+	orch := &mockOrchestrator{}
+	expErr := "some error"
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(expErr))
+	})
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	AuthWebhookURL = ts.URL
+	defer func() {
+		AuthWebhookURL = ""
+	}()
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Nil(oInfo)
+	assert.EqualError(err, fmt.Sprintf("authentication failed: %v", expErr))
+}
+
+func TestGetOrchestratorWebhookAuth_ReturnsOK(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	AuthWebhookURL = ts.URL
+	defer func() {
+		AuthWebhookURL = ""
+	}()
+
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	uri := "http://someuri.com"
 	expectedParams := defaultTicketParams()

@@ -784,6 +784,15 @@ func main() {
 		lpmon.MaxSessions(core.MaxSessions)
 	}
 
+	if *authWebhookURL != "" {
+		_, err := validateURL(*authWebhookURL)
+		if err != nil {
+			glog.Fatal("Error setting auth webhook URL ", err)
+		}
+		glog.Info("Using auth webhook URL ", *authWebhookURL)
+		server.AuthWebhookURL = *authWebhookURL
+	}
+
 	if n.NodeType == core.BroadcasterNode {
 		// default lpms listener for broadcaster; same as default rpc port
 		// TODO provide an option to disable this?
@@ -821,14 +830,6 @@ func main() {
 		if n.OrchestratorPool == nil {
 			// Not a fatal error; may continue operating in segment-only mode
 			glog.Error("No orchestrator specified; transcoding will not happen")
-		}
-		if *authWebhookURL != "" {
-			_, err := validateURL(*authWebhookURL)
-			if err != nil {
-				glog.Fatal("Error setting auth webhook URL ", err)
-			}
-			glog.Info("Using auth webhook URL ", *authWebhookURL)
-			server.AuthWebhookURL = *authWebhookURL
 		}
 
 		isLocalHTTP, err := isLocalURL("https://" + *httpAddr)

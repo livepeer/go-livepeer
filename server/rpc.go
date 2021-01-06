@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -253,6 +256,10 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
 	}
 
+	if err := authenticateBroadcaster(addr.Hex()); err != nil {
+		return nil, fmt.Errorf("authentication failed: %v", err)
+	}
+
 	// currently, orchestrator == transcoder
 	return orchestratorInfo(orch, addr, orch.ServiceURI().String())
 }
@@ -301,6 +308,34 @@ func verifyOrchestratorReq(orch Orchestrator, addr ethcommon.Address, sig []byte
 		return fmt.Errorf("orchestrator req sig check failed")
 	}
 	return orch.CheckCapacity("")
+}
+
+// authenticateBroadcaster returns an error if authentication fails
+func authenticateBroadcaster(id string) error {
+	if AuthWebhookURL == "" {
+		return nil
+	}
+
+	values := map[string]string{"id": id}
+	jsonValues, err := json.Marshal(values)
+	if err != nil {
+		return err
+	}
+	res, err := http.Post(AuthWebhookURL, "application/json", bytes.NewBuffer(jsonValues))
+	if err != nil {
+		return err
+	}
+
+	body, err := ioutil.ReadAll(res.Body)
+	defer res.Body.Close()
+	if err != nil {
+		return err
+	}
+
+	if res.StatusCode != 200 {
+		return errors.New(string(body))
+	}
+	return nil
 }
 
 func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
