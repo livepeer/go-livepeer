@@ -721,7 +721,6 @@ func InitCensus(nodeType NodeType, version string) {
 
 // LogDiscoveryError records discovery error
 func LogDiscoveryError(code string) {
-	glog.Error("Discovery error=" + code)
 	if strings.Contains(code, "OrchestratorCapped") {
 		code = "OrchestratorCapped"
 	} else if strings.Contains(code, "Canceled") {
