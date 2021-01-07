@@ -5,9 +5,9 @@ import (
 	"net/url"
 )
 
-func (w *wizard) setGasPrice() {
-	fmt.Printf("Current gas price: %v\n", w.getGasPrice())
-	fmt.Printf("Enter new gas price in Wei (enter \"0\" for automatic)")
+func (w *wizard) setMaxGasPrice() {
+	fmt.Printf("Current maximum gas price: %v\n", w.maxGasPrice())
+	fmt.Printf("Enter new maximum gas price in Wei (enter \"0\" for no maximum gas price)")
 	amount := w.readBigInt()
 
 	val := url.Values{

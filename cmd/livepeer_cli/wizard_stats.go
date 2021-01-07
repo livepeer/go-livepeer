@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
@@ -44,20 +45,22 @@ func (w *wizard) stats(showOrchestrator bool) {
 
 	lptBal, _ := new(big.Int).SetString(w.getTokenBalance(), 10)
 	ethBal, _ := new(big.Int).SetString(w.getEthBalance(), 10)
+	maxGasPrice, _ := new(big.Int).SetString(w.maxGasPrice(), 10)
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
-		[]string{"Node's version", status.Version},
-		[]string{"Node's GO runtime version", status.GolangRuntimeVersion},
-		[]string{"Node's architecture", status.GOArch},
-		[]string{"Node's operating system", status.GOOS},
-		[]string{"HTTP Port", w.httpPort},
-		[]string{"Controller Address", addrMap["Controller"].Hex()},
-		[]string{"LivepeerToken Address", addrMap["LivepeerToken"].Hex()},
-		[]string{"LivepeerTokenFaucet Address", addrMap["LivepeerTokenFaucet"].Hex()},
-		[]string{"ETH Account", w.getEthAddr()},
-		[]string{"LPT Balance", eth.FormatUnits(lptBal, "LPT")},
-		[]string{"ETH Balance", eth.FormatUnits(ethBal, "ETH")},
+		{"Node's version", status.Version},
+		{"Node's GO runtime version", status.GolangRuntimeVersion},
+		{"Node's architecture", status.GOArch},
+		{"Node's operating system", status.GOOS},
+		{"HTTP Port", w.httpPort},
+		{"Controller Address", addrMap["Controller"].Hex()},
+		{"LivepeerToken Address", addrMap["LivepeerToken"].Hex()},
+		{"LivepeerTokenFaucet Address", addrMap["LivepeerTokenFaucet"].Hex()},
+		{"ETH Account", w.getEthAddr()},
+		{"LPT Balance", eth.FormatUnits(lptBal, "LPT")},
+		{"ETH Balance", eth.FormatUnits(ethBal, "ETH")},
+		{"Max Gas Price", fmt.Sprintf("%v GWei", eth.FromWei(maxGasPrice, params.GWei))},
 	}
 
 	for _, v := range data {
@@ -113,17 +116,17 @@ func (w *wizard) protocolStats() {
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
-		[]string{"Protocol Paused", fmt.Sprintf("%t", params.Paused)},
-		[]string{"Max # Active Orchestrators", params.NumActiveTranscoders.String()},
-		[]string{"RoundLength (Blocks)", params.RoundLength.String()},
-		[]string{"RoundLockAmount (%)", eth.FormatPerc(params.RoundLockAmount)},
-		[]string{"UnbondingPeriod (Rounds)", strconv.Itoa(int(params.UnbondingPeriod))},
-		[]string{"Inflation (%)", eth.FormatPercMinter(params.Inflation)},
-		[]string{"InflationChange (%)", eth.FormatPercMinter(params.InflationChange)},
-		[]string{"TargetBondingRate (%)", eth.FormatPercMinter(params.TargetBondingRate)},
-		[]string{"Total Bonded", eth.FormatUnits(params.TotalBonded, "LPT")},
-		[]string{"Total Supply", eth.FormatUnits(params.TotalSupply, "LPT")},
-		[]string{"Current Participation Rate (%)", currentParticipationRate.String()},
+		{"Protocol Paused", fmt.Sprintf("%t", params.Paused)},
+		{"Max # Active Orchestrators", params.NumActiveTranscoders.String()},
+		{"RoundLength (Blocks)", params.RoundLength.String()},
+		{"RoundLockAmount (%)", eth.FormatPerc(params.RoundLockAmount)},
+		{"UnbondingPeriod (Rounds)", strconv.Itoa(int(params.UnbondingPeriod))},
+		{"Inflation (%)", eth.FormatPercMinter(params.Inflation)},
+		{"InflationChange (%)", eth.FormatPercMinter(params.InflationChange)},
+		{"TargetBondingRate (%)", eth.FormatPercMinter(params.TargetBondingRate)},
+		{"Total Bonded", eth.FormatUnits(params.TotalBonded, "LPT")},
+		{"Total Supply", eth.FormatUnits(params.TotalSupply, "LPT")},
+		{"Current Participation Rate (%)", currentParticipationRate.String()},
 	}
 
 	for _, v := range data {
@@ -156,10 +159,10 @@ func (w *wizard) broadcastStats() {
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
-		[]string{"Max Price Per Pixel", priceString},
-		[]string{"Broadcast Transcoding Options", transcodingOptions},
-		[]string{"Deposit", eth.FormatUnits(sender.Deposit, "ETH")},
-		[]string{"Reserve", eth.FormatUnits(sender.Reserve.FundsRemaining, "ETH")},
+		{"Max Price Per Pixel", priceString},
+		{"Broadcast Transcoding Options", transcodingOptions},
+		{"Deposit", eth.FormatUnits(sender.Deposit, "ETH")},
+		{"Reserve", eth.FormatUnits(sender.Reserve.FundsRemaining, "ETH")},
 	}
 
 	for _, v := range data {
@@ -193,14 +196,14 @@ func (w *wizard) orchestratorStats() {
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
-		[]string{"Status", t.Status},
-		[]string{"Active", strconv.FormatBool(t.Active)},
-		[]string{"Service URI", t.ServiceURI},
-		[]string{"Delegated Stake", eth.FormatUnits(t.DelegatedStake, "LPT")},
-		[]string{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
-		[]string{"Fee Share (%)", eth.FormatPerc(t.FeeShare)},
-		[]string{"Last Reward Round", t.LastRewardRound.String()},
-		[]string{"Base price per pixel", fmt.Sprintf("%v wei / %v pixels", priceInfo.Num(), priceInfo.Denom())},
+		{"Status", t.Status},
+		{"Active", strconv.FormatBool(t.Active)},
+		{"Service URI", t.ServiceURI},
+		{"Delegated Stake", eth.FormatUnits(t.DelegatedStake, "LPT")},
+		{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
+		{"Fee Share (%)", eth.FormatPerc(t.FeeShare)},
+		{"Last Reward Round", t.LastRewardRound.String()},
+		{"Base price per pixel", fmt.Sprintf("%v wei / %v pixels", priceInfo.Num(), priceInfo.Denom())},
 	}
 
 	for _, v := range data {
@@ -244,15 +247,15 @@ func (w *wizard) delegatorStats() {
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
-		[]string{"Status", d.Status},
-		[]string{"Stake", eth.FormatUnits(d.BondedAmount, "LPT")},
-		[]string{"Collected Fees", eth.FormatUnits(d.Fees, "ETH")},
-		[]string{"Pending Stake", pendingStake},
-		[]string{"Pending Fees", pendingFees},
-		[]string{"Delegated Stake", eth.FormatUnits(d.DelegatedAmount, "LPT")},
-		[]string{"Delegate Address", d.DelegateAddress.Hex()},
-		[]string{"Last Claim Round", d.LastClaimRound.String()},
-		[]string{"Start Round", d.StartRound.String()},
+		{"Status", d.Status},
+		{"Stake", eth.FormatUnits(d.BondedAmount, "LPT")},
+		{"Collected Fees", eth.FormatUnits(d.Fees, "ETH")},
+		{"Pending Stake", pendingStake},
+		{"Pending Fees", pendingFees},
+		{"Delegated Stake", eth.FormatUnits(d.DelegatedAmount, "LPT")},
+		{"Delegate Address", d.DelegateAddress.Hex()},
+		{"Last Claim Round", d.LastClaimRound.String()},
+		{"Start Round", d.StartRound.String()},
 	}
 
 	for _, v := range data {
@@ -407,14 +410,12 @@ func (w *wizard) getDelegatorInfo() (lpTypes.Delegator, error) {
 	return dInfo, nil
 }
 
-func (w *wizard) getGasPrice() string {
-	g := httpGet(fmt.Sprintf("http://%v:%v/gasPrice", w.host, w.httpPort))
-	if g == "" {
-		g = "Unknown"
-	} else if g == "0" {
-		g = "automatic"
+func (w *wizard) maxGasPrice() string {
+	max := httpGet(fmt.Sprintf("http://%v:%v/maxGasPrice", w.host, w.httpPort))
+	if max == "" {
+		max = "n/a"
 	}
-	return g
+	return max
 }
 
 func (w *wizard) currentBlock() (*big.Int, error) {

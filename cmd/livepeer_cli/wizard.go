@@ -103,7 +103,7 @@ func (w *wizard) readDefaultString(def string) string {
 func (w *wizard) readBaseAmountAndValidate(validate func(in *big.Int) error) *big.Int {
 	for {
 		text := w.readString()
-		val, err := eth.ToBaseAmount(text)
+		val, err := eth.ToBaseAmount(text, eth.DefaultMaxDecimals)
 		if err != nil {
 			log.Error("Error parsing user input", "err", err)
 			continue

@@ -166,9 +166,8 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		return
 	}
 
-	err = client.Setup(passphrase, uint64(0), nil)
-	if err != nil {
-		glog.Fatalf("Failed to setup client: %v", err)
+	if err := client.SetGasInfo(0, nil); err != nil {
+		glog.Errorf("Failed to set gas info on Livepeer Ethereum Client: %v", err)
 		return
 	}
 
