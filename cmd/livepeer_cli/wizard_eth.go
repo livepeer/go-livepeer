@@ -14,7 +14,7 @@ func (w *wizard) setMaxGasPrice() {
 		"amount": {fmt.Sprintf("%v", amount.String())},
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/setGasPrice", w.host, w.httpPort), val)
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxGasPrice", w.host, w.httpPort), val)
 }
 
 func (w *wizard) signMessage() {
