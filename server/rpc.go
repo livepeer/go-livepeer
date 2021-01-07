@@ -224,7 +224,7 @@ func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestr
 }
 
 func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.ClientConn, error) {
-	glog.Infof("Connecting RPC to %v", uri)
+	glog.V(common.DEBUG).Infof("Connecting RPC to %v", uri)
 	conn, err := grpc.Dial(uri.Host,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
 		grpc.WithBlock(),
