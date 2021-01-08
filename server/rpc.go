@@ -256,12 +256,19 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
 	}
 
-	if err := authenticateBroadcaster(addr.Hex()); err != nil {
+	webhookRes, err := authenticateBroadcaster(addr.Hex())
+	if err != nil {
 		return nil, fmt.Errorf("authentication failed: %v", err)
 	}
 
 	// currently, orchestrator == transcoder
-	return orchestratorInfo(orch, addr, orch.ServiceURI().String())
+	oInfo, err := orchestratorInfo(orch, addr, orch.ServiceURI().String())
+	if err != nil {
+		return nil, err
+	}
+
+	// Adjust the necessary orchestrator info values
+	return handleWebhookResponse(webhookRes, oInfo), nil
 }
 
 func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI string) (*net.OrchestratorInfo, error) {
@@ -310,32 +317,45 @@ func verifyOrchestratorReq(orch Orchestrator, addr ethcommon.Address, sig []byte
 	return orch.CheckCapacity("")
 }
 
+type authBroadcasterResponse struct{}
+
 // authenticateBroadcaster returns an error if authentication fails
-func authenticateBroadcaster(id string) error {
+func authenticateBroadcaster(id string) (*authBroadcasterResponse, error) {
 	if AuthWebhookURL == "" {
-		return nil
+		return nil, nil
 	}
 
 	values := map[string]string{"id": id}
 	jsonValues, err := json.Marshal(values)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	res, err := http.Post(AuthWebhookURL, "application/json", bytes.NewBuffer(jsonValues))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	body, err := ioutil.ReadAll(res.Body)
 	defer res.Body.Close()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if res.StatusCode != 200 {
-		return errors.New(string(body))
+		return nil, errors.New(string(body))
 	}
-	return nil
+
+	webhookRes := &authBroadcasterResponse{}
+	if err := json.Unmarshal(body, webhookRes); err != nil {
+		return nil, err
+	}
+
+	return webhookRes, nil
+}
+
+func handleWebhookResponse(res *authBroadcasterResponse, oInfo *net.OrchestratorInfo) *net.OrchestratorInfo {
+	// handleWebhookResponse modifies the orchestrator info object returned to the broadcaster based on the webhook response
+	return oInfo
 }
 
 func pmTicketParams(params *net.TicketParams) *pm.TicketParams {

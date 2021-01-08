@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -889,7 +890,13 @@ func TestGetOrchestrator_WebhookAuth_ReturnsNotOK(t *testing.T) {
 func TestGetOrchestratorWebhookAuth_ReturnsOK(t *testing.T) {
 	orch := &mockOrchestrator{}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		in, err := json.Marshal(&authBroadcasterResponse{})
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
+		w.Write(in)
 	})
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
