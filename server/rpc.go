@@ -103,6 +103,7 @@ type BroadcastSession struct {
 	Balances         *core.AddressBalances
 	Balance          Balance
 	LatencyScore     float64
+	SegsInFlight     []SegFlightMetadata
 }
 
 // ReceivedTranscodeResult contains received transcode result data and related metadata

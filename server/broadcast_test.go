@@ -276,15 +276,18 @@ func TestSelectSession(t *testing.T) {
 	// assert last session selected and sessList is correct length
 	sess := bsm.selectSession()
 	assert.Equal(expectedSess1, sess)
+	assert.Equal(sess, bsm.lastSess)
 	assert.Len(bsm.sessList(), 1)
 
 	sess = bsm.selectSession()
 	assert.Equal(expectedSess2, sess)
+	assert.Equal(sess, bsm.lastSess)
 	assert.Len(bsm.sessList(), 0)
 
 	// assert no session is selected from empty list
 	sess = bsm.selectSession()
 	assert.Nil(sess)
+	assert.Nil(bsm.lastSess)
 	assert.Len(bsm.sessList(), 0)
 	assert.Len(bsm.sessMap, 2) // map should still track original sessions
 
@@ -321,6 +324,134 @@ func TestSelectSession(t *testing.T) {
 	assert.Len(bsm.sessMap, 1)
 
 	// XXX check refresh condition more precisely - currently numOrchs / 2
+}
+
+func TestSelectSession_MultipleInFlight(t *testing.T) {
+	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
+
+	sendSegStub := func() *BroadcastSession {
+		sess := bsm.selectSession()
+		bsm.sessLock.Lock()
+		if sess == nil {
+			bsm.sessLock.Unlock()
+			return nil
+		}
+		sess.SegsInFlight = append(sess.SegsInFlight,
+			SegFlightMetadata{
+				startTime: time.Now(),
+				segDur:    time.Duration(100 * time.Millisecond),
+			})
+		bsm.sessLock.Unlock()
+		return sess
+	}
+
+	completeSegStub := func(sess *BroadcastSession) {
+		// Create dummy result
+		res := &ReceivedTranscodeResult{
+			LatencyScore: sess.LatencyScore,
+			Info:         sess.OrchestratorInfo,
+		}
+		bsm.completeSession(updateSession(sess, res))
+	}
+
+	// assert that initial lengths are as expected
+	assert := assert.New(t)
+	assert.Len(bsm.sessList(), 2)
+	assert.Len(bsm.sessMap, 2)
+
+	expectedSess0 := &BroadcastSession{}
+	expectedSess1 := &BroadcastSession{}
+	*expectedSess0 = *(bsm.sessList()[1])
+	*expectedSess1 = *(bsm.sessList()[0])
+
+	// send in a segment and check that completeSession returns a copy of same segment
+	sess0 := sendSegStub()
+	assert.Equal(bsm.lastSess, sess0)
+	assert.Equal(expectedSess0.OrchestratorInfo, sess0.OrchestratorInfo)
+	completeSegStub(sess0)
+	assert.NotEqual(sess0, bsm.lastSess)
+	assert.Equal(sess0.OrchestratorInfo, bsm.lastSess.OrchestratorInfo)
+
+	// send in multiple segments at the same time and verify SegsInFlight & lastSess are updated
+	sess0 = sendSegStub()
+	assert.Equal(bsm.lastSess, sess0)
+	assert.Equal(expectedSess0.OrchestratorInfo, sess0.OrchestratorInfo)
+	assert.Len(sess0.SegsInFlight, 1)
+
+	sess1 := sendSegStub()
+	assert.Equal(bsm.lastSess, sess1)
+	assert.Equal(sess0, sess1)
+	assert.Len(sess0.SegsInFlight, 2)
+
+	completeSegStub(sess0)
+	assert.Len(sess0.SegsInFlight, 1)
+	assert.Len(bsm.sessList(), 1)
+
+	completeSegStub(sess1)
+	assert.Len(bsm.lastSess.SegsInFlight, 0)
+	assert.Len(bsm.sessList(), 2)
+
+	// send in multiple segments with delay > segDur to trigger O switch
+	sess0 = sendSegStub()
+	assert.Equal(bsm.lastSess, sess0)
+	assert.Equal(expectedSess0.OrchestratorInfo, sess0.OrchestratorInfo)
+	assert.Len(bsm.lastSess.SegsInFlight, 1)
+
+	time.Sleep(110 * time.Millisecond)
+
+	sess1 = sendSegStub()
+	assert.Equal(bsm.lastSess, sess1)
+	assert.Equal(expectedSess1.OrchestratorInfo, sess1.OrchestratorInfo)
+	assert.Len(bsm.lastSess.SegsInFlight, 1)
+
+	completeSegStub(sess0)
+	completeSegStub(sess1)
+
+	// send in multiple segments with delay > segDur but < 2*segDur and only a single session available
+	bsm.suspendOrch(expectedSess0)
+	bsm.removeSession(expectedSess0)
+	assert.Len(bsm.sessMap, 1)
+
+	sess0 = sendSegStub()
+	assert.Equal(bsm.lastSess, sess0)
+	assert.Equal(expectedSess1.OrchestratorInfo, sess0.OrchestratorInfo)
+	assert.Len(bsm.lastSess.SegsInFlight, 1)
+
+	time.Sleep(110 * time.Millisecond)
+
+	sess1 = sendSegStub()
+	assert.Equal(bsm.lastSess, sess1)
+	assert.Equal(expectedSess1.OrchestratorInfo, sess1.OrchestratorInfo)
+	assert.Len(bsm.lastSess.SegsInFlight, 2)
+
+	completeSegStub(sess0)
+	completeSegStub(sess1)
+	assert.Len(bsm.lastSess.SegsInFlight, 0)
+
+	// send in multiple segments with delay > 2*segDur and only a single session available
+	bsm.suspendOrch(expectedSess0)
+	bsm.removeSession(expectedSess0)
+	sess0 = sendSegStub()
+	assert.Equal(bsm.lastSess, sess0)
+	assert.Equal(expectedSess1.OrchestratorInfo, sess0.OrchestratorInfo)
+	assert.Len(bsm.lastSess.SegsInFlight, 1)
+
+	time.Sleep(210 * time.Millisecond)
+
+	sess1 = sendSegStub()
+	assert.Nil(sess1)
+	assert.Nil(bsm.lastSess)
+
+	completeSegStub(sess0)
+
+	// remove both session and check if selector returns nil and sets lastSession to nil
+	bsm.suspendOrch(expectedSess0)
+	bsm.suspendOrch(expectedSess1)
+	bsm.removeSession(expectedSess0)
+	bsm.removeSession(expectedSess1)
+	sess0 = sendSegStub()
+	assert.Nil(sess0)
+	assert.Nil(bsm.lastSess)
 }
 
 func TestSelectSession_NilSession(t *testing.T) {
@@ -776,14 +907,16 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	assert.Nil(err)
 
 	completedSess := bsm.sessMap[ts.URL]
-	assert.NotEqual(completedSess, sess)
+	assert.NotEqual(completedSess.LatencyScore, sess.LatencyScore)
 	assert.NotZero(completedSess.LatencyScore)
 
 	// Check that the completed session is just the original session with a different LatencyScore
 	copiedSess := &BroadcastSession{}
 	*copiedSess = *completedSess
 	copiedSess.LatencyScore = 0.0
-	assert.Equal(copiedSess, sess)
+	assert.Equal(copiedSess.Broadcaster, sess.Broadcaster)
+	assert.Equal(copiedSess.LatencyScore, sess.LatencyScore)
+	assert.Equal(copiedSess.OrchestratorInfo, sess.OrchestratorInfo)
 
 	tr.Info = &net.OrchestratorInfo{Transcoder: ts.URL, PriceInfo: &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7}}
 	buf, err = proto.Marshal(tr)

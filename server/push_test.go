@@ -152,6 +152,8 @@ func TestPush_MultipartReturn(t *testing.T) {
 	assert.Equal("", strings.TrimSpace(string(body)))
 
 	// Binary data should be returned
+	bsm.sel.Clear()
+	bsm.sel.Add([]*BroadcastSession{sess})
 	reader.Seek(0, 0)
 	reader = strings.NewReader("InsteadOf.TS")
 	req = httptest.NewRequest("POST", "/live/mani/12.ts", reader)
@@ -191,6 +193,8 @@ func TestPush_MultipartReturn(t *testing.T) {
 
 	// No sessions error
 	cxn.sessManager.sel.Clear()
+	cxn.sessManager.lastSess = nil
+	cxn.sessManager.sessMap = make(map[string]*BroadcastSession)
 	reader.Seek(0, 0)
 	req = httptest.NewRequest("POST", "/live/mani/13.ts", reader)
 	w = httptest.NewRecorder()
