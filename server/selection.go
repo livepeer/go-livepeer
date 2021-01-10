@@ -234,6 +234,9 @@ func (s *LIFOSelector) Complete(sess *BroadcastSession) {
 func (s *LIFOSelector) Select() *BroadcastSession {
 	sessList := *s
 	last := len(sessList) - 1
+	if last < 0 {
+		return nil
+	}
 	sess, sessions := sessList[last], sessList[:last]
 	*s = sessions
 	return sess
