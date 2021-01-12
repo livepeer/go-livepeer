@@ -132,6 +132,7 @@ type (
 		mRecordingSaveLatency         *stats.Float64Measure
 		mRecordingSaveErrors          *stats.Int64Measure
 		mRecordingSavedSegments       *stats.Int64Measure
+		mOrchestratorSwaps            *stats.Int64Measure
 
 		// Metrics for sending payments
 		mTicketValueSent    *stats.Float64Measure
@@ -255,6 +256,7 @@ func InitCensus(nodeType NodeType, version string) {
 		"How long it takes to save segment to the OS", "sec")
 	census.mRecordingSaveErrors = stats.Int64("recording_save_errors", "Number of errors during save to the recording OS", "tot")
 	census.mRecordingSavedSegments = stats.Int64("recording_saved_segments", "Number of segments saved to the recording OS", "tot")
+	census.mOrchestratorSwaps = stats.Int64("orchestrator_swaps", "Number of orchestrator swaps mid-stream", "tot")
 
 	// Metrics for sending payments
 	census.mTicketValueSent = stats.Float64("ticket_value_sent", "TicketValueSent", "gwei")
@@ -591,6 +593,13 @@ func InitCensus(nodeType NodeType, version string) {
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
+		{
+			Name:        "orchestrator_swaps",
+			Measure:     census.mOrchestratorSwaps,
+			Description: "Number of orchestrator swaps mid-stream",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
 
 		// Metrics for sending payments
 		{
@@ -888,6 +897,12 @@ func MaxSessions(maxSessions int) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 	stats.Record(census.ctx, census.mMaxSessions.M(int64(maxSessions)))
+}
+
+func OrchestratorSwapped() {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+	stats.Record(census.ctx, census.mOrchestratorSwaps.M(1))
 }
 
 func CurrentSessions(currentSessions int) {
