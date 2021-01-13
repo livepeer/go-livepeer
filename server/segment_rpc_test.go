@@ -917,6 +917,11 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 	require.Nil(err)
 
+	price := &net.PriceInfo{
+		PricePerUnit:  2,
+		PixelsPerUnit: 3,
+	}
+
 	params := &net.TicketParams{
 		Recipient:         []byte("foo"),
 		FaceValue:         big.NewInt(100).Bytes(),
@@ -926,10 +931,10 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 		ExpirationBlock:   big.NewInt(100).Bytes(),
 	}
 
-	price := &net.PriceInfo{
-		PricePerUnit:  2,
-		PixelsPerUnit: 3,
-	}
+	payment := &net.Payment{ExpectedPrice: price}
+	data, err := proto.Marshal(payment)
+	require.Nil(err)
+	paymentString := base64.StdEncoding.EncodeToString(data)
 
 	// trigger an update to orchestrator info
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
@@ -940,10 +945,14 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	orch.On("Address").Return(addr)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(params, nil).Once()
 	orch.On("PriceInfo", mock.Anything).Return(price, nil)
-	orch.On("ProcessPayment", net.Payment{}, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(nil).Once()
+	orch.On("ProcessPayment", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(nil).Once()
 	orch.On("SufficientBalance", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(true)
 
-	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo")}}}
+	tData := &core.TranscodeData{
+		Segments: []*core.TranscodedSegmentData{
+			{Data: []byte("foo")},
+		},
+	}
 	tRes := &core.TranscodeResult{
 		TranscodeData: tData,
 		Sig:           []byte("foo"),
@@ -957,7 +966,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	orch.On("AuthToken", newAuthToken.SessionId, newAuthToken.Expiration).Return(newAuthToken)
 
 	headers := map[string]string{
-		paymentHeader: "",
+		paymentHeader: paymentString,
 		segmentHeader: creds,
 	}
 	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
@@ -988,7 +997,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	assert.Equal(oldAuthToken.Expiration, tr.Info.AuthToken.Expiration)
 
 	// Test orchestratorInfo error
-	orch.On("ProcessPayment", net.Payment{}, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(nil).Once()
+	orch.On("ProcessPayment", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(nil).Once()
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, errors.New("TicketParams error")).Once()
 
 	resp = httpPostResp(handler, bytes.NewReader(seg.Data), headers)
@@ -999,6 +1008,132 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
 	assert.Equal("Internal Server Error", strings.TrimSpace(string(body)))
+}
+
+func TestServeSegment_UpdateOrchestratorInfo_WebhookCache_PriceInfo(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+
+	AuthWebhookURL = "i'm enabled"
+	defer func() {
+		AuthWebhookURL = ""
+	}()
+
+	origRandomIDGenerator := common.RandomIDGenerator
+	defer func() { common.RandomIDGenerator = origRandomIDGenerator }()
+
+	newAuthToken := &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(authTokenValidPeriod).Unix()}
+	oldAuthToken := &net.AuthToken{Token: []byte("notfoo"), SessionId: "notbar", Expiration: time.Now().Add(authTokenValidPeriod).Unix()}
+	common.RandomIDGenerator = func(length uint) string { return newAuthToken.SessionId }
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("AuthToken", oldAuthToken.SessionId, oldAuthToken.Expiration).Return(oldAuthToken)
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles: []ffmpeg.VideoProfile{
+				ffmpeg.P720p60fps16x9,
+			},
+		},
+		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: oldAuthToken},
+	}
+
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	price := &net.PriceInfo{
+		PricePerUnit:  2,
+		PixelsPerUnit: 3,
+	}
+
+	webhookPrice := &net.PriceInfo{
+		PricePerUnit:  100,
+		PixelsPerUnit: 30,
+	}
+
+	discoveryAuthWebhookCache.Add(s.Broadcaster.Address().Hex(), &discoveryAuthWebhookRes{PriceInfo: webhookPrice}, authTokenValidPeriod)
+
+	params := &net.TicketParams{
+		Recipient:         []byte("foo"),
+		FaceValue:         big.NewInt(100).Bytes(),
+		WinProb:           big.NewInt(100).Bytes(),
+		RecipientRandHash: []byte("bar"),
+		Seed:              []byte("baz"),
+		ExpirationBlock:   big.NewInt(100).Bytes(),
+	}
+
+	payment := &net.Payment{ExpectedPrice: price, Sender: s.Broadcaster.Address().Bytes()}
+	data, err := proto.Marshal(payment)
+	require.Nil(err)
+	paymentString := base64.StdEncoding.EncodeToString(data)
+
+	// trigger an update to orchestrator info
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	uri, err := url.Parse("http://google.com")
+	require.Nil(err)
+	addr := ethcommon.BytesToAddress([]byte("foo"))
+	orch.On("ServiceURI").Return(uri)
+	orch.On("Address").Return(addr)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(params, nil).Once()
+	orch.On("PriceInfo", mock.Anything).Return(price, nil)
+	orch.On("ProcessPayment", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(nil).Once()
+	orch.On("SufficientBalance", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(true)
+
+	tData := &core.TranscodeData{
+		Segments: []*core.TranscodedSegmentData{
+			{Data: []byte("foo")},
+		},
+	}
+	tRes := &core.TranscodeResult{
+		TranscodeData: tData,
+		Sig:           []byte("foo"),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
+	}
+	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	// This could be flaky if time.Now() changes between the time when we set authToken.Expiration and the time
+	// when the mocked AuthToken is called. 1 second would need to elapse which should only really happen if the test
+	// is run in a really slow environment
+	orch.On("AuthToken", newAuthToken.SessionId, newAuthToken.Expiration).Return(newAuthToken)
+
+	headers := map[string]string{
+		paymentHeader: paymentString,
+		segmentHeader: creds,
+	}
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(err)
+
+	var tr net.TranscodeResult
+	err = proto.Unmarshal(body, &tr)
+	require.Nil(err)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	assert.Equal(uri.String(), tr.Info.Transcoder)
+	assert.Equal(params.Recipient, tr.Info.TicketParams.Recipient)
+	assert.Equal(params.FaceValue, tr.Info.TicketParams.FaceValue)
+	assert.Equal(params.WinProb, tr.Info.TicketParams.WinProb)
+	assert.Equal(params.RecipientRandHash, tr.Info.TicketParams.RecipientRandHash)
+	assert.Equal(params.Seed, tr.Info.TicketParams.Seed)
+	assert.Equal(webhookPrice.PricePerUnit, tr.Info.PriceInfo.PricePerUnit)
+	assert.Equal(webhookPrice.PixelsPerUnit, tr.Info.PriceInfo.PixelsPerUnit)
+	assert.Equal(addr.Bytes(), tr.Info.Address)
+
+	assert.Equal(oldAuthToken.Token, tr.Info.AuthToken.Token)
+	assert.Equal(oldAuthToken.SessionId, tr.Info.AuthToken.SessionId)
+	assert.Equal(oldAuthToken.Expiration, tr.Info.AuthToken.Expiration)
 }
 
 func TestServeSegment_InsufficientBalance(t *testing.T) {
