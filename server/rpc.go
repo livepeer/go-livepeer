@@ -22,6 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
+	"github.com/patrickmn/go-cache"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -34,6 +35,9 @@ const GRPCConnectTimeout = 3 * time.Second
 const GRPCTimeout = 8 * time.Second
 
 var authTokenValidPeriod = 30 * time.Minute
+var discoveryAuthWebhookCacheCleanup = 5 * time.Minute
+
+var discoveryAuthWebhookCache = cache.New(authTokenValidPeriod, discoveryAuthWebhookCacheCleanup)
 
 type Orchestrator interface {
 	ServiceURI() *url.URL
@@ -253,26 +257,29 @@ func genOrchestratorReq(b common.Broadcaster) (*net.OrchestratorRequest, error) 
 func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
 	addr := ethcommon.BytesToAddress(req.Address)
 	if err := verifyOrchestratorReq(orch, addr, req.Sig); err != nil {
-		return nil, fmt.Errorf("Invalid orchestrator request (%v)", err)
+		return nil, fmt.Errorf("Invalid orchestrator request: %v", err)
 	}
 
-	webhookRes, err := authenticateBroadcaster(addr.Hex())
-	if err != nil {
+	if _, err := authenticateBroadcaster(addr.Hex()); err != nil {
 		return nil, fmt.Errorf("authentication failed: %v", err)
 	}
 
 	// currently, orchestrator == transcoder
-	oInfo, err := orchestratorInfo(orch, addr, orch.ServiceURI().String())
-	if err != nil {
-		return nil, err
-	}
+	return orchestratorInfo(orch, addr, orch.ServiceURI().String())
+}
 
-	// Adjust the necessary orchestrator info values
-	return handleWebhookResponse(webhookRes, oInfo), nil
+func getPriceInfo(orch Orchestrator, addr ethcommon.Address) (*net.PriceInfo, error) {
+	if AuthWebhookURL != "" {
+		webhookRes := getFromDiscoveryAuthWebhookCache(addr.Hex())
+		if webhookRes != nil && webhookRes.PriceInfo != nil {
+			return webhookRes.PriceInfo, nil
+		}
+	}
+	return orch.PriceInfo(addr)
 }
 
 func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI string) (*net.OrchestratorInfo, error) {
-	priceInfo, err := orch.PriceInfo(addr)
+	priceInfo, err := getPriceInfo(orch, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -317,10 +324,13 @@ func verifyOrchestratorReq(orch Orchestrator, addr ethcommon.Address, sig []byte
 	return orch.CheckCapacity("")
 }
 
-type authBroadcasterResponse struct{}
+type discoveryAuthWebhookRes struct {
+	PriceInfo *net.PriceInfo `json:"priceInfo,omitempty"`
+}
 
 // authenticateBroadcaster returns an error if authentication fails
-func authenticateBroadcaster(id string) (*authBroadcasterResponse, error) {
+// on success it caches the webhook response
+func authenticateBroadcaster(id string) (*discoveryAuthWebhookRes, error) {
 	if AuthWebhookURL == "" {
 		return nil, nil
 	}
@@ -345,17 +355,35 @@ func authenticateBroadcaster(id string) (*authBroadcasterResponse, error) {
 		return nil, errors.New(string(body))
 	}
 
-	webhookRes := &authBroadcasterResponse{}
+	webhookRes := &discoveryAuthWebhookRes{}
 	if err := json.Unmarshal(body, webhookRes); err != nil {
 		return nil, err
 	}
 
+	addToDiscoveryAuthWebhookCache(id, webhookRes, authTokenValidPeriod)
+
 	return webhookRes, nil
 }
 
-func handleWebhookResponse(res *authBroadcasterResponse, oInfo *net.OrchestratorInfo) *net.OrchestratorInfo {
-	// handleWebhookResponse modifies the orchestrator info object returned to the broadcaster based on the webhook response
-	return oInfo
+func addToDiscoveryAuthWebhookCache(id string, webhookRes *discoveryAuthWebhookRes, expiration time.Duration) {
+	_, ok := discoveryAuthWebhookCache.Get(id)
+	if ok {
+		discoveryAuthWebhookCache.Replace(id, webhookRes, authTokenValidPeriod)
+	} else {
+		discoveryAuthWebhookCache.Add(id, webhookRes, authTokenValidPeriod)
+	}
+}
+
+func getFromDiscoveryAuthWebhookCache(id string) *discoveryAuthWebhookRes {
+	c, ok := discoveryAuthWebhookCache.Get(id)
+	if !ok {
+		return nil
+	}
+	webhookRes, ok := c.(*discoveryAuthWebhookRes)
+	if !ok {
+		return nil
+	}
+	return webhookRes
 }
 
 func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
