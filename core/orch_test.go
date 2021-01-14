@@ -536,6 +536,10 @@ func TestGetSegmentChan(t *testing.T) {
 		t.Error("SegmentChans mapping did not include channel")
 	}
 
+	if cap(sc) != maxSegmentChannels {
+		t.Error("returned segment channel is not the correct capacity")
+	}
+
 	// Test max sessions
 	oldTranscodeSessions := MaxSessions
 	MaxSessions = 0

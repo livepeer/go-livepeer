@@ -31,6 +31,8 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
+const maxSegmentChannels = 4
+
 var transcodeLoopTimeout = 1 * time.Minute
 
 // Gives us more control of "timeout" / cancellation behavior during testing
@@ -447,7 +449,7 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 	if len(n.SegmentChans) >= MaxSessions {
 		return nil, ErrOrchCap
 	}
-	sc := make(SegmentChan, 1)
+	sc := make(SegmentChan, maxSegmentChannels)
 	glog.V(common.DEBUG).Infof("Creating new segment chan for manifestID=%s sessionID=%s", md.ManifestID, md.AuthToken.SessionId)
 	if err := n.transcodeSegmentLoop(md, sc); err != nil {
 		return nil, err
