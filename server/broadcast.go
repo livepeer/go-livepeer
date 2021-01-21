@@ -413,6 +413,11 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 			return nil, err
 		}
 
+		if isNonRetryableError(err) {
+			glog.Warningf("Not retrying current segment nonce=%d seqNo=%d due to non-retryable error err=%v", nonce, seg.SeqNo, err)
+			return nil, err
+		}
+
 		// recoverable error, retry
 	}
 	if err != nil {
@@ -490,6 +495,10 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 
 	res, err := SubmitSegment(sess, seg, nonce)
 	if err != nil || res == nil {
+		if isNonRetryableError(err) {
+			cxn.sessManager.completeSession(sess)
+			return nil, err
+		}
 		cxn.sessManager.suspendOrch(sess)
 		cxn.sessManager.removeSession(sess)
 		if res == nil && err == nil {
@@ -823,4 +832,8 @@ func shouldRefreshSession(sess *BroadcastSession) (bool, error) {
 
 func getSegDurMsString(seg *stream.HLSSegment) string {
 	return strconv.Itoa(int(seg.Duration * 1000))
+}
+
+func isNonRetryableError(e error) bool {
+	return e.Error() == "No keyframes in input"
 }
