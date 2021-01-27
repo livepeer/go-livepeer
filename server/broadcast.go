@@ -103,6 +103,7 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 		// If no new sessions are available, re-use last session when oldest segment is in-flight for < 2 * segDur
 		if sess == nil && bsm.lastSess != nil && len(bsm.lastSess.SegsInFlight) > 0 &&
 			time.Now().Sub(bsm.lastSess.SegsInFlight[0].startTime) < 2*bsm.lastSess.SegsInFlight[0].segDur {
+			glog.V(common.DEBUG).Infof("No sessions in the selector for manifestID=%v re-using orch=%v with acceptable in-flight time", bsm.mid, bsm.lastSess.OrchestratorInfo.Transcoder)
 			sess = bsm.lastSess
 		}
 
@@ -124,8 +125,11 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 		   fixup the session list at selection time by retrying the selection.
 		*/
 		if _, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
-			if monitor.Enabled && bsm.lastSess != nil && bsm.lastSess.OrchestratorInfo.Transcoder != sess.OrchestratorInfo.Transcoder {
-				monitor.OrchestratorSwapped()
+			if bsm.lastSess != nil && bsm.lastSess.OrchestratorInfo.Transcoder != sess.OrchestratorInfo.Transcoder {
+				glog.V(common.DEBUG).Infof("Swapping from orch=%v to orch=%v for manifestID=%s", bsm.lastSess.OrchestratorInfo.Transcoder, sess.OrchestratorInfo.Transcoder, bsm.mid)
+				if monitor.Enabled {
+					monitor.OrchestratorSwapped()
+				}
 			}
 			bsm.lastSess = sess
 			return sess
@@ -133,6 +137,10 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 
 		// Last session got removed from map (possibly due to a failure) so stop tracking its in-flight segments
 		if bsm.lastSess != nil && sess.OrchestratorInfo.Transcoder == bsm.lastSess.OrchestratorInfo.Transcoder {
+			glog.V(common.DEBUG).Infof("Removing orch=%v from manifestID=%s session list", bsm.lastSess.OrchestratorInfo.Transcoder, bsm.mid)
+			if monitor.Enabled {
+				monitor.OrchestratorSwapped()
+			}
 			bsm.lastSess.SegsInFlight = nil
 			bsm.lastSess = nil
 		}
@@ -157,20 +165,22 @@ func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
 	defer bsm.sessLock.Unlock()
 
 	if existingSess, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
-		if bsm.lastSess != nil && bsm.lastSess.OrchestratorInfo.Transcoder == sess.OrchestratorInfo.Transcoder {
-			if len(bsm.lastSess.SegsInFlight) > 1 {
-				bsm.lastSess.SegsInFlight = bsm.lastSess.SegsInFlight[1:]
-				bsm.lastSess = sess
-				bsm.sessMap[sess.OrchestratorInfo.Transcoder] = sess
-				return
-				// don't place session back into the selector in case a segment is still in flight
-			}
-			bsm.lastSess = sess
-		}
 		// If the new session and the existing session share the same key in sessMap replace
 		// the existing session with the new session
 		if existingSess != sess {
 			bsm.sessMap[sess.OrchestratorInfo.Transcoder] = sess
+		}
+		if bsm.lastSess != nil && bsm.lastSess.OrchestratorInfo.Transcoder == sess.OrchestratorInfo.Transcoder && sess != bsm.lastSess {
+			sess.SegsInFlight = bsm.lastSess.SegsInFlight
+			bsm.lastSess = sess
+		}
+		if len(sess.SegsInFlight) == 1 {
+			sess.SegsInFlight = nil
+		} else if len(sess.SegsInFlight) > 1 {
+			sess.SegsInFlight = sess.SegsInFlight[1:]
+			// skip returning this session back to the selector
+			// we will return it later in transcodeSegment() once all in-flight segs downloaded
+			return
 		}
 		bsm.sel.Complete(sess)
 	}
@@ -225,6 +235,16 @@ func (bsm *BroadcastSessionsManager) refreshSessions() {
 	}
 
 	bsm.sel.Add(uniqueSessions)
+}
+
+func (bsm *BroadcastSessionsManager) pushSegInFlight(sess *BroadcastSession, seg *stream.HLSSegment) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	sess.SegsInFlight = append(sess.SegsInFlight,
+		SegFlightMetadata{
+			startTime: time.Now(),
+			segDur:    time.Duration(seg.Duration * float64(time.Second)),
+		})
 }
 
 func (bsm *BroadcastSessionsManager) cleanup() {
@@ -485,14 +505,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		sess = newSess
 	}
 
-	cxn.sessManager.sessLock.Lock()
-	sess.SegsInFlight = append(sess.SegsInFlight,
-		SegFlightMetadata{
-			startTime: time.Now(),
-			segDur:    time.Duration(seg.Duration * float64(time.Second)),
-		})
-	cxn.sessManager.sessLock.Unlock()
-
+	cxn.sessManager.pushSegInFlight(sess, seg)
 	res, err := SubmitSegment(sess, seg, nonce)
 	if err != nil || res == nil {
 		if isNonRetryableError(err) {
@@ -506,8 +519,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}
 		return nil, err
 	}
-
-	cxn.sessManager.completeSession(updateSession(sess, res))
 
 	// download transcoded segments from the transcoder
 	gotErr := false // only send one error msg per segment list
@@ -631,6 +642,8 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		return nil, dlErr
 	}
 
+	cxn.sessManager.completeSession(updateSession(sess, res))
+
 	downloadDur := time.Since(dlStart)
 	if monitor.Enabled {
 		monitor.SegmentDownloaded(nonce, seg.SeqNo, downloadDur)
@@ -748,7 +761,6 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) *Broadc
 	newSess := &BroadcastSession{}
 	*newSess = *sess
 	newSess.LatencyScore = res.LatencyScore
-	newSess.SegsInFlight = nil
 
 	if res.Info == nil {
 		// Return newSess early if we do not need to update OrchestratorInfo

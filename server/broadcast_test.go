@@ -336,12 +336,9 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 			bsm.sessLock.Unlock()
 			return nil
 		}
-		sess.SegsInFlight = append(sess.SegsInFlight,
-			SegFlightMetadata{
-				startTime: time.Now(),
-				segDur:    time.Duration(100 * time.Millisecond),
-			})
 		bsm.sessLock.Unlock()
+		seg := &stream.HLSSegment{Data: []byte("dummy"), Duration: 0.100}
+		bsm.pushSegInFlight(sess, seg)
 		return sess
 	}
 
@@ -364,32 +361,39 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	*expectedSess0 = *(bsm.sessList()[1])
 	*expectedSess1 = *(bsm.sessList()[0])
 
-	// send in a segment and check that completeSession returns a copy of same segment
+	// send in multiple segments at the same time and verify SegsInFlight & lastSess are updated
 	sess0 := sendSegStub()
 	assert.Equal(bsm.lastSess, sess0)
 	assert.Equal(expectedSess0.OrchestratorInfo, sess0.OrchestratorInfo)
-	completeSegStub(sess0)
-	assert.NotEqual(sess0, bsm.lastSess)
-	assert.Equal(sess0.OrchestratorInfo, bsm.lastSess.OrchestratorInfo)
-
-	// send in multiple segments at the same time and verify SegsInFlight & lastSess are updated
-	sess0 = sendSegStub()
-	assert.Equal(bsm.lastSess, sess0)
-	assert.Equal(expectedSess0.OrchestratorInfo, sess0.OrchestratorInfo)
-	assert.Len(sess0.SegsInFlight, 1)
+	assert.Len(bsm.lastSess.SegsInFlight, 1)
 
 	sess1 := sendSegStub()
 	assert.Equal(bsm.lastSess, sess1)
 	assert.Equal(sess0, sess1)
-	assert.Len(sess0.SegsInFlight, 2)
+	assert.Len(bsm.lastSess.SegsInFlight, 2)
 
 	completeSegStub(sess0)
-	assert.Len(sess0.SegsInFlight, 1)
+	assert.Len(bsm.lastSess.SegsInFlight, 1)
 	assert.Len(bsm.sessList(), 1)
 
 	completeSegStub(sess1)
 	assert.Len(bsm.lastSess.SegsInFlight, 0)
 	assert.Len(bsm.sessList(), 2)
+
+	// Same as above but to check thread safety, run this under -race
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { sess0 = sendSegStub(); wg.Done() }()
+	go func() { sess1 = sendSegStub(); wg.Done() }()
+	assert.True(wgWait(&wg), "Segment sending timed out")
+	assert.Equal(bsm.lastSess, sess0)
+	assert.Equal(sess0, sess1)
+	assert.Len(bsm.lastSess.SegsInFlight, 2)
+	wg.Add(2)
+	go func() { completeSegStub(sess0); wg.Done() }()
+	go func() { completeSegStub(sess1); wg.Done() }()
+	assert.True(wgWait(&wg), "Segment completion timed out")
+	assert.Len(bsm.lastSess.SegsInFlight, 0)
 
 	// send in multiple segments with delay > segDur to trigger O switch
 	sess0 = sendSegStub()
@@ -431,6 +435,8 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	// send in multiple segments with delay > 2*segDur and only a single session available
 	bsm.suspendOrch(expectedSess0)
 	bsm.removeSession(expectedSess0)
+	assert.Len(bsm.sessMap, 1)
+
 	sess0 = sendSegStub()
 	assert.Equal(bsm.lastSess, sess0)
 	assert.Equal(expectedSess1.OrchestratorInfo, sess0.OrchestratorInfo)
@@ -449,6 +455,8 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	bsm.suspendOrch(expectedSess1)
 	bsm.removeSession(expectedSess0)
 	bsm.removeSession(expectedSess1)
+	assert.Len(bsm.sessMap, 0)
+
 	sess0 = sendSegStub()
 	assert.Nil(sess0)
 	assert.Nil(bsm.lastSess)
