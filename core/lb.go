@@ -82,7 +82,7 @@ func (lb *LoadBalancingTranscoder) createSession(md *SegTranscodingMetadata) (*t
 	session := &transcoderSession{
 		transcoder:  lb.newT(transcoder),
 		key:         key,
-		sender:      make(chan *transcoderParams, 1),
+		sender:      make(chan *transcoderParams, maxSegmentChannels),
 		makeContext: transcodeLoopContext,
 	}
 	lb.sessions[job] = session
