@@ -648,7 +648,7 @@ func TestRedeemWinningTicket_IsUsedTicket(t *testing.T) {
 	assert.True(b.IsUsedTicket(signedT.Ticket))
 }
 
-func TestRedeemWinningTicket_CheckAvailableFunds(t *testing.T) {
+func TestRedeemWinningTicket_CheckAvailableFundsAndFaceValue(t *testing.T) {
 	assert := assert.New(t)
 
 	cfg, b, smgr, tm := localSenderMonitorFixture()
@@ -714,7 +714,23 @@ func TestRedeemWinningTicket_CheckAvailableFunds(t *testing.T) {
 	_, err = sm.redeemWinningTicket(signedT)
 	assert.Contains(err.Error(), "insufficient sender funds")
 
-	// Pass available funds check when availableFunds > txCost
+	// Trigger insufficient face value to cover redeem tx cost error when face value < txCost
+	txCost := new(big.Int).Sub(funds, big.NewInt(1))
+	cfg.RedeemGas = 1
+	cfg.SuggestGasPrice = func(ctx context.Context) (*big.Int, error) { return txCost, nil }
+	badSignedT := defaultSignedTicket(addr, uint32(0))
+	badSignedT.FaceValue = new(big.Int).Sub(txCost, big.NewInt(1))
+	sm = NewSenderMonitor(cfg, b, smgr, tm, ts)
+	_, err = sm.redeemWinningTicket(signedT)
+	assert.Contains(err.Error(), "insufficient ticket face value")
+
+	// Trigger insufficient face value to cover redeem tx cost error when face value = txCost
+	badSignedT.FaceValue = txCost
+	sm = NewSenderMonitor(cfg, b, smgr, tm, ts)
+	_, err = sm.redeemWinningTicket(signedT)
+	assert.Contains(err.Error(), "insufficient ticket face value")
+
+	// Pass available funds and face value check when availableFunds > txCost and face value > txCost
 	cfg.RedeemGas = 0
 	cfg.SuggestGasPrice = func(ctx context.Context) (*big.Int, error) { return big.NewInt(0), nil }
 	sm = NewSenderMonitor(cfg, b, smgr, tm, ts)
