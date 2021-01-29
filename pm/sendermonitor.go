@@ -383,6 +383,9 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 	if availableFunds.Cmp(txCost) <= 0 {
 		return nil, errors.New("insufficient sender funds for redeem tx cost")
 	}
+	if ticket.FaceValue.Cmp(txCost) <= 0 {
+		return nil, errors.New("insufficient ticket face value for redeem tx cost")
+	}
 
 	// Subtract the ticket face value from the sender's current max float
 	// This amount will be considered pending until the ticket redemption
