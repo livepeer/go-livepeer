@@ -488,7 +488,8 @@ func TestTicketParams(t *testing.T) {
 	assert.LessOrEqual(new(big.Int).Abs(new(big.Int).Sub(cfg.EV, expEV)).Int64(), int64(1))
 
 	// Test correct params returned when default faceValue > maxFloat
-	sm.maxFloat = big.NewInt(10000)
+	sm.maxFloat = big.NewInt(10001)
+	gm.gasPrice = big.NewInt(1)
 
 	params4, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(err)
@@ -496,15 +497,26 @@ func TestTicketParams(t *testing.T) {
 	faceValue = sm.maxFloat
 	assert.Equal(faceValue, params4.FaceValue)
 
-	winProb, _ = new(big.Int).SetString("57896044618658097711785492504343953926634992332820282019728792003956564820", 10)
+	winProb, _ = new(big.Int).SetString("57890255593098787833002192285115442382396752657554526567072084795477017120", 10)
 	assert.Equal(winProb, params4.WinProb)
 
 	// Might be slightly off due to truncation
 	expEV = new(big.Int).Div(new(big.Int).Mul(faceValue, winProb), maxWinProb)
 	assert.LessOrEqual(new(big.Int).Abs(new(big.Int).Sub(cfg.EV, expEV)).Int64(), int64(1))
 
-	// Test insufficient sender reserve error
+	// Test insufficient sender reserve error due to maxFloat < EV
 	sm.maxFloat = new(big.Int).Sub(cfg.EV, big.NewInt(1))
+	_, err = r.TicketParams(sender, big.NewRat(1, 1))
+	assert.EqualError(err, errInsufficientSenderReserve.Error())
+
+	// Test insufficient sender reserve error due to maxFloat < txCost
+	sm.maxFloat = new(big.Int).Add(cfg.EV, big.NewInt(1))
+	_, err = r.TicketParams(sender, big.NewRat(1, 1))
+	assert.EqualError(err, errInsufficientSenderReserve.Error())
+
+	// Test insufficient sender reserve error due to maxFloat = txCost
+	txCost := new(big.Int).Mul(big.NewInt(int64(cfg.RedeemGas)), gm.gasPrice)
+	sm.maxFloat = txCost
 	_, err = r.TicketParams(sender, big.NewRat(1, 1))
 	assert.EqualError(err, errInsufficientSenderReserve.Error())
 
@@ -543,9 +555,8 @@ func TestTxCostMultiplier_UsingMaxFloat_ReturnsScaledMultiplier(t *testing.T) {
 	secret := [32]byte{3}
 	r := NewRecipientWithSecret(recipient, b, v, gm, sm, tm, secret, cfg)
 
-	sm.maxFloat = big.NewInt(500000)
-
 	txCost := new(big.Int).Mul(gm.gasPrice, big.NewInt(int64(cfg.RedeemGas)))
+	sm.maxFloat = new(big.Int).Add(txCost, big.NewInt(1))
 	expMul := new(big.Rat).SetFrac(sm.maxFloat, txCost)
 
 	mul, err := r.TxCostMultiplier(sender)

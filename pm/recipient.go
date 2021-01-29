@@ -242,8 +242,8 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	}
 
 	if faceValue.Cmp(maxFloat) > 0 {
-		if maxFloat.Cmp(r.cfg.EV) < 0 {
-			// If maxFloat < EV, then there is no
+		if maxFloat.Cmp(r.cfg.EV) < 0 || maxFloat.Cmp(r.txCost()) <= 0 {
+			// If maxFloat < EV or <= tx cost, then there is no
 			// acceptable faceValue
 			return nil, errInsufficientSenderReserve
 		}
