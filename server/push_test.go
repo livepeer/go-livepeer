@@ -135,6 +135,8 @@ func TestPush_MultipartReturn(t *testing.T) {
 		i++
 	}
 	assert.Equal(1, i)
+	assert.Equal(uint64(12), cxn.sourceBytes)
+	assert.Equal(uint64(0), cxn.transcodedBytes)
 
 	bsm.sel.Clear()
 	bsm.sel.Add([]*BroadcastSession{sess})
@@ -190,6 +192,8 @@ func TestPush_MultipartReturn(t *testing.T) {
 		i++
 	}
 	assert.Equal(1, i)
+	assert.Equal(uint64(36), cxn.sourceBytes)
+	assert.Equal(uint64(44), cxn.transcodedBytes)
 
 	// No sessions error
 	cxn.sessManager.sel.Clear()

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -363,6 +364,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	if monitor.Enabled {
 		monitor.SegmentEmerged(nonce, seg.SeqNo, len(BroadcastJobVideoProfiles), seg.Duration)
 	}
+	atomic.AddUint64(&cxn.sourceBytes, uint64(len(seg.Data)))
 
 	seg.Name = "" // hijack seg.Name to convey the uploaded URI
 	ext, err := common.ProfileFormatExtension(vProfile.Format)
@@ -570,6 +572,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			}
 
 			data = d
+			atomic.AddUint64(&cxn.transcodedBytes, uint64(len(data)))
 		}
 
 		if bros != nil {
