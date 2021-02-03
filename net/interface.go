@@ -9,11 +9,17 @@ type RemoteTranscoderInfo struct {
 	Capacity int
 }
 
+type StreamInfo struct {
+	SourceBytes     uint64
+	TranscodedBytes uint64
+}
+
 type NodeStatus struct {
 	Manifests map[string]*m3u8.MasterPlaylist
 	// maps external manifest (provided in HTTP push URL to the internal one
 	// (returned from webhook))
 	InternalManifests           map[string]string
+	StreamInfo                  map[string]StreamInfo
 	OrchestratorPool            []string
 	Version                     string
 	GolangRuntimeVersion        string

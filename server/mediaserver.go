@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/livepeer/go-livepeer/drivers"
@@ -71,14 +72,16 @@ var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
 }
 
 type rtmpConnection struct {
-	mid         core.ManifestID
-	nonce       uint64
-	stream      stream.RTMPVideoStream
-	pl          core.PlaylistManager
-	profile     *ffmpeg.VideoProfile
-	params      *core.StreamParameters
-	sessManager *BroadcastSessionsManager
-	lastUsed    time.Time
+	mid             core.ManifestID
+	nonce           uint64
+	stream          stream.RTMPVideoStream
+	pl              core.PlaylistManager
+	profile         *ffmpeg.VideoProfile
+	params          *core.StreamParameters
+	sessManager     *BroadcastSessionsManager
+	lastUsed        time.Time
+	sourceBytes     uint64
+	transcodedBytes uint64
 }
 
 type LivepeerServer struct {
@@ -1339,16 +1342,24 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 
 	s.connectionLock.RLock()
 	defer s.connectionLock.RUnlock()
+	streamInfo := make(map[string]net.StreamInfo)
 	for _, cxn := range s.rtmpConnections {
 		if cxn.pl == nil {
 			continue
 		}
 		cpl := cxn.pl
 		m[string(cpl.ManifestID())] = cpl.GetHLSMasterPlaylist()
+		sb := atomic.LoadUint64(&cxn.sourceBytes)
+		tb := atomic.LoadUint64(&cxn.transcodedBytes)
+		streamInfo[string(cpl.ManifestID())] = net.StreamInfo{
+			SourceBytes:     sb,
+			TranscodedBytes: tb,
+		}
 	}
 	res := &net.NodeStatus{
 		Manifests:             m,
 		InternalManifests:     make(map[string]string),
+		StreamInfo:            streamInfo,
 		Version:               core.LivepeerVersion,
 		GolangRuntimeVersion:  runtime.Version(),
 		GOArch:                runtime.GOARCH,
