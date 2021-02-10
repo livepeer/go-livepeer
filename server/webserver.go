@@ -70,7 +70,8 @@ func (s *LivepeerServer) StartCliWebserver(bindAddr string) {
 	}
 
 	glog.Info("CLI server listening on ", bindAddr)
-	srv.ListenAndServe()
+	err := srv.ListenAndServe()
+	glog.Error(err)
 }
 
 func (s *LivepeerServer) setOnChainConfig() {}
