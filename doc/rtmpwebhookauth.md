@@ -54,11 +54,24 @@ There is simple webhook authentication server [example](https://github.com/livep
 
 ## Orchestrators
 
-Webhooks can be used to authenticate discovery requests. When a webhook URL is provided on node startup using the `-authWebhookUrl` flag the Livepeer node will make a `POST` request to the specified URL on each `GetOrchestratorInfo` call. 
+Webhooks can be used to authenticate discovery requests. When a webhook URL is provided on node startup using the `-authWebhookUrl` flag the Livepeer node will make a `POST` request to the specified URL on each `GetOrchestratorInfo` call.
+
+If a valid `priceInfo` object is provided in the response the orchestrator will use it instead of its default price. A valid price requires `pricePerUnit >= 0` and `pixelsPerUnit > 0`.
 
 #### Request Object
 ```json
 {
-    "id": ""
+    "id": string
+}
+```
+
+#### Response Object
+
+```json
+{
+    "priceInfo": {
+        "pricePerUnit": number,
+        "pixelsPerUnit": number
+    }
 }
 ```
