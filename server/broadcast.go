@@ -24,6 +24,7 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
 
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -850,5 +851,11 @@ func getSegDurMsString(seg *stream.HLSSegment) string {
 }
 
 func isNonRetryableError(e error) bool {
-	return e.Error() == "No keyframes in input"
+	foundErr := false
+	for _, v := range ffmpeg.LPMSErrors {
+		if e.Error() == v.Desc {
+			foundErr = true
+		}
+	}
+	return foundErr
 }
