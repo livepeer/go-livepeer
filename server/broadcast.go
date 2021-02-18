@@ -388,6 +388,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 				cpl.InsertHLSSegmentJSON(vProfile, seg.SeqNo, uri, seg.Duration)
 				glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s bytes=%d to record store took=%s",
 					nonce, mid, name, len(seg.Data), took)
+				cpl.FlushRecord()
 			}
 			if monitor.Enabled {
 				monitor.RecordingSegmentSaved(took, err)
@@ -414,8 +415,6 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false)
 		}
-	} else {
-		cpl.FlushRecord()
 	}
 
 	var sv *verification.SegmentVerifier
@@ -541,6 +540,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	segURLs := make([]string, len(res.Segments))
 	segLock := &sync.Mutex{}
 	cond := sync.NewCond(segLock)
+	var recordWG sync.WaitGroup
 
 	dlFunc := func(url string, pixels int64, i int) {
 		defer func() {
@@ -591,6 +591,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 					glog.Infof("Successfully saved nonce=%d manifestID=%s name=%s size=%d bytes to record store took=%s",
 						nonce, cxn.mid, name, len(data), took)
 				}
+				recordWG.Done()
 				if monitor.Enabled {
 					monitor.RecordingSegmentSaved(took, err)
 				}
@@ -633,8 +634,17 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	dlStart := time.Now()
+	if cpl.GetRecordOSSession() != nil && len(res.Segments) > 0 {
+		recordWG.Add(len(res.Segments))
+	}
 	for i, v := range res.Segments {
 		go dlFunc(v.Url, v.Pixels, i)
+	}
+	if cpl.GetRecordOSSession() != nil && len(res.Segments) > 0 {
+		go func() {
+			recordWG.Wait()
+			cpl.FlushRecord()
+		}()
 	}
 
 	cond.L.Lock()
@@ -675,7 +685,6 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			}
 		}
 	}
-	cpl.FlushRecord()
 
 	if monitor.Enabled {
 		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode)
