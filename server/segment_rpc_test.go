@@ -1759,7 +1759,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	}
 
 	tSegData := []*net.TranscodedSegmentData{
-		&net.TranscodedSegmentData{Url: "foo"},
+		{Url: "foo"},
 	}
 	tr := dummyRes(tSegData)
 	buf, err := proto.Marshal(tr)
@@ -1773,7 +1773,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 		if runChecks != nil {
 			runChecks(r)
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 		w.Write(buf)
 	})
