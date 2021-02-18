@@ -558,7 +558,7 @@ func TestPush_ShouldRemoveSessionAfterTimeoutIfInternalMIDIsUsed(t *testing.T) {
 	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 
 	oldRI := httpPushTimeout
-	httpPushTimeout = 2 * time.Millisecond
+	httpPushTimeout = 100 * time.Millisecond
 	defer func() { httpPushTimeout = oldRI }()
 	assert := assert.New(t)
 	s, cancel := setupServerWithCancel()
@@ -590,7 +590,7 @@ func TestPush_ShouldRemoveSessionAfterTimeoutIfInternalMIDIsUsed(t *testing.T) {
 	assert.Equal("intmid", string(intmid))
 	assert.True(exists)
 	assert.False(existsExt)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 	s.connectionLock.Lock()
 	_, exists = s.rtmpConnections["intmid"]
 	_, extEx := s.internalManifests["extmid1"]
@@ -604,7 +604,7 @@ func TestPush_ShouldRemoveSessionAfterTimeout(t *testing.T) {
 	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 
 	oldRI := httpPushTimeout
-	httpPushTimeout = 2 * time.Millisecond
+	httpPushTimeout = 100 * time.Millisecond
 	defer func() { httpPushTimeout = oldRI }()
 	assert := assert.New(t)
 	s, cancel := setupServerWithCancel()
@@ -617,7 +617,7 @@ func TestPush_ShouldRemoveSessionAfterTimeout(t *testing.T) {
 	_, exists := s.rtmpConnections["mani3"]
 	s.connectionLock.Unlock()
 	assert.True(exists)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 	s.connectionLock.Lock()
 	_, exists = s.rtmpConnections["mani3"]
 	s.connectionLock.Unlock()
@@ -627,7 +627,7 @@ func TestPush_ShouldRemoveSessionAfterTimeout(t *testing.T) {
 
 func TestPush_ShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
 	oldRI := httpPushTimeout
-	httpPushTimeout = 5 * time.Millisecond
+	httpPushTimeout = 100 * time.Millisecond
 	defer func() { httpPushTimeout = oldRI }()
 	assert := assert.New(t)
 	s := setupServer()
@@ -644,7 +644,7 @@ func TestPush_ShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
 	s.connectionLock.Lock()
 	delete(s.rtmpConnections, "mani2")
 	s.connectionLock.Unlock()
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	s.connectionLock.Lock()
 	_, exists = s.rtmpConnections["mani2"]
 	s.connectionLock.Unlock()
@@ -1075,7 +1075,7 @@ func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
 
 	reader := strings.NewReader("InsteadOf.TS")
 	oldRI := httpPushTimeout
-	httpPushTimeout = 10 * time.Millisecond
+	httpPushTimeout = 100 * time.Millisecond
 	defer func() { httpPushTimeout = oldRI }()
 	assert := assert.New(t)
 	s, cancel := setupServerWithCancel()
@@ -1125,7 +1125,7 @@ func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
 	assert.True(exists)
 	assert.False(existsOld)
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	s.connectionLock.Lock()
 	_, exists = s.rtmpConnections["intmid"]

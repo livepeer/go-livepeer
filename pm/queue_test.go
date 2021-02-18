@@ -156,7 +156,7 @@ func TestTicketQueueLoop_IsUsedTicket_MarkAsRedeemed(t *testing.T) {
 
 	tm.blockNumSink <- big.NewInt(1)
 	<-done
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	assert.True(ts.submitted[fmt.Sprintf("%x", ticket.Sig)])
 }
