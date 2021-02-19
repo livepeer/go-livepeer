@@ -47,7 +47,7 @@ func readWorker(ctx context.Context, tasks chan *task, resCh chan *readResult) {
 				continue
 			}
 			fi.Body.Close()
-			glog.V(common.VERBOSE).Infof("Reading file=%s took=%s", task.fileName, time.Since(now))
+			glog.V(common.VERBOSE).Infof("Reading file=%s bytes=%d took=%s", task.fileName, len(fb), time.Since(now))
 			res.data = fb
 			res.fileInfo = fi
 			resCh <- res
@@ -61,7 +61,7 @@ func ParallelReadFiles(ctx context.Context, sess OSSession, filesNames []string,
 	if len(filesNames) < workers {
 		workersToStart = len(filesNames)
 	}
-	resCh := make(chan *readResult, 8)
+	resCh := make(chan *readResult, len(filesNames))
 	tasks := make(chan *task)
 	for i := 0; i < workersToStart; i++ {
 		go readWorker(ctx, tasks, resCh)
