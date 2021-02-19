@@ -164,6 +164,7 @@ func main() {
 	datadir := flag.String("datadir", "", "data directory")
 	objectstore := flag.String("objectStore", "", "url of primary object store")
 	recordstore := flag.String("recordStore", "", "url of object store for recodings")
+	disableRecording := flag.Bool("disableRecording", false, "Turns of recoding, even if record store is specified by webhook")
 
 	// All deprecated
 	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
@@ -822,6 +823,7 @@ func main() {
 			// Not a fatal error; may continue operating in segment-only mode
 			glog.Error("No orchestrator specified; transcoding will not happen")
 		}
+		server.DisableRecording = *disableRecording
 		if *authWebhookURL != "" {
 			_, err := validateURL(*authWebhookURL)
 			if err != nil {

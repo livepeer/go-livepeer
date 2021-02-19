@@ -64,6 +64,9 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 
 var AuthWebhookURL string
 
+// DisableRecording if true then recordStore field from Webhook response ignored
+var DisableRecording bool
+
 // For HTTP push watchdog
 var httpPushTimeout = 1 * time.Minute
 var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
@@ -255,7 +258,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 				}
 			}
 			// set Recording OS if it was provided
-			if resp.RecordObjectStore != "" {
+			if resp.RecordObjectStore != "" && !DisableRecording {
 				ros, err = drivers.ParseOSURL(resp.RecordObjectStore, true)
 				if err != nil {
 					glog.Errorf("Failed to parse recording object store url for streamID url=%s err=%v", url.String(), err)

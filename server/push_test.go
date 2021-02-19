@@ -1030,6 +1030,56 @@ func TestPush_OSPerStream(t *testing.T) {
 	assert.True(len(body) > 0)
 }
 
+func TestPush_DisableRecording(t *testing.T) {
+	lpmon.NodeID = "testNode"
+	drivers.Testing = true
+	assert := assert.New(t)
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
+	s, _ := NewLivepeerServer("127.0.0.1:1939", n, true, "")
+	defer serverCleanup(s)
+
+	whts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		out, _ := ioutil.ReadAll(r.Body)
+		var req authWebhookReq
+		err := json.Unmarshal(out, &req)
+		if err != nil {
+			glog.Error("Error parsing URL: ", err)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		assert.Equal(req.URL, "http://example.com/live/sess3/3.ts")
+		w.Write([]byte(`{"manifestID":"OSTEST01", "objectStore": "memory://store3", "recordObjectStore": "memory://store4"}`))
+	}))
+
+	defer whts.Close()
+	oldURL := AuthWebhookURL
+	DisableRecording = true
+	defer func() {
+		AuthWebhookURL = oldURL
+		DisableRecording = false
+	}()
+	AuthWebhookURL = whts.URL
+
+	handler, reader, w := requestSetup(s)
+	reader = strings.NewReader("segmentbody")
+	req := httptest.NewRequest("POST", "/live/sess3/3.ts", reader)
+	req.Header.Set("Accept", "multipart/mixed")
+	handler.ServeHTTP(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	assert.Contains(drivers.TestMemoryStorages, "store3")
+	assert.NotContains(drivers.TestMemoryStorages, "store4")
+	store3 := drivers.TestMemoryStorages["store3"]
+	sess1 := store3.GetSession("OSTEST01")
+	assert.NotNil(sess1)
+	ctx := context.Background()
+	fi, err := sess1.ReadData(ctx, "OSTEST01/source/3.ts")
+	assert.Nil(err)
+	assert.NotNil(fi)
+}
+
 func TestPush_ConcurrentSegments(t *testing.T) {
 	assert := assert.New(t)
 
