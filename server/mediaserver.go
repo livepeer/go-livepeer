@@ -320,8 +320,11 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.Post(AuthWebhookURL, "application/json", bytes.NewBuffer(jsonValue))
-
+	req, err := core.NewPostRequest(AuthWebhookURL, "application/json", bytes.NewBuffer(jsonValue))
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

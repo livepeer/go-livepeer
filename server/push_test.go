@@ -1048,6 +1048,9 @@ func TestPush_DisableRecording(t *testing.T) {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
+		ua := r.Header.Get("User-Agent")
+		assert.Contains(ua, "Livepeer/")
+		assert.Equal("Livepeer/"+core.LivepeerVersion, ua)
 		assert.Equal(req.URL, "http://example.com/live/sess3/3.ts")
 		w.Write([]byte(`{"manifestID":"OSTEST01", "objectStore": "memory://store3", "recordObjectStore": "memory://store4"}`))
 	}))
