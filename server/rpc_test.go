@@ -890,7 +890,7 @@ func TestGetOrchestrator_WebhookAuth_ReturnsNotOK(t *testing.T) {
 func TestGetOrchestratorWebhookAuth_ReturnsOK(t *testing.T) {
 	orch := &mockOrchestrator{}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		in, err := json.Marshal(&authBroadcasterResponse{})
+		in, err := json.Marshal(&discoveryAuthWebhookRes{})
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -1026,6 +1026,120 @@ func TestGetOrchestrator_StorageInit(t *testing.T) {
 	assert.Equal(stubAuthToken.SessionId, oInfo.Storage[0].S3Info.Key)
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+}
+
+func TestGetPriceInfo_NoWebhook_DefaultPriceError_ReturnsError(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+	expErr := errors.New("PriceInfo error")
+
+	addr := ethcommon.HexToAddress("foo")
+
+	orch.On("PriceInfo", mock.Anything).Return(nil, expErr)
+
+	p, err := getPriceInfo(orch, addr)
+	assert.Nil(p)
+	assert.EqualError(err, expErr.Error())
+}
+
+func TestGetPriceInfo_NoWebhook_ReturnsDefaultPrice(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+
+	addr := ethcommon.HexToAddress("foo")
+
+	priceInfo := &net.PriceInfo{
+		PricePerUnit:  100,
+		PixelsPerUnit: 30,
+	}
+
+	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
+
+	p, err := getPriceInfo(orch, addr)
+	assert.Equal(p.PricePerUnit, int64(100))
+	assert.Equal(p.PixelsPerUnit, int64(30))
+	assert.Nil(err)
+}
+
+func TestGetPriceInfo_Webhook_NoCache_ReturnsDefaultPrice(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+
+	AuthWebhookURL = "i'm enabled"
+	defer func() {
+		AuthWebhookURL = ""
+	}()
+
+	addr := ethcommon.HexToAddress("foo")
+
+	priceInfo := &net.PriceInfo{
+		PricePerUnit:  100,
+		PixelsPerUnit: 30,
+	}
+
+	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
+
+	p, err := getPriceInfo(orch, addr)
+	assert.Equal(p.PricePerUnit, int64(100))
+	assert.Equal(p.PixelsPerUnit, int64(30))
+	assert.Nil(err)
+}
+
+func TestGetPriceInfo_Webhook_Cache_WrongType_ReturnsDefaultPrice(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+
+	AuthWebhookURL = "i'm enabled"
+	defer func() {
+		AuthWebhookURL = ""
+	}()
+
+	addr := ethcommon.HexToAddress("foo")
+
+	discoveryAuthWebhookCache.Add(addr.Hex(), 500, authTokenValidPeriod)
+
+	priceInfo := &net.PriceInfo{
+		PricePerUnit:  100,
+		PixelsPerUnit: 30,
+	}
+
+	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
+
+	p, err := getPriceInfo(orch, addr)
+	assert.Equal(p.PricePerUnit, int64(100))
+	assert.Equal(p.PixelsPerUnit, int64(30))
+	assert.Nil(err)
+}
+
+func TestGetPriceInfo_Webhook_Cache_ReturnsCachePrice(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+
+	AuthWebhookURL = "i'm enabled"
+	defer func() {
+		AuthWebhookURL = ""
+	}()
+
+	addr := ethcommon.HexToAddress("foo")
+
+	webhookPriceInfo := &net.PriceInfo{
+		PricePerUnit:  20,
+		PixelsPerUnit: 19,
+	}
+
+	addToDiscoveryAuthWebhookCache(addr.Hex(), &discoveryAuthWebhookRes{PriceInfo: webhookPriceInfo}, authTokenValidPeriod)
+
+	priceInfo := &net.PriceInfo{
+		PricePerUnit:  100,
+		PixelsPerUnit: 30,
+	}
+
+	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
+
+	p, err := getPriceInfo(orch, addr)
+	assert.Equal(p.PricePerUnit, int64(20))
+	assert.Equal(p.PixelsPerUnit, int64(19))
+	assert.Nil(err)
 }
 
 func TestGenVerify_RoundTrip_AuthToken(t *testing.T) {
