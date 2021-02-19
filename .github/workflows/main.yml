@@ -22,7 +22,7 @@ jobs:
       run: ./install_ffmpeg.sh
     - name: Build Livepeer
       shell: msys2 {0}
-      run: ./ci_env.sh make livepeer livepeer_cli livepeer_bench
+      run: ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
     - name: Upload build
       shell: msys2 {0}
       env: 

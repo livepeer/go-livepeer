@@ -13,5 +13,5 @@ script:
   - git fetch --unshallow --tags
   - ./install_ffmpeg.sh
   - go mod download
-  - ./ci_env.sh make livepeer livepeer_cli livepeer_bench
+  - ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
   - ./upload_build.sh
