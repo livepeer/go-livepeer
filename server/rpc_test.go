@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
@@ -846,6 +849,79 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 	assert.Equal(expectedParams, oInfo.TicketParams)
 }
 
+func TestGetOrchestrator_WebhookAuth_Error(t *testing.T) {
+	orch := &mockOrchestrator{}
+	AuthWebhookURL = "http://fail"
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Nil(oInfo)
+	assert.Contains(err.Error(), "authentication failed")
+}
+
+func TestGetOrchestrator_WebhookAuth_ReturnsNotOK(t *testing.T) {
+	orch := &mockOrchestrator{}
+	expErr := "some error"
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(expErr))
+	})
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	AuthWebhookURL = ts.URL
+	defer func() {
+		AuthWebhookURL = ""
+	}()
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Nil(oInfo)
+	assert.EqualError(err, fmt.Sprintf("authentication failed: %v", expErr))
+}
+
+func TestGetOrchestratorWebhookAuth_ReturnsOK(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		in, err := json.Marshal(&discoveryAuthWebhookRes{})
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write(in)
+	})
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	AuthWebhookURL = ts.URL
+	defer func() {
+		AuthWebhookURL = ""
+	}()
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	uri := "http://someuri.com"
+	expectedParams := defaultTicketParams()
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Address").Return(ethcommon.Address{})
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil)
+	orch.On("PriceInfo", mock.Anything, mock.Anything).Return(nil, nil)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
+
+	assert := assert.New(t)
+	assert.Nil(err)
+	assert.Equal(expectedParams, oInfo.TicketParams)
+}
+
 func TestGetOrchestrator_TicketParamsError(t *testing.T) {
 	orch := &mockOrchestrator{}
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
@@ -950,6 +1026,120 @@ func TestGetOrchestrator_StorageInit(t *testing.T) {
 	assert.Equal(stubAuthToken.SessionId, oInfo.Storage[0].S3Info.Key)
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+}
+
+func TestGetPriceInfo_NoWebhook_DefaultPriceError_ReturnsError(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+	expErr := errors.New("PriceInfo error")
+
+	addr := ethcommon.HexToAddress("foo")
+
+	orch.On("PriceInfo", mock.Anything).Return(nil, expErr)
+
+	p, err := getPriceInfo(orch, addr)
+	assert.Nil(p)
+	assert.EqualError(err, expErr.Error())
+}
+
+func TestGetPriceInfo_NoWebhook_ReturnsDefaultPrice(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+
+	addr := ethcommon.HexToAddress("foo")
+
+	priceInfo := &net.PriceInfo{
+		PricePerUnit:  100,
+		PixelsPerUnit: 30,
+	}
+
+	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
+
+	p, err := getPriceInfo(orch, addr)
+	assert.Equal(p.PricePerUnit, int64(100))
+	assert.Equal(p.PixelsPerUnit, int64(30))
+	assert.Nil(err)
+}
+
+func TestGetPriceInfo_Webhook_NoCache_ReturnsDefaultPrice(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+
+	AuthWebhookURL = "i'm enabled"
+	defer func() {
+		AuthWebhookURL = ""
+	}()
+
+	addr := ethcommon.HexToAddress("foo")
+
+	priceInfo := &net.PriceInfo{
+		PricePerUnit:  100,
+		PixelsPerUnit: 30,
+	}
+
+	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
+
+	p, err := getPriceInfo(orch, addr)
+	assert.Equal(p.PricePerUnit, int64(100))
+	assert.Equal(p.PixelsPerUnit, int64(30))
+	assert.Nil(err)
+}
+
+func TestGetPriceInfo_Webhook_Cache_WrongType_ReturnsDefaultPrice(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+
+	AuthWebhookURL = "i'm enabled"
+	defer func() {
+		AuthWebhookURL = ""
+	}()
+
+	addr := ethcommon.HexToAddress("foo")
+
+	discoveryAuthWebhookCache.Add(addr.Hex(), 500, authTokenValidPeriod)
+
+	priceInfo := &net.PriceInfo{
+		PricePerUnit:  100,
+		PixelsPerUnit: 30,
+	}
+
+	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
+
+	p, err := getPriceInfo(orch, addr)
+	assert.Equal(p.PricePerUnit, int64(100))
+	assert.Equal(p.PixelsPerUnit, int64(30))
+	assert.Nil(err)
+}
+
+func TestGetPriceInfo_Webhook_Cache_ReturnsCachePrice(t *testing.T) {
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+
+	AuthWebhookURL = "i'm enabled"
+	defer func() {
+		AuthWebhookURL = ""
+	}()
+
+	addr := ethcommon.HexToAddress("foo")
+
+	webhookPriceInfo := &net.PriceInfo{
+		PricePerUnit:  20,
+		PixelsPerUnit: 19,
+	}
+
+	addToDiscoveryAuthWebhookCache(addr.Hex(), &discoveryAuthWebhookRes{PriceInfo: webhookPriceInfo}, authTokenValidPeriod)
+
+	priceInfo := &net.PriceInfo{
+		PricePerUnit:  100,
+		PixelsPerUnit: 30,
+	}
+
+	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
+
+	p, err := getPriceInfo(orch, addr)
+	assert.Equal(p.PricePerUnit, int64(20))
+	assert.Equal(p.PixelsPerUnit, int64(19))
+	assert.Nil(err)
 }
 
 func TestGenVerify_RoundTrip_AuthToken(t *testing.T) {

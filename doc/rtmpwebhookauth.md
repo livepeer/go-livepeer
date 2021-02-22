@@ -1,8 +1,8 @@
 # Webhook Authentication
 
-Incoming streams can be authenticated using webhooks. To use these webhooks, node operators must implement their own web service / endpoint to be accessed only by the Livepeer node. As new streams appear, the Livepeer node will call this endpoint to determine whether the given stream is allowed.
+Incoming streams can be authenticated using webhooks on both orchestrator and broadcaster nodes. To use these webhooks, node operators must implement their own web service / endpoint to be accessed only by the Livepeer node. As new streams appear, the Livepeer node will call this endpoint to determine whether the given stream is allowed.
 
-Webhooks can authenticate streams supported by the RTMP and HTTP push ingest protocols. See the [ingest documentation](ingest.md) for details on how to use these protocols.
+The webhook server should respond with HTTP status code `200` in order to authenticate / authorize the stream. A response with a HTTP status code other than `200` will cause the Livepeer node to disconnect the stream.
 
 To enable webhook authentication functionality, the Livepeer node should be started with the `-authWebhookUrl` flag, along with the webhook endpoint URL.
 
@@ -11,6 +11,10 @@ For example:
 ```console
 livepeer -authWebhookUrl http://ownserver/auth
 ```
+
+## Broadcasters 
+
+Webhooks can authenticate streams supported by the RTMP and HTTP push ingest protocols. See the [ingest documentation](ingest.md) for details on how to use these protocols.
 
 For each incoming stream, the Livepeer node will make a `POST` request to the `http://ownserver/auth` endpoint, passing the URL of the request as JSON object.
 
@@ -21,8 +25,6 @@ For example, if the incoming request was made to `rtmp://livepeer.node/manifest`
     "url": "rtmp://livepeer.node/manifest"
 }
 ```
-
-The webhook server should respond with HTTP status code `200` in order to authenticate / authorize the stream. A response with a HTTP status code other than `200` will cause the Livepeer node to disconnect the stream.
 
 The webhook may respond with an empty body.  In this case, the `manifestID` property of the stream will be taken from the URL.  If the URL does not specify a manifest id, then it will be generated at random.  Otherwise, the webhook endpoint should respond with a JSON object in the following format:
 
@@ -49,3 +51,27 @@ The `profile` field is used to select the codec (H264) profile. Supported values
 The `gop` field is used to set the [GOP](https://en.wikipedia.org/wiki/Group_of_pictures) length, in seconds. This may help in post-transcoding segmentation to smooth out playback if the original segments are long or irregularly sized. Omitting this field will use the encoder default. To force all intra frames, use "intra".
 
 There is simple webhook authentication server [example](https://github.com/livepeer/go-livepeer/blob/master/cmd/simple_auth_server/simple_auth_server.go).
+
+## Orchestrators
+
+Webhooks can be used to authenticate discovery requests. When a webhook URL is provided on node startup using the `-authWebhookUrl` flag the Livepeer node will make a `POST` request to the specified URL on each `GetOrchestratorInfo` call.
+
+If a valid `priceInfo` object is provided in the response the orchestrator will use it instead of its default price. A valid price requires `pricePerUnit >= 0` and `pixelsPerUnit > 0`.
+
+#### Request Object
+```json
+{
+    "id": string
+}
+```
+
+#### Response Object
+
+```json
+{
+    "priceInfo": {
+        "pricePerUnit": string,
+        "pixelsPerUnit": string
+    }
+}
+```
