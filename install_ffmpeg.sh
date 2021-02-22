@@ -33,11 +33,15 @@ if [ $(uname) != "Darwin" ]; then
   fi
 fi
 
-if [ ! -e "$HOME/nasm/nasm" ]; then
+if [ ! -e "$HOME/nasm-2.14.02" ]; then
   # sudo apt-get -y install asciidoc xmlto # this fails :(
-  git clone -b nasm-2.14.02 https://github.com/livepeer/nasm.git "$HOME/nasm"
-  cd "$HOME/nasm"
-  ./autogen.sh
+  cd "$HOME"
+  curl -o nasm-2.14.02.tar.gz https://www.nasm.us/pub/nasm/releasebuilds/2.14.02/nasm-2.14.02.tar.gz
+  echo 'b34bae344a3f2ed93b2ca7bf25f1ed3fb12da89eeda6096e3551fd66adeae9fc  nasm-2.14.02.tar.gz' > nasm-2.14.02.tar.gz.sha256
+  sha256sum -c nasm-2.14.02.tar.gz.sha256
+  tar xf nasm-2.14.02.tar.gz
+  rm nasm-2.14.02.tar.gz nasm-2.14.02.tar.gz.sha256
+  cd "$HOME/nasm-2.14.02"
   ./configure --prefix="$HOME/compiled"
   make
   make install || echo "Installing docs fails but should be OK otherwise"
