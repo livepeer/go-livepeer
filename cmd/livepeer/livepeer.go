@@ -161,7 +161,7 @@ func main() {
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
 
 	// Storage:
-	datadir := flag.String("datadir", "", "data directory")
+	datadir := flag.String("datadir", "", "Directory that data is stored in")
 	objectstore := flag.String("objectStore", "", "url of primary object store")
 	recordstore := flag.String("recordStore", "", "url of object store for recodings")
 
