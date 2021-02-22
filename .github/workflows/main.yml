@@ -16,6 +16,10 @@ jobs:
     - name: Install Go 1.13
       shell: msys2 {0}
       run: pacman -U --noconfirm --noprogressbar --disable-download-timeout --ask=20 https://storage.googleapis.com/lp_testharness_assets/mingw-w64-x86_64-go-1.13.8-1-any.pkg.tar.xz
+    # https://msys2-users.narkive.com/Fjlrbrjg/building-static-versions-of-packages#post20
+    - name: Make build tree static
+      shell: msys2 {0}
+      run: find /mingw64/lib -name "*.dll.a" -exec rm {} \;
     - name: Build ffmpeg
       shell: msys2 {0}
       run: ./install_ffmpeg.sh
