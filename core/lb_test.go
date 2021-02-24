@@ -69,6 +69,41 @@ func TestLB_Ratchet(t *testing.T) {
 	})
 }
 
+func TestLB_SessionCleanupRace(t *testing.T) {
+	// Reproduce race condition around session cleanup #1750
+
+	assert := assert.New(t)
+	lb := NewLoadBalancingTranscoder("0", newStubTranscoder).(*LoadBalancingTranscoder)
+	sess := "sess"
+	// Force create a new session
+	_, err := lb.Transcode(stubMetadata(sess, ffmpeg.P144p30fps16x9))
+	assert.Nil(err)
+	// Mark transcoder to error out
+	transcoder := lb.sessions[sess].transcoder.(*StubTranscoder)
+	transcoder.FailTranscode = true
+
+	// Send 2 jobs concurrently to trigger the stuck issue
+	wg := newWg(2)
+	errSignal := make(chan struct{})
+	// Error out on Job 1
+	go func() {
+		lb.mu.Lock() // lock the LB to prevent session cleanup
+		_, err = lb.sessions[sess].Transcode(stubMetadata(sess, ffmpeg.P144p30fps16x9))
+		assert.Equal(ErrTranscode, err)
+		errSignal <- struct{}{}
+		wg.Done()
+	}()
+	// Job 2 arrives when the session loop() has closed, but session isn't cleaned up yet
+	go func() {
+		<-errSignal
+		_, err = lb.sessions[sess].Transcode(stubMetadata(sess, ffmpeg.P144p30fps16x9))
+		assert.Equal(ErrTranscoderStopped, err)
+		wg.Done()
+	}()
+	assert.True(wgWait(wg))
+	lb.mu.Unlock() // unlock for cleanup
+}
+
 func TestLB_LoadAssignment(t *testing.T) {
 
 	// Property: Overall load only increases after first segment
