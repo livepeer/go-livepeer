@@ -82,6 +82,7 @@ func (lb *LoadBalancingTranscoder) createSession(md *SegTranscodingMetadata) (*t
 	session := &transcoderSession{
 		transcoder:  lb.newT(transcoder),
 		key:         key,
+		done:        make(chan struct{}),
 		sender:      make(chan *transcoderParams, maxSegmentChannels),
 		makeContext: transcodeLoopContext,
 	}
@@ -138,31 +139,16 @@ type transcoderSession struct {
 	key        string
 
 	sender      chan *transcoderParams
+	done        chan struct{}
 	makeContext func() (context.Context, context.CancelFunc)
 }
 
 func (sess *transcoderSession) loop() {
 	defer func() {
 		sess.transcoder.Stop()
-		// Attempt to drain any pending messages in the channel.
-		// Otherwise, write a message into the channel to fill it up.
-		// Since we know the channel is buffered with size 1, any
-		// successful writes here mean the channel is full
-		// and we can safely exit immediately knowing that subsequent writes
-		// will be rejected
-		for {
-			select {
-			case params := <-sess.sender:
-				params.res <- struct {
-					*TranscodeData
-					error
-				}{nil, ErrTranscoderStopped}
-			case sess.sender <- &transcoderParams{}:
-				return
-			default:
-				continue
-			}
-		}
+		// Close the done channel to signal the sender(s) that the
+		// transcode loop has stopped
+		close(sess.done)
 	}()
 
 	// Run everything on a single loop to mitigate threading issues,
@@ -203,8 +189,12 @@ func (sess *transcoderSession) Transcode(md *SegTranscodingMetadata) (*Transcode
 		glog.V(common.DEBUG).Info("LB: Transcoder was busy; exiting ", sess.key)
 		return nil, ErrTranscoderBusy
 	}
-	res := <-params.res
-	return res.TranscodeData, res.error
+	select {
+	case res := <-params.res:
+		return res.TranscodeData, res.error
+	case <-sess.done:
+		return nil, ErrTranscoderStopped
+	}
 }
 
 func calculateCost(profiles []ffmpeg.VideoProfile) int {
