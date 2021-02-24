@@ -142,7 +142,8 @@ func TestLB_SessionCancel(t *testing.T) {
 
 	sess := &transcoderSession{
 		transcoder:  newStubTranscoder(""),
-		sender:      make(chan *transcoderParams, 1),
+		done:        make(chan struct{}),
+		sender:      make(chan *transcoderParams, maxSegmentChannels),
 		makeContext: ctxFunc,
 	}
 
@@ -154,7 +155,7 @@ func TestLB_SessionCancel(t *testing.T) {
 	stubCancel()
 	wgWait(wg)
 	_, err := sess.Transcode(&SegTranscodingMetadata{})
-	assert.Equal(t, ErrTranscoderBusy, err)
+	assert.Equal(t, ErrTranscoderStopped, err)
 }
 
 func TestLB_SessionConcurrency(t *testing.T) {
@@ -164,7 +165,8 @@ func TestLB_SessionConcurrency(t *testing.T) {
 
 	sess := &transcoderSession{
 		transcoder:  newStubTranscoder(""),
-		sender:      make(chan *transcoderParams, 1),
+		done:        make(chan struct{}),
+		sender:      make(chan *transcoderParams, maxSegmentChannels),
 		makeContext: ctxFunc,
 	}
 
@@ -212,7 +214,8 @@ func TestLB_ConcurrentSessionErrors(t *testing.T) {
 			sess := &transcoderSession{
 				key:         "",
 				transcoder:  transcoder,
-				sender:      make(chan *transcoderParams, 1),
+				done:        make(chan struct{}),
+				sender:      make(chan *transcoderParams, maxSegmentChannels),
 				makeContext: transcodeLoopContext,
 			}
 
