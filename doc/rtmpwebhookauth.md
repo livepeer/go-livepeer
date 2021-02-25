@@ -70,8 +70,8 @@ If a valid `priceInfo` object is provided in the response the orchestrator will 
 ```json
 {
     "priceInfo": {
-        "pricePerUnit": string,
-        "pixelsPerUnit": string
+        "pricePerUnit": number,
+        "pixelsPerUnit": number
     }
 }
 ```
