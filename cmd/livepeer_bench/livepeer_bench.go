@@ -30,6 +30,7 @@ func main() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	in := flag.String("in", "", "Input m3u8 manifest file")
+	live := flag.Bool("live", true, "Simulate live stream")
 	concurrentSessions := flag.Int("concurrentSessions", 1, "# of concurrent transcode sessions")
 	segs := flag.Int("segs", 0, "Maximum # of segments to transcode (default all)")
 	transcodingOptions := flag.String("transcodingOptions", "P240p30fps16x9,P360p30fps16x9,P720p30fps16x9", "Transcoding options for broadcast job, or path to json config")
@@ -69,32 +70,33 @@ func main() {
 	ffmpeg.InitFFmpeg()
 	var wg sync.WaitGroup
 	dir := path.Dir(*in)
-	start := time.Now()
 
 	table := tablewriter.NewWriter(os.Stderr)
 	data := [][]string{
 		{"Source File", *in},
 		{"Transcoding Options", *transcodingOptions},
 		{"Concurrent Sessions", fmt.Sprintf("%v", *concurrentSessions)},
-	}
-
-	for _, v := range data {
-		table.Append(v)
+		{"Live Mode", fmt.Sprintf("%v", *live)},
 	}
 
 	table.SetAlignment(tablewriter.ALIGN_LEFT)
 	table.SetCenterSeparator("*")
 	table.SetColumnSeparator("|")
+	table.AppendBulk(data)
 	table.Render()
 
-	fmt.Println("timestamp,session,segment,transcode_time")
+	fmt.Println("timestamp,session,segment,seg_dur,transcode_time")
 	segCount := 0
-	segTotalDur := 0.0
+	realTimeSegCount := 0
+	srcDur := 0.0
+	var mu sync.Mutex
+	transcodeDur := 0.0
 	for i := 0; i < *concurrentSessions; i++ {
 		wg.Add(1)
 		go func(k int, wg *sync.WaitGroup) {
 			tc := ffmpeg.NewTranscoder()
 			for j, v := range pl.Segments {
+				iterStart := time.Now()
 				if *segs > 0 && j >= *segs {
 					break
 				}
@@ -136,13 +138,23 @@ func main() {
 				t := time.Now()
 				_, err := tc.Transcode(in, out)
 				end := time.Now()
-				fmt.Printf("%s,%d,%d,%0.4v\n", end.Format("2006-01-02 15:04:05.9999"), k, j, end.Sub(t).Seconds())
 				if err != nil {
 					glog.Fatalf("Transcoding failed for session %d segment %d: %v", k, j, err)
 				}
-				if k == 0 {
-					segTotalDur += v.Duration
-					segCount++
+				fmt.Printf("%s,%d,%d,%0.4v,%0.4v\n", end.Format("2006-01-02 15:04:05.9999"), k, j, v.Duration, end.Sub(t).Seconds())
+				segTxDur := end.Sub(t).Seconds()
+				mu.Lock()
+				transcodeDur += segTxDur
+				srcDur += v.Duration
+				segCount++
+				if segTxDur <= v.Duration {
+					realTimeSegCount += 1
+				}
+				mu.Unlock()
+				iterEnd := time.Now()
+				segDur := time.Duration(v.Duration * float64(time.Second))
+				if *live {
+					time.Sleep(segDur - iterEnd.Sub(iterStart))
 				}
 			}
 			tc.StopTranscoder()
@@ -151,8 +163,25 @@ func main() {
 		time.Sleep(300 * time.Millisecond)
 	}
 	wg.Wait()
-	fmt.Fprintf(os.Stderr, "Took %0.4v seconds to transcode %v segments of total duration %vs (%v concurrent sessions)\n",
-		time.Since(start).Seconds(), segCount, segTotalDur, *concurrentSessions)
+	if segCount == 0 || srcDur == 0.0 {
+		glog.Fatal("Input manifest has no segments or total duration is 0s")
+	}
+	statsTable := tablewriter.NewWriter(os.Stderr)
+	stats := [][]string{
+		{"Concurrent Sessions", fmt.Sprintf("%v", *concurrentSessions)},
+		{"Total Segs Transcoded", fmt.Sprintf("%v", segCount)},
+		{"Real-Time Segs Transcoded", fmt.Sprintf("%v", realTimeSegCount)},
+		{"* Real-Time Segs Ratio *", fmt.Sprintf("%0.4v", float64(realTimeSegCount)/float64(segCount))},
+		{"Total Source Duration", fmt.Sprintf("%vs", srcDur)},
+		{"Total Transcoding Duration", fmt.Sprintf("%vs", transcodeDur)},
+		{"* Real-Time Duration Ratio *", fmt.Sprintf("%0.4v", transcodeDur/srcDur)},
+	}
+
+	statsTable.SetAlignment(tablewriter.ALIGN_LEFT)
+	statsTable.SetCenterSeparator("*")
+	statsTable.SetColumnSeparator("|")
+	statsTable.AppendBulk(stats)
+	statsTable.Render()
 }
 
 func parseVideoProfiles(inp string) []ffmpeg.VideoProfile {
