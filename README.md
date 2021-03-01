@@ -26,7 +26,7 @@ The easiest way to install Livepeer is by downloading the `livepeer` and `livepe
 2. Untar them and optionally move the executables to your PATH.
 
 Alternative Livepeer installation options are also available:
-* [Build from Source](doc/install.md#source)
+* [Build from Source](doc/install.md#option-2-build-from-source)
 * [Docker](doc/install.md/#docker)
 * [Private Testnet](doc/install.md/#testnet)
 
