@@ -1,137 +1,132 @@
 # Installing Livepeer
 
-## Option 1: Download pre-built executables from Livepeer
+- [Installing Livepeer](#installing-livepeer)
+	- [Install a binary release](#install-a-binary-release)
+	- [Install with Docker](#install-with-docker)
+	- [Install a binary pre-release](#install-a-binary-pre-release)
+	- [Build from source](#build-from-source)
+		- [System dependencies](#system-dependencies)
+		- [Go](#go)
+		- [Build and install](#build-and-install)
+	- [Build with Docker](#build-with-docker)
 
-The easiest way to install Livepeer is by downloading the pre-built `livepeer` and `livepeer_cli` executables.
+## Install a binary release
 
-### Downloading / installing the software
-
-1. Go to [Livepeer's release page on Github](https://github.com/livepeer/go-livepeer/releases).
-2. Under "Assets", download the `.tar.gz` files for your operating system - `darwin` for MacOS, `linux` for Linux.
-3. Untar them with `tar -xzf livepeer-linux-amd64.tar.gz` or `tar -xzf livepeer-darwin-amd64.tar.gz`
-
-### Running the software
-
-You can then run the `livepeer` binary with the following simple command in `Terminal`.
-```
-./livepeer-linux-amd64/livepeer -broadcaster
-```
-This creates an `RTMP` ingest endpoint on `127.0.0.1:1935` and an `HLS/HTTP` media server on `127.0.0.1:8935`.
-
-### Basic test of the installation
-
-You can serve `RTMP` content into the endpoint using the following command:
-```
-ffmpeg -re -f lavfi -i testsrc=size=360x640:rate=30,format=yuv420p -f lavfi -i sine -threads 1 -c:v libx264 -b:v 100000 -preset ultrafast -x264-params keyint=30 -strict -2 -c:a aac -f flv rtmp://127.0.0.1:1935/test_signal
-```
-You can query the `HLS` content coming from the media server using:
-```
-curl http://127.0.0.1:8935/stream/test_signal.m3u8
-```
-If you receive the following message, your basic `livepeer` node is running:
-```
-#EXTM3U
-#EXT-X-VERSION:3
-#EXT-X-STREAM-INF:PROGRAM-ID=0,BANDWIDTH=4000000,RESOLUTION=360x640
-test_signal/source.m3u8
-```
-This `URL`: `http://127.0.0.1:8935/stream/test_signal.m3u8` is a stream of `hls` video segments (`.hs` files), packaged in a `.m3u8` wrapper served over `http` over `IPv4`.
-
-The `URL`: `http://{hostname}:8935/stream/test_signal.m3u8` can also be played back on any device with access to the host, using `ffplay http://{hostname}:8935/stream/test_signal.m3u8`, in [VLC Player](https://www.videolan.org/vlc/index.html) on Mobile and Desktop, or in `Chromium-based` and `Firefox-based` browsers on Mobile (not on Desktop).
-
-For regular builds published by Livepeer's automated build process, see [option 5 below](#option-5-automated-build-process---latest-codebase).
-
-## Option 2: Build from source
-
-You can also build your own executables from source code.
-
-### Pre-requisites and Setup
-
-&ensp; 1\. Install Go, using Go's [Getting Started Guide](https://golang.org/doc/install).
-
-&ensp; 2\. Make sure you have the necessary libraries installed:
-
- * Linux (Ubuntu: 16.04 or 18.04): `apt-get update && apt-get -y install build-essential pkg-config autoconf gnutls-dev git curl`
-	 * (Optional) To enable transcoding on Nvidia GPU: `apt-get -y install clang-8 clang-tools-8`
-
- * OSX: `brew update && brew install pkg-config autoconf gnutls`
-	 * *Nvidia GPU not supported with OSX*
-
-&ensp; 3\. Fetch the code running the following in terminal:
-
-```
-mkdir livepeer && cd livepeer
-git clone https://github.com/livepeer/go-livepeer.git
-cd go-livepeer
-```
-
-&ensp; 4\. Install `FFmpeg` as a dependency.  Run the following command from your `livepeer` folder:
-```
-./install_ffmpeg.sh 
-```
-
-### Make the software
-
-&ensp; 5\. Run `make`. You can now run the following command from the `go-livepeer` root directory:
-```
-PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make
-```
-
-&ensp; &ensp; a\. `PKG_CONFIG_PATH` is the path where `pkg-config` files for `FFmpeg` dependencies have been installed _(see step 3 & 4)_. This defaults to `~/compiled/lib/pkgconfig` if you used the `FFmpeg` install script in step 4.
-
-&ensp; &ensp; b\. Default builds are `dev` builds and will fail to run on the public `rinkeby` Test Network or Ethereum `mainnet`.
-
-&ensp; &ensp; For a build to run on `dev` or the public `rinkeby` Test Network, run
-```
-HIGHEST_CHAIN_TAG=rinkeby PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make
-```
-
-&ensp; &ensp; For a build to run on `dev`, `rinkeby` or on Ethereum `mainnet`, run
-```
-HIGHEST_CHAIN_TAG=mainnet PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make
-```
-
-### Test your build
-
-&ensp; 6\. To run tests locally `./test.sh`, to run in docker container run `./test_docker.sh`
-
-## Option 3: Using Docker
-
-If you prefer to use [the official livepeer docker image](https://hub.docker.com/r/livepeer/go-livepeer) by simply pulling it
+Find the latest release for your platform on the [releases page](https://github.com/livepeer/go-livepeer/releases). Linux, Darwin (macOS) and Windows are supported.
 
 ```bash
-docker pull livepeer/go-livepeer
+# <RELEASE_VERSION> is the release version i.e. 0.5.14
+# <YOUR_PLATFORM> is your platform i.e. linux, darwin, windows
+wget https://github.com/livepeer/go-livepeer/releases/download/<RELEASE_VERSION>/livepeer-<YOUR PLATFORM>-amd64.tar.gz
+tar -zxvf livepeer-<YOUR_PLATFORM>-amd64.tar.gz
+mv livepeer-<YOUR_PLATFORM>-amd64/* /usr/local/bin/
 ```
 
-**Or** if you'd like to modify the code or try something out, you can build the image using the `Dockerfile.debian` in the repo
+## Install with Docker
+
+Docker images are pushed to [DockerHub](https://hub.docker.com/r/livepeer/go-livepeer).
 
 ```bash
-# clone this repo
-git clone https://github.com/livepeer/go-livepeer.git
-
-# do the modification you'd like to do the code
-# ...
-
-# have the repo tags exported to file
-echo $(git describe --tags) > .git.describe
-
-# in repo root folder
-docker build -t livepeerbinary:debian -f docker/Dockerfile.debian .
-
-# test it
-docker run -it livepeerbinary:debian livepeer -version
+# <RELEASE_VERSION> is the release version i.e. 0.5.14
+docker pull livepeer/go-livepeer:<RELEASE_VERSION>
 ```
 
-## Option 4: Private testnet deployments
+To pull the latest pre-release version:
 
-To setup a full Livepeer network deployment, try out our [test-harness](https://github.com/livepeer/test-harness) which automates the process of deploying the Livepeer developer testnet. This includes the Livepeer solidity contracts along with secondary services like a full metrics suite for debugging and a fully working Livepeer nodes running locally or on Google Cloud Platform (GCP).
+```bash
+docker pull livepeer/go-livepeer:master
+```
 
-Read more about GCP deployments [here](https://github.com/livepeer/test-harness/blob/master/docs/demo.md).
+## Install a binary pre-release
 
-## Option 5: Automated Build Process - Latest Codebase
+Binaries are produced from every GitHub commit and download links are available in [the #builds channel of the Livepeer Discord server](https://discord.gg/drApskX).
 
-There are also binaries produced from every GitHub commit made available in [the #builds channel of the Livepeer Discord server](https://discord.gg/drApskX).
-
-Those binaries are produced from go-livepeer's CI process, shown in this diagram:
+These binaries are produced from go-livepeer's CI process, shown in this diagram:
 
 ![image](https://user-images.githubusercontent.com/257909/58923612-3709a800-86f5-11e9-838b-6202f296bce8.png)
+
+## Build from source
+
+### System dependencies 
+
+Building `livepeer` requires some system dependencies.
+
+Linux (Ubuntu: 16.04 or 18.04):
+
+```bash
+apt-get update && apt-get -y install build-essential pkg-config autoconf gnutls-dev git curl
+# To enable transcoding on Nvidia GPUs
+apt-get -y install clang-8 clang-tools-8
+```
+
+Darwin (macOS):
+
+```bash
+brew update && brew install pkg-config autoconf gnutls
+```
+
+### Go
+
+Building `livepeer` requires Go. Follow the [official Go installation instructions](https://golang.org/doc/install).
+
+### Build and install
+
+1. Clone the repository:
+
+	```bash
+	git clone https://github.com/livepeer/go-livepeer.git
+	cd go-livepeer
+	```
+
+2. Install `ffmpeg` dependencies:
+
+	```bash
+	./install_ffmpeg.sh 
+	```
+
+3. Set build environment variables.
+
+	Set the `PKG_CONFIG_PATH` variable so that `pkg-config` can find the `ffmpeg` dependency files installed in step 2:
+
+	```bash
+	# install_ffmpeg.sh stores ffmpeg dependency files in this directory by default
+	export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
+	```
+
+	Set the `HIGHEST_CHAIN_TAG` variable to enable mainnet support:
+
+	```bash
+	export HIGHEST_CHAIN_TAG=mainnet
+	# To build with support for only development networks and the Rinkeby test network
+	# export HIGHEST_CHAIN_TAG=rinkeby
+	# To build with support for only development networks
+	# export HIGHEST_CHAIN_TAG=dev
+	```
+
+4. Build and install `livepeer`:
+
+	```bash
+	make
+	cp livepeer* /usr/local/bin
+	```
+
+## Build with Docker
+
+1. Clone the repository:
+
+	```bash
+	git clone https://github.com/livepeer/go-livepeer.git
+	cd go-livepeer
+	```
+
+2. Export tags:
+
+	```bash
+	echo $(git describe --tags) > .git.describe
+	```
+
+3. Build image:
+
+	```bash
+	docker build -t livepeerbinary:debian -f docker/Dockerfile.debian .
+	```
