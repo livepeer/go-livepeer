@@ -331,12 +331,12 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 
 	sendSegStub := func() *BroadcastSession {
 		sess := bsm.selectSession()
-		bsm.sessLock.Lock()
-		if sess == nil {
-			bsm.sessLock.Unlock()
-			return nil
+		// simulate session refresh
+		res := &ReceivedTranscodeResult{
+			LatencyScore: sess.LatencyScore,
+			Info:         sess.OrchestratorInfo,
 		}
-		bsm.sessLock.Unlock()
+		sess = updateSession(sess, res)
 		seg := &stream.HLSSegment{Data: []byte("dummy"), Duration: 0.100}
 		bsm.pushSegInFlight(sess, seg)
 		return sess
