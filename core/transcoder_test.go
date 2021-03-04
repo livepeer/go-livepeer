@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func stubMetadata(sess string, profile ...ffmpeg.VideoProfile) *SegTranscodingMetadata {
-	return &SegTranscodingMetadata{ManifestID: ManifestID(sess), Profiles: profile}
+	return &SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: sess}, Profiles: profile}
 }
 
 func TestLocalTranscoder(t *testing.T) {

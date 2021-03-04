@@ -48,7 +48,7 @@ func NewLoadBalancingTranscoder(devices string, newTranscoderFn newTranscoderFn)
 func (lb *LoadBalancingTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
 
 	lb.mu.RLock()
-	session, exists := lb.sessions[string(md.ManifestID)]
+	session, exists := lb.sessions[string(md.AuthToken.SessionId)]
 	lb.mu.RUnlock()
 	if exists {
 		glog.V(common.DEBUG).Info("LB: Using existing transcode session for ", session.key)
@@ -67,7 +67,7 @@ func (lb *LoadBalancingTranscoder) createSession(md *SegTranscodingMetadata) (*t
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
-	job := string(md.ManifestID)
+	job := string(md.AuthToken.SessionId)
 	if session, exists := lb.sessions[job]; exists {
 		glog.V(common.DEBUG).Info("Attempted to create session but already exists ", session.key)
 		return session, nil
