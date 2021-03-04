@@ -61,12 +61,12 @@ if [[ $(uname) != *"MSYS"* ]]; then
     make install
   fi
 
-  # rm -rf "$HOME/nettle-3.4.1"
-  if [ ! -e "$HOME/nettle-3.4.1" ]; then
+  # rm -rf "$HOME/nettle-3.7"
+  if [ ! -e "$HOME/nettle-3.7" ]; then
     cd $HOME
-    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/34900f2b1be4e366c5270e3ee5b0d001f12bd8a4/nettle-3.4.1.tar.gz
-    tar xf nettle-3.4.1.tar.gz
-    cd nettle-3.4.1
+    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/657a86b78759b1ab36dae227253c26ff50cb4b0a/nettle-3.7.tar.gz
+    tar xf nettle-3.7.tar.gz
+    cd nettle-3.7
     LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" ./configure --prefix="$HOME/compiled" --disable-shared --enable-pic
     make
     make install
