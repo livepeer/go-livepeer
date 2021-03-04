@@ -31,3 +31,4 @@ eth/protocol
 #windows build env
 /msys2
 /msys2-install
+/.build
