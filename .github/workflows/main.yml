@@ -11,12 +11,9 @@ jobs:
       uses: msys2/setup-msys2@v2
       with:
         msystem: MSYS
-    - name: Install prerequisites
+    - name: Prepare mingw64 environment
       shell: msys2 {0}
-      run: pacman -S --noconfirm --noprogressbar --ask=20 perl binutils git make autoconf zip mingw-w64-x86_64-gcc mingw-w64-x86_64-libtool mingw-w64-x86_64-gnutls mingw-w64-x86_64-pkg-config mingw-w64-x86_64-clang
-    - name: Install Go 1.13
-      shell: msys2 {0}
-      run: pacman -U --noconfirm --noprogressbar --disable-download-timeout --ask=20 https://storage.googleapis.com/lp_testharness_assets/mingw-w64-x86_64-go-1.13.8-1-any.pkg.tar.xz
+      run: ./prepare_mingw64.sh
     - name: Build ffmpeg
       shell: msys2 {0}
       run: ./install_ffmpeg.sh

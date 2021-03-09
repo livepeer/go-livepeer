@@ -14,6 +14,7 @@ if [[ $(uname) == *"MSYS"* ]]; then
 
   export TARGET_OS="--target-os=mingw64"
   export HOST_OS="--host=x86_64-w64-mingw32"
+  export BUILD_OS="--build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 --target=x86_64-w64-mingw32"
 
   # Needed for mbedtls
   export WINDOWS_BUILD=1
@@ -33,18 +34,44 @@ if [ $(uname) != "Darwin" ]; then
   fi
 fi
 
-if [ ! -e "$HOME/nasm-2.14.02" ]; then
-  # sudo apt-get -y install asciidoc xmlto # this fails :(
-  cd "$HOME"
-  curl -o nasm-2.14.02.tar.gz https://www.nasm.us/pub/nasm/releasebuilds/2.14.02/nasm-2.14.02.tar.gz
-  echo 'b34bae344a3f2ed93b2ca7bf25f1ed3fb12da89eeda6096e3551fd66adeae9fc  nasm-2.14.02.tar.gz' > nasm-2.14.02.tar.gz.sha256
-  sha256sum -c nasm-2.14.02.tar.gz.sha256
-  tar xf nasm-2.14.02.tar.gz
-  rm nasm-2.14.02.tar.gz nasm-2.14.02.tar.gz.sha256
-  cd "$HOME/nasm-2.14.02"
-  ./configure --prefix="$HOME/compiled"
-  make
-  make install || echo "Installing docs fails but should be OK otherwise"
+# Static linking of gnutls on Linux/Mac
+if [[ $(uname) != *"MSYS"* ]]; then
+  if [ ! -e "$HOME/nasm-2.14.02" ]; then
+    # sudo apt-get -y install asciidoc xmlto # this fails :(
+    cd "$HOME"
+    curl -o nasm-2.14.02.tar.gz https://www.nasm.us/pub/nasm/releasebuilds/2.14.02/nasm-2.14.02.tar.gz
+    echo 'b34bae344a3f2ed93b2ca7bf25f1ed3fb12da89eeda6096e3551fd66adeae9fc  nasm-2.14.02.tar.gz' > nasm-2.14.02.tar.gz.sha256
+    sha256sum -c nasm-2.14.02.tar.gz.sha256
+    tar xf nasm-2.14.02.tar.gz
+    rm nasm-2.14.02.tar.gz nasm-2.14.02.tar.gz.sha256
+    cd "$HOME/nasm-2.14.02"
+    ./configure --prefix="$HOME/compiled"
+    make
+    make install || echo "Installing docs fails but should be OK otherwise"
+  fi
+
+  # rm -rf "$HOME/gmp-6.1.2"
+  if [ ! -e "$HOME/gmp-6.1.2" ]; then
+    cd "$HOME"
+    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/34900f2b1be4e366c5270e3ee5b0d001f12bd8a4/gmp-6.1.2.tar.xz
+    tar xf gmp-6.1.2.tar.xz
+    cd "$HOME/gmp-6.1.2"
+    ./configure --prefix="$HOME/compiled" --disable-shared  --with-pic --enable-fat
+    make
+    make install
+  fi
+
+  # rm -rf "$HOME/nettle-3.7"
+  if [ ! -e "$HOME/nettle-3.7" ]; then
+    cd $HOME
+    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/657a86b78759b1ab36dae227253c26ff50cb4b0a/nettle-3.7.tar.gz
+    tar xf nettle-3.7.tar.gz
+    cd nettle-3.7
+    LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" ./configure --prefix="$HOME/compiled" --disable-shared --enable-pic
+    make
+    make install
+  fi
+
 fi
 
 if [ ! -e "$HOME/x264" ]; then
@@ -57,43 +84,21 @@ if [ ! -e "$HOME/x264" ]; then
   make install-lib-static
 fi
 
-# Static linking of gnutls on Linux/Mac
-if [[ $(uname) != *"MSYS"* ]]; then
-  # rm -rf "$HOME/gmp-6.1.2"
-  if [ ! -e "$HOME/gmp-6.1.2" ]; then
-    cd "$HOME"
-    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/34900f2b1be4e366c5270e3ee5b0d001f12bd8a4/gmp-6.1.2.tar.xz
-    tar xf gmp-6.1.2.tar.xz
-    cd "$HOME/gmp-6.1.2"
-    ./configure --prefix="$HOME/compiled" --disable-shared  --with-pic --enable-fat
-    make
-    make install
+if [ ! -e "$HOME/gnutls-3.7.0" ]; then
+  EXTRA_GNUTLS_LIBS=""
+  if [[ $(uname) == *"MSYS"* ]]; then
+    EXTRA_GNUTLS_LIBS="-lncrypt -lcrypt32 -lwsock32 -lws2_32 -lwinpthread"
   fi
-
-  # rm -rf "$HOME/nettle-3.4.1"
-  if [ ! -e "$HOME/nettle-3.4.1" ]; then
-    cd $HOME
-    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/34900f2b1be4e366c5270e3ee5b0d001f12bd8a4/nettle-3.4.1.tar.gz
-    tar xf nettle-3.4.1.tar.gz
-    cd nettle-3.4.1
-    LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --disable-shared --enable-pic
-    make
-    make install
-  fi
-
-  # rm -rf "$HOME/gnutls-3.5.18"
-  if [ ! -e "$HOME/gnutls-3.5.18" ]; then
-    cd $HOME
-    curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.5/gnutls-3.5.18.tar.xz
-    tar xf gnutls-3.5.18.tar.xz
-    cd gnutls-3.5.18
-    LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" LIBS="-lhogweed -lnettle -lgmp" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --without-idn --without-zlib --disable-doc --disable-cxx --disable-tools
-    make
-    make install
-    # gnutls doesn't properly set up its pkg-config or something? without this line ffmpeg and go
-    # don't know that they need gmp, nettle, and hogweed
-    sed -i'' -e 's/-lgnutls/-lgnutls -lhogweed -lnettle -lgmp/g' ~/compiled/lib/pkgconfig/gnutls.pc
-  fi
+  cd $HOME
+  curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.7/gnutls-3.7.0.tar.xz
+  tar xf gnutls-3.7.0.tar.xz
+  cd gnutls-3.7.0
+  LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" LIBS="-lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --without-idn --without-zlib --disable-doc --disable-cxx --disable-tools --disable-hardware-acceleration --disable-guile --disable-libdane --disable-tests --disable-rpath --disable-nls
+  make
+  make install
+  # gnutls doesn't properly set up its pkg-config or something? without this line ffmpeg and go
+  # don't know that they need gmp, nettle, and hogweed
+  sed -i'' -e "s/-lgnutls/-lgnutls -lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS/g" ~/compiled/lib/pkgconfig/gnutls.pc
 fi
 
 EXTRA_FFMPEG_FLAGS=""
@@ -110,7 +115,7 @@ else
 fi
 
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
-  git clone https://git.ffmpeg.org/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
+  git clone https://github.com/livepeer/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
   git checkout 3ea705767720033754e8d85566460390191ae27d
   ./configure ${TARGET_OS:-} --fatal-warnings \

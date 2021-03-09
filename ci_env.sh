@@ -8,8 +8,8 @@ set -e
 # Populate necessary Windows build path stuff
 if [[ $(uname) == *"MSYS"* ]]; then
   export PATH="/usr/bin:/mingw64/bin:$PATH"
-  export C_INCLUDE_PATH="/mingw64/lib:${C_INCLUDE_PATH:-}"
   export HOME="/build"
+  export C_INCLUDE_PATH="$HOME/compiled/lib:/mingw64/lib:/mingw64/lib:${C_INCLUDE_PATH:-}"
   mkdir -p $HOME
 
   export PATH="$HOME/compiled/bin":$PATH
