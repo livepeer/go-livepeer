@@ -14,7 +14,7 @@ else
 fi
 
 BASE="livepeer-$ARCH-amd64"
-BRANCH="${TRAVIS_BRANCH:-${CIRCLE_BRANCH:-unknown}}"
+BRANCH="${TRAVIS_BRANCH:-unknown}"
 if [[ "${GITHUB_REF:-}" != "" ]]; then
   BRANCH="$(echo $GITHUB_REF | sed 's/refs\/heads\///')"
 fi

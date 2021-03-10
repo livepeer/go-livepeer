@@ -22,9 +22,7 @@ fi
 NETWORK_BRANCHES="dev rinkeby"
 
 branch=""
-if [[ "${CIRCLE_BRANCH:-}" != "" ]]; then
-  branch="$CIRCLE_BRANCH"
-elif [[ "${TRAVIS_BRANCH:-}" != "" ]]; then
+if [[ "${TRAVIS_BRANCH:-}" != "" ]]; then
   branch="$TRAVIS_BRANCH"
 fi
 
