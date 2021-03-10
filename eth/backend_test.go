@@ -93,3 +93,10 @@ func TestSendTransaction_SendErr_DontUpdateNonce(t *testing.T) {
 
 	assert.Equal(t, nonceLockBefore.nonce, nonceLockAfter.nonce)
 }
+
+func TestBackend_SetMaxGasPrice(t *testing.T) {
+	gp := big.NewInt(10)
+	backend := &backend{}
+	backend.SetMaxGasPrice(gp)
+	assert.Equal(t, gp, backend.MaxGasPrice())
+}

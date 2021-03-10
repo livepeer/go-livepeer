@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
@@ -58,51 +59,51 @@ func TestFromPercOfUint256_Given0Percent_ReturnsZero(t *testing.T) {
 
 func TestToBaseAmount(t *testing.T) {
 	exp := "100000000000000000" // 0.1 eth
-	wei, err := ToBaseAmount("0.1")
+	wei, err := ToBaseAmount("0.1", DefaultMaxDecimals)
 	assert.Nil(t, err)
 	assert.Equal(t, wei.String(), exp)
 
 	exp = "20000000000000000" // 0.02 eth
-	wei, err = ToBaseAmount("0.02")
+	wei, err = ToBaseAmount("0.02", DefaultMaxDecimals)
 	assert.Nil(t, err)
 	assert.Equal(t, wei.String(), exp)
 
 	exp = "1250000000000000000" // 1.25 eth
-	wei, err = ToBaseAmount("1.25")
+	wei, err = ToBaseAmount("1.25", DefaultMaxDecimals)
 	assert.Nil(t, err)
 	assert.Equal(t, wei.String(), exp)
 
 	exp = "3333333333333333" // 0.003333333333333333 eth
-	wei, err = ToBaseAmount("0.003333333333333333")
+	wei, err = ToBaseAmount("0.003333333333333333", DefaultMaxDecimals)
 	assert.Nil(t, err)
 	assert.Equal(t, wei.String(), exp)
 
 	// return an error if value has more than 18 decimals
-	wei, err = ToBaseAmount("0.111111111111111111111111111111111")
+	wei, err = ToBaseAmount("0.111111111111111111111111111111111", DefaultMaxDecimals)
 	assert.Nil(t, wei)
 	assert.EqualError(t, err, "submitted value has more than 18 decimals")
 }
 
 func TestFromBaseAmount(t *testing.T) {
 	wei, _ := new(big.Int).SetString("100000000000000000", 10)
-	ethVal := FromBaseAmount(wei) // 0.1 eth
+	ethVal := FromBaseAmount(wei, DefaultMaxDecimals) // 0.1 eth
 	assert.Equal(t, ethVal, "0.1")
 
 	wei, _ = new(big.Int).SetString("20000000000000000", 10)
-	ethVal = FromBaseAmount(wei) // 0.02 eth
+	ethVal = FromBaseAmount(wei, DefaultMaxDecimals) // 0.02 eth
 	assert.Equal(t, ethVal, "0.02")
 
 	wei, _ = new(big.Int).SetString("1250000000000000000", 10)
-	ethVal = FromBaseAmount(wei) // 1.25 eth
+	ethVal = FromBaseAmount(wei, DefaultMaxDecimals) // 1.25 eth
 	assert.Equal(t, ethVal, "1.25")
 
 	wei, _ = new(big.Int).SetString("3333333333333333", 10) // 0.003333333333333333 eth
-	ethVal = FromBaseAmount(wei)
+	ethVal = FromBaseAmount(wei, DefaultMaxDecimals)
 	assert.Equal(t, ethVal, "0.003333333333333333")
 
 	// test that no decimals return no trailing "."
 	wei, _ = new(big.Int).SetString("1000000000000000000", 10)
-	ethVal = FromBaseAmount(wei) // 1 eth
+	ethVal = FromBaseAmount(wei, DefaultMaxDecimals) // 1 eth
 	assert.Equal(t, ethVal, "1")
 }
 
@@ -167,4 +168,20 @@ func TestDecodeTxParams(t *testing.T) {
 	assert.Equal(txParams["_tickets"], fmt.Sprintf("[ %v  %v ]", ticketAS, ticketBS))
 	assert.Equal(txParams["_sigs"], fmt.Sprintf("[ 0x%v  0x%v ]", ethcommon.Bytes2Hex(sigs[0]), ethcommon.Bytes2Hex(sigs[1])))
 	assert.Equal(txParams["_recipientRands"], fmt.Sprintf("[ %v  %v ]", recipientRands[0].String(), recipientRands[1].String()))
+}
+
+func TestToWei(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal("1", FromWei(big.NewInt(1e9), params.GWei))
+	assert.Equal("0.000000001", FromWei(big.NewInt(1e9), params.Ether))
+}
+
+func TestFromWei(t *testing.T) {
+	assert := assert.New(t)
+	val, err := ToWei("1", params.GWei)
+	assert.Nil(err)
+	assert.Equal(big.NewInt(params.GWei), val)
+	val, err = ToWei("1", params.Ether)
+	assert.Nil(err)
+	assert.Equal(big.NewInt(params.Ether), val)
 }

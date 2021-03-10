@@ -2,6 +2,7 @@ package eth
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 	"regexp"
@@ -14,7 +15,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 )
 
-const maxDecimals = 18
+const DefaultMaxDecimals = 18
 const percDivisor = 1000000
 const percDivisorMinter = 1000000000
 
@@ -38,9 +39,9 @@ func FormatUnits(baseAmount *big.Int, name string) string {
 	} else {
 		switch name {
 		case "ETH":
-			return fmt.Sprintf("%v ETH", FromBaseAmount(baseAmount))
+			return fmt.Sprintf("%v ETH", FromBaseAmount(baseAmount, DefaultMaxDecimals))
 		default:
-			return fmt.Sprintf("%v LPT", FromBaseAmount(baseAmount))
+			return fmt.Sprintf("%v LPT", FromBaseAmount(baseAmount, DefaultMaxDecimals))
 		}
 	}
 }
@@ -115,7 +116,7 @@ func fromPerc(perc float64, multiplier *big.Float) *big.Int {
 	return intRes
 }
 
-func ToBaseAmount(v string) (*big.Int, error) {
+func ToBaseAmount(v string, maxDecimals int) (*big.Int, error) {
 	// check that string is a float represented as a string with "." as seperator
 	ok, err := regexp.MatchString("^[-+]?[0-9]*.?[0-9]+$", v)
 	if !ok || err != nil {
@@ -148,7 +149,7 @@ func ToBaseAmount(v string) (*big.Int, error) {
 	return baseAmount, nil
 }
 
-func FromBaseAmount(v *big.Int) string {
+func FromBaseAmount(v *big.Int, maxDecimals int) string {
 	baseAmount := v.String()
 
 	// if length < 18 leftPad with zeros
@@ -244,4 +245,18 @@ func handleEthSlice(val reflect.Value) string {
 	}
 	vString += "]"
 	return vString
+}
+
+// FromWei converts a wei amount to another denomination
+// e.g. FromWei(1e18, params.Ether) = 1
+func FromWei(amount *big.Int, to int) string {
+	maxDecimals := int(math.Log10(float64(to)))
+	return FromBaseAmount(amount, maxDecimals)
+}
+
+// ToWei converts an amount in another denomination to the corresponding amount in wei
+// e.g. ToWei("1", params.Ether) = 1e18
+func ToWei(amount string, from int) (*big.Int, error) {
+	maxDecimals := int(math.Log10(float64(from)))
+	return ToBaseAmount(amount, maxDecimals)
 }

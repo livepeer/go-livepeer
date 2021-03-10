@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth/contracts"
 )
@@ -40,6 +42,8 @@ type Backend interface {
 	ethereum.LogFilterer
 	ethereum.ChainReader
 	ChainID(ctx context.Context) (*big.Int, error)
+	MaxGasPrice() *big.Int
+	SetMaxGasPrice(gp *big.Int)
 }
 
 type backend struct {
@@ -47,6 +51,9 @@ type backend struct {
 	abiMap       map[string]*abi.ABI
 	nonceManager *NonceManager
 	signer       types.Signer
+
+	sync.RWMutex
+	maxGasPrice *big.Int
 }
 
 func NewBackend(client *ethclient.Client, signer types.Signer) (Backend, error) {
@@ -56,10 +63,10 @@ func NewBackend(client *ethclient.Client, signer types.Signer) (Backend, error) 
 	}
 
 	return &backend{
-		client,
-		abiMap,
-		NewNonceManager(client),
-		signer,
+		Client:       client,
+		abiMap:       abiMap,
+		nonceManager: NewNonceManager(client),
+		signer:       signer,
 	}, nil
 }
 
@@ -97,6 +104,34 @@ func (b *backend) SendTransaction(ctx context.Context, tx *types.Transaction) er
 	glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\". Inputs: \"%v\"  Hash: \"%v\". \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, txLog.inputs, tx.Hash().String(), strings.Repeat("*", 75))
 
 	return nil
+}
+
+func (b *backend) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
+	gp, err := b.Client.SuggestGasPrice(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if b.maxGasPrice != nil && gp.Cmp(b.maxGasPrice) > 0 {
+		return nil, fmt.Errorf("current gas price exceeds maximum gas price max=%v GWei current=%v GWei",
+			FromWei(b.maxGasPrice, params.GWei),
+			FromWei(gp, params.GWei),
+		)
+	}
+
+	return gp, nil
+}
+
+func (b *backend) SetMaxGasPrice(gp *big.Int) {
+	b.Lock()
+	defer b.Unlock()
+	b.maxGasPrice = gp
+}
+
+func (b *backend) MaxGasPrice() *big.Int {
+	b.RLock()
+	defer b.RUnlock()
+	return b.maxGasPrice
 }
 
 type txLog struct {

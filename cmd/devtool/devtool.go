@@ -159,16 +159,15 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	}
 	glog.Infof("Using controller address %s", ethController)
 
-	client, err := eth.NewClient(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, backend,
-		ethcommon.HexToAddress(ethController), ethTxTimeout)
+	client, err := eth.NewClient(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, passphrase, backend,
+		ethcommon.HexToAddress(ethController), ethTxTimeout, nil)
 	if err != nil {
 		glog.Errorf("Failed to create client: %v", err)
 		return
 	}
 
-	err = client.Setup(passphrase, uint64(0), nil)
-	if err != nil {
-		glog.Fatalf("Failed to setup client: %v", err)
+	if err := client.SetGasInfo(0, nil); err != nil {
+		glog.Errorf("Failed to set gas info on Livepeer Ethereum Client: %v", err)
 		return
 	}
 

@@ -5,16 +5,16 @@ import (
 	"net/url"
 )
 
-func (w *wizard) setGasPrice() {
-	fmt.Printf("Current gas price: %v\n", w.getGasPrice())
-	fmt.Printf("Enter new gas price in Wei (enter \"0\" for automatic)")
+func (w *wizard) setMaxGasPrice() {
+	fmt.Printf("Current maximum gas price: %v\n", w.maxGasPrice())
+	fmt.Printf("Enter new maximum gas price in Wei (enter \"0\" for no maximum gas price)")
 	amount := w.readBigInt()
 
 	val := url.Values{
 		"amount": {fmt.Sprintf("%v", amount.String())},
 	}
 
-	httpPostWithParams(fmt.Sprintf("http://%v:%v/setGasPrice", w.host, w.httpPort), val)
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxGasPrice", w.host, w.httpPort), val)
 }
 
 func (w *wizard) signMessage() {
