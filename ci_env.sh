@@ -24,6 +24,8 @@ NETWORK_BRANCHES="dev rinkeby"
 branch=""
 if [[ "${TRAVIS_BRANCH:-}" != "" ]]; then
   branch="$TRAVIS_BRANCH"
+elif [[ "${GITHUB_REF:-}" != "" ]]; then
+  branch="$(echo $GITHUB_REF | sed 's/refs\/heads\///')"
 fi
 
 # By default we build with mainnet support
