@@ -172,24 +172,12 @@ func NewClient(accountAddr ethcommon.Address, keystoreDir, password string, eth 
 		return nil, err
 	}
 
-	// Setting gasLimit and gasPrice to zero, nil allows it to be overwritten by eth.Backend
-	opts, err := am.CreateTransactOpts(0, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	client := &client{
+	return &client{
 		accountManager: am,
 		backend:        backend,
 		controllerAddr: controllerAddr,
 		txTimeout:      txTimeout,
-	}
-
-	if err := client.setContracts(opts); err != nil {
-		return nil, err
-	}
-
-	return client, nil
+	}, nil
 }
 
 func (c *client) setContracts(opts *bind.TransactOpts) error {
