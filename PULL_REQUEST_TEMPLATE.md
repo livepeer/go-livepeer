@@ -18,6 +18,8 @@
 **Checklist:**
 <!--- Go over all the following points, and put an `x` in all the boxes that apply. -->
 <!--- If you're unsure about any of these, don't hesitate to ask. We're here to help! -->
-- [ ] README and other documentation updated
-- [ ] Node runs in OSX and devenv
+- [ ] Read the [contribution guide](./doc/contributing.md)
+- [ ] `make` runs successfully
 - [ ] All tests in `./test.sh` pass
+- [ ] README and other documentation updated
+- [ ] [Pending changelog](./CHANGELOG_PENDING.md) updated
