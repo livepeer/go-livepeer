@@ -22,6 +22,7 @@ fi
 
 export PATH="$HOME/compiled/bin":$PATH
 export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}:$HOME/compiled/lib/pkgconfig"
+export GO_LIVEPEER_PATH=$(pwd)
 
 # NVENC only works on Windows/Linux
 if [ $(uname) != "Darwin" ]; then
@@ -93,6 +94,9 @@ if [ ! -e "$HOME/gnutls-3.7.0" ]; then
   curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.7/gnutls-3.7.0.tar.xz
   tar xf gnutls-3.7.0.tar.xz
   cd gnutls-3.7.0
+  # Patch linking issue with isdigit
+  # Patch by Ross Nicholson: https://gitlab.com/gnutls/gnutls/-/issues/1033#note_451585569 
+  patch -Np1 -i $GO_LIVEPEER_PATH/patches/undo-libtasn1-cisdigit.patch
   LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" LIBS="-lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --without-idn --without-zlib --disable-doc --disable-cxx --disable-tools --disable-hardware-acceleration --disable-guile --disable-libdane --disable-tests --disable-rpath --disable-nls
   make
   make install
