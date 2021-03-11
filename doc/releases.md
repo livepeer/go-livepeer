@@ -62,14 +62,25 @@ Once we complete this stage, we prepare a mainnet release.
 
 ### Cutting a mainnet release of go-livepeer
 
-First, make the release commit on a branch:
+Create the release commit on a branch:
 
-```bash
-git checkout -b release-0.5.2 
-echo -n '0.5.2' > VERSION
-git commit -am 'release v0.5.2'
-git push -u origin release-0.5.2
-```
+1. Checkout a release branch
+
+    ```bash
+    git checkout -b release-0.5.2
+    ```
+
+2. `echo -n '0.5.2' > VERSION`
+
+3. Update the changelog
+
+    - Copy all entries from `CHANGELOG_PENDING.md` to the top of `CHANGELOG.md` and update `vX.X` to the new version number
+    - Run `go run cmd/scripts/linkify_changelog.go CHANGELOG.md` to add links for all PRs
+    - Reset `CHANGELOG_PENDING.md`
+
+4. `git commit -am 'release v0.5.2'`
+
+5. `git push -u origin release-0.5.2`
 
 Merge the release commit into `master` via PR. Then, push the release tag up.
 
