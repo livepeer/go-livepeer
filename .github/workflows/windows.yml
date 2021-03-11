@@ -23,7 +23,7 @@ jobs:
     - name: Upload build
       shell: msys2 {0}
       env: 
-        CIRCLE_BRANCH: ${{ github.head_ref }}
+        GITHUB_REF: ${{ github.ref }}
         GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
         GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
         DISCORD_URL: ${{ secrets.DISCORD_URL }}
