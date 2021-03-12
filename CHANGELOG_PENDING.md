@@ -22,6 +22,7 @@
 - \#1785 Update the Windows build to be fully static and to use go1.15 (@iameli)
 - \#1727 Add a `-maxGasPrice` flag to set the maximum gas price to use for transactions (@kyriediculous)
 - \#1790 Add changelog process
+- \#1791 Switch to Github actions for Linux build and test
 
 #### Broadcaster
 
@@ -38,6 +39,7 @@
 #### General
 
 - \#1729 Make sure the block watcher service can process multiple blocks in a single polling interval (@kyriediculous)
+- \#1795 Fix Darwin build by changing optimization flag used for gnutls dependency (@iameli)
 
 #### Broadcaster
 
