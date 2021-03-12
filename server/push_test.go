@@ -1010,6 +1010,9 @@ func TestPush_OSPerStream(t *testing.T) {
 	body, _ = ioutil.ReadAll(fi.Body)
 	assert.Equal("transcoded binary data", string(body))
 
+	// Saving to record store is async so sleep for a bit
+	time.Sleep(100 * time.Millisecond)
+
 	store2 := drivers.TestMemoryStorages["store2"]
 	sess2 := store2.GetSession("sess1/" + lpmon.NodeID)
 	assert.NotNil(sess2)
