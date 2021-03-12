@@ -21,6 +21,7 @@
 - \#1778 Add live mode to `livepeer_bench` and expose additional metrics (@jailuthra)
 - \#1785 Update the Windows build to be fully static and to use go1.15 (@iameli)
 - \#1727 Add a `-maxGasPrice` flag to set the maximum gas price to use for transactions (@kyriediculous)
+- \#1790 Add changelog process
 
 #### Broadcaster
 
