@@ -950,7 +950,7 @@ func TestSelectEarliestWinningTicket(t *testing.T) {
 	require.Nil(err)
 
 	_, ticket, sig, recipientRand := defaultWinningTicket(t)
-	ticket.Sender = ethcommon.HexToAddress("charizard")
+	ticket.Sender = ethcommon.HexToAddress("foo")
 
 	defaultCreationRound := ticket.CreationRound
 
@@ -961,7 +961,7 @@ func TestSelectEarliestWinningTicket(t *testing.T) {
 	}
 
 	_, ticket, sig, recipientRand = defaultWinningTicket(t)
-	ticket.Sender = ethcommon.HexToAddress("pikachu")
+	ticket.Sender = ethcommon.HexToAddress("bar")
 	signedTicket1 := &pm.SignedTicket{
 		Ticket:        ticket,
 		Sig:           sig,
@@ -971,23 +971,23 @@ func TestSelectEarliestWinningTicket(t *testing.T) {
 	require.Nil(err)
 
 	// no tickets found
-	earliest, err := dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"), defaultCreationRound)
+	earliest, err := dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("foo"), defaultCreationRound)
 	assert.Nil(err)
 	assert.Nil(earliest)
 
 	err = dbh.StoreWinningTicket(signedTicket0)
 	require.Nil(err)
-	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"), defaultCreationRound)
+	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("foo"), defaultCreationRound)
 	assert.Nil(err)
 	assert.Equal(signedTicket0, earliest)
 
 	// test ticket expired
-	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"), defaultCreationRound+100)
+	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("foo"), defaultCreationRound+100)
 	assert.Nil(err)
 	assert.Nil(earliest)
 
 	_, ticket, sig, recipientRand = defaultWinningTicket(t)
-	ticket.Sender = ethcommon.HexToAddress("charizard")
+	ticket.Sender = ethcommon.HexToAddress("foo")
 	signedTicket2 := &pm.SignedTicket{
 		Ticket:        ticket,
 		Sig:           pm.RandBytes(32),
@@ -998,21 +998,163 @@ func TestSelectEarliestWinningTicket(t *testing.T) {
 	err = dbh.StoreWinningTicket(signedTicket2)
 	require.Nil(err)
 
-	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"), defaultCreationRound)
+	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("foo"), defaultCreationRound)
 	assert.Nil(err)
 	assert.Equal(earliest, signedTicket0)
 
 	// Test excluding expired tickets
-	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"), defaultCreationRound+100)
+	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("foo"), defaultCreationRound+100)
 	assert.Nil(err)
 	assert.Equal(earliest, signedTicket2)
 
 	// Test excluding submitted tickets
 	err = dbh.MarkWinningTicketRedeemed(signedTicket0, pm.RandHash())
 	require.Nil(err)
-	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("charizard"), defaultCreationRound)
+	earliest, err = dbh.SelectEarliestWinningTicket(ethcommon.HexToAddress("foo"), defaultCreationRound)
 	assert.Equal(earliest, signedTicket2)
+}
 
+func TestSelectWinningTickets(t *testing.T) {
+	assert := assert.New(t)
+	dbh, dbraw, err := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require := require.New(t)
+	require.Nil(err)
+
+	_, ticket, sig, recipientRand := defaultWinningTicket(t)
+	ticket.Sender = ethcommon.HexToAddress("foo")
+
+	defaultCreationRound := ticket.CreationRound
+
+	signedTicket0 := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}
+
+	// no tickets found
+	tickets, err := dbh.SelectWinningTickets(ethcommon.HexToAddress("foo"), defaultCreationRound)
+	assert.Nil(err)
+	assert.Len(tickets, 0)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.Address{}, defaultCreationRound)
+	assert.Nil(err)
+	assert.Len(tickets, 0)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.HexToAddress("foo"), 0)
+	assert.Nil(err)
+	assert.Len(tickets, 0)
+
+	// Add signedTicket0 from foo
+	err = dbh.StoreWinningTicket(signedTicket0)
+	require.Nil(err)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.HexToAddress("foo"), defaultCreationRound)
+	assert.Nil(err)
+	assert.Len(tickets, 1)
+	assert.Equal(tickets[0], signedTicket0)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.Address{}, defaultCreationRound)
+	assert.Nil(err)
+	assert.Len(tickets, 1)
+	assert.Equal(tickets[0], signedTicket0)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.Address{}, 0)
+	assert.Nil(err)
+	assert.Len(tickets, 1)
+	assert.Equal(tickets[0], signedTicket0)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.HexToAddress("bar"), defaultCreationRound)
+	assert.Nil(err)
+	assert.Len(tickets, 0)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.HexToAddress("bar"), 0)
+	assert.Nil(err)
+	assert.Len(tickets, 0)
+
+	// Add signedTicket 1 from bar
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.Sender = ethcommon.HexToAddress("bar")
+	signedTicket1 := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           sig,
+		RecipientRand: recipientRand,
+	}
+	err = dbh.StoreWinningTicket(signedTicket1)
+	require.Nil(err)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.HexToAddress("foo"), defaultCreationRound)
+	assert.Nil(err)
+	assert.Len(tickets, 1)
+	assert.Equal(tickets[0], signedTicket0)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.Address{}, defaultCreationRound)
+	assert.Nil(err)
+	assert.Len(tickets, 2)
+	assert.Equal(tickets[0], signedTicket0)
+	assert.Equal(tickets[1], signedTicket1)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.Address{}, 0)
+	assert.Nil(err)
+	assert.Len(tickets, 2)
+	assert.Contains(tickets, signedTicket0)
+	assert.Contains(tickets, signedTicket1)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.HexToAddress("bar"), defaultCreationRound)
+	assert.Nil(err)
+	assert.Len(tickets, 1)
+	assert.Contains(tickets, signedTicket1)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.HexToAddress("bar"), 0)
+	assert.Nil(err)
+	assert.Len(tickets, 1)
+	assert.Contains(tickets, signedTicket1)
+
+	// Add signedTicket 2 from foo, expired
+	_, ticket, sig, recipientRand = defaultWinningTicket(t)
+	ticket.Sender = ethcommon.HexToAddress("foo")
+	signedTicket2 := &pm.SignedTicket{
+		Ticket:        ticket,
+		Sig:           pm.RandBytes(32),
+		RecipientRand: new(big.Int).SetBytes(pm.RandBytes(32)),
+	}
+	signedTicket2.CreationRound = ticket.CreationRound - 50
+	err = dbh.StoreWinningTicket(signedTicket2)
+	require.Nil(err)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.HexToAddress("foo"), defaultCreationRound)
+	assert.Nil(err)
+	assert.Len(tickets, 1)
+	assert.Contains(tickets, signedTicket0)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.HexToAddress("foo"), 0)
+	assert.Nil(err)
+	assert.Len(tickets, 2)
+	assert.Contains(tickets, signedTicket0)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.Address{}, defaultCreationRound)
+	assert.Nil(err)
+	assert.Len(tickets, 2)
+	assert.Contains(tickets, signedTicket0)
+	assert.Contains(tickets, signedTicket1)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.Address{}, 0)
+	assert.Nil(err)
+	assert.Len(tickets, 3)
+	assert.Contains(tickets, signedTicket0)
+	assert.Contains(tickets, signedTicket1)
+	assert.Contains(tickets, signedTicket2)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.HexToAddress("bar"), defaultCreationRound)
+	assert.Nil(err)
+	assert.Len(tickets, 1)
+	assert.Contains(tickets, signedTicket1)
+
+	tickets, err = dbh.SelectWinningTickets(ethcommon.HexToAddress("bar"), 0)
+	assert.Nil(err)
+	assert.Len(tickets, 1)
+	assert.Contains(tickets, signedTicket1)
 }
 
 func TestMarkWinningTicketRedeemed_GivenNilTicket_ReturnsError(t *testing.T) {
@@ -1263,6 +1405,7 @@ func defaultWinningTicket(t *testing.T) (sessionID string, ticket *pm.Ticket, si
 		SenderNonce:           uint32(123),
 		RecipientRandHash:     pm.RandHash(),
 		ParamsExpirationBlock: big.NewInt(1337),
+		CreationRound:         100,
 	}
 	sig = pm.RandBytes(42)
 	recipientRand = big.NewInt(4567)

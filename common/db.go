@@ -788,6 +788,76 @@ func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address, minCreationR
 	}, nil
 }
 
+func (db *DB) SelectWinningTickets(sender ethcommon.Address, minCreationRound int64) ([]*pm.SignedTicket, error) {
+	if db == nil {
+		return nil, nil
+	}
+
+	query := "SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue WHERE"
+	if sender != (ethcommon.Address{}) {
+		query = fmt.Sprintf("%s sender = '%s' AND", query, sender.Hex())
+	}
+	if minCreationRound > 0 {
+		query = fmt.Sprintf("%s creationRound >=%v AND", query, minCreationRound)
+	}
+	query = fmt.Sprintf("%s redeemedAt IS NULL AND txHash IS NULL ORDER BY createdAt ASC", query)
+
+	rows, err := db.dbh.Query(query)
+	if err != nil {
+		glog.Error("db: Unable to get winning tickets: ", err)
+		return nil, err
+	}
+
+	var winningTickets []*pm.SignedTicket
+
+	for rows.Next() {
+		var (
+			senderString           string
+			recipient              string
+			faceValue              []byte
+			winProb                []byte
+			senderNonce            int
+			recipientRand          []byte
+			recipientRandHash      string
+			sig                    []byte
+			creationRound          int64
+			creationRoundBlockHash string
+			paramsExpirationBlock  int64
+		)
+
+		if err := rows.Scan(&senderString, &recipient, &faceValue, &winProb, &senderNonce, &recipientRand, &recipientRandHash, &sig, &creationRound, &creationRoundBlockHash, &paramsExpirationBlock); err != nil {
+			glog.Error(err)
+			continue
+		}
+
+		signedTicket := &pm.SignedTicket{
+			Ticket: &pm.Ticket{
+				Sender:                 ethcommon.HexToAddress(senderString),
+				Recipient:              ethcommon.HexToAddress(recipient),
+				FaceValue:              new(big.Int).SetBytes(faceValue),
+				WinProb:                new(big.Int).SetBytes(winProb),
+				SenderNonce:            uint32(senderNonce),
+				RecipientRandHash:      ethcommon.HexToHash(recipientRandHash),
+				CreationRound:          creationRound,
+				CreationRoundBlockHash: ethcommon.HexToHash(creationRoundBlockHash),
+				ParamsExpirationBlock:  big.NewInt(paramsExpirationBlock),
+			},
+			Sig:           sig,
+			RecipientRand: new(big.Int).SetBytes(recipientRand),
+		}
+
+		winningTickets = append(winningTickets, signedTicket)
+	}
+
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return winningTickets, nil
+}
+
 // WinningTicketCount returns the amount of non-redeemed winning tickets for a 'sender'
 func (db *DB) WinningTicketCount(sender ethcommon.Address, minCreationRound int64) (int, error) {
 	row := db.winningTicketCount.QueryRow(sender.Hex(), minCreationRound)

@@ -68,6 +68,23 @@ func (ts *stubTicketStore) SelectEarliestWinningTicket(sender ethcommon.Address,
 	return nil, nil
 }
 
+func (ts *stubTicketStore) SelectWinningTickets(sender ethcommon.Address, minCreationRound int64) ([]*SignedTicket, error) {
+	ts.lock.Lock()
+	defer ts.lock.Unlock()
+
+	if ts.loadShouldFail {
+		return nil, fmt.Errorf("stub TicketStore load error")
+	}
+	var tickets []*SignedTicket
+	for _, t := range ts.tickets[sender] {
+		if !ts.submitted[fmt.Sprintf("%x", t.Sig)] {
+			tickets = append(tickets, t)
+		}
+	}
+
+	return tickets, nil
+}
+
 func (ts *stubTicketStore) MarkWinningTicketRedeemed(ticket *SignedTicket, txHash ethcommon.Hash) error {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()

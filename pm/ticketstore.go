@@ -11,6 +11,8 @@ type TicketStore interface {
 	// which is not yet redeemed
 	SelectEarliestWinningTicket(sender ethcommon.Address, minCreationRound int64) (*SignedTicket, error)
 
+	SelectWinningTickets(sender ethcommon.Address, minCreationRound int64) ([]*SignedTicket, error)
+
 	// RemoveWinningTicket removes a ticket
 	RemoveWinningTicket(ticket *SignedTicket) error
 

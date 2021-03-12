@@ -113,6 +113,9 @@ func (sm *LocalSenderMonitor) Start() {
 	go sm.startCleanupLoop()
 	go sm.watchReserveChange()
 	go sm.watchPoolSizeChange()
+	if err := sm.redeemWinningTicketsOnStartup(); err != nil {
+		glog.Errorf("Failed to redeem winning tickets on startup: %v", err)
+	}
 }
 
 // Stop signals the monitor to exit gracefully
@@ -278,6 +281,43 @@ func (sm *LocalSenderMonitor) cache(addr ethcommon.Address) {
 		queue:         queue,
 		done:          done,
 		lastAccess:    unixNow(),
+	}
+}
+
+func (sm *LocalSenderMonitor) redeemWinningTicketsOnStartup() error {
+	minCreationRound := sm.tm.LastInitializedRound().Int64() - 1
+
+	tickets, err := sm.ticketStore.SelectWinningTickets(ethcommon.Address{}, minCreationRound)
+	if err != nil {
+		return err
+	}
+
+	sm.redeemWinningTickets(tickets)
+
+	return nil
+}
+
+func (sm *LocalSenderMonitor) redeemWinningTickets(tickets []*SignedTicket) {
+	for _, t := range tickets {
+		go func(t *SignedTicket) {
+			tx, err := sm.redeemWinningTicket(t)
+			if err != nil {
+				glog.Errorf("Could not redeem ticket with recipientRandHash %v: %v", t.RecipientRandHash.Hex(), err)
+				// If the ticket is used, mark it as redeemed
+				if err != errIsUsedTicket {
+					return
+				}
+			}
+
+			txHash := ethcommon.Hash{}
+			if tx != nil {
+				txHash = tx.Hash()
+			}
+
+			if err := sm.ticketStore.MarkWinningTicketRedeemed(t, txHash); err != nil {
+				glog.Error("Failed to mark winning ticket as redeemed: err ")
+			}
+		}(t)
 	}
 }
 
