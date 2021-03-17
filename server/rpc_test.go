@@ -302,6 +302,7 @@ func TestRPCSeg(t *testing.T) {
 	// expired auth token
 	s.OrchestratorInfo.AuthToken = &net.AuthToken{Token: authToken.Token, SessionId: authToken.SessionId, Expiration: time.Now().Add(-1 * time.Hour).Unix()}
 	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5})
+	assert.Nil(t, err)
 	_, err = verifySegCreds(o, creds, baddr)
 	assert.Equal(t, "expired auth token", err.Error())
 	s.OrchestratorInfo.AuthToken = authToken
@@ -370,14 +371,14 @@ func TestEstimateFee(t *testing.T) {
 	assert.Nil(fee)
 
 	// Test first profile is invalid
-	profiles := []ffmpeg.VideoProfile{ffmpeg.VideoProfile{Resolution: "foo"}}
+	profiles := []ffmpeg.VideoProfile{{Resolution: "foo"}}
 	_, err = estimateFee(&stream.HLSSegment{}, profiles, big.NewRat(1, 1))
 	assert.Error(err)
 
 	// Test non-first profile is invalid
 	profiles = []ffmpeg.VideoProfile{
 		ffmpeg.P144p30fps16x9,
-		ffmpeg.VideoProfile{Resolution: "foo"},
+		{Resolution: "foo"},
 	}
 	_, err = estimateFee(&stream.HLSSegment{}, profiles, big.NewRat(1, 1))
 	assert.Error(err)
@@ -589,7 +590,7 @@ func TestGenPayment(t *testing.T) {
 		TicketExpirationParams: &pm.TicketExpirationParams{},
 		Sender:                 pm.RandAddress(),
 		SenderParams: []*pm.TicketSenderParams{
-			&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
+			{SenderNonce: 777, Sig: pm.RandBytes(42)},
 		},
 	}
 
@@ -615,8 +616,8 @@ func TestGenPayment(t *testing.T) {
 	// Test payment creation with > 1 ticket
 
 	senderParams := []*pm.TicketSenderParams{
-		&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
-		&pm.TicketSenderParams{SenderNonce: 777, Sig: pm.RandBytes(42)},
+		{SenderNonce: 777, Sig: pm.RandBytes(42)},
+		{SenderNonce: 777, Sig: pm.RandBytes(42)},
 	}
 	batch.SenderParams = append(batch.SenderParams, senderParams...)
 

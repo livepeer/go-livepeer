@@ -76,7 +76,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	// Test GetTranscoderError
 	eth.Err = errors.New("GetTranscoder error")
 	req := bytes.NewBufferString(form.Encode())
-	res, err := http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	res, _ := http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
 	require.Equal(http.StatusInternalServerError, res.StatusCode)
 	body, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
@@ -87,7 +87,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	// Test Transcoder Registered
 	eth.Orch.Status = "Registered"
 	req = bytes.NewBufferString(form.Encode())
-	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	res, _ = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
 	require.Equal(http.StatusBadRequest, res.StatusCode)
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
@@ -98,7 +98,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	// Test CurrentRoundLocked error
 	eth.RoundLockedErr = errors.New("CurrentRoundLocked error")
 	req = bytes.NewBufferString(form.Encode())
-	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	res, _ = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
 	require.Equal(http.StatusInternalServerError, res.StatusCode)
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
@@ -109,7 +109,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	// Test Round Locked
 	eth.RoundLocked = true
 	req = bytes.NewBufferString(form.Encode())
-	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	res, _ = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
 	require.Equal(http.StatusInternalServerError, res.StatusCode)
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
@@ -120,7 +120,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	// Test no block reward cut
 	form["blockRewardCut"] = []string{""}
 	req = bytes.NewBufferString(form.Encode())
-	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	res, _ = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
 	require.Equal(http.StatusBadRequest, res.StatusCode)
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
@@ -130,7 +130,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	// Test invalid block reward cut
 	form["blockRewardCut"] = []string{"foo"}
 	req = bytes.NewBufferString(form.Encode())
-	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	res, _ = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
 	require.Equal(http.StatusBadRequest, res.StatusCode)
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
@@ -141,7 +141,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	// Test no feeshare
 	form["feeShare"] = []string{""}
 	req = bytes.NewBufferString(form.Encode())
-	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	res, _ = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
 	require.Equal(http.StatusBadRequest, res.StatusCode)
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
@@ -151,7 +151,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	// Test invalid feeshare
 	form["feeShare"] = []string{"foo"}
 	req = bytes.NewBufferString(form.Encode())
-	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	res, _ = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
 	require.Equal(http.StatusBadRequest, res.StatusCode)
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
@@ -164,7 +164,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	// Test no serviceURI
 	form["serviceURI"] = []string{""}
 	req = bytes.NewBufferString(form.Encode())
-	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	res, _ = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
 	require.Equal(http.StatusBadRequest, res.StatusCode)
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
@@ -174,7 +174,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	// Test invalid ServiceURI
 	form["serviceURI"] = []string{"hello world"}
 	req = bytes.NewBufferString(form.Encode())
-	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	res, _ = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
 	require.Equal(http.StatusBadRequest, res.StatusCode)
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
@@ -183,7 +183,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	form["serviceURI"] = []string{"http://foo.bar:1337"}
 
 	req = bytes.NewBufferString(form.Encode())
-	res, err = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
+	res, _ = http.Post(fmt.Sprintf("%s/activateOrchestrator", srv.URL), "application/x-www-form-urlencoded", req)
 	require.Equal(http.StatusOK, res.StatusCode)
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
@@ -224,6 +224,7 @@ func TestGetEthChainID(t *testing.T) {
 
 	// test onchain
 	dbh, dbraw, err := common.TempDB(t)
+	require.Nil(err)
 	defer dbh.Close()
 	defer dbraw.Close()
 	require.Nil(err)

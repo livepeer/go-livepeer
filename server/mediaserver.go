@@ -33,7 +33,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	lpmon "github.com/livepeer/go-livepeer/monitor"
 	lpmscore "github.com/livepeer/lpms/core"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
@@ -44,8 +43,6 @@ import (
 )
 
 var errAlreadyExists = errors.New("StreamAlreadyExists")
-var errBroadcast = errors.New("ErrBroadcast")
-var errLowDeposit = errors.New("ErrLowDeposit")
 var errStorage = errors.New("ErrStorage")
 var errDiscovery = errors.New("ErrDiscovery")
 var errNoOrchs = errors.New("ErrNoOrchs")
@@ -133,7 +130,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		opts.RtmpDisabled = false
 
 		if transcodingOptions != "" {
-			profiles := BroadcastJobVideoProfiles
+			var profiles []ffmpeg.VideoProfile
 			content, err := ioutil.ReadFile(transcodingOptions)
 			if err == nil && len(content) > 0 {
 				stubResp := &authWebhookResponse{}
@@ -283,7 +280,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			oss = os.NewSession(string(mid))
 		}
 
-		recordPath := fmt.Sprintf("%s/%s", extmid, lpmon.NodeID)
+		recordPath := fmt.Sprintf("%s/%s", extmid, monitor.NodeID)
 		if ros != nil {
 			ross = ros.NewSession(recordPath)
 		} else if drivers.RecordStorage != nil {
@@ -420,7 +417,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 					// XXX update HLS manifest
 					return
 				}
-				if streamStarted == false {
+				if !streamStarted {
 					streamStarted = true
 					if monitor.Enabled {
 						monitor.StreamStarted(nonce)
@@ -588,7 +585,7 @@ func removeRTMPStream(s *LivepeerServer, extmid core.ManifestID) error {
 func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 	return func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 		var manifestID core.ManifestID
-		if s.ExposeCurrentManifest && "/stream/current.m3u8" == strings.ToLower(url.Path) {
+		if s.ExposeCurrentManifest && strings.ToLower(url.Path) == "/stream/current.m3u8" {
 			manifestID = s.LastManifestID()
 		} else {
 			sid := parseStreamID(url.Path)
@@ -1338,7 +1335,7 @@ func (s *LivepeerServer) LastHLSStreamID() core.StreamID {
 
 func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 	// not threadsafe; need to deep copy the playlist
-	m := make(map[string]*m3u8.MasterPlaylist, 0)
+	m := make(map[string]*m3u8.MasterPlaylist)
 
 	s.connectionLock.RLock()
 	defer s.connectionLock.RUnlock()

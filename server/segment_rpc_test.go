@@ -242,21 +242,21 @@ func TestCoreSegMetadata_Profiles(t *testing.T) {
 func TestGenSegCreds_FullProfiles(t *testing.T) {
 	assert := assert.New(t)
 	profiles := []ffmpeg.VideoProfile{
-		ffmpeg.VideoProfile{
+		{
 			Name:       "prof1",
 			Bitrate:    "432k",
 			Framerate:  uint(560),
 			Resolution: "123x456",
 			Format:     ffmpeg.FormatMPEGTS,
 		},
-		ffmpeg.VideoProfile{
+		{
 			Name:       "prof2",
 			Bitrate:    "765k",
 			Framerate:  uint(876),
 			Resolution: "456x987",
 			Format:     ffmpeg.FormatMP4,
 		},
-		ffmpeg.VideoProfile{Resolution: "0x0", Bitrate: "0"},
+		{Resolution: "0x0", Bitrate: "0"},
 	}
 
 	s := &BroadcastSession{
@@ -398,13 +398,13 @@ func TestCoreSegMetadata_FullProfiles(t *testing.T) {
 	assert := assert.New(t)
 
 	profiles := []ffmpeg.VideoProfile{
-		ffmpeg.VideoProfile{
+		{
 			Name:       "prof1",
 			Bitrate:    "432k",
 			Framerate:  uint(560),
 			Resolution: "123x456",
 		},
-		ffmpeg.VideoProfile{
+		{
 			Name:         "prof2",
 			Bitrate:      "765k",
 			Framerate:    uint(876),
@@ -438,7 +438,7 @@ func TestCoreSegMetadata_FullProfiles(t *testing.T) {
 
 	// Test deserialization with FullProfiles2
 	// (keep invalid FullProfiles populated to exhibit precedence)
-	segData.FullProfiles2 = []*net.VideoProfile{&net.VideoProfile{Name: "prof3"}}
+	segData.FullProfiles2 = []*net.VideoProfile{{Name: "prof3"}}
 	md, err = coreSegMetadata(segData)
 	expected := []ffmpeg.VideoProfile{{Name: "prof3",
 		Bitrate: "0", Resolution: "0x0",
@@ -447,7 +447,7 @@ func TestCoreSegMetadata_FullProfiles(t *testing.T) {
 
 	// Test deserialization with FullProfiles3
 	// (keep invalid FullProfiles populated to exhibit precedence)
-	segData.FullProfiles3 = []*net.VideoProfile{&net.VideoProfile{Name: "prof4"}}
+	segData.FullProfiles3 = []*net.VideoProfile{{Name: "prof4"}}
 	md, err = coreSegMetadata(segData)
 	expected = []ffmpeg.VideoProfile{{Name: "prof4",
 		Bitrate: "0", Resolution: "0x0",
@@ -538,8 +538,8 @@ func TestServeSegment_SaveDataFormat(t *testing.T) {
 	assert := assert.New(t)
 	os := &stubOSSession{}
 	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{
-		&core.TranscodedSegmentData{Data: []byte("unused1")},
-		&core.TranscodedSegmentData{Data: []byte("unused2")},
+		{Data: []byte("unused1")},
+		{Data: []byte("unused2")},
 	}}
 	tRes := &core.TranscodeResult{
 		TranscodeData: tData,
@@ -572,7 +572,7 @@ func TestServeSegment_SaveDataFormat(t *testing.T) {
 	assert.Equal([]string{"P720p30fps16x9/0.ts", "P720p60fps16x9/0.ts"}, os.saved)
 
 	// mp4 format
-	for i, _ := range sess.Params.Profiles {
+	for i := range sess.Params.Profiles {
 		sess.Params.Profiles[i].Format = ffmpeg.FormatMP4
 	}
 	assert.Equal(ffmpeg.FormatNone, ffmpeg.P720p30fps16x9.Format) // sanity
@@ -586,10 +586,10 @@ func TestServeSegment_SaveDataFormat(t *testing.T) {
 	assert.Equal([]string{"P720p30fps16x9/0.mp4", "P720p60fps16x9/0.mp4"}, os.saved)
 
 	// mpegts format
-	for i, _ := range sess.Params.Profiles {
+	for i := range sess.Params.Profiles {
 		sess.Params.Profiles[i].Format = ffmpeg.FormatMPEGTS
 	}
-	creds, err = genSegCreds(sess, &stream.HLSSegment{})
+	creds, _ = genSegCreds(sess, &stream.HLSSegment{})
 	os = &stubOSSession{} // reset for simplicity
 	tRes.OS = os
 	headers = map[string]string{segmentHeader: creds}
@@ -614,7 +614,7 @@ func TestServeSegment_SaveDataFormat(t *testing.T) {
 	assert.Empty(os.saved)
 
 	var tr net.TranscodeResult
-	body, err := ioutil.ReadAll(resp.Body)
+	body, _ := ioutil.ReadAll(resp.Body)
 	err = proto.Unmarshal(body, &tr)
 	assert.Nil(err)
 	assert.Equal(http.StatusOK, resp.StatusCode)
@@ -730,7 +730,7 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(true)
 
-	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo")}}}
+	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{{Data: []byte("foo")}}}
 	tRes := &core.TranscodeResult{
 		TranscodeData: tData,
 		Sig:           []byte("foo"),
@@ -1235,7 +1235,7 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	orch.On("ProcessPayment", net.Payment{}, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(nil)
 	orch.On("SufficientBalance", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(true)
 
-	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{&core.TranscodedSegmentData{Data: []byte("foo"), Pixels: int64(110592000)}}}
+	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{{Data: []byte("foo"), Pixels: int64(110592000)}}}
 	tRes := &core.TranscodeResult{
 		TranscodeData: tData,
 		Sig:           []byte("foo"),
@@ -1527,7 +1527,7 @@ func TestSubmitSegment_EstimateFeeError(t *testing.T) {
 		Params: &core.StreamParameters{
 			ManifestID: core.RandomManifestID(),
 			// Contains invalid profile
-			Profiles: []ffmpeg.VideoProfile{ffmpeg.VideoProfile{Resolution: "foo"}},
+			Profiles: []ffmpeg.VideoProfile{{Resolution: "foo"}},
 		},
 		OrchestratorInfo: &net.OrchestratorInfo{
 			PriceInfo: &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 1},

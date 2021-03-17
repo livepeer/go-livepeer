@@ -167,7 +167,6 @@ func TestRedeemerServer_MonitorMaxFloat_Success(t *testing.T) {
 	go func() {
 		err := r.MonitorMaxFloat(req, stream)
 		errC <- err
-		return
 	}()
 	time.Sleep(20 * time.Millisecond)
 	sm.sink <- struct{}{}
@@ -247,7 +246,6 @@ func TestRedeemerServer_MonitorMaxFloat_SendErr(t *testing.T) {
 	go func() {
 		err := r.MonitorMaxFloat(req, stream)
 		errC <- err
-		return
 	}()
 	time.Sleep(20 * time.Millisecond)
 	sm.sink <- struct{}{}
@@ -287,7 +285,6 @@ func TestRedeemerServer_MonitorMaxFloat_SubErr(t *testing.T) {
 
 	go func() {
 		errC <- r.MonitorMaxFloat(req, stream)
-		return
 	}()
 	time.Sleep(time.Second)
 	sm.sub.errCh <- nil
@@ -331,7 +328,6 @@ func TestRedeemerServer_MonitorMaxFloat_ContextCancelled(t *testing.T) {
 	go func() {
 		err := r.MonitorMaxFloat(req, stream)
 		errC <- err
-		return
 	}()
 	time.Sleep(20 * time.Millisecond)
 	sm.sink <- struct{}{}

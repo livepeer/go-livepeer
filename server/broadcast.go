@@ -94,7 +94,7 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 		var sess *BroadcastSession
 
 		if bsm.lastSess != nil && len(bsm.lastSess.SegsInFlight) > 0 &&
-			time.Now().Sub(bsm.lastSess.SegsInFlight[0].startTime) < bsm.lastSess.SegsInFlight[0].segDur {
+			time.Since(bsm.lastSess.SegsInFlight[0].startTime) < bsm.lastSess.SegsInFlight[0].segDur {
 			// Re-use last session if oldest segment is in-flight for < segDur
 			sess = bsm.lastSess
 		} else {
@@ -104,7 +104,7 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 
 		// If no new sessions are available, re-use last session when oldest segment is in-flight for < 2 * segDur
 		if sess == nil && bsm.lastSess != nil && len(bsm.lastSess.SegsInFlight) > 0 &&
-			time.Now().Sub(bsm.lastSess.SegsInFlight[0].startTime) < 2*bsm.lastSess.SegsInFlight[0].segDur {
+			time.Since(bsm.lastSess.SegsInFlight[0].startTime) < 2*bsm.lastSess.SegsInFlight[0].segDur {
 			glog.V(common.DEBUG).Infof("No sessions in the selector for manifestID=%v re-using orch=%v with acceptable in-flight time", bsm.mid, bsm.lastSess.OrchestratorInfo.Transcoder)
 			sess = bsm.lastSess
 		}

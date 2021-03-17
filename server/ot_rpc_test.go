@@ -32,8 +32,8 @@ type stubTranscoder struct {
 
 var testRemoteTranscoderResults = &core.TranscodeData{
 	Segments: []*core.TranscodedSegmentData{
-		&core.TranscodedSegmentData{Data: []byte("body1"), Pixels: 777},
-		&core.TranscodedSegmentData{Data: []byte("body2"), Pixels: 888},
+		{Data: []byte("body1"), Pixels: 777},
+		{Data: []byte("body2"), Pixels: 888},
 	},
 	Pixels: 999,
 }
@@ -129,13 +129,13 @@ func TestRemoteTranscoder_FullProfiles(t *testing.T) {
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 
 	profiles := []ffmpeg.VideoProfile{
-		ffmpeg.VideoProfile{
+		{
 			Name:       "prof1",
 			Bitrate:    "432k",
 			Framerate:  uint(560),
 			Resolution: "123x456",
 		},
-		ffmpeg.VideoProfile{
+		{
 			Name:       "prof2",
 			Bitrate:    "765k",
 			Framerate:  uint(876),
