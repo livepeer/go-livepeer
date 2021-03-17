@@ -218,6 +218,7 @@ func TestPush_MemoryRequestError(t *testing.T) {
 	defer serverCleanup(s)
 	handler, _, w := requestSetup(s)
 	f, err := os.Open(`doesn't exist`)
+	require.NotNil(t, err)
 	req := httptest.NewRequest("POST", "/live/seg.ts", f)
 
 	handler.ServeHTTP(w, req)
@@ -805,6 +806,7 @@ func TestPush_StorageError(t *testing.T) {
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
 	mid := parseManifestID(req.URL.Path)
 	err := removeRTMPStream(s, mid)
+	assert.Equal(errUnknownStream, err)
 
 	handler.ServeHTTP(w, req)
 	resp := w.Result()

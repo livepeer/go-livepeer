@@ -171,7 +171,7 @@ func TestSelectOrchestrator(t *testing.T) {
 		t.Error("Expected session length of 2")
 	}
 
-	if sess == nil {
+	if sess == nil || len(sess) < 1 {
 		t.Error("Expected non-nil session")
 	}
 
@@ -874,6 +874,7 @@ func TestRegisterConnection(t *testing.T) {
 	profiles[0].Format = -1
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
 	cxn, err = s.registerConnection(strm)
+	assert.Nil(cxn)
 	assert.Equal("capability: unknown format", err.Error())
 	// TODO test with non-legacy capabilities once we have some
 	// Should result in a non-nil `cxn.params.Capabilities`.
@@ -1065,6 +1066,7 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 	assert.Len(p, 0)
 
 	err = json.Unmarshal(initialValue, &resp.Profiles)
+	assert.Nil(err)
 
 	// test default name
 	p, err = jsonProfileToVideoProfile(resp)

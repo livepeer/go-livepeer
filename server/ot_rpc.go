@@ -282,7 +282,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var segments []*core.TranscodedSegmentData
-	if "multipart/mixed" == mediaType {
+	if mediaType == "multipart/mixed" {
 		start := time.Now()
 		mr := multipart.NewReader(r.Body, params["boundary"])
 		for {

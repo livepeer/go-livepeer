@@ -821,10 +821,8 @@ func httpGetResp(handler http.Handler) *http.Response {
 func httpResp(handler http.Handler, method string, body io.Reader, headers map[string]string) *http.Response {
 	req := httptest.NewRequest(method, "http://example.com", body)
 
-	if headers != nil {
-		for k, v := range headers {
-			req.Header.Add(k, v)
-		}
+	for k, v := range headers {
+		req.Header.Add(k, v)
 	}
 
 	w := httptest.NewRecorder()

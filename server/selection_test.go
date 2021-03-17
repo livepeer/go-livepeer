@@ -43,18 +43,18 @@ func TestStoreStakeReader(t *testing.T) {
 
 	// Test when we receive results for only some addresses
 	store.err = nil
-	store.orchs = []*common.DBOrch{&common.DBOrch{EthereumAddr: "foo", Stake: 77}}
-	stakes, err := rdr.Stakes([]ethcommon.Address{ethcommon.Address{}, ethcommon.Address{}})
+	store.orchs = []*common.DBOrch{{EthereumAddr: "foo", Stake: 77}}
+	stakes, err := rdr.Stakes([]ethcommon.Address{{}, {}})
 	assert.Nil(err)
 	assert.Len(stakes, 1)
 	assert.Equal(stakes[ethcommon.HexToAddress("foo")], int64(77))
 
 	// Test when we receive results for all addresses
 	store.orchs = []*common.DBOrch{
-		&common.DBOrch{EthereumAddr: "foo", Stake: 77},
-		&common.DBOrch{EthereumAddr: "bar", Stake: 88},
+		{EthereumAddr: "foo", Stake: 77},
+		{EthereumAddr: "bar", Stake: 88},
 	}
-	stakes, err = rdr.Stakes([]ethcommon.Address{ethcommon.Address{}, ethcommon.Address{}})
+	stakes, err = rdr.Stakes([]ethcommon.Address{{}, {}})
 	assert.Nil(err)
 
 	for _, orch := range store.orchs {
@@ -127,9 +127,9 @@ func TestMinLSSelector(t *testing.T) {
 	assert.Zero(sel.Size())
 
 	sessions := []*BroadcastSession{
-		&BroadcastSession{},
-		&BroadcastSession{},
-		&BroadcastSession{},
+		{},
+		{},
+		{},
 	}
 
 	// Return nil when there are no sessions
@@ -204,7 +204,7 @@ func TestMinLSSelector_SelectUnknownSession_Errors(t *testing.T) {
 
 	sel.Add(
 		[]*BroadcastSession{
-			&BroadcastSession{
+			{
 				OrchestratorInfo: &net.OrchestratorInfo{
 					TicketParams: &net.TicketParams{Recipient: []byte("foo")},
 				},
@@ -460,9 +460,9 @@ func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 
 	// Use ManifestID to identify each session
 	sessions := []*BroadcastSession{
-		&BroadcastSession{Params: &core.StreamParameters{ManifestID: "foo"}},
-		&BroadcastSession{Params: &core.StreamParameters{ManifestID: "bar"}},
-		&BroadcastSession{Params: &core.StreamParameters{ManifestID: "baz"}},
+		{Params: &core.StreamParameters{ManifestID: "foo"}},
+		{Params: &core.StreamParameters{ManifestID: "bar"}},
+		{Params: &core.StreamParameters{ManifestID: "baz"}},
 	}
 
 	resetUnknownSessions := func() {
@@ -493,7 +493,7 @@ func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 	assert.Equal("bar", string(sel.unknownSessions[1].Params.ManifestID))
 
 	// Test remove when list length = 1
-	sel.unknownSessions = []*BroadcastSession{&BroadcastSession{}}
+	sel.unknownSessions = []*BroadcastSession{{}}
 	sel.removeUnknownSession(0)
 	assert.Empty(sel.unknownSessions)
 }

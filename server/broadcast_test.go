@@ -687,7 +687,7 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 		},
 		Result: &net.TranscodeResult_Data{
 			Data: &net.TranscodeData{
-				Segments: []*net.TranscodedSegmentData{&net.TranscodedSegmentData{Url: "test.flv"}},
+				Segments: []*net.TranscodedSegmentData{{Url: "test.flv"}},
 				Sig:      []byte("bar"),
 			},
 		},
