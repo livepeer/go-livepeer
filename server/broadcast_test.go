@@ -145,6 +145,7 @@ type stubPlaylistManager struct {
 	profile    ffmpeg.VideoProfile
 	uri        string
 	os         drivers.OSSession
+	lock       sync.Mutex
 }
 
 func (pm *stubPlaylistManager) ManifestID() core.ManifestID {
@@ -152,6 +153,8 @@ func (pm *stubPlaylistManager) ManifestID() core.ManifestID {
 }
 
 func (pm *stubPlaylistManager) InsertHLSSegment(profile *ffmpeg.VideoProfile, seqNo uint64, uri string, duration float64) error {
+	pm.lock.Lock()
+	defer pm.lock.Unlock()
 	pm.profile = *profile
 	pm.seq = seqNo
 	pm.uri = uri
@@ -324,6 +327,116 @@ func TestSelectSession(t *testing.T) {
 	assert.Len(bsm.sessMap, 1)
 
 	// XXX check refresh condition more precisely - currently numOrchs / 2
+}
+
+func TestSelectSession_MultipleInFlight2(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+
+	tr := &net.TranscodeResult{
+		Info: &net.OrchestratorInfo{
+			Transcoder:   ts.URL,
+			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
+			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
+			AuthToken:    stubAuthToken,
+		},
+		Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{
+				Segments: []*net.TranscodedSegmentData{{Url: "test.flv"}},
+				Sig:      []byte("bar"),
+			},
+		},
+	}
+	buf, err := proto.Marshal(tr)
+	require.Nil(err)
+
+	segDone := make(chan interface{})
+	segStarted := make(chan interface{})
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		segStarted <- nil
+		<-segDone
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	successOrchInfoUpdate := &net.OrchestratorInfo{
+		Transcoder: ts.URL,
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 1,
+		},
+		TicketParams: &net.TicketParams{},
+		AuthToken:    stubAuthToken,
+	}
+
+	oldGetOrchestratorInfoRPC := getOrchestratorInfoRPC
+	defer func() { getOrchestratorInfoRPC = oldGetOrchestratorInfoRPC }()
+
+	orchInfoCalled := 0
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		orchInfoCalled++
+		return successOrchInfoUpdate, nil
+	}
+
+	sess := StubBroadcastSession(ts.URL)
+	sender := &pm.MockSender{}
+	sender.On("StartSession", mock.Anything).Return("foo").Times(3)
+	sender.On("EV", mock.Anything).Return(big.NewRat(1000000, 1), nil)
+	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil)
+	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
+	sess.Sender = sender
+	balance := &mockBalance{}
+	sess.Balance = balance
+	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(1, big.NewRat(100, 1), big.NewRat(100, 1))
+	balance.On("Credit", mock.Anything)
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.OrchestratorInfo = &net.OrchestratorInfo{
+		Transcoder: ts.URL,
+		AuthToken:  stubAuthToken,
+		PriceInfo: &net.PriceInfo{
+			PricePerUnit:  2,
+			PixelsPerUnit: 2,
+		},
+	}
+
+	cxn := &rtmpConnection{
+		mid:         core.ManifestID("foo"),
+		nonce:       7,
+		pl:          &stubPlaylistManager{manifestID: core.ManifestID("foo")},
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsmWithSessList([]*BroadcastSession{sess}),
+	}
+
+	// Refresh session for expired auth token
+	sess.OrchestratorInfo.AuthToken = &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(-1 * time.Hour).Unix()}
+	errC := make(chan error)
+	go func() {
+		res, err := transcodeSegment(cxn, &stream.HLSSegment{Name: "s1", Duration: 900}, "dummy", nil)
+		assert.Len(res, 1)
+		errC <- err
+	}()
+	<-segStarted
+	assert.Len(cxn.sessManager.lastSess.SegsInFlight, 1)
+	go func() {
+		res, err := transcodeSegment(cxn, &stream.HLSSegment{Name: "s2", Duration: 900}, "dummy", nil)
+		assert.Nil(err)
+		assert.Len(res, 1)
+		errC <- err
+	}()
+	<-segStarted
+	assert.Len(cxn.sessManager.lastSess.SegsInFlight, 2, "wrong length %d", len(cxn.sessManager.lastSess.SegsInFlight))
+
+	segDone <- nil
+	segDone <- nil
+	err = <-errC
+	assert.Nil(err)
+	err = <-errC
+	assert.Nil(err)
+	assert.Equal(1, orchInfoCalled)
 }
 
 func TestSelectSession_MultipleInFlight(t *testing.T) {
