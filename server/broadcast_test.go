@@ -568,7 +568,9 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	bsm.suspendOrch(expectedSess1)
 	bsm.removeSession(expectedSess0)
 	bsm.removeSession(expectedSess1)
+	bsm.sessLock.Lock() // refresh session could be running in parallel and modifying sessMap
 	assert.Len(bsm.sessMap, 0)
+	bsm.sessLock.Unlock()
 
 	sess0 = sendSegStub()
 	assert.Nil(sess0)
