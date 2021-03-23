@@ -249,6 +249,14 @@ func (bsm *BroadcastSessionsManager) pushSegInFlight(sess *BroadcastSession, seg
 		})
 }
 
+func (bsm *BroadcastSessionsManager) updateLastSession(oldSess, newSess *BroadcastSession) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	if bsm.lastSess == oldSess {
+		bsm.lastSess = newSess
+	}
+}
+
 func (bsm *BroadcastSessionsManager) cleanup() {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
@@ -504,6 +512,9 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			cxn.sessManager.removeSession(sess)
 			return nil, err
 		}
+		// if sess was lastSess, we need to update lastSess,
+		// or else content of SegsInFlight will be lost
+		cxn.sessManager.updateLastSession(sess, newSess)
 		sess = newSess
 	}
 
