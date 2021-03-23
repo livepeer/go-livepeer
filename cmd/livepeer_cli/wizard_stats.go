@@ -45,7 +45,11 @@ func (w *wizard) stats(showOrchestrator bool) {
 
 	lptBal, _ := new(big.Int).SetString(w.getTokenBalance(), 10)
 	ethBal, _ := new(big.Int).SetString(w.getEthBalance(), 10)
+	maxGasPriceStr := "n/a"
 	maxGasPrice, _ := new(big.Int).SetString(w.maxGasPrice(), 10)
+	if maxGasPrice != nil && maxGasPrice.Cmp(big.NewInt(0)) > 0 {
+		maxGasPriceStr = fmt.Sprintf("%v GWei", eth.FromWei(maxGasPrice, params.GWei))
+	}
 
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
@@ -60,7 +64,7 @@ func (w *wizard) stats(showOrchestrator bool) {
 		{"ETH Account", w.getEthAddr()},
 		{"LPT Balance", eth.FormatUnits(lptBal, "LPT")},
 		{"ETH Balance", eth.FormatUnits(ethBal, "ETH")},
-		{"Max Gas Price", fmt.Sprintf("%v GWei", eth.FromWei(maxGasPrice, params.GWei))},
+		{"Max Gas Price", maxGasPriceStr},
 	}
 
 	for _, v := range data {
