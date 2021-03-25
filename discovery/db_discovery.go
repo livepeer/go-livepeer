@@ -263,7 +263,18 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			errc <- err
 			return
 		}
-		dbOrch.PricePerPixel, err = common.PriceToFixed(big.NewRat(info.PriceInfo.GetPricePerUnit(), info.PriceInfo.GetPixelsPerUnit()))
+		price, err := common.RatPriceInfo(info.PriceInfo)
+		if err != nil {
+			errc <- fmt.Errorf("invalid price info orch=%v err=%v", info.GetTranscoder(), err)
+			return
+		}
+		// PriceToFixed also checks if the input is nil, but this check tells us
+		// which orch was missing price info
+		if price == nil {
+			errc <- fmt.Errorf("missing price info orch=%v", info.GetTranscoder())
+			return
+		}
+		dbOrch.PricePerPixel, err = common.PriceToFixed(price)
 		if err != nil {
 			errc <- err
 			return
