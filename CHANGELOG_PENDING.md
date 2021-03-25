@@ -21,6 +21,7 @@
 #### Broadcaster
 
 - \#1782 Fix SegsInFlight data-loss on refreshing O sessions (@darkdragon)
+- \#1814 Add price checks when caching orchestrator responses during discovery (@yondonfu)
 
 #### Transcoder
 
