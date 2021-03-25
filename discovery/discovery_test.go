@@ -179,6 +179,59 @@ func TestDBOrchestratorPoolCacheSize(t *testing.T) {
 	assert.Equal(len(addresses), nonEmptyPool.Size())
 }
 
+func TestNewDBOrchestratorPoolCache_InvalidPrices(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	priceInfo := &net.PriceInfo{
+		PricePerUnit:  0,
+		PixelsPerUnit: 0,
+	}
+
+	oldServerGetOrchInfo := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = oldServerGetOrchInfo }()
+	var mu sync.Mutex
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return &net.OrchestratorInfo{
+			Transcoder: "transcoder",
+			PriceInfo:  priceInfo,
+		}, nil
+	}
+
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require.Nil(err)
+
+	// Populate test DB with a stub orch so that serverGetOrchInfo will be called in cacheDBOrchs
+	orch := common.NewDBOrch("foo", "foo", 0, 0, 1000000000000, 100)
+	require.Nil(dbh.UpdateOrch(orch))
+
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth:      &eth.StubClient{},
+	}
+	// LastInitializedRound() will ensure the stub orch is always returned from the DB
+	rm := &stubRoundsManager{round: big.NewInt(100)}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, rm)
+	require.Nil(err)
+
+	// priceInfo.PixelsPerUnit = 0
+	// Check that this does not trigger a division by zero
+	assert.Nil(pool.cacheDBOrchs())
+
+	// priceInfo = nil
+	// Check that this does not trigger a nil pointer error
+	priceInfo = nil
+	assert.Nil(pool.cacheDBOrchs())
+}
+
 func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
 	expPriceInfo := &net.PriceInfo{
 		PricePerUnit:  999,
