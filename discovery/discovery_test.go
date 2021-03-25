@@ -469,10 +469,14 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 	pred := func(info *net.OrchestratorInfo) bool {
 		price := server.BroadcastCfg.MaxPrice()
-		if price != nil {
-			return big.NewRat(info.PriceInfo.PricePerUnit, info.PriceInfo.PixelsPerUnit).Cmp(price) <= 0
+		if price == nil {
+			return true
 		}
-		return true
+		ratPriceInfo, err := common.RatPriceInfo(info.PriceInfo)
+		if err != nil {
+			return false
+		}
+		return ratPriceInfo.Cmp(price) <= 0
 	}
 
 	addresses := []string{}
@@ -499,6 +503,10 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 
 	// Set MaxBroadcastPrice lower than PriceInfo, should return false
 	server.BroadcastCfg.SetMaxPrice(big.NewRat(1, 1))
+	assert.False(t, pool.pred(oInfo))
+
+	// PixelsPerUnit is 0 , return false
+	oInfo.PriceInfo.PixelsPerUnit = 0
 	assert.False(t, pool.pred(oInfo))
 }
 

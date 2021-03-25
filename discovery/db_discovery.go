@@ -99,7 +99,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspe
 	pred := func(info *net.OrchestratorInfo) bool {
 
 		if err := dbo.ticketParamsValidator.ValidateTicketParams(pmTicketParams(info.TicketParams)); err != nil {
-			glog.V(common.DEBUG).Infof("invalid ticket params - orch=%v err=%v",
+			glog.V(common.DEBUG).Infof("invalid ticket params orch=%v err=%v",
 				info.GetTranscoder(),
 				err,
 			)
@@ -108,9 +108,17 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspe
 
 		// check if O's price is below B's max price
 		maxPrice := server.BroadcastCfg.MaxPrice()
-		price := big.NewRat(info.PriceInfo.PricePerUnit, info.PriceInfo.PixelsPerUnit)
+		price, err := common.RatPriceInfo(info.PriceInfo)
+		if err != nil {
+			glog.V(common.DEBUG).Infof("invalid price info orch=%v err=%v", info.GetTranscoder(), err)
+			return false
+		}
+		if price == nil {
+			glog.V(common.DEBUG).Infof("no price info received for orch=%v", info.GetTranscoder())
+			return false
+		}
 		if maxPrice != nil && price.Cmp(maxPrice) > 0 {
-			glog.V(common.DEBUG).Infof("orchestrator's price is too high - orch=%v price=%v wei/pixel maxPrice=%v wei/pixel",
+			glog.V(common.DEBUG).Infof("orchestrator's price is too high orch=%v price=%v wei/pixel maxPrice=%v wei/pixel",
 				info.GetTranscoder(),
 				price.FloatString(3),
 				maxPrice.FloatString(3),

@@ -16,6 +16,8 @@
 
 #### General
 
+- \#1813 Check that priceInfo.pixelsPerUnit is not 0 (@kyriediculous)
+
 #### Broadcaster
 
 - \#1782 Fix SegsInFlight data-loss on refreshing O sessions (@darkdragon)
