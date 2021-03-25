@@ -109,12 +109,12 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspe
 		// check if O's price is below B's max price
 		maxPrice := server.BroadcastCfg.MaxPrice()
 		price, err := common.RatPriceInfo(info.PriceInfo)
-		if price == nil {
-			glog.V(common.DEBUG).Infof("no price info received for orch=%v", info.GetTranscoder())
-			return false
-		}
 		if err != nil {
 			glog.V(common.DEBUG).Infof("invalid price info orch=%v err=%v", info.GetTranscoder(), err)
+			return false
+		}
+		if price == nil {
+			glog.V(common.DEBUG).Infof("no price info received for orch=%v", info.GetTranscoder())
 			return false
 		}
 		if maxPrice != nil && price.Cmp(maxPrice) > 0 {
