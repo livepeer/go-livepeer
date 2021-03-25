@@ -233,7 +233,12 @@ func (orch *orchestrator) TicketParams(sender ethcommon.Address, priceInfo *net.
 		return nil, nil
 	}
 
-	params, err := orch.node.Recipient.TicketParams(sender, big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit))
+	ratPriceInfo, err := common.RatPriceInfo(priceInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	params, err := orch.node.Recipient.TicketParams(sender, ratPriceInfo)
 	if err != nil {
 		return nil, err
 	}

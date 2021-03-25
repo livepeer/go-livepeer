@@ -1280,6 +1280,15 @@ func TestTicketParams_GivenNilNode_ReturnsNil(t *testing.T) {
 	assert.Nil(t, params)
 }
 
+func TestTicketParams_GivenZeroPriceInfoDenom_ReturnsErr(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	orch := NewOrchestrator(n, nil)
+	n.Recipient = new(pm.MockRecipient)
+	params, err := orch.TicketParams(ethcommon.Address{}, &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 0})
+	assert.Nil(t, params)
+	assert.EqualError(t, err, "pixels per unit is 0")
+}
+
 func TestTicketParams_GivenNilRecipient_ReturnsNil(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	orch := NewOrchestrator(n, nil)
