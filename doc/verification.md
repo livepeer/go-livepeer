@@ -11,4 +11,4 @@ The Livepeer node supports two types of verification when running with the `-bro
 
 Local verification is enabled by default when the node is connected to Rinkeby and mainnet and disabled by default when the node is running in off-chain mode. Local verification can be explicitly enabled by starting the node with `-localVerify` and can be explicitly disabled with `-localVerify=false`.
 
-Tamper verification is disabled by default and can be enabled by specifying `-verifierURL`. See this [guide](https://livepeer.readthedocs.io/en/latest/broadcasting.html#transcoding-verification-experimental) for instructions on connecting the node to an external verifier that runs tamper verification. Note that when tamper verification is enabled, local verification is also enabled.
+Tamper verification is disabled by default and can be enabled by specifying `-verifierURL`. See this [guide](https://livepeer.org/docs/video-developers/how-to-guides/verification) for instructions on connecting the node to an external verifier that runs tamper verification. Note that when tamper verification is enabled, local verification is also enabled.
