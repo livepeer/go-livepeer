@@ -2,15 +2,15 @@
 
 This document describes the various ways an operator could run multiple Orchestrator nodes. Each Orchestrator node will still have its own keypair and will still accept payments on behalf of the on-chain registered Ethereum address. This setup allows an operator to separate node operations; e.g. one node responsible for redeeming winning tickets, one node for calling `reward` and multiple nodes solely responsible for handling transcode requests. 
 
-It is also possible to connect multiple Transcoder nodes to an Orchestrator node. The documentation about scaling transcoding by splitting Orchestrator and Transcoder nodes can be found [here](https://livepeer.readthedocs.io/en/latest/transcoding.html#scaling-transcoding).
+It is also possible to connect multiple Transcoder nodes to an Orchestrator node. The documentation about scaling transcoding by splitting Orchestrator and Transcoder nodes can be found [here](https://livepeer.org/docs/video-miners/how-to-guides/o-t-split).
 
 ## Unlocking Account and Connecting to Ethereum
 
-The Livepeer node requires you to unlock your Ethereum account and provide connection information for an Ethereum JSON-RPC provider in order to interact with the [Livepeer Protocol](https://github.com/livepeer/protocol), unless the node is in [standalone transcoder]((https://livepeer.readthedocs.io/en/latest/transcoding.html#scaling-transcoding)) mode.
+The Livepeer node requires you to unlock your Ethereum account and provide connection information for an Ethereum JSON-RPC provider in order to interact with the [Livepeer Protocol](https://github.com/livepeer/protocol), unless the node is in [standalone transcoder](https://livepeer.org/docs/video-miners/how-to-guides/o-t-split) mode.
 
 For brevity we'll exclude these flags in the examples and replace them with `<...ETH SETUP...>`. If no Ethereum account is available the Livepeer node will create one for you.
 
-More detailed instructions for connecting to Ethereum can be found [here](https://livepeer.readthedocs.io/en/latest/quickstart.html#connecting-to-an-ethereum-node). 
+More detailed instructions for connecting to Ethereum can be found [here](https://livepeer.org/docs/installation/connect-to-ethereum). 
 
 ```
 livepeer \
