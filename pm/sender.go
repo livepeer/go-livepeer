@@ -146,6 +146,10 @@ func (s *sender) ValidateTicketParams(ticketParams *TicketParams) error {
 
 // validateTicketParams checks if ticket params are acceptable for a specific number of tickets
 func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int) error {
+	if ticketParams == nil {
+		return fmt.Errorf("ticketParams is nil")
+	}
+
 	if ticketParams.ExpirationBlock.Int64() == 0 {
 		return nil
 	}
