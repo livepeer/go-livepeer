@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.5.16
+
+*March 29 2021*
+
+This release includes an important fix for a bug that could cause broadcasters to crash due to missing data in responses from misconfigured orchestrators. We strongly recommend that all broadcaster operators upgrade to this version as soon as possible to access this bug fix. 
+
+If you are not a broadcaster operator, then upgrading to this release is not urgent.
+
+Thanks to everyone that submitted bug reports and assisting in testing!
+
+### Bug Fixes 🐞
+
+#### General
+
+- [#1813](https://github.com/livepeer/go-livepeer/pull/1813) Check that priceInfo.pixelsPerUnit is not 0 (@kyriediculous)
+
+#### Broadcaster
+
+- [#1782](https://github.com/livepeer/go-livepeer/pull/1782) Fix SegsInFlight data-loss on refreshing O sessions (@darkdragon)
+- [#1814](https://github.com/livepeer/go-livepeer/pull/1814) Add price checks when caching orchestrator responses during discovery (@yondonfu)
+- [#1818](https://github.com/livepeer/go-livepeer/pull/1818) Additional checks to avoid nil pointer errors caused by unexpected orchestrator configurations (@kyriediculous)
+
+[Full list of changes](https://github.com/livepeer/go-livepeer/compare/v0.5.15...v0.5.16)
+
 ## v0.5.15
 
 *March 15th 2021*
