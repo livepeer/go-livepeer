@@ -428,6 +428,11 @@ func TestCreateTicketBatch_ConcurrentCallsForSameSession_SenderNonceIncrementsCo
 	assert.Equal(totalTickets, len(uniqueNonces))
 }
 
+func TestValidateTicketParams_NilTicketParams_ReturnsError(t *testing.T) {
+	sender := defaultSender(t)
+	assert.EqualError(t, sender.validateTicketParams(nil, 1), "ticketParams is nil")
+}
+
 func TestValidateParams_ValidateSender(t *testing.T) {
 	sender := defaultSender(t)
 	sm := sender.senderManager.(*stubSenderManager)

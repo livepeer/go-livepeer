@@ -179,6 +179,58 @@ func TestDBOrchestratorPoolCacheSize(t *testing.T) {
 	assert.Equal(len(addresses), nonEmptyPool.Size())
 }
 
+func TestNewDBOrchestorPoolCache_NoEthAddress(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	oldServerGetOrchInfo := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = oldServerGetOrchInfo }()
+	var mu sync.Mutex
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return &net.OrchestratorInfo{
+			Transcoder: "transcoder",
+			PriceInfo: &net.PriceInfo{
+				PixelsPerUnit: 1000,
+				PricePerUnit:  5000,
+			},
+		}, nil
+	}
+
+	dbh, dbraw, err := common.TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+	require.Nil(err)
+
+	// Populate test DB with a stub orch so that serverGetOrchInfo will be called in cacheDBOrchs
+	orch := common.NewDBOrch("foo", "foo", 1, 0, 1000000000000, 100)
+	require.Nil(dbh.UpdateOrch(orch))
+
+	node := &core.LivepeerNode{
+		Database: dbh,
+		Eth:      &eth.StubClient{},
+	}
+	// LastInitializedRound() will ensure the stub orch is always returned from the DB
+	rm := &stubRoundsManager{round: big.NewInt(100)}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, rm)
+	require.Nil(err)
+
+	// Check that serverGetOrchInfo returns early and the orchestrator isn't updated
+	assert.Nil(pool.cacheDBOrchs())
+	orchs, err := dbh.SelectOrchs(&common.DBOrchFilter{})
+	assert.Nil(err)
+	assert.Len(orchs, 1)
+	assert.Equal(orchs[0].PricePerPixel, int64(1))
+	falsePrice, _ := common.PriceToFixed(big.NewRat(5000, 1000))
+	assert.NotEqual(orchs[0].PricePerPixel, falsePrice)
+	assert.Equal(orchs[0].ServiceURI, "foo")
+}
+
 func TestNewDBOrchestratorPoolCache_InvalidPrices(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -249,6 +301,7 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
+			Address:    pm.RandBytes(20),
 			Transcoder: expTranscoder,
 			PriceInfo:  expPriceInfo,
 		}, nil
@@ -400,7 +453,9 @@ func TestNewDBOrchestratorPoolCache_TestURLs_Empty(t *testing.T) {
 }
 
 func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
+	addr := pm.RandBytes(20)
 	cachedOrchInfo := &net.OrchestratorInfo{
+		Address:    addr,
 		Transcoder: "transcoderFromTest",
 		PriceInfo: &net.PriceInfo{
 			PricePerUnit:  999,
@@ -408,6 +463,7 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 		},
 	}
 	polledOrchInfo := &net.OrchestratorInfo{
+		Address:    addr,
 		Transcoder: "transcoderFromTest",
 		PriceInfo: &net.PriceInfo{
 			PricePerUnit:  1,
@@ -585,6 +641,7 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) 
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
+			Address:    pm.RandBytes(20),
 			Transcoder: expTranscoder,
 			PriceInfo:  expPriceInfo,
 		}, nil
@@ -672,6 +729,7 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
+			Address:    pm.RandBytes(20),
 			Transcoder: expTranscoder,
 			PriceInfo:  expPriceInfo,
 		}, nil
@@ -748,6 +806,7 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.T) {
 	// Test setup
 	goodTranscoder := &net.OrchestratorInfo{
+		Address:    pm.RandBytes(20),
 		Transcoder: "goodPriceTranscoder",
 		PriceInfo: &net.PriceInfo{
 			PricePerUnit:  1,
@@ -755,6 +814,7 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 		},
 	}
 	badTranscoder := &net.OrchestratorInfo{
+		Address:    pm.RandBytes(20),
 		Transcoder: "badPriceTranscoder",
 		PriceInfo: &net.PriceInfo{
 			PricePerUnit:  999,
@@ -866,6 +926,7 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		return &net.OrchestratorInfo{
+			Address:      pm.RandBytes(20),
 			Transcoder:   "transcoder",
 			TicketParams: &net.TicketParams{},
 			PriceInfo: &net.PriceInfo{
@@ -945,6 +1006,7 @@ func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
+			Address:    pm.RandBytes(20),
 			Transcoder: expTranscoder,
 			PriceInfo:  expPriceInfo,
 		}, nil

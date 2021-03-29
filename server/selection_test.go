@@ -299,6 +299,9 @@ func TestMinLSSelector_SelectUnknownSession_UniformWeights(t *testing.T) {
 		stakeMap[addr] = 1000
 	}
 
+	addrNoInfo := ethcommon.BytesToAddress([]byte(strconv.Itoa(len(sessions) + 1)))
+	sessions = append(sessions, &BroadcastSession{OrchestratorInfo: &net.OrchestratorInfo{}})
+	stakeMap[addrNoInfo] = 1000
 	stakeRdr.SetStakes(stakeMap)
 	sel.Add(sessions)
 
@@ -314,12 +317,13 @@ func TestMinLSSelector_SelectUnknownSession_UniformWeights(t *testing.T) {
 
 	// Check that the difference between the selection count of each session is less than some small delta
 	maxDelta := .015
-	for i, sess := range sessions[:len(sessions)-1] {
+	for i, sess := range sessions[:len(sessions)-2] {
 		nextSess := sessions[i+1]
 		diff := math.Abs(float64(sessCount[sess] - sessCount[nextSess]))
 		delta := diff / float64(sessCount[sess])
 		assert.Less(t, delta, maxDelta)
 	}
+	assert.Zero(t, sessCount[sessions[len(sessions)-1]])
 }
 
 func TestMinLSSelector_SelectUnknownSession_SameAddress(t *testing.T) {

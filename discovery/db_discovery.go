@@ -97,6 +97,10 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspe
 	}
 
 	pred := func(info *net.OrchestratorInfo) bool {
+		// Return early if no ETH address is specified
+		if len(info.Address) == 0 {
+			return false
+		}
 
 		if err := dbo.ticketParamsValidator.ValidateTicketParams(pmTicketParams(info.TicketParams)); err != nil {
 			glog.V(common.DEBUG).Infof("invalid ticket params orch=%v err=%v",
@@ -258,22 +262,32 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			errc <- err
 			return
 		}
+
 		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri)
 		if err != nil {
 			errc <- err
 			return
 		}
+
+		// Return early if no ETH address is specified
+		if len(info.Address) == 0 {
+			errc <- fmt.Errorf("missing ETH address orch=%v", info.GetTranscoder())
+			return
+		}
+
 		price, err := common.RatPriceInfo(info.PriceInfo)
 		if err != nil {
 			errc <- fmt.Errorf("invalid price info orch=%v err=%v", info.GetTranscoder(), err)
 			return
 		}
+
 		// PriceToFixed also checks if the input is nil, but this check tells us
 		// which orch was missing price info
 		if price == nil {
 			errc <- fmt.Errorf("missing price info orch=%v", info.GetTranscoder())
 			return
 		}
+
 		dbOrch.PricePerPixel, err = common.PriceToFixed(price)
 		if err != nil {
 			errc <- err
