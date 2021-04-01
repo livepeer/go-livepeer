@@ -32,7 +32,7 @@ require (
 	github.com/influxdata/influxdb v1.7.8 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.1 // indirect
 	github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356 // indirect
-	github.com/livepeer/lpms v0.0.0-20210216144135-b4601518b202
+	github.com/livepeer/lpms v0.0.0-20210405233628-731af8d684c5
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/mattn/go-sqlite3 v1.11.0
