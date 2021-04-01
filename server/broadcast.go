@@ -872,8 +872,8 @@ func getSegDurMsString(seg *stream.HLSSegment) string {
 
 func isNonRetryableError(e error) bool {
 	foundErr := false
-	for _, v := range ffmpeg.LPMSErrors {
-		if e.Error() == v.Desc {
+	for _, v := range ffmpeg.NonRetryableErrs {
+		if e.Error() == v {
 			foundErr = true
 		}
 	}
