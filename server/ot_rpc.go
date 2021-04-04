@@ -295,7 +295,8 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 				res.Err = err
 				break
 			}
-			body, err := ioutil.ReadAll(p)
+			limitReader := io.LimitReader(p, common.MaxSegSize)
+			body, err := ioutil.ReadAll(limitReader)
 			if err != nil {
 				glog.Error("Error reading body ", err)
 				res.Err = err

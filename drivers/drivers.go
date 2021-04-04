@@ -213,7 +213,8 @@ func getSegmentDataHTTP(uri string) ([]byte, error) {
 		glog.Errorf("Non-200 response for status=%v uri=%s", resp.Status, uri)
 		return nil, fmt.Errorf(resp.Status)
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	bodyReader := io.LimitReader(resp.Body, common.MaxSegSize)
+	body, err := ioutil.ReadAll(bodyReader)
 	if err != nil {
 		glog.Errorf("Error reading body uri=%s err=%v", uri, err)
 		return nil, err
