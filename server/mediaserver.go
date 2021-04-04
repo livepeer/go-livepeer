@@ -693,7 +693,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// we read this unconditionally, mostly for ffmpeg
-	body, err := ioutil.ReadAll(r.Body)
+	bodyReader := io.LimitReader(r.Body, common.MaxSegSize)
+	body, err := ioutil.ReadAll(bodyReader)
 
 	if err != nil {
 		httpErr := fmt.Sprintf(`Error reading http request body: %s`, err.Error())

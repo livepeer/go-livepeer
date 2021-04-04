@@ -26,6 +26,9 @@ import (
 // HTTPTimeout timeout used in HTTP connections between nodes
 var HTTPTimeout = 8 * time.Second
 
+// Max Segment Size (cap reading HTTP response body at this size)
+const MaxSegSize = 20 * 1024 * 1024 // 20 MiB - 20s of 1080p30fps video @ 8000kbps
+
 const maxInt64 = int64(math.MaxInt64)
 
 // using a scaleFactor of 1000 for orchestrator prices
