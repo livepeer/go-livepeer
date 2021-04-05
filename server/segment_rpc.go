@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"math"
 	"math/big"
@@ -113,8 +112,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 	// download the segment and check the hash
 	dlStart := time.Now()
-	bodyReader := io.LimitReader(r.Body, common.MaxSegSize)
-	data, err := ioutil.ReadAll(bodyReader)
+	data, err := common.ReadAtMost(r.Body, common.MaxSegSize)
 	if err != nil {
 		glog.Errorf("Could not read request body - err=%v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)

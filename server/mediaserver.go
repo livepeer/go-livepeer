@@ -692,9 +692,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, httpErr, http.StatusMethodNotAllowed)
 		return
 	}
-	// we read this unconditionally, mostly for ffmpeg
-	bodyReader := io.LimitReader(r.Body, common.MaxSegSize)
-	body, err := ioutil.ReadAll(bodyReader)
+	body, err := common.ReadAtMost(r.Body, common.MaxSegSize)
 
 	if err != nil {
 		httpErr := fmt.Sprintf(`Error reading http request body: %s`, err.Error())
