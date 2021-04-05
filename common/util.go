@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"math"
 	"math/big"
 	"math/rand"
@@ -26,8 +28,14 @@ import (
 // HTTPTimeout timeout used in HTTP connections between nodes
 var HTTPTimeout = 8 * time.Second
 
-// Max Segment Size (cap reading HTTP response body at this size)
-const MaxSegSize = 20 * 1024 * 1024 // 20 MiB - 20s of 1080p30fps video @ 8000kbps
+// Max Segment Duration
+var MaxDuration = (5 * time.Minute)
+
+// Max Input Bitrate (bits/sec)
+var maxInputBitrate = 8000 * 1000 // 8000kbps
+
+// Max Segment Size in bytes (cap reading HTTP response body at this size)
+var MaxSegSize = int(MaxDuration.Seconds()) * (maxInputBitrate / 8)
 
 const maxInt64 = int64(math.MaxInt64)
 
@@ -389,4 +397,16 @@ func JoinURL(url, path string) string {
 		return url + "/" + path
 	}
 	return url + path
+}
+
+// Read at most n bytes from an io.Reader
+func ReadAtMost(r io.Reader, n int) ([]byte, error) {
+	// Reading one extra byte to check if input Reader
+	// had more than n bytes
+	limitedReader := io.LimitReader(r, int64(n)+1)
+	b, err := ioutil.ReadAll(limitedReader)
+	if err == nil && len(b) > n {
+		return nil, errors.New("input bigger than max buffer size")
+	}
+	return b, err
 }
