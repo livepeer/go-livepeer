@@ -870,12 +870,16 @@ func getSegDurMsString(seg *stream.HLSSegment) string {
 	return strconv.Itoa(int(seg.Duration * 1000))
 }
 
-func isNonRetryableError(e error) bool {
-	foundErr := false
+func nonRetryableErrMapInit() map[string]bool {
+	errs := make(map[string]bool)
 	for _, v := range ffmpeg.NonRetryableErrs {
-		if e.Error() == v {
-			foundErr = true
-		}
+		errs[v] = true
 	}
-	return foundErr
+	return errs
+}
+
+var NonRetryableErrMap = nonRetryableErrMapInit()
+
+func isNonRetryableError(e error) bool {
+	return NonRetryableErrMap[e.Error()]
 }
