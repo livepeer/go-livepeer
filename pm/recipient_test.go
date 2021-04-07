@@ -589,6 +589,27 @@ func TestTxCostMultiplier_InsufficientReserve_ReturnsError(t *testing.T) {
 	assert.EqualError(t, err, errInsufficientSenderReserve.Error())
 }
 
+func TestTxCostMultiplier_ZeroTxCost_Returns_Zero(t *testing.T) {
+	sender, b, v, gm, sm, tm, cfg, _ := newRecipientFixtureOrFatal(t)
+	gm.gasPrice = big.NewInt(0)
+	recipient := RandAddress()
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(recipient, b, v, gm, sm, tm, secret, cfg)
+
+	mul, err := r.TxCostMultiplier(sender)
+	assert.Nil(t, err)
+	assert.Equal(t, big.NewRat(0, 1), mul)
+}
+
+func TestTxCost_NilGasPrice_ReturnsZero(t *testing.T) {
+	_, b, v, gm, sm, tm, cfg, _ := newRecipientFixtureOrFatal(t)
+	gm.gasPrice = nil
+	secret := [32]byte{3}
+	r := NewRecipientWithSecret(RandAddress(), b, v, gm, sm, tm, secret, cfg)
+	txCost := r.(*recipient).txCost()
+	assert.Equal(t, big.NewInt(0), txCost)
+}
+
 func TestSenderNoncesCleanupLoop(t *testing.T) {
 	assert := assert.New(t)
 

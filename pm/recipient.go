@@ -215,8 +215,11 @@ func (r *recipient) TicketParams(sender ethcommon.Address, price *big.Rat) (*Tic
 }
 
 func (r *recipient) txCost() *big.Int {
+	gasPrice := big.NewInt(0)
 	// Fetch current gasprice from cache through gasPrice monitor
-	gasPrice := r.gpm.GasPrice()
+	if gp := r.gpm.GasPrice(); gp != nil {
+		gasPrice = gp
+	}
 	// Return txCost = redeemGas * gasPrice
 	return new(big.Int).Mul(big.NewInt(int64(r.cfg.RedeemGas)), gasPrice)
 }
@@ -286,7 +289,11 @@ func (r *recipient) TxCostMultiplier(sender ethcommon.Address) (*big.Rat, error)
 	// defaultTxCostMultiplier = defaultFaceValue / txCost
 	// Replacing defaultFaceValue with min(defaultFaceValue, MaxFloat(sender))
 	// Will scale the TxCostMultiplier according to the effective faceValue
-	return new(big.Rat).SetFrac(faceValue, r.txCost()), nil
+	txCost := r.txCost()
+	if txCost.Cmp(big.NewInt(0)) <= 0 {
+		return big.NewRat(0, 1), nil
+	}
+	return new(big.Rat).SetFrac(faceValue, txCost), nil
 }
 
 func (r *recipient) rand(seed *big.Int, sender ethcommon.Address, faceValue *big.Int, winProb *big.Int, expirationBlock *big.Int, price *big.Rat, ticketExpirationParams *TicketExpirationParams) *big.Int {
