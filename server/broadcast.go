@@ -29,8 +29,7 @@ import (
 )
 
 var refreshTimeout = 2500 * time.Millisecond
-var maxDuration = (5 * time.Minute)
-var maxDurationSec = maxDuration.Seconds()
+var maxDurationSec = common.MaxDuration.Seconds()
 
 var Policy *verification.Policy
 var BroadcastCfg = &BroadcastConfig{}

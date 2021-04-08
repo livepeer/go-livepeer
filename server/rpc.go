@@ -432,7 +432,7 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 	}
 
 	dur := time.Duration(segData.Duration) * time.Millisecond
-	if dur < 0 || dur > maxDuration {
+	if dur < 0 || dur > common.MaxDuration {
 		glog.Error("Invalid duration")
 		return nil, errDuration
 	}
