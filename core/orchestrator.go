@@ -289,7 +289,10 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address) (*big.Rat, error) 
 			return nil, err
 		}
 
-		overhead = overhead.Add(overhead, new(big.Rat).Inv(txCostMultiplier))
+		if txCostMultiplier.Cmp(big.NewRat(0, 1)) > 0 {
+			overhead = overhead.Add(overhead, new(big.Rat).Inv(txCostMultiplier))
+		}
+
 	}
 	// pricePerPixel = basePrice * overhead
 	fixedPrice, err := common.PriceToFixed(new(big.Rat).Mul(basePrice, overhead))
