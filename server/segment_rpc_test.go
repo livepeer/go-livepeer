@@ -213,7 +213,7 @@ func TestVerifySegCreds_Duration(t *testing.T) {
 	assert.Nil(md)
 
 	// check invalid value : greater than max duration
-	md, err = runVerify(&net.SegData{Duration: int32(maxDuration.Milliseconds() + 1), AuthToken: stubAuthToken})
+	md, err = runVerify(&net.SegData{Duration: int32(common.MaxDuration.Milliseconds() + 1), AuthToken: stubAuthToken})
 	assert.Equal(errDuration, err)
 	assert.Nil(md)
 }
