@@ -209,6 +209,22 @@ func TestPush_MultipartReturn(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 	assert.Equal("No sessions available\n", string(body))
 	assert.Equal(503, resp.StatusCode)
+
+	// Input Segment bigger than MaxSegSize
+	reader.Seek(0, 0)
+	req = httptest.NewRequest("POST", "/live/mani/14.ts", reader)
+	w = httptest.NewRecorder()
+	req.Header.Set("Accept", "multipart/mixed")
+	// set seg size to something small
+	tmpSegSize := common.MaxSegSize
+	common.MaxSegSize = 1 // 1 byte
+	defer func() { common.MaxSegSize = tmpSegSize }()
+	s.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	body, _ = ioutil.ReadAll(resp.Body)
+	assert.Equal("Error reading http request body: input bigger than max buffer size\n", string(body))
+	assert.Equal(500, resp.StatusCode)
 }
 
 func TestPush_MemoryRequestError(t *testing.T) {

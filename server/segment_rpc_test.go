@@ -830,6 +830,64 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	assert.Equal(2, len(res.Data.Segments))
 }
 
+func TestServeSegment_TooBigSegment(t *testing.T) {
+	orch := &mockOrchestrator{}
+	handler := serveSegmentHandler(orch)
+
+	require := require.New(t)
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(stubAuthToken)
+
+	s := &BroadcastSession{
+		Broadcaster: stubBroadcaster2(),
+		Params: &core.StreamParameters{
+			ManifestID: core.RandomManifestID(),
+			Profiles: []ffmpeg.VideoProfile{
+				ffmpeg.P720p60fps16x9,
+			},
+		},
+		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
+	}
+	seg := &stream.HLSSegment{Data: []byte("foo")}
+	creds, err := genSegCreds(s, seg)
+	require.Nil(err)
+
+	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+	require.Nil(err)
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	url, _ := url.Parse("foo")
+	orch.On("ServiceURI").Return(url)
+	orch.On("Address").Return(ethcommon.Address{})
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
+	orch.On("ProcessPayment", net.Payment{}, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(nil)
+	orch.On("SufficientBalance", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(true)
+
+	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{{Data: []byte("foo")}}}
+	tRes := &core.TranscodeResult{
+		TranscodeData: tData,
+		Sig:           []byte("foo"),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
+	}
+	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
+	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+
+	headers := map[string]string{
+		paymentHeader: "",
+		segmentHeader: creds,
+	}
+	tmpSegSize := common.MaxSegSize
+	common.MaxSegSize = 1 // 1 byte
+	defer func() { common.MaxSegSize = tmpSegSize }()
+	resp := httpPostResp(handler, bytes.NewReader(seg.Data), headers)
+	defer resp.Body.Close()
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+}
+
 func TestServeSegment_ProcessPaymentError(t *testing.T) {
 	orch := &mockOrchestrator{}
 	handler := serveSegmentHandler(orch)
