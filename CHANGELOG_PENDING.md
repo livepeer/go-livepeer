@@ -7,6 +7,7 @@
 #### General
 
 - \#1810 Display "n/a" in CLI when max gas price isn't specified (@kyriediculous)
+- \#1827 Limit the maximum size of a segment read over HTTP (@jailuthra)
 
 #### Orchestrator
 
