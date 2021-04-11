@@ -1,4 +1,5 @@
-FROM ubuntu:16.04
+# Base image 
+FROM ubuntu:16.04 as base
 
 ENV PATH "/usr/local/go/bin:/go/bin:${PATH}"
 ENV PKG_CONFIG_PATH "/root/compiled/lib/pkgconfig"
@@ -25,3 +26,43 @@ RUN GRPC_HEALTH_PROBE_VERSION=v0.3.6 && \
 ENV GOPATH /go
 RUN mkdir -p /go
 WORKDIR /build
+
+# ffmpeg builder image
+FROM base as ffmpeg-builder
+
+COPY ./install_ffmpeg.sh ./install_ffmpeg.sh
+RUN ./install_ffmpeg.sh
+
+# Builder image
+FROM ffmpeg-builder as builder
+
+ARG HIGHEST_CHAIN_TAG
+ENV HIGHEST_CHAIN_TAG ${HIGHEST_CHAIN_TAG}
+
+RUN GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.25.0
+RUN go get -v github.com/jstemmer/go-junit-report
+
+ENV GOFLAGS "-mod=readonly"
+
+COPY go.mod go.mod
+COPY go.sum go.sum
+RUN go mod download
+
+COPY . .
+
+RUN make livepeer livepeer_cli livepeer_bench livepeer_router
+
+CMD ./upload_build.sh
+
+# go-livepeer distributable image
+FROM nvidia/cuda:10.1-base as livepeer
+
+ENTRYPOINT ["/usr/bin/livepeer"]
+
+# this is needed to access GPU inside Docker Swarm
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+
+COPY --from=builder /build/livepeer /usr/bin/livepeer
+COPY --from=builder /build/livepeer_cli /usr/bin/livepeer_cli
+COPY --from=builder /build/livepeer_router /usr/bin/livepeer_router
+COPY --from=builder /usr/bin/grpc_health_probe /usr/bin/grpc_health_probe
