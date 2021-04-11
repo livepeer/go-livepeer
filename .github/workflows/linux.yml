@@ -92,8 +92,6 @@ jobs:
       run: golangci-lint --disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m run pm verification
     - name: Run unit tests
       run: /bin/bash test.sh
-    - name: Local Docker build check
-      run: make localdocker
     - name: Upload build
       run: ./upload_build.sh
       env:
