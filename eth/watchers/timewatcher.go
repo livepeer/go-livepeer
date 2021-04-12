@@ -71,7 +71,7 @@ func NewTimeWatcher(roundsManagerAddr ethcommon.Address, watcher BlockWatcher, l
 	}
 	num, err := tw.lpEth.CurrentRoundStartBlock()
 	if err != nil {
-		return nil, fmt.Errorf("error fetching current round start block %v=", err)
+		return nil, fmt.Errorf("error fetching current round start block err=%v", err)
 	}
 	tw.setLastInitializedRound(lr, bh, num)
 
@@ -85,9 +85,11 @@ func NewTimeWatcher(roundsManagerAddr ethcommon.Address, watcher BlockWatcher, l
 	}
 	tw.setLastSeenBlock(blockNum)
 
-	if err := tw.fetchAndSetTranscoderPoolSize(); err != nil {
+	size, err := tw.lpEth.GetTranscoderPoolSize()
+	if err != nil {
 		return nil, fmt.Errorf("error fetching initial transcoderPoolSize err=%v", err)
 	}
+	tw.setTranscoderPoolSize(size)
 
 	return tw, nil
 }
@@ -245,20 +247,13 @@ func (tw *TimeWatcher) handleLog(log types.Log) error {
 	}
 
 	// Get the active transcoder pool size when we receive a NewRound event
-	if err := tw.fetchAndSetTranscoderPoolSize(); err != nil {
-		return err
-	}
-
-	tw.roundSubFeed.Send(log)
-
-	return nil
-}
-
-func (tw *TimeWatcher) fetchAndSetTranscoderPoolSize() error {
 	size, err := tw.lpEth.GetTranscoderPoolSize()
 	if err != nil {
 		return err
 	}
 	tw.setTranscoderPoolSize(size)
+
+	tw.roundSubFeed.Send(log)
+
 	return nil
 }

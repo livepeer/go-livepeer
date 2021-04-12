@@ -84,7 +84,7 @@ func TestTimeWatcher_NewTimeWatcher(t *testing.T) {
 
 	// CurrentRoundStartBlock error
 	lpEth.Errors["CurrentRoundStartBlock"] = testErr
-	expErr = fmt.Sprintf("error fetching current round start block %v=", testErr)
+	expErr = fmt.Sprintf("error fetching current round start block err=%v", testErr)
 	tw, err = NewTimeWatcher(stubRoundsManagerAddr, watcher, lpEth)
 	assert.Nil(tw)
 	assert.EqualError(err, expErr)
