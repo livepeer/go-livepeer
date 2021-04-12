@@ -166,12 +166,6 @@ func main() {
 	objectstore := flag.String("objectStore", "", "url of primary object store")
 	recordstore := flag.String("recordStore", "", "url of object store for recodings")
 
-	// All deprecated
-	s3bucket := flag.String("s3bucket", "", "S3 region/bucket (e.g. eu-central-1/testbucket)")
-	s3creds := flag.String("s3creds", "", "S3 credentials (in form ACCESSKEYID/ACCESSKEY)")
-	gsBucket := flag.String("gsbucket", "", "Google storage bucket")
-	gsKey := flag.String("gskey", "", "Google Storage private key file name (in json format)")
-
 	// API
 	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
 	orchWebhookURL := flag.String("orchWebhookUrl", "", "Orchestrator discovery callback URL")
@@ -724,41 +718,6 @@ func main() {
 		}()
 	}
 
-	if *s3bucket != "" && *s3creds == "" || *s3bucket == "" && *s3creds != "" {
-		glog.Error("Should specify both s3bucket and s3creds")
-		return
-	}
-	if *gsBucket != "" && *gsKey == "" || *gsBucket == "" && *gsKey != "" {
-		glog.Error("Should specify both gsbucket and gskey")
-		return
-	}
-
-	// XXX get s3 credentials from local env vars?
-	if *s3bucket != "" && *s3creds != "" {
-		br := strings.Split(*s3bucket, "/")
-		cr := strings.Split(*s3creds, "/")
-		u := url.URL{
-			Scheme: "s3",
-			Host:   br[0],
-			Path:   fmt.Sprintf("/%s", br[1]),
-			User:   url.UserPassword(cr[0], cr[1]),
-		}
-		glog.Warningf("-s3bucket and -s3creds are deprecated. Instead, you can use -objectStore %s", u.String())
-		ustr := u.String()
-		objectstore = &ustr
-	}
-
-	if *gsBucket != "" && *gsKey != "" {
-		u := url.URL{
-			Scheme:   "gs",
-			Host:     *gsBucket,
-			RawQuery: fmt.Sprintf("keyfile=%s", *gsKey),
-		}
-		glog.Warningf("-gsbucket and -gskey are deprecated. Instead, you can use -objectStore %s", u.String())
-		ustr := u.String()
-		objectstore = &ustr
-	}
-
 	if *objectstore != "" {
 		prepared, err := drivers.PrepareOSURL(*objectstore)
 		if err != nil {
@@ -865,7 +824,7 @@ func main() {
 			// Set the verifier path. Remove once [1] is implemented!
 			// [1] https://github.com/livepeer/verification-classifier/issues/64
 			if drivers.NodeStorage == nil && *verifierPath == "" {
-				glog.Fatal("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath, S3 or GCS")
+				glog.Fatal("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath or -objectStore")
 			}
 			verification.VerifierPath = *verifierPath
 		} else if *localVerify {
