@@ -134,7 +134,6 @@ func main() {
 	ethOrchAddr := flag.String("ethOrchAddr", "", "ETH address of an on-chain registered orchestrator")
 	ethUrl := flag.String("ethUrl", "", "Ethereum node JSON-RPC URL")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
-	gasPrice := flag.Int("gasPrice", 0, "Gas price for ETH transactions")
 	maxGasPrice := flag.Int("maxGasPrice", 0, "Maximum gas price for ETH transactions")
 	ethController := flag.String("ethController", "", "Protocol smart contract address")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
@@ -384,13 +383,7 @@ func main() {
 			return
 		}
 
-		var bigGasPrice *big.Int
-		if *gasPrice > 0 {
-			glog.Warning("-gasPrice is deprecated, you can use -maxGasPrice instead")
-			bigGasPrice = big.NewInt(int64(*gasPrice))
-		}
-
-		if err := client.SetGasInfo(uint64(*gasLimit), bigGasPrice); err != nil {
+		if err := client.SetGasInfo(uint64(*gasLimit)); err != nil {
 			glog.Errorf("Failed to set gas info on Livepeer Ethereum Client: %v", err)
 			return
 		}
