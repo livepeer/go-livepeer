@@ -150,6 +150,7 @@ func TestOrchWatcher_HandleRoundEvent_CacheOrchestratorStake(t *testing.T) {
 	stubStore := &stubOrchestratorStore{}
 	lpEth := &eth.StubClient{
 		TotalStake: expStake,
+		Errors:     make(map[string]error),
 	}
 	tw := &stubTimeWatcher{}
 
@@ -170,13 +171,13 @@ func TestOrchWatcher_HandleRoundEvent_CacheOrchestratorStake(t *testing.T) {
 	assert.Equal(stubStore.stake, int64(500000000))
 
 	// LivepeerEthClient.CurrentRound() error
-	lpEth.RoundsErr = errors.New("CurrentRound error")
+	lpEth.Errors["CurrentRound"] = errors.New("CurrentRound error")
 	errorLogsBefore := glog.Stats.Error.Lines()
 	tw.sink <- newRoundEvent
 	time.Sleep(20 * time.Millisecond)
 	errorLogsAfter := glog.Stats.Error.Lines()
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
-	lpEth.RoundsErr = nil
+	lpEth.Errors["CurrentRound"] = nil
 
 	// OrchestratorStore.SelectOrchs error
 	stubStore.selectErr = errors.New("SelectOrchs error")

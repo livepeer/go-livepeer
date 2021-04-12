@@ -54,12 +54,44 @@ func NewTimeWatcher(roundsManagerAddr ethcommon.Address, watcher BlockWatcher, l
 		return nil, fmt.Errorf("error creating decoder: %v", err)
 	}
 
-	return &TimeWatcher{
+	tw := &TimeWatcher{
 		quit:    make(chan struct{}),
 		watcher: watcher,
 		lpEth:   lpEth,
 		dec:     dec,
-	}, nil
+	}
+
+	lr, err := tw.lpEth.LastInitializedRound()
+	if err != nil {
+		return nil, fmt.Errorf("error fetching initial lastInitializedRound value err=%v", err)
+	}
+	bh, err := tw.lpEth.BlockHashForRound(lr)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching initial lastInitializedBlockHash value err=%v", err)
+	}
+	num, err := tw.lpEth.CurrentRoundStartBlock()
+	if err != nil {
+		return nil, fmt.Errorf("error fetching current round start block err=%v", err)
+	}
+	tw.setLastInitializedRound(lr, bh, num)
+
+	lastSeenBlock, err := tw.watcher.GetLatestBlock()
+	if err != nil {
+		return nil, fmt.Errorf("error fetching last seen block err=%v", err)
+	}
+	blockNum := big.NewInt(0)
+	if lastSeenBlock != nil {
+		blockNum = lastSeenBlock.Number
+	}
+	tw.setLastSeenBlock(blockNum)
+
+	size, err := tw.lpEth.GetTranscoderPoolSize()
+	if err != nil {
+		return nil, fmt.Errorf("error fetching initial transcoderPoolSize err=%v", err)
+	}
+	tw.setTranscoderPoolSize(size)
+
+	return tw, nil
 }
 
 // LastInitializedRound gets the last initialized round from cache
@@ -93,6 +125,9 @@ func (tw *TimeWatcher) setLastInitializedRound(round *big.Int, hash [32]byte, st
 func (tw *TimeWatcher) GetTranscoderPoolSize() *big.Int {
 	tw.mu.RLock()
 	defer tw.mu.RUnlock()
+	if tw.transcoderPoolSize == nil {
+		return big.NewInt(0)
+	}
 	return tw.transcoderPoolSize
 }
 
@@ -116,34 +151,6 @@ func (tw *TimeWatcher) setLastSeenBlock(blockNum *big.Int) {
 
 // Watch the blockwatch subscription for NewRound events
 func (tw *TimeWatcher) Watch() error {
-	lr, err := tw.lpEth.LastInitializedRound()
-	if err != nil {
-		return fmt.Errorf("error fetching initial lastInitializedRound value err=%v", err)
-	}
-	bh, err := tw.lpEth.BlockHashForRound(lr)
-	if err != nil {
-		return fmt.Errorf("error fetching initial lastInitializedBlockHash value err=%v", err)
-	}
-	num, err := tw.lpEth.CurrentRoundStartBlock()
-	if err != nil {
-		return fmt.Errorf("error fetching current round start block %v=", err)
-	}
-	tw.setLastInitializedRound(lr, bh, num)
-
-	if err := tw.fetchAndSetTranscoderPoolSize(); err != nil {
-		return fmt.Errorf("error fetching initial transcoderPoolSize err=%v", err)
-	}
-
-	lastSeenBlock, err := tw.watcher.GetLatestBlock()
-	if err != nil {
-		return fmt.Errorf("error fetching last seen block err=%v", err)
-	}
-	blockNum := big.NewInt(0)
-	if lastSeenBlock != nil {
-		blockNum = lastSeenBlock.Number
-	}
-	tw.setLastSeenBlock(blockNum)
-
 	events := make(chan []*blockwatch.Event, 10)
 	sub := tw.watcher.Subscribe(events)
 	defer sub.Unsubscribe()
@@ -240,20 +247,13 @@ func (tw *TimeWatcher) handleLog(log types.Log) error {
 	}
 
 	// Get the active transcoder pool size when we receive a NewRound event
-	if err := tw.fetchAndSetTranscoderPoolSize(); err != nil {
+	size, err := tw.lpEth.GetTranscoderPoolSize()
+	if err != nil {
 		return err
 	}
+	tw.setTranscoderPoolSize(size)
 
 	tw.roundSubFeed.Send(log)
 
-	return nil
-}
-
-func (tw *TimeWatcher) fetchAndSetTranscoderPoolSize() error {
-	size, err := tw.lpEth.GetTranscoderPoolSize()
-	if err != nil {
-		return fmt.Errorf("error fetching initial transcoderPoolSize: %v", err)
-	}
-	tw.setTranscoderPoolSize(size)
 	return nil
 }

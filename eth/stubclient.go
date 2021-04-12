@@ -201,7 +201,6 @@ type StubClient struct {
 	ProcessHistoricalUnbondError error
 	Orchestrators                []*lpTypes.Transcoder
 	Round                        *big.Int
-	RoundsErr                    error
 	SenderInfo                   *pm.SenderInfo
 	PoolSize                     *big.Int
 	ClaimedAmount                *big.Int
@@ -213,6 +212,7 @@ type StubClient struct {
 	TranscoderPoolError          error
 	RoundLocked                  bool
 	RoundLockedErr               error
+	Errors                       map[string]error
 }
 
 type stubTranscoder struct {
@@ -220,21 +220,27 @@ type stubTranscoder struct {
 }
 
 func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) error { return nil }
-func (e *StubClient) Account() accounts.Account                                       { return accounts.Account{Address: e.TranscoderAddress} }
-func (e *StubClient) Backend() (Backend, error)                                       { return nil, nil }
+func (e *StubClient) Account() accounts.Account {
+	return accounts.Account{Address: e.TranscoderAddress}
+}
+func (e *StubClient) Backend() (Backend, error) { return nil, nil }
 
 // Rounds
 
 func (e *StubClient) InitializeRound() (*types.Transaction, error) { return nil, nil }
-func (e *StubClient) CurrentRound() (*big.Int, error)              { return big.NewInt(0), e.RoundsErr }
-func (e *StubClient) LastInitializedRound() (*big.Int, error)      { return e.Round, e.RoundsErr }
-func (e *StubClient) BlockHashForRound(round *big.Int) ([32]byte, error) {
-	return e.BlockHashToReturn, nil
+func (e *StubClient) CurrentRound() (*big.Int, error)              { return big.NewInt(0), e.Errors["CurrentRound"] }
+func (e *StubClient) LastInitializedRound() (*big.Int, error) {
+	return e.Round, e.Errors["LastInitializedRound"]
 }
-func (e *StubClient) CurrentRoundInitialized() (bool, error)    { return false, nil }
-func (e *StubClient) CurrentRoundLocked() (bool, error)         { return e.RoundLocked, e.RoundLockedErr }
-func (e *StubClient) CurrentRoundStartBlock() (*big.Int, error) { return nil, nil }
-func (e *StubClient) Paused() (bool, error)                     { return false, nil }
+func (e *StubClient) BlockHashForRound(round *big.Int) ([32]byte, error) {
+	return e.BlockHashToReturn, e.Errors["BlockHashForRound"]
+}
+func (e *StubClient) CurrentRoundInitialized() (bool, error) { return false, nil }
+func (e *StubClient) CurrentRoundLocked() (bool, error)      { return e.RoundLocked, e.RoundLockedErr }
+func (e *StubClient) CurrentRoundStartBlock() (*big.Int, error) {
+	return e.BlockNum, e.Errors["CurrentRoundStartBlock"]
+}
+func (e *StubClient) Paused() (bool, error) { return false, nil }
 
 // Token
 
@@ -300,9 +306,11 @@ func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, roun
 func (e *StubClient) TranscoderPool() ([]*lpTypes.Transcoder, error) {
 	return e.Orchestrators, e.TranscoderPoolError
 }
-func (e *StubClient) IsActiveTranscoder() (bool, error)        { return false, nil }
-func (e *StubClient) GetTotalBonded() (*big.Int, error)        { return big.NewInt(0), nil }
-func (e *StubClient) GetTranscoderPoolSize() (*big.Int, error) { return e.PoolSize, nil }
+func (e *StubClient) IsActiveTranscoder() (bool, error) { return false, nil }
+func (e *StubClient) GetTotalBonded() (*big.Int, error) { return big.NewInt(0), nil }
+func (e *StubClient) GetTranscoderPoolSize() (*big.Int, error) {
+	return e.PoolSize, e.Errors["GetTranscoderPoolSize"]
+}
 func (e *StubClient) ClaimedReserve(sender ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
 	return e.ClaimedAmount, e.ClaimedReserveError
 }
