@@ -159,6 +159,10 @@ func (w *Watcher) syncToLatestBlock() error {
 		return err
 	}
 
+	if lastSeenHeader == nil {
+		return w.pollNextBlock()
+	}
+
 	for i := lastSeenHeader.Number; i.Cmp(newestHeader.Number) < 0; i = i.Add(i, big.NewInt(1)) {
 		if err := w.pollNextBlock(); err != nil {
 			return err
@@ -332,7 +336,7 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 		return events, nil
 	}
 
-	if blocksElapsed = latestBlockNum - startBlockNum; blocksElapsed == 0 {
+	if blocksElapsed = latestBlockNum - startBlockNum; blocksElapsed <= 0 {
 		return events, nil
 	}
 
