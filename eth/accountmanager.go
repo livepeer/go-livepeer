@@ -3,7 +3,6 @@ package eth
 import (
 	"errors"
 	"fmt"
-	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -24,7 +23,7 @@ var (
 type AccountManager interface {
 	Unlock(passphrase string) error
 	Lock() error
-	CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error)
+	CreateTransactOpts(gasLimit uint64) (*bind.TransactOpts, error)
 	SignTx(tx *types.Transaction) (*types.Transaction, error)
 	Sign(msg []byte) ([]byte, error)
 	Account() accounts.Account
@@ -120,7 +119,7 @@ func (am *accountManager) Lock() error {
 
 // Create transact opts for client use - account must be unlocked
 // Can optionally set gas limit and gas price used
-func (am *accountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error) {
+func (am *accountManager) CreateTransactOpts(gasLimit uint64) (*bind.TransactOpts, error) {
 	if !am.unlocked {
 		return nil, ErrLocked
 	}
@@ -128,7 +127,6 @@ func (am *accountManager) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int)
 	return &bind.TransactOpts{
 		From:     am.account.Address,
 		GasLimit: gasLimit,
-		GasPrice: gasPrice,
 		Signer: func(signer types.Signer, address ethcommon.Address, tx *types.Transaction) (*types.Transaction, error) {
 			if address != am.account.Address {
 				return nil, errors.New("not authorized to sign this account")

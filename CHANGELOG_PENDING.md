@@ -18,6 +18,10 @@
 
 ### Features ⚒
 
+#### General
+
+- \#1838 Remove deprecated flags: -gasPrice, -s3bucket, -s3creds, -gsbucket, -gskey (@kyriediculous)
+
 #### Broadcaster
 
 - \#1823 Mark more transcoder errors as NonRetryable (@jailuthra)

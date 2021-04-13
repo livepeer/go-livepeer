@@ -128,15 +128,18 @@ else
     [ ! -d  "$CUSTOM_DATADIR"/rinkeby ] # sanity check that network isn't included
     kill $pid
 
-    # Check that price can be set to 0 with -pricePerUnit 0
-    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -s3bucket abc -pricePerUnit 0 -network rinkeby $ETH_ARGS 2>&1 | grep "Should specify both s3bucket and s3creds" 
     # Check that -pricePerUnit needs to be set
-    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -s3bucket abc -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pricePerUnit must be set"
+    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pricePerUnit must be set"
     # Orchestrator needs PricePerUnit > 0 
-    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -s3bucket abc -pricePerUnit -5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pricePerUnit must be >= 0, provided -5"
+    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit -5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pricePerUnit must be >= 0, provided -5"
     # Orchestrator needs PixelsPerUnit > 0
-    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -s3bucket abc -pixelsPerUnit 0 -pricePerUnit 5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pixelsPerUnit must be > 0, provided 0"
-    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -s3bucket abc -pixelsPerUnit -5 -pricePerUnit 5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pixelsPerUnit must be > 0, provided -5"
+    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit 0 -pricePerUnit 5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pixelsPerUnit must be > 0, provided 0"
+    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit -5 -pricePerUnit 5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pixelsPerUnit must be > 0, provided -5"
+
+    # Check that price can be set to 0 with -pricePerUnit 0
+    res=0
+    $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit 0 -network rinkeby $ETH_ARGS || res=$?
+    [ $res -ne 0 ]
 
     # Broadcaster needs a valid rational number for -maxTicketEV
     res=0
@@ -217,7 +220,7 @@ run_lp -broadcaster -verifierUrl http://host -verifierPath path
 kill $pid
 
 # Check OK with verifier + external storage
-run_lp -broadcaster -verifierUrl http://host -s3bucket foo/bar -s3creds baz/bat
+run_lp -broadcaster -verifierUrl http://host -objectStore s3+https://ACCESS_KEY_ID:ACCESS_KEY_PASSWORD@s3api.example.com/bucket-name
 kill $pid
 
 # Check that HTTP ingest is disabled when -httpAddr is publicly accessible and there is no auth webhook URL and -httpIngest defaults to false

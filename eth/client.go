@@ -115,8 +115,7 @@ type LivepeerEthClient interface {
 	CheckTx(*types.Transaction) error
 	ReplaceTransaction(*types.Transaction, string, *big.Int) (*types.Transaction, error)
 	Sign([]byte) ([]byte, error)
-	GetGasInfo() (uint64, *big.Int)
-	SetGasInfo(uint64, *big.Int) error
+	SetGasInfo(uint64) error
 }
 
 type client struct {
@@ -344,8 +343,8 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 	return nil
 }
 
-func (c *client) SetGasInfo(gasLimit uint64, gasPrice *big.Int) error {
-	opts, err := c.accountManager.CreateTransactOpts(gasLimit, gasPrice)
+func (c *client) SetGasInfo(gasLimit uint64) error {
+	opts, err := c.accountManager.CreateTransactOpts(gasLimit)
 	if err != nil {
 		return err
 	}
@@ -354,13 +353,8 @@ func (c *client) SetGasInfo(gasLimit uint64, gasPrice *big.Int) error {
 		return err
 	} else {
 		c.gasLimit = gasLimit
-		c.gasPrice = gasPrice
 		return nil
 	}
-}
-
-func (c *client) GetGasInfo() (gasLimit uint64, gasPrice *big.Int) {
-	return c.gasLimit, c.gasPrice
 }
 
 func (c *client) Account() accounts.Account {
