@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.5.17
+
+*April 13 2021*
+
+This release includes a few fixes for bugs that could cause nodes to crash due to race conditions and unexpected values returned by third party services (i.e. ETH JSON-RPC providers). We strongly recommend all node operators to upgrade to this version as soon as possible to access these bug fixes.
+
+Thanks to everyone that submitted bug reports and assisted in testing!
+
+### Breaking Changes 🚨🚨
+
+- The deprecated `-gasPrice`, `-s3bucket`, `-s3creds`, `-gsbucket` and `-gskey` flags are now removed
+
+### Features ⚒
+
+#### General
+
+- [#1838](https://github.com/livepeer/go-livepeer/pull/1838) Remove deprecated flags: `-gasPrice`, `-s3bucket`, `-s3creds`, `-gsbucket`, `-gskey` (@kyriediculous)
+
+#### Broadcaster
+
+- [#1823](https://github.com/livepeer/go-livepeer/pull/1823) Mark more transcoder errors as NonRetryable (@jailuthra)
+
+### Bug Fixes 🐞
+
+#### General
+
+- [#1810](https://github.com/livepeer/go-livepeer/pull/1810) Display "n/a" in CLI when max gas price isn't specified (@kyriediculous)
+- [#1827](https://github.com/livepeer/go-livepeer/pull/1827) Limit the maximum size of a segment read over HTTP (@jailuthra)
+- [#1809](https://github.com/livepeer/go-livepeer/pull/1809) Don't log statement that blocks have been backfilled when no blocks have elapsed (@kyriediculous)
+- [#1809](https://github.com/livepeer/go-livepeer/pull/1809) Avoid nil pointer error in SyncToLatestBlock when no blocks are present in the database (@kyriediculous)
+- [#1833](https://github.com/livepeer/go-livepeer/pull/1833) Prevent nil pointer errors when fetching transcoder pool size (@kyriediculous)
+
+#### Orchestrator
+
+- [#1830](https://github.com/livepeer/go-livepeer/pull/1830) Handle "zero" or "nil" gas price from gas price monitor (@kyriediculous)
+
 ## v0.5.16
 
 *March 29 2021*
