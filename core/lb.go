@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"math"
-	"strings"
 	"sync"
 
 	"github.com/golang/glog"
@@ -34,10 +33,9 @@ type LoadBalancingTranscoder struct {
 	idx      int // Ensures a non-tapered work distribution
 }
 
-func NewLoadBalancingTranscoder(devices string, newTranscoderFn newTranscoderFn) Transcoder {
-	d := strings.Split(devices, ",")
+func NewLoadBalancingTranscoder(devices []string, newTranscoderFn newTranscoderFn) Transcoder {
 	return &LoadBalancingTranscoder{
-		transcoders: d,
+		transcoders: devices,
 		newT:        newTranscoderFn,
 		mu:          &sync.RWMutex{},
 		load:        make(map[string]int),

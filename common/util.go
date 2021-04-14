@@ -19,6 +19,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	"github.com/jaypipes/ghw"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/pkg/errors"
@@ -409,4 +410,38 @@ func ReadAtMost(r io.Reader, n int) ([]byte, error) {
 		return nil, errors.New("input bigger than max buffer size")
 	}
 	return b, err
+}
+
+func detectNvidiaDevices() ([]string, error) {
+	gpu, err := ghw.GPU()
+	if err != nil {
+		return nil, err
+	}
+
+	nvidiaCardCount := 0
+	re := regexp.MustCompile("(?i)nvidia") // case insensitive match
+	for _, card := range gpu.GraphicsCards {
+		if re.MatchString(card.DeviceInfo.Vendor.Name) {
+			nvidiaCardCount += 1
+		}
+	}
+	if nvidiaCardCount == 0 {
+		return nil, errors.New("no devices found with vendor name 'Nvidia'")
+	}
+
+	devices := []string{}
+
+	for i := 0; i < nvidiaCardCount; i++ {
+		s := strconv.Itoa(i)
+		devices = append(devices, s)
+	}
+
+	return devices, nil
+}
+
+func ParseNvidiaDevices(nvidia string) ([]string, error) {
+	if nvidia == "all" {
+		return detectNvidiaDevices()
+	}
+	return strings.Split(nvidia, ","), nil
 }
