@@ -124,7 +124,7 @@ func main() {
 	maxAttempts := flag.Int("maxAttempts", 3, "Maximum transcode attempts")
 	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
-	nvidia := flag.String("nvidia", "", "Comma-separated list of Nvidia GPU device IDs to use for transcoding")
+	nvidia := flag.String("nvidia", "", "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
 	testTranscoder := flag.Bool("testTranscoder", true, "Test Nvidia GPU transcoding at startup")
 
 	// Onchain:
@@ -269,13 +269,21 @@ func main() {
 	if *transcoder {
 		core.WorkDir = *datadir
 		if *nvidia != "" {
+			// Get a list of device ids
+			devices, err := common.ParseNvidiaDevices(*nvidia)
+			if err != nil {
+				glog.Fatalf("Error while parsing '-nvidia %v' flag: %v", *nvidia, err)
+			}
+			glog.Infof("Transcoding on these Nvidia GPUs: %v", devices)
+			// Test transcoding with nvidia
 			if *testTranscoder {
-				err := core.TestNvidiaTranscoder(*nvidia)
+				err := core.TestNvidiaTranscoder(devices)
 				if err != nil {
-					glog.Fatalf("Unable to transcode using Nvidia gpu=%s err=%v", *nvidia, err)
+					glog.Fatalf("Unable to transcode using Nvidia gpu=%s err=%v", strings.Join(devices, ","), err)
 				}
 			}
-			n.Transcoder = core.NewLoadBalancingTranscoder(*nvidia, core.NewNvidiaTranscoder)
+			// Initialize LB transcoder
+			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNvidiaTranscoder)
 		} else {
 			n.Transcoder = core.NewLocalTranscoder(*datadir)
 		}

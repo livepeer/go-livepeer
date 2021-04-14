@@ -96,8 +96,7 @@ func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 }
 
 // TestNvidiaTranscoder tries to transcode test segment on all the devices
-func TestNvidiaTranscoder(gpu string) error {
-	devices := strings.Split(gpu, ",")
+func TestNvidiaTranscoder(devices []string) error {
 	b := bytes.NewReader(testSegment)
 	z, err := gzip.NewReader(b)
 	if err != nil {

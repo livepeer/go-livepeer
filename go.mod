@@ -31,6 +31,7 @@ require (
 	github.com/huin/goupnp v1.0.0 // indirect
 	github.com/influxdata/influxdb v1.7.8 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.1 // indirect
+	github.com/jaypipes/ghw v0.7.0
 	github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356 // indirect
 	github.com/livepeer/lpms v0.0.0-20210405233628-731af8d684c5
 	github.com/livepeer/m3u8 v0.11.1
