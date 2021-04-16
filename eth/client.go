@@ -399,7 +399,8 @@ func (c *client) Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transacti
 }
 
 func (c *client) Bond(amount *big.Int, to ethcommon.Address) (*types.Transaction, error) {
-	allowance, err := c.Allowance(c.Account().Address, c.bondingManagerAddr)
+	sender := c.Account().Address
+	allowance, err := c.Allowance(sender, c.bondingManagerAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +419,179 @@ func (c *client) Bond(amount *big.Int, to ethcommon.Address) (*types.Transaction
 		}
 	}
 
-	return c.BondingManagerSession.Bond(amount, to)
+	// Get transcoder pool
+	transcoders, err := c.TranscoderPool()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get transcoder pool")
+	}
+
+	// Get max pool size
+	maxSize, err := c.GetTranscoderPoolMaxSize()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get transcoder pool max size")
+	}
+
+	// Get delegator
+	delegator, err := c.GetDelegator(sender)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get delegator")
+	}
+
+	isFull := int64(len(transcoders)) == maxSize.Int64()
+
+	// Switching delegate's calculate old delegate positions
+	var oldHints lpTypes.TranscoderPoolHints
+	if delegator.DelegateAddress != to && delegator.DelegateAddress != (ethcommon.Address{}) {
+		currentRound, err := c.CurrentRound()
+		if err != nil {
+			return nil, err
+		}
+
+		delegatorTotalStake, err := c.PendingStake(sender, currentRound)
+		if err != nil {
+			return nil, err
+		}
+
+		// If the caller is switching delegate's with additional stake the new amount becomes
+		// the delegator's current pending stake plus the amount
+		amount = new(big.Int).Add(delegatorTotalStake, amount)
+		// Get total bonded
+		totalBonded, err := c.TranscoderTotalStake(delegator.DelegateAddress)
+		if err != nil {
+			return nil, err
+		}
+
+		// Only substract the delegator's pending stake from the old delegate since 'amount' is newly added stake
+		oldHints = simulateTranscoderPoolUpdate(delegator.DelegateAddress, new(big.Int).Sub(totalBonded, delegatorTotalStake), transcoders, isFull)
+	}
+
+	// Get total bonded
+	totalBonded, err := c.TranscoderTotalStake(to)
+	if err != nil {
+		return nil, err
+	}
+	newStake := totalBonded.Add(totalBonded, amount)
+
+	newHints := simulateTranscoderPoolUpdate(to, newStake, transcoders, isFull)
+
+	return c.BondingManagerSession.BondWithHint(
+		amount,
+		to,
+		oldHints.PosPrev,
+		oldHints.PosNext,
+		newHints.PosPrev,
+		newHints.PosNext,
+	)
+}
+
+func (c *client) Unbond(amount *big.Int) (*types.Transaction, error) {
+	sender := c.Account().Address
+
+	// Get delegator
+	delegator, err := c.GetDelegator(sender)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get delegator")
+	}
+
+	// Get transcoder pool
+	transcoders, err := c.TranscoderPool()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get transcoder pool")
+	}
+
+	// Get max pool size
+	maxSize, err := c.GetTranscoderPoolMaxSize()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get transcoder pool max size")
+	}
+
+	// Get total bonded
+	totalBonded, err := c.TranscoderTotalStake(delegator.DelegateAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	newStake := totalBonded.Sub(totalBonded, amount)
+
+	isFull := int64(len(transcoders)) == maxSize.Int64()
+
+	hints := simulateTranscoderPoolUpdate(delegator.DelegateAddress, newStake, transcoders, isFull)
+
+	return c.UnbondWithHint(amount, hints.PosPrev, hints.PosNext)
+}
+
+func (c *client) RebondFromUnbonded(to ethcommon.Address, unbondingLockID *big.Int) (*types.Transaction, error) {
+	sender := c.Account().Address
+
+	// Get transcoder pool
+	transcoders, err := c.TranscoderPool()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get transcoder pool")
+	}
+
+	// Get max pool size
+	maxSize, err := c.GetTranscoderPoolMaxSize()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get transcoder pool max size")
+	}
+
+	totalBonded, err := c.TranscoderTotalStake(to)
+	if err != nil {
+		return nil, err
+	}
+
+	lock, err := c.GetDelegatorUnbondingLock(sender, unbondingLockID)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get unbonding lock")
+	}
+
+	isFull := int64(len(transcoders)) == maxSize.Int64()
+
+	newStake := totalBonded.Add(totalBonded, lock.Amount)
+
+	hints := simulateTranscoderPoolUpdate(to, newStake, transcoders, isFull)
+
+	return c.RebondFromUnbondedWithHint(to, unbondingLockID, hints.PosPrev, hints.PosNext)
+}
+
+func (c *client) Rebond(unbondingLockID *big.Int) (*types.Transaction, error) {
+	sender := c.Account().Address
+
+	// Get delegator
+	delegator, err := c.GetDelegator(sender)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get delegator")
+	}
+
+	// Get transcoder pool
+	transcoders, err := c.TranscoderPool()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get transcoder pool")
+	}
+
+	// Get max pool size
+	maxSize, err := c.GetTranscoderPoolMaxSize()
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get transcoder pool max size")
+	}
+
+	lock, err := c.GetDelegatorUnbondingLock(sender, unbondingLockID)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to get unbonding lock")
+	}
+
+	transcoderStake, err := c.TranscoderTotalStake(delegator.DelegateAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	isFull := int64(len(transcoders)) == maxSize.Int64()
+
+	newStake := transcoderStake.Add(transcoderStake, lock.Amount)
+
+	hints := simulateTranscoderPoolUpdate(delegator.DelegateAddress, newStake, transcoders, isFull)
+
+	return c.RebondWithHint(unbondingLockID, hints.PosPrev, hints.PosNext)
 }
 
 func (c *client) IsActiveTranscoder() (bool, error) {

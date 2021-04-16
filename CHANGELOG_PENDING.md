@@ -13,6 +13,8 @@
 
 #### Orchestrator
 
+- \#1845 Staking actions with hints (@kyriediculous)
+
 #### Transcoder
 
 - \#1840 Automatically use all GPUs when -nvidia=all flag is set (@jailuthra)
