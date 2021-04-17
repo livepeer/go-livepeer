@@ -1,14 +1,21 @@
 # GPU Support
 
-Livepeer supports decoding and encoding on NVIDIA GPUs on Linux. GPU
-transcoding can be enabled by starting Livepeer in `-transcoder` mode with the
-`-nvidia <device-list>` flag. The `<device-list>` is a comma-separated
+Livepeer supports decoding and encoding on NVIDIA GPUs on Linux and Windows.
+GPU transcoding can be enabled by starting Livepeer in `-transcoder` mode with
+the `-nvidia <device-list>` flag. The `<device-list>` is a comma-separated
 numerical list of GPU devices that you wish to use for transcoding. If you are
 unsure of your GPU device, use the `nvidia-smi` utility. For example, to select
 devices 0, 2 and 4:
 
 ```
 ./livepeer -transcoder -nvidia 0,2,4
+```
+
+Alternatively, if you want to use all the available NVIDIA GPUs on your system,
+you can set the flag like:
+
+```
+./livepeer -transcoder -nvidia all
 ```
 
 ### Limitations
@@ -22,16 +29,19 @@ interleaved). Anything else will return an error.
 
 * **CUDA Availability** If running the Livepeer binary, the CUDA shared libraries are expected to be installed in `/usr/local/cuda`. If the CUDA location differs on your machine, run the node with `LD_LIBRARY_PATH=</path/to/cuda>` environment variable.
 
-So far, Livepeer has been tested  to work with the following driver versions:
+So far, Livepeer has been tested to work with the following driver versions:
 
 CUDA | Nvidia
 --|--
 10.0.130 |
 10.1 | 418.39 , 430.50
-10.2.89 | 440.33.01
-11.0 | 450.36.06
+10.2 | 440.33.01, 440.118.02
+11.1,11.2 | 460.39
 
-* **Driver Limits** "Retail GPU cards may impose a software limit on the number of concurrent transcode sessions allowed on the system in official drivers.
+Nvidia's 450.xx drivers can occassionally lead to stuck transcoding sessions.
+Refer to this [forum post](https://forum.livepeer.org/t/working-around-occasional-transcoding-issues-with-nvidia-driver-450/1219) on how to switch to a different driver version.
+
+* **Driver Limits** Retail GPU cards may impose a software limit on the number of concurrent transcode sessions allowed on the system in official drivers.
 
 * **Linux Only** We've only tested this on Linux. We haven't tried other platforms; if it works elsewhere, especially on Windows or OSX, let us know!
 
