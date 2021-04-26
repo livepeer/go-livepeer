@@ -205,7 +205,7 @@ func (w *wizard) orchestratorStats() {
 		{"Service URI", t.ServiceURI},
 		{"Delegated Stake", eth.FormatUnits(t.DelegatedStake, "LPT")},
 		{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
-		{"Fee Share (%)", eth.FormatPerc(t.FeeShare)},
+		{"Fee Cut (%)", eth.FormatPerc(flipPerc(t.FeeShare))},
 		{"Last Reward Round", t.LastRewardRound.String()},
 		{"Base price per pixel", fmt.Sprintf("%v wei / %v pixels", priceInfo.Num(), priceInfo.Denom())},
 	}
