@@ -115,7 +115,8 @@ func TestStart_Polling(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	assert.Greater(gpo.Queries(), 0)
-	assert.Equal(gasPrice2, gpm.GasPrice())
+	mean := new(big.Int).Div(new(big.Int).Add(gasPrice1, gasPrice2), big.NewInt(2))
+	assert.Equal(mean, gpm.GasPrice())
 
 	queries := gpo.Queries()
 
@@ -130,7 +131,9 @@ func TestStart_Polling(t *testing.T) {
 
 	// There should be more queries now
 	assert.Greater(gpo.Queries(), queries)
-	assert.Equal(gasPrice3, gpm.GasPrice())
+	sum := new(big.Int).Add(new(big.Int).Add(gasPrice1, gasPrice2), gasPrice3)
+	mean = new(big.Int).Div(sum, big.NewInt(3))
+	assert.Equal(mean, gpm.GasPrice())
 }
 
 func TestStart_Polling_ContextCancel(t *testing.T) {
@@ -189,4 +192,62 @@ func TestStop(t *testing.T) {
 	// check gasPriceUpdate channel is closed
 	_, ok := (<-gpm.update)
 	assert.False(ok)
+}
+
+func TestGasPrices(t *testing.T) {
+	assert := assert.New(t)
+	q := newGasPrices(gasPricesLength)
+
+	// queue is empty
+	assert.False(q.isFull())
+	assert.Nil(q.front())
+	assert.Nil(q.back())
+	assert.Equal(q.mean(), big.NewInt(0))
+	assert.False(q.isOutlier(big.NewInt(9999999)))
+
+	// Push 1 element
+	el_0 := big.NewInt(10)
+	q.push(el_0)
+	assert.False(q.isFull())
+	assert.Equal(el_0, q.front())
+	assert.Equal(el_0, q.back())
+	assert.Equal(q.mean(), el_0)
+	assert.False(q.isOutlier(big.NewInt(9999999)))
+
+	// Push 2nd element
+	el_1 := big.NewInt(20)
+	q.push(el_1)
+	assert.False(q.isFull())
+	assert.Equal(el_0, q.front())
+	assert.Equal(el_1, q.back())
+	assert.Equal(q.mean(), new(big.Int).Div(new(big.Int).Add(el_0, el_1), big.NewInt(2)))
+	assert.True(q.isOutlier(big.NewInt(9999999)))
+	assert.False(q.isOutlier(big.NewInt(15)))
+
+	// Push 3rd element
+	el_2 := big.NewInt(30)
+	q.push(el_2)
+	assert.True(q.isFull())
+	mean := new(big.Int).Div(
+		big.NewInt(el_0.Int64()+el_1.Int64()+el_2.Int64()),
+		big.NewInt(3),
+	)
+	assert.Equal(el_0, q.front())
+	assert.Equal(el_2, q.back())
+	assert.Equal(q.mean(), mean)
+	assert.True(q.isOutlier(big.NewInt(9999999)))
+	assert.False(q.isOutlier(big.NewInt(15)))
+
+	// Push 4th element, current front is removed
+	el_3 := big.NewInt(20)
+	q.push(el_3)
+	mean = new(big.Int).Div(
+		big.NewInt(el_1.Int64()+el_2.Int64()+el_3.Int64()),
+		big.NewInt(3),
+	)
+	assert.Equal(el_1, q.front())
+	assert.Equal(el_3, q.back())
+	assert.Equal(q.mean(), mean)
+	assert.True(q.isOutlier(big.NewInt(9999999)))
+	assert.False(q.isOutlier(big.NewInt(15)))
 }

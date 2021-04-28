@@ -12,6 +12,8 @@
 
 #### Orchestrator
 
+- \#1856 Use mean of last seen gas prices in the gas price monitor (@kyriediculous)
+
 #### Transcoder
 
 - \#1840 Automatically use all GPUs when -nvidia=all flag is set (@jailuthra)
