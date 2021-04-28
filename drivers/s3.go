@@ -96,14 +96,14 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI b
 }
 
 // NewCustomS3Driver for creating S3-compatible stores other than S3 itself
-func NewCustomS3Driver(host, bucket, accessKey, accessKeySecret string, useFullAPI bool) OSDriver {
-	glog.Infof("using custom s3 with url: %s, bucket %s use full API %v", host, bucket, useFullAPI)
+func NewCustomS3Driver(host, bucket, region, accessKey, accessKeySecret string, useFullAPI bool) OSDriver {
+	glog.Infof("using custom s3 with url: %s, bucket %s region %s use full API %v", host, bucket, region, useFullAPI)
 	os := &s3OS{
 		host:               host,
 		bucket:             bucket,
 		awsAccessKeyID:     accessKey,
 		awsSecretAccessKey: accessKeySecret,
-		region:             "ignored",
+		region:             region,
 		useFullAPI:         useFullAPI,
 	}
 	if !useFullAPI {

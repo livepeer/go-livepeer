@@ -133,7 +133,7 @@ func ParseOSURL(input string, useFullAPI bool) (OSDriver, error) {
 	}
 	if u.Scheme == "s3" {
 		pw, ok := u.User.Password()
-		if ok == false {
+		if !ok {
 			return nil, fmt.Errorf("password is required with s3:// OS")
 		}
 		base := path.Base(u.Path)
@@ -145,7 +145,12 @@ func ParseOSURL(input string, useFullAPI bool) (OSDriver, error) {
 		if u.Scheme == "s3+https" {
 			scheme = "https"
 		}
-		_, bucket := path.Split(u.Path)
+		region := "ignored"
+		base, bucket := path.Split(u.Path)
+		if len(base) > 1 && base[len(base)-1] == '/' {
+			base = base[:len(base)-1]
+			_, region = path.Split(base)
+		}
 		hosturl, err := url.Parse(input)
 		if err != nil {
 			return nil, err
@@ -154,10 +159,10 @@ func ParseOSURL(input string, useFullAPI bool) (OSDriver, error) {
 		hosturl.Scheme = scheme
 		hosturl.Path = ""
 		pw, ok := u.User.Password()
-		if ok == false {
+		if !ok {
 			return nil, fmt.Errorf("password is required with s3:// OS")
 		}
-		return NewCustomS3Driver(hosturl.String(), bucket, u.User.Username(), pw, useFullAPI), nil
+		return NewCustomS3Driver(hosturl.String(), bucket, region, u.User.Username(), pw, useFullAPI), nil
 	}
 	if u.Scheme == "gs" {
 		file := u.User.Username()
