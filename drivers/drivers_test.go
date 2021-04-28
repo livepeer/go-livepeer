@@ -26,12 +26,26 @@ func TestS3URL(t *testing.T) {
 
 func TestCustomS3URL(t *testing.T) {
 	assert := assert.New(t)
-	os, err := ParseOSURL("s3+http://user:password@example.com:9000/path/to/bucket-name", true)
+	os, err := ParseOSURL("s3+http://user:password@example.com:9000/bucket-name", true)
 	s3, iss3 := os.(*s3OS)
 	assert.Equal(true, iss3)
 	assert.Equal(nil, err)
 	assert.Equal("http://example.com:9000", s3.host)
 	assert.Equal("bucket-name", s3.bucket)
+	assert.Equal("user", s3.awsAccessKeyID)
+	assert.Equal("password", s3.awsSecretAccessKey)
+	assert.Equal("ignored", s3.region)
+}
+
+func TestCustomS3URLWithRegion(t *testing.T) {
+	assert := assert.New(t)
+	os, err := ParseOSURL("s3+http://user:password@example.com:9000/path/to/region-name/bucket-name", true)
+	s3, iss3 := os.(*s3OS)
+	assert.Equal(true, iss3)
+	assert.Equal(nil, err)
+	assert.Equal("http://example.com:9000", s3.host)
+	assert.Equal("bucket-name", s3.bucket)
+	assert.Equal("region-name", s3.region)
 	assert.Equal("user", s3.awsAccessKeyID)
 	assert.Equal("password", s3.awsSecretAccessKey)
 }
