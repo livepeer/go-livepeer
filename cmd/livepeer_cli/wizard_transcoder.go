@@ -18,6 +18,11 @@ import (
 
 const defaultRPCPort = "8935"
 
+const defaultRewardCut = float64(10)
+const defaultFeeCut = float64(95)
+
+var hundredPercent = eth.FromPerc(100)
+
 func (w *wizard) isOrchestrator() bool {
 	isT := httpGet(fmt.Sprintf("http://%v:%v/IsOrchestrator", w.host, w.httpPort))
 	return isT == "true"
@@ -36,24 +41,22 @@ func myHostPort() string {
 func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string) {
 	var (
 		blockRewardCut float64
-		feeShare       float64
+		feeCut         float64
 	)
 
 	orch, _, err := w.getOrchestratorInfo()
 	if err != nil || orch == nil {
-		fmt.Println("unable to get current reward cut and fee share")
-		blockRewardCut = 0
-		feeShare = 0
+		fmt.Println("unable to get current reward cut and fee cut")
 	} else {
 		blockRewardCut = eth.ToPerc(orch.RewardCut)
-		feeShare = eth.ToPerc(orch.FeeShare)
+		feeCut = eth.ToPerc(flipPerc(orch.FeeShare))
 	}
 
-	fmt.Printf("Enter block reward cut percentage (current=%v default=10) - ", blockRewardCut)
+	fmt.Printf("Enter block reward cut percentage (current=%v default=%v) - ", blockRewardCut, defaultRewardCut)
 	blockRewardCut = w.readDefaultFloat(blockRewardCut)
 
-	fmt.Printf("Enter fee share percentage (current=%v default=5) - ", feeShare)
-	feeShare = w.readDefaultFloat(feeShare)
+	fmt.Printf("Enter fee cut percentage (current=%v default=%v) - ", feeCut, defaultFeeCut)
+	feeCut = w.readDefaultFloat(feeCut)
 
 	fmt.Println("Enter a transcoding base price in wei per pixels")
 	fmt.Println("eg. 1 wei / 10 pixels = 0,1 wei per pixel")
@@ -80,7 +83,7 @@ func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string)
 		return in, nil
 	})
 
-	return blockRewardCut, feeShare, pricePerUnit, pixelsPerUnit, serviceURI
+	return blockRewardCut, 100 - feeCut, pricePerUnit, pixelsPerUnit, serviceURI
 }
 
 func (w *wizard) activateOrchestrator() {
@@ -267,4 +270,8 @@ func (w *wizard) showVoteChoices() {
 		fmt.Fprintf(wtr, "%v\t%v\n", int(choice), choice.String())
 	}
 	wtr.Flush()
+}
+
+func flipPerc(perc *big.Int) *big.Int {
+	return new(big.Int).Sub(hundredPercent, perc)
 }
