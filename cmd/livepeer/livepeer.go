@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/pm"
@@ -192,6 +193,7 @@ func main() {
 
 	type NetworkConfig struct {
 		ethController string
+		minGasPrice   *big.Int
 	}
 
 	ctx := context.Background()
@@ -202,6 +204,7 @@ func main() {
 		},
 		"mainnet": {
 			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
+			minGasPrice:   big.NewInt(int64(params.GWei)),
 		},
 	}
 
@@ -224,9 +227,11 @@ func main() {
 	}
 
 	// Setting config options based on specified network
+	var minGasPrice = big.NewInt(0)
 	if netw, ok := configOptions[*network]; ok {
 		if *ethController == "" {
 			*ethController = netw.ethController
+			minGasPrice = netw.minGasPrice
 		}
 		glog.Infof("***Livepeer is running on the %v network: %v***", *network, *ethController)
 	} else {
@@ -542,7 +547,7 @@ func main() {
 
 			sigVerifier := &pm.DefaultSigVerifier{}
 			validator := pm.NewValidator(sigVerifier, timeWatcher)
-			gpm := eth.NewGasPriceMonitor(backend, blockPollingTime)
+			gpm := eth.NewGasPriceMonitor(backend, blockPollingTime, minGasPrice)
 			// Start gas price monitor
 			_, err := gpm.Start(ctx)
 			if err != nil {

@@ -58,7 +58,7 @@ func TestStart(t *testing.T) {
 	gasPrice := big.NewInt(777)
 	gpo := newStubGasPriceOracle(gasPrice)
 
-	gpm := NewGasPriceMonitor(gpo, 1*time.Hour)
+	gpm := NewGasPriceMonitor(gpo, 1*time.Hour, big.NewInt(0))
 
 	assert := assert.New(t)
 
@@ -93,10 +93,11 @@ func TestStart_Polling(t *testing.T) {
 	gasPrice1 := big.NewInt(777)
 	gasPrice2 := big.NewInt(555)
 	gasPrice3 := big.NewInt(888)
+	gasPrice4 := big.NewInt(1)
 	gpo := newStubGasPriceOracle(gasPrice1)
 
 	pollingInterval := 1 * time.Millisecond
-	gpm := NewGasPriceMonitor(gpo, pollingInterval)
+	gpm := NewGasPriceMonitor(gpo, pollingInterval, big.NewInt(10))
 
 	assert := assert.New(t)
 
@@ -131,6 +132,15 @@ func TestStart_Polling(t *testing.T) {
 	// There should be more queries now
 	assert.Greater(gpo.Queries(), queries)
 	assert.Equal(gasPrice3, gpm.GasPrice())
+
+	queries = gpo.Queries()
+
+	go func() {
+		gpo.SetGasPrice(gasPrice4)
+	}()
+	time.Sleep(100 * time.Millisecond)
+	assert.Greater(gpo.Queries(), queries)
+	assert.Equal(gasPrice3, gpm.GasPrice())
 }
 
 func TestStart_Polling_ContextCancel(t *testing.T) {
@@ -138,7 +148,7 @@ func TestStart_Polling_ContextCancel(t *testing.T) {
 	gpo := newStubGasPriceOracle(gasPrice1)
 
 	pollingInterval := 1 * time.Second
-	gpm := NewGasPriceMonitor(gpo, pollingInterval)
+	gpm := NewGasPriceMonitor(gpo, pollingInterval, big.NewInt(0))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	update, err := gpm.Start(ctx)
@@ -161,7 +171,7 @@ func TestStop(t *testing.T) {
 	gpo := newStubGasPriceOracle(gasPrice)
 	gpo.SetGasPrice(gasPrice)
 
-	gpm := NewGasPriceMonitor(gpo, 1*time.Hour)
+	gpm := NewGasPriceMonitor(gpo, 1*time.Hour, big.NewInt(0))
 
 	assert := assert.New(t)
 

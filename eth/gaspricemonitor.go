@@ -32,6 +32,8 @@ type GasPriceMonitor struct {
 	gasPriceMu sync.RWMutex
 	// gasPrice is the current gas price to be returned to users
 	gasPrice *big.Int
+	// minGasPrice is the minimum gas price below which polled values will be discarded
+	minGasPrice *big.Int
 
 	// update is a channel used to send notifications to a listener
 	// when the gas price is updated
@@ -39,11 +41,16 @@ type GasPriceMonitor struct {
 }
 
 // NewGasPriceMonitor returns a GasPriceMonitor
-func NewGasPriceMonitor(gpo GasPriceOracle, pollingInterval time.Duration) *GasPriceMonitor {
+func NewGasPriceMonitor(gpo GasPriceOracle, pollingInterval time.Duration, minGasPrice *big.Int) *GasPriceMonitor {
+	minGasP := big.NewInt(0)
+	if minGasPrice != nil {
+		minGasP = minGasPrice
+	}
 	return &GasPriceMonitor{
 		gpo:             gpo,
 		pollingInterval: pollingInterval,
 		gasPrice:        big.NewInt(0),
+		minGasPrice:     minGasP,
 	}
 }
 
@@ -124,10 +131,12 @@ func (gpm *GasPriceMonitor) fetchAndUpdateGasPrice(ctx context.Context) error {
 		return err
 	}
 
-	gpm.updateGasPrice(gasPrice)
+	if gasPrice.Cmp(gpm.minGasPrice) >= 0 {
+		gpm.updateGasPrice(gasPrice)
 
-	if monitor.Enabled {
-		monitor.SuggestedGasPrice(gasPrice)
+		if monitor.Enabled {
+			monitor.SuggestedGasPrice(gasPrice)
+		}
 	}
 
 	return nil
