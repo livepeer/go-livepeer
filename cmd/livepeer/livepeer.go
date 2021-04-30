@@ -1012,17 +1012,21 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	// TODO probably should put this (along w wizard GETs) into common code
 	resp, err := http.Get("https://api.ipify.org?format=text")
 	if err != nil {
-		glog.Error("Could not look up public IP address")
+		glog.Errorf("Could not look up public IP err=%v", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		glog.Error("Could not look up public IP address")
+		glog.Errorf("Could not look up public IP err=%v", err)
 		return nil, err
 	}
 	addr := "https://" + strings.TrimSpace(string(body)) + ":" + RpcPort
 	inferredUri, err := url.ParseRequestURI(addr)
+	if err != nil {
+		glog.Errorf("Could not look up public IP err=%v", err)
+		return nil, err
+	}
 	if n.Eth == nil {
 		// we won't be looking up onchain sURI so use the inferred one
 		return inferredUri, err
@@ -1031,12 +1035,12 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	// On-chain lookup and matching with inferred public address
 	addr, err = n.Eth.GetServiceURI(n.Eth.Account().Address)
 	if err != nil {
-		glog.Error("Could not get service URI; orchestrator may be unreachable")
+		glog.Errorf("Could not get service URI; orchestrator may be unreachable err=%v", err)
 		return nil, err
 	}
 	ethUri, err := url.ParseRequestURI(addr)
 	if err != nil {
-		glog.Error("Could not parse service URI; orchestrator may be unreachable")
+		glog.Errorf("Could not parse service URI; orchestrator may be unreachable err=%v", err)
 		ethUri, _ = url.ParseRequestURI("http://127.0.0.1:" + RpcPort)
 	}
 	if ethUri.Hostname() != inferredUri.Hostname() || ethUri.Port() != inferredUri.Port() {
