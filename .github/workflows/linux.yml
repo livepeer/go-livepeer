@@ -1,5 +1,9 @@
 name: Linux Build
-on: push
+on:
+  pull_request:
+  push:
+    branches:
+      - master
 jobs:
   build:
     runs-on: ubuntu-16.04
