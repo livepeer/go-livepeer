@@ -550,7 +550,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	start := time.Now()
 	tData, err := transcoder.Transcode(md)
 	if err != nil {
-		glog.Errorf("Error transcoding manifestID=%s sessionID=%s segNo=%d segName=%s - %v", string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, seg.Name, err)
+		glog.Errorf("Error transcoding manifestID=%s sessionID=%s segNo=%d segName=%s err=%v", string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, seg.Name, err)
 		return terr(err)
 	}
 
@@ -741,8 +741,12 @@ func (rt *RemoteTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 	case <-ctx.Done():
 		return signalEOF(ErrRemoteTranscoderTimeout)
 	case chanData := <-taskChan:
+		segmentLen := 0
+		if chanData.TranscodeData != nil {
+			segmentLen = len(chanData.TranscodeData.Segments)
+		}
 		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v err=%v",
-			rt.addr, len(chanData.TranscodeData.Segments), taskID, fname, time.Since(start), chanData.Err)
+			rt.addr, segmentLen, taskID, fname, time.Since(start), chanData.Err)
 		return chanData.TranscodeData, chanData.Err
 	}
 }

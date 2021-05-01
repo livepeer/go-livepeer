@@ -26,6 +26,8 @@
 
 #### General
 
+- \#1864 Fix OT error handling (@reubenr0d)
+
 #### Broadcaster
 
 #### Orchestrator

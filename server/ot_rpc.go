@@ -259,13 +259,6 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decodedPixels, err := strconv.ParseInt(r.Header.Get("Pixels"), 10, 64)
-	if err != nil {
-		glog.Error("Could not parse decoded pixels", err)
-		http.Error(w, "Invalid Pixels", http.StatusBadRequest)
-		return
-	}
-
 	var res core.RemoteTranscoderResult
 	if transcodingErrorMimeType == mediaType {
 		w.Write([]byte("OK"))
@@ -278,6 +271,13 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		}
 		glog.Errorf("Trascoding error for taskID=%v err=%v", tid, res.Err)
 		orch.TranscoderResults(tid, &res)
+		return
+	}
+
+	decodedPixels, err := strconv.ParseInt(r.Header.Get("Pixels"), 10, 64)
+	if err != nil {
+		glog.Error("Could not parse decoded pixels", err)
+		http.Error(w, "Invalid Pixels", http.StatusBadRequest)
 		return
 	}
 
