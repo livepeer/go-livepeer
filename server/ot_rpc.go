@@ -187,9 +187,11 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	req.Header.Set("Credentials", n.OrchSecret)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
+	pixels := int64(0)
 	if tData != nil {
-		req.Header.Set("Pixels", strconv.FormatInt(tData.Pixels, 10))
+		pixels = tData.Pixels
 	}
+	req.Header.Set("Pixels", strconv.FormatInt(pixels, 10))
 	uploadStart := time.Now()
 	resp, err := httpc.Do(req)
 	if err != nil {
