@@ -21,7 +21,7 @@ var errInsufficientSenderReserve = errors.New("insufficient sender reserve")
 // maxWinProb = 2^256 - 1
 var maxWinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
 
-var paramsExpirationBlock = big.NewInt(5)
+var paramsExpirationBlock = big.NewInt(10)
 
 // Recipient is an interface which describes an object capable
 // of receiving tickets
