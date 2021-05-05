@@ -117,7 +117,7 @@ fi
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone https://github.com/livepeer/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
-  git checkout 3ea705767720033754e8d85566460390191ae27d
+  git checkout 1fdf06e14239e1aaa9ddfb648fa374ca3cb1b269
   ./configure ${TARGET_OS:-} --fatal-warnings \
     --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
