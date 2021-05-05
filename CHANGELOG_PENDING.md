@@ -28,6 +28,7 @@
 #### Orchestrator
 
 - \#1860 Discard low gas prices to prevent insufficient ticket faceValue errors (@kyriediculous)
+- \#1859 Handle error for invalid inferred orchestrator public IP on node startup (@reubenr0d)
 
 #### Transcoder
 
