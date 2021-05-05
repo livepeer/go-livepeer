@@ -474,7 +474,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		return nil, nil
 	}
 
-	glog.Infof("Trying to transcode segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
+	glog.Infof("Trying to transcode segment manifestID=%v nonce=%d seqNo=%d", cxn.mid, nonce, seg.SeqNo)
 	if monitor.Enabled {
 		monitor.TranscodeTry(nonce, seg.SeqNo)
 	}
