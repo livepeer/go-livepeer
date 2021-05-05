@@ -28,3 +28,5 @@
 - \#1860 Discard low gas prices to prevent insufficient ticket faceValue errors (@kyriediculous)
 
 #### Transcoder
+
+- \#1862 Report the correct FPS in outputs when FPS passthrough is enabled for GPU transcoding (@jailuthra)
