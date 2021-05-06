@@ -3,10 +3,9 @@
 set -eux
 
 # set a clean slate "home dir" for testing
-TMPDIR=/tmp/livepeer-test-"$RANDOM"
+TMPDIR=$PWD/tmp/livepeer-test-"$RANDOM"
 DEFAULT_DATADIR="$TMPDIR"/.lpData
 CUSTOM_DATADIR="$TMPDIR"/customDatadir
-export HOME=$TMPDIR
 rm -rf "$DEFAULT_DATADIR"
 mkdir -p $TMPDIR  # goclient should make the lpData datadir
 
@@ -22,6 +21,7 @@ ETH_KEY
 ETH_ARGS="-ethKeystorePath $TMPDIR/key"
 SLEEP=0.25
 
+export HOME=$TMPDIR
 
 run_lp () {
     $TMPDIR/livepeer "$@" &
