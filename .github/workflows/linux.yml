@@ -61,7 +61,7 @@ jobs:
         ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
         rm -rf ~/build && mkdir ~/build && mv livepeer* ~/build/
       env:
-        GITHUB_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+        GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
   test:
     runs-on: ubuntu-18.04
     needs: build
@@ -116,7 +116,7 @@ jobs:
       - name: Upload build
         run: cp ~/build/* . && ./upload_build.sh
         env:
-          GITHUB_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
           GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
           GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
           DISCORD_URL: ${{ secrets.DISCORD_URL }}

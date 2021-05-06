@@ -38,7 +38,7 @@ jobs:
         # livepeer/go-livepeer:BRANCH_NAME and livepeer/go-livepeer:VERSION_STRING. Both are useful
         # to pull from in different contexts.
         # Our Docker tag name should be our branch name with just alphanums
-        BRANCH_TAG=$(echo $GITHUB_REF | sed 's/refs\/heads\///' | sed 's/\//-/g' | tr -cd '[:alnum:]_-')
+        BRANCH_TAG=$(echo $GHA_REF | sed 's/refs\/heads\///' | sed 's/\//-/g' | tr -cd '[:alnum:]_-')
         VERSION_TAG=$(./print_version.sh)
         docker build -t current-build -f docker/Dockerfile.release-linux .
         for TAG in $BRANCH_TAG $VERSION_TAG; do
@@ -49,4 +49,4 @@ jobs:
           docker manifest push livepeer/go-livepeer:${TAG} || true
         done
       env:
-        GITHUB_REF: ${{ github.ref }}
+        GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
