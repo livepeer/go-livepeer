@@ -56,7 +56,7 @@ func TestBalance_StageUpdate(t *testing.T) {
 	assert.Zero(big.NewRat(0, 1).Cmp(newCredit))
 	assert.Zero(big.NewRat(2, 1).Cmp(existingCredit))
 	assert.Zero(big.NewRat(0, 1).Cmp(balances.Balance(addr, mid)))
-	assert.Zero(big.NewRat(5, 1).Cmp(balances.Balance(otherAddr, mid)))
+	assert.Zero(big.NewRat(4, 1).Cmp(balances.Balance(otherAddr, mid)))
 
 	// Test existing credit = minimum credit
 	b.Credit(big.NewRat(2, 1))
