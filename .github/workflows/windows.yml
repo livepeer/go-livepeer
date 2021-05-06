@@ -25,6 +25,7 @@ jobs:
       shell: msys2 {0}
       run: ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
     - name: Upload build
+      if: github.event.pull_request.head.repo.full_name == github.repository
       shell: msys2 {0}
       env: 
         GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
