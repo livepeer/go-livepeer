@@ -86,7 +86,7 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 			infoCh <- info
 			return
 		}
-		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		if err != nil && !errors.Is(err, context.Canceled) {
 			glog.Error(err)
 			if monitor.Enabled {
 				monitor.LogDiscoveryError(err.Error())

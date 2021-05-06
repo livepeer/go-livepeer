@@ -224,7 +224,7 @@ func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestr
 	req, err := genOrchestratorReq(bcast)
 	r, err := c.GetOrchestrator(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("Could not get orchestrator orch=%v err=%v", orchestratorServer, err)
+		return nil, errors.Wrapf(err, "Could not get orchestrator orch=%v", orchestratorServer)
 	}
 
 	return r, nil
@@ -237,8 +237,8 @@ func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.Client
 		grpc.WithBlock(),
 		grpc.WithTimeout(GRPCConnectTimeout))
 	if err != nil {
-		glog.Errorf("Did not connect to orch=%v err=%v", uri, err)
-		return nil, nil, fmt.Errorf("Did not connect to orch=%v err=%v", uri, err)
+		return nil, nil, errors.Wrapf(err, "Did not connect to orch=%v", uri)
+
 	}
 	c := net.NewOrchestratorClient(conn)
 
