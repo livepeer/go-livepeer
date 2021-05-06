@@ -11,6 +11,8 @@
 
 #### Broadcaster
 
+- \#1875 Update 'trying to transcode' log statement with manifestID (@kyriediculous)
+
 #### Orchestrator
 
 - \#1845 Staking actions with hints (@kyriediculous)
