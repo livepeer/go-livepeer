@@ -15,8 +15,8 @@ fi
 
 BASE="livepeer-$ARCH-amd64"
 BRANCH="${TRAVIS_BRANCH:-unknown}"
-if [[ "${GITHUB_REF:-}" != "" ]]; then
-  BRANCH="$(echo $GITHUB_REF | sed 's/refs\/heads\///')"
+if [[ "${GHA_REF:-}" != "" ]]; then
+  BRANCH="$(echo $GHA_REF | sed 's/refs\/heads\///')"
 fi
 VERSION="$(./print_version.sh)"
 if echo $VERSION | grep dirty; then

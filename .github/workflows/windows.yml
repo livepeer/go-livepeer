@@ -27,7 +27,7 @@ jobs:
     - name: Upload build
       shell: msys2 {0}
       env: 
-        GITHUB_REF: ${{ github.ref }}
+        GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
         GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
         GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
         DISCORD_URL: ${{ secrets.DISCORD_URL }}
