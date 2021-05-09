@@ -61,6 +61,10 @@ type jsonSeg struct {
 	discontinuity bool
 }
 
+func (js *jsonSeg) GetDiscontinuity() bool {
+	return js.discontinuity
+}
+
 type JsonPlaylist struct {
 	name       string
 	DurationMs uint64               `json:"duration_ms,omitempty"` // total duration of the saved sagments

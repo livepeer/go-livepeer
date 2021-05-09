@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"os"
 	"path"
 	"regexp"
 	"runtime"
@@ -1037,6 +1038,98 @@ func getPlaylistsFromStore(ctx context.Context, sess drivers.OSSession, manifest
 	return filesMap, jsonFiles, latestPlaylistTime, nil
 }
 
+func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *core.JsonPlaylist, manifestID, track string) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	contentType, _ := common.TypeByExtension(".mp4")
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Connection", "keep-alive")
+	var sourceBytesSent, resultBytesSent int64
+
+	or, ow, err := os.Pipe()
+	if err != nil {
+		glog.Errorf("Error creating pipe manifestID=%s err=%v", manifestID, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	tc := ffmpeg.NewTranscoder()
+	done := make(chan struct{})
+	go func() {
+		var err2 error
+		resultBytesSent, err2 = io.Copy(w, or)
+		if err2 != nil {
+			glog.Errorf("Error transmuxing to mp4 request=%s manifestID=%s err=%v", r.URL.String(), manifestID, err2)
+		}
+		or.Close()
+		done <- struct{}{}
+	}()
+	defer func() {
+		tc.StopTranscoder()
+		ow.Close()
+		<-done
+	}()
+	oname := fmt.Sprintf("pipe:%d", ow.Fd())
+	out := []ffmpeg.TranscodeOptions{
+		{
+			Oname: oname,
+			VideoEncoder: ffmpeg.ComponentOptions{
+				Name: "copy",
+			},
+			AudioEncoder: ffmpeg.ComponentOptions{
+				Name: "copy",
+			},
+			Profile: ffmpeg.VideoProfile{Format: ffmpeg.FormatNone},
+			Muxer: ffmpeg.ComponentOptions{
+				Name: "mp4",
+				// main option is 'frag_keyframe' which tells ffmpeg to create fragmented MP4 (which we need to be able to stream generatd file)
+				// other options is not mandatory but they will slightly improve generated MP4 file
+				Opts: map[string]string{"movflags": "frag_keyframe+negative_cts_offsets+omit_tfhd_offset+disable_chpl+default_base_moof"},
+			},
+		},
+	}
+	for _, seg := range jpl.Segments[track] {
+		if seg.GetDiscontinuity() {
+			tc.Discontinuity()
+		}
+
+		ir, iw, err := os.Pipe()
+		if err != nil {
+			glog.Errorf("Error creating pipe manifestID=%s err=%v", manifestID, err)
+			return
+		}
+		fname := fmt.Sprintf("pipe:%d", ir.Fd())
+
+		in := &ffmpeg.TranscodeOptionsIn{Fname: fname, Transmuxing: true}
+		go func() {
+			defer iw.Close()
+			glog.V(common.VERBOSE).Infof("Adding manifestID=%s track=%s uri=%s to mp4", manifestID, track, seg.URI)
+			resp, err := http.Get(seg.URI)
+			if err != nil {
+				glog.Errorf("Error getting HTTP uri=%s manifestID=%s err=%v", seg.URI, manifestID, err)
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != 200 {
+				glog.Errorf("Non-200 response for status=%v uri=%s manifestID=%s request=%s", resp.Status, seg.URI, manifestID, r.URL.String())
+				return
+			}
+			wn, err := io.Copy(iw, resp.Body)
+			if err != nil {
+				glog.Errorf("Error transmuxing to mp4 request=%s uri=%s manifestID=%s err=%v", r.URL.String(), seg.URI, manifestID, err)
+			}
+			sourceBytesSent += wn
+		}()
+
+		_, err = tc.Transcode(in, out)
+		ir.Close()
+		if err != nil {
+			glog.Errorf("Error transmuxing to mp4 request=%s uri=%s manifestID=%s err=%v", r.URL.String(), seg.URI, manifestID, err)
+			return
+		}
+	}
+	glog.Infof("Completed mp4 request=%s manifestID=%s sourceBytes=%d destBytes=%d", r.URL.String(),
+		manifestID, sourceBytesSent, resultBytesSent)
+}
+
 // HandleRecordings handle requests to /recordings/ endpoint
 func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
@@ -1045,7 +1138,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		return
 	}
 	ext := path.Ext(r.URL.Path)
-	if ext != ".m3u8" && ext != ".ts" {
+	if ext != ".m3u8" && ext != ".ts" && ext != ".mp4" {
 		glog.Errorf(`/recordings request wrong extension=%s url=%s host=%s`, ext, r.URL, r.Host)
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -1154,7 +1247,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	if time.Since(latestPlaylistTime) > 24*time.Hour && !finalizeSet {
+	if time.Since(latestPlaylistTime) > 24*time.Hour && !finalizeSet && ext == ".m3u8" {
 		finalize = true
 	}
 
@@ -1209,6 +1302,14 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 				mainJspl.AddDiscontinuedTrack(jspl, track)
 			}
 		}
+	}
+	if ext == ".mp4" {
+		if segs, has := mainJspl.Segments[track]; !has || len(segs) == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		s.streamMP4(w, r, mainJspl, manifestID, track)
+		return
 	}
 
 	masterPList := m3u8.NewMasterPlaylist()
