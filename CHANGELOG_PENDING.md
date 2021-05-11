@@ -16,6 +16,7 @@
 #### Orchestrator
 
 - \#1845 Staking actions with hints (@kyriediculous)
+- \#1873 Increase TicketParams expiration to 10 blocks (@kyriediculous)
 
 #### Transcoder
 
