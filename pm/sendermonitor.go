@@ -418,11 +418,16 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 	}
 
 	// Wait for transaction to confirm
-	if err := sm.broker.CheckTx(tx); err != nil {
+	var txErr error
+	for txErr = sm.broker.CheckTx(tx); !errors.Is(txErr, context.Canceled) || !errors.Is(txErr, context.DeadlineExceeded); {
+
+	}
+
+	if txErr != nil {
 		if monitor.Enabled {
 			monitor.TicketRedemptionError(ticket.Ticket.Sender.String())
 		}
-		return nil, err
+		return nil, txErr
 	}
 
 	if monitor.Enabled {
