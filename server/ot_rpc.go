@@ -187,9 +187,11 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	req.Header.Set("Credentials", n.OrchSecret)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
+	pixels := int64(0)
 	if tData != nil {
-		req.Header.Set("Pixels", strconv.FormatInt(tData.Pixels, 10))
+		pixels = tData.Pixels
 	}
+	req.Header.Set("Pixels", strconv.FormatInt(pixels, 10))
 	uploadStart := time.Now()
 	resp, err := httpc.Do(req)
 	if err != nil {
@@ -259,13 +261,6 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decodedPixels, err := strconv.ParseInt(r.Header.Get("Pixels"), 10, 64)
-	if err != nil {
-		glog.Error("Could not parse decoded pixels", err)
-		http.Error(w, "Invalid Pixels", http.StatusBadRequest)
-		return
-	}
-
 	var res core.RemoteTranscoderResult
 	if transcodingErrorMimeType == mediaType {
 		w.Write([]byte("OK"))
@@ -278,6 +273,13 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		}
 		glog.Errorf("Trascoding error for taskID=%v err=%v", tid, res.Err)
 		orch.TranscoderResults(tid, &res)
+		return
+	}
+
+	decodedPixels, err := strconv.ParseInt(r.Header.Get("Pixels"), 10, 64)
+	if err != nil {
+		glog.Error("Could not parse decoded pixels", err)
+		http.Error(w, "Invalid Pixels", http.StatusBadRequest)
 		return
 	}
 
