@@ -17,6 +17,7 @@
 
 - \#1845 Staking actions with hints (@kyriediculous)
 - \#1873 Increase TicketParams expiration to 10 blocks (@kyriediculous)
+- \#1849 Re-use remote transcoders for a stream sessions (@reubenr0d)
 
 #### Transcoder
 
