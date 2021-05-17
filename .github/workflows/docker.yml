@@ -14,6 +14,7 @@ jobs:
       with:
         # Needed for commands that depend on git tags
         fetch-depth: 0
+        ref: ${{ github.event.pull_request.head.sha }}
     - name: Set global environment variables
       run: |
         echo "PKG_CONFIG_PATH=/root/compiled/lib/pkgconfig" >> $GITHUB_ENV

@@ -11,6 +11,8 @@ jobs:
     - name: configure git line endings
       run: git config --global core.autocrlf false
     - uses: actions/checkout@v1
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
     - name: Setup Msys2 environment
       uses: msys2/setup-msys2@v2
       with:
