@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.5.18
+
+*May 18 2021*
+
+This release includes an important gas price monitoring fix that addresses cases where Ethereum JSON-RPC providers occassionally return really low gas prices for the `eth_gasPrice` RPC call, reductions in the gas cost for staking actions (under certain circumstances) using `livepeer_cli`  and improvements to split orchestrator and transcoder setups that help remote transcoders retain streams. We strongly recommend all orchestrator and transcoder operators to upgrade to this version as soon as possible to access this latest set of bug fixes and improvements.
+
+Thanks to everyone that submitted bug reports and assisted in testing!
+
+### Breaking Changes 🚨🚨
+
+- Payment/ticket metrics are no longer recorded with high cardinality keys (i.e. recipient, manifestID) which means those labels will no longer be available when using a monitoring system such as Prometheus
+
+### Features ⚒
+
+#### General
+
+- [#1848](https://github.com/livepeer/go-livepeer/pull/1848) Use fee cut instead of fee share for user facing language in the CLI (@kyriediculous)
+- [#1854](https://github.com/livepeer/go-livepeer/pull/1854) Allow to pass region in the custom s3 storage URL (@darkdarkdragon)
+- [#1893](https://github.com/livepeer/go-livepeer/pull/1893) Remove high cardinality keys from payment metrics (@yondonfu)
+
+#### Broadcaster
+
+- [#1875](https://github.com/livepeer/go-livepeer/pull/1875) Update 'trying to transcode' log statement with manifestID (@kyriediculous)
+- [#1837](https://github.com/livepeer/go-livepeer/pull/1837) Only log discovery errors when request is not cancelled (@yondonfu)
+
+#### Orchestrator
+
+- [#1845](https://github.com/livepeer/go-livepeer/pull/1845) Staking actions with hints (@kyriediculous)
+- [#1873](https://github.com/livepeer/go-livepeer/pull/1873) Increase TicketParams expiration to 10 blocks (@kyriediculous)
+- [#1849](https://github.com/livepeer/go-livepeer/pull/1849) Re-use remote transcoders for a stream sessions (@reubenr0d)
+
+#### Transcoder
+
+- [#1840](https://github.com/livepeer/go-livepeer/pull/1840) Automatically use all GPUs when -nvidia=all flag is set (@jailuthra)
+
+### Bug Fixes 🐞
+
+#### Orchestrator
+
+- [#1860](https://github.com/livepeer/go-livepeer/pull/1860) Discard low gas prices to prevent insufficient ticket faceValue errors (@kyriediculous)
+- [#1859](https://github.com/livepeer/go-livepeer/pull/1859) Handle error for invalid inferred orchestrator public IP on node startup (@reubenr0d)
+- [#1864](https://github.com/livepeer/go-livepeer/pull/1864) Fix OT error handling (@reubenr0d)
+
+#### Transcoder
+
+- [#1862](https://github.com/livepeer/go-livepeer/pull/1862) Report the correct FPS in outputs when FPS passthrough is enabled for GPU transcoding (@jailuthra)
+
 ## v0.5.17
 
 *April 13 2021*
