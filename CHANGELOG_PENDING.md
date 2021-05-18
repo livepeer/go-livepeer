@@ -2,12 +2,17 @@
 
 ## vX.X
 
+### Breaking Changes 🚨🚨
+
+- Payment/ticket metrics are no longer recorded with high cardinality keys (i.e. recipient, manifestID) which means those labels will no longer be available when using a monitoring system such as Prometheus
+
 ### Features ⚒
 
 #### General
 
 - \#1848 Use fee cut instead of fee share for user facing language in the CLI (@kyriediculous)
 - \#1854 Allow to pass region in the custom s3 storage URL (@darkdarkdragon)
+- \#1893 Remove high cardinality keys from payment metrics (@yondonfu)
 
 #### Broadcaster
 
