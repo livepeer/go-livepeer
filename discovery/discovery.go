@@ -3,6 +3,7 @@ package discovery
 import (
 	"container/heap"
 	"context"
+	"errors"
 	"math"
 	"math/rand"
 	"net/url"
@@ -85,8 +86,11 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 			infoCh <- info
 			return
 		}
-		if err != nil && monitor.Enabled {
-			monitor.LogDiscoveryError(err.Error())
+		if err != nil && !errors.Is(err, context.Canceled) {
+			glog.Error(err)
+			if monitor.Enabled {
+				monitor.LogDiscoveryError(err.Error())
+			}
 		}
 		errCh <- err
 	}

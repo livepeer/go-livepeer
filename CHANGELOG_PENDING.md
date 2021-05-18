@@ -12,6 +12,7 @@
 #### Broadcaster
 
 - \#1875 Update 'trying to transcode' log statement with manifestID (@kyriediculous)
+- \#1837 Only log discovery errors when request is not cancelled (@yondonfu)
 
 #### Orchestrator
 
