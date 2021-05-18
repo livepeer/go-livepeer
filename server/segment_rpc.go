@@ -387,9 +387,8 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	if err != nil {
 		glog.Errorf("Could not create payment nonce=%d manifestID=%s sessionID=%s seqNo=%d bytes=%v err=%v", nonce, sess.Params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, len(data), err)
 
-		if monitor.Enabled && sess.OrchestratorInfo.TicketParams != nil {
-			recipient := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient).String()
-			monitor.PaymentCreateError(recipient, string(params.ManifestID))
+		if monitor.Enabled {
+			monitor.PaymentCreateError()
 		}
 
 		return nil, err
@@ -440,12 +439,9 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	// If the segment was submitted then we assume that any payment included was
 	// submitted as well so we consider the update's credit as spent
 	balUpdate.Status = CreditSpent
-	if monitor.Enabled && sess.OrchestratorInfo.TicketParams != nil {
-		recipient := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient).String()
-		mid := string(params.ManifestID)
-
-		monitor.TicketValueSent(recipient, mid, balUpdate.NewCredit)
-		monitor.TicketsSent(recipient, mid, balUpdate.NumTickets)
+	if monitor.Enabled {
+		monitor.TicketValueSent(balUpdate.NewCredit)
+		monitor.TicketsSent(balUpdate.NumTickets)
 	}
 
 	if resp.StatusCode != 200 {

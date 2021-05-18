@@ -606,21 +606,21 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ticket_value_sent",
 			Measure:     census.mTicketValueSent,
 			Description: "Ticket value sent",
-			TagKeys:     append([]tag.Key{census.kRecipient, census.kManifestID}, baseTags...),
+			TagKeys:     baseTags,
 			Aggregation: view.Sum(),
 		},
 		{
 			Name:        "tickets_sent",
 			Measure:     census.mTicketsSent,
 			Description: "Tickets sent",
-			TagKeys:     append([]tag.Key{census.kRecipient, census.kManifestID}, baseTags...),
+			TagKeys:     baseTags,
 			Aggregation: view.Sum(),
 		},
 		{
 			Name:        "payment_create_errors",
 			Measure:     census.mPaymentCreateError,
 			Description: "Errors when creating payments",
-			TagKeys:     append([]tag.Key{census.kRecipient, census.kManifestID}, baseTags...),
+			TagKeys:     baseTags,
 			Aggregation: view.Sum(),
 		},
 		{
@@ -643,21 +643,21 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ticket_value_recv",
 			Measure:     census.mTicketValueRecv,
 			Description: "Ticket value received",
-			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID}, baseTags...),
+			TagKeys:     baseTags,
 			Aggregation: view.Sum(),
 		},
 		{
 			Name:        "tickets_recv",
 			Measure:     census.mTicketsRecv,
 			Description: "Tickets received",
-			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID}, baseTags...),
+			TagKeys:     baseTags,
 			Aggregation: view.Sum(),
 		},
 		{
 			Name:        "payment_recv_errors",
 			Measure:     census.mPaymentRecvErr,
 			Description: "Errors when receiving payments",
-			TagKeys:     append([]tag.Key{census.kSender, census.kManifestID, census.kErrorCode}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kErrorCode}, baseTags...),
 			Aggregation: view.Sum(),
 		},
 		{
@@ -678,7 +678,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ticket_redemption_errors",
 			Measure:     census.mTicketRedemptionError,
 			Description: "Errors when redeeming tickets",
-			TagKeys:     append([]tag.Key{census.kSender}, baseTags...),
+			TagKeys:     baseTags,
 			Aggregation: view.Sum(),
 		},
 		{
@@ -1281,8 +1281,8 @@ func (cen *censusMetricsCounter) streamEnded(nonce uint64) {
 	census.sendSuccess()
 }
 
-// TicketValueSent records the ticket value sent to a recipient for a manifestID
-func TicketValueSent(recipient string, manifestID string, value *big.Rat) {
+// TicketValueSent records the ticket value sent
+func TicketValueSent(value *big.Rat) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
@@ -1290,16 +1290,11 @@ func TicketValueSent(recipient string, manifestID string, value *big.Rat) {
 		return
 	}
 
-	ctx, err := tag.New(census.ctx, tag.Insert(census.kRecipient, recipient), tag.Insert(census.kManifestID, manifestID))
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	stats.Record(ctx, census.mTicketValueSent.M(fracwei2gwei(value)))
+	stats.Record(census.ctx, census.mTicketValueSent.M(fracwei2gwei(value)))
 }
 
-// TicketsSent records the number of tickets sent to a recipient for a manifestID
-func TicketsSent(recipient string, manifestID string, numTickets int) {
+// TicketsSent records the number of tickets sent
+func TicketsSent(numTickets int) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
@@ -1307,25 +1302,15 @@ func TicketsSent(recipient string, manifestID string, numTickets int) {
 		return
 	}
 
-	ctx, err := tag.New(census.ctx, tag.Insert(census.kRecipient, recipient), tag.Insert(census.kManifestID, manifestID))
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	stats.Record(ctx, census.mTicketsSent.M(int64(numTickets)))
+	stats.Record(census.ctx, census.mTicketsSent.M(int64(numTickets)))
 }
 
 // PaymentCreateError records a error from payment creation
-func PaymentCreateError(recipient string, manifestID string) {
+func PaymentCreateError() {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
-	ctx, err := tag.New(census.ctx, tag.Insert(census.kRecipient, recipient), tag.Insert(census.kManifestID, manifestID))
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	stats.Record(ctx, census.mPaymentCreateError.M(1))
+	stats.Record(census.ctx, census.mPaymentCreateError.M(1))
 }
 
 // Deposit records the current deposit for the broadcaster
@@ -1338,7 +1323,7 @@ func Reserve(sender string, reserve *big.Int) {
 }
 
 // TicketValueRecv records the ticket value received from a sender for a manifestID
-func TicketValueRecv(sender string, manifestID string, value *big.Rat) {
+func TicketValueRecv(value *big.Rat) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
@@ -1346,16 +1331,11 @@ func TicketValueRecv(sender string, manifestID string, value *big.Rat) {
 		return
 	}
 
-	ctx, err := tag.New(census.ctx, tag.Insert(census.kSender, sender), tag.Insert(census.kManifestID, manifestID))
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	stats.Record(ctx, census.mTicketValueRecv.M(fracwei2gwei(value)))
+	stats.Record(census.ctx, census.mTicketValueRecv.M(fracwei2gwei(value)))
 }
 
 // TicketsRecv records the number of tickets received from a sender for a manifestID
-func TicketsRecv(sender string, manifestID string, numTickets int) {
+func TicketsRecv(numTickets int) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
@@ -1363,16 +1343,11 @@ func TicketsRecv(sender string, manifestID string, numTickets int) {
 		return
 	}
 
-	ctx, err := tag.New(census.ctx, tag.Insert(census.kSender, sender), tag.Insert(census.kManifestID, manifestID))
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	stats.Record(ctx, census.mTicketsRecv.M(int64(numTickets)))
+	stats.Record(census.ctx, census.mTicketsRecv.M(int64(numTickets)))
 }
 
 // PaymentRecvError records an error from receiving a payment
-func PaymentRecvError(sender string, manifestID string, errStr string) {
+func PaymentRecvError(errStr string) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
@@ -1391,8 +1366,6 @@ func PaymentRecvError(sender string, manifestID string, errStr string) {
 
 	ctx, err := tag.New(
 		census.ctx,
-		tag.Insert(census.kSender, sender),
-		tag.Insert(census.kManifestID, manifestID),
 		tag.Insert(census.kErrorCode, errCode),
 	)
 	if err != nil {
@@ -1402,8 +1375,8 @@ func PaymentRecvError(sender string, manifestID string, errStr string) {
 	stats.Record(ctx, census.mPaymentRecvErr.M(1))
 }
 
-// WinningTicketsRecv records the number of winning tickets received from a sender
-func WinningTicketsRecv(sender string, numTickets int) {
+// WinningTicketsRecv records the number of winning tickets received
+func WinningTicketsRecv(numTickets int) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
@@ -1411,16 +1384,11 @@ func WinningTicketsRecv(sender string, numTickets int) {
 		return
 	}
 
-	ctx, err := tag.New(census.ctx, tag.Insert(census.kSender, sender))
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	stats.Record(ctx, census.mWinningTicketsRecv.M(int64(numTickets)))
+	stats.Record(census.ctx, census.mWinningTicketsRecv.M(int64(numTickets)))
 }
 
-// ValueRedeemed records the value from redeeming winning tickets from a sender
-func ValueRedeemed(sender string, value *big.Int) {
+// ValueRedeemed records the value from redeeming winning tickets
+func ValueRedeemed(value *big.Int) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
@@ -1428,25 +1396,15 @@ func ValueRedeemed(sender string, value *big.Int) {
 		return
 	}
 
-	ctx, err := tag.New(census.ctx, tag.Insert(census.kSender, sender))
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	stats.Record(ctx, census.mValueRedeemed.M(wei2gwei(value)))
+	stats.Record(census.ctx, census.mValueRedeemed.M(wei2gwei(value)))
 }
 
 // TicketRedemptionError records an error from redeeming a ticket
-func TicketRedemptionError(sender string) {
+func TicketRedemptionError() {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
-	ctx, err := tag.New(census.ctx, tag.Insert(census.kSender, sender))
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	stats.Record(ctx, census.mTicketRedemptionError.M(1))
+	stats.Record(census.ctx, census.mTicketRedemptionError.M(1))
 }
 
 // SuggestedGasPrice records the last suggested gas price
