@@ -6,7 +6,7 @@ on:
       - master
 jobs:
   build:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-16.04
     steps:
     - name: Checkout
