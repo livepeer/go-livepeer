@@ -183,7 +183,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			glog.Errorf("Error receiving ticket sessionID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 
 			if monitor.Enabled {
-				monitor.PaymentRecvError(sender.String(), string(manifestID), err.Error())
+				monitor.PaymentRecvError(err.Error())
 			}
 			if _, ok := err.(*pm.FatalReceiveErr); ok {
 				return err
@@ -213,12 +213,9 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 	}
 
 	if monitor.Enabled {
-		senderStr := sender.String()
-		mid := string(manifestID)
-
-		monitor.TicketValueRecv(senderStr, mid, totalEV)
-		monitor.TicketsRecv(senderStr, mid, totalTickets)
-		monitor.WinningTicketsRecv(senderStr, totalWinningTickets)
+		monitor.TicketValueRecv(totalEV)
+		monitor.TicketsRecv(totalTickets)
+		monitor.WinningTicketsRecv(totalWinningTickets)
 	}
 
 	if receiveErr != nil {
