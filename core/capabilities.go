@@ -34,11 +34,41 @@ const (
 	Capability_ProfileH264ConstrainedHigh
 	Capability_GOP
 	Capability_AuthToken
+	Capability_SceneClassification
 )
 
 var capFormatConv = errors.New("capability: unknown format")
 var capStorageConv = errors.New("capability: unknown storage")
 var capProfileConv = errors.New("capability: unknown profile")
+
+func DefaultCapabilities() []Capability {
+	// Add to this list as new features are added.
+	var defaultCapabilities = []Capability{
+		Capability_H264,
+		Capability_MPEGTS,
+		Capability_MP4,
+		Capability_FractionalFramerates,
+		Capability_StorageDirect,
+		Capability_StorageS3,
+		Capability_StorageGCS,
+		Capability_ProfileH264Baseline,
+		Capability_ProfileH264Main,
+		Capability_ProfileH264High,
+		Capability_ProfileH264ConstrainedHigh,
+		Capability_GOP,
+		Capability_AuthToken,
+	}
+	// Add experimental capabilities if enabled during build
+	return append(defaultCapabilities, experimentalCapabilities...)
+}
+
+func MandatoryCapabilities() []Capability {
+	// Add to this list as certain features become mandatory.
+	// Use sparingly, as adding to this is a hard break with older nodes
+	return []Capability{
+		Capability_AuthToken,
+	}
+}
 
 func NewCapabilityString(caps []Capability) CapabilityString {
 	capStr := []uint64{}
