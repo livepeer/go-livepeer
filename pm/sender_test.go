@@ -266,7 +266,7 @@ func TestCreateTicketBatch_UsesSessionParamsInBatch(t *testing.T) {
 		WinProb:           big.NewInt(2222),
 		Seed:              big.NewInt(3333),
 		RecipientRandHash: recipientRandHash,
-		ExpirationBlock:   big.NewInt(1),
+		ExpirationBlock:   big.NewInt(2),
 		PricePerPixel:     big.NewRat(1, 1),
 		ExpirationParams:  expectedExpParams,
 	}
@@ -295,7 +295,7 @@ func TestCreateTicketBatch_UsesSessionParamsInBatch(t *testing.T) {
 		WinProb:           big.NewInt(2222),
 		Seed:              big.NewInt(3333),
 		RecipientRandHash: recipientRandHash,
-		ExpirationBlock:   big.NewInt(1),
+		ExpirationBlock:   big.NewInt(2),
 		PricePerPixel:     big.NewRat(1, 1),
 		ExpirationParams:  &TicketExpirationParams{},
 	}
@@ -316,7 +316,7 @@ func TestCreateTicketBatch_UsesSessionParamsInBatch(t *testing.T) {
 		WinProb:           big.NewInt(2222),
 		Seed:              big.NewInt(3333),
 		RecipientRandHash: recipientRandHash,
-		ExpirationBlock:   big.NewInt(1),
+		ExpirationBlock:   big.NewInt(2),
 		PricePerPixel:     big.NewRat(1, 1),
 		ExpirationParams:  nil,
 	}
@@ -498,13 +498,24 @@ func TestValidateTicketParams_ExpiredParams_ReturnsError(t *testing.T) {
 	sender.maxEV = big.NewRat(100, 1)
 	sender.depositMultiplier = 2
 
+	sender.timeManager.(*stubTimeManager).lastSeenBlock = big.NewInt(100)
+
 	// test expired
 	ticketParams := defaultTicketParams(t, RandAddress())
-	ticketParams.ExpirationBlock = big.NewInt(int64(-1))
+	ticketParams.ExpirationBlock = big.NewInt(int64(1))
 	err := sender.ValidateTicketParams(&ticketParams)
 	assert.EqualError(t, err, ErrTicketParamsExpired.Error())
 
+	// test within expiry buffer
+	ticketParams.ExpirationBlock = big.NewInt(99)
+	err = sender.ValidateTicketParams(&ticketParams)
+	assert.EqualError(t, err, ErrTicketParamsExpired.Error())
+
 	// test nil
+	ticketParams.ExpirationBlock = big.NewInt(105)
+	err = sender.ValidateTicketParams(&ticketParams)
+	assert.Nil(t, err)
+
 	ticketParams.ExpirationBlock = big.NewInt(0)
 	err = sender.ValidateTicketParams(&ticketParams)
 	assert.Nil(t, err)
