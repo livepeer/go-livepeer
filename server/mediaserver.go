@@ -117,6 +117,17 @@ type authWebhookResponse struct {
 		GOP     string `json:"gop"`
 	} `json:"profiles"`
 	PreviousSessions []string `json:"previousSessions"`
+	Detection        struct {
+		// Run detection on 1/freq segments
+		Freq                       uint `json:"freq"`
+		SceneClassificationProfile struct {
+			SampleRate uint `json:"sampleRate"`
+			Classes    []struct {
+				ID   int    `json:"id"`
+				Name string `json: "name"`
+			} `json:"classes"`
+		} `json: "sceneClassifcationProfile"`
+	} `json: "detection"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
@@ -221,6 +232,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		var os, ros drivers.OSDriver
 		var oss, ross drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
+		detectionConfig := core.DetectionConfig{}
 		if resp, err = authenticateStream(url.String()); err != nil {
 			glog.Errorf("Authentication denied for streamID url=%s err=%v", url.String(), err)
 			return nil
@@ -260,6 +272,11 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 					return nil
 				}
 			}
+
+			// set Detection profile if provided
+			if resp.Detection.Freq != 0 {
+				detectionConfig = jsonDetectionToDetectorProfile(resp)
+			}
 		} else {
 			profiles = BroadcastJobVideoProfiles
 		}
@@ -298,9 +315,10 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			ManifestID: mid,
 			RtmpKey:    key,
 			// HTTP push mutates `profiles` so make a copy of it
-			Profiles: append([]ffmpeg.VideoProfile(nil), profiles...),
-			OS:       oss,
-			RecordOS: ross,
+			Profiles:  append([]ffmpeg.VideoProfile(nil), profiles...),
+			OS:        oss,
+			RecordOS:  ross,
+			Detection: detectionConfig,
 		}
 	}
 }
@@ -385,6 +403,25 @@ func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile
 		profiles = append(profiles, prof)
 	}
 	return profiles, nil
+}
+
+func jsonDetectionToDetectorProfile(resp *authWebhookResponse) core.DetectionConfig {
+	sceneClassification := ffmpeg.SceneClassificationProfile{
+		SampleRate: resp.Detection.SceneClassificationProfile.SampleRate,
+		Classes:    []ffmpeg.DetectorClass{},
+	}
+	for _, class := range resp.Detection.SceneClassificationProfile.Classes {
+		sceneClassification.Classes = append(sceneClassification.Classes,
+			ffmpeg.DetectorClass{
+				ID:   class.ID,
+				Name: class.Name,
+			})
+	}
+	detection := core.DetectionConfig{
+		Freq:     resp.Detection.Freq,
+		Profiles: []ffmpeg.DetectorProfile{&sceneClassification},
+	}
+	return detection
 }
 
 func streamParams(d stream.AppData) *core.StreamParameters {
