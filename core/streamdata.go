@@ -22,6 +22,11 @@ const (
 	DefaultManifestIDLength = 4
 )
 
+type DetectionConfig struct {
+	Freq     uint
+	Profiles []ffmpeg.DetectorProfile
+}
+
 type StreamParameters struct {
 	ManifestID   ManifestID
 	RtmpKey      string
@@ -31,6 +36,7 @@ type StreamParameters struct {
 	OS           drivers.OSSession
 	RecordOS     drivers.OSSession
 	Capabilities *Capabilities
+	Detection    DetectionConfig
 }
 
 func (s *StreamParameters) StreamID() string {
@@ -38,15 +44,16 @@ func (s *StreamParameters) StreamID() string {
 }
 
 type SegTranscodingMetadata struct {
-	ManifestID ManifestID
-	Fname      string
-	Seq        int64
-	Hash       ethcommon.Hash
-	Profiles   []ffmpeg.VideoProfile
-	OS         *net.OSInfo
-	Duration   time.Duration
-	Caps       *Capabilities
-	AuthToken  *net.AuthToken
+	ManifestID       ManifestID
+	Fname            string
+	Seq              int64
+	Hash             ethcommon.Hash
+	Profiles         []ffmpeg.VideoProfile
+	OS               *net.OSInfo
+	Duration         time.Duration
+	Caps             *Capabilities
+	AuthToken        *net.AuthToken
+	DetectorProfiles []ffmpeg.DetectorProfile
 }
 
 func (md *SegTranscodingMetadata) Flatten() []byte {
