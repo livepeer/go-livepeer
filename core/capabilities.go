@@ -144,6 +144,14 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 	}
 	caps[storageCap] = true
 
+	// capabilities based on detector profiles
+	for _, profile := range params.Detection.Profiles {
+		switch profile.Type() {
+		case ffmpeg.SceneClassification:
+			caps[Capability_SceneClassification] = true
+		}
+	}
+
 	// generate bitstring
 	capList := []Capability{}
 	for k := range caps {
