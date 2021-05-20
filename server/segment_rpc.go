@@ -557,18 +557,24 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		storage = bos.GetInfo()
 	}
 
+	detectorProfiles := []ffmpeg.DetectorProfile{}
+	if sess.Params.Detection.Freq != 0 && seg.SeqNo%uint64(sess.Params.Detection.Freq) == 0 {
+		detectorProfiles = sess.Params.Detection.Profiles
+	}
+
 	// Generate signature for relevant parts of segment
 	params := sess.Params
 	hash := crypto.Keccak256(seg.Data)
 	md := &core.SegTranscodingMetadata{
-		ManifestID: params.ManifestID,
-		Seq:        int64(seg.SeqNo),
-		Hash:       ethcommon.BytesToHash(hash),
-		Profiles:   params.Profiles,
-		OS:         storage,
-		Duration:   time.Duration(seg.Duration * float64(time.Second)),
-		Caps:       params.Capabilities,
-		AuthToken:  sess.OrchestratorInfo.GetAuthToken(),
+		ManifestID:       params.ManifestID,
+		Seq:              int64(seg.SeqNo),
+		Hash:             ethcommon.BytesToHash(hash),
+		Profiles:         params.Profiles,
+		OS:               storage,
+		Duration:         time.Duration(seg.Duration * float64(time.Second)),
+		Caps:             params.Capabilities,
+		AuthToken:        sess.OrchestratorInfo.GetAuthToken(),
+		DetectorProfiles: detectorProfiles,
 	}
 	sig, err := sess.Broadcaster.Sign(md.Flatten())
 	if err != nil {
