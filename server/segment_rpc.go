@@ -528,6 +528,10 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		}
 
 		balUpdate.Debit.Mul(new(big.Rat).SetInt64(pixelCount), priceInfo)
+
+		if monitor.Enabled {
+			monitor.MilPixelsProcessed(float64(pixelCount) / 1000000.0)
+		}
 	}
 
 	// transcode succeeded; continue processing response
