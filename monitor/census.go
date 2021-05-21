@@ -151,6 +151,9 @@ type (
 		mSuggestedGasPrice     *stats.Float64Measure
 		mTranscodingPrice      *stats.Float64Measure
 
+		// Metrics for pixel accounting
+		mMilPixelsProcessed *stats.Float64Measure
+
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
 		success     map[uint64]*segmentsAverager
@@ -274,6 +277,9 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mTicketRedemptionError = stats.Int64("ticket_redemption_errors", "TicketRedemptionError", "tot")
 	census.mSuggestedGasPrice = stats.Float64("suggested_gas_price", "SuggestedGasPrice", "gwei")
 	census.mTranscodingPrice = stats.Float64("transcoding_price", "TranscodingPrice", "wei")
+
+	// Metrics for pixel accounting
+	census.mMilPixelsProcessed = stats.Float64("mil_pixels_processed", "MilPixelsProcessed", "mil pixels")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -678,6 +684,14 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ticket_redemption_errors",
 			Measure:     census.mTicketRedemptionError,
 			Description: "Errors when redeeming tickets",
+			TagKeys:     baseTags,
+			Aggregation: view.Sum(),
+		},
+		// Metrics for pixel accounting
+		{
+			Name:        "mil_pixels_processed",
+			Measure:     census.mMilPixelsProcessed,
+			Description: "Million pixels processed",
 			TagKeys:     baseTags,
 			Aggregation: view.Sum(),
 		},
@@ -1405,6 +1419,13 @@ func TicketRedemptionError() {
 	defer census.lock.Unlock()
 
 	stats.Record(census.ctx, census.mTicketRedemptionError.M(1))
+}
+
+func MilPixelsProcessed(milPixels float64) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	stats.Record(census.ctx, census.mMilPixelsProcessed.M(milPixels))
 }
 
 // SuggestedGasPrice records the last suggested gas price
