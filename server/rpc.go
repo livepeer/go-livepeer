@@ -446,14 +446,38 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		caps = core.NewCapabilities(nil, nil)
 	}
 
+	detectorProfs := []ffmpeg.DetectorProfile{}
+	for _, detector := range segData.DetectorProfiles {
+		var detectorProfile ffmpeg.DetectorProfile
+		// Refer to the following for type magic:
+		// https://developers.google.com/protocol-buffers/docs/reference/go-generated#oneof
+		switch x := detector.Value.(type) {
+		case *net.DetectorProfile_SceneClassification:
+			profile := x.SceneClassification
+			classes := []ffmpeg.DetectorClass{}
+			for _, class := range profile.Classes {
+				classes = append(classes, ffmpeg.DetectorClass{
+					ID:   int(class.ClassId),
+					Name: class.ClassName,
+				})
+			}
+			detectorProfile = &ffmpeg.SceneClassificationProfile{
+				SampleRate: uint(profile.SampleRate),
+				Classes:    classes,
+			}
+		}
+		detectorProfs = append(detectorProfs, detectorProfile)
+	}
+
 	return &core.SegTranscodingMetadata{
-		ManifestID: core.ManifestID(segData.ManifestId),
-		Seq:        segData.Seq,
-		Hash:       ethcommon.BytesToHash(segData.Hash),
-		Profiles:   profiles,
-		OS:         os,
-		Duration:   dur,
-		Caps:       caps,
-		AuthToken:  segData.AuthToken,
+		ManifestID:       core.ManifestID(segData.ManifestId),
+		Seq:              segData.Seq,
+		Hash:             ethcommon.BytesToHash(segData.Hash),
+		Profiles:         profiles,
+		OS:               os,
+		Duration:         dur,
+		Caps:             caps,
+		AuthToken:        segData.AuthToken,
+		DetectorProfiles: detectorProfs,
 	}, nil
 }
