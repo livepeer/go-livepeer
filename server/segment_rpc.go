@@ -206,8 +206,9 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	} else {
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Data{
 			Data: &net.TranscodeData{
-				Segments: segments,
-				Sig:      res.Sig,
+				Segments:   segments,
+				Sig:        res.Sig,
+				Detections: makeNetDetectData(res.TranscodeData.Detections),
 			}},
 		}
 	}
@@ -293,6 +294,32 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 		profiles = append(profiles, prof)
 	}
 	return profiles, nil
+}
+
+func makeNetDetectData(ffmpegDetectData []ffmpeg.DetectData) []*net.DetectData {
+	netDataList := []*net.DetectData{}
+	for _, data := range ffmpegDetectData {
+		var netData *net.DetectData
+		switch data.Type() {
+		case ffmpeg.SceneClassification:
+			d := data.(ffmpeg.SceneClassificationData)
+			netClasses := make(map[uint32]*net.Fraction)
+			for classID, prob := range d {
+				// FIXME: Find a better way to convert a float64 to a fraction.
+				netClasses[uint32(classID)] = &net.Fraction{
+					Num:   uint32(math.Round(prob * 1e6)),
+					Denom: 1e6,
+				}
+			}
+			netData = &net.DetectData{Value: &net.DetectData_SceneClassification{
+				SceneClassification: &net.SceneClassificationData{
+					ClassProbs: netClasses,
+				},
+			}}
+		}
+		netDataList = append(netDataList, netData)
+	}
+	return netDataList
 }
 
 func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, error) {
