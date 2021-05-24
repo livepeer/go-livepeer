@@ -146,6 +146,7 @@ func main() {
 	// API
 	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
 	orchWebhookURL := flag.String("orchWebhookUrl", "", "Orchestrator discovery callback URL")
+	detectionWebhookURL := flag.String("detectionWebhookUrl", "", "(Experimental) Detection results callback URL")
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
@@ -739,6 +740,15 @@ func main() {
 		}
 		glog.Info("Using auth webhook URL ", *authWebhookURL)
 		server.AuthWebhookURL = *authWebhookURL
+	}
+
+	if *detectionWebhookURL != "" {
+		_, err := validateURL(*detectionWebhookURL)
+		if err != nil {
+			glog.Fatal("Error setting detection webhook URL ", err)
+		}
+		glog.Info("Using detection webhook URL ", *detectionWebhookURL)
+		server.DetectionWebhookURL = *detectionWebhookURL
 	}
 
 	if n.NodeType == core.BroadcasterNode {
