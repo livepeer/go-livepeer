@@ -70,7 +70,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}        
       - name: Setup Go
         uses: actions/setup-go@v2
         with:
@@ -117,6 +117,14 @@ jobs:
         with:
           path: ~/build
           key: ${{ runner.os }}-binaries-${{ github.sha }}
+      - name: Install gpgv2 
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y gpgv2
+      - name: Import gpg key
+        uses: crazy-max/ghaction-import-gpg@v3
+        with:
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
       - name: Upload build
         run: cp ~/build/* . && ./upload_build.sh
         env:
@@ -124,5 +132,7 @@ jobs:
           GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
           GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
           DISCORD_URL: ${{ secrets.DISCORD_URL }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       - name: Notify new build upload
         run: curl -X POST https://holy-bread-207a.livepeer.workers.dev

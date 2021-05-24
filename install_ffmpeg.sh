@@ -22,6 +22,24 @@ fi
 
 export PATH="$HOME/compiled/bin":$PATH
 export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}:$HOME/compiled/lib/pkgconfig"
+export GNU_KEYRING_PATH="/tmp/"
+
+# Function to verify signatures
+verify_sigs () {
+  SIGNATURE_FILE=$1
+  FILE_NAME=$2
+
+  if [ ! gpg --verify --keyring $GNU_KEYRING_PATH/gnu-keyring.gpg $SIGNATURE_FILE $FILE_NAME ]; then
+    echo "ERROR: failed to verify $FILE_NAME against $SIGNATURE_FILE"
+    exit 1
+  fi
+}
+
+# Download gpu keyring for verifying filters
+if [ ! wget https://ftp.gnu.org/gnu/gnu-keyring.gpg -O $GNU_KEYRING_PATH/gnu-keyring.gpg ]; then
+  echo "ERROR: failed to download gnu-keyring for verification"
+  exit 1
+fi
 
 # NVENC only works on Windows/Linux
 if [ $(uname) != "Darwin" ]; then
@@ -54,6 +72,9 @@ if [[ $(uname) != *"MSYS"* ]]; then
   if [ ! -e "$HOME/gmp-6.1.2" ]; then
     cd "$HOME"
     curl -LO https://github.com/livepeer/livepeer-builddeps/raw/34900f2b1be4e366c5270e3ee5b0d001f12bd8a4/gmp-6.1.2.tar.xz
+    curl -LO https://ftp.gnu.org/gnu/gmp/gmp-6.1.2.tar.xz.sig
+    verify_sigs gmp-6.1.2.tar.xz.sig gmp-6.1.2.tar.xz
+
     tar xf gmp-6.1.2.tar.xz
     cd "$HOME/gmp-6.1.2"
     ./configure --prefix="$HOME/compiled" --disable-shared  --with-pic --enable-fat
@@ -65,6 +86,9 @@ if [[ $(uname) != *"MSYS"* ]]; then
   if [ ! -e "$HOME/nettle-3.7" ]; then
     cd $HOME
     curl -LO https://github.com/livepeer/livepeer-builddeps/raw/657a86b78759b1ab36dae227253c26ff50cb4b0a/nettle-3.7.tar.gz
+    curl -LO https://ftp.gnu.org/gnu/nettle/nettle-3.7.tar.gz.sig
+    verify_sigs nettle-3.7.tar.gz.sig nettle-3.7.tar.gz
+
     tar xf nettle-3.7.tar.gz
     cd nettle-3.7
     LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" ./configure --prefix="$HOME/compiled" --disable-shared --enable-pic
@@ -91,6 +115,9 @@ if [ ! -e "$HOME/gnutls-3.7.0" ]; then
   fi
   cd $HOME
   curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.7/gnutls-3.7.0.tar.xz
+  curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.7/gnutls-3.7.1.tar.xz.sig
+  verify_sigs gnutls-3.7.1.tar.xz.sig gnutls-3.7.0.tar.xz
+
   tar xf gnutls-3.7.0.tar.xz
   cd gnutls-3.7.0
   LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include -O2" LIBS="-lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --without-idn --without-zlib --disable-doc --disable-cxx --disable-tools --disable-hardware-acceleration --disable-guile --disable-libdane --disable-tests --disable-rpath --disable-nls
@@ -124,7 +151,7 @@ if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
     --disable-postproc --disable-lzma \
     --enable-gnutls --enable-libx264 --enable-gpl \
-    --enable-protocol=https,http,rtmp,file,pipe \
+    --enable-protocol=https,http,rtmp,file \
     --enable-muxer=mpegts,hls,segment,mp4,null --enable-demuxer=flv,mpegts,mp4,mov \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps \
     --enable-parser=aac,aac_latm,h264 \

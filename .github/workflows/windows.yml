@@ -28,10 +28,20 @@ jobs:
     - name: Build Livepeer
       shell: msys2 {0}
       run: ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
+    - name: Import gpg key 
+      shell: msys2 {0}
+      env:
+        GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      run: |
+        echo "$GPG_PRIVATE_KEY" > ~/privatekey.asc
+        gpg --pinentry-mode loopback --passphrase $GPG_PASSPHRASE --import ~/privatekey.asc
     - name: Upload build
       if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
       shell: msys2 {0}
-      env: 
+      env:
+        GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
         GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
         GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}

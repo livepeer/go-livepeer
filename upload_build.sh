@@ -5,6 +5,33 @@
 set -e
 set -o nounset
 
+upload_to_bucket () {
+  local FILE=$1
+
+  # https://stackoverflow.com/a/44751929/990590
+  bucket="livepeer-ci"
+  resource="/${bucket}/${VERSION_AND_NETWORK}/${FILE}"
+  contentType="application/x-compressed-tar"
+  dateValue=`date -R`
+  stringToSign="PUT\n\n${contentType}\n${dateValue}\n${resource}"
+  signature=`echo -en ${stringToSign} | openssl sha1 -hmac ${GCLOUD_SECRET} -binary | base64`
+  fullUrl="https://storage.googleapis.com${resource}"
+
+
+  # Failsafe - don't overwrite existing uploads!
+  if curl --head --fail $fullUrl 2>/dev/null; then
+    echo "$fullUrl already exists, not overwriting!"
+    exit 0
+  fi
+
+  curl -X PUT -T "${FILE}" \
+    -H "Host: storage.googleapis.com" \
+    -H "Date: ${dateValue}" \
+    -H "Content-Type: ${contentType}" \
+    -H "Authorization: AWS ${GCLOUD_KEY}:${signature}" \
+    $fullUrl
+}
+
 if [[ $(uname) == *"MSYS"* ]]; then
   ARCH="windows"
   EXT=".exe"
@@ -59,6 +86,17 @@ fi
 
 FILE_SHA256=`shasum -a 256 ${FILE}`
 
+# Sign binary
+gpg --pinentry-mode loopback --passphrase $GPG_PASSPHRASE --detach-sign --armor $FILE
+
+FILE_SIGNATURE="${FILE}.asc"
+
+if [ ! -f $FILE_SIGNATURE ]; then
+  echo "Failed to find binary signature: ${FILE_SIGNATURE}"
+  exit 0
+fi
+
+
 # Quick self-check to see if the thing can execute at all
 (cd $BASE && $NODE -version)
 
@@ -67,27 +105,9 @@ if [[ "${GCLOUD_KEY:-}" == "" ]]; then
   exit 0
 fi
 
-# https://stackoverflow.com/a/44751929/990590
-bucket=build.livepeer.live
-resource="/${bucket}/${VERSION_AND_NETWORK}/${FILE}"
-contentType="application/x-compressed-tar"
-dateValue=`date -R`
-stringToSign="PUT\n\n${contentType}\n${dateValue}\n${resource}"
-signature=`echo -en ${stringToSign} | openssl sha1 -hmac ${GCLOUD_SECRET} -binary | base64`
-fullUrl="https://storage.googleapis.com${resource}"
-
-# Failsafe - don't overwrite existing uploads!
-if curl --head --fail $fullUrl 2>/dev/null; then
-  echo "$fullUrl already exists, not overwriting!"
-  exit 0
-fi
-
-curl -X PUT -T "${FILE}" \
-  -H "Host: storage.googleapis.com" \
-  -H "Date: ${dateValue}" \
-  -H "Content-Type: ${contentType}" \
-  -H "Authorization: AWS ${GCLOUD_KEY}:${signature}" \
-  $fullUrl
+# Upload binary and signature to Google cloud 
+upload_to_bucket $FILE
+upload_to_bucket $FILE_SIGNATURE
 
 curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nSHA256:\n${FILE_SHA256}\"}" $DISCORD_URL 2>/dev/null
 echo "done"
