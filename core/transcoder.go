@@ -37,6 +37,7 @@ func (lt *LocalTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData
 	}
 	profiles := md.Profiles
 	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles)
+	opts = append(opts, detectorsToTranscodeOptions(lt.workDir, ffmpeg.Software, md.DetectorProfiles)...)
 
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
@@ -75,6 +76,7 @@ func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 	}
 	profiles := md.Profiles
 	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles)
+	out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md.DetectorProfiles)...)
 
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
@@ -162,21 +164,28 @@ func resToTranscodeData(res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOpt
 	}
 
 	// Convert results into in-memory bytes following the expected API
-	segments := make([]*TranscodedSegmentData, len(opts), len(opts))
+	segments := []*TranscodedSegmentData{}
+	// Extract detection data from detector outputs
+	detections := []ffmpeg.DetectData{}
 	for i := range opts {
-		oname := opts[i].Oname
-		o, err := ioutil.ReadFile(oname)
-		if err != nil {
-			glog.Error("Cannot read transcoded output for ", oname)
-			return nil, err
+		if opts[i].Detector == nil {
+			oname := opts[i].Oname
+			o, err := ioutil.ReadFile(oname)
+			if err != nil {
+				glog.Error("Cannot read transcoded output for ", oname)
+				return nil, err
+			}
+			segments = append(segments, &TranscodedSegmentData{Data: o, Pixels: res.Encoded[i].Pixels})
+			os.Remove(oname)
+		} else {
+			detections = append(detections, res.Encoded[i].DetectData)
 		}
-		segments[i] = &TranscodedSegmentData{Data: o, Pixels: res.Encoded[i].Pixels}
-		os.Remove(oname)
 	}
 
 	return &TranscodeData{
-		Segments: segments,
-		Pixels:   res.Decoded.Pixels,
+		Segments:   segments,
+		Pixels:     res.Decoded.Pixels,
+		Detections: detections,
 	}, nil
 }
 
@@ -188,6 +197,26 @@ func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profi
 			Profile:      profiles[i],
 			Accel:        accel,
 			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+		}
+		opts[i] = o
+	}
+	return opts
+}
+
+func detectorsToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.DetectorProfile) []ffmpeg.TranscodeOptions {
+	opts := make([]ffmpeg.TranscodeOptions, len(profiles), len(profiles))
+	for i := range profiles {
+		var o ffmpeg.TranscodeOptions
+		switch profiles[i].Type() {
+		case ffmpeg.SceneClassification:
+			classifier := profiles[i].(*ffmpeg.SceneClassificationProfile)
+			classifier.ModelPath = fmt.Sprintf("%s/%s", workDir, ffmpeg.DSceneAdultSoccer.ModelPath)
+			classifier.Input = ffmpeg.DSceneAdultSoccer.Input
+			classifier.Output = ffmpeg.DSceneAdultSoccer.Output
+			o = ffmpeg.TranscodeOptions{
+				Detector: classifier,
+				Accel:    accel,
+			}
 		}
 		opts[i] = o
 	}
