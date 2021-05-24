@@ -16,6 +16,16 @@ if [[ $(uname) == *"MSYS"* ]]; then
   export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig:$HOME/compiled/lib/pkgconfig"
   export GOROOT=/mingw64/lib/go
   export GOPATH=/mingw64
+else
+  export PKG_CONFIG_PATH="$HOME/compiled/lib/pkgconfig"
+fi
+
+echo "PKG_CONFIG_PATH: ${PKG_CONFIG_PATH}"
+if [ -d $PKG_CONFIG_PATH ]; then
+  echo "Contents of ${PKG_CONFIG_PATH}"
+  ls -1 $PKG_CONFIG_PATH
+else
+  echo "PKG_CONFIG_PATH: ${PKG_CONFIG_PATH} does not exist" 
 fi
 
 # If we want to build with branch --> network support for any other networks, add them here!
