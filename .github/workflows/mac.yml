@@ -1,0 +1,40 @@
+name: Mac build
+on: push
+    
+jobs:
+  build:
+    runs-on: macOS-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - name: Install dependent packages
+      run: brew install coreutils
+
+    - name: Install ffmpeg
+      run: ./install_ffmpeg.sh
+
+    - name: Install go modules
+      run: go mod download
+
+    - name: Set CI environment variables
+      run: ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
+
+    - name: Import gpg key
+      uses: crazy-max/ghaction-import-gpg@v3
+      with:
+        gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+        passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+    - name: Upload build
+      env:
+        GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        GITHUB_REF: ${{ github.ref }}
+        GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
+        GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
+        DISCORD_URL: ${{ secrets.DISCORD_URL }}
+      run: ./upload_build.sh
+
