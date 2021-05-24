@@ -1,11 +1,15 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"math/big"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -542,6 +546,40 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			gotErr = true
 			errCode = subType
 		}
+	}
+
+	// [EXPERIMENTAL] send content detection results to callback webhook
+	if DetectionWebhookURL != "" && len(res.Detections) > 0 {
+		go func(mid core.ManifestID, seqNo uint64, detections []*net.DetectData) {
+			type DetectionWebhookRequest struct {
+				ManifestID          core.ManifestID               `json:"manifestID"`
+				SeqNo               uint64                        `json:"seqNo"`
+				SceneClassification []net.SceneClassificationData `json:"sceneClassification"`
+			}
+			req := DetectionWebhookRequest{ManifestID: mid, SeqNo: seqNo}
+			for _, detection := range detections {
+				switch x := detection.Value.(type) {
+				case *net.DetectData_SceneClassification:
+					data := x.SceneClassification
+					req.SceneClassification = append(req.SceneClassification, *data)
+				}
+			}
+			jsonValue, err := json.Marshal(req)
+			if err != nil {
+				glog.Errorf("Unable to marshal detection result into JSON manifestID=%v seqNo=%v", mid, seqNo)
+				return
+			}
+			resp, err := http.Post(DetectionWebhookURL, "application/json", bytes.NewBuffer(jsonValue))
+			if err != nil {
+				glog.Errorf("Unable to POST detection result on webhook url=%v manifestID=%v seqNo=%v",
+					DetectionWebhookURL, mid, seqNo)
+			} else if resp.StatusCode != 200 {
+				rbody, _ := ioutil.ReadAll(resp.Body)
+				resp.Body.Close()
+				glog.Errorf("Detection webhook returned error status=%v err=%v manifestID=%v seqNo=%v",
+					resp.StatusCode, string(rbody), mid, seqNo)
+			}
+		}(cxn.mid, seg.SeqNo, res.Detections)
 	}
 
 	var dlErr error

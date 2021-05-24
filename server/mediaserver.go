@@ -61,6 +61,7 @@ const BroadcastRetry = 15 * time.Second
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL string
+var DetectionWebhookURL string
 
 // For HTTP push watchdog
 var httpPushTimeout = 1 * time.Minute
