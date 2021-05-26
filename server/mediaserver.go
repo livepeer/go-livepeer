@@ -1066,6 +1066,8 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 		tc.StopTranscoder()
 		ow.Close()
 		<-done
+		glog.Infof("Completed mp4 request=%s manifestID=%s sourceBytes=%d destBytes=%d", r.URL.String(),
+			manifestID, sourceBytesSent, resultBytesSent)
 	}()
 	oname := fmt.Sprintf("pipe:%d", ow.Fd())
 	out := []ffmpeg.TranscodeOptions{
@@ -1126,8 +1128,6 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 			return
 		}
 	}
-	glog.Infof("Completed mp4 request=%s manifestID=%s sourceBytes=%d destBytes=%d", r.URL.String(),
-		manifestID, sourceBytesSent, resultBytesSent)
 }
 
 // HandleRecordings handle requests to /recordings/ endpoint
