@@ -53,6 +53,7 @@ type SegTranscodingMetadata struct {
 	Duration         time.Duration
 	Caps             *Capabilities
 	AuthToken        *net.AuthToken
+	DetectorEnabled  bool
 	DetectorProfiles []ffmpeg.DetectorProfile
 }
 
@@ -112,6 +113,7 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 		Duration:         int32(md.Duration / time.Millisecond),
 		Capabilities:     md.Caps.ToNetCapabilities(),
 		AuthToken:        md.AuthToken,
+		DetectorEnabled:  md.DetectorEnabled,
 		DetectorProfiles: detectorProfiles,
 		// Triggers failure on Os that don't know how to use FullProfiles/2/3
 		Profiles: []byte("invalid"),
