@@ -193,6 +193,10 @@ message SegData {
   // Data for transcoding authentication
   AuthToken auth_token = 8;
 
+  // [EXPERIMENTAL]
+  // Detector enabled for this segment
+  bool detector_enabled = 9;
+
   // Broadcaster's preferred storage medium(s)
   // XXX should we include this in a sig somewhere until certs are authenticated?
   repeated OSInfo storage = 32;
