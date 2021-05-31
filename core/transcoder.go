@@ -85,6 +85,7 @@ func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
 
+	glog.Warningf("!====    Here's the output config: %v", out)
 	res, err := nv.session.Transcode(in, out)
 	if err != nil {
 		return nil, err
@@ -186,6 +187,7 @@ func resToTranscodeData(res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOpt
 		}
 	}
 
+	glog.Warningf("===== TRANSCODER RESULT: %v", res.Encoded)
 	return &TranscodeData{
 		Segments:   segments,
 		Pixels:     res.Decoded.Pixels,
@@ -217,6 +219,7 @@ func detectorsToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, prof
 			classifier.ModelPath = fmt.Sprintf("%s/%s", workDir, ffmpeg.DSceneAdultSoccer.ModelPath)
 			classifier.Input = ffmpeg.DSceneAdultSoccer.Input
 			classifier.Output = ffmpeg.DSceneAdultSoccer.Output
+			glog.Warningf("!====    Here's the detector profile: %v", *classifier)
 			o = ffmpeg.TranscodeOptions{
 				Detector: classifier,
 				Accel:    accel,

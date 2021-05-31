@@ -548,6 +548,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		}
 	}
 
+	glog.Warningf("========  DETCTIONS %v", res.Detections)
 	// [EXPERIMENTAL] send content detection results to callback webhook
 	if DetectionWebhookURL != "" && len(res.Detections) > 0 {
 		go func(mid core.ManifestID, seqNo uint64, detections []*net.DetectData) {

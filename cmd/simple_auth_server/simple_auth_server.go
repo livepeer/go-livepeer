@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -15,6 +14,38 @@ import (
 
 type authWebhookReq struct {
 	Url string `json:"url"`
+}
+
+type detectClass struct {
+	ID   int    `json:"id"`
+	Name string `json: "name"`
+}
+
+type sceneClassificationProfile struct {
+	SampleRate uint          `json:"sampleRate"`
+	Classes    []detectClass `json:"classes"`
+}
+
+type detection struct {
+	Freq                       uint                       `json:"freq"`
+	SceneClassificationProfile sceneClassificationProfile `json:"sceneClassificationProfile"`
+}
+
+type profile struct {
+	Name    string `json:"name"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Bitrate int    `json:"bitrate"`
+	FPS     uint   `json:"fps"`
+	FPSDen  uint   `json:"fpsDen"`
+	Profile string `json:"profile"`
+	GOP     string `json:"gop"`
+}
+
+type authWebhookResponse struct {
+	ManifestID string    `json:"manifestID"`
+	Profiles   []profile `json:"profiles"`
+	Detection  detection `json:"detection"`
 }
 
 func main() {
@@ -28,19 +59,40 @@ func main() {
 			return
 		}
 
-		var mid core.ManifestID
-		u, err := url.Parse(req.Url)
-		mid = parseStreamID(u.String()).ManifestID
+		//var mid core.ManifestID
+		//u, err := url.Parse(req.Url)
+		//mid = parseStreamID(u.String()).ManifestID
 
-		if mid == "" {
-			mid = core.RandomManifestID()
-			fmt.Printf("Generated random manifestID: %v\n", mid)
-		} else if mid == "fizz" {
-			mid = "buzz"
-			fmt.Printf("Detected \"fizz\" as manifestID. Crazy! Renaming to \"buzz\".\n")
+		//if mid == "" {
+		//mid = core.RandomManifestID()
+		//fmt.Printf("Generated random manifestID: %v\n", mid)
+		//} else if mid == "fizz" {
+		//mid = "buzz"
+		//fmt.Printf("Detected \"fizz\" as manifestID. Crazy! Renaming to \"buzz\".\n")
+		//}
+		//fmt.Printf("Stream started with manifestID: %v\n", mid)
+		resp := authWebhookResponse{
+			ManifestID: "detectionStream",
+			Profiles: []profile{{
+				Name:    "240p",
+				Width:   426,
+				Height:  240,
+				Bitrate: 250000,
+				FPS:     0,
+			}},
+			Detection: detection{
+				Freq: 4,
+				SceneClassificationProfile: sceneClassificationProfile{
+					SampleRate: 1,
+					Classes: []detectClass{
+						{ID: 0, Name: "adult"},
+						{ID: 1, Name: "soccer"},
+					},
+				},
+			},
 		}
-		fmt.Printf("Stream started with manifestID: %v\n", mid)
-		w.Write([]byte(fmt.Sprintf("{\"ManifestID\":\"%v\"}", mid)))
+		byteSlice, _ := json.Marshal(resp)
+		w.Write(byteSlice)
 	})
 
 	fmt.Println("Listening on localhost:8000/auth\nTry something crazy - stream with \"fizz\" as the manifestID.")

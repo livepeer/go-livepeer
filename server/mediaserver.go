@@ -407,6 +407,7 @@ func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile
 }
 
 func jsonDetectionToDetectorProfile(resp *authWebhookResponse) core.DetectionConfig {
+	glog.Warningf("\n!!! === !! WEBHOOK RESPONSE  %v\n", *resp)
 	sceneClassification := ffmpeg.SceneClassificationProfile{
 		SampleRate: resp.Detection.SceneClassificationProfile.SampleRate,
 		Classes:    []ffmpeg.DetectorClass{},
@@ -418,6 +419,7 @@ func jsonDetectionToDetectorProfile(resp *authWebhookResponse) core.DetectionCon
 				Name: class.Name,
 			})
 	}
+	glog.Warningf("\n!!! === !! Scene class config %v\n", sceneClassification)
 	detection := core.DetectionConfig{
 		Freq:     resp.Detection.Freq,
 		Profiles: []ffmpeg.DetectorProfile{&sceneClassification},

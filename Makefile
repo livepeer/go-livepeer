@@ -26,7 +26,7 @@ endif
 
 .PHONY: livepeer
 livepeer:
-	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -tags "$(HIGHEST_CHAIN_TAG)" -ldflags="$(ldflags)" cmd/livepeer/*.go
+	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -tags "$(HIGHEST_CHAIN_TAG) experimental" -ldflags="$(ldflags)" cmd/livepeer/*.go
 
 .PHONY: livepeer_cli
 livepeer_cli:
