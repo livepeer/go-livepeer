@@ -53,6 +53,9 @@ func (lb *LoadBalancingTranscoder) Transcode(md *SegTranscodingMetadata) (*Trans
 	} else {
 		var err error
 		session, err = lb.createSession(md)
+		if len(md.DetectorProfiles) > 0 {
+			md.DetectorEnabled = true
+		}
 		if err != nil {
 			return nil, err
 		}
