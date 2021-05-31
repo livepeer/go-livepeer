@@ -37,7 +37,9 @@ func (lt *LocalTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData
 	}
 	profiles := md.Profiles
 	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles)
-	opts = append(opts, detectorsToTranscodeOptions(lt.workDir, ffmpeg.Software, md.DetectorProfiles)...)
+	if md.DetectorEnabled {
+		opts = append(opts, detectorsToTranscodeOptions(lt.workDir, ffmpeg.Software, md.DetectorProfiles)...)
+	}
 
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
@@ -76,7 +78,9 @@ func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 	}
 	profiles := md.Profiles
 	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles)
-	out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md.DetectorProfiles)...)
+	if md.DetectorEnabled {
+		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md.DetectorProfiles)...)
+	}
 
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
