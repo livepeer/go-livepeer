@@ -584,8 +584,12 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 	}
 
 	detectorProfiles := []ffmpeg.DetectorProfile{}
-	if sess.Params.Detection.Freq != 0 && seg.SeqNo%uint64(sess.Params.Detection.Freq) == 0 {
+	detectorEnabled := false
+	if sess.Params.Detection.Freq != 0 {
 		detectorProfiles = sess.Params.Detection.Profiles
+		if seg.SeqNo%uint64(sess.Params.Detection.Freq) == 0 {
+			detectorEnabled = true
+		}
 	}
 
 	// Generate signature for relevant parts of segment
@@ -600,6 +604,7 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		Duration:         time.Duration(seg.Duration * float64(time.Second)),
 		Caps:             params.Capabilities,
 		AuthToken:        sess.OrchestratorInfo.GetAuthToken(),
+		DetectorEnabled:  detectorEnabled,
 		DetectorProfiles: detectorProfiles,
 	}
 	sig, err := sess.Broadcaster.Sign(md.Flatten())

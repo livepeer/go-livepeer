@@ -478,6 +478,7 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		Duration:         dur,
 		Caps:             caps,
 		AuthToken:        segData.AuthToken,
+		DetectorEnabled:  segData.DetectorEnabled,
 		DetectorProfiles: detectorProfs,
 	}, nil
 }
