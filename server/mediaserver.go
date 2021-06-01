@@ -1038,11 +1038,12 @@ func getPlaylistsFromStore(ctx context.Context, sess drivers.OSSession, manifest
 	return filesMap, jsonFiles, latestPlaylistTime, nil
 }
 
-func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *core.JsonPlaylist, manifestID, track string) {
+func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *core.JsonPlaylist, manifestID, track, fileName string) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	contentType, _ := common.TypeByExtension(".mp4")
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename=%s;`, fileName))
 	var sourceBytesSent, resultBytesSent int64
 
 	or, ow, err := os.Pipe()
@@ -1308,7 +1309,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		s.streamMP4(w, r, mainJspl, manifestID, track)
+		s.streamMP4(w, r, mainJspl, manifestID, track, pp[len(pp)-1])
 		return
 	}
 
