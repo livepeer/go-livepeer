@@ -538,6 +538,23 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	osinfo = params.RecordOS.GetInfo()
 	assert.Equal(net.OSInfo_S3, osinfo.GetStorageType())
 	assert.Equal("http://record.store", osinfo.GetS3Info().Host)
+
+	// set scene classification detector profiles
+	ts18 := makeServer(`{"manifestID":"a", "detection": {"freq": 5, "sceneClassificationProfile": {"sampleRate": 10, "classes": [{"id": 0, "name": "class1"}]}}}`)
+	defer ts18.Close()
+	params = createSid(u).(*core.StreamParameters)
+
+	expectedDetection := core.DetectionConfig{
+		Freq: 5,
+		Profiles: []ffmpeg.DetectorProfile{
+			&ffmpeg.SceneClassificationProfile{
+				SampleRate: 10,
+				Classes:    []ffmpeg.DetectorClass{{ID: 0, Name: "class1"}},
+			},
+		},
+	}
+
+	assert.Equal(expectedDetection, params.Detection, "Did not have matching detector config")
 }
 
 func TestCreateRTMPStreamHandler(t *testing.T) {
