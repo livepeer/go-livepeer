@@ -9,3 +9,5 @@ COPY --from=livepeerci/build:latest /build/livepeer /usr/bin/livepeer
 COPY --from=livepeerci/build:latest /build/livepeer_cli /usr/bin/livepeer_cli
 COPY --from=livepeerci/build:latest /build/livepeer_router /usr/bin/livepeer_router
 COPY --from=livepeerci/build:latest /usr/bin/grpc_health_probe /usr/bin/grpc_health_probe
+
+COPY --from=livepeerci/build:latest /build/tasmodel.pb /tasmodel.pb
