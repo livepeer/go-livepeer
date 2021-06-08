@@ -26,11 +26,11 @@ endif
 
 .PHONY: livepeer
 livepeer:
-	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -tags "$(HIGHEST_CHAIN_TAG) experimental" -ldflags="$(ldflags)" cmd/livepeer/*.go
+	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -tags $(BUILD_TAGS) -ldflags="$(ldflags)" cmd/livepeer/*.go
 
 .PHONY: livepeer_cli
 livepeer_cli:
-	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -tags "$(HIGHEST_CHAIN_TAG)" -ldflags="$(ldflags)" cmd/livepeer_cli/*.go
+	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -tags $(BUILD_TAGS) -ldflags="$(ldflags)" cmd/livepeer_cli/*.go
 
 .PHONY: livepeer_bench
 livepeer_bench:
@@ -46,6 +46,6 @@ localdocker:
 	# docker build -t livepeerbinary:debian -f Dockerfile.debian .
 	# Manually build our context... this is hacky but docker refuses to support symlinks
 	# or selectable .dockerignore files
-	tar ch --exclude=.git . | docker build --build-arg HIGHEST_CHAIN_TAG=${HIGHEST_CHAIN_TAG} -t livepeerbinary:debian -f docker/Dockerfile.debian -
+	tar ch --exclude=.git . | docker build --build-arg BUILD_TAGS=$(BUILD_TAGS) -t livepeerbinary:debian -f docker/Dockerfile.debian -
 	rm .git.describe
 
