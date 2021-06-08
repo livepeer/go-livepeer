@@ -39,6 +39,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/watchers"
 	"github.com/livepeer/go-livepeer/verification"
+	"github.com/livepeer/lpms/ffmpeg"
 
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 )
@@ -104,6 +105,7 @@ func main() {
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	nvidia := flag.String("nvidia", "", "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
 	testTranscoder := flag.Bool("testTranscoder", true, "Test Nvidia GPU transcoding at startup")
+	sceneClassificationModelPath := flag.String("sceneClassificationModelPath", "", "Path to scene classification model")
 
 	// Onchain:
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
@@ -264,6 +266,16 @@ func main() {
 				if err != nil {
 					glog.Fatalf("Unable to transcode using Nvidia gpu=%s err=%v", strings.Join(devices, ","), err)
 				}
+			}
+			// FIXME: Short-term hack to pre-load the detection model for the whole node
+			if *sceneClassificationModelPath != "" {
+				detectorProfile := ffmpeg.DSceneAdultSoccer
+				detectorProfile.ModelPath = *sceneClassificationModelPath
+				err = ffmpeg.InitFFmpegWithDetectorProfile(&detectorProfile, strings.Join(devices, ","))
+				if err != nil {
+					glog.Fatalf("Could not initialize detector profiles")
+				}
+				defer ffmpeg.ReleaseFFmpegDetectorProfile()
 			}
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNvidiaTranscoder)
