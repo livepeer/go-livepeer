@@ -39,6 +39,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/watchers"
 	"github.com/livepeer/go-livepeer/verification"
+	"github.com/livepeer/lpms/ffmpeg"
 
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 )
@@ -265,6 +266,14 @@ func main() {
 					glog.Fatalf("Unable to transcode using Nvidia gpu=%s err=%v", strings.Join(devices, ","), err)
 				}
 			}
+			// FIXME: Short-term hack to pre-load the detection model for the whole node
+			detectorProfile := ffmpeg.DSceneAdultSoccer
+			detectorProfile.ModelPath = fmt.Sprintf("%s/%s", core.WorkDir, ffmpeg.DSceneAdultSoccer.ModelPath)
+			err = ffmpeg.InitFFmpegWithDetectProfile(&detectorProfile, strings.Join(devices, ","))
+			if err != nil {
+				glog.Fatalf("Could not initialize detector profiles")
+			}
+			defer ffmpeg.ReleaseFFmpeg()
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNvidiaTranscoder)
 		} else {
