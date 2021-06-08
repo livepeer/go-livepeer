@@ -50,6 +50,11 @@ jobs:
 
         sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
           && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
+
+        LIBTENSORFLOW_VERSION=2.3.0 \
+          && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+          && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+          && sudo ldconfig
     - name: Install go modules
       if: steps.cache-go-mod.outputs.cache-hit != 'true'
       run: go mod download
@@ -75,6 +80,12 @@ jobs:
         uses: actions/setup-go@v2
         with:
           go-version: '1.15.5'
+      - name: Install libtensorflow
+        run: |
+          LIBTENSORFLOW_VERSION=2.3.0 \
+            && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+            && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+            && sudo ldconfig
       - name: Cache go modules
         id: cache-go-mod
         uses: actions/cache@v2.1.5
@@ -112,6 +123,12 @@ jobs:
           # Needed for commands that depend on git tags
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
+      - name: Install libtensorflow
+        run: |
+          LIBTENSORFLOW_VERSION=2.3.0 \
+            && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+            && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+            && sudo ldconfig
       - name: Cache binaries
         uses: actions/cache@v2.1.5
         with:
